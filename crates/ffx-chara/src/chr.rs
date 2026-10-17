@@ -1315,6 +1315,347 @@ pub mod bridge {
         let inst: u32 = mem.read(chr + 0x830);
         call(mem, mem.rebase(SET_VISIBLE), &[inst, 1])
     }
+
+    /// The callees `Ch_MemMove` adds: `Ch_FunctionHistory(file, line)`
+    /// (`0x00833770`), `Ch_ElemRemapping(chr, delta)` (`0x00826980`),
+    /// `Ch_MotionRemappingFcurve(chr, delta)` (`0x00839890`),
+    /// `Ch_TextureReMapping(chr)` (`0x0083cdd0`), `TexAnim_GetWork(i)`
+    /// (`0x0077e9f0`), `texanim_malloc_memory_set(i, delta)` (`0x0077ea10`),
+    /// `Ch_ClutMapping(chr, copy)` (`0x0083ca20`), `Ch_ClutEnable(chr, on)`
+    /// (`0x0083c940`), `op_mdc_mem_transfer()` (`0x00803610`),
+    /// `Ch_MemMoveEventMgrp()` (`0x00837050`), `Sg_PLightGetPtr()`
+    /// (`0x00831b70`).
+    pub const FUNCTION_HISTORY: u32 = 0x0083_3770;
+    pub const ELEM_REMAPPING: u32 = 0x0082_6980;
+    pub const MOTION_REMAPPING_FCURVE: u32 = 0x0083_9890;
+    pub const TEXTURE_REMAPPING: u32 = 0x0083_cdd0;
+    pub const TEX_ANIM_GET_WORK: u32 = 0x0077_e9f0;
+    pub const TEX_ANIM_MEMORY_SET: u32 = 0x0077_ea10;
+    pub const CLUT_MAPPING: u32 = 0x0083_ca20;
+    pub const CLUT_ENABLE_FN: u32 = 0x0083_c940;
+    pub const MDC_MEM_TRANSFER: u32 = 0x0080_3610;
+    pub const MEM_MOVE_EVENT_MGRP: u32 = 0x0083_7050;
+    pub const PLIGHT_GET_PTR: u32 = 0x0083_1b70;
+    /// `g_ChrMemMoveTrigger` (`u8`) and the source file name
+    /// `Ch_FunctionHistory` gets.
+    pub const MEM_MOVE_TRIGGER: u32 = 0x012f_bda0;
+    pub const MEM_MOVE_FILE: u32 = 0x00b5_9520;
+    /// Bytes of scratch `ch_mem_move` needs: the moved flag (`[ebp-4]`)
+    /// and a work pointer (`[ebp-0xc]`).
+    pub const MEM_MOVE_SCRATCH: u32 = 0xc;
+
+    /// `Ch_MemMove()` (`0x00826fa0`, one function; the dump splits it at
+    /// the early return): with [`MEM_MOVE_TRIGGER`] set, moves each active
+    /// character's heap blocks that `Sg_MemMoveWork(&ptr, &moved)` moves,
+    /// fixing up what points into them: elements `+0x328`
+    /// (`Ch_ElemRemapping`), curves `+0x748` (`Ch_MotionRemappingFcurve`),
+    /// the model table `+0x1bc`, `+0x32c` and each model's `+8`, `+4`,
+    /// `+0xc`, the texture list `+0x6dc` (`Ch_TextureReMapping`), the
+    /// texture animation's work (`+0x700`) and the cluts `+0x704`
+    /// (`Ch_ClutMapping`, `Ch_ClutEnable(+0x708)`). Characters with flag
+    /// bits 10, 11 of `+0x198` are skipped. A character that moved
+    /// anything ends the pass (`op_mdc_mem_transfer`): 1. Then the event
+    /// motion groups (`Ch_MemMoveEventMgrp`) and the point lights
+    /// (`Sg_PLightGetPtr`): 1 when something moved; with nothing left the
+    /// trigger is cleared: 0. (`dbgPrintf` calls are left out: it is
+    /// empty.)
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_mem_move<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let moved = scratch + 0xc - 4;
+        let work = scratch;
+        mem.write(moved, 0u32);
+        if mem.read::<u8>(mem.rebase(MEM_MOVE_TRIGGER)) == 0 {
+            return 0;
+        }
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let file = r(mem, MEM_MOVE_FILE);
+        call(mem, r(mem, FUNCTION_HISTORY), &[file, 0xb52]);
+        let mw = r(mem, crate::motion::bridge::MEM_MOVE_WORK);
+        let end = |mem: &M| {
+            let n = crate::handle::bridge::CHR_COUNT.get(mem).cast_unsigned();
+            crate::handle::bridge::CHR_ARRAY
+                .get(mem)
+                .wrapping_add(n.wrapping_mul(0x880))
+        };
+        mem.write(moved, 0u32);
+        let mut chr = crate::handle::bridge::CHR_ARRAY.get(mem);
+        let mut stop = end(mem);
+        while chr != stop {
+            if mem.read::<u8>(chr + 2) == 0 || mem.read::<u32>(chr + 0x198) & 0xc00 != 0 {
+                chr = chr.wrapping_add(0x880);
+                continue;
+            }
+            let d = call(mem, mw, &[chr + 0x328, moved]);
+            if d != 0 {
+                call(mem, r(mem, ELEM_REMAPPING), &[chr, d]);
+            }
+            let d = call(mem, mw, &[chr + 0x748, moved]);
+            if d != 0 {
+                call(mem, r(mem, MOTION_REMAPPING_FCURVE), &[chr, d]);
+            }
+            call(mem, mw, &[chr + 0x1bc, moved]);
+            call(mem, mw, &[chr + 0x32c, moved]);
+            if mem.read::<u32>(chr + 0x1bc) != 0 {
+                let mut i = 0u32;
+                while i < u32::from(mem.read::<u16>(mem.read::<u32>(chr + 0x1c0).wrapping_add(6))) {
+                    for off in [8u32, 4, 0xc] {
+                        let m = mem.read::<u32>(chr + 0x1bc).wrapping_add(0x38 * i);
+                        call(mem, mw, &[m.wrapping_add(off), moved]);
+                    }
+                    i += 1;
+                }
+            }
+            if call(mem, mw, &[chr + 0x6dc, moved]) != 0 {
+                call(mem, r(mem, TEXTURE_REMAPPING), &[chr]);
+            }
+            if mem.read::<u32>(chr + 0x6fc) != 0 {
+                let anim: u32 = mem.read(chr + 0x700);
+                let w = call(mem, r(mem, TEX_ANIM_GET_WORK), &[anim]);
+                mem.write(work, w);
+                let d = call(mem, mw, &[work, moved]);
+                if d != 0 {
+                    let anim: u32 = mem.read(chr + 0x700);
+                    call(mem, r(mem, TEX_ANIM_MEMORY_SET), &[anim, d]);
+                }
+            }
+            if mem.read::<u32>(chr + 0x704) != 0 {
+                call(mem, mw, &[chr + 0x704, moved]);
+                call(mem, r(mem, CLUT_MAPPING), &[chr, 0]);
+                let on = i32::from(mem.read::<i8>(chr + 0x708)).cast_unsigned();
+                call(mem, r(mem, CLUT_ENABLE_FN), &[chr, on]);
+            }
+            if mem.read::<u32>(moved) != 0 {
+                call(mem, r(mem, MDC_MEM_TRANSFER), &[]);
+                return 1;
+            }
+            stop = end(mem);
+            chr = chr.wrapping_add(0x880);
+        }
+        call(mem, r(mem, FUNCTION_HISTORY), &[file, 0xb85]);
+        if call(mem, r(mem, MEM_MOVE_EVENT_MGRP), &[]) != 0 {
+            return 1;
+        }
+        let p = call(mem, r(mem, PLIGHT_GET_PTR), &[moved]);
+        if call(mem, mw, &[p, moved]) != 0 {
+            return 1;
+        }
+        mem.write(r(mem, MEM_MOVE_TRIGGER), 0u8);
+        0
+    }
+
+    /// `Cache_Unuse(kind, id)` (`0x00840d70`), `Ch_EnableSetTexture(on)`
+    /// (`0x00830330`), `Ch_GuiSetCalcNormAll(on)` (`0x00834090`),
+    /// `Ch_InitCircleTable()` (`0x0082e5a0`), `ChN_DisposeSystemMGRP(id, k)`
+    /// (`0x00836830`).
+    pub const CACHE_UNUSE: u32 = 0x0084_0d70;
+    pub const ENABLE_SET_TEXTURE: u32 = 0x0083_0330;
+    pub const GUI_SET_CALC_NORM_ALL: u32 = 0x0083_4090;
+    pub const INIT_CIRCLE_TABLE: u32 = 0x0082_e5a0;
+    pub const DISPOSE_SYSTEM_MGRP: u32 = 0x0083_6830;
+
+    /// `Ch_BlkDispose(blk)` (`0x008258d0`): a used model block (id `+0` not
+    /// -1) gives back what it holds. A resident block (flag bit 0 of
+    /// `+0x70`) disposes its four system motion groups and its cache entry
+    /// (`Cache_Unuse(1, id)`) and frees `+0x124` (cleared); others free
+    /// `+4`, `+0x14`, `+0x10c`, `+0x108`. A resident one with bit 1 frees
+    /// `+0x6c` (and with bit 2 `+0x14`). Then `+0x11c`, `+0x68`, `+0x100`
+    /// (cleared) are freed and the id becomes -1. Returns what EAX holds:
+    /// -1 for an unused block, else the last `user_free`'s result.
+    pub fn ch_blk_dispose<M: Mem>(
+        mem: &mut M,
+        blk: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id: u32 = mem.read(blk);
+        if id == u32::MAX {
+            return id;
+        }
+        let free = mem.rebase(USER_FREE);
+        let free_at = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, off: u32| {
+            let p: u32 = mem.read(blk + off);
+            call(mem, free, &[p])
+        };
+        if mem.read::<u8>(blk + 0x70) & 1 != 0 {
+            for k in 0..4 {
+                let id: u32 = mem.read(blk);
+                call(mem, mem.rebase(DISPOSE_SYSTEM_MGRP), &[id, k]);
+            }
+            let id: u32 = mem.read(blk);
+            call(mem, mem.rebase(CACHE_UNUSE), &[1, id]);
+            if mem.read::<u32>(blk + 0x124) != 0 {
+                free_at(mem, call, 0x124);
+                mem.write(blk + 0x124, 0u32);
+            }
+        } else {
+            for off in [4u32, 0x14, 0x10c, 0x108] {
+                free_at(mem, call, off);
+            }
+        }
+        let flags = mem.read::<u8>(blk + 0x70);
+        if flags & 3 == 3 {
+            free_at(mem, call, 0x6c);
+            if mem.read::<u8>(blk + 0x70) & 4 != 0 {
+                free_at(mem, call, 0x14);
+            }
+        }
+        free_at(mem, call, 0x11c);
+        free_at(mem, call, 0x68);
+        let r = free_at(mem, call, 0x100);
+        mem.write(blk + 0x100, 0u32);
+        mem.write(blk, u32::MAX);
+        r
+    }
+
+    /// `Ch_IsShadowExceptionId(chr)` (`0x0082e200`): 1 for characters 3
+    /// and 0x67 (`u16` `+0`), else 0.
+    pub fn ch_is_shadow_exception_id<M: Mem>(mem: &mut M, chr: u32) -> u32 {
+        u32::from(matches!(mem.read::<u16>(chr), 3 | 0x67))
+    }
+
+    /// `Ch_MemMove_Over()` (`0x00827260`): `Ch_MemMove` (`0x00826fa0`)
+    /// until it moves nothing; the number of passes that moved something.
+    pub fn ch_mem_move_over<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        while call(mem, mem.rebase(0x0082_6fa0), &[]) != 0 {
+            n += 1;
+        }
+        n
+    }
+
+    /// `Ch_DrawInitAll()` (`0x0082ed30`): `Ch_EnableSetTexture(1)`,
+    /// `Ch_GuiSetCalcNormAll(0)`, then (a tail call) `Ch_InitCircleTable()`.
+    pub fn ch_draw_init_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, mem.rebase(ENABLE_SET_TEXTURE), &[1]);
+        call(mem, mem.rebase(GUI_SET_CALC_NORM_ALL), &[0]);
+        call(mem, mem.rebase(INIT_CIRCLE_TABLE), &[]);
+    }
+
+    /// The shadow globals: mode (`u8`, `g_ChrShadowMode`; 0 lets each
+    /// character's `i8` `+0x183` decide, else mode + 1) and direction (two
+    /// `i32`, `g_ChrShadowDir`), and the callees `Sg_GetSpadPtr()`
+    /// (`0x00843220`), `Ch_IsShadowHidden(chr)` (`0x008303a0`),
+    /// `Ch_IsNotExceptionId(id)` (`0x00831780`), `Ch_DrawShadowQuad(chr,
+    /// p2, p3)` (`0x0082e3e0`) and the shadow direction setter
+    /// `0x00642fb0(x, y)`.
+    pub const SHADOW_MODE: u32 = 0x0130_08bd;
+    pub const SHADOW_DIR: u32 = 0x0130_08c4;
+    pub const GET_SPAD_PTR: u32 = 0x0084_3220;
+    pub const IS_SHADOW_HIDDEN: u32 = 0x0083_03a0;
+    pub const IS_NOT_EXCEPTION_ID: u32 = 0x0083_1780;
+    pub const DRAW_SHADOW_QUAD: u32 = 0x0082_e3e0;
+    pub const SET_SHADOW_DIR: u32 = 0x0064_2fb0;
+
+    /// The shadow mode of a character that may draw one (active, flag bit
+    /// 4 of `+0x198`, not hidden, `+0x186` not 2 or 3); `None` otherwise.
+    fn shadow_mode<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<i32> {
+        if mem.read::<u8>(chr + 2) == 0 || mem.read::<u8>(chr + 0x198) & 0x10 == 0 {
+            return None;
+        }
+        if call(mem, mem.rebase(IS_SHADOW_HIDDEN), &[chr]) != 0
+            || matches!(mem.read::<u8>(chr + 0x186), 2 | 3)
+        {
+            return None;
+        }
+        let g = mem.read::<u8>(mem.rebase(SHADOW_MODE));
+        Some(if g == 0 {
+            i32::from(mem.read::<i8>(chr + 0x183))
+        } else {
+            i32::from(g) - 1
+        })
+    }
+
+    /// `Ch_DrawShadow(on)` (`0x00830180`): with `on`, every character in
+    /// shadow mode 1 that is not an exception id gets its shadow quad
+    /// (`Ch_DrawShadowQuad(chr, chr + 0x114, Sg_GetSpadPtr())`).
+    pub fn ch_draw_shadow<M: Mem>(
+        mem: &mut M,
+        on: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if on == 0 {
+            return;
+        }
+        let spad = call(mem, mem.rebase(GET_SPAD_PTR), &[]);
+        let end = |mem: &M| {
+            let n = crate::handle::bridge::CHR_COUNT.get(mem).cast_unsigned();
+            crate::handle::bridge::CHR_ARRAY
+                .get(mem)
+                .wrapping_add(n.wrapping_mul(0x880))
+        };
+        let mut chr = crate::handle::bridge::CHR_ARRAY.get(mem);
+        if chr == end(mem) {
+            return;
+        }
+        loop {
+            if shadow_mode(mem, chr, call) == Some(1) {
+                let id = u32::from(mem.read::<u16>(chr));
+                if call(mem, mem.rebase(IS_NOT_EXCEPTION_ID), &[id]) != 0 {
+                    call(mem, mem.rebase(DRAW_SHADOW_QUAD), &[chr, chr + 0x114, spad]);
+                }
+            }
+            chr = chr.wrapping_add(0x880);
+            if chr == end(mem) {
+                return;
+            }
+        }
+    }
+
+    /// `Ch_DrawSingleShadow(chr)` (`0x00830240`): one character's shadow:
+    /// mode 3 first points the shadow direction ([`SHADOW_DIR`] as floats,
+    /// `0x00642fb0`), modes 3 and 1 draw the quad (`Ch_DrawShadowQuad(chr,
+    /// chr + 0x114, 0)`), for ids that are not exceptions.
+    pub fn ch_draw_single_shadow<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let Some(mode) = shadow_mode(mem, chr, call) else {
+            return;
+        };
+        if mode != 3 && mode != 1 {
+            return;
+        }
+        let id = u32::from(mem.read::<u16>(chr));
+        if call(mem, mem.rebase(IS_NOT_EXCEPTION_ID), &[id]) == 0 {
+            return;
+        }
+        if mode == 3 {
+            #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+            let [x, y] =
+                [0u32, 4].map(|o| (mem.read::<i32>(mem.rebase(SHADOW_DIR) + o) as f32).to_bits());
+            call(mem, mem.rebase(SET_SHADOW_DIR), &[x, y]);
+        }
+        call(mem, mem.rebase(DRAW_SHADOW_QUAD), &[chr, chr + 0x114, 0]);
+    }
+
+    /// `Ch_BlkDisposeAll()` (`0x008259c0`): `Ch_BlkDispose` on every used
+    /// model block (id not -1).
+    pub fn ch_blk_dispose_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let base = crate::handle::bridge::CHR_BLK.ptr(mem).addr;
+        for k in 0..40u32 {
+            let b = base + 0x12c * k;
+            if mem.read::<u32>(b) != u32::MAX {
+                call(mem, mem.rebase(0x0082_58d0), &[b]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

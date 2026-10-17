@@ -1026,6 +1026,9 @@ natives! {
             h.write(v, x);
             h.write(v + 4, y);
             h.write(v + 8, z);
+            // the original's fourth word (its local beyond z) is stack
+            // leftovers; zeroed here
+            h.write(v + 12, 0_u32);
             call(h, 0x0083_50a0, &[c, v]);
         }
         0

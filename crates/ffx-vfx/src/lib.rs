@@ -34,4 +34,5 @@ pub mod slots;
 pub mod small;
 pub mod tree;
 pub mod vec;
+pub mod wave;
 pub mod x87;

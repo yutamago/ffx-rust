@@ -2453,6 +2453,10 @@ fn control_synthetic() {
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
     round7_main_cases(&mut a, &mut b, &mut rng, 300);
     round8_main_cases(&mut a, &mut b, &mut rng, 300, false);
+    round9_main_cases(&mut a, &mut b, &mut rng, 300);
+    init_bones_cases(&mut a, &mut b, &mut rng, 300);
+    envelope_cases(&mut a, &mut b, &mut rng, 300);
+    packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2471,6 +2475,10 @@ fn control_snapshot() {
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
     round7_main_cases(&mut a, &mut b, &mut rng, 300);
     round8_main_cases(&mut a, &mut b, &mut rng, 300, true);
+    round9_main_cases(&mut a, &mut b, &mut rng, 300);
+    init_bones_cases(&mut a, &mut b, &mut rng, 300);
+    envelope_cases(&mut a, &mut b, &mut rng, 300);
+    packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3562,4 +3570,308 @@ fn round8_main_cases(
         });
     }
     let _ = f;
+}
+
+// Main round 9: the frame's pad.
+
+/// A recording stub over `sym` whose answer is `table[arg]`, the argument
+/// `k` (0-based) indexing words at `table` (an image address).
+fn table_stub(a: &mut Oracle, b: &mut Oracle, slot: u32, sym: u32, arg: u8, table: u32) {
+    for o in [a, b] {
+        let code = o.rebase(REC_CODE) + 0x60 * slot;
+        let t = o.rebase(table);
+        // mov eax, [esp+4+4k]; mov eax, [eax*4 + table]; ret
+        let mut s = vec![0x8b, 0x44, 0x24, 4 + 4 * arg, 0x8b, 0x04, 0x85];
+        s.extend(t.to_le_bytes());
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+/// Answers for the pad stubs (words by axis; the buttons at slot 0).
+const PAD_ANSWERS: u32 = 0x0270_fe40;
+
+fn round9_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    recorder(a, b, 41, st::TK_GET_CONTROLER_HIST, 3, 0);
+    table_stub(a, b, 42, st::TK_GET_CONTROLER_ANALOG_HIST, 2, PAD_ANSWERS);
+    let rets = a.rebase(REC_RETS);
+    let answers = a.rebase(PAD_ANSWERS);
+    for _ in 0..rounds {
+        let held = if rng.below(2) == 0 {
+            rng.next()
+        } else {
+            rng.below(16) | rng.next() & 0x400
+        };
+        put(a, b, rets + 4 * 41, held);
+        for k in 0..4 {
+            put(a, b, answers + 4 * k, rng.next());
+        }
+        set(
+            a,
+            b,
+            st::PAD_LAST,
+            if rng.below(2) == 0 {
+                rng.next()
+            } else {
+                rng.below(16)
+            },
+        );
+        set(a, b, st::IS_DEBUG, u8::from(rng.below(4) != 0));
+        set(a, b, st::LR_BUTTON_MODE, u8::from(rng.below(3) == 0));
+        let lv = [0u8, 1, 0x7f, 0x80, 0xff, 5][rng.below(6) as usize];
+        set(a, b, st::EXEC_FRAMES, lv);
+        set(
+            a,
+            b,
+            st::FREE_CAM_YAW,
+            f32::from_bits(bounded(rng) & 0xbfff_ffff),
+        );
+        set(
+            a,
+            b,
+            st::FREE_CAM_PITCH,
+            f32::from_bits(bounded(rng) & 0xbfff_ffff),
+        );
+        twin("Sg_ControlMain", a, b, 0x0082_d070, &[], |m| {
+            st::control_main(&mut H(m))
+        });
+    }
+}
+
+/// The allocator stand-in: each call answers the next word of a list
+/// (`mov eax, [cursor]; mov eax, [eax]; add dword [cursor], 4; ret`).
+const ALLOC_CURSOR: u32 = 0x0270_fe60;
+const ALLOC_LIST: u32 = 0x0270_fe80;
+/// `Ch_OptposGetElement`'s answers by option point, `Chr_ModelEntry`'s by
+/// index.
+const OPT_ANSWERS: u32 = 0x0270_fec0;
+const MODEL_ANSWERS: u32 = 0x0270_ff00;
+
+fn alloc_stub(a: &mut Oracle, b: &mut Oracle, slot: u32, sym: u32) {
+    for o in [a, b] {
+        let code = o.rebase(REC_CODE) + 0x60 * slot;
+        let cur = o.rebase(ALLOC_CURSOR);
+        let mut s = vec![0xa1];
+        s.extend(cur.to_le_bytes()); // mov eax, [cursor]
+        s.extend([0x8b, 0x00]); // mov eax, [eax]
+        s.extend([0x83, 0x05]);
+        s.extend(cur.to_le_bytes());
+        s.push(4); // add dword [cursor], 4
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+fn init_bones_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    let log = a.rebase(REC_LOG);
+    alloc_stub(a, b, 43, sq::USER_MALLOC);
+    // sprintf through its import slot: a stub that only returns
+    for o in [&mut *a, &mut *b] {
+        let code = o.rebase(REC_CODE) + 0x60 * 44;
+        o.write(code, &[0x31, 0xc0, 0xc3]).unwrap(); // xor eax, eax; ret
+        let slot = o.rebase(sq::SPRINTF_SLOT);
+        o.write(slot, &code.to_le_bytes()).unwrap();
+    }
+    recorder(a, b, 45, sq::SG_MEM_SET_STR, 1, 0x7000);
+    recorder(a, b, 46, sq::SG_MEM_SET_TYPE, 2, 0x7001);
+    recorder(a, b, 47, sq::MEMCLEAR, 2, 0x7002);
+    recorder(a, b, 48, sq::CH_ELEM_INIT, 1, 0x7003);
+    table_stub(a, b, 49, sq::CH_OPTPOS_GET_ELEMENT, 1, OPT_ANSWERS);
+    table_stub(a, b, 50, sq::CHR_MODEL_ENTRY, 0, MODEL_ANSWERS);
+    recorder(a, b, 51, sq::CH_MODEL_CREATE_PACKET, 1, 0x7004);
+    let (cursor, list) = (a.rebase(ALLOC_CURSOR), a.rebase(ALLOC_LIST));
+    let (opt, models) = (a.rebase(OPT_ANSWERS), a.rebase(MODEL_ANSWERS));
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        let n = rng.below(5);
+        let m = rng.below(4);
+        let c = if rng.below(2) == 0 {
+            0
+        } else {
+            rng.below(3) + 1
+        };
+        let model = block(a, b, rng, 0x40);
+        put(a, b, model + 0xa, u16::try_from(n).unwrap());
+        put(a, b, model + 6, u16::try_from(m).unwrap());
+        put(a, b, model + 0x2c, u16::try_from(c).unwrap());
+        // bones: each parent itself (the root) or an earlier bone
+        let table = block(a, b, rng, 20 * n as usize + 4);
+        let mut depth = vec![];
+        for k in 0..n {
+            let parent = if k == 0 || rng.below(3) == 0 {
+                k
+            } else {
+                rng.below(k)
+            };
+            put(a, b, table + 20 * k, u16::try_from(parent).unwrap());
+            let d = if parent == k {
+                0
+            } else {
+                depth[parent as usize] + 1
+            };
+            depth.push(d);
+        }
+        put(a, b, model + 0x1c, table);
+        let chr = block(a, b, rng, 0x900);
+        put(a, b, chr + 0x1c0, model);
+        put(a, b, chr + 0x1c8, 0u32);
+        // the allocations, in order
+        let sizes = [0x160 * n, 0x18c * n, 0x38 * m, 0x60 * c];
+        for (k, size) in (0u32..).zip(sizes) {
+            let p = block(a, b, rng, size as usize + 4);
+            put(a, b, list + 4 * k, p);
+        }
+        put(a, b, cursor, list);
+        // option points 7 and 8: none, or two bones at the same depth
+        let (pa, pb) = if n == 0 || rng.below(3) == 0 {
+            (0, rng.below(3))
+        } else {
+            let x = rng.below(n);
+            let same: Vec<u32> = (0..n)
+                .filter(|&k| depth[k as usize] == depth[x as usize])
+                .collect();
+            (
+                x,
+                same[rng.below(u32::try_from(same.len()).unwrap()) as usize],
+            )
+        };
+        put(a, b, opt + 4 * 7, pa);
+        put(a, b, opt + 4 * 8, pb);
+        for k in 0..m {
+            let e = block(a, b, rng, 0x20);
+            put(a, b, e + 0x18, u16::try_from(rng.below(2)).unwrap());
+            put(a, b, models + 4 * k, e);
+        }
+        twin("SG_InitBones", a, b, 0x0082_77f0, &[chr], |m| {
+            sq::init_bones(&mut H(m), chr);
+        });
+    }
+}
+
+/// Vertex lists for the envelope: rigid entries (16 bytes), then two
+/// weighted lists (20 bytes); indices below 16.
+fn envelope_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let counts = [rng.below(4), rng.below(4), rng.below(4)];
+    let len = 12 + 16 * counts[0] + 20 * (counts[1] + counts[2]);
+    let lists = alloc(a, b, len as usize + 4);
+    let mut p = lists;
+    for (l, &n) in counts.iter().enumerate() {
+        put(a, b, p, n);
+        p += 4;
+        for _ in 0..n {
+            for k in 0..3 {
+                put(a, b, p + 4 * k, modest(rng));
+            }
+            if l == 0 {
+                put(a, b, p + 0xc, rng.below(16));
+                p += 0x10;
+            } else {
+                put(a, b, p + 0xc, modest(rng));
+                put(a, b, p + 0x10, rng.below(16));
+                p += 0x14;
+            }
+        }
+    }
+    lists
+}
+
+fn envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 16);
+        for k in 0..64 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = envelope_lists(a, b, rng);
+        twin(
+            "sg_calcenvelopeW_asm_opt",
+            a,
+            b,
+            0x006e_e270,
+            &[lists, out, m],
+            |o| {
+                e::calc_envelope_w_opt(o, lists, out, m);
+            },
+        );
+    }
+}
+
+/// Packed vertex lists (`sg_calcenvelope_asm*`): rigid entries, then
+/// groups of first weighted entries ending in `0xffff`, 2 bytes, groups of
+/// further weighted entries ending in `0xffff`. Indices below 0x110 (the
+/// group bases 0 or 1).
+fn packed_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let mut bytes: Vec<u8> = vec![];
+    let w16 = |v: &mut Vec<u8>, x: u32| v.extend(u16::try_from(x & 0xffff).unwrap().to_le_bytes());
+    let vertex = |v: &mut Vec<u8>, rng: &mut Xorshift| {
+        for _ in 0..3 {
+            w16(v, rng.next());
+        }
+    };
+    let n = rng.below(4);
+    w16(&mut bytes, n);
+    w16(&mut bytes, rng.next());
+    for _ in 0..n {
+        vertex(&mut bytes, rng);
+        w16(&mut bytes, rng.below(0x110));
+    }
+    for section in 0..2 {
+        if section == 1 {
+            w16(&mut bytes, rng.next());
+        }
+        for _ in 0..rng.below(3) {
+            let c = rng.below(3);
+            w16(&mut bytes, c);
+            w16(&mut bytes, rng.below(2));
+            for _ in 0..c {
+                vertex(&mut bytes, rng);
+                bytes.push(u8::try_from(rng.next() & 0xff).unwrap());
+                bytes.push(u8::try_from(rng.below(16)).unwrap());
+            }
+        }
+        w16(&mut bytes, 0xffff);
+    }
+    let lists = alloc(a, b, bytes.len() + 4);
+    a.write(lists, &bytes).unwrap();
+    b.write(lists, &bytes).unwrap();
+    lists
+}
+
+fn packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 0x110);
+        for k in 0..4 * 0x110 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = packed_lists(a, b, rng);
+        twin(
+            "sg_calcenvelope_asm_opt",
+            a,
+            b,
+            0x006e_ee40,
+            &[lists, out, m],
+            |o| {
+                e::calc_envelope_opt(o, lists, out, m);
+            },
+        );
+    }
 }

@@ -1743,6 +1743,74 @@ pub mod bridge {
         f32::from_bits(x87::store(x87::div(x87::sub(d, t), ny)))
     }
 
+    /// `TkGetControlerHist(pad, a, b)` and `TkGetControlerAnalogHist(pad,
+    /// a, axis, b)`, called as the game's.
+    pub const TK_GET_CONTROLER_HIST: u32 = 0x0088_8d70;
+    pub const TK_GET_CONTROLER_ANALOG_HIST: u32 = 0x0088_8c20;
+    /// The pad state `Sg_ControlMain` keeps: the stick bytes `0x023c44a4..a7`
+    /// (left y, left x, right y, right x as read by axis 3..0), last
+    /// frame's held buttons, and the debug L+R request.
+    pub const PAD_STICKS: u32 = 0x023c_44a4;
+    pub const PAD_LAST: Global<u32> = Global::new(0x023c_44b0);
+    pub const PAD_DEBUG_REQUEST: Global<u32> = Global::new(0x023c_44b4);
+
+    /// `Sg_ControlMain()` (`0x0082d070`): the frame's pad. Held buttons
+    /// (`TkGetControlerHist(0, 0, 0)`, 16 bits) and the four stick axes
+    /// (`TkGetControlerAnalogHist(0, 0, axis, 0)` into `0x023c44a7` down to
+    /// `0x023c44a4`); pressed = newly held since last frame; then the free
+    /// camera (`Sg_ControlCamera`). In a debug build without the L/R button
+    /// mode, buttons step the frames per step ([`EXEC_FRAMES`]: 8+4
+    /// pressing 4 up, 4+8 pressing 8 down; below 0 it becomes 0 and
+    /// [`EXEC_STEP`] is set), 4 alone requests `0x023c44b4`, button 1
+    /// goes to [`EXEC_SPECIAL`]. Returns the last `eax`: the camera's, the
+    /// L/R mode, or the frames byte.
+    pub fn control_main(h: &mut impl ffx_bridge::Host) -> u32 {
+        let hist = h.rebase(TK_GET_CONTROLER_HIST);
+        let held = h.call(hist, &[0, 0, 0]) & 0xffff;
+        PAD_HELD.set(h, held);
+        let analog = h.rebase(TK_GET_CONTROLER_ANALOG_HIST);
+        let sticks = h.rebase(PAD_STICKS);
+        for axis in 0..4u32 {
+            let v = crate::lo8(h.call(analog, &[0, 0, axis, 0]));
+            h.write(sticks.wrapping_add(3 - axis), v);
+        }
+        let held = PAD_HELD.get(h);
+        let pressed = (PAD_LAST.get(h) ^ held) & held;
+        PAD_PRESSED.set(h, pressed);
+        PAD_LAST.set(h, held);
+        let r = control_camera(h);
+        EXEC_STEP.set(h, 0);
+        PAD_DEBUG_REQUEST.set(h, 0);
+        if IS_DEBUG.get(h) == 0 {
+            return r;
+        }
+        let lr = get_lr_button_mode(h);
+        if lr != 0 {
+            return lr.cast_unsigned();
+        }
+        let b = PAD_HELD.get(h);
+        EXEC_SPECIAL.set(h, crate::lo8(b & 1));
+        let p = PAD_PRESSED.get(h);
+        let mut level = EXEC_FRAMES.get(h);
+        if b & 8 != 0 && b & 4 != 0 && p & 4 != 0 {
+            level = level.wrapping_add(1);
+            EXEC_FRAMES.set(h, level);
+        }
+        if b & 4 != 0 {
+            if b & 8 == 0 {
+                PAD_DEBUG_REQUEST.set(h, 1);
+            } else if p & 8 != 0 {
+                level = level.wrapping_sub(1);
+                EXEC_FRAMES.set(h, level);
+            }
+        }
+        if level.cast_signed() < 0 {
+            EXEC_STEP.set(h, 1);
+            EXEC_FRAMES.set(h, 0);
+        }
+        u32::from(level)
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);

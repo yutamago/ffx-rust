@@ -33,6 +33,35 @@ fn call_sym<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
     call_ptr(mem, crate::rebase(sym) as u32, args)
 }
 
+/// Calls the original cdecl function at `sym` (an `ffx.sym` address) that
+/// returns its result in ST0, read back at double precision; up to four
+/// arguments (f32 arguments as their bits).
+#[allow(clippy::many_single_char_names)] // a..d: the words
+fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
+    let f = crate::rebase(sym);
+    // SAFETY: a cdecl function of `args.len()` word arguments returning in
+    // ST0; the caller cleans the stack, so the argument count is all the
+    // signature has to match.
+    unsafe {
+        match *args {
+            [] => std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f)(),
+            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(a),
+            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> f64>(f)(a, b),
+            [a, b, c] => {
+                std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> f64>(f)(a, b, c)
+            }
+            [a, b, c, d] => std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32, u32) -> f64,
+            >(f)(a, b, c, d),
+            _ => {
+                crate::log::log(&format!("system: no float call of {} words", args.len()));
+                f64::NAN
+            }
+        }
+    }
+}
+
 /// `Phyre::PSerialization::PStreamFile::read(buf, n)` (`0x00608090`,
 /// thiscall), not ported yet.
 fn stream_read<M>(_mem: &mut M, stream: u32, buf: u32, n: u32) -> u32 {
@@ -5818,6 +5847,182 @@ ported! {
     /// `TOConvAlbhedWord(in, out)`.
     TOConvAlbhedWord @ 0x0090_6780 => extern "C" fn to_conv_albhed_word(input: u32, out: u32) -> u32 {
         tolib::bridge::to_conv_albhed_word(&mut mem(), input, out, call_sym)
+    }
+    /// `TOGetInternationalBaseDicType()`.
+    TOGetInternationalBaseDicType @ 0x008a_c760 => extern "C" fn to_get_international_base_dic_type() -> u32 {
+        tolib::bridge::to_get_international_base_dic_type(&mut mem(), call_sym)
+    }
+    /// `TOGetFontInfo(text, out)`.
+    TOGetFontInfo @ 0x008b_7240 => extern "C" fn to_get_font_info(text: u32, out: u32) -> u32 {
+        tolib::bridge::to_get_font_info(&mut mem(), text, out, call_sym)
+    }
+    /// `ToGetBtlEasyFontWidth(text, &width, _, scale)`.
+    ToGetBtlEasyFontWidth @ 0x0090_5290 => extern "C" fn to_get_btl_easy_font_width(text: u32, out: u32, _unused: u32, scale: u32) {
+        tolib::bridge::to_get_btl_easy_font_width(&mut mem(), text, out, scale, call_sym, fcall);
+    }
+    /// `ToGetBtlEasyDigitWidth(digits, value, &width, scale)`.
+    ToGetBtlEasyDigitWidth @ 0x0090_5190 => extern "C" fn to_get_btl_easy_digit_width(digits: u32, value: u32, out: u32, scale: u32) {
+        let mut text = [0u32; 8];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = text.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_btl_easy_digit_width(&mut mem(), digits, value, out, scale, at, call_sym, fcall);
+    }
+    /// `ToGetBtlEasyDigitWidth2(value, &width, scale, extra)`.
+    ToGetBtlEasyDigitWidth2 @ 0x0090_5230 => extern "C" fn to_get_btl_easy_digit_width2(value: u32, out: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_get_btl_easy_digit_width2(&mut mem(), value, out, scale, extra, call_sym);
+    }
+    /// `TOGetWidthMacro_help(table, code, scale, extra)`.
+    TOGetWidthMacro_help @ 0x008f_a920 => extern "C" fn to_get_width_macro_help(table: u32, code: u32, scale: u32, extra: u32) -> f32 {
+        tolib::bridge::to_get_width_macro_help(&mut mem(), table, code, scale, extra, call_sym, fcall)
+    }
+    /// `ToGetCrossExtMesFontWidth(table, text, &width, scale, extra)`.
+    ToGetCrossExtMesFontWidth @ 0x0090_5320 => extern "C" fn to_get_cross_ext_mes_font_width(table: u32, text: u32, out: u32, scale: u32, extra: u32) {
+        let mut wh = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = wh.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_cross_ext_mes_font_width(&mut mem(), table, text, out, scale, extra, at, call_sym, fcall);
+    }
+    /// `TOGetChangeMacroAddress(window, code)`.
+    TOGetChangeMacroAddress @ 0x008b_6660 => extern "C" fn to_get_change_macro_address(window: u32, code: u32) -> u32 {
+        // The original keeps a folded macro's code in its own argument
+        // slot and may return a pointer to it; a static keeps that text
+        // readable after the return (a nested lookup reuses it only after
+        // reading its code).
+        static SCRATCH: [std::sync::atomic::AtomicU32; 2] =
+            [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = SCRATCH.as_ptr() as usize as u32;
+        tolib::bridge::to_get_change_macro_address(&mut mem(), window, code, at, call_sym)
+    }
+    /// `TOGetChangeMacroWidth(window, code, mode)`.
+    TOGetChangeMacroWidth @ 0x008b_6a30 => extern "C" fn to_get_change_macro_width(window: u32, code: u32, mode: u32) -> f32 {
+        let mut w = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut w) as usize as u32;
+        tolib::bridge::to_get_change_macro_width(&mut mem(), window, code, mode, at, call_sym, fcall)
+    }
+    /// `TOGetMessageWH(window, text, &w, &h, mode, flags)`.
+    TOGetMessageWH @ 0x008b_9650 => extern "C" fn to_get_message_wh(window: u32, text: u32, out_w: u32, out_h: u32, mode: u32, flags: u32) -> u32 {
+        let mut scratch = [0u32; 16];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_message_wh(&mut mem(), window, text, out_w, out_h, mode, flags, at, call_sym, fcall)
+    }
+    /// `TOBtlFinishCommand()`.
+    TOBtlFinishCommand @ 0x0089_75a0 => extern "C" fn to_btl_finish_command() -> u32 {
+        tolib::bridge::to_btl_finish_command(&mut mem(), call_sym)
+    }
+    /// `TOBtlSetCommand(level, chr, command)`.
+    TOBtlSetCommand @ 0x0089_9870 => extern "C" fn to_btl_set_command(level: u32, chr: u32, command: u32) -> u32 {
+        let mut slot = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut slot) as usize as u32;
+        tolib::bridge::to_btl_set_command(&mut mem(), level, chr, command, at, call_sym)
+    }
+    /// `TOBtlSetNextAction(chr, command)`.
+    TOBtlSetNextAction @ 0x0089_a330 => extern "C" fn to_btl_set_next_action(chr: u32, command: u32) -> u32 {
+        let mut word = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut word) as usize as u32;
+        tolib::bridge::to_btl_set_next_action(&mut mem(), chr, command, at, call_sym)
+    }
+    /// `ToMakeBtlEasyDigit(digits, value, x, y, alpha, scale)`.
+    ToMakeBtlEasyDigit @ 0x0090_5440 => extern "C" fn to_make_btl_easy_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32) {
+        let mut text = [0u32; 8];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = text.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_btl_easy_digit(&mut mem(), digits, value, x, y, alpha, scale, at, call_sym);
+    }
+    /// `ToMakeBtlEasyDigit2(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyDigit2 @ 0x0090_5550 => extern "C" fn to_make_btl_easy_digit2(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_make_btl_easy_digit2(&mut mem(), [value, x, y, alpha, scale, extra], call_sym);
+    }
+    /// `ToMakeBtlEasyDigitRight(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyDigitRight @ 0x0090_55c0 => extern "C" fn to_make_btl_easy_digit_right(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        let mut width = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut width) as usize as u32;
+        tolib::bridge::to_make_btl_easy_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeDigit @ 0x0090_57c0 => extern "C" fn to_make_btl_easy_edge_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        let mut text = [0u32; 8];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = text.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_btl_easy_edge_digit(&mut mem(), digits, [value, x, y, alpha, scale, extra], at, call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeDigit2(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeDigit2 @ 0x0090_5820 => extern "C" fn to_make_btl_easy_edge_digit2(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_make_btl_easy_edge_digit2(&mut mem(), [value, x, y, alpha, scale, extra], call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeFont @ 0x0090_5930 => extern "C" fn to_make_btl_easy_edge_font(text: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_make_btl_easy_edge_font(&mut mem(), [text, x, y, alpha, scale, extra], call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeFontA(text, x, y, alpha, scale, extra, edge)`.
+    ToMakeBtlEasyEdgeFontA @ 0x0090_5970 => extern "C" fn to_make_btl_easy_edge_font_a(text: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32, edge: u32) {
+        tolib::bridge::to_make_btl_easy_edge_font_a(&mut mem(), [text, x, y, alpha, scale, extra, edge], call_sym);
+    }
+    /// `ToMakeBtlEasyFont(text, x, y, alpha, scale)`.
+    ToMakeBtlEasyFont @ 0x0090_5ab0 => extern "C" fn to_make_btl_easy_font(text: u32, x: u32, y: u32, alpha: u32, scale: u32) {
+        tolib::bridge::to_make_btl_easy_font(&mut mem(), [text, x, y, alpha, scale], call_sym, fcall);
+    }
+    /// `TOMakePktBtlEasyFont(pen, glyph, scale)`.
+    TOMakePktBtlEasyFont @ 0x008f_b940 => extern "C" fn to_make_pkt_btl_easy_font(pen: u32, glyph: u32, scale: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, false, at, call_sym, fcall);
+    }
+    /// `TOMakePktBtlEasyFontShadow(pen, glyph, scale)`.
+    TOMakePktBtlEasyFontShadow @ 0x008f_bae0 => extern "C" fn to_make_pkt_btl_easy_font_shadow(pen: u32, glyph: u32, scale: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, true, false, at, call_sym, fcall);
+    }
+    /// `TOMakeBtlEasyFontEdge(pen, glyph, scale)`.
+    TOMakeBtlEasyFontEdge @ 0x008f_ae40 => extern "C" fn to_make_btl_easy_font_edge(pen: u32, glyph: u32, scale: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, true, at, call_sym, fcall);
+    }
+    /// `TODrawScaleButtonIconRGBA(c, x, y, scale, r, g, b, a)`.
+    TODrawScaleButtonIconRGBA @ 0x008f_8ee0 => extern "C" fn to_draw_scale_button_icon_rgba(c: u32, x: u32, y: u32, scale: u32, r: u32, g: u32, b: u32, a: u32) {
+        tolib::bridge::to_draw_scale_button_icon_rgba(&mut mem(), [c, x, y, scale, r, g, b, a], call_sym);
+    }
+    /// `TOCountMessageWords_008b80b0(window, text)`.
+    TOCountMessageWords_008b80b0 @ 0x008b_80b0 => extern "C" fn to_count_message_words(window: u32, text: u32) -> u32 {
+        tolib::bridge::count_message_words(&mut mem(), window, text, call_sym)
+    }
+    /// `TOGetMessageSize_008b7130(text, &w, &h)`.
+    TOGetMessageSize_008b7130 @ 0x008b_7130 => extern "C" fn to_get_message_size(text: u32, w: u32, h: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::message_size(&mut mem(), text, w, h, at, call_sym)
+    }
+    /// `TOFirstInitMessageNormal(window, text, pos)`.
+    TOFirstInitMessageNormal @ 0x008d_f520 => extern "C" fn to_first_init_message_normal(window: u32, text: u32, pos: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_first_init_message_normal(&mut mem(), window, text, pos, at, call_sym)
+    }
+    /// `ToMakeBtlEasyDigitRightAbmap(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyDigitRightAbmap @ 0x0090_5660 => extern "C" fn to_make_btl_easy_digit_right_abmap(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        let mut scratch = [0u32; 9];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_btl_easy_digit_right_abmap(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
+    }
+    /// `TOSetMessageWindowTexts_008b89d0(window, text, other)`.
+    TOSetMessageWindowTexts_008b89d0 @ 0x008b_89d0 => extern "C" fn to_set_message_window_texts(window: u32, text: u32, other: u32) {
+        let mut scratch = [0u32; 0x107];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::set_message_window_texts(&mut mem(), window, text, other, at, call_sym, |m, f, w| call_ptr(m, f, &[w]));
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
