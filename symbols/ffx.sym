@@ -5918,6 +5918,7 @@
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
+0x007bcf20 function MsCameraGetYaw            # () -> ST0: the yaw of the active camera (g_Camera): MsVectorRect2Polar(cam+0x50 look-at, cam+0x66c eye, &yaw, 0, 0); 3 callers; name ours
 0x007bd000 function MsCameraFree              # fh v3:cg3 0x7bcf80
 0x007bd110 function MsCameraGet               # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8); was Cam_AllocChannel
 0x007bd2d0 function MsCameraGetAngle          # fh switch:bsim1.00 0x710039de80
@@ -7382,6 +7383,7 @@
 0x0083f1c0 function Sg_CalcViewClipMatrix     # (m, wide): unit matrix, m[0][0] and m[1][1] = 1/(2 extent/depth) scaled, m[2][2], m[3][2] fixed; Switch name order after Sg_CalcScreenMatrix
 0x0083f260 function Sg_CameraGetPos           # fh switch:bsim1.00 0x710042a480
 0x0083f2a0 function Sg_CameraGetRef           # (&v) -> 0x00c4ded0 (the reference point, copied to v); Switch name beside Sg_CameraGetPos
+0x0083f2d0 function Sg_CameraGetYaw            # jmp MsCameraGetYaw (0x007bcf20): the camera yaw in ST0, for Sg_ControlPlayer (0x0082d180); a thunk outside functions.tsv; name ours
 0x0083f2e0 function Sg_CameraSetPlayer        # fh v3:exact 0x0083f2e0
 0x0083f4b0 function Sg_ControlCamera             # layout: alphabetical run between Sg_CameraSetPlayer and Sg_ControlMouseCamera (1 unnamed in the gap); Switch 0x710042a6d0 Sg_ControlCamera is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0083f6f0 function Sg_ControlMouseCamera     # fh v3:bsim1.00 0x0083f6f0
