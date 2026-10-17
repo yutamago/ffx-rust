@@ -6,7 +6,9 @@ repo="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="$repo/tools/shims:$PATH"
 export XWIN_ARCH=x86,x86_64
 cd "$repo"
-cargo xwin build --release --target x86_64-pc-windows-msvc -p ffx-render "$@"
+# One cargo-xwin at a time (see tools/build-hook.sh).
+mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+flock "${XDG_CACHE_HOME:-$HOME/.cache}/ffx-xwin.lock" cargo xwin build --release --target x86_64-pc-windows-msvc -p ffx-render "$@"
 out="$repo/target/x86_64-pc-windows-msvc/release"
 # DXC compiles the Direct3D 12 shaders far faster than the built-in FXC:
 # when its release (github.com/microsoft/DirectXShaderCompiler) is

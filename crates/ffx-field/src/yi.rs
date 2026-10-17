@@ -479,6 +479,64 @@ pub mod render {
     }
 }
 
+/// Fog and background colour (round 19).
+pub mod fog {
+    /// `graphicGetFogNear` (`0x006411d0`, returns in ST0).
+    pub const GET_NEAR: u32 = 0x0064_11d0;
+    /// `graphicGetFogFar` (`0x006411b0`, returns in ST0).
+    pub const GET_FAR: u32 = 0x0064_11b0;
+    /// `graphicGetFogLimit` (`0x006411c0`, returns in ST0).
+    pub const GET_LIMIT: u32 = 0x0064_11c0;
+    /// `graphicGetFogColor(r, g, b)` (`0x00641160`, float pointers).
+    pub const GET_COLOUR: u32 = 0x0064_1160;
+    /// `graphicGetGlobalAmbientColor(r, g, b)` (`0x00641230`), what
+    /// `yiGetFogColor` reads instead with render status bit 2.
+    pub const GET_AMBIENT: u32 = 0x0064_1230;
+    /// `graphicSetFogColour(r, g, b)` (`0x00643150`, floats).
+    pub const SET_COLOUR: u32 = 0x0064_3150;
+    /// `graphicSetFogNear(x)` (`0x006431e0`).
+    pub const SET_NEAR: u32 = 0x0064_31e0;
+    /// `graphicSetFogFar(x)` (`0x006431a0`).
+    pub const SET_FAR: u32 = 0x0064_31a0;
+    /// `graphicSetFogLimit(x)` (`0x006431c0`).
+    pub const SET_LIMIT: u32 = 0x0064_31c0;
+    /// `0x00643180(x)`: another fog manager setter, given 1.0.
+    pub const SET_FOG_643180: u32 = 0x0064_3180;
+    /// `graphicSetBackgroundColour(r, g, b, a)` (`0x00642e90`).
+    pub const SET_BACKGROUND: u32 = 0x0064_2e90;
+    /// `graphicSetDistortionEnable(on)` (`0x00642f50`).
+    pub const SET_DISTORTION: u32 = 0x0064_2f50;
+    /// `MagicFile_GetMagicId()` (`0x009da3b0`).
+    pub const MAGIC_GET_ID: u32 = 0x009d_a3b0;
+    /// The magic whose background colour stays the game's (`0x2c2`).
+    pub const MAGIC_KEEP_BACK: u32 = 0x2c2;
+    /// The map whose fog is the PC renderer's (`0xe0`).
+    pub const PC_FOG_MAP: u32 = 0xe0;
+    /// The fog colour, RGBA bytes (`0x018df140`).
+    pub const COLOUR: u32 = 0x018d_f140;
+    /// The fog limit, near and far (`f32`s, `0x018df144`, `0x018df148`,
+    /// `0x018df14c`), in scale-factor units.
+    pub const LIMIT: u32 = 0x018d_f144;
+    /// See [`LIMIT`].
+    pub const NEAR: u32 = 0x018d_f148;
+    /// See [`LIMIT`].
+    pub const FAR: u32 = 0x018d_f14c;
+    /// The scale factor (`f32`, `0x018deff8`).
+    pub const SCALE: u32 = 0x018d_eff8;
+    /// Two `f64` factors of the fog distances' units (`.rdata`).
+    pub const UNIT: [u32; 2] = [0x00b5_01a0, 0x00b4_12f8];
+    /// 255.0 (`f64`): colour bytes to `0..=1`, and the PC limit's scale.
+    pub const BYTE_MAX: u32 = 0x00b1_70c0;
+    /// The alpha factor (`f64`, `yiSetBackColor`).
+    pub const ALPHA_SCALE: u32 = 0x00b1_70b8;
+    /// The PC renderer's distance factor (`f64`, `yiSetFogParam`).
+    pub const PC_DISTANCE: u32 = 0x00b4_7c68;
+    /// The PC renderer's limit factor (`f64`, `yiSetFogParam`).
+    pub const PC_LIMIT: u32 = 0x00b4_8318;
+    /// The distortion (heat haze) word `yiDisableHamonEff` clears.
+    pub const HAMON: u32 = 0x018d_ed28;
+}
+
 /// More renderer state (round 4: colours, the render state save area).
 pub mod state {
     use ffx_bridge::Global;
@@ -2763,6 +2821,43 @@ pub mod bridge {
         0
     }
 
+    /// `yiAnimDetachAll(scene, obj)` (`0x009149a0`, name ours;
+    /// `yiDisposeAnimDObj` with a negative kind): [`yi_anim_detach`]
+    /// without the kind check, every active slot of `obj` cleared. Returns
+    /// 0.
+    pub fn yi_anim_detach_all<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        obj: u32,
+        call: &mut C,
+    ) -> u32 {
+        let mut seen = 0u32;
+        for i in 0..0x40u32 {
+            let e = scene.wrapping_add(0x9cac0 + 0x28 * i);
+            if mem.read::<u8>(e) & 1 == 0 {
+                continue;
+            }
+            if u32::from(mem.read::<u16>(e.wrapping_add(6))) == obj {
+                if mem.read::<u16>(e.wrapping_add(4)) == 2 {
+                    let f = mem.rebase(super::ENABLE_KEYFRAME_ANIM);
+                    call(mem, f, &[0]);
+                }
+                mem.write(e, 0u16);
+                mem.write(e.wrapping_add(0x14), 0u32);
+                mem.write(e.wrapping_add(0x18), 0u32);
+                mem.write(e.wrapping_add(8), 0u32);
+                mem.write(e.wrapping_add(6), 0u16);
+                let n = mem.read::<u32>(scene.wrapping_add(0x9cabc));
+                mem.write(scene.wrapping_add(0x9cabc), n.wrapping_sub(1));
+            }
+            seen += 1;
+            if seen >= mem.read::<u32>(scene.wrapping_add(0x9cabc)) {
+                return 0;
+            }
+        }
+        0
+    }
+
     /// `yiKeyFrame_attachDObj(scene, obj, anim, arg)` (`0x009144a0`): puts
     /// animation `anim` on display object `obj` in the first free slot:
     /// with a keyframe record (`+0x9d4c4` list) its kind (`+8`; kind 2
@@ -4459,5 +4554,212 @@ pub mod bridge {
         let y = ld(mem, b.wrapping_add(4)) * u + (1.0 - u) * ld(mem, a.wrapping_add(4));
         mem.write(out.wrapping_add(4), x87::store(y));
         1
+    }
+
+    // ---- round 19 ----
+
+    /// `yiGetFogColor(out)` (`0x00908980`): four ints. With render status
+    /// bit 2 the fog colour bytes are clamped through the colour scale and
+    /// offset as in [`yi_get_back_color`], else the raw bytes; then the
+    /// first three are replaced by the PC renderer's colour times 255.0
+    /// (`graphicGetGlobalAmbientColor` with bit 2, else
+    /// `graphicGetFogColor`, into the original's locals at `work`, 12
+    /// bytes), each product kept at the x87's precision. Returns the last
+    /// conversion.
+    pub fn yi_get_fog_color<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{Reg, ftol};
+        let at = mem.rebase(super::fog::COLOUR);
+        let c: [u8; 4] = mem.read(at);
+        let status = RENDER_STATUS.get(mem);
+        let top: f64 = mem.read(mem.rebase(super::fog::BYTE_MAX));
+        if status & 4 == 0 {
+            mem.write(out, c.map(u32::from));
+        } else {
+            let top_f = state::BACK_MAX_F32.get(mem);
+            let scale = state::COLOR_SCALE.get(mem);
+            let offset = COLOR_OFFSET.get(mem);
+            let mut w = [0u32; 4];
+            for i in 0..4 {
+                let x = Reg::load(scale[i]).mul_m32(f32::from(c[i])).store();
+                let mut v = Reg::load(x).add_m32(f32::from_bits(offset[i])).store();
+                // below 0.0 (not unordered): +0.0
+                if f64::from(v) < 0.0 {
+                    v = 0.0;
+                }
+                // above 255.0 (not equal, not unordered): 255.0f
+                if f64::from(v) > top {
+                    v = top_f;
+                }
+                w[i] = ftol(mem, f64::from(v));
+            }
+            mem.write(out, w);
+        }
+        let f = if status & 4 == 0 {
+            super::fog::GET_COLOUR
+        } else {
+            super::fog::GET_AMBIENT
+        };
+        let f = mem.rebase(f);
+        call(mem, f, &[work, work.wrapping_add(4), work.wrapping_add(8)]);
+        let mut last = 0;
+        for i in 0..3u32 {
+            let v = x87::load(mem.read(work.wrapping_add(4 * i)));
+            last = ftol(mem, v * top);
+            mem.write(out.wrapping_add(4 * i), last);
+        }
+        last
+    }
+
+    /// The fog distances' unit: scale factor times the two `.rdata`
+    /// factors, at the x87's precision.
+    fn fog_unit(mem: &impl Mem) -> f64 {
+        let sf = x87::load(mem.read(mem.rebase(super::fog::SCALE)));
+        let c1: f64 = mem.read(mem.rebase(super::fog::UNIT[0]));
+        let c2: f64 = mem.read(mem.rebase(super::fog::UNIT[1]));
+        sf * c1 * c2
+    }
+
+    /// An `int` loaded with `fild` and stored as `f32`, divided by 255.0
+    /// and stored again: a colour channel for the PC renderer.
+    fn byte_channel(mem: &impl Mem, v: u32) -> u32 {
+        let top: f64 = mem.read(mem.rebase(super::fog::BYTE_MAX));
+        #[allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)] // fild
+        let f = f64::from((v as i32) as f32);
+        x87::store(f / top)
+    }
+
+    /// `yiGetFogParam(near, far, limit)` (`0x00908bb0`): far and near are
+    /// the stored distances times the unit ([`fog_unit`]), limit copied;
+    /// on map 0xe0 the PC renderer's near, far and limit (times 255.0)
+    /// replace them. Written far, near, limit.
+    pub fn yi_get_fog_param<M: Mem>(
+        mem: &mut M,
+        out: [u32; 3],
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) {
+        let [near, far, limit] = out;
+        let u = fog_unit(mem);
+        let f = x87::load(mem.read(mem.rebase(super::fog::FAR)));
+        mem.write(far, x87::store(u * f));
+        let n = x87::load(mem.read(mem.rebase(super::fog::NEAR)));
+        mem.write(near, x87::store(u * n));
+        let l = x87::copy(mem.read(mem.rebase(super::fog::LIMIT)));
+        mem.write(limit, l);
+        if super::CURRENT_MAP.get(mem) != super::fog::PC_FOG_MAP {
+            return;
+        }
+        let g = mem.rebase(super::fog::GET_NEAR);
+        let v = fcall(mem, g, crate::camera::FArgs::Stack(&[]));
+        mem.write(near, x87::store(v));
+        let g = mem.rebase(super::fog::GET_FAR);
+        let v = fcall(mem, g, crate::camera::FArgs::Stack(&[]));
+        mem.write(far, x87::store(v));
+        let g = mem.rebase(super::fog::GET_LIMIT);
+        let v = fcall(mem, g, crate::camera::FArgs::Stack(&[]));
+        let top: f64 = mem.read(mem.rebase(super::fog::BYTE_MAX));
+        mem.write(limit, x87::store(v * top));
+    }
+
+    /// `yiSetBackColor(c)` (`0x0090a040`): the low bytes of four ints are
+    /// the background colour; unless the current magic is 0x2c2 the PC
+    /// renderer gets them as floats (`r, g, b / 255.0`, `a` times the
+    /// `.rdata` factor; each int stored as `f32` first).
+    pub fn yi_set_back_color<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) {
+        let v: [u32; 4] = mem.read(c);
+        #[allow(clippy::cast_possible_truncation)] // the low bytes
+        let b = v.map(|x| x as u8);
+        state::BACK_COLOR.set(mem, b);
+        let id = mem.rebase(super::fog::MAGIC_GET_ID);
+        if call(mem, id, &[]) == super::fog::MAGIC_KEEP_BACK {
+            return;
+        }
+        let v: [u32; 4] = mem.read(c);
+        let k: f64 = mem.read(mem.rebase(super::fog::ALPHA_SCALE));
+        #[allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)] // fild
+        let a = x87::store(f64::from((v[3] as i32) as f32) * k);
+        let rgb = [0, 1, 2].map(|i| byte_channel(mem, v[i]));
+        let f = mem.rebase(super::fog::SET_BACKGROUND);
+        call(mem, f, &[rgb[0], rgb[1], rgb[2], a]);
+    }
+
+    /// `yiSetFogColor(c)` (`0x0090a2c0`): the low bytes of four ints are
+    /// the fog colour; on map 0xe0 the PC renderer gets `r, g, b / 255.0`.
+    pub fn yi_set_fog_color<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) {
+        let v: [u32; 4] = mem.read(c);
+        #[allow(clippy::cast_possible_truncation)] // the low bytes
+        let b = v.map(|x| x as u8);
+        let at = mem.rebase(super::fog::COLOUR);
+        mem.write(at, b);
+        if super::CURRENT_MAP.get(mem) != super::fog::PC_FOG_MAP {
+            return;
+        }
+        let rgb = [0, 1, 2].map(|i| byte_channel(mem, v[i]));
+        let f = mem.rebase(super::fog::SET_COLOUR);
+        call(mem, f, &rgb);
+    }
+
+    /// `yiSetFogParam(near, far, limit)` (`0x0090a350`): near and far over
+    /// the unit ([`fog_unit`]) and limit are stored; on map 0xe0 the PC
+    /// renderer gets near and far times its distance factor, `(1 -
+    /// limit / 255) * ` its limit factor, and 1.0 for `0x00643180`.
+    pub fn yi_set_fog_param<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) {
+        let [near, far, limit] = args;
+        let u = fog_unit(mem);
+        let far = x87::store(x87::load(far) / u);
+        let near = x87::store(x87::load(near) / u);
+        let at = mem.rebase(super::fog::NEAR);
+        mem.write(at, near);
+        let at = mem.rebase(super::fog::FAR);
+        mem.write(at, far);
+        let at = mem.rebase(super::fog::LIMIT);
+        mem.write(at, x87::copy(limit));
+        if super::CURRENT_MAP.get(mem) != super::fog::PC_FOG_MAP {
+            return;
+        }
+        let d: f64 = mem.read(mem.rebase(super::fog::PC_DISTANCE));
+        let f = mem.rebase(super::fog::SET_NEAR);
+        call(mem, f, &[x87::store(x87::load(near) * d)]);
+        let f = mem.rebase(super::fog::SET_FAR);
+        call(mem, f, &[x87::store(x87::load(far) * d)]);
+        let top: f64 = mem.read(mem.rebase(super::fog::BYTE_MAX));
+        let k: f64 = mem.read(mem.rebase(super::fog::PC_LIMIT));
+        let l = x87::store((1.0 - x87::load(limit) / top) * k);
+        let f = mem.rebase(super::fog::SET_LIMIT);
+        call(mem, f, &[l]);
+        let f = mem.rebase(super::fog::SET_FOG_643180);
+        call(mem, f, &[1.0f32.to_bits()]);
+    }
+
+    /// `yiDisableHamonEff()` (`0x00908450`): clears render status bit 24
+    /// and the distortion word, turns the PC renderer's distortion off;
+    /// returns 0.
+    pub fn yi_disable_hamon_eff<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let s = RENDER_STATUS.get(mem);
+        RENDER_STATUS.set(mem, s & 0xfeff_ffff);
+        let at = mem.rebase(super::fog::HAMON);
+        mem.write(at, 0u32);
+        let f = mem.rebase(super::fog::SET_DISTORTION);
+        call(mem, f, &[0]);
+        0
     }
 }

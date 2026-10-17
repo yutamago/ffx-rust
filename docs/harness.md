@@ -77,10 +77,23 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Load: the title's cursor starts on Load; the save list and its Yes/No
   are Flash screens (Enter, arrows). Slot 1 of the user's saves starts on
   the salvage ship deck (`cdsp0000`), in the field: the D-pad turns Tidus.
+- Loading without the menus: `loadsave <slot|windows path>` runs what the
+  Load menu runs once a save is picked (`docs/formats/save.md`);
+  `screens::load_save_direct` (replay line `load direct <slot|path>
+  [script]`) taps Start until the title proper runs and sends it there.
+  The save's event opens about 3 s sooner (1.6-2.2 s after the first frame against
+  4.3-5.2 s), with no key presses to lose, and the state matches the menu
+  path's (the replays give the recorded originals' events and
+  screenshots). The replays use it; `load N` (list entry N) stays.
 - Battles start from the field without walking into one:
   `screens::start_battle(field, group, formation)` writes the request a
   random encounter makes (`MsBattleEncountExe`, `0x00780d10`) and raises its flag;
-  `MsBattleProcess` (`0x00790c10`) loads it on the next frame. The field table
+  `MsBattleProcess` (`0x00790c10`) loads it on the next frame. While the
+  field is still loading, `MsBattleExeClear` (`0x00781530`, called by the
+  event set-up and `AtelUpdateBattleStatus`) drops the request; with games
+  side by side the field loads slower in frames than the replays wait, so
+  `start_battle` raises the flag again every 30 frames while it is down
+  and no battle has begun. The field table
   (`*0x0112a9c8`, count `0x0112a9d0`, 14-byte entries: map number, group
   offset, first formation, name) lists all 96 battle fields; entry 3 is
   `cdsp00`. Actors are `*0x011334d4 + index × 0xf90`; a monster's max HP is
