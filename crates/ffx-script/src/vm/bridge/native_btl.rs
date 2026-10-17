@@ -239,7 +239,9 @@ pub fn native_btl_run_event<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) ->
 }
 
 /// `Native_BtlRunEvent_Poll` (`0x007a5ec0`; also `0x7097`'s `0x007a58c0`):
-/// `0x007a8700(args)` (the args words' address).
+/// `0x007a8700(args)` (the args words' address). The polls of `0x706e`
+/// (`0x007a71f0`), `0x7050` (`0x007a74f0`) and `0x704b` (`0x007a7850`)
+/// are the same.
 pub fn native_btl_run_event_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
     call(h, 0x007a_8700, &[a])
 }
@@ -1398,8 +1400,705 @@ pub fn native_7052<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
+// ---- round 12: the rest of group 7 ----
+
+/// The low 16 bits (a `mov m16, r16`).
+fn lo16(v: u32) -> u16 {
+    let [a, b, _, _] = v.to_le_bytes();
+    u16::from_le_bytes([a, b])
+}
+
+/// A signed byte, sign-extended.
+fn sb(h: &impl NativeHost, at: u32) -> u32 {
+    i32::from(h.read::<i8>(at)).cast_unsigned()
+}
+
+/// `f64::from(core::f32::consts::PI)`: the `fdiv qword` constant at
+/// `0x00b92288`.
+const PI_F32: f64 = 3.141_592_741_012_573_2;
+
+/// A yaw to degrees as `0x70be`/`0x70c3` do: `MsNearRag(0, yaw)`
+/// (`0x007c04c0`), times 180 (`0x00b48378`), over [`PI_F32`], rounded to
+/// `f32`.
+fn near_degrees(h: &mut impl NativeHost, yaw: u32) -> f64 {
+    let r = callf(h, 0x007c_04c0, &[x87::store(0.0), yaw]);
+    r32(x87::div(x87::mul(r, 180.0), PI_F32))
+}
+
+/// `Native_7035` (`0x007a53a0`, `0x7035`): the byte `0x0112c9f1`.
+pub fn native_7035<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    u32::from(h.read::<u8>(h.rebase(0x0112_c9f1)))
+}
+
+/// `Native_7014` (`0x007a4430`, `0x7014`): the word `0x0112c8d8`.
+pub fn native_7014<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    h.read(h.rebase(0x0112_c8d8))
+}
+
+/// `Native_7096` (`0x007a7b30`, `0x7096`): the signed byte `0x0112c9fa`.
+pub fn native_7096<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    sb(h, h.rebase(0x0112_c9fa))
+}
+
+/// `Native_706e` (`0x007a7020`, `0x706e`, start): `(selector, voice)`:
+/// `MsSetVoice(i, voice, 1, worker, &out)` (`0x007a0720`) for each picked
+/// actor; the args word is 1 when any `out` was set. `EAX` is the args
+/// word's address.
+pub fn native_706e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let v = pop(h, s);
+    let p = pop(h, s);
+    let m = call(h, GET_BIT, &[id, p, 0, 1]);
+    let o = out(h);
+    let mut r = 0_u32;
+    for i in 0..0x1f {
+        if (m.cast_signed() >> i) & 1 != 0 {
+            call(h, 0x007a_0720, &[i, v, 1, w, o]);
+            if h.read::<u32>(o) != 0 {
+                r = 1;
+            }
+        }
+    }
+    h.write(a, r);
+    a
+}
+
+/// `Native_704b` (`0x007a7640`, `0x704b`, start): `(selector, motion,
+/// b)`: `MsSetMotion(i, motion, b, 0, 1, worker, &out)` (`0x007ab360`)
+/// for each picked actor; as [`native_706e`].
+pub fn native_704b<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let b = pop(h, s);
+    let mo = pop(h, s);
+    let p = pop(h, s);
+    let m = call(h, GET_BIT, &[id, p, 0, 1]);
+    let o = out(h);
+    let mut r = 0_u32;
+    for i in 0..0x1f {
+        if (m.cast_signed() >> i) & 1 != 0 {
+            call(h, 0x007a_b360, &[i, mo, b, 0, 1, w, o]);
+            if h.read::<u32>(o) != 0 {
+                r = 1;
+            }
+        }
+    }
+    h.write(a, r);
+    a
+}
+
+/// `Native_7050` (`0x007a7400`, `0x7050`, start): `(selector)`: the args
+/// word = `MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector,
+/// 0, 1), -1)` (`0x007a89c0`), also `EAX`.
+pub fn native_7050<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let m = call(h, GET_BIT, &[id, p, 0, 1]);
+    let r = call(h, 0x007a_89c0, &[w, m, u32::MAX]);
+    h.write(a, r);
+    r
+}
+
+/// `Native_708e` (`0x007a5c20`, `0x708e`): `MsMotionPosCheck(actor, chr)`
+/// (`0x007aa100`), with `+0x4f0` = 10.0 and `+0x34` = 1 around the call
+/// when `+0x608` and `+0x505` are set; the actor's signed `+0x508`.
+pub fn native_708e<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let id = actor(h, w);
+    let c = chr(h, id);
+    if h.read::<u8>(c + 0x608) != 0 && h.read::<u8>(c + 0x505) != 0 {
+        let f = h.read::<u32>(c + 0x4f0);
+        let b = h.read::<u8>(c + 0x34);
+        h.write(c + 0x4f0, x87::store(10.0));
+        h.write(c + 0x34, 1_u8);
+        call(h, 0x007a_a100, &[id, c]);
+        let r = sb(h, c + 0x508);
+        // fld m32 / fstp m32
+        h.write(c + 0x4f0, x87::store(x87::load(f)));
+        h.write(c + 0x34, b);
+        return r;
+    }
+    call(h, 0x007a_a100, &[id, c]);
+    sb(h, c + 0x508)
+}
+
+/// `Native_7107` (`0x007a6800`, `0x7107`): `(n)`: `ftol((MsDirTurn(chr,
+/// yaw) - +0x490) / pi * n)`, the yaw the actor's `+0x514` entry `+0x511`
+/// (`0x007a9650` returns `ST0`; the steps round to `f32`).
+pub fn native_7107<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let n = pop(h, s);
+    let id = actor(h, w);
+    let c = chr(h, id);
+    let k = sb(h, c + 0x511);
+    let yaw = h.read::<u32>(c.wrapping_add(0x514).wrapping_add(k.wrapping_mul(4)));
+    let t = callf(h, 0x007a_9650, &[c, x87::store(x87::load(yaw))]);
+    let d = x87::div(x87::sub(t, ld(h, c + 0x490)), PI_F32);
+    let nf = r32(f64::from(n.cast_signed()));
+    let x = r32(x87::mul(d, nf));
+    x87::ftol(h, x)
+}
+
+/// `Native_7057` (`0x007a4220`, `0x7057`): `(target, f, b, a)`:
+/// `MsSetChrDirTarget(actor, target, 0, -1, b, a)` (`0x00795eb0`); the
+/// float is popped and dropped; 0.
+pub fn native_7057<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a1 = pop(h, s);
+    let b = pop(h, s);
+    popf(h, s);
+    let t = pop(h, s);
+    let id = actor(h, w);
+    call(h, 0x0079_5eb0, &[id, t, 0, u32::MAX, b, a1]);
+    0
+}
+
+/// `Native_7083` (`0x007a42a0`, `0x7083`): `(_, n)`: for n > 0 on an
+/// actor with `+0xe15` set and no weapon unit (`+0xea8`),
+/// `op_et_weapon_unit(model, 0, ...)` (`0x007fc9b0`) into `+0xea8`; 0.
+pub fn native_7083<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let n = pop(h, s);
+    pop(h, s);
+    let id = actor(h, w);
+    let c = chr(h, id);
+    if n.cast_signed() > 0 && h.read::<u8>(c + 0xe15) != 0 && h.read::<u32>(c + 0xea8) == 0 {
+        let m = h.read::<u32>(c);
+        let r = call(h, 0x007f_c9b0, &[m, 0, 0, 0, 0, 0, 0]);
+        if r != 0 {
+            h.write(c + 0xea8, r);
+        }
+    }
+    0
+}
+
+/// `Native_7117` (`0x007a4b00`, `0x7117`): `(targets, command)`: as
+/// `0x700b` without the checks: `MsMotionPosCheck` when `+0x3f9` is set,
+/// then `Battle_QueueCommand(actor, command, MsGetChrBit(actor, targets,
+/// 0, 1, 1, 0x40))`; 1, or 0 without an actor.
+pub fn native_7117<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let cmd = pop(h, s);
+    let t = pop(h, s);
+    let id = actor(h, w);
+    if id == 0xff {
+        return 0;
+    }
+    let c = chr(h, id);
+    if h.read::<u8>(c + 0x3f9) != 0 {
+        call(h, 0x007a_a100, &[id, c]);
+    }
+    let b = call(h, GET_BIT, &[id, t, 0, 1, 1, 0x40]);
+    call(h, 0x007a_c9c0, &[id, cmd, b]);
+    1
+}
+
+/// `Native_7078` (`0x007a6540`, `0x7078`): `(selector, b, a)` ->
+/// `MsGetComInfo(picked, b, a)` (`0x0078cd30`).
+pub fn native_7078<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let a1 = pop(h, s);
+    let b = pop(h, s);
+    let p = pop(h, s);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    call(h, 0x0078_cd30, &[i, b, a1])
+}
+
+/// `Native_70a4` (`0x007a7630`, `0x70a4`): `0x0079cca0()`; 0.
+pub fn native_70a4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0079_cca0, &[]);
+    0
+}
+
+/// `Native_7040` (`0x007a5610`, `0x7040`): `(v)` -> `0x0079e8c0(actor,
+/// v)`, 0 without an actor.
+pub fn native_7040<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let id = actor(h, w);
+    if id == 0xff {
+        return 0;
+    }
+    call(h, 0x0079_e8c0, &[id, v])
+}
+
+/// `Native_7046` (`0x007a5220`, `0x7046`): `(v)`: `MsMoveSplineSet(v)`
+/// (`0x007ab140`); 0.
+pub fn native_7046<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x007a_b140, &[v]);
+    0
+}
+
+/// `Native_7049` (`0x007a55a0`, `0x7049`): `(d, c, f, a)`:
+/// `0x007ab010(d, actor, c, f, a)`; 0.
+pub fn native_7049<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let a1 = pop(h, s);
+    let f = popf(h, s);
+    let c = pop(h, s);
+    let d = pop(h, s);
+    call(h, 0x007a_b010, &[d, id, c, x87::store(x87::load(f)), a1]);
+    0
+}
+
+/// `Native_70dc` (`0x007a7a10`, `0x70dc`): `(selector, i)`: copies 40
+/// bytes of the name table `*0x0112a9b8` (entry
+/// `MsGetSaveConfigHiragana() + 2i`, a `u16` offset in 4-byte steps) into the picked actor's `+0x540`;
+/// 0.
+pub fn native_70dc<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let k = pop(h, s);
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    let c = chr(h, i);
+    let t = h.read::<u32>(h.rebase(0x0112_a9b8));
+    if t == 0 {
+        return 0;
+    }
+    let e = call(h, 0x0078_51f0, &[]).wrapping_add(k.wrapping_mul(2));
+    let src = u32::from(h.read::<u16>(t.wrapping_add(e.wrapping_mul(4)))).wrapping_add(t);
+    if src != 0 {
+        for j in 0..0x28 {
+            let b = h.read::<u8>(src.wrapping_add(j));
+            h.write(c.wrapping_add(0x540 + j), b);
+        }
+    }
+    0
+}
+
+/// `Native_7091` (`0x007a77c0`, `0x7091`): `(to, from)` selectors: the
+/// 40-byte name at `+0x540` and the byte `+0xdd5` copied from one picked
+/// actor to the other; 0.
+pub fn native_7091<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let pf = pop(h, s);
+    let pt = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, pt, 0, 1]);
+    let j = call(h, GET_ONE, &[id, pf, 0, 1]);
+    let a1 = chr(h, i);
+    let b = chr(h, j);
+    for k in 0..0x28 {
+        let v = h.read::<u8>(b.wrapping_add(0x540 + k));
+        h.write(a1.wrapping_add(0x540 + k), v);
+    }
+    let v = h.read::<u8>(b + 0xdd5);
+    h.write(a1 + 0xdd5, v);
+    0
+}
+
+/// `CT_7106_ret_doesChrKnowCommand` (`0x007a30a0`, `0x7106`, Fahrenheit's
+/// name): `(selector, command)` -> `MsGetSaveCommand(picked, command)`
+/// (`0x00785020`).
+pub fn native_7106<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let cmd = pop(h, s);
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    call(h, 0x0078_5020, &[i, cmd])
+}
+
+/// `Native_7087` (`0x007a7880`, `0x7087`): `(selector, b, a)` ->
+/// `0x0079fcf0(picked, b, a)`, 0 for none.
+pub fn native_7087<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a1 = pop(h, s);
+    let b = pop(h, s);
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    if i.cast_signed() < 0 {
+        return 0;
+    }
+    call(h, 0x0079_fcf0, &[i, b, a1])
+}
+
+/// `Native_7088` (`0x007a79c0`, `0x7088`): `(selector, se)` ->
+/// `MsRegSEplay(picked, se)` (`0x007a0100`), 0 for none.
+pub fn native_7088<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let se = pop(h, s);
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    if i.cast_signed() < 0 {
+        return 0;
+    }
+    call(h, 0x007a_0100, &[i, se])
+}
+
+/// `Native_70ed` (`0x007a2ca0`, `0x70ed`): `(b, a)` -> `MsSaveItemUse(b,
+/// a)` (`0x00790550`).
+pub fn native_70ed<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let a1 = pop(h, s);
+    let b = pop(h, s);
+    call(h, 0x0079_0550, &[b, a1])
+}
+
+/// `Native_7109` (`0x007a3df0`, `0x7109`): `(selector, reset, f)`: for
+/// each picked actor with a model: `+0x407` = 1; with reset,
+/// `0x00796070(i, 0)`, `+0x505` = 1, `+0x50c` = 0; `+0x43d` = 0, `+0x538`
+/// = f. The number of picked actors.
+pub fn native_7109<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    chr(h, id);
+    let f = x87::store(x87::load(popf(h, s)));
+    let reset = pop(h, s);
+    let p = pop(h, s);
+    let m = call(h, GET_BIT, &[id, p, 0, 1]);
+    let mut n = 0_u32;
+    for i in 0..0x1f {
+        if (m.cast_signed() >> i) & 1 == 0 {
+            continue;
+        }
+        n += 1;
+        let c = chr(h, i);
+        if h.read::<u32>(c) == 0 {
+            continue;
+        }
+        h.write(c + 0x407, 1_u8);
+        if reset != 0 {
+            call(h, 0x0079_6070, &[i, 0]);
+            h.write(c + 0x505, 1_u8);
+            h.write(c + 0x50c, 0_u8);
+        }
+        h.write(c + 0x43d, 0_u8);
+        h.write(c + 0x538, f);
+    }
+    n
+}
+
+/// `Native_70d1` (`0x007a5cb0`, `0x70d1`): `(selector)` -> the picked
+/// actor's `+0xe12` byte.
+pub fn native_70d1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    let c = chr(h, i);
+    u32::from(h.read::<u8>(c + 0xe12))
+}
+
+/// `Native_701b` (`0x007a66a0`, `0x701b`): `(targets, v)`:
+/// `0x007ac940(actor, v, MsGetChrBit(actor, targets, 0, 1))`; 0.
+pub fn native_701b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let t = pop(h, s);
+    let id = actor(h, w);
+    if id != 0xff {
+        let m = call(h, GET_BIT, &[id, t, 0, 1]);
+        call(h, 0x007a_c940, &[id, v, m]);
+    }
+    0
+}
+
+/// `Native_7036` (`0x007a7180`, `0x7036`): `(a f, b f, n)`:
+/// `MsSetChrTransparentVisible(actor, a, b, n, 1)` (`0x00796550`); 0.
+pub fn native_7036<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let n = pop(h, s);
+    let b = popf(h, s);
+    let a1 = popf(h, s);
+    if id != 0xff {
+        let (a1, b) = (x87::store(x87::load(a1)), x87::store(x87::load(b)));
+        call(h, 0x0079_6550, &[id, a1, b, n, 1]);
+    }
+    0
+}
+
+/// `Native_702f` (`0x007a5140`, `0x702f`): `(keep)`: resets the actor:
+/// `+0x508` = 0, `MsStatusEffectClear` (`0x0079f110`), `0x0079ea90`, the
+/// system motion again for a model unless `+0xdce` (`Ch_ResetMotion`,
+/// `ms_motion_trans`, `Ch_SetSysMotion`), `MsSetChrVisibleAppear(actor,
+/// 0)`; with keep set `+0xdc8` = 0; 0.
+pub fn native_702f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let keep = pop(h, s);
+    let id = actor(h, w);
+    if id == 0xff {
+        return 0;
+    }
+    let c = chr(h, id);
+    h.write(c + 0x508, 0_u8);
+    call(h, 0x0079_f110, &[id]);
+    call(h, 0x0079_ea90, &[id, c]);
+    let m = h.read::<u32>(c);
+    if m != 0 && h.read::<u8>(c + 0xdce) == 0 {
+        call(h, 0x0082_b080, &[m]);
+        let t = call(h, 0x007a_8c80, &[c, 1]);
+        let k = sb(h, c + 0x20);
+        call(h, 0x0083_7d00, &[m, k, t]);
+    }
+    call(h, 0x0079_66a0, &[id, 0]);
+    if keep != 0 {
+        h.write(c + 0xdc8, 0_u8);
+    }
+    0
+}
+
+/// `Native_7082` (`0x007a41e0`, `0x7082`): `(b, a)` ->
+/// `0x0079eb10(actor, b, 1, a, 1)`.
+pub fn native_7082<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a1 = pop(h, s);
+    let b = pop(h, s);
+    let id = actor(h, w);
+    call(h, 0x0079_eb10, &[id, b, 1, a1, 1])
+}
+
+/// `Native_709d` (`0x007a3ae0`, `0x709d`, poll): 5 when there is no actor
+/// or its `+0x425` is clear, else 0.
+pub fn native_709d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let id = actor(h, w);
+    if id == 0xff {
+        return 5;
+    }
+    let c = chr(h, id);
+    if h.read::<u8>(c + 0x425) == 0 { 5 } else { 0 }
+}
+
+/// `Native_7063` (`0x007a5dc0`, `0x7063`, poll): 5 when the actor's
+/// `+0xe13` is clear, else 0.
+pub fn native_7063<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let id = actor(h, w);
+    let c = chr(h, id);
+    if h.read::<u8>(c + 0xe13) == 0 { 5 } else { 0 }
+}
+
+/// `Native_70d7` (`0x007a30f0`, `0x70d7`): `(selector, motion)`: unless
+/// the picked actor's `+0x422` actor has `+0xdcc` set,
+/// `MsDamageSetMotion(picked, motion, picked != actor)` (`0x0078ca20`); 0.
+pub fn native_70d7<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let mo = pop(h, s);
+    let p = pop(h, s);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    let ne = u32::from(id != i);
+    let c = chr(h, i);
+    let k = sb(h, c + 0x422);
+    let c2 = chr(h, k);
+    if h.read::<u8>(c2 + 0xdcc) == 0 {
+        call(h, 0x0078_ca20, &[i, mo, ne]);
+    }
+    0
+}
+
+/// `Native_701f` (`0x007a5f80`, `0x701f`): `(v)`: the actor's `+0x3f1` =
+/// v; 0.
+pub fn native_701f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let id = actor(h, w);
+    if id != 0xff {
+        let c = chr(h, id);
+        h.write(c + 0x3f1, v.to_le_bytes()[0]);
+    }
+    0
+}
+
+/// `Native_7022` (`0x007a4cd0`, `0x7022`): `(v)`: the byte `0x0112c9dc` =
+/// v; 0.
+pub fn native_7022<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    h.write(h.rebase(0x0112_c9dc), v.to_le_bytes()[0]);
+    0
+}
+
+/// `Native_7023` (`0x007a4940`, `0x7023`): `(selector)`: `ftol` of the
+/// mean of `MsSetMove(i, 1)` (`0x007a9fc0`, `ST0`) over the picked actors
+/// (0 for none; the sum and the mean round to `f32`).
+pub fn native_7023<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let p = pop(h, s);
+    let m = call(h, GET_BIT, &[id, p, 0, 1]);
+    let mut sum = 0.0;
+    let mut n = 0_i32;
+    for i in 0..0x1f {
+        if (m.cast_signed() >> i) & 1 != 0 {
+            let t = callf(h, 0x007a_9fc0, &[i, 1]);
+            sum = r32(x87::add(t, sum));
+            n += 1;
+        }
+    }
+    if n > 0 {
+        sum = r32(x87::div(sum, r32(f64::from(n))));
+    }
+    x87::ftol(h, sum)
+}
+
+/// `Native_7054` (`0x007a7fe0`, `0x7054`): `(to, from, point)`: the
+/// `from` actor's model point (`Ch_OptposGet`, `0x008354f0`) through
+/// `0x0079e1b0(0, &v)` into `MsSetChrPosReset(to, &v)` (`0x00796220`);
+/// 0. Without a model the vector is the original's stack garbage (zeroed
+/// here).
+pub fn native_7054<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let pt = pop(h, s);
+    let pf = pop(h, s);
+    let pto = pop(h, s);
+    let i = call(h, GET_ONE, &[id, pto, 0, 1]);
+    let j = call(h, GET_ONE, &[id, pf, 0, 1]);
+    if i.cast_signed() < 0 || j.cast_signed() < 0 {
+        return 0;
+    }
+    let v = h.scratch();
+    for k in 0..4 {
+        h.write(v + k * 4, 0_u32);
+    }
+    let c = chr(h, j);
+    let m = h.read::<u32>(c);
+    if m != 0 {
+        call(h, 0x0083_54f0, &[m, pt, v]);
+    }
+    call(h, 0x0079_e1b0, &[0, v]);
+    call(h, 0x0079_6220, &[i, v]);
+    0
+}
+
+/// `Native_70be` (`0x007a3780`, `0x70be`, float): `(selector)`: the picked
+/// actor's direction (`MsGetChrDir`, `0x00794d20`) in degrees.
+pub fn native_70be<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let id = actor(h, w);
+    let p = pop(h, s);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    let o = out(h);
+    call(h, 0x0079_4d20, &[i, o]);
+    let d = x87::store(x87::load(h.read(o)));
+    near_degrees(h, d)
+}
+
+/// `Native_70c3` (`0x007a3650`, `0x70c3`, float): `(selector)`: the
+/// direction to the picked actor's target (`MsGetChrTargetDir(i, 0)`,
+/// `0x007958c0`, rounded to `f32`) in degrees.
+pub fn native_70c3<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let id = actor(h, w);
+    let p = pop(h, s);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    let t = callf(h, 0x0079_58c0, &[i, x87::store(0.0)]);
+    let d = x87::store(t);
+    near_degrees(h, d)
+}
+
+/// `Native_70ea` (`0x007a7b10`, `0x70ea`): `(v)`: `MsSet01130838(v)`
+/// (`0x007b2b40`); v.
+pub fn native_70ea<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x007b_2b40, &[v]);
+    v
+}
+
+/// `Native_7115` (`0x007a4560`, `0x7115`): `MsSetChrDirLeave(actor)`
+/// (`0x00795e70`); 0.
+pub fn native_7115<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let id = actor(h, w);
+    call(h, 0x0079_5e70, &[id]);
+    0
+}
+
+/// `Native_711d` (`0x007a4330`, `0x711d`): `(height f)`:
+/// `Ch_ShadowSetHeight(MsGetChrHandle(actor), height)` (`0x00795080`,
+/// `0x00830cb0`) for a model; 0.
+pub fn native_711d<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let f = x87::store(x87::load(popf(h, s)));
+    if id != 0xff {
+        let m = call(h, 0x0079_5080, &[id]);
+        if m != 0 {
+            call(h, 0x0083_0cb0, &[m, f]);
+        }
+    }
+    0
+}
+
+/// `Native_7025` (`0x007a5cf0`, `0x7025`): `(d, c, b, a)`:
+/// `0x00796430(actor, MsActTargetSearch(actor, d, c, b, 4, a, 0, &out))`
+/// (`0x007acd40`); out (zeroed here when the search writes none).
+pub fn native_7025<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a1 = pop(h, s);
+    let b = pop(h, s);
+    let c = pop(h, s);
+    let d = pop(h, s);
+    let id = actor(h, w);
+    let o = out(h);
+    let r = call(h, 0x007a_cd40, &[id, d, c, b, 4, a1, 0, o]);
+    call(h, 0x0079_6430, &[id, r]);
+    h.read(o)
+}
+
+/// `Native_7053` (`0x007a4470`, `0x7053`): `(f)`: `0x007a9150(worker,
+/// args, stack, f)`; 0.
+pub fn native_7053<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let f = x87::store(x87::load(popf(h, s)));
+    call(h, 0x007a_9150, &[w, a, s, f]);
+    0
+}
+
+/// `Native_703a` (`0x007a7360`, `0x703a`): `(v)`: the actor's `+0x3fc`
+/// (`u16`) = v through `f32`, truncated.
+pub fn native_703a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let f = r32(f64::from(v.cast_signed()));
+    let id = actor(h, w);
+    if id != 0xff {
+        // fistp m32 with the chop rounding mode
+        let t = x87::cvttsd2si(f);
+        let c = chr(h, id);
+        h.write(c + 0x3fc, lo16(t));
+    }
+    0
+}
+
+/// `Native_7071` (`0x007a70b0`, `0x7071`): `0x0089bc60(0)`; 0.
+pub fn native_7071<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0089_bc60, &[0]);
+    0
+}
+
+/// `Native_708a` (`0x007a3710`, `0x708a`): `(v)`: `0x00782b40(v)`; 0.
+pub fn native_708a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0078_2b40, &[v]);
+    0
+}
+
+/// `Native_708b` (`0x007a3900`, `0x708b`): `(v)` -> `0x00782940(v)`.
+pub fn native_708b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0078_2940, &[v])
+}
+
+/// `Native_70bb` (`0x007a4cf0`, `0x70bb`): `(v)`: the actor's `+0x415` =
+/// 0x10, `+0x417` = 0, `+0x452` = 0, `+0x45a` = v (`u16`); 0.
+pub fn native_70bb<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let id = actor(h, w);
+    if id != 0xff {
+        let c = chr(h, id);
+        h.write(c + 0x415, 0x10_u8);
+        h.write(c + 0x417, 0_u8);
+        h.write(c + 0x452, 0_u16);
+        h.write(c + 0x45a, lo16(v));
+    }
+    0
+}
+
+/// `Native_70ef` (`0x007a64f0`, `0x70ef`): `(selector, signal)`:
+/// `MsEffectSendSignal(picked, signal)` (`0x0079e4f0`); 0.
+pub fn native_70ef<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let sig = pop(h, s);
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    call(h, 0x0079_e4f0, &[i, sig]);
+    0
+}
+
+/// `Native_7118` (`0x007a81d0`, `0x7118`): `(v)`: the byte `0x0112ca11` =
+/// v; v.
+pub fn native_7118<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    h.write(h.rebase(0x0112_ca11), v.to_le_bytes()[0]);
+    v
+}
+
+/// `Native_711c` (`0x007a8530`, `0x711c`): `(v)`: the `u16` `0x0112c94e`
+/// = v; v.
+pub fn native_711c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    h.write(h.rebase(0x0112_c94e), lo16(v));
+    v
+}
+
 /// The Rust version of a battle handler, if there is one.
 #[must_use]
+#[allow(clippy::too_many_lines)] // one arm per handler
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
     use Native::{Float, Int};
     Some(match sym {
@@ -1414,7 +2113,9 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_6b40 => Int(native_actor_get_slot_ref),
         0x007a_3530 => Int(native_7002),
         0x007a_5df0 => Int(native_btl_run_event),
-        0x007a_5ec0 | 0x007a_58c0 | 0x007a_5680 => Int(native_btl_run_event_poll),
+        0x007a_5ec0 | 0x007a_58c0 | 0x007a_5680 | 0x007a_71f0 | 0x007a_74f0 | 0x007a_7850 => {
+            Int(native_btl_run_event_poll)
+        }
         0x007a_2a20 => Int(native_actor_queue_motion),
         0x007a_5650 => Float(native_70ac),
         0x007a_4310 => Int(native_700c),
@@ -1492,12 +2193,62 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_63f0 => Int(native_700d),
         0x007a_6f70 => Int(native_7032),
         0x007a_7e10 => Int(native_7052),
-        _ => return None,
+        0x007a_53a0 => Int(native_7035),
+        0x007a_4430 => Int(native_7014),
+        0x007a_7b30 => Int(native_7096),
+        0x007a_7020 => Int(native_706e),
+        0x007a_7640 => Int(native_704b),
+        0x007a_7400 => Int(native_7050),
+        0x007a_5c20 => Int(native_708e),
+        0x007a_6800 => Int(native_7107),
+        0x007a_4220 => Int(native_7057),
+        0x007a_42a0 => Int(native_7083),
+        0x007a_4b00 => Int(native_7117),
+        0x007a_6540 => Int(native_7078),
+        0x007a_7630 => Int(native_70a4),
+        0x007a_5610 => Int(native_7040),
+        0x007a_5220 => Int(native_7046),
+        0x007a_55a0 => Int(native_7049),
+        0x007a_7a10 => Int(native_70dc),
+        0x007a_77c0 => Int(native_7091),
+        0x007a_30a0 => Int(native_7106),
+        0x007a_7880 => Int(native_7087),
+        0x007a_79c0 => Int(native_7088),
+        0x007a_2ca0 => Int(native_70ed),
+        0x007a_3df0 => Int(native_7109),
+        0x007a_5cb0 => Int(native_70d1),
+        0x007a_66a0 => Int(native_701b),
+        0x007a_7180 => Int(native_7036),
+        0x007a_5140 => Int(native_702f),
+        0x007a_41e0 => Int(native_7082),
+        0x007a_3ae0 => Int(native_709d),
+        0x007a_5dc0 => Int(native_7063),
+        0x007a_30f0 => Int(native_70d7),
+        0x007a_5f80 => Int(native_701f),
+        0x007a_4cd0 => Int(native_7022),
+        0x007a_4940 => Int(native_7023),
+        0x007a_7fe0 => Int(native_7054),
+        0x007a_3780 => Float(native_70be),
+        0x007a_3650 => Float(native_70c3),
+        0x007a_7b10 => Int(native_70ea),
+        0x007a_4560 => Int(native_7115),
+        0x007a_4330 => Int(native_711d),
+        0x007a_5cf0 => Int(native_7025),
+        0x007a_4470 => Int(native_7053),
+        0x007a_7360 => Int(native_703a),
+        0x007a_70b0 => Int(native_7071),
+        0x007a_3710 => Int(native_708a),
+        0x007a_3900 => Int(native_708b),
+        0x007a_4cf0 => Int(native_70bb),
+        0x007a_64f0 => Int(native_70ef),
+        0x007a_81d0 => Int(native_7118),
+        0x007a_8530 => Int(native_711c),
+        _ => return super::native_chr::find(sym),
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 91] = [
+pub const PORTED: [(u32, bool); 144] = [
     (0x007a_4f80, false),
     (0x007a_6970, false),
     (0x007a_81f0, false),
@@ -1589,4 +2340,57 @@ pub const PORTED: [(u32, bool); 91] = [
     (0x007a_7f20, false),
     (0x007a_76f0, false),
     (0x007a_5680, false),
+    (0x007a_53a0, false),
+    (0x007a_4430, false),
+    (0x007a_7b30, false),
+    (0x007a_7020, false),
+    (0x007a_7640, false),
+    (0x007a_7400, false),
+    (0x007a_5c20, false),
+    (0x007a_6800, false),
+    (0x007a_4220, false),
+    (0x007a_42a0, false),
+    (0x007a_4b00, false),
+    (0x007a_6540, false),
+    (0x007a_7630, false),
+    (0x007a_5610, false),
+    (0x007a_5220, false),
+    (0x007a_55a0, false),
+    (0x007a_7a10, false),
+    (0x007a_77c0, false),
+    (0x007a_30a0, false),
+    (0x007a_7880, false),
+    (0x007a_79c0, false),
+    (0x007a_2ca0, false),
+    (0x007a_3df0, false),
+    (0x007a_5cb0, false),
+    (0x007a_66a0, false),
+    (0x007a_7180, false),
+    (0x007a_5140, false),
+    (0x007a_41e0, false),
+    (0x007a_3ae0, false),
+    (0x007a_5dc0, false),
+    (0x007a_30f0, false),
+    (0x007a_5f80, false),
+    (0x007a_4cd0, false),
+    (0x007a_4940, false),
+    (0x007a_7fe0, false),
+    (0x007a_3780, true),
+    (0x007a_3650, true),
+    (0x007a_7b10, false),
+    (0x007a_4560, false),
+    (0x007a_4330, false),
+    (0x007a_5cf0, false),
+    (0x007a_4470, false),
+    (0x007a_7360, false),
+    (0x007a_70b0, false),
+    (0x007a_3710, false),
+    (0x007a_3900, false),
+    (0x007a_4cf0, false),
+    (0x007a_64f0, false),
+    (0x007a_81d0, false),
+    (0x007a_8530, false),
+    (0x007a_71f0, false),
+    (0x007a_74f0, false),
+    (0x007a_7850, false),
 ];

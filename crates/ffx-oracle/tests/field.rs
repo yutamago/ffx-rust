@@ -11153,3 +11153,308 @@ fn round25_copies_morph_lerp_and_colours_match_the_original() {
         );
     }
 }
+
+/// Round 26: the effect's screen shake, the scene's wave and the sphere
+/// grid's part start.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round26_shake_wave_and_part_start_match_the_original() {
+    use ffx_field::abmap;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001a_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (randv, tabv) = (t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(tb::MS_SCREEN_OFFSET), log_stub(log, rv, 300, 2)),
+        (Some(model::SCENE_WAVE_C0_STOP), log_stub(log, rv, 301, 1)),
+        (Some(abmap::GET_PTR32_FUNC), log_stub(log, tabv, 302, 1)),
+        (Some(abmap::PPP_START_PART), log_stub(log, rv, 303, 5)),
+        (None, log_stub(log, randv, 304, 0)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let rand = *stubs.last().unwrap();
+    t.put(t.b.rebase(model::RAND_IMPORT), rand);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (e, s) = (t.alloc(0x220), t.alloc(0xe0));
+    let (part, tab, data) = (t.alloc(0x80), t.alloc(0x40), t.alloc(0x20));
+    let slot = t.alloc(4);
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    t.put(t.b.rebase(abmap::ABMAP_PPP_DATA), data);
+    t.put(tabv, tab);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        t.put(randv, rng.below(0x8000));
+        // the shake
+        t.fill(e + 0x1f0, 0x30, &mut rng);
+        t.put(e + 0x214, rng.below(3));
+        t.put(e + 0x1f8, rng.below(6));
+        t.put(e + 0x210, float_in(&mut rng, -10, 10));
+        t.put(e + 0x1fc, float_in(&mut rng, -1, 1));
+        t.put(e + 0x200, rng.range(-2, 20));
+        t.put(e + 0x204, rng.range(0, 22));
+        if k % 11 == 3 {
+            // frames beyond f32's integers
+            t.put(e + 0x200, rng.range(0x0100_0001, 0x7fff_ffff));
+        }
+        let range = if rng.below(2) == 0 {
+            rng.range(1, 60)
+        } else {
+            rng.range(-60, -1)
+        };
+        t.put(e + 0x20c, range);
+        t.put(e + 0x208, rng.range(-100, 100));
+        t.same(
+            "rcefScreenShake",
+            |o| o.void(0x0092_4df0, &[e]),
+            |m| tb::rcef_screen_shake(m, e, call),
+        );
+        // the wave
+        t.fill(s + 0xb0, 0x30, &mut rng);
+        t.put(s + 0xc0, rng.below(6));
+        t.put(s + 0xd4, float_in(&mut rng, -10, 10));
+        t.put(s + 0xc4, float_in(&mut rng, -1, 1));
+        t.put(s + 0xc8, rng.range(-2, 20));
+        t.put(s + 0xd8, rng.range(0, 22));
+        if k % 11 == 4 {
+            t.put(s + 0xc8, rng.range(0x0100_0001, 0x7fff_ffff));
+        }
+        t.put(s + 0xd0, rng.range(-3, 40));
+        t.put(s + 0xcc, rng.range(-100, 100));
+        if k % 9 == 0 {
+            t.put(s + 0xcc, rng.next());
+        }
+        t.same(
+            "rcbgSceneWaveC0Update",
+            |o| o.void(0x0092_10e0, &[s]),
+            |m| model::bridge::rcbg_scene_wave_c0_update(m, s, call),
+        );
+        // the part start
+        t.fill(part, 0x80, &mut rng);
+        t.fill(tab, 0x40, &mut rng);
+        t.fill(data, 0x20, &mut rng);
+        let mut a = [0u32; 11];
+        a[0] = part;
+        a[1] = rng.below(0x10);
+        for v in &mut a[2..] {
+            *v = float_in(&mut rng, -3000, 3000);
+        }
+        if k % 7 == 0 {
+            a[7] = rng.next() | 0x0040_0000;
+        }
+        t.same(
+            "AbmapStartPart",
+            |o| o.eax(0x00a5_bad0, &a),
+            |m| abmap::bridge::abmap_start_part(m, a, call),
+        );
+    }
+}
+
+/// Round 27: the Phyre field map load, the sphere grid's warp start and
+/// the 2D direction angle.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round27_map_load_warp_and_angle_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001b_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let (log, rv) = (env.log, env.rv);
+    let (iobv, tabv) = (t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(yi::GRAPHIC_SET_HAS_2D_MAP), log_stub(log, rv, 310, 1)),
+        (Some(yi::GRAPHIC_SET_HAS_3D_MAP), log_stub(log, rv, 311, 1)),
+        (Some(yi::GRAPHIC_FIELD_MAP_LOAD), log_stub(log, rv, 312, 2)),
+        (
+            Some(yi::GRAPHIC_FIELD_MAP_INITIALIZE),
+            log_stub(log, rv, 313, 0),
+        ),
+        (
+            Some(yi::GRAPHIC_VFX_LOAD_LEVEL_DATA),
+            log_stub(log, rv, 314, 0),
+        ),
+        (Some(abmap::SND_SEP_PLAY_SIMPLE), log_stub(log, rv, 315, 1)),
+        (Some(abmap::PPP_CREATE_HEAP), log_stub(log, rv, 316, 3)),
+        (Some(abmap::GET_PTR32_FUNC), log_stub(log, tabv, 317, 1)),
+        (Some(abmap::PPP_START_PART), log_stub(log, rv, 318, 5)),
+        (None, log_stub(log, iobv, 319, 0)),
+        (None, log_stub(log, rv, 320, 4)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let n = stubs.len();
+    t.put(t.b.rebase(yi::CRT_IOB_FUNC), stubs[n - 2]);
+    t.put(t.b.rebase(yi::CRT_FPRINTF), stubs[n - 1]);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let map = t.alloc(0x40);
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let (tab, data, slot) = (t.alloc(0x40), t.alloc(0x20), t.alloc(4));
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    t.put(t.b.rebase(abmap::ABMAP_PPP_DATA), data);
+    t.put(tabv, tab);
+    let name = t.b.rebase(yi::PENDING_MAP_NAME);
+    for k in 0..300u32 {
+        env.reset(&mut t, &mut rng);
+        t.put(iobv, rng.next());
+        // the map load
+        t.fill(map, 0x40, &mut rng);
+        if rng.below(4) != 0 {
+            t.write(map, b"MAP1");
+        }
+        for i in 0..2 {
+            t.put(
+                map + 0x10 + 4 * i,
+                if rng.below(2) == 0 { 0 } else { rng.next() },
+            );
+        }
+        t.set(yi::PENDING_MAP, if rng.below(5) == 0 { 0 } else { map });
+        t.put(name, if rng.below(5) == 0 { 0u8 } else { b'm' });
+        t.set(yi::RENDER_STATUS, rng.next());
+        t.set(yi::BTL_MAP_READ, rng.next());
+        let pending = t.b.read::<u32>(t.b.rebase(0x0193_4ed0)) != 0 && t.b.read::<u8>(name) != 0;
+        t.same(
+            "loadPhyreFieldMap",
+            |o| {
+                let e = o.eax(0x0090_8000, &[]);
+                pending.then_some(e)
+            },
+            |m| yi::bridge::load_phyre_field_map(m, call),
+        );
+        // the warp
+        t.fill(grid + 0x11000, 0x700, &mut rng);
+        let chr = rng.below(7);
+        let node = rng.below(40);
+        t.put(grid + 0x110cc + 0x50 * chr, u16::try_from(node).unwrap());
+        t.fill(grid + 0x808 + 0x28 * node, 4, &mut rng);
+        for at in [0x115b0, 0x115b4] {
+            if rng.below(2) == 0 {
+                t.put(grid + at, 0u32);
+            }
+        }
+        t.fill(tab, 0x40, &mut rng);
+        let target = rng.next();
+        t.same(
+            "AbmapStartWarp",
+            |o| o.eax(0x00a4_8a80, &[chr, target]),
+            |m| abmap::bridge::abmap_start_warp(m, chr, target, call),
+        );
+        // the angle
+        let mut a = [0u32; 4];
+        for v in &mut a {
+            *v = float_in(&mut rng, -500, 500);
+        }
+        if k % 6 == 0 {
+            a[2] = a[0];
+        }
+        if k % 10 == 1 {
+            a[3] = 0x7fc0_0000;
+        }
+        t.same(
+            "rcAngle2D",
+            |o| o.float(0x007e_6d80, &a),
+            |m| bits(geom::bridge::rc_angle_2d(m, a, &mut *fcall)),
+        );
+    }
+}
+
+/// Round 28: the sphere grid's `abmap_set_chr_pos`, the effect's blur
+/// update and the nail effect's point update.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round28_set_chr_pos_blur_and_nail_match_the_original() {
+    use ffx_field::abmap;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001c_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let tabv = t.alloc(4);
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(abmap::SND_SEP_PLAY_SIMPLE), log_stub(log, rv, 330, 1)),
+        (Some(abmap::PPP_CREATE_HEAP), log_stub(log, rv, 331, 3)),
+        (Some(abmap::GET_PTR32_FUNC), log_stub(log, tabv, 332, 1)),
+        (Some(abmap::PPP_START_PART), log_stub(log, rv, 333, 5)),
+        (Some(tb::SG_BLUR), log_stub(log, rv, 334, 1)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let (tab, data, slot) = (t.alloc(0x40), t.alloc(0x20), t.alloc(4));
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    t.put(t.b.rebase(abmap::ABMAP_PPP_DATA), data);
+    t.put(tabv, tab);
+    let e = t.alloc(0x230);
+    let (fx, ctx, idx, src, m) = (
+        t.alloc(0x40),
+        t.alloc(0x30),
+        t.alloc(0x40),
+        t.alloc(0x200),
+        t.alloc(0x40),
+    );
+    let arrays: Vec<u32> = (0..3).map(|_| t.alloc(0x100)).collect();
+    for k in 0..300u32 {
+        env.reset(&mut t, &mut rng);
+        // abmap_set_chr_pos
+        t.fill(grid + 0x11000, 0x700, &mut rng);
+        let chr = rng.below(7);
+        let node = rng.below(40);
+        t.put(grid + 0x110cc + 0x50 * chr, u16::try_from(node).unwrap());
+        t.fill(grid + 0x808 + 0x28 * node, 4, &mut rng);
+        t.fill(tab, 0x40, &mut rng);
+        let target = rng.next();
+        t.same(
+            "abmap_set_chr_pos",
+            |o| o.eax(0x00a4_58f0, &[chr, target]),
+            |m| abmap::bridge::abmap_set_chr_pos(m, chr, target, call),
+        );
+        // the blur
+        t.fill(e + 0x210, 0x20, &mut rng);
+        t.put(e + 0x228, rng.below(3));
+        t.put(e + 0x218, rng.below(4));
+        t.put(e + 0x21c, rng.range(-300, 300));
+        t.put(e + 0x220, rng.range(-2, 20));
+        t.put(e + 0x224, rng.range(0, 22));
+        if k % 9 == 0 {
+            t.put(e + 0x21c, rng.next());
+        }
+        t.same(
+            "rcefBlurUpdate",
+            |o| o.void(0x0092_4bf0, &[e]),
+            |m| tb::rcef_blur_update(m, e, call),
+        );
+        // the nail
+        t.put(fx + 0x1c, rng.range(-1, 15));
+        t.put(fx + 0x20, idx);
+        for (i, &a) in (0u32..).zip(&arrays) {
+            t.put(fx + 0x24 + 4 * i, a);
+            t.fill(a, 0x100, &mut rng);
+        }
+        t.put(fx + 0x38, if rng.below(2) == 0 { 0 } else { m });
+        for i in 0..16 {
+            t.put(idx + 4 * i, rng.below(0x20));
+            t.put(m + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        for i in 0..0x80 {
+            t.put(src + 4 * i, float_in(&mut rng, -1000, 1000));
+        }
+        t.put(ctx + 0x24, src);
+        t.put(
+            ctx,
+            (u64::from(rng.next()) << 32 | u64::from(rng.next())) | 1 << 51,
+        );
+        if k % 7 == 0 {
+            // a quiet NaN (the emulator keeps signalling ones, which the
+            // hardware's fld quiets)
+            t.put(ctx, 0x7ff8_0000_0000_0001u64);
+        }
+        t.same(
+            "rcfxNailUpdate",
+            |o| o.eax(0x0092_9190, &[fx, ctx]),
+            |m| model::bridge::rcfx_nail_update(m, fx, ctx),
+        );
+    }
+}

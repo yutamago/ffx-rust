@@ -88,6 +88,28 @@ pub const ABMAP_FOR_NODE_AND_LINKED: u32 = 0x00a5_9760;
 pub const ITEM_NODE_EFFECT: u32 = 0x00a4_9440;
 /// `AbmapItemUsableAt` (`0x00a49310`).
 pub const ITEM_USABLE_AT: u32 = 0x00a4_9310;
+/// `g_pppEnvSlot`.
+pub const PPP_ENV_SLOT: u32 = 0x00c3_a4cc;
+/// The sphere grid's ppp environment (`AbmapStartPart`).
+pub const ABMAP_PPP_ENV: u32 = 0x01a8_6034;
+/// The sphere grid's ppp data pointer (its `+0x10` the part table).
+pub const ABMAP_PPP_DATA: u32 = 0x0230_5800;
+/// `get_ptr32_func(p)` (`0x00a44650`).
+pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
+/// `pppStartPart(part, flags, id, a, b)` (`0x007123c0`).
+pub const PPP_START_PART: u32 = 0x0071_23c0;
+/// `pppCreateHeap(env, buffer, size)` (`0x0072c480`).
+pub const PPP_CREATE_HEAP: u32 = 0x0072_c480;
+/// The sphere grid's ppp heap (0x7d000 bytes).
+pub const ABMAP_PPP_HEAP: u32 = 0x016c_1870;
+/// The warp's ppp part.
+pub const ABMAP_WARP_PART: u32 = 0x01a8_6060;
+/// 0.5 (`f32`, `.rdata`): the warp part's scale.
+pub const WARP_PART_SCALE: u32 = 0x00b9_2194;
+/// The warp's draw hook (`0x00a4c430`).
+pub const WARP_DRAW: u32 = 0x00a4_c430;
+/// `AbmapState_Warping` (`0x00a47f00`).
+pub const STATE_WARPING: u32 = 0x00a4_7f00;
 /// `MsMenuStatusNumSize()` (`0x00790220`).
 pub const MS_MENU_STATUS_NUM_SIZE: u32 = 0x0079_0220;
 /// `MsMenuStatusNum(i, 0)` (`0x00790200`): a menu status entry.
@@ -1724,5 +1746,139 @@ pub mod bridge {
             i += 1;
         }
         last
+    }
+
+    // ---- round 26 ----
+
+    /// `AbmapStartPart(part, n, x, y, z, a, b, c, d, e, f)` (`0x00a5bad0`,
+    /// from the sphere grid's states; name ours): the ppp environment set
+    /// to the grid's (`0x01a86034`), `pppStartPart(part, 0x1000, table[n],
+    /// 1, 0)` with the table `get_ptr32_func(data +0x10)` (data at
+    /// `0x02305800`), then `+0x1e` 1, `+0x40..` x, y, z, 1.0, `+0x50..` the
+    /// truncated a, b, c, `+0x5c` 1, `+0x60..` d, e, f and `+0x6c` 1.0.
+    /// Returns the truncated c (left in `eax`).
+    pub fn abmap_start_part<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 11],
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, round_trip};
+        let [part, n, x, y, z, a, b, c, d, e, f] = args;
+        let slot = mem.read::<u32>(mem.rebase(super::PPP_ENV_SLOT));
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        mem.write(slot, env);
+        let data = mem.read::<u32>(mem.rebase(super::ABMAP_PPP_DATA));
+        let g = mem.rebase(super::GET_PTR32_FUNC);
+        let tab = call(mem, g, &[mem.read::<u32>(data.wrapping_add(0x10))]);
+        let id = mem.read::<u32>(tab.wrapping_add(n.wrapping_mul(4)));
+        let g = mem.rebase(super::PPP_START_PART);
+        call(mem, g, &[part, 0x1000, id, 1, 0]);
+        let rt = |v: u32| round_trip(f32::from_bits(v)).to_bits();
+        mem.write(part.wrapping_add(0x1e), 1u16);
+        mem.write(part.wrapping_add(0x40), rt(x));
+        mem.write(part.wrapping_add(0x44), rt(y));
+        mem.write(part.wrapping_add(0x48), rt(z));
+        mem.write(part.wrapping_add(0x4c), 1.0f32.to_bits());
+        let ia = ftol(mem, load(a));
+        mem.write(part.wrapping_add(0x50), ia);
+        let ib = ftol(mem, load(b));
+        mem.write(part.wrapping_add(0x54), ib);
+        let ic = ftol(mem, load(c));
+        mem.write(part.wrapping_add(0x60), rt(d));
+        mem.write(part.wrapping_add(0x58), ic);
+        mem.write(part.wrapping_add(0x5c), 1u32);
+        mem.write(part.wrapping_add(0x64), rt(e));
+        mem.write(part.wrapping_add(0x68), rt(f));
+        mem.write(part.wrapping_add(0x6c), 1.0f32.to_bits());
+        ic
+    }
+
+    // ---- round 27 ----
+
+    /// `AbmapStartWarp(chr, target)` (`0x00a48a80`, from
+    /// `abmap_set_chr_pos`; name ours): the warp sound (`0x80000070`), the
+    /// character's node (`+0x110cc + 0x50 chr`) position as floats into
+    /// `+0x11308`/`+0x1163c` and `+0x1130c`/`+0x11640`, `+0x11620` 0.0,
+    /// `+0x11634` the target, `+0x11638` the character, the grid's ppp
+    /// heap (`pppCreateHeap`), [`abmap_start_part`] of part 2 at that
+    /// position (scale 0.5), and the state hooks: `+0x115ac` the warp's
+    /// draw (`0x00a4c430`) and `+0x115a8` `AbmapState_Warping`, each saved
+    /// first unless one is saved already. Returns what the original leaves
+    /// in `eax`.
+    pub fn abmap_start_warp<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        chr: u32,
+        target: u32,
+        call: &mut C,
+    ) -> u32 {
+        let g0 = ABMAP.get(mem);
+        let node = u32::from(
+            mem.read::<u16>(
+                g0.wrapping_add(0x110cc)
+                    .wrapping_add(chr.wrapping_mul(0x50)),
+            ),
+        );
+        let nd = g0.wrapping_add(node.wrapping_mul(0x28));
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[0x8000_0070]);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1164c), 0u8);
+        mem.write(g.wrapping_add(0x1164d), 0u8);
+        let coord =
+            |mem: &M, at: u32| -> u32 { f32::from(mem.read::<i16>(nd.wrapping_add(at))).to_bits() };
+        let x = coord(mem, 0x808);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11308), x);
+        mem.write(g.wrapping_add(0x1163c), x);
+        let y = coord(mem, 0x80a);
+        mem.write(g.wrapping_add(0x1130c), y);
+        mem.write(g.wrapping_add(0x11640), y);
+        mem.write(g.wrapping_add(0x11620), 0u32);
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit argument
+        mem.write(g.wrapping_add(0x11634), target as u16);
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        mem.write(g.wrapping_add(0x11638), chr as u8);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(super::WARP_PART_SCALE)))
+            .to_bits();
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let (x, y) = (coord(mem, 0x808), coord(mem, 0x80a));
+        let mut eax = abmap_start_part(mem, [part, 2, x, y, 0, 0, 0, 0, h, h, h], call);
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b4)) == 0 {
+            let v = mem.read::<u32>(g.wrapping_add(0x115ac));
+            mem.write(g.wrapping_add(0x115b4), v);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115ac), mem.rebase(super::WARP_DRAW));
+            eax = g;
+        }
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let v = mem.read::<u32>(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), v);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115a8), mem.rebase(super::STATE_WARPING));
+            eax = g;
+        }
+        eax
+    }
+
+    // ---- round 28 ----
+
+    /// `abmap_set_chr_pos(chr, target)` (`0x00a458f0`): [`abmap_start_warp`]
+    /// and `+0x115c7` = 1. Returns the grid (left in `eax`).
+    pub fn abmap_set_chr_pos<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        chr: u32,
+        target: u32,
+        call: &mut C,
+    ) -> u32 {
+        abmap_start_warp(mem, chr, target, call);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c7), 1u8);
+        g
     }
 }

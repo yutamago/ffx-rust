@@ -866,6 +866,318 @@ pub mod bridge {
         }
         chr
     }
+
+    // ---- round 8: setters that pass on to the renderer and the neck
+
+    /// `Ch_NeckSetTargetCamera(chr)` (`0x00835080`): the neck follows the
+    /// camera (mode `+0x40d` = 1), then `Ch_NeckSetEnable(chr, 1)`.
+    pub fn ch_neck_set_target_camera<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        quat: impl FnOnce(&mut M, u32, u32),
+    ) {
+        mem.write(chr + 0x40d, 1u8);
+        ch_neck_set_enable(mem, chr, 1, quat);
+    }
+
+    /// `Ch_NeckSetTarget(chr, target)` (`0x00835050`): the neck follows
+    /// another character (mode 2, `+0x4c0` = `target`).
+    pub fn ch_neck_set_target<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        target: u32,
+        quat: impl FnOnce(&mut M, u32, u32),
+    ) {
+        mem.write(chr + 0x40d, 2u8);
+        mem.write(chr + 0x4c0, target);
+        ch_neck_set_enable(mem, chr, 1, quat);
+    }
+
+    /// `Ch_NeckSetTargetPos(chr, &pos)` (`0x008350a0`): the neck looks at a
+    /// point (mode 3, the four words at `pos` into `+0x4c0`).
+    pub fn ch_neck_set_target_pos<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        pos: u32,
+        quat: impl FnOnce(&mut M, u32, u32),
+    ) {
+        mem.write(chr + 0x40d, 3u8);
+        let v: [u32; 4] = mem.read(pos);
+        mem.write(chr + 0x4c0, v);
+        ch_neck_set_enable(mem, chr, 1, quat);
+    }
+
+    /// `Ch_NeckSetRot(chr, x, y)` (`0x00834ff0`): the neck turns by fixed
+    /// angles (mode 4, `+0x4c0` and `+0x4c4`).
+    pub fn ch_neck_set_rot<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        x: f32,
+        y: f32,
+        quat: impl FnOnce(&mut M, u32, u32),
+    ) {
+        mem.write(chr + 0x4c0, x87::load(x));
+        mem.write(chr + 0x40d, 4u8);
+        mem.write(chr + 0x4c4, x87::load(y));
+        ch_neck_set_enable(mem, chr, 1, quat);
+    }
+
+    /// `Chr_SetHideFlags` (`0x0082ba30`).
+    pub const SET_HIDE_FLAGS: u32 = 0x0082_ba30;
+    /// `MsGetBattleScene` (`0x00782970`).
+    pub const GET_BATTLE_SCENE: u32 = 0x0078_2970;
+    /// `graphicLevelGetNameHash` (`0x00641da0`).
+    pub const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+    /// `graphicCharacterInstanceSetVisible` (`0x0063c390`).
+    pub const SET_VISIBLE: u32 = 0x0063_c390;
+    /// `graphicCharacterLightingSetShadeCoeff` (`0x0063cdd0`).
+    pub const SET_SHADE_COEFF: u32 = 0x0063_cdd0;
+    /// `graphicCharacterLightingSetShadeColor` (`0x0063d050`).
+    pub const SET_SHADE_COLOR: u32 = 0x0063_d050;
+    /// `Chr_FadeSet` (`0x0082b990`).
+    pub const FADE_SET: u32 = 0x0082_b990;
+    /// The battle scene `Ch_SetHideEvent` treats apart (compared as built,
+    /// not relocated).
+    pub const HIDE_EVENT_SCENE: u32 = 0x0237_0000;
+    /// That scene's level name hash.
+    pub const HIDE_EVENT_LEVEL: u32 = 0x21e8;
+    /// The character id hidden from it.
+    pub const HIDE_EVENT_ID: u16 = 0x108a;
+
+    /// `Ch_SetHideEvent(chr, flags)` (`0x0082b2c0`): `Chr_SetHideFlags(chr,
+    /// flags, 1)`, except in one battle scene and level (`0x02370000`, hash
+    /// `0x21e8`) where character `0x108a` keeps no flags. `call(f, args)`
+    /// runs the original at `f`; returns what `Chr_SetHideFlags` does.
+    pub fn ch_set_hide_event<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        flags: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let scene = call(mem, mem.rebase(GET_BATTLE_SCENE), &[]);
+        let mut f = flags;
+        // the image has no relocation for this constant: it stays as built
+        if scene == HIDE_EVENT_SCENE
+            && call(mem, mem.rebase(LEVEL_NAME_HASH), &[]) == HIDE_EVENT_LEVEL
+            && mem.read::<u16>(chr) == HIDE_EVENT_ID
+        {
+            f = 0;
+        }
+        call(mem, mem.rebase(SET_HIDE_FLAGS), &[chr, f, 1])
+    }
+
+    /// `Ch_SetResHide(chr, hide)` (`0x0082b4e0`): byte `+0x180` = `hide`,
+    /// and the renderer's instance (`+0x830`) visible when it is 0.
+    pub fn ch_set_res_hide<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        hide: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        mem.write(chr + 0x180, hide as u8);
+        let inst: u32 = mem.read(chr + 0x830);
+        call(mem, mem.rebase(SET_VISIBLE), &[inst, u32::from(hide == 0)])
+    }
+
+    /// `Ch_SetClipZ(chr, z)` (`0x0082b150`): `+0x174` = `z * 100`; returns
+    /// the old value / 100. Asks the level name hash first, unused.
+    pub fn ch_set_clip_z<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        z: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> f32 {
+        call(mem, mem.rebase(LEVEL_NAME_HASH), &[]);
+        let old = x87::load(f(mem, chr + 0x174));
+        #[allow(clippy::cast_possible_truncation)] // f32 stores
+        {
+            mem.write(chr + 0x174, (f64::from(x87::load(z)) * 100.0) as f32);
+            (f64::from(old) / 100.0) as f32
+        }
+    }
+
+    /// `Ch_CalcLight(chr, &coeff)` (`0x0083c6f0`): the renderer's shade
+    /// coefficient of the instance (`+0x830`).
+    pub fn ch_calc_light<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        coeff: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let c = x87::load(f(mem, coeff));
+        let inst: u32 = mem.read(chr + 0x830);
+        call(mem, mem.rebase(SET_SHADE_COEFF), &[inst, c.to_bits()])
+    }
+
+    /// `Ch_SetShadeCol(chr, r, g, b, frames)` (`0x0082b5d0`): a colour
+    /// whose largest component is above 1.3 is scaled down so it is 1.3
+    /// (by `f32(1.3 / max)`); each component fades there over `frames`
+    /// (`Chr_FadeSet` on `+0x330`, `+0x33c`, `+0x348`), and the renderer's
+    /// shade colour is the components times the character's own (`+0xbc`,
+    /// `+0xc0`, `+0xc4`). NaNs: the first comparison keeps `g`, the
+    /// second takes `b`, a NaN maximum scales nothing.
+    pub fn ch_set_shade_col<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        [r, g, b]: [f32; 3],
+        frames: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (r, g, b) = (x87::load(r), x87::load(g), x87::load(b));
+        // fcom: "below" only when ordered and less
+        let mx = if g < r { r } else { g };
+        let mx = if b < mx { mx } else { b };
+        let limit = f32::from_bits(0x3fa6_6666); // 1.3f
+        #[allow(clippy::cast_possible_truncation)] // f32 stores
+        let (r, g, b) = if limit < mx {
+            let s = (f64::from(limit) / f64::from(mx)) as f32;
+            let m = |v: f32| (f64::from(v) * f64::from(s)) as f32;
+            (m(r), m(g), m(b))
+        } else {
+            (r, g, b)
+        };
+        for (off, v) in [(0x330, r), (0x33c, g), (0x348, b)] {
+            call(mem, mem.rebase(FADE_SET), &[chr + off, v.to_bits(), frames]);
+        }
+        #[allow(clippy::cast_possible_truncation)] // f32 stores
+        let scaled = [(0xbc, r), (0xc0, g), (0xc4, b)]
+            .map(|(off, v)| (f64::from(x87::load(f(mem, chr + off))) * f64::from(v)) as f32);
+        let inst: u32 = mem.read(chr + 0x830);
+        let [sr, sg, sb] = scaled.map(f32::to_bits);
+        call(mem, mem.rebase(SET_SHADE_COLOR), &[inst, sr, sg, sb])
+    }
+
+    /// The import slots `Ch_ModelSetHide` calls through: `__iob_func`,
+    /// `fprintf`.
+    pub const IOB_FUNC_SLOT: u32 = 0x00b0_c350;
+    pub const FPRINTF_SLOT: u32 = 0x00b0_c38c;
+    /// `graphicCharacterInstanceSetMeshSegmentHide(inst, i, hide)`
+    /// (`0x0063bdf0`).
+    pub const SET_MESH_SEGMENT_HIDE: u32 = 0x0063_bdf0;
+    /// Pending hides of model `f117`'s segment 0: count, then up to 4
+    /// (hide, instance) pairs.
+    pub const F117_HIDE_COUNT: Global<i32> = Global::new(0x012f_fad4);
+    pub const F117_HIDES: Global<[u32; 2]> = Global::new(0x023c_44c0);
+
+    /// `Ch_ModelSetHide(chr, i, hide)` (`0x0082aea0`): bit 0 of `hide`
+    /// into model `i`'s hide byte (`+0x18` of the 0x38-byte models at
+    /// `+0x1bc`), told to the renderer
+    /// (`graphicCharacterInstanceSetMeshSegmentHide(+0x830, i, hide)`).
+    /// Characters whose name holds `"f117"` instead queue a non-zero hide
+    /// of model 0 for their instance, unless already queued (4 at most;
+    /// a full queue starts over). Returns the old hide byte
+    /// (sign-extended); for `i` not below the header's model count
+    /// (`u16` `+6` of `+0x1c0`, compared signed) it prints `"VIRTUOS
+    /// ERROR: ..."` to `stderr` (`fprintf` through the import slot) and
+    /// returns 0.
+    pub fn ch_model_set_hide<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        i: u32,
+        hide: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        let name: u32 = mem.read(chr + 4);
+        if i.cast_signed() >= i32::from(mem.read::<u16>(hdr + 6)) {
+            let f = mem.read(mem.rebase(IOB_FUNC_SLOT));
+            let iob = call(mem, f, &[]);
+            let f = mem.read(mem.rebase(FPRINTF_SLOT));
+            call(
+                mem,
+                f,
+                &[iob.wrapping_add(0x40), mem.rebase(0x00b5_9778), name, i],
+            );
+            return 0;
+        }
+        let models: u32 = mem.read(chr + 0x1bc);
+        let m = models.wrapping_add(i.wrapping_mul(0x38));
+        let old = i32::from(mem.read::<i8>(m + 0x18)).cast_unsigned();
+        #[allow(clippy::cast_possible_truncation)] // bit 0
+        mem.write(m + 0x18, (hide & 1) as u8);
+        let inst: u32 = mem.read(chr + 0x830);
+        if !crate::handle::bridge::c_string(mem, name)
+            .windows(4)
+            .any(|w| w == b"f117")
+        {
+            call(mem, mem.rebase(SET_MESH_SEGMENT_HIDE), &[inst, i, hide]);
+            return old;
+        }
+        if hide == 0 || i != 0 {
+            return old;
+        }
+        let pairs = F117_HIDES.ptr(mem).addr;
+        let count = F117_HIDE_COUNT.get(mem);
+        if (0..count).any(|k| mem.read::<u32>(pairs + 8 * k.cast_unsigned() + 4) == inst) {
+            return old;
+        }
+        let k = if count >= 4 { 0 } else { count };
+        let at = pairs.wrapping_add(8u32.wrapping_mul(k.cast_unsigned()));
+        mem.write(at, hide);
+        mem.write(at + 4, inst);
+        F117_HIDE_COUNT.set(mem, k.wrapping_add(1));
+        old
+    }
+
+    /// `Sg_MemGetSize(p)` (`0x0083c050`) and `user_free_thunk(p)`
+    /// (`0x00687010`).
+    pub const MEM_GET_SIZE: u32 = 0x0083_c050;
+    pub const USER_FREE: u32 = 0x0068_7010;
+    /// `Ch_MemMoveSetTrigger()` (`0x00827250`).
+    pub const MEM_MOVE_SET_TRIGGER: u32 = 0x0082_7250;
+
+    /// `Ch_ModelPurgePacket(chr, all)` (`0x00827700`): once (flag bit 5 of
+    /// `+0x198`), hides the renderer's instance and frees each model's
+    /// packets (`+8`, `+4`, and with `all` > 0 `+0xc` too, of the 0x38-byte
+    /// models at `+0x1bc`, count `u16` `+6` of `+0x1c0`), adding up their
+    /// sizes (`Sg_MemGetSize` before `user_free_thunk`); then
+    /// `Ch_MemMoveSetTrigger()`. Returns the bytes freed (0 the second
+    /// time).
+    pub fn ch_model_purge_packet<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        all: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flags: u32 = mem.read(chr + 0x198);
+        if flags & 0x20 != 0 {
+            return 0;
+        }
+        mem.write(chr + 0x198, flags | 0x20);
+        let inst: u32 = mem.read(chr + 0x830);
+        call(mem, mem.rebase(SET_VISIBLE), &[inst, 0]);
+        let (size, free) = (mem.rebase(MEM_GET_SIZE), mem.rebase(USER_FREE));
+        let mut total = 0u32;
+        let mut i = 0u32;
+        let count = |mem: &M| {
+            let h: u32 = mem.read(chr + 0x1c0);
+            u32::from(mem.read::<u16>(h + 6))
+        };
+        while i < count(mem) {
+            let models: u32 = mem.read(chr + 0x1bc);
+            let m = models.wrapping_add(0x38 * i);
+            for off in [8, 4] {
+                let p: u32 = mem.read(m + off);
+                total = total.wrapping_add(call(mem, size, &[p]));
+            }
+            for off in [8, 4] {
+                let p: u32 = mem.read(m + off);
+                call(mem, free, &[p]);
+                mem.write(m + off, 0u32);
+            }
+            if all > 0 {
+                let p: u32 = mem.read(m + 0xc);
+                total = total.wrapping_add(call(mem, size, &[p]));
+                let p: u32 = mem.read(m + 0xc);
+                call(mem, free, &[p]);
+                mem.write(m + 0xc, 0u32);
+            }
+            i += 1;
+        }
+        call(mem, mem.rebase(MEM_MOVE_SET_TRIGGER), &[]);
+        total
+    }
 }
 
 #[cfg(test)]

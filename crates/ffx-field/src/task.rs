@@ -286,6 +286,10 @@ pub mod bridge {
     pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
     /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
     pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// `Sg_Blur(v)` (`0x0082bee0`).
+    pub const SG_BLUR: u32 = 0x0082_bee0;
+    /// `MsScreenOffset(x, y)` (`0x007bc0c0`, floats).
+    pub const MS_SCREEN_OFFSET: u32 = 0x007b_c0c0;
     /// The pre-computed sine table (`g_pppSinTable`, 4096 `f32`s).
     pub const SIN_TABLE: u32 = 0x00c4_4bf0;
     /// 32768.0 (`f64`, `.rdata`).
@@ -1002,6 +1006,97 @@ pub mod bridge {
         colour_floats(mem, &args[..8], work);
         let w = mem.rebase(COLOR_WORK);
         rcef_work_set(mem, w, work, work.wrapping_add(0x10), args[8]);
+    }
+
+    // ---- round 26 ----
+
+    /// `rcefScreenShake(e)` (`0x00924df0`, from `rcefMainProcRunAfter`;
+    /// name ours): while on (`+0x214`) with a mode (`+0x1f8`), the swing of
+    /// the phase `+0x210` (`model::bridge::shake_swing`), faded over the
+    /// frames `+0x200` (done `+0x204`) for modes from 3, times `rand() %
+    /// +0x20c + +0x208` as the x (odd modes) or y screen offset, the other
+    /// 0.0; the phase advances by `+0x1fc`. Within the frames
+    /// `MsScreenOffset(x, y)`, after them `MsScreenOffset(0, 0)` and off.
+    pub fn rcef_screen_shake<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) {
+        use crate::model::bridge::{shake_fade, shake_random, shake_swing};
+        use ffx_bridge::x87::{add, load, mul, store};
+        if mem.read::<u32>(e.wrapping_add(0x214)) == 0 {
+            return;
+        }
+        let mode = mem.read::<i32>(e.wrapping_add(0x1f8));
+        if mode == 0 {
+            return;
+        }
+        let mut swing = shake_swing(mem, mem.read(e.wrapping_add(0x210)));
+        let frames = mem.read::<i32>(e.wrapping_add(0x200));
+        if mode >= 3 && frames > 0 {
+            let done = mem.read::<i32>(e.wrapping_add(0x204));
+            swing = shake_fade(frames, done, swing);
+        }
+        let range = mem.read::<i32>(e.wrapping_add(0x20c));
+        let base = mem.read::<i32>(e.wrapping_add(0x208));
+        let amp = shake_random(mem, range, base, call);
+        #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
+        let amp = load(store(f64::from(amp as f32)));
+        let w = store(mul(amp, swing));
+        let (x, y) = if mode & 1 != 0 { (w, 0) } else { (0, w) };
+        let done = mem.read::<i32>(e.wrapping_add(0x204)).wrapping_add(1);
+        mem.write(e.wrapping_add(0x204), done);
+        let p = store(add(
+            load(mem.read(e.wrapping_add(0x1fc))),
+            load(mem.read(e.wrapping_add(0x210))),
+        ));
+        mem.write(e.wrapping_add(0x210), p);
+        let f = mem.rebase(MS_SCREEN_OFFSET);
+        if done <= mem.read::<i32>(e.wrapping_add(0x200)) {
+            call(mem, f, &[x, y]);
+        } else {
+            call(mem, f, &[0, 0]);
+            mem.write(e.wrapping_add(0x214), 0u32);
+        }
+    }
+
+    // ---- round 28 ----
+
+    /// `rcefBlurUpdate(e)` (`0x00924bf0`, from `rcefMainProcRunAfter`;
+    /// name ours): while on (`+0x228`) with a mode (`+0x218`), the blur
+    /// `+0x21c` (mode 2: faded, `(frames - done) * blur / frames` with the
+    /// frames `+0x220` and done `+0x224`) to `Sg_Blur`; the count advances
+    /// and after the frames `Sg_Blur(0)` turns it off.
+    pub fn rcef_blur_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u32>(e.wrapping_add(0x228)) == 0 {
+            return;
+        }
+        let mode = mem.read::<u32>(e.wrapping_add(0x218));
+        if mode == 0 {
+            return;
+        }
+        let mut v = mem.read::<i32>(e.wrapping_add(0x21c));
+        let frames = mem.read::<i32>(e.wrapping_add(0x220));
+        if mode == 2 && frames > 0 {
+            let done = mem.read::<i32>(e.wrapping_add(0x224));
+            v = frames
+                .wrapping_sub(done)
+                .wrapping_mul(v)
+                .wrapping_div(frames);
+        }
+        let done = mem.read::<i32>(e.wrapping_add(0x224)).wrapping_add(1);
+        mem.write(e.wrapping_add(0x224), done);
+        let f = mem.rebase(SG_BLUR);
+        if done <= mem.read::<i32>(e.wrapping_add(0x220)) {
+            call(mem, f, &[v.cast_unsigned()]);
+        } else {
+            call(mem, f, &[0]);
+            mem.write(e.wrapping_add(0x228), 0u32);
+        }
     }
 
     // ---- round 4: running tasks, objects, particle parts ----

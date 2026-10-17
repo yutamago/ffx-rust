@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree};
+use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -58,6 +58,26 @@ fn crt_rand() -> u32 {
 /// arguments; returns `eax`.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
+}
+
+/// An original cdecl function of up to 12 word arguments that returns a
+/// float in `ST0` (`MsGetChrWidth`, `Ch_GetThickness`): the value at the
+/// x87's precision (the declared `f64` return pops `ST0`).
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+fn call_ptr_f64(f: u32, a: &[u32]) -> f64 {
+    type F12 =
+        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> f64;
+    let mut w = [0u32; 12];
+    let n = a.len().min(12);
+    w[..n].copy_from_slice(&a[..n]);
+    // SAFETY: a cdecl function of at most 12 word arguments returning in
+    // ST0; the extra zero words sit on the caller's side of the stack.
+    unsafe {
+        let g: F12 = std::mem::transmute::<usize, F12>(f as usize);
+        g(
+            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11],
+        )
+    }
 }
 
 /// A rand program with the CRT's `srand`.
@@ -1118,6 +1138,132 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
         slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_no_get(list, unit, no)`.
+    opus_no_get @ 0x0080_1060 => extern "C" fn opus_no_get(list: u32, unit: u32, no: u32) -> u32 {
+        opus::bridge::opus_no_get(&mem(), list, unit, no)
+    }
+    /// `op_mul_m(dst, b, c)`.
+    op_mul_m @ 0x007e_83b0 => extern "C" fn op_mul_m(dst: u32, b: u32, c: u32) {
+        op::bridge::op_mul_m(&mut mem(), dst, b, c);
+    }
+    /// `Vec3AddScalars_00735100(dst, src, x, y, z, w)`.
+    Vec3AddScalars_00735100 @ 0x0073_5100 => extern "C" fn vec3_add_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32) -> u32 {
+        let k = [x, y, z].map(f32::from_bits);
+        vec::bridge::vec3_add_scalars(&mut mem(), dst, src, k)
+    }
+    /// `Vec3SubScalars_0074b670(dst, src, x, y, z)`.
+    Vec3SubScalars_0074b670 @ 0x0074_b670 => extern "C" fn vec3_sub_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32) {
+        let k = [x, y, z].map(f32::from_bits);
+        vec::bridge::vec3_sub_scalars(&mut mem(), dst, src, k);
+    }
+    /// `Vec2SubScalarsFlags_0075e870(dst, src, x, y)`.
+    Vec2SubScalarsFlags_0075e870 @ 0x0075_e870 => extern "C" fn vec2_sub_scalars_flags(dst: u32, src: u32, x: u32, y: u32) {
+        vec::bridge::vec2_sub_scalars_flags(&mut mem(), dst, src, f32::from_bits(x), f32::from_bits(y));
+    }
+    /// `opus_get_chr_status_index(chr, no, add)`.
+    opus_get_chr_status_index @ 0x007f_e970 => extern "C" fn opus_get_chr_status_index(chr: u32, no: u32, add: u32) -> i32 {
+        et::bridge::opus_get_chr_status_index(&mut mem(), chr, no, add, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_xyz_scale(dst, src, s)`.
+    op_xyz_scale @ 0x007e_a850 => extern "C" fn op_xyz_scale(dst: u32, src: u32, s: u32) -> u32 {
+        op::bridge::op_xyz_scale(&mut mem(), dst, src, s)
+    }
+    /// `op_heap_display_clear()`.
+    op_heap_display_clear @ 0x007f_f260 => extern "C" fn op_heap_display_clear() {
+        op::bridge::op_heap_display_clear(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_sep_free_all(mask)`.
+    op_oef2_sep_free_all @ 0x007f_ff30 => extern "C" fn op_oef2_sep_free_all(mask: u32) -> u32 {
+        op::bridge::op_oef2_sep_free_all(&mut mem(), mask, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpSetStickChr(id, chr, bone)`.
+    pppFpSetStickChr @ 0x0072_a530 => extern "C" fn ppp_fp_set_stick_chr(id: u32, chr: u32, bone: u32) -> u32 {
+        fp::bridge::ppp_fp_set_stick_chr(&mut mem(), id, chr, bone, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpSetStickPos(id, pos)`.
+    pppFpSetStickPos @ 0x0072_a630 => extern "C" fn ppp_fp_set_stick_pos(id: u32, pos: u32) {
+        fp::bridge::ppp_fp_set_stick_pos(&mut mem(), id, pos, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_parent_get(obj, unit)`.
+    opus_parent_get @ 0x0080_1f00 => extern "C" fn opus_parent_get(obj: u32, unit: u32) -> u32 {
+        opus::bridge::opus_parent_get(&mem(), obj, unit)
+    }
+    /// `op_free(heap, p)`.
+    op_free @ 0x007f_f1d0 => extern "C" fn op_free(heap: u32, p: u32) {
+        op::bridge::op_free(&mut mem(), heap, p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_rot_m(dst, src, angles)`.
+    op_rot_m @ 0x007e_9530 => extern "C" fn op_rot_m(dst: u32, src: u32, angles: u32) {
+        op::bridge::op_rot_m(&mut mem(), dst, src, angles);
+    }
+    /// `op_rt_m(dst, src, angles, t)`.
+    op_rt_m @ 0x007e_9850 => extern "C" fn op_rt_m(dst: u32, src: u32, angles: u32, t: u32) {
+        op::bridge::op_rt_m_zyx(&mut mem(), dst, src, angles, t);
+    }
+    /// `opus_prog_off(list, no)`.
+    opus_prog_off @ 0x0080_14c0 => extern "C" fn opus_prog_off(list: u32, no: u32) {
+        op::bridge::opus_prog_off(&mut mem(), list, no, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_irandom_core_007e35c0(n, b, c, d)`.
+    op_irandom_core_007e35c0 @ 0x007e_35c0 => extern "C" fn op_irandom_core(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
+    }
+    /// `op_random_per(n, b, c, d)`.
+    op_random_per @ 0x007e_33e0 => extern "C" fn op_random_per(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_random_per(&mut mem(), [n, b, c, d])
+    }
+    /// `opu_unit_free_by_oef2(list, oef)`.
+    opu_unit_free_by_oef2 @ 0x007f_df70 => extern "C" fn opu_unit_free_by_oef2(list: u32, oef: u32) {
+        et::bridge::opu_unit_free_by_oef2(&mut mem(), list, oef, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_a_set(oef, kind, i, v)`.
+    op_oef2_a_set @ 0x007e_38a0 => extern "C" fn op_oef2_a_set(oef: u32, kind: u32, i: u32, v: u32) -> u32 {
+        op::bridge::op_oef2_a_set(&mut mem(), oef, kind, i, v, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Vec4Max_00808b70(dst, src, x, y, z, w)`.
+    Vec4Max_00808b70 @ 0x0080_8b70 => extern "C" fn vec4_max(dst: u32, src: u32, x: u32, y: u32, z: u32, w: u32) {
+        vec::bridge::vec4_max(&mut mem(), dst, src, [x, y, z, w]);
+    }
+    /// `op_random_per_call_007e5d40(n, b, c, d)`: a jump to `op_random_per`.
+    op_random_per_call_007e5d40 @ 0x007e_5d40 => extern "C" fn op_random_per_call(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_random_per(&mut mem(), [n, b, c, d])
+    }
+    /// `op_irandom_p(n, b, c, d)`: a jump to `op_irandom_core_007e35c0`.
+    op_irandom_p @ 0x007e_5d50 => extern "C" fn op_irandom_p(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
+    }
+    /// `opu_end(obj, cmd)`.
+    opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_chr_width_00800cd0(chr, battle)`: a float in `ST0`.
+    opus_chr_width_00800cd0 @ 0x0080_0cd0 => extern "C" fn opus_chr_width(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_chr_width(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_clip_off_all_in_battle()`.
+    opus_clip_off_all_in_battle @ 0x0080_0bb0 => extern "C" fn opus_clip_off_all_in_battle() -> u32 {
+        opus::bridge::opus_clip_off_all_in_battle(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_ivec4_to_fvec4_007e3100(dst, src)`.
+    op_ivec4_to_fvec4_007e3100 @ 0x007e_3100 => extern "C" fn op_ivec4_to_fvec4(dst: u32, src: u32) {
+        vec::bridge::ivec4_to_fvec4(&mut mem(), dst, src);
+    }
+    /// `op_num_xy_set(x, y)`.
+    op_num_xy_set @ 0x007e_65e0 => extern "C" fn op_num_xy_set(x: u32, y: u32) {
+        op::bridge::op_num_xy_set(&mut mem(), x, y, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_heap_init(heap, size)`.
+    op_heap_init @ 0x007f_f2d0 => extern "C" fn op_heap_init(heap: u32, size: u32) -> u32 {
+        op::bridge::op_heap_init(&mut mem(), heap, size)
+    }
+    /// `op_malloc(heap, n)`.
+    op_malloc @ 0x007f_f780 => extern "C" fn op_malloc(heap: u32, n: u32) -> u32 {
+        op::bridge::op_malloc(&mut mem(), heap, n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Vec4AddScalars_0074bc50(dst, src, x, y, z, w)`.
+    Vec4AddScalars_0074bc50 @ 0x0074_bc50 => extern "C" fn vec4_add_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32, w: u32) {
+        vec::bridge::vec4_add_scalars(&mut mem(), dst, src, [x, y, z, w].map(f32::from_bits));
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

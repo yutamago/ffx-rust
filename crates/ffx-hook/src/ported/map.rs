@@ -3534,6 +3534,51 @@ ported! {
         task::bridge::rcef_color_fade(&mut mem(), [r0, g0, b0, a0, r1, g1, b1, a1, v], w);
     }
 
+    /// `rcefScreenShake(e)`.
+    rcefScreenShake @ 0x0092_4df0 => extern "C" fn shim_rcef_screen_shake(e: u32) {
+        task::bridge::rcef_screen_shake(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcbgSceneWaveC0Update(scene)`.
+    rcbgSceneWaveC0Update @ 0x0092_10e0 => extern "C" fn shim_rcbg_scene_wave_c0_update(s: u32) {
+        model::bridge::rcbg_scene_wave_c0_update(&mut mem(), s, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapStartPart(part, n, x, y, z, a, b, c, d, e, f)`.
+    AbmapStartPart @ 0x00a5_bad0 => extern "C" fn shim_abmap_start_part(part: u32, n: u32, x: u32, y: u32, z: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        abmap::bridge::abmap_start_part(&mut mem(), [part, n, x, y, z, a, b, c, d, e, f], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `loadPhyreFieldMap()`.
+    loadPhyreFieldMap @ 0x0090_8000 => extern "C" fn shim_load_phyre_field_map() {
+        yi::bridge::load_phyre_field_map(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapStartWarp(chr, target)`.
+    AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
+        abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcAngle2D(x0, y0, x1, y1)` (a float in `ST0`).
+    rcAngle2D @ 0x007e_6d80 => extern "C" fn shim_rc_angle_2d(x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
+        geom::bridge::rc_angle_2d(&mut mem(), [x0, y0, x1, y1], |_, f, a| call_float(f, a))
+    }
+
+    /// `abmap_set_chr_pos(chr, target)`.
+    abmap_set_chr_pos @ 0x00a4_58f0 => extern "C" fn shim_abmap_set_chr_pos(chr: u32, target: u32) -> u32 {
+        abmap::bridge::abmap_set_chr_pos(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefBlurUpdate(e)`.
+    rcefBlurUpdate @ 0x0092_4bf0 => extern "C" fn shim_rcef_blur_update(e: u32) {
+        task::bridge::rcef_blur_update(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcfxNailUpdate(fx, ctx)`.
+    rcfxNailUpdate @ 0x0092_9190 => extern "C" fn shim_rcfx_nail_update(fx: u32, ctx: u32) -> u32 {
+        model::bridge::rcfx_nail_update(&mut mem(), fx, ctx)
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
