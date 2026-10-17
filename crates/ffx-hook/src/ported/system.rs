@@ -189,6 +189,21 @@ impl<M> tolib::bridge::ChrStatus<M> for GameMenu {
     }
 }
 
+impl<M> tolib::bridge::SummonList<M> for GameMenu {
+    fn status_num(&mut self, mem: &mut M, id: u32, strings: u32) -> u32 {
+        call_sym(mem, 0x0079_0200, &[id, strings])
+    }
+    fn command_max(&mut self, mem: &mut M, list: u32, kind: u32, a: u32, b: u32) -> i32 {
+        call_sym(mem, 0x008d_2d80, &[list, kind, a, b]).cast_signed()
+    }
+    fn command_offset(&mut self, mem: &mut M, list: u32, kind: u32, a: u32, b: u32) -> i32 {
+        call_sym(mem, 0x008d_2dc0, &[list, kind, a, b]).cast_signed()
+    }
+    fn joined(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0078_5380, &[chr])
+    }
+}
+
 impl<M> tolib::bridge::MenuMusic<M> for GameMenu {
     fn keep_white_in_out(&mut self, mem: &mut M) -> u32 {
         call_sym(mem, 0x0086_bc30, &[])
@@ -211,6 +226,36 @@ impl<M> tolib::bridge::MenuMusic<M> for GameMenu {
     fn fade_out(&mut self, mem: &mut M, n: u32, frames: u32) -> u32 {
         call_sym(mem, 0x0088_6af0, &[n, frames])
     }
+}
+
+/// `graphicFontGetScreenWH(&w, &h)` (the original, or its hook).
+fn font_screen_wh<M>(m: &mut M) -> (i32, i32) {
+    let mut wh = [0i32; 2];
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let at = wh.as_mut_ptr() as u32;
+    call_sym(m, 0x0064_0db0, &[at, at + 4]);
+    std::hint::black_box(&mut wh);
+    (wh[0], wh[1])
+}
+
+/// `SndIsSepPlay(id)` or, with `stop`, `SndSepStop(id)` (their hooks).
+fn limit_sound<M>(m: &mut M, stop: bool, id: u32) -> u32 {
+    call_sym(m, if stop { 0x0088_6eb0 } else { 0x0088_6680 }, &[id])
+}
+
+/// `TOGetFontWidthInPiexl(a, b)` (ported), for the TO library's callers.
+fn font_width<M: Mem>(m: &mut M, a: f32, b: f32) -> f32 {
+    tolib::bridge::font_width_in_pixel(m, a, b, font_screen_wh)
+}
+
+/// `TOGetFontSpaceInPiexl(kind)` (ported).
+fn font_space<M: Mem>(m: &mut M, kind: u32) -> f32 {
+    tolib::bridge::font_space_in_pixel(
+        m,
+        kind,
+        |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+        font_screen_wh,
+    )
 }
 
 /// The heap's Win32 calls, through the game's own import slots (so they are
@@ -3974,7 +4019,7 @@ ported! {
             |m, i, n, x, y| {
                 scene::bridge::get_point(m, i.cast_signed(), n, [x, y], menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
             },
-            |m, stop, id| call_sym(m, if stop { 0x0088_6eb0 } else { 0x0088_6680 }, &[id]),
+            limit_sound,
         )
     }
     /// `TOLoadMenuOpen(menu)`.
@@ -4060,14 +4105,112 @@ ported! {
     }
     /// `TOGetFontWidthInPiexl(a, b)`.
     TOGetFontWidthInPiexl @ 0x008f_a6b0 => extern "C" fn to_get_font_width_in_piexl(a: f32, b: f32) -> f32 {
-        tolib::bridge::font_width_in_pixel(&mut mem(), a, b, |m| {
-            let mut wh = [0i32; 2];
-            #[allow(clippy::cast_possible_truncation)] // 32-bit process
-            let at = wh.as_mut_ptr() as u32;
-            call_sym(m, 0x0064_0db0, &[at, at + 4]);
-            std::hint::black_box(&mut wh);
-            (wh[0], wh[1])
+        tolib::bridge::font_width_in_pixel(&mut mem(), a, b, font_screen_wh)
+    }
+    /// `TOWideWindowX(i, x)`.
+    TOWideWindowX_008b8430 @ 0x008b_8430 => extern "C" fn to_wide_window_x(i: i32, x: f32) -> f32 {
+        tolib::bridge::wide_window_x(&mut mem(), i, x, font_screen_wh)
+    }
+    /// `TOGetFontSpaceInPiexl(kind)`.
+    TOGetFontSpaceInPiexl @ 0x008f_a570 => extern "C" fn to_get_font_space_in_piexl(kind: u32) -> f32 {
+        tolib::bridge::font_space_in_pixel(
+            &mut mem(),
+            kind,
+            |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+            font_screen_wh,
+        )
+    }
+    /// `TOInitMessageSlot(i)`.
+    TOInitMessageSlot_008ada30 @ 0x008a_da30 => extern "C" fn to_init_message_slot(i: i32) -> u32 {
+        tolib::bridge::init_message_slot(&mut mem(), i)
+    }
+    /// `TOSeqInitScene(i)`.
+    TOSeqInitScene @ 0x008a_eec0 => extern "C" fn to_seq_init_scene(i: i32) -> u32 {
+        scene::bridge::init_scene(&mut mem(), i)
+    }
+    /// `TOGetImageWH(id, &w, &h)`.
+    TOGetImageWH @ 0x008a_c400 => extern "C" fn to_get_image_wh(id: u32, w: u32, h: u32) -> u32 {
+        tolib::bridge::get_image_wh(
+            &mut mem(),
+            id,
+            [w, h],
+            |m| ffx_menu::tk::bridge::tk_get_lang(m).cast_unsigned(),
+            |m| call_sym(m, 0x0078_16f0, &[]),
+        )
+    }
+    /// `TOBtlLimitTimerStop()` (two copies).
+    TOBtlLimitTimerStop_0089ab20 @ 0x0089_ab20 => extern "C" fn to_btl_limit_timer_stop_0089ab20() -> u32 {
+        tolib::bridge::limit_timer_stop(&mut mem(), limit_sound)
+    }
+    /// `TOBtlLimitTimerStop()`, second copy.
+    TOBtlLimitTimerStop_0089aba0 @ 0x0089_aba0 => extern "C" fn to_btl_limit_timer_stop_0089aba0() -> u32 {
+        tolib::bridge::limit_timer_stop(&mut mem(), limit_sound)
+    }
+    /// `TOBtlLimitTimerStart()`.
+    TOBtlLimitTimerStart_0089ab50 @ 0x0089_ab50 => extern "C" fn to_btl_limit_timer_start() {
+        tolib::bridge::limit_timer_start(&mut mem(), |m, play, id| call_sym(m, if play { 0x0088_6e80 } else { 0x0088_6680 }, &[id]));
+    }
+    /// `TOCopyWindowLayout(table, i)`.
+    TOCopyWindowLayout_00905e90 @ 0x0090_5e90 => extern "C" fn to_copy_window_layout(table: u32, i: u32) -> u32 {
+        tolib::bridge::copy_window_layout(&mut mem(), table, i)
+    }
+    /// `TOMenuInit()`.
+    TOMenuInit @ 0x008b_e800 => extern "C" fn to_menu_init() -> u32 {
+        tolib::bridge::menu_init(&mut mem())
+    }
+    /// `TOMenuInitBrush()`.
+    TOMenuInitBrush @ 0x0090_0f40 => extern "C" fn to_menu_init_brush() -> u32 {
+        tolib::bridge::menu_init_brush(&mut mem())
+    }
+    /// `TOAmapMakeItemList(k)`.
+    TOAmapMakeItemList @ 0x008c_6730 => extern "C" fn to_amap_make_item_list(k: u32) -> u32 {
+        tolib::bridge::amap_make_item_list(&mut mem(), k, |m, mode| call_sym(m, 0x008c_8e60, &[mode]))
+    }
+    /// `TOGetShapTextureName(id)`.
+    TOGetShapTextureName @ 0x008a_c8c0 => extern "C" fn to_get_shap_texture_name(id: u32) -> u32 {
+        tolib::bridge::shap_texture_name(&mut mem(), id, |m| instance::bridge::ffx_lang(m, &mut phyre_printf))
+    }
+    /// `TOSeqInitParam()`.
+    TOSeqInitParam @ 0x008a_e6f0 => extern "C" fn to_seq_init_param() {
+        let mut local = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(local) as u32;
+        scene::bridge::init_param(&mut mem(), at, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+        std::hint::black_box(&mut local);
+    }
+    /// `TOCopyWindowLayout` from the table at `0x00c5b460`.
+    TOCopyWindowLayout_008fa7d0 @ 0x008f_a7d0 => extern "C" fn to_copy_window_layout_008fa7d0(i: u32) -> u32 {
+        tolib::bridge::copy_layout_from(&mut mem(), 0x00c5_b460, i)
+    }
+    /// `TOCopyWindowLayout` from the table at `0x00c5c2c8`.
+    TOCopyWindowLayout_008fa450 @ 0x008f_a450 => extern "C" fn to_copy_window_layout_008fa450(i: u32) -> u32 {
+        tolib::bridge::copy_layout_from(&mut mem(), 0x00c5_c2c8, i)
+    }
+    /// `TOCopyWindowLayout` from the table at `0x00c5d578`.
+    TOCopyWindowLayout_008fa790 @ 0x008f_a790 => extern "C" fn to_copy_window_layout_008fa790(i: u32) -> u32 {
+        tolib::bridge::copy_layout_from(&mut mem(), 0x00c5_d578, i)
+    }
+    /// `TOGetFontAdvance(kind, font, size)`.
+    TOGetFontAdvance_008fa740 @ 0x008f_a740 => extern "C" fn to_get_font_advance(kind: u32, font: u32, size: f32) -> f32 {
+        tolib::bridge::font_advance(&mut mem(), kind, font, size, font_width, font_space)
+    }
+    /// `TOAddFontWidthSpace(glyph, font, size)`.
+    TOAddFontWidthSpace @ 0x008e_8ed0 => extern "C" fn to_add_font_width_space(glyph: u32, font: u32, size: f32) {
+        tolib::bridge::add_font_width_space(&mut mem(), glyph, font, size, font_screen_wh, font_width, font_space);
+    }
+    /// `TOWideWindowRect(i, out, x, y, w, h)`.
+    TOWideWindowRect_008b8d10 @ 0x008b_8d10 => extern "C" fn to_wide_window_rect(i: i32, out: u32, x: i32, y: i32, w: i32, h: i32) -> i32 {
+        tolib::bridge::wide_window_rect(&mut mem(), i, out, [x, y, w, h], |m, i, x| {
+            tolib::bridge::wide_window_x(m, i, x, font_screen_wh)
         })
+    }
+    /// `TOInternName(name)`.
+    TOInternName_008ab440 @ 0x008a_b440 => extern "C" fn to_intern_name(name: u32) -> u32 {
+        tolib::bridge::intern_name(&mut mem(), name)
+    }
+    /// `TOSummonListInit()`.
+    TOSummonListInit_008a9090 @ 0x008a_9090 => extern "C" fn to_summon_list_init() {
+        tolib::bridge::summon_list_init(&mut mem(), &mut GameMenu);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

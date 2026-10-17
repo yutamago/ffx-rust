@@ -1004,10 +1004,6 @@ ported! {
     BlurEffectEx_SetPositiveParams @ 0x006c_4620 => extern "thiscall" fn blur_ex_set_positive_params(this: u32, a: f32, b: f32, c: f32, d: f32) {
         ut::set_positive_floats(&mut mem(), this, [a, b, c, d]);
     }
-    /// `RenderParams_Reset(this)`.
-    RenderParams_Reset @ 0x006c_47a0 => extern "thiscall" fn render_params_reset(this: u32) -> u32 {
-        ut::render_params_reset(&mut mem(), this)
-    }
     /// `FloatHeap_PushHeap(base, hole, top, &value, less)`.
     FloatHeap_PushHeap @ 0x006c_7730 => extern "C" fn float_push_heap(base: u32, hole: u32, top: u32, value: u32, less: u32) -> u32 {
         ut::float_push_heap(&mut mem(), base, hole, top, value, less)
@@ -1024,10 +1020,6 @@ ported! {
     TexAnim_StartOld @ 0x0078_0750 => extern "C" fn tex_anim_start_old(i: u32, which: u32, pos: u32) -> u32 {
         ut::tex_anim_start(&mut mem(), 0x400, i, which, pos)
     }
-    /// `CheatIcons_InitFlashTable(this)`.
-    CheatIcons_InitFlashTable @ 0x006f_7700 => extern "fastcall" fn cheat_icons_init_flash_table(this: u32) -> u32 {
-        ut::init_flash_table(&mut mem(), this)
-    }
     /// `ShadowEntry_Init(this, owner)`.
     ShadowEntry_Init @ 0x006d_3560 => extern "thiscall" fn shadow_entry_init(this: u32, owner: u32) -> u32 {
         ut::shadow_entry_init(&mut mem(), this, owner)
@@ -1043,30 +1035,6 @@ ported! {
     /// `ParamList_SetAllFloat(this, v)`.
     ParamList_SetAllFloat @ 0x006b_47e0 => extern "thiscall" fn param_list_set_all_float(this: u32, v: f32) {
         ut::set_all_params(&mut mem(), this, v);
-    }
-    /// `RenderConst_180()`.
-    RenderConst_180 @ 0x006c_26d0 => extern "C" fn render_const_180() -> u32 {
-        ut::RENDER_CONST_180
-    }
-    /// `RenderConst_51()`.
-    RenderConst_51 @ 0x006c_2700 => extern "C" fn render_const_51() -> u32 {
-        ut::RENDER_CONST_51
-    }
-    /// `RenderFlag_Get()`.
-    RenderFlag_Get @ 0x006b_c960 => extern "C" fn render_flag_get() -> u32 {
-        ut::render_flag(&mem())
-    }
-    /// `Buffer_GetSizeBytes(this)`.
-    Buffer_GetSizeBytes @ 0x006f_7bd0 => extern "fastcall" fn buffer_size_bytes(this: u32) -> u32 {
-        ut::buffer_size_bytes(&mem(), this)
-    }
-    /// `Buffer_GetSizeBytes2(this)`: the same code.
-    Buffer_GetSizeBytes2 @ 0x006f_7c00 => extern "fastcall" fn buffer_size_bytes2(this: u32) -> u32 {
-        ut::buffer_size_bytes(&mem(), this)
-    }
-    /// `PhyreFIOS_LoadPrxComplete()`.
-    PhyreFIOS_LoadPrxComplete @ 0x006f_9b70 => extern "C" fn prx_complete() -> u32 {
-        ut::prx_complete(&mem())
     }
     /// `PhyreFIOS_LoadPrxIdle()`.
     PhyreFIOS_LoadPrxIdle @ 0x006f_9b80 => extern "C" fn prx_idle() -> u32 {

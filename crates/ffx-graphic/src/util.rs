@@ -253,7 +253,7 @@ pub mod bridge {
         }
     }
 
-    /// `RenderParams_Reset(this)` (`0x006c47a0`): clears the byte `+0x58`
+    /// `SetFields_006c47a0(this)` (`0x006c47a0`): clears the byte `+0x58`
     /// and the words `+0..+0x20` and `+0x48..+0x54`. Returns 0.
     pub fn render_params_reset(m: &mut impl Mem, this: u32) -> u32 {
         m.write(this + 0x58, 0u8);
@@ -361,7 +361,7 @@ pub mod bridge {
         0
     }
 
-    /// `CheatIcons_InitFlashTable(this)` (`0x006f7700`, fastcall): the
+    /// `SetFields_006f7700(this)` (`0x006f7700`, fastcall): the
     /// cheat-overlay icons' Iggy movie paths (`freecamera.swf`,
     /// `time_stop.swf`, `speed_2/4.swf`, `invincible.swf`, `enemy_0/1.swf`,
     /// `autobattle.swf`, `autobattle_disable.swf`) and their byte table.
@@ -474,22 +474,22 @@ pub mod bridge {
         }
     }
 
-    /// `RenderConst_180()` (`0x006c26d0`) and `RenderConst_51()`
-    /// (`0x006c2700`): constants the distortion set-up asks for.
+    /// `ReturnConst180_006c26d0()` and `ReturnConst51_006c2700()`
+    /// : constants the distortion set-up asks for.
     pub const RENDER_CONST_180: u32 = 0x180;
     pub const RENDER_CONST_51: u32 = 0x51;
 
-    /// The byte `RenderFlag_Get` (`0x006bc960`) returns sign-extended.
+    /// The byte `ReturnGlobalSx8_006bc960` (`0x006bc960`) returns sign-extended.
     pub const RENDER_FLAG: Global<u8> = Global::new(0x00cc_cab8);
 
-    /// `RenderFlag_Get()`.
+    /// `ReturnGlobalSx8_006bc960()`.
     pub fn render_flag(m: &impl Mem) -> u32 {
         #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)] // movsx
         let v = i32::from(RENDER_FLAG.get(m) as i8) as u32;
         v
     }
 
-    /// `Buffer_GetSizeBytes(this)` (`0x006f7bd0`, and its copy `0x006f7c00`;
+    /// `LoadCompute_006f7bd0(this)` (and its copy `LoadCompute_006f7c00`;
     /// fastcall): `(+0x30 + +0x34) * 4`.
     pub fn buffer_size_bytes(m: &impl Mem, this: u32) -> u32 {
         let a: u32 = m.read(this + 0x34);
@@ -497,12 +497,12 @@ pub mod bridge {
         a.wrapping_add(b).wrapping_mul(4)
     }
 
-    /// The PRX loader's state (`PhyreFIOS_*`): 3 when a load completed.
+    /// The PRX loader's state : 3 when a load completed.
     pub const PRX_STATE: Global<u32> = Global::new(0x00ce_83c4);
     /// The PRX loader's pending count.
     pub const PRX_PENDING: Global<u32> = Global::new(0x00ce_83c0);
 
-    /// `PhyreFIOS_LoadPrxComplete()` (`0x006f9b70`).
+    /// `Compare_006f9b70()`: the PRX load completed.
     pub fn prx_complete(m: &impl Mem) -> u32 {
         u32::from(PRX_STATE.get(m) == 3)
     }

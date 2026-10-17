@@ -24,6 +24,10 @@
 //!   its start time plus the skipped sleeps only, never real time, so every
 //!   frame advances it by exactly one frame interval; with `lockstep on`
 //!   frames then advance only as far as `wait` and `press` say (replays);
+//! - gives the single-instance mutex (`CreateMutexW`, named
+//!   `9B8F7468-6DE0-4C5A-9209-89D363F8FCC9` in `Game_Main`, `0x0062ee50`)
+//!   a name of its own per harness port, so harness games run side by side
+//!   (`docs/harness.md`, "Parallel games");
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
 //!   takes the focus nor stops reading input without it; the real devices
@@ -85,6 +89,9 @@ static XINPUT_GET_STATE: AtomicUsize = AtomicUsize::new(0);
 static MESSAGE_BOX_A: AtomicUsize = AtomicUsize::new(0);
 static MESSAGE_BOX_W: AtomicUsize = AtomicUsize::new(0);
 static SH_GET_FOLDER_PATH: AtomicUsize = AtomicUsize::new(0);
+static CREATE_MUTEX_W: AtomicUsize = AtomicUsize::new(0);
+/// The single-instance mutex's name for this game (NUL-terminated).
+static MUTEX_NAME: OnceLock<Vec<u16>> = OnceLock::new();
 /// The sandbox Documents folder, NUL-terminated UTF-16.
 static HOME: OnceLock<Vec<u16>> = OnceLock::new();
 static PRESENT: AtomicUsize = AtomicUsize::new(0);
@@ -740,6 +747,39 @@ unsafe extern "system" fn sh_get_folder_path(
             *mut u16,
         ) -> i32 = std::mem::transmute(SH_GET_FOLDER_PATH.load(Ordering::Acquire));
         original(window, csidl, token, flags, out)
+    }
+}
+
+/// The name `Game_Main` (`0x0062ee50`) gives its single-instance mutex; a
+/// second game finding it ends with "Same program is already running.".
+const INSTANCE_MUTEX: &str = "9B8F7468-6DE0-4C5A-9209-89D363F8FCC9";
+
+/// Replaces `CreateMutexW`: the single-instance mutex gets this game's own
+/// name ([`MUTEX_NAME`]), other mutexes are created as asked.
+unsafe extern "system" fn create_mutex_w(
+    attributes: *mut c_void,
+    owner: i32,
+    name: *const u16,
+) -> *mut c_void {
+    let mut name = name;
+    if !name.is_null()
+        && let Some(own) = MUTEX_NAME.get()
+    {
+        let wanted = INSTANCE_MUTEX.encode_utf16().chain([0]);
+        // SAFETY: a NUL-terminated name from the caller; the comparison
+        // stops at the first difference or the NUL.
+        let same = wanted
+            .enumerate()
+            .all(|(i, c)| unsafe { *name.add(i) } == c);
+        if same {
+            name = own.as_ptr();
+        }
+    }
+    // SAFETY: the original from the import table, same arguments.
+    unsafe {
+        let original: unsafe extern "system" fn(*mut c_void, i32, *const u16) -> *mut c_void =
+            std::mem::transmute(CREATE_MUTEX_W.load(Ordering::Acquire));
+        original(attributes, owner, name)
     }
 }
 
@@ -1756,9 +1796,21 @@ pub unsafe fn install(module: usize) {
             log("  harness: FFX_HARNESS_HOME is too long; ignored");
         }
     }
+    let _ = MUTEX_NAME.set(
+        format!("{INSTANCE_MUTEX}-harness-{port}")
+            .encode_utf16()
+            .chain([0])
+            .collect(),
+    );
     // SAFETY: forwarded from the caller.
     unsafe {
         for (dll, function, replacement, slot) in [
+            (
+                "KERNEL32.dll",
+                "CreateMutexW",
+                create_mutex_w as *const () as usize,
+                &CREATE_MUTEX_W,
+            ),
             (
                 "d3d11.dll",
                 "D3D11CreateDeviceAndSwapChain",

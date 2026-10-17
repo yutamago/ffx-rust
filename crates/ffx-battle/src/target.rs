@@ -1374,4 +1374,103 @@ pub mod bridge {
         });
         -1
     }
+
+    /// `12.0`, `0.2` (`double`): [`ms_check_targets_near`]'s distances.
+    pub const NEAR_REACH: Global<u32> = Global::new(0x00b4_7de8);
+    pub const NEAR_STOP: Global<f64> = Global::new(0x00b9_2208);
+
+    /// `MsGetEscapeDir(i)` (`0x007a99b0`): the direction from actor `i`'s
+    /// position to its escape position (`MsVectorRect2Polar` yaw, as
+    /// `MsNearRag(0, yaw)`). An `f32` in ST0.
+    pub fn ms_get_escape_dir(mem: &mut Dm<'_>, host: &Host<'_>, i: u32) -> u32 {
+        use crate::pos::bridge as p;
+        let trig = host.trig;
+        mem.frame(0x30, |mem, f| {
+            let (esc, pos, yaw) = (f, f + 0x10, f + 0x20);
+            crate::flow::bridge::ms_get_chr_escape_pos(mem, i, esc, |m, a, index, kk, out| {
+                p::ms_get_summoner_pos(m, trig, a, index.cast_unsigned(), kk.cast_unsigned(), out);
+            });
+            p::ms_get_chr_pos(mem, trig, i, pos);
+            v::ms_vector_rect2_polar(mem, trig, esc, pos, yaw, 0, 0);
+            let y = f32_at(mem, yaw);
+            v::ms_near_rag(mem, 0, y).to_bits()
+        })
+    }
+
+    /// `0x007af0f0(i, actor, targets)` (`MsCheckTargetsNear`, name ours):
+    /// for an actor that walks up to its targets (`+0x4ac` bit 12), 1 when
+    /// a target (not itself with `+0x4b4`) within 12.0 of it (2D distance
+    /// less both widths) has its move target (`MsGetMoveTargetPos` kind
+    /// 0xc, `+0x40c` from `+0x40d` meanwhile) within 0.2 of that target's
+    /// battle position; the position compared from then on is that
+    /// target's battle position. 0 when there are several targets.
+    pub fn ms_check_targets_near(
+        mem: &mut Dm<'_>,
+        host: &Host<'_>,
+        i: u32,
+        actor: u32,
+        targets: u32,
+    ) -> u32 {
+        use crate::actor::bridge::ms_get_chr_width;
+        use crate::pos::bridge as p;
+        use ffx_bridge::x87::{load, store, sub};
+        if mem.read::<u32>(actor.wrapping_add(0x4ac)) & 0x1000 == 0 {
+            return 0;
+        }
+        let trig = host.trig;
+        mem.frame(0x20, |mem, f| {
+            let (pos, q) = (f, f + 0x10);
+            p::ms_get_chr_pos(mem, trig, i, pos);
+            let wi = ms_get_chr_width(mem, i).to_bits();
+            let (mut n, mut near) = (0u32, 0u32);
+            for j in 0..0x1f {
+                if targets.cast_signed() >> j & 1 == 0 {
+                    continue;
+                }
+                n += 1;
+                if j == i && byte(mem, actor, 0x4b4) != 0 {
+                    continue;
+                }
+                p::ms_get_chr_btl_pos(mem, trig, j, q);
+                let d = v::ms_point_len_2d(mem, pos, q).to_bits();
+                // (d - wi) as a double, less the target's width, as f32
+                let t = sub(load(d), load(wi));
+                let wj = f64::from(ms_get_chr_width(mem, j));
+                let r = store(t - wj);
+                let close = load(r) < load(NEAR_REACH.get(mem));
+                if !close {
+                    continue;
+                }
+                p::ms_get_chr_btl_pos(mem, trig, j, pos);
+                let saved = byte(mem, actor, 0x40c);
+                let v40d = byte(mem, actor, 0x40d);
+                mem.write(actor.wrapping_add(0x40c), v40d);
+                let regs = Regs {
+                    edi: actor,
+                    esi: j,
+                    ebx: u32::from(saved),
+                };
+                ms_get_move_target_pos(mem, host, i, actor, 0xc, q, 0, Some(regs));
+                mem.write(actor.wrapping_add(0x40c), saved);
+                let d2 = f64::from(v::ms_point_len_2d(mem, pos, q));
+                if d2 < NEAR_STOP.get(mem) {
+                    near = 1;
+                }
+            }
+            if n > 1 { 0 } else { near }
+        })
+    }
+
+    /// `0x007af230(i, actor)` (`MsCheckChrNear`, name ours): unless
+    /// `+0x44b`, [`ms_check_targets_near`] over its targets (`+0xdc0`)
+    /// into `+0x44a` (else `+0x44b` there); the value stored.
+    pub fn ms_check_chr_near(mem: &mut Dm<'_>, host: &Host<'_>, i: u32, actor: u32) -> u32 {
+        let mut v = u32::from(byte(mem, actor, 0x44b));
+        if v == 0 {
+            let t = mem.read(actor.wrapping_add(0xdc0));
+            v = ms_check_targets_near(mem, host, i, actor, t);
+        }
+        mem.write(actor.wrapping_add(0x44a), v.to_le_bytes()[0]);
+        v
+    }
 }

@@ -622,4 +622,156 @@ pub mod bridge {
             }
         }
     }
+
+    /// Set while the battle camera is fixed (no script cameras).
+    pub const CAMERA_LOCK: Global<u8> = Global::new(0x0112_a8fe);
+    /// The battle's camera state (2: no script cameras unless forced).
+    pub const CAMERA_STATE: Global<u8> = Global::new(0x0112_a8e4);
+
+    /// `MsAtelRequestCamera(i, monster, a, b, show, flags, actor, &same)`
+    /// (`0x00797bc0`): the camera script for handler `i`: -1 while the
+    /// camera is locked ([`CAMERA_LOCK`]) or, without `actor`, in camera
+    /// state 2 or with an effect camera; with `show` the actors hidden by
+    /// the camera come back (`MsReturnCameraVisible`, its calls through
+    /// `s.call`). Requests `a` and `b` (each unless 0xffff) of the battle's
+    /// record 1, of the monster `monster` (when it is one) and of record 0
+    /// are queued and run ([`ms_atel_request_exe`] for record 0's handler
+    /// `i`, flags with 4).
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_atel_request_camera<M: Mem>(
+        mem: &mut M,
+        s: &mut Script<'_, M>,
+        i: u32,
+        monster: u32,
+        a: u32,
+        b: u32,
+        show: u32,
+        flags: u32,
+        actor: u32,
+        out: u32,
+    ) -> i32 {
+        if CAMERA_LOCK.get(mem) != 0 {
+            return -1;
+        }
+        if actor == 0
+            && (CAMERA_STATE.get(mem) == 2
+                || crate::minor::bridge::EFFECT_CAMERA_MODE.get(mem) != 0)
+        {
+            return -1;
+        }
+        if show != 0 {
+            crate::visible::bridge::ms_return_camera_visible(mem, &mut *s.call);
+        }
+        let h = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        ms_atel_request_init(mem);
+        let reqs: Vec<u16> = [a, b].into_iter().filter(|&r| r != 0xffff).map(h).collect();
+        for &r in &reqs {
+            ms_atel_request_add(mem, [2, 1, h(i), r]);
+        }
+        if monster != 0xff && crate::actor::bridge::ms_get_ram_chr_monster(monster) != 0 {
+            for &r in &reqs {
+                ms_atel_request_add(mem, [3, h(monster), h(i), r]);
+            }
+        }
+        for &r in &reqs {
+            ms_atel_request_add(mem, [2, 0, h(i), r]);
+        }
+        ms_atel_request_exe(mem, s, 2, 0, i.cast_signed(), flags | 4, actor, out)
+    }
+
+    /// `MsAtelRequestMagicCamera(i, monster, id, a, b, show, flags, actor,
+    /// &same)` (`0x00798000`): as [`ms_atel_request_camera`], with the
+    /// command `id`'s own camera request first: handler `i` plus 0x44
+    /// (items, 0x2xxx), 0x41 (0x3xxx), 0x47 (0x4xxx) or 0x4a (0x6xxx), `k`
+    /// the ID's low 12 bits; the script camera's (kind 4) requests `a` and
+    /// `b` come before record 0's.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_atel_request_magic_camera<M: Mem>(
+        mem: &mut M,
+        s: &mut Script<'_, M>,
+        i: u32,
+        monster: u32,
+        id: u32,
+        a: u32,
+        b: u32,
+        show: u32,
+        flags: u32,
+        actor: u32,
+        out: u32,
+    ) -> i32 {
+        if CAMERA_LOCK.get(mem) != 0 {
+            return -1;
+        }
+        if actor == 0
+            && (CAMERA_STATE.get(mem) == 2
+                || crate::minor::bridge::EFFECT_CAMERA_MODE.get(mem) != 0)
+        {
+            return -1;
+        }
+        if show != 0 {
+            crate::visible::bridge::ms_return_camera_visible(mem, &mut *s.call);
+        }
+        let h = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        let low = h(id & 0xfff);
+        let own = match (id.cast_signed() >> 12).wrapping_sub(2) {
+            0 => Some(0x44),
+            1 => Some(0x41),
+            2 => Some(0x47),
+            4 => Some(0x4a),
+            _ => None,
+        };
+        let own = own.map(|base: u32| h(base.wrapping_add(i)));
+        let reqs: Vec<u16> = [a, b].into_iter().filter(|&r| r != 0xffff).map(h).collect();
+        ms_atel_request_init(mem);
+        if let Some(o) = own {
+            ms_atel_request_add(mem, [2, 1, o, low]);
+        }
+        for &r in &reqs {
+            ms_atel_request_add(mem, [2, 1, h(i), r]);
+        }
+        if monster != 0xff && crate::actor::bridge::ms_get_ram_chr_monster(monster) != 0 {
+            if let Some(o) = own {
+                ms_atel_request_add(mem, [3, h(monster), o, low]);
+            }
+            for &r in &reqs {
+                ms_atel_request_add(mem, [3, h(monster), h(i), r]);
+            }
+        }
+        for &r in &reqs {
+            ms_atel_request_add(mem, [4, 0, h(i), r]);
+        }
+        if let Some(o) = own {
+            ms_atel_request_add(mem, [2, 0, o, low]);
+        }
+        for &r in &reqs {
+            ms_atel_request_add(mem, [2, 0, h(i), r]);
+        }
+        ms_atel_request_exe(mem, s, 2, 0, i.cast_signed(), flags | 4, actor, out)
+    }
+
+    /// `MsEscapeAll()` (`0x007ada60`): every battle party member
+    /// (`0x0112c895`, 7 slots) able (`+0xdc8`, not KO'd or petrified)
+    /// escapes: `+0x41c` cleared (for any present one), escaping counts for
+    /// its overdrive (`MsLimitTypeEscapeCheck`), `+0x4fd` up by 3, motion
+    /// 0x12 (`MsSetMotion(i, 0x12, 1, 1, 1)`) and its battle position kept
+    /// (`MsPushBtlPos`).
+    pub fn ms_escape_all<M: Mem>(mem: &mut M, s: &mut Script<'_, M>) {
+        let party = crate::save::bridge::BATTLE_PARTY.ptr(mem).addr;
+        for k in 0..7 {
+            let c = u32::from(mem.read::<u8>(party + k));
+            if c == 0xff {
+                continue;
+            }
+            let a = ms_get_chr(mem, c);
+            mem.write(a.wrapping_add(0x41c), 0u8);
+            if byte(mem, a, 0xdc8) == 0 || byte(mem, a, 0xdcc) != 0 || byte(mem, a, 0xdce) != 0 {
+                continue;
+            }
+            crate::exec::bridge::ms_limit_type_escape_check(mem, c, a);
+            let v = byte(mem, a, 0x4fd).wrapping_add(3);
+            mem.write(a.wrapping_add(0x4fd), v);
+            ms_set_motion(mem, s, c, 0x12, 1, 1, 1, 0, 0);
+            crate::actor::bridge::ms_push_btl_pos(mem, a);
+        }
+    }
 }

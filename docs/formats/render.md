@@ -536,8 +536,7 @@ Round 7:
 - `ShadowManager_SetQuality(q)` (`0x006ceaa0`): `g_ShadowSize` 4096, 2048
   or 1024 for quality 1-3; `ShadowEntry_Init` (`0x006d3560`).
 - `BlurEffectEx_SetPositiveParams` (`0x006c4620`): only floats above 0
-  replace `+0x5c..+0x68`; `RenderParams_Reset` (`0x006c47a0`);
-  `ParamList_SetAllFloat` (`0x006b47e0`).
+  replace `+0x5c..+0x68`; `ParamList_SetAllFloat` (`0x006b47e0`).
 - Texture animation: `TexAnim_StartNew`/`Old(i, which, pos)` (`0x0077fc90`,
   `0x00780750`) restart one work animation (at work `+0` or `+0x400`);
   `TextureAnimationManager_FindMaterialIndex` (`0x006b20a0`, -1 when
@@ -545,10 +544,14 @@ Round 7:
   text.
 - `FloatHeap_PushHeap` (`0x006c7730`) and `FloatSort_Median3`
   (`0x006c74d0`), the rest of the float sort with a `less` callback;
-  `CheatIcons_InitFlashTable` (`0x006f7700`, the nine cheat-overlay
-  `.swf` paths); `Buffer_GetSizeBytes` (`0x006f7bd0`, `0x006f7c00`);
-  `RenderConst_180`/`51`, `RenderFlag_Get`;
-  `PhyreFIOS_LoadPrxComplete`/`Idle` (`0x006f9b70`, `0x006f9b80`).
+  `PhyreFIOS_LoadPrxIdle` (`0x006f9b80`).
+- Hooked by main's automatic ports instead (`auto.rs`, names theirs):
+  `SetFields_006c47a0` (clears `+0x58`, `+0..+0x20`, `+0x48..+0x54`),
+  `SetFields_006f7700` (the nine cheat-overlay `.swf` paths and a byte
+  table), `LoadCompute_006f7bd0`/`_006f7c00` (`(+0x30 + +0x34) * 4`),
+  `ReturnConst180_006c26d0`, `ReturnConst51_006c2700`,
+  `ReturnGlobalSx8_006bc960`, `Compare_006f9b70` (PRX state 3); the
+  render bridges for them stay and their parity test with them.
 
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is

@@ -47,6 +47,14 @@ pub const VU0_MATRIX2: u32 = 0x00c8_f7e0;
 pub const SIN_TABLE: u32 = 0x00c4_4bf0;
 /// `SndSepPlaySimple(sfx)` (`0x00886e80`).
 pub const SND_SEP_PLAY_SIMPLE: u32 = 0x0088_6e80;
+/// `op_oef2_a_get(src, kind, id)` (`0x007e3810`).
+pub const OP_OEF2_A_GET: u32 = 0x007e_3810;
+/// The eight node kind ids (`0x00c86008`, bytes).
+pub const KIND_IDS: u32 = 0x00c8_6008;
+/// `g_AbmapPad` (`0x01a86108`): the menu pads, 0x340 bytes each.
+pub const ABMAP_PAD: u32 = 0x01a8_6108;
+/// `MsGetSavePlayerPtr(chr)` (`0x00785330`).
+pub const MS_GET_SAVE_PLAYER_PTR: u32 = 0x0078_5330;
 
 /// 256.0 (`f32`, `.rdata`): the cursor distance (`AbmapResetCursorCamera`).
 pub const CURSOR_DISTANCE: u32 = 0x00b5_01c0;
@@ -903,5 +911,133 @@ pub mod bridge {
     ) -> u32 {
         let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
         call(mem, f, &[0x8000_006d + which])
+    }
+
+    // ---- round 18 ----
+
+    /// `AbmapSetKindSizes(src)` (`0x00a5adf0`): for the eight node kinds
+    /// (ids at [`super::KIND_IDS`]), `op_oef2_a_get(src, 2, id)`'s `u16`s
+    /// `+0xc`/`+0xe` into the grid's kind sizes (`+0xf808`, four bytes
+    /// each). Returns the last `eax`: the record's high half and the last
+    /// `u16`.
+    pub fn abmap_set_kind_sizes<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        src: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::OP_OEF2_A_GET);
+        let mut r = 0;
+        for i in 0..8u32 {
+            let id = u32::from(mem.read::<u8>(mem.rebase(super::KIND_IDS) + i));
+            let g = ABMAP.get(mem);
+            let rec = call(mem, f, &[src, 2, id]);
+            let a = mem.read::<u16>(rec.wrapping_add(0xc));
+            mem.write(g.wrapping_add(0xf808 + 4 * i), a);
+            let b = mem.read::<u16>(rec.wrapping_add(0xe));
+            mem.write(g.wrapping_add(0xf80a + 4 * i), b);
+            r = (rec & 0xffff_0000) | u32::from(b);
+        }
+        r
+    }
+
+    /// `AbmapMarkLockedEntries(pad)` (`0x00a5a2e0`): for each of the menu
+    /// pad's entries (`g_AbmapPad + 0x340 * pad`, count `+0x1e`, 12-byte
+    /// entries from `+0x44`), byte 0 set when the current character's save
+    /// (`MsGetSavePlayerPtr`) lacks the bit the entry's word `+4` names
+    /// (in the `u16`s from `+0x3e`). Returns the count, 0 without entries.
+    pub fn abmap_mark_locked_entries<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        pad: u32,
+        call: &mut C,
+    ) -> u32 {
+        let chr = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bc)));
+        let p = pad
+            .wrapping_mul(0x340)
+            .wrapping_add(mem.read::<u32>(mem.rebase(super::ABMAP_PAD)));
+        let f = mem.rebase(super::MS_GET_SAVE_PLAYER_PTR);
+        let save = call(mem, f, &[chr]);
+        let mut r = 0;
+        let mut i = 0i32;
+        while i32::from(mem.read::<i16>(p.wrapping_add(0x1e))) > i {
+            let e = p.wrapping_add(0x44).wrapping_add(0xc * i.cast_unsigned());
+            let bit = mem.read::<u32>(e.wrapping_add(4));
+            let w =
+                u32::from(mem.read::<u16>(save.wrapping_add(0x3e).wrapping_add((bit >> 4) * 2)));
+            mem.write(e, u8::from(w & (1 << (bit & 0xf)) == 0));
+            r = i32::from(mem.read::<i16>(p.wrapping_add(0x1e))).cast_unsigned();
+            i += 1;
+        }
+        r
+    }
+
+    /// `AbmapLinkCells(link)` (`0x00a5a760`): each end node's cell on the
+    /// grid's 20-wide map: `(x + 0xa00) / 256 + (y + 0x920) / 256 * 20`
+    /// (`+8` for end 0, `+0xa` for end 1). Returns the second cell as
+    /// the full 32-bit value.
+    pub fn abmap_link_cells(mem: &mut impl Mem, link: u32) -> u32 {
+        let mut r = 0;
+        for (end, out) in [(0u32, 8u32), (2, 0xa)] {
+            let n = u32::from(mem.read::<u16>(link.wrapping_add(end)));
+            let node = ABMAP.get(mem).wrapping_add(n * 0x28);
+            let y = i32::from(mem.read::<i16>(node.wrapping_add(0x80a))) + 0x920;
+            let x = i32::from(mem.read::<i16>(node.wrapping_add(0x808))) + 0xa00;
+            let c = (x / 256).wrapping_add((y / 256).wrapping_mul(20));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half
+            mem.write(link.wrapping_add(out), c as u16);
+            r = c.cast_unsigned();
+        }
+        r
+    }
+
+    /// `AbmapCollectNodeLinks()` (`0x00a5b140`): for each node in use
+    /// (`+6` not -1), the links (`+0xa808`, 0x14 each) touching it into its
+    /// five slots (`+0xc`), the rest cleared; a sixth link and on still go
+    /// into the following words (the original's overflow, after a
+    /// `dbgPrintf`). Returns the node pointer past the last.
+    pub fn abmap_collect_node_links(mem: &mut impl Mem) -> u32 {
+        let mut g = ABMAP.get(mem);
+        let mut nd = g.wrapping_add(0x808);
+        let mut n = 0u32;
+        while i32::from(mem.read::<i16>(g.wrapping_add(2))) > n.cast_signed() {
+            if mem.read::<u16>(nd.wrapping_add(6)) != 0xffff {
+                let mut count = 0u32;
+                let mut last = 0u32;
+                let mut slot = nd.wrapping_add(0xc);
+                loop {
+                    let links = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+                    let end = g.wrapping_add(((links * 5 + 0x2a02) * 4).cast_unsigned());
+                    let mut l = if last == 0 {
+                        g.wrapping_add(0xa808)
+                    } else {
+                        last.wrapping_add(0x14)
+                    };
+                    let mut found = None;
+                    while l < end {
+                        #[allow(clippy::cast_possible_truncation)] // `cmp word`
+                        let id = n as u16;
+                        if mem.read::<u16>(l) == id || mem.read::<u16>(l.wrapping_add(2)) == id {
+                            found = Some(l);
+                            break;
+                        }
+                        l = l.wrapping_add(0x14);
+                    }
+                    let Some(l) = found else {
+                        for k in count..5 {
+                            mem.write(nd.wrapping_add(0xc + 4 * k), 0u32);
+                        }
+                        g = ABMAP.get(mem);
+                        break;
+                    };
+                    last = l;
+                    mem.write(slot, l);
+                    count += 1;
+                    slot = slot.wrapping_add(4);
+                    g = ABMAP.get(mem);
+                }
+            }
+            nd = nd.wrapping_add(0x28);
+            n += 1;
+        }
+        nd
     }
 }

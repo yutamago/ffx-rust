@@ -64,8 +64,26 @@ PC_END = 0x00760000
 NAME_RULES = [
     ("debug", r"(Debug|debug|Dbg|dbg|DBG|Tweak|Deci2|_Gui_|^Ms_Gui|^gui_|^Gu_|^Gu[A-Z]|^rcui|Profil|"
               r"^Sg_Db|DebugFont|^eidprintf|^printf|Printf$|Dump|^Assert|"
-              r"^SgGu|FpMem|host0|^TkPutDebug|DispDebug|^Sg_Id_coltest|^Gui_|^yiGui|^chr_anim_win)",
+              r"^SgGu|FpMem|host0|^TkPutDebug|DispDebug|^Sg_Id_coltest|^Gui_|^yiGui|^chr_anim_win|^FreeCamera)",
      "debug name", None),
+    # scene state ffx-render needs as input, kept exactly ("original look
+    # first"): camera view and projection, fog/ambient/background colours,
+    # screen fades, mesh and skeleton matrices, character lighting, 2D-layer
+    # and mesh visibility, the minimap and area-map camera. Only code that
+    # passes data to PhyreEngine/D3D11 (render targets, shaders, buffers,
+    # loading, drawing) stays glue.
+    ("logic", r"^(PhyreScene_|graphic|cgraphic|Graphic)"
+              r"(?!.*(Shader|Buffer|RenderTarget|Load(?!ed)|Unload|Create|Destroy|Initiali|Draw(?!Focus|Filter)|"
+              r"Texture(?!VideoInfo)|Pipeline|Cluster|Remap))"
+              r".*(Camera|FOV|AspectRatio|ViewProjection|Fog|Ambient|Background|ScreenFade|Fading|CrossFade|"
+              r"Skeleton|WorldMatrix|Matrices|Lighting|LightDir|ShadeColor|ShadeCoeff|2DLayer|2DHideLayer|"
+              r"2DShowLayer|2DStartLayer|2DSceneNum|Cut2DScene|3DScene|NonUI2DScene|Guidemap|Minimap|MiniMap|"
+              r"SetVisible|MeshVisible|MeshSegment(Alpha|Color|Hide)|[Oo]bject(Set)?(Rotation|Translation)|"
+              r"Project3DPoint|Screen(Get|Set)(Dtt)?Offset|LevelName|NameHash|KeyframeAnim|DttPageFlag|"
+              r"UiShadowType|TextureVideoInfo|Magic(Get|Set)(ToBeDelete)?Path|(Current|ToBeDelete)MagicPath|"
+              r"PushTip|AllSceneAssetsLoaded|HasRunDraw|Focus|BattleMap|Has[23]dMap|NowUIType|MiniMapType|"
+              r"FadeCenter)",
+     "scene state the renderer needs (original look first)", PC_END),
     ("glue", r"^(Fmod|FfxFmod|FMOD|fmod|SfxBank|SfxEvent|iMusic|iSfx|iVoice|movie|Movie|PhyFMV|PVideoPlayback|"
              r"createU16Mesh)", "glue name (FMOD or the movie player)", None),
     ("glue", r"^(PhyreScene|graphic|cgraphic|Graphic|PostProcess|Shadow|Distortion|TextureAnimation|"
@@ -86,7 +104,7 @@ NAME_RULES = [
      "platform name (files, CD/DVD emulation, allocators, threads, std::)", None),
     ("platform", r"^(Input|input|Virtuos|virtuos|Async|JobSchedule(?!_ppp)|SaveData|Save[A-Z]|getPlatform|"
                  r"Game_InitFileSystem|FFXApplication|ResetToLauncher|Fixup|AssetListReader|MagicFile|Lang|"
-                 r"Cloud|getIsConsoleMode|PArray|Alloc|Malloc)",
+                 r"Cloud|getIsConsoleMode|PArray|Alloc|Malloc|SetUpDefault|VbfStream|Vbf)",
      "platform name (PC port: input, saves, loaders, app lifecycle)", PC_END),
 ]
 NAME_RULES = [(c, re.compile(p), e, hi) for c, p, e, hi in NAME_RULES]
@@ -94,9 +112,28 @@ DEBUG_NAME = NAME_RULES[0][1]
 # the PS2 SDK stubs the PC build keeps (sce*, the Sif/IOP calls) run: they are
 # platform by name, not dead
 
+# GS/DMA packet building: kicks and the helpers that append to a packet
+PACKET_API = re.compile(r"^(sceDma|sceGs|rcPacketData|TOAdp|TOGs[A-Z]|TOCtrlPkt|TODrawKick|"
+                        r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$)")
+# named read-only helpers a packet writer may call (no global writes either)
+GETTER = re.compile(r"(Get|[Ii]s[A-Z0-9]|get_ptr32|Calc|ScaleMatrix|PersMatrix|Copy16|CopyQword|ToFixed|Mul[0-9A-Z]|Apply)")
+# the PC build's PS2 SDK stand-ins (sce*, FlushCache, threads, semaphores)
+PS2_STUB = re.compile(r"^(sce[A-Z]|FlushCache$|i?(Sleep|Wakeup)Thread$|i?(Signal|Wait|Create|Delete|Poll)Sema$|"
+                      r"FFXVpu0Reset|SetDebugHandler)")
+# what copies of std:: and PhyreEngine container code call: allocators,
+# trees, free lists, vectors, static-object registration
+CONTAINER_API = re.compile(r"^(Phyre_(PRedBlackTree|PFreeList|PhyreFree|PhyreMalloc|PString|PArray|PSharray)|"
+                           r"operator_(new|delete)|user_(malloc|free|aligned)|UserHeap|eh_vector_|atexit|onexit|"
+                           r"std_|Std|PArray|Array_Reserve)")
+# calls such code may make that are no evidence of it by themselves
+CONTAINER_OK = re.compile(r"^(memcpy|memmove|memset|crt_mem|_Xlength|_Xout|_Xbad|security_check_cookie|"
+                          r"CriticalSection|strlen)")
+# VU0 emulation: scratch registers, not game state
+VU_SCRATCH = re.compile(r"^(FFXVu0|AsmEmu|restoreVf00|set[SZ]SFlag|cdc_|rcVectorToFixed|rcCopyQword)")
+
 GLUE_IMPORTS = re.compile(r"^_?Iggy|IggyGDraw")
 PLATFORM_IMPORTS = re.compile(
-    r"^(Steam|CreateFile|ReadFile|WriteFile|SetFilePointer|SetEndOfFile|GetFile|CreateDirectory|_wfopen|"
+    r"^(Steam|CreateFile|ReadFile|WriteFile|CloseHandle|SetFilePointer|SetEndOfFile|GetFile|CreateDirectory|_wfopen|"
     r"CreateThread|_beginthreadex|ResumeThread|SuspendThread|TerminateThread|ExitThread|SetThreadPriority|"
     r"(Enter|Leave|Delete|Initialize)CriticalSection|CreateMutex|ReleaseMutex|CreateSemaphore|"
     r"ReleaseSemaphore|CreateEvent|SetEvent|ResetEvent|WaitForSingleObject|Sleep|Virtual(Alloc|Free|Query)|"
@@ -209,10 +246,11 @@ def code_graph(exe, secs, starts, ghidra_calls):
     for i, t in enumerate(nodes):
         if t in extra and i:
             edges[nodes[i - 1]].add(t)
+    direct = {a: set(ts) for a, ts in edges.items()}
     roots, code_edges = scan_pointers(secs, nodes)
     for h, ts in code_edges.items():
         edges[h] |= ts
-    return nodes, edges, roots
+    return nodes, edges, roots, direct
 
 
 def main():
@@ -221,6 +259,8 @@ def main():
     ap.add_argument("--exe", default=str(pathlib.Path(os.environ.get("FFX_GAME_DIR", "~/steam-games/FFX-X2-HD"))
                                          .expanduser() / "FFX.exe"))
     ap.add_argument("--summary", action="store_true", help="print the table only")
+    ap.add_argument("--explain", type=lambda x: int(x, 16), action="append", default=[],
+                    help="print why this address fails the packet-writer test")
     args = ap.parse_args()
 
     names = progress.symbols()
@@ -253,7 +293,7 @@ def main():
                         strings[int(x, 16)].append(p[2])
 
     entry, secs = read_pe(args.exe)
-    nodes, edges, roots = code_graph(args.exe, secs, starts, {a: set(c) for a, c in callees.items()})
+    nodes, edges, roots, direct = code_graph(args.exe, secs, starts, {a: set(c) for a, c in callees.items()})
     roots.add(entry)
     for a, ts in edges.items():
         for t in ts:
@@ -281,6 +321,36 @@ def main():
     reach = reach_from(roots | ran)
 
     phyre_lib = {a for a in starts if module.get(a) == "phyre"}
+
+    # an unnamed function between two debug-named methods of one class (the
+    # free debug camera's unnamed methods) is debug; callers outside the
+    # game modules count as debug by the same name rules
+    named = [a for a in starts if a in names]
+
+    def bracket_debug(a):
+        i = bisect.bisect_left(named, a)
+        if a in names or i == 0 or i >= len(named):
+            return None
+        lo, hi = names[named[i - 1]], names[named[i]]
+        if DEBUG_NAME.search(lo) and DEBUG_NAME.search(hi) and lo.split("_")[0] == hi.split("_")[0]:
+            return lo, hi
+        return None
+
+    def debug_outside(c):
+        n = names.get(c)
+        return bool(DEBUG_NAME.search(n)) if n else bracket_debug(c) is not None
+
+    writes = defaultdict(set)
+    accessors = defaultdict(set)
+    with open(WORK / "decomp/data_refs.tsv", encoding="utf-8") as f:
+        next(f)
+        for line in f:
+            fn, at, acc = line.rstrip("\n").split("\t")[:3]
+            fn, at = int(fn, 16), int(at, 16)
+            if acc != "W":
+                accessors[at].add(fn)
+            else:
+                writes[fn].add(at)
     cls, why, decided = {}, {}, set()
 
     def name_rule(a, n):
@@ -312,6 +382,18 @@ def main():
         r = name_rule(a, n) if n else None
         if r:
             cls[a], why[a] = r[0], f"{r[1]}: {n}"
+            decided.add(a)
+            continue
+        i = bisect.bisect_left(named, a)
+        if not n and 0 < i < len(named) and PS2_STUB.search(names[named[i - 1]]) \
+                and PS2_STUB.search(names[named[i]]):
+            cls[a], why[a] = "platform", (f"unnamed, in the PS2 SDK stub file between {names[named[i - 1]]} "
+                                          f"and {names[named[i]]}")
+            decided.add(a)
+            continue
+        br = bracket_debug(a)
+        if br:
+            cls[a], why[a] = "debug", f"unnamed, between the debug methods {br[0]} and {br[1]}"
             decided.add(a)
             continue
         dbg_imp = sorted(i for i in imp if DEBUG_IMPORTS.search(i))
@@ -358,7 +440,7 @@ def main():
             cs = [c for c in callers[a] if c != a and c in reach]
             if not cs:
                 continue
-            kinds = {cls.get(c, "library") for c in cs}
+            kinds = {cls.get(c) or ("debug" if debug_outside(c) else "library") for c in cs}
             for k in ("debug", "glue", "platform"):
                 # glue and platform pass one hop, to unnamed functions whose
                 # callers a rule decided (a main loop that the PC update
@@ -370,6 +452,114 @@ def main():
                              (f" and {len(cs) - 1} more)" if len(cs) > 1 else ")")
                     changed = True
                     break
+
+    # copies of std:: and PhyreEngine container code in the PC port's part
+    # of the image are platform: unnamed (or no rule) functions whose every
+    # call goes to allocators, trees, vectors, std:: copies or platform code
+    # (at least one such call); static initialisers (atexit registration);
+    # and destructors only exception unwinding reaches. Game code above
+    # PC_END keeps its default.
+    unwind = {a for a in starts if module.get(a) == "crt" and a >= 0x00aa0000}
+
+    def container_ok(c, depth):
+        """c is an allocator/container/platform call; a code block Ghidra
+        has no function for (an import thunk, a tail jump) counts by what
+        it calls in turn."""
+        n = names.get(c, "")
+        if CONTAINER_API.search(n) or CONTAINER_OK.search(n) or cls.get(c) == "platform" \
+                or (c not in cls and module.get(c) == "crt"):
+            return True
+        if c in size or depth == 0:
+            return False
+        return all(container_ok(x, depth - 1) for x in direct.get(c, ()) if x != c)
+    changed = True
+    while changed:
+        changed = False
+        for a in sorted(game):
+            if cls[a] != "logic" or a in decided or a >= PC_END or a not in reach:
+                continue
+            ce = {c for c in direct.get(a, ()) if c != a}
+            cnames = [names.get(c, "") for c in ce]
+            imp = imports[a]
+            if not ce and not imp:
+                continue
+            if a in args.explain:
+                print(f"0x{a:08x}: container test, calls " + ", ".join(f"{n or hex(c)}:{cls.get(c)}:{module.get(c)}" for c, n in zip(ce, cnames)) + f"; imports {sorted(imp)}", file=sys.stderr)
+            fine = all(container_ok(c, 3) for c in ce)
+            fine = fine and all(PLATFORM_IMPORTS.search(i) or CONTAINER_API.search(i) or CONTAINER_OK.search(i)
+                                or i in ("free", "malloc") for i in imp)
+            cs = [c for c in callers[a] if c != a]
+            if "atexit" in imp or any(n == "atexit" for n in cnames):
+                cls[a], why[a] = "platform", "static initialiser (registers its destructor with atexit)"
+            elif fine and any(CONTAINER_API.search(n) for n in cnames):
+                cls[a], why[a] = "platform", ("std::/PhyreEngine container code: only allocator, tree, "
+                                              "vector or platform calls (" +
+                                              ", ".join(sorted({n for n in cnames if n})[:3]) + ")")
+            elif fine and cs and all(c in unwind for c in cs):
+                cls[a], why[a] = "platform", "destructor only exception unwinding reaches"
+            else:
+                continue
+            decided.add(a)
+            changed = True
+
+    # pure GS/DMA packet writers are glue (ffx-render replaces them): they
+    # kick a packet or append to one through the packet API, or only packet
+    # writers call them; they call nothing but the packet API, glue,
+    # platform, VU0 scratch, read-only getters and other packet writers; and
+    # no logic reads a global they write (writers, an init that resets the
+    # buffer index, do not matter)
+    def other(c):
+        n = names.get(c, "")
+        return cls.get(c) in ("glue", "platform") or bool(PACKET_API.search(n) or VU_SCRATCH.search(n)
+                                                         or (GETTER.search(n) and not writes[c])
+                                                         or (size.get(c, 99) <= 16 and not writes[c]
+                                                             and not direct.get(c)))
+
+    for a in game:
+        n = names.get(a, "")
+        if cls[a] == "logic" and a not in decided and PACKET_API.search(n):
+            cls[a] = "glue"
+            why[a] = f"GS packet API ({n}): appends to or kicks a packet; replaced by ffx-render"
+            decided.add(a)
+    pk = {a for a in game if cls[a] == "logic" and a not in decided and a in reach}
+    for a in args.explain:
+        if a not in pk:
+            print(f"0x{a:08x}: not a candidate ({cls.get(a)}, {why.get(a)})", file=sys.stderr)
+    changed = True
+    while changed:
+        changed = False
+        for a in sorted(pk):
+            # real calls only: immediates in packet code (GIF tags) can look
+            # like function addresses
+            ce = {c for c in direct.get(a, ()) if c in cls and c != a}
+            if not all(c in pk or other(c) for c in ce):
+                if a in args.explain:
+                    print(f"0x{a:08x}: calls " + ", ".join(names.get(c, hex(c)) for c in ce
+                                                       if not (c in pk or other(c))), file=sys.stderr)
+                pk.discard(a)
+                changed = True
+                continue
+            if not all(fn in pk or other(fn) or fn not in reach for g in writes[a] for fn in accessors[g]):
+                if a in args.explain:
+                    print(f"0x{a:08x}: writes globals read by " + ", ".join(sorted(
+                        {names.get(fn, hex(fn)) for g in writes[a] for fn in accessors[g]
+                         if not (fn in pk or other(fn) or fn not in reach)})[:6]), file=sys.stderr)
+                pk.discard(a)
+                changed = True
+                continue
+            kicks = any(PACKET_API.search(names.get(c, "")) for c in ce)
+            cs = [c for c in callers[a] if c != a and c in reach]
+            if not kicks and not (cs and all(c in pk for c in cs)):
+                if a in args.explain:
+                    print(f"0x{a:08x}: no packet API call and callers not all packet writers: "
+                          + ", ".join(names.get(c, hex(c)) for c in cs if c not in pk), file=sys.stderr)
+                pk.discard(a)
+                changed = True
+    for a in pk:
+        api = sorted({names[c] for c in callees[a] if PACKET_API.search(names.get(c, ""))})
+        cls[a] = "glue"
+        why[a] = ("GS/DMA packet writer (" + (", ".join(api[:3]) if api else "only packet writers call it") +
+                  "; writes no game state): replaced by ffx-render")
 
     # a debug-sounding name the game logic depends on (a math helper of the
     # rc tools, an "is debug" flag the battle code reads) is logic when most
