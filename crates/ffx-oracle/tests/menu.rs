@@ -2716,7 +2716,7 @@ fn tk_round4_matches_the_original() {
         t.twin("MenuTuto_GetChoice", 0x008d_b840, &[], U32, |o| {
             s(tk::menu_tuto_get_choice(o))
         });
-        t.twin("BtlEnd_GetResult19", 0x008b_da20, &[], U32, |o| {
+        t.twin("BtlEnd_GetGilWon", 0x008b_da20, &[], U32, |o| {
             w(tk::btl_end_get_result(o, 19))
         });
         for k in 0..4 {
@@ -3664,8 +3664,8 @@ fn tk_round6_matches_the_original() {
         });
         // battle end
         t.scramble(tk::BTL_END_RESULTS.sym, 0x50);
-        t.twin("BtlEnd_InitApStep", 0x008b_df10, &[], VOID, |o| {
-            tk::btl_end_init_ap_step(o);
+        t.twin("BtlEnd_InitGilStep", 0x008b_df10, &[], VOID, |o| {
+            tk::btl_end_init_gil_step(o);
             0
         });
         t.twin("BtlEnd_ApStep", 0x008b_a3c0, &[chr], U32, |o| {
@@ -7363,6 +7363,766 @@ fn menu_round18_batch7_matches_the_original() {
                 w(tk::menu_wshop_open_sub_window4(o, &mut callback))
             });
         }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch1_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0001) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    // the VRAM blocks recorded (buffer, GS address, size)
+    let load = t.rng.next();
+    record_n(&mut t, 0x008a_a710, 3, load);
+    t.twin("MenuMain_RestoreVram", 0x008a_a690, &[], U32, |o| {
+        w(tk::menu_main_restore_vram(o, &mut callback))
+    });
+    let store = t.rng.next();
+    record_n(&mut t, 0x008a_ac10, 3, store);
+    t.twin("MenuMain_SaveVram", 0x008a_ab90, &[], U32, |o| {
+        w(tk::menu_main_save_vram(o, &mut callback))
+    });
+    // MenuAbility_ApplyHeal over recording stand-ins
+    for round in 0..64u32 {
+        let heal = t.rng.int();
+        record_n(&mut t, 0x008c_6920, 2, heal);
+        let added = t.rng.next();
+        record_n(&mut t, 0x008c_8d10, 2, added);
+        let mut rec = t.rng.bytes(0x40);
+        rec[0x22] = t.rng.pick(&[0u8, 0x40, 0x80, 0xc0, 0x3f, 0xff]);
+        let rec = t.alloc(&rec);
+        record_n(&mut t, 0x0079_0a90, 1, rec);
+        let aeons = t.rng.pick(&[0u32, 1, 3, 8, 0xffff_ffff]);
+        return_const(&mut t, 0x008a_9bf0, aeons);
+        let players = t.rng.pick(&[0u32, 1, 2, 7, 0x8000_0000]);
+        return_const(&mut t, 0x008a_9b30, players);
+        let chr = t.rng.below(0x20);
+        record_n(&mut t, 0x008a_9bc0, 1, chr);
+        record_n(&mut t, 0x008a_9ad0, 1, chr + 0x100);
+        let amount = t.rng.int();
+        record_n(&mut t, 0x008c_69a0, 3, amount);
+        let single = t.rng.pick(&[0u8, 1, 2, 0xff]);
+        t.put(t.sym(tk::ABILITY_SINGLE.sym), single);
+        let cmd = u16::try_from(t.rng.below(0x1_0000)).unwrap_or(0);
+        t.put(t.sym(tk::ABILITY_COMMAND.sym), cmd);
+        let (target, user) = (t.rng.next(), t.rng.int());
+        t.twin(
+            "MenuAbility_ApplyHeal",
+            0x008c_6d00,
+            &[target, user],
+            U32,
+            |o| {
+                w(tk::menu_ability_apply_heal(
+                    o,
+                    target,
+                    user,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+        // TkMn2DrawCommonPlateL: the plate writer recorded
+        let end = t.rng.next();
+        record_n(&mut t, 0x008f_0990, 8, end);
+        let plate = t.alloc_random(0x18);
+        let y = t.rng.next();
+        t.put(t.sym(tk::MN2_DRAW_Y.sym), y);
+        t.twin("TkMn2DrawCommonPlateL", 0x008b_f9b0, &[plate], U32, |o| {
+            w(tk::tk_mn2_draw_common_plate_l(o, plate, &mut callback))
+        });
+        if round % 8 == 0 {
+            t.twin("MenuWShop_OpenWindow3", 0x008d_a9c0, &[], U32, |o| {
+                w(tk::menu_wshop_open_window3(o, &mut callback))
+            });
+            t.twin("MenuStatus_OpenMainWindow", 0x008d_3100, &[], U32, |o| {
+                w(tk::menu_status_open_main_window(o, &mut callback))
+            });
+            t.twin("MenuSummon_OpenWindow", 0x008c_d1b0, &[], U32, |o| {
+                w(tk::menu_summon_open_window(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch2_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0002) else {
+        return;
+    };
+    let w = u64::from;
+    for round in 0..64u32 {
+        // TkRefreshHDDMode: the HDD names and the sound driver recorded
+        let name = t.rng.next();
+        record_n(&mut t, 0x0077_7eb0, 1, name);
+        let wave = t.rng.next();
+        record_n(&mut t, 0x0081_d470, 1, wave);
+        let music = t.rng.next();
+        record_n(&mut t, 0x0081_d3c0, 1, music);
+        let hdd = t.rng.pick(&[0u8, 1, 0x80, 0xff]);
+        t.put(t.sym(tk::HDD_MODE.sym), hdd);
+        t.twin("TkRefreshHDDMode", 0x0088_e930, &[], U32, |o| {
+            w(tk::tk_refresh_hdd_mode(o, &mut callback))
+        });
+        // SsSetProjectBase
+        let base = t.rng.next();
+        record_n(&mut t, 0x0081_eab0, 1, base);
+        let path = t.rng.next();
+        t.twin("SsSetProjectBase", 0x0088_7a90, &[path], U32, |o| {
+            w(tk::ss_set_project_base(o, path, &mut callback))
+        });
+        // TkMn2StringWidth
+        let size = t.rng.next();
+        record_n(&mut t, 0x008b_7170, 1, size);
+        let text = t.rng.next();
+        t.twin("TkMn2StringWidth", 0x008c_2cb0, &[text], U32, |o| {
+            w(tk::tk_mn2_string_width(o, text, &mut callback))
+        });
+        // MenuItem_LoadTargetKeys: a key string from a stand-in message
+        let lang = t.rng.pick(&[0u32, 1, 2]);
+        return_const(&mut t, 0x0064_10e0, lang);
+        let n = t.rng.below(40) as usize;
+        let mut keys: Vec<u8> = (0..n).map(|_| 1 + (t.rng.next() % 0x40) as u8).collect();
+        keys.push(0);
+        let keys = t.alloc(&keys);
+        record_n(&mut t, 0x008b_edd0, 1, keys);
+        t.scramble(tk::ITEM_KEYS, 0x80);
+        let target = if round % 5 == 0 {
+            t.rng.pick(&[-1i32, -2, i32::MIN])
+        } else {
+            i32::try_from(t.rng.below(18)).unwrap_or(0)
+        };
+        t.twin(
+            "MenuItem_LoadTargetKeys",
+            0x008c_5320,
+            &[target.cast_unsigned()],
+            VOID,
+            |o| {
+                tk::menu_item_load_target_keys(o, target, &mut callback);
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` replaced in both oracles by a stand-in of `(stat, _, *a, *b)`:
+/// `*a = A[stat]`, `*b = B[stat]`, returns `C[stat]` (tables of 10 words).
+fn out2_by_index(t: &mut Twins, f: u32, a: &[u32], b: &[u32], c: &[u32]) {
+    let words = |v: &[u32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    let (ta, tb, tc) = (t.alloc(&words(a)), t.alloc(&words(b)), t.alloc(&words(c)));
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x4c, 0x24, 0x04][..],              // mov ecx, [esp + 4]
+        &[0x8b, 0x04, 0x8d], &ta.to_le_bytes(),     // mov eax, [ecx*4 + A]
+        &[0x8b, 0x54, 0x24, 0x0c, 0x89, 0x02],      // mov edx, [esp + 12]; mov [edx], eax
+        &[0x8b, 0x04, 0x8d], &tb.to_le_bytes(),     // mov eax, [ecx*4 + B]
+        &[0x8b, 0x54, 0x24, 0x10, 0x89, 0x02],      // mov edx, [esp + 16]; mov [edx], eax
+        &[0x8b, 0x04, 0x8d], &tc.to_le_bytes(),     // mov eax, [ecx*4 + C]
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_round19_batch3_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0003) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    for round in 0..64u32 {
+        // MenuSummon_RefreshGrowMasks: stand-in grow infos, recorded item counts
+        let items: Vec<u32> = (0..10).map(|_| t.rng.below(0x10000)).collect();
+        let owned = t.rng.pick(&[0u32, 1, 5, 99, 0xffff_ffff]);
+        let counts: Vec<u32> = (0..10)
+            .map(|_| owned.wrapping_add(t.rng.below(5)).wrapping_sub(2))
+            .collect();
+        let grows: Vec<u32> = (0..10).map(|_| t.rng.pick(&[0u32, 1, 0x100])).collect();
+        out2_by_index(&mut t, 0x008c_d320, &items, &counts, &grows);
+        record_n(&mut t, 0x0079_04b0, 1, owned);
+        t.scramble(tk::SUMMON_GROW_MASK.sym, 8);
+        let chr = t.rng.next();
+        t.twin(
+            "MenuSummon_RefreshGrowMasks",
+            0x008c_d3b0,
+            &[chr],
+            U32,
+            |o| {
+                w(tk::menu_summon_refresh_grow_masks(
+                    o,
+                    chr,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+        // BtlEnd_GetSaveNextAP and BtlEnd_AddGil over recorders
+        let ap = t.rng.next();
+        record_n(&mut t, 0x0078_52b0, 1, ap);
+        let arg = t.rng.int();
+        t.twin("BtlEnd_GetSaveNextAP", 0x008b_da00, &[arg], U32, |o| {
+            w(tk::btl_end_get_save_next_ap(o, arg, &mut callback))
+        });
+        let paid = t.rng.next();
+        record_n(&mut t, 0x0078_59a0, 1, paid);
+        t.twin("BtlEnd_AddGil", 0x008b_a3a0, &[arg], U32, |o| {
+            w(tk::btl_end_add_gil(o, arg, &mut callback))
+        });
+        // TkMn2DrawKickPacket: the original body
+        if round % 8 == 0 {
+            t.twin("TkMn2DrawKickPacket", 0x008c_0c40, &[], U32, |o| {
+                w(tk::tk_mn2_draw_kick_packet(o, &mut callback))
+            });
+        }
+        // TkSyncVDI: the count from any value, SetGlobal013301f0 original
+        t.scramble(0x0133_01e0, 4);
+        t.twin("TkSyncVDI", 0x0088_7f20, &[], U32, |o| {
+            w(tk::tk_sync_vdi(o, &mut callback))
+        });
+        // TkMenuRefreshPartyList over recorders
+        let r1 = t.rng.next();
+        record_n(&mut t, 0x008a_8f40, 1, r1);
+        let r2 = t.rng.next();
+        record_n(&mut t, 0x008a_9090, 1, r2);
+        t.twin("TkMenuRefreshPartyList", 0x008a_ae10, &[], U32, |o| {
+            w(tk::tk_menu_refresh_party_list(o, &mut callback))
+        });
+        // MenuMain_RemoveAllMenus over a recorder
+        let r3 = t.rng.next();
+        record_n(&mut t, 0x008a_ab20, 1, r3);
+        t.twin("MenuMain_RemoveAllMenus", 0x008a_add0, &[], U32, |o| {
+            w(tk::menu_main_remove_all_menus(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch4_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0004) else {
+        return;
+    };
+    let w = u64::from;
+    let listed = [
+        0.0f32,
+        -0.0,
+        1.0,
+        -1.0,
+        0.5,
+        -0.5,
+        0.999,
+        -0.999,
+        2.0,
+        -2.0,
+        1e9,
+        -1e9,
+        1e30,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        -f32::NAN,
+        1.0 / 127.0,
+        -1.0 / 254.0,
+    ];
+    for round in 0..64u32 {
+        // TkChPatchM339 over a recording Ch_ModelSetHide
+        let hide = t.rng.next();
+        record_n(&mut t, 0x0082_aea0, 3, hide);
+        let chr = if round % 3 == 0 { 0 } else { t.rng.next() };
+        t.twin("TkChPatchM339", 0x0082_ba00, &[chr], U32, |o| {
+            w(tk::tk_ch_patch_m339(o, chr, &mut callback))
+        });
+        // Pad_StickToByte: listed axes, then random ones (no signalling NaN)
+        let axis = if (round as usize) < listed.len() {
+            listed[round as usize]
+        } else {
+            t.rng.float(-1.5, 1.5)
+        };
+        let bits = axis.to_bits();
+        t.twin("Pad_StickToByte", 0x0088_9aa0, &[bits], U32, |o| {
+            w(tk::pad_stick_to_byte(o, bits))
+        });
+        // TkMenuStartScene over a recording MenuScene_ResetGroup
+        let e = if round % 4 == 0 { 0 } else { t.alloc_random(8) };
+        record_n(&mut t, 0x00a7_ba70, 3, e);
+        let (scene, group) = (t.rng.next(), t.rng.int());
+        t.twin("TkMenuStartScene", 0x00a7_c880, &[scene, group], U32, |o| {
+            w(tk::tk_menu_start_scene(o, scene, group, &mut callback))
+        });
+        // MenuSave_McWrite: TkGetTGS fixed, the original sceMcWrite stub
+        let tgs = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0088_d6d0, tgs);
+        let args = [t.rng.next(), t.rng.next(), t.rng.int()];
+        t.twin("MenuSave_McWrite", 0x0088_8570, &args, U32, |o| {
+            w(tk::menu_save_mc_write(o, args, &mut callback))
+        });
+        // HelpMem_Free over a recording yiAssert
+        let assert = t.rng.next();
+        record_n(&mut t, 0x0090_ae50, 3, assert);
+        let used = t
+            .rng
+            .pick_or_any(&[0, 0x40, 0x3f, 0x1000, 0x8000_0000, 0x7fff_ffc0]);
+        t.put(t.sym(tk::HELP_MEM_USED.sym), used);
+        let size = t.rng.int();
+        t.twin("HelpMem_Free", 0x0077_4aa0, &[size], U32, |o| {
+            w(tk::help_mem_free(o, i(size), &mut callback))
+        });
+        // InitSysModuleEncoding: the language fixed, the loader recorded
+        let lang = t.rng.pick(&[0u32, 1, 5]);
+        return_const(&mut t, 0x0064_10e0, lang);
+        let loaded = t.rng.next();
+        record_n(&mut t, 0x0064_6920, 1, loaded);
+        t.twin("InitSysModuleEncoding", 0x0064_6910, &[], U32, |o| {
+            w(tk::init_sys_module_encoding(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch5_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0005) else {
+        return;
+    };
+    let w = u64::from;
+    // TkGetControlerWork as `base + (port << 8) + slot`
+    let works = t.alloc_random(0x800);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x08][..], // mov eax, [esp + 4]; shl eax, 8
+        &[0x03, 0x44, 0x24, 0x08, 0x05], &works.to_le_bytes(), // add eax, [esp + 8]; add eax, works
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0088_8ec0);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..48u32 {
+        // TkInitSyncV over the original setters
+        for g in [
+            0x0133_0220,
+            0x0133_0200,
+            0x0133_0210,
+            0x0133_01f0,
+            0x0133_01e0,
+        ] {
+            t.scramble(g, 4);
+        }
+        t.twin("TkInitSyncV", 0x0088_7e30, &[], U32, |o| {
+            w(tk::tk_init_sync_v(o, &mut callback))
+        });
+        // MenuTuto_RestoreNames from a random copy (a zero every 16 bytes)
+        let mut copy = t.rng.bytes(0x68c0);
+        for k in (0..copy.len()).step_by(16) {
+            copy[k + (round as usize % 16)] = 0;
+        }
+        let copy = t.alloc(&copy);
+        t.put(t.sym(tk::TUTO_SAVE_COPY.sym), copy);
+        t.twin("MenuTuto_RestoreNames", 0x008d_b7e0, &[], U32, |o| {
+            w(tk::menu_tuto_restore_names(o, &mut callback))
+        });
+        // MenuWShop_OpenSelWindow over the original allocator
+        if round % 8 == 0 {
+            t.scramble(0x0186_ac24, 2);
+            t.twin("MenuWShop_OpenSelWindow", 0x008d_a8f0, &[], U32, |o| {
+                w(tk::menu_wshop_open_sel_window(o, &mut callback))
+            });
+        }
+        // Pad_CheckPressMode over fixed pad stubs
+        let info = t.rng.pick(&[0u32, 1, 2]);
+        return_const(&mut t, 0x0062_fb70, info);
+        let enter = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0062_fb10, enter);
+        let status = t.alloc_random(4);
+        let kind = t.rng.pick(&[0x09u8, 0x79, 0x07, 0x40]);
+        t.put(status + 1, kind);
+        let args = [t.rng.below(4), t.rng.below(4), t.rng.next(), status];
+        t.twin("Pad_CheckPressMode", 0x0088_9510, &args, U32, |o| {
+            w(tk::pad_check_press_mode(o, args, &mut callback))
+        });
+        // MenuMain_SaveFrameBuffer: a stand-in DC table, the blocks recorded
+        let dc = t.alloc_random(0x60);
+        record_n(&mut t, 0x0082_0530, 1, dc);
+        let stored = t.rng.next();
+        record_n(&mut t, 0x008a_acf0, 3, stored);
+        t.scramble(0x0184_08f4, 4);
+        t.twin("MenuMain_SaveFrameBuffer", 0x008a_ac80, &[], U32, |o| {
+            w(tk::menu_main_save_frame_buffer(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch6_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0006) else {
+        return;
+    };
+    let w = u64::from;
+    for round in 0..64u32 {
+        // TkRefreshHdd: stand-in config reads, the HDD state fixed, the
+        // sound driver recorded (TkRefreshHDDMode's callees)
+        let menu = t.alloc_random(4);
+        return_const(&mut t, 0x0078_5290, menu);
+        let config = t.alloc_random(0x20);
+        return_const(&mut t, 0x0088_d5e0, config);
+        let word = t.rng.pick(&[0u32, 3, 1, 0x103]);
+        return_const(&mut t, 0x0077_87b0, word);
+        let status = t.rng.pick(&[0u32, 1, 2, 0x101]);
+        return_const(&mut t, 0x0077_7e90, status);
+        let name = t.rng.next();
+        record_n(&mut t, 0x0077_7eb0, 1, name);
+        let wave = t.rng.next();
+        record_n(&mut t, 0x0081_d470, 1, wave);
+        let music = t.rng.next();
+        record_n(&mut t, 0x0081_d3c0, 1, music);
+        t.scramble(tk::HDD_MODE.sym, 1);
+        t.twin("TkRefreshHdd", 0x0087_24a0, &[], U32, |o| {
+            w(tk::tk_refresh_hdd(o, &mut callback))
+        });
+        // BtlEnd_StepGil over a recording MsPayGIL
+        let paid = t.rng.next();
+        record_n(&mut t, 0x0078_59a0, 1, paid);
+        let step = t.rng.pick_or_any(&[0, 1, 5, 0x8000_0000]);
+        let rest = if round % 3 == 0 {
+            step
+        } else {
+            t.rng.pick_or_any(&[0, 1, 7, 0xffff_ffff])
+        };
+        t.put(t.sym(tk::BTL_END_GIL.sym), [step, rest]);
+        t.twin("BtlEnd_StepGil", 0x008b_a590, &[], U32, |o| {
+            w(tk::btl_end_step_gil(o, &mut callback))
+        });
+        // TkInitWork: alarms, controllers and sync recorded, the save original
+        if round % 4 == 0 {
+            for f in [0x0088_c810, 0x0088_8f00, 0x0088_7e30] {
+                let r = t.rng.next();
+                record_n(&mut t, f, 0, r);
+            }
+            for g in [0x0133_0870, 0x0133_0878, 0x0133_087c, 0x023c_bec4] {
+                t.scramble(g, 8);
+            }
+            let save = t.sym(0x0112_ca90);
+            let junk = t.rng.bytes(0x40);
+            t.put_bytes(save, &junk);
+            t.twin("TkInitWork", 0x0088_e570, &[], U32, |o| {
+                w(tk::tk_init_work(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch7_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0007) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    for round in 0..64u32 {
+        if round % 8 == 0 {
+            // the weapon shop's list and second windows over the original
+            // allocator; the cursor set-up recorded
+            t.scramble(0x0186_ab10, 2);
+            t.twin("MenuWShop_OpenListWindow", 0x008d_8260, &[], U32, |o| {
+                w(tk::menu_wshop_open_list_window(o, &mut callback))
+            });
+            t.scramble(0x0186_a250, 4);
+            let init = t.rng.next();
+            record_n(&mut t, 0x008d_9580, 1, init);
+            t.twin("MenuWShop_OpenSubWindow1", 0x008d_8370, &[], U32, |o| {
+                w(tk::menu_wshop_open_sub_window1(o, &mut callback))
+            });
+            // the aeon status window: the current aeon fixed, the command
+            // list and the status background recorded
+            let summon = t.rng.below(8);
+            return_const(&mut t, 0x008a_9880, summon);
+            let built = t.rng.next();
+            record_n(&mut t, 0x008d_2b40, 1, built);
+            let bg = t.rng.next();
+            record_n(&mut t, 0x008d_4ed0, 0, bg);
+            t.scramble(0x023c_c3bc, 0x10);
+            t.twin("MenuSummon_OpenStatusWindow", 0x008c_d140, &[], U32, |o| {
+                w(tk::menu_summon_open_status_window(o, &mut callback))
+            });
+        }
+        // BtlEnd_SelectedWeapon over a recording MsGetSaveWeapon
+        let rec = t.rng.next();
+        record_n(&mut t, 0x007a_bbd0, 1, rec);
+        let list = t.alloc_random(0x200);
+        t.put(t.sym(0x025c_c580), list);
+        for (g, v) in [
+            (0x0186_a19c, t.rng.pick(&[0u32, 1, 0x100])),
+            (0x0186_a1a8, t.rng.pick(&[0u32, 1, 0x8000_0000])),
+            (0x0186_a190, t.rng.below(0x80)),
+            (0x0186_a1a0, t.rng.below(0x80)),
+            (0x0186_a1a4, t.rng.below(0x10)),
+        ] {
+            t.put(t.sym(g), v);
+        }
+        t.scramble(0x0231_0f8e, 0x20);
+        t.twin("BtlEnd_SelectedWeapon", 0x008b_da80, &[], U32, |o| {
+            w(tk::btl_end_selected_weapon(o, local, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch8_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0008) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    // MsGetSavePartyMember as `*a, *b, *c = table[0..3]`
+    let table = t.alloc(&[0; 12]);
+    let mut code = vec![];
+    for k in 0..3u8 {
+        code.push(0xa1); // mov eax, [table + 4k]
+        code.extend((table + 4 * u32::from(k)).to_le_bytes());
+        code.extend([0x8b, 0x4c, 0x24, 4 + 4 * k]); // mov ecx, [esp + 4 + 4k]
+        code.extend([0x89, 0x01]); // mov [ecx], eax
+    }
+    code.push(0xc3);
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0078_52f0);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..64u32 {
+        if round % 8 == 0 {
+            t.scramble(0x0186_aa3c, 2);
+            t.twin("MenuKaizou_OpenWindow", 0x008d_6d60, &[], U32, |o| {
+                w(tk::menu_kaizou_open_window(o, &mut callback))
+            });
+        }
+        // BtlEnd_InParty
+        let slots: Vec<u32> = (0..3).map(|_| t.rng.pick(&[0u32, 1, 2, 7, 0xff])).collect();
+        for (at, v) in (table..).step_by(4).zip(&slots) {
+            t.put(at, *v);
+        }
+        let chr = t.rng.pick(&[0u32, 1, 2, 7, 0xff, 0x101]);
+        t.twin("BtlEnd_InParty", 0x008b_9ec0, &[chr], U32, |o| {
+            w(tk::btl_end_in_party(o, chr, local, &mut callback))
+        });
+        // MenuWShop_ClampSubWindow1: random cursor, scroll, count and rows
+        let restart = t.rng.next();
+        record_n(&mut t, 0x008b_5530, 1, restart);
+        let win = if round % 7 == 0 {
+            0
+        } else {
+            t.alloc_random(0x60)
+        };
+        if win != 0 {
+            for off in [0x30u32, 0x32, 0x3a, 0x48] {
+                let v = t.rng.pick(&[0u16, 1, 5, 9, 10, 0x7fff, 0x8000, 0xffff]);
+                let v = if t.rng.below(2) == 0 {
+                    v
+                } else {
+                    (t.rng.next() & 0x1f) as u16
+                };
+                t.put(win + off, v);
+            }
+        }
+        t.put(t.sym(tk::WSHOP_WINDOWS[1].sym), win);
+        let mask = if win == 0 { VOID } else { U32 };
+        t.twin("MenuWShop_ClampSubWindow1", 0x008d_8450, &[], mask, |o| {
+            w(tk::menu_wshop_clamp_sub_window1(o, &mut callback).unwrap_or(0))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round20_batch1_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0020_0001) else {
+        return;
+    };
+    let w = u64::from;
+    // TOGetMessageSizePacked as `return text` (the width is its low half)
+    let code = [0x8b, 0x44, 0x24, 0x04, 0xc3]; // mov eax, [esp + 4]; ret
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x008b_7170);
+        o.write(at, &code).unwrap();
+    }
+    let local = t.b.stack_range().start + 0x100;
+    record_n(&mut t, 0x008a_c850, 1, 0x00c0_1234);
+    record_n(&mut t, 0x0090_5930, 6, 0x53);
+    // MsGetSaveWeaponName: a constant (its kernel tables are not in the image)
+    return_const(&mut t, 0x007a_bdf0, 0x00c0_5678);
+    // dbgPrintf (a bare `ret` before int3 padding) keeps its format
+    let fmt = t.alloc(&[0; 4]);
+    let code = [
+        &[0x8b, 0x44, 0x24, 0x04, 0xa3][..],
+        &fmt.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0062_f500);
+        o.write(at, &code).unwrap();
+    }
+    // floats: a quiet NaN, halves, small finite values
+    let pick = |t: &mut Twins| -> u32 {
+        match t.rng.below(6) {
+            0 => f32::NAN.to_bits(),
+            1 => (f32::from_bits(t.rng.next() & 0x7f7f_ffff) * 1e-30).to_bits(),
+            _ => (f32::from(i16::try_from(t.rng.below(1000)).unwrap_or(0)) / 2.0).to_bits(),
+        }
+    };
+    for round in 0..48u32 {
+        // every window free again (32 records of 0x98 bytes)
+        let windows = t.sym(tk::MENU_WINDOWS.sym);
+        for k in 0..0x20u32 {
+            t.put(windows + k * 0x98 + 0x40, 0u8);
+        }
+        // TkMenuOpenSubCmdWindowMain_008e4790: random texts (their widths)
+        // and values, n from -1 to 6, widths around the row's length
+        let n = t.rng.pick(&[0u32, 0xffff_ffff, 1, 2, 2, 3, 4, 6]);
+        let small = round % 3 != 0;
+        let mut texts: Vec<u32> = (0..6)
+            .map(|_| {
+                let v = t.rng.next();
+                if small { v & 0x00ff_00ff } else { v }
+            })
+            .collect();
+        // the edges: a row of exactly the width (0x1a0), of exactly 0x1f0, and a
+        // negative width whose gap differs signed and unsigned (0x40, 0x80)
+        let edge = match round {
+            45 => Some((2, [0x100, 0x80, 0], 0x1a0)),
+            46 => Some((2, [0x100, 0xd0, 0], 0x100)),
+            47 => Some((3, [0xffff, 0x7ee1, 0], 0x8000)),
+            _ => None,
+        };
+        let n = edge.map_or(n, |e| e.0);
+        if let Some((_, e, _)) = edge {
+            texts[..3].copy_from_slice(&e);
+        }
+        let values: Vec<u32> = (0..6).map(|_| t.rng.next()).collect();
+        let texts = t.alloc(
+            &texts
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let values = t.alloc(
+            &values
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let width = t
+            .rng
+            .pick(&[0u32, 0x100, 0x1f0, 0x200, 0x2c0, 0x7fff, 0x8000, 0xffff]);
+        let width = if t.rng.below(2) == 0 {
+            width
+        } else {
+            t.rng.next()
+        };
+        let width = edge.map_or(width, |e| e.2);
+        let (id, b44) = (t.rng.next(), t.rng.next());
+        let args = [id, texts, values, n, width, b44];
+        t.twin(
+            "TkMenuOpenSubCmdWindowMain_008e4790",
+            0x008e_4790,
+            &args,
+            U32,
+            |o| w(tk::tk_menu_open_sub_cmd_window_row(o, args, &mut callback)),
+        );
+        // MenuNameEntry_DeleteKey: a language, keys parsed from a key string
+        // (sometimes changed), the target string the same or another
+        let lang = t.rng.pick(&[0u32, 1, 9, 10, 11]);
+        return_const(&mut t, 0x008a_c2f0, lang);
+        let n = t.rng.below(10);
+        let mut keys: Vec<u8> = (0..n)
+            .map(|_| t.rng.pick(&[1u8, 2, 3, 5, 0x30, 0x31, 0x80, 0xff]))
+            .collect();
+        keys.push(0);
+        let keys = t.alloc(&keys);
+        let f = t.sym(0x008c_5280);
+        for o in [&mut t.a, &mut t.b] {
+            o.call(f, Conv::Cdecl, &[keys]).unwrap();
+        }
+        if round % 3 == 1 {
+            let k = t.rng.below(0x30);
+            let v = u8::try_from(t.rng.below(3)).unwrap_or(0);
+            t.put(t.sym(tk::ITEM_KEYS) + k, v);
+        }
+        let s = match round % 4 {
+            0 => t.alloc(&[0]),
+            1 => t.alloc(&[1, 2, 0]),
+            _ => keys,
+        };
+        return_const(&mut t, 0x008b_edd0, s);
+        let target = t.rng.below(0x14).wrapping_sub(2);
+        t.put(t.sym(tk::MENU_ITEM_TARGET.sym), target);
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        t.twin("MenuNameEntry_DeleteKey", 0x008c_44d0, &[], VOID, |o| {
+            tk::menu_name_entry_delete_key(o, &mut callback);
+            0
+        });
+        // TkFindLegendWeapon_008c30e0: on half the rounds random slots
+        // (in use, flags with and without bit 2, owners 0..8)
+        if round % 2 == 0 {
+            let base = t.sym(ffx_battle::save::bridge::EQUIPMENT.sym);
+            for k in 0..200u32 {
+                let rec = [
+                    u8::from(t.rng.below(4) != 0),
+                    t.rng.pick(&[0u8, 2, 4, 6, 0xff]),
+                    u8::try_from(t.rng.below(9)).unwrap_or(0),
+                    u8::try_from(t.rng.below(2)).unwrap_or(0),
+                    t.rng.pick(&[0u8, 3, 0xff]),
+                ];
+                t.put_bytes(base + k * 22 + 2, &rec);
+            }
+        }
+        let chr = t.rng.pick(&[0u32, 1, 3, 6, 7, 8, 0xffff_ffff, 0x100]);
+        t.twin(
+            "TkFindLegendWeapon_008c30e0",
+            0x008c_30e0,
+            &[chr],
+            U32,
+            |o| w(tk::tk_find_legend_weapon(o, chr, local, &mut callback)),
+        );
+        // DrawCrossMenuSummonPlateNoHPMPClut: the name and the font recorded
+        let (x, y) = (pick(&mut t), pick(&mut t));
+        let (colour, chr) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "DrawCrossMenuSummonPlateNoHPMPClut",
+            0x008e_7110,
+            &[chr, x, y, colour],
+            U32,
+            |o| {
+                w(tk::draw_cross_menu_summon_plate_no_hpmp(
+                    o,
+                    chr,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    colour,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
     }
     eprintln!("{} calls", t.calls);
 }

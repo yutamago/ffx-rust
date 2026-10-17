@@ -1670,8 +1670,8 @@ ported! {
     BtlEnd_GetResult @ 0x008b_da10 => extern "C" fn btl_end_get_result(i: u32) -> u32 {
         tk::btl_end_get_result(&mem(), i)
     }
-    /// `BtlEnd_GetResult19()`.
-    BtlEnd_GetResult19 @ 0x008b_da20 => extern "C" fn btl_end_get_result19() -> u32 {
+    /// `BtlEnd_GetGilWon()`: result 19.
+    BtlEnd_GetGilWon @ 0x008b_da20 => extern "C" fn btl_end_get_gil_won() -> u32 {
         tk::btl_end_get_result(&mem(), 19)
     }
     /// `Pause_Request()`.
@@ -2102,9 +2102,9 @@ ported! {
     MenuWShop_CountSlots @ 0x008d_b440 => extern "C" fn menu_wshop_count_slots() {
         tk::menu_wshop_count_slots(&mut mem());
     }
-    /// `BtlEnd_InitApStep()`.
-    BtlEnd_InitApStep @ 0x008b_df10 => extern "C" fn btl_end_init_ap_step() {
-        tk::btl_end_init_ap_step(&mut mem());
+    /// `BtlEnd_InitGilStep()`.
+    BtlEnd_InitGilStep @ 0x008b_df10 => extern "C" fn btl_end_init_gil_step() {
+        tk::btl_end_init_gil_step(&mut mem());
     }
     /// `BtlEnd_ApStep(chr)`.
     BtlEnd_ApStep @ 0x008b_a3c0 => extern "C" fn btl_end_ap_step(chr: i32) -> u32 {
@@ -2746,6 +2746,10 @@ ported! {
     TkMenuOpenSubCmdWindowMain @ 0x008e_33d0 => extern "C" fn tk_menu_open_sub_cmd_window_main(x: u32, items: u32, c: u32, d: u32) -> u32 {
         tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], true, [1, 1], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuOpenSubCmdWindowMain_008e4790(id, texts, values, n, width, b44)`: the window.
+    TkMenuOpenSubCmdWindowMain_008e4790 @ 0x008e_4790 => extern "C" fn tk_menu_open_sub_cmd_window_row(id: u32, texts: u32, values: u32, n: u32, width: u32, b44: u32) -> u32 {
+        tk::tk_menu_open_sub_cmd_window_row(&mut mem(), [id, texts, values, n, width, b44], &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuSubCmd_OpenMainA(x, items, c, d)`: the window.
     MenuSubCmd_OpenMainA @ 0x008e_3470 => extern "C" fn menu_sub_cmd_open_main_a(x: u32, items: u32, c: u32, d: u32) -> u32 {
         tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], false, [0, 1], &mut |_, f, a| call_ptr(f, a))
@@ -3349,6 +3353,22 @@ ported! {
         };
         tk::tk_menu_item_heal_amount(&mut m, [item, player, mp], local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `DrawCrossMenuSummonPlateNoHPMPClut(chr, x, y, colour)`: the font call's eax.
+    DrawCrossMenuSummonPlateNoHPMPClut @ 0x008e_7110 => extern "C" fn draw_cross_menu_summon_plate_no_hpmp(chr: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tk::draw_cross_menu_summon_plate_no_hpmp(&mut mem(), chr, [f32::from_bits(x), f32::from_bits(y)], colour, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DeleteKey()`.
+    MenuNameEntry_DeleteKey @ 0x008c_44d0 => extern "C" fn menu_name_entry_delete_key() {
+        tk::menu_name_entry_delete_key(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkFindLegendWeapon_008c30e0(chr)`: the weapon record, or 0.
+    TkFindLegendWeapon_008c30e0 @ 0x008c_30e0 => extern "C" fn tk_find_legend_weapon(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::tk_find_legend_weapon(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `DrawCrossMenuIconItemName(item, x, y, colour)`.
     DrawCrossMenuIconItemName @ 0x008e_6700 => extern "C" fn draw_cross_menu_icon_item_name(item: u32, x: u32, y: u32, colour: u32) -> u32 {
         let mut m = mem();
@@ -3381,5 +3401,178 @@ ported! {
     /// `TkMenuListWindowCtrl(w)`.
     TkMenuListWindowCtrl_008b44b0 @ 0x008b_44b0 => extern "C" fn tk_menu_list_window_ctrl(w: u32) {
         tk::tk_menu_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuMain_RestoreVram()`.
+    MenuMain_RestoreVram @ 0x008a_a690 => extern "C" fn menu_main_restore_vram() -> u32 {
+        tk::menu_main_restore_vram(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_SaveVram()`.
+    MenuMain_SaveVram @ 0x008a_ab90 => extern "C" fn menu_main_save_vram() -> u32 {
+        tk::menu_main_save_vram(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuAbility_ApplyHeal(target, user)`.
+    MenuAbility_ApplyHeal_008c6d00 @ 0x008c_6d00 => extern "C" fn menu_ability_apply_heal(target: u32, user: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_ability_apply_heal(&mut m, target, user, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawCommonPlateL(plate)`.
+    TkMn2DrawCommonPlateL @ 0x008b_f9b0 => extern "C" fn tk_mn2_draw_common_plate_l(plate: u32) -> u32 {
+        tk::tk_mn2_draw_common_plate_l(&mut mem(), plate, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenWindow3()`: the window.
+    MenuWShop_OpenWindow3 @ 0x008d_a9c0 => extern "C" fn menu_wshop_open_window3() -> u32 {
+        tk::menu_wshop_open_window3(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_OpenMainWindow()`: the window.
+    MenuStatus_OpenMainWindow @ 0x008d_3100 => extern "C" fn menu_status_open_main_window() -> u32 {
+        tk::menu_status_open_main_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_OpenWindow()`.
+    MenuSummon_OpenWindow @ 0x008c_d1b0 => extern "C" fn menu_summon_open_window() -> u32 {
+        tk::menu_summon_open_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkRefreshHDDMode()`.
+    TkRefreshHDDMode @ 0x0088_e930 => extern "C" fn tk_refresh_hdd_mode() -> u32 {
+        tk::tk_refresh_hdd_mode(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `SsSetProjectBase(path)`.
+    SsSetProjectBase @ 0x0088_7a90 => extern "C" fn ss_set_project_base(path: u32) -> u32 {
+        tk::ss_set_project_base(&mut mem(), path, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2StringWidth(text)`.
+    TkMn2StringWidth @ 0x008c_2cb0 => extern "C" fn tk_mn2_string_width(text: u32) -> u32 {
+        tk::tk_mn2_string_width(&mut mem(), text, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_LoadTargetKeys(target)`: void (the parser's `eax` is unread).
+    MenuItem_LoadTargetKeys @ 0x008c_5320 => extern "C" fn menu_item_load_target_keys(target: i32) {
+        tk::menu_item_load_target_keys(&mut mem(), target, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_RefreshGrowMasks(chr)`.
+    MenuSummon_RefreshGrowMasks @ 0x008c_d3b0 => extern "C" fn menu_summon_refresh_grow_masks(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_summon_refresh_grow_masks(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_GetSaveNextAP(chr)`.
+    BtlEnd_GetSaveNextAP @ 0x008b_da00 => extern "C" fn btl_end_get_save_next_ap(chr: u32) -> u32 {
+        tk::btl_end_get_save_next_ap(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_AddGil(gil)`.
+    BtlEnd_AddGil @ 0x008b_a3a0 => extern "C" fn btl_end_add_gil(gil: u32) -> u32 {
+        tk::btl_end_add_gil(&mut mem(), gil, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawKickPacket()`.
+    TkMn2DrawKickPacket @ 0x008c_0c40 => extern "C" fn tk_mn2_draw_kick_packet() -> u32 {
+        tk::tk_mn2_draw_kick_packet(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSyncVDI()`.
+    TkSyncVDI @ 0x0088_7f20 => extern "C" fn tk_sync_vdi() -> u32 {
+        tk::tk_sync_vdi(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuRefreshPartyList()`.
+    TkMenuRefreshPartyList @ 0x008a_ae10 => extern "C" fn tk_menu_refresh_party_list() -> u32 {
+        tk::tk_menu_refresh_party_list(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_RemoveAllMenus()`.
+    MenuMain_RemoveAllMenus @ 0x008a_add0 => extern "C" fn menu_main_remove_all_menus() -> u32 {
+        tk::menu_main_remove_all_menus(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkChPatchM339(chr)`.
+    TkChPatchM339 @ 0x0082_ba00 => extern "C" fn tk_ch_patch_m339(chr: u32) -> u32 {
+        tk::tk_ch_patch_m339(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_StickToByte(axis)`: the byte in `al`, all of `eax` as the original.
+    Pad_StickToByte @ 0x0088_9aa0 => extern "C" fn pad_stick_to_byte(axis: u32) -> u32 {
+        tk::pad_stick_to_byte(&mut mem(), axis)
+    }
+    /// `TkMenuStartScene(scene, group)`.
+    TkMenuStartScene @ 0x00a7_c880 => extern "C" fn tk_menu_start_scene(scene: u32, group: u32) -> u32 {
+        tk::tk_menu_start_scene(&mut mem(), scene, group, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSave_McWrite(fd, buf, size)`.
+    MenuSave_McWrite @ 0x0088_8570 => extern "C" fn menu_save_mc_write(fd: u32, buf: u32, size: u32) -> u32 {
+        tk::menu_save_mc_write(&mut mem(), [fd, buf, size], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `HelpMem_Free(size)`.
+    HelpMem_Free @ 0x0077_4aa0 => extern "C" fn help_mem_free(size: i32) -> u32 {
+        tk::help_mem_free(&mut mem(), size, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `InitSysModuleEncoding()`.
+    InitSysModuleEncoding @ 0x0064_6910 => extern "C" fn init_sys_module_encoding() -> u32 {
+        tk::init_sys_module_encoding(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitSyncV()`.
+    TkInitSyncV @ 0x0088_7e30 => extern "C" fn tk_init_sync_v() -> u32 {
+        tk::tk_init_sync_v(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuTuto_RestoreNames()`.
+    MenuTuto_RestoreNames @ 0x008d_b7e0 => extern "C" fn menu_tuto_restore_names() -> u32 {
+        tk::menu_tuto_restore_names(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSelWindow()`: the window.
+    MenuWShop_OpenSelWindow @ 0x008d_a8f0 => extern "C" fn menu_wshop_open_sel_window() -> u32 {
+        tk::menu_wshop_open_sel_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_CheckPressMode(port, slot, ret, status)`.
+    Pad_CheckPressMode @ 0x0088_9510 => extern "C" fn pad_check_press_mode(port: u32, slot: u32, ret: u32, status: u32) -> u32 {
+        tk::pad_check_press_mode(&mut mem(), [port, slot, ret, status], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_SaveFrameBuffer()`.
+    MenuMain_SaveFrameBuffer @ 0x008a_ac80 => extern "C" fn menu_main_save_frame_buffer() -> u32 {
+        tk::menu_main_save_frame_buffer(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkRefreshHdd()`.
+    TkRefreshHdd @ 0x0087_24a0 => extern "C" fn tk_refresh_hdd() -> u32 {
+        tk::tk_refresh_hdd(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_StepGil()`: 1 while gil remains.
+    BtlEnd_StepGil @ 0x008b_a590 => extern "C" fn btl_end_step_gil() -> u32 {
+        tk::btl_end_step_gil(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitWork()`.
+    TkInitWork @ 0x0088_e570 => extern "C" fn tk_init_work() -> u32 {
+        tk::tk_init_work(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenListWindow()`: the window.
+    MenuWShop_OpenListWindow @ 0x008d_8260 => extern "C" fn menu_wshop_open_list_window() -> u32 {
+        tk::menu_wshop_open_list_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSubWindow1()`.
+    MenuWShop_OpenSubWindow1 @ 0x008d_8370 => extern "C" fn menu_wshop_open_sub_window1() -> u32 {
+        tk::menu_wshop_open_sub_window1(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_OpenStatusWindow()`.
+    MenuSummon_OpenStatusWindow_008cd140 @ 0x008c_d140 => extern "C" fn menu_summon_open_status_window() -> u32 {
+        tk::menu_summon_open_status_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_SelectedWeapon()`: the record.
+    BtlEnd_SelectedWeapon @ 0x008b_da80 => extern "C" fn btl_end_selected_weapon() -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::btl_end_selected_weapon(&mut m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_OpenWindow()`.
+    MenuKaizou_OpenWindow @ 0x008d_6d60 => extern "C" fn menu_kaizou_open_window() -> u32 {
+        tk::menu_kaizou_open_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_InParty(chr)`.
+    BtlEnd_InParty @ 0x008b_9ec0 => extern "C" fn btl_end_in_party(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::btl_end_in_party(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_ClampSubWindow1()`: void (its `eax` is unread; with no
+    /// window the original leaves it alone).
+    MenuWShop_ClampSubWindow1 @ 0x008d_8450 => extern "C" fn menu_wshop_clamp_sub_window1() {
+        tk::menu_wshop_clamp_sub_window1(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
 }

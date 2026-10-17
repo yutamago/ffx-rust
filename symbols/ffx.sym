@@ -1531,6 +1531,7 @@
 0x0062fa10 function sceMcWrite                   # layout: alphabetical run between sceMcSync and sceMount (1 unnamed in the gap); Switch 0x71001c27a0 sceMcWrite is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062fa20 function sceMount                  # fh v3:bsim1.00 0x0062fbd0
 0x0062fa30 function sceOpen                   # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; was Ps2File_Open
+0x0062fb10 function scePadEnterPressMode      # PS2 SDK stub (xor eax, eax; ret) between sceOpen and scePadG...; called by Pad_CheckPressMode after scePadInfoPressMode, as libpad's sequence
 0x0062fb30 function scePadGetState            # fh v3:bsim1.00 0x0062fce0
 0x0062fb40 function scePadInfoAct             # fh v3:bsim1.00 0x0062fcf0
 0x0062fb50 function scePadInfoComb            # fh v3:bsim1.00 0x0062fd00
@@ -4572,8 +4573,9 @@
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
 0x00774860 function MenuTextCode_00774860 # (&out, &code, arg): expands one 8-byte menu text code: kind (w0>>8)&0xff 1 copies the string from table fn w0>>16 ((w1&0xffff)+arg); kind 0 a number (table fn / value table *0x0112a0a4 / 0) as 6 digits with ':' for leading zeros, or with flag (w1>>16)&0xff to 0x0112a06c/0x0112a070; name ours
 0x00774a50 function MenuRecordCondition_00774a50 # (record): 1 when the record's condition holds: i16 +0x20 index into *0x00c416d0 (negative: 0), called with i16 +0x22; mode +0x2b 0 wants a zero result, 1 nonzero, else 0; name ours
+0x00774aa0 function HelpMem_Free              # (size): g_HelpMemUsed -= size rounded up to 64 (signed); below 0 yiAssert(0, 0x00b5313c, 0x00b533f4); returns -rounded; pairs with HelpMem_Get; caller 0x00770430; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0; cdecl(out, n): help picture path by TOGetFFXLang (0 help, 1 us, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch; others format an uninitialised buffer) through fiosUnifyFilename, then sprintf(out, path, n)
-0x00774c00 function TOMenuAllocHelpMem_00774c00  # (reset, bytes) -> a block from the help work area (TOMenuGetHelpWorkAdrs + 0x0112a09c, which reset clears), "help get mem %x (0x%x / 0x%x)", "help memory over flow" against TOMenuGetHelpWorkSize; own name
+0x00774c00 function HelpMem_Get               # (reset, size): "help get mem": g_HelpMemUsed (cleared when reset is 0) + base, then += size rounded to 64; asserts against the 0x200000 limit; name ours
 0x00774ff0 function GsPkt_TexturedSprite_00774ff0 # (pkt, tbp, ..., w, h): builds a GIF packet in pkt: TEX0 with TW/TH = log2 of the width/height (1..10), ALPHA, TEST, a sprite with UV and XYZ2 (0x0060ab4000 tag); callers 0x007766e0, 0x00776740; the system agent's finding (a DMA/GIF packet); own name
 0x00775530 function MenuCursorBlocked_00775530 # (): byte 0x0112a039 = 1 when the move from record *0x0112a084 is blocked: pad word by rec +2 (0x0112a090/08c/094), last direction bit wins (kept in 0x0112a08c), 12-byte link at +0x30 (cond index into *0x00c416d0, arg, expected flag, target +8): negative cond or a result disagreeing with the flag blocks; name ours
 0x00775810 function SetGlobal_0112a018 # cdecl(v): *0x0112a018 = v, returns v; name ours
@@ -9191,6 +9193,7 @@
 0x00888430 function TkMcSetExecPort              # layout: alphabetical run between TkMcSetDebugLock and TkMcSetFileInfo (1 unnamed in the gap); Switch 0x710048a530 TkMcSetExecPort is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00888440 function TkMcSetFileInfo           # fh switch:bsim1.00 0x710048a020
 0x00888480 function TkMcSetLoadFilePos        # (slot, pos) 0x0133023c[slot] = pos; Switch name, pairs with TkMcGetLoadFilePos
+0x00888570 function MenuSave_McWrite          # (fd, buf, size): 0 when TkGetTGS(), else jmp sceMcWrite; callers 0x008b15d0 (save menu); name ours
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
 0x00888650 function TkGetSyncVCallbackPtr     # (i) -> g_TkSyncVCallbackPtrs[i], i clamped to 0..2 (TkSetSyncVCallbackPtr's getter)
 0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none)
@@ -9232,7 +9235,9 @@
 0x008894b0 function Pad_SetActuatorFE         # (pad, port, v) work byte +0xfe; own name
 0x008894d0 function TkSetControlerActuatorMode # fh v3:bsim1.00 0x00889440
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
+0x00889510 function Pad_CheckPressMode        # (port, slot, ret, status): scePadInfoPressMode == 1: 7 when status[1] & 0xf != 9 and scePadEnterPressMode != 0, else ret; otherwise TkGetControlerWork(port, slot) +0x82 = 0, ret; caller 0x00889050; name ours
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
+0x00889aa0 function Pad_StickToByte           # (f32 axis): al = 0x80 - ftol(axis * -127.0) (double 0x00b5dee8), eax's upper 24 bits from the ftol; caller 0x00889570 (stick bytes +0x84..0x87); name ours
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
 0x00889b00 function Math_StoreMax             # (dst, src, v) *dst = v < *src ? *src : v (x87); own name
 0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
@@ -9319,6 +9324,7 @@
 0x0088dd60 function TkInitSceneFromSave       # () fade/0x01330854 cleared; no load pending (0x00c33480 -1): 0x01327108 = 1; else the save event block restores map/entrance (+0xba->+0, +0xc2->+2, +0xb8->+0xc then 0, +0xce->+0xd), 0x0133084c = 1; own name
 0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0
 0x0088e070 function TkInitScene               # fh v3:exact 0x0088dfe0
+0x0088e570 function TkInitWork                # (): 0x01330878/7c = 0, TkInitAlarm, TkInitControlerWork, TkInitSyncV, debug menu status 1, flags 0, g_SndStreamTable 0, save +0x2b = 0, save +0x13 = (b & ~4) | 2; returns MsGetSaveEventAddress(); TkInit calls it first; name ours
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
 0x0088e650 function TkMalloc                  # fh v3:exact 0x0088e5c0
 0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0
@@ -9626,11 +9632,18 @@
 0x008aa470 function MenuMain_ResetAllWindows  # the 32 window records (0x98 bytes from 0x01840900) reset; own name
 0x008aa4b0 function MenuMain_ResetWindow      # (window) defaults: callbacks/state 0, ids +0x2c/+0x2e = -1, +0x34 = 0x01000000, +0x3e = 0x0101; own name
 0x008aa610 function MenuMain_BusyMask         # (): g_TkMenuMainActiveMask | bit 31 when TkCdReadSync(1); when that is 0, 0x80000000 if AtelIsCallbackQue() == 1; name ours
+0x008aa690 function MenuMain_RestoreVram      # (): MenuMain_LoadVramBlock(0x01340870 + i*0x10000, 0xbc000 + i*0x4000, 0x10000) for 13 blocks; menu close in 0x008a9ca0 (after MenuMain_SaveVram on open); name ours
+0x008aa710 function MenuMain_LoadVramBlock    # (buf, vram, bytes): sceGsSetDefLoadImage(0x01841cd0, vram/64, 8, 0, 0, 0, 512, bytes/4/512), FlushCache, sceGsExecLoadImage; glue; name ours
 0x008aaab0 function TkMenuMainRegistMenu      # (slot 0..24, window): slot table 0x01840888, clears +0x18/+0x1c, calls +8(window, menu mode); Switch name, alphabetical slot
 0x008aab00 function TkMenuMainRegistWindow    # fh switch:bsim1.00+call.cs 0x71004ba0f0 cdecl
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
+0x008aab90 function MenuMain_SaveVram         # (): MenuMain_StoreVramBlock over the same 13 blocks as MenuMain_RestoreVram; menu open in 0x008a9ca0; name ours
+0x008aac10 function MenuMain_StoreVramBlock   # (buf, vram, bytes): sceGsSetDefStoreImage(0x01841c70, ...), FlushCache, sceGsExecStoreImage; glue; name ours
+0x008aac80 function MenuMain_SaveFrameBuffer  # (): Sg_GetDBuffDC(&0x018408f4), index &= 1, base = (dc[index] word +0x10 & 0x1ff) << 11; MenuMain_StoreFrameBlock(0x01410870 + i*0xc000, base + i*0x4000, 0xc000) for 13 blocks; menu open 0x008a9ca0; name ours
+0x008aacf0 function MenuMain_StoreFrameBlock  # (buf, gs, bytes): sceGsSetDefStoreImage(0x01841c70, gs/64, 8, 1, 0, 0, 512, bytes/3/512) (24-bit), FlushCache, sceGsExecStoreImage; glue; name ours
 0x008aad60 function TkMenuMainSetIgnoreJoinFlag # fh v3:cg3 0x8aad10
 0x008aad70 function TkMenuMainSleepMenu       # fh v3:exact 0x008aad20
+0x008aadd0 function MenuMain_RemoveAllMenus   # (): TkMenuMainRemoveMenu(slot) for slots 0..0x19, last result; the menu close 0x008a9ca0; name ours
 0x008aae00 function Pause_Request             # 0x01340850 = 1 (Pause_Update runs while set); own name
 0x008aae10 function TkMenuRefreshPartyList    # fh v3:bsim1.00 0x008aadc0
 0x008aae30 function MenuParty_RefreshMask     # 0x01841c2c = bits of the party slot ids (count TkMenuGetPlayerPartyMask); own name
@@ -9871,20 +9884,25 @@
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
 0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
+0x008b9ec0 function BtlEnd_InParty            # (chr): 1 when chr is one of MsGetSavePartyMember(&a, &b, &c)'s three slots and not 0xff, else 0 (stack cookie); caller 0x008bde00; name ours
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name
+0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
+0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndGil counts gil; returns 1 while some remains; name ours
 0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
 0x008bc340 function TkBtlEndDraw                 # the after-battle results screen's draw: its callees (TOMenuOpenPktBuffTmp, TOMkpShapeXYWHUV, DrawWaterWaveShapeC2, TOGetSaveChrName, ToMakeBtlEasyEdgeFont*, ToMakeBtlEasyDigitRight, TOGetFFXLang, the cos/sin lookups) are the Switch TkBtlEndDraw's (9536 bytes there, split into helpers here), and it sorts after TkBtlEndCtrl; called from 0x008bb7d6 (a block of 0x008bb690, which TkBtlEndCtrl calls)
+0x008bda00 function BtlEnd_GetSaveNextAP      # (chr): jmp MsGetSaveNextAP(chr); caller 0x008bdaf0 (battle results AP); sibling of BtlEnd_GetNextAP; name ours
 0x008bda10 function BtlEnd_GetResult          # (i) 0x02310f20[i]; own name
-0x008bda20 function BtlEnd_GetResult19        # 0x02310f6c (entry 19); own name
+0x008bda20 function BtlEnd_GetGilWon          # 0x02310f6c (entry 19, g_TkBtlEndGilWon); own name (was BtlEnd_GetResult19)
 0x008bda40 function BtlEnd_GetNextAP          # (chr) tail call MsGetNextAP; own name
 0x008bda50 function BtlEnd_GetSP              # (chr) tail call MsGetSaveSP (TkMenuGetSP copy in the battle-end file); own name
 0x008bda60 function TkBtlEndGetText           # fh switch:bsim1.00+call.cs 0x71004b25f0 cdecl
+0x008bda80 function BtlEnd_SelectedWeapon     # (): MsGetSaveWeapon(id, local): id u16 0x02310f8e[[0x0186a1a4]] (spoils) when [0x0186a19c] (inverted while [0x0186a1a8]) != 0, else u16 [0x025cc580][[0x0186a190] + [0x0186a1a0]]; caller TkBtlEndCtrl; name ours
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
-0x008bdf10 function BtlEnd_InitApStep         # 0x01869f14 = result 19 (AP), 0x01869f10 = its step (ap/189 | 1, +2 on a multiple of 5); own name
+0x008bdf10 function BtlEnd_InitGilStep        # 0x01869f14 = result 19 (the gil won), 0x01869f10 = its step (gil/189 | 1, +2 on a multiple of 5); own name
 0x008bdf60 function TOMenuFieldMusic_008bdf60 # (): after the menu: keep white in/out: nothing; clear 11: cross-fade to AtelGetMusicNumber (0x78), else AtelRegistMusicNumber(-1) and fade out; name ours
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
 0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
@@ -10050,12 +10068,14 @@
 0x008c4250 function TkMenuOpenNameEntryWindow    # callees: its named callees match the Switch 0x71004d8350 TkMenuOpenNameEntryWindow's (similarity 0.73: MsGetSaveConfigEnglish, PasswordTextRead, TMn2SetStatusBGDiff, TOGetFFXLang, TOGetSaveChrName); symbols from Fahrenheit's server export
 0x008c43f0 function MenuNameEntry_OpenCharWindow # (chr): TkMenuMainAllocWindow with +8 0x008c3530, +0xc 0x008c3ce0, +0x10 0x008c3ec0, +0x14 0x008c44b0, +0x3e = 3, +0x58 chr; TkMenuMainRegistWindow; then 0x023cc3c4/c0/bc = chr, 0x023cc3c8 = 0; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
+0x008c44d0 function MenuNameEntry_DeleteKey   # (): TOGetFFXLang() 10, 9 or 11 and MenuItem_KeysMatch(g_TkMenuItemTarget) -> every leading non-empty 4-byte entry of g_TkMenuItemKeyUse (0x0186a280) cleared, else the last one; callers 0x008c3891, 0x008c3a33 in the name entry's control step 0x008c3580; own name
 0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
 0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
 0x008c5050 function MenuNameEntry_LoadLayout  # (): the name entry's layout: TkMn2GetCommonPlate into 0x0186a334 (rect_fchplt, 0xda/0xdb), 0x0186a34c (rect_nmfwnd), 0x0186a364 (rect_nmnplt); TkMn2SeqGetNum num_fchplt/num_name1/num_name2 into 0x0186a304/31c/320, col_nmline into 0x0186a314; TkMn2SeqGetPos pos_nface .. pos_ace; TkMn2SeqGetRect rect_nmline into 0x0186a308; name ours
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5280 function Menu_ParseItemKeys        # (s): splits a key string into the 32 4-byte entries at 0x0186a280 (g_TkMenuItemKeyUse): kind 4 takes a second byte, values 6..0x2f an argument byte; the rest cleared; name ours
+0x008c5320 function MenuItem_LoadTargetKeys   # (target): target >= 0: Menu_ParseItemKeys(TOMenuGetNameMes(u16 [0x00c5a0d8 + 4*target], or 0x00c5a120 when TOGetFFXLang() != 0)) (tail jump); negative does nothing; callers 0x008c5370, the item menu; name ours
 0x008c5390 function MenuItem_KeysMatch        # (t) -> 1 when g_TkMenuItemKeyUse (Menu_ParseItemKeys' entries) spells TOMenuGetNameMes(u16 0x00c5a0d8[4t]) token by token (6..0x2f + arg, 4 + byte (+ byte when <= 0x2f), others alone; each entry then 0) up to the string's end and an entry starting 0; 0 for t < 0 or an empty string; callers pass g_TkMenuItemTarget; name ours
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
 0x008c5450 function TkMenuCtrlItem            # fh v3:exact 0x008c5420
@@ -10144,8 +10164,10 @@
 0x008ccb40 function TkMenuSummonCloseWindow   # (): close request for 0x0186a5a0 (TkMenuCtrlSummon's), forget it
 0x008ccb60 function MenuSummon_StatusWindowCtrl_008ccb60 # the aeon status window's control (+0xc of MenuSummon_OpenStatusWindow's window): TkMn2StepStatusBG, states at +0x28, previous/next aeon (TkMenuSetPrevSummon / TkMenuSetNextSummon), MenuStatus_CloseWindow; own name
 0x008cd140 function MenuSummon_OpenStatusWindow_008cd140 # TkMenuMainAllocWindow into g_TkMenuSummonStatusWindow with ctrl MenuSummon_StatusWindowCtrl, the current aeon's TkMenuGetCurrentSummonPos in 0x023cc3bc..c4, TkMn2InitStatusBG; caller TkMenuCtrlSummon; own name
+0x008cd1b0 function MenuSummon_OpenWindow     # (): TkMenuMainAllocWindow into 0x0186a5a0 (TkMenuSummonCloseWindow's): +8 0x008ccac0, +0xc 0x008cced0, +0x10 0x008cebe0, +0x14 0x008cd230, +0x1c 0x008ccad0, +0x54 = 0x155; returns TkMenuMainRegistWindow's result; TkMenuCtrlSummon state 9; name ours
 0x008cd1f0 function MenuSummon_RestartWindow  # aeon window: +0x45 = 0, +0x28 = 0 or 2 by 0x0186a5fc, then TkMn2InitStatusBG; own name
 0x008cd320 function MenuSummon_GrowInfo      # (stat, chr, *cost, *gain): *cost = -1, *gain = 0; for stat < 10 *cost = u16 +4 of MenuSummon_GrowEntry(stat) and, while MenuSummon_GetStat(chr's record, desc 0x00c5a608 + 0x1c stat, max) < desc +0x14, *gain = Math_Clamp1To99(desc +0x18 (chr, max)) and 1; else 0; relies on MenuSummon_GetStat leaving edx (the descriptor); name ours
+0x008cd3b0 function MenuSummon_RefreshGrowMasks # (chr): masks 0x0186a600/0x0186a604 cleared; per stat 0..10 MenuSummon_GrowInfo(stat, chr, &item, &count): count <= MsGetSaveItemNum(item) (signed) sets the afford bit, and the grow bit when GrowInfo != 0; returns the last item count; callers TkMenuCtrlSummon; name ours
 0x008cd430 function TkMn2CloseSummonGrowWindow # (): close request for 0x0186a5a8 (opened by TkMn2OpenSummonGrowWindow), kept
 0x008cd440 function TkMenuSummonCloseWindow2  # (): close request for 0x0186a5ac (TkMenuCtrlSummon's), forget it
 0x008cd460 function MenuSummon_GrowWindowCtrl_008cd460 # the aeon grow window's control (+0xc of TkMn2OpenSummonGrowWindow's window): states in 0x0186a610, TkMn2StepStatusBG, list ctrl, help message; own name
@@ -10186,6 +10208,7 @@
 0x008d2dc0 function TkMenuGetCommandOffset    # fh v3:exact 0x008d2d90
 0x008d2e10 function TkMenuGetDispCommand         # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e5df0 TkMenuGetDispCommand's (similarity 0.73: MsGetSaveCommand, MsGetSaveCommandMenuPanel, MsGetSavePlayerPtr, MsGetSavePlyJoin, MsGetSaveWeapon); symbols from Fahrenheit's server export
 0x008d30c0 function MenuMn2_Ease              # (t, dir) Math_CosLookup(t) & 0xffff, mirrored for dir < 0; own name
+0x008d3100 function MenuStatus_OpenMainWindow # (): TkMenuMainAllocWindow: +0xc 0x008d26c0, +0x10 0x008d2710, +0x14 0x008d31f0, +0x3e = 2, +0x36 = 3, +0x54 = 0x155; registered, returned (0x008d1d80 keeps it in 0x0186a838); name ours
 0x008d3140 function MenuStatus_OpenWindow     # (a, index, b, c): TkMenuMainAllocWindow into g_TkMenuStatusWindows[index]: +8 0x008d2670, +0xc TkMn2WindowStepFade, +0x10 0x008d2790, +0x14 TkMenuWindowFadedOut, +0x3e index + 3, +0x5c c, +0x64 a, +0x58 b, +0x60 index, +0x68 kind (index 0..4 -> 1,2,3,5,4, else 0), +0x54 = 0xaa; TkMenuMainRegistWindow; returns it; name ours
 0x008d3200 function TkMenuWindowFadedOut      # (window) -> whether the fade +0x52 is 0
 0x008d3220 function MenuStatus_OffsetRect     # (dx, dy, out, rect, sized) 24-byte rect copy moved; size from 0x0186a8a4 when sized; own name
@@ -10212,6 +10235,7 @@
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
 0x008d5f60 function DrawGearCustomizationMenu # fh call.cs cdecl
+0x008d6d60 function MenuKaizou_OpenWindow     # (): TkMenuMainAllocWindow: +8 0x008d56e0, +0xc UpdateGearCustomizationMenuState, +0x10 0x008d6860, +0x14 0x008d6e30, +0x1c 0x008d57a0, +0x48/+0x32 0, +0x30 u16 0x0186aa3c, +0x3e u16 0x101, +0x42 1, +0x36 u16 3, +0x3a 9; registered, then kept in 0x0186aa30; returns the registration's result; caller 0x008d5540; name ours
 0x008d6e00 function MenuKaizou_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186aa34); own name
 0x008d7590 function SetGlobals_008d7590          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x0186ab1c] = a1; u32[&0x0186aba0] = 0xffffffff; return a1; callers: no direct caller; name ours
 0x008d75d0 function MenuWShop_ItemPresent     # (list, i) item list u16 id != 0; own name
@@ -10220,8 +10244,11 @@
 0x008d7630 function MenuWShop_CloseSubWindow3 # close 0x0186aafc; own name
 0x008d7650 function MenuWShop_CloseSubWindow1 # close 0x0186aaf4; own name
 0x008d7670 function MenuWShop_CloseSubWindow4 # close 0x0186ab00; own name
+0x008d8260 function MenuWShop_OpenListWindow  # (): TkMenuMainAllocWindow into 0x0186aaf0: +0xc 0x008d77f0, +0x10 0x008d7aa0, +0x14 0x008d84e0, +0x48/+0x32 0, +0x30 u16 0x0186ab10, +0x3e 3, +0x42 1, +0x3a 9, +0x45 -1, +0x37 0, +0x28 0; registered, returned; caller 0x008d6e40; name ours
+0x008d8370 function MenuWShop_OpenSubWindow1  # (): TkMenuMainAllocWindow into 0x0186aaf4: +0xc 0x008d79c0, +0x10 0x008d7d20, +0x14 0x008d8500, +0x1c 0x008d75d0, +0x3e 3, +0x30 TkMn2GetNameModeMax(), +0x3a 9, +0x45 -1; registered, MenuWShop_InitCursor(w) returned; caller 0x008d6e40; name ours
 0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
+0x008d8450 function MenuWShop_ClampSubWindow1 # (): window 0x0186aaf4: cursor +0x48 < count +0x30, scroll +0x32 on the cursor's page (+0x3a rows, >= 0), +0x34 = scroll; TkMenuRestartSelFileWindow; +0x28 = 0, +0x45 = 0; caller 0x008d6e40; name ours
 0x008d85d0 function MenuWShop_CanAfford      # (e): 0 while 0x0186ab14 is 0, else MenuShop_WeaponPrice(e) <= MsGetGIL() (signed); called by the weapon shop's buy step; name ours
 0x008d9170 function MenuWShop_GetRecord       # (id) TkMn2GetExcelData(id & 0xfff, 0x0186abac); own name
 0x008d9190 function TkMn2GetWShopPos             # str-match switch: only user of 23 string(s) held once by both builds, e.g. 'rect_wshscrol'; Switch 0x71004e91d0 TkMn2GetWShopPos (symbols from Fahrenheit's server export)
@@ -10237,6 +10264,8 @@
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008d9e20 function TkMenuCtrlSelFileWindow      # callees: its named callees match the Switch 0x71004db0b0 TkMenuCtrlSelFileWindow's (similarity 0.67: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
+0x008da8f0 function MenuWShop_OpenSelWindow   # (): TkMenuMainAllocWindow into 0x0186ac34: +0xc 0x008d9da0, +0x10 0x008da050, +0x14 0x008daaf0, +0x48/+0x32 = 0, +0x30 = u16 0x0186ac24, +0x3e 3, +0x34 0x30000, +0x42 1, +0x3a 10, +0x45 -1; registered, returned; caller TkMenuCtrlWShop; name ours
+0x008da9c0 function MenuWShop_OpenWindow3     # (): TkMenuMainAllocWindow into 0x0186ac30 (TkMenuWShopCloseWindow3's): +0xc 0x008d9e10, +0x10 0x008da6b0, +0x14 0x008dab10, +0x3e = 2, +0x36 = 3; registered, returned; caller 0x008da7a0; name ours
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
@@ -10247,6 +10276,7 @@
 0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0
 0x008db790 function SetFieldConst1c_008db790     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
+0x008db7e0 function MenuTuto_RestoreNames     # (): 18 names (MsGetSaveChrName 0..17) copied back from the same offsets in *0x01871524 (the tutorial's save copy), and save +0xd1 into MsGetSaveEventAddress(); caller TkMenuCtrlTuto; name ours
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
 0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
@@ -14887,6 +14917,7 @@
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
 0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0
+0x0112a09c label    g_HelpMemUsed             # i32 help screen memory in use (HelpMem_Get adds, HelpMem_Free subtracts)
 0x0112a4fc label    g_Hdd_State               # 2 words zeroed by hdd_state_clear
 0x0112a508 label    g_Hdd_Mounted             # i8: hdd_mount/hdd_unmount set it, hdd_mount_flg_get returns it
 0x0112a509 label    g_Hdd_Status              # i8: get_hdd_status when no error
@@ -15462,6 +15493,7 @@
 0x01330097 label    g_SndHddError             # u8 set once by SndSeqIopCommandSendMain
 0x0133009c label    g_SndBattleMusicDataSize  # u32 iMusicDataSend result (SndMusicStandby)
 0x013300e0 label    g_SndMusicVolume          # u8[256] per music (SndGetMusicVolume)
+0x013301e0 label    g_TkSyncVDisableCount     # TkSyncVDI counts up, TkSyncVEI down (at least 0)
 0x013301e4 label    g_TkSoundSyncVFlag        # cleared by TkClearSoundSyncVFlag
 0x013301ec label    g_TkSoundSyncVFlag3       # TkGetSoundSyncVFlag3, TkClearSoundSyncVFlag3
 0x013301f4 label    g_TkGsCsr                 # TkGetGsRegisterCSR
@@ -15498,6 +15530,7 @@
 0x0133c8dc label    g_TkDebugFontPos2         # 2 x i32, x and y x16 (TkSetDebugFontLocate2)
 0x0133c900 label g_BtlActionStack # 0xf0 bytes per command-window level, indexed by g_BtlActionDepth (TOBtlSetPrevAction 0x0089a630); name ours
 0x0133c910 label    g_FFXIsDebug              # i8: FFXIsDebug
+0x0133c913 label    g_FFXHddMode              # u8 HDD-install mode (dbgPrintf ffx_hddmode=%d); TkRefreshHDDMode picks get_hdd_name paths when set
 0x0133c93c label    g_BtlHelpWinOpen          # u8: TOBtlCloseHelpWin clears it
 0x0133c93d label    g_BtlInfoWinShown         # u8: TOBtlInitInfoWinMes clears it; TOBtlDrawInfoWinMes draws only while set; name ours
 0x0133c940 label    g_BtlHelpScroll           # f32 help text scroll offset: TOBtlDrawHelpWin moves it by -0.8 a frame and wraps it, resets it to 0 while the help window is closed; name ours
@@ -15544,6 +15577,7 @@
 0x01840887 label    g_TkMenuSummonStep        # u8: 1 (TkMenuSetNextSummon) or 0xff (TkMenuSetPrevSummon)
 0x01840888 label    g_TkMenuSlots             # 25 menu window pointers (TkMenuMainRegistMenu, TkMenuMainActiveMenu, TkMenuMainSleepMenu)
 0x018408ec label    g_TkMenuMainActiveMask    # bit per main menu (TkMenuMainGetMenuActiveMask; TkMenuMainActiveMenu sets, TkMenuMainSleepMenu clears)
+0x018408f4 label    g_TkMenuDBuffIndex        # the shown buffer index Sg_GetDBuffDC writes (MenuMain_SaveFrameBuffer keeps its low bit)
 0x018408f8 label    g_TkMn2MenuMode           # TkMn2GetMenuMode; TkMenuMainActiveMenu tests its high half for 0x80
 0x01840900 label    g_TkMenuWindows           # 32 window records, 0x98 bytes (TkMenuMainAllocWindow)
 0x01841c00 label    g_TkMenuHelpMessage       # 3 x i32: current help message, the previous one, a timer (TkMenuSetHelpMessage resets it on a change)
@@ -15577,7 +15611,7 @@
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
-0x01869f10 label    g_TkBtlEndAp              # u32 step, u32 AP total (BtlEnd_InitApStep)
+0x01869f10 label    g_TkBtlEndGil             # u32 step, u32 gil left to count (BtlEnd_InitGilStep); gil, not AP: BtlEnd_StepGil pays each step with MsPayGIL(-step), the total is result 19 (g_TkBtlEndGilWon), and 0x008bbb10 draws +4 beside MsGetGIL(); was g_TkBtlEndAp
 0x01869f18 label    g_TkBtlEndList            # u8 count, 14-byte entries from +8 (BtlEnd_CompactList)
 0x01869fbc label    g_TkBtlEndFlag            # BtlEnd_SetFlag
 0x0186a228 label    g_MenuHelpExtMode         # first argument of TOMenuHelpSetExtMode
@@ -15593,13 +15627,17 @@
 0x0186a384 label    g_TkMenuItemListCount     # entries in g_TkMenuItemList
 0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
 0x0186a38c label    g_TkMenuItemRows          # MenuItem_GetRows
+0x0186a391 label    g_TkMenuAbilitySingle     # u8 1 when the ability menu's command has one target (+0x1a bits 2-3 neither 1 nor 2; set by 0x008c6bc0); MenuAbility_ApplyHeal
 0x0186a394 label    g_TkMenuItemWindow        # the item menu's window (TkMenuCtrlItem, TkMenuItemCloseWindow, TkMenuItemClearWindow)
+0x0186a3a8 label    g_TkMenuAbilityCommand    # u16 the ability menu's command id (set by 0x008c6bc0; Cmd_HealAmount, MsGetRomPlyCommand in MenuAbility_ApplyHeal)
 0x0186a3b0 label    g_TkMenuItemFirstUsable   # i16 inventory slot of the first usable item, -1 for none (TkMenuItemRefresh)
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
 0x0186a5a4 label    g_TkMenuSummonStatusWindow# MenuSummon_CloseStatusWindow
 0x0186a5fc label    g_TkMenuSummonRestartCount# <= 1: MenuSummon_RestartWindow sets state 0, else 2
+0x0186a600 label    g_TkMenuSummonGrowMask    # aeon stats that grow and can be paid for (MenuSummon_RefreshGrowMasks)
+0x0186a604 label    g_TkMenuSummonAffordMask  # aeon stats whose growth items the party has (MenuSummon_RefreshGrowMasks)
 0x0186a624 label    g_TkMenuEquipAltMode      # toggled in TkMenuCtrlEquip (MenuEquip_IsAltMode)
 0x0186a630 label    g_TkMenuEquipItem         # MenuEquip_PickItem
 0x0186a820 label    g_TkMenuStatusWindows     # status menu windows by index (MenuStatus_CloseWindow)
@@ -15610,6 +15648,7 @@
 0x0186abac label    g_TkMenuWShopTable        # MenuWShop_GetRecord
 0x0186ac20 label    g_TkMenuWShopList         # u32 id, slot count (+4), ?, table (+0xc) (MenuWShop_CountSlots)
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)
+0x01871524 label    g_TkMenuTutoSaveCopy      # pointer to the tutorial's g_SaveData copy (0x0186ac60, TkMenuCtrlTuto); MenuTuto_RestoreNames
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
 0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
@@ -15732,8 +15771,9 @@
 0x02310ea0 label g_BtlCountsBattle         # 18 bytes: characters MsBtlGetTerm counts a battle for (MsSaveAddInfoData kind 0)
 0x02310ec4 label g_BtlTookPart             # 18 bytes: characters who took part keep their battle AP (MsBtlGetTerm)
 0x02310ed8 label g_BtlStartAp                 # [u32; 18]; The AP of 18 actors at battle start (MsBtlStartAP copies the current ones, 0x48 bytes on, here).
-0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp)
+0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp); 19 is the gil won (g_TkBtlEndGilWon)
 0x02310f68 label g_BtlTermWord             # u32 cleared by MsBtlGetTerm
+0x02310f6c label    g_TkBtlEndGilWon          # u32 gil won in the battle: result 19 (BtlEnd_GetGilWon); 0x00799270 adds to it (MsCheckRange 0..999999999), 0x00857bf2 and 0x0085a9ec pay it with MsPayGIL(-x), BtlEnd_InitGilStep counts it down; own name
 0x02310f9e label g_Equipment7000           # 8 x 22-byte equipment slots of the 0x7000 IDs (MsGetSaveWeapon)
 0x02311050 label g_BtlChrExtra             # pointer to 0x24 bytes MsBtlChrInit clears
 0x02311060 label g_BtlHideQueue            # u32 characters queued to hide (index from 1)
