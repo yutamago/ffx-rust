@@ -4674,7 +4674,7 @@
 0x0078c1d0 function DmgCalc_CheckCounter      # fh v3:exact 0x0078c290 +DmgCalc_CheckCounter
 0x0078c270 function DmgCalc_ResultType        # DmgCalc's reaction at result +0: 5 hurt, 4/3 guarded against armor or 100+ defense (target +0x447), 6/5 drains, 8/0xb/0xc by table statuses, 2 revive/heal, 7 removed, 9/0xa changes; counts failed/immune statuses; ported
 0x0078c480 function DmgCalc_NoDamageDeath     # fh v3:exact 0x0078c540 +DmgCalc_NoDamageDeath
-0x0078c4c0 function MsCheckDeathMotion           # layout+callees: sorts between MsCalcWeakLevel and MsCheckUseCommand, and its named callees match the Switch 0x710033e4c0 MsCheckDeathMotion's (similarity 1.00: MsCheckCommandCueExe, MsCheckInputCueExe); symbols from Fahrenheit's server export
+0x0078c4c0 function MsCheckDeathMotion        # (i, actor): 1 when +0xf5e bits 1-2 clear, not busy with +0x3f9, and no input or command entry of i runs (MsSetDeath)
 0x0078c530 function DmgCalc_ShieldBoost       # fh v3:exact 0x0078c5f0 +DmgCalc_ShieldBoost
 0x0078c580 function DmgCalc_MagicBooster      # fh v3:exact 0x0078c640 +DmgCalc_MagicBooster
 0x0078c5f0 function DmgCalc_Alchemy           # fh v3:exact 0x0078c6b0 +DmgCalc_Alchemy
@@ -14147,6 +14147,7 @@
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9e3 label g_BtlDying                # u8: the actor MsSetDeath took last
 0x0112c9e4 label g_BtlTurnEndActor         # u8, MsDeleteInputCue (last) sets the actor whose turn ended with +0x606 bit 3
 0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
@@ -14169,6 +14170,7 @@
 0x0112ca08 label g_BtlEffectWait           # 2 x u8: the actor an effect waits on and its motion (0xff any) (MsEffectCheckMotion, MsCheckStartEffect)
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
+0x0112ca0c label g_BtlStoneStarted         # i8: stone effects begun (MsStoneEffectProcess, at most 3)
 0x0112ca0d label g_BtlCommandHold          # u8: MsCommandCueProcess waits while set
 0x0112ca0e label g_BtlRandomTargets        # i8 count of the random targets (MsGetTargetRandomList2)
 0x0112ca0f label g_BtlCommandRunning       # u8: set when a command starts, cleared when its actor's turn ends early (MsCommandCueProcess)

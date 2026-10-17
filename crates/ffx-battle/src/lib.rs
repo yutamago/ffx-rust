@@ -23,6 +23,7 @@ pub mod camera;
 pub mod command;
 pub mod cue;
 pub mod damage;
+pub mod death;
 mod encounters;
 pub mod exchange;
 pub mod exec;

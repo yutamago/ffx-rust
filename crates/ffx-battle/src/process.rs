@@ -79,12 +79,15 @@ pub mod bridge {
         -i32::from(quiet)
     }
 
-    /// `0x00791760()` (`MsSetDeathAll`, name ours): `MsSetDeath(i, 1)` for
-    /// every actor (the battle's own, through `call`).
-    pub fn ms_set_death_all<M: Mem>(mem: &mut M, call: Call<'_, M>) {
-        let f = code(mem, 0x0078_dc30);
+    /// `0x00791760()` (`MsSetDeathAll`, name ours): `MsSetDeath(i, 1)`
+    /// ([`crate::death::bridge::ms_set_death`]) for every actor.
+    pub fn ms_set_death_all<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        s: &mut crate::atel::bridge::Script<'_, crate::target::bridge::Dm<'d>>,
+    ) {
         for i in 0..0x1f {
-            call(mem, f, &[i, 1]);
+            crate::death::bridge::ms_set_death(mem, host, s, i, 1);
         }
     }
 

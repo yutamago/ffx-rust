@@ -3,6 +3,7 @@
 
 use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
+use ffx_battle::death::bridge as death;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::parse::bridge as parse;
@@ -2543,9 +2544,11 @@ ported! {
     MsBattleCanProgress @ 0x0079_1190 => extern "C" fn ms_battle_can_progress() -> i32 {
         process::ms_battle_can_progress(&mem())
     }
-    /// `MsSetDeathAll()` (`0x00791760`): `MsSetDeath` through the game.
+    /// `MsSetDeathAll()` (`0x00791760`).
     MsSetDeathAll @ 0x0079_1760 => extern "C" fn ms_set_death_all() {
-        process::ms_set_death_all(&mut mem(), &mut call_ptr);
+        let mut m = mem();
+        script!(s);
+        process::ms_set_death_all(&mut target::Dm::new(&mut m), &host(), &mut s);
     }
     /// `msVoiceCheckStanby(any)`: the CD library and sound through the game.
     msVoiceCheckStanby @ 0x007b_2c10 => extern "C" fn ms_voice_check_stanby(any: u32) -> i32 {
@@ -2562,5 +2565,36 @@ ported! {
     /// `MsCameraInit()`.
     MsCameraInit @ 0x007b_d5d0 => extern "C" fn ms_camera_init() {
         camera::ms_camera_init(&mut mem());
+    }
+    /// `MsCheckDeathMotion(i, actor)`.
+    MsCheckDeathMotion @ 0x0078_c4c0 => extern "C" fn ms_check_death_motion(i: u32, actor: u32) -> u32 {
+        death::ms_check_death_motion(&mem(), i, actor)
+    }
+    /// `MsDeathTerminate(i, actor)`.
+    MsDeathTerminate @ 0x0078_cca0 => extern "C" fn ms_death_terminate(i: u32, actor: u32) -> u32 {
+        script!(s);
+        death::ms_death_terminate(&mut mem(), &mut s, i, actor)
+    }
+    /// `MsSetDeathProcess(i, actor)`.
+    MsSetDeathProcess @ 0x0078_ddc0 => extern "C" fn ms_set_death_process(i: u32, actor: u32) {
+        let mut m = mem();
+        script!(s);
+        death::ms_set_death_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor);
+    }
+    /// `MsDeathEffectStart(i, kind)`: the sound and effect through the game.
+    MsDeathEffectStart @ 0x0079_e3d0 => extern "C" fn ms_death_effect_start(i: u32, kind: u32) -> u32 {
+        script!(s);
+        death::ms_death_effect_start(&mut mem(), &mut s, i, kind)
+    }
+    /// `MsStoneEffectProcess()`.
+    MsStoneEffectProcess @ 0x007a_2690 => extern "C" fn ms_stone_effect_process() -> u32 {
+        script!(s);
+        death::ms_stone_effect_process(&mut mem(), &mut s)
+    }
+    /// `MsSetDeath(i, flags)`.
+    MsSetDeath @ 0x0078_dc30 => extern "C" fn ms_set_death(i: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_set_death(&mut target::Dm::new(&mut m), &host(), &mut s, i, flags)
     }
 }

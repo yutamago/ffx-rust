@@ -1607,10 +1607,10 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
 }
 
 /// The battle loop's per-frame callees of sound, the CD library and the
-/// voice status (`ffx_battle::process`) and `MsSetDeath` (unported; its
-/// calls compared), stubbed in `MsDebugEnvSave` (debug only); the last is
-/// the CD library's `+8`.
-const PROCESS_CALLEES: [(u32, u8); 7] = {
+/// voice status (`ffx_battle::process`) and the deaths' sound (unported),
+/// trophy (main), neck and character ID (chara), stubbed in `MsDebugEnvSave` (debug
+/// only); the last is the CD library's `+8`.
+const PROCESS_CALLEES: [(u32, u8); 10] = {
     use ffx_battle::process::bridge as p;
     [
         (p::SND_MUSIC_STOP, 1),
@@ -1618,7 +1618,10 @@ const PROCESS_CALLEES: [(u32, u8); 7] = {
         (p::TK_SND_REPORT_STATUS, 0),
         (p::SND_IS_READ_STATUS, 0),
         (p::SND_IS_READ_SHOUT_VOICE_STATUS, 0),
-        (0x0078_dc30, 2),
+        (ffx_battle::death::bridge::MS_REG_SE_PLAY, 2),
+        (ffx_battle::death::bridge::TROPHY_CHECK_DEFEAT_MONSTER, 1),
+        (ffx_battle::atel::bridge::CH_NECK_SET_ENABLE, 2),
+        (ffx_battle::death::bridge::CH_GET_CHAR_ID, 1),
         (0, 1),
     ]
 };
@@ -1638,7 +1641,7 @@ fn process_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32, erec: u32) {
                 .try_into()
                 .unwrap(),
         );
-        let f = o.rebase(PROCESS_STUBS + 0x40 * 6);
+        let f = o.rebase(PROCESS_STUBS + 0x40 * 9);
         o.write(cd + 8, &f.to_le_bytes()).unwrap();
     }
 }
@@ -1654,7 +1657,7 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         (2, [0, 1, 2][rng.below(3) as usize]),
         (3, u32::from(flag(rng, 3))),
         (4, u32::from(flag(rng, 3))),
-        (6, u32::from(flag(rng, 3))),
+        (9, u32::from(flag(rng, 3))),
     ] {
         poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
     }
@@ -1739,15 +1742,172 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         });
         same("MsCameraInit", a, b);
     }
-    if rng.below(4) == 0 {
-        twin("MsSetDeathAll", a, b, 0x0079_1760, &[], 0, |m| {
-            dm(m, |m| {
-                p::ms_set_death_all(m, &mut call);
-            });
-            0
-        });
-        same("MsSetDeathAll", a, b);
+}
+
+/// Actors going down (`ffx_battle::death`): their death checks, effects
+/// and motions, the stone effect queue, and every actor's each frame.
+fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::death::bridge as d;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
     }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    set(a, b, ffx_battle::state::bridge::INPUT_CUE_COUNT, 0);
+    set(a, b, ffx_battle::state::bridge::COMMAND_CUE_COUNT, 0);
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        poke(a, b, p + 0xdcc, &[[0, 1, 1, 2][rng.below(4) as usize]]);
+        poke(
+            a,
+            b,
+            p + 0xf5e,
+            &[[0, 0, 2, 4, rng.byte()][rng.below(5) as usize]],
+        );
+        for o in [0x3f9, 0x508, 0xdcd, 0xdce, 0xdd0, 0x3f7] {
+            poke(a, b, p + o, &[flag(rng, 3)]);
+        }
+        poke(
+            a,
+            b,
+            p + 0x449,
+            &[[0, 1, 6, 2, rng.byte()][rng.below(5) as usize]],
+        );
+        poke(a, b, p + 0x3f5, &[u8::try_from(rng.below(10)).unwrap()]);
+        poke(
+            a,
+            b,
+            p + 0x701,
+            &[[0, 3, rng.byte()][rng.below(3) as usize]],
+        );
+    }
+    let i = [rng.below(ACTORS), 0xff, rng.byte().into()][rng.below(4).min(2) as usize];
+    let actor = w.actor(i & 0xff);
+    if i < ACTORS {
+        twin(
+            "MsCheckDeathMotion",
+            a,
+            b,
+            0x0078_c4c0,
+            &[i, actor],
+            ALL,
+            |m| d::ms_check_death_motion(m, i, actor),
+        );
+    }
+    let k = rng.below(10);
+    twin("MsDeathEffectStart", a, b, 0x0079_e3d0, &[i, k], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            d::ms_death_effect_start(m, &mut s, i, k)
+        })
+    });
+    same("MsDeathEffectStart", a, b);
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    twin(
+        "MsDeathTerminate",
+        a,
+        b,
+        0x0078_cca0,
+        &[i, actor],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                d::ms_death_terminate(m, &mut s, i, actor)
+            })
+        },
+    );
+    same("MsDeathTerminate", a, b);
+    if writes(a, b, 0x0079_56e0, i, out + 0x40) {
+        twin(
+            "MsSetDeathProcess",
+            a,
+            b,
+            0x0078_ddc0,
+            &[i, actor],
+            0,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    d::ms_set_death_process(m, &h, &mut s, i, actor);
+                });
+                0
+            },
+        );
+        same("MsSetDeathProcess", a, b);
+    }
+    // the stone queue
+    let n = rng.below(5);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::STONE_EFFECT,
+        [
+            i8::try_from(n).unwrap(),
+            i8::try_from(rng.below(4)).unwrap(),
+        ],
+    );
+    let q: Vec<u8> = (0..8)
+        .flat_map(|_| [rng.below(ACTORS), 0xff, 0x40][rng.below(4).min(2) as usize].to_le_bytes())
+        .collect();
+    poke(a, b, ffx_battle::minor::bridge::STONES.ptr(b).addr, &q);
+    poke(
+        a,
+        b,
+        ffx_battle::misc::bridge::MESSAGE_CUE_INIT.ptr(b).addr,
+        &[flag(rng, 3) ^ 1],
+    );
+    twin("MsStoneEffectProcess", a, b, 0x007a_2690, &[], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            d::ms_stone_effect_process(m, &mut s)
+        })
+    });
+    same("MsStoneEffectProcess", a, b);
+    // whole deaths (the positions MsResetChrPos and the camera read)
+    let dying: Vec<u32> = (0..ACTORS)
+        .filter(|&j| b.read(w.actor(j) + 0xdcc, 1).unwrap()[0] == 1)
+        .collect();
+    if !dying.iter().all(|&j| {
+        writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40)
+    }) {
+        return;
+    }
+    let j = dying.first().copied().unwrap_or(0);
+    let flags = rng.below(3);
+    twin("MsSetDeath", a, b, 0x0078_dc30, &[j, flags], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            d::ms_set_death(m, &h, &mut s, j, flags)
+        })
+    });
+    local_words(a, b);
+    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+    let v = a.read(m + 0x20, 16).unwrap();
+    b.write(m + 0x20, &v).unwrap();
+    same("MsSetDeath", a, b);
+    twin("MsSetDeathAll", a, b, 0x0079_1760, &[], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            ffx_battle::process::bridge::ms_set_death_all(m, &h, &mut s);
+        });
+        0
+    });
+    local_words(a, b);
+    let v = a.read(m + 0x20, 16).unwrap();
+    b.write(m + 0x20, &v).unwrap();
+    same("MsSetDeathAll", a, b);
 }
 
 /// Whether every able (`+0xdc8`) actor's and every monster's battle
@@ -2170,7 +2330,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         );
         logging_stub(o, 0x008b_7ca0, 0x0078_03a0, srec + 4 * EXCHANGE_REC, 1, 0);
     }
-    let prec = scratch(a, b, (EXCHANGE_REC * 7) as usize);
+    let prec = scratch(a, b, (EXCHANGE_REC * 10) as usize);
     process_stubs(a, b, prec, erec);
     for _ in 0..400 {
         file(a, b, rng, &f);
@@ -2189,6 +2349,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             command_cue(a, b, rng, &w, out, srec);
         }
         process(a, b, rng, &w, prec, srec);
+        deaths(a, b, rng, &w, out);
     }
 }
 
