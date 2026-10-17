@@ -10835,7 +10835,7 @@ fn round23_waits_and_forwarders_match_the_original() {
 }
 
 /// Round 23, second part: Yn's pre-BG layer switches and character
-/// distance, the rcfx deletes, the FPm173 end and the transfer pair.
+/// distance, the rcfx deletes, the `FPm173` end and the transfer pair.
 #[test]
 #[allow(clippy::too_many_lines)] // one function after another
 fn round23_yn_layers_and_rcfx_match_the_original() {
