@@ -1306,7 +1306,9 @@ natives! {
         let m = call(h, 0x0086_c1f0, &[]);
         call(h, 0x0086_5dc0, &[m]);
         let m = call(h, 0x0086_c1f0, &[0]);
-        call(h, 0x0086_1160, &[1, v, m])
+        // the 4th word is the 0 pushed for the last TkGetNowEventJumpMapNo, which
+        // the original leaves on the stack: the battle end type
+        call(h, 0x0086_1160, &[1, v, m, 0])
     };
     /// `0xc024` (`0x00878c60`, poll), `0xb00a` (`0x0076ec10`, int) and the
     /// like: 1.

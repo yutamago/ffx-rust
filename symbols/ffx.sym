@@ -5631,7 +5631,7 @@
 0x007ac650 function MsPushBtlPos              # fh v3:bsim1.00 0x007ac670
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
 0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0
-0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid
+0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid; reads 5 words: its script callers (0x700b, 0x705a, 0x7117) push 3 and leave MsGetChrBit's last two arguments as the 4th and 5th (0, -1; 1, -1; 1, 0x40); a non-negative 5th goes to 0x01136a70, so the bridges pass them
 0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
 0x007acc90 function MsActReCommand               # callees: its named callees match the Switch 0x710038bb80 MsActReCommand's (similarity 0.75: MsGetChr, MsGetChrCommand, MsGetCommand); symbols from Fahrenheit's server export
 0x007acd40 function MsActTargetSearch         # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); was Battle_FilterActors
@@ -8194,7 +8194,7 @@
 0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0; ported in helpers (script round 13)
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
-0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100
+0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100; (mode, v, map, end type): 0xc024 pushes 3; its 4th word is the 0 left from TkGetNowEventJumpMapNo(0), the end type (save +0xd0, != 6, == 1 game over), so the bridge passes 0
 0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720

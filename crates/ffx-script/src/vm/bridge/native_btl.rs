@@ -131,7 +131,9 @@ pub fn native_btl_use_command<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32)
         return 0;
     }
     let b = call(h, GET_BIT, &[id, t, 0, 1, 0, u32::MAX]);
-    call(h, 0x007a_c9c0, &[id, cmd, b]);
+    // the original's caller leaves 0, -1 of MsGetChrBit's arguments on
+    // the stack as Battle_QueueCommand's 4th and 5th words
+    call(h, 0x007a_c9c0, &[id, cmd, b, 0, u32::MAX]);
     1
 }
 
@@ -734,7 +736,8 @@ pub fn native_705a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
         return 0;
     }
     let b = call(h, GET_BIT, &[id, t, 0, 1, 1, u32::MAX]);
-    call(h, 0x007a_c9c0, &[id, cmd, b]);
+    // MsGetChrBit's leftover words: 1, -1
+    call(h, 0x007a_c9c0, &[id, cmd, b, 1, u32::MAX]);
     1
 }
 
@@ -1583,7 +1586,9 @@ pub fn native_7117<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
         call(h, 0x007a_a100, &[id, c]);
     }
     let b = call(h, GET_BIT, &[id, t, 0, 1, 1, 0x40]);
-    call(h, 0x007a_c9c0, &[id, cmd, b]);
+    // MsGetChrBit's leftover words: 1, 0x40; the 5th (non-negative) goes to
+    // 0x01136a70
+    call(h, 0x007a_c9c0, &[id, cmd, b, 1, 0x40]);
     1
 }
 
