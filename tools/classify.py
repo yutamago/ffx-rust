@@ -117,6 +117,12 @@ REVIEWED = {
     0x008903d0: ("glue", "GIF tag with a SCISSOR register: packet emission only (menu round 16)"),
     0x0088c860: ("platform", "TKMallocAndReadEventFTC: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)"),
     0x0088cac0: ("platform", "TKMallocAndReadEventMessage: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)"),
+    0x008432d0: ("glue", "Sg_MFIFOSpadSync: busy-waits on the GS register sink (main round 11)"),
+    0x00843260: ("glue", "Sg_MFIFOEnd: sends a DMA end tag (main round 11)"),
+    0x0082bc50: ("glue", "Sg_AccSetFrameMap: builds a GS packet (main round 11)"),
+    0x0082c7b0: ("glue", "Sg_DrawSetEnvironment: builds a GS packet (main round 11)"),
+    0x0082c8d0: ("glue", "Sg_DrawSetEnvironmentInit: builds a GS packet (main round 11)"),
+    0x0082caa0: ("glue", "Sg_DrawSetEnvironmentInitMovie: builds a GS packet (main round 11)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
