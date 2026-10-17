@@ -2,6 +2,46 @@
 //! masks, float steps, the MSVC container accessors the opus trees use,
 //! and similar leaves.
 
+/// `hashU`'s hash of a string's bytes `c` (each sign-extended):
+/// `h = (h * a + c) % 10007`, the multiplier `a` stepping from 31415 by
+/// `a = a * 27183 % 10006` (32-bit, C remainders); made non-negative at
+/// the end.
+#[must_use]
+pub fn hash_u(bytes: impl IntoIterator<Item = u8>) -> u32 {
+    let (mut h, mut a) = (0i32, 0x7ab7i32);
+    for c in bytes {
+        h = h
+            .wrapping_mul(a)
+            .wrapping_add(i32::from(c.cast_signed()))
+            .wrapping_rem(10007);
+        a = a.wrapping_mul(0x6af5).wrapping_rem(10006);
+    }
+    (if h < 0 { h + 10007 } else { h }).cast_unsigned()
+}
+
+/// `pppViewOutCode(x, y)` (`0x00728dd0`): where a projected point lies
+/// against the view rectangle: 1 left of `-8/9` (the `f32` value, as a
+/// double), 2 from `8/9` right, 4 below `-0.5`, 8 from `0.5` up. A NaN
+/// sets no bit.
+#[must_use]
+pub fn ppp_view_out_code(x: f32, y: f32) -> u32 {
+    const EDGE_X: f64 = 0.888_888_895_511_627_2;
+    let (x, y) = (f64::from(x), f64::from(y));
+    let mut code = if x < -EDGE_X {
+        1
+    } else if x >= EDGE_X {
+        2
+    } else {
+        0
+    };
+    if y < -0.5 {
+        code |= 4;
+    } else if y >= 0.5 {
+        code |= 8;
+    }
+    code
+}
+
 /// The helpers over game memory.
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -10,6 +50,15 @@ pub mod bridge {
 
     fn rf(mem: &impl Mem, at: u32) -> f32 {
         mem.read(at)
+    }
+
+    /// `hashU(s)` (`0x00716570`): [`super::hash_u`] of the NUL-terminated
+    /// string at `s`.
+    pub fn hash_u_at(mem: &impl Mem, s: u32) -> u32 {
+        let bytes = (0..)
+            .map(|i| mem.read::<u8>(s.wrapping_add(i)))
+            .take_while(|&c| c != 0);
+        super::hash_u(bytes)
     }
 
     /// `op_char_table_set(table, chars, v)` (`0x007e13e0`): `table[c] = v`
@@ -274,6 +323,13 @@ pub mod bridge {
         if f & 0xf000_0000 != 0x2000_0000 {
             return f & 0xf000_0000;
         }
+        node_to_owner(mem, n)
+    }
+
+    /// `n` out of its list and in at the front of its owner's list (the
+    /// head `[n +0x18] +0x48`), in state 1; returns the new state word.
+    fn node_to_owner(mem: &mut impl Mem, n: u32) -> u32 {
+        let at = |o: u32| n.wrapping_add(o);
         let next: u32 = mem.read(at(0x20));
         let prev: u32 = mem.read(at(0x1c));
         let owner: u32 = mem.read(at(0x18));
@@ -292,6 +348,229 @@ pub mod bridge {
         let v = (f & 0x0fff_ffff) | 0x1000_0000;
         mem.write(at(0x30), v);
         v
+    }
+
+    /// `op_node_requeue_all_00a39f60(set)` (`0x00a39f60`): every node of
+    /// the set's list 2 (the head at `set + 0x80`, first node at `+0x1c`)
+    /// moves to the front of its owner's list in state 1, as
+    /// [`op_node_requeue`] moves one. Returns the head, as left in `eax`.
+    pub fn op_node_requeue_all(mem: &mut impl Mem, set: u32) -> u32 {
+        let head = set.wrapping_add(0x80);
+        loop {
+            let n: u32 = mem.read(head.wrapping_add(0x1c));
+            if n == head {
+                return head;
+            }
+            node_to_owner(mem, n);
+        }
+    }
+
+    /// `op_texels_halve_00a385f0(dst, src, n, size)` (`0x00a385f0`): `n`
+    /// pairs of adjacent texels averaged into one, rounding up: `size` 4
+    /// per byte of each RGBA word (`(a | b) - ((a ^ b) >> 1 & 0x7f7f7f7f)`),
+    /// `size` 1 single bytes; other sizes do nothing. Returns `eax` as
+    /// left: the end of `src` (size 4), the last average (size 1, or 1
+    /// for none), else `size`.
+    pub fn op_texels_halve(mem: &mut impl Mem, dst: u32, src: u32, n: u32, size: u32) -> u32 {
+        match size {
+            4 => {
+                for i in 0..n {
+                    let s = src.wrapping_add(8 * i);
+                    let (a, b): (u32, u32) = (mem.read(s), mem.read(s.wrapping_add(4)));
+                    mem.write(
+                        dst.wrapping_add(4 * i),
+                        (a | b) - ((a ^ b) >> 1 & 0x7f7f_7f7f),
+                    );
+                }
+                src.wrapping_add(n.wrapping_mul(8))
+            }
+            1 => {
+                let mut last = 1;
+                for i in 0..n {
+                    let s = src.wrapping_add(2 * i);
+                    let (a, b) = (mem.read::<u8>(s), mem.read::<u8>(s.wrapping_add(1)));
+                    last = (u32::from(a) + u32::from(b) + 1) >> 1;
+                    #[allow(clippy::cast_possible_truncation)] // at most 255
+                    mem.write(dst.wrapping_add(i), last as u8);
+                }
+                last
+            }
+            _ => size,
+        }
+    }
+
+    /// `op_texels_halve_v_00a38560(dst, dst_step, src, src_step, n, size)`
+    /// (`0x00a38560`): [`op_texels_halve`] down a column: texel `i`
+    /// (`dst + i dst_step`) is the average of `src + 2i src_step` and the
+    /// one `src_step` below it. Returns `eax` as left: `src_step` when
+    /// anything was averaged, else `size`.
+    pub fn op_texels_halve_v(
+        mem: &mut impl Mem,
+        dst: u32,
+        dst_step: u32,
+        src: u32,
+        src_step: u32,
+        n: u32,
+        size: u32,
+    ) -> u32 {
+        if (size != 4 && size != 1) || n == 0 {
+            return size;
+        }
+        for i in 0..n {
+            let from = src.wrapping_add(i.wrapping_mul(src_step.wrapping_mul(2)));
+            let to = dst.wrapping_add(i.wrapping_mul(dst_step));
+            let below = from.wrapping_add(src_step);
+            if size == 4 {
+                let (a, b): (u32, u32) = (mem.read(from), mem.read(below));
+                mem.write(to, (a | b) - ((a ^ b) >> 1 & 0x7f7f_7f7f));
+            } else {
+                let (a, b) = (mem.read::<u8>(from), mem.read::<u8>(below));
+                #[allow(clippy::cast_possible_truncation)] // at most 255
+                mem.write(to, ((u32::from(a) + u32::from(b) + 1) >> 1) as u8);
+            }
+        }
+        src_step
+    }
+
+    /// `opus_0437_fade_step_00a6e260(b)` (`0x00a6e260`): each of the
+    /// `u16 b[0]` 0x60-byte entries from `b + 0x3c` that is in use (`i16`
+    /// slot at `+0` not negative) counts its `u8 +2` up; below 0x20 its
+    /// `u16 +0x52` = `(0x20 - count) * 0x80`, else its slot in the table
+    /// `[b + 0xc]` gets `0xfffe` and the entry is freed (slot -1, count 0).
+    /// Returns `eax` as left: 0 for no entries, else the end of the last.
+    pub fn opus_0437_fade_step<M: Mem>(mem: &mut M, b: u32) -> u32 {
+        let count = |mem: &M| u32::from(mem.read::<u16>(b));
+        let entry = |i: u32| b.wrapping_add(0x3c + 0x60 * i);
+        let mut i = 0;
+        while i < count(mem) {
+            let e = entry(i);
+            i += 1;
+            let slot: i16 = mem.read(e);
+            if slot < 0 {
+                continue;
+            }
+            let c = mem.read::<u8>(e.wrapping_add(2)).wrapping_add(1);
+            mem.write(e.wrapping_add(2), c);
+            if c < 0x20 {
+                mem.write(e.wrapping_add(0x52), (0x20 - u16::from(c)) * 0x80);
+            } else {
+                let table: u32 = mem.read(b.wrapping_add(0xc));
+                let at = table.wrapping_add((i32::from(slot) * 2).cast_unsigned());
+                mem.write(at, 0xfffe_u16);
+                mem.write(e, u16::MAX);
+                mem.write(e.wrapping_add(2), 0u8);
+            }
+        }
+        if i == 0 { 0 } else { entry(i) }
+    }
+
+    /// `pppFtoiRgba_0074c280(dst, src)` and its six copies: the four
+    /// floats at `src` truncated toward zero (`fistp` with the rounding
+    /// set to chop; out of range or NaN gives the integer indefinite) and
+    /// their low bytes stored at `dst`. Returns the last byte, zero-extended,
+    /// as left in `eax`.
+    pub fn ppp_ftoi_rgba(mem: &mut impl Mem, dst: u32, src: u32) -> u32 {
+        let mut last = 0;
+        for i in 0..4 {
+            let x: f32 = mem.read(src.wrapping_add(4 * i));
+            #[allow(clippy::cast_possible_truncation)] // the low byte
+            let b = ffx_bridge::x87::cvttsd2si(f64::from(x)) as u8;
+            mem.write(dst.wrapping_add(i), b);
+            last = u32::from(b);
+        }
+        last
+    }
+
+    /// `pppKeShpTail3VfCopy_00751680(dst)` (`0x00751680`): the four
+    /// emulated VU0 registers at `0x00c8f7b0..0x00c8f7ef` copied to `dst +
+    /// 0xc0` (`pppKeShpTail3Draw` keeps a matrix there). Returns the last
+    /// word, as left in `eax`.
+    pub fn ppp_ke_shp_tail3_vf_copy(mem: &mut impl Mem, dst: u32) -> u32 {
+        let vf: [u32; 16] = mem.read(Global::<u32>::new(0x00c8_f7b0).ptr(mem).addr);
+        mem.write(dst.wrapping_add(0xc0), vf);
+        vf[15]
+    }
+
+    /// `pppDataLastPair_00761250(data, a, b)` (`0x00761250`, for
+    /// `pppDataRcv`): walks the records from `data + [data + 4]` (a 16-byte
+    /// header, its kind the `i8` at `+1`, until kind `0xff`, then `i16 +2`
+    /// entries of a size per kind: 20, 28, 32, 40, 24, 32, 40, 48 bytes;
+    /// other kinds have none) and stores the `+8` and `+0xc` words of the
+    /// last record of kind 2, 3, 6 or 7 at `a` and `b` (0 for none).
+    /// Returns `b`, as left in `eax`.
+    pub fn ppp_data_last_pair(mem: &mut impl Mem, data: u32, a: u32, b: u32) -> u32 {
+        let mut rec = data.wrapping_add(mem.read::<u32>(data.wrapping_add(4)));
+        let (mut first, mut second) = (0u32, 0u32);
+        loop {
+            let kind: i8 = mem.read(rec.wrapping_add(1));
+            if kind == -1 {
+                break;
+            }
+            let n = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+            let (size, pair) = match kind {
+                0 => (20, false),
+                1 => (28, false),
+                2 => (32, true),
+                3 | 6 => (40, true),
+                4 => (24, false),
+                5 => (32, false),
+                7 => (48, true),
+                _ => (0, false),
+            };
+            if pair {
+                first = mem.read(rec.wrapping_add(8));
+                second = mem.read(rec.wrapping_add(0xc));
+            }
+            rec = rec
+                .wrapping_add(n.wrapping_mul(size).cast_unsigned())
+                .wrapping_add(0x10);
+        }
+        mem.write(a, first);
+        mem.write(b, second);
+        b
+    }
+
+    /// `pppDataSetTex_007628c0(data, base, a, b)` (`0x007628c0`): walks
+    /// the records as [`ppp_data_last_pair`] does; a record of kind 2, 3,
+    /// 6 or 7 gets the first two words of the 12-byte texture record
+    /// `u8 +4 + base` of `0x00d4be38` (`g_pppPmcomTexRecs`) at
+    /// `+8` and `+0xc`, and the last such pair goes to `a` and `b` (0 for
+    /// none). Returns `b`, as left in `eax`.
+    pub fn ppp_data_set_tex(mem: &mut impl Mem, data: u32, base: u32, a: u32, b: u32) -> u32 {
+        let table = Global::<u32>::new(0x00d4_be38).ptr(mem).addr;
+        let mut rec = data.wrapping_add(mem.read::<u32>(data.wrapping_add(4)));
+        let (mut first, mut second) = (0u32, 0u32);
+        loop {
+            let kind: i8 = mem.read(rec.wrapping_add(1));
+            if kind == -1 {
+                break;
+            }
+            let (size, tex) = match kind {
+                0 => (20, false),
+                1 => (28, false),
+                2 => (32, true),
+                3 | 6 => (40, true),
+                4 => (24, false),
+                5 => (32, false),
+                7 => (48, true),
+                _ => (0, false),
+            };
+            if tex {
+                let i = u32::from(mem.read::<u8>(rec.wrapping_add(4))).wrapping_add(base);
+                let at = table.wrapping_add(i.wrapping_mul(12));
+                first = mem.read(at);
+                mem.write(rec.wrapping_add(8), first);
+                second = mem.read(at.wrapping_add(4));
+                mem.write(rec.wrapping_add(0xc), second);
+            }
+            let n = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+            rec = rec
+                .wrapping_add(n.wrapping_mul(size).cast_unsigned())
+                .wrapping_add(0x10);
+        }
+        mem.write(a, first);
+        mem.write(b, second);
+        b
     }
 
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)

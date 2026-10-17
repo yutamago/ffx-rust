@@ -1483,6 +1483,53 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The Sqs IOP command builders (round 39)
+
+The command builders append one 32-byte command (`op`, then up to three
+arguments, zeros after) at `g_SqsCmdNext` (`0x00c4946c`) and move it on
+by 0x20. When the command would end past `0x012f4e00`, they first send
+the queue (`SqsIopCommandSend`), with a `dbgPrintf` (`0x00b58d28`) when bit
+0 of `0x012f4148` is set. The `eax` a builder leaves is its argument when
+it reloads it, else the send's result after a send, else the old end
+plus 0x20; the ports return the same.
+
+| Function | Address | Command | Also | Returns |
+|---|---|---|---|---|
+| `SqsAllVoiceTerminate()` | `0x0081ce70` | `(0)` | | queue |
+| `SqsMusicDataRead(a)` | `0x0081d820` | `(0x15, a)` | `SqsReportStandby` before, `SqsIopCommandSend` after | the send |
+| `SqsSetCycleMode(a)` | `0x0081e900` | `(4, a)` | | `a` |
+| `SqsSetPlayMode(m)` | `0x0081ea00` | `(3, m)` | `m` 3 and up (signed) becomes 0, kept in `0x012f4144` | queue |
+| `SqsSetReverbPlaySwitch(a)` | `0x0081ec20` | `(0xc, a)` | | `a` |
+| `SqsShoutStreamingStart(a)` | `0x0081ee20` | `(0x37, a, 0x40, 0x7f)` | `0x012f4f84` and `0x012f4e94` = 1 | `a` |
+| `SqsSetStraightStreamAreaSize(a)` | `0x0081ef50` | `(5, a)` | | `a` |
+| `SqsStraightStreamingStart()` | `0x0081f6c0` | `(0x38, *0x012f4e70)` | `0x012f4e90` = 0, `0x012f4edc` = 1, `0x012f4ef8` = 0 | queue |
+| `SqsStraightStreamingStop()` | `0x0081f770` | `(0x33, 0)` | `0x012f4efc` = 3, `0x012f4edc` = 0 | queue |
+| `SqsStraightStreamingVolumeDirect(v)` | `0x0081f800` | `(0x3e, v & 0x7f)` | | queue |
+| `SqsStraightStreamingVolumeTranslate(n, v)` | `0x0081f880` | `(0x3f, n, v & 0x7f)` | | `n` |
+
+("queue": the send's result or the old end plus 0x20.) The remaining
+builders in `0x0081d4a0..0x0081fc30` are dead.
+
+`SqsInitWaveInfo(src, _, a)` (`0x0081d3f0`) does nothing once `0x012f4140`
+is set; its `eax` is then the caller's. Otherwise a source goes by SIF DMA
+(0x5000 bytes to `*0x012f4f88`: the record at `0x012f4e00`, id 0, then
+`SqsSifDmaState(1, 1)`), and `a` to the send buffer for `Sqs_CallRpc(4)`.
+Neither caller reads `eax`, so its shim is void.
+
+## A VU0 subtraction (round 38)
+
+`rcVu0Sub(a, b, c)` (`0x0091f740`, name ours; from `rcbgPSimAddNail`
+and `rcbgPSimCreate`) and the identical `rcVu0Sub_0092d720` (from
+`0x0092dad0`, `0x0092e020`) compute `a.xyz = b.xyz - c.xyz` through the
+emulated VU0 registers:
+- `b` is copied to `0x00c8f980` and `c` to `0x00c8f970`; both keep the
+  copies afterwards.
+- `Vec3SubScalars` subtracts each component as an `f32` (the original
+  pushes `c`'s four words as its scalar arguments by overwriting the
+  stack words of the two copies' arguments) and restores `vf00`.
+- The register goes to `a`, so `a.w` is `b.w`. The function returns that
+  last word.
+
 ## The map's ID map pages and yiReset (round 37)
 
 - `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,

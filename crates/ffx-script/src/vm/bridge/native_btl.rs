@@ -2248,7 +2248,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_64f0 => Int(native_70ef),
         0x007a_81d0 => Int(native_7118),
         0x007a_8530 => Int(native_711c),
-        _ => return super::native_chr::find(sym),
+        _ => return super::native_btl2::find(sym),
     })
 }
 
