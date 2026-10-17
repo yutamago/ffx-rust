@@ -5837,6 +5837,7 @@
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
+0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
 0x007e3060 function op_word_copy3             # the op_word_copy body again
@@ -5877,6 +5878,7 @@
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
 0x007e5660 function op_vec_zero               # (dst) four zero words
+0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
 0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
 0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
 0x007e5d40 function op_random_per_call_007e5d40  # structure: () -> op_random_per(); called by two opp draw functions (0x00a6e540, 0x00a744e0); name ours
@@ -11757,6 +11759,7 @@
 0x00a6f4d0 function opp_mdc_draw_a6f4d0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) kinds 0x2000/0x1000 draw a character model with a texture (0x00808a90 record, graphicVFXIsTextureWithBpLoaded) through graphicSetNoLightSpecularPassParam / 0x006439b0 or op1_mdc_ref_nolight, with per-magic alpha and gain cases; ported in crates/ffx-vfx slots
 0x00a70210 function opus_0279_draw               # callees: its named callees match the Switch 0x710086e4f0 opus_0279_draw's (similarity 0.71: op_ffxambient_to_omdambient, op_refrection_st_float, op_spr_alloc, op_spr_free, op_vertex_normal_point44_ffx_2); symbols from Fahrenheit's server export
 0x00a70910 function opp_0582_cmd_a70910         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x8000 allocates the part's tables, calls opus_0582_dot_draw / _break_make / _draw / _break_draw, the character texture bases (Ch_TextureSetClutBase 0x3c00, Ch_TextureSetImageBase 0x2ee0) and Sg_FadeOutW(1); ported in crates/ffx-vfx slots
+0x00a70ce0 function op_pair_index_00a70ce0     # ours: (a, b) -> the index from 1 of the pair in g_OpPairTable, appended when absent; called by opus_0582_draw, _break_draw, _dot_draw
 0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
 0x00a71780 function opus_0582_break_make      # fh switch:cg4 0x71008725b0
 0x00a72380 function opus_0582_break_draw      # fh switch:cg4 0x7100872d90
@@ -14018,7 +14021,10 @@
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
 0x00c44a50 function MsPreProcess                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23include'; Switch 0x71003beea0 MsPreProcess (symbols from Fahrenheit's server export)
+0x00c44bb8 label    g_OpPsmBlockFactor           # byte per pixel format: the factor op_oef2_tex_clut_ovl_add multiplies height by stride with (then / 16 / 256) to get a CLUT area's last block
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
+0x00c48bf0 label    g_OpUpVector                 # f32 x4: the up vector op_vector_m crosses the view direction with
+0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
@@ -14444,6 +14450,7 @@
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x0119fef0 label    g_OpusMonsterFlags        # byte per g_OpusMonsters slot (bit 7 skips the texture move in 0x00808640, bit 0 picks the first VRAM spot)
 0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
+0x011a0010 label    g_OpFog                      # the effects' fog (op_fog_param_set): colour bytes +0..+2, near/far/param f32 +4..+0xc (yiGetFogParam), -(255/(far-near)) +0x10, 255-param +0x14, -near +0x18, 255.0 +0x1c
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
@@ -14455,6 +14462,8 @@
 0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
 0x011a04b0 label    g_OpOef2ClutOvlCount         # u16 one past the last overlay CLUT kept (op_oef2_tex_clut_ovl_clear)
 0x011a04c0 label    g_OpOef2ClutOvl              # 64 overlay CLUT masks, 0 free (op_oef2_tex_clut_ovl_clear, op_oef2_tex_clut_ovl_trans)
+0x011a05c0 label    g_OpOef2ClutOvlFlags         # 64 bytes, one per overlay CLUT: nonzero for a plain 16x16 CLUT record (u16 base, format at +8)
+0x011a0600 label    g_OpOef2ClutOvlRecs          # 64 texture-record pointers, one per overlay CLUT (op_oef2_tex_clut_ovl_add)
 0x011a0960 label    g_OpFuncOtOrder              # op function ordering table: i8 slot lists (-1 free), 32 from a list base (op_func_ot_set/free)
 0x011a09e0 label    g_OpFuncOt                   # its 16-byte slots {func, a, b, u16 c} at (list + slot) * 16
 0x011a11e0 label    g_OpMdcTransferCues          # 8 x 16-byte mdc transfer cues keyed by their first word (op_mdc_mem_transfer_cue_free[_all])
@@ -14874,6 +14883,7 @@
 0x0228615c label    g_OpdNumPal                  # byte palette of the number printer (opd_num_pal_set/default)
 0x022881d4 label    g_OpdNumFrames               # u16 counted up by opd_num_vdisp
 0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
+0x022fb400 label    g_OpPairTable                # dword count, then (a, b) word pairs from entry 1 (op_pair_index_00a70ce0; the count's carry goes into +4)
 0x022fb4d4 label    g_MenuWaitFrames           # CT_401D_init (0x00a78210) sets 1; Native_MenuOpen_Poll counts it down
 0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
