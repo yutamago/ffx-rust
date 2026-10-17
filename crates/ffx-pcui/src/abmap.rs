@@ -102,8 +102,46 @@ pub fn read_pad(pad: &mut Pad, buttons: u16, analog: Option<u8>) {
     }
 }
 
+/// The box words `AbmapSetupPlyTag` leaves at `0x02305804..0x02305834`
+/// for `AbmapPositionPlyTag` (named by their offset from `0x02305800`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TagBox {
+    /// `+0x14`, `+0x18`: the offsets for corners with bit 2 set.
+    pub wide: [u32; 2],
+    /// `+0x1c`, `+0x20`: the offsets otherwise.
+    pub narrow: [u32; 2],
+    /// `+0x04`.
+    pub w04: u32,
+    /// `+0x08`.
+    pub w08: u32,
+    /// `+0x0c`.
+    pub w0c: u32,
+    /// `+0x10`.
+    pub w10: u32,
+    /// `+0x30`.
+    pub w30: u32,
+}
+
+/// A tag's box offsets (`+0x46..+0x4e`, `u16`) for its corner: the
+/// horizontal pair word negated on the left corners (1, 2), the vertical
+/// one on the lower corners (0, 1); then the text offset and height.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)] // 16-bit stores of 32-bit words
+pub fn tag_offsets(corner: u8, b: &TagBox) -> [u16; 4] {
+    let [v, h] = if corner & 4 != 0 { b.wide } else { b.narrow };
+    let (h, v) = (h as u16, v as u16);
+    let sum = (b.w30.wrapping_add(b.w0c) as u16).wrapping_neg();
+    match corner & 3 {
+        0 => [h, v.wrapping_neg(), b.w10 as u16, b.w08 as u16],
+        1 => [h.wrapping_neg(), v.wrapping_neg(), sum, b.w08 as u16],
+        2 => [h.wrapping_neg(), v, sum, b.w04 as u16],
+        _ => [h, v, b.w10 as u16, b.w04 as u16],
+    }
+}
+
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
 pub mod bridge {
+    use ffx_bridge::x87::{Reg, ftol, round_trip};
     use ffx_bridge::{Global, Mem};
     use ffx_graphic::host::{Conv, Host};
 
@@ -260,6 +298,106 @@ pub mod bridge {
                 return node;
             }
         }
+    }
+
+    /// `TOGetSaveChrName(chr)`: the character's name.
+    pub const TO_GET_SAVE_CHR_NAME: u32 = 0x008a_c850;
+    /// `TOGetTextWidth(text, arg)`: in `ST0`.
+    pub const TO_GET_TEXT_WIDTH: u32 = 0x008b_70c0;
+    /// The narrowest name tag (`f32`).
+    pub const TAG_MIN_WIDTH: u32 = 0x00b4_1d84;
+    /// `AbmapSetupPlyTag(tag)`: the tag's box sizes into
+    /// `TAG_BOX` (`0x02305804..0x02305834`).
+    pub const ABMAP_SETUP_PLY_TAG: u32 = 0x00a4_7c60;
+    /// `g_pppSinTable`: 4096 sines (`f32`) over a turn.
+    pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+    /// What `AbmapSetupPlyTag` leaves for `AbmapPositionPlyTag`.
+    pub const TAG_BOX: u32 = 0x0230_5804;
+
+    /// Character `chr`'s name tag (`g_Abmap + 0x11088`, 0x50 each).
+    fn ply_tag(mem: &impl Mem, chr: u32) -> u32 {
+        ABMAP
+            .get(mem)
+            .wrapping_add(0x11088)
+            .wrapping_add(chr.wrapping_mul(0x50))
+    }
+
+    /// `AbmapInitPlyTag(chr, node, scale, a, b, c)` (`0x00a57f80`):
+    /// character `chr`'s tag placed on node `node` (`+0x44`; position
+    /// `+0`, `+4` from the node's `i16` x, y; `+8` = 0, `+0xc` = 1; radius
+    /// `+0x3c` as [`super::node_radius`]), `a`, `b`, `c` at `+0x20..+0x2c`,
+    /// `scale` at `+0x40`, corner `+0x4e` = 0. For the seven party members
+    /// (`chr <= 6`, signed) the name (`+0x2c`) and its width at least
+    /// `TAG_MIN_WIDTH` (`ftol`, `u16` `+0x30`), height `+0x32` = 16.
+    /// Returns the tag.
+    #[allow(clippy::many_single_char_names)] // g, n, x, y, w
+    pub fn init_ply_tag(mem: &mut impl Host, args: [u32; 6]) -> u32 {
+        let [chr, node, scale, w0, w1, w2] = args;
+        let tag = ply_tag(mem, chr);
+        let at = |o: u32| tag.wrapping_add(o);
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit field
+        mem.write(at(0x44), node as u16);
+        let g = ABMAP.get(mem);
+        let n = g.wrapping_add(node.wrapping_mul(0x28));
+        let x: i16 = mem.read(n.wrapping_add(0x808));
+        mem.write(at(0), f32::from(x));
+        let y: i16 = mem.read(n.wrapping_add(0x80a));
+        mem.write(at(4), f32::from(y));
+        mem.write(at(8), [0.0f32, 1.0]);
+        let radius = node_radius(mem, node);
+        mem.write(at(0x20), [w0, w1]);
+        mem.write(at(0x3c), radius);
+        mem.write(at(0x4e), 0u8);
+        mem.write(at(0x28), w2);
+        mem.write(at(0x40), round_trip(f32::from_bits(scale)));
+        #[allow(clippy::cast_possible_wrap)] // compared signed
+        if chr as i32 <= 6 {
+            let name = mem.call_sym(TO_GET_SAVE_CHR_NAME, Conv::Cdecl, &[chr]);
+            mem.write(at(0x2c), name);
+            let w = mem.call_sym_st0(TO_GET_TEXT_WIDTH, Conv::Cdecl, &[name, 1]);
+            let min: f32 = mem.read(mem.rebase(TAG_MIN_WIDTH));
+            let w = if w < min { min } else { w };
+            #[allow(clippy::cast_possible_truncation)] // the original stores ax
+            let w = ftol(mem, f64::from(w)) as u16;
+            mem.write(at(0x30), [w, 0x10]);
+        }
+        tag
+    }
+
+    /// `AbmapPositionPlyTag(chr)` (`0x00a58080`, Fahrenheit's name):
+    /// `AbmapSetupPlyTag`, then the tag's anchor (`+0x10`, `+0x14`; `+0x18`
+    /// = 0, `+0x1c` = 1) at the radius `+0x3c` from its position toward
+    /// corner `+0x4e & 3` (angle `corner * 0x4000 + 0x2000`, y up), and
+    /// the box offsets `+0x46..+0x4c` from `TAG_BOX` by corner (bit 2 picks
+    /// the wide or narrow pair). Returns the tag.
+    pub fn position_ply_tag<M: Host>(mem: &mut M, chr: u32) -> u32 {
+        let tag = ply_tag(mem, chr);
+        let at = |o: u32| tag.wrapping_add(o);
+        let corner: u8 = mem.read(at(0x4e));
+        let angle = u32::from(u16::from(corner).wrapping_mul(0x4000).wrapping_add(0x2000));
+        mem.call_sym(ABMAP_SETUP_PLY_TAG, Conv::Cdecl, &[tag]);
+        let sin = |mem: &mut M, i: u32| -> f32 { mem.read(mem.rebase(SIN_TABLE + 4 * i)) };
+        let cos = sin(mem, ((angle + 0x4000) >> 4) & 0xfff);
+        let sn = sin(mem, angle >> 4);
+        let [x, y]: [f32; 2] = mem.read(at(0));
+        let r: f32 = mem.read(at(0x3c));
+        mem.write(at(0x10), Reg::load(cos).mul_m32(r).add_m32(x).store());
+        let r: f32 = mem.read(at(0x3c));
+        mem.write(at(0x14), (Reg::load(y) - Reg::load(sn).mul_m32(r)).store());
+        mem.write(at(0x18), [0.0f32, 1.0]);
+        let corner: u8 = mem.read(at(0x4e));
+        let word = |mem: &mut M, o: u32| -> u32 { mem.read(mem.rebase(TAG_BOX + o)) };
+        let tb = super::TagBox {
+            wide: [word(mem, 0x10), word(mem, 0x14)],
+            narrow: [word(mem, 0x18), word(mem, 0x1c)],
+            w04: word(mem, 0),
+            w08: word(mem, 4),
+            w0c: word(mem, 8),
+            w10: word(mem, 0xc),
+            w30: word(mem, 0x2c),
+        };
+        mem.write(at(0x46), super::tag_offsets(corner, &tb));
+        tag
     }
 
     /// `AbmapResetVectors()` (`0x00a57120`): the eight vectors at

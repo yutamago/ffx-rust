@@ -2,12 +2,115 @@
 //! sphere grid screen's helpers, the pointer zones.
 
 use ffx_pcui::abmap::bridge as abmap;
+use ffx_pcui::cursor::bridge as cursor;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::item::bridge as item;
+use ffx_pcui::link::bridge as link;
+use ffx_pcui::panel::bridge as panel;
+use ffx_pcui::sea::bridge as sea;
+use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
 
 use super::{mem, ported};
 
+/// `_CIatan2(y, x)` through MSVCR110's import slot (`y` in `ST1`, `x` in
+/// `ST0`), the result stored as a float.
+fn ci_atan2(y: f64, x: f64) -> f32 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f32;
+        let ops = [y, x];
+        // SAFETY: the slot holds the CRT's `_CIatan2`, which takes its
+        // operands in ST1/ST0 and leaves its result in ST0 (eax, ecx, edx,
+        // the x87 and SSE registers clobbered). The x87 stack is empty here.
+        // Only edi, which the callee keeps, is read after the call.
+        unsafe {
+            let f = (crate::rebase(link::CI_ATAN2_SLOT) as *const usize).read();
+            std::arch::asm!(
+                "fld qword ptr [{ops}]",
+                "fld qword ptr [{ops} + 8]",
+                "call {f}",
+                "fstp dword ptr [edi]",
+                ops = in(reg) ops.as_ptr(),
+                f = in(reg) f,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        // the CRT's intrinsics only run in the 32-bit game
+        let _ = (y, x);
+        f32::NAN
+    }
+}
+
 ported! {
+    /// `GuiTouch_update(this)`.
+    GuiTouch_update @ 0x0068_a3a0 => extern "thiscall" fn gui_touch_update(this: u32) {
+        touch::update(&mut mem(), this);
+    }
+    /// `GuiTouch_initGroup(group)`.
+    GuiTouch_initGroup @ 0x0068_a420 => extern "fastcall" fn gui_touch_init_group(group: u32) {
+        touch::init_group(&mut mem(), group);
+    }
+    /// `AbmapPadActivateHandler(panel, entry, choice, confirmed)`.
+    AbmapPadActivateHandler @ 0x00a5_6160 => extern "C" fn abmap_pad_activate_handler(panel: u32, entry: u32, choice: u32, confirmed: u32) -> u32 {
+        let _ = (panel, entry, confirmed);
+        panel::activate_handler(&mut mem(), choice)
+    }
+    /// `AbmapCalcLinkPointsStraight(out, a, b, ra, rb, kind)`, floats
+    /// taken as bits.
+    AbmapCalcLinkPointsStraight @ 0x00a5_81f0 => extern "C" fn abmap_calc_link_points_straight(out: u32, a: u32, b: u32, ra: u32, rb: u32, kind: u32) -> u32 {
+        link::calc_link_points_straight(&mut mem(), out, a, b, f32::from_bits(ra), f32::from_bits(rb), kind)
+    }
+    /// `AbmapCalcLinkPointsCurved(out, a, b, c, ra, rb, kind)`, floats
+    /// taken as bits.
+    AbmapCalcLinkPointsCurved @ 0x00a5_7710 => extern "C" fn abmap_calc_link_points_curved(out: u32, a: u32, b: u32, c: u32, ra: u32, rb: u32, kind: u32) -> u32 {
+        link::calc_link_points_curved(&mut mem(), out, [a, b, c], f32::from_bits(ra), f32::from_bits(rb), kind, |_, y, x| ci_atan2(y, x))
+    }
+    /// `AbmapReadCursorStick(move)`.
+    AbmapReadCursorStick @ 0x00a5_6bd0 => extern "C" fn abmap_read_cursor_stick(mv: u32) -> u32 {
+        cursor::read_cursor_stick(&mut mem(), mv)
+    }
+    /// `AbmapFindNearestNode(dist, pos, filter)`.
+    AbmapFindNearestNode @ 0x00a5_6a40 => extern "C" fn abmap_find_nearest_node(dist: u32, pos: u32, filter: u32) -> u32 {
+        cursor::find_nearest_node(&mut mem(), dist, pos, filter)
+    }
+    /// `AbmapFindNodeInDirection(pos, dir, filter)`.
+    AbmapFindNodeInDirection @ 0x00a5_6860 => extern "C" fn abmap_find_node_in_direction(pos: u32, dir: u32, filter: u32) -> u32 {
+        cursor::find_node_in_direction(&mut mem(), pos, dir, filter)
+    }
+    /// `AbmapPadCtrl()`.
+    AbmapPadCtrl @ 0x00a5_83e0 => extern "C" fn abmap_pad_ctrl() {
+        panel::pad_ctrl(&mut mem());
+    }
+    /// `MenuItem_ParseTargetKeys(t)`.
+    MenuItem_ParseTargetKeys @ 0x008c_5320 => extern "C" fn menu_item_parse_target_keys(t: i32) {
+        item::parse_target_keys(&mut mem(), t);
+    }
+    /// `MenuItem_DrawRow(window, x, y, index)`, floats taken as bits.
+    MenuItem_DrawRow @ 0x008c_9a70 => extern "C" fn menu_item_draw_row(window: u32, x: u32, y: u32, index: i32) {
+        item::draw_row(&mut mem(), window, f32::from_bits(x), f32::from_bits(y), index);
+    }
+    /// `MenuItem_GetLinePos()`.
+    MenuItem_GetLinePos @ 0x008c_9b60 => extern "C" fn menu_item_get_line_pos() {
+        item::get_line_pos(&mut mem());
+    }
+    /// `rcuiSeaAddUvSpd(axis, step)`, the float taken as bits.
+    rcuiSeaAddUvSpd @ 0x0093_0c00 => extern "C" fn yn_sea_add_uv_spd(axis: u32, step: u32) {
+        sea::add_uv_spd(&mut mem(), axis, f32::from_bits(step));
+    }
+    /// `SpdCtrl_IsMapExcluded(map)`.
+    SpdCtrl_IsMapExcluded @ 0x006f_6fa0 => extern "C" fn spd_ctrl_is_map_excluded(map: u32) -> u32 {
+        spdctrl::is_map_excluded(&mut mem(), map)
+    }
+    /// `SpdCtrl_IsMagicExcluded()`.
+    SpdCtrl_IsMagicExcluded @ 0x006f_6ff0 => extern "C" fn spd_ctrl_is_magic_excluded() -> u32 {
+        spdctrl::is_magic_excluded(&mut mem())
+    }
     /// `GuiTouch_resetButtons(this)`.
     GuiTouch_resetButtons @ 0x0068_ab30 => extern "thiscall" fn gui_touch_reset_buttons(this: u32) {
         touch::reset_buttons(&mut mem(), this);
@@ -71,5 +174,13 @@ ported! {
     /// `AbmapTryChangePlayer()`.
     AbmapTryChangePlayer @ 0x00a5_8ec0 => extern "C" fn abmap_try_change_player() -> u32 {
         abmap::try_change_player(&mut mem())
+    }
+    /// `AbmapInitPlyTag(chr, node, scale, a, b, c)`.
+    AbmapInitPlyTag @ 0x00a5_7f80 => extern "C" fn abmap_init_ply_tag(chr: u32, node: u32, scale: u32, a: u32, b: u32, c: u32) -> u32 {
+        abmap::init_ply_tag(&mut mem(), [chr, node, scale, a, b, c])
+    }
+    /// `AbmapPositionPlyTag(chr)`.
+    AbmapPositionPlyTag @ 0x00a5_8080 => extern "C" fn abmap_position_ply_tag(chr: u32) -> u32 {
+        abmap::position_ply_tag(&mut mem(), chr)
     }
 }
