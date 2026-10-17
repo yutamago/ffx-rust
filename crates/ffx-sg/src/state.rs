@@ -1589,6 +1589,111 @@ pub mod bridge {
         }
     }
 
+    /// The free camera `Sg_ControlCamera` steers: yaw and pitch
+    /// (radians), height and distance (`f32`), the distance preset counter.
+    pub const FREE_CAM_YAW: Global<f32> = Global::new(0x00c4_def0);
+    pub const FREE_CAM_PITCH: Global<f32> = Global::new(0x00c4_def4);
+    pub const FREE_CAM_HEIGHT: Global<f32> = Global::new(0x00c4_dee4);
+    pub const FREE_CAM_DIST: Global<f32> = Global::new(0x0130_1bb8);
+    pub const FREE_CAM_PRESET: Global<u32> = Global::new(0x0130_1bb0);
+    /// The pad as `Sg_ControlCamera` reads it: the right stick's x and y
+    /// bytes, the buttons pressed this frame and held.
+    pub const PAD_RSTICK_X: Global<u8> = Global::new(0x023c_44a6);
+    pub const PAD_RSTICK_Y: Global<u8> = Global::new(0x023c_44a7);
+    pub const PAD_PRESSED: Global<u32> = Global::new(0x023c_44a8);
+    pub const PAD_HELD: Global<u32> = Global::new(0x023c_44ac);
+    /// `Sg_ControlCamera`'s constants: degrees to radians (`f64`), 12, pi,
+    /// 2 pi, -pi, the steps 0.2 and 0.4 (`f64`), and the six distances
+    /// (`f32`: 50, 100, 180, 250, 1000, 30).
+    pub const DEG_TO_RAD: Global<f64> = Global::new(0x00b5_a478);
+    pub const TWELVE: Global<f64> = Global::new(0x00b4_b468);
+    pub const PI_F64: Global<f64> = Global::new(0x00b5_82f0);
+    pub const TWO_PI_F64: Global<f64> = Global::new(0x00b5_9638);
+    pub const MINUS_PI_F64: Global<f64> = Global::new(0x00b5_9648);
+    pub const STEP_HEIGHT: Global<f64> = Global::new(0x00b3_eb60);
+    pub const STEP_DIST: Global<f64> = Global::new(0x00b4_8318);
+    pub const DIST_PRESETS: [u32; 6] = [
+        0x00b1_f2c8,
+        0x00b3_04f8,
+        0x00b5_a480,
+        0x00b5_a484,
+        0x00b1_f2cc,
+        0x00b4_1d80,
+    ];
+
+    /// `Sg_ControlCamera()` (`0x0083f4b0`): the free camera from the pad.
+    /// The right stick (outside the dead zone `0x51..0xaf`) turns yaw and
+    /// pitch by `(stick - 0x80)` degrees / 12, each wrapped once into `-pi..
+    /// pi`. A debug build captures on button `0x100` when a capture is
+    /// selected. With the L/R button mode, buttons 2 and 8 raise and lower
+    /// the height by 0.2, 1 and 4 the distance by 0.4. Button `0x400`
+    /// pressed steps through six distances. Returns the switch's `eax`:
+    /// the preset counter's low byte / 6 after a preset, else the held
+    /// buttons with the L/R mode, else 0.
+    pub fn control_camera(mem: &mut impl Mem) -> u32 {
+        use ffx_bridge::x87;
+        let ld = |v: f32| x87::load(v.to_bits());
+        let st = |x: f64| f32::from_bits(x87::store(x));
+        let stick = |b: u8| {
+            let v = u32::from(b);
+            if v.wrapping_sub(0x51) <= 0x5e { 0x80 } else { v }
+        };
+        let sx = stick(PAD_RSTICK_X.get(mem));
+        let sy = stick(PAD_RSTICK_Y.get(mem));
+        let (k, twelve) = (DEG_TO_RAD.get(mem), TWELVE.get(mem));
+        let turn = |s: u32| {
+            let a = ld(st(f64::from(s.cast_signed() - 0x80)));
+            x87::div(x87::mul(a, k), twelve)
+        };
+        let yaw = st(x87::sub(ld(FREE_CAM_YAW.get(mem)), turn(sx)));
+        FREE_CAM_YAW.set(mem, yaw);
+        let pitch = st(x87::sub(ld(FREE_CAM_PITCH.get(mem)), turn(sy)));
+        FREE_CAM_PITCH.set(mem, pitch);
+        let (pi, two, mpi) = (PI_F64.get(mem), TWO_PI_F64.get(mem), MINUS_PI_F64.get(mem));
+        for g in [FREE_CAM_YAW, FREE_CAM_PITCH] {
+            let a = ld(g.get(mem));
+            if a > pi {
+                g.set(mem, st(x87::sub(a, two)));
+            }
+            let a = ld(g.get(mem));
+            if a < mpi {
+                g.set(mem, st(x87::add(a, two)));
+            }
+        }
+        if IS_DEBUG.get(mem) != 0 && PAD_HELD.get(mem) & 0x100 != 0 && capture_get_select(mem) != 0 {
+            capture_enable(mem);
+        }
+        let mut r = 0;
+        if get_lr_button_mode(mem) != 0 {
+            let b = PAD_HELD.get(mem);
+            let step = STEP_HEIGHT.get(mem);
+            if b & 2 != 0 {
+                FREE_CAM_HEIGHT.set(mem, st(x87::add(ld(FREE_CAM_HEIGHT.get(mem)), step)));
+            }
+            if b & 8 != 0 {
+                FREE_CAM_HEIGHT.set(mem, st(x87::sub(ld(FREE_CAM_HEIGHT.get(mem)), step)));
+            }
+            let step = STEP_DIST.get(mem);
+            if b & 1 != 0 {
+                FREE_CAM_DIST.set(mem, st(x87::add(ld(FREE_CAM_DIST.get(mem)), step)));
+            }
+            if b & 4 != 0 {
+                FREE_CAM_DIST.set(mem, st(x87::sub(ld(FREE_CAM_DIST.get(mem)), step)));
+            }
+            r = b;
+        }
+        if PAD_PRESSED.get(mem) & 0x400 != 0 {
+            let n = FREE_CAM_PRESET.get(mem).wrapping_add(1);
+            FREE_CAM_PRESET.set(mem, n);
+            let low = n & 0xff;
+            let at = DIST_PRESETS[(low % 6) as usize];
+            let d = x87::round_trip(Global::<f32>::new(at).get(mem));
+            FREE_CAM_DIST.set(mem, d);
+            r = low / 6;
+        }
+        r
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
