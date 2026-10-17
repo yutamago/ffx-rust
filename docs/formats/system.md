@@ -65,6 +65,11 @@ Four bytes per glyph: x, y, flags, width. A text byte from `0x30` is glyph
 `+8`/`+0xc` x, y; `+0x10` x + width; `+0x14` y + 8.0; `+0x1c` width; `+0x20`
 8.0; `+0x26` the flags and `+4` their bit 3.
 
+Two text widths use it. `0x0089e410` adds, per glyph, its width plus 1,
+and 5 more when the flags byte is nonzero; the sum goes through x87 and
+`ftol`. `0x0089dfa0` counts a fixed 12 per glyph, less 2 for the whole
+text. Both step through the text with `TOSkipCode`.
+
 ## Battle command-window stack (`g_BtlActionStack`, `0x0133c900`)
 
 0xf0 bytes per level, the current level `g_BtlActionDepth` (`0x023cc092`,
@@ -73,6 +78,12 @@ Four bytes per glyph: x, y, flags, width. A text byte from `0x30` is glyph
 (`+0x51` = 2), steps its cursor (`+0x5b`) back when at or past `+0x5a`, and
 restores the command list (`0x0133d0d0` from `0x0133d210`, 0x140 bytes)
 when that level's `+0x52` is 1.
+
+`TOBtlSetTarget(level, a, b)` (`0x0089a860`) marks the level as targeting
+(`+2` = 1) and runs `TOCheckBtlCommandTarget(a, b)`. It then counts the
+request at `+0xa6`, keeps the target word `0x0133d1fc` at `+0x42` and
+`0x0133d178` at `+0xd8`, and calls `TOBtlSetTargetCallback` with the
+level.
 
 ## GS `TEST_2` packets
 
@@ -386,3 +397,65 @@ The table holding these is at `0x00c4119c` in `.data`; no code refers to
 its address directly. For the set-type entries the ports return eax as
 the original leaves it, because whoever calls through the table may read
 it.
+
+## Language set-up and timed messages
+
+`0x008ad900` sets the TO library's language word (`0x01865b5c`), the
+language swap flag and the video mode from `TkGetLang()`:
+
+| `TkGetLang` | language word | swap flag | video mode |
+|---|---|---|---|
+| 0, by `FFXGetAsiaMode` 0 / 1 / 2 | 0 / 0x11 / 9 | 1 | 0 (NTSC) |
+| 1 (English) | 1 | 0 | 0 (NTSC) |
+| 2..5 | same | 0 | 1 (PAL) |
+| 18 | 0x12 | 0 | 1 (PAL) |
+| any other | unchanged | unchanged | unchanged |
+
+`0x008b9220` plays timed macro messages. It counts frames while
+`0x018663d0` is set. It picks a table for the map (row
+`g_GraphicMapId - 0x189`, 0x32 frame numbers per row) and calls
+`TOMessageCallF8` each time the count reaches the next frame number. A 0
+in the table ends the sequence and resets its state.
+
+The 0x6f1820 group (`0x006f1820..0x006f1890`) is not ported. It is
+thiscall delegate glue: each stub loads a bound object (`+0xc`) and
+function (`+0x10`) from `this` and calls or jumps through them. It is
+classed logic only by default.
+
+## Menu record helpers (`0x00775530..0x007767d0`)
+
+The help and menu screens keep their entries in pages of 0x138-byte
+records. The page table is at `*0x0112a01c`: 8 bytes per page, an offset
+from `*0x0112a03c` and an i16 record count, with `0x0112a080` pages. The
+current page and record are in `0x0112a088` and `0x0112a084`.
+
+- `0x00775ce0` and `0x00775de0` search the pages for a record: by its
+  address in the first case, by bit 0 of `+1` in the second. They make the
+  record current and copy its value pairs (`+0x1c` pairs from
+  `*0x0112a028 + 8 × +0x1e`) into the value table `*0x0112a0a4`.
+- `0x007767d0` applies fixed edits to screen 5's first page and to
+  screen 0xb's pages 13 and 14: it moves some records and unlinks others.
+- `0x00775820` gives the texture size of a menu picture for screens 5 and
+  0xb.
+- `0x00774a50` tests a record's own condition: the function at
+  `+0x20` (none when negative) is called with `+0x22`. Mode `+0x2b` 0
+  wants a zero result, 1 a nonzero one, and any other mode fails.
+- `0x00774860` expands one 8-byte text code into a record's text. Kind 1
+  copies a string from a condition-table function. Kind 0 writes a number
+  as six digits, with `:` for leading zeros. The number comes from a
+  function or the value table. When the code has a flag byte, the number
+  goes to `0x0112a06c`/`0x0112a070` instead of the text.
+- `0x00776110` is one step of the list's cursor. A pending request
+  (`0x0112a038` = 1) is handed to `TOMenuHelpSetExtMode` and
+  `TOMenuTermHelp`, and the state becomes 2. Otherwise the pressed
+  direction is followed through the record's 12-byte link (at
+  `+0x30 + 12 × direction`) to its target. The move is allowed when the
+  link has no condition, or when the condition's result differs from the
+  link's flag. A move makes the target current and plays `+0xf6` on a page
+  change or `+0xf0` within the page; a refused move plays `+0xf8`.
+  Without a move, an entry of kind `+0xfb` 1 (pad 0x40) or 2 (pad 0x20)
+  posts a request: its kind `+0xfa` goes to `0x0112a058` and the value
+  `+0xfe` (an index into the value table) goes to `0x0112a054`.
+
+`0x00775330` builds a GS packet (GIF tags, `TEX0`/`TEX1`), so it is
+skipped.

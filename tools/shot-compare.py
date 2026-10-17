@@ -40,7 +40,13 @@ STREAK_WIDTH = 2
 # main menu's play time blinks its colon once a second of wall time, so two
 # original runs can both show it while the port's run catches it off
 MASKS = {
-    "menu-browse-2.bmp": [(140, 575, 165, 605)],
+    # the play-time clock (x 149-181, y 582-597): its colon blinks and its
+    # minutes can tick between recordings
+    "menu-browse-1.bmp": [(140, 575, 190, 605)],
+    "menu-browse-2.bmp": [(140, 575, 190, 605)],
+    "menu-browse-3.bmp": [(140, 575, 190, 605)],
+    "menu-browse-4.bmp": [(140, 575, 190, 605)],
+    "menu-browse-5.bmp": [(140, 575, 190, 605)],
     # a searchlight beam's lower end (blocks at y 240, x 1000-1120; up to 41 seen)
     # and the save sphere's pulsing glow (field-walk-1 only; 21.5 seen)
     "field-walk-1.bmp": [(1000, 240, 1120, 280), (480, 300, 580, 420)],

@@ -328,6 +328,78 @@ pub mod bridge {
         HSV_PENDING.set(mem, 0);
         eax
     }
+
+    /// `Sg_MemSetAlign(n)` (`0x0083c4a0`), `Ch_ClutMapping(chr, copy)`
+    /// (`0x0083ca20`), `Ch_ClutDispose(chr)` (`0x0083c810`).
+    pub const MEM_SET_ALIGN: u32 = 0x0083_c4a0;
+    pub const CLUT_MAPPING: u32 = 0x0083_ca20;
+    pub const CLUT_DISPOSE: u32 = 0x0083_c810;
+    /// Bytes of scratch `ch_clut_create` needs (the block's name).
+    pub const CLUT_CREATE_SCRATCH: u32 = 0x40;
+
+    /// `Ch_ClutCreate(chr, scratch)` (`0x0083c710`): unless petrified
+    /// (`op_get_chr_status_stone`, asked twice), the character's own clut
+    /// block: the old one disposed (`Ch_ClutDispose` with
+    /// [`CLUT_DISPOSE_HOLD`] set), then `n * 16` bytes plus each of
+    /// the `n` cluts (`i16` `+0x6e8`; the definition's `+0x14` list at
+    /// `+0x18`, 8-byte entries, data pointer `+4` with its size in the
+    /// 15 low bits of the word 0x10 before it) aligned so that the next
+    /// start plus 0x20 is a multiple of 0x80, then `(size + 4) * 16` bytes; aligned
+    /// to 0x40 (`Sg_MemSetAlign`), `user_malloc`ed into `+0x704` and named
+    /// `"<name>:CLUT"` (in `scratch`, the original's stack); then
+    /// `Ch_ClutMapping(chr, 1)` and `Ch_ClutEnable(chr, 1)`. Returns
+    /// what the original leaves in EAX.
+    pub fn ch_clut_create<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let def: u32 = mem.read(chr + 0x1c4);
+        let tex: u32 = mem.read(def + 0x14);
+        let stone = mem.rebase(crate::texture::bridge::STATUS_STONE);
+        call(mem, stone, &[chr]);
+        let s = call(mem, stone, &[chr]);
+        if s != 0 {
+            return s;
+        }
+        CLUT_DISPOSE_HOLD.set(mem, 1);
+        call(mem, mem.rebase(CLUT_DISPOSE), &[chr]);
+        CLUT_DISPOSE_HOLD.set(mem, 0);
+        let n = i32::from(mem.read::<i16>(chr + 0x6e8));
+        let mut size = n.cast_unsigned() << 4;
+        if n > 0 {
+            let mut e = mem.read::<u32>(tex + 0x18).wrapping_add(4);
+            for _ in 0..n {
+                while (size.wrapping_add(0x20)) & 0x7f != 0 {
+                    size = size.wrapping_add(1);
+                }
+                let p: u32 = mem.read(e);
+                e = e.wrapping_add(8);
+                let w: u32 = mem.read(p.wrapping_sub(0x10));
+                size = size.wrapping_add(((w & 0x7fff) + 4) << 4);
+            }
+        }
+        call(mem, mem.rebase(MEM_SET_ALIGN), &[0x40]);
+        let block = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[size]);
+        mem.write(chr + 0x704, block);
+        let name_at: u32 = mem.read(chr + 4);
+        let mut name = crate::handle::bridge::c_string(mem, name_at);
+        name.extend(b":CLUT");
+        crate::handle::bridge::put_c_string(mem, scratch, &name);
+        let block: u32 = mem.read(chr + 0x704);
+        call(
+            mem,
+            mem.rebase(crate::handle::bridge::MEM_SET_STR),
+            &[block, scratch, u32::MAX],
+        );
+        call(mem, mem.rebase(CLUT_MAPPING), &[chr, 1]);
+        call(
+            mem,
+            mem.rebase(crate::texture::bridge::CLUT_ENABLE),
+            &[chr, 1],
+        )
+    }
 }
 
 #[cfg(test)]

@@ -177,6 +177,71 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u
             |m| ffx_battle::flow::bridge::ms_btl_list_group(m, i, gr),
         );
     }
+    // a formation of a field (its map from the field records, a group's
+    // formation byte or any)
+    let n = i32::from(g::FIELD_COUNT.get(b));
+    let map = if n > 0 && rng.below(4) != 0 {
+        let k = rng.below(n.cast_unsigned());
+        let r = ffx_battle::state::bridge::FIELD_RECORDS.get(b) + 14 * k;
+        u32::from(u16::from_le_bytes(
+            b.read(r, 2).unwrap().try_into().unwrap(),
+        ))
+    } else {
+        rng.below(0x400)
+    };
+    let f = g::ms_btl_list_field_num(b, map.cast_signed());
+    let formation = if f >= 0 && rng.below(2) == 0 {
+        let groups = u32::from(b.read(g::ms_btl_list_encount(b, f) + 1, 1).unwrap()[0]);
+        if groups > 0 {
+            let e =
+                ffx_battle::flow::bridge::ms_btl_list_group(b, f, rng.below(groups).cast_signed());
+            let k = u32::from(b.read(e, 1).unwrap()[0]).max(1);
+            u32::from(b.read(e + 5 + 2 * rng.below(k), 1).unwrap()[0])
+        } else {
+            rng.below(0x40)
+        }
+    } else {
+        rng.below(0x40)
+    };
+    let scene = map << 16 | formation;
+    let outs = if rng.below(4) == 0 {
+        [0, 0, 0]
+    } else {
+        [area, area + 4, area + 8]
+    };
+    twin(
+        "MsFldGetScene",
+        a,
+        b,
+        0x0078_27f0,
+        &[scene, outs[0], outs[1], outs[2]],
+        ALL,
+        |m| ffx_battle::process::bridge::ms_fld_get_scene(m, scene, outs[0], outs[1], outs[2]),
+    );
+    let (x, y) = (rng.byte().into(), rng.byte().into());
+    set(
+        a,
+        b,
+        ffx_battle::process::bridge::LABEL_LOCK,
+        u8::from(rng.below(4) == 0),
+    );
+    twin(
+        "MsBattleLabelExe",
+        a,
+        b,
+        0x0078_1c90,
+        &[scene, x, y],
+        ALL,
+        |m| {
+            ffx_battle::process::bridge::ms_battle_label_exe(
+                &mut ffx_battle::target::bridge::Dm::new(m),
+                scene,
+                x,
+                y,
+            )
+            .cast_unsigned()
+        },
+    );
     let all = rng.below(2);
     twin("ResetEncountExe", a, b, 0x0078_0ff0, &[all], 0, |m| {
         g::reset_encount_exe(m, all);

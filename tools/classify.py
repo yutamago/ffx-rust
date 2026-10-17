@@ -55,6 +55,16 @@ WORK = progress.WORK
 BASE = 0x400000
 CATS = ("logic", "glue", "platform", "debug", "dead")
 
+# verdicts from porters who read the function and found no rule matched it
+# (address: (category, evidence)); applied last, over every rule
+REVIEWED = {
+    0x007eb760: ("glue", "op_gs1_init: fixed GS register-setup packets (effects round 13)"),
+    0x00775330: ("glue", "builds a GS packet (system round 19)"),
+    0x0082bb90: ("glue", "builds a GS sprite packet (main round 5)"),
+    0x008432e0: ("glue", "waits on the GS register flag, then sets a register (main round 5)"),
+    0x00a5e7b0: ("glue", "GS packet setup (effects round 14)"),
+}
+
 # (category, name regex, evidence, highest address or None); first match
 # wins. Debug first: a debug window of the battle code is debug, not logic.
 # The PC port's own code (PhyreScene, Iggy menus, FMOD, the loaders) sits
@@ -676,6 +686,10 @@ def main():
                   ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}{'' if c in decided else '?'}" for c in cs[:8]) +
                   "; calls " + ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}"
                                          for c in sorted(direct.get(a, ())) if c != a)[:300], file=sys.stderr)
+
+    for a, (c, w) in REVIEWED.items():
+        if a in cls:
+            cls[a], why[a] = c, "reviewed: " + w
 
     stats = defaultdict(Counter)
     for a in game:

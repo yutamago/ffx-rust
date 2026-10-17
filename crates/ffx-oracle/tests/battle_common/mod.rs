@@ -229,7 +229,8 @@ pub fn recording_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32
 /// [`recording_stub`] keeping every call: the count at `rec`, the result
 /// at `rec + 4` (write it to change it), the `n` arguments of the calls in
 /// a ring of 16 from `rec + 8` (`8 + 0x40 n` bytes in all). For callees
-/// called many times in one call (the read queue's loads).
+/// called many times in one call (the read queue's loads). With `f` 0
+/// only the code is written (for a function pointer to point at).
 pub fn logging_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32) {
     let at = o.rebase(at);
     let mut code = vec![0x8b, 0x0d];
@@ -248,8 +249,11 @@ pub fn logging_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32) 
     o.write(rec, &[0; 4]).unwrap();
     o.write(rec + 4, &ret.to_le_bytes()).unwrap();
     o.write(at, &code).unwrap();
-    let entry = o.rebase(f);
-    let rel = at.wrapping_sub(entry + 5);
-    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
-        .unwrap();
+    // f 0: the code alone (a function pointer's target)
+    if f != 0 {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
 }

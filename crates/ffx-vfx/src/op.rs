@@ -2790,4 +2790,153 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    /// `g_OpCharClass` (`0x0113fb58`): the op script tokenizer's class of
+    /// each byte (1 word, 2 two-byte word, 3/4 quotes, 5 space, 6/8 single
+    /// character, 7 comment or statement end).
+    pub const CHAR_CLASS: Global<u8> = Global::new(0x0113_fb58);
+    /// The tokenizer's block-comment depth (`0x0113fc64`) and whether it
+    /// is inside one (`0x0113fc60`).
+    pub const COMMENT_DEPTH: Global<u32> = Global::new(0x0113_fc64);
+    /// See [`COMMENT_DEPTH`].
+    pub const IN_COMMENT: Global<u32> = Global::new(0x0113_fc60);
+
+    /// `op_token_007e1f80(src, out, pos, max, eol)` (`0x007e1f80`): the
+    /// next token of an op script from `src + *pos` into `out` (at most
+    /// `max - 1` bytes, then a terminator), by the class of its first byte:
+    /// a run of class 1, a run of class 2 (bytes from 0x80 take the next
+    /// one too), a quoted run up to the closing quote of the same class
+    /// or a terminator, a run of spaces (5), or one byte (6, 8). Class 7:
+    /// `;` and `//` skip to `eol + 1`; `/*` opens a block comment (depth
+    /// up, `IN_COMMENT` set) and `*/` closes one (an error 3 through
+    /// `op_error` when none is open); others keep the byte. Inside a
+    /// comment the token is empty. `*pos` is left after the token (one
+    /// byte back, as the original reads one ahead). Returns the first byte's
+    /// class (sign-extended).
+    #[allow(clippy::too_many_lines)]
+    pub fn op_token<M: Mem>(
+        mem: &mut M,
+        src: u32,
+        out: u32,
+        pos: u32,
+        max: u32,
+        eol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let class =
+            |mem: &M, c: u8| mem.read::<u8>(CHAR_CLASS.ptr(mem).addr.wrapping_add(u32::from(c)));
+        let max = max.cast_signed();
+        let mut i: u32 = mem.read(pos);
+        let mut o = out;
+        let next = |mem: &M, i: &mut u32| {
+            let c: u8 = mem.read(src.wrapping_add(*i));
+            *i = i.wrapping_add(1);
+            c
+        };
+        let mut c = next(mem, &mut i);
+        let ch = class(mem, c);
+        let mut n: i32 = 1;
+        let put = |mem: &mut M, o: &mut u32, n: &mut i32, b: u8| {
+            if *n < max {
+                mem.write(*o, b);
+                *o = o.wrapping_add(1);
+                *n += 1;
+            }
+        };
+        match ch {
+            1 => loop {
+                put(mem, &mut o, &mut n, c);
+                c = next(mem, &mut i);
+                if class(mem, c) != 1 {
+                    break;
+                }
+            },
+            2 => loop {
+                put(mem, &mut o, &mut n, c);
+                if c >= 0x80 {
+                    let b = next(mem, &mut i);
+                    put(mem, &mut o, &mut n, b);
+                }
+                c = next(mem, &mut i);
+                if class(mem, c) != 2 {
+                    break;
+                }
+            },
+            3 | 4 => {
+                let mut done = false;
+                loop {
+                    put(mem, &mut o, &mut n, c);
+                    if c >= 0x80 {
+                        let b = next(mem, &mut i);
+                        put(mem, &mut o, &mut n, b);
+                    }
+                    c = next(mem, &mut i);
+                    if c == 0 || done {
+                        break;
+                    }
+                    if class(mem, c) == ch {
+                        done = true;
+                    }
+                }
+            }
+            5 => {
+                while c != 0 {
+                    put(mem, &mut o, &mut n, c);
+                    c = next(mem, &mut i);
+                    if class(mem, c) != 5 {
+                        break;
+                    }
+                }
+            }
+            6 | 8 => {
+                if max > n {
+                    mem.write(o, c);
+                    o = o.wrapping_add(1);
+                }
+                i = i.wrapping_add(1);
+            }
+            7 => {
+                mem.write(o, c);
+                if c == b';' {
+                    i = eol.wrapping_add(1);
+                } else {
+                    let b = next(mem, &mut i);
+                    if c == b'/' {
+                        if b == b'/' {
+                            i = eol.wrapping_add(1);
+                        } else if b == b'*' {
+                            let d = COMMENT_DEPTH.get(mem);
+                            COMMENT_DEPTH.set(mem, d.wrapping_add(1));
+                            IN_COMMENT.set(mem, 1);
+                            i = i.wrapping_add(1);
+                        } else {
+                            o = o.wrapping_add(1);
+                        }
+                    } else if b == b'/' {
+                        let d = COMMENT_DEPTH.get(mem);
+                        if d == 0 {
+                            let f = Global::<u32>::new(0x007e_1450).ptr(mem).addr;
+                            call(mem, f, &[3, 0]);
+                        } else {
+                            COMMENT_DEPTH.set(mem, d - 1);
+                            if d == 1 {
+                                IN_COMMENT.set(mem, 0);
+                            }
+                        }
+                        i = i.wrapping_add(1);
+                    } else {
+                        o = o.wrapping_add(1);
+                    }
+                }
+            }
+            _ => {}
+        }
+        i = i.wrapping_sub(1);
+        if IN_COMMENT.get(mem) != 0 {
+            o = out;
+        }
+        mem.write(o, 0u8);
+        mem.write(pos, i);
+        i32::from(ch.cast_signed()).cast_unsigned()
+    }
 }

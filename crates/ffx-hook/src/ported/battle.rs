@@ -3,9 +3,11 @@
 
 use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
+use ffx_battle::death::bridge as death;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::parse::bridge as parse;
+use ffx_battle::process::bridge as process;
 use ffx_battle::status::bridge as status;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
@@ -2529,5 +2531,101 @@ ported! {
         let mut m = mem();
         script!(s);
         parse::ms_command_cue_process(&mut target::Dm::new(&mut m), &host(), &mut s)
+    }
+    /// `MsNowMusicStop()`: sound through the game.
+    MsNowMusicStop @ 0x007a_00b0 => extern "C" fn ms_now_music_stop() -> u32 {
+        process::ms_now_music_stop(&mut mem(), &mut call_ptr)
+    }
+    /// `MsResetNormalCalc()`.
+    MsResetNormalCalc @ 0x0079_5c40 => extern "C" fn ms_reset_normal_calc() -> u32 {
+        process::ms_reset_normal_calc(&mut mem())
+    }
+    /// `MsBattleCanProgress()` (`0x00791190`).
+    MsBattleCanProgress @ 0x0079_1190 => extern "C" fn ms_battle_can_progress() -> i32 {
+        process::ms_battle_can_progress(&mem())
+    }
+    /// `MsSetDeathAll()` (`0x00791760`).
+    MsSetDeathAll @ 0x0079_1760 => extern "C" fn ms_set_death_all() {
+        let mut m = mem();
+        script!(s);
+        process::ms_set_death_all(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `msVoiceCheckStanby(any)`: the CD library and sound through the game.
+    msVoiceCheckStanby @ 0x007b_2c10 => extern "C" fn ms_voice_check_stanby(any: u32) -> i32 {
+        process::ms_voice_check_stanby(&mut mem(), &mut call_ptr, any)
+    }
+    /// `MsCheckSoftResetOk()` (`0x00792e80`).
+    MsCheckSoftResetOk @ 0x0079_2e80 => extern "C" fn ms_check_soft_reset_ok() -> i32 {
+        process::ms_check_soft_reset_ok(&mut mem(), &mut call_ptr)
+    }
+    /// `MsDebugCameraSleep(v)` (`0x007921c0`).
+    MsDebugCameraSleep @ 0x0079_21c0 => extern "C" fn ms_debug_camera_sleep(v: u32) {
+        camera::ms_debug_camera_sleep(&mut mem(), v);
+    }
+    /// `MsCameraInit()`.
+    MsCameraInit @ 0x007b_d5d0 => extern "C" fn ms_camera_init() {
+        camera::ms_camera_init(&mut mem());
+    }
+    /// `MsCheckDeathMotion(i, actor)`.
+    MsCheckDeathMotion @ 0x0078_c4c0 => extern "C" fn ms_check_death_motion(i: u32, actor: u32) -> u32 {
+        death::ms_check_death_motion(&mem(), i, actor)
+    }
+    /// `MsDeathTerminate(i, actor)`.
+    MsDeathTerminate @ 0x0078_cca0 => extern "C" fn ms_death_terminate(i: u32, actor: u32) -> u32 {
+        script!(s);
+        death::ms_death_terminate(&mut mem(), &mut s, i, actor)
+    }
+    /// `MsSetDeathProcess(i, actor)`.
+    MsSetDeathProcess @ 0x0078_ddc0 => extern "C" fn ms_set_death_process(i: u32, actor: u32) {
+        let mut m = mem();
+        script!(s);
+        death::ms_set_death_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor);
+    }
+    /// `MsDeathEffectStart(i, kind)`: the sound and effect through the game.
+    MsDeathEffectStart @ 0x0079_e3d0 => extern "C" fn ms_death_effect_start(i: u32, kind: u32) -> u32 {
+        script!(s);
+        death::ms_death_effect_start(&mut mem(), &mut s, i, kind)
+    }
+    /// `MsStoneEffectProcess()`.
+    MsStoneEffectProcess @ 0x007a_2690 => extern "C" fn ms_stone_effect_process() -> u32 {
+        script!(s);
+        death::ms_stone_effect_process(&mut mem(), &mut s)
+    }
+    /// `MsSetDeath(i, flags)`.
+    MsSetDeath @ 0x0078_dc30 => extern "C" fn ms_set_death(i: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_set_death(&mut target::Dm::new(&mut m), &host(), &mut s, i, flags)
+    }
+    /// `MsMotionPosCheck(i, actor)`.
+    MsMotionPosCheck @ 0x007a_a100 => extern "C" fn ms_motion_pos_check(i: u32, actor: u32) {
+        let mut m = mem();
+        process::ms_motion_pos_check(&mut target::Dm::new(&mut m), &host(), i, actor);
+    }
+    /// `MsMotionPosCheckAll()`.
+    MsMotionPosCheckAll @ 0x007a_a140 => extern "C" fn ms_motion_pos_check_all() {
+        let mut m = mem();
+        process::ms_motion_pos_check_all(&mut target::Dm::new(&mut m), &host());
+    }
+    /// `MsCountChrActing()` (`0x007b0ca0`).
+    MsCountChrActing @ 0x007b_0ca0 => extern "C" fn ms_count_chr_acting() -> u32 {
+        process::ms_count_chr_acting(&mem())
+    }
+    /// `MsLimitTypeProcess()`: `MsMessageCueRegist` through the game.
+    MsLimitTypeProcess @ 0x007b_1180 => extern "C" fn ms_limit_type_process() {
+        process::ms_limit_type_process(&mut mem(), &mut call_ptr);
+    }
+    /// `MsEtEffectFree()`: vfx and the heap through the game.
+    MsEtEffectFree @ 0x0079_e630 => extern "C" fn ms_et_effect_free() {
+        process::ms_et_effect_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsFldGetScene(scene, &field, &group, &k)`.
+    MsFldGetScene @ 0x0078_27f0 => extern "C" fn ms_fld_get_scene(scene: u32, field: u32, group: u32, slot: u32) -> u32 {
+        process::ms_fld_get_scene(&mut mem(), scene, field, group, slot)
+    }
+    /// `MsBattleLabelExe(scene, a, b)`.
+    MsBattleLabelExe @ 0x0078_1c90 => extern "C" fn ms_battle_label_exe(scene: u32, a: u32, b: u32) -> i32 {
+        let mut m = mem();
+        process::ms_battle_label_exe(&mut target::Dm::new(&mut m), scene, a, b)
     }
 }

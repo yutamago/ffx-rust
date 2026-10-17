@@ -123,11 +123,12 @@
 0x00440990	dead	unreachable from the entry point and every pointer table
 0x004409c0	dead	unreachable from the entry point and every pointer table
 0x004409e0	glue	calls PhyreEngine Phyre_PWorld_addInstanceList, Phyre_PWorld_removeInstanceList
-0x00441c60	platform	only called from platform code (Phyre_PCluster_fixupInstances and 1 more)
-0x00441cc0	platform	only called from platform code (Phyre_PCluster_resolveAssetReferences)
+0x00441bf0	platform	only called from platform code (Phyre_PCluster_resolveAssetReferences and 1 more)
+0x00441c60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreSceneCursor_Next5
+0x00441cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreSceneCursor_Next6
 0x00441dc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreSceneCursor_SetNode
-0x00441e10	platform	only called from platform code (0x441b80 and 1 more)
-0x00441e40	platform	only called from platform code (0x441bf0 and 1 more)
+0x00441e10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_00441e10
+0x00441e40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_00441e40
 0x00441e70	logic	default (no rule: ported to be safe)
 0x0044ccd0	logic	default (no rule: ported to be safe)
 0x0044cd00	dead	unreachable from the entry point and every pointer table
@@ -844,7 +845,7 @@
 0x00639380	logic	default (no rule: ported to be safe)
 0x00639390	logic	default (no rule: ported to be safe)
 0x006393a0	glue	thin wrapper: only forwards to glue code (BrokenScreenEffect_GetInstance)
-0x006393c0	logic	default (no rule: ported to be safe)
+0x006393c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_BufferSize
 0x00639410	dead	unreachable from the entry point and every pointer table
 0x00639450	logic	default (no rule: ported to be safe)
 0x00639470	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenInitializeBlockDataWithGivenBuffer
@@ -1161,15 +1162,15 @@
 0x00643830	glue	thin wrapper: only forwards to glue code (BlurEffectEx_GetInstance, BlurEffectEx_SetPositiveParams)
 0x00643860	glue	thin wrapper: only forwards to glue code (BlurEffectEx_GetInstance, BlurEffect_SetFloats74)
 0x00643890	glue	thin wrapper: only forwards to glue code (BlurEffectEx_GetInstance, BlurEffect_SetFloats6c)
-0x006438c0	logic	default (no rule: ported to be safe)
+0x006438c0	glue	thin wrapper: only forwards to glue code (PhyreScene_SetNumberText)
 0x006438e0	glue	thin wrapper: only forwards to glue code (PostProcessManager_GetInstance)
 0x00643900	glue	thin wrapper: only forwards to glue code (PostProcessManager_GetInstance)
 0x00643940	glue	thin wrapper: only forwards to glue code (PostProcessManager_GetInstance)
 0x00643960	dead	unreachable from the entry point and every pointer table
 0x00643980	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetSpecularMapParams
 0x006439b0	logic	default (no rule: ported to be safe)
-0x00643a00	logic	default (no rule: ported to be safe)
-0x00643a20	logic	default (no rule: ported to be safe)
+0x00643a00	glue	thin wrapper: only forwards to glue code (TextureAnimationManager_GetInstance, TextureAnimationManager_SetPaused)
+0x00643a20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureAnimationSetFrame
 0x00643a40	logic	default (no rule: ported to be safe)
 0x00643aa0	logic	scene state the renderer needs (original look first): graphicSetTextureVideoInfo
 0x00643af0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetUiDrawType
@@ -1185,7 +1186,7 @@
 0x00643df0	glue	thin wrapper: only forwards to glue code (PhyreScene_SetMeshesVisible)
 0x00643e20	glue	only called from glue code (ClassDynamicGeometry_setupMaterial and 1 more)
 0x00643e70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSwitchGPUMode
-0x00643e80	logic	default (no rule: ported to be safe)
+0x00643e80	glue	thin wrapper: only forwards to glue code (0x6ce0c0, PhyFMVPlayerManager_GetInstance, ShadowManager_getInstance)
 0x00643eb0	logic	default (no rule: ported to be safe)
 0x006440e0	glue	thin wrapper: only forwards to glue code (TextureAnimationManager_GetInstance, TextureAnimationManager_setAnimatedMaterialsChar)
 0x00644120	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureAnimationSetMaterialVisiability
@@ -1586,8 +1587,8 @@
 0x00656990	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Array_Reserve_00668100)
 0x00656a00	glue	only called from glue code (GuildMapDynamicGeometry_updateRenderData)
 0x00656ae0	glue	only called from glue code (PhyreScene_loadMagicFileVFXTexture and 2 more)
-0x00656b90	platform	only called from platform code (0x6a0f30 and 1 more)
-0x00656c10	logic	default (no rule: ported to be safe)
+0x00656b90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_PushPair3890
+0x00656c10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_AddDrawEntry
 0x00656c80	dead	unreachable from the entry point and every pointer table
 0x00656cc0	dead	unreachable from the entry point and every pointer table
 0x00656d00	dead	unreachable from the entry point and every pointer table
@@ -1959,7 +1960,7 @@
 0x0066db00	logic	scene state the renderer needs (original look first): PhyreScene_setObjectRotation
 0x0066e3e0	logic	scene state the renderer needs (original look first): PhyreScene_setObjectTranslation
 0x0066e4f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): Render_SurfaceFormat_0066e4f0
-0x0066e5e0	logic	default (no rule: ported to be safe)
+0x0066e5e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_SetNumberText
 0x0066e610	dead	unreachable from the entry point and every pointer table
 0x0066e620	dead	unreachable from the entry point and every pointer table
 0x0066e7b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_SetMeshesVisible
@@ -1974,7 +1975,7 @@
 0x0066ed00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setupColorCorrection
 0x0066ee70	glue	calls PhyreEngine Phyre_FogEffectManager_GetInstance
 0x0066efd0	dead	unreachable from the entry point and every pointer table
-0x0066f010	logic	default (no rule: ported to be safe)
+0x0066f010	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_ApplySettings
 0x0066f140	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setupPostProcessParams
 0x0066f2f0	logic	scene state the renderer needs (original look first): PhyreScene_show2DLayer
 0x0066f380	platform	only called from platform code (0x638f80)
@@ -2685,7 +2686,7 @@
 0x00698370	dead	unreachable from the entry point and every pointer table
 0x006983e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_SetByte123b1
 0x006983f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_SetByte123b0
-0x00698400	glue	only called from glue code (PhyreScene_fieldMapShutdown and 2 more)
+0x00698400	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_SetFirstEntry
 0x00698480	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_SetByte123bb
 0x00698490	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_setCrossFadeCaptureEnable
 0x006984a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_setCrossFadeTime
@@ -2957,7 +2958,7 @@
 0x006a2830	glue	calls PhyreEngine Phyre_PFreeList_allocateNewBlock, Phyre_PFreeList_deallocate, Phyre_PRedBlackTree_postInsertFinalize
 0x006a28b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassLoadedCharacterTable_insertPrototype
 0x006a29a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_LoadCompute_006a29a0
-0x006a29c0	glue	only called from glue code (0x6a2260 and 1 more)
+0x006a29c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_006a29c0
 0x006a29f0	dead	unreachable from the entry point and every pointer table
 0x006a2a10	dead	unreachable from the entry point and every pointer table
 0x006a2b10	dead	unreachable from the entry point and every pointer table
@@ -3142,7 +3143,7 @@
 0x006b2f50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_sceenTextureAnimationClear
 0x006b3060	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_setAnimatedMaterialsChar
 0x006b33c0	logic	default (no rule: ported to be safe)
-0x006b3600	logic	default (no rule: ported to be safe)
+0x006b3600	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_SetPaused
 0x006b3650	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimation_SetByte1c
 0x006b3660	glue	only called from glue code (TextureAnimationManager_setAnimatedMaterialsChar)
 0x006b3d90	dead	unreachable from the entry point and every pointer table
@@ -3156,7 +3157,7 @@
 0x006b3fe0	glue	calls PhyreEngine Phyre_PhyreFree
 0x006b4200	dead	unreachable from the entry point and every pointer table
 0x006b4250	dead	unreachable from the entry point and every pointer table
-0x006b42c0	logic	default (no rule: ported to be safe)
+0x006b42c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_SetFrame
 0x006b4330	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_unregisterChararcterInstance
 0x006b4450	logic	default (no rule: ported to be safe)
 0x006b44a0	logic	default (no rule: ported to be safe)
@@ -3452,7 +3453,7 @@
 0x006c4000	logic	default (no rule: ported to be safe)
 0x006c4010	dead	unreachable from the entry point and every pointer table
 0x006c4020	glue	only called from glue code (0x6c4820)
-0x006c40c0	glue	only called from glue code (0x6c4a30)
+0x006c40c0	logic	default (no rule: ported to be safe)
 0x006c40e0	glue	calls PhyreEngine Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial
 0x006c4290	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
 0x006c44d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_SetField84
@@ -3463,7 +3464,7 @@
 0x006c46e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_SetFloats74
 0x006c4710	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_SetFloats6c
 0x006c4730	glue	only called from glue code (0x6c4290)
-0x006c47a0	glue	only called from glue code (0x6c40c0)
+0x006c47a0	logic	default (no rule: ported to be safe)
 0x006c4810	dead	unreachable from the entry point and every pointer table
 0x006c4820	glue	only called from glue code (BlurEffectEx_CreateInstance)
 0x006c4900	dead	unreachable from the entry point and every pointer table
@@ -3527,9 +3528,9 @@
 0x006c7230	dead	unreachable from the entry point and every pointer table
 0x006c7240	dead	unreachable from the entry point and every pointer table
 0x006c7250	logic	default (no rule: ported to be safe)
-0x006c7320	glue	only called from glue code (0x6c77a0)
+0x006c7320	logic	default (no rule: ported to be safe)
 0x006c73f0	dead	unreachable from the entry point and every pointer table
-0x006c7410	glue	only called from glue code (0x6c77a0)
+0x006c7410	logic	default (no rule: ported to be safe)
 0x006c74d0	logic	default (no rule: ported to be safe)
 0x006c7560	glue	only called from glue code (0x6c7900)
 0x006c7600	dead	unreachable from the entry point and every pointer table
@@ -3580,19 +3581,19 @@
 0x006c9e50	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_clearScene
 0x006caee0	glue	calls PhyreEngine Phyre_PCamera_updateViewMatrices, Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface
 0x006cbf20	dead	unreachable from the entry point and every pointer table
-0x006cc8b0	logic	default (no rule: ported to be safe)
+0x006cc8b0	glue	only called from glue code (0x6ccd10 and 1 more)
 0x006cc8c0	glue	only called from glue code (0x6ccd10)
 0x006cc8e0	glue	only called from glue code (0x6ccd10)
 0x006cc900	glue	only called from glue code (0x6ccd10)
 0x006cc920	glue	only called from glue code (0x6ccd10)
 0x006cc950	glue	only called from glue code (0x6ccd10)
-0x006cc980	glue	only called from glue code (0x6d12f0 and 1 more)
+0x006cc980	logic	default (no rule: ported to be safe)
 0x006cca00	dead	unreachable from the entry point and every pointer table
 0x006ccad0	logic	default (no rule: ported to be safe)
 0x006cccc0	dead	unreachable from the entry point and every pointer table
 0x006ccd00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_GetShadowSize
 0x006ccd10	glue	only called from glue code (PhyreScene_fieldMapInitialize)
-0x006ce0c0	logic	default (no rule: ported to be safe)
+0x006ce0c0	glue	thin wrapper: only forwards to glue code (ShadowManager_ResetSolution)
 0x006ce0e0	dead	unreachable from the entry point and every pointer table
 0x006ce100	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_Initialize
 0x006ce130	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_clearScene
@@ -3609,7 +3610,7 @@
 0x006ceaa0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_SetQuality
 0x006ceaf0	dead	unreachable from the entry point and every pointer table
 0x006ceb00	dead	unreachable from the entry point and every pointer table
-0x006ceb10	logic	default (no rule: ported to be safe)
+0x006ceb10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_ResetSolution
 0x006cebd0	glue	only called from glue code (0x6ce860)
 0x006d00d0	glue	only called from glue code (0x6ce860)
 0x006d12f0	glue	only called from glue code (0x6c9e50)
@@ -6576,7 +6577,7 @@
 0x00774c00	logic	default (no rule: ported to be safe)
 0x00774cb0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x00774ff0	glue	GS packet API (GsPkt_TexturedSprite_00774ff0): appends to or kicks a packet; replaced by ffx-render
-0x00775330	logic	default (no rule: ported to be safe)
+0x00775330	glue	reviewed: builds a GS packet (system round 19)
 0x00775530	logic	default (no rule: ported to be safe)
 0x00775720	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00775810	logic	default (no rule: ported to be safe)
@@ -7254,7 +7255,7 @@
 0x00791fa0	logic	default (no rule: ported to be safe)
 0x00792120	logic	default (no rule: ported to be safe)
 0x00792170	logic	default (no rule: ported to be safe)
-0x007921c0	logic	default (no rule: ported to be safe)
+0x007921c0	logic	debug-sounding name, but used by logic: MsBattleProcess
 0x00792200	logic	debug-sounding name, but used by logic: MsBattleFree
 0x00792210	logic	default (no rule: ported to be safe)
 0x00792840	dead	unreachable from the entry point and every pointer table
@@ -8917,7 +8918,7 @@
 0x007eb4a0	logic	default (no rule: ported to be safe)
 0x007eb500	logic	default (no rule: ported to be safe)
 0x007eb580	glue	GS/DMA packet writer (sceDmaSend, sceGsSyncPath; writes no game state): replaced by ffx-render
-0x007eb760	logic	default (no rule: ported to be safe)
+0x007eb760	glue	reviewed: op_gs1_init: fixed GS register-setup packets (effects round 13)
 0x007eba80	dead	unreachable from the entry point and every pointer table
 0x007ec410	logic	default (no rule: ported to be safe)
 0x007ec420	logic	default (no rule: ported to be safe)
@@ -9870,7 +9871,7 @@
 0x0082ba30	logic	default (no rule: ported to be safe)
 0x0082ba70	logic	default (no rule: ported to be safe)
 0x0082baf0	logic	default (no rule: ported to be safe)
-0x0082bb90	logic	default (no rule: ported to be safe)
+0x0082bb90	glue	reviewed: builds a GS sprite packet (main round 5)
 0x0082bc50	logic	default (no rule: ported to be safe)
 0x0082bcb0	logic	default (no rule: ported to be safe)
 0x0082bcc0	debug	only called from debug code (0x854270 and 1 more)
@@ -10539,7 +10540,7 @@
 0x00843260	logic	default (no rule: ported to be safe)
 0x008432b0	dead	unreachable from the entry point and every pointer table
 0x008432d0	logic	default (no rule: ported to be safe)
-0x008432e0	logic	default (no rule: ported to be safe)
+0x008432e0	glue	reviewed: waits on the GS register flag, then sets a register (main round 5)
 0x00843360	logic	default (no rule: ported to be safe)
 0x00843560	logic	default (no rule: ported to be safe)
 0x00843590	debug	only called from debug code (0x84cf60)
@@ -16681,6 +16682,9 @@
 0x009df8e0	dead	unreachable from the entry point and every pointer table
 0x009df910	dead	unreachable from the entry point and every pointer table
 0x009df950	dead	unreachable from the entry point and every pointer table
+0x009df980	dead	unreachable from the entry point and every pointer table
+0x009df9c0	dead	unreachable from the entry point and every pointer table
+0x009df9f0	dead	unreachable from the entry point and every pointer table
 0x00a25860	glue	calls PhyreEngine Phyre_PBase_GetClassDescriptor
 0x00a258c0	logic	default (no rule: ported to be safe)
 0x00a25960	dead	unreachable from the entry point and every pointer table
@@ -17211,7 +17215,7 @@
 0x00a5e440	dead	unreachable from the entry point and every pointer table
 0x00a5e4a0	glue	GS/DMA packet writer (sceDmaSendN, sceGsExecLoadImage, sceGsSetDefLoadImage; writes no game state): replaced by ffx-render
 0x00a5e730	dead	unreachable from the entry point and every pointer table
-0x00a5e7b0	logic	default (no rule: ported to be safe)
+0x00a5e7b0	glue	reviewed: GS packet setup (effects round 14)
 0x00a5e880	logic	default (no rule: ported to be safe)
 0x00a5ea30	logic	default (no rule: ported to be safe)
 0x00a5eea0	logic	default (no rule: ported to be safe)
@@ -17280,7 +17284,7 @@
 0x00a64ff0	dead	unreachable from the entry point and every pointer table
 0x00a65060	dead	unreachable from the entry point and every pointer table
 0x00a654f0	dead	unreachable from the entry point and every pointer table
-0x00a65570	logic	default (no rule: ported to be safe)
+0x00a65570	logic	debug-sounding name, but used by logic: 0xa64c40, 0xa64ca0, 0xa64d00
 0x00a65750	logic	default (no rule: ported to be safe)
 0x00a657c0	logic	default (no rule: ported to be safe)
 0x00a68140	logic	default (no rule: ported to be safe)
