@@ -610,3 +610,18 @@ version was checked against.
 `TOMkpShapeXY` (`0x00903a10`) and `TOMkpShapeXYWHC2` (`0x00903b70`) only
 pass their arguments (and grey colours) to `TOAdpEasyShapeXYWHC2`. They
 compute no corners, colours or UVs, so they remain packet glue.
+
+## UI boxes
+
+- `TODrawCrossBoxXYWHC2` (`0x008f4b20`) draws an untextured gradient box
+  with float corners `x, y` and `x + w, y + h`. `BeginScissor_XY` clips
+  it, and the colours run from `c0` at the top left to `c1`.
+- `TODrawBoxXYWHC2` (`0x008f3db0`) and `TOMakePktBoxXYWHRGBA`
+  (`0x008fb150`) are the integer forms. Their corners are wrapping integer
+  sums converted with `fild`. `TODrawBoxXYWHC2` is skipped while the
+  ability map is up.
+- `0x008f8bb0` draws one cell of sheet 0x2ecc. The cells are 170 × 14
+  pixels, nine rows per column, and the box is not clipped.
+
+All of these draw through `graphicDrawUIElement`. The record words the
+originals leave unset (UVs of untextured boxes) are zero in the port.
