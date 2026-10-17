@@ -12135,7 +12135,8 @@ fn round21_font_matches_the_original_on_the_snapshot() {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    clippy::many_single_char_names
 )]
 fn round21_widths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
