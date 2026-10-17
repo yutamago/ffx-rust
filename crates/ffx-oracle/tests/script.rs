@@ -3083,6 +3083,7 @@ fn natives_match_the_original() {
                 .chain(&ffx_script::vm::bridge::native_msg::PORTED)
                 .chain(&ffx_script::vm::bridge::native_move::PORTED)
                 .chain(&ffx_script::vm::bridge::native_btl::PORTED)
+                .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
                 .chain(&ffx_script::vm::bridge::native_chr::PORTED)
             {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
@@ -3159,6 +3160,7 @@ fn natives_match_the_original() {
         .chain(&ffx_script::vm::bridge::native_msg::PORTED)
         .chain(&ffx_script::vm::bridge::native_move::PORTED)
         .chain(&ffx_script::vm::bridge::native_btl::PORTED)
+        .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
         .chain(&ffx_script::vm::bridge::native_chr::PORTED)
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
@@ -3889,4 +3891,190 @@ fn ctrl_start_matches_the_original() {
         compared += 1;
     }
     eprintln!("{compared} ctrl works started");
+}
+
+/// Round 18's natives on the inputs random small arguments miss: the
+/// command-record natives `0x70d6`/`0x70e7` with commands that have a
+/// record, `0x70ee`'s thresholds, the counters, item slots and flags with
+/// prepared globals, on every actor of every ctrl work in use.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per native
+fn round18_natives_match_the_original() {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let int = |v: u32| (stack::INT, v);
+    let mut compared = 0;
+    let mut records = 0;
+    let mut models = 0;
+    for c in ctrls {
+        let mut pair = fresh_run_pair(&pages, &exe, c);
+        let ws = {
+            let (a, b) = (&mut pair.0, &mut pair.1);
+            actors(a, b)
+        };
+        for &w in ws.iter().take(12) {
+            // the command records: try each command on the original first
+            for cmd in [
+                0x3000, 0x3001, 0x3003, 0x3010, 0x2000, 0x2001, 0x1000, 0x4000,
+            ] {
+                for (sym, push) in [
+                    (0x007a_80b0, vec![int(0), int(0), int(cmd)]),
+                    (0x007a_8680, vec![int(cmd)]),
+                ] {
+                    let (a, b) = (&mut pair.0, &mut pair.1);
+                    let s = w + worker::STACK;
+                    let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+                    let args = v::script_worker_level(b, w, lvl) + 0x2c;
+                    poke(a, b, s, 0i32);
+                    for &(k, x) in &push {
+                        push_both(a, b, s, k, x);
+                    }
+                    clear_stacks(a, b);
+                    if a.call(a.rebase(sym), Conv::Cdecl, &[w, args, s]).is_err() {
+                        // no record for this command: the original reads
+                        // through null, as the port would
+                        pair = fresh_run_pair(&pages, &exe, c);
+                        continue;
+                    }
+                    // the original ran: start again from the same state
+                    pair = fresh_run_pair(&pages, &exe, c);
+                    let (a, b) = (&mut pair.0, &mut pair.1);
+                    native_case(a, b, w, sym, &push, &format!("{sym:#x} command {cmd:#x}"));
+                    records += 1;
+                }
+            }
+            let (a, b) = (&mut pair.0, &mut pair.1);
+            // 0x70ee's thresholds on a + b
+            for sum in [
+                -5i32, 0, 0x1f, 0x20, 0x2f, 0x30, 0x3e, 0x3f, 0x4f, 0x50, 0x7fff,
+            ] {
+                let push = [int(sum.cast_unsigned()), int(0)];
+                native_case(a, b, w, 0x007a_7b90, &push, &format!("0x70ee {sum}"));
+                compared += 1;
+            }
+            // counters and flags with prepared bytes
+            for v in [3u8, 1, 0, 0xff, 0x80] {
+                poke(a, b, a.rebase(0x0112_ca0d), v);
+                native_case(a, b, w, 0x007a_2c10, &[], &format!("0x710c {v}"));
+                poke(a, b, a.rebase(0x0112_c9fc), v);
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x007a_73d0,
+                    &[int(u32::from(v))],
+                    &format!("0x70a0 {v}"),
+                );
+                poke(a, b, a.rebase(0x0112_ca10), v);
+                native_case(a, b, w, 0x007a_3a80, &[], &format!("0x710b {v}"));
+                poke(a, b, a.rebase(0x0113_63ec), v & 0x1f);
+                native_case(a, b, w, 0x007a_3560, &[int(0x1234)], &format!("0x70f7 {v}"));
+                poke(a, b, a.rebase(0x0112_c9e4), v);
+                native_case(a, b, w, 0x007a_2eb0, &[], &format!("0x709a {v}"));
+                compared += 5;
+            }
+            // 0x70df: the pointer and the flag
+            // an i16 inside the worker (both copies are equal there)
+            let rec = w + 0x500;
+            poke(a, b, rec, 0x0012_i16);
+            for (flag, ptr, v) in [
+                (0u8, rec, 0x12_0000u32),
+                (1, 0, 0x12_0000),
+                (1, rec, 0x12_0000),
+                (1, rec, 0x13_0000),
+                (1, rec, 0xffff_0000),
+            ] {
+                poke(a, b, a.rebase(0x0112_a8e0), flag);
+                poke(a, b, a.rebase(0x0112_a9f0), ptr);
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x007a_4ee0,
+                    &[int(v)],
+                    &format!("0x70df {flag} {ptr:#x} {v:#x}"),
+                );
+                compared += 1;
+            }
+            // the item slots: one free in the middle, then none
+            // (only where g_BtlItemMem2 holds a mapped table: the original
+            // 0x70f1 is tried first)
+            let id = u32::from(Mem::read::<u8>(b, v::atel_get_battle_id_adrs2(w)));
+            let (s0, args0) = (w + worker::STACK, 0);
+            let mapped = id != 0xff
+                && a.call(a.rebase(0x007a_2d30), Conv::Cdecl, &[w, args0, s0])
+                    .is_ok();
+            pair = fresh_run_pair(&pages, &exe, c);
+            let (a, b) = (&mut pair.0, &mut pair.1);
+            if mapped {
+                let base = Mem::read::<u32>(b, b.rebase(0x0231_0cd8)) + id * 0x478;
+                for k in 0..20 {
+                    poke(a, b, base + 2 * k, if k == 7 { 0xff_u16 } else { 0x10_u16 });
+                }
+                native_case(a, b, w, 0x007a_2e60, &[int(0x42)], "0x70f2 slot 7");
+                native_case(a, b, w, 0x007a_2e60, &[int(0x43)], "0x70f2 full");
+                native_case(a, b, w, 0x007a_2d30, &[], "0x70f1");
+                compared += 3;
+            }
+            // the model natives with inexact values where they read them:
+            // 0x705c's scale (+0x3a4 times the model's +0x4f4) and 0x7092's
+            // height (the model's +0x16c), on the actor selecting itself
+            let sel = 0xffff_fff3_u32;
+            if id != 0xff && orig(b, 0x0079_47f0, &[id, sel, 0, 1]) == id {
+                orig(a, 0x0079_47f0, &[id, sel, 0, 1]);
+                let chr = orig(b, 0x0079_4020, &[id]);
+                orig(a, 0x0079_4020, &[id]);
+                let m = Mem::read::<u32>(b, chr);
+                if m != 0 {
+                    poke(a, b, chr + 0x3a4, 1.3f32.to_bits());
+                    poke(a, b, chr + 0x3a8, 2.7f32.to_bits());
+                    poke(a, b, m + 0x4f4, 1.1f32.to_bits());
+                    poke(a, b, m + 0x16c, 1.1f32.to_bits());
+                    native_case(a, b, w, 0x007a_2df0, &[int(sel)], "0x705c scale");
+                    native_case(a, b, w, 0x007a_5f10, &[int(sel)], "0x7092 height");
+                    models += 2;
+                }
+            }
+            // the map-part natives on parts that exist (0x0091a3d0 counts
+            // them)
+            let parts = orig(b, 0x0091_a3d0, &[]).min(4);
+            orig(a, 0x0091_a3d0, &[]);
+            for i in 0..parts {
+                let f = (stack::FLOAT, 1.25f32.to_bits());
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x0091_c280,
+                    &[int(i), f],
+                    &format!("0x8054 part {i}"),
+                );
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x0091_c230,
+                    &[int(i), f],
+                    &format!("0x8053 part {i}"),
+                );
+                compared += 2;
+            }
+            // 0x7126 on a negative index (an actor without parts reads through
+            // null in the original)
+            native_case(a, b, w, 0x007a_8550, &[int(u32::MAX)], "0x7126 -1");
+            compared += 1;
+        }
+    }
+    eprintln!(
+        "{compared} round-18 cases compared, {records} with a command record, {models} with a model"
+    );
+    assert!(compared > 0, "nothing ran");
 }

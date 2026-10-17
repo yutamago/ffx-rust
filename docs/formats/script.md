@@ -1316,6 +1316,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
 | `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530`, poll `0x007a35c0` (native_btl) |
 | `0x7003` | `Native_7003` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
+| `0x7004` | `Native_7004` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
 | `0x7006` | `Native_7006` | a int, b int | 0 (as 0x7003 with 1, when actor +0x41d) | - | int `0x007a3f50` (native_btl) |
 | `0x7007` | `Native_ActorPlayMotion` | as 0x007a8fc0(worker, args, stack, 0) | its result | - | int `0x007a35a0` (native_move) |
 | `0x7008` | `Native_ActorWaitMotion` | - | 5 when done | until the actor's motion ends (no actor/model: at once) | poll `0x007a3980` (native_btl) |
@@ -1326,7 +1327,9 @@ API is generated from this table. `-`: none. A result starting with
 | `0x700d` | `Native_700d` | mode int, k int | int: 0x007a87f0(&to, &from, actor, abs k, 0); with the actor locked (+0x44e), 1 for a negative k else 0 | - | int `0x007a63f0` (native_btl) |
 | `0x700f` | `Native_GetActorProperty` | selector int, property int | int: MsGetChrStatInfo's value | - | int `0x007a4d50` (native_btl) |
 | `0x7010` | `Native_BtlSelectTarget` | a int, b int, c int, d int | int: the selected target | - | int `0x007a5af0` (native_btl) |
+| `0x7011` | `Native_7011` | v int | 0; the byte 0x0112a8fc = v & 1 | - | int `0x007a4280` (native_btl2) |
 | `0x7012` | `Native_7012` | - | 0 | - | int `0x007a29a0` (native_btl) |
+| `0x7013` | `Native_7013` | v f | 0; with a model, 0x0082b840(model, v) | - | int `0x007a5840` (native_btl2) |
 | `0x7014` | `Native_7014` | - | int: the word 0x0112c8d8 | - | int `0x007a4430` (native_btl) |
 | `0x7015` | `Native_DebugPrint` | v int | 0 (debug print) | - | int `0x007a4910` (native_btl) |
 | `0x7016` | `Native_ActorQueueMotion` | motion int | 0 (queued on the actor) | - | int `0x007a2a20` (native_btl) |
@@ -1339,12 +1342,14 @@ API is generated from this table. `-`: none. A result starting with
 | `0x701d` | `Native_701d` | - | int: actor +0x420 (signed) | - | int `0x007a5bf0` (native_btl) |
 | `0x701e` | `Native_BtlCountActorsInBoth` | a int, b int: selectors | int: actors both pick | - | int `0x007a6870` (native_btl) |
 | `0x701f` | `Native_701f` | v int | 0: the actor's +0x3f1 = v | - | int `0x007a5f80` (native_btl) |
+| `0x7020` | `Native_7020` | - | int: 0x007a92c0(actor, its +0xdc0), 0 without an actor | - | int `0x007a53b0` (native_btl2) |
 | `0x7021` | `Native_ActorGetId` | selector int | int: the picked actor's id, -1 for none | - | int `0x007a6a80` (native_btl) |
 | `0x7022` | `Native_7022` | v int | 0: the byte 0x0112c9dc = v | - | int `0x007a4cd0` (native_btl) |
 | `0x7023` | `Native_7023` | selector int | int: ftol of the mean of MsSetMove(i, 1) (0x007a9fc0) over the picked actors (f32 sum and mean) | - | int `0x007a4940` (native_btl) |
 | `0x7024` | `Native_BtlGetBattleId` | - | int: MsGetBattleScene() | - | int `0x007a4e90` (native_btl) |
 | `0x7025` | `Native_7025` | d int, c int, b int, a int | int: out of MsActTargetSearch(actor, d, c, b, 4, a, 0, &out) (0x007acd40), whose result goes to 0x00796430(actor, r) | - | int `0x007a5cf0` (native_btl) |
 | `0x7026` | `Native_7026` | v int | 0 (actor +0x44f = v) | - | int `0x007a5d80` (native_btl) |
+| `0x7027` | `Native_7027` | - | int: the actor's byte +0x44f, 0 without an actor | - | int `0x007a5e90` (native_btl2) |
 | `0x7028` | `Native_7028` | x f, y f, z f: the actor's +0x3a0..+0x3a8 and its model's 0x0082b560(model, 7, ..) | 0 | - | int `0x007a6970` (native_btl) |
 | `0x7029` | `Native_7029` | b int | 0 (actor +0x505 = b & 1) | - | int `0x007a3fb0` (native_btl) |
 | `0x702a` | `Native_702a` | - | int: actor +0x508 | - | int `0x007a5bc0` (native_btl) |
@@ -1369,12 +1374,16 @@ API is generated from this table. `-`: none. A result starting with
 | `0x703f` | `Native_BtlRunEvent` | event int, a int | the event handle; poll its 0x007a8700 | until the event ends | start `0x007a5df0`, poll `0x007a5ec0` (native_btl) |
 | `0x7040` | `Native_7040` | v int | int: 0x0079e8c0(actor, v); 0 without an actor | - | int `0x007a5610` (native_btl) |
 | `0x7041` | `Native_7041` | - | 0 | - | int `0x007a56d0` (native_btl) |
+| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | poll `0x007a6a40` (native_btl2) |
 | `0x7046` | `Native_7046` | v int | 0: MsMoveSplineSet(v) (0x007ab140) | - | int `0x007a5220` (native_btl) |
 | `0x7047` | `Native_7047` | i int, a int | 0 | - | int `0x007a5270` (native_btl) |
 | `0x7048` | `Native_7048` | i int, x f, y f, z f | 0 | - | int `0x007a53f0` (native_btl) |
 | `0x7049` | `Native_7049` | d int, c int, f f, a int | 0: 0x007ab010(d, actor, c, f, a) | - | int `0x007a55a0` (native_btl) |
 | `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
 | `0x704b` | `Native_704b` | selector int, motion int, b int | the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7640`, poll `0x007a7850` (native_btl) |
+| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2) |
+| `0x704e` | `Native_704e` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
+| `0x704f` | `Native_704f` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
 | `0x7050` | `Native_7050` | selector int | the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0) | until 0x007a8700(args) is done | start `0x007a7400`, poll `0x007a74f0` (native_btl) |
 | `0x7051` | `Native_7051` | - | 5 when done | until actor +0xe12 is 0 | poll `0x007a5890` (native_btl) |
 | `0x7052` | `Native_7052` | a int: selector, b int: target selector, v int | 0 | - | int `0x007a7e10` (native_btl) |
@@ -1385,16 +1394,28 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7058` | `Native_7058` | selector int, motion int | int: 0 when the picked actor plays it, else -1 | - | int `0x007a8160` (native_btl) |
 | `0x7059` | `Native_7059` | v int: target | float: distance (MsGetTargetDist mode 1) | - | float `0x007a6e40` (native_btl) |
 | `0x705a` | `Native_705a` | targets int, command int | 1, 0 without an actor | - | int `0x007a49f0` (native_btl) |
+| `0x705b` | `Native_705b` | selector int | float: 0x00794a70(selected actor), 0.0 for none | - | float `0x007a2d80` (native_btl2) |
+| `0x705c` | `Native_705c` | selector int | float: the selected actor's 0x0082ab30(model) times its f32 +0x3a4 (rounded to f32); 0.0 without actor or model | - | float `0x007a2df0` (native_btl2) |
 | `0x705d` | `Native_ActorSetFlag36` | a int, b int (dropped) | int: the actor index (+0x36 = 1) | - | int `0x007a51e0` (native_btl) |
+| `0x705e` | `Native_705e` | - | 0; 0x00788e60(actor) | - | int `0x007a5310` (native_btl2) |
+| `0x705f` | `Native_705f` | v f | debug (mod-tool candidate): dbgPrintf(0x00b54e84, (double)v, actor) (a bare ret in this build); 0 | - | int `0x007a4c30` (not ported) |
+| `0x7060` | `Native_7060` | - | 0; 0x0079eff0(actor) with an actor | - | int `0x007a62a0` (native_btl2) |
+| `0x7061` | `Native_7061` | - | 0; 0x0079f110(actor) with an actor | - | int `0x007a6300` (native_btl2) |
 | `0x7062` | `Native_7062` | a int, b int | int: 0x0079eba0(actor, a, b, 1) | - | int `0x007a4580` (native_btl) |
 | `0x7063` | `Native_7063` | - | 5 when the actor's +0xe13 is clear, else 0 | until +0xe13 is clear | poll `0x007a5dc0` (native_btl) |
+| `0x7064` | `Native_7064` | v int | v, kept in the argument word and the word 0x0112c24c | until 0x007a8c20() is set and 0x007b2c10(1) is 0 (poll 5) | start `0x007a63d0`, poll `0x007a64c0`, int `0x007a65d0` (native_btl2) |
+| `0x706a` | `Native_706a` | selector int | int: 0 when the selected actor's +0xdc0 is 1 << its index, else -1 | - | int `0x007a7580` (native_btl2) |
 | `0x706b` | `Native_706b` | selector int, a int, b int | 0 | - | int `0x007a84c0` (native_btl) |
+| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2) |
 | `0x706e` | `Native_706e` | selector int, voice int | the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7020`, poll `0x007a71f0` (native_btl) |
 | `0x706f` | `Native_706f` | as 0x007a8fc0(worker, args, stack, 1) | its result | - | int `0x007a36c0` (native_btl) |
 | `0x7071` | `Native_7071` | - | 0: 0x0089bc60(0) | - | int `0x007a70b0` (native_btl) |
+| `0x7073` | `Native_7073` | weapon int | int: MsAttachWeapon(actor, weapon)'s result | - | int `0x007a85f0` (native_btl2) |
+| `0x7075` | `Native_7075` | selector int, b int, a int | the argument word = 1 when 0x007ab360(record +0xc, b, a, 0, 1, worker, &out) set out for any selected actor below 31 with a command record (0x00795bb0), else 0 | until 0x007a8700(args) (poll) | start `0x007a78f0`, poll `0x007a7aa0` (native_btl2) |
 | `0x7078` | `Native_7078` | selector int, b int, a int | int: MsGetComInfo(picked, b, a) (0x0078cd30) | - | int `0x007a6540` (native_btl) |
 | `0x707a` | `Native_707a` | selector int | int: 0x0079a920's result | - | int `0x007a2a80` (native_btl) |
 | `0x707b` | `Native_707b` | selector int, k int | int: 0x0079fd40(picked, k) | - | int `0x007a7470` (native_btl) |
+| `0x707c` | `Native_707c_Poll` | - | 5 when done | until the actor's (or its +0x14 owner's, when +0x11 is clear) +0xf2c is set or +0xf2e is clear; 5 without an actor | poll `0x007a7260` (native_btl2) |
 | `0x707d` | `Native_707d` | k int: battle flag, v int | int: v | - | int `0x007a81f0` (native_btl) |
 | `0x707e` | `Native_707e` | k int: battle flag + 1 | int: the flag (0 for k without one) | - | int `0x007a27e0` (native_btl) |
 | `0x707f` | `Native_707f` | selector int | 0 | - | int `0x007a5e50` (native_btl) |
@@ -1411,49 +1432,102 @@ API is generated from this table. `-`: none. A result starting with
 | `0x708e` | `Native_708e` | - | int: the actor's signed +0x508 after MsMotionPosCheck (0x007aa100; +0x4f0 = 10.0, +0x34 = 1 around it when +0x608 and +0x505 are set) | - | int `0x007a5c20` (native_btl) |
 | `0x708f` | `Native_708f` | v int | int: 0x007a8720(actor, v, 1) | - | int `0x007a6700` (native_btl) |
 | `0x7091` | `Native_7091` | to int, from int (selectors) | 0: the 40-byte name +0x540 and +0xdd5 copied from one picked actor to the other | - | int `0x007a77c0` (native_btl) |
+| `0x7092` | `Native_7092` | selector int | int: (0x00794fb0(index) - the second float of 0x007956e0(index, &v)) rounded to f32, times 100, truncated | - | int `0x007a5f10` (native_btl2) |
 | `0x7093` | `Native_7093` | - | int: 0x00791780(actor, record) | - | int `0x007a60f0` (native_btl) |
 | `0x7096` | `Native_7096` | - | int: the signed byte 0x0112c9fa | - | int `0x007a7b30` (native_btl) |
 | `0x7097` | `Native_7097` | v int | the handle; poll 0x007a8700 | until it ends | start `0x007a5780`, poll `0x007a58c0` (native_btl) |
+| `0x709a` | `Native_709a` | - | int: 0 when the actor is the one in the signed byte 0x0112c9e4, else 1 | - | int `0x007a2eb0` (native_btl2) |
+| `0x709b` | `Native_709b` | selector int | float: the second float of the vector 0x007956e0(selected actor, &v) writes | - | float `0x007a3170` (native_btl2) |
+| `0x709c` | `Native_709c` | a int, b int (selectors) | float: as 0x70c2 with 0x007c4990's fourth result | - | float `0x007a3330` (native_btl2) |
 | `0x709d` | `Native_709d` | - | 5 when there is no actor or its +0x425 is clear, else 0 | until +0x425 is clear | poll `0x007a3ae0` (native_btl) |
 | `0x709e` | `Native_709e` | selector int, a int, b int | int: 0x007b74d0(picked, a, b) | - | int `0x007a2fe0` (native_btl) |
+| `0x709f` | `Native_709f` | selector int | float: the selected actor's target direction (MsGetChrTargetDir 0x007958c0) minus its direction (MsGetChrDir 0x00794d20), in degrees | - | float `0x007a3460` (native_btl2) |
+| `0x70a0` | `Native_70a0` | v int | int: the old signed byte 0x0112c9fc; it becomes v & 1 | - | int `0x007a73d0` (native_btl2) |
 | `0x70a1` | `Native_ActorGetSlotRef` | selector int | int: the picked actor's +0xc, -6 - slot, or 0xff | - | int `0x007a6b40` (native_btl) |
 | `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440`, poll `0x007a7500` (native_btl) |
 | `0x70a4` | `Native_70a4` | - | 0: 0x0079cca0() | - | int `0x007a7630` (native_btl) |
 | `0x70a5` | `Native_70a5` | x f, y f, z f | 0 | - | int `0x007a76f0` (native_btl) |
+| `0x70a6` | `Native_70a6` | v int | int: v; the byte 0x0112c9ff = v | - | int `0x007a77a0` (native_btl2) |
 | `0x70a8` | `Native_70a8` | selector int, property int, value f | 0 | - | int `0x007a57e0` (native_btl) |
+| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | poll `0x007a6cb0` (native_btl2) |
 | `0x70aa` | `Native_GetSelfProperty` | property int | int: the actor's own property | - | int `0x007a4ea0` (native_btl) |
 | `0x70ab` | `Native_SetActorProperty` | property int, value int | int: 0x007b4b70(actor, property, -13, value) | - | int `0x007a5360` (native_move) |
 | `0x70ac` | `Native_70ac` | i int | float: actor float property i | - | float `0x007a5650` (native_btl) |
 | `0x70b0` | `Native_70b0` | selector int | int: the steps the picked actor needs (from +0x40e, or the +0x4cc/+0x4d0 ramp over the distance) | - | int `0x007a4f80` (native_btl) |
 | `0x70b1` | `Native_70b1` | v int | debug (mod-tool candidate): dbgPrintf("##### %d : %x : c%02d #####", v, v, actor) (a bare ret in this build); 0 | - | int `0x007a4a60` (not ported) |
 | `0x70b2` | `Native_SetSelfFloatProperty` | property int, value f | 0 (MsSetChrMotionInfo) | - | int `0x007a5930` (native_btl) |
+| `0x70b3` | `Native_70b3` | v int | int: 0x007b2b60(v) | - | int `0x007a7df0` (native_btl2) |
 | `0x70b5` | `Native_70b5` | - | 0 | - | int `0x007a2f40` (native_btl) |
+| `0x70b8` | `Native_70b8` | v int | int: v; the byte 0x0112ca00 = v | - | int `0x007a7860` (native_btl2) |
+| `0x70b9` | `Native_70b9` | selector int | float: what 0x00795170(0xb, MsGetChrBit(actor, selector, 0, 1), 0, &out) writes | - | float `0x007a2ee0` (native_btl2) |
+| `0x70ba` | `Native_70ba` | selector int | float: what 0x00795170(0xa, MsGetChrBit(actor, selector, 0, 1), 0, &out) writes | - | float `0x007a3040` (native_btl2) |
 | `0x70bb` | `Native_70bb` | v int | 0: the actor's +0x415 = 0x10, +0x417 = 0, +0x452 = 0, +0x45a = v (u16) | - | int `0x007a4cf0` (native_btl) |
+| `0x70bc` | `Native_70bc` | selector int | the selected actor's index (kept in the argument word) | until that actor's +0xe12 is clear (poll 5) | start `0x007a5990`, poll `0x007a5b90` (native_btl2) |
+| `0x70bd` | `Native_70bd` | selector int | the selected actor's index (kept in the argument word) | until that actor's +0xe13 is clear (poll 5) | start `0x007a5ed0`, poll `0x007a6030` (native_btl2) |
 | `0x70be` | `Native_70be` | selector int | float: the picked actor's direction (MsGetChrDir 0x00794d20) in degrees (MsNearRag(0, d) * 180 / pi) | - | float `0x007a3780` (native_btl) |
+| `0x70bf` | `Native_70bf` | v f | 0; the actor's f32 +0x3ac = v and, with a model, 0x00832610(model, v) | - | int `0x007a6ae0` (native_btl2) |
+| `0x70c1` | `Native_70c1` | b int, a int (selectors) | int: the distance between the two actors' positions (0x00795170 mode 1, 0x007c3030), truncated | - | int `0x007a4b90` (native_btl2) |
+| `0x70c2` | `Native_70c2` | a int, b int (selectors) | float: the angle from a's position to b's (0x007c4990's third result; positions from 0x00795170 mode 5) in degrees | - | float `0x007a31d0` (native_btl2) |
 | `0x70c3` | `Native_70c3` | selector int | float: MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees, as 0x70be | - | float `0x007a3650` (native_btl) |
+| `0x70c4` | `Native_70c4` | selector int | int: 1 when one of the selected actor's two weapon slots (+0x592) holds a weapon with bit 3 of its +3 (MsGetSaveWeapon 0x007abbd0), else 0 | - | int `0x007a2ba0` (native_btl2) |
 | `0x70c9` | `Native_70c9` | selector int, k int | int: 0x0079fdf0(picked, k) | - | int `0x007a7740` (native_btl) |
 | `0x70cc` | `Native_70cc` | selector int | int: the set (actor +0xdc0 = it) | - | int `0x007a7cb0` (native_btl) |
 | `0x70cd` | `Native_70cd` | selector int | int: the set (actor +0xdc0 |= it) | - | int `0x007a7d60` (native_btl) |
 | `0x70ce` | `Native_70ce` | selector int | int: the set (cleared from actor +0xdc0) | - | int `0x007a7f20` (native_btl) |
+| `0x70d0` | `Native_70d0` | v int | 0; the byte 0x0112c9de = v & 1 | - | int `0x007a4380` (native_btl2) |
 | `0x70d1` | `Native_70d1` | selector int | int: the picked actor's +0xe12 | - | int `0x007a5cb0` (native_btl) |
+| `0x70d2` | `Native_70d2` | selector int | int: the selected actor's byte +0xe13 | - | int `0x007a6130` (native_btl2) |
 | `0x70d5` | `Native_70d5` | selector int | int: the picked index (actor +0x6d1) | - | int `0x007a7fa0` (native_btl) |
+| `0x70d6` | `Native_70d6` | c int, b int, a int | int: 0x00789bf0(chr i, chr j, r, r +0x28, r +0x2a, 0, r +0x23, 0, 0, 0, 0) with i, j the actors selected by c, b and r = 0x0078ce50(i, 0, -1, 0, &a) | - | int `0x007a80b0` (native_btl2) |
 | `0x70d7` | `Native_70d7` | selector int, motion int | 0: MsDamageSetMotion(picked, motion, picked != actor) (0x0078ca20) unless the picked actor's +0x422 actor has +0xdcc | - | int `0x007a30f0` (native_btl) |
+| `0x70d8` | `Native_70d8` | v int | int: v; the byte 0x0112ca06 = v & 1 | - | int `0x007a3400` (native_btl2) |
 | `0x70dc` | `Native_70dc` | selector int, i int | 0: 40 bytes of the name table *0x0112a9b8 (entry MsGetSaveConfigHiragana() + 2i) into the picked actor's +0x540 | - | int `0x007a7a10` (native_btl) |
+| `0x70dd` | `Native_70dd` | v int | int: v; the word 0x0112c8fc = v | - | int `0x007a7f80` (native_btl2) |
+| `0x70df` | `Native_70df` | v int | int: 1 when the byte 0x0112a8e0 is set and the i16 at *0x0112a9f0 is v >> 16, else 0 | - | int `0x007a4ee0` (native_btl2) |
 | `0x70e0` | `Native_70e0` | - | int: 1 when the actor and its partner can act | - | int `0x007a8450` (native_btl) |
+| `0x70e1` | `Native_70e1` | - | int: 1 when the actor named by the actor's signed byte +0xded has +0xdf1 clear, else 0 (0 without an actor) | - | int `0x007a85a0` (native_btl2) |
 | `0x70e2` | `Native_70e2` | selector int, v int | 0 | - | int `0x007a32a0` (native_btl) |
+| `0x70e3` | `Native_70e3` | v int | 0; once (word 0x0112be98 is 0): 0x0112be9c = v, 0x0083c4a0(0x40), 0x0112be98 = 0x00687020(v), 0x00799f00(it, v) | - | int `0x007a7da0` (native_btl2) |
+| `0x70e7` | `Native_70e7` | command int | int: the actor's +0xdc0 = 0x007996d0(actor, command, bit 1 of record +0x1a clear, 1), record = 0x0078ce50(actor, 0, -1, 0, &command) | - | int `0x007a8680` (native_btl2) |
 | `0x70ea` | `Native_70ea` | v int | int: v (MsSet01130838(v), 0x007b2b40) | - | int `0x007a7b10` (native_btl) |
+| `0x70ec` | `Native_01b2_copy_007a2c50` | v int | int: 0x007904b0(v), as Native_01b2 | - | int `0x007a2c50` (native_btl2) |
 | `0x70ed` | `Native_70ed` | b int, a int | int: MsSaveItemUse(b, a) (0x00790550) | - | int `0x007a2ca0` (native_btl) |
+| `0x70ee` | `Native_70ee` | b int, a int | int: by a + b: < 0x20 0x30de, < 0x30 0x30df, < 0x3f 0x30e0, < 0x50 0x30e1, else 0x30e2 | - | int `0x007a7b90` (native_btl2) |
 | `0x70ef` | `Native_70ef` | selector int, signal int | 0: MsEffectSendSignal(picked, signal) (0x0079e4f0) | - | int `0x007a64f0` (native_btl) |
+| `0x70f1` | `Native_70f1` | - | 0: the actor's 20 item slots in g_BtlItemMem2 (+id*0x478) freed (0xff) | - | int `0x007a2d30` (native_btl2) |
+| `0x70f2` | `Native_70f2` | item int | 0: the item put in the actor's first free slot of 20 (g_BtlItemMem2) | - | int `0x007a2e60` (native_btl2) |
+| `0x70f5` | `Native_70f5` | command int, selector int | int: 0x0078c690(selected actor, 0x0079a4b0(command, 0), 0) | - | int `0x007a2f80` (native_btl2) |
+| `0x70f7` | `Native_70f7` | v int | int: v; appended to the 16 u16 at 0x011363f0 (count: the byte 0x011363ec) while there is room | - | int `0x007a3560` (native_btl2) |
+| `0x70fa` | `Native_70fa` | v int | 0; the u16 0x01136410 = v | - | int `0x007a3420` (native_btl2) |
+| `0x70fd` | `Native_70fd` | b int, a int | int: the actor index; unless the u16 0x01136410 is set, the actor's +0x714 = 1, +0x726/+0x727 = a, +0x728/+0x729 = b | - | int `0x007a3a10` (native_btl2) |
+| `0x70fe` | `Native_70fe` | e int, d int, b int, a int | 0; the actor's +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e | - | int `0x007a3b80` (native_btl2) |
+| `0x70ff` | `Native_70ff` | - | int: the actor's +0xdc0, also stored in the word 0x0112c8d0 | - | int `0x007a3d00` (native_btl2) |
+| `0x7102` | `Native_7102` | a int, b int (selectors) | int: actor a's index (0xff for none), stored in actor b's +0x438 (+0x439 = 1) | - | int `0x007a35d0` (native_btl2) |
+| `0x7103` | `Native_7103` | selector int, x f, y f, z f | 0: the selected actor's model (0x00795080) gets mode 3 and the vector at +0x4c0 (0x008350a0) | - | int `0x007a3880` (native_btl2) |
 | `0x7104` | `Native_7104` | a int, b int, c int | int: 0x0079d2a0(a, b, c) | - | int `0x007a6600` (native_btl) |
+| `0x7105` | `Native_7105_Poll` | - | 5 when done | until the actor's +0xe17 is set | poll `0x007a6730` (native_btl2) |
 | `0x7106` | `CT_7106_ret_doesChrKnowCommand` | selector int, command int | int: MsGetSaveCommand(picked, command) (0x00785020) | - | int `0x007a30a0` (native_btl) |
 | `0x7107` | `Native_7107` | n int | int: ftol((MsDirTurn(chr, yaw +0x514[+0x511]) - +0x490) / pi * n) (0x007a9650; f32 steps) | - | int `0x007a6800` (native_btl) |
 | `0x7108` | `Native_7108` | a int, b int | 0 | - | int `0x007a40a0` (native_btl) |
 | `0x7109` | `Native_7109` | selector int, reset int, f f | int: the number of picked actors; each with a model: +0x407 = 1, with reset 0x00796070(i, 0), +0x505 = 1, +0x50c = 0; +0x43d = 0, +0x538 = f | - | int `0x007a3df0` (native_btl) |
+| `0x710b` | `Native_710b_Poll` | - | 5 when done | until the byte 0x0112ca10 is set | poll `0x007a3a80` (native_btl2) |
+| `0x710c` | `Native_710c` | - | int: the signed byte 0x0112ca0d, first counted down by 1 while above 0 (only with an actor) | - | int `0x007a2c10` (native_btl2) |
+| `0x710d` | `Native_710d` | - | 0; the actor's +0x411 = 0 | - | int `0x007a3c20` (native_btl2) |
+| `0x7110` | `Native_7110` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 1 (0x00834770) | - | int `0x007a3d30` (native_btl2) |
+| `0x7111` | `Native_7111` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 0 | - | int `0x007a3ff0` (native_btl2) |
+| `0x7112` | `Native_7112` | c int, _ f (dropped), b int, a int | 0; 0x00795eb0(actor, c, 1, -1, b, a) | - | int `0x007a43d0` (native_btl2) |
 | `0x7115` | `Native_7115` | - | 0: MsSetChrDirLeave(actor) (0x00795e70) | - | int `0x007a4560` (native_btl) |
 | `0x7117` | `Native_7117` | targets int, command int | 1: Battle_QueueCommand(actor, command, MsGetChrBit(actor, targets, 0, 1, 1, 0x40)) after MsMotionPosCheck when +0x3f9 is set; 0 without an actor | - | int `0x007a4b00` (native_btl) |
 | `0x7118` | `Native_7118` | v int | int: v; the byte 0x0112ca11 = v | - | int `0x007a81d0` (native_btl) |
+| `0x7119` | `Native_7119` | v int | int: v; the byte 0x0112ca12 = v | - | int `0x007a8430` (native_btl2) |
+| `0x711a` | `Native_711a` | selector int, a f, b f, c f | 0; the selected actor's model (0x00795080) gets 0x00824c90(model, c, b, a) | - | int `0x007a4160` (native_btl2) |
+| `0x711b` | `Native_711b` | v int | int: v & 1, stored in the byte 0x0112ca13 | - | int `0x007a3dd0` (native_btl2) |
 | `0x711c` | `Native_711c` | v int | int: v; the u16 0x0112c94e = v | - | int `0x007a8530` (native_btl) |
 | `0x711d` | `Native_711d` | height f | 0: Ch_ShadowSetHeight(MsGetChrHandle(actor), height) for a model (0x00795080, 0x00830cb0) | - | int `0x007a4330` (native_btl) |
+| `0x7122` | `Native_7122` | selector int | int: the selected actor's index; its model's +0x4d4 = 1 | - | int `0x007a3ef0` (native_btl2) |
+| `0x7123` | `Native_7123` | weapon int | int: MsAttachWeapon(5, weapon)'s result | - | int `0x007a2980` (native_btl2) |
+| `0x7125` | `Native_7125` | - | 0; MsAttachWeapon(4, 0) when the worker's actor is 4 | - | int `0x007a8650` (native_btl2) |
+| `0x7126` | `Native_7126` | i int | int: i (0xff for a negative i); actor i's +0x3e = 1 and its two parts' (0x00795b10(i, k)) +0x3e = 1 | - | int `0x007a8550` (native_btl2) |
 | `0x8000` | `Native_FieldSetMaskBit` | group int, on int: map draw group (TkSetMapGroupDrawStatus) | int: group | - | int `0x0091c530` (native) |
 | `0x8001` | `Native_8001` | on int: rendering on/off (yiRenderEnable bit 0x10, 0x00643df0) | int: on | - | int `0x0091c5b0` (native_map) |
 | `0x8002` | `Native_FpRun` | fp int: field program, restart int (0 ends it) | int: restart | - | int `0x0091c670` (native) |
