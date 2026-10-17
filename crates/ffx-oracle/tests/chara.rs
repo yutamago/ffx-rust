@@ -7564,3 +7564,80 @@ fn round11i_on(t: &mut Twin) {
         );
     }
 }
+
+/// Which skeleton matrices `graphicCharacterInstanceSetSkeletonMatrices`
+/// (`0x0063be60`) reads from `Ch_CalcElement`'s stack buffer, against the
+/// ones it computes (each element's `+4`): every index the instance's
+/// meshes remap through must be a computed one, and a poisoned stack
+/// must not reach the instance's matrices.
+#[test]
+fn ch_calc_element_reads_only_computed_matrices() {
+    const POISON: u32 = 0xffba_dbad;
+    for mut t in twins() {
+        if t.name == "synthetic" {
+            continue;
+        }
+        let mut rng = Xorshift(0x0012_0012);
+        let mut checked = 0;
+        for chr in live_characters(&mut t, &mut rng) {
+            let hdr: u32 = rd(&t.a, chr + 0x1c0);
+            if hdr == 0 || rd::<u16>(&t.a, hdr + 8) == 0 {
+                continue;
+            }
+            let n = u32::from(rd::<u16>(&t.a, hdr + 10));
+            let elems: u32 = rd(&t.a, chr + 0x328);
+            let computed: std::collections::BTreeSet<u32> = (0..n)
+                .map(|k| rd::<u32>(&t.a, elems + 0x160 * k + 4))
+                .collect();
+            for off in [0x830u32, 0x838] {
+                let inst: u32 = rd(&t.a, chr + off);
+                if inst == 0 {
+                    continue;
+                }
+                let meshes = rd::<u32>(&t.a, inst) & 0x7fff_ffff;
+                let remaps: u32 = rd(&t.a, rd::<u32>(&t.a, inst + 0x10) + 0x14);
+                for i in 0..meshes {
+                    let mesh: u32 = rd(&t.a, rd::<u32>(&t.a, inst + 4) + 4 * i);
+                    let bones = rd::<u32>(&t.a, rd::<u32>(&t.a, mesh) + 0x18) & 0x7fff_ffff;
+                    let remap: u32 = rd(&t.a, remaps + 4 * i);
+                    for j in 0..bones {
+                        let b: u32 = rd(&t.a, remap + 4 * j);
+                        let skipped = rd::<u16>(&t.a, chr) == 0x206a && b >= 0x42;
+                        assert!(
+                            skipped || computed.contains(&b),
+                            "chr {chr:#x}: instance {inst:#x} mesh {i} reads matrix {b}, not computed ({computed:?})"
+                        );
+                    }
+                }
+            }
+            // and with a poisoned stack
+            let stack = t.a.stack_range();
+            let words = vec![POISON; ((stack.end - stack.start) / 4) as usize];
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            t.a.write(stack.start, &bytes).unwrap();
+            let at = t.a.rebase(0x0083_2760);
+            t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+            for off in [0x830u32, 0x838] {
+                let inst: u32 = rd(&t.a, chr + off);
+                if inst == 0 {
+                    continue;
+                }
+                let meshes = rd::<u32>(&t.a, inst) & 0x7fff_ffff;
+                for i in 0..meshes {
+                    let mesh: u32 = rd(&t.a, rd::<u32>(&t.a, inst + 4) + 4 * i);
+                    let bones = rd::<u32>(&t.a, rd::<u32>(&t.a, mesh) + 0x18) & 0x7fff_ffff;
+                    let dest: u32 = rd(&t.a, mesh + 0xc);
+                    for w in 0..16 * bones {
+                        assert_ne!(
+                            rd::<u32>(&t.a, dest + 4 * w),
+                            POISON,
+                            "chr {chr:#x}: poison in mesh {i}"
+                        );
+                    }
+                }
+            }
+            checked += 1;
+        }
+        eprintln!("{}: {checked} characters checked", t.name);
+    }
+}
