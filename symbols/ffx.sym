@@ -4421,6 +4421,7 @@
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
+0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
 0x0078f8f0 function MsGetRomBtlText           # fh v3:bsim1.00+call.cs 0x0078f940 cdecl
@@ -4520,6 +4521,7 @@
 0x00794a30 function MsGetChrCamHeight         # fh v3:cg2 0x794a40
 0x00794a70 function MsGetChrCamWidth          # fh v3:cg2 0x794a80
 0x00794ab0 function MsGetChrCameraPos         # fh v3:exact 0x00794ac0
+0x00794b70 function MsGetChrCenter            # ours: MsCalcChrDir's party/monster centres: mean MsGetChrBtlPos of +0xdc8 actors (MsAddPoint, MsDivVector)
 0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
@@ -4962,6 +4964,7 @@
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
 0x007aceb0 function MsActionRequest           # fh call.cs cdecl
 0x007ad0c0 function MsActionTarget            # fh v3:exact 0x007ad0d0
+0x007ad130 function MsCheckBoundWeapon        # ours: weapon model ID in the zero-ended u16 list g_BtlBoundWeapons (MsBtlReadCueRegistWeapon queues its motion group too)
 0x007ad180 function MsBtlReadCueLevel         # fh v3:bsim1.00 0x007ad190
 0x007ad190 function MsBtlReadCueManage        # fh v3:exact 0x007ad1a0
 0x007ad3f0 function MsBtlReadCueRegist        # fh v3:exact 0x007ad400
@@ -12516,6 +12519,7 @@
 0x00c438a8 label g_AeonCommands            # 16 bytes per aeon (actor 8 on): u16 command / u8 value pairs at +0, +4, +8, +0xc (MsGetAeonCommand)
 0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
 0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs
+0x00c43984 label g_BtlBoundWeapons         # u16 weapon model IDs ending at 0, read by MsCheckBoundWeapon
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
@@ -12728,6 +12732,7 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112bde4 label g_BtlCenterScale          # f32: MsCalcChrDir moves one side's centre by it towards the other
 0x0112bde8 label g_BtlGround               # f32 ground height: MsSetChrHeight puts mode-0 actors at ground - height/2 + actor +0x538
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
 0x0112be38 label g_BtlMimic                # 0x48 bytes cleared by MsInitMimic
