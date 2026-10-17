@@ -810,6 +810,12 @@ fn in_use(b: &Oracle) -> Vec<u32> {
     all
 }
 
+/// Whether the current ctrl work is one of `g_AtelCtrlWorks`.
+fn ctx_ok(b: &Oracle) -> bool {
+    let c = v::CONTEXT.get(b);
+    (0..ctrl::COUNT).any(|i| v::atel_get_ctrl_work(b, i) == c)
+}
+
 /// Makes ctrl work `c` current on both sides, the worker cache dropped.
 fn make_current(a: &mut Oracle, b: &mut Oracle, c: u32) {
     let (at, cache) = (a.rebase(v::CONTEXT.sym), a.rebase(v::CACHE_WORK.sym));
@@ -3099,6 +3105,13 @@ fn natives_match_the_original() {
                 .chain(&ffx_script::vm::bridge::native_chr::PORTED)
                 .chain(&ffx_script::vm::bridge::native_mods::PORTED)
             {
+                // a native that ran alike on both sides may still have made
+                // a ctrl work from a garbage-filled worker's words current
+                // (battle.snap's worker 5 of 0xf46010 is 0xcd fill): start
+                // again then
+                if pair.as_ref().is_some_and(|(_, b)| !ctx_ok(b)) {
+                    pair = None;
+                }
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
                 let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
                 orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]);
@@ -4647,6 +4660,16 @@ fn round19_natives_match_the_original() {
             let f = |v: f32| (stack::FLOAT, v.to_bits());
             let ptrs = [int(out), int(out + 4), int(out + 8)];
             native_case(a, b, w, 0x00a7_7a70, &ptrs, "0x4037");
+            // worker 0's model's id bits apart (0x502f/0x5031 read +0x828)
+            let w0 = v::atel_get_basic_work(b, 0);
+            orig(a, ATEL_GET_BASIC_WORK, &[0]);
+            let m0 = Mem::read::<u32>(b, w0 + 0x9c);
+            if m0 != 0 {
+                poke(a, b, m0 + 0x828, 0x0001_8035_u32);
+                native_case(a, b, w, 0x00a7_9d60, &[int(0)], "0x502f");
+                native_case(a, b, w, 0x00a7_9e00, &[int(0)], "0x5031");
+                compared += 2;
+            }
             for i in 0..4 {
                 let mut push = vec![int(i)];
                 push.extend(ptrs);
@@ -4659,9 +4682,45 @@ fn round19_natives_match_the_original() {
             }
             compared += 1;
         }
+        // the polls without keep on a read that reports done (0): 5 for
+        // 0x5062, 1 for 0x5064 (the reads stubbed on both sides)
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let w = actors(&mut a, &mut b)[0];
+            let lvl = i32::from(Mem::read::<u8>(&b, w + worker::LEVEL));
+            let args = v::script_worker_level(&b, w, lvl) + 0x2c;
+            for o in [&mut a, &mut b] {
+                for f in [0x0083_6a50, 0x0082_a040] {
+                    let at = o.rebase(f);
+                    o.stub_return(at, 0).unwrap();
+                }
+            }
+            for (sym, keep) in [
+                (0x00a7_9070, 0u32),
+                (0x00a7_9290, 0),
+                (0x00a7_9070, 1),
+                (0x00a7_9290, 1),
+            ] {
+                for (off, x) in [(0, 7u32), (4, 2), (8, keep), (0xc, 0x55)] {
+                    poke(&mut a, &mut b, args + off, x);
+                }
+                native_case(
+                    &mut a,
+                    &mut b,
+                    w,
+                    sym,
+                    &[],
+                    &format!("poll {sym:#x} keep {keep}"),
+                );
+                compared += 1;
+            }
+        }
         for i in 0..n {
             for &(sym, float) in &PORTED {
                 for round in 0..3 {
+                    if pair.as_ref().is_some_and(|(_, b)| !ctx_ok(b)) {
+                        pair = None;
+                    }
                     let (a, b) = pair.get_or_insert_with(|| r19_pair(&pages, &exe, c));
                     let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
                     orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]);

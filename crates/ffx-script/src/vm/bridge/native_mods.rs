@@ -10,7 +10,10 @@ use ffx_bridge::x87;
 use super::native::Native;
 use super::native_map::pop_st0;
 use super::run::NativeHost;
-use super::{atel_get_real_var_adrs, atel_pop_stack_float, atel_pop_stack_integer};
+use super::{
+    atel_get_basic_work, atel_get_char_handle, atel_get_real_var_adrs, atel_pop_stack_float,
+    atel_pop_stack_integer,
+};
 
 fn pop(h: &mut impl NativeHost, s: u32) -> u32 {
     atel_pop_stack_integer(h, s)
@@ -384,6 +387,353 @@ pub fn native_4029<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     four0(h, s, 0x0083_1a60)
 }
 
+// ---- group 5: characters (Ch_*), shared with group 4's copies ----
+
+/// The worker's model (`AtelGetCharHandle`, `0x0086ae80`).
+fn chr(h: &mut impl NativeHost, w: u32) -> u32 {
+    atel_get_char_handle(h, w)
+}
+
+/// Worker `i`'s model.
+fn chr_of(h: &mut impl NativeHost, i: u32) -> u32 {
+    let w = atel_get_basic_work(h, i.cast_signed());
+    atel_get_char_handle(h, w)
+}
+
+/// `0x5002`, `0x501d` (`0x00a787a0`, `0x00a79310`, also `0x4049`,
+/// `0x4064`): `(seq)`: `Ch_SetSequence(model, seq)` (`0x00837ac0`) for a
+/// model; 0.
+pub fn native_5002<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let m = chr(h, w);
+    if m != 0 {
+        call(h, 0x0083_7ac0, &[m, v]);
+    }
+    0
+}
+
+/// `0x5004` (`0x00a788d0`, also `0x404b`): 1 when the model's `+0x736` is
+/// set, 0 (also without a model).
+pub fn native_5004<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    if m == 0 {
+        return 0;
+    }
+    u32::from(h.read::<u8>(m + 0x736) != 0)
+}
+
+/// `0x5053` (`0x00a78900`, also `0x409a`): `(i, id)` ->
+/// `Ch_ElemGetDirect(worker i's model, id)` (`0x00833bf0`), 0 without a
+/// model.
+pub fn native_5053<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let id = pop(h, s);
+    let i = pop(h, s);
+    let m = chr_of(h, i);
+    if m == 0 {
+        return 0;
+    }
+    call(h, 0x0083_3bf0, &[m, id])
+}
+
+/// `(v)` -> `f(model, v)`'s `EAX`, 0 without a model (the pop first).
+fn chr_pop<H: NativeHost>(h: &mut H, w: u32, s: u32, f: u32) -> u32 {
+    let v = pop(h, s);
+    let m = chr(h, w);
+    if m == 0 {
+        return 0;
+    }
+    call(h, f, &[m, v])
+}
+
+/// `0x5055` (`0x00a78a10`, also `0x409c`): `(v)` -> `Ch_ModelGetHide(model,
+/// v)` (`0x0082add0`), 0 without a model.
+pub fn native_5055<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    chr_pop(h, w, s, 0x0082_add0)
+}
+
+/// `(b, a)` with the model taken first: `f(model, b, a)`'s `EAX`, `none`
+/// without a model.
+fn chr_pop2<H: NativeHost>(h: &mut H, w: u32, s: u32, f: u32, none: Option<u32>) -> u32 {
+    let m = chr(h, w);
+    let a = pop(h, s);
+    let b = pop(h, s);
+    if m == 0 {
+        return 0;
+    }
+    let r = call(h, f, &[m, b, a]);
+    none.unwrap_or(r)
+}
+
+/// `0x5059` (`0x00a78bd0`, also `0x40a0`): `(slot, motion)`:
+/// `Ch_SetSysMotion(model, slot, motion)` (`0x00837d00`) for a model; 0.
+pub fn native_5059<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    chr_pop2(h, w, s, 0x0083_7d00, Some(0))
+}
+
+/// `0x505b` (`0x00a78ce0`, also `0x40a2`): `(b, a)` ->
+/// `Ch_TextureSetImageBase(model, b, a)` (`0x00831390`), 0 without a model.
+pub fn native_505b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    chr_pop2(h, w, s, 0x0083_1390, None)
+}
+
+/// `0x506c` (`0x00a797b0`, also `0x40b3`): `(bits, mask)`:
+/// `Ch_PLightSetEnableMask(model, bits, mask)` (`0x00830b00`) for a model;
+/// 0.
+pub fn native_506c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    chr_pop2(h, w, s, 0x0083_0b00, Some(0))
+}
+
+/// `0x500a` (`0x00a78c20`, also `0x4051`): `(h f)`:
+/// `Ch_SetHitHeight(model, h)` (`0x0082b320`) for a model; 0.
+pub fn native_500a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let m = chr(h, w);
+    let v = popf(h, s);
+    if m != 0 {
+        call(h, 0x0082_b320, &[m, v]);
+    }
+    0
+}
+
+/// `0x5011` (`0x00a78e50`, also `0x4058`): `(v)`:
+/// `ChN_DisposeSystemMGRP(model's u16 +0, v)` (`0x00836830`) for a model; 0.
+pub fn native_5011<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let m = chr(h, w);
+    let v = pop(h, s);
+    if m != 0 {
+        let id = u32::from(h.read::<u16>(m));
+        call(h, 0x0083_6830, &[id, v]);
+    }
+    0
+}
+
+/// `0x5062` (`0x00a79030`, start, also `0x40a9`): `(id, n, wait)`: args
+/// `+0` = id, `+4` = n, `+8` = wait, `+0xc` = 0; `EAX` the id.
+pub fn native_5062<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
+    h.write(a + 0xc, 0_u32);
+    let wait = pop(h, s);
+    h.write(a + 8, wait);
+    let n = pop(h, s);
+    h.write(a + 4, n);
+    let id = pop(h, s);
+    h.write(a, id);
+    id
+}
+
+/// `0x5062` (`0x00a79070`, poll): `ChN_ReadSystemMGRPsync(id, n)`
+/// (`0x00836a50`): with `+8` set its result goes to `+0xc` and the poll
+/// is done (5); else done when it is 0.
+pub fn native_5062_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let id = h.read::<u32>(a);
+    let n = h.read::<u32>(a + 4);
+    let r = call(h, 0x0083_6a50, &[id, n]);
+    if h.read::<u32>(a + 8) != 0 {
+        h.write(a + 0xc, r);
+        return 5;
+    }
+    if r == 0 { 5 } else { 0 }
+}
+
+/// `0x5062`, `0x5064` (`0x00a79120`, `0x00a79300`, int): the args word
+/// `+0xc`.
+pub fn native_5062_result<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    h.read::<u32>(a + 0xc)
+}
+
+/// `0x5064` (`0x00a79240`, start, also `0x40ab`): `(id, wait)`: args `+0`
+/// = id, `+8` = wait, `+0xc` = 0; `EAX` the id.
+pub fn native_5064<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
+    h.write(a + 0xc, 0_u32);
+    let wait = pop(h, s);
+    h.write(a + 8, wait);
+    let id = pop(h, s);
+    h.write(a, id);
+    id
+}
+
+/// `0x5064` (`0x00a79290`, poll): `Ch_DataReadSync(id)` (`0x0082a040`):
+/// with `+8` set its result goes to `+0xc` and the poll is done (5); else
+/// 1 when it is 0, else 0.
+pub fn native_5064_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let id = h.read::<u32>(a);
+    let r = call(h, 0x0082_a040, &[id]);
+    if h.read::<u32>(a + 8) != 0 {
+        h.write(a + 0xc, r);
+        return 5;
+    }
+    u32::from(r == 0)
+}
+
+/// `0x5023`, `0x5024` (`0x00a795b0`, `0x00a79620`, also `0x406a`,
+/// `0x406b`): the model asked for and one argument popped, both unused; 0.
+pub fn native_5023<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    chr(h, w);
+    pop(h, s);
+    0
+}
+
+/// `0x502b` (`0x00a79b70`, also `0x4072`): the model asked for, unused; 0.
+pub fn native_502b<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    chr(h, w);
+    0
+}
+
+/// `f(model)`'s `EAX`, 0 without a model.
+fn chr_get<H: NativeHost>(h: &mut H, m: u32, f: u32) -> u32 {
+    if m == 0 {
+        return 0;
+    }
+    call(h, f, &[m])
+}
+
+/// `0x506b` (`0x00a796c0`, also `0x40b2`): `Ch_PLightGetEnable(model)`
+/// (`0x00830ad0`), 0 without a model.
+pub fn native_506b<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    chr_get(h, m, 0x0083_0ad0)
+}
+
+/// `0x5070` (`0x00a79c30`, also `0x40b7`): `Ch_GetHideCalc(model)`
+/// (`0x0082abe0`), 0 without a model.
+pub fn native_5070<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    chr_get(h, m, 0x0082_abe0)
+}
+
+/// `0x502e` (`0x00a79d10`, also `0x4075`): `Ch_IdGetMap(model)`
+/// (`0x0083d840`), 0 without a model.
+pub fn native_502e<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    chr_get(h, m, 0x0083_d840)
+}
+
+/// `0x502f` (`0x00a79d60`, also `0x4076`): `(i)` -> `Ch_IdGetMap(worker
+/// i's model)`, 0 without a model.
+pub fn native_502f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let i = pop(h, s);
+    let m = chr_of(h, i);
+    chr_get(h, m, 0x0083_d840)
+}
+
+/// `0x5074` (`0x00a79d90`, also `0x40bb`): `Ch_GetOverlapHit(model)`
+/// (`0x0082ac70`), 0 without a model.
+pub fn native_5074<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    chr_get(h, m, 0x0082_ac70)
+}
+
+/// `0x5030` (`0x00a79db0`, also `0x4077`): `Ch_IdGetSound(model)`
+/// (`0x0083d900`), 0 without a model.
+pub fn native_5030<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    chr_get(h, m, 0x0083_d900)
+}
+
+/// `0x5031` (`0x00a79e00`, also `0x4078`): `(i)` -> `Ch_IdGetSound(worker
+/// i's model)`, 0 without a model.
+pub fn native_5031<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let i = pop(h, s);
+    let m = chr_of(h, i);
+    chr_get(h, m, 0x0083_d900)
+}
+
+/// `0x5077` (`0x00a79e80`, also `0x40be`): `Ch_MouthGetAutoTalk(model)`
+/// (`0x00834740`), 0 without a model.
+pub fn native_5077<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let m = chr(h, w);
+    chr_get(h, m, 0x0083_4740)
+}
+
+/// Writes the `f32` at `from` to the variable address `to` when it is not
+/// null (`fld`/`fstp`).
+fn out_f32(h: &mut impl NativeHost, from: u32, to: u32) {
+    if to != 0 {
+        let v = x87::store(x87::load(h.read(from)));
+        h.write(to, v);
+    }
+}
+
+/// `0x5027` (`0x00a79860`, also `0x406e`): `(i, element, x f, y f, z f,
+/// &ox, &oy, &oz)`: `Ch_ElemGetPos(worker i's model, element, &(x, y, z,
+/// 1.0), &out)` (`0x00833d10`) and the result's three words into the
+/// variables (null ones skipped; nothing without a model); 0.
+pub fn native_5027<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [i1, i2, i3] = pops::<3>(h, s);
+    let [f1, f2, f3] = popfs::<3>(h, s);
+    let e = pop(h, s);
+    let i = pop(h, s);
+    let oz = atel_get_real_var_adrs(h, w, i3);
+    let oy = atel_get_real_var_adrs(h, w, i2);
+    let ox = atel_get_real_var_adrs(h, w, i1);
+    let m = chr_of(h, i);
+    if m == 0 {
+        return 0;
+    }
+    let buf = h.scratch();
+    let (v, out) = (buf, buf + 0x10);
+    for (k, x) in [f3, f2, f1, 1f32.to_bits()].into_iter().enumerate() {
+        h.write(v + 4 * u32::try_from(k).unwrap_or(0), x);
+    }
+    call(h, 0x0083_3d10, &[m, e, v, out]);
+    out_f32(h, out, oz);
+    out_f32(h, out + 4, oy);
+    out_f32(h, out + 8, ox);
+    0
+}
+
+/// `0x5038` (`0x00a7a250`, also `0x407f`): `(i, &x, &y, &z)`: worker i's
+/// model's `+0x6b4`, `+0x6b8`, `+0x6bc` into the variables (null ones
+/// skipped); 0.
+pub fn native_5038<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [i1, i2, i3, i] = pops::<4>(h, s);
+    let px = atel_get_real_var_adrs(h, w, i3);
+    let py = atel_get_real_var_adrs(h, w, i2);
+    let pz = atel_get_real_var_adrs(h, w, i1);
+    let m = chr_of(h, i);
+    if m == 0 {
+        return 0;
+    }
+    out_f32(h, m + 0x6b4, px);
+    out_f32(h, m + 0x6b8, py);
+    out_f32(h, m + 0x6bc, pz);
+    0
+}
+
+/// `0x507f` (`0x00a7a380`, also `0x40c6`): `(i, v f)`: `0x0082ae30(model,
+/// i, v)` for a model; 0.
+pub fn native_507f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = popf(h, s);
+    let i = pop(h, s);
+    let m = chr(h, w);
+    if m != 0 {
+        call(h, 0x0082_ae30, &[m, i, v]);
+    }
+    0
+}
+
+/// `Native_PlayMotionCommon(worker, stack, mode, other)`; 0.
+fn play<H: NativeHost>(h: &mut H, w: u32, s: u32, mode: u32, other: u32) -> u32 {
+    super::native_chr::native_play_motion_common(h, w, s, mode, other);
+    0
+}
+
+/// `0x508a`, `0x508c` (`0x00a7a720`, `0x00a7a7a0`, also `0x40d1`,
+/// `0x40d3`): `Native_PlayMotionCommon(worker, stack, 2, 1)`; 0.
+pub fn native_508a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    play(h, w, s, 2, 1)
+}
+
+/// `0x5041` (`0x00a7a740`, also `0x4088`): `Native_PlayMotionCommon(worker,
+/// stack, 0, 0)`; 0.
+pub fn native_5041<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    play(h, w, s, 0, 0)
+}
+
+/// `0x5043`, `0x5045` (`0x00a7a7c0`, `0x00a7a830`, also `0x408a`,
+/// `0x408c`): `Native_PlayMotionCommon(worker, stack, 0, 1)`; 0.
+pub fn native_5043<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    play(h, w, s, 0, 1)
+}
+
 /// The Rust version of a round-19 handler, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -429,12 +779,42 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x00a7_84c0 => Int(native_4027),
         0x00a7_8510 => Int(native_4028),
         0x00a7_8560 => Int(native_4029),
+        0x00a7_87a0 | 0x00a7_9310 => Int(native_5002),
+        0x00a7_88d0 => Int(native_5004),
+        0x00a7_8900 => Int(native_5053),
+        0x00a7_8a10 => Int(native_5055),
+        0x00a7_8bd0 => Int(native_5059),
+        0x00a7_8ce0 => Int(native_505b),
+        0x00a7_97b0 => Int(native_506c),
+        0x00a7_8c20 => Int(native_500a),
+        0x00a7_8e50 => Int(native_5011),
+        0x00a7_9030 => Int(native_5062),
+        0x00a7_9070 => Int(native_5062_poll),
+        0x00a7_9120 | 0x00a7_9300 => Int(native_5062_result),
+        0x00a7_9240 => Int(native_5064),
+        0x00a7_9290 => Int(native_5064_poll),
+        0x00a7_95b0 | 0x00a7_9620 => Int(native_5023),
+        0x00a7_9b70 => Int(native_502b),
+        0x00a7_96c0 => Int(native_506b),
+        0x00a7_9c30 => Int(native_5070),
+        0x00a7_9d10 => Int(native_502e),
+        0x00a7_9d60 => Int(native_502f),
+        0x00a7_9d90 => Int(native_5074),
+        0x00a7_9db0 => Int(native_5030),
+        0x00a7_9e00 => Int(native_5031),
+        0x00a7_9e80 => Int(native_5077),
+        0x00a7_9860 => Int(native_5027),
+        0x00a7_a250 => Int(native_5038),
+        0x00a7_a380 => Int(native_507f),
+        0x00a7_a720 | 0x00a7_a7a0 => Int(native_508a),
+        0x00a7_a740 => Int(native_5041),
+        0x00a7_a7c0 | 0x00a7_a830 => Int(native_5043),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] knows, and whether it returns a float.
-pub const PORTED: [(u32, bool); 42] = [
+pub const PORTED: [(u32, bool); 77] = [
     (0x0087_78d0, false),
     (0x0087_78f0, false),
     (0x0087_7920, false),
@@ -477,4 +857,39 @@ pub const PORTED: [(u32, bool); 42] = [
     (0x00a7_84c0, false),
     (0x00a7_8510, false),
     (0x00a7_8560, false),
+    (0x00a7_87a0, false),
+    (0x00a7_9310, false),
+    (0x00a7_88d0, false),
+    (0x00a7_8900, false),
+    (0x00a7_8a10, false),
+    (0x00a7_8bd0, false),
+    (0x00a7_8ce0, false),
+    (0x00a7_97b0, false),
+    (0x00a7_8c20, false),
+    (0x00a7_8e50, false),
+    (0x00a7_9030, false),
+    (0x00a7_9070, false),
+    (0x00a7_9120, false),
+    (0x00a7_9300, false),
+    (0x00a7_9240, false),
+    (0x00a7_9290, false),
+    (0x00a7_95b0, false),
+    (0x00a7_9620, false),
+    (0x00a7_9b70, false),
+    (0x00a7_96c0, false),
+    (0x00a7_9c30, false),
+    (0x00a7_9d10, false),
+    (0x00a7_9d60, false),
+    (0x00a7_9d90, false),
+    (0x00a7_9db0, false),
+    (0x00a7_9e00, false),
+    (0x00a7_9e80, false),
+    (0x00a7_9860, false),
+    (0x00a7_a250, false),
+    (0x00a7_a380, false),
+    (0x00a7_a720, false),
+    (0x00a7_a7a0, false),
+    (0x00a7_a740, false),
+    (0x00a7_a7c0, false),
+    (0x00a7_a830, false),
 ];
