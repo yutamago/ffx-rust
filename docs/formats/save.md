@@ -49,7 +49,7 @@ menu goes through them (`load_trace`):
 So list entry 1 is the newest manual save, not `ffx_001`. The harness
 sandbox copies the saves with new modification times, all in about the
 same second, which makes the order of the copies (and the sort's ties)
-decide it: in the sandbox, entry 1 was `ffx_001` (2026-10-17).
+decide it: in the sandbox, entry 1 was `ffx_001` (2026-10-17). `loadsave` takes the slot (the file) instead.
 
 ## From the loaded buffer into the game
 
@@ -104,6 +104,15 @@ A developer path does the same in one step: `TkDebugLoadViewerSave`
 (`0x008b55e0`) reads a file with `debugLoadForViewer`, copies the block and
 jumps with `0x0086fec0` to the map and entrance in `+0xb8`.
 
+## The boot and the title
+
+`Sg_MainInit` jumps to map `0x17` (`test20.ebp`, on `titl00`). That first
+visit's script set-up starts a new game's state (`MsSetSaveStartGame`
+territory: party, HP and MP natives) and jumps to `memochek` (map `0x15c`,
+on `titl02`: the logos and the opening), which waits for Start or the end
+of the opening and comes back to map `0x17` (previous map `0x15c`): the
+title proper, where the title menu and its Load run.
+
 ## `loadsave` (harness)
 
 `loadsave <slot|path>` runs, between two frames on the game thread: the
@@ -112,25 +121,56 @@ file into the buffer, manager `+0xc` = -1 and state 3 (what `doLoad` sets),
 the Al Bhed check, `SaveDataResetToIdle`, `AtelClearForcePlaceId`,
 `TkMenuJumpToLoadedScene`, `SaveDataSetScreenState(0)`, then the title
 script's natives above (`0x0086f3d0(1)`, `AtelSetEventMode(2)` and the
-post-menu ones, called with a script stack made for them) with ctrl work 0
-as the current one. `screens::load_save_direct` sends it as soon as the
-title event (`test20.ebp`) has opened, about 20 frames after boot; the
-opening and the title never show.
+post-menu ones, called with a script stack laid out as
+`AtelPopStackInteger` reads it) with ctrl work 0 as the current one. The
+title holds control there, so the jump goes through without forcing it.
 
-Compared with the menu path on the same file (`ffx_001`, snapshots once
-the event opened and 120 frames later, `load_compare`): `g_SaveData` (and
-with it the party records), both random generators, the save/load
-globals, the scene variables and the save buffer are the same 120 frames
-in. What differs:
+When it runs matters (`load_trace direct [early]`):
 
-- the Flash list's machine leftovers: state `0xa` vs 0, the timer, the list
-  cursor and file count, the Yes/No choice, the machine's buffer pointer
-  and size (set again by every save, `SaveDataManager_doSave`), the sorted
-  table: the direct load never builds the list;
-- heap pointers in the ctrl works (`+0x1c`, `+0x34`, `+0x38`, `+0x48`,
-  `+0x204`) and the script caches: the two runs allocate differently (the
-  menu path loaded the Flash screens and the opening);
-- ctrl work 0 `+0x1f4` (`0x6b` vs `0x6d`) and, just after the event opens,
-  block `+0xe` and two message-window words: the snapshots were taken a few
-  frames apart (the menu path polls every 30 frames for the event, the
-  direct one every 5), and they agree 120 frames in.
+- at the first visit's open (frame 8), the boot's jump to map `0x17` is
+  still pending (`g_TkEventJumpRequest` 1): the scene step enters the
+  title map instead, and the title script's set-up then resets the state;
+  the save's map never opens;
+- later in the first visit the title script's own jump to `memochek`
+  overtakes it (the load "succeeds" and `memochek` opens);
+- from `memochek` (frame 66) the save's map opened and the game crashed on
+  the next frame;
+- in the title proper it works every time.
+
+So `screens::load_save_direct` taps Start until `g_SaveData` reads map
+`0x17` with previous map `0x15c` and no jump is pending, waits 30 frames
+for the title script's set-up, drains the file events (the title's
+`test20.ebp` is read again there) and sends `loadsave`; the menus never
+open. In fast mode that is about frame 290, against about 600 to 730 for
+the menu path's event.
+
+## Menu path against `loadsave`
+
+Same file (`ffx_001`, list entry 1 and slot 1), snapshots 120 frames
+after the save's event opened (`load_compare`, virtual clock, lockstep),
+image `.data`/`.bss` compared with pointers into the image normalized: one
+menu run against one direct run, and the bytes that differ there but
+neither between two menu runs nor between two direct runs.
+
+- Identical: `g_SaveData` (`0x0112ca90`, `0x68c0` bytes, with the party
+  records at `0x0113205c`), the global random generator (`0x00c42200`), the
+  68 generators (`0x01135ee0`), the save/load globals (`0x00ccb990`..), the
+  scene variables (`0x01330840`..), the save file buffer, and the ctrl
+  works and script caches apart from heap pointers (which differ between
+  any two runs).
+- Only between the paths (3,668 bytes): what the menus leave behind. The
+  save machine's state `0xa`, timer, list cursor and file count, Yes/No
+  choice, buffer and size (set again by every save,
+  `SaveDataManager_doSave`), the sorted table and the list's dates and
+  texts (`g_SortedSaveTable`.., the Flash screens' strings "Load", "Yes",
+  "No", play time, after `g_UserHeapArenaSize`), the save manager's UI
+  fields past `+0x560`, the pad history of the keys the menus took
+  (`g_TkControlerWork` `+0xa8`, `+0x1a8`), the menu module
+  (`g_TkMenuSaveLoadActive` `+0x3a0`, `+0x3b1`, a message window flag,
+  `g_MenuWaitFrames` -1 against 0: the `0x401d` menu ran), and single
+  counters of caches and heaps that grew with the extra screens
+  (`g_CacheEntries`, `g_OpSprStack`, `g_BtlEtEffectRead`).
+
+The replays (`tools/replays`) gave the recorded original events and
+screenshots with `load direct 1 cdsp0000` (see the commit that switched
+them).

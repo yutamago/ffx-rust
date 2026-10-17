@@ -77,6 +77,14 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Load: the title's cursor starts on Load; the save list and its Yes/No
   are Flash screens (Enter, arrows). Slot 1 of the user's saves starts on
   the salvage ship deck (`cdsp0000`), in the field: the D-pad turns Tidus.
+- Loading without the menus: `loadsave <slot|windows path>` runs what the
+  Load menu runs once a save is picked (`docs/formats/save.md`);
+  `screens::load_save_direct` (replay line `load direct <slot|path>
+  [script]`) taps Start until the title proper runs and sends it there.
+  The save's event opens about 3 s sooner (1.6-2.2 s after the first frame against
+  4.3-5.2 s), with no key presses to lose, and the state matches the menu
+  path's (the replays give the recorded originals' events and
+  screenshots). The replays use it; `load N` (list entry N) stays.
 - Battles start from the field without walking into one:
   `screens::start_battle(field, group, formation)` writes the request a
   random encounter makes (`MsBattleEncountExe`, `0x00780d10`) and raises its flag;

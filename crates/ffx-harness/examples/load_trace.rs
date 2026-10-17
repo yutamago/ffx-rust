@@ -1,8 +1,8 @@
 //! Loads a save through the title menu (`load_trace [entry]`), or with
 //! `loadsave` (`load_trace direct [save] [early]`, frame by frame in
-//! lockstep: once the title scene is set up as `screens::load_save_direct`
-//! waits (the second visit, after `memochek`), or with `early` as soon as the title event opens, which the
-//! pending boot jump undoes), and prints every change of the
+//! lockstep: once the title proper runs, as `screens::load_save_direct`
+//! waits, or with `early` as soon as the title event first opens, which
+//! the pending boot jump undoes), and prints every change of the
 //! save/load state globals, with the frame it was seen on, until the save's
 //! map script opens and a while after: which steps each path takes
 //! (docs/formats/save.md).
@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         for (i, (name, at, len)) in WATCH.iter().enumerate() {
             let v = game.read(*at, *len)?;
             if v != last[i] {
-                let hex: String = v.iter().map(|b| format!("{b:02x}")).collect();
+                let hex = hex(&v);
                 println!("{f:6} {tag:8} {name:28} {hex}");
                 last[i] = v;
             }
@@ -111,7 +111,7 @@ fn direct(save: &str, early: bool) -> Result<()> {
         for (i, (name, at, len)) in WATCH.iter().enumerate() {
             let v = game.read(*at, *len)?;
             if v != last[i] {
-                let hex: String = v.iter().map(|b| format!("{b:02x}")).collect();
+                let hex = hex(&v);
                 println!("{f:6} {tag:8} {name:28} {hex}");
                 last[i] = v;
             }
@@ -131,4 +131,12 @@ fn direct(save: &str, early: bool) -> Result<()> {
         snap(&mut game, "frame")?;
     }
     game.quit()
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }

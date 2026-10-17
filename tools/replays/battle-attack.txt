@@ -1,11 +1,11 @@
-# Battle: from the first manual save, start the first battle field's first
+# Battle: from save slot 1 (ffx_001, loaded without the title menu), start the first battle field's first
 # formation (cdsp00, the salvage ship's), wait for the battle proper (phase
 # byte 0x0112a8e0 = 1, after loading 4..9, the intro 34 and 11..20), then
 # attack twice. Ranges: the HP (+0x5d0)
 # of the first 8 actors (*0x011334d4, 0xf90 bytes each); the generators are
 # compared through the call log (tools/replay-compare.py). Screenshots at
 # the start and the end (battle-attack-<n>.bmp).
-load 1 cdsp0000
+load direct 1 cdsp0000
 lockstep on
 wait 10
 battle 3 0 0

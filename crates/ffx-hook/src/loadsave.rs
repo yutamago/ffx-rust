@@ -89,7 +89,7 @@ fn native(address: u32, args: &[i32]) -> u32 {
     let n = args.len().min(16);
     stack[0] = n as u32;
     for (i, &a) in args.iter().take(n).enumerate() {
-        stack[1 + i] = a as u32;
+        stack[1 + i] = a.cast_unsigned();
     }
     let bytes: &mut [u8] = stack_bytes(&mut stack);
     for t in &mut bytes[0x54..0x54 + n] {

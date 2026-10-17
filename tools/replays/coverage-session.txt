@@ -1,7 +1,7 @@
 # Coverage session (tools/coverage-run.sh; not a parity replay): boot,
 # load a save, walk and talk, a battle (attacks, skills, a summon attempt,
 # items), every main menu screen, then the PC (Esc) menu.
-load 1
+load direct 1
 wait 60
 press up 60 10
 press left 60 10
