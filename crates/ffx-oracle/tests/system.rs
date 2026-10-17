@@ -13974,12 +13974,26 @@ fn round25_font_1612_passes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) 
         put(
             a,
             b,
+            g(a, 0x00b4_1da4),
+            [-2.0f32, -1.75][(rng.next() % 2) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x00b9_2340),
+            [-1.0f32, -0.5][(rng.next() % 2) as usize],
+        );
+        put(
+            a,
+            b,
             g(a, 0x0187_16e0),
             [(rng.next() % 5) as f32 - 2.3, (rng.next() % 5) as f32 - 1.7],
         );
         let arg = [0u32, 1, 4, 5, 6][(rng.next() % 5) as usize];
-        let (sym, pass, args) = match rng.next() % 3 {
+        let (sym, pass, args) = match rng.next() % 5 {
             0 => (0x008f_c870, Font1612Pass::Edge, vec![pen, glyph]),
+            3 => (0x008f_ce90, Font1612Pass::ItalicEdge, vec![pen, glyph]),
+            4 => (0x008f_d0a0, Font1612Pass::ItalicFace, vec![pen, glyph]),
             1 => (
                 0x008f_cca0,
                 Font1612Pass::Shadow(arg),

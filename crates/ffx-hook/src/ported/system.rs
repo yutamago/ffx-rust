@@ -6227,6 +6227,20 @@ ported! {
             fcall,
         );
     }
+    /// `TOMakePktFontLItalicEdge(pen, glyph)`.
+    TOMakePktFontLItalicEdge @ 0x008f_ce90 => extern "C" fn to_make_pkt_font_l_italic_edge(pen: u32, glyph: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicEdge, at, call_sym, fcall);
+    }
+    /// `TOMakePktFontLItalicFont(pen, glyph)`.
+    TOMakePktFontLItalicFont @ 0x008f_d0a0 => extern "C" fn to_make_pkt_font_l_italic_font(pen: u32, glyph: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicFace, at, call_sym, fcall);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

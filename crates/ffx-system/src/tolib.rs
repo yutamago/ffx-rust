@@ -8489,10 +8489,31 @@ pub mod bridge {
         /// `TOMakePktFont1612Font(pen, glyph, mode)` (`0x008fcad0`): the
         /// face; mode 5 draws at a higher layer without the scissor test.
         Face(u32),
+        /// `TOMakePktFontLItalicEdge(pen, glyph)` (`0x008fce90`): the
+        /// outline of an italic glyph (pen kind 3), unclipped.
+        ItalicEdge,
+        /// `TOMakePktFontLItalicFont(pen, glyph)` (`0x008fd0a0`): the face
+        /// of an italic glyph, unclipped.
+        ItalicFace,
+    }
+
+    impl Font1612Pass {
+        /// Whether this pass draws the outline (ten offset copies).
+        fn is_edge(self) -> bool {
+            matches!(self, Self::Edge | Self::ItalicEdge)
+        }
+
+        /// Whether this pass is an italic one: fixed scale, depth 2001, no
+        /// scissor, layer 0.
+        fn is_italic(self) -> bool {
+            matches!(self, Self::ItalicEdge | Self::ItalicFace)
+        }
     }
 
     /// Where the edge pass draws its ten copies, in pixels before the
-    /// `graphicFontGetEdgeRatio` division.
+    /// `graphicFontGetEdgeRatio` division. The italic edge uses the same
+    /// pattern from image floats: -2 at `0x00b41da4`, 2 at `0x00b92268`
+    /// and -1 at `0x00b92340` (see [`font_1612_edge_offsets`]).
     const FONT_1612_EDGE_OFFSETS: [(i8, i8); 10] = [
         (-2, -2),
         (0, -2),
@@ -8506,12 +8527,35 @@ pub mod bridge {
         (2, 2),
     ];
 
+    /// The edge offsets of `pass` as the x87 holds them: the integers of
+    /// [`FONT_1612_EDGE_OFFSETS`], or for the italic edge the same pattern
+    /// with its -2, 2 and -1 read from the image.
+    fn font_1612_edge_offsets<M: Mem>(mem: &M, pass: Font1612Pass) -> [(f64, f64); 10] {
+        if !pass.is_italic() {
+            return FONT_1612_EDGE_OFFSETS.map(|(dx, dy)| (f64::from(dx), f64::from(dy)));
+        }
+        let image = |a: u32| f64::from(mem.read::<f32>(mem.rebase(a)));
+        let (a, b, c) = (image(0x00b4_1da4), image(0x00b9_2268), image(0x00b9_2340));
+        [
+            (a, a),
+            (0.0, a),
+            (b, a),
+            (c, 0.0),
+            (a, 0.0),
+            (1.0, 0.0),
+            (b, 0.0),
+            (a, b),
+            (0.0, b),
+            (b, b),
+        ]
+    }
+
     /// The glyph scale of a 16 × 12 text pen: `0x00c5d784` (1.0) for the
-    /// edged kinds 1 and 3 (pen byte `+0x1a`), `0x00b5ee10` (0.78)
-    /// otherwise.
-    fn font_1612_scale<M: Mem>(mem: &M, pen: u32) -> f32 {
+    /// edged kinds 1 and 3 (pen byte `+0x1a`) and for the italic passes,
+    /// `0x00b5ee10` (0.78) otherwise.
+    fn font_1612_scale<M: Mem>(mem: &M, pen: u32, pass: Font1612Pass) -> f32 {
         let kind = mem.read::<u8>(pen.wrapping_add(0x1a));
-        let at = if kind == 1 || kind == 3 {
+        let at = if kind == 1 || kind == 3 || pass.is_italic() {
             0x00c5_d784
         } else {
             0x00b5_ee10
@@ -8527,8 +8571,9 @@ pub mod bridge {
     ///
     /// The face and shadow stretch the width by `K_x` (`0x00c5d778`) and
     /// the height by `K_y` (`0x00c5d77c`); the shadow then moves the quad
-    /// by `0x018716e0`/`0x018716e4`. The edge uses the plain cell size.
-    /// Both colours are the pen's, the depth is 2000.
+    /// by `0x018716e0`/`0x018716e4`. The edges and the italic face use the
+    /// plain cell size. Both colours are the pen's, the depth is 2000
+    /// (2001 for the italic passes).
     #[allow(clippy::cast_possible_truncation)] // fstp dword
     fn font_1612_record<M: Mem>(
         mem: &mut M,
@@ -8540,11 +8585,11 @@ pub mod bridge {
     ) {
         let f = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(a)) };
         let cell = |mem: &M, off: u32| f(mem, glyph.wrapping_add(off));
-        let scale = f64::from(font_1612_scale(mem, pen));
+        let scale = f64::from(font_1612_scale(mem, pen, pass));
         let (px, py) = (f(mem, pen.wrapping_add(4)), f(mem, pen.wrapping_add(8)));
         let (slant, width, height) = (cell(mem, 0x18), cell(mem, 0x1c), cell(mem, 0x20));
         let top = scale * slant + py;
-        let (x1, y1) = if pass == Font1612Pass::Edge {
+        let (x1, y1) = if pass.is_edge() || pass.is_italic() {
             (width * scale + px, scale * (height + slant) + py)
         } else {
             let kx = f(mem, mem.rebase(0x00c5_d778));
@@ -8576,7 +8621,10 @@ pub mod bridge {
             mem.write(rec.wrapping_add(0x10 + 4 * k), u32::from(c));
             mem.write(rec.wrapping_add(0x30 + 4 * k), u32::from(c));
         }
-        mem.write(rec.wrapping_add(0x80), 2000u32);
+        mem.write(
+            rec.wrapping_add(0x80),
+            if pass.is_italic() { 2001u32 } else { 2000 },
+        );
         mem.write(rec.wrapping_add(0x88), 0u32);
     }
 
@@ -8616,7 +8664,10 @@ pub mod bridge {
         let page = mem.read::<u16>(glyph);
         let parity = mem.read::<u16>(glyph.wrapping_add(4));
         let alpha = mem.read::<u8>(pen.wrapping_add(0x1b));
-        let variant = u32::from(!matches!(pass, Font1612Pass::Face(_)));
+        let variant = u32::from(!matches!(
+            pass,
+            Font1612Pass::Face(_) | Font1612Pass::ItalicFace
+        ));
         let texture = call(
             mem,
             TEXTURE_NAME,
@@ -8628,7 +8679,7 @@ pub mod bridge {
                 extra,
             ],
         );
-        let ratio = if pass == Font1612Pass::Edge {
+        let ratio = if pass.is_edge() {
             f64::from(fcall(mem, EDGE_RATIO, &[]) as f32)
         } else {
             1.0
@@ -8649,16 +8700,17 @@ pub mod bridge {
             field(0x28),
             field(0x2c),
         ];
-        let unclipped = matches!(pass, Font1612Pass::Shadow(4) | Font1612Pass::Face(5));
+        let unclipped =
+            pass.is_italic() || matches!(pass, Font1612Pass::Shadow(4) | Font1612Pass::Face(5));
         if !unclipped && call(mem, SCISSOR, &scissor) == 0 {
             return;
         }
         let layer = i32::from(parity.cast_signed());
         match pass {
-            Font1612Pass::Edge => {
-                for (dx, dy) in FONT_1612_EDGE_OFFSETS {
-                    let dx = (f64::from(dx) / ratio) as f32;
-                    let dy = (f64::from(dy) / ratio) as f32;
+            Font1612Pass::Edge | Font1612Pass::ItalicEdge => {
+                for (dx, dy) in font_1612_edge_offsets(mem, pass) {
+                    let dx = (dx / ratio) as f32;
+                    let dy = (dy / ratio) as f32;
                     call(
                         mem,
                         FONT_DRAW,
@@ -8674,6 +8726,9 @@ pub mod bridge {
             Font1612Pass::Face(mode) => {
                 let layer = layer + if mode == 5 { 6 } else { 2 };
                 call(mem, FONT_DRAW, &[rec, texture, 0, 0, layer.cast_unsigned()]);
+            }
+            Font1612Pass::ItalicFace => {
+                call(mem, FONT_DRAW, &[rec, texture, 0, 0, 0]);
             }
         }
     }

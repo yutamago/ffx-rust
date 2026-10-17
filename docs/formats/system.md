@@ -585,7 +585,11 @@ shadow is moved by `0x018716e0`/`0x018716e4` and drawn with offsets
 `0x00b92268` (2.0) at layer parity + its argument (4 skips the scissor).
 The face draws at parity + 2 (parity + 6 without scissor in mode 5). The
 edge draws ten copies at offsets (±2, ±2), (0, ±2), (±2, 0) and (±1, 0)
-over `graphicFontGetEdgeRatio`. `0x00906270`/`0x00906290` are the face and
+over `graphicFontGetEdgeRatio`. The italic passes (`TOMakePktFontLItalicEdge`/`Font`, `0x008fce90`/
+`0x008fd0a0`) use scale `0x00c5d784` and the edge geometry for both,
+depth 2001, no scissor and layer 0. The italic edge's offsets follow the
+same pattern, read from the image floats -2 (`0x00b41da4`), 2
+(`0x00b92268`) and -1 (`0x00b92340`). `0x00906270`/`0x00906290` are the face and
 shadow passes with argument 0. Only `graphicFontDraw` emits packets.
 
 `TODrawCrossMenuIconAbilityName` (`0x008f4f10`) and
