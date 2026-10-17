@@ -100,8 +100,8 @@ NAME_RULES = [
     ("platform", r"^(fios|CD|Cd|dvd|hdd|get_hdd|BigFile|VFile|Vbf_|Path_|File|FileSys|Settings|user_|"
                  r"UserHeap|Sg_Mem|mspace|sa_|Sa_|task_|sce[A-Z]|FFXSif|Sif|rpc_|Trophy|trophy|achievement|"
                  r"Steam|std_|Std|Array_|CriticalSection|VirtualFree|Virtual|MemSystem|AsyncLoad|FlushCache$|"
-                 r"i?(Sleep|Wakeup)Thread$|i?(Signal|Wait|Create|Delete|Poll)Sema$)",
-     "platform name (files, CD/DVD emulation, allocators, threads, std::)", None),
+                 r"i?(Sleep|Wakeup)Thread$|i?(Signal|Wait|Create|Delete|Poll)Sema$|Throw[A-Za-z]*Exception|CxxThrow)",
+     "platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions)", None),
     ("platform", r"^(Input|input|Virtuos|virtuos|Async|JobSchedule(?!_ppp)|SaveData|Save[A-Z]|getPlatform|"
                  r"Game_InitFileSystem|FFXApplication|ResetToLauncher|Fixup|AssetListReader|MagicFile|Lang|"
                  r"Cloud|getIsConsoleMode|PArray|Alloc|Malloc|SetUpDefault|VbfStream|Vbf)",
@@ -272,6 +272,15 @@ def main():
     args = ap.parse_args()
 
     names = progress.symbols()
+    # auto-port shape names (SetFields_*, Compare_*, ...) say what the code
+    # does, not whose it is: the propagation rules treat them as unnamed
+    shape = set()
+    for line in (REPO / "symbols/ffx.sym").read_text(encoding="utf-8").splitlines():
+        if "# auto-port shape" in line:
+            shape.add(int(line.split()[0], 16))
+
+    def meaningful(a):
+        return bool(names.get(a)) and a not in shape
     rows = progress.functions()
     module = progress.placement(rows, names)
     size = {a: s for a, _, s in rows}
@@ -451,7 +460,7 @@ def main():
             cs = [c for c in callers[a] if c != a and c in reach]
             if not cs:
                 continue
-            pc_part = a < PC_END and not names.get(a)
+            pc_part = a < PC_END and not meaningful(a)
             if pc_part and all(c in unwind for c in cs):
                 cls[a], why[a] = "platform", "only exception unwinding reaches it (a release or destructor)"
                 changed = True
@@ -468,7 +477,7 @@ def main():
                 # glue and platform pass one hop, to unnamed functions whose
                 # callers a rule decided (a main loop that the PC update
                 # function calls stays logic); debug-only trees go all the way
-                if kinds == {k} and (k == "debug" or pc_tree or (module[a] in GLUE_SIDE and not names.get(a)
+                if kinds == {k} and (k == "debug" or pc_tree or (module[a] in GLUE_SIDE and not meaningful(a)
                                                                  and all(c in decided for c in cs))):
                     cls[a] = k
                     why[a] = f"only called from {k} code ({names.get(next(iter(cs)), hex(next(iter(cs))))}" + \
@@ -607,6 +616,25 @@ def main():
                 changed = True
                 why[a] = ("ran in the coverage sessions, called by logic: " +
                           ", ".join(sorted(names.get(c, hex(c)) for c in lc)[:3]))
+
+    # thin wrappers in the PC part: a small function that writes no global
+    # and only forwards to glue or platform code (PhyFMVPlayerManager calls,
+    # a renderer delegation, a PString setter) is that boundary, even when
+    # its name sounds like scene state: the state lives on the PC side and
+    # ffx-render takes the call's arguments as its input
+    changed = True
+    while changed:
+        changed = False
+        for a in sorted(game):
+            if cls[a] != "logic" or a >= PC_END or a not in reach or writes[a] or size.get(a, 99) > 64:
+                continue
+            ce = {c for c in direct.get(a, ()) if c != a and not CONTAINER_OK.search(names.get(c, ""))}
+            ks = {cls.get(c) for c in ce}
+            if ce and ks <= {"glue", "platform"}:
+                cls[a] = "glue" if "glue" in ks else "platform"
+                why[a] = ("thin wrapper: only forwards to " + cls[a] + " code (" +
+                          ", ".join(sorted(names.get(c, hex(c)) for c in ce)[:3]) + ")")
+                changed = True
 
     for a in args.explain:
         if a in cls:

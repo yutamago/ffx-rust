@@ -1628,11 +1628,13 @@
 0x00635a70 function IsCharacterCancleLoad        # layout+callees: sorts between AssetListReader_dtor_AssetListReader and asyncFFXInitialize, and its named callees match the Switch 0x71001cd2b0 IsCharacterCancleLoad's (similarity 1.00: getScenerioFlag); symbols from Fahrenheit's server export
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
 0x006365f0 function batchSetClothVertexBuffers   # str-match switch: only user of the string 'ClothWorld' held once by both builds; Switch 0x71001cfcf0 batchSetClothVertexBuffers (the address fh switch:cg2 had given to 0x0063b290)
+0x00636d60 function std_Tree_erase_range_00636d60 # MSVC std::map erase(first, last); callers AssetListReader's destructor and others; the render agent's finding; own name
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
 0x00637d90 function FlashSpriteRenderer_Initialize # fh switch:bsim1.00 0x71000028f0 FlashSpriteRenderer::Initialize
 0x00637f50 function inverseMatrix             # fh switch:bsim1.00 0x71001d16f0
 0x006386c0 function ShaderParamBuffer_SetValue2  # structure: byte-identical twin of ShaderParamBuffer_SetValue 0x00638780 (another template instance); callers graphicSgSetSpecular, PostProcessManager_renderFocusFrame, VFXDynamicGeometry_setPointLightParameters; name ours
+0x00638720 function ShaderParam_CopyToBuffer_00638720 # thiscall(buffer, param, src): copies the parameter's bytes (+8 offset, +0xa size & 0x1fff) into the buffer when they fit, 1 for no source; callers batchSetClothVertexBuffers, the deferred-lighting shadows; same code as ShaderParam_CopyToBuffer_00698960; the render agent's finding (shader parameters into material buffers); own name
 0x00638780 function ShaderParamBuffer_SetValue   # structure: thiscall(buffer {u32 size, data...}, param {+8 u16 offset, +10 u16 size & 0x1fff}, src): memcpy src into the buffer at the parameter's offset; 1 for a null src, 3 out of range, 0 done; a template instance inlined on the Switch (memcpy in PostProcessManager::copyBuffer); twin of 0x006386c0; name ours
 0x00638d90 function cgraphicSetNowUIType      # fh v3:bsim1.00 0x00638f40
 0x00638e00 function debugDrawKeTh             # fh v3:bsim1.00 0x00638fb0
@@ -1844,6 +1846,7 @@
 0x00642690 function graphicNeedResetMapParam  # () -> movzx g_PhyreScene +0x10d2d; name Fahrenheit's (Switch BSim)
 0x006426a0 function graphicObjectSetRotation  # fh v3:bsim1.00 0x00642850
 0x006426c0 function graphicObjectSetTranslation # fh v3:bsim1.00 0x00642870
+0x006426e0 function ShaderParam_Write_006426e0   # (param, value, ...) writes a shader parameter into a material's parameter buffer (0x006e60d0); callers render set-up (0x006c5c90, 0x006e5a40); the render agent's finding (docs/formats/render.md on its branch, 91cdf20); own name
 0x00642750 function graphicPS2LightingSetupEffect # fh v3:exact 0x00642900
 0x006427e0 function graphicPreviousLevelGetNameHash # fh v3:bsim1.00 0x00642990
 0x006427f0 function graphicProcessPs2DataLoadingCallback # fh v3:exact 0x006429a0
@@ -2101,6 +2104,7 @@
 0x00657a50 function PhyreScene_bootInit          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71001ead10 PhyreScene::bootInit, 3 votes, round 1
 0x006587d0 function PhyreScene_change2DSceneNum  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'scene%d'; Switch 0x71001f1a80 PhyreScene::change2DSceneNum (symbols from Fahrenheit's server export)
 0x00659090 function PhyreScene_releaseVFXMeshes # thiscall(this): add ecx, 0x10d54; jmp 0x00636970 (graphicVFXUnloadLevelData's last call); name ours (the Ghidra dump's operator_new_00659090 from a Switch BSim match does not fit)
+0x006590d0 function std_string_compare_006590d0  # MSVC std::string compare (memcmp of the shorter length, then the lengths); the render agent's finding; own name
 0x00659290 function PhyreScene_convertMapPath # fh v3:exact 0x00659420 PhyreScene::convertMapPath
 0x006593d0 function PhyreScene_copyPreviousFrameBufferForDtt # fh v3:exact 0x00659560 PhyreScene::copyPreviousFrameBufferForDtt
 0x00659c30 function PhyreScene_createRWTTTarget  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PhyreScene_colorTargetRWTT'; Switch 0x71001eba60 PhyreScene::createRWTTTarget (symbols from Fahrenheit's server export)
@@ -2219,6 +2223,7 @@
 0x0066d940 function PhyreScene_setMinimapCameraWorldMatrix # fh v3:exact 0x0066dad0 PhyreScene::setMinimapCameraWorldMatrix
 0x0066db00 function PhyreScene_setObjectRotation # fh v3:exact 0x0066dc90 PhyreScene::setObjectRotation
 0x0066e3e0 function PhyreScene_setObjectTranslation # fh v3:exact 0x0066e570 PhyreScene::setObjectTranslation
+0x0066e4f0 function Render_SurfaceFormat_0066e4f0 # (surface, desc) -> 5 for a format byte (+2) outside B, C, D, 0x12, 0xd9..0xdc, else builds a 4-word format record (B by default) and passes it to 0x004d57d0; callers the PostProcessManager render-target functions; the TrophyManager_Install it calls is the folded xor eax,eax stub (so not a trophy install); own name
 0x0066e800 function PhyreScene_setTextureVideoInfo # fh v3:exact 0x0066e990 PhyreScene::setTextureVideoInfo
 0x0066e850 function PhyreScene_setWaveStrength   # layout+callees: sorts between PhyreScene_setTextureVideoInfo and PhyreScene_setupColorCorrection, and its named callees match the Switch 0x7100208d10 PhyreScene_setWaveStrength's (similarity 0.88: WaterWaveController_setBuoyancyFix, WaterWaveController_setCircleWaveStrength, WaterWaveController_setDraughtOffset, WaterWaveController_setFoamStrength, WaterWaveController_setMultiTexBlendFactor); symbols from Fahrenheit's server export
 0x0066ed00 function PhyreScene_setupColorCorrection # str-match switch: only user of 2 string(s) held once by both builds, e.g. '_ColorCorrection'; Switch 0x71001ed590 PhyreScene::setupColorCorrection (symbols from Fahrenheit's server export)
@@ -2515,6 +2520,7 @@
 0x006985d0 function PostProcessManager_setHDAOSetting # fh v3:exact 0x00698710 PostProcessManager::setHDAOSetting
 0x00698730 function PostProcessManager_isEffectAllowed # stdcall(id), ret 4 -> al: false for 0x17 and 0x15c; name ours
 0x00698750 function PostProcessManager_setNon16By9Viewport # fh v3:exact 0x00698890 PostProcessManager::setNon16By9Viewport
+0x00698960 function ShaderParam_CopyToBuffer_00698960 # the same bytes as ShaderParam_CopyToBuffer_00638720 (a second copy); callers 0x00695ba0, 0x006b33c0, 0x006b3660; own name
 0x006989c0 function PostProcessManager_setAllSwitches # thiscall(this, v), ret 4: bytes +0x123b0..+0x123b3 = v; name ours
 0x00698f70 function PostProcessManager_resetCrossFade # thiscall(this): unless +0x123a0, while g_PostProcessManager +0x123a8 == 1: +0x1239c = 0, float +0x12398 = 0; name ours
 0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
