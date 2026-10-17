@@ -8788,6 +8788,7 @@ fn round15_target_lists_match_the_original_on_the_snapshot() {
 }
 
 /// Round 15's small limit-timer setters.
+#[allow(clippy::many_single_char_names)]
 fn round15_limit_timer_setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     for _ in 0..40 {
@@ -8824,7 +8825,7 @@ fn round15_limit_timer_setters_match_the_original_on_the_snapshot() {
 }
 
 /// Round 15's default command-cursor restore.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 fn round15_default_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let lists = alloc(a, b, 4 * 0x40);
