@@ -6,7 +6,7 @@ use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
     accessor, btl, cd, config, container, daps, dtor, files, fixup, heap, instance, math, menu,
-    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -6037,6 +6037,15 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], Some([c0, c1]), at, call_sym);
+    }
+    /// `TODrawMenuPlateXYWHType(x, y, w, h, kind)`.
+    TODrawMenuPlateXYWHType @ 0x008f_5f70 => extern "C" fn to_draw_menu_plate_xywh_type(x: u32, y: u32, w: u32, h: u32, kind: u32) {
+        plate::bridge::to_draw_menu_plate_xywh_type(
+            &mut mem(),
+            [x, y, w, h, kind],
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
+        );
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

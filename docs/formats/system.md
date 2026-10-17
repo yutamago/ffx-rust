@@ -562,3 +562,35 @@ eight copies offset by ±2 over the edge ratio. These are ported; only
 `TODrawScaleButtonIconRGBA` (`0x008f8ee0`) picks the icon for a text
 character, as `TOGetScaleButtonIconWidth` does. `4`..`7` sit 2.0 higher,
 and `@`..`O` stack four direction parts by their low bits.
+
+## UI shapes and menu plates
+
+`TOMkpShapeXYWHUV` (`0x00903bb0`) and `TOMkpShapeXYWHUVC2` (`0x00903ee0`)
+build the quad of a UI shape. The corners are `x, y` and `x + w, y + h`;
+`BeginScissor_XYUV` clips them together with the UVs. The UVs are then
+scaled for the shape's sheet:
+
+- Shapes -1, -3 and -6 divide by the image size of 0x3e80, 0x3e83 or
+  0x3e86.
+- Shape -2 uses 1/2048 and 1/1024; shape -4 (C2 only) uses 1/256.
+- Shapes 0..=0x289 pick sheet 0x3e00, 0x3f00 or 0x3dc0 by range.
+
+For any other shape the original passes a stale stack word as the
+texture; the port passes 0. The quad goes to `graphicDrawUIElement`
+with grey corners, or with the C2 colours.
+
+`TODrawMenuPlateXYWHType` (`0x008f5f70`, module `plate`) draws the menu
+plates of types 1-14. A plate is a stretched sheet image, either three
+shape -4 pieces or a single shape, framed by `TODrawCrossBoxXYWHC2`
+pieces. Every offset goes through the HD UI remap. Its ten kilobytes of
+straight-line x87 code were lifted instruction by instruction:
+
+- x87 values are `f64` at the game's 53-bit precision;
+- dword stores are `f32`;
+- constants are read from the image.
+
+So every piece lands where the original puts it.
+
+`TOMkpShapeXY` (`0x00903a10`) and `TOMkpShapeXYWHC2` (`0x00903b70`) only
+pass their arguments (and grey colours) to `TOAdpEasyShapeXYWHC2`. They
+compute no corners, colours or UVs, so they remain packet glue.

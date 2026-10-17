@@ -13592,6 +13592,74 @@ fn round23_shapes_match_the_original_on_the_snapshot() {
     round23_shapes(&mut a, &mut b, &mut Xorshift(0x4023_0012));
 }
 
+/// Round 23's menu plates over the original remaps, with logging
+/// stand-ins for the shape, frame and panel calls.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round23_plates(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::plate::bridge as p;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let abmap = alloc(a, b, 4);
+    for (i, (sym, n)) in [
+        (0x0090_3ee0u32, 11u8),
+        (0x0090_3bb0, 9),
+        (0x008f_4b20, 6),
+        (0x008f_9c20, 5),
+        (0x008f_4df0, 6),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stand_in8(a, b, 0x40 + 0x80 * i as u32, &logger_args(cursor, n));
+        redirect(a, b, sym, s);
+    }
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&abmap.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x300, &v);
+    redirect(a, b, 0x0064_1060, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(a, b, abmap, rng.next() % 2);
+        let kind = k % 16;
+        let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
+        let args = [
+            fl(rng, 6000, 10.0),
+            fl(rng, 4000, 10.0),
+            fl(rng, 6000, 7.0),
+            fl(rng, 3000, 7.0),
+            kind,
+        ];
+        eax(a, 0x008f_5f70, &args);
+        p::to_draw_menu_plate_xywh_type(b, args, remap, call);
+        same_memory(&format!("menu plate {k} kind {kind}"), a, b);
+    }
+}
+
+#[test]
+fn round23_plates_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round23_plates(&mut a, &mut b, &mut Xorshift(0x4023_0021));
+}
+
+#[test]
+fn round23_plates_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round23_plates(&mut a, &mut b, &mut Xorshift(0x4023_0022));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

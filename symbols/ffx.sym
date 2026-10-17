@@ -10310,8 +10310,8 @@
 0x00903a50 function TOMkpShapeXYC2               # layout: the three unnamed functions between TOMkpShapeXY and TOMkpShapeXYWHUV take the Switch names sorting there, in order (TOMkpShapeXYC2, TOMkpShapeXYDirect, TOMkpShapeXYWHC2); this one passes no width/height (0, 0) to TOAdpEasyShapeXYWHC2, then TOCtrlPkt
 0x00903a80 function TOMkpShapeXYDirect           # layout: second of the three (see TOMkpShapeXYC2)
 0x00903b70 function TOMkpShapeXYWHC2             # layout: third of the three (see TOMkpShapeXYC2)
-0x00903bb0 function TOMkpShapeXYWHUV          # fh v3:exact+call.cs 0x00903bb0 cdecl
-0x00903ee0 function TOMkpShapeXYWHUVC2        # fh v3:exact+call.cs 0x00903ee0 cdecl
+0x00903bb0 function TOMkpShapeXYWHUV          # fh v3:exact+call.cs 0x00903bb0 cdecl; quad x,y..x+w,y+h clipped by BeginScissor_XYUV, UVs scaled for the shape's sheet (-1/-3/-6 image size, -2, 0..0x289 ranges), graphicDrawUIElement(rec, texture, 1, 0, 0)
+0x00903ee0 function TOMkpShapeXYWHUVC2        # fh v3:exact+call.cs 0x00903ee0 cdecl; TOMkpShapeXYWHUV with corner colours c0/c1 and shape -4 (1/256 UVs, sheet 0x3e84)
 0x009042e0 function TOMkpValueFontMClutRight     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008bb278 TOMkpValueFontMClutRight, 2 votes, round 2
 0x00904600 function TOOpenPktbuff             # fh v3:bsim1.00 0x00904600
 0x00904650 function TOInitAddPkt              # fh v3:bsim1.00 0x00904650
