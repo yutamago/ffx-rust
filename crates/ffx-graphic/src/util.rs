@@ -855,8 +855,8 @@ pub mod bridge {
     pub const TEX_ANIM_POS_SET_OLD: u32 = 0x0078_08f0;
 
     /// `TexAnim_PosSet(i, which, v)` (`0x0077e9a0`): by `g_ChrTexAnim[i]`'s
-    /// format (`+0xd`): new (0) `TexAnim_ResetPos`, old (1)
-    /// `tex_anim_pos_set_old` (tail calls: their `eax`); else nothing
+    /// format (`+0xd`): old (0) `tex_anim_pos_set_old`, new (1)
+    /// `TexAnim_ResetPos` (tail calls: their `eax`); else nothing
     /// (`eax` the format - 1).
     pub fn tex_anim_pos_set(h: &mut impl Host, i: u32, which: u32, v: u32) -> u32 {
         use crate::texanim::bridge::CHR_TEXANIM;
@@ -864,8 +864,8 @@ pub mod bridge {
         #[allow(clippy::cast_sign_loss)] // movsx
         let fmt = i32::from(h.read::<i8>(e + 0xd)) as u32;
         match fmt {
-            0 => h.call_sym(TEX_ANIM_RESET_POS, Conv::Cdecl, &[i, which, v]),
-            1 => h.call_sym(TEX_ANIM_POS_SET_OLD, Conv::Cdecl, &[i, which, v]),
+            0 => h.call_sym(TEX_ANIM_POS_SET_OLD, Conv::Cdecl, &[i, which, v]),
+            1 => h.call_sym(TEX_ANIM_RESET_POS, Conv::Cdecl, &[i, which, v]),
             _ => fmt.wrapping_sub(1),
         }
     }
