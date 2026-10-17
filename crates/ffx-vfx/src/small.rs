@@ -19,6 +19,29 @@ pub fn hash_u(bytes: impl IntoIterator<Item = u8>) -> u32 {
     (if h < 0 { h + 10007 } else { h }).cast_unsigned()
 }
 
+/// `pppViewOutCode(x, y)` (`0x00728dd0`): where a projected point lies
+/// against the view rectangle: 1 left of `-8/9` (the `f32` value, as a
+/// double), 2 from `8/9` right, 4 below `-0.5`, 8 from `0.5` up. A NaN
+/// sets no bit.
+#[must_use]
+pub fn ppp_view_out_code(x: f32, y: f32) -> u32 {
+    const EDGE_X: f64 = 0.888_888_895_511_627_2;
+    let (x, y) = (f64::from(x), f64::from(y));
+    let mut code = if x < -EDGE_X {
+        1
+    } else if x >= EDGE_X {
+        2
+    } else {
+        0
+    };
+    if y < -0.5 {
+        code |= 4;
+    } else if y >= 0.5 {
+        code |= 8;
+    }
+    code
+}
+
 /// The helpers over game memory.
 pub mod bridge {
     use ffx_bridge::{Global, Mem};

@@ -10292,3 +10292,42 @@ fn node_requeue_all_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn view_out_code_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_8dd0);
+        let edges = [
+            0.888_888_9f32,
+            -0.888_888_9,
+            0.888_888_8,
+            -0.888_888_8,
+            0.5,
+            -0.5,
+            0.499_999_97,
+            -0.499_999_97,
+            0.0,
+            -0.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ];
+        for _ in 0..4000 {
+            let pick = |rng: &mut Xorshift| -> f32 {
+                match rng.below(3) {
+                    0 => edges[rng.below(13) as usize],
+                    1 => f32::from_bits(finite(rng)),
+                    _ => (rng.below(4000) as f32 - 2000.0) / 1000.0,
+                }
+            };
+            let (x, y) = (pick(&mut rng), pick(&mut rng));
+            p.check(
+                "pppViewOutCode",
+                0x0072_8dd0,
+                &[x.to_bits(), y.to_bits()],
+                |_| Some(small::ppp_view_out_code(x, y)),
+            );
+        }
+    }
+}

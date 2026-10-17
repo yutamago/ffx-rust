@@ -3520,6 +3520,7 @@
 0x007287b0 function JobSchedule_pppPart_fillBuffer_drawShp_007287b0 # fh v3:exact 0x007288a0
 0x007289d0 function pppNull                   # a lone ret: the step, set-up and draw of 69 program table entries (the pppop_* records and others)
 0x00728a60 function vfx_vec3_scale3           # (dst, v, sx, sy, sz) dst.xyz = v.xyz * (sx, sy, sz)
+0x00728dd0 function pppViewOutCode           # ours: (x f32, y f32) -> outcode: 1 x < -8/9, 2 x >= 8/9 (the f32 8/9 as a double, 0x00b514e0/e8), 4 y < -0.5, 8 y >= 0.5; NaN none; pppCheckViewCylinder calls it for four corners
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)

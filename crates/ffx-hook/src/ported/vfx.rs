@@ -3216,6 +3216,10 @@ ported! {
         et::bridge::opu_eff_part_index(&mem(), unit)
     }
 
+    /// `pppViewOutCode(x, y)`.
+    pppViewOutCode @ 0x0072_8dd0 => extern "C" fn ppp_view_out_code(x: f32, y: f32) -> u32 {
+        small::ppp_view_out_code(x, y)
+    }
     /// `hashU(s)`.
     hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {
         small::bridge::hash_u_at(&mem(), s)
