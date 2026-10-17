@@ -3207,6 +3207,10 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a short argument
         op::bridge::opu_id_list_add(&mut mem(), unit, id as u16)
     }
+    /// `op_et_chr_count_same_no_007feb20(h)`.
+    op_et_chr_count_same_no_007feb20 @ 0x007f_eb20 => extern "C" fn op_et_chr_count_same_no(h: u32) -> u32 {
+        et::bridge::op_et_chr_count_same_no(&mem(), h)
+    }
     /// `op_et_chr_index_by_no(no)`.
     op_et_chr_index_by_no @ 0x007f_eaa0 => extern "C" fn op_et_chr_index_by_no(no: u32) -> i32 {
         et::bridge::op_et_chr_index_by_no(&mem(), no)

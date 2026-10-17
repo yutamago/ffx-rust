@@ -6315,6 +6315,7 @@
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007fead0 function op_et_chr_slot_007fead0      # ours: (chr) -> the low byte when any of the top 4 bits is set, else the first g_EtChr record whose u16 +0xe is the low byte, else the first with a handle, else -1; caller 0x007feba0
+0x007feb20 function op_et_chr_count_same_no_007feb20 # ours: (h) -> how many of the 240 g_EtChr records share the character number (+4) of handle h's record (itself included), 0 for a null or unknown handle; caller op_et_monster_free
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
 0x007fed60 function op_et_eff_index           # (id) -> the first g_EtEff record with this ID, or -1
 0x007fedf0 function opus_chr_handles_clear    # () the 240 g_EtChrHandles zeroed

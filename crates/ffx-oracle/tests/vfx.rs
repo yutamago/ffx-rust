@@ -10331,3 +10331,34 @@ fn view_out_code_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn et_chr_count_same_no_matches_the_original() {
+    use et::bridge as e;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_eb20);
+        let chr = p.sym(e::CHR.sym);
+        for round in 0..1000 {
+            // the snapshot's own table first
+            if !p.snapshot() || round > 0 {
+                for i in 0..e::CHRS {
+                    let h = if rng.chance(50) {
+                        0
+                    } else {
+                        1 + rng.below(300)
+                    };
+                    p.set(chr + 0x20 * i, h);
+                    p.set(chr + 0x20 * i + 4, rng.below(8));
+                }
+            }
+            let h = if rng.chance(70) {
+                p.get(chr + 0x20 * rng.below(e::CHRS))
+            } else {
+                rng.pick(&[0u32, 0x1234, u32::MAX])
+            };
+            p.check("0x007feb20", 0x007f_eb20, &[h], |m| {
+                Some(e::op_et_chr_count_same_no(m, h))
+            });
+        }
+    }
+}
