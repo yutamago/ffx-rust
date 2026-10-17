@@ -7871,3 +7871,113 @@ fn round12b_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn round12c_matches_the_original() {
+    for mut t in twins() {
+        round12c_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn round12c_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0012_c12c);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    // Sg_MemMoveWork: a non-zero result also sets *moved; its pointers are
+    // partly the caller's stack, so only the call is logged
+    let ret = t.alloc(4);
+    let mut pre = vec![0xa1];
+    pre.extend(ret.to_le_bytes());
+    pre.extend([
+        0x85, 0xc0, 0x74, 0x0a, 0x8b, 0x4c, 0x24, 0x08, 0xc7, 0x01, 1, 0, 0, 0,
+    ]);
+    let (mw_code, mw_ret) = fk.fake_code_idxs(t, &pre, 1, &[]);
+    let at = t.a.rebase(0x0083_c350);
+    let mut jmp = vec![0xe9];
+    jmp.extend(mw_code.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    let mut rets = vec![];
+    for (sym, id, n) in [
+        (0x0083_3770u32, 2u32, 2u8),
+        (0x0082_6980, 3, 2),
+        (0x0083_9890, 4, 2),
+        (0x0083_cdd0, 5, 1),
+        (0x0077_e9f0, 6, 1),
+        (0x0077_ea10, 7, 2),
+        (0x0083_ca20, 8, 2),
+        (0x0083_c940, 9, 2),
+        (0x0080_3610, 10, 0),
+        (0x0083_7050, 11, 0),
+        (0x0083_1b70, 12, 0),
+    ] {
+        rets.push(fk.fake(t, sym, id, n));
+    }
+    let trigger = t.a.rebase(0x012f_bda0);
+    let (count, array) = (t.a.rebase(0x023c_44e0), t.a.rebase(0x023c_44e4));
+    for round in 0..32u32 {
+        fk.reset(t);
+        for &r in &rets {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(rets[9], u32::from(rng.next().is_multiple_of(3)));
+        let v = if rng.next().is_multiple_of(2) {
+            0
+        } else {
+            rng.next() | 1
+        };
+        t.put_u32(mw_ret, v);
+        t.put_u32(ret, v);
+        t.put(trigger, &[u8::from(round % 8 != 7)]);
+        let n = 1 + rng.next() % 3;
+        let chrs = t.alloc(0x880 * 3);
+        t.put_u32(count, n);
+        t.put_u32(array, chrs);
+        for k in 0..n {
+            let chr = chrs + 0x880 * k;
+            for w in 0..0x220 {
+                t.put_u32(chr + 4 * w, rng.next());
+            }
+            t.put(chr + 2, &[u8::from(!rng.next().is_multiple_of(4))]);
+            t.put_u32(
+                chr + 0x198,
+                rng.next()
+                    & 0x0c00
+                    & if rng.next().is_multiple_of(3) {
+                        u32::MAX
+                    } else {
+                        0
+                    },
+            );
+            let hdr = t.alloc(8);
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(hdr + 6, &((rng.next() % 3) as u16).to_le_bytes());
+            t.put_u32(chr + 0x1c0, hdr);
+            let models = t.alloc(0x38 * 3);
+            t.put_u32(
+                chr + 0x1bc,
+                if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    models
+                },
+            );
+            for off in [0x6fcu32, 0x704] {
+                t.put_u32(chr + off, rng.next() % 2);
+            }
+        }
+        let scratch = t.alloc(0xc);
+        let at = t.a.rebase(0x0082_6fa0);
+        let ra = t.a.call(at, Conv::Cdecl, &[]).unwrap();
+        let rb = c::ch_mem_move(&mut t.b, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_MemMove {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, 0xc).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_MemMove {round} memory",
+            t.name
+        );
+    }
+}

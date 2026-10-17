@@ -1822,4 +1822,9 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_calc_element(&mut mem(), chr, at, &mut c);
     }
+    /// `Ch_MemMove()`: the whole function (the dump splits it at the early
+    /// return).
+    Ch_MemMove @ 0x0082_6fa0 => extern "C" fn ch_mem_move() -> u32 {
+        c::ch_mem_move(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

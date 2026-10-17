@@ -1315,6 +1315,137 @@ pub mod bridge {
         let inst: u32 = mem.read(chr + 0x830);
         call(mem, mem.rebase(SET_VISIBLE), &[inst, 1])
     }
+
+    /// The callees `Ch_MemMove` adds: `Ch_FunctionHistory(file, line)`
+    /// (`0x00833770`), `Ch_ElemRemapping(chr, delta)` (`0x00826980`),
+    /// `Ch_MotionRemappingFcurve(chr, delta)` (`0x00839890`),
+    /// `Ch_TextureReMapping(chr)` (`0x0083cdd0`), `TexAnim_GetWork(i)`
+    /// (`0x0077e9f0`), `texanim_malloc_memory_set(i, delta)` (`0x0077ea10`),
+    /// `Ch_ClutMapping(chr, copy)` (`0x0083ca20`), `Ch_ClutEnable(chr, on)`
+    /// (`0x0083c940`), `op_mdc_mem_transfer()` (`0x00803610`),
+    /// `Ch_MemMoveEventMgrp()` (`0x00837050`), `Sg_PLightGetPtr()`
+    /// (`0x00831b70`).
+    pub const FUNCTION_HISTORY: u32 = 0x0083_3770;
+    pub const ELEM_REMAPPING: u32 = 0x0082_6980;
+    pub const MOTION_REMAPPING_FCURVE: u32 = 0x0083_9890;
+    pub const TEXTURE_REMAPPING: u32 = 0x0083_cdd0;
+    pub const TEX_ANIM_GET_WORK: u32 = 0x0077_e9f0;
+    pub const TEX_ANIM_MEMORY_SET: u32 = 0x0077_ea10;
+    pub const CLUT_MAPPING: u32 = 0x0083_ca20;
+    pub const CLUT_ENABLE_FN: u32 = 0x0083_c940;
+    pub const MDC_MEM_TRANSFER: u32 = 0x0080_3610;
+    pub const MEM_MOVE_EVENT_MGRP: u32 = 0x0083_7050;
+    pub const PLIGHT_GET_PTR: u32 = 0x0083_1b70;
+    /// `g_ChrMemMoveTrigger` (`u8`) and the source file name
+    /// `Ch_FunctionHistory` gets.
+    pub const MEM_MOVE_TRIGGER: u32 = 0x012f_bda0;
+    pub const MEM_MOVE_FILE: u32 = 0x00b5_9520;
+    /// Bytes of scratch `ch_mem_move` needs: the moved flag (`[ebp-4]`)
+    /// and a work pointer (`[ebp-0xc]`).
+    pub const MEM_MOVE_SCRATCH: u32 = 0xc;
+
+    /// `Ch_MemMove()` (`0x00826fa0`, one function; the dump splits it at
+    /// the early return): with [`MEM_MOVE_TRIGGER`] set, moves each active
+    /// character's heap blocks that `Sg_MemMoveWork(&ptr, &moved)` moves,
+    /// fixing up what points into them: elements `+0x328`
+    /// (`Ch_ElemRemapping`), curves `+0x748` (`Ch_MotionRemappingFcurve`),
+    /// the model table `+0x1bc`, `+0x32c` and each model's `+8`, `+4`,
+    /// `+0xc`, the texture list `+0x6dc` (`Ch_TextureReMapping`), the
+    /// texture animation's work (`+0x700`) and the cluts `+0x704`
+    /// (`Ch_ClutMapping`, `Ch_ClutEnable(+0x708)`). Characters with flag
+    /// bits 10, 11 of `+0x198` are skipped. A character that moved
+    /// anything ends the pass (`op_mdc_mem_transfer`): 1. Then the event
+    /// motion groups (`Ch_MemMoveEventMgrp`) and the point lights
+    /// (`Sg_PLightGetPtr`): 1 when something moved; with nothing left the
+    /// trigger is cleared: 0. (`dbgPrintf` calls are left out: it is
+    /// empty.)
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_mem_move<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let moved = scratch + 0xc - 4;
+        let work = scratch;
+        mem.write(moved, 0u32);
+        if mem.read::<u8>(mem.rebase(MEM_MOVE_TRIGGER)) == 0 {
+            return 0;
+        }
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let file = r(mem, MEM_MOVE_FILE);
+        call(mem, r(mem, FUNCTION_HISTORY), &[file, 0xb52]);
+        let mw = r(mem, crate::motion::bridge::MEM_MOVE_WORK);
+        let end = |mem: &M| {
+            let n = crate::handle::bridge::CHR_COUNT.get(mem).cast_unsigned();
+            crate::handle::bridge::CHR_ARRAY
+                .get(mem)
+                .wrapping_add(n.wrapping_mul(0x880))
+        };
+        mem.write(moved, 0u32);
+        let mut chr = crate::handle::bridge::CHR_ARRAY.get(mem);
+        let mut stop = end(mem);
+        while chr != stop {
+            if mem.read::<u8>(chr + 2) == 0 || mem.read::<u32>(chr + 0x198) & 0xc00 != 0 {
+                chr = chr.wrapping_add(0x880);
+                continue;
+            }
+            let d = call(mem, mw, &[chr + 0x328, moved]);
+            if d != 0 {
+                call(mem, r(mem, ELEM_REMAPPING), &[chr, d]);
+            }
+            let d = call(mem, mw, &[chr + 0x748, moved]);
+            if d != 0 {
+                call(mem, r(mem, MOTION_REMAPPING_FCURVE), &[chr, d]);
+            }
+            call(mem, mw, &[chr + 0x1bc, moved]);
+            call(mem, mw, &[chr + 0x32c, moved]);
+            if mem.read::<u32>(chr + 0x1bc) != 0 {
+                let mut i = 0u32;
+                while i < u32::from(mem.read::<u16>(mem.read::<u32>(chr + 0x1c0).wrapping_add(6))) {
+                    for off in [8u32, 4, 0xc] {
+                        let m = mem.read::<u32>(chr + 0x1bc).wrapping_add(0x38 * i);
+                        call(mem, mw, &[m.wrapping_add(off), moved]);
+                    }
+                    i += 1;
+                }
+            }
+            if call(mem, mw, &[chr + 0x6dc, moved]) != 0 {
+                call(mem, r(mem, TEXTURE_REMAPPING), &[chr]);
+            }
+            if mem.read::<u32>(chr + 0x6fc) != 0 {
+                let anim: u32 = mem.read(chr + 0x700);
+                let w = call(mem, r(mem, TEX_ANIM_GET_WORK), &[anim]);
+                mem.write(work, w);
+                let d = call(mem, mw, &[work, moved]);
+                if d != 0 {
+                    let anim: u32 = mem.read(chr + 0x700);
+                    call(mem, r(mem, TEX_ANIM_MEMORY_SET), &[anim, d]);
+                }
+            }
+            if mem.read::<u32>(chr + 0x704) != 0 {
+                call(mem, mw, &[chr + 0x704, moved]);
+                call(mem, r(mem, CLUT_MAPPING), &[chr, 0]);
+                let on = i32::from(mem.read::<i8>(chr + 0x708)).cast_unsigned();
+                call(mem, r(mem, CLUT_ENABLE_FN), &[chr, on]);
+            }
+            if mem.read::<u32>(moved) != 0 {
+                call(mem, r(mem, MDC_MEM_TRANSFER), &[]);
+                return 1;
+            }
+            stop = end(mem);
+            chr = chr.wrapping_add(0x880);
+        }
+        call(mem, r(mem, FUNCTION_HISTORY), &[file, 0xb85]);
+        if call(mem, r(mem, MEM_MOVE_EVENT_MGRP), &[]) != 0 {
+            return 1;
+        }
+        let p = call(mem, r(mem, PLIGHT_GET_PTR), &[moved]);
+        if call(mem, mw, &[p, moved]) != 0 {
+            return 1;
+        }
+        mem.write(r(mem, MEM_MOVE_TRIGGER), 0u8);
+        0
+    }
 }
 
 #[cfg(test)]
