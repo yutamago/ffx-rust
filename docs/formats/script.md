@@ -538,10 +538,11 @@ and `0xc025`. `0xc03b` and `0xc03c` turned out to be the debug cheats
 `MsDebugFullItem`/`MsDebugFullCommand` and are marked instead. The
 debug ones (`0x70b1`, `0xb002`, `0xc00b`, `0xc00c`, `0xc018`, `0xc022`,
 `0xc028`, `0xc02a`, `0xc03b`, `0xc03c`, `0xc056`, `0xc057`, `0xc05b`)
-are marked in the table. `0x5065` never completes in the oracle: its
-`Ch_RomReadEventMGRP` asks the file system for the group's size first
-(`*0x02310c54`, for every input), which hashes the name through
-`ADVAPI32!CryptCreateHash`, an import the emulator does not stub.
+are marked in the table. `0x5065` stops in most oracle calls (all on
+the field snapshot): its `Ch_RomReadEventMGRP` asks the file system for
+the group's size first (`*0x02310c54`, whatever the input), which
+hashes the name through `ADVAPI32!CryptCreateHash`, an import the
+emulator does not stub; on the battle snapshot some calls get past it.
 
 `ffx_script::vm::bridge::helpers` (round 13) has VM helpers that are
 not natives: `Script_StopTurn` (`0x00863fe0`, the turn-block twin of
