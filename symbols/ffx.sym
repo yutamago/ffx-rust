@@ -6143,6 +6143,7 @@
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
+0x00808b70 function Vec4Max_00808b70           # ours: (dst, src, x, y, z, w): each component the larger of src's and the argument's (fcom: the argument when unordered); 65 functions above it
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
 0x00808cf0 function opu_ffxlight                 # callees: its named callees match the Switch 0x7100403180 opu_ffxlight's (similarity 1.00: FFXVu0AddVector, FFXVu0CopyVector, FFXVu0Normalize, FFXVu0ScaleVector, FFXVu0SubVector); symbols from Fahrenheit's server export

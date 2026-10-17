@@ -6955,6 +6955,13 @@ fn round10c_helpers_match_the_original() {
             p.check("op_random_per", 0x007e_33e0, &args, |o| {
                 Some(rand::bridge::op_random_per(o, args))
             });
+            // the two jumps to them
+            p.check("op_random_per_call", 0x007e_5d40, &args, |o| {
+                Some(rand::bridge::op_random_per(o, args))
+            });
+            p.check("op_irandom_p", 0x007e_5d50, &args, |o| {
+                Some(rand::bridge::op_irandom_core(o, args))
+            });
         }
         // opus_prog_off
         let cells = p.alloc(8);
@@ -7006,6 +7013,103 @@ fn round10c_helpers_match_the_original() {
             p.check("opus_prog_off", 0x0080_14c0, &[list, no], |o| {
                 op::bridge::opus_prog_off(o, list, no, &mut call_original);
                 None
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10d_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_df70);
+        for (sym, words) in [
+            (0x007f_e920u32, &[0u8][..]),
+            // the original opus_prog_off runs: it takes the unit out of
+            // its index list, which the caller's loop relies on
+            (0x0064_5280, &[0, 0]),
+            (0x0080_0d10, &[0, 0]),
+            // yonExtMapDeleteId (0x00807830) is a bare `ret`, left alone
+            (0x0062_f500, &[0, 0, 0]),
+        ] {
+            deref_recorder(&mut p, sym, words);
+        }
+        let eff = p.sym(et::bridge::EFF.sym);
+        let list = p.alloc(0x100);
+        let units = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let (a, b, oef) = (p.alloc(0x20), p.alloc(0x20), p.alloc(0x100));
+        for _ in 0..1500 {
+            // opu_unit_free_by_oef2
+            for i in 0..512u32 {
+                p.set(eff + 0x20 * i + 0x1c, u8::try_from(rng.below(20)).unwrap());
+                p.set(eff + 0x20 * i, rng.next());
+            }
+            p.fill(units, 0x1000, &mut rng);
+            p.set(p.sym(0x012a_12fc), 0u32);
+            p.set(list + 0x38, 0x20u16);
+            for i in 0..16 {
+                let u = units + 0x100 * i;
+                p.set(u + 0xbc, 0u32);
+                p.set(u + 0x16, 0u8);
+                p.set(u + 0x1e, u8::try_from(rng.below(6)).unwrap());
+            }
+            for i in 0..16 {
+                p.set(list + 0x60 + 4 * i, 0x100 + rng.below(6));
+            }
+            p.set(list + 0x20, units);
+            for (k, at) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+                let li = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, li);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(li + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                }
+                p.set(li + 2 * n, 0xffffu16);
+            }
+            let o = rng.pick(&[0u32, 0x100, 0x101, 0x102, 0x105, 0x200]);
+            p.check("opu_unit_free_by_oef2", 0x007f_df70, &[list, o], |m| {
+                et::bridge::opu_unit_free_by_oef2(m, list, o, &mut call_original);
+                None
+            });
+            // Vec4Max
+            let k = [rng.float(), rng.float(), rng.float(), rng.float()];
+            for i in 0..4 {
+                let x = if rng.chance(20) {
+                    k[i as usize]
+                } else {
+                    rng.float()
+                };
+                p.set(a + 4 * i, x);
+            }
+            p.check(
+                "Vec4Max",
+                0x0080_8b70,
+                &[b, a, k[0], k[1], k[2], k[3]],
+                |m| {
+                    vec::bridge::vec4_max(m, b, a, k);
+                    None
+                },
+            );
+            // op_oef2_a_set
+            p.fill(oef, 0x100, &mut rng);
+            let kind = rng.below(10);
+            p.set(oef + 4 * kind, 0x80 - 4 * rng.below(4));
+            p.set(
+                oef + 0x40 + 2 * kind,
+                rng.pick(&[0u16, 1, 4, 5, 0xfe, 0x1ff]),
+            );
+            let i = rng.pick(&[0u32, 1, 3, 4, 7, u32::MAX]);
+            let v = rng.next();
+            p.check("op_oef2_a_set", 0x007e_38a0, &[oef, kind, i, v], |m| {
+                Some(op::bridge::op_oef2_a_set(
+                    m,
+                    oef,
+                    kind,
+                    i,
+                    v,
+                    &mut call_original,
+                ))
             });
         }
     }

@@ -1193,6 +1193,26 @@ ported! {
     op_random_per @ 0x007e_33e0 => extern "C" fn op_random_per(n: u32, b: u32, c: u32, d: u32) -> u32 {
         rand::bridge::op_random_per(&mut mem(), [n, b, c, d])
     }
+    /// `opu_unit_free_by_oef2(list, oef)`.
+    opu_unit_free_by_oef2 @ 0x007f_df70 => extern "C" fn opu_unit_free_by_oef2(list: u32, oef: u32) {
+        et::bridge::opu_unit_free_by_oef2(&mut mem(), list, oef, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_a_set(oef, kind, i, v)`.
+    op_oef2_a_set @ 0x007e_38a0 => extern "C" fn op_oef2_a_set(oef: u32, kind: u32, i: u32, v: u32) -> u32 {
+        op::bridge::op_oef2_a_set(&mut mem(), oef, kind, i, v, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Vec4Max_00808b70(dst, src, x, y, z, w)`.
+    Vec4Max_00808b70 @ 0x0080_8b70 => extern "C" fn vec4_max(dst: u32, src: u32, x: u32, y: u32, z: u32, w: u32) {
+        vec::bridge::vec4_max(&mut mem(), dst, src, [x, y, z, w]);
+    }
+    /// `op_random_per_call_007e5d40(n, b, c, d)`: a jump to `op_random_per`.
+    op_random_per_call_007e5d40 @ 0x007e_5d40 => extern "C" fn op_random_per_call(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_random_per(&mut mem(), [n, b, c, d])
+    }
+    /// `op_irandom_p(n, b, c, d)`: a jump to `op_irandom_core_007e35c0`.
+    op_irandom_p @ 0x007e_5d50 => extern "C" fn op_irandom_p(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

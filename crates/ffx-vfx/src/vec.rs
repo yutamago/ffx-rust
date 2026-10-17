@@ -47,4 +47,15 @@ pub mod bridge {
         }
         restore_vf00(mem);
     }
+
+    /// `Vec4Max_00808b70(dst, src, x, y, z, w)` (`0x00808b70`): each
+    /// component of `dst` is `src`'s when the argument is below it, else
+    /// the argument (so a NaN on either side gives the argument).
+    pub fn vec4_max(mem: &mut impl Mem, dst: u32, src: u32, k: [u32; 4]) {
+        for (i, a) in (0u32..).zip(k) {
+            let s: u32 = mem.read(src + 4 * i);
+            let below = f32::from_bits(a) < f32::from_bits(s);
+            mem.write(dst + 4 * i, crate::x87::load(if below { s } else { a }));
+        }
+    }
 }

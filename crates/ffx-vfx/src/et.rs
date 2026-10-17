@@ -857,4 +857,66 @@ pub mod bridge {
         DRAW_FLAGS2.ptr(mem).at(k).set(mem, 0);
         free.cast_signed()
     }
+
+    /// `opu_unit_free_by_oef2(list, oef)` (`0x007fdf70`): the oef2 slot `k`
+    /// of `oef` in the list (`+0x60`, 16 pointers; nothing when absent or
+    /// `oef` is null) is released: every `g_EtEff` record of group `k`
+    /// (`+0x1c`) freed (`opu_eff_free_by_id(+0)`), every slot holding
+    /// `oef` cleared, and every unit of group `k` (`+0x1e`) in the index
+    /// lists `+0x10`, `+0x14`, `+0x18` shut down (`opus_prog_off`,
+    /// `opus_draw_off`, `yonExtMapDeleteId`; the list entry is read again
+    /// in place, as `opus_prog_off` moves the rest down). Callees through
+    /// `call`.
+    pub fn opu_unit_free_by_oef2<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        oef: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if oef == 0 {
+            return;
+        }
+        let slots = list.wrapping_add(0x60);
+        let Some(k) = (0..16u32).find(|&i| mem.read::<u32>(slots.wrapping_add(4 * i)) == oef)
+        else {
+            return;
+        };
+        #[allow(clippy::cast_possible_truncation)] // below 16
+        let group = k as u8;
+        let free = Global::<u32>::new(0x007f_e920).ptr(mem).addr;
+        for i in 0..EFFS {
+            let e = EFF.ptr(mem).at(i).addr;
+            if mem.read::<u8>(e + 0x1c) == group {
+                let id: u32 = mem.read(e);
+                call(mem, free, &[id]);
+            }
+        }
+        for i in 0..16u32 {
+            let at = slots.wrapping_add(4 * i);
+            if mem.read::<u32>(at) == oef {
+                mem.write(at, 0u32);
+            }
+        }
+        let calls =
+            [0x0080_14c0u32, 0x0080_0d10, 0x0080_7830].map(|f| Global::<u32>::new(f).ptr(mem).addr);
+        for at in [0x10u32, 0x14, 0x18] {
+            let mut e: u32 = mem.read(list.wrapping_add(at));
+            loop {
+                let u: u16 = mem.read(e);
+                if u & 0x8000 != 0 {
+                    break;
+                }
+                let no = i32::from(u.cast_signed()).cast_unsigned();
+                let base: u32 = mem.read(list.wrapping_add(0x20));
+                if mem.read::<u8>(no.wrapping_shl(8).wrapping_add(base).wrapping_add(0x1e)) == group
+                {
+                    call(mem, calls[0], &[list, u32::from(u)]);
+                    call(mem, calls[1], &[list, u32::from(u)]);
+                    call(mem, calls[2], &[no]);
+                    e = e.wrapping_sub(2);
+                }
+                e = e.wrapping_add(2);
+            }
+        }
+    }
 }

@@ -1703,4 +1703,37 @@ pub mod bridge {
         let n: u16 = mem.read(heap.wrapping_sub(2));
         mem.write(heap.wrapping_sub(2), n.wrapping_sub(1));
     }
+
+    /// `op_oef2_a_set(oef, kind, i, v)` (`0x007e38a0`): word `i` of the
+    /// oef2 table `kind` (at `oef + oef[kind]`) set to `v` when `i` is
+    /// below its count (`u16 +0x40 + 2 kind`) rounded up to 4 in the low
+    /// byte; kinds 2, 3 and 6 (and an empty table) are left alone.
+    /// Returns 1 when it wrote. Kind 8 is logged through `dbgPrintf`
+    /// (`0x00b580c8`, `i`, `oef +0x20`; through `call`) first.
+    pub fn op_oef2_a_set<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        kind: u32,
+        i: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if kind == 8 {
+            let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+            let msg = Global::<u32>::new(0x00b5_80c8).ptr(mem).addr;
+            let w: u32 = mem.read(oef.wrapping_add(0x20));
+            call(mem, f, &[msg, i, w]);
+        }
+        if matches!(kind, 2 | 3 | 6) {
+            return 0;
+        }
+        let n =
+            u32::from(mem.read::<u16>(oef.wrapping_add(kind.wrapping_mul(2)).wrapping_add(0x40)));
+        if n == 0 || (n.wrapping_add(3) & 0xfc).cast_signed() <= i.cast_signed() {
+            return 0;
+        }
+        let t: u32 = mem.read(oef.wrapping_add(kind.wrapping_mul(4)));
+        mem.write(t.wrapping_add(i.wrapping_mul(4)).wrapping_add(oef), v);
+        1
+    }
 }
