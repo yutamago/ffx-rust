@@ -1340,6 +1340,16 @@ ported! {
     graphicCharacterLightingSetLightMatrix @ 0x0063_cb80 => extern "C" fn set_light_matrix(list: u32, dirs: u32, colours: u32) {
         ut::set_light_matrix(&mut mem(), list, dirs, colours);
     }
+
+    // ---- round 17 ----
+    /// `graphicCharacterInstanceSetBTUFadeCenter(chr, axis, center)`.
+    graphicCharacterInstanceSetBTUFadeCenter @ 0x0063_b5d0 => extern "C" fn set_btu_fade_center(chr: u32, axis: u32, center: u32) {
+        mt::set_btu_fade_center(&mut mem(), chr, axis, f32::from_bits(center));
+    }
+    /// `graphicCharacterLightingSetShadeCoeff_debug(list)`.
+    graphicCharacterLightingSetShadeCoeff_debug @ 0x0063_cec0 => extern "C" fn set_shade_coeff_debug(list: u32) {
+        ut::set_shade_coeff_debug(&mut mem(), list);
+    }
 }
 
 /// A singleton's pointer.

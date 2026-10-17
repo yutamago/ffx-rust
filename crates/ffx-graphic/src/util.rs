@@ -1640,4 +1640,57 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    // ---- round 17 ----
+
+    /// `PhyreScene_getCurrentLevelNameHash`, the lighting's
+    /// `setShadeCoeff` and `resetShadeCoeff`, the tweak utility's getter
+    /// and `setShadeCoeff_dbgHook`.
+    pub const SCENE_GET_LEVEL_HASH: u32 = 0x0065_de90;
+    pub const LIGHTING_SET_SHADE_COEFF: u32 = 0x006a_aef0;
+    pub const LIGHTING_RESET_SHADE_COEFF: u32 = 0x006a_afa0;
+    pub const LIGHTING_TWEAK_GET_INSTANCE: u32 = 0x006a_6e40;
+    pub const LIGHTING_TWEAK_SET_SHADE_COEFF: u32 = 0x006a_afc0;
+    /// The levels whose characters get a shade coefficient of 1.
+    pub const FLAT_SHADE_LEVELS: [u32; 3] = [0x226d, 0x1739, 0x869];
+
+    /// `graphicCharacterLightingSetShadeCoeff_debug(list)` (`0x0063cec0`):
+    /// each instance's shade coefficient: 1 on three levels
+    /// ([`FLAT_SHADE_LEVELS`], by the current level hash), else the
+    /// default (`resetShadeCoeff`); then the tweak utility's debug hook
+    /// `(inst, 0.0, 0)`.
+    pub fn set_shade_coeff_debug(h: &mut impl Host, list: u32) {
+        use crate::scene::bridge::SCENE;
+        if list == 0 {
+            return;
+        }
+        let scene = SCENE.get(h);
+        let hash = h.call_sym(SCENE_GET_LEVEL_HASH, Conv::Thiscall(scene), &[]);
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+            if FLAT_SHADE_LEVELS.contains(&hash) {
+                h.call_sym(
+                    LIGHTING_SET_SHADE_COEFF,
+                    Conv::Thiscall(lighting),
+                    &[inst, 1f32.to_bits()],
+                );
+            } else {
+                h.call_sym(
+                    LIGHTING_RESET_SHADE_COEFF,
+                    Conv::Thiscall(lighting),
+                    &[inst],
+                );
+            }
+            let tweak = h.call_sym(LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, &[]);
+            h.call_sym(
+                LIGHTING_TWEAK_SET_SHADE_COEFF,
+                Conv::Thiscall(tweak),
+                &[inst, 0, 0],
+            );
+            i += 1;
+        }
+    }
 }

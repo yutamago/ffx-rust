@@ -2682,6 +2682,7 @@
 0x006aad00 function Phyre_CharacterLighting_setMapIdFlagChanged # fh switch:bsim1.00 0x7100253340 Phyre::CharacterLighting::setMapIdFlagChanged
 0x006aaea0 function Phyre_CharacterLighting_setRotation # layout+callees: sorts between Phyre_CharacterLighting_setMapIdFlagChanged and Phyre_CharacterLighting_setShadeCoeff, and its named callees match the Switch 0x7100252910 Phyre_CharacterLighting_setRotation's (similarity 1.00: Phyre_CharacterLighting_applyRotation); symbols from Fahrenheit's server export
 0x006aaef0 function Phyre_CharacterLighting_setShadeCoeff # fh v3:exact 0x006ab040 Phyre::CharacterLighting::setShadeCoeff
+0x006aafa0 function Phyre_CharacterLighting_resetShadeCoeff # thiscall(lighting, inst): setShadeCoeff(inst, the default 0x006a8c40 returns in ST0); graphicCharacterLightingSetShadeCoeff_debug's call outside its three levels; name ours
 0x006aafc0 function Phyre_CharacterLightingTweakUtil_setShadeCoeff_dbgHook # fh v3:exact 0x006ab110 Phyre::CharacterLightingTweakUtil::setShadeCoeff_dbgHook
 0x006ab010 function Phyre_CharacterLighting_setShadeColor # fh v3:exact 0x006ab160 Phyre::CharacterLighting::setShadeColor
 0x006abf40 function MorphManager_GetInstance  # fh v3:bsim1.00 0x006ac090 MorphManager::GetInstance

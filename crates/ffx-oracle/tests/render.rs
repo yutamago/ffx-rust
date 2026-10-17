@@ -6166,3 +6166,133 @@ fn snapshot_round16_matches_the_original() {
         round16_case(&mut t, &mut rng, round % 2, &what);
     }
 }
+
+// ---- round 17 ----
+
+/// Writes a `ShaderParams_FindByName` (`thiscall(shader, name)`, `ret 4`)
+/// over the original that answers by the name's address: `params` pairs
+/// a name (image address) with the parameter it finds; others find 0.
+fn stub_find_param(t: &mut Twins, params: &[(u32, u32)]) {
+    use ffx_graphic::material::bridge as mt;
+    let at = t.rebase(mt::FIND_PARAMETER);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    for &(name, param) in params {
+        c.push(0x3d);
+        c.extend(t.rebase(name).to_le_bytes()); // cmp eax, name
+        c.extend([0x75, 0x08]); // jne next
+        c.push(0xb8);
+        c.extend(param.to_le_bytes()); // mov eax, param
+        c.extend([0xc2, 0x04, 0x00]); // ret 4
+    }
+    c.extend([0x31, 0xc0, 0xc2, 0x04, 0x00]); // xor eax, eax; ret 4
+    t.write(at, &c);
+}
+
+fn round17_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::material::bridge as mt;
+    use ffx_graphic::util::bridge as ut;
+    if case == 0 {
+        let (list, _) = build_material_list(t, rng, 0x30);
+        t.stub_sym(
+            mt::CH_GET_CHR_RENDER_INSTANCE,
+            Conv::Cdecl,
+            1,
+            if rng.chance(8) { 0 } else { list },
+        );
+        let mut params = Vec::new();
+        for name in [
+            mt::NAME_FADE_BASIC_ALPHA,
+            mt::NAME_FADE_Y_CENTER,
+            mt::NAME_FADE_Z_CENTER,
+        ] {
+            if !rng.chance(5) {
+                let fits = !rng.chance(5);
+                let p = build_param(t, rng, 0x30, 4, fits);
+                params.push((name, p));
+            }
+        }
+        stub_find_param(t, &params);
+        let axis = [0, 1, 2, rng.next()][rng.below(4) as usize];
+        let center = rng.float();
+        let chr = rng.next();
+        t.check(
+            what,
+            0x0063_b5d0,
+            Conv::Cdecl,
+            &[chr, axis, center.to_bits()],
+            |g| {
+                mt::set_btu_fade_center(g, chr, axis, center);
+                Out::None
+            },
+        );
+    } else {
+        if t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 {
+            let scene = t.zeros(0x10);
+            t.global(scene::bridge::SCENE.sym, scene);
+        }
+        let hash = if rng.chance(2) {
+            ut::FLAT_SHADE_LEVELS[rng.below(3) as usize]
+        } else {
+            rng.below(0x3000)
+        };
+        t.stub_sym(ut::SCENE_GET_LEVEL_HASH, Conv::Thiscall(0), 0, hash);
+        t.stub_sym(ut::LIGHTING_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+        t.stub_sym(
+            ut::LIGHTING_SET_SHADE_COEFF,
+            Conv::Thiscall(0),
+            2,
+            rng.next(),
+        );
+        t.stub_sym(
+            ut::LIGHTING_RESET_SHADE_COEFF,
+            Conv::Thiscall(0),
+            1,
+            rng.next(),
+        );
+        t.stub_sym(ut::LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+        t.stub_sym(
+            ut::LIGHTING_TWEAK_SET_SHADE_COEFF,
+            Conv::Thiscall(0),
+            3,
+            rng.next(),
+        );
+        let n = rng.below(4);
+        let arr: Vec<u8> = (0..=n).flat_map(|_| rng.next().to_le_bytes()).collect();
+        let arr = t.alloc(&arr);
+        let list = t.zeros(8);
+        t.w32(list, n | (rng.next() & 0x8000_0000));
+        t.w32(list + 4, arr);
+        let list = if rng.chance(10) { 0 } else { list };
+        t.check(what, 0x0063_cec0, Conv::Cdecl, &[list], |g| {
+            ut::set_shade_coeff_debug(g, list);
+            Out::None
+        });
+    }
+}
+
+#[test]
+fn round17_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1717_0017);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round17_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
+
+#[test]
+fn snapshot_round17_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5017_0017);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round17_case(&mut t, &mut rng, round % 2, &what);
+    }
+}

@@ -819,3 +819,18 @@ Round 16:
   as it is; `colours` copied. Then
   `Phyre_CharacterLighting_setLightMatrix(inst, dirs, colours)` on the
   lighting singleton for each instance of `list`.
+
+Round 17:
+
+- `graphicCharacterInstanceSetBTUFadeCenter(chr, axis, center)`
+  (`0x0063b5d0`): over the character's segments (`Ch_GetChrRenderInstance`),
+  `GradualFade_BasicAlpha` is looked up first whatever `axis`; for `axis` 0
+  `GradualFade_YCenter`, for 1 `GradualFade_ZCenter` (others: nothing
+  more). With both found, the centre gets `center` and then the basic
+  alpha 0 (each written only where it fits its buffer).
+- `graphicCharacterLightingSetShadeCoeff_debug(list)` (`0x0063cec0`): on
+  levels `0x226d`, `0x1739` and `0x869` (`PhyreScene_getCurrentLevelNameHash`)
+  each instance gets `Phyre_CharacterLighting_setShadeCoeff(inst, 1.0)`,
+  elsewhere `Phyre_CharacterLighting_resetShadeCoeff(inst)` (`0x006aafa0`:
+  the default from `0x006a8c40`); then the tweak utility's
+  `setShadeCoeff_dbgHook(inst, 0.0, 0)`.
