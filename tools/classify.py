@@ -227,6 +227,9 @@ REVIEWED = {
     0x00a77ab0: ("debug", "native 0x4038 Sg_MemDump: memory report (script round 19)"),
     0x00a782c0: ("debug", "native 0x401e Sg_Test: map-test setup (script round 19)"),
     0x00857f70: ("debug", "native 0x01ed: an endless loop (script round 19)"),
+    0x008beeb0: ("glue", "TOMenuGetSummonMes: MsMenuGetText(0xc, id, hiragana), like TOMenuGetNameMes (system round 30)"),
+    0x00a42a00: ("platform", "pc_ReadWholeFile: sceOpen/sceRead into user_malloc (system round 30)"),
+    0x0076d5a0: ("platform", "CD stream read (sceCdRead) (system round 30)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
