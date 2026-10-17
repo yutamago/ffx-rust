@@ -11310,6 +11310,145 @@ fn round19_to_matches_the_original_on_the_snapshot() {
     round19_to(&mut a, &mut b, &mut Xorshift(0x4019_0042));
 }
 
+/// Round 19's menu text code expansion and glyph text width.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let strings = alloc(a, b, 0x100);
+    // the string function: strings + (arg & 0xf) * 0x10
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x0f, 0xc1, 0xe0, 0x04, 0x05,
+    ];
+    v.extend_from_slice(&strings.to_le_bytes());
+    v.push(0xc3);
+    let c0 = stand_in8(a, b, 0x40, &v);
+    // the number function: arg * 0x1357, or arg alone for small values
+    let c1 = stand_in8(
+        a,
+        b,
+        0x60,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x69, 0xc0, 0x57, 0x13, 0x00, 0x00, 0xc3,
+        ],
+    );
+    let c2 = stand_in8(
+        a,
+        b,
+        0x80,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x3f, 0xc3],
+    );
+    let table = alloc(a, b, 12);
+    put(a, b, table, [c0, c1, c2]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    let s = stand_in8(
+        a,
+        b,
+        0xa0,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x83, 0xe1, 0x01, 0x8d, 0x44, 0x08, 0x01,
+            0xc3,
+        ],
+    );
+    redirect(a, b, 0x008d_fd80, s);
+    let values = alloc(a, b, 0x40 * 4);
+    set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+    let codes = alloc(a, b, 8 * 8);
+    let out = alloc(a, b, 0x40);
+    let cells = alloc(a, b, 8);
+    let text = alloc(a, b, 0x40);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let cond = |m: &mut Oracle, f: u32, arg: u32| m.call(f, Conv::Cdecl, &[arg]).unwrap().eax;
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..400u32 {
+        let bytes: Vec<u8> = (0..0x100)
+            .map(|_| {
+                if rng.next().is_multiple_of(6) {
+                    0
+                } else {
+                    rng.next() as u8
+                }
+            })
+            .collect();
+        a.write(strings, &bytes).unwrap();
+        b.write(strings, &bytes).unwrap();
+        for i in 0..0x40u32 {
+            let v = match rng.next() % 4 {
+                0 => rng.next() % 10,
+                1 => rng.next() % 1_000_000,
+                2 => (rng.next() % 1000) * 1000,
+                _ => rng.next(),
+            };
+            put(a, b, values + 4 * i, v);
+        }
+        let at = codes + 8 * (rng.next() % 8);
+        // the string function only for kind 1
+        let kind = rng.next() % 3;
+        let func = if kind == 1 { 0 } else { 1 + rng.next() % 2 };
+        let w0 = func << 16 | kind << 8 | (rng.next() % 3);
+        let flag = if rng.next().is_multiple_of(3) {
+            rng.next() % 0x100
+        } else {
+            0
+        };
+        let w1 = flag << 16 | (rng.next() % 0x40) | (rng.next() & 0xff00_0000);
+        put(a, b, at, [w0, w1]);
+        put(a, b, cells, [out + rng.next() % 8, at]);
+        put(a, b, g(a, 0x0112_a06c), rng.next());
+        put(a, b, g(a, 0x0112_a070), rng.next());
+        let arg = rng.next() % 0x20;
+        eax(a, 0x0077_4860, &[cells, cells + 4, arg]);
+        t::menu_text_code(b, cells, cells + 4, arg, cond);
+        same_memory("menu text code", a, b);
+        // the glyph width over a random glyph table
+        if k % 50 == 0 {
+            let glyphs: Vec<u8> = (0..0x680)
+                .map(|i| {
+                    if i % 4 == 0 {
+                        u8::from(rng.next().is_multiple_of(3))
+                    } else {
+                        rng.next() as u8
+                    }
+                })
+                .collect();
+            let at = g(a, 0x00c5_8f02);
+            a.write(at, &glyphs).unwrap();
+            b.write(at, &glyphs).unwrap();
+        }
+        let n = rng.next() % 0x30;
+        let bytes: Vec<u8> = (0..0x40)
+            .map(|i| if i < n { (rng.next() as u8).max(1) } else { 0 })
+            .collect();
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        assert_eq!(
+            eax(a, 0x0089_e410, &[text]),
+            t::text_width_glyphs(b, text, call),
+            "glyph width {k}"
+        );
+        same_memory("glyph width", a, b);
+    }
+}
+
+#[test]
+fn round19_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_text(&mut a, &mut b, &mut Xorshift(0x4019_0051));
+}
+
+#[test]
+fn round19_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_text(&mut a, &mut b, &mut Xorshift(0x4019_0052));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

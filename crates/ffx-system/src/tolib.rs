@@ -5567,4 +5567,127 @@ pub mod bridge {
         call(mem, 0x0089_77f0, &[]);
         call(mem, 0x0089_dc40, &[])
     }
+
+    /// `0x00774860(&out, &code, arg)`: expands one 8-byte menu text code
+    /// (words `w0`, `w1`) at `*out` and steps `*code` past it.
+    ///
+    /// Kind `(w0 >> 8) & 0xff` 1 copies the string returned by the table
+    /// function `w0 >> 16` (from `*0x00c416d0`) for `(w1 & 0xffff) + arg`,
+    /// without its terminator. Kind 0 takes a number: from the table
+    /// function called with `w1 & 0xffff` (`w0 & 0xff` 0), from the value
+    /// table `*0x0112a0a4` (1), or 0. With a nonzero `(w1 >> 16) & 0xff` the
+    /// flag and number go to `0x0112a06c` / `0x0112a070`; otherwise the
+    /// number is written as six digits, leading zeros as `:` (the last digit
+    /// always shown). Other kinds write nothing.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn menu_text_code<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        code: u32,
+        arg: u32,
+        mut cond: impl FnMut(&mut M, u32, u32) -> u32,
+    ) {
+        let mut dst: u32 = mem.read(out);
+        let at: u32 = mem.read(code);
+        let w0: u32 = mem.read(at);
+        let w1: u32 = mem.read(at.wrapping_add(4));
+        let table: u32 = mem.read(mem.rebase(0x00c4_16d0));
+        let func = |mem: &M| -> u32 { mem.read(table.wrapping_add((w0 >> 16) * 4)) };
+        match (w0 >> 8) & 0xff {
+            1 => {
+                let f = func(mem);
+                let src = cond(mem, f, (w1 & 0xffff).wrapping_add(arg));
+                let mut c: u8 = mem.read(src);
+                let mut i = 0u32;
+                while c != 0 {
+                    mem.write(dst, c);
+                    dst = dst.wrapping_add(1);
+                    i = i.wrapping_add(1);
+                    c = mem.read(src.wrapping_add(i));
+                }
+            }
+            0 => {
+                let v = match w0 & 0xff {
+                    0 => {
+                        let f = func(mem);
+                        cond(mem, f, w1 & 0xffff)
+                    }
+                    1 => {
+                        let values: u32 = mem.read(mem.rebase(0x0112_a0a4));
+                        mem.read(values.wrapping_add((w1 & 0xffff).wrapping_mul(4)))
+                    }
+                    _ => 0,
+                };
+                let flag = (w1 >> 16) & 0xff;
+                if flag != 0 {
+                    mem.write(mem.rebase(0x0112_a06c), flag);
+                    mem.write(mem.rebase(0x0112_a070), v);
+                } else {
+                    let mut digits = [0u16; 6];
+                    let mut q = v.cast_signed();
+                    for d in &mut digits {
+                        let next = q / 10;
+                        *d = q.wrapping_sub(next * 10) as u16;
+                        q = next;
+                    }
+                    let mut seen = false;
+                    for d in digits[1..].iter_mut().rev() {
+                        if *d == 0 {
+                            *d = if seen { 0x30 } else { 0x3a };
+                        } else {
+                            *d = d.wrapping_add(0x30);
+                            seen = true;
+                        }
+                    }
+                    digits[0] = digits[0].wrapping_add(0x30);
+                    for d in digits.iter().rev() {
+                        mem.write(dst, *d as u8);
+                        dst = dst.wrapping_add(1);
+                    }
+                }
+            }
+            _ => {}
+        }
+        mem.write(out, dst);
+        mem.write(code, at.wrapping_add(8));
+    }
+
+    /// `0x0089e410(text)`: the pixel width of a text from the glyph table
+    /// at `0x00c58f02` (4 bytes per glyph: `+1` its width, `+0` a flag
+    /// adding 5). Codes below 0x30 take glyph `0xa0 + next byte`, others
+    /// `code - 0x30`; codes are stepped with `TOSkipCode`. Each glyph adds
+    /// its width plus 1 through x87 (`ftol`, so 0x80000000 once out of
+    /// range).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn text_width_glyphs<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let glyphs = mem.rebase(0x00c5_8f02);
+        let mut width = 0i32;
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return width.cast_unsigned();
+            }
+            let index = if c < 0x30 {
+                u32::from(mem.read::<u8>(p.wrapping_add(1))) + 0xa0
+            } else {
+                u32::from(c) - 0x30
+            };
+            let glyph = glyphs.wrapping_add(index * 4);
+            let sum = 1.0 + f64::from(mem.read::<u8>(glyph.wrapping_add(1))) + f64::from(width);
+            width = if (-2_147_483_648.0..2_147_483_648.0).contains(&sum) {
+                sum as i32
+            } else {
+                i32::MIN
+            };
+            if mem.read::<u8>(glyph) != 0 {
+                width = width.wrapping_add(5);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
 }

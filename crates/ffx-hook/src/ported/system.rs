@@ -5754,6 +5754,14 @@ ported! {
     TOReset1 @ 0x008a_de50 => extern "C" fn to_reset1() -> u32 {
         tolib::bridge::to_reset1(&mut mem(), call_sym)
     }
+    /// `MenuTextCode_00774860(&out, &code, arg)`.
+    MenuTextCode_00774860 @ 0x0077_4860 => extern "C" fn menu_text_code(out: u32, code: u32, arg: u32) {
+        tolib::bridge::menu_text_code(&mut mem(), out, code, arg, |m, f, a| call_ptr(m, f, &[a]));
+    }
+    /// `TOTextWidthGlyphs_0089e410(text)`.
+    TOTextWidthGlyphs_0089e410 @ 0x0089_e410 => extern "C" fn to_text_width_glyphs(text: u32) -> u32 {
+        tolib::bridge::text_width_glyphs(&mut mem(), text, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
