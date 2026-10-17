@@ -580,16 +580,32 @@ texture; the port passes 0. The quad goes to `graphicDrawUIElement`
 with grey corners, or with the C2 colours.
 
 `TODrawMenuPlateXYWHType` (`0x008f5f70`, module `plate`) draws the menu
-plates of types 1-14. A plate is a stretched sheet image, either three
-shape -4 pieces or a single shape, framed by `TODrawCrossBoxXYWHC2`
-pieces. Every offset goes through the HD UI remap. Its ten kilobytes of
-straight-line x87 code were lifted instruction by instruction:
+plates of types 1-14 from four kinds of pieces, all sized through the HD UI
+remap:
 
-- x87 values are `f64` at the game's 53-bit precision;
-- dword stores are `f32`;
-- constants are read from the image.
+- **Bands.** A band is three `TODrawCrossBoxXYWHC2` boxes over the
+  plate's columns: a left cap `rx(cap)` wide, the middle, and a right cap.
+  The caps fade to their edge colours.
+  - The banded types are 1 and 2 (caps 300 and 140), 4/5 (160), 7/14 and
+    11 (140), and 13 (200).
+  - They draw a drop shadow under the plate (6 or 4 high), the tinted
+    body, a white highlight one line down and a dark line at the bottom.
+  - Types 7 and 11 add a title strip after the body; type 4 adds an icon
+    at the top right.
+- **The sheet image.** This is shape -4 with UVs `1920 × w / 512` and
+  `1080 × h / 416`. Types 1 and 2 cut it into the three columns; types 9
+  and 10 stretch it over the plate.
+- **The nine-slice frame.** Eight atlas pieces with 7-unit corners, used
+  by types 9, 10 and 12.
+- **The `0x008f9c20` and `0x008f4df0` panels.** Types 3, 6 and 8 use the
+  first. Types 9 and 10 use the second; type 10 picks its colours by
+  `graphicGetAbmap`, and draws nothing when the box is narrower than
+  `rx(14)`.
 
-So every piece lands where the original puts it.
+The port keeps the original's rounding: sums are formed in `f64` (the x87
+at 53 bits) and stored as `f32` where the original stores a dword.
+`tools/x87-lift.py` produced the exact first draft that the readable
+version was checked against.
 
 `TOMkpShapeXY` (`0x00903a10`) and `TOMkpShapeXYWHC2` (`0x00903b70`) only
 pass their arguments (and grey colours) to `TOAdpEasyShapeXYWHC2`. They
