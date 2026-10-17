@@ -5956,11 +5956,14 @@ ported! {
         // The original keeps a folded macro's code in its own argument
         // slot and may return a pointer to it; a static keeps that text
         // readable after the return (a nested lookup reuses it only after
-        // reading its code).
-        static SCRATCH: [std::sync::atomic::AtomicU32; 2] =
-            [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)];
+        // reading its code). One per thread, not a process-wide static
+        // (docs/hooking.md, "Threads").
+        thread_local! {
+            static SCRATCH: [std::sync::atomic::AtomicU32; 2] =
+                const { [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)] };
+        }
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = SCRATCH.as_ptr() as usize as u32;
+        let at = SCRATCH.with(|s| s.as_ptr() as usize as u32);
         tolib::bridge::to_get_change_macro_address(&mut mem(), window, code, at, call_sym)
     }
     /// `TOGetChangeMacroWidth(window, code, mode)`.

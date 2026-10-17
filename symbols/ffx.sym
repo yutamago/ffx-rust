@@ -6964,6 +6964,7 @@
 0x0082dbc0 function Sg_ClothPlaceAnchors      # (chr): each cloth anchor vertex = weighted corners of its model triangle (+ lift along the normal when Ch_UseAnchorVertex or bit 0); zeroed on level 0xc58 with a collapsed matrix; called from 0x0082e390 after the cloth step
 0x0082e200 function Ch_IsShadowExceptionId    # (chr): 1 for characters 3 and 0x67 (u16 +0), else 0; Ch_DrawShadow's per-character test; name ours
 0x0082e220 function Ch_CullByDistance         # (chr): +0x178 = camera distance (MsCameraGetPosNow(1), _CIsqrt) to +0x694; with +0x194 bit 11: hide bit 3 of +0x180 when the instance is not visible, bit 5 beyond +0x174 (half on level 0x24f9 with Valefor's bit 2); returns 1 when hidden; called after Ch_UpdateClothMatrix; name ours
+0x0082e390 function Ch_Cloth_PerCharacter      # (chars, &count): per character Apply_Envelope(c, 0), Sg_ClothStep(c), Sg_ClothPlaceAnchors(c) unless 0x012fb7d8; the job JobSchedule_Ch_Cloth_PerCharacter (0x00a44b40) queues and JobScheduleWait_Ch_Cloth_PerCharacter waits for; runs on JobWorker threads
 0x0082e3e0 function Ch_DrawShadowQuad         # (chr, -, p3): the shadow quad: matrix by -facing +0x158 and position +0x7c, graphicUpdateShadowMap (size, uv) then Ch_DrawQuad; returns p3; called for shadow mode 2 with Ch_IsNotExceptionId; name ours
 0x0082e5a0 function Ch_InitCircleTable        # (): for i in 0..13 the angle i * [0x00b59638] / [0x00b4b468] gives _CIcos into 0x013007ec[i] and _CIsin into 0x01300860[i]; called at init after Ch_GuiSetCalcNormAll(0); name ours
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70
@@ -11964,8 +11965,9 @@
 0x00a44820 function sceCdSync                 # fh v3:cg5 0xa44820
 0x00a44840 function MyProfilerAddMarker       # fh v3:cg6 0xa44840
 0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
-0x00a44b80 function JobScheduleWait_Ch_CalcMiddle_Batch # JobSchedule_JobScheduler_waitForComplete(0) only; Ch_CalcMiddle (0x00833390) calls it before and after queueing the batches (0x00a44b90)
-0x00a44b90 function JobSchedule_Ch_CalcMiddle_Batch # (chars, pass, count): queues Ch_CalcMiddle_Batch as a job (0x0071e720, worker threads); Ch_CalcMiddle (0x00833390) calls it once per ~200 elements, so battles run several batches (Ch_Neck/Ch_CalcElement) at once
+0x00a44b40 function JobSchedule_Ch_Cloth_PerCharacter # (chars, &count): queues Ch_Cloth_PerCharacter (0x0082e390) through the scheduler's one-argument enqueue 0x00a44a50; Ch_DrawMain calls it
+0x00a44b80 function JobScheduleWait_Ch_CalcMiddle_Batch # JobSchedule_JobScheduler_waitForComplete(0) only; Ch_CalcMain (0x00832e10) and Ch_CalcMiddle (0x00833390) call it before and after queueing the batches (0x00a44b90)
+0x00a44b90 function JobSchedule_Ch_CalcMiddle_Batch # (chars, pass, count): queues Ch_CalcMiddle_Batch as a job (0x0071e720, worker threads); Ch_CalcMain (0x00832e10) and Ch_CalcMiddle (0x00833390) call it once per ~200 elements, so battles run several batches (Ch_Neck/Ch_CalcElement) at once
 0x00a44bd0 function str_replace               # fh v3:exact 0x00a44bd0
 0x00a45000 function abmCalcChrMoveCurMoveCheck # fh v3:exact 0x00a45000
 0x00a45440 function AbmapSetHelpMessage_copy_00a45440 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
