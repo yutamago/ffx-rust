@@ -10652,6 +10652,94 @@ fn opus_rt_m_chara_matches_the_original() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
+fn opus_mdc_packets_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_e160);
+        let (pk, mats, obj, unit) = (p.alloc(0x60), p.alloc(0x100), p.alloc(0xa0), p.alloc(0x100));
+        let oef = p.alloc(0x400);
+        let lights = p.alloc(0x100 * 16);
+        let (col, pos, nos) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x10));
+        let gpr = p.sym(0x00c8_f508);
+        // opus_no_get stands in: unit `no` of `lights` (movzx eax, word
+        // [esp + 0xc]; shl eax, 8; add eax, lights; ret)
+        let mut code = vec![0x0f, 0xb7, 0x44, 0x24, 0x0c, 0xc1, 0xe0, 0x08, 0x05];
+        code.extend(lights.to_le_bytes());
+        code.push(0xc3);
+        let get = p.sym(0x0080_1060);
+        p.a.write(get, &code).unwrap();
+        p.b.write(get, &code).unwrap();
+        let float = |rng: &mut Xorshift| {
+            if rng.chance(50) {
+                rng.float()
+            } else {
+                // around the 0..0x100 the clamp sees
+                let x = f32::from_bits(rng.float()).abs() % 600.0 - 100.0;
+                x.to_bits()
+            }
+        };
+        for _ in 0..500 {
+            p.fill(pk, 0x60, &mut rng);
+            p.fill(obj, 0xa0, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            // the oef2 block: table 4 at a small offset, of small offsets
+            p.fill(oef, 0x400, &mut rng);
+            p.set(oef + 0x10, 0x100u32 + 4 * rng.below(16));
+            p.set(unit + 0x1e, u8::try_from(rng.below(4)).unwrap());
+            for g in 0..4 {
+                p.set(obj + 0x60 + 4 * g, if rng.chance(10) { 0 } else { oef });
+            }
+            // the entry is tex & 0xff: high bits too
+            let (n, high) = (rng.below(0x40), rng.next() & 0xffff_ff00);
+            let tex = rng.pick(&[u32::MAX, n, high | n]);
+            let o: u32 = p.get(obj + 0x60 + 4 * u32::from(p.get::<u8>(unit + 0x1e)));
+            let tex = if o == 0 { u32::MAX } else { tex };
+            for (name, sym, clear) in [
+                ("0x0080e160", 0x0080_e160u32, true),
+                ("0x0080e230", 0x0080_e230, false),
+            ] {
+                p.check(name, sym, &[pk, mats, obj, unit, tex], |m| {
+                    Some(opus::bridge::opus_mdc_packet_set(
+                        m, pk, mats, obj, unit, tex, clear,
+                    ))
+                });
+            }
+            // the lights
+            p.set(pk + 0x24, col);
+            p.set(pk + 0x28, pos);
+            p.fill(col, 0x40, &mut rng);
+            p.fill(pos, 0x40, &mut rng);
+            p.fill(gpr, 0x10, &mut rng);
+            p.fill(lights, 0x100 * 16, &mut rng);
+            for i in 0..16 {
+                let l = lights + 0x100 * i;
+                for at in [0x3cu32, 0x4c, 0x90, 0x94, 0x98] {
+                    let v = rng.float();
+                    p.set(l + at, v);
+                }
+            }
+            for i in 0..5 {
+                let no = if rng.chance(25) { 0 } else { rng.below(16) };
+                p.set(nos + 2 * i, u16::try_from(no).unwrap());
+            }
+            for at in [0x30u32, 0x4c] {
+                let v = float(&mut rng);
+                p.set(unit + at, v);
+            }
+            p.check(
+                "0x0080e900",
+                0x0080_e900,
+                &[pk, mats, obj, unit, nos],
+                |m| {
+                    opus::bridge::opus_mdc_light_set(m, pk, obj, unit, nos, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
 fn opus_get_bone_matrix_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x0080_5430);

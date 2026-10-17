@@ -417,3 +417,24 @@ is `id`, frees it (`opu_eff_free_by_id`) and shuts down the units whose
 record index (`u16 +0x14` of the 0x100-byte unit) is that record's.
 `opu_unit_free_by_oef2(list, oef)` (`0x007fdf70`) works by oef2 slot
 group instead (`u8 +0x1e`). Both are in `et.rs`.
+
+## Model-draw packets (`0x0080e160`, `0x0080e230`, `0x0080e900`)
+
+Before `op1_mdc_draw`, the opus model units (`0x0080df10`, `0x0080e030`)
+fill a 0x50-byte packet header with `0x0080e160(pk, mats, obj, unit, tex)`:
+`+0` the unit's `u16 +0xc0`, `+4` `obj +0x28`, `u16 +8` the unit's `+0xc2`,
+`+0x18` RGB 0x80 and the unit's `+0xcb` as A, `+0x1c` the unit's `+0xc8`
+without its top byte, `+0x20`/`+0x24`/`+0x28`/`+0x2c` the matrices at
+`mats + 0xc0`, `+0`, `+0x40`, `+0x80`, `+0x34` `obj +0x54`, `+0x40` the
+unit's `+0xc4`, `u16 +0x4c` 0x8080; `+0xc`, `+0x10`, `+0x14`, `+0x38`,
+`+0x3c` and `+0x44` are 0. It returns the model, `op_oef2_a_get(obj +0x60
+[unit +0x1e], 4, tex)` (0 when `tex` is -1). `0x0080e230` is the same
+without clearing `+0x14` and `+0x3c`.
+
+`0x0080e900(pk, mats, obj, unit, nos)` then sets four lights: the colour
+matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
+`g_Ee_Gpr`; each nonzero unit number `nos[1..=4]` names a light unit
+(`opus_no_get`) whose row gets its position (`+0x90`) with `w = +0x4c *
+0.0625`, and colour `+0x3c * (1/32768) * c` for R, G, B (53 bits) and
+`a / 256`. `pk +0x4c` and `+0x4d` become `ftol(unit +0x30) / 2` and
+`ftol(unit +0x4c) / 2`, clamped to 0..0x80.

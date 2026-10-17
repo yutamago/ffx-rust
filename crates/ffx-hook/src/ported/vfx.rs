@@ -2264,6 +2264,19 @@ ported! {
         let frame = (locals.0.as_mut_ptr() as u32).wrapping_add(0x20);
         opus::bridge::opus_rt_m_chara(&mut mem(), m, chr, f32::from_bits(k), angles, trans, battle, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
     }
+    /// `opus_mdc_packet_set_0080e160(pk, mats, obj, unit, tex)`.
+    opus_mdc_packet_set_0080e160 @ 0x0080_e160 => extern "C" fn opus_mdc_packet_set_0080e160(pk: u32, mats: u32, obj: u32, unit: u32, tex: u32) -> u32 {
+        opus::bridge::opus_mdc_packet_set(&mut mem(), pk, mats, obj, unit, tex, true)
+    }
+    /// `opus_mdc_packet_set_0080e230(pk, mats, obj, unit, tex)`.
+    opus_mdc_packet_set_0080e230 @ 0x0080_e230 => extern "C" fn opus_mdc_packet_set_0080e230(pk: u32, mats: u32, obj: u32, unit: u32, tex: u32) -> u32 {
+        opus::bridge::opus_mdc_packet_set(&mut mem(), pk, mats, obj, unit, tex, false)
+    }
+    /// `opus_mdc_light_set_0080e900(pk, mats, obj, unit, nos)`.
+    opus_mdc_light_set_0080e900 @ 0x0080_e900 => extern "C" fn opus_mdc_light_set_0080e900(pk: u32, mats: u32, obj: u32, unit: u32, nos: u32) {
+        let _ = mats;
+        opus::bridge::opus_mdc_light_set(&mut mem(), pk, obj, unit, nos, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opus_get_weapon_index(obj)`.
     opus_get_weapon_index @ 0x0080_1000 => extern "C" fn opus_get_weapon_index(obj: u32) -> i32 {
         opus::bridge::opus_get_weapon_index(&mem(), obj)
