@@ -75,9 +75,11 @@ macro_rules! script {
     ($s:ident, $block:expr) => {
         let mut call = script_call;
         let mut sig = signal($block);
+        let mut off = |m: &mut Oracle, e| ffx_vfx::et::bridge::op_et_eff_off_signal(m, e);
         let mut $s = at::Script {
             call: &mut call,
             signal: &mut sig,
+            off: &mut off,
         };
     };
 }
@@ -293,38 +295,6 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, block: u
         },
     );
     same("MsSetTargetsMotion", a, b);
-}
-
-/// `0x00780b40` (`MsBattleAllFree`, never called here): where the
-/// recording stubs go in both oracles (the heap is not executable).
-const STUBS: u32 = 0x0078_0b40;
-
-/// `AtelDecodeSignal` and `AtelDecodeCommand` as stubs in one oracle,
-/// each counting its calls and recording its two arguments at `rec`
-/// (+0, +0x10): running the scripts' code would reach the OS's waits.
-/// `AtelGetRequestLevel` returns `level`.
-fn script_stubs(o: &mut Oracle, rec: u32) {
-    let base = o.rebase(STUBS);
-    for (k, f) in [at::ATEL_DECODE_SIGNAL, at::ATEL_DECODE_COMMAND]
-        .into_iter()
-        .enumerate()
-    {
-        let r = rec + 0x10 * u32::try_from(k).unwrap();
-        let mut code = vec![0xff, 0x05];
-        code.extend(r.to_le_bytes());
-        for (arg, to) in [(4u8, r + 4), (8, r + 8)] {
-            code.extend([0x8b, 0x44, 0x24, arg, 0xa3]);
-            code.extend(to.to_le_bytes());
-        }
-        code.extend([0x31, 0xc0, 0xc3]);
-        let at = base + 0x20 * u32::try_from(k).unwrap();
-        o.write(at, &code).unwrap();
-        // the function jumps to its stub
-        let entry = o.rebase(f);
-        let rel = at.wrapping_sub(entry + 5);
-        o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
-            .unwrap();
-    }
 }
 
 /// What `MsDefenseStartProcess` gets for its caller's `edi`, `esi`, `ebx`:
