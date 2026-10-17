@@ -8583,6 +8583,152 @@ fn round18_helpers_match_the_original() {
     }
 }
 
+/// Code padding after `.text` for `opu_main_host`'s stand-in handlers.
+const HOST_HANDLERS: u32 = 0x00b0_bb00;
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn opu_main_host_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_cc00);
+        // the SPR stack: one block from the bottom
+        let spr = p.alloc(0x600);
+        p.put(op::bridge::SPR_TOP, 0i8);
+        let stack = p.sym(op::bridge::SPR_STACK.sym);
+        p.set(stack, spr);
+        // MsBattleChrStart from a cell; dbgPrintf recorded
+        let cells = p.alloc(0x20);
+        deref_recorder_with(&mut p, 0x0078_0cb0, &[], Some(cells));
+        dbg_printf_recorder(&mut p, 0);
+        // the handlers: next (+2), done (+0x210 from a cell, +2), zero
+        // (done, null) and the motion callback (recorded)
+        let base = p.sym(HOST_HANDLERS);
+        let (h_next, h_done, h_zero, h_cb) = (base, base + 0x10, base + 0x30, base + 0x50);
+        let mut code = vec![0u8; 0x80];
+        code[..8].copy_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x83, 0xc0, 0x02, 0xc3]);
+        let mut d = vec![0x8b, 0x4c, 0x24, 0x04, 0x8a, 0x15];
+        d.extend((cells + 4).to_le_bytes());
+        d.extend([
+            0x88, 0x91, 0x10, 0x02, 0, 0, 0x8b, 0x44, 0x24, 0x08, 0x83, 0xc0, 0x02, 0xc3,
+        ]);
+        code[0x10..0x10 + d.len()].copy_from_slice(&d);
+        let z = [
+            0x8b, 0x4c, 0x24, 0x04, 0xc6, 0x81, 0x10, 0x02, 0, 0, 1, 0x31, 0xc0, 0xc3,
+        ];
+        code[0x30..0x30 + z.len()].copy_from_slice(&z);
+        let mut cb = vec![0x8b, 0x44, 0x24, 0x08, 0xa3];
+        cb.extend((cells + 8).to_le_bytes());
+        cb.extend([0xff, 0x05]);
+        cb.extend((cells + 0xc).to_le_bytes());
+        cb.push(0xc3);
+        code[0x50..0x50 + cb.len()].copy_from_slice(&cb);
+        p.a.write(base, &code).unwrap();
+        p.b.write(base, &code).unwrap();
+        let table = p.sym(0x00c4_8ec8);
+        let overlay = p.alloc(0x400);
+        for i in 0..0x100u32 {
+            // a zero command ends the slot, so a walk off the programs
+            // stops in zeroed memory
+            let h = match i {
+                1..0xa0 => h_next,
+                0xa0..0xf0 => h_done,
+                0 | 0xf0..0xfe => h_zero,
+                _ => 0,
+            };
+            p.set(table + 4 * i, h);
+            // the overlay table has no null check: every entry set
+            p.set(overlay + 4 * i, if h == 0 { h_zero } else { h });
+        }
+        let cbs = p.sym(0x00c4_92c8);
+        for i in 0..12u32 {
+            p.set(cbs + 4 * i, h_cb);
+        }
+        let ob = p.sym(et::bridge::OPUS_BATTLE.sym);
+        let (b, e, orders, units, progs) = (
+            p.alloc(0x100),
+            p.alloc(0x80),
+            p.alloc(0x40),
+            p.alloc(0x800),
+            p.alloc(0x800),
+        );
+        let (g1, g2) = (p.sym(0x0113_fcd0), p.sym(0x0113_fd10));
+        let (regs, vf, r0) = (p.sym(0x00c8_f528), p.sym(0x00c8_f8d0), p.sym(0x00c8_f508));
+        for round in 0..1500 {
+            p.fill(b, 0x100, &mut rng);
+            p.fill(g1, 0x40, &mut rng);
+            p.fill(g2, 0x40, &mut rng);
+            p.fill(regs, 0x40, &mut rng);
+            p.fill(vf, 0x70, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            // the emulated zero register, now and then not: its bytes seed
+            // the host's flags (+0x210 done, +0x212 still, +0x21d second
+            // pass, +0x21f motion only), but the order index (+0x218) stays
+            // 0
+            if rng.chance(4) {
+                p.fill(r0, 0x10, &mut rng);
+                let w: u32 = p.get(r0 + 8);
+                p.set(r0 + 8, w & 0xffff_0000);
+            } else {
+                p.set(r0, [0u32; 4]);
+            }
+            p.set(cells, u32::from(rng.chance(2)));
+            p.set(cells + 4, rng.pick(&[1u8, 2, 3, 0xff]));
+            let battle = rng.below(4);
+            p.set(ob + 4 * battle, b);
+            p.set(b + 0x50, e);
+            p.set(e + 0x7c, if rng.chance(3) { 0 } else { overlay });
+            // four orders of up to five units, ending at -1
+            for l in 0..4u32 {
+                let o = orders + 0x10 * l;
+                p.set(b + 0x10 + 4 * l, o);
+                let n = rng.below(6);
+                for k in 0..n {
+                    p.set(o + 2 * k, u16::try_from(rng.below(8)).unwrap());
+                }
+                p.set(o + 2 * n, 0xffffu16);
+            }
+            p.set(b + 0x20, units);
+            p.fill(units, 0x800, &mut rng);
+            p.fill(progs, 0x800, &mut rng);
+            for k in 0..8u32 {
+                let u = units + 0x100 * k;
+                for s in 0..4u32 {
+                    let at = if rng.chance(4) {
+                        0
+                    } else {
+                        progs + 0x200 * s + 2 * rng.below(0x40)
+                    };
+                    p.set(u + 4 * s, at);
+                    p.set(u + 0x10 + s, rng.pick(&[0u8, 0, 1, 2]));
+                }
+                p.set(u + 0x1f, u8::try_from(rng.below(0x100)).unwrap());
+                for i in 0..28u32 {
+                    let x = light_value(&mut rng);
+                    p.set(u + 0x30 + 4 * i, x);
+                }
+                p.set(u + 0xb2, u8::try_from(rng.below(8)).unwrap());
+                p.set(u + 0xba, u8::try_from(rng.below(14)).unwrap());
+            }
+            p.put(op::bridge::SPR_TOP, 0i8);
+            let list = rng.below(4)
+                | if rng.chance(4) {
+                    rng.next() & 0xffff_ff00
+                } else {
+                    0
+                };
+            let bw = battle | if round % 7 == 0 { 0xabcd_0000 } else { 0 };
+            p.check("opu_main_host", 0x0080_cc00, &[bw, list], |o| {
+                Some(opus::bridge::opu_main_host(
+                    &mut Capped::new(o),
+                    bw,
+                    list,
+                    &mut |c: &mut Capped<Oracle>, f, a| call_original(c.m, f, a),
+                ))
+            });
+        }
+    }
+}
+
 /// `fcos`/`fsin` stand-ins for the CRT's `_CIcos`/`_CIsin` (their import
 /// slots `0x00b0c3b4`, `0x00b0c3b8` pointed at `0x00b0bfc0`, `0x00b0bfc8`)
 /// and a thunk at [`THUNK`], `fld dword [esp + 4]; jmp [slot]`, for the

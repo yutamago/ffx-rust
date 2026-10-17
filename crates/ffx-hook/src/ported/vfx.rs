@@ -1546,6 +1546,10 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // the u16 argument
         opus::bridge::opus_list_add(&mut mem(), set, id as u16, list)
     }
+    /// `opu_main_host(battle, list)`.
+    opu_main_host @ 0x0080_cc00 => extern "C" fn opu_main_host(battle: u32, list: u32) -> u32 {
+        opus::bridge::opu_main_host(&mut mem(), battle, list, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
