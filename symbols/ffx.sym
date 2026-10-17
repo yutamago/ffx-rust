@@ -9472,6 +9472,7 @@
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008b8680 function TOResetMessageVars_008b8680 # cdecl(i): g_MsgVars[i*32..]: type byte copied to +1, then type 0xff; name ours
 0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690; cdecl(bank): 0x018676f0[8] = 0x018663f0/0x01866d70 + 0x130k, 0x01868a90[8] = 0x01867710/0x018680d0 + 0x138k, 0x01869ab0[256] = 0x01868ab0/0x018692b0 + 8k
+0x008b8880 function TOSetMessageChoice        # cdecl(i, n, x, y, total): msg +0x1c = 2; line rec (0x01868a90[i]) +1/+4 = 0, +5 = n, +2/+3 clamped 0..n-1, per item cell at +0x38+8k: 1, total/n, x + k*(total/n), y; name ours
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b89a0 function TOSetMessageText_008b89a0 # cdecl(i, text): window +0x94 = text, +0x98 = TOSkipCodesAbove2(text); name ours
@@ -10289,6 +10290,7 @@
 0x00906d90 function TOSetWindowRGBA # cdecl(i, r, g, b, a): stores the four colour bytes at +0x58..+0x5b of window i (TO-prefix like its neighbours); name ours
 0x00906dd0 function TOSetWindowRect_00906dd0 # cdecl(i, x, y, w, h): g_Windows[i] +0x10/+0x14 = w/h (u16), +0x28..+0x34 = x, y, x+w, y+h as floats; name ours
 0x00906e60 function TOSetWindowKind           # cdecl(i, kind): u16 +4 of g_Windows[i] = kind, yiWindowSetHandlers(window); name ours
+0x00906e90 function TOSnapWindowRect          # cdecl(win): +6 = 0x1000; +0x48..+0x54 = (float)(u16)trunc(+0x28..+0x34); name ours
 0x00906fb0 function TOGetWindowStructAdrs     # fh v3:bsim1.00 0x00906fb0 _TOGetWindowStructAdrs
 0x00906fc0 function yiWindowGrowClose         # (window): progress +6 -= 0x2aa (>= 0), drawn x1 = x0 + height +0x10 * progress / 4096; at x0: state 4, handler yiWindowFinishAll; window kind 0 slot +0x6c
 0x00907040 function yiWindowFinishAll         # (window): +0 and state +8 cleared, handler +0x74 = idle 0x00907e50; returns 1 (kind 0 slot +0x70)

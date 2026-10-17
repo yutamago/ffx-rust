@@ -4578,4 +4578,72 @@ pub mod bridge {
         let p: u32 = mem.read(mem.rebase(0x0132_6b28));
         u32::from(mem.read::<u8>(p.wrapping_add(3)) & 3 == 1)
     }
+
+    /// `0x008b8880(i, n, x, y, total)`: message window `i` set up as a
+    /// choice of `n` items (`+0x1c` 2): its line record (`0x01868a90`)
+    /// gets `+1` and `+4` cleared, `+5` `n`, the cursor and top
+    /// (`+2`, `+3`) clamped to 0..`n - 1`, and per item an 8-byte cell at
+    /// `+0x38` (1, width `total / n`) followed by the item's position
+    /// (`x + k × width`, `y`). A zero `n` makes the original fault
+    /// (`idiv`); here it gives a zero width.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)] // byte and halfword stores
+    pub fn set_message_choice(mem: &mut impl Mem, i: u32, n: u32, x: u32, y: u32, total: u32) {
+        let m: u32 = mem.read(
+            crate::window::bridge::MSG_WINDOWS
+                .ptr(mem)
+                .addr
+                .wrapping_add(i.wrapping_mul(4)),
+        );
+        mem.write(m.wrapping_add(0x1c), 2u16);
+        let slot = mem.rebase(0x0186_8a90).wrapping_add(i.wrapping_mul(4));
+        let l: u32 = mem.read(slot);
+        mem.write(l.wrapping_add(1), 0u8);
+        let l: u32 = mem.read(slot);
+        mem.write(l.wrapping_add(4), 0u8);
+        let l: u32 = mem.read(slot);
+        mem.write(l.wrapping_add(5), n as u8);
+        let lim = n.cast_signed().wrapping_sub(1);
+        let clamp = |v: i8| -> u8 {
+            let v = i32::from(v);
+            if v > lim { lim as u8 } else { v.max(0) as u8 }
+        };
+        for off in [2u32, 3] {
+            let l: u32 = mem.read(slot);
+            let v: i8 = mem.read(l.wrapping_add(off));
+            mem.write(l.wrapping_add(off), clamp(v));
+        }
+        let step = total
+            .cast_signed()
+            .checked_div(n.cast_signed())
+            .unwrap_or(0);
+        let mut px = x;
+        let mut k = 0i32;
+        while k < n.cast_signed() {
+            let cell = (k * 8).cast_unsigned();
+            let l: u32 = mem.read(slot);
+            mem.write(l.wrapping_add(cell + 0x38), 1u16);
+            let l: u32 = mem.read(slot);
+            mem.write(l.wrapping_add(cell + 0x3a), step as u16);
+            let l: u32 = mem.read(slot);
+            mem.write(l.wrapping_add(cell + 0x3c), px as u16);
+            let l: u32 = mem.read(slot);
+            mem.write(l.wrapping_add(cell + 0x3e), y as u16);
+            px = px.wrapping_add(step.cast_unsigned());
+            k += 1;
+        }
+    }
+
+    /// `0x00906e90(win)`: window `win`'s `+6` set to 0x1000 and its
+    /// rectangle floats (`+0x28..=+0x34`) snapped: truncated to an
+    /// integer (`fistp` with chop), its low 16 bits taken unsigned, and
+    /// stored as floats at `+0x48..=+0x54`.
+    #[allow(clippy::cast_possible_truncation)] // the low halfword
+    pub fn snap_window_rect(mem: &mut impl Mem, win: u32) {
+        mem.write(win.wrapping_add(6), 0x1000u16);
+        for k in 0..4u32 {
+            let v = f64::from(mem.read::<f32>(win.wrapping_add(0x28 + 4 * k)));
+            let low = ffx_bridge::x87::cvttsd2si(v) as u16;
+            mem.write(win.wrapping_add(0x48 + 4 * k), f32::from(low));
+        }
+    }
 }

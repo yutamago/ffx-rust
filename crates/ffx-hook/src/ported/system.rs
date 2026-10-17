@@ -5674,6 +5674,14 @@ ported! {
     CheckPreviousLevel_00872a00 @ 0x0087_2a00 => extern "C" fn check_previous_level() -> u32 {
         tolib::bridge::previous_level_check(&mut mem(), call_sym)
     }
+    /// `TOSetMessageChoice(i, n, x, y, total)`.
+    TOSetMessageChoice @ 0x008b_8880 => extern "C" fn to_set_message_choice(i: u32, n: u32, x: u32, y: u32, total: u32) {
+        tolib::bridge::set_message_choice(&mut mem(), i, n, x, y, total);
+    }
+    /// `TOSnapWindowRect(win)`.
+    TOSnapWindowRect @ 0x0090_6e90 => extern "C" fn to_snap_window_rect(win: u32) {
+        tolib::bridge::snap_window_rect(&mut mem(), win);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
