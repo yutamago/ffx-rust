@@ -265,6 +265,50 @@ impl<M: Mem> tolib::bridge::LimitWindowCalls<M> for GameMenu {
     }
 }
 
+/// A CRT `_CI*` intrinsic through the game's import thunk at `sym`: `x`
+/// in ST0 (`fld qword`), the result read back from ST0 (`fstp qword`).
+fn intrinsic(sym: u32, x: f64) -> f64 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let f = crate::rebase(sym) as u32;
+    // SAFETY: the thunk jumps to the CRT intrinsic, which takes its
+    // argument in ST0 and leaves the result there (eax, ecx, edx, the x87
+    // and SSE registers clobbered; edi kept).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut out = 0f64;
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, x);
+        f64::NAN
+    }
+}
+
+impl<M: Mem> tolib::bridge::NearTarget<M> for GameMenu {
+    fn btl_pos(&mut self, mem: &mut M, chr: u32, vec: u32) {
+        call_sym(mem, 0x0079_48e0, &[chr, vec]);
+    }
+    fn dist(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0079_4e00, &[chr])
+    }
+    fn sqrt(&mut self, _mem: &mut M, x: f64) -> f64 {
+        intrinsic(0x0094_97b8, x)
+    }
+    fn acos(&mut self, _mem: &mut M, x: f64) -> f64 {
+        intrinsic(0x0094_98da, x)
+    }
+}
+
 impl<M: Mem> menu::bridge::MagicFileCalls<M> for GameMenu {
     fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>) {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
@@ -4543,6 +4587,15 @@ ported! {
             |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
             |m, table| tolib::bridge::font_width(m, text, kind, out, table, &mut GameMenu),
         )
+    }
+    /// `TOBtlSearchRevNearTarget()`.
+    TOBtlSearchRevNearTarget @ 0x0089_90f0 => extern "C" fn to_btl_search_rev_near_target() -> u32 {
+        let mut v = [0f32; 4];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = v.as_mut_ptr() as u32;
+        let r = tolib::bridge::btl_search_rev_near_target(&mut mem(), at, &mut GameMenu);
+        std::hint::black_box(&mut v);
+        r
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

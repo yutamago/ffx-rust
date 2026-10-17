@@ -3617,4 +3617,172 @@ pub mod bridge {
         };
         width(mem, table)
     }
+
+
+    /// The calls [`btl_search_rev_near_target`] makes outside this module.
+    pub trait NearTarget<M> {
+        /// `MsGetChrBtlPos(chr, vec)` into the 16-byte scratch `vec`.
+        fn btl_pos(&mut self, mem: &mut M, chr: u32, vec: u32);
+        /// `MsGetChrDist(chr)`.
+        fn dist(&mut self, mem: &mut M, chr: u32) -> u32;
+        /// `_CIsqrt(x)` (`0x009497b8`), the value left in ST0.
+        fn sqrt(&mut self, mem: &mut M, x: f64) -> f64;
+        /// `_CIacos(x)` (`0x009498da`), the value left in ST0.
+        fn acos(&mut self, mem: &mut M, x: f64) -> f64;
+    }
+
+    /// `TOBtlSearchRevNearTarget()` (`0x008990f0`): the target to jump to
+    /// on the other side, returned (eax) as an index into that side's
+    /// target list (the decompilation misses the return). The party's
+    /// (`0x0133d180`) and the monsters' (`0x0133d1d4`, only those at
+    /// distance 0 when there are any) mean positions give the axis between
+    /// the sides (x and z; y is 0). From the cursor character
+    /// (`0x0133d1f4`) the other side's nearest target gives the distance
+    /// unit (at least 1; the first list entry's last target starts it).
+    /// Each target scores `angle from the axis in degrees × distance /
+    /// unit`, and the lowest score wins (the first entry's last target
+    /// starts it); a degenerate angle counts as `acos(1)`. With an empty
+    /// other side the original returns an uninitialised word; this
+    /// returns 0. `vec` is a 16-byte scratch for the positions.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::similar_names
+    )]
+    pub fn btl_search_rev_near_target<M: Mem>(
+        mem: &mut M,
+        vec: u32,
+        calls: &mut impl NearTarget<M>,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, mul, sub};
+        let party = mem.rebase(0x0133_d180);
+        let monsters = mem.rebase(0x0133_d1d4);
+        let (n1_at, n2_at) = (mem.rebase(0x0133_d17c), mem.rebase(0x0133_d1d0));
+        let count = |mem: &M, at: u32| i32::from(mem.read::<i16>(at));
+        let pos = |mem: &mut M, calls: &mut dyn NearTarget<M>, chr: u32| -> [f64; 3] {
+            calls.btl_pos(mem, chr, vec);
+            let v: [f32; 3] = mem.read(vec);
+            v.map(f64::from)
+        };
+        let entry = |mem: &M, list: u32, i: i32| -> u32 {
+            mem.read(list.wrapping_add(i.cast_unsigned().wrapping_mul(4)))
+        };
+        // the party's mean position (y kept 0)
+        let mut ap = [0f64; 3];
+        let mut i = 0;
+        while i < count(mem, n1_at) {
+            for chr in 0..20u32 {
+                if entry(mem, party, i) & (1 << chr) != 0 {
+                    let p = pos(mem, calls, chr);
+                    ap[0] = dword(add(p[0], ap[0]));
+                    ap[1] = 0.0;
+                    ap[2] = dword(add(p[2], ap[2]));
+                }
+            }
+            i += 1;
+        }
+        let n = f64::from(count(mem, n1_at));
+        ap = ap.map(|v| dword(div(v, n)));
+        // the monsters at distance 0, if any, else all of them
+        let mut near = 0i32;
+        let mut i = 0;
+        while i < count(mem, n2_at) {
+            for chr in 20..28u32 {
+                if entry(mem, monsters, i) & (1 << chr) != 0 && calls.dist(mem, chr) == 0 {
+                    near += 1;
+                }
+            }
+            i += 1;
+        }
+        let mut am = [0f64; 3];
+        let mut i = 0;
+        while i < count(mem, n2_at) {
+            for chr in 20..28u32 {
+                if entry(mem, monsters, i) & (1 << chr) != 0 && (near <= 0 || calls.dist(mem, chr) == 0) {
+                    let p = pos(mem, calls, chr);
+                    am[0] = dword(add(am[0], p[0]));
+                    am[1] = 0.0;
+                    am[2] = dword(add(am[2], p[2]));
+                }
+            }
+            i += 1;
+        }
+        let used = if near == 0 { count(mem, n2_at) } else { near };
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let m = f64::from(used as f32);
+        am = am.map(|v| dword(div(v, m)));
+        let cursor = u32::from(mem.read::<u16>(mem.rebase(0x0133_d1f4)));
+        let p = pos(mem, calls, cursor);
+        // the other side, its axis and its list (copied, as the original)
+        let (list, n_at, lo, hi, axis) = if cursor < 0x14 {
+            let d = [sub(am[0], ap[0]), sub(am[1], ap[1]), sub(am[2], ap[2])].map(dword);
+            (monsters, n2_at, 20u32, 28u32, d)
+        } else {
+            let d = [sub(ap[0], am[0]), sub(ap[1], am[1]), sub(ap[2], am[2])].map(dword);
+            (party, n1_at, 0, 20, d)
+        };
+        let copy: Vec<u32> = (0..(hi - lo).max(8))
+            .map(|k| entry(mem, list, k.cast_signed()))
+            .collect();
+        let n = count(mem, n_at);
+        let rel = |mem: &mut M, calls: &mut dyn NearTarget<M>, chr: u32| -> [f64; 3] {
+            let q = pos(mem, calls, chr);
+            [sub(q[0], p[0]), sub(q[1], p[1]), sub(q[2], p[2])].map(dword)
+        };
+        let len = |calls: &mut dyn NearTarget<M>, mem: &mut M, q: [f64; 3]| -> f64 {
+            let s = add(add(mul(q[1], q[1]), mul(q[0], q[0])), mul(q[2], q[2]));
+            dword(calls.sqrt(mem, s))
+        };
+        // the nearest target of the other side: the unit
+        let mut unit = f64::NAN; // uninitialised in the original until a target is seen
+        let mut i = 0;
+        while i < count(mem, n_at) {
+            for chr in lo..hi {
+                if entry(mem, list, i) & (1 << chr) != 0 {
+                    let q = rel(mem, calls, chr);
+                    let r = len(calls, mem, q);
+                    if i == 0 || unit > r {
+                        unit = r;
+                    }
+                }
+            }
+            i += 1;
+        }
+        if 1.0 > unit {
+            unit = 1.0;
+        }
+        if n <= 0 {
+            return 0;
+        }
+        let mut best_score = 0f64;
+        let mut best = 1u32 << lo;
+        for j in 0..n {
+            for chr in lo..hi {
+                if copy[j.cast_unsigned() as usize] & (1 << chr) == 0 {
+                    continue;
+                }
+                let q = rel(mem, calls, chr);
+                let dot = dword(add(
+                    add(mul(q[0], axis[0]), mul(q[1], axis[1])),
+                    mul(q[2], axis[2]),
+                ));
+                let dl = len(calls, mem, axis);
+                let ql = len(calls, mem, q);
+                let cos = if dl == 0.0 || ql == 0.0 || dot == 0.0 {
+                    1.0
+                } else {
+                    dword(div(dot, mul(dl, ql)))
+                };
+                let deg = dword(div(mul(calls.acos(mem, cos), 180.0), 3.141_592_741_012_573_2));
+                let ratio = dword(div(ql, unit));
+                let score = dword(mul(deg, ratio));
+                if j == 0 || best_score > score {
+                    best_score = score;
+                    best = j.cast_unsigned();
+                }
+            }
+        }
+        best
+    }
 }
