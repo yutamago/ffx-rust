@@ -18,6 +18,7 @@ pub mod native_chr;
 pub mod native_map;
 pub mod native_move;
 pub mod native_msg;
+pub mod native_sys;
 pub mod run;
 pub mod signal;
 

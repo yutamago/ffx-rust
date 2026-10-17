@@ -3084,6 +3084,7 @@ fn natives_match_the_original() {
                 .chain(&ffx_script::vm::bridge::native_move::PORTED)
                 .chain(&ffx_script::vm::bridge::native_btl::PORTED)
                 .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
+                .chain(&ffx_script::vm::bridge::native_sys::PORTED)
                 .chain(&ffx_script::vm::bridge::native_chr::PORTED)
             {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
@@ -3161,6 +3162,7 @@ fn natives_match_the_original() {
         .chain(&ffx_script::vm::bridge::native_move::PORTED)
         .chain(&ffx_script::vm::bridge::native_btl::PORTED)
         .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
+        .chain(&ffx_script::vm::bridge::native_sys::PORTED)
         .chain(&ffx_script::vm::bridge::native_chr::PORTED)
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
