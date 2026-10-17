@@ -10744,3 +10744,211 @@ fn round22_dispose_fini_menus_fade_and_chadist_match_the_original() {
         );
     }
 }
+
+/// Round 23: the effect sequences' waits and forwarders.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round23_waits_and_forwarders_match_the_original() {
+    use task::{bridge as tb, header};
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0017_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let log = env.log;
+    let v: Vec<u32> = (0..7).map(|_| t.alloc(4)).collect();
+    let [cue, mot, hv, ev, ov, rv2, rv3] = v[..] else {
+        unreachable!()
+    };
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(tb::SOUND_CUE_CHECK), log_stub(log, cue, 250, 1)),
+        (Some(tb::MS_EFFECT_CHECK_MOTION), log_stub(log, mot, 251, 1)),
+        (Some(tb::MS_SET_CHR_DIR_TARGET), log_stub(log, rv2, 252, 6)),
+        (Some(tb::MS_GET_WEAPON_HANDLE), log_stub(log, hv, 253, 2)),
+        (Some(tb::CH_SET_HIDE_EFFECT), log_stub(log, rv2, 254, 2)),
+        (Some(tb::OP_OEF2_A_GET), log_stub(log, ev, 255, 3)),
+        (Some(tb::OP_OEF2_SEP_NUMBER_GET), log_stub(log, rv3, 256, 1)),
+        (Some(tb::OP_OEF2_SE_ON), log_stub(log, rv2, 257, 3)),
+        (Some(tb::RCEF_MAIN_CREATE_OBJ), log_stub(log, ov, 258, 1)),
+        (Some(tb::RCEF_TASK_SET_SEQ), log_stub(log, rv3, 259, 2)),
+        (Some(tb::RCEF_CHR_FINI), log_stub(log, rv3, 260, 1)),
+        (Some(task::PPP_MEM_FREE), log_stub(log, rv2, 261, 3)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let task = t.alloc(0xbc);
+    let envw = t.alloc(4);
+    for k in 0..200u32 {
+        env.reset(&mut t, &mut rng);
+        for &w in &v {
+            t.put(w, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        if k % 4 == 0 {
+            t.put(mot, u32::MAX);
+        }
+        t.fill(task, 0xbc, &mut rng);
+        t.put(task + header::LEVEL, rng.range(0, 8));
+        t.same(
+            "rcEffectTaskSoundCueWait",
+            |o| o.void(0x0093_0500, &[task]),
+            |m| tb::rc_effect_task_sound_cue_wait(m, task, call),
+        );
+        t.same(
+            "rcEffectTaskMotionWait",
+            |o| o.void(0x0093_0430, &[task]),
+            |m| tb::rc_effect_task_motion_wait(m, task, call),
+        );
+        let a = [rng.next(), rng.next(), rng.next(), rng.next()];
+        t.same(
+            "rcefSetChrDirTarget",
+            |o| o.eax(0x0092_e750, &a[..3]),
+            |m| tb::rcef_set_chr_dir_target(m, [a[0], a[1], a[2]], call),
+        );
+        t.same(
+            "rcefSetChrDirTarget2",
+            |o| o.eax(0x0092_e960, &a),
+            |m| tb::rcef_set_chr_dir_target2(m, a, call),
+        );
+        let show = rng.below(3);
+        t.same(
+            "rcefWeaponSetHide",
+            |o| o.eax(0x0092_eb70, &[a[0], show]),
+            |m| tb::rcef_weapon_set_hide(m, a[0], show, call),
+        );
+        t.set(tb::RCEF_OEF2, rng.next());
+        t.same(
+            "rcefPlaySE",
+            |o| o.eax(0x0092_e680, &[a[1]]),
+            |m| tb::rcef_play_se(m, a[1], call),
+        );
+        t.same(
+            "rcefMainCreateTask",
+            |o| o.eax(0x0092_5170, &[a[0], a[1]]),
+            |m| tb::rcef_main_create_task(m, a[0], a[1], call),
+        );
+        t.set(tb::PPP_ENV_SLOT, envw);
+        t.put(envw, rng.next());
+        t.same(
+            "rcefChrDelete",
+            |o| o.eax(0x0093_0600, &[a[2]]),
+            |m| tb::rcef_chr_delete(m, a[2], call),
+        );
+    }
+}
+
+/// Round 23, second part: Yn's pre-BG layer switches and character
+/// distance, the rcfx deletes, the FPm173 end and the transfer pair.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round23_yn_layers_and_rcfx_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0017_0002);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let log = env.log;
+    let v: Vec<u32> = (0..6).map(|_| t.alloc(4)).collect();
+    let [cv, sv, gv, rv2, rv3, _] = v[..] else {
+        unreachable!()
+    };
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(model::SCENE_SET_CHADIST_THUNK),
+            log_stub(log, rv2, 262, 1),
+        ),
+        (Some(model::YN_MAP_PART_COUNT), log_stub(log, cv, 263, 0)),
+        (
+            Some(model::GRAPHIC_2D_HIDE_LAYER),
+            log_stub(log, rv3, 264, 1),
+        ),
+        (
+            Some(model::GRAPHIC_2D_SHOW_LAYER),
+            log_stub(log, rv3, 265, 1),
+        ),
+        (
+            Some(model::TEX_ANIM_SET_VISIBILITY),
+            log_stub(log, rv2, 266, 2),
+        ),
+        (Some(model::RCFX_SPRING_FINI), log_stub(log, rv3, 267, 1)),
+        (Some(model::RCFX_NAIL_FINI), log_stub(log, rv3, 268, 1)),
+        (Some(model::YN_SCENE_GET_OBJECT), log_stub(log, gv, 269, 2)),
+        (Some(model::FPM173_END), log_stub(log, rv2, 270, 1)),
+        (Some(model::TRX_SET_NO), log_stub(log, rv2, 271, 2)),
+        (None, log_stub(log, sv, 272, 2)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let strstr = *stubs.last().unwrap();
+    t.put(t.b.rebase(model::STRSTR_IMPORT), strstr);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (sys, map, scene, parts) = (
+        t.alloc(4),
+        t.alloc(0x20),
+        t.alloc(0x20),
+        t.alloc(0xc0 * 0x30),
+    );
+    for _ in 0..200u32 {
+        env.reset(&mut t, &mut rng);
+        for &w in &v {
+            t.put(w, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        let a = [rng.next(), rng.next(), rng.next(), rng.next()];
+        // Yn
+        let (s, m0) = match rng.below(3) {
+            0 => (0, 0),
+            1 => (sys, 0),
+            _ => (sys, map),
+        };
+        t.set(guide::YN_MAP_SYSTEM, s);
+        t.put(sys, m0);
+        t.put(map + 8, scene);
+        t.same(
+            "Yn_SetChadist",
+            |o| {
+                let e = o.eax(0x0091_a250, &[]);
+                (s != 0 && m0 != 0).then_some(e)
+            },
+            |m| model::bridge::yn_set_chadist(m, call),
+        );
+        // the layer switches need the scene (the original reads address 8
+        // without one)
+        t.set(guide::YN_MAP_SYSTEM, sys);
+        t.put(sys, map);
+        t.put(scene + 8, parts);
+        t.fill(parts, 0xc0 * 0x30, &mut rng);
+        t.put(cv, rng.range(-2, 0x30).cast_unsigned());
+        let mapno = match rng.below(4) {
+            0 => 0x15b,
+            1 => 0xd4,
+            _ => rng.below(0x400),
+        };
+        t.put(t.b.rebase(model::CURRENT_MAP_NO), mapno);
+        let n = rng.below(0x30);
+        t.same(
+            "Yn_PreBgLayerDispOff",
+            |o| o.eax(0x0091_a7c0, &[n]),
+            |m| model::bridge::yn_pre_bg_layer_disp_off(m, n, call),
+        );
+        t.same(
+            "Yn_PreBgLayerDispOn",
+            |o| o.eax(0x0091_a830, &[n]),
+            |m| model::bridge::yn_pre_bg_layer_disp_on(m, n, call),
+        );
+        // rcfx, FPm173, transfers
+        t.same(
+            "rcfxSpringDelete",
+            |o| o.eax(0x0092_8c60, &[a[3]]),
+            |m| model::bridge::rcfx_spring_delete(m, a[3], call),
+        );
+        t.same(
+            "rcfxNailDelete",
+            |o| o.eax(0x0092_9070, &[a[3]]),
+            |m| model::bridge::rcfx_nail_delete(m, a[3], call),
+        );
+        t.same(
+            "Yn_FPm173End",
+            |o| o.eax(0x0091_9ab0, &[]),
+            |m| model::bridge::yn_fpm173_end(m, call),
+        );
+        t.same(
+            "rcbgTrxPairSetNo",
+            |o| o.eax(0x0092_21e0, &[a[0], a[1]]),
+            |m| model::bridge::rcbg_trx_pair_set_no(m, a[0], a[1], call),
+        );
+    }
+}

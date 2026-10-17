@@ -9421,6 +9421,7 @@
 0x00919a20 function Yn_BattleBegin            # fh v3:bsim1.00 0x00919a20
 0x00919a40 function Yn_BattleEnd              # fh v3:bsim1.00 0x00919a40
 0x00919a60 function Yn_MapSystemFini          # (): rcbgFini when g_YnMapSystem is set (a guard jumping into it; returns the caller's eax without one); yiResetObj
+0x00919ab0 function Yn_FPm173End              # () -> eax: rcbgFPm173End(Yn_SceneGetObject(0x20008, 0)) when there is one, else 0; name ours
 0x00919ba0 function Yn_FpTrxTexGet            # fh switch:bsim1.00 0x7100548ce0
 0x00919bc0 function Yn_EmbeddedTrxGetCnt      # (obj): jumps to rcbgEmbeddedTrxGetCnt; called from 0x0073b5c0 and three more
 0x00919be0 function Yn_FpTrxTexSetAddr        # (tex, image, clut): rcbgTrxTexSetAddr; pppDrawMdl* callers
@@ -9450,6 +9451,7 @@
 0x0091a0f0 function Yn_MapPartMoveTo             # (part, x, y, frames): move from the position (+0x64 = +0x4c, +0x6c = +0x50) to x, y (+0x68, +0x70) over frames (+0x7c), counter +0x80 = 0; native 0x8055 (0x0091c2d0)
 0x0091a150 function Yn_MapPartScaleTo            # (part, sx, sy, frames): scale from +0x44/+0x48 (into +0x54/+0x5c) to sx, sy (+0x58/+0x60; 0.0 keeps it) over frames (+0x74), counter +0x78; native 0x804f (0x0091c150, one value for both)
 0x0091a240 function Yn_DrawScene              # (): through 0x00921a10/0x009215e0, rcbgSceneDraw(map +8) when g_YnMapSystem and its map exist; name ours
+0x0091a250 function Yn_SetChadist             # (): through 0x00921a30/0x00921610, rcbgSceneSetChadist_thunk(map +8) when g_YnMapSystem and its map exist (as Yn_DrawScene); name ours
 0x0091a260 function Yn_SceneSet104               # (v): scene +0x104 (g_YnMapSystem map +8); script native 0x0091af80
 0x0091a2a0 function Yn_MapPartAnimeGetCount      # (part) -> the animation's frame count (+0x98), 0 past the count; native 0x801c slot 0 (0x0091b3e0)
 0x0091a2e0 function Yn_MapPartGetAlpha           # (part) -> the colour's alpha byte (+0x43); native 0x8031 (0x0091b720)
@@ -9469,6 +9471,7 @@
 0x0091a700 function Yn_SceneGetB8                # () -> float scene +0xb8
 0x0091a730 function Yn_SceneGetBC                # () -> float scene +0xbc
 0x0091a770 function Yn_PreBgLayerDispGet      # fh v3:exact 0x0091a770
+0x0091a7c0 function Yn_PreBgLayerDispOff      # (n): Yn_PreBgLayerDispOn's reverse: part n (0xc0 bytes, scene +8) bit 0 set below Yn_MapPartCount; below the count (0x1c on maps 0x15b, 0xd4) graphic2DHideLayer(n), texture animation material n invisible; name ours
 0x0091a830 function Yn_PreBgLayerDispOn          # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'te/test20'; Switch 0x7100547930 Yn_PreBgLayerDispOn (symbols from Fahrenheit's server export)
 0x0091a930 function Yn_MapPartAnimeSetFrame      # (part, frame): the animation's current frame (u16 +0x96); native 0x801d (0x0091b400)
 0x0091a970 function Yn_MapPartAnimeSetLastFrame  # (part): current frame = count (+0x98) - 1; native 0x802f (0x0091b6d0)
@@ -9678,6 +9681,7 @@
 0x00922140 function rcbgEmbeddedTrxGetCnt     # (obj) -> rcbgTrxGetCnt(obj + 0x20)
 0x00922160 function rcbgTrxTexInit            # (tex): kind 0x20003, rcbgTrxTexDelete, rcbgTrxTexDraw, +0x14 -1, two transfers +0x20/+0x60 (rcbgTrxTexNew)
 0x009221b0 function rcbgTrxTexNew             # fh v3:bsim1.00 0x009221b0
+0x009221e0 function rcbgTrxPairSetNo          # (p, n): rcbgTrxSetNo(p +0x20, n), rcbgTrxSetNo(p +0x60, n); name ours
 0x00922210 function rcbgTrxTexSetAddr         # (tex, image, clut): GS addresses at +0x18/+0x1c, rcbgTrxSetRegs for the image (+0x20, psm 0x13) and CLUT (+0x60, 16x16)
 0x00922290 function rcbgFPmGetMatrix          # (fp, out): rotation +0x18 (x 0x00b678ec), identity scaled by +0x28, op_rt_m_yxz with +0x8
 0x00922300 function rcbgFPmRestart            # (id, chr, elem): pppFpGetMngPtr, flag 0x100, Fp_Restart, Ch_ElemGetMatrix into mng + 0xc; rcbgFPm173Proc*
@@ -9805,12 +9809,14 @@
 0x009289b0 function rcfxParticleClearForces      # (p): 16 bytes per particle (+0x2c array, +0x1c count) zeroed; rcfxParticleResetForce
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
+0x00928c60 function rcfxSpringDelete          # (spring): rcfxSpringFini, then rcFree; name ours
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
 0x00928ce0 function rcfxSpringInit            # (s): kind 0x30005, functions 0x00928c60/0x00928d70/0x00928aa0, 0.8 and 0.4
 0x00928d50 function rcfxSpringNew             # (): rcAlloc(0x30, rcfxSpring.c 0x1d) + rcfxSpringInit
 0x00928d80 function rcfxSpringSetCnt          # (s, n): +0x1c = n, +0x20 (8 n) and +0x24 (4 n) reallocated (rcfxSpring.c 0x42/0x43)
 0x00928e50 function rcbgScaleVector_00928e50  # the same code as rcbgScaleVector 0x009200a0
 0x00928eb0 function rcCopyQword_00928eb0      # (dst, src): as rcCopyQword_0091cb40
+0x00929070 function rcfxNailDelete            # (nail): rcfxNailFini, then rcFree; name ours
 0x00929090 function rcfxNailFini              # (nail): rcFree +0x20..+0x2c
 0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
 0x00929170 function rcfxNailNew               # (): rcAlloc 0x40 (rcfxNail.c), rcfxNailInit
@@ -9941,13 +9947,16 @@
 0x0092e630 function rcefScaleMatrix100        # (m): three rows times 100.0 (rcbgScaleVector_0092d690); rcefGetChrMatrix
 0x0092e680 function rcefPlaySE                # fh v3:exact 0x0092e680
 0x0092e6b0 function rcefPlayStream            # fh v3:exact 0x0092e6b0
+0x0092e750 function rcefSetChrDirTarget       # (chr, a, b): MsSetChrDirTarget(chr, 1, 0, 0, a, b); name ours
 0x0092e770 function rcefWorkCall_00925530     # g_MagicImports slot 472 (9 overlays): 0x00925530(0x025d5a20); hidden from the dump
 0x0092e780 function rcefResetMotion           # fh switch:bsim1.00 0x7100556210
 0x0092e7a0 function rcefReverseList           # g_MagicImports slot 521 (1 overlay): reverses the dwords from 0x025d5bc0 (count at 0x025d5bbc) in place; hidden from the dump
+0x0092e960 function rcefSetChrDirTarget2      # (chr, a, b, c): MsSetChrDirTarget(chr, 2, 0, a, b, c); name ours
 0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
 0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
+0x0092eb70 function rcefWeaponSetHide         # (chr, show): Ch_SetHideEffect(MsGetWeaponHandle(chr, 0), show == 0) when the handle is non-zero; name ours
 0x0092eba0 function rcefPostRequest           # (a, f, b, c, d) -> d: g_RcefRequest = a, f (float), b, 0, c, d; g_RcefRequestPending = 1; g_MagicImports (0x00c65494); nothing in the PC build reads the request; name ours
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
 0x0092ec20 function rcefVecToAngle            # (v) -> float: acos(-v.z) (_CIacos), 2pi minus it when v.x > 0
@@ -10007,8 +10016,10 @@
 0x009304b0 function rcEffectTaskPrayWait      # fh v3:exact 0x009304b0
 0x009304d0 function rcefTaskRetSeqCont_thunk  # g_MagicImports slot 430 (39 overlays), between rcEffectTaskPrayWait and rcEffectTaskTaskWait: jmp rcefTaskRetSeqCont; hidden from the dump
 0x009304e0 function rcEffectTaskRequestWait   # sequence (task): rcefTaskRetSeqCont once g_RcefRequestPending is 0 (never cleared on PC); next to rcEffectTaskFlagWait; name ours
+0x00930500 function rcEffectTaskSoundCueWait  # sequence (task): rcefTaskRetSeqCont once op_oef2_sound_cue_check(0x800) is 0; name ours
 0x00930520 function rcEffectTaskTaskWait      # fh v3:exact 0x00930520
 0x00930550 function rcefChrNew                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100555d40 rcefChrNew, 3 votes, round 2
+0x00930600 function rcefChrDelete             # (obj): rcefChrFini, then pppMemFree(env, env + 0x10, obj) with env = *g_pppEnvSlot; name ours
 0x00930710 function rcefChrFini               # fh switch:bsim1.00 0x7100555f00
 0x00930770 function rcefChrInit               # fh switch:bsim0.91 0x7100555e10
 0x00930800 function rcefChrAlloc              # g_MagicImports slot 468 (1 overlay): pppMemAlloc(env, env + 0x10, 0x100) on g_pppEnvSlot's environment, rcefChrInit(it), returns it; hidden from the dump
@@ -13793,6 +13804,8 @@
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
+0x025d5a28 label    g_RcefOef2                   # the effect's oef2 data: rcefPlaySE's op_oef2_a_get(it, 6, id)
 0x025d5c18 label    g_RcefRequest                # rcefPostRequest's words: a, f, b, 0, c, d (+0..+0x14); no reader in the PC build
 0x025d5c34 label    g_RcefRequestPending         # set by rcefPostRequest, awaited (0) by rcEffectTaskRequestWait; never cleared on PC
 0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)
+0x025d5ebc label    g_YnTest20Seen               # set by Yn_PreBgLayerDispOn when the path at 0x023cbc60 contains "te/test20" (strstr)
