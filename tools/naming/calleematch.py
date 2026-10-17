@@ -16,6 +16,7 @@ seeds): 98-99.5% with the defaults.
 
   tools/naming/calleematch.py --out PROPOSALS.tsv [--min 0.6] [--shared 1]
   tools/naming/calleematch.py --holdout 0.2 [--seed 1]   # measure precision
+  wider: --span 0x3000 --file 0x20000 (holdout 97-99.3%, about twice the names)
   then: tools/naming/apply.py PROPOSALS.tsv  (repeat: new names make new gaps)
 
 Inputs: $FFX_WORK/decomp/{functions,call_sites}.tsv and

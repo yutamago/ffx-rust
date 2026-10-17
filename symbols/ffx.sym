@@ -149,6 +149,10 @@
 0x0043bad0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClassDescriptor__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClassDescriptor *>::Get" (its own __FUNCTION__ in an error print)
 0x0043be70 function Phyre_PClassDescriptor_SortClassDescriptors # fh v3:exact 0x0043bf60 Phyre::PClassDescriptor::SortClassDescriptors
 0x0043c140 function Phyre_PClassDescriptor_addToNamespace # fh v3:exact 0x0043c230 Phyre::PClassDescriptor::addToNamespace
+0x0043c160 function Phyre_PClassDescriptor_applyDefaultBufferWithValidation # layout+callees: sorts between Phyre_PClassDescriptor_addToNamespace and Phyre_PClassDescriptor_calculateDefaultBuffer, and its named callees match the Switch 0x71000a3960 Phyre_PClassDescriptor_applyDefaultBufferWithValidation's (similarity 1.00: Phyre_PClassDescriptor_calculateDefaultBuffer, Phyre_PClassDescriptor_calculateValidationBuffer); symbols from Fahrenheit's server export
+0x0043c250 function Phyre_PClassDescriptor_applyValidationBuffer # layout: alphabetical run between Phyre_PClassDescriptor_applyDefaultBufferWithValidation and Phyre_PClassDescriptor_calculateDefaultBuffer (3 unnamed in the gap); Switch 0x71000a36d0 Phyre::PClassDescriptor::applyValidationBuffer is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0043c2a0 function Phyre_PClassDescriptor_applyWriteMaskBuffer # layout: alphabetical run between Phyre_PClassDescriptor_applyDefaultBufferWithValidation and Phyre_PClassDescriptor_calculateDefaultBuffer (3 unnamed in the gap); Switch 0x71000a3720 Phyre::PClassDescriptor::applyWriteMaskBuffer is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0043c400 function Phyre_PClassDescriptor_asClassDescriptor # layout: alphabetical run between Phyre_PClassDescriptor_applyDefaultBufferWithValidation and Phyre_PClassDescriptor_calculateDefaultBuffer (3 unnamed in the gap); Switch 0x71000a3b00 Phyre::PClassDescriptor::asClassDescriptor is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0043c420 function Phyre_PClassDescriptor_calculateDefaultBuffer # fh v3:bsim0.98 0x0043c510 Phyre::PClassDescriptor::calculateDefaultBuffer
 0x0043c630 function Phyre_PClassDescriptor_calculateValidationBuffer # fh v3:exact 0x0043c720 Phyre::PClassDescriptor::calculateValidationBuffer
 0x0043cb80 function Phyre_PClassDescriptor_getDefaultBuffer # fh v3:cg3 0x43cc70 Phyre::PClassDescriptor::getDefaultBuffer
@@ -187,6 +191,7 @@
 0x00441120 function Phyre_PCluster_createInternal # layout: alphabetical run between Phyre_PCluster_create and Phyre_PCluster_deleteInstancesOfType (2 unnamed in the gap); Switch 0x71000a5ab0 Phyre::PCluster::createInternal is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00441180 function Phyre_PCluster_deleteInstancesOfType # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71000a5b30 Phyre::PCluster::deleteInstancesOfType, 6 votes, round 1
 0x00441240 function Phyre_PCluster_deleteObject # fh v3:exact 0x00441310 Phyre::PCluster::deleteObject
+0x00441380 function Phyre_PCluster_deleteObjectForScript # layout+callees: sorts between Phyre_PCluster_deleteObject and Phyre_PCluster_deleteObjectWithInstanceList, and its named callees match the Switch 0x71000a5b20 Phyre_PCluster_deleteObjectForScript's (similarity 1.00: Phyre_PCluster_deleteObject); symbols from Fahrenheit's server export
 0x004413a0 function Phyre_PCluster_deleteObjectWithInstanceList # layout+callees: sorts between Phyre_PCluster_deleteObject and Phyre_PCluster_fixupInstances, and its named callees match the Switch 0x71000a65b0 Phyre_PCluster_deleteObjectWithInstanceList's (similarity 1.00: Phyre_PFreeList_deallocate, Phyre_PFreeList_dtor_PFreeList, Phyre_PInstanceList_freeBuffer, Phyre_PInstanceList_freeObject, Phyre_PWorld_removeInstanceList); symbols from Fahrenheit's server export
 0x00441620 function Phyre_PCluster_fixupInstances # fh v3:exact 0x004416f0 Phyre::PCluster::fixupInstances
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
@@ -235,6 +240,7 @@
 0x0044db40 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PComponent__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PComponent &>::Get" (its own __FUNCTION__ in an error print)
 0x0044dc10 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PComponent__Get_0044dc10 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PComponent *>::Get" (its own __FUNCTION__ in an error print)
 0x0044e120 function Phyre_PClassDescriptorForType_Phyre_PComponent__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b2d80 Phyre::PClassDescriptorForType<Phyre::PComponent>::getPointerFromScriptContext
+0x0044e520 function Phyre_PClassDescriptor_GetInstanceMemberForType_Phyre_PEntity # layout+callees: sorts between Phyre_PClassDescriptorForType_Phyre_PComponent__getPointerFromScriptContext and Phyre_PComponent_PComponent, and its named callees match the Switch 0x71000b4160 Phyre_PClassDescriptor_GetInstanceMemberForType_Phyre_PEntity's (similarity 0.67: Phyre_PNamespace_GetGlobalNamespace, Phyre_PNamespace_getClassDescriptor); symbols from Fahrenheit's server export
 0x0044ecb0 function Phyre_PComponent_PComponent  # layout+callees: sorts between Phyre_PClassDescriptorForType_Phyre_PComponent__getPointerFromScriptContext and Phyre_PEntity_Bind, and its named callees match the Switch 0x71000b2c40 Phyre_PComponent_PComponent's (similarity 1.00: Phyre_PBase_GetClassDescriptor); symbols from Fahrenheit's server export
 0x0044f120 function Phyre_PEntity_Bind        # fh v3:exact 0x0044f200 Phyre::PEntity::Bind
 0x0044f780 function Phyre_PEntity_FixInstancesAfterLoading # layout+callees: sorts between Phyre_PEntity_Bind and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PEntity__Get, and its named callees match the Switch 0x71000b4360 Phyre_PEntity_FixInstancesAfterLoading's (similarity 1.00: Phyre_PRedBlackTree_postInsertFinalize); symbols from Fahrenheit's server export
@@ -275,6 +281,7 @@
 0x0045ad60 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PNameComponent__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PNameComponent *>::Get" (its own __FUNCTION__ in an error print)
 0x0045c500 function Phyre_PAssetReference_Bind # fh v3:exact 0x0045c5c0 Phyre::PAssetReference::Bind
 0x0045c890 function Phyre_PAssetReferenceImport_Bind # fh v3:exact 0x0045c950 Phyre::PAssetReferenceImport::Bind
+0x0045c9e0 function Phyre_PAssetReferenceImport_PAssetReferenceImport # layout+callees: sorts between Phyre_PAssetReferenceImport_Bind and Phyre_PAssetReference_CreateAssetReference, and its named callees match the Switch 0x71000ae6c0 Phyre_PAssetReferenceImport_PAssetReferenceImport's (similarity 1.00: Phyre_PBase_GetClassDescriptor); symbols from Fahrenheit's server export
 0x0045ca90 function Phyre_PAssetReference_CreateAssetReference # layout+callees: sorts between Phyre_PAssetReferenceImport_Bind and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAssetReferenceImport__Get, and its named callees match the Switch 0x71000ad9e0 Phyre_PAssetReference_CreateAssetReference's (similarity 0.67: Phyre_PCluster_allocateInstanceList, Phyre_PCluster_deleteObject); symbols from Fahrenheit's server export
 0x0045cb50 function Phyre_PAssetReference_GetAssetReferenceByAsset # layout+callees: sorts between Phyre_PAssetReferenceImport_Bind and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAssetReferenceImport__Get, and its named callees match the Switch 0x71000adbd0 Phyre_PAssetReference_GetAssetReferenceByAsset's (similarity 0.60: Phyre_PCriticalSectionSimple_lock, Phyre_PCriticalSectionSimple_unlock, Phyre_PRedBlackTree_successor); symbols from Fahrenheit's server export
 0x0045cf00 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAssetReferenceImport__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAssetReferenceImport &>::Get" (its own __FUNCTION__ in an error print)
@@ -423,6 +430,7 @@
 0x004a2800 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShaderParameterDefinition__Get_004a2800 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PShaderParameterDefinition *>::Get" (its own __FUNCTION__ in an error print)
 0x004a31a0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterCaptureBufferLocationType__getValueFromScriptContext # fh switch:bsim1.00 0x710005e4f0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PShaderParameterCaptureBufferLocationType>::getValueFromScriptContext
 0x004a31d0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer__getValueFromScriptContext # fh switch:bsim0.91 0x710005e930 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PShaderParameterCaptureBufferLocationTypeConstantBuffer>::getValueFromScriptContext
+0x004a3830 function Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderParameterCaptureBufferTextureBase__getPointerFromScriptContext # layout+callees: sorts between Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer__getValueFromScriptContext and Phyre_PRendering_PShaderParameterCaptureBufferIndexDataBlock_Bind, and its named callees match the Switch 0x7100066610 Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderParameterCaptureBufferTextureBase__getPointerFromScriptContext's (similarity 1.00: Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShaderParameterCaptureBufferTextureBase__Get); symbols from Fahrenheit's server export
 0x004a9f60 function Phyre_PRendering_PShaderParameterCaptureBufferIndexDataBlock_Bind # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'm_indexDataBlock'; Switch 0x7100064f90 Phyre::PRendering::PShaderParameterCaptureBufferIndexDataBlock::Bind (symbols from Fahrenheit's server export)
 0x004aa000 function Phyre_PRendering_PShaderParameterCaptureBufferRWByteAddressBuffer_Bind # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'm_rwIndirectArgsBuffer'; Switch 0x7100064d90 Phyre::PRendering::PShaderParameterCaptureBufferRWByteAddressBuffer::Bind (symbols from Fahrenheit's server export)
 0x004aa130 function Phyre_PRendering_PShaderParameterCaptureBufferRWStructuredBuffer_Bind # layout: alphabetical run between Phyre_PRendering_PShaderParameterCaptureBufferRWByteAddressBuffer_Bind and Phyre_PRendering_PShaderParameterCaptureBufferSampler_Bind (3 unnamed in the gap); Switch 0x7100064b90 Phyre::PRendering::PShaderParameterCaptureBufferRWStructuredBuffer::Bind is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -511,6 +519,7 @@
 0x004bcde0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShader__Get_004bcde0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PShader *>::Get" (its own __FUNCTION__ in an error print)
 0x004be260 function Phyre_PInternal_PCallerImplementation_PCallerImplementation1_PMethodCallerConcrete_Phyre_PRendering_PSamplerStateBase_Phyre_PResult_Phyre_PRendering_PSamplerStateBase_PSamplerStateFilterFormatType__getArgumentTypes # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Phyre::PRendering::PSamplerStateBase::PSamplerStateFilterFor'; Switch 0x710004ed80 Phyre::PInternal::PCallerImplementation::PCallerImplementation1::PMethodCallerConcrete<Phyre::PRendering::PSamplerStateBase,Phyre::PResult,Phyre::PRendering::PSamplerStateBase::PSamplerStateFilterFormatType>::getArgumentTypes (symbols from Fahrenheit's server export)
 0x004be300 function Phyre_PInternal_PCallerImplementation_PCallerImplementation1_PMethodCallerConcrete_Phyre_PRendering_PSamplerStateBase_Phyre_PResult_Phyre_PRendering_PSamplerStateBase_PSamplerStateWrapFormatType__getArgumentTypes # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Phyre::PRendering::PSamplerStateBase::PSamplerStateWrapForma'; Switch 0x710004f170 Phyre::PInternal::PCallerImplementation::PCallerImplementation1::PMethodCallerConcrete<Phyre::PRendering::PSamplerStateBase,Phyre::PResult,Phyre::PRendering::PSamplerStateBase::PSamplerStateWrapFormatType>::getArgumentTypes (symbols from Fahrenheit's server export)
+0x004bed40 function Phyre_PRendering_PRenderTarget_Bind # layout+callees: sorts between Phyre_PInternal_PCallerImplementation_PCallerImplementation1_PMethodCallerConcrete_Phyre_PRendering_PSamplerStateBase_Phyre_PResult_Phyre_PRendering_PSamplerStateBase_PSamplerStateWrapFormatType__getArgumentTypes and Phyre_PRendering_PSamplerStateBase_Bind, and its named callees match the Switch 0x710004ae50 Phyre_PRendering_PRenderTarget_Bind's (similarity 1.00: Phyre_PClassDescriptor_addToNamespace, Phyre_PTypeDispenser_RegisterType); symbols from Fahrenheit's server export
 0x004bed60 function Phyre_PRendering_PSamplerStateBase_Bind # fh v3:exact 0x004bee80 Phyre::PRendering::PSamplerStateBase::Bind
 0x004bf870 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PSamplerState__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PSamplerState &>::Get" (its own __FUNCTION__ in an error print)
 0x004bf940 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PSamplerStateBase__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PSamplerStateBase &>::Get" (its own __FUNCTION__ in an error print)
@@ -688,6 +697,7 @@
 0x0050e2c0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationChannel__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAnimation::PAnimationChannel &>::Get" (its own __FUNCTION__ in an error print)
 0x0050e390 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationChannel__Get_0050e390 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAnimation::PAnimationChannel *>::Get" (its own __FUNCTION__ in an error print)
 0x0050e730 function Phyre_PAnimation_PAnimationChannel_getBatchSortKey # fh switch:bsim1.00 0x7100136ea0 Phyre::PAnimation::PAnimationChannel::getBatchSortKey
+0x0050e890 function Phyre_PClassDescriptorForType_Phyre_PAnimation_PAnimationChannel__getPointerFromScriptContext # layout+callees: sorts between Phyre_PAnimation_PAnimationChannel_getBatchSortKey and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationConstantChannel__Get, and its named callees match the Switch 0x7100137050 Phyre_PClassDescriptorForType_Phyre_PAnimation_PAnimationChannel__getPointerFromScriptContext's (similarity 1.00: Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationChannel__Get); symbols from Fahrenheit's server export
 0x0050f3d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationConstantChannel__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAnimation::PAnimationConstantChannel &>::Get" (its own __FUNCTION__ in an error print)
 0x0050f4a0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationConstantChannel__Get_0050f4a0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAnimation::PAnimationConstantChannel *>::Get" (its own __FUNCTION__ in an error print)
 0x00510450 function Phyre_PAnimation_PAnimationClipBinding_Bind # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'm_spuBindingSize'; Switch 0x710013ea90 Phyre::PAnimation::PAnimationClipBinding::Bind (symbols from Fahrenheit's server export)
@@ -888,6 +898,7 @@
 0x0056d4f0 function Phyre_PClassDescriptorForType_Phyre_PGameplay_PLocator__getPointerFromScriptContext # fh switch:bsim1.00 0x7100169e10 Phyre::PClassDescriptorForType<Phyre::PGameplay::PLocator>::getPointerFromScriptContext
 0x0056d510 function Phyre_PClassDescriptorForType_Phyre_PGameplay_PTimerComponent__getPointerFromScriptContext # fh switch:bsim1.00 0x710016bac0 Phyre::PClassDescriptorForType<Phyre::PGameplay::PTimerComponent>::getPointerFromScriptContext
 0x0056d550 function Phyre_PClassDescriptorForType_Phyre_PAnimation_PAnimationClip__getPointerFromScriptContext # fh switch:bsim1.00 0x710013c030 Phyre::PClassDescriptorForType<Phyre::PAnimation::PAnimationClip>::getPointerFromScriptContext
+0x0056d910 function Phyre_PClassDescriptorForType_Phyre_PSprite_PTextureAtlasInfo__getPointerFromScriptContext # layout+callees: sorts between Phyre_PClassDescriptorForType_Phyre_PAnimation_PAnimationClip__getPointerFromScriptContext and Phyre_PSprite_PSpriteAnimationInfoInstance_Bind, and its named callees match the Switch 0x7100128350 Phyre_PClassDescriptorForType_Phyre_PSprite_PTextureAtlasInfo__getPointerFromScriptContext's (similarity 1.00: Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSprite_PTextureAtlasInfo__Get); symbols from Fahrenheit's server export
 0x0056f990 function Phyre_PSprite_PSpriteAnimationInfoInstance_Bind # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'm_spriteCollection'; Switch 0x710012aca0 Phyre::PSprite::PSpriteAnimationInfoInstance::Bind (symbols from Fahrenheit's server export)
 0x0056fb60 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSprite_PSpriteAnimationInfoInstance__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSprite::PSpriteAnimationInfoInstance &>::Get" (its own __FUNCTION__ in an error print)
 0x0056fc30 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSprite_PSpriteAnimationInfoInstance__Get_0056fc30 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSprite::PSpriteAnimationInfoInstance *>::Get" (its own __FUNCTION__ in an error print)
@@ -933,6 +944,7 @@
 0x0057a320 function Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers # str-match switch: only user of 1 string(s) held once by both builds, e.g. "Array fixup refers to array '%s::%s' not in current runtime\\"; Switch 0x71000fbdb0 Phyre::PSerialization::PBinary::PInternal::PClusterReaderBinary::fixupDataPointers (symbols from Fahrenheit's server export)
 0x0057a6b0 function Cluster_ApplyPointerFixups # unpacks with Cluster_UnpackPointerFixups, then writes each pointer: target list data + index * size + word 4, or a user fixup when word 6 < user fixup count
 0x0057acd0 function Cluster_ApplyPointerArrayFixups # Cluster_UnpackArrayFixups(..., 1), then points each pointer array at its storage ("Pointer array fixup refers to array ...")
+0x0057b3a0 function Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_initializeInstanceLists # layout+callees: sorts between Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers and Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_loadAndFixHeaderClasses, and its named callees match the Switch 0x71000fa0d0 Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_initializeInstanceLists's (similarity 0.67: Phyre_PCluster_allocateInstanceList, Phyre_PCluster_allocateInstanceListForSize); symbols from Fahrenheit's server export
 0x0057b6c0 function Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_loadAndFixHeaderClasses # str-match switch: only user of 3 string(s) held once by both builds, e.g. "Header class '%s' is larger at runtime than stored in the fi"; Switch 0x71000fa9d0 Phyre::PSerialization::PBinary::PInternal::PClusterReaderBinary::loadAndFixHeaderClasses (symbols from Fahrenheit's server export)
 0x0057bce0 function Phyre_PSerialization_PBinary_loadCluster # fh v3:cg4 0x57be50 Phyre::PSerialization::PBinary::loadCluster
 0x0057c480 function Phyre_PSerialization_PBinary_loadClusterToVram # fh switch:bsim1.00 0x71000fd4a0 Phyre::PSerialization::PBinary::loadClusterToVram
@@ -1416,6 +1428,7 @@
 0x00623470 function Steam_Init                # RestartAppIfNecessary(0), SteamAPI_Init; sets g_SteamReady on success, result ignored by caller
 0x00623580 function PApplication_FixupClusters # fh v4:user_defined+call.cs cdecl
 0x006235d0 function Phyre_PFramework_PApplicationScriptProxy_Framerate # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Framerate:%s: %f %d\\n'; Switch 0x71001aac70 Phyre::PFramework::PApplicationScriptProxy::Framerate (symbols from Fahrenheit's server export)
+0x00623660 function Phyre_PFramework_PApplicationScriptProxy_Frames # layout+callees: sorts between Phyre_PFramework_PApplicationScriptProxy_Framerate and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PInputMapper__Get, and its named callees match the Switch 0x71001aaa30 Phyre_PFramework_PApplicationScriptProxy_Frames's (similarity 1.00: Phyre_PFramework_PApplicationScriptProxy_applyFrameInput, Phyre_PFramework_PApplication_frame); symbols from Fahrenheit's server export
 0x006237e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PInputMapper__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PFramework::PInputMapper &>::Get" (its own __FUNCTION__ in an error print)
 0x006238b0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PApplication__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PFramework::PApplication *>::Get" (its own __FUNCTION__ in an error print)
 0x00623990 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PApplicationViewport__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PFramework::PApplicationViewport *>::Get" (its own __FUNCTION__ in an error print)
@@ -1447,8 +1460,10 @@
 0x0062ac70 function Phyre_PFramework_PApplication_prePhyreInit # fh v3:bsim1.00 0x0062ae20 Phyre::PFramework::PApplication::prePhyreInit
 0x0062b5f0 function Phyre_PFramework_PApplicationScriptProxy_readInputLog # str-match switch: only user of 4 string(s) held once by both builds, e.g. '%d:%d:%d'; Switch 0x71001abce0 Phyre::PFramework::PApplicationScriptProxy::readInputLog (symbols from Fahrenheit's server export)
 0x0062bb60 function Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands # str-match switch: only user of 12 string(s) held once by both builds, e.g. 'Timestep'; Switch 0x71001a9ba0 Phyre::PFramework::PApplicationScriptProxy::registerScriptCommands (symbols from Fahrenheit's server export)
+0x0062be00 function Phyre_PFramework_PApplicationViewport_render # layout+callees: sorts between Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands and Phyre_PFramework_PApplication_renderMeshInstances, and its named callees match the Switch 0x71001b2b40 Phyre_PFramework_PApplicationViewport_render's (similarity 1.00: Phyre_PRendering_PRendererBase_setViewport); symbols from Fahrenheit's server export
 0x0062be50 function Phyre_PFramework_PApplication_renderMeshInstances # fh switch:bsim1.00 0x71001b1ba0 Phyre::PFramework::PApplication::renderMeshInstances
 0x0062be70 function Phyre_PFramework_PApplication_renderWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a1f58 Phyre::PFramework::PApplication::renderWorld, 16 votes, round 1
+0x0062c6f0 function Phyre_PFramework_PApplication_scriptedFrame # layout+callees: sorts between Phyre_PFramework_PApplication_renderWorld and Phyre_PFramework_PInputDevicePad_setVibration, and its named callees match the Switch 0x71001af1a0 Phyre_PFramework_PApplication_scriptedFrame's (similarity 1.00: Phyre_PFramework_PApplicationScript_executeNextCommand); symbols from Fahrenheit's server export
 0x0062cb70 function Phyre_PFramework_PInputDevicePad_setVibration # fh v3:exact 0x0062cd20 Phyre::PFramework::PInputDevicePad::setVibration
 0x0062cf50 function Phyre_PFramework_PApplication_setWindowIconID # structure: this +0x39c = id, its only caller FFXApplication_FFXApplication; Switch PApplication::setWindowIconID (8 bytes) is called by FFXApplication::FFXApplication
 0x0062d5c0 function Keyboard_Update            # GetDeviceState(256); Phyre key i is down when scan code table[i] (0x00c30e90) is
@@ -1609,6 +1624,7 @@
 0x006352b0 function std_Tree_const_iterator_inc_006352b0 # fastcall(it*) -> it: std::map iterator ++ (in-order successor; left +0, parent +4, right +8, _Isnil +0xd); same bytes at 0x00635300, 0x00635350, 0x00699ee0 (and in other modules)
 0x00635300 function std_Tree_const_iterator_inc_00635300 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x00635350 function std_Tree_const_iterator_inc_00635350 # same bytes as std_Tree_const_iterator_inc_006352b0
+0x00635a70 function IsCharacterCancleLoad        # layout+callees: sorts between AssetListReader_dtor_AssetListReader and asyncFFXInitialize, and its named callees match the Switch 0x71001cd2b0 IsCharacterCancleLoad's (similarity 1.00: getScenerioFlag); symbols from Fahrenheit's server export
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
 0x006365f0 function batchSetClothVertexBuffers   # str-match switch: only user of the string 'ClothWorld' held once by both builds; Switch 0x71001cfcf0 batchSetClothVertexBuffers (the address fh switch:cg2 had given to 0x0063b290)
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
@@ -1686,13 +1702,20 @@
 0x0063d140 function graphicCharacterLoad      # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."; was Chr_LoadAssetList
 0x0063d260 function ClusterManager_createPreallocateDataList # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001c6ea0 ClusterManager::createPreallocateDataList, 3 votes, round 1
 0x0063d370 function graphicCharacterRegistToInstantiate # fh v3:exact 0x0063d520
+0x0063d400 function graphicCharacterReplaceSummonTexture # layout+callees: sorts between graphicCharacterRegistToInstantiate and graphicCharacterRestoreSummonTexture, and its named callees match the Switch 0x71001dd2d0 graphicCharacterReplaceSummonTexture's (similarity 0.67: Ch_GetChrRenderInstance, Ch_GetName, ClusterManager_GetInstance, ClusterManager_getPClusterByName, MagicFile_GetMagicId); symbols from Fahrenheit's server export
 0x0063d550 function graphicCharacterRestoreSummonTexture # fh v3:exact 0x0063d700
 0x0063d710 function graphicCharacterSetClipPlane # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'clipPlane'; Switch 0x71001d8d50 graphicCharacterSetClipPlane (symbols from Fahrenheit's server export)
+0x0063d810 function graphicCharacterSetShaderType # layout: alphabetical run between graphicCharacterSetClipPlane and graphicCharacterShaderRestore (1 unnamed in the gap); Switch 0x71001db370 graphicCharacterSetShaderType is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0063d870 function graphicCharacterShaderRestore # layout+callees: sorts between graphicCharacterSetClipPlane and graphicCheckChrClusterRelationship, and its named callees match the Switch 0x71001db3e0 graphicCharacterShaderRestore's (similarity 1.00: Phyre_CharacterShaderManager_resetCharacterShader); symbols from Fahrenheit's server export
+0x0063d8e0 function graphicCharacterShaderSetParameterTexture # layout+callees: sorts between graphicCharacterSetClipPlane and graphicCheckChrClusterRelationship, and its named callees match the Switch 0x71001db510 graphicCharacterShaderSetParameterTexture's (similarity 1.00: Ch_GetChrRenderInstance, Phyre_CharacterShaderManager_setShaderParameterTexture); symbols from Fahrenheit's server export
 0x0063d9c0 function graphicCheckChrClusterRelationship # fh v3:exact 0x0063db70
 0x0063da80 function graphicIsEscMenuActive    # () -> 1 when g_FFEscMenu exists and is open (+0x70) or has a selection (+0xe4 >= 0); the frame loop's callers around graphicRender test it; name ours
+0x0063dd50 function graphicClothFree             # layout+callees: sorts between graphicCheckChrClusterRelationship and graphicClothMemPrintStats, and its named callees match the Switch 0x71001ceb70 graphicClothFree's (similarity 1.00: mspace_free, user_free); symbols from Fahrenheit's server export
+0x0063dd90 function graphicClothMalloc           # layout+callees: sorts between graphicCheckChrClusterRelationship and graphicClothMemPrintStats, and its named callees match the Switch 0x71001ceb10 graphicClothMalloc's (similarity 1.00: mspace_memalign, user_aligned_malloc); symbols from Fahrenheit's server export
 0x0063ddc0 function graphicClothMemPrintStats # fh v3:cg2 0x63df70
 0x0063dde0 function graphicClothMemoryInit    # fh switch:bsim1.00 0x71001cb500
 0x0063de10 function graphicConvertScreenCoords # fh switch:bsim1.00 0x71001d75e0
+0x0063de40 function graphicDeActivateLoadingScreen # layout+callees: sorts between graphicConvertScreenCoords and graphicDestroyFmv, and its named callees match the Switch 0x71001dcc40 graphicDeActivateLoadingScreen's (similarity 1.00: PhyreScene_stopLoadingScreen); symbols from Fahrenheit's server export
 0x0063df30 function graphicDestroyFmv         # fh v3:exact+call.cs 0x0063e0e0 cdecl
 0x0063df50 function graphicDetachChrClusterFrom3DWorld # layout: alphabetical run between graphicDestroyFmv and graphicDoneResetMapParam (1 unnamed in the gap); Switch 0x71001dade0 graphicDetachChrClusterFrom3DWorld is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0063df60 function graphicDoneResetMapParam  # () -> g_PhyreScene, its byte +0x10d2d = 0; name Fahrenheit's (Switch BSim)
@@ -1750,6 +1773,7 @@
 0x006411b0 function graphicGetFogFar          # fh v3:cg2 0x641360
 0x006411c0 function graphicGetFogLimit        # fh v3:cg2 0x641370
 0x006411d0 function graphicGetFogNear         # fh v3:cg2 0x641380
+0x006411e0 function graphicGetFreeCameraType     # layout+callees: sorts between graphicGetFogNear and graphicGetGlobalAmbientColor, and its named callees match the Switch 0x71001da520 graphicGetFreeCameraType's (similarity 1.00: FreeCamera_FreeCamera); symbols from Fahrenheit's server export
 0x00641230 function graphicGetGlobalAmbientColor # fh v3:cg2 0x6413e0
 0x006412d0 function SaveDataGetLoc            # fh v3:bsim1.00+call.cs 0x00641480 cdecl
 0x006412f0 function graphicGetLocTextWithLength # fh v3:bsim1.00 0x006414a0
@@ -1765,6 +1789,7 @@
 0x00641400 function graphicGetTextureVideoInfo # fh v3:bsim1.00 0x006415b0
 0x00641410 function graphicGetTime            # fh v3:bsim1.00+call.cs 0x006415c0 cdecl
 0x00641420 function graphicGetTimeInMicroseconds # fh v3:exact 0x006415d0
+0x00641460 function graphicGetYIQParam           # layout+callees: sorts between graphicGetTime and graphicGuidemapSetup, and its named callees match the Switch 0x71001d8cb0 graphicGetYIQParam's (similarity 1.00: PhyreScene_getYIQParam); symbols from Fahrenheit's server export
 0x00641490 function graphicGuidemapSetup      # fh v3:exact 0x00641640
 0x006414f0 function graphicGuidemapUpdate     # fh v3:bsim1.00 0x006416a0
 0x00641510 function graphicGuildmapCreate     # fh v3:exact 0x006416c0
@@ -1785,10 +1810,12 @@
 0x00641c60 function graphicIsMagicFileAsyncLoadAvailable # fh v3:bsim1.00 0x00641e10
 0x00641c70 function graphicIsMiniMapInBlitzBall # fh v3:bsim1.00 0x00641e20
 0x00641cb0 function graphicIsScreenFadeColorLocked # fh v3:bsim1.00 0x00641e60
+0x00641cc0 function graphicIsSplitScreenEnabled  # layout+callees: sorts between graphicIsScreenFadeColorLocked and graphicIsVideoPlaying, and its named callees match the Switch 0x71001d1ea0 graphicIsSplitScreenEnabled's (similarity 1.00: PhyreScene_GetSplitScreenStat); symbols from Fahrenheit's server export
 0x00641cf0 function graphicIsVideoPlaying     # fh v3:bsim1.00+call.cs 0x00641ea0 cdecl
 0x00641d00 function graphicLevelAnalysisName  # fh v3:exact 0x00641eb0
 0x00641d90 function graphicLevelGetName          # layout+callees: sorts between graphicLevelAnalysisName and graphicLevelGetNameHash, and its named callees match the Switch 0x71001cc640 graphicLevelGetName's (similarity 1.00: PhyreScene_getCurrentLevelName); symbols from Fahrenheit's server export
 0x00641da0 function graphicLevelGetNameHash   # fh v3:bsim1.00 0x00641f50
+0x00641db0 function graphicLevelSetName          # layout+callees: sorts between graphicLevelGetNameHash and graphicLockScreenFadeColor, and its named callees match the Switch 0x71001d4770 graphicLevelSetName's (similarity 1.00: PhyreScene_setCurrentLevelName, PhyreScene_setCurrentLevelNameHash, PostProcessManager_GetInstance, PostProcessManager_setHDAOSetting, hashU); symbols from Fahrenheit's server export
 0x00641e20 function graphicLockScreenFadeColor # fh v3:bsim1.00 0x00641fd0
 0x00641e60 function graphicMagic0708ConvBallChr  # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'Ball_Center'; Switch 0x71001cced0 graphicMagic0708ConvBallChr (symbols from Fahrenheit's server export)
 0x00642030 function graphicMagicGetPath       # fh v3:bsim1.00 0x006421e0
@@ -1808,6 +1835,7 @@
 0x00642380 function graphicMenuUnloadExtraTexture # layout: alphabetical run between graphicMenuReset and graphicMenuUnloadSpecialTexture (3 unnamed in the gap); Switch 0x71001d6270 graphicMenuUnloadExtraTexture is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00642390 function graphicMenuUnloadSpecialTexture # fh v3:bsim1.00 0x00642540
 0x006423b0 function graphicMenuUpdate         # fh v3:bsim1.00 0x00642560
+0x006423d0 function graphicMeshInstanceGroupIdSetVisible # layout+callees: sorts between graphicMenuUpdate and graphicMinimapCameraSetWorldMatrix, and its named callees match the Switch 0x71001d7840 graphicMeshInstanceGroupIdSetVisible's (similarity 1.00: PhyreScene_setMeshInstanceGroupIdVisible); symbols from Fahrenheit's server export
 0x00642410 function graphicMinimapCameraSetWorldMatrix # fh v3:exact 0x006425c0
 0x006425d0 function graphicMinimapFogSetEnable # fh v3:cg2 0x642780
 0x006425f0 function graphicMinimapSetEnable   # fh v3:bsim1.00 0x006427a0
@@ -1827,6 +1855,7 @@
 0x00642950 function graphicRegistAsyncTask    # fh v3:bsim1.00 0x00642b00
 0x00642b90 function Phyre_PAnimation_PAnimationChannelTargetBindScene_dtor_PAnimationChannelTargetBindScene # fh switch:bsim1.00 0x71001a8400 Phyre::PAnimation::PAnimationChannelTargetBindScene::~PAnimationChannelTargetBindScene
 0x00642bb0 function graphicRender             # fh v3:exact 0x00642d60
+0x00642c30 function graphicRenderVideo           # layout+callees: sorts between graphicRender and graphicResetButtonIconScale, and its named callees match the Switch 0x71001cc390 graphicRenderVideo's (similarity 1.00: PhyFMVPlayerManager_GetInstance, PhyFMVPlayerManager_Render); symbols from Fahrenheit's server export
 0x00642c60 function graphicResetButtonIconScale # fh v3:cg7 0x642e10
 0x00642c70 function graphicResetHasRunDrawFocusInThisFrame # fh v3:cg3 0x642e20
 0x00642cc0 function graphicResetYIQ           # fh v3:bsim1.00 0x00642e70
@@ -1878,6 +1907,7 @@
 0x00643b10 function StoreComputedToDeref_00643b10 # auto-port shape (store computed to deref, cdecl): t0 = u32[&0x00ccb9d8]; u8[(t0 + 0xfc88)] = (a0 != 0x0); return t0; callers: no direct caller; name ours
 0x00643cc0 function graphicSgSetSpecular         # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'SgSpec_LightVec'; Switch 0x71001d8220 graphicSgSetSpecular (symbols from Fahrenheit's server export)
 0x00643db0 function graphicShaderGetVertexInfo # fh v3:bsim1.00 0x00643f60
+0x00643de0 function graphicShowAutoSavePrompt    # layout+callees: sorts between graphicShaderGetVertexInfo and graphicSwitchGPUMode, and its named callees match the Switch 0x71001dd940 graphicShowAutoSavePrompt's (similarity 1.00: PhyreScene_showAutoSavingPrompt); symbols from Fahrenheit's server export
 0x00643e70 function graphicSwitchGPUMode      # fh v3:bsim1.00 0x00644020
 0x00644120 function graphicTextureAnimationSetMaterialVisiability # fh v3:exact 0x006442d0
 0x00644280 function graphicTextureVideoPlay   # fh v3:exact+call.cs 0x00644430 cdecl
@@ -1907,6 +1937,7 @@
 0x00644ca0 function graphicVFXAddDrawCharacterEvent # layout: alphabetical run between graphicVFX2DUpdate and graphicVFXAddScreenFadeEvent (6 unnamed in the gap); Switch 0x71001cea50 graphicVFXAddDrawCharacterEvent is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00644cf0 function graphicVFXAddDrawZPrePassEvent # layout: alphabetical run between graphicVFX2DUpdate and graphicVFXAddScreenFadeEvent (6 unnamed in the gap); Switch 0x71001ceaa0 graphicVFXAddDrawZPrePassEvent is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00644d40 function graphicVFXAddScreenFadeEvent # fh v3:exact 0x00644ef0
+0x00644db0 function graphicVFXAfterPostProcessUpdate # layout+callees: sorts between graphicVFXAddScreenFadeEvent and graphicVFXCreate, and its named callees match the Switch 0x71001d3c20 graphicVFXAfterPostProcessUpdate's (similarity 1.00: graphicVFXUpdateWithType); symbols from Fahrenheit's server export
 0x00644de0 function graphicVFXCreate          # fh call.cs cdecl
 0x00645040 function graphicVFXCreateDataBuffer # fh v3:exact 0x006451f0
 0x00645280 function graphicVFXDestroy         # fh v3:exact+call.cs 0x00645430 cdecl
@@ -2027,7 +2058,9 @@
 0x0064f360 function MapIterator_Decrement     # structure: fastcall(it): --it of an MSVC std::map iterator (nodes +0 left, +4 parent, +8 right, +0xd head flag); returns it; name ours
 0x0064fa50 function ThrowStdException_0064fa50   # structure: (x): _CxxThrowException(&x, the throw info at 0x00bf749c); never returns; 12 callers in the PhyreScene code (growing arrays); name ours
 0x0064faa0 function PhyreScene_ChangeToHSVPass # fh v3:bsim1.00 0x0064fc50 PhyreScene::ChangeToHSVPass
+0x0064fbb0 function PhyreScene_Draw3DWorld       # layout+callees: sorts between PhyreScene_ChangeToHSVPass and PhyreScene_DrawMostVFX, and its named callees match the Switch 0x71001f3e80 PhyreScene_Draw3DWorld's (similarity 0.62: PhyreScene_DrawZPrePass, Phyre_PCamera_updateViewMatrices, Phyre_PFramework_PApplication_GetApplication, Phyre_PFramework_PApplication_renderWorld, Phyre_PRendering_PRendererBase_setViewport); symbols from Fahrenheit's server export
 0x00650670 function PhyreScene_DrawMostVFX    # fh v3:exact 0x00650820 PhyreScene::DrawMostVFX
+0x006507d0 function PhyreScene_DrawNonUIPrerenderScene # layout+callees: sorts between PhyreScene_DrawMostVFX and PhyreScene_DrawNormalUI, and its named callees match the Switch 0x71001f6260 PhyreScene_DrawNonUIPrerenderScene's (similarity 0.60: Phyre_PCamera_updateViewMatrices, Phyre_PFramework_PApplication_GetApplication, Phyre_PFramework_PApplication_renderWorld); symbols from Fahrenheit's server export
 0x00650cb0 function PhyreScene_DrawNormalUI      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f4d30 PhyreScene::DrawNormalUI, 2 votes, round 1
 0x00650ea0 function PhyreScene_DrawUI2DVFX       # layout+callees: sorts between PhyreScene_DrawNormalUI and PhyreScene_DrawZPrePass, and its named callees match the Switch 0x71001f4c00 PhyreScene_DrawUI2DVFX's (similarity 0.67: Phyre_PCamera_updateViewMatrices, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x00650f80 function PhyreScene_DrawUIPrerenderScene # layout+callees: sorts between PhyreScene_DrawNormalUI and PhyreScene_DrawZPrePass, and its named callees match the Switch 0x71001f65f0 PhyreScene_DrawUIPrerenderScene's (similarity 0.86: Phyre_PCamera_updateViewMatrices, Phyre_PFramework_PApplication_GetApplication, Phyre_PFramework_PApplication_renderWorld, Phyre_PRendering_PRendererBase_clearScene, Phyre_PRendering_PRenderer_beginScene); symbols from Fahrenheit's server export
@@ -2040,7 +2073,10 @@
 0x00652470 function ClipOutcode               # structure: cdecl(v): homogeneous-point outcode, bits 0-2 x/y/z > w, bits 3-5 x/y/z < -w; 8 calls for a box's corners in 0x00660000's frustum test; name ours
 0x006526a0 function PhyreScene_Project3DPointOntoScreen # fh v3:exact 0x00652850 PhyreScene::Project3DPointOntoScreen
 0x00652a10 function PhyreScene_RenderABmap       # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f51b0 PhyreScene::RenderABmap, 2 votes, round 1
+0x00653060 function PhyreScene_RenderCloudUI     # layout+callees: sorts between PhyreScene_RenderABmap and PhyreScene_RenderMF152Related, and its named callees match the Switch 0x71001f30f0 PhyreScene_RenderCloudUI's (similarity 0.82: MenuManager_GetMenuCount, MenuManager_GetMenuMeshInstace, Phyre_PCamera_updateViewMatrices, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor); symbols from Fahrenheit's server export
+0x006531b0 function PhyreScene_RenderDTTVFX      # layout+callees: sorts between PhyreScene_RenderABmap and PhyreScene_RenderMF152Related, and its named callees match the Switch 0x71001f7e40 PhyreScene_RenderDTTVFX's (similarity 1.00: Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x00653230 function PhyreScene_RenderMF152Related # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7030 PhyreScene::RenderMF152Related, 2 votes, round 1
+0x006538d0 function PhyreScene_RenderVFXAfterPostProcess # layout+callees: sorts between PhyreScene_RenderMF152Related and PhyreScene_RenderVideoAndItsUI, and its named callees match the Switch 0x71001f7ee0 PhyreScene_RenderVFXAfterPostProcess's (similarity 0.75: Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x00653960 function PhyreScene_RenderVideoAndItsUI # fh v3:exact 0x00653b10 PhyreScene::RenderVideoAndItsUI
 0x00654550 function PhyreScene_SetSplitScreenStat # fh switch:bsim0.97 0x710020c030 PhyreScene::SetSplitScreenStat
 0x00654570 function PhyreScene_SetSplitScreenType # fh switch:bsim0.97 0x710020c050 PhyreScene::SetSplitScreenType
@@ -2067,6 +2103,7 @@
 0x00659290 function PhyreScene_convertMapPath # fh v3:exact 0x00659420 PhyreScene::convertMapPath
 0x006593d0 function PhyreScene_copyPreviousFrameBufferForDtt # fh v3:exact 0x00659560 PhyreScene::copyPreviousFrameBufferForDtt
 0x00659c30 function PhyreScene_createRWTTTarget  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PhyreScene_colorTargetRWTT'; Switch 0x71001eba60 PhyreScene::createRWTTTarget (symbols from Fahrenheit's server export)
+0x0065a2c0 function PhyreScene_deleteMaterialInCluster # layout+callees: sorts between PhyreScene_createRWTTTarget and PhyreScene_deletePMeshInstanceInCluster, and its named callees match the Switch 0x7100207e90 PhyreScene_deleteMaterialInCluster's (similarity 1.00: Phyre_PCluster_deleteObjectWithInstanceList); symbols from Fahrenheit's server export
 0x0065a4c0 function PhyreScene_deletePMeshInstanceInCluster # fh v3:exact 0x0065a650 PhyreScene::deletePMeshInstanceInCluster
 0x0065a620 function PhyreScene_doDeleteMeshInstances # fh v3:exact+call.cs 0x0065a7b0 thiscall PhyreScene::doDeleteMeshInstances
 0x0065a6c0 function PhyreScene_doOnAllFieldMapAssetsLoaded # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71001edfe0 PhyreScene::doOnAllFieldMapAssetsLoaded, 3 votes, round 2
@@ -2079,6 +2116,7 @@
 0x0065d0c0 function PhyreScene_fieldMapShutdown # fh v3:exact 0x0065d240 PhyreScene::fieldMapShutdown
 0x0065d240 function PhyreScene_fieldMapUnload # fh v3:exact 0x0065d3c0 PhyreScene::fieldMapUnload
 0x0065d780 function PhyreScene_forceUnloadMenuTexture # fh v3:cg2 0x65d900 PhyreScene::forceUnloadMenuTexture
+0x0065d860 function PhyreScene_getChaPos         # layout+callees: sorts between PhyreScene_forceUnloadMenuTexture and PhyreScene_getCurrentLevelName, and its named callees match the Switch 0x71001fe7b0 PhyreScene_getChaPos's (similarity 0.60: MsGetBattleScene, PhyreScene_Project3DPointOntoScreen, getScenerioFlag); symbols from Fahrenheit's server export
 0x0065de70 function PhyreScene_getCurrentLevelName # fh v3:bsim1.00 0x0065dff0 PhyreScene::getCurrentLevelName
 0x0065de90 function PhyreScene_getCurrentLevelNameHash # fh v3:bsim1.00 0x0065e010 PhyreScene::getCurrentLevelNameHash
 0x0065dea0 function PhyreScene_getCurrentMagicPath # fh v3:bsim1.00 0x0065e020 PhyreScene::getCurrentMagicPath
@@ -2098,6 +2136,7 @@
 0x0065e9e0 function PhyreScene_getYIQParam    # fh v3:exact 0x0065eb60 PhyreScene::getYIQParam
 0x0065f050 function PhyreScene_hide2DLayer    # fh v3:exact 0x0065f1d0 PhyreScene::hide2DLayer
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
+0x0065ff30 function PhyreScene_insertRenderDataToDeletePool # layout+callees: sorts between PhyreScene_initScene and PhyreScene_is3DScene, and its named callees match the Switch 0x7100209110 PhyreScene_insertRenderDataToDeletePool's (similarity 1.00: user_free, user_malloc); symbols from Fahrenheit's server export
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene
 0x00660240 function PhyreCursor_IsValid_00660240 # thiscall(this) -> al: valid without a list (+0x18), else when the list's nodes (+0x2c, linked at +0x40) still hold +0x1c and the list's +0x40 is set; one of six identical template copies (0x00660270, 0x006602a0, 0x006602d0, 0x00660300, 0x006b28f0); name ours
 0x00660270 function PhyreCursor_IsValid_00660270 # as PhyreCursor_IsValid_00660240; name ours
@@ -2129,6 +2168,7 @@
 0x00665580 function PhyreScene_loadOptimizedFontShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/OptimizedFontShader.c'; Switch 0x7100200840 PhyreScene::loadOptimizedFontShader (symbols from Fahrenheit's server export)
 0x00665660 function PhyreScene_loadPersistentVFXTexture # fh v3:exact 0x006657f0 PhyreScene::loadPersistentVFXTexture
 0x00665770 function PhyreScene_loadVFXTexture # fh v3:exact 0x00665900 PhyreScene::loadVFXTexture
+0x00665f60 function PhyreScene_loadVFXTextureAsync # layout+callees: sorts between PhyreScene_loadVFXTexture and PhyreScene_onCharacterAssetLoaded, and its named callees match the Switch 0x7100202a90 PhyreScene_loadVFXTextureAsync's (similarity 0.67: AsyncLoadManager_registAsyncLoadTask, AsyncLoadManager_sGetInstance); symbols from Fahrenheit's server export
 0x006663d0 function PhyreScene_onCharacterAssetLoaded # fh v3:exact 0x00666560 PhyreScene::onCharacterAssetLoaded
 0x00666610 function PhyreScene_onCutbufferShaderLoaded # fh switch:bsim1.00 0x7100200dd0 PhyreScene::onCutbufferShaderLoaded
 0x00666630 function PhyreScene_onFieldMapAssetLoaded # fh v3:exact 0x006667c0 PhyreScene::onFieldMapAssetLoaded
@@ -2154,10 +2194,13 @@
 0x00668680 function PhyreScene_removeMeshInstance # fh v3:exact 0x00668810 PhyreScene::removeMeshInstance
 0x006687a0 function PhyreScene_removeVFXFromRenderArray # fh v3:exact 0x00668930 PhyreScene::removeVFXFromRenderArray
 0x00668930 function PhyreScene_render         # fh v3:cg36 0x668ac0 PhyreScene::render
+0x0066b130 function PhyreScene_renderCaptureTexture # layout+callees: sorts between PhyreScene_render and PhyreScene_renderOpeningScreen, and its named callees match the Switch 0x71001fc640 PhyreScene_renderCaptureTexture's (similarity 1.00: Phyre_PFramework_PApplication_GetApplication, Phyre_PRendering_PRendererBase_setClearColor, Phyre_PRendering_PRendererBase_setViewport, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
+0x0066b1e0 function PhyreScene_renderLoadingScreen # layout+callees: sorts between PhyreScene_render and PhyreScene_renderOpeningScreen, and its named callees match the Switch 0x710020bf40 PhyreScene_renderLoadingScreen's (similarity 0.67: LoadingScreen_render, PhyreScene_doDeleteMeshInstances, Phyre_PFramework_PApplication_GetApplication, Phyre_PRendering_PRenderer_flip, SleepThreadInMillisecond); symbols from Fahrenheit's server export
 0x0066b2e0 function PhyreScene_renderOpeningScreen # fh v3:exact 0x0066b470 PhyreScene::renderOpeningScreen
 0x0066b560 function PostProcessManager_renderHDAO # fh switch:cg4 0x7100210cd0 PostProcessManager::renderHDAO
 0x0066bf40 function PhyreScene_resetYIQ       # fh v3:exact 0x0066c0d0 PhyreScene::resetYIQ
 0x0066c580 function PhyreScene_resize            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001fcca0 PhyreScene::resize, 2 votes, round 3
+0x0066c7f0 function PhyreScene_restoreDefaultRenderTargets # layout+callees: sorts between PhyreScene_resize and PhyreScene_setAbmapCamera, and its named callees match the Switch 0x71001fc4a0 PhyreScene_restoreDefaultRenderTargets's (similarity 1.00: Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRenderer_setColorTarget, Phyre_PRendering_PRenderer_setDepthStencilTarget); symbols from Fahrenheit's server export
 0x0066ca60 function PhyreScene_setAbmapCamera # fh v3:exact 0x0066cbf0 PhyreScene::setAbmapCamera
 0x0066cbe0 function PhyreScene_setCameraAspectRatio # fh v3:exact 0x0066cd70 PhyreScene::setCameraAspectRatio
 0x0066cda0 function PhyreScene_setCameraFOVy  # fh v3:exact 0x0066cf30 PhyreScene::setCameraFOVy
@@ -2169,18 +2212,21 @@
 0x0066d1b0 function PhyreScene_SetByte03      # thiscall(this, v), ret 4: byte +3 = v (the magic 0146 key graphicGetMagic0146Key reads; 0x00641e40 sets it with g_GraphicLevelFilter); name ours
 0x0066d1d0 function PhyreScene_setMaterialColourScale2 # fh v3:exact 0x0066d360 PhyreScene::setMaterialColourScale2
 0x0066d5c0 function PhyreScene_setMaterialVisibilityBySetAlpha # fh v3:exact 0x0066d750 PhyreScene::setMaterialVisibilityBySetAlpha
+0x0066d610 function PhyreScene_setMeshInstanceGroupIdVisible # layout+callees: sorts between PhyreScene_setMaterialVisibilityBySetAlpha and PhyreScene_setMeshInstanceWorldMatrix, and its named callees match the Switch 0x7100208c00 PhyreScene_setMeshInstanceGroupIdVisible's (similarity 1.00: Phyre_PRedBlackTree_successor); symbols from Fahrenheit's server export
 0x0066d810 function PhyreScene_setMeshInstanceWorldMatrix # fh v3:exact 0x0066d9a0 PhyreScene::setMeshInstanceWorldMatrix
 0x0066d910 function PhyreScene_setMeshVisible # fh v3:exact 0x0066daa0 PhyreScene::setMeshVisible
 0x0066d940 function PhyreScene_setMinimapCameraWorldMatrix # fh v3:exact 0x0066dad0 PhyreScene::setMinimapCameraWorldMatrix
 0x0066db00 function PhyreScene_setObjectRotation # fh v3:exact 0x0066dc90 PhyreScene::setObjectRotation
 0x0066e3e0 function PhyreScene_setObjectTranslation # fh v3:exact 0x0066e570 PhyreScene::setObjectTranslation
 0x0066e800 function PhyreScene_setTextureVideoInfo # fh v3:exact 0x0066e990 PhyreScene::setTextureVideoInfo
+0x0066e850 function PhyreScene_setWaveStrength   # layout+callees: sorts between PhyreScene_setTextureVideoInfo and PhyreScene_setupColorCorrection, and its named callees match the Switch 0x7100208d10 PhyreScene_setWaveStrength's (similarity 0.88: WaterWaveController_setBuoyancyFix, WaterWaveController_setCircleWaveStrength, WaterWaveController_setDraughtOffset, WaterWaveController_setFoamStrength, WaterWaveController_setMultiTexBlendFactor); symbols from Fahrenheit's server export
 0x0066ed00 function PhyreScene_setupColorCorrection # str-match switch: only user of 2 string(s) held once by both builds, e.g. '_ColorCorrection'; Switch 0x71001ed590 PhyreScene::setupColorCorrection (symbols from Fahrenheit's server export)
 0x0066f140 function PhyreScene_setupPostProcessParams # fh switch:bsim1.00 0x71001f1570 PhyreScene::setupPostProcessParams
 0x0066f2f0 function PhyreScene_show2DLayer    # fh v3:exact 0x0066f480 PhyreScene::show2DLayer
 0x0066f480 function PhyreScene_showAutoSavingPrompt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/chocobo.swf'; Switch 0x710020cba0 PhyreScene::showAutoSavingPrompt (symbols from Fahrenheit's server export)
 0x0066fad0 function PhyreScene_softResetScene # fh switch:bsim0.94 0x710020bb90 PhyreScene::softResetScene
 0x0066fb30 function PhyreScene_startLoadingScreen # fh v3:bsim1.00 0x0066fcc0 PhyreScene::startLoadingScreen
+0x0066fb50 function PhyreScene_stopLoadingScreen # layout+callees: sorts between PhyreScene_startLoadingScreen and PhyreScene_textureVideoLoad, and its named callees match the Switch 0x710020bd80 PhyreScene_stopLoadingScreen's (similarity 1.00: Phyre_PFramework_PApplication_GetApplication); symbols from Fahrenheit's server export
 0x0066fb70 function PhyreScene_textureVideoLoad # fh v3:exact 0x0066fd10 PhyreScene::textureVideoLoad
 0x00670750 function PhyreScene_textureVideoPlay # fh v3:bsim1.00 0x006708f0 PhyreScene::textureVideoPlay
 0x00670760 function PhyreScene_textureVideoUnload # fh v3:exact 0x00670900 PhyreScene::textureVideoUnload
@@ -2190,6 +2236,7 @@
 0x00671120 function PhyreScene_unloadMenuTexture # fh v3:cg13 0x6712c0 PhyreScene::unloadMenuTexture
 0x00671280 function PhyreScene_unloadPersistentVFXTexture # layout+callees: sorts between PhyreScene_unloadMenuTexture and PhyreScene_unloadVFXTexture, and its named callees match the Switch 0x7100206540 PhyreScene_unloadPersistentVFXTexture's (similarity 1.00: PhyreScene_unloadVFXTexture, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x00671300 function PhyreScene_unloadVFXTexture # fh v3:exact 0x006714a0 PhyreScene::unloadVFXTexture
+0x00671b90 function PhyreScene_unloadWaterEffectTexture # layout+callees: sorts between PhyreScene_unloadVFXTexture and PhyreScene_updateMapYIQ, and its named callees match the Switch 0x7100206b70 PhyreScene_unloadWaterEffectTexture's (similarity 1.00: PhyreScene_unloadVFXTexture, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x00671da0 function PhyreScene_updateMapYIQ   # fh v3:exact 0x00671f40 PhyreScene::updateMapYIQ
 0x00672070 function PhyreScene_updateTextureVideoCallback # fh v3:exact+call.cs 0x00672210 cdecl PhyreScene::updateTextureVideoCallback
 0x006720c0 function Phyre_PCamera_updateViewMatrices # fh v3:exact 0x00672260 Phyre::PCamera::updateViewMatrices
@@ -2352,7 +2399,9 @@
 0x0067e6a0 function MenuManager_SetMenuUiMaterialUnloaded # layout: alphabetical run between MenuManager_SetMenuUiInstanceUnloaded and MenuManager_SetUpAllMenuInstance (1 unnamed in the gap); Switch 0x7100228550 MenuManager::SetMenuUiMaterialUnloaded is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0067e6c0 function MenuManager_SetUpAllMenuInstance # fh v3:exact 0x0067e860 MenuManager::SetUpAllMenuInstance
 0x0067e7f0 function MenuManager_SwapMenuBufferChain # fh v3:exact 0x0067e990 MenuManager::SwapMenuBufferChain
+0x0067e9d0 function MenuTextureManager_UnLoadDefaultMenuTexture # layout+callees: sorts between MenuManager_SwapMenuBufferChain and MenuTextureManager_UnLoadDreamMapTexture, and its named callees match the Switch 0x7100229bf0 MenuTextureManager_UnLoadDefaultMenuTexture's (similarity 0.89: LocalizationManager_GetInstance, MenuDynamicGeometry_setTextureInMaterialUnloaded, MenuManager_SetMenuUiInstanceUnloaded, MenuTextureManager_UnloadBGWaterTexture, MenuTextureManager_UnloadGameMenuTexture); symbols from Fahrenheit's server export
 0x0067ebc0 function MenuTextureManager_UnLoadDreamMapTexture # fh v3:cg5 0x67ed60 MenuTextureManager::UnLoadDreamMapTexture
+0x0067ec50 function MenuTextureManager_UnLoadExtraMenuTexture # layout+callees: sorts between MenuTextureManager_UnLoadDreamMapTexture and MenuTextureManager_UnloadBGWaterTexture, and its named callees match the Switch 0x710022f320 MenuTextureManager_UnLoadExtraMenuTexture's (similarity 1.00: PhyreScene_unloadMenuTexture); symbols from Fahrenheit's server export
 0x0067ecf0 function MenuTextureManager_UnloadBGWaterTexture # fh v3:exact 0x0067ee90 MenuTextureManager::UnloadBGWaterTexture
 0x0067edc0 function MenuTextureManager_UnloadCloudSaveUITexture # fh v3:bsim1.00 0x0067ef60 MenuTextureManager::UnloadCloudSaveUITexture
 0x0067ee40 function MenuTextureManager_UnloadEternalCalmCopyRightTexture # fh v3:exact 0x0067eff0 MenuTextureManager::UnloadEternalCalmCopyRightTexture
@@ -2374,6 +2423,7 @@
 0x006843a0 function AbmapManager_CheckWordVertex # fh v3:exact 0x00684540 AbmapManager::CheckWordVertex
 0x00684ca0 function AbmapManager_GetMeshInstace  # thiscall(mgr, i) -> entry i's mesh instance (+0xc; entry 0 once the count +4 is above 1); only caller PhyreScene_RenderABmap as on the Switch (AbmapManager::GetMeshInstace, 32 bytes, called by PhyreScene::RenderABmap); sorts between AbmapManager_CheckWordVertex and AbmapManager_GetVertexInfo; cg-match switch lead 0x71008a1fd8 (2 votes); the system porter's EntryWordC_00684ca0
 0x00684cd0 function AbmapManager_GetVertexInfo # fh v3:exact 0x00684e70 AbmapManager::GetVertexInfo
+0x00684eb0 function AbmapManager_InstanceUpdateMaterialShader # layout+callees: sorts between AbmapManager_GetVertexInfo and AbmapManager_ToDestroy, and its named callees match the Switch 0x71001c1550 AbmapManager_InstanceUpdateMaterialShader's (similarity 1.00: Phyre_PhyrePrintf); symbols from Fahrenheit's server export
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -2447,6 +2497,7 @@
 0x00694f10 function PostProcessManager_render    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'ColorCorrectionBuffer'; Switch 0x7100214b00 PostProcessManager::render (symbols from Fahrenheit's server export)
 0x006953a0 function PostProcessTweakUtil_render  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PostProcess: %.2f fps'; Switch 0x71002183a0 PostProcessTweakUtil::render (symbols from Fahrenheit's server export)
 0x00695440 function PostProcessManager_renderBright # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'g_brightPara'; Switch 0x7100214680 PostProcessManager::renderBright (symbols from Fahrenheit's server export)
+0x006956d0 function PostProcessManager_renderDebug4By3Frame # layout+callees: sorts between PostProcessManager_renderBright and PostProcessManager_renderFocusFrame, and its named callees match the Switch 0x71002186b0 PostProcessManager_renderDebug4By3Frame's (similarity 1.00: Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene, Phyre_PRendering_PRenderer_setColorTarget); symbols from Fahrenheit's server export
 0x00695790 function PostProcessManager_renderFocusFrame # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'FocusDepth'; Switch 0x7100215a80 PostProcessManager::renderFocusFrame (symbols from Fahrenheit's server export)
 0x006959d0 function PostProcessManager_renderFullScreenTexture # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71002165f0 PostProcessManager::renderFullScreenTexture, 3 votes, round 1
 0x00697490 function PostProcessManager_renderScreenFade # fh v3:exact 0x006975d0 PostProcessManager::renderScreenFade
@@ -2560,10 +2611,13 @@
 0x006a96b0 function Phyre_CharacterLighting_instantiateUniqueMaterialParameters # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'USE_CHARACTER_LIGHTING'; Switch 0x7100253750 Phyre::CharacterLighting::instantiateUniqueMaterialParameters (symbols from Fahrenheit's server export)
 0x006a9f00 function Phyre_CharacterLightingTweakUtil_render # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'CharacterLighting: %.2f fps'; Switch 0x7100256bb0 Phyre::CharacterLightingTweakUtil::render (symbols from Fahrenheit's server export)
 0x006aa3d0 function Phyre_CharacterLightingTweakUtil_resize # layout+callees: sorts between Phyre_CharacterLightingTweakUtil_render and Phyre_CharacterLighting_setLightDir, and its named callees match the Switch 0x7100256d10 Phyre_CharacterLightingTweakUtil_resize's (similarity 1.00: TextUtil_resize); symbols from Fahrenheit's server export
+0x006aa410 function Phyre_CharacterLightingTweakUtil_selectNeighborItem # layout+callees: sorts between Phyre_CharacterLightingTweakUtil_resize and Phyre_CharacterLightingTweakUtil_setEnabled, and its named callees match the Switch 0x7100256d30 Phyre_CharacterLightingTweakUtil_selectNeighborItem's (similarity 1.00: Phyre_CharacterLightingTweakUtil_getLineText, TextUtil_changeLine); symbols from Fahrenheit's server export
+0x006aa5f0 function Phyre_CharacterLightingTweakUtil_setEnabled # layout+callees: sorts between Phyre_CharacterLightingTweakUtil_resize and Phyre_CharacterLighting_setLightDir, and its named callees match the Switch 0x7100257500 Phyre_CharacterLightingTweakUtil_setEnabled's (similarity 1.00: TextUtil_resize, TextUtil_setEnabled); symbols from Fahrenheit's server export
 0x006aa9f0 function Phyre_CharacterLighting_setLightDir # fh v3:exact 0x006aab40 Phyre::CharacterLighting::setLightDir
 0x006aab40 function Phyre_CharacterLighting_setLightEnabled # layout: alphabetical run between Phyre_CharacterLighting_setLightDir and Phyre_CharacterLighting_setLightMatrix (1 unnamed in the gap); Switch 0x71002529a0 Phyre::CharacterLighting::setLightEnabled is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006aabf0 function Phyre_CharacterLighting_setLightMatrix # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'LgtMatClr'; Switch 0x7100253520 Phyre::CharacterLighting::setLightMatrix (symbols from Fahrenheit's server export)
 0x006aad00 function Phyre_CharacterLighting_setMapIdFlagChanged # fh switch:bsim1.00 0x7100253340 Phyre::CharacterLighting::setMapIdFlagChanged
+0x006aaea0 function Phyre_CharacterLighting_setRotation # layout+callees: sorts between Phyre_CharacterLighting_setMapIdFlagChanged and Phyre_CharacterLighting_setShadeCoeff, and its named callees match the Switch 0x7100252910 Phyre_CharacterLighting_setRotation's (similarity 1.00: Phyre_CharacterLighting_applyRotation); symbols from Fahrenheit's server export
 0x006aaef0 function Phyre_CharacterLighting_setShadeCoeff # fh v3:exact 0x006ab040 Phyre::CharacterLighting::setShadeCoeff
 0x006aafc0 function Phyre_CharacterLightingTweakUtil_setShadeCoeff_dbgHook # fh v3:exact 0x006ab110 Phyre::CharacterLightingTweakUtil::setShadeCoeff_dbgHook
 0x006ab010 function Phyre_CharacterLighting_setShadeColor # fh v3:exact 0x006ab160 Phyre::CharacterLighting::setShadeColor
@@ -2609,6 +2663,7 @@
 0x006b94a0 function BtlChrParamConfigTweakUitl_initialize # str-match switch: only user of 17 string(s) held once by both builds, e.g. 'Player:\\t\\t'; Switch 0x7100298020 BtlChrParamConfigTweakUitl::initialize (symbols from Fahrenheit's server export)
 0x006b9600 function BtlDebugTweakUtil_initialize # str-match switch: only user of 5 string(s) held once by both builds, e.g. '  (ro)Battle Map Name:  '; Switch 0x7100297260 BtlDebugTweakUtil::initialize (symbols from Fahrenheit's server export)
 0x006b97f0 function CharacterAnimationTweakUtil_initialize # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Motion Mode:'; Switch 0x7100294be0 CharacterAnimationTweakUtil::initialize (symbols from Fahrenheit's server export)
+0x006b9970 function CharacterSwitchTweakUtil_initialize # layout+callees: sorts between CharacterAnimationTweakUtil_initialize and CharacterTextureAnimationTweakUtil_initialize, and its named callees match the Switch 0x7100291bc0 CharacterSwitchTweakUtil_initialize's (similarity 0.75: TextUtil_appendLine, TextUtil_init, TextUtil_setEnabled); symbols from Fahrenheit's server export
 0x006b9aa0 function CharacterTextureAnimationTweakUtil_initialize # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'Debug Output:'; Switch 0x7100293590 CharacterTextureAnimationTweakUtil::initialize (symbols from Fahrenheit's server export)
 0x006b9cd0 function GameParamConfigTweakUitl_initialize # str-match switch: only user of 15 string(s) held once by both builds, e.g. 'FullItem:\\t\\t'; Switch 0x71002999f0 GameParamConfigTweakUitl::initialize (symbols from Fahrenheit's server export)
 0x006ba1a0 function BasicDebugTweakUtil_render   # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Basic Debug Information: %.2f fps'; Switch 0x7100296fc0 BasicDebugTweakUtil::render (symbols from Fahrenheit's server export)
@@ -2620,6 +2675,7 @@
 0x006ba570 function GameParamConfigTweakUitl_render # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Game parameter config: %.2f fps'; Switch 0x710029ad80 GameParamConfigTweakUitl::render (symbols from Fahrenheit's server export)
 0x006ba610 function MapSwitchTweakUtil_render    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'MapSwitching: %.2f fps\\nMap Name:%s'; Switch 0x7100293340 MapSwitchTweakUtil::render (symbols from Fahrenheit's server export)
 0x006baf60 function BasicDebugTweakUtil_setEnabled # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/ffx/proj/event/Section_GoThrough.txt'; Switch 0x7100295dd0 BasicDebugTweakUtil::setEnabled (symbols from Fahrenheit's server export)
+0x006bb3b0 function BtlChrParamConfigTweakUitl_setEnabled # layout+callees: sorts between BasicDebugTweakUtil_setEnabled and CharacterAnimationTweakUtil_setEnabled, and its named callees match the Switch 0x7100298640 BtlChrParamConfigTweakUitl_setEnabled's (similarity 0.80: TextUtil_changeLine, TextUtil_resize, TextUtil_setEnabled, getBtlchrParam); symbols from Fahrenheit's server export
 0x006bb5f0 function CharacterAnimationTweakUtil_setEnabled # layout+callees: sorts between BasicDebugTweakUtil_setEnabled and CharacterAnimationTweakUtil_updateAnimation, and its named callees match the Switch 0x7100294e00 CharacterAnimationTweakUtil_setEnabled's (similarity 0.75: CharacterAnimationTweakUtil_updateAnimation, TextUtil_resize, TextUtil_setEnabled); symbols from Fahrenheit's server export
 0x006bc130 function CharacterAnimationTweakUtil_updateAnimation # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100294b20 CharacterAnimationTweakUtil::updateAnimation, 2 votes, round 1
 0x006bc960 function ReturnGlobalSx8_006bc960     # auto-port shape (return global sx8, cdecl): t0 = u8[&0x00cccab8]; return sx8(t0); callers: ; name ours
@@ -2641,6 +2697,7 @@
 0x006c2350 function Distortion_createRenderTarget # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Distortion_colorTarget'; Switch 0x710025c920 Distortion::createRenderTarget (symbols from Fahrenheit's server export)
 0x006c26d0 function ReturnConst180_006c26d0      # auto-port shape (return constant, cdecl): return 0x180; callers: ; name ours
 0x006c2700 function ReturnConst51_006c2700       # auto-port shape (return constant, cdecl): return 0x51; callers: ; name ours
+0x006c2dc0 function Distortion_renderDistortion  # layout+callees: sorts between Distortion_createRenderTarget and Distortion_resize, and its named callees match the Switch 0x710025e620 Distortion_renderDistortion's (similarity 0.75: Distortion_createRenderTarget, Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor); symbols from Fahrenheit's server export
 0x006c2fd0 function Distortion_resize            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2748 Distortion::resize, 2 votes, round 4
 0x006c2ff0 function Distortion_setupDistortionGrid # layout: alphabetical run between Distortion_resize and Distortion_updateDistortionBlur (2 unnamed in the gap); Switch 0x710025cc90 Distortion::setupDistortionGrid is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006c31c0 function Distortion_terminate         # layout: alphabetical run between Distortion_resize and Distortion_updateDistortionBlur (2 unnamed in the gap); Switch 0x710025e900 Distortion::terminate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2657,10 +2714,15 @@
 0x006c49a0 function BlurEffectEx_CreateInstance  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BlurEffectEx: BlurEffect singleton is not created yet.'; Switch 0x710024e270 BlurEffectEx::CreateInstance (symbols from Fahrenheit's server export)
 0x006c4a70 function BlurEffectEx_GetInstance     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a08a8 BlurEffectEx::GetInstance, 3 votes, round 1
 0x006c4a90 function BlurEffect_setTarget # thiscall(this, v), ret 4: +0x2c = v, byte +0x28 = 1; name ours
+0x006c4b00 function BlurEffectEx_initialize      # layout+callees: sorts between BlurEffectEx_GetInstance and BlurEffectEx_postInitialize, and its named callees match the Switch 0x710024e480 BlurEffectEx_initialize's (similarity 1.00: BlurEffect_GetInstance); symbols from Fahrenheit's server export
+0x006c4b60 function BlurEffectEx_postInitialize  # layout+callees: sorts between BlurEffectEx_GetInstance and MotionBlur_GetInstance, and its named callees match the Switch 0x710024e4e0 BlurEffectEx_postInitialize's (similarity 0.60: BlurEffect_GetInstance, Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial); symbols from Fahrenheit's server export
+0x006c4cf0 function BlurEffectEx_render          # layout+callees: sorts between BlurEffectEx_GetInstance and MotionBlur_GetInstance, and its named callees match the Switch 0x710024e750 BlurEffectEx_render's (similarity 0.67: PostProcessManager_GetInstance, PostProcessManager_copyBuffer); symbols from Fahrenheit's server export
+0x006c4e00 function BlurEffectEx_update          # layout+callees: sorts between BlurEffectEx_render and MotionBlur_GetInstance, and its named callees match the Switch 0x710024e6e0 BlurEffectEx_update's (similarity 0.67: BlurEffectEx_postInitialize, BlurEffect_GetInstance); symbols from Fahrenheit's server export
 0x006c5130 function MotionBlur_GetInstance    # fh v3:bsim1.00 0x006c5270 MotionBlur::GetInstance
 0x006c5360 function MotionBlur_initialize        # layout+callees: sorts between MotionBlur_GetInstance and MotionBlur_setMotionBlurWeight, and its named callees match the Switch 0x71002645b0 MotionBlur_initialize's (similarity 1.00: AsyncLoadManager_loadCluster, AsyncLoadManager_sGetInstance, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x006c5410 function MotionBlur_renderMotionBlur  # layout+callees: sorts between MotionBlur_GetInstance and MotionBlur_setMotionBlurWeight, and its named callees match the Switch 0x7100264630 MotionBlur_renderMotionBlur's (similarity 0.80: Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x006c5600 function MotionBlur_setMotionBlurWeight # fh v3:exact 0x006c5740 MotionBlur::setMotionBlurWeight
+0x006c56f0 function SpecularMapParamsManager_AddSpecularEvent # layout+callees: sorts between MotionBlur_setMotionBlurWeight and SpecularMapParamsManager_GetInstance, and its named callees match the Switch 0x7100286bc0 SpecularMapParamsManager_AddSpecularEvent's (similarity 1.00: MagicFile_GetMagicId, PhyreScene_addVFXDrawEvent); symbols from Fahrenheit's server export
 0x006c57e0 function SpecularMapParamsManager_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0958 SpecularMapParamsManager::GetInstance, 3 votes, round 1
 0x006c59a0 function SpecularMapParamsManager_needDrawSpecularPass # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2468 SpecularMapParamsManager::needDrawSpecularPass, 2 votes, round 2
 0x006c59c0 function SpecularMapParamsManager_renderCorrespondSpecular # layout: alphabetical run between SpecularMapParamsManager_needDrawSpecularPass and SpecularMapParamsManager_renderSpecularPass (1 unnamed in the gap); Switch 0x7100286810 SpecularMapParamsManager::renderCorrespondSpecular is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2671,6 +2733,7 @@
 0x006cc8b0 function Compute_006cc8b0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 == 0x1); callers: no direct caller; name ours
 0x006cc8c0 function Compute_006cc8c0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 != 0x2083); callers: no direct caller; name ours
 0x006ccd00 function ShadowManager_GetShadowSize # () -> g_ShadowSize; name Fahrenheit's (Switch BSim)
+0x006ce100 function ShadowManager_Initialize     # layout+callees: sorts between ShadowManager_GetShadowSize and ShadowManager_InsertIntoShadowMap_Double, and its named callees match the Switch 0x7100278060 ShadowManager_Initialize's (similarity 0.67: ShadowManager_createshadowbuffer, ShadowManager_loadShadowShaderBinFiles); symbols from Fahrenheit's server export
 0x006ce3e0 function ShadowManager_InsertIntoShadowMap_Double # fh v3:exact 0x006ce510 ShadowManager::InsertIntoShadowMap_Double
 0x006ce4f0 function ShadowManager_InsertIntoShadowMap # fh v3:exact 0x006ce620 ShadowManager::InsertIntoShadowMap
 0x006ce9d0 function ShadowManager_RemoveFromShadowMap # fh v3:exact 0x006ceb00 ShadowManager::RemoveFromShadowMap
@@ -2718,6 +2781,8 @@
 0x006da490 function PhyFMVPlayerDelegation_onTextureVideoStop # fh v3:bsim1.00 0x006da5c0 PhyFMVPlayerDelegation::onTextureVideoStop
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
 0x006da550 function PhyFMVPlayerManager_readCreditsText # fh switch:cg2 0x7100268970 PhyFMVPlayerManager::readCreditsText
+0x006da750 function PhyFMVPlayerManager_renderPauseBG # layout+callees: sorts between PhyFMVPlayerManager_readCreditsText and PhyFMVPlayerManager_updateVideoCallback, and its named callees match the Switch 0x7100269280 PhyFMVPlayerManager_renderPauseBG's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
+0x006da8b0 function PhyFMVPlayerManager_renderPauseMenu # layout+callees: sorts between PhyFMVPlayerManager_readCreditsText and PhyFMVPlayerManager_updateVideoCallback, and its named callees match the Switch 0x7100269370 PhyFMVPlayerManager_renderPauseMenu's (similarity 1.00: Phyre_PRendering_PRendererBase_renderMeshInstance); symbols from Fahrenheit's server export
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
@@ -2740,6 +2805,12 @@
 0x006dedd0 function DynGeoTree_Find           # thiscall(this, &key), ret 4: search tree with head this (root +0xc; node +0 lower, +4 higher, +0xc u32 key); the node or 0; callers 0x006df2f0, 0x006df5f0; name ours
 0x006dee50 function DynGeoTree_Insert         # thiscall(this, node), ret 4: links node (key +0xc) under DynGeoTree_Find's tree; node +8 = parent | colour bit; the node already holding the key, else 0; name ours
 0x006df000 function CopyFields_006df000          # auto-port shape (several stores: copy into field, thiscall): u32[a0] = a0; u32[(a0 + 0x4)] = a0; u32[(a0 + 0x8)] = a0; t0 = u32[a1]; u32[(a0 + 0xc)] = t0; return a0; callers: no direct caller; name ours
+0x006df2d0 function Phyre_CharacterLighting_terminate # layout+callees: sorts between DynGeoMemManager_unlockForRecordNumInKeLns and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get, and its named callees match the Switch 0x7100255010 Phyre_CharacterLighting_terminate's (similarity 0.67: Phyre_PFreeList_reset, Phyre_PRedBlackTree_orphanAllContents); symbols from Fahrenheit's server export
+0x006df620 function Phyre_CharacterShaderManager_resetCharacterShader # layout+callees: sorts between DynGeoMemManager_unlockForRecordNumInKeLns and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get, and its named callees match the Switch 0x7100258b00 Phyre_CharacterShaderManager_resetCharacterShader's (similarity 0.75: Phyre_PFreeList_reset, Phyre_PRedBlackTree_orphanAllContents, Phyre_PRedBlackTree_successor); symbols from Fahrenheit's server export
+0x006df6d0 function Phyre_CharacterShaderManager_restoreCharacterShader # layout+callees: sorts between Phyre_CharacterShaderManager_resetCharacterShader and Phyre_CharacterShaderManager_setShaderParameterTexture, and its named callees match the Switch 0x7100258840 Phyre_CharacterShaderManager_restoreCharacterShader's (similarity 0.75: Phyre_PCluster_deleteObject, Phyre_PFreeList_deallocate, Phyre_PRedBlackTree_remove); symbols from Fahrenheit's server export
+0x006df8c0 function Phyre_CharacterShaderManager_setShaderParameter # layout: alphabetical run between Phyre_CharacterShaderManager_restoreCharacterShader and Phyre_CharacterShaderManager_setShaderParameterTexture (1 unnamed in the gap); Switch 0x7100257d60 Phyre::CharacterShaderManager::setShaderParameter is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x006df950 function Phyre_CharacterShaderManager_setShaderParameterTexture # layout+callees: sorts between DynGeoMemManager_unlockForRecordNumInKeLns and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get, and its named callees match the Switch 0x7100258050 Phyre_CharacterShaderManager_setShaderParameterTexture's (similarity 0.67: ClusterManager_GetInstance, ClusterManager_getPClusterByName); symbols from Fahrenheit's server export
+0x006dff40 function Phyre_PClassDescriptorForType_Phyre_ClothInstancingDynamicMeshInstance__getPointerFromScriptContext # layout+callees: sorts between DynGeoMemManager_unlockForRecordNumInKeLns and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get, and its named callees match the Switch 0x710025ae80 Phyre_PClassDescriptorForType_Phyre_ClothInstancingDynamicMeshInstance__getPointerFromScriptContext's (similarity 1.00: Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMeshInstance__Get); symbols from Fahrenheit's server export
 0x006e0f30 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::ClothInstancingDynamicMesh &>::Get" (its own __FUNCTION__ in an error print)
 0x006e1010 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_DynamicMeshDefaultImplmenetation__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::DynamicMeshDefaultImplmenetation &>::Get" (its own __FUNCTION__ in an error print)
 0x006e10f0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get_006e10f0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::ClothInstancingDynamicMesh *>::Get" (its own __FUNCTION__ in an error print)
@@ -2758,6 +2829,7 @@
 0x006e45c0 function Add_006e45c0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006e45d0 function AddU16_006e45d0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006e45e0 function LoadingScreen_LoadingScreen # fh v3:exact 0x006e4710 LoadingScreen::LoadingScreen
+0x006e46d0 function LoadingScreen_destroyMesh    # layout+callees: sorts between LoadingScreen_LoadingScreen and LoadingScreen_initialize, and its named callees match the Switch 0x7100227e40 LoadingScreen_destroyMesh's (similarity 1.00: Phyre_PCluster_dtor_PCluster); symbols from Fahrenheit's server export
 0x006e4720 function LoadingScreen_initialize  # fh v3:exact 0x006e4850 LoadingScreen::initialize
 0x006e4770 function LoadingScreen_loadTextures # fh v3:exact 0x006e48a0 LoadingScreen::loadTextures
 0x006e4920 function LoadingScreen_prepareMesh    # layout: alphabetical run between LoadingScreen_loadTextures and LoadingScreen_render (1 unnamed in the gap); Switch 0x7100226c60 LoadingScreen::prepareMesh is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2770,6 +2842,7 @@
 0x006e56d0 function RemapButtonIcon_sDestoryInstance # fh switch:bsim1.00 0x710022fc60 RemapButtonIcon::sDestoryInstance
 0x006e56f0 function Phyre_Virtuos_AssetsSharingManager_FixID # fh switch:bsim1.00 0x71000c6670 Phyre::Virtuos::AssetsSharingManager::FixID
 0x006e5c90 function Phyre_PS2LightingSetup_registerWithPointLightEffect # fh v3:exact 0x006e5dc0 Phyre::PS2LightingSetup::registerWithPointLightEffect
+0x006e5ee0 function Phyre_PS2LightingSetup_restoreCharacterShader # layout+callees: sorts between Phyre_PS2LightingSetup_registerWithPointLightEffect and Phyre_PS2LightingSetup_setupCharacterShader, and its named callees match the Switch 0x710026c1c0 Phyre_PS2LightingSetup_restoreCharacterShader's (similarity 0.75: Phyre_PCluster_deleteObject, Phyre_PFreeList_deallocate, Phyre_PRedBlackTree_remove); symbols from Fahrenheit's server export
 0x006e6160 function Phyre_PS2LightingSetup_setupCharacterShader # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'MaterialDiffuse'; Switch 0x710026b4b0 Phyre::PS2LightingSetup::setupCharacterShader (symbols from Fahrenheit's server export)
 0x006e6330 function RemapButtonIcon_RemapButtonIcon # fh v3:exact 0x006e6460 RemapButtonIcon::RemapButtonIcon
 0x006e63f0 function RemapButtonIcon_getButtonIconUV # layout+callees: sorts between RemapButtonIcon_RemapButtonIcon and RemapButtonIcon_getCurrentControlMachine, and its named callees match the Switch 0x7100230a50 RemapButtonIcon_getButtonIconUV's (similarity 0.75: RemapButtonIcon_getJoypadUV, Virtuos_InputManager_getInstance, Virtuos_InputManager_getVibrationFlag); symbols from Fahrenheit's server export
@@ -2793,6 +2866,7 @@
 0x006e76c0 function RemapButtonIcon_sCreatInstance # fh v3:cg2 0x6e77f0 RemapButtonIcon::sCreatInstance
 0x006e7710 function RemapButtonIcon_sGetInstance # fh v3:bsim1.00 0x006e7840 RemapButtonIcon::sGetInstance
 0x006e7720 function RemapButtonIcon_setButtonIconScale # fh v3:bsim1.00 0x006e7850 RemapButtonIcon::setButtonIconScale
+0x006e8700 function TipSystem_DestroyInstance    # layout+callees: sorts between RemapButtonIcon_setButtonIconScale and TipSystem_Get, and its named callees match the Switch 0x710023d820 TipSystem_DestroyInstance's (similarity 1.00: IggyMenu_dtor_IggyMenu); symbols from Fahrenheit's server export
 0x006e8750 function TipSystem_Get             # fh v3:bsim1.00 0x006e8890 TipSystem::Get
 0x006e8770 function TipSystem_PushTip         # fh v3:exact 0x006e88b0 TipSystem::PushTip
 0x006e8810 function TipSystem_PlayTip         # structure: thiscall(tips, id): with an Iggy movie (this[0]) enables the menu and calls its AS3 "OnPlay"(0, id), then replay; returns 1 (0 without a movie); graphicPushTip's callee; name ours
@@ -3321,6 +3395,7 @@
 0x00715810 function createVFXRenderDataBufferShp_OShapeVu1 # layout+callees: sorts between createVFXRenderDataBufferShp and getAlphaForShpIgnoreAnFormatBaseOnSh, and its named callees match the Switch 0x71002dec70 createVFXRenderDataBufferShp_OShapeVu1's (similarity 0.60: graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXIsTextureWithBpLoaded); symbols from Fahrenheit's server export
 0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630
 0x00716570 function hashU                     # fh v3:exact 0x00716650
+0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export
 0x00716710 function pppCallUsrFunc            # fh v3:exact 0x007167f0
 0x00716770 function pppCreatePObject          # fh v3:exact 0x00716850
 0x007168f0 function pppDeletePObject          # fh v3:exact 0x007169d0
@@ -3337,6 +3412,7 @@
 0x00717600 function resetVfxShapeEnlargeBufferFactor # fh v3:bsim1.00 0x007176e0
 0x00717610 function setVfxShapeEnlargeBufferFactor # fh v3:bsim1.00 0x007176f0
 0x00717620 function updateGuildMapRenderData  # fh v3:exact 0x00717700
+0x00717ba0 function updateMapRenderData          # layout+callees: sorts between updateGuildMapRenderData and updateVFXRenderData, and its named callees match the Switch 0x71002da4d0 updateMapRenderData's (similarity 0.60: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXGetRenderDataByInstance, graphicVFXSetVisible); symbols from Fahrenheit's server export
 0x00718610 function updateVFXRenderData       # fh v3:bsim0.96 0x007186f0
 0x007196f0 function updateVFXRenderDataAtelShp # fh v3:exact 0x007197d0
 0x0071a0c0 function updateVFXRenderDataLine      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002e12b0 updateVFXRenderDataLine, 4 votes, round 1
@@ -3344,6 +3420,8 @@
 0x0071a4e0 function updateVFXRenderDataShapeField # fh v3:exact 0x0071a5c0
 0x0071b8a0 function updateVFXRenderDataShp    # fh v3:exact 0x0071b980
 0x0071c0b0 function updateVFXRenderDataShp_OShapeVu1 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002dfcd0 updateVFXRenderDataShp_OShapeVu1, 6 votes, round 1
+0x0071ce20 function updateVFXRenderData_AkazaScrFlt # layout+callees: sorts between updateVFXRenderDataShp_OShapeVu1 and updateVFXRenderData_KaGra001, and its named callees match the Switch 0x71002e5d00 updateVFXRenderData_AkazaScrFlt's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXGetRenderDataByInstance, graphicVFXSetVisible); symbols from Fahrenheit's server export
+0x0071cf90 function updateVFXRenderData_FakeEnvModel # layout+callees: sorts between updateVFXRenderDataShp_OShapeVu1 and updateVFXRenderData_KaGra001, and its named callees match the Switch 0x71002e4cf0 updateVFXRenderData_FakeEnvModel's (similarity 0.71: FFXVu0ApplyMatrix, graphicDynGeoMemManagerGetBufferForSegment, graphicGetScreenRatio, graphicVFXGetRenderDataByInstance, graphicVFXSetVisible); symbols from Fahrenheit's server export
 0x0071d520 function updateVFXRenderData_KaGra001 # fh switch:cg2 0x71002e31c0
 0x0071dbd0 function updateVFXRenderData_NoiseBlur # fh switch:cg4 0x71002e3aa0
 0x0071e330 function updateVFXZBufClearRenderData # fh v3:exact 0x0071e410
@@ -3379,6 +3457,7 @@
 0x007293f0 function pppFpGetPacketUsed        # () -> 0x00cec204, the packet use of the last pppFpLoop
 0x00729400 function pppFpGroupDispOff         # (group) g_FpDisp |= 0x10 for every g_FpData entry whose u16 +0x66 is group (pppFpIDdispOff by group)
 0x00729440 function pppFpGroupDispOn          # (group) g_FpDisp &= ~0x10 for the group's entries
+0x00729480 function pppFpGrpForceOff             # layout+callees: sorts between pppFpGetPacketSize and pppFpIDdispOff, and its named callees match the Switch 0x71002d78c0 pppFpGrpForceOff's (similarity 1.00: pppAllFreePObject); symbols from Fahrenheit's server export
 0x007294f0 function Fp_EndGroup               # (group) Fp_End for every g_FpData entry whose u16 at +0x66 (after the ID at +0x64) is group: g_FpRun +0x1d = 1; callers 0x0091b790, 0x00933cc0
 0x00729530 function Fp_RestartGroup           # (group) Fp_Restart for every g_FpData entry of the group (+0x66): g_FpRun +0 = 0, +0x1d = 0
 0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
@@ -3894,6 +3973,14 @@
 0x0075e4b0 function op_word_copy              # (dst, src) *dst = *src (one word); 1 caller
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
+0x0075ee70 function KeVu0GetDist                 # layout+callees: sorts between KeVu0CopyVecXYZ and KeVu0RndI, and its named callees match the Switch 0x7100307e30 KeVu0GetDist's (similarity 1.00: FFXVu0SubVector); symbols from Fahrenheit's server export
+0x0075eed0 function KeVu0ItrsBallLine            # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003071c0 KeVu0ItrsBallLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075efe0 function KeVu0LowClamp                # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003072b0 KeVu0LowClamp is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075f010 function KeVu0NormXY                  # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307990 KeVu0NormXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075f120 function KeVu0PacAddVecXY             # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307680 KeVu0PacAddVecXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075f310 function KeVu0PacPers                 # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307cd0 KeVu0PacPers is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075f420 function KeVu0PacVec                  # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307820 KeVu0PacVec is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075f5c0 function KeVu0RTPersF                 # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307a50 KeVu0RTPersF is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075f920 function KeVu0RndI                 # fh v3:exact 0x0075fa10
 0x0075fab0 function KeVu0ScaleVecXY              # layout: alphabetical run between KeVu0RndI and KeVu0ScaleVecXYZ (1 unnamed in the gap); Switch 0x71003073d0 KeVu0ScaleVecXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075fb50 function KeVu0ScaleVecXYZ          # fh v3:exact 0x0075fc40
@@ -4007,6 +4094,7 @@
 0x0076d9c0 function dvd_cd_id_size            # fh v3:cg2 0x76dad0
 0x0076da40 function dvd_cd_unk7 # () -> 0xf: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
 0x0076dac0 function dvd_cd_unk8 # () -> 0x10: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
+0x0076db40 function file_offset_get              # layout+callees: sorts between dvd_cd_id_size and get_read_buffer, and its named callees match the Switch 0x7100320550 file_offset_get's (similarity 1.00: TkSyncV, sceCdSearchFile); symbols from Fahrenheit's server export
 0x0076dc20 function cd_size_from_table # cdecl(n): 1 when entry n + g_CdLib+0x20 of the sector table has bit 23 clear and bit 22 set (size from sizetbl.bin), else 0; name ours
 0x0076dc50 function get_read_buffer           # () -> the CD reader's buffer (0x01128ac8); Fahrenheit Switch BSim 1.00 0x710031e670
 0x0076dc60 function SetByte_01128ac0 # cdecl(v): byte 0x01128ac0 = v; caller 0x00a7aee0; name ours
@@ -4221,6 +4309,7 @@
 0x0077ade0 function audioDma                     # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'uruu buffer full err !!!!!!\\n'; Switch 0x71003359e0 audioDma (symbols from Fahrenheit's server export)
 0x0077b0d0 function audioInit                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'audioInit\\n'; Switch 0x7100335730 audioInit (symbols from Fahrenheit's server export)
 0x0077b170 function audioStop                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'SqsStraightStreamingStop()\\n'; Switch 0x71003357d0 audioStop (symbols from Fahrenheit's server export)
+0x0077c6d0 function chr_movie_main               # layout+callees: sorts between audioStop and chr_texanim_del, and its named callees match the Switch 0x7100327200 chr_movie_main's (similarity 1.00: Sg_MemSetAlign, sa_task_init, user_malloc); symbols from Fahrenheit's server export
 0x0077c770 function chr_texanim_del           # fh v3:exact 0x0077c860
 0x0077c830 function chr_texanim_draw          # fh v3:exact 0x0077c920
 0x0077c870 function chr_texanim_init          # fh v3:exact 0x0077c960
@@ -4233,6 +4322,7 @@
 0x0077d5e0 function movie_csc                    # layout+callees: sorts between movieHardWareInit and movie_iPicture_Main, and its named callees match the Switch 0x7100326240 movie_csc's (similarity 0.88: FFXGetVideoMode, SPAD_CALL, TODebugGetPadPrintFlag, TODrawMovieMessage, TkGetGsRegisterCSR); symbols from Fahrenheit's server export
 0x0077d670 function movie_iPicture_Main       # fh switch:bsim1.00 0x7100326700
 0x0077d700 function movie_iPicture_Main2      # fh switch:bsim1.00 0x7100326c70
+0x0077daa0 function movie_wait                   # layout+callees: sorts between movie_iPicture_Main2 and mpegstrendsub, and its named callees match the Switch 0x7100323e50 movie_wait's (similarity 1.00: task_wait); symbols from Fahrenheit's server export
 0x0077dab0 function mpegstrendsub                # str-match switch: only user of 7 string(s) held once by both builds, e.g. 'mpegstrendsub(%d)\\n'; Switch 0x7100325dc0 mpegstrendsub (symbols from Fahrenheit's server export)
 0x0077df00 function print_sound_debug_info       # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ee  %d %d'; Switch 0x7100326180 print_sound_debug_info (symbols from Fahrenheit's server export)
 0x0077e730 function loadImage                 # fh switch:bsim1.00 0x7100336e30
@@ -4320,6 +4410,7 @@
 0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0
+0x00784220 function MsGetRamChrCTBbasic          # layout+callees: sorts between MsCDreadWeapon and readBtlMonsterName, and its named callees match the Switch 0x710036b910 MsGetRamChrCTBbasic's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00784260 function Mon_GetName               # kernel monster record string 0
 0x007844c0 function readBtlMonsterName        # fh v3:exact 0x00784570
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
@@ -4651,6 +4742,7 @@
 0x00793f10 function MsDetachWeapon               # layout: alphabetical run between MsCommandStartChrStatusAll and MsGetChr (1 unnamed in the gap); Switch 0x71003472c0 MsDetachWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00794020 function MsGetChr                  # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; was Battle_Actor
 0x00794060 function MsGetChrInfoOne           # (i, kind, k, dir, out) -> 1/0: one actor's property kind 1-13 (position, direction, height, width, battle/bottom/camera position, move position 0x007a93e0, optional position k...) added to out; MsGetChrInfo's step; named here; ported
+0x007942c0 function MsGetChrBetweenDist          # layout+callees: sorts between MsGetChr and MsGetChrBit, and its named callees match the Switch 0x710034cdb0 MsGetChrBetweenDist's (similarity 0.67: MsGetChrPos, MsPointLen2D); symbols from Fahrenheit's server export
 0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); was Battle_SelectActors
 0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
 0x00794830 function MsGetChrBottomPos         # fh v3:exact 0x00794840
@@ -4659,6 +4751,7 @@
 0x00794a30 function MsGetChrCamHeight         # fh v3:cg2 0x794a40
 0x00794a70 function MsGetChrCamWidth          # fh v3:cg2 0x794a80
 0x00794ab0 function MsGetChrCameraPos         # fh v3:exact 0x00794ac0
+0x00794b70 function MsGetChrCenter               # layout+callees: sorts between MsGetChrCameraPos and MsGetChrCenterPos, and its named callees match the Switch 0x710034a880 MsGetChrCenter's (similarity 0.75: MsAddPoint, MsDivVector, MsGetChrBtlPos); symbols from Fahrenheit's server export
 0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
@@ -4727,6 +4820,7 @@
 0x00796940 function MsSetDirThetaMode         # fh v3:exact 0x00796950
 0x007969c0 function Ch_SetCalcNorm2           # (holder) on = holder +0x3c or +0x3d byte set; Ch_SetCalcNorm2_00835780(holder[0], on) when holder[0]; returns on. fh: switch:cg3 0x71008ad4c8
 0x007969f0 function MsSetTargetDir            # fh v3:exact 0x00796a00
+0x00796b40 function getAllPCEquips               # layout+callees: sorts between MsSetTargetDir and getSparedLmtPos, and its named callees match the Switch 0x710034cef0 getAllPCEquips's (similarity 0.75: MsGetSaveChrArmorModel, MsGetSaveChrWeaponModel, ch_create_name); symbols from Fahrenheit's server export
 0x00796c30 function getSparedLmtPos           # fh v3:exact 0x00796c40
 0x00796d70 function msCheckSameTarget         # fh v3:exact 0x00796d80
 0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
@@ -4834,6 +4928,7 @@
 0x0079af60 function MsGetRamChrSummon         # fh v3:bsim1.00 0x0079af70
 0x0079af80 function MsGetRamPartyMember          # layout: alphabetical run between MsGetRamChrSummon and MsGetStatusThreat (1 unnamed in the gap); Switch 0x710036c690 MsGetRamPartyMember is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079afc0 function MsGetStatusThreat         # fh v3:exact 0x0079afd0
+0x0079aff0 function MsMergeDamage                # layout+callees: sorts between MsGetStatusThreat and MsResetAutoStatus, and its named callees match the Switch 0x710036bb80 MsMergeDamage's (similarity 1.00: MsBtlChrNumCheck, MsGetChr, MsGetChrCommand); symbols from Fahrenheit's server export
 0x0079b170 function MsSeveralStoresCopyIntoTable_0079b170 # auto-port shape (several stores: copy into table, cdecl): u8[((a0 * 0x4) + &0x0112aa00)] = (a1 & 0xff); t0 = u16[(a2 + (a1 * 0x4))]; u16[((a0 * 0x4) + &0x0112aa02)] = t0; return ((a2 & 0xffff0000) | t0); callers: MsGetCTBlist; name ours
 0x0079b1a0 function MsResetAutoStatus         # fh v3:exact 0x0079b1b0
 0x0079b290 function MsSetAutoStatus           # fh v3:exact 0x0079b2a0
@@ -5110,6 +5205,7 @@
 0x007a8fc0 function Battle_ScriptPlayMotion      # (ctx, ..., motion, flag): plays a motion on the script's actor (0x00837d00), returns the length in frames << 8 / speed; core of 0x7007
 0x007a9230 function MsCheckBtlPos             # fh v3:exact 0x007a9250
 0x007a92c0 function MsCheckStartEffect        # fh v3:exact 0x007a92e0
+0x007a9320 function MsGetChrMoveFrameRest        # layout+callees: sorts between MsCheckStartEffect and MsGetDirMode, and its named callees match the Switch 0x7100361920 MsGetChrMoveFrameRest's (similarity 1.00: MsGetChr, MsGetChrPos, MsGetMoveTargetPos, MsPointLen); symbols from Fahrenheit's server export
 0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
 0x007a9650 function MsDirTurn                 # (actor, dir) -> f32 in ST0: MsNearRag(+0x490, dir), or the turn the other way round (+-2pi) when +0x494 and the turn pass 2pi/3; MsGetDirMode with +0x42c; name ours
 0x007a9710 function MsGetDirMode              # (i, actor, vec, follow, &mode, &plain) -> f32 in ST0 (fld at ret; Ghidra types it void, MsSetChrDirTarget reads (float10)); direction for mode +0x42b 1-13; fh v3:exact 0x007a9730
@@ -5135,6 +5231,7 @@
 0x007ab160 function MsMoveTargetPos           # fh switch:cg2 0x71008b0578
 0x007ab170 function MsResetDirMove            # fh v3:bsim1.00 0x007ab190
 0x007ab190 function MsTurnMoveVector          # (i, actor, vec, angle): turns a move vector's x/z by angle (negated by the side of the actor's battle position); MsGetMoveTargetPos kind 9 with +0x411; named here; ported
+0x007ab2a0 function MsSetBtlPosReset             # layout+callees: sorts between MsResetDirMove and MsSetChrHeight, and its named callees match the Switch 0x710035f980 MsSetBtlPosReset's (similarity 1.00: MsGetChr, MsGetChrBtlPos, MsSetChrDirF, MsSetChrPosReset); symbols from Fahrenheit's server export
 0x007ab300 function MsSetChrHeight            # fh v3:exact 0x007ab320
 0x007ab360 function MsSetMotion               # fh v3:exact 0x007ab380
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520
@@ -5183,6 +5280,7 @@
 0x007ade10 function MsExchangeParty           # fh v3:exact 0x007ade20
 0x007adf10 function MsExchangePlayer          # fh v3:exact 0x007adf20
 0x007adf90 function MsExchangeSummon          # fh v3:exact 0x007adfa0
+0x007ae0a0 function MsFreePlayer                 # layout+callees: sorts between MsExchangeSummon and MsInsertChrCommand, and its named callees match the Switch 0x710038f940 MsFreePlayer's (similarity 1.00: MsBtlChrFree, MsCleanInputCue, MsGetChr); symbols from Fahrenheit's server export
 0x007ae0f0 function MsCheckCommand3029        # (u16 *ids): ids not null and ids[0] or ids[1] == 0x3029; MsParseCommand; name ours
 0x007ae120 function MsCommandKindMode         # (kind, command): kinds 1/5: 0 if command +0x1c bit 20, 2 if bit 21, else 1; MsParseCommand; name ours
 0x007ae1a0 function MsInsertChrCommand        # fh v3:exact 0x007ae1b0
@@ -5401,6 +5499,8 @@
 0x007ba9a0 function MsBindCamera              # fh v3:exact 0x007ba920
 0x007ba9c0 function MsBindOffCamera           # fh v3:exact 0x007ba940
 0x007baaa0 function MsSplineInit              # fh v3:bsim1.00 0x007baa20
+0x007baac0 function MsSplineRegist               # layout+callees: sorts between MsSplineInit and setCameraMatrixToPhyreScene, and its named callees match the Switch 0x7100392480 MsSplineRegist's (similarity 1.00: MsCameraGetID, MsNearRag); symbols from Fahrenheit's server export
+0x007bab60 function MsSplineSet                  # layout+callees: sorts between MsSplineInit and setCameraMatrixToPhyreScene, and its named callees match the Switch 0x7100392440 MsSplineSet's (similarity 1.00: MsCameraGetID); symbols from Fahrenheit's server export
 0x007bb370 function MsAtelCameraRefAddCircleArea_007bb370 # structure: as MsAtelCameraEyeAddArea_007bb410, pops the floats and adds a circle constraint through 0x007bf1f0; callers Native_CamRefAddCircleArea and three more; name ours
 0x007bb410 function MsAtelCameraEyeAddArea_007bb410 # structure: gets/caches the worker's camera (AtelGetCameraWorkAdrs, MsAtelGetCameraID), pops six floats and adds an eye constraint: kind 4 through 0x007bf330, kinds 5/6 through 0x007bf420 (docs/formats/script.md, natives 0x6006-0x6008); callers Native_Cam_6006/6007/6008 and three more; name ours
 0x007bb6a0 function setCameraMatrixToPhyreScene # fh switch:cg2 0x71003a0fe0
@@ -5459,6 +5559,7 @@
 0x007bf7f0 function Cam_AddPolar                 # (handle, side, dtheta, dphi, dlen): relative polar position, mode 7
 0x007bf940 function MsCameraSetRect           # (handle, side, &xyz): absolute position; applied now if the channel is active; was Cam_SetPos
 0x007bfa80 function MsCameraSetRoll           # fh v3:exact 0x007bfa00
+0x007bfb50 function MsCameraSetScale             # layout+callees: sorts between MsCameraSetRoll and MsCameraSetScrDpt, and its named callees match the Switch 0x710039d510 MsCameraSetScale's (similarity 1.00: MsCameraGetNum); symbols from Fahrenheit's server export
 0x007bfbd0 function MsCameraSetScrDpt         # fh v3:exact 0x007bfb50
 0x007bfe70 function MsCameraSetSplineFilter      # layout+callees: sorts between MsCameraSetScrDpt and MsCopyCameraMatrix, and its named callees match the Switch 0x710039cb20 MsCameraSetSplineFilter's (similarity 1.00: MsCameraIDcheck); symbols from Fahrenheit's server export
 0x007bff10 function MsCameraSetStartPos          # layout+callees: sorts between MsCameraSetScrDpt and MsCopyCameraMatrix, and its named callees match the Switch 0x710039ccc0 MsCameraSetStartPos's (similarity 1.00: MsVectorPolar2Rect, MsVectorRect2Polar); symbols from Fahrenheit's server export
@@ -5704,6 +5805,7 @@
 0x007f94e0 function opus_wave_omd_make        # fh switch:cg2 0x71003eaaf0
 0x007fa510 function create0706NoiseRenderDataBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e3a40 create0706NoiseRenderDataBuffer, 4 votes, round 4
 0x007fa5c0 function create0706AccRenderDataBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e3d80 create0706AccRenderDataBuffer, 4 votes, round 1
+0x007fae40 function op_chr_status_reset_exception # layout+callees: sorts between create0706AccRenderDataBuffer and op_et_astatus_effect_change, and its named callees match the Switch 0x71003ec1e0 op_chr_status_reset_exception's (similarity 1.00: op_et_astatus_effect_off); symbols from Fahrenheit's server export
 0x007faed0 function op_et_astatus_effect_change # fh v3:exact 0x007fadf0
 0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20
 0x007fb0a0 function op_et_astatus_effect_off_all # layout: alphabetical run between op_et_astatus_effect_off and op_et_battle_effect_free (1 unnamed in the gap); Switch 0x71003f2130 op_et_astatus_effect_off_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5843,6 +5945,8 @@
 0x00800770 function op_part_init              # fh v3:exact 0x00800690
 0x008008b0 function op_part_run               # fh v3:exact 0x008007d0
 0x008009c0 function op_part_free              # fh v3:exact 0x008008e0
+0x00800b40 function opus_chara_center_check      # layout+callees: sorts between op_part_free and opus_clip_off_all_in_battle, and its named callees match the Switch 0x71003f56a0 opus_chara_center_check's (similarity 1.00: MsBattleWater, MsGetChrFly); symbols from Fahrenheit's server export
+0x00800b70 function opus_cheight_get             # layout+callees: sorts between op_part_free and opus_clip_off_all_in_battle, and its named callees match the Switch 0x71003f5620 opus_cheight_get's (similarity 1.00: Ch_GetFixHeight, MsGetChrHeight); symbols from Fahrenheit's server export
 0x00800bb0 function opus_clip_off_all_in_battle # fh v3:bsim1.00 0x00800ad0
 0x00800be0 function opus_clip_on_all_in_battle # fh v3:bsim1.00 0x00800b00
 0x00800c10 function opus_cscale_get              # layout+callees: sorts between opus_clip_on_all_in_battle and opus_draw_off, and its named callees match the Switch 0x71003f55b0 opus_cscale_get's (similarity 1.00: Ch_GetFixHeight, Ch_GetThickness, MsGetChrHeight, MsGetChrWidth); symbols from Fahrenheit's server export
@@ -5866,6 +5970,9 @@
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
+0x00803170 function endU16MeshBreakRenderDataBuffer # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e8a90 endU16MeshBreakRenderDataBuffer's (similarity 1.00: FFXVu0UnitMatrix, graphicVFXSetVisible); symbols from Fahrenheit's server export
+0x00803610 function op_mdc_mem_transfer          # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e84d0 op_mdc_mem_transfer's (similarity 1.00: Ch_ModelGetBaseMatrix, Ch_ModelGetNromPtr, Ch_ModelGetVtexPtr); symbols from Fahrenheit's server export
+0x008036d0 function op_mdc_mem_transfer_cue      # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e8360 op_mdc_mem_transfer_cue's (similarity 1.00: debug_exit_trace); symbols from Fahrenheit's server export
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
 0x00803760 function op_mdc_mem_transfer_cue_free_all # fh v3:bsim1.00 0x00803680
 0x008037c0 function op_chara_packet_size_get  # (chr, mode, visible) -> bytes: mimic: 0x0080f580(mode, visible); else per model (Ch_GetNbModel, hidden skipped with visible) Ch_ModelCalcSizeEffectPacket rounded to 16 (+ size/28 * 12 rounded for mode 2), + 0x10 per model + 0x10; g_MagicImports slot 363
@@ -5882,9 +5989,11 @@
 0x00805430 function opus_get_bone_matrix         # layout+callees: sorts between opu_v_en_bone and opus_mdc_break_draw, and its named callees match the Switch 0x71003e5480 opus_get_bone_matrix's (similarity 1.00: Ch_ElemGetBaseMatrix, Ch_OptposGetElement, op_apply_m_w1); symbols from Fahrenheit's server export
 0x008054d0 function opus_get_bone_vertex         # layout+callees: sorts between opu_v_en_bone and opus_mdc_break_draw, and its named callees match the Switch 0x71003e5ec0 opus_get_bone_vertex's (similarity 1.00: Ch_ElemGetPos, Ch_OptposGet); symbols from Fahrenheit's server export
 0x00805510 function opus_mdc_break_draw          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e77c0 opus_mdc_break_draw, 4 votes, round 3
+0x00805980 function opus_mdc_break_make          # layout+callees: sorts between opus_mdc_break_draw and opus_mdc_break_make_VitaSafe, and its named callees match the Switch 0x71003e8920 opus_mdc_break_make's (similarity 1.00: opus_mdc_break_make_VitaSafe); symbols from Fahrenheit's server export
 0x008059c0 function opus_mdc_break_make_VitaSafe # layout+callees: sorts between opus_mdc_break_draw and opus_mdc_free, and its named callees match the Switch 0x71003e7100 opus_mdc_break_make_VitaSafe's (similarity 1.00: Ch_GetBigImageSize, FFXVu0ApplyMatrix, FFXVu0CopyMatrix, debug_exit_trace, op_irandom_p); symbols from Fahrenheit's server export
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
 0x00806230 function opus_motion_set              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003e4eb0 opus_motion_set, 6 votes, round 1
+0x008062c0 function opus_rt_m_chara              # layout+callees: sorts between opus_motion_set and yonExtMapDeleteId, and its named callees match the Switch 0x71003e52e0 opus_rt_m_chara's (similarity 1.00: Ch_GetDataScale, Ch_GetScaleX, Ch_GetScaleY, Ch_GetScaleZ, MsGetChrScale); symbols from Fahrenheit's server export
 0x00806450 function opusIdentity_00806450     # (v) -> v (an MSVC container accessor)
 0x00806460 function opusIdentity_00806460     # (v) -> v (an MSVC container accessor)
 0x00806470 function opusIdentity_00806470     # (v) -> v (an MSVC container accessor)
@@ -5923,6 +6032,7 @@
 0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00807de0 function op_ota_encount1_draw         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e92c0 op_ota_encount1_draw, 4 votes, round 1
+0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
@@ -5938,8 +6048,10 @@
 0x0080b670 function opu_part_init                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos FIXME: particle data address in effect overlay was N'; Switch 0x71003e4710 opu_part_init (symbols from Fahrenheit's server export)
 0x0080b800 function opu_part_run                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos: FIXME osu->malloc is NULL in opu_part_run() u_15.c '; Switch 0x71003e4860 opu_part_run (symbols from Fahrenheit's server export)
 0x0080bd50 function opp_main                  # fh v3:exact 0x0080bea0
+0x0080c3f0 function opu_end                      # layout+callees: sorts between opp_main and opu_wait, and its named callees match the Switch 0x71003f3230 opu_end's (similarity 1.00: opus_draw_off, opus_prog_off, yonExtMapDeleteId); symbols from Fahrenheit's server export
 0x0080c500 function opu_wait                  # fh switch:bsim1.00 0x71003f32f0
 0x0080cc00 function opu_main_host             # fh v3:exact 0x0080cd60
+0x0080f210 function opu_mimic                    # layout+callees: sorts between opu_main_host and opus_mdc_make_mimic, and its named callees match the Switch 0x71003eb6a0 opu_mimic's (similarity 0.69: Ch_GetNbModel, Ch_ModelGetNromPtr, Ch_ModelGetVtexPtr, Ch_TextureSetClutBase, Ch_TextureSetImageBase); symbols from Fahrenheit's server export
 0x0080f460 function opus_mdc_make_mimic       # fh v3:exact 0x0080f5c0
 0x0080f580 function opus_mdc_size_get_mimic      # layout+callees: sorts between opus_mdc_make_mimic and opus_mimic_check, and its named callees match the Switch 0x71003ebf00 opus_mdc_size_get_mimic's (similarity 1.00: Ch_ModelCalcSizeEffectPacket, opus_get_osu_by_draw); symbols from Fahrenheit's server export
 0x0080f630 function opus_mimic_check          # fh v3:exact 0x0080f790
@@ -6018,6 +6130,7 @@
 0x0081e4c0 function SqsSePitchTranslate       # (kind, id, a, pitch, b); called by SndSePitchTranslate
 0x0081e4e0 function SqsSePlay                 # fh v3:bsim1.00 0x0081e5f0
 0x0081e530 function SqsSePlayState            # () -> 0: prints a message (stderr) on PC; SndGetSePlayState jumps here
+0x0081e550 function SqsSePlaySwitch              # layout+callees: sorts between SqsSePlayState and SqsSeSeparateClear, and its named callees match the Switch 0x7100407050 SqsSePlaySwitch's (similarity 1.00: SqsIopCommandSend); symbols from Fahrenheit's server export
 0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0
 0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710
 0x0081e750 function SqsSeSeparateMaskClear    # fh v3:exact 0x0081e860
@@ -6106,7 +6219,9 @@
 0x00822550 function isDebugMode               # () -> g_FFXIsDebug in AL; Fahrenheit Switch BSim 1.00 0x710042ff60
 0x00822580 function recallSceneEffect         # fh switch:cg4 0x710042da60
 0x00822620 function recallSceneEffect2        # fh v3:exact 0x008226b0
+0x00822720 function setFramSync                  # layout+callees: sorts between recallSceneEffect2 and trophyCheckDefeatMonster, and its named callees match the Switch 0x710042cbd0 setFramSync's (similarity 1.00: MagicFile_GetMagicId, MsBattleCheck, getScenerioFlag); symbols from Fahrenheit's server export
 0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0
+0x00822810 function trophyUnlockTrophy           # layout+callees: sorts between trophyCheckDefeatMonster and updateFFX, and its named callees match the Switch 0x710042de60 trophyUnlockTrophy's (similarity 1.00: SaveDataIsSaveEnabled, SaveDataUnlockTrophy); symbols from Fahrenheit's server export
 0x00822840 function updateFFX                 # fh v3:exact 0x008228d0
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
 0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
@@ -6469,6 +6584,7 @@
 0x00832760 function Ch_CalcElement            # fh v3:exact 0x008327e0
 0x00832db0 function Ch_AllClearFlags24       # ours: chr +0x194 &= 0xf8ffffff for every active character (Sg_MainLoop)
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
+0x00833530 function Ch_CalcMiddle_Batch          # layout+callees: sorts between Ch_CalcMain and Ch_FunctionHistory, and its named callees match the Switch 0x7100417b60 Ch_CalcMiddle_Batch's (similarity 0.62: Ch_CalcElement, Ch_IdShadeCalc, Ch_Neck, Ch_OptposCalc, Sg_GetPause); symbols from Fahrenheit's server export
 0x00833760 function Ch_FunctionHistoryClear  # ours: g_ChrFunctionHistory9e8 = 0 (next to the chr.c function-history logger 0x00833770)
 0x00833770 function Ch_FunctionHistory        # ours: for each active character whose header has no models (+6 == 0) sprintfs "%s:%s:%d\n" (name chr+4, file, line) into the debug line 0x023c4000; cdecl (file, line); next to Ch_FunctionHistoryClear
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
@@ -6829,6 +6945,7 @@
 0x00841470 function Sg_DbLine                 # fh switch:bsim1.00 0x7100432680
 0x00841490 function Sg_DbLineStrip           # (): debug line buffer word 0x20001 (Sg_DbLine writes 0x10001); Switch name order Sg_DbLine, Sg_DbLineStrip
 0x008414b0 function Sg_DbNull                 # (c, s): a locator, three debug lines of length 2s through c; Switch name
+0x00841550 function Sg_DbSphere                  # layout+callees: sorts between Sg_DbNull and Sg_DbVertex, and its named callees match the Switch 0x71004333f0 Sg_DbSphere's (similarity 1.00: Sg_DbCircle, Sg_DbCircleXY, Sg_DbCircleYZ); symbols from Fahrenheit's server export
 0x00841610 function Sg_DbVertex               # fh switch:bsim1.00 0x71004326e0
 0x00841670 function Sg_GsALPHA                # fh v3:bsim1.00 0x00841670
 0x008416f0 function Sg_GsDIMX                 # (): A+D DIMX (0x44) = 0xffff_ffff_ffff_fffc; Switch name
@@ -7594,7 +7711,7 @@
 0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
-0x00862800 function Fp_BindToWorker              # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (0x0072a530) or other object kinds (0x0072a590/0x0072a5e0)
+0x00862800 function AtelBindFp                # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (pppFpSetStickChr) or other object kinds (pppFpSetStickMap/pppFpSetStickMapDObj); the Switch AtelBindFp calls exactly those three and sorts between AtelBindElemOff and AtelBindFpOff, as here; callers Native_FpBind, Native_0196; was Fp_BindToWorker
 0x008628a0 function AtelBindFpOff                # layout+callees: sorts between AtelBindElemOff and AtelChangeBinaryHeader, and its named callees match the Switch 0x7100473c90 AtelBindFpOff's (similarity 1.00: pppFpResetStick); symbols from Fahrenheit's server export
 0x00862920 function AtelBindFpPos                # layout+callees: sorts between AtelBindElemOff and AtelChangeBinaryHeader, and its named callees match the Switch 0x7100473b30 AtelBindFpPos's (similarity 1.00: pppFpSetStickPos); symbols from Fahrenheit's server export
 0x00862c60 function AtelChangeLevelHeader     # (worker, level): AtelChangeBinaryHeader from the level's ctrl work tables (+0x1f8/+0x1fc) by its +0x3c/+0x3e/+0x40
@@ -7604,6 +7721,7 @@
 0x00863570 function AtelIsSignalQueued        # (worker index, entry) -> 1 when a request for entry is queued (opcodes 77/78, wait state 2)
 0x008635c0 function AtelSearchReplySignal     # (worker, level) -> the last reply matching the level's wait (+0x2c entry, +0x2e worker, +0x30 level); Script_Run wait state 1
 0x00863620 function AtelClearAllMenuMask      # fh v3:cg2 0x8635c0
+0x008636b0 function AtelClearBreakPointerFromPC  # layout+callees: sorts between AtelClearAllMenuMask and AtelClearEffectParam, and its named callees match the Switch 0x710046b860 AtelClearBreakPointerFromPC's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x00863750 function AtelInitLevelMove         # (worker, level, n): type 1 workers' move (+0x5b8+n*0x4c) and turn (+0x864+n*0x44) blocks reset from the position
 0x00863860 function AtelClearEffectFlag_00863860 # structure: (bit): clears bit n of g_AtelEffectFlags, the reverse of AtelSetEffectFlag; callers two effect natives; name ours
 0x00863880 function AtelClearEffectParam      # fh v3:cg2 0x863820
@@ -7621,6 +7739,7 @@
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x008653f0 function AtelDecodeSignal          # fh v3:exact 0x00865390
 0x008654c0 function AtelFreeSignal            # (worker index, node): back to the free list
+0x00865580 function AtelDisposeFPForBattle       # layout+callees: sorts between AtelDecodeSignal and AtelEnterMenuCallback, and its named callees match the Switch 0x71004707e0 AtelDisposeFPForBattle's (similarity 1.00: pppFpResetStick); symbols from Fahrenheit's server export
 0x008655e0 function AtelEnterMenuCallback     # fh v3:exact 0x00865580
 0x00865890 function AtelEventGetMotionIndex   # fh switch:bsim1.00 0x7100473870
 0x008658b0 function AtelEventGetNowCtrlTopId  # fh switch:bsim1.00 0x710046fdd0
@@ -7633,6 +7752,7 @@
 0x008661d0 function AtelEventRemoveSep        # fh v3:exact 0x00866170
 0x00866210 function AtelEventSetUpFoot3d      # fh v3:exact 0x008661b0
 0x00866240 function AtelEventSetUpForBattleMusic # fh v3:exact 0x008661e0
+0x00866430 function AtelEventSetUpSep            # layout+callees: sorts between AtelEventSetUpForBattleMusic and AtelEventSetupGuideMap, and its named callees match the Switch 0x7100460ab0 AtelEventSetUpSep's (similarity 1.00: AtelSetSnd3dVolumeDiffRatio, AtelSetSnd3dVolumeTotalRatio, SndSyncTrans); symbols from Fahrenheit's server export
 0x00866490 function AtelEventSetupGuideMap    # fh v3:exact 0x00866430
 0x00867230 function Script_OpReq              # (op, level, worker, stack): opcodes 36, 45-49 (REQ): pops entry, worker, level; 47-49 gated by the ctrl work's +0x60 callback; calls 0x0067a9b0 first
 0x008673d0 function Script_OpReqEw            # (op, worker, level, stack) -> 0: opcodes 38, 4f-53 (REQEW, kind 2)
@@ -7645,6 +7765,7 @@
 0x00869d60 function AtelFetchCommand          # (worker, level) -> opcode << 24 | u16 operand when the high bit is set, from the level's PC; Switch name (alphabetical slot before AtelFetchCommandMain and AtelFetchStackInteger); was Script_Fetch
 0x00869da0 function AtelFetchCommandMain      # (long, pc): AtelFetchCommand from a PC, the operand read also when long != 0 (Script_Run's breakpoints); Switch name by its alphabetical slot?
 0x0086a000 function AtelFetchStackInteger     # (worker, stack) -> top slot as integer, not popped (opcode 2b); Switch name: between AtelFetchCommandMain and AtelFlushAlbhedDic (0x0086a040, which reads g_AtelAlbhedDic) in the alphabetical Atel layout
+0x0086a040 function AtelFlushAlbhedDic           # layout+callees: sorts between AtelFetchStackInteger and AtelForceMusicAllStop, and its named callees match the Switch 0x7100474620 AtelFlushAlbhedDic's (similarity 1.00: TkMsImportantSet); symbols from Fahrenheit's server export
 0x0086a170 function AtelForceMusicAllStop     # fh switch:bsim1.00 0x71004743f0
 0x0086a1c0 function AtelFreeSepBuffer         # fh v3:exact 0x0086a150
 0x0086a290 function AtelGetActorBufferSize    # fh v3:exact 0x0086a220
@@ -7703,6 +7824,7 @@
 0x0086b400 function AtelGetEventElemCharIDFromID # fh v3:exact 0x0086b390
 0x0086b480 function AtelGetEventElemHandleFromID # fh v3:bsim1.00 0x0086b3d0
 0x0086b4c0 function AtelGetEventElemStatus    # fh v3:exact 0x0086b450
+0x0086b510 function AtelGetEventLinePos          # layout+callees: sorts between AtelGetEventElemStatus and AtelGetEventMapCameraId, and its named callees match the Switch 0x710046b320 AtelGetEventLinePos's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x0086b5d0 function AtelGetEventMapCameraId   # fh v3:exact 0x0086b560
 0x0086b6c0 function Get_g_AtelForceBattleMapId_0086b6c0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x00c5273c]; return t0; callers: ; name ours
 0x0086b700 function AtelGetGideMapActorInfo   # fh v3:cg7 0x86b690
@@ -7774,6 +7896,7 @@
 0x0086d670 function AtelInitSourceCodeDebugWork # fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind                # fh v3:exact 0x0086d8e0
+0x0086d980 function AtelIsElemBind               # layout+callees: sorts between AtelIsBind and AtelJumpGameOver, and its named callees match the Switch 0x7100462940 AtelIsElemBind's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x0086d9d0 function AtelGetSave20             # ours: the Switch BSim name TkGetLastEventJumpIndex belongs to 0x0088d610 (its alphabetical Tk slot, menu module): g_SaveData +0x20 (u8)
 0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
@@ -7798,6 +7921,7 @@
 0x0086e700 function AtelRecoverFromMenuCallback # fh v3:exact 0x0086e690
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
 0x0086e840 function AtelRegistBattleEndMovieFadeout # fh v3:bsim1.00 0x0086e7d0
+0x0086e860 function AtelRegistBreakPointer       # layout+callees: sorts between AtelRegistBattleEndMovieFadeout and AtelRegistSignal, and its named callees match the Switch 0x710046b6b0 AtelRegistBreakPointer's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x0086e970 function SetGlobals_0086e970          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x01327070] = a0; u32[&0x01327074] = a1; return a1; callers: ; name ours
 0x0086e990 function AtelRegistSignal          # (from, to, kind, level, entry) -> AtelRegistSignalMain
 0x0086e9e0 function AtelRegistSignal2         # fh v3:exact 0x0086e970
@@ -7814,8 +7938,10 @@
 0x0086f3a0 function AtelSetBattleEndKeepRecoverType # fh v3:exact 0x0086f330
 0x0086f3c0 function AtelSetBattleSceneGroup   # fh v3:bsim1.00 0x0086f350
 0x0086f4c0 function AtelSetBindObject         # fh v3:exact 0x0086f450
+0x0086f580 function AtelSetCtrlChar              # layout+callees: sorts between AtelSetBindObject and AtelSetCurrentCtrl, and its named callees match the Switch 0x710046fe70 AtelSetCtrlChar's (similarity 0.75: AtelGetBasicWork, AtelUcOff, AtelUcOn); symbols from Fahrenheit's server export
 0x0086f6a0 function Event_SetPlayer              # (worker id): ctx+0x0a = id; copies its position to ctx+0x218 and +0x228
 0x0086f730 function AtelSetCurrentCtrl        # fh v3:bsim1.00 0x0086f6c0
+0x0086f9e0 function AtelSetDolby                 # layout+callees: sorts between AtelSetCurrentCtrl and AtelSetEffectFlag, and its named callees match the Switch 0x7100474730 AtelSetDolby's (similarity 1.00: MsGetSaveMenu, SndSetSoundMode, TkSetControlerActuatorMode); symbols from Fahrenheit's server export
 0x0086fa40 function AtelSetEffectFlag         # fh v3:bsim1.00 0x0086f9d0
 0x0086fa60 function AtelSetEffectParam        # g_AtelEffectParams[i] = v, no bound; native 0x0085a250
 0x0086fa80 function AtelSetEffectState        # g_AtelEffectState = v; native 0x0085e9e0 sets 1 after AtelAllClearEffectFlag
@@ -7827,6 +7953,7 @@
 0x0086fde0 function AtelSetEventElemHandleFromID # fh v3:cg6 0x86fd70
 0x0086fe20 function AtelSetEventElemPosFromID # fh v3:bsim1.00 0x0086fdb0
 0x0086fe60 function AtelSetEventElemStatus    # fh v3:exact 0x0086fdf0
+0x0086fec0 function AtelSetEventJump             # layout+callees: sorts between AtelSetEventElemStatus and AtelSetEventJump2, and its named callees match the Switch 0x71004618e0 AtelSetEventJump's (similarity 0.62: AtelSetSnd3dVolumeDiffRatio, AtelUcOff, MsBattleExeClear, TkSetEventJump, TkSetFadeOut); symbols from Fahrenheit's server export
 0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap
 0x008700c0 function AtelSetMapFadeType        # g_SaveData +0x11 (u8); Native_SetMapFadeType
 0x008700d0 function AtelSetMapFadeFrames      # g_SaveData +0x12 (u8); Native_SetMapFadeFrames
@@ -7845,6 +7972,7 @@
 0x00870870 function AtelSetMyWorkAdrs         # fh v3:exact 0x00870810
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
 0x00870900 function AtelSetOverlayStatus      # fh v3:bsim1.00 0x008708a0
+0x00870910 function AtelSetPC                    # layout+callees: sorts between AtelSetOverlayStatus and AtelSetPos3d, and its named callees match the Switch 0x71004689c0 AtelSetPC's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x00870b20 function AtelSetPos3d              # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228; was Worker_SetPos
 0x00870d30 function Script_Op79               # (worker, var, index, value): opcode 79, the worker's vibration curve (+0x44) in an 8 x u16 variable
 0x00870ef0 function AtelSetSaveDicIndex       # fh v3:exact 0x00870e90
@@ -7921,6 +8049,7 @@
 0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00)
 0x00873b30 function AtelGetSaveDC             # g_SaveData +0xdc; read by 0x008807b0
 0x00873b40 function AtelGetRandomEncountStatus# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe4
+0x00873b50 function AtelGetSummonNameforFinalBattleSelector # layout+callees: sorts between AtelGetMusicNumber and AtelGetVoicePan, and its named callees match the Switch 0x710044ff00 AtelGetSummonNameforFinalBattleSelector's (similarity 1.00: MsGetSaveChrName, TkMn2GetCommandName); symbols from Fahrenheit's server export
 0x00873b80 function AtelGetVoicePan           # g_AtelVoicePan (u8)
 0x00873b90 function AtelGetVagStreamVolume    # g_AtelVagStreamVolume (u8)
 0x00873c70 function AtelPs2DebugString        # fh v3:bsim1.00+call.cs 0x00873c10
@@ -7951,6 +8080,8 @@
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756b0 function GetFieldPtrb8_008756b0       # auto-port shape (return address of a field's target, cdecl): t0 = u32[(a0 + 0xb8)]; return (t0 + a1); callers: no direct caller; name ours
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
+0x00875950 function AtelCharSetUp                # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f2d0 AtelCharSetUp's (similarity 1.00: AtelGetBinHdrExpandAddChr, AtelGetCtrlWork, AtelPs2DebugString, Sg_EventjumpInit); symbols from Fahrenheit's server export
+0x008759b0 function AtelCommonSetUp              # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f0b0 AtelCommonSetUp's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetActorNumber, AtelGetIndexWork, AtelGetNamespaceNumber, AtelInitActor); symbols from Fahrenheit's server export
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
 0x00875c20 function Vibrate_EntryLevel        # (rec, e) entry e level for this frame into +0xa: 0 outside modes 1/2, start level for negative length, 0 for curve parts >= 0x200, else Vibrate_StepLevel; own name
 0x00875c90 function Vibrate_StepLevel         # (rec, entry, len) step +4 += 1; at len: mode 1 -> Vibrate_StartStream(entry, data), mode 2 -> level = target, +6 = 0xfffe; returns ((n - s) * from + to * s) / n or from; own name
@@ -8498,11 +8629,13 @@
 0x00897240 function TOBtlDrawTidusLimitWindow # fh v3:exact 0x008971b0
 0x008974a0 function TOBtlDrawWakkaLimitWindow    # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004a1710 TOBtlDrawWakkaLimitWindow, 3 votes, round 1
 0x008976f0 function TOBtlGetChrName           # fh v3:cg6 0x897660
+0x00897700 function TOBtlGetChrParamFontColor    # layout+callees: sorts between TOBtlGetChrName and TOBtlInit, and its named callees match the Switch 0x71004a1c60 TOBtlGetChrParamFontColor's (similarity 1.00: MsCalcWeakLevel); symbols from Fahrenheit's server export
 0x00897770 function TOBtlLibraGetState        # g_MagicImports slot 373 (1 overlay): (i16) 0x0133f6a8; hidden from the dump
 0x00897780 function TOGetFloat133f790         # g_MagicImports slot 651 (10 overlays): fld 0x0133f790; hidden from the dump
 0x008977c0 function TOBwakkCheckTerm          # g_MagicImports slot 652 (10 overlays): with byte 0x0133c93f 1, TOSeqCheckTermScene(2, "bwakk"); hidden from the dump
 0x008977e0 function TOBgoodCheckTerm          # g_MagicImports slot 653 (10 overlays): TOSeqCheckTermScene(2, "bgood"); hidden from the dump
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
+0x00897860 function TOBtlInitActiveChrCursor     # layout+callees: sorts between TOBtlInit and TOBtlInitAuronLimitWindow, and its named callees match the Switch 0x7100493ec0 TOBtlInitActiveChrCursor's (similarity 1.00: TOSeqGetColor); symbols from Fahrenheit's server export
 0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
 0x00897af0 function TOBtlInitEnemyLimit          # layout+callees: sorts between TOBtlInitChrNum and TOBtlInitInfoWinMes, and its named callees match the Switch 0x71004942e0 TOBtlInitEnemyLimit's (similarity 1.00: MsGetChrLimitBarFlag, MsGetChrLimitGauge, MsGetChrLimitGaugeMax); symbols from Fahrenheit's server export
@@ -8532,6 +8665,7 @@
 0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060
 0x008997c0 function TOBtlSetChangeHelpMes     # fh v3:exact 0x00899730
 0x00899870 function TOBtlSetCommand           # fh v3:exact 0x008997e0
+0x00899970 function TOBtlSetCommandHelpMes       # layout+callees: sorts between TOBtlSetCommand and TOBtlSetCurPos, and its named callees match the Switch 0x710049e4c0 TOBtlSetCommandHelpMes's (similarity 1.00: MsGetComData, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008999f0 function TOBtlSetCurPos            # fh v3:exact 0x00899960
 0x00899a40 function TOBtlSetDamageValue       # fh v3:exact 0x008999b0; appends a 16-byte record (u16, u16, u32, u32, 4 bytes) at 0x0133f110, count i16 0x0133f108 (max 63, else -1)
 0x00899ac0 function TOBtlSetDefaultCursorPos  # fh v3:exact 0x00899a30
@@ -8566,6 +8700,7 @@
 0x0089bc60 function SetByte_00c58ef4 # cdecl(v): byte 0x00c58ef4 = v; name ours
 0x0089bc80 function ToDrawLibraWin            # fh v3:exact 0x0089bbf0
 0x0089bf70 function TOBtlDrawLibraLeft        # fh v3:cg14 0x89bee0 _TOBtlDrawLibraLeft
+0x0089c7d0 function TOBtlDrawLibraRight          # layout+callees: sorts between TOBtlDrawLibraLeft and TOBtlDrawTargetCursor, and its named callees match the Switch 0x71004a0960 TOBtlDrawLibraRight's (similarity 1.00: MsGetMenuChrInfo, TOGetMessageWH, TOMkpCrossExtMesFontLClut, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad
 0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad
@@ -8613,6 +8748,7 @@
 0x008a75f0 function TODrawWaitBtlWinSummon    # fh v3:cg5 0x8a75a0 __TODrawWaitBtlWinSummon
 0x008a7dc0 function TODrawWaitBtlWinWeapon    # fh v3:cg5 0x8a7d70 __TODrawWaitBtlWinWeapon
 0x008a84d0 function TOInitBtlWinChange        # fh v3:cg2 0x8a8480 __TOInitBtlWinChange
+0x008a8550 function TOKickOpenLimitBreakSecond   # layout+callees: sorts between TOInitBtlWinChange and TOOpenBtlLimitBreak, and its named callees match the Switch 0x71004ae790 TOKickOpenLimitBreakSecond's (similarity 1.00: MsCheckLeftWindow, TOSeqInitScene, TOSeqStartScene); symbols from Fahrenheit's server export
 0x008a85a0 function TOOpenBtlLimitBreak       # fh v3:cg2 0x8a8550 __TOOpenBtlLimitBreak
 0x008a8620 function TOOpenBtlWinLeft             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bleftwlay'; Switch 0x71004a8d60 __TOOpenBtlWinLeft (symbols from Fahrenheit's server export)
 0x008a8640 function TOOpenBtlWinMain          # fh v3:cg2 0x8a85f0 __TOOpenBtlWinMain
@@ -8791,6 +8927,8 @@
 0x008b0500 function TOSwapInternationalEnvExecNonBlock # fh v3:exact 0x008b04b0
 0x008b0920 function TOSwapInternationalEnvInit # fh v3:exact 0x008b08d0; MsSetSaveConfigEnglish(on); 0x00c59564 = on == 1 ? 4 : 0x12; 0x01841d28..+0x10 = 0
 0x008b0970 function TOSwapInternationalEnvInit_008b0970 # cdecl(english): MsSetSaveConfigEnglish(english); 0x00c59978 = english == 1 ? 4 : 0x12; 0x01841d38, 0x01841d3c = 0; twin of TOSwapInternationalEnvInit; name ours
+0x008b0b10 function TOTransImageHL               # layout+callees: sorts between TOSwapInternationalEnvInit and TOTransImageLH, and its named callees match the Switch 0x71004fb3c0 TOTransImageHL's (similarity 1.00: FlushCache, sceDmaGetChan, sceDmaSend, sceGsSyncPath); symbols from Fahrenheit's server export
+0x008b0da0 function TOTransImageLH               # layout+callees: sorts between TOSwapInternationalEnvInit and TOTransTexture, and its named callees match the Switch 0x71004fb560 TOTransImageLH's (similarity 1.00: FlushCache, sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath); symbols from Fahrenheit's server export
 0x008b1020 function TOTransTexture            # fh v3:exact 0x008b0fd0
 0x008b1330 function resetButtonData           # fh v3:bsim1.00 0x008b12e0
 0x008b1350 function setButtonData             # fh v3:bsim1.00 0x008b1300
@@ -8969,6 +9107,7 @@
 0x008bf120 function MenuHelp_Ratio            # (a, b) (b+2)*a*2/4 truncating; own name
 0x008bf140 function MenuHelp_Plus40           # (p) p + 0x40; no caller; own name
 0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0)
+0x008bf170 function TkMn2BuySellWindow           # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawBrush, and its named callees match the Switch 0x71004c8560 TkMn2BuySellWindow's (similarity 0.70: TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyDigit2); symbols from Fahrenheit's server export
 0x008bf720 function MenuList_IsEmptySlot      # (entry) u16 at +0xc+2*byte(+0xb) is 0 or 0xff; own name
 0x008bf830 function TkMn2DrawBrush               # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawCharFace, and its named callees match the Switch 0x71004c5a10 TkMn2DrawBrush's (similarity 1.00: TOMkpShapeXYWHUV, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008bf8f0 function TkMn2DrawCharFace         # fh switch:bsim1.00 0x71004c5760
@@ -8981,6 +9120,7 @@
 0x008c0670 function TkMn2DrawCrossCursor      # fh v3:exact+call.cs 0x008c0640 cdecl
 0x008c0930 function TkMn2DrawCrossRect           # layout+callees: sorts between TkMn2DrawCrossCursor and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c53e0 TkMn2DrawCrossRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x008c0a10 function MenuMn2_StepDrawY         # 0x0186a238 += 16; own name
+0x008c0a20 function TkMn2DrawGillPlate           # layout+callees: sorts between TkMn2DrawCrossRect and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c7fc0 TkMn2DrawGillPlate's (similarity 1.00: TOGetFFXLang, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyEdgeDigit2, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008c0be0 function TkMn2DrawInitPacket       # (): g_TkMn2DrawY from the menu packet buffer address (rewound by half of TOMenuGetPacketBuffSize when unchanged), font shade 0x80; the Switch's TkMn2DrawInitPacket calls TOMenuGetPacketBuffAdrs and TOMenuGetPacketBuffSize and sorts between TkMn2DrawCross* and TkMn2DrawKickPacket, as here; 15 callers (the menu draw roots)
 0x008c0c40 function TkMn2DrawKickPacket          # layout+callees: sorts between TkMn2DrawInitPacket and TkMn2DrawKickPacketBody, and its named callees match the Switch 0x71004c5650 TkMn2DrawKickPacket's (similarity 1.00: TkMn2DrawKickPacketBody); symbols from Fahrenheit's server export
 0x008c0c50 function TkMn2DrawKickPacketBody   # (sync): records the high-water marks of the menu draw cursor (g_TkMn2DrawY), clears the scissor and, when asked, waits for VU1 (TkVU1SyncPath); the Switch's TkMn2DrawKickPacketBody (scissor, TkVU1SyncPath, dbgPrintf) is called by TkMn2DrawKickPacket and TkMn2DrawKickSyncPacket and sorts between them, as here; was TkMn2DrawFlush_008c0c50
@@ -9002,6 +9142,9 @@
 0x008c1280 function TkMn2DrawRect                # layout+callees: sorts between TkMn2DrawMesMR and TkMn2DrawScissorClear, and its named callees match the Switch 0x71004c5340 TkMn2DrawRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x008c1370 function TkMn2DrawScissorClear     # fh switch:bsim1.00 0x71004c5480
 0x008c1390 function TkMn2DrawScissorRect      # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMn2DrawScissorClear
+0x008c13a0 function TkMn2DrawShape               # layout: alphabetical run between TkMn2DrawScissorClear and TkMn2DrawStatiCursor (1 unnamed in the gap); Switch 0x71004c66a0 TkMn2DrawShape is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x008c13d0 function TkMn2DrawStatiCursor         # layout+callees: sorts between TkMn2DrawScissorClear and TkMn2DrawSubTitlePlate, and its named callees match the Switch 0x71004c7180 TkMn2DrawStatiCursor's (similarity 1.00: TOMkpShapeXYWHUV, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008c1490 function TkMn2DrawStatusPlate         # layout+callees: sorts between TkMn2DrawScissorClear and TkMn2DrawSubTitlePlate, and its named callees match the Switch 0x71004c7230 TkMn2DrawStatusPlate's (similarity 1.00: MsGetSavePlayerPtr, TODrawMenuPlateXYWHType, TOMenuGetStatusMes, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2); symbols from Fahrenheit's server export
 0x008c16b0 function TkMn2DrawSubTitlePlate    # fh switch:bsim1.00 0x71004c5d70
 0x008c16e0 function TkMn2DrawSubTitlePlate2      # layout: alphabetical run between TkMn2DrawSubTitlePlate and TkMn2DrawSummonPlate (1 unnamed in the gap); Switch 0x71004c5dc0 TkMn2DrawSubTitlePlate2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c1730 function TkMn2DrawSummonPlate      # fh switch:bsim1.00 0x71004c5cd0
@@ -9304,6 +9447,7 @@
 0x008dd8c0 function TkMenuDrawSp3Tex0         # (a, b, c) MenuDraw_GifTag (the TEX0 setup); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008dd8f0 function TkMenuDrawSp3UR           # (x, y, entry) MenuDraw_SpriteV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008dd920 function TkMenuDrawSp3URHalf       # (x, y, entry) MenuDraw_SpriteV8; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dda80 function TkMenuDrawTriangle           # layout+callees: sorts between TkMenuDrawSp3URHalf and TkMenuEquipWin, and its named callees match the Switch 0x71004c3220 TkMenuDrawTriangle's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
 0x008ddc90 function TkMenuFukiWin1L              # layout: alphabetical run between TkMenuEquipWin and TkMenuGetCommandHelp (8 unnamed in the gap); Switch 0x71004c0be0 TkMenuFukiWin1L is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008ddcc0 function TkMenuFukiWin1LNA            # layout: alphabetical run between TkMenuEquipWin and TkMenuGetCommandHelp (8 unnamed in the gap); Switch 0x71004c0e70 TkMenuFukiWin1LNA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -9344,11 +9488,13 @@
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
 0x008df690 function TOSkipCountedCodes_008df690 # cdecl(p, n): TOSkipCode until n codes <= 2 or >= 0x26 passed; name ours
 0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export
+0x008df7b0 function TORightingMessage            # layout+callees: sorts between TOInitMessageCallBack and TOScanDrawInfo, and its named callees match the Switch 0x7100501880 TORightingMessage's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
 0x008dfe70 function MessageHold_008dfe70 # cdecl(w) -> 0: w+0x2c = 4 (u16), w+0x124 = itself; name ours
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
+0x008e01b0 function TOInitMessageWaitNamesp      # layout+callees: sorts between TODrawMovieMessageWaitNamesp and hardCodeToFixTheWrongData, and its named callees match the Switch 0x7100500c20 TOInitMessageWaitNamesp's (similarity 1.00: TOGetFFXVideoMode); symbols from Fahrenheit's server export
 0x008e0200 function MenuWin_StateSlide        # (w) +0x2c = 1, float +0x4c -= 12, +0x114 = +0x104; returns 0; own name
 0x008e0240 function MenuWin_StateOpen         # (w) +0x2c = 2, +0xa0 = +0xa8, handlers 0x008e0230 (+0x114), 0x008de970 (+0x11c); returns 0; own name
 0x008e0280 function MenuWin_StateWaitText     # (w) +0x2e = 2, or 3 when the text at +0x98 is empty; +0x120 = itself; returns 0; own name
@@ -9389,7 +9535,10 @@
 0x008e3690 function MenuSubCmd_OpenC          # (x, items, c) MenuSubCmd_OpenMainC with d 0; own name
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
 0x008e3710 function TkMenuCloseSubCmdWindow1  # (): close request for 0x023cc124 and forget it (TkMenuCloseSubCmdWindow does 0x023cc128)
+0x008e3730 function TkMenuCtrlAskYesNoWindow     # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e6f50 TkMenuCtrlAskYesNoWindow's (similarity 1.00: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
+0x008e4560 function TkMenuGetYesNoWindowHeight   # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e7760 TkMenuGetYesNoWindowHeight's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
+0x008e4790 function TkMenuOpenSubCmdWindowMain   # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e8190 TkMenuOpenSubCmdWindowMain's (similarity 1.00: TkMenuMainAllocWindow, TkMenuMainRegistWindow, TkMn2StringWidth); symbols from Fahrenheit's server export
 0x008e49b0 function MenuSubCmd_RefreshHelp    # TkMenuSetHelpMessage of the sub-command window cursor entry +0x5c+12i; own name
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e49f0 function TkMenuRestartSubCmdWindow1 # (): 0x023cc124 +0x45 = 0, +0x28 = 1 (TkMenuRestartSubCmdWindow2 does 0x023cc128)
@@ -9402,24 +9551,36 @@
 0x008e5a20 function BeginScissor_XYUV         # (&x0, &y0, &x1, &y1, &u0, &v0, &u1, &v1) -> 0 when outside g_TkMenuScissorBox, else 1 with the rectangle and its texture coordinates clipped; x87 at 53 bits, ratios rounded to float; fh v3:exact 0x008e5a20
 0x008e5cd0 function CloseScissor              # fh v3:bsim1.00 0x008e5cd0
 0x008e5cf0 function TkMenuSceneHash           # (name) -> XOR of its bytes & 0xf: the bucket TkMenuGetParamHandle and TkMenuGetSceneHandle use
+0x008e5d20 function DrawBtlMenuWithTex           # layout+callees: sorts between CloseScissor and DrawCrossButtonIconRGBA, and its named callees match the Switch 0x71005038c0 DrawBtlMenuWithTex's (similarity 1.00: BeginScissor_XYUV, graphicDrawUIElement, graphicGetNowUIType); symbols from Fahrenheit's server export
+0x008e5e90 function DrawBtlMenuWithoutTex        # layout+callees: sorts between DrawBtlMenuWithTex and DrawCrossButtonIcon, and its named callees match the Switch 0x7100503740 DrawBtlMenuWithoutTex's (similarity 0.67: graphicDrawUIElement, graphicGetNowUIType); symbols from Fahrenheit's server export
+0x008e6030 function DrawCrossButtonIcon          # layout+callees: sorts between CloseScissor and DrawCrossButtonIconRGBA, and its named callees match the Switch 0x710051c770 DrawCrossButtonIcon's (similarity 1.00: DrawCrossButtonIconRGBA); symbols from Fahrenheit's server export
 0x008e6070 function DrawCrossButtonIconRGBA   # fh v3:exact 0x008e6070
+0x008e6700 function DrawCrossMenuIconItemName    # layout+callees: sorts between DrawCrossButtonIconRGBA and DrawCrossMenuIconWeaponName2, and its named callees match the Switch 0x71005120b0 DrawCrossMenuIconItemName's (similarity 1.00: DrawCrossMenuIconXYWHRGBA, MsGetRomItem, ToMakeBtlEasyFont, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008e67f0 function DrawCrossMenuIconWeaponName  # layout+callees: sorts between DrawCrossButtonIconRGBA and DrawCrossMenuIconWeaponName2, and its named callees match the Switch 0x7100512250 DrawCrossMenuIconWeaponName's (similarity 1.00: DrawCrossMenuIconXYWHRGBA, MsGetSaveWeapon, MsGetSaveWeaponName, ToMakeBtlEasyFont, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008e6970 function DrawCrossMenuIconWeaponName2 # fh v3:exact+call.cs 0x008e6970 cdecl
 0x008e6af0 function DrawCrossMenuIconXYWHRGBA # fh v3:exact+call.cs 0x008e6af0 cdecl
 0x008e6cc0 function DrawCrossMenuScrollParts  # fh v3:exact+call.cs 0x008e6cc0 cdecl
+0x008e6e10 function DrawCrossMenuSummonPlateClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100524e90 DrawCrossMenuSummonPlateClut's (similarity 0.69: TOGetFFXLang, TOGetSaveChrName, TOMkpShapeXYWHUV, TkMenuGetHP, TkMenuGetMP); symbols from Fahrenheit's server export
+0x008e7110 function DrawCrossMenuSummonPlateNoHPMPClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100525170 DrawCrossMenuSummonPlateNoHPMPClut's (similarity 0.60: TOGetSaveChrName, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008e7a90 function DrawScaleButtonIconRGBA   # fh v3:exact 0x008e7a90
 0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl
 0x008e7ed0 function GetLocationText           # fh switch:bsim1.00 0x710050f050
+0x008e7ef0 function GetLocationWH                # layout+callees: sorts between GetLocationText and OpenFontScissor, and its named callees match the Switch 0x710050f080 GetLocationWH's (similarity 0.67: AtelGetSaveDicName, MsGetSaveConfigEnglish); symbols from Fahrenheit's server export
 0x008e8940 function OpenFontScissor           # (x0, y0, x1, y1 floats): g_TkMenuScissorOn = 1, XYUV mode 1, the box; fh v3:bsim1.00 0x008e8940
 0x008e8980 function OpenScissor               # fh v3:bsim1.00 0x008e8980
 0x008e89c0 function SetInvokedFromSelectCursor # fh v3:bsim1.00 0x008e89c0
+0x008e89d0 function SetWakkalimitMagicFileTexturesUnloaded # layout+callees: sorts between SetInvokedFromSelectCursor and TOAddFontWidthSpace, and its named callees match the Switch 0x7100501f80 SetWakkalimitMagicFileTexturesUnloaded's (similarity 1.00: graphicMenuSetTextureUnloadedInMaterial); symbols from Fahrenheit's server export
+0x008e8a10 function ShapeDataModify              # layout+callees: sorts between SetInvokedFromSelectCursor and TOAddFontWidthSpace, and its named callees match the Switch 0x710051d350 ShapeDataModify's (similarity 1.00: graphicGetTime, graphicUiRemapX, graphicUiRemapY); symbols from Fahrenheit's server export
 0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0; glyph+4 snapped to pixels (trunc(x*ws+0.5)/ws), then + font width + space of kind byte +0x1a
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
+0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
 0x008eb270 function TOAddPktMenuIconRGBA      # fh v3:exact 0x008eb270
 0x008ec2f0 function TOAdpCrossEasyStrFontSClutRGBA # fh v3:exact 0x008ec2f0
+0x008ec720 function TOAdpCrossFontM_FFX          # layout+callees: sorts between TOAdpCrossEasyStrFontSClutRGBA and TOAdpCrossFontS_ASCII, and its named callees match the Switch 0x7100513980 TOAdpCrossFontM_FFX's (similarity 1.00: BeginScissor_XYUV, TOGetImageWH, TOGetTextureName, graphicFontDraw); symbols from Fahrenheit's server export
 0x008eca90 function TOAdpCrossFontS_ASCII        # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100515dd0 TOAdpCrossFontS_ASCII, 2 votes, round 1
 0x008ed020 function Identity_008ed020 # cdecl(x) -> x (frame-pointer build); name ours
 0x008ed030 function Identity_008ed030 # cdecl(x) -> x (frame-pointer build); name ours
@@ -9550,6 +9711,8 @@
 0x008feb00 function TOMakePktShapeCursor      # fh v3:exact 0x008feb00
 0x008ff020 function TOXyoffsetPacket_008ff020 # cdecl(x, y) -> x: at *0x018716cc a GIF tag (0x8001, 0x10000000, A+D) and XYOFFSET_1 (x, y | sign of x), the cursor +0x20; caller TODrawMovieMessage; name ours
 0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
+0x008ff260 function TOMenuDrawBrush2             # layout+callees: sorts between TOMakePktShapeCursor and TOMenuInitBrush, and its named callees match the Switch 0x7100528420 TOMenuDrawBrush2's (similarity 0.67: TOMkpShapeXYWHUV, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x009008c0 function TOMenuDrawStatusPlayerPlate  # layout+callees: sorts between TOMakePktShapeCursor and TOMenuInitBrush, and its named callees match the Switch 0x71005267a0 TOMenuDrawStatusPlayerPlate's (similarity 0.71: MsGetNextAP, MsGetSaveNextAP, TOGetSaveChrName, TOMenuDrawKickTmp, TOMenuOpenPktBuffTmp); symbols from Fahrenheit's server export
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
 0x00900f60 function TOMenuSet_018762ee        # (i, v): i < 16 (signed): u16 at 0x018762ee + 16 i = v; between TOMenuInitBrush and TOMenuTransFacePlyTex; name ours
 0x00900f80 function TOMoveEntry_00900f80 # cdecl(i, x, y, d): entry i (< 16) of 0x018762e0 moved to (x, y) (+0 = 1) unless there; unless +0xe == 1: +8 = 0, +6 = d, +0xc = d / 14 + 2; callers 0x008e3cf0, 0x008e4140; name ours
@@ -9561,6 +9724,7 @@
 0x00901190 function TOMkpActiveChrCursor      # fh v3:exact 0x00901190
 0x00901280 function TOMkpBtlLimitLuluMidareCounter # fh v3:exact 0x00901280
 0x00901300 function TOMkpBtlLimitSpecialGauge # fh v3:exact 0x00901300
+0x009015e0 function TOMkpCrossEasyMesFontM       # layout+callees: sorts between TOMkpBtlLimitSpecialGauge and TOMkpCrossEasyStrFontSClut, and its named callees match the Switch 0x7100513c10 TOMkpCrossEasyMesFontM's (similarity 1.00: TOAdpCrossFontM_FFX, TOSkipCode); symbols from Fahrenheit's server export
 0x00901660 function TOMkpCrossEasyStrFontSClut # fh v3:exact+call.cs 0x00901660 cdecl
 0x009016b0 function TOMkpCrossExtMesFontLClut # fh v3:exact+call.cs 0x009016b0 cdecl
 0x00901700 function TOMkpCrossExtMesFontLClutTypeRGBA # fh v3:exact+call.cs 0x00901700 cdecl
@@ -9620,6 +9784,7 @@
 0x00905930 function ToMakeBtlEasyEdgeFont     # fh v3:exact+call.cs 0x00905930 cdecl
 0x00905970 function ToMakeBtlEasyEdgeFontA    # fh v3:exact 0x00905970
 0x00905ab0 function ToMakeBtlEasyFont         # fh v3:exact+call.cs 0x00905ab0 cdecl
+0x00905d30 function ToMakeBtlEasyFontWithOffset  # layout+callees: sorts between ToMakeBtlEasyFont and getScaleButtonIconWidth, and its named callees match the Switch 0x7100506870 ToMakeBtlEasyFontWithOffset's (similarity 1.00: TOGetFontInfo, TOGetGroup, TOMakePktFont1612, TOSkipCode); symbols from Fahrenheit's server export
 0x00905e90 function TOCopyWindowLayout_00905e90 # cdecl(table, i): i < count: entry i (n, then n 12-byte records; layout 0x43 n = 1) memcpy'd to 0x01876148; returns it, else 0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
@@ -9785,6 +9950,7 @@
 0x0090bc10 function yiMallocQuiet             # (size): Sg_MemSetErrorIgnore(1), then user_malloc (tail call)
 0x0090bc40 function yiPkAddGsAD_0090bc40         # the same code as yiPkAddGsAD
 0x0090bee0 function yiRender_destroy          # fh switch:bsim1.00 0x7100539700
+0x0090bf10 function yiRender_draw                # layout+callees: sorts between yiRender_destroy and yiRender_resetobj, and its named callees match the Switch 0x710053a860 yiRender_draw's (similarity 0.75: FFXVu0CopyVector, graphicDoneResetMapParam, graphicNeedResetMapParam, graphicObjectSetRotation, graphicObjectSetTranslation); symbols from Fahrenheit's server export
 0x0090c120 function yiRender_addDirectBlock   # (render, src, n): data pointer +0xba3e0 aligned to 64, DMA ref tag 0x30000000|(n+1) at +0xba3f0 (+0xba3f8 counts), block VIF FLUSH, STMOD, STCYCL 1,1, DIRECTHL n, n quadwords; returns src + 16n; name ours
 0x0090c1f0 function yiRender_addRef              # (render, addr, qwc u16): DMA ref tag (0x30000000 | qwc, addr) at render +0xba3f0, which moves 16 on; render +0xba3f8 counts tags
 0x0090c230 function yiRender_addRefData          # (render, block): yiRender_addRef of block +0x10 for block's u16 quadword count
@@ -10383,6 +10549,7 @@
 0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
 0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092d880 function SetGlobals_0092d880          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2; callers: no direct caller; name ours
+0x0092dcd0 function rcefCalcRotMatrix            # layout+callees: sorts between rcbgTrxSetTag and rcefChgChrClut, and its named callees match the Switch 0x71005581b0 rcefCalcRotMatrix's (similarity 0.67: FFXVu0UnitMatrix, op_rt_m_yxz); symbols from Fahrenheit's server export
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
 0x0092de50 function rcMat4fSetScale001           # (m) -> identity scaled by 0.01 (0x00b1f2b0); FFXVu0UnitMatrix's eax
@@ -10503,6 +10670,7 @@
 0x00934fb0 function rcuiLoadSetTitle          # (): sprintf 'Load - %s' (0x00b68500) of the map directory (+0x64) and Gu_WindowSetTitle(+4); Switch's 'Load - %s' is used by rcuiLoadProc and rcuiLoadSetTitle only (str_switch)
 0x00935340 function rcuiMotionProc               # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Motion Speed'; Switch 0x710055c730 rcuiMotionProc (symbols from Fahrenheit's server export)
 0x00935690 function rcuiMotionStep            # (d): the selected motion (work +0x8d8) moved d groups (ranges 0x00c60dc0, motions 0x00c60a78)
+0x00935820 function rcuiPaletteProc              # layout+callees: sorts between rcuiMotionProc and rcuiParProcKick, and its named callees match the Switch 0x710055b470 rcuiPaletteProc's (similarity 1.00: Gu_PrintSetX, Gu_PrintSetY, Gu_Printf, Gu_WindowControlSetText, rcuiAddItems); symbols from Fahrenheit's server export
 0x00936340 function rcuiParProcKick              # layout+callees: sorts between rcuiMotionProc and rcuiPreMemWinOpen, and its named callees match the Switch 0x710055dc80 rcuiParProcKick's (similarity 1.00: Ch_OptposGetElement, rcefGetChrHandle, rcefMainKickPar); symbols from Fahrenheit's server export
 0x009363f0 function rcuiPreMemProc               # layout+callees: sorts between rcuiMotionProc and rcuiPreMemWinOpen, and its named callees match the Switch 0x710055e720 rcuiPreMemProc's (similarity 0.75: Gu_PrintSetX, Gu_PrintSetY, Gu_Printf); symbols from Fahrenheit's server export
 0x009364a0 function rcuiPreMemWinOpen         # fh switch:bsim1.00 0x710055e6c0
@@ -10539,6 +10707,7 @@
 0x0093a910 function rcbgFpTrxTexLoadTextGetTrxCnt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%d_00.tm2'; Switch 0x7100561290 rcbgFpTrxTexLoadTextGetTrxCnt (symbols from Fahrenheit's server export)
 0x0093aa60 function rcbgGuideMapLoadTextSub      # layout+callees: sorts between rcbgFpTrxTexLoadTextGetTrxCnt and rcbgSceneLoadTextCameraCalcRef, and its named callees match the Switch 0x7100561570 rcbgGuideMapLoadTextSub's (similarity 0.75: rcbgModelDelete, rcbgModelNew, rcuiGetStageName); symbols from Fahrenheit's server export
 0x0093adf0 function rcbgPalLoadConfig         # (pal, parse): keywords (0x00c60e94) 0 mode byte +0xa, 1 speed byte +0xb, 2 stop
+0x0093ae60 function rcbgPreLoadText              # layout+callees: sorts between rcbgGuideMapLoadTextSub and rcbgSceneLoadTextCameraCalcRef, and its named callees match the Switch 0x710055f4f0 rcbgPreLoadText's (similarity 0.71: rcAlloc, rcbgPreInit, rcbgSceneInit, rcbgSceneLoadTextSub, rcbgSceneLoadTexture); symbols from Fahrenheit's server export
 0x0093aee0 function rcbgSceneLoadTextSubConfigKeys # (obj, parse): keywords (0x00c60e44) 0..2 the ints +0x5c/+0x60/+0x64, 3 stop; rcbgSceneLoadTextSubConfig
 0x0093b110 function rcbgSceneLoadTextCameraCalcRef # (cam): rotation from the degrees at +0x98/9c/a0, +0x78 = +0x68 + +0xf4 * row 2, +0x88 = -row 1. Switch rcbgSceneLoadTextCameraCalcRef sorts right before rcbgSceneLoadTextModel (0x0093b200); callers rcuiCameraProc and the camera text loader 0x0093af60
 0x0093b200 function rcbgSceneLoadTextModel       # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%s/3d/mdl'; Switch 0x71005609d0 rcbgSceneLoadTextModel (symbols from Fahrenheit's server export)
@@ -10590,6 +10759,7 @@
 0x0093e570 function Gui_NameinputProc            # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'NAME EDIT'; Switch 0x7100564880 Gui_NameinputProc (symbols from Fahrenheit's server export)
 0x00941820 function Gui_AddrOfGlobal025d5fa0_00941820 # auto-port shape (return address of global, cdecl): return &0x025d5fa0; callers: Gui_MovieDebugProc; name ours
 0x00941830 function movie_view                   # layout+callees: sorts between Gui_NameinputProc and sasa_menu, and its named callees match the Switch 0x7100565680 movie_view's (similarity 1.00: Gu_WindowCreate); symbols from Fahrenheit's server export
+0x00941c00 function sa_camera_disp_sub           # layout+callees: sorts between movie_view and sasa_menu, and its named callees match the Switch 0x7100567210 sa_camera_disp_sub's (similarity 0.62: FFXSamp0TransMatrix, FFXSamp0UnitMatrix, FlushCache, MsMulMatrix, sceGsSyncPath); symbols from Fahrenheit's server export
 0x00942110 function sasa_menu                 # fh v3:exact 0x00942110
 0x00942360 function set_path_name                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'ms->filename != NULL'; Switch 0x7100564650 set_path_name (symbols from Fahrenheit's server export)
 0x009428a0 function MemSystem_Ensure # (): 0x009428b0 (sets g_MemSystem = 0x0193c390) unless g_MemSystem is set; called first by malloc_pool_init; name ours
@@ -10710,6 +10880,7 @@
 0x0094d5b0 function luaL_newstate                          # Lua 5.2.1; lua_newstate(0x0094c5f0, 0) + lua_atpanic(0x0094ddb0); no references; never runs (lua.md)
 0x0094d870 function luaL_callmeta                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100771810 luaL_callmeta, 4 votes, round 1
 0x0094d930 function luaL_setfuncs                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'too many upvalues'; Switch 0x7100771a30 luaL_setfuncs (symbols from Fahrenheit's server export)
+0x0094da10 function luaL_testudata               # layout+callees: sorts between luaL_setfuncs and luaL_tolstring, and its named callees match the Switch 0x71007703f8 luaL_testudata's (similarity 0.60: lua_getfield, lua_settop, lua_touserdata); symbols from Fahrenheit's server export
 0x0094da80 function luaL_tolstring               # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s: %p'; Switch 0x7100771928 luaL_tolstring (symbols from Fahrenheit's server export)
 0x0094ddb0 function luaL_panic                             # Lua 5.2.1 lauxlib panic: "PANIC: unprotected error in call to Lua API (%s)"
 0x009506b0 function lua_close                 # fh switch:bsim1.00 0x710077e1e8
@@ -10957,6 +11128,7 @@
 0x00a18c80 function Phyre_PPostProcessing_PMotionBlurBase_initializeCommonShaders # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'VelocityBuffer'; Switch 0x7100821250 Phyre::PPostProcessing::PMotionBlurBase::initializeCommonShaders (symbols from Fahrenheit's server export)
 0x00a19cb0 function Phyre_PPostProcessing_PDeferredLightingBase_initializeGeometry # fh switch:bsim1.00 0x7100813f50 Phyre::PPostProcessing::PDeferredLightingBase::initializeGeometry
 0x00a1a4f0 function Phyre_PPostProcessing_PDeferredLightingNVN_initializeShaders # str-match switch: only user of 19 string(s) held once by both builds, e.g. 'LightBuffer'; Switch 0x7100817c70 Phyre::PPostProcessing::PDeferredLightingNVN::initializeShaders (symbols from Fahrenheit's server export)
+0x00a1a720 function Phyre_PPostProcessing_PExponentialShadowNVN_initializeShaders # layout+callees: sorts between Phyre_PPostProcessing_PDeferredLightingNVN_initializeShaders and Phyre_PPostProcessing_PGlowBase_initializeShaders, and its named callees match the Switch 0x7100820640 Phyre_PPostProcessing_PExponentialShadowNVN_initializeShaders's (similarity 0.67: Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial); symbols from Fahrenheit's server export
 0x00a1a830 function Phyre_PPostProcessing_PGlowBase_initializeShaders # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'LuminanceThreshold'; Switch 0x710082ae60 Phyre::PPostProcessing::PGlowBase::initializeShaders (symbols from Fahrenheit's server export)
 0x00a1ab00 function Phyre_PPostProcessing_PLegacyGlowBase_initializeShaders # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'GlowBufferState'; Switch 0x710082ce30 Phyre::PPostProcessing::PLegacyGlowBase::initializeShaders (symbols from Fahrenheit's server export)
 0x00a1acc0 function Phyre_PPostProcessing_PMeshParticleSystemBase_initializeShaders # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'ColorTexture'; Switch 0x7100828c20 Phyre::PPostProcessing::PMeshParticleSystemBase::initializeShaders (symbols from Fahrenheit's server export)
@@ -11213,6 +11385,7 @@
 0x00a6e2e0 function opus_0437_dot_draw        # fh switch:cg2 0x7100870250
 0x00a6e5d0 function opus_0437_dot_set            # layout+callees: sorts between opus_0437_dot_draw and opus_0437_draw, and its named callees match the Switch 0x71008701d0 opus_0437_dot_set's (similarity 1.00: op_xyz_scale); symbols from Fahrenheit's server export
 0x00a6e650 function opus_0437_draw            # fh switch:cg2 0x7100870ea0
+0x00a6ed40 function opus_0437_poly_check         # layout+callees: sorts between opus_0437_draw and opus_0582_draw, and its named callees match the Switch 0x7100870640 opus_0437_poly_check's (similarity 1.00: FFXVu0ApplyMatrix, op_mul_m, op_random, op_xyz_scale, user_free); symbols from Fahrenheit's server export
 0x00a6f4d0 function opp_mdc_draw_a6f4d0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) kinds 0x2000/0x1000 draw a character model with a texture (0x00808a90 record, graphicVFXIsTextureWithBpLoaded) through graphicSetNoLightSpecularPassParam / 0x006439b0 or op1_mdc_ref_nolight, with per-magic alpha and gain cases; ported in crates/ffx-vfx slots
 0x00a70910 function opp_0582_cmd_a70910         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x8000 allocates the part's tables, calls opus_0582_dot_draw / _break_make / _draw / _break_draw, the character texture bases (Ch_TextureSetClutBase 0x3c00, Ch_TextureSetImageBase 0x2ee0) and Sg_FadeOutW(1); ported in crates/ffx-vfx slots
 0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
