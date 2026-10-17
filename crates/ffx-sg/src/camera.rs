@@ -43,6 +43,34 @@ pub mod bridge {
     /// 8 bytes per camera (`Cam_SetChannelSuspended`).
     pub const CHANNELS: Global<u32> = Global::new(0x0113_81a8);
 
+    /// `g_Screens`: three screens of 0x1c0 bytes; `+0xc0` (a byte) says
+    /// whether the screen views one of the battle cameras, `+0xc1`
+    /// (`g_DebugCamera` for the first) which.
+    pub const SCREENS: u32 = 0x0113_7000;
+    pub const SCREEN_SIZE: u32 = 0x1c0;
+    pub const SCREEN_CAMERA_ON: u32 = 0xc0;
+    pub const SCREEN_CAMERA: u32 = 0xc1;
+
+    /// `Cam_SetScreenCameraOn(screen, on)` (`0x007bc930`): the screen's
+    /// camera byte (`+0xc0`) for screens 0..=2, the others ignored.
+    pub fn set_screen_camera_on(mem: &mut impl Mem, screen: u32, on: u8) {
+        if screen <= 2 {
+            let at = mem.rebase(SCREENS) + SCREEN_SIZE * screen + SCREEN_CAMERA_ON;
+            mem.write(at, on);
+        }
+    }
+
+    /// `Cam_SetScreenCamera(screen, on, camera)` (`0x007bc950`): the
+    /// screen's camera byte (`+0xc0`) and camera (`+0xc1`) for screens
+    /// 0..=2, the others ignored.
+    pub fn set_screen_camera(mem: &mut impl Mem, screen: u32, on: u8, camera: u8) {
+        if screen <= 2 {
+            let at = mem.rebase(SCREENS) + SCREEN_SIZE * screen;
+            mem.write(at + SCREEN_CAMERA_ON, on);
+            mem.write(at + SCREEN_CAMERA, camera);
+        }
+    }
+
     fn bits(x: f32) -> u32 {
         x87::round_trip(x).to_bits()
     }
@@ -93,6 +121,31 @@ pub mod bridge {
             copy3(mem, at, v);
         }
         at
+    }
+
+    /// `Sg_CameraGetYaw()` (`0x0083f2d0`, a `jmp` to the battle module's
+    /// `MsCameraGetYaw`, `0x007bcf20`): the active camera's (`g_Camera`)
+    /// yaw, `MsVectorRect2Polar(cam + 0x50, cam + 0x66c, &yaw, 0, 0)` from
+    /// the eye to the look-at point, as `ST0` holds it (`fld dword`). The
+    /// yaw goes through a stack local ([`crate::scratch`]); `trig` is the
+    /// CRT's `_CIatan`.
+    pub fn camera_get_yaw(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(ffx_battle::pos::bridge::Trig, u32) -> u32,
+    ) -> f32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        let cam = battle::CAMERA.get(mem);
+        let mut s = Scratch::new(mem);
+        ffx_battle::vector::bridge::ms_vector_rect2_polar(
+            &mut s,
+            trig,
+            cam.wrapping_add(0x50),
+            cam.wrapping_add(0x66c),
+            SCRATCH,
+            0,
+            0,
+        );
+        s.read(SCRATCH)
     }
 
     /// `Sg_CameraGetRef(&v)` (`0x0083f2a0`); [`CAMERA_REF`]'s address.

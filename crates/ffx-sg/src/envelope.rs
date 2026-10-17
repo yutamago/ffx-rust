@@ -387,4 +387,257 @@ pub mod bridge {
         h.write_bytes(dst, &list);
         dst
     }
+
+    /// The emulated R5900 registers `sg_calcenvelope_normW` uses (16
+    /// bytes each, `g_Ee_Gpr + 16 n`): r0, a0 (the list pointer), a1 (the
+    /// output), a2 (the matrix), t0..t6, t8 (the list's end).
+    pub const EE_R0: u32 = 0x00c8_f508;
+    pub const EE_A0: u32 = 0x00c8_f548;
+    pub const EE_A1: u32 = 0x00c8_f558;
+    pub const EE_A2: u32 = 0x00c8_f568;
+    pub const EE_T: [u32; 7] = [
+        0x00c8_f588,
+        0x00c8_f598,
+        0x00c8_f5a8,
+        0x00c8_f5b8,
+        0x00c8_f5c8,
+        0x00c8_f5d8,
+        0x00c8_f5e8,
+    ];
+    pub const EE_T8: u32 = 0x00c8_f688;
+    /// The emulated VU0 registers it uses: a word before Q (`0x00c8f784`),
+    /// the accumulator, the blended vertex (`0x00c8f7a0`), the source
+    /// vertex, the matrix rows (`0x00c8f7d0..f0`), the vertex as floats,
+    /// the result, the normal scale (`0x00c8f840`).
+    pub const VU_I: u32 = 0x00c8_f784;
+    pub const VU_BLEND: u32 = 0x00c8_f7a0;
+    pub const VU_SRC: u32 = 0x00c8_f7c0;
+    pub const VU_ROWS: [u32; 3] = [0x00c8_f7d0, 0x00c8_f7e0, 0x00c8_f7f0];
+    pub const VU_VERTEX: u32 = 0x00c8_f810;
+    pub const VU_RESULT: u32 = 0x00c8_f820;
+    pub const VU_SCALE: u32 = 0x00c8_f840;
+    /// `g_Vu0_Vf00`.
+    pub const VU_VF00: u32 = 0x00c0_a004;
+    /// The word the translated code saves the VU word in while it loads
+    /// the scale.
+    pub const SAVED_WORD: u32 = 0x0130_36a8;
+    /// The normal scale, 0.0001 (`f32` in `.rdata`).
+    pub const NORMAL_SCALE: Global<f32> = Global::new(0x00b9_2154);
+
+    /// The skinning step shared by the three lists: `VU_VERTEX` times the
+    /// matrix rows (`sg_VmulScalar` by x, `sg_VmaddaScalar` by y,
+    /// `sg_VmaddScalar` by z into `dst`).
+    fn rows(mem: &mut impl Mem, r: &impl Fn(u32) -> u32, dst: u32) {
+        let v: [f32; 4] = mem.read(r(VU_VERTEX));
+        vmul_scalar(mem, r(VU0_ACC), r(VU_ROWS[0]), v[0]);
+        let v: [f32; 4] = mem.read(r(VU_VERTEX));
+        vmadda_scalar(mem, r(VU_ROWS[1]), v[1]);
+        let v: [f32; 4] = mem.read(r(VU_VERTEX));
+        vmadd_scalar(mem, dst, r(VU_ROWS[2]), v[2]);
+    }
+
+    /// `t_k` = the 64-bit sign- or zero-extension of a list `u16`.
+    fn load_half(mem: &mut impl Mem, reg: u32, at: u32, signed: bool) {
+        let h: u16 = mem.read(at);
+        let v = if signed {
+            i64::from(h.cast_signed()).cast_unsigned()
+        } else {
+            u64::from(h)
+        };
+        mem.write(reg, v);
+    }
+
+    /// The header of the second and third lists: the count at `p` (into
+    /// t0), t2 = count 8 + 2 count, a0 = `p + 2`, t8 = a0 + t2. True when
+    /// the count is r0's (none).
+    fn list_header(mem: &mut impl Mem, r: &impl Fn(u32) -> u32, p: u32) -> bool {
+        use ffx_vfx::op::bridge::op_add64;
+        let [t0, _, t2, ..] = EE_T.map(r);
+        load_half(mem, t0, p, false);
+        sll(mem, t2, t0, 3);
+        let n: u32 = mem.read(t0);
+        op_add64(mem, t2, t2, n);
+        op_add64(mem, t2, t2, n);
+        let a0 = r(EE_A0);
+        mem.write(a0, p.wrapping_add(2));
+        mem.write(a0 + 4, 0u32);
+        let len: u32 = mem.read(t2);
+        op_add64(mem, r(EE_T8), a0, len);
+        let r0: [u32; 2] = mem.read(r(EE_R0));
+        let hi: u32 = mem.read(t0 + 4);
+        n == r0[0] && hi == r0[1]
+    }
+
+    /// Whether a0 (both words) has reached t8.
+    fn at_end(mem: &impl Mem, r: &impl Fn(u32) -> u32) -> bool {
+        let a: [u32; 2] = mem.read(r(EE_A0));
+        let e: [u32; 2] = mem.read(r(EE_T8));
+        a == e
+    }
+
+    /// One weighted entry's common part (10 bytes at `p`: `i16` x, y, z,
+    /// `u16` weight, `u16` index): the vertex into `VU_VERTEX` with its w
+    /// scaled by `VU_SCALE`'s x, skinned into `VU_BLEND`; t4 becomes the
+    /// output slot's address.
+    fn weighted(mem: &mut impl Mem, r: &impl Fn(u32) -> u32, p: u32) {
+        use ffx_vfx::op::bridge::{copy16, op_vec_w_scale};
+        let [t0, t1, t2, t3, t4, t5, t6] = EE_T.map(r);
+        load_half(mem, t0, p, true);
+        load_half(mem, t1, p + 2, true);
+        load_half(mem, t2, p + 4, true);
+        // the third list fills t3 and t4 after the first copy, the second
+        // before: the copy reads neither
+        copy_fields_7ecb20(mem, t5, t1, t0);
+        load_half(mem, t3, p + 6, false);
+        load_half(mem, t4, p + 8, false);
+        copy_fields_7ecb20(mem, t6, t3, t2);
+        copy_fields_845d00(mem, t0, t6, t5);
+        copy16(mem, r(VU_SRC), t0);
+        ffx_vfx::vec::bridge::ivec4_to_fvec4(mem, r(VU_VERTEX), r(VU_SRC));
+        let s: f32 = mem.read(r(VU_SCALE));
+        op_vec_w_scale(mem, r(VU_VERTEX), r(VU_VERTEX), s);
+        rows(mem, r, r(VU_BLEND));
+        sll(mem, t4, t4, 4);
+        let out: u32 = mem.read(r(EE_A1));
+        daddiu(mem, t4, t4, out);
+    }
+
+    /// `CopyFields_007ecb20(dst, a, b)`: MIPS `pextlw` (`dst` = `b.x,
+    /// a.x, b.y, a.y`).
+    fn copy_fields_7ecb20(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let a: [u32; 4] = mem.read(a);
+        let b: [u32; 4] = mem.read(b);
+        mem.write(dst + 4, a[0]);
+        mem.write(dst + 8, b[1]);
+        mem.write(dst + 0xc, a[1]);
+        mem.write(dst, b[0]);
+    }
+
+    /// `sg_CopyFields_00845d00(dst, a, b)`: MIPS `pcpyld` (`dst` = `b.x,
+    /// b.y, a.x, a.y`).
+    fn copy_fields_845d00(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let a: [u32; 4] = mem.read(a);
+        let b: [u32; 4] = mem.read(b);
+        mem.write(dst + 8, a[0]);
+        mem.write(dst + 4, b[1]);
+        mem.write(dst + 0xc, a[1]);
+        mem.write(dst, b[0]);
+    }
+
+    /// `sg_calcenvelope_normW(lists, out, m)` (`0x00845ec0`): the vertex
+    /// normals' envelope, the PS2's R5900 and VU0 code translated register
+    /// by register (the emulated registers in memory, every step as the
+    /// original leaves it).
+    ///
+    /// a0..a2 take the arguments; the matrix's three rows go to
+    /// `VU_ROWS`, 0.0001 through the VU word into t0 and from there to
+    /// `VU_SCALE`; the result starts as `vf00`. Three lists follow, each a
+    /// `u16` count then entries:
+    /// - rigid (8 bytes: `i16` x, y, z, `u16` index): `out[index]` =
+    ///   `VU_ROWS x (x, y, z)` (the w of `VU_RESULT` left as it was);
+    /// - first weights (10 bytes: x, y, z, weight, index): `out[index]` =
+    ///   `VU_ROWS x v` scaled by `weight 0.0001`;
+    /// - further weights: that added to `out[index]`.
+    ///
+    /// Entries are 16 bytes in `out` (`index 16`). The loops end when a0
+    /// meets t8 (both words), as the translated `bne` does.
+    #[allow(clippy::too_many_lines)]
+    pub fn calc_envelope_norm_w(mem: &mut impl Mem, lists: u32, out: u32, m: u32) {
+        use ffx_vfx::op::bridge::{copy16, op_add64, op_word_copy, opus_vec3_scale, ppp_vec4_copy};
+        let base = mem.rebase(0);
+        let r = move |a: u32| a.wrapping_add(base);
+        let [t0, _, _, t3, t4, t5, _] = EE_T.map(r);
+        let a0 = r(EE_A0);
+        mem.write(a0, lists);
+        mem.write(r(EE_A1), out);
+        mem.write(r(EE_A2), m);
+        for (k, row) in (0u32..).zip(VU_ROWS) {
+            copy16(mem, r(row), m.wrapping_add(0x10 * k));
+        }
+        let (word, saved) = (r(VU_I), r(SAVED_WORD));
+        let w: u32 = mem.read(word);
+        mem.write(saved, w);
+        set_float(mem, word, NORMAL_SCALE.get(mem));
+        op_word_copy(mem, t0, word);
+        let w: u32 = mem.read(saved);
+        mem.write(word, w);
+        copy16(mem, r(VU_SCALE), t0);
+        ppp_vec4_copy(mem, r(VU_RESULT), r(VU_VF00));
+        // the rigid list
+        load_half(mem, t0, lists, false);
+        sll(mem, t0, t0, 3);
+        let n: u32 = mem.read(t0);
+        let t8 = r(EE_T8);
+        op_add64(mem, t8, a0, n);
+        let end: u32 = mem.read(t8);
+        mem.write(t8, [end.wrapping_add(4), 0]);
+        mem.write(a0, [lists.wrapping_add(4), 0]);
+        let mut p = lists.wrapping_add(4);
+        if !at_end(mem, &r) {
+            loop {
+                load_half(mem, t0, p, true);
+                load_half(mem, r(EE_T[1]), p + 2, true);
+                load_half(mem, r(EE_T[2]), p + 4, true);
+                copy_fields_7ecb20(mem, t5, r(EE_T[1]), t0);
+                copy_fields_845d00(mem, t0, r(EE_T[2]), t5);
+                copy16(mem, r(VU_SRC), t0);
+                load_half(mem, t3, p + 6, false);
+                crate::vec::bridge::int_vec_to_float(mem, r(VU_VERTEX), r(VU_SRC));
+                let a: u32 = mem.read(a0);
+                mem.write(a0, [a.wrapping_add(8), 0]);
+                rows(mem, &r, r(VU_RESULT));
+                sll(mem, t3, t3, 4);
+                let o: u32 = mem.read(r(EE_A1));
+                daddiu(mem, t3, t3, o);
+                let dst: u32 = mem.read(t3);
+                copy16(mem, dst, r(VU_RESULT));
+                p = mem.read(a0);
+                if at_end(mem, &r) {
+                    break;
+                }
+            }
+        }
+        // the first weights
+        if !list_header(mem, &r, p) {
+            loop {
+                p = mem.read(a0);
+                weighted(mem, &r, p);
+                let a: u32 = mem.read(a0);
+                mem.write(a0, [a.wrapping_add(0xa), 0]);
+                let v: [f32; 4] = mem.read(r(VU_VERTEX));
+                opus_vec3_scale(mem, r(VU_RESULT), r(VU_BLEND), v[3]);
+                let dst: u32 = mem.read(t4);
+                copy16(mem, dst, r(VU_RESULT));
+                if at_end(mem, &r) {
+                    break;
+                }
+            }
+        }
+        // the further weights
+        p = mem.read(a0);
+        if !list_header(mem, &r, p) {
+            loop {
+                p = mem.read(a0);
+                weighted(mem, &r, p);
+                let src: u32 = mem.read(t4);
+                copy16(mem, r(VU_SRC), src);
+                let v: [f32; 4] = mem.read(r(VU_VERTEX));
+                opus_vec3_scale(mem, r(VU_RESULT), r(VU_BLEND), v[3]);
+                let k: [f32; 4] = mem.read(r(VU_SRC));
+                ffx_vfx::vec::bridge::vec3_add_scalars(
+                    mem,
+                    r(VU_RESULT),
+                    r(VU_RESULT),
+                    [k[0], k[1], k[2]],
+                );
+                let a: u32 = mem.read(a0);
+                mem.write(a0, [a.wrapping_add(0xa), 0]);
+                let dst: u32 = mem.read(t4);
+                copy16(mem, dst, r(VU_RESULT));
+                if at_end(mem, &r) {
+                    break;
+                }
+            }
+        }
+    }
 }

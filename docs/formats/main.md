@@ -643,3 +643,153 @@ z lanes are memory operands. `Ch_EffectPacketCreateMain` sets the two
 `u16`s at `0x0130366c` (`g_ChrPacketState`) and `0x01303684` through
 `Sg_SetChrPacketState` (`0x00845c30`) and `Sg_SetChrPacketWord`
 (`0x00845c40`).
+
+## Round 13: the player's control (`crates/ffx-sg/src/player.rs`)
+
+`Sg_ControlPlayer()` (`0x0082d180`) steers the player (`0x01300788`,
+`Sg_SetPlayer`) from the frame's pad. Axis 3 (`0x023c44a4`) is the left
+stick's y and axis 2 (`0x023c44a5`) its x: 0x59..0xa7 on y and 88 < x <
+168 (an `f32` compare) count as 0x80; the results go to `0x013007ac` and
+`0x013007a8`. Without a player nothing else happens; with its control
+off (`Sg_GetPlayerControlEnable`) the speed is 0.
+
+Four levels at `0x0130078c` (`i32`, up, down, right, left) ramp by 32 a
+frame. The d-pad (any of 0xf000: 0x1000 up, 0x4000 down, 0x2000 right,
+0x8000 left) raises its levels to 256 and lowers the others to 0.
+Otherwise the stick, doubled about its rest (`2y - 256`, `2(128 - x)`, as
+`f32`) and zeroed in -96 < v < 96, raises its side's level, capped at the
+stick's magnitude (through `ftol`), and lowers the opposite one to 0.
+
+The speed is `sqrt((right-left)^2 + (up-down)^2)` (`f32`), 256 above 256
+and 0 below 48; the angle `atan2(right - left, up - down)` (`_CIatan2`,
+stored as `f32` in `0x013007a0`) is kept only when both axes rest in the
+dead zone and a falling level of each hit 0 this frame. In motion type 2
+with button 0x40 while diving (`0x013007c5`) a gravity below 2 gets 0.2
+more (`Ch_AddGrav`).
+
+The camera's yaw (`Sg_CameraGetYaw`, `0x0083f2d0`, a jump to
+`MsCameraGetYaw`: `MsVectorRect2Polar` from `g_Camera + 0x66c` to
+`+ 0x50`) goes to `0x0130079c` every frame, except with `g_CameraFollow`
+3: there it is taken when the angle moved more than `Angle_Wrap(0.349)`
+from `0x013007a4` (which then takes the angle, and the offset `0x01300780`
+0), and on the levels whose name hash (`graphicLevelGetNameHash`) is
+0x19c or 0x220 every frame; standing still there sets `0x013007a4` to
+-1000. Standing still the speed is 0. Moving, the character gets
+`Ch_SetSp(speed * s / 256)` with `s` the type 2 speed (`0x013007bc`) or
+the walk and run speeds (`0x013007b4`, `0x013007b8`; run without button
+0x40) and `Ch_SetDir(-((angle - offset) - yaw))`, the fixed direction
+(`Sg_PlayerSetDirFix`, `0x013007c8`) replacing the yaw when its flag
+(`0x013007c4`) is set. Every intermediate is an `f32` store of a 53-bit
+x87 result.
+
+## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
+
+`sg_calcenvelope_normW(lists, out, m)` (`0x00845ec0`, called by
+`Apply_Envelope`, `0x00832110`, for the normals) is PS2 R5900/VU0 code
+translated register by register: the registers live in memory
+(`g_Ee_Gpr + 16 n`: a0..a2 the arguments at `0x00c8f548/58/68`, t0..t6 at
+`0x00c8f588..e8`, t8 the list's end at `0x00c8f688`; VU0 registers from
+`0x00c8f784`), and every step goes through a leaf (`sg_Sll`, `sg_Daddiu`,
+`op_add64`, the `pextlw`/`pcpyld` copies `CopyFields_007ecb20` and
+`sg_CopyFields_00845d00`, `VFX_Copy16*`, the scalar products). The port
+keeps every register write.
+
+The matrix rows go to `0x00c8f7d0/e0/f0`; 0.0001 (`.rdata 0x00b92154`)
+reaches `0x00c8f840` through the word at `0x00c8f784` (saved at
+`0x013036a8` and restored); the result register `0x00c8f820` starts as
+`vf00`. Three lists follow:
+
+| list | header | entry | `out[index]` (16 bytes each) |
+|---|---|---|---|
+| rigid | `u16` count, 2 bytes | 8: `i16` x, y, z, `u16` index | rows x (x, y, z); w as the result register had it |
+| first weights | `u16` count | 10: x, y, z, `u16` weight, index | rows x v x (weight x 0.0001) |
+| further weights | `u16` count | 10 | that plus `out[index]`'s x, y, z |
+
+The products run as `sg_VmulScalar` (x), `sg_VmaddaScalar` (y) into the
+accumulator and `sg_VmaddScalar` (z); weights scale with `opus_vec3_scale`.
+A loop ends when a0 equals t8 in both words; a count equal to r0 (0)
+skips a weighted list.
+
+## Round 13: the screens' cameras
+
+`g_Screens` (`0x01137000`, three screens of 0x1c0 bytes) holds per screen
+a byte at `+0xc0` (the screen views one of the battle cameras; the
+screen's per-frame code then sets `g_Camera` to `g_Cameras + 0xda0 n`)
+and the camera `n` at `+0xc1` (`g_DebugCamera` for screen 0).
+`Cam_SetScreenCameraOn(screen, on)` (`0x007bc930`) sets the first for
+screens 0..2 and ignores the others; `Cam_SetScreenCamera(screen, on,
+camera)` (`0x007bc950`) sets both.
+
+## Round 13: the walk mesh's triangle exceptions (`crates/ffx-sg/src/triangle.rs`)
+
+`passThisTriangle(a, b, c, group, tag)` (`0x00829870`, all `u16`) tells
+`InsideTriangle` (`0x00828c10`) whether to test a triangle. It is a fixed
+table of map exceptions keyed by `(a, b, c)`, the triangle's group and
+`tag / 100`: group 0, and a tag equal to `group 100 + c`, always pass;
+`(3, 2, 2)` and `(0x67, 1, 1)` pass only tags of hundred 1; the rows for
+`a` 2, 4, 7, 0x29 and 0x68 list the hundreds each group allows (see the
+module's doc comment), unlisted groups pass and other `a` fail. The
+result is 0 or 1 in all of `eax`.
+
+## Round 13: the push-apart list
+
+The push-apart pass (`0x0083d3b0`) collects the active characters into
+`0x01301b08` (40 pointers, count `0x01301ba8`) and sorts them with
+`Sg_ChrSortByZ(n)` (`0x0083eb30`): a selection sort on `+0x14` (z),
+where each place takes the last remaining character whose z is at most
+the smallest seen (`fcomp` with `C0 | C3`, so a NaN is never taken).
+
+## Round 13: a frame of the motion script (`SG_SeqFrame`)
+
+`SG_SeqFrame(chr)` (`0x008377c0`) runs `SG_SeqStep` until a step stops:
+1 (waiting) runs `Ch_MotionLoopFrame`; 2 (the script's end) runs it too
+and clears `+0x736` when `+0x728` is 0; 3 (a hold) sets `+0x734` and
+clears `+0x736`; -1 (an unknown code) calls `yiAssert(0, "SG:SeqFrame",
+"seq err")`. Any other result steps again. `eax` is left as the last
+callee's (the loop step's, the assertion's) or 3 for a hold.
+
+## Round 13: the id triangle under a point (`Sg_IdFindTriangle`)
+
+`Sg_IdFindTriangle(p)` (`0x0083de10`) walks the id table (`0x01301a84`,
+`0x01301a88` entries of 16 bytes: three `i16` vertex numbers into the
+8-byte `i16` vertices at `0x01301a8c`, x at `+0`, z at `+4`). A triangle
+holds `p` when every edge `(a, b)` in order gives `(b.x - a.x) p.z +
+(a.z - b.z) p.x + f32(a.x b.z) - f32(b.x a.z)` not above 0 (edge
+differences and integer products as `f32`, the sums at 53 bits; NaN
+holds). Each holding triangle's height (`Sg_IdGetHeight`, through
+`ftol`) is a candidate unless it is below `p.y`; the lowest candidate
+wins (the first of equals). Without one the last holding triangle is
+returned, then -1 (also with no id table).
+
+## Round 13: reading a PC file (`Sg_PcRead`, `Sg_PcReadD`)
+
+`Sg_PcRead(path)` (`0x0083ae30`) and `Sg_PcReadD(path)` (`0x0083ae50`)
+read a file through `_Sg_PcRead(path, kind)` (`0x0083b1d0`, kind 0 and
+1, platform) and set the memory manager's current address
+(`Sg_MemSetCurrentAddr`, `0x0083c4e0`) to the result, which they return.
+
+## Round 14: the CD read queue (`crates/ffx-sg/src/cdread.rs`)
+
+The PS2 CD-library emulation (`libmscd.c`) keeps 64 read requests
+(`READ_Q_CNT`) at `g_CdChannels` (`0x01127c80`, 0x38 bytes each): size
+at `+0` and `+0x2c`, buffer `+4`, PS2 file number `+8` (-1 for a read
+by sector, as `+0x28`), the caller's four option words `+0xc..+0x1c`,
+start sector `+0x1c`, callback `+0x20`, request id `+0x24`, busy byte
+`+0x31`, cancel byte `+0x33`, a word at `+0x34`. Their names (0x80
+bytes each) are at `g_CdChannelNames` (`0x022fb6c0`). Ids come from
+`g_CdReadId` (`0x01128a80`): incremented per request, back to 1 past
+0xffff. Request 64 would start at `g_CdReadId` itself.
+
+`cd_read_q_clear(id)` (`0x0076e130`, `g_CdLib + 0x1c`) sets the cancel
+byte of every busy request with that id, or of every busy request when
+`id < 1`. Its `eax` is the loop pointer, garbage.
+
+`CDfileReadSector_CD(sector, buffer, size, callback, opts)`
+(`0x0076bdd0`, `g_CdLib + 0x78`) queues a read by sector in the first
+request whose busy byte is clear: busy set, buffer, file number and
+`+0x28` -1, the option words from `opts + 0xc..+0x1c` (zeros without
+`opts`), callback, a new id, size twice, sector, name `"DVD FILE"`
+(unless `g_CdChannelKeepNames`), `+0x34` cleared; it returns the id.
+With all 64 busy the assertion `q_cnt != READ_Q_CNT` (`libmscd.c`,
+line 0x6a7) goes to `movie_err` and request 64 is written anyway, its
+size landing on `g_CdReadId` after the id was taken.

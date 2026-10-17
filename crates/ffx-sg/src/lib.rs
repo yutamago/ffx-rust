@@ -6,16 +6,19 @@
 
 pub mod assert;
 pub mod camera;
+pub mod cdread;
 pub mod chpacket;
 pub mod cloth;
 pub mod control;
 pub mod envelope;
 pub mod gs;
 pub mod light;
+pub mod player;
 pub mod quat;
 pub mod scratch;
 pub mod seq;
 pub mod state;
+pub mod triangle;
 pub mod vec;
 
 /// The low byte of an argument the original reads as a byte (`mov al,

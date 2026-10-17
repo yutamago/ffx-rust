@@ -4204,6 +4204,7 @@
 0x0076b7e0 function eiWaitLoop                # fh switch:bsim1.00 0x71002f17e0
 0x0076b8d0 function eidprintfPrint            # fh v3:exact 0x0076b9e0
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
+0x0076bdd0 function CDfileReadSector_CD # cdecl(sector, buffer, size, callback, opts) -> id: queues a read by sector in the first free g_CdChannels request (+0x1c sector, +4 buffer, +0/+0x2c size, +0x20 callback, +8/+0x28 -1, opts' words +0xc..+0x18 or 0), name "DVD FILE" unless g_CdChannelKeepNames, returns the new g_CdReadId; all 64 busy: "q_cnt != READ_Q_CNT" (libmscd.c 0x6a7) to movie_err and request 64 written anyway; g_CdLib slot +0x78 (CdEnvInit; the HDD path 0x00a42870 wraps it); name from Fahrenheit's Switch CDfileReadSector_CD (0x710031f090, 396 bytes against our 408, sole callee movie_err; of the five Switch users of "q_cnt != READ_Q_CNT" the others are 224, 280, 828 and 1224 bytes); ported in ffx_sg::cdread (main round 14)
 0x0076bf70 function cd_ModuleFileRead_0076bf70   # (file, sector, size, ...): a libmscd.c read request (cd_module_file_sector_rel / cd_size_from_table, CDfileName_PC), "q_cnt != READ_Q_CNT" assert, "HDD FILE" / "DVD FILE"; own name
 0x0076c250 function cd_module_file_sector_rel # cdecl(n): cd_file_sector(n + g_CdLib+0x20, the module's first file number), a tail jump; callers 0x0076b970, 0x0076bf70; name ours
 0x0076c270 function cd_module_file_sector     # (module, n): cd_file_sector(i16 [g_CdLib+0x2c][module] + n); name ours
@@ -4240,6 +4241,7 @@
 0x0076dec0 function printf_init_over             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'pach dbgPrintf(%d)\\n'; Switch 0x7100320220 printf_init_over (symbols from Fahrenheit's server export)
 0x0076df40 function printf_mask_set              # layout: alphabetical run between printf_init_over and printf_write (1 unnamed in the gap); Switch 0x710031ff40 printf_mask_set is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0076df80 function printf_write                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '------------- dbgPrintf.log write done. -------------\\n'; Switch 0x7100320310 printf_write (symbols from Fahrenheit's server export)
+0x0076e130 function cd_read_q_clear # cdecl(id): sets the cancel byte (+0x33) of each busy (+0x31) g_CdChannels request whose id (+0x24) is id, of all busy ones when id < 1; returns garbage in eax; g_CdLib slot +0x1c (CdEnvInit 0x0076cff0); name from Fahrenheit's Switch cd_read_q_clear (0x710031e6f0, an 80-byte libmscd.c function without calls; shape lead, not a matched body); ported in ffx_sg::cdread (main round 14)
 0x0076e5e0 function read_err_disp_set         # (v): byte 0x01128a87 = v; Fahrenheit Switch BSim 1.00 0x710031ea70
 0x0076e630 function read_thread_init          # fh v3:bsim1.00 0x0076e740
 0x0076e640 function sa_read_callback          # fh v3:exact 0x0076e750
@@ -6043,6 +6045,8 @@
 0x007bc110 function MsScreenProcess           # cdecl(camera 0-2) -> 1 when camera > 2: per frame, picks the active channel (g_Camera), moves it, builds the view matrix 0x02311440 with FUN_007c1be0 from the channel's eye (+0x65c) and look-at (+0x40), or from the override camera when g_CamOverrideOn; was Cam_Update
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
+0x007bc930 function Cam_SetScreenCameraOn     # (screen, on): byte +0xc0 of g_Screens[screen] for screens 0..2 (MsScreen's per-frame code takes g_Camera from the screen's camera +0xc1 when it is set); caller Native_604e; name ours; ported (ffx_sg::camera)
+0x007bc950 function Cam_SetScreenCamera       # (screen, on, camera): bytes +0xc0 and +0xc1 (the camera, g_DebugCamera for screen 0) of g_Screens[screen] for screens 0..2; caller Native_604f; name ours; ported (ffx_sg::camera)
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
 0x007bcf20 function MsCameraGetYaw            # () -> ST0: the yaw of the active camera (g_Camera): MsVectorRect2Polar(cam+0x50 look-at, cam+0x66c eye, &yaw, 0, 0); 3 callers; name ours
 0x007bd000 function MsCameraFree              # fh v3:cg3 0x7bcf80
@@ -7340,7 +7344,7 @@
 0x00837780 function Ch_RegMotionToTop            # layout+callees: sorts between Ch_RegMotionGetExistMem and Ch_RelElemMapping, and its named callees match the Switch 0x71004214b0 Ch_RegMotionToTop's (similarity 1.00: Cache_ToTop); symbols from Fahrenheit's server export
 0x00837790 function Ch_RegMotionUse              # layout+callees: sorts between Ch_RegMotionGetExistMem and Ch_RelElemMapping, and its named callees match the Switch 0x71004214c0 Ch_RegMotionUse's (similarity 1.00: Cache_Use); symbols from Fahrenheit's server export
 0x008377a0 function Ch_RelElemMapping         # fh v3:exact 0x00837820
-0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err")
+0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err"): wait 1 and end 2 advance Ch_MotionLoopFrame (end with +0x728 at 0 clears +0x736), hold 3 sets +0x734 and clears +0x736, -1 asserts; ported (ffx_sg::seq)
 0x00837860 function Ch_SeqGetFastMotion       # fh v3:exact 0x008378e0
 0x00837900 function SG_SeqStep                # motion script opcodes 0-6 ("unknown motion sequence code %x"); 1 = play clip (clip, loops, start mark, end mark)
 0x00837ac0 function Ch_SetSequence            # (actor, character << 16 | number): finds the motion in the character's sequences; was SG_SetMotion
@@ -7496,6 +7500,7 @@
 0x0083d920 function Ch_IdGetWater             # chr +0x828 bits 13-14; Switch name, in name order before Ch_IdSetDefPid
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
 0x0083d960 function Sg_IdWalk                 # (chr, p, i): from id triangle i, the edge p (x, z) lies beyond (integer edge lines, f32 products; a later edge only when the old position +0x3c/+0x44 is past it): inside all three, the vertices into +0x8c..+0xb4 and +0x824 = i, 0; else the neighbour is entered (0x01301ae8 depth, at most 10) unless missing, Sg_IdMatchChr or Sg_IdGetHeight below +0x40 - 0x01301af4; then the edge into 0x01301aec/af0, 1; recursive; name ours
+0x0083de10 function Sg_IdFindTriangle         # (p) -> the id triangle under p (x, z inside all three edges, f32 edge sums at 53 bits); of those, the lowest truncated Sg_IdGetHeight not below p.y, else the last that held p, else -1; callers 0x0083e5f0, 0x0083eae0; name ours; ported (ffx_sg::state)
 0x0083e040 function Sg_IdGetHeight            # (p, i) -> ST0: the height of id triangle i's plane under point p (x, z): normal n (Sg_CalcTriangleNormal via the entry's vertices), first vertex v, (n.v - (n.x p.x + n.z p.z)) / n.y; 0.0 without id data (0x01301a84) or for i -1; callers 0x0083d960, 0x0083de10, 0x0083e5f0 (ground under a character); name ours; ported (ffx_sg::state)
 0x0083e130 function Sg_IdGetNormal            # (out, i) -> -1 without id data (0x01301a84) or for i -1; else Sg_CalcTriangleNormal of entry i's three i16 vertices (8 bytes each at 0x01301a8c) into out, 0; name ours; ported (ffx_sg::state)
 0x0083e180 function Sg_IdSlideEdge            # (from, to): a move that crossed the id edge 0x01301aec-0x01301af0 slides along it: the move in the edge's frame (FFXVu0ApplyMatrix) loses its across component, then steps back one unit along z while the world result (FFXVu0InversMatrix) is still past the edge; to.x/z = from + w; called from the id move loop 0x0083e5f0 after 0x0083d960 finds a crossing; name ours; ported (ffx_sg::state)
@@ -7512,6 +7517,7 @@
 0x0083e9d0 function Sg_IdSetEffectTableIndex  # fh v3:bsim1.00 0x0083e9d0
 0x0083e9e0 function Sg_IdSetMapTable          # (i, v): g_ChrIdMapTable[i] = v
 0x0083ea00 function Sg_IdSetPtr               # fh v3:exact 0x0083ea00
+0x0083eb30 function Sg_ChrSortByZ             # (n): selection sort of the first n of g_SgPushChrs by chr +0x14 (z), the last of equal minimums swapping in; caller 0x0083d3b0 (the push-apart pass, before its pair loop); name ours; ported (ffx_sg::state)
 0x0083ecd0 function Sg_ChrPushApart           # (a, b, reach, dist): pushes two chrs apart by reach - dist in x-z, shared by their +0x500 weights (both <0: by Sg_VectorGetLengthXZ from their anchors); +0x4c/+0x54 step, +0x194 bit 5; caller 0x0083d3b0
 0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010
 0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00
@@ -14983,6 +14989,7 @@
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
 0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
 0x01127c80 label g_CdChannels # CD channel records, 0x38 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
+0x01128a80 label g_CdReadId # i32: last read-request id, 1..=0xffff (Cd_QueueRead, CDfileReadSector_CD wrap it to 1 past 0xffff); request 64 of g_CdChannels starts here, so an overfull queue overwrites it; name ours
 0x01128a90 label    g_Cd_ExSizes              # u32 per PS2 file number: pc_sizetbl_set_Ex() (CdEnvInit); CDfileSize_CD_EX indexes it with number + g_CdLib_FileBase
 0x01128a94 label    g_Cd_ExSizeCount          # entries of g_Cd_ExSizes (pc_sizetbl_set_Ex); CDfileSize_CD_EX returns -1 at or past it
 0x01128aac label    g_Cd_DiskOpenCheck        # byte: disk_open_check_set; CdEnvInit clears it; the read loop 0x0076ccb0 reads it
@@ -15399,8 +15406,18 @@
 0x01300704 label    g_FadeActive              # u32: a bit per screen fade slot still running (Sg_DrawFilter clears a slot's bit when its frames reach 0)
 0x01300708 label    g_FadeSlots               # 5 x 0x10: mode, r, g, b, i16 frames, total/level, target, step (Sg_DrawFilter, 0x0082c0c0)
 0x01300768 label    g_FocusOn                 # u32: the focus (depth of field) requested; 0x0130076c drawn, 0x01300758/c the depths (Sg_DrawFilter)
+0x01300780 label    g_PlayerDirOffset         # f32 offset from the stick angle in the player's direction: 0x0082d950 sets Angle_Wrap(deg)+g_PlayerStickDir, Sg_ControlPlayer (0x0082d180) clears it when it takes the camera yaw; name ours
+0x01300788 label    g_Player                  # the player character (Sg_SetPlayer 0x0082dad0, which also clears g_PlayerLevels); Sg_ControlPlayer steers it; name ours
+0x0130078c label    g_PlayerLevels            # i32[4] 0..256: up, down, right, left (d-pad 0x1000/0x4000/0x2000/0x8000, or the left stick's side ramped by 32 a frame); Sg_ControlPlayer's speed is |(right-left, up-down)|, its angle atan2 of the same; name ours
+0x0130079c label    g_PlayerCameraYaw         # f32 camera yaw (Sg_CameraGetYaw) Sg_ControlPlayer turns the stick angle by: every frame, or with g_CameraFollow 3 when the angle turned 0.349 since g_PlayerStickDirTaken; name ours
+0x013007a0 label    g_PlayerStickDir          # f32 atan2(right-left, up-down) of g_PlayerLevels (Sg_ControlPlayer), kept while the stick rests in its dead zone; name ours
+0x013007a4 label    g_PlayerStickDirTaken     # f32 g_PlayerStickDir when Sg_ControlPlayer last took the camera yaw (follow mode 3); -1000 standing still; name ours
+0x013007a8 label    g_PlayerStickX            # i32 left stick x after the dead zone (88 < x < 168 -> 128), Sg_ControlPlayer; name ours
+0x013007ac label    g_PlayerStickY            # i32 left stick y after the dead zone (0x59..0xa7 -> 0x80), Sg_ControlPlayer; name ours
 0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
+0x013007c4 label    g_PlayerDirFixOn          # u8 Sg_PlayerSetDirFix's flag: Sg_ControlPlayer turns the stick angle by g_PlayerDirFix instead of the camera yaw; name ours
 0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
+0x013007c8 label    g_PlayerDirFix            # f32 Sg_PlayerSetDirFix's direction (Angle_Wrap of degrees in radians); name ours
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
@@ -15432,8 +15449,11 @@
 0x013019c8 label g_ChrRemapCluts            # clut textures Ch_TextureReMapping laid out
 0x013019d8 label g_ChrIdMapTable             # u32 by raw map id: Ch_IdGetMap maps ids 0x30..0x3f through it (0x0083e9e0 sets entries)
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
+0x01301a88 label    g_SgIdCount               # i32 entries in the id table (0x01301a84), Sg_IdSetPtr's; Sg_IdFindTriangle loops over them; name ours
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01301b08 label    g_SgPushChrs              # 40 chr pointers the push-apart pass (0x0083d3b0) collects (active, not +0x194 bit 8) and sorts by z (Sg_ChrSortByZ); name ours
+0x01301ba8 label    g_SgPushChrCount          # i32 count of g_SgPushChrs; name ours
 0x01301bb0 label    g_FreeCamPreset           # u32: Sg_ControlCamera's distance preset counter (button 0x400; low byte % 6 picks 50, 100, 180, 250, 1000, 30)
 0x01301bb8 label    g_FreeCamDist             # f32: Sg_ControlCamera's distance, +/- 0.4 with L/R button mode buttons 1/4, or a preset
 0x01301ff8 label    g_CacheEntries            # the model cache's 100 entries (0x28 bytes) Cache_Init points g_CacheSlots at
@@ -15877,6 +15897,9 @@
 0x023c37a0 label    g_OpOef2Seps                 # 32 x (sound sep handle, user mask) slots: op_oef2_sep_free_all clears a mask, stopping (SndSepStop, SndSepClear) a slot left with no user
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
+0x023c44a4 label    g_PadLStickY              # u8 left stick y, 0x80 at rest (Sg_ControlMain: TkGetControlerAnalogHist axis 3); up below 0x80 (it ramps the up level, d-pad 0x1000); name ours
+0x023c44a5 label    g_PadLStickX              # u8 left stick x (Sg_ControlMain: axis 2); right above 0x80 (the right level, d-pad 0x2000); name ours
+0x023c44ac label    g_PadHeld                 # u32 held pad buttons (Sg_ControlMain: TkGetControlerHist); 0x023c44b0 last frame's, 0x023c44a8 the newly pressed; name ours
 0x023c44c0 label    g_ChrF117Hides            # 4 x (hide, renderer instance), Ch_ModelSetHide's queue (count g_ChrF117HideCount)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)

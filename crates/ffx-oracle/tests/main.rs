@@ -4680,3 +4680,788 @@ fn vu_helper_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u
         });
     }
 }
+
+// Main round 13: the player's control from the pad.
+
+/// `_CIatan` and `_CIatan2` (imports the oracle lacks) replaced at their
+/// thunks by exact stand-ins: `-x` (`fchs`) and `y - x` (`fsubp st(1),
+/// st`); the bridge gets the same through its callbacks.
+fn patch_atan(o: &mut Oracle) {
+    for (thunk, code) in [
+        (0x0094_9d5c, &[0xd9, 0xe0, 0xc3][..]),
+        (0x0094_98bc, &[0xde, 0xe9, 0xc3][..]),
+    ] {
+        let at = o.rebase(thunk);
+        o.write(at, code).unwrap();
+    }
+}
+
+fn atan_stand_in(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
+    use ffx_bridge::x87::{load, store};
+    match t {
+        ffx_battle::pos::bridge::Trig::Atan => store(-load(x)),
+        _ => panic!("no cosine or sine here"),
+    }
+}
+
+fn atan2_stand_in(y: u32, x: u32) -> u32 {
+    use ffx_bridge::x87::{load, store, sub};
+    store(sub(load(y), load(x)))
+}
+
+/// A stick byte: at rest, at a dead zone's edges, or any.
+fn stick(rng: &mut Xorshift) -> u8 {
+    const EDGES: [u8; 10] = [0x80, 0x58, 0x59, 0xa7, 0xa8, 88, 89, 167, 168, 0];
+    match rng.below(4) {
+        0 => EDGES[rng.below(10) as usize],
+        1 => 0x80,
+        _ => rng.next().to_le_bytes()[0],
+    }
+}
+
+fn control_player_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::player::bridge as p;
+    patch_atan(a);
+    patch_atan(b);
+    let log = a.rebase(REC_LOG);
+    let rets = a.rebase(REC_RETS);
+    recorder(a, b, 89, p::SG_GET_PLAYER_CONTROL_ENABLE, 0, 0);
+    recorder(a, b, 90, p::GRAPHIC_LEVEL_GET_NAME_HASH, 0, 0);
+    let game_camera = ffx_battle::camera::bridge::CAMERA.get(a);
+    let level = |rng: &mut Xorshift| -> i32 {
+        match rng.below(8) {
+            0 => rng.next().cast_signed(),
+            1 => 0,
+            2 => 0x100,
+            // the speed's floor and top exactly (48, 256 from one axis)
+            3 => [0x30, 0x50, 0x130][rng.below(3) as usize],
+            _ => rng.below(0x180).cast_signed() - 0x40,
+        }
+    };
+    let angle = |rng: &mut Xorshift| {
+        if rng.below(6) == 0 {
+            rng.float()
+        } else {
+            bounded(rng)
+        }
+    };
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, rets + 4 * 89, u32::from(rng.below(6) != 0));
+        let hash = [0x19c, 0x220, 0x19c, 7][rng.below(4) as usize];
+        put(
+            a,
+            b,
+            rets + 4 * 90,
+            if rng.below(3) == 0 { hash } else { 0 },
+        );
+        set(a, b, p::PAD_LSTICK_Y, stick(rng));
+        set(a, b, p::PAD_LSTICK_X, stick(rng));
+        let mut held = rng.next();
+        if rng.below(3) != 0 {
+            held &= !0xf000;
+        }
+        set(a, b, p::PAD_HELD, held);
+        let chr = if rng.below(10) == 0 {
+            0
+        } else {
+            let chr = block(a, b, rng, 0x880);
+            put(a, b, chr + ffx_chara::layout::GRAV, modest(rng));
+            if rng.below(2) == 0 {
+                put(a, b, chr + ffx_chara::layout::MOTION_TYPE, 2u8);
+            }
+            chr
+        };
+        set(a, b, p::PLAYER, chr);
+        for l in p::LEVELS {
+            set(a, b, l, level(rng));
+        }
+        for g in [
+            p::CAMERA_YAW,
+            p::STICK_DIR,
+            p::STICK_DIR_TAKEN,
+            p::DIR_OFFSET,
+            p::DIR_FIX,
+        ] {
+            let v = angle(rng);
+            put(a, b, g.ptr(a).addr, v);
+        }
+        for k in 0..4 {
+            let at = a.rebase(p::SPEED) + 4 * k;
+            put(a, b, at, modest(rng));
+        }
+        if rng.below(6) == 0 {
+            // a turn of exactly the bound since the yaw was taken
+            let turn = p::TURN.get(a);
+            set(a, b, p::STICK_DIR, turn);
+            set(a, b, p::STICK_DIR_TAKEN, 0.0);
+        }
+        set(a, b, p::DIVING, u8::from(rng.below(2) == 0));
+        set(a, b, p::DIR_FIX_ON, u8::from(rng.below(3) == 0));
+        let follow = if rng.below(3) == 0 { rng.below(8) } else { 3 };
+        set(a, b, p::CAMERA_FOLLOW, u8::try_from(follow).unwrap());
+        let cam = if from_game && game_camera != 0 && n % 2 == 0 {
+            game_camera
+        } else {
+            let cam = alloc(a, b, 0x700);
+            for k in 0..4 {
+                put(a, b, cam + 0x50 + 4 * k, bounded(rng));
+                put(a, b, cam + 0x66c + 4 * k, bounded(rng));
+            }
+            if rng.below(8) == 0 {
+                let w: [u32; 4] = Mem::read(a, cam + 0x50);
+                put(a, b, cam + 0x66c, w);
+            }
+            cam
+        };
+        set(a, b, ffx_battle::camera::bridge::CAMERA, cam);
+        twin("Sg_ControlPlayer", a, b, 0x0082_d180, &[], |m| {
+            p::control_player(&mut H(m), &atan_stand_in, &atan2_stand_in);
+        });
+    }
+}
+
+#[test]
+fn control_player_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0d18);
+    control_player_cases(&mut a, &mut b, &mut rng, 3000, false);
+}
+
+#[test]
+fn control_player_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0d19);
+    control_player_cases(&mut a, &mut b, &mut rng, 3000, true);
+}
+
+// Main round 13: sg_calcenvelope_normW.
+
+/// Normal lists (`sg_calcenvelope_normW`): a `u16` count, 2 bytes, rigid
+/// entries (8 bytes: `i16` x, y, z, `u16` index); then twice a `u16` count
+/// and weighted entries (10 bytes: x, y, z, `u16` weight, index). Indices
+/// below 16.
+fn normal_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let counts = [rng.below(5), rng.below(5), rng.below(5)];
+    let len = 8 + 8 * counts[0] + 10 * (counts[1] + counts[2]);
+    let lists = alloc(a, b, len as usize + 4);
+    let mut p = lists;
+    let half = |rng: &mut Xorshift| -> u16 {
+        match rng.below(3) {
+            0 => rng.next().to_le_bytes()[0].into(),
+            _ => u16::from_le_bytes([rng.next().to_le_bytes()[0], rng.next().to_le_bytes()[1]]),
+        }
+    };
+    for (l, &n) in counts.iter().enumerate() {
+        put(a, b, p, u16::try_from(n).unwrap());
+        p += if l == 0 { 4 } else { 2 };
+        for _ in 0..n {
+            for k in 0..3 {
+                put(a, b, p + 2 * k, half(rng));
+            }
+            if l == 0 {
+                put(a, b, p + 6, u16::try_from(rng.below(16)).unwrap());
+                p += 8;
+            } else {
+                let w = if rng.below(4) == 0 {
+                    half(rng)
+                } else {
+                    u16::try_from(rng.below(10001)).unwrap()
+                };
+                put(a, b, p + 6, w);
+                put(a, b, p + 8, u16::try_from(rng.below(16)).unwrap());
+                p += 10;
+            }
+        }
+    }
+    lists
+}
+
+fn normal_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let regs = a.rebase(e::EE_A0);
+    let vu = a.rebase(e::VU_I);
+    for n in 0..rounds {
+        // stale registers (r0 stays the zero register)
+        if n % 2 == 0 {
+            for k in 0..(0x6a0 - 0x548) / 4 {
+                put(a, b, regs + 4 * k, rng.next());
+            }
+            for k in 0..(0x850 - 0x784) / 4 {
+                put(a, b, vu + 4 * k, modest(rng));
+            }
+        }
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 16);
+        for k in 0..64 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = normal_lists(a, b, rng);
+        twin(
+            "sg_calcenvelope_normW",
+            a,
+            b,
+            0x0084_5ec0,
+            &[lists, out, m],
+            |o| e::calc_envelope_norm_w(o, lists, out, m),
+        );
+    }
+}
+
+#[test]
+fn normal_envelope_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e01);
+    normal_envelope_cases(&mut a, &mut b, &mut rng, 2000);
+}
+
+#[test]
+fn normal_envelope_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e02);
+    normal_envelope_cases(&mut a, &mut b, &mut rng, 2000);
+}
+
+// Main round 13: the screens' camera bytes.
+fn screen_camera_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    for _ in 0..rounds {
+        let screen = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(5)
+        };
+        let on = rng.next();
+        twin(
+            "Cam_SetScreenCameraOn",
+            a,
+            b,
+            0x007b_c930,
+            &[screen, on],
+            |m| {
+                c::set_screen_camera_on(m, screen, ffx_sg::lo8(on));
+            },
+        );
+        let cam = rng.next();
+        let screen = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(5)
+        };
+        twin(
+            "Cam_SetScreenCamera",
+            a,
+            b,
+            0x007b_c950,
+            &[screen, on, cam],
+            |m| {
+                c::set_screen_camera(m, screen, ffx_sg::lo8(on), ffx_sg::lo8(cam));
+            },
+        );
+    }
+}
+
+#[test]
+fn screen_camera_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e11);
+    screen_camera_cases(&mut a, &mut b, &mut rng, 500);
+}
+
+#[test]
+fn screen_camera_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e12);
+    screen_camera_cases(&mut a, &mut b, &mut rng, 500);
+}
+
+// Main round 13: passThisTriangle's table.
+fn triangle_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    let pick = |rng: &mut Xorshift, set: &[u32]| {
+        if rng.below(5) == 0 {
+            rng.next()
+        } else {
+            set[rng.below(u32::try_from(set.len()).unwrap()) as usize]
+        }
+    };
+    for _ in 0..rounds {
+        // mostly the table's own (a, b, c)
+        const ROWS: [[u32; 3]; 11] = [
+            [2, 2, 0xc],
+            [2, 2, 0xd],
+            [2, 0, 5],
+            [4, 0, 10],
+            [7, 0, 6],
+            [7, 0, 2],
+            [0x29, 0, 6],
+            [0x68, 2, 0xc],
+            [3, 2, 2],
+            [0x67, 1, 1],
+            [0x10002, 2, 0xc],
+        ];
+        let [ka, kb, kc] = if rng.below(8) == 0 {
+            [
+                pick(rng, &[2, 3, 4, 7, 0x29, 0x67, 0x68]),
+                pick(rng, &[0, 1, 2, 3]),
+                pick(rng, &[0, 1, 2, 6, 10, 0xc, 0xd]),
+            ]
+        } else {
+            ROWS[rng.below(11) as usize]
+        };
+        let group = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(22)
+        };
+        let tag = match rng.below(4) {
+            0 => rng.next(),
+            1 => (group & 0xffff) * 100 + (kc & 0xffff),
+            _ => rng.below(23) * 100 + rng.below(100),
+        };
+        let lo = |v: u32| ffx_sg::lo16(v);
+        let args = [ka, kb, kc, group, tag];
+        twin("passThisTriangle", a, b, 0x0082_9870, &args, |_| {
+            ffx_sg::triangle::pass_this_triangle(lo(ka), lo(kb), lo(kc), lo(group), lo(tag))
+        });
+    }
+}
+
+#[test]
+fn triangle_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e21);
+    triangle_cases(&mut a, &mut b, &mut rng, 40000);
+}
+
+#[test]
+fn triangle_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e22);
+    triangle_cases(&mut a, &mut b, &mut rng, 5000);
+}
+
+// Main round 13: the push-apart list sorted by z.
+fn sort_by_z_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::state::bridge as s;
+    let list = a.rebase(s::PUSH_CHRS);
+    let game_n = s::PUSH_CHR_COUNT.get(a);
+    for r in 0..rounds {
+        let n = if from_game && game_n > 0 && r % 4 == 0 {
+            game_n
+        } else {
+            let n = if rng.below(8) == 0 {
+                rng.int()
+            } else {
+                rng.below(41).cast_signed()
+            };
+            let chrs = alloc(a, b, 0x20 * 40);
+            let zs = [rng.float(), rng.float(), modest(rng)];
+            for k in 0..n.clamp(0, 40).cast_unsigned() {
+                let chr = chrs + 0x20 * k;
+                // repeated values often, to see which equal one wins
+                let z = if rng.below(3) == 0 {
+                    rng.float()
+                } else {
+                    zs[rng.below(3) as usize]
+                };
+                put(a, b, chr + 0x14, z);
+                put(a, b, list + 4 * k, chr);
+            }
+            n.clamp(-5, 40)
+        };
+        twin(
+            "Sg_ChrSortByZ",
+            a,
+            b,
+            0x0083_eb30,
+            &[n.cast_unsigned()],
+            |m| {
+                s::chr_sort_by_z(m, n);
+            },
+        );
+    }
+}
+
+#[test]
+fn sort_by_z_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e31);
+    sort_by_z_cases(&mut a, &mut b, &mut rng, 1500, false);
+}
+
+#[test]
+fn sort_by_z_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e32);
+    sort_by_z_cases(&mut a, &mut b, &mut rng, 1500, true);
+}
+
+// Main round 13: SG_SeqFrame over short motion scripts.
+fn seq_frame_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 91, sq::YI_ASSERT, 3, 0x5a);
+    recorder(a, b, 92, sq::CH_SET_MOTION_SEQ, 5, 0);
+    recorder(a, b, 93, sq::DBG_PRINTF, 2, 0x6001);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        let chr = block(a, b, rng, 0x800);
+        // ops until one that stops: 1 (9 bytes), 2 (1), 3 (3), 6 (3) step;
+        // 0, 5 and unknown codes stop
+        let script = alloc(a, b, 0x80);
+        let mut p = 0;
+        while p < 0x70 {
+            let op = [1u8, 2, 3, 6, 1, 2, 3, 6, 0, 5, 7, 0xff][rng.below(12) as usize];
+            put(a, b, script + p, op);
+            for k in 1..9 {
+                let v = if k % 2 == 1 { rng.below(3) } else { 0 };
+                put(a, b, script + p + k, u8::try_from(v).unwrap());
+            }
+            p += match op {
+                1 => 9,
+                2 => 1,
+                3 | 6 => 3,
+                _ => break,
+            };
+        }
+        if p >= 0x70 {
+            put(a, b, script + p, 0u8);
+        }
+        put(a, b, chr + 0x714, script);
+        let clips = block(a, b, rng, 0x20);
+        let entries = block(a, b, rng, 16 * 4);
+        let marks = block(a, b, rng, 2 * 4);
+        for k in 0..4 {
+            put(a, b, entries + 16 * k + 8, marks);
+        }
+        put(a, b, clips + 0x10, entries);
+        put(a, b, chr + 0x710, clips);
+        put(a, b, chr + 0x728, u16::try_from(rng.below(2)).unwrap());
+        put(a, b, chr + 0x72a, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, chr + 0x737, u8::try_from(rng.below(5)).unwrap());
+        // the loop: frame, end, length, loops
+        put(a, b, chr + 0x740, rng.int());
+        put(a, b, chr + 0x71c, rng.int());
+        put(a, b, chr + 0x720, rng.below(0x400));
+        put(a, b, chr + 0x724, rng.int());
+        twin("SG_SeqFrame", a, b, 0x0083_77c0, &[chr], |m| {
+            sq::seq_frame(&mut H(m), chr)
+        });
+    }
+}
+
+#[test]
+fn seq_frame_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e41);
+    seq_frame_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn seq_frame_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e42);
+    seq_frame_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+// Main round 13: the id triangle under a point.
+fn find_triangle_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::state::bridge as st;
+    let game = (
+        st::ID_TABLE.get(a),
+        st::ID_VERTICES.get(a),
+        st::ID_COUNT.get(a),
+    );
+    for r in 0..rounds {
+        let use_game = from_game && game.0 != 0 && game.2 > 0 && r % 2 == 0;
+        let (table, verts, n) = if use_game {
+            game
+        } else {
+            let nv = 10u32;
+            let verts = alloc(a, b, 8 * nv as usize);
+            for k in 0..nv {
+                let c = |rng: &mut Xorshift| -> i16 { i16::try_from(rng.below(129)).unwrap() - 64 };
+                put(a, b, verts + 8 * k, c(rng));
+                put(a, b, verts + 8 * k + 2, c(rng));
+                put(a, b, verts + 8 * k + 4, c(rng));
+            }
+            let n = rng.below(13);
+            let table = alloc(a, b, 16 * 13);
+            for k in 0..n * 3 {
+                put(
+                    a,
+                    b,
+                    table + 16 * (k / 3) + 2 * (k % 3),
+                    u16::try_from(rng.below(nv)).unwrap(),
+                );
+            }
+            let table = if rng.below(10) == 0 { 0 } else { table };
+            let n = if rng.below(10) == 0 {
+                -rng.int().abs()
+            } else {
+                n.cast_signed()
+            };
+            (table, verts, n)
+        };
+        set(a, b, st::ID_TABLE, table);
+        set(a, b, st::ID_VERTICES, verts);
+        set(a, b, st::ID_COUNT, n);
+        // a point near a triangle's middle, or anywhere
+        let p = alloc(a, b, 16);
+        let (mut cx, mut cy, mut cz) = (0f64, 0f64, 0f64);
+        if table != 0 && n > 0 {
+            let i = rng.below(n.cast_unsigned());
+            for k in 0..3 {
+                let v: i16 = Mem::read(a, table + 16 * i + 2 * k);
+                let at = verts.wrapping_add((i32::from(v) * 8).cast_unsigned());
+                cx += f64::from(Mem::read::<i16>(a, at)) / 3.0;
+                cy += f64::from(Mem::read::<i16>(a, at + 2)) / 3.0;
+                cz += f64::from(Mem::read::<i16>(a, at + 4)) / 3.0;
+            }
+        }
+        let jitter = |rng: &mut Xorshift| f64::from(rng.below(64)) / 8.0 - 4.0;
+        #[allow(clippy::cast_possible_truncation)]
+        let mut q = [
+            (cx + jitter(rng)) as f32,
+            (cy + 4.0 * jitter(rng)) as f32,
+            (cz + jitter(rng)) as f32,
+        ];
+        if rng.below(6) == 0 {
+            q = [rng.float(), rng.float(), rng.float()].map(f32::from_bits);
+        }
+        for (k, v) in (0u32..).zip(q) {
+            put(a, b, p + 4 * k, v);
+        }
+        twin("Sg_IdFindTriangle", a, b, 0x0083_de10, &[p], |m| {
+            st::id_find_triangle(m, p)
+        });
+    }
+}
+
+#[test]
+fn find_triangle_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e51);
+    find_triangle_cases(&mut a, &mut b, &mut rng, 3000, false);
+}
+
+#[test]
+fn find_triangle_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e52);
+    find_triangle_cases(&mut a, &mut b, &mut rng, 3000, true);
+}
+
+// Main round 13: Sg_PcRead and Sg_PcReadD over recorded callees.
+fn pc_read_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    let log = a.rebase(REC_LOG);
+    let rets = a.rebase(REC_RETS);
+    recorder(a, b, 94, c::SG_PC_READ_FILE, 2, 0);
+    recorder(a, b, 95, c::SG_MEM_SET_CURRENT_ADDR, 1, 0x77);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, rets + 4 * 94, rng.next());
+        let path = rng.next();
+        twin("Sg_PcRead", a, b, 0x0083_ae30, &[path], |m| {
+            c::pc_read(&mut H(m), path)
+        });
+        put(a, b, log, 0u32);
+        put(a, b, rets + 4 * 94, rng.next());
+        twin("Sg_PcReadD", a, b, 0x0083_ae50, &[path], |m| {
+            c::pc_read_d(&mut H(m), path)
+        });
+    }
+}
+
+#[test]
+fn pc_read_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e61);
+    pc_read_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn pc_read_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e62);
+    pc_read_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+// Main round 14: the CD read queue (`cd_read_q_clear`,
+// `CDfileReadSector_CD`).
+
+/// Busy bytes and ids of the 64 requests, from a few ids so some match.
+fn fill_read_queue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, all_busy: bool) {
+    use ffx_sg::cdread::bridge as c;
+    let base = c::CHANNELS.ptr(a).addr;
+    for i in 0..64 {
+        let r = base + 0x38 * i;
+        for k in 0..14 {
+            put(a, b, r + 4 * k, rng.next());
+        }
+        let busy = if all_busy || rng.below(3) != 0 {
+            rng.next() | 1
+        } else {
+            0
+        };
+        put(a, b, r + 0x31, ffx_sg::lo8(busy));
+        let id = match rng.below(4) {
+            0 => rng.next(),
+            _ => rng.below(6),
+        };
+        put(a, b, r + 0x24, id);
+    }
+}
+
+fn read_q_clear_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::cdread::bridge as c;
+    for _ in 0..rounds {
+        fill_read_queue(a, b, rng, false);
+        let id = match rng.below(4) {
+            0 => rng.next(),
+            1 => 0u32.wrapping_sub(rng.below(3)),
+            _ => rng.below(6),
+        };
+        twin("cd_read_q_clear", a, b, 0x0076_e130, &[id], |m| {
+            c::cd_read_q_clear(m, id.cast_signed());
+        });
+    }
+}
+
+#[test]
+fn read_q_clear_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e71);
+    read_q_clear_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn read_q_clear_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e72);
+    let id = 0;
+    twin(
+        "cd_read_q_clear (game)",
+        &mut a,
+        &mut b,
+        0x0076_e130,
+        &[id],
+        |m| {
+            ffx_sg::cdread::bridge::cd_read_q_clear(m, 0);
+        },
+    );
+    read_q_clear_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+fn read_sector_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::cdread::bridge as c;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 96, c::MOVIE_ERR, 3, 0);
+    let opts = block(a, b, rng, 0x20);
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        if !(from_game && n == 0) {
+            let all = rng.below(5) == 0;
+            fill_read_queue(a, b, rng, all);
+            let id = match rng.below(4) {
+                0 => 0xffff - rng.below(2),
+                1 => rng.next(),
+                _ => rng.below(0x1000),
+            };
+            set(a, b, c::READ_ID, id.cast_signed());
+            set(a, b, c::CHANNEL_KEEP_NAMES, rng.below(2) * rng.next());
+        }
+        let args = [
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            if rng.below(2) == 0 { 0 } else { opts },
+        ];
+        twin("CDfileReadSector_CD", a, b, 0x0076_bdd0, &args, |m| {
+            c::cd_file_read_sector(&mut H(m), args[0], args[1], args[2], args[3], args[4])
+        });
+    }
+}
+
+#[test]
+fn read_sector_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e73);
+    read_sector_cases(&mut a, &mut b, &mut rng, 300, false);
+}
+
+#[test]
+fn read_sector_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e74);
+    read_sector_cases(&mut a, &mut b, &mut rng, 100, true);
+}

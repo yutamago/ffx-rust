@@ -13,6 +13,7 @@ ffx-chara.workspace = true
 ffx-ps2.workspace = true
 ffx-script.workspace = true
 ffx-system.workspace = true
+ffx-vfx.workspace = true
 
 [lints]
 workspace = true

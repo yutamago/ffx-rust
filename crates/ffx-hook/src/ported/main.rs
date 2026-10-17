@@ -3,7 +3,9 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, cloth, control, envelope, gs, light, quat, seq, state, vec};
+use ffx_sg::{
+    camera, cdread, chpacket, cloth, control, envelope, gs, light, player, quat, seq, state, vec,
+};
 
 use super::{mem, ported};
 
@@ -15,6 +17,14 @@ ported! {
     /// `get_read_buffer()`.
     get_read_buffer @ 0x0076_dc50 => extern "C" fn get_read_buffer() -> u32 {
         state::bridge::get_read_buffer(&mem())
+    }
+    /// `CDfileReadSector_CD(sector, buffer, size, callback, opts)`.
+    CDfileReadSector_CD @ 0x0076_bdd0 => extern "C" fn cd_file_read_sector(sector: u32, buffer: u32, size: u32, callback: u32, opts: u32) -> i32 {
+        cdread::bridge::cd_file_read_sector(&mut mem(), sector, buffer, size, callback, opts)
+    }
+    /// `cd_read_q_clear(id)`.
+    cd_read_q_clear @ 0x0076_e130 => extern "C" fn cd_read_q_clear(id: i32) {
+        cdread::bridge::cd_read_q_clear(&mut mem(), id);
     }
     /// `read_err_disp_set(v)` (a byte).
     read_err_disp_set @ 0x0076_e5e0 => extern "C" fn read_err_disp_set(v: u32) {
@@ -1429,6 +1439,47 @@ ported! {
     sg_calcenvelope_asm @ 0x006e_e570 => extern "C" fn sg_calcenvelope_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
         envelope::bridge::calc_envelope(&mut mem(), lists, out, mask, m)
     }
+    /// `sg_calcenvelope_normW(lists, out, m)`.
+    sg_calcenvelope_normW @ 0x0084_5ec0 => extern "C" fn sg_calcenvelope_norm_w(lists: u32, out: u32, m: u32) {
+        envelope::bridge::calc_envelope_norm_w(&mut mem(), lists, out, m);
+    }
+    /// `Cam_SetScreenCameraOn(screen, on)`.
+    Cam_SetScreenCameraOn @ 0x007b_c930 => extern "C" fn cam_set_screen_camera_on(screen: u32, on: u32) {
+        camera::bridge::set_screen_camera_on(&mut mem(), screen, ffx_sg::lo8(on));
+    }
+    /// `Cam_SetScreenCamera(screen, on, camera)`.
+    Cam_SetScreenCamera @ 0x007b_c950 => extern "C" fn cam_set_screen_camera(screen: u32, on: u32, camera: u32) {
+        camera::bridge::set_screen_camera(&mut mem(), screen, ffx_sg::lo8(on), ffx_sg::lo8(camera));
+    }
+    /// `passThisTriangle(a, b, c, group, tag)`.
+    passThisTriangle @ 0x0082_9870 => extern "C" fn pass_this_triangle(a: u32, b: u32, c: u32, group: u32, tag: u32) -> u32 {
+        use ffx_sg::lo16;
+        ffx_sg::triangle::pass_this_triangle(lo16(a), lo16(b), lo16(c), lo16(group), lo16(tag))
+    }
+    /// `Sg_ChrSortByZ(n)`.
+    Sg_ChrSortByZ @ 0x0083_eb30 => extern "C" fn sg_chr_sort_by_z(n: i32) {
+        state::bridge::chr_sort_by_z(&mut mem(), n);
+    }
+    /// `SG_SeqFrame(chr)`.
+    SG_SeqFrame @ 0x0083_77c0 => extern "C" fn sg_seq_frame(chr: u32) -> u32 {
+        seq::bridge::seq_frame(&mut mem(), chr)
+    }
+    /// `Sg_IdFindTriangle(p)`.
+    Sg_IdFindTriangle @ 0x0083_de10 => extern "C" fn sg_id_find_triangle(p: u32) -> i32 {
+        state::bridge::id_find_triangle(&mut mem(), p)
+    }
+    /// `Sg_PcRead(path)`.
+    Sg_PcRead @ 0x0083_ae30 => extern "C" fn sg_pc_read(path: u32) -> u32 {
+        control::bridge::pc_read(&mut mem(), path)
+    }
+    /// `Sg_PcReadD(path)`.
+    Sg_PcReadD @ 0x0083_ae50 => extern "C" fn sg_pc_read_d(path: u32) -> u32 {
+        control::bridge::pc_read_d(&mut mem(), path)
+    }
+    /// `Sg_ControlPlayer()`.
+    Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
+        player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
@@ -1477,5 +1528,78 @@ fn crt(c: Crt, x: f64) -> f32 {
     {
         let _ = (thunk, x);
         unreachable!("the CRT's trigonometry runs in the 32-bit game")
+    }
+}
+
+/// MSVCR110's `_CIcos`, `_CIsin` or `_CIatan` through the game's import
+/// thunks (`0x009498c2`, `0x009498c8`, `0x00949d5c`), as the battle
+/// vector code calls them: the argument (`f32` bits) loaded with `fld
+/// dword`, the result stored with `fstp dword`.
+fn crt_vector_trig(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
+    use ffx_battle::pos::bridge::Trig;
+    let thunk = match t {
+        Trig::Cos => 0x0094_98c2,
+        Trig::Sin => 0x0094_98c8,
+        Trig::Atan => 0x0094_9d5c,
+    };
+    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
+    // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE
+    // registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = crate::rebase(thunk);
+        let bits: u32;
+        std::arch::asm!(
+            "fld dword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        bits
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (thunk, x);
+        0
+    }
+}
+
+/// MSVCR110's `_CIatan2` (`ST1` = y, `ST0` = x, the result in `ST0`)
+/// through the game's import thunk (`0x009498bc`): both loaded with `fld
+/// dword`, the result stored with `fstp dword`, as `Sg_ControlPlayer`
+/// does; `f32` bits in and out.
+fn crt_atan2(y: u32, x: u32) -> u32 {
+    let f = crate::rebase(0x0094_98bc);
+    #[cfg(target_arch = "x86")]
+    {
+        let pair = [y, x];
+        let mut out = 0u32;
+        // SAFETY: the thunk jumps to the CRT's `_CIatan2`, which takes its
+        // two operands on the x87 stack and leaves the result there; the
+        // asm loads them, calls it and stores the result through edi
+        // (which the callee keeps), leaving the x87 stack empty.
+        unsafe {
+            std::arch::asm!(
+                "fld dword ptr [{p}]",
+                "fld dword ptr [{p} + 4]",
+                "call {f}",
+                "fstp dword ptr [edi]",
+                p = in(reg) &raw const pair,
+                in("edi") &raw mut out,
+                f = in(reg) f,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, y, x);
+        0
     }
 }
