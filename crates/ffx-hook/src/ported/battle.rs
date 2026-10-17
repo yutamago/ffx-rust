@@ -183,11 +183,49 @@ fn crt_cos(x: f64) -> f64 {
     }
 }
 
+/// `TkMtCalcSpline` or `TkMtCalcSplineTangent` (`f`) into `out`, which
+/// may be a [`target::Dm`] frame local: through four words on this stack,
+/// holding `out`'s words first (the spline writes nothing for some point
+/// counts, leaving the caller's).
+#[allow(clippy::many_single_char_names)] // the spline's arguments
+fn spline_via_stack(m: &mut target::Dm<'_>, f: u32, out: u32, points: u32, n: u32, t: u32) {
+    use ffx_bridge::Mem;
+    let mut v = super::StackFrame::<4>::new();
+    let at = v.at();
+    let w: [u32; 4] = m.read(out);
+    m.write(at, w);
+    call4(f, at, points, n, t);
+    let w: [u32; 4] = m.read(at);
+    m.write(out, w);
+}
+
 /// What `ffx_battle::target` calls in other modules: the CRT through
 /// [`crt_trig`], script's ported functions, the originals of the rest.
 fn host() -> target::Host<'static> {
-    fn spline(_: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
-        call4(0x0088_a4a0, out, points, n, t);
+    fn spline(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_a4a0, out, points, n, t);
+    }
+    fn tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_b3b0, out, points, n, t);
+    }
+    fn ball(_: &mut target::Dm<'_>, i: u32) {
+        call1(0x007b_78c0, i);
+    }
+    fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
+        ffx_chara::chr::bridge::ch_neck_set_enable(
+            m,
+            chr,
+            on,
+            ffx_sg::quat::bridge::matrix_to_quaternion,
+        );
+    }
+    fn neck_target(m: &mut target::Dm<'_>, chr: u32, to: u32) {
+        ffx_chara::chr::bridge::ch_neck_set_target(
+            m,
+            chr,
+            to,
+            ffx_sg::quat::bridge::matrix_to_quaternion,
+        );
     }
     fn total(m: &mut target::Dm<'_>) -> u32 {
         ffx_script::vm::bridge::atel_get_total_actor_number2(m)
@@ -213,6 +251,11 @@ fn host() -> target::Host<'static> {
     target::Host {
         trig: &crt_trig,
         spline: &spline,
+        spline_tangent: &tangent,
+        cos: &crt_cos,
+        ball_spline: &ball,
+        neck_enable: &neck_enable,
+        neck_target: &neck_target,
         atel_total: &total,
         atel_top: &top,
         atel_is_bind: &is_bind,

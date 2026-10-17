@@ -130,6 +130,16 @@ pub mod bridge {
         pub trig: &'h dyn Fn(Trig, u32) -> u32,
         /// `TkMtCalcSpline(out, points, n, t)` (menu, `0x0088a4a0`).
         pub spline: &'h dyn Fn(&mut Dm<'_>, u32, u32, u32, u32),
+        /// `TkMtCalcSplineTangent(out, points, n, t)` (menu, `0x0088b3b0`).
+        pub spline_tangent: &'h dyn Fn(&mut Dm<'_>, u32, u32, u32, u32),
+        /// `_CIcos` on a double (`MsCameraMoveCalc`).
+        pub cos: &'h dyn Fn(f64) -> f64,
+        /// `MsSetBallSpline(i)` (`0x007b78c0`, battle, not ported yet).
+        pub ball_spline: &'h dyn Fn(&mut Dm<'_>, u32),
+        /// `Ch_NeckSetEnable(chr, on)` (chara, `0x00834f60`).
+        pub neck_enable: &'h dyn Fn(&mut Dm<'_>, u32, u32),
+        /// `Ch_NeckSetTarget(chr, target)` (chara, `0x00835050`).
+        pub neck_target: &'h dyn Fn(&mut Dm<'_>, u32, u32),
         /// `AtelGetTotalActorNumber2()` (script).
         pub atel_total: &'h dyn Fn(&mut Dm<'_>) -> u32,
         /// `AtelGetNowCtrlTopId()` (script).

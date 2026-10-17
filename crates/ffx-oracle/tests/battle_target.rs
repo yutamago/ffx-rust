@@ -29,10 +29,29 @@ fn call(m: &mut Oracle, sym: u32, args: &[u32]) -> ffx_oracle::Ret {
 
 fn host() -> t::Host<'static> {
     fn spline(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
-        // the output is a frame local: through scratch in the oracle
+        spline_via(m, 0x0088_a4a0, out, points, n, x);
+    }
+    fn tangent(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
+        spline_via(m, 0x0088_b3b0, out, points, n, x);
+    }
+    fn ball(m: &mut t::Dm<'_>, i: u32) {
+        call(oracle(m), 0x007b_78c0, &[i]);
+    }
+    fn neck_enable(m: &mut t::Dm<'_>, chr: u32, on: u32) {
+        call(oracle(m), 0x0083_4f60, &[chr, on]);
+    }
+    fn neck_target(m: &mut t::Dm<'_>, chr: u32, to: u32) {
+        call(oracle(m), 0x0083_5050, &[chr, to]);
+    }
+    fn spline_via(m: &mut t::Dm<'_>, f: u32, out: u32, points: u32, n: u32, x: u32) {
+        // the output is a frame local: through scratch in the oracle,
+        // holding its words first (some counts write nothing)
+        let w: [u32; 4] = ffx_bridge::Mem::read(m, out);
         let o = oracle(m);
         let s = SCRATCH.with(std::cell::Cell::get);
-        call(o, 0x0088_a4a0, &[s, points, n, x]);
+        let bytes: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
+        o.write(s, &bytes).unwrap();
+        call(o, f, &[s, points, n, x]);
         let v = o.read(s, 16).unwrap();
         o.write(s, &[0; 16]).unwrap();
         let w: [u32; 4] =
@@ -69,6 +88,11 @@ fn host() -> t::Host<'static> {
     t::Host {
         trig: &stand_in,
         spline: &spline,
+        spline_tangent: &tangent,
+        cos: &cos_stand_in,
+        ball_spline: &ball,
+        neck_enable: &neck_enable,
+        neck_target: &neck_target,
         atel_total: &total,
         atel_top: &top,
         atel_is_bind: &is_bind,
