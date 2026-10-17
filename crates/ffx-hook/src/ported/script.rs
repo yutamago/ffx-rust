@@ -16,6 +16,10 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `AtelClearMesWinWork`.
+    AtelClearMesWinWork @ 0x0086_3b10 => extern "C" fn h_863b10() -> u32 {
+        hp::atel_clear_mes_win_work(&mut mem())
+    }
     /// `Native_PlayMotionCommon(worker, stack, mode, other)`.
     Native_PlayMotionCommon @ 0x00a7_aae0 => extern "C" fn h_a7aae0(w: u32, s: u32, m: u32, o: u32) -> u32 {
         native_chr::native_play_motion_common(&mut mem(), w, s, m, o)

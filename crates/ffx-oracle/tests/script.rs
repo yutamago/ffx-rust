@@ -3783,6 +3783,16 @@ fn round16_vm_helpers_match_the_original() {
         }
         no_diff(&mut a, &mut b, &format!("0x0086f460 {n}"));
     }
+    let win = a.rebase(0x0132_6d70);
+    for k in (0..16 * 0x2c).step_by(4) {
+        poke(&mut a, &mut b, win + k, rng.next());
+    }
+    assert_eq!(
+        orig(&mut a, 0x0086_3b10, &[]),
+        hp::atel_clear_mes_win_work(&mut b),
+        "AtelClearMesWinWork"
+    );
+    no_diff(&mut a, &mut b, "AtelClearMesWinWork");
     // the callback queues: register named callbacks, then run them; a
     // callback that returns non-zero (AtelGetSnd3dWork) is done, one
     // that returns 0 (0x008719c0 on an empty string) stays

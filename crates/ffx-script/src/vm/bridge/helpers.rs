@@ -1021,3 +1021,28 @@ pub fn atel_exec_callback_que(h: &mut impl ffx_bridge::Host, q: u32) -> u32 {
     }
     u32::from(h.read::<u32>(base) == 0)
 }
+
+/// `AtelClearMesWinWork()` (`0x00863b10`): the 16 message windows (two
+/// banks of eight, 0x2c bytes from `g_AtelMsgWindows` `0x01326d70`)
+/// reset: `+0`, `+0x14`, `+0x1c`, `+0x28` = 0, `+4` = `0x01a00200`, `+8`
+/// = `g_MsgNone` (`0x01325b74`), `+0x10` = `0x50000080`. Returns 0.
+pub fn atel_clear_mes_win_work(m: &mut impl Mem) -> u32 {
+    let base = m.rebase(0x0132_6d70);
+    // 0x01a00200 is a constant the image has no relocation for
+    let (buf, none) = (0x01a0_0200, m.rebase(0x0132_5b74));
+    for k in 0..16 {
+        let w = base + k * 0x2c;
+        for (off, v) in [
+            (0, 0),
+            (4, buf),
+            (0x10, 0x5000_0080),
+            (0x28, 0),
+            (8, none),
+            (0x14, 0),
+            (0x1c, 0),
+        ] {
+            m.write(w + off, v);
+        }
+    }
+    0
+}
