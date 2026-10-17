@@ -1574,7 +1574,7 @@ is set; its `eax` is then the caller's. Otherwise a source goes by SIF DMA
 `SqsSifDmaState(1, 1)`), and `a` to the send buffer for `Sqs_CallRpc(4)`.
 Neither caller reads `eax`, so its shim is void.
 
-## A VU0 subtraction (round 38)
+## VU0 sums and differences (rounds 38, 45)
 
 `rcVu0Sub(a, b, c)` (`0x0091f740`, name ours; from `rcbgPSimAddNail`
 and `rcbgPSimCreate`) and the identical `rcVu0Sub_0092d720` (from
@@ -1587,6 +1587,20 @@ emulated VU0 registers:
   stack words of the two copies' arguments) and restores `vf00`.
 - The register goes to `a`, so `a.w` is `b.w`. The function returns that
   last word.
+
+Thirteen more copies of the same 95-byte template differ only in the
+step they call (round 45, names ours):
+- `Vec3AddScalars` (`xyz` sums, `vf00` left alone): `rcVu0Add`
+  (`0x0091f650`) and `rcVu0Add_<address>` at `0x00924770`, `0x009285a0`,
+  `0x00928df0`, `0x00929440`, `0x009295e0`, `0x0092f790`.
+- `Vec3SubScalars`: `rcVu0Sub_<address>` at `0x00924860`, `0x00928ee0`,
+  `0x00929300`.
+- `Vec4AddScalars` (all four, no `vf00`): `rcVu0Add4` (`0x00924fc0`),
+  `rcVu0Add4_0092f880`.
+- `Vec4SubScalars` (all four, `vf00` restored): `rcVu0Sub4`
+  (`0x009250d0`).
+
+The 4-component ones leave `a.w = b.w ± c.w`.
 
 ## The map's ID map pages and yiReset (round 37)
 

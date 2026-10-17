@@ -3858,6 +3858,71 @@ ported! {
         nkz::bridge::sqs_init_wave_info(&mut mem(), src, a, &mut |_, f, a| call_cdecl(f, a));
     }
 
+    /// `rcVu0Add(a, b, c)`.
+    rcVu0Add @ 0x0091_f650 => extern "C" fn shim_rc_vu0_add(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_00924770(a, b, c)`.
+    rcVu0Add_00924770 @ 0x0092_4770 => extern "C" fn shim_rc_vu0_add_00924770(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00924860(a, b, c)`.
+    rcVu0Sub_00924860 @ 0x0092_4860 => extern "C" fn shim_rc_vu0_sub_00924860(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Add4(a, b, c)`.
+    rcVu0Add4 @ 0x0092_4fc0 => extern "C" fn shim_rc_vu0_add4(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add4, a, b, c)
+    }
+
+    /// `rcVu0Sub4(a, b, c)`.
+    rcVu0Sub4 @ 0x0092_50d0 => extern "C" fn shim_rc_vu0_sub4(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub4, a, b, c)
+    }
+
+    /// `rcVu0Add_009285a0(a, b, c)`.
+    rcVu0Add_009285a0 @ 0x0092_85a0 => extern "C" fn shim_rc_vu0_add_009285a0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_00928df0(a, b, c)`.
+    rcVu0Add_00928df0 @ 0x0092_8df0 => extern "C" fn shim_rc_vu0_add_00928df0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00928ee0(a, b, c)`.
+    rcVu0Sub_00928ee0 @ 0x0092_8ee0 => extern "C" fn shim_rc_vu0_sub_00928ee0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00929300(a, b, c)`.
+    rcVu0Sub_00929300 @ 0x0092_9300 => extern "C" fn shim_rc_vu0_sub_00929300(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Add_00929440(a, b, c)`.
+    rcVu0Add_00929440 @ 0x0092_9440 => extern "C" fn shim_rc_vu0_add_00929440(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_009295e0(a, b, c)`.
+    rcVu0Add_009295e0 @ 0x0092_95e0 => extern "C" fn shim_rc_vu0_add_009295e0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_0092f790(a, b, c)`.
+    rcVu0Add_0092f790 @ 0x0092_f790 => extern "C" fn shim_rc_vu0_add_0092f790(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add4_0092f880(a, b, c)`.
+    rcVu0Add4_0092f880 @ 0x0092_f880 => extern "C" fn shim_rc_vu0_add4_0092f880(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add4, a, b, c)
+    }
+
     /// `rcVu0Sub(a, b, c)`.
     rcVu0Sub @ 0x0091_f740 => extern "C" fn shim_rc_vu0_sub(a: u32, b: u32, c: u32) -> u32 {
         vu0::bridge::rc_vu0_sub(&mut mem(), a, b, c)

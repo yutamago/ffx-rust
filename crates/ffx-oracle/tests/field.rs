@@ -12482,6 +12482,26 @@ fn round36_on_a_snapshot_matches_the_original() {
 
 // ---- round 38 ----
 
+/// The `rcVu0*` copies ported in round 45, with their step.
+const RC_VU0_COPIES: [(u32, vu0::bridge::Vu0Op); 13] = {
+    use vu0::bridge::Vu0Op::{Add3, Add4, Sub3, Sub4};
+    [
+        (0x0091_f650, Add3),
+        (0x0092_4770, Add3),
+        (0x0092_4860, Sub3),
+        (0x0092_4fc0, Add4),
+        (0x0092_50d0, Sub4),
+        (0x0092_85a0, Add3),
+        (0x0092_8df0, Add3),
+        (0x0092_8ee0, Sub3),
+        (0x0092_9300, Sub3),
+        (0x0092_9440, Add3),
+        (0x0092_95e0, Add3),
+        (0x0092_f790, Add3),
+        (0x0092_f880, Add4),
+    ]
+};
+
 /// Round 38 on `t`: the two VU0 subtractions (`rcVu0Sub` and its twin),
 /// `a` apart from or the same as `b` or `c`.
 fn round38_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
@@ -12505,6 +12525,15 @@ fn round38_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
                 "rcVu0Sub",
                 |o| o.eax(f, &[dst, b, c]),
                 |m| vu0::bridge::rc_vu0_sub(m, dst, b, c),
+            );
+        }
+        // round 45: the other copies of the template
+        for (f, op) in RC_VU0_COPIES {
+            t.fill(vf00, 0x10, rng); // only the subtractions restore it
+            t.same(
+                "rcVu0 copy",
+                |o| o.eax(f, &[dst, b, c]),
+                |m| vu0::bridge::rc_vu0_op(m, op, dst, b, c),
             );
         }
     }
