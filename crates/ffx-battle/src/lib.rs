@@ -24,6 +24,7 @@ pub mod command;
 pub mod cue;
 pub mod damage;
 mod encounters;
+pub mod exchange;
 pub mod exec;
 pub mod flow;
 mod formation;

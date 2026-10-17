@@ -3,6 +3,7 @@
 
 use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
+use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::status::bridge as status;
 use ffx_battle::visible::bridge as visible;
@@ -2427,5 +2428,83 @@ ported! {
         let mut m = mem();
         script!(s);
         action::ms_clean_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s, chr, keep)
+    }
+    /// `MsGetSaveWeaponModel(id)`.
+    MsGetSaveWeaponModel @ 0x007a_bdc0 => extern "C" fn ms_get_save_weapon_model(id: u32) -> u32 {
+        exchange::ms_get_save_weapon_model(&mut mem(), id)
+    }
+    /// `MsCheckBoundWeapon(id)` (`0x007ad130`).
+    MsCheckBoundWeapon @ 0x007a_d130 => extern "C" fn ms_check_bound_weapon(id: u32) -> u32 {
+        exchange::ms_check_bound_weapon(&mem(), id)
+    }
+    /// `MsBtlReadCueManage()`: the loads through the game (chara, battle).
+    MsBtlReadCueManage @ 0x007a_d190 => extern "C" fn ms_btl_read_cue_manage() {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_btl_read_cue_manage(&mut target::Dm::new(&mut m), &mut s);
+    }
+    /// `MsBtlReadCueRegist(kind, chr, owner, id, then)`.
+    MsBtlReadCueRegist @ 0x007a_d3f0 => extern "C" fn ms_btl_read_cue_regist(kind: u32, chr: u32, owner: u32, id: u32, then: u32) {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_btl_read_cue_regist(&mut target::Dm::new(&mut m), &mut s, kind, chr, owner, id, then);
+    }
+    /// `MsBtlReadCueRegistWeapon(i, which)`.
+    MsBtlReadCueRegistWeapon @ 0x007a_d470 => extern "C" fn ms_btl_read_cue_regist_weapon(i: u32, which: u32) {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_btl_read_cue_regist_weapon(&mut target::Dm::new(&mut m), &mut s, i, which);
+    }
+    /// `MsEffectWeaponFree(i)`: `op_et_weapon_free` (vfx) through the game.
+    MsEffectWeaponFree @ 0x0078_8b30 => extern "C" fn ms_effect_weapon_free(i: u32) {
+        script!(s);
+        exchange::ms_effect_weapon_free(&mut mem(), &mut s, i);
+    }
+    /// `MsThreatEndMotion(i, actor)` (`0x0078f6a0`).
+    MsThreatEndMotion @ 0x0078_f6a0 => extern "C" fn ms_threat_end_motion(i: u32, actor: u32) {
+        script!(s);
+        exchange::ms_threat_end_motion(&mut mem(), &mut s, i, actor);
+    }
+    /// `MsThreatProcess(i, actor)`.
+    MsThreatProcess @ 0x0078_e460 => extern "C" fn ms_threat_process(i: u32, actor: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_threat_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor)
+    }
+    /// `MsThreatOff(i, actor)`.
+    MsThreatOff @ 0x0078_e410 => extern "C" fn ms_threat_off(i: u32, actor: u32) {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_threat_off(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor);
+    }
+    /// `MsGetChrCenter(first, n, out)` (`0x00794b70`; the divide's caller
+    /// words as the VU registers had them).
+    MsGetChrCenter @ 0x0079_4b70 => extern "C" fn ms_get_chr_center(first: u32, n: i32, out: u32) {
+        let mut m = mem();
+        exchange::ms_get_chr_center(&mut target::Dm::new(&mut m), &host(), first, n, out, None);
+    }
+    /// `MsCalcChrDir(i, actor)` (an `f32` in ST0; the caller words as the VU
+    /// registers had them).
+    MsCalcChrDir @ 0x0079_3ba0 => extern "C" fn ms_calc_chr_dir(i: u32, _actor: u32) -> f32 {
+        let mut m = mem();
+        f32::from_bits(exchange::ms_calc_chr_dir(&mut target::Dm::new(&mut m), &host(), i, None))
+    }
+    /// `MsChangeMonsterDir()`.
+    MsChangeMonsterDir @ 0x0079_3cf0 => extern "C" fn ms_change_monster_dir() {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_change_monster_dir(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `MsExchangeChr(out, in, mode, after)`.
+    MsExchangeChr @ 0x007a_dae0 => extern "C" fn ms_exchange_chr(out: u32, inn: u32, mode: i32, after: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_exchange_chr(&mut target::Dm::new(&mut m), &host(), &mut s, out, inn, mode, after)
+    }
+    /// `MsExchangeSummon(in, summon)`.
+    MsExchangeSummon @ 0x007a_df90 => extern "C" fn ms_exchange_summon(inn: u32, summon: u32) {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_exchange_summon(&mut target::Dm::new(&mut m), &host(), &mut s, inn, summon);
     }
 }

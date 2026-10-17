@@ -53,8 +53,53 @@ pub const OP_OEF2_A_GET: u32 = 0x007e_3810;
 pub const KIND_IDS: u32 = 0x00c8_6008;
 /// `g_AbmapPad` (`0x01a86108`): the menu pads, 0x340 bytes each.
 pub const ABMAP_PAD: u32 = 0x01a8_6108;
+
+/// `AbmapPadSlideOutStep` (`0x00a59800`), the pad step `AbmapPadStartSlideOut`
+/// installs.
+pub const PAD_SLIDE_OUT_STEP: u32 = 0x00a5_9800;
+/// `AbmapPadSlideInStep` (`0x00a5a270`), the pad step `AbmapPadStartSlideIn`
+/// installs.
+pub const PAD_SLIDE_IN_STEP: u32 = 0x00a5_a270;
+/// `MsGetSaveSP(chr)` (`0x007853e0`).
+pub const MS_GET_SAVE_SP: u32 = 0x0078_53e0;
+/// `TOAmapMakeItemList(kind)` (`0x008c6730`).
+pub const TO_AMAP_MAKE_ITEM_LIST: u32 = 0x008c_6730;
+/// The jump to `TOAmapGetItemListMax` the original calls (`0x008c6700`).
+pub const TO_AMAP_GET_ITEM_LIST_MAX: u32 = 0x008c_6700;
+/// The grid's current character byte (`g_Abmap + 0x115bc`).
+pub const CURRENT_CHR: u32 = 0x115bc;
 /// `MsGetSavePlayerPtr(chr)` (`0x00785330`).
 pub const MS_GET_SAVE_PLAYER_PTR: u32 = 0x0078_5330;
+/// `MsGetSaveItemNum(item)` (`0x007904b0`).
+pub const MS_GET_SAVE_ITEM_NUM: u32 = 0x0079_04b0;
+/// `MsGetRomItem(item, out)` (`0x007909f0`).
+pub const MS_GET_ROM_ITEM: u32 = 0x0079_09f0;
+/// `MsGetExcelData(i, table, out)` (`0x007ab870`).
+pub const MS_GET_EXCEL_DATA: u32 = 0x007a_b870;
+/// The item ability excel table pointer (`0x01a860e4`).
+pub const ITEM_EXCEL_TABLE: u32 = 0x01a8_60e4;
+/// The node excel table pointer (`0x01a860e0`).
+pub const NODE_EXCEL_TABLE: u32 = 0x01a8_60e0;
+/// `AbmapForEachNode(cb, ctx)` (`0x00a59710`).
+pub const ABMAP_FOR_EACH_NODE: u32 = 0x00a5_9710;
+/// `AbmapForNodeAndLinked(node, cb, ctx)` (`0x00a59760`).
+pub const ABMAP_FOR_NODE_AND_LINKED: u32 = 0x00a5_9760;
+/// `AbmapItemNodeEffect` (`0x00a49440`), the iterators' callback.
+pub const ITEM_NODE_EFFECT: u32 = 0x00a4_9440;
+/// `AbmapItemApplyNode` (`0x00a5b490`), the iterators' callback.
+pub const ITEM_APPLY_NODE: u32 = 0x00a5_b490;
+/// `0x00a5d120(kind, node, row, chr)`: a special item's abilities.
+pub const ABMAP_SPECIAL_EFFECT: u32 = 0x00a5_d120;
+/// The kind shape record tables (`0x01a85f98`, then `0x01a85fe8`).
+pub const KIND_SHAPE_TABLES: u32 = 0x01a8_5f98;
+/// The size class shapes (`0x0230578c`, `0x02305790`, `0x02305794`).
+pub const SIZE_CLASS_SHAPES: u32 = 0x0230_578c;
+/// 7.8125e-5 (`f64`, `.rdata`): a kind's scale per size unit.
+pub const KIND_SCALE: u32 = 0x00b7_b608;
+/// 3.0 (`f64`, `.rdata`): added to a kind's circle radius.
+pub const KIND_RADIUS_PAD: u32 = 0x00b2_c5c8;
+/// 9362.286 (`f64`, `.rdata`): the circle's angle step (65536 / 7).
+pub const KIND_ANGLE_STEP: u32 = 0x00b7_b6c0;
 
 /// 256.0 (`f32`, `.rdata`): the cursor distance (`AbmapResetCursorCamera`).
 pub const CURSOR_DISTANCE: u32 = 0x00b5_01c0;
@@ -1039,5 +1084,460 @@ pub mod bridge {
             n += 1;
         }
         nd
+    }
+
+    // ---- round 19: item effects over the sphere grid ----
+
+    /// The item lookup shared by the item iterators: the item's ability
+    /// record (`MsGetRomItem`, its byte `+0x5d`), then its excel row
+    /// (`MsGetExcelData` from the table at `0x01a860e4`), or 0 for 0xff.
+    fn item_excel<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        item: u32,
+        tmp: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::MS_GET_ROM_ITEM);
+        let rec = call(mem, f, &[item, tmp]);
+        let k = mem.read::<u8>(rec.wrapping_add(0x5d));
+        if k == 0xff {
+            return 0;
+        }
+        let table = mem.read::<u32>(mem.rebase(super::ITEM_EXCEL_TABLE));
+        let f = mem.rebase(super::MS_GET_EXCEL_DATA);
+        call(mem, f, &[u32::from(k), table, tmp])
+    }
+
+    /// Runs `cb` over every node (an excel row whose byte `+0xc` is `' '`,
+    /// `AbmapForEachNode`) or over `node` and its linked nodes
+    /// (`AbmapForNodeAndLinked`) with the context `ctx`; returns the
+    /// context's result (`+0xc`).
+    fn item_walk<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        node: u32,
+        cb: u32,
+        ctx: u32,
+        call: &mut C,
+    ) -> u32 {
+        let excel = mem.read::<u32>(ctx);
+        if excel != 0 {
+            let cb = mem.rebase(cb);
+            if mem.read::<u8>(excel.wrapping_add(0xc)) == 0x20 {
+                let f = mem.rebase(super::ABMAP_FOR_EACH_NODE);
+                call(mem, f, &[cb, ctx]);
+            } else {
+                let f = mem.rebase(super::ABMAP_FOR_NODE_AND_LINKED);
+                call(mem, f, &[node, cb, ctx]);
+            }
+        }
+        mem.read::<u32>(ctx.wrapping_add(0xc))
+    }
+
+    /// `AbmapItemUsableAt(chr, node, item, work)` (`0x00a49310`): 0 when
+    /// the item is not held (`MsGetSaveItemNum`); else the abilities the
+    /// item would grant `chr` there, collected by [`abmap_item_node_effect`]
+    /// (`0x00a49440`) over the nodes the item reaches. `work` holds the
+    /// original's locals: the context (excel row, `chr`, `1 << chr`, the
+    /// result) and a scratch word at `+0x14`.
+    pub fn abmap_item_usable_at<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [chr, node, item] = args;
+        let f = mem.rebase(super::MS_GET_SAVE_ITEM_NUM);
+        let held = call(mem, f, &[item]);
+        if held == 0 {
+            return 0;
+        }
+        mem.write(work.wrapping_add(4), chr);
+        mem.write(work.wrapping_add(0xc), 0u32);
+        mem.write(work.wrapping_add(8), 1u32.wrapping_shl(chr));
+        let excel = item_excel(mem, item, work.wrapping_add(0x14), call);
+        mem.write(work, excel);
+        item_walk(mem, node, super::ITEM_NODE_EFFECT, work, call)
+    }
+
+    /// `AbmapItemApplyAt(chr, node, item, mark, work)` (`0x00a5b400`): as
+    /// [`abmap_item_usable_at`] without the held check and with the mark
+    /// byte (`+0x10` of the context), through `0x00a5b490`
+    /// ([`abmap_item_apply_node`]).
+    pub fn abmap_item_apply_at<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [chr, node, item, mark] = args;
+        mem.write(work.wrapping_add(4), chr);
+        mem.write(work.wrapping_add(0xc), 0u32);
+        mem.write(work.wrapping_add(8), 1u32.wrapping_shl(chr));
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        mem.write(work.wrapping_add(0x10), mark as u8);
+        // the original's scratch is the mark's own argument slot
+        mem.write(work.wrapping_add(0x14), mark);
+        let excel = item_excel(mem, item, work.wrapping_add(0x14), call);
+        mem.write(work, excel);
+        item_walk(mem, node, super::ITEM_APPLY_NODE, work, call)
+    }
+
+    /// `AbmapItemNodeEffect(node, ctx, tmp)` (`0x00a49440`): the node's
+    /// excel row (`MsGetExcelData` of its id `+6`, table `0x01a860e0`).
+    /// With the item's special kind (`*ctx +0xd`) the abilities
+    /// `0x00a5d120(kind, node index, row, chr)` returns; else, unless the
+    /// node is already activated for the character (`+0x21 & ctx[2]`) or
+    /// the row is a hidden one (bit 15 of `+0x10`), the item's ability
+    /// bits (`*ctx +0xa`) present in the row. Either is OR-ed into
+    /// `ctx[3]`, which is returned.
+    pub fn abmap_item_node_effect<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        node: u32,
+        ctx: u32,
+        tmp: u32,
+        call: &mut C,
+    ) -> u32 {
+        let id = u32::from(mem.read::<u16>(node.wrapping_add(6)));
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let f = mem.rebase(super::MS_GET_EXCEL_DATA);
+        let row = call(mem, f, &[id, table, tmp]);
+        let item = mem.read::<u32>(ctx);
+        let kind = mem.read::<u8>(item.wrapping_add(0xd));
+        let res = ctx.wrapping_add(0xc);
+        if kind != 0 {
+            let g = ABMAP.get(mem);
+            let idx = node.wrapping_sub(g).wrapping_sub(0x808).cast_signed() / 0x28;
+            let chr = mem.read::<u32>(ctx.wrapping_add(4));
+            let f = mem.rebase(super::ABMAP_SPECIAL_EFFECT);
+            let r = call(mem, f, &[u32::from(kind), idx.cast_unsigned(), row, chr]);
+            let v = mem.read::<u32>(res) | r;
+            mem.write(res, v);
+            return v;
+        }
+        let act = mem.read::<u8>(node.wrapping_add(0x21));
+        if mem.read::<u8>(ctx.wrapping_add(8)) & act == 0 {
+            let bits = u32::from(mem.read::<u16>(row.wrapping_add(0x10)));
+            if bits & 0x8000 == 0 {
+                let want = u32::from(mem.read::<u16>(item.wrapping_add(0xa)));
+                let v = mem.read::<u32>(res) | (want & bits);
+                mem.write(res, v);
+            }
+        }
+        mem.read::<u32>(res)
+    }
+
+    /// `AbmapItemApplyNode(node, ctx, tmp)` (`0x00a5b490`): with any
+    /// effect ([`abmap_item_node_effect`]) the node's byte `+0x22` gains the
+    /// context's mark (`+0x10`) and the result is cleared. Returns 0.
+    pub fn abmap_item_apply_node<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        node: u32,
+        ctx: u32,
+        tmp: u32,
+        call: &mut C,
+    ) -> u32 {
+        if abmap_item_node_effect(mem, node, ctx, tmp, call) != 0 {
+            let m = mem.read::<u8>(ctx.wrapping_add(0x10));
+            let v = mem.read::<u8>(node.wrapping_add(0x22)) | m;
+            mem.write(node.wrapping_add(0x22), v);
+            mem.write(ctx.wrapping_add(0xc), 0u32);
+        }
+        0
+    }
+
+    /// `AbmapSetupKindShapes(tmp)` (`0x00a5b230`): for each of the 130
+    /// node kinds (0x30 bytes from the grid's `+0xf828`), from its excel
+    /// row (`MsGetExcelData`, table `0x01a860e0`; `tmp` the original's
+    /// scratch): the two shape records its byte `+0x16` selects
+    /// (`0x01a85f98`, `0x01a85fe8`, each plus its `+0x10` offset), the
+    /// size from the first one's box (`+0x2c - +0x20`, `+0x2e - +0x22`,
+    /// over 16; 16 x 16 without one), the size class's shape
+    /// (`0x0230578c`/`90`/`94` for under 24, under 32, else), the scale
+    /// `size * 7.8125e-5` and, for visible rows (`+0x10` set without bit
+    /// 15), seven points of a circle of radius `size / 2 + 3` (sine table
+    /// steps of 9362.29), else `+0xf83c` 0x1000. Returns 130.
+    #[allow(clippy::too_many_lines)] // the original's steps
+    pub fn abmap_setup_kind_shapes<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        tmp: u32,
+        call: &mut C,
+    ) -> u32 {
+        let table = mem.rebase(super::KIND_SHAPE_TABLES);
+        let sin = mem.rebase(super::SIN_TABLE);
+        for i in 0..130u32 {
+            let g = ABMAP.get(mem);
+            let k = g.wrapping_add(0xf828 + 0x30 * i);
+            let excel = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+            let f = mem.rebase(super::MS_GET_EXCEL_DATA);
+            let row = call(mem, f, &[i, excel, tmp]);
+            for (j, base) in [(0u32, 0u32), (4, 0x50)] {
+                let id = u32::from(mem.read::<u8>(row.wrapping_add(0x16)));
+                let a = mem.read::<u32>(table.wrapping_add(base + 4 * id));
+                let off = i32::from(mem.read::<i16>(a.wrapping_add(0x10)));
+                mem.write(k.wrapping_add(j), a.wrapping_add(off.cast_unsigned()));
+            }
+            let d = mem.read::<u32>(k);
+            if d == 0 {
+                mem.write(k.wrapping_add(0xc), 0x0010_0010u32);
+            } else {
+                let w = (i32::from(mem.read::<i16>(d.wrapping_add(0x2c)))
+                    - i32::from(mem.read::<i16>(d.wrapping_add(0x20))))
+                    >> 4;
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                mem.write(k.wrapping_add(0xc), w as i16);
+                let h = (i32::from(mem.read::<i16>(d.wrapping_add(0x2e)))
+                    - i32::from(mem.read::<i16>(d.wrapping_add(0x22))))
+                    >> 4;
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                mem.write(k.wrapping_add(0xe), h as i16);
+            }
+            let size = mem.read::<i16>(k.wrapping_add(0xc));
+            let class = if size < 0x18 {
+                0
+            } else if size < 0x20 {
+                1
+            } else {
+                2
+            };
+            let p = mem.read::<u32>(mem.rebase(super::SIZE_CLASS_SHAPES) + 4 * class);
+            let off = i32::from(mem.read::<i16>(p.wrapping_add(0x10)));
+            mem.write(k.wrapping_add(8), p.wrapping_add(off.cast_unsigned()));
+            let s = x87::load(x87::store(f64::from(size)));
+            let scale = mem.read::<f64>(mem.rebase(super::KIND_SCALE));
+            mem.write(k.wrapping_add(0x10), x87::store(s * scale));
+            let flags = mem.read::<u16>(row.wrapping_add(0x10));
+            if flags == 0 || flags & 0x8000 != 0 {
+                mem.write(k.wrapping_add(0x14), 0x1000u16);
+                continue;
+            }
+            let three = mem.read::<f64>(mem.rebase(super::KIND_RADIUS_PAD));
+            let step = mem.read::<f64>(mem.rebase(super::KIND_ANGLE_STEP));
+            let r = x87::load(x87::store(f64::from(size >> 1) + three));
+            let mut a = 0f32.to_bits();
+            for n in 0..7u32 {
+                let ang = ftol(mem, x87::load(a)).cast_signed();
+                let i0 = ((ang >> 4) & 0xfff).cast_unsigned();
+                let x = ftol(mem, x87::load(mem.read(sin + 4 * i0)) * r);
+                let at = k.wrapping_add(0x14 + 4 * n);
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                mem.write(at, x as u16);
+                let i1 = ((ang.wrapping_add(0x4000) >> 4) & 0xfff).cast_unsigned();
+                let y = ftol(mem, x87::load(mem.read(sin + 4 * i1)) * r);
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                mem.write(at.wrapping_add(2), (y as u16).wrapping_neg());
+                a = x87::store(x87::load(a) + step);
+            }
+        }
+        130
+    }
+
+    // ---- round 20 ----
+
+    /// A pad (`g_AbmapPad + 0x340 * pad`).
+    fn pad_at(mem: &impl Mem, pad: u32) -> u32 {
+        let base: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+        pad.wrapping_mul(0x340).wrapping_add(base)
+    }
+
+    /// `(n * h) / 3 + h / 6` as the original's magic-number divisions
+    /// (both truncate toward zero), plus `base`, as an `i16`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the original's 16-bit add
+    fn pad_offset(n: i32, h: i32, base: u16) -> u16 {
+        let v = n.wrapping_mul(h) / 3 + h / 6;
+        (v as u16).wrapping_add(base)
+    }
+
+    /// `AbmapPadStartSlideOut(pad)` (`0x00a48c20`): unless the pad is hidden
+    /// (`+0x23` 0) and idle (`+0x34` null), restarts its step counter
+    /// (`+0x29`) and installs [`abmap_pad_slide_out_step`].
+    pub fn abmap_pad_start_slide_out(mem: &mut impl Mem, pad: u32) {
+        let p = pad_at(mem, pad);
+        if mem.read::<u8>(p.wrapping_add(0x23)) != 0 || mem.read::<u32>(p.wrapping_add(0x34)) != 0 {
+            mem.write(p.wrapping_add(0x29), 0u8);
+            let f = mem.rebase(super::PAD_SLIDE_OUT_STEP);
+            mem.write(p.wrapping_add(0x34), f);
+        }
+    }
+
+    /// `AbmapPadStartSlideIn(pad)` (`0x00a48f20`): unless the pad is shown
+    /// (`+0x23` set) and idle, restarts its counter and installs
+    /// [`abmap_pad_slide_in_step`].
+    pub fn abmap_pad_start_slide_in(mem: &mut impl Mem, pad: u32) {
+        let p = pad_at(mem, pad);
+        if mem.read::<u8>(p.wrapping_add(0x23)) == 0 || mem.read::<u32>(p.wrapping_add(0x34)) != 0 {
+            mem.write(p.wrapping_add(0x29), 0u8);
+            let f = mem.rebase(super::PAD_SLIDE_IN_STEP);
+            mem.write(p.wrapping_add(0x34), f);
+        }
+    }
+
+    /// `AbmapPadSlideOutStep(p)` (`0x00a59800`): counts `+0x29` up; from 3 the
+    /// pad is hidden (`+0x23` 0) and the step removed (`+0x34`), else its
+    /// position `+0xa` is `+2 + n h / 3 + h / 6` (`h` the `i16` at `+6`,
+    /// its height: half, then five sixths of the way out).
+    pub fn abmap_pad_slide_out_step(mem: &mut impl Mem, p: u32) {
+        let n = mem.read::<u8>(p.wrapping_add(0x29)).wrapping_add(1);
+        mem.write(p.wrapping_add(0x29), n);
+        if n >= 3 {
+            mem.write(p.wrapping_add(0x23), 0u8);
+            mem.write(p.wrapping_add(0x34), 0u32);
+            return;
+        }
+        let h = i32::from(mem.read::<i16>(p.wrapping_add(6)));
+        let base: u16 = mem.read(p.wrapping_add(2));
+        mem.write(p.wrapping_add(0xa), pad_offset(i32::from(n), h, base));
+    }
+
+    /// `AbmapPadSlideInStep(p)` (`0x00a5a270`): the reverse of
+    /// [`abmap_pad_slide_out_step`]: the pad is shown (`+0x23` 1); from 3 the
+    /// step is removed and `+0xa` is `+2`, else `+2 + (3 - n) h / 3 + h /
+    /// 6`.
+    pub fn abmap_pad_slide_in_step(mem: &mut impl Mem, p: u32) {
+        let n = mem.read::<u8>(p.wrapping_add(0x29)).wrapping_add(1);
+        mem.write(p.wrapping_add(0x29), n);
+        mem.write(p.wrapping_add(0x23), 1u8);
+        let base: u16 = mem.read(p.wrapping_add(2));
+        if n >= 3 {
+            mem.write(p.wrapping_add(0x34), 0u32);
+            mem.write(p.wrapping_add(0xa), base);
+            return;
+        }
+        let h = i32::from(mem.read::<i16>(p.wrapping_add(6)));
+        mem.write(p.wrapping_add(0xa), pad_offset(3 - i32::from(n), h, base));
+    }
+
+    /// One coordinate of a rectangle tween: `from + ((to - from) * t >>
+    /// 16)`, in 32 bits, as an `i16`.
+    #[allow(clippy::cast_possible_truncation)] // the original's 16-bit store
+    fn tween(from: i16, to: i16, t: i32) -> i16 {
+        let d = i32::from(to).wrapping_sub(i32::from(from)).wrapping_mul(t) >> 16;
+        d.wrapping_add(i32::from(from)) as i16
+    }
+
+    /// The cell coordinates of a rectangle's `+0xc` and `+0xe`:
+    /// `(y + 15) / 16` and `(h + 15) / 20`, truncating, to `+0x14` and
+    /// `+0x16`.
+    #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+    fn rect_cells(y: i16, h: i16) -> (i16, i16) {
+        (
+            ((i32::from(y) + 15) / 16) as i16,
+            ((i32::from(h) + 15) / 20) as i16,
+        )
+    }
+
+    /// The four `i16`s at `r + at`.
+    fn rect(mem: &impl Mem, r: u32, at: u32) -> [i16; 4] {
+        mem.read(r.wrapping_add(at))
+    }
+
+    /// `AbmapRectTweenIn(r)` (`0x00a5a080`): counts `+0x32` up; below 4 the
+    /// rectangle `+8` moves `n / 4` of the way from `+0` to `+0x2a`, else
+    /// it is `+0x2a` and the step (`+0x34`) is removed; then the cells
+    /// ([`rect_cells`]).
+    pub fn abmap_rect_tween_in(mem: &mut impl Mem, r: u32) {
+        let n = mem.read::<u8>(r.wrapping_add(0x32)).wrapping_add(1);
+        mem.write(r.wrapping_add(0x32), n);
+        let to = rect(mem, r, 0x2a);
+        if n >= 4 {
+            mem.write(r.wrapping_add(8), to);
+            mem.write(r.wrapping_add(0x34), 0u32);
+        } else {
+            let from = rect(mem, r, 0);
+            let t = (i32::from(n) << 16) >> 2;
+            let v = [0, 1, 2, 3].map(|i| tween(from[i], to[i], t));
+            mem.write(r.wrapping_add(8), v);
+        }
+        let v = rect(mem, r, 8);
+        let (a, b) = rect_cells(v[2], v[3]);
+        mem.write(r.wrapping_add(0x14), a);
+        mem.write(r.wrapping_add(0x16), b);
+    }
+
+    /// `AbmapRectTweenOut(r)` (`0x00a5a170`): the reverse of
+    /// [`abmap_rect_tween_in`]: `(3 - n) / 4` of the way from `+0` to
+    /// `+0x2a`; from 4 the rectangle is `+0` with its saved cells (`+0x10`,
+    /// `+0x12`) and the step removed.
+    pub fn abmap_rect_tween_out(mem: &mut impl Mem, r: u32) {
+        let n = mem.read::<u8>(r.wrapping_add(0x32)).wrapping_add(1);
+        mem.write(r.wrapping_add(0x32), n);
+        let from = rect(mem, r, 0);
+        if n >= 4 {
+            mem.write(r.wrapping_add(8), from);
+            let cells: [i16; 2] = mem.read(r.wrapping_add(0x10));
+            mem.write(r.wrapping_add(0x14), cells[0]);
+            mem.write(r.wrapping_add(0x34), 0u32);
+            mem.write(r.wrapping_add(0x16), cells[1]);
+            return;
+        }
+        let to = rect(mem, r, 0x2a);
+        let t = ((3 - i32::from(n)) << 16) / 4;
+        let v = [0, 1, 2, 3].map(|i| tween(from[i], to[i], t));
+        mem.write(r.wrapping_add(8), v);
+        let (a, b) = rect_cells(v[2], v[3]);
+        mem.write(r.wrapping_add(0x14), a);
+        mem.write(r.wrapping_add(0x16), b);
+    }
+
+    /// `AbmapMaskNodeFlags(mask)` (`0x00a47400`): ANDs `mask` into the
+    /// flags byte (`+0x22`) of every node (`+0x808`, 0x28 bytes, the `i16`
+    /// count at `+2`) whose kind (`+6`) is not -1.
+    pub fn abmap_mask_node_flags(mem: &mut impl Mem, mask: u8) {
+        let g = ABMAP.get(mem);
+        // a negative count runs (practically) forever in the original
+        let n = i32::from(mem.read::<i16>(g.wrapping_add(2))).cast_unsigned();
+        for i in 0..n {
+            let nd = g.wrapping_add(0x808).wrapping_add(0x28u32.wrapping_mul(i));
+            if mem.read::<i16>(nd.wrapping_add(6)) != -1 {
+                let f: u8 = mem.read(nd.wrapping_add(0x22));
+                mem.write(nd.wrapping_add(0x22), f & mask);
+            }
+        }
+    }
+
+    /// `AbmapMarkEmptyMenus()` (`0x00a5aca0`): the pad's menu entries
+    /// (`+0x1704`, 12 bytes, the `i16` count at `+0x16de` read again after
+    /// each): entry 0 is marked (1) when the current character has no
+    /// sphere points (`MsGetSaveSP`), entry 1 when the item list
+    /// (`TOAmapMakeItemList(3)`, `TOAmapGetItemListMax`) is empty, the rest
+    /// cleared. Returns what the original leaves in `eax`: the last count
+    /// read, or 0.
+    pub fn abmap_mark_empty_menus<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let pad: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+        let count = |mem: &M| i32::from(mem.read::<i16>(pad.wrapping_add(0x16de)));
+        if count(mem) <= 0 {
+            return 0;
+        }
+        let mut i = 0i32;
+        let mut e = pad.wrapping_add(0x1704);
+        loop {
+            mem.write(e, 0u8);
+            let r = match i {
+                0 => {
+                    let g = ABMAP.get(mem);
+                    let chr: u8 = mem.read(g.wrapping_add(super::CURRENT_CHR));
+                    let f = mem.rebase(super::MS_GET_SAVE_SP);
+                    Some(call(mem, f, &[u32::from(chr)]))
+                }
+                1 => {
+                    let f = mem.rebase(super::TO_AMAP_MAKE_ITEM_LIST);
+                    call(mem, f, &[3]);
+                    let f = mem.rebase(super::TO_AMAP_GET_ITEM_LIST_MAX);
+                    Some(call(mem, f, &[]))
+                }
+                _ => None,
+            };
+            if r == Some(0) {
+                mem.write(e, 1u8);
+            }
+            let c = count(mem);
+            i += 1;
+            e = e.wrapping_add(0xc);
+            if i >= c {
+                return c.cast_unsigned();
+            }
+        }
     }
 }
