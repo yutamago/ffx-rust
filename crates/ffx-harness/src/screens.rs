@@ -26,7 +26,8 @@ pub fn cursor_at(shot: &Image, y: usize) -> f32 {
     shot.mean(476, y - 12, 50, 24).iter().sum()
 }
 
-/// Polls every `step` frames, at most `tries` times, until `screen` shows.
+/// Polls every `step` frames until `screen` shows: at least `tries` times
+/// and [`crate::MIN_WAIT`] of real time.
 ///
 /// # Errors
 /// Fails when it does not.
@@ -36,14 +37,17 @@ pub fn wait_for(
     step: u32,
     tries: u32,
 ) -> Result<Image> {
-    for _ in 0..tries {
+    let mut deadline = crate::Deadline::new(game, step * tries)?;
+    loop {
         let shot = game.screenshot()?;
         if screen(&shot) {
             return Ok(shot);
         }
+        if deadline.passed(game, "a screen")? {
+            return Err(Error::Harness("the screen did not appear".into()));
+        }
         game.wait(step)?;
     }
-    Err(Error::Harness("the screen did not appear".into()))
 }
 
 /// From boot to the title menu: waits for the opening (the title event
