@@ -36,6 +36,7 @@ fn call_sym<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
 /// Calls the original cdecl function at `sym` (an `ffx.sym` address) that
 /// returns its result in ST0, read back at double precision; up to four
 /// arguments (f32 arguments as their bits).
+#[allow(clippy::many_single_char_names)] // a..d: the words
 fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
     let f = crate::rebase(sym);
     // SAFETY: a cdecl function of `args.len()` word arguments returning in
@@ -5880,6 +5881,18 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         let at = wh.as_mut_ptr() as usize as u32;
         tolib::bridge::to_get_cross_ext_mes_font_width(&mut mem(), table, text, out, scale, extra, at, call_sym, fcall);
+    }
+    /// `TOGetChangeMacroAddress(window, code)`.
+    TOGetChangeMacroAddress @ 0x008b_6660 => extern "C" fn to_get_change_macro_address(window: u32, code: u32) -> u32 {
+        // The original keeps a folded macro's code in its own argument
+        // slot and may return a pointer to it; a static keeps that text
+        // readable after the return (a nested lookup reuses it only after
+        // reading its code).
+        static SCRATCH: [std::sync::atomic::AtomicU32; 2] =
+            [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = SCRATCH.as_ptr() as usize as u32;
+        tolib::bridge::to_get_change_macro_address(&mut mem(), window, code, at, call_sym)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

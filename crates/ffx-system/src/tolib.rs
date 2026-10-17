@@ -6729,4 +6729,195 @@ pub mod bridge {
         }
         drop_letter_space(mem, out, &mut fcall);
     }
+
+    /// `TOGetChangeMacroAddress(window, code)` (`0x008b6660`): the text a
+    /// macro code stands for in message window `window`, or 0.
+    ///
+    /// By the code byte: 0x10 `n` (0x50..=0x57) writes the window's counter
+    /// (`*(0x01868a90[window]) + 0xc`) as `n - 0x4f` digits into
+    /// `0x01869ec4` (`TOIntToMes` mode 1, kept back in the counter); 0x12
+    /// is a macro slot (`0x01869ab0[window × 32 + n - 0x30]`, see below, or
+    /// for `n` from 0x50 a window string `u16` offset table at
+    /// `*0x025d16c4 - 0x140`); 0x13 a character name
+    /// (`TOGetSaveChrName`); 0x14, 0x15 and 0x18 the code itself; 0x16 and
+    /// 0x17 an item text (`MsGetRomItem`); 0x19..=0x22 a text table
+    /// (`get_ptr32_func` of `0x01869eb0[English]`, entry `code - 0x13`)
+    /// indexed by the window's `+0x20` base; 0x23 a key item
+    /// (`MsImportantName`).
+    ///
+    /// A macro slot of kind (`+1`) 0xff is the empty text (`0x00c5a040`);
+    /// 0 points at `+4`; 1 and 2 go through `TOFuncMacroCmdValue`;
+    /// 0x33..=0x36 name an item, weapon, command or ability (`+4`); 0x37 is
+    /// the field pickup (`MsFieldItemGetMes`, then gil, item, key item or
+    /// weapon from `0x02310dac..`, the empty text unless exactly one kind);
+    /// 0x13..=0x23 fold `+4 / 0xd0` into the kind (and keep `+4 % 0xd0`)
+    /// and expand that code (through `scratch + 4`, the original's stack);
+    /// 0x2b..=0x32 write `+4` as `kind - 0x2a` digits. `scratch` (8 bytes)
+    /// stands in for the original's stack words.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn to_get_change_macro_address<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        code: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let empty = mem.rebase(0x00c5_a040);
+        let digits = mem.rebase(0x0186_9ec4);
+        let c: u8 = mem.read(code);
+        let next: u8 = mem.read(code.wrapping_add(1));
+        let n = u32::from(next.wrapping_sub(0x30));
+        let window_base = |mem: &M| -> i32 {
+            let w: u32 = mem.read(mem.rebase(0x0186_76f0).wrapping_add(window.wrapping_mul(4)));
+            i32::from(mem.read::<i16>(w.wrapping_add(0x20)))
+        };
+        match c {
+            0x10 => {
+                if !(0x50..=0x57).contains(&next) {
+                    return 0;
+                }
+                let slot = mem.rebase(0x0186_8a90).wrapping_add(window.wrapping_mul(4));
+                let w: u32 = mem.read(slot);
+                let count: u32 = mem.read(w.wrapping_add(0xc));
+                let r = call(
+                    mem,
+                    0x008b_8290,
+                    &[count, digits, u32::from(next) - 0x4f, 1],
+                );
+                let w: u32 = mem.read(slot);
+                mem.write(w.wrapping_add(0xc), r);
+                digits
+            }
+            0x12 => {
+                if next >= 0x50 {
+                    let strings: u32 = mem.read(mem.rebase(0x025d_16c4));
+                    let index = window_base(mem) + i32::from(next) * 2;
+                    let at = strings
+                        .wrapping_add((index * 2).cast_unsigned())
+                        .wrapping_sub(0x140);
+                    return u32::from(mem.read::<u16>(at)).wrapping_add(strings);
+                }
+                let slot = mem
+                    .rebase(0x0186_9ab0)
+                    .wrapping_add((window.wrapping_shl(5).wrapping_add(n)).wrapping_mul(4));
+                let entry = |mem: &M| -> u32 { mem.read(slot) };
+                let e = entry(mem);
+                let kind: u8 = mem.read(e.wrapping_add(1));
+                if kind == 0xff {
+                    return empty;
+                }
+                let mut out = if kind == 0 {
+                    mem.read(e.wrapping_add(4))
+                } else {
+                    code
+                };
+                if kind == 1 {
+                    out = call(mem, 0x008b_6210, &[e]);
+                }
+                let e = entry(mem);
+                if mem.read::<u8>(e.wrapping_add(1)) == 2 {
+                    out = call(mem, 0x008b_6210, &[e]);
+                }
+                let e = entry(mem);
+                let kind: u8 = mem.read(e.wrapping_add(1));
+                let arg: u32 = mem.read(e.wrapping_add(4));
+                let name = match kind {
+                    0x33 => Some(0x008b_8db0),
+                    0x34 => Some(0x008b_8dd0),
+                    0x35 => Some(0x008b_8d70),
+                    0x36 => Some(0x008b_8d90),
+                    _ => None,
+                };
+                if let Some(f) = name {
+                    return call(mem, f, &[arg]);
+                }
+                if kind == 0x37 {
+                    call(mem, 0x0079_8ff0, &[arg]);
+                    let g = |mem: &M, a: u32| mem.rebase(a);
+                    let gil: i32 = mem.read(g(mem, 0x0231_0dac));
+                    let items = i16::from(mem.read::<i8>(g(mem, 0x0231_0db0)));
+                    let keys = i16::from(mem.read::<i8>(g(mem, 0x0231_0db1)));
+                    let weapons = i16::from(mem.read::<i8>(g(mem, 0x0231_0db2)));
+                    let kinds = keys
+                        .wrapping_add(weapons)
+                        .wrapping_add(items)
+                        .wrapping_add(i16::from(gil > 0));
+                    if kinds != 1 {
+                        return empty;
+                    }
+                    if gil > 0 {
+                        call(mem, 0x008b_8290, &[gil.cast_unsigned(), digits, 0, 0]);
+                        return digits;
+                    }
+                    if items > 0 {
+                        let item = u32::from(mem.read::<u16>(g(mem, 0x0231_0db4)));
+                        return call(mem, 0x008b_8db0, &[item]);
+                    }
+                    if keys > 0 {
+                        let key = u32::from(mem.read::<u16>(g(mem, 0x0231_0dcc)));
+                        return call(mem, 0x0079_0860, &[key]);
+                    }
+                    if weapons > 0 {
+                        let weapon = u32::from(mem.read::<u16>(g(mem, 0x0231_0dce)));
+                        return call(mem, 0x008b_8dd0, &[weapon]);
+                    }
+                }
+                let e = entry(mem);
+                let kind = mem.read::<i8>(e.wrapping_add(1));
+                if (0x13..=0x23).contains(&kind) {
+                    let v: i32 = mem.read(e.wrapping_add(4));
+                    mem.write(
+                        e.wrapping_add(1),
+                        kind.cast_unsigned().wrapping_add((v / 0xd0) as u8),
+                    );
+                    let e = entry(mem);
+                    let v: i32 = mem.read(e.wrapping_add(4));
+                    mem.write(e.wrapping_add(4), v % 0xd0);
+                    let e = entry(mem);
+                    let buf = scratch.wrapping_add(4);
+                    let k: u8 = mem.read(e.wrapping_add(1));
+                    let low: u8 = mem.read(e.wrapping_add(4));
+                    mem.write(buf, k);
+                    mem.write(buf.wrapping_add(1), low.wrapping_add(0x30));
+                    mem.write(buf.wrapping_add(2), 0u8);
+                    out = call(mem, 0x008b_6660, &[window, buf]);
+                }
+                let e = entry(mem);
+                let kind = mem.read::<i8>(e.wrapping_add(1));
+                if (0x2b..=0x32).contains(&kind) {
+                    let v: u32 = mem.read(e.wrapping_add(4));
+                    let count = (i32::from(kind) - 0x2a).cast_unsigned();
+                    call(mem, 0x008b_8290, &[v, digits, count, 0]);
+                    return digits;
+                }
+                out
+            }
+            0x13 => call(mem, 0x008a_c850, &[n]),
+            0x14 | 0x15 | 0x18 => code,
+            0x16 | 0x17 => {
+                let item = call(mem, 0x0079_09f0, &[n, scratch]);
+                let base: u32 = mem.read(scratch);
+                u32::from(mem.read::<u16>(item)).wrapping_add(base)
+            }
+            0x19..=0x22 => {
+                let english = call(mem, 0x0078_51d0, &[]);
+                let tables: u32 = mem.read(
+                    mem.rebase(0x0186_9eb0)
+                        .wrapping_add(english.wrapping_mul(4)),
+                );
+                let table = call(mem, 0x00a4_4650, &[tables]);
+                let text: u32 = mem.read(table.wrapping_add(u32::from(c) * 4).wrapping_sub(0x4c));
+                let index = window_base(mem) + n.cast_signed() * 2;
+                u32::from(mem.read::<u16>(text.wrapping_add((index * 2).cast_unsigned())))
+                    .wrapping_add(text)
+            }
+            0x23 => call(mem, 0x0079_0860, &[n]),
+            _ => 0,
+        }
+    }
 }
