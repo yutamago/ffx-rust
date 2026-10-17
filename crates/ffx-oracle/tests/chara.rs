@@ -5675,3 +5675,163 @@ fn round9_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round9b_matches_the_original() {
+    for mut t in twins() {
+        round9b_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round9b_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    use ffx_chara::texture::bridge as tx;
+    let mut rng = Xorshift(0x0009_b9b9);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let mut rets = Vec::new();
+    for (k, (sym, n)) in [
+        (0x0083_7ac0u32, 2u8),
+        (0x0083_d040, 3),
+        (0x0083_c580, 1),
+        (0x0083_c590, 2),
+        (0x0083_c550, 2),
+        (0x0084_0560, 3),
+        (0x0084_0dd0, 2),
+        (0x0084_0960, 2),
+        (0x0084_05f0, 3),
+        (0x007f_cc80, 1),
+        (0x0083_cb90, 1),
+        (0x0083_c6f0, 2),
+        (0x0083_c940, 2),
+        (0x0068_7010, 1),
+        (0x0083_c910, 0),
+        (0x0064_2a10, 1),
+        (0x0079_5b40, 2),
+        // called with 5 and with 2 arguments: log 2
+        (0x0082_6b70, 2),
+        (0x0064_3340, 5),
+        (0x0064_0100, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        rets.push((sym, fk.fake(t, sym, u32::try_from(k).unwrap() + 1, n)));
+    }
+    let ret = |sym: u32| rets.iter().find(|r| r.0 == sym).unwrap().1;
+    let sets = t.a.rebase(0x00c4_9784);
+    let chrs = live_characters(t, &mut rng);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for &(_, r) in &rets {
+            t.put_u32(r, rng.next() % 3);
+        }
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        // Ch_SetSysMotion on a made-up definition of either form
+        let def = t.alloc(0x110);
+        t.put_u32(def, rng.next() % 0x100);
+        t.put(def + 0x70, &[u8::from(round % 2 == 0)]);
+        let tab = t.alloc(0x40);
+        for k in 0..4 {
+            let set = if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                t.alloc(0x50)
+            };
+            if set != 0 {
+                for m in 0..0x14 {
+                    t.put_u32(
+                        set + 4 * m,
+                        if rng.next().is_multiple_of(3) {
+                            rng.next()
+                        } else {
+                            0
+                        },
+                    );
+                }
+            }
+            t.put_u32(tab + 0x10 + 8 * k, set);
+        }
+        t.put_u32(def + 0x6c, tab);
+        // the slots' sets within the made-up table (the game's are other)
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(sets, &[0, 1, 2, 3].map(|_| (rng.next() % 4) as u8));
+        let list = if round % 7 == 6 { 0 } else { t.alloc(0x20) };
+        if list != 0 {
+            for s in 0..3 {
+                let n = rng.next() % 4;
+                let pairs = t.alloc(4 * n as usize + 4);
+                for i in 0..n {
+                    #[allow(clippy::cast_possible_truncation)]
+                    t.put(
+                        pairs + 4 * i,
+                        &[
+                            (rng.next() % 6) as u8,
+                            0,
+                            rng.next() as u8,
+                            rng.next() as u8,
+                        ],
+                    );
+                }
+                t.put_u32(list + 8 + 8 * s, n);
+                t.put_u32(list + 0xc + 8 * s, pairs);
+            }
+        }
+        t.put_u32(def + 0x108, list);
+        t.put_u32(chr + 0x1c4, def);
+        t.put_u32(chr + 0x198, rng.next() & 0x200);
+        let slot = rng.next() % 3;
+        let motion = if rng.next().is_multiple_of(3) {
+            0x10
+        } else {
+            rng.next() % 6
+        };
+        t.check(
+            &format!("Ch_SetSysMotion {round}"),
+            0x0083_7d00,
+            &[chr, slot, motion],
+            |m| {
+                Res::Int(mo::ch_set_sys_motion(
+                    m,
+                    chr,
+                    slot,
+                    motion,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        // Ch_RegMotionEntryCache, Ch_RomReadChrCB
+        let p = rng.next();
+        t.check(
+            &format!("Ch_RegMotionEntryCache {round}"),
+            0x0083_76b0,
+            &[p],
+            |m| {
+                Res::Int(mo::ch_reg_motion_entry_cache(m, p, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let req = random_block(t, &mut rng, 0x20);
+        t.check(
+            &format!("Ch_RomReadChrCB {round}"),
+            0x0082_a6c0,
+            &[req],
+            |m| Res::Int(mo::ch_rom_read_chr_cb(m, req, &mut |m, f, a| call(m, f, a))),
+        );
+        // Ch_ClutDispose (not with no clut: EAX is the caller's then)
+        t.put_u32(chr + 0x704, rng.next() | 1);
+        t.put_u32(ret(0x007f_cc80), u32::from(round % 5 == 0));
+        let inst: u32 = rd(&t.b, chr + 0x830);
+        let pend = t.a.rebase(0x012f_4110);
+        t.put_u32(pend, rng.next() % 2);
+        t.put_u32(pend + 4, [0, inst, inst ^ 4][rng.next() as usize % 3]);
+        t.check(
+            &format!("Ch_ClutDispose {round}"),
+            0x0083_c810,
+            &[chr],
+            |m| Res::Int(tx::ch_clut_dispose(m, chr, &mut |m, f, a| call(m, f, a))),
+        );
+    }
+}

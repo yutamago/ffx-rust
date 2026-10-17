@@ -315,7 +315,11 @@ pub mod bridge {
     ) -> u32 {
         let h = crate::handle::bridge::MEM_SET_STR;
         let key = (n << 16) | id;
-        let state = call(mem, mem.rebase(crate::motion::bridge::CACHE_CHECK_YET), &[2, key]);
+        let state = call(
+            mem,
+            mem.rebase(crate::motion::bridge::CACHE_CHECK_YET),
+            &[2, key],
+        );
         if state <= 1 {
             return 0;
         }

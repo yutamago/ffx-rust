@@ -1084,7 +1084,11 @@ pub mod bridge {
             let f = mem.read(mem.rebase(IOB_FUNC_SLOT));
             let iob = call(mem, f, &[]);
             let f = mem.read(mem.rebase(FPRINTF_SLOT));
-            call(mem, f, &[iob.wrapping_add(0x40), mem.rebase(0x00b5_9778), name, i]);
+            call(
+                mem,
+                f,
+                &[iob.wrapping_add(0x40), mem.rebase(0x00b5_9778), name, i],
+            );
             return 0;
         }
         let models: u32 = mem.read(chr + 0x1bc);
@@ -1093,7 +1097,10 @@ pub mod bridge {
         #[allow(clippy::cast_possible_truncation)] // bit 0
         mem.write(m + 0x18, (hide & 1) as u8);
         let inst: u32 = mem.read(chr + 0x830);
-        if !crate::handle::bridge::c_string(mem, name).windows(4).any(|w| w == b"f117") {
+        if !crate::handle::bridge::c_string(mem, name)
+            .windows(4)
+            .any(|w| w == b"f117")
+        {
             call(mem, mem.rebase(SET_MESH_SEGMENT_HIDE), &[inst, i, hide]);
             return old;
         }

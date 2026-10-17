@@ -1572,4 +1572,20 @@ ported! {
     Ch_TextureLoadImage @ 0x0083_1300 => extern "C" fn ch_texture_load_image(chr: u32, x: u32) {
         ta::ch_texture_load_image(&mut mem(), chr, x, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
     }
+    /// `Ch_RomReadChrCB(request)`.
+    Ch_RomReadChrCB @ 0x0082_a6c0 => extern "C" fn ch_rom_read_chr_cb(req: u32) -> u32 {
+        mo::bridge::ch_rom_read_chr_cb(&mut mem(), req, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RegMotionEntryCache(p)`.
+    Ch_RegMotionEntryCache @ 0x0083_76b0 => extern "C" fn ch_reg_motion_entry_cache(p: u32) -> u32 {
+        mo::bridge::ch_reg_motion_entry_cache(&mut mem(), p, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetSysMotion(chr, slot, motion)`.
+    Ch_SetSysMotion @ 0x0083_7d00 => extern "C" fn ch_set_sys_motion(chr: u32, slot: u32, motion: u32) -> u32 {
+        mo::bridge::ch_set_sys_motion(&mut mem(), chr, slot, motion, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClutDispose(chr)`.
+    Ch_ClutDispose @ 0x0083_c810 => extern "C" fn ch_clut_dispose(chr: u32) -> u32 {
+        tx::ch_clut_dispose(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

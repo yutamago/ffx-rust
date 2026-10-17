@@ -13934,6 +13934,7 @@
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
+0x00c49784 label    g_ChrSysMotionSets        # i8 per slot: the system motion set of a definition's table (+0x6c, 8-byte entries from +0x10) Ch_SetSysMotion 0x00837d00 uses
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
 0x00c52704 label    g_AtelConstants              # u32 table opcode 75 pushes (Script_Run)
@@ -14370,6 +14371,8 @@
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
+0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
+0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
 0x012f4e00 label    g_SqsSifDma               # two SIF DMA records of 16 bytes (source, destination, size, attribute): SqsSifDmaStart
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
 0x012f4e94 label    g_SqsShoutSkipped         # set when a shout sound was skipped (SqsShoutStreamingPlayState)
