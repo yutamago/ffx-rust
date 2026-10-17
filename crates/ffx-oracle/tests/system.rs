@@ -8643,3 +8643,55 @@ fn round14_timer_and_cursor_match_the_original_on_the_snapshot() {
     };
     round14_timer_and_cursor(&mut a, &mut b, &mut Xorshift(0x4014_0032));
 }
+
+/// Round 14's target group masks over stand-in battle queries.
+#[allow(clippy::cast_possible_truncation)]
+fn round14_target_groups(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let rec = alloc(a, b, 0x40);
+    let tmp = alloc(a, b, 4);
+    // MsGetComData: eax = rec
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&rec.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xdc0, &v);
+    redirect(a, b, 0x0079_a4b0, s);
+    // MsGetChrGroup: (chr ^ key) & 7
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+    v.extend_from_slice(&0x1400_0605u32.to_le_bytes());
+    v.extend_from_slice(&[0x83, 0xe0, 0x07, 0xc3]);
+    let s = stand_in8(a, b, 0xde0, &v);
+    redirect(a, b, 0x0079_5040, s);
+    for _ in 0..200 {
+        let bytes: Vec<u8> = (0..0x90).map(|_| rng.next() as u8).collect();
+        let at = a.rebase(0x0133_d0d0);
+        a.write(at, &bytes).unwrap();
+        b.write(at, &bytes).unwrap();
+        put(a, b, at, (rng.next() % 28) as u16);
+        put(a, b, rec + 0x1a, rng.next() as u16);
+        eax(a, 0x0089_8490, &[]);
+        t::btl_make_target_group_bit(
+            b,
+            tmp,
+            |m, id, p| eax(m, 0x0079_a4b0, &[id, p]),
+            |m, chr| eax(m, 0x0079_5040, &[chr]),
+        );
+        same_memory("target groups", a, b);
+    }
+}
+
+#[test]
+fn round14_target_groups_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_target_groups(&mut a, &mut b, &mut Xorshift(0x4014_0041));
+}
+
+#[test]
+fn round14_target_groups_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_target_groups(&mut a, &mut b, &mut Xorshift(0x4014_0042));
+}

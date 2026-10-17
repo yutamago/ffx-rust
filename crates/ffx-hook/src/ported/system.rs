@@ -4436,6 +4436,16 @@ ported! {
     TOBtlMemoryCursorPos @ 0x0089_89d0 => extern "C" fn to_btl_memory_cursor_pos() {
         tolib::bridge::btl_memory_cursor_pos(&mut mem());
     }
+    /// `TOBtlMakeTargetGroupBit()`.
+    TOBtlMakeTargetGroupBit @ 0x0089_8490 => extern "C" fn to_btl_make_target_group_bit() {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        tolib::bridge::btl_make_target_group_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data, |m, chr| {
+            call_sym(m, 0x0079_5040, &[chr])
+        });
+        std::hint::black_box(&mut tmp);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

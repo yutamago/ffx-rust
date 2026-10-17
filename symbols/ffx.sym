@@ -8161,7 +8161,7 @@
 0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0
 0x00898330 function TOBtlMakeTargetChrStatusBit # fh v3:exact 0x008982a0
 0x008983f0 function TOBtlMakeTargetCommandBit    # layout: alphabetical run between TOBtlMakeTargetChrStatusBit and TOBtlMakeTargetGroupBit (1 unnamed in the gap); Switch 0x710049b3c0 TOBtlMakeTargetCommandBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400
+0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400; (): 28 masks 0x0133d0e4 cleared; mode = (MsGetComData(0x0133d0d2)+0x1a >> 2) & 3 -> 0x0133d0e0: 0 one per union bit (0x0133d0dc), 1 party 0x0133d0d4 / monsters 0x0133d0d8 by MsGetChrGroup (monsters from mask 20), 2 party in mask 0 and monsters in mask 20, 3 the cursor chr 0x0133d0d0 alone
 0x008985b0 function TOBtlMakeTargetListBit       # layout: alphabetical run between TOBtlMakeTargetGroupBit and TOBtlMakeTargetTargetBit (1 unnamed in the gap); Switch 0x710049ab50 TOBtlMakeTargetListBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00898640 function TOBtlMakeTargetTargetBit  # fh v3:exact 0x008985b0
 0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940; (): unless cmd 0x0133ca4c is 0xffff/0xfffe/0x3002, copies 0x023cc092+1 windows (0xf0 each from 0x0133c952) of cursor state into chr 0x023cc088's 0x168-byte block at 0x0133d788 (0x24 each), flag 0x0133d770[chr] = 1

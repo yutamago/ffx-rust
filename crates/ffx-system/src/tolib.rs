@@ -2913,4 +2913,70 @@ pub mod bridge {
         let flag = mem.rebase(0x0133_d770).wrapping_add(chr.cast_unsigned());
         mem.write(flag, 1u8);
     }
+
+    /// `TOBtlMakeTargetGroupBit()` (`0x00898490`): the 28 group masks at
+    /// `0x0133d0e4` cleared and rebuilt by the selected command's group mode
+    /// (`+0x1a` of its `MsGetComData` record, bits 2-3, kept in
+    /// `0x0133d0e0`): 0 each character of the target union (`0x0133d0dc`)
+    /// alone; 1 the party (`0x0133d0d4`, characters 0..20) and the
+    /// monsters (`0x0133d0d8`, 20..28) by `MsGetChrGroup` (passed in), the
+    /// monsters' groups from mask 20; 2 the party and the monsters as two
+    /// groups (masks 0 and 20); 3 the cursor's character (`0x0133d0d0`)
+    /// alone.
+    pub fn btl_make_target_group_bit<M: Mem>(
+        mem: &mut M,
+        tmp: u32,
+        get_com: impl FnOnce(&mut M, u32, u32) -> u32,
+        mut chr_group: impl FnMut(&mut M, u32) -> u32,
+    ) {
+        let id = u32::from(TARGET_COMMAND.get(mem));
+        let rec = get_com(mem, id, tmp);
+        let groups = mem.rebase(0x0133_d0e4);
+        for k in 0..28u32 {
+            mem.write(groups.wrapping_add(4 * k), 0u32);
+        }
+        let flags: u16 = mem.read(rec.wrapping_add(0x1a));
+        let mode = u32::from(flags >> 2) & 3;
+        let mode_at = mem.rebase(0x0133_d0e0);
+        mem.write(mode_at, mode);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let or = |mem: &mut M, at: u32, bit: u32| {
+            let v: u32 = mem.read(at);
+            mem.write(at, v | bit);
+        };
+        match mode {
+            0 => {
+                for chr in 0..28u32 {
+                    let bit = 1u32 << chr;
+                    if word(mem, 0x0133_d0dc) & bit != 0 {
+                        mem.write(groups.wrapping_add(4 * chr), bit);
+                    }
+                }
+            }
+            1 => {
+                for (range, mask, base) in [(0..20u32, 0x0133_d0d4, 0), (20..28, 0x0133_d0d8, 20)] {
+                    for chr in range {
+                        let bit = 1u32 << chr;
+                        if word(mem, mask) & bit != 0 {
+                            let g = chr_group(mem, chr);
+                            let at = groups
+                                .wrapping_add(4 * base)
+                                .wrapping_add(g.wrapping_mul(4));
+                            or(mem, at, bit);
+                        }
+                    }
+                }
+            }
+            2 => {
+                let party = word(mem, 0x0133_d0d4);
+                mem.write(groups, party);
+                let monsters = word(mem, 0x0133_d0d8);
+                mem.write(groups.wrapping_add(0x50), monsters);
+            }
+            _ => {
+                let c = u32::from(mem.read::<u16>(mem.rebase(0x0133_d0d0)));
+                mem.write(groups.wrapping_add(c.wrapping_mul(4)), 1u32 << (c & 31));
+            }
+        }
+    }
 }
