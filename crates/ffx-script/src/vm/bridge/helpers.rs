@@ -619,3 +619,231 @@ pub fn atel_get_battle_count_f(m: &impl Mem) -> f64 {
     let v = m.read::<u32>(m.rebase(0x0112_c900)).cast_signed();
     x87::load(x87::store(f64::from(v)))
 }
+
+// ---- round 15 ----
+
+fn host_call(h: &mut impl ffx_bridge::Host, sym: u32, args: &[u32]) -> u32 {
+    let f = h.rebase(sym);
+    h.call(f, args)
+}
+
+/// `AtelSetUpCallFunc(group, table)` (`0x00877880`): `g_NativeTables[group]`
+/// = table, or the empty table `0x00c52b60` for 0; `EAX` the group.
+pub fn atel_set_up_call_func(m: &mut impl Mem, group: u32, table: u32) -> u32 {
+    let t = if table == 0 {
+        m.rebase(0x00c5_2b60)
+    } else {
+        table
+    };
+    let at = m.rebase(0x0132_8558).wrapping_add(group.wrapping_mul(4));
+    m.write(at, t);
+    group
+}
+
+/// `AtelGetSaveDic()` (`0x0086c410`): the save event record's
+/// (`MsGetSaveEventAddress`, `0x0088c830`) `+0xd4` when `+0xd6` is set,
+/// else `+0xe` (`u16`).
+pub fn atel_get_save_dic(h: &mut impl ffx_bridge::Host) -> u32 {
+    let e = host_call(h, 0x0088_c830, &[]);
+    let off = if h.read::<u8>(e + 0xd6) != 0 {
+        0xd4
+    } else {
+        0xe
+    };
+    u32::from(h.read::<u16>(e + off))
+}
+
+/// `AtelGetSaveDicName(i, dic)` (`0x0086c430`): entry i (0 past the
+/// count, the first `u16` / 4) of the dictionary `TOGetSaveDicAdrs(dic)`
+/// (`0x008b7f60`), its second offset with hiragana on
+/// (`MsGetSaveConfigHiragana`); the text's address.
+pub fn atel_get_save_dic_name(h: &mut impl ffx_bridge::Host, i: u32, dic: u32) -> u32 {
+    let hira = u32::from(host_call(h, 0x0078_51f0, &[]) != 0);
+    let p = host_call(h, 0x008b_7f60, &[dic]);
+    let n = u32::from(h.read::<u16>(p) >> 2);
+    let k = if i.cast_signed() >= n.cast_signed() {
+        0
+    } else {
+        i
+    };
+    let e = hira.wrapping_add(k.wrapping_mul(2));
+    u32::from(h.read::<u16>(p.wrapping_add(e.wrapping_mul(2)))).wrapping_add(p)
+}
+
+/// `0x00877520(v, dst, base)`: v written as digits over the divisor table
+/// at `0x00c52b18` (0-ended), each digit plus `base` (`'0'`); `EAX` what
+/// is left of v (dst for an empty table).
+pub fn atel_put_digits(m: &mut impl Mem, v: u32, dst: u32, base: u32) -> u32 {
+    let mut t = m.rebase(0x00c5_2b18);
+    let mut d = m.read::<u32>(t);
+    if d == 0 {
+        m.write(dst, 0_u8);
+        return dst;
+    }
+    let (mut v, mut p) = (v, dst);
+    let [b, ..] = base.to_le_bytes();
+    while d != 0 {
+        let mut n = 0_u8;
+        t += 4;
+        while v >= d {
+            v -= d;
+            n = n.wrapping_add(1);
+        }
+        m.write(p, n.wrapping_add(b));
+        p = p.wrapping_add(1);
+        d = m.read::<u32>(t);
+    }
+    m.write(p, 0_u8);
+    v
+}
+
+/// `0x0086db80(worker, mask)`: the current level's turn block gets the
+/// worker's position-block angles: bit 0 `+0x38` = `+0x34`, bit 1 `+0x3c`
+/// = `+0x30`, bit 2 `+0x40` = `+0x38` (`fld`/`fstp`). `EAX` the mask.
+pub fn atel_copy_turn_angles(m: &mut impl Mem, w: u32, mask: u32) -> u32 {
+    let t = kind(m, w);
+    let src = if t == 4 {
+        0
+    } else if t.wrapping_sub(5) < 2 {
+        w + 0x284
+    } else {
+        w + 0x558
+    };
+    let l = clamp_level(m, w, u32::from(m.read::<u8>(w + 0x32)));
+    let blk = m.read::<u32>(w + 0x174 + l * 0x4c);
+    for (bit, from, to) in [(1, 0x34, 0x38), (2, 0x30, 0x3c), (4, 0x38, 0x40)] {
+        if mask & bit != 0 {
+            copy_f32(m, src + from, blk + to);
+        }
+    }
+    mask
+}
+
+/// `AtelUcOff()` (`0x008719e0`): for each type-1 worker of the current
+/// ctrl work that has the player's control (`+0xaa` 1, `+0x34` bit 5):
+/// the bit cleared, its position block `+0xc` = 0.0 and
+/// `Ch_SetSp(model, 0.0)` (`0x0082b840`) for a model; then
+/// `Sg_SetPlayer(0)` (`0x0082dad0`) and the ctrl work's bit 1 cleared.
+/// `EAX` the ctrl work.
+pub fn atel_uc_off(h: &mut impl ffx_bridge::Host) -> u32 {
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let mut c = h.read::<u32>(ctx);
+    let n = u32::from(h.read::<u16>(c + 0xc));
+    for i in 0..n {
+        if i >= u32::from(h.read::<u16>(c + 0xc)) {
+            continue;
+        }
+        let w = super::atel_get_basic_work(h, i.cast_signed());
+        if kind(h, w) != 1 {
+            continue;
+        }
+        let w = super::atel_get_basic_work(h, i.cast_signed());
+        let pos = w + 0x558;
+        let flags = h.read::<u16>(w + 0x34);
+        if h.read::<u8>(w + 0xaa) != 1 || flags & 0x20 == 0 {
+            continue;
+        }
+        h.write(w + 0x34, flags & 0xffdf);
+        h.write(pos + 0xc, 0_u32);
+        let model = h.read::<u32>(w + 0x9c);
+        if model != 0 {
+            host_call(h, 0x0082_b840, &[model, 0]);
+            c = h.read::<u32>(ctx);
+        }
+    }
+    host_call(h, 0x0082_dad0, &[0]);
+    let c = h.read::<u32>(ctx);
+    let b = h.read::<u8>(c);
+    h.write(c, b & 0xfd);
+    c
+}
+
+/// `g_AtelBasicWorkCache` (`0x013270e4`).
+const BASIC_WORK_CACHE: u32 = 0x0132_70e4;
+
+/// `AtelRequireCtrlWork(i, block, a, b)` (`0x0086ee10`): ctrl work i
+/// (`g_AtelCtrlWorks + i*0x238`) set up for a script block: its id, the
+/// block (`+0x48`) and its counts (`+0x36`, `+0x34`, `+0x14`, `+0x1c`,
+/// `+0x16` of the block, or zeros without one), `a` and `b` (`+0x1c`,
+/// `+0x24`), the callbacks (`+0x50` = `0x008683e0`), the flag words
+/// (`+0` 0x9880, `+2` 0xc8 keeping bit 4, `+3` 0x30, `+4` 0x20004,
+/// `+0x210` `& !0x36 | 0x49`), two scales of 1.0 and cleared slots; also
+/// `g_AtelBasicWorkCache` = 0. Returns the ctrl work.
+#[allow(clippy::too_many_lines)] // one store per field
+pub fn atel_require_ctrl_work(m: &mut impl Mem, i: u32, block: u32, a: u32, b: u32) -> u32 {
+    let c = m.rebase(0x0132_5ba0).wrapping_add(i.wrapping_mul(0x238));
+    let one = 1f32.to_bits();
+    for (off, v) in [
+        (0x228, 0),
+        (0x22c, 0),
+        (0x230, 0),
+        (0x234, one),
+        (0x224, one),
+    ] {
+        m.write(c + off, v);
+    }
+    m.write(c + 0x1a, u16::try_from(i & 0xffff).unwrap_or(0));
+    m.write(c + 0x1c, a);
+    m.write(c + 0x218, 0_u32);
+    m.write(c + 0x24, b);
+    m.write(c + 0x21c, 0_u32);
+    m.write(c + 0x220, 0_u32);
+    m.write(c + 0xa, 0xffff_u16);
+    m.write(c + 0x1ec, 0_u32);
+    m.write(c + 0x1e8, 0xffff_u16);
+    m.write(c + 0x1f0, 0_u32);
+    let f2 = m.read::<u8>(c + 2);
+    m.write(c + 0x208, 0_u32);
+    m.write(c + 2, f2 & 0x10 | 0xc8);
+    let fl = m.read::<u32>(c + 0x210);
+    for off in [0x20c, 0x20, 0x28, 0x2c, 0x30, 0x4c] {
+        m.write(c + off, 0_u32);
+    }
+    m.write(c + 0x50, m.rebase(0x0086_83e0));
+    for off in [0x58, 0x5c, 0x60, 0x34, 0x44] {
+        m.write(c + off, 0_u32);
+    }
+    m.write(c + 0x1ea, 0_u8);
+    for off in [0x200, 0x204, 0x1f8, 0x1fc, 0x1f4] {
+        m.write(c + off, 0_u32);
+    }
+    m.write(c + 4, 0x0002_0004_u32);
+    m.write(c + 0x1e7, 0xff_u8);
+    m.write(c + 0x54, 0_u32);
+    m.write(c + 8, 0_u8);
+    m.write(c + 0x48, block);
+    m.write(c + 0x1e4, 0_u8);
+    m.write(c, 0x9880_u16);
+    m.write(c + 3, 0x30_u8);
+    m.write(c + 0x210, fl & 0xffff_ffc9 | 0x49);
+    m.write(c + 0x214, u32::MAX);
+    if block == 0 {
+        m.write(c + 0xc, 0_u16);
+        m.write(c + 0x10, 0_u32);
+        m.write(c + 0x14, 0_u32);
+        m.write(c + 0x18, 0_u16);
+    } else {
+        let n36 = m.read::<u16>(block + 0x36);
+        m.write(c + 0xc, n36);
+        let n34 = m.read::<u16>(block + 0x34);
+        m.write(c + 0x10, n34);
+        m.write(c + 0x12, n36);
+        let n14 = m.read::<u16>(block + 0x14);
+        m.write(c + 0x14, n14);
+        let n1c = m.read::<u16>(block + 0x1c);
+        m.write(c + 0x18, n1c);
+        let n16 = m.read::<u16>(block + 0x16);
+        m.write(c + 0x16, n16);
+    }
+    for off in [0x64, 0x74, 0x84, 0x94] {
+        m.write(c + off, u32::MAX);
+    }
+    for k in 0..0x20 {
+        m.write(c + 0xa4 + k * 8, 0_u16);
+    }
+    m.write(m.rebase(BASIC_WORK_CACHE), 0_u32);
+    for k in 0..8 {
+        m.write(c + 0x1a4 + k * 8, 0_u32);
+    }
+    c
+}
