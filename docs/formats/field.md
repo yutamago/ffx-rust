@@ -1247,6 +1247,26 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   is a debug pixel probe, listed under "Debug (mod-tool candidates)"
   since round 28.
 
+## The warp's entry, the blur and the nail's points (round 28)
+
+- `abmap_set_chr_pos` (`0x00a458f0`, Fahrenheit's name): `AbmapStartWarp`
+  and `+0x115c7` = 1; returns the grid.
+- `rcefBlurUpdate` (`0x00924bf0`, name ours, from `rcefMainProcRunAfter`):
+  while on (`+0x228`) with a mode (`+0x218`), calls `Sg_Blur` with the
+  blur `+0x21c`. Mode 2 fades it: `(frames - done) * blur / frames`,
+  integer, with the frames `+0x220` and the count `+0x224`. After the
+  frames it calls `Sg_Blur(0)` and switches off.
+- `rcfxNailUpdate` (`0x00929190`, name ours, `rcfxNailInit`'s update
+  callback): for each of the `+0x1c` points, copies the source point
+  (`ctx +0x24`, picked by the index array `+0x20`) into the base array
+  (`+0x24`). That goes through the matrix `+0x38` into `+0x28`, or is
+  copied there without a matrix, then copied on to `+0x2c`. Finally the
+  `f64` at `ctx` goes to `+0x30` through the x87 stack (on hardware a
+  signalling NaN turns quiet; the oracle's emulator does not, so the test
+  leaves them out).
+- The debug pixel probe `0x007606f0`/`0x00760f30` moved to "Debug
+  (mod-tool candidates)".
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

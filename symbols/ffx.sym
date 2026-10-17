@@ -10580,6 +10580,7 @@
 0x00924ba0 function rcefTargetIsDone             # (i) -> bit 1 of target i's u16 flags
 0x00924bc0 function rcefTargetClear              # (i): its flags = 0
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
+0x00924bf0 function rcefBlurUpdate            # (e): while +0x228 with mode +0x218: Sg_Blur(+0x21c, mode 2 faded (frames +0x220 - done +0x224) * v / frames), count +0x224++, after the frames Sg_Blur(0) and +0x228 = 0; from rcefMainProcRunAfter; name ours
 0x00924df0 function rcefScreenShake           # (e): while +0x214 with mode +0x1f8: sin-table swing of phase +0x210, faded over +0x200 frames from mode 3, times rand() % +0x20c + +0x208 as x (odd) or y; MsScreenOffset(x, y), after the frames (0, 0) and +0x214 = 0; from rcefMainProcRunAfter; name ours
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40
@@ -10676,6 +10677,7 @@
 0x00929090 function rcfxNailFini              # (nail): rcFree +0x20..+0x2c
 0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
 0x00929170 function rcfxNailNew               # (): rcAlloc 0x40 (rcfxNail.c), rcfxNailInit
+0x00929190 function rcfxNailUpdate            # (fx, ctx) -> ctx: each of +0x1c points: ctx +0x24 array [+0x20 index] to +0x24 array, through matrix +0x38 (rcVec3fApplyMatrix) or copied to +0x28, then to +0x2c; ctx f64 to +0x30; rcfxNailInit's update callback; name ours
 0x00929230 function rcfxNailSetCnt            # (nail, n): +0x1c = n, +0x20 (4 n) and three quadword buffers reallocated (rcfxNail.c 0x45..0x48)
 0x009292a0 function rcbgScaleVector_009292a0  # the same code as rcbgScaleVector 0x009200a0
 0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
