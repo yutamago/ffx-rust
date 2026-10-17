@@ -5459,4 +5459,112 @@ pub mod bridge {
             }
         }
     }
+
+    /// `0x00774a50(record)`: whether a menu record's own condition holds.
+    /// The condition index (i16 `+0x20`, none when negative) picks a
+    /// function from `*0x00c416d0`, called with the i16 `+0x22`; mode
+    /// (`+0x2b`) 0 wants a zero result, 1 a nonzero one, anything else
+    /// fails.
+    pub fn menu_record_condition<M: Mem>(
+        mem: &mut M,
+        record: u32,
+        mut cond: impl FnMut(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let c = mem.read::<i16>(record.wrapping_add(0x20));
+        if c < 0 {
+            return 0;
+        }
+        let arg = i32::from(mem.read::<i16>(record.wrapping_add(0x22))).cast_unsigned();
+        let table: u32 = mem.read(mem.rebase(0x00c4_16d0));
+        let f: u32 = mem.read(table.wrapping_add((i32::from(c) * 4).cast_unsigned()));
+        let r = cond(mem, f, arg);
+        match mem.read::<i8>(record.wrapping_add(0x2b)) {
+            0 => u32::from(r == 0),
+            1 => u32::from(r != 0),
+            _ => 0,
+        }
+    }
+
+    /// `0x0089dfa0(text)`: the pixel width of a battle-window text at 12
+    /// per character (codes stepped with `TOSkipCode`), less 2; -2 for an
+    /// empty text.
+    pub fn text_width_12<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut width = 0u32;
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            width = width.wrapping_add(0xc);
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        width.wrapping_sub(2)
+    }
+
+    /// `TOBtlSetTarget(slot, a, b)`: marks battle window `slot` (0xf0-byte
+    /// entries at `0x0133c950`) as targeting, runs
+    /// `TOCheckBtlCommandTarget(a, b)`, counts the request (`+0xa6`), keeps
+    /// the current target (`0x0133d1fc` at `+0x42`, `0x0133d178` at
+    /// `+0xd8`) and hands the entry to `TOBtlSetTargetCallback`, whose eax
+    /// it returns.
+    pub fn to_btl_set_target<M: Mem>(
+        mem: &mut M,
+        slot: u32,
+        a: u32,
+        b: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let entry = mem
+            .rebase(0x0133_c950)
+            .wrapping_add(slot.wrapping_mul(0xf0));
+        mem.write(entry.wrapping_add(2), 1u8);
+        call(mem, 0x0089_abd0, &[a, b]);
+        let target: u16 = mem.read(mem.rebase(0x0133_d1fc));
+        let count: u16 = mem.read(entry.wrapping_add(0xa6));
+        mem.write(entry.wrapping_add(0xa6), count.wrapping_add(1));
+        mem.write(entry.wrapping_add(0x42), target);
+        let which: u32 = mem.read(mem.rebase(0x0133_d178));
+        mem.write(entry.wrapping_add(0xd8), which);
+        call(mem, 0x008a_1090, &[entry])
+    }
+
+    /// `TOClearBtlWindow()`: flags `0x0133f77c`, stops sound 0x8000004e
+    /// when it plays, resets the pads, selects message area 0 and clears
+    /// `0x0133c948`. Returns the area call's eax.
+    pub fn to_clear_btl_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(mem.rebase(0x0133_f77c), 1u32);
+        if call(mem, 0x0088_6680, &[0x8000_004e]) != 0 {
+            call(mem, 0x0088_6eb0, &[0x8000_004e]);
+        }
+        call(mem, 0x008a_dbd0, &[]);
+        let r = call(mem, 0x008a_f5c0, &[0]);
+        mem.write(mem.rebase(0x0133_c948), 0u32);
+        r
+    }
+
+    /// `TOReset1()`: resets the pads, clears `0x01841e0c` and the message
+    /// window mode (`0x018659bc`), then for message areas 1 and 0 inits the
+    /// 8 message slots and 8 macro commands, and finally runs
+    /// `TOMenuInit`, `TOBtlInit` and `TODapsInit`, returning the last's eax.
+    pub fn to_reset1<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        call(mem, 0x008a_dbd0, &[]);
+        mem.write(mem.rebase(0x0184_1e0c), 0u32);
+        mem.write(mem.rebase(0x0186_59bc), 0u32);
+        for area in [1u32, 0] {
+            call(mem, 0x008a_f5c0, &[area]);
+            for i in 0..8 {
+                call(mem, 0x008a_da30, &[i]);
+            }
+            for i in 0..8 {
+                call(mem, 0x008b_81d0, &[i]);
+            }
+        }
+        call(mem, 0x008b_e800, &[]);
+        call(mem, 0x0089_77f0, &[]);
+        call(mem, 0x0089_dc40, &[])
+    }
 }

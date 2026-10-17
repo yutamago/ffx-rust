@@ -10949,6 +10949,31 @@ fn round19_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     }
 }
 
+/// A cdecl stand-in logging its first two arguments at `*cursor`.
+fn logger2(cursor: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x01, 0x89, 0x51, 0x04, 0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x08, 0xc3]);
+    v
+}
+
+/// A stand-in logging `value` at `*cursor` and returning it.
+fn marker(cursor: u32, value: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0xc7, 0x01]);
+    v.extend_from_slice(&value.to_le_bytes());
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(0x04);
+    v.push(0xb8);
+    v.extend_from_slice(&value.to_le_bytes());
+    v.push(0xc3);
+    v
+}
+
 /// `0x00776110` over logging stand-ins for the sound, print, help and
 /// reset calls and two condition functions.
 #[allow(
@@ -10960,23 +10985,8 @@ fn round19_step(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let log = alloc(a, b, 0x800);
     let cursor = alloc(a, b, 4);
-    // logs [esp+4] and [esp+8]
-    let mut two = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x0d];
-    two.extend_from_slice(&cursor.to_le_bytes());
-    two.extend_from_slice(&[0x89, 0x01, 0x89, 0x51, 0x04, 0x83, 0x05]);
-    two.extend_from_slice(&cursor.to_le_bytes());
-    two.extend_from_slice(&[0x08, 0xc3]);
-    // logs a fixed word
-    let marker = |value: u32| {
-        let mut v = vec![0x8b, 0x0d];
-        v.extend_from_slice(&cursor.to_le_bytes());
-        v.extend_from_slice(&[0xc7, 0x01]);
-        v.extend_from_slice(&value.to_le_bytes());
-        v.extend_from_slice(&[0x83, 0x05]);
-        v.extend_from_slice(&cursor.to_le_bytes());
-        v.extend_from_slice(&[0x04, 0xc3]);
-        v
-    };
+    let two = logger2(cursor);
+    let marker = |value: u32| marker(cursor, value);
     let s = stand_in8(a, b, 0x40, &logger(cursor, 0x1900_1000));
     redirect(a, b, 0x0088_6e80, s);
     let s = stand_in8(a, b, 0x80, &logger(cursor, 0x1900_2000));
@@ -11146,6 +11156,158 @@ fn round19_step_matches_the_original_on_the_snapshot() {
         return;
     };
     round19_step(&mut a, &mut b, &mut Xorshift(0x4019_0032));
+}
+
+/// The record condition, text width and battle-window helpers of round 19
+/// over logging stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_to(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x800);
+    let cursor = alloc(a, b, 4);
+    let playing = alloc(a, b, 4);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cond = |m: &mut Oracle, f: u32, arg: u32| m.call(f, Conv::Cdecl, &[arg]).unwrap().eax;
+    let c0 = stand_in8(
+        a,
+        b,
+        0x40,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    let c1 = stand_in8(
+        a,
+        b,
+        0x50,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x02, 0xc3],
+    );
+    let table = alloc(a, b, 8);
+    put(a, b, table, [c0, c1]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    // TOSkipCode: one byte, two when bit 0 is set
+    let s = stand_in8(
+        a,
+        b,
+        0x60,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x83, 0xe1, 0x01, 0x8d, 0x44, 0x08, 0x01,
+            0xc3,
+        ],
+    );
+    redirect(a, b, 0x008d_fd80, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&playing.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x0088_6680, s);
+    for (i, sym) in [
+        0x0089_abd0u32,
+        0x008a_1090,
+        0x0088_6eb0,
+        0x008a_f5c0,
+        0x008a_da30,
+        0x008b_81d0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let off = 0xa0 + 0x40 * i as u32;
+        let code = if i == 0 {
+            logger2(cursor)
+        } else {
+            logger(cursor, 0x1900_5000 + i as u32)
+        };
+        let s = stand_in8(a, b, off, &code);
+        redirect(a, b, sym, s);
+    }
+    for (i, sym) in [0x008a_dbd0u32, 0x008b_e800, 0x0089_77f0, 0x0089_dc40]
+        .into_iter()
+        .enumerate()
+    {
+        let off = 0x300 + 0x40 * i as u32;
+        let s = stand_in8(a, b, off, &marker(cursor, 0x1900_6000 + i as u32));
+        redirect(a, b, sym, s);
+    }
+    let record = alloc(a, b, 0x30);
+    let text = alloc(a, b, 0x40);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        // the record condition
+        let c = if rng.next().is_multiple_of(4) {
+            0x8000 | rng.next() as u16
+        } else {
+            (rng.next() % 2) as u16
+        };
+        put(a, b, record + 0x20, [c, rng.next() as u16]);
+        put(a, b, record + 0x2b, (rng.next() % 4) as u8);
+        assert_eq!(
+            eax(a, 0x0077_4a50, &[record]),
+            t::menu_record_condition(b, record, cond),
+            "record condition {k}"
+        );
+        // the text width
+        let n = rng.next() % 0x30;
+        let bytes: Vec<u8> = (0..0x40)
+            .map(|i| if i < n { (rng.next() as u8) | 0x10 } else { 0 })
+            .collect();
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        assert_eq!(
+            eax(a, 0x0089_dfa0, &[text]),
+            t::text_width_12(b, text, call),
+            "text width {k}"
+        );
+        // the battle window
+        let slot = rng.next() % 4;
+        let (x, y) = (rng.next(), rng.next());
+        put(a, b, g(a, 0x0133_d1fc), rng.next() as u16);
+        put(a, b, g(a, 0x0133_d178), rng.next());
+        put(
+            a,
+            b,
+            g(a, 0x0133_c950 + slot * 0xf0 + 0xa6),
+            rng.next() as u16,
+        );
+        assert_eq!(
+            eax(a, 0x0089_a860, &[slot, x, y]),
+            t::to_btl_set_target(b, slot, x, y, call),
+            "set target {k}"
+        );
+        put(a, b, playing, rng.next() % 2);
+        put(a, b, g(a, 0x0133_c948), rng.next());
+        put(a, b, g(a, 0x0133_f77c), rng.next());
+        assert_eq!(
+            eax(a, 0x0089_ad90, &[]),
+            t::to_clear_btl_window(b, call),
+            "clear {k}"
+        );
+        if k % 10 == 0 {
+            put(a, b, g(a, 0x0184_1e0c), rng.next());
+            put(a, b, g(a, 0x0186_59bc), rng.next());
+            assert_eq!(eax(a, 0x008a_de50, &[]), t::to_reset1(b, call), "reset {k}");
+        }
+        same_memory("round 19 TO helpers", a, b);
+    }
+}
+
+#[test]
+fn round19_to_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_to(&mut a, &mut b, &mut Xorshift(0x4019_0041));
+}
+
+#[test]
+fn round19_to_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_to(&mut a, &mut b, &mut Xorshift(0x4019_0042));
 }
 
 #[test]

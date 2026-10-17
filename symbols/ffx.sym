@@ -4525,6 +4525,7 @@
 0x00774680 function IsLangSpecialRecord_00774680 # cdecl(rec): 0x00c416c0 == 8, rec, (i16)+0x26 > 8, (*0x0112a0a4)[that] == -400, u16 +4 == (lang 2/3: 0x25a, 10/11: 0x276, else 0x266) and +6 == 0xbb; caller 0x0076....; name ours
 0x00774720 function Kernel_GetAbilityName # (id) -> char*: g_EmptyName for 0, else TkMn2GetAbilityMes(id) (a tail jump); about 110 callers 0x00770920..0x007734c0; named after Kernel_GetItemName; name ours
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
+0x00774a50 function MenuRecordCondition_00774a50 # (record): 1 when the record's condition holds: i16 +0x20 index into *0x00c416d0 (negative: 0), called with i16 +0x22; mode +0x2b 0 wants a zero result, 1 nonzero, else 0; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0; cdecl(out, n): help picture path by TOGetFFXLang (0 help, 1 us, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch; others format an uninitialised buffer) through fiosUnifyFilename, then sprintf(out, path, n)
 0x00774c00 function TOMenuAllocHelpMem_00774c00  # (reset, bytes) -> a block from the help work area (TOMenuGetHelpWorkAdrs + 0x0112a09c, which reset clears), "help get mem %x (0x%x / 0x%x)", "help memory over flow" against TOMenuGetHelpWorkSize; own name
 0x00774ff0 function GsPkt_TexturedSprite_00774ff0 # (pkt, tbp, ..., w, h): builds a GIF packet in pkt: TEX0 with TW/TH = log2 of the width/height (1..10), ALPHA, TEST, a sprite with UV and XYZ2 (0x0060ab4000 tag); callers 0x007766e0, 0x00776740; the system agent's finding (a DMA/GIF packet); own name
@@ -9198,6 +9199,7 @@
 0x0089dde0 function TODapsPrintf              # fh v3:exact 0x0089dd50
 0x0089de30 function TODapsSetPos              # fh v3:exact 0x0089dda0
 0x0089dec0 function TODapsString              # fh v3:exact 0x0089de30
+0x0089dfa0 function TOTextWidth12_0089dfa0 # (text): 12 per character stepped with TOSkipCode, minus 2; name ours
 0x0089e360 function TOFontGlyphSprite # cdecl(s, out) -> s: the glyph of the char at s (byte - 0x30, or s[1] + 0xa0 after a lead byte < 0x30) from g_TOFontGlyphs into a sprite (+8/+0xc x,y; +0x10/+0x14 right, bottom (y + 8.0); +0x1c width; +0x20 8.0; +0x26 flags, +4 flags bit 3; +2 0x14); TO-prefix like its neighbours; name ours
 0x0089e4f0 function PushEntry_013402b8 # cdecl(a, b, c) -> c: 12-byte entry *0x01340438 (then incremented) at 0x013402b8 = (u16 1, u16 a at +4, u16 b at +6, c at +8); caller 0x009415e0; name ours
 0x0089e600 function TONumberFontString_0089e600 # cdecl(src, dst): digits kept, space -> :, - . / -> G H I (any other char spins the original forever; the battle number font); caller 0x008ebb80; name ours

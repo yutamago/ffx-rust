@@ -5734,6 +5734,26 @@ ported! {
     MenuCursorStep_00776110 @ 0x0077_6110 => extern "C" fn menu_cursor_step(result: u32) {
         tolib::bridge::menu_cursor_step(&mut mem(), result, call_sym, |m, f, arg| call_ptr(m, f, &[arg]));
     }
+    /// `MenuRecordCondition_00774a50(record)`.
+    MenuRecordCondition_00774a50 @ 0x0077_4a50 => extern "C" fn menu_record_condition(record: u32) -> u32 {
+        tolib::bridge::menu_record_condition(&mut mem(), record, |m, f, arg| call_ptr(m, f, &[arg]))
+    }
+    /// `TOTextWidth12_0089dfa0(text)`.
+    TOTextWidth12_0089dfa0 @ 0x0089_dfa0 => extern "C" fn to_text_width_12(text: u32) -> u32 {
+        tolib::bridge::text_width_12(&mut mem(), text, call_sym)
+    }
+    /// `TOBtlSetTarget(slot, a, b)`.
+    TOBtlSetTarget @ 0x0089_a860 => extern "C" fn to_btl_set_target(slot: u32, a: u32, b: u32) -> u32 {
+        tolib::bridge::to_btl_set_target(&mut mem(), slot, a, b, call_sym)
+    }
+    /// `TOClearBtlWindow()`.
+    TOClearBtlWindow @ 0x0089_ad90 => extern "C" fn to_clear_btl_window() -> u32 {
+        tolib::bridge::to_clear_btl_window(&mut mem(), call_sym)
+    }
+    /// `TOReset1()`.
+    TOReset1 @ 0x008a_de50 => extern "C" fn to_reset1() -> u32 {
+        tolib::bridge::to_reset1(&mut mem(), call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
