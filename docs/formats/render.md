@@ -673,3 +673,109 @@ as glue too); `0x00651800` (`MultiByteToWideChar` conversion: platform);
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
 not atomic, and loader threads share strings, so it stays original.
+
+Round 12:
+
+- `TextureAnimationInfo_update(this, dt)` (`0x006b4450`, slot 1 of
+  `TextureAnimationInfo_vftable` and `TextureAnimationInfoChar_vftable`):
+  while playing (byte `+0x1c`) the timer `+0x14` grows by `dt`, stored as a
+  float; once it reaches the period `+0x10` (`fcompp; test ah, 0x41; jp`:
+  an ordered `period <= timer`) it restarts at 0 and the frame `+0x18`
+  becomes `(frame + 1 + count) % count` (count `+8`, bit 31 a flag).
+- `TextureAnimationManager_GetByIndexList(this, list, i, absolute)`
+  (`0x006b2140`): index `i` of the list (`+8` count, `+0xc` words, -1 for
+  none), plus the manager's `+0x10` unless `absolute`, picks a word of
+  `+0x60` (`+0x5c` count); 0 out of range.
+- `tex_anim_no_set_old(i, a, v)` (`0x007807c0`): only for `a == 4` and a
+  loaded `g_ChrTexAnim[i]`: `+8 = v`, and each of the eight old-format
+  animations (`0x34` bytes from work `+0x400`) gets `+0xc`, `+0x1c`,
+  `+0x20`, `+0x34` and `+0x38` zeroed (the last two lie in the next
+  animation: the compiler's unrolled loop). Its `eax` (the work buffer, or
+  `i`) is what `tex_anim_no_set` returns; for `a != 4` it is the caller's,
+  which `tex_anim_no_set` (`0x0077e940`) loads with `v` before the call.
+- `texanim_malloc_memory_set(i, delta)` (`0x0077ea10`): `dbgPrintf`
+  "Sa:Movie Malloc Move %x", then entry `i`'s work buffer moves by `delta`.
+- The PRX loader's state `g_PrxState` (`0x00ce83c4`): 1 loading, 2 loading
+  asynchronously (`MagicDLLAsyncLoad`), 3 done, 0 unloaded;
+  `PhyreFIOS_LoadPrxInProgress` (`0x006f9ba0`) is 1 or 2. `0x00ce83c0` is
+  the `HMODULE` (`g_PrxModule`), not a count.
+- `SpdCtrl_Init` (`0x006f72f0`), `CheckAutobtlKey`/`CheckInvincibleKey`
+  (`0x006f7580`/`0x006f76c0`: buttons `0x20000`/`0x200000`),
+  `setLuluODKeyboardInput(left, right)` (`0x00645eb0`: exactly one of
+  `0x8000`/`0x2000`), `SplitScreenStart(kind)` (`0x00638d40`),
+  `graphicMagic0146SetKey(v)` (`0x00641e40`: the scene's byte `+3` and
+  `g_GraphicLevelFilter`), `graphicResetLoadingScreen()` (`0x00642c80`: the
+  loading screen `g_LoadingScreen` in state 3 goes to 1, in state 0 is
+  reset), `ScreenFadeDelegations_processRenderDelegation(d)` (`0x006ae5b0`:
+  unless the post-process's fade colour is locked (`+0x123a0`), `d +0x1c`
+  to `+0x1239c` and the four floats `d +0xc..+0x18` to
+  `+0x1238c..+0x12398`; then `renderScreenFade(d[0], d[1], d[2],
+  g_ScreenFadeByte)`).
+
+Round 13:
+
+- `ShadowManager_AverageCasterValue(this)` (`0x006ccad0`, fastcall, result
+  in `ST0`; `PhyreScene_fieldMapInitialize` and `0x00653600` store it): the
+  shadow manager's 64 caster slots (index `8 * row + col`) are a mesh
+  pointer (`+0xde8`), two flags (`+0xfe8`, `+0x10e8`; a slot counts when
+  both are 1), a kind byte (`+0x2ba8`, 12-byte stride: `'c'` or `'n'`) and a
+  callback word (`+0x2ea8`). A caster's value is the float
+  `mesh +4 ->[0] +4 -> +0x24`, and a mesh with count 0 (`*mesh & 0x7fffffff`)
+  has none. The selected slot (`+0x4010` row, `+0x4014` col, both
+  non-negative or the result is 0) gives its own value when it counts;
+  else the mean of the `'c'` slots, and failing those of the `'n'` slots,
+  where with `+0x4030` set only those the callback `+0x4048` (cdecl, `al`)
+  accepts for their word count. The running sum is stored as a float after
+  each add (`fadd m32; fstp m32`) and the mean as one; 0 when no slot
+  counts.
+- `graphicAddMeshMatrix(list, matrix, id)` (`0x00639170`): over a list of
+  mesh instances (count, array) and each segment of an instance's mesh
+  (`0x6c` bytes, `+0x18` the id), `PhyreScene_PushMeshMatrix(inst,
+  matrix)` (`0x00656780`: the pair appended to the scene's `+0x10d84`
+  array of `0x44`-byte entries): for `id == -1` once per segment, else once
+  at the first matching segment, which ends the walk.
+- `graphicSetTextureAnimationFrameByName(frame, name)` (`0x00643a40`):
+  `TextureAnimationManager_FindMaterialIndex(name)`, then
+  `SetFrame(i, frame, 1)`; when that fails it prints "SceneName.%s,
+  TextureAnimName.%s." to `stdout` (`__iob_func() + 0x20`) with the level
+  name and `name` (the latter is the argument pushed for
+  `PhyreScene_getCurrentLevelName`, which takes none and leaves it on the
+  stack for `fprintf`).
+- `graphicSetColourPair_00643b30(r, g, b, r2, g2, b2, second)`:
+  `PhyreScene_SetColourPair` on the scene with `second != 0`; `eax` is
+  that flag, which the callee leaves.
+
+## Shader parameters of mesh segments (round 14)
+
+`crates/ffx-graphic/src/material.rs`. A mesh instance list is a count
+(bit 31 a flag) and an array of instances. An instance's `+0` is its mesh
+(count; `+4` segments of `0x6c` bytes: `+0` the material index, `+0x14`
+the hidden byte, `+0x18` the segment id) and `+0x10` its materials (count;
+one material inline at `+4`, several through the pointer at `+4`). A
+material's `+0` is its shader and `+4` its parameter buffer (a size word,
+then the data). `ShaderParams_FindByName(shader, name)` (`0x0056cbf0`,
+PhyreEngine's) finds a parameter: `+8` (`u16`) its offset in the buffer,
+`+0xa` (`u16 & 0x1fff`) its size. A value is written only when the offset
+is at least 4 and offset + size is within the size word
+(`ShaderParamBuffer_SetValue`, `0x00638780`, inlined in the callers).
+
+- `graphicCharacterInstanceSetMeshColor(list, _, r, g, b, a)`
+  (`0x0063bb30`) and `graphicCharacterInstanceSetMeshSegmentColor(list, id,
+  r, g, b, a, hide)` (`0x0063bc80`): `MaterialColour` = `(r, g, b, a)` on
+  each (matching) segment's material, then
+  `PhyreScene_ForceTransparent(material, a < 1)` (ordered compare), both
+  only when the shader has the parameter. With `hide`, a segment whose
+  `a` is 0 (either sign) is hidden (`+0x14` = 1) and keeps its colour; a
+  positive `a` first shows it (`+0x14` = 0).
+- `graphicCharacterInstanceSetMeshAlphaThreshold(list)` (`0x0063b9e0`):
+  each segment's `AlphaThreshold` that is not below `0.001` (the `f32` at
+  `0x00b368a4`; a NaN counts as not below) becomes 0. For a parameter
+  outside its buffer the original compares the float at address 0.
+- `PhyreScene_SetLayerMaterialAlpha(scene, layer, alpha)` (`0x006582e0`):
+  with the scene's byte `+0x93c` and word `+0x1128` set, the material of
+  texture-animation layer `layer` gets `MaterialColour` `(1, 1, 1,
+  f32(alpha) * (1/128))` (the `f64` at `0x00b170b8`).
+
+The originals copy `size` bytes from a 16-byte (`AlphaThreshold`: 4-byte)
+local; a larger parameter would copy their stack frame. The ports write
+zeros past the value.

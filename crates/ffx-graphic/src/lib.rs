@@ -11,6 +11,8 @@
 //! - [`managers`]: the post-process, shadow, texture-animation and
 //!   dynamic-geometry managers' accessors;
 //! - [`cache`]: the model cache (`Cache_*`);
+//! - [`material`]: the shader parameters of character mesh segments
+//!   (`MaterialColour`, `AlphaThreshold`);
 //! - [`state`]: the scene state `ffx-render` reads: fog, ambient and
 //!   background colours, the screen fade, the cameras, the 2D layers,
 //!   skeleton matrices and character lighting.
@@ -22,6 +24,7 @@
 pub mod cache;
 pub mod host;
 pub mod managers;
+pub mod material;
 pub mod render_data;
 pub mod scene;
 pub mod state;

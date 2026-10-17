@@ -708,3 +708,148 @@ the pulsing strip in grey, with alpha `trunc(cos(time × 0x00b2c5c8) × 32 +
 
 All of these draw through `graphicDrawUIElement`. The record words the
 originals leave unset (UVs of untextured boxes) are zero in the port.
+
+## Packet buffer kicks
+
+`g_TOPktBuff` (`0x018716c0`) holds the buffer's start, a second address
+and the limit, all set by `TOSetPktBuffAdrs`; the write cursor is
+`g_TOPktCursor` (`0x018716cc`).
+
+- `TODrawKick` (`0x008f5bc0`) sends the buffer once the written part
+  (cursor less start, rounded down to 16 and compared signed) exceeds 0x20
+  bytes: `FlushCache(0)`, `sceGsSyncPath(0, 0)`,
+  `sceDmaSend(g_TOPktDmaChannel, start)`, `sceGsSyncPath(0, 0)`. On PC
+  these PS2 stand-ins are empty (`ret`, or `xor eax, eax; ret`), so the
+  kick does nothing visible; its `eax` is 0 after a send and the rounded
+  size otherwise.
+- `TOCtrlPkt` (`0x008f3a30`) jumps to `TODrawKick` while `g_TOAddPkt` is
+  set and the cursor has reached the limit (unsigned). It leaves `eax` as
+  the caller had it when packets are not added, and no caller reads it.
+
+## 16×12-font texts with the cross-menu pen
+
+`TOAddPktBaseMesFontLAbmap` (`0x008e8fb0`) lays a text out with the same
+pen as `TOMkpCrossExtMesFontLClutTypeRGBA` (`0x025d09a0`: colour bytes,
+x, y, then the kind byte at `+0x1a` and the mode byte at `+0x1b`). It
+starts the packet cursor at its first argument and returns the cursor.
+The position is given as integers and stored as floats.
+
+- A new line puts x back and adds `0x00b313a0` (16.0) to y.
+- Code 7, the `0xa` mode nibbles and the `0xb` button icons work as in
+  the cross-menu form. The icons are drawn at scale `0x00b5edf0` (0.65)
+  at `y + 3.0 + AdjustButtonIconY`, and the pen then moves by the icon
+  width plus 1.
+- Glyphs are skipped when the kind is 1. Otherwise they go through
+  `TOMakePktFont1612Shadow` and `TOMakePktFont1612Font`, with passes 4
+  and 5 when the last argument is positive and 0 and 0 when it is not.
+  The advance uses scale `0x00b5ee10` (0.78).
+- Macros go to `TOAddPktChangeMacro` (`0x008e9b80`, the Switch name).
+  That is `TOAddPktChangeMacro_help` for this font: a kind-1 pen draws the
+  edge and `TOMakePktFont1612Font_00906270` and advances at `0x00c5d784`.
+  Other pens use the shadow and face with pass 0 and advance at 0.78.
+
+The original first calls `graphicFontGetScreenWH` (`0x00640db0`). That
+stores 1920 and 1080 into locals nobody reads, so the port leaves it out.
+
+`TOGetChangeMacroAdvance_008b6bb0(key, code, kind, scale, extra)` adds up
+the width of a macro's text. Nested macros add their own width, code 7
+with 0xe1..=0xef adds its byte less 0xe0, and any other code adds its
+glyph's `TOGetFontAdvance_008fa740(kind, glyph, scale)`. The total is an
+`f32`, rounded after each step. The result is the total less
+`TOGetFontSpaceInPiexl(kind)`, or 0 when there is no macro.
+
+`TOGetMessageWH1612_008b6cb0(window, text, &w, &h, scale, extra, kind,
+flags)` (`0x008b6cb0`, callers `TOMenuDrawYesNoWindow` and `0x008bc100`)
+measures a message text in this font. It returns `&h` in `eax`. The line
+width is an `f32`, rounded after each step:
+
+- Glyphs add `TOGetFontAdvance_008fa740(kind, glyph, scale)`. For a
+  window whose `+0x10` is 0x4000 the glyph first goes through
+  `TOConvAlbhedWord`.
+- Macros add `TOGetChangeMacroAdvance_008b6bb0`.
+- Code 7 with a byte 0x40..0xbf sets the width to `4 × byte - 0x100`.
+  With 0xe1..=0xef it adds its byte less 0xe0. `7 0x38` sets the window's
+  `+0xe` when its `+0x24` is 0.
+- `0xe 0x40` opens a padded run and `0xe 0x41` closes it, adding 5 to a
+  positive width. Kind 3 starts with a run open.
+- `0xb n` adds `TOGetButtonIconWidth(n)`.
+- `0x10 n` (with a window) for n 0x50..0x5f measures the window's counter
+  (`[0x01868a90 + 4 × window] + 0xc`) as `TOIntToMes` text of n - 0x4f
+  digits, adds its width and sets the window's `+0x1e`. Without flag bit 8
+  any n other than 0xff also sets `+0x1e`.
+- A line end (codes 0..3) adds 5 to a positive width inside a run, keeps
+  the widest line and clears the width.
+  - Code 0 ends the text.
+  - Codes 1 and 2 start a line of height 16 and end the text when the
+    flags' low nibble is set.
+  - Code 3 adds 16 to the line height. When the nibble is 3 and the line
+    is now the tallest, it ends the text.
+  - The tallest height is taken at codes 0, 1 and 2, and at code 3 with
+    nibble 3.
+
+`w` is the widest line less `TOGetFontSpaceInPiexl(kind)`, and `h` is
+`(tallest + 2) × scale`.
+
+`TOBtlGetChrName` (`0x008976f0`) is a tail jump to `TOGetSaveChrName`
+(`0x008ac850`).
+
+`TOCountMessageWordsAbove_008b8140(window, text, limit)` counts words the
+way `TOCountMessageWords_008b80b0` does. It stops at the first byte at or
+below `limit` (compared signed) rather than at the first line code.
+
+`TOGetMessageSizePacked_008b7170(text)` measures the text with
+`TOGetMessageWH(0, text, &w, &h, 0, 0)`. It returns the `i16` height
+shifted up 16 bits, OR-ed with the low half of the width's inline
+`fistp qword` truncation. That low half is 0 for NaN or out-of-range
+widths, and a negative width sets the upper bits too.
+
+## Battle message openers (`TODrawAMES*`)
+
+Four openers each do the same steps on a message slot:
+`TOInitMessageSlot_008ada30`, `TOSetWindowKindAndType_008b0000`,
+`TOSetMessageWindowTexts_008b89d0` (the text twice),
+`TOSetMessageWindowPosition`, `TOSetMessageWindowValue(…, 4)`,
+`TOSetMessageWindowActive` and `TOOpenWindowAndMessage`. They return the
+last call's `eax`.
+
+| Function | Kind, type | Position (anchor, x, y) |
+|---|---|---|
+| `TODrawAMES` (`0x0089b140`) | 0, 0 | arguments |
+| `TODrawAMES_CENTERMES` (`0x0089b1d0`) | 1, 0x2402 | 4, 0x100, 0xe0 |
+| `TODrawAMES_EVJIMAKU` (`0x0089b230`) | 1, 0x2002 | 4, 0x100, 0x1c0 |
+| `TODrawAMES_EVJIMAKU_ALBHED` (`0x0089b290`) | 1, 0x6002 | 4, 0x100, 0x1c0 |
+
+On map 0x185, `TODrawAMES` moves a message at (0xfa, 0x96) up to y 0x8c
+when the language is 2..=5. The last three names are inferred from the
+Switch build's five `TODrawAMES*` names; their position and type bits
+fit the names.
+
+`ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`
+(`0x00905890`) right-aligns a number at `x`. It counts the digits of
+`value` (1 for 0, the sign not counted) and gets the width from
+`ToGetBtlEasyDigitWidth`. It then draws with `ToMakeBtlEasyEdgeDigit` from
+`x - width`, rounded to `f32`. The original stores the width in its own
+`value` argument slot.
+
+## Battle help text
+
+`TOBtlSetDirectHelpMes(text)` (`0x00899ec0`) clears the 0x80-byte help
+buffer `g_BtlHelpText` (`0x0133f538`) and copies `text` into it up to its
+terminator. The copy is not bounded. It then measures the buffer with
+`TOGetMessageWH(0, buffer, &g_BtlHelpTextW, &g_BtlHelpTextH, 0, 0)`
+(`0x0133f534`, `0x0133f530`). A null text does nothing.
+
+`TOBtlSetCommandHelpMes(command)` (`0x00899970`) looks the command up with
+`MsGetComData(command & 0xffff, &strings)`; the help text is at
+`strings + u16 [entry + 8]`. It measures the text where it is, then copies
+and measures it again the same way.
+
+`TOMkpBtlDigitRight_008f3300` and `_008f3420` (`ret, value, x, y, alpha`)
+call `ToMakeBtlEasyDigitRight(value, f32(x) + dx, f32(y) + dy, alpha,
+scale, 0.0)` and return `ret`. Each sum is rounded to `f32`; `dx` is a
+double.
+
+| Function | dx | dy | scale |
+|---|---|---|---|
+| `0x008f3300` | 4.0 | -3.0; -2.0 for languages 1..=8 and from 12 | 0.8 |
+| `0x008f3420` | 0.0 | -5.5 (language 0), -6.0 (9), else -5.0 | 0.77 for language 0, else 0.8 |

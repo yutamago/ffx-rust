@@ -36,6 +36,9 @@ ARM_HELPERS = {
     "st0_cdecl": ("crates/ffx-hook/src/ported/chara.rs", "st0_cdecl"),
     "ci_call": ("crates/ffx-hook/src/ported/chara.rs", "ci_call"),
     "map_float_stack": ("crates/ffx-hook/src/ported/map.rs", "call_float"),
+    # ffx-system's `fcall` callbacks; the 0x00901700 port passed
+    # AdjustButtonIconY five words when it took four (NaN: no button icon)
+    "system_fcall": ("crates/ffx-hook/src/ported/system.rs", "fcall"),
 }
 TWO_OPERAND = {"_CIatan2", "_CIfmod", "_CIpow"}
 # The crt_trig helpers' slots (one-operand intrinsics), checked by name.
@@ -106,9 +109,15 @@ class Exe:
             if head:
                 slot = base + int(head.group(1), 16)
                 continue
-            member = re.match(r"^\t[0-9a-f]+\s+\d+\s+(\S+)", line)
-            if member and slot is not None:
-                names[slot] = member.group(1)
+            # binutils 2.42: "\t<vma> <hint> <name>"; 2.46 adds an ordinal
+            # column ("\t<vma> <none> <hint> <name> [bound-to]", "<none>"
+            # for each absent field). One IAT slot per member line in both.
+            fields = line.split()
+            if line.startswith("\t") and len(fields) >= 3 and re.fullmatch(r"[0-9a-f]+", fields[0]) \
+                    and slot is not None:
+                new_layout = len(fields) >= 4 and re.fullmatch(r"<none>|\d+", fields[1]) \
+                    and re.fullmatch(r"<none>|[0-9a-f]+", fields[2])
+                names[slot] = fields[3] if new_layout else fields[2]
                 slot += 4
         return names
 
@@ -314,6 +323,9 @@ def check(repo, exe_path, sizes):
             elif name == "st0_cdecl" or (name == "fcall" and "ffx-chara" in f.parts):
                 if count not in arm_sets["st0_cdecl"]:
                     problems.append(f"{where}: {name} passes {count} words; st0_cdecl takes {sorted(arm_sets['st0_cdecl'])}")
+            elif name == "fcall" and "ffx-system" in f.parts:
+                if count not in arm_sets["system_fcall"]:
+                    problems.append(f"{where}: fcall passes {count} words; system.rs fcall takes {sorted(arm_sets['system_fcall'])}")
             elif name == "call_n":
                 cap = 12
             elif name == "call_float" and "ffx-script" in f.parts:

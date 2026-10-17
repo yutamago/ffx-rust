@@ -996,8 +996,8 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   `0x008c6700`.
 - Not ported: `0x0092eba0` (stores five arguments in `0x025d5c18..2c`
   and sets `0x025d5c34`, which `0x009304e0` waits on; no name yet).
-  `0x0083bdb0` is a `Sg_Mem` pool helper (system). The `Sqs*` functions
-  stay with the sound agent.
+  `0x0083bdb0` is a `Sg_Mem` pool helper and the `Sqs*` functions are
+  the sound driver's; both are placed in `map` and ported in round 33.
 
 ## Effect requests, finalisers and the sphere grid's menus (round 21)
 
@@ -1387,6 +1387,310 @@ locals (0xc0 bytes) are `M`'s copy, a work matrix `W`, `d`, `v0` and
     the fade is 0 when that range is not positive.
 - Every stored step is an `f32`. A NaN passes the `1 - x` steps (the
   `C0`/`C2` tests), not the zero.
+
+## The Sqs IOP calls, SE wrappers and ADPCM decoder; Sg_MemSetFree (round 33)
+
+The `Sqs*` layer sits between `Snd*` (`crates/ffx-sound`) and the PC's
+stand-ins for the PS2 IOP: `FFXSifCheckStatRpc` and `FFXSifCallRpc`
+(`0x00a44760`/`0x00a44750`) return 0, `sceSifDmaStat` (`0x00a44770`)
+returns -1, `FlushCache` (`0x0062f4c0`) is a bare `ret`. The ports call
+them (and the FMOD glue `iSfx*`, `0x0067a2f0..`) as the originals do, and
+return the `eax` the callee leaves (most are tail calls or end right after
+the call).
+
+- RPC: `Sqs_CallRpc(cmd)` (`0x0081cbd0`) waits until the sound client
+  (`0x012f4e20`) is idle, then calls it (`mode` 0, 0x40 bytes from
+  `*0x00c49458`, 0x400 bytes back into `*0x00c49460`, both pointers
+  reread on each try) until the result is not negative.
+  `Sqs_CallRpc2(cmd, _, end, arg)` (`0x0081cc20`, name ours) is the same
+  on the second client (`0x012f4e48`, `*0x00c4945c`/`*0x00c49464`, 0x40
+  bytes each way) and passes `end` and `arg` on.
+- `SqsIopCommandSend()` (`0x0081d5f0`): the command queue is
+  `0x00c49468` (top) .. `0x00c4946c` (next), 32-byte commands; it sends
+  `next - top` rounded down to 32 from `0x012f4a00` with a 0x40-byte reply
+  at `0x012f4f00`, then sets `next = top`. Four reply histories of four
+  words at `0x012f4f48` shift down one word each and get the reply's
+  `+0x10`, `+0x18`, `+0x30` and `+0x34` last. Returns `*0x012f4150`.
+- `SqsSifDmaState(_, wait)` (`0x0081eef0`): `sceSifDmaStat(*0x012f4ed0)`,
+  repeated while `wait` and the result is not negative (a delay loop on
+  registers between tries); returns the last result.
+- SE starts: `SqsSePlay` (`0x0081e4e0`, `iSfxStart`) and `SqsSeForcePlay`
+  (`0x0081e410`, `iSfxForceStart`), both `(kind, id, pan, volume)`:
+  the SE handle `0x012f4e7c` is incremented (0 becomes 1), the glue
+  called with `(id & 0x7fffffff, volume & 0x7f, pan & 0x7f)`, bit 0 of
+  `0x012f4f64` (the second reply history's newest word) set; returns the
+  handle, read after the call.
+- The others clear bit 31 of the id and mask the level with `0x7f`:
+
+  | Function | Address | Glue call |
+  |---|---|---|
+  | `SqsSeStop(_, id)` | `0x0081e7c0` | `iSfxStop(id)` |
+  | `SqsSePanDirect(_, id, p)` | `0x0081e460` | `iSfxSetPan(id, p)` |
+  | `SqsSeVolumeDirect(_, id, v)` | `0x0081e820` | `iSfxSetVolume(id, v)` |
+  | `SqsSePanTranslate(_, id, n, p)` | `0x0081e480` | `iSfxSetPanTranslate(id, p, n)` |
+  | `SqsSeVolumeTranslate(_, id, n, v)` | `0x0081e860` | `iSfxSetVolumeTranslate(id, v, n)` |
+  | `SqsSeVolumeFadeOut(_, id, n)` | `0x0081e840` | `iSfxSetVolumeTranslate(id, 0, n)` |
+  | `SqsSeBlockPlaying(id)` | `0x0081e3e0` | `iSfxIsPlaying(id)` |
+  | `SqsSeSeparatePlaying(id)` | `0x0081e7a0` | `iSfxIsPlaying(id)` |
+
+  (`n` is passed unmasked.)
+- `SqsSeSeparateClear(id)` (`0x0081e5d0`): -1 writes -1 to the send
+  buffer's first word and calls `iSfxStopAllNonBlockingSound(buffer)`;
+  any other id goes to `iSfxStopNonBlockingSound(id)` as given.
+  `SqsSeSeparateMaskClear(m0..m7)` (`0x0081e750`) writes the eight words
+  and a -1 after them to the send buffer, calls
+  `iSfxStopAllNonBlockingSound(buffer)` and `iSfxUnloadAllData()`.
+- `SqsBattleWaveDataSend(wave)` (`0x0081cf90`): a `"WD"` file (`u16`
+  0x4457) goes to `iSfxLoadData(i16 +2, 0)`; anything else returns
+  `wave` itself (`eax` still holds it).
+- `SqsBattleStreamingStart(_, a, b)` (`0x0081cf40`): without a magic file
+  (`g_MagicFile_MagicId` -1) or a stream id (`0x00c49498` -1) it prints
+  its error to stderr (`fprintf(__iob_func() + 0x40, msg)`, through the
+  import slots); else `iSfxPlayBattleStreaming(id, b, a)`.
+- `SqsCmdSetC4C6(ctx, cmd)` (`0x0081c260`, name ours, a handler of the
+  IOP command table like `SqsCmdSetC2`): the command's second `u16` to
+  `+0xc4` of the record at `ctx +0x220` when bit 12 of `u16 ctx +0x21a` is
+  set, else to `+0xc6`; returns `cmd + 4`.
+- `Sqs_DecodeAdpcm(src, dst)` (`0x0081cc70`, name ours; from
+  `SqsStraightStreamingDataSend`) decodes PS-ADPCM, stereo in 512-byte
+  halves: 25 rounds of 256 left samples, then 256 right ones (`i16`, 0x6400
+  bytes in all), each half from 16 blocks of 9 bytes (7200 bytes in all).
+  It returns `dst + 0x6400`.
+  - A block's header byte gives the filter (high nibble, indexing the
+    `i32` pairs at `0x00c49470` unchecked, so 5..15 read what follows) and
+    the shift (low nibble).
+  - Each of its 8 data bytes gives two samples, low nibble first:
+    `d = i16(nibble << 12) >> shift`,
+    `s = ((c0 * s1 + c1 * s2) >> 6) + d` (wrapping `i32`, arithmetic
+    shift), then `s2 = s1`, `s1 = s`; the sample is `s`'s low 16 bits.
+  - The history (`s1`, `s2`) is kept per channel at `0x012f4f90` (left)
+    and `0x012f4f98` (right) across calls.
+- `Sg_MemSetFree(block)` (`0x0083bdb0`, name ours; from
+  `Sg_MemCreateFree`, `Sg_MemMoveWork` and `0x0083b720`) marks a block
+  free:
+  - In the block's header, `+8` becomes 0 and `+0xc` keeps only its heap
+    bits (27..28).
+  - That heap's record (`0x01301968`, 0x18 bytes each) gets byte `+0` set
+    to 1, and `+0x14`, the lowest freed block, lowered to the block
+    (unsigned compare).
+  - It returns three times the heap index, the `eax` its indexing leaves.
+- Not ported:
+  - `SqsSePitchDirect` (`0x0081e4a0`) and `SqsSePitchTranslate`
+    (`0x0081e4c0`) only print "function is not implemented yet" to stderr
+    (debug).
+  - `0x00916130` sets byte 1 of each of 0x48 x 0x100 words from `+0x70`
+    (stride 0x460 per row) to an uninitialised stack local
+    (`[ebp-0x14]`), so its result depends on what an earlier call left on
+    the stack.
+
+## 2D lines, circles and triangles (rounds 41-43)
+
+`rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
+vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
+through the x87 stack, so a signalling NaN turns quiet; 256.0 comes from
+`0x00b501c0`. It then calls `rcPrimDraw2D(0x41, verts, 2, colour)`
+(`0x00925f80`, the renderer), with `cgraphicSetNowUIType(2)` before it when
+`ui` is set and `cgraphicSetNowUIType(0)` after. It returns that last
+call's `eax`, which the stack-cookie check leaves alone.
+
+`rcPrimCircleLine(x, y, r, colour, ui)` (`0x00925ea0`) hands the renderer
+a circle as 65 vertices on its stack:
+- the box `(x - r, y - k)` and `(x + r, y + k)`, depth 256.0 and `w` 0;
+- then 63 zero vertices.
+
+Here `k = r * 1.1666666 * 416 / 448` (constants at `0x00b67698`,
+`0x00b41d30`, `0x00b50210`, each step in `f64` at 53 bits), the height
+corrected for the screen's aspect. It calls `rcPrimDraw2D(0x42, verts,
+0x41, colour)` with the same UI type calls as `rcPrimLine`.
+
+`rcPrimTri(x, y, r, angle, colour, ui)` (`0x009270c0`) draws the
+triangle inscribed in that circle:
+- Its corners sit at `angle` and a third of a turn on either side.
+- `i = ftol(angle * A / B)` (`A`, `B` the `f64` at `0x00b51558` and
+  `0x00b39378`) indexes the `ppp` sine table (`0x00c44bf0`, 4096 `f32`)
+  as `(i + o) >> 4 & 0xfff`.
+- Corner `k` is `(x + t(a) r, y + t(b) r * 1.1666666 * 416 / 448)` with
+  `(a, b)` = (0x4000, 0x8000), (0xa38e, 0xe38e), (0xdc71, 0x11c71) (the
+  cosine and sine of each).
+- Each step runs at 53 bits in the original's operand order and is
+  rounded to `f32` at the store.
+- Depths are 256.0 for the first corner and the `f32` at `0x00b664d8` for
+  the others; `w` is 0.
+- It is drawn with `rcPrimDraw2D(0x4c, verts, 3, colour)` and the same UI
+  type calls.
+
+## Separate SE wave data (round 40)
+
+`SqsSeSeparateDataSend(data, size)` (`0x0081e600`) loads the waves a
+block of SE data names:
+- A size outside `1..=0x10000` only reports (`dbgPrintf`, a bare `ret`,
+  when bit 0 of `0x012f4148` is set) and returns `size - 1`.
+- While more than 16 bytes are left, it reads a chunk. A chunk starts with
+  the words `0x65536553` (the bytes `"SeSe"`) and
+  `0x20202070`, and has its length at `+0xc` (positive, a multiple of 4).
+  Anything else ends the walk.
+- A chunk's `u16` id at `+0x11` (unaligned) joins the list at
+  `0x012fb3c0` unless already there, up to 256 ids. Reaching 256 prints
+  "Too many wave datat to be loaded at the same time!!" between red and
+  reset escapes to stderr and flushes it.
+- Each listed id then goes to `iSfxLoadData(id, 0)`, and the queue is sent
+  (a tail call to `SqsIopCommandSend`, whose result it returns).
+
+`SndStandbyShoutStream(data)` (`0x0081e3b0`, round 44) loads one shout
+wave: when the length at `+0xc` is in `1..=0x10000` (signed) it calls
+`iSfxLoadData(i16 +8, 0)` and returns that call's result. Otherwise it
+returns the length, which is what `eax` still holds.
+
+## The Sqs IOP command builders (round 39)
+
+The command builders append one 32-byte command (`op`, then up to three
+arguments, zeros after) at `g_SqsCmdNext` (`0x00c4946c`) and move it on
+by 0x20. When the command would end past `0x012f4e00`, they first send
+the queue (`SqsIopCommandSend`), with a `dbgPrintf` (`0x00b58d28`) when bit
+0 of `0x012f4148` is set. The `eax` a builder leaves is its argument when
+it reloads it, else the send's result after a send, else the old end
+plus 0x20; the ports return the same.
+
+| Function | Address | Command | Also | Returns |
+|---|---|---|---|---|
+| `SqsAllVoiceTerminate()` | `0x0081ce70` | `(0)` | | queue |
+| `SqsMusicDataRead(a)` | `0x0081d820` | `(0x15, a)` | `SqsReportStandby` before, `SqsIopCommandSend` after | the send |
+| `SqsSetCycleMode(a)` | `0x0081e900` | `(4, a)` | | `a` |
+| `SqsSetPlayMode(m)` | `0x0081ea00` | `(3, m)` | `m` 3 and up (signed) becomes 0, kept in `0x012f4144` | queue |
+| `SqsSetReverbPlaySwitch(a)` | `0x0081ec20` | `(0xc, a)` | | `a` |
+| `SqsShoutStreamingStart(a)` | `0x0081ee20` | `(0x37, a, 0x40, 0x7f)` | `0x012f4f84` and `0x012f4e94` = 1 | `a` |
+| `SqsSetStraightStreamAreaSize(a)` | `0x0081ef50` | `(5, a)` | | `a` |
+| `SqsStraightStreamingStart()` | `0x0081f6c0` | `(0x38, *0x012f4e70)` | `0x012f4e90` = 0, `0x012f4edc` = 1, `0x012f4ef8` = 0 | queue |
+| `SqsStraightStreamingStop()` | `0x0081f770` | `(0x33, 0)` | `0x012f4efc` = 3, `0x012f4edc` = 0 | queue |
+| `SqsStraightStreamingVolumeDirect(v)` | `0x0081f800` | `(0x3e, v & 0x7f)` | | queue |
+| `SqsStraightStreamingVolumeTranslate(n, v)` | `0x0081f880` | `(0x3f, n, v & 0x7f)` | | `n` |
+
+("queue": the send's result or the old end plus 0x20.) The remaining
+builders in `0x0081d4a0..0x0081fc30` are dead.
+
+`SqsInitWaveInfo(src, _, a)` (`0x0081d3f0`) does nothing once `0x012f4140`
+is set; its `eax` is then the caller's. Otherwise a source goes by SIF DMA
+(0x5000 bytes to `*0x012f4f88`: the record at `0x012f4e00`, id 0, then
+`SqsSifDmaState(1, 1)`), and `a` to the send buffer for `Sqs_CallRpc(4)`.
+Neither caller reads `eax`, so its shim is void.
+
+## VU0 sums and differences (rounds 38, 45)
+
+`rcVu0Sub(a, b, c)` (`0x0091f740`, name ours; from `rcbgPSimAddNail`
+and `rcbgPSimCreate`) and the identical `rcVu0Sub_0092d720` (from
+`0x0092dad0`, `0x0092e020`) compute `a.xyz = b.xyz - c.xyz` through the
+emulated VU0 registers:
+- `b` is copied to `0x00c8f980` and `c` to `0x00c8f970`; both keep the
+  copies afterwards.
+- `Vec3SubScalars` subtracts each component as an `f32` (the original
+  pushes `c`'s four words as its scalar arguments by overwriting the
+  stack words of the two copies' arguments) and restores `vf00`.
+- The register goes to `a`, so `a.w` is `b.w`. The function returns that
+  last word.
+
+Thirteen more copies of the same 95-byte template differ only in the
+step they call (round 45, names ours):
+- `Vec3AddScalars` (`xyz` sums, `vf00` left alone): `rcVu0Add`
+  (`0x0091f650`) and `rcVu0Add_<address>` at `0x00924770`, `0x009285a0`,
+  `0x00928df0`, `0x00929440`, `0x009295e0`, `0x0092f790`.
+- `Vec3SubScalars`: `rcVu0Sub_<address>` at `0x00924860`, `0x00928ee0`,
+  `0x00929300`.
+- `Vec4AddScalars` (all four, no `vf00`): `rcVu0Add4` (`0x00924fc0`),
+  `rcVu0Add4_0092f880`.
+- `Vec4SubScalars` (all four, `vf00` restored): `rcVu0Sub4`
+  (`0x009250d0`).
+
+The 4-component ones leave `a.w = b.w ± c.w`.
+
+## The map's ID map pages and yiReset (round 37)
+
+- `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,
+  `0x019138a8`) section `page + 2`, an ID (shade) map, to
+  `Sg_IdFixupAndSet` (through the thunk `0x00845000`) when
+  there is a map file and it has that section (`yiMapGetSection`: `MAP1`
+  data, a non-zero offset). `yiSetPreBgPage(page)` (`0x0090a6f0`) does the
+  same and then, only when the section was there, calls
+  `Yn_PreBgChangeStage(page)`. Both return 0.
+- `yiReset()` (`0x00909e60`) runs `yiResetObj`, `sceGsSyncPath(0, 0)` and
+  `yiRender_resettex(&g_YiRender)`. It then sets both map ids
+  (`0x01934edc`, `0x01934ee0`) to -1 and returns `Sg_IdFixupAndSet(0)`
+  (no ID map).
+
+## Sqs standby requests and info paths (round 36)
+
+- Standby requests count up in `0x012f414c`; `0x012f4150` (what
+  `SqsIopCommandSend` returns) holds the count answered.
+  - `SqsReportStandby()` (`0x0081e260`, name ours) first sends the queued
+    IOP commands when requests are unanswered and the queue is not empty
+    (`next > top`, unsigned).
+  - It then counts one more request, writes `(1, count)` to the second
+    client's send buffer and calls `Sqs_CallRpc2(0, _, 0x0081fcb0, 0)`, returning its result.
+- The request's end function (`0x0081fcb0`; not a function in the
+  Ghidra dump, so not ported) copies the first word of the second client's
+  receive buffer to `0x012f4150` and clears bit 0 of `0x012f4e74`.
+  Nothing calls it on PC, where `FFXSifCallRpc` is a stub.
+- `SqsReportStandbyStatus(flush)` (`0x0081e2d0`) sends the queue the same
+  way when `flush` is set. It returns the requests unanswered (sent less
+  answered, wrapping).
+- `SqsDataSendingCompleted(wait)` (`0x0081cfd0`): 1 when
+  `SqsSifDmaState(1, wait)` is not negative, else 0.
+- Three functions copy a path (its NUL included) to the send buffer and
+  call `Sqs_CallRpc` with a command, returning its result:
+  - `SqsInitMusicInfoHdd(path)` (`0x0081d3c0`): command 7.
+  - `SqsInitWaveInfoHdd(path)` (`0x0081d470`): command 6.
+  - `SqsSetProjectBase(path)` (`0x0081eab0`): command 2, and it returns the
+    word a non-zero result points at (0 on PC).
+
+## The poly buffer's VIF interpreter (round 35)
+
+`yiPolyBufExecVif(buf, codes, words)` (`0x009113a0`, name ours; eight
+calls in the yi renderer) runs VIF codes on the poly buffer until `words`
+words are used (unsigned compare after each code) and returns the words
+used; 0 words does nothing. The command is bits 24..30; any with bits 5
+and 6 both set is an `UNPACK` (`yiPolyBufUnpack`, with the code word
+copied to the interpreter's stack, so its row count is the code's byte
+`+2`). The registers follow the VU memory:
+
+| Command | Effect |
+|---|---|
+| 1 `STCYCL` | byte `+0x4084` = bits 8..15 (`WL`), `+0x4085` = bits 0..7 (`CL`) |
+| 2 `OFFSET` | `+0x4078` = bits 0..9; bit 7 of `+0x4000` (double buffer) cleared; `TOPS` (`+0x4070`) = `BASE` (`+0x4074`) |
+| 3 `BASE` | `BASE` = `TOPS` = bits 0..9; the bit cleared |
+| 4 `ITOP` | `+0x4070` = bits 0..9 (the same word as `TOPS`) |
+| 5 `STMOD` | `+0x407c` = bits 0..1 |
+| 7 `MARK` | `+0x4080` = bits 0..15 |
+| `0x14`, `0x15`, `0x17` | `+0x406c` = `TOPS`; with the bit set `TOPS = BASE` and it clears, else `TOPS = BASE + OFFSET` and it sets; the run ends |
+| `0x20` `STMASK` | the next word to `+0x4068` |
+| `0x30` `STROW`, `0x31` `STCOL` | the next four words to `+0x4048` / `+0x4058` |
+| `0x4a` `MPG` | skips two words per unit of bits 16..23 |
+| `0x50`, `0x51` `DIRECT` | skips four words per unit of bits 0..15 |
+
+Every other command (`0x16` too) is a
+one-word no-op.
+
+## The poly buffer's VIF unpack (round 34)
+
+The yi poly buffer (`yiPolyBufClear`, `0x00911970`) is 0x4000 bytes of
+emulated VU memory followed by VIF registers at `+0x4000..+0x4084`
+(`+0x4070` `TOPS`). Its VIF code interpreter (`0x009113a0`) hands
+`UNPACK` codes to `yiPolyBufUnpack(buf, src, code)` (`0x00911620`, name
+ours), which returns the number of source words it read:
+
+- The destination row is `code & 0x3ff`, plus `TOPS` when bit 15 is set;
+  each row is 16 bytes. The row count is the byte at `code + 2`, reread
+  for each row.
+- Bits 24..25 give the element size and bits 26..27 the elements per row
+  less one:
+  - 32 bits: words copied.
+  - 16 and 8 bits: taken unsigned (bit 14, `USN`, is ignored) from the low
+    end of each source word up; a partly used word carries over to the
+    next row.
+  - 3 (`V4-5`, the count ignored): one 16-bit element per row, giving
+    `(v & 0x1f) << 3`, `(v >> 2) & 0xf8`, `(v >> 7) & 0xf8` and
+    `(v >> 8) & 0x80`.
+- With one element (`S-32`, `S-16`, `S-8`) the value fills all four
+  words of the row. Otherwise only the first `count` words are written.
+- The address is not wrapped to the buffer.
 
 ## Floats
 

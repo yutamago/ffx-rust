@@ -5339,6 +5339,21 @@ pub mod bridge {
         })
     }
 
+    /// `MenuItem_CursorCount()` (`0x008c5030`, own name): the entries of
+    /// [`menu_item_cursor_table`] (4 bytes each) before the first whose
+    /// `u16` is 0.
+    pub fn menu_item_cursor_count<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = menu_item_cursor_table(mem, call);
+        let mut n = 0u32;
+        while mem.read::<u16>(table.wrapping_add(4 * n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
     /// `MenuItem_CellTable()` (`0x008c4f80`, own name): with an item-menu
     /// target `t` (`0x0186a258` >= 0) entry `t` of `0x00c5a0d8` (Japanese,
     /// `MsGetSaveConfigEnglish` asked but unused) or `0x00c5a120`; without
@@ -5454,6 +5469,617 @@ pub mod bridge {
         let f = mem.rebase(0x008a_ab00);
         call(mem, f, &[w]);
         w
+    }
+
+    /// `MenuShop_SellPrice(id)` (`0x008db400`, own name): the item's record
+    /// (`TkMn2GetExcelData(id & 0xfff, [0x0186ac28])`) first word through
+    /// `AbmapQuarterOrOne(g_TkMenuWShopList, price)` (a quarter, or 1).
+    pub fn menu_shop_sell_price<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(mem.rebase(0x0186_ac28));
+        let excel = mem.rebase(0x008c_1af0);
+        let rec = call(mem, excel, &[id & 0xfff, table]);
+        let price: u32 = mem.read(rec);
+        let list: u32 = mem.read(mem.rebase(0x0186_ac20));
+        let quarter = mem.rebase(0x00a5_cee0);
+        call(mem, quarter, &[list, price])
+    }
+
+    /// `TkMenuStopScene(scene, group)` (`0x00a7c8a0`): `MenuScene_ResetGroup
+    /// (scene, group, 0)`; the entry it returns (if any) has the top two
+    /// bits of its `+4` word cleared. Returns the entry.
+    pub fn tk_menu_stop_scene<M: Mem>(
+        mem: &mut M,
+        scene: u32,
+        group: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let reset = mem.rebase(0x00a7_ba70);
+        let e = call(mem, reset, &[scene, group, 0]);
+        if e != 0 {
+            let v = mem.read::<u32>(e.wrapping_add(4)) & 0x3fff_ffff;
+            mem.write(e.wrapping_add(4), v);
+        }
+        e
+    }
+
+    /// `MenuKaizou_WeaponByte4(w)` (`0x008d56f0`, own name): the weapon at
+    /// the window's cursor (`i16 +0x48`) in the list at `[0x0186aa38]`
+    /// (`MsGetSaveWeapon`, its out pointer `local`): -1 when its byte `+2`
+    /// is 0, else its byte `+4`.
+    pub fn menu_kaizou_weapon_byte4<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+        let list: u32 = mem.read(mem.rebase(0x0186_aa38));
+        let id: u16 = mem.read(list.wrapping_add(k.wrapping_mul(2)));
+        let get = mem.rebase(0x007a_bbd0);
+        let weapon = call(mem, get, &[u32::from(id), local]);
+        if mem.read::<u8>(weapon.wrapping_add(2)) == 0 {
+            u32::MAX
+        } else {
+            u32::from(mem.read::<u8>(weapon.wrapping_add(4)))
+        }
+    }
+
+    /// `MenuMain_BusyMask()` (`0x008aa610`, own name): the active main menus
+    /// ([`MENU_MAIN_ACTIVE_MASK`]) with bit 31 for a CD read in progress
+    /// (`TkCdReadSync(1)`); with none of those, bit 31 alone when the
+    /// script's callback queue is busy (`AtelIsCallbackQue()` = 1).
+    pub fn menu_main_busy_mask<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut mask = MENU_MAIN_ACTIVE_MASK.get(mem);
+        let sync = mem.rebase(0x0088_d1c0);
+        if call(mem, sync, &[1]) != 0 {
+            mask |= 0x8000_0000;
+        }
+        if mask == 0 {
+            let que = mem.rebase(0x0087_5180);
+            if call(mem, que, &[]) == 1 {
+                return 0x8000_0000;
+            }
+        }
+        mask
+    }
+
+    /// `MenuWShop_OpenSubWindow4()` (`0x008d83e0`, own name): a window from
+    /// `TkMenuMainAllocWindow()` with callbacks `+0xc` `0x008d7a30`, `+0x10`
+    /// `0x008d7f50`, `+0x14` `0x008d8510`, layer 1, kept in `0x0186ab00`
+    /// (what `MenuWShop_CloseSubWindow4` closes) and registered; returned.
+    pub fn menu_wshop_open_sub_window4<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        for (o, f) in [
+            (0xcu32, 0x008d_7a30u32),
+            (0x10, 0x008d_7f50),
+            (0x14, 0x008d_8510),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 1u8);
+        let keep = mem.rebase(0x0186_ab00);
+        mem.write(keep, w);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuStatus_OpenWindow(a, index, b, c)` (`0x008d3140`, own name): a
+    /// window from `TkMenuMainAllocWindow()` kept in [`STATUS_WINDOWS`]
+    /// `[index]`, with the status window's callbacks (`+8` `0x008d2670`,
+    /// `+0xc` `TkMn2WindowStepFade`, `+0x10` `0x008d2790`, `+0x14`
+    /// `TkMenuWindowFadedOut`), layer `index + 3` (`+0x3e`), `c` at `+0x5c`,
+    /// `a` at `+0x64`, `b` at `+0x58`, `index` at `+0x60`, the kind at
+    /// `+0x68` (index 0..=4 → 1, 2, 3, 5, 4; else 0) and the fade step
+    /// `0xaa` (`+0x54`); registered (`TkMenuMainRegistWindow`) and returned.
+    pub fn menu_status_open_window<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let index = args[1];
+        let kind: u32 = match index {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+            3 => 5,
+            4 => 4,
+            _ => 0,
+        };
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        let slot = STATUS_WINDOWS
+            .ptr(mem)
+            .addr
+            .wrapping_add(index.wrapping_mul(4));
+        mem.write(slot, w);
+        for (o, f) in [
+            (8u32, 0x008d_2670u32),
+            (0xc, 0x008d_26d0),
+            (0x10, 0x008d_2790),
+            (0x14, 0x008d_3200),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), index.to_le_bytes()[0].wrapping_add(3));
+        mem.write(w.wrapping_add(0x5c), args[3]);
+        mem.write(w.wrapping_add(0x64), args[0]);
+        mem.write(w.wrapping_add(0x58), args[2]);
+        mem.write(w.wrapping_add(0x60), index);
+        mem.write(w.wrapping_add(0x68), kind);
+        mem.write(w.wrapping_add(0x54), 0xaau16);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuItem_KeysMatch(t)` (`0x008c5390`, own name): whether the item
+    /// keys [`menu_parse_item_keys`] left in [`ITEM_KEYS`] spell target `t`'s
+    /// key string (`TOMenuGetNameMes` of the `u16` at `0x00c5a0d8 + 4t`):
+    /// token by token, each 4-byte entry its bytes then a 0 (a value in
+    /// 6..=0x2f with its argument byte; kind 4 with its byte, and for a byte
+    /// up to 0x2f one more), until the string's end meets an entry starting
+    /// with 0. 0 for a negative `t` or an empty string.
+    pub fn menu_item_keys_match<M: Mem>(
+        mem: &mut M,
+        t: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if t < 0 {
+            return 0;
+        }
+        let id: u16 = mem.read(
+            mem.rebase(0x00c5_a0d8)
+                .wrapping_add(t.cast_unsigned().wrapping_mul(4)),
+        );
+        let name_mes = mem.rebase(0x008b_edd0);
+        let mut at = call(mem, name_mes, &[u32::from(id)]);
+        if mem.read::<u8>(at) == 0 {
+            return 0;
+        }
+        let mut key = mem.rebase(ITEM_KEYS);
+        let mut next = |mem: &M| {
+            let v = mem.read::<u8>(at);
+            at = at.wrapping_add(1);
+            v
+        };
+        loop {
+            let b = next(mem);
+            let entry: [u8; 4] = mem.read(key);
+            // the entry's expected bytes, ending with its 0
+            let (want, n) = if b == 0 {
+                return u32::from(entry[0] == 0);
+            } else if b.wrapping_sub(6) <= 0x29 {
+                ([b, next(mem), 0, 0], 3)
+            } else if b == 4 {
+                let c = next(mem);
+                if c <= 0x2f {
+                    ([4, c, next(mem), 0], 4)
+                } else {
+                    ([4, c, 0, 0], 3)
+                }
+            } else {
+                ([b, 0, 0, 0], 2)
+            };
+            if entry[..n] != want[..n] {
+                return 0;
+            }
+            key = key.wrapping_add(4);
+        }
+    }
+
+    /// `MenuItem_OpenListWindow(kind)` (`0x008c9140`, own name): a window from
+    /// `TkMenuMainAllocWindow()` with the item list's callbacks (`+0xc`
+    /// `0x008c6dd0`, `+0x10` `0x008c7750`, `+0x14` `0x008c93e0`), `kind` at
+    /// `+0x43`, layer 1, `+0x42` = 1 and the cursor words cleared; then by
+    /// kind: 0 (items) and 1 (key items) half the count (rounded up,
+    /// `TOAmapGetItemListMax()` or `TkMenuGetImportantCounter()`) as rows
+    /// (`+0x30`) and the count at `+0x94`, columns 3 or 0 (`+0x36`), 10 rows
+    /// shown at `0x32001d`; 2 (the usable list) `MenuItem_UsableByte` as its
+    /// check, 3 columns, 9 rows at `0x50001d`. Kinds 0 and 2 clear
+    /// `0x0186a3ac`. Registered (`TkMenuMainRegistWindow`) and returned.
+    pub fn menu_item_open_list_window<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        let at = |o: u32| w.wrapping_add(o);
+        mem.write(at(0x48), 0u16);
+        mem.write(at(0x32), 0u32);
+        mem.write(at(0x43), kind.to_le_bytes()[0]);
+        for (o, f) in [
+            (0xcu32, 0x008c_6dd0u32),
+            (0x10, 0x008c_7750),
+            (0x14, 0x008c_93e0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(at(o), handler);
+        }
+        mem.write(at(0x3e), 1u16);
+        mem.write(at(0x42), 1u8);
+        mem.write(at(0x58), 0u32);
+        mem.write(at(0x5c), 0u32);
+        let page = mem.rebase(0x0186_a3ac);
+        let list = match kind {
+            0 => {
+                mem.write(page, 0u16);
+                Some((0x008c_8c30, 3u8))
+            }
+            1 => {
+                mem.write(at(0x42), 1u8);
+                Some((0x008c_8a10, 0))
+            }
+            2 => {
+                let usable = mem.rebase(0x008c_6a30);
+                mem.write(at(0x1c), usable);
+                mem.write(at(0x36), 3u8);
+                mem.write(at(0x3a), 9u16);
+                mem.write(at(0x4a), 0x0050_001du32);
+                mem.write(at(0x42), 1u8);
+                mem.write(page, 0u16);
+                None
+            }
+            _ => None,
+        };
+        if let Some((count, columns)) = list {
+            let count = mem.rebase(count);
+            let n = call(mem, count, &[]).cast_signed();
+            // the rows rounded up (toward zero for a negative count), as a word
+            let rows = (n.wrapping_add(1) / 2).to_le_bytes();
+            mem.write(at(0x30), u16::from_le_bytes([rows[0], rows[1]]));
+            let n = call(mem, count, &[]);
+            mem.write(at(0x94), n);
+            mem.write(at(0x36), columns);
+            mem.write(at(0x4a), 0x0032_001du32);
+            mem.write(at(0x3a), 10u16);
+        }
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuWShop_CanAfford(e)` (`0x008d85d0`, own name): 0 while
+    /// `0x0186ab14` is 0, else whether [`menu_shop_weapon_price`]`(e)` is at
+    /// most `MsGetGIL()` (signed).
+    pub fn menu_wshop_can_afford<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(mem.rebase(0x0186_ab14)) == 0 {
+            return 0;
+        }
+        let price = menu_shop_weapon_price(mem, e, call);
+        let gil = mem.rebase(0x0078_4e80);
+        u32::from(price <= call(mem, gil, &[]).cast_signed())
+    }
+
+    /// `MenuShop_CanBuy(id)` (`0x008dab30`, own name): whether the party
+    /// holds fewer than 99 (`MsGetSaveItemNum`, signed) and
+    /// [`menu_shop_price`]`(id)` is at most `MsGetGIL()`.
+    pub fn menu_shop_can_buy<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let price = menu_shop_price(mem, id, call);
+        let held = mem.rebase(0x0079_04b0);
+        if call(mem, held, &[id]).cast_signed() >= 99 {
+            return 0;
+        }
+        let gil = mem.rebase(0x0078_4e80);
+        u32::from(price <= call(mem, gil, &[]).cast_signed())
+    }
+
+    /// `MenuNameEntry_OpenCharWindow(chr)` (`0x008c43f0`, own name): a window
+    /// from `TkMenuMainAllocWindow()` with the name entry's character
+    /// callbacks (`+8` `0x008c3530`, `+0xc` `0x008c3ce0`, `+0x10`
+    /// `0x008c3ec0`, `+0x14` `0x008c44b0`), layer 3, `chr` at `+0x58`;
+    /// registered (`TkMenuMainRegistWindow`); then `chr` into `0x023cc3c4`,
+    /// `0x023cc3c0`, `0x023cc3bc` and `0x023cc3c8` = 0. Returns the window.
+    pub fn menu_name_entry_open_char_window<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        for (o, f) in [
+            (8u32, 0x008c_3530u32),
+            (0xc, 0x008c_3ce0),
+            (0x10, 0x008c_3ec0),
+            (0x14, 0x008c_44b0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        mem.write(w.wrapping_add(0x58), chr);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        for a in [0x023c_c3c4, 0x023c_c3c0, 0x023c_c3bc] {
+            let a = mem.rebase(a);
+            mem.write(a, chr);
+        }
+        let a = mem.rebase(0x023c_c3c8);
+        mem.write(a, 0u32);
+        w
+    }
+
+    /// `MenuItem_TargetNeedsRecovery(kind, _, chr)` (`0x008c6a70`): kind 0
+    /// whether HP is below the maximum, 1 MP, 2 either, 3 always (1); any
+    /// other kind 0. The comparisons are signed (`MenuItem_Less`).
+    pub fn menu_item_target_needs_recovery(mem: &impl Mem, kind: u32, chr: u32) -> u32 {
+        let below = |now: u32, max: u32| {
+            u32::from(super::less(
+                tk_menu_get_ply(mem, chr, now).cast_signed(),
+                tk_menu_get_ply(mem, chr, max).cast_signed(),
+            ))
+        };
+        match kind {
+            0 => below(0x1c, 0x24),
+            1 => below(0x20, 0x28),
+            2 => below(0x1c, 0x24) | below(0x20, 0x28),
+            3 => 1,
+            _ => 0,
+        }
+    }
+
+    /// `Msg_PollClose(i)` (`0x00860aa0`, own name): 1 when message window
+    /// `i`'s state (`AtelGetMesWinWork(i)` `+0x14`) is 0 or 4; in state 2
+    /// with message status 3 (`TOGetMessageStatus(i)`), the window is
+    /// closed (`Msg_CloseWindow(i)`) when the current control work's bit 2
+    /// asks for it (`AtelGetCurCtrlWork()`, the bit cleared); 0 otherwise.
+    pub fn msg_poll_close<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0086_be90);
+        let window = call(mem, f, &[i]);
+        match mem.read::<u16>(window.wrapping_add(0x14)) {
+            0 | 4 => return 1,
+            2 => {}
+            _ => return 0,
+        }
+        let f = mem.rebase(0x008b_7ca0);
+        if call(mem, f, &[i]) != 3 {
+            return 0;
+        }
+        let f = mem.rebase(0x0086_aff0);
+        let ctrl = call(mem, f, &[]);
+        if mem.read::<u8>(ctrl) & 4 != 0 {
+            let close = mem.rebase(0x0086_40f0);
+            call(mem, close, &[i]);
+            let v = mem.read::<u8>(ctrl) & !4;
+            mem.write(ctrl, v);
+        }
+        0
+    }
+
+    /// `MenuSummon_GrowInfo(stat, chr, cost, gain)` (`0x008cd320`, own
+    /// name): for an aeon stat (`stat` < 10, signed; its descriptor at
+    /// `0x00c5a608` + 0x1c × `stat`) the sphere cost (`u16 +4` of
+    /// `MenuSummon_GrowEntry(stat)`) into `*cost` and, while the stat's
+    /// maximum ([`menu_summon_get_stat`] of `chr`'s record) is below the
+    /// descriptor's limit (`+0x14`, signed), the gain its function (`+0x18`,
+    /// called with `chr` and that maximum) gives, clamped to 1..=99
+    /// ([`crate::math::clamp_1_to_99`]), into `*gain`; returns 1 then.
+    /// Otherwise `*cost` stays -1 (stat >= 10), `*gain` 0, and 0 returns.
+    pub fn menu_summon_grow_info<M: Mem>(
+        mem: &mut M,
+        stat: i32,
+        chr: u32,
+        [cost, gain]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(cost, u32::MAX);
+        mem.write(gain, 0u32);
+        let ply = save::ms_get_save_player_ptr(mem, chr);
+        if stat >= 10 {
+            return 0;
+        }
+        let entry = mem.rebase(0x008c_ecf0);
+        let entry = call(mem, entry, &[stat.cast_unsigned()]);
+        let c = u32::from(mem.read::<u16>(entry.wrapping_add(4)));
+        mem.write(cost, c);
+        let desc = mem
+            .rebase(0x00c5_a608)
+            .wrapping_add(stat.cast_unsigned().wrapping_mul(0x1c));
+        let max = menu_summon_get_stat(mem, ply, desc, 1);
+        if max.cast_signed() >= mem.read::<i32>(desc.wrapping_add(0x14)) {
+            mem.write(gain, 0u32);
+            return 0;
+        }
+        let f: u32 = mem.read(desc.wrapping_add(0x18));
+        let g = call(mem, f, &[chr, max]).cast_signed();
+        mem.write(gain, crate::math::clamp_1_to_99(g));
+        1
+    }
+
+    /// `MenuNameEntry_LoadLayout()` (`0x008c5050`, own name): the name
+    /// entry's layout from the menu sequence: three plates
+    /// (`TkMn2GetCommonPlate` into `0x0186a334`, `0x0186a34c`, `0x0186a364`,
+    /// the first with 0xda/0xdb), three numbers (`TkMn2SeqGetNum`), a colour
+    /// (`TkMn2SeqGetColor`), eight positions (`TkMn2SeqGetPos`) and a
+    /// rectangle (`TkMn2SeqGetRect`), each name a string of the image. The
+    /// last call's result is left in `eax`.
+    pub fn menu_name_entry_load_layout<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let plate = r(mem, 0x008c_1a60);
+        for (to, rect, c1, c2, a, b) in [
+            (
+                0x0186_a334,
+                0x00b6_58d4,
+                0x00b6_58c8,
+                0x00b6_58c8,
+                0xda,
+                0xdb,
+            ),
+            (0x0186_a34c, 0x00b6_58f8, 0x00b6_58ec, 0x00b6_58e0, 0, 0),
+            (0x0186_a364, 0x00b6_5910, 0x00b6_5904, 0x00b6_5904, 0, 0),
+        ] {
+            let args = [r(mem, to), r(mem, rect), r(mem, c1), r(mem, c2), a, b];
+            call(mem, plate, &args);
+        }
+        for (f, name, to) in [
+            (0x008c_2b10, 0x00b6_591c, 0x0186_a304),
+            (0x008c_2b10, 0x00b6_5928, 0x0186_a31c),
+            (0x008c_2b10, 0x00b6_5934, 0x0186_a320),
+            (0x008c_2ad0, 0x00b6_5940, 0x0186_a314),
+        ] {
+            let (f, name, to) = (r(mem, f), r(mem, name), r(mem, to));
+            let v = call(mem, f, &[name]);
+            mem.write(to, v);
+        }
+        let pos = r(mem, 0x008c_2b50);
+        for (name, to) in [
+            (0x00b6_594c, 0x0186_a27c),
+            (0x00b6_5958, 0x0186_a300),
+            (0x00b6_5964, 0x0186_a310),
+            (0x00b6_5970, 0x0186_a318),
+            (0x00b6_597c, 0x0186_a324),
+            (0x00b6_5988, 0x0186_a328),
+            (0x00b6_5994, 0x0186_a32c),
+            (0x00b6_59a0, 0x0186_a330),
+        ] {
+            let args = [r(mem, name), r(mem, to)];
+            call(mem, pos, &args);
+        }
+        let rect = r(mem, 0x008c_2b90);
+        let args = [r(mem, 0x00b6_59a8), r(mem, 0x0186_a308)];
+        call(mem, rect, &args)
+    }
+
+    /// `MenuSummon_DrawFaceSlide(x, y, w, h, t, cur, next)` (`0x008d34a0`,
+    /// own name): aeon `cur`'s face (`TkMenuGetSummonFromIndex`) drawn at
+    /// `(x, y, w, h)` (`TkMn2DrawCrossCharFace`, while
+    /// `TOMenuGetFirstReadEndFlag()`); with a slide `t` (nonzero) aeon
+    /// `next`'s face too, `x` moved by `0x0186a9ec × t / 4096` (signed,
+    /// toward zero; the sum at 53 bits truncated to an integer and back to
+    /// a float) and faded (font shade alpha `(0x1000 - |t|) >> 5` between
+    /// `TkMn2SaveFontShade` and `TkMn2RestoreFontShade`, whose result is
+    /// returned). Without a slide `eax` is the face draw's result, or the
+    /// flag's when not drawn.
+    #[allow(clippy::many_single_char_names)] // the rectangle and the slide
+    pub fn menu_summon_draw_face_slide<M: Mem>(
+        mem: &mut M,
+        [x, y, w, h]: [u32; 4],
+        t: i32,
+        [cur, next]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let summon = mem.rebase(0x008a_9bc0);
+        let cur = call(mem, summon, &[cur]);
+        let next = call(mem, summon, &[next]);
+        let read_end = mem.rebase(0x008a_8e50);
+        let face = mem.rebase(0x008c_0250);
+        let mut drawn = call(mem, read_end, &[]);
+        if drawn != 0 {
+            drawn = call(mem, face, &[cur, x, y, w, h]);
+        }
+        if t == 0 {
+            return drawn;
+        }
+        let step: i32 = mem.read(mem.rebase(0x0186_a9ec));
+        let shift = step.wrapping_mul(t) / 0x1000;
+        let moved = x87::add(x87::load(x), x87::load(x87::store(f64::from(shift))));
+        let moved = x87::ftol(mem, moved).cast_signed();
+        let save = mem.rebase(0x008c_2330);
+        call(mem, save, &[]);
+        let alpha = (0x1000 - t.wrapping_abs()) >> 5;
+        let shade = mem.rebase(0x008c_2c30);
+        call(mem, shade, &[0x80, 0x80, 0x80, alpha.cast_unsigned()]);
+        if call(mem, read_end, &[]) != 0 {
+            let moved = x87::store(f64::from(moved));
+            call(mem, face, &[next, moved, y, w, h]);
+        }
+        let restore = mem.rebase(0x008c_2300);
+        call(mem, restore, &[])
+    }
+
+    /// `MenuSummon_BuildCommandList(chr)` (`0x008d2b40`, own name): the aeon
+    /// status window's commands. From the command lists of
+    /// `MsMenuStatusNum(0, local)` (`TkMenuGetCommandMax` and
+    /// `TkMenuGetCommandOffset` of `(list, 1, chr, group)`), the ids
+    /// (`u16 +2` of each 4-byte entry) `chr` has (`MsGetSaveCommand`) are
+    /// appended to the `u16` array at `0x0186aa04`: groups 1, 3, 4 and 5
+    /// counted in `0x0186aa24`, then group 2 counted in `0x0186aa28` after
+    /// those (each counter a `u16`, written after its entry). Group 4 stops
+    /// at the first command `chr` has and appends the group's *first* id,
+    /// whichever matched. `TOGetSaveGilAddress()` is asked (unused).
+    /// Returns what the original leaves in `eax`: group 2's offset when it
+    /// is empty, else its last id when stored, or 0.
+    pub fn menu_summon_build_command_list<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let status_num = r(mem, 0x0079_0200);
+        let list = call(mem, status_num, &[0, local]);
+        let gil = r(mem, 0x008a_8e20);
+        call(mem, gil, &[]);
+        let (max, offset, has) = (
+            r(mem, 0x008d_2d80),
+            r(mem, 0x008d_2dc0),
+            r(mem, 0x0078_5020),
+        );
+        let ids = r(mem, 0x0186_aa04);
+        let (first, second) = (r(mem, 0x0186_aa24), r(mem, 0x0186_aa28));
+        let mut eax = 0;
+        for group in [1u32, 3, 4, 5, 2] {
+            let n = call(mem, max, &[list, 1, chr, group]).cast_signed();
+            let off = call(mem, offset, &[list, 1, chr, group]);
+            eax = off;
+            let count = if group == 2 { second } else { first };
+            if group == 1 || group == 2 {
+                mem.write(count, 0u16);
+            }
+            let entries = list.wrapping_add(off.wrapping_mul(4)).wrapping_add(2);
+            for k in 0..n.max(0).cast_unsigned() {
+                let id: u16 = mem.read(entries.wrapping_add(4 * k));
+                eax = call(mem, has, &[chr, u32::from(id)]);
+                if eax == 0 {
+                    continue;
+                }
+                let id = if group == 4 { mem.read(entries) } else { id };
+                let base = if group == 2 {
+                    mem.read::<u16>(first)
+                } else {
+                    0
+                };
+                let k: u16 = mem.read(count);
+                let slot = u32::from(k) + u32::from(base);
+                mem.write(ids.wrapping_add(2 * slot), id);
+                mem.write(count, k.wrapping_add(1));
+                eax = u32::from(id);
+                if group == 4 {
+                    break;
+                }
+            }
+        }
+        eax
     }
 
     /// The base value of an equipment entry `e` (shared by
@@ -6120,6 +6746,75 @@ pub mod bridge {
         half
     }
 
+    /// `TkMn2DrawKickPacketBody(clear)` (`0x008c0c50`): the menu packet's
+    /// high-water marks first (unsigned): `0x0186a248` takes the bytes used
+    /// (`g_TkMn2DrawY - 0x0186a244`) and `g_TkMn2Work` the cursor when
+    /// larger. Then the full-screen scissor (`TkMn2DrawScissorClear`) when
+    /// `clear` is set, a 16-byte step of the cursor (`MenuMn2_StepDrawY`),
+    /// `TkVU1SyncPath()`, `dbgPrintf("TK:MN:Packet Over\n")` once the cursor
+    /// reaches `0x02000000`, and [`tk_mn2_draw_init_packet`] for the next
+    /// frame (a tail jump: its result).
+    pub fn tk_mn2_draw_kick_packet_body<M: Mem>(
+        mem: &mut M,
+        clear: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let y = MN2_DRAW_Y.get(mem);
+        let used = y.wrapping_sub(mem.read(mem.rebase(0x0186_a244)));
+        let peak = mem.rebase(0x0186_a248);
+        if mem.read::<u32>(peak) < used {
+            mem.write(peak, used);
+        }
+        let work = mem.rebase(0x0186_a240);
+        if mem.read::<u32>(work) < y {
+            mem.write(work, y);
+        }
+        if clear != 0 {
+            let f = mem.rebase(0x008c_1370);
+            call(mem, f, &[]);
+        }
+        let y = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        MN2_DRAW_Y.set(mem, y);
+        let f = mem.rebase(0x0088_ec60);
+        call(mem, f, &[]);
+        if MN2_DRAW_Y.get(mem) >= 0x0200_0000 {
+            let (f, text) = (mem.rebase(0x0062_f500), mem.rebase(0x00b6_5768));
+            call(mem, f, &[text]);
+        }
+        tk_mn2_draw_init_packet(mem, call)
+    }
+
+    /// `TkMn2DrawKickSyncPacket()` (`0x008c0cc0`) and
+    /// `TkMn2DrawKickSyncPacket2()` (`0x008c0cd0`): [`tk_mn2_draw_kick_packet_body`]
+    /// (with the scissor cleared for the first), then `TkVU1SyncPath()`,
+    /// whose result is returned (a tail jump).
+    pub fn tk_mn2_draw_kick_sync_packet<M: Mem>(
+        mem: &mut M,
+        clear: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        tk_mn2_draw_kick_packet_body(mem, clear, call);
+        let f = mem.rebase(0x0088_ec60);
+        call(mem, f, &[])
+    }
+
+    /// `MenuMn2_EmitPacket(a, b, kind)` (`0x008c11b0`, own name): the menu
+    /// draw cursor (`g_TkMn2DrawY`) stepped by 16, then the packet builder
+    /// `0x008f1b50(cursor, a, b, kind)` writes there and its end becomes
+    /// the cursor (returned).
+    pub fn menu_mn2_emit_packet<M: Mem>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let y = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        MN2_DRAW_Y.set(mem, y);
+        let f = mem.rebase(0x008f_1b50);
+        let end = call(mem, f, &[y, args[0], args[1], args[2]]);
+        MN2_DRAW_Y.set(mem, end);
+        end
+    }
+
     /// `TkFree(p)` (`0x0088d520`): `user_free_thunk(p)`, then
     /// `Sg_MemCheck` on pools 0 and 1 (with the source file `0x00b5e968`
     /// and lines 480, 481). Returns the last check's result.
@@ -6134,6 +6829,165 @@ pub mod bridge {
         let f = mem.rebase(0x0083_b7b0);
         call(mem, f, &[0, file, 0x1e0]);
         call(mem, f, &[1, file, 0x1e1])
+    }
+
+    /// `Math_YawPitchTo(yaw, pitch, from, to)` (`0x0088b4d0`):
+    /// [`crate::math::yaw_pitch_to`] (`atan2` the C runtime's `_CIatan2`)
+    /// stored at `*yaw`, then `*pitch`; `eax` is left holding `yaw`.
+    pub fn math_yaw_pitch_to<M: Mem>(
+        mem: &mut M,
+        yaw: u32,
+        pitch: u32,
+        from: [f32; 3],
+        to: [f32; 3],
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        let (y, p) = crate::math::yaw_pitch_to(from, to, |a, b| atan2(mem, a, b));
+        mem.write(yaw, y.to_bits());
+        mem.write(pitch, p.to_bits());
+        yaw
+    }
+
+    /// `TkSndIsRead()` (`0x00886600`): whether any of the sound status
+    /// words (`0x0132ff20`, `0x0132ff1c`, `0x0132ff10`, `0x0132ff24`) is
+    /// set, read before [`tk_snd_update_main`] runs (and clears most of
+    /// them).
+    pub fn tk_snd_is_read<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut any = 0u32;
+        for a in [0x0132_ff20, 0x0132_ff1c, 0x0132_ff10, 0x0132_ff24] {
+            any |= mem.read::<u32>(mem.rebase(a));
+        }
+        tk_snd_update_main(mem, call);
+        u32::from(any != 0)
+    }
+
+    /// `TkSetSyncVCallback(id, f)` (`0x00887ed0`): with the sync callbacks
+    /// held off (`0x013301f0` = 0 through `0x00887e80`),
+    /// `TkGetSyncVCallbackHandle(id)` and `TkSetSyncVCallbackPtr(id, f)`;
+    /// then on again (its result returned).
+    pub fn tk_set_sync_v_callback<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        f: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let enable = mem.rebase(0x0088_7e80);
+        call(mem, enable, &[0]);
+        let handle = mem.rebase(0x0088_8620);
+        call(mem, handle, &[id]);
+        let set = mem.rebase(0x0088_8790);
+        call(mem, set, &[id, f]);
+        call(mem, enable, &[1])
+    }
+
+    /// `TkSyncVEI()` (`0x00887f40`): the pending count `0x013301e0` down by
+    /// one while positive (else set to 0), then the sync callbacks on
+    /// (`0x00887e80(1)`, its result returned).
+    pub fn tk_sync_v_ei<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = mem.rebase(0x0133_01e0);
+        let n: i32 = mem.read(at);
+        mem.write(at, if n > 0 { n - 1 } else { 0 });
+        let enable = mem.rebase(0x0088_7e80);
+        call(mem, enable, &[1])
+    }
+
+    /// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)` (`0x0088b780`, own
+    /// name): [`crate::math::facing_within`] as 1 or 0 (`atan2` the C
+    /// runtime's `_CIatan2`).
+    pub fn math_facing_within<M: Mem>(
+        mem: &mut M,
+        heading: f32,
+        tol: f32,
+        from: [f32; 2],
+        to: [f32; 2],
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        u32::from(crate::math::facing_within(
+            heading,
+            tol,
+            from,
+            to,
+            |a, b| atan2(mem, a, b),
+        ))
+    }
+
+    /// `Math_PolarToVector(out, r, yaw, pitch)` (`0x0088a3a0`, own name):
+    /// [`crate::math::polar_to_vector`] into `out[1]`, `out[3]`, `out[0]`,
+    /// `out[2]` in that order (`sin_cos` the C runtime's `_CIcos`/`_CIsin`).
+    pub fn math_polar_to_vector<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        [r, yaw, pitch]: [f32; 3],
+        sin_cos: &mut impl FnMut(&mut M, bool, f64) -> f64,
+    ) {
+        let v = crate::math::polar_to_vector(r, yaw, pitch, |c, x| sin_cos(mem, c, x));
+        for k in [1u32, 3, 0, 2] {
+            mem.write(out.wrapping_add(4 * k), v[k as usize].to_bits());
+        }
+    }
+
+    /// `Math_SegmentsCross(a, b, c, d)` (`0x00889bb0`, own name):
+    /// [`crate::math::segments_cross`] of the points' `x` (`+0`) and `z`
+    /// (`+8`), each loaded as a float.
+    pub fn math_segments_cross(mem: &impl Mem, points: [u32; 4]) -> i32 {
+        let xz = |p: u32| {
+            [0, 8].map(|o| ffx_bridge::x87::round_trip(f32::from_bits(mem.read(p.wrapping_add(o)))))
+        };
+        let [a, b, c, d] = points.map(xz);
+        crate::math::segments_cross(a, b, c, d)
+    }
+
+    /// `TkSndUpdate()` (`0x00887b60`): `SndExecMusicClearQue(1, 0)` (every
+    /// queued music/SE entry counted down), then [`tk_snd_update_main`],
+    /// whose result it returns (a tail jump).
+    pub fn tk_snd_update<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_6000);
+        call(mem, f, &[1, 0]);
+        tk_snd_update_main(mem, call)
+    }
+
+    /// `TkSndUpdate2()` (`0x00887b80`): with `TkGetSoundSyncVFlag()` set,
+    /// `SndExecMusicClearQue(1, 0)` and [`tk_snd_update`] (so the queue
+    /// counts down twice); otherwise the flag (0).
+    pub fn tk_snd_update2<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7dd0);
+        let flag = call(mem, f, &[]);
+        if flag == 0 {
+            return flag;
+        }
+        let f = mem.rebase(0x0088_6000);
+        call(mem, f, &[1, 0]);
+        tk_snd_update(mem, call)
+    }
+
+    /// `TkSndUpdate3(last)` (`0x00887ba0`): the sync counter
+    /// (`TkGetSyncVCounter()`); when `last` is nonzero and differs from it,
+    /// the sound sync flag is set and [`tk_snd_update_main`] runs first.
+    pub fn tk_snd_update3<M: Mem>(
+        mem: &mut M,
+        last: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7e00);
+        let counter = call(mem, f, &[]);
+        if last != 0 && last != counter {
+            let f = mem.rebase(0x0088_7ea0);
+            call(mem, f, &[]);
+            tk_snd_update_main(mem, call);
+        }
+        counter
     }
 
     /// `TkSndUpdateMain()` (`0x00887bd0`): with `TkGetSoundSyncVFlag()` set,

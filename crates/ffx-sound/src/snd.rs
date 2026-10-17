@@ -318,6 +318,12 @@ pub mod bridge {
     pub const I_VOICE_STOP: u32 = 0x0067_a7a0;
     /// `iVoiceVolumeDirect(volume)`.
     pub const I_VOICE_VOLUME_DIRECT: u32 = 0x0067_a7b0;
+    /// `MsGetSaveEventAddress()`: the save data.
+    pub const MS_GET_SAVE_EVENT_ADDRESS: u32 = 0x0078_5240;
+    /// The save data's BGM type byte (`iMuiscSetBgmType` takes bit 0).
+    pub const SAVE_BGM_TYPE: u32 = 0x5ec;
+    /// `iMusicRefreshBgmType()`: `iMuiscSetBgmType` of the save's byte.
+    pub const I_MUSIC_REFRESH_BGM_TYPE: u32 = 0x008c_c170;
     /// `iVoiceVolumeTranslate(frames, volume)`.
     pub const I_VOICE_VOLUME_TRANSLATE: u32 = 0x0067_a7d0;
 
@@ -1055,6 +1061,15 @@ pub mod bridge {
     /// `SndSepClearAll()` (0x00886db0).
     pub fn snd_sep_clear_all(h: &mut impl Host) -> u32 {
         call(h, SQS_SE_SEPARATE_CLEAR, &[u32::MAX])
+    }
+
+    /// `SndSetBgmTypeSave(on)` (0x008cc150): the save's BGM type byte
+    /// (`MsGetSaveEventAddress() + 0x5ec`, 0 or 1), then a tail call to
+    /// `iMusicRefreshBgmType`, whose `eax` it returns.
+    pub fn snd_set_bgm_type_save(h: &mut impl Host, on: u32) -> u32 {
+        let save = call(h, MS_GET_SAVE_EVENT_ADDRESS, &[]);
+        h.write(save + SAVE_BGM_TYPE, u8::from(on != 0));
+        call(h, I_MUSIC_REFRESH_BGM_TYPE, &[])
     }
 
     /// `SndSepLock(on)` (0x00886dd0); returns `on`.

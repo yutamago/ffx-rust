@@ -268,6 +268,19 @@ pub mod bridge {
             .map_or(-1, u32::cast_signed)
     }
 
+    /// `op_et_chr_count_same_no_007feb20(h)` (`0x007feb20`): how many
+    /// `g_EtChr` records (all 240, itself included) share the character
+    /// number (`+4`) of handle `h`'s record; 0 for a null or unknown
+    /// handle.
+    pub fn op_et_chr_count_same_no(mem: &impl Mem, h: u32) -> u32 {
+        let Some(i) = find_chr(mem, h) else {
+            return 0;
+        };
+        let no: u32 = mem.read(chr(mem, i) + 4);
+        let same = (0..CHRS).filter(|&k| mem.read::<u32>(chr(mem, k) + 4) == no);
+        u32::try_from(same.count()).unwrap_or(u32::MAX)
+    }
+
     /// `opu_eff_part_index(unit)` (`0x00800da0`): for the `g_EtEff` record
     /// the unit names (`+0x14`), its part (`+0x1a & 7`) when below the
     /// record's count (`+8`); else the index of the unit's byte `+0x18` in

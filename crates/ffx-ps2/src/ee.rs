@@ -23,6 +23,19 @@ pub mod bridge {
         v
     }
 
+    /// The stack pointer register, `sp` (r29).
+    pub const SP: u32 = 29;
+
+    /// `AsmEmuInit()` (`0x0042ee40`): `vf00` = (0, 0, 0, 1) and `sp`'s
+    /// low word = the address of `g_Ee_Gpr` itself (as the original stores
+    /// it, relocated). Its two `dbgPrintf` lines are left out: `dbgPrintf`
+    /// is a bare `ret` in this build, and `eax` stays the caller's.
+    pub fn asm_emu_init(mem: &mut impl Mem) {
+        restore_vf00(mem);
+        let gpr = GPR.ptr(mem);
+        mem.write(gpr.at(SP).addr, gpr.addr);
+    }
+
     /// `restoreVf00Register()` (`0x0042ef00`).
     pub fn restore_vf00(mem: &mut impl Mem) {
         let z = ffx_bridge::x87::Reg::ZERO.store();
