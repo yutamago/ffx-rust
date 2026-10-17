@@ -196,6 +196,8 @@
 0x004413a0 function Phyre_PCluster_deleteObjectWithInstanceList # layout+callees: sorts between Phyre_PCluster_deleteObject and Phyre_PCluster_fixupInstances, and its named callees match the Switch 0x71000a65b0 Phyre_PCluster_deleteObjectWithInstanceList's (similarity 1.00: Phyre_PFreeList_deallocate, Phyre_PFreeList_dtor_PFreeList, Phyre_PInstanceList_freeBuffer, Phyre_PInstanceList_freeObject, Phyre_PWorld_removeInstanceList); symbols from Fahrenheit's server export
 0x00441620 function Phyre_PCluster_fixupInstances # fh v3:exact 0x004416f0 Phyre::PCluster::fixupInstances
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
+0x00441c60 function PhyreSceneCursor_Next5    # structure: as PhyreSceneCursor_Next1 with the check PhyreCursor_IsValid_00441e10; name ours
+0x00441cc0 function PhyreSceneCursor_Next6    # structure: as PhyreSceneCursor_Next1 with the check PhyreCursor_IsValid_00441e40; name ours
 0x00441dc0 function PhyreSceneCursor_SetNode  # structure: thiscall(cursor, node), ret 4: cursor words from the node (+0x34, +0x8, +0x3c count, +0x2c's +0x1c stride and +0x8c), skipping while +4 == +0; the cursor steps' set-up; name ours
 0x00441e10 function PhyreCursor_IsValid_00441e10 # structure: thiscall(cursor) -> al: the cursor check template of PhyreCursor_IsValid_00660240 etc. (list +0x18 null, or its node +0x1c still linked from +0x2c via +0x40 and the list's +0x40 set); name in the existing family's style
 0x00441e40 function PhyreCursor_IsValid_00441e40 # structure: the same code as PhyreCursor_IsValid_00441e10
@@ -2105,6 +2107,7 @@
 0x006564a0 function PhyreScene_addChrDrawSituation # fh v3:exact 0x00656650 PhyreScene::addChrDrawSituation
 0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2
 0x00656940 function PhyreScene_addVFXDrawEvent # fh v3:exact 0x00656af0 PhyreScene::addVFXDrawEvent
+0x00656b90 function PhyreScene_PushPair3890   # structure: thiscall(scene, a, b), ret 8: appends a and b at the count +0x38a0 to the arrays +0x3894 and +0x389c; both grow by 0x400 (0x0066c700, 0x0066c690) when the first (+0x3890 capacity) is full; name ours
 0x00657140 function PhyreScene_animate        # fh v3:bsim0.95 0x006572f0 PhyreScene::animate
 0x006575a0 function std_string_append_substr     # structure: thiscall(this, const string &s, pos, n): MSVC basic_string<char>::append(s, pos, n) ("invalid string position", "string too long"); name ours
 0x006576d0 function std_string_append_ptr        # structure: thiscall(this, const char *p, n): MSVC basic_string<char>::append(p, n): appends a substring of itself through 0x006575a0, "string too long" checks, grows through 0x00404740; name ours
@@ -2253,6 +2256,7 @@
 0x0066e850 function PhyreScene_setWaveStrength   # layout+callees: sorts between PhyreScene_setTextureVideoInfo and PhyreScene_setupColorCorrection, and its named callees match the Switch 0x7100208d10 PhyreScene_setWaveStrength's (similarity 0.88: WaterWaveController_setBuoyancyFix, WaterWaveController_setCircleWaveStrength, WaterWaveController_setDraughtOffset, WaterWaveController_setFoamStrength, WaterWaveController_setMultiTexBlendFactor); symbols from Fahrenheit's server export
 0x0066ea70 function PhyreScene_SetColourPair  # structure: thiscall(scene, r, g, b, r2, g2, b2, second): (r, g, b, 1) and (r2, g2, b2, 0) at +0xfc8c, or +0xfcac with second; 0x00643b30 wraps it; name ours
 0x0066ed00 function PhyreScene_setupColorCorrection # str-match switch: only user of 2 string(s) held once by both builds, e.g. '_ColorCorrection'; Switch 0x71001ed590 PhyreScene::setupColorCorrection (symbols from Fahrenheit's server export)
+0x0066f010 function PhyreScene_ApplySettings  # structure: thiscall(scene): g_Settings to the scene: +0x24 (as a float) to the post-process +0x12328, +0x30 to ShadowManager_SetQuality then 0x006d2df0, +0x44 != 0 to +0x123d3, +0x48 to +0x1264, +0x38 to 0x00697e10, +0x40 (1-5) to the scene's +0x10dd8 and the post-process's +0x1231c; name ours
 0x0066f140 function PhyreScene_setupPostProcessParams # fh switch:bsim1.00 0x71001f1570 PhyreScene::setupPostProcessParams
 0x0066f2f0 function PhyreScene_show2DLayer    # fh v3:exact 0x0066f480 PhyreScene::show2DLayer
 0x0066f480 function PhyreScene_showAutoSavingPrompt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/chocobo.swf'; Switch 0x710020cba0 PhyreScene::showAutoSavingPrompt (symbols from Fahrenheit's server export)
@@ -2774,11 +2778,14 @@
 0x006c5b60 function SpecularMapParamsManager_renderSpecularPass # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2478 SpecularMapParamsManager::renderSpecularPass, 2 votes, round 2
 0x006c6830 function SpecularMapParamsManager_setShadeSpecularMapParams # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SpecularPower'; Switch 0x7100284370 SpecularMapParamsManager::setShadeSpecularMapParams (symbols from Fahrenheit's server export)
 0x006c7250 function FloatHeap_AdjustHeap      # structure: cdecl(base, hole, len, &value, less): std::_Adjust_heap on floats with a bool less(a, b) callback; name ours
+0x006c7320 function FloatSort_Insertion       # structure: cdecl(first, last, less): std::_Insertion_sort on floats (memmove for a new first); name ours
+0x006c7410 function FloatHeap_MakeHeap        # structure: cdecl(first, last, less): std::_Make_heap on floats (sifts down, then FloatHeap_PushHeap); name ours
 0x006c74d0 function FloatSort_Median3         # structure: cdecl(a, b, c, less): orders three floats by less (std::_Med3); name ours
 0x006c7730 function FloatHeap_PushHeap        # structure: cdecl(base, hole, top, &value, less): std::_Push_heap on floats; name ours
 0x006c8040 function ShadowManager_AlreadyinShadowMap # fh v3:exact 0x006c8180 ShadowManager::AlreadyinShadowMap
 0x006cc8b0 function Compute_006cc8b0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 == 0x1); callers: no direct caller; name ours
 0x006cc8c0 function Compute_006cc8c0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 != 0x2083); callers: no direct caller; name ours
+0x006cc980 function GetASpareGradMeshInstance # str-match: the only user of "GetASpareGradMeshInstance() , Shouldn't get here, contact cg please"; thiscall(pool, &extra), ret 4: takes the first free of the current set's (0x00cdec24) 16 slots (+0xdc4), extra = +0xd44 word, returns its +0xcc4 word
 0x006ccd00 function ShadowManager_GetShadowSize # () -> g_ShadowSize; name Fahrenheit's (Switch BSim)
 0x006ce100 function ShadowManager_Initialize     # layout+callees: sorts between ShadowManager_GetShadowSize and ShadowManager_InsertIntoShadowMap_Double, and its named callees match the Switch 0x7100278060 ShadowManager_Initialize's (similarity 0.67: ShadowManager_createshadowbuffer, ShadowManager_loadShadowShaderBinFiles); symbols from Fahrenheit's server export
 0x006ce3e0 function ShadowManager_InsertIntoShadowMap_Double # fh v3:exact 0x006ce510 ShadowManager::InsertIntoShadowMap_Double
@@ -13998,6 +14005,7 @@
 0x00cccab8 label    g_RenderFlag              # the byte ReturnGlobalSx8_006bc960 returns sign-extended
 0x00cccb00 label    g_GraphicPauseGame        # graphicCheckPauseGame returns it; graphicPauseGameDestroy deletes it
 0x00cdec1c label    g_SpecularMapParamsManager # SpecularMapParamsManager_GetInstance
+0x00cdec24 label    g_GradMeshSet             # the grad-mesh pool's current set (GetASpareGradMeshInstance)
 0x00cdec28 label    g_ShadowManager           # ShadowManager_getInstance
 0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang)
 0x00cdedf0 label    g_DynGeoFillBuffer        # graphicDynGeoFillBufferIsValid: *(*this) != 0

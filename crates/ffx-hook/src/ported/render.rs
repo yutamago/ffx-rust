@@ -1152,6 +1152,36 @@ ported! {
     TextureAnimationManager_SetFrame @ 0x006b_42c0 => extern "thiscall" fn tex_anim_set_frame(this: u32, i: u32, frame: u32, absolute: u32) -> u32 {
         ut::tex_anim_set_frame(&mut mem(), this, i, frame, absolute)
     }
+
+    // ---- round 10 ----
+    /// `PhyreSceneCursor_Next5(this)` (checks with `PhyreCursor_IsValid_00441e10`).
+    PhyreSceneCursor_Next5 @ 0x0044_1c60 => extern "fastcall" fn scene_cursor_next5(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next6(this)` (checks with `PhyreCursor_IsValid_00441e40`).
+    PhyreSceneCursor_Next6 @ 0x0044_1cc0 => extern "fastcall" fn scene_cursor_next6(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `FloatHeap_MakeHeap(first, last, less)`.
+    FloatHeap_MakeHeap @ 0x006c_7410 => extern "C" fn float_make_heap(first: u32, last: u32, less: u32) -> u32 {
+        ut::float_make_heap(&mut mem(), first, last, less)
+    }
+    /// `FloatSort_Insertion(first, last, less)`.
+    FloatSort_Insertion @ 0x006c_7320 => extern "C" fn float_insertion_sort(first: u32, last: u32, less: u32) {
+        ut::float_insertion_sort(&mut mem(), first, last, less);
+    }
+    /// `PhyreScene_PushPair3890(this, a, b)`.
+    PhyreScene_PushPair3890 @ 0x0065_6b90 => extern "thiscall" fn scene_push_pair(this: u32, a: u32, b: u32) -> u32 {
+        ut::scene_push_pair(&mut mem(), this, a, b)
+    }
+    /// `GetASpareGradMeshInstance(this, &extra)`.
+    GetASpareGradMeshInstance @ 0x006c_c980 => extern "thiscall" fn get_spare_grad_mesh(this: u32, out: u32) -> u32 {
+        ut::get_spare_grad_mesh(&mut mem(), this, out)
+    }
+    /// `PhyreScene_ApplySettings(this)`.
+    PhyreScene_ApplySettings @ 0x0066_f010 => extern "thiscall" fn scene_apply_settings(this: u32) -> u32 {
+        st::scene_apply_settings(&mut mem(), this)
+    }
 }
 
 /// A singleton's pointer.

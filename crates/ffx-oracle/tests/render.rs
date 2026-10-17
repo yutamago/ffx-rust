@@ -4849,3 +4849,133 @@ fn round9_more_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round10_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1010_0010);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 5 {
+            0 => {
+                t.stub_sym(st::CURSOR_SET_NODE, Conv::Thiscall(0), 1, rng.next());
+                let cur = build_cursor(&mut t, &mut rng);
+                let sym = if rng.chance(2) {
+                    0x0044_1c60
+                } else {
+                    0x0044_1cc0
+                };
+                t.check(&what, sym, Conv::Fastcall, &[cur], |g| {
+                    Out::U32(st::cursor_step(g, cur, false))
+                });
+            }
+            1 => {
+                let less = cave_float_less(&mut t);
+                let n = rng.below(14);
+                let base = t.alloc(&float_bytes(&mut rng, n as usize + 1));
+                t.check(
+                    &what,
+                    0x006c_7410,
+                    Conv::Cdecl,
+                    &[base, base + 4 * n, less],
+                    |g| Out::U32(ut::float_make_heap(g, base, base + 4 * n, less)),
+                );
+            }
+            2 => {
+                let less = cave_float_less(&mut t);
+                let n = rng.below(10);
+                // no NaNs: the unguarded inner loop relies on an order
+                let v: Vec<u8> = (0..=n)
+                    .flat_map(|_| (rng.below(200) as f32 - 100.0).to_le_bytes())
+                    .collect();
+                let base = t.alloc(&v);
+                t.check(
+                    &what,
+                    0x006c_7320,
+                    Conv::Cdecl,
+                    &[base, base + 4 * n, less],
+                    |g| {
+                        ut::float_insertion_sort(g, base, base + 4 * n, less);
+                        Out::None
+                    },
+                );
+            }
+            3 => {
+                t.stub_sym(ut::ARRAY_GROW_3890, Conv::Thiscall(0), 1, rng.next());
+                t.stub_sym(ut::ARRAY_GROW_3898, Conv::Thiscall(0), 1, rng.next());
+                let scene = t.alloc(&rng.bytes(0x38b0));
+                let cap = 1 + rng.below(6);
+                let a1 = t.alloc(&rng.bytes(4 * cap as usize + 8));
+                let a2 = t.alloc(&rng.bytes(4 * cap as usize + 8));
+                t.w32(scene + 0x3890, cap | (rng.next() & 0x8000_0000));
+                t.w32(scene + 0x3894, a1);
+                t.w32(scene + 0x3898, rng.next());
+                t.w32(scene + 0x389c, a2);
+                t.w32(scene + 0x38a0, rng.below(cap));
+                let (a, b) = (rng.next(), rng.next());
+                t.check(&what, 0x0065_6b90, Conv::Thiscall(scene), &[a, b], |g| {
+                    Out::U32(ut::scene_push_pair(g, scene, a, b))
+                });
+            }
+            _ => {
+                // printf through its import slot: a recording stub there
+                let pf = t.stub(None, 0x5052, false, 1, 0, 0);
+                let slot = t.rebase(ut::PRINTF_SLOT);
+                t.w32(slot, pf);
+                let set = rng.below(4);
+                t.global(ut::GRAD_MESH_SET.sym, set);
+                let pool = t.alloc(&rng.bytes(0xe10));
+                for i in 0..16 {
+                    t.w8(pool + set * 16 + 0xdc4 + i, u8::from(!rng.chance(8)));
+                }
+                let out = t.zeros(4);
+                t.check(&what, 0x006c_c980, Conv::Thiscall(pool), &[out], |g| {
+                    Out::U32(ut::get_spare_grad_mesh(g, pool, out))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn round10_settings_match_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1010_0011);
+    for round in 0..1000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        let sm = t.alloc(&rng.bytes(0x4070));
+        t.global(managers::bridge::SHADOW.sym, sm);
+        t.stub_sym(st::SHADOW_RESIZE, Conv::Thiscall(0), 0, rng.next());
+        t.stub_sym(st::POST_PROCESS_REBIND, Conv::Thiscall(0), 1, rng.next());
+        let cfg = t.alloc(&rng.bytes(0x50));
+        t.w32(cfg + 0x30, rng.below(5));
+        t.w32(
+            cfg + 0x40,
+            if rng.chance(5) {
+                rng.next()
+            } else {
+                rng.below(7)
+            },
+        );
+        t.w32(cfg + 0x44, if rng.chance(2) { 0 } else { rng.next() });
+        t.global(st::SETTINGS.sym, cfg);
+        let pp = t.alloc(&rng.bytes(0x12400));
+        let scene = t.alloc(&rng.bytes(0x10de0));
+        t.w32(scene + 0x10cc, pp);
+        t.check(&what, 0x0066_f010, Conv::Thiscall(scene), &[], |g| {
+            Out::U32(st::scene_apply_settings(g, scene))
+        });
+    }
+}

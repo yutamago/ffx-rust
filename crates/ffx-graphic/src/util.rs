@@ -675,4 +675,154 @@ pub mod bridge {
         }
         (n & !0xff) | 1
     }
+
+    // ---- round 10 ----
+
+    /// `FloatHeap_MakeHeap(first, last, less)` (`0x006c7410`):
+    /// `std::_Make_heap` on floats: from the last parent down, each value
+    /// is sifted to a leaf and pushed back up (`FloatHeap_PushHeap`).
+    /// Returns `eax`: the last parent index (0 after any work).
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)] // signed indices
+    pub fn float_make_heap(h: &mut impl Host, first: u32, last: u32, less: u32) -> u32 {
+        let at = |i: i32| first.wrapping_add((i as u32).wrapping_mul(4));
+        let n = (last.wrapping_sub(first) as i32) >> 2;
+        let mut half = n / 2;
+        if half <= 0 {
+            return half as u32;
+        }
+        let mut edx = half * 2 + 2;
+        let value = h.scratch() + 0x100;
+        while half > 0 {
+            let v = rt(h.read(at(half - 1)));
+            h.write(value, v);
+            half -= 1;
+            edx -= 2;
+            let mut hole = half;
+            let mut child = edx;
+            while child < n {
+                let a = rt(h.read(at(child)));
+                let b = rt(h.read(at(child - 1)));
+                if less_than(h, less, a, b) {
+                    child -= 1;
+                }
+                let v = rt(h.read(at(child)));
+                h.write(at(hole), v);
+                hole = child;
+                child = child * 2 + 2;
+            }
+            if child == n {
+                let v = rt(h.read(at(n - 1)));
+                h.write(at(hole), v);
+                hole = n - 1;
+            }
+            float_push_heap(h, first, hole as u32, half as u32, value, less);
+        }
+        half as u32
+    }
+
+    /// `FloatSort_Insertion(first, last, less)` (`0x006c7320`):
+    /// `std::_Insertion_sort` on floats: a value less than the first moves
+    /// the run up by one with `memmove` (bytes unchanged) and goes first;
+    /// otherwise it sinks past larger neighbours (moved through
+    /// `fld`/`fstp`).
+    pub fn float_insertion_sort(h: &mut impl Host, first: u32, last: u32, less: u32) {
+        if first == last {
+            return;
+        }
+        let mut cur = first + 4;
+        while cur != last {
+            let v = rt(h.read(cur));
+            let f = rt(h.read(first));
+            if less_than(h, less, v, f) {
+                let n = cur - first;
+                let mut run = vec![0u8; n as usize];
+                h.read_bytes(first, &mut run);
+                h.write_bytes(first + 4, &run);
+                h.write(first, rt(v));
+            } else {
+                let mut hole = cur;
+                let mut prev = cur - 4;
+                loop {
+                    let p = rt(h.read(prev));
+                    if !less_than(h, less, v, p) {
+                        break;
+                    }
+                    let p = rt(h.read(prev));
+                    h.write(hole, p);
+                    hole = prev;
+                    prev -= 4;
+                }
+                h.write(hole, rt(v));
+            }
+            cur += 4;
+        }
+    }
+
+    /// The `PArray` growths `0x0066c700` and `0x0066c690` (`thiscall(array,
+    /// capacity)`).
+    pub const ARRAY_GROW_3890: u32 = 0x0066_c700;
+    pub const ARRAY_GROW_3898: u32 = 0x0066_c690;
+
+    /// `PhyreScene_PushPair3890(this, a, b)` (`0x00656b90`): `a` and `b`
+    /// appended at the count `+0x38a0` to the arrays `+0x3894` and
+    /// `+0x389c`; when the first array (`+0x3890` capacity, bit 31 a flag)
+    /// is full both grow by 0x400. Returns the second growth's `eax`, or
+    /// the first array's capacity.
+    pub fn scene_push_pair(h: &mut impl Host, this: u32, a: u32, b: u32) -> u32 {
+        let n: u32 = h.read(this + 0x38a0);
+        let arr: u32 = h.read(this + 0x3894);
+        h.write(arr + 4 * n, a);
+        let n: u32 = h.read(this + 0x38a0);
+        let arr: u32 = h.read(this + 0x389c);
+        h.write(arr + 4 * n, b);
+        let cap = h.read::<u32>(this + 0x3890) & 0x7fff_ffff;
+        let n = h.read::<u32>(this + 0x38a0).wrapping_add(1);
+        h.write(this + 0x38a0, n);
+        if n < cap {
+            return cap;
+        }
+        h.call_sym(
+            ARRAY_GROW_3890,
+            Conv::Thiscall(this + 0x3890),
+            &[cap + 0x400],
+        );
+        let cap2 = h.read::<u32>(this + 0x3898) & 0x7fff_ffff;
+        h.call_sym(
+            ARRAY_GROW_3898,
+            Conv::Thiscall(this + 0x3898),
+            &[cap2 + 0x400],
+        )
+    }
+
+    /// The grad-mesh pool's current set (`0x00cdec24`).
+    pub const GRAD_MESH_SET: Global<u32> = Global::new(0x00cd_ec24);
+    /// The CRT `printf` import slot.
+    pub const PRINTF_SLOT: u32 = 0x00b0_c380;
+
+    /// `GetASpareGradMeshInstance(this, &extra)` (`0x006cc980`): the first
+    /// free one of the current set's 16 slots (bytes `+0xdc4`, 16 per set)
+    /// is taken; `extra` gets its `+0xd44` word and its `+0xcc4` word is
+    /// returned. With none free, a message (`GetASpareGradMeshInstance() , Shouldn't
+    /// get here, contact cg please`) is printed and 0 returned.
+    pub fn get_spare_grad_mesh(h: &mut impl Host, this: u32, out: u32) -> u32 {
+        let set = GRAD_MESH_SET.get(h);
+        let base = this.wrapping_add(set.wrapping_mul(16));
+        for i in 0..16 {
+            if h.read::<u8>(base + 0xdc4 + i) == 0 {
+                h.write(base + 0xdc4 + i, 1u8);
+                let set = GRAD_MESH_SET.get(h);
+                let k = set.wrapping_mul(16).wrapping_add(i);
+                let extra: u32 = h.read(this.wrapping_add(4 * k) + 0xd44);
+                h.write(out, extra);
+                let set = GRAD_MESH_SET.get(h);
+                let k = set.wrapping_mul(16).wrapping_add(i);
+                return h.read(this.wrapping_add(4 * k) + 0xcc4);
+            }
+        }
+        let slot = h.rebase(PRINTF_SLOT);
+        let printf: u32 = h.read(slot);
+        let msg = h.rebase(0x00b4_97c0);
+        h.call(printf, Conv::Cdecl, &[msg]);
+        0
+    }
 }
