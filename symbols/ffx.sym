@@ -10658,7 +10658,7 @@
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
 0x009048f0 function TOSetScreenWH # cdecl(w, h): u16 g_TOScreenW = w, g_TOScreenH = h (the setter of TOGetScreenWH); caller 0x008fae20; name ours
 0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70
-0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0
+0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0; cdecl(text, x, y, w, alpha, scale, extra, align, scroll, slot): battle-font label fitted to w: align 1 centres, 0 left (else left unset); wider text marquees in slot min(slot,3) (scroll 1: 51-frame waits, -0.5/frame, drawn twice 10 apart in OpenFontScissor) or is cut glyph by glyph with an ellipsis HHH/> (a G at the cut narrowed by the G glyph width); callers TOBtlDrawCommandWindow; ported (system round 29)
 0x00905190 function ToGetBtlEasyDigitWidth    # fh v3:exact 0x00905190
 0x00905230 function ToGetBtlEasyDigitWidth2      # layout+callees: sorts between ToGetBtlEasyDigitWidth and ToGetBtlEasyFontWidth, and its named callees match the Switch 0x7100506420 ToGetBtlEasyDigitWidth2's (similarity 1.00: ToGetBtlEasyDigitWidth); symbols from Fahrenheit's server export
 0x00905290 function ToGetBtlEasyFontWidth     # fh v3:exact+call.cs 0x00905290 cdecl
@@ -15589,6 +15589,8 @@
 0x018716f0 label    g_InvokedFromSelectCursor # SetInvokedFromSelectCursor
 0x018716f4 label    g_TOPktDmaChannel         # TODrawKick passes it to sceDmaSend with g_TOPktBuff[0]; name ours
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
+0x01871708 label    g_QRScrollPhase           # u8[4] QuickRecoverMenuDraw marquee phase: 0 wait, 1 slide, 2 wait at the end; name ours
+0x01876110 label    g_QRScrollOffset          # f32[4] QuickRecoverMenuDraw marquee offsets; 0x01876120 u32[4] text xor hashes (low nibble), 0x01876130 u32[4] frame counts; name ours
 0x018763e8 label    g_FFXToAlbhedTbl          # the Al Bhed character table (TOGetFFXToAlbhedTblAdrs)
 0x01876da8 label    g_Windows                 # TO window pointers: +0 in use (i16), +4 type, +8 state, +0x60 handler per state, +0x74 current handler (TOGetWindowType/Status, TOCloseWindow, TOControlWindow)
 0x01876e00 label    g_YiRender                   # the field renderer object (yiRender_*'s this): +0x68788 animation id bound, +0x9cac0 64 animation slots of 0x28, +0x9d4c4 keyframe data, +0x9d9c4 texture swap count, +0x9d9c8 64 swaps of 0x720 (yiAttachChrDObj, yiTexSwapSetFrame)

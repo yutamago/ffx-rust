@@ -15582,13 +15582,18 @@ fn log_arg(v: &mut Vec<u8>, off: u8, at: u8) {
 /// and the words at `[esp+offs]`, then (with `out` set) stores `[cell]`
 /// through the pointer at `[esp+out]` and steps `[cell]` by 0x00400000.
 fn deref_logger(cursor: u32, offs: &[u8], out: Option<(u8, u32)>) -> Vec<u8> {
+    // the rest of the originals' text buffers is stack garbage
+    deref_logger_mask(cursor, offs, out, 0xffff)
+}
+
+/// [`deref_logger`] keeping the pointed-at word's bits in `mask`.
+fn deref_logger_mask(cursor: u32, offs: &[u8], out: Option<(u8, u32)>, mask: u32) -> Vec<u8> {
     let mut v = vec![0x8b, 0x0d];
     v.extend_from_slice(&cursor.to_le_bytes());
-    // mov eax, [esp+4]; mov eax, [eax]; and eax, 0xffff (the rest of the
-    // original's text buffer is stack garbage); mov [ecx], eax
-    v.extend_from_slice(&[
-        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x25, 0xff, 0xff, 0, 0, 0x89, 0x01,
-    ]);
+    // mov eax, [esp+4]; mov eax, [eax]; and eax, mask; mov [ecx], eax
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x25]);
+    v.extend_from_slice(&mask.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x01]);
     for (k, &off) in (1u8..).zip(offs) {
         log_arg(&mut v, off, 4 * k);
     }
@@ -16224,4 +16229,161 @@ fn round28_wave_matches_the_original_on_the_snapshot() {
         return;
     };
     round28_wave(&mut a, &mut b, &mut Xorshift(0x4028_0062));
+}
+
+/// `QuickRecoverMenuDraw` over stand-ins for the battle font's width,
+/// glyph record, advance and drawing calls and the scissor.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round29_quick_recover(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, 0x50);
+    let text = alloc(a, b, 0x40);
+    let stand = |a: &mut Oracle, b: &mut Oracle, off: u32, sym: u32, code: &[u8]| {
+        let s = stand_in8(a, b, off, code);
+        redirect(a, b, sym, s);
+    };
+    // TOGetFFXLang: [cells]
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    stand(a, b, 0, 0x008a_c2f0, &v);
+    // ToGetBtlEasyFontWidth(text, &w, alpha, scale, extra): w = [cells + 4]
+    stand(
+        a,
+        b,
+        0x80,
+        0x0090_5290,
+        &deref_logger_mask(cursor, &[0xc, 0x10, 0x14], Some((8, cells + 4)), u32::MAX),
+    );
+    // ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, extra)
+    stand(
+        a,
+        b,
+        0x100,
+        0x0090_5930,
+        &deref_logger_mask(cursor, &[8, 0xc, 0x10, 0x14, 0x18], None, u32::MAX),
+    );
+    stand(a, b, 0x180, 0x008e_8940, &logger_args(cursor, 4));
+    stand(a, b, 0x200, 0x008e_5cd0, &marker(cursor, 0x2910));
+    // TOGetFontInfo(text, out): logs the code, out+0x1c = [cells + 8]
+    let mut v = deref_logger_mask(cursor, &[], None, u32::MAX);
+    v.pop();
+    v.push(0xa1);
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x08, 0x89, 0x41, 0x1c, 0xc3]);
+    stand(a, b, 0x280, 0x008b_7240, &v);
+    // TOGetFontAdvance_008fa740(kind, glyph, scale): the glyph's +0x1c
+    stand(
+        a,
+        b,
+        0x300,
+        0x008f_a740,
+        &[0x8b, 0x44, 0x24, 0x08, 0xd9, 0x40, 0x1c, 0xc3],
+    );
+    stand(a, b, 0x380, 0x0064_3af0, &logger_args(cursor, 1));
+    stand(a, b, 0x400, 0x0064_0dd0, &logger_args(cursor, 1));
+    stand(a, b, 0x480, 0x008f_ae40, &logger_args(cursor, 3));
+    stand(a, b, 0x500, 0x008f_b940, &logger_args(cursor, 3));
+    // TOAddFontWidthSpace(pen, glyph, scale): logs, pen x += glyph +0x1c
+    let mut v = logger_args(cursor, 3);
+    v.truncate(v.len() - 5);
+    v.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x08, 0xd9, 0x40, 0x1c, 0x8b, 0x44, 0x24, 0x04, 0xd8, 0x40, 0x04, 0xd9,
+        0x58, 0x04, 0xc3,
+    ]);
+    stand(a, b, 0x580, 0x008e_8ed0, &v);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let [offsets, hashes, phases, counts] =
+        [0x0187_6110, 0x0187_6120, 0x0187_1708, 0x0187_6130].map(|x| a.rebase(x));
+    let float = |rng: &mut Xorshift, lo: u32, hi: u32| (lo + rng.next() % (hi - lo)) as f32 / 4.0;
+    for k in 0..2500u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, [0u32, 1, 8, 9, 0xb][(rng.next() % 5) as usize]);
+        let lw = float(rng, 40, 1600);
+        put(a, b, cells + 4, lw);
+        put(a, b, cells + 8, float(rng, 8, 120));
+        let codes = [0x30u8, 0x41, 0x47, 0x47, 0x61, 0x7a, 0x0a, 0x03, 0x01, 0x20];
+        let n = (rng.next() % 0x18) as usize;
+        let mut bytes = [0u8; 0x40];
+        for c in bytes.iter_mut().take(n) {
+            *c = codes[(rng.next() % codes.len() as u32) as usize];
+        }
+        put(a, b, text, bytes);
+        for i in 0..4 {
+            put(a, b, offsets + 4 * i, -float(rng, 0, 800));
+            put(a, b, hashes + 4 * i, rng.next() % 16);
+            put(a, b, phases + i, (rng.next() % 4) as u8);
+            put(a, b, counts + 4 * i, 45 + rng.next() % 10);
+        }
+        // edge cases: the text exactly as wide as the box; the marquee
+        // reaching the box's end exactly; the first glyph ending exactly at
+        // the ellipsis
+        let w = match rng.next() % 6 {
+            0 => lw,
+            _ => float(rng, 40, 1200),
+        };
+        let slot = rng.next() % 6;
+        if rng.next().is_multiple_of(4) {
+            let s = slot.min(3);
+            put(a, b, offsets + 4 * s, w - lw + 0.5);
+            put(a, b, phases + s, 1u8);
+        }
+        let ew = f32::from_bits(lw.to_bits() + 0x0040_0000);
+        let exact = rng.next().is_multiple_of(4) && lw > w;
+        if exact {
+            put(a, b, cells + 8, w - ew);
+            put(a, b, text, [0x41u8, 0x41]);
+        }
+        let mut args = [
+            text,
+            float(rng, 0, 2000).to_bits(),
+            float(rng, 0, 2000).to_bits(),
+            w.to_bits(),
+            rng.next(),
+            [1.0f32, 0.63][(rng.next() % 2) as usize].to_bits(),
+            1.5f32.to_bits(),
+            rng.next() % 2,
+            [0u32, 1, 1, 2][(rng.next() % 4) as usize],
+            slot,
+        ];
+        if exact {
+            // cut to fit, the first glyph's advance (negative here) ending
+            // exactly at the ellipsis
+            args[7] = 0;
+            args[8] = 0;
+        }
+        eax(a, 0x0090_4ba0, &args);
+        t::quick_recover_menu_draw(b, args, scratch, call, fcall);
+        let v: [u32; 0x14] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("quick recover {k}"), a, b);
+    }
+}
+
+#[test]
+fn round29_quick_recover_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round29_quick_recover(&mut a, &mut b, &mut Xorshift(0x4029_0011));
+}
+
+#[test]
+fn round29_quick_recover_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round29_quick_recover(&mut a, &mut b, &mut Xorshift(0x4029_0012));
 }

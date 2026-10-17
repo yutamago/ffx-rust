@@ -11070,4 +11070,248 @@ pub mod bridge {
         }
         call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0])
     }
+
+    /// `QuickRecoverMenuDraw`'s per-slot scroll state: offset (`f32`,
+    /// `0x01876110`), text hash (`0x01876120`), phase (`u8`, `0x01871708`)
+    /// and frame count (`0x01876130`), four slots.
+    pub const QR_SCROLL_OFFSET: u32 = 0x0187_6110;
+
+    /// `QuickRecoverMenuDraw(text, x, y, w, alpha, scale, extra, align,
+    /// scroll, slot)` (`0x00904ba0`, from `TOBtlDrawCommandWindow`): a
+    /// battle-font label fitted into width `w`, drawn with
+    /// `ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, extra)`. The text's
+    /// width comes from `ToGetBtlEasyFontWidth`. `align` 1 centres it at
+    /// `x` (by `w` when wider), 0 starts it at `x`; any other value leaves
+    /// the left edge unset (stack garbage in the original, the word at
+    /// `scratch + 0xc` here).
+    ///
+    /// A text that fits is drawn as is. A wider one:
+    /// - with `scroll` 1 marquees in slot `min(slot, 3)`: a new text (its
+    ///   xor hash's low nibble differs) restarts it; it waits 51 frames,
+    ///   slides left 0.5 a frame until its end reaches the box's, waits 51
+    ///   frames and starts over. It is drawn twice (10 apart) inside
+    ///   `OpenFontScissor(left, y - 2, left + w, y + 20)`.
+    /// - otherwise is cut to fit with an ellipsis (`"HHH"` for languages
+    ///   1..=8, else `">"`): glyph by glyph through the TO font writer
+    ///   (`g_TOFontCursor`, `0x025d09a0`: colour 0x80808080, `+4` x, `+8`
+    ///   y, `+0x1b` alpha), group 1 codes starting a new line 16 lower at
+    ///   `x`. A glyph that would pass `left + w - ellipsis width` ends the
+    ///   text: a `G` there (0x47) is first narrowed by the `G` glyph's width
+    ///   until it fits and drawn. The ellipsis follows at the cursor.
+    ///
+    /// Sums are doubles of the `f32` values, rounded where the original
+    /// stores. `scratch` (0x50 bytes) stands for the original's frame: text
+    /// width `+0`, ellipsis width `+4`, ellipsis text `+8`, left edge or
+    /// `G` code `+0xc`, glyph record `+0x10`. Float results come through
+    /// `fcall`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::neg_cmp_op_on_partial_ord // the x87 tests: NaN takes the negated side
+    )]
+    pub fn quick_recover_menu_draw<M: Mem>(
+        mem: &mut M,
+        args: [u32; 10],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
+        const LANG: u32 = 0x008a_c2f0;
+        const EDGE_FONT: u32 = 0x0090_5930;
+        const FONT_INFO: u32 = 0x008b_7240;
+        const ADVANCE: u32 = 0x008f_a740;
+        let rt = |v: u32| round_trip(f32::from_bits(v)).to_bits();
+        let d = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let [text, x, y, w, alpha, scale, extra, align, scroll, slot] = args;
+        let (scale, extra) = (rt(scale), rt(extra));
+        let (lw_at, ew_at, ellipsis, left_at, info) = (
+            scratch,
+            scratch.wrapping_add(4),
+            scratch.wrapping_add(8),
+            scratch.wrapping_add(0xc),
+            scratch.wrapping_add(0x10),
+        );
+        let glyph = mem.rebase(0x0184_1d50);
+        for k in 0..0x10 {
+            mem.write(glyph.wrapping_add(4 * k), 0u32);
+        }
+        let pen = mem.rebase(0x025d_09a0);
+        for k in 0..7 {
+            mem.write(pen.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(ellipsis, 0u32);
+        let lang = call(mem, LANG, &[]).cast_signed();
+        if lang > 0 && call(mem, LANG, &[]).cast_signed() < 9 {
+            mem.write(ellipsis, [0x48u8, 0x48, 0x48]);
+        } else {
+            mem.write(ellipsis, 0x3eu8);
+        }
+        call(mem, 0x0090_5290, &[text, lw_at, alpha, scale, extra]);
+        let lw = f64::from(mem.read::<f32>(lw_at));
+        let (fx, fw) = (load(x), load(w));
+        let half = d(mem, 0x00b9_2220);
+        match align {
+            1 => {
+                let span = if lw > fw { fw } else { lw };
+                mem.write(left_at, store(sub(fx, mul(span, half))));
+            }
+            0 => mem.write(left_at, rt(x)),
+            _ => {}
+        }
+        let left = rt(mem.read(left_at));
+        let draw = |mem: &mut M,
+                    call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                    t: u32,
+                    x: u32,
+                    y: u32| {
+            call(mem, EDGE_FONT, &[t, x, y, alpha, scale, extra]);
+        };
+        if scroll == 1 {
+            let slot = if slot.cast_signed() >= 4 { 3 } else { slot };
+            let offset = mem
+                .rebase(QR_SCROLL_OFFSET)
+                .wrapping_add(slot.wrapping_mul(4));
+            let hash = mem.rebase(0x0187_6120).wrapping_add(slot.wrapping_mul(4));
+            let phase = mem.rebase(0x0187_1708).wrapping_add(slot);
+            let count = mem.rebase(0x0187_6130).wrapping_add(slot.wrapping_mul(4));
+            let mut h = 0u8;
+            let mut p = text;
+            loop {
+                let c: u8 = mem.read(p);
+                if c == 0 {
+                    break;
+                }
+                h ^= c;
+                p = p.wrapping_add(1);
+            }
+            let h = u32::from(h & 0xf);
+            if mem.read::<u32>(hash) != h {
+                mem.write(offset, 0f32);
+                mem.write(phase, 0u8);
+                mem.write(count, 0u32);
+                mem.write(hash, h);
+            }
+            if !(lw > fw) {
+                draw(mem, &mut call, text, left, rt(y));
+                return;
+            }
+            let tick = |mem: &mut M| -> u32 {
+                let n = mem.read::<u32>(count).wrapping_add(1);
+                mem.write(count, n);
+                n
+            };
+            match mem.read::<i8>(phase) {
+                0 => {
+                    let n = tick(mem);
+                    mem.write(offset, 0f32);
+                    if n > 50 {
+                        mem.write(phase, 1u8);
+                        mem.write(count, 0u32);
+                    }
+                }
+                1 => {
+                    let o = store(sub(load(mem.read(offset)), half));
+                    mem.write(offset, o);
+                    let room = sub(fw, lw);
+                    if load(o) <= room {
+                        mem.write(offset, store(room));
+                        mem.write(phase, 2u8);
+                    }
+                }
+                2 => {
+                    if tick(mem) > 50 {
+                        mem.write(phase, 0u8);
+                        mem.write(count, 0u32);
+                    }
+                }
+                _ => {
+                    mem.write(offset, 0f32);
+                    mem.write(phase, 0u8);
+                    mem.write(count, 0u32);
+                }
+            }
+            let (fy, fl) = (load(y), load(left));
+            let bottom = store(add(d(mem, 0x00b4_9968), fy));
+            let right = store(add(fw, fl));
+            let top = store(sub(fy, d(mem, 0x00b9_2270)));
+            call(mem, 0x008e_8940, &[left, top, right, bottom]);
+            let first = add(load(mem.read(offset)), fl);
+            draw(mem, &mut call, text, store(first), rt(y));
+            let second = add(
+                add(add(load(mem.read(offset)), fl), lw),
+                d(mem, 0x00b9_22b0),
+            );
+            draw(mem, &mut call, text, store(second), rt(y));
+            call(mem, 0x008e_5cd0, &[]);
+            return;
+        }
+        if lw <= fw {
+            draw(mem, &mut call, text, left, rt(y));
+            return;
+        }
+        // cut to fit, with the ellipsis
+        call(mem, 0x0090_5290, &[ellipsis, ew_at, alpha, scale, extra]);
+        let fl = load(left);
+        mem.write(pen, 0x8080_8080u32);
+        mem.write(pen.wrapping_add(0x1a), 0u8);
+        mem.write(pen.wrapping_add(0x1b), alpha.to_le_bytes()[0]);
+        let ew = f64::from(mem.read::<f32>(ew_at));
+        let limit = load(store(sub(add(fl, fw), ew)));
+        mem.write(pen.wrapping_add(4), left);
+        mem.write(pen.wrapping_add(8), rt(y));
+        let pen_x = |mem: &M| f64::from(mem.read::<f32>(pen.wrapping_add(4)));
+        let emit = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            call(mem, 0x0064_3af0, &[1]);
+            call(mem, 0x0064_0dd0, &[0]);
+            call(mem, 0x008f_ae40, &[pen, glyph, scale]);
+            call(mem, 0x0064_0dd0, &[1]);
+            call(mem, 0x008f_b940, &[pen, glyph, scale]);
+            call(mem, 0x0064_3af0, &[0]);
+            call(mem, 0x008e_8ed0, &[pen, glyph, scale]);
+        };
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    mem.write(pen.wrapping_add(4), rt(x));
+                    let row: f32 = mem.read(pen.wrapping_add(8));
+                    let row = store(add(f64::from(row), d(mem, 0x00b3_13a0)));
+                    mem.write(pen.wrapping_add(8), row);
+                }
+                4 => {
+                    call(mem, FONT_INFO, &[p, glyph]);
+                    let advance = fcall(mem, ADVANCE, &[0, glyph, scale]);
+                    if limit < add(advance, pen_x(mem)) {
+                        break;
+                    }
+                    emit(mem, &mut call);
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        if mem.read::<u8>(p) == 0x47 {
+            mem.write(left_at, 0x47u16);
+            call(mem, FONT_INFO, &[left_at, info]);
+            let narrow = glyph.wrapping_add(0x1c);
+            loop {
+                let advance = fcall(mem, ADVANCE, &[0, glyph, scale]);
+                if !(add(advance, pen_x(mem)) > limit) {
+                    break;
+                }
+                let g = load(mem.read(narrow));
+                let by = load(mem.read(info.wrapping_add(0x1c)));
+                mem.write(narrow, store(sub(g, by)));
+            }
+            emit(mem, &mut call);
+        }
+        let at: u32 = mem.read(pen.wrapping_add(4));
+        let row: u32 = mem.read(pen.wrapping_add(8));
+        draw(mem, &mut call, ellipsis, rt(at), rt(row));
+    }
 }

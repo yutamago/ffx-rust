@@ -6094,6 +6094,18 @@ ported! {
         std::hint::black_box(&mut frame);
         r
     }
+    /// `QuickRecoverMenuDraw(text, x, y, w, alpha, scale, extra, align, scroll, slot)`.
+    QuickRecoverMenuDraw @ 0x0090_4ba0 => extern "C" fn quick_recover_menu_draw(
+        text: u32, x: u32, y: u32, w: u32, alpha: u32, scale: u32, extra: u32, align: u32, scroll: u32, slot: u32
+    ) {
+        let mut frame = [0u32; 0x14];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = frame.as_mut_ptr() as u32;
+        tolib::bridge::quick_recover_menu_draw(
+            &mut mem(), [text, x, y, w, alpha, scale, extra, align, scroll, slot], at, call_sym, fcall,
+        );
+        std::hint::black_box(&mut frame);
+    }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32

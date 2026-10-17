@@ -977,3 +977,31 @@ The colours `c0` (top-left vertex) and `c1` go in byte by byte. The
 `graphicDrawUIElement(record, texture, 1, 0, 0)` record has `+0x90` and
 `+0x94` zeroed; its other unused words are stack leftovers in the
 original.
+
+## Fitted command labels (round 29)
+
+`QuickRecoverMenuDraw(text, x, y, w, alpha, scale, extra, align, scroll,
+slot)` (`0x00904ba0`, called only by `TOBtlDrawCommandWindow`) draws a
+battle-font label (`ToMakeBtlEasyEdgeFont`) into a box `w` wide. `align`
+1 centres it at `x` (by half of `w` when the text is wider), 0 starts it
+at `x`. Any other value leaves the left edge uninitialised (stack
+garbage).
+
+A text no wider than `w` is drawn as is. A wider one:
+
+- With `scroll` 1 it scrolls in marquee slot `min(slot, 3)`. State is
+  `g_QRScrollOffset` (`0x01876110`), the text's xor hash at `0x01876120`,
+  `g_QRScrollPhase` (`0x01871708`) and a frame count at `0x01876130`. A
+  text whose hash's low nibble changed restarts it. Phase 0 waits 51
+  frames at offset 0, phase 1 slides 0.5 a frame until the text's end
+  meets the box's (`w - width`), and phase 2 waits 51 frames. The text is
+  drawn at `left + offset` and again 10 past its end, inside
+  `OpenFontScissor(left, y - 2, left + w, y + 20)`.
+- Otherwise it is cut. The ellipsis is `HHH` for languages 1..=8, else
+  `>`. The text is written glyph by glyph through the TO font cursor at
+  `0x025d09a0` (colour 0x80808080, `+4` x, `+8` y, `+0x1b` alpha;
+  `TOMakeBtlEasyFontEdge`, `TOMakePktBtlEasyFont`, `TOAddFontWidthSpace`).
+  Group 1 codes go to `x`, 16 lower. The first glyph whose advance passes
+  `left + w - ellipsis width` stops it. A `G` (0x47) there is narrowed by
+  the `G` glyph's width until it fits and is drawn. The ellipsis follows
+  at the cursor. A text that ends first gets no ellipsis.
