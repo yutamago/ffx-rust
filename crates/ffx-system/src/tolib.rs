@@ -2376,4 +2376,134 @@ pub mod bridge {
             );
         }
     }
+
+
+    /// `g_TkMenuTutoChosen` (`0x025d16bc`).
+    pub const TUTO_CHOSEN: Global<u32> = Global::new(0x025d_16bc);
+    /// Per message window: 1 when [`set_message_window_position`] split a
+    /// wide window into 300-unit rows (`0x025d0b20`).
+    pub const MESSAGE_WRAPPED: Global<[u32; 8]> = Global::new(0x025d_0b20);
+    /// A word (`0x01327104`) that, set, keeps a type-1 message window from
+    /// being clamped horizontally.
+    pub const MESSAGE_UNCLAMPED: Global<u32> = Global::new(0x0132_7104);
+
+    /// `TOSetMessageWindowPosition(i, anchor, x, y)` (`0x008af850`): the
+    /// anchor and position stored (u16 `+0xc`, `+8`, `+0xa` of the object
+    /// and `+0x18`, `+0x14`, `+0x16` of its `+0x14` record); the size is the
+    /// record's text size (`+0x40`, `+0x42`) plus the frame padding, and
+    /// with the tutorial choice set a text wider than 0x190 becomes 300 wide
+    /// with `width / 300 + 1` rows ([`MESSAGE_WRAPPED`]). The anchor moves
+    /// the position (1 bottom, 2 right, 3 bottom right, 4 centre); the width
+    /// is clamped to 0..=0x200 and `x` into the 512 columns (except for
+    /// magic 0x281 on maps 0x5e and 0x12e, or a type-1 window while
+    /// [`MESSAGE_UNCLAMPED`] is set); the height to 4..=0x7f (mode 1, 0x7b
+    /// rows) or 4..=0x1a0 (0x19c rows) and `y` to 4.. that bound; then
+    /// [`place_message_window`].
+    #[allow(
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::too_many_lines
+    )] // 16-bit arithmetic
+    pub fn set_message_window_position<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        anchor: u32,
+        x: i32,
+        y: i32,
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) {
+        let (mut x, mut y) = (x, y);
+        let slot = MESSAGE_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let obj: u32 = mem.read(slot);
+        let low = |v: i32| v.cast_unsigned() as u16;
+        let a16 = anchor as u16;
+        mem.write(obj.wrapping_add(0xc), a16);
+        mem.write(obj.wrapping_add(8), low(x));
+        mem.write(obj.wrapping_add(0xa), low(y));
+        let rec: u32 = mem.read(obj.wrapping_add(0x14));
+        mem.write(rec.wrapping_add(0x18), a16);
+        mem.write(rec.wrapping_add(0x14), low(x));
+        mem.write(rec.wrapping_add(0x16), low(y));
+        let [l, t, r, b] = frame_padding(mem, i).map(|v| v.cast_unsigned() as u16);
+        let pad_w = u32::from(r.wrapping_add(l));
+        let pad_h = u32::from(b.wrapping_add(t));
+        let rec: u32 = mem.read(obj.wrapping_add(0x14));
+        let text_w: u16 = mem.read(rec.wrapping_add(0x40));
+        let text_h: u16 = mem.read(rec.wrapping_add(0x42));
+        let wrapped = MESSAGE_WRAPPED
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let s16 = |v: u32| i32::from((v as u16).cast_signed());
+        let (rows_h, w_add) = if TUTO_CHOSEN.get(mem) != 0
+            && i32::from(text_w.cast_signed()) + s16(pad_w) > 0x190
+        {
+            mem.write(wrapped, 1u32);
+            let rows = i32::from(text_w.cast_signed()) / 300 + 1;
+            let h = rows.wrapping_mul(i32::from(text_h)).cast_unsigned() as u16;
+            (u32::from(h), 300u32)
+        } else {
+            mem.write(wrapped, 0u32);
+            (u32::from(text_h), u32::from(text_w))
+        };
+        let mut h = pad_h.wrapping_add(rows_h);
+        let w = pad_w.wrapping_add(w_add);
+        let (sw, sh) = (s16(w), s16(h));
+        match anchor.wrapping_sub(1) {
+            0 => y = y.wrapping_sub(sh),
+            1 => x = x.wrapping_sub(sw),
+            2 => {
+                x = x.wrapping_sub(sw);
+                y = y.wrapping_sub(sh);
+            }
+            3 => {
+                x = x.wrapping_sub(sw / 2);
+                y = y.wrapping_sub(sh / 2);
+            }
+            _ => {}
+        }
+        let width = if sw > 0x200 {
+            0x200
+        } else if sw < 0 {
+            0
+        } else {
+            w
+        };
+        let width = s16(width);
+        let map = CURRENT_MAP.get(mem);
+        let exempt = ((map == 0x5e || map == 0x12e)
+            && crate::menu::bridge::MAGIC_FILE.get(mem)[0] == 0x281)
+            || (MESSAGE_UNCLAMPED.get(mem) != 0
+                && crate::window::bridge::window_type(mem, i) == 1);
+        if !exempt {
+            let lim = 0x200 - width;
+            x = if x > lim { lim } else { x.max(0) };
+        }
+        let rows = if crate::menu::bridge::message_window_mode(mem) == 1 {
+            if s16(h) > 0x7f {
+                h = 0x7f;
+            } else if s16(h) < 4 {
+                h = 4;
+            }
+            0x7b
+        } else {
+            if s16(h) > 0x1a0 {
+                h = 0x1a0;
+            } else if s16(h) < 4 {
+                h = 4;
+            }
+            0x19c
+        };
+        let height = s16(h);
+        let lim = rows - height;
+        if y > lim {
+            y = lim;
+        } else if y < 4 {
+            y = 4;
+        }
+        place_message_window(mem, i, [x, y, width, height], screen_wh);
+    }
 }

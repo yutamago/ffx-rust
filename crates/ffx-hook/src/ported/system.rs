@@ -4343,6 +4343,10 @@ ported! {
     TOPlaceMessageWindow @ 0x008a_fbb0 => extern "C" fn to_place_message_window(i: i32, x: i32, y: i32, w: i32, h: i32) {
         tolib::bridge::place_message_window(&mut mem(), i, [x, y, w, h], font_screen_wh);
     }
+    /// `TOSetMessageWindowPosition(i, anchor, x, y)`.
+    TOSetMessageWindowPosition @ 0x008a_f850 => extern "C" fn to_set_message_window_position(i: i32, anchor: u32, x: i32, y: i32) {
+        tolib::bridge::set_message_window_position(&mut mem(), i, anchor, x, y, font_screen_wh);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
