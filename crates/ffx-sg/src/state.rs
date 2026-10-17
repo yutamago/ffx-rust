@@ -1372,6 +1372,188 @@ pub mod bridge {
         }
     }
 
+    /// `g_ChrIdShadeOn` (`i8`).
+    pub const CHR_ID_SHADE_ON: Global<u8> = Global::new(0x0130_34b8);
+    /// `graphicCharacterLightingSetMapIdFlagChanged(old, new)`.
+    pub const LIGHTING_SET_MAP_ID_FLAG_CHANGED: u32 = 0x0063_cd20;
+
+    /// `Sg_IdFixupAndSet(map)` (`0x00844bc0`): for a map's id data, the
+    /// id shades go on for a version (`i16` at `+4`) above `0x1202` (the
+    /// renderer told of a change, old value sign-extended), the data's
+    /// offsets become pointers (word 0 holds the base they were taken from:
+    /// `+0x1c`, `+0x18`, and `+0xc` of each of the `i16` `+6` 16-byte
+    /// entries in `+0x1c`'s table, each moved by `map - base`), then
+    /// `Sg_IdSetPtr(map)`. A null map only goes to `Sg_IdSetPtr`.
+    /// (`get_ptr32_func`/`set_ptr32` are identities on the PC.)
+    pub fn id_fixup_and_set(h: &mut impl ffx_bridge::Host, map: u32) {
+        if map != 0 {
+            let old = i32::from(CHR_ID_SHADE_ON.get(h).cast_signed()).cast_unsigned();
+            let on = u32::from(h.read::<i16>(map.wrapping_add(4)) > 0x1202);
+            if on != old {
+                let at = h.rebase(LIGHTING_SET_MAP_ID_FLAG_CHANGED);
+                h.call(at, &[old, on]);
+            }
+            let on = u8::from(h.read::<i16>(map.wrapping_add(4)) > 0x1202);
+            CHR_ID_SHADE_ON.set(h, on);
+            let delta = map.wrapping_sub(h.read::<u32>(map));
+            if delta != 0 {
+                h.write(map, delta);
+                for off in [0x1c, 0x18] {
+                    let p: u32 = h.read(map.wrapping_add(off));
+                    h.write(map.wrapping_add(off), p.wrapping_add(delta));
+                }
+                let mut k = 0i32;
+                while k < i32::from(h.read::<i16>(map.wrapping_add(6))) {
+                    let table: u32 = h.read(map.wrapping_add(0x1c));
+                    let e = table.wrapping_add(0xc).wrapping_add(16 * k.cast_unsigned());
+                    let p: u32 = h.read(e);
+                    let table: u32 = h.read(map.wrapping_add(0x1c));
+                    let e = table.wrapping_add(0xc).wrapping_add(16 * k.cast_unsigned());
+                    h.write(e, p.wrapping_add(delta));
+                    k += 1;
+                }
+            }
+        }
+        id_set_ptr(h, map);
+    }
+
+    /// `Sg_IdInitAll()` (`0x00844ca0`): `Sg_IdSetPtr(0)`.
+    pub fn id_init_all(mem: &mut impl Mem) {
+        id_set_ptr(mem, 0);
+    }
+
+    /// `Sg_PlayerInitAll()` (`0x0082d910`): no player (`Sg_SetPlayer(0)`),
+    /// diving on (`Sg_PlayerSetDiving(1)`). Returns `eax`: the player's
+    /// upper bytes (0) under the diving byte, so 1.
+    pub fn player_init_all(mem: &mut impl Mem) -> u32 {
+        let r = set_player(mem, 0);
+        r & !0xff | u32::from(player_set_diving(mem, 1))
+    }
+
+    /// `SgStrdupD`, called as the game's.
+    pub const SG_STRDUP_D: u32 = 0x0083_f050;
+
+    /// `Sg_SetUserName(name)` (`0x00821d30`): [`USER_NAME`] becomes a copy
+    /// (`SgStrdupD(name)`, not freed before); returns it.
+    pub fn set_user_name(h: &mut impl ffx_bridge::Host, name: u32) -> u32 {
+        let at = h.rebase(SG_STRDUP_D);
+        let p = h.call(at, &[name]);
+        USER_NAME.set(h, p);
+        p
+    }
+
+    /// The filter requests (`0x01300708..0x01300758`: cross-fade, blur
+    /// and their neighbours), cleared by `Sg_InitFilter`.
+    pub const FILTER_BLOCK: u32 = 0x0130_0708;
+    /// The request flags (`Sg_AccSetAlpha`, `Sg_Blur`) and `0x01300768`.
+    pub const FILTER_FLAGS: Global<u32> = Global::new(0x0130_0704);
+    pub const FILTER_1300768: Global<u32> = Global::new(0x0130_0768);
+
+    /// `Sg_InitFilter()` (`0x0082cd50`): the filter block (`0x50` bytes)
+    /// and the two words cleared, then `Sg_FocusReset` (a tail call: its
+    /// `eax`).
+    pub fn init_filter(mem: &mut impl Mem) -> u32 {
+        let at = mem.rebase(FILTER_BLOCK);
+        mem.write_bytes(at, &[0; 0x50]);
+        FILTER_FLAGS.set(mem, 0);
+        FILTER_1300768.set(mem, 0);
+        focus_reset(mem)
+    }
+
+    /// `Sg_PlayerInitDefault()` (`0x0082d8d0`): [`player_init_all`], then
+    /// the speeds of kinds 1, 2 and `0x12` from `.rdata` (`0x00b9231c` 16,
+    /// `0x00b59830` 38, `0x00b4ae10` 20). Returns the last
+    /// `Sg_PlayerSetSpeed`'s `eax` (2).
+    pub fn player_init_default(mem: &mut impl Mem) -> u32 {
+        player_init_all(mem);
+        let mut r = 0;
+        for (kind, at) in [(1, 0x00b9_231c), (2, 0x00b5_9830), (0x12, 0x00b4_ae10)] {
+            let v = ffx_bridge::x87::round_trip(Global::<f32>::new(at).get(mem));
+            r = player_set_speed(mem, kind, v);
+        }
+        r
+    }
+
+    /// The current id table (`Sg_IdSetPtr`'s, 16-byte entries).
+    pub const ID_TABLE: Global<u32> = Global::new(0x0130_1a84);
+    /// `g_ChrIdMapTable`: the kinds `0x30..0x3f` stand for.
+    pub const CHR_ID_MAP_TABLE: u32 = 0x0130_19d8;
+
+    /// `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): whether entry `i`'s kind
+    /// (low 7 bits of `+0xc`) applies to `chr`: 1 everyone, 2 anyone but
+    /// the player, 13 characters with bit 2 of `+0x198`, 14 the player;
+    /// kinds `0x30..0x3f` stand for the kind in `g_ChrIdMapTable` (a whole
+    /// word, followed again); anything else 0.
+    pub fn id_match_chr(mem: &impl Mem, chr: u32, i: u32) -> u32 {
+        let e = ID_TABLE.get(mem).wrapping_add(16 * i).wrapping_add(0xc);
+        let mut kind = mem.read::<u32>(e) & 0x7f;
+        let map = mem.rebase(CHR_ID_MAP_TABLE);
+        loop {
+            match kind {
+                1 => return 1,
+                2 => return u32::from(chr != get_player(mem)),
+                13 => return (mem.read::<u32>(chr.wrapping_add(0x198)) >> 2) & 1,
+                14 => return u32::from(chr == get_player(mem)),
+                0x30..=0x3f => kind = mem.read(map.wrapping_add(4 * kind)),
+                _ => return 0,
+            }
+        }
+    }
+
+    /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
+    /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
+    pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
+
+    /// `Sg_PlayerSetDiving(v)` (`0x0082d9d0`): [`PLAYER_DIVING`]. Returns
+    /// it (`al`).
+    pub fn player_set_diving(mem: &mut impl Mem, v: u32) -> u8 {
+        PLAYER_DIVING.set(mem, lo8(v));
+        lo8(v)
+    }
+
+    /// The player's speeds `Sg_PlayerSetSpeed` sets: kinds 1, 2, `0x12`,
+    /// `0x13` (`f32` each).
+    pub const PLAYER_SPEED: [Global<f32>; 4] = [
+        Global::new(0x0130_07b4),
+        Global::new(0x0130_07b8),
+        Global::new(0x0130_07bc),
+        Global::new(0x0130_07c0),
+    ];
+
+    /// `Sg_PlayerSetSpeed(kind, v)` (`0x0082d9e0`): the speed of kind 1, 2,
+    /// `0x12` or `0x13` (through `fld`/`fstp`); other kinds are ignored.
+    /// Returns the switch's `eax`: the jump-table byte for kinds 1 to
+    /// `0x13` (0, 1, 2, 3 for the four, 4 for the rest), else `kind - 1`.
+    pub fn player_set_speed(mem: &mut impl Mem, kind: u32, v: f32) -> u32 {
+        let i = kind.wrapping_sub(1);
+        if i > 0x12 {
+            return i;
+        }
+        let slot: u32 = match kind {
+            1 => 0,
+            2 => 1,
+            0x12 => 2,
+            0x13 => 3,
+            _ => return 4,
+        };
+        PLAYER_SPEED[slot as usize].set(mem, ffx_bridge::x87::round_trip(v));
+        slot
+    }
+
+    /// The camera-follow bits (`0x00c496d5`): bit 0 set by `0x0082d030`,
+    /// bit 1 by `Sg_SetCameraFollow`; with both, `Sg_ControlMain` turns
+    /// the camera after the player's heading.
+    pub const CAMERA_FOLLOW: Global<u8> = Global::new(0x00c4_96d5);
+
+    /// `Sg_SetCameraFollow(on)` (`0x0082dab0`): bit 1 of
+    /// [`CAMERA_FOLLOW`]. Returns the other bits (`al`: the old byte
+    /// without bit 1).
+    pub fn set_camera_follow(mem: &mut impl Mem, on: u32) -> u8 {
+        let rest = CAMERA_FOLLOW.get(mem) & 0xfd;
+        CAMERA_FOLLOW.set(mem, rest | if on != 0 { 2 } else { 0 });
+        rest
+    }
+
     /// `Sg_IdSetPtr`'s zoom divisor (`f64` 10 in `.rdata`).
     pub const ZOOM_DIVISOR: Global<f64> = Global::new(0x00b9_22b0);
     /// The map objects (`0x880` bytes each) and their count.

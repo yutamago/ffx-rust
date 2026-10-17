@@ -92,12 +92,30 @@ pub const INIT_VFX_RENDER_DATA_SHP: u32 = 0x0071_1460;
 pub const CALCULATE_VFX_SP_ALPHA_FUNCTION: u32 = 0x0071_2c30;
 /// `FFXVu0CopyMatrix(dst, src)` (`0x006ed360`).
 pub const VU0_COPY_MATRIX: u32 = 0x006e_d360;
+/// 2.0 (`f64`, `.rdata`).
+pub const TWO: u32 = 0x00b9_2270;
+/// 4.0 (`f64`, `.rdata`).
+pub const FOUR: u32 = 0x00b4_3d80;
 /// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`).
 pub const VU0_UNIT_MATRIX: u32 = 0x006e_d9a0;
 /// `FFXVu0CopyVector(dst, src)` (`0x006ed370`).
 pub const VU0_COPY_VECTOR: u32 = 0x006e_d370;
 /// `FFXVu0ScaleVector(dst, src, k)` (`0x006ed8f0`).
 pub const VU0_SCALE_VECTOR: u32 = 0x006e_d8f0;
+/// `FFXVu0SubVector(dst, a, b)` (`0x006ed940`).
+pub const VU0_SUB_VECTOR: u32 = 0x006e_d940;
+/// `KeVu0CopyVecXYZ(dst, src)` (`0x0075ede0`).
+pub const KE_VU0_COPY_VEC_XYZ: u32 = 0x0075_ede0;
+/// `KeVu0AddVecXYZ(dst, a, b)` (`0x0075eca0`).
+pub const KE_VU0_ADD_VEC_XYZ: u32 = 0x0075_eca0;
+/// `pppCreatePObject(part, base)` (`0x00716770`).
+pub const PPP_CREATE_POBJECT: u32 = 0x0071_6770;
+/// `set_ptr32(p)` (`0x00a44700`).
+pub const SET_PTR32: u32 = 0x00a4_4700;
+/// `is_ptr32_null(p)` (`0x00a446a0`).
+pub const IS_PTR32_NULL: u32 = 0x00a4_46a0;
+/// `get_ptr32_func(p)` (`0x00a44650`).
+pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
 /// The emulated EE registers (`0x00c8f500`..): `+8` the register
 /// `KeMdl_Draw` interleaves with, `+0x88` and `+0x98` its operands.
 pub const EE_REGS: u32 = 0x00c8_f500;
@@ -1415,6 +1433,139 @@ pub mod bridge {
         mem.write(o.wrapping_add(4), ptr32(cp));
         mem.write(cp, ptr32(o));
         ptr32(o)
+    }
+
+    // ---- field round 31 ----
+    /// `KeBornPtCmlp(pc, pd, prog, out, work)` (`0x00759400`, from
+    /// `pppKeBornPtCmpl`): spawns the particle objects that fill the gap
+    /// between this frame's point and the last one.
+    /// - One object first: `pppCreatePObject(part, pd[8] * 16 + part
+    ///   +0x3c)` (no object, 0, when that address is 0; a failed creation
+    ///   returns at once), into `out`, its `+4` the owner
+    ///   (`set_ptr32(pc)`); its position (`+0xa0 + pd[0xc]`, `dst`) is the
+    ///   point at `pc + prog[0xc][1] + 0xa0` (`KeVu0CopyVecXYZ`).
+    /// - Without a previous point (`pc + prog[0xc][0] + 0xa0` null), the
+    ///   step `+0xa8` there becomes `1 / f32(pd[4] + 1)`.
+    /// - Else, with `prev` that point (`get_ptr32_func`, copied into
+    ///   `work`) and `d = dst - prev` (`work + 0x20`), for `f` from
+    ///   `f32(pd[4])` down by 1.0 while above 0, another object goes to
+    ///   `prev + d * f32(f * step)` (scaled into `work + 0x10`,
+    ///   `KeVu0AddVecXYZ`).
+    /// - Last, the previous point becomes `dst`.
+    pub fn ke_born_pt_cmlp<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        use ffx_bridge::x87::{load, mul, round_trip, store, sub};
+        let [pc, pd, prog, out] = args;
+        // one particle object into `out`; false when its creation failed
+        let spawn = |mem: &mut M, call: &mut C| -> bool {
+            let part = mem.read::<u32>(mem.rebase(super::PPP_CURRENT_PART));
+            let base = mem
+                .read::<u32>(pd.wrapping_add(8))
+                .wrapping_shl(4)
+                .wrapping_add(mem.read::<u32>(part.wrapping_add(0x3c)));
+            if base == 0 {
+                mem.write(out, 0u32);
+                return true;
+            }
+            let f = mem.rebase(super::PPP_CREATE_POBJECT);
+            let o = call(mem, f, &[part, base]);
+            mem.write(out, o);
+            if o == 0 {
+                return false;
+            }
+            let f = mem.rebase(super::SET_PTR32);
+            let v = call(mem, f, &[pc]);
+            mem.write(o.wrapping_add(4), v);
+            true
+        };
+        if !spawn(mem, call) {
+            return;
+        }
+        let dst = mem
+            .read::<u32>(out)
+            .wrapping_add(mem.read::<u32>(pd.wrapping_add(0xc)))
+            .wrapping_add(0xa0);
+        let tab = mem.read::<u32>(prog.wrapping_add(0xc));
+        let src = pc
+            .wrapping_add(mem.read::<u32>(tab.wrapping_add(4)))
+            .wrapping_add(0xa0);
+        let f = mem.rebase(super::KE_VU0_COPY_VEC_XYZ);
+        call(mem, f, &[dst, src]);
+        let prev_at = pc.wrapping_add(mem.read::<u32>(tab)).wrapping_add(0xa0);
+        let f = mem.rebase(super::IS_PTR32_NULL);
+        if call(mem, f, &[mem.read::<u32>(prev_at)]) != 0 {
+            let n = u32::from(mem.read::<u8>(pd.wrapping_add(4))) + 1;
+            #[allow(clippy::cast_precision_loss)] // a byte plus one
+            let q = load((n as f32).to_bits());
+            mem.write(prev_at.wrapping_add(8), store(1.0 / q));
+        } else {
+            let f = mem.rebase(super::GET_PTR32_FUNC);
+            let prev = call(mem, f, &[mem.read::<u32>(prev_at)]);
+            let f = mem.rebase(super::VU0_COPY_VECTOR);
+            call(mem, f, &[work, prev]);
+            let f = mem.rebase(super::VU0_SUB_VECTOR);
+            call(mem, f, &[work.wrapping_add(0x20), dst, work]);
+            let step = load(round_trip(mem.read::<f32>(prev_at.wrapping_add(8))).to_bits());
+            let mut c = f64::from(f32::from(mem.read::<u8>(pd.wrapping_add(4))));
+            while c > 0.0 {
+                if !spawn(mem, call) {
+                    return;
+                }
+                let o = mem.read::<u32>(out);
+                let s = store(mul(c, step));
+                let f = mem.rebase(super::VU0_SCALE_VECTOR);
+                call(
+                    mem,
+                    f,
+                    &[work.wrapping_add(0x10), work.wrapping_add(0x20), s],
+                );
+                let at = mem
+                    .read::<u32>(pd.wrapping_add(0xc))
+                    .wrapping_add(0xa0)
+                    .wrapping_add(o);
+                let f = mem.rebase(super::KE_VU0_ADD_VEC_XYZ);
+                call(mem, f, &[at, work, work.wrapping_add(0x10)]);
+                c = load(store(sub(c, 1.0)));
+            }
+        }
+        let f = mem.rebase(super::SET_PTR32);
+        let v = call(mem, f, &[dst]);
+        mem.write(prev_at, v);
+    }
+
+    /// `KeVu0ItrsBallLine(q)` (`0x0075eed0`, from `pppKeHitChkPxB`): where
+    /// the ray `p + t d` (`p` at `+0`, `d` at `+0x10`) enters the sphere of
+    /// radius `+0x20` around the origin: with `a = d.d`, `b = 2 p.d`,
+    /// `c = p.p - r²` (every partial sum stored as `f32`), no hit (0) when
+    /// `b² - 4ac < 0`; else `t = (-b - sqrt(disc)) / f32(2a)` to `+0x24`
+    /// and 1.
+    pub fn ke_vu0_itrs_ball_line(mem: &mut impl Mem, q: u32) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, sqrt, store, sub};
+        let st = |x: f64| load(store(x));
+        let v = |mem: &dyn Fn(u32) -> u32, at: u32| load(mem(at));
+        let rd = |at: u32| mem.read::<u32>(q.wrapping_add(at));
+        let (p0, p1, p2) = (v(&rd, 0), v(&rd, 4), v(&rd, 8));
+        let (d0, d1, d2) = (v(&rd, 0x10), v(&rd, 0x14), v(&rd, 0x18));
+        let r = v(&rd, 0x20);
+        let two: f64 = mem.read(mem.rebase(super::TWO));
+        let four: f64 = mem.read(mem.rebase(super::FOUR));
+        let a = st(add(st(add(st(mul(d0, d0)), mul(d1, d1))), mul(d2, d2)));
+        let dot = st(add(st(add(st(mul(p0, d0)), mul(d1, p1))), mul(d2, p2)));
+        let b = st(mul(dot, two));
+        let c0 = st(add(st(add(st(mul(p0, p0)), mul(p1, p1))), mul(p2, p2)));
+        let c = st(sub(c0, mul(r, r)));
+        let disc = st(sub(mul(b, b), mul(c, mul(a, four))));
+        if disc < 0.0 {
+            return 0;
+        }
+        let s = st(sqrt(disc));
+        let t = div(sub(-b, s), st(mul(a, two)));
+        mem.write(q.wrapping_add(0x24), store(t));
+        1
     }
 }
 

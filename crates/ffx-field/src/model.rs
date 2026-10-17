@@ -166,6 +166,16 @@ pub const MODEL_UPDATE: u32 = 0x0092_83e0;
 pub const MODEL_DRAW: u32 = 0x0092_8020;
 /// `rcbgSceneDraw(scene)` (`0x00920740`).
 pub const SCENE_DRAW: u32 = 0x0092_0740;
+/// `Yn_SeaGetAngPtr()` (`0x0091adf0`).
+pub const YN_SEA_GET_ANG_PTR: u32 = 0x0091_adf0;
+/// `pppFpIDdispOn(id)` (`0x007295b0`).
+pub const PPP_FP_ID_DISP_ON: u32 = 0x0072_95b0;
+/// `pppFpIDdispOff(id)` (`0x00729570`).
+pub const PPP_FP_ID_DISP_OFF: u32 = 0x0072_9570;
+/// `Fp_End(id)` (`0x00729660`).
+pub const FP_END: u32 = 0x0072_9660;
+/// `rcbgFPmGetMatrix(fp, out)` (`0x00922290`).
+pub const FPM_GET_MATRIX: u32 = 0x0092_2290;
 /// -65536.0 (`f64`, `.rdata`): the shakes' and waves' phase scale.
 pub const SWING_SCALE: u32 = 0x00b6_77a0;
 /// 6.2831855 (`f64` of an `f32`, `.rdata`): a turn.
@@ -1297,6 +1307,111 @@ pub mod bridge {
         }
         mem.write(fx.wrapping_add(0x30), v);
         ctx
+    }
+
+    /// `Yn_SeaFpFade(fade, work)` (`0x00922970`, from `0x00922600`; name
+    /// ours): a field effect faded in and out by the sea's angle
+    /// (`Yn_SeaGetAngPtr` `+8`, `lim`) against the fade's angle `a`
+    /// (`+8`), its state `+0`, effect id `+4`, frames `+0xc`, count `+0x10`:
+    /// - 0 (off): when `lim < a < 0` or `0 < a < lim`, the effect is shown
+    ///   and restarted (`pppFpIDdispOn`, `Fp_Restart`), state 1; weight 0.
+    /// - 1 (fading in): the count up, weight `count / frames` (both stored
+    ///   as `f32` first), state 2 once the count reaches the frames.
+    /// - 2 (on): weight 1.0; when `a < 0` and `a < lim`, or `0 < a` and
+    ///   `a > lim`, state 3.
+    /// - 3 (fading out): the count down, the weight as in 1; at 0 or below
+    ///   the effect is hidden and ended (`pppFpIDdispOff`, `Fp_End`), state
+    ///   0.
+    ///
+    /// For a positive id the weight goes to `+0x2c` of its chunk entry
+    /// (`0x00c5e480 + 0x38 id`), whose matrix (`rcbgFPmGetMatrix`, into
+    /// `work`) is copied to the effect's manager (`pppFpGetMngPtr(entry
+    /// id, 0, work + 0x40)`, `+0xc`) when there is one.
+    pub fn yn_sea_fp_fade<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        fade: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        use ffx_bridge::x87::{div, load, store};
+        let f = mem.rebase(super::YN_SEA_GET_ANG_PTR);
+        let ang = call(mem, f, &[]);
+        let id16 = u32::from(mem.read::<u16>(fade.wrapping_add(4)));
+        let int_f32 = |v: i32| {
+            #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
+            let x = v as f32;
+            load(x.to_bits())
+        };
+        let ratio = |mem: &M| {
+            let c = mem.read::<i32>(fade.wrapping_add(0x10));
+            let n = mem.read::<i32>(fade.wrapping_add(0xc));
+            store(div(int_f32(c), int_f32(n)))
+        };
+        let angle = |mem: &M| {
+            (
+                f64::from(mem.read::<f32>(fade.wrapping_add(8))),
+                f64::from(mem.read::<f32>(ang.wrapping_add(8))),
+            )
+        };
+        let mut w = 0u32;
+        match mem.read::<u32>(fade) {
+            0 => {
+                let (a, lim) = angle(mem);
+                if (a < 0.0 && a > lim) || (0.0 < a && a < lim) {
+                    let f = mem.rebase(super::PPP_FP_ID_DISP_ON);
+                    call(mem, f, &[id16]);
+                    let f = mem.rebase(super::FP_RESTART);
+                    call(mem, f, &[id16]);
+                    mem.write(fade, 1u32);
+                }
+            }
+            1 => {
+                let c = mem.read::<i32>(fade.wrapping_add(0x10)).wrapping_add(1);
+                mem.write(fade.wrapping_add(0x10), c);
+                w = ratio(mem);
+                if c >= mem.read::<i32>(fade.wrapping_add(0xc)) {
+                    mem.write(fade, 2u32);
+                }
+            }
+            2 => {
+                w = 1.0f32.to_bits();
+                let (a, lim) = angle(mem);
+                if (a < 0.0 && a < lim) || (0.0 < a && a > lim) {
+                    mem.write(fade, 3u32);
+                }
+            }
+            3 => {
+                let c = mem.read::<i32>(fade.wrapping_add(0x10)).wrapping_sub(1);
+                mem.write(fade.wrapping_add(0x10), c);
+                w = ratio(mem);
+                if c <= 0 {
+                    let f = mem.rebase(super::PPP_FP_ID_DISP_OFF);
+                    call(mem, f, &[id16]);
+                    let f = mem.rebase(super::FP_END);
+                    call(mem, f, &[id16]);
+                    mem.write(fade, 0u32);
+                }
+            }
+            _ => {}
+        }
+        let id = mem.read::<i32>(fade.wrapping_add(4));
+        if id <= 0 {
+            return;
+        }
+        let entry = mem
+            .rebase(super::CHUNK_IDS)
+            .wrapping_add(id.cast_unsigned().wrapping_mul(0x38));
+        mem.write(entry.wrapping_add(0x2c), w);
+        let f = mem.rebase(super::FPM_GET_MATRIX);
+        call(mem, f, &[entry, work]);
+        let f = mem.rebase(super::PPP_FP_GET_MNG_PTR);
+        let n = i32::from(mem.read::<i16>(entry)).cast_unsigned();
+        call(mem, f, &[n, 0, work.wrapping_add(0x40)]);
+        let mng = mem.read::<u32>(work.wrapping_add(0x40));
+        if mng != 0 {
+            let f = mem.rebase(crate::ke::VU0_COPY_MATRIX);
+            call(mem, f, &[mng.wrapping_add(0xc), work]);
+        }
     }
 
     /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's

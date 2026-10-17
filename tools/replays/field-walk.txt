@@ -5,7 +5,8 @@
 # walk (field-walk-<n>.bmp; models must be drawn).
 load direct 1 cdsp0000
 lockstep on
-wait 30
+# the map fades in over about a second after the direct load
+wait 120
 shot $OUT\field-walk-1.bmp
 trace 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x00ccb170:8
 press up 40 10

@@ -220,3 +220,86 @@ behind them stays with those modules, which the bridges call.
 | `Sg_PLightDispose()` `0x00831ba0` | point-light table freed, table and count 0 | the memory move's trigger |
 | `dreamParamReset()` `0x00822410` | `0x012ffaf4`, `0x012fb8f0`, `0x012ffae8`, `0x012ffaec`, `0x012fb8f4` 0; `0x00c496d0` -1 | `graphicMenuUnloadSpecialTexture(10)` |
 | `Sg_LightSetDir(i, dir)` `0x00836430` | light `i` (0-2: `0x00c49724`, `0x00c49734`, `0x013008e8`) gets four words | `FFXVu0NormalLightMatrix(g_Vu0ClipScreen, the three)`, `graphicCharacterLightingSetLightDir(i, x, y, z)` |
+
+## Map id data, motion groups, player settings
+
+- `Sg_IdFixupAndSet(map)` (`0x00844bc0`): a map's id data arrives with
+  offsets taken from the base in its word 0. When `map - base` is not 0,
+  word 0 becomes that difference and `+0x1c`, `+0x18` and `+0xc` of each
+  16-byte entry in `+0x1c`'s table (`i16` count at `+6`) move by it. The id
+  shades (`g_ChrIdShadeOn`) go on for a version (`i16` `+4`) above
+  `0x1202`; a change is told to
+  `graphicCharacterLightingSetMapIdFlagChanged(old, new)`. Then
+  `Sg_IdSetPtr(map)`.
+- `SG_DisposeMotionGroup(a, b, key)` (`0x00836e20`): removes the group's
+  sequences (`+4` of them, 20 bytes each at `+0xc`) and its table entry.
+  A character group (`a` 0) or the system group (`a` 2) goes back to the
+  cache, `Cache_Unuse(2, b << 16 | key)` or `Cache_Unuse(2, 0x903e7)`;
+  any other is freed and the memory move triggered. Active characters
+  whose `+0x7e8` is the group get `Ch_MotionSetNull`.
+- `Sg_PlayerSetDiving(v)` (`0x0082d9d0`): byte `0x013007c5`.
+  `Sg_PlayerSetSpeed(kind, v)` (`0x0082d9e0`): `f32` speeds for kinds 1,
+  2, `0x12`, `0x13` at `0x013007b4..c0`; others ignored.
+- `Sg_SetCameraFollow(on)` (`0x0082dab0`): bit 1 of `0x00c496d5` (bit 0 is
+  `0x0082d030`'s). With both set, `Sg_ControlMain` turns the camera after
+  the player's heading.
+- Initialisers: `Sg_InitFilter` (`0x0082cd50`) clears `0x01300708..58`,
+  the request flags `0x01300704` and `0x01300768`, then `Sg_FocusReset`.
+  `Sg_IdInitAll` is `Sg_IdSetPtr(0)`. `Sg_PlayerInitAll` is
+  `Sg_SetPlayer(0)` and diving on. `Sg_SetUserName(name)` keeps
+  `SgStrdupD(name)` in `0x00c494a8`; the old copy is not freed.
+  `Sg_PLightAllocate(n)` (`0x00831950`) disposes the old lights, then
+  allocates `n` 44-byte lights, each off with `+0xc` and `+0x1c` 1.0.
+
+## Start-up, event-jump initialisers and helpers (round 3)
+
+- `Sg_InitArgs(argc, argv)` (`0x00820310`, start-up): L/R button mode 0,
+  `0x012fb8fa` 0xff, `0x012fb8f9` and `0x012fb8f8` 0; a debug build takes
+  the user name from `argv[1]`.
+- `Sg_AccInitAll` (`0x0082bcd0`) and `Sg_PlayerInitDefault` (`0x0082d8d0`),
+  both from `Sg_EventjumpInit`: the accumulation requests off (alpha 0 at
+  once, map, background and characters off, clear colour 0, the current
+  frame requested); no player, diving on, speeds 16 (kind 1), 38 (kind 2)
+  and 20 (kind `0x12`).
+- `setFramSync` (`0x00822720`): `0x012fb7e4` = 1 in a battle
+  (`MsBattleCheck`) with a magic file (`MagicFile_GetMagicId() != -1`).
+- `Sg_LightSetDirXYZ(i, x, y, z)` (`0x008364f0`): `Sg_LightSetDir(i, &(x,
+  y, z, 0))`.
+- `Sg_MatrixFromDir(m, dir, rows)` (`0x008435a0`): basis `d = |dir|`, `s =
+  |(0,0,1) x d|`, `u = |s x d|` into the identity's rows named by the
+  nibbles of `rows` (`0x12`: s in row 0, u in row 1, d in row 2). Rows
+  past 3 are written past the matrix.
+- `Sg_CalcTriangleNormal(v0, v1, v2, out)` (`0x0083e420`): `i16` vertices;
+  `|(v2 - v0) x (v1 - v0)|`.
+- `Sg_IntVecToFloat(out, v)` (`0x00845d90`): three `i32` to `f32`.
+
+## Bones, sequences, id kinds, the dream effect, cloth rods (round 4)
+
+- `SG_ApplyBone(_, chan, bone, scale)` (`0x00838280`): nine channels of
+  `0x2c` bytes (value `+0x20`, changed byte `+0x28`, cleared when read).
+  Rotations `Angle_Wrap(v * 2 * pi)` go to `bone+0x114..` and
+  `bone+0xe4..`, translations `v * scale * 4096` to `+0x124..` and
+  `+0xf4..`, scales copied to `+0x134..` and `+0x104..`.
+  `SG_ApplyBoneDamped` (`0x00838470`) sets only the targets for rotations
+  and translations. The current values then move toward them
+  (`Chr_LerpAngleDamped(t, c, 0.7, 0, 10)`, `Chr_LerpDamped(t, c, 1, 0,
+  1)`). `Angle_Wrap` steps by 2 pi, so an infinite angle never returns.
+- `SG_AddSequence(seq, v)` (`0x00836d30`): the first free `g_ChrSequences`
+  entry gets `seq`, its `u16` `+4` and `v` at `+0x10`. A full table asserts
+  ("SG:AddMseq"). Either way `Ch_SeqLink` runs.
+- `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): id entry kinds (low 7 bits of
+  `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit 2,
+  14 the player; `0x30..0x3f` through `g_ChrIdMapTable`.
+- `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
+  `0x00822620`): the dream effect. A shown layer whose display byte
+  (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
+  phase `0x012fb8f4` = 0, special texture 10 loaded. It hides the layers
+  and draws the effect in phase 5. A layer with bits 0-1 set ends a started
+  effect past phase 0.
+- The cloth rods, kinds 1-6 of the cloth step `0x00822de0`
+  (`0x00822890`, `0x00822960`, `0x00822a50`, `0x00822b20`, `0x00822c10`,
+  `0x00822cf0`): 12-byte rods `{i16 a, i16 b, f32 len, f32 lim}`.
+  - Kinds 1 and 3 move `b` to `len` from `a` when `|b - a|^2` is above or
+    below `lim`; kinds 2 and 4 move both halfway.
+  - Kinds 5 and 6 always apply. `b = a` when `|d|^2` (5) or `|d|` (6) is
+    at most `1e-5`.
