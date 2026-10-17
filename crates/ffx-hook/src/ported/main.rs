@@ -1460,6 +1460,10 @@ ported! {
     Sg_IdFindTriangle @ 0x0083_de10 => extern "C" fn sg_id_find_triangle(p: u32) -> i32 {
         state::bridge::id_find_triangle(&mut mem(), p)
     }
+    /// `Sg_PcRead(path)`.
+    Sg_PcRead @ 0x0083_ae30 => extern "C" fn sg_pc_read(path: u32) -> u32 {
+        control::bridge::pc_read(&mut mem(), path)
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

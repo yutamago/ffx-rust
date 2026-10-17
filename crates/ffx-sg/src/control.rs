@@ -374,6 +374,20 @@ pub mod bridge {
         h.call(at, args)
     }
 
+    /// `_Sg_PcRead(path, kind)` (`Sg_PcRead_0083b1d0`, platform: reads
+    /// the file).
+    pub const SG_PC_READ_FILE: u32 = 0x0083_b1d0;
+    /// `Sg_MemSetCurrentAddr(p)` (platform).
+    pub const SG_MEM_SET_CURRENT_ADDR: u32 = 0x0083_c4e0;
+
+    /// `Sg_PcRead(path)` (`0x0083ae30`): the file read by `_Sg_PcRead(path,
+    /// 0)`, then `Sg_MemSetCurrentAddr` to the result; returns it.
+    pub fn pc_read(h: &mut impl Host, path: u32) -> u32 {
+        let r = call_sym(h, SG_PC_READ_FILE, &[path, 0]);
+        call_sym(h, SG_MEM_SET_CURRENT_ADDR, &[r]);
+        r
+    }
+
     /// `Sg_DrawFilter()` (`0x0082c0c0`): the frame's focus and fades.
     ///
     /// With a fade or the focus running, the filter packet is started; the

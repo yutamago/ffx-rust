@@ -5300,3 +5300,38 @@ fn find_triangle_snapshot() {
     let mut rng = Xorshift(0x5eed_0e52);
     find_triangle_cases(&mut a, &mut b, &mut rng, 3000, true);
 }
+
+// Main round 13: Sg_PcRead and Sg_PcReadD over recorded callees.
+fn pc_read_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    let log = a.rebase(REC_LOG);
+    let rets = a.rebase(REC_RETS);
+    recorder(a, b, 94, c::SG_PC_READ_FILE, 2, 0);
+    recorder(a, b, 95, c::SG_MEM_SET_CURRENT_ADDR, 1, 0x77);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, rets + 4 * 94, rng.next());
+        let path = rng.next();
+        twin("Sg_PcRead", a, b, 0x0083_ae30, &[path], |m| {
+            c::pc_read(&mut H(m), path)
+        });
+    }
+}
+
+#[test]
+fn pc_read_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e61);
+    pc_read_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn pc_read_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e62);
+    pc_read_cases(&mut a, &mut b, &mut rng, 200);
+}

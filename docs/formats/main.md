@@ -760,3 +760,10 @@ holds). Each holding triangle's height (`Sg_IdGetHeight`, through
 `ftol`) is a candidate unless it is below `p.y`; the lowest candidate
 wins (the first of equals). Without one the last holding triangle is
 returned, then -1 (also with no id table).
+
+## Round 13: reading a PC file (`Sg_PcRead`, `Sg_PcReadD`)
+
+`Sg_PcRead(path)` (`0x0083ae30`) and `Sg_PcReadD(path)` (`0x0083ae50`)
+read a file through `_Sg_PcRead(path, kind)` (`0x0083b1d0`, kind 0 and
+1, platform) and set the memory manager's current address
+(`Sg_MemSetCurrentAddr`, `0x0083c4e0`) to the result, which they return.
