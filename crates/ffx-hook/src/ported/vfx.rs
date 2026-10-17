@@ -1481,6 +1481,23 @@ ported! {
     op_node_pool_init_00a39bc0 @ 0x00a3_9bc0 => extern "C" fn op_node_pool_init(set: u32, n: u32, v: u32) -> u32 {
         small::bridge::op_node_pool_init(&mut mem(), set, n, v)
     }
+    /// `op_slot_bytes_reset_008888e0(obj)`.
+    op_slot_bytes_reset_008888e0 @ 0x0088_88e0 => extern "C" fn op_slot_bytes_reset(obj: u32) -> u32 {
+        small::bridge::op_slot_bytes_reset(&mut mem(), obj)
+    }
+    /// `Fp_IdState_0072a760(id)`.
+    Fp_IdState_0072a760 @ 0x0072_a760 => extern "C" fn fp_id_state(id: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the i16 argument
+        fp::bridge::fp_id_state(&mem(), id as u16)
+    }
+    /// `op_md_packet_size_00a698c0(packet)`.
+    op_md_packet_size_00a698c0 @ 0x00a6_98c0 => extern "C" fn op_md_packet_size(packet: u32) -> u32 {
+        op::bridge::op_md_packet_size(&mem(), packet)
+    }
+    /// `op_read_line_007e1cc0(src, out, max)`.
+    op_read_line_007e1cc0 @ 0x007e_1cc0 => extern "C" fn op_read_line(src: u32, out: u32, max: u32) -> u32 {
+        op::bridge::op_read_line(&mut mem(), src, out, max)
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

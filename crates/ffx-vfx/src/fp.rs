@@ -353,6 +353,32 @@ pub mod bridge {
             or_flags(mem, d, 0, !0x10);
         }
     }
+
+    /// `0x0072a760(id)`: the run state of the `g_FpData` entry whose `i16
+    /// +0x64` is `id` (the first): 0 not started (`g_FpRun` `+0` is
+    /// `-0x1000`), 1 running, 2 ended (`+0x1d` set); -1 without a table or
+    /// entry.
+    pub fn fp_id_state<M: Mem>(mem: &M, id: u16) -> u32 {
+        let data = DATA.get(mem);
+        if data == 0 {
+            return u32::MAX;
+        }
+        let mut run = RUN.ptr(mem).addr;
+        let mut e = data.wrapping_add(0x64);
+        let mut left = u32::from(mem.read::<u16>(data.wrapping_add(4)));
+        while left != 0 {
+            left -= 1;
+            if mem.read::<u16>(e) == id {
+                if mem.read::<u32>(run) == 0xffff_f000 {
+                    return 0;
+                }
+                return 1 + u32::from(mem.read::<u8>(run.wrapping_add(0x1d)) != 0);
+            }
+            e = e.wrapping_add(0x50);
+            run = run.wrapping_add(0x80);
+        }
+        u32::MAX
+    }
 }
 
 #[cfg(test)]

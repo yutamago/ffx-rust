@@ -397,4 +397,18 @@ pub mod bridge {
         }
         set
     }
+
+    /// `0x008888e0(obj)`: `u16 +0xfe` = 0, `u16 +0xf6` = `0x808`, bytes
+    /// `+0xf0`..`+0xf5` 0xff and `+0xf8`..`+0xfd` 0. Returns `obj + 0xfe`
+    /// (left in `eax`).
+    pub fn op_slot_bytes_reset(mem: &mut impl Mem, obj: u32) -> u32 {
+        let at = |o: u32| obj.wrapping_add(o);
+        mem.write(at(0xfe), 0u16);
+        mem.write(at(0xf6), 0x808u16);
+        for i in 0..6u32 {
+            mem.write(at(0xf0 + i), 0xffu8);
+            mem.write(at(0xf8 + i), 0u8);
+        }
+        at(0xfe)
+    }
 }
