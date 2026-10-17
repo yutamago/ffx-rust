@@ -6039,3 +6039,151 @@ fn round10_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round10b_matches_the_original() {
+    for mut t in twins() {
+        round10b_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10b_on(t: &mut Twin) {
+    use ffx_chara::cloth::bridge as cl;
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0010_b10b);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 1, 0x200);
+    let clear = fk.fake(t, 0x0062_f4e0, 2, 2);
+    let free = fk.fake(t, 0x0068_7010, 3, 1);
+    let mesh_data = fk.fake(t, 0x0084_07d0, 4, 2);
+    let step = fk.fake(t, 0x0083_94d0, 5, 2);
+    let chrs = live_characters(t, &mut rng);
+    for round in 0..16u32 {
+        fk.reset(t);
+        for r in [clear, free, step] {
+            t.put_u32(r, rng.next());
+        }
+        let blocks = t.alloc(0x200 * 0x40);
+        t.put_u32(heap, blocks);
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        // models: data entries with mesh and vertex counts
+        let nmod = 1 + rng.next() % 3;
+        let hdr = t.alloc(0x10);
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            t.put(hdr + 6, &(nmod as u16).to_le_bytes());
+            t.put(hdr + 0xa, &((rng.next() % 4) as u16).to_le_bytes());
+        }
+        let models = t.alloc(0x38 * 3);
+        for i in 0..nmod {
+            let d = t.alloc(0x20);
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                t.put(d + 4, &((8 + rng.next() % 8) as u16).to_le_bytes());
+                t.put(d + 0x18, &((1 + rng.next() % 3) as u16).to_le_bytes());
+            }
+            let m = models + 0x38 * i;
+            t.put_u32(m, d);
+            let list = if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                t.alloc(0x10)
+            };
+            if list != 0 {
+                for k in 0..3 {
+                    let b = if rng.next().is_multiple_of(2) {
+                        0
+                    } else {
+                        t.alloc(0x50)
+                    };
+                    t.put_u32(list + 4 * k, b);
+                }
+            }
+            t.put_u32(m + 0x2c, list);
+            let flags = if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                t.alloc(0x10)
+            };
+            t.put_u32(m + 0x30, flags);
+        }
+        t.put_u32(chr + 0x1c0, hdr);
+        t.put_u32(chr + 0x1bc, models);
+        // cloth mesh data: the box, then records
+        let data = if round % 4 == 3 {
+            0
+        } else {
+            let d = t.alloc(0x400);
+            for k in 0..6 {
+                t.put_u32(d + 4 * k, small_float(&mut rng));
+            }
+            let mut p = d + 0x18;
+            for _ in 0..rng.next() % 3 {
+                let tris = rng.next() % 3;
+                #[allow(clippy::cast_possible_truncation)]
+                let head = [
+                    (rng.next() % nmod) as u16,
+                    (rng.next() % 1) as u16,
+                    tris as u16,
+                    0,
+                ];
+                t.put(p, &head.map(u16::to_le_bytes).concat());
+                p += 8;
+                for _ in 0..tris {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let tri = [0; 16].map(|_| (rng.next() % 8) as u16);
+                    t.put(p, &tri.map(u16::to_le_bytes).concat());
+                    p += 0x20;
+                }
+            }
+            t.put(p, &[0xff, 0xff]);
+            d
+        };
+        t.put_u32(mesh_data, data);
+        t.check(
+            &format!("Ch_ClothMeshMapping {round}"),
+            0x0082_6340,
+            &[chr],
+            |m| {
+                Res::Int(cl::ch_cloth_mesh_mapping(m, chr, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        // Ch_MotionSetupFcurve: a clip with all four channel kinds
+        let chans = t.alloc(0x2c * 40);
+        t.put_u32(chr + 0x748, chans);
+        let clip = t.alloc(0x200);
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            t.put(clip + 2, &((rng.next() % 5) as i16).to_le_bytes());
+            t.put(clip + 4, &(rng.next() as u16).to_le_bytes());
+            t.put(clip + 6, &((rng.next() % 2) as u16).to_le_bytes());
+        }
+        t.put_u32(clip + 8, 0x20);
+        t.put_u32(clip + 0xc, 0x60);
+        t.put_u32(clip + 0x10, rng.next());
+        for k in 0..4 {
+            t.put_u32(clip + 0x20 + 4 * k, rng.next());
+        }
+        // data: constants and streams whose first halfword is a small length
+        for k in 0..0x50u32 {
+            #[allow(clippy::cast_possible_truncation)]
+            let v = (rng.next() % 9) as u16;
+            t.put(clip + 0x60 + 2 * k, &v.to_le_bytes());
+        }
+        let given = if round % 5 == 4 { 0 } else { clip };
+        t.check(
+            &format!("Ch_MotionSetupFcurve {round}"),
+            0x0083_9980,
+            &[chr, given],
+            |m| {
+                Res::Int(mo::ch_motion_setup_fcurve(m, chr, given, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+}

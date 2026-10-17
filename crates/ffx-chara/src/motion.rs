@@ -893,6 +893,98 @@ pub mod bridge {
         let slot = i32::from(mem.read::<i8>(chr + 0x185)).cast_unsigned();
         call(mem, mem.rebase(0x0083_7d00), &[chr, slot, 0])
     }
+
+    /// `SG_StepChannels(obj, frames)` (`0x008394d0`, the main module's).
+    pub const STEP_CHANNELS: u32 = 0x0083_94d0;
+
+    /// `Ch_MotionSetupFcurve(chr, clip)` (`0x00839980`): sets up the
+    /// character's channels (0x2c bytes each from `+0x748`) for a clip:
+    /// frames `+0x7e0` = `i16` clip `+4`; events (`u16` `+6`, data at
+    /// clip + `+0x10`) into `+0x7f0`/`+0x7f4` (0 without). Nine channels
+    /// per bone, for the fewer of the clip's (`i16` `+2`) and the header's
+    /// (`u16` `+10` of `+0x1c0`) bones, each typed by the next 2 bits of
+    /// the 64-bit words at clip + `+8`: 0 the value 0, 1 the value 1, 2 a
+    /// constant (the next `i16` of the data at clip + `+0xc`, 12-bit
+    /// fixed), 3 a stream there (rotation for the first 3 of the 9; length
+    /// `i16`, so the data moves by `len / 2` halfwords), linked in front of
+    /// `+0x74c`. Then `SG_StepChannels(chr, 1)`, each streamed channel's
+    /// previous value `+0x18` = its value `+0x16`, and `+0x7dc` = 1.
+    /// Returns what the original leaves in EAX.
+    pub fn ch_motion_setup_fcurve<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        clip: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if clip == 0 {
+            return 0;
+        }
+        let mut data = clip.wrapping_add(mem.read::<u32>(clip + 0xc));
+        let mut words = clip.wrapping_add(mem.read::<u32>(clip + 8));
+        let bones = i32::from(mem.read::<i16>(clip + 2));
+        mem.write(chr + 0x7e0, i32::from(mem.read::<i16>(clip + 4)));
+        let mut ch: u32 = mem.read(chr + 0x748);
+        let events: u16 = mem.read(clip + 6);
+        if events == 0 {
+            mem.write(chr + 0x7f4, 0u32);
+        } else {
+            mem.write(chr + 0x7f0, events);
+            mem.write(chr + 0x7f4, clip.wrapping_add(mem.read::<u32>(clip + 0x10)));
+        }
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        let have = i32::from(mem.read::<u16>(hdr + 0xa));
+        let n = bones.min(have).wrapping_mul(9);
+        let (mut bits, mut left, mut head) = (0u64, 0u32, 0u32);
+        let mut i = 0i32;
+        while i < n {
+            if left == 0 {
+                let lo: u32 = mem.read(words);
+                let hi: u32 = mem.read(words + 4);
+                bits = u64::from(lo) | (u64::from(hi) << 32);
+                words = words.wrapping_add(8);
+                left = 0x20;
+            }
+            #[allow(clippy::cast_possible_truncation)] // 2 bits
+            let kind = (bits & 3) as u8;
+            mem.write(ch + 4, kind);
+            match kind {
+                0 => mem.write(ch + 0x1c, 0f32),
+                1 => mem.write(ch + 0x1c, 1f32),
+                2 => {
+                    let v = crate::fixed::fixed12_to_float(u32::from(mem.read::<u16>(data)));
+                    data = data.wrapping_add(2);
+                    mem.write(ch + 0x1c, v);
+                }
+                _ => {
+                    mem.write(ch + 5, u8::from(i.cast_unsigned() % 9 < 3));
+                    mem.write(ch + 8, data.wrapping_add(2));
+                    mem.write(ch + 0xc, data.wrapping_add(2));
+                    mem.write(ch + 6, 0u16);
+                    mem.write(ch + 0x14, 0u32);
+                    mem.write(ch, head);
+                    let len = i32::from(mem.read::<i16>(data));
+                    head = ch;
+                    data = data.wrapping_add(((len / 2) * 2).cast_unsigned());
+                }
+            }
+            bits >>= 2;
+            mem.write(ch + 0x28, 1u8);
+            left -= 1;
+            ch = ch.wrapping_add(0x2c);
+            i += 1;
+        }
+        mem.write(chr + 0x74c, head);
+        let mut eax = call(mem, mem.rebase(STEP_CHANNELS), &[chr, 1]);
+        let mut c: u32 = mem.read(chr + 0x74c);
+        while c != 0 {
+            let v: u16 = mem.read(c + 0x16);
+            mem.write(c + 0x18, v);
+            eax = (eax & 0xffff_0000) | u32::from(v);
+            c = mem.read(c);
+        }
+        mem.write(chr + 0x7dc, 1u32);
+        eax
+    }
 }
 
 #[cfg(test)]

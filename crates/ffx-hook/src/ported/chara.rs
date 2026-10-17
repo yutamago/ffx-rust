@@ -1611,4 +1611,12 @@ ported! {
     Ch_ClutCreate @ 0x0083_c710 => extern "C" fn ch_clut_create(chr: u32) -> u32 {
         tx::ch_clut_create(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_ClothMeshMapping(chr)`: 1 with mesh data, else 0.
+    Ch_ClothMeshMapping @ 0x0082_6340 => extern "C" fn ch_cloth_mesh_mapping(chr: u32) -> u32 {
+        cl::ch_cloth_mesh_mapping(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MotionSetupFcurve(chr, clip)`.
+    Ch_MotionSetupFcurve @ 0x0083_9980 => extern "C" fn ch_motion_setup_fcurve(chr: u32, clip: u32) -> u32 {
+        mo::bridge::ch_motion_setup_fcurve(&mut mem(), chr, clip, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
