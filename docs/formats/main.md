@@ -681,3 +681,31 @@ the walk and run speeds (`0x013007b4`, `0x013007b8`; run without button
 (`Sg_PlayerSetDirFix`, `0x013007c8`) replacing the yaw when its flag
 (`0x013007c4`) is set. Every intermediate is an `f32` store of a 53-bit
 x87 result.
+
+## Round 13: the normals' envelope (`sg_calcenvelope_normW`)
+
+`sg_calcenvelope_normW(lists, out, m)` (`0x00845ec0`, called by
+`Apply_Envelope`, `0x00832110`, for the normals) is PS2 R5900/VU0 code
+translated register by register: the registers live in memory
+(`g_Ee_Gpr + 16 n`: a0..a2 the arguments at `0x00c8f548/58/68`, t0..t6 at
+`0x00c8f588..e8`, t8 the list's end at `0x00c8f688`; VU0 registers from
+`0x00c8f784`), and every step goes through a leaf (`sg_Sll`, `sg_Daddiu`,
+`op_add64`, the `pextlw`/`pcpyld` copies `CopyFields_007ecb20` and
+`sg_CopyFields_00845d00`, `VFX_Copy16*`, the scalar products). The port
+keeps every register write.
+
+The matrix rows go to `0x00c8f7d0/e0/f0`; 0.0001 (`.rdata 0x00b92154`)
+reaches `0x00c8f840` through the word at `0x00c8f784` (saved at
+`0x013036a8` and restored); the result register `0x00c8f820` starts as
+`vf00`. Three lists follow:
+
+| list | header | entry | `out[index]` (16 bytes each) |
+|---|---|---|---|
+| rigid | `u16` count, 2 bytes | 8: `i16` x, y, z, `u16` index | rows x (x, y, z); w as the result register had it |
+| first weights | `u16` count | 10: x, y, z, `u16` weight, index | rows x v x (weight x 0.0001) |
+| further weights | `u16` count | 10 | that plus `out[index]`'s x, y, z |
+
+The products run as `sg_VmulScalar` (x), `sg_VmaddaScalar` (y) into the
+accumulator and `sg_VmaddScalar` (z); weights scale with `opus_vec3_scale`.
+A loop ends when a0 equals t8 in both words; a count equal to r0 (0)
+skips a weighted list.

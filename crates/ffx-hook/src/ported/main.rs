@@ -1431,6 +1431,10 @@ ported! {
     sg_calcenvelope_asm @ 0x006e_e570 => extern "C" fn sg_calcenvelope_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
         envelope::bridge::calc_envelope(&mut mem(), lists, out, mask, m)
     }
+    /// `sg_calcenvelope_normW(lists, out, m)`.
+    sg_calcenvelope_normW @ 0x0084_5ec0 => extern "C" fn sg_calcenvelope_norm_w(lists: u32, out: u32, m: u32) {
+        envelope::bridge::calc_envelope_norm_w(&mut mem(), lists, out, m);
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

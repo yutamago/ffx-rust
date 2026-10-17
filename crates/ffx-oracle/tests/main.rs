@@ -4844,3 +4844,97 @@ fn control_player_snapshot() {
     let mut rng = Xorshift(0x5eed_0d19);
     control_player_cases(&mut a, &mut b, &mut rng, 3000, true);
 }
+
+// Main round 13: sg_calcenvelope_normW.
+
+/// Normal lists (`sg_calcenvelope_normW`): a `u16` count, 2 bytes, rigid
+/// entries (8 bytes: `i16` x, y, z, `u16` index); then twice a `u16` count
+/// and weighted entries (10 bytes: x, y, z, `u16` weight, index). Indices
+/// below 16.
+fn normal_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let counts = [rng.below(5), rng.below(5), rng.below(5)];
+    let len = 8 + 8 * counts[0] + 10 * (counts[1] + counts[2]);
+    let lists = alloc(a, b, len as usize + 4);
+    let mut p = lists;
+    let half = |rng: &mut Xorshift| -> u16 {
+        match rng.below(3) {
+            0 => rng.next().to_le_bytes()[0].into(),
+            _ => u16::from_le_bytes([rng.next().to_le_bytes()[0], rng.next().to_le_bytes()[1]]),
+        }
+    };
+    for (l, &n) in counts.iter().enumerate() {
+        put(a, b, p, u16::try_from(n).unwrap());
+        p += if l == 0 { 4 } else { 2 };
+        for _ in 0..n {
+            for k in 0..3 {
+                put(a, b, p + 2 * k, half(rng));
+            }
+            if l == 0 {
+                put(a, b, p + 6, u16::try_from(rng.below(16)).unwrap());
+                p += 8;
+            } else {
+                let w = if rng.below(4) == 0 {
+                    half(rng)
+                } else {
+                    u16::try_from(rng.below(10001)).unwrap()
+                };
+                put(a, b, p + 6, w);
+                put(a, b, p + 8, u16::try_from(rng.below(16)).unwrap());
+                p += 10;
+            }
+        }
+    }
+    lists
+}
+
+fn normal_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let regs = a.rebase(e::EE_A0);
+    let vu = a.rebase(e::VU_I);
+    for n in 0..rounds {
+        // stale registers (r0 stays the zero register)
+        if n % 2 == 0 {
+            for k in 0..(0x6a0 - 0x548) / 4 {
+                put(a, b, regs + 4 * k, rng.next());
+            }
+            for k in 0..(0x850 - 0x784) / 4 {
+                put(a, b, vu + 4 * k, modest(rng));
+            }
+        }
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 16);
+        for k in 0..64 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = normal_lists(a, b, rng);
+        twin(
+            "sg_calcenvelope_normW",
+            a,
+            b,
+            0x0084_5ec0,
+            &[lists, out, m],
+            |o| e::calc_envelope_norm_w(o, lists, out, m),
+        );
+    }
+}
+
+#[test]
+fn normal_envelope_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e01);
+    normal_envelope_cases(&mut a, &mut b, &mut rng, 2000);
+}
+
+#[test]
+fn normal_envelope_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e02);
+    normal_envelope_cases(&mut a, &mut b, &mut rng, 2000);
+}
