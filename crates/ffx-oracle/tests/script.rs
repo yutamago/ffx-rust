@@ -3677,3 +3677,116 @@ fn round15_vm_helpers_match_the_original() {
     no_diff(&mut a, &mut b, "AtelSetUpCallFunc");
     poke(&mut a, &mut b, tables, saved);
 }
+
+/// Round 16's VM helpers against the original: results and memory.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per helper
+fn round16_vm_helpers_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0016);
+    for c in in_use(&b) {
+        make_current(&mut a, &mut b, c);
+        for w in actors(&mut a, &mut b) {
+            for key in [u32::MAX, 0, 1, 2, 5] {
+                assert_eq!(
+                    orig(&mut a, 0x0086_32b0, &[w, key]),
+                    hp::script_line_actor_side(&b, w, key),
+                    "Script_LineActorSide {w:#x} {key}"
+                );
+            }
+        }
+        let blk = Mem::read::<u32>(&b, c + 0x48);
+        if blk != 0 {
+            assert_eq!(
+                orig(&mut a, 0x0086_c0c0, &[blk]),
+                hp::atel_get_my_buffer_size(&b, blk),
+                "AtelGetMyBufferSize {c:#x}"
+            );
+            for i in 0..4 {
+                let ra = orig_float(&mut a, 0x0086_ab80, &[blk, i]);
+                let rb = hp::atel_get_bin_hdr_float(&b, blk, i);
+                assert!(
+                    same_float(ra, ffx_bridge::x87::store(rb)),
+                    "0x0086ab80 {c:#x} {i}"
+                );
+            }
+        }
+    }
+    let s = a.alloc(0x40).unwrap();
+    assert_eq!(b.alloc(0x40).unwrap(), s);
+    let digits = b"0123456789abcdefABCDEFxg$ ";
+    for _ in 0..300 {
+        let mut text: Vec<u8> = match rng.below(3) {
+            0 => b"0x".to_vec(),
+            1 => b"$".to_vec(),
+            _ => Vec::new(),
+        };
+        for _ in 0..rng.below(12) {
+            text.push(digits[usize::try_from(rng.below(26)).unwrap()]);
+        }
+        text.push(0);
+        for o in [&mut a, &mut b] {
+            Mem::write_bytes(o, s, &text);
+        }
+        assert_eq!(
+            orig(&mut a, 0x0087_7660, &[s]),
+            hp::atel_parse_hex(&b, s),
+            "0x00877660 {text:?}"
+        );
+    }
+    for _ in 0..40 {
+        let n = if rng.below(4) == 0 {
+            rng.below(0x200)
+        } else {
+            rng.below(0x240) - 0x20
+        };
+        let ra = orig(&mut a, 0x0086_f460, &[n]);
+        let rb = hp::atel_set_bind_mask(&mut b, n);
+        if n.cast_signed() < 0x200 {
+            assert_eq!(ra, rb, "0x0086f460 {n}");
+        }
+        no_diff(&mut a, &mut b, &format!("0x0086f460 {n}"));
+    }
+    // the callback queues: register named callbacks, then run them; a
+    // callback that returns non-zero (AtelGetSnd3dWork) is done, one
+    // that returns 0 (0x008719c0 on an empty string) stays
+    let done = a.rebase(0x0087_73f0);
+    let wait = a.rebase(0x0087_19c0);
+    let que = a.rebase(0x0132_7f50);
+    for q in 0..2 {
+        let zero = [0u8; 0x100];
+        for o in [&mut a, &mut b] {
+            Mem::write_bytes(o, que + q * 0x100, &zero);
+        }
+        for k in 0..17 {
+            let name: Vec<u8> = (0..rng.below(10))
+                .map(|_| b'a' + u8::try_from(rng.below(26)).unwrap())
+                .chain([0])
+                .collect();
+            for o in [&mut a, &mut b] {
+                Mem::write_bytes(o, s, &name);
+            }
+            let f = if k % 3 == 2 { wait } else { done };
+            let ra = orig(&mut a, 0x0087_51b0, &[q, f, s]);
+            assert_eq!(
+                ra,
+                hp::atel_regist_callback_que2(&mut b, q, f, s),
+                "AtelRegistCallbackQue2 {q} {k}"
+            );
+            no_diff(&mut a, &mut b, &format!("AtelRegistCallbackQue2 {q} {k}"));
+        }
+        for k in 0..20 {
+            let ra = orig(&mut a, 0x0087_50b0, &[q]);
+            let rb = hp::atel_exec_callback_que(&mut Run(&mut b), q);
+            assert_eq!(ra, rb, "AtelExecCallbackQue {q} {k}");
+            no_diff(&mut a, &mut b, &format!("AtelExecCallbackQue {q} {k}"));
+            if k % 4 == 3 {
+                // let a waiting callback finish: its word non-zero
+                poke(&mut a, &mut b, que + q * 0x100 + 4, 0x41_u32);
+            }
+        }
+    }
+}
