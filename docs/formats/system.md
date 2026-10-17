@@ -491,3 +491,40 @@ skipped.
   battle command can be used: -1 when `MsGetCommandUse` blocks it, -2 when
   `MsCheckUseCommand` fails, the item window kind for item-like commands
   (-4/-3 for an empty list), else 0xfe or 0xff.
+
+## Glyph metrics and message sizes
+
+- `TOGetFontInfo(text, out)` (`0x008b7240`) describes one glyph and
+  returns the text after it. `out` holds the font page (`+0`), the cell
+  parity (`+4`), the cell box (`+8..+0x14`: columns of 14 for every two
+  glyphs, rows of 18), the slant (`+0x18`: -1.0 for language 10, 1.0 for
+  languages 1-8), the width (`+0x1c`, a quarter of the width-table byte
+  from `TOGetFontWidthTblAdrs`) and 18.0 (`+0x20`). Codes from 0x2c use
+  the language's dictionary; 0x26..0x2b are two-byte codes of tables 1-3;
+  6 is an icon. A `:` that joins its neighbours is 5.0 wide, and a run
+  of `G` at the start of a text is measured as one glyph.
+- `TOGetChangeMacroAddress(window, code)` (`0x008b6660`) finds the text a
+  macro code stands for: a macro slot (`0x01869ab0`, 32 per window), a
+  character, item or key-item name, a window string table, or a number
+  written by `TOIntToMes`. A slot whose kind is a code byte folds `+4 /
+  0xd0` into that code and expands it in turn. The original builds that
+  code in its own argument slot and can return a pointer to it; the port
+  keeps it in a static, so the text stays readable.
+- `TOGetMessageWH` (`0x008b9650`) measures a message: the widest line in
+  pixels and the height of the deepest line (lines of 0x10, plus 2). Codes
+  0-3 end lines and the text, `7 n` positions and spaces, `0xe 0x40`/`0x41`
+  open and close a 5.0 indent, `0xb n` adds a button icon and `0x10 n` the
+  window's counter. Macros add `TOGetChangeMacroWidth`. The battle widths
+  (`ToGetBtlEasyFontWidth`, `ToGetBtlEasyDigitWidth`,
+  `ToGetCrossExtMesFontWidth`, `TOGetWidthMacro_help`) add glyph advances
+  (`TOGetFontAdvance`) and take off one letter space at the end.
+
+## Battle command windows
+
+`TOBtlSetNextAction(chr, command)` (`0x0089a330`) moves the command
+windows one level deeper. At a targeting level the command becomes the
+target pick 0x3115, and the command finishes (`TOBtlFinishCommand`) once
+all targets are chosen. `TOCheckBtlCommandUse` decides what opens next:
+a sub-window (`TOBtlSetCommand`, 0x80 or less), a target pick (0xfe) or
+the finish (0xff). A new target pick with no forced target starts on the
+first dead party member.
