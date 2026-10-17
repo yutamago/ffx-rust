@@ -9843,3 +9843,515 @@ fn round16_kernel_accessors_match_the_original_on_the_snapshot() {
     };
     round16_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4016_0052));
 }
+
+/// Round 17's message and battle-target helpers over stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round17_helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x200);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    // no-argument stand-ins count their calls in cells + 4k
+    for (k, sym) in [
+        0x0089_85b0u32,
+        0x0089_8490,
+        0x0089_8330,
+        0x0089_83f0,
+        0x0089_8640,
+        0x008b_7cd0,
+        0x008a_bd00,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let mut v = vec![0x83, 0x05];
+        v.extend_from_slice(&(cells + 4 * k).to_le_bytes());
+        v.extend_from_slice(&[0x01, 0xb8]);
+        v.extend_from_slice(&(0x1700_0000 + k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x100 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // TOControlWindow: i & 1; the others log their first argument
+    let s = stand_in8(
+        a,
+        b,
+        0x180,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    redirect(a, b, 0x0090_6bd0, s);
+    for (k, sym) in [0x008b_5850u32, 0x008b_8af0, 0x008b_6b70]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        let s = stand_in8(
+            a,
+            b,
+            0x190 + 0x18 * k,
+            &logger(cursor, 0x1700_0100 + (k << 8)),
+        );
+        redirect(a, b, sym, s);
+    }
+    // MsGetSaveMenu: cells + 0x20
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&(cells + 0x20).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1e0, &v);
+    redirect(a, b, 0x0078_5290, s);
+    // TOGetFontWidthForLang: *out = (float) *text, returns text + 1
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x89, 0x0d];
+    v.extend_from_slice(&(cells + 0x24).to_le_bytes());
+    v.extend_from_slice(&[0xdb, 0x05]);
+    v.extend_from_slice(&(cells + 0x24).to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x54, 0x24, 0x0c, 0xd9, 0x1a, 0x40, 0xc3]);
+    let s = stand_in8(a, b, 0x1f0, &v);
+    redirect(a, b, 0x008b_7c00, s);
+    let objects = alloc(a, b, 8 * 0x20);
+    let recs = alloc(a, b, 8 * 0x10);
+    let msgs = alloc(a, b, 8 * 0x140);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        slots[k as usize] = objects + 0x20 * k;
+        put(a, b, wb::MSG_WINDOWS.ptr(a).addr + 4 * k, msgs + 0x140 * k);
+    }
+    let text = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 4);
+    for k in 0..60u32 {
+        put(a, b, cursor, log);
+        let bytes: Vec<u8> = (0..0x140).map(|_| rng.next() as u8).collect();
+        let at = a.rebase(0x0133_d0d0);
+        a.write(at, &bytes).unwrap();
+        b.write(at, &bytes).unwrap();
+        put(a, b, a.rebase(0x023c_c092), (rng.next() % 4) as u8);
+        put(
+            a,
+            b,
+            a.rebase(0x0133_c94c),
+            if k % 2 == 0 { 0x100 } else { rng.next() },
+        );
+        let (chr, cmd) = (rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x0089_abd0, &[chr, cmd]),
+            t::btl_check_command_target(b, chr, cmd, call)
+        );
+        // message windows
+        set(a, b, t::MESSAGE_SLOTS, slots);
+        for i in 0..8u32 {
+            put(a, b, objects + 0x20 * i, (rng.next() % 2) as u16);
+            put(a, b, objects + 0x20 * i + 6, (rng.next() % 3) as u16);
+            put(a, b, objects + 0x20 * i + 0x10, recs + 0x10 * i);
+            put(a, b, recs + 0x10 * i + 8, rng.next() as u16);
+        }
+        let pad = [0x100u16, 0x100, 0, 0x100][(rng.next() % 4) as usize];
+        put(
+            a,
+            b,
+            a.rebase(0x025d_09d2),
+            [pad, [0x100u16, 7][(rng.next() % 2) as usize]],
+        );
+        eax(a, 0x008a_b910, &[]);
+        t::control_message_window(b, call);
+        // message types
+        let bytes: Vec<u8> = (0..8 * 0x140).map(|_| rng.next() as u8).collect();
+        a.write(msgs, &bytes).unwrap();
+        b.write(msgs, &bytes).unwrap();
+        put(a, b, cells + 0x20, rng.next() & 0x100);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        let (i, kind) = (rng.next() % 8, rng.next() & 0xf7f3);
+        let kind = if rng.next().is_multiple_of(3) {
+            (kind & !0xf) | 3
+        } else {
+            kind & !0xc
+        };
+        assert_eq!(
+            eax(a, 0x008b_8bb0, &[i, kind]),
+            t::set_message_type(b, i, kind, call)
+        );
+        // text widths
+        let n = rng.next() % 30;
+        let mut s: Vec<u8> = (0..n).map(|_| (rng.next() % 255 + 1) as u8).collect();
+        s.push(0);
+        a.write(text, &s).unwrap();
+        b.write(text, &s).unwrap();
+        let arg = rng.next();
+        let at = a.rebase(0x008b_70c0);
+        let want = a.call(at, Conv::Cdecl, &[text, arg]).unwrap().st0.unwrap();
+        let got = t::text_width(b, text, arg, scratch, |m, p, out, arg| {
+            eax(m, 0x008b_7c00, &[p, 0, out, arg])
+        });
+        assert_eq!(want, f64::from(got));
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("round 17 helpers", a, b);
+    }
+    for bank in [0u32, 1, 7] {
+        eax(a, 0x008a_f5c0, &[bank]);
+        t::set_exe_message_window_area(b, bank);
+        same_memory("exe message window area", a, b);
+    }
+}
+
+#[test]
+fn round17_helpers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round17_helpers(&mut a, &mut b, &mut Xorshift(0x4017_0001));
+}
+
+#[test]
+fn round17_helpers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round17_helpers(&mut a, &mut b, &mut Xorshift(0x4017_0002));
+}
+
+/// Round 17's second batch of kernel menu accessors over stand-ins.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round17_kernel_accessors(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let table = alloc(a, b, 0x1d8 * 8);
+    // MsGetSaveCommand(chr, cmd): chr * 0x100 ^ cmd ^ key
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x08, 0x33, 0x44, 0x24, 0x08, 0x35,
+    ];
+    v.extend_from_slice(&0x1700_0001u32.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x0078_5020, s);
+    // Kernel_GetAbilityName, Kernel_GetItemName, MsGetMonsterCapture: arg ^ key
+    for (k, sym) in [0x0077_4720u32, 0x0077_67a0, 0x0079_0af0]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+        v.extend_from_slice(&(0x1700_0100u32 + 0x100 * k as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x80 + 0x10 * k as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cases: [(char, u32, u32, u32); 172] = [
+        ('C', 0x0077_2790, 0x0079_0af0, 0x0),
+        ('A', 0x0077_2530, 0x30d5, 0x0),
+        ('A', 0x0077_2590, 0x30d6, 0x0),
+        ('A', 0x0077_25d0, 0x30d7, 0x0),
+        ('A', 0x0077_2660, 0x30d8, 0x0),
+        ('A', 0x0077_26b0, 0x30d9, 0x0),
+        ('A', 0x0077_2710, 0x30da, 0x0),
+        ('A', 0x0077_2770, 0x30db, 0x0),
+        ('A', 0x0077_27d0, 0x30dc, 0x0),
+        ('A', 0x0077_2810, 0x30dd, 0x0),
+        ('A', 0x0077_2890, 0x30de, 0x0),
+        ('A', 0x0077_28e0, 0x30df, 0x0),
+        ('A', 0x0077_2950, 0x30e0, 0x0),
+        ('A', 0x0077_29b0, 0x30e1, 0x0),
+        ('A', 0x0077_29e0, 0x3000, 0x0),
+        ('A', 0x0077_2a30, 0x30e2, 0x0),
+        ('A', 0x0077_2a50, 0x3001, 0x0),
+        ('A', 0x0077_2a70, 0x30e3, 0x0),
+        ('A', 0x0077_2ac0, 0x3002, 0x0),
+        ('A', 0x0077_2ae0, 0x30e4, 0x0),
+        ('A', 0x0077_2b30, 0x3003, 0x0),
+        ('A', 0x0077_2b50, 0x30e5, 0x0),
+        ('A', 0x0077_2ba0, 0x3004, 0x0),
+        ('A', 0x0077_2bc0, 0x30e6, 0x0),
+        ('A', 0x0077_2c10, 0x3005, 0x0),
+        ('A', 0x0077_2c30, 0x30e7, 0x0),
+        ('A', 0x0077_2c50, 0x3006, 0x0),
+        ('A', 0x0077_2ca0, 0x30e8, 0x0),
+        ('A', 0x0077_2cc0, 0x3007, 0x0),
+        ('A', 0x0077_2ce0, 0x30e9, 0x0),
+        ('A', 0x0077_2d30, 0x3008, 0x0),
+        ('A', 0x0077_2d50, 0x30ea, 0x0),
+        ('A', 0x0077_2da0, 0x3009, 0x0),
+        ('A', 0x0077_2e20, 0x300a, 0x0),
+        ('A', 0x0077_2ea0, 0x300b, 0x0),
+        ('A', 0x0077_2ec0, 0x30ff, 0x0),
+        ('A', 0x0077_2ee0, 0x300c, 0x0),
+        ('A', 0x0077_2f30, 0x3100, 0x0),
+        ('A', 0x0077_2f50, 0x300d, 0x0),
+        ('A', 0x0077_2fa0, 0x3101, 0x0),
+        ('A', 0x0077_2fc0, 0x300e, 0x0),
+        ('A', 0x0077_3010, 0x3102, 0x0),
+        ('A', 0x0077_3030, 0x300f, 0x0),
+        ('A', 0x0077_3080, 0x3103, 0x0),
+        ('A', 0x0077_30a0, 0x3010, 0x0),
+        ('A', 0x0077_30c0, 0x3104, 0x0),
+        ('A', 0x0077_3110, 0x3011, 0x0),
+        ('A', 0x0077_3130, 0x3105, 0x0),
+        ('A', 0x0077_3150, 0x3012, 0x0),
+        ('A', 0x0077_31a0, 0x3106, 0x0),
+        ('A', 0x0077_31c0, 0x3013, 0x0),
+        ('A', 0x0077_3210, 0x3107, 0x0),
+        ('A', 0x0077_3230, 0x3014, 0x0),
+        ('A', 0x0077_3280, 0x3108, 0x0),
+        ('A', 0x0077_32a0, 0x3015, 0x0),
+        ('A', 0x0077_32f0, 0x3109, 0x0),
+        ('A', 0x0077_3310, 0x3016, 0x0),
+        ('A', 0x0077_3330, 0x311f, 0x0),
+        ('A', 0x0077_3380, 0x3017, 0x0),
+        ('A', 0x0077_33a0, 0x3120, 0x0),
+        ('A', 0x0077_33c0, 0x3018, 0x0),
+        ('A', 0x0077_3410, 0x3113, 0x0),
+        ('A', 0x0077_3430, 0x3019, 0x0),
+        ('A', 0x0077_3480, 0x3114, 0x0),
+        ('A', 0x0077_34a0, 0x301a, 0x0),
+        ('A', 0x0077_34f0, 0x3115, 0x0),
+        ('A', 0x0077_3510, 0x301b, 0x0),
+        ('A', 0x0077_3540, 0x3116, 0x0),
+        ('A', 0x0077_3560, 0x301c, 0x0),
+        ('A', 0x0077_3580, 0x3117, 0x0),
+        ('A', 0x0077_35a0, 0x301d, 0x0),
+        ('A', 0x0077_35c0, 0x3118, 0x0),
+        ('A', 0x0077_35e0, 0x301e, 0x0),
+        ('A', 0x0077_3600, 0x3119, 0x0),
+        ('A', 0x0077_3620, 0x301f, 0x0),
+        ('A', 0x0077_3640, 0x311a, 0x0),
+        ('A', 0x0077_3660, 0x3020, 0x0),
+        ('A', 0x0077_3680, 0x311b, 0x0),
+        ('A', 0x0077_36a0, 0x3021, 0x0),
+        ('A', 0x0077_36c0, 0x311c, 0x0),
+        ('A', 0x0077_36e0, 0x3022, 0x0),
+        ('A', 0x0077_3700, 0x311d, 0x0),
+        ('A', 0x0077_3720, 0x3023, 0x0),
+        ('A', 0x0077_3740, 0x311e, 0x0),
+        ('A', 0x0077_3760, 0x3024, 0x0),
+        ('A', 0x0077_37c0, 0x3025, 0x0),
+        ('A', 0x0077_37e0, 0x3026, 0x0),
+        ('A', 0x0077_3840, 0x3027, 0x0),
+        ('A', 0x0077_38c0, 0x3028, 0x0),
+        ('A', 0x0077_3900, 0x3029, 0x0),
+        ('A', 0x0077_3950, 0x302b, 0x0),
+        ('A', 0x0077_39a0, 0x302c, 0x0),
+        ('A', 0x0077_3a10, 0x302d, 0x0),
+        ('A', 0x0077_3a80, 0x302e, 0x0),
+        ('A', 0x0077_3af0, 0x302f, 0x0),
+        ('A', 0x0077_3b40, 0x3030, 0x0),
+        ('A', 0x0077_3ba0, 0x3031, 0x0),
+        ('A', 0x0077_3be0, 0x3032, 0x0),
+        ('A', 0x0077_3c20, 0x3033, 0x0),
+        ('A', 0x0077_3c90, 0x3034, 0x0),
+        ('A', 0x0077_3cd0, 0x3035, 0x0),
+        ('A', 0x0077_3d10, 0x3036, 0x0),
+        ('A', 0x0077_3d50, 0x3037, 0x0),
+        ('A', 0x0077_3d90, 0x3038, 0x0),
+        ('A', 0x0077_3dd0, 0x3039, 0x0),
+        ('A', 0x0077_3e10, 0x303a, 0x0),
+        ('A', 0x0077_3e50, 0x303b, 0x0),
+        ('A', 0x0077_3e90, 0x303c, 0x0),
+        ('A', 0x0077_3ed0, 0x303d, 0x0),
+        ('A', 0x0077_3f10, 0x303e, 0x0),
+        ('A', 0x0077_3f50, 0x303f, 0x0),
+        ('A', 0x0077_3f90, 0x3040, 0x0),
+        ('A', 0x0077_3fd0, 0x3041, 0x0),
+        ('A', 0x0077_4010, 0x3042, 0x0),
+        ('A', 0x0077_4050, 0x3043, 0x0),
+        ('A', 0x0077_4090, 0x3044, 0x0),
+        ('A', 0x0077_40d0, 0x3045, 0x0),
+        ('A', 0x0077_4110, 0x3046, 0x0),
+        ('A', 0x0077_4150, 0x3047, 0x0),
+        ('A', 0x0077_4190, 0x3048, 0x0),
+        ('A', 0x0077_41d0, 0x3049, 0x0),
+        ('A', 0x0077_4210, 0x304a, 0x0),
+        ('A', 0x0077_4250, 0x304b, 0x0),
+        ('A', 0x0077_4290, 0x304c, 0x0),
+        ('A', 0x0077_42d0, 0x304d, 0x0),
+        ('A', 0x0077_4310, 0x304e, 0x0),
+        ('A', 0x0077_4350, 0x304f, 0x0),
+        ('A', 0x0077_4370, 0x3050, 0x0),
+        ('A', 0x0077_43c0, 0x3051, 0x0),
+        ('A', 0x0077_4410, 0x3052, 0x0),
+        ('A', 0x0077_4430, 0x3053, 0x0),
+        ('A', 0x0077_4480, 0x3054, 0x0),
+        ('A', 0x0077_44d0, 0x3055, 0x0),
+        ('D', 0x0077_2500, 0x14e, 0x0077_4720),
+        ('D', 0x0077_2560, 0x150, 0x0077_4720),
+        ('D', 0x0077_25f0, 0x152, 0x0077_4720),
+        ('D', 0x0077_2680, 0x154, 0x0077_4720),
+        ('D', 0x0077_26e0, 0x156, 0x0077_4720),
+        ('D', 0x0077_2740, 0x158, 0x0077_4720),
+        ('D', 0x0077_27a0, 0x15a, 0x0077_4720),
+        ('D', 0x0077_2830, 0x15c, 0x0077_4720),
+        ('D', 0x0077_28b0, 0x15e, 0x0077_4720),
+        ('D', 0x0077_2920, 0x160, 0x0077_4720),
+        ('D', 0x0077_2980, 0x162, 0x0077_4720),
+        ('D', 0x0077_2a00, 0x164, 0x0077_4720),
+        ('D', 0x0077_2a90, 0x166, 0x0077_4720),
+        ('D', 0x0077_2b00, 0x168, 0x0077_4720),
+        ('D', 0x0077_2b70, 0x16a, 0x0077_4720),
+        ('D', 0x0077_2be0, 0x16c, 0x0077_4720),
+        ('D', 0x0077_2c70, 0x16e, 0x0077_4720),
+        ('D', 0x0077_2d00, 0x170, 0x0077_4720),
+        ('D', 0x0077_2d70, 0x172, 0x0077_4720),
+        ('D', 0x0077_2df0, 0x174, 0x0077_4720),
+        ('D', 0x0077_2e70, 0x176, 0x0077_4720),
+        ('D', 0x0077_2f00, 0x178, 0x0077_4720),
+        ('D', 0x0077_2f70, 0x17a, 0x0077_4720),
+        ('D', 0x0077_2fe0, 0x17c, 0x0077_4720),
+        ('D', 0x0077_3050, 0x17e, 0x0077_4720),
+        ('D', 0x0077_30e0, 0x180, 0x0077_4720),
+        ('D', 0x0077_3170, 0x182, 0x0077_4720),
+        ('D', 0x0077_31e0, 0x184, 0x0077_4720),
+        ('D', 0x0077_3250, 0x186, 0x0077_4720),
+        ('D', 0x0077_32c0, 0x188, 0x0077_4720),
+        ('D', 0x0077_3350, 0x18a, 0x0077_4720),
+        ('D', 0x0077_33e0, 0x18c, 0x0077_4720),
+        ('D', 0x0077_3450, 0x18e, 0x0077_4720),
+        ('D', 0x0077_34c0, 0x190, 0x0077_4720),
+        ('D', 0x0077_4390, 0x8c, 0x0077_67a0),
+        ('D', 0x0077_43e0, 0x8e, 0x0077_67a0),
+        ('D', 0x0077_4450, 0x90, 0x0077_67a0),
+        ('D', 0x0077_44a0, 0x92, 0x0077_67a0),
+        ('D', 0x0077_44f0, 0x98, 0x0077_67a0),
+    ];
+    for _ in 0..3 {
+        let bytes: Vec<u8> = (0..0x1d8 * 8).map(|_| rng.next() as u8).collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        for &(kind, at, p, f) in &cases {
+            let arg = rng.next() % 8;
+            let want = eax(a, at, &[arg]);
+            let got = match kind {
+                'A' => t::kernel_save_command(b, arg, p, call),
+                'C' => t::kernel_forward(b, p, arg, call),
+                _ => t::kernel_slot_name(b, arg, p, f, call),
+            };
+            assert_eq!(want, got, "{at:#x}");
+        }
+        same_memory("kernel accessors", a, b);
+    }
+}
+
+#[test]
+fn round17_kernel_accessors_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round17_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4017_0011));
+}
+
+#[test]
+fn round17_kernel_accessors_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round17_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4017_0012));
+}
+
+/// Round 17's event-flag, request and price kernel accessors.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round17_kernel_flags(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let table = alloc(a, b, 0x1d8 * 8);
+    let flags = alloc(a, b, 0x100);
+    let cells = alloc(a, b, 8);
+    let ret = |v: u32| {
+        let mut c = vec![0xb8];
+        c.extend_from_slice(&v.to_le_bytes());
+        c.push(0xc3);
+        c
+    };
+    let s = stand_in8(a, b, 0x40, &ret(flags));
+    redirect(a, b, 0x0078_5250, s);
+    let mut c = vec![0xa1];
+    c.extend_from_slice(&cells.to_le_bytes());
+    c.push(0xc3);
+    let s = stand_in8(a, b, 0x50, &c);
+    redirect(a, b, 0x0078_4e80, s);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+    c.extend_from_slice(&0x1700_0300u32.to_le_bytes());
+    c.push(0xc3);
+    let s = stand_in8(a, b, 0x60, &c);
+    redirect(a, b, 0x0088_6e80, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x70,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0xc3],
+    );
+    redirect(a, b, 0x0078_5380, s);
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for _ in 0..200 {
+        let bytes: Vec<u8> = (0..0x1d8 * 8).map(|_| rng.next() as u8).collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        let bytes: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+        a.write(flags, &bytes).unwrap();
+        b.write(flags, &bytes).unwrap();
+        put(a, b, cells, rng.next() % 100_000);
+        let i = rng.next() % 8;
+        let i2 = if rng.next().is_multiple_of(4) {
+            0xf9
+        } else {
+            i
+        };
+        if i2 == 0xf9 {
+            assert_eq!(eax(a, 0x0077_2dc0, &[i2]), 0x1f40);
+            assert_eq!(t::kernel_slot_word_194(b, i2), 0x1f40);
+        } else {
+            assert_eq!(eax(a, 0x0077_2dc0, &[i2]), t::kernel_slot_word_194(b, i2));
+        }
+        assert_eq!(eax(a, 0x0077_2e40, &[i]), t::kernel_gil_after(b, i, call));
+        let sfx = rng.next();
+        assert_eq!(
+            eax(a, 0x0077_3b10, &[sfx]),
+            t::kernel_play_sfx(b, sfx, call)
+        );
+        let k = rng.next() % 0x100;
+        assert_eq!(eax(a, 0x0077_25b0, &[k]), t::kernel_event_byte(b, k, call));
+        let v = rng.next();
+        assert_eq!(
+            eax(a, 0x0077_3800, &[k, v]),
+            t::kernel_set_event_byte(b, k, v, call)
+        );
+        let chr = rng.next();
+        assert_eq!(eax(a, 0x0077_2900, &[chr]), t::kernel_joined(b, chr, call));
+        let n = rng.next() % 0x800;
+        assert_eq!(eax(a, 0x0077_2620, &[n]), t::kernel_event_bit(b, n, call));
+        let on = rng.next() % 3;
+        assert_eq!(
+            eax(a, 0x0077_3880, &[n, on]),
+            t::kernel_set_event_bit(b, n, on, call)
+        );
+        for (at, kind) in [(0x0077_39c0u32, 1u32), (0x0077_3a30, 0), (0x0077_3aa0, 3)] {
+            let pending = u8::from(rng.next().is_multiple_of(2));
+            put(a, b, a.rebase(0x0112_a038), pending);
+            let v = rng.next();
+            let want = eax(a, at, &[v]);
+            let got = t::kernel_post_request(b, v, kind);
+            if pending == 0 {
+                assert_eq!(want, got);
+            }
+        }
+        same_memory("kernel flags", a, b);
+    }
+}
+
+#[test]
+fn round17_kernel_flags_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round17_kernel_flags(&mut a, &mut b, &mut Xorshift(0x4017_0021));
+}
+
+#[test]
+fn round17_kernel_flags_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round17_kernel_flags(&mut a, &mut b, &mut Xorshift(0x4017_0022));
+}

@@ -361,7 +361,7 @@ then copies the chosen set over the other. The menu version always uses
 the stick set. It also ORs both pads into `+6..+0xa`, and with the dummy
 controller on it takes everything from the dummy.
 
-## Kernel menu accessors (`0x00771c30..0x007724f0`)
+## Kernel menu accessors (`0x00771b20..0x007744ff`)
 
 These 58 small entries come from a table; nothing calls them directly.
 29 ask `MsGetSaveCommand(chr, cmd)` for a fixed command (0x30b8 onward).
@@ -369,3 +369,20 @@ These 58 small entries come from a table; nothing calls them directly.
 (0x1d8 bytes each) of `*0x0112a034`. Three read a word of
 `MsGetSavePlayerPtr(chr)` (`+0x50`, `+0x54`, `+0x58`). The last two
 forward to `MsGetSaveItemNum` and `MsImportantGet`.
+
+The second run (`0x00772500..0x007744ff`) has the same shapes. 132 ask
+`MsGetSaveCommand`. 39 name a slot, five of them through
+`Kernel_GetItemName` (item slots). One forwards to `MsGetMonsterCapture`.
+Eleven differ:
+- three post a menu request once (`0x0112a038` pending, kind
+  `0x0112a058` 1/0/3, value `0x0112a054`);
+- event flag bytes and bits of `MsGetSaveEventFlag()`, read and set;
+- the price at `+0x194` of a record (0x1f40 for record 0xf9), and the gil
+  left after paying it;
+- whether a character has joined;
+- a sound with bit 31 set.
+
+The table holding these is at `0x00c4119c` in `.data`; no code refers to
+its address directly. For the set-type entries the ports return eax as
+the original leaves it, because whoever calls through the table may read
+it.

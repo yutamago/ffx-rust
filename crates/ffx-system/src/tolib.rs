@@ -4242,4 +4242,326 @@ pub mod bridge {
     ) -> u32 {
         call(mem, f, &[arg])
     }
+
+    /// `TOSetExeMessageWindowArea(bank)` (`0x008af5c0`): the eight message
+    /// window objects ([`MESSAGE_SLOTS`]) to the first (`bank` 0,
+    /// `0x01865ce0`) or second (`0x01865dc0`) bank of 0x1c-byte objects,
+    /// then `0x01841e0c` = `bank` (`0x008af690`), [`set_exe_window_area`]
+    /// and [`set_exe_message_area`].
+    pub fn set_exe_message_window_area(mem: &mut impl Mem, bank: u32) {
+        let first = mem.rebase(if bank == 0 { 0x0186_5ce0 } else { 0x0186_5dc0 });
+        let at = MESSAGE_SLOTS.ptr(mem).addr;
+        for k in 0..8u32 {
+            mem.write(at.wrapping_add(4 * k), first.wrapping_add(0x1c * k));
+        }
+        crate::accessor::bridge::set_word_global(mem, 0x008a_f690, bank);
+        set_exe_window_area(mem, bank);
+        set_exe_message_area(mem, bank);
+    }
+
+    /// `TOCheckBtlCommandTarget(chr, cmd)` (`0x0089abd0`): the target block
+    /// `0x0133d0d0` (0x140 bytes) cleared with the cursor character and
+    /// command set, the command window's start and mask cleared, then the
+    /// list, group, status, command and target masks rebuilt
+    /// (`TOBtlMakeTarget*Bit`, through `call`). With `0x0133c94c` at 0x100
+    /// the target is instead the cursor mask (`0x0133d15c & 0x0133d154 &
+    /// 0x0133d0dc`) as a single party entry in mode 2. Returns 1.
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    pub fn btl_check_command_target<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        cmd: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let block = mem.rebase(0x0133_d0d0);
+        mem.write_bytes(block, &[0u8; 0x140]);
+        mem.write(block, chr as u16);
+        mem.write(block.wrapping_add(2), cmd as u16);
+        let depth = i32::from(mem.read::<i8>(mem.rebase(0x023c_c092)));
+        let w = mem
+            .rebase(0x0133_c992)
+            .wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+        mem.write(w, 0u16);
+        mem.write(w.wrapping_add(0x96), 0u32);
+        for f in [
+            0x0089_85b0u32,
+            0x0089_8490,
+            0x0089_8330,
+            0x0089_83f0,
+            0x0089_8640,
+        ] {
+            call(mem, f, &[]);
+        }
+        if mem.read::<u32>(mem.rebase(0x0133_c94c)) == 0x100 {
+            let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+            let mask = word(mem, 0x0133_d15c) & word(mem, 0x0133_d154) & word(mem, 0x0133_d0dc);
+            let at = |mem: &M, a: u32| mem.rebase(a);
+            let party = at(mem, 0x0133_d180);
+            mem.write(at(mem, 0x0133_d1fe), 0u32);
+            mem.write(at(mem, 0x0133_d1fc), 0u16);
+            mem.write(at(mem, 0x0133_d0e0), 2u32);
+            mem.write(at(mem, 0x0133_d1f8), party);
+            mem.write(at(mem, 0x0133_d1f4), 0x0001_00ffu32);
+            mem.write(at(mem, 0x0133_d17c), 1u16);
+            mem.write(party, mask);
+            mem.write(at(mem, 0x0133_d178), mask);
+        }
+        1
+    }
+
+    /// `TOControlMessageWindow()` (`0x008ab910`): the pad read
+    /// (`TOGetPadStatus`), then for each active message window (`u16 +0`
+    /// of its object) `TOControlWindow(i)` and `TOControlMessage(i)`; when
+    /// the window reported a change its message function is set
+    /// (`TOSetMessageFunc(i, +8 of the object's +0x10 record)`), and a
+    /// window waiting for the pad (`+6` 1) reads it
+    /// (`TOGetControlPadStatus(i)`). Both pad words at 0x100 (held and
+    /// triggered) step the debug pad-print mode (`TODebugAddPadPrintFlag`).
+    /// Calls go through `call`.
+    pub fn control_message_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008b_7cd0, &[]);
+        let slots = MESSAGE_SLOTS.ptr(mem).addr;
+        for i in 0..8u32 {
+            let obj = |mem: &M| -> u32 { mem.read(slots.wrapping_add(4 * i)) };
+            if mem.read::<u16>(obj(mem)) == 0 {
+                continue;
+            }
+            let changed = call(mem, 0x0090_6bd0, &[i]);
+            call(mem, 0x008b_5850, &[i]);
+            if changed != 0 {
+                let rec: u32 = mem.read(obj(mem).wrapping_add(0x10));
+                let f = i32::from(mem.read::<i16>(rec.wrapping_add(8))).cast_unsigned();
+                call(mem, 0x008b_8af0, &[i, f]);
+            }
+            if mem.read::<u16>(obj(mem).wrapping_add(6)) == 1 {
+                call(mem, 0x008b_6b70, &[i]);
+            }
+        }
+        let pad = mem.rebase(0x025d_09d2);
+        if mem.read::<u16>(pad) == 0x100 && mem.read::<u16>(pad.wrapping_add(2)) == 0x100 {
+            call(mem, 0x008a_bd00, &[]);
+        }
+    }
+
+    /// `TOSetMessageType(i, type)` (`0x008b8bb0`): message window `i`'s
+    /// kind (`+8`, the low nibble) and flags from `type`: `+0x10` 0x4000,
+    /// `+0x1a` 1 with 0x2000 (3 with 0x8000 too), `+0xc` 1 with 0x1000 (or
+    /// when the save menu word lacks 0x100), `+0x12` 1 with 0x400; kind 3
+    /// sets `+0x1a` to 3 with 0x8000, else 1. Then
+    /// [`init_message_call_back`]; returns 0. `MsGetSaveMenu` goes through
+    /// `call`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn set_message_type<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slot = crate::window::bridge::MSG_WINDOWS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(4));
+        let m = |mem: &M| -> u32 { mem.read(slot) };
+        mem.write(m(mem).wrapping_add(8), kind & 0xf);
+        mem.write(m(mem).wrapping_add(0x10), (kind & 0x4000) as u16);
+        let scroll = if kind & 0x2000 == 0 {
+            0u16
+        } else if kind & 0x8000 != 0 {
+            3
+        } else {
+            1
+        };
+        mem.write(m(mem).wrapping_add(0x1a), scroll);
+        mem.write(m(mem).wrapping_add(0xc), u16::from(kind & 0x1000 != 0));
+        mem.write(m(mem).wrapping_add(0x12), u16::from(kind & 0x400 != 0));
+        let menu = call(mem, 0x0078_5290, &[]);
+        if mem.read::<u32>(menu) & 0x100 == 0 {
+            mem.write(m(mem).wrapping_add(0xc), 1u16);
+        }
+        let w = m(mem);
+        if mem.read::<u32>(w.wrapping_add(8)) == 3 {
+            mem.write(
+                w.wrapping_add(0x1a),
+                if kind & 0x8000 != 0 { 3u16 } else { 1 },
+            );
+        }
+        init_message_call_back(mem, m(mem));
+        0
+    }
+
+    /// `0x008b70c0(text, arg)`: the width of the whole of `text`, a glyph
+    /// at a time through `TOGetFontWidthForLang(text, 0, &w, arg)` (passed
+    /// in as `width`, with the scratch float `out`), summed as
+    /// `ftol(total + w)`; the glyph count in `0x018663e8`. Returns the total
+    /// as a float.
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)] // fild, fstp dword
+    pub fn text_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        arg: u32,
+        out: u32,
+        mut width: impl FnMut(&mut M, u32, u32, u32) -> u32,
+    ) -> f32 {
+        let count = mem.rebase(0x0186_63e8);
+        let mut total = 0i32;
+        let mut p = text;
+        mem.write(count, 0u32);
+        while mem.read::<u8>(p) != 0 {
+            p = width(mem, p, out, arg);
+            let w = f64::from(mem.read::<f32>(out));
+            total =
+                ffx_bridge::x87::ftol(mem, ffx_bridge::x87::add(f32_of(total), w)).cast_signed();
+            let c: u32 = mem.read(count);
+            mem.write(count, c.wrapping_add(1));
+        }
+        total as f32
+    }
+
+    /// A kernel accessor: the name function `f` (`Kernel_GetAbilityName`
+    /// or `Kernel_GetItemName`) of the `u16` at `off` of record `i` (0x1d8
+    /// bytes each) of the table `*0x0112a034`.
+    pub fn kernel_slot_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        off: u32,
+        f: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        let id =
+            u32::from(mem.read::<u16>(table.wrapping_add(i.wrapping_mul(0x1d8)).wrapping_add(off)));
+        call(mem, f, &[id])
+    }
+
+    /// Kernel accessors `0x007739c0`, `0x00773a30`, `0x00773aa0`: unless a
+    /// request is pending (byte `0x0112a038`), post one: kind `kind`
+    /// (`0x0112a058`), value `v` (`0x0112a054`), pending set. Returns `v`
+    /// (eax; with a request pending the original leaves eax as it found it,
+    /// and this returns 0).
+    pub fn kernel_post_request(mem: &mut impl Mem, v: u32, kind: u32) -> u32 {
+        let pending = mem.rebase(0x0112_a038);
+        if mem.read::<u8>(pending) != 0 {
+            return 0;
+        }
+        mem.write(mem.rebase(0x0112_a058), kind);
+        mem.write(mem.rebase(0x0112_a054), v);
+        mem.write(pending, 1u8);
+        v
+    }
+
+    /// Kernel accessor `0x00772dc0(i)`: 0x1f40 for 0xf9, else the word at
+    /// `+0x194` of record `i` of `*0x0112a034`.
+    pub fn kernel_slot_word_194(mem: &impl Mem, i: u32) -> u32 {
+        if i == 0xf9 {
+            return 0x1f40;
+        }
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        mem.read(
+            table
+                .wrapping_add(i.wrapping_mul(0x1d8))
+                .wrapping_add(0x194),
+        )
+    }
+
+    /// Kernel accessor `0x00772e40(i)`: the gil (`MsGetGIL`) left after
+    /// the price at `+0x194` of record `i`, or 0 when it is short.
+    pub fn kernel_gil_after<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let gil = call(mem, 0x0078_4e80, &[]);
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        let price: u32 = mem.read(
+            table
+                .wrapping_add(i.wrapping_mul(0x1d8))
+                .wrapping_add(0x194),
+        );
+        let v = gil.wrapping_sub(price);
+        if v.cast_signed() < 0 { 0 } else { v }
+    }
+
+    /// Kernel accessor `0x00773b10(sfx)`: `SndSepPlaySimple(sfx |
+    /// 0x80000000)`.
+    pub fn kernel_play_sfx<M: Mem>(
+        mem: &mut M,
+        sfx: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0088_6e80, &[sfx | 0x8000_0000])
+    }
+
+    /// Kernel accessor `0x007725b0(i)`: event flag byte `i` of
+    /// `MsGetSaveEventFlag()`, sign-extended.
+    pub fn kernel_event_byte<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = call(mem, 0x0078_5250, &[]);
+        i32::from(mem.read::<i8>(base.wrapping_add(i))).cast_unsigned()
+    }
+
+    /// Kernel accessor `0x00773800(i, v)`: event flag byte `i` set to `v`;
+    /// returns the flags' address (eax).
+    #[allow(clippy::cast_possible_truncation)] // `mov byte`
+    pub fn kernel_set_event_byte<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        v: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = call(mem, 0x0078_5250, &[]);
+        mem.write(base.wrapping_add(i), v as u8);
+        base
+    }
+
+    /// Kernel accessor `0x00772900(chr)`: 1 when `MsGetSavePlyJoin(chr)` is
+    /// 1, else 0.
+    pub fn kernel_joined<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, 0x0078_5380, &[chr]) == 1)
+    }
+
+    /// Kernel accessor `0x00772620(n)`: event flag bit `n` (byte `n / 8`
+    /// of `MsGetSaveEventFlag()`, truncating, bit `n & 7`): 1 or 0.
+    pub fn kernel_event_bit<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = call(mem, 0x0078_5250, &[]);
+        let byte = (n.cast_signed() / 8).cast_unsigned();
+        let v = i32::from(mem.read::<i8>(base.wrapping_add(byte)));
+        u32::from(v & (1 << (n & 7)) != 0)
+    }
+
+    /// Kernel accessor `0x00773880(n, on)`: event flag bit `n` cleared,
+    /// then set when `on`. Returns eax as left: `n / 8` with the byte's
+    /// final value in its low byte.
+    pub fn kernel_set_event_bit<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        on: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = call(mem, 0x0078_5250, &[]);
+        let idx = (n.cast_signed() / 8).cast_unsigned();
+        let at = base.wrapping_add(idx);
+        let mask = 1u8 << (n & 7);
+        let v: u8 = mem.read(at);
+        let mut v = v & !mask;
+        mem.write(at, v);
+        if on != 0 {
+            v |= mask;
+            mem.write(at, v);
+        }
+        (idx & !0xff) | u32::from(v)
+    }
 }
