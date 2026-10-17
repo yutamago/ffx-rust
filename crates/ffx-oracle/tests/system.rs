@@ -9843,3 +9843,175 @@ fn round16_kernel_accessors_match_the_original_on_the_snapshot() {
     };
     round16_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4016_0052));
 }
+
+/// Round 17's message and battle-target helpers over stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round17_helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x200);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    // no-argument stand-ins count their calls in cells + 4k
+    for (k, sym) in [
+        0x0089_85b0u32,
+        0x0089_8490,
+        0x0089_8330,
+        0x0089_83f0,
+        0x0089_8640,
+        0x008b_7cd0,
+        0x008a_bd00,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let mut v = vec![0x83, 0x05];
+        v.extend_from_slice(&(cells + 4 * k).to_le_bytes());
+        v.extend_from_slice(&[0x01, 0xb8]);
+        v.extend_from_slice(&(0x1700_0000 + k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x100 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // TOControlWindow: i & 1; the others log their first argument
+    let s = stand_in8(
+        a,
+        b,
+        0x180,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    redirect(a, b, 0x0090_6bd0, s);
+    for (k, sym) in [0x008b_5850u32, 0x008b_8af0, 0x008b_6b70]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        let s = stand_in8(
+            a,
+            b,
+            0x190 + 0x18 * k,
+            &logger(cursor, 0x1700_0100 + (k << 8)),
+        );
+        redirect(a, b, sym, s);
+    }
+    // MsGetSaveMenu: cells + 0x20
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&(cells + 0x20).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1e0, &v);
+    redirect(a, b, 0x0078_5290, s);
+    // TOGetFontWidthForLang: *out = (float) *text, returns text + 1
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x89, 0x0d];
+    v.extend_from_slice(&(cells + 0x24).to_le_bytes());
+    v.extend_from_slice(&[0xdb, 0x05]);
+    v.extend_from_slice(&(cells + 0x24).to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x54, 0x24, 0x0c, 0xd9, 0x1a, 0x40, 0xc3]);
+    let s = stand_in8(a, b, 0x1f0, &v);
+    redirect(a, b, 0x008b_7c00, s);
+    let objects = alloc(a, b, 8 * 0x20);
+    let recs = alloc(a, b, 8 * 0x10);
+    let msgs = alloc(a, b, 8 * 0x140);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        slots[k as usize] = objects + 0x20 * k;
+        put(a, b, wb::MSG_WINDOWS.ptr(a).addr + 4 * k, msgs + 0x140 * k);
+    }
+    let text = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 4);
+    for k in 0..60u32 {
+        put(a, b, cursor, log);
+        let bytes: Vec<u8> = (0..0x140).map(|_| rng.next() as u8).collect();
+        let at = a.rebase(0x0133_d0d0);
+        a.write(at, &bytes).unwrap();
+        b.write(at, &bytes).unwrap();
+        put(a, b, a.rebase(0x023c_c092), (rng.next() % 4) as u8);
+        put(
+            a,
+            b,
+            a.rebase(0x0133_c94c),
+            if k % 2 == 0 { 0x100 } else { rng.next() },
+        );
+        let (chr, cmd) = (rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x0089_abd0, &[chr, cmd]),
+            t::btl_check_command_target(b, chr, cmd, call)
+        );
+        // message windows
+        set(a, b, t::MESSAGE_SLOTS, slots);
+        for i in 0..8u32 {
+            put(a, b, objects + 0x20 * i, (rng.next() % 2) as u16);
+            put(a, b, objects + 0x20 * i + 6, (rng.next() % 3) as u16);
+            put(a, b, objects + 0x20 * i + 0x10, recs + 0x10 * i);
+            put(a, b, recs + 0x10 * i + 8, rng.next() as u16);
+        }
+        let pad = [0x100u16, 0x100, 0, 0x100][(rng.next() % 4) as usize];
+        put(
+            a,
+            b,
+            a.rebase(0x025d_09d2),
+            [pad, [0x100u16, 7][(rng.next() % 2) as usize]],
+        );
+        eax(a, 0x008a_b910, &[]);
+        t::control_message_window(b, call);
+        // message types
+        let bytes: Vec<u8> = (0..8 * 0x140).map(|_| rng.next() as u8).collect();
+        a.write(msgs, &bytes).unwrap();
+        b.write(msgs, &bytes).unwrap();
+        put(a, b, cells + 0x20, rng.next() & 0x100);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        let (i, kind) = (rng.next() % 8, rng.next() & 0xf7f3);
+        let kind = if rng.next().is_multiple_of(3) {
+            (kind & !0xf) | 3
+        } else {
+            kind & !0xc
+        };
+        assert_eq!(
+            eax(a, 0x008b_8bb0, &[i, kind]),
+            t::set_message_type(b, i, kind, call)
+        );
+        // text widths
+        let n = rng.next() % 30;
+        let mut s: Vec<u8> = (0..n).map(|_| (rng.next() % 255 + 1) as u8).collect();
+        s.push(0);
+        a.write(text, &s).unwrap();
+        b.write(text, &s).unwrap();
+        let arg = rng.next();
+        let at = a.rebase(0x008b_70c0);
+        let want = a.call(at, Conv::Cdecl, &[text, arg]).unwrap().st0.unwrap();
+        let got = t::text_width(b, text, arg, scratch, |m, p, out, arg| {
+            eax(m, 0x008b_7c00, &[p, 0, out, arg])
+        });
+        assert_eq!(want, f64::from(got));
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("round 17 helpers", a, b);
+    }
+    for bank in [0u32, 1, 7] {
+        eax(a, 0x008a_f5c0, &[bank]);
+        t::set_exe_message_window_area(b, bank);
+        same_memory("exe message window area", a, b);
+    }
+}
+
+#[test]
+fn round17_helpers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round17_helpers(&mut a, &mut b, &mut Xorshift(0x4017_0001));
+}
+
+#[test]
+fn round17_helpers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round17_helpers(&mut a, &mut b, &mut Xorshift(0x4017_0002));
+}

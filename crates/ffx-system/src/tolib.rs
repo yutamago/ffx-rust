@@ -4243,7 +4243,6 @@ pub mod bridge {
         call(mem, f, &[arg])
     }
 
-
     /// `TOSetExeMessageWindowArea(bank)` (`0x008af5c0`): the eight message
     /// window objects ([`MESSAGE_SLOTS`]) to the first (`bank` 0,
     /// `0x01865ce0`) or second (`0x01865dc0`) bank of 0x1c-byte objects,
@@ -4259,7 +4258,6 @@ pub mod bridge {
         set_exe_window_area(mem, bank);
         set_exe_message_area(mem, bank);
     }
-
 
     /// `TOCheckBtlCommandTarget(chr, cmd)` (`0x0089abd0`): the target block
     /// `0x0133d0d0` (0x140 bytes) cleared with the cursor character and
@@ -4285,7 +4283,13 @@ pub mod bridge {
             .wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
         mem.write(w, 0u16);
         mem.write(w.wrapping_add(0x96), 0u32);
-        for f in [0x0089_85b0u32, 0x0089_8490, 0x0089_8330, 0x0089_83f0, 0x0089_8640] {
+        for f in [
+            0x0089_85b0u32,
+            0x0089_8490,
+            0x0089_8330,
+            0x0089_83f0,
+            0x0089_8640,
+        ] {
             call(mem, f, &[]);
         }
         if mem.read::<u32>(mem.rebase(0x0133_c94c)) == 0x100 {
@@ -4314,7 +4318,10 @@ pub mod bridge {
     /// (`TOGetControlPadStatus(i)`). Both pad words at 0x100 (held and
     /// triggered) step the debug pad-print mode (`TODebugAddPadPrintFlag`).
     /// Calls go through `call`.
-    pub fn control_message_window<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+    pub fn control_message_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         call(mem, 0x008b_7cd0, &[]);
         let slots = MESSAGE_SLOTS.ptr(mem).addr;
         for i in 0..8u32 {
@@ -4376,7 +4383,10 @@ pub mod bridge {
         }
         let w = m(mem);
         if mem.read::<u32>(w.wrapping_add(8)) == 3 {
-            mem.write(w.wrapping_add(0x1a), if kind & 0x8000 != 0 { 3u16 } else { 1 });
+            mem.write(
+                w.wrapping_add(0x1a),
+                if kind & 0x8000 != 0 { 3u16 } else { 1 },
+            );
         }
         init_message_call_back(mem, m(mem));
         0
@@ -4402,7 +4412,8 @@ pub mod bridge {
         while mem.read::<u8>(p) != 0 {
             p = width(mem, p, out, arg);
             let w = f64::from(mem.read::<f32>(out));
-            total = ffx_bridge::x87::ftol(mem, ffx_bridge::x87::add(f32_of(total), w)).cast_signed();
+            total =
+                ffx_bridge::x87::ftol(mem, ffx_bridge::x87::add(f32_of(total), w)).cast_signed();
             let c: u32 = mem.read(count);
             mem.write(count, c.wrapping_add(1));
         }

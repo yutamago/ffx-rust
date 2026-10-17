@@ -8946,7 +8946,7 @@
 0x0089ab50 function TOBtlLimitTimerStart_0089ab50 # (): 0x0133f77c != 2: = 2, SndSepPlaySimple(0x8000004e) unless playing; name ours
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
-0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40
+0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40; cdecl(chr, cmd): 0x0133d0d0 (0x140) cleared, +0 chr, +2 cmd, window start/mask 0, TOBtlMakeTarget{List,Group,ChrStatus,Command,Target}Bit; 0x0133c94c == 0x100: single party target 0x0133d15c & 0x0133d154 & 0x0133d0dc in mode 2; returns 1
 0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
@@ -9117,7 +9117,7 @@
 0x008ab7d0 function TOCDGetFileName           # fh v3:bsim1.00 0x008ab780
 0x008ab800 function TOClearMessageSlot_008ab800 # cdecl(i): g_TOMessageWindowSlots[i]: halves +0, +8 of *(slot+0x10), +0, +0x2c of *(slot+0x14), bytes +0, +1 of *(slot+0x18) zeroed; caller 0x008ab860; name ours
 0x008ab8f0 function TOCloseMessageWindow      # (i): TOCloseWindow(i), then jmp TOCloseMessage(i); fh v3:bsim1.00 0x008ab8a0
-0x008ab910 function TOControlMessageWindow       # layout+callees: sorts between TOCloseMessageWindow and TOControlMessageWindowForMenu, and its named callees match the Switch 0x71004f7b90 TOControlMessageWindow's (similarity 0.80: TOControlMessage, TOControlWindow, TOGetControlPadStatus, TOSetMessageFunc); symbols from Fahrenheit's server export
+0x008ab910 function TOControlMessageWindow       # layout+callees: sorts between TOCloseMessageWindow and TOControlMessageWindowForMenu, and its named callees match the Switch 0x71004f7b90 TOControlMessageWindow's (similarity 0.80: TOControlMessage, TOControlWindow, TOGetControlPadStatus, TOSetMessageFunc); symbols from Fahrenheit's server export; (): TOGetPadStatus; per active window: TOControlWindow, TOControlMessage, changed: TOSetMessageFunc(i, +0x10 rec +8), +6 == 1: TOGetControlPadStatus; pad 0x100/0x100: TODebugAddPadPrintFlag
 0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950; per message-window slot: TOControlWindow, TOControlMessage, TOSetMessageFunc, TOGetControlPadStatus; g_TOMenuPad 0x100,0x100: jmp TODebugAddPadPrintFlag
 0x008aba30 function TODVDFileRead             # fh switch:bsim1.00 0x71004f4c70
 0x008aba60 function TODVDFileLoad # cdecl(file, name): CdLib +0x10(file), size = +0x14(name), user_malloc(size), TODVDFileRead(file, name, block); block or 0; name ours
@@ -9178,7 +9178,7 @@
 0x008af380 function TOSeqStopExecScene        # fh v3:exact 0x008af330
 0x008af4f0 function TOSeqStopScene            # fh v3:exact 0x008af4a0
 0x008af590 function TOSetEnvMovieMessage      # fh v3:exact 0x008af540
-0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570
+0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570; cdecl(bank): g_TOMessageWindowSlots[8] = 0x01865ce0/0x01865dc0 + 0x1c k, SetGlobal_01841e0c(bank), TOSetExeWindowArea(bank), TOSetExeMessageArea(bank)
 0x008af690 function SetGlobal_01841e0c # cdecl(v): *0x01841e0c = v, returns v; caller TOSetExeMessageWindowArea; name ours
 0x008af6a0 function TOCheckMapMessage         # cdecl(id): unless 0x00c59558 < 0 or (MsGetSaveMenu & 0x200 and 0x007851b0() == 1): 0x00c59558 = 1 if id is listed for g_CurrentMapNo in 0x00b5f730 (0x20-byte entries: map (first compiled as 0xa2), ids to -1; map 0 ends), else 0; returns 0; caller 0x0086...; name ours
 0x008af730 function TOMessageSlotCursor_008af730 # cdecl(i, x, y, v): +0x18 part bytes +2/+3 = x, y clamped 0..7, +0x10/+0xc = v; +0x14 part handler 0x008b62b0; name ours
@@ -9257,6 +9257,7 @@
 0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
+0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
 0x008b71c0 function TOGetEasyMesWHForCredits  # fh switch:bsim1.00 0x71004f15e0
 0x008b71f0 function TOGetExtMesWHFontL2          # layout+callees: sorts between TOGetEasyMesWHForCredits and TOGetFontInfo, and its named callees match the Switch 0x71004f1540 TOGetExtMesWHFontL2's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0
@@ -9292,7 +9293,7 @@
 0x008b89a0 function TOSetMessageText_008b89a0 # cdecl(i, text): window +0x94 = text, +0x98 = TOSkipCodesAbove2(text); name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
 0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
-0x008b8bb0 function TOSetMessageType             # layout+callees: sorts between TOSetMessageFunc and TOSetRectDirect, and its named callees match the Switch 0x71004ee390 TOSetMessageType's (similarity 1.00: MsGetSaveMenu, TOInitMessageCallBack); symbols from Fahrenheit's server export
+0x008b8bb0 function TOSetMessageType             # layout+callees: sorts between TOSetMessageFunc and TOSetRectDirect, and its named callees match the Switch 0x71004ee390 TOSetMessageType's (similarity 1.00: MsGetSaveMenu, TOInitMessageCallBack); symbols from Fahrenheit's server export; cdecl(i, type): msg +8 = type & 0xf, +0x10 = type & 0x4000, +0x1a = 0x2000 ? (0x8000 ? 3 : 1) : 0, +0xc = 0x1000 (or 1 without save-menu bit 0x100), +0x12 = 0x400; kind 3: +0x1a = 0x8000 ? 3 : 1; TOInitMessageCallBack; returns 0
 0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
 0x008b8d10 function TOWideWindowRect_008b8d10 # cdecl(i, out, x, y, w, h) -> y + h: out = TOWideWindowX(i, x), y, that + w, y + h as floats; name ours
