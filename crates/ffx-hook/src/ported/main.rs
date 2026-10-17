@@ -3,7 +3,7 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, control, gs, light, quat, seq, state, vec};
+use ffx_sg::{camera, chpacket, control, envelope, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -1350,6 +1350,22 @@ ported! {
     /// `SG_SeqStep(chr)`.
     SG_SeqStep @ 0x0083_7900 => extern "C" fn sg_seq_step(chr: u32) -> u32 {
         seq::bridge::seq_step(&mut mem(), chr)
+    }
+    /// `Sg_ControlMain()`.
+    Sg_ControlMain @ 0x0082_d070 => extern "C" fn sg_control_main() -> u32 {
+        state::bridge::control_main(&mut mem())
+    }
+    /// `SG_InitBones(chr)`.
+    SG_InitBones @ 0x0082_77f0 => extern "C" fn sg_init_bones(chr: u32) {
+        seq::bridge::init_bones(&mut mem(), chr);
+    }
+    /// `sg_calcenvelopeW_asm_opt(lists, out, m)`.
+    sg_calcenvelopeW_asm_opt @ 0x006e_e270 => extern "C" fn sg_calcenvelope_w_asm_opt(lists: u32, out: u32, m: u32) {
+        envelope::bridge::calc_envelope_w_opt(&mut mem(), lists, out, m);
+    }
+    /// `sg_calcenvelope_asm_opt(lists, out, m)`.
+    sg_calcenvelope_asm_opt @ 0x006e_ee40 => extern "C" fn sg_calcenvelope_asm_opt(lists: u32, out: u32, m: u32) {
+        envelope::bridge::calc_envelope_opt(&mut mem(), lists, out, m);
     }
 }
 

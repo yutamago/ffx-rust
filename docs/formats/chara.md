@@ -340,6 +340,27 @@ frame (×256; a negative end means the clip's length). One case is
 special: Tidus (`"c001"`) on map 0x7a, playing 0x3000 to -0x100, stops
 at 0x2800.
 
+## Element matrices
+
+`Ch_CalcElement` (`0x00832760`) builds the character's world matrix
+`+0x1d0` from one of three sources: a parent's element (`+0x19c`,
+`+0x1a0`), a given matrix (`+0x10c`), or its own scale, pitch, facing and
+position. The scaled copy goes to `+0x210`. It then builds each
+element's matrix (`+0x88` of the 0x160-byte elements at `+0x328`). The
+skin matrices (the element relative to its bone's inverse) go into a
+512-entry stack buffer at each element's index `+4`, and
+`graphicCharacterInstanceSetSkeletonMatrices` (`0x0063be60`) uploads that
+buffer to both instances. The upload reads only the entries its meshes'
+remap tables name. On the snapshots' characters those are all computed
+entries; the other entries are undefined in the original, and the oracle
+check `ch_calc_element_reads_only_computed_matrices` confirms this with a
+poisoned stack.
+
+`Ch_MemMove` (`0x00826fa0`) is one function; the dump splits it at the
+early return. It moves each active character's heap blocks
+(`Sg_MemMoveWork`) and stops after the first character that moved
+anything.
+
 ## Head, mouth and automatic motion
 
 `Ch_Neck` (`0x008348d0`) turns the head (option point 9's element)
