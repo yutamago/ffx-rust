@@ -922,6 +922,48 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - `KeThCp_AddBp` (`0x007644d0`): a beam block taken off its pool's free
   list, set up (`KeThBP_Init`) and pushed onto the lens's list.
 
+## Sphere grid items, node shapes and fog (round 19)
+
+- `AbmapItemUsableAt` (`0x00a49310`): 0 unless the item is held
+  (`MsGetSaveItemNum`); else the ability bits it grants a character. The
+  item's record (`MsGetRomItem`, byte `+0x5d`) picks an item excel row
+  (`0x01a860e4`); a row whose byte `+0xc` is `' '` covers every node
+  (`AbmapForEachNode`), else the node and the nodes linked to it
+  (`AbmapForNodeAndLinked`). The context on the stack is the row, the
+  character, `1 << chr`, the result and (apply only) a mark byte.
+- `AbmapItemNodeEffect` (`0x00a49440`), its callback: the node's excel
+  row (`0x01a860e0`, by its id `+6`). A special item kind (row `+0xd`)
+  asks `0x00a5d120(kind, node index, row, chr)`; else the item's ability
+  bits (`+0xa`) present in the node row, unless the node is activated for
+  the character (`+0x21`) or hidden (bit 15 of the row's `+0x10`).
+- `AbmapItemApplyAt` (`0x00a5b400`) and its callback
+  `AbmapItemApplyNode` (`0x00a5b490`): the same walk without the held
+  check; a node with an effect gets the mark ORed into `+0x22`.
+- `AbmapSetupKindShapes` (`0x00a5b230`): the 130 node kinds (0x30 bytes
+  from the grid's `+0xf828`): two shape records picked by the row's
+  `+0x16` (`0x01a85f98`, `0x01a85fe8`), a size from the first one's box
+  over 16, a size class shape (`0x0230578c`/`90`/`94`: under 24, under
+  32, else), scale `size * 7.8125e-5` and for visible kinds seven circle
+  points of radius `size / 2 + 3`. Every shape table entry is read.
+- Fog: the colour is four bytes at `0x018df140`, the limit, near and far
+  `f32`s at `0x018df144`/`48`/`4c`, the distances in units of `scale
+  factor * 0x00b501a0 * 0x00b412f8` (both `f64`).
+  `yiSetFogColor` (`0x0090a2c0`) and `yiSetFogParam` (`0x0090a350`) store
+  them; `yiGetFogParam` (`0x00908bb0`) reads them back (far first). On map
+  0xe0 only, the PC renderer's fog is used: the setters also call
+  `graphicSetFogColour` (`r, g, b / 255`), `graphicSetFogNear`/`Far`
+  (times `0x00b47c68`), `graphicSetFogLimit` (`(1 - limit / 255) *
+  0x00b48318`) and `0x00643180(1.0)`; the getter returns
+  `graphicGetFogNear`/`Far` and `graphicGetFogLimit * 255`.
+- `yiSetBackColor` (`0x0090a040`): four bytes at `0x018df178`; unless the
+  current magic (`MagicFile_GetMagicId`) is 0x2c2 also
+  `graphicSetBackgroundColour(r, g, b / 255, a * 0x00b170b8)`.
+- `yiDisableHamonEff` (`0x00908450`): clears render status bit 24 and the
+  distortion word `0x018ded28`, `graphicSetDistortionEnable(0)`.
+- Not ported this round: `yiGetFogColor` (`0x00908980`, the clamped
+  colour scale and offset, kept on the x87 stack in a different order
+  from `yiGetBackColor`'s; next).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

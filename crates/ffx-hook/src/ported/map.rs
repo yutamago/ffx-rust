@@ -3182,6 +3182,62 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ke::bridge::ke_th_cp_add_bp(&mut mem(), cp, pool, (a, b), w)
     }
+    // ---- round 19 ----
+    /// `AbmapItemUsableAt(chr, node, item)`.
+    AbmapItemUsableAt @ 0x00a4_9310 => extern "C" fn shim_abmap_item_usable_at(chr: u32, node: u32, item: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_usable_at(&mut mem(), [chr, node, item], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapItemApplyAt(chr, node, item, mark)`.
+    AbmapItemApplyAt @ 0x00a5_b400 => extern "C" fn shim_abmap_item_apply_at(chr: u32, node: u32, item: u32, mark: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_apply_at(&mut mem(), [chr, node, item, mark], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapItemNodeEffect(node, ctx)`.
+    AbmapItemNodeEffect @ 0x00a4_9440 => extern "C" fn shim_abmap_item_node_effect(node: u32, ctx: u32) -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_node_effect(&mut mem(), node, ctx, t, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapItemApplyNode(node, ctx)`.
+    AbmapItemApplyNode @ 0x00a5_b490 => extern "C" fn shim_abmap_item_apply_node(node: u32, ctx: u32) -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_apply_node(&mut mem(), node, ctx, t, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapSetupKindShapes()`.
+    AbmapSetupKindShapes @ 0x00a5_b230 => extern "C" fn shim_abmap_setup_kind_shapes() -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_setup_kind_shapes(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiGetFogParam(near, far, limit)`.
+    yiGetFogParam @ 0x0090_8bb0 => extern "C" fn shim_yi_get_fog_param(near: u32, far: u32, limit: u32) {
+        yi::bridge::yi_get_fog_param(&mut mem(), [near, far, limit], &mut |_, f, a| call_float(f, a));
+    }
+
+    /// `yiSetBackColor(c)`.
+    yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
+        yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiSetFogColor(c)`.
+    yiSetFogColor @ 0x0090_a2c0 => extern "C" fn shim_yi_set_fog_color(c: u32) {
+        yi::bridge::yi_set_fog_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiSetFogParam(near, far, limit)`.
+    yiSetFogParam @ 0x0090_a350 => extern "C" fn shim_yi_set_fog_param(near: u32, far: u32, limit: u32) {
+        yi::bridge::yi_set_fog_param(&mut mem(), [near, far, limit], &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiDisableHamonEff()`.
+    yiDisableHamonEff @ 0x0090_8450 => extern "C" fn shim_yi_disable_hamon_eff() -> u32 {
+        yi::bridge::yi_disable_hamon_eff(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
