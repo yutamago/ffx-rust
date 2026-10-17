@@ -4826,4 +4826,85 @@ pub mod bridge {
         mem.write(rec.wrapping_add(2), n as u16);
         n
     }
+
+    /// The record search of `0x00775ce0` and `0x00775de0`: the current
+    /// page and record (`0x0112a088`, `0x0112a084`), the relative page
+    /// `0x0112a0a0` and `0x0112a098` cleared; then the pages of
+    /// `*0x0112a01c` (8 bytes each: offset from `*0x0112a03c`, i16 record
+    /// count; `0x0112a080` pages) are searched, each page's records first
+    /// reset (`ResetRecords_00774740`, through `call`), for the first
+    /// 0x138-byte record `hit` accepts. Found: it becomes current, the page
+    /// relative to `*0x0112a03c` goes in `0x0112a0a0`, and its `+0x1c`
+    /// value pairs (at `*0x0112a028 + 8 × +0x1e`) are stored into the
+    /// value table `*0x0112a0a4`.
+    #[allow(clippy::many_single_char_names)]
+    fn find_record<M: Mem>(
+        mem: &mut M,
+        mut hit: impl FnMut(&M, u32) -> bool,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        for a in [0x0112_a0a0u32, 0x0112_a098, 0x0112_a084, 0x0112_a088] {
+            mem.write(g(mem, a), 0u32);
+        }
+        if word(mem, 0x0112_a01c) == 0 {
+            return;
+        }
+        let mut page = 0u32;
+        while page.cast_signed() < word(mem, 0x0112_a080).cast_signed() {
+            let pages = word(mem, 0x0112_a01c);
+            let entry = pages.wrapping_add(page.wrapping_mul(8));
+            let mut rec = mem.read::<u32>(entry).wrapping_add(word(mem, 0x0112_a03c));
+            let n = i32::from(mem.read::<i16>(entry.wrapping_add(4)));
+            call(mem, 0x0077_4740, &[]);
+            for _ in 0..n.max(0) {
+                if hit(mem, rec) {
+                    mem.write(g(mem, 0x0112_a088), page);
+                    let rel = page.wrapping_sub(word(mem, 0x0112_a03c));
+                    mem.write(g(mem, 0x0112_a084), rec);
+                    mem.write(g(mem, 0x0112_a0a0), rel);
+                    let count = mem.read::<u16>(rec.wrapping_add(0x1c));
+                    if count == 0 {
+                        return;
+                    }
+                    let start = i32::from(mem.read::<i16>(rec.wrapping_add(0x1e)));
+                    let mut pair =
+                        word(mem, 0x0112_a028).wrapping_add(start.wrapping_mul(8).cast_unsigned());
+                    let values = word(mem, 0x0112_a0a4);
+                    let mut j = 0u32;
+                    while j < u32::from(mem.read::<u16>(rec.wrapping_add(0x1c))) {
+                        let k: u32 = mem.read(pair);
+                        let v: u32 = mem.read(pair.wrapping_add(4));
+                        mem.write(values.wrapping_add(k.wrapping_mul(4)), v);
+                        j += 1;
+                        pair = pair.wrapping_add(8);
+                    }
+                    return;
+                }
+                rec = rec.wrapping_add(0x138);
+            }
+            page += 1;
+        }
+    }
+
+    /// `0x00775ce0()`: [`find_record`] for the record at the previous
+    /// relative page's start (`0x0112a0a0 + *0x0112a03c` taken before the
+    /// clear, compared with the record address).
+    pub fn find_record_at<M: Mem>(mem: &mut M, call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let target = mem
+            .read::<u32>(mem.rebase(0x0112_a0a0))
+            .wrapping_add(mem.read::<u32>(mem.rebase(0x0112_a03c)));
+        find_record(mem, |_, rec| rec == target, call);
+    }
+
+    /// `0x00775de0()`: [`find_record`] for the first record with bit 0 of
+    /// `+1` set.
+    pub fn find_record_flagged<M: Mem>(mem: &mut M, call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        find_record(
+            mem,
+            |m, rec| m.read::<u8>(rec.wrapping_add(1)) & 1 != 0,
+            call,
+        );
+    }
 }
