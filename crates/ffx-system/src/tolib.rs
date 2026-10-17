@@ -6506,4 +6506,227 @@ pub mod bridge {
         mem.write(out.wrapping_add(0x14), (bottom + zero) as f32);
         p.wrapping_add(1)
     }
+
+    /// Clears the 0x40-byte glyph record at `0x01841d50` that the battle
+    /// text widths pass to `TOGetFontInfo` (the originals `memset` it).
+    fn clear_glyph_record<M: Mem>(mem: &mut M) -> u32 {
+        let at = mem.rebase(0x0184_1d50);
+        for k in 0..0x10 {
+            mem.write(at.wrapping_add(4 * k), 0u32);
+        }
+        at
+    }
+
+    /// The advance of the glyph at `p` (`TOGetFontInfo` into the glyph
+    /// record, then `TOGetFontAdvance(0, record, scale)`), added to the f32
+    /// at `out`.
+    #[allow(clippy::cast_possible_truncation)]
+    fn add_glyph_advance<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        out: u32,
+        scale: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let record = mem.rebase(0x0184_1d50);
+        let next = call(mem, 0x008b_7240, &[p, record]);
+        let advance = fcall(mem, 0x008f_a740, &[0, record, scale]);
+        let w: f32 = mem.read(out);
+        mem.write(out, (advance + f64::from(w)) as f32);
+        next
+    }
+
+    /// Takes the trailing letter space (`TOGetFontSpaceInPiexl(0)`) off
+    /// the f32 at `out`.
+    #[allow(clippy::cast_possible_truncation)]
+    fn drop_letter_space<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let w: f32 = mem.read(out);
+        let space = fcall(mem, 0x008f_a570, &[0]);
+        mem.write(out, (f64::from(w) - space) as f32);
+    }
+
+    /// `ToGetBtlEasyFontWidth(text, &width, _, scale)` (`0x00905290`): the
+    /// width of a battle text at `scale` (f32 bits): the advances of its
+    /// group-4 glyphs (`TOGetGroup`), less one letter space. Calls go
+    /// through `call`, float results (ST0) through `fcall`.
+    pub fn to_get_btl_easy_font_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        out: u32,
+        scale: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        clear_glyph_record(mem);
+        mem.write(out, 0.0f32);
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            if call(mem, 0x008d_f610, &[u32::from(c)]) == 4 {
+                add_glyph_advance(mem, p, out, scale, &mut call, &mut fcall);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        drop_letter_space(mem, out, &mut fcall);
+    }
+
+    /// `ToGetBtlEasyDigitWidth(digits, value, &width, scale)`
+    /// (`0x00905190`): the width of `value` written by
+    /// `TOValueToMesFontL(value, text, digits)` into the 32-byte `text`
+    /// (the original's stack buffer): every glyph's advance, less one
+    /// letter space.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_get_btl_easy_digit_width<M: Mem>(
+        mem: &mut M,
+        digits: u32,
+        value: u32,
+        out: u32,
+        scale: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        call(mem, 0x008b_9140, &[value, text, digits]);
+        clear_glyph_record(mem);
+        mem.write(out, 0.0f32);
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            add_glyph_advance(mem, p, out, scale, &mut call, &mut fcall);
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        drop_letter_space(mem, out, &mut fcall);
+    }
+
+    /// `ToGetBtlEasyDigitWidth2(value, &width, scale, extra)`
+    /// (`0x00905230`): [`to_get_btl_easy_digit_width`] with as many digits
+    /// as `value` has (1 for 0).
+    pub fn to_get_btl_easy_digit_width2<M: Mem>(
+        mem: &mut M,
+        value: u32,
+        out: u32,
+        scale: u32,
+        extra: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mut digits = 0u32;
+        let mut q = value.cast_signed();
+        if q == 0 {
+            digits = 1;
+        } else {
+            while q != 0 {
+                q /= 10;
+                digits += 1;
+            }
+        }
+        call(mem, 0x0090_5190, &[digits, value, out, scale, extra]);
+    }
+
+    /// `TOGetWidthMacro_help(table, code, scale, extra)` (`0x008fa920`):
+    /// the width of the macro text `TOGetChangeMacroAddress(table, code)`
+    /// (0.0 without one): `7 n` spaces of `n - 0xe0` (0xe0..0xf0), nested
+    /// macros 0x12..=0x22 (through `fcall` to itself), other glyphs their
+    /// advance at `scale`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_get_width_macro_help<M: Mem>(
+        mem: &mut M,
+        table: u32,
+        code: u32,
+        scale: u32,
+        extra: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        let record = clear_glyph_record(mem);
+        let mut acc = 0.0f32;
+        let mut p = call(mem, 0x008b_6660, &[table, code]);
+        if p == 0 {
+            return 0.0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return acc;
+            }
+            if c == 7 {
+                let n: u8 = mem.read(p.wrapping_add(1));
+                if (0xe0..0xf0).contains(&n) {
+                    acc = (f64::from(f32::from(n - 0xe0)) + f64::from(acc)) as f32;
+                }
+                p = call(mem, 0x008d_fd80, &[p]);
+            } else if (0x12..=0x22).contains(&c) {
+                let v = fcall(mem, 0x008f_a920, &[table, p, scale, extra]);
+                acc = (v + f64::from(acc)) as f32;
+                p = call(mem, 0x008d_fd80, &[p]);
+            } else {
+                p = call(mem, 0x008b_7240, &[p, record]);
+                let advance = fcall(mem, 0x008f_a740, &[0, record, scale]);
+                acc = (advance + f64::from(acc)) as f32;
+            }
+        }
+    }
+
+    /// `ToGetCrossExtMesFontWidth(table, text, &width, scale, extra)`
+    /// (`0x00905320`): the width of a message text: group-4 glyphs their
+    /// advance, group-3 macros their width (`TOGetWidthMacro_help`, unless
+    /// `table` is -1), group-2 `7 n` spaces of `n - 0xe0` (0xe1..0xf0) and
+    /// `0xb n` button icons (`TOGetScaleButtonIconWidth(n, 0x00b66864)`
+    /// plus a letter space), less one letter space. It first asks
+    /// `graphicFontGetScreenWH` into `scratch` (8 bytes), as the original
+    /// does.
+    #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
+    pub fn to_get_cross_ext_mes_font_width<M: Mem>(
+        mem: &mut M,
+        table: u32,
+        text: u32,
+        out: u32,
+        scale: u32,
+        extra: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        call(mem, 0x0064_0db0, &[scratch, scratch.wrapping_add(4)]);
+        clear_glyph_record(mem);
+        mem.write(out, 0.0f32);
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            let add = match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                4 => {
+                    add_glyph_advance(mem, p, out, scale, &mut call, &mut fcall);
+                    None
+                }
+                3 if table != u32::MAX => Some(fcall(mem, 0x008f_a920, &[table, p, scale, extra])),
+                2 if c == 7 => {
+                    let n: u8 = mem.read(p.wrapping_add(1));
+                    (n > 0xe0 && n < 0xf0).then(|| f64::from(f32::from(n - 0xe0)))
+                }
+                2 if c == 0xb => {
+                    let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                    let size: u32 = mem.read(mem.rebase(0x00b6_6864));
+                    let icon = fcall(mem, 0x008f_a800, &[n, size]);
+                    let space = fcall(mem, 0x008f_a570, &[0]);
+                    Some(space + icon)
+                }
+                _ => None,
+            };
+            if let Some(v) = add {
+                let w: f32 = mem.read(out);
+                mem.write(out, (v + f64::from(w)) as f32);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        drop_letter_space(mem, out, &mut fcall);
+    }
 }

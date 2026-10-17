@@ -12114,6 +12114,174 @@ fn round21_font_matches_the_original_on_the_snapshot() {
     round21_font(&mut a, &mut b, &mut Xorshift(0x4021_0012));
 }
 
+/// Round 21's battle text widths over the original glyph, advance and
+/// letter-space functions, with `TOGetChangeMacroAddress` a stand-in that
+/// gives one macro text for codes inside the text.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
+fn round21_widths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let text = alloc(a, b, 0x100);
+    let macro_text = alloc(a, b, 0x100);
+    // [esp+8] in text..text+0x40: macro_text, else 0
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x2d];
+    v.extend_from_slice(&text.to_le_bytes());
+    v.extend_from_slice(&[0x83, 0xf8, 0x40, 0x73, 0x06, 0xb8]);
+    v.extend_from_slice(&macro_text.to_le_bytes());
+    v.push(0xc3);
+    v.extend_from_slice(&[0x31, 0xc0, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008b_6660, s);
+    // TOGetFontInfo: the code byte into the record, the next byte
+    let s = stand_in8(
+        a,
+        b,
+        0x80,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x0f, 0xb6, 0x10, 0x89, 0x11, 0x8d,
+            0x40, 0x01, 0xc3,
+        ],
+    );
+    redirect(a, b, 0x008b_7240, s);
+    // TOGetFontAdvance: the recorded code plus the scale
+    let s = stand_in8(
+        a,
+        b,
+        0xc0,
+        &[
+            0x8b, 0x44, 0x24, 0x08, 0x0f, 0xb6, 0x00, 0x50, 0xdb, 0x04, 0x24, 0x58, 0xd8, 0x44,
+            0x24, 0x0c, 0xc3,
+        ],
+    );
+    redirect(a, b, 0x008f_a740, s);
+    // TOGetFontSpaceInPiexl: 1.0; TOGetScaleButtonIconWidth: the icon code
+    let s = stand_in8(a, b, 0x100, &[0xd9, 0xe8, 0xc3]);
+    redirect(a, b, 0x008f_a570, s);
+    let s = stand_in8(a, b, 0x110, &[0xdb, 0x44, 0x24, 0x04, 0xc3]);
+    redirect(a, b, 0x008f_a800, s);
+    // graphicFontGetScreenWH: 640 x 448
+    let s = stand_in8(
+        a,
+        b,
+        0x120,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00, 0x80, 0x02, 0x00, 0x00, 0x8b, 0x44, 0x24, 0x08,
+            0xc7, 0x00, 0xc0, 0x01, 0x00, 0x00, 0xc3,
+        ],
+    );
+    redirect(a, b, 0x0064_0db0, s);
+    // the language and English flag from cells
+    let lang = alloc(a, b, 8);
+    for (i, sym) in [0x008a_c2f0u32, 0x0078_51d0].into_iter().enumerate() {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(lang + 4 * i as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x140 + 0x10 * i as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    let out = alloc(a, b, 4);
+    let scratch = alloc(a, b, 0x20);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let codes = [
+        0x30u8, 0x31, 0x45, 0x47, 0x3a, 0x7a, 7, 0xb, 0x12, 0x13, 0x22, 0x2c, 0x2d, 0x10, 0x5c,
+    ];
+    let mut random_text = |rng: &mut Xorshift, n: u32| -> Vec<u8> {
+        let mut v = vec![0u8; 0x100];
+        let mut k = 0usize;
+        while (k as u32) < n {
+            let c = if rng.next().is_multiple_of(3) {
+                (0x30 + rng.next() % 0x80) as u8
+            } else {
+                codes[(rng.next() % 15) as usize]
+            };
+            v[k] = c;
+            v[k + 1] = match c {
+                7 => (0xd8 + rng.next() % 0x20) as u8,
+                0xb => (0x20 + rng.next() % 0x50) as u8,
+                _ => (0x30 + rng.next() % 0x80) as u8,
+            };
+            k += if c < 0x30 { 2 } else { 1 };
+        }
+        v[k] = 0;
+        v
+    };
+    for k in 0..300u32 {
+        put(
+            a,
+            b,
+            lang,
+            [[0u32, 9, 10, 3][(rng.next() % 4) as usize], rng.next() % 2],
+        );
+        let n = rng.next() % 0x18;
+        let bytes = random_text(rng, n);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let n = rng.next() % 0x10;
+        // nested macros inside the macro give no text (the stand-in), but
+        // still take their own path
+        let bytes = random_text(rng, n);
+        a.write(macro_text, &bytes).unwrap();
+        b.write(macro_text, &bytes).unwrap();
+        let scale = [1.0f32, 0.5, 1.25, 0.8, (rng.next() % 300) as f32 / 100.0]
+            [(rng.next() % 5) as usize]
+            .to_bits();
+        let extra = [1.0f32, 0.7][(rng.next() % 2) as usize].to_bits();
+        put(a, b, out, rng.next());
+        eax(a, 0x0090_5290, &[text, out, 0, scale]);
+        t::to_get_btl_easy_font_width(b, text, out, scale, call, fcall);
+        same_memory("easy font width", a, b);
+        let value =
+            [rng.next() % 10, rng.next() % 100_000, rng.next(), 0][(rng.next() % 4) as usize];
+        let digits = rng.next() % 8;
+        eax(a, 0x0090_5190, &[digits, value, out, scale]);
+        t::to_get_btl_easy_digit_width(b, digits, value, out, scale, scratch, call, fcall);
+        let tail: [u8; 0x20] = Mem::read(b, scratch);
+        a.write(scratch, &tail).unwrap();
+        same_memory("easy digit width", a, b);
+        eax(a, 0x0090_5230, &[value, out, scale, extra]);
+        t::to_get_btl_easy_digit_width2(b, value, out, scale, extra, call);
+        same_memory("easy digit width 2", a, b);
+        let table = if rng.next().is_multiple_of(5) {
+            u32::MAX
+        } else {
+            rng.next() % 0x10
+        };
+        let code = text + rng.next() % 0x20;
+        let want = fcall(a, 0x008f_a920, &[table, code, scale, extra]);
+        let got = t::to_get_width_macro_help(b, table, code, scale, extra, call, fcall);
+        assert_eq!((want as f32).to_bits(), got.to_bits(), "macro width {k}");
+        same_memory("macro width", a, b);
+        eax(a, 0x0090_5320, &[table, text, out, scale, extra]);
+        t::to_get_cross_ext_mes_font_width(b, table, text, out, scale, extra, scratch, call, fcall);
+        let wh: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, wh);
+        same_memory("cross ext width", a, b);
+    }
+}
+
+#[test]
+fn round21_widths_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round21_widths(&mut a, &mut b, &mut Xorshift(0x4021_0021));
+}
+
+#[test]
+fn round21_widths_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round21_widths(&mut a, &mut b, &mut Xorshift(0x4021_0022));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

@@ -33,6 +33,34 @@ fn call_sym<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
     call_ptr(mem, crate::rebase(sym) as u32, args)
 }
 
+/// Calls the original cdecl function at `sym` (an `ffx.sym` address) that
+/// returns its result in ST0, read back at double precision; up to four
+/// arguments (f32 arguments as their bits).
+fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
+    let f = crate::rebase(sym);
+    // SAFETY: a cdecl function of `args.len()` word arguments returning in
+    // ST0; the caller cleans the stack, so the argument count is all the
+    // signature has to match.
+    unsafe {
+        match *args {
+            [] => std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f)(),
+            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(a),
+            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> f64>(f)(a, b),
+            [a, b, c] => {
+                std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> f64>(f)(a, b, c)
+            }
+            [a, b, c, d] => std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32, u32) -> f64,
+            >(f)(a, b, c, d),
+            _ => {
+                crate::log::log(&format!("system: no float call of {} words", args.len()));
+                f64::NAN
+            }
+        }
+    }
+}
+
 /// `Phyre::PSerialization::PStreamFile::read(buf, n)` (`0x00608090`,
 /// thiscall), not ported yet.
 fn stream_read<M>(_mem: &mut M, stream: u32, buf: u32, n: u32) -> u32 {
@@ -5826,6 +5854,32 @@ ported! {
     /// `TOGetFontInfo(text, out)`.
     TOGetFontInfo @ 0x008b_7240 => extern "C" fn to_get_font_info(text: u32, out: u32) -> u32 {
         tolib::bridge::to_get_font_info(&mut mem(), text, out, call_sym)
+    }
+    /// `ToGetBtlEasyFontWidth(text, &width, _, scale)`.
+    ToGetBtlEasyFontWidth @ 0x0090_5290 => extern "C" fn to_get_btl_easy_font_width(text: u32, out: u32, _unused: u32, scale: u32) {
+        tolib::bridge::to_get_btl_easy_font_width(&mut mem(), text, out, scale, call_sym, fcall);
+    }
+    /// `ToGetBtlEasyDigitWidth(digits, value, &width, scale)`.
+    ToGetBtlEasyDigitWidth @ 0x0090_5190 => extern "C" fn to_get_btl_easy_digit_width(digits: u32, value: u32, out: u32, scale: u32) {
+        let mut text = [0u32; 8];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = text.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_btl_easy_digit_width(&mut mem(), digits, value, out, scale, at, call_sym, fcall);
+    }
+    /// `ToGetBtlEasyDigitWidth2(value, &width, scale, extra)`.
+    ToGetBtlEasyDigitWidth2 @ 0x0090_5230 => extern "C" fn to_get_btl_easy_digit_width2(value: u32, out: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_get_btl_easy_digit_width2(&mut mem(), value, out, scale, extra, call_sym);
+    }
+    /// `TOGetWidthMacro_help(table, code, scale, extra)`.
+    TOGetWidthMacro_help @ 0x008f_a920 => extern "C" fn to_get_width_macro_help(table: u32, code: u32, scale: u32, extra: u32) -> f32 {
+        tolib::bridge::to_get_width_macro_help(&mut mem(), table, code, scale, extra, call_sym, fcall)
+    }
+    /// `ToGetCrossExtMesFontWidth(table, text, &width, scale, extra)`.
+    ToGetCrossExtMesFontWidth @ 0x0090_5320 => extern "C" fn to_get_cross_ext_mes_font_width(table: u32, text: u32, out: u32, scale: u32, extra: u32) {
+        let mut wh = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = wh.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_cross_ext_mes_font_width(&mut mem(), table, text, out, scale, extra, at, call_sym, fcall);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
