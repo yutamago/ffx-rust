@@ -2804,14 +2804,17 @@ pub mod bridge {
         mem.write(at, n);
     }
 
-    /// The battle-end AP total and its counting step.
-    pub const BTL_END_AP: Global<[u32; 2]> = Global::new(0x0186_9f10);
+    /// The battle results' gil count-down: the step, then the gil still to
+    /// count (`g_TkBtlEndGil`; once named AP, but [`btl_end_step_gil`] pays
+    /// each step with `MsPayGIL(-step)` and the total is result 19, the
+    /// gil won, which `0x00857bf2` and `0x0085a9ec` pay the same way).
+    pub const BTL_END_GIL: Global<[u32; 2]> = Global::new(0x0186_9f10);
 
-    /// The battle-end counting step for `ap`: `ap / 189 | 1`, moved off a
-    /// multiple of 5 by adding 2.
+    /// The battle-end counting step for a total `n` (gil or AP): `n / 189 | 1`,
+    /// moved off a multiple of 5 by adding 2.
     #[must_use]
-    pub const fn btl_end_ap_step(ap: u32) -> u32 {
-        let s = (ap / 0xbd) | 1;
+    pub const fn btl_end_count_step(n: u32) -> u32 {
+        let s = (n / 0xbd) | 1;
         if s.is_multiple_of(5) {
             s.wrapping_add(2)
         } else {
@@ -2819,17 +2822,17 @@ pub mod bridge {
         }
     }
 
-    /// `BtlEnd_InitApStep()` (`0x008bdf10`, own name): the AP total from
-    /// result 19 and its step.
-    pub fn btl_end_init_ap_step(mem: &mut impl Mem) {
-        let ap = btl_end_get_result(mem, 19);
-        BTL_END_AP.set(mem, [btl_end_ap_step(ap), ap]);
+    /// `BtlEnd_InitGilStep()` (`0x008bdf10`, own name; was `BtlEnd_InitApStep`):
+    /// the gil won (result 19) as the count-down total, and its step.
+    pub fn btl_end_init_gil_step(mem: &mut impl Mem) {
+        let gil = btl_end_get_result(mem, 19);
+        BTL_END_GIL.set(mem, [btl_end_count_step(gil), gil]);
     }
 
     /// `BtlEnd_ApStep(chr)` (`0x008ba3c0`, own name): the step for the
     /// character's `MsGetNextAP`.
     pub fn btl_end_ap_step_for(mem: &mut impl Mem, chr: i32) -> u32 {
-        btl_end_ap_step(ffx_battle::menu::bridge::ms_get_next_ap(mem, chr).cast_unsigned())
+        btl_end_count_step(ffx_battle::menu::bridge::ms_get_next_ap(mem, chr).cast_unsigned())
     }
 
     /// The battle-end list: count `u8` and up to three 14-byte entries.
@@ -7816,7 +7819,7 @@ pub mod bridge {
     }
 
     /// `BtlEnd_StepGil()` (`0x008ba590`, own name): one step of the battle
-    /// results' count-down ([`BTL_END_AP`]: the step, the rest): the step,
+    /// results' count-down ([`BTL_END_GIL`]: the step, the rest): the step,
     /// or the whole rest when not below it (unsigned), comes off the rest
     /// and is paid out as gil ([`btl_end_add_gil`], so the counted value
     /// is gil, not AP). Returns 1 while something remains, else 0.
@@ -7824,9 +7827,9 @@ pub mod bridge {
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let [step, rest] = BTL_END_AP.get(mem);
+        let [step, rest] = BTL_END_GIL.get(mem);
         let (take, more) = if step < rest { (step, 1) } else { (rest, 0) };
-        let at = BTL_END_AP.ptr(mem).addr.wrapping_add(4);
+        let at = BTL_END_GIL.ptr(mem).addr.wrapping_add(4);
         mem.write(at, rest.wrapping_sub(take));
         let f = mem.rebase(0x008b_a3a0);
         call(mem, f, &[take]);

@@ -9878,20 +9878,20 @@
 0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
-0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndAp counts gil; returns 1 while some remains; name ours
+0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndGil counts gil; returns 1 while some remains; name ours
 0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
 0x008bc340 function TkBtlEndDraw                 # the after-battle results screen's draw: its callees (TOMenuOpenPktBuffTmp, TOMkpShapeXYWHUV, DrawWaterWaveShapeC2, TOGetSaveChrName, ToMakeBtlEasyEdgeFont*, ToMakeBtlEasyDigitRight, TOGetFFXLang, the cos/sin lookups) are the Switch TkBtlEndDraw's (9536 bytes there, split into helpers here), and it sorts after TkBtlEndCtrl; called from 0x008bb7d6 (a block of 0x008bb690, which TkBtlEndCtrl calls)
 0x008bda00 function BtlEnd_GetSaveNextAP      # (chr): jmp MsGetSaveNextAP(chr); caller 0x008bdaf0 (battle results AP); sibling of BtlEnd_GetNextAP; name ours
 0x008bda10 function BtlEnd_GetResult          # (i) 0x02310f20[i]; own name
-0x008bda20 function BtlEnd_GetResult19        # 0x02310f6c (entry 19); own name
+0x008bda20 function BtlEnd_GetGilWon          # 0x02310f6c (entry 19, g_TkBtlEndGilWon); own name (was BtlEnd_GetResult19)
 0x008bda40 function BtlEnd_GetNextAP          # (chr) tail call MsGetNextAP; own name
 0x008bda50 function BtlEnd_GetSP              # (chr) tail call MsGetSaveSP (TkMenuGetSP copy in the battle-end file); own name
 0x008bda60 function TkBtlEndGetText           # fh switch:bsim1.00+call.cs 0x71004b25f0 cdecl
 0x008bda80 function BtlEnd_SelectedWeapon     # (): MsGetSaveWeapon(id, local): id u16 0x02310f8e[[0x0186a1a4]] (spoils) when [0x0186a19c] (inverted while [0x0186a1a8]) != 0, else u16 [0x025cc580][[0x0186a190] + [0x0186a1a0]]; caller TkBtlEndCtrl; name ours
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
-0x008bdf10 function BtlEnd_InitApStep         # 0x01869f14 = result 19 (AP), 0x01869f10 = its step (ap/189 | 1, +2 on a multiple of 5); own name
+0x008bdf10 function BtlEnd_InitGilStep        # 0x01869f14 = result 19 (the gil won), 0x01869f10 = its step (gil/189 | 1, +2 on a multiple of 5); own name
 0x008bdf60 function TOMenuFieldMusic_008bdf60 # (): after the menu: keep white in/out: nothing; clear 11: cross-fade to AtelGetMusicNumber (0x78), else AtelRegistMusicNumber(-1) and fade out; name ours
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
 0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
@@ -15569,7 +15569,7 @@
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
-0x01869f10 label    g_TkBtlEndAp              # u32 step, u32 AP total (BtlEnd_InitApStep)
+0x01869f10 label    g_TkBtlEndGil             # u32 step, u32 gil left to count (BtlEnd_InitGilStep); gil, not AP: BtlEnd_StepGil pays each step with MsPayGIL(-step), the total is result 19 (g_TkBtlEndGilWon), and 0x008bbb10 draws +4 beside MsGetGIL(); was g_TkBtlEndAp
 0x01869f18 label    g_TkBtlEndList            # u8 count, 14-byte entries from +8 (BtlEnd_CompactList)
 0x01869fbc label    g_TkBtlEndFlag            # BtlEnd_SetFlag
 0x0186a228 label    g_MenuHelpExtMode         # first argument of TOMenuHelpSetExtMode
@@ -15727,8 +15727,9 @@
 0x02310ea0 label g_BtlCountsBattle         # 18 bytes: characters MsBtlGetTerm counts a battle for (MsSaveAddInfoData kind 0)
 0x02310ec4 label g_BtlTookPart             # 18 bytes: characters who took part keep their battle AP (MsBtlGetTerm)
 0x02310ed8 label g_BtlStartAp                 # [u32; 18]; The AP of 18 actors at battle start (MsBtlStartAP copies the current ones, 0x48 bytes on, here).
-0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp)
+0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp); 19 is the gil won (g_TkBtlEndGilWon)
 0x02310f68 label g_BtlTermWord             # u32 cleared by MsBtlGetTerm
+0x02310f6c label    g_TkBtlEndGilWon          # u32 gil won in the battle: result 19 (BtlEnd_GetGilWon); 0x00799270 adds to it (MsCheckRange 0..999999999), 0x00857bf2 and 0x0085a9ec pay it with MsPayGIL(-x), BtlEnd_InitGilStep counts it down; own name
 0x02310f9e label g_Equipment7000           # 8 x 22-byte equipment slots of the 0x7000 IDs (MsGetSaveWeapon)
 0x02311050 label g_BtlChrExtra             # pointer to 0x24 bytes MsBtlChrInit clears
 0x02311060 label g_BtlHideQueue            # u32 characters queued to hide (index from 1)

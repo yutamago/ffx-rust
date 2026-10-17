@@ -2716,7 +2716,7 @@ fn tk_round4_matches_the_original() {
         t.twin("MenuTuto_GetChoice", 0x008d_b840, &[], U32, |o| {
             s(tk::menu_tuto_get_choice(o))
         });
-        t.twin("BtlEnd_GetResult19", 0x008b_da20, &[], U32, |o| {
+        t.twin("BtlEnd_GetGilWon", 0x008b_da20, &[], U32, |o| {
             w(tk::btl_end_get_result(o, 19))
         });
         for k in 0..4 {
@@ -3664,8 +3664,8 @@ fn tk_round6_matches_the_original() {
         });
         // battle end
         t.scramble(tk::BTL_END_RESULTS.sym, 0x50);
-        t.twin("BtlEnd_InitApStep", 0x008b_df10, &[], VOID, |o| {
-            tk::btl_end_init_ap_step(o);
+        t.twin("BtlEnd_InitGilStep", 0x008b_df10, &[], VOID, |o| {
+            tk::btl_end_init_gil_step(o);
             0
         });
         t.twin("BtlEnd_ApStep", 0x008b_a3c0, &[chr], U32, |o| {
@@ -7804,7 +7804,7 @@ fn menu_round19_batch6_matches_the_original() {
         } else {
             t.rng.pick_or_any(&[0, 1, 7, 0xffff_ffff])
         };
-        t.put(t.sym(tk::BTL_END_AP.sym), [step, rest]);
+        t.put(t.sym(tk::BTL_END_GIL.sym), [step, rest]);
         t.twin("BtlEnd_StepGil", 0x008b_a590, &[], U32, |o| {
             w(tk::btl_end_step_gil(o, &mut callback))
         });

@@ -1670,8 +1670,8 @@ ported! {
     BtlEnd_GetResult @ 0x008b_da10 => extern "C" fn btl_end_get_result(i: u32) -> u32 {
         tk::btl_end_get_result(&mem(), i)
     }
-    /// `BtlEnd_GetResult19()`.
-    BtlEnd_GetResult19 @ 0x008b_da20 => extern "C" fn btl_end_get_result19() -> u32 {
+    /// `BtlEnd_GetGilWon()`: result 19.
+    BtlEnd_GetGilWon @ 0x008b_da20 => extern "C" fn btl_end_get_gil_won() -> u32 {
         tk::btl_end_get_result(&mem(), 19)
     }
     /// `Pause_Request()`.
@@ -2102,9 +2102,9 @@ ported! {
     MenuWShop_CountSlots @ 0x008d_b440 => extern "C" fn menu_wshop_count_slots() {
         tk::menu_wshop_count_slots(&mut mem());
     }
-    /// `BtlEnd_InitApStep()`.
-    BtlEnd_InitApStep @ 0x008b_df10 => extern "C" fn btl_end_init_ap_step() {
-        tk::btl_end_init_ap_step(&mut mem());
+    /// `BtlEnd_InitGilStep()`.
+    BtlEnd_InitGilStep @ 0x008b_df10 => extern "C" fn btl_end_init_gil_step() {
+        tk::btl_end_init_gil_step(&mut mem());
     }
     /// `BtlEnd_ApStep(chr)`.
     BtlEnd_ApStep @ 0x008b_a3c0 => extern "C" fn btl_end_ap_step(chr: i32) -> u32 {
