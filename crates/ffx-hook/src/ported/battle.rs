@@ -2406,4 +2406,26 @@ ported! {
         let mut m = mem();
         target::ms_check_chr_near(&mut target::Dm::new(&mut m), &host(), i, actor)
     }
+    /// `MsEffectFileNumber(n, k)`.
+    MsEffectFileNumber @ 0x0078_7a70 => extern "C" fn ms_effect_file_number(n: i32, k: i32) -> i32 {
+        exec::ms_effect_file_number(&mem(), n, k)
+    }
+    /// `MsSEPchrClear(actor, shared)`: `SndSepClear` (sound) through the game.
+    MsSEPchrClear @ 0x007a_0400 => extern "C" fn ms_sep_chr_clear(actor: u32, shared: u32) {
+        exec::ms_sep_chr_clear(&mut mem(), &mut call_ptr, actor, shared);
+    }
+    /// `MsGetAeonCommand(i, id, kind, &mode, &value)`.
+    MsGetAeonCommand @ 0x007a_f060 => extern "C" fn ms_get_aeon_command(i: u32, id: u32, kind: u32, mode: u32, value: u32) -> u32 {
+        exec::ms_get_aeon_command(&mut mem(), i, id, kind, mode, value)
+    }
+    /// `MsInsertChrCommand(i, target, kind)`.
+    MsInsertChrCommand @ 0x007a_e1a0 => extern "C" fn ms_insert_chr_command(i: u32, target: u32, kind: u32) -> u32 {
+        action::ms_insert_chr_command(&mut mem(), i, target, kind)
+    }
+    /// `MsCleanInputCue(chr, keep)`.
+    MsCleanInputCue @ 0x007b_20b0 => extern "C" fn ms_clean_input_cue(chr: u32, keep: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_clean_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s, chr, keep)
+    }
 }

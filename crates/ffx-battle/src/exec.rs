@@ -457,4 +457,107 @@ pub mod bridge {
         TITLE_WINDOW.set(mem, [b, b]);
         pos
     }
+
+    /// The effect file table (`MsEffectFileNumber`): `u16` first numbers,
+    /// one per effect, the next one's ending it.
+    pub const EFFECT_FILES: Global<u32> = Global::new(0x0112_a950);
+    /// `SndSepClear` (sound).
+    pub const SND_SEP_CLEAR: u32 = 0x0088_6d80;
+    /// The aeon commands' table: 16 bytes per aeon (actor 8 on), three
+    /// `u16` command / `u8` value pairs and a fourth at `+4` (`0x007af060`).
+    pub const AEON_COMMANDS: Global<u8> = Global::new(0x00c4_38a8);
+
+    /// `MsEffectFileNumber(n, k)` (`0x00787a70`): file `k + 1` of effect
+    /// `n` (below 0x400) in [`EFFECT_FILES`], -1 past its files.
+    pub fn ms_effect_file_number(mem: &impl Mem, n: i32, k: i32) -> i32 {
+        if n >= 0x400 {
+            return -1;
+        }
+        let t = EFFECT_FILES.get(mem).wrapping_add((n * 2).cast_unsigned());
+        let first = i32::from(mem.read::<u16>(t));
+        let next = i32::from(mem.read::<u16>(t.wrapping_add(2)));
+        let k = k.wrapping_add(1);
+        if k < next - first { first + k } else { -1 }
+    }
+
+    /// `MsSEPchrClear(actor, shared)` (`0x007a0400`): the actor's 32 sound
+    /// effect slots (`+0xeac`) stopped (`SndSepClear`) and cleared, with
+    /// `shared` those another actor (not its own index `+0xc`) also holds
+    /// only cleared; `+0xf2c` cleared.
+    pub fn ms_sep_chr_clear<M: Mem>(mem: &mut M, call: Call<'_, M>, actor: u32, shared: u32) {
+        let slots = actor.wrapping_add(0xeac);
+        if shared != 0 {
+            let own = u32::from(byte(mem, actor, 0xc));
+            for k in 0..32 {
+                let at = slots + 4 * k;
+                let id: u32 = mem.read(at);
+                if id == 0 {
+                    continue;
+                }
+                let held = (0..0x1f).filter(|&j| j != own).any(|j| {
+                    let o = ms_get_chr(mem, j).wrapping_add(0xeac);
+                    (0..32).any(|m| mem.read::<u32>(o + 4 * m) == id)
+                });
+                if held {
+                    mem.write(at, 0u32);
+                }
+            }
+        }
+        for k in 0..32 {
+            let at = slots + 4 * k;
+            let id: u32 = mem.read(at);
+            if id != 0 {
+                let f = code(mem, SND_SEP_CLEAR);
+                call(mem, f, &[id]);
+                mem.write(at, 0u32);
+            }
+        }
+        mem.write(actor.wrapping_add(0xf2c), 0u8);
+    }
+
+    /// `0x007af060(i, id, kind, &mode, &value)` (`MsGetAeonCommand`, name
+    /// ours): aeon `i`'s (actor 8 on, [`AEON_COMMANDS`]) command for `kind`
+    /// 0 (mode 1: the pair at `+4` once command `id` was used and the menu
+    /// setting `0x800` is off, else `+0`), 1 (`+8`, mode 3) or 2 (`+0xc`,
+    /// mode 2); 0 and mode 0 for others. `mode` and `value` (unless null)
+    /// get the mode and the pair's byte.
+    pub fn ms_get_aeon_command(
+        mem: &mut impl Mem,
+        i: u32,
+        id: u32,
+        kind: u32,
+        mode: u32,
+        value: u32,
+    ) -> u32 {
+        let rec = AEON_COMMANDS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_sub(8) << 4);
+        let at = match kind {
+            0 => {
+                let menu = crate::save::bridge::MENU.get(mem);
+                let used = menu & 0x800 == 0
+                    && crate::save::bridge::ms_get_save_command_use(mem, i.cast_signed(), id) != 0;
+                Some((if used { 4 } else { 0 }, 1))
+            }
+            1 => Some((8, 3)),
+            2 => Some((0xc, 2)),
+            _ => None,
+        };
+        let (cmd, val, m) = match at {
+            Some((o, m)) => (
+                u32::from(mem.read::<u16>(rec + o)),
+                u32::from(byte(mem, rec, o + 2)),
+                m,
+            ),
+            None => (0, 0, 0),
+        };
+        if mode != 0 {
+            mem.write(mode, m);
+        }
+        if value != 0 {
+            mem.write(value, val);
+        }
+        cmd
+    }
 }

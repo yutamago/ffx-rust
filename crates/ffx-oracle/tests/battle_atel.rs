@@ -681,11 +681,95 @@ fn parse_callees(
         |m| e::ms_menu_open_title_window(m, &mut call, k, pos),
     );
     same("MsMenuOpenTitleWindow", a, b);
+    // effect files: a table of our own where there is none
+    let t = e::EFFECT_FILES.get(b);
+    if !readable(a, t, 0x802) {
+        let v: Vec<u8> = {
+            let mut n = 0u16;
+            (0..0x401)
+                .flat_map(|_| {
+                    n = n.wrapping_add(u16::try_from(rng.below(5)).unwrap());
+                    n.to_le_bytes()
+                })
+                .collect()
+        };
+        let at = scratch(a, b, 0x802);
+        poke(a, b, at, &v);
+        set(a, b, e::EFFECT_FILES, at);
+    }
+    let (n, k) = (rng.range(-1, 0x402), rng.range(-2, 6));
+    twin(
+        "MsEffectFileNumber",
+        a,
+        b,
+        0x0078_7a70,
+        &[n.cast_unsigned(), k.cast_unsigned()],
+        ALL,
+        |m| e::ms_effect_file_number(m, n, k).cast_unsigned(),
+    );
+    // sound effect slots: some ids shared between actors
+    let ids = [0, 0, 0x1234, 0x5678, rng.next()];
+    for c in 0..ACTORS {
+        let v: Vec<u8> = (0..32)
+            .flat_map(|_| {
+                let id = if rng.below(4) == 0 {
+                    rng.next()
+                } else {
+                    ids[rng.below(5) as usize]
+                };
+                id.to_le_bytes()
+            })
+            .collect();
+        poke(a, b, w.actor(c) + 0xeac, &v);
+        poke(a, b, w.actor(c) + 0xc, &[u8::try_from(c).unwrap()]);
+    }
+    let i = rng.below(ACTORS);
+    let shared = rng.below(2);
+    twin(
+        "MsSEPchrClear",
+        a,
+        b,
+        0x007a_0400,
+        &[w.actor(i), shared],
+        0,
+        |m| {
+            e::ms_sep_chr_clear(m, &mut call, w.actor(i), shared);
+            0
+        },
+    );
+    same("MsSEPchrClear", a, b);
+    // aeons' command table
+    let i = 8 + rng.below(10);
+    let (mo, va) = if rng.below(4) == 0 {
+        (0, 0)
+    } else {
+        (w.out + 0x40, w.out + 0x44)
+    };
+    let args = [
+        i,
+        [0x3100, rng.below(0x40) + 0x3000][rng.below(2) as usize],
+        rng.below(4),
+        mo,
+        va,
+    ];
+    set(a, b, ffx_battle::save::bridge::MENU, rng.next());
+    // commands used (18 characters x 0x16 flag words)
+    fill(
+        a,
+        b,
+        rng,
+        ffx_battle::save::bridge::COMMAND_USE.ptr(b).addr,
+        0x12 * 0x2c,
+    );
+    twin("MsGetAeonCommand", a, b, 0x007a_f060, &args, ALL, |m| {
+        e::ms_get_aeon_command(m, args[0], args[1], args[2], args[3], args[4])
+    });
+    same("MsGetAeonCommand", a, b);
 }
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
-    let rec = scratch(a, b, 0x80);
+    let rec = scratch(a, b, 0xa0);
     for o in [&mut *a, &mut *b] {
         patch(o);
         let at = o.rebase(at::SG_BLUR);
@@ -696,6 +780,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         recording_stub(o, 0x0088_63f0, STUBS + 0x80, rec + 0x40, 0, 0x2d);
         recording_stub(o, 0x0088_6b40, STUBS + 0xc0, rec + 0x50, 3, 7);
         recording_stub(o, 0x0089_8c60, STUBS + 0x100, rec + 0x70, 1, 0);
+        // SndSepClear
+        recording_stub(o, 0x0088_6d80, STUBS + 0x140, rec + 0x80, 1, 0);
     }
     if w.synthetic {
         // our own actors: no monster files; no battle scripts (a field

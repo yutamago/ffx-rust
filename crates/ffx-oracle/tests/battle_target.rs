@@ -977,6 +977,45 @@ fn actions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u
     );
     local_words(a, b);
     same("MsCheckSummon", a, b);
+    // all of an actor's input entries
+    cues(a, b, rng, w);
+    let chr = rng.below(ACTORS);
+    let keep = rng.below(2);
+    twin(
+        "MsCleanInputCue",
+        a,
+        b,
+        0x007b_20b0,
+        &[chr, keep],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                ac::ms_clean_input_cue(m, &h, &mut s, chr, keep)
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsCleanInputCue", a, b);
+    // an aeon's command (its table, the kernel's command 0x3100)
+    cues(a, b, rng, w);
+    let i = 8 + rng.below(10);
+    let target = rng.below(ACTORS);
+    let kind = rng.below(4);
+    set(a, b, ac::AEON_PLAIN, u8::from(rng.below(4) == 0));
+    set(a, b, ac::AEON_PLAIN2, u8::from(rng.below(4) == 0));
+    set(a, b, ffx_battle::save::bridge::MENU, rng.next());
+    poke(a, b, w.actor(i) + 0x3f9, &[u8::from(rng.below(2) == 0)]);
+    twin(
+        "MsInsertChrCommand",
+        a,
+        b,
+        0x007a_e1a0,
+        &[i, target, kind],
+        ALL,
+        |m| ac::ms_insert_chr_command(m, i, target, kind),
+    );
+    same("MsInsertChrCommand", a, b);
 }
 
 /// Whether `sym` (`MsGetChrPos` or `MsGetChrBtlPos`) writes actor `i`'s

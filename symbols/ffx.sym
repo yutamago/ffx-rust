@@ -4811,6 +4811,7 @@
 0x007aeec0 function MsReturnParty             # fh v3:exact 0x007aeed0
 0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30
 0x007aefb0 function MsSortCommand             # fh v3:exact 0x007aefc0
+0x007af060 function MsGetAeonCommand          # (i, id, kind, &mode, &value) -> u16: aeon i's (actor 8 on) entry in 0x00c438a8 (16 bytes each): kind 0 +0 or +4 (once id used, g_SaveMenu bit 11 clear) mode 1, kind 1 +8 mode 3, kind 2 +0xc mode 2; value the pair's byte; MsInsertChrCommand; name ours
 0x007af0f0 function MsCheckTargetsNear        # (i, actor, targets): with +0x4ac bit 12, 1 when a target within 12.0 (2D, less widths) has its MsGetMoveTargetPos kind 0xc within 0.2 of its battle position; 0 with several targets; name ours
 0x007af230 function MsCheckChrNear            # (i, actor): +0x44a = +0x44b, or MsCheckTargetsNear(i, actor, +0xdc0) when 0; MsParseCommand; name ours
 0x007af260 function MsCheckAutoStatus         # fh v3:exact 0x007af270
@@ -12124,6 +12125,7 @@
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
+0x00c438a8 label g_AeonCommands            # 16 bytes per aeon (actor 8 on): u16 command / u8 value pairs at +0, +4, +8, +0xc (MsGetAeonCommand)
 0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
 0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
@@ -12281,7 +12283,9 @@
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
 0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
+0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
+0x0112a904 label g_BtlAeonPlain            # u8 (MsInsertChrCommand)
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a907 label g_BtlStatInvert1B         # u8, MsGetChrStatInfo property 0x1b counts actors whose +0xdec is clear instead of set
 0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
@@ -12307,6 +12311,7 @@
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
+0x0112a950 label g_BtlEffectFiles          # pointer to u16 first file numbers per effect, the next one's ending it (MsEffectFileNumber)
 0x0112a954 label g_BtlMotBin               # pointer to the motion binary: u16 count, u16 offsets (MsSetMotBinAddress sets actor +0x4f8 from entry i)
 0x0112a958 label g_StatusRom               # kernel table MsMenuStatusNum reads
 0x0112a95c label g_BtlEffectOwner          # u32, the owner op_et_eff gets in MsStatusEffect
