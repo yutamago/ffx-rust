@@ -2431,6 +2431,7 @@ fn control_synthetic() {
     let mut rng = Xorshift(0x5eed_0401);
     control_cases(&mut a, &mut b, &mut rng, 300, false);
     scene_cases(&mut a, &mut b, &mut rng, 300);
+    init_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 #[test]
@@ -2441,6 +2442,7 @@ fn control_snapshot() {
     let mut rng = Xorshift(0x5eed_0402);
     control_cases(&mut a, &mut b, &mut rng, 300, true);
     scene_cases(&mut a, &mut b, &mut rng, 300);
+    init_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -2579,6 +2581,51 @@ fn scene_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) 
         );
         twin("Sg_SetCameraFollow", a, b, 0x0082_dab0, &[v], |m| {
             st::set_camera_follow(m, v)
+        });
+    }
+}
+
+/// The main loop's initialisers: filters, ids, the player, the user
+/// name, the point lights.
+fn init_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    for _ in 0..rounds {
+        let filter = a.rebase(st::FILTER_BLOCK);
+        for k in 0..0x1b {
+            put(a, b, filter - 4 + 4 * k, rng.next());
+        }
+        twin("Sg_InitFilter", a, b, 0x0082_cd50, &[], |m| {
+            st::init_filter(m)
+        });
+        twin("Sg_IdInitAll", a, b, 0x0084_4ca0, &[], |m| {
+            st::id_init_all(m);
+        });
+        twin("Sg_PlayerInitAll", a, b, 0x0082_d910, &[], |m| {
+            st::player_init_all(m)
+        });
+
+        put(a, b, log, 0u32);
+        let copy = rng.next();
+        recorder(a, b, 20, st::SG_STRDUP_D, 1, copy);
+        let name = rng.next();
+        twin("Sg_SetUserName", a, b, 0x0082_1d30, &[name], |m| {
+            st::set_user_name(&mut H(m), name)
+        });
+
+        put(a, b, log, 0u32);
+        let n = match rng.below(6) {
+            0 => 0,
+            1 => 0xffff_fff0 + rng.below(16),
+            _ => rng.below(5) + 1,
+        };
+        let size = if n.cast_signed() > 0 { 0x2c * n } else { 4 };
+        let table = block(a, b, rng, size as usize);
+        recorder(a, b, 21, c::USER_MALLOC, 1, table);
+        set(a, b, c::PLIGHT_TABLE, rng.next());
+        twin("Sg_PLightAllocate", a, b, 0x0083_1950, &[n], |m| {
+            c::plight_allocate(&mut H(m), n)
         });
     }
 }

@@ -243,3 +243,10 @@ behind them stays with those modules, which the bridges call.
 - `Sg_SetCameraFollow(on)` (`0x0082dab0`): bit 1 of `0x00c496d5` (bit 0 is
   `0x0082d030`'s). With both set, `Sg_ControlMain` turns the camera after
   the player's heading.
+- Initialisers: `Sg_InitFilter` (`0x0082cd50`) clears `0x01300708..58`,
+  the request flags `0x01300704` and `0x01300768`, then `Sg_FocusReset`.
+  `Sg_IdInitAll` is `Sg_IdSetPtr(0)`. `Sg_PlayerInitAll` is
+  `Sg_SetPlayer(0)` and diving on. `Sg_SetUserName(name)` keeps
+  `SgStrdupD(name)` in `0x00c494a8`; the old copy is not freed.
+  `Sg_PLightAllocate(n)` (`0x00831950`) disposes the old lights, then
+  allocates `n` 44-byte lights, each off with `+0xc` and `+0x1c` 1.0.

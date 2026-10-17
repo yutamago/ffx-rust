@@ -1417,6 +1417,49 @@ pub mod bridge {
         id_set_ptr(h, map);
     }
 
+    /// `Sg_IdInitAll()` (`0x00844ca0`): `Sg_IdSetPtr(0)`.
+    pub fn id_init_all(mem: &mut impl Mem) {
+        id_set_ptr(mem, 0);
+    }
+
+    /// `Sg_PlayerInitAll()` (`0x0082d910`): no player (`Sg_SetPlayer(0)`),
+    /// diving on (`Sg_PlayerSetDiving(1)`). Returns `eax`: the player's
+    /// upper bytes (0) under the diving byte, so 1.
+    pub fn player_init_all(mem: &mut impl Mem) -> u32 {
+        let r = set_player(mem, 0);
+        r & !0xff | u32::from(player_set_diving(mem, 1))
+    }
+
+    /// `SgStrdupD`, called as the game's.
+    pub const SG_STRDUP_D: u32 = 0x0083_f050;
+
+    /// `Sg_SetUserName(name)` (`0x00821d30`): [`USER_NAME`] becomes a copy
+    /// (`SgStrdupD(name)`, not freed before); returns it.
+    pub fn set_user_name(h: &mut impl ffx_bridge::Host, name: u32) -> u32 {
+        let at = h.rebase(SG_STRDUP_D);
+        let p = h.call(at, &[name]);
+        USER_NAME.set(h, p);
+        p
+    }
+
+    /// The filter requests (`0x01300708..0x01300758`: cross-fade, blur
+    /// and their neighbours), cleared by `Sg_InitFilter`.
+    pub const FILTER_BLOCK: u32 = 0x0130_0708;
+    /// The request flags (`Sg_AccSetAlpha`, `Sg_Blur`) and `0x01300768`.
+    pub const FILTER_FLAGS: Global<u32> = Global::new(0x0130_0704);
+    pub const FILTER_1300768: Global<u32> = Global::new(0x0130_0768);
+
+    /// `Sg_InitFilter()` (`0x0082cd50`): the filter block (`0x50` bytes)
+    /// and the two words cleared, then `Sg_FocusReset` (a tail call: its
+    /// `eax`).
+    pub fn init_filter(mem: &mut impl Mem) -> u32 {
+        let at = mem.rebase(FILTER_BLOCK);
+        mem.write_bytes(at, &[0; 0x50]);
+        FILTER_FLAGS.set(mem, 0);
+        FILTER_1300768.set(mem, 0);
+        focus_reset(mem)
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);

@@ -1195,6 +1195,26 @@ ported! {
     Sg_IdFixupAndSet_00844bc0 @ 0x0084_4bc0 => extern "C" fn sg_id_fixup_and_set(map: u32) {
         state::bridge::id_fixup_and_set(&mut mem(), map);
     }
+    /// `Sg_IdInitAll()`.
+    Sg_IdInitAll @ 0x0084_4ca0 => extern "C" fn sg_id_init_all() {
+        state::bridge::id_init_all(&mut mem());
+    }
+    /// `Sg_PlayerInitAll()`.
+    Sg_PlayerInitAll @ 0x0082_d910 => extern "C" fn sg_player_init_all() -> u32 {
+        state::bridge::player_init_all(&mut mem())
+    }
+    /// `Sg_SetUserName(name)`.
+    Sg_SetUserName @ 0x0082_1d30 => extern "C" fn sg_set_user_name(name: u32) -> u32 {
+        state::bridge::set_user_name(&mut mem(), name)
+    }
+    /// `Sg_InitFilter()`.
+    Sg_InitFilter @ 0x0082_cd50 => extern "C" fn sg_init_filter() -> u32 {
+        state::bridge::init_filter(&mut mem())
+    }
+    /// `Sg_PLightAllocate(n)`.
+    Sg_PLightAllocate @ 0x0083_1950 => extern "C" fn sg_plight_allocate(n: u32) -> u32 {
+        control::bridge::plight_allocate(&mut mem(), n)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
