@@ -4743,4 +4743,36 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// `0x00774680(rec)`: 1 when `0x00c416c0` is 8 and record `rec` (not
+    /// null) has an index `+0x26` above 8 whose entry in `*0x0112a0a4` is
+    /// -400, and holds the language's id at `+4` (0x25a for languages 2
+    /// and 3, 0x276 for 10 and 11, else 0x266; `TOGetFFXLang`, `lang`) with
+    /// 0xbb at `+6`; else 0.
+    pub fn is_lang_special_record<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        lang: impl FnOnce(&mut M) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(mem.rebase(0x00c4_16c0)) != 8 || rec == 0 {
+            return 0;
+        }
+        let k = i32::from(mem.read::<i16>(rec.wrapping_add(0x26)));
+        if k <= 8 {
+            return 0;
+        }
+        let table: u32 = mem.read(mem.rebase(0x0112_a0a4));
+        if mem.read::<u32>(table.wrapping_add(k.cast_unsigned().wrapping_mul(4))) != 0xffff_fe70 {
+            return 0;
+        }
+        let want: u16 = match lang(mem) {
+            2 | 3 => 0x25a,
+            10 | 11 => 0x276,
+            _ => 0x266,
+        };
+        u32::from(
+            mem.read::<u16>(rec.wrapping_add(4)) == want
+                && mem.read::<u16>(rec.wrapping_add(6)) == 0xbb,
+        )
+    }
 }

@@ -4521,6 +4521,7 @@
 0x007744d0 function KernelSaveCommand_3055_007744d0# cdecl(chr): MsGetSaveCommand(chr, 0x3055); kernel menu accessor (table entry); name ours
 0x007744f0 function KernelSlotItemName_098_007744f0# cdecl(i): Kernel_GetItemName(u16 +0x98 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00774670 function GetU32_0112a010 # () -> u32 at 0x0112a010; name ours
+0x00774680 function IsLangSpecialRecord_00774680 # cdecl(rec): 0x00c416c0 == 8, rec, (i16)+0x26 > 8, (*0x0112a0a4)[that] == -400, u16 +4 == (lang 2/3: 0x25a, 10/11: 0x276, else 0x266) and +6 == 0xbb; caller 0x0076....; name ours
 0x00774720 function Kernel_GetAbilityName # (id) -> char*: g_EmptyName for 0, else TkMn2GetAbilityMes(id) (a tail jump); about 110 callers 0x00770920..0x007734c0; named after Kernel_GetItemName; name ours
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0; cdecl(out, n): help picture path by TOGetFFXLang (0 help, 1 us, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch; others format an uninitialised buffer) through fiosUnifyFilename, then sprintf(out, path, n)
