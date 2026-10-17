@@ -617,4 +617,285 @@ pub mod bridge {
         }
         i32::from(mem.read::<i8>(a.wrapping_add(0xdf2)))
     }
+
+    /// Commands wait while set (`MsCommandCueProcess`).
+    pub const COMMAND_HOLD: Global<u8> = Global::new(0x0112_ca0d);
+    /// Commands wait unless -1 (`MsCommandCueProcess`).
+    pub const COMMAND_WAIT: Global<i32> = Global::new(0x00c6_4cb0);
+    /// `g_BtlTurnActor`: the command's actor (with `actor::TURN_ACTOR`, which
+    /// is `0x0112c9df`, and `COMMAND_ACTOR`).
+    pub const TURN_ACTOR2: Global<u8> = Global::new(0x0112_c9e2);
+    /// Set when a command starts; cleared when its actor's turn ends early.
+    pub const COMMAND_RUNNING: Global<u8> = Global::new(0x0112_ca0f);
+    /// Set: the next command starts with camera 0x1c.
+    pub const COMMAND_CAMERA: Global<u8> = Global::new(0x0112_ca16);
+    /// Read with [`COMMAND_3029_COUNT`] 1, then cleared, by each command.
+    pub const COMMAND_SINGLE: Global<u32> = Global::new(0x0113_34c4);
+    /// Set when a command does not hit (no target moved), else cleared.
+    pub const COMMAND_MISSED: Global<u32> = Global::new(0x0133_d6ec);
+    /// `MsCommandCueProcess`'s error for a bad entry (`MsBattleError`).
+    pub const COMMAND_CUE_ERROR: u32 = 0x00b5_4ba8;
+    /// The game's functions the driver calls (sound, and ports that take
+    /// other modules' callbacks: through the game).
+    pub const SND_GET_STREAM_STATE: u32 = 0x0088_64b0;
+    pub const MS_CHECK_RIKKU_LIMIT: u32 = 0x007a_fbd0;
+    pub const MS_CALC_COMMAND: u32 = 0x0078_92e0;
+    pub const MS_MESSAGE_CUE_REGIST: u32 = 0x0079_cfd0;
+
+    /// `MsCommandCueProcess()` (`0x00792210`, name ours, called each frame
+    /// by `MsBattleProcess`): the command cue's first entry (`+4` its
+    /// state) moves on. Nothing happens while an actor swaps or escapes,
+    /// numbers or stone effects show, messages, streams or system messages
+    /// play. An entry of a bad actor or list (`+1` neither 0 nor 1) is an
+    /// error (`MsBattleError`, which hangs); an entry whose actor is busy
+    /// (`+0x433`, `+0x50e`) or done (state 1) waits. State 2 waits for its
+    /// targets to be ready, 3 for the guard (`MsDefenseProcess`: the
+    /// targets the entry's own), 4 starts the Rikku limit's motion (0x1d,
+    /// camera 0x46) and goes to 5, which waits for it (`MsSetRikkuLimit`),
+    /// 6 for the payment; the rest start the command unless the Rikku limit
+    /// or Kimahri's hold keeps the actor: its turn starts (the turn globals,
+    /// `msResetHeadTarget`, the input cue, statuses), the aeon's summoning
+    /// is checked, the targets (`+(k+1)·0x10`, cleared when it may not act)
+    /// taken and the command calculated (`MsCalcMagic`, `MsActionTarget`,
+    /// `MsSetTargetsMotion`, `MsCalcCommand`, the gil paid; state 2 or 3
+    /// waits for the targets or the guard). A command that did not start
+    /// shows its message (mimic 0x3016, no hit 0x300e, else 0x3017) and
+    /// uses its item; the payment (`+0x6e0`) goes to state 6. Once in state
+    /// 1 a started entry is copied to the actor (`+0x72c`) and parsed
+    /// ([`ms_parse_command`]). 1 when a command started this frame.
+    #[allow(clippy::too_many_lines)]
+    pub fn ms_command_cue_process<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        s: &mut Script<'_, crate::target::bridge::Dm<'d>>,
+    ) -> u32 {
+        use crate::atel::bridge as at;
+        use crate::exec::bridge as ex;
+        use crate::state::bridge as st;
+        if PARTY_LEAVES.get(mem) != 0
+            || crate::minor::bridge::NUMBERS_KIND12.get(mem) != 0
+            || st::STONE_EFFECT.get(mem)[0] != 0
+            || COMMAND_HOLD.get(mem) != 0
+            || st::MESSAGE_CUE_COUNT.get(mem) != 0
+        {
+            return 0;
+        }
+        let f = code(mem, SND_GET_STREAM_STATE);
+        if (s.call)(mem, f, &[]) != 0
+            || ex::ms_system_message_check(mem, &mut *s.call) != 0
+            || COMMAND_WAIT.get(mem) != -1
+        {
+            return 0;
+        }
+        let mut cue = st::ms_get_command_cue(mem);
+        let (i, a, sub) = loop {
+            if cue == 0 || byte(mem, cue, 4) == 1 {
+                return 0;
+            }
+            let i = u32::from(byte(mem, cue, 0));
+            let a = ms_get_chr(mem, i);
+            if byte(mem, a, 0x433) != 0 || byte(mem, a, 0x50e) != 0 {
+                return 0;
+            }
+            let sub = u32::from(byte(mem, cue, 1));
+            if crate::actor::bridge::ms_btl_chr_num_check(i) != 0 && sub <= 1 {
+                break (i, a, sub);
+            }
+            let k = u32::from(byte(mem, a, 0xde4));
+            crate::action::bridge::ms_delete_input_cue(mem, host, s, i, k, 0, 0);
+            crate::cue::bridge::ms_delete_command_cue(mem, i, 0, 0);
+            let (f, msg) = (code(mem, MS_BATTLE_ERROR), code(mem, COMMAND_CUE_ERROR));
+            (s.call)(mem, f, &[msg]);
+            cue = st::ms_get_command_cue(mem);
+        };
+        let set_state = |mem: &mut crate::target::bridge::Dm<'d>, v: u8| mem.write(cue + 4, v);
+        let targets_at =
+            |mem: &crate::target::bridge::Dm<'d>| cue + 0x10 * (u32::from(byte(mem, cue, 2)) + 1);
+        let mut started = 0;
+        let parse = 'state: {
+            match byte(mem, cue, 4) {
+                2 => {
+                    let set = crate::actor::bridge::CHR_SET.get(mem);
+                    if ex::ms_count_chr_ready(mem, set) == 0 {
+                        set_state(mem, 1);
+                        mem.write(a.wrapping_add(0xdf0), 3u8);
+                    }
+                    break 'state true;
+                }
+                3 => {
+                    if crate::flow::bridge::ms_defense_process(mem) != 0 {
+                        crate::stat::bridge::GUARD_TOOK.set(mem, 2);
+                        set_state(mem, 1);
+                        let t: u32 = mem.read(targets_at(mem));
+                        mem.write(a.wrapping_add(0xdc0), t);
+                        mem.write(a.wrapping_add(0xdf0), 3u8);
+                    }
+                    break 'state true;
+                }
+                6 => {
+                    if crate::misc::bridge::ms_payment_process(mem, a) != 0 {
+                        set_state(mem, 1);
+                        mem.write(a.wrapping_add(0xdf0), 3u8);
+                        mem.write(a.wrapping_add(0x6e0), 0u8);
+                    }
+                    break 'state true;
+                }
+                k @ (4 | 5) => {
+                    if k == 4 {
+                        if byte(mem, a, 0x508) != 0 || byte(mem, a, 0x436) != 0 {
+                            break 'state true;
+                        }
+                        mem.write(a.wrapping_add(0xdc0), 0u32);
+                        mem.write(a.wrapping_add(0x435), 1u8);
+                        at::ms_set_motion(mem, s, i, 0x1d, 1, 0, 1, 0, 0);
+                        at::ms_atel_request_camera(mem, s, 0, i, 0x46, 0xffff, 0, 1, 0, 0);
+                        set_state(mem, 5);
+                    }
+                    if crate::target::bridge::ms_set_rikku_limit(mem, host, i, a, cue) != 0 {
+                        break 'state true;
+                    }
+                }
+                _ => {}
+            }
+            let f = code(mem, MS_CHECK_RIKKU_LIMIT);
+            if (s.call)(mem, f, &[i, a, cue]) != 0 {
+                break 'state true;
+            }
+            if i == 5 && ex::ms_check_chr_hold(mem, a) != 0 {
+                break 'state true;
+            }
+            if COMMAND_CAMERA.get(mem) != 0 {
+                at::ms_atel_request_camera(mem, s, 0, i, 0x1c, 0xffff, 1, 1, 0, 0);
+                COMMAND_CAMERA.set(mem, 0);
+            }
+            started = 1;
+            let mimic = ex::ms_set_chr_mimic(mem, host.trig, i, a, cue);
+            mem.write(cue + 4, 1u16);
+            mem.write(a.wrapping_add(0xdf0), 2u8);
+            mem.write(a.wrapping_add(0xde5), 0u8);
+            mem.write(a.wrapping_add(0xde9), 1u8);
+            mem.write(a.wrapping_add(0xdf1), sub.to_le_bytes()[0]);
+            let ib = i.to_le_bytes()[0];
+            crate::actor::bridge::TURN_ACTOR.set(mem, ib);
+            crate::actor::bridge::COMMAND_ACTOR.set(mem, ib);
+            TURN_ACTOR2.set(mem, ib);
+            COMMAND_RUNNING.set(mem, 1);
+            COMMAND_STARTED.set(mem, 1);
+            mem.write(crate::misc::bridge::MESSAGE_CUE_INIT.ptr(mem).addr, 0u8);
+            at::ms_reset_head_target(mem, &mut *s.call, a);
+            crate::cue::bridge::ms_check_input_cue_pos(mem, i);
+            crate::minor::bridge::ms_command_start_chr_status_all(mem);
+            let (mut k, mut set) = (0, 0);
+            if byte(mem, a, 0x608) == 0 {
+                if crate::action::bridge::ms_check_summon(mem, host, s, i, a, sub, cue) != 0 {
+                    if byte(mem, cue, 3) == 0 {
+                        mem.write(a.wrapping_add(0xdf4), 1u8);
+                        let (n, mode) = if sub == 0 { (0, 0) } else { (3, sub) };
+                        crate::action::bridge::ms_action_request(
+                            mem, host, s, i, 0xff, n, 1, mode, cue,
+                        );
+                    } else if byte(mem, cue, 2) == 0 {
+                        mem.write(a.wrapping_add(0xdf4), 0u8);
+                    }
+                }
+                k = u32::from(byte(mem, cue, 2));
+                set = mem.read(targets_at(mem));
+                crate::actor::bridge::CHR_SET.set(mem, set);
+            }
+            if byte(mem, cue, 7) == 0x30
+                && crate::actor::bridge::ms_auto_command_status_check(mem, a, 1, 1, 1) == 0
+            {
+                set = 0;
+                mem.write(cue + 0x10 * (k + 1), 0u32);
+            }
+            let dea = byte(mem, cue, 6);
+            mem.write(a.wrapping_add(0xdea), dea);
+            let mut done = false;
+            let mut moved = 0;
+            {
+                if mimic == 0
+                    && byte(mem, cue, 3) != 0
+                    && crate::command::bridge::ms_calc_magic(mem, cue, k) != 0
+                {
+                    mem.write(a.wrapping_add(0xdc0), set);
+                    crate::action::bridge::ms_action_target(mem, host, s, set, i, 2, 1);
+                    let (r, far) = at::set_targets_motion(mem, s, i, cue, k);
+                    moved = far;
+                    if r == 0 || (COMMAND_SINGLE.get(mem) == 1 && COMMAND_3029_COUNT.get(mem) == 1)
+                    {
+                        COMMAND_MISSED.set(mem, 1);
+                    } else {
+                        let t: u32 = mem.read(a.wrapping_add(0xdc0));
+                        mem.write(a.wrapping_add(0xdc4), t);
+                        let f = code(mem, MS_CALC_COMMAND);
+                        (s.call)(mem, f, &[cue, k]);
+                        if mem.read::<u32>(a.wrapping_add(0xdc0)) == 0
+                            || mem.read::<u32>(cue + 0x10 * (k + 1)) != 0
+                        {
+                            mem.write(a.wrapping_add(0xdf0), 3u8);
+                            let gil = crate::damage::bridge::GIL_AMOUNT.get(mem);
+                            ex::ms_pay_gil(mem, gil);
+                            if ex::ms_count_chr_ready(mem, set) != 0 {
+                                mem.write(a.wrapping_add(0xdf0), 4u8);
+                                set_state(mem, 2);
+                            }
+                            if crate::stat::bridge::GUARD_TOOK.get(mem) != 0 {
+                                at::ms_defense_start_process(
+                                    mem,
+                                    s,
+                                    host.trig,
+                                    Some(crate::target::bridge::Regs {
+                                        edi: a,
+                                        esi: i,
+                                        ebx: cue,
+                                    }),
+                                );
+                                mem.write(a.wrapping_add(0xdf0), 4u8);
+                                set_state(mem, 3);
+                            }
+                            done = true;
+                        }
+                        COMMAND_MISSED.set(mem, 0);
+                    }
+                }
+            }
+            COMMAND_SINGLE.set(mem, 0);
+            if !done {
+                let msg = code(mem, MS_MESSAGE_CUE_REGIST);
+                if mimic != 0 {
+                    (s.call)(mem, msg, &[1, i, 0x3016, 0x1b, 0x23]);
+                } else {
+                    crate::turn::bridge::ms_use_item(mem, i, cue, 1);
+                    if moved != 0 && byte(mem, a, 0xdf4) == 0 {
+                        (s.call)(mem, msg, &[1, i, 0x300e, 0x1b, 0x23]);
+                        if crate::cue::bridge::ms_check_turn_input_cue(mem, i) != 0 {
+                            COMMAND_RUNNING.set(mem, 0);
+                            mem.write(a.wrapping_add(0xdf0), 0u8);
+                            mem.write(a.wrapping_add(0x716), 1u8);
+                            crate::cue::bridge::ms_exe_input_cue(mem, i, 0);
+                            let slot = u32::from(byte(mem, a, 0xde5));
+                            crate::cue::bridge::ms_delete_command_cue(mem, i, slot, 0);
+                        }
+                    } else if byte(mem, a, 0x717) != 0 {
+                        (s.call)(mem, msg, &[1, i, 0x3017, 0x1b, 0x23]);
+                        at::ms_set_motion(mem, s, i, 0x22, 1, 1, 1, 0, 0);
+                    }
+                }
+                mem.write(a.wrapping_add(0x6cc), 0u16);
+                mem.write(a.wrapping_add(0xdf2), 0u8);
+            }
+            if byte(mem, a, 0x6e0) != 0 {
+                at::ms_payment_process_start(mem, s, a);
+                mem.write(a.wrapping_add(0xdf0), 4u8);
+                set_state(mem, 6);
+            }
+            done
+        };
+        if parse && byte(mem, cue, 4) == 1 {
+            let entry: [u32; 0x12] = mem.read(cue);
+            mem.write(a.wrapping_add(0x72c), entry);
+            ms_parse_command(mem, host, s, cue);
+        }
+        started
+    }
 }

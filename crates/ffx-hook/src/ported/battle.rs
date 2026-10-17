@@ -2524,4 +2524,10 @@ ported! {
         script!(s);
         parse::ms_parse_command(&mut target::Dm::new(&mut m), &host(), &mut s, cue)
     }
+    /// `MsCommandCueProcess()` (`0x00792210`).
+    MsCommandCueProcess @ 0x0079_2210 => extern "C" fn ms_command_cue_process() -> u32 {
+        let mut m = mem();
+        script!(s);
+        parse::ms_command_cue_process(&mut target::Dm::new(&mut m), &host(), &mut s)
+    }
 }
