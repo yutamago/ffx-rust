@@ -14359,7 +14359,14 @@ fn round25_net_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     ];
     for k in 0..600u32 {
         put(a, b, cursor, log);
-        put(a, b, clock, f64::from(rng.next() % 100_000) / 7.0);
+        // k = 0: cos(3t) just under 0.5, which the f32 rounding of the
+        // cosine lifts to 0.5 (alpha 112, not 111)
+        let time = if k == 0 {
+            (0.5f64.acos() + 1e-9 / 0.75f64.sqrt()) / 3.0
+        } else {
+            f64::from(rng.next() % 100_000) / 7.0
+        };
+        put(a, b, clock, time);
         for at in uv_constants {
             let at = a.rebase(at);
             put(
@@ -14374,7 +14381,7 @@ fn round25_net_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let y = fl(rng, 40000, 30.0, 50.0);
         let w = fl(rng, 30000, 29.0, 0.0);
         let h = fl(rng, 30000, 31.0, 0.0);
-        let kind = rng.next() % 6;
+        let kind = if k == 0 { 1 } else { rng.next() % 6 };
         let args = [x, y, w, h].map(f32::to_bits);
         eax(a, 0x008f_41b0, &[args[0], args[1], args[2], args[3], kind]);
         t::to_draw_btl_net_window_xywh_type(b, (x, y, w, h), kind, call, fcall, cos, remap);
@@ -14396,6 +14403,216 @@ fn round25_net_window_matches_the_original_on_the_snapshot() {
         return;
     };
     round25_net_window(&mut a, &mut b, &mut Xorshift(0x4025_0062));
+}
+
+/// A stand-in that returns the f64 at `cell` in ST0.
+fn st0_cell(cell: u32) -> Vec<u8> {
+    let mut v = vec![0xdd, 0x05];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    v
+}
+
+/// Round 26's cross-menu message writer and its macro helper over logging
+/// stand-ins for the glyph drawers, a code skipper that steps 2 bytes over
+/// codes below 0x30 and 1 otherwise, and the original `TOGetGroup` and
+/// button-data functions.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
+fn round26_cross_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let text = alloc(a, b, 0x80);
+    let macro_text = alloc(a, b, 0x40);
+    let keyed = |cursor: u32, key: u32, n: u8| {
+        let mut v = marker(cursor, key);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        v
+    };
+    for (k, (sym, n)) in (0u32..).zip([
+        (0x008f_ae40u32, 3u8),
+        (0x008f_bae0, 3),
+        (0x008f_b940, 3),
+        (0x008e_8ed0, 3),
+        (0x008f_8ee0, 8),
+    ]) {
+        let s = stand_in8(a, b, 0x40 + 0x80 * k, &keyed(cursor, 0x6100 + k, n));
+        redirect(a, b, sym, s);
+    }
+    // TOGetFontInfo(p, rec): logs both, returns p + 1
+    let mut v = keyed(cursor, 0x6200, 2);
+    v.truncate(v.len() - 1);
+    v.extend_from_slice(&[0x40, 0xc3]); // inc eax; ret
+    let s = stand_in8(a, b, 0x300, &v);
+    redirect(a, b, 0x008b_7240, s);
+    // TOSkipCode(p): p + 2 below 0x30, else p + 1
+    let skip = [
+        0x8b, 0x44, 0x24, 0x04, 0x80, 0x38, 0x30, 0x72, 0x02, 0x40, 0xc3, 0x83, 0xc0, 0x02, 0xc3,
+    ];
+    let s = stand_in8(a, b, 0x380, &skip);
+    redirect(a, b, 0x008d_fd80, s);
+    // TOGetChangeMacroAddress(key, code): logs both, returns cells[0]
+    let mut v = keyed(cursor, 0x6300, 2);
+    v.truncate(v.len() - 5); // drop "mov eax, [esp+4]; ret"
+    v.push(0xa1);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x3c0, &v);
+    redirect(a, b, 0x008b_6660, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x440, &v);
+    redirect(a, b, 0x008a_c2f0, s);
+    let s = stand_in8(a, b, 0x460, &st0_cell(cells + 8));
+    redirect(a, b, 0x008f_a800, s);
+    let s = stand_in8(a, b, 0x480, &st0_cell(cells + 0x10));
+    redirect(a, b, 0x008f_a570, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let pen = alloc(a, b, 0x20);
+    let codes: [u8; 14] = [
+        0x30, 0x41, 0x5a, 3, 7, 7, 0xa, 0xa, 0xb, 0xb, 0x12, 0x22, 0x23, 1,
+    ];
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        let mut bytes = [0u8; 0x40];
+        let n = (rng.next() % 30) as usize;
+        let mut i = 0;
+        while i + 2 < n {
+            let c = codes[(rng.next() as usize) % codes.len()];
+            bytes[i] = c;
+            if c < 0x30 {
+                bytes[i + 1] = [0xe0u8, 0xe1, 0xe7, 0xef, 0xf0, 0x45, 0x07, 0x00, 0x3f]
+                    [(rng.next() % 9) as usize];
+                if bytes[i + 1] == 0 {
+                    bytes[i + 1] = 1;
+                }
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+        put(a, b, text, bytes);
+        let mut mbytes = [0u8; 0x20];
+        for (j, m) in mbytes
+            .iter_mut()
+            .take((rng.next() % 12) as usize)
+            .enumerate()
+        {
+            *m = match j % 3 {
+                1 => [7u8, 0x31][(rng.next() % 2) as usize],
+                2 => [0xe0u8, 0xe5, 0xf0, 0x32][(rng.next() % 4) as usize],
+                _ => 0x30 + (rng.next() % 40) as u8,
+            };
+        }
+        put(a, b, macro_text, mbytes);
+        put(
+            a,
+            b,
+            cells,
+            if rng.next().is_multiple_of(6) {
+                0
+            } else {
+                macro_text
+            },
+        );
+        put(a, b, cells + 4, rng.next() % 2);
+        put(
+            a,
+            b,
+            cells + 8,
+            f64::from_bits(
+                0x4030_0000_0000_0000
+                    | (u64::from(rng.next()) << 20)
+                    | u64::from(rng.next() & 0xf_ffff),
+            ),
+        );
+        put(a, b, cells + 0x10, (rng.next() % 40) as f64 / 3.0);
+        put(a, b, g(a, 0x0187_16bc), rng.next() % 3);
+        let scale = [0.64f32, 0.6, 1.0, 0.73][(rng.next() % 4) as usize].to_bits();
+        let x = if rng.next().is_multiple_of(5) {
+            (-0.0f32).to_bits()
+        } else {
+            ((rng.next() % 6000) as f32 / 7.0).to_bits()
+        };
+        let y = ((rng.next() % 4000) as f32 / 7.0).to_bits();
+        if k % 3 == 0 {
+            put(a, b, pen, rng.next());
+            put(a, b, pen + 4, [x, y]);
+            let args = [
+                rng.next() % 4,
+                rng.next(),
+                pen,
+                scale,
+                rng.next(),
+                rng.next() % 2,
+            ];
+            let ra = eax(a, 0x008e_9ca0, &args);
+            let rb = t::to_add_pkt_change_macro_help(b, args, call);
+            assert_eq!(ra, rb, "macro help {k}");
+        } else {
+            let key = if rng.next().is_multiple_of(4) {
+                u32::MAX
+            } else {
+                rng.next() % 4
+            };
+            let args = [
+                key,
+                text,
+                x,
+                y,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                scale,
+                rng.next(),
+            ];
+            eax(a, 0x0090_1700, &args);
+            t::to_mkp_cross_ext_mes_font_l_clut_type_rgba(b, args, call, fcall);
+        }
+        let lang = rng.next() % 2;
+        put(a, b, cells + 4, lang);
+        let at = a.rebase(0x008e_5280);
+        let ra = a
+            .call(at, Conv::Cdecl, &[0, 0, 0, 0, 0])
+            .unwrap()
+            .st0
+            .unwrap();
+        let rb = t::adjust_button_icon_y(b, call);
+        assert_eq!(ra.to_bits(), f64::from(rb).to_bits(), "icon y {k}");
+        same_memory(&format!("cross text {k}"), a, b);
+    }
+}
+
+#[test]
+fn round26_cross_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round26_cross_text(&mut a, &mut b, &mut Xorshift(0x4026_0011));
+}
+
+#[test]
+fn round26_cross_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round26_cross_text(&mut a, &mut b, &mut Xorshift(0x4026_0012));
 }
 
 #[test]

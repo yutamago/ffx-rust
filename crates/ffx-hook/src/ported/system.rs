@@ -6208,6 +6208,25 @@ ported! {
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
         );
     }
+    /// `AdjustButtonIconY(scale, r, g, b, a)`.
+    AdjustButtonIconY @ 0x008e_5280 => extern "C" fn adjust_button_icon_y(_scale: u32, _r: u32, _g: u32, _b: u32, _a: u32) -> f32 {
+        tolib::bridge::adjust_button_icon_y(&mut mem(), call_sym)
+    }
+    /// `TOAddPktChangeMacro_help(key, code, pen, scale, extra, shadow)`.
+    TOAddPktChangeMacro_help @ 0x008e_9ca0 => extern "C" fn to_add_pkt_change_macro_help(key: u32, code: u32, pen: u32, scale: u32, extra: u32, shadow: u32) -> u32 {
+        tolib::bridge::to_add_pkt_change_macro_help(&mut mem(), [key, code, pen, scale, extra, shadow], call_sym)
+    }
+    /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r, g, b, a, scale, extra)`.
+    TOMkpCrossExtMesFontLClutTypeRGBA @ 0x0090_1700 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut_type_rgba(
+        key: u32, text: u32, x: u32, y: u32, mode: u32, kind: u32, r: u32, g: u32, b: u32, a: u32, scale: u32, extra: u32
+    ) {
+        tolib::bridge::to_mkp_cross_ext_mes_font_l_clut_type_rgba(
+            &mut mem(),
+            [key, text, x, y, mode, kind, r, g, b, a, scale, extra],
+            call_sym,
+            fcall,
+        );
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

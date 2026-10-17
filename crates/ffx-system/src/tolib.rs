@@ -9039,4 +9039,242 @@ pub mod bridge {
             }
         }
     }
+
+    /// `AdjustButtonIconY(scale, r, g, b, a)` (`0x008e5280`): how far a
+    /// button icon sits above the text line, `0x00b4838c` (-1.5) when the
+    /// `TOGetFFXLang` thunk (`0x008ac2f0`) reports a non-zero language,
+    /// `0x00b92338` (-0.5) otherwise; its arguments are unused.
+    pub fn adjust_button_icon_y<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> f32 {
+        let at = if call(mem, 0x008a_c2f0, &[]) != 0 {
+            0x00b4_838c
+        } else {
+            0x00b9_2338
+        };
+        mem.read(mem.rebase(at))
+    }
+
+    /// The glyph record buffer the help-text writers fill with
+    /// `TOGetFontInfo` (0x40 bytes, cleared on entry).
+    const HELP_GLYPH: u32 = 0x0184_1d50;
+
+    /// `TOAddPktChangeMacro_help(key, code, pen, scale, extra, shadow)`
+    /// (`0x008e9ca0`): the packets of a macro's replacement text
+    /// (`TOGetChangeMacroAddress(key, code)`) at the text cursor `pen`.
+    ///
+    /// Each glyph gets its record in [`HELP_GLYPH`] and is drawn by
+    /// `TOMakeBtlEasyFontEdge` (or `TOMakePktBtlEasyFontShadow` when
+    /// `shadow` is set) and `TOMakePktBtlEasyFont`, then the pen moves on
+    /// (`TOAddFontWidthSpace`), all at `scale`. Code 7 with a byte
+    /// 0xe0..=0xef moves the pen right by that byte less 0xe0; macro codes
+    /// 0x12..=0x22 nest (this function again, same key). Returns the packet
+    /// cursor `0x018716cc`.
+    pub fn to_add_pkt_change_macro_help<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const CHANGE_MACRO_ADDRESS: u32 = 0x008b_6660;
+        const SKIP_CODE: u32 = 0x008d_fd80;
+        const FONT_INFO: u32 = 0x008b_7240;
+        const EDGE: u32 = 0x008f_ae40;
+        const SHADOW: u32 = 0x008f_bae0;
+        const FACE: u32 = 0x008f_b940;
+        const ADD_WIDTH_SPACE: u32 = 0x008e_8ed0;
+        const ITSELF: u32 = 0x008e_9ca0;
+        let [key, code, pen, scale, extra, shadow] = args;
+        let glyph = mem.rebase(HELP_GLYPH);
+        for k in 0..0x10 {
+            mem.write(glyph.wrapping_add(4 * k), 0u32);
+        }
+        let mut p = call(mem, CHANGE_MACRO_ADDRESS, &[key, code]);
+        while p != 0 && mem.read::<u8>(p) != 0 {
+            match mem.read::<u8>(p) {
+                7 => {
+                    let step = mem.read::<u8>(p.wrapping_add(1));
+                    if (0xe0..0xf0).contains(&step) {
+                        let x = f64::from(f32::from(step - 0xe0))
+                            + f64::from(mem.read::<f32>(pen.wrapping_add(4)));
+                        #[allow(clippy::cast_possible_truncation)] // fstp dword
+                        mem.write(pen.wrapping_add(4), x as f32);
+                    }
+                    p = call(mem, SKIP_CODE, &[p]);
+                }
+                0x12..=0x22 => {
+                    call(mem, ITSELF, &[key, p, pen, scale, extra, shadow]);
+                    p = call(mem, SKIP_CODE, &[p]);
+                }
+                _ => {
+                    p = call(mem, FONT_INFO, &[p, glyph]);
+                    call(
+                        mem,
+                        if shadow == 0 { EDGE } else { SHADOW },
+                        &[pen, glyph, scale],
+                    );
+                    call(mem, FACE, &[pen, glyph, scale]);
+                    call(mem, ADD_WIDTH_SPACE, &[pen, glyph, scale]);
+                }
+            }
+        }
+        mem.read(mem.rebase(0x0187_16cc))
+    }
+
+    /// The battle-font text cursor the cross-menu writers lay out with
+    /// (see [`to_make_btl_easy_font`]).
+    const CROSS_PEN: u32 = 0x025d_09a0;
+
+    /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r,
+    /// g, b, a, scale, extra)` (`0x00901700`): a cross-menu text in the
+    /// battle font at `x, y`, with the pen ([`CROSS_PEN`]) reset to colour
+    /// `r, g, b, a`, kind byte `kind` (`+0x1a`) and mode byte `mode`
+    /// (`+0x1b`).
+    ///
+    /// By `TOGetGroup` of each code:
+    /// - 1 (new line): x back to the start; y down by `0x00b66c98` (13.6)
+    ///   when `scale` equals `0x00b5edec` (0.64), else by `scale × 16`.
+    /// - 2 (control): 7 with a byte 0xe1..=0xef moves the pen right by
+    ///   that byte less 0xe0. `0xa n` sets the mode's low nibble to
+    ///   `(n & 0xf) - 1` (when non-zero) and its high nibble to
+    ///   `(n & 0xf0) - 0x40` (from 0x40). `0xb n` draws button icon `n`
+    ///   (`setButtonData(n, -1)`, `TODrawScaleButtonIconRGBA` at scale
+    ///   `0x00b66864` (0.63), at y, or at `y + 3.0 + AdjustButtonIconY`
+    ///   unless `scale` is 0.64) and moves the pen by the icon width plus
+    ///   `TOGetFontSpaceInPiexl(0)`. Other than 7 they end with
+    ///   `resetButtonData`.
+    /// - 3 (macro): `TOAddPktChangeMacro_help(key, …, scale, extra, 0)`
+    ///   unless `key` is -1.
+    /// - 4 (glyph): its record ([`HELP_GLYPH`]), the edge (unless
+    ///   `0x018716bc` is set), the face and the advance at `scale`.
+    #[allow(
+        clippy::cast_possible_truncation, // fstp dword
+        clippy::too_many_lines,
+        clippy::many_single_char_names, // the colour and the position
+        clippy::float_cmp // the original's exact `fucomp`
+    )]
+    pub fn to_mkp_cross_ext_mes_font_l_clut_type_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 12],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        const GET_GROUP: u32 = 0x008d_f610;
+        const SKIP_CODE: u32 = 0x008d_fd80;
+        const FONT_INFO: u32 = 0x008b_7240;
+        const EDGE: u32 = 0x008f_ae40;
+        const FACE: u32 = 0x008f_b940;
+        const ADD_WIDTH_SPACE: u32 = 0x008e_8ed0;
+        const MACRO_HELP: u32 = 0x008e_9ca0;
+        const SET_BUTTON: u32 = 0x008b_1350;
+        const RESET_BUTTON: u32 = 0x008b_1330;
+        const ADJUST_ICON_Y: u32 = 0x008e_5280;
+        const DRAW_ICON: u32 = 0x008f_8ee0;
+        const ICON_WIDTH: u32 = 0x008f_a800;
+        const SPACE_PIXELS: u32 = 0x008f_a570;
+        let [key, text, x, y, mode, kind, r, g, b, a, scale, extra] = args;
+        let glyph = mem.rebase(HELP_GLYPH);
+        let pen = mem.rebase(CROSS_PEN);
+        for k in 0..0x10 {
+            mem.write(glyph.wrapping_add(4 * k), 0u32);
+        }
+        for k in 0..7 {
+            mem.write(pen.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(pen, [r, g, b, a].map(|c| c.to_le_bytes()[0]));
+        mem.write(pen.wrapping_add(4), f32::from_bits(x));
+        mem.write(pen.wrapping_add(8), f32::from_bits(y));
+        mem.write(
+            pen.wrapping_add(0x1a),
+            [kind.to_le_bytes()[0], mode.to_le_bytes()[0]],
+        );
+        let image = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let pen_x = |mem: &M| f64::from(mem.read::<f32>(pen.wrapping_add(4)));
+        let pen_y = |mem: &M| f64::from(mem.read::<f32>(pen.wrapping_add(8)));
+        let scale_f = f32::from_bits(scale);
+        let small = f32::from_bits(image(mem, 0x00b5_edec));
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            match call(mem, GET_GROUP, &[u32::from(mem.read::<u8>(p))]) {
+                1 => {
+                    mem.write(pen.wrapping_add(4), f32::from_bits(x));
+                    let y = if small == scale_f {
+                        pen_y(mem) + mem.read::<f64>(mem.rebase(0x00b6_6c98))
+                    } else {
+                        f64::from(scale_f) * mem.read::<f64>(mem.rebase(0x00b3_13a0)) + pen_y(mem)
+                    };
+                    mem.write(pen.wrapping_add(8), y as f32);
+                }
+                2 => {
+                    let code = mem.read::<u8>(p);
+                    let arg = mem.read::<u8>(p.wrapping_add(1));
+                    if code == 7 {
+                        if arg > 0xe0 && arg < 0xf0 {
+                            let x = f64::from(f32::from(arg - 0xe0)) + pen_x(mem);
+                            mem.write(pen.wrapping_add(4), x as f32);
+                        }
+                    } else {
+                        if code == 0xa {
+                            let at = pen.wrapping_add(0x1b);
+                            let mut m = mem.read::<u8>(at);
+                            if arg & 0xf != 0 {
+                                m = (m & 0xf0) | ((arg & 0xf) - 1);
+                                mem.write(at, m);
+                            }
+                            if arg & 0xf0 >= 0x40 {
+                                m = (m & 0xf) | ((arg & 0xf0) - 0x40);
+                                mem.write(at, m);
+                            }
+                        }
+                        if code == 0xb {
+                            let icon = u32::from(arg);
+                            call(mem, SET_BUTTON, &[icon, u32::MAX]);
+                            let icon_scale = image(mem, 0x00b6_6864);
+                            let small = mem.read::<f64>(mem.rebase(0x00b6_6c68));
+                            let icon_y = if small == f64::from(scale_f) {
+                                mem.read::<f32>(pen.wrapping_add(8))
+                            } else {
+                                let lift = fcall(
+                                    mem,
+                                    ADJUST_ICON_Y,
+                                    &[icon_scale, 0x80, 0x80, 0x80, 0x80],
+                                );
+                                let three = mem.read::<f64>(mem.rebase(0x00b2_c5c8));
+                                ((pen_y(mem) + three) + lift) as f32
+                            };
+                            let pen_x_bits = mem.read::<u32>(pen.wrapping_add(4));
+                            let args = [
+                                icon,
+                                pen_x_bits,
+                                icon_y.to_bits(),
+                                icon_scale,
+                                0x80,
+                                0x80,
+                                0x80,
+                                0x80,
+                            ];
+                            call(mem, DRAW_ICON, &args);
+                            let width = fcall(mem, ICON_WIDTH, &[icon, icon_scale]);
+                            let space = fcall(mem, SPACE_PIXELS, &[0]);
+                            mem.write(pen.wrapping_add(4), ((space + width) + pen_x(mem)) as f32);
+                        }
+                        call(mem, RESET_BUTTON, &[]);
+                    }
+                }
+                3 if key != u32::MAX => {
+                    call(mem, MACRO_HELP, &[key, p, pen, scale, extra, 0]);
+                }
+                4 => {
+                    call(mem, FONT_INFO, &[p, glyph]);
+                    if image(mem, 0x0187_16bc) == 0 {
+                        call(mem, EDGE, &[pen, glyph, scale]);
+                    }
+                    call(mem, FACE, &[pen, glyph, scale]);
+                    call(mem, ADD_WIDTH_SPACE, &[pen, glyph, scale]);
+                }
+                _ => {}
+            }
+            p = call(mem, SKIP_CODE, &[p]);
+        }
+    }
 }
