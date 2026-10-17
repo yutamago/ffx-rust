@@ -231,4 +231,66 @@ pub mod bridge {
         };
         r.store()
     }
+
+    /// `Sg_IntVecToFloat(out, v)` (`0x00845d90`): three `i32` as `f32`
+    /// (`fild`/`fstp`). Returns `v`'s fourth word (`eax`).
+    pub fn int_vec_to_float(mem: &mut impl Mem, out: u32, v: u32) -> u32 {
+        let w: [i32; 4] = mem.read(v);
+        for (k, x) in (0u32..3).zip(w) {
+            put(mem, out, k, f32::from_bits(x87::store(f64::from(x))));
+        }
+        w[3].cast_unsigned()
+    }
+
+    /// `Sg_CalcTriangleNormal(v0, v1, v2, out)` (`0x0083e420`): with `i16`
+    /// vertices, the edges `v1 - v0` and `v2 - v0` as `f32`, their outer
+    /// product (`FFXVu0OuterProduct(n, e2, e1)`) normalised into `out`
+    /// (`FFXVu0Normalize`).
+    pub fn calc_triangle_normal(mem: &mut impl Mem, v0: u32, v1: u32, v2: u32, out: u32) {
+        use crate::scratch::{SCRATCH, Scratch};
+        use ffx_ps2::vu0::bridge as vu0;
+        let p: [i16; 3] = mem.read(v0);
+        let a: [i16; 3] = mem.read(v1);
+        let b: [i16; 3] = mem.read(v2);
+        let edge = |q: [i16; 3]| {
+            [0, 1, 2].map(|k| x87::store(f64::from(i32::from(q[k]) - i32::from(p[k]))))
+        };
+        let (e1, e2) = (edge(a), edge(b));
+        let mut s = Scratch::new(mem);
+        // e1 at +0x20, e2 at +0x10, the product at +0 (w of each 0)
+        s.write(SCRATCH + 0x20, e1);
+        s.write(SCRATCH + 0x10, e2);
+        vu0::outer_product(&mut s, SCRATCH, SCRATCH + 0x10, SCRATCH + 0x20);
+        vu0::normalize(&mut s, out, SCRATCH);
+    }
+
+    /// `Sg_MatrixFromDir(m, dir, rows)` (`0x008435a0`): an orthonormal
+    /// basis around `dir`: `d = |dir|`, `s = |(0, 0, 1) x d|`, `u = |s x
+    /// d|` (`FFXVu0Normalize`, `Sg_VecCross`); `m` the identity
+    /// (`FFXVu0UnitMatrix`), then the `x, y, z` of `s` into row `rows >> 8
+    /// & 15`, of `u` into row `rows >> 4 & 15` and of `d` into row `rows &
+    /// 15`, in that order (rows past 3 write beyond the matrix, as the
+    /// original). Returns `eax`: twice `u`'s row.
+    pub fn matrix_from_dir(mem: &mut impl Mem, m: u32, dir: u32, rows: u32) -> u32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        use ffx_ps2::vu0::bridge as vu0;
+        let (d, z, t, s_, u) = (SCRATCH, SCRATCH + 0x10, SCRATCH + 0x20, SCRATCH + 0x30, SCRATCH + 0x40);
+        let mut sc = Scratch::new(mem);
+        sc.write(z, [0f32, 0.0, 1.0]);
+        vu0::normalize(&mut sc, d, dir);
+        cross(&mut sc, t, z, d);
+        vu0::normalize(&mut sc, s_, t);
+        cross(&mut sc, t, s_, d);
+        vu0::normalize(&mut sc, u, t);
+        vu0::matrix_identity(&mut sc, m);
+        let row = |r: u32| m.wrapping_add(16 * (r & 0xf));
+        for (v, r) in [(s_, rows >> 8), (u, rows >> 4), (d, rows)] {
+            let x: [f32; 3] = sc.read(v);
+            let at = row(r);
+            for (k, c) in (0u32..).zip(x) {
+                sc.write(at.wrapping_add(4 * k), x87::round_trip(c));
+            }
+        }
+        ((rows >> 4) & 0xf) * 2
+    }
 }

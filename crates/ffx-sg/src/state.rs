@@ -1460,6 +1460,20 @@ pub mod bridge {
         focus_reset(mem)
     }
 
+    /// `Sg_PlayerInitDefault()` (`0x0082d8d0`): [`player_init_all`], then
+    /// the speeds of kinds 1, 2 and `0x12` from `.rdata` (`0x00b9231c` 16,
+    /// `0x00b59830` 38, `0x00b4ae10` 20). Returns the last
+    /// `Sg_PlayerSetSpeed`'s `eax` (2).
+    pub fn player_init_default(mem: &mut impl Mem) -> u32 {
+        player_init_all(mem);
+        let mut r = 0;
+        for (kind, at) in [(1, 0x00b9_231c), (2, 0x00b5_9830), (0x12, 0x00b4_ae10)] {
+            let v = ffx_bridge::x87::round_trip(Global::<f32>::new(at).get(mem));
+            r = player_set_speed(mem, kind, v);
+        }
+        r
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);

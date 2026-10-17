@@ -48,3 +48,10 @@ impl<M: Mem> Mem for Scratch<'_, M> {
         self.mem.image_base()
     }
 }
+
+/// Calls go to the game: no scratch address reaches a callee.
+impl<M: ffx_bridge::Host> ffx_bridge::Host for Scratch<'_, M> {
+    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        self.mem.call(addr, args)
+    }
+}
