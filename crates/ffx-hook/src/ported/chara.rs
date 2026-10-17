@@ -27,6 +27,63 @@ fn scratch() -> u32 {
     u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
 }
 
+/// A C runtime intrinsic through the game's import thunk `f`: the operands
+/// loaded in order (`fld qword`, so the last is `ST0`), the result stored
+/// as the callers do (`fstp dword`). The result pointer rides in `edi`,
+/// which the intrinsic keeps (map.rs's `st0_call`/`st01_call`).
+fn ci_call(f: u32, args: &[f64]) -> f32 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f32;
+        match *args {
+            // SAFETY: the thunk jumps to the CRT's intrinsic, which takes
+            // its operand in ST0 and leaves its result there (eax, ecx,
+            // edx, the x87 and SSE registers clobbered).
+            [x] => unsafe {
+                std::arch::asm!(
+                    "fld qword ptr [{x}]",
+                    "call {f}",
+                    "fstp dword ptr [edi]",
+                    x = in(reg) &raw const x,
+                    f = in(reg) f,
+                    in("edi") &raw mut out,
+                    clobber_abi("C"),
+                );
+            },
+            // SAFETY: as above, with operands in ST1 and ST0.
+            [a, b] => unsafe {
+                std::arch::asm!(
+                    "fld qword ptr [{a}]",
+                    "fld qword ptr [{b}]",
+                    "call {f}",
+                    "fstp dword ptr [edi]",
+                    a = in(reg) &raw const a,
+                    b = in(reg) &raw const b,
+                    f = in(reg) f,
+                    in("edi") &raw mut out,
+                    clobber_abi("C"),
+                );
+            },
+            _ => return f32::NAN,
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, args);
+        f32::NAN
+    }
+}
+
+/// A cdecl function of one word that returns in `ST0` (read back as
+/// `f64`).
+fn st0_cdecl(f: u32, args: &[u32]) -> f64 {
+    let [a] = *args else { return f64::NAN };
+    // SAFETY: `f` is an original cdecl function of one word returning a
+    // float in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a) }
+}
+
 ported! {
     // ---- finding characters
 
@@ -1642,5 +1699,13 @@ ported! {
     /// `Ch_SetMotionSeq(chr, clip, loops, start, end)`.
     Ch_SetMotionSeq @ 0x0083_9b80 => extern "C" fn ch_set_motion_seq(chr: u32, clip: u32, loops: u32, start: i32, end: i32) -> u32 {
         mo::bridge::ch_set_motion_seq(&mut mem(), chr, clip, loops, start, end, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_Neck(chr)`.
+    Ch_Neck @ 0x0083_48d0 => extern "C" fn ch_neck(chr: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_neck(&mut mem(), chr, scratch(), &mut c)
     }
 }

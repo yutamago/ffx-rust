@@ -6631,3 +6631,196 @@ fn round10g_on(t: &mut Twin) {
         );
     }
 }
+
+/// Calls a one-operand intrinsic (third word) on `fld qword [esp + 4]`,
+/// stores the result as `f32` and returns its bits in EAX.
+const CI1_STUB: [u8; 17] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xd9, 0x5c, 0x24, 0x04, 0x8b, 0x44, 0x24, 0x04,
+    0xc3,
+];
+/// The two-operand form: `[esp + 4]` to ST1, `[esp + 0xc]` to ST0, the
+/// intrinsic in the fifth word.
+const CI2_STUB: [u8; 21] = [
+    0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xd9, 0x5c, 0x24, 0x04,
+    0x8b, 0x44, 0x24, 0x04, 0xc3,
+];
+
+/// Code at the same new address in both oracles.
+fn twin_code(t: &mut Twin, code: &[u8]) -> u32 {
+    let at = t.a.alloc_code(code).unwrap();
+    assert_eq!(t.b.alloc_code(code).unwrap(), at);
+    at
+}
+
+/// Replaces the function at `sym` with a jump to `code` in both.
+fn fake_with(t: &mut Twin, sym: u32, code: &[u8]) {
+    let to = twin_code(t, code);
+    let at = t.a.rebase(sym);
+    let mut jmp = vec![0xe9];
+    jmp.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+}
+
+/// A stand-in copying the 16 bytes at `src` (plus `id & 0x1f` × 16 when
+/// `id_arg` names the word holding an id) to the pointer in word `out`.
+fn copy_stub(src: u32, id_arg: Option<u8>, out: u8) -> Vec<u8> {
+    let mut c = vec![];
+    if let Some(k) = id_arg {
+        c.extend([
+            0x8b,
+            0x44,
+            0x24,
+            4 * k,
+            0x83,
+            0xe0,
+            0x1f,
+            0xc1,
+            0xe0,
+            0x04,
+            0x05,
+        ]);
+    } else {
+        c.push(0xb8);
+    }
+    c.extend(src.to_le_bytes());
+    c.extend([0x8b, 0x54, 0x24, 4 * out]);
+    for k in [0u8, 4, 8, 0xc] {
+        c.extend([0x8b, 0x48, k, 0x89, 0x4a, k]);
+    }
+    c.push(0xc3);
+    c
+}
+
+#[test]
+fn round11_matches_the_original() {
+    for mut t in twins() {
+        round11_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+#[allow(clippy::cast_precision_loss)]
+fn round11_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_0011);
+    let fk = Fakes::new(t);
+    let elem = fk.fake(t, 0x0083_5660, 1, 3);
+    let set = fk.fake(t, 0x0083_3df0, 2, 4);
+    let check = fk.fake(t, 0x0082_61b0, 3, 1);
+    let exist = fk.fake(t, 0x0083_5680, 4, 2);
+    let pts = t.alloc(0x20 * 16);
+    let cam = t.alloc(16);
+    let opt = copy_stub(pts, Some(2), 3);
+    fake_with(t, 0x0083_54f0, &opt);
+    let camera = copy_stub(cam, None, 1);
+    fake_with(t, 0x0083_f260, &camera);
+    let ci1 = twin_code(t, &CI1_STUB);
+    let ci2 = twin_code(t, &CI2_STUB);
+    let pop = t.b.rebase(FPU_POP);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..64u32 {
+        fk.reset(t);
+        t.put_u32(
+            elem,
+            if round % 16 == 15 {
+                0
+            } else {
+                0x100 + rng.next() % 8
+            },
+        );
+        t.put_u32(set, rng.next());
+        t.put_u32(check, u32::from(rng.next().is_multiple_of(4)));
+        t.put_u32(exist, u32::from(!rng.next().is_multiple_of(4)));
+        for k in 0..0x20 * 4 {
+            let v = f(&mut rng, -10, 10);
+            t.put_u32(pts + 4 * k, v);
+        }
+        for k in 0..4 {
+            let v = f(&mut rng, -20, 20);
+            t.put_u32(cam + 4 * k, v);
+        }
+        let chr = t.alloc(0x900);
+        for k in 0..0x240 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(chr + 4 * k, v);
+        }
+        let model = t.alloc(0x80);
+        t.put(model + 0x40, &[u8::from(rng.next().is_multiple_of(2))]);
+        t.put_u32(chr + 0x1c4, model);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(chr + 0x40d, &[1 + (rng.next() % 4) as u8]);
+        t.put_u32(
+            chr + 0x414,
+            (if rng.next().is_multiple_of(4) {
+                0f32
+            } else {
+                1f32
+            })
+            .to_bits(),
+        );
+        let w = (rng.next() % 17) as f32 / 16.0;
+        t.put_u32(chr + 0x418, w.to_bits());
+        t.put_u32(
+            chr + 0x420,
+            [1f32, 2.0, 4.0, 8.0][(rng.next() % 4) as usize].to_bits(),
+        );
+        t.put_u32(chr + 0x158, f(&mut rng, -3, 3));
+        t.put_u32(chr + 0x424, f(&mut rng, 0, 120));
+        t.put_u32(chr + 0x428, f(&mut rng, -120, 0));
+        t.put_u32(chr + 0x41c, f(&mut rng, -180, 180));
+        t.put_u32(chr + 0x4d0, rng.next() % 2);
+        if rng.next().is_multiple_of(2) {
+            t.put_u32(chr + 0x4c0, f(&mut rng, -3, 3));
+            t.put_u32(chr + 0x4c4, f(&mut rng, -3, 3));
+        }
+        t.put_u32(
+            chr + 0x4bc,
+            [0f32, 0.25, 0.5, 1.0][(rng.next() % 4) as usize].to_bits(),
+        );
+        // a unit quaternion at +0x4ac
+        for k in 0..4 {
+            t.put_u32(chr + 0x4ac + 4 * k, 0.5f32.to_bits());
+        }
+        let scratch = t.alloc(p::NECK_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_48d0);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |m: &mut Oracle, f: u32, a: &[f64]| {
+                let words: Vec<u32> = a
+                    .iter()
+                    .flat_map(|x| {
+                        let b = x.to_bits();
+                        #[allow(clippy::cast_possible_truncation)]
+                        [b as u32, (b >> 32) as u32]
+                    })
+                    .chain([f])
+                    .collect();
+                let stub = if a.len() == 1 { ci1 } else { ci2 };
+                f32::from_bits(m.call(stub, Conv::Cdecl, &words).unwrap().eax)
+            };
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_neck(&mut t.b, chr, scratch, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_Neck {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::NECK_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_Neck {round} memory",
+            t.name
+        );
+    }
+}
