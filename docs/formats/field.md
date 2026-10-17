@@ -1323,8 +1323,10 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - The Ke* functions left in the worklist (`KeDttSpr_MkGifPk`,
   `KeDttMdl_MkGifPk`, `KeLnsLp_Update`, `KeThBP_Update`, `KeBornPtCmlp`,
   `KeVu0ItrsBallLine`) are classed logic by default in `classes.tsv`.
-  The `MkGifPk` ones build GIF packets (replaced by ffx-render); the
-  others are VFX updates for the vfx crate.
+  The `MkGifPk` ones build GIF packets (replaced by ffx-render). The
+  updates (`KeLnsLp_Update`, `KeThBP_Update`, `KeBornPtCmlp`,
+  `KeVu0ItrsBallLine`) belong to the Ke effect library in `ke.rs` and
+  stay on the list as large logic.
 
 ## Floats
 
