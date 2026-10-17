@@ -2,13 +2,49 @@
 //! sphere grid screen's helpers, the pointer zones.
 
 use ffx_pcui::abmap::bridge as abmap;
+use ffx_pcui::cursor::bridge as cursor;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::item::bridge as item;
+use ffx_pcui::panel::bridge as panel;
+use ffx_pcui::sea::bridge as sea;
 use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
 
 use super::{mem, ported};
 
 ported! {
+    /// `AbmapReadCursorStick(move)`.
+    AbmapReadCursorStick @ 0x00a5_6bd0 => extern "C" fn abmap_read_cursor_stick(mv: u32) -> u32 {
+        cursor::read_cursor_stick(&mut mem(), mv)
+    }
+    /// `AbmapFindNearestNode(dist, pos, filter)`.
+    AbmapFindNearestNode @ 0x00a5_6a40 => extern "C" fn abmap_find_nearest_node(dist: u32, pos: u32, filter: u32) -> u32 {
+        cursor::find_nearest_node(&mut mem(), dist, pos, filter)
+    }
+    /// `AbmapFindNodeInDirection(pos, dir, filter)`.
+    AbmapFindNodeInDirection @ 0x00a5_6860 => extern "C" fn abmap_find_node_in_direction(pos: u32, dir: u32, filter: u32) -> u32 {
+        cursor::find_node_in_direction(&mut mem(), pos, dir, filter)
+    }
+    /// `AbmapPadCtrl()`.
+    AbmapPadCtrl @ 0x00a5_83e0 => extern "C" fn abmap_pad_ctrl() {
+        panel::pad_ctrl(&mut mem());
+    }
+    /// `MenuItem_ParseTargetKeys(t)`.
+    MenuItem_ParseTargetKeys @ 0x008c_5320 => extern "C" fn menu_item_parse_target_keys(t: i32) {
+        item::parse_target_keys(&mut mem(), t);
+    }
+    /// `MenuItem_DrawRow(window, x, y, index)`, floats taken as bits.
+    MenuItem_DrawRow @ 0x008c_9a70 => extern "C" fn menu_item_draw_row(window: u32, x: u32, y: u32, index: i32) {
+        item::draw_row(&mut mem(), window, f32::from_bits(x), f32::from_bits(y), index);
+    }
+    /// `MenuItem_GetLinePos()`.
+    MenuItem_GetLinePos @ 0x008c_9b60 => extern "C" fn menu_item_get_line_pos() {
+        item::get_line_pos(&mut mem());
+    }
+    /// `rcuiSeaAddUvSpd(axis, step)`, the float taken as bits.
+    rcuiSeaAddUvSpd @ 0x0093_0c00 => extern "C" fn yn_sea_add_uv_spd(axis: u32, step: u32) {
+        sea::add_uv_spd(&mut mem(), axis, f32::from_bits(step));
+    }
     /// `SpdCtrl_IsMapExcluded(map)`.
     SpdCtrl_IsMapExcluded @ 0x006f_6fa0 => extern "C" fn spd_ctrl_is_map_excluded(map: u32) -> u32 {
         spdctrl::is_map_excluded(&mut mem(), map)

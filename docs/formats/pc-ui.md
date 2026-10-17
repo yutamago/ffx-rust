@@ -189,6 +189,107 @@ ours):
   start when outside both tables, the id for 0x1b7..0x1bd, the control
   call's result), reproduced by the port.
 
+## Item menu pieces
+
+Three item menu functions the PC build placed among its UI code (names
+ours; `ffx_pcui::item`):
+
+- `MenuItem_ParseTargetKeys(t)` (`0x008c5320`): nothing for `t < 0`;
+  else the message id `u16` at `0x00c5a0d8 + 4t` (Japanese,
+  `TOGetFFXLangJmp` 0) or `0x00c5a120 + 4t` (the other languages),
+  `TOMenuGetNameMes` of it, and `Menu_ParseItemKeys` on the string (a
+  tail call; both void).
+- `MenuItem_DrawRow(window, x, y, index)` (`0x008c9a70`): for `index` in
+  `0..u16 window+0x30`: `TODrawMenuPlateXYWHType(x, y, rx2(740),
+  ry2(60), 5)` (`rx2`/`ry2` are `graphicUiRemapX2`/`Y2`); then, when the
+  signed byte `+0x45` is positive and `index` equals the `i16` at `+0x2c`,
+  `TkMn2DrawCrossCmdCursor(x + rx2(160), y + ry2(4), 1)` (each sum stored
+  as a float); then, when `g_TkMenuItemList[index]` byte `+2` is set,
+  `DrawCrossMenuIconWeaponName2(MsGetSaveWeapon(id, &local), x, y, 0)`.
+  The window bytes are read after the plate is drawn.
+- `MenuItem_GetLinePos()` (`0x008c9b60`): `TkMn2SeqGetPos("p_linmline",
+  0x0186a400)` and `("p_rinmline", 0x0186a404)`.
+
+## rcui sea speed
+
+`rcuiSeaAddUvSpd(axis, step)` (`0x00930c00`, name ours; no callers in the
+image, among the `rcui` debug screens): the first time (`g_RcuiWork + 4`
+is 0) it sets that word to 1 and the two floats at `g_RcuiWork + 0x2c`
+and `+0x30` to 0; then `speed[axis] = speed[axis] + step / 10.0` (x87:
+`fdiv` by the double, `fadd` of the float, one store; `axis` is not
+checked) and `Yn_SeaSetUvSpd(speed[0], speed[1])`.
+
+## Sphere grid cursor
+
+The cursor's move and the node searches of the sphere grid's cursor
+update (`0x00a58ff0`; names ours, `ffx_pcui::cursor`). Floats follow the
+x87 code (53-bit arithmetic, rounded where stored).
+
+- `AbmapReadCursorStick(move)` (`0x00a56bd0`): `move` is 4 floats;
+  `move[1]`, `move[0]` = 0 first. The stick:
+  `TOMenuGetControlPadAnalogHist(0, 0, 2, -1)` and `(0, 0, 3, -1)`, the
+  low bytes less `0x80` as `x`, `y`. When either byte is outside
+  `0x41..=0xbf` (`(b - 0x41) as u8 > 0x7e`): the acceleration (`f32` at
+  `g_Abmap + 0x115e4`) goes up by the double 0.1 (stored, then at most 2)
+  when `x² + y² > 0x3840`, else down 0.1 (at least 1); each axis past its
+  dead zone (`> 0x40` less 0x40, `< -0x40` plus 0x40, else 0, byte
+  arithmetic) gives `move[0] = x * 0.125 * accel`, `move[1] = 0.125 * y *
+  accel` (the acceleration read back after its store); returns 1.
+  Otherwise the d-pad (`g_Abmap + 0x1166c`): `0x8000` gives `move[0] =
+  -1`, else `0x2000` 1; `0x1000` gives `move[1] = -1`, else `0x4000` 1.
+  Nothing pressed clears the counter byte `g_Abmap + 0x115ca`; one axis
+  alone increments it and, while it is below 2, zeroes the move (from 2
+  it stays 2); both axes pass at once. `move[2]`, `move[3]` = 0, 1;
+  returns 0.
+- `AbmapFindNearestNode(dist, pos, filter)` (`0x00a56a40`) and
+  `AbmapFindNodeInDirection(pos, dir, filter)` (`0x00a56860`, returns the
+  node in `eax` though Ghidra says void) walk the nodes (`0x28` bytes from
+  `g_Abmap + 0x808`, `i16` count at `+2`, the end `g_Abmap + (5n + 0x101)
+  * 8`), skipping those without a kind (`+6` = `0xffff`) or refused by
+  `filter(node)` (cdecl, none when 0). The offset is `(f32)(x - pos.x)`,
+  `(f32)(y - pos.y)` from the node's `i16` position. Its length goes
+  through the emulated VU0 as the PS2 code did: `vf10` (`0x00c8f830`)
+  gets `(x², x² + y², x² + y² + 0², 1)` in place, `g_Vu0_Q` =
+  `sqrt|sum|` (`_CIsqrt`), `vf10.x = vf00.x + Q` is the length; the
+  scratch keeps the last node's values.
+  - The nearest: the first node strictly below the best so far (from
+    1e9, `0x00b7b70c`); `*dist` = the best; returns the node or 0.
+  - In a direction: `dot = FFXVu0InnerProduct((dx, dy, 0, 1), dir)` must
+    be above 0.5 and the length above 0; the score `dot / (len * len)`
+    (the square kept at 53 bits) must be strictly above the best (from 0);
+    returns the node or 0.
+
+## Sphere grid panels
+
+`AbmapPadCtrl()` (`0x00a583e0`, name ours, `ffx_pcui::panel`; only
+caller `eiAbmCalc`, which reads no `eax`) drives the open list panel of
+`g_AbmapPad` (`0x01a86108`): panels of `0x340` bytes, the open one's
+index at `+0x2700` (`i16`, negative for none), the handler at `+0x2704`.
+A panel's list: `+0x16` rows shown, `+0x18` cursor, `+0x1a` first shown,
+`+0x1c` the first shown before a page flip, `+0x1e` count, `+0x23`
+shown, `+0x24` flags, `+0x26` scroll animation (`u16`; the panel takes
+no input while its low byte is set), entries of 12 bytes at `+0x40`
+(byte `+4` locked).
+
+- Repeating buttons (`g_Abmap + 0x11674`): when the list is longer than
+  a page, bit 0 flips a page up while the first shown is above 0
+  (first shown less a page, at least 0; the cursor moves as much;
+  animation 3), else bit 1 a page down while a page fits below
+  (`first < count - page`; first plus a page, at most `count - page`;
+  animation 4); a flip ends the frame. Otherwise `0x1000` moves the
+  cursor up (sound only when above 0; at least 0; scrolls with animation
+  1), else `0x4000` down (sound only when below `count - 1`; at most
+  `count - 1`; scrolls with animation 2 when `first + page <= cursor`).
+- Pressed buttons (`g_Abmap + 0x1166e`): `0x20` chooses: a locked entry
+  buzzes (`0x80000003`); else the cursor sound unless flag 8, the panel
+  hidden (`+0x23` = 0), none open (`+0x2700` = -1) and
+  `handler(panel, entry, cursor, 1)`. Else `0x40` cancels: flag 4 puts
+  the cursor on entry 1 (cursor sound), else flag 2 closes the same way
+  with `0x80000004` and `handler(..., 0)`, else the buzz.
+- Sounds are `SndSepPlaySimple(0x80000001)` unless stated. `i16`
+  arithmetic wraps; the comparisons are signed, some in 32 bits as the
+  original does them.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not
