@@ -15216,9 +15216,11 @@
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
 0x018716a8 label    g_TkMenuScissorScales     # 2 x f32 a, b: in XYUV mode BeginScissor_XYUV scales x1 from x0 by b / a, clips, scales back by a / b
 0x018716c0 label    g_TOPktBuff               # 3 words: TOSetPktBuffAdrs(base, a, b) stores base, base + a (+4), base + b (+8)
+0x018716cc label    g_TOPktCursor             # the packet write cursor: the TOAdp* cursor forms and 0x008ff020 write at it; TOCtrlPkt kicks once it reaches g_TOPktBuff[2]; name ours
 0x018716d0 label    g_TkMenuScissorOn         # 1: BeginScissor_XYUV clips; cleared by CloseScissor
 0x018716d4 label    g_TkMenuScissorXyuv       # u8, BeginScissor_XYUV's scaled mode; cleared by CloseScissor
 0x018716f0 label    g_InvokedFromSelectCursor # SetInvokedFromSelectCursor
+0x018716f4 label    g_TOPktDmaChannel         # TODrawKick passes it to sceDmaSend with g_TOPktBuff[0]; name ours
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
 0x018763e8 label    g_FFXToAlbhedTbl          # the Al Bhed character table (TOGetFFXToAlbhedTblAdrs)
 0x01876da8 label    g_Windows                 # TO window pointers: +0 in use (i16), +4 type, +8 state, +0x60 handler per state, +0x74 current handler (TOGetWindowType/Status, TOCloseWindow, TOControlWindow)

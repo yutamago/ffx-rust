@@ -14633,6 +14633,68 @@ fn round26_cross_text_matches_the_original_on_the_snapshot() {
 /// `TOGetImageWH` and the scissor from cells, and a `graphicDrawUIElement`
 /// stand-in logging the record.
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+/// `TODrawKick` and `TOCtrlPkt` over logging stand-ins for the PS2 layer's
+/// `FlushCache`, `sceDmaSend` and `sceGsSyncPath`.
+fn round27_kick(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use pkt::bridge as p;
+    let log = alloc(a, b, 0x100);
+    let cursor = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x40, &logger_args(cursor, 1));
+    redirect(a, b, 0x0062_f4c0, s);
+    let s = stand_in8(a, b, 0x80, &logger_args(cursor, 2));
+    redirect(a, b, 0x0062_f710, s);
+    let s = stand_in8(a, b, 0xc0, &logger(cursor, 0x5a5a_0000));
+    redirect(a, b, 0x0062_f880, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        Mem::write(a, log, [0u32; 8]);
+        Mem::write(b, log, [0u32; 8]);
+        let start = rng.next();
+        let near = |rng: &mut Xorshift| match rng.next() % 4 {
+            0 => rng.next(),
+            _ => start.wrapping_add(rng.next() % 0x60).wrapping_sub(0x10),
+        };
+        let (pos, limit) = (near(rng), near(rng));
+        set(a, b, p::PKT_BUFF, [start, rng.next(), limit]);
+        set(a, b, p::PACKET_CURSOR, pos);
+        set(a, b, p::DMA_CHANNEL, rng.next());
+        set(
+            a,
+            b,
+            p::ADD_PKT,
+            [0, 1, rng.next()][(rng.next() % 3) as usize],
+        );
+        if k % 2 == 0 {
+            let want = eax(a, 0x008f_5bc0, &[]);
+            assert_eq!(p::draw_kick(b, call), want, "kick {k}");
+        } else {
+            let want = eax(a, 0x008f_3a30, &[]);
+            if let Some(got) = p::ctrl_pkt(b, call) {
+                assert_eq!(got, want, "ctrl {k}");
+            }
+        }
+        same_memory(&format!("kick {k}"), a, b);
+    }
+}
+
+#[test]
+fn round27_kick_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round27_kick(&mut a, &mut b, &mut Xorshift(0x4027_0011));
+}
+
+#[test]
+fn round27_kick_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round27_kick(&mut a, &mut b, &mut Xorshift(0x4027_0012));
+}
+
+#[allow(clippy::cast_precision_loss)] // small exact test values
 fn round26_cross_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let log = alloc(a, b, 0x1000);

@@ -1185,6 +1185,15 @@ ported! {
     TOSetPktBuffAdrs @ 0x0090_47c0 => extern "C" fn to_set_pkt_buff_adrs(base: u32, a: u32, b: u32) {
         pkt::bridge::set_pkt_buff(&mut mem(), base, a, b);
     }
+    /// `TODrawKick()`: sends the packet buffer through the PS2 stand-ins.
+    TODrawKick @ 0x008f_5bc0 => extern "C" fn to_draw_kick() -> u32 {
+        pkt::bridge::draw_kick(&mut mem(), call_sym)
+    }
+    /// `TOCtrlPkt()`. Void: where the original leaves `eax` set, no caller
+    /// reads it (`tools/check-clobber.py`).
+    TOCtrlPkt @ 0x008f_3a30 => extern "C" fn to_ctrl_pkt() {
+        let _ = pkt::bridge::ctrl_pkt(&mut mem(), call_sym);
+    }
     /// `TOGetScreenWH(&w, &h)`.
     TOGetScreenWH @ 0x008f_a900 => extern "C" fn to_get_screen_wh(w: u32, h: u32) {
         pkt::bridge::screen_wh(&mut mem(), w, h);

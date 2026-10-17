@@ -708,3 +708,20 @@ the pulsing strip in grey, with alpha `trunc(cos(time × 0x00b2c5c8) × 32 +
 
 All of these draw through `graphicDrawUIElement`. The record words the
 originals leave unset (UVs of untextured boxes) are zero in the port.
+
+## Packet buffer kicks
+
+`g_TOPktBuff` (`0x018716c0`) holds the buffer's start, a second address
+and the limit, all set by `TOSetPktBuffAdrs`; the write cursor is
+`g_TOPktCursor` (`0x018716cc`).
+
+- `TODrawKick` (`0x008f5bc0`) sends the buffer once the written part
+  (cursor less start, rounded down to 16 and compared signed) exceeds 0x20
+  bytes: `FlushCache(0)`, `sceGsSyncPath(0, 0)`,
+  `sceDmaSend(g_TOPktDmaChannel, start)`, `sceGsSyncPath(0, 0)`. On PC
+  these PS2 stand-ins are empty (`ret`, or `xor eax, eax; ret`), so the
+  kick does nothing visible; its `eax` is 0 after a send and the rounded
+  size otherwise.
+- `TOCtrlPkt` (`0x008f3a30`) jumps to `TODrawKick` while `g_TOAddPkt` is
+  set and the cursor has reached the limit (unsigned). It leaves `eax` as
+  the caller had it when packets are not added, and no caller reads it.
