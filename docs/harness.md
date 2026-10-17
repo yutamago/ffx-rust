@@ -205,6 +205,9 @@ target/release/game-slot status              # holder and queue
 target/release/game-slot run -- <command>    # waits, runs it in the slot
 ```
 
+Test games play their sound at 5% master volume (`FFX_TEST_VOLUME`,
+0-100), set in the sandbox's `GameSetting.ini`, never the user's.
+
 `tools/run-game.sh` refuses to start a game while someone else holds the
 slot. A test stopped mid-run leaves its game running; the next
 `Game::launch` in the slot ends it with the harness's `quit` (only games
