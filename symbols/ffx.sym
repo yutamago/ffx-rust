@@ -8241,6 +8241,7 @@
 0x00860990 function Msg_ChoicePoll             # (worker, args, handlers): as Native_MsgSelect_Poll, plus status 1: handlers[0x008b8010(window)](choice); ported in native_msg
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
+0x00860aa0 function Msg_PollClose             # (i): 1 when AtelGetMesWinWork(i) +0x14 is 0 or 4; state 2 with TOGetMessageStatus(i) == 3 closes it (Msg_CloseWindow) when AtelGetCurCtrlWork() bit 2 is set (cleared); else 0; callers 0x00860e40, 0x00860f30; name ours
 0x00860f20 function setMegasAdding            # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_MegasAdding = v (getMegasAdding 0x00860a90)
 0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0; ported in helpers (script round 13)
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
@@ -9047,18 +9048,21 @@
 0x00889b00 function Math_StoreMax             # (dst, src, v) *dst = v < *src ? *src : v (x87); own name
 0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
 0x00889b80 function TkDegtoRad                # fh v3:exact 0x00889af0
+0x00889bb0 function Math_SegmentsCross       # (a, b, c, d) xz at +0/+8: 0 unless Math_Det3Points(a,b,c)*(a,b,d) <= 0 and (c,d,a)*(c,d,b) <= 0 (products at 53 bits, NaN fails); then 1 when det(a,b,d) > 0 else -1; name ours
 0x00889e70 function CIatan2                   # (y, x) _CIatan2 (y in ST1, x in ST0) stored to a float; own name beside CIcos/CIsin/CItan
 0x00889e90 function Math_CrossHeightGap       # (p1, p2, p3, p4) -> ST0: |y1 - y2| where segments p1-p2 and p3-p4 cross in x-z, -1 when parallel; each step a float; after FUN_00889bb0 (the crossing test); name ours
+0x0088a3a0 function Math_PolarToVector       # (out, r, yaw, pitch): pitch Math_WrapAngle'd, beyond +-pi/2 turned back (pi - p or p + pi) with yaw + pi; yaw wrapped; out = (cos(yaw) h, sin(p) r, sin(yaw) h, 1) with h = cos(p) r (CIsin/CIcos, each a float); name ours
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320
 0x0088b3e0 function CIcos                     # fh v3:bsim1.00 0x0088b350 +_CIcos
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
-0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
+0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz): yaw Math_Atan2XZ on XZ, pitch Math_Atan2XZ(0, fy, sqrt(dx^2+dz^2), ty); eax = yaw
 0x0088b570 function Math_AngleStep            # (cur, target, step) -> ST0: cur turned toward target by at most step the short way (Math_WrapAngle, Math_MinAbs), wrapped; the target itself when closer; name ours
 0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
+0x0088b780 function Math_FacingWithin         # (heading, tol, x0, z0, x1, z1) -> eax 1 when Math_MinAbs(Math_WrapAngle(Math_Atan2XZ(x0, z0, x1, z1) - heading), tol) < tol; the talk-angle check (Native_SetTalkAngle, Native_1015); name ours
 0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
@@ -9432,6 +9436,7 @@
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aa470 function MenuMain_ResetAllWindows  # the 32 window records (0x98 bytes from 0x01840900) reset; own name
 0x008aa4b0 function MenuMain_ResetWindow      # (window) defaults: callbacks/state 0, ids +0x2c/+0x2e = -1, +0x34 = 0x01000000, +0x3e = 0x0101; own name
+0x008aa610 function MenuMain_BusyMask         # (): g_TkMenuMainActiveMask | bit 31 when TkCdReadSync(1); when that is 0, 0x80000000 if AtelIsCallbackQue() == 1; name ours
 0x008aaab0 function TkMenuMainRegistMenu      # (slot 0..24, window): slot table 0x01840888, clears +0x18/+0x1c, calls +8(window, menu mode); Switch name, alphabetical slot
 0x008aab00 function TkMenuMainRegistWindow    # fh switch:bsim1.00+call.cs 0x71004ba0f0 cdecl
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
@@ -9771,7 +9776,7 @@
 0x008c0a20 function TkMn2DrawGillPlate           # layout+callees: sorts between TkMn2DrawCrossRect and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c7fc0 TkMn2DrawGillPlate's (similarity 1.00: TOGetFFXLang, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyEdgeDigit2, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008c0be0 function TkMn2DrawInitPacket       # (): g_TkMn2DrawY from the menu packet buffer address (rewound by half of TOMenuGetPacketBuffSize when unchanged), font shade 0x80; the Switch's TkMn2DrawInitPacket calls TOMenuGetPacketBuffAdrs and TOMenuGetPacketBuffSize and sorts between TkMn2DrawCross* and TkMn2DrawKickPacket, as here; 15 callers (the menu draw roots)
 0x008c0c40 function TkMn2DrawKickPacket          # layout+callees: sorts between TkMn2DrawInitPacket and TkMn2DrawKickPacketBody, and its named callees match the Switch 0x71004c5650 TkMn2DrawKickPacket's (similarity 1.00: TkMn2DrawKickPacketBody); symbols from Fahrenheit's server export
-0x008c0c50 function TkMn2DrawKickPacketBody   # (sync): records the high-water marks of the menu draw cursor (g_TkMn2DrawY), clears the scissor and, when asked, waits for VU1 (TkVU1SyncPath); the Switch's TkMn2DrawKickPacketBody (scissor, TkVU1SyncPath, dbgPrintf) is called by TkMn2DrawKickPacket and TkMn2DrawKickSyncPacket and sorts between them, as here; was TkMn2DrawFlush_008c0c50
+0x008c0c50 function TkMn2DrawKickPacketBody   # (clear): records the high-water marks of the menu draw cursor (0x0186a248 bytes used since 0x0186a244, g_TkMn2Work the cursor), clears the scissor when clear is set, steps the cursor 16, TkVU1SyncPath, dbgPrintf at >= 0x02000000, then TkMn2DrawInitPacket (tail); the Switch's TkMn2DrawKickPacketBody (scissor, TkVU1SyncPath, dbgPrintf) is called by TkMn2DrawKickPacket and TkMn2DrawKickSyncPacket and sorts between them, as here; was TkMn2DrawFlush_008c0c50
 0x008c0cc0 function TkMn2DrawKickSyncPacket   # fh call.cs cdecl
 0x008c0cd0 function TkMn2DrawKickSyncPacket2  # TkMn2DrawKickPacketBody + TkVU1SyncPath; the Switch's TkMn2DrawKickSyncPacket2 sorts right after TkMn2DrawKickSyncPacket, as here
 0x008c0dd0 function MenuMn2_StepDrawY80       # g_TkMn2DrawY = MenuMn2_Plus80(y + 16); own name
@@ -9787,6 +9792,7 @@
 0x008c10b0 function TkMn2DrawMesLR               # layout: alphabetical run between TkMn2DrawMesL and TkMn2DrawMesM (1 unnamed in the gap); Switch 0x71004c64b0 TkMn2DrawMesLR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c1100 function TkMn2DrawMesM             # fh switch:bsim1.00 0x71004c5fb0
 0x008c1150 function TkMn2DrawMesMR            # fh switch:bsim1.00 0x71004c6040
+0x008c11b0 function MenuMn2_EmitPacket        # (a, b, kind): g_TkMn2DrawY += 16, then g_TkMn2DrawY = 0x008f1b50(g_TkMn2DrawY, a, b, kind) (the packet's end; returned); caller 0x008c7c30; name ours
 0x008c1280 function TkMn2DrawRect                # layout+callees: sorts between TkMn2DrawMesMR and TkMn2DrawScissorClear, and its named callees match the Switch 0x71004c5340 TkMn2DrawRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x008c1370 function TkMn2DrawScissorClear     # fh switch:bsim1.00 0x71004c5480
 0x008c1390 function TkMn2DrawScissorRect      # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMn2DrawScissorClear
@@ -9853,11 +9859,15 @@
 0x008c33f0 function NameInputChrChange           # callees: its named callees match the Switch 0x71004da190 NameInputChrChange's (similarity 0.75: MsGetSaveConfigEnglish, TOGetFFXLang, TOGetSaveChrName, TOMenuGetNameMes, TkMn2GetMenuMode); symbols from Fahrenheit's server export
 0x008c3550 function MenuItem_IsUsable2        # (window, list) lists 4 and 3-with-target use the key-item flag 0x0186a280; own name
 0x008c4250 function TkMenuOpenNameEntryWindow    # callees: its named callees match the Switch 0x71004d8350 TkMenuOpenNameEntryWindow's (similarity 0.73: MsGetSaveConfigEnglish, PasswordTextRead, TMn2SetStatusBGDiff, TOGetFFXLang, TOGetSaveChrName); symbols from Fahrenheit's server export
+0x008c43f0 function MenuNameEntry_OpenCharWindow # (chr): TkMenuMainAllocWindow with +8 0x008c3530, +0xc 0x008c3ce0, +0x10 0x008c3ec0, +0x14 0x008c44b0, +0x3e = 3, +0x58 chr; TkMenuMainRegistWindow; then 0x023cc3c4/c0/bc = chr, 0x023cc3c8 = 0; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
+0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
+0x008c5050 function MenuNameEntry_LoadLayout  # (): the name entry's layout: TkMn2GetCommonPlate into 0x0186a334 (rect_fchplt, 0xda/0xdb), 0x0186a34c (rect_nmfwnd), 0x0186a364 (rect_nmnplt); TkMn2SeqGetNum num_fchplt/num_name1/num_name2 into 0x0186a304/31c/320, col_nmline into 0x0186a314; TkMn2SeqGetPos pos_nface .. pos_ace; TkMn2SeqGetRect rect_nmline into 0x0186a308; name ours
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5280 function Menu_ParseItemKeys        # (s): splits a key string into the 32 4-byte entries at 0x0186a280 (g_TkMenuItemKeyUse): kind 4 takes a second byte, values 6..0x2f an argument byte; the rest cleared; name ours
+0x008c5390 function MenuItem_KeysMatch        # (t) -> 1 when g_TkMenuItemKeyUse (Menu_ParseItemKeys' entries) spells TOMenuGetNameMes(u16 0x00c5a0d8[4t]) token by token (6..0x2f + arg, 4 + byte (+ byte when <= 0x2f), others alone; each entry then 0) up to the string's end and an entry starting 0; 0 for t < 0 or an empty string; callers pass g_TkMenuItemTarget; name ours
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
 0x008c5450 function TkMenuCtrlItem            # fh v3:exact 0x008c5420
 0x008c60b0 function TkMenuCtrlAbility         # fh v3:exact 0x008c6080
@@ -9944,6 +9954,7 @@
 0x008ccb60 function MenuSummon_StatusWindowCtrl_008ccb60 # the aeon status window's control (+0xc of MenuSummon_OpenStatusWindow's window): TkMn2StepStatusBG, states at +0x28, previous/next aeon (TkMenuSetPrevSummon / TkMenuSetNextSummon), MenuStatus_CloseWindow; own name
 0x008cd140 function MenuSummon_OpenStatusWindow_008cd140 # TkMenuMainAllocWindow into g_TkMenuSummonStatusWindow with ctrl MenuSummon_StatusWindowCtrl, the current aeon's TkMenuGetCurrentSummonPos in 0x023cc3bc..c4, TkMn2InitStatusBG; caller TkMenuCtrlSummon; own name
 0x008cd1f0 function MenuSummon_RestartWindow  # aeon window: +0x45 = 0, +0x28 = 0 or 2 by 0x0186a5fc, then TkMn2InitStatusBG; own name
+0x008cd320 function MenuSummon_GrowInfo      # (stat, chr, *cost, *gain): *cost = -1, *gain = 0; for stat < 10 *cost = u16 +4 of MenuSummon_GrowEntry(stat) and, while MenuSummon_GetStat(chr's record, desc 0x00c5a608 + 0x1c stat, max) < desc +0x14, *gain = Math_Clamp1To99(desc +0x18 (chr, max)) and 1; else 0; relies on MenuSummon_GetStat leaving edx (the descriptor); name ours
 0x008cd430 function TkMn2CloseSummonGrowWindow # (): close request for 0x0186a5a8 (opened by TkMn2OpenSummonGrowWindow), kept
 0x008cd440 function TkMenuSummonCloseWindow2  # (): close request for 0x0186a5ac (TkMenuCtrlSummon's), forget it
 0x008cd460 function MenuSummon_GrowWindowCtrl_008cd460 # the aeon grow window's control (+0xc of TkMn2OpenSummonGrowWindow's window): states in 0x0186a610, TkMn2StepStatusBG, list ctrl, help message; own name
@@ -9979,13 +9990,16 @@
 0x008d2660 function TMn2SetStatusBGDiff       # (step): i16 0x0186a9fc; Switch symbol name (BSim), pairs with TkMn2InitStatusBG
 0x008d2680 function MenuStatus_CloseWindow    # (i) close request for 0x0186a820[i], +0x54 = -0xaa, forget; own name
 0x008d26d0 function TkMn2WindowStepFade       # (window) -> window: with a step (+0x54), +0x52 += it, then at most 0x1000, at least 0
+0x008d2b40 function MenuSummon_BuildCommandList # (chr): u16 ids into 0x0186aa04 from MsMenuStatusNum(0, local)'s lists (TkMenuGetCommandMax/Offset (list, 1, chr, g)) that chr has (MsGetSaveCommand): groups 1, 3, 4 (first match appends the group's FIRST id), 5 counted in u16 0x0186aa24, then group 2 in 0x0186aa28 after them; callers MenuSummon_StatusWindowCtrl, MenuSummon_OpenStatusWindow; name ours
 0x008d2d80 function TkMenuGetCommandMax       # fh v3:exact 0x008d2d50
 0x008d2dc0 function TkMenuGetCommandOffset    # fh v3:exact 0x008d2d90
 0x008d2e10 function TkMenuGetDispCommand         # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e5df0 TkMenuGetDispCommand's (similarity 0.73: MsGetSaveCommand, MsGetSaveCommandMenuPanel, MsGetSavePlayerPtr, MsGetSavePlyJoin, MsGetSaveWeapon); symbols from Fahrenheit's server export
 0x008d30c0 function MenuMn2_Ease              # (t, dir) Math_CosLookup(t) & 0xffff, mirrored for dir < 0; own name
+0x008d3140 function MenuStatus_OpenWindow     # (a, index, b, c): TkMenuMainAllocWindow into g_TkMenuStatusWindows[index]: +8 0x008d2670, +0xc TkMn2WindowStepFade, +0x10 0x008d2790, +0x14 TkMenuWindowFadedOut, +0x3e index + 3, +0x5c c, +0x64 a, +0x58 b, +0x60 index, +0x68 kind (index 0..4 -> 1,2,3,5,4, else 0), +0x54 = 0xaa; TkMenuMainRegistWindow; returns it; name ours
 0x008d3200 function TkMenuWindowFadedOut      # (window) -> whether the fade +0x52 is 0
 0x008d3220 function MenuStatus_OffsetRect     # (dx, dy, out, rect, sized) 24-byte rect copy moved; size from 0x0186a8a4 when sized; own name
 0x008d3280 function TkMn2StepStatusBG         # (): i16 0x0186aa00 += step (0x0186a9fc), kept in 0..0x1000
+0x008d34a0 function MenuSummon_DrawFaceSlide  # (x, y, w, h, t, cur, next): TkMn2DrawCrossCharFace of aeon cur (TkMenuGetSummonFromIndex) when TOMenuGetFirstReadEndFlag; with t != 0 aeon next's face at x + 0x0186a9ec*t/4096 (ftol'd) under font shade alpha (0x1000-|t|)>>5 (Save/Set/RestoreFontShade); name ours
 0x008d3690 function TkMn2DrawCrossLimitParam     # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e31c0 TkMn2DrawCrossLimitParam's (similarity 1.00: TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2, graphicGetTime, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008d3c40 function TkMn2DrawLimitParam          # layout+callees: sorts between TkMn2DrawCrossLimitParam and TkMn2DrawOverDrive, and its named callees match the Switch 0x71004e30c0 TkMn2DrawLimitParam's (similarity 1.00: TkMn2DrawRect); symbols from Fahrenheit's server export
 0x008d3d70 function TkMn2DrawOverDrive           # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e3b50 TkMn2DrawOverDrive's (similarity 0.83: TODrawMenuPlateXYWHType, TOMkpShapeXYWHUVC2, TkMenuGetLimit, TkMenuGetLimitMax, TkMenuMenu1Mes); symbols from Fahrenheit's server export
@@ -10000,6 +10014,7 @@
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
+0x008d56f0 function MenuKaizou_WeaponByte4    # (w): MsGetSaveWeapon(u16 [0x0186aa38][i16 w+0x48], &local): -1 when its byte +2 is 0, else its byte +4; name ours
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
 0x008d5750 function MenuEquip_IsSelectable    # (id, any): MsGetSaveWeapon(id, &unused) slot: 0 when empty (+2) or flag 2 (+3); 1 with any; 0 for flags 4/8; else MenuList_IsEmptySlot; name ours
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it
@@ -10014,7 +10029,9 @@
 0x008d7630 function MenuWShop_CloseSubWindow3 # close 0x0186aafc; own name
 0x008d7650 function MenuWShop_CloseSubWindow1 # close 0x0186aaf4; own name
 0x008d7670 function MenuWShop_CloseSubWindow4 # close 0x0186ab00; own name
+0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
+0x008d85d0 function MenuWShop_CanAfford      # (e): 0 while 0x0186ab14 is 0, else MenuShop_WeaponPrice(e) <= MsGetGIL() (signed); called by the weapon shop's buy step; name ours
 0x008d9170 function MenuWShop_GetRecord       # (id) TkMn2GetExcelData(id & 0xfff, 0x0186abac); own name
 0x008d9190 function TkMn2GetWShopPos             # str-match switch: only user of 23 string(s) held once by both builds, e.g. 'rect_wshscrol'; Switch 0x71004e91d0 TkMn2GetWShopPos (symbols from Fahrenheit's server export)
 0x008d9370 function MenuShop_WeaponPrice      # (entry): AbmapScaledLevelValue(sum of the abilities' TkMn2GetExcelData(id, [0x0186aba4]) first words, slots, empty slots) * shop ratio (0x01326b6c) / 100, at least 1; name ours
@@ -10031,8 +10048,10 @@
 0x008d9e20 function TkMenuCtrlSelFileWindow      # callees: its named callees match the Switch 0x71004db0b0 TkMenuCtrlSelFileWindow's (similarity 0.67: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
+0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
 0x008db080 function TkMn2GetIShopPos             # str-match switch: only user of 38 string(s) held once by both builds, e.g. 'r_ashmojiplt1'; Switch 0x71004c90d0 TkMn2GetIShopPos (symbols from Fahrenheit's server export)
 0x008db3b0 function MenuShop_Price            # (id): TkMn2GetExcelData(id & 0xfff, [0x0186ac28]) first word * shop ratio (0x01326b6c) / 100, at least 1; name ours
+0x008db400 function MenuShop_SellPrice        # (id): AbmapQuarterOrOne(g_TkMenuWShopList, first word of TkMn2GetExcelData(id & 0xfff, [0x0186ac28])); name ours
 0x008db440 function MenuWShop_CountSlots      # 0x0186ac24 = ids before the first 0/0xff among 16 of the shop record; own name
 0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0
 0x008db790 function SetFieldConst1c_008db790     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours
