@@ -2457,6 +2457,7 @@ fn control_synthetic() {
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
     envelope_cases(&mut a, &mut b, &mut rng, 300);
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2479,6 +2480,7 @@ fn control_snapshot() {
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
     envelope_cases(&mut a, &mut b, &mut rng, 300);
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3872,6 +3874,74 @@ fn packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rou
             |o| {
                 e::calc_envelope_opt(o, lists, out, m);
             },
+        );
+    }
+}
+
+/// Source-form vertex lists (`sg_calcenvelopeW_asm`): rigid 8-byte
+/// entries after a `u16` count and 2 bytes, then two weighted lists of
+/// 10-byte entries after a `u16` count; indices below 16.
+fn source_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let mut bytes: Vec<u8> = vec![];
+    let w16 = |v: &mut Vec<u8>, x: u32| v.extend(u16::try_from(x & 0xffff).unwrap().to_le_bytes());
+    let n = rng.below(5);
+    w16(&mut bytes, n);
+    w16(&mut bytes, rng.next());
+    for _ in 0..n {
+        for _ in 0..3 {
+            w16(&mut bytes, rng.next());
+        }
+        w16(&mut bytes, rng.below(16));
+    }
+    for _ in 0..2 {
+        let n = rng.below(5);
+        w16(&mut bytes, n);
+        for _ in 0..n {
+            for _ in 0..3 {
+                w16(&mut bytes, rng.next());
+            }
+            w16(&mut bytes, rng.below(16));
+            w16(&mut bytes, rng.next());
+        }
+    }
+    let lists = alloc(a, b, bytes.len() + 4);
+    a.write(lists, &bytes).unwrap();
+    b.write(lists, &bytes).unwrap();
+    lists
+}
+
+fn source_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let (cursor, list) = (a.rebase(ALLOC_CURSOR), a.rebase(ALLOC_LIST));
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 16);
+        for k in 0..64 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = source_lists(a, b, rng);
+        let mask = if rng.below(3) == 0 {
+            0
+        } else {
+            let mk = alloc(a, b, 16);
+            for k in 0..16 {
+                put(a, b, mk + k, u8::from(rng.below(3) != 0));
+            }
+            mk
+        };
+        let dst = block(a, b, rng, 0x200);
+        put(a, b, list, dst);
+        put(a, b, cursor, list);
+        twin(
+            "sg_calcenvelopeW_asm",
+            a,
+            b,
+            0x006e_d9e0,
+            &[lists, out, mask, m],
+            |o| e::calc_envelope_w(&mut H(o), lists, out, mask, m),
         );
     }
 }
