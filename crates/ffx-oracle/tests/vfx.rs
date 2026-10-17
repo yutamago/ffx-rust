@@ -10249,3 +10249,46 @@ fn hash_u_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn node_requeue_all_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_9f60);
+        let (set, nodes, owners) = (p.alloc(0x100), p.alloc(0x40 * 8), p.alloc(0x100));
+        for _ in 0..2000 {
+            p.fill(set, 0x100, &mut rng);
+            p.fill(nodes, 0x200, &mut rng);
+            p.fill(owners, 0x100, &mut rng);
+            // two owners, their lists (head at +0x48) empty or one node
+            for o in [owners, owners + 0x80] {
+                let h = o + 0x48;
+                let (a, b) = if rng.chance(50) {
+                    (h, h)
+                } else {
+                    let d = nodes + 0x40 * 7;
+                    (d, d)
+                };
+                p.set(h + 0x1c, a);
+                p.set(h + 0x20, b);
+            }
+            // list 2: the head at set + 0x80 and k nodes, +0x1c onward
+            let head = set + 0x80;
+            let k = rng.below(7);
+            let nodes_in: Vec<u32> = std::iter::once(head)
+                .chain((0..k).map(|i| nodes + 0x40 * i))
+                .collect();
+            for (i, &n) in nodes_in.iter().enumerate() {
+                let next = nodes_in[(i + 1) % nodes_in.len()];
+                let prev = nodes_in[(i + nodes_in.len() - 1) % nodes_in.len()];
+                p.set(n + 0x1c, next);
+                p.set(n + 0x20, prev);
+                if n != head {
+                    p.set(n + 0x18, rng.pick(&[owners, owners + 0x80]));
+                }
+            }
+            p.check("0x00a39f60", 0x00a3_9f60, &[set], |o| {
+                Some(small::bridge::op_node_requeue_all(o, set))
+            });
+        }
+    }
+}

@@ -300,6 +300,13 @@ pub mod bridge {
         if f & 0xf000_0000 != 0x2000_0000 {
             return f & 0xf000_0000;
         }
+        node_to_owner(mem, n)
+    }
+
+    /// `n` out of its list and in at the front of its owner's list (the
+    /// head `[n +0x18] +0x48`), in state 1; returns the new state word.
+    fn node_to_owner(mem: &mut impl Mem, n: u32) -> u32 {
+        let at = |o: u32| n.wrapping_add(o);
         let next: u32 = mem.read(at(0x20));
         let prev: u32 = mem.read(at(0x1c));
         let owner: u32 = mem.read(at(0x18));
@@ -318,6 +325,21 @@ pub mod bridge {
         let v = (f & 0x0fff_ffff) | 0x1000_0000;
         mem.write(at(0x30), v);
         v
+    }
+
+    /// `op_node_requeue_all_00a39f60(set)` (`0x00a39f60`): every node of
+    /// the set's list 2 (the head at `set + 0x80`, first node at `+0x1c`)
+    /// moves to the front of its owner's list in state 1, as
+    /// [`op_node_requeue`] moves one. Returns the head, as left in `eax`.
+    pub fn op_node_requeue_all(mem: &mut impl Mem, set: u32) -> u32 {
+        let head = set.wrapping_add(0x80);
+        loop {
+            let n: u32 = mem.read(head.wrapping_add(0x1c));
+            if n == head {
+                return head;
+            }
+            node_to_owner(mem, n);
+        }
     }
 
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)

@@ -1523,6 +1523,10 @@ ported! {
     TreeNext_0069ebd0 @ 0x0069_ebd0 => extern "thiscall" fn tree_next_0069ebd0(it: u32) -> u32 {
         tree::bridge::opus_tree_next(&mut mem(), it)
     }
+    /// `op_node_requeue_all_00a39f60(set)`: returns `set + 0x80`.
+    op_node_requeue_all_00a39f60 @ 0x00a3_9f60 => extern "C" fn op_node_requeue_all(set: u32) -> u32 {
+        small::bridge::op_node_requeue_all(&mut mem(), set)
+    }
     /// `op_node_requeue_00a39f00(n)`.
     op_node_requeue_00a39f00 @ 0x00a3_9f00 => extern "C" fn op_node_requeue(n: u32) -> u32 {
         small::bridge::op_node_requeue(&mut mem(), n)
