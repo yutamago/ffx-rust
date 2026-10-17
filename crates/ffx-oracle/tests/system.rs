@@ -13109,7 +13109,13 @@ fn round22_layout_matches_the_original_on_the_snapshot() {
 /// Round 22's battle glyph quads with `TOGetImageWH` from cells, the
 /// original texture names and scissor, and a `graphicFontDraw` stand-in
 /// that logs the record words the writers set and its arguments.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    clippy::similar_names
+)]
 fn round22_quads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let g = |a: &Oracle, x: u32| a.rebase(x);
@@ -13158,7 +13164,7 @@ fn round22_quads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
     };
     let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
-    for k in 0..2000u32 {
+    for _ in 0..2000u32 {
         put(a, b, cursor, log);
         put(
             a,
@@ -13296,7 +13302,11 @@ fn round22_icons_match_the_original_on_the_snapshot() {
 
 /// Round 22's message word count, size and centring over stand-ins for
 /// the word count and message size.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 fn round22_message(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let log = alloc(a, b, 0x800);
@@ -13401,6 +13411,7 @@ fn round22_message_matches_the_original_on_the_snapshot() {
 
 /// Round 22's message window texts over cells for the language swap,
 /// English and bit test, with a logging window function.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 fn round22_window_texts(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let g = |a: &Oracle, x: u32| a.rebase(x);
