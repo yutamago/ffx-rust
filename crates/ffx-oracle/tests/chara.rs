@@ -8242,3 +8242,62 @@ fn round12g_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round12h_matches_the_original() {
+    for mut t in twins() {
+        round12h_on(&mut t);
+    }
+}
+
+fn round12h_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0012_b0b0);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let clear = fk.fake(t, 0x0062_f4e0, 1, 2);
+    let arc = fk.fake(t, 0x0082_5ee0, 2, 2);
+    let size = fk.fake(t, 0x0083_c050, 3, 1);
+    let name = fk.fake(t, 0x0083_8060, 4, 1);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 5, 0x40);
+    let set_str = fk.fake(t, 0x0083_c580, 6, 3);
+    let set_type = fk.fake(t, 0x0083_c590, 7, 2);
+    let copy = fk.fake(t, 0x0094_9256, 8, 3);
+    let blks = t.a.rebase(0x023c_8d00);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for r in [clear, arc, set_str, set_type, copy] {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(size, rng.next() % 0x1000);
+        let s = t.alloc(16);
+        t.put(s, format!("c{:03}\0", rng.next() % 1000).as_bytes());
+        t.put_u32(name, s);
+        t.put_u32(heap, 0x1100_0000 + 0x1000 * round);
+        let free = rng.next() % 40;
+        for k in 0..40 {
+            let b = blks + 0x12c * k;
+            t.put_u32(b, if k == free { u32::MAX } else { k });
+        }
+        let b = blks + 0x12c * free;
+        t.put_u32(b + 0x70, rng.next());
+        t.put_u32(
+            b + 0x120,
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                0x2000_0000 + rng.next() % 0x100
+            },
+        );
+        let (id, data) = (rng.next() % 0x10000, 0x2000_0100 + rng.next() % 0x100);
+        t.check(
+            &format!("Ch_BlkAllocate {round}"),
+            0x0082_5760,
+            &[id, data],
+            |m| {
+                Res::Int(h::ch_blk_allocate(m, id, data, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+}

@@ -466,6 +466,65 @@ pub mod bridge {
             }
         }
     }
+
+    /// `Ch_CbArcMapping(blk, data)` (`0x00825ee0`), `ch_create_chrname(id)`
+    /// (`0x00838060`), the `sprintf` import slot, `memcpy`'s thunk
+    /// (`0x00949256`), the debug line (`0x023c4000`) and its format
+    /// `"[%s]EffectData"` (`0x00b59320`).
+    pub const CB_ARC_MAPPING: u32 = 0x0082_5ee0;
+    pub const CREATE_CHRNAME: u32 = 0x0083_8060;
+    pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+    pub const MEMCPY_THUNK: u32 = 0x0094_9256;
+    pub const EFFECT_DATA_FORMAT: u32 = 0x00b5_9320;
+
+    /// `Ch_BlkAllocate_00825760(id, data)` (`0x00825760`): the first free
+    /// model block (none: 0, which the original then clears anyway) is
+    /// cleared, marked resident (bit 0 of `+0x70`), takes the id and maps
+    /// the archive (`Ch_CbArcMapping`). Its effect data (`+0x120`, to the
+    /// end of `data`'s heap block) is copied into its own block (`+0x124`,
+    /// size `+0x128`, named `"[<name>]EffectData"`, type 5). Returns the
+    /// block. (`dbgPrintf` calls are left out: it is empty.)
+    pub fn ch_blk_allocate<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        data: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = CHR_BLK.ptr(mem).addr;
+        let blk = (0..40u32)
+            .map(|k| base + 0x12c * k)
+            .find(|&b| mem.read::<u32>(b) == u32::MAX)
+            .unwrap_or(0);
+        call(mem, mem.rebase(MEMCLEAR), &[blk, 0x12c]);
+        let f: u8 = mem.read(blk.wrapping_add(0x70));
+        mem.write(blk.wrapping_add(0x70), f | 1);
+        mem.write(blk, id);
+        call(mem, mem.rebase(CB_ARC_MAPPING), &[blk, data]);
+        let effect: u32 = mem.read(blk.wrapping_add(0x120));
+        if effect == 0 {
+            return blk;
+        }
+        let size = call(mem, mem.rebase(crate::chr::bridge::MEM_GET_SIZE), &[data]);
+        let size = size.wrapping_add(data.wrapping_sub(effect));
+        mem.write(blk.wrapping_add(0x128), size);
+        call(mem, mem.rebase(CREATE_CHRNAME), &[id, size]);
+        let p = call(mem, mem.rebase(USER_MALLOC), &[size]);
+        mem.write(blk.wrapping_add(0x124), p);
+        let name = call(mem, mem.rebase(CREATE_CHRNAME), &[id]);
+        let line = DEBUG_LINE.ptr(mem).addr;
+        let sprintf: u32 = mem.read(mem.rebase(SPRINTF_SLOT));
+        call(mem, sprintf, &[line, mem.rebase(EFFECT_DATA_FORMAT), name]);
+        let p: u32 = mem.read(blk.wrapping_add(0x124));
+        call(mem, mem.rebase(MEM_SET_STR), &[p, line, u32::MAX]);
+        call(mem, mem.rebase(crate::sys::bridge::MEM_SET_TYPE), &[p, 5]);
+        let (to, from, n) = (
+            mem.read::<u32>(blk.wrapping_add(0x124)),
+            mem.read::<u32>(blk.wrapping_add(0x120)),
+            mem.read::<u32>(blk.wrapping_add(0x128)),
+        );
+        call(mem, mem.rebase(MEMCPY_THUNK), &[to, from, n]);
+        blk
+    }
 }
 
 #[cfg(test)]

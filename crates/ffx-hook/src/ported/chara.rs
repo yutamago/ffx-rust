@@ -1863,4 +1863,8 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_cull_by_distance(&mut mem(), chr, scratch(), &mut c)
     }
+    /// `Ch_BlkAllocate_00825760(id, data)`.
+    Ch_BlkAllocate_00825760 @ 0x0082_5760 => extern "C" fn ch_blk_allocate(id: u32, data: u32) -> u32 {
+        h::ch_blk_allocate(&mut mem(), id, data, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
