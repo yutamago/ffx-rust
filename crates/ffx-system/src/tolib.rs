@@ -3956,7 +3956,6 @@ pub mod bridge {
         out
     }
 
-
     /// The input calls of [`get_pad_status`].
     pub trait PadInput<M> {
         /// `inputGetCurTime()`, the value left in ST0.

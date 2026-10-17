@@ -9200,7 +9200,7 @@
 0x008b7c60 function TOGetLineFeedHeight       # fh v3:bsim1.00 0x008b7c10
 0x008b7ca0 function TOGetMessageStatus        # fh v3:bsim1.00 0x008b7c50
 0x008b7cc0 function ReturnConst_008b7cc0 # () -> 0x640064; name ours
-0x008b7cd0 function TOGetPadStatus               # layout+callees: sorts between TOGetMessageStatus and TOGetSaveDicAdrs, and its named callees match the Switch 0x71004f0e50 TOGetPadStatus's (similarity 1.00: TkGetControlerAnalogHist, TkGetControlerHist, inputGetCurTime); symbols from Fahrenheit's server export
+0x008b7cd0 function TOGetPadStatus               # layout+callees: sorts between TOGetMessageStatus and TOGetSaveDicAdrs, and its named callees match the Switch 0x71004f0e50 TOGetPadStatus's (similarity 1.00: TkGetControlerAnalogHist, TkGetControlerHist, inputGetCurTime); symbols from Fahrenheit's server export; (): pad words 0x025d09d2 held/trg/rep and stick-made d-pad set 0x025d09e2 (stick 0x025d09de/df < 0x18 or > 0xe8), refilled only while 0x025d09c1 or g_TOPadGetCtrl; repeat per button (not 0x800/0x100): fresh press repeats, held time 0x025d0a00 += now - 0x025d0a40 (inputGetCurTime), > 0.2333 repeats and restarts at 0.1333 with count 0x025d09c2+k = 4; chosen set copied to the other, g_TOPadGetCtrl = 0
 0x008b7f40 function TOSkipCodesAbove2 # cdecl(p): TOSkipCode while *p > 2; name ours
 0x008b7f60 function TOGetSaveDicAdrs          # fh v3:exact 0x008b7f10
 0x008b7f80 function TOCountLineBreaks_008b7f80 # cdecl(p): 0x10 codes not followed by 0xff, stepping with TOSkipCode; name ours

@@ -9485,3 +9485,91 @@ fn round16_save_name_and_numbers_match_the_original_on_the_snapshot() {
     };
     round16_save_name_and_numbers(&mut a, &mut b, &mut Xorshift(0x4016_0022));
 }
+
+/// Round 16's pad repeat over stand-in controller history and time.
+#[allow(clippy::cast_possible_truncation, clippy::items_after_statements)]
+fn round16_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    // inputGetCurTime: fld dword [cells]; TkGetControlerHist: [cells + 4];
+    // TkGetControlerAnalogHist: byte [cells + 8 + axis]
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf00, &v);
+    redirect(a, b, 0x0063_0c60, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf10, &v);
+    redirect(a, b, 0x0088_8d70, s);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03, 0x0f, 0xb6, 0x80];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf20, &v);
+    redirect(a, b, 0x0088_8c20, s);
+    struct Pad;
+    impl t::PadInput<Oracle> for Pad {
+        fn cur_time(&mut self, m: &mut Oracle) -> f64 {
+            let at = m.rebase(0x0063_0c60);
+            m.call(at, Conv::Cdecl, &[]).unwrap().st0.unwrap()
+        }
+        fn hist(&mut self, m: &mut Oracle, a: u32, b: u32, c: u32) -> u32 {
+            eax(m, 0x0088_8d70, &[a, b, c])
+        }
+        fn analog(&mut self, m: &mut Oracle, a: u32, b: u32, axis: u32, d: u32) -> u32 {
+            eax(m, 0x0088_8c20, &[a, b, axis, d])
+        }
+    }
+    let base = a.rebase(0x025d_09c0);
+    let bytes: Vec<u8> = (0..0xc0).map(|_| rng.next() as u8).collect();
+    a.write(base, &bytes).unwrap();
+    b.write(base, &bytes).unwrap();
+    for k in 0..16u32 {
+        put(a, b, a.rebase(0x025d_0a00) + 4 * k, 0f32);
+        put(a, b, a.rebase(0x025d_0a40) + 4 * k, 0f32);
+    }
+    let mut time = 0f32;
+    let mut held = 0u32;
+    for k in 0..600u32 {
+        time += [0.016f32, 0.033, 0.1, 0.25][(rng.next() % 4) as usize];
+        if rng.next().is_multiple_of(4) {
+            held ^= 1 << (rng.next() % 16);
+        }
+        put(a, b, cells, time);
+        put(a, b, cells + 4, held | (rng.next() & 0xffff_0000));
+        let sticks = [rng.next() as u8, (rng.next() % 3) as u8 * 0x7f, 0x10, 0xf0];
+        put(
+            a,
+            b,
+            cells + 8,
+            [
+                0u8,
+                0,
+                sticks[(rng.next() % 4) as usize],
+                sticks[(rng.next() % 4) as usize],
+            ],
+        );
+        put(a, b, base + 1, u8::from(k % 3 != 0));
+        put(a, b, base, u8::from(rng.next().is_multiple_of(2)));
+        eax(a, 0x008b_7cd0, &[]);
+        t::get_pad_status(b, &mut Pad);
+        same_memory("pad status", a, b);
+    }
+}
+
+#[test]
+fn round16_pad_status_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0031));
+}
+
+#[test]
+fn round16_pad_status_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0032));
+}
