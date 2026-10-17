@@ -285,7 +285,8 @@ carry crosses a byte; the result is bit-exact to the per-byte formula.
 
 The tail draws save the emulated VU0 registers they use and restore them
 after drawing: `pppKeShpTail3VfCopy_00751680` copies `0x00c8f7b0..0x00c8f7ef`
-to `dst + 0xc0`; `pppKeShpTail3VfLoad_00751740` (and its byte-identical copy
+to `dst + 0xc0`, and `pppKeShpTail3XVfCopy_00753080` (for `pppKeShpTail3XDraw`)
+also `0x00c8f930..0x00c8f95f` to `dst + 0x100`; `pppKeShpTail3VfLoad_00751740` (and its byte-identical copy
 `pppKeShpTail3XVfLoad_00751ab0`) loads a saved block back:
 
 | Block words | VU0 registers |
@@ -330,3 +331,31 @@ then sets the curve constants `op_3d_vol_pan_get` reads, copied from
 | `0x023c3680` | 129.0667 |
 | `0x023c3684` | -0.0645833 |
 | `0x023c368c` | 1/24 |
+
+## Model texture coordinates (`op_md_tex0_change*`)
+
+`op_md_tex0_change_limit(packet, tex0, lo, hi)` (`0x00a69ca0`) walks a model
+packet's tags (from `+0x20` to type `0xff`, as `op_md_packet_set_addr`).
+Tags with type bit 2 carry a 14-bit `u` in `+8` (bits 0..13) and `v` in
+`+0xc` (bits 5..18). It finds the smallest `u` and `v` over those tags and
+rebases every tag with `lo <= u <= hi`: `u' = u - u_min + 0x3fff`, the same
+for `v`. Results reach 0x7ffe and spill into the bit above each field, as in
+the original. The PC build never reads `tex0`.
+`op_md_tex0_change(packet, tex0)` (`0x00a69c80`) is the call with `lo` 0 and
+`hi` 0x4000. Both return the end tag.
+
+## Encounter grid (`opus_encount0_init`)
+
+`opus_encount0_init(obj)` (`0x007f8480`) sets `f32 +0x20` = 16, `+0x24` = 32,
+`+0x28` = 0 and lays out `u16 +6` planes of `u16 +4` rows of `u16 +2`
+particles, 0x20 bytes each from `+0x30`:
+
+| Offset | Value |
+| --- | --- |
+| `+0`, `+4`, `+8` | x, y, z: 0, then down by 64 per particle, row and plane |
+| `+0xc`, `+0x1c` | 1 |
+| `+0x10` | 2112, up by 64 per particle across the whole grid |
+| `+0x14`, `+0x18` | 0 |
+
+Each step adds 64.0 in 53 bits to the stored `f32` and rounds at the store.
+Returns the plane count (0 for none) in `eax`.

@@ -562,6 +562,17 @@ pub mod bridge {
         vf[15]
     }
 
+    /// `pppKeShpTail3XVfCopy_00753080(dst)` (`0x00753080`, for
+    /// `pppKeShpTail3XDraw`): as [`ppp_ke_shp_tail3_vf_copy`] (the 16
+    /// words at `0x00c8f7b0` to `dst + 0xc0`), then the 12 at `0x00c8f930`
+    /// to `dst + 0x100`. Returns the last word, as left in `eax`.
+    pub fn ppp_ke_shp_tail3x_vf_copy(mem: &mut impl Mem, dst: u32) -> u32 {
+        ppp_ke_shp_tail3_vf_copy(mem, dst);
+        let vf: [u32; 12] = mem.read(Global::<u32>::new(0x00c8_f930).ptr(mem).addr);
+        mem.write(dst.wrapping_add(0x100), vf);
+        vf[11]
+    }
+
     /// `pppKeShpTail3VfLoad_00751740(src)` (`0x00751740`) and its copy
     /// `pppKeShpTail3XVfLoad_00751ab0` (`0x00751ab0`): the emulated VU0
     /// registers back from a saved block, the other way round from

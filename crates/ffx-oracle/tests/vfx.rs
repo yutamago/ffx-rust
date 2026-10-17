@@ -10419,6 +10419,91 @@ fn texels_halve_matches_the_original() {
 }
 
 #[test]
+fn md_tex0_change_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_9ca0);
+        let packet = p.alloc(0x2000);
+        let sizes = p.sym(op::bridge::MD_TAG_SIZES.sym);
+        for _ in 0..1500 {
+            p.fill(packet, 0x2000, &mut rng);
+            let mut t = packet + 0x20;
+            for _ in 0..rng.below(8) {
+                let kind = u8::try_from(rng.below(0xff)).unwrap();
+                p.set(t + 1, kind);
+                p.set(t + 2, u16::try_from(rng.below(12)).unwrap());
+                // coordinates near the 14-bit range's ends and in between
+                let any = rng.below(0x4000);
+                let u = rng.pick(&[0u32, 1, 0x3fff, 0x3ffe, 0x2000, any]);
+                let any = rng.below(0x4000);
+                let v = rng.pick(&[0u32, 1, 0x3fff, 0x1000, any]);
+                let w8: u32 = p.get(t + 8);
+                let wc: u32 = p.get(t + 0xc);
+                p.set(t + 8, w8 & !0x3fff | u);
+                p.set(t + 0xc, wc & !(0x3fff << 5) | v << 5);
+                let size: u32 = p.get(sizes + 4 * u32::from(kind & 7));
+                t += 0x10 + u32::from(p.get::<u16>(t + 2)) * size;
+            }
+            p.set(t + 1, 0xffu8);
+            let tex0 = rng.next();
+            let any = rng.below(0x4000);
+            let lo = rng.pick(&[0u32, 0x100, any, 0xffff_0010]);
+            let any = rng.below(0x4000);
+            let hi = rng.pick(&[0x4000u32, 0x3fff, any, 0x1_2000]);
+            p.check("0x00a69ca0", 0x00a6_9ca0, &[packet, tex0, lo, hi], |m| {
+                Some(op::bridge::op_md_tex0_change_limit(m, packet, lo, hi))
+            });
+            p.check("0x00a69c80", 0x00a6_9c80, &[packet, tex0], |m| {
+                Some(op::bridge::op_md_tex0_change(m, packet))
+            });
+        }
+    }
+}
+
+#[test]
+fn opus_encount0_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_8480);
+        let obj = p.alloc(0x30 + 0x20 * 0x200);
+        for _ in 0..200 {
+            p.fill(obj, 0x30 + 0x20 * 0x200, &mut rng);
+            let n = |rng: &mut Xorshift| {
+                let any = rng.below(8);
+                u16::try_from(rng.pick(&[0u32, 1, 2, any])).unwrap()
+            };
+            let (nx, ny, nz) = (n(&mut rng), n(&mut rng), n(&mut rng));
+            p.set(obj + 2, nx);
+            p.set(obj + 4, ny);
+            p.set(obj + 6, nz);
+            p.check("0x007f8480", 0x007f_8480, &[obj], |m| {
+                Some(opus::bridge::opus_encount0_init(m, obj))
+            });
+        }
+        // one long row of 0x200 particles
+        p.set(obj + 2, 0x200u16);
+        p.set(obj + 4, 1u16);
+        p.set(obj + 6, 1u16);
+        p.check("0x007f8480 long", 0x007f_8480, &[obj], |m| {
+            Some(opus::bridge::opus_encount0_init(m, obj))
+        });
+    }
+}
+
+#[test]
+fn shp_tail3x_vf_copy_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_3080);
+        let (dst, vf) = (p.alloc(0x200), p.sym(0x00c8_f7b0));
+        for _ in 0..500 {
+            p.fill(dst, 0x200, &mut rng);
+            p.fill(vf, 0x1c0, &mut rng);
+            p.check("0x00753080", 0x0075_3080, &[dst], |m| {
+                Some(small::bridge::ppp_ke_shp_tail3x_vf_copy(m, dst))
+            });
+        }
+    }
+}
+
+#[test]
 fn oef2_sound_init_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x0080_0440);

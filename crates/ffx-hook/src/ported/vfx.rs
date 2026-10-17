@@ -3288,6 +3288,10 @@ ported! {
     pppKeShpTail3VfCopy_00751680 @ 0x0075_1680 => extern "C" fn ppp_ke_shp_tail3_vf_copy(dst: u32) -> u32 {
         small::bridge::ppp_ke_shp_tail3_vf_copy(&mut mem(), dst)
     }
+    /// `pppKeShpTail3XVfCopy_00753080(dst)`.
+    pppKeShpTail3XVfCopy_00753080 @ 0x0075_3080 => extern "C" fn ppp_ke_shp_tail3x_vf_copy(dst: u32) -> u32 {
+        small::bridge::ppp_ke_shp_tail3x_vf_copy(&mut mem(), dst)
+    }
     /// `pppKeShpTail3VfLoad_00751740(src)`.
     pppKeShpTail3VfLoad_00751740 @ 0x0075_1740 => extern "C" fn ppp_ke_shp_tail3_vf_load(src: u32) -> u32 {
         small::bridge::ppp_ke_shp_tail3_vf_load(&mut mem(), src)
@@ -3441,6 +3445,14 @@ ported! {
     /// `op_rt_m_yxz(dst, src, angles, t)`.
     op_rt_m_yxz @ 0x007e_9a30 => extern "C" fn op_rt_m_yxz(dst: u32, src: u32, angles: u32, t: u32) {
         op::bridge::op_rt_m_yxz(&mut mem(), dst, src, angles, t);
+    }
+    /// `op_md_tex0_change(packet, tex0)`.
+    op_md_tex0_change @ 0x00a6_9c80 => extern "C" fn op_md_tex0_change(packet: u32, _tex0: u32) -> u32 {
+        op::bridge::op_md_tex0_change(&mut mem(), packet)
+    }
+    /// `op_md_tex0_change_limit(packet, tex0, lo, hi)`.
+    op_md_tex0_change_limit @ 0x00a6_9ca0 => extern "C" fn op_md_tex0_change_limit(packet: u32, _tex0: u32, lo: u32, hi: u32) -> u32 {
+        op::bridge::op_md_tex0_change_limit(&mut mem(), packet, lo, hi)
     }
     /// `op_md_packet_set_addr(packet, a, b)`.
     op_md_packet_set_addr @ 0x00a6_9de0 => extern "C" fn op_md_packet_set_addr(packet: u32, a: u32, b: u32) {

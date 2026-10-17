@@ -819,6 +819,88 @@ pub mod bridge {
         }
     }
 
+    /// The tag after `t` (as in [`op_md_packet_set_addr`]): 0x10 bytes
+    /// plus its count (`i16 +2`) times its type's size (`i8 +1` & 7).
+    fn md_next_tag(mem: &impl Mem, t: u32) -> u32 {
+        let kind = u32::from(mem.read::<u8>(t.wrapping_add(1)) & 7);
+        let n = i32::from(mem.read::<i16>(t.wrapping_add(2)));
+        let size: u32 = mem.read(MD_TAG_SIZES.ptr(mem).addr + 4 * kind);
+        t.wrapping_add(0x10)
+            .wrapping_add(n.cast_unsigned().wrapping_mul(size))
+    }
+
+    /// A tag's `u` (`+8 & 0x3fff`) and `v` (`+0xc >> 5 & 0x3fff`).
+    #[allow(clippy::cast_possible_truncation)] // 14-bit fields
+    fn md_tag_uv(mem: &impl Mem, t: u32) -> (u16, u16) {
+        let u = mem.read::<u16>(t.wrapping_add(8)) & 0x3fff;
+        let v = (mem.read::<u32>(t.wrapping_add(0xc)) >> 5 & 0x3fff) as u16;
+        (u, v)
+    }
+
+    /// `op_md_tex0_change_limit(packet, tex0, lo, hi)` (`0x00a69ca0`; the
+    /// `tex0` argument is not read): the texture coordinates of the tags
+    /// with type bit 2, the 14-bit `u` in `+8` and `v` in `+0xc >> 5`,
+    /// moved so that the smallest becomes 0x3fff. First the lowest `u -
+    /// 0x3fff` and `v - 0x3fff` (`i16`, starting at 0x3fff) over all those
+    /// tags; then each with `lo <= u <= hi` (`u16`s) gets `u - low_u` and
+    /// `v - low_v` (16-bit, 0 when negative) back into its fields, the
+    /// other bits kept (`+8 & 0xffffc000`, `+0xc & 0xfff8001f`; a result
+    /// over 0x3fff spills into the bits above, as in the original). Returns
+    /// the end tag (type 0xff), as left in `eax`.
+    pub fn op_md_tex0_change_limit(mem: &mut impl Mem, packet: u32, lo: u32, hi: u32) -> u32 {
+        let first = packet.wrapping_add(0x20);
+        let (mut low_u, mut low_v) = (0x3fffu16, 0x3fffu16);
+        let mut t = first;
+        loop {
+            let kind = mem.read::<u8>(t.wrapping_add(1));
+            if kind == 0xff {
+                break;
+            }
+            if kind & 2 != 0 {
+                let (u, v) = md_tag_uv(mem, t);
+                let (du, dv) = (u.wrapping_sub(0x3fff), v.wrapping_sub(0x3fff));
+                if du.cast_signed() < low_u.cast_signed() {
+                    low_u = du;
+                }
+                if dv.cast_signed() < low_v.cast_signed() {
+                    low_v = dv;
+                }
+            }
+            t = md_next_tag(mem, t);
+        }
+        #[allow(clippy::cast_possible_truncation)] // u16 arguments
+        let (lo, hi) = (lo as u16, hi as u16);
+        let clamp = |d: u16| if d.cast_signed() < 0 { 0 } else { u32::from(d) };
+        let mut t = first;
+        loop {
+            let kind = mem.read::<u8>(t.wrapping_add(1));
+            if kind == 0xff {
+                return t;
+            }
+            let (u, v) = md_tag_uv(mem, t);
+            if kind & 2 != 0 && lo <= u && u <= hi {
+                let c: u32 = mem.read(t.wrapping_add(0xc));
+                let a: u32 = mem.read(t.wrapping_add(8));
+                mem.write(
+                    t.wrapping_add(8),
+                    a & 0xffff_c000 | clamp(u.wrapping_sub(low_u)),
+                );
+                mem.write(
+                    t.wrapping_add(0xc),
+                    clamp(v.wrapping_sub(low_v)) << 5 | c & 0xfff8_001f,
+                );
+            }
+            t = md_next_tag(mem, t);
+        }
+    }
+
+    /// `op_md_tex0_change(packet, tex0)` (`0x00a69c80`):
+    /// [`op_md_tex0_change_limit`] over every `u` (0..=0x4000); returns its
+    /// `eax`.
+    pub fn op_md_tex0_change(mem: &mut impl Mem, packet: u32) -> u32 {
+        op_md_tex0_change_limit(mem, packet, 0, 0x4000)
+    }
+
     /// `0x00a698c0(packet)`: the size of the packet's vertex block after
     /// its tags: walking the tags from `+0x20` (as in
     /// [`op_md_packet_set_addr`]), 0 at a type nibble (`+1` & 0xf0) of 0x10

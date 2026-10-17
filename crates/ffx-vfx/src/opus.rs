@@ -7,6 +7,31 @@
 //! take the object and the command's address and return the next
 //! command's.
 
+/// `opus_encount0`'s particle grid, `nz` planes of `ny` rows of `nx`
+/// particles in the order the original lays them out: each is `[x, y, z,
+/// 1, t, 0, 0, 1]`, `x` from 0 down by 64 along a row, `y` from 0 down by
+/// 64 per row, `z` from 0 down by 64 per plane, and `t` from 2112 up by 64
+/// per particle. Each step is the x87's: the `f32` value plus 64.0 in 53
+/// bits, rounded to `f32` where the original stores it.
+pub fn encount0_grid(nx: u16, ny: u16, nz: u16, mut put: impl FnMut([f32; 8])) {
+    #[allow(clippy::cast_possible_truncation)] // the original's fstp
+    let step = |v: f32, d: f64| (f64::from(v) + d) as f32;
+    let (mut t, mut z) = (2112.0f32, 0.0f32);
+    for _ in 0..nz {
+        let mut y = 0.0f32;
+        for _ in 0..ny {
+            let mut x = 0.0f32;
+            for _ in 0..nx {
+                put([x, y, z, 1.0, t, 0.0, 0.0, 1.0]);
+                t = step(t, 64.0);
+                x = step(x, -64.0);
+            }
+            y = step(y, -64.0);
+        }
+        z = step(z, -64.0);
+    }
+}
+
 /// The objects where the game keeps them.
 pub mod bridge {
     use ffx_bridge::{Global, Mem, Ptr};
@@ -18,6 +43,24 @@ pub mod bridge {
     pub const WEAPONS: Global<u32> = Global::new(0x0119_fea0);
     /// `g_OpusMonsters`: the eight monster objects.
     pub const MONSTERS: Global<u32> = Global::new(0x0119_fed0);
+
+    /// `opus_encount0_init(obj)` (`0x007f8480`): `f32 +0x20` = 16, `+0x24`
+    /// = 32, `+0x28` = 0, and the 0x20-byte particles from `+0x30` laid
+    /// out by [`super::encount0_grid`] for the `u16` counts `+2` (x), `+4`
+    /// (y) and `+6` (z). Returns `eax` as left: the z count (0 for none).
+    pub fn opus_encount0_init(mem: &mut impl Mem, obj: u32) -> u32 {
+        mem.write(obj.wrapping_add(0x20), 16.0f32);
+        mem.write(obj.wrapping_add(0x24), 32.0f32);
+        mem.write(obj.wrapping_add(0x28), 0.0f32);
+        let count = |at: u32| mem.read::<u16>(obj.wrapping_add(at));
+        let (nx, ny, nz) = (count(2), count(4), count(6));
+        let mut at = obj.wrapping_add(0x30);
+        super::encount0_grid(nx, ny, nz, |p| {
+            mem.write(at, p);
+            at = at.wrapping_add(0x20);
+        });
+        u32::from(nz)
+    }
 
     /// `opus_get_weapon_index(obj)` (`0x00801000`): its slot, or -1.
     pub fn opus_get_weapon_index(mem: &impl Mem, obj: u32) -> i32 {
