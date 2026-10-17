@@ -4985,6 +4985,7 @@
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
 0x0078e630 function DmgCalc                   # fh v3:exact 0x0078e680 +DmgCalc
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
+0x0078f000 function MsOrderKey                # ours: (i) turn-order key: a monster 0x10000 + i, a party member (0xff - +0x5ac) << 8 | i; MsOrderCalc sorts by it
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
 0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
@@ -14215,6 +14216,7 @@
 0x00c41758 label    g_HddPassNames            # "ffxpassf" (+0) and "ffxpassr" (+0xc), written by hdd_set_pass_names
 0x00c42130 label g_ChrTexAnimSwizzle        # two 64-byte index tables (0x00c42130, 0x00c42170) for chr_texanim_clut_swizzle
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
+0x00c421d8 label g_EncountMode             # u32 how steps count toward encounters: 0 not, 1 with encounters on, 2 ten times (MsBattleEncountExe)
 0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
 0x00c421e8 label g_BtlEffectReadClear      # u32 cleared after MsEffectRead starts a file it waits for
 0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
@@ -14395,6 +14397,7 @@
 0x0112a844 label g_ChrTexAnim844            # u8 = 0 and 0x0112a845 = 0xff by chr_texanim_init
 0x0112a8d0 label g_BtlMem                  # 0x2150 bytes of battle globals cleared by MsBattleMemInit (the kernel table pointers 0x0112a92c.. among them)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
+0x0112a8e1 label g_BtlOrderHold            # u8: no turn order is made while set (MsBattleProcess_Order)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
 0x0112a8e4 label g_BtlCameraState          # u8, 2: no script camera requests unless an actor asks (MsAtelRequestCamera)
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
@@ -14402,8 +14405,10 @@
 0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8f0 label g_BtlEffectCameraCall     # i32 effect camera asked for (MsEffectCameraCall, when not negative)
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
+0x0112a8f7 label g_BtlEncountFade          # u8: an encounter fades in (Sg_FadeInW(3)) and counts the battle (MsBattleEncountExe)
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a8fb label g_BtlStatusShort          # u8: a waiting actor's wait (+0x65c) drops to 1 each idle round (MsBattleProcess_Order)
 0x0112a8fc label g_BtlDebugCameraSleepOn   # u8 MsBattleProcess passes to MsDebugCameraSleep each frame
 0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
 0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
@@ -14451,6 +14456,7 @@
 0x0112a9d0 label g_BtlFieldCount              # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a9d4 label g_BtlEncountType            # u8 (MsGetEncountType 0x00782a10)
 0x0112a9d5 label g_BtlEncountType2         # u8: MsBattleLabelExe's third argument, stored with g_BtlEncountType
+0x0112a9d6 label g_BtlEncountDanger        # u8: the danger (+3) of the encounter group of the last step (MsBattleEncountExe)
 0x0112a9d7 label g_BtlEncountOn            # u8: 0 when a joined character has g_PlySave +0x4e bit 1 (MsSaveEncountCheck)
 0x0112a9d8 label g_BtlEncountSteps         # 2 x f32 encounter counters, 0 after ResetEncountExe (which writes g_BtlEncountType as u16)
 0x0112a9e0 label g_BtlEncountRates         # 2 x f32, 1.0 after ResetEncountExe
@@ -14460,6 +14466,8 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112bde2 label g_BtlIdleRounds           # i8 idle frames counted by MsBattleProcess_Order up to g_BtlIdleRoundsLimit
+0x0112bde3 label g_BtlIdleRoundsLimit      # i8 (MsBattleProcess_Order)
 0x0112bde4 label g_BtlCenterScale          # f32: MsCalcChrDir moves one side's centre by it towards the other
 0x0112bde8 label g_BtlGround               # f32 ground height: MsSetChrHeight puts mode-0 actors at ground - height/2 + actor +0x538
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
@@ -14549,6 +14557,9 @@
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
 0x0112ca15 label g_BtlCommand3029Count     # u8: commands with ID 0x3029 among their two (+0x6d0; MsParseCommand)
 0x0112ca16 label g_BtlCommandCamera        # u8: the next command starts with camera 0x1c (MsCommandCueProcess)
+0x0112ca20 label g_BtlForcedEncount2       # u32: with g_BtlForcedEncount a step starts the forced encounter (MsBattleEncountExe)
+0x0112ca24 label g_BtlForcedEncount        # u32 (MsBattleEncountExe)
+0x0112ca28 label g_BtlForcedSlot           # u8 the forced encounter's formation slot (MsBattleEncountExe)
 0x0112ca2c label g_BtlLabelLock            # u8: 1 blocks MsBattleLabelExe
 0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)

@@ -2628,4 +2628,24 @@ ported! {
         let mut m = mem();
         process::ms_battle_label_exe(&mut target::Dm::new(&mut m), scene, a, b)
     }
+    /// `MsOrderKey(i)` (`0x0078f000`).
+    MsOrderKey @ 0x0078_f000 => extern "C" fn ms_order_key(i: u32) -> u32 {
+        process::ms_order_key(&mem(), i)
+    }
+    /// `MsOrderCalc(&n)`.
+    MsOrderCalc @ 0x0078_d3e0 => extern "C" fn ms_order_calc(n: u32) -> u32 {
+        process::ms_order_calc(&mut mem(), n)
+    }
+    /// `MsLimitTypeTurnCheck(i, actor)`.
+    MsLimitTypeTurnCheck @ 0x007b_13c0 => extern "C" fn ms_limit_type_turn_check(i: u32, actor: u32) -> u32 {
+        process::ms_limit_type_turn_check(&mut mem(), i, actor)
+    }
+    /// `MsBattleProcess_Order_00790fb0()`: `MagicFile_GetMagicId` through the game.
+    MsBattleProcess_Order_00790fb0 @ 0x0079_0fb0 => extern "C" fn ms_battle_process_order() -> i32 {
+        process::ms_battle_process_order(&mut mem(), &mut call_ptr)
+    }
+    /// `MsBattleEncountExe(map, group, step)` (`step` an `f32`): `Sg_FadeInW` through the game.
+    MsBattleEncountExe @ 0x0078_0d10 => extern "C" fn ms_battle_encount_exe(map: i32, group: i32, step: u32) -> i32 {
+        process::ms_battle_encount_exe(&mut mem(), &mut call_ptr, map, group, step)
+    }
 }

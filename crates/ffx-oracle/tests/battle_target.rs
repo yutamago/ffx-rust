@@ -1611,7 +1611,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
 /// trophy (main), neck and character ID (chara), the battle effects'
 /// release (vfx, the heap), stubbed in `MsDebugEnvSave` (debug
 /// only); the last is the CD library's `+8`.
-const PROCESS_CALLEES: [(u32, u8); 12] = {
+const PROCESS_CALLEES: [(u32, u8); 13] = {
     use ffx_battle::process::bridge as p;
     [
         (p::SND_MUSIC_STOP, 1),
@@ -1625,6 +1625,7 @@ const PROCESS_CALLEES: [(u32, u8); 12] = {
         (ffx_battle::death::bridge::CH_GET_CHAR_ID, 1),
         (p::OP_ET_BATTLE_EFFECT_FREE, 0),
         (p::USER_FREE, 1),
+        (p::MAGIC_FILE_GET_MAGIC_ID, 0),
         (0, 1),
     ]
 };
@@ -1644,7 +1645,7 @@ fn process_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32, erec: u32) {
                 .try_into()
                 .unwrap(),
         );
-        let f = o.rebase(PROCESS_STUBS + 0x40 * 11);
+        let f = o.rebase(PROCESS_STUBS + 0x40 * 12);
         o.write(cd + 8, &f.to_le_bytes()).unwrap();
     }
 }
@@ -1668,7 +1669,8 @@ fn process(
         (2, [0, 0, 0, 1, 2][rng.below(5) as usize]),
         (3, u32::from(flag(rng, 6))),
         (4, u32::from(flag(rng, 6))),
-        (11, u32::from(flag(rng, 6))),
+        (11, [0x1ad, 0, 5][rng.below(3) as usize]),
+        (12, u32::from(flag(rng, 6))),
     ] {
         poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
     }
@@ -1836,6 +1838,94 @@ fn process(
         0
     });
     same("MsEtEffectFree", a, b);
+    // the turn order
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::INPUT_CUE_COUNT,
+        if rng.below(4) == 0 { 1 } else { 0 },
+    );
+    set(a, b, p::ORDER_HOLD, flag(rng, 8));
+    set(a, b, p::IDLE_ROUNDS, i8::try_from(rng.below(4)).unwrap());
+    set(
+        a,
+        b,
+        p::IDLE_ROUNDS_LIMIT,
+        i8::try_from(rng.below(4)).unwrap(),
+    );
+    set(a, b, p::STATUS_SHORT, flag(rng, 3));
+    let cmd = [0x312c, 0x3022, 0x3000, 0x3001][rng.below(4) as usize];
+    set(a, b, ffx_battle::parse::bridge::PARSED_COMMAND, cmd);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::TITLE_WINDOW,
+        [i8::try_from(rng.below(3)).unwrap() - 1, 0],
+    );
+    for j in 0..ACTORS {
+        let q = w.actor(j);
+        for o in [0xde6, 0xdcc] {
+            poke(a, b, q + o, &[flag(rng, 6)]);
+        }
+        poke(a, b, q + 0xdc8, &[flag(rng, 4) ^ 1]);
+        poke(a, b, q + 0xdd6, &[flag(rng, 4) ^ 1]);
+        poke(
+            a,
+            b,
+            q + 0x65c,
+            &[[0, 0, 1, 2, rng.byte()][rng.below(5) as usize]],
+        );
+        poke(
+            a,
+            b,
+            q + 0x6d2,
+            &[[0xff, 0xfe, rng.byte()][rng.below(3) as usize]],
+        );
+        let s606 = b.read(q + 0x606, 1).unwrap()[0]
+            & !(4 * flag(rng, 1).min(1) * u8::from(rng.below(5) != 0));
+        poke(a, b, q + 0x606, &[s606]);
+        poke(a, b, q + 0x5ac, &[rng.byte()]);
+        for o in [0x608, 0x609, 0x60a, 0x614] {
+            poke(a, b, q + o, &[flag(rng, 5)]);
+        }
+        poke(
+            a,
+            b,
+            q + 0x5bb,
+            &[[0xd, 0xe, 0xf, 0x10, rng.byte()][rng.below(5) as usize]],
+        );
+    }
+    let n = [0, 1, 3, 8, rng.below(0x20)][rng.below(5) as usize];
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::ORDER_COUNT,
+        i32::try_from(n).unwrap(),
+    );
+    let list: Vec<u8> = (0..0x20)
+        .map(|_| u8::try_from(rng.below(ACTORS)).unwrap())
+        .collect();
+    poke(a, b, ffx_battle::state::bridge::ORDERS.ptr(b).addr, &list);
+    twin("MsOrderCalc", a, b, 0x0078_d3e0, &[out + 0x40], ALL, |m| {
+        p::ms_order_calc(m, out + 0x40)
+    });
+    same("MsOrderCalc", a, b);
+    let i = rng.below(9);
+    let actor = w.actor(i);
+    twin(
+        "MsLimitTypeTurnCheck",
+        a,
+        b,
+        0x007b_13c0,
+        &[i, actor],
+        ALL,
+        |m| p::ms_limit_type_turn_check(m, i, actor),
+    );
+    same("MsLimitTypeTurnCheck", a, b);
+    twin("MsBattleProcess_Order", a, b, 0x0079_0fb0, &[], ALL, |m| {
+        dm(m, |m| p::ms_battle_process_order(m, &mut call)).cast_unsigned()
+    });
+    same("MsBattleProcess_Order", a, b);
     if rng.below(8) == 0 {
         twin("MsCameraInit", a, b, 0x007b_d5d0, &[], 0, |m| {
             ffx_battle::camera::bridge::ms_camera_init(m);
@@ -2431,7 +2521,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         );
         logging_stub(o, 0x008b_7ca0, 0x0078_03a0, srec + 4 * EXCHANGE_REC, 1, 0);
     }
-    let prec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
+    let prec = scratch(a, b, (EXCHANGE_REC * 13) as usize);
     process_stubs(a, b, prec, erec);
     for _ in 0..400 {
         file(a, b, rng, &f);
