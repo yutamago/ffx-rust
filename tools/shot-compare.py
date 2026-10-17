@@ -39,7 +39,7 @@ MASKS = {
 }
 BLOCK = 40
 COARSE = 25
-SKY = 160  # coarse shots: rows above this are left out (the beams reach the y 120 block)
+SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
 
 
 def block_means(w, h, px):
