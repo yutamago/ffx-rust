@@ -39,6 +39,53 @@ pub mod bridge {
         mem.write(p + 8, base.wrapping_add(b));
     }
 
+    /// The DMA channel word `TODrawKick` passes to `sceDmaSend`
+    /// (`0x018716f4`).
+    pub const DMA_CHANNEL: Global<u32> = Global::new(0x0187_16f4);
+
+    /// `TODrawKick()` (`0x008f5bc0`): when the packets written since the
+    /// buffer's start (cursor less start, rounded down to 16, compared
+    /// signed) exceed 0x20 bytes, sends them: `FlushCache(0)`,
+    /// `sceGsSyncPath(0, 0)`, `sceDmaSend(channel, start)`,
+    /// `sceGsSyncPath(0, 0)` (the PS2 layer's stand-ins, which do nothing on
+    /// PC). Returns what it leaves in `eax`: the last call's result, or the
+    /// rounded size when nothing was sent.
+    pub fn draw_kick<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        const FLUSH_CACHE: u32 = 0x0062_f4c0;
+        const GS_SYNC_PATH: u32 = 0x0062_f880;
+        const DMA_SEND: u32 = 0x0062_f710;
+        let start = PKT_BUFF.get(mem)[0];
+        let used = PACKET_CURSOR.get(mem).wrapping_sub(start) & !0xf;
+        if used.cast_signed() <= 0x20 {
+            return used;
+        }
+        call(mem, FLUSH_CACHE, &[0]);
+        call(mem, GS_SYNC_PATH, &[0, 0]);
+        let channel = DMA_CHANNEL.get(mem);
+        let start = PKT_BUFF.get(mem)[0];
+        call(mem, DMA_SEND, &[channel, start]);
+        call(mem, GS_SYNC_PATH, &[0, 0])
+    }
+
+    /// `TOCtrlPkt()` (`0x008f3a30`): [`draw_kick`] while packets are added
+    /// and the cursor has reached the buffer's limit (`g_TOPktBuff[2]`,
+    /// unsigned). Returns the `eax` it leaves: `None` (the caller's) when
+    /// packets are not added, the cursor when it is below the limit, else
+    /// what [`draw_kick`] returns.
+    pub fn ctrl_pkt<M: Mem>(
+        mem: &mut M,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        if ADD_PKT.get(mem) == 0 {
+            return None;
+        }
+        let cursor = PACKET_CURSOR.get(mem);
+        if cursor < PKT_BUFF.get(mem)[2] {
+            return Some(cursor);
+        }
+        Some(draw_kick(mem, call))
+    }
+
     /// `TOGetScreenWH(&w, &h)` (`0x008fa900`).
     pub fn screen_wh(mem: &mut impl Mem, w: u32, h: u32) {
         let v = SCREEN_W.get(mem);

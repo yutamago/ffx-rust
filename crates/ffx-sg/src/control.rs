@@ -320,6 +320,257 @@ pub mod bridge {
     /// `g_FFXIsDebug`.
     pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
 
+    /// `Sg_AccRequestCurrent`'s flag (`g_AccCurrentRequest`).
+    pub const ACC_CURRENT_REQUEST: Global<u32> = Global::new(0x012f_fae4);
+    /// The five screen fades, 0x10 bytes each: mode, red, green, blue
+    /// (bytes), then `i16` frames left, total (or the level), target,
+    /// step.
+    pub const FADE_SLOTS: u32 = 0x0130_0708;
+    /// The slots still running, a bit each.
+    pub const FADE_ACTIVE: Global<u32> = Global::new(0x0130_0704);
+    /// The focus (depth of field) requested.
+    pub const FOCUS_ON: Global<u32> = Global::new(0x0130_0768);
+    /// The focus drawn.
+    pub const FOCUS_DRAW: Global<u32> = Global::new(0x0130_076c);
+    /// The two focus depths.
+    pub const FOCUS_Z: [Global<u32>; 2] = [Global::new(0x0130_0758), Global::new(0x0130_075c)];
+    /// The packet the filter builds into.
+    pub const FILTER_PACKET: u32 = 0x012f_fb00;
+    /// The PS2 screen's width (0x200 draws the mode 0 level).
+    pub const SCREEN_W: Global<u32> = Global::new(0x023c_bbe4);
+    /// The fade mode the dream effect sees (-1 none).
+    pub const DREAM_FADE_MODE: Global<u32> = Global::new(0x00c4_96d0);
+    /// The dream fade's frames.
+    pub const DREAM_FADE_TOTAL: Global<i32> = Global::new(0x012f_faf0);
+    /// The dream fade's share (`f32`).
+    pub const DREAM_FADE_SHARE: Global<f32> = Global::new(0x012f_faf4);
+    /// Set when a fade ran for the dream effect.
+    pub const DREAM_FADE_SEEN: Global<u32> = Global::new(0x012f_fae8);
+    /// Set once the level fade reached its last frames.
+    pub const DREAM_FADE_OUT: Global<u32> = Global::new(0x012f_faec);
+    /// 127 (`f64`).
+    pub const FADE_127: Global<f64> = Global::new(0x00b9_22e8);
+    /// 1/256 (`f64`).
+    pub const FADE_BYTE: Global<f64> = Global::new(0x00b5_0198);
+    /// 255 (`f64`).
+    pub const FADE_255: Global<f64> = Global::new(0x00b1_70c0);
+    /// `graphicHasRunDrawFilterInThisFrame()`.
+    pub const GRAPHIC_HAS_RUN_DRAW_FILTER: u32 = 0x0064_1660;
+    /// `graphicResetHasRunDrawFocusInThisFrame()`.
+    pub const GRAPHIC_RESET_HAS_RUN_DRAW_FOCUS: u32 = 0x0064_2c70;
+    /// `graphicHasRunDrawFocusInThisFrame()`.
+    pub const GRAPHIC_HAS_RUN_DRAW_FOCUS: u32 = 0x0064_1670;
+    /// `graphicSetFocusZ(which, z)`.
+    pub const GRAPHIC_SET_FOCUS_Z: u32 = 0x0064_30f0;
+    /// `graphicAddScreenFadeTask(r, g, b, a, flags)`.
+    pub const GRAPHIC_ADD_SCREEN_FADE_TASK: u32 = 0x0063_9240;
+    /// The focus packet for one depth (GS glue).
+    pub const SG_DRAW_FOCUS: u32 = 0x0082_bb90;
+    /// The level quad of a mode 0 fade (GS glue).
+    pub const SG_DRAW_LEVEL: u32 = 0x0082_baf0;
+
+    fn call_sym(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
+        let at = h.rebase(sym);
+        h.call(at, args)
+    }
+
+    /// `Sg_DrawFilter()` (`0x0082c0c0`): the frame's focus and fades.
+    ///
+    /// With a fade or the focus running, the filter packet is started; the
+    /// focus draws both depths (`graphicSetFocusZ`). Then each slot with
+    /// frames left (else its bit in [`FADE_ACTIVE`] is cleared) runs by
+    /// mode, colors as `byte / 256`, levels over 127, through
+    /// `graphicAddScreenFadeTask(r, g, b, a, flags)`:
+    ///
+    /// - 0 a level moving by its step to the target, its quad drawn when
+    ///   the screen is 0x200 wide unless a request is current; the dream
+    ///   effect gets its share.
+    /// - 2 black at `1 - (127 - n' 127 / total) / 127`, then
+    ///   `Sg_AccSetAlpha(0, 0)`; 3 black at `1 - (n' 127 / total) / 127`,
+    ///   held at its last frame.
+    /// - 4 the color at `n 255 / total / 127`; 5 rising to 255 and held; 6
+    ///   at `n 127 / total / 127`; 7 and 8 at the level `+6 / 127` (8 with
+    ///   flag 0x10).
+    ///
+    /// Modes 1 and above 8 do nothing. A total of 0 divides by zero in the
+    /// original (a crash); here the quotient counts as 0.
+    #[allow(clippy::too_many_lines, clippy::cast_precision_loss)] // small integers
+    pub fn draw_filter(h: &mut impl Host) {
+        use x87::Reg;
+        call_sym(h, GRAPHIC_HAS_RUN_DRAW_FILTER, &[]);
+        call_sym(h, GRAPHIC_RESET_HAS_RUN_DRAW_FOCUS, &[]);
+        if FADE_ACTIVE.get(h) == 0 && FOCUS_ON.get(h) == 0 {
+            return;
+        }
+        let packet = h.rebase(FILTER_PACKET);
+        crate::gs::bridge::set_packet(h, packet);
+        crate::gs::bridge::start(h);
+        if FOCUS_DRAW.get(h) != 0 && FOCUS_ON.get(h) != 0 {
+            crate::gs::bridge::test_1(h, [1, 1, 0, 0, 0, 0, 1, 2]);
+            for z in FOCUS_Z {
+                let v = z.get(h);
+                if v != 0 {
+                    call_sym(h, SG_DRAW_FOCUS, &[v]);
+                }
+            }
+            for (i, z) in (0u32..).zip(FOCUS_Z) {
+                let v = z.get(h);
+                call_sym(h, GRAPHIC_SET_FOCUS_Z, &[i, v]);
+            }
+            call_sym(h, GRAPHIC_HAS_RUN_DRAW_FOCUS, &[]);
+        }
+        crate::gs::bridge::test_1(h, [1, 1, 0, 0, 0, 0, 1, 1]);
+        let k127 = Reg::constant(FADE_127.get(h));
+        let byte = Reg::constant(FADE_BYTE.get(h));
+        let k255 = Reg::constant(FADE_255.get(h));
+        let base = h.rebase(FADE_SLOTS);
+        for i in 0..5u32 {
+            let s = base + 0x10 * i;
+            let n: i16 = h.read(s + 4);
+            if n == 0 {
+                let x = FADE_ACTIVE.get(h) & !(1 << i);
+                FADE_ACTIVE.set(h, x);
+                continue;
+            }
+            let mode: u8 = h.read(s);
+            let total: i16 = h.read(s + 6);
+            let div = |x: i32| x.checked_div(i32::from(total)).unwrap_or(0);
+            let level = |x: i32| (Reg::load(x as f32) / k127).store();
+            let rgb = [1, 2, 3].map(|o| {
+                let c: u8 = h.read(s + o);
+                (Reg::constant(f64::from(c)) * byte).store()
+            });
+            let dream = DREAM_ON.get(h) != 0;
+            let fade = |h: &mut _, rgb: [f32; 3], a: f32, flags: u32| {
+                let [r, g, b] = rgb.map(f32::to_bits);
+                call_sym(
+                    h,
+                    GRAPHIC_ADD_SCREEN_FADE_TASK,
+                    &[r, g, b, a.to_bits(), flags],
+                );
+            };
+            match mode {
+                0 => {
+                    let n1 = n.wrapping_sub(1);
+                    h.write(s + 4, n1);
+                    let cur: i16 = h.read(s + 6);
+                    let target: i16 = h.read(s + 8);
+                    let step: i16 = h.read(s + 0xa);
+                    if target != cur {
+                        let v = if target > cur {
+                            cur.wrapping_add(step)
+                        } else {
+                            cur.wrapping_sub(step)
+                        };
+                        h.write(s + 6, v);
+                        if (target > cur && target < v) || (target < cur && target > v) {
+                            h.write(s + 6, target);
+                        }
+                    }
+                    let cur: i16 = h.read(s + 6);
+                    if cur != 0 && n1 == 0 {
+                        h.write(s + 4, 1i16);
+                    }
+                    if ACC_CURRENT_REQUEST.get(h) == 0 {
+                        if SCREEN_W.get(h) != 0x200 {
+                            continue;
+                        }
+                        #[allow(clippy::cast_sign_loss)]
+                        call_sym(h, SG_DRAW_LEVEL, &[i32::from(cur) as u32]);
+                    }
+                    if dream {
+                        let n: i16 = h.read(s + 4);
+                        if DREAM_FADE_MODE.get(h) == u32::MAX {
+                            DREAM_FADE_TOTAL.set(h, i32::from(n));
+                        }
+                        DREAM_FADE_SEEN.set(h, 1);
+                        if n < 2 {
+                            DREAM_FADE_OUT.set(h, 1);
+                            DREAM_FADE_MODE.set(h, u32::MAX);
+                        } else {
+                            DREAM_FADE_MODE.set(h, u32::from(mode));
+                            let t = DREAM_FADE_TOTAL.get(h) as f32;
+                            let r = Reg::constant(f64::from(n)).div_m32(t);
+                            let r = if DREAM_FADE_OUT.get(h) == 0 {
+                                r
+                            } else {
+                                Reg::ONE - r
+                            };
+                            DREAM_FADE_SHARE.set(h, r.store());
+                        }
+                    }
+                }
+                2 | 3 => {
+                    let n1 = n.wrapping_sub(1);
+                    h.write(s + 4, n1);
+                    let q = if mode == 2 {
+                        0x7f - div(i32::from(n1) * 0x7f)
+                    } else if n1 == 0 {
+                        h.write(s + 4, 1i16);
+                        0
+                    } else {
+                        div(i32::from(n1) * 0x7f)
+                    };
+                    let a = (Reg::ONE - Reg::load(q as f32) / k127).store();
+                    fade(h, [0.0; 3], a, 0);
+                    if mode == 2 {
+                        acc_set_alpha(h, 0, 0);
+                    }
+                }
+                4 => {
+                    let q = div(i32::from(n) * 0xff);
+                    fade(h, rgb, level(q), 0);
+                    if dream {
+                        DREAM_FADE_MODE.set(h, u32::from(mode));
+                        DREAM_FADE_SEEN.set(h, 1);
+                        DREAM_FADE_SHARE.set(h, (Reg::load(q as f32) / k255).store());
+                        if n < 3 {
+                            DREAM_FADE_MODE.set(h, u32::MAX);
+                        }
+                    }
+                    h.write(s + 4, n.wrapping_sub(1));
+                }
+                5 => {
+                    let n1 = n.wrapping_sub(1);
+                    h.write(s + 4, n1);
+                    let v = if n1 == 0 {
+                        h.write(s + 4, 1i16);
+                        0xff
+                    } else {
+                        0xff - div(i32::from(n1) * 0xff)
+                    };
+                    fade(h, rgb, level(v), 0);
+                    if dream {
+                        DREAM_FADE_MODE.set(h, u32::from(mode));
+                        DREAM_FADE_SHARE.set(h, (Reg::load(v as f32) / k255).store());
+                    }
+                }
+                6 => {
+                    fade(h, rgb, level(div(i32::from(n) * 0x7f)), 0);
+                    h.write(s + 4, n.wrapping_sub(1));
+                }
+                7 | 8 => {
+                    if mode == 7 && dream {
+                        h.write(s + 6, 0i16);
+                    }
+                    let v: i16 = h.read(s + 6);
+                    let a = (Reg::constant(f64::from(v)) / k127).store();
+                    fade(h, rgb, a, if mode == 8 { 0x10 } else { 0 });
+                }
+                _ => {}
+            }
+        }
+        gs_end(h);
+    }
+
+    /// `ExportValidateInterface(id)` (`0x008202e0`): 1 for the interface
+    /// ids the executable exports (0x40400003, 0x40800001..=0x40800003),
+    /// else 0.
+    #[must_use]
+    pub const fn export_validate_interface(id: u32) -> u32 {
+        matches!(id, 0x4040_0003 | 0x4080_0001 | 0x4080_0002 | 0x4080_0003) as u32
+    }
+
     /// `Sg_InitArgs(argc, argv)` (`0x00820310`): the L/R button mode 0,
     /// `0x012fb8fa` 0xff and `0x012fb8f9`, `0x012fb8f8` 0; in a debug
     /// build with an argument, the user name from `argv[1]`
