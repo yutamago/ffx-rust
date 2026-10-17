@@ -1619,4 +1619,8 @@ ported! {
     Ch_MotionSetupFcurve @ 0x0083_9980 => extern "C" fn ch_motion_setup_fcurve(chr: u32, clip: u32) -> u32 {
         mo::bridge::ch_motion_setup_fcurve(&mut mem(), chr, clip, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_ModelCreatePacket(chr)`: vertex, normal and physics blocks.
+    Ch_ModelCreatePacket @ 0x0082_7280 => extern "C" fn ch_model_create_packet(chr: u32) -> u32 {
+        c::ch_model_create_packet(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

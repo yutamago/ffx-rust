@@ -6187,3 +6187,114 @@ fn round10b_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round10c_matches_the_original() {
+    for mut t in twins() {
+        round10c_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10c_on(t: &mut Twin) {
+    use ffx_chara::chr::bridge as c;
+    let mut rng = Xorshift(0x0010_c10c);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 1, 0x400);
+    let normalize = fk.fake(t, 0x006e_d6f0, 2, 2);
+    // the name buffer is the original's stack: log only the block
+    let set_str = fk.fake(t, 0x0083_c580, 3, 1);
+    let set_type = fk.fake(t, 0x0083_c590, 4, 2);
+    let reset = fk.fake(t, 0x0082_4650, 5, 1);
+    let magic = fk.fake(t, 0x009d_a3b0, 6, 0);
+    let visible = fk.fake(t, 0x0063_c390, 7, 2);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for r in [normalize, set_str, set_type, reset, visible] {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(
+            magic,
+            if rng.next().is_multiple_of(2) {
+                0x295
+            } else {
+                rng.next() % 0x400
+            },
+        );
+        let blocks = t.alloc(0x400 * 0x10);
+        t.put_u32(heap, blocks);
+        let chr = t.alloc(0x900);
+        let id: u16 = if rng.next().is_multiple_of(2) {
+            0x402e
+        } else {
+            0x1000
+        };
+        t.put(chr, &id.to_le_bytes());
+        t.put(chr + 0x180, &[0]);
+        t.put_u32(chr + 0x198, rng.next());
+        t.put_u32(chr + 0x830, rng.next());
+        let name = t.alloc(16);
+        t.put(name, b"c051\0");
+        t.put_u32(chr + 4, name);
+        let nmod = rng.next() % 4;
+        let hdr = t.alloc(0x10);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(hdr + 6, &(nmod as u16).to_le_bytes());
+        t.put_u32(chr + 0x1c0, hdr);
+        let models = t.alloc(0x38 * 4);
+        t.put_u32(chr + 0x1bc, models);
+        for i in 0..nmod {
+            let m = models + 0x38 * i;
+            let d = t.alloc(0x20);
+            t.put_u32(m, d);
+            for off in [4u32, 8, 0xc] {
+                let v = if rng.next().is_multiple_of(3) {
+                    rng.next()
+                } else {
+                    0
+                };
+                t.put_u32(m + off, v);
+            }
+            t.put_u32(m + 0x10, rng.next());
+            let nv = rng.next() % 6;
+            let nn = rng.next() % 6;
+            let np = rng.next() % 4;
+            for (off, n) in [(4u32, nv), (0x16, nn), (0x18, np)] {
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(d + off, &(n as u16).to_le_bytes());
+            }
+            for (off, n) in [(8u32, nv), (0xc, nn)] {
+                let src = t.alloc(6 * 6);
+                for k in 0..n * 3 {
+                    #[allow(clippy::cast_possible_truncation)]
+                    t.put(src + 2 * k, &(rng.next() as u16).to_le_bytes());
+                }
+                t.put_u32(d + off, src);
+            }
+            let ents = t.alloc(0x24 * 4);
+            for k in 0..np {
+                let e = ents + 0x24 * k;
+                #[allow(clippy::cast_possible_truncation)]
+                {
+                    t.put(e + 0x13, &[(rng.next() % 16) as u8]);
+                    t.put(e + 0x1c, &((rng.next() % 32) as u16).to_le_bytes());
+                }
+            }
+            t.put_u32(d + 0x1c, ents);
+        }
+        let scratch = t.alloc(c::CREATE_PACKET_SCRATCH as usize);
+        let at = t.a.rebase(0x0082_7280);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = c::ch_model_create_packet(&mut t.b, chr, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_ModelCreatePacket {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, c::CREATE_PACKET_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_ModelCreatePacket {round} memory",
+            t.name
+        );
+    }
+}
