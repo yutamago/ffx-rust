@@ -110,7 +110,7 @@ impl Default for Options {
 /// Where the game's Documents folder is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Home {
-    /// The slot's own sandbox, `<temp>/ffx-harness/<slot>/home`.
+    /// The slot's own sandbox, [`slot_dir`]`/home`.
     Instance,
     /// This folder (made afresh at each launch).
     Dir(PathBuf),
@@ -128,11 +128,22 @@ pub fn base_port() -> u16 {
         .unwrap_or(27100)
 }
 
-/// Slot `n`'s output directory (WSL side): `<temp>/ffx-harness/<n>`, for
+/// The harness's own folder: `FFX_HARNESS_DIR`, else `~/ffx-work/harness`
+/// (not `/tmp`, which a WSL shutdown empties).
+#[must_use]
+pub fn work_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("FFX_HARNESS_DIR") {
+        return PathBuf::from(d);
+    }
+    let home = std::env::var_os("HOME").map_or_else(std::env::temp_dir, PathBuf::from);
+    home.join("ffx-work/harness")
+}
+
+/// Slot `n`'s output directory (WSL side): [`work_dir`]`/<n>`, for
 /// screenshots, its sandboxed home and anything a test writes.
 #[must_use]
 pub fn slot_dir(n: u32) -> PathBuf {
-    std::env::temp_dir().join("ffx-harness").join(n.to_string())
+    work_dir().join(n.to_string())
 }
 
 /// Game instance `n`'s folder (`tools/instance.sh`).
@@ -561,7 +572,7 @@ impl Game {
             .map(|a| TcpStream::connect_timeout(&a, Duration::from_secs(2)))
             .ok_or_else(|| Error::Launch("no address".into()))??;
         stream.set_read_timeout(Some(Duration::from_secs(600)))?;
-        let shot_dir = std::env::temp_dir().join("ffx-harness");
+        let shot_dir = work_dir();
         std::fs::create_dir_all(&shot_dir)?;
         Ok(Self {
             stream: BufReader::new(stream),

@@ -9,7 +9,8 @@
 //! tools/game-tests.sh --all      # all of them
 //! ```
 //!
-//! Screenshots go to the system temp folder (`ffx-harness/`).
+//! Screenshots of failed checks go to `~/ffx-work/harness/`
+//! (`ffx_harness::work_dir`).
 
 use std::path::PathBuf;
 
@@ -39,12 +40,10 @@ fn fail(game: &mut Game, name: &str, why: &str) -> ! {
 }
 
 fn screenshot_path(name: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join("ffx-harness")
-        .join(format!("{name}.png"))
+    ffx_harness::work_dir().join(format!("{name}.png"))
 }
 
-/// Writes mod files into a folder of this process, `<temp>/ffx-harness/
+/// Writes mod files into a folder of this process, `~/ffx-work/harness/
 /// mods-<pid>/<name>`, runs `test` with it (for [`Options::mods`]: the
 /// launch adds it to its own game instance, so tests side by side never see
 /// each other's mods), and removes it again, also when the test fails.
@@ -53,8 +52,7 @@ fn with_mods<T>(
     files: &[(&str, Vec<u8>)],
     test: impl FnOnce(PathBuf) -> T + std::panic::UnwindSafe,
 ) -> T {
-    let dir = std::env::temp_dir()
-        .join("ffx-harness")
+    let dir = ffx_harness::work_dir()
         .join(format!("mods-{}", std::process::id()))
         .join(name);
     let _ = std::fs::remove_dir_all(&dir);

@@ -120,7 +120,7 @@ fi
 # handle that). Without the harness, any game outside the instances holds
 # the real mutex, and so does one stuck while exiting (no path then).
 games="$(powershell.exe -NoProfile -Command \
-    'Get-Process FFX -ErrorAction SilentlyContinue | ForEach-Object { "path=" + $_.Path }' | tr -d '\r')"
+    'Get-Process FFX -ErrorAction SilentlyContinue | ForEach-Object { "path=" + $_.Path }; exit 0' | tr -d '\r')"
 here="$(wslpath -w "$game/FFX.exe")"
 instances="$(wslpath -w "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}")"
 clash=""
