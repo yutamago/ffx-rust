@@ -656,6 +656,22 @@ pub mod bridge {
         call(mem, f, &[p, hi])
     }
 
+    // ---- round 22 ----
+
+    /// `rcefObjFini(obj)` (`0x0092fee0`, an object's finaliser
+    /// [`obj::FINI`]): the particle part's finaliser (`0x0092efc0`, empty),
+    /// [`rcef_anime_fini`] with the animation's address (`+0x330`) as the
+    /// id, [`rcef_model_fini`] with the model's (`+0x3c0`), then the empty
+    /// destructor. Returns `rcefModelFini`'s `eax`.
+    pub fn rcef_obj_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcef_anime_fini(mem, o.wrapping_add(obj::ANIME), call);
+        rcef_model_fini(mem, o.wrapping_add(obj::MODEL), call)
+    }
+
     // ---- round 4: running tasks, objects, particle parts ----
 
     /// `rcefTaskProc(task)` (`0x0092ed90`): the current level's sequence

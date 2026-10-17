@@ -1039,6 +1039,46 @@ From here on, functions are picked by `symbols/classes.tsv` (category
     material set-up for PhyreEngine (glue).
   - The `0x0081xxxx` functions are the sound sequencer's (sound agent).
 
+## Disposing, finalising, command menus and the guide's fade (round 22)
+
+- `yiDisposeAnimDObj` (`0x009084b0`): on `g_YiRender`, `yiAnimDetachAll`
+  for a negative kind, else `yiAnimDetach`.
+- `rcefObjFini` (`0x0092fee0`, an effect object's finaliser): the
+  particle part's finaliser and the destructor are empty (`0x0092efc0`,
+  `0x0092ed00`); between them `rcefAnimeFini(obj + 0x330)` (the
+  animation's address used as the id) and `rcefModelFini(obj + 0x3c0)`,
+  whose `eax` it returns.
+- `AbmapFillCommandMenu` (`0x00a459e0`, name ours): `eiAbmStart` fills
+  menu pads 3, 2, 4 and 5 with the menu status entries
+  (`MsMenuStatusNum`) of kinds 0x40, 0x41, 0x45 and 0x44. Each entry
+  goes through the inlined `addMenuPrim`: 12-byte entries from `+0x40`
+  (`+0x40` command id, `+0x44` 0, `+0x48` id - 0x3000), the `i16`
+  count at `+0x1e` (at most 0x40; a full pad prints the error and calls
+  `debug_exit_trace(0)`), and `+0x28` set when the count is above rows
+  `+0x22` times columns `+0x16`.
+- `Yn_GuideEdgeFade` (`0x0091f530`, name ours, from `0x0091cf10`): `h` is
+  half the rectangle's width and `r` the point's distance from the
+  clamped segment (`Yn_NearestOnLine2D`). Beyond `0.2 h` it writes 1.0
+  and returns 1. Otherwise it writes `(r - 0.15 h) / (0.2 h - 0.15 h)`
+  clamped to 0..1 (a NaN passes through) and returns 0. Every
+  intermediate is stored as `f32` except the denominator. The original
+  reads the point a second time through `edx`, which
+  `Yn_NearestOnLine2D` leaves alone; the port reads the argument again.
+- `rcbgSceneSetChadist` (`0x00920790`, name ours; the thunk at
+  `0x00920780` jumps to it): the character distance is the player's
+  camera-space z (`Ch_GetPos`, w 1.0, through `g_CameraMatrix`) times
+  0.1, or 98.0 without a player. It is stored at `+0x100`, `+0x104` is
+  set, `+0x10` of Yn's map is cleared, and the distance goes to
+  `graphicSetChadist`.
+- Not ported:
+  - `AbmapFillUseItemMenu` (`0x00a45fd0`) builds `+0x48` from a 32-bit
+    local of which only the low half (the item) is written, so the high
+    half is stale stack.
+  - `0x00a45e30` and `0x00a4c460` build UI draw elements and packets
+    (replaced by ffx-render).
+  - `0x009161d0` is a CRT `_splitpath` copy (platform).
+  - The `rcPrim*` functions are packet writers (replaced by ffx-render).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
