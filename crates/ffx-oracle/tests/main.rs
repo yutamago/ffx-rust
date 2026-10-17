@@ -2456,6 +2456,7 @@ fn control_synthetic() {
     round9_main_cases(&mut a, &mut b, &mut rng, 300);
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
     envelope_cases(&mut a, &mut b, &mut rng, 300);
+    packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2477,6 +2478,7 @@ fn control_snapshot() {
     round9_main_cases(&mut a, &mut b, &mut rng, 300);
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
     envelope_cases(&mut a, &mut b, &mut rng, 300);
+    packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3803,6 +3805,72 @@ fn envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u3
             &[lists, out, m],
             |o| {
                 e::calc_envelope_w_opt(o, lists, out, m);
+            },
+        );
+    }
+}
+
+/// Packed vertex lists (`sg_calcenvelope_asm*`): rigid entries, then
+/// groups of first weighted entries ending in `0xffff`, 2 bytes, groups of
+/// further weighted entries ending in `0xffff`. Indices below 0x110 (the
+/// group bases 0 or 1).
+fn packed_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let mut bytes: Vec<u8> = vec![];
+    let w16 = |v: &mut Vec<u8>, x: u32| v.extend(u16::try_from(x & 0xffff).unwrap().to_le_bytes());
+    let vertex = |v: &mut Vec<u8>, rng: &mut Xorshift| {
+        for _ in 0..3 {
+            w16(v, rng.next());
+        }
+    };
+    let n = rng.below(4);
+    w16(&mut bytes, n);
+    w16(&mut bytes, rng.next());
+    for _ in 0..n {
+        vertex(&mut bytes, rng);
+        w16(&mut bytes, rng.below(0x110));
+    }
+    for section in 0..2 {
+        if section == 1 {
+            w16(&mut bytes, rng.next());
+        }
+        for _ in 0..rng.below(3) {
+            let c = rng.below(3);
+            w16(&mut bytes, c);
+            w16(&mut bytes, rng.below(2));
+            for _ in 0..c {
+                vertex(&mut bytes, rng);
+                bytes.push(u8::try_from(rng.next() & 0xff).unwrap());
+                bytes.push(u8::try_from(rng.below(16)).unwrap());
+            }
+        }
+        w16(&mut bytes, 0xffff);
+    }
+    let lists = alloc(a, b, bytes.len() + 4);
+    a.write(lists, &bytes).unwrap();
+    b.write(lists, &bytes).unwrap();
+    lists
+}
+
+fn packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 0x110);
+        for k in 0..4 * 0x110 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = packed_lists(a, b, rng);
+        twin(
+            "sg_calcenvelope_asm_opt",
+            a,
+            b,
+            0x006e_ee40,
+            &[lists, out, m],
+            |o| {
+                e::calc_envelope_opt(o, lists, out, m);
             },
         );
     }
