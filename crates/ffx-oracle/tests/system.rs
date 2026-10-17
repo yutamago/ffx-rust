@@ -10974,6 +10974,21 @@ fn marker(cursor: u32, value: u32) -> Vec<u8> {
     v
 }
 
+/// A cdecl stand-in logging its first `n` arguments at `*cursor` and
+/// returning the first.
+fn logger_args(cursor: u32, n: u8) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    for k in 0..n {
+        // mov eax, [esp+4+4k]; mov [ecx+4k], eax
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[4 * n, 0x8b, 0x44, 0x24, 0x04, 0xc3]);
+    v
+}
+
 /// `0x00776110` over logging stand-ins for the sound, print, help and
 /// reset calls and two condition functions.
 #[allow(
@@ -12648,6 +12663,255 @@ fn round21_message_matches_the_original_on_the_snapshot() {
         return;
     };
     round21_message(&mut a, &mut b, &mut Xorshift(0x4021_0042));
+}
+
+/// Round 21's battle command windows over logging stand-ins for the
+/// command data, checks, windows and targets.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round21_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let ret = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let mut off = 0x40u32;
+    let mut stand = |a: &mut Oracle, b: &mut Oracle, sym: u32, code: &[u8]| {
+        let s = stand_in8(a, b, off, code);
+        redirect(a, b, sym, s);
+        off += 0x40;
+    };
+    stand(a, b, 0x0089_afc0, &marker(cursor, 0x2101_0001));
+    stand(a, b, 0x0079_2d60, &logger_args(cursor, 3));
+    stand(a, b, 0x0078_51c0, &ret(cells));
+    stand(a, b, 0x0089_89d0, &marker(cursor, 0x2101_0002));
+    stand(a, b, 0x008a_e5a0, &logger(cursor, 0x2101_0003));
+    // MsGetComData: *out = 0x1234, returns the data in cells + 4
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00, 0x34, 0x12, 0x00, 0x00, 0xa1,
+    ];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    stand(a, b, 0x0079_a4b0, &v);
+    stand(a, b, 0x0089_b5a0, &logger_args(cursor, 3));
+    stand(a, b, 0x008a_10d0, &logger(cursor, 0x2101_0004));
+    stand(a, b, 0x008a_0de0, &logger(cursor, 0x2101_0005));
+    stand(a, b, 0x0078_cf70, &logger_args(cursor, 2));
+    stand(a, b, 0x0089_aca0, &ret(cells + 8));
+    stand(a, b, 0x0089_9ac0, &logger(cursor, 0x2101_0006));
+    // TOBtlSetTarget: marks the level targeting (+2 = 1) and logs
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x69, 0xc0, 0xf0, 0x00, 0x00, 0x00, 0xc6, 0x80,
+    ];
+    v.extend_from_slice(&(g(a, 0x0133_c952)).to_le_bytes());
+    v.push(0x01);
+    v.extend_from_slice(&logger_args(cursor, 3));
+    stand(a, b, 0x0089_a860, &v);
+    // MsGetChrStatDeath: the id less cells[3], so 1, 0 and other values
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x2b, 0x05];
+    v.extend_from_slice(&(cells + 12).to_le_bytes());
+    v.push(0xc3);
+    stand(a, b, 0x0079_5780, &v);
+    let data = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 4);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let levels = g(a, 0x0133_c860);
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        let bytes: Vec<u8> = (0..5 * 0xf0).map(|_| rng.next() as u8).collect();
+        a.write(levels, &bytes).unwrap();
+        b.write(levels, &bytes).unwrap();
+        for l in 0..5u32 {
+            let level = levels + 0xf0 * l;
+            put(a, b, level + 2, u8::from(rng.next().is_multiple_of(2)));
+            put(a, b, level + 0xb, (rng.next() % 8) as u8);
+            put(
+                a,
+                b,
+                level + 0xc,
+                [0x311eu16, 0x3029, rng.next() as u16][(rng.next() % 3) as usize],
+            );
+            put(
+                a,
+                b,
+                level + 0xa4,
+                [(rng.next() % 4) as u16, (rng.next() % 4) as u16],
+            );
+            put(a, b, level + 8, (rng.next() % 0x20) as u16);
+        }
+        let list: Vec<u8> = (0..0x140).map(|_| rng.next() as u8).collect();
+        a.write(g(a, 0x0133_d0d0), &list).unwrap();
+        b.write(g(a, 0x0133_d0d0), &list).unwrap();
+        let bytes: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+        a.write(data, &bytes).unwrap();
+        b.write(data, &bytes).unwrap();
+        put(a, b, cells, rng.next() % 2);
+        put(a, b, cells + 4, data);
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 0x10, 0x80, 0x81, 0xfe, 0xff, 0xffff_ffff, 0xffff_fffe]
+                [(rng.next() % 8) as usize],
+        );
+        put(a, b, cells + 12, rng.next() % 4);
+        put(
+            a,
+            b,
+            g(a, 0x023c_c092),
+            [0xffu8, 0, 0, 1, 2][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_c94c),
+            [0x0001_0000u32, 0x100, 0][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_d168),
+            [0xffff_ffffu32, 0][(rng.next() % 2) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_d0e0),
+            u32::from(rng.next().is_multiple_of(4)),
+        );
+        put(a, b, g(a, 0x0133_f0d8), rng.next() % 5);
+        for i in 0..4u32 {
+            put(a, b, g(a, 0x0133_f0dc) + 2 * i, (rng.next() % 6) as u16);
+            put(a, b, g(a, 0x0133_d180) + 4 * i, rng.next());
+        }
+        put(a, b, g(a, 0x0133_d17c), rng.next() as u16);
+        put(a, b, g(a, 0x023c_c088), (rng.next() % 4) as u16);
+        put(
+            a,
+            b,
+            g(a, 0x0133_d770),
+            [
+                (rng.next() % 2) as u8,
+                (rng.next() % 2) as u8,
+                (rng.next() % 2) as u8,
+                (rng.next() % 2) as u8,
+            ],
+        );
+        put(a, b, g(a, 0x0133_d6e0), rng.next() % 2);
+        put(a, b, g(a, 0x023c_c038), rng.next());
+        put(a, b, g(a, 0x023c_c040), (rng.next() % 0x20) as u8);
+        let chr = rng.next() % 0x20;
+        let command =
+            [0xfeu32, 0xfffe, 0xffff, rng.next() % 0x4000, 0x3115][(rng.next() % 5) as usize];
+        match k % 3 {
+            0 => assert_eq!(
+                eax(a, 0x0089_75a0, &[]),
+                t::to_btl_finish_command(b, call),
+                "finish {k}"
+            ),
+            1 => {
+                let level = rng.next() % 4;
+                assert_eq!(
+                    eax(a, 0x0089_9870, &[level, chr, command]),
+                    t::to_btl_set_command(b, level, chr, command, scratch, call),
+                    "set command {k}"
+                );
+            }
+            _ => {
+                // the finish and sub-window steps as markers here
+                assert_eq!(
+                    eax(a, 0x0089_a330, &[chr, command]),
+                    t::to_btl_set_next_action(b, chr, command, scratch, call),
+                    "next action {k}"
+                );
+            }
+        }
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("battle command windows", a, b);
+    }
+    // the next action over stand-ins for the finish and sub-window steps
+    stand(a, b, 0x0089_75a0, &marker(cursor, 0x2101_0007));
+    stand(a, b, 0x0089_9870, &logger_args(cursor, 3));
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        let bytes: Vec<u8> = (0..5 * 0xf0).map(|_| rng.next() as u8).collect();
+        a.write(levels, &bytes).unwrap();
+        b.write(levels, &bytes).unwrap();
+        for l in 0..5u32 {
+            let level = levels + 0xf0 * l;
+            put(a, b, level + 2, u8::from(rng.next().is_multiple_of(2)));
+            put(a, b, level + 0xb, (rng.next() % 8) as u8);
+            put(
+                a,
+                b,
+                level + 0xa4,
+                [(rng.next() % 4) as u16, (rng.next() % 4) as u16],
+            );
+        }
+        put(a, b, cells, rng.next() % 2);
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 0x10, 0x80, 0x81, 0xfe, 0xff, 0xffff_ffff][(rng.next() % 7) as usize],
+        );
+        put(a, b, cells + 12, rng.next() % 4);
+        put(
+            a,
+            b,
+            g(a, 0x023c_c092),
+            [0xffu8, 0, 1, 2][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_c94c),
+            [0x0001_0000u32, 0][(rng.next() % 2) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_d168),
+            [0xffff_ffffu32, 0][(rng.next() % 2) as usize],
+        );
+        put(a, b, g(a, 0x0133_f0d8), rng.next() % 5);
+        let chr = [0x11u32, 0x12, rng.next() % 0x20][(rng.next() % 3) as usize];
+        let command = [0xfeu32, 0xfffe, 0xffff, rng.next() % 0x4000][(rng.next() % 4) as usize];
+        assert_eq!(
+            eax(a, 0x0089_a330, &[chr, command]),
+            t::to_btl_set_next_action(b, chr, command, scratch, call),
+            "next action {k}"
+        );
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("next action", a, b);
+    }
+}
+
+#[test]
+fn round21_btl_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round21_btl(&mut a, &mut b, &mut Xorshift(0x4021_0051));
+}
+
+#[test]
+fn round21_btl_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round21_btl(&mut a, &mut b, &mut Xorshift(0x4021_0052));
 }
 
 #[test]

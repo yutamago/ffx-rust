@@ -5908,6 +5908,24 @@ ported! {
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::to_get_message_wh(&mut mem(), window, text, out_w, out_h, mode, flags, at, call_sym, fcall)
     }
+    /// `TOBtlFinishCommand()`.
+    TOBtlFinishCommand @ 0x0089_75a0 => extern "C" fn to_btl_finish_command() -> u32 {
+        tolib::bridge::to_btl_finish_command(&mut mem(), call_sym)
+    }
+    /// `TOBtlSetCommand(level, chr, command)`.
+    TOBtlSetCommand @ 0x0089_9870 => extern "C" fn to_btl_set_command(level: u32, chr: u32, command: u32) -> u32 {
+        let mut slot = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut slot) as usize as u32;
+        tolib::bridge::to_btl_set_command(&mut mem(), level, chr, command, at, call_sym)
+    }
+    /// `TOBtlSetNextAction(chr, command)`.
+    TOBtlSetNextAction @ 0x0089_a330 => extern "C" fn to_btl_set_next_action(chr: u32, command: u32) -> u32 {
+        let mut word = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut word) as usize as u32;
+        tolib::bridge::to_btl_set_next_action(&mut mem(), chr, command, at, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

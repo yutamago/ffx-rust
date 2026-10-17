@@ -9368,7 +9368,7 @@
 0x008ac3d0 function TOGetFontWidthTblAdrs     # fh v3:bsim1.00 0x008ac380
 0x008ac3f0 function TOGetWord_01841d98        # () -> [0x01841d98]; between TOGetFontWidthTblAdrs and TOGetImageWH; name ours
 0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl; (id, &w, &h): constant sizes for 0x2eac..0x132f0c, or i16 pairs from 0x01841dac (0x3c00 by TkGetLang, 0x3d00 by MsBattleGetStatus); returns &h
-0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710
+0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710; () -> 4, or for languages 0/9/10 4 only with MsGetSaveConfigEnglish (else 0)
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac7c0 function TOGetMessageWindowWH         # layout+callees: sorts between TOGetMessageWindowMode and TOGetSaveChrName, and its named callees match the Switch 0x71004fa030 TOGetMessageWindowWH's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
@@ -9494,7 +9494,7 @@
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
 0x008b71c0 function TOGetEasyMesWHForCredits  # fh switch:bsim1.00 0x71004f15e0
 0x008b71f0 function TOGetExtMesWHFontL2          # layout+callees: sorts between TOGetEasyMesWHForCredits and TOGetFontInfo, and its named callees match the Switch 0x71004f1540 TOGetExtMesWHFontL2's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
-0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0
+0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0; (text, out) -> next: page +0, cell parity +4, box +8..+0x14, slant +0x18, width +0x1c (width-table byte / 4), +0x20 18.0; dictionary codes from 0x2c, two-byte tables 0x26..0x2b, icon 6, fixed 10.0 box otherwise
 0x008b78b0 function TOGetFontInfoInterMode       # layout and calls: the Switch name after TOGetFontInfo here (TOGetFontInfoInterMode, 744 bytes, calls TOGetFFXLang; ours 801, calls TOGetFFXLang)
 0x008b7be0 function TOGetFontWidthInterMode      # layout and calls: (a, b, c) -> TOGetFontWidth(a, b, c, TOGetInternationalBaseDicType()); the Switch's TOGetFontWidthInterMode (calls TOGetFFXLang and _TOGetFontWidth) sorts after TOGetFontInfoInterMode, as here
 0x008b7c00 function TOGetFontWidthForLang     # cdecl(text, kind, out, _): TOGetFontWidth(text, kind, out, lang 0/9/10 ? 0 : 4); name ours

@@ -7166,4 +7166,263 @@ pub mod bridge {
         mem.write(g(mem, 0x0186_63ec), 0u32);
         p
     }
+
+    /// `TOBtlFinishCommand()` (`0x008975a0`): sends the chosen command
+    /// (`TOControlMsSetMenuCommand`, `MsSetBtlCommand(0x023cc040,
+    /// 0x023cc038, 0)`), saves the cursor when the cursor-save option is on
+    /// and the command (`0x023cc040`) is at most 0x11, clears the command
+    /// window state (`0x0133c93c`, `0x023cc08c`, nine words at
+    /// `0x0133d74c`), resets the scenes (`TOSeqInitAllScene(2)`) and, when
+    /// `0x0133d6e0` is 0, sets `0x023cc088` to 0xff. Returns 0xff then,
+    /// else the scene reset's eax.
+    pub fn to_btl_finish_command<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        call(mem, 0x0089_afc0, &[]);
+        let target: u32 = mem.read(g(mem, 0x023c_c038));
+        call(mem, 0x0079_2d60, &[g(mem, 0x023c_c040), target, 0]);
+        if call(mem, 0x0078_51c0, &[]) == 1 && mem.read::<u8>(g(mem, 0x023c_c040)) <= 0x11 {
+            call(mem, 0x0089_89d0, &[]);
+        }
+        mem.write(g(mem, 0x0133_c93c), 0u8);
+        mem.write(g(mem, 0x023c_c08c), 0u32);
+        for k in 0..9 {
+            mem.write(g(mem, 0x0133_d74c).wrapping_add(4 * k), 0u32);
+        }
+        let r = call(mem, 0x008a_e5a0, &[2]);
+        if mem.read::<u32>(g(mem, 0x0133_d6e0)) == 0 {
+            mem.write(g(mem, 0x023c_c088), 0xffu16);
+            return 0xff;
+        }
+        r
+    }
+
+    /// `TOBtlSetCommand(level, chr, command)` (`0x00899870`): opens the
+    /// sub-window of battle-window level `level` (0xf0-byte entries at
+    /// `0x0133c950`) for `command`: its kind `+6` (0 for 0xfe, 0xd for
+    /// 0xfffe, 0xc for 0xffff, else the command data's `+0x17`) and sets
+    /// `+0xa` to 1; a real command checks the current level's command (`+0xc`):
+    /// 0x311e sets `0x0133c94c` to 0x100 and marks `+0xa` 2, 0x3029 sets it
+    /// to 0x10000 and `+0xa4` to 2. Then `+0x20` takes the
+    /// `TOGetSaveWindow(chr +8, kind, +0x24)` text, `+0x88` the window
+    /// function `0x00898e40`, and the layout and callback are set
+    /// (`TOBtlSetWindowLayout`, `TOBtlSetCallback`, whose eax it returns).
+    /// `scratch` stands in for the original's argument slot that
+    /// `MsGetComData` writes.
+    pub fn to_btl_set_command<M: Mem>(
+        mem: &mut M,
+        level: u32,
+        chr: u32,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let _ = chr;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let entry = g(mem, 0x0133_c950).wrapping_add(level.wrapping_mul(0xf0));
+        mem.write(entry.wrapping_add(2), 0u8);
+        let kind = match command {
+            0xfe => Some(0u16),
+            0xfffe => Some(0xd),
+            0xffff => Some(0xc),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            mem.write(entry.wrapping_add(6), kind);
+            mem.write(entry.wrapping_add(0xa), 1u16);
+        } else {
+            mem.write(scratch, level);
+            let data = call(mem, 0x0079_a4b0, &[command, scratch]);
+            let kind = u16::from(mem.read::<u8>(data.wrapping_add(0x17)));
+            mem.write(entry.wrapping_add(6), kind);
+            let depth = i32::from(mem.read::<i8>(g(mem, 0x023c_c092)));
+            let current =
+                g(mem, 0x0133_c950).wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+            mem.write(entry.wrapping_add(0xa), 1u16);
+            if mem.read::<u16>(current.wrapping_add(0xc)) == 0x311e {
+                mem.write(g(mem, 0x0133_c94c), 0x100u32);
+                mem.write(current.wrapping_add(0xa), 2u8);
+            }
+            if mem.read::<u16>(current.wrapping_add(0xc)) == 0x3029 {
+                mem.write(g(mem, 0x0133_c94c), 0x0001_0000u32);
+                mem.write(current.wrapping_add(0xa4), 2u16);
+            }
+        }
+        let kind = i32::from(mem.read::<i16>(entry.wrapping_add(6))).cast_unsigned();
+        let owner = i32::from(mem.read::<i16>(entry.wrapping_add(8))).cast_unsigned();
+        let text = call(mem, 0x0089_b5a0, &[owner, kind, entry.wrapping_add(0x24)]);
+        mem.write(entry.wrapping_add(0x20), text);
+        mem.write(entry.wrapping_add(0x88), g(mem, 0x0089_8e40));
+        call(mem, 0x008a_10d0, &[entry]);
+        call(mem, 0x008a_0de0, &[entry])
+    }
+
+    /// `TOBtlSetNextAction(chr, command)` (`0x0089a330`): steps the battle
+    /// command windows one level deeper for `command`, returning 1, or 0
+    /// when `TOCheckBtlCommandUse` refuses it.
+    ///
+    /// At a targeting level (`+2` 1) the command is the target pick 0x3115
+    /// and the command list is saved (`0x0133d0d0` to `0x0133d210`, 0x140
+    /// bytes); with all targets chosen (`+0xa6` at least `+0xa4`) the
+    /// command finishes (`TOBtlFinishCommand`) instead, and at the 0x10000
+    /// pick mode `0x0133f106` takes `MsGetCommandMP`. A use check of 0xff
+    /// finishes too. The current level is marked done (`+1` 6) with the
+    /// command in its history (`+0x16 + 2 × +0xb`); the next level is
+    /// cleared and given the character, command, `+0x16` 0xff, the target
+    /// counts of the level before (or 1 at level 0) and `+1` 1. Checks of
+    /// 0x80 or less open the sub-window (`TOBtlSetCommand`), 0xfe a target
+    /// pick (`TOBtlSetTarget`); with cursor saving the saved cursor comes
+    /// back (`TOBtlSetDefaultCursorPos`). A new target pick with no
+    /// forced target (`0x0133d168` -1, `0x0133d0e0` 0) starts on the first
+    /// dead party member (`MsGetChrStatDeath`), if any. `scratch` stands in
+    /// for the original's stack word.
+    #[allow(clippy::too_many_lines)]
+    pub fn to_btl_set_next_action<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let depth_at = g(mem, 0x023c_c092);
+        let level_at = |mem: &M, depth: i8| -> u32 {
+            mem.rebase(0x0133_c950)
+                .wrapping_add((i32::from(depth) * 0xf0).cast_unsigned())
+        };
+        let depth: i8 = mem.read(depth_at);
+        let level = level_at(mem, depth);
+        let mut command = command;
+        if mem.read::<u8>(level.wrapping_add(2)) == 1 {
+            let done: i16 = mem.read(level.wrapping_add(0xa6));
+            let want: i16 = mem.read(level.wrapping_add(0xa4));
+            if done >= want {
+                call(mem, 0x0089_75a0, &[]);
+                return 1;
+            }
+            command = 0x3115;
+            for k in 0..0x50u32 {
+                let v: u32 = mem.read(g(mem, 0x0133_d0d0).wrapping_add(4 * k));
+                mem.write(g(mem, 0x0133_d210).wrapping_add(4 * k), v);
+            }
+            if mem.read::<u32>(g(mem, 0x0133_c94c)) == 0x0001_0000 {
+                let own = u32::from(mem.read::<u16>(level.wrapping_add(0xc)));
+                let data = call(mem, 0x0079_a4b0, &[own, scratch]);
+                let depth: i8 = mem.read(depth_at);
+                let who = i32::from(mem.read::<i16>(level_at(mem, depth).wrapping_add(8)))
+                    .cast_unsigned();
+                let mp = call(mem, 0x0078_cf70, &[who, data]);
+                #[allow(clippy::cast_possible_truncation)] // mov word, ax
+                mem.write(g(mem, 0x0133_f106), mp as u16);
+            }
+        }
+        let check = match command {
+            0xfffe => 0xdi32,
+            0xffff => 0xc,
+            _ => {
+                let r = call(mem, 0x0089_aca0, &[chr, command]).cast_signed();
+                if r < 0 {
+                    return 0;
+                }
+                if r == 0xff {
+                    call(mem, 0x0089_75a0, &[]);
+                    return 1;
+                }
+                r
+            }
+        };
+        let depth: i8 = mem.read(depth_at);
+        if depth >= 0 {
+            let level = level_at(mem, depth);
+            mem.write(level.wrapping_add(1), 6u8);
+            let slot = i32::from(mem.read::<i8>(level.wrapping_add(0xb)));
+            #[allow(clippy::cast_possible_truncation)] // mov word, cx
+            mem.write(
+                level
+                    .wrapping_add(0x16)
+                    .wrapping_add((slot * 2).cast_unsigned()),
+                command as u16,
+            );
+        }
+        let depth = depth.wrapping_add(1);
+        mem.write(depth_at, depth);
+        let next = level_at(mem, depth);
+        for k in 0..0x3cu32 {
+            mem.write(next.wrapping_add(4 * k), 0u32);
+        }
+        #[allow(clippy::cast_possible_truncation)] // mov word, dx / cx
+        {
+            mem.write(next.wrapping_add(8), chr as u16);
+            mem.write(next.wrapping_add(0xc), command as u16);
+        }
+        mem.write(next.wrapping_add(0x16), 0xffu16);
+        if depth == 0 {
+            mem.write(g(mem, 0x0133_c9f4), 1u32);
+        } else {
+            let before = next.wrapping_sub(0xf0);
+            let want: u16 = mem.read(before.wrapping_add(0xa4));
+            mem.write(next.wrapping_add(0xa4), want);
+            let done: u16 = mem.read(before.wrapping_add(0xa6));
+            mem.write(next.wrapping_add(0xa6), done);
+        }
+        mem.write(next.wrapping_add(1), 1u8);
+        let depth_arg = i32::from(depth).cast_unsigned();
+        if check <= 0x80 {
+            call(mem, 0x0089_9870, &[depth_arg, chr, command]);
+        }
+        if check == 0xfe {
+            let depth: i8 = mem.read(depth_at);
+            call(
+                mem,
+                0x0089_a860,
+                &[i32::from(depth).cast_unsigned(), chr, command],
+            );
+        }
+        if call(mem, 0x0078_51c0, &[]) == 1 {
+            let depth: i8 = mem.read(depth_at);
+            let screen = i32::from(mem.read::<i16>(g(mem, 0x023c_c088)));
+            let saved: u8 = mem.read(g(mem, 0x0133_d770).wrapping_add(screen.cast_unsigned()));
+            let pick: u16 = mem.read(g(mem, 0x0133_ca4c));
+            let level = level_at(mem, depth);
+            if saved == 1
+                && pick != 0xffff
+                && pick != 0xfffe
+                && mem.read::<i16>(level.wrapping_add(8)) <= 0x11
+            {
+                call(mem, 0x0089_9ac0, &[level]);
+            }
+        }
+        let depth: i8 = mem.read(depth_at);
+        let level = level_at(mem, depth);
+        if mem.read::<u8>(level.wrapping_add(2)) == 1
+            && mem.read::<u32>(g(mem, 0x0133_d168)) == 0xffff_ffff
+            && mem.read::<u32>(g(mem, 0x0133_d0e0)) == 0
+        {
+            let count: i32 = mem.read(g(mem, 0x0133_f0d8));
+            let mut i = 0i32;
+            while i < count {
+                let who = g(mem, 0x0133_f0dc).wrapping_add((i * 2).cast_unsigned());
+                let id = u32::from(mem.read::<u16>(who));
+                if call(mem, 0x0079_5780, &[id]) == 1 {
+                    mem.write(g(mem, 0x0133_d200), 0u16);
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    // mov word, si
+                    mem.write(g(mem, 0x0133_d1fc), i as u16);
+                    let target: u32 =
+                        mem.read(g(mem, 0x0133_d180).wrapping_add((i * 4).cast_unsigned()));
+                    mem.write(g(mem, 0x0133_d178), target);
+                    let id: u16 = mem.read(who);
+                    mem.write(g(mem, 0x0133_d1f4), id);
+                    mem.write(g(mem, 0x0133_d1f8), g(mem, 0x0133_d180));
+                    let n: u16 = mem.read(g(mem, 0x0133_d17c));
+                    mem.write(g(mem, 0x0133_d1f6), n);
+                    return 1;
+                }
+                i += 1;
+            }
+        }
+        1
+    }
 }
