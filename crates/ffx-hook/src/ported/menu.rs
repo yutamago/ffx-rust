@@ -3241,6 +3241,18 @@ ported! {
     MenuNameEntry_OpenCharWindow @ 0x008c_43f0 => extern "C" fn menu_name_entry_open_char_window(chr: u32) -> u32 {
         tk::menu_name_entry_open_char_window(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_TargetNeedsRecovery(kind, all, chr)`: 1 or 0.
+    MenuItem_TargetNeedsRecovery_008c6a70 @ 0x008c_6a70 => extern "C" fn menu_item_target_needs_recovery(kind: u32, _all: u32, chr: u32) -> u32 {
+        tk::menu_item_target_needs_recovery(&mem(), kind, chr)
+    }
+    /// `Msg_PollClose(i)`: 1 or 0.
+    Msg_PollClose @ 0x0086_0aa0 => extern "C" fn msg_poll_close(i: u32) -> u32 {
+        tk::msg_poll_close(&mut mem(), i, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_GrowInfo(stat, chr, cost, gain)`: 1 or 0.
+    MenuSummon_GrowInfo @ 0x008c_d320 => extern "C" fn menu_summon_grow_info(stat: i32, chr: u32, cost: u32, gain: u32) -> u32 {
+        tk::menu_summon_grow_info(&mut mem(), stat, chr, [cost, gain], &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {
         tk::menu_shop_weapon_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))

@@ -5716,6 +5716,97 @@ pub mod bridge {
         w
     }
 
+    /// `MenuItem_TargetNeedsRecovery(kind, _, chr)` (`0x008c6a70`): kind 0
+    /// whether HP is below the maximum, 1 MP, 2 either, 3 always (1); any
+    /// other kind 0. The comparisons are signed (`MenuItem_Less`).
+    pub fn menu_item_target_needs_recovery(mem: &impl Mem, kind: u32, chr: u32) -> u32 {
+        let below = |now: u32, max: u32| {
+            u32::from(super::less(
+                tk_menu_get_ply(mem, chr, now).cast_signed(),
+                tk_menu_get_ply(mem, chr, max).cast_signed(),
+            ))
+        };
+        match kind {
+            0 => below(0x1c, 0x24),
+            1 => below(0x20, 0x28),
+            2 => below(0x1c, 0x24) | below(0x20, 0x28),
+            3 => 1,
+            _ => 0,
+        }
+    }
+
+    /// `Msg_PollClose(i)` (`0x00860aa0`, own name): 1 when message window
+    /// `i`'s state (`AtelGetMesWinWork(i)` `+0x14`) is 0 or 4; in state 2
+    /// with message status 3 (`TOGetMessageStatus(i)`), the window is
+    /// closed (`Msg_CloseWindow(i)`) when the current control work's bit 2
+    /// asks for it (`AtelGetCurCtrlWork()`, the bit cleared); 0 otherwise.
+    pub fn msg_poll_close<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0086_be90);
+        let window = call(mem, f, &[i]);
+        match mem.read::<u16>(window.wrapping_add(0x14)) {
+            0 | 4 => return 1,
+            2 => {}
+            _ => return 0,
+        }
+        let f = mem.rebase(0x008b_7ca0);
+        if call(mem, f, &[i]) != 3 {
+            return 0;
+        }
+        let f = mem.rebase(0x0086_aff0);
+        let ctrl = call(mem, f, &[]);
+        if mem.read::<u8>(ctrl) & 4 != 0 {
+            let close = mem.rebase(0x0086_40f0);
+            call(mem, close, &[i]);
+            let v = mem.read::<u8>(ctrl) & !4;
+            mem.write(ctrl, v);
+        }
+        0
+    }
+
+    /// `MenuSummon_GrowInfo(stat, chr, cost, gain)` (`0x008cd320`, own
+    /// name): for an aeon stat (`stat` < 10, signed; its descriptor at
+    /// `0x00c5a608` + 0x1c × `stat`) the sphere cost (`u16 +4` of
+    /// `MenuSummon_GrowEntry(stat)`) into `*cost` and, while the stat's
+    /// maximum ([`menu_summon_get_stat`] of `chr`'s record) is below the
+    /// descriptor's limit (`+0x14`, signed), the gain its function (`+0x18`,
+    /// called with `chr` and that maximum) gives, clamped to 1..=99
+    /// ([`crate::math::clamp_1_to_99`]), into `*gain`; returns 1 then.
+    /// Otherwise `*cost` stays -1 (stat >= 10), `*gain` 0, and 0 returns.
+    pub fn menu_summon_grow_info<M: Mem>(
+        mem: &mut M,
+        stat: i32,
+        chr: u32,
+        [cost, gain]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(cost, u32::MAX);
+        mem.write(gain, 0u32);
+        let ply = save::ms_get_save_player_ptr(mem, chr);
+        if stat >= 10 {
+            return 0;
+        }
+        let entry = mem.rebase(0x008c_ecf0);
+        let entry = call(mem, entry, &[stat.cast_unsigned()]);
+        let c = u32::from(mem.read::<u16>(entry.wrapping_add(4)));
+        mem.write(cost, c);
+        let desc = mem
+            .rebase(0x00c5_a608)
+            .wrapping_add(stat.cast_unsigned().wrapping_mul(0x1c));
+        let max = menu_summon_get_stat(mem, ply, desc, 1);
+        if max.cast_signed() >= mem.read::<i32>(desc.wrapping_add(0x14)) {
+            mem.write(gain, 0u32);
+            return 0;
+        }
+        let f: u32 = mem.read(desc.wrapping_add(0x18));
+        let g = call(mem, f, &[chr, max]).cast_signed();
+        mem.write(gain, crate::math::clamp_1_to_99(g));
+        1
+    }
+
     /// The base value of an equipment entry `e` (shared by
     /// `0x008d9370` and `0x008d9410`): the first words of its abilities'
     /// records (`u16` ids at `+0xe`, `byte +0xb` of them; 0 and 0xff empty)

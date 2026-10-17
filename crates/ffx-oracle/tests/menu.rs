@@ -6901,3 +6901,110 @@ fn menu_round18_windows_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round18_checks_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_6a70) else {
+        return;
+    };
+    // Msg_CloseWindow recorded; the message status and the control work
+    // stand-ins
+    record_n(&mut t, 0x0086_40f0, 1, 0);
+    let ctrl = t.alloc_random(4);
+    return_const(&mut t, 0x0086_aff0, ctrl);
+    for round in 0..200u32 {
+        // HP and MP around their maxima, some negative
+        let chr = t.rng.below(0x12);
+        let ply = ffx_battle::save::bridge::ms_get_save_player_ptr(&t.b, chr);
+        let base = t.rng.below(1000);
+        for o in [0x1cu32, 0x20, 0x24, 0x28] {
+            let v = match t.rng.below(4) {
+                0 => t.rng.next(),
+                _ => base + t.rng.below(3),
+            };
+            t.put(ply + o, v);
+        }
+        let kind = if round % 8 == 7 {
+            t.rng.next()
+        } else {
+            t.rng.below(5)
+        };
+        let all = t.rng.next();
+        t.twin(
+            "MenuItem_TargetNeedsRecovery",
+            0x008c_6a70,
+            &[kind, all, chr],
+            U32,
+            |o| u64::from(tk::menu_item_target_needs_recovery(o, kind, chr)),
+        );
+        // Msg_PollClose over the window bank's states
+        let bank = u8::try_from(t.rng.below(2)).unwrap_or(0);
+        t.put(t.sym(0x0132_6b82), bank);
+        let i = t.rng.pick(&[0u32, 1, 3, 7, 8, 0xffff_ffff]);
+        let f = t.sym(0x0086_be90);
+        let window = callback(&mut t.b, f, &[i]);
+        let state = t.rng.pick(&[0u16, 1, 2, 2, 3, 4, 5, 0x102]);
+        t.put(window + 0x14, state);
+        let status = t.rng.pick(&[3u32, 3, 2, 0x103]);
+        return_const(&mut t, 0x008b_7ca0, status);
+        let bits = u8::try_from(t.rng.below(0x100)).unwrap_or(0);
+        t.put(ctrl, bits);
+        t.twin("Msg_PollClose", 0x0086_0aa0, &[i], U32, |o| {
+            u64::from(tk::msg_poll_close(o, i, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_summon_grow_info_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_d320) else {
+        return;
+    };
+    // MenuSummon_GrowEntry: a random entry; the descriptors' gain
+    // functions: a recorder (in the body of an unused debug function)
+    // returning a value set per case
+    let entry = t.alloc_random(8);
+    return_const(&mut t, 0x008c_ecf0, entry);
+    let out = t.alloc_random(8);
+    record_n(&mut t, 0x0088_fd50, 2, 0);
+    for _ in 0..300u32 {
+        let stat = t.rng.below(14).wrapping_sub(2);
+        let chr = t.rng.below(0x12);
+        let ply = ffx_battle::save::bridge::ms_get_save_player_ptr(&t.b, chr);
+        let rec = t.rng.bytes(0x94);
+        t.put_bytes(ply, &rec);
+        // the descriptor read (stat < 10, signed; 9 for the others)
+        let k = if stat.cast_signed() < 10 { stat } else { 9 };
+        let desc = t.sym(0x00c5_a608).wrapping_add(0x1c_u32.wrapping_mul(k));
+        // the limit near the maximum the descriptor reads
+        let max = tk::menu_summon_get_stat(&t.b, ply, desc, 1);
+        let limit = match t.rng.below(4) {
+            0 => t.rng.next(),
+            _ => max.wrapping_add(t.rng.below(3)).wrapping_sub(1),
+        };
+        t.put(desc + 0x14, limit);
+        let gain = t
+            .rng
+            .pick(&[0u32, 1, 50, 99, 100, 0xffff_ffff, 0x8000_0000]);
+        // record_n's `mov eax, ret` immediate: 6 + 7 × 2 + 7 + 1 bytes in
+        let f = t.sym(0x0088_fd50);
+        t.put(f + 28, gain);
+        t.put(desc + 0x18, f);
+        let r = t.rng.bytes(4);
+        t.put_bytes(entry, &r);
+        let args = [stat, chr, out, out + 4];
+        t.twin("MenuSummon_GrowInfo", 0x008c_d320, &args, U32, |o| {
+            u64::from(tk::menu_summon_grow_info(
+                o,
+                stat.cast_signed(),
+                chr,
+                [out, out + 4],
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

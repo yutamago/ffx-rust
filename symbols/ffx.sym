@@ -8207,6 +8207,7 @@
 0x00860990 function Msg_ChoicePoll             # (worker, args, handlers): as Native_MsgSelect_Poll, plus status 1: handlers[0x008b8010(window)](choice); ported in native_msg
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
+0x00860aa0 function Msg_PollClose             # (i): 1 when AtelGetMesWinWork(i) +0x14 is 0 or 4; state 2 with TOGetMessageStatus(i) == 3 closes it (Msg_CloseWindow) when AtelGetCurCtrlWork() bit 2 is set (cleared); else 0; callers 0x00860e40, 0x00860f30; name ours
 0x00860f20 function setMegasAdding            # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_MegasAdding = v (getMegasAdding 0x00860a90)
 0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0; ported in helpers (script round 13)
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
@@ -9904,6 +9905,7 @@
 0x008ccb60 function MenuSummon_StatusWindowCtrl_008ccb60 # the aeon status window's control (+0xc of MenuSummon_OpenStatusWindow's window): TkMn2StepStatusBG, states at +0x28, previous/next aeon (TkMenuSetPrevSummon / TkMenuSetNextSummon), MenuStatus_CloseWindow; own name
 0x008cd140 function MenuSummon_OpenStatusWindow_008cd140 # TkMenuMainAllocWindow into g_TkMenuSummonStatusWindow with ctrl MenuSummon_StatusWindowCtrl, the current aeon's TkMenuGetCurrentSummonPos in 0x023cc3bc..c4, TkMn2InitStatusBG; caller TkMenuCtrlSummon; own name
 0x008cd1f0 function MenuSummon_RestartWindow  # aeon window: +0x45 = 0, +0x28 = 0 or 2 by 0x0186a5fc, then TkMn2InitStatusBG; own name
+0x008cd320 function MenuSummon_GrowInfo      # (stat, chr, *cost, *gain): *cost = -1, *gain = 0; for stat < 10 *cost = u16 +4 of MenuSummon_GrowEntry(stat) and, while MenuSummon_GetStat(chr's record, desc 0x00c5a608 + 0x1c stat, max) < desc +0x14, *gain = Math_Clamp1To99(desc +0x18 (chr, max)) and 1; else 0; relies on MenuSummon_GetStat leaving edx (the descriptor); name ours
 0x008cd430 function TkMn2CloseSummonGrowWindow # (): close request for 0x0186a5a8 (opened by TkMn2OpenSummonGrowWindow), kept
 0x008cd440 function TkMenuSummonCloseWindow2  # (): close request for 0x0186a5ac (TkMenuCtrlSummon's), forget it
 0x008cd460 function MenuSummon_GrowWindowCtrl_008cd460 # the aeon grow window's control (+0xc of TkMn2OpenSummonGrowWindow's window): states in 0x0186a610, TkMn2StepStatusBG, list ctrl, help message; own name
