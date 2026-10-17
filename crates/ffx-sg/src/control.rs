@@ -171,9 +171,12 @@ pub mod bridge {
         h.call(at, &[])
     }
 
-    /// `Sg_RequestFlag_12ffae4()` (`0x0082bdf0`): `0x00639150`, then the
-    /// flag `0x012ffae4`. Returns the call's `eax`.
-    pub fn request_12ffae4(h: &mut impl Host) -> u32 {
+    /// `Sg_AccRequestCurrent()` (`0x0082bdf0`, native `0x4019`; its
+    /// argument unread): the post-process cross-fade capture turned on
+    /// (`0x00639150`), then the request flag `0x012ffae4` that
+    /// `sg_AccSetCurrent` (`0x0082ce90`) consumes to keep the current frame.
+    /// Returns the call's `eax`.
+    pub fn acc_request_current(h: &mut impl Host) -> u32 {
         let at = h.rebase(0x0063_9150);
         let r = h.call(at, &[]);
         Global::<u32>::new(0x012f_fae4).set(h, 1);

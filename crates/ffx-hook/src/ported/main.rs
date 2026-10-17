@@ -3,7 +3,7 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, gs, light, quat, seq, state, vec};
+use ffx_sg::{camera, chpacket, control, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -1134,6 +1134,46 @@ ported! {
     /// `Ch_PacketSetTexture(v)`.
     Ch_PacketSetTexture @ 0x0084_30f0 => extern "C" fn ch_packet_set_texture(v: u32) {
         chpacket::bridge::set_texture(&mut mem(), v);
+    }
+    /// `Sg_SetMapAlphaFast(on)`.
+    Sg_SetMapAlphaFast @ 0x0082_1b00 => extern "C" fn sg_set_map_alpha_fast(on: u32) -> u32 {
+        control::bridge::set_map_alpha_fast(&mut mem(), on)
+    }
+    /// `Sg_SetMuteSound(on)`.
+    Sg_SetMuteSound @ 0x0082_1c60 => extern "C" fn sg_set_mute_sound(on: u32) {
+        control::bridge::set_mute_sound(&mut mem(), on);
+    }
+    /// `Sg_SetPauseAllSounds(on)`.
+    Sg_SetPauseAllSounds @ 0x0082_1cc0 => extern "C" fn sg_set_pause_all_sounds(on: u32) {
+        control::bridge::set_pause_all_sounds(&mut mem(), on);
+    }
+    /// `dreamParamReset()`.
+    dreamParamReset @ 0x0082_2410 => extern "C" fn dream_param_reset() -> u32 {
+        control::bridge::dream_param_reset(&mut mem())
+    }
+    /// `Sg_AccSetAlpha(alpha, frames)`.
+    Sg_AccSetAlpha @ 0x0082_bd10 => extern "C" fn sg_acc_set_alpha(alpha: u32, frames: u32) -> u32 {
+        control::bridge::acc_set_alpha(&mut mem(), alpha, frames)
+    }
+    /// `Sg_AccRequestCurrent()`.
+    Sg_AccRequestCurrent @ 0x0082_bdf0 => extern "C" fn sg_acc_request_current() -> u32 {
+        control::bridge::acc_request_current(&mut mem())
+    }
+    /// `Sg_Blur(weight)`.
+    Sg_Blur @ 0x0082_bee0 => extern "C" fn sg_blur(weight: u32) -> u32 {
+        control::bridge::blur(&mut mem(), weight)
+    }
+    /// `Sg_PLightDispose()`.
+    Sg_PLightDispose @ 0x0083_1ba0 => extern "C" fn sg_plight_dispose() -> u32 {
+        control::bridge::plight_dispose(&mut mem())
+    }
+    /// `Sg_LightSetDir(i, dir)`.
+    Sg_LightSetDir @ 0x0083_6430 => extern "C" fn sg_light_set_dir(i: u32, dir: u32) -> u32 {
+        control::bridge::light_set_dir(&mut mem(), i, dir)
+    }
+    /// `Sg_GsEnd()`.
+    Sg_GsEnd @ 0x0084_1770 => extern "C" fn sg_gs_end() -> u32 {
+        control::bridge::gs_end(&mut mem())
     }
 }
 

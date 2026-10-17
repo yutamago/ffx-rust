@@ -6587,6 +6587,7 @@
 0x0082bcc0 function Sg_AccGetAlpha            # () -> i16 0x0130070e, the value Sg_AccSetAlpha sets
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
 0x0082bdc0 function Sg_AccSetClear            # (r, g, b, a): bytes 0x01300771..74; Switch name (36 bytes there), among the Sg_Acc* setters
+0x0082bdf0 function Sg_AccRequestCurrent      # (unread arg): 0x00639150 (PostProcess cross-fade capture on), then g_AccCurrentRequest = 1; consumed by sg_AccSetCurrent (0x0082ce90), which captures the current frame; native 0x4019 (0x00a78180) and Sg_AccInit-like 0x0082bcd0; between Sg_AccSetClear and Sg_AccSetDrawChr; ported (ffx_sg::control)
 0x0082be00 function Sg_AccSetDrawChr          # (v): byte 0x01300778, read by Sg_AccSetFrameChr
 0x0082be10 function Sg_AccEnableBG            # (v): byte 0x01300777, read by Sg_AccDrawBG
 0x0082be20 function Sg_AccSetFrameChr         # fh switch:cg3 0x710042ba80
@@ -14324,6 +14325,7 @@
 0x012fc6a0 label g_ChrClothLoads             # 50 cloth file loads of 0x110 bytes (to 0x012ffbc0): +0 state (1 = loading), +4 key (Ch_IsLoadingClothFile)
 0x012ffab8 label    g_ChrKindTables           # 8 pointers, one per kind (id >> 12): i16 count, then i16 ids (Chr_TableIndex)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
+0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
