@@ -3171,7 +3171,6 @@ pub mod bridge {
         mem.write(w, start);
     }
 
-
     /// `0x0089a2a0(t)`: the limit timer started (`0x0133f77c` 1) with `t`
     /// as its limit, time left and shown time (as [`start_limit_timer`]
     /// in another order: the flag first).
@@ -3194,5 +3193,198 @@ pub mod bridge {
         let at = mem.rebase(0x0133_f780);
         mem.write(at, x as u16);
         mem.write(at.wrapping_add(2), y as u16);
+    }
+
+    /// `TOBtlSetDefaultCursorPos()` (`0x00899ac0`): the command window
+    /// `0x023cc092` restored from character `0x023cc088`'s saved cursor
+    /// (see [`btl_memory_cursor_pos`]) when the saved key (`+0x14`) still
+    /// matches the window's (`+0xa`). A window still at kind 0 looks its
+    /// saved command (`+0xc` + 2 × level) up in its list (`+0x20`, count
+    /// `+0x24`): found, it takes the kind, the position, the level's scroll
+    /// (read through the found index as a window number, as compiled), the
+    /// row scroll clamped to the list's pages (columns `+0x38`, rows
+    /// `+0x3a`), the position and the saved target mask; not found, the
+    /// scroll and position words are cleared. A window of kind 1 with a
+    /// saved mask then selects the target list entry by the saved target
+    /// mode (`+0x1a`; `+0x18` picks the monster list): 0 the entry equal to
+    /// the mask, with its highest character; 1 the first entry sharing a
+    /// bit; 2 the first entry. A zero column count makes the original fault
+    /// (`idiv`); here it gives a zero quotient.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )] // 16-bit stores
+    pub fn btl_set_default_cursor_pos(mem: &mut impl Mem) {
+        let d = i32::from(mem.read::<i8>(mem.rebase(0x023c_c092)));
+        let c = i32::from(mem.read::<i16>(mem.rebase(0x023c_c088)));
+        let e = d.wrapping_add(c.wrapping_mul(10));
+        let saved = mem
+            .rebase(0x0133_d788)
+            .wrapping_add(e.wrapping_mul(0x24).cast_unsigned());
+        let win = mem
+            .rebase(0x0133_c952)
+            .wrapping_add(d.wrapping_mul(0xf0).cast_unsigned());
+        let key: u16 = mem.read(saved.wrapping_add(0x14));
+        if mem.read::<u16>(win.wrapping_add(0xa)) != key {
+            return;
+        }
+        if mem.read::<u8>(win) == 0 {
+            let n = mem.read::<u32>(win.wrapping_add(0x22)).cast_signed();
+            let mut found = None;
+            if n > 0 {
+                let lvl = i32::from(mem.read::<i8>(win.wrapping_add(9)));
+                let at = saved
+                    .wrapping_add(0xc)
+                    .wrapping_add((lvl * 2).cast_unsigned());
+                let target = u32::from(mem.read::<u16>(at));
+                let list: u32 = mem.read(win.wrapping_add(0x1e));
+                for j in 0..n {
+                    let v = i32::from(mem.read::<i16>(list.wrapping_add((j * 2).cast_unsigned())));
+                    if target == v.cast_unsigned() {
+                        found = Some(j);
+                        break;
+                    }
+                }
+            }
+            match found {
+                Some(j) => {
+                    let kind: u8 = mem.read(saved);
+                    mem.write(win, kind);
+                    let lvl = i32::from(mem.read::<i8>(win.wrapping_add(9)));
+                    mem.write(
+                        win.wrapping_add(0xc)
+                            .wrapping_add((lvl * 2).cast_unsigned()),
+                        j as u16,
+                    );
+                    let lvl = i32::from(mem.read::<i8>(win.wrapping_add(9)));
+                    // the scroll is read through the found index as a window number
+                    let other = mem
+                        .rebase(0x0133_c95b)
+                        .wrapping_add(j.wrapping_mul(0xf0).cast_unsigned());
+                    let olvl = i32::from(mem.read::<i8>(other));
+                    let src = mem.rebase(0x0133_d794).wrapping_add(
+                        (olvl.wrapping_add(e.wrapping_mul(0x12)) * 2).cast_unsigned(),
+                    );
+                    let v: u16 = mem.read(src);
+                    mem.write(
+                        win.wrapping_add(0x14)
+                            .wrapping_add((lvl * 2).cast_unsigned()),
+                        v,
+                    );
+                    mem.write(win.wrapping_add(0xa), key);
+                    let cols_u = mem.read::<u16>(win.wrapping_add(0x36));
+                    let cols = i32::from(cols_u.cast_signed());
+                    let q = j.checked_div(cols).unwrap_or(0);
+                    let scroll_at = win.wrapping_add(0x3e);
+                    mem.write(
+                        scroll_at,
+                        (q.wrapping_sub(1)).wrapping_mul(i32::from(cols_u)) as u16,
+                    );
+                    let cols = i32::from(mem.read::<i16>(win.wrapping_add(0x36)));
+                    let rows = i32::from(mem.read::<i16>(win.wrapping_add(0x38)));
+                    let n = mem.read::<u32>(win.wrapping_add(0x22)).cast_signed();
+                    if n < rows.wrapping_mul(cols) {
+                        mem.write(scroll_at, 0u16);
+                    } else {
+                        if j < cols {
+                            mem.write(scroll_at, 0u16);
+                        }
+                        let cols = i32::from(mem.read::<i16>(win.wrapping_add(0x36)));
+                        let n = mem.read::<u32>(win.wrapping_add(0x22)).cast_signed();
+                        let pages = n
+                            .wrapping_sub(1)
+                            .wrapping_add(cols)
+                            .checked_div(cols)
+                            .unwrap_or(0);
+                        if j > pages.wrapping_sub(1).wrapping_mul(cols).wrapping_sub(1) {
+                            let rows: u16 = mem.read(win.wrapping_add(0x38));
+                            let cols: u16 = mem.read(win.wrapping_add(0x36));
+                            let v = (pages as u16).wrapping_sub(rows).wrapping_mul(cols);
+                            mem.write(scroll_at, v);
+                        }
+                    }
+                    mem.write(win.wrapping_add(0x40), j as u16);
+                    let mask: u32 = mem.read(saved.wrapping_add(0x1c));
+                    mem.write(win.wrapping_add(0xd6), mask);
+                }
+                None => mem.write(win.wrapping_add(0x3e), 0u32),
+            }
+        }
+        if mem.read::<u8>(win) != 1 {
+            return;
+        }
+        let mask: u32 = mem.read(saved.wrapping_add(0x1c));
+        if mask == 0 {
+            return;
+        }
+        let party = mem.rebase(0x0133_d180);
+        let monsters = mem.rebase(0x0133_d1d4);
+        let (start_at, which_at, sel_at, top_at, count_at, list_at) = (
+            mem.rebase(0x0133_d1fc),
+            mem.rebase(0x0133_d200),
+            mem.rebase(0x0133_d178),
+            mem.rebase(0x0133_d1f4),
+            mem.rebase(0x0133_d1f6),
+            mem.rebase(0x0133_d1f8),
+        );
+        let (party_n_at, monster_n_at) = (mem.rebase(0x0133_d17c), mem.rebase(0x0133_d1d0));
+        let monster_side = mem.read::<u16>(saved.wrapping_add(0x18)) != 0;
+        let (list, n_at, which, len, tops) = if monster_side {
+            (monsters, monster_n_at, 1u16, 8u32, 20u16..28)
+        } else {
+            (party, party_n_at, 0u16, 20, 0..20)
+        };
+        match mem.read::<i16>(saved.wrapping_add(0x1a)) {
+            0 => {
+                let Some(i) = (0..len).find(|&i| mem.read::<u32>(list.wrapping_add(4 * i)) == mask)
+                else {
+                    return;
+                };
+                mem.write(which_at, which);
+                mem.write(start_at, i as u16);
+                let sel: u32 = mem.read(list.wrapping_add(4 * i));
+                mem.write(sel_at, sel);
+                for c in tops {
+                    if sel & (1 << c) != 0 {
+                        mem.write(top_at, c);
+                    }
+                }
+                let n: u16 = mem.read(n_at);
+                mem.write(list_at, list);
+                mem.write(count_at, n);
+            }
+            1 => {
+                let n: u16 = mem.read(n_at);
+                let n = i32::from(n.cast_signed());
+                if n <= 0 {
+                    return;
+                }
+                let Some(i) = (0..n.cast_unsigned())
+                    .find(|&i| mem.read::<u32>(list.wrapping_add(4 * i)) & mask != 0)
+                else {
+                    return;
+                };
+                mem.write(start_at, i as u16);
+                mem.write(which_at, which);
+                let sel: u32 = mem.read(list.wrapping_add(4 * i));
+                mem.write(sel_at, sel);
+                mem.write(count_at, n as u16);
+                mem.write(top_at, 0xffu16);
+                mem.write(list_at, list);
+            }
+            2 => {
+                mem.write(which_at, which);
+                mem.write(start_at, 0u16);
+                let sel: u32 = mem.read(list);
+                mem.write(sel_at, sel);
+                mem.write(top_at, 0xffu16);
+                let n: u16 = mem.read(n_at);
+                mem.write(list_at, list);
+                mem.write(count_at, n);
+            }
+            _ => {}
+        }
     }
 }

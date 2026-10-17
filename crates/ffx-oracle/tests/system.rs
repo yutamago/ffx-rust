@@ -8792,7 +8792,11 @@ fn round15_limit_timer_setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshif
     use tolib::bridge as t;
     for _ in 0..40 {
         let f = rng.float();
-        let f = if ffx_bridge::x87::is_snan(f.to_bits()) { 2.5 } else { f };
+        let f = if ffx_bridge::x87::is_snan(f.to_bits()) {
+            2.5
+        } else {
+            f
+        };
         eax(a, 0x0089_a2a0, &[f.to_bits()]);
         t::btl_start_limit_timer(b, f);
         same_memory("limit timer start", a, b);
@@ -8817,4 +8821,91 @@ fn round15_limit_timer_setters_match_the_original_on_the_snapshot() {
         return;
     };
     round15_limit_timer_setters(&mut a, &mut b, &mut Xorshift(0x4015_0012));
+}
+
+/// Round 15's default command-cursor restore.
+#[allow(clippy::cast_possible_truncation)]
+fn round15_default_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let lists = alloc(a, b, 4 * 0x40);
+    let fill = |a: &mut Oracle, b: &mut Oracle, from: u32, bytes: &[u8]| {
+        a.write(from, bytes).unwrap();
+        b.write(from, bytes).unwrap();
+    };
+    for k in 0..800u32 {
+        let d = rng.next() % 4;
+        let c = rng.next() % 8;
+        let win = a.rebase(0x0133_c952) + d * 0xf0;
+        let saved = a.rebase(0x0133_d788) + (d + c * 10) * 0x24;
+        // all windows, all saved records and the target lists
+        let bytes: Vec<u8> = (0..0x3c0).map(|_| rng.next() as u8).collect();
+        fill(a, b, a.rebase(0x0133_c950), &bytes);
+        let bytes: Vec<u8> = (0..0x168 * 8).map(|_| rng.next() as u8).collect();
+        fill(a, b, a.rebase(0x0133_d788), &bytes);
+        let bytes: Vec<u8> = (0..0x90).map(|_| rng.next() as u8).collect();
+        fill(a, b, a.rebase(0x0133_d170), &bytes);
+        put(a, b, a.rebase(0x023c_c092), d as u8);
+        put(a, b, a.rebase(0x023c_c088), c as u16);
+        // the window's command list, sometimes holding the saved command
+        let lvl = rng.next() % 4;
+        let n = rng.next() % 12;
+        let list = lists + 0x40 * (k % 4);
+        let entries: Vec<u16> = (0..16).map(|_| (rng.next() % 6) as u16).collect();
+        for (i, v) in entries.iter().enumerate() {
+            put(a, b, list + 2 * i as u32, *v);
+        }
+        put(a, b, win + 9, lvl as u8);
+        put(a, b, win + 0x1e, list);
+        put(
+            a,
+            b,
+            win + 0x22,
+            if k % 13 == 0 { 0u32.wrapping_sub(n) } else { n },
+        );
+        put(a, b, saved + 0xc + 2 * lvl, (rng.next() % 6) as u16);
+        put(a, b, win + 0x36, (rng.next() % 4 + 1) as u16);
+        put(a, b, win + 0x38, (rng.next() % 4 + 1) as u16);
+        if k % 4 != 0 {
+            let key: u16 = Mem::read(a, saved + 0x14);
+            put(a, b, win + 0xa, key);
+        }
+        put(a, b, win, (rng.next() % 3) as u8);
+        put(a, b, saved, (rng.next() % 3) as u8);
+        put(a, b, saved + 0x1a, (rng.next() % 4) as u16);
+        put(a, b, saved + 0x18, (rng.next() % 2) as u16);
+        // the saved mask, sometimes an exact target entry
+        let side = if rng.next() & 1 == 0 {
+            0x0133_d180u32
+        } else {
+            0x0133_d1d4
+        };
+        let e: u32 = Mem::read(a, a.rebase(side) + 4 * (rng.next() % 4));
+        let mask = match rng.next() % 3 {
+            0 => e,
+            1 => 1 << (rng.next() % 28),
+            _ => 0,
+        };
+        put(a, b, saved + 0x1c, mask);
+        put(a, b, a.rebase(0x0133_d17c), (rng.next() % 6) as u16);
+        put(a, b, a.rebase(0x0133_d1d0), (rng.next() % 6) as u16);
+        eax(a, 0x0089_9ac0, &[]);
+        t::btl_set_default_cursor_pos(b);
+        same_memory("default cursor", a, b);
+    }
+}
+
+#[test]
+fn round15_default_cursor_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round15_default_cursor(&mut a, &mut b, &mut Xorshift(0x4015_0021));
+}
+
+#[test]
+fn round15_default_cursor_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round15_default_cursor(&mut a, &mut b, &mut Xorshift(0x4015_0022));
 }

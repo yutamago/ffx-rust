@@ -4462,6 +4462,10 @@ ported! {
     TOBtlSetLimitTimerPos @ 0x0089_a2d0 => extern "C" fn to_btl_set_limit_timer_pos(x: u32, y: u32) {
         tolib::bridge::btl_set_limit_timer_pos(&mut mem(), x, y);
     }
+    /// `TOBtlSetDefaultCursorPos()`.
+    TOBtlSetDefaultCursorPos @ 0x0089_9ac0 => extern "C" fn to_btl_set_default_cursor_pos() {
+        tolib::bridge::btl_set_default_cursor_pos(&mut mem());
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
