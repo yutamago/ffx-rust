@@ -9579,7 +9579,11 @@ fn round16_pad_status_matches_the_original_on_the_snapshot() {
 }
 
 /// Round 16's menu pad repeat over stand-in controllers and time.
-#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
 fn round16_menu_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cells = alloc(a, b, 0x40);
@@ -9685,7 +9689,7 @@ fn round16_menu_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                 let at = m.rebase(0x0063_0c60);
                 m.call(at, Conv::Cdecl, &[]).unwrap().st0.unwrap()
             },
-            |m, sym, args| eax(m, sym, args),
+            eax,
         );
         same_memory("menu pad status", a, b);
     }
