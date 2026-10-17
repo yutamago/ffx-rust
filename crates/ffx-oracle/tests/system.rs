@@ -11542,6 +11542,37 @@ fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         );
         same_memory("icon", a, b);
     }
+    // the ids themselves: the icon width replaced by `fild [esp+4]`
+    let s = stand_in8(a, b, 0x80, &[0xdb, 0x44, 0x24, 0x04, 0xc3]);
+    redirect(a, b, 0x0090_62b0, s);
+    for c in 0..0x100u32 {
+        for assign_value in 0..2u32 {
+            put(a, b, assign, assign_value);
+            let want = a
+                .call(g(a, 0x008f_a800), Conv::Cdecl, &[c, 0])
+                .unwrap()
+                .st0
+                .unwrap();
+            let got = t::to_get_scale_button_icon_width(
+                b,
+                c,
+                0.0,
+                |m, sym, args| eax(m, sym, args),
+                |m, id, s| {
+                    m.call(m.rebase(0x0090_62b0), Conv::Cdecl, &[id, s.to_bits()])
+                        .unwrap()
+                        .st0
+                        .unwrap() as f32
+                },
+            );
+            assert_eq!(
+                (want as f32).to_bits(),
+                got.to_bits(),
+                "icon id: char {c:#x}"
+            );
+            same_memory("icon id", a, b);
+        }
+    }
 }
 
 #[test]
