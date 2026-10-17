@@ -360,4 +360,87 @@ pub mod bridge {
         FRAM_SYNC.set(h, u32::from(id != u32::MAX));
         id
     }
+
+    pub const YN_PRE_BG_LAYER_DISP_GET: u32 = 0x0091_a770;
+    pub const GRAPHIC_MENU_LOAD_SPECIAL_TEXTURE: u32 = 0x0064_2300;
+    pub const GRAPHIC_MENU_UNLOAD_SPECIAL_TEXTURE: u32 = 0x0064_2390;
+    pub const GRAPHIC_2D_HIDE_LAYER: u32 = 0x0063_8f30;
+    pub const GRAPHIC_2D_SHOW_LAYER: u32 = 0x0063_8f60;
+    pub const GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY: u32 = 0x0064_4120;
+    pub const GRAPHIC_DRAW_DREAM: u32 = 0x0063_df70;
+    /// The special texture's name (`0x00b20b30`).
+    pub const DREAM_TEXTURE: u32 = 0x00b2_0b30;
+    /// The dream effect's state: on (`0x012fb8f0`) and its phase
+    /// (`0x012fb8f4`, 5 drawing).
+    pub const DREAM_ON: Global<u32> = Global::new(0x012f_b8f0);
+    pub const DREAM_PHASE: Global<u32> = Global::new(0x012f_b8f4);
+
+    /// The dream effect over layers (`recallSceneEffect`'s and
+    /// `recallSceneEffect2`'s common work): for each layer's display byte
+    /// (`Yn_PreBgLayerDispGet`), a shown layer without bits 0-1 starts it
+    /// (once: on, phase 0, special texture 10 loaded), hides those layers
+    /// (`graphic2DHideLayer`, texture animation off) and, in phase 5,
+    /// draws it (`graphicDrawDream`, a tail call). Otherwise a layer with
+    /// bits 0-1 ends a started effect past phase 0: texture unloaded,
+    /// `dreamParamReset`, the shown layers back on. Returns the last
+    /// call's `eax`.
+    fn dream_layers(h: &mut impl Host, layers: &[u32]) -> u32 {
+        let mut r = 0;
+        let mut disp = [0u8; 2];
+        for (d, &l) in disp.iter_mut().zip(layers) {
+            let at = h.rebase(YN_PRE_BG_LAYER_DISP_GET);
+            r = h.call(at, &[l]);
+            *d = crate::lo8(r);
+        }
+        let disp = &disp[..layers.len()];
+        let hide = disp.iter().any(|&d| d != 0 && d.trailing_zeros() >= 2);
+        if hide {
+            if DREAM_ON.get(h) == 0 {
+                DREAM_ON.set(h, 1);
+                DREAM_PHASE.set(h, 0);
+                let at = h.rebase(GRAPHIC_MENU_LOAD_SPECIAL_TEXTURE);
+                let name = h.rebase(DREAM_TEXTURE);
+                r = h.call(at, &[10, name, 0]);
+            }
+            for (&d, &l) in disp.iter().zip(layers) {
+                if layers.len() == 1 || d != 0 {
+                    let at = h.rebase(GRAPHIC_2D_HIDE_LAYER);
+                    h.call(at, &[l]);
+                    let at = h.rebase(GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY);
+                    r = h.call(at, &[l, 0]);
+                }
+            }
+            if DREAM_PHASE.get(h) == 5 {
+                let at = h.rebase(GRAPHIC_DRAW_DREAM);
+                r = h.call(at, &[]);
+            }
+            return r;
+        }
+        if disp.iter().any(|&d| d & 3 != 0) && DREAM_ON.get(h) != 0 && DREAM_PHASE.get(h) != 0 {
+            let at = h.rebase(GRAPHIC_MENU_UNLOAD_SPECIAL_TEXTURE);
+            h.call(at, &[10]);
+            dream_param_reset(h);
+            for (&d, &l) in disp.iter().zip(layers) {
+                if layers.len() == 1 || d != 0 {
+                    let at = h.rebase(GRAPHIC_2D_SHOW_LAYER);
+                    h.call(at, &[l]);
+                    let at = h.rebase(GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY);
+                    r = h.call(at, &[l, 1]);
+                }
+            }
+        }
+        r
+    }
+
+    /// `recallSceneEffect(layer)` (`0x00822580`): the dream effect over
+    /// one layer (see [`dream_layers`]).
+    pub fn recall_scene_effect(h: &mut impl Host, layer: u32) -> u32 {
+        dream_layers(h, &[layer])
+    }
+
+    /// `recallSceneEffect2(a, b)` (`0x00822620`): the dream effect over two
+    /// layers; only shown ones are hidden or shown again.
+    pub fn recall_scene_effect2(h: &mut impl Host, a: u32, b: u32) -> u32 {
+        dream_layers(h, &[a, b])
+    }
 }

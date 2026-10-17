@@ -299,4 +299,69 @@ pub mod bridge {
         }
         ((rows >> 4) & 0xf) * 2
     }
+
+    /// `Sg_ClothRod*`'s threshold for kinds 5 and 6 (`f64` 1e-5) and the
+    /// half (`f64` 0.5).
+    pub const ROD_EPSILON: Global<f64> = Global::new(0x00b5_01e8);
+    pub const ROD_HALF: Global<f64> = Global::new(0x00b9_2220);
+
+    /// The cloth's rod constraints, kind 1-6 of the cloth step
+    /// (`0x00822de0`): `n` rods of 12 bytes (`i16` points `a`, `b` into
+    /// `points`, 16 bytes each; `f32` length; for kinds 1-4 an `f32` limit
+    /// on the squared distance) with `d = b - a` (`Sg_VecSub`), `dd = d.d`
+    /// (`Sg_VecDot`), `s = sqrt(dd)` stored as `f32`:
+    ///
+    /// - 1 `Sg_ClothRodMaxPin` (`0x00822890`), 3 `Sg_ClothRodMinPin`
+    ///   (`0x00822a50`): when `dd` is above (1) or below (3) the limit, `b
+    ///   = a + d * (len / s)`.
+    /// - 2 `Sg_ClothRodMax` (`0x00822960`), 4 `Sg_ClothRodMin`
+    ///   (`0x00822b20`): the same tests; both move, `k = (s - len) / s *
+    ///   0.5`, `a += d k`, `b -= d k`.
+    /// - 5 `Sg_ClothRodFixPin` (`0x00822c10`): as 1 always, but `b = a`
+    ///   (`Sg_VecCopy4`) unless `|dd| > 1e-5`.
+    /// - 6 `Sg_ClothRodFix` (`0x00822cf0`): as 2 always, but `b = a` unless
+    ///   `|s| > 1e-5`.
+    ///
+    /// A NaN comparison does nothing (1-4) or copies (5, 6). Returns 0
+    /// (the count left, `eax`).
+    pub fn cloth_rods(mem: &mut impl Mem, kind: u32, rods: u32, n: u32, points: u32) -> u32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        let (eps, half) = (ROD_EPSILON.get(mem), ROD_HALF.get(mem));
+        let mut m = Scratch::new(mem);
+        let (d, dd_at) = (SCRATCH, SCRATCH + 0x10);
+        for r in 0..n {
+            let e = rods.wrapping_add(12 * r);
+            let pa = points.wrapping_add((i32::from(m.read::<i16>(e)) << 4).cast_unsigned());
+            let pb = points
+                .wrapping_add((i32::from(m.read::<i16>(e.wrapping_add(2))) << 4).cast_unsigned());
+            let len = x87::load(m.read(e.wrapping_add(4)));
+            let lim = x87::load(m.read(e.wrapping_add(8)));
+            sub(&mut m, d, pb, pa);
+            dot(&mut m, d, d, dd_at);
+            let dd = x87::load(m.read(dd_at));
+            let s = || x87::load(x87::store(x87::sqrt(dd)));
+            let pin = |m: &mut Scratch<'_, _>, s: f64| {
+                let k = f32::from_bits(x87::store(x87::div(len, s)));
+                scale(m, d, d, k);
+                add(m, pb, pa, d);
+            };
+            let both = |m: &mut Scratch<'_, _>, s: f64| {
+                let k = x87::mul(x87::div(x87::sub(s, len), s), half);
+                scale(m, d, d, f32::from_bits(x87::store(k)));
+                add(m, pa, pa, d);
+                sub(m, pb, pb, d);
+            };
+            match kind {
+                1 if dd > lim => pin(&mut m, s()),
+                3 if dd < lim => pin(&mut m, s()),
+                2 if dd > lim => both(&mut m, s()),
+                4 if dd < lim => both(&mut m, s()),
+                5 if dd.abs() > eps => pin(&mut m, s()),
+                6 if s().abs() > eps => both(&mut m, s()),
+                5 | 6 => copy4(&mut m, pb, pa),
+                _ => {}
+            }
+        }
+        0
+    }
 }

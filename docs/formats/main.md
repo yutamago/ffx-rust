@@ -272,3 +272,34 @@ behind them stays with those modules, which the bridges call.
 - `Sg_CalcTriangleNormal(v0, v1, v2, out)` (`0x0083e420`): `i16` vertices;
   `|(v2 - v0) x (v1 - v0)|`.
 - `Sg_IntVecToFloat(out, v)` (`0x00845d90`): three `i32` to `f32`.
+
+## Bones, sequences, id kinds, the dream effect, cloth rods (round 4)
+
+- `SG_ApplyBone(_, chan, bone, scale)` (`0x00838280`): nine channels of
+  `0x2c` bytes (value `+0x20`, changed byte `+0x28`, cleared when read).
+  Rotations `Angle_Wrap(v * 2 * pi)` go to `bone+0x114..` and
+  `bone+0xe4..`, translations `v * scale * 4096` to `+0x124..` and
+  `+0xf4..`, scales copied to `+0x134..` and `+0x104..`.
+  `SG_ApplyBoneDamped` (`0x00838470`) sets only the targets for rotations
+  and translations. The current values then move toward them
+  (`Chr_LerpAngleDamped(t, c, 0.7, 0, 10)`, `Chr_LerpDamped(t, c, 1, 0,
+  1)`). `Angle_Wrap` steps by 2 pi, so an infinite angle never returns.
+- `SG_AddSequence(seq, v)` (`0x00836d30`): the first free `g_ChrSequences`
+  entry gets `seq`, its `u16` `+4` and `v` at `+0x10`. A full table asserts
+  ("SG:AddMseq"). Either way `Ch_SeqLink` runs.
+- `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): id entry kinds (low 7 bits of
+  `+0xc`): 1 everyone, 2 not the player, 13 characters with `+0x198` bit 2,
+  14 the player; `0x30..0x3f` through `g_ChrIdMapTable`.
+- `recallSceneEffect(layer)` / `recallSceneEffect2(a, b)` (`0x00822580`,
+  `0x00822620`): the dream effect. A shown layer whose display byte
+  (`Yn_PreBgLayerDispGet`) has bits 0-1 clear starts it: `0x012fb8f0` = 1,
+  phase `0x012fb8f4` = 0, special texture 10 loaded. It hides the layers
+  and draws the effect in phase 5. A layer with bits 0-1 set ends a started
+  effect past phase 0.
+- The cloth rods, kinds 1-6 of the cloth step `0x00822de0`
+  (`0x00822890`, `0x00822960`, `0x00822a50`, `0x00822b20`, `0x00822c10`,
+  `0x00822cf0`): 12-byte rods `{i16 a, i16 b, f32 len, f32 lim}`.
+  - Kinds 1 and 3 move `b` to `len` from `a` when `|b - a|^2` is above or
+    below `lim`; kinds 2 and 4 move both halfway.
+  - Kinds 5 and 6 always apply. `b = a` when `|d|^2` (5) or `|d|` (6) is
+    at most `1e-5`.

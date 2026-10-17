@@ -1247,6 +1247,54 @@ ported! {
     Sg_IntVecToFloat @ 0x0084_5d90 => extern "C" fn sg_int_vec_to_float(out: u32, v: u32) -> u32 {
         vec::bridge::int_vec_to_float(&mut mem(), out, v)
     }
+    /// `SG_ApplyBone(_, chan, bone, scale)`.
+    SG_ApplyBone @ 0x0083_8280 => extern "C" fn sg_apply_bone(_a: u32, chan: u32, bone: u32, scale: f32) {
+        seq::bridge::apply_bone(&mut mem(), chan, bone, scale, false);
+    }
+    /// `SG_ApplyBoneDamped(_, chan, bone, scale)`.
+    SG_ApplyBoneDamped @ 0x0083_8470 => extern "C" fn sg_apply_bone_damped(_a: u32, chan: u32, bone: u32, scale: f32) {
+        seq::bridge::apply_bone(&mut mem(), chan, bone, scale, true);
+    }
+    /// `SG_AddSequence(seq, v)`.
+    SG_AddSequence @ 0x0083_6d30 => extern "C" fn sg_add_sequence(seq: u32, v: u32) {
+        seq::bridge::add_sequence(&mut mem(), seq, v);
+    }
+    /// `Sg_IdMatchChr(chr, i)`.
+    Sg_IdMatchChr @ 0x0083_e4e0 => extern "C" fn sg_id_match_chr(chr: u32, i: u32) -> u32 {
+        state::bridge::id_match_chr(&mem(), chr, i)
+    }
+    /// `recallSceneEffect(layer)`.
+    recallSceneEffect @ 0x0082_2580 => extern "C" fn recall_scene_effect(layer: u32) -> u32 {
+        control::bridge::recall_scene_effect(&mut mem(), layer)
+    }
+    /// `recallSceneEffect2(a, b)`.
+    recallSceneEffect2 @ 0x0082_2620 => extern "C" fn recall_scene_effect2(a: u32, b: u32) -> u32 {
+        control::bridge::recall_scene_effect2(&mut mem(), a, b)
+    }
+    /// `Sg_ClothRodMaxPin(rods, n, points)`.
+    Sg_ClothRodMaxPin @ 0x0082_2890 => extern "C" fn sg_cloth_rod_max_pin(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 1, rods, n, points)
+    }
+    /// `Sg_ClothRodMax(rods, n, points)`.
+    Sg_ClothRodMax @ 0x0082_2960 => extern "C" fn sg_cloth_rod_max(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 2, rods, n, points)
+    }
+    /// `Sg_ClothRodMinPin(rods, n, points)`.
+    Sg_ClothRodMinPin @ 0x0082_2a50 => extern "C" fn sg_cloth_rod_min_pin(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 3, rods, n, points)
+    }
+    /// `Sg_ClothRodMin(rods, n, points)`.
+    Sg_ClothRodMin @ 0x0082_2b20 => extern "C" fn sg_cloth_rod_min(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 4, rods, n, points)
+    }
+    /// `Sg_ClothRodFixPin(rods, n, points)`.
+    Sg_ClothRodFixPin @ 0x0082_2c10 => extern "C" fn sg_cloth_rod_fix_pin(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 5, rods, n, points)
+    }
+    /// `Sg_ClothRodFix(rods, n, points)`.
+    Sg_ClothRodFix @ 0x0082_2cf0 => extern "C" fn sg_cloth_rod_fix(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 6, rods, n, points)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

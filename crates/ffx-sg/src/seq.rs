@@ -279,4 +279,90 @@ pub mod bridge {
         }
         stop
     }
+
+    /// `SG_ApplyBone`'s constants (`f64` 2, pi as `f32` in an `f64`, 4096)
+    /// and the damping ones (`f32` 0.7 and 10).
+    pub const TWO: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b9_2270);
+    pub const PI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_82f0);
+    pub const UNITS: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_15c8);
+    pub const DAMP_X: ffx_bridge::Global<f32> = ffx_bridge::Global::new(0x00b2_607c);
+    pub const DAMP_K: ffx_bridge::Global<f32> = ffx_bridge::Global::new(0x00b9_2318);
+
+    /// `SG_ApplyBone(_, chan, bone, scale)` (`0x00838280`) and, `damped`,
+    /// `SG_ApplyBoneDamped` (`0x00838470`). Nine channels of `0x2c` bytes
+    /// (value at `+0x20`, changed flag at `+0x28`, cleared when read):
+    /// rotations as `Angle_Wrap(v * 2 * pi)` into the bone's targets
+    /// `+0x114..` (and at once its current `+0xe4..`), translations as `v *
+    /// scale * 4096` into `+0x124..` (and `+0xf4..`), scales copied to
+    /// `+0x134..` and `+0x104..`. Damped, the current rotations and
+    /// translations then move toward the targets
+    /// (`Chr_LerpAngleDamped(target, cur, 0.7, 0, 10)`, `Chr_LerpDamped(target,
+    /// cur, 1, 0, 1)`) instead of jumping.
+    pub fn apply_bone(mem: &mut impl Mem, chan: u32, bone: u32, scale: f32, damped: bool) {
+        use ffx_bridge::x87;
+        let f = |b: u32| f32::from_bits(b);
+        let (two, pi, units) = (TWO.get(mem), PI.get(mem), UNITS.get(mem));
+        let scale = x87::load(scale.to_bits());
+        for k in 0..9u32 {
+            let c = chan.wrapping_add(0x2c * k);
+            if mem.read::<u8>(c.wrapping_add(0x28)) == 0 {
+                continue;
+            }
+            mem.write(c.wrapping_add(0x28), 0u8);
+            let v = x87::load(mem.read::<u32>(c.wrapping_add(0x20)));
+            let (r, slot) = match k {
+                0..3 => {
+                    let a = f(x87::store(x87::mul(x87::mul(v, two), pi)));
+                    (crate::vec::bridge::angle_wrap(a), k)
+                }
+                3..6 => (f(x87::store(x87::mul(x87::mul(v, scale), units))), k + 1),
+                _ => (f(x87::store(v)), k + 2),
+            };
+            mem.write(bone.wrapping_add(0x114 + 4 * slot), r);
+            if !damped || k >= 6 {
+                mem.write(bone.wrapping_add(0xe4 + 4 * slot), r);
+            }
+        }
+        if !damped {
+            return;
+        }
+        let (dx, dk) = (DAMP_X.get(mem), DAMP_K.get(mem));
+        let rt = x87::round_trip;
+        for slot in [0u32, 1, 2, 4, 5, 6] {
+            let target = rt(mem.read(bone.wrapping_add(0x114 + 4 * slot)));
+            let cur = rt(mem.read(bone.wrapping_add(0xe4 + 4 * slot)));
+            let r = if slot < 3 {
+                ffx_chara::motion::lerp_angle_damped(target, cur, rt(dx), 0.0, rt(dk))
+            } else {
+                ffx_chara::motion::lerp_damped(target, cur, 1.0, 0.0, 1.0)
+            };
+            mem.write(bone.wrapping_add(0xe4 + 4 * slot), r);
+        }
+    }
+
+    /// `yiAssert`, called as the game's.
+    pub const YI_ASSERT: u32 = 0x0090_ae50;
+
+    /// `SG_AddSequence(seq, v)` (`0x00836d30`): the first free entry of
+    /// `g_ChrSequences` takes `seq`, its `u16` at `+4` and `v` (at `+0x10`);
+    /// a full table asserts (`yiAssert(0, "SG:AddMseq", "nb mseq err")`).
+    /// Either way the table is linked again (`Ch_SeqLink`, a tail call).
+    pub fn add_sequence(h: &mut impl ffx_bridge::Host, seq: u32, v: u32) {
+        let base = SEQUENCES.ptr(h).addr;
+        let free = (0..100u32)
+            .map(|k| base.wrapping_add(20 * k))
+            .find(|&e| h.read::<u32>(e) == 0);
+        if let Some(e) = free {
+            let n: u16 = h.read(seq.wrapping_add(4));
+            h.write(e.wrapping_add(4), n);
+            h.write(e, seq);
+            h.write(e.wrapping_add(0x10), v);
+        } else {
+            let at = h.rebase(YI_ASSERT);
+            let file = h.rebase(0x00b5_9a24);
+            let text = h.rebase(0x00b5_9a18);
+            h.call(at, &[0, file, text]);
+        }
+        ffx_chara::motion::bridge::ch_seq_link(h);
+    }
 }

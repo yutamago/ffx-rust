@@ -2439,6 +2439,7 @@ fn control_synthetic() {
     scene_cases(&mut a, &mut b, &mut rng, 300);
     init_cases(&mut a, &mut b, &mut rng, 200);
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
+    round4_main_cases(&mut a, &mut b, &mut rng, 300, false);
 }
 
 #[test]
@@ -2451,6 +2452,7 @@ fn control_snapshot() {
     scene_cases(&mut a, &mut b, &mut rng, 300);
     init_cases(&mut a, &mut b, &mut rng, 200);
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
+    round4_main_cases(&mut a, &mut b, &mut rng, 300, true);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -2742,5 +2744,204 @@ fn round3_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
             &[mtx, dir, rows],
             |m| v::matrix_from_dir(m, mtx, dir, rows),
         );
+    }
+}
+
+// Main round 4: bones, sequences, id kinds, the dream effect, cloth rods.
+
+/// A moderate float (-8..8, sometimes any float).
+fn modest(rng: &mut Xorshift) -> u32 {
+    if rng.below(8) == 0 {
+        return rng.float();
+    }
+    let v = f64::from(rng.below(0x10000)) / 4096.0 - 8.0;
+    ffx_bridge::x87::store(v)
+}
+
+fn round4_main_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    use ffx_sg::vec::bridge as v;
+    let log = a.rebase(REC_LOG);
+    let f = f32::from_bits;
+    recorder(a, b, 25, sq::YI_ASSERT, 3, 0x4000);
+    // Yn_PreBgLayerDispGet: the byte its argument points to
+    for o in [&mut *a, &mut *b] {
+        let code = o.rebase(REC_CODE) + 0x60 * 26;
+        // mov eax, [esp+4]; movzx eax, byte [eax]; ret
+        o.write(code, &[0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0xc3])
+            .unwrap();
+        let at = o.rebase(c::YN_PRE_BG_LAYER_DISP_GET);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+    for (k, (sym, n)) in [
+        (c::GRAPHIC_MENU_LOAD_SPECIAL_TEXTURE, 3),
+        (c::GRAPHIC_2D_HIDE_LAYER, 1),
+        (c::GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY, 2),
+        (c::GRAPHIC_DRAW_DREAM, 0),
+        (c::GRAPHIC_2D_SHOW_LAYER, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        recorder(
+            a,
+            b,
+            27 + u32::try_from(k).unwrap(),
+            sym,
+            n,
+            0x4100 + u32::try_from(k).unwrap(),
+        );
+    }
+    for _ in 0..rounds {
+        // bones
+        let chan = alloc(a, b, 9 * 0x2c);
+        for k in 0..9 {
+            let ch = chan + 0x2c * k;
+            // a rotation: finite (Angle_Wrap steps by 2 pi, an infinity
+            // never ends)
+            let x = modest(rng);
+            let x = if k < 3 && (x >> 23 & 0xff) > 0x90 {
+                0x3f80_0000
+            } else {
+                x
+            };
+            put(a, b, ch + 0x20, x);
+            let flag = match rng.below(3) {
+                0 => 0u8,
+                1 => 1,
+                _ => u8::try_from(rng.next() & 0xff).unwrap(),
+            };
+            put(a, b, ch + 0x28, flag);
+        }
+        let bone = alloc(a, b, 0x140);
+        for k in 0..0x50 {
+            put(a, b, bone + 4 * k, modest(rng));
+        }
+        let scale = modest(rng);
+        let first = rng.next();
+        let damped = rng.below(2) == 0;
+        let (name, sym) = if damped {
+            ("SG_ApplyBoneDamped", 0x0083_8470)
+        } else {
+            ("SG_ApplyBone", 0x0083_8280)
+        };
+        twin(name, a, b, sym, &[first, chan, bone, scale], |m| {
+            sq::apply_bone(m, chan, bone, f(scale), damped);
+        });
+
+        // sequences: some of the table used, sometimes all of it
+        put(a, b, log, 0u32);
+        if !from_game {
+            let base = a.rebase(sq::SEQUENCES.sym);
+            let full = rng.below(6) == 0;
+            for k in 0..100 {
+                let used = full || rng.below(3) == 0;
+                put(a, b, base + 20 * k, if used { rng.next() | 1 } else { 0 });
+                put(a, b, base + 20 * k + 4, rng.next());
+            }
+        }
+        let seq = block(a, b, rng, 8);
+        let val = rng.next();
+        twin("SG_AddSequence", a, b, 0x0083_6d30, &[seq, val], |m| {
+            sq::add_sequence(&mut H(m), seq, val);
+        });
+
+        // id kinds: the map table only leads to lower kinds (no cycle)
+        let table = alloc(a, b, 16 * 8);
+        let kinds = [0u32, 1, 2, 13, 14, 3, 0x30, 0x35, 0x3f, 0x40, 0x7f];
+        for k in 0..8 {
+            let kind = kinds[rng.below(11) as usize] | (rng.next() & !0x7f);
+            put(a, b, table + 16 * k + 0xc, kind);
+        }
+        set(a, b, st::ID_TABLE, table);
+        let map = a.rebase(st::CHR_ID_MAP_TABLE);
+        for k in 0x30..0x40 {
+            let to = match rng.below(4) {
+                0 => [1, 2, 13, 14][rng.below(4) as usize],
+                1 if k > 0x30 => 0x30 + rng.below(k - 0x30),
+                2 => rng.next() | 0x40,
+                _ => rng.below(0x30),
+            };
+            put(a, b, map + 4 * k, to);
+        }
+        let chr = block(a, b, rng, 0x200);
+        set(
+            a,
+            b,
+            st::PLAYER,
+            if rng.below(2) == 0 { chr } else { rng.next() },
+        );
+        let i = rng.below(8);
+        twin("Sg_IdMatchChr", a, b, 0x0083_e4e0, &[chr, i], |m| {
+            st::id_match_chr(m, chr, i)
+        });
+
+        // the dream effect: a layer is a pointer to its display byte here
+        put(a, b, log, 0u32);
+        let disp = [0u8, 1, 2, 3, 4, 8, 0x80, 0x81];
+        let la = alloc(a, b, 4);
+        let lb = alloc(a, b, 4);
+        put(a, b, la, disp[rng.below(8) as usize]);
+        put(a, b, lb, disp[rng.below(8) as usize]);
+        set(a, b, c::DREAM_ON, rng.below(2));
+        set(a, b, c::DREAM_PHASE, [0, 1, 5, 7][rng.below(4) as usize]);
+        if rng.below(2) == 0 {
+            twin("recallSceneEffect", a, b, 0x0082_2580, &[la], |m| {
+                c::recall_scene_effect(&mut H(m), la)
+            });
+        } else {
+            twin("recallSceneEffect2", a, b, 0x0082_2620, &[la, lb], |m| {
+                c::recall_scene_effect2(&mut H(m), la, lb)
+            });
+        }
+
+        // cloth rods
+        let npts = rng.below(6) + 2;
+        let points = alloc(a, b, 16 * npts as usize);
+        for k in 0..4 * npts {
+            put(a, b, points + 4 * k, modest(rng));
+        }
+        let n = rng.below(6);
+        let rods = alloc(a, b, 12 * n as usize + 4);
+        for k in 0..n {
+            let e = rods + 12 * k;
+            let pa = rng.below(npts);
+            // one point twice: the distance 0, against a limit of 0 too
+            let same = rng.below(5) == 0;
+            let pb = if same { pa } else { rng.below(npts) };
+            put(a, b, e, u16::try_from(pa).unwrap());
+            put(a, b, e + 2, u16::try_from(pb).unwrap());
+            put(a, b, e + 4, modest(rng));
+            let lim = if same {
+                0
+            } else if rng.below(4) == 0 {
+                modest(rng)
+            } else {
+                rng.below(64) * 0x0080_0000 / 8 + 0x3c00_0000
+            };
+            put(a, b, e + 8, lim);
+        }
+        let kind = rng.below(6) + 1;
+        let sym = [
+            0x0082_2890,
+            0x0082_2960,
+            0x0082_2a50,
+            0x0082_2b20,
+            0x0082_2c10,
+            0x0082_2cf0,
+        ][kind as usize - 1];
+        twin("Sg_ClothRod", a, b, sym, &[rods, n, points], |m| {
+            v::cloth_rods(m, kind, rods, n, points)
+        });
     }
 }
