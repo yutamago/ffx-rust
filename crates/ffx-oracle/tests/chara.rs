@@ -8116,3 +8116,46 @@ fn round12e_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round12f_matches_the_original() {
+    for mut t in twins() {
+        round12f_on(&mut t);
+    }
+}
+
+fn round12f_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0012_f12f);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let malloc = fk.fake_alloc(t, 0x0068_7020, 1, 0x100);
+    let size = fk.fake(t, 0x0083_c050, 2, 1);
+    let memset = fk.fake(t, 0x0094_964c, 3, 3);
+    let name = fk.fake(t, 0x0083_c580, 4, 3);
+    let remap = fk.fake(t, 0x0083_cdd0, 5, 1);
+    let set = fk.fake(t, 0x0077_c950, 6, 2);
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(malloc, 0x1000_0000 + 0x10000 * round);
+        for r in [size, memset, name, remap, set] {
+            t.put_u32(r, rng.next());
+        }
+        let chr = t.alloc(0x800);
+        let blk = t.alloc(0x20);
+        let data = t.alloc(0x20);
+        for k in 0..8 {
+            t.put_u32(data + 4 * k, rng.next());
+        }
+        let v: u16 = [0x1028, 0x1029, 0x1126, 0x0800][usize::try_from(rng.next() % 4).unwrap()];
+        t.put(data + 0x10, &v.to_le_bytes());
+        t.put_u32(blk + 0x14, if round % 6 == 5 { 0 } else { data });
+        t.put_u32(chr + 0x1c4, blk);
+        t.put_u32(chr + 0x6fc, rng.next() % 2);
+        t.check(
+            &format!("Ch_TextureSetup {round}"),
+            0x0083_d0a0,
+            &[chr],
+            |m| Res::Int(tx::ch_texture_setup(m, chr, &mut |m, f, a| call(m, f, a))),
+        );
+    }
+}

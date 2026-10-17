@@ -1851,4 +1851,8 @@ ported! {
     Ch_DrawSingleShadow @ 0x0083_0240 => extern "C" fn ch_draw_single_shadow(chr: u32) {
         c::ch_draw_single_shadow(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    /// `Ch_TextureSetup(chr)`.
+    Ch_TextureSetup @ 0x0083_d0a0 => extern "C" fn ch_texture_setup(chr: u32) -> u32 {
+        tx::ch_texture_setup(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
