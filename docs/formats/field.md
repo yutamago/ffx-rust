@@ -748,11 +748,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   when the flash cannot draw. Bytes 0..2 and 0x14..0x1c of the
   description are never written: the renderer gets the original's
   stack there, and the port's zeros.
-- `KeMdl_Draw` (`0x00766ff0`) also feeds the renderer
-  (`InitVFXRenderData`/`updateVFXRenderData`, CLUT parameters), but its
-  colour goes through the emulated EE registers (`0x00c8f508`..,
-  `0x00c8f588`.., `pppEePmulth`, `pppEePpacb`) with persistent global
-  writes at every step. It is left for its own round.
+- `KeMdl_Draw` (`0x00766ff0`) also feeds the renderer; it is ported in
+  round 16.
 
 ### Replaced by ffx-render
 
@@ -762,10 +759,47 @@ renderer takes over:
 - `0x00760ce0`: a GIF image transfer (`sceGsSyncPath`, `sceDmaSync`,
   `sceDmaSend` from two alternating buffers).
 - `rcPacketDataDraw` (`0x00927600`): `sceDmaSend` of a packet.
+- `0x0093c730`: a bar of `Gu_SetXyzf2` vertices (the rcui Z value
+  window).
 - `0x00927630`, `0x00927720`, `0x00927810`, `0x009278d0`: `rc` packet
   builders (rectangles, circles, lines, projected points as fixed-point
   GIF vertices; their `ftol2_sse` operands are x87 values the
   decompilation hides).
+
+## The VFX model's render data, rcui helpers (round 16)
+
+- `KeMdl_Draw` (`0x00766ff0`): the colour is the compiler's emulation of
+  R5900 multimedia instructions on the EE register words at `0x00c8f508`
+  (A), `0x00c8f588` (M) and `0x00c8f598` (B). The two words at
+  `col + g_pppColorConShift` and the current part's `+0x70` words are
+  interleaved halfword-wise with A into M and B, and multiplied
+  (`pppEePmulth`). The products are shifted down 19 bits (13 kept),
+  interleaved with A's low halves and packed to bytes (`pppEePpacb`). Every
+  dword and halfword write to those globals is kept in the original's
+  order, and `g_pppColorConShift` is cleared twice. A colour whose top
+  byte is 0 draws nothing.
+- Its description (0x48 bytes) is built from:
+  - flags from the mode argument and the record's shape byte (0x4/0xc
+    path 3, 0x80 additive, 0x8, 0x10, 0x100, 0x200, 0x2000 with the view
+    matrix `g_pppViewMatrix * e +0x10`);
+  - the GIF tag word `0x00c498dc`, the record's alpha byte and the colour;
+  - `e +0x50`/`+0x10`/`+0x90`/`+0x94`, the model data blocks
+    `0x0230fd60`/`0x0230fda0` and the packet position;
+  - the Z mode argument when mode bit 5 is set.
+- It goes to `updateVFXRenderData` with `graphicVFX(Path3)Update`, or to
+  `InitVFX(Path3)RenderData` with the alpha function, Z mode (unless the
+  matrix is set) `| 0x40 | 0x80`. Then `graphicVFXSetClutParameters`
+  takes the three words at `0x010d5600`. Bytes `+0xb` and (without the
+  matrix) `+0x30` are never written.
+- `rcuiProjectToInt` (`0x0093d710`) leaves `1/w` on the x87 stack at
+  return (both paths pop everything else), so its port returns that
+  float.
+- `rcuiInvertRigidMatrix` (`0x0093d090`): the transpose with the
+  translation `-(R^T t)`; `rcuiClampVector` (`0x0093cd20`) keeps NaN.
+- `rcbgAnimeLoadConfig` (`0x0093a650`): `DataCnt`, then that many
+  four-byte frames.
+- `0x0093c730` draws a bar through `Gu_SetXyzf2`/`Gu_SetRgbaq` packets:
+  replaced by ffx-render.
 
 ## Floats
 

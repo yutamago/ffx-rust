@@ -3097,6 +3097,39 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_fls_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
+    // ---- round 16 ----
+    /// `KeMdl_Draw(e, rec, col, p4, p5, p6, mode, zmat, p9, p10)`.
+    KeMdl_Draw @ 0x0076_6ff0 => extern "C" fn shim_ke_mdl_draw(e: u32, rec: u32, col: u32, p4: u32, p5: u32, p6: u32, mode: u32, zmat: u32, p9: u32, p10: u32) {
+        let mut work = MdlWork([0; 0xe0]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ke::bridge::ke_mdl_draw(&mut mem(), [e, rec, col, p4, p5, p6, mode, zmat, p9, p10], w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcuiVu0SubVector(dst, a, b)`.
+    rcuiVu0SubVector @ 0x0093_76b0 => extern "C" fn shim_rcui_vu0_sub_vector(dst: u32, a: u32, b: u32) {
+        rcui::bridge::rcui_vu0_sub_vector(&mut mem(), dst, a, b);
+    }
+    /// `rcuiClampVector(dst, v, lo, hi)`.
+    rcuiClampVector @ 0x0093_cd20 => extern "C" fn shim_rcui_clamp_vector(dst: u32, v: u32, lo: u32, hi: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_clamp_vector(&mut mem(), dst, v, (lo, hi), w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiInvertRigidMatrix(dst, m)`.
+    rcuiInvertRigidMatrix @ 0x0093_d090 => extern "C" fn shim_rcui_invert_rigid_matrix(dst: u32, m: u32) -> u32 {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_invert_rigid_matrix(&mut mem(), dst, m, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiProjectToInt(out, m, v, raw)`.
+    rcuiProjectToInt @ 0x0093_d710 => extern "C" fn shim_rcui_project_to_int(out: u32, m: u32, v: u32, raw: u32) -> f32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_project_to_int(&mut mem(), out, (m, v), raw, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgAnimeLoadConfig(anime, parse)`.
+    rcbgAnimeLoadConfig @ 0x0093_a650 => extern "C" fn shim_rcbg_anime_load_config(anime: u32, p: u32) -> u32 {
+        model::bridge::rcbg_anime_load_config(&mut mem(), anime, p, &mut |_, f, a| call_cdecl(f, a))
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
@@ -3107,6 +3140,10 @@ struct Image([u8; 0x60]);
 /// The original's stack chunk and parser (`rcbgLoadBin`).
 #[repr(C, align(16))]
 struct Work([u8; 0xa4]);
+
+/// `KeMdl_Draw`'s render description and view matrix.
+#[repr(C, align(16))]
+struct MdlWork([u8; 0xe0]);
 
 /// A small 16-byte aligned stack buffer of the original (a vector pair, a
 /// model description, a CD read's result).

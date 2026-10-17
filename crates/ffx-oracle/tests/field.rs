@@ -9545,3 +9545,254 @@ fn round15_lens_render_data_matches_the_original() {
         }
     }
 }
+
+/// A renderer stand-in recording `id`, the arguments in `logged`, the
+/// byte ranges `segs` (offset, length) of the description at argument
+/// `desc`, and, when its flags word has bit 13, the 64 bytes its matrix
+/// pointer (`+0x30`) points at (`KeMdl_Draw`'s descriptions).
+fn capture_segs_stub(dst: u32, id: u32, logged: &[u32], desc: u32, segs: &[(u32, u32)]) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xc7, 0x05];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    for (j, &i) in (0u32..).zip(logged) {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, u8::try_from(0xc + 4 * i).unwrap(), 0xa3]);
+        c.extend_from_slice(&(dst + 4 + 4 * j).to_le_bytes());
+    }
+    let d = u8::try_from(0xc + 4 * desc).unwrap();
+    let mut to = dst + 0x20;
+    for &(off, n) in segs {
+        c.extend_from_slice(&[
+            0x8b,
+            0x74,
+            0x24,
+            d,
+            0x83,
+            0xc6,
+            u8::try_from(off).unwrap(),
+            0xbf,
+        ]);
+        c.extend_from_slice(&to.to_le_bytes());
+        c.push(0xb9);
+        c.extend_from_slice(&n.to_le_bytes());
+        c.extend_from_slice(&[0xf3, 0xa4]);
+        to += n;
+    }
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, d, 0xf7, 0x06]);
+    c.extend_from_slice(&0x2000u32.to_le_bytes());
+    c.extend_from_slice(&[0x74, 15, 0x8b, 0x76, 0x30, 0xbf]);
+    c.extend_from_slice(&(dst + 0xa0).to_le_bytes());
+    c.push(0xb9);
+    c.extend_from_slice(&0x40u32.to_le_bytes());
+    c.extend_from_slice(&[0xf3, 0xa4, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Round 16: `KeMdl_Draw`, the VFX model's render data: the colour
+/// through the emulated EE registers (`pppEePmulth`, `pppEePpacb`, the
+/// register words compared), the flags, view matrix and description
+/// handed to the stood-in renderer.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round16_model_render_data_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = env.log;
+    let (rdv, afv, zv, cap) = (t.alloc(4), t.alloc(4), t.alloc(4), t.alloc(0x400));
+    let segs = [(0, 0xb), (0xc, 0x24), (0x34, 0x14)];
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(ke::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE),
+            log_stub(log, rdv, 150, 2),
+        ),
+        (Some(ke::GRAPHIC_VFX_UPDATE), log_stub(log, env.rv, 151, 2)),
+        (
+            Some(ke::GRAPHIC_VFX_PATH3_UPDATE),
+            log_stub(log, env.rv, 152, 2),
+        ),
+        (
+            Some(ke::CALCULATE_VFX_SP_ALPHA_FUNCTION),
+            log_stub(log, afv, 153, 1),
+        ),
+        (Some(ke::CALCULATE_VFX_SP_ZMAT), log_stub(log, zv, 154, 1)),
+        (
+            Some(ke::GRAPHIC_VFX_SET_CLUT_PARAMETERS),
+            log_stub(log, env.rv, 155, 5),
+        ),
+        (
+            Some(ke::UPDATE_VFX_RENDER_DATA),
+            capture_segs_stub(cap, 156, &[0, 1, 2], 3, &segs),
+        ),
+        (
+            Some(ke::INIT_VFX_RENDER_DATA),
+            capture_segs_stub(cap + 0x100, 157, &[0, 1, 2, 4], 3, &segs),
+        ),
+        (
+            Some(ke::INIT_VFX_PATH3_RENDER_DATA),
+            capture_segs_stub(cap + 0x200, 158, &[0, 1, 2, 4], 3, &segs),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let (slot, envb, recs, pb) = (t.alloc(4), t.alloc(0x40), t.alloc(0x100), t.alloc(0x20));
+    let (e, colw, part) = (t.alloc(0xa0), t.alloc(0x40), t.alloc(0x80));
+    t.set(task::main::ENV_SLOT, slot);
+    t.put(slot, envb);
+    t.put(envb + 0x20, recs);
+    let ee = t.b.rebase(ke::EE_REGS);
+    let shift = t.b.rebase(ke::PPP_COLOR_CON_SHIFT);
+    let part_at = t.b.rebase(ke::PPP_CURRENT_PART);
+    let prog = t.b.rebase(ke::PPP_CURRENT_PROGRAM);
+    let view = t.b.rebase(ke::PPP_VIEW_MATRIX);
+    let clut = t.b.rebase(0x010d_5600);
+    for k in 0..80u32 {
+        env.reset(&mut t, &mut rng);
+        t.write(cap, &[0; 0x400]);
+        t.fill(ee, 0xb0, &mut rng);
+        t.fill(colw, 0x40, &mut rng);
+        t.put(shift, 4 * rng.below(4));
+        t.fill(part, 0x80, &mut rng);
+        t.put(part_at, part);
+        if k % 5 == 0 {
+            // a colour of 0: nothing drawn, only the registers written
+            t.write(ee, &[0; 0xb0]);
+            t.write(colw, &[0; 0x40]);
+            t.write(part, &[0; 0x80]);
+        }
+        t.put(prog, rng.next());
+        for i in 0..16 {
+            t.put(view + 4 * i, float_in(&mut rng, -4, 4));
+            t.put(e + 0x10 + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        t.put(e + 0x90, rng.next());
+        t.put(e + 0x94, rng.next());
+        for i in 0..3 {
+            t.put(clut + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        let idx = rng.below(8);
+        t.put(recs + 0x20 * idx + 0x1c, pb);
+        t.fill(pb, 0x20, &mut rng);
+        t.put(rdv, rng.below(2));
+        t.put(afv, rng.next());
+        t.put(zv, rng.next());
+        let a = [
+            e,
+            idx,
+            colw,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.below(0x40),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        ];
+        let work = t.stack_scratch(0);
+        t.same(
+            "KeMdl_Draw",
+            |o| o.void(0x0076_6ff0, &a),
+            |m| ke::bridge::ke_mdl_draw(m, a, work, call),
+        );
+    }
+}
+
+/// Keyword `i` of a parser keyword table (the strings it points at),
+/// past the end "junk".
+fn table_keyword(t: &Twin, table: u32, i: u32) -> String {
+    let n = (0..8)
+        .take_while(|&k| Mem::read::<u32>(&t.b, t.b.rebase(table) + 4 * k) != 0)
+        .count();
+    if i as usize >= n {
+        return "junk".to_string();
+    }
+    let s = Mem::read::<u32>(&t.b, t.b.rebase(table) + 4 * i);
+    (0..)
+        .map(|j| Mem::read::<u8>(&t.b, s + j))
+        .take_while(|&c| c != 0)
+        .map(char::from)
+        .collect()
+}
+
+/// Round 16 (rcui and anime helpers): the VU0 vector subtraction, the
+/// vector clamp, the rigid matrix inverse, the projection to integers
+/// (its `1/w` left in `ST0`) and the anime frame configuration keywords.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round16_rcui_and_anime_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_0002);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (dst, a, b, m) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10), t.alloc(0x40));
+    let (out, chunk, parse, data, anime) = (
+        t.alloc(0x40),
+        t.alloc(8),
+        t.alloc(0x90),
+        t.alloc(0x200),
+        t.alloc(0x20),
+    );
+    for _ in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        for i in 0..4 {
+            t.put(a + 4 * i, float_in(&mut rng, -50, 50));
+            t.put(b + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        t.same(
+            "rcuiVu0SubVector",
+            |o| o.void(0x0093_76b0, &[dst, a, b]),
+            |o| rcui::bridge::rcui_vu0_sub_vector(o, dst, a, b),
+        );
+        let (lo, hi) = (float_in(&mut rng, -30, 0), float_in(&mut rng, 0, 30));
+        let work = t.stack_scratch(0);
+        t.same(
+            "rcuiClampVector",
+            |o| o.eax(0x0093_cd20, &[dst, a, lo, hi]),
+            |o| rcui::bridge::rcui_clamp_vector(o, dst, a, (lo, hi), work, call),
+        );
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        t.same(
+            "rcuiInvertRigidMatrix",
+            |o| o.eax(0x0093_d090, &[out, m]),
+            |o| rcui::bridge::rcui_invert_rigid_matrix(o, out, m, work, call),
+        );
+        t.put(m + 0x3c, float_in(&mut rng, 1, 8));
+        let raw = rng.below(2);
+        t.same(
+            "rcuiProjectToInt",
+            |o| o.float(0x0093_d710, &[out, m, a, raw]),
+            |o| {
+                bits(rcui::bridge::rcui_project_to_int(
+                    o,
+                    out,
+                    (m, a),
+                    raw,
+                    work,
+                    call,
+                ))
+            },
+        );
+        // anime frames
+        let mut text = b"head ".to_vec();
+        for _ in 0..rng.below(5) {
+            let w = table_keyword(&t, model::ANIME_CONFIG_KEYS, rng.below(4));
+            text.extend(w.bytes());
+            for _ in 0..=rng.below(9) {
+                text.extend(format!(" {}", rng.range(0, 5)).bytes());
+            }
+            text.push(b' ');
+        }
+        text.push(0);
+        t.write(data, &text);
+        parser_over(&mut t, chunk, parse, data);
+        t.put(chunk + 4, u32::try_from(text.len() - 1).unwrap());
+        t.put(parse + 8, 1u32);
+        t.write(anime, &[0; 0x20]);
+        t.same(
+            "rcbgAnimeLoadConfig",
+            |o| o.eax(0x0093_a650, &[anime, parse]),
+            |o| model::bridge::rcbg_anime_load_config(o, anime, parse, call),
+        );
+    }
+}

@@ -98,6 +98,43 @@ pub const VU0_UNIT_MATRIX: u32 = 0x006e_d9a0;
 pub const VU0_COPY_VECTOR: u32 = 0x006e_d370;
 /// `FFXVu0ScaleVector(dst, src, k)` (`0x006ed8f0`).
 pub const VU0_SCALE_VECTOR: u32 = 0x006e_d8f0;
+/// The emulated EE registers (`0x00c8f500`..): `+8` the register
+/// `KeMdl_Draw` interleaves with, `+0x88` and `+0x98` its operands.
+pub const EE_REGS: u32 = 0x00c8_f500;
+/// `g_pppColorConShift` (`0x00c8b500`): a byte offset added once to the
+/// colour address, cleared after use.
+pub const PPP_COLOR_CON_SHIFT: u32 = 0x00c8_b500;
+/// `g_pppCurrentPart` (`0x0230ffe4`).
+pub const PPP_CURRENT_PART: u32 = 0x0230_ffe4;
+/// `pppEePmulth(dst, a, b)` (`0x007374e0`).
+pub const PPP_EE_PMULTH: u32 = 0x0073_74e0;
+/// `pppEePpacb(dst, a, b)` (`0x007375d0`).
+pub const PPP_EE_PPACB: u32 = 0x0073_75d0;
+/// `g_pppViewMatrix` (`0x0230ff20`).
+pub const PPP_VIEW_MATRIX: u32 = 0x0230_ff20;
+/// `FFXVu0MulMatrix(dst, a, b)` (`0x006ed5c0`).
+pub const VU0_MUL_MATRIX: u32 = 0x006e_d5c0;
+/// The GIF tag word `KeMdl_Draw` copies (`0x00c498dc`).
+pub const REF_GIF_TAG: u32 = 0x00c4_98dc;
+/// The VFX packet position (`0x0230fd2c`).
+pub const PACKET_POS_ADDR: u32 = 0x0230_fd2c;
+/// The two VFX model data blocks `KeMdl_Draw`'s description points at
+/// (`0x0230fd60`, `0x0230fda0`).
+pub const MDL_FP_DATA: u32 = 0x0230_fd60;
+/// See [`MDL_FP_DATA`].
+pub const MDL_FQ_DATA: u32 = 0x0230_fda0;
+/// `updateVFXRenderData(lo, hi, rec, desc)` (`0x00718610`).
+pub const UPDATE_VFX_RENDER_DATA: u32 = 0x0071_8610;
+/// `InitVFXRenderData(lo, hi, rec, desc, flags)` (`0x00711180`).
+pub const INIT_VFX_RENDER_DATA: u32 = 0x0071_1180;
+/// `InitVFXPath3RenderData(lo, hi, rec, desc, flags)` (`0x00710fd0`).
+pub const INIT_VFX_PATH3_RENDER_DATA: u32 = 0x0071_0fd0;
+/// `graphicVFXPath3Update(lo, hi)` (`0x00645600`).
+pub const GRAPHIC_VFX_PATH3_UPDATE: u32 = 0x0064_5600;
+/// `graphicVFXSetClutParameters(lo, hi, a, b, c)` (`0x00645630`).
+pub const GRAPHIC_VFX_SET_CLUT_PARAMETERS: u32 = 0x0064_5630;
+/// `calculateVFXSP_ZMat(mode)` (`0x00712d00`).
+pub const CALCULATE_VFX_SP_ZMAT: u32 = 0x0071_2d00;
 
 /// The `Ke` objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -1097,6 +1134,228 @@ pub mod bridge {
             return;
         }
         lns_submit(mem, key, rd, w, call);
+    }
+
+    // ---- round 16: KeMdl_Draw ----
+
+    /// The work layout of `KeMdl_Draw` (the original's frame from `ebp -
+    /// 0xe0`): the render description the renderer gets (`+0`, 0x48
+    /// bytes) and the view matrix (`+0x98`).
+    pub mod mdl_work {
+        /// Bytes.
+        pub const SIZE: u32 = 0xd8;
+        /// The view matrix.
+        pub const MATRIX: u32 = 0x98;
+    }
+
+    /// The emulated EE registers' words at `0x00c8f500 + off`.
+    fn ee(mem: &impl Mem, off: u32) -> u32 {
+        mem.rebase(super::EE_REGS + off)
+    }
+
+    /// `KeMdl_Draw(e, rec, col, p4, p5, p6, mode, zmat, _, p10, work)`
+    /// (`0x00766ff0`): a VFX model's render data. The colour: the two
+    /// words at `col + g_pppColorConShift` and the current part's `+0x70`
+    /// words are interleaved halfword-wise with the EE register at
+    /// `0x00c8f508` into registers `0x00c8f588` and `0x00c8f598`,
+    /// multiplied (`pppEePmulth`), shifted down by 19 bits (13 kept),
+    /// interleaved again and packed to bytes (`pppEePpacb`); a colour whose
+    /// top byte is 0 draws nothing. Else the description: flags from
+    /// `mode` and the record's shape flags (`rec`'s `+0x1c` byte 0), the
+    /// view matrix (`g_pppViewMatrix * e +0x10`, mode bit 4), the colour,
+    /// the record's alpha byte (`+0x16`), `p4`..`p6`, `e`'s `+0x50`,
+    /// `+0x10`, `+0x90`/`+0x94`, the packet position, `zmat` with mode
+    /// bit 5; then `updateVFXRenderData` and the (path 3) update with
+    /// render data, else `InitVFX(Path3)RenderData` with the alpha
+    /// function, Z mode (unless bit 4) | 0x40 (flag 8) | 0x80; and the
+    /// CLUT parameters (`0x010d5600`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // the original's steps
+    pub fn ke_mdl_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 10],
+        w: u32,
+        call: &mut C,
+    ) {
+        let [e, rec_index, col, p4, p5, p6, mode, zmat, _, p10] = args;
+        let shift = mem.rebase(super::PPP_COLOR_CON_SHIFT);
+        let at = mem.read::<u32>(shift).wrapping_add(col);
+        let d = mem.read::<u32>(at);
+        mem.write(ee(mem, 0x88), d);
+        let c = mem.read::<u32>(at.wrapping_add(4));
+        let part = mem.read::<u32>(mem.rebase(super::PPP_CURRENT_PART));
+        mem.write(ee(mem, 0x8c), c);
+        mem.write(shift, 0u32);
+        let p70 = mem.read::<u32>(part.wrapping_add(0x70));
+        mem.write(ee(mem, 0x98), p70);
+        let p74 = mem.read::<u32>(part.wrapping_add(0x74));
+        let lo = |v: u32| (v & 0xffff) as u16;
+        let hi = |v: u32| (v >> 16) as u16;
+        let a0 = mem.read::<u32>(ee(mem, 0x08));
+        mem.write(ee(mem, 0x8a), lo(a0));
+        mem.write(ee(mem, 0x8e), hi(a0));
+        let a1 = mem.read::<u32>(ee(mem, 0x0c));
+        mem.write(ee(mem, 0x92), lo(a1));
+        mem.write(ee(mem, 0x96), hi(a1));
+        mem.write(ee(mem, 0x8c), hi(d));
+        mem.write(ee(mem, 0x94), hi(c));
+        mem.write(ee(mem, 0x88), lo(d));
+        let a0 = mem.read::<u32>(ee(mem, 0x08));
+        mem.write(ee(mem, 0x90), lo(c));
+        let a1 = mem.read::<u32>(ee(mem, 0x0c));
+        mem.write(ee(mem, 0x9c), p74);
+        mem.write(ee(mem, 0x9e), hi(a0));
+        mem.write(ee(mem, 0xa6), hi(a1));
+        mem.write(ee(mem, 0x9c), hi(p70));
+        mem.write(shift, 0u32);
+        mem.write(ee(mem, 0x9a), lo(a0));
+        mem.write(ee(mem, 0xa2), lo(a1));
+        mem.write(ee(mem, 0x98), lo(p70));
+        mem.write(ee(mem, 0xa0), lo(p74));
+        mem.write(ee(mem, 0xa4), hi(p74));
+        let (m, b, a) = (ee(mem, 0x88), ee(mem, 0x98), ee(mem, 0x08));
+        let f = mem.rebase(super::PPP_EE_PMULTH);
+        call(mem, f, &[m, m, b]);
+        let top =
+            |mem: &M, off: u32| (mem.read::<i32>(ee(mem, off)) >> 19).cast_unsigned() & 0x1fff;
+        let s0 = top(mem, 0x88);
+        let s1 = top(mem, 0x8c);
+        let s3 = top(mem, 0x94);
+        let s2 = top(mem, 0x90);
+        mem.write(ee(mem, 0x94), s3);
+        mem.write(ee(mem, 0x8c), s1);
+        mem.write(ee(mem, 0x8e), lo(s3));
+        let a0 = mem.read::<u32>(ee(mem, 0x08));
+        mem.write(ee(mem, 0x90), s2);
+        mem.write(ee(mem, 0x90), lo(a0));
+        let a1 = mem.read::<u32>(ee(mem, 0x0c));
+        mem.write(ee(mem, 0x92), lo(a1));
+        let a2 = mem.read::<u32>(ee(mem, 0x10));
+        mem.write(ee(mem, 0x94), lo(a2));
+        let a3 = mem.read::<u32>(ee(mem, 0x14));
+        mem.write(ee(mem, 0x88), s0);
+        mem.write(ee(mem, 0x88), lo(s0));
+        mem.write(ee(mem, 0x8a), lo(s1));
+        mem.write(ee(mem, 0x8c), lo(s2));
+        mem.write(ee(mem, 0x96), lo(a3));
+        let f = mem.rebase(super::PPP_EE_PPACB);
+        call(mem, f, &[m, a, m]);
+        let sh = mem.read::<u32>(shift);
+        let colour = mem.read::<u32>(ee(mem, 0x88));
+        mem.write(w.wrapping_add(0x18).wrapping_add(sh), colour);
+        let alpha = mem.read::<u8>(w.wrapping_add(0x1b));
+        mem.write(shift, 0u32);
+        if alpha == 0 {
+            return;
+        }
+        // the description
+        let env = mem.read::<u32>(mem.read::<u32>(mem.rebase(super::VFX_DATA)));
+        let rec = rec_index
+            .wrapping_shl(5)
+            .wrapping_add(mem.read::<u32>(env.wrapping_add(0x20)));
+        let pb = ptr32(mem.read::<u32>(rec.wrapping_add(0x1c)));
+        let shape = mem.read::<u8>(pb);
+        let mut fl = 0u32;
+        if mode & 2 != 0 {
+            fl = 4;
+            if shape & 1 == 0 {
+                fl = 0xc;
+            }
+        } else {
+            if mode & 1 != 0 {
+                fl = 0x80;
+            }
+            if shape & 1 == 0 {
+                fl |= 8;
+            }
+        }
+        if mem.read::<u8>(pb) & 2 == 0 {
+            fl |= 0x10;
+        }
+        if mode & 4 != 0 {
+            fl |= 0x200;
+        }
+        if mode & 8 != 0 {
+            fl |= 0x100;
+        }
+        mem.write(w, fl);
+        if mode & 0x10 != 0 {
+            fl |= 0x2000;
+            mem.write(w, fl);
+            let mtx = w.wrapping_add(mdl_work::MATRIX);
+            mem.write(w.wrapping_add(0x30), mtx);
+            let view = mem.rebase(super::PPP_VIEW_MATRIX);
+            let f = mem.rebase(super::VU0_MUL_MATRIX);
+            call(mem, f, &[mtx, view, e.wrapping_add(0x10)]);
+        }
+        let z = if mode & 0x20 != 0 { zmat } else { 0 };
+        mem.write(w.wrapping_add(0x44), z);
+        let ab = mem.read::<u16>(pb.wrapping_add(0x16));
+        mem.write(w.wrapping_add(8), ab);
+        mem.write(w.wrapping_add(0x1c), p10);
+        let r90 = ptr32(mem.read::<u32>(e.wrapping_add(0x90)));
+        mem.write(w.wrapping_add(0x38), r90);
+        let r94 = ptr32(mem.read::<u32>(e.wrapping_add(0x94)));
+        mem.write(w.wrapping_add(0x3c), r94);
+        let tag = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        mem.write(w.wrapping_add(4), tag);
+        mem.write(w.wrapping_add(0xc), 0u16);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        mem.write(w.wrapping_add(0xe), p4 as u16);
+        mem.write(w.wrapping_add(0x10), p5 << 16);
+        mem.write(w.wrapping_add(0x14), p6 << 16);
+        mem.write(w.wrapping_add(0x20), e.wrapping_add(0x50));
+        mem.write(w.wrapping_add(0x2c), e.wrapping_add(0x10));
+        let prog = mem.read::<i32>(mem.rebase(super::PPP_CURRENT_PROGRAM));
+        let key = [
+            prog.cast_unsigned(),
+            e.wrapping_add((prog >> 31).cast_unsigned()),
+        ];
+        let pos = mem.read::<u32>(mem.rebase(super::PACKET_POS_ADDR));
+        mem.write(w.wrapping_add(0x40), 0u32);
+        mem.write(w.wrapping_add(0xa), 0u8);
+        let (fp, fq) = (
+            mem.rebase(super::MDL_FP_DATA),
+            mem.rebase(super::MDL_FQ_DATA),
+        );
+        mem.write(w.wrapping_add(0x24), fp);
+        mem.write(w.wrapping_add(0x28), fq);
+        mem.write(w.wrapping_add(0x34), pos);
+        let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+        let rd = call(mem, f, &key);
+        let path3 = |mem: &M| mem.read::<u8>(w) & 4 != 0;
+        if rd != 0 {
+            let f = mem.rebase(super::UPDATE_VFX_RENDER_DATA);
+            call(mem, f, &[key[0], key[1], rec, w]);
+            let f = mem.rebase(if path3(mem) {
+                super::GRAPHIC_VFX_PATH3_UPDATE
+            } else {
+                super::GRAPHIC_VFX_UPDATE
+            });
+            call(mem, f, &key);
+        } else {
+            let ab = u32::from(mem.read::<u8>(w.wrapping_add(8)));
+            let f = mem.rebase(super::CALCULATE_VFX_SP_ALPHA_FUNCTION);
+            let mut fa = call(mem, f, &[ab]);
+            if mem.read::<u32>(w) & 0x2000 == 0 {
+                let z = mem.read::<u32>(w.wrapping_add(0x44));
+                let f = mem.rebase(super::CALCULATE_VFX_SP_ZMAT);
+                fa |= call(mem, f, &[z]);
+            }
+            let b = mem.read::<u8>(w);
+            if b & 8 != 0 {
+                fa |= 0x40;
+            }
+            fa |= 0x80;
+            let f = mem.rebase(if b & 4 != 0 {
+                super::INIT_VFX_PATH3_RENDER_DATA
+            } else {
+                super::INIT_VFX_RENDER_DATA
+            });
+            call(mem, f, &[key[0], key[1], rec, w, fa]);
+        }
+        let [c0, c1, c2] = crate::vu0::TK_CLUT.get(mem);
+        let f = mem.rebase(super::GRAPHIC_VFX_SET_CLUT_PARAMETERS);
+        call(mem, f, &[key[0], key[1], c0, c1, x87::copy(c2)]);
     }
 }
 
