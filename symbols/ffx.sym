@@ -4431,6 +4431,8 @@
 0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
 0x00796ea0 function msGetChrPos               # fh v3:exact 0x00796eb0
 0x00796f20 function msSetChrBodyHit           # fh v3:exact 0x00796f30
+0x00797020 function msSetChrShadowReq         # (p, k, v): shadow request k (< 3) of actor/weapon record p = v; first non-negative of +0x26..+0x28 (stopping at 0) into +0x25, mode +0x2a[that] into +0x29 and Ch_SetShadowMode; returns +0 the character; name ours
+0x00797080 function msSetChrVisibleReq        # (i, k, v): visibility request +0x16[k] = v; visible (+0x15) when +0x16..+0x19 all set: Ch_SetHideBattle/Effect, Ch_EnMapID(+0x32), Ch_SetCalcNorm(+0x33), msSetChrShadowReq(p,1,-1/0), msSetChrBodyHit; op_et_bindeff for +0x36; recurses to +0x13 and actors with +0x43f == i (with +0x440); weapons with +0x1d; hiding queued in 0x02311060 while 0x011363b8 & 0x01136b58; name ours
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0
@@ -4733,7 +4735,7 @@
 0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
 0x007a9650 function MsDirTurn                 # (actor, dir) -> f32 in ST0: MsNearRag(+0x490, dir), or the turn the other way round (+-2pi) when +0x494 and the turn pass 2pi/3; MsGetDirMode with +0x42c; name ours
 0x007a9710 function MsGetDirMode              # (i, actor, vec, follow, &mode, &plain) -> f32 in ST0 (fld at ret; Ghidra types it void, MsSetChrDirTarget reads (float10)); direction for mode +0x42b 1-13; fh v3:exact 0x007a9730
-0x007a99b0 function MsGetEscapeDir            # fh v3:exact 0x007a99d0
+0x007a99b0 function MsGetEscapeDir            # (i) -> f32 in ST0 (Ghidra types it void; MsParseCommand reads (float10)): MsNearRag(0, yaw from the position to MsGetChrEscapePos); fh v3:exact 0x007a99d0
 0x007a9a20 function MsMenuWeakElement         # fh switch:bsim1.00 0x710035e1b0
 0x007a9a40 function MsGetTargetDist              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100360780 MsGetTargetDist, 2 votes, round 1
 0x007a9ac0 function MsGetMoveTargetPos        # fh v3:exact 0x007a9ae0
@@ -4809,6 +4811,8 @@
 0x007aeec0 function MsReturnParty             # fh v3:exact 0x007aeed0
 0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30
 0x007aefb0 function MsSortCommand             # fh v3:exact 0x007aefc0
+0x007af0f0 function MsCheckTargetsNear        # (i, actor, targets): with +0x4ac bit 12, 1 when a target within 12.0 (2D, less widths) has its MsGetMoveTargetPos kind 0xc within 0.2 of its battle position; 0 with several targets; name ours
+0x007af230 function MsCheckChrNear            # (i, actor): +0x44a = +0x44b, or MsCheckTargetsNear(i, actor, +0xdc0) when 0; MsParseCommand; name ours
 0x007af260 function MsCheckAutoStatus         # fh v3:exact 0x007af270
 0x007af2b0 function MsCheckChrHitMotionAll    # fh v3:exact 0x007af2c0
 0x007af2f0 function MsCheckDefenseMotion         # layout: alphabetical run between MsCheckChrHitMotionAll and MsCheckSetMotion (1 unnamed in the gap); Switch 0x710037a3f0 MsCheckDefenseMotion is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -11625,6 +11629,7 @@
 0x00b46fac label AsyncLoadManager_RequestPool_AsyncLoadManager_LoadClusterRequest__vftable # fh v4:imported AsyncLoadManager::RequestPool<AsyncLoadManager::LoadClusterRequest>::vftable
 0x00b46fb4 label AsyncLoadManager_RequestPool_AsyncLoadManager_RegistTaskRequest__vftable # fh v4:imported AsyncLoadManager::RequestPool<AsyncLoadManager::RegistTaskRequest>::vftable
 0x00b473fc label PostProcessTweakUtil_vftable # fh v4:imported PostProcessTweakUtil::vftable
+0x00b47de8 label g_Twelve                  # f32 12.0: MsCheckTargetsNear's reach
 0x00b47e0c label ClassCharacter_vftable       # fh v4:imported ClassCharacter::vftable
 0x00b47e14 label ClassDynamicGeometry_vftable # fh v4:imported ClassDynamicGeometry::vftable
 0x00b47e40 label VFXDynamicGeometry_vftable   # fh v4:imported VFXDynamicGeometry::vftable
@@ -12267,6 +12272,7 @@
 0x0112a8d0 label g_BtlMem                  # 0x2150 bytes of battle globals cleared by MsBattleMemInit (the kernel table pointers 0x0112a92c.. among them)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
+0x0112a8e4 label g_BtlCameraState          # u8, 2: no script camera requests unless an actor asks (MsAtelRequestCamera)
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
 0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
@@ -12274,6 +12280,7 @@
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a907 label g_BtlStatInvert1B         # u8, MsGetChrStatInfo property 0x1b counts actors whose +0xdec is clear instead of set
@@ -12381,6 +12388,7 @@
 0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
+0x0112c9fe label g_BtlCameraHides          # u8, set by MsSetChrVisibleCamera; MsReturnCameraVisible shows all again and clears it (the shows set it again)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
@@ -12437,6 +12445,7 @@
 0x011333f0 label g_BtlMenuText             # 17 x 12 bytes cleared by MsMenuInitText
 0x011334c0 label g_KernelImportant           # key item kernel table (MsImportantPtr 0x007908a0 looks IDs up in it with MsGetExcelData)
 0x011334c8 label g_BtlDebugCameraSleep        # i32; Set to -1 by MsDebugCameraSleepInit.
+0x011334d0 label g_BtlHideQueueLast        # i32, last index of the character queue at 0x02311060 (msSetChrVisibleReq, 0x007badb0)
 0x011334d4 label g_BtlChrTop                 # pointer to the 0x1f battle actors of 0xf90 bytes (MsGetChr 0x00794020, MsGetChrTop)
 0x011334d8 label g_BtlChrSpare               # what MsGetChr returns for an index from 0x5d on
 0x01134468 label g_BtlMonTop                 # pointer to the monster actors, 0xf90 bytes each (MsGetMon 0x00795aa0)
@@ -12475,6 +12484,7 @@
 0x01136a7b label g_BtlActionRequestEntries # u8, the action request block's (0x01136a78) +3: entries a script left; MsActionRequest makes them a cue entry
 0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
+0x01136b58 label g_BtlHideMask             # u32, with g_ActorPropertyLatch: msSetChrVisibleReq queues a hidden character (0x02311060) instead of hiding it
 0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.
 0x01136b68 label    g_BtlSplineLists           # two 0x210-byte camera path lists (count word, points) after g_BtlSplines; Native_Cam_6059/605a/605b, 0x007bb970
@@ -12952,6 +12962,7 @@
 0x02310f68 label g_BtlTermWord             # u32 cleared by MsBtlGetTerm
 0x02310f9e label g_Equipment7000           # 8 x 22-byte equipment slots of the 0x7000 IDs (MsGetSaveWeapon)
 0x02311050 label g_BtlChrExtra             # pointer to 0x24 bytes MsBtlChrInit clears
+0x02311060 label g_BtlHideQueue            # u32 characters queued to hide (index from 1)
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)

@@ -363,4 +363,98 @@ pub mod bridge {
         }
         SCRIPT_TARGETS.get(mem)
     }
+
+    /// Set when an overdrive type was learnt (`MsLimitTypeExpGet`).
+    pub const LIMIT_LEARNT: Global<u8> = Global::new(0x0112_c02b);
+    /// `SndGetNowPlayMusic`, `SndMusicVolumeTranslate` (sound),
+    /// `TOBtlOpenSignWindow` (system).
+    pub const SND_GET_NOW_PLAY_MUSIC: u32 = 0x0088_63f0;
+    pub const SND_MUSIC_VOLUME_TRANSLATE: u32 = 0x0088_6b40;
+    pub const TO_BTL_OPEN_SIGN_WINDOW: u32 = 0x0089_8c60;
+    /// The title window's position bytes (`MsMenuOpenTitleWindow`).
+    pub const TITLE_WINDOW: Global<[u8; 2]> = Global::new(0x0112_c9d1);
+
+    /// `MsLimitTypeExpGet(i, k, force)` (`0x007b10c0`): party member `i`'s
+    /// (up to 6) progress towards overdrive type `k` (up to 0x10): unless
+    /// the battle keeps no records (`g_BtlStealRule`), it is KO'd or
+    /// petrified (without `force`), it already counted `k` this turn
+    /// (`+0x6f0` bit `k`) or its counter (`ply_save +0x60[k]`) is 0xffff:
+    /// counted (`+0x6f0`), the counter down by one (not below 0); at 0 with
+    /// the type not yet had (`+0x88` bit `k`) [`LIMIT_LEARNT`] is set and 1.
+    /// Else 0.
+    pub fn ms_limit_type_exp_get(mem: &mut impl Mem, i: u32, k: u32, force: u32) -> u32 {
+        if crate::save::bridge::STEAL_RULE.get(mem) != 0 || i > 6 || k > 0x10 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        if (byte(mem, a, 0xdcc) != 0 || byte(mem, a, 0xdce) != 0) && force == 0 {
+            return 0;
+        }
+        let bit = 1u32 << k;
+        let had: u32 = mem.read(a.wrapping_add(0x6f0));
+        if had & bit != 0 {
+            return 0;
+        }
+        let rec = crate::save::bridge::PLY_SAVE.ptr(mem).addr + i * 0x94;
+        let at = rec + 0x60 + 2 * k;
+        let v: u16 = mem.read(at);
+        if v == 0xffff {
+            return 0;
+        }
+        mem.write(a.wrapping_add(0x6f0), had | bit);
+        let types: u32 = mem.read(rec + 0x88);
+        if v != 0 {
+            mem.write(at, v - 1);
+        }
+        if mem.read::<u16>(at) != 0 || (types >> k) & 1 != 0 {
+            return 0;
+        }
+        LIMIT_LEARNT.set(mem, 1);
+        1
+    }
+
+    /// `MsLimitTypeEscapeCheck(i, actor)` (`0x007b1090`): escaping counts
+    /// towards overdrive type 0xc ([`ms_limit_type_exp_get`]) and, with
+    /// that type set (`+0x5bb` 0xc), raises the gauge
+    /// (`MsLimitUp(i, actor, 10)`). 0.
+    pub fn ms_limit_type_escape_check(mem: &mut impl Mem, i: u32, actor: u32) -> u32 {
+        ms_limit_type_exp_get(mem, i, 0xc, 0);
+        if byte(mem, actor, 0x5bb) == 0xc {
+            crate::turn::bridge::ms_limit_up(mem, i, actor, 10);
+        }
+        0
+    }
+
+    /// `MsMusicVolume(volume, frames)` (`0x007a0090`): the playing music's
+    /// volume (`SndMusicVolumeTranslate(SndGetNowPlayMusic(), frames,
+    /// volume)`), its result.
+    pub fn ms_music_volume<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        volume: u32,
+        frames: u32,
+    ) -> u32 {
+        let f = code(mem, SND_GET_NOW_PLAY_MUSIC);
+        let m = call(mem, f, &[]);
+        let f = code(mem, SND_MUSIC_VOLUME_TRANSLATE);
+        call(mem, f, &[m, frames, volume])
+    }
+
+    /// `MsMenuOpenTitleWindow(i, pos)` (`0x0078fea0`): the battle's sign
+    /// window `i` (`TOBtlOpenSignWindow`); when it opens, [`TITLE_WINDOW`]
+    /// both `pos` and `pos` returned, else 0.
+    pub fn ms_menu_open_title_window<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        i: u32,
+        pos: u32,
+    ) -> u32 {
+        let f = code(mem, TO_BTL_OPEN_SIGN_WINDOW);
+        if call(mem, f, &[i]) == 0 {
+            return 0;
+        }
+        let b = pos.to_le_bytes()[0];
+        TITLE_WINDOW.set(mem, [b, b]);
+        pos
+    }
 }
