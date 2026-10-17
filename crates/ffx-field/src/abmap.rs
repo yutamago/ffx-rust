@@ -98,6 +98,14 @@ pub const ABMAP_PPP_DATA: u32 = 0x0230_5800;
 pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
 /// `pppStartPart(part, flags, id, a, b)` (`0x007123c0`).
 pub const PPP_START_PART: u32 = 0x0071_23c0;
+/// `abmap_test_panel(bit, node)` (`0x00a457d0`).
+pub const ABMAP_TEST_PANEL: u32 = 0x00a4_57d0;
+/// `abmap_other_has_panel(chr, node)` (`0x00a45800`).
+pub const ABMAP_OTHER_HAS_PANEL: u32 = 0x00a4_5800;
+/// `abmap_chr_node(chr)` (`0x00a45870`).
+pub const ABMAP_CHR_NODE: u32 = 0x00a4_5870;
+/// `MsGetSavePlyJoined(chr)` (`0x007853a0`).
+pub const MS_GET_SAVE_PLY_JOINED: u32 = 0x0078_53a0;
 /// `AbmapMarkLockedEntries(pad)` (`0x00a5a2e0`).
 pub const MARK_LOCKED_ENTRIES: u32 = 0x00a5_a2e0;
 /// `MsGetSaveMenu()` (`0x00785290`).
@@ -1956,5 +1964,74 @@ pub mod bridge {
         if n <= 0 || every(mem, &|b| b == 0x7f) {
             call(mem, unlock, &[0x1d]);
         }
+    }
+
+    /// `AbmapSpecialEffect(kind, node, row, chr)` (`0x00a5d120`, the
+    /// special item kinds of [`abmap_item_node_effect`]): 1 when the item
+    /// of `kind` applies to node index `node` with the excel row `row`
+    /// (its type `+0x16`) for `chr`, else 0:
+    /// - 1..=4: type 0x12, 0x11, 0 or 0x10; 5..=7 and 0x10..=0x16: type 1;
+    /// - 8..=0xb: the node lacks panel bit `chr` (`abmap_test_panel`), the
+    ///   type is 0xf, 0xe, 0xc or 0xd and another character has it
+    ///   (`abmap_other_has_panel`);
+    /// - 0xc, 0xd, 0xe, 0xf: `chr` is not on the node (`abmap_chr_node`)
+    ///   and, in turn, it has the panel bit, another character has it,
+    ///   another joined character (`MsGetSavePlyJoined`, 0..=6) stands on
+    ///   it, or the row is not hidden (bit 15 of `+0x10`);
+    /// - 0x17: type 2..=0xb; 0x18: as 0x17 with no panel bit and another
+    ///   character's.
+    pub fn abmap_special_effect<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        let [kind, node, row, chr] = args;
+        let ty = mem.read::<u8>(row.wrapping_add(0x16));
+        let test = |mem: &mut M, call: &mut C| {
+            let f = mem.rebase(super::ABMAP_TEST_PANEL);
+            call(mem, f, &[chr, node]) != 0
+        };
+        let other = |mem: &mut M, call: &mut C| {
+            let f = mem.rebase(super::ABMAP_OTHER_HAS_PANEL);
+            call(mem, f, &[chr, node]) != 0
+        };
+        let on_node = |mem: &mut M, call: &mut C, c: u32| {
+            let f = mem.rebase(super::ABMAP_CHR_NODE);
+            call(mem, f, &[c]) == node
+        };
+        let r = match kind {
+            1 => ty == 0x12,
+            2 => ty == 0x11,
+            3 => ty == 0,
+            4 => ty == 0x10,
+            5..=7 | 0x10..=0x16 => ty == 1,
+            8..=0xb => {
+                let want = [0xf, 0xe, 0xc, 0xd][(kind - 8) as usize];
+                !test(mem, call) && ty == want && other(mem, call)
+            }
+            0xc => !on_node(mem, call, chr) && test(mem, call),
+            0xd => !on_node(mem, call, chr) && other(mem, call),
+            0xe => {
+                !on_node(mem, call, chr)
+                    && (0..7).any(|c| {
+                        if c == chr {
+                            return false;
+                        }
+                        let f = mem.rebase(super::MS_GET_SAVE_PLY_JOINED);
+                        call(mem, f, &[c]) != 0 && on_node(mem, call, c)
+                    })
+            }
+            0xf => {
+                !on_node(mem, call, chr) && mem.read::<u16>(row.wrapping_add(0x10)) & 0x8000 == 0
+            }
+            0x17 => (2..0xc).contains(&ty),
+            0x18 => {
+                !test(mem, call)
+                    && (2..0xc).contains(&mem.read::<u8>(row.wrapping_add(0x16)))
+                    && other(mem, call)
+            }
+            _ => false,
+        };
+        u32::from(r)
     }
 }
