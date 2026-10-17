@@ -3468,7 +3468,7 @@
 0x00714d40 function createVFXRenderDataBufferShapeField # fh v3:exact 0x00714e20
 0x00715170 function createVFXRenderDataBufferShp # fh v3:exact 0x00715250
 0x00715810 function createVFXRenderDataBufferShp_OShapeVu1 # layout+callees: sorts between createVFXRenderDataBufferShp and getAlphaForShpIgnoreAnFormatBaseOnSh, and its named callees match the Switch 0x71002dec70 createVFXRenderDataBufferShp_OShapeVu1's (similarity 0.60: graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXIsTextureWithBpLoaded); symbols from Fahrenheit's server export
-0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630
+0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630; ours: (shp) -> byte +0x1c when byte +0xf is 3, else the byte at shp + shp[1] + 4 (small::bridge::shp_alpha)
 0x00716570 function hashU                     # fh v3:exact 0x00716650
 0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export
 0x00716710 function pppCallUsrFunc            # fh v3:exact 0x007167f0
@@ -6040,6 +6040,7 @@
 0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
+0x007e2660 function op_line_length_007e2660      # ours: (src, lines) -> length of the op script reader's next line (bytes before LF, >= 0x80 with the next) or -1 at 0/0xff/the end (position back one); *lines (if any) and g_OpLineCount += 1; callers 0x007e1d50, 0x007e2270
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
 0x007e3060 function op_word_copy3             # the op_word_copy body again
@@ -6080,6 +6081,7 @@
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
 0x007e5660 function op_vec_zero               # (dst) four zero words
+0x007e5680 function op_oef2_tex_clut_init_007e5680 # ours: () -> 0: clears g_OpOef2ClutOvl, 0x011a01a0.., 0x011a02a0.., g_OpOef2ClutCues (64 dwords each), the cue head/count dword and g_OpOef2ClutOvlCount; caller 0x007ff960
 0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
 0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
 0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
@@ -8899,6 +8901,7 @@
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
 0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790
+0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller 0x008884a0
 0x008888e0 function op_slot_bytes_reset_008888e0 # ours: (obj) -> obj+0xfe: u16 +0xfe = 0, u16 +0xf6 = 0x808, bytes +0xf0..+0xf5 = 0xff, +0xf8..+0xfd = 0; callers 0x00889050, 0x00889360
 0x008889e0 function Compute_008889e0             # auto-port shape (arithmetic on arguments, cdecl): return (a1 & 0xff); callers: ; name ours
 0x00888b60 function TkGetControlerFrame       # (work, i) -> work + ((byte +0x9c + i) & 3) * 0x20: a frame of a pad work's 4-entry input ring
@@ -11764,6 +11767,8 @@
 0x00a39f00 function op_node_requeue_00a39f00    # ours: (n) -> eax the state word: a node in state 2 (top nibble of +0x30) unlinks (+0x1c prev, +0x20 next) and goes in at the front of [n+0x18]+0x48's list, state 1; callers 0x00a374e0, 0x00a38c40, 0x00a39200, 0x00a398a0, 0x00a3ac90
 0x00a3a010 function StoreComputed_00a3a010       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x18)]; t1 = u32[(a0 + 0x20)]; t2 = u32[(a0 + 0x1c)]; u32[(t1 + 0x1c)] = t2; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = ((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)); t5 = u32[(((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)) + 0x20)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = ((t7 & 0xfffffff) | (a1 << 0x1c)); return ((t7 & 0xfffffff) | (a1 << 0x1c)); callers:  and 3 more; name ours
 0x00a3b210 function opd_config_memory            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'memory'; Switch 0x7100864950 opd_config_memory (symbols from Fahrenheit's server export)
+0x00a3ba10 function op_node_slot_00a3ba10        # ours: (node) -> base + 16 ((node - base - 0x438) / 0x38 + 99), base = [0x01a858b4] (the render object's 0x38-byte nodes and their 16-byte slots); caller 0x00a39200
+0x00a3c0f0 function op_mip_bytes_00a3c0f0        # ours: (w, h, levels) -> sum over levels of 2 w h, w and h halved (at least 1) each level: a 16-bit texture's mip chain bytes; caller 0x00a37c20
 0x00a3d7c0 function AddrOfGlobal01a858cc_00a3d7c0 # auto-port shape (return address of global, cdecl): return &0x01a858cc; callers: ; name ours
 0x00a3dd00 function SetFields_00a3dd00           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[(a0 + 0xc)] = a3; u32[(a0 + 0x10)] = a4; u32[(a0 + 0x14)] = a1; u32[(a0 + 0x18)] = a2; return a2; callers: ; name ours
 0x00a3dd50 function StoreAddressToField_00a3dd50 # auto-port shape (store address to field, thiscall): u32[a0] = &0x00b7a9e4; callers:  and 4 more; name ours
@@ -11990,6 +11995,7 @@
 0x00a6c8b0 function op_md_one8_fog               # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\top_md0_onef() light no support !\\n'; Switch 0x71003d2140 op_md_one8_fog (symbols from Fahrenheit's server export)
 0x00a6cd80 function op_matrix_light4_vector   # fh v3:exact 0x00a6cd80
 0x00a6cf10 function op_normal_light44_ffx     # fh v3:exact 0x00a6cf10
+0x00a6cf70 function op_md_white_vectors_00a6cf70 # ours: (obj, _, work) -> count: obj.i16[+0x14] (1,1,1,1) vectors from [work+0x390] (the count reread each time); caller 0x00a6b710
 0x00a6cfb0 function op_refrection_st_float    # fh v3:cg7 0xa6cfb0
 0x00a6d380 function op_vertex_normal_point44_ffx # fh v3:exact 0x00a6d380
 0x00a6d670 function op_vertex_normal_point44_ffx_2 # callees: its named callees match the Switch 0x71003df590 op_vertex_normal_point44_ffx_2's (similarity 0.78: Ch_DrawCalcShade, Ch_GetChrRenderInstance, MagicFile_GetMagicId, graphicPS2LightingSetupEffect, op_ffxlight_to_omdlight_0279); symbols from Fahrenheit's server export
@@ -14701,6 +14707,7 @@
 0x0113fb58 label    g_OpCharClass                # 256 bytes: the op script tokenizer's class per byte (1 word, 2 two-byte, 3/4 quotes, 5 space, 6/8 single, 7 comment/end)
 0x0113fc60 label    g_OpInComment                # nonzero inside an op script block comment (op_token_007e1f80)
 0x0113fc64 label    g_OpCommentDepth             # op script block-comment nesting depth (op_token_007e1f80)
+0x0113fc80 label    g_OpLineCount                # op script reader line counter, +1 per op_line_length_007e2660
 0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
 0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it

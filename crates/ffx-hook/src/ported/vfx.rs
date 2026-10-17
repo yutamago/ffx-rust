@@ -1498,6 +1498,34 @@ ported! {
     op_read_line_007e1cc0 @ 0x007e_1cc0 => extern "C" fn op_read_line(src: u32, out: u32, max: u32) -> u32 {
         op::bridge::op_read_line(&mut mem(), src, out, max)
     }
+    /// `op_line_length_007e2660(src, lines)`.
+    op_line_length_007e2660 @ 0x007e_2660 => extern "C" fn op_line_length(src: u32, lines: u32) -> u32 {
+        op::bridge::op_line_length(&mut mem(), src, lines)
+    }
+    /// `op_counter_add_00888890(n)`.
+    op_counter_add_00888890 @ 0x0088_8890 => extern "C" fn op_counter_add(n: u32) -> u32 {
+        small::bridge::op_counter_add(&mut mem(), n)
+    }
+    /// `getAlphaForShpIgnoreAnFormatBaseOnSh(shp)`.
+    getAlphaForShpIgnoreAnFormatBaseOnSh @ 0x0071_6550 => extern "C" fn shp_alpha(shp: u32) -> u32 {
+        small::bridge::shp_alpha(&mem(), shp)
+    }
+    /// `op_node_slot_00a3ba10(node)`.
+    op_node_slot_00a3ba10 @ 0x00a3_ba10 => extern "C" fn op_node_slot(node: u32) -> u32 {
+        small::bridge::op_node_slot(&mem(), node)
+    }
+    /// `op_mip_bytes_00a3c0f0(w, h, levels)`.
+    op_mip_bytes_00a3c0f0 @ 0x00a3_c0f0 => extern "C" fn op_mip_bytes(w: u32, h: u32, levels: u32) -> u32 {
+        small::bridge::op_mip_bytes(w, h, levels)
+    }
+    /// `op_md_white_vectors_00a6cf70(obj, _, work)`.
+    op_md_white_vectors_00a6cf70 @ 0x00a6_cf70 => extern "C" fn op_md_white_vectors(obj: u32, _unused: u32, work: u32) -> u32 {
+        md::bridge::op_md_white_vectors(&mut mem(), obj, work)
+    }
+    /// `op_oef2_tex_clut_init_007e5680()`.
+    op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
+        op::bridge::op_oef2_tex_clut_init(&mut mem())
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

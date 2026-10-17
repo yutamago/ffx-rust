@@ -858,4 +858,22 @@ pub mod bridge {
         mem.write(w(0x158), 8u32);
         w(0x300)
     }
+
+    /// `0x00a6cf70(obj, _, work)`: `obj.i16[+0x14]` white vectors (each
+    /// component 1) from `[work +0x390]`, the count read anew each time.
+    /// Returns the count (0 when not positive; left in `eax`).
+    pub fn op_md_white_vectors(mem: &mut impl Mem, obj: u32, work: u32) -> u32 {
+        let mut v: u32 = mem.read(work.wrapping_add(0x390));
+        let mut i = 0i32;
+        let mut last = 0i32;
+        while i < i32::from(mem.read::<i16>(obj.wrapping_add(0x14))) {
+            for o in [0xcu32, 8, 4, 0] {
+                mem.write(v.wrapping_add(o), 1.0f32);
+            }
+            v = v.wrapping_add(0x10);
+            i += 1;
+            last = i32::from(mem.read::<i16>(obj.wrapping_add(0x14)));
+        }
+        last.cast_unsigned()
+    }
 }

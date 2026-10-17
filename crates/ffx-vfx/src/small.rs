@@ -411,4 +411,59 @@ pub mod bridge {
         }
         at(0xfe)
     }
+
+    /// `0x00888890(n)`: `n` added to the dword at `0x01330278` when
+    /// positive. Returns `n` (left in `eax`).
+    pub fn op_counter_add(mem: &mut impl Mem, n: u32) -> u32 {
+        if n.cast_signed() > 0 {
+            let g = Global::<u32>::new(0x0133_0278);
+            let v = g.get(mem);
+            g.set(mem, v.wrapping_add(n));
+        }
+        n
+    }
+
+    /// `getAlphaForShpIgnoreAnFormatBaseOnSh(shp)` (`0x00716550`): the
+    /// byte `+0x1c` when the byte `+0xf` is 3, else the byte at `shp +
+    /// shp[1] + 4`.
+    pub fn shp_alpha(mem: &impl Mem, shp: u32) -> u32 {
+        let at = if mem.read::<u8>(shp.wrapping_add(0xf)) == 3 {
+            shp.wrapping_add(0x1c)
+        } else {
+            let off: u32 = mem.read(shp.wrapping_add(4));
+            off.wrapping_add(shp).wrapping_add(4)
+        };
+        u32::from(mem.read::<u8>(at))
+    }
+
+    /// `0x00a3ba10(node)`: the 16-byte slot of a node of the render object
+    /// `[0x01a858b4]` (0x38-byte nodes from `+0x438`, slots from
+    /// `+0x630`): `base + 16 ((node - base - 0x438) / 0x38 + 99)`, the
+    /// division truncated.
+    pub fn op_node_slot(mem: &impl Mem, node: u32) -> u32 {
+        let g = Global::<u32>::new(0x01a8_58b4);
+        let d = node
+            .wrapping_sub(g.get(mem))
+            .wrapping_sub(0x438)
+            .cast_signed();
+        let q = d / 0x38 + 0x63;
+        q.cast_unsigned().wrapping_shl(4).wrapping_add(g.get(mem))
+    }
+
+    /// `0x00a3c0f0(w, h, levels)`: the bytes of a mip chain of 16-bit
+    /// texels: `2 w h` summed over `levels`, `w` and `h` halved (arithmetic
+    /// shift) each level, at least 1.
+    #[must_use]
+    pub fn op_mip_bytes(w: u32, h: u32, levels: u32) -> u32 {
+        let (mut w, mut h) = (w.cast_signed(), h.cast_signed());
+        let mut sum = 0i32;
+        let mut n = levels.cast_signed();
+        while n > 0 {
+            sum = sum.wrapping_add(w.wrapping_mul(h).wrapping_mul(2));
+            w = (w >> 1) + i32::from(w >> 1 == 0);
+            h = (h >> 1) + i32::from(h >> 1 == 0);
+            n -= 1;
+        }
+        sum.cast_unsigned()
+    }
 }

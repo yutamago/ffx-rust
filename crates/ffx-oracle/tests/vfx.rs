@@ -4526,7 +4526,7 @@ fn et_opus_math_and_trees_match_the_original() {
             for at in [0x0080_6a50, 0x0080_6aa0, 0x0069_ebd0] {
                 for _ in 0..4 {
                     let r = p.a.call(p.sym(at), Conv::Thiscall(it), &[]).unwrap();
-                    let mine = t::opus_tree_next(&mut p.b, it);
+                    let mine = t::opus_tree_next(&mut Capped::new(&mut p.b), it);
                     assert_eq!(r.eax, mine, "opusTree_Next");
                     p.same("opusTree_Next");
                 }
@@ -8301,6 +8301,46 @@ fn osu_and_hsv_helpers_match_the_original() {
     }
 }
 
+/// A test-only access budget for the bridges' walker loops: `M` through
+/// at most `left` reads and writes, then a panic, so a mutation that walks
+/// off the data fails at once instead of timing out. The ports themselves
+/// carry no cap.
+struct Capped<'a, M> {
+    m: &'a mut M,
+    left: std::cell::Cell<u32>,
+}
+
+impl<'a, M: Mem> Capped<'a, M> {
+    fn new(m: &'a mut M) -> Self {
+        Self {
+            m,
+            left: std::cell::Cell::new(100_000),
+        }
+    }
+
+    fn spend(&self) {
+        let n = self.left.get();
+        assert!(n > 0, "the walker's access budget ran out");
+        self.left.set(n - 1);
+    }
+}
+
+impl<M: Mem> Mem for Capped<'_, M> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.spend();
+        self.m.read_bytes(addr, out);
+    }
+
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        self.spend();
+        self.m.write_bytes(addr, data);
+    }
+
+    fn image_base(&self) -> u32 {
+        self.m.image_base()
+    }
+}
+
 #[test]
 #[allow(clippy::too_many_lines)]
 fn round16_helpers_match_the_original() {
@@ -8336,7 +8376,7 @@ fn round16_helpers_match_the_original() {
             let id = u16::try_from(rng.below(7)).unwrap();
             let idw = u32::from(id) | (rng.next() << 16);
             p.check("0x0072a760", 0x0072_a760, &[idw], |o| {
-                Some(fp::bridge::fp_id_state(o, id))
+                Some(fp::bridge::fp_id_state(&Capped::new(o), id))
             });
             // 0x00a698c0
             p.fill(packet, 0x400, &mut rng);
@@ -8353,7 +8393,7 @@ fn round16_helpers_match_the_original() {
             let last = rng.pick(&[0x10u8, 0x20, 0xf0, 0x1f, 0xf7]);
             p.set(t + 1, last);
             p.check("0x00a698c0", 0x00a6_98c0, &[packet], |o| {
-                Some(op::bridge::op_md_packet_size(o, packet))
+                Some(op::bridge::op_md_packet_size(&Capped::new(o), packet))
             });
             // 0x007e1cc0
             for i in 0..0x40u32 {
@@ -8379,7 +8419,99 @@ fn round16_helpers_match_the_original() {
             p.set(src + 0x10, end);
             let max = rng.pick(&[0u32, 1, 2, 8, 0x40]);
             p.check("0x007e1cc0", 0x007e_1cc0, &[src, out, max], |o| {
-                Some(op::bridge::op_read_line(o, src, out, max))
+                Some(op::bridge::op_read_line(&mut Capped::new(o), src, out, max))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round17_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_2660);
+        let (src, buf, lines) = (p.alloc(0x20), p.alloc(0x40), p.alloc(4));
+        let counter = p.sym(0x0133_0278);
+        let shp = p.alloc(0x200);
+        let render = p.sym(0x01a8_58b4);
+        let (obj, work, vecs) = (p.alloc(0x40), p.alloc(0x400), p.alloc(0x200));
+        let clut = p.sym(0x011a_01a0);
+        for _ in 0..3000 {
+            // 0x007e2660
+            for i in 0..0x40u32 {
+                let b = match rng.below(11) {
+                    0 => 0u8,
+                    1 => 0xff,
+                    2 | 3 => 0xa,
+                    9 => 0xd,
+                    4 | 5 => u8::try_from(0x80 + rng.below(0x7f)).unwrap(),
+                    _ => u8::try_from(0x20 + rng.below(0x5f)).unwrap(),
+                };
+                p.set(buf + i, b);
+            }
+            let end = rng.below(0x41);
+            let pos = if rng.chance(10) {
+                (-1i32).cast_unsigned()
+            } else {
+                rng.below(end + 1)
+            };
+            p.set(src, buf);
+            p.set(src + 0xc, pos);
+            p.set(src + 0x10, end);
+            let l = if rng.chance(4) { 0 } else { lines };
+            p.check("0x007e2660", 0x007e_2660, &[src, l], |o| {
+                Some(op::bridge::op_line_length(&mut Capped::new(o), src, l))
+            });
+            // 0x00888890
+            let r9 = rng.next();
+            let n = rng.pick(&[0u32, 1, 0x7fff_ffff, 0x8000_0000, r9]);
+            p.set(counter, rng.next());
+            p.check("0x00888890", 0x0088_8890, &[n], |o| {
+                Some(small::bridge::op_counter_add(o, n))
+            });
+            // getAlphaForShpIgnoreAnFormatBaseOnSh
+            p.fill(shp, 0x200, &mut rng);
+            p.set(shp + 0xf, rng.pick(&[3u8, 0, 2, 4]));
+            p.set(shp + 4, rng.below(0x1f0));
+            p.check("getAlphaForShp", 0x0071_6550, &[shp], |o| {
+                Some(small::bridge::shp_alpha(o, shp))
+            });
+            // 0x00a3ba10
+            let base = rng.next();
+            p.set(render, base);
+            let r9 = rng.next();
+            let node = base.wrapping_add(rng.pick(&[0x438u32, 0x470, 0x438 + 0x38 * 9 + 5, 0, r9]));
+            p.check("0x00a3ba10", 0x00a3_ba10, &[node], |o| {
+                Some(small::bridge::op_node_slot(o, node))
+            });
+            // 0x00a3c0f0
+            let (r9, r8) = (rng.next(), rng.next());
+            let (w, h) = (
+                rng.pick(&[1u32, 2, 256, 0, (-4i32).cast_unsigned(), r9]),
+                rng.pick(&[1u32, 3, 512, 0, (-1i32).cast_unsigned(), r8]),
+            );
+            let lv = rng.pick(&[0u32, 1, 4, 12, (-2i32).cast_unsigned()]);
+            p.check("0x00a3c0f0", 0x00a3_c0f0, &[w, h, lv], |_| {
+                Some(small::bridge::op_mip_bytes(w, h, lv))
+            });
+            // 0x00a6cf70
+            p.fill(vecs, 0x200, &mut rng);
+            // now and then over the count itself, which then reads 0
+            let at = if rng.chance(6) { obj } else { vecs };
+            p.set(work + 0x390, at);
+            p.set(obj + 0x14, rng.pick(&[0i16, 1, 7, 0x20, -3]));
+            let junk = rng.next();
+            p.check("0x00a6cf70", 0x00a6_cf70, &[obj, junk, work], |o| {
+                Some(md::bridge::op_md_white_vectors(
+                    &mut Capped::new(o),
+                    obj,
+                    work,
+                ))
+            });
+            // 0x007e5680
+            p.fill(clut, 0x400, &mut rng);
+            p.check("0x007e5680", 0x007e_5680, &[], |o| {
+                Some(op::bridge::op_oef2_tex_clut_init(o))
             });
         }
     }
