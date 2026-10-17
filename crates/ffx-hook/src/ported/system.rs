@@ -6061,6 +6061,20 @@ ported! {
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::draw_sheet_cell(&mut mem(), [cell, x, y, w, h], at, call_sym);
     }
+    /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)`.
+    TODrawBoxXYWHC2 @ 0x008f_3db0 => extern "C" fn to_draw_box_xywh_c2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) {
+        let mut rec = [0u32; 0x26];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = rec.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_draw_box_xywh_c2(&mut mem(), [x, y, w, h, c0, c1], at, call_sym);
+    }
+    /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)`.
+    TOMakePktBoxXYWHRGBA @ 0x008f_b150 => extern "C" fn to_make_pkt_box_xywh_rgba(x: u32, y: u32, w: u32, h: u32, r: u32, g: u32, b: u32, a: u32) {
+        let mut rec = [0u32; 0x26];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = rec.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_box_xywh_rgba(&mut mem(), [x, y, w, h, r, g, b, a], at, call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

@@ -8380,4 +8380,65 @@ pub mod bridge {
         mem.write(rec.wrapping_add(0x88), 0u32);
         call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
     }
+
+    /// The integer box record of [`to_draw_box_xywh_c2`] and
+    /// [`to_make_pkt_box_xywh_rgba`]: corners `x, y` and `x + w, y + h`
+    /// (wrapping integer sums, then `fild`), the two corner colours, and
+    /// `+0x88`, `+0x90`, `+0x94` cleared; drawn untextured with
+    /// `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    #[allow(clippy::cast_precision_loss)]
+    fn int_box<M: Mem>(
+        mem: &mut M,
+        rect: [u32; 4],
+        colours: [[u32; 4]; 2],
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h] = rect.map(u32::cast_signed);
+        for k in 0..0x26 {
+            mem.write(rec.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(rec, x as f32);
+        mem.write(rec.wrapping_add(4), y as f32);
+        mem.write(rec.wrapping_add(0x20), x.wrapping_add(w) as f32);
+        mem.write(rec.wrapping_add(0x24), y.wrapping_add(h) as f32);
+        for (corner, c) in [0x10u32, 0x30].into_iter().zip(colours) {
+            for (k, v) in c.into_iter().enumerate() {
+                #[allow(clippy::cast_possible_truncation)] // four words
+                mem.write(rec.wrapping_add(corner + 4 * k as u32), v);
+            }
+        }
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f3db0`): an integer
+    /// gradient box (see [`int_box`]) from colour `c0` to `c1`, skipped
+    /// while the ability map is up (`graphicGetAbmap() == 1`). `rec` is
+    /// 0x98 bytes of scratch.
+    pub fn to_draw_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        if call(mem, 0x0064_1060, &[]) == 1 {
+            return;
+        }
+        let bytes = |c: u32| [c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, c >> 24];
+        int_box(mem, [x, y, w, h], [bytes(c0), bytes(c1)], rec, &mut call);
+    }
+
+    /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)` (`0x008fb150`): an
+    /// integer box (see [`int_box`]) in one colour.
+    #[allow(clippy::many_single_char_names)]
+    pub fn to_make_pkt_box_xywh_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, r, g, b, a] = args;
+        int_box(mem, [x, y, w, h], [[r, g, b, a]; 2], rec, &mut call);
+    }
 }

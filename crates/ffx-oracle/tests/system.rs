@@ -13713,6 +13713,16 @@ fn round24_boxes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let cell_words: Vec<u8> = (0..16u8).map(|k| 4 * k).chain([0x88]).collect();
     let box_logger = stand_in8(a, b, 0xe0, &record_words_logger(cursor, &box_words));
     let cell_logger = stand_in8(a, b, 0x1a0, &record_words_logger(cursor, &cell_words));
+    let int_words: Vec<u8> = vec![
+        0, 4, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x30, 0x34, 0x38, 0x3c, 0x88, 0x90, 0x94,
+    ];
+    let int_logger = stand_in8(a, b, 0x280, &record_words_logger(cursor, &int_words));
+    let abmap = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&abmap.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x360, &v);
+    redirect(a, b, 0x0064_1060, s);
     let scratch = alloc(a, b, 0xa0);
     let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
     let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
@@ -13734,7 +13744,35 @@ fn round24_boxes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             fl(rng, 6000, 3.0),
             fl(rng, 4000, 3.0),
         ];
-        if k % 2 == 0 {
+        if k % 4 == 3 {
+            // the integer boxes
+            redirect(a, b, 0x0063_eee0, int_logger);
+            let rect = [
+                rng.next() % 640,
+                rng.next() % 448,
+                rng.next() % 640,
+                (rng.next() % 448).wrapping_sub(20),
+            ];
+            put(a, b, abmap, rng.next() % 3);
+            if k % 8 == 3 {
+                let args = [rect[0], rect[1], rect[2], rect[3], rng.next(), rng.next()];
+                eax(a, 0x008f_3db0, &args);
+                t::to_draw_box_xywh_c2(b, args, scratch, call);
+            } else {
+                let args = [
+                    rect[0],
+                    rect[1],
+                    rect[2],
+                    rect[3],
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                ];
+                eax(a, 0x008f_b150, &args);
+                t::to_make_pkt_box_xywh_rgba(b, args, scratch, call);
+            }
+        } else if k % 2 == 0 {
             redirect(a, b, 0x0063_eee0, box_logger);
             let args = [rect[0], rect[1], rect[2], rect[3], rng.next(), rng.next()];
             eax(a, 0x008f_4b20, &args);
