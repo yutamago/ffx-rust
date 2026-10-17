@@ -3169,3 +3169,132 @@ fn natives_match_the_original() {
     );
     assert!(compared > 0, "nothing ran");
 }
+
+/// The non-native VM helpers of round 13 against the original, on every
+/// actor of every ctrl work in use and on random global state: results
+/// (`EAX`) and all memory.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per helper
+fn vm_helpers_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0013);
+    for c in in_use(&b) {
+        make_current(&mut a, &mut b, c);
+        for w in actors(&mut a, &mut b) {
+            let what = format!("worker {w:#x} of {c:#x}");
+            // workers without turn blocks (their slots unset, 0xcdcdcdcd)
+            // fault in the original
+            let turns = (0..9).all(|l| {
+                let p = Mem::read::<u32>(&b, w + 0x174 + l * 0x4c);
+                (w..w + 0x1000).contains(&p)
+            });
+            for level in [u32::MAX, 0, 1, 3, 8, 9].into_iter().filter(|_| turns) {
+                let ra = orig(&mut a, 0x0086_3fe0, &[w, level]);
+                let rb = hp::script_stop_turn(&mut b, w, level);
+                assert_eq!(ra, rb, "Script_StopTurn {what} {level}");
+                no_diff(&mut a, &mut b, &format!("Script_StopTurn {what}"));
+            }
+            for on in [1, 0, 7] {
+                let ra = orig(&mut a, 0x0087_12a0, &[w, on]);
+                let rb = hp::atel_set_worker_flag_200(&mut b, w, on);
+                assert_eq!(ra, rb, "0x008712a0 {what}");
+                no_diff(&mut a, &mut b, "0x008712a0");
+            }
+            if turns && {
+                let h = Mem::read::<u32>(&b, w + worker::HEADER);
+                Mem::read::<u8>(&b, h) != 4
+            } {
+                let v: Vec<u32> = (0..3).map(|_| stored_value(&mut rng)).collect();
+                let ra = orig(&mut a, 0x0086_f780, &[w, v[0], v[1], v[2]]);
+                let rb = hp::atel_set_level_vectors(&mut b, w, v[0], v[1], v[2]);
+                assert_eq!(ra, rb, "0x0086f780 {what}");
+                no_diff(&mut a, &mut b, "0x0086f780");
+            }
+        }
+        // the header tables of the ctrl work's script block (+0x48)
+        let bin = Mem::read::<u32>(&b, c + 0x48);
+        // a ctrl work without a block (0) faults in the original
+        if bin != 0 {
+            let what = format!("ctrl {c:#x}");
+            assert_eq!(
+                orig(&mut a, 0x0086_ac60, &[bin]),
+                hp::atel_bin_table_count(&b, bin),
+                "0x0086ac60 {what}"
+            );
+            for i in 0..4 {
+                assert_eq!(
+                    orig(&mut a, 0x0086_ac30, &[bin, i]),
+                    hp::atel_bin_table_entry_a(&b, bin, i),
+                    "0x0086ac30 {what} {i}"
+                );
+                assert_eq!(
+                    orig(&mut a, 0x0086_ac90, &[bin, i]),
+                    hp::atel_bin_table_entry_b(&b, bin, i),
+                    "0x0086ac90 {what} {i}"
+                );
+            }
+        }
+    }
+    let ctx = a.rebase(0x0132_6b28);
+    let ctrl0 = Mem::read::<u32>(&b, ctx);
+    let bank = a.rebase(0x0132_6b82);
+    let windows = a.rebase(0x0132_6d84);
+    let masks = a.rebase(0x0132_6b94);
+    for round in 0..60 {
+        if round > 0 {
+            for off in (0..0x2c * 24).step_by(4) {
+                let v = if rng.below(2) == 0 {
+                    rng.below(3)
+                } else {
+                    rng.next()
+                };
+                poke(&mut a, &mut b, windows + off, v);
+            }
+            poke(&mut a, &mut b, bank, u8::try_from(rng.below(3)).unwrap());
+            poke(&mut a, &mut b, ctrl0, rng.next());
+            for i in 0..19 {
+                poke(&mut a, &mut b, masks + 4 * i, rng.next());
+            }
+        }
+        for i in [u32::MAX, 0, 3, 7, 9, 15, 16] {
+            assert_eq!(
+                orig(&mut a, 0x0087_73f0, &[i]),
+                hp::atel_get_snd3d_work(&b, i),
+                "AtelGetSnd3dWork {i}"
+            );
+            for k in 0..8 {
+                assert_eq!(
+                    orig(&mut a, 0x0087_6860, &[k, i & 7]),
+                    hp::atel_sound_table_get(&b, k, i & 7),
+                    "AtelSoundTableGet {k} {i}"
+                );
+            }
+            assert_eq!(
+                orig(&mut a, 0x0086_be60, &[i]) & 0xffff,
+                hp::atel_get_window_status(&b, i),
+                "0x0086be60 {i} round {round}"
+            );
+        }
+        assert_eq!(
+            orig(&mut a, 0x0086_c8b0, &[]),
+            hp::atel_windows_busy(&b),
+            "0x0086c8b0 round {round}"
+        );
+        for strict in [0, 1] {
+            assert_eq!(
+                orig(&mut a, 0x0086_c530, &[strict]),
+                hp::atel_ctrl_running(&b, strict),
+                "0x0086c530 {strict} round {round}"
+            );
+        }
+        assert_eq!(
+            orig(&mut a, 0x0086_0f50, &[]),
+            hp::atel_all_clear_bind_mask(&mut b),
+            "AtelAllClearBindMask"
+        );
+        no_diff(&mut a, &mut b, &format!("globals round {round}"));
+    }
+}
