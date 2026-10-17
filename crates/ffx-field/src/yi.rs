@@ -2821,6 +2821,43 @@ pub mod bridge {
         0
     }
 
+    /// `yiAnimDetachAll(scene, obj)` (`0x009149a0`, name ours;
+    /// `yiDisposeAnimDObj` with a negative kind): [`yi_anim_detach`]
+    /// without the kind check, every active slot of `obj` cleared. Returns
+    /// 0.
+    pub fn yi_anim_detach_all<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        obj: u32,
+        call: &mut C,
+    ) -> u32 {
+        let mut seen = 0u32;
+        for i in 0..0x40u32 {
+            let e = scene.wrapping_add(0x9cac0 + 0x28 * i);
+            if mem.read::<u8>(e) & 1 == 0 {
+                continue;
+            }
+            if u32::from(mem.read::<u16>(e.wrapping_add(6))) == obj {
+                if mem.read::<u16>(e.wrapping_add(4)) == 2 {
+                    let f = mem.rebase(super::ENABLE_KEYFRAME_ANIM);
+                    call(mem, f, &[0]);
+                }
+                mem.write(e, 0u16);
+                mem.write(e.wrapping_add(0x14), 0u32);
+                mem.write(e.wrapping_add(0x18), 0u32);
+                mem.write(e.wrapping_add(8), 0u32);
+                mem.write(e.wrapping_add(6), 0u16);
+                let n = mem.read::<u32>(scene.wrapping_add(0x9cabc));
+                mem.write(scene.wrapping_add(0x9cabc), n.wrapping_sub(1));
+            }
+            seen += 1;
+            if seen >= mem.read::<u32>(scene.wrapping_add(0x9cabc)) {
+                return 0;
+            }
+        }
+        0
+    }
+
     /// `yiKeyFrame_attachDObj(scene, obj, anim, arg)` (`0x009144a0`): puts
     /// animation `anim` on display object `obj` in the first free slot:
     /// with a keyframe record (`+0x9d4c4` list) its kind (`+8`; kind 2
