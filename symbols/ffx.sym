@@ -6916,6 +6916,7 @@
 0x0082dab0 function Sg_SetCameraFollow        # (on): bit 1 of g_CameraFollow 0x00c496d5 (bit 0 is 0x0082d030's); with both set Sg_ControlMain turns the camera after the player's heading; script native at 0x00a77950 and the map defaults (Light_Set run, 0x00839xxx) call it with 1; returns the old byte without bit 1 in al; name ours; ported (ffx_sg::state)
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
+0x0082e5a0 function Ch_InitCircleTable        # (): for i in 0..13 the angle i * [0x00b59638] / [0x00b4b468] gives _CIcos into 0x013007ec[i] and _CIsin into 0x01300860[i]; called at init after Ch_GuiSetCalcNormAll(0); name ours
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70
 0x0082eb60 function Ch_DrawEnEffect           # fh v3:bsim1.00 0x0082ebe0
 0x0082eb80 function Ch_DrawGetDisableSpec     # movsx g_ChrDrawDisableSpec (Ch_DrawSetDisableSpec's); Switch name, in name order after Ch_DrawEnEffect

@@ -1303,6 +1303,38 @@ pub mod bridge {
             return table + 50 * 12 + 4;
         }
     }
+
+    /// `Sg_MemMoveWork(&ptr, &moved)` (`0x0083c350`), `Ch_MgrpMove(new, old)`
+    /// (`0x008370c0`).
+    pub const MEM_MOVE_WORK: u32 = 0x0083_c350;
+    pub const MGRP_MOVE: u32 = 0x0083_70c0;
+
+    /// `Ch_MemMoveEventMgrp(scratch)` (`0x00837050`): the first used
+    /// event motion group ([`MGRP_TABLE`] kind 1) whose block
+    /// `Sg_MemMoveWork` moves (the pointer copied to `scratch`, the
+    /// original's stack) is relocated (`Ch_MgrpMove(new, old)`): 1; none,
+    /// 0.
+    pub fn ch_mem_move_event_mgrp<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = mem.rebase(MGRP_TABLE);
+        for k in 0..50u32 {
+            let e = table + 12 * k;
+            let p: u32 = mem.read(e);
+            if p != 0 && mem.read::<i16>(e + 4) == 1 {
+                mem.write(scratch, p);
+                if call(mem, mem.rebase(MEM_MOVE_WORK), &[scratch, 0]) != 0 {
+                    let old: u32 = mem.read(e);
+                    let new: u32 = mem.read(scratch);
+                    call(mem, mem.rebase(MGRP_MOVE), &[new, old]);
+                    return 1;
+                }
+            }
+        }
+        0
+    }
 }
 
 #[cfg(test)]

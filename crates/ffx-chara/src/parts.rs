@@ -1068,6 +1068,33 @@ pub mod bridge {
         mem.write(vi.wrapping_add(4), n.wrapping_add(4));
         p2
     }
+
+    /// The 13-step circle tables `Ch_InitCircleTable` fills: cosines at
+    /// `0x013007ec`, sines at `0x01300860`.
+    pub const CIRCLE_COS: u32 = 0x0130_07ec;
+    pub const CIRCLE_SIN: u32 = 0x0130_0860;
+
+    /// `Ch_InitCircleTable()` (`0x0082e5a0`): for i in 0..13, the angle
+    /// `i × [0x00b59638] / [0x00b4b468]` (as `f32`) gives `_CIcos` and
+    /// `_CIsin` (`ci`, results as stored) into the tables.
+    pub fn ch_init_circle_table<M: Mem>(
+        mem: &mut M,
+        ci: &mut impl FnMut(&mut M, u32, &[f64]) -> f32,
+    ) {
+        let (mul, div) = (
+            mem.read::<f64>(mem.rebase(0x00b5_9638)),
+            mem.read::<f64>(mem.rebase(0x00b4_b468)),
+        );
+        for i in 0..13u32 {
+            let a = f64::from(i) * mul / div;
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            let a = f64::from(a as f32);
+            let c = ci(mem, mem.rebase(CI_COS), &[a]);
+            mem.write(mem.rebase(CIRCLE_COS) + 4 * i, c);
+            let s = ci(mem, mem.rebase(CI_SIN), &[a]);
+            mem.write(mem.rebase(CIRCLE_SIN) + 4 * i, s);
+        }
+    }
 }
 
 #[cfg(test)]

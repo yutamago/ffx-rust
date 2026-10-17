@@ -1783,4 +1783,12 @@ ported! {
     Ch_DisposeAllMGRP @ 0x0083_6a80 => extern "C" fn ch_dispose_all_mgrp() -> u32 {
         mo::bridge::ch_dispose_all_mgrp(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_MemMoveEventMgrp()`.
+    Ch_MemMoveEventMgrp @ 0x0083_7050 => extern "C" fn ch_mem_move_event_mgrp() -> u32 {
+        mo::bridge::ch_mem_move_event_mgrp(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_InitCircleTable()`.
+    Ch_InitCircleTable @ 0x0082_e5a0 => extern "C" fn ch_init_circle_table() {
+        p::ch_init_circle_table(&mut mem(), &mut |_, f, a| ci_call(f, a));
+    }
 }

@@ -7389,3 +7389,63 @@ fn round11g_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11h_matches_the_original() {
+    for mut t in twins() {
+        round11h_on(&mut t);
+    }
+}
+
+fn round11h_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_b0b0);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    // its first argument is the caller's stack: logged without arguments
+    let moved = fk.fake(t, 0x0083_c350, 1, 0);
+    let mgrp_move = fk.fake(t, 0x0083_70c0, 2, 2);
+    let table = t.a.rebase(0x0130_11e0);
+    let ci1 = twin_code(t, &CI1_STUB);
+    // Ch_InitCircleTable, through the CRT's own intrinsics
+    t.check("Ch_InitCircleTable", 0x0082_e5a0, &[], |m| {
+        p::ch_init_circle_table(m, &mut |m: &mut Oracle, f, a: &[f64]| {
+            let b = a[0].to_bits();
+            #[allow(clippy::cast_possible_truncation)]
+            let w = [b as u32, (b >> 32) as u32, f];
+            f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+        });
+        Res::Void
+    });
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(moved, u32::from(rng.next().is_multiple_of(3)));
+        t.put_u32(mgrp_move, rng.next());
+        for k in 0..50 {
+            let e = table + 12 * k;
+            t.put_u32(
+                e,
+                if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(e + 4, &((rng.next() % 3) as i16).to_le_bytes());
+        }
+        let scratch = t.alloc(4);
+        let at = t.a.rebase(0x0083_7050);
+        let ra = t.a.call(at, Conv::Cdecl, &[]).unwrap();
+        let rb = mo::ch_mem_move_event_mgrp(&mut t.b, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_MemMoveEventMgrp {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, 4).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_MemMoveEventMgrp {round} memory",
+            t.name
+        );
+    }
+}
