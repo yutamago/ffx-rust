@@ -219,3 +219,52 @@ here so the useful parts can come back as mod tools.
 | `0x00a42a00`, `0x00a42ab0`, `0x00a42f50` (`read_debug.c`) and `pc_fat_index_filename_set` `0x00a42fc0`, `pc_module_sizetbl_set` `0x00a43080`, `pc_sizetbl_set` `0x00a430c0`, `pc_sizetbl_set_Ex` `0x00a43100` | Point the CD layer at `host0:/ffx/proj/...` index and size tables; `host0:` is the devkit host. |
 | `TOInitBattleFontPath` `0x008ad780`, `TOInitEventFontPath` `0x008ad840` | Build font file paths under `host0:/ffx/master/...`. Classed as file layer, not game state: they only choose where fonts are read from. |
 | `0x00a7aee0` | Loads `host0:%s.irx` modules (IOP drivers); nothing calls it. |
+| `TkyiAssert` `0x00777680` | Asserts: tail-calls the empty `0x0088ec80` when the debug word `0x0112a520` is 0. |
+
+## Message-window placement (`TOPlaceMessageWindow`, `0x008afbb0`)
+
+`TOPlaceMessageWindow(i, x, y, w, h)` places message window `i`. Its
+style (`+4` of the object `g_TOMessageWindowSlots[i] + 0x10`) picks a frame
+padding (`0x00c59ed8`, i16 left, top, right, bottom per style: 20/10,
+32/12, 16/8, 0, then 16/8). Outside message-window mode 1 the padding is
+taken off the rectangle first and added back after the x87 rounding.
+
+On wide screens (`graphicFontGetScreenWH` height at least 0x2d0) the
+window is kept inside the safe area of the 512x416 layout: the top at
+least 31.2, the bottom at most 384.8 (a window of type 1 measures from its
+padded edge). Horizontally, type 1 maps its left and right edges to the
+screen (`h / 416` scale plus the 4:3 offset `w * (1 - (16/13) / (w/h)) / 2`)
+and keeps them within 7.5% and 92.5% of the width, then moves 10 units
+in; other types stay within 38.4..473.6. Two fixes are tied to maps: on
+map 0x17 a window at (400, 0x110) moves by (-45, +5), and on map 0x15b a
+0x1d8 x 0xf6 window is drawn 0x1ba wide (its message area keeps 0x1d8).
+`TOSetWindowRect` gets the result and `TOSetMessageArea` (`0x008b8b20`) the
+padded area.
+
+## Texture names (`TOGetTextureName`, `0x008acf50`)
+
+`TOGetTextureName(id, nibbles, index, high, &size)` returns the name of
+picture `index` of a texture family. A nibble of `nibbles` (the high one
+when `high`) gives a column `k` = twice its low three bits. Its bit 3, or
+`high`, selects the second table of each pair and the second size table
+(`0x00b5f8d0` instead of `0x00b5f890`, two words per entry, entry
+`(index + k) / 2`).
+
+| id | tables (plain, second) | indexed by |
+|---|---|---|
+| 0x3c00 | `TkGetLang()` 0: `0x00c59568`/`0x00c595a8`; else `0x00c595e8`/`0x00c59628` | index + k |
+| 0x3d00 | `0x00c59bc0`/`0x00c59c00`, appended to the prefix `0x025d08a0` (in battle `0x025d06a0`) in `0x025d07a0` (`0x025d05a0`) and interned | index + k |
+| 0x3d01 | by `TOGetFFXLang()` 0, 9, 10: `0x00c59878`/`0x00c59938`, `0x00c598f8`/`0x00c599c0`, `0x00c598b8`/`0x00c59980` | index (second table and size only by `high`) |
+| 0x3d10, 0x3d20, 0x3d30, 0x3d40 | `0x00c59668`/`0x00c596e8`, `0x00c596a8`/`0x00c59728`, `0x00c59768`/`0x00c597a8`, `0x00c595e8`/`0x00c59628` | index + k |
+| 0x3d60 | as 0x3d01 with `0x00c59a00`/`0x00c59b00`, `0x00c59ac0`/`0x00c59b80`, `0x00c59a40`/`0x00c59b40` | index |
+| 0x3d80 | `0x00c597f8`/`0x00c59838` (second by `high`) | the byte `nibbles` |
+
+Another language for 0x3d01/0x3d60 reads the word at `k + 4 * index` (a
+null-page read in the original). Any other id prints "VIRTUOS
+ASSERTION:Font not found." and returns `k`.
+
+The help pictures (`getSa_MenuTextureName`, `0x00774ae0`) are
+`help%d.dds.phyre` under `help`, `help_us`, `help_fr`, `help_es`,
+`help_de`, `help_it` (languages 0..5), `help_kr` and `help_ch` (9, 10).
+Languages 6..8 format an uninitialised buffer in the original; the port
+writes an empty name.
