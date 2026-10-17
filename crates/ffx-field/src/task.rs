@@ -277,6 +277,19 @@ pub mod bridge {
     pub const PRAY_EFFECT: Global<u32> = Global::new(0x025d_5a24);
     /// What `rcEffectTaskFlagWait` waits to be 0 (read only there).
     pub const FLAG_WAIT: Global<u32> = Global::new(0x025d_5c10);
+    /// The request `rcefPostRequest` stores: five words at `0x025d5c18`
+    /// (the first argument, the float, the third, a zero, the fourth, the
+    /// fifth; `+0x10` is the zero). Nothing in the PC build reads them.
+    pub const REQUEST: u32 = 0x025d_5c18;
+    /// Set by `rcefPostRequest`; `rcEffectTaskRequestWait` waits for it to
+    /// be 0, and nothing in the PC build clears it.
+    pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
+    /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
+    pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// `graphicVFXDestroy(lo, hi)` (cdecl, a 64-bit instance handle).
+    pub const VFX_DESTROY: u32 = 0x0064_5280;
+    /// `graphicVFXGetRenderDataByInstance(lo, hi)` (cdecl).
+    pub const VFX_GET_RENDER_DATA: u32 = 0x0064_53d0;
 
     fn level(mem: &impl Mem, t: u32) -> i32 {
         mem.read(t + header::LEVEL)
@@ -583,6 +596,64 @@ pub mod bridge {
         if FLAG_WAIT.get(mem) == 0 {
             rcef_task_ret_seq_cont(mem, t);
         }
+    }
+
+    // ---- round 21 ----
+
+    /// `rcefPostRequest(a, f, b, c, d)` (`0x0092eba0`, an exported effect
+    /// import; name ours): stores the request at [`REQUEST`] (the float
+    /// copied through the x87 stack, so a signalling NaN turns quiet) and
+    /// sets [`REQUEST_PENDING`]. Returns `d` (left in `eax`).
+    pub fn rcef_post_request(mem: &mut impl Mem, args: [u32; 5]) -> u32 {
+        let [a, f, b, c, d] = args;
+        let f = ffx_bridge::x87::round_trip(f32::from_bits(f)).to_bits();
+        let r = mem.rebase(REQUEST);
+        mem.write(r, a);
+        mem.write(r + 4, f);
+        mem.write(r + 8, b);
+        mem.write(r + 0x10, c);
+        mem.write(r + 0xc, 0u32);
+        mem.write(r + 0x14, d);
+        REQUEST_PENDING.set(mem, 1);
+        d
+    }
+
+    /// `rcEffectTaskRequestWait(task)` (`0x009304e0`, name ours): a
+    /// sequence that returns once [`REQUEST_PENDING`] is 0.
+    pub fn rc_effect_task_request_wait(mem: &mut impl Mem, t: u32) {
+        if REQUEST_PENDING.get(mem) == 0 {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcefAnimeFini(id)` (`0x0092f4a0`): `graphicVFXDestroy` of the
+    /// handle `id << 32`. Returns its `eax`.
+    pub fn rcef_anime_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(VFX_DESTROY);
+        call(mem, f, &[0, id])
+    }
+
+    /// `rcefModelFini(id)` (`0x0092f710`): the handle `(id << 32) +
+    /// program` (the current program sign-extended) destroyed when the
+    /// renderer has render data for it. Returns the last call's `eax`.
+    pub fn rcef_model_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let p = CURRENT_PROGRAM.get(mem);
+        let hi = id.wrapping_add(if p.cast_signed() < 0 { u32::MAX } else { 0 });
+        let f = mem.rebase(VFX_GET_RENDER_DATA);
+        let r = call(mem, f, &[p, hi]);
+        if r == 0 {
+            return 0;
+        }
+        let f = mem.rebase(VFX_DESTROY);
+        call(mem, f, &[p, hi])
     }
 
     // ---- round 4: running tasks, objects, particle parts ----
