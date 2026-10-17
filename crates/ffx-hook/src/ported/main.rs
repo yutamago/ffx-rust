@@ -1456,6 +1456,10 @@ ported! {
     SG_SeqFrame @ 0x0083_77c0 => extern "C" fn sg_seq_frame(chr: u32) -> u32 {
         seq::bridge::seq_frame(&mut mem(), chr)
     }
+    /// `Sg_IdFindTriangle(p)`.
+    Sg_IdFindTriangle @ 0x0083_de10 => extern "C" fn sg_id_find_triangle(p: u32) -> i32 {
+        state::bridge::id_find_triangle(&mut mem(), p)
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

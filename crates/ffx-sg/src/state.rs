@@ -1522,6 +1522,66 @@ pub mod bridge {
         0
     }
 
+    /// The number of entries in [`ID_TABLE`] (`i32`).
+    pub const ID_COUNT: Global<i32> = Global::new(0x0130_1a88);
+
+    /// `Sg_IdFindTriangle(p)` (`0x0083de10`): the id triangle under point
+    /// `p` (`f32` x, y, z). A triangle holds `p` when, for each of its
+    /// edges `(a, b)` taken in order, `(b.x - a.x) p.z + (a.z - b.z) p.x +
+    /// a.x b.z - b.x a.z` is not above 0 (the integer products stored as
+    /// `f32`, the sums at 53 bits; NaN counts as inside). Of those, the
+    /// one whose height ([`id_get_height`], truncated) is lowest while not
+    /// below `p.y` wins (the first among equals); without one, the last
+    /// triangle that held `p`; else -1 (also without id data).
+    pub fn id_find_triangle(mem: &mut impl Mem, p: u32) -> i32 {
+        use ffx_bridge::x87::{self, Reg};
+        let table = ID_TABLE.get(mem);
+        if table == 0 {
+            return -1;
+        }
+        let verts = ID_VERTICES.get(mem);
+        let px: f32 = mem.read(p);
+        let pz: f32 = mem.read(p.wrapping_add(8));
+        let f = |v: i32| f32::from_bits(x87::store(f64::from(v)));
+        // an edge's side of the point: not above 0 inside
+        let inside = |a: (i32, i32), b: (i32, i32)| {
+            let e = Reg::load(f(b.0.wrapping_sub(a.0))).mul_m32(pz)
+                + Reg::load(f(a.1.wrapping_sub(b.1))).mul_m32(px);
+            let e = e
+                .add_m32(f(a.0.wrapping_mul(b.1)))
+                .sub_m32(f(b.0.wrapping_mul(a.1)));
+            e.value().partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+        };
+        let (mut best, mut best_h, mut last) = (-1i32, 0i32, -1i32);
+        let n = ID_COUNT.get(mem);
+        for i in 0..n.max(0) {
+            let e = table.wrapping_add(i.cast_unsigned() << 4);
+            let [a, b, c] = [0u32, 2, 4].map(|k| {
+                let k = i32::from(mem.read::<i16>(e.wrapping_add(k)));
+                let v = verts.wrapping_add((k << 3).cast_unsigned());
+                (
+                    i32::from(mem.read::<i16>(v)),
+                    i32::from(mem.read::<i16>(v.wrapping_add(4))),
+                )
+            });
+            if !(inside(a, b) && inside(b, c) && inside(c, a)) {
+                continue;
+            }
+            last = i;
+            let h = id_get_height(mem, p, i.cast_unsigned());
+            let c = x87::ftol(mem, f64::from(h)).cast_signed();
+            let y: f32 = mem.read(p.wrapping_add(4));
+            if f64::from(f(c)) < f64::from(y) {
+                continue;
+            }
+            if best == -1 || best_h > c {
+                best = i;
+                best_h = c;
+            }
+        }
+        if best == -1 { last } else { best }
+    }
+
     /// The id edge a move last crossed (found by `0x0083d960`):
     /// its two `i16` vertices.
     pub const ID_EDGE_B: Global<u32> = Global::new(0x0130_1aec);

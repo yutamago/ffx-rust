@@ -747,3 +747,16 @@ and clears `+0x736` when `+0x728` is 0; 3 (a hold) sets `+0x734` and
 clears `+0x736`; -1 (an unknown code) calls `yiAssert(0, "SG:SeqFrame",
 "seq err")`. Any other result steps again. `eax` is left as the last
 callee's (the loop step's, the assertion's) or 3 for a hold.
+
+## Round 13: the id triangle under a point (`Sg_IdFindTriangle`)
+
+`Sg_IdFindTriangle(p)` (`0x0083de10`) walks the id table (`0x01301a84`,
+`0x01301a88` entries of 16 bytes: three `i16` vertex numbers into the
+8-byte `i16` vertices at `0x01301a8c`, x at `+0`, z at `+4`). A triangle
+holds `p` when every edge `(a, b)` in order gives `(b.x - a.x) p.z +
+(a.z - b.z) p.x + f32(a.x b.z) - f32(b.x a.z)` not above 0 (edge
+differences and integer products as `f32`, the sums at 53 bits; NaN
+holds). Each holding triangle's height (`Sg_IdGetHeight`, through
+`ftol`) is a candidate unless it is below `p.y`; the lowest candidate
+wins (the first of equals). Without one the last holding triangle is
+returned, then -1 (also with no id table).

@@ -5202,3 +5202,101 @@ fn seq_frame_snapshot() {
     let mut rng = Xorshift(0x5eed_0e42);
     seq_frame_cases(&mut a, &mut b, &mut rng, 1500);
 }
+
+// Main round 13: the id triangle under a point.
+fn find_triangle_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::state::bridge as st;
+    let game = (
+        st::ID_TABLE.get(a),
+        st::ID_VERTICES.get(a),
+        st::ID_COUNT.get(a),
+    );
+    for r in 0..rounds {
+        let use_game = from_game && game.0 != 0 && game.2 > 0 && r % 2 == 0;
+        let (table, verts, n) = if use_game {
+            game
+        } else {
+            let nv = 10u32;
+            let verts = alloc(a, b, 8 * nv as usize);
+            for k in 0..nv {
+                let c = |rng: &mut Xorshift| -> i16 { i16::try_from(rng.below(129)).unwrap() - 64 };
+                put(a, b, verts + 8 * k, c(rng));
+                put(a, b, verts + 8 * k + 2, c(rng));
+                put(a, b, verts + 8 * k + 4, c(rng));
+            }
+            let n = rng.below(13);
+            let table = alloc(a, b, 16 * 13);
+            for k in 0..n * 3 {
+                put(
+                    a,
+                    b,
+                    table + 16 * (k / 3) + 2 * (k % 3),
+                    u16::try_from(rng.below(nv)).unwrap(),
+                );
+            }
+            let table = if rng.below(10) == 0 { 0 } else { table };
+            let n = if rng.below(10) == 0 {
+                -rng.int().abs()
+            } else {
+                n.cast_signed()
+            };
+            (table, verts, n)
+        };
+        set(a, b, st::ID_TABLE, table);
+        set(a, b, st::ID_VERTICES, verts);
+        set(a, b, st::ID_COUNT, n);
+        // a point near a triangle's middle, or anywhere
+        let p = alloc(a, b, 16);
+        let (mut cx, mut cy, mut cz) = (0f64, 0f64, 0f64);
+        if table != 0 && n > 0 {
+            let i = rng.below(n.cast_unsigned());
+            for k in 0..3 {
+                let v: i16 = Mem::read(a, table + 16 * i + 2 * k);
+                let at = verts.wrapping_add((i32::from(v) * 8).cast_unsigned());
+                cx += f64::from(Mem::read::<i16>(a, at)) / 3.0;
+                cy += f64::from(Mem::read::<i16>(a, at + 2)) / 3.0;
+                cz += f64::from(Mem::read::<i16>(a, at + 4)) / 3.0;
+            }
+        }
+        let jitter = |rng: &mut Xorshift| f64::from(rng.below(64)) / 8.0 - 4.0;
+        #[allow(clippy::cast_possible_truncation)]
+        let mut q = [
+            (cx + jitter(rng)) as f32,
+            (cy + 4.0 * jitter(rng)) as f32,
+            (cz + jitter(rng)) as f32,
+        ];
+        if rng.below(6) == 0 {
+            q = [rng.float(), rng.float(), rng.float()].map(f32::from_bits);
+        }
+        for (k, v) in (0u32..).zip(q) {
+            put(a, b, p + 4 * k, v);
+        }
+        twin("Sg_IdFindTriangle", a, b, 0x0083_de10, &[p], |m| {
+            st::id_find_triangle(m, p)
+        });
+    }
+}
+
+#[test]
+fn find_triangle_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e51);
+    find_triangle_cases(&mut a, &mut b, &mut rng, 3000, false);
+}
+
+#[test]
+fn find_triangle_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e52);
+    find_triangle_cases(&mut a, &mut b, &mut rng, 3000, true);
+}
