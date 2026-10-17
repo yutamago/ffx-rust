@@ -856,6 +856,12 @@ Prints and dumps:
   entry.
 - `0x00760bf0`: the VFX "drawField is not implemented" warning loop
   (listed in round 12).
+- `0x007606f0` and `0x00760f30`: a pixel probe. A cross is drawn at
+  the point `0x00d4b4e8`/`0x00d4b4ec` (skipped at x 0x7fff) from
+  `pppPartDraw` and `pppPartLoop`. The second, while `0x00d4b4d4` is
+  set, reads the 16x16 GS block there back (`sceGsExecStoreImage`) and
+  sends its colour as a packet. No code writes the point (`.bss`, set by
+  a host tool), so it is a debug aid (round 28).
 
 Debug camera:
 - `FreeCamera_handleInput` (`0x00680030`), `FreeCamera_setFreePause`
@@ -1237,9 +1243,9 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   - the angle is `atan(b / a)` when `a >= b` (or unordered), else
     `π/2 - atan(a / b)` stored as `f32`;
   - then `q π/2` is added (`π/2` the `f64` of an `f32`).
-- Not ported: `0x007606f0` draws six lines (`0x00760ce0`) as a cross
-  around the point at `0x00d4b4e8`. That is drawing, and it looks like a
-  debug marker; not confirmed.
+- `0x007606f0` (six lines as a cross around the point at `0x00d4b4e8`)
+  is a debug pixel probe, listed under "Debug (mod-tool candidates)"
+  since round 28.
 
 ## Floats
 
