@@ -2746,6 +2746,10 @@ ported! {
     TkMenuOpenSubCmdWindowMain @ 0x008e_33d0 => extern "C" fn tk_menu_open_sub_cmd_window_main(x: u32, items: u32, c: u32, d: u32) -> u32 {
         tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], true, [1, 1], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuOpenSubCmdWindowMain_008e4790(id, texts, values, n, width, b44)`: the window.
+    TkMenuOpenSubCmdWindowMain_008e4790 @ 0x008e_4790 => extern "C" fn tk_menu_open_sub_cmd_window_row(id: u32, texts: u32, values: u32, n: u32, width: u32, b44: u32) -> u32 {
+        tk::tk_menu_open_sub_cmd_window_row(&mut mem(), [id, texts, values, n, width, b44], &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuSubCmd_OpenMainA(x, items, c, d)`: the window.
     MenuSubCmd_OpenMainA @ 0x008e_3470 => extern "C" fn menu_sub_cmd_open_main_a(x: u32, items: u32, c: u32, d: u32) -> u32 {
         tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], false, [0, 1], &mut |_, f, a| call_ptr(f, a))
@@ -3348,6 +3352,22 @@ ported! {
             return 0;
         };
         tk::tk_menu_item_heal_amount(&mut m, [item, player, mp], local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawCrossMenuSummonPlateNoHPMPClut(chr, x, y, colour)`: the font call's eax.
+    DrawCrossMenuSummonPlateNoHPMPClut @ 0x008e_7110 => extern "C" fn draw_cross_menu_summon_plate_no_hpmp(chr: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tk::draw_cross_menu_summon_plate_no_hpmp(&mut mem(), chr, [f32::from_bits(x), f32::from_bits(y)], colour, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DeleteKey()`.
+    MenuNameEntry_DeleteKey @ 0x008c_44d0 => extern "C" fn menu_name_entry_delete_key() {
+        tk::menu_name_entry_delete_key(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkFindLegendWeapon_008c30e0(chr)`: the weapon record, or 0.
+    TkFindLegendWeapon_008c30e0 @ 0x008c_30e0 => extern "C" fn tk_find_legend_weapon(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::tk_find_legend_weapon(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
     }
     /// `DrawCrossMenuIconItemName(item, x, y, colour)`.
     DrawCrossMenuIconItemName @ 0x008e_6700 => extern "C" fn draw_cross_menu_icon_item_name(item: u32, x: u32, y: u32, colour: u32) -> u32 {

@@ -7950,3 +7950,179 @@ fn menu_round19_batch8_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round20_batch1_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0020_0001) else {
+        return;
+    };
+    let w = u64::from;
+    // TOGetMessageSizePacked as `return text` (the width is its low half)
+    let code = [0x8b, 0x44, 0x24, 0x04, 0xc3]; // mov eax, [esp + 4]; ret
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x008b_7170);
+        o.write(at, &code).unwrap();
+    }
+    let local = t.b.stack_range().start + 0x100;
+    record_n(&mut t, 0x008a_c850, 1, 0x00c0_1234);
+    record_n(&mut t, 0x0090_5930, 6, 0x53);
+    // MsGetSaveWeaponName: a constant (its kernel tables are not in the image)
+    return_const(&mut t, 0x007a_bdf0, 0x00c0_5678);
+    // dbgPrintf (a bare `ret` before int3 padding) keeps its format
+    let fmt = t.alloc(&[0; 4]);
+    let code = [
+        &[0x8b, 0x44, 0x24, 0x04, 0xa3][..],
+        &fmt.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0062_f500);
+        o.write(at, &code).unwrap();
+    }
+    // floats: a quiet NaN, halves, small finite values
+    let pick = |t: &mut Twins| -> u32 {
+        match t.rng.below(6) {
+            0 => f32::NAN.to_bits(),
+            1 => (f32::from_bits(t.rng.next() & 0x7f7f_ffff) * 1e-30).to_bits(),
+            _ => (f32::from(i16::try_from(t.rng.below(1000)).unwrap_or(0)) / 2.0).to_bits(),
+        }
+    };
+    for round in 0..48u32 {
+        // every window free again (32 records of 0x98 bytes)
+        let windows = t.sym(tk::MENU_WINDOWS.sym);
+        for k in 0..0x20u32 {
+            t.put(windows + k * 0x98 + 0x40, 0u8);
+        }
+        // TkMenuOpenSubCmdWindowMain_008e4790: random texts (their widths)
+        // and values, n from -1 to 6, widths around the row's length
+        let n = t.rng.pick(&[0u32, 0xffff_ffff, 1, 2, 2, 3, 4, 6]);
+        let small = round % 3 != 0;
+        let mut texts: Vec<u32> = (0..6)
+            .map(|_| {
+                let v = t.rng.next();
+                if small { v & 0x00ff_00ff } else { v }
+            })
+            .collect();
+        // the edges: a row of exactly the width (0x1a0), of exactly 0x1f0, and a
+        // negative width whose gap differs signed and unsigned (0x40, 0x80)
+        let edge = match round {
+            45 => Some((2, [0x100, 0x80, 0], 0x1a0)),
+            46 => Some((2, [0x100, 0xd0, 0], 0x100)),
+            47 => Some((3, [0xffff, 0x7ee1, 0], 0x8000)),
+            _ => None,
+        };
+        let n = edge.map_or(n, |e| e.0);
+        if let Some((_, e, _)) = edge {
+            texts[..3].copy_from_slice(&e);
+        }
+        let values: Vec<u32> = (0..6).map(|_| t.rng.next()).collect();
+        let texts = t.alloc(
+            &texts
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let values = t.alloc(
+            &values
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let width = t
+            .rng
+            .pick(&[0u32, 0x100, 0x1f0, 0x200, 0x2c0, 0x7fff, 0x8000, 0xffff]);
+        let width = if t.rng.below(2) == 0 {
+            width
+        } else {
+            t.rng.next()
+        };
+        let width = edge.map_or(width, |e| e.2);
+        let (id, b44) = (t.rng.next(), t.rng.next());
+        let args = [id, texts, values, n, width, b44];
+        t.twin(
+            "TkMenuOpenSubCmdWindowMain_008e4790",
+            0x008e_4790,
+            &args,
+            U32,
+            |o| w(tk::tk_menu_open_sub_cmd_window_row(o, args, &mut callback)),
+        );
+        // MenuNameEntry_DeleteKey: a language, keys parsed from a key string
+        // (sometimes changed), the target string the same or another
+        let lang = t.rng.pick(&[0u32, 1, 9, 10, 11]);
+        return_const(&mut t, 0x008a_c2f0, lang);
+        let n = t.rng.below(10);
+        let mut keys: Vec<u8> = (0..n)
+            .map(|_| t.rng.pick(&[1u8, 2, 3, 5, 0x30, 0x31, 0x80, 0xff]))
+            .collect();
+        keys.push(0);
+        let keys = t.alloc(&keys);
+        let f = t.sym(0x008c_5280);
+        for o in [&mut t.a, &mut t.b] {
+            o.call(f, Conv::Cdecl, &[keys]).unwrap();
+        }
+        if round % 3 == 1 {
+            let k = t.rng.below(0x30);
+            let v = u8::try_from(t.rng.below(3)).unwrap_or(0);
+            t.put(t.sym(tk::ITEM_KEYS) + k, v);
+        }
+        let s = match round % 4 {
+            0 => t.alloc(&[0]),
+            1 => t.alloc(&[1, 2, 0]),
+            _ => keys,
+        };
+        return_const(&mut t, 0x008b_edd0, s);
+        let target = t.rng.below(0x14).wrapping_sub(2);
+        t.put(t.sym(tk::MENU_ITEM_TARGET.sym), target);
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        t.twin("MenuNameEntry_DeleteKey", 0x008c_44d0, &[], VOID, |o| {
+            tk::menu_name_entry_delete_key(o, &mut callback);
+            0
+        });
+        // TkFindLegendWeapon_008c30e0: on half the rounds random slots
+        // (in use, flags with and without bit 2, owners 0..8)
+        if round % 2 == 0 {
+            let base = t.sym(ffx_battle::save::bridge::EQUIPMENT.sym);
+            for k in 0..200u32 {
+                let rec = [
+                    u8::from(t.rng.below(4) != 0),
+                    t.rng.pick(&[0u8, 2, 4, 6, 0xff]),
+                    u8::try_from(t.rng.below(9)).unwrap_or(0),
+                    u8::try_from(t.rng.below(2)).unwrap_or(0),
+                    t.rng.pick(&[0u8, 3, 0xff]),
+                ];
+                t.put_bytes(base + k * 22 + 2, &rec);
+            }
+        }
+        let chr = t.rng.pick(&[0u32, 1, 3, 6, 7, 8, 0xffff_ffff, 0x100]);
+        t.twin(
+            "TkFindLegendWeapon_008c30e0",
+            0x008c_30e0,
+            &[chr],
+            U32,
+            |o| w(tk::tk_find_legend_weapon(o, chr, local, &mut callback)),
+        );
+        // DrawCrossMenuSummonPlateNoHPMPClut: the name and the font recorded
+        let (x, y) = (pick(&mut t), pick(&mut t));
+        let (colour, chr) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "DrawCrossMenuSummonPlateNoHPMPClut",
+            0x008e_7110,
+            &[chr, x, y, colour],
+            U32,
+            |o| {
+                w(tk::draw_cross_menu_summon_plate_no_hpmp(
+                    o,
+                    chr,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    colour,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -3948,6 +3948,76 @@ pub mod bridge {
         tk_menu_main_regist_window(mem, w, call);
         w
     }
+
+    /// `TkMenuOpenSubCmdWindowMain_008e4790(id, texts, values, n, width,
+    /// b44)` (`0x008e4790`; Fahrenheit's Switch name, shared with
+    /// `0x008e33d0`): the one-row sub-command window. A window with `+0x1c`
+    /// = `id`, `+0x4e` = `width` (`u16`), callbacks `+8` `0x008e36c0`, `+0xc`
+    /// `0x008e3880`, `+0x10` `0x008e3cf0`, `+0x14` `0x008e4a60`, `+0x30` =
+    /// `n` (`u16`), `+0x46` the word `0x1000`, `+0x42` 1, `+0x36` the word
+    /// `0x103`, layer 2 (`+0x3e`), `+0x44` = `b44`. Entry `k < n` (signed)
+    /// is `[texts[k], values[k], TkMn2StringWidth(texts[k])]` from `+0x58`,
+    /// 12 bytes each. Then `+0x90` = 0 and the row's length (the widths
+    /// plus `32 * (n - 1)`, wrapping) goes to `+0x3a`; a length above the
+    /// width (signed) but below `0x1f1` sets the width to `0x1f0`. The gap
+    /// `+0x3c`: `(width - length - 0x60) / (n - 1)` (signed) for `n > 1`,
+    /// clamped as a `u16` to `0x20..=0x80`; 0x20 otherwise. Registered;
+    /// returns the window. Its callers (`0x008e4660`, `0x008e46b0`,
+    /// `0x008e48f0`, `0x008e4930`) keep it in `g_TkMenuSubCmdWindow`.
+    pub fn tk_menu_open_sub_cmd_window_row<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [id, texts, values, n, width, b44] = args;
+        let n = n.cast_signed();
+        let w = open_window(mem);
+        mem.write(w + 0x1c, id);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        mem.write(w + 0x4e, width as u16);
+        put_code(mem, w + 8, 0x008e_36c0);
+        put_code(mem, w + 0xc, 0x008e_3880);
+        put_code(mem, w + 0x10, 0x008e_3cf0);
+        put_code(mem, w + 0x14, 0x008e_4a60);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        mem.write(w + 0x30, n as u16);
+        mem.write(w + 0x46, 0x1000u32);
+        mem.write(w + 0x42, 1u8);
+        mem.write(w + 0x36, 0x103u32);
+        mem.write(w + 0x3e, 2u8);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        mem.write(w + 0x44, b44 as u8);
+        let mut len = 0i32;
+        for k in 0..n.max(0).cast_unsigned() {
+            let text: u32 = mem.read(texts.wrapping_add(4 * k));
+            let value: u32 = mem.read(values.wrapping_add(4 * k));
+            let width = tk_mn2_string_width(mem, text, call);
+            len = len.wrapping_add(width.cast_signed());
+            let e = w.wrapping_add(0x58 + 0xc * k);
+            mem.write(e, text);
+            mem.write(e.wrapping_add(8), width);
+            mem.write(e.wrapping_add(4), value);
+        }
+        let len = len.wrapping_add(n.wrapping_shl(5)).wrapping_sub(0x20);
+        mem.write(w + 0x90, 0u32);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        mem.write(w + 0x3a, len as u16);
+        if i32::from(mem.read::<i16>(w + 0x4e)) < len && len < 0x1f1 {
+            mem.write(w + 0x4e, 0x1f0u16);
+        }
+        let gap = if n > 1 {
+            let h = i32::from(mem.read::<i16>(w + 0x4e));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let q = (h.wrapping_sub(len).wrapping_sub(0x60) / (n - 1)) as u16;
+            q.clamp(0x20, 0x80)
+        } else {
+            0x20
+        };
+        mem.write(w + 0x3c, gap);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+
     /// `TkMenuCtrlHdd(w)` (`0x008e2870`): the HDD menu's control step (the
     /// pad reads it starts with are unused): state `+0x1c` 0 closes the
     /// HDD menu (`MenuHdd_Close`) and moves to 1; in state 1, once
@@ -5629,6 +5699,43 @@ pub mod bridge {
         w
     }
 
+    /// `MenuNameEntry_DeleteKey()` (`0x008c44d0`, own name; called twice by
+    /// the name entry's control step `0x008c3580`): with language 10, 9 or
+    /// 11 (`TOGetFFXLang` through `0x008ac2f0`, asked again for each test)
+    /// and keys that spell the target's string ([`menu_item_keys_match`]
+    /// of [`MENU_ITEM_TARGET`]), every leading non-empty entry of
+    /// [`ITEM_KEYS`] gets its first byte cleared; otherwise the last of them
+    /// does. The run of entries is not bounded, as the original.
+    pub fn menu_name_entry_delete_key<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let lang = mem.rebase(0x008a_c2f0);
+        let mut cjk = false;
+        for l in [10, 9, 11] {
+            if call(mem, lang, &[]) == l {
+                cjk = true;
+                break;
+            }
+        }
+        let keys = mem.rebase(ITEM_KEYS);
+        let entry = |k: u32| keys.wrapping_add(4 * k);
+        let all = cjk && {
+            let t = MENU_ITEM_TARGET.get(mem).cast_signed();
+            menu_item_keys_match(mem, t, call) != 0
+        };
+        let mut n = 0u32;
+        while mem.read::<u8>(entry(n)) != 0 {
+            if all {
+                mem.write(entry(n), 0u8);
+            }
+            n += 1;
+        }
+        if !all && n != 0 {
+            mem.write(entry(n - 1), 0u8);
+        }
+    }
+
     /// `MenuItem_KeysMatch(t)` (`0x008c5390`, own name): whether the item
     /// keys [`menu_parse_item_keys`] left in [`ITEM_KEYS`] spell target `t`'s
     /// key string (`TOMenuGetNameMes` of the `u16` at `0x00c5a0d8 + 4t`):
@@ -6249,6 +6356,32 @@ pub mod bridge {
         let scale = f32::from_bits(0x3f47_ae14).to_bits();
         let f = mem.rebase(0x0090_5ab0);
         call(mem, f, &[text, left, top, colour, scale, 1f32.to_bits()])
+    }
+
+    /// `DrawCrossMenuSummonPlateNoHPMPClut(chr, x, y, colour)` (`0x008e7110`;
+    /// the aeon list's plate without HP/MP, caller `0x008ceb90`): the name
+    /// `TOGetSaveChrName(chr)` drawn with `ToMakeBtlEasyEdgeFont(name, x',
+    /// y', colour, 0.82, 1.0)`, `x'` = `remapX2(160) + x` and `y'` =
+    /// `remapY2(10) + y`, the remaps in the
+    /// original's order (Y, then X), each sum rounded to a float. Returns
+    /// the font call's `eax` (the original's, unread by its caller).
+    pub fn draw_cross_menu_summon_plate_no_hpmp<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        [x, y]: [f32; 2],
+        colour: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let top = r(remap(mem, true, 10.0) + f64::from(y));
+        let left = r(remap(mem, false, 160.0) + f64::from(x));
+        let f = mem.rebase(0x008a_c850);
+        let name = call(mem, f, &[chr]);
+        let scale = f32::from_bits(0x3f51_eb85).to_bits();
+        let f = mem.rebase(0x0090_5930);
+        call(mem, f, &[name, left, top, colour, scale, 1f32.to_bits()])
     }
 
     /// `DrawCrossMenuIconItemName(item, x, y, colour)` (`0x008e6700`): the
@@ -8061,6 +8194,46 @@ pub mod bridge {
         let r = call(mem, regist, &[w]);
         KAIZOU_WINDOW.set(mem, w);
         r
+    }
+
+    /// `TkFindLegendWeapon_008c30e0(chr)` (`0x008c30e0`; the Switch inlines
+    /// it into `TkSetLegendAbility`, its only caller here): the first of
+    /// `chr`'s weapons (`MsGetSaveWeaponList(chr, -1, 0, &n)`) whose record
+    /// (`MsGetSaveWeapon(id, &x)`) has flag `+3` bit 2 (the celestial
+    /// weapon) and owner byte `+4` == `chr`, or 0; `dbgPrintf` "TK:Found
+    /// Legend weapon(%d)" or "TK:not found ..." with `chr` either way.
+    /// `local` is 8 bytes of out slots (`n`, then `x`).
+    pub fn tk_find_legend_weapon<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_battle::save::bridge as save;
+        let mut ids = save::ms_get_save_weapon_list(mem, chr.cast_signed(), -1, 0, local);
+        let mut found = None;
+        while mem.read::<i32>(local) > 0 {
+            let id: u16 = mem.read(ids);
+            let get = mem.rebase(0x007a_bbd0);
+            let rec = call(mem, get, &[u32::from(id), local.wrapping_add(4)]);
+            if mem.read::<u8>(rec.wrapping_add(3)) & 4 != 0
+                && u32::from(mem.read::<u8>(rec.wrapping_add(4))) == chr
+            {
+                found = Some(rec);
+                break;
+            }
+            let n: i32 = mem.read(local);
+            mem.write(local, n.wrapping_sub(1));
+            ids = ids.wrapping_add(2);
+        }
+        let text = if found.is_some() {
+            0x00b6_57b4
+        } else {
+            0x00b6_57d0
+        };
+        let (f, text) = (mem.rebase(0x0062_f500), mem.rebase(text));
+        call(mem, f, &[text, chr]);
+        found.unwrap_or(0)
     }
 
     /// `BtlEnd_InParty(chr)` (`0x008b9ec0`, own name): 1 when `chr` is one
