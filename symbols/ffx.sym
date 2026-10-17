@@ -4301,8 +4301,10 @@
 0x00772530 function KernelSaveCommand_30d5_00772530# cdecl(chr): MsGetSaveCommand(chr, 0x30d5); kernel menu accessor (table entry); name ours
 0x00772560 function KernelSlotAbilityName_150_00772560# cdecl(i): Kernel_GetAbilityName(u16 +0x150 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772590 function KernelSaveCommand_30d6_00772590# cdecl(chr): MsGetSaveCommand(chr, 0x30d6); kernel menu accessor (table entry); name ours
+0x007725b0 function KernelEventByte_007725b0  # cdecl(i): (i8) MsGetSaveEventFlag()[i]; name ours
 0x007725d0 function KernelSaveCommand_30d7_007725d0# cdecl(chr): MsGetSaveCommand(chr, 0x30d7); kernel menu accessor (table entry); name ours
 0x007725f0 function KernelSlotAbilityName_152_007725f0# cdecl(i): Kernel_GetAbilityName(u16 +0x152 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772620 function KernelEventBit_00772620   # cdecl(n): bit n & 7 of MsGetSaveEventFlag()[n / 8] (truncating); name ours
 0x00772660 function KernelSaveCommand_30d8_00772660# cdecl(chr): MsGetSaveCommand(chr, 0x30d8); kernel menu accessor (table entry); name ours
 0x00772680 function KernelSlotAbilityName_154_00772680# cdecl(i): Kernel_GetAbilityName(u16 +0x154 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007726b0 function KernelSaveCommand_30d9_007726b0# cdecl(chr): MsGetSaveCommand(chr, 0x30d9); kernel menu accessor (table entry); name ours
@@ -4318,6 +4320,7 @@
 0x00772890 function KernelSaveCommand_30de_00772890# cdecl(chr): MsGetSaveCommand(chr, 0x30de); kernel menu accessor (table entry); name ours
 0x007728b0 function KernelSlotAbilityName_15e_007728b0# cdecl(i): Kernel_GetAbilityName(u16 +0x15e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007728e0 function KernelSaveCommand_30df_007728e0# cdecl(chr): MsGetSaveCommand(chr, 0x30df); kernel menu accessor (table entry); name ours
+0x00772900 function KernelJoined_00772900     # cdecl(chr): MsGetSavePlyJoin(chr) == 1; name ours
 0x00772920 function KernelSlotAbilityName_160_00772920# cdecl(i): Kernel_GetAbilityName(u16 +0x160 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772950 function KernelSaveCommand_30e0_00772950# cdecl(chr): MsGetSaveCommand(chr, 0x30e0); kernel menu accessor (table entry); name ours
 0x00772980 function KernelSlotAbilityName_162_00772980# cdecl(i): Kernel_GetAbilityName(u16 +0x162 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
@@ -4349,8 +4352,10 @@
 0x00772d50 function KernelSaveCommand_30ea_00772d50# cdecl(chr): MsGetSaveCommand(chr, 0x30ea); kernel menu accessor (table entry); name ours
 0x00772d70 function KernelSlotAbilityName_172_00772d70# cdecl(i): Kernel_GetAbilityName(u16 +0x172 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772da0 function KernelSaveCommand_3009_00772da0# cdecl(chr): MsGetSaveCommand(chr, 0x3009); kernel menu accessor (table entry); name ours
+0x00772dc0 function KernelSlotWord194_00772dc0 # cdecl(i): 0x1f40 for 0xf9, else u32 +0x194 of record i of *0x0112a034; name ours
 0x00772df0 function KernelSlotAbilityName_174_00772df0# cdecl(i): Kernel_GetAbilityName(u16 +0x174 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772e20 function KernelSaveCommand_300a_00772e20# cdecl(chr): MsGetSaveCommand(chr, 0x300a); kernel menu accessor (table entry); name ours
+0x00772e40 function KernelGilAfter_00772e40   # cdecl(i): max(MsGetGIL() - record i +0x194, 0) (signed); name ours
 0x00772e70 function KernelSlotAbilityName_176_00772e70# cdecl(i): Kernel_GetAbilityName(u16 +0x176 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772ea0 function KernelSaveCommand_300b_00772ea0# cdecl(chr): MsGetSaveCommand(chr, 0x300b); kernel menu accessor (table entry); name ours
 0x00772ec0 function KernelSaveCommand_30ff_00772ec0# cdecl(chr): MsGetSaveCommand(chr, 0x30ff); kernel menu accessor (table entry); name ours
@@ -4418,9 +4423,11 @@
 0x00773760 function KernelSaveCommand_3024_00773760# cdecl(chr): MsGetSaveCommand(chr, 0x3024); kernel menu accessor (table entry); name ours
 0x007737c0 function KernelSaveCommand_3025_007737c0# cdecl(chr): MsGetSaveCommand(chr, 0x3025); kernel menu accessor (table entry); name ours
 0x007737e0 function KernelSaveCommand_3026_007737e0# cdecl(chr): MsGetSaveCommand(chr, 0x3026); kernel menu accessor (table entry); name ours
+0x00773800 function KernelSetEventByte_00773800 # cdecl(i, v): MsGetSaveEventFlag()[i] = v; name ours
 0x00773820 function GetDerefU32_00773820         # auto-port shape (return deref u32 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u32[(((a0 * 0x1d8) + t0) + 0x14)]; return t1; callers: no direct caller; name ours
 0x00773840 function KernelSaveCommand_3027_00773840# cdecl(chr): MsGetSaveCommand(chr, 0x3027); kernel menu accessor (table entry); name ours
 0x00773860 function GetDerefU8_00773860          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x20)]; return t1; callers: no direct caller; name ours
+0x00773880 function KernelSetEventBit_00773880 # cdecl(n, on): that bit cleared, then set when on; name ours
 0x007738c0 function KernelSaveCommand_3028_007738c0# cdecl(chr): MsGetSaveCommand(chr, 0x3028); kernel menu accessor (table entry); name ours
 0x007738e0 function GetDerefU8_007738e0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x22)]; return t1; callers: no direct caller; name ours
 0x00773900 function KernelSaveCommand_3029_00773900# cdecl(chr): MsGetSaveCommand(chr, 0x3029); kernel menu accessor (table entry); name ours
@@ -4428,12 +4435,16 @@
 0x00773950 function KernelSaveCommand_302b_00773950# cdecl(chr): MsGetSaveCommand(chr, 0x302b); kernel menu accessor (table entry); name ours
 0x00773970 function GetDerefU8_00773970          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2c)]; return t1; callers: no direct caller; name ours
 0x007739a0 function KernelSaveCommand_302c_007739a0# cdecl(chr): MsGetSaveCommand(chr, 0x302c); kernel menu accessor (table entry); name ours
+0x007739c0 function KernelPostRequest1_007739c0 # cdecl(v): unless byte 0x0112a038: 0x0112a058 = 1, 0x0112a054 = v, 0x0112a038 = 1; kernel menu accessor; name ours
 0x007739f0 function GetDerefU8_007739f0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2d)]; return t1; callers: no direct caller; name ours
 0x00773a10 function KernelSaveCommand_302d_00773a10# cdecl(chr): MsGetSaveCommand(chr, 0x302d); kernel menu accessor (table entry); name ours
+0x00773a30 function KernelPostRequest0_00773a30 # cdecl(v): as 0x007739c0 with kind 0; name ours
 0x00773a60 function GetDerefU8_00773a60          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2e)]; return t1; callers: no direct caller; name ours
 0x00773a80 function KernelSaveCommand_302e_00773a80# cdecl(chr): MsGetSaveCommand(chr, 0x302e); kernel menu accessor (table entry); name ours
+0x00773aa0 function KernelPostRequest3_00773aa0 # cdecl(v): as 0x007739c0 with kind 3; name ours
 0x00773ad0 function GetDerefU8_00773ad0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2f)]; return t1; callers: no direct caller; name ours
 0x00773af0 function KernelSaveCommand_302f_00773af0# cdecl(chr): MsGetSaveCommand(chr, 0x302f); kernel menu accessor (table entry); name ours
+0x00773b10 function KernelPlaySfx_00773b10    # cdecl(sfx): tail SndSepPlaySimple(sfx | 0x80000000); name ours
 0x00773b20 function GetDerefU8_00773b20          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x30)]; return t1; callers: no direct caller; name ours
 0x00773b40 function KernelSaveCommand_3030_00773b40# cdecl(chr): MsGetSaveCommand(chr, 0x3030); kernel menu accessor (table entry); name ours
 0x00773b60 function GetDerefU8_00773b60          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x31)]; return t1; callers: no direct caller; name ours

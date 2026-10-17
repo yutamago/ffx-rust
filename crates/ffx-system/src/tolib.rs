@@ -4435,4 +4435,124 @@ pub mod bridge {
             u32::from(mem.read::<u16>(table.wrapping_add(i.wrapping_mul(0x1d8)).wrapping_add(off)));
         call(mem, f, &[id])
     }
+
+    /// Kernel accessors `0x007739c0`, `0x00773a30`, `0x00773aa0`: unless a
+    /// request is pending (byte `0x0112a038`), post one: kind `kind`
+    /// (`0x0112a058`), value `v` (`0x0112a054`), pending set.
+    pub fn kernel_post_request(mem: &mut impl Mem, v: u32, kind: u32) {
+        let pending = mem.rebase(0x0112_a038);
+        if mem.read::<u8>(pending) != 0 {
+            return;
+        }
+        mem.write(mem.rebase(0x0112_a058), kind);
+        mem.write(mem.rebase(0x0112_a054), v);
+        mem.write(pending, 1u8);
+    }
+
+    /// Kernel accessor `0x00772dc0(i)`: 0x1f40 for 0xf9, else the word at
+    /// `+0x194` of record `i` of `*0x0112a034`.
+    pub fn kernel_slot_word_194(mem: &impl Mem, i: u32) -> u32 {
+        if i == 0xf9 {
+            return 0x1f40;
+        }
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        mem.read(
+            table
+                .wrapping_add(i.wrapping_mul(0x1d8))
+                .wrapping_add(0x194),
+        )
+    }
+
+    /// Kernel accessor `0x00772e40(i)`: the gil (`MsGetGIL`) left after
+    /// the price at `+0x194` of record `i`, or 0 when it is short.
+    pub fn kernel_gil_after<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let gil = call(mem, 0x0078_4e80, &[]);
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        let price: u32 = mem.read(
+            table
+                .wrapping_add(i.wrapping_mul(0x1d8))
+                .wrapping_add(0x194),
+        );
+        let v = gil.wrapping_sub(price);
+        if v.cast_signed() < 0 { 0 } else { v }
+    }
+
+    /// Kernel accessor `0x00773b10(sfx)`: `SndSepPlaySimple(sfx |
+    /// 0x80000000)`.
+    pub fn kernel_play_sfx<M: Mem>(
+        mem: &mut M,
+        sfx: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0088_6e80, &[sfx | 0x8000_0000])
+    }
+
+    /// Kernel accessor `0x007725b0(i)`: event flag byte `i` of
+    /// `MsGetSaveEventFlag()`, sign-extended.
+    pub fn kernel_event_byte<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = call(mem, 0x0078_5250, &[]);
+        i32::from(mem.read::<i8>(base.wrapping_add(i))).cast_unsigned()
+    }
+
+    /// Kernel accessor `0x00773800(i, v)`: event flag byte `i` set to `v`.
+    #[allow(clippy::cast_possible_truncation)] // `mov byte`
+    pub fn kernel_set_event_byte<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        v: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let base = call(mem, 0x0078_5250, &[]);
+        mem.write(base.wrapping_add(i), v as u8);
+    }
+
+    /// Kernel accessor `0x00772900(chr)`: 1 when `MsGetSavePlyJoin(chr)` is
+    /// 1, else 0.
+    pub fn kernel_joined<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, 0x0078_5380, &[chr]) == 1)
+    }
+
+    /// Kernel accessor `0x00772620(n)`: event flag bit `n` (byte `n / 8`
+    /// of `MsGetSaveEventFlag()`, truncating, bit `n & 7`): 1 or 0.
+    pub fn kernel_event_bit<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = call(mem, 0x0078_5250, &[]);
+        let byte = (n.cast_signed() / 8).cast_unsigned();
+        let v = i32::from(mem.read::<i8>(base.wrapping_add(byte)));
+        u32::from(v & (1 << (n & 7)) != 0)
+    }
+
+    /// Kernel accessor `0x00773880(n, on)`: event flag bit `n` cleared,
+    /// then set when `on`.
+    pub fn kernel_set_event_bit<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        on: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let base = call(mem, 0x0078_5250, &[]);
+        let at = base.wrapping_add((n.cast_signed() / 8).cast_unsigned());
+        let mask = 1u8 << (n & 7);
+        let v: u8 = mem.read(at);
+        let v = v & !mask;
+        mem.write(at, v);
+        if on != 0 {
+            mem.write(at, v | mask);
+        }
+    }
 }
