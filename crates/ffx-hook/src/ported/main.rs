@@ -3,7 +3,7 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, control, envelope, gs, light, quat, seq, state, vec};
+use ffx_sg::{camera, chpacket, cloth, control, envelope, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -1334,6 +1334,10 @@ ported! {
     /// `Sg_ClothPlaceAnchors(chr)`.
     Sg_ClothPlaceAnchors @ 0x0082_dbc0 => extern "C" fn sg_cloth_place_anchors(chr: u32) {
         vec::bridge::cloth_place_anchors(&mut mem(), chr);
+    }
+    /// `Sg_ClothStep(chr)`.
+    Sg_ClothStep @ 0x0082_2de0 => extern "C" fn sg_cloth_step(chr: u32) {
+        cloth::bridge::cloth_step(&mut mem(), chr, &mut crt);
     }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {

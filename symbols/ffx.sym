@@ -6670,6 +6670,7 @@
 0x00822b20 function Sg_ClothRodMin            # kind 4: as Sg_ClothRodMax when |b - a|^2 < lim; name ours; ported
 0x00822c10 function Sg_ClothRodFixPin         # kind 5: rods {i16 a, i16 b, f32 len}: b = a + d * len / |d|, or b = a (Sg_VecCopy4) when |d|^2 <= 1e-5; name ours; ported
 0x00822cf0 function Sg_ClothRodFix            # kind 6: both points to length len, or b = a when |d| <= 1e-5; name ours; ported
+0x00822de0 function Sg_ClothStep              # (chr): the cloth step: wind (Sg_CreateVectorFromHV + rand), follow of the model group, anchors from bones, rods 1-6, collision spheres/capsules/planes, the floor, velocity/previous buffers, written back to the model vertices; repeats +0x812 times when far; called from 0x0082e390
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
 0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
 0x00824620 function Ch_ClothMeshMappingOffset # fh v3:exact 0x008246b0
