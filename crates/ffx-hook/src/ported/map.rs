@@ -3345,6 +3345,81 @@ ported! {
         model::bridge::rcbg_scene_set_chadist(&mut mem(), scene, w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcEffectTaskSoundCueWait(task)`.
+    rcEffectTaskSoundCueWait @ 0x0093_0500 => extern "C" fn shim_rc_effect_task_sound_cue_wait(t: u32) {
+        task::bridge::rc_effect_task_sound_cue_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcEffectTaskMotionWait(task)`.
+    rcEffectTaskMotionWait @ 0x0093_0430 => extern "C" fn shim_rc_effect_task_motion_wait(t: u32) {
+        task::bridge::rc_effect_task_motion_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcefSetChrDirTarget(chr, a, b)`.
+    rcefSetChrDirTarget @ 0x0092_e750 => extern "C" fn shim_rcef_set_chr_dir_target(chr: u32, a: u32, b: u32) -> u32 {
+        task::bridge::rcef_set_chr_dir_target(&mut mem(), [chr, a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefSetChrDirTarget2(chr, a, b, c)`.
+    rcefSetChrDirTarget2 @ 0x0092_e960 => extern "C" fn shim_rcef_set_chr_dir_target2(chr: u32, a: u32, b: u32, c: u32) -> u32 {
+        task::bridge::rcef_set_chr_dir_target2(&mut mem(), [chr, a, b, c], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefWeaponSetHide(chr, show)`.
+    rcefWeaponSetHide @ 0x0092_eb70 => extern "C" fn shim_rcef_weapon_set_hide(chr: u32, show: u32) -> u32 {
+        task::bridge::rcef_weapon_set_hide(&mut mem(), chr, show, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefPlaySE(id)`.
+    rcefPlaySE @ 0x0092_e680 => extern "C" fn shim_rcef_play_se(id: u32) -> u32 {
+        task::bridge::rcef_play_se(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefMainCreateTask(kind, seq)`.
+    rcefMainCreateTask @ 0x0092_5170 => extern "C" fn shim_rcef_main_create_task(kind: u32, seq: u32) -> u32 {
+        task::bridge::rcef_main_create_task(&mut mem(), kind, seq, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefChrDelete(obj)`.
+    rcefChrDelete @ 0x0093_0600 => extern "C" fn shim_rcef_chr_delete(o: u32) -> u32 {
+        task::bridge::rcef_chr_delete(&mut mem(), o, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_SetChadist()`.
+    Yn_SetChadist @ 0x0091_a250 => extern "C" fn shim_yn_set_chadist() {
+        model::bridge::yn_set_chadist(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `Yn_PreBgLayerDispOff(n)`.
+    Yn_PreBgLayerDispOff @ 0x0091_a7c0 => extern "C" fn shim_yn_pre_bg_layer_disp_off(n: u32) -> u32 {
+        model::bridge::yn_pre_bg_layer_disp_off(&mut mem(), n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_PreBgLayerDispOn(n)`.
+    Yn_PreBgLayerDispOn @ 0x0091_a830 => extern "C" fn shim_yn_pre_bg_layer_disp_on(n: u32) -> u32 {
+        model::bridge::yn_pre_bg_layer_disp_on(&mut mem(), n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxSpringDelete(spring)`.
+    rcfxSpringDelete @ 0x0092_8c60 => extern "C" fn shim_rcfx_spring_delete(p: u32) -> u32 {
+        model::bridge::rcfx_spring_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxNailDelete(nail)`.
+    rcfxNailDelete @ 0x0092_9070 => extern "C" fn shim_rcfx_nail_delete(p: u32) -> u32 {
+        model::bridge::rcfx_nail_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_FPm173End()`.
+    Yn_FPm173End @ 0x0091_9ab0 => extern "C" fn shim_yn_fpm173_end() -> u32 {
+        model::bridge::yn_fpm173_end(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgTrxPairSetNo(p, n)`.
+    rcbgTrxPairSetNo @ 0x0092_21e0 => extern "C" fn shim_rcbg_trx_pair_set_no(p: u32, n: u32) -> u32 {
+        model::bridge::rcbg_trx_pair_set_no(&mut mem(), p, n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

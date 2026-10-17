@@ -1079,6 +1079,43 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   - `0x009161d0` is a CRT `_splitpath` copy (platform).
   - The `rcPrim*` functions are packet writers (replaced by ffx-render).
 
+## Effect sequence helpers and Yn's layer switches (round 23)
+
+- Waits: `rcEffectTaskSoundCueWait` (`0x00930500`, name ours) returns once
+  `op_oef2_sound_cue_check(0x800)` is 0. `rcEffectTaskMotionWait`
+  (`0x00930430`) returns once `MsEffectCheckMotion` of the current
+  level's first argument is -1.
+- Forwarders, all returning the last call's `eax` (names ours unless
+  Fahrenheit's):
+  - `rcefSetChrDirTarget` (`0x0092e750`) and `rcefSetChrDirTarget2`
+    (`0x0092e960`) call `MsSetChrDirTarget` with modes 1 and 2.
+  - `rcefWeaponSetHide` (`0x0092eb70`) calls `Ch_SetHideEffect(weapon,
+    show == 0)` when `MsGetWeaponHandle(chr, 0)` returns a handle.
+  - `rcefPlaySE` (`0x0092e680`) plays sound entry `id` of the effect's
+    oef2 data (`0x025d5a28`) with `op_oef2_se_on(entry, 0x40, 0x100)`.
+  - `rcefMainCreateTask` (`0x00925170`) creates an object and sets its
+    sequence; it returns the object.
+  - `rcefChrDelete` (`0x00930600`) calls `rcefChrFini`, then frees the
+    object into the current ppp environment (`*g_pppEnvSlot`, its pool
+    at `+0x10`).
+  - `rcfxSpringDelete`/`rcfxNailDelete` (`0x00928c60`/`0x00929070`)
+    call the fini, then `rcFree`.
+  - `Yn_FPm173End` (`0x00919ab0`) calls `rcbgFPm173End` on the scene's
+    first object of kind 0x20008.
+  - `rcbgTrxPairSetNo` (`0x009221e0`) sets the number of two transfers
+    at `+0x20` and `+0x60`.
+- `Yn_SetChadist` (`0x0091a250`, name ours) is `Yn_DrawScene`'s sibling
+  through `0x00921a30`/`0x00921610` to `rcbgSceneSetChadist`.
+- `Yn_PreBgLayerDispOn`/`Off` (`0x0091a830`/`0x0091a7c0`): below
+  `Yn_MapPartCount`, bit 0 of the part (`0xc0` bytes from the scene's
+  `+8`) is cleared (on) or set (off). Below the same count, or 0x1c on
+  maps 0x15b and 0xd4, `graphic2DShowLayer`/`HideLayer(n)` runs and
+  `graphicTextureAnimationSetMaterialVisiability(n, on)`. Without a scene
+  the original reads address 8. `On` first sets `0x025d5ebc` when the
+  path at `0x023cbc60` contains `"te/test20"` (`strstr` through the
+  import table). When the layer is past the limit, `eax` is the map
+  number.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
