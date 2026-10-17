@@ -11461,6 +11461,7 @@ fn round19_text_matches_the_original_on_the_snapshot() {
 /// both sides.
 #[allow(
     clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
     clippy::too_many_lines,
     clippy::many_single_char_names
 )]
@@ -11526,19 +11527,13 @@ fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             .unwrap()
             .st0
             .unwrap();
-        let got = t::to_get_scale_button_icon_width(
-            b,
-            c,
-            scale,
-            |m, sym, args| eax(m, sym, args),
-            |m, id, s| {
-                let at = m.rebase(0x0090_62b0);
-                m.call(at, Conv::Cdecl, &[id, s.to_bits()])
-                    .unwrap()
-                    .st0
-                    .unwrap() as f32
-            },
-        );
+        let got = t::to_get_scale_button_icon_width(b, c, scale, eax, |m, id, s| {
+            let at = m.rebase(0x0090_62b0);
+            m.call(at, Conv::Cdecl, &[id, s.to_bits()])
+                .unwrap()
+                .st0
+                .unwrap() as f32
+        });
         assert_eq!(
             (want as f32).to_bits(),
             got.to_bits(),
@@ -11557,18 +11552,12 @@ fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                 .unwrap()
                 .st0
                 .unwrap();
-            let got = t::to_get_scale_button_icon_width(
-                b,
-                c,
-                0.0,
-                |m, sym, args| eax(m, sym, args),
-                |m, id, s| {
-                    m.call(m.rebase(0x0090_62b0), Conv::Cdecl, &[id, s.to_bits()])
-                        .unwrap()
-                        .st0
-                        .unwrap() as f32
-                },
-            );
+            let got = t::to_get_scale_button_icon_width(b, c, 0.0, eax, |m, id, s| {
+                m.call(m.rebase(0x0090_62b0), Conv::Cdecl, &[id, s.to_bits()])
+                    .unwrap()
+                    .st0
+                    .unwrap() as f32
+            });
             assert_eq!(
                 (want as f32).to_bits(),
                 got.to_bits(),
@@ -11753,6 +11742,7 @@ fn round20_text_matches_the_original_on_the_snapshot() {
 /// stand-ins.
 #[allow(
     clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
     clippy::too_many_lines,
     clippy::many_single_char_names
 )]
@@ -11913,7 +11903,11 @@ fn round20_btl_matches_the_original_on_the_snapshot() {
 
 /// Round 20's Al Bhed translation over random tables, languages and
 /// collected letters.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines
+)]
 fn round20_albhed(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cells = alloc(a, b, 8);
