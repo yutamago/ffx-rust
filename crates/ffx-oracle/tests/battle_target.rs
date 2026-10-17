@@ -2246,6 +2246,19 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             .map(|_| [0, 0, 0, 1, 2, 0xfd, 0xfe, 0xff, rng.byte()][rng.below(9) as usize])
             .collect();
         poke(a, b, p + 0x608, &counts);
+        // mostly one the cursor may pick (MsGetCursorTarget: +0xdd9, no
+        // event +0xddd, near +0x4ff, there +0xdcd)
+        if rng.below(3) != 0 {
+            for (o, v) in [
+                (0xdd9, 1),
+                (0xddd, flag(rng, 4) ^ 1),
+                (0x4ff, 0),
+                (0xdcd, 0),
+            ] {
+                poke(a, b, p + o, &[v]);
+            }
+            poke(a, b, p + 0xdde, &0xffu16.to_le_bytes());
+        }
         // each moves itself (MsDamageSetMotion's +0x422: the positions
         // checked are its own)
         poke(a, b, p + 0x422, &[u8::try_from(i).unwrap()]);
@@ -2784,6 +2797,15 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     // members and three monsters in it, the entries theirs
     let on = rng.below(3) != 0;
     if on {
+        // everyone at its own place (+0x6d4 set: MsBtlGetPos reads +0x3b0
+        // for a valid group), so the motions find their positions
+        let file = ffx_battle::pos::bridge::POS_FILE.get(b);
+        if readable(a, file, 2) && b.read(file + 1, 1).unwrap()[0] as i8 > 0 {
+            for q in 0..ACTORS {
+                poke(a, b, w.actor(q) + 0x4fc, &[0]);
+                poke(a, b, w.actor(q) + 0x6d4, &[0]);
+            }
+        }
         let mut party = vec![0xffu8; 7];
         party[..3].copy_from_slice(&[0, 1, 2]);
         poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
