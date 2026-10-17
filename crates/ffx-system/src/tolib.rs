@@ -4716,7 +4716,7 @@ pub mod bridge {
                 }
             }
             1 => {
-                let cell = |mem: &M| -> u32 {
+                let due = |mem: &M| -> u32 {
                     let t: u32 = mem.read(table_at);
                     let row: u32 = mem.read(row_at);
                     let col: u32 = mem.read(col_at);
@@ -4724,14 +4724,14 @@ pub mod bridge {
                         t.wrapping_add(row.wrapping_mul(0x32).wrapping_add(col).wrapping_mul(4)),
                     )
                 };
-                if cell(mem) == n {
+                if due(mem) == n {
                     let col: u32 = mem.read(col_at);
                     if col.cast_signed() < 0x32 {
                         mem.write(col_at, col.wrapping_add(1));
                     }
                     call(mem, 0x008b_8ca0, &[arg]);
                 }
-                if cell(mem) == 0 {
+                if due(mem) == 0 {
                     mem.write(g(mem, 0x0186_63d0), 0u8);
                     mem.write(frames_at, 0u32);
                     mem.write(state_at, 0u8);
