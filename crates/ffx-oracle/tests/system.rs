@@ -8190,7 +8190,12 @@ fn round13_message_windows_match_the_original_on_the_snapshot() {
 }
 
 /// Round 14's message-window positions over a stand-in screen size.
-#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
 fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use ffx_system::{menu::bridge as mb, window::bridge as wb};
     use tolib::bridge as t;
@@ -8242,18 +8247,18 @@ fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift)
         let k = i.cast_unsigned();
         put(a, b, styles + 0x10 * k + 4, (rng.next() % 8) as u16);
         put(a, b, windows + 0x80 * k + 4, (rng.next() % 3) as u16);
-        let (tw, th) = if rng.next() % 4 == 0 {
+        let (tw, th) = if rng.next().is_multiple_of(4) {
             (rng.next() as u16, rng.next() as u16)
         } else {
             ((rng.next() % 0x300) as u16, (rng.next() % 0x80) as u16)
         };
         put(a, b, records + 0x60 * k + 0x40, [tw, th]);
-        let anchor = if rng.next() % 8 == 0 {
+        let anchor = if rng.next().is_multiple_of(8) {
             rng.next()
         } else {
             rng.next() % 6
         };
-        let (x, y) = if rng.next() % 6 == 0 {
+        let (x, y) = if rng.next().is_multiple_of(6) {
             (rng.next().cast_signed(), rng.next().cast_signed())
         } else {
             (
@@ -8271,7 +8276,7 @@ fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift)
             (v[0], v[1])
         });
         same_memory("message positions", a, b);
-        let (w, h) = if rng.next() % 6 == 0 {
+        let (w, h) = if rng.next().is_multiple_of(6) {
             (rng.next().cast_signed(), rng.next().cast_signed())
         } else {
             (
@@ -8313,7 +8318,7 @@ fn round14_message_positions_match_the_original_on_the_snapshot() {
 }
 
 /// Round 14's battle limit-window set-ups over stand-in scene getters.
-#[allow(clippy::items_after_statements)]
+#[allow(clippy::items_after_statements, clippy::cast_possible_truncation)]
 fn round14_limit_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     // [out] = name ^ key
@@ -8420,7 +8425,11 @@ fn round14_limit_windows_match_the_original_on_the_snapshot() {
 }
 
 /// Round 14's battle limit-window openers over stand-in overdrive tables.
-#[allow(clippy::items_after_statements, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::items_after_statements,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
 fn round14_limit_openers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cells = alloc(a, b, 0x10);
@@ -8496,7 +8505,7 @@ fn round14_limit_openers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         a.write(seq, &bytes).unwrap();
         b.write(seq, &bytes).unwrap();
-        let cmd = if rng.next() % 4 == 0 {
+        let cmd = if rng.next().is_multiple_of(4) {
             rng.next()
         } else {
             cmds[(rng.next() % 13) as usize]
