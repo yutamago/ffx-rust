@@ -5,6 +5,7 @@ use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::status::bridge as status;
+use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{
     body::bridge as body, menu::bridge as menu, target::bridge as target, vector::bridge as vector,
@@ -2337,5 +2338,94 @@ ported! {
         let mut m = mem();
         script!(s);
         action::ms_delete_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s, chr, k, last, keep)
+    }
+    /// `msSetChrShadowReq(p, k, v)`.
+    msSetChrShadowReq @ 0x0079_7020 => extern "C" fn ms_set_chr_shadow_req(p: u32, k: i32, v: u32) -> u32 {
+        visible::ms_set_chr_shadow_req(&mut mem(), p, k, v.to_le_bytes()[0])
+    }
+    /// `msSetChrVisibleReq(i, k, v)`: `op_et_bindeff` (vfx) through the game.
+    msSetChrVisibleReq @ 0x0079_7080 => extern "C" fn ms_set_chr_visible_req(i: u32, k: u32, v: u32) -> u32 {
+        visible::ms_set_chr_visible_req(&mut mem(), &mut call_ptr, i, k, v)
+    }
+    /// `MsSetChrVisibleCamera(i, v)`.
+    MsSetChrVisibleCamera @ 0x0079_67a0 => extern "C" fn ms_set_chr_visible_camera(i: u32, v: u32) -> u32 {
+        visible::ms_set_chr_visible_camera(&mut mem(), &mut call_ptr, i, v)
+    }
+    /// `MsSetChrVisibleCameraAll(v)`.
+    MsSetChrVisibleCameraAll @ 0x0079_67c0 => extern "C" fn ms_set_chr_visible_camera_all(v: u32) -> u32 {
+        visible::ms_set_chr_visible_camera_all(&mut mem(), &mut call_ptr, v)
+    }
+    /// `MsReturnCameraVisible()`: `eax` as it was (the original leaves it
+    /// alone when nothing was hidden; no caller reads it).
+    MsReturnCameraVisible @ 0x0079_5c70 => extern "C" fn ms_return_camera_visible() {
+        visible::ms_return_camera_visible(&mut mem(), &mut call_ptr);
+    }
+    /// `MsAtelRequestCamera(i, monster, a, b, show, flags, actor, &same)`.
+    MsAtelRequestCamera @ 0x0079_7bc0 => extern "C" fn ms_atel_request_camera(i: u32, monster: u32, a: u32, b: u32, show: u32, flags: u32, actor: u32, out: u32) -> i32 {
+        script!(s);
+        atel::ms_atel_request_camera(&mut mem(), &mut s, i, monster, a, b, show, flags, actor, out)
+    }
+    /// `MsLimitTypeExpGet(i, k, force)`.
+    MsLimitTypeExpGet @ 0x007b_10c0 => extern "C" fn ms_limit_type_exp_get(i: u32, k: u32, force: u32) -> u32 {
+        exec::ms_limit_type_exp_get(&mut mem(), i, k, force)
+    }
+    /// `MsLimitTypeEscapeCheck(i, actor)`.
+    MsLimitTypeEscapeCheck @ 0x007b_1090 => extern "C" fn ms_limit_type_escape_check(i: u32, actor: u32) -> u32 {
+        exec::ms_limit_type_escape_check(&mut mem(), i, actor)
+    }
+    /// `MsMusicVolume(volume, frames)`: sound's functions through the game.
+    MsMusicVolume @ 0x007a_0090 => extern "C" fn ms_music_volume(volume: u32, frames: u32) -> u32 {
+        exec::ms_music_volume(&mut mem(), &mut call_ptr, volume, frames)
+    }
+    /// `MsMenuOpenTitleWindow(i, pos)`: system's window through the game.
+    MsMenuOpenTitleWindow @ 0x0078_fea0 => extern "C" fn ms_menu_open_title_window(i: u32, pos: u32) -> u32 {
+        exec::ms_menu_open_title_window(&mut mem(), &mut call_ptr, i, pos)
+    }
+    /// `MsAtelRequestMagicCamera(i, monster, id, a, b, show, flags, actor, &same)`.
+    MsAtelRequestMagicCamera @ 0x0079_8000 => extern "C" fn ms_atel_request_magic_camera(i: u32, monster: u32, id: u32, a: u32, b: u32, show: u32, flags: u32, actor: u32, out: u32) -> i32 {
+        script!(s);
+        atel::ms_atel_request_magic_camera(&mut mem(), &mut s, i, monster, id, a, b, show, flags, actor, out)
+    }
+    /// `MsEscapeAll()`.
+    MsEscapeAll @ 0x007a_da60 => extern "C" fn ms_escape_all() {
+        script!(s);
+        atel::ms_escape_all(&mut mem(), &mut s);
+    }
+    /// `MsGetEscapeDir(i)` (an `f32` in ST0).
+    MsGetEscapeDir @ 0x007a_99b0 => extern "C" fn ms_get_escape_dir(i: u32) -> f32 {
+        let mut m = mem();
+        f32::from_bits(target::ms_get_escape_dir(&mut target::Dm::new(&mut m), &host(), i))
+    }
+    /// `MsCheckTargetsNear(i, actor, targets)`.
+    MsCheckTargetsNear @ 0x007a_f0f0 => extern "C" fn ms_check_targets_near(i: u32, actor: u32, targets: u32) -> u32 {
+        let mut m = mem();
+        target::ms_check_targets_near(&mut target::Dm::new(&mut m), &host(), i, actor, targets)
+    }
+    /// `MsCheckChrNear(i, actor)`.
+    MsCheckChrNear @ 0x007a_f230 => extern "C" fn ms_check_chr_near(i: u32, actor: u32) -> u32 {
+        let mut m = mem();
+        target::ms_check_chr_near(&mut target::Dm::new(&mut m), &host(), i, actor)
+    }
+    /// `MsEffectFileNumber(n, k)`.
+    MsEffectFileNumber @ 0x0078_7a70 => extern "C" fn ms_effect_file_number(n: i32, k: i32) -> i32 {
+        exec::ms_effect_file_number(&mem(), n, k)
+    }
+    /// `MsSEPchrClear(actor, shared)`: `SndSepClear` (sound) through the game.
+    MsSEPchrClear @ 0x007a_0400 => extern "C" fn ms_sep_chr_clear(actor: u32, shared: u32) {
+        exec::ms_sep_chr_clear(&mut mem(), &mut call_ptr, actor, shared);
+    }
+    /// `MsGetAeonCommand(i, id, kind, &mode, &value)`.
+    MsGetAeonCommand @ 0x007a_f060 => extern "C" fn ms_get_aeon_command(i: u32, id: u32, kind: u32, mode: u32, value: u32) -> u32 {
+        exec::ms_get_aeon_command(&mut mem(), i, id, kind, mode, value)
+    }
+    /// `MsInsertChrCommand(i, target, kind)`.
+    MsInsertChrCommand @ 0x007a_e1a0 => extern "C" fn ms_insert_chr_command(i: u32, target: u32, kind: u32) -> u32 {
+        action::ms_insert_chr_command(&mut mem(), i, target, kind)
+    }
+    /// `MsCleanInputCue(chr, keep)`.
+    MsCleanInputCue @ 0x007b_20b0 => extern "C" fn ms_clean_input_cue(chr: u32, keep: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_clean_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s, chr, keep)
     }
 }

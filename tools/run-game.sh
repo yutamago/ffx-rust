@@ -23,6 +23,10 @@
 # FFX_COVERAGE=FILE in the environment: coverage mode (FILE.hits gets the hits)
 #   --fixed-addresses  start through ffx-launch.exe with bottom-up ASLR off, so
 #               heap and VirtualAlloc addresses repeat between runs
+#   --instance N  run from game instance N (tools/instance.sh: a hard-linked
+#               copy of the game folder with its own DINPUT8.dll and
+#               ffx-hook.log), so harness games run side by side
+#   --mod DIR   (with --instance) add DIR as mods/<name of DIR> in the instance
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -32,6 +36,8 @@ repo="$(cd "$(dirname "$0")/.." && pwd)"
 game="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
 hooks=1
 lang="${FFX_LANG:-en}"
+instance=""
+mods=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-hooks) hooks=0 ;;
@@ -43,6 +49,8 @@ while [[ $# -gt 0 ]]; do
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
         --virtual-clock) export FFX_HARNESS_VIRTUAL_CLOCK=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_VIRTUAL_CLOCK"; fixed=1 ;;
         --fixed-addresses) fixed=1 ;;
+        --instance) instance="$2"; shift ;;
+        --mod) mods+=(--mod "$2"); shift ;;
         --call-log) export FFX_HARNESS_CALL_LOG="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_CALL_LOG"; shift ;;
         --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST:FFX_GFX_REDIRECT:FFX_GFX_SHARE:FFX_GFX_FENCE:FFX_RENDER_BACKEND:FFX_RENDERER_SKIP:FFX_RENDER_EXPORT_MATERIALS:FFX_RENDER_GLOW_DUMP/p"; renderer=1 ;;
         --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT" ;;
@@ -58,6 +66,11 @@ if [[ -n "${FFX_COVERAGE:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_COVERAGE/p"
 fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
+if [[ -n "$instance" ]]; then
+    game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"
+elif [[ ${#mods[@]} -gt 0 ]]; then
+    echo "--mod needs --instance" >&2; exit 2
+fi
 
 if [[ -n "${home:-}" ]]; then
     mkdir -p "$home"
@@ -89,12 +102,16 @@ if [[ $hooks == 0 ]]; then
     rm -f "$game/DINPUT8.dll"
 else
     "$repo/tools/build-hook.sh" >/dev/null
+    # rm first: never write through a hard link into the game folder.
+    rm -f "$game/DINPUT8.dll"
     install -m 755 "$repo/target/i686-pc-windows-msvc/release/dinput8.dll" "$game/DINPUT8.dll"
     if [[ -n "${renderer:-}" ]]; then
         "$repo/tools/build-renderer.sh" >/dev/null
+        rm -f "$game/ffx-render.exe"
         install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-render.exe" "$game/ffx-render.exe"
         for dll in dxcompiler.dll dxil.dll amd_fidelityfx_loader_dx12.dll amd_fidelityfx_upscaler_dx12.dll LICENSE-FidelityFX.txt; do
             if [[ -f "$repo/target/x86_64-pc-windows-msvc/release/$dll" ]]; then
+                rm -f "$game/$dll"
                 install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/$dll" "$game/$dll"
             fi
         done
@@ -102,18 +119,37 @@ else
     echo "hooks installed; log: $game/ffx-hook.log"
 fi
 
-# Only one game at a time: the game refuses a second one with a dialog
-# (mutex 9B8F7468-...). A process stuck while exiting still holds that mutex,
-# so any listed FFX.exe counts.
-running="$(powershell.exe -NoProfile -Command '@(Get-Process FFX -ErrorAction SilentlyContinue).Count' | tr -d '\r')"
-if [[ "$running" != "0" ]]; then
-    echo "FFX.exe is already running (or stuck exiting); not starting another" >&2
+# A game refuses to start while another holds its single-instance mutex
+# (9B8F7468-..., Game_Main). With the harness the hook gives that mutex a
+# name per port, so harness games only clash with one running from the same
+# folder (same DINPUT8.dll and log) or on the same port (the game slots
+# handle that). Without the harness, any game outside the instances holds
+# the real mutex, and so does one stuck while exiting (no path then).
+games="$(powershell.exe -NoProfile -Command \
+    'Get-Process FFX -ErrorAction SilentlyContinue | ForEach-Object { "path=" + $_.Path }; exit 0' | tr -d '\r')"
+here="$(wslpath -w "$game/FFX.exe")"
+instances="$(wslpath -w "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}")"
+clash=""
+while IFS= read -r line; do
+    [[ "$line" == path=* ]] || continue
+    path="${line#path=}"
+    if [[ "${path,,}" == "${here,,}" ]]; then
+        clash="a game from this folder is running"
+    elif [[ -z "${FFX_HARNESS:-}" && ( -z "$path" || "${path,,}" != "${instances,,}"\\* ) ]]; then
+        clash="FFX.exe is already running (or stuck exiting)"
+    fi
+done <<< "$games"
+if [[ -n "$clash" ]]; then
+    echo "$clash; not starting another" >&2
     exit 1
 fi
 
-# The game slot (crates/ffx-harness/src/slot.rs): tests and agents queue
-# for the game there; don't start one under a running test.
-slot_lock="${FFX_GAME_SLOT_DIR:-$HOME/ffx-work/game-slot}/lock"
+# The game slots (crates/ffx-harness/src/slot.rs): tests and agents take a
+# slot there; don't start a game under a running test. Instance N's slot
+# lock is lock-N; the main folder waits until no slot is in use (every
+# slot holder also holds "lock", shared).
+slots="${FFX_GAME_SLOT_DIR:-$HOME/ffx-work/game-slot}"
+if [[ -n "$instance" ]]; then slot_lock="$slots/lock-$instance"; else slot_lock="$slots/lock"; fi
 if [[ "${FFX_GAME_SLOT_HELD:-}" != 1 && -f "$slot_lock" ]] && ! flock -n "$slot_lock" true; then
     echo "the game slot is in use ($(cat "$slot_lock")); queue with: target/release/game-slot run -- $0 $*" >&2
     exit 1
@@ -123,6 +159,7 @@ cd "$game"
 if [[ -n "${fixed:-}" ]]; then
     PATH="$repo/tools/shims:$PATH" XWIN_ARCH=x86,x86_64 cargo xwin build -q --release \
         --manifest-path "$repo/Cargo.toml" --target x86_64-pc-windows-msvc -p ffx-launch >/dev/null
+    rm -f "$game/ffx-launch.exe"
     install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-launch.exe" "$game/ffx-launch.exe"
     pid="$(./ffx-launch.exe FFX.exe | tr -d '\r')"
     echo "FFX.exe started (language $lang, pid $pid, fixed addresses)"

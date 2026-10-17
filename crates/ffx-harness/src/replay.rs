@@ -13,6 +13,10 @@
 //! | `trace RANGE...` | starts tracing these ranges (`addr:len`, `*addr+off:len`; see the `trace` harness command) |
 //! | anything else | sent to the harness as it is (`press circle 4`, `wait 60`, ...) |
 //!
+//! `$OUT` in a line is the trace's folder (a Windows path), so a run's
+//! screenshots (`shot $OUT\field-walk-1.bmp`) land next to its trace and
+//! runs side by side do not overwrite each other's.
+//!
 //! The game runs seeded (seed 1) and in fast mode, as [`crate::Options`]
 //! defaults to, so the same inputs land on the same frames.
 
@@ -25,8 +29,11 @@ use crate::{Game, Result, screens};
 /// When a command fails.
 pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
     let mut replies = Vec::new();
+    let out = trace.rsplit_once(['\\', '/']).map_or(".", |(dir, _)| dir);
     for raw in script.lines() {
         let line = raw.split('#').next().unwrap_or("").trim();
+        let line = &line.replace("$OUT", out);
+        let line = line.as_str();
         if line.is_empty() {
             continue;
         }

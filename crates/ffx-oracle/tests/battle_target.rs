@@ -977,6 +977,169 @@ fn actions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u
     );
     local_words(a, b);
     same("MsCheckSummon", a, b);
+    // all of an actor's input entries
+    cues(a, b, rng, w);
+    let chr = rng.below(ACTORS);
+    let keep = rng.below(2);
+    twin(
+        "MsCleanInputCue",
+        a,
+        b,
+        0x007b_20b0,
+        &[chr, keep],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                ac::ms_clean_input_cue(m, &h, &mut s, chr, keep)
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsCleanInputCue", a, b);
+    // an aeon's command (its table, the kernel's command 0x3100)
+    cues(a, b, rng, w);
+    let i = 8 + rng.below(10);
+    let target = rng.below(ACTORS);
+    let kind = rng.below(4);
+    set(a, b, ac::AEON_PLAIN, u8::from(rng.below(4) == 0));
+    set(a, b, ac::AEON_PLAIN2, u8::from(rng.below(4) == 0));
+    set(a, b, ffx_battle::save::bridge::MENU, rng.next());
+    poke(a, b, w.actor(i) + 0x3f9, &[u8::from(rng.below(2) == 0)]);
+    twin(
+        "MsInsertChrCommand",
+        a,
+        b,
+        0x007a_e1a0,
+        &[i, target, kind],
+        ALL,
+        |m| ac::ms_insert_chr_command(m, i, target, kind),
+    );
+    same("MsInsertChrCommand", a, b);
+}
+
+/// Whether `sym` (`MsGetChrPos` or `MsGetChrBtlPos`) writes actor `i`'s
+/// position (both oracles call it on `probe`): where it does not, the
+/// originals use their stack garbage.
+fn writes(a: &mut Oracle, b: &mut Oracle, sym: u32, i: u32, probe: u32) -> bool {
+    use ffx_battle::pos::bridge as p;
+    poke(a, b, probe, &[0xff; 16]);
+    twin("position probe", a, b, sym, &[i, probe], ALL, |m| {
+        if sym == 0x0079_56e0 {
+            p::ms_get_chr_pos(m, &stand_in, i, probe).cast_unsigned()
+        } else {
+            p::ms_get_chr_btl_pos(m, &stand_in, i, probe).cast_unsigned()
+        }
+    });
+    same("position probe", a, b);
+    b.read(probe, 12).unwrap().iter().all(|&x| x != 0xff)
+}
+
+/// The escape direction and the walk-up check (`ffx_battle::target`).
+fn near(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    let h = host();
+    // nobody stands on another (status and actions leave 0 there)
+    for k in 0..ACTORS {
+        poke(a, b, w.actor(k) + 0x43f, &[0xff]);
+    }
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    // the escape position's y is never written: the original's stack
+    // garbage reaches VF2.y and VF3.y through MsVectorRect2Polar (tiny next
+    // to x and z, which must be written)
+    let probe = out + 0x40;
+    poke(a, b, probe, &[0xff; 16]);
+    twin(
+        "MsGetChrEscapePos",
+        a,
+        b,
+        0x0079_4ec0,
+        &[i, probe],
+        ALL,
+        |m| {
+            let trig = &stand_in;
+            ffx_battle::flow::bridge::ms_get_chr_escape_pos(m, i, probe, |m, a, index, kk, out| {
+                ffx_battle::pos::bridge::ms_get_summoner_pos(
+                    m,
+                    trig,
+                    a,
+                    index.cast_unsigned(),
+                    kk.cast_unsigned(),
+                    out,
+                );
+            })
+            .cast_unsigned()
+        },
+    );
+    same("MsGetChrEscapePos", a, b);
+    let e = b.read(probe, 12).unwrap();
+    let escape = e[0..4] != [0xff; 4] && e[8..12] != [0xff; 4];
+    if escape && writes(a, b, 0x0079_56e0, i, probe) {
+        ftwin("MsGetEscapeDir", a, b, 0x007a_99b0, &[i], |m| {
+            dm(m, |m| t::ms_get_escape_dir(m, &h, i))
+        });
+        let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+        for at in [m + 0x24, m + 0x34] {
+            let v = a.read(at, 4).unwrap();
+            b.write(at, &v).unwrap();
+        }
+        local_words(a, b);
+    }
+    same("MsGetEscapeDir", a, b);
+    let walk = if rng.below(4) == 0 { 0 } else { 0x1000 };
+    poke(
+        a,
+        b,
+        actor + 0x4ac,
+        &(walk | (rng.next() & !0x1000)).to_le_bytes(),
+    );
+    for o in [0x4b4, 0x44b] {
+        poke(a, b, actor + o, &[u8::from(rng.below(3) == 0)]);
+    }
+    poke(a, b, actor + 0x40d, &[u8::try_from(rng.below(30)).unwrap()]);
+    if !writes(a, b, 0x0079_56e0, i, probe) {
+        return;
+    }
+    let mut targets =
+        [1 << rng.below(ACTORS), 1 << i, rng.next() & 0x7fff_ffff, 0][rng.below(4) as usize];
+    for j in 0..ACTORS {
+        if targets >> j & 1 != 0 && !writes(a, b, 0x0079_48e0, j, probe) {
+            targets &= !(1 << j);
+        }
+    }
+    // an actor at its battle position, targeting itself: its move
+    // target is where it stands (the "near" case)
+    if rng.below(3) == 0 && writes(a, b, 0x0079_48e0, i, probe) {
+        targets = 1 << i;
+        poke(a, b, actor + 0x4b4, &[0]);
+        twin("MsSetChrPos", a, b, 0x0079_6150, &[i, probe], ALL, |m| {
+            ffx_battle::body::bridge::ms_set_chr_pos(m, i, probe).cast_unsigned()
+        });
+        same("MsSetChrPos", a, b);
+    }
+    poke(a, b, actor + 0xdc0, &targets.to_le_bytes());
+    twin(
+        "MsCheckTargetsNear",
+        a,
+        b,
+        0x007a_f0f0,
+        &[i, actor, targets],
+        ALL,
+        |m| dm(m, |m| t::ms_check_targets_near(m, &h, i, actor, targets)),
+    );
+    local_words(a, b);
+    same("MsCheckTargetsNear", a, b);
+    twin(
+        "MsCheckChrNear",
+        a,
+        b,
+        0x007a_f230,
+        &[i, actor],
+        0xff,
+        |m| dm(m, |m| t::ms_check_chr_near(m, &h, i, actor)),
+    );
+    local_words(a, b);
+    same("MsCheckChrNear", a, b);
 }
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
@@ -1060,6 +1223,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
         calls(a, b, rng, &w, out, !synthetic);
+        // on the dressed actors (status and actions change their fields)
+        near(a, b, rng, &w, out);
         status(a, b, rng, &w, out);
         actions(a, b, rng, &w, out);
     }

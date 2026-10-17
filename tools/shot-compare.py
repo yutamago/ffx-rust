@@ -31,9 +31,15 @@ RADIUS = 12
 # a glow pixel by chance (seen: 8 to 15 levels); a missing or moved element
 # differs by far more
 TOLERANCE = 24
+# regions left out per screenshot (x0, y0, x1, y1, top-left origin): the
+# main menu's play time blinks its colon once a second of wall time, so two
+# original runs can both show it while the port's run catches it off
+MASKS = {
+    "menu-browse-2.bmp": [(140, 575, 165, 605)],
+}
 BLOCK = 40
 COARSE = 25
-SKY = 120  # coarse shots: rows above this are left out
+SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
 
 
 def block_means(w, h, px):
@@ -84,6 +90,9 @@ for a_path in sorted(a_dir.glob("*.bmp")):
     box = [w, h, -1, -1]
     for i in range(0, w * h * 4, 4):
         if not noise[i // 4] and max(abs(a[i + c] - r[i + c]) for c in range(3)) > TOLERANCE:
+            mx, my = (i // 4) % w, h - 1 - (i // 4) // w
+            if any(x0 <= mx < x1 and y0 <= my < y1 for x0, y0, x1, y1 in MASKS.get(a_path.name, ())):
+                continue
             stable_diff += 1
             x, y = (i // 4) % w, h - 1 - (i // 4) // w
             box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]

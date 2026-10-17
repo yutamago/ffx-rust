@@ -1,7 +1,9 @@
 //! Drives the running game through the `ffx-hook` test harness
 //! (`docs/harness.md`): launches `FFX.exe` from WSL with
-//! `tools/run-game.sh --harness <port> --background`, then sends it one
-//! command per line over `127.0.0.1`.
+//! `tools/run-game.sh --instance <n> --harness <port> --background`, then
+//! sends it one command per line over `127.0.0.1`. Every launch takes a
+//! slot of the pool ([`slot`]): its own game folder, port, Documents
+//! folder and output directory, so several games run side by side.
 //!
 //! ```no_run
 //! let mut game = ffx_harness::Game::launch(&ffx_harness::Options::default())?;
@@ -43,17 +45,28 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Options {
     /// The repository (for `tools/run-game.sh`).
     pub repo: PathBuf,
-    pub port: u16,
+    /// The harness port; `None` (the default) uses the slot's,
+    /// [`base_port`] + slot.
+    pub port: Option<u16>,
     /// Show the window without taking the focus.
     pub background: bool,
     /// How long to wait for the harness to answer.
     pub startup: Duration,
     /// The game's Documents folder: settings and saves are read and
-    /// written there, never in the user's own. `None` uses the real one.
-    pub home: Option<PathBuf>,
-    /// Copy the user's settings and saves into `home` before each launch
-    /// (a fresh copy, so every run starts from the same saves).
+    /// written there, never in the user's own (unless [`Home::Real`]).
+    pub home: Home,
+    /// Copy the user's settings and saves into the sandboxed home before
+    /// each launch (a fresh copy, so every run starts from the same saves).
     pub copy_user_data: bool,
+    /// Save files to put into the sandboxed home after that copy:
+    /// `(slot name, source file)`, the name as the game's (`ffx_001`; entry
+    /// 1 of the load screen is the first manual save). Lets a test run from
+    /// a given save, independent of the user's.
+    pub saves: Vec<(String, PathBuf)>,
+    /// Mod folders to add to the game instance's `mods/` (as
+    /// `mods/<folder name>`), for this launch only; the game folder's own
+    /// mods are there too.
+    pub mods: Vec<PathBuf>,
     /// Seed of the random number generators (instead of the clock), so
     /// encounters, battles and drops repeat. `None` keeps the clock.
     pub seed: Option<u32>,
@@ -76,14 +89,13 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             repo: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
-            port: std::env::var("FFX_HARNESS_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(27100),
+            port: None,
             background: true,
             startup: Duration::from_secs(90),
-            home: Some(std::env::temp_dir().join("ffx-harness/home")),
+            home: Home::Instance,
             copy_user_data: true,
+            saves: Vec::new(),
+            mods: Vec::new(),
             seed: Some(1),
             fast: true,
             gfx: std::env::var("FFX_GFX").ok().filter(|v| !v.is_empty()),
@@ -94,6 +106,55 @@ impl Default for Options {
                 .filter(|v| !v.is_empty()),
         }
     }
+}
+
+/// Where the game's Documents folder is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Home {
+    /// The slot's own sandbox, [`slot_dir`]`/home`.
+    Instance,
+    /// This folder (made afresh at each launch).
+    Dir(PathBuf),
+    /// The user's real Documents folder (settings and saves are changed).
+    Real,
+}
+
+/// The first slot's harness port (`FFX_HARNESS_PORT`, default 27100); slot
+/// `n` listens on this + `n`.
+#[must_use]
+pub fn base_port() -> u16 {
+    std::env::var("FFX_HARNESS_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(27100)
+}
+
+/// The harness's own folder: `FFX_HARNESS_DIR`, else `~/ffx-work/harness`
+/// (not `/tmp`, which a WSL shutdown empties).
+#[must_use]
+pub fn work_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("FFX_HARNESS_DIR") {
+        return PathBuf::from(d);
+    }
+    let home = std::env::var_os("HOME").map_or_else(std::env::temp_dir, PathBuf::from);
+    home.join("ffx-work/harness")
+}
+
+/// Slot `n`'s output directory (WSL side): [`work_dir`]`/<n>`, for
+/// screenshots, its sandboxed home and anything a test writes.
+#[must_use]
+pub fn slot_dir(n: u32) -> PathBuf {
+    work_dir().join(n.to_string())
+}
+
+/// Game instance `n`'s folder (`tools/instance.sh`).
+#[must_use]
+pub fn instance_dir(n: u32) -> PathBuf {
+    if let Some(d) = std::env::var_os("FFX_INSTANCES_DIR") {
+        return PathBuf::from(d).join(n.to_string());
+    }
+    let home = std::env::var_os("HOME").map_or_else(std::env::temp_dir, PathBuf::from);
+    home.join("ffx-work/instances").join(n.to_string())
 }
 
 /// A screenshot: 8-bit RGB, rows top first.
@@ -213,6 +274,11 @@ fn crc32(data: &[u8]) -> u32 {
 pub struct Game {
     stream: BufReader<TcpStream>,
     shot_dir: PathBuf,
+    port: u16,
+    /// The slot (instance) this game runs in, when launched.
+    instance: Option<u32>,
+    /// The length of the instance's `ffx-hook.log` before the launch.
+    log_start: u64,
     owned: bool,
     log: Vec<String>,
     /// The game slot while this launched the game ([`slot`]).
@@ -262,9 +328,21 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The saves' folder under the game's Documents folder.
+const SAVE_FOLDER: &str = "FINAL FANTASY X";
+
 /// Empties the sandbox Documents folder and copies the user's game folder
-/// (settings and saves) into it. The user's own files are only read.
-fn prepare_home(home: &Path, copy: bool) -> Result<()> {
+/// (settings and saves) into it, then the chosen saves. The user's own
+/// files are only read.
+fn prepare_home(home: &Path, copy: bool, saves: &[(String, PathBuf)]) -> Result<()> {
+    if let Ok(real) = user_documents()
+        && home.starts_with(&real)
+    {
+        return Err(Error::Launch(format!(
+            "{} is inside the user's Documents folder",
+            home.display()
+        )));
+    }
     if home.exists() {
         std::fs::remove_dir_all(home)?;
     }
@@ -274,6 +352,15 @@ fn prepare_home(home: &Path, copy: bool) -> Result<()> {
         if source.is_dir() {
             copy_tree(&source, &home.join(GAME_DOCUMENTS))?;
         }
+    }
+    let folder = home.join(GAME_DOCUMENTS).join(SAVE_FOLDER);
+    for (name, source) in saves {
+        if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+            return Err(Error::Launch(format!("bad save name {name:?}")));
+        }
+        std::fs::create_dir_all(&folder)?;
+        std::fs::copy(source, folder.join(name))
+            .map_err(|e| Error::Launch(format!("save {name} from {}: {e}", source.display())))?;
     }
     test_display(&home.join(GAME_DOCUMENTS).join("GameSetting.ini"))
 }
@@ -318,12 +405,6 @@ fn windows_path(path: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
-/// Whether a parent process holds the game slot for this one
-/// (`FFX_GAME_SLOT_HELD=1`, set by `game-slot run`).
-fn slot_held() -> bool {
-    std::env::var("FFX_GAME_SLOT_HELD").is_ok_and(|v| v == "1")
-}
-
 impl Game {
     /// Starts the game (installing the hook DLL) and connects.
     ///
@@ -331,48 +412,25 @@ impl Game {
     /// Fails when the launcher fails or the harness does not answer in
     /// time.
     pub fn launch(options: &Options) -> Result<Self> {
-        // One game at a time: queue for it unless a caller already holds
-        // the slot for us (`game-slot run`).
-        let held = slot_held();
-        let slot = if held {
-            None
-        } else {
-            Some(slot::Slot::acquire()?)
-        };
-        // A game that is still shutting down frees the port within seconds.
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while Self::connect(options.port).is_ok_and(|mut g| {
-            g.stream
-                .get_mut()
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .is_ok()
-                && g.command("ping").is_ok()
-        }) {
-            if Instant::now() > deadline {
-                // The slot is ours, so a harness game still answering is an
-                // orphan (its test was stopped before it could end it): end
-                // it the way `Game::end` does. Games started without the
-                // harness never answer on the port and are left alone.
-                if let Ok(mut orphan) = Self::connect(options.port) {
-                    eprintln!(
-                        "game slot: ending an orphaned game on port {}",
-                        options.port
-                    );
-                    let _ = orphan.command("quit");
-                }
-                std::thread::sleep(Duration::from_secs(3));
-                if Self::connect(options.port).is_ok() {
-                    return Err(Error::Launch(format!(
-                        "a game already answers on port {} and did not quit",
-                        options.port
-                    )));
-                }
-                break;
+        // Take a slot of the pool (waiting for one), unless a caller
+        // already holds one for us (`game-slot run`).
+        let (number, slot) = match slot::held() {
+            Some(n) => (n, None),
+            None => {
+                let s = slot::Slot::acquire()?;
+                (s.number(), Some(s))
             }
-            std::thread::sleep(Duration::from_millis(500));
-        }
+        };
+        let port = options
+            .port
+            .unwrap_or_else(|| base_port().saturating_add(u16::try_from(number).unwrap_or(0)));
+        Self::end_orphan(port)?;
         let mut cmd = Command::new(options.repo.join("tools/run-game.sh"));
-        cmd.arg("--harness").arg(options.port.to_string());
+        cmd.arg("--instance").arg(number.to_string());
+        cmd.arg("--harness").arg(port.to_string());
+        for dir in &options.mods {
+            cmd.arg("--mod").arg(dir);
+        }
         // The launcher refuses to start a game when someone else has the slot.
         cmd.env("FFX_GAME_SLOT_HELD", "1");
         if options.fast {
@@ -387,9 +445,18 @@ impl Game {
         if let Some(list) = &options.hook_disable {
             cmd.arg("--hook-disable").arg(list);
         }
-        if let Some(home) = &options.home {
-            prepare_home(home, options.copy_user_data)?;
+        let home = match &options.home {
+            Home::Instance => Some(slot_dir(number).join("home")),
+            Home::Dir(dir) => Some(dir.clone()),
+            Home::Real => None,
+        };
+        if let Some(home) = home {
+            prepare_home(&home, options.copy_user_data, &options.saves)?;
             cmd.arg("--home").arg(home);
+        } else if !options.saves.is_empty() {
+            return Err(Error::Launch(
+                "saves are only put into a sandboxed home".into(),
+            ));
         }
         if options.background {
             cmd.arg("--background");
@@ -400,6 +467,8 @@ impl Game {
         if options.renderer {
             cmd.arg("--renderer");
         }
+        let log_start =
+            std::fs::metadata(instance_dir(number).join("ffx-hook.log")).map_or(0, |m| m.len());
         let status = cmd.status()?;
         if !status.success() {
             return Err(Error::Launch(format!("tools/run-game.sh: {status}")));
@@ -408,11 +477,15 @@ impl Game {
         loop {
             // Ready once the first frame is presented (the frame hook runs
             // the commands that touch the game).
-            if let Ok(mut game) = Self::connect(options.port)
+            if let Ok(mut game) = Self::connect(port)
                 && game.frame().is_ok_and(|f| f > 0)
             {
                 game.owned = true;
                 game.slot = slot;
+                game.instance = Some(number);
+                game.log_start = log_start;
+                game.shot_dir = slot_dir(number);
+                std::fs::create_dir_all(&game.shot_dir)?;
                 return Ok(game);
             }
             if start.elapsed() > options.startup {
@@ -420,6 +493,84 @@ impl Game {
             }
             std::thread::sleep(Duration::from_millis(500));
         }
+    }
+
+    /// Ends a harness game left answering on `port` (its test was stopped
+    /// before it could end it). The slot is ours, so such a game is an
+    /// orphan; games started without the harness never answer on the port
+    /// and are left alone. A game still shutting down gets 15 s first.
+    fn end_orphan(port: u16) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Self::connect(port).is_ok_and(|mut g| {
+            g.stream
+                .get_mut()
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .is_ok()
+                && g.command("ping").is_ok()
+        }) {
+            if Instant::now() > deadline {
+                if let Ok(mut orphan) = Self::connect(port) {
+                    eprintln!("game slot: ending an orphaned game on port {port}");
+                    let _ = orphan.command("quit");
+                }
+                std::thread::sleep(Duration::from_secs(3));
+                if Self::connect(port).is_ok() {
+                    return Err(Error::Launch(format!(
+                        "a game already answers on port {port} and did not quit"
+                    )));
+                }
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        Ok(())
+    }
+
+    /// The harness port.
+    #[must_use]
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// The slot (game instance) of a launched game.
+    #[must_use]
+    pub fn instance(&self) -> Option<u32> {
+        self.instance
+    }
+
+    /// The folder the game runs from: its instance folder.
+    #[must_use]
+    pub fn game_dir(&self) -> Option<PathBuf> {
+        self.instance.map(instance_dir)
+    }
+
+    /// The hook's log of this game (`ffx-hook.log` in its folder).
+    #[must_use]
+    pub fn log_path(&self) -> Option<PathBuf> {
+        self.game_dir().map(|d| d.join("ffx-hook.log"))
+    }
+
+    /// What the hook logged since this game was launched (its own lines:
+    /// the log is the instance's).
+    #[must_use]
+    pub fn new_log(&self) -> String {
+        use std::io::{Read as _, Seek as _};
+        let Some(path) = self.log_path() else {
+            return String::new();
+        };
+        let mut text = Vec::new();
+        if let Ok(mut f) = std::fs::File::open(path)
+            && f.seek(std::io::SeekFrom::Start(self.log_start)).is_ok()
+        {
+            let _ = f.read_to_end(&mut text);
+        }
+        String::from_utf8_lossy(&text).into_owned()
+    }
+
+    /// The slot's output directory (WSL side): screenshots go here.
+    #[must_use]
+    pub fn out_dir(&self) -> &Path {
+        &self.shot_dir
     }
 
     /// Connects to a game that is already running.
@@ -433,11 +584,14 @@ impl Game {
             .map(|a| TcpStream::connect_timeout(&a, Duration::from_secs(2)))
             .ok_or_else(|| Error::Launch("no address".into()))??;
         stream.set_read_timeout(Some(Duration::from_secs(600)))?;
-        let shot_dir = std::env::temp_dir().join("ffx-harness");
+        let shot_dir = work_dir();
         std::fs::create_dir_all(&shot_dir)?;
         Ok(Self {
             stream: BufReader::new(stream),
             shot_dir,
+            port,
+            instance: None,
+            log_start: 0,
             owned: false,
             log: Vec::new(),
             slot: None,
@@ -642,5 +796,26 @@ mod tests {
     #[test]
     fn crc_matches_the_png_reference() {
         assert_eq!(crc32(b"IEND"), 0xae42_6082);
+    }
+
+    /// Chosen saves land in the sandbox's save folder, settings get the
+    /// test display; bad names are refused.
+    #[test]
+    fn prepare_home_puts_the_chosen_saves() {
+        let dir = std::env::temp_dir().join(format!("ffx-home-test-{}", std::process::id()));
+        let source = dir.join("save.bin");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&source, b"save").unwrap();
+        let home = dir.join("home");
+        prepare_home(&home, false, &[("ffx_007".into(), source.clone())]).unwrap();
+        let game = home.join(GAME_DOCUMENTS);
+        assert_eq!(
+            std::fs::read(game.join(SAVE_FOLDER).join("ffx_007")).unwrap(),
+            b"save"
+        );
+        let settings = std::fs::read_to_string(game.join("GameSetting.ini")).unwrap();
+        assert!(settings.contains("ScreenMode=SM_WINDOW"), "{settings}");
+        assert!(prepare_home(&home, false, &[("../x".into(), source)]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

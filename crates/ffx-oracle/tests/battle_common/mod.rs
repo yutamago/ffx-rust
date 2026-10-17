@@ -203,8 +203,9 @@ pub fn script_stubs(o: &mut Oracle, rec: u32) {
 
 /// Replaces the function at `f` (ffx.sym address) in one oracle by a stub
 /// at `at` (ffx.sym address, unused code) that counts its calls at `rec`,
-/// keeps its `n` arguments at `rec + 4` on and returns `ret`: callees of
-/// other modules whose effects the test checks through what they got.
+/// keeps its `n` arguments at `rec + 4` on and returns the word after them
+/// (`ret` at first; write it to change the result): callees of other
+/// modules whose effects the test checks through what they got.
 pub fn recording_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32) {
     let at = o.rebase(at);
     let mut code = vec![0xff, 0x05];
@@ -213,8 +214,10 @@ pub fn recording_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32
         code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0xa3]);
         code.extend((rec + 4 + 4 * u32::from(k)).to_le_bytes());
     }
-    code.push(0xb8);
-    code.extend(ret.to_le_bytes());
+    let r = rec + 4 + 4 * u32::from(n);
+    o.write(r, &ret.to_le_bytes()).unwrap();
+    code.push(0xa1);
+    code.extend(r.to_le_bytes());
     code.push(0xc3);
     o.write(at, &code).unwrap();
     let entry = o.rebase(f);

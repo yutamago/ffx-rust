@@ -373,4 +373,103 @@ pub mod bridge {
         }
         count
     }
+
+    /// Flags that make an aeon's first command fall back to its plain one
+    /// (`MsInsertChrCommand` kind 0).
+    pub const AEON_PLAIN: Global<u8> = Global::new(0x0112_a904);
+    pub const AEON_PLAIN2: Global<u8> = Global::new(0x0112_a900);
+    /// The frame `MsInsertChrCommand` builds its cue in.
+    pub const CHR_COMMAND_FRAME: u32 = 0xff10_0000;
+
+    /// `MsCleanInputCue(chr, keep)` (`0x007b20b0`): every input entry,
+    /// last first, given to [`ms_delete_input_cue`] for `chr`; how many
+    /// went.
+    pub fn ms_clean_input_cue<'d>(
+        mem: &mut Dm<'d>,
+        host: &Host<'_>,
+        s: &mut Script<'_, Dm<'d>>,
+        chr: u32,
+        keep: u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut e = i32::from(INPUT_CUE_COUNT.get(mem)) - 1;
+        while e >= 0 {
+            n = n.wrapping_add(ms_delete_input_cue(
+                mem,
+                host,
+                s,
+                chr,
+                e.cast_unsigned(),
+                0,
+                keep,
+            ));
+            e -= 1;
+        }
+        n
+    }
+
+    /// `MsInsertChrCommand(i, target, kind)` (`0x007ae1a0`): aeon `i`'s
+    /// command 0x3100 on `target` next: its value
+    /// ([`crate::exec::bridge::ms_get_aeon_command`] for `kind`, kind 0
+    /// with [`AEON_PLAIN`] or [`AEON_PLAIN2`] or none: 0 with `+0x1e` set)
+    /// written into the kernel's command 0x3100 (`+0x10`, `+0x12`; `+0x1a`
+    /// bit 6, `+0x1c` bit 27 and bit 30 from the pair's byte), its kind
+    /// (`+0x15`: 0x11 for kind 0, after the party's exchange
+    /// `MsExchangeParty`, 2 for 1, 0x16 for 2), and an input entry and a
+    /// one-entry command cue after `target` (priority 0x40 for kind 2 with
+    /// `+0x3f9`). The command's value.
+    pub fn ms_insert_chr_command(mem: &mut impl Mem, i: u32, target: u32, kind: u32) -> u32 {
+        let a = ms_get_chr(mem, i);
+        let mut f = ffx_bridge::frame::Frame::new(mem, CHR_COMMAND_FRAME, 0x50);
+        let (cue, mode_at, val_at) = (f.at(0), f.at(0x48), f.at(0x4c));
+        let mut v =
+            crate::exec::bridge::ms_get_aeon_command(&mut f, i, 0x3100, kind, mode_at, val_at);
+        if kind == 0 && (AEON_PLAIN.get(&f) != 0 || AEON_PLAIN2.get(&f) != 0 || v == 0) {
+            v = 0;
+            f.write(a.wrapping_add(0x1e), 1u8);
+        }
+        f.write(a.wrapping_add(0xdf2), 0u8);
+        f.write(cue + 2, 0x100u16);
+        f.write(cue + 8, 0x3100u32);
+        f.write(cue + 0x10, 1u32.wrapping_shl(target));
+        let rec = ffx_kernel::bridge::rom(&mut f, ffx_kernel::bridge::COMMAND, 0x3100, 0);
+        let val: u32 = f.read(val_at);
+        let flags: u32 = f.read(rec + 0x1c);
+        let w: u16 = f.read(rec + 0x1a);
+        f.write(rec + 0x1a, w | 0x40);
+        let flags = ((flags & !0x4000_0000) | ((val << 30) & 0x4000_0000)) | 0x800_0000;
+        f.write(rec + 0x1c, flags);
+        let h = v.to_le_bytes();
+        f.write(rec + 0x10, u16::from_le_bytes([h[0], h[1]]));
+        f.write(rec + 0x12, u16::from_le_bytes([h[0], h[1]]));
+        let mut prio = 0u32;
+        match kind {
+            1 => f.write(rec + 0x15, 2u8),
+            2 => {
+                f.write(rec + 0x15, 0x16u8);
+                if byte(&f, a, 0x3f9) != 0 {
+                    prio = 0x40;
+                }
+            }
+            _ => {
+                if kind == 0 {
+                    crate::flow::bridge::ms_exchange_party(&mut f);
+                }
+                f.write(rec + 0x15, 0x11u8);
+            }
+        }
+        crate::cue::bridge::ms_insert_input_cue(&mut f, i, prio, 0, 1, target, 1);
+        let mode: u32 = f.read(mode_at);
+        crate::cue::bridge::ms_insert_command_cue(
+            &mut f,
+            i,
+            cue,
+            mode.to_le_bytes()[0],
+            prio,
+            1,
+            0,
+            target,
+        );
+        v
+    }
 }

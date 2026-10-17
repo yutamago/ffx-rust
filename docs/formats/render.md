@@ -7,7 +7,10 @@ against the originals by `crates/ffx-oracle/tests/render.rs`.
 
 PhyreEngine and the C++ objects built on it (meshes, dynamic geometry,
 clusters) are library code: the ports call their methods through
-`ffx_graphic::host::Host`, never reimplement them.
+`ffx_graphic::host::Host`, never reimplement them. `Host::call_st0`
+reads a callee's float result from `ST0` (as the caller's `fstp m32`
+stores it), through float-returning function signatures, no inline
+assembly.
 
 ## Effect render data
 
@@ -314,3 +317,215 @@ writes the address (minus `0x80000000` from `0x70000000` up), `bytes /
 << 1 | p7) << 14, p2, p3]`. `g_ChrTexAnim` (64 x `0x30`): `+0` loaded,
 `+4` the work buffer (64 animations of `0x34` bytes, active bytes at
 `+0xd08`), `+0xd` the format (0 old, 1 new), `+0xe` the timer.
+
+## Scene state
+
+What `ffx-render` needs from the scene stream lives in a few objects the
+`graphic*` calls set (`crates/ffx-graphic/src/state.rs`).
+
+`g_PhyreApplication` (`0x00cc9cd8`, `Phyre_PFramework_PApplication_GetApplication`):
+
+| Offset | Value | Set / read by |
+|---|---|---|
+| `0x50` | global ambient colour (3 floats) | `graphicSetGlobalAmbientColor` (`0x00643270`), `graphicGetGlobalAmbientColor` (`0x00641230`) |
+| `0x60` | fog colour (3 floats) | `graphicGetFogColor` (`0x00641160`) |
+| `0x70`, `0x74`, `0x7c` | fog near, far, limit | `graphicGetFogNear`/`Far`/`Limit` (`0x006411d0`, `0x006411b0`, `0x006411c0`) |
+| `0x80` | background colour (3 floats) | `graphicSetBackgroundColour` (`0x00642e90`) |
+| `0x26c`, `0x270` | window width and height (`u32`) | `PhyreScene_setCameraAspectRatio` |
+| `0x3ac` | keyframe animation on (byte) | `graphicFFXApplicationEnableKeyframeAnim` (`0x006401e0`) |
+
+The screen fade, in `PostProcessManager` (`0x00ccc8a0`): `+0x1238c` the
+colour (r, g, b, alpha floats), `+0x1239c` the alpha mode, `+0x123a0` a
+lock byte (`graphicLockScreenFadeColor` `0x00641e20`; while set,
+`graphicSetScreenFadeColor` `0x00643900` and `graphicSetScreenFadeAlphaMode`
+`0x006438e0` do nothing; `graphicUnlockScreenFadeColor` `0x006448d0`
+clears it and the alpha), `+0x123a4` the last reason. `+0x123a8` and
+`+0x123c5` are "draw filter / draw focus ran this frame" bytes.
+`graphicSetFocusZ(which, z)` (`0x006430f0`) turns a PS2 z-buffer value
+into the depth-of-field focus `((z - 16770000) / -16769999) * 2 - 1`
+(`z` 0 gives -2) for `PostProcessManager_setFocusDepth`.
+
+Cameras (scene `+0xdc` main, `+0x654` minimap, `+0x238` reflection when
+scene `+0x10d8c` is 1; a camera's `+0xbc` far plane, `+0x150` aspect,
+`+0x154` vertical FOV, virtual 1 its update):
+
+- `graphicCameraSetWorldMatrix(view)` (`0x00639860`, the matrix
+  `Cam_Apply` passes, `0x02311440`) inverts the game's 4x4 view
+  (`sceVu0InversMatrix4x4`), negates x and y of rows 0 and 3 and z of
+  rows 1 and 2 (as 14 fld/fchs/fstp: rows 1 and 2's x and y twice), and
+  stores `PMatrix4_toWorldMatrix3x4` of it
+  at scene `+0xfa04`. A row that is all zero bits makes it use the
+  identity; `g_GraphicSkipFrame` set skips the call.
+- `PhyreScene_setCameraWorldMatrix(m, alt)` (`0x0066ce70`) copies a 3x4
+  matrix to `+0xfa04`, or with `alt` to `+0xfa3c`; the byte `+0xfaa1`
+  says which.
+- `PhyreScene_setMinimapCameraWorldMatrix(m)` (`0x0066d940`) copies it to
+  `+0x7b0`, points the minimap camera's `+0xb4` there and updates it.
+- `PhyreScene_setCameraFOVy(fovy)` (`0x0066cda0`) sets the main and
+  minimap cameras; in a 3D scene (`+0x93c`) map `0xec1` forces
+  `0x3ef126e9` and the minimap camera gets `0x3f2c49ba` on `0x107`,
+  `0x3f5126e9` on `0xf48`.
+- `PhyreScene_setCameraAspectRatio(a)` (`0x0066cbe0`): in a 3D scene
+  `a * 3 * 0.25 * 16/9`; a reflection camera of kind (`+0x10d90`) 0 or 1
+  gets that times 0.5 or 2, and then the main camera `window_w * a *
+  0.75 / window_h` times the same.
+- `PhyreScene_setAbmapCamera(x, y, z, h, scale)` (`0x0066ca60`): the
+  area-map camera (`+0xbe0`, world matrix `+0xd34`, pointed at by
+  `+0xc90`) looks from `(-z*1920/512, x*1080*16/13/scale - h*1080*4/1536,
+  1 - y*1080*16/13/scale)` to `(-z*1920/512, -h*1080*4/1536, 1)`, up
+  `(0, y, x)`.
+- `setFarPlane(f)` (`0x00645e90`): the main camera's far plane.
+
+Meshes: `PhyreScene_setMeshInstanceWorldMatrix(mesh, m)` (`0x0066d810`,
+stdcall) negates x and y of every row of the game's 4x4 and converts it
+to the mesh's 3x4 world matrix (`*(mesh +4)`); the draw entry
+(`*(mesh +0x1c) +0xc`) points at it.
+`graphicCharacterInstanceSetSkeletonMatrices(chr, list, bones)`
+(`0x0063be60`): a character's instance list is a count (bit 31 a flag)
+and pointers to its meshes' instances; instance `+0` its skeleton
+(`+0x18` bone count, `+0x1c` default matrices), `+0xc` its skin
+matrices; `list +0x10 +0x14` holds per mesh a bone-index table into the
+game's 64-byte bone matrices. Character `0x206a` keeps its own matrices
+from bone `0x42` up. `...RestoreDefault(list, bone)` (`0x0063bfc0`)
+copies one bone's default back (the first mesh having it, from table
+entry 1). `graphicCharacterInstanceSetVisible(list, v)` (`0x0063c390`)
+sets `list +0x14` and each mesh's visibility.
+
+Object translation: `PhyreScene_setObjectTranslation(id, pos)`
+(`0x0066e3e0`), with the object tree up (`+0x10d4`), finds `id` in the
+tree at scene `+0x1198` (`ObjectTree_Find`, `0x0064b9f0`; the node's
+`+0x10` a list: `+0` count, `+8` meshes) and gives each mesh's 3x4 world
+matrix (`*(mesh +4)`) the translation row `(-x, -y, z)` (words 8-10,
+the others rewritten as they were); each mesh's draw entry (`*(mesh
++0x1c) +0xc`) then points at it. Returns 0.
+
+Shade coefficient: `graphicCharacterLightingSetShadeCoeff(list, c)`
+(`0x0063cdd0`) takes `Phyre_CharacterLighting_calcShadeCoeffWithConfidence(list,
+c, 0)` (an `ST0` result), forced to 1.0 on maps `0x226d` and `0x1739` and
+back to `c` on `0x1c45`, `0xf62` and `0xc04` (the current level hash), sets
+it on each character and reports it to the tweak utility's debug hook
+with mode 1 when `|result - c| > 0.1`, else 2.
+
+2D layers: scene `+0x1140` an array of `+0x1138` entries of 8 bytes (`+0`
+shown, `+1` group (signed byte), `+2` id (signed `i16`), `+4` the mesh),
+`+0x11d8` the current group, `+0x1128` non-zero when there are layers.
+`PhyreScene_show2DLayer`/`hide2DLayer(id)` (`0x0066f2f0`/`0x0065f050`)
+set the first matching entry and its mesh's draw pointer (`+0x1c` of
+the mesh's `+0x1c`: the mesh, or 0).
+
+`graphicConvertScreenCoords(x, y, *fx, *fy)` (`0x0063de10`) maps PS2
+screen units to the 1920x1080 frame: `x * 3.75`, `y * 2.5961537`.
+
+## Replaced by ffx-render
+
+From round 5 the render layer ports only game state and what the scene
+stream needs. These functions only feed PhyreEngine or the D3D11 side;
+`ffx-render` replaces them, so they stay original until the renderer
+takes over, and are not ported:
+
+- `Array_Reserve_*` (`0x00667e00`..`0x00668380`, 12): `PArray` growth.
+- `BlurEffect_GetInstance`, `BlurEffectEx_GetInstance`,
+  `Distortion_GetInstance`, `MotionBlur_GetInstance`,
+  `Distortion_resize`: post-effect objects.
+- `DynGeoMemManager_lockForRecordNumInKeLns`/`unlock...`/`swapDynGeoMemory`,
+  `graphicDynGeoMemManagerClearBuffer`/`GetBuffer`/`GetCurrentBufferId`:
+  vertex-buffer memory.
+- `PhyreScene_ChangeToHSVPass`, `ForceTransparent`, `UseVFXOptimizedTrans`,
+  `createRWTTTarget`, `setEnableRenderWorldToTexture`,
+  `setMaterialColourScale2`, `setupPostProcessParams`, `updateMapYIQ`,
+  `startLoadingScreen`: render passes, targets and material constants.
+- `PhyreScene_attachChrClusterTo3DWorld`, `deletePMeshInstanceInCluster`,
+  `removeMeshInstance`, `removeVFXFromRenderArray`,
+  `PhyreScene_isVFXTextureLoaded` (both, `0x006604d0`, `0x00661c80`),
+  `unloadAtelVFXTexture`, `onCutbufferShaderLoaded`, `onFontTextureLoaded`,
+  `onMenuTextureLoaded`, `getMonsterEtTextureName`, `convertMapPath`:
+  PhyreEngine clusters, render arrays and asset loading.
+- `PhyreScene_UpdateTextureVideo`, `updateTextureVideoCallback`,
+  `graphicTextureVideoPlay`: the video texture.
+- `PhyreScene_getViewProjectionMatrix`: PhyreEngine's camera matrices
+  (`ffx-render` builds its own from the camera state above).
+- `PostProcessManager_renderScreenFade`, `setHDAOSetting`,
+  `RadialLine_destroyRadialLine`, `RenderDelegationHelper_setDataToFreeList`,
+  `ShaderParamBuffer_SetValue`/`SetValue2`, `graphicShaderGetVertexInfo`,
+  `ShadowManager_InsertIntoShadowMap`/`_Double`/`createshadowbuffer`,
+  `TextureAnimationManager_sceenTextureAnimationClear`/`unregisterChararcterInstance`.
+- `graphicSetHSVParam`, `graphicCharacterInstanceSetBTUFadeCenter`: shader
+  parameters (`hsv_scale`, `GradualFade_*`) written into material buffers.
+- `graphicCharacterInstanceUpdateSkeletonounds`, `graphicCharacterSetClipPlane`,
+  `graphicCharacterRestoreSummonTexture`, `graphicCharacterLightingSetLightMatrix`,
+  `graphicPS2LightingSetupEffect`, `graphicAbmapDestory`: PhyreEngine-side
+  model, texture and light objects.
+- `graphicMagic0708ConvBallChr`, `graphicMagic_DrawColorModel_KaMdldrw`:
+  draw an effect's model through PhyreEngine.
+- `tex_anim_no_set_old`, `texanim_malloc_memory_set`: PS2 GS packets.
+
+Platform, not render state (the platform layer replaces them):
+`graphicGetTime`, `graphicGetTimeInMicroseconds`, `graphicSetFlipVsnc`,
+`graphicSetForceNoVsync`, `graphicProcessWindowsMessage`,
+`graphicGetFileReadSemaId`, `graphicGetOldFileReadCompleteSemaId`,
+`graphicAsyncTaskCallback`, `getCurrentControlMode`, `MagicDLLAsyncLoad`,
+`PhyreFIOS_LoadPrxInProgress`, `PhyreFIOS_UnloadPrx`,
+`PhyreFIOSStreamFile_seek`.
+
+Already ported in rounds 1-4 and glue by this rule (kept, since their
+parity is tested, but `ffx-render` will not call them): the
+texture-animation packet writers (`loadImage`, `TexAnim_*`,
+`tex_anim_*`: PS2 GS register writes into `g_GsRegisterSink`), the
+manager singleton accessors and deleters, `DynGeoMemManager_*` buffers
+and trees, `PhyreScene_getLinearSampler`, the `PostProcessManager`
+switch setters (`SetByte123b*`, `setAllSwitches`, `isEffectAllowed`,
+`setCrossFadeCaptureEnable`), `ShadowManager` map bookkeeping,
+`SpecularMapParamsManager_needDrawSpecularPass`, `Distortion_updateVertex`.
+
+Dead by `symbols/classes.tsv` (no reference anywhere in the image), so
+not hooked; their behaviour above is still checked by the oracle test:
+`graphicCharacterInstanceRemoveFromPipeline`, `graphicPushTip`,
+`graphicConvertScreenCoords`, `graphicCharacterLightingSetPointLightColor`/
+`Position`/`Range`, `setFarPlane`.
+
+## Debug code
+
+Not ported; listed for mod tools:
+
+- `DebugMenuManager_CreateInstance` (`0x006b4950`): creates the
+  developer debug menu singleton (`g_DebugMenuManager`).
+- `graphicCharacterLightingSetShadeCoeff_debug` (`0x0063cec0`): forces
+  each character's shade coefficient (1.0 on three maps, else the
+  tweak default) and reports it to `CharacterLightingTweakUtil`'s debug
+  hook.
+- `graphicCharacterLightingSetShadeCoeffUnused` (`0x0063cf70`, no
+  callers): the shade-coefficient setter's older variant, also with the
+  tweak-util debug hook.
+- `graphicCharacterInstanceOutputAllVertexBuffers` (`0x0063b290`):
+  prints every mesh, segment, vertex stream and its values of a
+  character to stdout (a vertex-buffer dump; a model-export start).
+- The tweak-util hooks the shipping code still calls
+  (`Phyre_CharacterLightingTweakUtil_setShadeCoeff_dbgHook`,
+  `PostProcessTweakUtil`): live tuning of lighting and post-processing.
+
+## Helpers
+
+Small functions the render layer's callers rely on
+(`crates/ffx-graphic/src/util.rs`):
+
+- `ClipOutcode(v)` (`0x00652470`): for `(x, y, z, w)`, bits 0-2 set when
+  `x - w`, `y - w`, `z - w` (each stored as a float) are above 0, bits
+  3-5 when `w + x`, `w + y`, `w + z` are below 0; a NaN sets nothing.
+- `graphicIsMapInList()` (`0x00642610`): 1 for the map ids `0x118`,
+  `0x52`, `0x51`, `0xde`, `0x13c`, `0x17d`, `0x5d`, `0x12`, `0x15d`,
+  `0xf8`, `0x99`, `0xb3`, `0x50`, `0x137`, `0x16b`, `0x84` (in
+  `0x01330844`).
+- `ShadowManager_GetCascadeMatrix(out, i)` (`0x006d23a0`): the 4x4 at
+  `+0x210 + 64 i`.
+- Containers: `Vec3_UninitializedCopy` (`0x006b4f80`; a null destination
+  skips only the first element), `FloatHeap_AdjustHeap` (`0x006c7250`,
+  `std::_Adjust_heap` with a `less` callback; floats move through
+  `fld`/`fstp`), `MapIterator_Decrement` (`0x0064f360`), the search-tree
+  finds `ObjectTree_Find`, `UIntTree_Find` (`0x006be700`, the same code as
+  `DynGeoTree_Find`) and `PStringTree_Find` (`0x006be750`, by `PString`
+  text: the pointer without its flag bit, `strcmp` order, by pointer when
+  either is null).
+
+Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
+reference count with `lock xadd`; game memory access through `Mem` is
+not atomic, and loader threads share strings, so it stays original.
