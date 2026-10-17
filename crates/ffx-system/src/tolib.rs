@@ -958,4 +958,309 @@ pub mod bridge {
         let n = n as f32;
         f32::from_bits(store(div(f64::from(n), load(s[0].to_bits()))))
     }
+
+    /// The three words that keep `0x008b8430` from widening (`0x01340824`
+    /// movie fading, `0x0133c948`, `0x01327100`).
+    pub const WIDE_BLOCKERS: [u32; 3] = [0x0134_0824, 0x0133_c948, 0x0132_7100];
+
+    /// `0x008b8430(i, x)`: an x position in window `i` moved for a wide
+    /// screen. Only for type-1 windows (`TOGetWindowType`) with none of
+    /// [`WIDE_BLOCKERS`] set; there, with the font screen size `w`, `h`
+    /// (`graphicFontGetScreenWH`, passed in), `hs = h / 416`, `ws = w /
+    /// 512`, the result is `(w - 512 hs) / (2 ws) + x hs / ws`, the
+    /// intermediates stored as `f32` where the original stores them;
+    /// otherwise `x`. In 53-bit precision, returned in `st(0)`.
+    #[allow(clippy::many_single_char_names)] // the screen terms
+    pub fn wide_window_x<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        x: f32,
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) -> f32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        if crate::window::bridge::window_type(mem, i) != 1 {
+            return x;
+        }
+        for g in WIDE_BLOCKERS {
+            let g = mem.rebase(g);
+            if mem.read::<u32>(g) != 0 {
+                return x;
+            }
+        }
+        let (w, h) = screen_wh(mem);
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let (w, h) = (f64::from(w as f32), f64::from(h as f32));
+        let f = |v: f64| f64::from(f32::from_bits(store(v)));
+        let hs = f(div(h, 416.0));
+        let ws = f(mul(w, 1.0 / 512.0));
+        let diff = f(sub(w, mul(512.0, hs)));
+        let two = f(add(ws, ws));
+        let q1 = div(diff, two);
+        let r = f(mul(div(hs, ws), load(x.to_bits())));
+        f32::from_bits(store(add(q1, r)))
+    }
+
+    /// The font spaces `TOGetFontSpaceInPiexl` caches (`0x018716b4`,
+    /// `0x018716b8`, f32).
+    pub const FONT_SPACES: Global<[f32; 2]> = Global::new(0x0187_16b4);
+
+    /// The scale factor of the wide space (`0x00b66c70`, `0.7f32` as a
+    /// double).
+    const SPACE_SCALE: f64 = 0.699_999_988_079_071;
+
+    /// `TOGetFontSpaceInPiexl(kind)` (`0x008fa570`): the space widths in
+    /// pixels, computed once (while the first is 0): the scales as
+    /// [`font_width_in_pixel`] computes them when the width scale is 0;
+    /// then for languages 1..=8 (`lang`, asked twice) both spaces
+    /// `trunc(ws * 0.7 + 0.5) / ws`, for the others the narrow one
+    /// `trunc(ws * 0.5 + 0.5) / ws` and the wide one `trunc(ws * 0.7 +
+    /// 0.5) / ws`. Kind 1 or 3 gets the wide one. In 53-bit precision,
+    /// returned in `st(0)`.
+    pub fn font_space_in_pixel<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        mut lang: impl FnMut(&mut M) -> u32,
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) -> f32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store};
+        if FONT_SPACES.get(mem)[0] == 0.0 {
+            let mut s = FONT_SCALES.get(mem);
+            if s[0] == 0.0 {
+                let (w, h) = screen_wh(mem);
+                #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+                let (w, h) = (w as f32, h as f32);
+                s[0] = f32::from_bits(store(mul(f64::from(w), 1.0 / 512.0)));
+                s[1] = f32::from_bits(store(div(f64::from(h), 416.0)));
+                FONT_SCALES.set(mem, s);
+            }
+            let ws = load(s[0].to_bits());
+            let snap = |mem: &M, k: f64| {
+                let n = ftol(mem, add(mul(ws, k), 0.5)).cast_signed();
+                #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+                let n = n as f32;
+                f32::from_bits(store(div(f64::from(n), ws)))
+            };
+            // asked twice, as the original does
+            let latin = lang(mem).cast_signed() > 0 && lang(mem).cast_signed() < 9;
+            let spaces = if latin {
+                let v = snap(mem, SPACE_SCALE);
+                [v, v]
+            } else {
+                [snap(mem, 0.5), snap(mem, SPACE_SCALE)]
+            };
+            FONT_SPACES.set(mem, spaces);
+        }
+        let s = FONT_SPACES.get(mem);
+        if kind.to_le_bytes()[0] == 3 || kind.to_le_bytes()[0] == 1 {
+            s[1]
+        } else {
+            s[0]
+        }
+    }
+
+    /// `0x008ada30(i)`: message-window slot `i` set up: its seven words
+    /// zeroed, its parts pointed at window `i` (`TOGetWindowStructAdrs`),
+    /// message `i` and parameter entry `i`; the window cleared (0x7c bytes,
+    /// `memset`), the message initialised (`TOInitMessage`); the window and
+    /// message tagged with `i` (`+2`, `+4`), the slot's `+4` -1, and the
+    /// message's handler `+0xfc` `0x008b64a0`. Returns the message.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )] // `mov word, si`; slot, window, message
+    pub fn init_message_slot(mem: &mut impl Mem, i: i32) -> u32 {
+        let slots = crate::window::bridge::MSG_WINDOW_SLOTS.ptr(mem).addr;
+        let at = slots.wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let s: u32 = mem.read(at);
+        mem.write(s, [0u32; 7]);
+        let w = crate::window::bridge::window(mem, i);
+        let s: u32 = mem.read(at);
+        mem.write(s.wrapping_add(0x10), w);
+        let m = crate::window::bridge::message_window(mem, i);
+        let s: u32 = mem.read(at);
+        mem.write(s.wrapping_add(0x14), m);
+        let e = crate::window::bridge::table_01868a90_entry(mem, i);
+        let s: u32 = mem.read(at);
+        mem.write(s.wrapping_add(0x18), e);
+        let w: u32 = mem.read(s.wrapping_add(0x10));
+        mem.write(w, [0u8; 0x7c]);
+        init_message(mem, i);
+        let s: u32 = mem.read(at);
+        let w: u32 = mem.read(s.wrapping_add(0x10));
+        mem.write(w.wrapping_add(2), i as u16);
+        let m: u32 = mem.read(s.wrapping_add(0x14));
+        mem.write(m.wrapping_add(4), i as u16);
+        mem.write(s.wrapping_add(4), 0xffffu16);
+        let m: u32 = mem.read(s.wrapping_add(0x14));
+        let h = mem.rebase(0x008b_64a0);
+        mem.write(m.wrapping_add(0xfc), h);
+        m
+    }
+
+    /// The image sizes `TOGetImageWH` reads for the screen-sized images
+    /// (`0x01841dac`, 16-byte entries: `i16` width, `i16` height).
+    pub const IMAGE_SIZES: Global<[i16; 2]> = Global::new(0x0184_1dac);
+
+    /// The size of image `id` in `TOGetImageWH`: a constant, or an entry of
+    /// [`IMAGE_SIZES`] (`Err(k)`). Ids `0x3c00` and `0x3d00` pick their
+    /// entry by the language and battle state ([`get_image_wh`]).
+    ///
+    /// # Errors
+    ///
+    /// The index of the [`IMAGE_SIZES`] entry to read instead.
+    pub fn image_wh_of(id: u32) -> Result<(f32, f32), u32> {
+        Ok(match id {
+            0x2eac => (512.0, 416.0),
+            0x2ecc => (512.0, 128.0),
+            0x2ed0 | 0x2ed4 | 0x3e81 => (512.0, 256.0),
+            0x2f00 | 0x2f04 | 0x0013_2f00 | 0x0013_2f04 => (512.0, 512.0),
+            0x3d80 => (128.0, 256.0),
+            0x3dc0 => (256.0, 128.0),
+            0x3e00 | 0x3f00 | 0x0013_2f08 | 0x0013_2f0c => (256.0, 256.0),
+            0x3e80 | 0x3e83 => (2048.0, 1024.0),
+            0x3e86 => (1024.0, 1024.0),
+            0x3d01 => return Err(3),
+            0x3d40 => return Err(4),
+            0x3d60 => return Err(5),
+            // 0x3d10, 0x3d20, 0x3d30, and every unknown id (the original
+            // also calls the empty `dbgPrintf` for those)
+            _ => return Err(0),
+        })
+    }
+
+    /// `TOGetImageWH(id, &w, &h)` (`0x008ac400`): the width and height of
+    /// image `id` as floats ([`image_wh_of`]; `TkGetLang` and
+    /// `MsBattleGetStatus` passed in). Returns `h`'s address.
+    pub fn get_image_wh<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        out: [u32; 2],
+        lang: impl FnOnce(&mut M) -> u32,
+        battle: impl FnOnce(&mut M) -> u32,
+    ) -> u32 {
+        let k = match id {
+            0x3c00 => Err(if lang(mem) != 0 { 4 } else { 0 }),
+            0x3d00 => Err(if battle(mem) != 0 { 2 } else { 1 }),
+            _ => image_wh_of(id),
+        };
+        let (w, h) = k.unwrap_or_else(|k| entry_wh(mem, k));
+        mem.write(out[0], w);
+        mem.write(out[1], h);
+        out[1]
+    }
+
+    fn entry_wh(mem: &impl Mem, k: u32) -> (f32, f32) {
+        let e = IMAGE_SIZES.ptr(mem).addr.wrapping_add(k << 4);
+        let w: i16 = mem.read(e);
+        let h: i16 = mem.read(e.wrapping_add(2));
+        (f32::from(w), f32::from(h))
+    }
+
+    /// The limit sound effect (`0x8000004e`).
+    pub const LIMIT_SE: u32 = 0x8000_004e;
+
+    /// `0x0089ab20()` and `0x0089aba0()`: the limit timer's flag
+    /// ([`LIMIT_TIMER`] `+0`) 1 and a playing [`LIMIT_SE`] stopped
+    /// (`SndIsSepPlay`, `SndSepStop`, passed in as `sound(stop, id)`).
+    /// Returns the last call's `eax`.
+    pub fn limit_timer_stop<M: Mem>(
+        mem: &mut M,
+        mut sound: impl FnMut(&mut M, bool, u32) -> u32,
+    ) -> u32 {
+        let t = LIMIT_TIMER.ptr(mem).addr;
+        mem.write(t, 1u32);
+        if sound(mem, false, LIMIT_SE) == 0 {
+            return 0;
+        }
+        sound(mem, true, LIMIT_SE)
+    }
+
+    /// `0x0089ab50()`: unless the flag is already 2, flag 2 and
+    /// [`LIMIT_SE`] started (`SndSepPlaySimple`) when not playing;
+    /// `sound(play, id)` is `SndIsSepPlay` or `SndSepPlaySimple`.
+    pub fn limit_timer_start<M: Mem>(mem: &mut M, mut sound: impl FnMut(&mut M, bool, u32) -> u32) {
+        let t = LIMIT_TIMER.ptr(mem).addr;
+        if mem.read::<u32>(t) == 2 {
+            return;
+        }
+        mem.write(t, 2u32);
+        if sound(mem, false, LIMIT_SE) == 0 {
+            sound(mem, true, LIMIT_SE);
+        }
+    }
+
+    /// The window layout `0x00905e90` copies into (`0x01876148`).
+    pub const WINDOW_LAYOUT: Global<u32> = Global::new(0x0187_6148);
+
+    /// `0x00905e90(table, i)`: layout `i` of a layout table (a count, then
+    /// offsets from the table): its count `n` (forced to 1 for layout
+    /// 0x43) and `n` 12-byte entries copied to [`WINDOW_LAYOUT`] (`memcpy`
+    /// of `12 n + 4` bytes), the count rewritten to 1 when it is 1.
+    /// Returns the copy, or 0 for `i` out of range.
+    pub fn copy_window_layout(mem: &mut impl Mem, table: u32, i: u32) -> u32 {
+        if i >= mem.read::<u32>(table) {
+            return 0;
+        }
+        let off: u32 = mem.read(table.wrapping_add(4).wrapping_add(i.wrapping_mul(4)));
+        let src = off.wrapping_add(table);
+        let mut n: u32 = mem.read(src);
+        if i == 0x43 {
+            n = 1;
+        }
+        let dst = WINDOW_LAYOUT.ptr(mem).addr;
+        let len = n.wrapping_mul(12).wrapping_add(4);
+        for k in 0..len {
+            let v: u8 = mem.read(src.wrapping_add(k));
+            mem.write(dst.wrapping_add(k), v);
+        }
+        if n == 1 {
+            WINDOW_LAYOUT.set(mem, 1);
+        }
+        dst
+    }
+
+    /// The words `TOMenuInit` clears: `0x025d16b8..=0x025d16c0`,
+    /// `0x0186a214`, and the halves `0x0186a1d0`, `0x0186a1ec`.
+    pub const MENU_INIT_WORDS: [u32; 4] = [0x025d_16c0, 0x025d_16bc, 0x025d_16b8, 0x0186_a214];
+
+    /// `TOMenuInit()` (`0x008be800`): the menu words cleared, then (a tail
+    /// call) [`init_pad_data`].
+    pub fn menu_init(mem: &mut impl Mem) -> u32 {
+        for g in MENU_INIT_WORDS {
+            let g = mem.rebase(g);
+            mem.write(g, 0u32);
+        }
+        for g in [0x0186_a1d0, 0x0186_a1ec] {
+            let g = mem.rebase(g);
+            mem.write(g, 0u16);
+        }
+        init_pad_data(mem)
+    }
+
+    /// `TOMenuInitBrush()` (`0x00900f40`): the 16 window-move entries
+    /// ([`WINDOW_MOVES`], 0x100 bytes) zeroed (`memset`); returns their
+    /// address.
+    pub fn menu_init_brush(mem: &mut impl Mem) -> u32 {
+        let at = WINDOW_MOVES.ptr(mem).addr;
+        mem.write(at, [0u8; 0x100]);
+        at
+    }
+
+    /// `TOAmapMakeItemList(k)` (`0x008c6730`): the menu's item list
+    /// refreshed (`TkMenuItemRefresh`, passed in, a tail call) in mode 2,
+    /// 1, 3 or 6 for `k` 0..=3; other `k` return `k`.
+    pub fn amap_make_item_list<M: Mem>(
+        mem: &mut M,
+        k: u32,
+        refresh: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        match k {
+            0 => refresh(mem, 2),
+            1 => refresh(mem, 1),
+            2 => refresh(mem, 3),
+            3 => refresh(mem, 6),
+            _ => k,
+        }
+    }
 }
