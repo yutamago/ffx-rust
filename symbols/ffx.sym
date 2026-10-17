@@ -6420,6 +6420,7 @@
 0x00825670 function Ch_Allocate_InitAll          # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[CHR WORK]'; Switch 0x710040ef70 Ch_Allocate_InitAll (symbols from Fahrenheit's server export)
 0x008256f0 function Ch_ArcMapping             # fh v3:exact 0x00825770
 0x00825760 function Ch_BlkAllocate_00825760      # (name, size) -> a free g_ChrBlk slot (0x4b words), user_malloc'd and registered (Sg_MemSetStr/Type, Ch_CbArcMapping), "SG:Ch_BlkAllocate %x", "SG:monster effect size %s=%d"; caller Ch_BlkGetHandle; own name from the message
+0x00825860 function Ch_BlkNew                 # ours: (header, key, x) takes the first free g_ChrBlk (+0 == -1), clears it (memclear), +0 header, +4 key, Ch_ModelMapping(key), +0x14 x, +0x30/+0x34 1.0, +0x38 0.1; returns it; only caller Ch_BlkGetHandle
 0x008258d0 function Ch_BlkDispose             # fh v3:exact 0x00825950
 0x008259c0 function Ch_BlkDisposeAll          # fh v3:exact 0x00825a40
 0x008259f0 function Ch_BlkDisposeHandle       # fh v3:exact 0x00825a70
@@ -6599,6 +6600,7 @@
 0x0082bcc0 function Sg_AccGetAlpha            # () -> i16 0x0130070e, the value Sg_AccSetAlpha sets
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
 0x0082bdc0 function Sg_AccSetClear            # (r, g, b, a): bytes 0x01300771..74; Switch name (36 bytes there), among the Sg_Acc* setters
+0x0082bdf0 function Sg_AccRequestCurrent      # (unread arg): 0x00639150 (PostProcess cross-fade capture on), then g_AccCurrentRequest = 1; consumed by sg_AccSetCurrent (0x0082ce90), which captures the current frame; native 0x4019 (0x00a78180) and Sg_AccInit-like 0x0082bcd0; between Sg_AccSetClear and Sg_AccSetDrawChr; ported (ffx_sg::control)
 0x0082be00 function Sg_AccSetDrawChr          # (v): byte 0x01300778, read by Sg_AccSetFrameChr
 0x0082be10 function Sg_AccEnableBG            # (v): byte 0x01300777, read by Sg_AccDrawBG
 0x0082be20 function Sg_AccSetFrameChr         # fh switch:cg3 0x710042ba80
@@ -6690,6 +6692,7 @@
 0x00830ae0 function Ch_PLightSetEnable        # fh v3:bsim1.00 0x00830b60
 0x00830b00 function Ch_PLightSetEnableMask    # (chr, bits, mask): chr +0x188 = (+0x188 & ~mask) | bits; Switch name, in name order after Ch_PLightSetEnable
 0x00830b20 function Ch_CalcHeight            # ours: chr +0x70 = -(highest vertex y of all models / 1000); called by ChrViewProc
+0x00830b90 function Ch_DrawClothClear         # ours: (chr) with the cloth vertex buffer cached (Cache_Exist_ClothVertexBuff), a cloth +0x834, flag +0x194 bit 21 and 0x012fb7d8 clear: SetField0_006f2f70(e + 0x48, 0) on each cloth mesh entry e whose buffer entry and +0x4c are set; only caller Ch_DrawMain
 0x00830c70 function Ch_SetDrawIcon           # Switch name (0x71004194c0): g_ChrDrawIcon = v & 1
 0x00830c80 function Ch_SetDrawIcon2          # Switch name (0x71004194e0): g_ChrDrawIcon2 = v & 1
 0x00830c90 function Ch_SetShadowDirH          # (chr, dir): chr +0x6d8 = dir; Switch name, in name order before Ch_ShadowSetHeight
@@ -6752,6 +6755,7 @@
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
 0x00833390 function Ch_CalcMiddle                # (): the per-character middle calculation, waiting on the job scheduler (JobScheduleWait_*); the Switch Ch_CalcMiddle (calls JobSchedule_Ch_CalcMiddle_Batch and its wait) sorts between Ch_CalcMain and Ch_CalcMiddle_Batch, as here
 0x00833530 function Ch_CalcMiddle_Batch          # layout+callees: sorts between Ch_CalcMain and Ch_FunctionHistory, and its named callees match the Switch 0x7100417b60 Ch_CalcMiddle_Batch's (similarity 0.62: Ch_CalcElement, Ch_IdShadeCalc, Ch_Neck, Ch_OptposCalc, Sg_GetPause); symbols from Fahrenheit's server export
+0x008336a0 function Ch_DrawReserveCalcNorm    # ours: frame budget (500 - ReturnTableU32_00820580(0)) / 40 Ch_ReserveCalcNorm2 calls, round-robin from the cursor 0x013009e8 over active characters with +0x194 & 6 and +0x198 & 0x40; only caller Ch_DrawMain
 0x00833760 function Ch_FunctionHistoryClear  # ours: g_ChrFunctionHistory9e8 = 0 (next to the chr.c function-history logger 0x00833770)
 0x00833770 function Ch_FunctionHistory        # ours: for each active character whose header has no models (+6 == 0) sprintfs "%s:%s:%d\n" (name chr+4, file, line) into the debug line 0x023c4000; cdecl (file, line); next to Ch_FunctionHistoryClear
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
@@ -6900,6 +6904,7 @@
 0x00838c90 function SG_UpdateMotion           # per-frame motion update of an actor
 0x00838f70 function SG_ApplyBones             # scale = character def +0x38 * 0.001; calls SG_ApplyBone per bone
 0x00839140 function Ch_AnimCopy2              # fh switch:cg2 0x7100412100
+0x00839200 function Ch_AnimCopyNear           # ours: (chr) -> al 1 outside battle (g_BtlStatus), with AtelGetCurCtrlWork()'s bit 1 clear and +0x684 vs +0x694 (x, y, z) each less than 2.0 apart; only caller SG_ApplyBones; next to Ch_AnimCopy2
 0x008392a0 function Ch_GetKeepFps             # chr +0x194 bit 20 (Ch_SetKeepFps's); Switch name
 0x008392c0 function Ch_GetWaitMotion          # fh v3:bsim1.00 0x00839340
 0x008392d0 function Ch_MotionLoopFrame       # ours: frame +0x740 past the end +0x71c: back by the loop length +0x720 while loops (+0x724) remain; 1 when it stops or restarts (SG_SeqFrame, SG_UpdateMotion)
@@ -10499,6 +10504,7 @@
 0x00920c00 function rcbgSceneSetMatrix        # fh v3:exact 0x00920c00
 0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
+0x009210e0 function rcbgSceneWaveC0Update     # (scene): while +0xc0: sin-table swing of phase +0xd4 (* -65536 / 2pi), faded over +0xc8 frames for modes 3/4, times +0xcc (+ rand() % +0xd0) into +0xb8 (odd) or +0xbc; phase += +0xc4, +0xd8++, rcbgSceneWaveC0Stop after the frames, rcbgSceneSetMatrix; from 0x00920aa0; name ours
 0x00921200 function rcbgSceneWaveC0Stop          # (scene): +0xb8, +0xbc = 0.0, +0xc0 = 0: ends the wave Yn_SceneSetC0 starts (update 0x009210e0)
 0x00921220 function rcVec3fDot                   # (a, b) -> float: (a.y*b.y + a.x*b.x) + a.z*b.z on the x87 stack, stored as f32
 0x00921250 function rcVec3fLength                # (v) -> float: sqrt((x*x + y*y) + z*z) through _CIsqrt, stored as f32; rcVec3fNormalize divides by it
@@ -10583,6 +10589,7 @@
 0x00924ba0 function rcefTargetIsDone             # (i) -> bit 1 of target i's u16 flags
 0x00924bc0 function rcefTargetClear              # (i): its flags = 0
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
+0x00924df0 function rcefScreenShake           # (e): while +0x214 with mode +0x1f8: sin-table swing of phase +0x210, faded over +0x200 frames from mode 3, times rand() % +0x20c + +0x208 as x (odd) or y; MsScreenOffset(x, y), after the frames (0, 0) and +0x214 = 0; from rcefMainProcRunAfter; name ours
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40
 0x00925020 function rcefGetVf00               # (dst): vf00 (0x00c0a004) to dst
@@ -11583,6 +11590,7 @@
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
 0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
+0x00a5bad0 function AbmapStartPart            # (part, n, x, y, z, a, b, c, d, e, f) -> trunc c: env 0x01a86034, pppStartPart(part, 0x1000, get_ptr32_func(*0x02305800 +0x10)[n], 1, 0), +0x1e 1, +0x40 x y z 1.0, +0x50 trunc a b c, +0x5c 1, +0x60 d e f, +0x6c 1.0; name ours
 0x00a5bb70 function AbmapStoreSave            # (): node byte pairs (+0x80e/+0x829), link flags (+0xa814) from +0xa00, seven characters' u16s (+0x110cc) at +0xf00, +0x115cb/cc at +0xf18 into MsGetSaveAbilityMap's block; name ours
 0x00a5bca0 function AbmapTryUseItem           # fh v3:exact 0x00a5bca0 +AbmapTryUseItem
 0x00a5bd80 function KaGDebFirstCall           # fh v3:bsim1.00 0x00a5bd80
@@ -14382,6 +14390,7 @@
 0x012f4ecc label    g_SqsShoutBuffer          # the shout sound buffer's IOP address (SqsShoutStreamingDataSend)
 0x012f4ed0 label    g_SqsSifDmaId             # the id of the last SIF DMA (SqsSifDmaStart)
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
+0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone
 0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
@@ -14400,6 +14409,7 @@
 0x012fc6a0 label g_ChrClothLoads             # 50 cloth file loads of 0x110 bytes (to 0x012ffbc0): +0 state (1 = loading), +4 key (Ch_IsLoadingClothFile)
 0x012ffab8 label    g_ChrKindTables           # 8 pointers, one per kind (id >> 12): i16 count, then i16 ids (Chr_TableIndex)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
+0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
@@ -14409,6 +14419,7 @@
 0x013007e9 label g_ChrDrawIcon              # u8, Ch_SetDrawIcon; g_ChrDrawIcon2 at 0x013007ea (Ch_SetDrawIcon2)
 0x013008bd label g_ChrShadowMode             # u8, Ch_DrawSetShadowMode
 0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
+0x013008c2 label    g_ChrDrawSituation        # u8, Ch_SysDrawSetSituation
 0x013008c4 label g_ChrShadowDir              # 2 words, Ch_DrawSetShadowDir / Ch_DrawGetShadowDir
 0x013008db label g_ChrDumpMotEv              # i8, Ch_SetDumpMotEv / Ch_GetDumpMotEv
 0x013008f8 label g_ChrCameraMatrix           # 64 bytes, Ch_SysGetCameraMatrixPtr / Ch_SysSetCameraMatrix
