@@ -14291,6 +14291,113 @@ fn round25_rotate_shape_matches_the_original_on_the_snapshot() {
     round25_rotate_shape(&mut a, &mut b, &mut Xorshift(0x4025_0052));
 }
 
+/// Round 25's battle network window over logging shape stand-ins, a
+/// clock from a cell, `fcos` in the C runtime's slot and the original
+/// remaps, with every UV constant randomised.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
+fn round25_net_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let clock = alloc(a, b, 8);
+    let slot = a.rebase(0x00b0_c3b4);
+    let fcos = a.rebase(0x00b0_bfc0);
+    a.write(fcos, &[0xd9u8, 0xff, 0xc3]).unwrap();
+    b.write(fcos, &[0xd9u8, 0xff, 0xc3]).unwrap();
+    put(a, b, slot, fcos);
+    let s = stand_in8(a, b, 0x40, &logger_args(cursor, 9));
+    redirect(a, b, 0x0090_3bb0, s);
+    let s = stand_in8(a, b, 0xc0, &logger_args(cursor, 11));
+    redirect(a, b, 0x0090_3ee0, s);
+    let mut v = vec![0xdd, 0x05];
+    v.extend_from_slice(&clock.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x180, &v);
+    redirect(a, b, 0x0064_1410, s);
+    // fld qword [esp+4]; call [slot]; ret
+    let mut v = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x15];
+    v.extend_from_slice(&slot.to_le_bytes());
+    v.push(0xc3);
+    let cos_thunk = stand_in8(a, b, 0x1c0, &v);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let cos = |m: &mut Oracle, v: f64| {
+        let bits = v.to_bits();
+        m.call(cos_thunk, Conv::Cdecl, &[bits as u32, (bits >> 32) as u32])
+            .unwrap()
+            .st0
+            .unwrap()
+    };
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let uv_constants = [
+        0x00b6_6bf0u32,
+        0x00b6_6bf4,
+        0x00b6_6bfc,
+        0x00b6_6c00,
+        0x00b4_1cb8,
+        0x00b6_6c1c,
+        0x00b6_6c20,
+        0x00b6_6c24,
+        0x00b6_6c30,
+        0x00b6_6914,
+        0x00b5_ee18,
+        0x00b6_6c38,
+    ];
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(a, b, clock, (rng.next() % 100_000) as f64 / 7.0);
+        for at in uv_constants {
+            let at = a.rebase(at);
+            put(
+                a,
+                b,
+                at,
+                ((rng.next() % 0x10000) as f32 / 65536.0).to_bits(),
+            );
+        }
+        let fl = |rng: &mut Xorshift, m: u32, d: f32, o: f32| (rng.next() % m) as f32 / d - o;
+        let x = fl(rng, 60000, 30.0, 50.0);
+        let y = fl(rng, 40000, 30.0, 50.0);
+        let w = fl(rng, 30000, 29.0, 0.0);
+        let h = fl(rng, 30000, 31.0, 0.0);
+        let kind = rng.next() % 6;
+        let args = [x, y, w, h].map(f32::to_bits);
+        eax(a, 0x008f_41b0, &[args[0], args[1], args[2], args[3], kind]);
+        t::to_draw_btl_net_window_xywh_type(b, (x, y, w, h), kind, call, fcall, cos, remap);
+        same_memory(&format!("net window {k}"), a, b);
+    }
+}
+
+#[test]
+fn round25_net_window_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round25_net_window(&mut a, &mut b, &mut Xorshift(0x4025_0061));
+}
+
+#[test]
+fn round25_net_window_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round25_net_window(&mut a, &mut b, &mut Xorshift(0x4025_0062));
+}
+
 #[test]
 fn round25_wrappers_match_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

@@ -652,6 +652,28 @@ version was checked against.
 pass their arguments (and grey colours) to `TOAdpEasyShapeXYWHC2`. They
 compute no corners, colours or UVs, so they remain packet glue.
 
+### Turned shapes and the battle network window
+
+`TOMkpRotateShapeXYWHUVC2` (`0x00902ef0`) turns a shape quad by an angle
+about its centre. The corners `centre + R(∓w/2, ∓h/2)` use
+`_CIcos`/`_CIsin` of the angle and are passed through the remaps. The four
+vertices go to `graphicDrawUIElement(rec, texture, 1, 4, 0)` without
+clipping. Shape -1 divides the UVs by image 0x3e80's size; the other
+shapes pick their sheet as `TOMkpShapeXYWHUV` does.
+
+`TODrawBtlNetWindowXYWHType` (`0x008f41b0`) is a nine-slice frame of
+shape 0x194 cells. The corners are `X2(8)` × `Y2(8)`, and the edges span
+the box less `X2(16)`/`Y2(16)`. The u edges are the image floats at
+`0x00b66bf0`, `…bf4`, `…bfc`, `…c00`. The v edges come from one of two
+strips:
+
+- plain: `0x00b41cb8`, `0x00b66c1c`, `…c20`, `…c24`;
+- pulsing: `0x00b66c30`, `0x00b66914`, `0x00b5ee18`, `0x00b66c38`.
+
+Kinds 0/2 draw the border from the plain strip. Kinds 1/3 draw it from
+the pulsing strip in grey, with alpha `trunc(cos(time × 0x00b2c5c8) × 32 +
+96)`. Kinds 0, 1 and 4 fill the centre.
+
 ## UI boxes
 
 - `TODrawCrossBoxXYWHC2` (`0x008f4b20`) draws an untextured gradient box

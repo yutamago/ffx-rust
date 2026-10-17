@@ -62,6 +62,38 @@ fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
     }
 }
 
+/// MSVCR110's `_CIcos` through the game's import slot (`0x00b0c3b4`,
+/// behind the thunk `0x009498c2`) on a double: loaded with `fld qword`,
+/// the result stored with `fstp qword`.
+fn crt_cos<M>(_mem: &mut M, x: f64) -> f64 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f64;
+        // SAFETY: the slot holds the address of the CRT's intrinsic, which
+        // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the
+        // x87 and SSE registers clobbered); edi, which holds the result's
+        // address, is kept by the callee.
+        unsafe {
+            let f = (crate::rebase(0x00b0_c3b4) as *const usize).read();
+            std::arch::asm!(
+                "fld qword ptr [{x}]",
+                "call {f}",
+                "fstp qword ptr [edi]",
+                x = in(reg) &raw const x,
+                f = in(reg) f,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = x;
+        f64::NAN
+    }
+}
+
 /// `Phyre::PSerialization::PStreamFile::read(buf, n)` (`0x00608090`,
 /// thiscall), not ported yet.
 fn stream_read<M>(_mem: &mut M, stream: u32, buf: u32, n: u32) -> u32 {
@@ -6161,6 +6193,18 @@ ported! {
             at,
             call_sym,
             fcall,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
+    /// `TODrawBtlNetWindowXYWHType(x, y, w, h, kind)`.
+    TODrawBtlNetWindowXYWHType @ 0x008f_41b0 => extern "C" fn to_draw_btl_net_window_xywh_type(x: f32, y: f32, w: f32, h: f32, kind: u32) {
+        tolib::bridge::to_draw_btl_net_window_xywh_type(
+            &mut mem(),
+            (x, y, w, h),
+            kind,
+            call_sym,
+            fcall,
+            crt_cos,
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
         );
     }

@@ -8926,4 +8926,117 @@ pub mod bridge {
         }
         call(mem, DRAW_UI, &[rec, texture, 1, 4, 0]);
     }
+
+    /// The u edges of the battle network window's nine slices (left
+    /// column, middle, right column), image floats.
+    const NET_WINDOW_U: [u32; 4] = [0x00b6_6bf0, 0x00b6_6bf4, 0x00b6_6bfc, 0x00b6_6c00];
+    /// The v edges of its rows (top, middle, bottom) for the plain kinds.
+    const NET_WINDOW_V: [u32; 4] = [0x00b4_1cb8, 0x00b6_6c1c, 0x00b6_6c20, 0x00b6_6c24];
+    /// The v edges of its rows for the pulsing kinds (a second strip).
+    const NET_WINDOW_V_PULSE: [u32; 4] = [0x00b6_6c30, 0x00b6_6914, 0x00b5_ee18, 0x00b6_6c38];
+
+    /// `TODrawBtlNetWindowXYWHType(x, y, w, h, kind)` (`0x008f41b0`): the
+    /// battle network window, a nine-slice frame of shape 0x194 cells
+    /// (`TOMkpShapeXYWHUV`) over the box `x, y, w, h`.
+    ///
+    /// The corners are `X2(8)` × `Y2(8)` (`graphicUiRemapX2`/`Y2` of
+    /// `0x00b92314`, through `remap`); the edges between them span the box
+    /// less `X2(16)`/`Y2(16)` (`0x00b9231c`). Right and bottom cells start
+    /// at `x + w` and `y + h` (kept at double precision) less the corner
+    /// size; every sum is rounded to f32 as the argument.
+    ///
+    /// Kinds 0 and 2 draw the eight border cells from the plain strip
+    /// ([`NET_WINDOW_V`]); kinds 1 and 3 from the pulsing strip
+    /// ([`NET_WINDOW_V_PULSE`]) with `TOMkpShapeXYWHUVC2` in grey (0x80)
+    /// whose alpha is `trunc(cos(t × 0x00b2c5c8) × 32 + 96)` for the time
+    /// `t` (`graphicGetTime`, through `fcall`; `cos` is the C runtime's
+    /// `_CIcos` on the unrounded product). Kinds 0, 1 and 4 fill the centre
+    /// from the plain strip. Cells go column by column (left, middle top
+    /// and bottom, right), the centre last.
+    #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)] // fstp dword; fistp
+    pub fn to_draw_btl_net_window_xywh_type<M: Mem>(
+        mem: &mut M,
+        (x, y, w, h): (f32, f32, f32, f32),
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+        mut cos: impl FnMut(&mut M, f64) -> f64,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        const SHAPE: u32 = 0x0090_3bb0;
+        const SHAPE_C2: u32 = 0x0090_3ee0;
+        const GET_TIME: u32 = 0x0064_1410;
+        const CELL: u32 = 0x194;
+        let image = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(mem.rebase(a))) };
+        let time = fcall(mem, GET_TIME, &[]);
+        let wave = f64::from(cos(mem, time * mem.read::<f64>(mem.rebase(0x00b2_c5c8))) as f32);
+        let depth: f64 = mem.read(mem.rebase(0x00b4_12f8));
+        let middle: f64 = mem.read(mem.rebase(0x00b5_ee40));
+        let alpha = ((wave * depth + middle) as i64).cast_unsigned() as u32; // fistp qword (chop), low word
+        let colour = (alpha << 24).wrapping_add(0x0080_8080);
+        let corner = image(mem, 0x00b9_2314) as f32;
+        let inset = image(mem, 0x00b9_231c) as f32;
+        let corner_w = remap(mem, false, corner);
+        let corner_h = remap(mem, true, corner);
+        let inset_w = remap(mem, false, inset);
+        let inset_h = remap(mem, true, inset);
+        let right = f64::from(x) + f64::from(w);
+        let bottom = f64::from(y) + f64::from(h);
+        // a column or row: its start and size, for slice 0, 1 or 2
+        let span =
+            |slice: usize, start: f32, size: f32, far: f64, corner: f32, inset: f32| match slice {
+                0 => (start, corner),
+                1 => (
+                    (f64::from(corner) + f64::from(start)) as f32,
+                    (f64::from(size) - f64::from(inset)) as f32,
+                ),
+                _ => ((far - f64::from(corner)) as f32, corner),
+            };
+        let pulse = kind == 1 || kind == 3;
+        let border = kind <= 3;
+        let centre = kind == 0 || kind == 1 || kind == 4;
+        for (col, row) in [
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (1, 0),
+            (1, 2),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (1, 1),
+        ] {
+            let is_centre = (col, row) == (1, 1);
+            if !(if is_centre { centre } else { border }) {
+                continue;
+            }
+            let (cx, cw) = span(col, x, w, right, corner_w, inset_w);
+            let (cy, ch) = span(row, y, h, bottom, corner_h, inset_h);
+            let rows = if pulse && !is_centre {
+                &NET_WINDOW_V_PULSE
+            } else {
+                &NET_WINDOW_V
+            };
+            let uv = [
+                NET_WINDOW_U[col],
+                rows[row],
+                NET_WINDOW_U[col + 1],
+                rows[row + 1],
+            ]
+            .map(|a| mem.read::<u32>(mem.rebase(a)));
+            let quad = [CELL, cx.to_bits(), cy.to_bits(), cw.to_bits(), ch.to_bits()];
+            if pulse && !is_centre {
+                let mut args = [0u32; 11];
+                args[..5].copy_from_slice(&quad);
+                args[5..9].copy_from_slice(&uv);
+                args[9..].copy_from_slice(&[colour, colour]);
+                call(mem, SHAPE_C2, &args);
+            } else {
+                let mut args = [0u32; 9];
+                args[..5].copy_from_slice(&quad);
+                args[5..].copy_from_slice(&uv);
+                call(mem, SHAPE, &args);
+            }
+        }
+    }
 }
