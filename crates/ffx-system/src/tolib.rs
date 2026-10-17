@@ -1601,4 +1601,421 @@ pub mod bridge {
         }
         mem.write(g.wrapping_add(0x1c), 0u32);
     }
+
+    /// The loaded font/menu textures (`0x01841da0`, 16-byte entries: image
+    /// data, CLUT data, image size, `i16` width and height; [`IMAGE_SIZES`]
+    /// is the size pair).
+    pub const TEXTURES: Global<[u32; 4]> = Global::new(0x0184_1da0);
+    /// The two fixed image buffers (textures 0 and 4).
+    pub const TEXTURE_IMAGE_BUFFERS: [(u16, u32); 2] = [(0, 0x0184_b610), (4, 0x0185_b610)];
+    /// The CLUT buffers of textures 0..=5.
+    pub const TEXTURE_CLUT_BUFFERS: [u32; 6] = [
+        0x0186_4e10,
+        0x0186_56c0,
+        0x0186_5840,
+        0x0186_59c0,
+        0x0186_55f0,
+        0x0186_5b60,
+    ];
+
+    /// `TOFTCTransfer(file)` (`0x008ac130`): a font/menu texture file
+    /// (version `u16` `+4` from 0xc8, slot `u16` `+8`) registered in
+    /// [`TEXTURES`]: image (`+0x20` offset, `+0x24` size), size (`+0x28`,
+    /// `+0x2a`); textures 0 and 4 copy the image into their own buffer;
+    /// slots 0..=5 copy the CLUT (`+0x30` offset, `+0x10` size) into theirs,
+    /// others get none. Returns 0, or 1 for an old file or a slot above 5.
+    /// (The original also passes the slot to the empty `dbgPrintf`.)
+    #[allow(clippy::many_single_char_names)] // file, slot, entry, size
+    pub fn ftc_transfer(mem: &mut impl Mem, f: u32) -> u32 {
+        if mem.read::<u16>(f.wrapping_add(4)) < 0xc8 {
+            return 1;
+        }
+        let k = mem.read::<u16>(f.wrapping_add(8));
+        let e = TEXTURES.ptr(mem).addr.wrapping_add(u32::from(k) << 4);
+        let image = f.wrapping_add(mem.read(f.wrapping_add(0x20)));
+        let size: u32 = mem.read(f.wrapping_add(0x24));
+        mem.write(e, image);
+        mem.write(e.wrapping_add(8), size);
+        let w: u16 = mem.read(f.wrapping_add(0x28));
+        let h: u16 = mem.read(f.wrapping_add(0x2a));
+        mem.write(e.wrapping_add(0xc), w);
+        mem.write(e.wrapping_add(0xe), h);
+        for (slot, buf) in TEXTURE_IMAGE_BUFFERS {
+            if k == slot {
+                let buf = mem.rebase(buf);
+                copy_bytes(mem, buf, image, size);
+                mem.write(e, buf);
+            }
+        }
+        let Some(&clut) = TEXTURE_CLUT_BUFFERS.get(usize::from(k)) else {
+            mem.write(e.wrapping_add(4), 0u32);
+            return 1;
+        };
+        let clut = mem.rebase(clut);
+        mem.write(e.wrapping_add(4), clut);
+        let src = f.wrapping_add(mem.read(f.wrapping_add(0x30)));
+        let n: u32 = mem.read(f.wrapping_add(0x10));
+        copy_bytes(mem, clut, src, n);
+        0
+    }
+
+    /// `memcpy(dst, src, n)`, byte by byte.
+    fn copy_bytes(mem: &mut impl Mem, dst: u32, src: u32, n: u32) {
+        for i in 0..n {
+            let b: u8 = mem.read(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), b);
+        }
+    }
+
+    /// The menu calls of [`player_list_init`].
+    pub trait PlayerList<M> {
+        /// `MsGetSaveInParty(&count)`: the party's ids.
+        fn in_party(&mut self, mem: &mut M, count: u32) -> u32;
+        /// `MsGetSaveOutParty(&count)`: the reserve's ids.
+        fn out_party(&mut self, mem: &mut M, count: u32) -> u32;
+        /// `MsGetSavePlyJoined(chr)`.
+        fn joined(&mut self, mem: &mut M, chr: u32) -> u32;
+    }
+
+    /// The player menu's state (`0x01841c14`): `+0` the player ids
+    /// (`g_TkMenuPlayers`), `+8` the party-and-reserve count, `+0xc` the
+    /// full count, `+0x10` the party count, `+0x14` a word, `+0x18` the
+    /// party bits (`g_TkMenuPartyBits`), `+0x1c` the listed mask, `+0x20`
+    /// the joined mask.
+    pub const PLAYER_MENU: u32 = 0x0184_1c14;
+
+    /// `0x008a8f40(flags)`: the player list built from the party and the
+    /// reserve (`MsGetSaveInParty`, `MsGetSaveOutParty`, each with a
+    /// scratch count), then every other joined character (0..=7,
+    /// `MsGetSavePlyJoined`); free slots (0xff) and character 7 never
+    /// listed, nobody when `flags`' high half is 1.
+    #[allow(clippy::many_single_char_names)] // menu state, list, count
+    pub fn player_list_init<M: Mem>(
+        mem: &mut M,
+        flags: u32,
+        count: u32,
+        k: &mut impl PlayerList<M>,
+    ) {
+        let g = mem.rebase(PLAYER_MENU);
+        let none = flags & 0xffff_0000 == 0x1_0000;
+        mem.write(g.wrapping_add(0x1c), [0u32; 2]);
+        let mut mask = 0u32;
+        let mut n = 0u32;
+        let take = |mem: &mut M, p: u32, party: bool, mask: &mut u32, n: &mut u32| {
+            let len: i32 = mem.read(count);
+            for d in 0..len.max(0).cast_unsigned() {
+                let c: u8 = mem.read(p.wrapping_add(d));
+                if c == 0xff || c == 7 || none {
+                    continue;
+                }
+                mem.write(g.wrapping_add(*n), c);
+                *n += 1;
+                let bit = 1u32.wrapping_shl(u32::from(c));
+                *mask |= bit;
+                if party {
+                    let v: u32 = mem.read(g.wrapping_add(0x18));
+                    mem.write(g.wrapping_add(0x18), v | bit);
+                }
+            }
+        };
+        let p = k.in_party(mem, count);
+        mem.write(g.wrapping_add(0x18), 0u32);
+        take(mem, p, true, &mut mask, &mut n);
+        mem.write(g.wrapping_add(0x10), n);
+        let p = k.out_party(mem, count);
+        take(mem, p, false, &mut mask, &mut n);
+        mem.write(g.wrapping_add(8), n);
+        mem.write(g.wrapping_add(0x1c), mask);
+        let mut joined = 0u32;
+        for b in 0..8u32 {
+            if k.joined(mem, b) != 0 && b != 7 && !none {
+                let bit = 1u32 << b;
+                joined |= bit;
+                if mask & bit == 0 {
+                    mem.write(g.wrapping_add(n), b.to_le_bytes()[0]);
+                    n += 1;
+                }
+            }
+        }
+        mem.write(g.wrapping_add(0xc), n);
+        mem.write(g.wrapping_add(0x20), joined | mask);
+        mem.write(g.wrapping_add(0x14), 0u32);
+    }
+
+    /// The battle info window's state (`0x0133f5bc..0x0133f6a2`).
+    pub const INFO_WIN: u32 = 0x0133_f5bc;
+
+    /// `TOBtlInitInfoWinMes()` (`0x00897bd0`): the battle info window laid
+    /// out for the screen: its corners (x 700 and 1400, y 101, 109 and
+    /// 160) through `graphicUiRemapX2`/`Y2` (passed in as `remap(y, v)`)
+    /// and `_ftol2_sse`, then three line records of position, size and
+    /// float origin, all from those. Returns 0.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // `mov word, ax`; fild
+    pub fn btl_init_info_win_mes<M: Mem>(
+        mem: &mut M,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) -> u32 {
+        let g = |off: u32| INFO_WIN.wrapping_add(off);
+        let w16 = |mem: &mut M, a: u32, v: u16| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let w32 = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let b = mem.rebase(0x0133_c93d);
+        mem.write(b, 0u8);
+        w16(mem, g(0), 0xff);
+        let mut pick = |mem: &mut M, y: bool, v: f32| -> u16 {
+            let r = remap(mem, y, v);
+            ffx_bridge::x87::ftol(mem, f64::from(r)) as u16
+        };
+        let a0 = pick(mem, false, 700.0);
+        w16(mem, 0x0133_f68c, a0);
+        let b0 = pick(mem, true, 101.0);
+        w16(mem, 0x0133_f690, b0);
+        let c0 = pick(mem, false, 700.0);
+        w16(mem, 0x0133_f694, c0);
+        let d0 = pick(mem, true, 109.0);
+        w16(mem, 0x0133_f698, d0);
+        let e0 = pick(mem, false, 1400.0);
+        w16(mem, 0x0133_f69c, e0);
+        let f0 = pick(mem, true, 160.0);
+        w16(mem, 0x0133_f6a0, f0);
+        let dx = e0.wrapping_sub(a0);
+        let x = f32::from(a0.cast_signed());
+        let y = f32::from(b0.cast_signed());
+        for (a, v) in [
+            (0x0133_f688, 0),
+            (0x0133_f618, 0),
+            (0x0133_f61a, c0),
+            (0x0133_f61c, d0),
+            (0x0133_f61e, dx),
+        ] {
+            w16(mem, a, v);
+        }
+        for (a, v) in [
+            (0x0133_f624, x),
+            (0x0133_f628, y),
+            (0x0133_f640, x),
+            (0x0133_f644, y),
+        ] {
+            w32(mem, a, v.to_bits());
+        }
+        for (a, v) in [
+            (0x0133_f65c, x),
+            (0x0133_f660, y),
+            (0x0133_f678, x),
+            (0x0133_f67c, y),
+        ] {
+            w32(mem, a, v.to_bits());
+        }
+        for a in [0x0133_f630, 0x0133_f64c, 0x0133_f668, 0x0133_f684] {
+            w32(mem, a, 0);
+        }
+        for (a, v) in [
+            (0x0133_f62c, 0),
+            (0x0133_f634, 0),
+            (0x0133_f636, c0),
+            (0x0133_f638, d0),
+            (0x0133_f63a, dx),
+            (0x0133_f648, 0),
+            (0x0133_f650, 0),
+            (0x0133_f652, c0),
+            (0x0133_f654, d0),
+            (0x0133_f656, dx),
+            (0x0133_f664, 0),
+            (0x0133_f66c, 0),
+            (0x0133_f66e, c0),
+            (0x0133_f670, d0),
+            (0x0133_f672, dx),
+            (0x0133_f680, 0),
+        ] {
+            w16(mem, a, v);
+        }
+        0
+    }
+
+    /// `TOSortMessageWindowPriority(out)` (`0x008b00a0`): the message-window
+    /// slots in use (`u16` 1 at the slot object) as (slot, priority `+4`)
+    /// pairs, unused ones (0x7fff, 0x7fff), put in order by the compiled
+    /// exchange sort (for each `c`, every `j` with a lower signed priority
+    /// swapped into place `c`); then `out` (eight `u16`) filled with 0xffff
+    /// and the slots in order up to the first unused one. Returns how many
+    /// were written.
+    pub fn sort_message_window_priority(mem: &mut impl Mem, out: u32) -> u32 {
+        let slots = crate::window::bridge::MSG_WINDOW_SLOTS.ptr(mem).addr;
+        let mut e = [(0x7fffu16, 0x7fffi16); 8];
+        for (k, item) in (0u16..).zip(e.iter_mut()) {
+            let s: u32 = mem.read(slots.wrapping_add(4 * u32::from(k)));
+            if mem.read::<u16>(s) == 1 {
+                *item = (k, mem.read(s.wrapping_add(4)));
+            }
+        }
+        for c in 0..8 {
+            for j in 0..8 {
+                if e[j].1 < e[c].1 {
+                    e.swap(c, j);
+                }
+            }
+        }
+        mem.write(out, [u32::MAX; 4]);
+        let mut n = 0u32;
+        for &(idx, _) in &e {
+            if idx == 0x7fff {
+                break;
+            }
+            mem.write(out.wrapping_add(2 * n), idx);
+            n += 1;
+        }
+        n
+    }
+
+    /// Whether `TOGetFontWidth` corrects for the screen's aspect
+    /// (`0x018663ec`).
+    pub const FONT_ASPECT_ON: Global<u32> = Global::new(0x0186_63ec);
+
+    /// The calls `TOGetFontWidth` makes.
+    pub trait FontWidth<M> {
+        /// `graphicFontGetScreenWH()`.
+        fn screen_wh(&mut self, mem: &mut M) -> (i32, i32);
+        /// `TOGetFFXLang()`.
+        fn lang(&mut self, mem: &mut M) -> u32;
+        /// `TOGetFontWidthInPiexl(width, scale)`.
+        fn width(&mut self, mem: &mut M, width: f32, scale: f32) -> f32;
+        /// `TOGetFontSpaceInPiexl(kind)`.
+        fn space(&mut self, mem: &mut M, kind: u32) -> f32;
+    }
+
+    /// `TOGetFontWidth(text, kind, &width, table)` (`0x008b9330`): the
+    /// on-screen width of the character at `text` (stored at `width`) and
+    /// the address after it. The glyph width comes from the font's width
+    /// table `table` (`TOGetFontWidthTblAdrs`, [`TEXTURES`] `+4`; a
+    /// Korean/Chinese double-byte page with code 4, 0x410 further on) or,
+    /// for the codes 0x26..=0x2f and 6, from tables 0..=3 and 5, a quarter
+    /// of its signed byte; without one, the stale word the original reads
+    /// (the screen's width/height ratio). Then [`font_width_in_pixel`] of
+    /// it at the kind's scale plus [`font_space_in_pixel`], times the
+    /// aspect correction (`w/h / 1.2307693`) when [`FONT_ASPECT_ON`]. A
+    /// positive width is stored, except that a run of repeated 0x47
+    /// codes adds it (twice for table 4) once per code; codes 6 and below
+    /// 0x30 are two bytes long. In 53-bit precision.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )] // one routine; fild; the cursors
+    pub fn font_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        kind: u32,
+        out: u32,
+        table: u32,
+        k: &mut impl FontWidth<M>,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let orig = text;
+        let mut p = text;
+        let (w, h) = k.screen_wh(mem);
+        let ratio = f32::from_bits(store(div(f64::from(w as f32), f64::from(h as f32))));
+        let aspect = f32::from_bits(store(div(f64::from(ratio), 1.230_769_276_618_957_5)));
+        let lang = k.lang(mem);
+        let big = (lang == 9 || lang == 10) && mem.read::<u8>(p) == 4;
+        if big {
+            p = p.wrapping_add(1);
+        }
+        mem.write(out, 0f32);
+        let mut off = if big { 0x410u32 } else { 0 };
+        let scale: f32 = if kind == 3 || kind == 1 {
+            FONT_SCALE.get(mem)
+        } else {
+            f32::from_bits(0x3f47_ae14)
+        };
+        let tbl = |mem: &M, t: u32| -> u32 {
+            mem.read(TEXTURES.ptr(mem).addr.wrapping_add((t << 4) + 4))
+        };
+        let quarter = |mem: &M, at: u32| -> f32 {
+            let v = i32::from(mem.read::<i8>(at));
+            f32::from_bits(store(mul(f64::from(v), 0.25)))
+        };
+        let mut glyph = ratio;
+        let b: u8 = mem.read(p);
+        let next = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+        if b >= 0x30 {
+            let t = tbl(mem, table);
+            off = off.wrapping_sub(0x30).wrapping_add(u32::from(b));
+            glyph = quarter(mem, t.wrapping_add(off));
+        }
+        let row = u32::from(b).wrapping_mul(0xd0).wrapping_add(next);
+        if (0x2c..=0x2f).contains(&b) {
+            let t = tbl(mem, 0);
+            glyph = quarter(
+                mem,
+                t.wrapping_add(row).wrapping_add(off).wrapping_sub(0x2320),
+            );
+        }
+        for (lo, t, base) in [(0x2au8, 1, 0x2250u32), (0x28, 2, 0x20b0), (0x26, 3, 0x1f10)] {
+            if b == lo || b == lo + 1 {
+                let t = tbl(mem, t);
+                glyph = quarter(mem, t.wrapping_add(row).wrapping_sub(base));
+            }
+        }
+        if b == 6 {
+            let t = tbl(mem, 5);
+            glyph = if t == 0 {
+                56.0
+            } else {
+                quarter(mem, t.wrapping_add(next).wrapping_sub(0x30))
+            };
+        }
+        let wpx = k.width(mem, glyph, scale);
+        let sp = k.space(mem, kind);
+        let mut r = add(load(sp.to_bits()), load(wpx.to_bits()));
+        if FONT_ASPECT_ON.get(mem) != 0 {
+            r = mul(r, load(aspect.to_bits()));
+        }
+        let res = f32::from_bits(store(r));
+        let first: u8 = mem.read(orig);
+        let c: u8 = mem.read(p);
+        let repeat = first == 0x47 && mem.read::<u8>(p.wrapping_add(1)) == c;
+        if res > 0.0 {
+            if repeat {
+                if c != 0x47 {
+                    return p;
+                }
+                let res = load(res.to_bits());
+                loop {
+                    let o: f32 = mem.read(out);
+                    let v = if table == 4 {
+                        add(mul(res, 2.0), load(o.to_bits()))
+                    } else {
+                        add(load(o.to_bits()), res)
+                    };
+                    p = p.wrapping_add(1);
+                    mem.write(out, f32::from_bits(store(v)));
+                    if mem.read::<u8>(p) != 0x47 {
+                        return p;
+                    }
+                }
+            }
+            mem.write(out, res);
+        }
+        let c: u8 = mem.read(p);
+        if c == 6 || c < 0x30 {
+            return p.wrapping_add(2);
+        }
+        if first == 0x47 && mem.read::<u8>(p.wrapping_add(1)) == c {
+            if c != 0x47 {
+                return p;
+            }
+            loop {
+                p = p.wrapping_add(1);
+                if mem.read::<u8>(p) != 0x47 {
+                    return p;
+                }
+            }
+        }
+        p.wrapping_add(1)
+    }
 }
