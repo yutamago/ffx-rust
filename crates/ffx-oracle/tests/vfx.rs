@@ -4523,7 +4523,7 @@ fn et_opus_math_and_trees_match_the_original() {
                 p.set(n + 0xd, u8::from(k == 0));
             }
             p.set(it, node(rng.below(m + 1)));
-            for at in [0x0080_6a50, 0x0080_6aa0] {
+            for at in [0x0080_6a50, 0x0080_6aa0, 0x0069_ebd0] {
                 for _ in 0..4 {
                     let r = p.a.call(p.sym(at), Conv::Thiscall(it), &[]).unwrap();
                     let mine = t::opus_tree_next(&mut p.b, it);
@@ -8204,6 +8204,92 @@ fn md_spr_init_matches_the_original() {
             }
             p.check("op_md_spr_init_x64", 0x00a6_9940, &[obj, init, work], |o| {
                 Some(md::bridge::op_md_spr_init_x64(o, obj, init, work))
+            });
+        }
+    }
+}
+
+#[test]
+fn node_requeue_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_9f00);
+        let (pool, n) = (p.alloc(0x400), p.alloc(0x40));
+        for _ in 0..3000 {
+            // every word a pointer within the pool (4-aligned, room for
+            // the +0x68 reads), the node's links too; now and then the node
+            // itself
+            for k in 0..0x100u32 {
+                let x = if rng.chance(20) {
+                    n
+                } else {
+                    pool + 4 * rng.below(0xe0)
+                };
+                p.set(pool + 4 * k, x);
+            }
+            p.fill(n, 0x40, &mut rng);
+            for at in [0x18u32, 0x1c, 0x20] {
+                p.set(n + at, pool + 4 * rng.below(0xe0));
+            }
+            // links that alias the node's own (next + 0x1c at its + 0x20)
+            for at in [0x1cu32, 0x20] {
+                if rng.chance(6) {
+                    p.set(n + at, n + rng.pick(&[0u32, 4]));
+                }
+            }
+            let state = rng.pick(&[0x2000_0000u32, 0x1000_0000, 0x2fff_ffff, 0x3000_0000]);
+            let low = rng.next() & 0x0fff_ffff;
+            p.set(n + 0x30, state | low);
+            p.check("0x00a39f00", 0x00a3_9f00, &[n], |o| {
+                Some(small::bridge::op_node_requeue(o, n))
+            });
+        }
+    }
+}
+
+#[test]
+fn osu_and_hsv_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_1200);
+        let (out, set, dst, src) = (
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x100),
+            p.alloc(0x100),
+        );
+        let r0 = p.sym(0x00c8_f508);
+        let (hsv, cols) = (p.alloc(0x100), p.alloc(0x80));
+        for _ in 0..3000 {
+            p.fill(out, 0x100, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.check("opus_osu_init", 0x0080_1200, &[out], |o| {
+                Some(opus::bridge::opus_osu_init(o, out))
+            });
+            p.fill(dst, 0x100, &mut rng);
+            p.fill(src, 0x100, &mut rng);
+            p.fill(set, 0x40, &mut rng);
+            if rng.chance(2) {
+                p.set(set + 0x20, src - 0x100 * rng.below(8));
+            }
+            p.check("opus_osu_copy", 0x0080_0eb0, &[set, dst, src], |o| {
+                Some(opus::bridge::opus_osu_copy(o, set, dst, src))
+            });
+            p.fill(hsv, 0x100, &mut rng);
+            p.fill(cols, 0x80, &mut rng);
+            for k in 0..0x20u32 {
+                match rng.below(6) {
+                    0 => p.set(cols + 4 * k, 0u32),
+                    1 => {
+                        let v = u8::try_from(rng.below(256)).unwrap();
+                        let a = u8::try_from(rng.below(256)).unwrap();
+                        p.set(cols + 4 * k, [v, v, v, a]);
+                    }
+                    2 => p.set(cols + 4 * k, rng.next() & 0xff00_0000),
+                    _ => {}
+                }
+            }
+            let n = rng.pick(&[0u32, 1, 5, 0x20, u32::MAX]);
+            p.check("0x00807e90", 0x0080_7e90, &[hsv, cols, n], |o| {
+                Some(small::bridge::op_rgb_to_hsv(o, hsv, cols, n))
             });
         }
     }

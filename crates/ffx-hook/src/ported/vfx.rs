@@ -1457,6 +1457,26 @@ ported! {
     op_md_spr_init_x64 @ 0x00a6_9940 => extern "C" fn op_md_spr_init_x64(obj: u32, init: u32, work: u32) -> u32 {
         md::bridge::op_md_spr_init_x64(&mut mem(), obj, init, work)
     }
+    /// `0x0069ebd0(it)`: `opusTree_Next`'s code again (`ecx` the iterator).
+    TreeNext_0069ebd0 @ 0x0069_ebd0 => extern "thiscall" fn tree_next_0069ebd0(it: u32) -> u32 {
+        tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `op_node_requeue_00a39f00(n)`.
+    op_node_requeue_00a39f00 @ 0x00a3_9f00 => extern "C" fn op_node_requeue(n: u32) -> u32 {
+        small::bridge::op_node_requeue(&mut mem(), n)
+    }
+    /// `opus_osu_init(out)`.
+    opus_osu_init @ 0x0080_1200 => extern "C" fn opus_osu_init(out: u32) -> u32 {
+        opus::bridge::opus_osu_init(&mut mem(), out)
+    }
+    /// `opus_osu_copy_00800eb0(set, dst, src)`.
+    opus_osu_copy_00800eb0 @ 0x0080_0eb0 => extern "C" fn opus_osu_copy(set: u32, dst: u32, src: u32) -> u32 {
+        opus::bridge::opus_osu_copy(&mut mem(), set, dst, src)
+    }
+    /// `op_rgb_to_hsv_00807e90(out, src, n)`.
+    op_rgb_to_hsv_00807e90 @ 0x0080_7e90 => extern "C" fn op_rgb_to_hsv(out: u32, src: u32, n: u32) -> u32 {
+        small::bridge::op_rgb_to_hsv(&mut mem(), out, src, n)
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

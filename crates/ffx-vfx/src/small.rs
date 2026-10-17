@@ -262,4 +262,85 @@ pub mod bridge {
         let eq = mem.read::<u32>(this) == mem.read::<u32>(other);
         u32::from(eq != ne)
     }
+
+    /// `0x00a39f00(n)`: a node whose state (top nibble of `+0x30`) is 2
+    /// leaves its list (`+0x1c` previous, `+0x20` next) and goes in at
+    /// the front of its owner's list (the head `[n +0x18] +0x48`), in
+    /// state 1. Returns the state word as left in `eax`: the new word, or the
+    /// top nibble alone when nothing moved.
+    pub fn op_node_requeue(mem: &mut impl Mem, n: u32) -> u32 {
+        let at = |o: u32| n.wrapping_add(o);
+        let f: u32 = mem.read(at(0x30));
+        if f & 0xf000_0000 != 0x2000_0000 {
+            return f & 0xf000_0000;
+        }
+        let next: u32 = mem.read(at(0x20));
+        let prev: u32 = mem.read(at(0x1c));
+        let owner: u32 = mem.read(at(0x18));
+        mem.write(next.wrapping_add(0x1c), prev);
+        let prev: u32 = mem.read(at(0x1c));
+        let next: u32 = mem.read(at(0x20));
+        mem.write(prev.wrapping_add(0x20), next);
+        let head = owner.wrapping_add(0x48);
+        mem.write(at(0x1c), head);
+        let first: u32 = mem.read(head.wrapping_add(0x20));
+        mem.write(at(0x20), first);
+        mem.write(first.wrapping_add(0x1c), n);
+        let h: u32 = mem.read(at(0x1c));
+        mem.write(h.wrapping_add(0x20), n);
+        let f: u32 = mem.read(at(0x30));
+        let v = (f & 0x0fff_ffff) | 0x1000_0000;
+        mem.write(at(0x30), v);
+        v
+    }
+
+    /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
+    /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
+    /// dword gives `h` = `s` = 0 (the first two only); else with `max`,
+    /// `min` of `r g b`, `d` = `max - min`: `s` = `256 d / max`, `h` =
+    /// `128 (g - b) / d` when `r` is `max`, `128 (b - r) / d + 0x100` when
+    /// `g` is, else `128 (r - g) / d + 0x200` (0 and 0 when `d` is 0), `v`
+    /// = `max`. Returns the end of `out`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn op_rgb_to_hsv(mem: &mut impl Mem, out: u32, src: u32, n: u32) -> u32 {
+        let mut out = out;
+        let mut src = src;
+        let mut left = n.cast_signed();
+        while left > 0 {
+            if mem.read::<u32>(src) == 0 {
+                mem.write(out, 0u32);
+            } else {
+                let c = |o: u32| i32::from(mem.read::<u8>(src.wrapping_add(o)));
+                let (r, g, b) = (c(0), c(1), c(2));
+                let max = r.max(g).max(b);
+                let min = r.min(g).min(b);
+                let d = max - min;
+                let (h, s) = if d == 0 {
+                    (0, 0)
+                } else {
+                    let s = if max == 0 { 0 } else { (d << 8) / max };
+                    let h = if r == max {
+                        ((g - b) << 7) / d
+                    } else if g == max {
+                        ((b - r) << 7) / d + 0x100
+                    } else {
+                        ((r - g) << 7) / d + 0x200
+                    };
+                    (h, s)
+                };
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // u16 stores
+                {
+                    mem.write(out, h as u16);
+                    mem.write(out.wrapping_add(4), max as u16);
+                    mem.write(out.wrapping_add(2), s as u16);
+                }
+                let a = u16::from(mem.read::<u8>(src.wrapping_add(3)));
+                mem.write(out.wrapping_add(6), a);
+            }
+            left -= 1;
+            src = src.wrapping_add(4);
+            out = out.wrapping_add(8);
+        }
+        out
+    }
 }

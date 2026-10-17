@@ -2597,6 +2597,7 @@
 0x0069e2b0 function GuildMapDynamicGeometry_GuildMapDynamicGeometry # fh v3:exact 0x0069e3f0 GuildMapDynamicGeometry::GuildMapDynamicGeometry
 0x0069e320 function MenuDynamicGeometry_MenuDynamicGeometry # fh v3:exact 0x0069e460 MenuDynamicGeometry::MenuDynamicGeometry
 0x0069e3e0 function VFXDynamicGeometry_VFXDynamicGeometry # fh v3:exact 0x0069e520 VFXDynamicGeometry::VFXDynamicGeometry
+0x0069ebd0 function TreeNext_0069ebd0           # ours: (ecx it) -> it: the MSVC tree iterator ++, the same code as opusTree_Next 0x00806a50 (left +0, parent +4, right +8, nil byte +0xd); callers 0x0069caf0, 0x0069eb70, 0x0069eb90, 0x0069ebc0, 0x006a1a70
 0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs cdecl
 0x0069f110 function ClassVFXRenderDataTable_ClearByType # fh v3:exact 0x0069f250 ClassVFXRenderDataTable::ClearByType
 0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData
@@ -6335,12 +6336,13 @@
 0x00800e20 function opus_monster_clut_pos     # (slot) -> 0 without g_OpusMonsterFlags[slot], else 0x3fc0 (bit 0) or 0x3fd0
 0x00800e50 function opus_monster_tex_pos      # (slot) -> 0 without flags, else 0x3f40 (bit 0) or 0x3fc0
 0x00800e80 function opus_get_monster_index    # fh v3:exact 0x00800da0
+0x00800eb0 function opus_osu_copy_00800eb0      # ours: (set, dst, src) -> eax byte src+0xb3: copies src's +0x30..+0x4c, +0x90..+0x9c, +0x14, +0x18, +0x1e, +0xba, +0xb3 into dst and dst.u16[+0x1c] = (src - set[+0x20]) >> 8; called with opus_osu_init by 0x0080ae30, 0x0080af70, 0x0080b520
 0x00800f60 function opus_get_osu_by_draw      # fh v3:exact 0x00800e80
 0x00800fd0 function opus_get_weapon_by_no     # (no) -> g_OpusWeapons[i] for the first g_OpusWeaponNos[i] == no, else 0
 0x00801000 function opus_get_weapon_index     # fh v3:exact 0x00800f20
 0x00801030 function opus_get_weapon_index_by_no # (no) -> the first i with g_OpusWeaponNos[i] == no, else -1
 0x00801060 function opus_no_get                  # structure: (oef2, unit, no) -> the 0x100-byte unit with number no (+0x1a) and the same group (+0x1e), searched in two index lists (+0x14, +0x10), 0xffff/0xff00 special cases, calls is_ptr32_null; Switch opus_no_get (0x71003f4ff0, calls is_ptr32_null) sorts between opus_get_weapon_index_by_no and opus_osu_init, as here; 47 callers
-0x00801200 function opus_osu_init             # fh v3:exact 0x00801120
+0x00801200 function opus_osu_init             # fh v3:exact 0x00801120; ours: (out) -> eax g_Ee_Gpr r0 word 3: fills 0x100 bytes with r0, then out+0xc8 = 0x80808080 (opus::bridge::opus_osu_init)
 0x00801480 function opus_osu_init_group          # (battle i, n): zeroes the first 16 bytes of n 0x100-byte units of g_OpusBattle[i]'s +0x20 table; its only caller 0x007fda80 calls opus_osu_init_group, opus_osu_init, set_ptr32, opus_get_eff_status_index, the callees of the Switch's opu_init, which calls opus_osu_init_group (0x71003f4160); sorts between opus_osu_init and opus_prog_off; the vfx porter's opus_parts_clear
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
@@ -6418,6 +6420,7 @@
 0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00807de0 function op_ota_encount1_draw         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e92c0 op_ota_encount1_draw, 4 votes, round 1
+0x00807e90 function op_rgb_to_hsv_00807e90      # ours: (out, src, n) -> out end: n rgba byte colours to u16 hue (0..0x2ff, 0x100 a sextant pair), saturation (256 d / max), value, alpha; callers 0x008079f0, 0x00807de0, 0x00808000
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
@@ -11727,6 +11730,7 @@
 0x00a384b0 function SetFieldComputed30_00a384b0  # auto-port shape (store computed to field, stdcall): t0 = u32[(a0 + 0x30)]; u32[a1] = (t0 & 0xfffffff); return a1; callers: no direct caller; name ours
 0x00a39900 function SetFields_00a39900           # auto-port shape (several stores: set field (constants, arguments, addresses), stdcall): u32[a0] = 0x8; u32[(a0 + 0x4)] = 0x1ffe; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x1; u32[(a0 + 0x14)] = 0x1; u32[(a0 + 0x8)] = 0x2000; u32[(a0 + 0x18)] = 0x0; return a0; callers: no direct caller; name ours
 0x00a39b00 function StoreComputed_00a39b00       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x20)]; t1 = u32[(a0 + 0x1c)]; t2 = u32[(a0 + 0x18)]; u32[(t0 + 0x1c)] = t1; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = (t2 + 0x10); t5 = u32[(t2 + 0x30)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = (t7 & 0xfffffff); return t6; callers: ; name ours
+0x00a39f00 function op_node_requeue_00a39f00    # ours: (n) -> eax the state word: a node in state 2 (top nibble of +0x30) unlinks (+0x1c prev, +0x20 next) and goes in at the front of [n+0x18]+0x48's list, state 1; callers 0x00a374e0, 0x00a38c40, 0x00a39200, 0x00a398a0, 0x00a3ac90
 0x00a3a010 function StoreComputed_00a3a010       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x18)]; t1 = u32[(a0 + 0x20)]; t2 = u32[(a0 + 0x1c)]; u32[(t1 + 0x1c)] = t2; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = ((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)); t5 = u32[(((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)) + 0x20)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = ((t7 & 0xfffffff) | (a1 << 0x1c)); return ((t7 & 0xfffffff) | (a1 << 0x1c)); callers:  and 3 more; name ours
 0x00a3b210 function opd_config_memory            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'memory'; Switch 0x7100864950 opd_config_memory (symbols from Fahrenheit's server export)
 0x00a3d7c0 function AddrOfGlobal01a858cc_00a3d7c0 # auto-port shape (return address of global, cdecl): return &0x01a858cc; callers: ; name ours
