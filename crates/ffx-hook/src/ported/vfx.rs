@@ -3041,6 +3041,17 @@ ported! {
     pppDrawMatrixWood @ 0x0073_4cf0 => extern "C" fn ppp_draw_matrix_wood(obj: u32) {
         mat::bridge::ppp_draw_matrix_wood(&mut mem(), obj);
     }
+    /// `pppKeZCrctShpDraw(obj, key, ctrl)`: its stack matrix in a buffer
+    /// on this shim's stack (the frame pointer at its end; a mode the
+    /// original does not know leaves row 3 zero here, stale stack there).
+    pppKeZCrctShpDraw @ 0x0073_54c0 => extern "C" fn ppp_ke_z_crct_shp_draw(obj: u32, key: u32, ctrl: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x50]);
+        let mut locals = Locals([0; 0x50]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        mat::bridge::ppp_ke_z_crct_shp_draw(&mut mem(), obj, key, ctrl, frame, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppKeDMatDraw(obj, key, ctrl)`.
     pppKeDMatDraw @ 0x0073_4eb0 => extern "C" fn ppp_ke_d_mat_draw(obj: u32, key: u32, ctrl: u32) {
         let _ = key;

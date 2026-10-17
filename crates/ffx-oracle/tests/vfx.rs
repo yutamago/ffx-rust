@@ -10158,3 +10158,56 @@ fn dot_draw_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn z_crct_shp_draw_matches_the_original() {
+    use mat::bridge as mt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_54c0);
+        let (obj, key, ctrl, offs, part) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x100),
+        );
+        let part_at = p.sym(0x0230_ffe4);
+        let (view, world) = (p.sym(0x0230_ff20), p.sym(0x0230_ffa0));
+        // the frame check_deep_n gives a three-argument original
+        let frame = p.b.stack_range().end - 0x100 - 12 - 4 - 0x200 - 12 - 4 - 4;
+        for _ in 0..3000 {
+            p.set(ctrl + 0xc, offs);
+            p.set(offs, 4 * rng.below(0x10));
+            p.set(part_at, part);
+            for (at, n) in [
+                (obj, 0x80u32),
+                (key, 0x10),
+                (part, 0x40),
+                (view, 0x10),
+                (world, 0x10),
+            ] {
+                for k in 0..n {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * k, x);
+                }
+            }
+            p.set(key + 0x30, rng.pick(&[0u8, 1, 2, 0, 1, 2, 3, 0xff]));
+            // the stack row 3 an unknown mode leaves (both alike)
+            for k in 0..4 {
+                let x = finite(&mut rng);
+                p.set(frame - 0x14 + 4 * k, x);
+            }
+            check_deep_n(
+                &mut p,
+                "pppKeZCrctShpDraw",
+                0x0073_54c0,
+                &[obj, key, ctrl],
+                |m, frame| {
+                    mt::ppp_ke_z_crct_shp_draw(m, obj, key, ctrl, frame, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}

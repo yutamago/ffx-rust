@@ -798,4 +798,132 @@ pub mod bridge {
         mem.write(at(work, 12), row);
         vu0::matrix_copy(mem, WOOD.ptr(mem).addr, work)
     }
+
+    /// `pppKeZCrctShpDraw(obj, key, ctrl)` (`0x007354c0`): the shape's
+    /// draw matrix into work area 0, built on the emulated VU0 (whose
+    /// registers keep the original's final values):
+    /// - rows 0..2: the object's rows (`+0x10`) times the running part's
+    ///   scale (`+0x60`, through `VF_SCALE`), `w` as is (left in
+    ///   `VF_ROWS`, and row 2 stays in `0x00c8f850`);
+    /// - `v` = the object's `+0x40` times the key's `+0x20` (xyz, `w` as
+    ///   is), in `0x00c8f830`, the key's `+0x20` in `0x00c8f840`;
+    /// - row 3 by the key's mode (`u8 +0x30`), the product through VU0's
+    ///   `mul`/`madd` sequence ([`apply`]):
+    ///   0: `v` plus the key's `+0x10` (all four), times `g_pppViewMatrix`;
+    ///   1: `v` times `g_pppViewMatrix`, plus the key's `+0x10`;
+    ///   2: `v` times `g_pppWorldMatrix` (into the VU0 registers only),
+    ///   and row 3 = the part's scale plus the scale times the key's
+    ///   `+0x10` (`w` the scale's), through `0x00c8f830..0x00c8f85c`;
+    ///   other modes leave row 3 as the stack had it.
+    ///
+    /// The matrix is built on the stack at `frame - 0x44` (the original's
+    /// frame pointer; row 3 at `frame - 0x14`) and copied with
+    /// `FFXVu0CopyMatrix` through `call`.
+    pub fn ppp_ke_z_crct_shp_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let dst = area(mem, obj, ctrl, 0);
+        let part = CURRENT_PART.get(mem);
+        let words = |mem: &M, p: u32| -> [u32; 4] { mem.read(p) };
+        let floats = |w: [u32; 4]| w.map(f32::from_bits);
+        let scale = words(mem, part.wrapping_add(0x60));
+        VF_SCALE.set(mem, scale);
+        // rows 0..2 scaled (x and z by the memory operand, y by the
+        // register)
+        let mut rows = [0u32; 12];
+        for r in 0..3 {
+            let s = f32::from_bits(scale[r as usize]);
+            let row = floats(words(mem, obj.wrapping_add(0x10 + 0x10 * r)));
+            let i = 4 * r as usize;
+            rows[i] = scaled(s, row[0]).to_bits();
+            rows[i + 1] = scaled(row[1], round_trip(s)).to_bits();
+            rows[i + 2] = scaled(s, row[2]).to_bits();
+            rows[i + 3] = row[3].to_bits();
+        }
+        // v = the object's +0x40 times the key's +0x20
+        let o = floats(words(mem, obj.wrapping_add(0x40)));
+        let k20 = words(mem, key.wrapping_add(0x20));
+        let k = floats(k20);
+        let v = [
+            scaled(k[0], o[0]),
+            scaled(k[1], o[1]),
+            scaled(k[2], o[2]),
+            o[3],
+        ];
+        let mut vf = rows;
+        vf[0..4].copy_from_slice(&v.map(f32::to_bits));
+        vf[4..8].copy_from_slice(&k20);
+        let k10 = floats(words(mem, key.wrapping_add(0x10)));
+        let w = f32::from_bits(VF00_W.get(mem));
+        let mut last = None;
+        match mem.read::<u8>(key.wrapping_add(0x30)) {
+            0 => {
+                let u = [
+                    Reg::load(v[0]).add_m32(k10[0]).store(),
+                    Reg::load(v[1]).add_m32(k10[1]).store(),
+                    Reg::load(v[2]).add_m32(k10[2]).store(),
+                    Reg::load(k10[3]).add_m32(v[3]).store(),
+                ];
+                VF_PAR_V.set(mem, u.map(f32::to_bits));
+                last = Some(apply(mem, VIEW.get(mem), u, w));
+            }
+            1 => {
+                VF_PAR_V.set(mem, v.map(f32::to_bits));
+                let out = apply(mem, VIEW.get(mem), v, w);
+                last = Some([
+                    Reg::load(out[0]).add_m32(k10[0]).store(),
+                    Reg::load(out[1]).add_m32(k10[1]).store(),
+                    Reg::load(out[2]).add_m32(k10[2]).store(),
+                    Reg::load(k10[3]).add_m32(out[3]).store(),
+                ]);
+            }
+            2 => {
+                VF_PAR_V.set(mem, v.map(f32::to_bits));
+                apply(mem, WORLD.get(mem), v, w);
+                let part = CURRENT_PART.get(mem);
+                let sw = words(mem, part.wrapping_add(0x60));
+                let s = floats(sw);
+                let p: [f32; 3] = std::array::from_fn(|c| scaled(s[c], k10[c]));
+                let t: [f32; 3] = std::array::from_fn(|c| Reg::load(s[c]).add_m32(p[c]).store());
+                vf[0..4].copy_from_slice(&[p[0], p[1], p[2], k10[3]].map(f32::to_bits));
+                vf[4..8].copy_from_slice(&sw);
+                let r3 = [t[0], t[1], t[2], s[3]];
+                vf[8..12].copy_from_slice(&r3.map(f32::to_bits));
+                last = Some(r3);
+            }
+            _ => {}
+        }
+        VF_ROWS.set(mem, vf);
+        let local = frame.wrapping_sub(0x44);
+        mem.write(local, rows);
+        if let Some(r3) = last {
+            mem.write(local.wrapping_add(0x30), r3);
+        }
+        let copy = Global::<u32>::new(0x006e_d360).ptr(mem).addr;
+        call(mem, copy, &[dst, local]);
+    }
+
+    /// The VU0 `mul`/`madd` product of the row vector `v` (with `w` as its
+    /// fourth element) and `m`: `m` into `VF_PAR_M`, the partial sums in
+    /// `ACC`, the result in `VF_PAR`, which it returns (each product exact,
+    /// each sum rounded to `f32`).
+    fn apply(mem: &mut impl Mem, m: [f32; 16], v: [f32; 4], w: f32) -> [f32; 4] {
+        VF_PAR_M.set(mem, m.map(f32::to_bits));
+        let mut acc: [f32; 4] = std::array::from_fn(|c| scaled(m[c], v[0]));
+        for (r, x) in [v[1], v[2]].into_iter().enumerate() {
+            for (c, a) in acc.iter_mut().enumerate() {
+                *a = Reg::load(m[4 * (r + 1) + c]).mul_m32(x).add_m32(*a).store();
+            }
+        }
+        ACC.set(mem, acc.map(f32::to_bits));
+        let out: [f32; 4] =
+            std::array::from_fn(|c| Reg::load(w).mul_m32(m[12 + c]).add_m32(acc[c]).store());
+        VF_PAR.set(mem, out.map(f32::to_bits));
+        out
+    }
 }
