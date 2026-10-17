@@ -1341,6 +1341,19 @@ ported! {
     opus_cscale_get @ 0x0080_0c10 => extern "C" fn opus_cscale_get(chr: u32, battle: u32) -> f32 {
         opus::bridge::opus_cscale_get(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `op_fog_param_set()`: its local in a buffer on this shim's stack.
+    op_fog_param_set @ 0x007f_f100 => extern "C" fn op_fog_param_set() {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x20]);
+        let mut locals = Locals([0; 0x20]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x20;
+        op::bridge::op_fog_param_set(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_sep_wave_load(cue, mask)`.
+    op_oef2_sep_wave_load @ 0x007f_ffa0 => extern "C" fn op_oef2_sep_wave_load(cue: u32, mask: u32) -> u32 {
+        op::bridge::op_oef2_sep_wave_load(&mut mem(), cue, mask, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

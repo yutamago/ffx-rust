@@ -2324,4 +2324,106 @@ pub mod bridge {
         mem.write(t.wrapping_add(k.wrapping_mul(8)).wrapping_add(4), b);
         k
     }
+
+    /// `g_OpFog` (`0x011a0010`): the effects' fog: colour bytes (`+0`..`+2`),
+    /// near, far and a third parameter (`+4`, `+8`, `+0xc`, from
+    /// `yiGetFogParam`), then the derived scale, offset, negated near and
+    /// 255.0 (`+0x10`..`+0x1c`).
+    pub const FOG: Global<u8> = Global::new(0x011a_0010);
+
+    /// `op_fog_param_set()` (`0x007ff100`): the map's fog into `FOG`: the
+    /// colour (`yiGetFogColor` into a local, its three low bytes), the
+    /// parameters (`yiGetFogParam(&near, &far, &c)`; both through `call`),
+    /// then `+0x10` = `-(255 / (far - near))` (0 when they are equal),
+    /// `+0x14` = `255 - c`, `+0x18` = `-near`, `+0x1c` = 255.0. The local
+    /// lies below `frame` (from `frame - 0x14`).
+    pub fn op_fog_param_set<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use x87::{Reg, SUB};
+        let div: x87::Op = |a, b| a / b;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let local = frame.wrapping_sub(0x14);
+        let colour = g(mem, 0x0090_8980);
+        call(mem, colour, &[local]);
+        let fog = FOG.ptr(mem).addr;
+        for k in 0..3u32 {
+            let b: u8 = mem.read(local + 4 * k);
+            mem.write(fog + k, b);
+        }
+        let param = g(mem, 0x0090_8bb0);
+        call(mem, param, &[fog + 4, fog + 8, fog + 0xc]);
+        for at in [4u32, 8] {
+            let x: u32 = mem.read(fog + at);
+            mem.write(fog + at, x87::load(x));
+        }
+        let (near, far) = (Reg::load(mem.read(fog + 4)), Reg::load(mem.read(fog + 8)));
+        let k: f64 = mem.read(g(mem, 0x00b1_70c0));
+        #[allow(clippy::float_cmp)] // fucomp: exactly equal
+        let equal = near.value() == far.value();
+        let scale = if equal {
+            0.0
+        } else {
+            let d = far.reg(SUB, near);
+            match Reg::Num(k).reg(div, d) {
+                Reg::Num(x) => Reg::Num(-x),
+                Reg::Nan(b) => Reg::Nan(b ^ 0x8000_0000),
+            }
+            .store()
+        };
+        mem.write(fog + 0x10, scale);
+        let off = Reg::Num(k).mem(SUB, mem.read(fog + 0xc)).store();
+        mem.write(fog + 0x14, off);
+        let n = match near {
+            Reg::Num(x) => Reg::Num(-x),
+            Reg::Nan(b) => Reg::Nan(b ^ 0x8000_0000),
+        };
+        mem.write(fog + 0x18, n.store());
+        let top: u32 = mem.read(g(mem, 0x00b4_80d4));
+        mem.write(fog + 0x1c, x87::load(top));
+    }
+
+    /// `op_oef2_sep_wave_load(cue, mask)` (`0x007fffa0`): the sound sep of
+    /// the cue's wave (`cue +8`, its handle `+8`) gets a slot in
+    /// `OEF2_SEPS` unless one holds it already: the first free one, with
+    /// `mask` among its users, then `SndSepTransSepOnly(wave, wave +0xc)`;
+    /// then, for a positive `cue +0xc`, `SndStandbyBattleWave(it, 0)`
+    /// (both through `call`) and 1, else 0.
+    pub fn op_oef2_sep_wave_load<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let wave = stub_ptr(mem.read(cue.wrapping_add(8)));
+        let h: u32 = mem.read(wave.wrapping_add(8));
+        let seps = OEF2_SEPS.ptr(mem);
+        if !(0..32).any(|i| mem.read::<u32>(seps.at(i).addr) == h)
+            && let Some(i) = (0..32).find(|&i| mem.read::<u32>(seps.at(i).addr) == 0)
+        {
+            {
+                let at = seps.at(i).addr;
+                mem.write(at, h);
+                let u: u32 = mem.read(at + 4);
+                mem.write(at + 4, u | mask);
+                let len: u32 = mem.read(wave.wrapping_add(0xc));
+                let f = Global::<u32>::new(0x0088_6f30).ptr(mem).addr;
+                call(mem, f, &[wave, len]);
+            }
+        }
+        let n: u32 = mem.read(cue.wrapping_add(0xc));
+        if n.cast_signed() > 0 {
+            let f = Global::<u32>::new(0x0088_7450).ptr(mem).addr;
+            call(mem, f, &[n, 0]);
+            1
+        } else {
+            0
+        }
+    }
+
+    fn stub_ptr(p: u32) -> u32 {
+        ffx_system::stub::ptr32(p)
+    }
 }

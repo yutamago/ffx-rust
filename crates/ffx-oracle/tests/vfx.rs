@@ -7622,3 +7622,109 @@ fn round11b_helpers_match_the_original() {
         }
     }
 }
+
+/// [`check_deep`] for any number of arguments; `rust` gives the result to
+/// compare with `eax`, if any.
+#[allow(clippy::many_single_char_names)]
+fn check_deep_n(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    args: &[u32],
+    rust: impl FnOnce(&mut Oracle, u32) -> Option<u32>,
+) {
+    let n = u8::try_from(args.len()).unwrap();
+    let at = p.sym(THUNK);
+    let mut c = vec![0x81, 0xec, 0, 2, 0, 0]; // sub esp, 0x200
+    for _ in 0..n {
+        c.extend([0xff, 0xb4, 0x24]); // push [esp + 0x200 + 4n]
+        c.extend((0x200 + 4 * u32::from(n)).to_le_bytes());
+    }
+    c.push(0xe8); // call sym
+    let call_end = at + u32::try_from(c.len()).unwrap() + 4;
+    c.extend(p.sym(sym).wrapping_sub(call_end).to_le_bytes());
+    c.extend([0x81, 0xc4]); // add esp, 0x200 + 4n
+    c.extend((0x200 + 4 * u32::from(n)).to_le_bytes());
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    let w = 4 * u32::from(n);
+    let frame = p.b.stack_range().end - 0x100 - w - 4 - 0x200 - w - 4 - 4;
+    let r =
+        p.a.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    assert!(
+        r.st0.is_none(),
+        "{}: {what}: the original returns {:?} in ST0",
+        p.name,
+        r.st0
+    );
+    if let Some(mine) = rust(&mut p.b, frame) {
+        assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+    }
+    p.same(what);
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn fog_and_sep_waves_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_f100);
+        let cells = p.alloc(0x20);
+        copy_recorder(&mut p, 0x0090_8980, 1, 0, From::At(cells), 3);
+        // yiGetFogParam(a, b, c): each from the cells
+        let mut c = Vec::new();
+        for k in 0..3u8 {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+            c.extend([0x8b, 0x0d]); // mov ecx, [cell]
+            c.extend((cells + 0x10 + 4 * u32::from(k)).to_le_bytes());
+            c.extend([0x89, 0x08]); // mov [eax], ecx
+        }
+        c.push(0xc3);
+        let at = p.sym(0x0090_8bb0);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        deref_recorder(&mut p, 0x0088_6f30, &[0, 0]);
+        deref_recorder(&mut p, 0x0088_7450, &[0, 0]);
+        let seps = p.sym(op::bridge::OEF2_SEPS.sym);
+        let (cue, wave) = (p.alloc(0x10), p.alloc(0x10));
+        for _ in 0..3000 {
+            p.fill(cells, 0x20, &mut rng);
+            for k in 0..3 {
+                let x = if rng.chance(15) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(cells + 0x10 + 4 * k, x);
+            }
+            if rng.chance(20) {
+                let x: u32 = p.get(cells + 0x10);
+                p.set(cells + 0x14, x);
+            }
+            check_deep_n(&mut p, "op_fog_param_set", 0x007f_f100, &[], |o, frame| {
+                // eax is the status word over a colour byte: no result
+                op::bridge::op_fog_param_set(o, frame, &mut call_original);
+                None
+            });
+            for i in 0..32 {
+                let h = if rng.chance(50) { 0 } else { rng.below(40) };
+                p.set(seps + 8 * i, h);
+                p.set(seps + 8 * i + 4, rng.below(16));
+            }
+            p.set(cue + 8, wave);
+            p.set(wave + 8, rng.below(40));
+            p.set(wave + 0xc, rng.next());
+            p.set(cue + 0xc, rng.pick(&[0u32, 1, 0x8000_0000, 7]));
+            let mask = 1u32 << rng.below(8);
+            p.check("op_oef2_sep_wave_load", 0x007f_ffa0, &[cue, mask], |o| {
+                Some(op::bridge::op_oef2_sep_wave_load(
+                    o,
+                    cue,
+                    mask,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
