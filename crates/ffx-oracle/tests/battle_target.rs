@@ -2930,7 +2930,9 @@ fn whole_turn(
         poke(a, b, p + 0x5c8, &[u8::try_from(rng.below(2)).unwrap()]);
         poke(a, b, p + 0xdf3, &[[0, 1, 0x80][rng.below(3) as usize]]);
         poke(a, b, p + 0x716, &[flag(rng, 4)]);
-        poke(a, b, p + 0x591, &[[0x11, 0][rng.below(2) as usize]]);
+        // the party's members are party members (+0x591 0x11: the cheat
+        // heals them)
+        poke(a, b, p + 0x591, &[if q < 3 { 0x11 } else { 0 }]);
         // mostly past the turn's start actions (+0xdf7: their random
         // request blocks rewrite the statuses above)
         poke(a, b, p + 0xdf7, &[flag(rng, 4) ^ 1]);
@@ -2959,7 +2961,16 @@ fn whole_turn(
         [0, 0, 0, 0, 1, 2][rng.below(6) as usize],
     );
     set(a, b, ip::AUTO_OFF, flag(rng, 3));
-    set(a, b, ip::CHEAT_POWERUP, u32::from(flag(rng, 6)));
+    set(a, b, ip::CHEAT_POWERUP, u32::from(flag(rng, 3)));
+    // at times Regen without a Zombie (the numbers' wait, not the
+    // commands')
+    if rng.below(3) == 0 {
+        for q in 0..ACTORS {
+            let p = w.actor(q);
+            let v = b.read(p + 0x606, 1).unwrap()[0] & !2;
+            poke(a, b, p + 0x606, &[v]);
+        }
+    }
     if !placed(a, b, w, out) {
         return;
     }
