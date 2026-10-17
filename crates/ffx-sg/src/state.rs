@@ -1522,6 +1522,73 @@ pub mod bridge {
         0
     }
 
+    /// The id edge a move last crossed (`Sg_IdHitTriangle`'s, `0x0083d960`):
+    /// its two `i16` vertices.
+    pub const ID_EDGE_B: Global<u32> = Global::new(0x0130_1aec);
+    pub const ID_EDGE_A: Global<u32> = Global::new(0x0130_1af0);
+
+    /// `Sg_IdSlideEdge(from, to)` (`0x0083e180`): a move from `from` to
+    /// `to` (`f32` x, z) that crossed the edge [`ID_EDGE_B`] to
+    /// [`ID_EDGE_A`] slides along it. The move, in the edge's frame (`M`,
+    /// the rotation about y taking x to the edge's unit direction;
+    /// `FFXVu0ApplyMatrix`), loses its across component. While the result
+    /// back in the world (`FFXVu0InversMatrix`) is still on the far side
+    /// (`w.z * n.x - w.x * n.z` above 0), it steps one unit further back
+    /// along z. `to` becomes `from + w` in x and z (y as it was).
+    pub fn id_slide_edge(mem: &mut impl Mem, from: u32, to: u32) {
+        use crate::scratch::{SCRATCH, Scratch};
+        use ffx_bridge::x87;
+        use ffx_ps2::vu0::bridge as vu0;
+        let ld = |b: u32| x87::load(b);
+        let st = |x: f64| f32::from_bits(x87::store(x));
+        let a = ID_EDGE_A.get(mem);
+        let b = ID_EDGE_B.get(mem);
+        let comp = |m: &_, p: u32, k: u32| i32::from(Mem::read::<i16>(m, p.wrapping_add(k)));
+        let ex = st(f64::from(comp(mem, a, 0) - comp(mem, b, 0)));
+        let ez = st(f64::from(comp(mem, a, 4) - comp(mem, b, 4)));
+        let f = |m: &_, p: u32, k: u32| ld(Mem::read::<u32>(m, p.wrapping_add(4 * k)));
+        let vx = st(x87::sub(f(mem, to, 0), f(mem, from, 0)));
+        let vz = st(x87::sub(f(mem, to, 2), f(mem, from, 2)));
+        let mut s = Scratch::new(mem);
+        let (e, v, n, m, u, inv, w) = (
+            SCRATCH,
+            SCRATCH + 0x10,
+            SCRATCH + 0x20,
+            SCRATCH + 0x40,
+            SCRATCH + 0x80,
+            SCRATCH + 0xc0,
+            SCRATCH + 0x100,
+        );
+        s.write(e, [ex, 0.0, ez, 0.0]);
+        s.write(v, [vx, 0.0, vz, 0.0]);
+        vu0::normalize(&mut s, n, e);
+        vu0::matrix_identity(&mut s, m);
+        let [nx, _, nz]: [f32; 3] = s.read(n);
+        let (nx, nz) = (x87::round_trip(nx), x87::round_trip(nz));
+        s.write(m, [nx, 0.0, -nz]);
+        s.write(m + 0x10, [0f32, 1.0, 0.0]);
+        s.write(m + 0x20, [nz, 0.0, nx]);
+        vu0::apply_matrix(&mut s, u, m, v);
+        ffx_system::math::bridge::orthonormal_inverse3x4(&mut s, inv, m);
+        s.write(u + 8, 0f32);
+        loop {
+            vu0::apply_matrix(&mut s, w, inv, u);
+            let [wx, _, wz]: [u32; 3] = s.read(w);
+            let (nxb, nzb) = (ld(nx.to_bits()), ld(nz.to_bits()));
+            let side = x87::sub(x87::mul(ld(wz), nxb), x87::mul(ld(wx), nzb));
+            // a NaN ends it too
+            if side.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+                let x = st(x87::add(ld(wx), ld(s.read(from))));
+                s.write(to, x);
+                let z = st(x87::add(ld(wz), ld(s.read(from.wrapping_add(8)))));
+                s.write(to.wrapping_add(8), z);
+                return;
+            }
+            let uz = ld(s.read(u + 8));
+            s.write(u + 8, st(x87::sub(uz, 1.0)));
+        }
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
