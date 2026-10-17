@@ -1878,6 +1878,30 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x30;
         lns::bridge::ppp_ke_lns_lp_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `pppKeMdlTfdDraw(obj, key, prog)`.
+    pppKeMdlTfdDraw @ 0x0074_9810 => extern "C" fn ppp_ke_mdl_tfd_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::One, false, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfd2Draw(obj, key, prog)`.
+    pppKeMdlTfd2Draw @ 0x0074_9b40 => extern "C" fn ppp_ke_mdl_tfd2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Two, false, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfd3Draw(obj, key, prog)`.
+    pppKeMdlTfd3Draw @ 0x0074_9e90 => extern "C" fn ppp_ke_mdl_tfd3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Three, false, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdUvDraw(obj, key, prog)`.
+    pppKeMdlTfdUvDraw @ 0x0074_9950 => extern "C" fn ppp_ke_mdl_tfd_uv_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::One, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdUv2Draw(obj, key, prog)`.
+    pppKeMdlTfdUv2Draw @ 0x0074_9c90 => extern "C" fn ppp_ke_mdl_tfd_uv2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Two, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdUv3Draw(obj, key, prog)`.
+    pppKeMdlTfdUv3Draw @ 0x0074_9ff0 => extern "C" fn ppp_ke_mdl_tfd_uv3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Three, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppKeTkFadeDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppKeTkFadeDraw @ 0x0072_ee50 => extern "C" fn ppp_ke_tk_fade_draw(obj: u32, key: u32, prog: u32) -> u32 {

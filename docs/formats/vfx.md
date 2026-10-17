@@ -189,3 +189,21 @@ and `+4` added to `+0xa8`, `+0x9c` on its frame, bytes `+0xc`, `+0xd` to
 `+0x90` while `+0x8f` is set, copies the object's position `+0x40` to
 `+0x80` and calls `KeLnsLp_Update` with `[set_ptr32(area), obj + 0x40,
 g_pppViewMatrix, g_pppScreenMatrix]`.
+
+## Fading models (`pppKeMdlTfd*`)
+
+Ported with the model draws (`mdl.rs`, `ppp_ke_mdl_tfd_draw`). The work
+area `obj + 0xa0 + [[prog + 0xc] + 8]` holds one `[pos, speed, accel]`
+triple (`Tfd`, `Tfd2`, `Tfd3`) or three at `+0`, `+0x10`, `+0x1c` (`Uv`
+variants, key floats from `+8`, `+0x20`, `+0x2c`), stepped like the `Ts`
+draws unless `g_pppStop`. Unless the key's model is `0xffff`:
+`KeMdl_MkTkClut(key[0x14], key[0x18], pos, 0)`, then
+
+    KeMdl_Draw(obj, model, obj + 0xa0 + [[prog + 0xc]], key[0x1c] << 2,
+               u, v, mode, zmat, part + 0x70, part[0x78])
+
+| Variant | `u`, `v` | `mode` | `zmat` |
+| --- | --- | --- | --- |
+| `Tfd` (`0x00749810`), `TfdUv` (`0x00749950`) | 0, or `ftol` of positions 2, 3 | 1 | 0 |
+| `Tfd2` (`0x00749b40`), `TfdUv2` (`0x00749c90`) | as above | key `+0x1d` / `+0x38` | 0 |
+| `Tfd3` (`0x00749e90`), `TfdUv3` (`0x00749ff0`) | as above | key `+0x1d..+0x21` / `+0x38..+0x3c` OR-ed | `obj + 0xa0 + [[prog + 0xc] + 0xc]` |

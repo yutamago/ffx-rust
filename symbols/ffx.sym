@@ -3817,17 +3817,17 @@
 0x007490c0 function pppKeMdlBmpCon2           # ppp program table record "pppKeMdlBmp" +0x20 set-up; not a function start in the Ghidra dump
 0x007490d0 function pppKeMdlBmpDraw           # ppp program table record "pppKeMdlBmp" draw; not a function start in the Ghidra dump
 0x007497e0 function pppKeMdlTfdCon            # ppp program table record "pppKeMdlTfd" (0x00c3ab98) +0x1c set-up; "pppKeMdlTfd" (0x00c3ab98) +0x20 second set-up; "pppKeMdlTfd" (0x00c3c240) +0x1c set-up and 1 more
-0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0
+0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (One): one pos/speed/accel triple at area [[prog+0xc]+8] stepped (key +8..+0x10 on its frame); KeMdl_MkTkClut(key+0x14, key+0x18, pos, 0); KeMdl_Draw(obj, model, area0, key[0x1c] << 2, 0, 0, 1, 0, part+0x70, part[0x78]) (oracle parity)
 0x007498f0 function pppKeMdlTfdUvCon          # ppp program table record "pppKeMdlTfdUv" (0x00c3dd48) +0x1c set-up; "pppKeMdlTfdUv" (0x00c3dd48) +0x20 second set-up
-0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20
+0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (One, uv): three triples (+0, +0x10, +0x1c; key +8, +0x20, +0x2c); KeMdl_Draw u, v = ftol of the second and third positions (oracle parity)
 0x00749b10 function pppKeMdlTfd2Con           # ppp program table record "pppKeMdlTfd2" (0x00c3dd70) +0x1c set-up; "pppKeMdlTfd2" (0x00c3dd70) +0x20 second set-up
-0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw
+0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Two): KeMdl_Draw mode = key +0x1d (oracle parity)
 0x00749c30 function pppKeMdlTfdUv2Con         # ppp program table record "pppKeMdlTfdUv2" (0x00c3dd98) +0x1c set-up; "pppKeMdlTfdUv2" (0x00c3dd98) +0x20 second set-up
-0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw
+0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Two, uv): mode = key +0x38 (oracle parity)
 0x00749e60 function pppKeMdlTfd3Con           # ppp program table record "pppKeMdlTfd3" (0x00c3ddc0) +0x1c set-up; "pppKeMdlTfd3" (0x00c3ddc0) +0x20 second set-up
-0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60
+0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three): mode = key +0x1d..+0x21 OR-ed, zmat = obj+0xa0+[[prog+0xc]+0xc] (oracle parity)
 0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
-0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
+0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three, uv): mode = key +0x38..+0x3c OR-ed, zmat as Tfd3 (oracle parity)
 0x0074a1e0 function pppNeiDrawMdlPointLightDraw # ppp program table record "pppNeiDrawMdlPointLight" draw; not a function start in the Ghidra dump
 0x0074a850 function pppNeiDrawMdlSemiPointLightDraw # ppp program table record "pppNeiDrawMdlSemiPointLight" draw; not a function start in the Ghidra dump
 0x0074ae70 function pppNeiDrawMdlTsPointLightDraw # ppp program table record "pppNeiDrawMdlTsPointLight" draw; not a function start in the Ghidra dump

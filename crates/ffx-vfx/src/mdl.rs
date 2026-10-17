@@ -888,41 +888,11 @@ pub mod bridge {
     /// frame).
     fn ts_step(mem: &mut impl Mem, obj: u32, key: u32, prog: u32) -> (u32, u32) {
         let w = at(obj, offset(mem, prog, 2)).wrapping_add(0xa0);
-        if mem.read::<u32>(g(mem, STOP)) != 0 {
-            return (w, prog);
+        if step_triples(mem, obj, key, w, &[(0, 8), (0xc, 0x14)]) {
+            (w, mem.read(key))
+        } else {
+            (w, prog)
         }
-        let mut regs = [0u32; 4];
-        for (k, base) in [0u32, 0xc].into_iter().enumerate() {
-            let speed = store(add(f(mem, at(w, base + 8)), f(mem, at(w, base + 4))));
-            mem.write(at(w, base + 4), speed);
-            let pos = store(add(f(mem, at(w, base)), load(speed)));
-            mem.write(at(w, base), pos);
-            regs[2 * k] = pos;
-            regs[2 * k + 1] = speed;
-        }
-        let frame: u32 = mem.read(key);
-        if frame != mem.read::<u32>(at(obj, 0xc)) {
-            return (w, frame);
-        }
-        // the key's six floats added: positions and speeds to the values
-        // still in registers, accelerations to memory
-        let [pos0, speed0, pos1, speed1] = regs;
-        for (o, reg) in [
-            (0u32, Some(pos0)),
-            (4, Some(speed0)),
-            (8, None),
-            (0xc, Some(pos1)),
-            (0x10, Some(speed1)),
-            (0x14, None),
-        ] {
-            let kv = f(mem, at(key, o + 8));
-            let v = match reg {
-                Some(r) => add(load(r), kv),
-                None => add(kv, f(mem, at(w, o))),
-            };
-            mem.write(at(w, o), store(v));
-        }
-        (w, frame)
     }
 
     /// The request's `+0x10` and `+0x14`: the floats at `x` and `y` in
@@ -1264,5 +1234,137 @@ pub mod bridge {
             space: LoopSpace::PartRelative,
         };
         mdl_loop(mem, obj, key, prog, frame, kind, call)
+    }
+
+    const MK_TK_CLUT: u32 = 0x0076_7530;
+    const KE_MDL_DRAW: u32 = 0x0076_6ff0;
+
+    /// Steps `[pos, speed, accel]` triples of the work area `w` (each
+    /// `(area offset, key offset)`) unless `g_pppStop`: `speed += accel`,
+    /// `pos += speed` for every triple, then on the key's frame (`[key] ==
+    /// [obj + 0xc]`) each triple's three key floats added to the position
+    /// and speed still in registers and to the acceleration in memory.
+    /// Returns whether it stepped.
+    fn step_triples(
+        mem: &mut impl Mem,
+        obj: u32,
+        key: u32,
+        w: u32,
+        triples: &[(u32, u32)],
+    ) -> bool {
+        if mem.read::<u32>(g(mem, STOP)) != 0 {
+            return false;
+        }
+        let mut regs = [(0u32, 0u32); 3];
+        for (r, &(o, _)) in regs.iter_mut().zip(triples) {
+            let speed = store(add(f(mem, at(w, o + 8)), f(mem, at(w, o + 4))));
+            mem.write(at(w, o + 4), speed);
+            let pos = store(add(f(mem, at(w, o)), load(speed)));
+            mem.write(at(w, o), pos);
+            *r = (pos, speed);
+        }
+        if mem.read::<u32>(key) != mem.read::<u32>(at(obj, 0xc)) {
+            return true;
+        }
+        for (&(pos, speed), &(o, k)) in regs.iter().zip(triples) {
+            let v = store(add(load(pos), f(mem, at(key, k))));
+            mem.write(at(w, o), v);
+            let v = store(add(load(speed), f(mem, at(key, k + 4))));
+            mem.write(at(w, o + 4), v);
+            let v = store(add(f(mem, at(key, k + 8)), f(mem, at(w, o + 8))));
+            mem.write(at(w, o + 8), v);
+        }
+        true
+    }
+
+    /// The three `pppKeMdlTfd*` draw families' `KeMdl_Draw` arguments.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Tfd {
+        /// `Tfd`, `TfdUv`: mode 1, no Z matrix.
+        One,
+        /// `Tfd2`, `TfdUv2`: the mode from a key byte.
+        Two,
+        /// `Tfd3`, `TfdUv3`: the mode from five key bytes OR-ed, the Z
+        /// matrix the work area at offset 3.
+        Three,
+    }
+
+    /// `pppKeMdlTfdDraw` (`0x00749810`), `pppKeMdlTfd2Draw` (`0x00749b40`),
+    /// `pppKeMdlTfd3Draw` (`0x00749e90`), and with `uv`
+    /// `pppKeMdlTfdUvDraw` (`0x00749950`), `pppKeMdlTfdUv2Draw`
+    /// (`0x00749c90`), `pppKeMdlTfdUv3Draw` (`0x00749ff0`) `(obj, key,
+    /// prog)`: a fading model. The work area `w = obj + 0xa0 + [[prog +
+    /// 0xc] + 8]` holds one `[pos, speed, accel]` triple (three with
+    /// `uv`, at `+0x10` and `+0x1c`, key floats `+0x20`, `+0x2c`), stepped
+    /// ([`step_triples`]). Unless the key's model (`+4`) is `0xffff`,
+    /// `KeMdl_MkTkClut(key + 0x14, key + 0x18, pos, 0)`, then
+    /// `KeMdl_Draw(obj, model, obj + 0xa0 + [[prog + 0xc]], key[0x1c] << 2,
+    /// u, v, mode, zmat, part + 0x70, part[0x78])` with `u, v` the other
+    /// two positions truncated (`uv`) or 0. Returns what the original
+    /// leaves in eax.
+    pub fn ppp_ke_mdl_tfd_draw<M: Mem>(
+        mem: &mut M,
+        kind: Tfd,
+        uv: bool,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(at(prog, 0xc));
+        let w = at(obj, 0xa0).wrapping_add(mem.read(at(table, 8)));
+        let triples: &[(u32, u32)] = if uv {
+            &[(0, 8), (0x10, 0x20), (0x1c, 0x2c)]
+        } else {
+            &[(0, 8)]
+        };
+        let eax = if step_triples(mem, obj, key, w, triples) {
+            mem.read(at(obj, 0xc))
+        } else {
+            table
+        };
+        let model: u32 = mem.read(at(key, 4));
+        if model == 0xffff {
+            return eax;
+        }
+        let shift = u32::from(mem.read::<u8>(at(key, 0x1c))) << 2;
+        let pos = store(f(mem, w));
+        let clut = [mem.read(at(key, 0x14)), mem.read(at(key, 0x18)), pos, 0];
+        call(mem, g(mem, MK_TK_CLUT), &clut);
+        let part: u32 = mem.read(g(mem, CURRENT_PART));
+        let (u, v) = if uv {
+            (
+                ftol(mem, f(mem, at(w, 0x10))),
+                ftol(mem, f(mem, at(w, 0x1c))),
+            )
+        } else {
+            (0, 0)
+        };
+        let bytes = if uv { 0x38 } else { 0x1d };
+        let (mode, zmat) = match kind {
+            Tfd::One => (1, 0),
+            Tfd::Two => (u32::from(mem.read::<u8>(at(key, bytes))), 0),
+            Tfd::Three => {
+                let any = (bytes..bytes + 5).fold(0u8, |a, o| a | mem.read::<u8>(at(key, o)));
+                (
+                    u32::from(any),
+                    at(obj, 0xa0).wrapping_add(mem.read(at(table, 0xc))),
+                )
+            }
+        };
+        let col = at(obj, 0xa0).wrapping_add(mem.read(table));
+        let args = [
+            obj,
+            model,
+            col,
+            shift,
+            u,
+            v,
+            mode,
+            zmat,
+            at(part, 0x70),
+            mem.read(at(part, 0x78)),
+        ];
+        call(mem, g(mem, KE_MDL_DRAW), &args)
     }
 }

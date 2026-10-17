@@ -9641,6 +9641,80 @@ fn lns_lp_draw_matches_the_original() {
     );
 }
 
+/// The `pppKeMdlTfd*` draws: `KeMdl_MkTkClut` and `KeMdl_Draw` recorded
+/// (all their words), the work area's triples and the key's floats in
+/// range.
+fn tfd_case(name: &str, sym: u32, rust: impl Fn(&mut Oracle, u32, u32, u32) -> u32) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        deref_recorder(&mut p, 0x0076_7530, &[0, 0, 0, 0]);
+        deref_recorder(&mut p, 0x0076_6ff0, &[0; 10]);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x80),
+        );
+        let (cpart, stop) = (p.sym(0x0230_ffe4), p.sym(0x0230_fd34));
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(prog + 0xc, table);
+            for k in 0..4 {
+                let off = 4 * rng.below(0x10);
+                p.set(table + 4 * k, off);
+            }
+            p.set(cpart, part);
+            p.set(stop, u32::from(rng.chance(20)));
+            let w = obj + 0xa0 + p.get::<u32>(table + 8);
+            for o in (0..0x28).step_by(4) {
+                let x = ranged(&mut rng, -300.0, 300.0);
+                p.set(w + o, x);
+            }
+            for o in (8..0x38).step_by(4) {
+                if o != 0x1c {
+                    let x = ranged(&mut rng, -50.0, 50.0);
+                    p.set(key + o, x);
+                }
+            }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            if rng.chance(10) {
+                p.set(key + 4, 0xffffu32);
+            }
+            for o in (0x1d..0x22).chain(0x38..0x3d) {
+                if rng.chance(60) {
+                    p.set(key + o, 0u8);
+                }
+            }
+            check_conv(&mut p, name, sym, Conv::Cdecl, &[obj, key, prog], |o| {
+                Some(rust(o, obj, key, prog))
+            });
+        }
+    }
+}
+
+#[test]
+fn ke_mdl_tfd_draws_match_the_original() {
+    use mdl::bridge::{self as d, Tfd};
+    for (kind, uv, name, sym) in [
+        (Tfd::One, false, "pppKeMdlTfdDraw", 0x0074_9810u32),
+        (Tfd::Two, false, "pppKeMdlTfd2Draw", 0x0074_9b40),
+        (Tfd::Three, false, "pppKeMdlTfd3Draw", 0x0074_9e90),
+        (Tfd::One, true, "pppKeMdlTfdUvDraw", 0x0074_9950),
+        (Tfd::Two, true, "pppKeMdlTfdUv2Draw", 0x0074_9c90),
+        (Tfd::Three, true, "pppKeMdlTfdUv3Draw", 0x0074_9ff0),
+    ] {
+        tfd_case(name, sym, |o, obj, key, prog| {
+            d::ppp_ke_mdl_tfd_draw(o, kind, uv, obj, key, prog, &mut call_original)
+        });
+    }
+}
+
 /// A thunk, `fld qword [esp + 4]; jmp [slot]`, through `_CItan`'s import
 /// slot (`0x00b0c3a0`, MSVCR110's own `_CItan` in the oracle's runtime), for
 /// the bridges' `tan` callback; returns the thunk.
