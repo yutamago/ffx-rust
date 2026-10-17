@@ -363,4 +363,201 @@ pub mod bridge {
         }
         SCRIPT_TARGETS.get(mem)
     }
+
+    /// Set when an overdrive type was learnt (`MsLimitTypeExpGet`).
+    pub const LIMIT_LEARNT: Global<u8> = Global::new(0x0112_c02b);
+    /// `SndGetNowPlayMusic`, `SndMusicVolumeTranslate` (sound),
+    /// `TOBtlOpenSignWindow` (system).
+    pub const SND_GET_NOW_PLAY_MUSIC: u32 = 0x0088_63f0;
+    pub const SND_MUSIC_VOLUME_TRANSLATE: u32 = 0x0088_6b40;
+    pub const TO_BTL_OPEN_SIGN_WINDOW: u32 = 0x0089_8c60;
+    /// The title window's position bytes (`MsMenuOpenTitleWindow`).
+    pub const TITLE_WINDOW: Global<[u8; 2]> = Global::new(0x0112_c9d1);
+
+    /// `MsLimitTypeExpGet(i, k, force)` (`0x007b10c0`): party member `i`'s
+    /// (up to 6) progress towards overdrive type `k` (up to 0x10): unless
+    /// the battle keeps no records (`g_BtlStealRule`), it is KO'd or
+    /// petrified (without `force`), it already counted `k` this turn
+    /// (`+0x6f0` bit `k`) or its counter (`ply_save +0x60[k]`) is 0xffff:
+    /// counted (`+0x6f0`), the counter down by one (not below 0); at 0 with
+    /// the type not yet had (`+0x88` bit `k`) [`LIMIT_LEARNT`] is set and 1.
+    /// Else 0.
+    pub fn ms_limit_type_exp_get(mem: &mut impl Mem, i: u32, k: u32, force: u32) -> u32 {
+        if crate::save::bridge::STEAL_RULE.get(mem) != 0 || i > 6 || k > 0x10 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        if (byte(mem, a, 0xdcc) != 0 || byte(mem, a, 0xdce) != 0) && force == 0 {
+            return 0;
+        }
+        let bit = 1u32 << k;
+        let had: u32 = mem.read(a.wrapping_add(0x6f0));
+        if had & bit != 0 {
+            return 0;
+        }
+        let rec = crate::save::bridge::PLY_SAVE.ptr(mem).addr + i * 0x94;
+        let at = rec + 0x60 + 2 * k;
+        let v: u16 = mem.read(at);
+        if v == 0xffff {
+            return 0;
+        }
+        mem.write(a.wrapping_add(0x6f0), had | bit);
+        let types: u32 = mem.read(rec + 0x88);
+        if v != 0 {
+            mem.write(at, v - 1);
+        }
+        if mem.read::<u16>(at) != 0 || (types >> k) & 1 != 0 {
+            return 0;
+        }
+        LIMIT_LEARNT.set(mem, 1);
+        1
+    }
+
+    /// `MsLimitTypeEscapeCheck(i, actor)` (`0x007b1090`): escaping counts
+    /// towards overdrive type 0xc ([`ms_limit_type_exp_get`]) and, with
+    /// that type set (`+0x5bb` 0xc), raises the gauge
+    /// (`MsLimitUp(i, actor, 10)`). 0.
+    pub fn ms_limit_type_escape_check(mem: &mut impl Mem, i: u32, actor: u32) -> u32 {
+        ms_limit_type_exp_get(mem, i, 0xc, 0);
+        if byte(mem, actor, 0x5bb) == 0xc {
+            crate::turn::bridge::ms_limit_up(mem, i, actor, 10);
+        }
+        0
+    }
+
+    /// `MsMusicVolume(volume, frames)` (`0x007a0090`): the playing music's
+    /// volume (`SndMusicVolumeTranslate(SndGetNowPlayMusic(), frames,
+    /// volume)`), its result.
+    pub fn ms_music_volume<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        volume: u32,
+        frames: u32,
+    ) -> u32 {
+        let f = code(mem, SND_GET_NOW_PLAY_MUSIC);
+        let m = call(mem, f, &[]);
+        let f = code(mem, SND_MUSIC_VOLUME_TRANSLATE);
+        call(mem, f, &[m, frames, volume])
+    }
+
+    /// `MsMenuOpenTitleWindow(i, pos)` (`0x0078fea0`): the battle's sign
+    /// window `i` (`TOBtlOpenSignWindow`); when it opens, [`TITLE_WINDOW`]
+    /// both `pos` and `pos` returned, else 0.
+    pub fn ms_menu_open_title_window<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        i: u32,
+        pos: u32,
+    ) -> u32 {
+        let f = code(mem, TO_BTL_OPEN_SIGN_WINDOW);
+        if call(mem, f, &[i]) == 0 {
+            return 0;
+        }
+        let b = pos.to_le_bytes()[0];
+        TITLE_WINDOW.set(mem, [b, b]);
+        pos
+    }
+
+    /// The effect file table (`MsEffectFileNumber`): `u16` first numbers,
+    /// one per effect, the next one's ending it.
+    pub const EFFECT_FILES: Global<u32> = Global::new(0x0112_a950);
+    /// `SndSepClear` (sound).
+    pub const SND_SEP_CLEAR: u32 = 0x0088_6d80;
+    /// The aeon commands' table: 16 bytes per aeon (actor 8 on), three
+    /// `u16` command / `u8` value pairs and a fourth at `+4` (`0x007af060`).
+    pub const AEON_COMMANDS: Global<u8> = Global::new(0x00c4_38a8);
+
+    /// `MsEffectFileNumber(n, k)` (`0x00787a70`): file `k + 1` of effect
+    /// `n` (below 0x400) in [`EFFECT_FILES`], -1 past its files.
+    pub fn ms_effect_file_number(mem: &impl Mem, n: i32, k: i32) -> i32 {
+        if n >= 0x400 {
+            return -1;
+        }
+        let t = EFFECT_FILES.get(mem).wrapping_add((n * 2).cast_unsigned());
+        let first = i32::from(mem.read::<u16>(t));
+        let next = i32::from(mem.read::<u16>(t.wrapping_add(2)));
+        let k = k.wrapping_add(1);
+        if k < next - first { first + k } else { -1 }
+    }
+
+    /// `MsSEPchrClear(actor, shared)` (`0x007a0400`): the actor's 32 sound
+    /// effect slots (`+0xeac`) stopped (`SndSepClear`) and cleared, with
+    /// `shared` those another actor (not its own index `+0xc`) also holds
+    /// only cleared; `+0xf2c` cleared.
+    pub fn ms_sep_chr_clear<M: Mem>(mem: &mut M, call: Call<'_, M>, actor: u32, shared: u32) {
+        let slots = actor.wrapping_add(0xeac);
+        if shared != 0 {
+            let own = u32::from(byte(mem, actor, 0xc));
+            for k in 0..32 {
+                let at = slots + 4 * k;
+                let id: u32 = mem.read(at);
+                if id == 0 {
+                    continue;
+                }
+                let held = (0..0x1f).filter(|&j| j != own).any(|j| {
+                    let o = ms_get_chr(mem, j).wrapping_add(0xeac);
+                    (0..32).any(|m| mem.read::<u32>(o + 4 * m) == id)
+                });
+                if held {
+                    mem.write(at, 0u32);
+                }
+            }
+        }
+        for k in 0..32 {
+            let at = slots + 4 * k;
+            let id: u32 = mem.read(at);
+            if id != 0 {
+                let f = code(mem, SND_SEP_CLEAR);
+                call(mem, f, &[id]);
+                mem.write(at, 0u32);
+            }
+        }
+        mem.write(actor.wrapping_add(0xf2c), 0u8);
+    }
+
+    /// `0x007af060(i, id, kind, &mode, &value)` (`MsGetAeonCommand`, name
+    /// ours): aeon `i`'s (actor 8 on, [`AEON_COMMANDS`]) command for `kind`
+    /// 0 (mode 1: the pair at `+4` once command `id` was used and the menu
+    /// setting `0x800` is off, else `+0`), 1 (`+8`, mode 3) or 2 (`+0xc`,
+    /// mode 2); 0 and mode 0 for others. `mode` and `value` (unless null)
+    /// get the mode and the pair's byte.
+    pub fn ms_get_aeon_command(
+        mem: &mut impl Mem,
+        i: u32,
+        id: u32,
+        kind: u32,
+        mode: u32,
+        value: u32,
+    ) -> u32 {
+        let rec = AEON_COMMANDS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_sub(8) << 4);
+        let at = match kind {
+            0 => {
+                let menu = crate::save::bridge::MENU.get(mem);
+                let used = menu & 0x800 == 0
+                    && crate::save::bridge::ms_get_save_command_use(mem, i.cast_signed(), id) != 0;
+                Some((if used { 4 } else { 0 }, 1))
+            }
+            1 => Some((8, 3)),
+            2 => Some((0xc, 2)),
+            _ => None,
+        };
+        let (cmd, val, m) = match at {
+            Some((o, m)) => (
+                u32::from(mem.read::<u16>(rec + o)),
+                u32::from(byte(mem, rec, o + 2)),
+                m,
+            ),
+            None => (0, 0, 0),
+        };
+        if mode != 0 {
+            mem.write(mode, m);
+        }
+        if value != 0 {
+            mem.write(value, val);
+        }
+        cmd
+    }
 }

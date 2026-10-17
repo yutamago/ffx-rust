@@ -235,10 +235,12 @@
 0x0044f8c0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PEntity__Get_0044f8c0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PEntity *>::Get" (its own __FUNCTION__ in an error print)
 0x0044f9a0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix *>::Get" (its own __FUNCTION__ in an error print)
 0x00450350 function Phyre_PClassDescriptorConcrete_Phyre_PEntity__getValueFromScriptContext # fh switch:bsim0.90 0x71000b4480 Phyre::PClassDescriptorConcrete<Phyre::PEntity>::getValueFromScriptContext
+0x00451190 function PMatrix4_toWorldMatrix3x4 # structure: thiscall(dst, m): rows 1-3 of a 4x4 to a 3x4, row 0's x/y/z as the last column; graphicCameraSetWorldMatrix and PhyreScene_setAbmapCamera build the camera world matrix with it; name ours
 0x004514a0 function Phyre_PWorldMatrix_Bind   # fh v3:exact 0x00451580 Phyre::PWorldMatrix::Bind
 0x004517d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix__Get_004517d0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix &>::Get" (its own __FUNCTION__ in an error print)
 0x004518a0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PMatrix4x3_const__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PMatrix4x3 const &>::Get" (its own __FUNCTION__ in an error print)
 0x00451970 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix_const__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix const &>::Get" (its own __FUNCTION__ in an error print)
+0x00451c30 function PMatrix4_lookAt           # structure: thiscall(m, eye, target, up): normalises up and target - eye (_CIsqrt), cross products into a view basis; reads 3 floats of each vector; PhyreScene_setAbmapCamera and Phyre_CharacterLighting_setLightDir; name ours
 0x00452300 function Phyre_PClassDescriptorForType_Phyre_PEntity__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b4500 Phyre::PClassDescriptorForType<Phyre::PEntity>::getPointerFromScriptContext
 0x004537d0 function Phyre_PCamera_Bind        # fh v3:exact 0x004538a0 Phyre::PCamera::Bind
 0x00454070 function Phyre_PCameraProjection_Bind # fh v3:exact 0x00454140 Phyre::PCameraProjection::Bind
@@ -1776,6 +1778,7 @@
 0x00642410 function graphicMinimapCameraSetWorldMatrix # fh v3:exact 0x006425c0
 0x006425d0 function graphicMinimapFogSetEnable # fh v3:cg2 0x642780
 0x006425f0 function graphicMinimapSetEnable   # fh v3:bsim1.00 0x006427a0
+0x00642610 function graphicIsMapInList        # structure: 1 when the map id 0x01330844 is one of 16 listed (0x118, 0x52, 0x51, 0xde, 0x13c, 0x17d, 0x5d, 0x12, 0x15d, 0xf8, 0x99, 0xb3, 0x50, 0x137, 0x16b, 0x84), else 0; name ours
 0x00642690 function graphicNeedResetMapParam  # () -> movzx g_PhyreScene +0x10d2d; name Fahrenheit's (Switch BSim)
 0x006426a0 function graphicObjectSetRotation  # fh v3:bsim1.00 0x00642850
 0x006426c0 function graphicObjectSetTranslation # fh v3:bsim1.00 0x00642870
@@ -1972,7 +1975,9 @@
 0x0064b7a0 function Phyre_PCluster_create_PMaterialSet # stdcall (count): Phyre_PCluster_create(count, 0x00c998e8 PMaterialSet descriptor, 0); a template instance, PhyreEngine code, left original. fh: yiGetRootMatrix (switch bsim1.00 0x710052c6a0, a wrong match: no callers here, the body is not yi code)
 0x0064b7e0 function Phyre_PCluster_create_PTexture2D # stdcall (count): Phyre_PCluster_create(count, 0x00ca37d0 PTexture2D descriptor, 0); PhyreEngine code, left original. fh: yiSetRootMatrix (switch bsim1.00, a wrong match)
 0x0064b800 function Phyre_PCluster_create_PWorldMatrix # stdcall (count): Phyre_PCluster_create(count, 0x00c92090 PWorldMatrix descriptor, 0); PhyreEngine code, left original. fh: SqsEeSoundCreateTime (switch bsim1.00, a wrong match)
+0x0064b9f0 function ObjectTree_Find           # structure: thiscall(head, &key): search tree (root head +0xc; nodes +0/+4 children, +0xc u32 key), the node else 0; byte-identical to DynGeoTree_Find; PhyreScene_setObjectTranslation's tree at scene +0x1198; name ours
 0x0064dc00 function PhyreScene_PhyreScene     # fh v3:exact 0x0064ddb0 PhyreScene::PhyreScene
+0x0064f360 function MapIterator_Decrement     # structure: fastcall(it): --it of an MSVC std::map iterator (nodes +0 left, +4 parent, +8 right, +0xd head flag); returns it; name ours
 0x0064fa50 function ThrowStdException_0064fa50   # structure: (x): _CxxThrowException(&x, the throw info at 0x00bf749c); never returns; 12 callers in the PhyreScene code (growing arrays); name ours
 0x0064faa0 function PhyreScene_ChangeToHSVPass # fh v3:bsim1.00 0x0064fc50 PhyreScene::ChangeToHSVPass
 0x00650670 function PhyreScene_DrawMostVFX    # fh v3:exact 0x00650820 PhyreScene::DrawMostVFX
@@ -1983,6 +1988,7 @@
 0x006517d0 function PhyreScene_GetSplitScreenStat # thiscall(this): u32 +0x10d8c; name Fahrenheit's (Switch BSim)
 0x00651be0 function PhyreScene_preRender         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f2cf0 PhyreScene::preRender, 2 votes, round 2
 0x006523e0 function PhyreScene_isFading # thiscall(this) -> al: byte +0x10dcc set or g_MovieFading; name ours
+0x00652470 function ClipOutcode               # structure: cdecl(v): homogeneous-point outcode, bits 0-2 x/y/z > w, bits 3-5 x/y/z < -w; 8 calls for a box's corners in 0x00660000's frustum test; name ours
 0x006526a0 function PhyreScene_Project3DPointOntoScreen # fh v3:exact 0x00652850 PhyreScene::Project3DPointOntoScreen
 0x00652a10 function PhyreScene_RenderABmap       # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f51b0 PhyreScene::RenderABmap, 2 votes, round 1
 0x00653230 function PhyreScene_RenderMF152Related # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7030 PhyreScene::RenderMF152Related, 2 votes, round 1
@@ -2522,6 +2528,7 @@
 0x006b4950 function DebugMenuManager_CreateInstance # fh v3:exact 0x006b4aa0 DebugMenuManager::CreateInstance
 0x006b4990 function DebugMenuManager_Destroy # (): virtual destructor (1) of g_DebugMenuManager, then clears it; name ours
 0x006b49b0 function DebugMenuManager_GetInstance # () -> g_DebugMenuManager; name Fahrenheit's (Switch BSim)
+0x006b4f80 function Vec3_UninitializedCopy    # structure: cdecl(first, last, dest): copies 12-byte elements, returns dest's end (std::uninitialized_copy); name ours
 0x006b5000 function Identity_006b5000            # auto-port shape (pass-through, cdecl): return a0; callers: no direct caller; name ours
 0x006b55d0 function CharacterSwitchTweakUtil_CharacterSwitchTweakUtil # fh v3:exact 0x006b5720 CharacterSwitchTweakUtil::CharacterSwitchTweakUtil
 0x006b5eb0 function CharacterSwitchTweakUtil_CreateInstance # fh v3:cg2 0x6b6000 CharacterSwitchTweakUtil::CreateInstance
@@ -2550,6 +2557,8 @@
 0x006bcc70 function graphicPauseGameDestroy # (): virtual destructor (1) of g_GraphicPauseGame, then clears it; name ours
 0x006bcc90 function graphicCheckPauseGame     # () -> g_GraphicPauseGame; name Fahrenheit's (Switch BSim)
 0x006bd290 function PhyreScene_ReturnConst0_006bd290 # auto-port shape (return constant, stdcall): return 0x0; callers: PhyreScene_render; name ours
+0x006be700 function UIntTree_Find             # structure: thiscall(head, &key), byte-identical to DynGeoTree_Find; VfxShaderManager's maps (0x006c0000); name ours
+0x006be750 function PStringTree_Find          # structure: thiscall(head, &key): search tree keyed by PString text (pointer with flag bit 0; strcmp, by pointer when either is null); VfxShaderManager's maps; name ours
 0x006bfe90 function VfxShaderManager_analysisSpecialShaderBlock # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'texture_name'; Switch 0x710028f9f0 VfxShaderManager::analysisSpecialShaderBlock (symbols from Fahrenheit's server export)
 0x006c0560 function VfxShaderManager_combineTextureNameInCurrentLevel # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%s/%s%s'; Switch 0x7100290ef0 VfxShaderManager::combineTextureNameInCurrentLevel (symbols from Fahrenheit's server export)
 0x006c0a70 function VfxShaderManager_loadShader  # str-match switch: only user of 29 string(s) held once by both builds, e.g. 'VSP_GROUND_SPECIAL'; Switch 0x710028f140 VfxShaderManager::loadShader (symbols from Fahrenheit's server export)
@@ -2586,6 +2595,7 @@
 0x006c59c0 function SpecularMapParamsManager_renderCorrespondSpecular # layout: alphabetical run between SpecularMapParamsManager_needDrawSpecularPass and SpecularMapParamsManager_renderSpecularPass (1 unnamed in the gap); Switch 0x7100286810 SpecularMapParamsManager::renderCorrespondSpecular is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006c5b60 function SpecularMapParamsManager_renderSpecularPass # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2478 SpecularMapParamsManager::renderSpecularPass, 2 votes, round 2
 0x006c6830 function SpecularMapParamsManager_setShadeSpecularMapParams # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SpecularPower'; Switch 0x7100284370 SpecularMapParamsManager::setShadeSpecularMapParams (symbols from Fahrenheit's server export)
+0x006c7250 function FloatHeap_AdjustHeap      # structure: cdecl(base, hole, len, &value, less): std::_Adjust_heap on floats with a bool less(a, b) callback; name ours
 0x006c8040 function ShadowManager_AlreadyinShadowMap # fh v3:exact 0x006c8180 ShadowManager::AlreadyinShadowMap
 0x006cc8b0 function Compute_006cc8b0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 == 0x1); callers: no direct caller; name ours
 0x006cc8c0 function Compute_006cc8c0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 != 0x2083); callers: no direct caller; name ours
@@ -2598,6 +2608,7 @@
 0x006d18b0 function ShadowManager_createshadowbuffer # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ShadowManager_TempShadowMaptarget'; Switch 0x7100278090 ShadowManager::createshadowbuffer (symbols from Fahrenheit's server export)
 0x006d22e0 function ShadowManager_getCascade # thiscall(this, i), ret 4: word i from +0x60; name ours
 0x006d2390 function ShadowManager_getInstance # fh v3:bsim1.00 0x006d24c0 ShadowManager::getInstance
+0x006d23a0 function ShadowManager_GetCascadeMatrix # structure: thiscall(this, out, i), ret 8: copies the 4x4 matrix at this +0x210 + 64 i to out; PhyreScene callers after ShadowManager_getInstance; name ours
 0x006d2520 function ShadowManager_getTextureSampler # thiscall(this) -> this + 0x3fc4; name Fahrenheit's (Switch BSim)
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1
@@ -2706,6 +2717,7 @@
 0x006e7720 function RemapButtonIcon_setButtonIconScale # fh v3:bsim1.00 0x006e7850 RemapButtonIcon::setButtonIconScale
 0x006e8750 function TipSystem_Get             # fh v3:bsim1.00 0x006e8890 TipSystem::Get
 0x006e8770 function TipSystem_PushTip         # fh v3:exact 0x006e88b0 TipSystem::PushTip
+0x006e8810 function TipSystem_PlayTip         # structure: thiscall(tips, id): with an Iggy movie (this[0]) enables the menu and calls its AS3 "OnPlay"(0, id), then replay; returns 1 (0 without a movie); graphicPushTip's callee; name ours
 0x006e8a1f function Catch_All_006e8b5f        # fh v3:cg2 0x6e8b5f Catch_All@006e8b5f
 0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90
 0x006e96c0 function InitIggyHelper               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Loc_Texture_Saveload_Attention_Before_Game'; Switch 0x710029c7b0 InitIggyHelper (symbols from Fahrenheit's server export)
@@ -4588,7 +4600,8 @@
 0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
 0x00796ea0 function msGetChrPos               # fh v3:exact 0x00796eb0
 0x00796f20 function msSetChrBodyHit           # fh v3:exact 0x00796f30
-0x00797080 function msSetChrVisibleFlag          # structure: (chr, slot, on): writes the visibility byte chr +0x16 + slot, then hides or shows the model and its effects (Ch_SetHideBattle, Ch_SetHideEffect, op_et_bindeff), recursing into the weapons (MsGetWeapon); callers MsSetChrVisible, MsSetChrVisibleAppear/Camera/Main, MsCommandReturnChrStatusAll; between msSetChrBodyHit and msSetChrWeight; name ours
+0x00797020 function msSetChrShadowReq         # (p, k, v): shadow request k (< 3) of actor/weapon record p = v; first non-negative of +0x26..+0x28 (stopping at 0) into +0x25, mode +0x2a[that] into +0x29 and Ch_SetShadowMode; returns +0 the character; name ours
+0x00797080 function msSetChrVisibleReq        # (i, k, v): visibility request +0x16[k] = v; visible (+0x15) when +0x16..+0x19 all set: Ch_SetHideBattle/Effect, Ch_EnMapID(+0x32), Ch_SetCalcNorm(+0x33), msSetChrShadowReq(p,1,-1/0), msSetChrBodyHit; op_et_bindeff for +0x36; recurses to +0x13 and actors with +0x43f == i (with +0x440); weapons with +0x1d; hiding queued in 0x02311060 while 0x011363b8 & 0x01136b58; name ours
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0
@@ -4907,7 +4920,7 @@
 0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
 0x007a9650 function MsDirTurn                 # (actor, dir) -> f32 in ST0: MsNearRag(+0x490, dir), or the turn the other way round (+-2pi) when +0x494 and the turn pass 2pi/3; MsGetDirMode with +0x42c; name ours
 0x007a9710 function MsGetDirMode              # (i, actor, vec, follow, &mode, &plain) -> f32 in ST0 (fld at ret; Ghidra types it void, MsSetChrDirTarget reads (float10)); direction for mode +0x42b 1-13; fh v3:exact 0x007a9730
-0x007a99b0 function MsGetEscapeDir            # fh v3:exact 0x007a99d0
+0x007a99b0 function MsGetEscapeDir            # (i) -> f32 in ST0 (Ghidra types it void; MsParseCommand reads (float10)): MsNearRag(0, yaw from the position to MsGetChrEscapePos); fh v3:exact 0x007a99d0
 0x007a9a20 function MsMenuWeakElement         # fh switch:bsim1.00 0x710035e1b0
 0x007a9a40 function MsGetTargetDist              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100360780 MsGetTargetDist, 2 votes, round 1
 0x007a9ac0 function MsGetMoveTargetPos        # fh v3:exact 0x007a9ae0
@@ -4983,6 +4996,9 @@
 0x007aeec0 function MsReturnParty             # fh v3:exact 0x007aeed0
 0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30
 0x007aefb0 function MsSortCommand             # fh v3:exact 0x007aefc0
+0x007af060 function MsGetAeonCommand          # (i, id, kind, &mode, &value) -> u16: aeon i's (actor 8 on) entry in 0x00c438a8 (16 bytes each): kind 0 +0 or +4 (once id used, g_SaveMenu bit 11 clear) mode 1, kind 1 +8 mode 3, kind 2 +0xc mode 2; value the pair's byte; MsInsertChrCommand; name ours
+0x007af0f0 function MsCheckTargetsNear        # (i, actor, targets): with +0x4ac bit 12, 1 when a target within 12.0 (2D, less widths) has its MsGetMoveTargetPos kind 0xc within 0.2 of its battle position; 0 with several targets; name ours
+0x007af230 function MsCheckChrNear            # (i, actor): +0x44a = +0x44b, or MsCheckTargetsNear(i, actor, +0xdc0) when 0; MsParseCommand; name ours
 0x007af260 function MsCheckAutoStatus         # fh v3:exact 0x007af270
 0x007af2b0 function MsCheckChrHitMotionAll    # fh v3:exact 0x007af2c0
 0x007af2f0 function MsCheckDefenseMotion         # layout: alphabetical run between MsCheckChrHitMotionAll and MsCheckSetMotion (1 unnamed in the gap); Switch 0x710037a3f0 MsCheckDefenseMotion is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -7874,7 +7890,10 @@
 0x0089a630 function TOBtlSetPrevAction        # fh v3:exact 0x0089a5a0
 0x0089a850 function SetByte_0133d782 # cdecl(v): byte 0x0133d782 = v; name ours
 0x0089a8b0 function TOBtlSetTargetHelpMes     # fh v3:exact 0x0089a820
+0x0089ab20 function TOBtlLimitTimerStop_0089ab20 # (): 0x0133f77c = 1; SndIsSepPlay(0x8000004e): SndSepStop; name ours
+0x0089ab50 function TOBtlLimitTimerStart_0089ab50 # (): 0x0133f77c != 2: = 2, SndSepPlaySimple(0x8000004e) unless playing; name ours
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
+0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40
 0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
@@ -7950,6 +7969,7 @@
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a8e70 function TOMenuMainWindowOpen_008a8e70 # (): TkMenuMainAllocWindow, set up (handlers 0x008a91d0/0x008a9350, layer 6), kept at 0x018408fc, 0x01841c00..+0x14 = 0, TkMenuMainRegistWindow; name ours
 0x008a8f00 function TOBit16_008a8f00 # cdecl(bits, i): bit i of a u16 array (signed division); name ours
+0x008a9090 function TOSummonListInit_008a9090 # (): g_TkMenuSummons/Totals/ListMax/EnableMask from command list 5 of MsMenuStatusNum(0, 0); joined aeons (MsGetSavePlyJoin) shown; 0x64 = aeons 0xf/0x10/0x11; name ours
 0x008a9230 function TOMenuCloseMainWindows_008a9230 # cdecl(owner): each of the 16 main windows at 0x01840900 (0x98 bytes) with owner byte +0x3f: +0xc(w); free flag +0x41: unless +0x14(w) == 0, +0x18(w) or TkMenuMainFreeWindow(w); name ours
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
 0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
@@ -8029,6 +8049,7 @@
 0x008ab2c0 function TkMsImportantGet          # fh v3:cg3 0x8ab270
 0x008ab340 function Pause_Update                 # per frame: enters the pause (Pause_Enter) when g_PauseOn is set and not entered; Start (pad 0x800) at fade 0x40 hides the screen and sets the step +4; at 0x80 it ends (flags cleared, sound resumed)
 0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4
+0x008ab440 function TOInternName_008ab440 # cdecl(name): the 0x100-byte slot of 0x025cc5a0 holding name (count 0x01841d90), else the next one, cleared and strcpy'd; no bound past 64 (dbgPrintf only); name ours
 0x008ab550 function EventFontTextureArrayReset # fh v3:exact 0x008ab500
 0x008ab570 function SetGlobal_00c59f38 # cdecl(v): *0x00c59f38 = v, returns v; name ours
 0x008ab580 function SetTOPadGetCtrl           # fh v3:bsim1.00 0x008ab530
@@ -8054,12 +8075,12 @@
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
 0x008ac3d0 function TOGetFontWidthTblAdrs     # fh v3:bsim1.00 0x008ac380
 0x008ac3f0 function TOGetWord_01841d98        # () -> [0x01841d98]; between TOGetFontWidthTblAdrs and TOGetImageWH; name ours
-0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl
+0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl; (id, &w, &h): constant sizes for 0x2eac..0x132f0c, or i16 pairs from 0x01841dac (0x3c00 by TkGetLang, 0x3d00 by MsBattleGetStatus); returns &h
 0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl
-0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl
+0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl; id -> name pointer from 0x00c59d58..0x00c59eb8 by id and TOGetFFXLang; 0x2f00 cached at 0x025d16c8; unknown ids return id
 0x008acf10 function TOGetWord_01841d9c        # () -> [0x01841d9c]; before TOGetSystemConfirmButtonAssign; name ours
 0x008acf20 function GetU32_01841d30 # () -> u32 at 0x01841d30; name ours
 0x008acf30 function TOGetSystemConfirmButtonAssign # fh v3:exact 0x008acee0
@@ -8067,6 +8088,7 @@
 0x008ad4d0 function TOInit                       # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOInit(): about to read menu base_ftc file!!!!\\n'; Switch 0x71004f38b0 TOInit (symbols from Fahrenheit's server export)
 0x008ad780 function TOInitBattleFontPath      # fh v3:bsim0.92 0x008ad730
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
+0x008ada30 function TOInitMessageSlot_008ada30 # cdecl(i): g_TOMessageWindowSlots[i] zeroed, parts = window i, message i, entry i; window memset 0x7c, TOInitMessage(i), tags +2/+4 = i, slot +4 = -1, message handler 0x008b64a0; name ours
 0x008adbd0 function TOInitPadData             # fh v3:bsim1.00 0x008adb80; memset(0x025d09c0, 0, 0xc0), 0x025d09de = 0x80808080
 0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
 0x008ade10 function TOOpenWindowAndMessage # cdecl(i): *(u16*)g_TOMessageWindowSlots[i] = 1; 0x00906c80(i); 0x008b8560(i); name ours
@@ -8086,8 +8108,8 @@
 0x008ae4b0 function TOSeqGetRect              # fh v3:exact 0x008ae460
 0x008ae530 function TOSeqGetSceneState_008ae530 # cdecl(i, name): i16 state of scene i's slot named name, 0 when none; callers 0x008974a0, 0x008fdf20; name ours
 0x008ae5a0 function TOSeqInitAllScene         # fh v3:exact 0x008ae550
-0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0
-0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70
+0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0; 92 TOSeqGetColor/RGBA/Rect/Num/Point reads from scenes 1 and 2 into the menu layout globals 0x025d0a80..0x025d16b4
+0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70; every running slot of scene i stopped (state 4, name cleared) unless kept (+2 == 1); returns i << 8
 0x008af060 function TOSeqSetScenePosByName # cdecl(i, name, x, y): every slot of scene i named name: TkMenuSetScenePos(i, slot +0x1c, x, y); name ours
 0x008af0d0 function TOSeqStartScene           # fh v3:exact 0x008af080
 0x008af1b0 function TOSeqStartSceneDrawContinue # fh v3:exact 0x008af160
@@ -8182,6 +8204,7 @@
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
+0x008b8430 function TOWideWindowX_008b8430 # cdecl(i, x) -> float: type-1 window and 0x01340824/0x0133c948/0x01327100 clear: (w - 512 h/416) / (2 w/512) + x (h/416)/(w/512) from graphicFontGetScreenWH; else x; name ours
 0x008b84f0 function TOMacroSetByte1 # cdecl(win, n, v): byte 1 of macro record n of message window win (the table at 0x01869ab0, as TOMacroSetType sets byte 0); callers 0x008c2c60, 0x00a59350; name ours
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
 0x008b8530 function TOIsMessageStatus3Pressed # (i) -> 1 when TOGetMessageStatus(i) == 3 and bit 0x20 of the pad byte 0x025d09d4; name ours
@@ -8196,6 +8219,7 @@
 0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
 0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
+0x008b8d10 function TOWideWindowRect_008b8d10 # cdecl(i, out, x, y, w, h) -> y + h: out = TOWideWindowX(i, x), y, that + w, y + h as floats; name ours
 0x008b8d70 function TOGetComName_008b8d70 # cdecl(id): MsGetComData(id, &strings) record's u16 +0 + strings; name ours
 0x008b8d90 function TOGetAbilityName_008b8d90 # cdecl(id): MsGetRomAbility(id, &strings) record's u16 +0 + strings; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
@@ -8655,7 +8679,7 @@
 0x008e8940 function OpenFontScissor           # (x0, y0, x1, y1 floats): g_TkMenuScissorOn = 1, XYUV mode 1, the box; fh v3:bsim1.00 0x008e8940
 0x008e8980 function OpenScissor               # fh v3:bsim1.00 0x008e8980
 0x008e89c0 function SetInvokedFromSelectCursor # fh v3:bsim1.00 0x008e89c0
-0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0
+0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0; glyph+4 snapped to pixels (trunc(x*ws+0.5)/ws), then + font width + space of kind byte +0x1a
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
@@ -8731,9 +8755,13 @@
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
-0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570
+0x008fa450 function TOCopyWindowLayout_008fa450 # cdecl(i): TOCopyWindowLayout(0x00c5c2c8, i); name ours
+0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570; spaces 0x018716b4/b8 computed once: langs 1..8 both trunc(ws*0.7+0.5)/ws, else trunc(ws*0.5+0.5)/ws and the 0.7 one; kind 1/3 the second
 0x008fa6b0 function TOGetFontWidthInPiexl     # fh v3:exact 0x008fa6b0
+0x008fa740 function TOGetFontAdvance_008fa740 # cdecl(kind, font, size) -> float: TOGetFontWidthInPiexl(font+0x1c, size) + TOGetFontSpaceInPiexl(kind); name ours
+0x008fa790 function TOCopyWindowLayout_008fa790 # cdecl(i): TOCopyWindowLayout(0x00c5d578, i); name ours
 0x008fa7b0 function TOGetGsRegWord            # () -> edx:eax 0x2005d40621313e00 (a GS register word); name ours, between TOGetFontWidthInPiexl and TOGetScaleButtonIconWidth
+0x008fa7d0 function TOCopyWindowLayout_008fa7d0 # cdecl(i): TOCopyWindowLayout(0x00c5b460, i); name ours
 0x008fa800 function TOGetScaleButtonIconWidth # fh v3:exact 0x008fa800
 0x008fa900 function TOGetScreenWH             # fh switch:bsim1.00 0x7100502fb0
 0x008fa920 function TOGetWidthMacro_help      # fh v3:exact 0x008fa920
@@ -8854,7 +8882,7 @@
 0x00905930 function ToMakeBtlEasyEdgeFont     # fh v3:exact+call.cs 0x00905930 cdecl
 0x00905970 function ToMakeBtlEasyEdgeFontA    # fh v3:exact 0x00905970
 0x00905ab0 function ToMakeBtlEasyFont         # fh v3:exact+call.cs 0x00905ab0 cdecl
-0x00905e90 function TOTableEntry_00905e90        # structure: (table, i) -> entry i of a counted table (count at +0), 0 when i is out of range; callers the TO font tables 0x008fa450, 0x008fa790, 0x008fa7d0; name ours
+0x00905e90 function TOCopyWindowLayout_00905e90 # cdecl(table, i): i < count: entry i (n, then n 12-byte records; layout 0x43 n = 1) memcpy'd to 0x01876148; returns it, else 0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
 0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
@@ -10330,11 +10358,15 @@
 0x00a59860 function SeveralStoresSetDerefConstantsArgumentsAddresses_00a59860 # auto-port shape (several stores: set deref (constants, arguments, addresses), cdecl): t0 = u32[&0x01a86108]; u16[(((a0 * 0x340) + t0) + 0x23)] = 0x301; u8[(((a0 * 0x340) + t0) + 0x25)] = 0x1; u16[(t0 + 0x2700)] = (a0 & 0xffff); u32[(t0 + 0x2704)] = a1; return ((a0 * 0x340) + t0); callers: no direct caller; name ours
 0x00a59990 function AbmapState_MovingToTarget # fh v3:exact+call.cs 0x00a59990
 0x00a59e80 function AbmapState_HomeOnNode     # fh v3:exact 0x00a59e80 +AbmapState_HomeOnNode
+0x00a5a2e0 function AbmapMarkLockedEntries    # (pad): each menu pad entry's byte 0 = the current character's save lacks the bit its +4 word names (u16s from save +0x3e); name ours
 0x00a5a360 function AbmapMakeLinkMatrix       # (out, a, b, scale): scale matrix (from the zero register), translation a + b (i16 x, y)
+0x00a5a760 function AbmapLinkCells            # (link): both end nodes' cells on the 20-wide map ((x+0xa00)/256 + (y+0x920)/256 * 20) into +8/+0xa; LoadAbmap; name ours
 0x00a5a800 function AbmapCalcLinkPoints       # fh v3:exact 0x00a5a800 +AbmapCalcLinkPoints
 0x00a5a990 function AbmapSetChrMarker         # (chr): marker +0x11088 + 0x50 chr on its node +0x44: x, y, 0, 1; +0x3c half the kind size + 3.0
 0x00a5ad30 function AbmapMakeNodeMatrix       # (out, pos, scale): scale matrix (from the zero register), translation the i16 position, 1.0 (7 callers)
+0x00a5adf0 function AbmapSetKindSizes         # (src): op_oef2_a_get(src, 2, id) u16s +0xc/+0xe of the eight kinds (ids 0x00c86008) into g_Abmap +0xf808; name ours
 0x00a5b030 function AbmapResetCursorCamera    # (): +0x115a0 = 256.0, current character's position (+0x11088 + 0x50 * +0x115bc) to +0x11520 (y - 32.0, w twice the distance), its colour (0x00c86010) to +0x11560, then AbmapPulseCursor; name ours
+0x00a5b140 function AbmapCollectNodeLinks     # (): each used node's links (g_Abmap +0xa808) into its five slots +0xc, the rest cleared; LoadAbmap; name ours
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
 0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
@@ -10350,6 +10382,8 @@
 0x00a5ca80 function NkzGetLuluLimitMidareCount   # layout: alphabetical run between NkzGetAuronLimitTime and NkzGetLuluLimitTime (1 unnamed in the gap); Switch 0x71003c81e0 NkzGetLuluLimitMidareCount is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00a5cb10 function NkzGetLuluLimitTime       # fh v3:bsim1.00 0x00a5cb10
 0x00a5cb20 function NkzGetMonsterListNum      # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
+0x00a5cb30 function NkzTidusLimitTableA       # (i) -> 24, 20, 20, 18 [i] (a local table); TOBtlOpenTidusLimitWindow; name ours
+0x00a5cb80 function NkzTidusLimitTableB       # (i) -> 11, 12, 13, 14 [i]; TOBtlOpenTidusLimitWindow; name ours
 0x00a5cbd0 function NkzGetTidusLimitTime      # fh v3:bsim1.00 0x00a5cbd0
 0x00a5cbe0 function AbmapScaledLevelValue     # (level, i, j): 100000 for j 4, else ftol(T[i] * (level + 50) * T[j]), T = 1, 1, 1.5, 3, 5; name ours
 0x00a5cc70 function NkzSetLuluLimitTbl        # fh v3:exact 0x00a5cc70
@@ -12038,6 +12072,7 @@
 0x00b46fac label AsyncLoadManager_RequestPool_AsyncLoadManager_LoadClusterRequest__vftable # fh v4:imported AsyncLoadManager::RequestPool<AsyncLoadManager::LoadClusterRequest>::vftable
 0x00b46fb4 label AsyncLoadManager_RequestPool_AsyncLoadManager_RegistTaskRequest__vftable # fh v4:imported AsyncLoadManager::RequestPool<AsyncLoadManager::RegistTaskRequest>::vftable
 0x00b473fc label PostProcessTweakUtil_vftable # fh v4:imported PostProcessTweakUtil::vftable
+0x00b47de8 label g_Twelve                  # f32 12.0: MsCheckTargetsNear's reach
 0x00b47e0c label ClassCharacter_vftable       # fh v4:imported ClassCharacter::vftable
 0x00b47e14 label ClassDynamicGeometry_vftable # fh v4:imported ClassDynamicGeometry::vftable
 0x00b47e40 label VFXDynamicGeometry_vftable   # fh v4:imported VFXDynamicGeometry::vftable
@@ -12532,6 +12567,7 @@
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
+0x00c438a8 label g_AeonCommands            # 16 bytes per aeon (actor 8 on): u16 command / u8 value pairs at +0, +4, +8, +0xc (MsGetAeonCommand)
 0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
 0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
@@ -12595,6 +12631,7 @@
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
+0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md)
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00ccb170 label    g_Virtuos_InputManager    # the object Virtuos_InputManager_getInstance returns
 0x00ccb228 label    g_GraphicScreenDttOffset  # two floats: graphicScreenSetDttOffset / graphicScreenGetDttOffset
@@ -12625,6 +12662,8 @@
 0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
+0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
+0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy
 0x00cccb00 label    g_GraphicPauseGame        # graphicCheckPauseGame returns it; graphicPauseGameDestroy deletes it
@@ -12632,7 +12671,9 @@
 0x00cdec28 label    g_ShadowManager           # ShadowManager_getInstance
 0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang)
 0x00cdedf0 label    g_DynGeoFillBuffer        # graphicDynGeoFillBufferIsValid: *(*this) != 0
+0x00ce5170 label    g_FogEffectManager        # Phyre_FogEffectManager_GetInstance; graphicSetChrFogFade
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
+0x00ce6ea4 label    g_TipSystem               # TipSystem_Get; graphicPushTip, graphicPushTipByLocId
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce9010 label    g_FmodManager             # FmodManager* (0x50 bytes; +8 FfxFmod, +0x10 queue mutex, +0x14 sync mutex, +0x18/+0x1c events, +0x28/+0x2c ring write/read, +0x30.. sync command); iFmodInitialize
@@ -12680,6 +12721,7 @@
 0x0112a8d0 label g_BtlMem                  # 0x2150 bytes of battle globals cleared by MsBattleMemInit (the kernel table pointers 0x0112a92c.. among them)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
+0x0112a8e4 label g_BtlCameraState          # u8, 2: no script camera requests unless an actor asks (MsAtelRequestCamera)
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
 0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
@@ -12687,7 +12729,10 @@
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
+0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
+0x0112a904 label g_BtlAeonPlain            # u8 (MsInsertChrCommand)
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a907 label g_BtlStatInvert1B         # u8, MsGetChrStatInfo property 0x1b counts actors whose +0xdec is clear instead of set
 0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
@@ -12713,6 +12758,7 @@
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
+0x0112a950 label g_BtlEffectFiles          # pointer to u16 first file numbers per effect, the next one's ending it (MsEffectFileNumber)
 0x0112a954 label g_BtlMotBin               # pointer to the motion binary: u16 count, u16 offsets (MsSetMotBinAddress sets actor +0x4f8 from entry i)
 0x0112a958 label g_StatusRom               # kernel table MsMenuStatusNum reads
 0x0112a95c label g_BtlEffectOwner          # u32, the owner op_et_eff gets in MsStatusEffect
@@ -12794,6 +12840,7 @@
 0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
+0x0112c9fe label g_BtlCameraHides          # u8, set by MsSetChrVisibleCamera; MsReturnCameraVisible shows all again and clears it (the shows set it again)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
@@ -12850,6 +12897,7 @@
 0x011333f0 label g_BtlMenuText             # 17 x 12 bytes cleared by MsMenuInitText
 0x011334c0 label g_KernelImportant           # key item kernel table (MsImportantPtr 0x007908a0 looks IDs up in it with MsGetExcelData)
 0x011334c8 label g_BtlDebugCameraSleep        # i32; Set to -1 by MsDebugCameraSleepInit.
+0x011334d0 label g_BtlHideQueueLast        # i32, last index of the character queue at 0x02311060 (msSetChrVisibleReq, 0x007badb0)
 0x011334d4 label g_BtlChrTop                 # pointer to the 0x1f battle actors of 0xf90 bytes (MsGetChr 0x00794020, MsGetChrTop)
 0x011334d8 label g_BtlChrSpare               # what MsGetChr returns for an index from 0x5d on
 0x01134468 label g_BtlMonTop                 # pointer to the monster actors, 0xf90 bytes each (MsGetMon 0x00795aa0)
@@ -12888,6 +12936,7 @@
 0x01136a7b label g_BtlActionRequestEntries # u8, the action request block's (0x01136a78) +3: entries a script left; MsActionRequest makes them a cue entry
 0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
+0x01136b58 label g_BtlHideMask             # u32, with g_ActorPropertyLatch: msSetChrVisibleReq queues a hidden character (0x02311060) instead of hiding it
 0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.
 0x01136b68 label    g_BtlSplineLists           # two 0x210-byte camera path lists (count word, points) after g_BtlSplines; Native_Cam_6059/605a/605b, 0x007bb970
@@ -13135,6 +13184,7 @@
 0x01330830 label    g_TkLang                  # i8, FFXSetLang / TkGetLang (sign-extended)
 0x01330832 label    g_TkTGS                   # u8 (TkGetTGS)
 0x01330833 label    g_FFXAsiaMode             # u8: FFXGetAsiaMode / FFXSetAsiaMode
+0x01330844 label    g_GraphicMapId            # the map id graphicIsMapInList tests
 0x01330850 label    g_TkFadeOut               # 2 words, both set by TkSetFadeOut
 0x0133085c label    g_TkStartMapEvent         # u32 id, index (TkSetStartMapIndex)
 0x01330864 label    g_TkLocalStartMapEvent    # u32 id, index (TkSetLocalStartMapIndex)
@@ -13365,6 +13415,7 @@
 0x02310f68 label g_BtlTermWord             # u32 cleared by MsBtlGetTerm
 0x02310f9e label g_Equipment7000           # 8 x 22-byte equipment slots of the 0x7000 IDs (MsGetSaveWeapon)
 0x02311050 label g_BtlChrExtra             # pointer to 0x24 bytes MsBtlChrInit clears
+0x02311060 label g_BtlHideQueue            # u32 characters queued to hide (index from 1)
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)

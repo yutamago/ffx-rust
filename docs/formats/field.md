@@ -903,6 +903,25 @@ The `rcui` map editor and the map tool's text format:
   (also called by `rcuiCameraProc`) and `rcbgAnimeLoadConfig` were ported
   earlier.
 
+## Sphere grid set-up and lens beams (round 18)
+
+From here on, functions are picked by `symbols/classes.tsv` (category
+`logic`) and blocker count.
+- `NkzTidusLimitTableA`/`B` (`0x00a5cb30`/`0x00a5cb80`): four-entry
+  local tables (24, 20, 20, 18 and 11 to 14). An index past 3 reads the
+  original's stack; the port returns 0.
+- `AbmapSetKindSizes` (`0x00a5adf0`): the eight node kinds' sizes from
+  `op_oef2_a_get`.
+- `AbmapMarkLockedEntries` (`0x00a5a2e0`): menu entries whose save bit is
+  clear.
+- `AbmapLinkCells` (`0x00a5a760`): a link's end cells on the grid's
+  20-wide map.
+- `AbmapCollectNodeLinks` (`0x00a5b140`): each node's links (up to five;
+  a sixth overflows into the next words after a `dbgPrintf`, as in the
+  original).
+- `KeThCp_AddBp` (`0x007644d0`): a beam block taken off its pool's free
+  list, set up (`KeThBP_Init`) and pushed onto the lens's list.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

@@ -9,7 +9,8 @@
 //! tools/game-tests.sh --all      # all of them
 //! ```
 //!
-//! Screenshots go to the system temp folder (`ffx-harness/`).
+//! Screenshots of failed checks go to `~/ffx-work/harness/`
+//! (`ffx_harness::work_dir`).
 
 use std::path::PathBuf;
 
@@ -39,25 +40,28 @@ fn fail(game: &mut Game, name: &str, why: &str) -> ! {
 }
 
 fn screenshot_path(name: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join("ffx-harness")
-        .join(format!("{name}.png"))
+    ffx_harness::work_dir().join(format!("{name}.png"))
 }
 
-/// Writes mod files into `mods/<name>`, runs `test`, and removes the mod
-/// again, also when the test fails.
+/// Writes mod files into a folder of this process, `~/ffx-work/harness/
+/// mods-<pid>/<name>`, runs `test` with it (for [`Options::mods`]: the
+/// launch adds it to its own game instance, so tests side by side never see
+/// each other's mods), and removes it again, also when the test fails.
 fn with_mods<T>(
     name: &str,
     files: &[(&str, Vec<u8>)],
-    test: impl FnOnce() -> T + std::panic::UnwindSafe,
+    test: impl FnOnce(PathBuf) -> T + std::panic::UnwindSafe,
 ) -> T {
-    let dir = game_dir().join("mods").join(name);
+    let dir = ffx_harness::work_dir()
+        .join(format!("mods-{}", std::process::id()))
+        .join(name);
+    let _ = std::fs::remove_dir_all(&dir);
     for (path, bytes) in files {
         let file = dir.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, bytes).unwrap();
     }
-    let result = std::panic::catch_unwind(test);
+    let result = std::panic::catch_unwind(|| test(dir.clone()));
     std::fs::remove_dir_all(&dir).unwrap();
     result.unwrap()
 }
@@ -273,9 +277,13 @@ fn start_up_input_and_kernel_mod() {
         ("mod.toml", b"name = \"off\"\nenabled = false\n".to_vec()),
         (ITEM, off.to_bytes().unwrap()),
     ];
-    with_mods("zz-harness-start-up-off", &off_files, || {
-        with_mods("zz-harness-start-up", &files, move || {
-            let mut game = Game::launch(&Options::default()).unwrap();
+    with_mods("zz-harness-start-up-off", &off_files, |off| {
+        with_mods("zz-harness-start-up", &files, move |on| {
+            let options = Options {
+                mods: vec![off, on],
+                ..Options::default()
+            };
+            let mut game = Game::launch(&options).unwrap();
             // The keyboard is read without the focus.
             let start = game.frame().unwrap();
             game.wait(120).unwrap();
@@ -357,8 +365,12 @@ fn first_scene_with_script_model_and_motion_mods() {
         (ASSETS, assets_mod()),
         (MOTIONS, motion_mod()),
     ];
-    with_mods("zz-harness-first-scene", &files, move || {
-        let mut game = Game::launch(&Options::default()).unwrap();
+    with_mods("zz-harness-first-scene", &files, move |dir| {
+        let options = Options {
+            mods: vec![dir],
+            ..Options::default()
+        };
+        let mut game = Game::launch(&options).unwrap();
         let opened = ffx_harness::screens::first_scene(&mut game).unwrap();
         assert!(
             opened.starts_with("mod "),
@@ -412,8 +424,12 @@ fn save_and_battle_with_monster_and_formation_mods() {
         (formation_path.as_str(), formation),
         (ffx_battle::ENCOUNTER_TABLE, encounters),
     ];
-    let (group, ids, max_hp) = with_mods("zz-harness-save", &files, || {
-        let mut game = Game::launch(&Options::default()).unwrap();
+    let (group, ids, max_hp) = with_mods("zz-harness-save", &files, |dir| {
+        let options = Options {
+            mods: vec![dir],
+            ..Options::default()
+        };
+        let mut game = Game::launch(&options).unwrap();
         // Entry 1: the first manual save (entry 0 is the autosave).
         let event = ffx_harness::screens::load_save(&mut game, 1).unwrap();
         assert!(event.ends_with(".ebp"), "{event}");

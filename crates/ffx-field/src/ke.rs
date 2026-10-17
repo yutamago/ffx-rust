@@ -1357,6 +1357,65 @@ pub mod bridge {
         let f = mem.rebase(super::GRAPHIC_VFX_SET_CLUT_PARAMETERS);
         call(mem, f, &[key[0], key[1], c0, c1, x87::copy(c2)]);
     }
+
+    // ---- round 18 ----
+
+    /// `KeThCp_AddBp(cp, pool, a, b)` (`0x007644d0`): takes a block off
+    /// the pool's free list (`pool[1]`), sets it up (`KeThBP_Init` with
+    /// the pool's size byte `+1`, through `work`, the original's 8-byte
+    /// local), clears `+0x5c` and `+0x30`, ORs flags from `cp`'s byte `+4`
+    /// into `+0x3e` (0x100, 0x180 with bit 2, | 0x200 bit 4, | 0x400 bit 3,
+    /// | 0x1000 bit 5), copies `a` and `b` to `+0x40` and `+0x60`
+    /// (`KeVu0CopyVecXYZ`) and pushes it on the front of `cp`'s list.
+    /// Returns the block, 0 with an empty pool, 1 without a free list.
+    pub fn ke_th_cp_add_bp(
+        mem: &mut impl Mem,
+        cp: u32,
+        pool: u32,
+        ab: (u32, u32),
+        work: u32,
+    ) -> u32 {
+        let free = mem.read::<u32>(pool.wrapping_add(4));
+        if is_ptr32_null(free) != 0 {
+            return is_ptr32_null(free);
+        }
+        let o = ptr32(free);
+        let next = mem.read::<u32>(ptr32(mem.read::<u32>(pool.wrapping_add(4))));
+        mem.write(pool.wrapping_add(4), next);
+        if o == 0 {
+            return 0;
+        }
+        let size = mem.read::<u8>(pool.wrapping_add(1));
+        mem.write(work.wrapping_add(4), size);
+        mem.write(work, o);
+        ke_th_bp_init(mem, work);
+        mem.write(o.wrapping_add(0x5c), 0f32);
+        mem.write(o.wrapping_add(0x30), 0f32);
+        let b = mem.read::<u8>(cp.wrapping_add(4));
+        let mut f = if b & 4 != 0 { 0x180u16 } else { 0x100 };
+        if b & 0x10 != 0 {
+            f |= 0x200;
+        }
+        if b & 8 != 0 {
+            f |= 0x400;
+        }
+        if b & 0x20 != 0 {
+            f |= 0x1000;
+        }
+        let v = mem.read::<u16>(o.wrapping_add(0x3e)) | f;
+        mem.write(o.wrapping_add(0x3e), v);
+        crate::vu0::bridge::ke_vu0_copy_vec_xyz(mem, o.wrapping_add(0x40), ab.0);
+        crate::vu0::bridge::ke_vu0_copy_vec_xyz(mem, o.wrapping_add(0x60), ab.1);
+        let head = mem.read::<u32>(cp);
+        if is_ptr32_null(head) == 0 {
+            mem.write(ptr32(head).wrapping_add(4), ptr32(o));
+        }
+        let head = mem.read::<u32>(cp);
+        mem.write(o, head);
+        mem.write(o.wrapping_add(4), ptr32(cp));
+        mem.write(cp, ptr32(o));
+        ptr32(o)
+    }
 }
 
 #[cfg(test)]
