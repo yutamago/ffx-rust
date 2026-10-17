@@ -1021,12 +1021,12 @@ ported! {
     TOFFXToSJIS @ 0x008b_6200 => extern "C" fn to_ffx_to_sjis(_text: u32, out: u32) {
         menu::bridge::ffx_to_sjis(&mut mem(), out);
     }
-    /// `TOMenuGetGetImportantName(id)`.
-    TOMenuGetGetImportantName @ 0x008d_dee0 => extern "C" fn to_menu_get_get_important_name(id: u32) -> u32 {
+    /// `TkMenuGetImportantName(id)`.
+    TkMenuGetImportantName @ 0x008d_dee0 => extern "C" fn to_menu_get_get_important_name(id: u32) -> u32 {
         important_text(id, 0)
     }
-    /// `TOMenuGetGetImportantHelp(id)`.
-    TOMenuGetGetImportantHelp @ 0x008d_dea0 => extern "C" fn to_menu_get_get_important_help(id: u32) -> u32 {
+    /// `TkMenuGetImportantHelp(id)`.
+    TkMenuGetImportantHelp @ 0x008d_dea0 => extern "C" fn to_menu_get_get_important_help(id: u32) -> u32 {
         important_text(id, 8)
     }
 
@@ -1841,7 +1841,7 @@ ported! {
         accessor::bridge::address(&mem(), 0x0077_7230)
     }
     /// `() -> &0x023cc480`.
-    ReturnAddress_008bec70 @ 0x008b_ec70 => extern "C" fn returnaddress_008bec70() -> u32 {
+    TOMenuGetHelpWorkAdrs @ 0x008b_ec70 => extern "C" fn returnaddress_008bec70() -> u32 {
         accessor::bridge::address(&mem(), 0x008b_ec70)
     }
     /// `() -> *0x01325ac4`.
@@ -4067,19 +4067,19 @@ ported! {
         table_name(id, 0, false, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::A_ABILITY, id, t))
     }
     /// `MsGetRomPlyCommand` name (kana-aware).
-    TOGetPlyCommandName_008bebb0 @ 0x008b_ebb0 => extern "C" fn to_get_ply_command_name(id: u32) -> u32 {
+    TOMenuGetGetCommandName @ 0x008b_ebb0 => extern "C" fn to_get_ply_command_name(id: u32) -> u32 {
         table_name(id, 0, true, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::COMMAND, id, t))
     }
     /// `MsGetRomPlyCommand` help text (kana-aware).
-    TOGetPlyCommandHelp_008beb70 @ 0x008b_eb70 => extern "C" fn to_get_ply_command_help(id: u32) -> u32 {
+    TOMenuGetGetCommandHelp @ 0x008b_eb70 => extern "C" fn to_get_ply_command_help(id: u32) -> u32 {
         table_name(id, 8, true, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::COMMAND, id, t))
     }
     /// `MsImportantPtr` name (kana-aware).
-    TOGetImportantName_008bec30 @ 0x008b_ec30 => extern "C" fn to_get_important_name(id: u32) -> u32 {
+    TOMenuGetGetImportantName @ 0x008b_ec30 => extern "C" fn to_get_important_name(id: u32) -> u32 {
         table_name(id, 0, true, ffx_battle::save::bridge::ms_important_ptr)
     }
     /// `MsImportantPtr` help text (kana-aware).
-    TOGetImportantHelp_008bebf0 @ 0x008b_ebf0 => extern "C" fn to_get_important_help(id: u32) -> u32 {
+    TOMenuGetGetImportantHelp @ 0x008b_ebf0 => extern "C" fn to_get_important_help(id: u32) -> u32 {
         table_name(id, 8, true, ffx_battle::save::bridge::ms_important_ptr)
     }
     /// `0x008b3730(_, i)`.
@@ -4412,9 +4412,9 @@ ported! {
     TOBtlInitTidusLimitWindow @ 0x0089_8180 => extern "C" fn to_btl_init_tidus_limit_window() {
         tolib::bridge::btl_init_tidus_limit_window(&mut mem(), &mut GameMenu);
     }
-    /// `TOBtlInitWindowParams()`.
-    TOBtlInitWindowParams @ 0x0089_7860 => extern "C" fn to_btl_init_window_params() {
-        tolib::bridge::btl_init_window_params(&mut mem(), &mut GameMenu);
+    /// `TOBtlInitActiveChrCursor()`.
+    TOBtlInitActiveChrCursor @ 0x0089_7860 => extern "C" fn to_btl_init_active_chr_cursor() {
+        tolib::bridge::btl_init_active_chr_cursor(&mut mem(), &mut GameMenu);
     }
     /// `TOBtlOpenAuronLimitWindow(cmd)`.
     TOBtlOpenAuronLimitWindow @ 0x0089_8ad0 => extern "C" fn to_btl_open_auron_limit_window(cmd: u32) -> u32 {

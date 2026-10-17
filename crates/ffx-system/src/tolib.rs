@@ -2641,7 +2641,7 @@ pub mod bridge {
     /// `0x0133fa08` set from constants (0, 1 and six image floats), then
     /// four colours from the scene (`0x0133f7d4`, `0x0133fa88`,
     /// `0x0133fa8c`, `0x0133fa90`).
-    pub fn btl_init_window_params<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+    pub fn btl_init_active_chr_cursor<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
         // which value each float gets: 0 = 0.0, 1 = 1.0, else an image float
         const SOURCES: [u32; 24] = [
             0,

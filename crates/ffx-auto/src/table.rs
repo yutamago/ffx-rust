@@ -1529,30 +1529,6 @@ pub static R_0069F880: Row = Row {
     ],
     result: Some(Val::Tmp(1)),
 };
-/// `FieldAddrc_006a0440` (return argument + offset): `return (a0 + 0xc)`.
-pub static R_006A0440: Row = Row {
-    address: 0x006a_0440,
-    conv: Conv::Cdecl,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc))),
-};
-/// `FieldAddrc_006a0450` (return argument + offset): `return (a0 + 0xc)`.
-pub static R_006A0450: Row = Row {
-    address: 0x006a_0450,
-    conv: Conv::Cdecl,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc))),
-};
-/// `FieldAddr10_006a06c0` (return argument + offset): `return (a0 + 0x10)`.
-pub static R_006A06C0: Row = Row {
-    address: 0x006a_06c0,
-    conv: Conv::Stdcall,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10))),
-};
 /// `PhyreScene_LoadCompute_006a29a0` (load and compute): `t0 = u32[(a0 + 0xc)]; t1 = u32[(a0 + 0x8)]; return ((t0 - t1) >>s 0x2)`.
 pub static R_006A29A0: Row = Row {
     address: 0x006a_29a0,
@@ -1845,14 +1821,6 @@ pub static R_006D59F0: Row = Row {
         value: Val::Const(0x0),
     }],
     result: None,
-};
-/// `Identity_006d7b20` (pass-through): `return a0`.
-pub static R_006D7B20: Row = Row {
-    address: 0x006d_7b20,
-    conv: Conv::Stdcall,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Arg(0)),
 };
 /// `PhyFMVPlayerManager_getCurrentFrame` (return field u32): `t0 = u32[(a0 + 0x6d8)]; return t0`.
 pub static R_006D91B0: Row = Row {
@@ -4939,30 +4907,6 @@ pub static R_007ECB20: Row = Row {
     ],
     result: Some(Val::Arg(0)),
 };
-/// `FieldAddr10_00806e10` (return argument + offset): `return (a0 + 0x10)`.
-pub static R_00806E10: Row = Row {
-    address: 0x0080_6e10,
-    conv: Conv::Cdecl,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10))),
-};
-/// `FieldAddr4_00806e30` (return argument + offset): `return (a0 + 0x4)`.
-pub static R_00806E30: Row = Row {
-    address: 0x0080_6e30,
-    conv: Conv::Cdecl,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4))),
-};
-/// `FieldAddr4_00806e40` (return argument + offset): `return (a0 + 0x4)`.
-pub static R_00806E40: Row = Row {
-    address: 0x0080_6e40,
-    conv: Conv::Cdecl,
-    args: &[Kind::Value],
-    steps: &[],
-    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4))),
-};
 /// `SetFieldConst210_008106a0` (store constant to field): `u8[(a0 + 0x210)] = 0xff; return 0x0`.
 pub static R_008106A0: Row = Row {
     address: 0x0081_06a0,
@@ -6834,13 +6778,21 @@ pub static R_008BE3F0: Row = Row {
         &Val::Const(0xffff_0000),
     )),
 };
-/// `ReturnConst200000_008bec80` (return constant): `return 0x200000`.
+/// `TOMenuGetHelpWorkSize` (return constant): `return 0x200000`.
 pub static R_008BEC80: Row = Row {
     address: 0x008b_ec80,
     conv: Conv::Cdecl,
     args: &[],
     steps: &[],
     result: Some(Val::Const(0x20_0000)),
+};
+/// `TOMenuGetPacketBuffSize` (return constant): `return 0x100000`.
+pub static R_008BEE00: Row = Row {
+    address: 0x008b_ee00,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x10_0000)),
 };
 /// `SeveralStoresSetFieldGlobalConstantsArgumentsAddresses_008bf070` (several stores: set field/global (constants, arguments, addresses)): `u32[&0x0186a234] = (a1 & 0xffff); u32[&0x0186a230] = (a1 & 0xfff); u32[(a0 + 0x1c)] = 0x0; return a0`.
 pub static R_008BF070: Row = Row {
@@ -8479,7 +8431,7 @@ pub static R_00A79540: Row = Row {
 };
 
 /// Every row, by address.
-pub static ROWS: [&Row; 373] = [
+pub static ROWS: [&Row; 367] = [
     &R_00401310,
     &R_0042D3C0,
     &R_0042E060,
@@ -8553,9 +8505,6 @@ pub static ROWS: [&Row; 373] = [
     &R_0069E320,
     &R_0069F6C0,
     &R_0069F880,
-    &R_006A0440,
-    &R_006A0450,
-    &R_006A06C0,
     &R_006A29A0,
     &R_006A3B40,
     &R_006B02E0,
@@ -8575,7 +8524,6 @@ pub static ROWS: [&Row; 373] = [
     &R_006D4E10,
     &R_006D5180,
     &R_006D59F0,
-    &R_006D7B20,
     &R_006D91B0,
     &R_006DF000,
     &R_006E55D0,
@@ -8714,9 +8662,6 @@ pub static ROWS: [&Row; 373] = [
     &R_007E5F30,
     &R_007E6A30,
     &R_007ECB20,
-    &R_00806E10,
-    &R_00806E30,
-    &R_00806E40,
     &R_008106A0,
     &R_008106C0,
     &R_00810710,
@@ -8808,6 +8753,7 @@ pub static ROWS: [&Row; 373] = [
     &R_008B3D10,
     &R_008BE3F0,
     &R_008BEC80,
+    &R_008BEE00,
     &R_008BF070,
     &R_008CBAA0,
     &R_008D7590,

@@ -2858,6 +2858,23 @@ pub mod bridge {
         0
     }
 
+    /// `yiDisposeAnimDObj(obj, kind)` (`0x009084b0`): on the renderer
+    /// object, [`yi_anim_detach_all`] for a negative kind, else
+    /// [`yi_anim_detach`]. Returns 0.
+    pub fn yi_dispose_anim_dobj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        kind: u32,
+        call: &mut C,
+    ) -> u32 {
+        let scene = mem.rebase(0x0187_6e00);
+        if kind.cast_signed() < 0 {
+            yi_anim_detach_all(mem, scene, obj, call)
+        } else {
+            yi_anim_detach(mem, scene, obj, kind, call)
+        }
+    }
+
     /// `yiKeyFrame_attachDObj(scene, obj, anim, arg)` (`0x009144a0`): puts
     /// animation `anim` on display object `obj` in the first free slot:
     /// with a keyframe record (`+0x9d4c4` list) its kind (`+8`; kind 2

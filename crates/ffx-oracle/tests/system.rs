@@ -8403,7 +8403,7 @@ fn round14_limit_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         same_memory("Tidus' limit window", a, b);
         fill(a, b, rng);
         eax(a, 0x0089_7860, &[]);
-        t::btl_init_window_params(b, &mut Calls);
+        t::btl_init_active_chr_cursor(b, &mut Calls);
         same_memory("battle window parameters", a, b);
     }
 }
