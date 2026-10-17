@@ -6,6 +6,7 @@ use super::{mem, ported};
 use ffx_bridge::Global;
 use ffx_graphic::{cache, managers, scene, ui, vfx};
 
+use ffx_graphic::material::bridge as mt;
 use ffx_graphic::state::bridge as st;
 use ffx_graphic::texanim::bridge as ta;
 use ffx_graphic::util::bridge as ut;
@@ -1289,6 +1290,27 @@ ported! {
     graphicSetColourPair_00643b30 @ 0x0064_3b30 => extern "C" fn graphic_set_colour_pair(r: u32, g: u32, b: u32, r2: u32, g2: u32, b2: u32, second: u32) -> u32 {
         let c = [r, g, b, r2, g2, b2].map(f32::from_bits);
         ut::graphic_set_colour_pair(&mut mem(), c, second)
+    }
+
+    // ---- round 14: the segments' shader parameters ----
+    /// `graphicCharacterInstanceSetMeshColor(list, _, r, g, b, a)` (the
+    /// floats by their bits).
+    graphicCharacterInstanceSetMeshColor @ 0x0063_bb30 => extern "C" fn set_mesh_colour(list: u32, _unused: u32, r: u32, g: u32, b: u32, a: u32) {
+        let c = [r, g, b, a].map(f32::from_bits);
+        mt::set_mesh_colour(&mut mem(), list, c);
+    }
+    /// `graphicCharacterInstanceSetMeshSegmentColor(list, id, r, g, b, a, hide)`.
+    graphicCharacterInstanceSetMeshSegmentColor @ 0x0063_bc80 => extern "C" fn set_mesh_segment_colour(list: u32, id: u32, r: u32, g: u32, b: u32, a: u32, hide: u32) {
+        let c = [r, g, b, a].map(f32::from_bits);
+        mt::set_mesh_segment_colour(&mut mem(), list, id, c, hide);
+    }
+    /// `graphicCharacterInstanceSetMeshAlphaThreshold(list)`.
+    graphicCharacterInstanceSetMeshAlphaThreshold @ 0x0063_b9e0 => extern "C" fn set_mesh_alpha_threshold(list: u32) {
+        mt::set_mesh_alpha_threshold(&mut mem(), list);
+    }
+    /// `PhyreScene_SetLayerMaterialAlpha(this, layer, alpha)`.
+    PhyreScene_SetLayerMaterialAlpha @ 0x0065_82e0 => extern "thiscall" fn scene_set_layer_material_alpha(this: u32, layer: u32, alpha: u32) {
+        mt::scene_set_layer_material_alpha(&mut mem(), this, layer, alpha);
     }
 }
 

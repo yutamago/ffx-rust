@@ -744,3 +744,38 @@ Round 13:
 - `graphicSetColourPair_00643b30(r, g, b, r2, g2, b2, second)`:
   `PhyreScene_SetColourPair` on the scene with `second != 0`; `eax` is
   that flag, which the callee leaves.
+
+## Shader parameters of mesh segments (round 14)
+
+`crates/ffx-graphic/src/material.rs`. A mesh instance list is a count
+(bit 31 a flag) and an array of instances. An instance's `+0` is its mesh
+(count; `+4` segments of `0x6c` bytes: `+0` the material index, `+0x14`
+the hidden byte, `+0x18` the segment id) and `+0x10` its materials (count;
+one material inline at `+4`, several through the pointer at `+4`). A
+material's `+0` is its shader and `+4` its parameter buffer (a size word,
+then the data). `ShaderParams_FindByName(shader, name)` (`0x0056cbf0`,
+PhyreEngine's) finds a parameter: `+8` (`u16`) its offset in the buffer,
+`+0xa` (`u16 & 0x1fff`) its size. A value is written only when the offset
+is at least 4 and offset + size is within the size word
+(`ShaderParamBuffer_SetValue`, `0x00638780`, inlined in the callers).
+
+- `graphicCharacterInstanceSetMeshColor(list, _, r, g, b, a)`
+  (`0x0063bb30`) and `graphicCharacterInstanceSetMeshSegmentColor(list, id,
+  r, g, b, a, hide)` (`0x0063bc80`): `MaterialColour` = `(r, g, b, a)` on
+  each (matching) segment's material, then
+  `PhyreScene_ForceTransparent(material, a < 1)` (ordered compare), both
+  only when the shader has the parameter. With `hide`, a segment whose
+  `a` is 0 (either sign) is hidden (`+0x14` = 1) and keeps its colour; a
+  positive `a` first shows it (`+0x14` = 0).
+- `graphicCharacterInstanceSetMeshAlphaThreshold(list)` (`0x0063b9e0`):
+  each segment's `AlphaThreshold` that is not below `0.001` (the `f32` at
+  `0x00b368a4`; a NaN counts as not below) becomes 0. For a parameter
+  outside its buffer the original compares the float at address 0.
+- `PhyreScene_SetLayerMaterialAlpha(scene, layer, alpha)` (`0x006582e0`):
+  with the scene's byte `+0x93c` and word `+0x1128` set, the material of
+  texture-animation layer `layer` gets `MaterialColour` `(1, 1, 1,
+  f32(alpha) * (1/128))` (the `f64` at `0x00b170b8`).
+
+The originals copy `size` bytes from a 16-byte (`AlphaThreshold`: 4-byte)
+local; a larger parameter would copy their stack frame. The ports write
+zeros past the value.

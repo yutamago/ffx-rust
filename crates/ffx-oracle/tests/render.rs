@@ -5634,3 +5634,247 @@ fn snapshot_round13_matches_the_original() {
         round13_case(&mut t, &mut rng, round % 4, &what);
     }
 }
+
+// ---- round 14 ----
+
+/// A mesh instance list for the shader-parameter setters: instances with
+/// meshes of segments (material index, hidden byte, id), materials (one
+/// inline or several by pointer), each with a shader word and a parameter
+/// buffer of `buf_len` bytes. Returns the list and the segment ids used.
+fn build_material_list(t: &mut Twins, rng: &mut Rng, buf_len: u32) -> (u32, Vec<u32>) {
+    let n = rng.below(4);
+    let mut arr = Vec::new();
+    let mut ids = Vec::new();
+    for _ in 0..n {
+        let nm = 1 + rng.below(3);
+        let mut mats = Vec::new();
+        for _ in 0..nm {
+            let buf = t.alloc(&rng.bytes(buf_len as usize + 4));
+            let size = if rng.chance(6) { rng.next() } else { buf_len };
+            t.w32(buf, size);
+            let mat = t.zeros(8);
+            t.w32(mat, rng.next());
+            t.w32(mat + 4, buf);
+            mats.push(mat);
+        }
+        let container = t.zeros(8);
+        t.w32(container, nm | (rng.next() & 0x8000_0000));
+        if nm == 1 {
+            t.w32(container + 4, mats[0]);
+        } else {
+            let p: Vec<u8> = mats.iter().flat_map(|m| m.to_le_bytes()).collect();
+            let p = t.alloc(&p);
+            t.w32(container + 4, p);
+        }
+        let k = rng.below(4);
+        let segs = t.alloc(&rng.bytes(0x6c * k as usize + 4));
+        for j in 0..k {
+            t.w32(segs + 0x6c * j, rng.below(nm));
+            let id = rng.below(4);
+            ids.push(id);
+            t.w32(segs + 0x6c * j + 0x18, id);
+        }
+        let mesh = t.zeros(8);
+        t.w32(mesh, k | (rng.next() & 0x8000_0000));
+        t.w32(mesh + 4, segs);
+        let inst = t.alloc(&rng.bytes(0x14));
+        t.w32(inst, mesh);
+        t.w32(inst + 0x10, container);
+        arr.extend(inst.to_le_bytes());
+    }
+    arr.extend([0; 4]);
+    let arr = t.alloc(&arr);
+    let list = t.zeros(8);
+    t.w32(list, n | (rng.next() & 0x8000_0000));
+    t.w32(list + 4, arr);
+    (list, ids)
+}
+
+/// A parameter descriptor of `size` bytes at an offset into a buffer of
+/// `buf_len` (sometimes past it, or below 4, when `fits` is false).
+fn build_param(t: &mut Twins, rng: &mut Rng, buf_len: u32, size: u32, fits: bool) -> u32 {
+    let p = t.alloc(&rng.bytes(0x10));
+    let off = if fits || rng.chance(2) {
+        4 + 4 * rng.below((buf_len - size) / 4)
+    } else if rng.chance(2) {
+        rng.below(4)
+    } else {
+        buf_len + rng.below(8)
+    };
+    t.write(p + 8, &(off as u16).to_le_bytes());
+    let hi = (rng.next() as u16) & 0xe000;
+    t.write(p + 0xa, &(size as u16 | hi).to_le_bytes());
+    p
+}
+
+#[allow(clippy::too_many_lines)] // one arm per function
+fn round14_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::material::bridge as mt;
+    let colour = |rng: &mut Rng| -> [f32; 4] {
+        let mut c: [f32; 4] = std::array::from_fn(|_| rng.float());
+        match rng.below(5) {
+            0 => c[3] = 0.0,
+            1 => c[3] = -0.0,
+            2 => c[3] = 1.0,
+            3 => c[3] = (rng.below(20) as f32) / 10.0 - 0.5,
+            _ => {}
+        }
+        c
+    };
+    match case {
+        0 | 1 => {
+            let (list, ids) = build_material_list(t, rng, 0x30);
+            let size = [16, 12, 4, 0][rng.below(4) as usize];
+            let param = build_param(t, rng, 0x30, size, false);
+            t.stub_sym(
+                mt::FIND_PARAMETER,
+                Conv::Thiscall(0),
+                1,
+                if rng.chance(6) { 0 } else { param },
+            );
+            t.stub_sym(mt::FORCE_TRANSPARENT, Conv::Cdecl, 2, rng.next());
+            let list = if rng.chance(10) { 0 } else { list };
+            let c = colour(rng);
+            let cb = c.map(f32::to_bits);
+            if case == 0 {
+                let x = rng.next();
+                t.check(
+                    what,
+                    0x0063_bb30,
+                    Conv::Cdecl,
+                    &[list, x, cb[0], cb[1], cb[2], cb[3]],
+                    |g| {
+                        mt::set_mesh_colour(g, list, c);
+                        Out::None
+                    },
+                );
+            } else {
+                let id = if !ids.is_empty() && rng.chance(2) {
+                    ids[rng.below(ids.len() as u32) as usize]
+                } else {
+                    rng.below(5)
+                };
+                let hide = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
+                t.check(
+                    what,
+                    0x0063_bc80,
+                    Conv::Cdecl,
+                    &[list, id, cb[0], cb[1], cb[2], cb[3], hide],
+                    |g| {
+                        mt::set_mesh_segment_colour(g, list, id, c, hide);
+                        Out::None
+                    },
+                );
+            }
+        }
+        2 => {
+            let (list, _) = build_material_list(t, rng, 0x30);
+            // every buffer large enough: the original reads the threshold
+            // at address 0 for a parameter outside it
+            let size = 4;
+            let param = build_param(t, rng, 0x30, size, true);
+            let off = u32::from(u16::from_le_bytes([t.r8(param + 8), t.r8(param + 9)]));
+            let v = match rng.below(4) {
+                0 => 0.001f32,
+                1 => 0.0009,
+                2 => (rng.below(10) as f32) / 1000.0,
+                _ => rng.float(),
+            };
+            // the threshold at the parameter's offset of every buffer
+            let n = t.r32(list) & 0x7fff_ffff;
+            let arr = t.r32(list + 4);
+            for i in 0..n {
+                let inst = t.r32(arr + 4 * i);
+                let mats = t.r32(inst + 0x10);
+                let nm = t.r32(mats) & 0x7fff_ffff;
+                let base = if nm == 1 { mats + 4 } else { t.r32(mats + 4) };
+                for j in 0..nm {
+                    let mat = t.r32(base + 4 * j);
+                    let buf = t.r32(mat + 4);
+                    t.w32(buf, 0x30);
+                    t.write(buf + off, &v.to_le_bytes());
+                }
+            }
+            t.stub_sym(
+                mt::FIND_PARAMETER,
+                Conv::Thiscall(0),
+                1,
+                if rng.chance(6) { 0 } else { param },
+            );
+            let list = if rng.chance(10) { 0 } else { list };
+            t.check(what, 0x0063_b9e0, Conv::Cdecl, &[list], |g| {
+                mt::set_mesh_alpha_threshold(g, list);
+                Out::None
+            });
+        }
+        _ => {
+            // the original ShaderParamBuffer_SetValue runs on both sides
+            let scene = t.alloc(&rng.bytes(0x1130));
+            t.w8(scene + 0x93c, u8::from(!rng.chance(5)));
+            t.w32(scene + 0x1128, if rng.chance(5) { 0 } else { rng.next() });
+            let buf = t.alloc(&rng.bytes(0x34));
+            t.w32(buf, if rng.chance(6) { rng.below(0x40) } else { 0x30 });
+            let mat = t.zeros(8);
+            t.w32(mat, rng.next());
+            t.w32(mat + 4, buf);
+            t.stub_sym(mt::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+            t.stub_sym(
+                mt::TEX_ANIM_MATERIAL_BY_LAYER,
+                Conv::Thiscall(0),
+                1,
+                if rng.chance(6) { 0 } else { mat },
+            );
+            let size = [16, 12, 4][rng.below(3) as usize];
+            let param = build_param(t, rng, 0x30, size, false);
+            t.stub_sym(
+                mt::FIND_PARAMETER,
+                Conv::Thiscall(0),
+                1,
+                if rng.chance(6) { 0 } else { param },
+            );
+            let layer = rng.next();
+            let alpha = match rng.below(3) {
+                0 => rng.below(0x100),
+                1 => rng.next(),
+                _ => 0x80,
+            };
+            t.check(
+                what,
+                0x0065_82e0,
+                Conv::Thiscall(scene),
+                &[layer, alpha],
+                |g| {
+                    mt::scene_set_layer_material_alpha(g, scene, layer, alpha);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn round14_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1414_0014);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round14_case(&mut t, &mut rng, round % 4, &what);
+    }
+}
+
+#[test]
+fn snapshot_round14_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5014_0014);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round14_case(&mut t, &mut rng, round % 4, &what);
+    }
+}
