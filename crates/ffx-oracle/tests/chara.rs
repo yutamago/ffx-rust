@@ -7015,3 +7015,66 @@ fn round11c_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11d_matches_the_original() {
+    for mut t in twins() {
+        round11d_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round11d_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_d11d);
+    let fk = Fakes::new(t);
+    let seq = fk.fake(t, 0x0083_7ac0, 1, 2);
+    let sys = fk.fake(t, 0x0083_7d00, 2, 3);
+    let pop = t.b.rebase(FPU_POP);
+    let water = t.a.rebase(0x0130_09d8);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..64u32 {
+        fk.reset(t);
+        t.put_u32(seq, rng.next());
+        t.put_u32(sys, rng.next());
+        t.put_u32(water, f(&mut rng, -4, 4));
+        let chr = t.alloc(0x800);
+        for k in 0..0x200 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        t.put_u32(chr + 0x194, rng.next());
+        let speed = [0f32, 0.5, 1.0, 2.0][(rng.next() % 4) as usize];
+        t.put_u32(chr + 0x154, speed.to_bits());
+        t.put_u32(chr + 0x170, f(&mut rng, 0, 2));
+        t.put_u32(chr + 0x158, f(&mut rng, -7, 7));
+        t.put_u32(chr + 0x168, f(&mut rng, -7, 7));
+        t.put_u32(chr + 0x10, f(&mut rng, -6, 6));
+        t.put_u32(chr + 0x504, f(&mut rng, 0, 2));
+        t.put(chr + 0x736, &[u8::from(rng.next().is_multiple_of(4))]);
+        for off in [0x79cu32, 0x7a4, 0x7a8] {
+            let m = (rng.next() & 0xffff_0000) | (rng.next() % 0x2000);
+            t.put_u32(chr + off, m);
+        }
+        let at = t.a.rebase(0x0083_5d30);
+        t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        mo::ch_auto_motion(
+            &mut t.b,
+            chr,
+            &mut |m: &mut Oracle, f, a: &[u32]| m.call_cdecl(f, a).unwrap(),
+            &mut |m: &mut Oracle, f, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            },
+        );
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_AutoMotion {round}",
+            t.name
+        );
+    }
+}

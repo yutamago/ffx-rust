@@ -1044,6 +1044,85 @@ pub mod bridge {
         mem.write(chr + 0x728, 1u16);
         u32::from(k)
     }
+
+    /// `Ch_SetSysMotion(chr, slot, motion)` (`0x00837d00`),
+    /// `Sg_AngleApproach(cur, target, step)` (`0x00835f80`, `ST0` out),
+    /// `Angle_Wrap_00836720` (`ST0` out) and the water height
+    /// (`f32`, `Sg_GetSuimen`).
+    pub const SET_SYS_MOTION: u32 = 0x0083_7d00;
+    pub const ANGLE_APPROACH: u32 = 0x0083_5f80;
+    pub const ANGLE_WRAP: u32 = 0x0083_6720;
+    pub const SUIMEN: u32 = 0x0130_09d8;
+
+    /// The automatic motion step (`0x00835d30`, called for characters the
+    /// script released, `Native_ChrReleaseMotion`): with flag bit 10 of
+    /// `+0x194` the facing `+0x158` turns toward `+0x168` (step by speed
+    /// `+0x154` against `+0x170`: faster, standing or walking); unless a
+    /// motion is pending (`+0x736`), standing (`+0x154` 0) plays `+0x79c`,
+    /// else `+0x7a8` above the water (y `+0x10` not above its height + 1)
+    /// or `+0x7a4` below, as a sequence (low half from 0x1000) or system
+    /// motion 2, and the run blend `+0x504` grows by 0.15 while below 1.
+    /// The original's EAX is not a result.
+    pub fn ch_auto_motion<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        if mem.read::<u32>(chr + 0x194) & 0x400 != 0 {
+            let speed = fl(mem, chr + 0x154);
+            let step = if fl(mem, chr + 0x170) < speed {
+                0x00b5_99a8
+            } else if speed == 0.0 {
+                0x00b5_99a4
+            } else {
+                0x00b5_982c
+            };
+            let step = bits(mem, r(mem, step));
+            let to = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x168)]));
+            let cur = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x158)]));
+            let v = (fcall)(
+                mem,
+                r(mem, ANGLE_APPROACH),
+                &[cur.to_bits(), to.to_bits(), step],
+            );
+            mem.write(chr + 0x158, r32(v));
+        }
+        if mem.read::<u8>(chr + 0x736) != 0 {
+            return;
+        }
+        let play = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, m: u32| {
+            if m & 0xffff >= 0x1000 {
+                call(mem, r(mem, SET_SEQUENCE), &[chr, m]);
+            } else {
+                call(mem, r(mem, SET_SYS_MOTION), &[chr, 2, m]);
+            }
+            mem.write(chr + 0x736, 0u8);
+        };
+        if fl(mem, chr + 0x154) == 0.0 {
+            let m: u32 = mem.read(chr + 0x79c);
+            play(mem, call, m);
+            return;
+        }
+        let top = fl(mem, r(mem, SUIMEN)) + mem.read::<f64>(r(mem, 0x00b9_2248));
+        let m: u32 = mem.read(
+            chr + if top > fl(mem, chr + 0x10) {
+                0x7a4
+            } else {
+                0x7a8
+            },
+        );
+        play(mem, call, m);
+        if 1.0 > fl(mem, chr + 0x504) {
+            let v = r32(fl(mem, chr + 0x504) + mem.read::<f64>(r(mem, 0x00b5_99b0)));
+            mem.write(chr + 0x504, v);
+        }
+    }
 }
 
 #[cfg(test)]

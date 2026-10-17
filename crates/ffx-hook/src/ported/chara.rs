@@ -1728,4 +1728,13 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_mouth(&mut mem(), chr, &mut c)
     }
+    /// `Ch_AutoMotion(chr)`.
+    Ch_AutoMotion @ 0x0083_5d30 => extern "C" fn ch_auto_motion(chr: u32) {
+        mo::bridge::ch_auto_motion(
+            &mut mem(),
+            chr,
+            &mut |_, f, a| super::call_cdecl(f, a),
+            &mut |_, f, a| st0_cdecl(f, a),
+        );
+    }
 }

@@ -7087,6 +7087,7 @@
 0x00835b70 function Ch_SysGetScreenMatrixPtr  # fh v3:bsim1.00 0x00835bf0
 0x00835b90 function FFXVu0ClipScreen          # () -> &g_Vu0ClipScreen; fh switch:bsim1.00 0x71001c22e0
 0x00835ba0 function Ch_SysGetCameraMatrixPtr  # fh v3:bsim1.00 0x00835c20
+0x00835d30 function Ch_AutoMotion             # (chr): the automatic stand/walk/run motion step: facing +0x158 toward +0x168 by Sg_AngleApproach, then +0x79c/+0x7a4/+0x7a8 by speed +0x154 and the water height (Sg_GetSuimen's 0x013009d8) through Ch_SetSequence or Ch_SetSysMotion(chr, 2, m); name ours
 0x00835e90 function Ch_SysSetScreenMatrix     # (m): 64 bytes from m to g_ChrScreenMatrix (Ch_SysGetScreenMatrixPtr's); Switch name
 0x00835eb0 function Ch_SysSetCameraMatrix     # (m): 64 bytes from m to g_ChrCameraMatrix (Ch_SysGetCameraMatrixPtr's); Switch name
 0x00835ed0 function Ch_TextureAnimGetHandle   # fh v3:exact 0x00835f50
