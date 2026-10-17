@@ -8147,15 +8147,16 @@
 0x008977c0 function TOBwakkCheckTerm          # g_MagicImports slot 652 (10 overlays): with byte 0x0133c93f 1, TOSeqCheckTermScene(2, "bwakk"); hidden from the dump
 0x008977e0 function TOBgoodCheckTerm          # g_MagicImports slot 653 (10 overlays): TOSeqCheckTermScene(2, "bgood"); hidden from the dump
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
-0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0
+0x00897860 function TOBtlInitWindowParams     # (): 24 floats 0x0133fa08..0x0133fa64 from 0/1 and the image floats 0x00b49998, 0x00b92340, 0x00b5f048, 0x00b10f38, 0x00b5165c, 0x00b5f044, 0x00b43d28; TOSeqGetColor into 0x0133f7d4, 0x0133fa88/8c/90; caller TOInitBtlWindow; name ours
+0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0; TOSeqGetNum(2, 0x00b5ecbc, 0x0133f778), TOInitPadData, TOBtlInitLimitTimer, 5 words 0x0133d6f4 = 0, TOSeqGetPoint(2, 0x00b5ecc4, +2, +4), dword +6 = 4
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
 0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40; battle info window 0x0133f5bc..0x0133f6a2 laid out from graphicUiRemapX2/Y2 of x 700, 1400 and y 101, 109, 160
 0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
 0x00897f00 function TOBtlInitLimitTimer          # structure: (): zeroes the limit timer state 0x0133f77c..0x0133f794, its position from TOSeqGetPoint(2, "dum201"), stops sound effect 0x8000004e if playing; callers are the Tidus/Auron/Lulu limit window init and control functions; Switch TOBtlInitLimitTimer (104 bytes) is the one unused name sorting between TOBtlInitInfoWinMes and TOBtlInitLuluLimitWindow here (with TOBtlInitLibraWindow, which is our TOBtlLibraGetRects 0x00897dc0)
-0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0
+0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0; same start, 0x2c bytes 0x0133d708 cleared, point +2, u16 +6 = 0xc0, colours +8/+0xc, point +0x10
 0x00898010 function TOBtlInitStatusWin        # fh v3:exact 0x00897f80
 0x00898130 function TOBtlInitTargetBit        # fh switch:bsim1.00 0x710049aae0
-0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0
+0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0; same start, 6 words 0x0133d734 = 0, u16 +2/+4/+6 = ftol(graphicUiRemapX2/Y2/X2 of 0x00b5ef70/0x00b5ef98/0x00b5f010), colour +0x14
 0x00898230 function TODum225GetNum            # g_MagicImports slot 655 (10 overlays): TOInitPadData(); TOSeqGetNum(2, "dum225", 0x0133f778); byte 0x0133c93f = 0; hidden from the dump
 0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0
 0x00898330 function TOBtlMakeTargetChrStatusBit # fh v3:exact 0x008982a0

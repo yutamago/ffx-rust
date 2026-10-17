@@ -2543,4 +2543,154 @@ pub mod bridge {
         let y = if y > lim { lim } else { y.max(4) };
         place_message_window(mem, i, [x, y, w, h], screen_wh);
     }
+
+
+    /// The calls the battle limit-window set-ups make outside this module.
+    pub trait LimitWindowCalls<M> {
+        /// `TOSeqGetNum(i, name, &n)`.
+        fn seq_num(&mut self, mem: &mut M, i: u32, name: u32, out: u32);
+        /// `TOSeqGetPoint(i, name, &x, &y)`.
+        fn seq_point(&mut self, mem: &mut M, i: u32, name: u32, x: u32, y: u32);
+        /// `TOSeqGetColor(i, name, &rgba)`.
+        fn seq_color(&mut self, mem: &mut M, i: u32, name: u32, out: u32);
+        /// `TOInitPadData()`.
+        fn init_pad(&mut self, mem: &mut M);
+        /// `TOBtlInitLimitTimer()`.
+        fn init_limit_timer(&mut self, mem: &mut M);
+        /// `graphicUiRemapX2(v)` or, with `y`, `graphicUiRemapY2(v)`.
+        fn remap(&mut self, mem: &mut M, y: bool, v: f32) -> f32;
+    }
+
+    /// The common start of the limit-window set-ups: `TOSeqGetNum(2,
+    /// "dumm..", 0x0133f778)`, `TOInitPadData()`, `TOBtlInitLimitTimer()`.
+    fn limit_window_start<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        let name = mem.rebase(0x00b5_ecbc);
+        let out = mem.rebase(0x0133_f778);
+        calls.seq_num(mem, 2, name, out);
+        calls.init_pad(mem);
+        calls.init_limit_timer(mem);
+    }
+
+    /// `words` words cleared from the image address `from`.
+    fn zero_words<M: Mem>(mem: &mut M, from: u32, words: u32) {
+        let at = mem.rebase(from);
+        for k in 0..words {
+            mem.write(at.wrapping_add(4 * k), 0u32);
+        }
+    }
+
+    /// `TOSeqGetPoint(2, name, &x, &y)` into image addresses.
+    fn limit_point<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>, name: u32, x: u32) {
+        let (name, x) = (mem.rebase(name), mem.rebase(x));
+        calls.seq_point(mem, 2, name, x, x.wrapping_add(2));
+    }
+
+    /// `TOSeqGetColor(2, name, &rgba)` into an image address.
+    fn limit_color<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>, name: u32, out: u32) {
+        let (name, out) = (mem.rebase(name), mem.rebase(out));
+        calls.seq_color(mem, 2, name, out);
+    }
+
+    /// `TOBtlInitAuronLimitWindow()` (`0x00897970`): the common start, the
+    /// window record `0x0133d6f4` (5 words) cleared, its point from the
+    /// scene (`+2`, `+4`) and the word `+6` 4.
+    pub fn btl_init_auron_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        limit_window_start(mem, calls);
+        zero_words(mem, 0x0133_d6f4, 5);
+        limit_point(mem, calls, 0x00b5_ecc4, 0x0133_d6f6);
+        let at = mem.rebase(0x0133_d6fa);
+        mem.write(at, 4u32);
+    }
+
+    /// `TOBtlInitLuluLimitWindow()` (`0x00897f70`): the common start, the
+    /// record `0x0133d708` (0x2c bytes) cleared, a point (`+2`), `+6` 0xc0,
+    /// two colours (`+8`, `+0xc`) and a second point (`+0x10`).
+    pub fn btl_init_lulu_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        limit_window_start(mem, calls);
+        zero_words(mem, 0x0133_d708, 11);
+        limit_point(mem, calls, 0x00b5_ecf4, 0x0133_d70a);
+        let at = mem.rebase(0x0133_d70e);
+        mem.write(at, 0xc0u16);
+        limit_color(mem, calls, 0x00b5_ecfc, 0x0133_d710);
+        limit_color(mem, calls, 0x00b5_ed04, 0x0133_d714);
+        limit_point(mem, calls, 0x00b5_ed0c, 0x0133_d718);
+    }
+
+    /// `TOBtlInitTidusLimitWindow()` (`0x00898180`): the common start, the
+    /// record `0x0133d734` (6 words) cleared, `+2`, `+4`, `+6` the remapped
+    /// (`graphicUiRemapX2`/`Y2`, then `ftol`) constants at `0x00b5ef70`,
+    /// `0x00b5ef98`, `0x00b5f010`, and a colour at `+0x14`.
+    #[allow(clippy::cast_possible_truncation)] // `mov word, ax`
+    pub fn btl_init_tidus_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        limit_window_start(mem, calls);
+        zero_words(mem, 0x0133_d734, 6);
+        for (k, (c, y)) in [(0x00b5_ef70, false), (0x00b5_ef98, true), (0x00b5_f010, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let c = mem.rebase(c);
+            let v: f32 = mem.read(c);
+            let r = calls.remap(mem, y, v);
+            let w = ffx_bridge::x87::ftol(mem, f64::from(r)) as u16;
+            let at = mem.rebase(0x0133_d736).wrapping_add(2 * k as u32);
+            mem.write(at, w);
+        }
+        limit_color(mem, calls, 0x00b5_ece4, 0x0133_d748);
+    }
+
+    /// `0x00897860()` (from `TOInitBtlWindow`): the 24 floats at
+    /// `0x0133fa08` set from constants (0, 1 and six image floats), then
+    /// four colours from the scene (`0x0133f7d4`, `0x0133fa88`,
+    /// `0x0133fa8c`, `0x0133fa90`).
+    pub fn btl_init_window_params<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        // which value each float gets: 0 = 0.0, 1 = 1.0, else an image float
+        const SOURCES: [u32; 24] = [
+            0,
+            0x00b4_9998,
+            0,
+            1,
+            0x00b9_2340,
+            0x00b5_f048,
+            0,
+            1,
+            1,
+            0x00b5_f048,
+            0,
+            1,
+            0,
+            0,
+            0x00b1_0f38,
+            1,
+            0x00b5_165c,
+            0x00b5_f044,
+            0x00b1_0f38,
+            1,
+            0x00b4_3d28,
+            0x00b5_f044,
+            0x00b1_0f38,
+            1,
+        ];
+        let base = mem.rebase(0x0133_fa08);
+        for (k, s) in SOURCES.into_iter().enumerate() {
+            let bits = match s {
+                0 => 0u32,
+                1 => 1.0f32.to_bits(),
+                a => {
+                    let a = mem.rebase(a);
+                    mem.read(a)
+                }
+            };
+            #[allow(clippy::cast_possible_truncation)] // 24 entries
+            let at = base.wrapping_add(4 * k as u32);
+            mem.write(at, bits);
+        }
+        for (name, out) in [
+            (0x00b5_ed34, 0x0133_f7d4),
+            (0x00b5_ed3c, 0x0133_fa88),
+            (0x00b5_ed44, 0x0133_fa8c),
+            (0x00b5_ed4c, 0x0133_fa90),
+        ] {
+            limit_color(mem, calls, name, out);
+        }
+    }
 }
