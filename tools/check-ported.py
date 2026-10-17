@@ -105,120 +105,14 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src").rglob("*.rs")):
                 print(f"{f.name}:{n}: asm uses {{{name}}} after a call, in a register the callee may clobber")
                 bad += 1
 
-# A shim helper that dispatches on the argument count (chara's `st0_cdecl`,
-# `ci_call`) answers NaN for a count it lacks, and the oracle's own
-# closures never run it: Ch_AutoMotion's three-word Sg_AngleApproach call
-# got NaN in the game. Every `fcall`/`ci` call a bridge makes must pass a
-# count its helper supports and, for a cdecl `fcall`, the callee's arity
-# (the dump's signature).
-def helper_arities(text, fn):
-    m = re.search(rf"fn {fn}\(.*?\n}}\n", text, re.S)
-    if not m:
-        return None
-    return {len([x for x in arm.split(",") if x.strip()])
-            for arm in re.findall(r"^\s*\[([\w\s,]*)\]\s*=>", m.group(0), re.M)}
+# Argument counts at the bridges' calls into original code (tools/callarity.py).
+if exe:
+    import callarity  # noqa: E402
 
-
-def dump_arity(addr):
-    """The parameter count of the dump's signature for `addr`, or None."""
-    chunk = WORK_DECOMP / f"code/0x{addr & ~0xffff:08x}.c"
-    if not chunk.exists():
-        return None
-    text = chunk.read_text(encoding="utf-8", errors="replace")
-    i = text.find(f"// ==== 0x{addr:08x} ====")
-    if i < 0:
-        return None
-    for line in text[i:].splitlines()[1:40]:
-        m = re.match(r"^[A-Za-z_].*?\b\w+\((.*)\)\s*$", line)
-        if m:
-            params = m.group(1).strip()
-            return 0 if params in ("", "void") else params.count(",") + 1
-    return None
-
-
-def slice_len(code, arg):
-    """Words in a call's slice argument: a literal `&[..]`, or `&name` bound
-    to a literal array (`let name = [..]`, also `[..].map(..)`)."""
-    arg = arg.strip()
-    lit = re.fullmatch(r"&\[(.*)\]", arg, re.S)
-    if not lit:
-        name = re.fullmatch(r"&(\w+)", arg)
-        if not name:
-            return None
-        bound = list(re.finditer(rf"let {name.group(1)}\s*=\s*\[", code))
-        if not bound:
-            return None
-        start = bound[-1].end() - 1
-        body = balanced(code, start)
-        return top_level_items(body[1:-1]) if body else None
-    return top_level_items(lit.group(1))
-
-
-def balanced(code, start):
-    depth = 0
-    for j in range(start, len(code)):
-        depth += code[j] in "([{" and 1 or (-1 if code[j] in ")]}" else 0)
-        if depth == 0:
-            return code[start:j + 1]
-    return None
-
-
-def top_level_items(body):
-    depth, items, cur = 0, 0, ""
-    for ch in body:
-        depth += 1 if ch in "([{" else -1 if ch in ")]}" else 0
-        if ch == "," and depth == 0:
-            items += cur.strip() != ""
-            cur = ""
-        else:
-            cur += ch
-    return items + (cur.strip() != "")
-
-
-WORK_DECOMP = progress.WORK / "decomp"
-shim = (progress.REPO / "crates/ffx-hook/src/ported/chara.rs").read_text(encoding="utf-8")
-helpers = {"fcall": helper_arities(shim, "st0_cdecl"), "ci": helper_arities(shim, "ci_call")}
-consts = {}
-for f in sorted((progress.REPO / "crates/ffx-chara/src").glob("*.rs")):
-    for m in re.finditer(r"pub const (\w+): u32 = (0x[0-9a-f_]+);", f.read_text(encoding="utf-8")):
-        consts[m.group(1)] = int(m.group(2).replace("_", ""), 16)
-checked = 0
-for f in sorted((progress.REPO / "crates/ffx-chara/src").glob("*.rs")):
-    code = f.read_text(encoding="utf-8")
-    for m in re.finditer(r"\((?:c\.)?(fcall|ci)\)\(mem,\s*", code):
-        args = balanced(code, m.start() + m.group(0).index(")(") + 1)
-        n = code[: m.start()].count("\n") + 1
-        parts = []
-        depth, cur = 0, ""
-        for ch in args[1:-1]:
-            depth += 1 if ch in "([{" else -1 if ch in ")]}" else 0
-            if ch == "," and depth == 0:
-                parts.append(cur)
-                cur = ""
-            else:
-                cur += ch
-        parts.append(cur)
-        target, arg = parts[1].strip(), ",".join(parts[2:])
-        count = slice_len(code, arg)
-        kind = m.group(1)
-        if count is None:
-            print(f"{f.name}:{n}: {kind} call with an argument list this check cannot count")
-            bad += 1
-            continue
-        if helpers[kind] is not None and count not in helpers[kind]:
-            print(f"{f.name}:{n}: {kind} passes {count} words; the shim helper takes {sorted(helpers[kind])}")
-            bad += 1
-        name = re.fullmatch(r"r\(mem,\s*(\w+)\)", target)
-        addr = None
-        if name:
-            v = name.group(1)
-            addr = int(v.replace("_", ""), 16) if v.startswith("0x") else consts.get(v)
-        if kind == "fcall" and addr is not None:
-            arity = dump_arity(addr)
-            if arity is not None and arity != count:
-                print(f"{f.name}:{n}: fcall passes {count} words to 0x{addr:08x}, which takes {arity}")
-                bad += 1
-        checked += 1
-print(f"{checked} float helper calls checked")
+    found, checked = callarity.check(progress.REPO, exe, {a: size for a, (_, size) in rows.items()})
+    for line in found:
+        print(line)
+    bad += len(found)
+    print(f"{checked} calls checked for argument counts")
 print(f"{len(seen)} ported, {bad} problems")
 sys.exit(1 if bad else 0)

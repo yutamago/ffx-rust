@@ -7165,7 +7165,7 @@ fn round11f_on(t: &mut Twin) {
     let find = fk.fake(t, 0x0083_6f10, 7, 3);
     let battle = fk.fake(t, 0x0078_0c90, 8, 0);
     let c1 = fk.fake(t, 0x0086_c1c0, 9, 1);
-    let c2 = fk.fake(t, 0x0086_5890, 10, 1);
+    let c2 = fk.fake(t, 0x0086_5890, 10, 2);
     let c3 = fk.fake(t, 0x0082_a7f0, 11, 1);
     for round in 0..24u32 {
         fk.reset(t);

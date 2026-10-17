@@ -7175,7 +7175,7 @@
 0x00837590 function Ch_MoveMgrp              # Switch name (0x7100423e80): (chr, delta) the motion group pointers (+0x70c/710/714/7e8/7f4, node list at +0x74c) after it moved
 0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2
 0x00837630 function ChN_AddEventMgrp          # (data, x): SG_AddMotionGroup(data, 1, x, 0) when data is not 0; called with a request's +0x10, +0xc; name ours
-0x00837670 function Ch_ReadEventMgrp          # (x): tail call Ch_RomReadEventMGRPsync(AtelEventGetMotionIndex(0x0086c1c0(x))); name ours
+0x00837670 function Ch_ReadEventMgrp          # (x): tail call Ch_RomReadEventMGRPsync(AtelEventGetMotionIndex(0x0086c1c0(x), x)) (x is left pushed and read as the second word); name ours
 0x008376b0 function Ch_RegMotionEntryCache    # fh switch:bsim1.00 0x71004214d0
 0x00837710 function ChN_SystemMgrpLoaded      # (): SG_FindMotionGroup(2, 0, 0) != 0; name ours
 0x00837730 function Ch_RegMotionGetExistMem   # fh switch:bsim1.00 0x7100421550
