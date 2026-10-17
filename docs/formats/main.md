@@ -413,3 +413,25 @@ mode steps the frames per step (`0x00c496d4`): 8+4 with 4 pressed raises
 it, 4+8 with 8 pressed lowers it, and below 0 it returns to 0 and sets
 `0x013007b3`. Button 4 alone requests `0x023c44b4`; button 1 is copied to
 `0x013007b1`.
+
+## Bones from the model (round 9)
+
+`SG_InitBones(chr)` (`0x008277f0`) builds a character's skeleton from its
+model (`+0x1c0`). It allocates named blocks: the bones' elements
+(`0x160` each, "%s:Elem", `+0x328`), their channels (`0x18c`, "%s:Fcv",
+`+0x748`), the model entries (`0x38`, "%s:Mdl", `+0x1bc`) and any
+collisions (`0x60`, "%s:Collision", `+0x32c`; only `0x38` each cleared).
+The model's bone table (`+0x1c`, 20 bytes each) gives the bind pose:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0` | `u16` | parent bone; the bone itself means the root element `chr+0x1c8` |
+| `+2..+6` | `i16` x 3 | rotation in hundredths of a degree (`Angle_Wrap(v / 100 * pi / 180)`) |
+| `+8..+0xc` | `i16` x 3 | translation x 1000 |
+| `+0xe..+0x12` | `i16` x 3 | scale x 4096 (divided, rounding to 0) |
+
+When option points 7 and 8 share an ancestor, that ancestor and its own
+ancestors lose their damping byte (`+0x144`), as does every bone whose
+parent has none. Each model entry gets `Chr_ModelEntry`, a weight of 1.0 at
+`+0x14`, and `+0x194` bit 21 when its `+0x18` is set. Then
+`Ch_ModelCreatePacket` builds the packet.

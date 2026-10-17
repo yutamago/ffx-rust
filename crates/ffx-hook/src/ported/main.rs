@@ -1355,6 +1355,10 @@ ported! {
     Sg_ControlMain @ 0x0082_d070 => extern "C" fn sg_control_main() -> u32 {
         state::bridge::control_main(&mut mem())
     }
+    /// `SG_InitBones(chr)`.
+    SG_InitBones @ 0x0082_77f0 => extern "C" fn sg_init_bones(chr: u32) {
+        seq::bridge::init_bones(&mut mem(), chr);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

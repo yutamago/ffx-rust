@@ -914,7 +914,14 @@ pub mod bridge {
     /// `chr + field`, named `fmt` with the character's name, type 1, then
     /// `clear` bytes cleared). The name goes through the host's callee
     /// scratch, as the original's stack buffer did.
-    fn named_block(h: &mut impl ffx_bridge::Host, chr: u32, field: u32, size: u32, fmt: u32, clear: u32) {
+    fn named_block(
+        h: &mut impl ffx_bridge::Host,
+        chr: u32,
+        field: u32,
+        size: u32,
+        fmt: u32,
+        clear: u32,
+    ) {
         let at = h.rebase(USER_MALLOC);
         let p = h.call(at, &[size]);
         h.write(chr.wrapping_add(field), p);
@@ -949,19 +956,39 @@ pub mod bridge {
     /// common ancestor, that ancestor and its own ancestors lose their
     /// damping byte (`+0x144`), as do bones whose parent has none. Each
     /// model entry gets `Chr_ModelEntry(k, model+0x10, model+4)` and 1.0 at
-    /// `+0x14`, `+0x194` bit 21 telling whether its `+0x18` is set; then
+    /// `+0x14`, `+0x194` bit 21 set when its `+0x18` is (never cleared); then
     /// `Ch_ModelCreatePacket`.
     pub fn init_bones(h: &mut impl ffx_bridge::Host, chr: u32) {
-        use ffx_bridge::x87;
         let model: u32 = h.read(chr.wrapping_add(0x1c0));
         let count = |h: &_, o: u32| u32::from(Mem::read::<u16>(h, model.wrapping_add(o)));
         let n = count(h, 0xa);
         named_block(h, chr, 0x328, n * 0x160, NAME_ELEM, count(h, 0xa) * 0x160);
-        named_block(h, chr, 0x748, count(h, 0xa) * 0x18c, NAME_FCV, count(h, 0xa) * 0x18c);
-        named_block(h, chr, 0x1bc, count(h, 6) * 0x38, NAME_MDL, count(h, 6) * 0x38);
+        named_block(
+            h,
+            chr,
+            0x748,
+            count(h, 0xa) * 0x18c,
+            NAME_FCV,
+            count(h, 0xa) * 0x18c,
+        );
+        named_block(
+            h,
+            chr,
+            0x1bc,
+            count(h, 6) * 0x38,
+            NAME_MDL,
+            count(h, 6) * 0x38,
+        );
         let coll = count(h, 0x2c);
         if coll != 0 {
-            named_block(h, chr, 0x32c, coll * 0x60, NAME_COLLISION, count(h, 0x2c) * 0x38);
+            named_block(
+                h,
+                chr,
+                0x32c,
+                coll * 0x60,
+                NAME_COLLISION,
+                count(h, 0x2c) * 0x38,
+            );
         }
         let elem = h.rebase(CH_ELEM_INIT);
         let mut k = 0;
@@ -972,7 +999,38 @@ pub mod bridge {
         }
         h.call(elem, &[chr.wrapping_add(0x1c8)]);
         h.write(chr.wrapping_add(0x1cc), u32::MAX);
-        let (c100, pi, c180, c1000) = (HUNDRED.get(h), PI.get(h), ONE_EIGHTY.get(h), THOUSAND.get(h));
+        bind_pose(h, chr, model);
+        clear_damping(h, chr);
+        let entry = h.rebase(CHR_MODEL_ENTRY);
+        let mut k = 0;
+        while k < u32::from(h.read::<u16>(h.read::<u32>(chr.wrapping_add(0x1c0)).wrapping_add(6))) {
+            let base: u32 = h.read(model.wrapping_add(0x10));
+            let version = u32::from(h.read::<u16>(model.wrapping_add(4)));
+            let mdl: u32 = h.read(chr.wrapping_add(0x1bc));
+            let r = h.call(entry, &[k, base, version]);
+            let e = mdl.wrapping_add(0x38 * k);
+            h.write(e.wrapping_add(0x14), 1.0f32);
+            h.write(e, r);
+            let f: u32 = h.read(chr.wrapping_add(0x194));
+            // the original's ((bit | f) ^ f) & bit 21 ^ f: sets, never clears
+            let bit = u32::from(h.read::<u16>(r.wrapping_add(0x18)) != 0) << 21;
+            h.write(chr.wrapping_add(0x194), f | bit);
+            k += 1;
+        }
+        let at = h.rebase(CH_MODEL_CREATE_PACKET);
+        h.call(at, &[chr]);
+    }
+
+    /// `SG_InitBones`' bind pose from the model's bone table.
+    fn bind_pose(h: &mut impl ffx_bridge::Host, chr: u32, model: u32) {
+        use ffx_bridge::x87;
+        let count = |h: &_, o: u32| u32::from(Mem::read::<u16>(h, model.wrapping_add(o)));
+        let (c100, pi, c180, c1000) = (
+            HUNDRED.get(h),
+            PI.get(h),
+            ONE_EIGHTY.get(h),
+            THOUSAND.get(h),
+        );
         let st = |x: f64| f32::from_bits(x87::store(x));
         let mut k = 0;
         while k < count(h, 0xa) {
@@ -992,10 +1050,16 @@ pub mod bridge {
             for i in 0..3u32 {
                 let a = x87::load(x87::store(v(h, 1 + i)));
                 let r = st(x87::div(x87::mul(x87::div(a, c100), pi), c180));
-                h.write(bone.wrapping_add(0xe4 + 4 * i), crate::vec::bridge::angle_wrap(r));
+                h.write(
+                    bone.wrapping_add(0xe4 + 4 * i),
+                    crate::vec::bridge::angle_wrap(r),
+                );
             }
             for i in 0..3u32 {
-                h.write(bone.wrapping_add(0xf4 + 4 * i), st(x87::div(v(h, 4 + i), c1000)));
+                h.write(
+                    bone.wrapping_add(0xf4 + 4 * i),
+                    st(x87::div(v(h, 4 + i), c1000)),
+                );
             }
             for i in 0..3u32 {
                 #[allow(clippy::cast_possible_truncation)] // an i16
@@ -1004,6 +1068,12 @@ pub mod bridge {
             }
             k += 1;
         }
+    }
+
+    /// `SG_InitBones`' damping: the common ancestor of option points 7
+    /// and 8 and its ancestors, and bones whose parent has none, lose
+    /// `+0x144`.
+    fn clear_damping(h: &mut impl ffx_bridge::Host, chr: u32) {
         let opt = h.rebase(CH_OPTPOS_GET_ELEMENT);
         let a = h.call(opt, &[chr, 7, 0]);
         let b = h.call(opt, &[chr, 8, 0]);
@@ -1019,7 +1089,9 @@ pub mod bridge {
                 h.write(x.wrapping_add(0x144), 0u8);
                 let mut c = bones;
                 let mut k = 0;
-                while k < u32::from(h.read::<u16>(h.read::<u32>(chr.wrapping_add(0x1c0)).wrapping_add(0xa))) {
+                while k < u32::from(
+                    h.read::<u16>(h.read::<u32>(chr.wrapping_add(0x1c0)).wrapping_add(0xa)),
+                ) {
                     let parent: u32 = h.read(c);
                     if h.read::<u8>(parent.wrapping_add(0x144)) == 0 {
                         h.write(c.wrapping_add(0x144), 0u8);
@@ -1033,22 +1105,5 @@ pub mod bridge {
                 }
             }
         }
-        let entry = h.rebase(CHR_MODEL_ENTRY);
-        let mut k = 0;
-        while k < u32::from(h.read::<u16>(h.read::<u32>(chr.wrapping_add(0x1c0)).wrapping_add(6))) {
-            let base: u32 = h.read(model.wrapping_add(0x10));
-            let version = u32::from(h.read::<u16>(model.wrapping_add(4)));
-            let mdl: u32 = h.read(chr.wrapping_add(0x1bc));
-            let r = h.call(entry, &[k, base, version]);
-            let e = mdl.wrapping_add(0x38 * k);
-            h.write(e.wrapping_add(0x14), 1.0f32);
-            h.write(e, r);
-            let f: u32 = h.read(chr.wrapping_add(0x194));
-            let bit = u32::from(h.read::<u16>(r.wrapping_add(0x18)) != 0) << 21;
-            h.write(chr.wrapping_add(0x194), ((bit | f) ^ f) & 0x20_0000 ^ f);
-            k += 1;
-        }
-        let at = h.rebase(CH_MODEL_CREATE_PACKET);
-        h.call(at, &[chr]);
     }
 }
