@@ -499,6 +499,12 @@ Not ported; listed for mod tools:
 - `graphicCharacterInstanceOutputAllVertexBuffers` (`0x0063b290`):
   prints every mesh, segment, vertex stream and its values of a
   character to stdout (a vertex-buffer dump; a model-export start).
+- `0x006411e0`/`0x00640e20`: create the free camera (`g_FreeCamera`,
+  `FreeCamera_FreeCamera`, 0x340 bytes) on demand and read its mode or
+  pass it input: the developer fly camera.
+- `0x006dd3b0`: writes `WIN32_VramDetail_<name>_<n>.csv` with a header
+  and "Vram dump is not supported on platforms other than PS3/PSV.": the
+  PS3 VRAM report, stubbed on PC.
 - The tweak-util hooks the shipping code still calls
   (`Phyre_CharacterLightingTweakUtil_setShadeCoeff_dbgHook`,
   `PostProcessTweakUtil`): live tuning of lighting and post-processing.
@@ -578,8 +584,8 @@ Round 8:
   cleared without a node.
 
 Classed logic but not ported, with the class I think fits (for the
-classifier): `0x0066e4f0` (trophy install, `TrophyManager_Install`:
-platform), `0x006590d0` (`std::string::compare`), `0x00636d60`
+classifier): `0x0066e4f0` (a render-target surface-format check:
+glue), `0x006590d0` (`std::string::compare`), `0x00636d60`
 (`std::map` range erase) and `0x0064fa50` (`_CxxThrowException`): `std`
 and CRT copies, platform; `0x0066c8a0` (an x-rotation matrix from
 `_CIsin`/`_CIcos`, whose results need the CRT's own routines), `0x006426e0`,
@@ -591,6 +597,32 @@ buffers: glue); wrappers whose callee is glue: `0x00641cc0`
 `graphicMagicSetPath`/`SetToBeDeletePath` (`Phyre_PString_Assign`
 setters); `0x006c56f0` (adds a VFX draw event from a stack struct with
 an uninitialised word) left for later.
+
+Round 9:
+
+- `Matrix_RotationX`/`Y(out, angle)` (`0x0066c8a0`, `0x0066c920`): the
+  4x4 rotations, with `sin` and `cos` from the CRT's `_CIsin`/`_CIcos`
+  through the game's import thunks (`0x009498c8`, `0x009498c2`):
+  `Host::call_intrinsic` puts the angle in `ST0` and stores the result as
+  the original's `fstp m32` (result pointer in `edi`, no register operand
+  read after the call).
+- The list cursor's set-up `PhyreSceneCursor_SetNode(node)` (`0x00441dc0`):
+  stride `*(node +0x2c) +0x1c`, position `node +0x34`, count `node +0x3c`,
+  `+0x10` from `*(node +0x2c) +0x8c`, link `node +8`; while counted and the
+  link equals the position, the position steps by the stride and the link
+  follows itself. Three more copies of the cursor check
+  (`0x00441e10`, `0x00441e40`, `0x006a29c0`).
+- `PostProcessManager_SetFirstEntry(list)` (`0x00698400`),
+  `TextureAnimationManager_SetFrame(i, frame, absolute)` (`0x006b42c0`),
+  `ResetAndConstruct_006c40c0`.
+
+Not ported in round 9: `0x006411e0`/`0x00640e20` (the free camera,
+`g_FreeCamera`: debug), `0x006dd3b0` (a VRAM detail dump to
+`WIN32_VramDetail_*.csv`: debug), `0x006370d0` (`std::map` range erase:
+platform), `0x00692680` (exception-frame set-up: platform),
+`graphicCharacterInstanceUpdateSkeletonounds` (`0x0063c500`, only
+forwards to `Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton`:
+glue, by the forwarder rule).
 
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
