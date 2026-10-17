@@ -13,8 +13,8 @@ use super::native_map::pop_st0;
 use super::run::NativeHost;
 use super::{
     atel_get_basic_work, atel_get_battle_id_adrs2, atel_get_char_handle, atel_get_pos_work_adrs,
-    atel_get_real_var_adrs, atel_pop_stack_float, atel_pop_stack_integer, atel_push_stack_integer,
-    script_worker_level,
+    atel_get_real_var_adrs, atel_pop_stack_float, atel_pop_stack_integer, atel_push_stack_float,
+    atel_push_stack_integer, script_worker_level,
 };
 use crate::vm::worker;
 
@@ -782,6 +782,284 @@ pub fn native_menu_open_result<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u
     call(h, 0x0082_1740, &[])
 }
 
+/// `Native_GetEntranceX` (`0x0085c7b0`, `0x0080`, float): `+0xc`.
+pub fn native_get_entrance_x<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
+    entrance(h, w, 0xc)
+}
+
+/// `Native_GetEntranceY` (`0x0085c8f0`, `0x0081`, float): `+0x10`.
+pub fn native_get_entrance_y<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
+    entrance(h, w, 0x10)
+}
+
+/// `Native_002c` (`0x0085a1a0`, `0x002c`, float): `(v)` ->
+/// `0x00871500(worker, level, v)`'s `ST0`.
+pub fn native_002c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    turn_speed(h, w, s, 0x0087_1500)
+}
+
+/// `Native_002b` (`0x0085a0b0`, `0x002b`, float): `0x00871520`.
+pub fn native_002b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    turn_speed(h, w, s, 0x0087_1520)
+}
+
+/// `Native_0021` (`0x00859430`, `0x0021`, float): `(yaw)`: the wrapped yaw
+/// into the move block's `+0x44`; `ST0` it.
+pub fn native_0021<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let m = move_block(h, w);
+    let v = popf(h, s);
+    let y = x87::store(callf(h, super::native::MATH_WRAP_ANGLE, &[v]));
+    h.write(m + 0x44, y);
+    x87::load(y)
+}
+
+/// `Native_015e` (`0x00857980`, `0x015e`): `(v)` -> `0x008701c0(v)`.
+pub fn native_015e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0087_01c0, &[v])
+}
+
+/// `Native_0119` (`0x0085bd70`, `0x0119`): `(on)` clamped to 0..=1 ->
+/// `0x0086b150(the worker's bound character, on)`.
+pub fn native_0119<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s).cast_signed().clamp(0, 1).cast_unsigned();
+    let pc = h.read::<u32>(w + worker::BIND_PC);
+    call(h, 0x0086_b150, &[pc, v])
+}
+
+/// `Native_SetTriggerMode` (`0x0085c320`, `0x007f`): `(mode)`: for trigger
+/// workers (types 2, 3, 5, 6) bits 13-14 of `+0x34` = mode; 1, else 0.
+pub fn native_set_trigger_mode<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let hdr = h.read::<u32>(w);
+    if !matches!(h.read::<u8>(hdr), 2 | 3 | 5 | 6) {
+        return 0;
+    }
+    let f = h.read::<u16>(w + 0x34);
+    #[allow(clippy::cast_possible_truncation)] // the original works on AX
+    let x = ((v << 13) as u16 ^ f) & 0x6000;
+    h.write(w + 0x34, f ^ x);
+    1
+}
+
+/// `Native_SetPlayer` (`0x0085c9a0`, `0x0043`): `0x0086f6a0(worker id)`;
+/// the id.
+pub fn native_set_player<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let id = u32::from(h.read::<u16>(w + worker::ID));
+    call(h, 0x0086_f6a0, &[id]);
+    id
+}
+
+/// `Native_0091` (`0x0085e0b0`, `0x0091`, float): the position's yaw
+/// (`+0x34`).
+pub fn native_0091<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
+    let p = atel_get_pos_work_adrs(h, w);
+    x87::load(h.read(p + 0x34))
+}
+
+/// `Native_0004` (`0x0085ecb0`, `0x0004`): `(v)`: `+0xa8` = v, `+0xaa` =
+/// 4; 0.
+pub fn native_0004<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    #[allow(clippy::cast_possible_truncation)] // the original stores AX
+    h.write(w + 0xa8, v as u16);
+    h.write(w + 0xaa, 4_u8);
+    0
+}
+
+/// `Native_00e0` (`0x00855f60`, `0x00e0`): `(v)` -> `0x00886eb0(v)`; `v`.
+pub fn native_00e0<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0088_6eb0, &[v]);
+    v
+}
+
+/// A position float set from the stack (`+off`), worker `+0x36` |= 1.
+fn pos_set<H: NativeHost>(h: &mut H, w: u32, s: u32, off: u32) -> u32 {
+    let p = atel_get_pos_work_adrs(h, w);
+    let v = popf(h, s);
+    h.write(p + off, v);
+    let fl = h.read::<u16>(w + worker::FLAGS2);
+    h.write(w + worker::FLAGS2, fl | 1);
+    v
+}
+
+/// `Native_SetTalkAngle` (`0x008574f0`, `0x0063`, float): `+0x3c`.
+pub fn native_set_talk_angle<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    x87::load(pos_set(h, w, s, 0x3c))
+}
+
+/// `Native_SetTouchRange` (`0x00856460`, `0x0085`): `+0x48`; 1.
+pub fn native_set_touch_range<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    pos_set(h, w, s, 0x48);
+    1
+}
+
+/// `Native_SetTYZAngle` (`0x008577c0`, `0x008d`, float): `+0x4c`.
+pub fn native_set_tyz_angle<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    x87::load(pos_set(h, w, s, 0x4c))
+}
+
+/// `Native_SetRadius44` (`0x008572e0`, `0x0062`, float): `(r)` truncated
+/// into the position's `+0x44`; worker `+0x36` |= 1; `ST0` the stored value.
+pub fn native_set_radius44<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let p = atel_get_pos_work_adrs(h, w);
+    let v = pop_st0(h, s);
+    let r = x87::ftol(h, v);
+    let f = x87::store(f64::from(r.cast_signed()));
+    h.write(p + 0x44, f);
+    let fl = h.read::<u16>(w + worker::FLAGS2);
+    h.write(w + worker::FLAGS2, fl | 1);
+    x87::load(f)
+}
+
+/// `Native_00a7` (`0x00857820`, `0x00a7`): `(worker)`: its `+0x34` bit 1
+/// cleared; 0.
+pub fn native_00a7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let i = pop(h, s);
+    let o = atel_get_basic_work(h, i.cast_signed());
+    let f = h.read::<u16>(o + 0x34);
+    h.write(o + 0x34, f & 0xfffd);
+    0
+}
+
+/// `Native_0058` (`0x00855f80`, `0x0058`): pushes the float at `0x00b92340`
+/// and goes on as `Native_0059` (`0x00855cd0`).
+pub fn native_0058<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let f = h.read::<u32>(h.rebase(0x00b9_2340));
+    atel_push_stack_float(h, s, f);
+    call(h, 0x0085_5cd0, &[w, a, s])
+}
+
+/// `Native_00fb` (`0x00858ac0`, `0x00fb`): `(window)` -> `0x008b8010(window)`.
+pub fn native_00fb<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x008b_8010, &[v])
+}
+
+/// `Native_0180` (`0x0085c000`, `0x0180`): `(a, b)`: `0x00886b40(i, a, b)`
+/// for `i = 0x00873b00()` when not negative; `i`.
+pub fn native_0180<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let b = pop(h, s);
+    let a = pop(h, s);
+    let i = call(h, 0x0087_3b00, &[]);
+    if i.cast_signed() >= 0 {
+        call(h, 0x0088_6b40, &[i, a, b]);
+    }
+    i
+}
+
+/// `Native_SetTurnSpeedAll` (`0x0085b030`, `0x00e4`, float): `(v)` ->
+/// `0x0086f300(worker, v)` (its `ST0` dropped); `ST0` `v`.
+pub fn native_set_turn_speed_all<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let v = popf(h, s);
+    callf(h, 0x0086_f300, &[w, v]);
+    x87::load(v)
+}
+
+/// `Native_SetMoveParam3C` (`0x0085ab80`, `0x006d`, float): `0x0086f1c0`.
+pub fn native_set_move_param3c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    set_f(h, w, s, 0x0086_f1c0)
+}
+
+/// `Native_SetMoveParam40` (`0x0085acd0`, `0x006e`, float): `0x0086f170`.
+pub fn native_set_move_param40<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    set_f(h, w, s, 0x0086_f170)
+}
+
+/// `Native_SetTurnParam10` (`0x0085af20`, `0x006f`, float): `0x0086f2b0`.
+pub fn native_set_turn_param10<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    set_f(h, w, s, 0x0086_f2b0)
+}
+
+/// `Native_SetTurnParam18` (`0x0085b230`, `0x0070`, float): `0x0086f260`.
+pub fn native_set_turn_param18<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    set_f(h, w, s, 0x0086_f260)
+}
+
+/// `Native_SetTurnParam1C` (`0x0085b480`, `0x0071`, float): `0x0086f210`.
+pub fn native_set_turn_param1c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    set_f(h, w, s, 0x0086_f210)
+}
+
+/// `Native_GetOwnWorkerType` (`0x0085f5a0`, `0x0076`):
+/// `0x0086a7b0(worker id)`.
+pub fn native_get_own_worker_type<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let id = u32::from(h.read::<u16>(w + worker::ID));
+    call(h, 0x0086_a7b0, &[id])
+}
+
+/// `Native_00aa` (`0x00857a60`, `0x00aa`): `(v)` -> `0x0086f3d0(v)`; `v`.
+pub fn native_00aa<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0086_f3d0, &[v]);
+    v
+}
+
+/// `g_01325b40` (`0x01325b40`): whether the music `Native_MusicPlay` last
+/// started is track `0x25`.
+pub const MUSIC_IS_25: Global<u32> = Global::new(0x0132_5b40);
+
+/// `Native_MusicPlay` (`0x008596d0`, `0x0104`): `(track)`: `0x008869e0`,
+/// `0x00886a20`, `0x00873d00` on it; 1.
+pub fn native_music_play<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    MUSIC_IS_25.set(h, u32::from(v == 0x25));
+    for f in [0x0088_69e0, 0x0088_6a20, 0x0087_3d00] {
+        call(h, f, &[v]);
+    }
+    1
+}
+
+/// `Native_0007` (`0x0085c8c0`, `0x0007`): `(slot)` ->
+/// `0x00862780(worker, slot)`; 1.
+pub fn native_0007<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0086_2780, &[w, v]);
+    1
+}
+
+/// `Native_012a` (`0x0085c890`, `0x012a`): `(b, a)` -> `0x00874970(b, a)`; `b`.
+pub fn native_012a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let a = pop(h, s);
+    let b = pop(h, s);
+    call(h, 0x0087_4970, &[b, a]);
+    b
+}
+
+/// `Native_0133` (`0x00860290`, `0x0133`): as `0x0085fe30`.
+pub fn native_0133<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    call(h, 0x0085_fe30, &[w, a, s])
+}
+
+/// `Native_016f` (`0x0085c430`, `0x016f`): `(v)`: the record
+/// `0x0088c830()` gets `+0xb8` = v and `+0xba` = `0x0086c1c0()`, then
+/// `0x0088e800(it)`; `v`.
+pub fn native_016f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let g = call(h, 0x0088_c830, &[]);
+    let v = pop(h, s);
+    #[allow(clippy::cast_possible_truncation)] // the original stores SI, AX
+    {
+        h.write(g + 0xb8, v as u16);
+        let x = call(h, 0x0086_c1c0, &[]);
+        h.write(g + 0xba, x as u16);
+    }
+    call(h, 0x0088_e800, &[g]);
+    v
+}
+
+/// `Native_0236` (`0x00860350`, `0x0236`): `(msg)`: its text from the
+/// second table (`Msg_Text1`) when `0x0086bbc0()` is set, else `Msg_Text`.
+pub fn native_0236<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let f = if call(h, 0x0086_bbc0, &[]) == 0 {
+        0x0086_bf30
+    } else {
+        0x0086_b170
+    };
+    call(h, f, &[v])
+}
+
 /// The Rust version of one of these handlers, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -838,12 +1116,80 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x00a7_8210 => Int(native_menu_open),
         0x00a7_8270 => Int(native_menu_open_poll),
         0x00a7_82a0 => Int(native_menu_open_result),
+        0x0085_c7b0 => Float(native_get_entrance_x),
+        0x0085_c8f0 => Float(native_get_entrance_y),
+        0x0085_a1a0 => Float(native_002c),
+        0x0085_a0b0 => Float(native_002b),
+        0x0085_9430 => Float(native_0021),
+        0x0085_7980 => Int(native_015e),
+        0x0085_bd70 => Int(native_0119),
+        0x0085_c320 => Int(native_set_trigger_mode),
+        0x0085_c9a0 => Int(native_set_player),
+        0x0085_e0b0 => Float(native_0091),
+        0x0085_ecb0 => Int(native_0004),
+        0x0085_5f60 => Int(native_00e0),
+        0x0085_74f0 => Float(native_set_talk_angle),
+        0x0085_6460 => Int(native_set_touch_range),
+        0x0085_77c0 => Float(native_set_tyz_angle),
+        0x0085_72e0 => Float(native_set_radius44),
+        0x0085_7820 => Int(native_00a7),
+        0x0085_5f80 => Int(native_0058),
+        0x0085_8ac0 => Int(native_00fb),
+        0x0085_c000 => Int(native_0180),
+        0x0085_b030 => Float(native_set_turn_speed_all),
+        0x0085_ab80 => Float(native_set_move_param3c),
+        0x0085_acd0 => Float(native_set_move_param40),
+        0x0085_af20 => Float(native_set_turn_param10),
+        0x0085_b230 => Float(native_set_turn_param18),
+        0x0085_b480 => Float(native_set_turn_param1c),
+        0x0085_f5a0 => Int(native_get_own_worker_type),
+        0x0085_7a60 => Int(native_00aa),
+        0x0085_96d0 => Int(native_music_play),
+        0x0085_c8c0 => Int(native_0007),
+        0x0085_c890 => Int(native_012a),
+        0x0086_0290 => Int(native_0133),
+        0x0085_c430 => Int(native_016f),
+        0x0086_0350 => Int(native_0236),
         _ => return super::native_btl::find(sym),
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 52] = [
+pub const PORTED: [(u32, bool); 86] = [
+    (0x0085_c7b0, true),
+    (0x0085_c8f0, true),
+    (0x0085_a1a0, true),
+    (0x0085_a0b0, true),
+    (0x0085_9430, true),
+    (0x0085_7980, false),
+    (0x0085_bd70, false),
+    (0x0085_c320, false),
+    (0x0085_c9a0, false),
+    (0x0085_e0b0, true),
+    (0x0085_ecb0, false),
+    (0x0085_5f60, false),
+    (0x0085_74f0, true),
+    (0x0085_6460, false),
+    (0x0085_77c0, true),
+    (0x0085_72e0, true),
+    (0x0085_7820, false),
+    (0x0085_5f80, false),
+    (0x0085_8ac0, false),
+    (0x0085_c000, false),
+    (0x0085_b030, true),
+    (0x0085_ab80, true),
+    (0x0085_acd0, true),
+    (0x0085_af20, true),
+    (0x0085_b230, true),
+    (0x0085_b480, true),
+    (0x0085_f5a0, false),
+    (0x0085_7a60, false),
+    (0x0085_96d0, false),
+    (0x0085_c8c0, false),
+    (0x0085_c890, false),
+    (0x0086_0290, false),
+    (0x0085_c430, false),
+    (0x0086_0350, false),
     (0x0085_e620, false),
     (0x0085_8f40, true),
     (0x0085_b820, false),
