@@ -13842,6 +13842,239 @@ fn round25_wrappers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     }
 }
 
+/// Round 25's 16 × 12 glyph passes with `TOGetImageWH` from cells, a
+/// texture-name logger, a scissor that keeps the quad when cells[2] says
+/// so and a `graphicFontDraw` stand-in that logs every record word the
+/// writers set and its arguments.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::similar_names
+)]
+fn round25_font_1612_passes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge::{self as t, Font1612Pass};
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let s = stand_in8(a, b, 0xc0, &logger_args(cursor, 4));
+    redirect(a, b, 0x008a_cf50, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x100, &v);
+    redirect(a, b, 0x008e_5a20, s);
+    // TOGetImageWH(page, &w, &h) logs the page and takes w, h from cells
+    let mut v = logger(cursor, 0x5a5a);
+    v.pop();
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let words: Vec<u8> = (0..12u8)
+        .map(|k| 4 * k)
+        .chain([0x20 + 0x10, 0x3c, 0x80, 0x88])
+        .collect();
+    let s = stand_in8(a, b, 0x200, &record_words_logger(cursor, &words));
+    redirect(a, b, 0x0064_0660, s);
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&(cells + 12).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x140, &v);
+    redirect(a, b, 0x0064_0d70, s);
+    let pen = alloc(a, b, 0x20);
+    let glyph = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 0xb0);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for _ in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize].to_bits(),
+                [256.0f32, 512.0][(rng.next() % 2) as usize].to_bits(),
+            ],
+        );
+        put(
+            a,
+            b,
+            cells + 12,
+            [1.0f32, 1.5, 0.7, 3.0][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(5)));
+        put(a, b, pen, rng.next());
+        put(
+            a,
+            b,
+            pen + 4,
+            [
+                ((rng.next() % 7000) as f32 / 10.0 - 50.0).to_bits(),
+                ((rng.next() % 5000) as f32 / 10.0 - 30.0).to_bits(),
+            ],
+        );
+        put(a, b, pen + 0x1a, [(rng.next() % 5) as u8, rng.next() as u8]);
+        let page = [0x3c00u16, 0x3d00, 0x8d40, 0xfd60][(rng.next() % 4) as usize];
+        put(
+            a,
+            b,
+            glyph,
+            [page, 0x14, [0u16, 1, 0xfffe][(rng.next() % 3) as usize], 0],
+        );
+        let cell: [f32; 7] = [
+            (rng.next() % 0x200) as f32,
+            (rng.next() % 0x200) as f32,
+            (rng.next() % 0x200) as f32,
+            (rng.next() % 0x200) as f32,
+            [-1.0f32, 0.0, 1.0, 0.3][(rng.next() % 4) as usize],
+            (rng.next() % 80) as f32 / 4.0 + 0.1,
+            [
+                12.0f32,
+                16.0,
+                13.7,
+                f32::from_bits(0x4140_0000 | (rng.next() & 0x7f_ffff)),
+            ][(rng.next() % 4) as usize],
+        ];
+        put(a, b, glyph + 8, cell);
+        let kx = [1.0f32, 1.5, 0.75, 1.1][(rng.next() % 4) as usize];
+        let ky = [1.0f32, 1.125, 0.8, 0.9][(rng.next() % 4) as usize];
+        put(a, b, g(a, 0x00c5_d778), [kx, ky]);
+        put(
+            a,
+            b,
+            g(a, 0x00c5_d784),
+            [1.0f32, 1.25, 0.9][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x00b5_ee10),
+            [
+                0.78f32,
+                0.7,
+                f32::from_bits(0x3f00_0000 | (rng.next() & 0x7f_ffff)),
+            ][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x00b9_2268),
+            [2.0f32, 1.5, -1.0][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0187_16e0),
+            [(rng.next() % 5) as f32 - 2.3, (rng.next() % 5) as f32 - 1.7],
+        );
+        let arg = [0u32, 1, 4, 5, 6][(rng.next() % 5) as usize];
+        let (sym, pass, args) = match rng.next() % 3 {
+            0 => (0x008f_c870, Font1612Pass::Edge, vec![pen, glyph]),
+            1 => (
+                0x008f_cca0,
+                Font1612Pass::Shadow(arg),
+                vec![pen, glyph, arg],
+            ),
+            _ => (0x008f_cad0, Font1612Pass::Face(arg), vec![pen, glyph, arg]),
+        };
+        eax(a, sym, &args);
+        t::to_make_pkt_font_1612_pass(b, pen, glyph, pass, scratch, call, fcall);
+        let v: [u32; 0x2c] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("glyph pass {pass:?}"), a, b);
+    }
+}
+
+#[test]
+fn round25_font_1612_passes_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round25_font_1612_passes(&mut a, &mut b, &mut Xorshift(0x4025_0021));
+}
+
+#[test]
+fn round25_font_1612_passes_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round25_font_1612_passes(&mut a, &mut b, &mut Xorshift(0x4025_0022));
+}
+
+/// Round 25's `TOMakePktFont1612` dispatch and default passes over
+/// stand-ins that log a key and their arguments.
+fn round25_font_1612_dispatch(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let keyed = |cursor: u32, key: u32, n: u8| {
+        let mut v = marker(cursor, key);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        v
+    };
+    let stand_ins: [(u32, u8); 8] = [
+        (0x008f_c870, 2),
+        (0x008f_cad0, 3),
+        (0x008f_cca0, 3),
+        (0x008f_ce90, 2),
+        (0x008f_d0a0, 2),
+        (0x0064_3af0, 1),
+        (0x0064_0dd0, 1),
+        (0x008e_8ed0, 3),
+    ];
+    for (k, (sym, n)) in (0u32..).zip(stand_ins) {
+        let s = stand_in8(a, b, 0x40 + 0x60 * k, &keyed(cursor, 0x5100 + k, n));
+        redirect(a, b, sym, s);
+    }
+    let pen = alloc(a, b, 0x20);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, pen + 0x1a, (rng.next() % 5) as u8);
+        put(a, b, g(a, 0x00c5_d784), rng.next() | 1);
+        put(a, b, g(a, 0x00b5_ee10), rng.next() | 1);
+        let glyph = rng.next();
+        eax(a, 0x008f_c7c0, &[pen, glyph]);
+        t::to_make_pkt_font_1612(b, pen, glyph, call);
+        let shadow = rng.next().is_multiple_of(2);
+        eax(
+            a,
+            [0x0090_6270, 0x0090_6290][usize::from(shadow)],
+            &[pen, glyph],
+        );
+        t::to_make_pkt_font_1612_default(b, pen, glyph, shadow, call);
+        same_memory(&format!("1612 dispatch {k}"), a, b);
+    }
+}
+
+#[test]
+fn round25_font_1612_dispatch_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round25_font_1612_dispatch(&mut a, &mut b, &mut Xorshift(0x4025_0031));
+}
+
+#[test]
+fn round25_font_1612_dispatch_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round25_font_1612_dispatch(&mut a, &mut b, &mut Xorshift(0x4025_0032));
+}
+
 #[test]
 fn round25_wrappers_match_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

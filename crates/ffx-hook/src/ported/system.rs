@@ -6083,6 +6083,39 @@ ported! {
     TOMkpCrossExtMesFontLClut @ 0x0090_16b0 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut(text: u32, window: u32, x: u32, y: u32, flags: u32, scale: u32, extra: u32) {
         tolib::bridge::to_mkp_cross_ext_mes_font_l_clut(&mut mem(), [text, window, x, y, flags, scale, extra], call_sym);
     }
+    /// `TOMakePktFont1612Edge(pen, glyph)`.
+    TOMakePktFont1612Edge @ 0x008f_c870 => extern "C" fn to_make_pkt_font_1612_edge(pen: u32, glyph: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Edge, at, call_sym, fcall);
+    }
+    /// `TOMakePktFont1612Shadow(pen, glyph, layer)`.
+    TOMakePktFont1612Shadow @ 0x008f_cca0 => extern "C" fn to_make_pkt_font_1612_shadow(pen: u32, glyph: u32, layer: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Shadow(layer), at, call_sym, fcall);
+    }
+    /// `TOMakePktFont1612Font(pen, glyph, mode)`.
+    TOMakePktFont1612Font @ 0x008f_cad0 => extern "C" fn to_make_pkt_font_1612_font(pen: u32, glyph: u32, mode: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Face(mode), at, call_sym, fcall);
+    }
+    /// `TOMakePktFont1612(pen, glyph)`.
+    TOMakePktFont1612 @ 0x008f_c7c0 => extern "C" fn to_make_pkt_font_1612(pen: u32, glyph: u32) {
+        tolib::bridge::to_make_pkt_font_1612(&mut mem(), pen, glyph, call_sym);
+    }
+    /// `TOMakePktFont1612Font_00906270(pen, glyph)`.
+    TOMakePktFont1612Font_00906270 @ 0x0090_6270 => extern "C" fn to_make_pkt_font_1612_font_default(pen: u32, glyph: u32) {
+        tolib::bridge::to_make_pkt_font_1612_default(&mut mem(), pen, glyph, false, call_sym);
+    }
+    /// `TOMakePktFont1612Shadow_00906290(pen, glyph)`.
+    TOMakePktFont1612Shadow_00906290 @ 0x0090_6290 => extern "C" fn to_make_pkt_font_1612_shadow_default(pen: u32, glyph: u32) {
+        tolib::bridge::to_make_pkt_font_1612_default(&mut mem(), pen, glyph, true, call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

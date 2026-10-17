@@ -563,6 +563,37 @@ eight copies offset by ±2 over the edge ratio. These are ported; only
 character, as `TOGetScaleButtonIconWidth` does. `4`..`7` sit 2.0 higher,
 and `@`..`O` stack four direction parts by their low bits.
 
+## Message glyph writers (`TOMakePktFont1612*`)
+
+The 16 × 12 message font uses the same pen layout as the battle texts
+(`+0x1a` the kind, `+0x1b` the alpha). `TOMakePktFont1612` (`0x008fc7c0`)
+draws one glyph by the kind:
+
+- kind 1: the edge (`TOMakePktFont1612Edge`, `0x008fc870`), then the face;
+- kind 3: the italic edge and face (`TOMakePktFontLItalicEdge`/`Font`);
+- otherwise the shadow (`TOMakePktFont1612Shadow`, `0x008fcca0`) with UI
+  draw type 1 and shadow type 0, then the face
+  (`TOMakePktFont1612Font`, `0x008fcad0`) with shadow type 1.
+
+The pen then moves on by the advance spacing `0x00c5d784` (1.0) for kinds
+1 and 3, or `0x00b5ee10` (0.78) otherwise; the same value scales the
+glyph. Each pass computes the quad from the pen and the `TOGetFontInfo`
+cell. Its top is `pen.y + scale × slant`; its size is
+`width × scale` by `scale × (height + slant)`, stretched by `K_x`/`K_y`
+(`0x00c5d778`/`0x00c5d77c`) for the face and shadow but not the edge. The
+shadow is moved by `0x018716e0`/`0x018716e4` and drawn with offsets
+`0x00b92268` (2.0) at layer parity + its argument (4 skips the scissor).
+The face draws at parity + 2 (parity + 6 without scissor in mode 5). The
+edge draws ten copies at offsets (±2, ±2), (0, ±2), (±2, 0) and (±1, 0)
+over `graphicFontGetEdgeRatio`. `0x00906270`/`0x00906290` are the face and
+shadow passes with argument 0. Only `graphicFontDraw` emits packets.
+
+`TODrawMenuBG` (`0x008f5c10`) draws the menu background as shape -2
+(`TOMkpShapeXYWHUV`) over `(0, 0, [0x00b41d9c], [0x00b41d98])` with UVs up
+to `([0x00b4a1ac], [0x00b55178])`. `TOMkpCrossExtMesFontLClut`
+(`0x009016b0`) is `TOMkpCrossExtMesFontLClutTypeRGBA` with type 0 and grey
+`0x80` colour.
+
 ## UI shapes and menu plates
 
 `TOMkpShapeXYWHUV` (`0x00903bb0`) and `TOMkpShapeXYWHUVC2` (`0x00903ee0`)

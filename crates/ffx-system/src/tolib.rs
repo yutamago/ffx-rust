@@ -8475,4 +8475,264 @@ pub mod bridge {
             ],
         );
     }
+
+    /// The pass of a 16 × 12 message glyph a `TOMakePktFont1612*` writer
+    /// draws.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum Font1612Pass {
+        /// `TOMakePktFont1612Edge(pen, glyph)` (`0x008fc870`): the outline,
+        /// the quad drawn ten times around the glyph.
+        Edge,
+        /// `TOMakePktFont1612Shadow(pen, glyph, layer)` (`0x008fcca0`): the
+        /// drop shadow; layer 4 draws without the scissor test.
+        Shadow(u32),
+        /// `TOMakePktFont1612Font(pen, glyph, mode)` (`0x008fcad0`): the
+        /// face; mode 5 draws at a higher layer without the scissor test.
+        Face(u32),
+    }
+
+    /// Where the edge pass draws its ten copies, in pixels before the
+    /// `graphicFontGetEdgeRatio` division.
+    const FONT_1612_EDGE_OFFSETS: [(i8, i8); 10] = [
+        (-2, -2),
+        (0, -2),
+        (2, -2),
+        (-1, 0),
+        (-2, 0),
+        (1, 0),
+        (2, 0),
+        (-2, 2),
+        (0, 2),
+        (2, 2),
+    ];
+
+    /// The glyph scale of a 16 × 12 text pen: `0x00c5d784` (1.0) for the
+    /// edged kinds 1 and 3 (pen byte `+0x1a`), `0x00b5ee10` (0.78)
+    /// otherwise.
+    fn font_1612_scale<M: Mem>(mem: &M, pen: u32) -> f32 {
+        let kind = mem.read::<u8>(pen.wrapping_add(0x1a));
+        let at = if kind == 1 || kind == 3 {
+            0x00c5_d784
+        } else {
+            0x00b5_ee10
+        };
+        mem.read(mem.rebase(at))
+    }
+
+    /// The sprite record of one 16 × 12 glyph pass (layout, no drawing):
+    /// the quad from the pen (`+4` x, `+8` y, colour bytes at `+0`) and
+    /// the glyph's `TOGetFontInfo` cell (u0, v0, u1, v1 at `+8..+0x14`,
+    /// slant `+0x18`, width `+0x1c`, height `+0x20`), all scaled by
+    /// [`font_1612_scale`], the UVs over the texture size `w`, `h`.
+    ///
+    /// The face and shadow stretch the width by `K_x` (`0x00c5d778`) and
+    /// the height by `K_y` (`0x00c5d77c`); the shadow then moves the quad
+    /// by `0x018716e0`/`0x018716e4`. The edge uses the plain cell size.
+    /// Both colours are the pen's, the depth is 2000.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    fn font_1612_record<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        pass: Font1612Pass,
+        (w, h): (f64, f64),
+        rec: u32,
+    ) {
+        let f = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(a)) };
+        let cell = |mem: &M, off: u32| f(mem, glyph.wrapping_add(off));
+        let scale = f64::from(font_1612_scale(mem, pen));
+        let (px, py) = (f(mem, pen.wrapping_add(4)), f(mem, pen.wrapping_add(8)));
+        let (slant, width, height) = (cell(mem, 0x18), cell(mem, 0x1c), cell(mem, 0x20));
+        let top = scale * slant + py;
+        let (x1, y1) = if pass == Font1612Pass::Edge {
+            (width * scale + px, scale * (height + slant) + py)
+        } else {
+            let kx = f(mem, mem.rebase(0x00c5_d778));
+            let ky = f(mem, mem.rebase(0x00c5_d77c));
+            (width * scale * kx + px, scale * (height + slant) * ky + py)
+        };
+        let (x0, y0, x1, y1) = if let Font1612Pass::Shadow(_) = pass {
+            let ox = f(mem, mem.rebase(0x0187_16e0));
+            let oy = f(mem, mem.rebase(0x0187_16e4));
+            (px + ox, top + oy, x1 + ox, y1 + oy)
+        } else {
+            (px, top, x1, y1)
+        };
+        let corners = [
+            (0x00, x0),
+            (0x04, y0),
+            (0x08, cell(mem, 0x08) / w),
+            (0x0c, cell(mem, 0x0c) / h),
+            (0x20, x1),
+            (0x24, y1),
+            (0x28, cell(mem, 0x10) / w),
+            (0x2c, cell(mem, 0x14) / h),
+        ];
+        for (off, v) in corners {
+            mem.write(rec.wrapping_add(off), v as f32);
+        }
+        let colour: [u8; 4] = mem.read(pen);
+        for (k, c) in (0u32..).zip(colour) {
+            mem.write(rec.wrapping_add(0x10 + 4 * k), u32::from(c));
+            mem.write(rec.wrapping_add(0x30 + 4 * k), u32::from(c));
+        }
+        mem.write(rec.wrapping_add(0x80), 2000u32);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+    }
+
+    /// One pass of `TOMakePktFont1612Edge`/`Shadow`/`Font` (see
+    /// [`Font1612Pass`]): the glyph's texture (`TOGetTextureName`, variant 1
+    /// for edge and shadow), its record ([`font_1612_record`]) and the
+    /// `graphicFontDraw` calls when `BeginScissor_XYUV` keeps the quad.
+    ///
+    /// The shadow draws offset by `0x00b92268` (2.0) in both axes at layer
+    /// parity + `layer` (glyph word `+4`), the face at parity + 2 (+ 6 in
+    /// mode 5), the edge ten times at layer 0 offset by
+    /// [`FONT_1612_EDGE_OFFSETS`] over `graphicFontGetEdgeRatio` (through
+    /// `fcall`). `scratch` holds 0xb0 bytes: the texture size at `+0`, the
+    /// record at `+0x10`, the texture word pair at `+0xa0`; record words
+    /// the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    pub fn to_make_pkt_font_1612_pass<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        pass: Font1612Pass,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        const TEXTURE_NAME: u32 = 0x008a_cf50;
+        const IMAGE_WH: u32 = 0x008a_c400;
+        const SCISSOR: u32 = 0x008e_5a20;
+        const FONT_DRAW: u32 = 0x0064_0660;
+        const EDGE_RATIO: u32 = 0x0064_0d70;
+        for k in 0..0x2c {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let extra = scratch.wrapping_add(0xa0);
+        let page = mem.read::<u16>(glyph);
+        let parity = mem.read::<u16>(glyph.wrapping_add(4));
+        let alpha = mem.read::<u8>(pen.wrapping_add(0x1b));
+        let variant = u32::from(!matches!(pass, Font1612Pass::Face(_)));
+        let texture = call(
+            mem,
+            TEXTURE_NAME,
+            &[
+                u32::from(page),
+                u32::from(alpha),
+                u32::from(parity),
+                variant,
+                extra,
+            ],
+        );
+        let ratio = if pass == Font1612Pass::Edge {
+            f64::from(fcall(mem, EDGE_RATIO, &[]) as f32)
+        } else {
+            1.0
+        };
+        let signed_page = i32::from(page.cast_signed()).cast_unsigned();
+        call(mem, IMAGE_WH, &[signed_page, size, size.wrapping_add(4)]);
+        let w = f64::from(mem.read::<f32>(size));
+        let h = f64::from(mem.read::<f32>(size.wrapping_add(4)));
+        font_1612_record(mem, pen, glyph, pass, (w, h), rec);
+        let field = |off: u32| rec.wrapping_add(off);
+        let scissor = [
+            field(0),
+            field(4),
+            field(0x20),
+            field(0x24),
+            field(8),
+            field(0xc),
+            field(0x28),
+            field(0x2c),
+        ];
+        let unclipped = matches!(pass, Font1612Pass::Shadow(4) | Font1612Pass::Face(5));
+        if !unclipped && call(mem, SCISSOR, &scissor) == 0 {
+            return;
+        }
+        let layer = i32::from(parity.cast_signed());
+        match pass {
+            Font1612Pass::Edge => {
+                for (dx, dy) in FONT_1612_EDGE_OFFSETS {
+                    let dx = (f64::from(dx) / ratio) as f32;
+                    let dy = (f64::from(dy) / ratio) as f32;
+                    call(
+                        mem,
+                        FONT_DRAW,
+                        &[rec, texture, dx.to_bits(), dy.to_bits(), 0],
+                    );
+                }
+            }
+            Font1612Pass::Shadow(extra_layer) => {
+                let offset: u32 = mem.read(mem.rebase(0x00b9_2268));
+                let layer = layer.cast_unsigned().wrapping_add(extra_layer);
+                call(mem, FONT_DRAW, &[rec, texture, offset, offset, layer]);
+            }
+            Font1612Pass::Face(mode) => {
+                let layer = layer + if mode == 5 { 6 } else { 2 };
+                call(mem, FONT_DRAW, &[rec, texture, 0, 0, layer.cast_unsigned()]);
+            }
+        }
+    }
+
+    /// `TOMakePktFont1612(pen, glyph)` (`0x008fc7c0`): one 16 × 12 glyph
+    /// by the pen's kind (byte `+0x1a`): kind 1 the edge then the face,
+    /// kind 3 the italic edge and face (`TOMakePktFontLItalicEdge`/`Font`,
+    /// `0x008fce90`/`0x008fd0a0`), both advancing by `0x00c5d784`;
+    /// otherwise the shadow (UI draw type 1, shadow type 0) then the face
+    /// (shadow type 1), draw type 0 again, advancing by `0x00b5ee10`
+    /// (`TOAddFontWidthSpace`).
+    pub fn to_make_pkt_font_1612<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const EDGE: u32 = 0x008f_c870;
+        const FACE: u32 = 0x008f_cad0;
+        const SHADOW: u32 = 0x008f_cca0;
+        const SET_DRAW_TYPE: u32 = 0x0064_3af0;
+        const SET_SHADOW_TYPE: u32 = 0x0064_0dd0;
+        const ADD_WIDTH_SPACE: u32 = 0x008e_8ed0;
+        let space = match mem.read::<u8>(pen.wrapping_add(0x1a)) {
+            1 => {
+                call(mem, EDGE, &[pen, glyph]);
+                call(mem, FACE, &[pen, glyph, 0]);
+                0x00c5_d784
+            }
+            3 => {
+                call(mem, 0x008f_ce90, &[pen, glyph]);
+                call(mem, 0x008f_d0a0, &[pen, glyph]);
+                0x00c5_d784
+            }
+            _ => {
+                call(mem, SET_DRAW_TYPE, &[1]);
+                call(mem, SET_SHADOW_TYPE, &[0]);
+                call(mem, SHADOW, &[pen, glyph, 0]);
+                call(mem, SET_SHADOW_TYPE, &[1]);
+                call(mem, FACE, &[pen, glyph, 0]);
+                call(mem, SET_DRAW_TYPE, &[0]);
+                0x00b5_ee10
+            }
+        };
+        let space: u32 = mem.read(mem.rebase(space));
+        call(mem, ADD_WIDTH_SPACE, &[pen, glyph, space]);
+    }
+
+    /// `TOMakePktFont1612Font_00906270(pen, glyph)` and
+    /// `TOMakePktFont1612Shadow_00906290(pen, glyph)`: the face or shadow
+    /// pass at its default (0).
+    pub fn to_make_pkt_font_1612_default<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        shadow: bool,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let pass = if shadow { 0x008f_cca0 } else { 0x008f_cad0 };
+        call(mem, pass, &[pen, glyph, 0]);
+    }
 }
