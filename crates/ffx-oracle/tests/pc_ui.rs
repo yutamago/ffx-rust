@@ -48,6 +48,7 @@ const ABMAP_FIND_NODE_IN_DIRECTION: u32 = 0x00a5_6860;
 const ABMAP_CALC_LINK_POINTS_STRAIGHT: u32 = 0x00a5_81f0;
 const ABMAP_CALC_LINK_POINTS_CURVED: u32 = 0x00a5_7710;
 const ABMAP_PAD_ACTIVATE_HANDLER: u32 = 0x00a5_6160;
+const GUI_TOUCH_UPDATE: u32 = 0x0068_a3a0;
 const GUI_TOUCH_INIT_GROUP: u32 = 0x0068_a420;
 const ABMAP_PAD_CTRL: u32 = 0x00a5_83e0;
 const MENU_ITEM_PARSE_TARGET_KEYS: u32 = 0x008c_5320;
@@ -825,6 +826,25 @@ impl Log {
         c.extend(base.to_le_bytes());
         c.push(0xc3);
         c
+    }
+
+    /// A thiscall stub at `sym` that logs `id`, `this` and its `args`
+    /// stack arguments (0 to 6) and pops them (`ret 4 * args`).
+    fn stub_this(&self, t: &mut Twin, sym: u32, id: u32, args: u8) {
+        let at = t.a.rebase(sym);
+        let mut c = vec![0x89, 0xc8, 0x8b, 0x0d]; // mov eax, ecx; mov ecx, [cursor]
+        c.extend(self.cursor.to_le_bytes());
+        c.extend([0xc7, 0x01]);
+        c.extend(id.to_le_bytes());
+        c.extend([0x89, 0x41, 0x04]); // mov [ecx + 4], eax
+        for k in 1..=args {
+            c.extend([0x8b, 0x54, 0x24, 4 * k, 0x89, 0x51, 4 * k + 4]);
+        }
+        let size = if args > 2 { 0x20 } else { 0x10 };
+        c.extend([0x83, 0xc1, size, 0x89, 0x0d]);
+        c.extend(self.cursor.to_le_bytes());
+        c.extend([0xc2, 4 * args, 0]);
+        t.jump(at, &c);
     }
 
     fn rewind(&self, t: &mut Twin) {
@@ -1873,6 +1893,51 @@ fn abmap_pad_activate_handler_matches_the_original() {
                 Conv::Cdecl,
                 &[panel_at, entry, choice, 1],
                 |o| Res::Int(panel::activate_handler(&mut Run(o), choice)),
+            );
+        }
+    }
+}
+
+#[test]
+fn gui_touch_update_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_010c);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, touch::GUI_TOUCH_RESET_BUTTONS, 2, 0);
+        log.stub_this(&mut t, touch::GUI_TOUCH_HOVER, 3, 2);
+        log.stub_this(&mut t, touch::GUI_TOUCH_HANDLE_EVENT, 4, 1);
+        let dev = t.alloc(0x200);
+        let events = t.alloc(0x20 * 8);
+        let this = t.alloc(0x10);
+        for n in 0..300u32 {
+            log.rewind(&mut t);
+            let device = if n % 7 == 0 { 0 } else { dev };
+            log.stub(&mut t, touch::INPUT_GET_DEVICE, 1, 2, (device, 0, 0));
+            t.put(dev, &rng.bytes(0x200));
+            t.put(events, &rng.bytes(0x100));
+            // a ring of 0 to 8 events through the device's +0x164
+            let head = dev + 0x164;
+            let count = rng.below(9);
+            let mut at = head;
+            for k in 0..count {
+                let e = events + 0x20 * k;
+                t.put(at, &e.to_le_bytes());
+                let kind = [0u32, 1, 2, 3, 4, 5, 6, 0xffff_ffff, rng.next()][rng.below(9) as usize];
+                t.put(e + 0x18, &kind.to_le_bytes());
+                t.put(e + 8, &tag_float(&mut rng).to_le_bytes());
+                t.put(e + 0xc, &tag_float(&mut rng).to_le_bytes());
+                at = e;
+            }
+            t.put(at, &head.to_le_bytes());
+            t.check(
+                &format!("update {n} with {count}"),
+                GUI_TOUCH_UPDATE,
+                Conv::Thiscall(this),
+                &[],
+                |o| {
+                    touch::update(&mut Run(o), this);
+                    Res::Void
+                },
             );
         }
     }

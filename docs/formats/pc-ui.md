@@ -169,6 +169,13 @@ Tests are strict (`<`) on all four edges; any NaN misses.
   inside and held, else 4; kind 3 (release) moves phase 1 to 2 when
   outside, sets 4, `+0x17`, the end position and the drag.
 
+`GuiTouch_update(this)` (`0x0068a3a0`, thiscall, name ours) is the
+update: the pointer device (`0x00623c90(3, 0)`, `InputManager`),
+`GuiTouch_resetButtons`, then each event of the device's ring (head at
+the device's `+0x164`, each event's first word the next; the head ends
+it): `GuiTouch_hover(x +8, y +0xc)` for moves (kind `+0x18` 0, 4, 5;
+signed), `GuiTouch_handleEvent` for all.
+
 `GuiTouch_initGroup(group)` (`0x0068a420`, fastcall) empties a button
 group: `+0` (`u16`), `+4`, `+0x1c4` (`u32`) zero; in each button the
 rectangle, `+0x10`, `+0x16`, `+0x18` and `+0x34` zero and the `u16` at

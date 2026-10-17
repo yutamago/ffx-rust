@@ -48,6 +48,10 @@ fn ci_atan2(y: f64, x: f64) -> f32 {
 }
 
 ported! {
+    /// `GuiTouch_update(this)`.
+    GuiTouch_update @ 0x0068_a3a0 => extern "thiscall" fn gui_touch_update(this: u32) {
+        touch::update(&mut mem(), this);
+    }
     /// `GuiTouch_initGroup(group)`.
     GuiTouch_initGroup @ 0x0068_a420 => extern "fastcall" fn gui_touch_init_group(group: u32) {
         touch::init_group(&mut mem(), group);

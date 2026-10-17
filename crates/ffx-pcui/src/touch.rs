@@ -194,6 +194,47 @@ pub mod bridge {
         mem.write(at(0x24), [b.start[0], b.start[1], b.end[0], b.end[1]]);
     }
 
+    /// `InputManager` device getter `(kind, index)` (`0x00623c90`): the
+    /// pointer device is kind 3, index 0.
+    pub const INPUT_GET_DEVICE: u32 = 0x0062_3c90;
+    /// `GuiTouch_resetButtons(this)`.
+    pub const GUI_TOUCH_RESET_BUTTONS: u32 = 0x0068_ab30;
+    /// `GuiTouch_hover(this, x, y)`.
+    pub const GUI_TOUCH_HOVER: u32 = 0x0068_b6d0;
+    /// `GuiTouch_handleEvent(this, event)`.
+    pub const GUI_TOUCH_HANDLE_EVENT: u32 = 0x0068_b470;
+
+    /// `GuiTouch_update(this)` (`0x0068a3a0`, thiscall): the buttons reset
+    /// (`GuiTouch_resetButtons`), then for each event in the pointer
+    /// device's list (a ring whose head is the device's `+0x164`, the
+    /// next pointer first in each event; no device, nothing): moves (kind
+    /// `+0x18` 0, 4 or 5) to `GuiTouch_hover(x +8, y +0xc)`, every event to
+    /// `GuiTouch_handleEvent`. Callers read no `eax`.
+    pub fn update(mem: &mut impl Host, this: u32) {
+        let dev = mem.call_sym(INPUT_GET_DEVICE, Conv::Cdecl, &[3, 0]);
+        mem.call_sym(GUI_TOUCH_RESET_BUTTONS, Conv::Thiscall(this), &[]);
+        if dev == 0 {
+            return;
+        }
+        let head = dev.wrapping_add(0x164);
+        let next = |n: u32| if n == head { 0 } else { n };
+        let mut e = next(mem.read(head));
+        while e != 0 {
+            let kind = mem.read::<u32>(e.wrapping_add(0x18)).cast_signed();
+            if kind == 0 || (4..=5).contains(&kind) {
+                let x = ffx_bridge::x87::round_trip(mem.read(e.wrapping_add(8)));
+                let y = ffx_bridge::x87::round_trip(mem.read(e.wrapping_add(0xc)));
+                mem.call_sym(
+                    GUI_TOUCH_HOVER,
+                    Conv::Thiscall(this),
+                    &[x.to_bits(), y.to_bits()],
+                );
+            }
+            mem.call_sym(GUI_TOUCH_HANDLE_EVENT, Conv::Thiscall(this), &[e]);
+            e = next(mem.read(e));
+        }
+    }
+
     /// `GuiTouch_initGroup(group)` (`0x0068a420`, fastcall): a button
     /// group (0x1c8 bytes) emptied: `+0` (`u16`), `+4` (byte), `+0x1c4`
     /// (`u32`) zero; each of the 8 buttons gets a zero rectangle, state,
