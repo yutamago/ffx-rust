@@ -9577,6 +9577,7 @@
 0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0; (table, index): codes >= 0x26 or 4 count one, group-3 codes add their macro's count (recursive)
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
 0x008b6bb0 function TOGetChangeMacroAdvance_008b6bb0 # cdecl(key, code, kind, scale, extra) -> float in ST0: width of the macro's replacement text, nested macros (group 3) recursive, 7 0xe1..0xef its byte - 0xe0, glyphs TOGetFontAdvance_008fa740, less TOGetFontSpaceInPiexl(kind); 0 without a macro; name ours
+0x008b6cb0 function TOGetMessageWH1612_008b6cb0 # cdecl(window, text, &w, &h, scale, extra, kind, flags) -> &h: widest line (glyph advances, macros, 7/0xb/0xe/0x10 codes) less TOGetFontSpaceInPiexl(kind), (tallest line + 2) * scale; flags low nibble ends at the first line, bit 8 keeps 0x10 from marking the window; callers TOMenuDrawYesNoWindow, 0x008bc100; name ours
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
 0x008b7130 function TOGetMessageSize_008b7130 # (text, &w, &h) -> 0: TOGetMessageWH(0, text, .., 0, 0), w through ftol, h the i16 height; name ours

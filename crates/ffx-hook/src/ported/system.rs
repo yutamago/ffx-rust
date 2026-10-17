@@ -5854,6 +5854,10 @@ ported! {
             tolib::bridge::scale_button_icon_width(m, id, s, |_, v| ffx_graphic::ui::remap_x2(v))
         })
     }
+    /// `TOBtlGetChrName(i)`.
+    TOBtlGetChrName @ 0x0089_76f0 => extern "C" fn to_btl_get_chr_name(i: u32) -> u32 {
+        tolib::bridge::to_btl_get_chr_name(&mut mem(), i, call_sym)
+    }
     /// `TOGetSaveChrName(i)`.
     TOGetSaveChrName @ 0x008a_c850 => extern "C" fn to_get_save_chr_name(i: u32) -> u32 {
         tolib::bridge::to_get_save_chr_name(&mut mem(), i, call_sym)
@@ -6253,6 +6257,21 @@ ported! {
         key: u32, code: u32, kind: u32, scale: u32, extra: u32
     ) -> f32 {
         tolib::bridge::to_get_change_macro_advance(&mut mem(), [key, code, kind, scale, extra], call_sym, fcall)
+    }
+    /// `TOGetMessageWH1612_008b6cb0(window, text, &w, &h, scale, extra, kind, flags)`.
+    TOGetMessageWH1612_008b6cb0 @ 0x008b_6cb0 => extern "C" fn to_get_message_wh_1612(
+        window: u32, text: u32, w: u32, h: u32, scale: u32, extra: u32, kind: u32, flags: u32
+    ) -> u32 {
+        let mut scratch = [0u32; 0xc];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_message_wh_1612(
+            &mut mem(),
+            [window, text, w, h, scale, extra, kind, flags],
+            at,
+            call_sym,
+            fcall,
+        )
     }
     /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r, g, b, a, scale, extra)`.
     TOMkpCrossExtMesFontLClutTypeRGBA @ 0x0090_1700 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut_type_rgba(

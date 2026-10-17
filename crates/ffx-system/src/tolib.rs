@@ -5802,6 +5802,16 @@ pub mod bridge {
         icon(mem, id, scale)
     }
 
+    /// `TOBtlGetChrName(i)` (`0x008976f0`): a tail jump to
+    /// [`to_get_save_chr_name`].
+    pub fn to_btl_get_chr_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        to_get_save_chr_name(mem, i, call)
+    }
+
     /// `TOGetSaveChrName(i)` (`0x008ac850`): characters from 0x14 on come
     /// from `MsGetRamChrName(i)`; the others from `MsGetSaveChrName(i)`,
     /// after `MsGetSaveConfigEnglish()` when the language
@@ -9298,6 +9308,203 @@ pub mod bridge {
         }
         let space = fcall(mem, SPACE_PIXELS, &[kind]);
         (f64::from(sum) - space) as f32
+    }
+
+    /// `TOGetMessageWH1612_008b6cb0(window, text, &w, &h, scale, extra,
+    /// kind, flags)` (`0x008b6cb0`): measures a message text in the
+    /// 16×12 font. Returns `h` (left in `eax`).
+    ///
+    /// Line widths add up per code by `TOGetGroup`, each sum rounded to
+    /// `f32`:
+    /// - 4 (glyph): `TOGetFontAdvance_008fa740(kind, glyph, scale)` after
+    ///   `TOGetFontInfo` into [`HELP_GLYPH`]. When `window` (signed) is a
+    ///   message window whose `+0x10` is 0x4000, `TOConvAlbhedWord` runs
+    ///   first into a scratch word.
+    /// - 3 (macro): `TOGetChangeMacroAdvance_008b6bb0(window, code, kind,
+    ///   scale, extra)`.
+    /// - 2 (control): 7 with a byte 0x40..0xbf sets the width to
+    ///   `4 × byte - 0x100`, then 0xe1..=0xef adds its byte less 0xe0
+    ///   (7 0x38 also marks `+0xe` of a window whose `+0x24` is 0). `0xe
+    ///   0x40` opens a padded run when none is open, `0xe 0x41` closes it
+    ///   and adds 5 to a positive width. `0xb n` adds
+    ///   `TOGetButtonIconWidth(n)`. `0x10 n` (with a window) for n
+    ///   0x50..0x5f measures `TOIntToMes(counter +0xc, n - 0x4f digits, 1)`
+    ///   (this function again, flags 0) and adds its width; it marks the
+    ///   window's `+0x1e` then, and also for any n but 0xff unless flags
+    ///   bit 8 is set.
+    /// - 1 (line end): a padded run (kind 3) adds 5 to a positive width;
+    ///   the widest line is kept and the width cleared. Code 0 ends the
+    ///   text, 1 and 2 start a new line of height 16 (and end the text when
+    ///   the flags' low nibble is set), 3 adds 16 to the line height (and
+    ///   ends the text when the nibble is 3 and the height grew the tallest).
+    ///   The tallest line height is kept at code 0, 1, 2 (and 3, nibble 3).
+    ///
+    /// `w` is the widest line less `TOGetFontSpaceInPiexl(kind)`, `h` is
+    /// `(tallest + 2) × scale`, both stored as `f32`. `scratch` is 0x30
+    /// bytes for the counter text (0x20), the nested sizes and the Al Bhed
+    /// word.
+    #[allow(
+        clippy::cast_possible_truncation, // fstp dword
+        clippy::cast_precision_loss,      // fild then fstp dword
+        clippy::too_many_lines,
+        clippy::too_many_arguments
+    )]
+    pub fn to_get_message_wh_1612<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        const GET_GROUP: u32 = 0x008d_f610;
+        const SKIP_CODE: u32 = 0x008d_fd80;
+        const FONT_INFO: u32 = 0x008b_7240;
+        const ADVANCE: u32 = 0x008f_a740;
+        const SPACE_PIXELS: u32 = 0x008f_a570;
+        const MACRO_ADVANCE: u32 = 0x008b_6bb0;
+        const ALBHED: u32 = 0x0090_6780;
+        const ICON_WIDTH: u32 = 0x008b_65e0;
+        const INT_TO_MES: u32 = 0x008b_8290;
+        const ITSELF: u32 = 0x008b_6cb0;
+        const COUNTERS: u32 = 0x0186_8a90;
+        let [window, text, out_w, out_h, scale, extra, kind, flags] = args;
+        let image_f32 = |mem: &M, a: u32| -> f32 { x87::round_trip(mem.read(mem.rebase(a))) };
+        let image_f64 = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let window_at = |mem: &M| -> u32 {
+            let slot = MSG_WINDOWS
+                .ptr(mem)
+                .addr
+                .wrapping_add(window.wrapping_mul(4));
+            mem.read(slot)
+        };
+        let has_window = window.cast_signed() >= 0;
+        let glyph = mem.rebase(HELP_GLYPH);
+        // passed on through fld/fstp dword
+        let scale_arg = x87::round_trip(f32::from_bits(scale)).to_bits();
+        let extra_arg = x87::round_trip(f32::from_bits(extra)).to_bits();
+        let mode = flags & 0xf;
+        let (mut widest, mut tallest, mut width) = (0f32, 0f32, 0f32);
+        let line = image_f32(mem, 0x00b9_231c);
+        let mut height = line;
+        let mut padded = (kind ^ 3).cast_signed() < 1;
+        let five = image_f64(mem, 0x00b4_1d20);
+        let mut going = true;
+        let mut p = text;
+        while going {
+            let byte = mem.read::<u8>(p);
+            match call(mem, GET_GROUP, &[u32::from(byte)]) {
+                1 => {
+                    if padded && 0.0 < width {
+                        width = (f64::from(width) + five) as f32;
+                    }
+                    if widest < width {
+                        widest = width;
+                    }
+                    width = 0.0;
+                    match byte {
+                        0 => {
+                            if tallest < height {
+                                tallest = height;
+                            }
+                            going = false;
+                        }
+                        1 | 2 => {
+                            if tallest < height {
+                                tallest = height;
+                            }
+                            height = image_f32(mem, 0x00b9_231c);
+                            if mode != 0 {
+                                going = false;
+                            }
+                        }
+                        3 => {
+                            height = (f64::from(height) + image_f64(mem, 0x00b3_13a0)) as f32;
+                            if mode == 3 && tallest < height {
+                                tallest = height;
+                                going = false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                2 => {
+                    let arg = mem.read::<u8>(p.wrapping_add(1));
+                    if byte == 7 {
+                        if has_window && arg == 0x38 {
+                            let w = window_at(mem);
+                            if mem.read::<u16>(w.wrapping_add(0x24)) == 0 {
+                                mem.write(w.wrapping_add(0xe), 1u16);
+                            }
+                        }
+                        if (0x40..0xc0).contains(&arg) {
+                            width = (i32::from(arg) * 4 - 0x100) as f32;
+                        }
+                        if (0xe1..=0xef).contains(&arg) {
+                            width = (f64::from(f32::from(arg - 0xe0)) + f64::from(width)) as f32;
+                        }
+                    } else {
+                        if byte == 0xe {
+                            if arg == 0x40 && !padded {
+                                padded = true;
+                            }
+                            if arg == 0x41 && padded && 0.0 < width {
+                                width = (f64::from(width) + five) as f32;
+                                padded = false;
+                            }
+                        }
+                        if byte == 0xb {
+                            let icon = call(mem, ICON_WIDTH, &[u32::from(arg)]);
+                            let icon = icon.cast_signed() as f32;
+                            width = (f64::from(icon) + f64::from(width)) as f32;
+                        }
+                        if byte == 0x10 && has_window {
+                            if (0x50..0x60).contains(&arg) {
+                                let counter: u32 = mem.read(
+                                    mem.rebase(COUNTERS).wrapping_add(window.wrapping_mul(4)),
+                                );
+                                let value = mem.read::<u32>(counter.wrapping_add(0xc));
+                                call(mem, INT_TO_MES, &[value, scratch, u32::from(arg - 0x4f), 1]);
+                                let (w, h) =
+                                    (scratch.wrapping_add(0x20), scratch.wrapping_add(0x24));
+                                call(
+                                    mem,
+                                    ITSELF,
+                                    &[window, scratch, w, h, scale_arg, extra_arg, kind, 0],
+                                );
+                                let nested = mem.read::<f32>(w);
+                                width = (f64::from(nested) + f64::from(width)) as f32;
+                                mem.write(window_at(mem).wrapping_add(0x1e), 1u16);
+                            }
+                            if flags & 0x100 == 0 && arg != 0xff {
+                                mem.write(window_at(mem).wrapping_add(0x1e), 1u16);
+                            }
+                        }
+                    }
+                }
+                3 => {
+                    let nested =
+                        fcall(mem, MACRO_ADVANCE, &[window, p, kind, scale_arg, extra_arg]);
+                    width = (nested + f64::from(width)) as f32;
+                }
+                4 => {
+                    if has_window && mem.read::<u16>(window_at(mem).wrapping_add(0x10)) == 0x4000 {
+                        call(mem, ALBHED, &[p, scratch.wrapping_add(0x28)]);
+                    }
+                    call(mem, FONT_INFO, &[p, glyph]);
+                    let advance = fcall(mem, ADVANCE, &[kind, glyph, scale_arg]);
+                    width = (advance + f64::from(width)) as f32;
+                }
+                _ => {}
+            }
+            p = call(mem, SKIP_CODE, &[p]);
+        }
+        let space = fcall(mem, SPACE_PIXELS, &[kind]);
+        mem.write(out_w, x87::store(x87::sub(f64::from(widest), space)));
+        let minus_two = image_f64(mem, 0x00b2_c5d0);
+        let h = x87::mul(x87::sub(f64::from(tallest), minus_two), x87::load(scale));
+        mem.write(out_h, x87::store(h));
+        out_h
     }
 
     /// The battle-font text cursor the cross-menu writers lay out with

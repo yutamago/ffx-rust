@@ -11730,6 +11730,11 @@ fn round20_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             t::to_get_save_chr_name(b, i, call),
             "save name {k}"
         );
+        assert_eq!(
+            eax(a, 0x0089_76f0, &[i]),
+            t::to_btl_get_chr_name(b, i, call),
+            "battle name {k}"
+        );
         // the macro word count
         let n = rng.next() % 0x30;
         let bytes: Vec<u8> = (0..0x40)
@@ -14832,6 +14837,240 @@ fn round27_text_matches_the_original_on_the_snapshot() {
         return;
     };
     round27_text(&mut a, &mut b, &mut Xorshift(0x4027_0022));
+}
+
+/// Round 27's message measure `TOGetMessageWH1612_008b6cb0` over the
+/// round-27 text stand-ins, a logging `TOGetButtonIconWidth` stand-in,
+/// stand-ins for `TOIntToMes` and `TOConvAlbhedWord`, two message windows
+/// with counters, and the original `TOGetGroup` and macro width.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
+fn round27_measure(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x30);
+    let text = alloc(a, b, 0x80);
+    let macro_text = alloc(a, b, 0x20);
+    let windows = alloc(a, b, 2 * 0x40);
+    let counters = alloc(a, b, 2 * 0x10);
+    let out = alloc(a, b, 8);
+    let scratch = alloc(a, b, 0x30);
+    for w in 0..2u32 {
+        put(a, b, g(a, 0x0186_76f0) + 4 * w, windows + 0x40 * w);
+        put(a, b, g(a, 0x0186_8a90) + 4 * w, counters + 0x10 * w);
+    }
+    let keyed = |cursor: u32, key: u32, n: u8| {
+        let mut v = marker(cursor, key);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        v
+    };
+    // logs its two arguments, the text pointer `text` (0 or 1, which
+    // differs between the original's stack and the port's scratch) as the
+    // byte it points at; leaves the text pointer in eax
+    let byte_logger = |cursor: u32, text: u8| {
+        let (t, o) = (4 + 4 * text, 8 - 4 * text);
+        let mut v = vec![0x8b, 0x44, 0x24, t, 0x0f, 0xb6, 0x10, 0x8b, 0x0d];
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.extend_from_slice(&[
+            0x89,
+            0x51,
+            4 * text,
+            0x8b,
+            0x54,
+            0x24,
+            o,
+            0x89,
+            0x51,
+            4 - 4 * text,
+        ]);
+        v.extend_from_slice(&[0x83, 0x05]);
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.push(8);
+        v
+    };
+    // TOGetFontInfo(p, rec): returns p + 1
+    let mut v = byte_logger(cursor, 0);
+    v.extend_from_slice(&[0x40, 0xc3]); // inc eax; ret
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008b_7240, s);
+    // TOSkipCode(p): p + 2 below 0x30, else p + 1
+    let skip = [
+        0x8b, 0x44, 0x24, 0x04, 0x80, 0x38, 0x30, 0x72, 0x02, 0x40, 0xc3, 0x83, 0xc0, 0x02, 0xc3,
+    ];
+    let s = stand_in8(a, b, 0xc0, &skip);
+    redirect(a, b, 0x008d_fd80, s);
+    // logs its arguments, returns a cell's word
+    // TOGetChangeMacroAddress(key, code): returns cells[0]
+    let mut v = byte_logger(cursor, 1);
+    v.push(0xa1);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x100, &v);
+    redirect(a, b, 0x008b_6660, s);
+    // TOGetButtonIconWidth(n): logs n, returns cells[1]
+    let mut v = keyed(cursor, 0x7800, 1);
+    v.truncate(v.len() - 5); // drop "mov eax, [esp+4]; ret"
+    v.push(0xa1);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x180, &v);
+    redirect(a, b, 0x008b_65e0, s);
+    // the advance and the space: log their arguments, return a cell in ST0
+    for (off, sym, n, cell, key) in [
+        (0x200u32, 0x008f_a740u32, 3u8, cells + 0x10, 0x7900u32),
+        (0x280, 0x008f_a570, 1, cells + 0x18, 0x7a00),
+    ] {
+        let mut v = keyed(cursor, key, n);
+        v.truncate(v.len() - 1);
+        v.extend_from_slice(&st0_cell(cell));
+        let s = stand_in8(a, b, off, &v);
+        redirect(a, b, sym, s);
+    }
+    // TOIntToMes(value, out, digits, mode): logs value and digits, writes
+    // `digits` 0x35 bytes and a terminator
+    let mut v = vec![0x8b, 0x15];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x04, 0x89, 0x02, 0x8b, 0x44, 0x24, 0x0c, 0x89, 0x42, 0x04,
+    ]);
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(8);
+    v.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x0c, 0xc6, 0x00, 0x35, 0x40, 0xe2, 0xfa, 0xc6,
+        0x00, 0x00, 0xc3,
+    ]);
+    let s = stand_in8(a, b, 0x300, &v);
+    redirect(a, b, 0x008b_8290, s);
+    // TOConvAlbhedWord(in, out): logs the byte, writes 'X', 0
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x10, 0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x11, 0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(4);
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x66, 0xc7, 0x00, 0x58, 0x00, 0xc3]);
+    let s = stand_in8(a, b, 0x380, &v);
+    redirect(a, b, 0x0090_6780, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let quiet = |rng: &mut Xorshift| {
+        let x = rng.float();
+        if x.is_nan() {
+            x.to_bits() | 0x0040_0000
+        } else {
+            x.to_bits()
+        }
+    };
+    let pick = |rng: &mut Xorshift, v: &[u8]| v[(rng.next() as usize) % v.len()];
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        let mut bytes = Vec::new();
+        for _ in 0..rng.next() % 24 {
+            match rng.next() % 12 {
+                0 => bytes.extend([
+                    7,
+                    pick(
+                        rng,
+                        &[0x38, 0x38, 0x40, 0x41, 0xbf, 0xc0, 0xe0, 0xe1, 0xef, 0xf0],
+                    ),
+                ]),
+                1 => bytes.extend([0xb, (rng.next() % 30) as u8]),
+                2 => bytes.extend([0xe, pick(rng, &[0x40, 0x41, 0x42])]),
+                3 => bytes.extend([0x10, pick(rng, &[0x50, 0x55, 0x5f, 0x60, 0xff, 0x20])]),
+                4 => bytes.extend([pick(rng, &[0x12, 0x22]), 0x31]),
+                5 => bytes.extend([pick(rng, &[1, 2, 3, 3]), 0x31]),
+                6 => bytes.extend([pick(rng, &[4, 0xc, 0xd, 8]), 0x33]),
+                _ => bytes.push(0x30 + (rng.next() % 0x40) as u8),
+            }
+        }
+        bytes.push(0);
+        bytes.resize(0x80, 0);
+        let bytes: [u8; 0x80] = bytes.try_into().unwrap();
+        put(a, b, text, bytes);
+        let mut mbytes = [0u8; 0x20];
+        for (j, m) in mbytes
+            .iter_mut()
+            .take((rng.next() % 10) as usize)
+            .enumerate()
+        {
+            *m = match j % 3 {
+                1 => pick(rng, &[7, 0x31]),
+                2 => pick(rng, &[0xe0, 0xe1, 0xef, 0x32]),
+                _ => 0x30 + (rng.next() % 40) as u8,
+            };
+        }
+        put(a, b, macro_text, mbytes);
+        put(
+            a,
+            b,
+            cells,
+            if rng.next().is_multiple_of(5) {
+                0
+            } else {
+                macro_text
+            },
+        );
+        put(a, b, cells + 4, (rng.next() % 40).wrapping_sub(5));
+        put(a, b, cells + 0x10, f64::from(rng.next() % 4000) / 9.0);
+        put(a, b, cells + 0x18, f64::from(rng.next() % 400) / 11.0);
+        for w in 0..2u32 {
+            let at = windows + 0x40 * w;
+            put(a, b, at + 0xe, 0u16);
+            put(
+                a,
+                b,
+                at + 0x10,
+                [0x4000u16, 0, 0x4001][(rng.next() % 3) as usize],
+            );
+            put(a, b, at + 0x1e, 0u16);
+            put(a, b, at + 0x24, [0u16, 0, 1, 2][(rng.next() % 4) as usize]);
+            put(a, b, counters + 0x10 * w + 0xc, rng.next() % 100_000);
+        }
+        let window = [u32::MAX, 0, 1, 1][(rng.next() % 4) as usize];
+        let kind = [0u32, 1, 3, 3, rng.next()][(rng.next() % 5) as usize];
+        let flags = [0u32, 0, 1, 3, 0x100, 0x103, 0x200, rng.next()][(rng.next() % 8) as usize];
+        let args = [
+            window,
+            text,
+            out,
+            out + 4,
+            quiet(rng),
+            quiet(rng),
+            kind,
+            flags,
+        ];
+        let ra = eax(a, 0x008b_6cb0, &args);
+        let rb = t::to_get_message_wh_1612(b, args, scratch, call, fcall);
+        assert_eq!(ra, rb, "measure {k}");
+        let v: [u32; 0xc] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("measure {k}"), a, b);
+    }
+}
+
+#[test]
+fn round27_measure_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round27_measure(&mut a, &mut b, &mut Xorshift(0x4027_0031));
+}
+
+#[test]
+fn round27_measure_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round27_measure(&mut a, &mut b, &mut Xorshift(0x4027_0032));
 }
 
 /// `TODrawKick` and `TOCtrlPkt` over logging stand-ins for the PS2 layer's

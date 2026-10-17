@@ -757,3 +757,38 @@ with 0xe1..=0xef adds its byte less 0xe0, and any other code adds its
 glyph's `TOGetFontAdvance_008fa740(kind, glyph, scale)`. The total is an
 `f32`, rounded after each step. The result is the total less
 `TOGetFontSpaceInPiexl(kind)`, or 0 when there is no macro.
+
+`TOGetMessageWH1612_008b6cb0(window, text, &w, &h, scale, extra, kind,
+flags)` (`0x008b6cb0`, callers `TOMenuDrawYesNoWindow` and `0x008bc100`)
+measures a message text in this font. It returns `&h` in `eax`. The line
+width is an `f32`, rounded after each step:
+
+- Glyphs add `TOGetFontAdvance_008fa740(kind, glyph, scale)`. For a
+  window whose `+0x10` is 0x4000 the glyph first goes through
+  `TOConvAlbhedWord`.
+- Macros add `TOGetChangeMacroAdvance_008b6bb0`.
+- Code 7 with a byte 0x40..0xbf sets the width to `4 × byte - 0x100`.
+  With 0xe1..=0xef it adds its byte less 0xe0. `7 0x38` sets the window's
+  `+0xe` when its `+0x24` is 0.
+- `0xe 0x40` opens a padded run and `0xe 0x41` closes it, adding 5 to a
+  positive width. Kind 3 starts with a run open.
+- `0xb n` adds `TOGetButtonIconWidth(n)`.
+- `0x10 n` (with a window) for n 0x50..0x5f measures the window's counter
+  (`[0x01868a90 + 4 × window] + 0xc`) as `TOIntToMes` text of n - 0x4f
+  digits, adds its width and sets the window's `+0x1e`. Without flag bit 8
+  any n other than 0xff also sets `+0x1e`.
+- A line end (codes 0..3) adds 5 to a positive width inside a run, keeps
+  the widest line and clears the width.
+  - Code 0 ends the text.
+  - Codes 1 and 2 start a line of height 16 and end the text when the
+    flags' low nibble is set.
+  - Code 3 adds 16 to the line height. When the nibble is 3 and the line
+    is now the tallest, it ends the text.
+  - The tallest height is taken at codes 0, 1 and 2, and at code 3 with
+    nibble 3.
+
+`w` is the widest line less `TOGetFontSpaceInPiexl(kind)`, and `h` is
+`(tallest + 2) × scale`.
+
+`TOBtlGetChrName` (`0x008976f0`) is a tail jump to `TOGetSaveChrName`
+(`0x008ac850`).
