@@ -286,6 +286,18 @@ pub mod bridge {
     pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
     /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
     pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// The pre-computed sine table (`g_pppSinTable`, 4096 `f32`s).
+    pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+    /// 32768.0 (`f64`, `.rdata`).
+    pub const LERP_HALF_TURN: u32 = 0x00b5_1588;
+    /// 16384.0 (`f64`).
+    pub const LERP_QUARTER_TURN: u32 = 0x00b5_1668;
+    /// 1.0 (`f64`).
+    pub const LERP_ONE: u32 = 0x00b9_2248;
+    /// 0.5 (`f64`).
+    pub const LERP_HALF: u32 = 0x00b9_2220;
+    /// The effect's colour work (`rcefColorSet`/`rcefColorFade`).
+    pub const COLOR_WORK: u32 = 0x025d_5a20;
     /// `TkSetVibrateStream(a, b, entry)` (`0x00875fb0`).
     pub const TK_SET_VIBRATE_STREAM: u32 = 0x0087_5fb0;
     /// `op_oef2_stream_cue(entry, arg, mask)` (`0x00800390`).
@@ -930,6 +942,66 @@ pub mod bridge {
             o.wrapping_add(0x170),
         ];
         call(mem, f, &a)
+    }
+
+    // ---- round 25 ----
+
+    /// `rcefLerp(a, b, t, mode)` (`0x0092e580`, an effect import; name
+    /// ours): `a + w (b - a)` with `w` = `t` (mode 0 and others),
+    /// `sin(t)` (mode 2, the sine table at `0x00c44bf0` indexed by
+    /// `trunc(t * 16384) >> 4 & 0xfff`) or `(sin(t * 32768 - 16384) + 1) /
+    /// 2` (mode 1, a cosine ease, `w` stored as `f32`). `b - a` and the
+    /// result are `f32`; returned in `ST0`.
+    pub fn rcef_lerp(mem: &impl Mem, args: [u32; 4]) -> f32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let [a, b, t, mode] = args;
+        let st = |x: f64| load(store(x));
+        let (a, t) = (load(a), load(t));
+        let d = st(sub(load(b), a));
+        let c = |at: u32| mem.read::<f64>(mem.rebase(at));
+        let sine = |x: f64| {
+            let i = ftol(mem, x).cast_signed() >> 4 & 0xfff;
+            let at = mem.rebase(SIN_TABLE) + 4 * i.cast_unsigned();
+            load(mem.read::<u32>(at))
+        };
+        let r = match mode {
+            1 => {
+                let x = sub(mul(t, c(LERP_HALF_TURN)), c(LERP_QUARTER_TURN));
+                let w = st(mul(add(sine(x), c(LERP_ONE)), c(LERP_HALF)));
+                add(a, mul(w, d))
+            }
+            2 => add(a, mul(sine(mul(t, c(LERP_QUARTER_TURN))), d)),
+            _ => add(a, mul(d, t)),
+        };
+        f32::from_bits(store(r))
+    }
+
+    /// The colour bytes as floats into `work` (`fild`, exact).
+    fn colour_floats(mem: &mut impl Mem, bytes: &[u32], work: u32) {
+        for (i, &b) in (0u32..).zip(bytes) {
+            #[allow(clippy::cast_possible_truncation)] // a byte argument
+            let v = f32::from(b as u8);
+            mem.write(work.wrapping_add(4 * i), v.to_bits());
+        }
+    }
+
+    /// `rcefColorSet(r, g, b, a, v, work)` (`0x0092e9c0`, an effect import;
+    /// name ours): the four colour bytes as floats (into `work`, the
+    /// original's locals) given to [`rcef_work_set_from_vf00`] on the
+    /// effect's colour work at [`COLOR_WORK`].
+    pub fn rcef_color_set(mem: &mut impl Mem, args: [u32; 5], work: u32) {
+        colour_floats(mem, &args[..4], work);
+        let w = mem.rebase(COLOR_WORK);
+        rcef_work_set_from_vf00(mem, w, work, args[4]);
+    }
+
+    /// `rcefColorFade(r0, g0, b0, a0, r1, g1, b1, a1, v, work)`
+    /// (`0x0092ea40`, an effect import; name ours): both colours as floats
+    /// (`work`, 32 bytes) given to [`rcef_work_set`] on [`COLOR_WORK`].
+    pub fn rcef_color_fade(mem: &mut impl Mem, args: [u32; 9], work: u32) {
+        colour_floats(mem, &args[..8], work);
+        let w = mem.rebase(COLOR_WORK);
+        rcef_work_set(mem, w, work, work.wrapping_add(0x10), args[8]);
     }
 
     // ---- round 4: running tasks, objects, particle parts ----
