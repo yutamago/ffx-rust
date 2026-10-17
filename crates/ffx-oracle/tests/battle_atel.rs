@@ -837,6 +837,14 @@ fn comebacks(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, bloc
     let p = w.actor(i);
     poke(a, b, p + 0x5d0, &rng.range(-3, 3).to_le_bytes());
     poke(a, b, p + 0x617, &[u8::from(rng.below(3) == 0)]);
+    poke(
+        a,
+        b,
+        p + 0x606,
+        &u16::try_from(rng.below(0x1_0000)).unwrap().to_le_bytes(),
+    );
+    poke(a, b, p + 0x65d, &[rng.byte()]);
+    set(a, b, ffx_battle::minor::bridge::STONE_EXCLUDED, rng.next());
     let weight = battle_common::world::quiet(rng.next());
     poke(a, b, p + 0x4dc, &weight.to_le_bytes());
     let full = rng.below(2);
@@ -858,6 +866,8 @@ fn comebacks(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, bloc
     for o in [0x436, 0x450] {
         poke(a, b, p + o, &[u8::from(rng.below(3) == 0)]);
     }
+    // mostly with an effect motion to drop (+0x3f3)
+    poke(a, b, p + 0x3f3, &[u8::from(rng.below(4) != 0)]);
     let kind = [0, 1, 3, 4, 5, 6, rng.next()][rng.below(7) as usize];
     queue(a, b, rng);
     twin("MsEffectEndMotion", a, b, 0x0078_7950, &[i, kind], 0, |m| {

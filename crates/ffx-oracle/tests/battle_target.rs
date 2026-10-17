@@ -2472,6 +2472,25 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         let flag = rng.below(3);
         let side = rng.below(2);
         let args = [i, actor, c, flag, side];
+        // the forced command's record: its target kind (+0x1a bits 2-3)
+        // and the cursor's event bits at random (put back after)
+        let id = u32::from_le_bytes(
+            [b.read(actor + 0x6c6, 2).unwrap(), vec![0, 0]]
+                .concat()
+                .try_into()
+                .unwrap(),
+        );
+        let rec = ffx_battle::stat::bridge::ms_get_com_data(b, id, 0);
+        let old = if readable(a, rec + 0x1a, 2) {
+            let v = b.read(rec + 0x1a, 2).unwrap();
+            let f = u16::from_le_bytes([v[0], v[1]]) & !0xc0c
+                | (u16::try_from(rng.below(4)).unwrap() << 2)
+                | 0xc00;
+            poke(a, b, rec + 0x1a, &f.to_le_bytes());
+            Some(v)
+        } else {
+            None
+        };
         twin(what, a, b, sym, &args, ALL, |m| {
             dm(m, |m| {
                 s!(s);
@@ -2486,6 +2505,9 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         });
         local_words(a, b);
         same(what, a, b);
+        if let Some(v) = old {
+            poke(a, b, rec + 0x1a, &v);
+        }
     }
     // the cheat (its standing motion reads the actor's positions)
     let i = rng.below(ACTORS);
@@ -2830,7 +2852,29 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         local_words(a, b);
         same("MsCheckStatusBeforeAction", a, b);
     }
-    // whole turn starts: a few input entries
+    // whole turn starts: a few input entries, three rounds
+    for _ in 0..3 {
+        whole_turn(a, b, rng, w, out, &h);
+    }
+}
+
+/// One round of [`turns`]' whole turn starts.
+fn whole_turn(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    out: u32,
+    h: &t::Host<'_>,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::input::bridge as ip;
+    use ffx_battle::minor::bridge as mn;
+    use ffx_battle::state::bridge as st;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
     let n = rng.below(4);
     set(a, b, st::INPUT_CUE_COUNT, i8::try_from(n).unwrap());
     set(
@@ -2866,6 +2910,19 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             }
         }
     }
+    // the turn's actors: the commands they may get
+    for q in [0, 1, 2, 0x14] {
+        let p = w.actor(q);
+        let st6: u16 = [0, 0, 0x100, 0x200, 0x300, 0x400, 0x500][rng.below(7) as usize];
+        poke(a, b, p + 0x606, &st6.to_le_bytes());
+        poke(a, b, p + 0x608, &[[0, 0, 0, 1][rng.below(4) as usize]]);
+        let doom: u16 = [0, 0, 0, 0x4000][rng.below(4) as usize];
+        poke(a, b, p + 0x616, &doom.to_le_bytes());
+        poke(a, b, p + 0x5c8, &[u8::try_from(rng.below(2)).unwrap()]);
+        poke(a, b, p + 0xdf3, &[[0, 1, 0x80][rng.below(3) as usize]]);
+        poke(a, b, p + 0x716, &[flag(rng, 4)]);
+        poke(a, b, p + 0x591, &[[0x11, 0][rng.below(2) as usize]]);
+    }
     let entries: Vec<u8> = (0..n * 8)
         .map(|k| match k % 8 {
             0 if on => [0, 1, 2, 0x14][rng.below(4) as usize],
@@ -2899,8 +2956,12 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     a.write(stack.end - 0x8000, &vec![0; 0x8000]).unwrap();
     twin("MsBattleProcess_InputCue", a, b, 0x0079_2a90, &[], 0, |m| {
         dm(m, |m| {
-            s!(s);
-            ip::ms_battle_process_input_cue(m, &h, &mut s);
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            ip::ms_battle_process_input_cue(m, h, &mut s);
         });
         0
     });
