@@ -1123,6 +1123,115 @@ pub mod bridge {
             mem.write(chr + 0x504, v);
         }
     }
+
+    /// `MsGetSaveEventAddress`'s thunk (`0x0088c830`), `Ch_ResetMotion`
+    /// (`0x0082b080`), `Ch_SeqGetFastMotion` (`0x00837860`),
+    /// `Ch_SetMotionSeq` (`0x00839b80`), `SG_DisposeMotionGroup` (`0x00836e20`),
+    /// `SG_FindMotionGroup` (`0x00836f10`), `MsBattleCheck` (`0x00780c90`).
+    pub const SAVE_EVENT_ADDRESS: u32 = 0x0088_c830;
+    pub const RESET_MOTION: u32 = 0x0082_b080;
+    pub const SEQ_GET_FAST_MOTION: u32 = 0x0083_7860;
+    pub const SET_MOTION_SEQ: u32 = 0x0083_9b80;
+    pub const DISPOSE_MOTION_GROUP: u32 = 0x0083_6e20;
+    pub const FIND_MOTION_GROUP: u32 = 0x0083_6f10;
+    pub const BATTLE_CHECK: u32 = 0x0078_0c90;
+    /// The sequence `Ch_MotionSetLow2` leaves at `+0x714` and the two
+    /// globals `0x008303a0` points at the save data's `+0xd2`.
+    pub const LOW_SEQUENCE: u32 = 0x00c4_9789;
+    pub const SAVE_D2_A: u32 = 0x022f_d6c0;
+    pub const SAVE_D2_B: u32 = 0x023c_4450;
+    /// The byte `SetByte_012fb8fd` sets.
+    pub const BYTE_012FB8FD: u32 = 0x012f_b8fd;
+
+    /// `Ch_MotionSetLow2(chr, motion, -, loops, start, end)` (`0x008373e0`):
+    /// after `MsGetSaveEventAddress()` and `Ch_ResetMotion`, plays the
+    /// sequence of `motion` (`Ch_SetSequence`; non-zero: -1) by its fast
+    /// motion (`Ch_SeqGetFastMotion`, none: -1) as raw frames
+    /// (`Ch_SetMotionSeq(chr, [+0xc], loops, start << 8, end << 8)`);
+    /// `+0x736` = 1, `+0x714` = the fixed sequence, `+0x738` = 1. Returns 0.
+    pub fn ch_motion_set_low2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [chr, motion, _, loops, start, end] = args;
+        call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]);
+        call(mem, mem.rebase(RESET_MOTION), &[chr]);
+        if call(mem, mem.rebase(SET_SEQUENCE), &[chr, motion]) != 0 {
+            return u32::MAX;
+        }
+        let fast = call(mem, mem.rebase(SEQ_GET_FAST_MOTION), &[chr]);
+        if fast == 0 {
+            return u32::MAX;
+        }
+        let clip: u32 = mem.read(fast.wrapping_add(0xc));
+        call(
+            mem,
+            mem.rebase(SET_MOTION_SEQ),
+            &[chr, clip, loops, start << 8, end << 8],
+        );
+        mem.write(chr + 0x736, 1u8);
+        mem.write(chr + 0x714, mem.rebase(LOW_SEQUENCE));
+        mem.write(chr + 0x738, 1u8);
+        0
+    }
+
+    /// `ChN_DisposeSystemMGRP(a, b)` (`0x00836830`):
+    /// `SG_DisposeMotionGroup(0, b, a)`'s result.
+    pub fn chn_dispose_system_mgrp<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[0, b, a])
+    }
+
+    /// `ChN_SystemMgrpLoaded()` (`0x00837710`): whether the system motion
+    /// group (`SG_FindMotionGroup(2, 0, 0)`) is loaded, 1 or 0.
+    pub fn chn_system_mgrp_loaded<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, mem.rebase(FIND_MOTION_GROUP), &[2, 0, 0]) != 0)
+    }
+
+    /// `Ch_ReadEventMgrp(x)` (`0x00837670`): `Ch_RomReadEventMGRPsync` of
+    /// `AtelEventGetMotionIndex(0x0086c1c0(x))` (a tail call); its result.
+    pub fn ch_read_event_mgrp<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = call(mem, mem.rebase(0x0086_c1c0), &[x]);
+        let i = call(mem, mem.rebase(0x0086_5890), &[v]);
+        call(mem, mem.rebase(0x0082_a7f0), &[i])
+    }
+
+    /// `Ch_SaveMotionByte(chr)` (`0x008303a0`): points both globals at the
+    /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is
+    /// neither 2 nor 3 gets that byte, else 0.
+    pub fn ch_save_motion_byte<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let p = call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]).wrapping_add(0xd2);
+        mem.write(mem.rebase(SAVE_D2_A), p);
+        mem.write(mem.rebase(SAVE_D2_B), p);
+        if call(mem, mem.rebase(BATTLE_CHECK), &[]) == 0 {
+            return 0;
+        }
+        if matches!(mem.read::<u8>(chr + 0x186), 2 | 3) {
+            return 0;
+        }
+        u32::from(mem.read::<u8>(p))
+    }
+
+    /// `SetByte_012fb8fd(v)` (`0x00821b20`): the byte at [`BYTE_012FB8FD`].
+    pub fn set_byte_012fb8fd<M: Mem>(mem: &mut M, v: u8) {
+        mem.write(mem.rebase(BYTE_012FB8FD), v);
+    }
 }
 
 #[cfg(test)]

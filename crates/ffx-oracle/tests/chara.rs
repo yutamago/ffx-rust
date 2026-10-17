@@ -7142,3 +7142,121 @@ fn round11e_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11f_matches_the_original() {
+    for mut t in twins() {
+        round11f_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn round11f_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_f11f);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let save = fk.fake(t, 0x0088_c830, 1, 0);
+    let reset = fk.fake(t, 0x0082_b080, 2, 1);
+    let seq = fk.fake(t, 0x0083_7ac0, 3, 2);
+    let fast = fk.fake(t, 0x0083_7860, 4, 1);
+    let play = fk.fake(t, 0x0083_9b80, 5, 5);
+    let dispose = fk.fake(t, 0x0083_6e20, 6, 3);
+    let find = fk.fake(t, 0x0083_6f10, 7, 3);
+    let battle = fk.fake(t, 0x0078_0c90, 8, 0);
+    let c1 = fk.fake(t, 0x0086_c1c0, 9, 1);
+    let c2 = fk.fake(t, 0x0086_5890, 10, 1);
+    let c3 = fk.fake(t, 0x0082_a7f0, 11, 1);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for r in [reset, play, dispose, c1, c2, c3] {
+            t.put_u32(r, rng.next());
+        }
+        let data = t.alloc(0x100);
+        t.put(data + 0xd2, &[rng.next().to_le_bytes()[0]]);
+        t.put_u32(save, data);
+        t.put_u32(seq, u32::from(rng.next().is_multiple_of(4)));
+        let clip = t.alloc(0x10);
+        t.put_u32(clip + 0xc, rng.next());
+        t.put_u32(
+            fast,
+            if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                clip
+            },
+        );
+        t.put_u32(
+            find,
+            if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        t.put_u32(battle, u32::from(!rng.next().is_multiple_of(3)));
+        let chr = t.alloc(0x800);
+        t.put(chr + 0x186, &[(rng.next() % 5).to_le_bytes()[0]]);
+        let args = [
+            chr,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next() % 0x100,
+            rng.next() % 0x100,
+        ];
+        t.check(
+            &format!("Ch_MotionSetLow2 {round}"),
+            0x0083_73e0,
+            &args,
+            |m| {
+                Res::Int(mo::ch_motion_set_low2(m, args, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let (a, b) = (rng.next(), rng.next());
+        t.check(
+            &format!("ChN_DisposeSystemMGRP {round}"),
+            0x0083_6830,
+            &[a, b],
+            |m| {
+                Res::Int(mo::chn_dispose_system_mgrp(m, a, b, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.check(
+            &format!("ChN_SystemMgrpLoaded {round}"),
+            0x0083_7710,
+            &[],
+            |m| Res::Int(mo::chn_system_mgrp_loaded(m, &mut |m, f, a| call(m, f, a))),
+        );
+        t.check(
+            &format!("Ch_ReadEventMgrp {round}"),
+            0x0083_7670,
+            &[a],
+            |m| Res::Int(mo::ch_read_event_mgrp(m, a, &mut |m, f, a| call(m, f, a))),
+        );
+        t.check(
+            &format!("Ch_SaveMotionByte {round}"),
+            0x0083_03a0,
+            &[chr],
+            |m| {
+                Res::Int(mo::ch_save_motion_byte(m, chr, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let v = a.to_le_bytes()[0];
+        t.check(
+            &format!("SetByte_012fb8fd {round}"),
+            0x0082_1b20,
+            &[u32::from(v)],
+            |m| {
+                mo::set_byte_012fb8fd(m, v);
+                Res::Void
+            },
+        );
+    }
+}

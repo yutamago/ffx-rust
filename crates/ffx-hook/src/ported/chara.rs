@@ -1743,4 +1743,28 @@ ported! {
             super::call_cdecl(f, a)
         })
     }
+    /// `Ch_MotionSetLow2(chr, motion, -, loops, start, end)`.
+    Ch_MotionSetLow2 @ 0x0083_73e0 => extern "C" fn ch_motion_set_low2(chr: u32, motion: u32, x: u32, loops: u32, start: u32, end: u32) -> u32 {
+        mo::bridge::ch_motion_set_low2(&mut mem(), [chr, motion, x, loops, start, end], &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_DisposeSystemMGRP(a, b)`.
+    ChN_DisposeSystemMGRP @ 0x0083_6830 => extern "C" fn chn_dispose_system_mgrp(a: u32, b: u32) -> u32 {
+        mo::bridge::chn_dispose_system_mgrp(&mut mem(), a, b, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_SystemMgrpLoaded()`.
+    ChN_SystemMgrpLoaded @ 0x0083_7710 => extern "C" fn chn_system_mgrp_loaded() -> u32 {
+        mo::bridge::chn_system_mgrp_loaded(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ReadEventMgrp(x)`.
+    Ch_ReadEventMgrp @ 0x0083_7670 => extern "C" fn ch_read_event_mgrp(x: u32) -> u32 {
+        mo::bridge::ch_read_event_mgrp(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SaveMotionByte(chr)`.
+    Ch_SaveMotionByte @ 0x0083_03a0 => extern "C" fn ch_save_motion_byte(chr: u32) -> u32 {
+        mo::bridge::ch_save_motion_byte(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `SetByte_012fb8fd(v)`.
+    SetByte_012fb8fd @ 0x0082_1b20 => extern "C" fn setbyte_012fb8fd(v: u8) {
+        mo::bridge::set_byte_012fb8fd(&mut mem(), v);
+    }
 }
