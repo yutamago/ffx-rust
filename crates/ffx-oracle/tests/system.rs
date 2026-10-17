@@ -9228,3 +9228,618 @@ fn round15_counters_match_the_original_on_the_snapshot() {
     };
     round15_counters(&mut a, &mut b, &mut Xorshift(0x4015_0052));
 }
+
+/// Round 16's reverse nearest-target search over stand-in positions and
+/// distances, with the CRT's `_CIsqrt` and `_CIacos`.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::items_after_statements
+)]
+fn round16_near_target(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let table = alloc(a, b, 32 * 16);
+    let dists = alloc(a, b, 32);
+    let vec = alloc(a, b, 16);
+    let mut pos = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x04, 0x05,
+    ];
+    pos.extend_from_slice(&table.to_le_bytes());
+    pos.extend_from_slice(&[
+        0x8b, 0x4c, 0x24, 0x08, 0x8b, 0x10, 0x89, 0x11, 0x8b, 0x50, 0x04, 0x89, 0x51, 0x04, 0x8b,
+        0x50, 0x08, 0x89, 0x51, 0x08, 0x8b, 0x50, 0x0c, 0x89, 0x51, 0x0c, 0x31, 0xc0, 0xc3,
+    ]);
+    let s = stand_in8(a, b, 0xe40, &pos);
+    redirect(a, b, 0x0079_48e0, s);
+    let mut dist = vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x1f, 0x0f, 0xb6, 0x80];
+    dist.extend_from_slice(&dists.to_le_bytes());
+    dist.push(0xc3);
+    let s = stand_in8(a, b, 0xe80, &dist);
+    redirect(a, b, 0x0079_4e00, s);
+    // fld qword [esp+4]; call [esp+0xc]; ret; ... ; fstp st(0); ret
+    let tramp = stand_in8(
+        a,
+        b,
+        0xea0,
+        &[
+            0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90,
+            0x90, 0x90, 0xdd, 0xd8, 0xc3,
+        ],
+    );
+    struct Calls(u32);
+    impl Calls {
+        fn intrinsic(&self, m: &mut Oracle, sym: u32, x: f64) -> f64 {
+            let f = m.rebase(sym);
+            let bits = x.to_bits();
+            let r = m
+                .call(self.0, Conv::Cdecl, &[bits as u32, (bits >> 32) as u32, f])
+                .unwrap()
+                .st0
+                .unwrap();
+            m.call(self.0 + 16, Conv::Cdecl, &[]).unwrap();
+            r
+        }
+    }
+    impl t::NearTarget<Oracle> for Calls {
+        fn btl_pos(&mut self, m: &mut Oracle, chr: u32, vec: u32) {
+            eax(m, 0x0079_48e0, &[chr, vec]);
+        }
+        fn dist(&mut self, m: &mut Oracle, chr: u32) -> u32 {
+            eax(m, 0x0079_4e00, &[chr])
+        }
+        fn sqrt(&mut self, m: &mut Oracle, x: f64) -> f64 {
+            self.intrinsic(m, 0x0094_97b8, x)
+        }
+        fn acos(&mut self, m: &mut Oracle, x: f64) -> f64 {
+            self.intrinsic(m, 0x0094_98da, x)
+        }
+    }
+    let mut calls = Calls(tramp);
+    let mask = |rng: &mut Xorshift, lo: u32, n: u32| {
+        let m = (rng.next() & ((1 << n) - 1)) << lo;
+        if m == 0 {
+            1 << (lo + rng.next() % n)
+        } else {
+            m
+        }
+    };
+    for k in 0..400u32 {
+        for chr in 0..32u32 {
+            let v: [f32; 4] = if k % 9 == 0 && chr % 3 == 0 {
+                [0.0, 0.0, 0.0, 1.0]
+            } else {
+                [
+                    (rng.next() % 4000) as f32 / 10.0 - 200.0,
+                    (rng.next() % 100) as f32 / 10.0,
+                    (rng.next() % 4000) as f32 / 10.0 - 200.0,
+                    1.0,
+                ]
+            };
+            put(a, b, table + 16 * chr, v);
+            put(a, b, dists + chr, u8::from(!rng.next().is_multiple_of(3)));
+        }
+        let n1 = rng.next() % 4 + u32::from(k % 7 != 0);
+        let n2 = rng.next() % 4 + u32::from(k % 5 != 0);
+        for i in 0..20 {
+            put(
+                a,
+                b,
+                a.rebase(0x0133_d180) + 4 * i,
+                if i < n1 { mask(rng, 0, 20) } else { 0 },
+            );
+        }
+        for i in 0..8 {
+            put(
+                a,
+                b,
+                a.rebase(0x0133_d1d4) + 4 * i,
+                if i < n2 { mask(rng, 20, 8) } else { 0 },
+            );
+        }
+        put(a, b, a.rebase(0x0133_d17c), n1 as u16);
+        put(a, b, a.rebase(0x0133_d1d0), n2 as u16);
+        put(a, b, a.rebase(0x0133_d1f4), (rng.next() % 28) as u16);
+        let n_other = {
+            let c: u16 = Mem::read(a, a.rebase(0x0133_d1f4));
+            if c < 0x14 { n2 } else { n1 }
+        };
+        let want = eax(a, 0x0089_90f0, &[]);
+        let got = t::btl_search_rev_near_target(b, vec, &mut calls);
+        if n_other > 0 {
+            assert_eq!(want, got, "case {k}");
+        }
+        let v: [u32; 4] = Mem::read(b, vec);
+        Mem::write(a, vec, v);
+        same_memory("reverse near target", a, b);
+    }
+}
+
+#[test]
+fn round16_near_target_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_near_target(&mut a, &mut b, &mut Xorshift(0x4016_0001));
+}
+
+#[test]
+fn round16_near_target_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_near_target(&mut a, &mut b, &mut Xorshift(0x4016_0002));
+}
+
+/// Round 16's message-window set-ups.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round16_message_setup(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    use tolib::bridge as t;
+    let objects = alloc(a, b, 8 * 0x20);
+    let records = alloc(a, b, 8 * 3 * 0x40);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        for (j, off) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+            put(
+                a,
+                b,
+                objects + 0x20 * k + off,
+                records + 0xc0 * k + 0x40 * j as u32,
+            );
+        }
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    let msg = alloc(a, b, 0x140);
+    for _ in 0..8 {
+        set(a, b, t::MESSAGE_SLOTS, slots);
+        let bytes: Vec<u8> = (0..8 * 3 * 0x40).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        eax(a, 0x008a_dbf0, &[]);
+        t::init_scene_message_window(b);
+        same_memory("scene message windows", a, b);
+        let bank = [0u32, 1, 2, u32::MAX][(rng.next() % 4) as usize];
+        eax(a, 0x008b_86e0, &[bank]);
+        t::set_exe_message_area(b, bank);
+        same_memory("message areas", a, b);
+        let bytes: Vec<u8> = (0..0x140).map(|_| rng.next() as u8).collect();
+        a.write(msg, &bytes).unwrap();
+        b.write(msg, &bytes).unwrap();
+        put(a, b, msg + 8, rng.next() % 6);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        eax(a, 0x008d_f6d0, &[msg]);
+        t::init_message_call_back(b, msg);
+        same_memory("message callbacks", a, b);
+    }
+}
+
+#[test]
+fn round16_message_setup_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_message_setup(&mut a, &mut b, &mut Xorshift(0x4016_0011));
+}
+
+#[test]
+fn round16_message_setup_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_message_setup(&mut a, &mut b, &mut Xorshift(0x4016_0012));
+}
+
+/// Round 16's save folder name and macro number text.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round16_save_name_and_numbers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    let mut getter = vec![0xa1];
+    getter.extend_from_slice(&cell.to_le_bytes());
+    getter.push(0xc3);
+    let s = stand_in8(a, b, 0xec0, &getter);
+    redirect(a, b, 0x0064_10e0, s);
+    for lang in 0..0x16u32 {
+        let mut pre: Vec<u8> = (0..rng.next() % 12)
+            .map(|_| b'a' + (rng.next() % 26) as u8)
+            .collect();
+        pre.resize(0x40, 0);
+        let at = a.rebase(0x023c_c0a0);
+        a.write(at, &pre).unwrap();
+        b.write(at, &pre).unwrap();
+        put(a, b, cell, lang);
+        put(a, b, a.rebase(0x0186_6240), rng.next());
+        eax(a, 0x008b_3a40, &[]);
+        t::menu_make_save_file_name(b, lang);
+        same_memory("save folder name", a, b);
+    }
+    let cmd = alloc(a, b, 8);
+    for k in 0..300u32 {
+        let v = match k % 4 {
+            0 => rng.next(),
+            1 => rng.next() % 2_000_000,
+            2 => (rng.next() % 2000).wrapping_neg(),
+            _ => [0u32, 999, 1000, 0x8000_0000, 0x7fff_ffff, 100_000][(rng.next() % 6) as usize],
+        };
+        put(a, b, cmd, [u32::from(rng.next() as u8 % 4) << 8, v]);
+        put(a, b, a.rebase(0x0186_9ee4), [0xa5u8; 0x20]);
+        assert_eq!(eax(a, 0x008b_6210, &[cmd]), t::func_macro_cmd_value(b, cmd));
+        same_memory("macro numbers", a, b);
+    }
+}
+
+#[test]
+fn round16_save_name_and_numbers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_save_name_and_numbers(&mut a, &mut b, &mut Xorshift(0x4016_0021));
+}
+
+#[test]
+fn round16_save_name_and_numbers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_save_name_and_numbers(&mut a, &mut b, &mut Xorshift(0x4016_0022));
+}
+
+/// Round 16's pad repeat over stand-in controller history and time.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::items_after_statements,
+    clippy::many_single_char_names
+)]
+fn round16_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    // inputGetCurTime: fld dword [cells]; TkGetControlerHist: [cells + 4];
+    // TkGetControlerAnalogHist: byte [cells + 8 + axis]
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf00, &v);
+    redirect(a, b, 0x0063_0c60, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf10, &v);
+    redirect(a, b, 0x0088_8d70, s);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03, 0x0f, 0xb6, 0x80];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf20, &v);
+    redirect(a, b, 0x0088_8c20, s);
+    struct Pad;
+    impl t::PadInput<Oracle> for Pad {
+        fn cur_time(&mut self, m: &mut Oracle) -> f64 {
+            let at = m.rebase(0x0063_0c60);
+            m.call(at, Conv::Cdecl, &[]).unwrap().st0.unwrap()
+        }
+        fn hist(&mut self, m: &mut Oracle, a: u32, b: u32, c: u32) -> u32 {
+            eax(m, 0x0088_8d70, &[a, b, c])
+        }
+        fn analog(&mut self, m: &mut Oracle, a: u32, b: u32, axis: u32, d: u32) -> u32 {
+            eax(m, 0x0088_8c20, &[a, b, axis, d])
+        }
+    }
+    let base = a.rebase(0x025d_09c0);
+    let bytes: Vec<u8> = (0..0xc0).map(|_| rng.next() as u8).collect();
+    a.write(base, &bytes).unwrap();
+    b.write(base, &bytes).unwrap();
+    for k in 0..16u32 {
+        put(a, b, a.rebase(0x025d_0a00) + 4 * k, 0f32);
+        put(a, b, a.rebase(0x025d_0a40) + 4 * k, 0f32);
+    }
+    let mut time = 0f32;
+    let mut held = 0u32;
+    for k in 0..600u32 {
+        time += [0.016f32, 0.033, 0.1, 0.25][(rng.next() % 4) as usize];
+        if rng.next().is_multiple_of(4) {
+            held ^= 1 << (rng.next() % 16);
+        }
+        put(a, b, cells, time);
+        put(a, b, cells + 4, held | (rng.next() & 0xffff_0000));
+        let sticks = [rng.next() as u8, (rng.next() % 3) as u8 * 0x7f, 0x10, 0xf0];
+        put(
+            a,
+            b,
+            cells + 8,
+            [
+                0u8,
+                0,
+                sticks[(rng.next() % 4) as usize],
+                sticks[(rng.next() % 4) as usize],
+            ],
+        );
+        put(a, b, base + 1, u8::from(k % 3 != 0));
+        put(a, b, base, u8::from(rng.next().is_multiple_of(2)));
+        eax(a, 0x008b_7cd0, &[]);
+        t::get_pad_status(b, &mut Pad);
+        same_memory("pad status", a, b);
+    }
+}
+
+#[test]
+fn round16_pad_status_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0031));
+}
+
+#[test]
+fn round16_pad_status_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0032));
+}
+
+/// Round 16's menu pad repeat over stand-in controllers and time.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
+fn round16_menu_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x40);
+    let getter = |off: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + off).to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf00, &v);
+    redirect(a, b, 0x0063_0c60, s);
+    // no-argument getters: the dummy flag, flush, dummy pads
+    for (k, sym) in [
+        0x008c_a510u32,
+        0x008c_a490,
+        0x008c_a500,
+        0x008c_a530,
+        0x008c_a520,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let s = stand_in8(a, b, 0xf40 + 0x10 * k, &getter(4 + 4 * k));
+        redirect(a, b, sym, s);
+    }
+    // the history getters: [cells + 0x20 + 4k] ^ (third argument)
+    for (k, sym) in [0x0088_8d70u32, 0x0088_8e80, 0x0088_8e50]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x33, 0x05];
+        v.extend_from_slice(&(cells + 0x20 + 4 * k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0xfa0 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // sticks: byte [cells + 0x30 + (axis & 3)] for both analog getters
+    let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03, 0x0f, 0xb6, 0x80];
+    v.extend_from_slice(&(cells + 0x30).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xfe0, &v);
+    redirect(a, b, 0x0088_8c20, s);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0x0f, 0xb6, 0x80];
+    v.extend_from_slice(&(cells + 0x34).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1000, &v);
+    redirect(a, b, 0x008c_a320, s);
+    let base = a.rebase(0x025d_09c0);
+    let bytes: Vec<u8> = (0..0xc0).map(|_| rng.next() as u8).collect();
+    a.write(base, &bytes).unwrap();
+    b.write(base, &bytes).unwrap();
+    for k in 0..16u32 {
+        put(a, b, a.rebase(0x025d_0a00) + 4 * k, 0f32);
+        put(a, b, a.rebase(0x025d_0a40) + 4 * k, 0f32);
+    }
+    let mut time = 0f32;
+    let mut held = 0u32;
+    for _ in 0..600u32 {
+        time += [0.016f32, 0.033, 0.1, 0.25][(rng.next() % 4) as usize];
+        if rng.next().is_multiple_of(4) {
+            held ^= 1 << (rng.next() % 16);
+        }
+        let flag = u32::from(rng.next().is_multiple_of(8));
+        put(
+            a,
+            b,
+            cells,
+            [time.to_bits(), flag, 0, rng.next(), rng.next(), rng.next()],
+        );
+        put(
+            a,
+            b,
+            cells + 0x20,
+            [held, rng.next() & 0xff, rng.next() & 0xff],
+        );
+        let sticks = [rng.next() as u8, 0x7f, 0x10, 0xf0];
+        put(
+            a,
+            b,
+            cells + 0x30,
+            [
+                0u8,
+                0,
+                sticks[(rng.next() % 4) as usize],
+                sticks[(rng.next() % 4) as usize],
+            ],
+        );
+        put(
+            a,
+            b,
+            cells + 0x34,
+            [0u8, 0, rng.next() as u8, rng.next() as u8],
+        );
+        eax(a, 0x008b_e500, &[]);
+        t::menu_get_pad_status(
+            b,
+            |m| {
+                let at = m.rebase(0x0063_0c60);
+                m.call(at, Conv::Cdecl, &[]).unwrap().st0.unwrap()
+            },
+            eax,
+        );
+        same_memory("menu pad status", a, b);
+    }
+}
+
+#[test]
+fn round16_menu_pad_status_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_menu_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0041));
+}
+
+#[test]
+fn round16_menu_pad_status_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_menu_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0042));
+}
+
+/// Round 16's kernel menu accessors over stand-in save getters.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round16_kernel_accessors(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let rec = alloc(a, b, 0x80);
+    let table = alloc(a, b, 0x1d8 * 8);
+    // MsGetSaveCommand(chr, cmd): chr * 0x100 ^ cmd ^ key
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x08, 0x33, 0x44, 0x24, 0x08, 0x35,
+    ];
+    v.extend_from_slice(&0x1600_0001u32.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1040, &v);
+    redirect(a, b, 0x0078_5020, s);
+    // MsGetSavePlayerPtr: rec + 8 * (chr & 3)
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0xc1, 0xe0, 0x03, 0x05,
+    ];
+    v.extend_from_slice(&rec.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1060, &v);
+    redirect(a, b, 0x0077_6f50, s);
+    // Kernel_GetAbilityName, MsGetSaveItemNum, MsImportantGet: arg ^ key
+    for (k, sym) in [0x0077_4720u32, 0x0079_04b0, 0x0079_0800]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+        v.extend_from_slice(&(0x1600_0100u32 + 0x100 * k as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x1080 + 0x10 * k as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cases: [(char, u32, u32); 58] = [
+        ('C', 0x0077_24c0, 0x0079_04b0),
+        ('C', 0x0077_24f0, 0x0079_0800),
+        ('B', 0x0077_2370, 0x50),
+        ('B', 0x0077_23e0, 0x58),
+        ('B', 0x0077_2450, 0x54),
+        ('A', 0x0077_1c60, 0x30b8),
+        ('A', 0x0077_1c80, 0x30b9),
+        ('A', 0x0077_1cd0, 0x30ba),
+        ('A', 0x0077_1d20, 0x30bb),
+        ('A', 0x0077_1d70, 0x30bc),
+        ('A', 0x0077_1dc0, 0x30bd),
+        ('A', 0x0077_1e10, 0x30be),
+        ('A', 0x0077_1e30, 0x30bf),
+        ('A', 0x0077_1e80, 0x30c0),
+        ('A', 0x0077_1ed0, 0x30c1),
+        ('A', 0x0077_1f20, 0x30c2),
+        ('A', 0x0077_1f70, 0x30c3),
+        ('A', 0x0077_1fc0, 0x30c4),
+        ('A', 0x0077_1fe0, 0x30c5),
+        ('A', 0x0077_2030, 0x30c6),
+        ('A', 0x0077_2080, 0x30c7),
+        ('A', 0x0077_20d0, 0x30c8),
+        ('A', 0x0077_2120, 0x30c9),
+        ('A', 0x0077_2170, 0x30ca),
+        ('A', 0x0077_2190, 0x30cb),
+        ('A', 0x0077_21e0, 0x30cc),
+        ('A', 0x0077_2230, 0x30cd),
+        ('A', 0x0077_2280, 0x30ce),
+        ('A', 0x0077_22f0, 0x30cf),
+        ('A', 0x0077_2350, 0x30d0),
+        ('A', 0x0077_2390, 0x30d1),
+        ('A', 0x0077_2400, 0x30d2),
+        ('A', 0x0077_2470, 0x30d3),
+        ('A', 0x0077_24d0, 0x30d4),
+        ('D', 0x0077_1c30, 0x11e),
+        ('D', 0x0077_1ca0, 0x120),
+        ('D', 0x0077_1cf0, 0x122),
+        ('D', 0x0077_1d40, 0x124),
+        ('D', 0x0077_1d90, 0x126),
+        ('D', 0x0077_1de0, 0x128),
+        ('D', 0x0077_1e50, 0x12a),
+        ('D', 0x0077_1ea0, 0x12c),
+        ('D', 0x0077_1ef0, 0x12e),
+        ('D', 0x0077_1f40, 0x130),
+        ('D', 0x0077_1f90, 0x132),
+        ('D', 0x0077_2000, 0x134),
+        ('D', 0x0077_2050, 0x136),
+        ('D', 0x0077_20a0, 0x138),
+        ('D', 0x0077_20f0, 0x13a),
+        ('D', 0x0077_2140, 0x13c),
+        ('D', 0x0077_21b0, 0x13e),
+        ('D', 0x0077_2200, 0x140),
+        ('D', 0x0077_2250, 0x142),
+        ('D', 0x0077_22c0, 0x144),
+        ('D', 0x0077_2320, 0x146),
+        ('D', 0x0077_23b0, 0x148),
+        ('D', 0x0077_2420, 0x14a),
+        ('D', 0x0077_2490, 0x14c),
+    ];
+    for _ in 0..4 {
+        let bytes: Vec<u8> = (0..0x80).map(|_| rng.next() as u8).collect();
+        a.write(rec, &bytes).unwrap();
+        b.write(rec, &bytes).unwrap();
+        let bytes: Vec<u8> = (0..0x1d8 * 8).map(|_| rng.next() as u8).collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        for &(kind, at, p) in &cases {
+            let arg = rng.next() % 8;
+            let want = eax(a, at, &[arg]);
+            let got = match kind {
+                'A' => t::kernel_save_command(b, arg, p, call),
+                'B' => t::kernel_player_word(b, arg, p, call),
+                'C' => t::kernel_forward(b, p, arg, call),
+                _ => t::kernel_slot_ability_name(b, arg, p, call),
+            };
+            assert_eq!(want, got, "{at:#x}");
+        }
+        same_memory("kernel accessors", a, b);
+    }
+}
+
+#[test]
+fn round16_kernel_accessors_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4016_0051));
+}
+
+#[test]
+fn round16_kernel_accessors_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4016_0052));
+}

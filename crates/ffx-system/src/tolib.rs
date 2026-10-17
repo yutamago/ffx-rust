@@ -3617,4 +3617,629 @@ pub mod bridge {
         };
         width(mem, table)
     }
+
+    /// The calls [`btl_search_rev_near_target`] makes outside this module.
+    pub trait NearTarget<M> {
+        /// `MsGetChrBtlPos(chr, vec)` into the 16-byte scratch `vec`.
+        fn btl_pos(&mut self, mem: &mut M, chr: u32, vec: u32);
+        /// `MsGetChrDist(chr)`.
+        fn dist(&mut self, mem: &mut M, chr: u32) -> u32;
+        /// `_CIsqrt(x)` (`0x009497b8`), the value left in ST0.
+        fn sqrt(&mut self, mem: &mut M, x: f64) -> f64;
+        /// `_CIacos(x)` (`0x009498da`), the value left in ST0.
+        fn acos(&mut self, mem: &mut M, x: f64) -> f64;
+    }
+
+    /// `TOBtlSearchRevNearTarget()` (`0x008990f0`): the target to jump to
+    /// on the other side, returned (eax) as an index into that side's
+    /// target list (the decompilation misses the return). The party's
+    /// (`0x0133d180`) and the monsters' (`0x0133d1d4`, only those at
+    /// distance 0 when there are any) mean positions give the axis between
+    /// the sides (x and z; y is 0). From the cursor character
+    /// (`0x0133d1f4`) the other side's nearest target gives the distance
+    /// unit (at least 1; the first list entry's last target starts it).
+    /// Each target scores `angle from the axis in degrees × distance /
+    /// unit`, and the lowest score wins (the first entry's last target
+    /// starts it); a degenerate angle counts as `acos(1)`. With an empty
+    /// other side the original returns an uninitialised word; this
+    /// returns 0. `vec` is a 16-byte scratch for the positions.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::similar_names
+    )]
+    pub fn btl_search_rev_near_target<M: Mem>(
+        mem: &mut M,
+        vec: u32,
+        calls: &mut impl NearTarget<M>,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, mul, sub};
+        let party = mem.rebase(0x0133_d180);
+        let monsters = mem.rebase(0x0133_d1d4);
+        let (n1_at, n2_at) = (mem.rebase(0x0133_d17c), mem.rebase(0x0133_d1d0));
+        let count = |mem: &M, at: u32| i32::from(mem.read::<i16>(at));
+        let pos = |mem: &mut M, calls: &mut dyn NearTarget<M>, chr: u32| -> [f64; 3] {
+            calls.btl_pos(mem, chr, vec);
+            let v: [f32; 3] = mem.read(vec);
+            v.map(f64::from)
+        };
+        let entry = |mem: &M, list: u32, i: i32| -> u32 {
+            mem.read(list.wrapping_add(i.cast_unsigned().wrapping_mul(4)))
+        };
+        // the party's mean position (y kept 0)
+        let mut ap = [0f64; 3];
+        let mut i = 0;
+        while i < count(mem, n1_at) {
+            for chr in 0..20u32 {
+                if entry(mem, party, i) & (1 << chr) != 0 {
+                    let p = pos(mem, calls, chr);
+                    ap[0] = dword(add(p[0], ap[0]));
+                    ap[1] = 0.0;
+                    ap[2] = dword(add(p[2], ap[2]));
+                }
+            }
+            i += 1;
+        }
+        let n = f64::from(count(mem, n1_at));
+        ap = ap.map(|v| dword(div(v, n)));
+        // the monsters at distance 0, if any, else all of them
+        let mut near = 0i32;
+        let mut i = 0;
+        while i < count(mem, n2_at) {
+            for chr in 20..28u32 {
+                if entry(mem, monsters, i) & (1 << chr) != 0 && calls.dist(mem, chr) == 0 {
+                    near += 1;
+                }
+            }
+            i += 1;
+        }
+        let mut am = [0f64; 3];
+        let mut i = 0;
+        while i < count(mem, n2_at) {
+            for chr in 20..28u32 {
+                if entry(mem, monsters, i) & (1 << chr) != 0
+                    && (near <= 0 || calls.dist(mem, chr) == 0)
+                {
+                    let p = pos(mem, calls, chr);
+                    am[0] = dword(add(am[0], p[0]));
+                    am[1] = 0.0;
+                    am[2] = dword(add(am[2], p[2]));
+                }
+            }
+            i += 1;
+        }
+        let used = if near == 0 { count(mem, n2_at) } else { near };
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let m = f64::from(used as f32);
+        am = am.map(|v| dword(div(v, m)));
+        let cursor = u32::from(mem.read::<u16>(mem.rebase(0x0133_d1f4)));
+        let p = pos(mem, calls, cursor);
+        // the other side, its axis and its list (copied, as the original)
+        let (list, n_at, lo, hi, axis) = if cursor < 0x14 {
+            let d = [sub(am[0], ap[0]), sub(am[1], ap[1]), sub(am[2], ap[2])].map(dword);
+            (monsters, n2_at, 20u32, 28u32, d)
+        } else {
+            let d = [sub(ap[0], am[0]), sub(ap[1], am[1]), sub(ap[2], am[2])].map(dword);
+            (party, n1_at, 0, 20, d)
+        };
+        let copy: Vec<u32> = (0..(hi - lo).max(8))
+            .map(|k| entry(mem, list, k.cast_signed()))
+            .collect();
+        let n = count(mem, n_at);
+        let rel = |mem: &mut M, calls: &mut dyn NearTarget<M>, chr: u32| -> [f64; 3] {
+            let q = pos(mem, calls, chr);
+            [sub(q[0], p[0]), sub(q[1], p[1]), sub(q[2], p[2])].map(dword)
+        };
+        let len = |calls: &mut dyn NearTarget<M>, mem: &mut M, q: [f64; 3]| -> f64 {
+            let s = add(add(mul(q[1], q[1]), mul(q[0], q[0])), mul(q[2], q[2]));
+            dword(calls.sqrt(mem, s))
+        };
+        // the nearest target of the other side: the unit
+        let mut unit = f64::NAN; // uninitialised in the original until a target is seen
+        let mut i = 0;
+        while i < count(mem, n_at) {
+            for chr in lo..hi {
+                if entry(mem, list, i) & (1 << chr) != 0 {
+                    let q = rel(mem, calls, chr);
+                    let r = len(calls, mem, q);
+                    if i == 0 || unit > r {
+                        unit = r;
+                    }
+                }
+            }
+            i += 1;
+        }
+        if 1.0 > unit {
+            unit = 1.0;
+        }
+        if n <= 0 {
+            return 0;
+        }
+        let mut best_score = 0f64;
+        let mut best = 1u32 << lo;
+        for j in 0..n {
+            for chr in lo..hi {
+                if copy[j.cast_unsigned() as usize] & (1 << chr) == 0 {
+                    continue;
+                }
+                let q = rel(mem, calls, chr);
+                let dot = dword(add(
+                    add(mul(q[0], axis[0]), mul(q[1], axis[1])),
+                    mul(q[2], axis[2]),
+                ));
+                let dl = len(calls, mem, axis);
+                let ql = len(calls, mem, q);
+                let cos = if dl == 0.0 || ql == 0.0 || dot == 0.0 {
+                    1.0
+                } else {
+                    dword(div(dot, mul(dl, ql)))
+                };
+                let deg = dword(div(
+                    mul(calls.acos(mem, cos), 180.0),
+                    3.141_592_741_012_573_2,
+                ));
+                let ratio = dword(div(ql, unit));
+                let score = dword(mul(deg, ratio));
+                if j == 0 || best_score > score {
+                    best_score = score;
+                    best = j.cast_unsigned();
+                }
+            }
+        }
+        best
+    }
+
+    /// `TOInitSceneMessageWindow()` (`0x008adbf0`): for each of the 8
+    /// message-window objects (re-read before every store): u16 `+0` and
+    /// `+8` of its `+0x10` record, u16 `+0` and `+0x2c` of its `+0x14`
+    /// record and bytes `+0`, `+1` of its `+0x18` record cleared, in the
+    /// original's order.
+    pub fn init_scene_message_window(mem: &mut impl Mem) {
+        let slots = MESSAGE_SLOTS.ptr(mem).addr;
+        for i in 0..8u32 {
+            let slot = slots.wrapping_add(4 * i);
+            for (rec, off, wide) in [
+                (0x10u32, 0u32, true),
+                (0x14, 0, true),
+                (0x18, 0, false),
+                (0x10, 8, true),
+                (0x14, 0x2c, true),
+                (0x18, 1, false),
+            ] {
+                let obj: u32 = mem.read(slot);
+                let r: u32 = mem.read(obj.wrapping_add(rec));
+                if wide {
+                    mem.write(r.wrapping_add(off), 0u16);
+                } else {
+                    mem.write(r.wrapping_add(off), 0u8);
+                }
+            }
+        }
+    }
+
+    /// `TOSetExeMessageArea(bank)` (`0x008b86e0`): the message windows'
+    /// eight pointers (`0x018676f0`) to the first (`bank` 0, `0x018663f0`)
+    /// or second (`0x01866d70`) bank of 0x130-byte windows, their eight
+    /// line records (`0x01868a90`; 0x138 bytes from `0x01867710` or
+    /// `0x018680d0`), and the 256 macro-command pointers of [`MSG_VARS`]
+    /// (`0x01869ab0`) to consecutive 8-byte records from `0x01868ab0` or
+    /// `0x018692b0`.
+    pub fn set_exe_message_area(mem: &mut impl Mem, bank: u32) {
+        let (win, line, var) = if bank == 0 {
+            (0x0186_63f0, 0x0186_7710, 0x0186_8ab0)
+        } else {
+            (0x0186_6d70, 0x0186_80d0, 0x0186_92b0)
+        };
+        let (win, line, var) = (mem.rebase(win), mem.rebase(line), mem.rebase(var));
+        let (wins, lines, vars) = (
+            mem.rebase(0x0186_76f0),
+            mem.rebase(0x0186_8a90),
+            mem.rebase(0x0186_9ab0),
+        );
+        for k in 0..8u32 {
+            mem.write(wins.wrapping_add(4 * k), win.wrapping_add(0x130 * k));
+            mem.write(lines.wrapping_add(4 * k), line.wrapping_add(0x138 * k));
+        }
+        for k in 0..256u32 {
+            mem.write(vars.wrapping_add(4 * k), var.wrapping_add(8 * k));
+        }
+    }
+
+    /// `TOInitMessageCallBack(msg)` (`0x008df6d0`): message window `msg`'s
+    /// handlers from its kind's row (`+8`, 0x24-byte rows at `0x00c5b1b0`):
+    /// words 0..5 into `+0x100..=+0x110`, word 5 into `+0x12c` (in message
+    /// mode 1 `0x008dfea0` instead), words 6 and 7 into `+0xf4`, `+0xf8`.
+    pub fn init_message_call_back(mem: &mut impl Mem, msg: u32) {
+        let table = mem.rebase(0x00c5_b1b0);
+        for (k, off) in [
+            (0u32, 0x100u32),
+            (1, 0x104),
+            (2, 0x108),
+            (3, 0x10c),
+            (4, 0x110),
+        ] {
+            let kind: u32 = mem.read(msg.wrapping_add(8));
+            let v: u32 = mem.read(
+                table
+                    .wrapping_add(kind.wrapping_mul(0x24))
+                    .wrapping_add(4 * k),
+            );
+            mem.write(msg.wrapping_add(off), v);
+        }
+        let v = if crate::menu::bridge::message_window_mode(mem) == 1 {
+            mem.rebase(0x008d_fea0)
+        } else {
+            let kind: u32 = mem.read(msg.wrapping_add(8));
+            mem.read(
+                table
+                    .wrapping_add(kind.wrapping_mul(0x24))
+                    .wrapping_add(0x14),
+            )
+        };
+        mem.write(msg.wrapping_add(0x12c), v);
+        let kind: u32 = mem.read(msg.wrapping_add(8));
+        let row = table.wrapping_add(kind.wrapping_mul(0x24));
+        let a: u32 = mem.read(row.wrapping_add(0x18));
+        mem.write(msg.wrapping_add(0xf4), a);
+        let b: u32 = mem.read(row.wrapping_add(0x1c));
+        mem.write(msg.wrapping_add(0xf8), b);
+    }
+
+    /// `TOMenuMakeSaveFileName()` (`0x008b3a40`): the save folder name in
+    /// `0x023cc0a0`: the PS2 product code of the language (`TOGetFFXLang`,
+    /// passed in: 0 `BISLPS-25088`, 1 `BASLUS-20312`, 2 `BESCES-50491`, 3
+    /// `BESCES-50494`, 4 `BESCES-50492`, 5 `BESCES-50493`, 9
+    /// `BKSLPM-67513`, 16 `BISLPS-25088`, 17 `BISLPM-65115`, 18
+    /// `BESCES-50490`; any other leaves the buffer as it is) with
+    /// `FF0906%02d` appended (the slot number is formatted later); the
+    /// word `0x01866240` cleared.
+    pub fn menu_make_save_file_name(mem: &mut impl Mem, lang: u32) {
+        let code = match lang {
+            0 | 16 => Some(0x00c5_b360),
+            1 => Some(0x00c5_b370),
+            2 => Some(0x00c5_b3c0),
+            3 => Some(0x00c5_b3a0),
+            4 => Some(0x00c5_b390),
+            5 => Some(0x00c5_b3b0),
+            9 => Some(0x00c5_b3e0),
+            17 => Some(0x00c5_b3d0),
+            18 => Some(0x00c5_b380),
+            _ => None,
+        };
+        let out = mem.rebase(0x023c_c0a0);
+        if let Some(src) = code {
+            let src = mem.rebase(src);
+            let mut k = 0u32;
+            loop {
+                let c: u8 = mem.read(src.wrapping_add(k));
+                mem.write(out.wrapping_add(k), c);
+                k = k.wrapping_add(1);
+                if c == 0 {
+                    break;
+                }
+            }
+        }
+        let tail = mem.rebase(0x00c5_b3f0);
+        let len = c_strlen(mem, tail);
+        let end = out.wrapping_add(c_strlen(mem, out));
+        for k in 0..=len {
+            let c: u8 = mem.read(tail.wrapping_add(k));
+            mem.write(end.wrapping_add(k), c);
+        }
+        let w = mem.rebase(0x0186_6240);
+        mem.write(w, 0u32);
+    }
+
+    /// `TOFuncMacroCmdValue(cmd)` (`0x008b6210`): the macro command's value
+    /// (`+4`) as decimal (`sprintf("%d")`) in `0x01869ee4`; with the
+    /// command's type `+1` at 2 the digit-group mark 0x46 goes before each
+    /// group of three from the right (the count includes a minus sign).
+    /// Returns the buffer.
+    pub fn func_macro_cmd_value(mem: &mut impl Mem, cmd: u32) -> u32 {
+        let v: i32 = mem.read(cmd.wrapping_add(4));
+        let text = v.to_string().into_bytes();
+        let grouped = mem.read::<u8>(cmd.wrapping_add(1)) == 2;
+        let out = mem.rebase(0x0186_9ee4);
+        let mut at = out;
+        let mut left = text.len();
+        for (i, &c) in text.iter().enumerate() {
+            if left.is_multiple_of(3) && i > 0 && grouped {
+                mem.write(at, 0x46u8);
+                at = at.wrapping_add(1);
+            }
+            mem.write(at, c);
+            at = at.wrapping_add(1);
+            left -= 1;
+        }
+        mem.write(at, 0u8);
+        out
+    }
+
+    /// The input calls of [`get_pad_status`].
+    pub trait PadInput<M> {
+        /// `inputGetCurTime()`, the value left in ST0.
+        fn cur_time(&mut self, mem: &mut M) -> f64;
+        /// `TkGetControlerHist(a, b, c)`.
+        fn hist(&mut self, mem: &mut M, a: u32, b: u32, c: u32) -> u32;
+        /// `TkGetControlerAnalogHist(a, b, axis, d)`.
+        fn analog(&mut self, mem: &mut M, a: u32, b: u32, axis: u32, d: u32) -> u32;
+    }
+
+    /// `TOGetPadStatus()` (`0x008b7cd0`): the TO library's pad words.
+    /// `0x025d09d2` held, `+2` triggered, `+4` repeated buttons; the same
+    /// at `0x025d09e2` with the d-pad bits made from the left stick
+    /// (`0x025d09de` x, `0x025d09df` y, below 0x18 or above 0xe8). All are
+    /// cleared, and refilled only while `0x025d09c1` or `g_TOPadGetCtrl`
+    /// (`0x025d09c0`) is set: the d-pad's own set if any d-pad button is
+    /// held, else the stick's. Each button but 0x800 and 0x100 repeats: a
+    /// fresh press (count `0x025d09c2 + k` 0) repeats at once; while held
+    /// (not freshly triggered) the count rises and the held time
+    /// (`0x025d0a00 + 4k`) adds the time since the last frame
+    /// (`0x025d0a40 + 4k`, from `inputGetCurTime`); past 0.2333 s it
+    /// repeats and restarts at 0.1333 s with count 4; a released button
+    /// resets both. The chosen set is copied to the other; the control
+    /// flag is cleared.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // `mov word`
+    pub fn get_pad_status<M: Mem>(mem: &mut M, calls: &mut impl PadInput<M>) {
+        use ffx_bridge::x87::{add, sub};
+        let base = mem.rebase(0x025d_09c0);
+        let w = |off: u32| base.wrapping_add(off);
+        let prev_alt: u16 = mem.read(w(0x22));
+        let prev: u16 = mem.read(w(0x12));
+        let t = dword(calls.cur_time(mem));
+        mem.write(w(0x12), 0u32);
+        mem.write(w(0x16), 0u16);
+        mem.write(w(0x22), 0u32);
+        mem.write(w(0x26), 0u16);
+        if mem.read::<u8>(w(1)) == 0 && mem.read::<u8>(w(0)) == 0 {
+            return;
+        }
+        let h = calls.hist(mem, 0, 0, 0) as u16;
+        mem.write(w(0x12), h);
+        mem.write(w(0x14), (h ^ prev) & h);
+        let sx = calls.analog(mem, 0, 0, 2, 0) as u8;
+        mem.write(w(0x1e), sx);
+        let sy = calls.analog(mem, 0, 0, 3, 0) as u8;
+        let held: u16 = mem.read(w(0x12));
+        mem.write(w(0x1f), sy);
+        let mut alt = held & 0xfff;
+        mem.write(w(0x22), alt);
+        for (on, bit) in [(sy < 0x18, 0x1000u16), (sy > 0xe8, 0x4000)] {
+            if on {
+                alt |= bit;
+                mem.write(w(0x22), alt);
+            }
+        }
+        let sx: u8 = mem.read(w(0x1e));
+        for (on, bit) in [(sx < 0x18, 0x8000u16), (sx > 0xe8, 0x2000)] {
+            if on {
+                alt |= bit;
+                mem.write(w(0x22), alt);
+            }
+        }
+        mem.write(w(0x24), (alt ^ prev_alt) & alt);
+        let (held_at, trg_at, rep_at) = if held & 0xf000 == 0 {
+            (w(0x22), w(0x24), w(0x26))
+        } else {
+            (w(0x12), w(0x14), w(0x16))
+        };
+        let limit = 0.233_333_319_425_582_89;
+        let restart = f64::from(f32::from_bits(0x3e08_8888));
+        for k in 0..16u32 {
+            let bit = 1u16 << k;
+            if bit == 0x800 || bit == 0x100 {
+                continue;
+            }
+            let cnt_at = w(2 + k);
+            let acc_at = mem.rebase(0x025d_0a00).wrapping_add(4 * k);
+            let last_at = mem.rebase(0x025d_0a40).wrapping_add(4 * k);
+            let or_rep = |mem: &mut M| {
+                let r: u16 = mem.read(rep_at);
+                mem.write(rep_at, r | bit);
+            };
+            let mut skip = false;
+            if mem.read::<u16>(trg_at) & bit != 0 {
+                if mem.read::<u8>(cnt_at) == 0 {
+                    or_rep(mem);
+                }
+                skip = mem.read::<u16>(trg_at) & bit != 0;
+            }
+            if !skip {
+                let c: u8 = mem.read(cnt_at);
+                mem.write(cnt_at, c.wrapping_add(1));
+                let last = f64::from(mem.read::<f32>(last_at));
+                let acc = f64::from(mem.read::<f32>(acc_at));
+                mem.write(acc_at, dword(add(sub(t, last), acc)) as f32);
+            }
+            if mem.read::<u16>(held_at) & bit == 0 {
+                mem.write(cnt_at, 0u8);
+                mem.write(acc_at, 0f32);
+            }
+            if f64::from(mem.read::<f32>(acc_at)) > limit {
+                or_rep(mem);
+                mem.write(cnt_at, 4u8);
+                mem.write(acc_at, restart as f32);
+            }
+            mem.write(last_at, t as f32);
+        }
+        let held: u16 = mem.read(w(0x12));
+        if held & 0xf000 == 0 {
+            for off in [0x12u32, 0x14, 0x16] {
+                let v: u16 = mem.read(w(off + 0x10));
+                mem.write(w(off), v);
+            }
+        } else {
+            mem.write(w(0x22), held);
+            for off in [0x14u32, 0x16] {
+                let v: u16 = mem.read(w(off));
+                mem.write(w(off + 0x10), v);
+            }
+        }
+        mem.write(w(0), 0u8);
+    }
+
+    /// `TOMenuGetPadStatus()` (`0x008be500`): the menu's pad words (as
+    /// [`get_pad_status`]'s: `0x025d09d2` held, triggered, repeated, then
+    /// `+6..+0xa` the same of both pads, `TkGetControler*Hist(0, 0, 0)`
+    /// with `(0, 0, -1)` OR-ed in). With the dummy controller on
+    /// (`TkMenuGetDummyControlerFlag`, flushed first) they come from the
+    /// dummy (`TkMenuGetDummyControler`/`T`/`R`, sticks
+    /// `TOMenuGetDummyAnalogControler`) and nothing more happens. Else the
+    /// stick-made d-pad set (`0x025d09e2`) is built and repeats: a fresh
+    /// press at once, then after 0.4667 s, again every 0.1667 s (restart
+    /// 0.3, count 9). Calls go through `call(sym, args)`; the time is
+    /// `inputGetCurTime` (`time`).
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // `mov word`
+    pub fn menu_get_pad_status<M: Mem>(
+        mem: &mut M,
+        time: impl FnOnce(&mut M) -> f64,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, sub};
+        let base = mem.rebase(0x025d_09c0);
+        let w = |off: u32| base.wrapping_add(off);
+        let prev_alt: u16 = mem.read(w(0x22));
+        let t = dword(time(mem));
+        mem.write(w(0x12), 0u32);
+        mem.write(w(0x16), 0u16);
+        mem.write(w(0x22), 0u32);
+        mem.write(w(0x26), 0u16);
+        if call(mem, 0x008c_a510, &[]) == 1 {
+            call(mem, 0x008c_a490, &[]);
+        }
+        if call(mem, 0x008c_a510, &[]) == 1 {
+            for (sym, a, b) in [
+                (0x008c_a500u32, 0x12u32, 0x18u32),
+                (0x008c_a530, 0x14, 0x1a),
+                (0x008c_a520, 0x16, 0x1c),
+            ] {
+                let v = call(mem, sym, &[]) as u16;
+                mem.write(w(a), v);
+                let v = call(mem, sym, &[]) as u16;
+                mem.write(w(b), v);
+            }
+            let v = call(mem, 0x008c_a320, &[2]) as u8;
+            mem.write(w(0x1e), v);
+            let v = call(mem, 0x008c_a320, &[3]) as u8;
+            mem.write(w(0x1f), v);
+            return;
+        }
+        let (hist, trig, rept) = (0x0088_8d70u32, 0x0088_8e80u32, 0x0088_8e50u32);
+        for (sym, off) in [(hist, 0x12u32), (trig, 0x14), (rept, 0x16)] {
+            let v = call(mem, sym, &[0, 0, 0]) as u16;
+            mem.write(w(off), v);
+        }
+        for (sym, off) in [(hist, 0x18u32), (trig, 0x1a), (rept, 0x1c)] {
+            let v = call(mem, sym, &[0, 0, 0]) as u16;
+            mem.write(w(off), v);
+            let v2 = call(mem, sym, &[0, 0, u32::MAX]) as u16;
+            let cur: u16 = mem.read(w(off));
+            mem.write(w(off), cur | v2);
+        }
+        let sx = call(mem, 0x0088_8c20, &[0, 0, 2, 0]) as u8;
+        mem.write(w(0x1e), sx);
+        let sy = call(mem, 0x0088_8c20, &[0, 0, 3, 0]) as u8;
+        let held: u16 = mem.read(w(0x12));
+        mem.write(w(0x1f), sy);
+        let mut alt = held & 0xfff;
+        mem.write(w(0x22), alt);
+        for (on, bit) in [(sy < 0x18, 0x1000u16), (sy > 0xe8, 0x4000)] {
+            if on {
+                alt |= bit;
+                mem.write(w(0x22), alt);
+            }
+        }
+        let sx: u8 = mem.read(w(0x1e));
+        for (on, bit) in [(sx < 0x18, 0x8000u16), (sx > 0xe8, 0x2000)] {
+            if on {
+                alt |= bit;
+                mem.write(w(0x22), alt);
+            }
+        }
+        mem.write(w(0x24), (alt ^ prev_alt) & alt);
+        let limit = 0.466_666_638_851_165_77;
+        let restart = f64::from(f32::from_bits(0x3e99_9999));
+        for k in 0..16u32 {
+            let bit = 1u16 << k;
+            if bit == 0x800 || bit == 0x100 {
+                continue;
+            }
+            let cnt_at = w(2 + k);
+            let acc_at = mem.rebase(0x025d_0a00).wrapping_add(4 * k);
+            let last_at = mem.rebase(0x025d_0a40).wrapping_add(4 * k);
+            let or_rep = |mem: &mut M| {
+                let r: u16 = mem.read(w(0x26));
+                mem.write(w(0x26), r | bit);
+            };
+            let pressed = mem.read::<u16>(w(0x24)) & bit;
+            if pressed != 0 && mem.read::<u8>(cnt_at) == 0 {
+                or_rep(mem);
+            }
+            if pressed == 0 {
+                let c: u8 = mem.read(cnt_at);
+                mem.write(cnt_at, c.wrapping_add(1));
+                let last = f64::from(mem.read::<f32>(last_at));
+                let acc = f64::from(mem.read::<f32>(acc_at));
+                mem.write(acc_at, dword(add(sub(t, last), acc)) as f32);
+            }
+            if mem.read::<u16>(w(0x22)) & bit == 0 {
+                mem.write(cnt_at, 0u8);
+                mem.write(acc_at, 0f32);
+            }
+            if f64::from(mem.read::<f32>(acc_at)) > limit {
+                or_rep(mem);
+                mem.write(cnt_at, 9u8);
+                mem.write(acc_at, restart as f32);
+            }
+            mem.write(last_at, t as f32);
+        }
+    }
+
+    /// The kernel accessors at `0x00771c30..=0x007724f0` (one per menu
+    /// field, reached through a table): `MsGetSaveCommand(chr, cmd)` for a
+    /// fixed command (through `call`).
+    pub fn kernel_save_command<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        cmd: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0078_5020, &[chr, cmd])
+    }
+
+    /// A kernel accessor: the word at `off` of `MsGetSavePlayerPtr(chr)`.
+    pub fn kernel_player_word<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        off: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let p = call(mem, 0x0077_6f50, &[chr]);
+        mem.read(p.wrapping_add(off))
+    }
+
+    /// A kernel accessor: `Kernel_GetAbilityName` of the `u16` at `off` of
+    /// record `i` (0x1d8 bytes each) of the table `*0x0112a034`.
+    pub fn kernel_slot_ability_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        off: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        let id =
+            u32::from(mem.read::<u16>(table.wrapping_add(i.wrapping_mul(0x1d8)).wrapping_add(off)));
+        call(mem, 0x0077_4720, &[id])
+    }
+
+    /// A kernel accessor that only forwards to `f` (a tail call).
+    pub fn kernel_forward<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        arg: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, f, &[arg])
+    }
 }
