@@ -4564,4 +4564,18 @@ pub mod bridge {
         }
         (idx & !0xff) | u32::from(v)
     }
+
+    /// `0x00872a00()`: 1 when the previous level's name hash
+    /// (`graphicPreviousLevelGetNameHash`, through `call`) is 0x1d58, or
+    /// when bits 0-1 of byte `+3` of `*0x01326b28` are 1; else 0.
+    pub fn previous_level_check<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if call(mem, 0x0064_27e0, &[]) == 0x1d58 {
+            return 1;
+        }
+        let p: u32 = mem.read(mem.rebase(0x0132_6b28));
+        u32::from(mem.read::<u8>(p.wrapping_add(3)) & 3 == 1)
+    }
 }

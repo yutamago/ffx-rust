@@ -5656,6 +5656,24 @@ ported! {
     KernelSetEventBit_00773880 @ 0x0077_3880 => extern "C" fn kernel_set_event_bit(n: u32, on: u32) -> u32 {
         tolib::bridge::kernel_set_event_bit(&mut mem(), n, on, call_sym)
     }
+    /// `MagicFile_Stop()`.
+    MagicFile_Stop @ 0x009d_a880 => extern "C" fn magic_file_stop() -> u32 {
+        menu::bridge::magic_file_stop(&mut mem(), call_sym, |m, fmt, arg| {
+            menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, arg);
+        })
+    }
+    /// `MagicFile_SetAsyncLoad()`.
+    MagicFile_SetAsyncLoad @ 0x009d_afe0 => extern "C" fn magic_file_set_async_load() -> u32 {
+        menu::bridge::magic_file_async_load(&mut mem(), call_sym)
+    }
+    /// `MagicFile_ResetPreloaded()`.
+    MagicFile_ResetPreloaded @ 0x009d_adc0 => extern "C" fn magic_file_reset_preloaded() -> u32 {
+        menu::bridge::magic_file_reset_preloaded(&mut mem())
+    }
+    /// `CheckPreviousLevel_00872a00()`.
+    CheckPreviousLevel_00872a00 @ 0x0087_2a00 => extern "C" fn check_previous_level() -> u32 {
+        tolib::bridge::previous_level_check(&mut mem(), call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
