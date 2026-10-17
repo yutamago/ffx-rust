@@ -1439,6 +1439,10 @@ ported! {
     Cam_SetScreenCameraOn @ 0x007b_c930 => extern "C" fn cam_set_screen_camera_on(screen: u32, on: u32) {
         camera::bridge::set_screen_camera_on(&mut mem(), screen, ffx_sg::lo8(on));
     }
+    /// `Cam_SetScreenCamera(screen, on, camera)`.
+    Cam_SetScreenCamera @ 0x007b_c950 => extern "C" fn cam_set_screen_camera(screen: u32, on: u32, camera: u32) {
+        camera::bridge::set_screen_camera(&mut mem(), screen, ffx_sg::lo8(on), ffx_sg::lo8(camera));
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

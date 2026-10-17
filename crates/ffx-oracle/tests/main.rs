@@ -4959,6 +4959,22 @@ fn screen_camera_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, round
                 c::set_screen_camera_on(m, screen, ffx_sg::lo8(on));
             },
         );
+        let cam = rng.next();
+        let screen = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(5)
+        };
+        twin(
+            "Cam_SetScreenCamera",
+            a,
+            b,
+            0x007b_c950,
+            &[screen, on, cam],
+            |m| {
+                c::set_screen_camera(m, screen, ffx_sg::lo8(on), ffx_sg::lo8(cam));
+            },
+        );
     }
 }
 

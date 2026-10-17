@@ -717,4 +717,5 @@ a byte at `+0xc0` (the screen views one of the battle cameras; the
 screen's per-frame code then sets `g_Camera` to `g_Cameras + 0xda0 n`)
 and the camera `n` at `+0xc1` (`g_DebugCamera` for screen 0).
 `Cam_SetScreenCameraOn(screen, on)` (`0x007bc930`) sets the first for
-screens 0..2 and ignores the others.
+screens 0..2 and ignores the others; `Cam_SetScreenCamera(screen, on,
+camera)` (`0x007bc950`) sets both.

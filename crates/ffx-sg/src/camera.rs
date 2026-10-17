@@ -60,6 +60,17 @@ pub mod bridge {
         }
     }
 
+    /// `Cam_SetScreenCamera(screen, on, camera)` (`0x007bc950`): the
+    /// screen's camera byte (`+0xc0`) and camera (`+0xc1`) for screens
+    /// 0..=2, the others ignored.
+    pub fn set_screen_camera(mem: &mut impl Mem, screen: u32, on: u8, camera: u8) {
+        if screen <= 2 {
+            let at = mem.rebase(SCREENS) + SCREEN_SIZE * screen;
+            mem.write(at + SCREEN_CAMERA_ON, on);
+            mem.write(at + SCREEN_CAMERA, camera);
+        }
+    }
+
     fn bits(x: f32) -> u32 {
         x87::round_trip(x).to_bits()
     }
