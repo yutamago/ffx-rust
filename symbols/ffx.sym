@@ -188,6 +188,7 @@
 0x00441240 function Phyre_PCluster_deleteObject # fh v3:exact 0x00441310 Phyre::PCluster::deleteObject
 0x00441620 function Phyre_PCluster_fixupInstances # fh v3:exact 0x004416f0 Phyre::PCluster::fixupInstances
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
+0x00441dc0 function PhyreSceneCursor_SetNode  # structure: thiscall(cursor, node), ret 4: cursor words from the node (+0x34, +0x8, +0x3c count, +0x2c's +0x1c stride and +0x8c), skipping while +4 == +0; the cursor steps' set-up; name ours
 0x00441f20 function Phyre_PCluster_resolveAssetReferences # fh v3:exact 0x00441ff0 Phyre::PCluster::resolveAssetReferences
 0x004429e0 function Phyre_PWorld_PWorld       # fh v3:exact 0x00442ab0 Phyre::PWorld::PWorld
 0x00442e30 function Phyre_PWorld_Bind         # fh v3:cg4 0x442f00 Phyre::PWorld::Bind
@@ -1871,6 +1872,7 @@
 0x00644ca0 function graphicVFXAddDrawCharacterEvent # layout: alphabetical run between graphicVFX2DUpdate and graphicVFXAddScreenFadeEvent (6 unnamed in the gap); Switch 0x71001cea50 graphicVFXAddDrawCharacterEvent is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00644cf0 function graphicVFXAddDrawZPrePassEvent # layout: alphabetical run between graphicVFX2DUpdate and graphicVFXAddScreenFadeEvent (6 unnamed in the gap); Switch 0x71001ceaa0 graphicVFXAddDrawZPrePassEvent is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00644d40 function graphicVFXAddScreenFadeEvent # fh v3:exact 0x00644ef0
+0x00644db0 function graphicVFXUpdateType4     # structure: cdecl(lo, hi): graphicVFXUpdateWithType(lo, hi, 4), as graphicGuidemapUpdate does with 3; name ours
 0x00644de0 function graphicVFXCreate          # fh call.cs cdecl
 0x00645040 function graphicVFXCreateDataBuffer # fh v3:exact 0x006451f0
 0x00645280 function graphicVFXDestroy         # fh v3:exact+call.cs 0x00645430 cdecl
@@ -2049,6 +2051,14 @@
 0x0065e650 function PhyreScene_GetField0dd8 # thiscall(this): u32 at +0xdd8; name ours
 0x0065e660 function PhyreScene_getViewProjectionMatrix # fh v3:exact 0x0065e7e0 PhyreScene::getViewProjectionMatrix
 0x0065e9e0 function PhyreScene_getYIQParam    # fh v3:exact 0x0065eb60 PhyreScene::getYIQParam
+0x0065eaf0 function PhyreSceneCursor_Seek1    # structure: fastcall(cursor): unless PhyreCursor_IsValid (0x00660240), steps +0x18 to *node (0 at the end node +0x14) until valid; then PhyreSceneCursor_SetNode, or the first five words cleared; name ours
+0x0065ebd0 function PhyreSceneCursor_Seek2    # structure: as PhyreSceneCursor_Seek1 with the check 0x006602a0; name ours
+0x0065ec40 function PhyreSceneCursor_Seek3    # structure: as PhyreSceneCursor_Seek1 with the check 0x006602d0; name ours
+0x0065ecb0 function PhyreSceneCursor_Seek4    # structure: as PhyreSceneCursor_Seek1 with the check 0x00660300; name ours
+0x0065ed20 function PhyreSceneCursor_Next1    # structure: as PhyreSceneCursor_Seek1 but steps before the first check (0x00660240); name ours
+0x0065ed80 function PhyreSceneCursor_Next2    # structure: as PhyreSceneCursor_Next1 with the check 0x00660270; name ours
+0x0065ede0 function PhyreSceneCursor_Next3    # structure: as PhyreSceneCursor_Next1 with the check 0x006602a0; name ours
+0x0065ee40 function PhyreSceneCursor_Next4    # structure: as PhyreSceneCursor_Next1 with the check 0x00660300; name ours
 0x0065f050 function PhyreScene_hide2DLayer    # fh v3:exact 0x0065f1d0 PhyreScene::hide2DLayer
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene

@@ -1040,6 +1040,80 @@ ported! {
     PhyreFIOS_LoadPrxIdle @ 0x006f_9b80 => extern "C" fn prx_idle() -> u32 {
         ut::prx_idle(&mem())
     }
+
+    // ---- round 8 ----
+    /// `graphicCameraSetWorldMatrixSub(view, on)`.
+    graphicCameraSetWorldMatrixSub @ 0x0063_9b30 => extern "C" fn graphic_camera_set_world_matrix_sub(view: u32, on: u32) {
+        st::camera_set_world_matrix_sub(&mut mem(), view, on);
+    }
+    /// `graphicMinimapCameraSetWorldMatrix(view)`.
+    graphicMinimapCameraSetWorldMatrix @ 0x0064_2410 => extern "C" fn graphic_minimap_camera_set_world_matrix(view: u32) {
+        st::minimap_camera_set_world_matrix(&mut mem(), view);
+    }
+    /// `graphicCameraSetFOVy(&v)`.
+    graphicCameraSetFOVy @ 0x0063_95e0 => extern "C" fn graphic_camera_set_fovy(v: u32) -> u32 {
+        st::camera_set_from_ptr(&mut mem(), st::SCENE_SET_CAMERA_FOVY, v)
+    }
+    /// `graphicCameraSetAspectRatio(&v)`.
+    graphicCameraSetAspectRatio @ 0x0063_95c0 => extern "C" fn graphic_camera_set_aspect_ratio(v: u32) -> u32 {
+        st::camera_set_from_ptr(&mut mem(), st::SCENE_SET_CAMERA_ASPECT_RATIO, v)
+    }
+    /// `graphicObjectSetTranslation(id, pos)`.
+    graphicObjectSetTranslation @ 0x0064_26c0 => extern "C" fn graphic_object_set_translation(id: u32, pos: u32) -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_SET_OBJECT_TRANSLATION, &[id, pos])
+    }
+    /// `graphic2DHideLayer(id)`.
+    graphic2DHideLayer @ 0x0063_8f30 => extern "C" fn graphic_2d_hide_layer(id: u32) {
+        st::scene_call(&mut mem(), st::SCENE_HIDE_2D_LAYER, &[id]);
+    }
+    /// `graphic2DShowLayer(id)`.
+    graphic2DShowLayer @ 0x0063_8f60 => extern "C" fn graphic_2d_show_layer(id: u32) {
+        st::scene_call(&mut mem(), st::SCENE_SHOW_2D_LAYER, &[id]);
+    }
+    /// `graphicVFXUpdateType4(lo, hi)`: `graphicVFXUpdateWithType(lo, hi, 4)`.
+    graphicVFXUpdateType4 @ 0x0064_4db0 => extern "C" fn graphic_vfx_update_type4(lo: u32, hi: u32) {
+        vfx::bridge::update_with_type(&mut mem(), lo, hi, 4);
+    }
+    /// `graphicCharacterInstanceSetWorldMatrix(list, m)`.
+    graphicCharacterInstanceSetWorldMatrix @ 0x0063_c3e0 => extern "C" fn graphic_character_set_world_matrix(list: u32, m: u32) {
+        st::character_set_world_matrix(&mut mem(), list, m);
+    }
+    /// `graphicCharacterInstanceSetWorldMatrixByMdlID(list, m, id)`.
+    graphicCharacterInstanceSetWorldMatrixByMdlID @ 0x0063_c430 => extern "C" fn graphic_character_set_world_matrix_by_mdl_id(list: u32, m: u32, id: u32) {
+        st::character_set_world_matrix_by_mdl_id(&mut mem(), list, m, id);
+    }
+    /// `PhyreSceneCursor_Seek1(this)`.
+    PhyreSceneCursor_Seek1 @ 0x0065_eaf0 => extern "fastcall" fn scene_cursor_seek1(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Seek2(this)`.
+    PhyreSceneCursor_Seek2 @ 0x0065_ebd0 => extern "fastcall" fn scene_cursor_seek2(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Seek3(this)`.
+    PhyreSceneCursor_Seek3 @ 0x0065_ec40 => extern "fastcall" fn scene_cursor_seek3(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Seek4(this)`.
+    PhyreSceneCursor_Seek4 @ 0x0065_ecb0 => extern "fastcall" fn scene_cursor_seek4(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Next1(this)`.
+    PhyreSceneCursor_Next1 @ 0x0065_ed20 => extern "fastcall" fn scene_cursor_next1(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next2(this)`.
+    PhyreSceneCursor_Next2 @ 0x0065_ed80 => extern "fastcall" fn scene_cursor_next2(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next3(this)`.
+    PhyreSceneCursor_Next3 @ 0x0065_ede0 => extern "fastcall" fn scene_cursor_next3(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next4(this)`.
+    PhyreSceneCursor_Next4 @ 0x0065_ee40 => extern "fastcall" fn scene_cursor_next4(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
 }
 
 /// A singleton's pointer.

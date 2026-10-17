@@ -631,9 +631,6 @@ pub mod bridge {
     /// (`0x0063c430`): every mesh one of whose segments (`0x6c` bytes,
     /// the id at `+0x18`) has model id `id` gets the world matrix (once per
     /// matching segment); with none, mesh number `id` when there is one.
-    /// After a match the original compares the mesh's remaining segments
-    /// at the same offsets from the segment table's holder instead of the
-    /// table (a reloaded register); kept.
     pub fn character_set_world_matrix_by_mdl_id(h: &mut impl Host, list: u32, mat: u32, id: u32) {
         if list == 0 {
             return;
@@ -645,9 +642,9 @@ pub mod bridge {
             let mesh: u32 = h.read(items + 4 * i);
             let holder: u32 = h.read(mesh);
             let n = h.read::<u32>(holder) & 0x7fff_ffff;
-            let mut base: u32 = h.read(holder + 4);
             for k in 0..n {
-                if h.read::<u32>(base.wrapping_add(0x6c * k + 0x18)) == id {
+                let table: u32 = h.read(holder + 4);
+                if h.read::<u32>(table.wrapping_add(0x6c * k + 0x18)) == id {
                     let items: u32 = h.read(list + 4);
                     let mesh: u32 = h.read(items + 4 * i);
                     found = true;
@@ -656,7 +653,6 @@ pub mod bridge {
                         Conv::Stdcall,
                         &[mesh, mat],
                     );
-                    base = holder;
                 }
             }
             i += 1;

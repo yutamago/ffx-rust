@@ -553,6 +553,45 @@ Round 7:
   `ReturnGlobalSx8_006bc960`, `Compare_006f9b70` (PRX state 3); the
   render bridges for them stay and their parity test with them.
 
+Round 8:
+
+- Cameras: `graphicCameraSetWorldMatrixSub(view, on)` (`0x00639b30`)
+  sends the view, converted as by `graphicCameraSetWorldMatrix` but
+  without its zero-row and skipped-frame checks, to the alternative camera
+  matrix (`PhyreScene_setCameraWorldMatrix(m, 1)`), or with `on` 0 just
+  clears `+0xfaa1`; `graphicMinimapCameraSetWorldMatrix(view)`
+  (`0x00642410`) does the same conversion for the minimap camera.
+  `graphicCameraSetFOVy`/`AspectRatio(&v)` (`0x006395e0`, `0x006395c0`)
+  pass a float by pointer to the scene setters.
+- Meshes: `graphicCharacterInstanceSetWorldMatrix(list, m)`
+  (`0x0063c3e0`) sets every mesh's world matrix;
+  `...ByMdlID(list, m, id)` (`0x0063c430`) sets it on each mesh once per
+  segment (`0x6c` bytes, model id `+0x18`) with that id, and with no match
+  on mesh number `id` if there is one.
+- Wrappers: `graphicObjectSetTranslation`, `graphic2DHideLayer`/`ShowLayer`,
+  `graphicVFXUpdateType4` (`0x00644db0`, type 4).
+- The scene's list cursors (`PhyreSceneCursor_Seek1..4`,
+  `0x0065eaf0`..`0x0065ecb0`, check first; `_Next1..4`,
+  `0x0065ed20`..`0x0065ee40`, step first): the node `+0x18` steps to
+  `*node` (0 at the end node `+0x14`) until `PhyreCursor_IsValid`, then
+  `PhyreSceneCursor_SetNode` (`0x00441dc0`), or the first five words are
+  cleared without a node.
+
+Classed logic but not ported, with the class I think fits (for the
+classifier): `0x0066e4f0` (trophy install, `TrophyManager_Install`:
+platform), `0x006590d0` (`std::string::compare`), `0x00636d60`
+(`std::map` range erase) and `0x0064fa50` (`_CxxThrowException`): `std`
+and CRT copies, platform; `0x0066c8a0` (an x-rotation matrix from
+`_CIsin`/`_CIcos`, whose results need the CRT's own routines), `0x006426e0`,
+`0x00698960`, `0x00638720` (shader-parameter writes into material
+buffers: glue); wrappers whose callee is glue: `0x00641cc0`
+(`PhyreScene_GetSplitScreenStat`), `0x006427c0`/`0x00645d90`
+(`PhyFMVPlayerManager`), `0x00638fd0` (`AbmapManager_GetVertexInfo`),
+`graphicAddScreenFadeTask` (`ScreenFadeDelegations_registerDelegation`),
+`graphicMagicSetPath`/`SetToBeDeletePath` (`Phyre_PString_Assign`
+setters); `0x006c56f0` (adds a VFX draw event from a stack struct with
+an uninitialised word) left for later.
+
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
 not atomic, and loader threads share strings, so it stays original.

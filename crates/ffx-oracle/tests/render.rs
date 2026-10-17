@@ -4446,3 +4446,170 @@ fn round7_matches_the_original() {
         }
     }
 }
+
+/// A scene list cursor for the cursor steps: `+0x14` the end node, `+0x18`
+/// the current node, `+0x1c` the node the validity check looks for (the
+/// list's nodes at `+0x2c`, linked at `+0x40`). Nodes are 0x60 bytes with
+/// the next node at `+0`.
+fn build_cursor(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let n = 1 + rng.below(5) as usize;
+    let nodes: Vec<u32> = (0..n).map(|_| t.alloc(&rng.bytes(0x60))).collect();
+    for k in 0..n {
+        let next = if k + 1 < n { nodes[k + 1] } else { 0 };
+        t.w32(nodes[k], next);
+        t.w32(nodes[k] + 0x40, if k + 1 < n { nodes[k + 1] } else { 0 });
+        let data = t.alloc(&rng.bytes(0x90));
+        t.w32(nodes[k] + 0x2c, data);
+    }
+    let cur = t.alloc(&rng.bytes(0x40));
+    let end = if rng.chance(3) {
+        nodes[rng.below(n as u32) as usize]
+    } else {
+        rng.next()
+    };
+    t.w32(cur + 0x14, end);
+    // validity: node +0x18 is the "list" (0 = valid), +0x1c the sought node
+    let start = if rng.chance(5) {
+        0
+    } else {
+        nodes[rng.below(n as u32) as usize]
+    };
+    t.w32(cur + 0x18, start);
+    // a node that ends the search: the last one, as a list with +0x40 set
+    let at = nodes[rng.below(n as u32) as usize];
+    t.w32(cur + 0x1c, at);
+    for &k in &nodes {
+        t.w32(k + 0x2c, nodes[0]);
+        if rng.chance(2) {
+            t.w32(k + 0x40, 0);
+        }
+    }
+    t.w32(nodes[n - 1] + 0x40, 0);
+    cur
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one case per function
+fn round8_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x8008_0008);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 6 {
+            0 => {
+                let scene = build_scene(&mut t, &mut rng);
+                let view: Vec<u8> = (0..16)
+                    .flat_map(|_| (rng.below(2000) as f32 / 100.0 - 10.0).to_le_bytes())
+                    .collect();
+                let view = t.alloc(&view);
+                if rng.chance(2) {
+                    let on = u32::from(!rng.chance(4));
+                    t.check(&what, 0x0063_9b30, Conv::Cdecl, &[view, on], |g| {
+                        st::camera_set_world_matrix_sub(g, view, on);
+                        Out::None
+                    });
+                } else {
+                    let camera = if rng.chance(4) {
+                        0
+                    } else {
+                        t.alloc(&rng.bytes(0x100))
+                    };
+                    t.w32(scene + 0x654, camera);
+                    t.stub_sym(st::CAMERA_UPDATE_VIEW, Conv::Thiscall(0), 0, rng.next());
+                    t.check(&what, 0x0064_2410, Conv::Cdecl, &[view], |g| {
+                        st::minimap_camera_set_world_matrix(g, view);
+                        Out::None
+                    });
+                }
+            }
+            1 => {
+                build_scene(&mut t, &mut rng);
+                let (sym, method, n) = [
+                    (0x0063_95e0, st::SCENE_SET_CAMERA_FOVY, 1),
+                    (0x0063_95c0, st::SCENE_SET_CAMERA_ASPECT_RATIO, 1),
+                ][rng.below(2) as usize];
+                t.stub_sym(method, Conv::Thiscall(0), n, rng.next());
+                let v = t.alloc(&float_bytes(&mut rng, 1));
+                t.check(&what, sym, Conv::Cdecl, &[v], |g| {
+                    Out::U32(st::camera_set_from_ptr(g, method, v))
+                });
+                let (sym, method, n) = [
+                    (0x0064_26c0, st::SCENE_SET_OBJECT_TRANSLATION, 2),
+                    (0x0063_8f30, st::SCENE_HIDE_2D_LAYER, 1),
+                    (0x0063_8f60, st::SCENE_SHOW_2D_LAYER, 1),
+                ][rng.below(3) as usize];
+                let ret = rng.next();
+                t.stub_sym(method, Conv::Thiscall(0), n, ret);
+                let args: Vec<u32> = (0..n).map(|_| rng.next()).collect();
+                t.check(&what, sym, Conv::Cdecl, &args, |g| {
+                    Out::U32(st::scene_call(g, method, &args))
+                });
+            }
+            2 | 3 => {
+                build_scene(&mut t, &mut rng);
+                t.stub_sym(
+                    st::SCENE_SET_MESH_INSTANCE_WORLD_MATRIX,
+                    Conv::Stdcall,
+                    2,
+                    rng.next(),
+                );
+                let n = rng.below(4);
+                let mut items = Vec::new();
+                for _ in 0..n {
+                    let segs = 1 + rng.below(4);
+                    let table = t.alloc(&rng.bytes(0x6c * segs as usize + 0x20));
+                    for k in 0..segs {
+                        t.w32(table + 0x6c * k + 0x18, rng.below(4));
+                    }
+                    let holder = t.alloc(&rng.bytes(0x6c * 4 + 0x20));
+                    t.w32(holder, segs | (rng.next() & 0x8000_0000));
+                    t.w32(holder + 4, table);
+                    let mesh = t.zeros(0x20);
+                    t.w32(mesh, holder);
+                    items.extend(mesh.to_le_bytes());
+                }
+                let items = t.alloc(&items);
+                let list = if rng.chance(8) { 0 } else { t.zeros(0x20) };
+                if list != 0 {
+                    t.w32(list, n | (rng.next() & 0x8000_0000));
+                    t.w32(list + 4, items);
+                }
+                let m = rng.next();
+                if round % 6 == 2 {
+                    t.check(&what, 0x0063_c3e0, Conv::Cdecl, &[list, m], |g| {
+                        st::character_set_world_matrix(g, list, m);
+                        Out::None
+                    });
+                } else {
+                    let id = rng.below(6);
+                    t.check(&what, 0x0063_c430, Conv::Cdecl, &[list, m, id], |g| {
+                        st::character_set_world_matrix_by_mdl_id(g, list, m, id);
+                        Out::None
+                    });
+                }
+            }
+            _ => {
+                t.stub_sym(st::CURSOR_SET_NODE, Conv::Thiscall(0), 1, rng.next());
+                let cur = build_cursor(&mut t, &mut rng);
+                let (sym, seek) = [
+                    (0x0065_eaf0, true),
+                    (0x0065_ebd0, true),
+                    (0x0065_ec40, true),
+                    (0x0065_ecb0, true),
+                    (0x0065_ed20, false),
+                    (0x0065_ed80, false),
+                    (0x0065_ede0, false),
+                    (0x0065_ee40, false),
+                ][rng.below(8) as usize];
+                t.check(&what, sym, Conv::Fastcall, &[cur], |g| {
+                    Out::U32(st::cursor_step(g, cur, seek))
+                });
+            }
+        }
+    }
+}
