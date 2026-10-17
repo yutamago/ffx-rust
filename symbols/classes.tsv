@@ -1263,7 +1263,7 @@
 0x00645e60	glue	thin wrapper: only forwards to glue code (RenderDelegationHelper_registerDelegation)
 0x00645e90	dead	unreachable from the entry point and every pointer table
 0x00645eb0	logic	default (no rule: ported to be safe)
-0x00645f00	logic	default (no rule: ported to be safe)
+0x00645f00	glue	reviewed: setNearPlane: sets the PhyreScene camera near plane (menu round 15)
 0x00645f30	logic	default (no rule: ported to be safe)
 0x00645f50	logic	default (no rule: ported to be safe)
 0x006460a0	logic	default (no rule: ported to be safe)
@@ -12834,12 +12834,12 @@
 0x0088ce80	logic	default (no rule: ported to be safe)
 0x0088d120	logic	default (no rule: ported to be safe)
 0x0088d140	logic	default (no rule: ported to be safe)
-0x0088d190	logic	default (no rule: ported to be safe)
-0x0088d1c0	logic	default (no rule: ported to be safe)
+0x0088d190	platform	reviewed: TkCdReadNB: dispatches through the GetCD() object (menu round 15)
+0x0088d1c0	platform	reviewed: TkCdReadSync: dispatches through the GetCD() object (menu round 15)
 0x0088d1d0	logic	default (no rule: ported to be safe)
 0x0088d240	logic	default (no rule: ported to be safe)
 0x0088d2c0	logic	default (no rule: ported to be safe)
-0x0088d390	logic	default (no rule: ported to be safe)
+0x0088d390	platform	reviewed: TkCdSize: dispatches through the GetCD() object (menu round 15)
 0x0088d3d0	logic	default (no rule: ported to be safe)
 0x0088d4e0	logic	debug-sounding name, but used by logic: Sg_MainLoop
 0x0088d4f0	logic	default (no rule: ported to be safe)
@@ -12923,7 +12923,7 @@
 0x0088fab0	debug	debug name: TkSetDebugFontBuffer
 0x0088faf0	debug	debug name: TkSetDebugFontLocate
 0x0088fb10	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0088fb30	logic	default (no rule: ported to be safe)
+0x0088fb30	glue	reviewed: builds a GIF-tag sprite packet (menu round 15)
 0x0088fca0	logic	default (no rule: ported to be safe)
 0x0088fd50	logic	default (no rule: ported to be safe)
 0x0088ff70	logic	default (no rule: ported to be safe)
@@ -14589,7 +14589,7 @@
 0x008f8910	dead	unreachable from the entry point and every pointer table
 0x008f8940	dead	unreachable from the entry point and every pointer table
 0x008f8970	dead	unreachable from the entry point and every pointer table
-0x008f8bb0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008f8bb0	glue	GS packet API (TODrawSheetCell_008f8bb0): appends to or kicks a packet; replaced by ffx-render
 0x008f8d50	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008f8ee0	glue	GS packet API (TODrawScaleButtonIconRGBA): appends to or kicks a packet; replaced by ffx-render
 0x008f91f0	glue	GS packet API (TODrawScissor): appends to or kicks a packet; replaced by ffx-render

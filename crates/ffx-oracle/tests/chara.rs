@@ -7165,7 +7165,7 @@ fn round11f_on(t: &mut Twin) {
     let find = fk.fake(t, 0x0083_6f10, 7, 3);
     let battle = fk.fake(t, 0x0078_0c90, 8, 0);
     let c1 = fk.fake(t, 0x0086_c1c0, 9, 1);
-    let c2 = fk.fake(t, 0x0086_5890, 10, 1);
+    let c2 = fk.fake(t, 0x0086_5890, 10, 2);
     let c3 = fk.fake(t, 0x0082_a7f0, 11, 1);
     for round in 0..24u32 {
         fk.reset(t);
@@ -8449,6 +8449,273 @@ fn round13b_on(t: &mut Twin) {
             |m| {
                 c::ch_blk_dispose_all(m, &mut |m, f, a| call(m, f, a));
                 Res::Void
+            },
+        );
+    }
+}
+
+#[test]
+fn round14_matches_the_original() {
+    for mut t in twins() {
+        round14_on(&mut t);
+    }
+}
+
+/// `Sg_IdWalk` over a made-up strip of triangles (a 4 x 4 grid of
+/// vertices, two triangles per cell, neighbours across shared edges).
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+#[allow(clippy::many_single_char_names)]
+fn round14_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0014_0014);
+    let pop = t.b.rebase(FPU_POP);
+    let fk = Fakes::new(t);
+    let matches = fk.fake(t, 0x0083_e4e0, 1, 2);
+    let normal = t.alloc(16);
+    let stub = copy_stub(normal, None, 1);
+    fake_with(t, 0x0083_e130, &stub);
+    // Sg_IdGetHeight: fld dword [h]; ret
+    let h = t.alloc(4);
+    let mut c = vec![0xd9, 0x05];
+    c.extend(h.to_le_bytes());
+    c.push(0xc3);
+    fake_with(t, 0x0083_e040, &c);
+    let verts = t.alloc(8 * 16);
+    for j in 0..4i16 {
+        for i in 0..4i16 {
+            let v = verts + 8 * u32::try_from(4 * j + i).unwrap();
+            t.put(v, &(i * 100 - 150).to_le_bytes());
+            t.put(v + 2, &((rng.next() % 50) as i16).to_le_bytes());
+            t.put(v + 4, &(j * 100 - 150).to_le_bytes());
+        }
+    }
+    // cell (i, j): triangle 2c = (a, b, d), 2c + 1 = (a, d, e) with
+    // a = (i, j), b = (i + 1, j), d = (i + 1, j + 1), e = (i, j + 1)
+    let tris = t.alloc(16 * 18);
+    let tri = |i: i16, j: i16, k: i16| {
+        if (0..3).contains(&i) && (0..3).contains(&j) {
+            2 * (3 * j + i) + k
+        } else {
+            -1
+        }
+    };
+    for j in 0..3i16 {
+        for i in 0..3i16 {
+            let (a, b, d, e) = (
+                4 * j + i,
+                4 * j + i + 1,
+                4 * (j + 1) + i + 1,
+                4 * (j + 1) + i,
+            );
+            for (k, (vs, ns)) in [
+                (
+                    [a, b, d],
+                    [tri(i, j - 1, 1), tri(i + 1, j, 1), tri(i, j, 1)],
+                ),
+                (
+                    [a, d, e],
+                    [tri(i, j, 0), tri(i, j + 1, 0), tri(i - 1, j, 0)],
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let at = tris + 16 * u32::try_from(tri(i, j, i16::try_from(k).unwrap())).unwrap();
+                for (n, v) in (0u32..).zip(vs.iter().chain(ns.iter())) {
+                    t.put(at + 2 * n, &v.to_le_bytes());
+                }
+            }
+        }
+    }
+    t.put_u32(t.a.rebase(0x0130_1a84), tris);
+    t.put_u32(t.a.rebase(0x0130_1a8c), verts);
+    let depth = t.a.rebase(0x0130_1ae8);
+    let slack = t.a.rebase(0x0130_1af4);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        (rng.next() % u32::try_from(hi - lo).unwrap()) as f32 + lo as f32
+    };
+    for round in 0..96u32 {
+        fk.reset(t);
+        t.put_u32(matches, u32::from(rng.next().is_multiple_of(5)));
+        t.put_u32(
+            normal + 4,
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                0.5f32.to_bits()
+            },
+        );
+        t.put_u32(h, f(&mut rng, -10, 60).to_bits());
+        t.put_u32(slack, f(&mut rng, 0, 20).to_bits());
+        t.put_u32(depth, rng.next() % 12);
+        let chr = t.alloc(0x900);
+        for off in [0x3cu32, 0x44] {
+            t.put_u32(chr + off, f(&mut rng, -160, 160).to_bits());
+        }
+        t.put_u32(chr + 0x40, f(&mut rng, -10, 60).to_bits());
+        let p = t.alloc(16);
+        t.put_u32(p, f(&mut rng, -170, 170).to_bits());
+        t.put_u32(p + 8, f(&mut rng, -170, 170).to_bits());
+        let start = if round % 16 == 15 {
+            u32::MAX
+        } else {
+            rng.next() % 18
+        };
+        let scratch = t.alloc(p::ID_WALK_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_d960);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr, p, start]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |_: &mut Oracle, _: u32, _: &[f64]| f32::NAN;
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::sg_id_walk(&mut t.b, chr, p, start, scratch, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Sg_IdWalk {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::ID_WALK_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Sg_IdWalk {round} memory",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round14b_matches_the_original() {
+    for mut t in twins() {
+        round14b_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round14b_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0014_b14b);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let yet = fk.fake(t, 0x0083_ffe0, 1, 2);
+    let index = fk.fake(t, 0x0082_a640, 2, 1);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 3, 0x100);
+    let name = fk.fake(t, 0x0083_8100, 4, 1);
+    let section = fk.fake(t, 0x0083_8150, 5, 2);
+    // Sg_MemSetStr: the name (the caller's stack) copied out, then logged
+    let names = t.alloc(32);
+    let mut pre = vec![0x8b, 0x44, 0x24, 0x08];
+    for k in 0..8u8 {
+        pre.extend([0x8b, 0x48, 4 * k, 0x89, 0x0d]);
+        pre.extend((names + 4 * u32::from(k)).to_le_bytes());
+    }
+    let (set_code, set_str) = fk.fake_code_idxs(t, &pre, 6, &[0]);
+    let at = t.a.rebase(0x0083_c580);
+    let mut jmp = vec![0xe9];
+    jmp.extend(set_code.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    let entry = fk.fake(t, 0x0084_0560, 7, 3);
+    let not_yet = fk.fake(t, 0x0084_05f0, 8, 3);
+    let load = fk.fake(t, 0x0082_a1c0, 9, 4);
+    let add = fk.fake(t, 0x0083_7630, 10, 2);
+    let (size_code, size) = fk.fake_code(t, 11, 1);
+    let (file_code, file) = fk.fake_code(t, 12, 1);
+    let (read_code, read) = fk.fake_code(t, 13, 3);
+    t.put_u32(t.a.rebase(0x0231_0c54), size_code);
+    t.put_u32(t.a.rebase(0x0231_0c98), file_code);
+    t.put_u32(t.a.rebase(0x0231_0c40), read_code);
+    // Cache_Entry_RenderData: writes its two slot pointers and two words
+    let (slots, words) = (t.alloc(8), t.alloc(8));
+    let mut pre = vec![];
+    for (k, src) in [(3u8, slots), (4, slots + 4), (5, words), (6, words + 4)] {
+        // mov eax, [esp + 4k]; mov ecx, src (as a value); mov [eax], ecx
+        pre.extend([0x8b, 0x44, 0x24, 4 * k, 0x8b, 0x0d]);
+        pre.extend(src.to_le_bytes());
+        pre.extend([0x89, 0x08]);
+    }
+    let (render, _) = fk.fake_code_idxs(t, &pre, 14, &[0, 1]);
+    let at = t.a.rebase(0x0084_0680);
+    let mut jmp = vec![0xe9];
+    jmp.extend(render.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    let strs = t.alloc(32);
+    t.put(strs, b"c010\0\0\0\0chr\0");
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(yet, rng.next() % 4);
+        t.put_u32(
+            index,
+            if rng.next().is_multiple_of(5) {
+                u32::MAX
+            } else {
+                rng.next() % 64
+            },
+        );
+        t.put_u32(heap, 0x1200_0000 + 0x1000 * round);
+        t.put_u32(name, strs);
+        t.put_u32(section, strs + 8);
+        for r in [set_str, entry, not_yet, load, add, file, read] {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(
+            size,
+            if rng.next().is_multiple_of(5) {
+                0
+            } else {
+                rng.next() % 0x10000
+            },
+        );
+        let (a, b) = (t.alloc(4), t.alloc(4));
+        t.put_u32(a, rng.next());
+        t.put_u32(b, rng.next());
+        t.put_u32(slots, a);
+        t.put_u32(slots + 4, b);
+        t.put_u32(words, rng.next());
+        t.put_u32(words + 4, rng.next());
+        let id = rng.next() % 0x10000;
+        let scratch = t.alloc(sy::DATA_READ_SCRATCH as usize);
+        let at = t.a.rebase(0x0082_9ef0);
+        let ra = t.a.call(at, Conv::Cdecl, &[id]).unwrap();
+        let rb = sy::ch_data_read(&mut t.b, id, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_DataRead {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, sy::DATA_READ_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        // the copied name: only up to its NUL (the rest is either stack)
+        for o in [&mut t.a, &mut t.b] {
+            let mut n = Oracle::read(o, names, 32).unwrap();
+            if let Some(end) = n.iter().position(|&c| c == 0) {
+                n[end..].fill(0);
+            }
+            o.write(names, &n).unwrap();
+        }
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_DataRead {round} memory",
+            t.name
+        );
+        let req = t.alloc(0x20);
+        t.put_u32(req + 0xc, rng.next());
+        t.put_u32(req + 0x10, rng.next());
+        t.check(
+            &format!("Ch_RomReadEventMGRPcb {round}"),
+            0x0082_a7d0,
+            &[req],
+            |m| {
+                Res::Int(sy::ch_rom_read_event_mgrp_cb(m, req, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
             },
         );
     }

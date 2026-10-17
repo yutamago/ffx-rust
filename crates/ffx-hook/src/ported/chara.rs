@@ -1887,4 +1887,20 @@ ported! {
     Ch_BlkDisposeAll @ 0x0082_59c0 => extern "C" fn ch_blk_dispose_all() {
         c::ch_blk_dispose_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
     }
+    /// `Sg_IdWalk(chr, p, i)`.
+    Sg_IdWalk @ 0x0083_d960 => extern "C" fn sg_id_walk(chr: u32, p: u32, i: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::sg_id_walk(&mut mem(), chr, p, i, scratch(), &mut c)
+    }
+    /// `Ch_DataRead(id)`.
+    Ch_DataRead @ 0x0082_9ef0 => extern "C" fn ch_data_read(id: u32) -> u32 {
+        sy::ch_data_read(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RomReadEventMGRPcb(req)`.
+    Ch_RomReadEventMGRPcb @ 0x0082_a7d0 => extern "C" fn ch_rom_read_event_mgrp_cb(req: u32) -> u32 {
+        sy::ch_rom_read_event_mgrp_cb(&mut mem(), req, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

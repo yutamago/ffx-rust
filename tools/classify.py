@@ -103,6 +103,11 @@ REVIEWED = {
     0x00903a10: ("glue", "TOMkpShapeXY: packet emission (system round 22)"),
     0x00903b70: ("glue", "TOMkpShapeXYWHC2: packet emission (system round 22)"),
     0x006ef310: ("debug", "a single ret (no-op stub) (system round 22)"),
+    0x00645f00: ("glue", "setNearPlane: sets the PhyreScene camera near plane (menu round 15)"),
+    0x0088fb30: ("glue", "builds a GIF-tag sprite packet (menu round 15)"),
+    0x0088d1c0: ("platform", "TkCdReadSync: dispatches through the GetCD() object (menu round 15)"),
+    0x0088d190: ("platform", "TkCdReadNB: dispatches through the GetCD() object (menu round 15)"),
+    0x0088d390: ("platform", "TkCdSize: dispatches through the GetCD() object (menu round 15)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

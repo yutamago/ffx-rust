@@ -326,11 +326,26 @@ thread_local! {
         const { std::cell::UnsafeCell::new([0; SCRATCH_LEN as usize / 4]) };
 }
 
+/// Reports a call with more words than a game-side helper passes, on
+/// stderr, without panicking (a failed write is ignored).
+pub fn too_many_arguments(helper: &str, addr: u32, n: usize) {
+    use std::io::Write;
+    let _ = writeln!(
+        std::io::stderr(),
+        "{helper}: {n} arguments for {addr:#010x}, at most 6; not called"
+    );
+}
+
 #[cfg(target_pointer_width = "32")]
 impl Host for RawMem {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
         type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> u32;
-        assert!(args.len() <= 6, "at most six arguments");
+        // No panic here: a panic in a function the game calls ends the
+        // process. A longer list is a bridge bug: say so and fail the call.
+        if args.len() > 6 {
+            too_many_arguments("RawMem::call", addr, args.len());
+            return 0;
+        }
         let mut a = [0u32; 6];
         a[..args.len()].copy_from_slice(args);
         // SAFETY: the address is a cdecl function of the game taking at
