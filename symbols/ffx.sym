@@ -3932,7 +3932,19 @@
 0x0076e5e0 function read_err_disp_set         # (v): byte 0x01128a87 = v; Fahrenheit Switch BSim 1.00 0x710031ea70
 0x0076e630 function read_thread_init          # fh v3:bsim1.00 0x0076e740
 0x0076e640 function sa_read_callback          # fh v3:exact 0x0076e750
+0x0076e910 function Native_b000                # 0xb000 (start): args (movie int, flags int) -> start: args = flags, movie; graphicInitFMVPlayer(movie, 0), 0x006427c0(1), flags 0x2000 pauses at the end; int: 0, movie_start_prog(movie, flags) (0x0076f080); ported in native_chr (script round 12)
+0x0076e980 function Native_b000_Poll           # 0xb000 (poll): args (movie int, flags int) -> start: args = flags, movie; graphicInitFMVPlayer(movie, 0), 0x006427c0(1), flags 0x2000 pauses at the end; int: 0, movie_start_prog(movie, flags) (0x0076f080); ported in native_chr (script round 12)
+0x0076e990 function Native_b000_Result         # 0xb000: args (movie int, flags int) -> start: args = flags, movie; graphicInitFMVPlayer(movie, 0), 0x006427c0(1), flags 0x2000 pauses at the end; int: 0, movie_start_prog(movie, flags) (0x0076f080); ported in native_chr (script round 12)
 0x0076e9b0 function SetFieldConst0_0076e9b0      # auto-port shape (store constant to field, cdecl): u32[a1] = 0x0; return a1; callers: no direct caller; name ours
+0x0076e9c0 function Native_b001_Poll           # 0xb001 (poll): no args -> int: 0; the movie camera off (movie_have_camera), movie -1; ported in native_chr (script round 12)
+0x0076e9f0 function Native_b001_Result         # 0xb001: no args -> int: 0; the movie camera off (movie_have_camera), movie -1; ported in native_chr (script round 12)
+0x0076ea40 function Native_b003                # 0xb003: no args -> int: graphicGetCurrentFrame() (0x006410d0, a jump); ported in native_chr (script round 12)
+0x0076ea50 function Native_b004                # 0xb004 (start): no args -> start: graphicSetPauseVideoAtEndFrame(0); poll: 0x00643e50(), the movie camera off, movie -1, g_WaitFramesByTime 0, 1; int: graphicDestroyFmv(), 0; ported in native_chr (script round 12)
+0x0076ea60 function Native_b004_Poll           # 0xb004 (poll): no args -> start: graphicSetPauseVideoAtEndFrame(0); poll: 0x00643e50(), the movie camera off, movie -1, g_WaitFramesByTime 0, 1; int: graphicDestroyFmv(), 0; ported in native_chr (script round 12)
+0x0076eac0 function Native_b004_Result         # 0xb004: no args -> start: graphicSetPauseVideoAtEndFrame(0); poll: 0x00643e50(), the movie camera off, movie -1, g_WaitFramesByTime 0, 1; int: graphicDestroyFmv(), 0; ported in native_chr (script round 12)
+0x0076eb30 function Native_b009                # 0xb009 (start): no args -> int: 0; g_WaitFramesByTime 1, 0x006427c0(0), 0x0076edc0(); ported in native_chr (script round 12)
+0x0076eb40 function Native_b009_Poll           # 0xb009 (poll): no args -> int: 0; g_WaitFramesByTime 1, 0x006427c0(0), 0x0076edc0(); ported in native_chr (script round 12)
+0x0076eb60 function Native_b009_Result         # 0xb009: no args -> int: 0; g_WaitFramesByTime 1, 0x006427c0(0), 0x0076edc0(); ported in native_chr (script round 12)
 0x0076ece0 function destroyMoviePicture       # fh v3:exact 0x0076edf0
 0x0076ed70 function make_yi_font16               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impe'; Switch 0x7100322120 make_yi_font16 (symbols from Fahrenheit's server export)
 0x0076efa0 function movie_err                 # fh v3:bsim1.00 0x0076f0b0
@@ -7721,6 +7733,7 @@
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function AtelSetUpCallFunc         # (group, table); was Script_SetNativeTable
 0x008778f0 function AtelCall_Math_Ftoul_RI    # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI
+0x008779c0 function Native_1000                # 0x1000: args (slot int, a int, b int, v int) -> 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b); ported in native_chr (script round 12)
 0x00877a70 function AtelCall_Math_Sin_RF      # fh v3:cg2 0x8779f0 +AtelCall_Math_Sin_RF
 0x00877aa0 function AtelCall_Math_Cos_RF      # fh v3:cg2 0x877a20 +AtelCall_Math_Cos_RF
 0x00877ad0 function AtelCall_Math_Tan_RF      # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF
@@ -7728,7 +7741,11 @@
 0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF
 0x00877b70 function AtelCall_Math_Sqrt_RF     # 0x1006 float (x) -> sqrt(x); was Native_MathSqrt
 0x00877ba0 function AtelCall_Math_InvSqrt_RF  # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF
+0x00877d30 function Native_1013                # 0x1013 (float): args (v f) -> float: Math_WrapAngle(v) (0x0088bc20); ported in native_chr (script round 12)
 0x00877fd0 function AtelCall_Math_Abs_RF      # fh v3:exact 0x00877f50 +AtelCall_Math_Abs_RF
+0x00877ff0 function Native_101a                # 0x101a (float): args (x1 f, z1 f, x2 f, z2 f) -> float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps; ported in native_chr (script round 12)
+0x00878060 function Native_101b                # 0x101b (float): args (x1 f, y1 f, z1 f, x2 f, y2 f, z2 f) -> float: the 3D distance, as 0x101a; ported in native_chr (script round 12)
+0x00878330 function Native_c05b                # 0xc05b: args (v int) -> debug (mod-tool candidate): AtelPs2DebugString2("DEBUG:%d/%d" of the worker id +0x2e and v) (0x00873c80); v; debug, not ported (mod-tool candidate)
 0x008795b0 function AtelEventGetFilePath2     # fh v3:exact 0x00879530
 0x00879750 function AtelReturnTableU32_00879750  # auto-port shape (return table u32, cdecl): t0 = u32[((a0 * 0x4) + &0x01328598)]; return t0; callers: AtelEventSetUp; name ours
 0x00879760 function AtelGetEventName          # fh v3:exact+call.cs 0x008796e0 cdecl
@@ -10788,39 +10805,68 @@
 0x00a76720 function opp_part_a76720             # ours (g_MagicImports slot used by every overlay): (obj, cmd) kind 0 clears u16 rec+0xc0, kind 0x1000 calls 0x00a76770(obj, rec); returns cmd+2
 0x00a76b60 function opp_chr_fade_center_a76b60  # ours (g_MagicImports slot used by every overlay): (obj, cmd) on g_EtChrHandles[rec+0x18]: kind 0x1000 bone set 0x0080e160/0x0080e900, part matrices 0x008062c0, per bone the unit's +0x90 point through the inverse into graphicCharacterInstanceSetBTUFadeCenter (0x0063b5d0) / 1000; kind 0x2000 moves a unit by bone record 0x00803200; ported in crates/ffx-vfx slots
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
+0x00a77b90 function Native_4001                # 0x4001: args (v f) -> 0: Sg_SetSuimen(v) (0x00836640); ported in native_chr (script round 12)
 0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
 0x00a77d30 function Atel_Sg_Flash             # fh v3:bsim1.00 0x00a77d30 +Atel_Sg_Flash
 0x00a77d80 function Native_FadeIn                # 0x4004 (frames) -> 0; Screen_StartFade(frames, 1, 0): black overlay alpha n/total -> 0
 0x00a77da0 function Native_FadeOut               # 0x4005 (frames) -> 0; Screen_StartFade(frames, 0, 0): to black and held
+0x00a77dc0 function Native_4006                # 0x4006: args (v int) -> 0: Sg_Fade_Common(v, 1, 1); ported in native_chr (script round 12)
+0x00a77de0 function Native_4007                # 0x4007: args (v int) -> 0: Sg_Fade_Common(v, 0, 1) (0x0082cdc0); ported in native_chr (script round 12)
 0x00a77e00 function Native_MotionBlur            # 0x400a (strength, 0 = off) -> 0; 0x0082bee0: MotionBlur "BlendWeight" = n / 128 (0x00643730/0x00643750)
+0x00a77ed0 function Native_400c                # 0x400c: no args -> 0: 0x0082cc70(); ported in native_chr (script round 12)
 0x00a77ee0 function Native_FadeWait              # 0x400d start: empty
 0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls)
 0x00a78030 function Native_LightSet              # 0x4013 (light, r, g, b, pitch deg, yaw deg) -> 0; Light_Set 0x00836520
+0x00a780a0 function Native_4014                # 0x4014: args (v int) -> int: Sg_EnFocus(v) (0x0082cb60); ported in native_chr (script round 12)
+0x00a780c0 function Native_4015                # 0x4015: args (b int, a int) -> 0: Sg_SetFocus(b, a) (0x0082ce20); ported in native_chr (script round 12)
+0x00a780f0 function Native_4016                # 0x4016: args (i int, v f) -> 0: 0x0082d9e0(i, v); ported in native_chr (script round 12)
+0x00a78130 function Native_4017                # 0x4017: args (b int, a int) -> 0: Sg_IdSetMapTable(b, a) (0x0083e9e0); ported in native_chr (script round 12)
+0x00a78180 function Native_4019                # 0x4019: args (v int) -> 0: 0x0082bdf0(v); ported in native_chr (script round 12)
+0x00a781a0 function Native_401a                # 0x401a: args (b int, a int) -> 0: Sg_AccSetAlpha(b, a) (0x0082bd10); ported in native_chr (script round 12)
 0x00a78210 function CT_401D_init              # 0x401d start (menu id): "%d:sgMenu Init", Menu_Request 0x00821750, frame counter 0x022fb4d4 = 1; was Native_MenuOpen
 0x00a78270 function Native_MenuOpen_Poll         # 0x401d poll: "%d:sgMenu Exec", waits one frame (0x022fb4d4)
 0x00a782a0 function Native_MenuOpen_Result       # 0x401d int: "%d:sgMenu Result = %d" -> 0x012fbc3c
+0x00a782f0 function Native_4020                # 0x4020: no args -> 0: 0x00840e50(); ported in native_chr (script round 12)
+0x00a786a0 function Native_504c                # 0x504c: args (worker int, v int) -> 0: Ch_SetMotionSpeed(that worker's model, v) (0x0082b380); ported in native_chr (script round 12)
+0x00a78710 function Native_5050                # 0x5050: args (worker int, v int) -> 0: Ch_MotionSet737(that worker's model, v) (0x00837570); ported in native_chr (script round 12)
 0x00a78750 function Native_ChrGetMotionFrame     # 0x5051: no args -> current motion frame (chr +0x740, 8.8 fixed; the "frame=" of the CHRINFO debug view)
 0x00a78770 function Native_ChrSetMotion_5000     # 0x5000 (motion) -> 0; SG_SetMotion(worker model +0x9c, motion)
 0x00a787d0 function Native_ChrWaitMotion_5003    # 0x5003 start: no-op (reads the model)
 0x00a788a0 function Native_ChrWaitMotion_Poll_5003 # 0x5003 poll: done (5) when model +0x736 is 0 (?motion playing flag)
 0x00a78940 function Native_ChrReleaseMotion      # 0x5005: no args -> 0; Chr_ReleaseMotion: ends the scripted motion so the automatic stand/walk/run motions (0x75c table, 0x00835d30) take over
+0x00a78960 function Native_5054                # 0x5054: args (part int, on int) -> int: Ch_ModelSetHide(model, part, on) (0x0082aea0); 0 without a model; ported in native_chr (script round 12)
+0x00a78a40 function Native_5006                # 0x5006: args (scale f) -> 0: Ch_SetScaleAll(model, scale) (0x0082b590); ported in native_chr (script round 12)
+0x00a78a80 function Native_5056                # 0x5056: args (v int) -> int: Ch_SetCalcNorm(model, v) (0x00835750); 0 without a model; ported in native_chr (script round 12)
 0x00a78ac0 function Native_ChrHide               # 0x5008: args (hide 0/1) -> 0; sets/clears the "Ev" hide bit (chr +0x180 bit 0, Chr_SetHideFlags); map 0x21e8 forces 0 for model 0x108a
 0x00a78af0 function Native_ChrSetBoneUpdate      # 0x5057: args (worker, on) -> previous; chr +0x194 bit 0 of another worker's chr (0x00835750); ?bit 0 = recompute the skeleton every frame (0x00832110)
 0x00a78b30 function Native_ChrSetPushWeight      # 0x5009: args (weight float) -> previous; chr +0x500, weighs how far each chr is pushed when two collide (0x0083ecd0); <0 special (scripts push -1)
+0x00a78b70 function Native_5058                # 0x5058: args (v int) -> 0: Ch_AllSetCalcNorm(v) (0x008325b0); ported in native_chr (script round 12)
+0x00a78b90 function Native_500b                # 0x500b: args (v f) -> 0: Ch_SetJimen(model, v) (0x0082b360); ported in native_chr (script round 12)
 0x00a78cb0 function Native_ChrSetGroundFollow    # 0x500e: args (on) -> 0; on clears chr +0x194 bit 0x80 (stick to ground, height clamped to +0x16c); off = free 3D movement, normal reset to (0,-1,0) (0x0082aa70)
 0x00a78d70 function Native_ChrSetNextMotionBlend # 0x505c: args (frames; -1 = 0, 0 = 1) -> 0; chr +0x73c "nexthokan" (interpolation frames, CHRINFO debug text)
 0x00a78da0 function Native_ChrSetBodyHit         # 0x500f: args (on) -> 0; on clears chr +0x194 bit 8 ("bodyhit=" = !bit 8 in the CHRINFO debug text), 0 disables chr collision (0x0082a9f0)
 0x00a78dd0 function Native_ChrGetMotion          # 0x505d: no args -> current motion id (chr +0x72c, "Motion : %x" in CHRINFO)
+0x00a78df0 function Native_500d                # 0x500d: args (v int) -> 0: Ch_SetHideEvent(model, v) (0x0082b2c0); ported in native_chr (script round 12)
+0x00a78e90 function Native_505f                # 0x505f: args (v int) -> 0: Ch_MotionSetLoop(model, v) (0x00839960); ported in native_chr (script round 12)
+0x00a78ec0 function Native_5013                # 0x5013: args (mode int) -> 0: Ch_SetFieldMode, Ch_SetMotionType(model, mode) (0x0082b1e0, 0x0082b3a0); ported in native_chr (script round 12)
+0x00a78f80 function Native_5061                # 0x5061: args (b int, a int) -> 0: Ch_MgrpRead(b, a) (0x00836a40); ported in native_chr (script round 12)
+0x00a78fb0 function Native_5015                # 0x5015: args (r f, g f, b f, n int) -> 0: Ch_SetShadeCol(model, r, g, b, n) (0x0082b5d0); ported in native_chr (script round 12)
 0x00a790b0 function Native_ChrSetOffset       # 0x5016: (x, y, z) floats -> 0; Ch_SetOffset
 0x00a79120 function GetFieldc_00a79120           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
 0x00a79130 function Native_ChrSetGroundMode      # 0x5017: args (mode) -> 0; chr +0x182: 0 clamp to ground, 1 snap to ground, 2 float/bob (water) (height update in 0x00832f..)
+0x00a79160 function Native_5063                # 0x5063 (start): args (id int, n int) -> int: args +0xc, ChN_ReadSystemMGRPsync(id, n)'s result (0x00836a50); ported in native_chr (script round 12)
+0x00a791a0 function Native_5063_Poll           # 0x5063 (poll): args (id int, n int) -> int: args +0xc, ChN_ReadSystemMGRPsync(id, n)'s result (0x00836a50); ported in native_chr (script round 12)
+0x00a791e0 function Native_5018                # 0x5018: args (v int) -> 0: Ch_SetMotionSpeed(model, v) (0x0082b380); ported in native_chr (script round 12)
 0x00a79210 function GetFieldc_00a79210           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
 0x00a79270 function Native_ChrPlayMotion         # 0x501a: args (motion, unused, loops, start frame, end frame; -1 = end) -> 0; Native_PlayMotionCommon mode 1 (Chr_PlayMotion); scripts push e.g. (0x1109e, 0, 1, 0, 20)
 0x00a792d0 function Native_ChrSetMotion_501b     # 0x501b: args (motion) -> 0; SG_SetMotion on the worker's chr
 0x00a79300 function GetFieldc_00a79300           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
+0x00a79340 function Native_504f                # 0x504f (start): args (slot int) -> int: args +0xc, Ch_DataReadSync(slot)'s result (0x0082a040); ported in native_chr (script round 12)
 0x00a79370 function Native_ChrWaitMotion_501e    # 0x501e start slot: empty (ret)
+0x00a79380 function Native_504f_Poll           # 0x504f (poll): args (slot int) -> int: args +0xc, Ch_DataReadSync(slot)'s result (0x0082a040); ported in native_chr (script round 12)
 0x00a793c0 function Native_ChrWaitMotion_Poll_501e # 0x501e poll: no args; done (5) when the scripted motion has ended (chr +0x736 == 0); counts frames in 0x022fb4d8 when 0x012fb80c == 1
 0x00a79410 function GetFieldc_00a79410           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
+0x00a79420 function Native_5065                # 0x5065: args (v int) -> 0: 0x00837650(v) (the dbgPrintf left out); ported in native_chr (script round 12)
 0x00a794b0 function Native_ChrReleaseMotion2     # 0x5020: same body as 0x5005 (Chr_ReleaseMotion)
 0x00a79510 function Native_ChrSetMotionSpeed     # 0x5021: args (speed, 8.8 fixed, 256 = 1x) -> 0; chr +0x750, multiplies the clip speed +0x754 in the frame step (0x00836f..: speed * [0x750] >> 8)
 0x00a79540 function GetFieldc_00a79540           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
@@ -10832,19 +10878,32 @@
 0x00a79970 function Native_ChrLoadSystemMgrp_Poll # 0x5010 poll: returns 5 immediately
 0x00a79980 function Native_ChrLoadSystemMgrp_Result # 0x5010 int result: prints "chReadSystemMGRP %04x %x fin", calls Chr_LoadSystemMgrp(chr id, n); -> 0
 0x00a799b0 function Native_ChrLoadMotionGroup    # 0x5001 start (n) -> result slot; poll 0x00a79a10 returns 5
+0x00a79a10 function Native_ChrLoadMotionGroup_Poll # 0x5001 (poll): args (n int) -> int: 0, Chr_LoadMotionGroup(n) (0x008375f0); ported in native_chr (script round 12)
 0x00a79a20 function Native_ChrLoadMotionGroup_Result # 0x5001 int: Chr_LoadMotionGroup(n) 0x008375f0 -> 0; ?
 0x00a79a40 function Native_ChrSetShadowMode   # 0x5029: (mode) -> Ch_SetShadowMode's result
 0x00a79af0 function Native_ChrSetDistanceCull    # 0x502a: args (on) -> previous; chr +0x194 bit 11: hide past clip Z (+0x174) or off screen ("Z"/"Disp" hide bits, 0x0082e2..)
+0x00a79b90 function Native_506f                # 0x506f: args (v int (popped only for a model)) -> 0: Ch_SetHideCalc(model, v) (0x0082b280); ported in native_chr (script round 12)
 0x00a79c50 function Native_ChrAttach             # 0x502d: args (worker, point) -> 0; attaches the chr to another worker's chr at attach point id (+0x19c, 0x00833a70 looks up the model's point table); worker -1 detaches
 0x00a79dd0 function Native_ChrGetMotionFrameOf# 0x5075: (worker) -> Ch_MotionGetFrame of that worker's character
+0x00a79e30 function Native_5076                # 0x5076: args (on int (popped only for a model)) -> 0: Ch_MouthSetAutoTalk(model, on) (0x00834770); ported in native_chr (script round 12)
 0x00a79e60 function Native_ChrPlayDefaultMotion  # 0x5032: no args -> 0; SG_PlaySlotMotion(chr, chr +0x185, 0)
 0x00a79ea0 function Native_ChrFadeAlpha          # 0x5033: args (alpha float, frames) -> 0; shade alpha at chr +0x354 ("shadeRGBA" in CHRINFO): target + frames, frames 0 = immediate (0x0082b990); scripts push (0, 60)
+0x00a79ef0 function Native_5078                # 0x5078: args (b int, a int) -> 0: Ch_TextureSetAnim(model, b, a) (0x0083d040); ported in native_chr (script round 12)
 0x00a79f40 function Native_ChrSetMotionBlend     # 0x5034: args (frames) -> 0; chr +0x73a, copied to "hokan" (+0x752) when the next clip starts (SG_StartClip); 0 marks dirty (+0x820 |= 4)
+0x00a79f70 function Native_5079                # 0x5079: args (on int) -> 0: Ch_NeckSetEnable(model, on) (0x00834f60); ported in native_chr (script round 12)
+0x00a79fc0 function Native_507a                # 0x507a: args (worker int) -> 0: Ch_NeckSetTarget(model, that worker's model) (0x00835050); ported in native_chr (script round 12)
 0x00a7a210 function CT_507E_ret               # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls); was Native_ChrSetTalking
 0x00a7a340 function Native_ChrSetHitRadiusScale  # 0x5039: args (scale float; <= 0 = model default +0x1c4->+0x1c) -> previous; chr +0x4e4, collision radius +0x4e8 = mean bbox width * scale; scripts push 6.0, 8.0
+0x00a7a3d0 function Native_503a                # 0x503a (float): args (z f) -> float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model; ported in native_chr (script round 12)
+0x00a7a4d0 function Native_503c                # 0x503c: args (v int) -> 0: Ch_DisposeMGRP(v) (0x00836ad0); ported in native_chr (script round 12)
+0x00a7a520 function Native_503d                # 0x503d: args (v int) -> 0: ChN_DataDispose(v, 1) (0x00824f00); ported in native_chr (script round 12)
+0x00a7a570 function Native_503e                # 0x503e: args (b int, a int) -> 0: ChN_DataDispose(b, a) (0x00824f00); ported in native_chr (script round 12)
 0x00a7a610 function Native_ChrSetMotion2         # 0x5040: same body as 0x501b (SG_SetMotion)
 0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr
 0x00a7a780 function Native_ChrPlayMotion2        # 0x5042: same body as 0x501a (Native_PlayMotionCommon mode 1)
+0x00a7a810 function Native_5044                # 0x5044: args (as Native_PlayMotionCommon) -> 0: Native_PlayMotionCommon(worker, stack, 1, 1) (0x00a7aae0); ported in native_chr (script round 12)
+0x00a7a8a0 function Native_508f                # 0x508f: args (v int (popped only for a model)) -> 0: the model's +0x870 byte = v; ported in native_chr (script round 12)
+0x00a7a900 function Native_5047                # 0x5047: args (worker int, v int) -> 0: Ch_SetSequence(that worker's model, v) (0x00837ac0); ported in native_chr (script round 12)
 0x00a7aae0 function Native_PlayMotionCommon      # (ctx, args, mode, other worker): pops end, start, loops, unused, motion (+ worker); mode 0/1/2 -> Chr_PlayMotionMarks/Chr_PlayMotion/Chr_PlayMotionInclEnd; per-map hacks set chr +0x870
 0x00a7ae90 function GetU32_023cbeb0 # () -> u32 at 0x023cbeb0; name ours
 0x00a7b1a0 function CopyCuttingLines_00a7b1a0 # cdecl(dst, src): src copied with line feeds turned into terminators, returns length + 1 (null src: empty dst, 0); caller 0x00a7aee0; name ours
