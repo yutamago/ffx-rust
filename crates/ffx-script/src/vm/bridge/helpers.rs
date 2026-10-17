@@ -1046,3 +1046,30 @@ pub fn atel_clear_mes_win_work(m: &mut impl Mem) -> u32 {
     }
     0
 }
+
+// ---- round 17 ----
+
+/// `0x008683e0(ctrl)`: the ctrl work's default start callback (`+0x50`,
+/// set by `AtelRequireCtrlWork`): runs each worker (`Script_Run(worker,
+/// ctrl +8, 1)`) until its `+0x34` bit 4 says its init is done, then
+/// decodes every worker's signals (`AtelDecodeSignal(i, -1)`) and sets the
+/// ctrl work's bit 3. `EAX` the ctrl work (0 without workers).
+pub fn atel_ctrl_start<H: super::run::NativeHost>(h: &mut H, c: u32) -> u32 {
+    let n = u32::from(h.read::<u16>(c + 0xc));
+    let mode = u32::from(h.read::<u8>(c + 8));
+    for i in 0..n {
+        let w = super::atel_get_basic_work(h, i.cast_signed());
+        loop {
+            super::run::script_run(h, &mut super::run::OriginalNatives, w, mode, 1);
+            if h.read::<u8>(w + 0x34) & 0x10 != 0 {
+                break;
+            }
+        }
+    }
+    for i in 0..n {
+        super::signal::atel_decode_signal(h, i, -1);
+    }
+    let b = h.read::<u8>(c);
+    h.write(c, b | 8);
+    if n == 0 { 0 } else { c }
+}

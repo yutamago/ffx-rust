@@ -8263,6 +8263,7 @@
 0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
 0x00867740 function AtelExecCtrlEvent         # fh v3:exact 0x008676e0
 0x008677a0 function AtelExecCtrlEventInit_008677a0 # (ctrl): the event start of AtelExecCtrlEvent: debug strings "EVENT INIT cnt %5d", "INI id %3d/cnt %5d", "DECODE SIGNAL", "EVENT START"; Script_Run of the init, AtelDecodeSignal, op_event_effect_init, MsBattleExeClear, AtelClearPauseFlag; own name
+0x008683e0 function Atel_CtrlStart             # (ctrl): the default start callback (+0x50, AtelRequireCtrlWork): Script_Run(worker, ctrl +8, 1) on each worker until its +0x34 bit 4, then AtelDecodeSignal(i, -1) for each, ctrl bit 3 set -> ctrl (0 without workers); name ours; ported in helpers (script round 17)
 0x008690a0 function AtelStartSignal           # (worker, node): starts a queued request at its level and entry
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2           # fh v3:bsim1.00 0x008692f0
