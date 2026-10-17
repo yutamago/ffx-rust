@@ -10608,9 +10608,9 @@ fn round18_helpers_match_the_original_on_the_snapshot() {
 #[allow(clippy::cast_possible_truncation)]
 fn round18_resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
-    let cell = alloc(a, b, 4);
+    let gil_cell = alloc(a, b, 4);
     let mut v = vec![0xa1];
-    v.extend_from_slice(&cell.to_le_bytes());
+    v.extend_from_slice(&gil_cell.to_le_bytes());
     v.push(0xc3);
     let s = stand_in8(a, b, 0x40, &v);
     redirect(a, b, 0x0078_4e80, s);
@@ -10632,7 +10632,7 @@ fn round18_resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         }
         let gil = [0u32, 9, 10, 999_999_999, rng.next() % 1_000_000, rng.next()]
             [(rng.next() % 6) as usize];
-        put(a, b, cell, gil);
+        put(a, b, gil_cell, gil);
         let max = [u32::MAX, 0, 100, rng.next() % 2_000_000, rng.next()][(rng.next() % 5) as usize];
         assert_eq!(eax(a, 0x008a_2030, &[max]), t::init_gil_input(b, max, call));
         same_memory("round 18 resets", a, b);
