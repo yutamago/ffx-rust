@@ -549,4 +549,86 @@ pub mod bridge {
         }
         out
     }
+
+    /// `PhyreSceneCursor_SetNode(cursor, node)` (`0x00441dc0`): the cursor
+    /// from the node: `+8` the stride (`*(node +0x2c) +0x1c`), `+0` the
+    /// position (`node +0x34`), `+0xc` the count (`node +0x3c`), `+0x10`
+    /// (`*(node +0x2c) +0x8c`), `+4` the next link (`node +8`); then while
+    /// counted and the link equals the position, the position steps by the
+    /// stride and the link follows itself. Returns the last value moved
+    /// into `eax`.
+    pub fn cursor_set_node(m: &mut impl Mem, cur: u32, node: u32) -> u32 {
+        let obj: u32 = m.read(node + 0x2c);
+        let stride: u32 = m.read(obj + 0x1c);
+        m.write(cur + 8, stride);
+        let pos: u32 = m.read(node + 0x34);
+        m.write(cur, pos);
+        let count: u32 = m.read(node + 0x3c);
+        m.write(cur + 0xc, count);
+        let zero = m.read::<u32>(cur + 0xc) == 0;
+        let v: u32 = m.read(obj + 0x8c);
+        m.write(cur + 0x10, v);
+        let mut eax: u32 = m.read(node + 8);
+        m.write(cur + 4, eax);
+        if zero {
+            return eax;
+        }
+        loop {
+            let link: u32 = m.read(cur + 4);
+            let pos: u32 = m.read(cur);
+            if link != pos {
+                return eax;
+            }
+            eax = m.read::<u32>(cur + 8).wrapping_add(pos);
+            let n = m.read::<u32>(cur + 0xc).wrapping_sub(1);
+            m.write(cur + 0xc, n);
+            m.write(cur, eax);
+            eax = m.read(link);
+            m.write(cur + 4, eax);
+            if n == 0 {
+                return eax;
+            }
+        }
+    }
+
+    /// `ResetAndConstruct_006c40c0(this)` (`0x006c40c0`): the fields reset
+    /// (`SetFields_006c47a0`), then the member at `+0x24` set up
+    /// (`0x00585230`, a tail call: its `eax`).
+    pub fn reset_and_construct(h: &mut impl Host, this: u32) -> u32 {
+        h.call_sym(RESET_FIELDS, Conv::Thiscall(this), &[]);
+        h.call_sym(MEMBER_INIT_585230, Conv::Thiscall(this + 0x24), &[])
+    }
+
+    /// `SetFields_006c47a0`.
+    pub const RESET_FIELDS: u32 = 0x006c_47a0;
+    /// The `+0x24` member's set-up `0x00585230`.
+    pub const MEMBER_INIT_585230: u32 = 0x0058_5230;
+    /// The list cursor's advance `0x00464f30` (fastcall).
+    pub const CURSOR_NEXT_464F30: u32 = 0x0046_4f30;
+
+    /// `PostProcessManager_SetFirstEntry(this, list)` (`0x00698400`):
+    /// `+0x1200` cleared, then with a list, a cursor on it (its node
+    /// `list +0x1c`, the end `*(list +0x1c)` unless that is the node itself)
+    /// is advanced (`0x00464f30`) and, when it has a count, `+0x1200` gets
+    /// its position plus its first word. Returns 0.
+    pub fn post_process_set_first_entry(h: &mut impl Host, this: u32, list: u32) -> u32 {
+        h.write(this + 0x1200, 0u32);
+        if list == 0 {
+            return 0;
+        }
+        let node = list + 0x1c;
+        let next: u32 = h.read(node);
+        let end = if next == node { 0 } else { next };
+        let cur = h.scratch();
+        let tag = h.rebase(0x00ca_37d0);
+        for (i, v) in (0u32..).zip([0, 0, 0, 0, 0, node, end, tag]) {
+            h.write(cur + 4 * i, v);
+        }
+        h.call_sym(CURSOR_NEXT_464F30, Conv::Fastcall, &[cur]);
+        if h.read::<u32>(cur + 0xc) != 0 {
+            let v = h.read::<u32>(cur + 0x10).wrapping_add(h.read(cur));
+            h.write(this + 0x1200, v);
+        }
+        0
+    }
 }

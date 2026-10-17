@@ -1114,6 +1114,40 @@ ported! {
     PhyreSceneCursor_Next4 @ 0x0065_ee40 => extern "fastcall" fn scene_cursor_next4(this: u32) -> u32 {
         st::cursor_step(&mut mem(), this, false)
     }
+
+    // ---- round 9 ----
+    /// `Matrix_RotationX(out, angle)`.
+    Matrix_RotationX @ 0x0066_c8a0 => extern "C" fn matrix_rotation_x(out: u32, angle: u32) -> u32 {
+        ut::rotation(&mut mem(), out, angle, false)
+    }
+    /// `Matrix_RotationY(out, angle)`.
+    Matrix_RotationY @ 0x0066_c920 => extern "C" fn matrix_rotation_y(out: u32, angle: u32) -> u32 {
+        ut::rotation(&mut mem(), out, angle, true)
+    }
+    /// `PhyreSceneCursor_SetNode(cursor, node)`.
+    PhyreSceneCursor_SetNode @ 0x0044_1dc0 => extern "thiscall" fn scene_cursor_set_node(this: u32, node: u32) -> u32 {
+        ut::cursor_set_node(&mut mem(), this, node)
+    }
+    /// `PhyreCursor_IsValid_00441e10(this)`.
+    PhyreCursor_IsValid_00441e10 @ 0x0044_1e10 => extern "thiscall" fn cursor_valid_441e10(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_00441e40(this)`.
+    PhyreCursor_IsValid_00441e40 @ 0x0044_1e40 => extern "thiscall" fn cursor_valid_441e40(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_006a29c0(this)`.
+    PhyreCursor_IsValid_006a29c0 @ 0x006a_29c0 => extern "thiscall" fn cursor_valid_6a29c0(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `ResetAndConstruct_006c40c0(this)`.
+    ResetAndConstruct_006c40c0 @ 0x006c_40c0 => extern "thiscall" fn reset_and_construct(this: u32) -> u32 {
+        ut::reset_and_construct(&mut mem(), this)
+    }
+    /// `PostProcessManager_SetFirstEntry(this, list)`.
+    PostProcessManager_SetFirstEntry @ 0x0069_8400 => extern "thiscall" fn post_process_set_first_entry(this: u32, list: u32) -> u32 {
+        ut::post_process_set_first_entry(&mut mem(), this, list)
+    }
 }
 
 /// A singleton's pointer.
