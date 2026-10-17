@@ -9195,7 +9195,7 @@
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40; cdecl(chr, cmd): 0x0133d0d0 (0x140) cleared, +0 chr, +2 cmd, window start/mask 0, TOBtlMakeTarget{List,Group,ChrStatus,Command,Target}Bit; 0x0133c94c == 0x100: single party target 0x0133d15c & 0x0133d154 & 0x0133d0dc in mode 2; returns 1
-0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
+0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl; (chr, cmd): 0xfe->0, 0xff->-2, MsGetCommandUse 1 -> -1, MsCheckUseCommand -1 -> -2, item kinds (+0x16&0xf8 8/0x10) -> +0x17 or -4/-3 if TOGetSaveWindow is empty, else 0xfe (+0x1a bit 0) or 0xfe + (0x0133c94c != 0x100)
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
 0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
@@ -9203,7 +9203,7 @@
 0x0089b360 function TODrawBtlWindow           # fh v3:exact 0x0089b2d0
 0x0089b530 function TODrawCommandValue        # fh switch:cg2 0x71004a1820
 0x0089b590 function TOGetBtlWindowControlEnable # fh v3:bsim1.00 0x0089b500
-0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl
+0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl; (a, kind, &count): MsGetSaveWindow text, trailing 0xff halfwords dropped except kinds 6/17/20, kinds 7/15 at least 1
 0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0
 0x0089baa0 function TOBtlSetDamageValue_0089baa0 # cdecl(a, b, d, e, f, g, h): TOBtlSetDamageValue without the word at +4; name ours
 0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80
@@ -9391,7 +9391,7 @@
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac7c0 function TOGetMessageWindowWH         # layout+callees: sorts between TOGetMessageWindowMode and TOGetSaveChrName, and its named callees match the Switch 0x71004fa030 TOGetMessageWindowWH's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
-0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl
+0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl; (i): >= 0x14 MsGetRamChrName, else MsGetSaveChrName after MsGetSaveConfigEnglish when the language is 0
 0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl; id -> name pointer from 0x00c59d58..0x00c59eb8 by id and TOGetFFXLang; 0x2f00 cached at 0x025d16c8; unknown ids return id
 0x008acf10 function TOGetWord_01841d9c        # () -> [0x01841d9c]; before TOGetSystemConfirmButtonAssign; name ours
 0x008acf20 function GetU32_01841d30 # () -> u32 at 0x01841d30; name ours
@@ -9507,7 +9507,7 @@
 0x008b65e0 function TOGetButtonIconWidth         # layout: alphabetical run between TOFuncPadMessageNormal and TOGetChangeMacroAddress (2 unnamed in the gap); Switch 0x71004f1ae0 TOGetButtonIconWidth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008b6660 function TOGetChangeMacroAddress   # fh v3:exact 0x008b6610
 0x008b6a30 function TOGetChangeMacroWidth     # fh v3:exact 0x008b69e0
-0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0
+0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0; (table, index): codes >= 0x26 or 4 count one, group-3 codes add their macro's count (recursive)
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
@@ -9532,7 +9532,7 @@
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
-0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
+0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240; (value, out, digits, mode) -> shown value: negatives 0; mode 0 value % 10^digits left-padded with ']'/':'/0xfe by language, mode 1 clamped to 10^digits-1 and zero-padded; copies `digits` bytes of its sprintf buffer, so stale stack bytes follow the terminator
 0x008b8430 function TOWideWindowX_008b8430 # cdecl(i, x) -> float: type-1 window and 0x01340824/0x0133c948/0x01327100 clear: (w - 512 h/416) / (2 w/512) + x (h/416)/(w/512) from graphicFontGetScreenWH; else x; name ours
 0x008b84f0 function TOMacroSetByte1 # cdecl(win, n, v): byte 1 of macro record n of message window win (the table at 0x01869ab0, as TOMacroSetType sets byte 0); callers 0x008c2c60, 0x00a59350; name ours
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
@@ -9556,7 +9556,7 @@
 0x008b8db0 function TOStdGetItemName             # layout+callees: sorts between TOSetRectDirect and TOValueToMesFontL, and its named callees match the Switch 0x71004f2560 TOStdGetItemName's (similarity 1.00: MsGetRomItem); symbols from Fahrenheit's server export; cdecl(item): MsGetRomItem(item, &base) record's u16 +0 + base
 0x008b8dd0 function TOStdGetWeaponName        # cdecl(id): tail call MsGetSaveWeaponName(id); sits after TOStdGetItemName; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
-0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
+0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0; (value, out, width): %d / %<width>d, digits kept, spaces '^' (lang 0, not English), ':' (lang 9/10) or 0xfe, others dropped
 0x008b9220 function TOTimedMacroMessage       # cdecl(arg): frames 0x018663d4 counted while 0x018663d0; TOCountMapVisits; state 0x018663d1 0: TOSelectMacroDic_008b56d0 table 0x01869eb8, row g_GraphicMapId - 0x189; state 1: at frame table[row*0x32+col] TOMessageCallF8_008b8ca0(arg), col up to 0x32; 0 frame clears all; name ours
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth; (text, kind, &w, table) -> next: glyph width (tables via 0x01841da4, kr/ch code-4 pages) -> TOGetFontWidthInPiexl + space (x aspect when 0x018663ec); 0x47 runs; 6 and < 0x30 are 2 bytes
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
@@ -10340,13 +10340,13 @@
 0x00905e90 function TOCopyWindowLayout_00905e90 # cdecl(table, i): i < count: entry i (n, then n 12-byte records; layout 0x43 n = 1) memcpy'd to 0x01876148; returns it, else 0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
-0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
+0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0; (id, scale) -> f32: ids 0x258..0x263/0x264..0x267/0x268/0x269 give graphicUiRemapX2(ftol(scale*54/64/64.5/147.4 + 0.5)); char 0x025d16e4 digits/space 9.0, ':;' 13.6, '@'..'O' 20.0 or 9.0 ('@' 33.5)
 0x00906420 function graphicDrawUIElementAfterSet # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100501fe0 graphicDrawUIElementAfterSet, 3 votes, round 1
 0x00906680 function SeveralStoresSetTableConstantsArgumentsAddresses_00906680 # auto-port shape (several stores: set table (constants, arguments, addresses), cdecl): u32[((a4 << 0x5) + &0x025d1710)] = a0; u32[((a4 << 0x5) + &0x025d1714)] = a1; u32[((a4 << 0x5) + &0x025d1718)] = a2; u32[((a4 << 0x5) + &0x025d171c)] = a3; return a3; callers: no direct caller; name ours
 0x009066f0 function TOShiftListedId # cdecl(id): 0x40e..=0x46e and 0x40e or in the zero-terminated table 0x00b66e44: id + 100; else id; name ours
 0x00906730 function GetU32_018763e0 # () -> u32 at 0x018763e0; name ours
 0x00906740 function StepSwitch_018763e0 # (): *0x018763e0 steps -1 -> 0 -> 1 -> -1 (other values stay), returns it; caller 0x006b8ce0; name ours
-0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780
+0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780; (in, out) -> 1 translated / 2 letter known (or all known) / 0: known letters = 0x011307a0 bits (0x018763e0 -1 none, 1 all); lang 0 tables at 0x0187626c (0x5f..0xae), other Latin 0x018762a8 (0x50..0x69, 0x70..0x89), langs 9/10 kana ids letter (id-0x5e)%26
 0x00906b10 function GetGlobal011307a0_00906b10   # auto-port shape (return global u32, cdecl): t0 = u32[&0x011307a0]; return t0; callers: ; name ours
 0x00906b20 function TOGetFFXToAlbhedTblAdrs   # fh v3:bsim1.00 0x00906b20
 0x00906b30 function TOSetCollectBit           # cdecl(n): -1 clears 0x011307a0; 0..0x19 sets bit n + achievement 1, all 26 -> achievement 0x1c; 0xff sets all + achievement 0x1c; name ours

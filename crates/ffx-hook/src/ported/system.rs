@@ -5766,6 +5766,59 @@ ported! {
     TOSetWindowKindAndType_008b0000 @ 0x008b_0000 => extern "C" fn to_set_window_kind_and_type(window: u32, kind: u32, message_type: u32) -> u32 {
         tolib::bridge::to_set_window_kind_and_type(&mut mem(), window, kind, message_type, call_sym)
     }
+    /// `getScaleButtonIconWidth(id, scale)`.
+    getScaleButtonIconWidth @ 0x0090_62b0 => extern "C" fn get_scale_button_icon_width(id: u32, scale: f32) -> f32 {
+        tolib::bridge::scale_button_icon_width(&mut mem(), id, scale, |_, v| ffx_graphic::ui::remap_x2(v))
+    }
+    /// `TOGetScaleButtonIconWidth(c, scale)`.
+    TOGetScaleButtonIconWidth @ 0x008f_a800 => extern "C" fn to_get_scale_button_icon_width(c: u32, scale: f32) -> f32 {
+        tolib::bridge::to_get_scale_button_icon_width(&mut mem(), c, scale, call_sym, |m, id, s| {
+            tolib::bridge::scale_button_icon_width(m, id, s, |_, v| ffx_graphic::ui::remap_x2(v))
+        })
+    }
+    /// `TOGetSaveChrName(i)`.
+    TOGetSaveChrName @ 0x008a_c850 => extern "C" fn to_get_save_chr_name(i: u32) -> u32 {
+        tolib::bridge::to_get_save_chr_name(&mut mem(), i, call_sym)
+    }
+    /// `TOGetChangeMacroWordCount(table, index)`.
+    TOGetChangeMacroWordCount @ 0x008b_6b00 => extern "C" fn to_get_change_macro_word_count(table: u32, index: u32) -> u32 {
+        tolib::bridge::to_get_change_macro_word_count(&mut mem(), table, index, &mut call_sym, &mut |m, t, i| {
+            call_sym(m, 0x008b_6b00, &[t, i])
+        })
+    }
+    /// `TOGetSaveWindow(a, kind, &count)`.
+    TOGetSaveWindow @ 0x0089_b5a0 => extern "C" fn to_get_save_window(a: u32, kind: u32, count: u32) -> u32 {
+        let mut n = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let local = (&raw mut n) as usize as u32;
+        tolib::bridge::to_get_save_window(&mut mem(), a, kind, count, local, call_sym)
+    }
+    /// `TOValueToMesFontL(value, out, width)`.
+    TOValueToMesFontL @ 0x008b_9140 => extern "C" fn to_value_to_mes_font_l(value: u32, out: u32, width: u32) {
+        tolib::bridge::to_value_to_mes_font_l(&mut mem(), value, out, width, call_sym);
+    }
+    /// `TOCheckBtlCommandUse(chr, command)`.
+    TOCheckBtlCommandUse @ 0x0089_aca0 => extern "C" fn to_check_btl_command_use(chr: u32, command: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_check_btl_command_use(&mut mem(), chr, command, at, call_sym)
+    }
+    /// `TOBtlOpenSimpleHelpMes(i, message)`.
+    TOBtlOpenSimpleHelpMes @ 0x0089_dba0 => extern "C" fn to_btl_open_simple_help_mes(i: u32, message: u32) -> u32 {
+        let mut scratch = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut scratch) as usize as u32;
+        tolib::bridge::to_btl_open_simple_help_mes(&mut mem(), i, message, at, call_sym)
+    }
+    /// `TOIntToMes(value, out, digits, mode)`.
+    TOIntToMes @ 0x008b_8290 => extern "C" fn to_int_to_mes(value: u32, out: u32, digits: u32, mode: u32) -> u32 {
+        tolib::bridge::to_int_to_mes(&mut mem(), value, out, digits, mode, call_sym)
+    }
+    /// `TOConvAlbhedWord(in, out)`.
+    TOConvAlbhedWord @ 0x0090_6780 => extern "C" fn to_conv_albhed_word(input: u32, out: u32) -> u32 {
+        tolib::bridge::to_conv_albhed_word(&mut mem(), input, out, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

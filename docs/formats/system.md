@@ -459,3 +459,35 @@ current page and record are in `0x0112a088` and `0x0112a084`.
 
 `0x00775330` builds a GS packet (GIF tags, `TEX0`/`TEX1`), so it is
 skipped.
+
+## Text helpers of the HD menus and battle windows
+
+- `getScaleButtonIconWidth(id, scale)` (`0x009062b0`) gives a button
+  icon's width for the HD UI. Icon ids 0x258..=0x263 use 54, 0x264..=0x267
+  64, 0x268 64.5 and 0x269 147.4: the scale times that, plus 0.5, goes
+  through `ftol`, an f32 and `graphicUiRemapX2`. The character last set in
+  `0x025d16e4` then overrides the result: digits and space 9.0, `:` and
+  `;` 13.6, `@`..`O` 20.0 when the low nibble is a multiple of 3 and 9.0
+  otherwise, with `@` itself 33.5. `TOGetScaleButtonIconWidth`
+  (`0x008fa800`) stores the character there and picks the id.
+- `TOIntToMes(value, out, digits, mode)` (`0x008b8290`) writes a
+  non-negative number as `digits` characters. Mode 0 keeps the low digits
+  and pads on the left with a language blank (`]`, `:` or 0xfe). Mode 1
+  clamps to the largest value and pads with `0`. Both copy `digits` bytes
+  of the `sprintf` buffer, so after a short number they copy stale stack
+  bytes behind its terminator; the port copies zeros there instead. The
+  text up to the terminator is the same.
+- `TOValueToMesFontL` (`0x008b9140`) is the large-font variant without
+  truncation: the blank is `^`, `:` or 0xfe, and non-digits other than
+  spaces are dropped.
+- `TOConvAlbhedWord(in, out)` (`0x00906780`) translates one character of
+  Al Bhed. The letters known are the 26 bits of `0x011307a0`, unless
+  `0x018763e0` forces none (-1) or all (1). A known letter stays as it is
+  (result 2) and an unknown one is translated (1). Japanese and Korean
+  texts work on kana ids: the letter is `(id - 0x5e) % 26`, and a
+  translated id is shifted by a fixed amount (Korean also through
+  `TOShiftListedId`) and re-encoded.
+- `TOCheckBtlCommandUse(chr, command)` (`0x0089aca0`) decides whether a
+  battle command can be used: -1 when `MsGetCommandUse` blocks it, -2 when
+  `MsCheckUseCommand` fails, the item window kind for item-like commands
+  (-4/-3 for an empty list), else 0xfe or 0xff.
