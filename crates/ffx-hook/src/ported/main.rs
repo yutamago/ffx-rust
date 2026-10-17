@@ -1175,6 +1175,126 @@ ported! {
     Sg_GsEnd @ 0x0084_1770 => extern "C" fn sg_gs_end() -> u32 {
         control::bridge::gs_end(&mut mem())
     }
+    /// `Sg_PlayerSetDiving(v)`.
+    Sg_PlayerSetDiving @ 0x0082_d9d0 => extern "C" fn sg_player_set_diving(v: u32) -> u8 {
+        state::bridge::player_set_diving(&mut mem(), v)
+    }
+    /// `Sg_PlayerSetSpeed(kind, v)`.
+    Sg_PlayerSetSpeed @ 0x0082_d9e0 => extern "C" fn sg_player_set_speed(kind: u32, v: f32) -> u32 {
+        state::bridge::player_set_speed(&mut mem(), kind, v)
+    }
+    /// `Sg_SetCameraFollow(on)`.
+    Sg_SetCameraFollow @ 0x0082_dab0 => extern "C" fn sg_set_camera_follow(on: u32) -> u8 {
+        state::bridge::set_camera_follow(&mut mem(), on)
+    }
+    /// `SG_DisposeMotionGroup(a, b, key)`.
+    SG_DisposeMotionGroup_00836e20 @ 0x0083_6e20 => extern "C" fn sg_dispose_motion_group(a: i32, b: i32, key: u32) -> u32 {
+        seq::bridge::dispose_motion_group(&mut mem(), a, b, key)
+    }
+    /// `Sg_IdFixupAndSet(map)`.
+    Sg_IdFixupAndSet_00844bc0 @ 0x0084_4bc0 => extern "C" fn sg_id_fixup_and_set(map: u32) {
+        state::bridge::id_fixup_and_set(&mut mem(), map);
+    }
+    /// `Sg_IdInitAll()`.
+    Sg_IdInitAll @ 0x0084_4ca0 => extern "C" fn sg_id_init_all() {
+        state::bridge::id_init_all(&mut mem());
+    }
+    /// `Sg_PlayerInitAll()`.
+    Sg_PlayerInitAll @ 0x0082_d910 => extern "C" fn sg_player_init_all() -> u32 {
+        state::bridge::player_init_all(&mut mem())
+    }
+    /// `Sg_SetUserName(name)`.
+    Sg_SetUserName @ 0x0082_1d30 => extern "C" fn sg_set_user_name(name: u32) -> u32 {
+        state::bridge::set_user_name(&mut mem(), name)
+    }
+    /// `Sg_InitFilter()`.
+    Sg_InitFilter @ 0x0082_cd50 => extern "C" fn sg_init_filter() -> u32 {
+        state::bridge::init_filter(&mut mem())
+    }
+    /// `Sg_PLightAllocate(n)`.
+    Sg_PLightAllocate @ 0x0083_1950 => extern "C" fn sg_plight_allocate(n: u32) -> u32 {
+        control::bridge::plight_allocate(&mut mem(), n)
+    }
+    /// `Sg_InitArgs(argc, argv)`.
+    Sg_InitArgs @ 0x0082_0310 => extern "C" fn sg_init_args(count: u32, args: u32) {
+        control::bridge::init_args(&mut mem(), count, args);
+    }
+    /// `setFramSync()`.
+    setFramSync @ 0x0082_2720 => extern "C" fn set_fram_sync() -> u32 {
+        control::bridge::set_fram_sync(&mut mem())
+    }
+    /// `Sg_AccInitAll()`.
+    Sg_AccInitAll @ 0x0082_bcd0 => extern "C" fn sg_acc_init_all() {
+        control::bridge::acc_init_all(&mut mem());
+    }
+    /// `Sg_PlayerInitDefault()`.
+    Sg_PlayerInitDefault @ 0x0082_d8d0 => extern "C" fn sg_player_init_default() -> u32 {
+        state::bridge::player_init_default(&mut mem())
+    }
+    /// `Sg_LightSetDirXYZ(i, x, y, z)`.
+    Sg_LightSetDirXYZ @ 0x0083_64f0 => extern "C" fn sg_light_set_dir_xyz(i: u32, x: f32, y: f32, z: f32) -> u32 {
+        control::bridge::light_set_dir_xyz(&mut mem(), i, x, y, z)
+    }
+    /// `Sg_CalcTriangleNormal(v0, v1, v2, out)`.
+    Sg_CalcTriangleNormal_0083e420 @ 0x0083_e420 => extern "C" fn sg_calc_triangle_normal(v0: u32, v1: u32, v2: u32, out: u32) {
+        vec::bridge::calc_triangle_normal(&mut mem(), v0, v1, v2, out);
+    }
+    /// `Sg_MatrixFromDir(m, dir, rows)`.
+    Sg_MatrixFromDir @ 0x0084_35a0 => extern "C" fn sg_matrix_from_dir(m: u32, dir: u32, rows: u32) -> u32 {
+        vec::bridge::matrix_from_dir(&mut mem(), m, dir, rows)
+    }
+    /// `Sg_IntVecToFloat(out, v)`.
+    Sg_IntVecToFloat @ 0x0084_5d90 => extern "C" fn sg_int_vec_to_float(out: u32, v: u32) -> u32 {
+        vec::bridge::int_vec_to_float(&mut mem(), out, v)
+    }
+    /// `SG_ApplyBone(_, chan, bone, scale)`.
+    SG_ApplyBone @ 0x0083_8280 => extern "C" fn sg_apply_bone(_a: u32, chan: u32, bone: u32, scale: f32) {
+        seq::bridge::apply_bone(&mut mem(), chan, bone, scale, false);
+    }
+    /// `SG_ApplyBoneDamped(_, chan, bone, scale)`.
+    SG_ApplyBoneDamped @ 0x0083_8470 => extern "C" fn sg_apply_bone_damped(_a: u32, chan: u32, bone: u32, scale: f32) {
+        seq::bridge::apply_bone(&mut mem(), chan, bone, scale, true);
+    }
+    /// `SG_AddSequence(seq, v)`.
+    SG_AddSequence @ 0x0083_6d30 => extern "C" fn sg_add_sequence(seq: u32, v: u32) {
+        seq::bridge::add_sequence(&mut mem(), seq, v);
+    }
+    /// `Sg_IdMatchChr(chr, i)`.
+    Sg_IdMatchChr @ 0x0083_e4e0 => extern "C" fn sg_id_match_chr(chr: u32, i: u32) -> u32 {
+        state::bridge::id_match_chr(&mem(), chr, i)
+    }
+    /// `recallSceneEffect(layer)`.
+    recallSceneEffect @ 0x0082_2580 => extern "C" fn recall_scene_effect(layer: u32) -> u32 {
+        control::bridge::recall_scene_effect(&mut mem(), layer)
+    }
+    /// `recallSceneEffect2(a, b)`.
+    recallSceneEffect2 @ 0x0082_2620 => extern "C" fn recall_scene_effect2(a: u32, b: u32) -> u32 {
+        control::bridge::recall_scene_effect2(&mut mem(), a, b)
+    }
+    /// `Sg_ClothRodMaxPin(rods, n, points)`.
+    Sg_ClothRodMaxPin @ 0x0082_2890 => extern "C" fn sg_cloth_rod_max_pin(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 1, rods, n, points)
+    }
+    /// `Sg_ClothRodMax(rods, n, points)`.
+    Sg_ClothRodMax @ 0x0082_2960 => extern "C" fn sg_cloth_rod_max(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 2, rods, n, points)
+    }
+    /// `Sg_ClothRodMinPin(rods, n, points)`.
+    Sg_ClothRodMinPin @ 0x0082_2a50 => extern "C" fn sg_cloth_rod_min_pin(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 3, rods, n, points)
+    }
+    /// `Sg_ClothRodMin(rods, n, points)`.
+    Sg_ClothRodMin @ 0x0082_2b20 => extern "C" fn sg_cloth_rod_min(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 4, rods, n, points)
+    }
+    /// `Sg_ClothRodFixPin(rods, n, points)`.
+    Sg_ClothRodFixPin @ 0x0082_2c10 => extern "C" fn sg_cloth_rod_fix_pin(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 5, rods, n, points)
+    }
+    /// `Sg_ClothRodFix(rods, n, points)`.
+    Sg_ClothRodFix @ 0x0082_2cf0 => extern "C" fn sg_cloth_rod_fix(rods: u32, n: u32, points: u32) -> u32 {
+        vec::bridge::cloth_rods(&mut mem(), 6, rods, n, points)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

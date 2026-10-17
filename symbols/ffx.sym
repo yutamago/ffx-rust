@@ -3835,6 +3835,7 @@
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
 0x0074bc50 function Vec4AddScalars_0074bc50    # ours: (dst, src, x, y, z, w): dst = src + (x, y, z, w), each f32 sum through the x87
 0x0074bde0 function pppVu0MaddW_copy_0074bde0    # the same code as pppVu0MaddW (0x0072c650; call targets equal), a copy the compiler kept; own name
+0x0074be90 function Vec4SubScalars_0074be90    # ours: (dst, src, x, y, z, w): dst = src - (x, y, z, w), then restoreVf00Register
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
 0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
@@ -3914,7 +3915,7 @@
 0x00759200 function pppKeBornRnd6             # ppp program table record "pppKeBornRnd6" step
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
-0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export
+0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export; ported (round 31): (pc, pd, prog, out): spawns pd[4] particle objects (pppCreatePObject) filling the gap from the previous point (prog[0xc][0]) to this one (prog[0xc][1]) at prev + d * f * step, step +0xa8 = 1 / (pd[4] + 1) when there is no previous point
 0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step
 0x00759620 function pppKeBornPtCmplCon        # ppp program table record "pppKeBornPtCmpl" (0x00c3e1d0) +0x1c set-up
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
@@ -4059,7 +4060,7 @@
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
 0x0075ee70 function KeVu0GetDist                 # layout+callees: sorts between KeVu0CopyVecXYZ and KeVu0RndI, and its named callees match the Switch 0x7100307e30 KeVu0GetDist's (similarity 1.00: FFXVu0SubVector); symbols from Fahrenheit's server export
-0x0075eed0 function KeVu0ItrsBallLine            # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003071c0 KeVu0ItrsBallLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075eed0 function KeVu0ItrsBallLine            # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003071c0 KeVu0ItrsBallLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (round 31): ray p + t d (+0, +0x10) against the sphere of radius +0x20: a = d.d, b = 2 p.d, c = p.p - r^2 (f32 partial sums), 0 when b^2 - 4ac < 0, else t = (-b - sqrt) / 2a to +0x24 and 1
 0x0075efe0 function KeVu0LowClamp                # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003072b0 KeVu0LowClamp is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075f010 function KeVu0NormXY                  # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307990 KeVu0NormXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075f120 function KeVu0PacAddVecXY             # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307680 KeVu0PacAddVecXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -4239,46 +4240,287 @@
 0x0076f390 function GetDerefU8_0076f390          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xa9)]; return t1; callers: no direct caller; name ours
 0x00770990 function GetDerefU8_00770990          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xad)]; return t1; callers: no direct caller; name ours
 0x007709d0 function GetDerefU8_007709d0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xb1)]; return t1; callers: no direct caller; name ours
+0x00771c30 function KernelSlotAbilityName_11e_00771c30# cdecl(i): Kernel_GetAbilityName(u16 +0x11e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771c60 function KernelSaveCommand_30b8_00771c60# cdecl(chr): MsGetSaveCommand(chr, 0x30b8); kernel menu accessor (table entry); name ours
+0x00771c80 function KernelSaveCommand_30b9_00771c80# cdecl(chr): MsGetSaveCommand(chr, 0x30b9); kernel menu accessor (table entry); name ours
+0x00771ca0 function KernelSlotAbilityName_120_00771ca0# cdecl(i): Kernel_GetAbilityName(u16 +0x120 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771cd0 function KernelSaveCommand_30ba_00771cd0# cdecl(chr): MsGetSaveCommand(chr, 0x30ba); kernel menu accessor (table entry); name ours
+0x00771cf0 function KernelSlotAbilityName_122_00771cf0# cdecl(i): Kernel_GetAbilityName(u16 +0x122 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771d20 function KernelSaveCommand_30bb_00771d20# cdecl(chr): MsGetSaveCommand(chr, 0x30bb); kernel menu accessor (table entry); name ours
+0x00771d40 function KernelSlotAbilityName_124_00771d40# cdecl(i): Kernel_GetAbilityName(u16 +0x124 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771d70 function KernelSaveCommand_30bc_00771d70# cdecl(chr): MsGetSaveCommand(chr, 0x30bc); kernel menu accessor (table entry); name ours
+0x00771d90 function KernelSlotAbilityName_126_00771d90# cdecl(i): Kernel_GetAbilityName(u16 +0x126 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771dc0 function KernelSaveCommand_30bd_00771dc0# cdecl(chr): MsGetSaveCommand(chr, 0x30bd); kernel menu accessor (table entry); name ours
+0x00771de0 function KernelSlotAbilityName_128_00771de0# cdecl(i): Kernel_GetAbilityName(u16 +0x128 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771e10 function KernelSaveCommand_30be_00771e10# cdecl(chr): MsGetSaveCommand(chr, 0x30be); kernel menu accessor (table entry); name ours
+0x00771e30 function KernelSaveCommand_30bf_00771e30# cdecl(chr): MsGetSaveCommand(chr, 0x30bf); kernel menu accessor (table entry); name ours
+0x00771e50 function KernelSlotAbilityName_12a_00771e50# cdecl(i): Kernel_GetAbilityName(u16 +0x12a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771e80 function KernelSaveCommand_30c0_00771e80# cdecl(chr): MsGetSaveCommand(chr, 0x30c0); kernel menu accessor (table entry); name ours
+0x00771ea0 function KernelSlotAbilityName_12c_00771ea0# cdecl(i): Kernel_GetAbilityName(u16 +0x12c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771ed0 function KernelSaveCommand_30c1_00771ed0# cdecl(chr): MsGetSaveCommand(chr, 0x30c1); kernel menu accessor (table entry); name ours
+0x00771ef0 function KernelSlotAbilityName_12e_00771ef0# cdecl(i): Kernel_GetAbilityName(u16 +0x12e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771f20 function KernelSaveCommand_30c2_00771f20# cdecl(chr): MsGetSaveCommand(chr, 0x30c2); kernel menu accessor (table entry); name ours
+0x00771f40 function KernelSlotAbilityName_130_00771f40# cdecl(i): Kernel_GetAbilityName(u16 +0x130 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771f70 function KernelSaveCommand_30c3_00771f70# cdecl(chr): MsGetSaveCommand(chr, 0x30c3); kernel menu accessor (table entry); name ours
+0x00771f90 function KernelSlotAbilityName_132_00771f90# cdecl(i): Kernel_GetAbilityName(u16 +0x132 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00771fc0 function KernelSaveCommand_30c4_00771fc0# cdecl(chr): MsGetSaveCommand(chr, 0x30c4); kernel menu accessor (table entry); name ours
+0x00771fe0 function KernelSaveCommand_30c5_00771fe0# cdecl(chr): MsGetSaveCommand(chr, 0x30c5); kernel menu accessor (table entry); name ours
+0x00772000 function KernelSlotAbilityName_134_00772000# cdecl(i): Kernel_GetAbilityName(u16 +0x134 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772030 function KernelSaveCommand_30c6_00772030# cdecl(chr): MsGetSaveCommand(chr, 0x30c6); kernel menu accessor (table entry); name ours
+0x00772050 function KernelSlotAbilityName_136_00772050# cdecl(i): Kernel_GetAbilityName(u16 +0x136 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772080 function KernelSaveCommand_30c7_00772080# cdecl(chr): MsGetSaveCommand(chr, 0x30c7); kernel menu accessor (table entry); name ours
+0x007720a0 function KernelSlotAbilityName_138_007720a0# cdecl(i): Kernel_GetAbilityName(u16 +0x138 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007720d0 function KernelSaveCommand_30c8_007720d0# cdecl(chr): MsGetSaveCommand(chr, 0x30c8); kernel menu accessor (table entry); name ours
+0x007720f0 function KernelSlotAbilityName_13a_007720f0# cdecl(i): Kernel_GetAbilityName(u16 +0x13a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772120 function KernelSaveCommand_30c9_00772120# cdecl(chr): MsGetSaveCommand(chr, 0x30c9); kernel menu accessor (table entry); name ours
+0x00772140 function KernelSlotAbilityName_13c_00772140# cdecl(i): Kernel_GetAbilityName(u16 +0x13c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772170 function KernelSaveCommand_30ca_00772170# cdecl(chr): MsGetSaveCommand(chr, 0x30ca); kernel menu accessor (table entry); name ours
+0x00772190 function KernelSaveCommand_30cb_00772190# cdecl(chr): MsGetSaveCommand(chr, 0x30cb); kernel menu accessor (table entry); name ours
+0x007721b0 function KernelSlotAbilityName_13e_007721b0# cdecl(i): Kernel_GetAbilityName(u16 +0x13e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007721e0 function KernelSaveCommand_30cc_007721e0# cdecl(chr): MsGetSaveCommand(chr, 0x30cc); kernel menu accessor (table entry); name ours
+0x00772200 function KernelSlotAbilityName_140_00772200# cdecl(i): Kernel_GetAbilityName(u16 +0x140 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772230 function KernelSaveCommand_30cd_00772230# cdecl(chr): MsGetSaveCommand(chr, 0x30cd); kernel menu accessor (table entry); name ours
+0x00772250 function KernelSlotAbilityName_142_00772250# cdecl(i): Kernel_GetAbilityName(u16 +0x142 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772280 function KernelSaveCommand_30ce_00772280# cdecl(chr): MsGetSaveCommand(chr, 0x30ce); kernel menu accessor (table entry); name ours
+0x007722c0 function KernelSlotAbilityName_144_007722c0# cdecl(i): Kernel_GetAbilityName(u16 +0x144 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007722f0 function KernelSaveCommand_30cf_007722f0# cdecl(chr): MsGetSaveCommand(chr, 0x30cf); kernel menu accessor (table entry); name ours
+0x00772320 function KernelSlotAbilityName_146_00772320# cdecl(i): Kernel_GetAbilityName(u16 +0x146 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772350 function KernelSaveCommand_30d0_00772350# cdecl(chr): MsGetSaveCommand(chr, 0x30d0); kernel menu accessor (table entry); name ours
+0x00772370 function KernelPlayerWord_50_00772370# cdecl(chr): u32 +0x50 of MsGetSavePlayerPtr(chr); kernel menu accessor; name ours
+0x00772390 function KernelSaveCommand_30d1_00772390# cdecl(chr): MsGetSaveCommand(chr, 0x30d1); kernel menu accessor (table entry); name ours
+0x007723b0 function KernelSlotAbilityName_148_007723b0# cdecl(i): Kernel_GetAbilityName(u16 +0x148 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007723e0 function KernelPlayerWord_58_007723e0# cdecl(chr): u32 +0x58 of MsGetSavePlayerPtr(chr); kernel menu accessor; name ours
+0x00772400 function KernelSaveCommand_30d2_00772400# cdecl(chr): MsGetSaveCommand(chr, 0x30d2); kernel menu accessor (table entry); name ours
+0x00772420 function KernelSlotAbilityName_14a_00772420# cdecl(i): Kernel_GetAbilityName(u16 +0x14a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772450 function KernelPlayerWord_54_00772450# cdecl(chr): u32 +0x54 of MsGetSavePlayerPtr(chr); kernel menu accessor; name ours
+0x00772470 function KernelSaveCommand_30d3_00772470# cdecl(chr): MsGetSaveCommand(chr, 0x30d3); kernel menu accessor (table entry); name ours
+0x00772490 function KernelSlotAbilityName_14c_00772490# cdecl(i): Kernel_GetAbilityName(u16 +0x14c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007724c0 function KernelGetSaveItemNum_007724c0# cdecl(id): tail call MsGetSaveItemNum(id); kernel menu accessor; name ours
+0x007724d0 function KernelSaveCommand_30d4_007724d0# cdecl(chr): MsGetSaveCommand(chr, 0x30d4); kernel menu accessor (table entry); name ours
+0x007724f0 function KernelImportantGet_007724f0# cdecl(id): tail call MsImportantGet(id); kernel menu accessor; name ours
+0x00772500 function KernelSlotAbilityName_14e_00772500# cdecl(i): Kernel_GetAbilityName(u16 +0x14e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772530 function KernelSaveCommand_30d5_00772530# cdecl(chr): MsGetSaveCommand(chr, 0x30d5); kernel menu accessor (table entry); name ours
+0x00772560 function KernelSlotAbilityName_150_00772560# cdecl(i): Kernel_GetAbilityName(u16 +0x150 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772590 function KernelSaveCommand_30d6_00772590# cdecl(chr): MsGetSaveCommand(chr, 0x30d6); kernel menu accessor (table entry); name ours
+0x007725b0 function KernelEventByte_007725b0  # cdecl(i): (i8) MsGetSaveEventFlag()[i]; name ours
+0x007725d0 function KernelSaveCommand_30d7_007725d0# cdecl(chr): MsGetSaveCommand(chr, 0x30d7); kernel menu accessor (table entry); name ours
+0x007725f0 function KernelSlotAbilityName_152_007725f0# cdecl(i): Kernel_GetAbilityName(u16 +0x152 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772620 function KernelEventBit_00772620   # cdecl(n): bit n & 7 of MsGetSaveEventFlag()[n / 8] (truncating); name ours
+0x00772660 function KernelSaveCommand_30d8_00772660# cdecl(chr): MsGetSaveCommand(chr, 0x30d8); kernel menu accessor (table entry); name ours
+0x00772680 function KernelSlotAbilityName_154_00772680# cdecl(i): Kernel_GetAbilityName(u16 +0x154 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007726b0 function KernelSaveCommand_30d9_007726b0# cdecl(chr): MsGetSaveCommand(chr, 0x30d9); kernel menu accessor (table entry); name ours
+0x007726e0 function KernelSlotAbilityName_156_007726e0# cdecl(i): Kernel_GetAbilityName(u16 +0x156 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772710 function KernelSaveCommand_30da_00772710# cdecl(chr): MsGetSaveCommand(chr, 0x30da); kernel menu accessor (table entry); name ours
+0x00772740 function KernelSlotAbilityName_158_00772740# cdecl(i): Kernel_GetAbilityName(u16 +0x158 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772770 function KernelSaveCommand_30db_00772770# cdecl(chr): MsGetSaveCommand(chr, 0x30db); kernel menu accessor (table entry); name ours
+0x00772790 function KernelMonsterCapture_00772790# cdecl(id): tail call MsGetMonsterCapture(id); kernel menu accessor; name ours
+0x007727a0 function KernelSlotAbilityName_15a_007727a0# cdecl(i): Kernel_GetAbilityName(u16 +0x15a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007727d0 function KernelSaveCommand_30dc_007727d0# cdecl(chr): MsGetSaveCommand(chr, 0x30dc); kernel menu accessor (table entry); name ours
+0x00772810 function KernelSaveCommand_30dd_00772810# cdecl(chr): MsGetSaveCommand(chr, 0x30dd); kernel menu accessor (table entry); name ours
+0x00772830 function KernelSlotAbilityName_15c_00772830# cdecl(i): Kernel_GetAbilityName(u16 +0x15c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772890 function KernelSaveCommand_30de_00772890# cdecl(chr): MsGetSaveCommand(chr, 0x30de); kernel menu accessor (table entry); name ours
+0x007728b0 function KernelSlotAbilityName_15e_007728b0# cdecl(i): Kernel_GetAbilityName(u16 +0x15e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007728e0 function KernelSaveCommand_30df_007728e0# cdecl(chr): MsGetSaveCommand(chr, 0x30df); kernel menu accessor (table entry); name ours
+0x00772900 function KernelJoined_00772900     # cdecl(chr): MsGetSavePlyJoin(chr) == 1; name ours
+0x00772920 function KernelSlotAbilityName_160_00772920# cdecl(i): Kernel_GetAbilityName(u16 +0x160 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772950 function KernelSaveCommand_30e0_00772950# cdecl(chr): MsGetSaveCommand(chr, 0x30e0); kernel menu accessor (table entry); name ours
+0x00772980 function KernelSlotAbilityName_162_00772980# cdecl(i): Kernel_GetAbilityName(u16 +0x162 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007729b0 function KernelSaveCommand_30e1_007729b0# cdecl(chr): MsGetSaveCommand(chr, 0x30e1); kernel menu accessor (table entry); name ours
+0x007729e0 function KernelSaveCommand_3000_007729e0# cdecl(chr): MsGetSaveCommand(chr, 0x3000); kernel menu accessor (table entry); name ours
+0x00772a00 function KernelSlotAbilityName_164_00772a00# cdecl(i): Kernel_GetAbilityName(u16 +0x164 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772a30 function KernelSaveCommand_30e2_00772a30# cdecl(chr): MsGetSaveCommand(chr, 0x30e2); kernel menu accessor (table entry); name ours
+0x00772a50 function KernelSaveCommand_3001_00772a50# cdecl(chr): MsGetSaveCommand(chr, 0x3001); kernel menu accessor (table entry); name ours
+0x00772a70 function KernelSaveCommand_30e3_00772a70# cdecl(chr): MsGetSaveCommand(chr, 0x30e3); kernel menu accessor (table entry); name ours
+0x00772a90 function KernelSlotAbilityName_166_00772a90# cdecl(i): Kernel_GetAbilityName(u16 +0x166 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772ac0 function KernelSaveCommand_3002_00772ac0# cdecl(chr): MsGetSaveCommand(chr, 0x3002); kernel menu accessor (table entry); name ours
+0x00772ae0 function KernelSaveCommand_30e4_00772ae0# cdecl(chr): MsGetSaveCommand(chr, 0x30e4); kernel menu accessor (table entry); name ours
+0x00772b00 function KernelSlotAbilityName_168_00772b00# cdecl(i): Kernel_GetAbilityName(u16 +0x168 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772b30 function KernelSaveCommand_3003_00772b30# cdecl(chr): MsGetSaveCommand(chr, 0x3003); kernel menu accessor (table entry); name ours
+0x00772b50 function KernelSaveCommand_30e5_00772b50# cdecl(chr): MsGetSaveCommand(chr, 0x30e5); kernel menu accessor (table entry); name ours
+0x00772b70 function KernelSlotAbilityName_16a_00772b70# cdecl(i): Kernel_GetAbilityName(u16 +0x16a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772ba0 function KernelSaveCommand_3004_00772ba0# cdecl(chr): MsGetSaveCommand(chr, 0x3004); kernel menu accessor (table entry); name ours
+0x00772bc0 function KernelSaveCommand_30e6_00772bc0# cdecl(chr): MsGetSaveCommand(chr, 0x30e6); kernel menu accessor (table entry); name ours
+0x00772be0 function KernelSlotAbilityName_16c_00772be0# cdecl(i): Kernel_GetAbilityName(u16 +0x16c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772c10 function KernelSaveCommand_3005_00772c10# cdecl(chr): MsGetSaveCommand(chr, 0x3005); kernel menu accessor (table entry); name ours
+0x00772c30 function KernelSaveCommand_30e7_00772c30# cdecl(chr): MsGetSaveCommand(chr, 0x30e7); kernel menu accessor (table entry); name ours
+0x00772c50 function KernelSaveCommand_3006_00772c50# cdecl(chr): MsGetSaveCommand(chr, 0x3006); kernel menu accessor (table entry); name ours
+0x00772c70 function KernelSlotAbilityName_16e_00772c70# cdecl(i): Kernel_GetAbilityName(u16 +0x16e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772ca0 function KernelSaveCommand_30e8_00772ca0# cdecl(chr): MsGetSaveCommand(chr, 0x30e8); kernel menu accessor (table entry); name ours
+0x00772cc0 function KernelSaveCommand_3007_00772cc0# cdecl(chr): MsGetSaveCommand(chr, 0x3007); kernel menu accessor (table entry); name ours
+0x00772ce0 function KernelSaveCommand_30e9_00772ce0# cdecl(chr): MsGetSaveCommand(chr, 0x30e9); kernel menu accessor (table entry); name ours
+0x00772d00 function KernelSlotAbilityName_170_00772d00# cdecl(i): Kernel_GetAbilityName(u16 +0x170 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772d30 function KernelSaveCommand_3008_00772d30# cdecl(chr): MsGetSaveCommand(chr, 0x3008); kernel menu accessor (table entry); name ours
+0x00772d50 function KernelSaveCommand_30ea_00772d50# cdecl(chr): MsGetSaveCommand(chr, 0x30ea); kernel menu accessor (table entry); name ours
+0x00772d70 function KernelSlotAbilityName_172_00772d70# cdecl(i): Kernel_GetAbilityName(u16 +0x172 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772da0 function KernelSaveCommand_3009_00772da0# cdecl(chr): MsGetSaveCommand(chr, 0x3009); kernel menu accessor (table entry); name ours
+0x00772dc0 function KernelSlotWord194_00772dc0 # cdecl(i): 0x1f40 for 0xf9, else u32 +0x194 of record i of *0x0112a034; name ours
+0x00772df0 function KernelSlotAbilityName_174_00772df0# cdecl(i): Kernel_GetAbilityName(u16 +0x174 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772e20 function KernelSaveCommand_300a_00772e20# cdecl(chr): MsGetSaveCommand(chr, 0x300a); kernel menu accessor (table entry); name ours
+0x00772e40 function KernelGilAfter_00772e40   # cdecl(i): max(MsGetGIL() - record i +0x194, 0) (signed); name ours
+0x00772e70 function KernelSlotAbilityName_176_00772e70# cdecl(i): Kernel_GetAbilityName(u16 +0x176 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772ea0 function KernelSaveCommand_300b_00772ea0# cdecl(chr): MsGetSaveCommand(chr, 0x300b); kernel menu accessor (table entry); name ours
+0x00772ec0 function KernelSaveCommand_30ff_00772ec0# cdecl(chr): MsGetSaveCommand(chr, 0x30ff); kernel menu accessor (table entry); name ours
+0x00772ee0 function KernelSaveCommand_300c_00772ee0# cdecl(chr): MsGetSaveCommand(chr, 0x300c); kernel menu accessor (table entry); name ours
+0x00772f00 function KernelSlotAbilityName_178_00772f00# cdecl(i): Kernel_GetAbilityName(u16 +0x178 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772f30 function KernelSaveCommand_3100_00772f30# cdecl(chr): MsGetSaveCommand(chr, 0x3100); kernel menu accessor (table entry); name ours
+0x00772f50 function KernelSaveCommand_300d_00772f50# cdecl(chr): MsGetSaveCommand(chr, 0x300d); kernel menu accessor (table entry); name ours
+0x00772f70 function KernelSlotAbilityName_17a_00772f70# cdecl(i): Kernel_GetAbilityName(u16 +0x17a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772fa0 function KernelSaveCommand_3101_00772fa0# cdecl(chr): MsGetSaveCommand(chr, 0x3101); kernel menu accessor (table entry); name ours
+0x00772fc0 function KernelSaveCommand_300e_00772fc0# cdecl(chr): MsGetSaveCommand(chr, 0x300e); kernel menu accessor (table entry); name ours
+0x00772fe0 function KernelSlotAbilityName_17c_00772fe0# cdecl(i): Kernel_GetAbilityName(u16 +0x17c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773010 function KernelSaveCommand_3102_00773010# cdecl(chr): MsGetSaveCommand(chr, 0x3102); kernel menu accessor (table entry); name ours
+0x00773030 function KernelSaveCommand_300f_00773030# cdecl(chr): MsGetSaveCommand(chr, 0x300f); kernel menu accessor (table entry); name ours
+0x00773050 function KernelSlotAbilityName_17e_00773050# cdecl(i): Kernel_GetAbilityName(u16 +0x17e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773080 function KernelSaveCommand_3103_00773080# cdecl(chr): MsGetSaveCommand(chr, 0x3103); kernel menu accessor (table entry); name ours
+0x007730a0 function KernelSaveCommand_3010_007730a0# cdecl(chr): MsGetSaveCommand(chr, 0x3010); kernel menu accessor (table entry); name ours
+0x007730c0 function KernelSaveCommand_3104_007730c0# cdecl(chr): MsGetSaveCommand(chr, 0x3104); kernel menu accessor (table entry); name ours
+0x007730e0 function KernelSlotAbilityName_180_007730e0# cdecl(i): Kernel_GetAbilityName(u16 +0x180 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773110 function KernelSaveCommand_3011_00773110# cdecl(chr): MsGetSaveCommand(chr, 0x3011); kernel menu accessor (table entry); name ours
+0x00773130 function KernelSaveCommand_3105_00773130# cdecl(chr): MsGetSaveCommand(chr, 0x3105); kernel menu accessor (table entry); name ours
+0x00773150 function KernelSaveCommand_3012_00773150# cdecl(chr): MsGetSaveCommand(chr, 0x3012); kernel menu accessor (table entry); name ours
+0x00773170 function KernelSlotAbilityName_182_00773170# cdecl(i): Kernel_GetAbilityName(u16 +0x182 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007731a0 function KernelSaveCommand_3106_007731a0# cdecl(chr): MsGetSaveCommand(chr, 0x3106); kernel menu accessor (table entry); name ours
+0x007731c0 function KernelSaveCommand_3013_007731c0# cdecl(chr): MsGetSaveCommand(chr, 0x3013); kernel menu accessor (table entry); name ours
+0x007731e0 function KernelSlotAbilityName_184_007731e0# cdecl(i): Kernel_GetAbilityName(u16 +0x184 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773210 function KernelSaveCommand_3107_00773210# cdecl(chr): MsGetSaveCommand(chr, 0x3107); kernel menu accessor (table entry); name ours
+0x00773230 function KernelSaveCommand_3014_00773230# cdecl(chr): MsGetSaveCommand(chr, 0x3014); kernel menu accessor (table entry); name ours
+0x00773250 function KernelSlotAbilityName_186_00773250# cdecl(i): Kernel_GetAbilityName(u16 +0x186 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773280 function KernelSaveCommand_3108_00773280# cdecl(chr): MsGetSaveCommand(chr, 0x3108); kernel menu accessor (table entry); name ours
+0x007732a0 function KernelSaveCommand_3015_007732a0# cdecl(chr): MsGetSaveCommand(chr, 0x3015); kernel menu accessor (table entry); name ours
+0x007732c0 function KernelSlotAbilityName_188_007732c0# cdecl(i): Kernel_GetAbilityName(u16 +0x188 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007732f0 function KernelSaveCommand_3109_007732f0# cdecl(chr): MsGetSaveCommand(chr, 0x3109); kernel menu accessor (table entry); name ours
+0x00773310 function KernelSaveCommand_3016_00773310# cdecl(chr): MsGetSaveCommand(chr, 0x3016); kernel menu accessor (table entry); name ours
+0x00773330 function KernelSaveCommand_311f_00773330# cdecl(chr): MsGetSaveCommand(chr, 0x311f); kernel menu accessor (table entry); name ours
+0x00773350 function KernelSlotAbilityName_18a_00773350# cdecl(i): Kernel_GetAbilityName(u16 +0x18a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773380 function KernelSaveCommand_3017_00773380# cdecl(chr): MsGetSaveCommand(chr, 0x3017); kernel menu accessor (table entry); name ours
+0x007733a0 function KernelSaveCommand_3120_007733a0# cdecl(chr): MsGetSaveCommand(chr, 0x3120); kernel menu accessor (table entry); name ours
+0x007733c0 function KernelSaveCommand_3018_007733c0# cdecl(chr): MsGetSaveCommand(chr, 0x3018); kernel menu accessor (table entry); name ours
+0x007733e0 function KernelSlotAbilityName_18c_007733e0# cdecl(i): Kernel_GetAbilityName(u16 +0x18c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773410 function KernelSaveCommand_3113_00773410# cdecl(chr): MsGetSaveCommand(chr, 0x3113); kernel menu accessor (table entry); name ours
+0x00773430 function KernelSaveCommand_3019_00773430# cdecl(chr): MsGetSaveCommand(chr, 0x3019); kernel menu accessor (table entry); name ours
+0x00773450 function KernelSlotAbilityName_18e_00773450# cdecl(i): Kernel_GetAbilityName(u16 +0x18e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00773480 function KernelSaveCommand_3114_00773480# cdecl(chr): MsGetSaveCommand(chr, 0x3114); kernel menu accessor (table entry); name ours
+0x007734a0 function KernelSaveCommand_301a_007734a0# cdecl(chr): MsGetSaveCommand(chr, 0x301a); kernel menu accessor (table entry); name ours
+0x007734c0 function KernelSlotAbilityName_190_007734c0# cdecl(i): Kernel_GetAbilityName(u16 +0x190 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007734f0 function KernelSaveCommand_3115_007734f0# cdecl(chr): MsGetSaveCommand(chr, 0x3115); kernel menu accessor (table entry); name ours
+0x00773510 function KernelSaveCommand_301b_00773510# cdecl(chr): MsGetSaveCommand(chr, 0x301b); kernel menu accessor (table entry); name ours
+0x00773540 function KernelSaveCommand_3116_00773540# cdecl(chr): MsGetSaveCommand(chr, 0x3116); kernel menu accessor (table entry); name ours
+0x00773560 function KernelSaveCommand_301c_00773560# cdecl(chr): MsGetSaveCommand(chr, 0x301c); kernel menu accessor (table entry); name ours
+0x00773580 function KernelSaveCommand_3117_00773580# cdecl(chr): MsGetSaveCommand(chr, 0x3117); kernel menu accessor (table entry); name ours
+0x007735a0 function KernelSaveCommand_301d_007735a0# cdecl(chr): MsGetSaveCommand(chr, 0x301d); kernel menu accessor (table entry); name ours
+0x007735c0 function KernelSaveCommand_3118_007735c0# cdecl(chr): MsGetSaveCommand(chr, 0x3118); kernel menu accessor (table entry); name ours
+0x007735e0 function KernelSaveCommand_301e_007735e0# cdecl(chr): MsGetSaveCommand(chr, 0x301e); kernel menu accessor (table entry); name ours
+0x00773600 function KernelSaveCommand_3119_00773600# cdecl(chr): MsGetSaveCommand(chr, 0x3119); kernel menu accessor (table entry); name ours
+0x00773620 function KernelSaveCommand_301f_00773620# cdecl(chr): MsGetSaveCommand(chr, 0x301f); kernel menu accessor (table entry); name ours
+0x00773640 function KernelSaveCommand_311a_00773640# cdecl(chr): MsGetSaveCommand(chr, 0x311a); kernel menu accessor (table entry); name ours
+0x00773660 function KernelSaveCommand_3020_00773660# cdecl(chr): MsGetSaveCommand(chr, 0x3020); kernel menu accessor (table entry); name ours
+0x00773680 function KernelSaveCommand_311b_00773680# cdecl(chr): MsGetSaveCommand(chr, 0x311b); kernel menu accessor (table entry); name ours
+0x007736a0 function KernelSaveCommand_3021_007736a0# cdecl(chr): MsGetSaveCommand(chr, 0x3021); kernel menu accessor (table entry); name ours
+0x007736c0 function KernelSaveCommand_311c_007736c0# cdecl(chr): MsGetSaveCommand(chr, 0x311c); kernel menu accessor (table entry); name ours
+0x007736e0 function KernelSaveCommand_3022_007736e0# cdecl(chr): MsGetSaveCommand(chr, 0x3022); kernel menu accessor (table entry); name ours
+0x00773700 function KernelSaveCommand_311d_00773700# cdecl(chr): MsGetSaveCommand(chr, 0x311d); kernel menu accessor (table entry); name ours
+0x00773720 function KernelSaveCommand_3023_00773720# cdecl(chr): MsGetSaveCommand(chr, 0x3023); kernel menu accessor (table entry); name ours
+0x00773740 function KernelSaveCommand_311e_00773740# cdecl(chr): MsGetSaveCommand(chr, 0x311e); kernel menu accessor (table entry); name ours
+0x00773760 function KernelSaveCommand_3024_00773760# cdecl(chr): MsGetSaveCommand(chr, 0x3024); kernel menu accessor (table entry); name ours
+0x007737c0 function KernelSaveCommand_3025_007737c0# cdecl(chr): MsGetSaveCommand(chr, 0x3025); kernel menu accessor (table entry); name ours
+0x007737e0 function KernelSaveCommand_3026_007737e0# cdecl(chr): MsGetSaveCommand(chr, 0x3026); kernel menu accessor (table entry); name ours
+0x00773800 function KernelSetEventByte_00773800 # cdecl(i, v): MsGetSaveEventFlag()[i] = v; name ours
 0x00773820 function GetDerefU32_00773820         # auto-port shape (return deref u32 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u32[(((a0 * 0x1d8) + t0) + 0x14)]; return t1; callers: no direct caller; name ours
+0x00773840 function KernelSaveCommand_3027_00773840# cdecl(chr): MsGetSaveCommand(chr, 0x3027); kernel menu accessor (table entry); name ours
 0x00773860 function GetDerefU8_00773860          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x20)]; return t1; callers: no direct caller; name ours
+0x00773880 function KernelSetEventBit_00773880 # cdecl(n, on): that bit cleared, then set when on; name ours
+0x007738c0 function KernelSaveCommand_3028_007738c0# cdecl(chr): MsGetSaveCommand(chr, 0x3028); kernel menu accessor (table entry); name ours
 0x007738e0 function GetDerefU8_007738e0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x22)]; return t1; callers: no direct caller; name ours
+0x00773900 function KernelSaveCommand_3029_00773900# cdecl(chr): MsGetSaveCommand(chr, 0x3029); kernel menu accessor (table entry); name ours
 0x00773920 function GetDerefU8_00773920          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2b)]; return t1; callers: no direct caller; name ours
+0x00773950 function KernelSaveCommand_302b_00773950# cdecl(chr): MsGetSaveCommand(chr, 0x302b); kernel menu accessor (table entry); name ours
 0x00773970 function GetDerefU8_00773970          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2c)]; return t1; callers: no direct caller; name ours
+0x007739a0 function KernelSaveCommand_302c_007739a0# cdecl(chr): MsGetSaveCommand(chr, 0x302c); kernel menu accessor (table entry); name ours
+0x007739c0 function KernelPostRequest1_007739c0 # cdecl(v): unless byte 0x0112a038: 0x0112a058 = 1, 0x0112a054 = v, 0x0112a038 = 1; kernel menu accessor; name ours
 0x007739f0 function GetDerefU8_007739f0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2d)]; return t1; callers: no direct caller; name ours
+0x00773a10 function KernelSaveCommand_302d_00773a10# cdecl(chr): MsGetSaveCommand(chr, 0x302d); kernel menu accessor (table entry); name ours
+0x00773a30 function KernelPostRequest0_00773a30 # cdecl(v): as 0x007739c0 with kind 0; name ours
 0x00773a60 function GetDerefU8_00773a60          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2e)]; return t1; callers: no direct caller; name ours
+0x00773a80 function KernelSaveCommand_302e_00773a80# cdecl(chr): MsGetSaveCommand(chr, 0x302e); kernel menu accessor (table entry); name ours
+0x00773aa0 function KernelPostRequest3_00773aa0 # cdecl(v): as 0x007739c0 with kind 3; name ours
 0x00773ad0 function GetDerefU8_00773ad0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2f)]; return t1; callers: no direct caller; name ours
+0x00773af0 function KernelSaveCommand_302f_00773af0# cdecl(chr): MsGetSaveCommand(chr, 0x302f); kernel menu accessor (table entry); name ours
+0x00773b10 function KernelPlaySfx_00773b10    # cdecl(sfx): tail SndSepPlaySimple(sfx | 0x80000000); name ours
 0x00773b20 function GetDerefU8_00773b20          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x30)]; return t1; callers: no direct caller; name ours
+0x00773b40 function KernelSaveCommand_3030_00773b40# cdecl(chr): MsGetSaveCommand(chr, 0x3030); kernel menu accessor (table entry); name ours
 0x00773b60 function GetDerefU8_00773b60          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x31)]; return t1; callers: no direct caller; name ours
+0x00773ba0 function KernelSaveCommand_3031_00773ba0# cdecl(chr): MsGetSaveCommand(chr, 0x3031); kernel menu accessor (table entry); name ours
 0x00773bc0 function GetDerefU8_00773bc0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x32)]; return t1; callers: no direct caller; name ours
+0x00773be0 function KernelSaveCommand_3032_00773be0# cdecl(chr): MsGetSaveCommand(chr, 0x3032); kernel menu accessor (table entry); name ours
 0x00773c00 function GetDerefU8_00773c00          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x33)]; return t1; callers: no direct caller; name ours
+0x00773c20 function KernelSaveCommand_3033_00773c20# cdecl(chr): MsGetSaveCommand(chr, 0x3033); kernel menu accessor (table entry); name ours
 0x00773c40 function GetDerefU8_00773c40          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x34)]; return t1; callers: no direct caller; name ours
+0x00773c90 function KernelSaveCommand_3034_00773c90# cdecl(chr): MsGetSaveCommand(chr, 0x3034); kernel menu accessor (table entry); name ours
 0x00773cb0 function GetDerefU8_00773cb0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x35)]; return t1; callers: no direct caller; name ours
+0x00773cd0 function KernelSaveCommand_3035_00773cd0# cdecl(chr): MsGetSaveCommand(chr, 0x3035); kernel menu accessor (table entry); name ours
 0x00773cf0 function GetDerefU8_00773cf0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x36)]; return t1; callers: no direct caller; name ours
+0x00773d10 function KernelSaveCommand_3036_00773d10# cdecl(chr): MsGetSaveCommand(chr, 0x3036); kernel menu accessor (table entry); name ours
 0x00773d30 function GetDerefU8_00773d30          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x37)]; return t1; callers: no direct caller; name ours
+0x00773d50 function KernelSaveCommand_3037_00773d50# cdecl(chr): MsGetSaveCommand(chr, 0x3037); kernel menu accessor (table entry); name ours
 0x00773d70 function GetDerefU8_00773d70          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x38)]; return t1; callers: no direct caller; name ours
+0x00773d90 function KernelSaveCommand_3038_00773d90# cdecl(chr): MsGetSaveCommand(chr, 0x3038); kernel menu accessor (table entry); name ours
 0x00773db0 function GetDerefU8_00773db0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x39)]; return t1; callers: no direct caller; name ours
+0x00773dd0 function KernelSaveCommand_3039_00773dd0# cdecl(chr): MsGetSaveCommand(chr, 0x3039); kernel menu accessor (table entry); name ours
 0x00773df0 function GetDerefU8_00773df0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3a)]; return t1; callers: no direct caller; name ours
+0x00773e10 function KernelSaveCommand_303a_00773e10# cdecl(chr): MsGetSaveCommand(chr, 0x303a); kernel menu accessor (table entry); name ours
 0x00773e30 function GetDerefU8_00773e30          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3b)]; return t1; callers: no direct caller; name ours
+0x00773e50 function KernelSaveCommand_303b_00773e50# cdecl(chr): MsGetSaveCommand(chr, 0x303b); kernel menu accessor (table entry); name ours
 0x00773e70 function GetDerefU8_00773e70          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3c)]; return t1; callers: no direct caller; name ours
+0x00773e90 function KernelSaveCommand_303c_00773e90# cdecl(chr): MsGetSaveCommand(chr, 0x303c); kernel menu accessor (table entry); name ours
 0x00773eb0 function GetDerefU8_00773eb0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3d)]; return t1; callers: no direct caller; name ours
+0x00773ed0 function KernelSaveCommand_303d_00773ed0# cdecl(chr): MsGetSaveCommand(chr, 0x303d); kernel menu accessor (table entry); name ours
 0x00773ef0 function GetDerefU8_00773ef0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3e)]; return t1; callers: no direct caller; name ours
+0x00773f10 function KernelSaveCommand_303e_00773f10# cdecl(chr): MsGetSaveCommand(chr, 0x303e); kernel menu accessor (table entry); name ours
 0x00773f30 function GetDerefU8_00773f30          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3f)]; return t1; callers: no direct caller; name ours
+0x00773f50 function KernelSaveCommand_303f_00773f50# cdecl(chr): MsGetSaveCommand(chr, 0x303f); kernel menu accessor (table entry); name ours
 0x00773f70 function GetDerefU8_00773f70          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x40)]; return t1; callers: no direct caller; name ours
+0x00773f90 function KernelSaveCommand_3040_00773f90# cdecl(chr): MsGetSaveCommand(chr, 0x3040); kernel menu accessor (table entry); name ours
 0x00773fb0 function GetDerefU8_00773fb0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x41)]; return t1; callers: no direct caller; name ours
+0x00773fd0 function KernelSaveCommand_3041_00773fd0# cdecl(chr): MsGetSaveCommand(chr, 0x3041); kernel menu accessor (table entry); name ours
 0x00773ff0 function GetDerefU8_00773ff0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x42)]; return t1; callers: no direct caller; name ours
+0x00774010 function KernelSaveCommand_3042_00774010# cdecl(chr): MsGetSaveCommand(chr, 0x3042); kernel menu accessor (table entry); name ours
 0x00774030 function GetDerefU8_00774030          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x43)]; return t1; callers: no direct caller; name ours
+0x00774050 function KernelSaveCommand_3043_00774050# cdecl(chr): MsGetSaveCommand(chr, 0x3043); kernel menu accessor (table entry); name ours
 0x00774070 function GetDerefU8_00774070          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x44)]; return t1; callers: no direct caller; name ours
+0x00774090 function KernelSaveCommand_3044_00774090# cdecl(chr): MsGetSaveCommand(chr, 0x3044); kernel menu accessor (table entry); name ours
 0x007740b0 function GetDerefU8_007740b0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x45)]; return t1; callers: no direct caller; name ours
+0x007740d0 function KernelSaveCommand_3045_007740d0# cdecl(chr): MsGetSaveCommand(chr, 0x3045); kernel menu accessor (table entry); name ours
 0x007740f0 function GetDerefU8_007740f0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x46)]; return t1; callers: no direct caller; name ours
+0x00774110 function KernelSaveCommand_3046_00774110# cdecl(chr): MsGetSaveCommand(chr, 0x3046); kernel menu accessor (table entry); name ours
 0x00774130 function GetDerefU8_00774130          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x47)]; return t1; callers: no direct caller; name ours
+0x00774150 function KernelSaveCommand_3047_00774150# cdecl(chr): MsGetSaveCommand(chr, 0x3047); kernel menu accessor (table entry); name ours
 0x00774170 function GetDerefU16_00774170         # auto-port shape (return deref u16 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x4e)]; return t1; callers: no direct caller; name ours
+0x00774190 function KernelSaveCommand_3048_00774190# cdecl(chr): MsGetSaveCommand(chr, 0x3048); kernel menu accessor (table entry); name ours
 0x007741b0 function GetDerefU16_007741b0         # auto-port shape (return deref u16 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x80)]; return t1; callers: no direct caller; name ours
+0x007741d0 function KernelSaveCommand_3049_007741d0# cdecl(chr): MsGetSaveCommand(chr, 0x3049); kernel menu accessor (table entry); name ours
 0x007741f0 function GetDerefU16_007741f0         # auto-port shape (return deref u16 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x82)]; return t1; callers: no direct caller; name ours
+0x00774210 function KernelSaveCommand_304a_00774210# cdecl(chr): MsGetSaveCommand(chr, 0x304a); kernel menu accessor (table entry); name ours
 0x00774230 function GetDerefU16_00774230         # auto-port shape (return deref u16 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x84)]; return t1; callers: no direct caller; name ours
+0x00774250 function KernelSaveCommand_304b_00774250# cdecl(chr): MsGetSaveCommand(chr, 0x304b); kernel menu accessor (table entry); name ours
 0x00774270 function GetDerefU8_00774270          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x88)]; return t1; callers: no direct caller; name ours
+0x00774290 function KernelSaveCommand_304c_00774290# cdecl(chr): MsGetSaveCommand(chr, 0x304c); kernel menu accessor (table entry); name ours
 0x007742b0 function GetDerefU8_007742b0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x89)]; return t1; callers: no direct caller; name ours
+0x007742d0 function KernelSaveCommand_304d_007742d0# cdecl(chr): MsGetSaveCommand(chr, 0x304d); kernel menu accessor (table entry); name ours
 0x007742f0 function GetDerefU8_007742f0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x8a)]; return t1; callers: no direct caller; name ours
+0x00774310 function KernelSaveCommand_304e_00774310# cdecl(chr): MsGetSaveCommand(chr, 0x304e); kernel menu accessor (table entry); name ours
 0x00774330 function GetDerefU8_00774330          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x8b)]; return t1; callers: no direct caller; name ours
+0x00774350 function KernelSaveCommand_304f_00774350# cdecl(chr): MsGetSaveCommand(chr, 0x304f); kernel menu accessor (table entry); name ours
+0x00774370 function KernelSaveCommand_3050_00774370# cdecl(chr): MsGetSaveCommand(chr, 0x3050); kernel menu accessor (table entry); name ours
+0x00774390 function KernelSlotItemName_08c_00774390# cdecl(i): Kernel_GetItemName(u16 +0x8c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007743c0 function KernelSaveCommand_3051_007743c0# cdecl(chr): MsGetSaveCommand(chr, 0x3051); kernel menu accessor (table entry); name ours
+0x007743e0 function KernelSlotItemName_08e_007743e0# cdecl(i): Kernel_GetItemName(u16 +0x8e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00774410 function KernelSaveCommand_3052_00774410# cdecl(chr): MsGetSaveCommand(chr, 0x3052); kernel menu accessor (table entry); name ours
+0x00774430 function KernelSaveCommand_3053_00774430# cdecl(chr): MsGetSaveCommand(chr, 0x3053); kernel menu accessor (table entry); name ours
+0x00774450 function KernelSlotItemName_090_00774450# cdecl(i): Kernel_GetItemName(u16 +0x90 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00774480 function KernelSaveCommand_3054_00774480# cdecl(chr): MsGetSaveCommand(chr, 0x3054); kernel menu accessor (table entry); name ours
+0x007744a0 function KernelSlotItemName_092_007744a0# cdecl(i): Kernel_GetItemName(u16 +0x92 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x007744d0 function KernelSaveCommand_3055_007744d0# cdecl(chr): MsGetSaveCommand(chr, 0x3055); kernel menu accessor (table entry); name ours
+0x007744f0 function KernelSlotItemName_098_007744f0# cdecl(i): Kernel_GetItemName(u16 +0x98 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00774670 function GetU32_0112a010 # () -> u32 at 0x0112a010; name ours
 0x00774720 function Kernel_GetAbilityName # (id) -> char*: g_EmptyName for 0, else TkMn2GetAbilityMes(id) (a tail jump); about 110 callers 0x00770920..0x007734c0; named after Kernel_GetItemName; name ours
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
@@ -5557,7 +5799,7 @@
 0x007b9010 function Native_CamSetRoll            # 0x603a: args (degrees) -> cam; 0x007bfa80 stores radians in the camera's +0xc94 (eye half's roll channel)
 0x007b90b0 function Native_CamSetScreenDepth     # 0x603b: args (depth e.g. 404, 624, 1024) -> cam; debug string "MsCameraSetScrDpt"; 0x007bfbd0 (projection distance, i.e. zoom/FOV)
 0x007b9150 function Native_606c                # 0x606c: no args -> the shake with (0, 4); ported in native_chr (script round 12)
-0x007b9190 function Native_6077_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id
+0x007b9190 function Native_6077_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id; ported in native_chr (script round 13)
 0x007b91f0 function Native_6078                # 0x6078 (float): no args -> jumps to 0x007bd510(worker, args, stack) (ST0); ported in native_chr (script round 12)
 0x007b9220 function Native_CamSetPos             # 0x6002: args (x, y, z) floats -> 0; sets the camera eye position (side 1) via Cam_SetPos 0x007bf940; side 1 = "cam", side 0 = "ref" per the debug dump "ref%s\ncam%s" in 0x007d2430; a few hard-coded per-map fixes
 0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
@@ -5777,8 +6019,10 @@
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
+0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
+0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
 0x007e3060 function op_word_copy3             # the op_word_copy body again
@@ -5819,6 +6063,7 @@
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
 0x007e5660 function op_vec_zero               # (dst) four zero words
+0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
 0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
 0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
 0x007e5d40 function op_random_per_call_007e5d40  # structure: () -> op_random_per(); called by two opp draw functions (0x00a6e540, 0x00a744e0); name ours
@@ -6337,6 +6582,7 @@
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
 0x008202d0 function Sg_ReturnConst1_008202d0     # auto-port shape (return constant, cdecl): return 0x1; callers: Sg_MainLoop; name ours
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
+0x00820310 function Sg_InitArgs               # (argc, argv): Sg_SetLRButtonMode(0), bytes 0x012fb8fa = 0xff, 0x012fb8f9 = 0x012fb8f8 = 0; with g_FFXIsDebug and argc > 1, Sg_SetUserName(argv[1]); callers 0x00820680, 0x00822490 (start-up); name ours; ported (ffx_sg::control)
 0x00820380 function Sg_EffectRoutineEnable    # fh v3:bsim1.00+call.cs 0x00820490 cdecl
 0x008203a0 function Sg_EnableCalcCam          # fh v3:bsim1.00 0x008204b0
 0x008203c0 function Sg_EnableDrawChr          # (on): i8 0x012fb8ff = on & 1, returns the old value; the one Sg_Enable* of the Switch set left (Calc/Draw Map, Chr, Gui, Menu), Sg_MainLoop reads it
@@ -6395,6 +6641,12 @@
 0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0
 0x00822810 function trophyUnlockTrophy           # layout+callees: sorts between trophyCheckDefeatMonster and updateFFX, and its named callees match the Switch 0x710042de60 trophyUnlockTrophy's (similarity 1.00: SaveDataIsSaveEnabled, SaveDataUnlockTrophy); symbols from Fahrenheit's server export
 0x00822840 function updateFFX                 # fh v3:exact 0x008228d0
+0x00822890 function Sg_ClothRodMaxPin         # cloth rod constraint kind 1 of the cloth step 0x00822de0: (rods, n, points) 12-byte rods {i16 a, i16 b, f32 len, f32 lim}; when |b - a|^2 > lim, b = a + d * len / |d|; name ours; ported (ffx_sg::vec::cloth_rods)
+0x00822960 function Sg_ClothRodMax            # kind 2: as Sg_ClothRodMaxPin, both points move by d * (|d| - len) / |d| / 2; name ours; ported
+0x00822a50 function Sg_ClothRodMinPin         # kind 3: as Sg_ClothRodMaxPin when |b - a|^2 < lim; name ours; ported
+0x00822b20 function Sg_ClothRodMin            # kind 4: as Sg_ClothRodMax when |b - a|^2 < lim; name ours; ported
+0x00822c10 function Sg_ClothRodFixPin         # kind 5: rods {i16 a, i16 b, f32 len}: b = a + d * len / |d|, or b = a (Sg_VecCopy4) when |d|^2 <= 1e-5; name ours; ported
+0x00822cf0 function Sg_ClothRodFix            # kind 6: both points to length len, or b = a when |d| <= 1e-5; name ours; ported
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
 0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
 0x00824620 function Ch_ClothMeshMappingOffset # fh v3:exact 0x008246b0
@@ -6606,6 +6858,7 @@
 0x0082bc50 function Sg_AccSetFrameMap         # fh switch:cg3 0x710042ba10
 0x0082bcb0 function Sg_AccSetDrawMap          # (v): byte 0x01300776, read by Sg_AccSetFrameMap; Switch name order Sg_AccEnableBG, Sg_AccSetDrawMap, Sg_AccSetDrawChr
 0x0082bcc0 function Sg_AccGetAlpha            # () -> i16 0x0130070e, the value Sg_AccSetAlpha sets
+0x0082bcd0 function Sg_AccInitAll             # (): Sg_AccSetAlpha(0, 0), Sg_AccSetDrawMap(0), Sg_AccRequestCurrent(0), Sg_AccEnableBG(0), Sg_AccSetDrawChr(0), Sg_AccSetClear(0, 0, 0, 0); caller Sg_EventjumpInit; named after Sg_IdInitAll/Sg_PlayerInitAll; name ours; ported (ffx_sg::control)
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
 0x0082bdc0 function Sg_AccSetClear            # (r, g, b, a): bytes 0x01300771..74; Switch name (36 bytes there), among the Sg_Acc* setters
 0x0082bdf0 function Sg_AccRequestCurrent      # (unread arg): 0x00639150 (PostProcess cross-fade capture on), then g_AccCurrentRequest = 1; consumed by sg_AccSetCurrent (0x0082ce90), which captures the current frame; native 0x4019 (0x00a78180) and Sg_AccInit-like 0x0082bcd0; between Sg_AccSetClear and Sg_AccSetDrawChr; ported (ffx_sg::control)
@@ -6651,6 +6904,7 @@
 0x0082d860 function Sg_GetPlayer              # fh v3:bsim1.00 0x0082d8e0
 0x0082d870 function Sg_GetPlayerControlEnable    # layout: alphabetical run between Sg_GetPlayer and Sg_GetPlayerPos (1 unnamed in the gap); Switch 0x7100427b20 Sg_GetPlayerControlEnable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
+0x0082d8d0 function Sg_PlayerInitDefault      # (): Sg_PlayerInitAll, then Sg_PlayerSetSpeed(1, 16), (2, 38), (0x12, 20) from .rdata; caller Sg_EventjumpInit; name ours; ported (ffx_sg::state)
 0x0082d910 function Sg_PlayerInitAll          # fh v3:bsim1.00 0x0082d990
 0x0082d990 function Sg_PlayerSetDirFix        # (on, degrees): byte 0x013007c4, f32 0x013007c8 = Angle_Wrap(deg * pi / 180), read by Sg_ControlPlayer; Switch name by position (Player functions) and arguments
 0x0082d9d0 function Sg_PlayerSetDiving           # layout: the two unnamed functions after Sg_PlayerSetDirFix take the Switch player file's names sorting there: Sg_PlayerSetDiving (12 bytes; ours 13, stores byte 0x013007c5) and Sg_PlayerSetSpeed (72; ours 70)
@@ -6658,6 +6912,7 @@
 0x0082da60 function Sg_SetExecFrames          # fh v3:exact 0x0082dae0
 0x0082da90 function Sg_SetExecSpecialSpeed    # fh v3:bsim1.00 0x0082db10
 0x0082daa0 function Sg_SetLRButtonMode        # fh v3:bsim1.00 0x0082db20
+0x0082dab0 function Sg_SetCameraFollow        # (on): bit 1 of g_CameraFollow 0x00c496d5 (bit 0 is 0x0082d030's); with both set Sg_ControlMain turns the camera after the player's heading; script native at 0x00a77950 and the map defaults (Light_Set run, 0x00839xxx) call it with 1; returns the old byte without bit 1 in al; name ours; ported (ffx_sg::state)
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70
@@ -6848,6 +7103,7 @@
 0x00836250 function Sg_LightSetChr            # (chr): light matrices from the character's own directions/colours (+0x384.., +0x3c4.., chosen by the i8 at +0x188) or the global ones; Switch name
 0x00836310 function Sg_LightSetColor          # fh v3:exact 0x00836390
 0x00836430 function Sg_LightSetDir            # fh v3:exact 0x008364b0
+0x008364f0 function Sg_LightSetDirXYZ         # (i, x, y, z): Sg_LightSetDir(i, &(x, y, z, 0)); script native at 0x00a77f70; between Sg_LightSetDir and Light_Set; name ours; ported (ffx_sg::control)
 0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430)
 0x00836640 function Sg_SetSuimen              # fh switch:bsim1.00 0x71004143a0
 0x00836660 function Sg_SetWaterLimit          # (h): f32 0x013009dc; Fahrenheit Switch BSim 1.00 0x71004143d0
@@ -6907,6 +7163,7 @@
 0x00838170 function Ch_SeqLink               # ours: links the sequence table 0x01300a08 (100 x 0x14): chains by key (+4) through +8, chain heads through +0xc from 0x013011d8
 0x00838220 function ReadU16Unaligned          # p[1] << 8 | p[0]
 0x00838280 function SG_ApplyBone              # channel floats -> bone: rotation * 2 pi, translation * scale * 4096
+0x00838470 function SG_ApplyBoneDamped        # as SG_ApplyBone, but the rotations and translations only set the targets (+0x114..), the current values (+0xe4..) then move toward them (Chr_LerpAngleDamped(t, c, 0.7, 0, 10), Chr_LerpDamped(t, c, 1, 0, 1)); next to SG_ApplyBone; name ours; ported (ffx_sg::seq::apply_bone)
 0x00838750 function SG_ApplyRawClip           # uncompressed clips: per bone 9 channels x frames i16
 0x00838c60 function SG_RawToRad               # (x) -> Angle_Wrap_0083a010(x * pi / 2048); SG_ApplyRawClip
 0x00838c90 function SG_UpdateMotion           # per-frame motion update of an actor
@@ -7046,6 +7303,7 @@
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
 0x0083e3e0 function Sg_VectorGetLengthXZ      # (a, b) -> |b - a| in the x-z plane (_CIsqrt); the id map functions
 0x0083e420 function Sg_CalcTriangleNormal_0083e420 # structure: (v0, v1, v2, out) with s16 vertices: the normalised cross product of the two edges (FFXVu0OuterProduct, FFXVu0Normalize); next to Sg_VectorGetLengthXZ; name ours
+0x0083e4e0 function Sg_IdMatchChr             # (chr, i) -> whether id entry i's kind (low 7 bits of +0xc) applies to chr: 1 all, 2 not the player, 13 bit 2 of +0x198, 14 the player, 0x30..0x3f through g_ChrIdMapTable; caller 0x0083d960; name ours; ported (ffx_sg::state)
 0x0083e5c0 function Sg_Debug                  # fh switch:bsim0.93 0x7100429320
 0x0083e8d0 function Sg_IdEventInitAll         # (): clears the id events 0x01301a98..ae4 and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
 0x0083e960 function Sg_IdGetMapTable          # (i) -> g_ChrIdMapTable[i]
@@ -7186,6 +7444,7 @@
 0x008432d0 function Sg_MFIFOSpadSync          # fh v3:exact 0x008432d0
 0x00843360 function Sg_MFIFOSync              # fh v3:exact 0x00843360
 0x00843590 function StoreComputedToGlobal_00843590 # auto-port shape (store computed to global, cdecl): t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1); callers: ; name ours
+0x008435a0 function Sg_MatrixFromDir          # (m, dir, rows): d = |dir|, s = |(0,0,1) x d|, u = |s x d| (FFXVu0Normalize, Sg_VecCross), m = identity, then s, u, d into the rows in nibbles 2, 1, 0 of rows (0x12 from Ch_DrawMain and 0x008440f0); name ours; ported (ffx_sg::vec)
 0x00844a80 function Sg_IdDrawMain             # fh v3:exact 0x00844a80
 0x00844bb0 function Sg_IdExistShade           # () -> i8 0x013034b8; Fahrenheit Switch BSim 1.00 0x7100428040
 0x00844bc0 function Sg_IdFixupAndSet_00844bc0    # structure: (id map): sets the character ID-shade flag (map version +4 > 0x1202, telling graphicCharacterLightingSetMapIdFlagChanged on a change), turns the map's offsets into pointers (get_ptr32_func/set_ptr32) and installs it (Sg_IdSetPtr); callers Sg_MapInit, yiMapReadMaster, yiMapSetup, rcbgIDLoad; name ours
@@ -7220,6 +7479,7 @@
 0x00845ce0 function sg_CopyField0_00845ce0       # auto-port shape (store copy to field, cdecl): t0 = u32[a1]; u32[a0] = t0; return a0; callers: sg_calcenvelope_normW; name ours
 0x00845d00 function sg_CopyFields_00845d00       # auto-port shape (several stores: copy into field, cdecl): t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x8)] = t3; u32[(a0 + 0x4)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0; callers: sg_calcenvelope_normW; name ours
 0x00845d60 function sg_CopyField0_00845d60       # auto-port shape (store copy to field, cdecl): t0 = u32[a0]; u32[a1] = t0; return a1; callers: sg_calcenvelope_normW; name ours
+0x00845d90 function Sg_IntVecToFloat          # (out, v): three i32 to f32; returns v[3] in eax; caller sg_calcenvelope_normW; name ours; ported (ffx_sg::vec)
 0x00845eb0 function sg_calcenvelope_norm      # fh v3:bsim1.00 0x00845eb0
 0x00845ec0 function sg_calcenvelope_normW     # fh v3:exact 0x00845ec0
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
@@ -7892,7 +8152,7 @@
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
 0x00860f20 function setMegasAdding            # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_MegasAdding = v (getMegasAdding 0x00860a90)
-0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0
+0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0; ported in helpers (script round 13)
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
 0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100
@@ -7919,7 +8179,7 @@
 0x00863b10 function AtelClearMesWinWork       # fh v3:exact 0x00863ab0
 0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000
 0x00863f90 function AtelClearNotAuronPatchFlag # fh v3:bsim1.00 0x00863f30
-0x00863fe0 function Script_StopTurn              # (worker, level): the same for the turn block (ctx+0x864+i*0x44, pointer at level block +0x48)
+0x00863fe0 function Script_StopTurn              # (worker, level): the same for the turn block (ctx+0x864+i*0x44, pointer at level block +0x48); ported in helpers (script round 13)
 0x008640f0 function Msg_CloseWindow              # (window): clamps 0..7; if state +0x14 is not 0 or 3, sets 3 and calls 0x008ab8f0
 0x00864150 function Msg_CancelChoice          # (worker, slot 0..3) AtelGetBasicWork(worker); g_ScriptContext slot: pending answer +0x64 = -1 (writing default +0x72 to target +0x6c first), +0x68, +0x73 cleared; own name
 0x008641c0 function AtelDecodeCommand         # fh v3:bsim1.00 0x00864160
@@ -7977,6 +8237,9 @@
 0x0086a9d0 function AtelGetBattleStatusSys    # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): bit 1 of g_SaveData +0x13 (AtelGetBattleStatusDummyEnc: bit 2)
 0x0086a9e0 function AtelGetFieldU1616_0086a9e0   # auto-port shape (return field u16, cdecl): t0 = u16[(a0 + 0x16)]; return t0; callers: AtelBattleSetUp; name ours
 0x0086aa20 function AtelGetBinHdrExpandAddChr # fh v3:bsim1.00 0x0086a9b0
+0x0086ac30 function Atel_BinTableEntryA        # (block, i): entry i's first word (+4 + 8i) of that table; name ours; ported in helpers (script round 13)
+0x0086ac60 function Atel_BinTableCount         # (block): the first word of the script block's +0x2c -> +0xc table (offsets relative to the block), 0 without; name ours; ported in helpers (script round 13)
+0x0086ac90 function Atel_BinTableEntryB        # (block, i): entry i's second word (+8 + 8i); name ours; ported in helpers (script round 13)
 0x0086ad20 function AtelGetBinHdrExpandSoundEvent # fh v3:exact 0x0086acb0
 0x0086ad50 function AtelGetBinHdrExpandSoundFoot # layout: alphabetical run between AtelGetBinHdrExpandSoundEvent and AtelGetBinHdrExpandSpFlags (1 unnamed in the gap); Switch 0x71004606a0 AtelGetBinHdrExpandSoundFoot is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086adc0 function AtelGetBinHdrExpandSpFlags # fh v3:bsim1.00 0x0086ad50
@@ -8038,6 +8301,7 @@
 0x0086bd40 function Get_g_AtelLoveParamDisable_0086bd40 # auto-port shape (return global u32, cdecl): t0 = u32[&0x01326b90]; return t0; callers: ; name ours
 0x0086bd90 function AtelGetMapIndex           # fh v3:exact 0x0086bd20
 0x0086be50 function AtelGetMenuMask           # fh switch:cg2 0x71008bcd08
+0x0086be60 function Atel_GetWindowStatus       # (i 0..7): message window i's status u16 in the g_AtelMenuExecStatus bank (0x01326d84, 0x2c each); name ours; ported in helpers (script round 13)
 0x0086be90 function AtelGetMesWinWork         # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c; was Msg_Window
 0x0086bed0 function Msg_TableText             # (table, i): entry i's text (+0) in table; offset 0 falls back to the .ebp's section 1; no callers
 0x0086bf00 function Msg_TableFlags            # (table, i) -> u16 entry i's flags (+2), beside Msg_TableText
@@ -8063,6 +8327,7 @@
 0x0086c4b0 function AtelGetSphereMonitor      # fh v3:exact 0x0086c440
 0x0086c4d0 function AtelGetStatusWinFadeOut   # fh v3:cg4 0x86c460
 0x0086c510 function AtelGetTotalActorNumber2  # fh v3:exact 0x0086c4a0
+0x0086c530 function Atel_CtrlRunning           # (strict): 1 when g_ScriptContext +0 has bits 0x22, unless strict and +1 bit 4 or +3 bits 0x84; name ours; ported in helpers (script round 13)
 0x0086c570 function AtelGetValueAdrs          # (worker, var, index) -> AtelGetRealVarAdrs of the var's word + index (negative -> 0, >= length -> length-1) * element size; Switch name: the Steam Atel functions are laid out alphabetically and AtelGetValueAdrs..AtelGetVersion fill 0x0086c570-0x0086c890 between AtelGetTotalActorNumber2 and AtelGetWaterBattleEffect, each matching its name
 0x0086c610 function AtelGetValueFloat         # (worker, var, index) -> element as float (ST0) by type nibble: u8, i8, u16, i16, u32, i32, f32 (jump table 0x0086c6bc), 0.0 past 6; Switch name (alphabetical slot, see AtelGetValueAdrs)
 0x0086c6e0 function AtelGetValueIncValue      # (type) -> element size: 1 for 0, 1, 7; 2 for 2, 3; 4 for 4-6; 0 otherwise; Switch name (alphabetical slot, see AtelGetValueAdrs)
@@ -8075,6 +8340,7 @@
 0x0086c870 function AtelGetVarType            # (worker, var) -> location word >> 28; Switch name (alphabetical slot, see AtelGetValueAdrs)
 0x0086c890 function AtelGetVersion            # () -> the build date and time string (0x00b5b9fc); Switch name (alphabetical slot, see AtelGetValueAdrs)
 0x0086c8a0 function AtelGetWaterBattleEffect  # fh v3:bsim1.00 0x0086c830
+0x0086c8b0 function Atel_WindowsBusy           # (): 2 for an open window (status 1/2) with +9 bits 0x22, 1 with +2 or +9 bit 0x10, else 0; name ours; ported in helpers (script round 13)
 0x0086ca10 function Compute_0086ca10             # auto-port shape (arithmetic on arguments, cdecl): return (((a0 & 0xff) | 0x40) >> 0x6); callers: ; name ours
 0x0086cae0 function AtelInitActor             # fh v3:exact 0x0086ca70
 0x0086cb00 function AtelInitBasicWork         # fh v3:exact 0x0086ca90
@@ -8131,6 +8397,7 @@
 0x0086f580 function AtelSetCtrlChar              # layout+callees: sorts between AtelSetBindObject and AtelSetCurrentCtrl, and its named callees match the Switch 0x710046fe70 AtelSetCtrlChar's (similarity 0.75: AtelGetBasicWork, AtelUcOff, AtelUcOn); symbols from Fahrenheit's server export
 0x0086f6a0 function Event_SetPlayer              # (worker id): ctx+0x0a = id; copies its position to ctx+0x218 and +0x228
 0x0086f730 function AtelSetCurrentCtrl        # fh v3:bsim1.00 0x0086f6c0
+0x0086f780 function Atel_SetLevelVectors       # (worker, a f, b f, c f): the current level's +0x5e0..+0x5e8 = a, b, c, +0x5d4..+0x5dc = the position (+0x284 types 5/6, +0x558 else; type 4 reads 0); EAX level*0x4c; name ours; ported in helpers (script round 13)
 0x0086f9e0 function AtelSetDolby                 # layout+callees: sorts between AtelSetCurrentCtrl and AtelSetEffectFlag, and its named callees match the Switch 0x7100474730 AtelSetDolby's (similarity 1.00: MsGetSaveMenu, SndSetSoundMode, TkSetControlerActuatorMode); symbols from Fahrenheit's server export
 0x0086fa40 function AtelSetEffectFlag         # fh v3:bsim1.00 0x0086f9d0
 0x0086fa60 function AtelSetEffectParam        # g_AtelEffectParams[i] = v, no bound; native 0x0085a250
@@ -8171,6 +8438,7 @@
 0x00871170 function SetField_00871170            # auto-port shape (store argument to field, cdecl): u16[((a0 + (((a1 << 0x4) + a1) * 0x4)) + 0x868)] = (a2 & 0xffff); return a0; callers: ; name ours
 0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130
 0x00871210 function Msg_ClampChoices             # (window, mode): with mode bit 2, clamps the choice cursors +0x1e/+0x1f/+0x22/+0x23 to the counts in Msg_Flags (window +0x16); drops bit 2 (no choices) / bit 0x40; returns the flags
+0x008712a0 function Atel_SetWorkerFlag200      # (worker, on): +0x34 bit 0x200 set/cleared -> the bit; name ours; ported in helpers (script round 13)
 0x008712e0 function AtelSetValueFloat         # (worker, var, index, float, clamp): integer types get the value through _ftol2_sse, saturated to the type with clamp; f32 stored; nothing past type 6; Switch name: AtelSetValueFloat/AtelSetValueInteger follow AtelSetUseFlag alphabetically, before AtelSetVel* (0x00871500 writes a level's velocity)
 0x00871400 function AtelSetValueInteger       # (worker, var, index, value, clamp): u8/i8/u16/i16 truncated or saturated (clamp), u32/i32 stored, f32 converted; nothing past type 6; Switch name (see AtelSetValueFloat)
 0x008715e0 function AtelSetVibrateStreamExt   # fh v3:bsim1.00 0x00871580
@@ -8297,14 +8565,14 @@
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
-0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours
+0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours; ported in helpers (script round 13)
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours
 0x008772e0 function AtelClearCameraMatrixFlag # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelCameraMatrixFlag = -1
 0x008772f0 function AtelClearSnd3dWork           # layout: alphabetical run between AtelClearCameraMatrixFlag and AtelClearSnd3dWorkAll (1 unnamed in the gap); Switch 0x71004788a0 AtelClearSnd3dWork is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00877330 function AtelClearSnd3dWorkAll     # fh v3:exact 0x008772b0
 0x00877380 function AtelExecSound                # layout: alphabetical run between AtelClearSnd3dWorkAll and AtelInitCalcSound (2 unnamed in the gap); Switch 0x7100478730 AtelExecSound is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008773f0 function AtelGetSnd3dWork             # layout: alphabetical run between AtelClearSnd3dWorkAll and AtelInitCalcSound (2 unnamed in the gap); Switch 0x7100478870 AtelGetSnd3dWork is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x008773f0 function AtelGetSnd3dWork             # layout: alphabetical run between AtelClearSnd3dWorkAll and AtelInitCalcSound (2 unnamed in the gap); Switch 0x7100478870 AtelGetSnd3dWork is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported in helpers (script round 13)
 0x00877420 function AtelInitCalcSound         # fh switch:bsim1.00 0x7100478a70
 0x00877450 function AtelSetSnd3dVolumeDiffRatio # fh v3:bsim1.00 0x008773d0
 0x00877460 function AtelSetSnd3dVolumeTotalRatio # fh v3:bsim1.00 0x008773e0
@@ -8321,7 +8589,7 @@
 0x00877aa0 function AtelCall_Math_Cos_RF      # fh v3:cg2 0x877a20 +AtelCall_Math_Cos_RF
 0x00877ad0 function AtelCall_Math_Tan_RF      # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF
 0x00877b00 function AtelCall_Math_ATan_RF     # fh v3:cg2 0x877a80 +AtelCall_Math_ATan_RF
-0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF
+0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF; 0x1005 (float): atan2(y, x) through _CIatan2; ported in native_chr (script round 13)
 0x00877b70 function AtelCall_Math_Sqrt_RF     # 0x1006 float (x) -> sqrt(x); was Native_MathSqrt
 0x00877ba0 function AtelCall_Math_InvSqrt_RF  # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF
 0x00877d30 function Native_1013                # 0x1013 (float): args (v f) -> float: Math_WrapAngle(v) (0x0088bc20); ported in native_chr (script round 12)
@@ -8351,15 +8619,15 @@
 0x00878c10 function Native_c024                # 0xc024 (start): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
 0x00878c60 function Native_c024_Poll           # 0xc024 (poll): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
 0x00878c60 function Native_c024_Poll           # 0xc024 (poll): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
-0x00878c70 function Native_c025                  # native 0xc025 int handler (g_NativeTables group c entry 0x25, ffx-script native_counts); 4 calls in the shipped scripts; calls AtelPopStackInteger, MsGetSaveChrName, MsGetSaveChrNameSize, Msg_Text; name by id
+0x00878c70 function Native_c025                  # native 0xc025 int handler (g_NativeTables group c entry 0x25, ffx-script native_counts); 4 calls in the shipped scripts; calls AtelPopStackInteger, MsGetSaveChrName, MsGetSaveChrNameSize, Msg_Text; name by id; ported in native_chr (script round 13)
 0x00878d60 function Native_c028                # 0xc028: no args -> debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1; debug, not ported (mod-tool candidate)
 0x00878e10 function Native_c02a                # 0xc02a: no args -> debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v; debug, not ported (mod-tool candidate)
 0x00878e60 function Native_c02c                # 0xc02c: args (v int) -> int: the popped value; int: the popped value; ported in native_chr (script round 12)
 0x00878e80 function Native_c02f                # 0xc02f: args (on, v f) -> the current ctrl work's +0x208 = v and +2 bit 0 = on != 0; EAX on != 0; ported in native_chr (script round 12)
 0x00878ed0 function Native_c030                # 0xc030: no args -> TkIsDebug(), then the current ctrl work's +0x1f4; ported in native_chr (script round 12)
 0x00878f70 function Native_c036                # 0xc036: args (on) -> pppFpSetDisp(on != 0) (0x00729050); on != 0; ported in native_chr (script round 12)
-0x008790b0 function Native_c03b                # 0xc03b: no args -> 0x007849d0(); 1; ported in native_chr (script round 12)
-0x008790c0 function Native_c03c                # 0xc03c: no args -> 0x007848b0(); 1; ported in native_chr (script round 12)
+0x008790b0 function Native_c03b                # 0xc03b: no args -> MsDebugFullItem(); 1; debug, not ported (mod-tool candidate)
+0x008790c0 function Native_c03c                # 0xc03c: no args -> MsDebugFullCommand(); 1; debug, not ported (mod-tool candidate)
 0x008793b0 function Native_c051                # 0xc051: args (on) -> TkSetTGS(on != 0) (0x0088ec10); on != 0; ported in native_chr (script round 12)
 0x008793e0 function Native_c052                # 0xc052: no args -> jumps to 0x0088d6d0; ported in native_chr (script round 12)
 0x008793f0 function Native_c053                # 0xc053: no args -> four popped and dropped; 0; ported in native_chr (script round 12)
@@ -8865,7 +9133,7 @@
 0x00898dc0 function TOBwakkStart              # g_MagicImports slot 656 (10 overlays): 0x0133f520 = 0; TOSeqStartSceneDrawContinue(2, "bwakk"); byte 0x0133c93f = 1; hidden from the dump
 0x00898df0 function TOBtlPadScrollDown        # fh v3:exact 0x00898d60; 0x0133c938 == 0: 0x0133f7a8 = w+0x3c; w+0x3c += TOGetLineFeedHeight(), w+0x88 = 0x00898e40
 0x00898e20 function TOBtlPadScrollUp          # fh v3:exact 0x00898d90; w+0x3c -= TOGetLineFeedHeight(), w+0x88 = 0x00898e40 (ret)
-0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060; (): writes nothing outside its frame; returns in eax the chosen target index (nearest / angle-weighted from MsGetChrBtlPos, MsGetChrDist, _CIsqrt, _CIacos), read by TOBtlGetTargetPad 0x0089d4bb
+0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060; (): returns (eax, the decompilation drops it) the other side's list index with the lowest angle-from-axis (deg, _CIacos) x distance / nearest distance (min 1), the axis between the party (0x0133d180) and monster (0x0133d1d4; distance-0 ones if any) mean x/z positions, from the cursor 0x0133d1f4; ties to the first entry's last target; writes nothing; read by TOBtlGetTargetPad 0x0089d4bb
 0x008997c0 function TOBtlSetChangeHelpMes     # fh v3:exact 0x00899730
 0x00899870 function TOBtlSetCommand           # fh v3:exact 0x008997e0
 0x00899970 function TOBtlSetCommandHelpMes       # layout+callees: sorts between TOBtlSetCommand and TOBtlSetCurPos, and its named callees match the Switch 0x710049e4c0 TOBtlSetCommandHelpMes's (similarity 1.00: MsGetComData, TOGetMessageWH); symbols from Fahrenheit's server export
@@ -8888,7 +9156,7 @@
 0x0089ab50 function TOBtlLimitTimerStart_0089ab50 # (): 0x0133f77c != 2: = 2, SndSepPlaySimple(0x8000004e) unless playing; name ours
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
-0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40
+0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40; cdecl(chr, cmd): 0x0133d0d0 (0x140) cleared, +0 chr, +2 cmd, window start/mask 0, TOBtlMakeTarget{List,Group,ChrStatus,Command,Target}Bit; 0x0133c94c == 0x100: single party target 0x0133d15c & 0x0133d154 & 0x0133d0dc in mode 2; returns 1
 0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
@@ -9059,7 +9327,7 @@
 0x008ab7d0 function TOCDGetFileName           # fh v3:bsim1.00 0x008ab780
 0x008ab800 function TOClearMessageSlot_008ab800 # cdecl(i): g_TOMessageWindowSlots[i]: halves +0, +8 of *(slot+0x10), +0, +0x2c of *(slot+0x14), bytes +0, +1 of *(slot+0x18) zeroed; caller 0x008ab860; name ours
 0x008ab8f0 function TOCloseMessageWindow      # (i): TOCloseWindow(i), then jmp TOCloseMessage(i); fh v3:bsim1.00 0x008ab8a0
-0x008ab910 function TOControlMessageWindow       # layout+callees: sorts between TOCloseMessageWindow and TOControlMessageWindowForMenu, and its named callees match the Switch 0x71004f7b90 TOControlMessageWindow's (similarity 0.80: TOControlMessage, TOControlWindow, TOGetControlPadStatus, TOSetMessageFunc); symbols from Fahrenheit's server export
+0x008ab910 function TOControlMessageWindow       # layout+callees: sorts between TOCloseMessageWindow and TOControlMessageWindowForMenu, and its named callees match the Switch 0x71004f7b90 TOControlMessageWindow's (similarity 0.80: TOControlMessage, TOControlWindow, TOGetControlPadStatus, TOSetMessageFunc); symbols from Fahrenheit's server export; (): TOGetPadStatus; per active window: TOControlWindow, TOControlMessage, changed: TOSetMessageFunc(i, +0x10 rec +8), +6 == 1: TOGetControlPadStatus; pad 0x100/0x100: TODebugAddPadPrintFlag
 0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950; per message-window slot: TOControlWindow, TOControlMessage, TOSetMessageFunc, TOGetControlPadStatus; g_TOMenuPad 0x100,0x100: jmp TODebugAddPadPrintFlag
 0x008aba30 function TODVDFileRead             # fh switch:bsim1.00 0x71004f4c70
 0x008aba60 function TODVDFileLoad # cdecl(file, name): CdLib +0x10(file), size = +0x14(name), user_malloc(size), TODVDFileRead(file, name, block); block or 0; name ours
@@ -9093,7 +9361,7 @@
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
 0x008ada30 function TOInitMessageSlot_008ada30 # cdecl(i): g_TOMessageWindowSlots[i] zeroed, parts = window i, message i, entry i; window memset 0x7c, TOInitMessage(i), tags +2/+4 = i, slot +4 = -1, message handler 0x008b64a0; name ours
 0x008adbd0 function TOInitPadData             # fh v3:bsim1.00 0x008adb80; memset(0x025d09c0, 0, 0xc0), 0x025d09de = 0x80808080
-0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
+0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0; (): for the 8 message-window objects, u16 +0/+8 of +0x10, u16 +0/+0x2c of +0x14, bytes +0/+1 of +0x18 cleared
 0x008ade10 function TOOpenWindowAndMessage # cdecl(i): *(u16*)g_TOMessageWindowSlots[i] = 1; 0x00906c80(i); 0x008b8560(i); name ours
 0x008ade50 function TOReset1                  # fh v3:exact 0x008ade00
 0x008adee0 function TOReset2                  # fh v3:exact 0x008ade90; (): 0x008adf20, TkMenuInitSeq, TkMenuSetSceneDataAdrs(0, 0x0185f610)/(1, 0x0185fe10)/(2, 0x01841e10), tail TOSeqInitParam
@@ -9120,7 +9388,7 @@
 0x008af380 function TOSeqStopExecScene        # fh v3:exact 0x008af330
 0x008af4f0 function TOSeqStopScene            # fh v3:exact 0x008af4a0
 0x008af590 function TOSetEnvMovieMessage      # fh v3:exact 0x008af540
-0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570
+0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570; cdecl(bank): g_TOMessageWindowSlots[8] = 0x01865ce0/0x01865dc0 + 0x1c k, SetGlobal_01841e0c(bank), TOSetExeWindowArea(bank), TOSetExeMessageArea(bank)
 0x008af690 function SetGlobal_01841e0c # cdecl(v): *0x01841e0c = v, returns v; caller TOSetExeMessageWindowArea; name ours
 0x008af6a0 function TOCheckMapMessage         # cdecl(id): unless 0x00c59558 < 0 or (MsGetSaveMenu & 0x200 and 0x007851b0() == 1): 0x00c59558 = 1 if id is listed for g_CurrentMapNo in 0x00b5f730 (0x20-byte entries: map (first compiled as 0xa2), ids to -1; map 0 ends), else 0; returns 0; caller 0x0086...; name ours
 0x008af730 function TOMessageSlotCursor_008af730 # cdecl(i, x, y, v): +0x18 part bytes +2/+3 = x, y clamped 0..7, +0x10/+0xc = v; +0x14 part handler 0x008b62b0; name ours
@@ -9151,7 +9419,7 @@
 0x008b3630 function AddrOfGlobal0159e468_008b3630 # auto-port shape (return address of global, cdecl): return &0x0159e468; callers: ; name ours
 0x008b3730 function TOSaveSlotShown_008b3730 # cdecl(_, i): g_TkSaveSlots[i] == 1, or with byte 0x0186628a set <= 2 or 4; name ours
 0x008b3790 function TOCloseHelpWindow_008b3790 # (): window 0x0186625c: +0x41 = 1, pointer cleared; name ours
-0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export)
+0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export); (): 0x023cc0a0 = product code by TOGetFFXLang (0/16 BISLPS-25088, 1 BASLUS-20312, 2 BESCES-50491, 3 -50494, 4 -50492, 5 -50493, 9 BKSLPM-67513, 17 BISLPM-65115, 18 BESCES-50490, others unchanged) + 'FF0906%02d'; 0x01866240 = 0
 0x008b3cf0 function AtelAllClearCallbackQue   # fh switch:bsim1.00 0x710044df20
 0x008b3d10 function SetFieldConst28_008b3d10     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x28)] = 0x0; return a0; callers: no direct caller; name ours
 0x008b3d90 function TkMenuSaveLoadCloseWindow2 # (): close request (+0x41 = 1) for 0x01866258 and forget it; save/load menu (TkMenuCtrlSaveLoad area)
@@ -9189,7 +9457,7 @@
 0x008b5ea0 function TODrawMovieChangeMacro2   # fh v3:exact 0x008b5e50
 0x008b5fb0 function TODrawSelectCursor        # fh v3:cg8 0x8b5f60
 0x008b6200 function TOFFXToSJIS               # fh v3:exact 0x008b61b0
-0x008b6210 function TOFuncMacroCmdValue          # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f24a0 TOFuncMacroCmdValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x008b6210 function TOFuncMacroCmdValue          # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f24a0 TOFuncMacroCmdValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(cmd): sprintf('%d', cmd+4) into 0x01869ee4, with digit-group mark 0x46 before each 3 from the right when cmd+1 == 2; returns the buffer
 0x008b62b0 function TOFuncPadMessageInputValue   # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f3020 TOFuncPadMessageInputValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008b64a0 function TOFuncPadMessageNormal    # fh v3:exact 0x008b6450
 0x008b64e0 function TOFuncPadMessageSelect       # layout: alphabetical run between TOFuncPadMessageNormal and TOGetChangeMacroAddress (2 unnamed in the gap); Switch 0x71004f2f00 TOFuncPadMessageSelect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -9199,6 +9467,7 @@
 0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
+0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
 0x008b71c0 function TOGetEasyMesWHForCredits  # fh switch:bsim1.00 0x71004f15e0
 0x008b71f0 function TOGetExtMesWHFontL2          # layout+callees: sorts between TOGetEasyMesWHForCredits and TOGetFontInfo, and its named callees match the Switch 0x71004f1540 TOGetExtMesWHFontL2's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0
@@ -9209,7 +9478,7 @@
 0x008b7c60 function TOGetLineFeedHeight       # fh v3:bsim1.00 0x008b7c10
 0x008b7ca0 function TOGetMessageStatus        # fh v3:bsim1.00 0x008b7c50
 0x008b7cc0 function ReturnConst_008b7cc0 # () -> 0x640064; name ours
-0x008b7cd0 function TOGetPadStatus               # layout+callees: sorts between TOGetMessageStatus and TOGetSaveDicAdrs, and its named callees match the Switch 0x71004f0e50 TOGetPadStatus's (similarity 1.00: TkGetControlerAnalogHist, TkGetControlerHist, inputGetCurTime); symbols from Fahrenheit's server export
+0x008b7cd0 function TOGetPadStatus               # layout+callees: sorts between TOGetMessageStatus and TOGetSaveDicAdrs, and its named callees match the Switch 0x71004f0e50 TOGetPadStatus's (similarity 1.00: TkGetControlerAnalogHist, TkGetControlerHist, inputGetCurTime); symbols from Fahrenheit's server export; (): pad words 0x025d09d2 held/trg/rep and stick-made d-pad set 0x025d09e2 (stick 0x025d09de/df < 0x18 or > 0xe8), refilled only while 0x025d09c1 or g_TOPadGetCtrl; repeat per button (not 0x800/0x100): fresh press repeats, held time 0x025d0a00 += now - 0x025d0a40 (inputGetCurTime), > 0.2333 repeats and restarts at 0.1333 with count 0x025d09c2+k = 4; chosen set copied to the other, g_TOPadGetCtrl = 0
 0x008b7f40 function TOSkipCodesAbove2 # cdecl(p): TOSkipCode while *p > 2; name ours
 0x008b7f60 function TOGetSaveDicAdrs          # fh v3:exact 0x008b7f10
 0x008b7f80 function TOCountLineBreaks_008b7f80 # cdecl(p): 0x10 codes not followed by 0xff, stepping with TOSkipCode; name ours
@@ -9228,13 +9497,13 @@
 0x008b8560 function TOOpenMessage_008b8560 # cdecl(i): message window i: +0 = 1, +0x2c = 0, its +0x100(window), +0x114 = +0x104, then a tail call of +0xf8(window); caller 0x008ade10; name ours
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008b8680 function TOResetMessageVars_008b8680 # cdecl(i): g_MsgVars[i*32..]: type byte copied to +1, then type 0xff; name ours
-0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690
+0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690; cdecl(bank): 0x018676f0[8] = 0x018663f0/0x01866d70 + 0x130k, 0x01868a90[8] = 0x01867710/0x018680d0 + 0x138k, 0x01869ab0[256] = 0x01868ab0/0x018692b0 + 8k
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b89a0 function TOSetMessageText_008b89a0 # cdecl(i, text): window +0x94 = text, +0x98 = TOSkipCodesAbove2(text); name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
 0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
-0x008b8bb0 function TOSetMessageType             # layout+callees: sorts between TOSetMessageFunc and TOSetRectDirect, and its named callees match the Switch 0x71004ee390 TOSetMessageType's (similarity 1.00: MsGetSaveMenu, TOInitMessageCallBack); symbols from Fahrenheit's server export
+0x008b8bb0 function TOSetMessageType             # layout+callees: sorts between TOSetMessageFunc and TOSetRectDirect, and its named callees match the Switch 0x71004ee390 TOSetMessageType's (similarity 1.00: MsGetSaveMenu, TOInitMessageCallBack); symbols from Fahrenheit's server export; cdecl(i, type): msg +8 = type & 0xf, +0x10 = type & 0x4000, +0x1a = 0x2000 ? (0x8000 ? 3 : 1) : 0, +0xc = 0x1000 (or 1 without save-menu bit 0x100), +0x12 = 0x400; kind 3: +0x1a = 0x8000 ? 3 : 1; TOInitMessageCallBack; returns 0
 0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
 0x008b8d10 function TOWideWindowRect_008b8d10 # cdecl(i, out, x, y, w, h) -> y + h: out = TOWideWindowX(i, x), y, that + w, y + h as floats; name ours
@@ -9281,7 +9550,7 @@
 0x008be450 function TOMenuGetControlPadAnalogHist # fh v3:exact 0x008be420; dummy controller flag 1: TOMenuGetDummyAnalogControler(k), else jmp TkGetControlerAnalogHist
 0x008be470 function TOMenuGetControlPadRep    # fh v3:bsim1.00 0x008be440
 0x008be4b0 function TOMenuGetControlPadTrg    # fh v3:bsim1.00 0x008be480
-0x008be500 function TOMenuGetPadStatus           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004b1c90 TOMenuGetPadStatus, 2 votes, round 2
+0x008be500 function TOMenuGetPadStatus           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004b1c90 TOMenuGetPadStatus, 2 votes, round 2; (): menu pad words 0x025d09d2.. (+6..+0xa both pads: Tk*Hist(0,0,0) | (0,0,-1)); dummy controller on (flushed first): from TkMenuGetDummyControler/T/R and TOMenuGetDummyAnalogControler, done; else stick-made d-pad set 0x025d09e2 repeats: fresh press, > 0.4667 s, restart 0.3 count 9
 0x008be800 function TOMenuInit                # fh v3:exact 0x008be7d0
 0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
 0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl
@@ -9718,7 +9987,7 @@
 0x008df520 function TOFirstInitMessageNormal     # layout+callees: sorts between TODrawMessageWaitNamesp and TOGetGroup, and its named callees match the Switch 0x7100500760 TOFirstInitMessageNormal's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
 0x008df690 function TOSkipCountedCodes_008df690 # cdecl(p, n): TOSkipCode until n codes <= 2 or >= 0x26 passed; name ours
-0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export
+0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export; cdecl(msg): row kind +8 of 0x00c5b1b0 (0x24 bytes): words 0-4 -> +0x100..+0x110, word 5 -> +0x12c (mode 1: 0x008dfea0), words 6/7 -> +0xf4/+0xf8
 0x008df7b0 function TORightingMessage            # layout+callees: sorts between TOInitMessageCallBack and TOScanDrawInfo, and its named callees match the Switch 0x7100501880 TORightingMessage's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0
@@ -10560,6 +10829,7 @@
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
 0x009225a0 function rcbgFPm097New             # (): rcAlloc 0x40 (rcbgFP.c), rcbgFPm097Init
 0x00922930 function rcbgFpFadeInit               # (fade, id, step, frames): pppFpIDdispOff(id), then 0, id, step (float), frames, 0; rcbgFPm097's process (0x00922600)
+0x00922970 function Yn_SeaFpFade              # (fade): state +0 off/in/on/out: field effect +4 shown and restarted when lim < a < 0 or 0 < a < lim (a +8, lim Yn_SeaGetAngPtr +8), faded in/out over +0xc frames (count +0x10), hidden and ended; weight to chunk entry +0x2c, rcbgFPmGetMatrix copied to the effect manager +0xc; from 0x00922600; name ours
 0x00922b50 function rcbgFPm173End             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00922b70 function rcbgFPm173Init               # (part) -> part: +0x10..0x24 cleared, type 0x20008, functions 0x00922b40, 0x00922be0; map 0xad's part (0x00921a50)
 0x00922bb0 function rcbgFPm173New             # (): rcAlloc 0x28 (rcbgFP.c), rcbgFPm173Init
@@ -11533,6 +11803,7 @@
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
 0x00a459e0 function AbmapFillCommandMenu      # (pad, kind): each MsMenuStatusNum entry of kind (byte 0) appended to menu pad (inlined addMenuPrim: +0x40 command id +2, +0x48 id - 0x3000, count +0x1e max 0x40, page flag +0x28); eiAbmStart: pads 3/2/4/5, kinds 0x40/0x41/0x45/0x44; name ours
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
+0x00a47210 function AbmapCheckAchievements    # (): AbmapMarkLockedEntries 3/2/4/5; node list file 0x11/0x12/0x13 (save menu bits 14..15) through GetCD's reader into a 0x484-byte local; achievement 0x17 per character bit 0..6 all listed nodes activated in MsGetSaveAbilityMap, 0x1d when all are 0x7f; name ours
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
 0x00a47400 function AbmapMaskNodeFlags        # (mask): ANDs mask into +0x22 of every node (+0x808, 0x28 bytes, i16 count +2) whose kind +6 is not -1; name ours
 0x00a47440 function AbmapPulseCursor          # (): +0x115a4 = sin(frame +0x11698), +0x115c5 = ((sin + 1) * 8 + 0x70) * +0x115c6 >> 7 (eiAbmCalc)
@@ -11594,6 +11865,7 @@
 0x00a5aca0 function AbmapMarkEmptyMenus       # (): pad menu entries +0x1704 (12 bytes, i16 count +0x16de): entry 0 marked when MsGetSaveSP(current chr) is 0, entry 1 when TOAmapMakeItemList(3)/TOAmapGetItemListMax is empty; name ours
 0x00a5ad30 function AbmapMakeNodeMatrix       # (out, pos, scale): scale matrix (from the zero register), translation the i16 position, 1.0 (7 callers)
 0x00a5adf0 function AbmapSetKindSizes         # (src): op_oef2_a_get(src, 2, id) u16s +0xc/+0xe of the eight kinds (ids 0x00c86008) into g_Abmap +0xf808; name ours
+0x00a5ae40 function AbmapCalcBounds           # (): from 0.0, min/max of node x -/+ w/2, y -/+ h/2 (kind sizes +0xf808) into +0x115fc..+0x11608, copied to +0x1160c..+0x11618; from LoadAbmap; name ours
 0x00a5b030 function AbmapResetCursorCamera    # (): +0x115a0 = 256.0, current character's position (+0x11088 + 0x50 * +0x115bc) to +0x11520 (y - 32.0, w twice the distance), its colour (0x00c86010) to +0x11560, then AbmapPulseCursor; name ours
 0x00a5b140 function AbmapCollectNodeLinks     # (): each used node's links (g_Abmap +0xa808) into its five slots +0xc, the rest cleared; LoadAbmap; name ours
 0x00a5b230 function AbmapSetupKindShapes      # () -> 130: the 130 node kinds' shapes at g_Abmap+0xf828 (seven circle points from the sine table); name ours
@@ -11634,6 +11906,7 @@
 0x00a5cf00 function NkzVersion                # fh v3:bsim1.00 0x00a5cf00
 0x00a5cf10 function AbmapQuarterOrOne_a5cf10  # (_, n) -> n / 4, or 1 when 0 (identical to 0x00a5cee0; called by 0x008d9410)
 0x00a5cf30 function abmap_para_get_special    # fh v3:exact 0x00a5cf30
+0x00a5d120 function AbmapSpecialEffect        # (kind, node, row, chr) -> 0/1: the special item kinds (row type +0x16, abmap_test_panel, abmap_other_has_panel, abmap_chr_node, MsGetSavePlyJoined); AbmapItemNodeEffect's special path; name ours
 0x00a5d3c0 function opd_num                   # fh v3:exact 0x00a5d3c0
 0x00a5d5f0 function opd_num_char_256          # fh v3:exact 0x00a5d5f0
 0x00a5dd90 function opd_num_display           # fh v3:bsim1.00 0x00a5dd90
@@ -11658,6 +11931,7 @@
 0x00a64b20 function opd_heap_display_set      # fh v3:exact 0x00a64b20
 0x00a64b60 function opd_heap_display_set_par  # fh v3:exact 0x00a64b60
 0x00a65060 function opd_unit_osu                 # str-match switch: only user of 45 string(s) held once by both builds, e.g. '     (%3d)umax'; Switch 0x710086a720 opd_unit_osu (symbols from Fahrenheit's server export)
+0x00a65570 function opd_debug_flags_str_00a65570 # ours: (buf, flags) formats a flag word as letters ("x"/"y"/"z"/"t"/"u" or "." per bit) with the CRT's sprintf (0x00b0c3dc); called only by the op debug display 0x00a64c40/0x00a64ca0/0x00a64d00: debug
 0x00a65750 function op1_md_draw               # fh v3:exact 0x00a65750
 0x00a657c0 function op1_md_draw_eiabm            # layout: the three unnamed functions between op1_md_draw and op1_mdc_ref_nolight take the Switch names that sort there, in order: op1_md_draw_eiabm (9400 bytes; ours 10573, "NoTexture"), op1_md_draw_eiabm_sphe (3168; 2892), op1_mdc_draw (388; 376)
 0x00a68140 function op1_md_draw_eiabm_sphe       # layout: second of the three (see op1_md_draw_eiabm)
@@ -11690,6 +11964,7 @@
 0x00a6f4d0 function opp_mdc_draw_a6f4d0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) kinds 0x2000/0x1000 draw a character model with a texture (0x00808a90 record, graphicVFXIsTextureWithBpLoaded) through graphicSetNoLightSpecularPassParam / 0x006439b0 or op1_mdc_ref_nolight, with per-magic alpha and gain cases; ported in crates/ffx-vfx slots
 0x00a70210 function opus_0279_draw               # callees: its named callees match the Switch 0x710086e4f0 opus_0279_draw's (similarity 0.71: op_ffxambient_to_omdambient, op_refrection_st_float, op_spr_alloc, op_spr_free, op_vertex_normal_point44_ffx_2); symbols from Fahrenheit's server export
 0x00a70910 function opp_0582_cmd_a70910         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x8000 allocates the part's tables, calls opus_0582_dot_draw / _break_make / _draw / _break_draw, the character texture bases (Ch_TextureSetClutBase 0x3c00, Ch_TextureSetImageBase 0x2ee0) and Sg_FadeOutW(1); ported in crates/ffx-vfx slots
+0x00a70ce0 function op_pair_index_00a70ce0     # ours: (a, b) -> the index from 1 of the pair in g_OpPairTable, appended when absent; called by opus_0582_draw, _break_draw, _dot_draw
 0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
 0x00a71780 function opus_0582_break_make      # fh switch:cg4 0x71008725b0
 0x00a72380 function opus_0582_break_draw      # fh switch:cg4 0x7100872d90
@@ -11852,7 +12127,7 @@
 0x00a7a070 function Native_507c                # 0x507c: no args -> Ch_NeckSetTargetCamera(model) (0x00835080); ported in native_chr (script round 12)
 0x00a7a090 function Native_507d                # 0x507d: args (b f, a f) -> degrees: Ch_NeckSetRot(model, wrap(b), wrap(a)) (0x00834ff0); ported in native_chr (script round 12)
 0x00a7a120 function Native_5036                # 0x5036: no args -> 0x00a7a980(worker, args, stack, 0); ported in native_chr (script round 12)
-0x00a7a140 function Native_5037                  # native 0x5037 int handler (g_NativeTables group 5 entry 0x37, ffx-script native_counts); 5 calls in the shipped scripts; calls AtelGetBasicWork, AtelGetCharHandle, AtelGetRealVarAdrs, AtelPopStackInteger, Ch_OptposGet; name by id
+0x00a7a140 function Native_5037                  # native 0x5037 int handler (g_NativeTables group 5 entry 0x37, ffx-script native_counts); 5 calls in the shipped scripts; calls AtelGetBasicWork, AtelGetCharHandle, AtelGetRealVarAdrs, AtelPopStackInteger, Ch_OptposGet; name by id; ported in native_chr (script round 13)
 0x00a7a210 function CT_507E_ret               # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls); was Native_ChrSetTalking
 0x00a7a340 function Native_ChrSetHitRadiusScale  # 0x5039: args (scale float; <= 0 = model default +0x1c4->+0x1c) -> previous; chr +0x4e4, collision radius +0x4e8 = mean bbox width * scale; scripts push 6.0, 8.0
 0x00a7a3d0 function Native_503a                # 0x503a (float): args (z f) -> float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model; ported in native_chr (script round 12)
@@ -13951,12 +14226,16 @@
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
 0x00c44a50 function MsPreProcess                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23include'; Switch 0x71003beea0 MsPreProcess (symbols from Fahrenheit's server export)
+0x00c44bb8 label    g_OpPsmBlockFactor           # byte per pixel format: the factor op_oef2_tex_clut_ovl_add multiplies height by stride with (then / 16 / 256) to get a CLUT area's last block
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
+0x00c48bf0 label    g_OpUpVector                 # f32 x4: the up vector op_vector_m crosses the view direction with
+0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
 0x00c4967f label    g_ChrKindTableStride      # i8: Chr_TableIndex's index step per table entry
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
+0x00c496d5 label    g_CameraFollow            # u8 bits: 0 set by 0x0082d030, 1 by Sg_SetCameraFollow (0x0082dab0); Sg_ControlMain follows the player's heading when it is 3
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
@@ -14366,6 +14645,7 @@
 0x01139e24 label g_CameraMatrixLookAt      # vec4 (MsSetCameraMatrix)
 0x01139e34 label g_CameraMatrixEye         # vec4 (MsSetCameraMatrix)
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
+0x0113e238 label    g_OpLastError                # op_error_007e1450's code + 1
 0x0113e23c label g_BtlPosState             # 0x34 bytes (three 1.0 scales at +0x10) and 6 words after it (+0x3c points back here), reset by MsBtlPosInit
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
@@ -14376,6 +14656,7 @@
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x0119fef0 label    g_OpusMonsterFlags        # byte per g_OpusMonsters slot (bit 7 skips the texture move in 0x00808640, bit 0 picks the first VRAM spot)
 0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
+0x011a0010 label    g_OpFog                      # the effects' fog (op_fog_param_set): colour bytes +0..+2, near/far/param f32 +4..+0xc (yiGetFogParam), -(255/(far-near)) +0x10, 255-param +0x14, -near +0x18, 255.0 +0x1c
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
@@ -14387,6 +14668,8 @@
 0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
 0x011a04b0 label    g_OpOef2ClutOvlCount         # u16 one past the last overlay CLUT kept (op_oef2_tex_clut_ovl_clear)
 0x011a04c0 label    g_OpOef2ClutOvl              # 64 overlay CLUT masks, 0 free (op_oef2_tex_clut_ovl_clear, op_oef2_tex_clut_ovl_trans)
+0x011a05c0 label    g_OpOef2ClutOvlFlags         # 64 bytes, one per overlay CLUT: nonzero for a plain 16x16 CLUT record (u16 base, format at +8)
+0x011a0600 label    g_OpOef2ClutOvlRecs          # 64 texture-record pointers, one per overlay CLUT (op_oef2_tex_clut_ovl_add)
 0x011a0960 label    g_OpFuncOtOrder              # op function ordering table: i8 slot lists (-1 free), 32 from a list base (op_func_ot_set/free)
 0x011a09e0 label    g_OpFuncOt                   # its 16-byte slots {func, a, b, u16 c} at (list + slot) * 16
 0x011a11e0 label    g_OpMdcTransferCues          # 8 x 16-byte mdc transfer cues keyed by their first word (op_mdc_mem_transfer_cue_free[_all])
@@ -14409,10 +14692,13 @@
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
 0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone
 0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
+0x012fb7e4 label    g_FramSync                # set by setFramSync (0x00822720): 1 in a battle with a magic file loaded
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
 0x012fb8b8 label g_BtlEffectPreloaded      # u32: magic file 0x15e taken preloaded (MsEffectRead)
 0x012fb8c0 label g_SaveLoadedPending # HandleSaveDataScreen: 1 after a successful load, then TkMenuJumpToLoadedScene in screen state 4
+0x012fb8f0 label    g_DreamOn                 # u32: the dream effect started (recallSceneEffect sets it and loads special texture 10); cleared by dreamParamReset
+0x012fb8f4 label    g_DreamPhase              # u32: the dream effect's phase; 5 draws it (graphicDrawDream from recallSceneEffect)
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
@@ -14428,6 +14714,8 @@
 0x012ffad4 label    g_ChrF117HideCount        # i32: pending hides of model "f117"'s segment 0 queued by Ch_ModelSetHide 0x0082aea0 (4 at most, then starts over)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
+0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
+0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
@@ -14803,6 +15091,7 @@
 0x0228615c label    g_OpdNumPal                  # byte palette of the number printer (opd_num_pal_set/default)
 0x022881d4 label    g_OpdNumFrames               # u16 counted up by opd_num_vdisp
 0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
+0x022fb400 label    g_OpPairTable                # dword count, then (a, b) word pairs from entry 1 (op_pair_index_00a70ce0; the count's carry goes into +4)
 0x022fb4d4 label    g_MenuWaitFrames           # CT_401D_init (0x00a78210) sets 1; Native_MenuOpen_Poll counts it down
 0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)

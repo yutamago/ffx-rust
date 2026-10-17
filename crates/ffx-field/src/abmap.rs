@@ -98,6 +98,22 @@ pub const ABMAP_PPP_DATA: u32 = 0x0230_5800;
 pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
 /// `pppStartPart(part, flags, id, a, b)` (`0x007123c0`).
 pub const PPP_START_PART: u32 = 0x0071_23c0;
+/// `abmap_test_panel(bit, node)` (`0x00a457d0`).
+pub const ABMAP_TEST_PANEL: u32 = 0x00a4_57d0;
+/// `abmap_other_has_panel(chr, node)` (`0x00a45800`).
+pub const ABMAP_OTHER_HAS_PANEL: u32 = 0x00a4_5800;
+/// `abmap_chr_node(chr)` (`0x00a45870`).
+pub const ABMAP_CHR_NODE: u32 = 0x00a4_5870;
+/// `MsGetSavePlyJoined(chr)` (`0x007853a0`).
+pub const MS_GET_SAVE_PLY_JOINED: u32 = 0x0078_53a0;
+/// `AbmapMarkLockedEntries(pad)` (`0x00a5a2e0`).
+pub const MARK_LOCKED_ENTRIES: u32 = 0x00a5_a2e0;
+/// `MsGetSaveMenu()` (`0x00785290`).
+pub const MS_GET_SAVE_MENU: u32 = 0x0078_5290;
+/// `GetCD()` (`0x0076d0d0`): the CD library's function table.
+pub const GET_CD: u32 = 0x0076_d0d0;
+/// `achievementUnlockAchievement(id)` (`0x00822380`).
+pub const ACHIEVEMENT_UNLOCK: u32 = 0x0082_2380;
 /// `pppCreateHeap(env, buffer, size)` (`0x0072c480`).
 pub const PPP_CREATE_HEAP: u32 = 0x0072_c480;
 /// The sphere grid's ppp heap (0x7d000 bytes).
@@ -1879,6 +1895,202 @@ pub mod bridge {
         abmap_start_warp(mem, chr, target, call);
         let g = ABMAP.get(mem);
         mem.write(g.wrapping_add(0x115c7), 1u8);
+        g
+    }
+
+    // ---- round 29 ----
+
+    /// `AbmapCheckAchievements(work)` (`0x00a47210`, from `0x00a48910` and
+    /// `AbmapTryChangePlayer`; name ours): marks the menu pads' locked
+    /// entries (`AbmapMarkLockedEntries` 3, 2, 4, 5), reads the grid's node
+    /// list for the save's grid kind (`MsGetSaveMenu` bits 14..15: file
+    /// 0x11, 0x12 or 0x13 through `GetCD`'s reader: `+0x10(0x25)`, `+0
+    /// (id, work, 0, 0)`, `+8(0)`) into `work` (0x484 bytes), and unlocks
+    /// achievement 0x17 once per character bit 0..6 when every listed node
+    /// (bytes, 0xff skipped; the count at `+2` and the list at `+8` when
+    /// the file starts with 0x31, else the list at `+2` and, as the
+    /// original, the ability map's address as the count) has that bit in
+    /// the save's ability map (`MsGetSaveAbilityMap`, byte `1 + 2 i`), and
+    /// achievement 0x1d when every listed node there is 0x7f. An empty
+    /// list unlocks both.
+    pub fn abmap_check_achievements<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::MARK_LOCKED_ENTRIES);
+        for pad in [3, 2, 4, 5] {
+            call(mem, f, &[pad]);
+        }
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let kind = mem.read::<u32>(menu).cast_signed() >> 14 & 3;
+        let file = match kind {
+            0 => 0x11,
+            1 => 0x12,
+            _ => 0x13,
+        };
+        let f = mem.rebase(super::GET_CD);
+        let cd = call(mem, f, &[]);
+        let f = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, f, &[0x25]);
+        let f = mem.read::<u32>(cd);
+        call(mem, f, &[file, work, 0, 0]);
+        let f = mem.read::<u32>(cd.wrapping_add(8));
+        call(mem, f, &[0]);
+        let f = mem.rebase(super::MS_GET_SAVE_ABILITY_MAP);
+        let save = call(mem, f, &[]);
+        let (n, list) = if mem.read::<u16>(work) == 0x31 {
+            (
+                i32::from(mem.read::<u16>(work.wrapping_add(2))),
+                work.wrapping_add(8),
+            )
+        } else {
+            (save.cast_signed(), work.wrapping_add(2))
+        };
+        let unlock = mem.rebase(super::ACHIEVEMENT_UNLOCK);
+        let every = |mem: &M, ok: &dyn Fn(u8) -> bool| {
+            (0..n.max(0).cast_unsigned()).all(|j| {
+                mem.read::<u8>(list.wrapping_add(j)) == 0xff
+                    || ok(mem.read::<u8>(save.wrapping_add(1).wrapping_add(j.wrapping_mul(2))))
+            })
+        };
+        for c in 0..7 {
+            let bit = 1u8 << c;
+            if n <= 0 || every(mem, &|b| b & bit != 0) {
+                call(mem, unlock, &[0x17]);
+            }
+        }
+        if n <= 0 || every(mem, &|b| b == 0x7f) {
+            call(mem, unlock, &[0x1d]);
+        }
+    }
+
+    /// `AbmapSpecialEffect(kind, node, row, chr)` (`0x00a5d120`, the
+    /// special item kinds of [`abmap_item_node_effect`]): 1 when the item
+    /// of `kind` applies to node index `node` with the excel row `row`
+    /// (its type `+0x16`) for `chr`, else 0:
+    /// - 1..=4: type 0x12, 0x11, 0 or 0x10; 5..=7 and 0x10..=0x16: type 1;
+    /// - 8..=0xb: the node lacks panel bit `chr` (`abmap_test_panel`), the
+    ///   type is 0xf, 0xe, 0xc or 0xd and another character has it
+    ///   (`abmap_other_has_panel`);
+    /// - 0xc, 0xd, 0xe, 0xf: `chr` is not on the node (`abmap_chr_node`)
+    ///   and, in turn, it has the panel bit, another character has it,
+    ///   another joined character (`MsGetSavePlyJoined`, 0..=6) stands on
+    ///   it, or the row is not hidden (bit 15 of `+0x10`);
+    /// - 0x17: type 2..=0xb; 0x18: as 0x17 with no panel bit and another
+    ///   character's.
+    pub fn abmap_special_effect<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        let [kind, node, row, chr] = args;
+        let ty = mem.read::<u8>(row.wrapping_add(0x16));
+        let test = |mem: &mut M, call: &mut C| {
+            let f = mem.rebase(super::ABMAP_TEST_PANEL);
+            call(mem, f, &[chr, node]) != 0
+        };
+        let other = |mem: &mut M, call: &mut C| {
+            let f = mem.rebase(super::ABMAP_OTHER_HAS_PANEL);
+            call(mem, f, &[chr, node]) != 0
+        };
+        let on_node = |mem: &mut M, call: &mut C, c: u32| {
+            let f = mem.rebase(super::ABMAP_CHR_NODE);
+            call(mem, f, &[c]) == node
+        };
+        let r = match kind {
+            1 => ty == 0x12,
+            2 => ty == 0x11,
+            3 => ty == 0,
+            4 => ty == 0x10,
+            5..=7 | 0x10..=0x16 => ty == 1,
+            8..=0xb => {
+                let want = [0xf, 0xe, 0xc, 0xd][(kind - 8) as usize];
+                !test(mem, call) && ty == want && other(mem, call)
+            }
+            0xc => !on_node(mem, call, chr) && test(mem, call),
+            0xd => !on_node(mem, call, chr) && other(mem, call),
+            0xe => {
+                !on_node(mem, call, chr)
+                    && (0..7).any(|c| {
+                        if c == chr {
+                            return false;
+                        }
+                        let f = mem.rebase(super::MS_GET_SAVE_PLY_JOINED);
+                        call(mem, f, &[c]) != 0 && on_node(mem, call, c)
+                    })
+            }
+            0xf => {
+                !on_node(mem, call, chr) && mem.read::<u16>(row.wrapping_add(0x10)) & 0x8000 == 0
+            }
+            0x17 => (2..0xc).contains(&ty),
+            0x18 => {
+                !test(mem, call)
+                    && (2..0xc).contains(&mem.read::<u8>(row.wrapping_add(0x16)))
+                    && other(mem, call)
+            }
+            _ => false,
+        };
+        u32::from(r)
+    }
+
+    // ---- round 30 ----
+
+    /// `AbmapCalcBounds()` (`0x00a5ae40`, from `LoadAbmap`; name ours):
+    /// the grid's extent: from 0.0, the minimum and maximum over the `i16`
+    /// count (`+0`) of nodes (`+8`, 16 bytes: `i16` x `+0`, y `+2`, kind
+    /// `+6`) of `x -/+ w / 2` and `y -/+ h / 2` (the kind's size, `i16`s at
+    /// `+0xf808 + 4 kind`; halves toward zero) as floats into
+    /// `+0x115fc`/`+0x11600` (minimum x, y) and `+0x11604`/`+0x11608`
+    /// (maximum), copied to `+0x1160c`, `+0x11610`, `+0x11614` and
+    /// `+0x11618`. Returns the grid (left in `eax`).
+    pub fn abmap_calc_bounds(mem: &mut impl Mem) -> u32 {
+        let g = ABMAP.get(mem);
+        for at in [0x11608, 0x11604, 0x11600, 0x115fc] {
+            mem.write(g.wrapping_add(at), 0u32);
+        }
+        let f = |v: i32| -> f32 {
+            #[allow(clippy::cast_precision_loss)] // i16 sums: exact
+            let x = v as f32;
+            x
+        };
+        let mut n = i32::from(mem.read::<i16>(g));
+        let mut rec = g.wrapping_add(8);
+        while n != 0 {
+            n = n.wrapping_sub(1);
+            let x = i32::from(mem.read::<i16>(rec));
+            let y = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+            let kind = u32::from(mem.read::<u16>(rec.wrapping_add(6)));
+            let size = g.wrapping_add(0xf808).wrapping_add(kind.wrapping_mul(4));
+            let hw = i32::from(mem.read::<i16>(size)) / 2;
+            let hh = i32::from(mem.read::<i16>(size.wrapping_add(2))) / 2;
+            let ext = [
+                (0x115fc, f(x - hw), false),
+                (0x11600, f(y - hh), false),
+                (0x11604, f(hw + x), true),
+                (0x11608, f(hh + y), true),
+            ];
+            for (at, v, max) in ext {
+                let cur = f32::from_bits(mem.read::<u32>(g.wrapping_add(at)));
+                if (max && v > cur) || (!max && v < cur) {
+                    mem.write(g.wrapping_add(at), v.to_bits());
+                }
+            }
+            rec = rec.wrapping_add(0x10);
+        }
+        for (from, to) in [
+            (0x115fc, 0x1160c),
+            (0x11604, 0x11614),
+            (0x11600, 0x11610),
+            (0x11608, 0x11618),
+        ] {
+            let v = mem.read::<u32>(g.wrapping_add(from));
+            mem.write(
+                g.wrapping_add(to),
+                ffx_bridge::x87::round_trip(f32::from_bits(v)).to_bits(),
+            );
+        }
         g
     }
 }
