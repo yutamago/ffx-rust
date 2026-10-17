@@ -2458,6 +2458,7 @@ fn control_synthetic() {
     envelope_cases(&mut a, &mut b, &mut rng, 300);
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2481,6 +2482,7 @@ fn control_snapshot() {
     envelope_cases(&mut a, &mut b, &mut rng, 300);
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3942,6 +3944,42 @@ fn source_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rou
             0x006e_d9e0,
             &[lists, out, mask, m],
             |o| e::calc_envelope_w(&mut H(o), lists, out, mask, m),
+        );
+    }
+}
+
+fn source_packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let (cursor, list) = (a.rebase(ALLOC_CURSOR), a.rebase(ALLOC_LIST));
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 0x110);
+        for k in 0..4 * 0x110 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = packed_lists(a, b, rng);
+        let mask = if rng.below(3) == 0 {
+            0
+        } else {
+            let mk = alloc(a, b, 0x110);
+            for k in 0..0x110 {
+                put(a, b, mk + k, u8::from(rng.below(3) != 0));
+            }
+            mk
+        };
+        let dst = block(a, b, rng, 0x200);
+        put(a, b, list, dst);
+        put(a, b, cursor, list);
+        twin(
+            "sg_calcenvelope_asm",
+            a,
+            b,
+            0x006e_e570,
+            &[lists, out, mask, m],
+            |o| e::calc_envelope(&mut H(o), lists, out, mask, m),
         );
     }
 }

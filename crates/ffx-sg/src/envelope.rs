@@ -226,4 +226,70 @@ pub mod bridge {
         h.write_bytes(dst, &list);
         dst
     }
+
+    /// `sg_calcenvelope_asm(lists, out, mask, m)` (`0x006ee570`): the packed
+    /// lists of [`calc_envelope_opt`] keeping only vertices whose
+    /// `mask[index]` is set (all without a mask): rigid entries and group
+    /// entries are copied as they are, each group header with its count
+    /// replaced by the kept count, the terminators with the 2 bytes after
+    /// them; [`calc_envelope_opt`] runs on the kept vertices. With a mask the
+    /// new list is returned as a new block (`user_malloc`, then copied),
+    /// else 0. The 2 bytes after the rigid count are the original's
+    /// uninitialised stack; they are 0 here.
+    pub fn calc_envelope(h: &mut impl Host, lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        let kept = |h: &_, i: u32| mask == 0 || Mem::read::<u8>(h, mask.wrapping_add(i)) != 0;
+        let mut list: Vec<u8> = vec![0; 4];
+        let n = h.read::<u16>(lists);
+        let mut p = lists.wrapping_add(4);
+        let mut kept_n = 0u16;
+        for _ in 0..n {
+            let e: [u8; 8] = h.read(p);
+            let i = u32::from(h.read::<u16>(p.wrapping_add(6)));
+            p = p.wrapping_add(8);
+            if kept(h, i) {
+                kept_n = kept_n.wrapping_add(1);
+                list.extend(e);
+            }
+        }
+        list[0..2].copy_from_slice(&kept_n.to_le_bytes());
+        for _ in 0..2 {
+            loop {
+                let head: [u8; 4] = h.read(p);
+                let n = u16::from_le_bytes([head[0], head[1]]);
+                if n == 0xffff {
+                    // the terminator and the 2 bytes after it
+                    list.extend(head);
+                    p = p.wrapping_add(4);
+                    break;
+                }
+                let base = u32::from(u16::from_le_bytes([head[2], head[3]])) << 8;
+                let at = list.len();
+                list.extend(head);
+                p = p.wrapping_add(4);
+                let mut kept_n = 0u16;
+                for _ in 0..n {
+                    let e: [u8; 8] = h.read(p);
+                    p = p.wrapping_add(8);
+                    if kept(h, u32::from(e[7]) + base) {
+                        kept_n = kept_n.wrapping_add(1);
+                        list.extend(e);
+                    }
+                }
+                list[at..at + 2].copy_from_slice(&kept_n.to_le_bytes());
+            }
+        }
+        let len = u32::try_from(list.len()).unwrap_or(u32::MAX);
+        {
+            let mut f = ffx_bridge::frame::Frame::new(h, LIST_FRAME, list.len());
+            f.write_bytes(LIST_FRAME, &list);
+            calc_envelope_opt(&mut f, LIST_FRAME, out, m);
+        }
+        if mask == 0 {
+            return 0;
+        }
+        let at = h.rebase(USER_MALLOC);
+        let dst = h.call(at, &[len]);
+        h.write_bytes(dst, &list);
+        dst
+    }
 }

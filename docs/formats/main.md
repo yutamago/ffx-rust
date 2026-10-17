@@ -457,3 +457,20 @@ first weighted vertices (they set), further weighted vertices (they add).
 
 Products are stored as `f32` at each step (vertex x weight, then x
 1000).
+- `sg_calcenvelopeW_asm(lists, out, mask, m)` (`0x006ed9e0`), source form
+  of the float lists. The rigid list is a `u16` count and 2 bytes, then
+  8-byte entries (`i16 x, y, z` in thousandths, `u16 index`). Each of the
+  two weighted lists is a `u16` count, then 10-byte entries (x, y, z,
+  index, `u16` weight in 1/10000). It keeps only vertices whose
+  `mask[index]` is set (all with no mask). It converts them to the
+  `_opt` float form, which runs as the list is built. With a mask, the
+  new list is returned in a fresh block; else it returns 0.
+- `sg_calcenvelope_asm(lists, out, mask, m)` (`0x006ee570`): the packed
+  lists filtered the same way. Entries are copied as they are, each group
+  count is replaced by the kept count, and terminators keep the 2 bytes
+  after them. The 2 bytes after the rigid count come from the original's
+  uninitialised stack. With a mask, the new list is returned in a fresh
+  block.
+- Neither port passes a stack buffer to game code. They build the list in
+  Rust and write it straight into the allocated block, where the originals
+  `memcpy` from a 32 KB stack frame.

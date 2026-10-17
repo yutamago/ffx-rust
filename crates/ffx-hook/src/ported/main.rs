@@ -1371,6 +1371,10 @@ ported! {
     sg_calcenvelopeW_asm @ 0x006e_d9e0 => extern "C" fn sg_calcenvelope_w_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
         envelope::bridge::calc_envelope_w(&mut mem(), lists, out, mask, m)
     }
+    /// `sg_calcenvelope_asm(lists, out, mask, m)`.
+    sg_calcenvelope_asm @ 0x006e_e570 => extern "C" fn sg_calcenvelope_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        envelope::bridge::calc_envelope(&mut mem(), lists, out, mask, m)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
