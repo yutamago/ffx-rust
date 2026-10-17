@@ -4897,6 +4897,33 @@ ported! {
     KernelSlotAbilityName_14c_00772490 @ 0x0077_2490 => extern "C" fn kernel_slot_ability_name_00772490(i: u32) -> u32 {
         tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x14c, call_sym)
     }
+    /// `TOSetExeMessageWindowArea(bank)`.
+    TOSetExeMessageWindowArea @ 0x008a_f5c0 => extern "C" fn to_set_exe_message_window_area(bank: u32) {
+        tolib::bridge::set_exe_message_window_area(&mut mem(), bank);
+    }
+    /// `TOCheckBtlCommandTarget(chr, cmd)`.
+    TOCheckBtlCommandTarget @ 0x0089_abd0 => extern "C" fn to_check_btl_command_target(chr: u32, cmd: u32) -> u32 {
+        tolib::bridge::btl_check_command_target(&mut mem(), chr, cmd, call_sym)
+    }
+    /// `TOControlMessageWindow()`.
+    TOControlMessageWindow @ 0x008a_b910 => extern "C" fn to_control_message_window() {
+        tolib::bridge::control_message_window(&mut mem(), call_sym);
+    }
+    /// `TOSetMessageType(i, type)`.
+    TOSetMessageType @ 0x008b_8bb0 => extern "C" fn to_set_message_type(i: u32, kind: u32) -> u32 {
+        tolib::bridge::set_message_type(&mut mem(), i, kind, call_sym)
+    }
+    /// `TOGetTextWidth(text, arg)`.
+    TOGetTextWidth @ 0x008b_70c0 => extern "C" fn to_get_text_width(text: u32, arg: u32) -> f32 {
+        let mut w = 0f32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(w) as u32;
+        let r = tolib::bridge::text_width(&mut mem(), text, arg, at, |m, p, out, arg| {
+            call_sym(m, 0x008b_7c00, &[p, 0, out, arg])
+        });
+        std::hint::black_box(&mut w);
+        r
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
