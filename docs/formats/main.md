@@ -303,3 +303,48 @@ behind them stays with those modules, which the bridges call.
     below `lim`; kinds 2 and 4 move both halfway.
   - Kinds 5 and 6 always apply. `b = a` when `|d|^2` (5) or `|d|` (6) is
     at most `1e-5`.
+
+## Cut-scene sync, id normals, dispatchers (round 5)
+
+- `Sg_SyncCutScene()` (`0x00821d60`) calls `iSyncGetData(&time, &rate,
+  &frame)` with the frame in a local, so a callee writes through a pointer
+  to the original's stack. The bridge gets that memory from
+  `ffx_bridge::Host::callee_scratch` (a static buffer in the game, the
+  emulated stack's bottom in the oracle). An answer of 999 clears the sync:
+  `0x012fb8a0..b0` 0, the frame table `0x012fb828` (30 words), its index
+  `0x012fb814`, `0x00c494d4` 1. Any other answer turns it on, stores `frame
+  << 7` at the index and makes time `0x012fb8ac` and rate `0x012fb8b0`
+  milliseconds (`x 1000`).
+- `Sg_IdGetNormal(out, i)` (`0x0083e130`): the normal of id triangle `i`
+  from the id data's `i16` vertex numbers and vertex block (`0x01301a8c`, 8
+  bytes per vertex).
+- `SG_ApplyBoneSel` (`0x00838240`): `SG_ApplyBoneDamped` when the bone's
+  `+0x144` is set, else `SG_ApplyBone`.
+- `drawDreamEffect` (`0x008223a0`): which maps have the dream effect and on
+  which layers: 0 on `0x86`, `0xa5`, `0xbf`, `0xf9`, `0xfc`; 3 and 4 on
+  `0x129`; 7 and 8 on `0x187`. Elsewhere a started effect is reset.
+
+## Effect strips, channel sampling, pose blending (round 6)
+
+- `Ch_EffectPacketStoreStrip(v)` (`0x00844370`): effect geometry comes as
+  triangle strips of 8-byte vertices (`u16` x, y, u, v). Each vertex goes
+  into a ring of three (`0x01303354`, slot `count % 3`; count `u16`
+  `0x01303370`, the newest slot's address `0x0130336c`). An x or y with
+  bit 15 set refers back to an earlier vertex: the value `(x & 0x7fff) * 4
+  / 3` words before (y: one word further). From the third vertex on, each
+  new vertex makes a triangle with the two before it for
+  `Ch_EffectPacketStorePoly`. Even counts give `(n-1, n-2, new)`, odd
+  `(n-2, n-1, new)`, so all faces keep one winding. A null vertex starts a
+  new strip.
+- `SG_SampleChannels(obj)` (`0x008393c0`): the motion time `+0x740` (8.8
+  frames) rounded up to a frame, clamped to the end (`+0x71c`) for a motion
+  that stops (`u16` `+0x724` 1), else wrapped by the loop (`+0x720`). The
+  channels rewind when the time goes back, then step to it (frame count
+  `+0x7dc`). Each channel's `+0x1c` becomes its key or, between frames, the
+  blend with the key before: `AngleTurn_Lerp` for angles, linear
+  otherwise.
+- `SG_BlendToTarget(obj, n)` (`0x008395b0`): one of `n` steps from the
+  current pose toward the target. A channel motion (`+0x196` bit 0) steps
+  each channel's `+0x20` toward `+0x1c`. Otherwise every bone steps its 3
+  rotations (`Chr_FracStep`) and 6 values (`cur += (target - cur) / n`,
+  skipped when already equal). `n` 1 sets `+0x194` bit 16.

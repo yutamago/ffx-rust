@@ -365,4 +365,143 @@ pub mod bridge {
         }
         ffx_chara::motion::bridge::ch_seq_link(h);
     }
+
+    /// `SG_ApplyBoneSel(a, chan, bone, scale)` (`0x00838240`):
+    /// [`apply_bone`], damped when the bone's byte `+0x144` is set (`scale`
+    /// passed on through `fld`/`fstp`).
+    pub fn apply_bone_sel(mem: &mut impl Mem, chan: u32, bone: u32, scale: f32) {
+        let damped = mem.read::<u8>(bone.wrapping_add(0x144)) != 0;
+        apply_bone(mem, chan, bone, ffx_bridge::x87::round_trip(scale), damped);
+    }
+
+    /// `SG_SampleChannels(obj)` (`0x008393c0`): the key streams stepped to
+    /// the motion time and their values interpolated. The time `+0x740`
+    /// (8.8 frames, kept in `+0x744`) rounded up past the frame
+    /// (`(t + 0x1ff) >> 8`) is clamped to the end (`(+0x71c + 1) >> 8`)
+    /// for a motion that stops (`u16` `+0x724` 1), else wrapped back by the
+    /// loop length (`+0x720 >> 8`). Going back rewinds the channels
+    /// (`SG_RewindChannels`); then they step to that frame
+    /// (`SG_StepChannels`, the frame count `+0x7dc`). Each channel of the
+    /// list `+0x74c` then gets at `+0x1c` its key (`Fixed12_ToFloat` of
+    /// `+0x16`) or, between frames (`t & 0xff`), the blend with the key
+    /// before (`+0x18`): `AngleTurn_Lerp` for an angle (byte `+5`), else
+    /// `prev + Fixed8_ToFloat(t & 0xff) * (key - prev)`.
+    pub fn sample_channels(mem: &mut impl Mem, obj: u32) {
+        use ffx_bridge::x87;
+        use ffx_chara::fixed::{fixed8_to_float, fixed12_to_float};
+        let at = |o: u32| obj.wrapping_add(o);
+        let t: u32 = mem.read(at(0x740));
+        let end = mem.read::<i32>(at(0x71c)).wrapping_add(1) >> 8;
+        mem.write(at(0x744), t);
+        let mut want = (t.wrapping_add(0x1ff)).cast_signed() >> 8;
+        if want > end {
+            if mem.read::<u16>(at(0x724)) == 1 {
+                want = end;
+            } else {
+                want = want.wrapping_sub(mem.read::<i32>(at(0x720)) >> 8);
+            }
+        }
+        let mut d = want.wrapping_sub(mem.read::<i32>(at(0x7dc)));
+        if d < 0 {
+            rewind_channels(mem, obj);
+            d = want.wrapping_sub(1);
+        }
+        if want > mem.read::<i32>(at(0x7dc)) {
+            step_channels(mem, obj, d);
+            let n: i32 = mem.read(at(0x7dc));
+            mem.write(at(0x7dc), n.wrapping_add(d));
+        }
+        let f = t & 0xff;
+        let mut ch: u32 = mem.read(at(0x74c));
+        while ch != 0 {
+            let key: u16 = mem.read(ch.wrapping_add(0x16));
+            let v = if f == 0 {
+                fixed12_to_float(u32::from(key))
+            } else {
+                let prev: u16 = mem.read(ch.wrapping_add(0x18));
+                if mem.read::<u8>(ch.wrapping_add(5)) != 0 {
+                    let s = |x: u16| i32::from(x.cast_signed()).cast_unsigned();
+                    ffx_chara::motion::angle_turn_lerp(s(prev), s(key), f)
+                } else {
+                    let a = x87::load(fixed12_to_float(u32::from(prev)).to_bits());
+                    let b = x87::load(fixed12_to_float(u32::from(key)).to_bits());
+                    let diff = x87::sub(b, a);
+                    let w = x87::load(fixed8_to_float(f).to_bits());
+                    f32::from_bits(x87::store(x87::add(x87::mul(w, diff), a)))
+                }
+            };
+            mem.write(ch.wrapping_add(0x1c), v);
+            ch = mem.read(ch);
+        }
+    }
+
+    /// One linear step toward the target over `n` frames: `cur +=
+    /// (target - cur) / n` unless the difference (stored as `f32`) is 0;
+    /// a NaN difference steps.
+    fn step_toward(mem: &mut impl Mem, target: u32, cur: u32, n: i32) {
+        use ffx_bridge::x87;
+        let t = x87::load(mem.read(target));
+        let c = x87::load(mem.read(cur));
+        let d = x87::load(x87::store(x87::sub(t, c)));
+        if d == 0.0 {
+            return;
+        }
+        let nf = x87::load(x87::store(f64::from(n)));
+        let r = x87::add(x87::div(d, nf), c);
+        mem.write(cur, f32::from_bits(x87::store(r)));
+    }
+
+    /// `SG_BlendToTarget(obj, n)` (`0x008395b0`): one of `n` steps from the
+    /// current pose to the target. A channel motion (`+0x196` bit 0) steps
+    /// each channel of `+0x74c` (`+0x20` toward `+0x1c`: `Chr_FracStep` for
+    /// an angle, byte `+5`, else linearly) and marks it changed (`+0x28`).
+    /// Otherwise each of the model's bones (`u16` `+0xa` of `+0x1c0`;
+    /// `0x18c` bytes each at `+0x748`) steps its three rotations
+    /// (`Chr_FracStep`) and six other values linearly, marking its nine
+    /// channels changed; with `n` 1, `+0x194` gets bit 16.
+    pub fn blend_to_target(mem: &mut impl Mem, obj: u32, n: i32) {
+        use ffx_bridge::x87::round_trip as rt;
+        use ffx_chara::motion::bridge::chr_frac_step;
+        let frac = |mem: &mut _, cur: u32, target: u32| {
+            let (c, t) = (rt(Mem::read(mem, cur)), rt(Mem::read(mem, target)));
+            let r = chr_frac_step(mem, c, t, n);
+            Mem::write(mem, cur, r);
+        };
+        if mem.read::<u8>(obj.wrapping_add(0x196)) & 1 != 0 {
+            let mut ch: u32 = mem.read(obj.wrapping_add(0x74c));
+            while ch != 0 {
+                if mem.read::<u8>(ch.wrapping_add(5)) == 0 {
+                    step_toward(mem, ch.wrapping_add(0x1c), ch.wrapping_add(0x20), n);
+                } else {
+                    frac(mem, ch.wrapping_add(0x20), ch.wrapping_add(0x1c));
+                }
+                mem.write(ch.wrapping_add(0x28), 1u8);
+                ch = mem.read(ch);
+            }
+            return;
+        }
+        let count = |mem: &_| {
+            let model: u32 = Mem::read(mem, obj.wrapping_add(0x1c0));
+            i32::from(Mem::read::<u16>(mem, model.wrapping_add(0xa)))
+        };
+        let mut b = mem.read::<u32>(obj.wrapping_add(0x748)).wrapping_add(0x20);
+        let mut i = 0;
+        while i < count(mem) {
+            for o in [0u32, 0x2c, 0x58] {
+                frac(mem, b.wrapping_add(o), b.wrapping_add(o).wrapping_sub(4));
+            }
+            for o in [0x80u32, 0xac, 0xd8, 0x104, 0x130, 0x15c] {
+                step_toward(mem, b.wrapping_add(o), b.wrapping_add(o + 4), n);
+            }
+            for o in [0x168u32, 0x13c, 0x110, 0xe4, 0xb8, 0x8c, 0x60, 0x34, 0x8] {
+                mem.write(b.wrapping_add(o), 1u8);
+            }
+            i += 1;
+            b = b.wrapping_add(0x18c);
+        }
+        if n == 1 {
+            let f: u32 = mem.read(obj.wrapping_add(0x194));
+            mem.write(obj.wrapping_add(0x194), f | 0x1_0000);
+        }
+    }
 }
