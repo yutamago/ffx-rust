@@ -186,6 +186,62 @@ pub mod bridge {
         }
     }
 
+    /// `y − h · k` (x87, `y` through a double) for actor `i`'s height `h`.
+    fn lower(mem: &mut impl Mem, i: u32, vec: u32, k: Option<f64>) {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let y = vec.wrapping_add(4);
+        let h = load(crate::body::bridge::ms_get_chr_height(mem, i).to_bits());
+        let d = match k {
+            Some(k) => mul(h, k),
+            None => h,
+        };
+        let r = store(sub(load(f32_at(mem, y)), d));
+        mem.write(y, r);
+    }
+
+    /// `MsGetChrCenterPos(i, vec)` (`0x00794c20`): actor `i`'s position
+    /// (`msGetChrPos`), half its height up (y down) unless it floats
+    /// (`+0x505`) or the battle is under water; -1, 0 for a non-actor.
+    pub fn ms_get_chr_center_pos<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(Trig, u32) -> u32,
+        i: u32,
+        vec: u32,
+    ) -> i32 {
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        crate::pos::bridge::ms_get_chr_pos_of(mem, trig, a, vec);
+        if byte(mem, a, 0x505) == 0 && crate::state::bridge::UNDERWATER.get(mem) == 0 {
+            let half = HALF.get(mem);
+            lower(mem, i, vec, Some(half));
+        }
+        -1
+    }
+
+    /// `MsGetChrTopPos(i, vec)` (`0x00795980`): actor `i`'s position
+    /// (`msGetChrPos`), its height up (half of it when it floats,
+    /// `+0x505`, or under water); -1, 0 for a non-actor.
+    pub fn ms_get_chr_top_pos<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(Trig, u32) -> u32,
+        i: u32,
+        vec: u32,
+    ) -> i32 {
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        crate::pos::bridge::ms_get_chr_pos_of(mem, trig, a, vec);
+        let full = byte(mem, a, 0x505) == 0 && crate::state::bridge::UNDERWATER.get(mem) == 0;
+        let k = if full { None } else { Some(HALF.get(mem)) };
+        lower(mem, i, vec, k);
+        -1
+    }
+
     /// `MsGetChrBottomPos(i, vec)` (`0x00794830`): actor `i`'s position
     /// (`msGetChrPos`), half its height up when it floats (`+0x505`) or the
     /// battle is under water; -1, 0 for a non-actor.
