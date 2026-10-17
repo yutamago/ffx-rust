@@ -2265,6 +2265,9 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         );
         let own = [rng.range(0, 3000), rng.next().cast_signed()][rng.below(2) as usize];
         poke(a, b, p + 0x6f4, &own.to_le_bytes());
+        // few groups (+0x504 & 7: Provoke keeps the provoker's group)
+        let g = b.read(p + 0x504, 1).unwrap()[0] & !7 | u8::try_from(rng.below(2)).unwrap();
+        poke(a, b, p + 0x504, &[g]);
         // each moves itself (MsDamageSetMotion's +0x422: the positions
         // checked are its own)
         poke(a, b, p + 0x422, &[u8::try_from(i).unwrap()]);
@@ -2936,6 +2939,26 @@ fn whole_turn(
     );
     set(a, b, ip::AUTO_OFF, flag(rng, 3));
     set(a, b, ip::CHEAT_POWERUP, u32::from(flag(rng, 3)));
+    // at times a plain menu turn with the cheat on: no forced command, not
+    // automatic, hurt (the heal shows)
+    if rng.below(4) == 0 {
+        set(a, b, ip::CHEAT_POWERUP, 1);
+        for q in [0, 1, 2, 0x14] {
+            let p = w.actor(q);
+            for (o, v) in [
+                (0x606, 0u8),
+                (0x607, 0),
+                (0x608, 0),
+                (0x616, 0),
+                (0x617, 0),
+                (0xdf3, 0),
+            ] {
+                poke(a, b, p + o, &[v]);
+            }
+            let max = i32::from_le_bytes(b.read(p + 0x594, 4).unwrap().try_into().unwrap());
+            poke(a, b, p + 0x5d0, &(max / 2).max(1).to_le_bytes());
+        }
+    }
     // at times Regen without a Zombie (the numbers' wait, not the
     // commands')
     if rng.below(3) == 0 {
