@@ -40,6 +40,7 @@ pub mod target;
 pub mod turn;
 pub mod util;
 pub mod vector;
+pub mod visible;
 
 pub use encounters::{EncounterTable, Field, Formation, Group};
 pub use formation::{FORMATION, FormationFile, MONSTER_SLOTS};
