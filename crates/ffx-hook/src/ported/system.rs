@@ -5714,6 +5714,10 @@ ported! {
     FindRecordFlagged_00775de0 @ 0x0077_5de0 => extern "C" fn find_record_flagged() {
         tolib::bridge::find_record_flagged(&mut mem(), call_sym);
     }
+    /// `PatchMenuRecords_007767d0()`.
+    PatchMenuRecords_007767d0 @ 0x0077_67d0 => extern "C" fn patch_menu_records() {
+        tolib::bridge::patch_menu_records(&mut mem(), call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

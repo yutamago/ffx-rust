@@ -4907,4 +4907,70 @@ pub mod bridge {
             call,
         );
     }
+
+    /// `0x007767d0()`: fixed edits to the menu's records (0x138 bytes) for
+    /// two screens (`0x00c416c0`). Screen 5, first page: records 3 and 4
+    /// get `+6` 0x53 and 0x83, 5 is unlinked (`UnlinkRecord_00776910`,
+    /// through `call`), 7 cleared at `+1` and unlinked, 8 flagged (`+1`
+    /// bit 0) with `+6` 0x56, 9 `+6` 0x86. Screen 0xb: on page 13 records 7
+    /// and 12 unlinked and records 4 and 8 get `+6` 0xb4 and 0xb8; on page
+    /// 14 records 5 and 8 unlinked and 9 and 6 get 0x88 and 0x84.
+    pub fn patch_menu_records<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        match word(mem, 0x00c4_16c0) {
+            5 => {
+                let pages = word(mem, 0x0112_a01c);
+                if pages == 0 {
+                    return;
+                }
+                let n = i32::from(mem.read::<i16>(pages.wrapping_add(4)));
+                let mut rec = mem.read::<u32>(pages).wrapping_add(word(mem, 0x0112_a03c));
+                for i in 0..n.max(0) {
+                    match i {
+                        3 => mem.write(rec.wrapping_add(6), 0x53u16),
+                        4 => mem.write(rec.wrapping_add(6), 0x83u16),
+                        5 => {
+                            call(mem, 0x0077_6910, &[rec]);
+                        }
+                        7 => {
+                            mem.write(rec.wrapping_add(1), 0u8);
+                            call(mem, 0x0077_6910, &[rec]);
+                        }
+                        8 => {
+                            let f: u8 = mem.read(rec.wrapping_add(1));
+                            mem.write(rec.wrapping_add(1), f | 1);
+                            mem.write(rec.wrapping_add(6), 0x56u16);
+                        }
+                        9 => mem.write(rec.wrapping_add(6), 0x86u16),
+                        _ => {}
+                    }
+                    rec = rec.wrapping_add(0x138);
+                }
+            }
+            0xb => {
+                let pages = word(mem, 0x0112_a01c);
+                if pages == 0 {
+                    return;
+                }
+                let base = mem
+                    .read::<u32>(pages.wrapping_add(0x68))
+                    .wrapping_add(word(mem, 0x0112_a03c));
+                call(mem, 0x0077_6910, &[base.wrapping_add(0x888)]);
+                call(mem, 0x0077_6910, &[base.wrapping_add(0xea0)]);
+                mem.write(base.wrapping_add(0x4e6), 0xb4u16);
+                mem.write(base.wrapping_add(0x9c6), 0xb8u16);
+                let base = mem
+                    .read::<u32>(pages.wrapping_add(0x70))
+                    .wrapping_add(word(mem, 0x0112_a03c));
+                call(mem, 0x0077_6910, &[base.wrapping_add(0x618)]);
+                call(mem, 0x0077_6910, &[base.wrapping_add(0x9c0)]);
+                mem.write(base.wrapping_add(0xafe), 0x88u16);
+                mem.write(base.wrapping_add(0x756), 0x84u16);
+            }
+            _ => {}
+        }
+    }
 }
