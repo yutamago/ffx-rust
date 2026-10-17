@@ -7827,3 +7827,60 @@ fn menu_round19_batch6_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round19_batch7_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0007) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    for round in 0..64u32 {
+        if round % 8 == 0 {
+            // the weapon shop's list and second windows over the original
+            // allocator; the cursor set-up recorded
+            t.scramble(0x0186_ab10, 2);
+            t.twin("MenuWShop_OpenListWindow", 0x008d_8260, &[], U32, |o| {
+                w(tk::menu_wshop_open_list_window(o, &mut callback))
+            });
+            t.scramble(0x0186_a250, 4);
+            let init = t.rng.next();
+            record_n(&mut t, 0x008d_9580, 1, init);
+            t.twin("MenuWShop_OpenSubWindow1", 0x008d_8370, &[], U32, |o| {
+                w(tk::menu_wshop_open_sub_window1(o, &mut callback))
+            });
+            // the aeon status window: the current aeon fixed, the command
+            // list and the status background recorded
+            let summon = t.rng.below(8);
+            return_const(&mut t, 0x008a_9880, summon);
+            let built = t.rng.next();
+            record_n(&mut t, 0x008d_2b40, 1, built);
+            let bg = t.rng.next();
+            record_n(&mut t, 0x008d_4ed0, 0, bg);
+            t.scramble(0x023c_c3bc, 0x10);
+            t.twin("MenuSummon_OpenStatusWindow", 0x008c_d140, &[], U32, |o| {
+                w(tk::menu_summon_open_status_window(o, &mut callback))
+            });
+        }
+        // BtlEnd_SelectedWeapon over a recording MsGetSaveWeapon
+        let rec = t.rng.next();
+        record_n(&mut t, 0x007a_bbd0, 1, rec);
+        let list = t.alloc_random(0x200);
+        t.put(t.sym(0x025c_c580), list);
+        for (g, v) in [
+            (0x0186_a19c, t.rng.pick(&[0u32, 1, 0x100])),
+            (0x0186_a1a8, t.rng.pick(&[0u32, 1, 0x8000_0000])),
+            (0x0186_a190, t.rng.below(0x80)),
+            (0x0186_a1a0, t.rng.below(0x80)),
+            (0x0186_a1a4, t.rng.below(0x10)),
+        ] {
+            t.put(t.sym(g), v);
+        }
+        t.scramble(0x0231_0f8e, 0x20);
+        t.twin("BtlEnd_SelectedWeapon", 0x008b_da80, &[], U32, |o| {
+            w(tk::btl_end_selected_weapon(o, local, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -3518,4 +3518,24 @@ ported! {
     TkInitWork @ 0x0088_e570 => extern "C" fn tk_init_work() -> u32 {
         tk::tk_init_work(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuWShop_OpenListWindow()`: the window.
+    MenuWShop_OpenListWindow @ 0x008d_8260 => extern "C" fn menu_wshop_open_list_window() -> u32 {
+        tk::menu_wshop_open_list_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSubWindow1()`.
+    MenuWShop_OpenSubWindow1 @ 0x008d_8370 => extern "C" fn menu_wshop_open_sub_window1() -> u32 {
+        tk::menu_wshop_open_sub_window1(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_OpenStatusWindow()`.
+    MenuSummon_OpenStatusWindow_008cd140 @ 0x008c_d140 => extern "C" fn menu_summon_open_status_window() -> u32 {
+        tk::menu_summon_open_status_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_SelectedWeapon()`: the record.
+    BtlEnd_SelectedWeapon @ 0x008b_da80 => extern "C" fn btl_end_selected_weapon() -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::btl_end_selected_weapon(&mut m, local, &mut |_, f, a| call_ptr(f, a))
+    }
 }

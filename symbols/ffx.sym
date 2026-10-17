@@ -9696,6 +9696,7 @@
 0x008bda40 function BtlEnd_GetNextAP          # (chr) tail call MsGetNextAP; own name
 0x008bda50 function BtlEnd_GetSP              # (chr) tail call MsGetSaveSP (TkMenuGetSP copy in the battle-end file); own name
 0x008bda60 function TkBtlEndGetText           # fh switch:bsim1.00+call.cs 0x71004b25f0 cdecl
+0x008bda80 function BtlEnd_SelectedWeapon     # (): MsGetSaveWeapon(id, local): id u16 0x02310f8e[[0x0186a1a4]] (spoils) when [0x0186a19c] (inverted while [0x0186a1a8]) != 0, else u16 [0x025cc580][[0x0186a190] + [0x0186a1a0]]; caller TkBtlEndCtrl; name ours
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
 0x008bdf10 function BtlEnd_InitApStep         # 0x01869f14 = result 19 (AP), 0x01869f10 = its step (ap/189 | 1, +2 on a multiple of 5); own name
@@ -10036,6 +10037,8 @@
 0x008d7630 function MenuWShop_CloseSubWindow3 # close 0x0186aafc; own name
 0x008d7650 function MenuWShop_CloseSubWindow1 # close 0x0186aaf4; own name
 0x008d7670 function MenuWShop_CloseSubWindow4 # close 0x0186ab00; own name
+0x008d8260 function MenuWShop_OpenListWindow  # (): TkMenuMainAllocWindow into 0x0186aaf0: +0xc 0x008d77f0, +0x10 0x008d7aa0, +0x14 0x008d84e0, +0x48/+0x32 0, +0x30 u16 0x0186ab10, +0x3e 3, +0x42 1, +0x3a 9, +0x45 -1, +0x37 0, +0x28 0; registered, returned; caller 0x008d6e40; name ours
+0x008d8370 function MenuWShop_OpenSubWindow1  # (): TkMenuMainAllocWindow into 0x0186aaf4: +0xc 0x008d79c0, +0x10 0x008d7d20, +0x14 0x008d8500, +0x1c 0x008d75d0, +0x3e 3, +0x30 TkMn2GetNameModeMax(), +0x3a 9, +0x45 -1; registered, MenuWShop_InitCursor(w) returned; caller 0x008d6e40; name ours
 0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
 0x008d85d0 function MenuWShop_CanAfford      # (e): 0 while 0x0186ab14 is 0, else MenuShop_WeaponPrice(e) <= MsGetGIL() (signed); called by the weapon shop's buy step; name ours

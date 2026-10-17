@@ -7872,6 +7872,156 @@ pub mod bridge {
         mem.write(save.wrapping_add(0x13), (b & 0xfb) | 2);
         save
     }
+
+    /// `MenuWShop_OpenListWindow()` (`0x008d8260`, own name): the weapon
+    /// shop's list window ([`WSHOP_WINDOWS`]`[0]`, which
+    /// `MenuWShop_RestartListWindow` restarts): callbacks `+0xc`
+    /// `0x008d77f0`, `+0x10` `0x008d7aa0`, `+0x14` `0x008d84e0`; `+0x48`
+    /// (`u16`) and `+0x32` (`u32`) 0, `+0x30` the list's count (`u16`
+    /// `0x0186ab10`), layer 3, `+0x42` 1, `+0x3a` 9, `+0x45` -1, `+0x37` 0,
+    /// `+0x28` 0; registered and returned.
+    pub fn menu_wshop_open_list_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        mem.write(w.wrapping_add(0x48), 0u16);
+        mem.write(w.wrapping_add(0x32), 0u32);
+        let count: u16 = mem.read(mem.rebase(0x0186_ab10));
+        mem.write(w.wrapping_add(0x30), count);
+        for (o, f) in [
+            (0xcu32, 0x008d_77f0u32),
+            (0x10, 0x008d_7aa0),
+            (0x14, 0x008d_84e0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        mem.write(w.wrapping_add(0x42), 1u8);
+        mem.write(w.wrapping_add(0x3a), 9u16);
+        mem.write(w.wrapping_add(0x45), 0xffu8);
+        mem.write(w.wrapping_add(0x37), 0u8);
+        mem.write(w.wrapping_add(0x28), 0u32);
+        WSHOP_WINDOWS[0].set(mem, w);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuWShop_OpenSubWindow1()` (`0x008d8370`, own name): the weapon
+    /// shop's second window ([`WSHOP_WINDOWS`]`[1]`): callbacks `+0xc`
+    /// `0x008d79c0`, `+0x10` `0x008d7d20`, `+0x14` `0x008d8500`, `+0x1c`
+    /// `0x008d75d0`; layer 3, `+0x48` (`u16`) and `+0x32` (`u32`) 0, `+0x42`
+    /// 1, `+0x30` `TkMn2GetNameModeMax()` (`u16`), `+0x3a` 9, `+0x45` -1,
+    /// `+0x28` 0, `+0x37` 0; registered, then `MenuWShop_InitCursor`
+    /// (its result returned).
+    pub fn menu_wshop_open_sub_window1<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        for (o, f) in [
+            (0xcu32, 0x008d_79c0u32),
+            (0x10, 0x008d_7d20),
+            (0x14, 0x008d_8500),
+            (0x1c, 0x008d_75d0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        mem.write(w.wrapping_add(0x48), 0u16);
+        mem.write(w.wrapping_add(0x32), 0u32);
+        mem.write(w.wrapping_add(0x42), 1u8);
+        let f = mem.rebase(0x008c_1bc0);
+        let max = call(mem, f, &[]);
+        let [lo, hi, ..] = max.to_le_bytes();
+        mem.write(w.wrapping_add(0x30), u16::from_le_bytes([lo, hi]));
+        mem.write(w.wrapping_add(0x3a), 9u16);
+        mem.write(w.wrapping_add(0x45), 0xffu8);
+        mem.write(w.wrapping_add(0x28), 0u32);
+        mem.write(w.wrapping_add(0x37), 0u8);
+        WSHOP_WINDOWS[1].set(mem, w);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        let f = mem.rebase(0x008d_9580);
+        call(mem, f, &[w])
+    }
+
+    /// `MenuSummon_OpenStatusWindow()` (`0x008cd140`): the aeon status
+    /// window ([`SUMMON_STATUS_WINDOW`], which `MenuSummon_CloseStatusWindow`
+    /// closes):
+    /// callbacks `+0xc` `MenuSummon_StatusWindowCtrl`, `+0x10`
+    /// `0x008cd080`, `+0x14` `0x008cd220`, `+0x45` 0, `+0x36` 3; then
+    /// `0x023cc3c8` 0 and `TkMenuGetCurrentSummonPos()` three times into
+    /// `0x023cc3c4`, `0x023cc3c0`, `0x023cc3bc`; registered;
+    /// `MenuSummon_BuildCommandList(TkMenuGetCurrentSummon())`, and
+    /// `TkMn2InitStatusBG()` (a tail jump: its result).
+    pub fn menu_summon_open_status_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        SUMMON_STATUS_WINDOW.set(mem, w);
+        for (o, f) in [
+            (0xcu32, 0x008c_cb60u32),
+            (0x10, 0x008c_d080),
+            (0x14, 0x008c_d220),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x45), 0u8);
+        mem.write(w.wrapping_add(0x36), 3u8);
+        let at = mem.rebase(0x023c_c3c8);
+        mem.write(at, 0u32);
+        let pos = mem.rebase(0x008a_9890);
+        for g in [0x023c_c3c4u32, 0x023c_c3c0, 0x023c_c3bc] {
+            let v = call(mem, pos, &[]);
+            let at = mem.rebase(g);
+            mem.write(at, v);
+        }
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        let f = mem.rebase(0x008a_9880);
+        let chr = call(mem, f, &[]);
+        let f = mem.rebase(0x008d_2b40);
+        call(mem, f, &[chr]);
+        let f = mem.rebase(0x008d_4ed0);
+        call(mem, f, &[])
+    }
+
+    /// `BtlEnd_SelectedWeapon()` (`0x008bda80`, own name): the weapon under
+    /// the battle results' cursor, `MsGetSaveWeapon(id, local)`: from the
+    /// spoils (`u16` `0x02310f8e[[0x0186a1a4]]`) when the side flag
+    /// (`0x0186a19c`, inverted while `0x0186a1a8` is set) is non-zero, else
+    /// from the list at `[0x025cc580]` (`u16` at `[0x0186a190] +
+    /// [0x0186a1a0]`). Returns the record. `local` is the 4-byte out slot.
+    pub fn btl_end_selected_weapon<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &mut M, a: u32| mem.read::<u32>(mem.rebase(a));
+        let mut side = g(mem, 0x0186_a19c);
+        if g(mem, 0x0186_a1a8) != 0 {
+            side = u32::from(side == 0);
+        }
+        let at = if side == 0 {
+            let i = g(mem, 0x0186_a190).wrapping_add(g(mem, 0x0186_a1a0));
+            g(mem, 0x025c_c580).wrapping_add(i.wrapping_mul(2))
+        } else {
+            let i = g(mem, 0x0186_a1a4);
+            mem.rebase(0x0231_0f8e).wrapping_add(i.wrapping_mul(2))
+        };
+        let id: u16 = mem.read(at);
+        let f = mem.rebase(0x007a_bbd0);
+        call(mem, f, &[u32::from(id), local])
+    }
 }
 
 #[cfg(test)]
