@@ -8545,7 +8545,11 @@ fn round14_limit_openers_match_the_original_on_the_snapshot() {
 }
 
 /// Round 14's limit timer and command-cursor memory.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 fn round14_timer_and_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cell = alloc(a, b, 4);
