@@ -41,9 +41,14 @@
 0x0040d2c0 function vpx_setup_rtcd_0040d2c0      # libvpx run-time CPU detection: SIMD caps from the VPX_SIMD_CAPS / VPX_SIMD_CAPS_MASK environment variables or CPUID (MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, AVX), then stores the matching DSP routine (0x00a7c920..0x00a8d87a and C wrappers near 0x00417830) in each function pointer; own name
 0x0042d3c0 function ReturnConst2_0042d3c0        # auto-port shape (return constant, cdecl): return 0x2; callers: no direct caller; name ours
 0x0042e060 function ReturnFieldU32PointerChain_0042e060 # auto-port shape (return field u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x10)]; t1 = u32[(a0 + 0x14)]; return t0; callers: ; name ours
+0x0042e0d0 function libwebm_mkvparser_Block_GetFrame # thiscall(block; idx) -> &frames[idx] (16-byte {i64 pos, len}): its asserts name libwebm's mkvparser.cpp ('idx < m_frame_count', 'f.pos > 0', 'f.len > 0'); library (the PhyreEngine video player's WebM demuxer); name by the library's API
 0x0042e1d0 function SetGlobals_0042e1d0          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x00c8b248] = a0; u32[&0x00c8b24c] = a1; u32[&0x00c8b244] = a2; u32[&0x00c8b240] = a3; return a3; callers: ; name ours
 0x0042e200 function SeveralStoresCopyIntoGlobal_0042e200 # auto-port shape (several stores: copy into global, cdecl): t0 = u32[&0x00b0c578]; u32[&0x00c8b248] = &0x00949d80; u32[&0x00c8b24c] = &0x00949d3e; u32[&0x00c8b244] = t0; u32[&0x00c8b240] = &0x009495f2; return t0; callers: ; name ours
-0x0042ee40 function AsmEmuInit                # fh v4:imported
+0x0042e350 function libogg_oggpack_write      # cdecl(buffer, value, bits): libogg's bit packer (buffer {endbyte, endbit, buffer, ptr, storage}, grows by 256 through realloc, mask table libogg_mask); library (the video player's Vorbis audio); name by the library's API
+0x0042e840 function libogg_oggpack_look       # fastcall(buffer, bits) -> the next bits, -1 past the end; libogg's; library (the video player's Vorbis audio); name by the library's API
+0x0042ea30 function libogg_oggpack_adv        # fastcall(buffer, bits): skips bits (past the end: ptr 0, endbit 1); libogg's; library; name by the library's API
+0x0042eb10 function libogg_oggpack_read       # fastcall(buffer, bits) -> look then adv; libogg's; library; name by the library's API
+0x0042ee40 function AsmEmuInit                # fh v4:imported; () vf00 = (0, 0, 0, 1.0) (fldz/fld1), g_Ee_Gpr sp (+0x1d0) = &g_Ee_Gpr, two dbgPrintf lines (a bare ret); eax the caller's (ee::bridge::asm_emu_init)
 0x0042ee80 function AsmEmuPrintVec            # fh v3:exact 0x0042ee80
 0x0042eec0 function AsmEmuSetFuncParam0       # fh v3:cg2 0x42eec0
 0x0042eed0 function AsmEmuSetFuncParam1       # fh v3:cg2 0x42eed0
@@ -240,6 +245,7 @@
 0x0044b7e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSharray_Phyre_PString__Get_0044b7e0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSharray<class Phyre::PString> *>::Get" (its own __FUNCTION__ in an error print)
 0x0044b970 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClusterDependencyList__Get_0044b970 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClusterDependencyList *>::Get" (its own __FUNCTION__ in an error print)
 0x0044cbe0 function Phyre_PThreadPool_PThreadPool # fh v3:exact 0x0044ccc0 Phyre::PThreadPool::PThreadPool
+0x0044ccd0 function Phyre_PThreadPool_deleting_dtor_0044ccd0 # thiscall(pool; flags): vtable Phyre_PThreadPool_vftable, 0x0044d070, operator_delete when flags & 1; PhyreEngine library; name ours
 0x0044cd30 function Phyre_PThreadPool_GetSingleton # fh v3:exact 0x0044ce10 Phyre::PThreadPool::GetSingleton
 0x0044ce70 function Phyre_PThreadPool_startThreads # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PhyreEngineWorkerThread'; Switch 0x71000bf410 Phyre::PThreadPool::startThreads (symbols from Fahrenheit's server export)
 0x0044d880 function Phyre_PComponent_Bind     # fh v3:exact 0x0044d960 Phyre::PComponent::Bind
@@ -2392,7 +2398,7 @@
 0x0067a590 function iSoundSetSfxVolume           # layout: alphabetical run between iSoundSetMute and iSoundStageFlush (2 unnamed in the gap); Switch 0x710021bcd0 iSoundSetSfxVolume is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0067a5b0 function iSoundSetVoiceVolume         # layout: alphabetical run between iSoundSetMute and iSoundStageFlush (2 unnamed in the gap); Switch 0x710021bcb0 iSoundSetVoiceVolume is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0067a5d0 function iSoundStageFlush          # fh v3:bsim1.00 0x0067a780
-0x0067a600 function iSoundUpdate                 # layout+callees: sorts between iSoundStageFlush and iVoiceDataChange, and its named callees match the Switch 0x710021b230 iSoundUpdate's (similarity 1.00: FmodManager_registCommandAsync); symbols from Fahrenheit's server export
+0x0067a600 function iSoundUpdate                 # layout+callees: sorts between iSoundStageFlush and iVoiceDataChange, and its named callees match the Switch 0x710021b230 iSoundUpdate's (similarity 1.00: FmodManager_registCommandAsync); symbols from Fahrenheit's server export; ours: () g_Settings volumes +0x14/+0x1c/+0x18/+0x20 (0 when +0x10) as commands 0x42..0x45, +0x14 / 100.0 to PhyFMVPlayerManager_SetVolume_006dabf0 (fmod::bridge::i_sound_update)
 0x0067a6a0 function iVoiceDataChange          # fh v3:exact 0x0067a850
 0x0067a6c0 function iVoiceIsPaused               # layout: alphabetical run between iVoiceDataChange and iVoicePanDirect (1 unnamed in the gap); Switch 0x710021b4a0 iVoiceIsPaused is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0067a6d0 function iVoicePanDirect           # fh v3:bsim1.00 0x0067a880
@@ -2842,6 +2848,7 @@
 0x006d5a70 function BrokenScreenEffect_updateLightParameters # fh switch:bsim1.00 0x710024f970 BrokenScreenEffect::updateLightParameters
 0x006d5d49 function Catch_All_006d5e79        # fh v3:cg2 0x6d5e79 Catch_All@006d5e79
 0x006d6970 function PhyFMVPlayerManager_PhyFMVPlayerManager # fh v3:exact 0x006d6aa0 PhyFMVPlayerManager::PhyFMVPlayerManager
+0x006d6ff0 function std_Tree_const_iterator_inc_006d6ff0 # same bytes as std_Tree_const_iterator_inc_006352b0 (the movie player's std::map)
 0x006d7130 function PhyFMVPlayerManager_CreateInstance # fh v3:cg2 0x6d7260 PhyFMVPlayerManager::CreateInstance
 0x006d73a0 function PhyFMVPlayerManager_GetInstance # fh v3:bsim1.00 0x006d74d0 PhyFMVPlayerManager::GetInstance
 0x006d7430 function PhyFMVPlayerManager_PlayVideo # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'start to play video:%s\\n'; Switch 0x7100267240 PhyFMVPlayerManager::PlayVideo (symbols from Fahrenheit's server export)
@@ -2852,6 +2859,8 @@
 0x006d7cc0 function std_Tree_Rrotate_copy_006d7cc0 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
 0x006d82f0 function PhyFMVPlayerManager_createVideoIndexMap # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Video/JP/FFX_VideoList.txt'; Switch 0x71002660d0 PhyFMVPlayerManager::createVideoIndexMap (symbols from Fahrenheit's server export)
 0x006d86e0 function PhyFMVPlayerManager_doOnShaderBinFilesLoaded # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'imageWidth'; Switch 0x7100265c60 PhyFMVPlayerManager::doOnShaderBinFilesLoaded (symbols from Fahrenheit's server export)
+0x006d8940 function std_Tree_erase_range_006d8940 # same bytes as std_Tree_erase_range_00636d60 (MSVC std::map erase(first, last)); the movie player's map; name ours
+0x006d8a00 function std_Tree_erase_006d8a00   # MSVC std::map erase(iterator): unlinks and rebalances, then destroys the node (a std::string at +0x28; 0x00636e20 is the same code for +0x24); the movie player's map; name ours
 0x006d9180 function PhyFMVPlayerManager_fmvPlayer_terminate # fh switch:bsim1.00 0x71002671f0 PhyFMVPlayerManager::fmvPlayer_terminate
 0x006d91b0 function PhyFMVPlayerManager_getCurrentFrame # fh v3:bsim1.00 0x006d92e0 PhyFMVPlayerManager::getCurrentFrame
 0x006d93e0 function PhyFMVPlayerManager_getVideoName # fh v3:exact 0x006d9510 PhyFMVPlayerManager::getVideoName
@@ -2859,12 +2868,14 @@
 0x006d9570 function PhyFMVPlayerManager_initPauseMenuAssets # str-match switch: only user of 3 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/PauseMenuShader.fx.ph'; Switch 0x7100268470 PhyFMVPlayerManager::initPauseMenuAssets (symbols from Fahrenheit's server export)
 0x006d98e0 function PhyFMVPlayerManager_initSubtitleTimestamps # str-match switch: only user of 4 string(s) held once by both builds, e.g. '/MetaMenu/GameData/PS3Data/Video/JP/timestamp_JP.txt'; Switch 0x7100268b00 PhyFMVPlayerManager::initSubtitleTimestamps (symbols from Fahrenheit's server export)
 0x006d9c80 function PhyFMVPlayerManager_initialize # fh v3:exact 0x006d9db0 PhyFMVPlayerManager::initialize
+0x006da2a0 function PhyFMVPlayerManager_StateCheck_006da2a0 # fastcall(mgr) -> al: 1 when one of the count (+4) states at +0xc is 1, or +0x704 is 0; else 0 (eax's upper bytes what was there); only caller 0x00641ce0 (graphic, under PhyFMVPlayerManager_GetInstance), which Native_b00a_Poll waits on; movie player glue; name ours
 0x006da480 function PhyFMVPlayerDelegation_onTextureVideoPlay # fh v3:bsim1.00 0x006da5b0 PhyFMVPlayerDelegation::onTextureVideoPlay
 0x006da490 function PhyFMVPlayerDelegation_onTextureVideoStop # fh v3:bsim1.00 0x006da5c0 PhyFMVPlayerDelegation::onTextureVideoStop
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
 0x006da550 function PhyFMVPlayerManager_readCreditsText # fh switch:cg2 0x7100268970 PhyFMVPlayerManager::readCreditsText
 0x006da750 function PhyFMVPlayerManager_renderPauseBG # layout+callees: sorts between PhyFMVPlayerManager_readCreditsText and PhyFMVPlayerManager_updateVideoCallback, and its named callees match the Switch 0x7100269280 PhyFMVPlayerManager_renderPauseBG's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x006da8b0 function PhyFMVPlayerManager_renderPauseMenu # layout+callees: sorts between PhyFMVPlayerManager_readCreditsText and PhyFMVPlayerManager_updateVideoCallback, and its named callees match the Switch 0x7100269370 PhyFMVPlayerManager_renderPauseMenu's (similarity 1.00: Phyre_PRendering_PRendererBase_renderMeshInstance); symbols from Fahrenheit's server export
+0x006dabf0 function PhyFMVPlayerManager_SetVolume_006dabf0 # cdecl(f32 volume 0..1): 0x00c34420 = volume; while the movie player (0x00cded3c) plays (+0x6d0) and g_WaitFramesByTime == 1, also 0x00a28330(volume) (PVideoPlayback); caller iSoundUpdate; movie player glue; name ours
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
@@ -3121,6 +3132,7 @@
 0x006f9d70 function PhyreFIOS_isFileExist     # fh v3:bsim1.00 0x006f9e50 PhyreFIOS::isFileExist
 0x006f9d80 function PhyreFIOSStreamFile_seek  # fh v3:exact 0x006f9e60 PhyreFIOSStreamFile::seek
 0x006fa130 function FmodManager_createThread     # str: the thread is named "FmodManager"; Switch FmodManager::createThread (116 bytes) sits in the same place after getSystemTimeInMsec/registCommandAsync in the file
+0x006fa190 function FmodManager_Destroy       # (): when g_FmodManager: its deleting destructor (vtable +0, thiscall 1), SleepThread(), g_FmodManager = 0; only caller iFmodFinalize; FMOD glue; name ours
 0x006fa200 function GetDerefU32_006fa200         # auto-port shape (return deref u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x8)]; t1 = u32[(t0 + 0x8)]; return t1; callers: ; name ours
 0x006fa210 function FmodManager_getSystemTimeInMsec # structure: graphicGetTimeInMicroseconds converted to a float of milliseconds; Switch FmodManager::getSystemTimeInMsec (36 bytes), here just before the registCommandAsync overloads as there
 0x006fa280 function FmodManager_registCommandAsync1 # structure: (cmd) -> Fmod_PushCommand(cmd, 0, 0, 0, 0); one of the registCommandAsync overloads with defaulted arguments (Switch has five FmodManager::registCommandAsync, 28-40 bytes beside the 556-byte main one, which is our Fmod_PushCommand); 1-argument form; ours: thiscall(mgr; cmd), ret 4: Fmod_PushCommand(cmd, 0, 0, 0, 0)
@@ -3375,6 +3387,7 @@
 0x00709eb0 function FmodMusic_volumeFadeOut   # thiscall(FmodMusic; id, frames) -> 0: a playing music (state & 8) is marked fading (+8) and translated to 0; Switch FmodMusic::volumeFadeOut by the PC build's alphabetical order of FmodMusic.cpp
 0x00709f20 function FmodMusic_volumeReset     # thiscall(FmodMusic); Switch FmodMusic::volumeReset by the PC build's alphabetical order of FmodMusic.cpp
 0x00709ff0 function FmodMusic_volumeTranslate # thiscall(FmodMusic; id, frames, volume); Switch FmodMusic::volumeTranslate by the PC build's alphabetical order of FmodMusic.cpp
+0x0070a140 function FmodEventInfo_Init        # fastcall(info) -> info: zeroes FMOD Ex's 13-word FMOD_EVENT_INFO (+0x24 audibility, f32, by fldz) before FMOD::Event::getInfo (0x00948cca); callers 0x0070a1a0, 0x0070eb40, SfxEvent_isPlaying; FMOD glue; name ours
 0x0070a590 function FmodVoice_clear           # thiscall(FmodVoice); Switch FmodVoice::clear by the PC build's alphabetical order of FmodVoice.cpp
 0x0070a630 function FmodVoice_dataChange      # fh call.cs thiscall
 0x0070aa30 function FmodVoice_initData           # str: its error message names it: "FmodVoice::initData: NULL == mVoiceBtlEventProject! fileName = %s"
@@ -10112,6 +10125,7 @@
 0x008cba20 function MenuParty_CursorNext      # (): i8 0x0186a444 on (wrapping to 0) to the next slot whose +0xc is 1; name ours
 0x008cba60 function MenuParty_CursorPrev      # (): i8 0x0186a444 back (wrapping to count 0x0186a448 - 1) to the previous slot (0x0186a44c) whose +0xc is 1; name ours
 0x008cbaa0 function GetDerefU32_008cbaa0         # auto-port shape (return deref u32 (pointer chain), cdecl): t0 = u32[&0x0186a44c]; t1 = u32[(t0 + (a0 * 0x4))]; return t1; callers: ; name ours
+0x008cc150 function SndSetBgmTypeSave         # (on) -> eax of iMusicRefreshBgmType (tail call): MsGetSaveEventAddress() +0x5ec = (on != 0), then iMusicRefreshBgmType queues it; callers Native_0264 and Native_0267_Poll's choices; name ours (snd::bridge::snd_set_bgm_type_save)
 0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140
 0x008cc330 function TkMenuCtrlSummon          # fh v3:exact+call.cs 0x008cc300 cdecl
 0x008ccb10 function MenuSummon_CloseStatusWindow# TkMn2InitStatusBG, close request for 0x0186a5a4, forget it; own name
@@ -11697,8 +11711,8 @@
 0x0093d710 function rcuiProjectToInt          # (out, m, v, raw) -> float 1/w (left in ST0): rcuiApplyMatrix, x y z over w, the four ftol'd (times the double 0x00b313a0 unless raw); name ours
 0x0093d7d0 function rcuiScaleVec4             # (dst, v, s): four floats times s, returns dst; name ours
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
-0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900
-0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960
+0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900; (m) -> 4 (the row counter in eax): the identity into 16 f32 (fld1/fldz, +0.0) (movie::bridge::samp0_unit_matrix)
+0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960; (m, scrz, ax, ay, cx, cy, zmin, zmax, nearz, farz), libvu0's sceVu0ViewScreenMatrix: projection into m, screen transform in its frame ([10] = nearz*farz*(zmax-zmin)/(farz-nearz), [14] = (farz*zmin - nearz*zmax)/(farz-nearz), x87 53-bit), then rcuiMulMatrix(m, screen, m); eax rcuiMulMatrix's (movie::bridge::samp0_view_screen_matrix)
 0x0093da00 function movieClose                # fh switch:bsim1.00 0x710056ae90
 0x0093da30 function movieOpen                 # fh switch:bsim1.00 0x710056ae50
 0x0093da60 function readSizeFile                 # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'sceLseek() fails (%s)\\n'; Switch 0x710056ad50 readSizeFile (symbols from Fahrenheit's server export)
@@ -12094,6 +12108,13 @@
 0x00a25a30 function GetGlobal01984c68_00a25a30   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01984c68]; return t0; callers: ; name ours
 0x00a25db0 function IggyMenuManager_SetFields_00a25db0 # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x1; return a0; callers: IggyMenuManager_createInstance; name ours
 0x00a26240 function IggyMenuManager_createInstance # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710089f8c8 IggyMenuManager::createInstance, 3 votes, round 1
+0x00a26f30 function PVideoPlaybackWin32_dtor_00a26f30 # thiscall: destroys members +0x118 (0x00a3e040), +0x80, +0x40, +0 (0x00a3dd50) under an SEH frame; called by unwind funclets and 0x006d6d00; PhyreEngine video player (library); name ours
+0x00a26fb0 function PVideoPlaybackWin32_memcpy_00a26fb0 # cdecl(dst, src, n): memcpy; Fahrenheit's Switch match calls it MovieAllocate; a decoder callback of the PhyreEngine video player (library); name ours
+0x00a26fc0 function PVideoPlaybackWin32_memmove_00a26fc0 # cdecl(dst, src, n): memmove (a jmp); a decoder callback of the PhyreEngine video player (library); name ours
+0x00a26fd0 function PVideoPlaybackWin32_memset_00a26fd0 # cdecl(dst, c, n): memset; a decoder callback of the PhyreEngine video player (library); name ours
+0x00a26fe0 function PVideoPlaybackWin32_CopyPlane_00a26fe0 # cdecl(dst, dst stride, src, src stride, row bytes, rows): one memcpy when the strides agree, else row by row; called by 0x00a284a0 (video frames); library; name ours
+0x00a27170 function PVideoPlaybackWin32_AudioRead_00a27170 # thiscall(player; s16 out): Vorbis float PCM to interleaved s16 (floor(x * 32767 + 0.5), clamped, 'Clipping in frame %ld'); called by the FMOD read callback 0x00a27ee0; library; name ours
+0x00a273b0 function PVideoPlaybackWin32_AudioInit_00a273b0 # fastcall(player) -> al: the Vorbis headers, then an FMOD stream (System::createSound, playSound, Channel::setPriority); called by PVideoPlaybackWin32__ReadingThread; library; name ours
 0x00a27bd0 function Phyre_PVideo_PVideoPlaybackWin32_getCurrentTime # fh v3:exact+call.cs 0x00a27bd0 thiscall Phyre::PVideo::PVideoPlaybackWin32::getCurrentTime
 0x00a27c40 function Phyre_PVideo_PVideoPlaybackWin32_getEndTime # fh v3:bsim1.00+call.cs 0x00a27c40 thiscall Phyre::PVideo::PVideoPlaybackWin32::getEndTime
 0x00a27cb0 function Phyre_PVideo_PVideoPlaybackNX_getSDKMemoryStats # fh switch:bsim1.00 0x710080ae80 Phyre::PVideo::PVideoPlaybackNX::getSDKMemoryStats
@@ -14617,6 +14638,7 @@
 0x00b7cb1c label std_basic_ostringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_ostringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b7cb2c label std_basic_stringbuf_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_stringbuf<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b7cb6c label std_basic_stringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
+0x00b8f4b8 label    libogg_mask              # u32[33]: (1 << n) - 1, libogg's bitwise.c mask table (libogg_oggpack_*)
 0x00b8f790 label std_basic_istringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_istringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b9208c label mkvparser_VideoTrack_vftable # fh v4:imported mkvparser::VideoTrack::vftable
 0x00b9209c label mkvparser_AudioTrack_vftable # fh v4:imported mkvparser::AudioTrack::vftable

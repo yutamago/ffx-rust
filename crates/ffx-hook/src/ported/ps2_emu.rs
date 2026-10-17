@@ -140,6 +140,10 @@ ported! {
     AsmEmuSetFuncParam3 @ 0x0042_eef0 => extern "C" fn asm_emu_set_func_param3(v: u32) -> u32 {
         ee::set_func_param(&mut mem(), 3, v)
     }
+    /// `AsmEmuInit()`.
+    AsmEmuInit @ 0x0042_ee40 => extern "C" fn asm_emu_init() {
+        ee::asm_emu_init(&mut mem());
+    }
     /// `restoreVf00Register()`.
     restoreVf00Register @ 0x0042_ef00 => extern "C" fn restore_vf00_register() {
         ee::restore_vf00(&mut mem());
