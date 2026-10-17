@@ -6123,13 +6123,13 @@ fn round10b_on(t: &mut Twin) {
             for _ in 0..rng.next() % 3 {
                 let tris = rng.next() % 3;
                 #[allow(clippy::cast_possible_truncation)]
-                let head = [
+                let rec = [
                     (rng.next() % nmod) as u16,
-                    (rng.next() % 1) as u16,
+                    (rng.next() % 2) as u16,
                     tris as u16,
                     0,
                 ];
-                t.put(p, &head.map(u16::to_le_bytes).concat());
+                t.put(p, &rec.map(u16::to_le_bytes).concat());
                 p += 8;
                 for _ in 0..tris {
                     #[allow(clippy::cast_possible_truncation)]
