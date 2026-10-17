@@ -166,6 +166,8 @@ pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
         game.command("press start 3 20")?;
     }
     game.wait(30)?;
+    // The title's own files (test20.ebp again) must not count as the save's.
+    game.events()?;
     let mut tries = 0;
     let reply = loop {
         match game.command(&format!("loadsave {save}")) {
