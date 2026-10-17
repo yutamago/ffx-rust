@@ -365,6 +365,73 @@ pub mod bridge {
         }
     }
 
+    /// `op_texels_halve_00a385f0(dst, src, n, size)` (`0x00a385f0`): `n`
+    /// pairs of adjacent texels averaged into one, rounding up: `size` 4
+    /// per byte of each RGBA word (`(a | b) - ((a ^ b) >> 1 & 0x7f7f7f7f)`),
+    /// `size` 1 single bytes; other sizes do nothing. Returns `eax` as
+    /// left: the end of `src` (size 4), the last average (size 1, or 1
+    /// for none), else `size`.
+    pub fn op_texels_halve(mem: &mut impl Mem, dst: u32, src: u32, n: u32, size: u32) -> u32 {
+        match size {
+            4 => {
+                for i in 0..n {
+                    let s = src.wrapping_add(8 * i);
+                    let (a, b): (u32, u32) = (mem.read(s), mem.read(s.wrapping_add(4)));
+                    mem.write(
+                        dst.wrapping_add(4 * i),
+                        (a | b) - ((a ^ b) >> 1 & 0x7f7f_7f7f),
+                    );
+                }
+                src.wrapping_add(n.wrapping_mul(8))
+            }
+            1 => {
+                let mut last = 1;
+                for i in 0..n {
+                    let s = src.wrapping_add(2 * i);
+                    let (a, b) = (mem.read::<u8>(s), mem.read::<u8>(s.wrapping_add(1)));
+                    last = (u32::from(a) + u32::from(b) + 1) >> 1;
+                    #[allow(clippy::cast_possible_truncation)] // at most 255
+                    mem.write(dst.wrapping_add(i), last as u8);
+                }
+                last
+            }
+            _ => size,
+        }
+    }
+
+    /// `op_texels_halve_v_00a38560(dst, dst_step, src, src_step, n, size)`
+    /// (`0x00a38560`): [`op_texels_halve`] down a column: texel `i`
+    /// (`dst + i dst_step`) is the average of `src + 2i src_step` and the
+    /// one `src_step` below it. Returns `eax` as left: `src_step` when
+    /// anything was averaged, else `size`.
+    pub fn op_texels_halve_v(
+        mem: &mut impl Mem,
+        dst: u32,
+        dst_step: u32,
+        src: u32,
+        src_step: u32,
+        n: u32,
+        size: u32,
+    ) -> u32 {
+        if (size != 4 && size != 1) || n == 0 {
+            return size;
+        }
+        for i in 0..n {
+            let from = src.wrapping_add(i.wrapping_mul(src_step.wrapping_mul(2)));
+            let to = dst.wrapping_add(i.wrapping_mul(dst_step));
+            let below = from.wrapping_add(src_step);
+            if size == 4 {
+                let (a, b): (u32, u32) = (mem.read(from), mem.read(below));
+                mem.write(to, (a | b) - ((a ^ b) >> 1 & 0x7f7f_7f7f));
+            } else {
+                let (a, b) = (mem.read::<u8>(from), mem.read::<u8>(below));
+                #[allow(clippy::cast_possible_truncation)] // at most 255
+                mem.write(to, ((u32::from(a) + u32::from(b) + 1) >> 1) as u8);
+            }
+        }
+        src_step
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,

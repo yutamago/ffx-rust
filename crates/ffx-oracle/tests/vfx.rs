@@ -10362,3 +10362,36 @@ fn et_chr_count_same_no_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn texels_halve_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_85f0);
+        let (dst, src) = (p.alloc(0x200), p.alloc(0x400));
+        for _ in 0..3000 {
+            p.fill(dst, 0x200, &mut rng);
+            p.fill(src, 0x400, &mut rng);
+            let size = rng.pick(&[4u32, 4, 1, 1, 0, 2, 3, 8]);
+            let big = rng.below(0x80);
+            let n = rng.pick(&[0u32, 1, 2, big]);
+            p.check("0x00a385f0", 0x00a3_85f0, &[dst, src, n, size], |m| {
+                Some(small::bridge::op_texels_halve(m, dst, src, n, size))
+            });
+            // a column: steps of 4..0x10 bytes, 1..0x10 texels
+            let (ds, ss) = (4 * (1 + rng.below(4)), 4 * (1 + rng.below(4)));
+            let few = rng.below(0x10);
+            let n = rng.pick(&[0u32, 1, few]);
+            p.fill(dst, 0x200, &mut rng);
+            p.check(
+                "0x00a38560",
+                0x00a3_8560,
+                &[dst, ds, src, ss, n, size],
+                |m| {
+                    Some(small::bridge::op_texels_halve_v(
+                        m, dst, ds, src, ss, n, size,
+                    ))
+                },
+            );
+        }
+    }
+}
