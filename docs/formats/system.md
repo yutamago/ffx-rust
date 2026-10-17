@@ -602,6 +602,22 @@ The entry (`MsGetRomAbility`/`MsGetComData`) gives the name offset (word
 (`0x00b5f374`, `0x00b92318`) (command: `0x00b5ef30`, `0x00b92314`), scale
 0.78.
 
+`DrawCrossMenuIconXYWHRGBA` (`0x008e6af0`) draws icon `n` from sheet
+0x3dc0: 17 icons to a row, each 15 × 18 texels (UVs over the sheet size).
+The colour is passed as bytes, the depth is 500, the quad is clipped by
+`BeginScissor_XYUV` and drawn by `graphicDrawUIElement(rec, texture, 1, 0,
+0)`.
+
+`TOMkpCrossExtMesFontLClutTypeRGBA` (`0x00901700`) writes a cross-menu
+text in the battle font with the pen at `0x025d09a0`. A new line moves y
+by 13.6 at scale 0.64, otherwise by `scale × 16`. Its control codes (7
+spacing, `0xa` mode nibbles, `0xb` button icons at scale 0.63 lifted by
+`AdjustButtonIconY`) work as in `ToMakeBtlEasyFont`. Macros go to
+`TOAddPktChangeMacro_help` (`0x008e9ca0`), which writes the replacement
+text's glyphs and nests for macro codes 0x12..=0x22. `AdjustButtonIconY`
+(`0x008e5280`) is -1.5 when the language thunk `0x008ac2f0` is non-zero,
+otherwise -0.5.
+
 `TODrawMenuBG` (`0x008f5c10`) draws the menu background as shape -2
 (`TOMkpShapeXYWHUV`) over `(0, 0, [0x00b41d9c], [0x00b41d98])` with UVs up
 to `([0x00b4a1ac], [0x00b55178])`. `TOMkpCrossExtMesFontLClut`

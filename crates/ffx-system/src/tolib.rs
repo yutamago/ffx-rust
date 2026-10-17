@@ -9332,4 +9332,86 @@ pub mod bridge {
             p = call(mem, SKIP_CODE, &[p]);
         }
     }
+
+    /// The UV rectangle of cross-menu icon `icon` (layout): the icons sit
+    /// 17 to a row on sheet 0x3dc0, each 15 × 18 texels, over the sheet
+    /// size `w`, `h`.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    fn cross_menu_icon_uv(icon: u8, (w, h): (f64, f64)) -> [f32; 4] {
+        let (col, row) = (u16::from(icon % 17), u16::from(icon / 17));
+        let texel = |v: u16, size: f64| (f64::from(v) / size) as f32;
+        [
+            texel(col * 15, w),
+            texel(row * 18, h),
+            texel(col * 15 + 15, w),
+            texel(row * 18 + 18, h),
+        ]
+    }
+
+    /// `DrawCrossMenuIconXYWHRGBA(x, y, w, h, icon, r, g, b, a)`
+    /// (`0x008e6af0`): one cross-menu icon (see [`cross_menu_icon_uv`]) in
+    /// the box `x, y, w, h` with the colour bytes `r, g, b, a` on both
+    /// corners and depth 500, handed to `graphicDrawUIElement(rec, texture,
+    /// 1, 0, 0)` when `BeginScissor_XYUV` keeps it. `scratch` holds 0xa0
+    /// bytes: the sheet size at `+0`, the record at `+0x10`; record words
+    /// the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    pub fn draw_cross_menu_icon_xywh_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const SHEET: u32 = 0x3dc0;
+        const SHAPE_TEXTURE: u32 = 0x008a_c8c0;
+        const IMAGE_WH: u32 = 0x008a_c400;
+        const SCISSOR: u32 = 0x008e_5a20;
+        const DRAW_UI: u32 = 0x0063_eee0;
+        let [x, y, w, h, icon, colour @ ..] = args;
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let rec = scratch.wrapping_add(0x10);
+        let texture = call(mem, SHAPE_TEXTURE, &[SHEET]);
+        call(mem, IMAGE_WH, &[SHEET, scratch, scratch.wrapping_add(4)]);
+        let sheet_w = f64::from(mem.read::<f32>(scratch));
+        let sheet_h = f64::from(mem.read::<f32>(scratch.wrapping_add(4)));
+        let [u0, v0, u1, v1] = cross_menu_icon_uv(icon.to_le_bytes()[0], (sheet_w, sheet_h));
+        let float = |bits: u32| f64::from(f32::from_bits(bits));
+        let x1 = (float(x) + float(w)) as f32;
+        let y1 = (float(y) + float(h)) as f32;
+        let fields = [
+            (0x00, f32::from_bits(x)),
+            (0x04, f32::from_bits(y)),
+            (0x08, u0),
+            (0x0c, v0),
+            (0x20, x1),
+            (0x24, y1),
+            (0x28, u1),
+            (0x2c, v1),
+        ];
+        for (off, v) in fields {
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for (k, c) in (0u32..).zip(colour) {
+            let byte = u32::from(c.to_le_bytes()[0]);
+            mem.write(rec.wrapping_add(0x10 + 4 * k), byte);
+            mem.write(rec.wrapping_add(0x30 + 4 * k), byte);
+        }
+        mem.write(rec.wrapping_add(0x80), 500u32);
+        let field = |off: u32| rec.wrapping_add(off);
+        let scissor = [
+            field(0),
+            field(4),
+            field(0x20),
+            field(0x24),
+            field(8),
+            field(0xc),
+            field(0x28),
+            field(0x2c),
+        ];
+        if call(mem, SCISSOR, &scissor) != 0 {
+            call(mem, DRAW_UI, &[rec, texture, 1, 0, 0]);
+        }
+    }
 }

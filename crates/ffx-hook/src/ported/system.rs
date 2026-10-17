@@ -6241,6 +6241,15 @@ ported! {
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicFace, at, call_sym, fcall);
     }
+    /// `DrawCrossMenuIconXYWHRGBA(x, y, w, h, icon, r, g, b, a)`.
+    DrawCrossMenuIconXYWHRGBA @ 0x008e_6af0 => extern "C" fn draw_cross_menu_icon_xywh_rgba(
+        x: u32, y: u32, w: u32, h: u32, icon: u32, r: u32, g: u32, b: u32, a: u32
+    ) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::draw_cross_menu_icon_xywh_rgba(&mut mem(), [x, y, w, h, icon, r, g, b, a], at, call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

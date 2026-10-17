@@ -14629,6 +14629,85 @@ fn round26_cross_text_matches_the_original_on_the_snapshot() {
     round26_cross_text(&mut a, &mut b, &mut Xorshift(0x4026_0012));
 }
 
+/// Round 26's cross-menu icon over a logging texture-name stand-in,
+/// `TOGetImageWH` and the scissor from cells, and a `graphicDrawUIElement`
+/// stand-in logging the record.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn round26_cross_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, 0xa0);
+    let s = stand_in8(a, b, 0x40, &logger_args(cursor, 1));
+    redirect(a, b, 0x008a_c8c0, s);
+    let mut v = logger(cursor, 0x3dc0);
+    v.pop();
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x100, &v);
+    redirect(a, b, 0x008e_5a20, s);
+    let words: Vec<u8> = (0..16u8).map(|k| 4 * k).chain([0x80, 0x88]).collect();
+    let s = stand_in8(a, b, 0x200, &record_words_logger(cursor, &words));
+    redirect(a, b, 0x0063_eee0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..1000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 255.0, 512.0][(rng.next() % 3) as usize],
+                [256.0f32, 300.0][(rng.next() % 2) as usize],
+            ],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(6)));
+        let fl =
+            |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d - 20.0).to_bits();
+        let args = [
+            fl(rng, 60000, 33.0),
+            fl(rng, 40000, 33.0),
+            fl(rng, 3000, 9.0),
+            fl(rng, 3000, 9.0),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        ];
+        eax(a, 0x008e_6af0, &args);
+        t::draw_cross_menu_icon_xywh_rgba(b, args, scratch, call);
+        let v: [u32; 0x28] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("cross icon {k}"), a, b);
+    }
+}
+
+#[test]
+fn round26_cross_icon_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round26_cross_icon(&mut a, &mut b, &mut Xorshift(0x4026_0021));
+}
+
+#[test]
+fn round26_cross_icon_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round26_cross_icon(&mut a, &mut b, &mut Xorshift(0x4026_0022));
+}
+
 #[test]
 fn round25_wrappers_match_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {
