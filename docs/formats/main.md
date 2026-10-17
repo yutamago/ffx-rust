@@ -730,3 +730,11 @@ table of map exceptions keyed by `(a, b, c)`, the triangle's group and
 `a` 2, 4, 7, 0x29 and 0x68 list the hundreds each group allows (see the
 module's doc comment), unlisted groups pass and other `a` fail. The
 result is 0 or 1 in all of `eax`.
+
+## Round 13: the push-apart list
+
+The push-apart pass (`0x0083d3b0`) collects the active characters into
+`0x01301b08` (40 pointers, count `0x01301ba8`) and sorts them with
+`Sg_ChrSortByZ(n)` (`0x0083eb30`): a selection sort on `+0x14` (z),
+where each place takes the last remaining character whose z is at most
+the smallest seen (`fcomp` with `C0 | C3`, so a NaN is never taken).

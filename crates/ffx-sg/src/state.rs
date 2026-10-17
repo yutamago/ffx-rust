@@ -1825,6 +1825,36 @@ pub mod bridge {
     /// moved character's step (`+0x4c`, `+0x54`) gets the push, and `+0x194`
     /// bit 5 when the step is not zero. Returns bit 5 of either
     /// character's `+0x194`.
+    /// The characters the push-apart pass checks (`0x0083d3b0` fills it:
+    /// 40 pointers) and their count.
+    pub const PUSH_CHRS: u32 = 0x0130_1b08;
+    pub const PUSH_CHR_COUNT: Global<i32> = Global::new(0x0130_1ba8);
+
+    /// `Sg_ChrSortByZ(n)` (`0x0083eb30`): the first `n` of [`PUSH_CHRS`]
+    /// sorted by their z (`+0x14`) with a selection sort: for each place,
+    /// the last of the rest whose z is at most the smallest so far (a NaN
+    /// never is) swaps in.
+    pub fn chr_sort_by_z(mem: &mut impl Mem, n: i32) {
+        let list = mem.rebase(PUSH_CHRS);
+        let at = |i: i32| list.wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let z = |mem: &mut _, i: i32| {
+            let chr: u32 = Mem::read(mem, at(i));
+            f64::from(Mem::read::<f32>(mem, chr.wrapping_add(0x14)))
+        };
+        for i in 0..n.max(0) {
+            let mut min = i;
+            for j in i..n {
+                if z(mem, j) <= z(mem, min) {
+                    min = j;
+                }
+            }
+            let a: u32 = mem.read(at(min));
+            let b: u32 = mem.read(at(i));
+            mem.write(at(i), a);
+            mem.write(at(min), b);
+        }
+    }
+
     #[allow(clippy::float_cmp)]
     pub fn chr_push_apart(mem: &mut impl Mem, a: u32, b: u32, reach: f32, dist: f32) -> u32 {
         use crate::scratch::{SCRATCH, Scratch};

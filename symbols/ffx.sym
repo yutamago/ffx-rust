@@ -7374,6 +7374,7 @@
 0x0083e9d0 function Sg_IdSetEffectTableIndex  # fh v3:bsim1.00 0x0083e9d0
 0x0083e9e0 function Sg_IdSetMapTable          # (i, v): g_ChrIdMapTable[i] = v
 0x0083ea00 function Sg_IdSetPtr               # fh v3:exact 0x0083ea00
+0x0083eb30 function Sg_ChrSortByZ             # (n): selection sort of the first n of g_SgPushChrs by chr +0x14 (z), the last of equal minimums swapping in; caller 0x0083d3b0 (the push-apart pass, before its pair loop); name ours; ported (ffx_sg::state)
 0x0083ecd0 function Sg_ChrPushApart           # (a, b, reach, dist): pushes two chrs apart by reach - dist in x-z, shared by their +0x500 weights (both <0: by Sg_VectorGetLengthXZ from their anchors); +0x4c/+0x54 step, +0x194 bit 5; caller 0x0083d3b0
 0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010
 0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00
@@ -14968,6 +14969,8 @@
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01301b08 label    g_SgPushChrs              # 40 chr pointers the push-apart pass (0x0083d3b0) collects (active, not +0x194 bit 8) and sorts by z (Sg_ChrSortByZ); name ours
+0x01301ba8 label    g_SgPushChrCount          # i32 count of g_SgPushChrs; name ours
 0x01301bb0 label    g_FreeCamPreset           # u32: Sg_ControlCamera's distance preset counter (button 0x400; low byte % 6 picks 50, 100, 180, 250, 1000, 30)
 0x01301bb8 label    g_FreeCamDist             # f32: Sg_ControlCamera's distance, +/- 0.4 with L/R button mode buttons 1/4, or a preset
 0x01301ff8 label    g_CacheEntries            # the model cache's 100 entries (0x28 bytes) Cache_Init points g_CacheSlots at

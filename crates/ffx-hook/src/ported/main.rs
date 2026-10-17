@@ -1448,6 +1448,10 @@ ported! {
         use ffx_sg::lo16;
         ffx_sg::triangle::pass_this_triangle(lo16(a), lo16(b), lo16(c), lo16(group), lo16(tag))
     }
+    /// `Sg_ChrSortByZ(n)`.
+    Sg_ChrSortByZ @ 0x0083_eb30 => extern "C" fn sg_chr_sort_by_z(n: i32) {
+        state::bridge::chr_sort_by_z(&mut mem(), n);
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

@@ -5064,3 +5064,69 @@ fn triangle_snapshot() {
     let mut rng = Xorshift(0x5eed_0e22);
     triangle_cases(&mut a, &mut b, &mut rng, 5000);
 }
+
+// Main round 13: the push-apart list sorted by z.
+fn sort_by_z_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::state::bridge as s;
+    let list = a.rebase(s::PUSH_CHRS);
+    let game_n = s::PUSH_CHR_COUNT.get(a);
+    for r in 0..rounds {
+        let n = if from_game && game_n > 0 && r % 4 == 0 {
+            game_n
+        } else {
+            let n = if rng.below(8) == 0 {
+                rng.int()
+            } else {
+                rng.below(41).cast_signed()
+            };
+            let chrs = alloc(a, b, 0x20 * 40);
+            let zs = [rng.float(), rng.float(), modest(rng)];
+            for k in 0..n.clamp(0, 40).cast_unsigned() {
+                let chr = chrs + 0x20 * k;
+                // repeated values often, to see which equal one wins
+                let z = if rng.below(3) == 0 {
+                    rng.float()
+                } else {
+                    zs[rng.below(3) as usize]
+                };
+                put(a, b, chr + 0x14, z);
+                put(a, b, list + 4 * k, chr);
+            }
+            n.clamp(-5, 40)
+        };
+        twin(
+            "Sg_ChrSortByZ",
+            a,
+            b,
+            0x0083_eb30,
+            &[n.cast_unsigned()],
+            |m| {
+                s::chr_sort_by_z(m, n);
+            },
+        );
+    }
+}
+
+#[test]
+fn sort_by_z_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e31);
+    sort_by_z_cases(&mut a, &mut b, &mut rng, 1500, false);
+}
+
+#[test]
+fn sort_by_z_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e32);
+    sort_by_z_cases(&mut a, &mut b, &mut rng, 1500, true);
+}
