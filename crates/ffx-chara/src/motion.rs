@@ -882,6 +882,17 @@ pub mod bridge {
             &[kind, key, 0],
         )
     }
+
+    /// `Ch_MotionCancel(chr)` (`0x00837180`): `Ch_SetSysMotion(chr, slot
+    /// i8 +0x185, 0)`, its result.
+    pub fn ch_motion_cancel<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slot = i32::from(mem.read::<i8>(chr + 0x185)).cast_unsigned();
+        call(mem, mem.rebase(0x0083_7d00), &[chr, slot, 0])
+    }
 }
 
 #[cfg(test)]

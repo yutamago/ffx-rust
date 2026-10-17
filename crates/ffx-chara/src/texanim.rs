@@ -598,4 +598,65 @@ pub mod bridge {
         call(mem, mem.rebase(TEXTURE_LOAD), &[t, n.cast_unsigned(), x]);
         ch_texture_load_anim(mem, chr, scratch, call);
     }
+
+    /// The character texture animation table (`chr_texanim_*`): 64
+    /// entries of 0x30 bytes: `+0` source, `+4` work block, `+8`, `u8`
+    /// kind `+0xc` (1 new form, 2 old).
+    pub const TEX_ANIMS: Global<u32> = Global::new(0x0231_0000);
+    /// `g_ChrTexAnim844` and the byte after it.
+    pub const TEX_ANIM_844: Global<[u8; 2]> = Global::new(0x0112_a844);
+    /// `movie_err(message, file, line)` (`0x0076efa0`).
+    pub const MOVIE_ERR: u32 = 0x0076_efa0;
+
+    /// `chr_texanim_del(id)` (`0x0077c770`): an id outside 0..64 is
+    /// reported (`movie_err("id >= 0" / "id < CHR_TEX_ANIM_MAX",
+    /// "..\\program\\lib\\src\\movie_str.c", 0xb39 / 0xb3a)`, then used
+    /// anyway). A kind-1 entry's work block is shut down (the function at
+    /// `+4` of the table at its `+0x460f8`), freed, and the two bytes at
+    /// [`TEX_ANIM_844`] reset to 0, 0xff; a kind-2 entry's block is
+    /// freed; the block, source and `+8` cleared. Returns what the
+    /// original leaves in EAX.
+    pub fn chr_texanim_del<M: Mem>(
+        mem: &mut M,
+        id: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let err = mem.rebase(MOVIE_ERR);
+        let file = mem.rebase(0x00b5_40a8);
+        if id < 0 {
+            call(mem, err, &[mem.rebase(0x00b5_44cc), file, 0xb39]);
+        }
+        if id >= 0x40 {
+            call(mem, err, &[mem.rebase(0x00b5_44d4), file, 0xb3a]);
+        }
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30u32.wrapping_mul(id.cast_unsigned()));
+        let kind = i32::from(mem.read::<i8>(e + 0xc));
+        let free = mem.rebase(crate::chr::bridge::USER_FREE);
+        let block: u32 = mem.read(e + 4);
+        let eax = match kind {
+            1 if block != 0 => {
+                let table: u32 = mem.read(block.wrapping_add(0x460f8));
+                let f: u32 = mem.read(table.wrapping_add(4));
+                call(mem, f, &[]);
+                let block: u32 = mem.read(e + 4);
+                let r = call(mem, free, &[block]);
+                TEX_ANIM_844.set(mem, [0, 0xff]);
+                mem.write(e + 4, 0u32);
+                r
+            }
+            2 if block != 0 => {
+                let r = call(mem, free, &[block]);
+                mem.write(e + 4, 0u32);
+                r
+            }
+            1 | 2 => 0,
+            k => (k - 2).cast_unsigned(),
+        };
+        mem.write(e, 0u32);
+        mem.write(e + 8, 0u32);
+        eax
+    }
 }

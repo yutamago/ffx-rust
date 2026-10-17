@@ -4980,6 +4980,21 @@ impl Fakes {
     /// A stand-in at new code (for function pointers): its address and
     /// result word.
     fn fake_code(&self, t: &mut Twin, id: u32, n: u8) -> (u32, u32) {
+        self.fake_code_step(t, id, n, 0)
+    }
+
+    /// [`Fakes::fake`] for an allocator: the result word grows by `step`
+    /// after each call, so every call gets its own block.
+    fn fake_alloc(&self, t: &mut Twin, sym: u32, id: u32, step: u32) -> u32 {
+        let (code, ret) = self.fake_code_step(t, id, 1, step);
+        let at = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.put(at, &jmp);
+        ret
+    }
+
+    fn fake_code_step(&self, t: &mut Twin, id: u32, n: u8, step: u32) -> (u32, u32) {
         let ret = t.alloc(4);
         let mut c = vec![0x8b, 0x0d];
         c.extend(self.log.to_le_bytes());
@@ -4993,6 +5008,11 @@ impl Fakes {
         c.push(4 * (n + 1));
         c.push(0xa1);
         c.extend(ret.to_le_bytes());
+        if step != 0 {
+            c.extend([0x81, 0x05]);
+            c.extend(ret.to_le_bytes());
+            c.extend(step.to_le_bytes());
+        }
         c.push(0xc3);
         let at = t.a.alloc_code(&c).unwrap();
         assert_eq!(t.b.alloc_code(&c).unwrap(), at);
@@ -5832,6 +5852,190 @@ fn round9b_on(t: &mut Twin) {
             0x0083_c810,
             &[chr],
             |m| Res::Int(tx::ch_clut_dispose(m, chr, &mut |m, f, a| call(m, f, a))),
+        );
+    }
+}
+
+#[test]
+fn round10_matches_the_original() {
+    for mut t in twins() {
+        round10_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10_on(t: &mut Twin) {
+    use ffx_chara::cloth::bridge as cl;
+    use ffx_chara::motion::bridge as mo;
+    use ffx_chara::texanim::bridge as ta;
+    use ffx_chara::texture::bridge as tx;
+    let mut rng = Xorshift(0x0010_1010);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let mut rets = Vec::new();
+    let heap = fk.fake_alloc(t, 0x0068_7020, 50, 0x100);
+    for (k, (sym, n)) in [
+        (0x0062_f4e0u32, 2u8),
+        (0x0068_7010, 1),
+        (0x0076_efa0, 3),
+        (0x0083_7d00, 3),
+        (0x007f_cc80, 1),
+        (0x0083_c810, 1),
+        (0x0083_c4a0, 1),
+        (0x0083_c580, 1),
+        (0x0083_ca20, 2),
+        (0x0083_c940, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        rets.push((sym, fk.fake(t, sym, u32::try_from(k).unwrap() + 1, n)));
+    }
+    let ret = |sym: u32| rets.iter().find(|r| r.0 == sym).unwrap().1;
+    let (shut, shut_ret) = fk.fake_code(t, 100, 0);
+    let chrs = live_characters(t, &mut rng);
+    for round in 0..16u32 {
+        fk.reset(t);
+        for &(_, r) in &rets {
+            t.put_u32(r, rng.next() % 3);
+        }
+        t.put_u32(shut_ret, rng.next());
+        let blocks = t.alloc(0x100 * 0x20);
+        t.put_u32(heap, blocks);
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        // models with cloth meshes and bones
+        let nmod = rng.next() % 4;
+        let hdr = t.alloc(0x10);
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            t.put(hdr + 6, &(nmod as u16).to_le_bytes());
+            t.put(hdr + 8, &((rng.next() % 2) as u16).to_le_bytes());
+        }
+        let models = t.alloc(0x38 * 4);
+        let bones = random_block(t, &mut rng, 0x160 * 4);
+        for i in 0..nmod {
+            let d = t.alloc(0x20);
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                t.put(d, &((rng.next() % 4) as u16).to_le_bytes());
+                t.put(d + 0x18, &((rng.next() % 3) as u16).to_le_bytes());
+            }
+            let m = models + 0x38 * i;
+            t.put_u32(m, d);
+            // some lists already there, with some blocks
+            let list = if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                t.alloc(0x10)
+            };
+            if list != 0 {
+                for k in 0..3 {
+                    let b = if rng.next().is_multiple_of(2) {
+                        0
+                    } else {
+                        random_block(t, &mut rng, 0x50)
+                    };
+                    t.put_u32(list + 4 * k, b);
+                }
+            }
+            t.put_u32(m + 0x2c, list);
+            t.put_u32(m + 0x30, rng.next());
+        }
+        t.put_u32(chr + 0x1c0, hdr);
+        t.put_u32(chr + 0x1bc, models);
+        t.put_u32(chr + 0x328, bones);
+        t.put_u32(chr + 0x194, if round % 3 == 0 { 0 } else { 0x20_0000 });
+        t.check(
+            &format!("Ch_ClothMeshDestroy {round}"),
+            0x0082_6260,
+            &[chr],
+            |m| {
+                Res::Int(cl::ch_cloth_mesh_destroy(m, chr, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.check(
+            &format!("Ch_GetRestPoseMatrices {round}"),
+            0x0082_6ba0,
+            &[chr],
+            |m| {
+                Res::Int(cl::ch_get_rest_pose_matrices(m, chr, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        // Ch_MotionCancel
+        t.check(
+            &format!("Ch_MotionCancel {round}"),
+            0x0083_7180,
+            &[chr],
+            |m| Res::Int(mo::ch_motion_cancel(m, chr, &mut |m, f, a| call(m, f, a))),
+        );
+        // chr_texanim_del: ids in and out of range, each kind
+        let id = [0i32, 5, 63, 64, -1, 17][rng.next() as usize % 6];
+        let tab = t.a.rebase(0x0231_0000);
+        let e = tab.wrapping_add(0x30u32.wrapping_mul(id.cast_unsigned()));
+        if (0..64).contains(&id) {
+            let work = if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                t.alloc(0x10)
+            };
+            if work != 0 {
+                // the shutdown table at +0x460f8
+                let ft = t.alloc(8);
+                t.put_u32(ft + 4, shut);
+                let base = t.alloc(0x46100);
+                t.put_u32(base + 0x460f8, ft);
+                t.put_u32(e + 4, base);
+            } else {
+                t.put_u32(e + 4, 0);
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(e + 0xc, &[[0u8, 1, 2, 3, 0xff][rng.next() as usize % 5]]);
+            t.put_u32(e, rng.next());
+            t.put_u32(e + 8, rng.next());
+        }
+        if (0..64).contains(&id) || t.name == "synthetic" {
+            t.check(
+                &format!("chr_texanim_del {id} {round}"),
+                0x0077_c770,
+                &[id.cast_unsigned()],
+                |m| Res::Int(ta::chr_texanim_del(m, id, &mut |m, f, a| call(m, f, a))),
+            );
+        }
+        // Ch_ClutCreate: cluts of the definition's texture data
+        t.put_u32(ret(0x007f_cc80), u32::from(round % 4 == 3));
+        let n = rng.next() % 4;
+        let def = t.alloc(0x20);
+        let texd = t.alloc(0x20);
+        let list = t.alloc(8 * 4);
+        for k in 0..n {
+            let data = t.alloc(0x20) + 0x10;
+            t.put_u32(data - 0x10, rng.next());
+            t.put_u32(list + 8 * k + 4, data);
+        }
+        t.put_u32(texd + 0x18, list);
+        t.put_u32(def + 0x14, texd);
+        t.put_u32(chr + 0x1c4, def);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(chr + 0x6e8, &(n as i16).to_le_bytes());
+        let name = t.alloc(16);
+        t.put(name, b"c010\0");
+        t.put_u32(chr + 4, name);
+        let scratch = t.alloc(0x40);
+        let at = t.a.rebase(0x0083_c710);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = tx::ch_clut_create(&mut t.b, chr, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_ClutCreate {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, 0x40).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_ClutCreate {round} memory",
+            t.name
         );
     }
 }

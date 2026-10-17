@@ -339,6 +339,141 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    // ---- round 10: the cloth meshes' rest poses
+
+    /// `FFXVu0CopyMatrix(dst, src)` (`0x006ed360`).
+    pub const VU0_COPY_MATRIX: u32 = 0x006e_d360;
+
+    /// `Ch_GetRestPoseMatrices(chr)` (`0x00826ba0`): without a cloth (flag
+    /// bit 21 of `+0x194`) each model's cloth lists (`+0x2c`, `+0x30` of
+    /// the 0x38-byte models at `+0x1bc`) are cleared. With one, each model
+    /// with cloth meshes (`u16` `+0x18` of its data `+0`) gets a list of
+    /// that many pointers (`user_malloc`, `memclear`) and each entry a
+    /// 0x4c-byte block; when the header has bones (`u16` `+8` of `+0x1c0`)
+    /// the block takes the model's bone matrix (`FFXVu0CopyMatrix` from
+    /// the bone at `u16` `+0` of the data, 0x160-byte bones at `+0x328`,
+    /// matrix at `+0x88`) with its translation times 1000. Returns 0.
+    pub fn ch_get_rest_pose_matrices<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let count = |mem: &M| {
+            let h: u32 = mem.read(chr + 0x1c0);
+            u32::from(mem.read::<u16>(h + 6))
+        };
+        let model = |mem: &M, i: u32| mem.read::<u32>(chr + 0x1bc).wrapping_add(0x38 * i);
+        let meshes = |mem: &M, i: u32| {
+            let d: u32 = mem.read(model(mem, i));
+            u32::from(mem.read::<u16>(d + 0x18))
+        };
+        if mem.read::<u32>(chr + 0x194) & 0x20_0000 == 0 {
+            let mut i = 0;
+            while i < count(mem) {
+                mem.write(model(mem, i) + 0x2c, 0u32);
+                mem.write(model(mem, i) + 0x30, 0u32);
+                i += 1;
+            }
+            return 0;
+        }
+        let (malloc, clear) = (
+            mem.rebase(crate::handle::bridge::USER_MALLOC),
+            mem.rebase(crate::handle::bridge::MEMCLEAR),
+        );
+        let mut i = 0;
+        while i < count(mem) {
+            let n = meshes(mem, i);
+            if n != 0 {
+                if mem.read::<u32>(model(mem, i) + 0x2c) == 0 {
+                    let p = call(mem, malloc, &[n << 2]);
+                    mem.write(model(mem, i) + 0x2c, p);
+                    let p: u32 = mem.read(model(mem, i) + 0x2c);
+                    let n = meshes(mem, i);
+                    call(mem, clear, &[p, n << 2]);
+                }
+                let mut k = 0;
+                while k < meshes(mem, i) {
+                    let list: u32 = mem.read(model(mem, i) + 0x2c);
+                    if mem.read::<u32>(list + 4 * k) == 0 {
+                        let b = call(mem, malloc, &[0x4c]);
+                        let list: u32 = mem.read(model(mem, i) + 0x2c);
+                        mem.write(list + 4 * k, b);
+                        let b: u32 = mem.read(list + 4 * k);
+                        call(mem, clear, &[b, 0x4c]);
+                    }
+                    let list: u32 = mem.read(model(mem, i) + 0x2c);
+                    let b: u32 = mem.read(list + 4 * k);
+                    let hdr: u32 = mem.read(chr + 0x1c0);
+                    if mem.read::<u16>(hdr + 8) != 0 {
+                        let d: u32 = mem.read(model(mem, i));
+                        let bone = u32::from(mem.read::<u16>(d));
+                        let src = mem.read::<u32>(chr + 0x328) + 0x88 + bone.wrapping_mul(0x160);
+                        call(mem, mem.rebase(VU0_COPY_MATRIX), &[b, src]);
+                        for off in [0x30, 0x34, 0x38] {
+                            let v = crate::x87::load(mem.read::<f32>(b + off));
+                            #[allow(clippy::cast_possible_truncation)] // f32 stores
+                            mem.write(b + off, (f64::from(v) * 1000.0) as f32);
+                        }
+                    }
+                    k += 1;
+                }
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `Ch_ClothMeshDestroy(chr)` (`0x00826260`): frees what
+    /// [`ch_get_rest_pose_matrices`] and the cloth mapping made: each
+    /// mesh block's `+0x44` and `+0x48` lists and the block, then each
+    /// model's `+0x2c` and `+0x30` lists (`user_free_thunk`; the pointers
+    /// stay). Returns 0.
+    pub fn ch_cloth_mesh_destroy<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let free = mem.rebase(crate::chr::bridge::USER_FREE);
+        let count = |mem: &M| {
+            let h: u32 = mem.read(chr + 0x1c0);
+            u32::from(mem.read::<u16>(h + 6))
+        };
+        let model = |mem: &M, i: u32| mem.read::<u32>(chr + 0x1bc).wrapping_add(0x38 * i);
+        let mut i = 0;
+        while i < count(mem) {
+            let m = model(mem, i);
+            if mem.read::<u32>(m + 0x2c) != 0 {
+                let mut k = 0u32;
+                loop {
+                    let m = model(mem, i);
+                    let d: u32 = mem.read(m);
+                    if k >= u32::from(mem.read::<u16>(d + 0x18)) {
+                        break;
+                    }
+                    let list: u32 = mem.read(m + 0x2c);
+                    let b: u32 = mem.read(list + 4 * k);
+                    if b != 0 {
+                        let p: u32 = mem.read(b + 0x44);
+                        call(mem, free, &[p]);
+                        for off in [0x48u32, 0] {
+                            let list: u32 = mem.read(model(mem, i) + 0x2c);
+                            let b: u32 = mem.read(list + 4 * k);
+                            let p: u32 = if off == 0 { b } else { mem.read(b + off) };
+                            call(mem, free, &[p]);
+                        }
+                    }
+                    k += 1;
+                }
+                for off in [0x2c, 0x30] {
+                    let p: u32 = mem.read(model(mem, i) + off);
+                    call(mem, free, &[p]);
+                }
+            }
+            i += 1;
+        }
+        0
+    }
 }
 
 #[cfg(test)]
