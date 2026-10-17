@@ -119,6 +119,56 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src").rglob("*.rs")):
                 print(f"{f.name}:{n}: asm uses {{{name}}} after a call, in a register the callee may clobber")
                 bad += 1
 
+# Scratch a shim hands to a bridge or to the game's code must be per call
+# (ported::StackFrame, a local array) or per thread (thread_local!), never a
+# process-wide static: the game runs ports on several threads at once
+# (docs/hooking.md, "Threads"). A shared Ch_CalcElement frame garbled every
+# battle model. This rejects a static outside thread_local! whose address the
+# same file takes (as_ptr/as_mut_ptr/get()/addr_of!/&raw) when it is a buffer
+# (an array or an UnsafeCell), in the hook and in
+# the game-side RawMem impls of other crates.
+# a buffer: an array (of words, atomics, ...) or a cell holding one
+STATIC = re.compile(
+    r"^\s*(?:pub(?:\([\w:]+\))?\s+)?static\s+(?:mut\s+)?([A-Z_][A-Z0-9_]*)\s*:\s*"
+    r"(?:\[|(?:[\w]+::)*(?:Sync)?UnsafeCell\s*<)",
+    re.M,
+)
+
+
+def thread_local_spans(text):
+    spans = []
+    for m in re.finditer(r"thread_local!\s*\{", text):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        spans.append((m.start(), i))
+    return spans
+
+
+def shared_scratch(path, text):
+    spans = thread_local_spans(text)
+    found = []
+    for m in STATIC.finditer(text):
+        if any(a <= m.start() < b for a, b in spans):
+            continue
+        name = re.escape(m.group(1))
+        took = re.search(rf"\b{name}\s*\.\s*(?:as_ptr|as_mut_ptr|get)\s*\(|addr_of(?:_mut)?!\s*\(\s*{name}\b|&raw\s+(?:const|mut)\s+{name}\b", text)
+        if took:
+            n = text[: m.start()].count("\n") + 1
+            found.append(f"{path}:{n}: process-wide static {m.group(1)} handed out by address (make it per call or thread_local!)")
+    return found
+
+
+hook_side = list((progress.REPO / "crates/ffx-hook/src").rglob("*.rs"))
+for f in sorted(progress.REPO.glob("crates/*/src/**/*.rs")):
+    if f not in hook_side and re.search(r"^impl [^\n]*\bfor (?:ffx_bridge::)?RawMem\b", f.read_text(encoding="utf-8"), re.M):
+        hook_side.append(f)
+for f in sorted(hook_side):
+    for line in shared_scratch(f.relative_to(progress.REPO), f.read_text(encoding="utf-8")):
+        print(line)
+        bad += 1
+
 # Argument counts at the bridges' calls into original code (tools/callarity.py).
 if exe:
     import callarity  # noqa: E402

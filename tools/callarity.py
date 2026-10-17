@@ -109,9 +109,15 @@ class Exe:
             if head:
                 slot = base + int(head.group(1), 16)
                 continue
-            member = re.match(r"^\t[0-9a-f]+\s+\d+\s+(\S+)", line)
-            if member and slot is not None:
-                names[slot] = member.group(1)
+            # binutils 2.42: "\t<vma> <hint> <name>"; 2.46 adds an ordinal
+            # column ("\t<vma> <none> <hint> <name> [bound-to]", "<none>"
+            # for each absent field). One IAT slot per member line in both.
+            fields = line.split()
+            if line.startswith("\t") and len(fields) >= 3 and re.fullmatch(r"[0-9a-f]+", fields[0]) \
+                    and slot is not None:
+                new_layout = len(fields) >= 4 and re.fullmatch(r"<none>|\d+", fields[1]) \
+                    and re.fullmatch(r"<none>|[0-9a-f]+", fields[2])
+                names[slot] = fields[3] if new_layout else fields[2]
                 slot += 4
         return names
 

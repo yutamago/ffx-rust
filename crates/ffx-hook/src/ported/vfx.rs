@@ -1216,6 +1216,16 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
         slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_0582_dot_draw(b, rec, m, hold)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    opus_0582_dot_draw @ 0x00a7_2b80 => extern "C" fn opus_0582_dot_draw(b: u32, rec: u32, m: u32, hold: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x3a0]);
+        let mut locals = Locals([0; 0x3a0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x3a0;
+        slots::bridge::opus_0582_dot_draw(&mut mem(), b, rec, m, hold, frame, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opus_no_get(list, unit, no)`.
     opus_no_get @ 0x0080_1060 => extern "C" fn opus_no_get(list: u32, unit: u32, no: u32) -> u32 {
         opus::bridge::opus_no_get(&mem(), list, unit, no)
@@ -1512,6 +1522,22 @@ ported! {
     /// `0x0069ebd0(it)`: `opusTree_Next`'s code again (`ecx` the iterator).
     TreeNext_0069ebd0 @ 0x0069_ebd0 => extern "thiscall" fn tree_next_0069ebd0(it: u32) -> u32 {
         tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `opus_0437_fade_step_00a6e260(b)`.
+    opus_0437_fade_step_00a6e260 @ 0x00a6_e260 => extern "C" fn opus_0437_fade_step(b: u32) -> u32 {
+        small::bridge::opus_0437_fade_step(&mut mem(), b)
+    }
+    /// `op_texels_halve_v_00a38560(dst, dst_step, src, src_step, n, size)`.
+    op_texels_halve_v_00a38560 @ 0x00a3_8560 => extern "C" fn op_texels_halve_v(dst: u32, dst_step: u32, src: u32, src_step: u32, n: u32, size: u32) -> u32 {
+        small::bridge::op_texels_halve_v(&mut mem(), dst, dst_step, src, src_step, n, size)
+    }
+    /// `op_texels_halve_00a385f0(dst, src, n, size)`.
+    op_texels_halve_00a385f0 @ 0x00a3_85f0 => extern "C" fn op_texels_halve(dst: u32, src: u32, n: u32, size: u32) -> u32 {
+        small::bridge::op_texels_halve(&mut mem(), dst, src, n, size)
+    }
+    /// `op_node_requeue_all_00a39f60(set)`: returns `set + 0x80`.
+    op_node_requeue_all_00a39f60 @ 0x00a3_9f60 => extern "C" fn op_node_requeue_all(set: u32) -> u32 {
+        small::bridge::op_node_requeue_all(&mut mem(), set)
     }
     /// `op_node_requeue_00a39f00(n)`.
     op_node_requeue_00a39f00 @ 0x00a3_9f00 => extern "C" fn op_node_requeue(n: u32) -> u32 {
@@ -3031,6 +3057,17 @@ ported! {
     pppDrawMatrixWood @ 0x0073_4cf0 => extern "C" fn ppp_draw_matrix_wood(obj: u32) {
         mat::bridge::ppp_draw_matrix_wood(&mut mem(), obj);
     }
+    /// `pppKeZCrctShpDraw(obj, key, ctrl)`: its stack matrix in a buffer
+    /// on this shim's stack (the frame pointer at its end; a mode the
+    /// original does not know leaves row 3 zero here, stale stack there).
+    pppKeZCrctShpDraw @ 0x0073_54c0 => extern "C" fn ppp_ke_z_crct_shp_draw(obj: u32, key: u32, ctrl: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x50]);
+        let mut locals = Locals([0; 0x50]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        mat::bridge::ppp_ke_z_crct_shp_draw(&mut mem(), obj, key, ctrl, frame, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppKeDMatDraw(obj, key, ctrl)`.
     pppKeDMatDraw @ 0x0073_4eb0 => extern "C" fn ppp_ke_d_mat_draw(obj: u32, key: u32, ctrl: u32) {
         let _ = key;
@@ -3182,6 +3219,10 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a short argument
         op::bridge::opu_id_list_add(&mut mem(), unit, id as u16)
     }
+    /// `op_et_chr_count_same_no_007feb20(h)`.
+    op_et_chr_count_same_no_007feb20 @ 0x007f_eb20 => extern "C" fn op_et_chr_count_same_no(h: u32) -> u32 {
+        et::bridge::op_et_chr_count_same_no(&mem(), h)
+    }
     /// `op_et_chr_index_by_no(no)`.
     op_et_chr_index_by_no @ 0x007f_eaa0 => extern "C" fn op_et_chr_index_by_no(no: u32) -> i32 {
         et::bridge::op_et_chr_index_by_no(&mem(), no)
@@ -3191,6 +3232,54 @@ ported! {
         et::bridge::opu_eff_part_index(&mem(), unit)
     }
 
+    /// `pppViewOutCode(x, y)`.
+    pppViewOutCode @ 0x0072_8dd0 => extern "C" fn ppp_view_out_code(x: f32, y: f32) -> u32 {
+        small::ppp_view_out_code(x, y)
+    }
+    /// `hashU(s)`.
+    hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {
+        small::bridge::hash_u_at(&mem(), s)
+    }
+    /// `pppFtoiRgba_0074c280(dst, src)`.
+    pppFtoiRgba_0074c280 @ 0x0074_c280 => extern "C" fn ppp_ftoi_rgba_0074c280(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_0074d280(dst, src)`.
+    pppFtoiRgba_0074d280 @ 0x0074_d280 => extern "C" fn ppp_ftoi_rgba_0074d280(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_0074e280(dst, src)`.
+    pppFtoiRgba_0074e280 @ 0x0074_e280 => extern "C" fn ppp_ftoi_rgba_0074e280(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_0074f2c0(dst, src)`.
+    pppFtoiRgba_0074f2c0 @ 0x0074_f2c0 => extern "C" fn ppp_ftoi_rgba_0074f2c0(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_00750130(dst, src)`.
+    pppFtoiRgba_00750130 @ 0x0075_0130 => extern "C" fn ppp_ftoi_rgba_00750130(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_00751930(dst, src)`.
+    pppFtoiRgba_00751930 @ 0x0075_1930 => extern "C" fn ppp_ftoi_rgba_00751930(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_007535a0(dst, src)`.
+    pppFtoiRgba_007535a0 @ 0x0075_35a0 => extern "C" fn ppp_ftoi_rgba_007535a0(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppKeShpTail3VfCopy_00751680(dst)`.
+    pppKeShpTail3VfCopy_00751680 @ 0x0075_1680 => extern "C" fn ppp_ke_shp_tail3_vf_copy(dst: u32) -> u32 {
+        small::bridge::ppp_ke_shp_tail3_vf_copy(&mut mem(), dst)
+    }
+    /// `pppDataLastPair_00761250(data, a, b)`.
+    pppDataLastPair_00761250 @ 0x0076_1250 => extern "C" fn ppp_data_last_pair(data: u32, a: u32, b: u32) -> u32 {
+        small::bridge::ppp_data_last_pair(&mut mem(), data, a, b)
+    }
+    /// `pppDataSetTex_007628c0(data, base, a, b)`.
+    pppDataSetTex_007628c0 @ 0x0076_28c0 => extern "C" fn ppp_data_set_tex(data: u32, base: u32, a: u32, b: u32) -> u32 {
+        small::bridge::ppp_data_set_tex(&mut mem(), data, base, a, b)
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {
@@ -3200,6 +3289,20 @@ ported! {
     }
     /// `pppVu0MaddaZ(_, v, _, _, s)`: returns `v`.
     pppVu0MaddaZ @ 0x0072_c5f0 => extern "C" fn ppp_vu0_madda_z(a: u32, v: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
+        v
+    }
+    /// `pppVu0MaddaY_copy_0075e670(_, v, _, s)`: `pppVu0MaddaY`'s code
+    /// again; returns `v`.
+    pppVu0MaddaY_copy_0075e670 @ 0x0075_e670 => extern "C" fn ppp_vu0_madda_y_copy(a: u32, v: u32, b: u32, s: f32) -> u32 {
+        let _ = (a, b);
+        mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
+        v
+    }
+    /// `pppVu0MaddaZ_copy_0075e6d0(_, v, _, _, s)`: `pppVu0MaddaZ`'s code
+    /// again; returns `v`.
+    pppVu0MaddaZ_copy_0075e6d0 @ 0x0075_e6d0 => extern "C" fn ppp_vu0_madda_z_copy(a: u32, v: u32, b: u32, c: u32, s: f32) -> u32 {
         let _ = (a, b, c);
         mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
         v

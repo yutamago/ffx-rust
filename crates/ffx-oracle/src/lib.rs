@@ -75,6 +75,8 @@ pub enum Error {
     BadAccess(u64),
     #[error("{0} not preserved across the call (the calling convention requires it)")]
     Clobbered(&'static str),
+    #[error("no return after {MAX_INSTRUCTIONS} instructions (a runaway loop?), at {0:#010x}")]
+    Runaway(u64),
     #[error("the heap is exhausted")]
     OutOfMemory,
     #[error("no free range of {0:#x} bytes for the oracle's own memory")]
@@ -209,6 +211,9 @@ struct State {
     heap_next: u64,
     stack_base: u64,
     sentinel: u64,
+    /// The call returned to the sentinel (else the instruction budget ran
+    /// out or a stub stopped it).
+    returned: bool,
     fault: Option<Error>,
     pages: Option<Arc<Pages>>,
     /// Pages written since the last [`Oracle::clear_dirty`].
@@ -474,6 +479,7 @@ impl Oracle {
 
         uc.add_code_hook(stub_base, stub_base + STUB_SIZE - 1, |uc, addr, _| {
             if addr == uc.get_data().sentinel {
+                uc.get_data_mut().returned = true;
                 let _ = uc.emu_stop();
                 return;
             }
@@ -909,12 +915,16 @@ impl Oracle {
         self.uc.reg_write(RegisterX86::FPSW, sw & !0x3800)?;
         self.uc.reg_write(RegisterX86::FPTAG, 0xffff)?;
         self.uc.get_data_mut().fault = None;
+        self.uc.get_data_mut().returned = false;
 
         let run = self.uc.emu_start(u64::from(addr), 0, 0, MAX_INSTRUCTIONS);
         if let Some(fault) = self.uc.get_data_mut().fault.take() {
             return Err(fault);
         }
         run?;
+        if !self.uc.get_data().returned {
+            return Err(Error::Runaway(self.uc.reg_read(RegisterX86::EIP)?));
+        }
         for (reg, name, value) in SAVED {
             if self.uc.reg_read(reg)? != value {
                 return Err(Error::Clobbered(name));

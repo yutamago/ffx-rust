@@ -145,6 +145,21 @@ pub const SQS_RPC_FLAGS: Global<u32> = Global::new(0x012f_4e74);
 /// Set while a reply history update is pending (`SqsReportStandby` reads
 /// it, without effect).
 pub const SQS_REPLY_PENDING: Global<u32> = Global::new(0x012f_4f44);
+/// Bit 0: report a full command queue (`dbgPrintf`) before sending it.
+pub const SQS_DEBUG_FLAGS: Global<u32> = Global::new(0x012f_4148);
+/// The end of the command queue's space: a command that would pass it
+/// sends the queue first.
+pub const SQS_CMD_LIMIT: u32 = 0x012f_4e00;
+/// The full-queue message (`.rdata`).
+pub const SQS_CMD_FULL_MESSAGE: u32 = 0x00b5_8d28;
+/// The play mode `SqsSetPlayMode` keeps (0..2).
+pub const SQS_PLAY_MODE: Global<u32> = Global::new(0x012f_4144);
+/// Non-zero: `SqsInitWaveInfo` does nothing.
+pub const SQS_WAVE_INFO_DONE: Global<u32> = Global::new(0x012f_4140);
+/// The IOP address `SqsInitWaveInfo` sends the wave info to.
+pub const SQS_WAVE_INFO_DST: Global<u32> = Global::new(0x012f_4f88);
+/// The straight stream's id (`SqsStraightStreamingStart` sends it).
+pub const SQS_STRAIGHT_STREAM: Global<u32> = Global::new(0x012f_4e70);
 /// What `SqsIopCommandSend` returns.
 pub const SQS_IOP_RESULT: Global<u32> = Global::new(0x012f_4150);
 /// The last SE handle `SqsSePlay`/`SqsSeForcePlay` gave (never 0).
@@ -881,5 +896,178 @@ pub mod bridge {
     ) -> u32 {
         let r = send_string(mem, path, 2, call);
         if r == 0 { 0 } else { mem.read::<u32>(r) }
+    }
+
+    // ---- field round 39: the IOP command builders ----
+
+    /// Appends the 32-byte command `cmd` to the queue (`0x00c4946c`); a
+    /// command that would pass `0x012f4e00` sends the queue first, with a
+    /// `dbgPrintf` when bit 0 of `0x012f4148` is set. Returns the `eax`
+    /// this leaves: the send's result, else the old end plus 0x20.
+    fn push_command<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        cmd: [u32; 8],
+        call: &mut C,
+    ) -> u32 {
+        let mut at = super::SQS_CMD_NEXT.get(mem);
+        let mut eax = at.wrapping_add(0x20);
+        if eax > mem.rebase(super::SQS_CMD_LIMIT) {
+            if super::SQS_DEBUG_FLAGS.get(mem) & 1 != 0 {
+                let f = mem.rebase(super::DBG_PRINTF);
+                let msg = mem.rebase(super::SQS_CMD_FULL_MESSAGE);
+                call(mem, f, &[msg]);
+            }
+            eax = sqs_iop_command_send(mem, call);
+            at = super::SQS_CMD_NEXT.get(mem);
+        }
+        mem.write(at, cmd);
+        super::SQS_CMD_NEXT.set(mem, at.wrapping_add(0x20));
+        eax
+    }
+
+    /// `(op, a, b, c)` padded with zeros to a command.
+    const fn cmd(op: u32, a: u32, b: u32, c: u32) -> [u32; 8] {
+        [op, a, b, c, 0, 0, 0, 0]
+    }
+
+    /// The one-argument command builders that return their argument:
+    /// `SqsSetCycleMode(a)` (`0x0081e900`, op 4), `SqsSetReverbPlaySwitch`
+    /// (`0x0081ec20`, op `0xc`), `SqsSetStraightStreamAreaSize`
+    /// (`0x0081ef50`, op 5).
+    pub fn sqs_cmd_arg<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        op: u32,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(op, a, 0, 0), call);
+        a
+    }
+
+    /// `SqsAllVoiceTerminate()` (`0x0081ce70`): command 0.
+    pub fn sqs_all_voice_terminate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0, 0, 0, 0), call)
+    }
+
+    /// `SqsMusicDataRead(a)` (`0x0081d820`): a standby request
+    /// ([`sqs_report_standby`]), command `(0x15, a)`, then the queue sent
+    /// (a tail call to `SqsIopCommandSend`, whose result it returns).
+    pub fn sqs_music_data_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        sqs_report_standby(mem, call);
+        push_command(mem, cmd(0x15, a, 0, 0), call);
+        sqs_iop_command_send(mem, call)
+    }
+
+    /// `SqsSetPlayMode(mode)` (`0x0081ea00`): modes 3 and up (signed)
+    /// become 0; kept in `0x012f4144` and sent as `(3, mode)`.
+    pub fn sqs_set_play_mode<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        mode: u32,
+        call: &mut C,
+    ) -> u32 {
+        let v = if mode.cast_signed() >= 3 { 0 } else { mode };
+        super::SQS_PLAY_MODE.set(mem, v);
+        push_command(mem, cmd(3, v, 0, 0), call)
+    }
+
+    /// `SqsShoutStreamingStart(a)` (`0x0081ee20`): `(0x37, a, 0x40,
+    /// 0x7f)`, then `0x012f4f84` and the shout flag `0x012f4e94` 1.
+    /// Returns `a`.
+    pub fn sqs_shout_streaming_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0x37, a, 0x40, 0x7f), call);
+        let h = mem.rebase(super::SQS_REPLY_HISTORY);
+        mem.write(h + 0x3c, 1u32);
+        super::SHOUT_SKIPPED.set(mem, 1);
+        a
+    }
+
+    /// `SqsStraightStreamingStart()` (`0x0081f6c0`): `(0x38, id)` with the
+    /// stream id `0x012f4e70` (read before a send), then `0x012f4e90` 0,
+    /// `0x012f4edc` 1, `0x012f4ef8` 0.
+    pub fn sqs_straight_streaming_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let id = super::SQS_STRAIGHT_STREAM.get(mem);
+        let r = push_command(mem, cmd(0x38, id, 0, 0), call);
+        for (at, v) in [(0x012f_4e90, 0u32), (0x012f_4edc, 1), (0x012f_4ef8, 0)] {
+            let a = mem.rebase(at);
+            mem.write(a, v);
+        }
+        r
+    }
+
+    /// `SqsStraightStreamingStop()` (`0x0081f770`): `(0x33, 0)`, then
+    /// `0x012f4efc` 3 and `0x012f4edc` 0.
+    pub fn sqs_straight_streaming_stop<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let r = push_command(mem, cmd(0x33, 0, 0, 0), call);
+        for (at, v) in [(0x012f_4efc, 3u32), (0x012f_4edc, 0)] {
+            let a = mem.rebase(at);
+            mem.write(a, v);
+        }
+        r
+    }
+
+    /// `SqsStraightStreamingVolumeDirect(v)` (`0x0081f800`): `(0x3e, v &
+    /// 0x7f)`.
+    pub fn sqs_straight_streaming_volume_direct<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        v: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0x3e, v & 0x7f, 0, 0), call)
+    }
+
+    /// `SqsStraightStreamingVolumeTranslate(frames, v)` (`0x0081f880`):
+    /// `(0x3f, frames, v & 0x7f)`; returns `frames`.
+    pub fn sqs_straight_streaming_volume_translate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        frames: u32,
+        v: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0x3f, frames, v & 0x7f, 0), call);
+        frames
+    }
+
+    /// `SqsInitWaveInfo(src, _, a)` (`0x0081d3f0`): nothing once
+    /// `0x012f4140` is set (the caller's `eax` comes back). Else a source
+    /// sends 0x5000 bytes by SIF DMA to `*0x012f4f88` (the record at
+    /// `0x012f4e00`, id 0, then `SqsSifDmaState(1, 1)`; the `FlushCache(0)`
+    /// before is a bare `ret`), and `a` goes to the send buffer for
+    /// `Sqs_CallRpc(4)`. No caller reads `eax`.
+    pub fn sqs_init_wave_info<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        src: u32,
+        a: u32,
+        call: &mut C,
+    ) {
+        if super::SQS_WAVE_INFO_DONE.get(mem) != 0 {
+            return;
+        }
+        if src != 0 {
+            let dst = super::SQS_WAVE_INFO_DST.get(mem);
+            let r = mem.rebase(super::SIF_DMA);
+            mem.write(r, [src, dst, 0x5000, 0]);
+            super::SIF_DMA_ID.set(mem, 0);
+            sqs_sif_dma_state(mem, 1, call);
+        }
+        let buf = super::SQS_RPC_SEND.get(mem);
+        mem.write(buf, a);
+        sqs_call_rpc(mem, 4, call);
     }
 }
