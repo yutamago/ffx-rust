@@ -2464,6 +2464,7 @@ fn control_synthetic() {
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
     round11_main_cases(&mut a, &mut b, &mut rng, 300);
     draw_filter_cases(&mut a, &mut b, &mut rng, 600);
+    vu_helper_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 #[test]
@@ -2493,6 +2494,7 @@ fn control_snapshot() {
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
     round11_main_cases(&mut a, &mut b, &mut rng, 300);
     draw_filter_cases(&mut a, &mut b, &mut rng, 600);
+    vu_helper_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -4609,6 +4611,72 @@ fn draw_filter_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
         }
         twin("Sg_DrawFilter", a, b, 0x0082_c0c0, &[], |m| {
             c::draw_filter(&mut H(m));
+        });
+    }
+}
+
+// Main round 11: sg_calcenvelope_normW's translated VU0 and MIPS helpers.
+fn vu_helper_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let acc = a.rebase(e::VU0_ACC);
+    let val = |rng: &mut Xorshift| match rng.below(4) {
+        0 => rng.float(),
+        1 => modest(rng),
+        _ => bounded(rng),
+    };
+    for n in 0..rounds {
+        let v = rng.next();
+        #[allow(clippy::cast_possible_truncation)]
+        let h = v as u16;
+        twin("Sg_SetChrPacketState", a, b, 0x0084_5c30, &[v], |m| {
+            e::set_chr_packet_state(m, h);
+        });
+        twin("Sg_SetChrPacketWord", a, b, 0x0084_5c40, &[v], |m| {
+            e::set_chr_packet_word(m, h);
+        });
+        let src = alloc(a, b, 16);
+        put(a, b, src, rng.next());
+        put(a, b, src + 4, rng.next());
+        let dst = if n % 4 == 0 { src } else { alloc(a, b, 16) };
+        let imm = rng.next();
+        twin("sg_Daddiu", a, b, 0x0084_5cc0, &[dst, src, imm], |m| {
+            e::daddiu(m, dst, src, imm)
+        });
+        let sh = rng.next();
+        twin("sg_Sll", a, b, 0x0084_5d70, &[dst, src, sh], |m| {
+            e::sll(m, dst, src, sh)
+        });
+        let f = val(rng);
+        twin("sg_SetFloat", a, b, 0x0084_5cf0, &[dst, f], |m| {
+            e::set_float(m, dst, f32::from_bits(f))
+        });
+        let v3 = alloc(a, b, 16);
+        for k in 0..4 {
+            put(a, b, v3 + 4 * k, val(rng));
+            put(a, b, acc + 4 * k, val(rng));
+        }
+        let out = match n % 3 {
+            0 => v3,
+            1 => acc,
+            _ => alloc(a, b, 16),
+        };
+        let s = val(rng);
+        twin("sg_VmulScalar", a, b, 0x0084_5e80, &[out, v3, s], |m| {
+            e::vmul_scalar(m, out, v3, f32::from_bits(s))
+        });
+        let s = val(rng);
+        twin(
+            "sg_VmaddScalar",
+            a,
+            b,
+            0x0084_5e40,
+            &[out, v3, 0, 0, s],
+            |m| e::vmadd_scalar(m, out, v3, f32::from_bits(s)),
+        );
+        let v = if n % 5 == 0 { acc } else { v3 };
+        let s = val(rng);
+        twin("sg_VmaddaScalar", a, b, 0x0084_5df0, &[0, v, 0, s], |m| {
+            e::vmadda_scalar(m, v, f32::from_bits(s))
         });
     }
 }

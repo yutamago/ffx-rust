@@ -630,3 +630,16 @@ through `graphicSetFocusZ`). Each slot with frames left calls
 
 `n'` is the frame count after the decrement; integer divisions truncate.
 A total of 0 is a division fault in the original; the port takes 0.
+
+`sg_calcenvelope_normW`'s translated R5900/VU0 code calls small leaves
+(names ours): `sg_Daddiu` (`0x00845cc0`, 64-bit add of a sign-extended
+immediate), `sg_SetFloat` (`0x00845cf0`, a float through the x87),
+`sg_Sll` (`0x00845d70`, shift by `n & 31`), and three scalar products on
+the VU0 accumulator at `0x00c8f790`: `sg_VmulScalar` (`0x00845e80`,
+`dst = v s`), `sg_VmaddScalar` (`0x00845e40`, `dst = ACC + v s`) and
+`sg_VmaddaScalar` (`0x00845df0`, `ACC += v s`); x and y multiply x87
+registers, z takes `v.z` as a memory operand, and the accumulator's y and
+z lanes are memory operands. `Ch_EffectPacketCreateMain` sets the two
+`u16`s at `0x0130366c` (`g_ChrPacketState`) and `0x01303684` through
+`Sg_SetChrPacketState` (`0x00845c30`) and `Sg_SetChrPacketWord`
+(`0x00845c40`).

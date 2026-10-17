@@ -7531,14 +7531,22 @@
 0x00845800 function Ch_EffectPacketStoreMAT   # (v): u16 0x01303674 = v; Switch name, in name order between Ch_EffectPacketStoreEND and Ch_EffectPacketStorePRG
 0x00845810 function Ch_EffectPacketStorePRG   # (v): u16 0x0130367c = v; Switch name, in name order before Ch_EffectPacketStorePoly
 0x00845820 function Ch_EffectPacketStorePoly  # (a, b, c) u16 x, y, u, v vertices: new 32-byte block on a state change (g_ChrPacketState), 28 bytes per triangle, uv = v*4096/(size*16) chopped; measuring keeps size, count, max x/y. fh: v3:exact 0x00845820
+0x00845c30 function Sg_SetChrPacketState      # (v): g_ChrPacketState (u16 0x0130366c) = v; Ch_EffectPacketCreateMain; name ours
+0x00845c40 function Sg_SetChrPacketWord       # (v): u16 0x01303684 = v; Ch_EffectPacketCreateMain; name ours
 0x00845c50 function sg_getnorm                # () -> 0x01303694 (sg_setvtex_and_normal's second); Switch name
 0x00845c60 function sg_getvtex                # () -> 0x01303690 (sg_setvtex_and_normal's first); Switch name
 0x00845c70 function sg_packet_strip              # str-match switch: only user of 1 string(s) held once by both builds, e.g. "Virtuos Warning: Asm function 'sg_packet_strip' not implemen"; Switch 0x7100436e40 sg_packet_strip (symbols from Fahrenheit's server export)
 0x00845ca0 function sg_setvtex_and_normal     # fh v3:bsim1.00 0x00845ca0
+0x00845cc0 function sg_Daddiu                 # (dst, src, imm): u64 dst = u64 src + sign-extended imm (MIPS daddiu), eax the low word; sg_calcenvelope_normW; name ours
 0x00845ce0 function sg_CopyField0_00845ce0       # auto-port shape (store copy to field, cdecl): t0 = u32[a1]; u32[a0] = t0; return a0; callers: sg_calcenvelope_normW; name ours
+0x00845cf0 function sg_SetFloat               # (dst, f): f32 dst = f through fld/fstp, eax dst; sg_calcenvelope_normW; name ours
 0x00845d00 function sg_CopyFields_00845d00       # auto-port shape (several stores: copy into field, cdecl): t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x8)] = t3; u32[(a0 + 0x4)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0; callers: sg_calcenvelope_normW; name ours
 0x00845d60 function sg_CopyField0_00845d60       # auto-port shape (store copy to field, cdecl): t0 = u32[a0]; u32[a1] = t0; return a1; callers: sg_calcenvelope_normW; name ours
+0x00845d70 function sg_Sll                    # (dst, src, n): dst = src << (n & 31) (MIPS sll), eax dst; sg_calcenvelope_normW; name ours
 0x00845d90 function Sg_IntVecToFloat          # (out, v): three i32 to f32; returns v[3] in eax; caller sg_calcenvelope_normW; name ours; ported (ffx_sg::vec)
+0x00845df0 function sg_VmaddaScalar           # (-, v, -, s): VU0 ACC (0x00c8f790) += v.xyz * s, eax v; sg_calcenvelope_normW; name ours
+0x00845e40 function sg_VmaddScalar            # (dst, v, -, -, s): dst.xyz = ACC + v.xyz * s, eax dst; sg_calcenvelope_normW; name ours
+0x00845e80 function sg_VmulScalar             # (dst, v, s): dst.xyz = v.xyz * s, eax dst; sg_calcenvelope_normW; name ours
 0x00845eb0 function sg_calcenvelope_norm      # fh v3:bsim1.00 0x00845eb0
 0x00845ec0 function sg_calcenvelope_normW     # fh v3:exact 0x00845ec0
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
@@ -14441,6 +14449,7 @@
 0x00c8f588 label g_Ee_GprMove              # the EE register MsEffectCameraSet moves its vectors through
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
 0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
+0x00c8f790 label    g_Vu0Acc                  # 3 x f32: the VU0 accumulator of sg_calcenvelope_normW's translated code (sg_VmaddaScalar adds into it)
 0x00c8f980 label    g_Vu0_VfMove              # emulated VU0 register pppVu0MoveVia copies through
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
