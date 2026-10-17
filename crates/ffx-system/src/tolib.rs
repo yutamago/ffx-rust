@@ -4195,4 +4195,51 @@ pub mod bridge {
             mem.write(last_at, t as f32);
         }
     }
+
+    /// The kernel accessors at `0x00771c30..=0x007724f0` (one per menu
+    /// field, reached through a table): `MsGetSaveCommand(chr, cmd)` for a
+    /// fixed command (through `call`).
+    pub fn kernel_save_command<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        cmd: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0078_5020, &[chr, cmd])
+    }
+
+    /// A kernel accessor: the word at `off` of `MsGetSavePlayerPtr(chr)`.
+    pub fn kernel_player_word<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        off: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let p = call(mem, 0x0077_6f50, &[chr]);
+        mem.read(p.wrapping_add(off))
+    }
+
+    /// A kernel accessor: `Kernel_GetAbilityName` of the `u16` at `off` of
+    /// record `i` (0x1d8 bytes each) of the table `*0x0112a034`.
+    pub fn kernel_slot_ability_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        off: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        let id =
+            u32::from(mem.read::<u16>(table.wrapping_add(i.wrapping_mul(0x1d8)).wrapping_add(off)));
+        call(mem, 0x0077_4720, &[id])
+    }
+
+    /// A kernel accessor that only forwards to `f` (a tail call).
+    pub fn kernel_forward<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        arg: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, f, &[arg])
+    }
 }
