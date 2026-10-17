@@ -132,21 +132,30 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
     game.wait_for_open(".ebp", 30, 1200)
 }
 
-/// From boot into the game from a save file, without the title menu: as
-/// soon as the title event runs (its script, `test20.ebp`, has opened),
-/// the `loadsave` harness command runs what the Load menu runs once a
-/// save is picked (`docs/formats/save.md`). `save` is a slot (the file
-/// `ffx_<slot>` of the sandbox saves, `Options::home`: slot 1 is
-/// `ffx_001`, not the list's entry 1) or a Windows path to a save file,
-/// which is only read. Returns the event script the save starts in.
+/// From boot into the game from a save file, without the title menu: once
+/// the title scene is set up, the `loadsave` harness command runs what the
+/// Load menu runs once a save is picked (`docs/formats/save.md`). `save` is
+/// a slot (the file `ffx_<slot>` of the sandbox saves, `Options::home`) or a
+/// Windows path to a save file, which is only read. Returns the event
+/// script the save starts in.
+///
+/// The title event's script (`test20.ebp`) opens while the boot's jump to
+/// the title (map `0x17`) is still pending (`g_TkEventJumpRequest`,
+/// `0x0133084c`); a load sent then is undone: the scene step enters the
+/// title map (`titl00`) and the title script's set-up starts a new game's
+/// state. So this waits for `titl00`'s map to open, the request to clear
+/// and 30 frames for the script's set-up (about 70 frames from boot).
 ///
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
+    const TITLE_MAP: &str = "titl00/bin/mapout.vpa";
     game.events()?;
-    if !game.opened().iter().any(|e| e.contains("test20.ebp")) {
-        game.wait_for_open("test20.ebp", 5, 3000)?;
+    if !game.opened().iter().any(|e| e.contains(TITLE_MAP)) {
+        game.wait_for_open(TITLE_MAP, 2, 3000)?;
     }
+    game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
+    game.wait(30)?;
     let mut tries = 0;
     let reply = loop {
         match game.command(&format!("loadsave {save}")) {

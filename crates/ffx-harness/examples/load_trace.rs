@@ -1,6 +1,8 @@
 //! Loads a save through the title menu (`load_trace [entry]`), or with
-//! `loadsave` as soon as the title event opens (`load_trace direct
-//! [save]`, frame by frame in lockstep), and prints every change of the
+//! `loadsave` (`load_trace direct [save] [early]`, frame by frame in
+//! lockstep: once the title scene is set up as `screens::load_save_direct`
+//! waits, or with `early` as soon as the title event opens, which the
+//! pending boot jump undoes), and prints every change of the
 //! save/load state globals, with the frame it was seen on, until the save's
 //! map script opens and a while after: which steps each path takes
 //! (docs/formats/save.md).
@@ -33,7 +35,10 @@ const WATCH: &[(&str, u32, usize)] = &[
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("direct") {
-        return direct(args.get(1).map_or("1", String::as_str));
+        return direct(
+            args.get(1).map_or("1", String::as_str),
+            args.get(2).map(String::as_str) == Some("early"),
+        );
     }
     let entry: u32 = args.first().map_or(1, |e| e.parse().expect("entry"));
     let mut game = Game::launch(&ffx_harness::Options::default())?;
@@ -83,12 +88,17 @@ fn main() -> Result<()> {
     game.quit()
 }
 
-fn direct(save: &str) -> Result<()> {
+fn direct(save: &str, early: bool) -> Result<()> {
     let mut game = Game::launch(&ffx_harness::Options {
         virtual_clock: true,
         ..ffx_harness::Options::default()
     })?;
     game.wait_for_open("test20.ebp", 1, 3000)?;
+    if !early {
+        game.wait_for_open("titl00/bin/mapout.vpa", 1, 3000)?;
+        game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
+        game.wait(30)?;
+    }
     game.command("lockstep on")?;
     let mut last: Vec<Vec<u8>> = vec![Vec::new(); WATCH.len()];
     let mut snap = |game: &mut Game, tag: &str| -> Result<()> {
