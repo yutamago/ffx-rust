@@ -3016,6 +3016,168 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         );
         same("MsStatusDefenseEffect", a, b);
     }
+    // the overdrive modes of a hit, Auto-Med, Auto-Potion and the whole
+    // AfterDamageProcess
+    {
+        use ffx_battle::after_damage::bridge as ad;
+        use ffx_battle::save::bridge as sv;
+        let side = |rng: &mut Xorshift| match rng.below(3) {
+            0 => rng.below(7),
+            1 => 0x14 + rng.below(8),
+            _ => rng.below(ACTORS),
+        };
+        for q in 0..ACTORS {
+            let p = w.actor(q);
+            let mode = [0u8, 1, 2, 3, 4, 5, 6, 10, 0x13, rng.byte()][rng.below(10) as usize];
+            poke(a, b, p + 0x5bb, &[mode]);
+            // a strength to divide by
+            poke(a, b, p + 0x6f4, &rng.range(1, 3000).to_le_bytes());
+            poke(a, b, p + 0x594, &rng.range(1, 99_999).to_le_bytes());
+        }
+        // the cure items in the bag at times
+        let ids = sv::ITEM_IDS.ptr(b).addr;
+        let counts = sv::ITEM_COUNTS.ptr(b).addr;
+        for (slot, item) in [
+            0x2000u16, 0x2001, 0x2002, 0x200a, 0x200c, 0x200d, 0x200e, 0x200f,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let slot = u32::try_from(slot).unwrap();
+            poke(a, b, ids + 2 * slot, &item.to_le_bytes());
+            poke(a, b, counts + slot, &[[0, 0, 1, 5][rng.below(4) as usize]]);
+        }
+        set(a, b, sv::USE_ITEM, 0);
+        // party and monsters either way, the modes in use the branches read
+        for _ in 0..6 {
+            let (i, j) = match rng.below(3) {
+                0 => (rng.below(7), 0x14 + rng.below(8)),
+                1 => (0x14 + rng.below(8), rng.below(7)),
+                _ => (side(rng), side(rng)),
+            };
+            for q in [i, j] {
+                let p = w.actor(q);
+                let mode = [0u8, 0, 1, 2, 3, 3, 4, 5, 6, 10, 0x13, 0x13, rng.byte()]
+                    [rng.below(13) as usize];
+                poke(a, b, p + 0x5bb, &[mode]);
+                // a strength the hit outdoes at times (mode 0's cap)
+                poke(
+                    a,
+                    b,
+                    p + 0x6f4,
+                    &[rng.range(1, 300), rng.range(1, 3000)][rng.below(2) as usize].to_le_bytes(),
+                );
+                // at times a gauge that fills (MsLimitUp: not KO'd or
+                // petrified, empty, no cap in sight)
+                if rng.below(2) == 0 {
+                    for (o, v) in [
+                        (0xdcc, 0u8),
+                        (0xdce, 0),
+                        (0x5bc, 0),
+                        (0x5bd, 0xff),
+                        (0x617, 0),
+                    ] {
+                        poke(a, b, p + o, &[v]);
+                    }
+                }
+            }
+            let (by, actor) = (w.actor(i), w.actor(j));
+            let hp = [
+                rng.range(-500, 500),
+                rng.range(1, 5000),
+                -rng.range(1, 5000),
+                0,
+            ][rng.below(4) as usize];
+            let raw = rng.range(0, 5000);
+            let crit = rng.below(2);
+            let args = [
+                i,
+                by,
+                j,
+                actor,
+                hp.cast_unsigned(),
+                raw.cast_unsigned(),
+                crit,
+            ];
+            twin(
+                "MsLimitTypeDamageCheck",
+                a,
+                b,
+                0x007b_0d50,
+                &args,
+                ALL,
+                |m| ad::ms_limit_type_damage_check(m, i, by, j, actor, hp, raw, crit),
+            );
+            same("MsLimitTypeDamageCheck", a, b);
+            let n = [0, 1, i32::from(rng.byte())][rng.below(3) as usize];
+            let bits = rng.below(4);
+            let args = [i, by, j, actor, n.cast_unsigned(), bits];
+            twin(
+                "MsLimitTypeStatusCheck",
+                a,
+                b,
+                0x007b_12c0,
+                &args,
+                ALL,
+                |m| ad::ms_limit_type_status_check(m, i, by, j, actor, n, bits),
+            );
+            same("MsLimitTypeStatusCheck", a, b);
+        }
+        // Auto-Med and Auto-Potion: mostly free to act
+        let (i, by) = (rng.below(ACTORS), rng.below(ACTORS));
+        let actor = w.actor(i);
+        if rng.below(3) != 0 {
+            for (o, v) in [(0xdce, 0u8), (0x607, 0), (0x608, 0), (0x617, 0), (0xdc8, 1)] {
+                poke(a, b, actor + o, &[v]);
+            }
+        }
+        let st = [0u8, 2, 8, 0xa, rng.byte() & !4][rng.below(5) as usize];
+        poke(a, b, actor + 0x606, &[st]);
+        // HP about half (Auto-Potion's limit)
+        let max = i32::from_le_bytes(b.read(actor + 0x594, 4).unwrap().try_into().unwrap());
+        let hp = [max / 2, max / 2 + 1, max / 4, max][rng.below(4) as usize];
+        poke(a, b, actor + 0x5d0, &hp.to_le_bytes());
+        for o in [0x609, 0x60a] {
+            poke(a, b, actor + o, &[flag(rng, 2)]);
+        }
+        for o in [0x62a, 0x62c] {
+            poke(
+                a,
+                b,
+                actor + o,
+                &[[0, 0, rng.byte()][rng.below(3) as usize]],
+            );
+        }
+        let old: Vec<u32> = (0..4).map(|_| u32::from(flag(rng, 3))).collect();
+        let args = [i, actor, by, old[0], old[1], old[2], old[3]];
+        twin("MsAutoCureProcess", a, b, 0x007b_2510, &args, ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                ad::ms_auto_cure_process(
+                    m, &h, &mut s, i, actor, by, old[0], old[1], old[2], old[3],
+                )
+            })
+        });
+        local_words(a, b);
+        same("MsAutoCureProcess", a, b);
+        twin(
+            "MsAutoPotionProcess",
+            a,
+            b,
+            0x007b_2850,
+            &[i, actor, by],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    ad::ms_auto_potion_process(m, &h, &mut s, i, actor, by)
+                })
+            },
+        );
+        local_words(a, b);
+        same("MsAutoPotionProcess", a, b);
+        after_damage(a, b, rng, w, out);
+    }
     // Regen and the status counts before a turn (the motions of those it
     // heals read their positions)
     let i = rng.below(ACTORS);
@@ -3202,6 +3364,244 @@ fn whole_turn(
     local_words(a, b);
     unplaced_rows(a, b, out);
     same("MsBattleProcess_InputCue", a, b);
+}
+
+/// `AfterDamageProcess` on hit records built at random: an attacker `i`'s
+/// hit `k` on `j`, whose positions are locatable (its motions, the death
+/// check and the reaction read them).
+fn after_damage(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    for _ in 0..3 {
+        after_damage_once(a, b, rng, w, out);
+    }
+}
+
+/// One [`after_damage`] case.
+fn after_damage_once(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    use ffx_battle::after_damage::bridge as ad;
+    use ffx_battle::atel::bridge::Script;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    let (i, j) = (
+        rng.below(ACTORS),
+        [0, rng.below(ACTORS)][rng.below(3).min(1) as usize],
+    );
+    let k = rng.below(4);
+    let actor = w.actor(j);
+    // at times hurt (Auto-Potion) and clean statuses after the hit (free
+    // to act: Auto-Med and Auto-Potion go on)
+    let clean = rng.below(2) == 0;
+    if rng.below(2) == 0 {
+        let max = i32::from_le_bytes(b.read(actor + 0x594, 4).unwrap().try_into().unwrap());
+        poke(
+            a,
+            b,
+            actor + 0x5d0,
+            &[max / 4, max / 2, max / 2 + 1][rng.below(3) as usize].to_le_bytes(),
+        );
+    }
+    // no automatic Threaten (+0x62a, +0x630, +0x636; +0x618 the saved
+    // statuses): a stone ending redoes the automatic statuses, which could
+    // turn it on unseen within the call (its yaw is the original's garbage)
+    for q in 0..ACTORS {
+        let p = w.actor(q);
+        for o in [0x618, 0x62a, 0x630, 0x636] {
+            let v = u16::from_le_bytes(b.read(p + o, 2).unwrap().try_into().unwrap()) & !0x800;
+            poke(a, b, p + o, &v.to_le_bytes());
+        }
+    }
+    // never every shared command learnt (its achievement is Steam's)
+    let sc = ffx_battle::save::bridge::SHARED_COMMANDS;
+    set(a, b, sc, sc.get(b) & 0x7fff);
+    for n in 0..2 {
+        let rec = actor + 0x774 + 0x2d8 * n;
+        let count = rng.below(4);
+        let done = rng.below(count + 1);
+        let mut head = [0u8; 0x18];
+        head[0] = u8::try_from(done).unwrap();
+        head[1] = u8::try_from(count).unwrap();
+        head[2] = u8::try_from([i, i, i, rng.below(ACTORS)][rng.below(4) as usize]).unwrap();
+        head[3] = u8::try_from([k, k, rng.below(4)][rng.below(3) as usize]).unwrap();
+        head[4] = [0, 0, 1, 2, 3][rng.below(5) as usize];
+        head[5] = [0, 1, 3, 4, rng.byte()][rng.below(5) as usize];
+        head[6] = flag(rng, 2);
+        head[7] = flag(rng, 4);
+        head[8..10].copy_from_slice(&[0i16, 1, 3, -1][rng.below(4) as usize].to_le_bytes());
+        head[0xa..0xc].copy_from_slice(
+            &u16::try_from(0x2000 + rng.below(0x40))
+                .unwrap()
+                .to_le_bytes(),
+        );
+        head[0xc] = flag(rng, 4);
+        head[0x10..0x14].copy_from_slice(&[0i32, 100, -5][rng.below(3) as usize].to_le_bytes());
+        head[0x17] = u8::try_from(rng.below(ACTORS)).unwrap();
+        poke(a, b, rec, &head);
+        let st: u16 = u16::from_le_bytes(b.read(actor + 0x606, 2).unwrap().try_into().unwrap());
+        for e in 0..count {
+            let mut ent = [0u8; 0x2c];
+            ent[0] = [1, 5, 6, 8, 2, rng.byte()][rng.below(6) as usize];
+            ent[1] = [0, 1, 2][rng.below(3) as usize];
+            ent[2] = rng.byte();
+            ent[3] = u8::try_from(rng.below(4)).unwrap();
+            ent[4] = [0, 1, rng.byte()][rng.below(3) as usize];
+            ent[6] = [0, 1, 2, 0x80][rng.below(4) as usize];
+            for c in &mut ent[7..0x14] {
+                *c = if clean {
+                    0
+                } else {
+                    [0, 0, 1, rng.byte()][rng.below(4) as usize]
+                };
+            }
+            if clean {
+                // Darkness, Silence (+0x60a, +0x609) and Regen (+0x612)
+                for o in [8, 9, 0x11] {
+                    ent[o] = flag(rng, 2);
+                }
+            }
+            // Threaten as it was (turning it on reads the original's garbage)
+            let s606 = [st, st ^ 1, st ^ 4, st ^ 9, st ^ 2, half16(rng)][rng.below(6) as usize];
+            let s606 = if clean {
+                [0, 2, 8, 0xa][rng.below(4) as usize]
+            } else {
+                s606 & !0x800
+            } | st & 0x800;
+            ent[0x14..0x16].copy_from_slice(&s606.to_le_bytes());
+            let s616 = if clean {
+                0
+            } else {
+                [0u16, 1, 0x200, half16(rng)][rng.below(4) as usize]
+            };
+            ent[0x16..0x18].copy_from_slice(&s616.to_le_bytes());
+            let bits =
+                u16::try_from(rng.below(8)).unwrap() | [0, 0x20, 0x8200][rng.below(3) as usize];
+            ent[0x18..0x1a].copy_from_slice(&bits.to_le_bytes());
+            for o in [0x1c, 0x20, 0x24, 0x28] {
+                let v = [rng.range(-300, 300), rng.range(0, 5000), 0][rng.below(3) as usize];
+                ent[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            poke(a, b, rec + 0x18 + 0x2c * e, &ent);
+        }
+    }
+    for o in [0x6dc, 0x6dd, 0x612, 0x617] {
+        poke(a, b, actor + o, &[flag(rng, 3)]);
+    }
+    let auto = [0u16, 0x400, 0x400, 0x800, 0xc00, half16(rng)][rng.below(6) as usize];
+    if clean {
+        poke(a, b, actor + 0xdc8, &[1]);
+    }
+    poke(a, b, actor + 0x6bc, &auto.to_le_bytes());
+    // mostly applying entries (bit 3 shows nothing and applies none)
+    let flags = rng.below(0x40) & !1 & !(u32::from(rng.below(3) != 0) << 3)
+        | [0, 0x400][rng.below(2) as usize];
+    let dst = out + 0xa0;
+    poke(a, b, dst, &0xeeee_eeeeu32.to_le_bytes());
+    // MsSetDamage at times: the hit is the command's (+2 of i's own block),
+    // the selector j alone or a whole side
+    let whole = rng.below(2) == 0;
+    let sel = [j, j, 0xffff_fff1, 0xffff_fff2, 0xffff_ffeb][rng.below(5) as usize];
+    let them: Vec<u32> = if whole && sel != j {
+        (0..ACTORS).collect()
+    } else {
+        vec![i, j]
+    };
+    let ok = them.iter().all(|&q| {
+        writes(a, b, 0x0079_56e0, q, out + 0x40) && writes(a, b, 0x0079_48e0, q, out + 0x40)
+    });
+    if !ok || !placed(a, b, w, out) {
+        return;
+    }
+    if whole {
+        let user = w.actor(i);
+        poke(a, b, user + 0xde5, &[0xff]);
+        let k8 = u8::try_from(k).unwrap();
+        poke(
+            a,
+            b,
+            user + 0x72c + 2,
+            &[k8, [k8, k8 + 1, k8 + 2][rng.below(3) as usize]],
+        );
+        poke(a, b, user + 0xde9, &[flag(rng, 2) ^ 1]);
+        poke(
+            a,
+            b,
+            user + 0xde4,
+            &[[0xff, 0, 1, 2][rng.below(4) as usize]],
+        );
+        poke(a, b, user + 0x6ca, &[flag(rng, 2)]);
+        poke(a, b, user + 0xdcc, &[flag(rng, 3)]);
+        let all: Vec<u32> = (0..ACTORS).collect();
+        let was = threats(b, w, &all);
+        twin(
+            "MsSetDamage",
+            a,
+            b,
+            0x0078_d980,
+            &[i, sel, flags],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    let mut s = Script {
+                        call: &mut call,
+                        signal: &mut signal,
+                        off: &mut off,
+                    };
+                    ad::ms_set_damage(m, &h, &mut s, i, sel, flags)
+                })
+            },
+        );
+        threatened(a, b, w, &all, &was);
+        local_words(a, b);
+        unplaced_rows(a, b, out);
+        same("MsSetDamage", a, b);
+        return;
+    }
+    let was = threats(b, w, &[j]);
+    twin(
+        "AfterDamageProcess",
+        a,
+        b,
+        0x0078_f060,
+        &[i, k, j, dst, flags],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                let mut s = Script {
+                    call: &mut call,
+                    signal: &mut signal,
+                    off: &mut off,
+                };
+                ad::after_damage_process(m, &h, &mut s, i, k, j, dst, flags)
+            })
+        },
+    );
+    threatened(a, b, w, &[j], &was);
+    local_words(a, b);
+    unplaced_rows(a, b, out);
+    same("AfterDamageProcess", a, b);
+}
+
+/// Who of `them` has Threaten on (`+0x606` bit 11).
+fn threats(b: &mut Oracle, w: &World, them: &[u32]) -> Vec<bool> {
+    them.iter()
+        .map(|&q| b.read(w.actor(q) + 0x607, 1).unwrap()[0] & 8 != 0)
+        .collect()
+}
+
+/// After a call that may have turned Threaten on for one of `them` (an
+/// entry restoring it after a revival cleared it; a death may clear it
+/// again within the same call): that actor's first yaw (`+0x51c`) and the
+/// vector unit's rows are the original's stack garbage
+/// (`MsThreatProcess`), copied from `a` for each of them threatened
+/// before (`was`) or after.
+fn threatened(a: &mut Oracle, b: &mut Oracle, w: &World, them: &[u32], was: &[bool]) {
+    let now = threats(b, w, them);
+    for (k, &q) in them.iter().enumerate() {
+        if was[k] || now[k] {
+            copy_garbage(a, b, w.actor(q) + 0x51c, 4);
+        }
+    }
 }
 
 /// After a call: when some actor's battle position cannot be located any

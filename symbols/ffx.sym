@@ -4978,7 +4978,7 @@
 0x0078d790 function MsSetChrImageDamageAttack # fh v3:exact 0x0078d850
 0x0078d7f0 function MsSetChrWeak              # fh v3:exact+call.cs 0x0078d8b0 cdecl; ours: (i, level) -> the pose +0x63d (0 with +0x450, level unless -1, else by MsCalcWeakLevel: 0/1 with poison-like counts, 2 weak (3 while MsCheckDeathMotion waits or KO'd), 1 underwater, aeons 1/0); +0x63e the level; ported (battle round 12)
 0x0078d8d0 function MsAutoRelifeProcess       # fh v3:exact+call.cs 0x0078d990 cdecl; ours: (i, actor, by, helper): helper free to act: +0x6dd = (+0x446 == 1), by's command helper+0x6c6 on i inserted after i's (prio 0), 1; helper +0x6dc cleared; ported (battle round 13)
-0x0078d980 function MsSetDamage               # fh v3:exact 0x0078da40
+0x0078d980 function MsSetDamage               # fh v3:exact 0x0078da40; ours: (i, sel, flags) -> how many targets still have hit entries: AfterDamageProcess on the actors MsGetChrBit(i, sel, 1, 1) picks, MsCheckHitPending on the rest; on the last hit of a command with an input entry (+0xde9, +0xde4) sound 0x3a on who warded a status, the self-destruct (+0x6ca), a 6-frame pause and MsDeleteInputCue; ported (battle round 13)
 0x0078dae0 function SetUpDamageInfo           # fh v3:exact 0x0078dba0 +SetUpDamageInfo
 0x0078db70 function MsSetDamageMotion         # fh v3:exact 0x0078dc30
 0x0078dc30 function MsSetDeath                # fh v3:exact 0x0078dcf0
@@ -5001,7 +5001,7 @@
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f000 function MsOrderKey                # ours: (i) turn-order key: a monster 0x10000 + i, a party member (0xff - +0x5ac) << 8 | i; MsOrderCalc sorts by it
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
-0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
+0x0078f060 function AfterDamageProcess        # fh call.cs cdecl; ours: (i, k, j, out, flags) -> bit 0 entries left, bit 1 one applied: steals, gauge and Lancet transfers, then the next hit entry of j's records +0x774/+0xa4c (numbers, HP/MP/CTB, statuses, revival, stone, blow, Threaten, Auto-Med, Auto-Potion), the reaction, the death check and the motion (docs/formats/battle.md); ported (battle round 13)
 0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
@@ -5719,12 +5719,12 @@
 0x007b0c20 function MsUseItem                 # fh v3:exact 0x007b0c30
 0x007b0ca0 function MsCountChrActing          # ours: actors whose command stage +0xdf0 is not 0 (MsLimitTypeProcess waits for none)
 0x007b0cd0 function MsLimitTidusLearn         # fh v3:exact+call.cs 0x007b0ce0 cdecl
-0x007b0d50 function MsLimitTypeDamageCheck    # fh v3:exact+call.cs 0x007b0d60 cdecl
+0x007b0d50 function MsLimitTypeDamageCheck    # fh v3:exact+call.cs 0x007b0d60 cdecl; ours: (i, by, j, actor, hp, raw, crit) the overdrive modes a hit feeds (0, 1, 2, 3, 0x13); ported (battle round 13)
 0x007b0f80 function MsLimitTypeDeathCheck     # fh call.cs cdecl; ours: Comrade (7) for the party when a monster kills one, Slayer (8)/Hero (9) for a party member's kill; ported (battle round 12)
 0x007b1090 function MsLimitTypeEscapeCheck    # fh v3:exact 0x007b10a0
 0x007b10c0 function MsLimitTypeExpGet            # layout: alphabetical run between MsLimitTypeEscapeCheck and MsLimitTypeProcess (1 unnamed in the gap); Switch 0x7100359860 MsLimitTypeExpGet is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007b1180 function MsLimitTypeProcess        # fh v3:exact 0x007b1190
-0x007b12c0 function MsLimitTypeStatusCheck    # fh v3:exact+call.cs 0x007b12d0 cdecl
+0x007b12c0 function MsLimitTypeStatusCheck    # fh v3:exact+call.cs 0x007b12d0 cdecl; ours: (i, by, j, actor, n, bits) the overdrive modes statuses feed (4, 5, 6, 10); ported (battle round 13)
 0x007b13c0 function MsLimitTypeTurnCheck      # fh v3:exact+call.cs 0x007b13d0 cdecl
 0x007b1540 function MsLimitTypeWinCheck       # fh v3:exact+call.cs 0x007b1550 cdecl
 0x007b1590 function MsLimitUp                 # fh v3:exact+call.cs 0x007b15a0 cdecl
@@ -5743,11 +5743,11 @@
 0x007b2300 function MsInsertInputCue          # fh v3:exact 0x007b2310
 0x007b2430 function MsRegistInputCue          # fh v3:exact 0x007b2440
 0x007b24a0 function MsAutoCommandStatusCheck  # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it; was Battle_ActorCanAct
-0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl
+0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl; ours: Auto-Med, (i, actor, by, poison, zombie, dark, silence the old ones) -> the item used on itself (Remedy for two or more, else Antidote/Holy Water/Eye Drops/Echo Screen); ported (battle round 13)
 0x007b26d0 function MsAutoInsertCommand_007b26d0 # structure: (chr, command, target, ...): clears a command struct (MsStructClear), fills it and queues it (MsInsertBtlCommand); callers MsAutoCureProcess, MsAutoPhenixProcess, MsAutoPotionProcess (the auto-item abilities); name ours; ported (battle round 12)
 0x007b2740 function MsAutoInsertAbility       # ours: (i, target, after, id, prio): a cleared 0x48-byte block with command id (second 0xff) on target alone inserted (MsInsertBtlCommand(block, prio, 1, after)); MsAutoRelifeProcess_007b2910's; ported (battle round 12)
 0x007b27b0 function MsAutoPhenixProcess       # fh v3:exact 0x007b27c0; ours: the first of i's side with +0x6bc bit 12 free to act throws a Phoenix Down (0x2006, the party's from the bag) via MsAutoInsertCommand_007b26d0; ported (battle round 12)
-0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl
+0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl; ours: Auto-Potion, (i, actor, by) -> Potion/Hi-Potion/X-Potion at half HP or less; ported (battle round 13)
 0x007b2910 function MsAutoRelifeProcess_007b2910 # fh v3:exact 0x007b2920; ours: status bit 9 (Auto-Life): command 0x311f on itself via MsAutoInsertAbility; else +0x5ca cleared, -1; ported (battle round 12)
 0x007b2950 function MsAddYoujinbouCom         # fh switch:bsim1.00 0x7100381b80
 0x007b2980 function MsCheckSummon             # fh v3:exact 0x007b2990

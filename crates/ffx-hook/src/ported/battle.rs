@@ -2904,4 +2904,38 @@ ported! {
     MsStatusDefenseEffect @ 0x0079_ee20 => extern "C" fn ms_status_defense_effect(i: u32, j: u32, bits: u32) -> u32 {
         afterdmg::ms_status_defense_effect(&mut mem(), &mut call_ptr, i, j, bits)
     }
+    /// `MsLimitTypeDamageCheck(i, by, j, actor, hp, raw, crit)`.
+    MsLimitTypeDamageCheck @ 0x007b_0d50 => extern "C" fn ms_limit_type_damage_check(i: u32, by: u32, j: u32, actor: u32, hp: i32, raw: i32, crit: u32) -> u32 {
+        afterdmg::ms_limit_type_damage_check(&mut mem(), i, by, j, actor, hp, raw, crit)
+    }
+    /// `MsLimitTypeStatusCheck(i, by, j, actor, n, bits)`.
+    MsLimitTypeStatusCheck @ 0x007b_12c0 => extern "C" fn ms_limit_type_status_check(i: u32, by: u32, j: u32, actor: u32, n: i32, bits: u32) -> u32 {
+        afterdmg::ms_limit_type_status_check(&mut mem(), i, by, j, actor, n, bits)
+    }
+    /// `MsAutoCureProcess(i, actor, by, poison, zombie, dark, silence)`.
+    MsAutoCureProcess @ 0x007b_2510 => extern "C" fn ms_auto_cure_process(i: u32, actor: u32, by: u32, poison: u32, zombie: u32, dark: u32, silence: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_auto_cure_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, by, poison, zombie, dark, silence)
+    }
+    /// `MsAutoPotionProcess(i, actor, by)`.
+    MsAutoPotionProcess @ 0x007b_2850 => extern "C" fn ms_auto_potion_process(i: u32, actor: u32, by: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_auto_potion_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, by)
+    }
+    /// `AfterDamageProcess(i, k, j, out, flags)`: the sign window, the
+    /// effects, sounds and the achievement through the game.
+    AfterDamageProcess @ 0x0078_f060 => extern "C" fn after_damage_process(i: u32, k: u32, j: u32, out: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::after_damage_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, k, j, out, flags)
+    }
+    /// `MsSetDamage(i, sel, flags)`: its warded-status local in the
+    /// port's frame.
+    MsSetDamage @ 0x0078_d980 => extern "C" fn ms_set_damage(i: u32, sel: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_set_damage(&mut target::Dm::new(&mut m), &host(), &mut s, i, sel, flags)
+    }
 }
