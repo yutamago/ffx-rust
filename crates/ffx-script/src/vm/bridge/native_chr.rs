@@ -409,11 +409,11 @@ pub fn native_nothing<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u
 }
 
 /// `Native_ChrLoadMotionGroup` (`0x00a799b0`, `0x5001`, start): `(n)`
-/// into the args word; `EAX` the args word's address.
+/// into the args word; `EAX` n.
 pub fn native_chr_load_motion_group<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     let n = pop(h, s);
     h.write(a, n);
-    a
+    n
 }
 
 /// `Native_ChrLoadMotionGroup_Result` (`0x00a79a20`, `0x5001`, int):
