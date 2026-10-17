@@ -14904,6 +14904,9 @@
 0x012ffad4 label    g_ChrF117HideCount        # i32: pending hides of model "f117"'s segment 0 queued by Ch_ModelSetHide 0x0082aea0 (4 at most, then starts over)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
+0x01300704 label    g_FadeActive              # u32: a bit per screen fade slot still running (Sg_DrawFilter clears a slot's bit when its frames reach 0)
+0x01300708 label    g_FadeSlots               # 5 x 0x10: mode, r, g, b, i16 frames, total/level, target, step (Sg_DrawFilter, 0x0082c0c0)
+0x01300768 label    g_FocusOn                 # u32: the focus (depth of field) requested; 0x0130076c drawn, 0x01300758/c the depths (Sg_DrawFilter)
 0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
 0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8

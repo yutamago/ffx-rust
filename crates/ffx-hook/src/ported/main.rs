@@ -1343,6 +1343,10 @@ ported! {
     ExportValidateInterface @ 0x0082_02e0 => extern "C" fn export_validate_interface(id: u32) -> u32 {
         control::bridge::export_validate_interface(id)
     }
+    /// `Sg_DrawFilter()`.
+    Sg_DrawFilter @ 0x0082_c0c0 => extern "C" fn sg_draw_filter() {
+        control::bridge::draw_filter(&mut mem());
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())

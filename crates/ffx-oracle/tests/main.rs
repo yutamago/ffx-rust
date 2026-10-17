@@ -2463,6 +2463,7 @@ fn control_synthetic() {
     cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
     round11_main_cases(&mut a, &mut b, &mut rng, 300);
+    draw_filter_cases(&mut a, &mut b, &mut rng, 600);
 }
 
 #[test]
@@ -2491,6 +2492,7 @@ fn control_snapshot() {
     cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
     round11_main_cases(&mut a, &mut b, &mut rng, 300);
+    draw_filter_cases(&mut a, &mut b, &mut rng, 600);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -4527,6 +4529,86 @@ fn round11_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds
         };
         twin("ExportValidateInterface", a, b, 0x0082_02e0, &[id], |_| {
             c::export_validate_interface(id)
+        });
+    }
+}
+
+// Main round 11: the fades and the focus.
+fn draw_filter_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    let log = a.rebase(REC_LOG);
+    for (k, sym, n) in [
+        (82, c::GRAPHIC_HAS_RUN_DRAW_FILTER, 0),
+        (83, c::GRAPHIC_RESET_HAS_RUN_DRAW_FOCUS, 0),
+        (84, c::GRAPHIC_HAS_RUN_DRAW_FOCUS, 0),
+        (85, c::GRAPHIC_SET_FOCUS_Z, 2),
+        (86, c::GRAPHIC_ADD_SCREEN_FADE_TASK, 5),
+        (87, c::SG_DRAW_FOCUS, 1),
+        (88, c::SG_DRAW_LEVEL, 1),
+    ] {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let slots = a.rebase(c::FADE_SLOTS);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        set(
+            a,
+            b,
+            c::FADE_ACTIVE,
+            if rng.below(6) == 0 {
+                0
+            } else {
+                rng.next() & 0x1f
+            },
+        );
+        set(a, b, c::FOCUS_ON, rng.below(2));
+        set(a, b, c::FOCUS_DRAW, rng.below(2));
+        for z in c::FOCUS_Z {
+            set(a, b, z, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        set(a, b, c::ACC_CURRENT_REQUEST, u32::from(rng.below(3) == 0));
+        set(
+            a,
+            b,
+            c::SCREEN_W,
+            if rng.below(2) == 0 { 0x200 } else { 0x280 },
+        );
+        set(a, b, c::DREAM_ON, rng.below(2));
+        set(
+            a,
+            b,
+            c::DREAM_FADE_MODE,
+            if rng.below(2) == 0 { u32::MAX } else { 2 },
+        );
+        set(
+            a,
+            b,
+            c::DREAM_FADE_TOTAL,
+            i32::try_from(rng.below(40)).unwrap() - 4,
+        );
+        set(a, b, c::DREAM_FADE_OUT, rng.below(2));
+        let small = |rng: &mut Xorshift, lo: i32, hi: u32| {
+            i16::try_from(i32::try_from(rng.below(hi)).unwrap() + lo).unwrap()
+        };
+        for i in 0..5 {
+            let s = slots + 0x10 * i;
+            put(a, b, s, u8::try_from(rng.below(10)).unwrap());
+            for o in 1..4 {
+                put(a, b, s + o, u8::try_from(rng.next() & 0xff).unwrap());
+            }
+            let n = if rng.below(5) == 0 {
+                0
+            } else {
+                small(rng, -3, 24)
+            };
+            put(a, b, s + 4, n);
+            let total = small(rng, 1, 40) * if rng.below(6) == 0 { -1 } else { 1 };
+            put(a, b, s + 6, total);
+            put(a, b, s + 8, small(rng, -40, 120));
+            put(a, b, s + 0xa, small(rng, 0, 30));
+        }
+        twin("Sg_DrawFilter", a, b, 0x0082_c0c0, &[], |m| {
+            c::draw_filter(&mut H(m));
         });
     }
 }

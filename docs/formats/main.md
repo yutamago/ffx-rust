@@ -610,3 +610,23 @@ Glue (GS packets and the PS2 DMA FIFO, left to the original):
 `Sg_DrawSetEnvironmentInit` (`0x0082c8d0`) and
 `Sg_DrawSetEnvironmentInitMovie` (`0x0082caa0`), which build GS register
 packets.
+
+`Sg_DrawFilter()` (`0x0082c0c0`) runs the five screen fades at
+`0x01300708` (0x10 each: mode, r, g, b, then `i16` frames left, total or
+level, target, step; `0x01300704` a bit per running slot) and the focus
+(`0x01300768` requested, `0x0130076c` drawn, depths at `0x01300758/c`
+through `graphicSetFocusZ`). Each slot with frames left calls
+`graphicAddScreenFadeTask(r/256, g/256, b/256, a, flags)`:
+
+| mode | alpha | |
+|---|---|---|
+| 0 | the level, moved by its step towards the target | quad `0x0082baf0` when the screen is 0x200 wide and no request is current; dream share |
+| 2 | `1 - (127 - n' 127 / total) / 127`, black | then `Sg_AccSetAlpha(0, 0)` |
+| 3 | `1 - (n' 127 / total) / 127`, black | held at the last frame |
+| 4 | `(n 255 / total) / 127` | dream share `/ 255` |
+| 5 | `(255 - n' 255 / total) / 127` | held; dream share |
+| 6 | `(n 127 / total) / 127` | |
+| 7, 8 | `level / 127` | 7 zeroes the level with the dream effect on; 8 passes flag 0x10 |
+
+`n'` is the frame count after the decrement; integer divisions truncate.
+A total of 0 is a division fault in the original; the port takes 0.
