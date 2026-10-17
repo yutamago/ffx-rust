@@ -6116,6 +6116,38 @@ ported! {
     TOMakePktFont1612Shadow_00906290 @ 0x0090_6290 => extern "C" fn to_make_pkt_font_1612_shadow_default(pen: u32, glyph: u32) {
         tolib::bridge::to_make_pkt_font_1612_default(&mut mem(), pen, glyph, true, call_sym);
     }
+    /// `TODrawCrossMenuIconAbilityName(id, x, y, alpha)`.
+    TODrawCrossMenuIconAbilityName @ 0x008f_4f10 => extern "C" fn to_draw_cross_menu_icon_ability_name(id: u32, x: u32, y: u32, alpha: u32) {
+        let mut base = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut base) as usize as u32;
+        tolib::bridge::to_draw_cross_menu_icon_name(
+            &mut mem(),
+            tolib::bridge::CrossMenuIconName::Ability,
+            id,
+            (x, y),
+            alpha,
+            at,
+            call_sym,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
+    /// `TODrawCrossMenuIconCommandName(id, x, y, alpha)`.
+    TODrawCrossMenuIconCommandName @ 0x008f_5000 => extern "C" fn to_draw_cross_menu_icon_command_name(id: u32, x: u32, y: u32, alpha: u32) {
+        let mut base = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut base) as usize as u32;
+        tolib::bridge::to_draw_cross_menu_icon_name(
+            &mut mem(),
+            tolib::bridge::CrossMenuIconName::Command,
+            id,
+            (x, y),
+            alpha,
+            at,
+            call_sym,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

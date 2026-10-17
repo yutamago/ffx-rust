@@ -14075,6 +14075,83 @@ fn round25_font_1612_dispatch_matches_the_original_on_the_snapshot() {
     round25_font_1612_dispatch(&mut a, &mut b, &mut Xorshift(0x4025_0032));
 }
 
+/// Round 25's cross-menu icon name rows over an entry lookup that hands
+/// out cells, logging stand-ins for the icon and text drawers, and the
+/// original remaps.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round25_icon_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge::{self as t, CrossMenuIconName};
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let entry = alloc(a, b, 0x80);
+    let base = alloc(a, b, 4);
+    let out = alloc(a, b, 4);
+    // lookup(id, &base): logs id, stores *base, returns the entry
+    let mut v = logger(cursor, 0x77);
+    v.pop();
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    v.extend_from_slice(&base.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xb8]);
+    v.extend_from_slice(&entry.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x0079_0970, s);
+    redirect(a, b, 0x0079_a4b0, s);
+    let s = stand_in8(a, b, 0xc0, &logger_args(cursor, 9));
+    redirect(a, b, 0x008e_6af0, s);
+    let s = stand_in8(a, b, 0x140, &logger_args(cursor, 6));
+    redirect(a, b, 0x0090_5ab0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, base, rng.next());
+        let bytes: [u32; 0x20] = std::array::from_fn(|_| rng.next());
+        put(a, b, entry, bytes);
+        let command = k % 2 == 1;
+        let kind = if command {
+            CrossMenuIconName::Command
+        } else {
+            CrossMenuIconName::Ability
+        };
+        let id = rng.next() % 0x200;
+        let x = ((rng.next() % 20000) as f32 / 10.0 - 100.0).to_bits();
+        let y = ((rng.next() % 12000) as f32 / 10.0 - 100.0).to_bits();
+        let alpha = rng.next() % 0x100;
+        eax(
+            a,
+            [0x008f_4f10, 0x008f_5000][usize::from(command)],
+            &[id, x, y, alpha],
+        );
+        t::to_draw_cross_menu_icon_name(b, kind, id, (x, y), alpha, out, call, remap);
+        let stored: u32 = Mem::read(b, out);
+        Mem::write(a, out, stored);
+        same_memory(&format!("icon name {k}"), a, b);
+    }
+}
+
+#[test]
+fn round25_icon_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round25_icon_names(&mut a, &mut b, &mut Xorshift(0x4025_0041));
+}
+
+#[test]
+fn round25_icon_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round25_icon_names(&mut a, &mut b, &mut Xorshift(0x4025_0042));
+}
+
 #[test]
 fn round25_wrappers_match_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

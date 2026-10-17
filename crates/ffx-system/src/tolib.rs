@@ -8735,4 +8735,95 @@ pub mod bridge {
         let pass = if shadow { 0x008f_cca0 } else { 0x008f_cad0 };
         call(mem, pass, &[pen, glyph, 0]);
     }
+
+    /// What a cross-menu icon name row names, with the constants that
+    /// differ between `TODrawCrossMenuIconAbilityName` (`0x008f4f10`) and
+    /// `TODrawCrossMenuIconCommandName` (`0x008f5000`).
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum CrossMenuIconName {
+        /// An ability: `MsGetRomAbility`, icon byte `+0x68`, icon x
+        /// `0x00b49980`, text at (`0x00b5f374`, `0x00b92318`).
+        Ability,
+        /// A command: `MsGetComData`, icon byte `+0x14`, icon x
+        /// `0x00b5a480`, text at (`0x00b5ef30`, `0x00b92314`).
+        Command,
+    }
+
+    /// `TODrawCrossMenuIconAbilityName(id, x, y, alpha)` and
+    /// `TODrawCrossMenuIconCommandName(id, x, y, alpha)`: one row of a
+    /// cross menu, the entry's icon and its name.
+    ///
+    /// The entry record (from `MsGetRomAbility`/`MsGetComData`, which
+    /// also store the text base at `scratch`) gives the name (base +
+    /// word `+0`) and the icon id. The icon goes to
+    /// `DrawCrossMenuIconXYWHRGBA` at (x + `X2(icon x)`, y +
+    /// `Y2(0x00b5f2e8)`) sized `X2(0x00b59830)` × `Y2(0x00b5f304)` in grey
+    /// (0x80); the name to `ToMakeBtlEasyFont` at (x + `X2(text x)`, y +
+    /// `Y2(text y)`) with `alpha`, scale `0x00b5ee10` (0.78) and 1.0. The
+    /// remaps (`graphicUiRemapX2`/`Y2`, `remap(y_axis, v)`) are taken in
+    /// the original's order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_draw_cross_menu_icon_name<M: Mem>(
+        mem: &mut M,
+        kind: CrossMenuIconName,
+        id: u32,
+        (x, y): (u32, u32),
+        alpha: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        const DRAW_ICON: u32 = 0x008e_6af0;
+        const BTL_EASY_FONT: u32 = 0x0090_5ab0;
+        let (lookup, icon_at, icon_x, text_x, text_y) = match kind {
+            CrossMenuIconName::Ability => {
+                (0x0079_0970, 0x68, 0x00b4_9980, 0x00b5_f374, 0x00b9_2318)
+            }
+            CrossMenuIconName::Command => {
+                (0x0079_a4b0, 0x14, 0x00b5_a480, 0x00b5_ef30, 0x00b9_2314)
+            }
+        };
+        let constant = |mem: &M, a: u32| -> f32 { mem.read(mem.rebase(a)) };
+        let entry = call(mem, lookup, &[id, scratch]);
+        let name = u32::from(mem.read::<u16>(entry)).wrapping_add(mem.read(scratch));
+        let icon = u32::from(mem.read::<u8>(entry.wrapping_add(icon_at)));
+        let (x, y) = (f64::from(f32::from_bits(x)), f64::from(f32::from_bits(y)));
+        // `fadd` onto the remapped value, then `fstp dword`
+        #[allow(clippy::cast_possible_truncation)]
+        let shift = |base: f64, r: f32| (f64::from(r) + base) as f32;
+        let value = constant(mem, 0x00b5_f304);
+        let h = remap(mem, true, value);
+        let value = constant(mem, 0x00b5_9830);
+        let w = remap(mem, false, value);
+        let value = constant(mem, 0x00b5_f2e8);
+        let icon_y = shift(y, remap(mem, true, value));
+        let value = constant(mem, icon_x);
+        let icon_x = shift(x, remap(mem, false, value));
+        let args = [
+            icon_x.to_bits(),
+            icon_y.to_bits(),
+            w.to_bits(),
+            h.to_bits(),
+            icon,
+            0x80,
+            0x80,
+            0x80,
+            0x80,
+        ];
+        call(mem, DRAW_ICON, &args);
+        let scale: u32 = mem.read(mem.rebase(0x00b5_ee10));
+        let value = constant(mem, text_y);
+        let name_y = shift(y, remap(mem, true, value));
+        let value = constant(mem, text_x);
+        let name_x = shift(x, remap(mem, false, value));
+        let args = [
+            name,
+            name_x.to_bits(),
+            name_y.to_bits(),
+            alpha,
+            scale,
+            1.0f32.to_bits(),
+        ];
+        call(mem, BTL_EASY_FONT, &args);
+    }
 }

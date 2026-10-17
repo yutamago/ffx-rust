@@ -588,6 +588,16 @@ edge draws ten copies at offsets (±2, ±2), (0, ±2), (±2, 0) and (±1, 0)
 over `graphicFontGetEdgeRatio`. `0x00906270`/`0x00906290` are the face and
 shadow passes with argument 0. Only `graphicFontDraw` emits packets.
 
+`TODrawCrossMenuIconAbilityName` (`0x008f4f10`) and
+`TODrawCrossMenuIconCommandName` (`0x008f5000`) draw one cross-menu row.
+The entry (`MsGetRomAbility`/`MsGetComData`) gives the name offset (word
+`+0`) and the icon (byte `+0x68`/`+0x14`). The icon is drawn by
+`DrawCrossMenuIconXYWHRGBA` at the row plus `X2(0x00b49980)` (command:
+`0x00b5a480`) and `Y2(0x00b5f2e8)`, sized `X2(0x00b59830)` ×
+`Y2(0x00b5f304)`. The name is drawn by `ToMakeBtlEasyFont` at the row plus
+(`0x00b5f374`, `0x00b92318`) (command: `0x00b5ef30`, `0x00b92314`), scale
+0.78.
+
 `TODrawMenuBG` (`0x008f5c10`) draws the menu background as shape -2
 (`TOMkpShapeXYWHUV`) over `(0, 0, [0x00b41d9c], [0x00b41d98])` with UVs up
 to `([0x00b4a1ac], [0x00b55178])`. `TOMkpCrossExtMesFontLClut`
