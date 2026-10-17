@@ -6714,7 +6714,7 @@
 0x00776f00	logic	default (no rule: ported to be safe)
 0x00776f50	logic	default (no rule: ported to be safe)
 0x00776f60	dead	unreachable from the entry point and every pointer table
-0x00777000	logic	default (no rule: ported to be safe)
+0x00777000	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdOpenCheck_sub
 0x00777080	dead	unreachable from the entry point and every pointer table
 0x00777230	logic	default (no rule: ported to be safe)
 0x00777240	dead	unreachable from the entry point and every pointer table
@@ -9571,7 +9571,7 @@
 0x008157a0	logic	default (no rule: ported to be safe)
 0x00815d90	logic	default (no rule: ported to be safe)
 0x00815e10	logic	default (no rule: ported to be safe)
-0x00815e80	logic	default (no rule: ported to be safe)
+0x00815e80	debug	debug name: opu_dbg
 0x00815f10	logic	default (no rule: ported to be safe)
 0x00815f60	logic	default (no rule: ported to be safe)
 0x00816030	logic	default (no rule: ported to be safe)
@@ -14436,7 +14436,7 @@
 0x008dea20	logic	default (no rule: ported to be safe)
 0x008ded00	logic	default (no rule: ported to be safe)
 0x008ded60	logic	default (no rule: ported to be safe)
-0x008dee00	logic	default (no rule: ported to be safe)
+0x008dee00	glue	GS packet API (TODrawMessageWaitNamesp): appends to or kicks a packet; replaced by ffx-render
 0x008df4c0	logic	default (no rule: ported to be safe)
 0x008df4f0	logic	default (no rule: ported to be safe)
 0x008df520	logic	default (no rule: ported to be safe)

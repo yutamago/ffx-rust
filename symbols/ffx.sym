@@ -1637,6 +1637,7 @@
 0x006386c0 function ShaderParamBuffer_SetValue2  # structure: byte-identical twin of ShaderParamBuffer_SetValue 0x00638780 (another template instance); callers graphicSgSetSpecular, PostProcessManager_renderFocusFrame, VFXDynamicGeometry_setPointLightParameters; name ours
 0x00638720 function ShaderParam_CopyToBuffer_00638720 # thiscall(buffer, param, src): copies the parameter's bytes (+8 offset, +0xa size & 0x1fff) into the buffer when they fit, 1 for no source; callers batchSetClothVertexBuffers, the deferred-lighting shadows; same code as ShaderParam_CopyToBuffer_00698960; the render agent's finding (shader parameters into material buffers); own name
 0x00638780 function ShaderParamBuffer_SetValue   # structure: thiscall(buffer {u32 size, data...}, param {+8 u16 offset, +10 u16 size & 0x1fff}, src): memcpy src into the buffer at the parameter's offset; 1 for a null src, 3 out of range, 0 done; a template instance inlined on the Switch (memcpy in PostProcessManager::copyBuffer); twin of 0x006386c0; name ours
+0x00638d40 function SplitScreenStart             # callees: its named callees match the Switch 0x71001d1df0 SplitScreenStart's (similarity 1.00: PhyreScene_GetSplitScreenStat, PhyreScene_SetSplitScreenStat, PhyreScene_SetSplitScreenType); symbols from Fahrenheit's server export
 0x00638d90 function cgraphicSetNowUIType      # fh v3:bsim1.00 0x00638f40
 0x00638e00 function debugDrawKeTh             # fh v3:bsim1.00 0x00638fb0
 0x00638e30 function getCurrentControlMode     # fh v3:bsim1.00 0x00638fe0
@@ -3526,6 +3527,7 @@
 0x0072a690 function pppFpSetWoodMatrix        # fh v3:exact 0x0072a780
 0x0072a750 function pppFpStopStatus           # fh v3:bsim1.00+call.cs 0x0072a840 cdecl
 0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0
+0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export
 0x0072ac20 function ModelBuffer_AllocateBuffer # fh v3:bsim1.00 0x0072ad10
 0x0072ac30 function ModelBuffer_ClearAll      # fh v3:bsim1.00 0x0072ad20
 0x0072ac50 function ModelBuffer_CreateNewBuffer  # layout: alphabetical run between ModelBuffer_ClearAll and ModelBuffer_GetBufferByIndex (1 unnamed in the gap); Switch 0x71002d0370 ModelBuffer_CreateNewBuffer is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -3877,6 +3879,7 @@
 0x00759200 function pppKeBornRnd6             # ppp program table record "pppKeBornRnd6" step
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
+0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export
 0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step
 0x00759620 function pppKeBornPtCmplCon        # ppp program table record "pppKeBornPtCmpl" (0x00c3e1d0) +0x1c set-up
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
@@ -4241,6 +4244,7 @@
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
+0x00777000 function CdOpenCheck_sub              # callees: its named callees match the Switch 0x71003227a0 CdOpenCheck_sub's (similarity 0.80: TkSyncV, movie_wait, read_err_disp_set, sceCdDiskReady); symbols from Fahrenheit's server export
 0x00777230 function ReturnAddress_00777230 # () -> 0x00c41748 (an address in the image); name ours
 0x00777240 function movieOpenCd                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'movieOpenCd() hdd_mode=%d\\n'; Switch 0x7100322db0 movieOpenCd (symbols from Fahrenheit's server export)
 0x00777420 function hdd_state_clear           # (): zeroes the two words at 0x0112a4fc (before g_Hdd_Mounted); name ours
@@ -4877,6 +4881,7 @@
 0x00797080 function msSetChrVisibleReq        # (i, k, v): visibility request +0x16[k] = v; visible (+0x15) when +0x16..+0x19 all set: Ch_SetHideBattle/Effect, Ch_EnMapID(+0x32), Ch_SetCalcNorm(+0x33), msSetChrShadowReq(p,1,-1/0), msSetChrBodyHit; op_et_bindeff for +0x36; recurses to +0x13 and actors with +0x43f == i (with +0x440); weapons with +0x1d; hiding queued in 0x02311060 while 0x011363b8 & 0x01136b58; name ours
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
+0x00797490 function MsAtelActorWorkInit          # callees: its named callees match the Switch 0x710033ced0 MsAtelActorWorkInit's (similarity 0.75: AtelChangeCurrentCtrl, AtelInitInternalActorWork, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0
 0x00797500 function MsAtelCamInit             # fh v3:exact 0x00797510
 0x00797550 function MsAtelCamRegist           # fh v3:exact 0x00797560
@@ -5008,6 +5013,8 @@
 0x0079ddb0 function MsBattleSpecialCameraPause # fh v3:exact 0x0079ddd0
 0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80
+0x0079dfe0 function MsSpCameraProcess            # layout+callees: sorts between MsBattleSpecialInit and MsTransSpPos, and its named callees match the Switch 0x71003797d0 MsSpCameraProcess's (similarity 1.00: MsSetNormalUpVector, MsTransSpPos); symbols from Fahrenheit's server export
+0x0079e1b0 function MsTransSpPos                 # callees: its named callees match the Switch 0x71003796e0 MsTransSpPos's (similarity 1.00: FFXVu0UnitMatrix, MsApplyMatrix, MsRotMatrixX, MsRotMatrixZ); symbols from Fahrenheit's server export
 0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
 0x0079e330 function MsCheckStatCount          # byte 3 of entry i of the counter statuses' table 0x00c42464; Switch MsCheckStatCount sits with MsCheckStat, MsCheckStat2, MsCheckWrongStatus; ported
@@ -5244,6 +5251,8 @@
 0x007a8620 function Native_7000                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8)
 0x007a86e0 function Clamp0To6_007a86e0           # structure: (n) -> n clamped to 0..6; called by the eight battle natives 0x007a6060..0x007a6e10 next to Native_7000; name ours
 0x007a8700 function GetFieldPtr0_007a8700        # auto-port shape (return address of a field's target, cdecl): t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1); callers: Native_703c_Poll, Native_7097_Poll, Native_BtlRunEvent_Poll and 4 more; name ours
+0x007a8720 function MsGetBasicDivide             # callees: its named callees match the Switch 0x7100382290 MsGetBasicDivide's (similarity 1.00: MsGetChr, MsGetChrDir, MsNearRag); symbols from Fahrenheit's server export
+0x007a87f0 function MsGetDirDivide               # callees: its named callees match the Switch 0x7100382180 MsGetDirDivide's (similarity 1.00: MsGetChrDir, MsNearRag, MsPointLen, MsVectorRect2Polar); symbols from Fahrenheit's server export
 0x007a8920 function addMonDieSe                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Please increase ZanmatoSep Size\\n'; Switch 0x7100382390 addMonDieSe (symbols from Fahrenheit's server export)
 0x007a8970 function MsGetGlobal0112c8d8_007a8970 # auto-port shape (return global u32, cdecl): t0 = u32[&0x0112c8d8]; return t0; callers: MsSetChrStatInfo; name ours
 0x007a89c0 function MsSetChrVisibleBtl2Event  # fh switch:cg2 0x7100348680
@@ -5283,6 +5292,7 @@
 0x007ab360 function MsSetMotion               # fh v3:exact 0x007ab380
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520
 0x007ab520 function MsSetMotionReturn         # fh v3:cg3 0x7ab540
+0x007ab540 function MsGetMoveTargetDist          # callees: its named callees match the Switch 0x7100360f30 MsGetMoveTargetDist's (similarity 0.83: MsGetChr, MsGetChrPos, MsGetMoveTargetPos, MsSubPoint, MsVectorLen); symbols from Fahrenheit's server export
 0x007ab6c0 function MsTerminateMotion         # fh v3:exact 0x007ab6e0
 0x007ab730 function MsMotionSpeedReset        # fh switch:bsim1.00 0x71003619f0
 0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
@@ -5306,6 +5316,7 @@
 0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid
 0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
+0x007acc90 function MsActReCommand               # callees: its named callees match the Switch 0x710038bb80 MsActReCommand's (similarity 0.75: MsGetChr, MsGetChrCommand, MsGetCommand); symbols from Fahrenheit's server export
 0x007acd40 function MsActTargetSearch         # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); was Battle_FilterActors
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
 0x007aceb0 function MsActionRequest           # fh call.cs cdecl
@@ -5431,6 +5442,8 @@
 0x007b7280 function MsGetTargetRandomList2    # fh switch:cg4 0x710037d720
 0x007b72c0 function MsGetTargetSortList       # fh v3:exact 0x007b7240
 0x007b78c0 function MsSetBallSpline           # fh v3:exact 0x007b7840
+0x007b7c80 function MsSetBallSplineInit          # callees: its named callees match the Switch 0x710038cd20 MsSetBallSplineInit's (similarity 1.00: MsGetChr, MsGetChrInfo, MsGetChrPos); symbols from Fahrenheit's server export
+0x007b7d00 function MsEffectChrGetLoveLoveMax    # callees: its named callees match the Switch 0x71003917e0 MsEffectChrGetLoveLoveMax's (similarity 1.00: MsGetChrStatDeath, MsGetChrStatStone, MsGetRamChrFemale, MsGetSavePlyJoin); symbols from Fahrenheit's server export
 0x007b7d70 function MsEffectChrMotionIn          # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003916f0 MsEffectChrMotionIn, 2 votes, round 1
 0x007b7e20 function MsEffectChrMotionOut         # layout+callees: sorts between MsEffectChrMotionIn and MsEffectGetBufferAddress, and its named callees match the Switch 0x7100391670 MsEffectChrMotionOut's (similarity 1.00: MsGetChr, MsSetMotion); symbols from Fahrenheit's server export
 0x007b7e80 function MsEffectChrMotionSync        # layout+callees: sorts between MsEffectChrMotionIn and MsEffectGetBufferAddress, and its named callees match the Switch 0x71003917b0 MsEffectChrMotionSync's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
@@ -5652,6 +5665,8 @@
 0x007c56c0 function MsScreenResetShake        # fh v3:exact 0x007c5650
 0x007c56f0 function MsScreenShake                # structure: fills screen shake slot i (< 3) of 0x0113716c; Switch MsScreenShake (120 bytes), sorts after MsScreenResetShake
 0x007c57b0 function MsScreenShake2               # structure: screen shake with brnd, caller Ms_Gui_ShakeProc as on the Switch (MsScreenShake2 0x71003a0700 calls brnd, called by Ms_Gui_ShakeProc)
+0x007c58e0 function MsCamSetBtl                  # callees: its named callees match the Switch 0x71003981f0 MsCamSetBtl's (similarity 1.00: MsGetChrInfo, MsVectorPolar2Rect, MsVectorRect2Polar); symbols from Fahrenheit's server export
+0x007c5c60 function MsCameraSetBtl               # callees: its named callees match the Switch 0x7100397ea0 MsCameraSetBtl's (similarity 0.80: MsCameraGetID, MsCameraIDcheck, MsGetChrBit, MsSetCheckChange); symbols from Fahrenheit's server export
 0x007c5f50 function MsDebugGetFieldNum        # fh v3:bsim1.00 0x007c5ee0
 0x007c5f60 function MsDebugSetScene           # fh v3:exact 0x007c5ef0
 0x007c5fc0 function MsGetBattleName           # fh v3:exact 0x007c5f30
@@ -5845,6 +5860,7 @@
 0x007f67c0 function opus_0154_wave_omd_make   # fh switch:cg2 0x71003e2830
 0x007f7360 function opus_0706_acc_draw           # layout: alphabetical run between opus_0154_wave_omd_make and opus_0706_noise_draw (1 unnamed in the gap); Switch 0x71003e3920 opus_0706_acc_draw is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007f73d0 function opus_0706_noise_draw         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e3820 opus_0706_noise_draw, 4 votes, round 2
+0x007f7e30 function opu_encount                  # callees: its named callees match the Switch 0x71003e8b30 opu_encount's (similarity 0.74: FFXSamp0ViewScreenMatrix, graphicBrokenScreenReset, op_func_after_ot3d_set, op_func_final_set, op_m_copy); symbols from Fahrenheit's server export
 0x007f81e0 function opus_encount0_draw           # layout+callees: sorts between opus_0706_noise_draw and opus_encount4_init, and its named callees match the Switch 0x71003e9050 opus_encount0_draw's (similarity 0.60: op_mul_m, op_rt_m, op_unit_m_scale); symbols from Fahrenheit's server export
 0x007f8480 function opus_encount0_init           # layout: alphabetical run between opus_encount0_draw and opus_encount4_calc (1 unnamed in the gap); Switch 0x71003e8f60 opus_encount0_init is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007f8570 function opus_encount4_calc           # layout+callees: sorts between opus_0706_noise_draw and opus_encount4_init, and its named callees match the Switch 0x71003e9ae0 opus_encount4_calc's (similarity 0.67: Sg_Blur, graphicBrokenScreenStartKeepFrame, graphicBrokenScreenUpdateOpacity, op_random); symbols from Fahrenheit's server export
@@ -6016,6 +6032,9 @@
 0x00801480 function opus_osu_init_group          # (battle i, n): zeroes the first 16 bytes of n 0x100-byte units of g_OpusBattle[i]'s +0x20 table; its only caller 0x007fda80 calls opus_osu_init_group, opus_osu_init, set_ptr32, opus_get_eff_status_index, the callees of the Switch's opu_init, which calls opus_osu_init_group (0x71003f4160); sorts between opus_osu_init and opus_prog_off; the vfx porter's opus_parts_clear
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
+0x008017d0 function opu_local_etc                # callees: its named callees match the Switch 0x71003e41c0 opu_local_etc's (similarity 0.83: op_m_copy, op_mul_m, op_vector_m, opus_no_get, restoreVf00Register); symbols from Fahrenheit's server export
+0x00801ab0 function opu_matrix_etc               # layout+callees: sorts between opu_local_etc and opu_world, and its named callees match the Switch 0x71003e4390 opu_matrix_etc's (similarity 0.62: op_apply_m_w1, op_mul_m, op_rot_m, op_trans_m, op_unit_m); symbols from Fahrenheit's server export
+0x00801d00 function opu_world                    # callees: its named callees match the Switch 0x71003e4080 opu_world's (similarity 0.75: op_apply_m_w1, op_m_copy, op_mul_m33, op_rt_m_6, op_unit_m_scale); symbols from Fahrenheit's server export
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
@@ -6087,6 +6106,8 @@
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
+0x00808cf0 function opu_ffxlight                 # callees: its named callees match the Switch 0x7100403180 opu_ffxlight's (similarity 1.00: FFXVu0AddVector, FFXVu0CopyVector, FFXVu0Normalize, FFXVu0ScaleVector, FFXVu0SubVector); symbols from Fahrenheit's server export
+0x00809620 function opu_rgba_en                  # callees: its named callees match the Switch 0x7100402640 opu_rgba_en's (similarity 0.75: Ch_DrawCalcShade, Ch_DrawGetModelAlpha, Ch_ModelSetAlpha, MagicFile_GetMagicId, op_xyz_scale); symbols from Fahrenheit's server export
 0x0080a560 function opus_chara_rgba_set       # fh v3:exact 0x0080a6c0
 0x0080aa00 function opus_chara_status_rgb_set # fh v3:exact 0x0080ab60
 0x0080abb0 function opus_ffxfocus_free        # fh v3:exact 0x0080ad10
@@ -6100,7 +6121,9 @@
 0x0080bd50 function opp_main                  # fh v3:exact 0x0080bea0
 0x0080c3f0 function opu_end                      # layout+callees: sorts between opp_main and opu_wait, and its named callees match the Switch 0x71003f3230 opu_end's (similarity 1.00: opus_draw_off, opus_prog_off, yonExtMapDeleteId); symbols from Fahrenheit's server export
 0x0080c500 function opu_wait                  # fh switch:bsim1.00 0x71003f32f0
+0x0080ca80 function opu_gw_etc                   # callees: its named callees match the Switch 0x71003f38e0 opu_gw_etc's (similarity 1.00: MsGetDamageInfo, op_irandom_p, op_random); symbols from Fahrenheit's server export
 0x0080cc00 function opu_main_host             # fh v3:exact 0x0080cd60
+0x0080eb50 function opp_mimic                    # callees: its named callees match the Switch 0x71003eb8e0 opp_mimic's (similarity 0.76: Ch_DrawCalcShade, Ch_DrawGetModelAlpha, Ch_GetHide, Ch_GetMotionSpeed, Ch_GetNbModel); symbols from Fahrenheit's server export
 0x0080f210 function opu_mimic                    # layout+callees: sorts between opu_main_host and opus_mdc_make_mimic, and its named callees match the Switch 0x71003eb6a0 opu_mimic's (similarity 0.69: Ch_GetNbModel, Ch_ModelGetNromPtr, Ch_ModelGetVtexPtr, Ch_TextureSetClutBase, Ch_TextureSetImageBase); symbols from Fahrenheit's server export
 0x0080f460 function opus_mdc_make_mimic       # fh v3:exact 0x0080f5c0
 0x0080f580 function opus_mdc_size_get_mimic      # layout+callees: sorts between opus_mdc_make_mimic and opus_mimic_check, and its named callees match the Switch 0x71003ebf00 opus_mdc_size_get_mimic's (similarity 1.00: Ch_ModelCalcSizeEffectPacket, opus_get_osu_by_draw); symbols from Fahrenheit's server export
@@ -6111,20 +6134,31 @@
 0x00810710 function GetFieldPtr_00810710         # auto-port shape (return address of a field's target, cdecl): t0 = u16[(a2 + 0x2)]; return (sx16(t0) + a2); callers: no direct caller; name ours
 0x00810b70 function CopyField21a_00810b70        # auto-port shape (store copy to field, cdecl): t0 = u16[(a0 + 0x21a)]; t1 = u16[(a2 + 0x2)]; t2 = u16[((((sx16(t0) >>s 0xc) & 0x7) * 0x2) + &0x00c4930c)]; u16[(sx16(t2) + a3)] = t1; return (a2 + 0x4); callers: no direct caller; name ours
 0x00810cd0 function CopyField_00810cd0           # auto-port shape (store copy to field, cdecl): t0 = u8[(a2 + 0x2)]; u8[(a3 + 0x4f)] = t0; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810e20 function opp_anmm_fin_en_bone5        # callees: its named callees match the Switch 0x71003f7a90 opp_anmm_fin_en_bone5's (similarity 0.75: Ch_ElemGetParent, op_irandom_p, op_random_p); symbols from Fahrenheit's server export
 0x00810ed0 function opp_anmm_fin_en_bone3x    # fh switch:bsim1.00 0x71003f7b60
 0x00811120 function opp_anm                      # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f7dc0 opp_anm, 3 votes, round 2
 0x00811530 function opp_anm_sippo                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f8110 opp_anm_sippo, 3 votes, round 2
 0x00811bc0 function opp_anm_yodare               # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f86e0 opp_anm_yodare, 4 votes, round 1
 0x008124b0 function opp_anmm                     # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f91d0 opp_anmm, 4 votes, round 1
 0x00812b50 function opp_dtt                      # layout+callees: sorts between opp_anmm and opp_et_ovl, and its named callees match the Switch 0x71003f8ed0 opp_dtt's (similarity 0.67: KeDttSpr_MkGifPk, KeDttSpr_MkGifPk_Pre, op_apply_m_w1, op_rot_m, op_unit_m); symbols from Fahrenheit's server export
+0x00812fa0 function opp_flash                    # callees: its named callees match the Switch 0x71003f8e60 opp_flash's (similarity 1.00: calculateVFXSP_AlphaFunction, graphicAddScreenFadeTask, graphicsRegisterResetScreenFadeDelegation); symbols from Fahrenheit's server export
 0x00813460 function opp_et_ovl                # fh switch:bsim1.00 0x71003fb640
+0x00813480 function op_2point_shadow             # callees: its named callees match the Switch 0x7100405270 op_2point_shadow's (similarity 1.00: op_spline_xyz, op_spline_xyz_table, op_spr_alloc, op_spr_free); symbols from Fahrenheit's server export
 0x00813c20 function updateWeaponShadowDrawData   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71004057a0 updateWeaponShadowDrawData, 3 votes, round 2
 0x00814070 function weaponShadowDrawInit         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100405700 weaponShadowDrawInit, 4 votes, round 4
+0x008143e0 function opu_vibration                # callees: its named callees match the Switch 0x71004062a0 opu_vibration's (similarity 1.00: TkSetVibrateStream, TkStopVibrate, op_oef2_a_get); symbols from Fahrenheit's server export
 0x00814790 function opu_et_ovl                # fh switch:bsim1.00 0x7100406310
 0x008148c0 function opu_dvd                      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004067d0 opu_dvd, 3 votes, round 3
 0x00814a00 function opu_file                     # str-match switch: only user of 8 string(s) held once by both builds, e.g. '(op)\\t\\t\\ttexture count change (%d) !!!\\n'; Switch 0x7100406900 opu_file (symbols from Fahrenheit's server export)
+0x008155b0 function opf_sph                      # callees: its named callees match the Switch 0x71003f6180 opf_sph's (similarity 1.00: op_apply_m_w1, op_rt_m, op_unit_m, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
+0x00815670 function opf_spl_gw                   # callees: its named callees match the Switch 0x71003f6540 opf_spl_gw's (similarity 1.00: op_spline_xyz, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
+0x008157a0 function opu_camera                   # callees: its named callees match the Switch 0x71003fc5b0 opu_camera's (similarity 0.94: MagicFile_GetMagicId, MsBattleGetStatus, MsBattleSpecialCameraPause, MsCameraGetPosNow, MsCameraResetMove); symbols from Fahrenheit's server export
+0x00815d90 function opu_damage                   # layout+callees: sorts between opu_camera and opu_damage_motion, and its named callees match the Switch 0x71003fcec0 opu_damage's (similarity 1.00: MsMergeDamage, MsSetDamage); symbols from Fahrenheit's server export
 0x00815e10 function opu_damage_motion         # fh v3:exact 0x00815f60
+0x00815e80 function opu_dbg                      # layout: alphabetical run between opu_damage_motion and opu_en_etc (2 unnamed in the gap); Switch 0x71003fcfc0 opu_dbg is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00815f10 function opu_death                    # layout: alphabetical run between opu_damage_motion and opu_en_etc (2 unnamed in the gap); Switch 0x71003fd150 opu_death is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00815f60 function opu_en_etc                   # layout+callees: sorts between opu_damage_motion and opu_en_on, and its named callees match the Switch 0x71003fd3c0 opu_en_etc's (similarity 1.00: Ch_WindSet, Ch_WindSetEnable, op_random); symbols from Fahrenheit's server export
+0x00816030 function opu_en_lock                  # layout: alphabetical run between opu_en_etc and opu_en_on (1 unnamed in the gap); Switch 0x71003fbf60 opu_en_lock is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
 0x00816680 function opu_ffx                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd240 opu_ffx's (similarity 0.71: MsEffectMotionLevel, MsEffectReady, Sg_EnableDrawGui, Sg_EnableDrawMap, Sg_EnableDrawMenu); symbols from Fahrenheit's server export
@@ -6138,10 +6172,27 @@
 0x00817300 function opu_sloop                    # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fbde0 opu_sloop's (similarity 0.67: MsGetDamageInfo, op_irandom_p); symbols from Fahrenheit's server export
 0x00817470 function opu_sys                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd1a0 opu_sys's (similarity 1.00: MsEffectWaitFlag); symbols from Fahrenheit's server export
 0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
+0x00817ad0 function opu_level                    # callees: its named callees match the Switch 0x71003fd8e0 opu_level's (similarity 1.00: Ch_EffectGetEffectLevel, Ch_EffectSetEffectLevel, MsGetChrMotionSignal); symbols from Fahrenheit's server export
 0x00817c30 function op_add64                  # (dst, src, n) 64-bit dst = src + (i32) n
 0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
+0x00817f50 function opu_r_en                     # callees: its named callees match the Switch 0x71003ff6d0 opu_r_en's (similarity 0.80: Ch_GetRot, MsGetChrBtlDir, MsSetChrDirTarget, op_deg_get); symbols from Fahrenheit's server export
+0x00818110 function opu_r_etc                    # layout+callees: sorts between opu_r_en and opu_v_2d, and its named callees match the Switch 0x71003ffe60 opu_r_etc's (similarity 1.00: op_deg_in_check); symbols from Fahrenheit's server export
+0x00818200 function opu_r_u                      # layout+callees: sorts between opu_r_en and opu_v_2d, and its named callees match the Switch 0x71003ff9a0 opu_r_u's (similarity 1.00: op_deg_get, opus_no_get); symbols from Fahrenheit's server export
+0x00818dc0 function opu_v_2d                     # callees: its named callees match the Switch 0x7100400620 opu_v_2d's (similarity 0.71: op_mul_m, op_rtp_w1, op_trans_m, op_unit_m, opus_no_get); symbols from Fahrenheit's server export
 0x00818ed0 function opu_v_en                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fe760 opu_v_en, 2 votes, round 2
 0x008190e0 function opu_v_en_move                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fef00 opu_v_en_move, 2 votes, round 1
+0x00819450 function opu_v_etc                    # callees: its named callees match the Switch 0x71003ffa60 opu_v_etc's (similarity 0.75: MsGetMapCenter, Sg_GetSuimen, op_apply_m_w1, op_length_get, op_rt_m_6); symbols from Fahrenheit's server export
+0x00819940 function opu_v_get                    # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003fe690 opu_v_get's (similarity 1.00: opus_no_get); symbols from Fahrenheit's server export
+0x00819a20 function opu_v_rev                    # layout: alphabetical run between opu_v_get and opu_v_scale (1 unnamed in the gap); Switch 0x7100400240 opu_v_rev is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00819af0 function opu_v_scale                  # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003ffee0 opu_v_scale's (similarity 0.67: MsGetChrScale, opus_cscale_get); symbols from Fahrenheit's server export
+0x00819c90 function opu_v_u2                     # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003ff4a0 opu_v_u2's (similarity 1.00: opus_no_get, restoreVf00Register); symbols from Fahrenheit's server export
+0x0081abe0 function opu_vran_etc                 # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x7100400320 opu_vran_etc's (similarity 0.62: op_apply_m_w1, op_random, op_rt_m, op_unit_m, op_xyz_scale); symbols from Fahrenheit's server export
+0x0081afa0 function opu_vzero                    # layout: alphabetical run between opu_vran_etc and opus_get_chr_pos (3 unnamed in the gap); Switch 0x71003fe580 opu_vzero is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0081b170 function opus_ffxdeg_to_normaldeg     # layout: alphabetical run between opu_vran_etc and opus_get_chr_pos (3 unnamed in the gap); Switch 0x71003ff970 opus_ffxdeg_to_normaldeg is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0081b1e0 function opus_get_chr_pos             # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003fec20 opus_get_chr_pos's (similarity 1.00: Ch_GetPos); symbols from Fahrenheit's server export
+0x0081b270 function opus_set_chr_dirf            # callees: its named callees match the Switch 0x71003ff2b0 opus_set_chr_dirf's (similarity 1.00: Ch_SetDirF, MsBattleChrStart, MsSetChrDirF); symbols from Fahrenheit's server export
+0x0081b2b0 function opus_set_chr_pos             # callees: its named callees match the Switch 0x71003ff220 opus_set_chr_pos's (similarity 1.00: Ch_SetPos3, MsBattleChrStart, MsSetChrPos); symbols from Fahrenheit's server export
+0x0081b560 function opu_spl                      # callees: its named callees match the Switch 0x7100401030 opu_spl's (similarity 0.88: op_free, op_malloc, op_mul_m, op_spline_xyz, op_spline_xyz_table); symbols from Fahrenheit's server export
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081c4f0 function opu_md_etc                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100404b50 opu_md_etc, 3 votes, round 1
 0x0081cbd0 function Sqs_CallRpc                  # structure: (cmd): waits for the sound RPC client 0x012f4e20 to be idle (FFXSifCheckStatRpc), then FFXSifCallRpc(client, cmd, send 0x40, recv 0x400) until accepted; 21 callers, the Sqs* IOP command wrappers 0x0081d010..; name ours
@@ -6516,6 +6567,7 @@
 0x0082ce80 function Sg_VramGetAddrZ           # fh v3:bsim1.00 0x0082cf00
 0x0082ce90 function sg_AccSetCurrent          # fh v3:exact 0x0082cf10
 0x0082cf80 function Sg_DrawSetFrame           # (): both FRAME registers for the draw mode (i8 0x01300775): the draw buffer, the 16-bit buffer at 0xd0, or at 0x0130077c; callers Sg_DrawSetEnvironment, Sg_AccDrawBG, Sg_AccSetFrameChr
+0x0082d070 function Sg_ControlMain               # callees: its named callees match the Switch 0x7100427770 Sg_ControlMain's (similarity 0.75: Sg_ControlCamera, TkGetControlerAnalogHist, TkGetControlerHist); symbols from Fahrenheit's server export
 0x0082d180 function Sg_ControlPlayer          # fh switch:cg2 0x7100427b30
 0x0082d7e0 function Sg_GetCurExecFrames       # fh v3:exact+call.cs 0x0082d860 cdecl
 0x0082d810 function Sg_GetExecFrames          # fh v3:cg4 0x82d890
@@ -7887,6 +7939,7 @@
 0x0086ba40 function AtelGetHideStatusFromID   # fh v3:bsim1.00 0x0086b9d0
 0x0086ba60 function Msg_TableTextAlt          # (table, i): entry i's alternate text (+4) in table; offset 0 falls back to entry i's text in the .ebp's section 1; no callers
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
+0x0086bae0 function AtelGetHyoukaMenuEnable      # callees: its named callees match the Switch 0x71004728f0 AtelGetHyoukaMenuEnable's (similarity 1.00: MsBattleCheck, SndIsReadStatus, TkGetTGS, isEternalCalmScene, movie_run_check); symbols from Fahrenheit's server export
 0x0086bb80 function AtelGetIndexWork          # fh v3:exact 0x0086bb10
 0x0086bbf0 function AtelGetKeepBattlePartyFromID # fh v3:exact 0x0086bb80
 0x0086bc10 function AtelIsKeepPlayStatusClear12# !(g_AtelBattleEndStatus +4 bit 12); TkBtlEndCtrl
@@ -8678,6 +8731,7 @@
 0x00897200 function TOBtlDrawStdChrNameMessageWindow # fh call.cs cdecl
 0x00897240 function TOBtlDrawTidusLimitWindow # fh v3:exact 0x008971b0
 0x008974a0 function TOBtlDrawWakkaLimitWindow    # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004a1710 TOBtlDrawWakkaLimitWindow, 3 votes, round 1
+0x008975a0 function TOBtlFinishCommand           # callees: its named callees match the Switch 0x7100499780 TOBtlFinishCommand's (similarity 1.00: MsGetSaveConfigCursorSave, MsSetBtlCommand, TOBtlMemoryCursorPos, TOControlMsSetMenuCommand, TOSeqInitAllScene); symbols from Fahrenheit's server export
 0x008976f0 function TOBtlGetChrName           # fh v3:cg6 0x897660
 0x00897700 function TOBtlGetChrParamFontColor    # layout+callees: sorts between TOBtlGetChrName and TOBtlInit, and its named callees match the Switch 0x71004a1c60 TOBtlGetChrParamFontColor's (similarity 1.00: MsCalcWeakLevel); symbols from Fahrenheit's server export
 0x00897770 function TOBtlLibraGetState        # g_MagicImports slot 373 (1 overlay): (i16) 0x0133f6a8; hidden from the dump
@@ -9255,7 +9309,9 @@
 0x008c32e0 function Gs_Pack4b                 # copy of Gs_Pack4; own name
 0x008c3300 function Gs_Pack5b                 # copy of Gs_Pack5; own name
 0x008c3330 function MenuItem_Second           # (a, b) b; no caller; own name
+0x008c33f0 function NameInputChrChange           # callees: its named callees match the Switch 0x71004da190 NameInputChrChange's (similarity 0.75: MsGetSaveConfigEnglish, TOGetFFXLang, TOGetSaveChrName, TOMenuGetNameMes, TkMn2GetMenuMode); symbols from Fahrenheit's server export
 0x008c3550 function MenuItem_IsUsable2        # (window, list) lists 4 and 3-with-target use the key-item flag 0x0186a280; own name
+0x008c4250 function TkMenuOpenNameEntryWindow    # callees: its named callees match the Switch 0x71004d8350 TkMenuOpenNameEntryWindow's (similarity 0.73: MsGetSaveConfigEnglish, PasswordTextRead, TMn2SetStatusBGDiff, TOGetFFXLang, TOGetSaveChrName); symbols from Fahrenheit's server export
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
 0x008c5450 function TkMenuCtrlItem            # fh v3:exact 0x008c5420
@@ -9341,7 +9397,9 @@
 0x008cd430 function TkMn2CloseSummonGrowWindow # (): close request for 0x0186a5a8 (opened by TkMn2OpenSummonGrowWindow), kept
 0x008cd440 function TkMenuSummonCloseWindow2  # (): close request for 0x0186a5ac (TkMenuCtrlSummon's), forget it
 0x008cd460 function MenuSummon_GrowWindowCtrl_008cd460 # the aeon grow window's control (+0xc of TkMn2OpenSummonGrowWindow's window): states in 0x0186a610, TkMn2StepStatusBG, list ctrl, help message; own name
+0x008cd720 function TkMn2DrawCrossSummonBattleCountPlate # callees: its named callees match the Switch 0x71004e0000 TkMn2DrawCrossSummonBattleCountPlate's (similarity 1.00: MsGetSavePlayerPtr, TOMkpCrossExtMesFontLClut, TOMkpShapeXYWHUVC2, TkMenuStatusMes, TkMn2SetMacroParam); symbols from Fahrenheit's server export
 0x008cdba0 function MenuSummon_GrowWindowDraw_008cdba0 # the aeon grow window's draw (+0x10 of TkMn2OpenSummonGrowWindow's window): TkMn2GetSummonGrow entries of the current aeon, TOMenuGetSummonMes labels, scissored window and scroll parts; own name
+0x008ceb00 function TkMn2DrawSummonPlateCheckHP  # layout+callees: sorts between TkMn2DrawCrossSummonBattleCountPlate and TkMn2OpenSummonGrowWindow, and its named callees match the Switch 0x71004e0160 TkMn2DrawSummonPlateCheckHP's (similarity 0.71: DrawCrossMenuSummonPlateClut, DrawCrossMenuSummonPlateNoHPMPClut, TkMenuGetHP, TkMn2DrawCrossSummonBattleCountPlate, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008cecf0 function MenuSummon_GrowEntry      # (i) TkMn2GetSummonGrow + 8i + 8 * TkMn2GetSummonGrowMax; own name
 0x008ced10 function Math_Clamp1To99           # (n) -> n clamped to 1..99
 0x008ced30 function TkMn2OpenSummonGrowWindow # fh v3:exact 0x008ced00
@@ -9352,16 +9410,20 @@
 0x008cf970 function TkMenuEquipCloseWindow    # (): close request for 0x0186a61c (TkMenuCtrlEquip's), forget it
 0x008cfc30 function MenuEquip_IsAltMode       # 0x0186a624 != 0; own name
 0x008cfd40 function TkMenuEquipClearWindow    # (): 0x0186a61c +0x45 = 0, +0x28 = 0
+0x008cfd70 function TkMn2ArmsRefreshArms         # callees: its named callees match the Switch 0x71004b69a0 TkMn2ArmsRefreshArms's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetBasicWork, AtelGetBindPC, AtelGetTotalActorNumber2, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x008d0430 function MenuEquip_PickItem        # 0x0186a630 = item list id under the equipment cursor, 0xff when 0; own name
 0x008d0460 function TkMenuCtrlLimit           # fh v3:exact 0x008d0430
 0x008d0c90 function TkMenuLimitCloseWindow    # (): close request for 0x0186a714 (TkMenuCtrlLimit's), forget it
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
 0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
+0x008d0eb0 function TkMn2CtrlSelItemsWindow      # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export
+0x008d1a20 function TkMn2DrawSelItemsHelp        # callees: its named callees match the Switch 0x71004d3930 TkMn2DrawSelItemsHelp's (similarity 1.00: MsGetMenuChrInfo, TkMenuMenu1Help, TkMenuSetHelpMessage, TkMn2GetAbilityHelp, TkMn2GetCommandHelp); symbols from Fahrenheit's server export
 0x008d1b50 function TkMenuLimitClearWindow    # (): 0x0186a714 +0x28 = 0, +0x45 = 0
 0x008d1b70 function TkMenuLimitClearWindow2   # (): 0x0186a718 +0x28 = 0, +0x45 = 0
 0x008d1b90 function TkMenuRestartWindow       # (window) -> window: +0x28 = 1, +0x45 = 0 (as TkMenuRestartSubCmdWindow2 for any window)
 0x008d1e00 function TkMenuCtrlStatus          # fh v3:exact 0x008d1dd0
+0x008d2270 function DrawLimitPageOverDrive       # callees: its named callees match the Switch 0x71004e3f10 DrawLimitPageOverDrive's (similarity 1.00: TODrawMenuPlateXYWHType, TOMkpShapeXYWHUV, TOMkpShapeXYWHUVC2, TkMenuGetLimit, TkMenuGetLimitMax); symbols from Fahrenheit's server export
 0x008d2660 function TMn2SetStatusBGDiff       # (step): i16 0x0186a9fc; Switch symbol name (BSim), pairs with TkMn2InitStatusBG
 0x008d2680 function MenuStatus_CloseWindow    # (i) close request for 0x0186a820[i], +0x54 = -0xaa, forget; own name
 0x008d26d0 function TkMn2WindowStepFade       # (window) -> window: with a step (+0x54), +0x52 += it, then at most 0x1000, at least 0
@@ -9381,6 +9443,8 @@
 0x008d4e30 function MenuStatus_GetPos         # (out, alt) u16 pair 0x0186a900 (alt 0x0186a948) + status origin 0x0186a86c; own name
 0x008d4e80 function MenuStatus_GetPos2        # (out, alt) u16 pair 0x0186a918 (alt 0x0186a960) + status origin; own name
 0x008d4ed0 function TkMn2InitStatusBG         # (): both i16 of g_TkMn2StatusBG = 0; Switch symbol name (BSim)
+0x008d5180 function TkMn2MainStatusPlayerStatus  # callees: its named callees match the Switch 0x71004e4bd0 TkMn2MainStatusPlayerStatus's (similarity 0.73: MsGetSavePlayerPtr, TODrawMenuPlateXYWHType, TOMenuGetStatusMes, TOMkpCrossExtMesFontLClut, TOMkpShapeXYWHUV); symbols from Fahrenheit's server export
+0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
@@ -9409,6 +9473,7 @@
 0x008d9b60 function MenuTuto_CloseWindow2     # () tutorial window 0x0186ac38 the same, then TkMn2SeqStopScene("scene9") only after a close; own name
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
+0x008d9e20 function TkMenuCtrlSelFileWindow      # callees: its named callees match the Switch 0x71004db0b0 TkMenuCtrlSelFileWindow's (similarity 0.67: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008db080 function TkMn2GetIShopPos             # str-match switch: only user of 38 string(s) held once by both builds, e.g. 'r_ashmojiplt1'; Switch 0x71004c90d0 TkMn2GetIShopPos (symbols from Fahrenheit's server export)
@@ -9537,7 +9602,9 @@
 0x008de200 function MenuStatus_Second         # (a, b) b; no caller; own name
 0x008dea00 function SetFields_008dea00           # auto-port shape (several stores: set field (constants, arguments, addresses), cdecl): u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0; callers: no direct caller; name ours
 0x008dea20 function MenuStatus_ResetEntry     # (entry) u16 +0 and +0x2c cleared, returns 0; own name
+0x008dee00 function TODrawMessageWaitNamesp      # callees: its named callees match the Switch 0x7100500df0 TODrawMessageWaitNamesp's (similarity 0.73: TOConvAlbhedWord, TODrawChangeMacro2, TOGetChangeMacroWidth, TOGetChangeMacroWordCount, TOGetFontInfo); symbols from Fahrenheit's server export
 0x008df4c0 function StoreComputed_008df4c0       # auto-port shape (several stores: computed, into field, cdecl): t0 = u8[(a0 + 0x5b)]; u8[(a0 + 0x5b)] = ((t0 + 0xf0) & 0xff); u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0; callers: no direct caller; name ours
+0x008df520 function TOFirstInitMessageNormal     # layout+callees: sorts between TODrawMessageWaitNamesp and TOGetGroup, and its named callees match the Switch 0x7100500760 TOFirstInitMessageNormal's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
 0x008df690 function TOSkipCountedCodes_008df690 # cdecl(p, n): TOSkipCode until n codes <= 2 or >= 0x26 passed; name ours
 0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export
@@ -9554,6 +9621,7 @@
 0x008e02f0 function hardCodeToFixTheWrongData    # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'azit0600'; Switch 0x71005002b0 hardCodeToFixTheWrongData (symbols from Fahrenheit's server export)
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
+0x008e19f0 function TOMenuDrawTimer              # callees: its named callees match the Switch 0x71004d6a90 TOMenuDrawTimer's (similarity 1.00: TOGetFFXLang, TOGetFontSpaceInPiexl, ToGetBtlEasyDigitWidth2, ToGetBtlEasyFontWidth, ToMakeBtlEasyEdgeDigit2); symbols from Fahrenheit's server export
 0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
 0x008e2250 function GetGlobal01871558_008e2250   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01871558]; return t0; callers: no direct caller; name ours
 0x008e2260 function MenuMain_OptionY          # (i) i16 0x0187156e + 8i; own name
@@ -9576,6 +9644,8 @@
 0x008e2d60 function MenuWorldMap_OpenWindow   # () g_TkMenuWorldMapWindow: callbacks 0x008e2b00/0x008e2b30/0x008e2b60, mode 7, tint 0x80 x3, +0x68 6; own name
 0x008e2dd0 function TkMenuWorldMapWindowSetWord68 # cdecl(v): word +0x68 of *g_TkMenuWorldMapWindow = v, returns the window; caller TkMenuCtrlWorldMap; name ours
 0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0; window 0x023cc120: state +0x94 == 2: TOSeqStopScene(1, 0x00b66904); +0x41 = 1; pointer cleared
+0x008e2e20 function TOMenuCtrlYesNoWindow        # layout+callees: sorts between TOMenuCloseYesNoWindow and TOMenuDrawYesNoWindow, and its named callees match the Switch 0x71004e7560 TOMenuCtrlYesNoWindow's (similarity 1.00: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
+0x008e2f80 function TOMenuDrawYesNoWindow        # callees: its named callees match the Switch 0x71004e77d0 TOMenuDrawYesNoWindow's (similarity 0.67: TODrawMenuPlateXYWHType, TOMkpCrossExtMesFontLClut, TOMkpShapeXYWHUV, TOSeqStartScene, TkMn2DrawCrossCursor); symbols from Fahrenheit's server export
 0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
 0x008e33a0 function TkMenuOpenSubCmdWindow    # (x, items, c) TkMenuOpenSubCmdWindowMain with d 0; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
 0x008e33c0 function TkMenuOpenSubCmdWindow2   # (x, items, c, d) a jump to TkMenuOpenSubCmdWindowMain; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
@@ -9615,6 +9685,7 @@
 0x008e6cc0 function DrawCrossMenuScrollParts  # fh v3:exact+call.cs 0x008e6cc0 cdecl
 0x008e6e10 function DrawCrossMenuSummonPlateClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100524e90 DrawCrossMenuSummonPlateClut's (similarity 0.69: TOGetFFXLang, TOGetSaveChrName, TOMkpShapeXYWHUV, TkMenuGetHP, TkMenuGetMP); symbols from Fahrenheit's server export
 0x008e7110 function DrawCrossMenuSummonPlateNoHPMPClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100525170 DrawCrossMenuSummonPlateNoHPMPClut's (similarity 0.60: TOGetSaveChrName, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008e75c0 function DrawMesFontLClutTypeRGBA_ForHelp # callees: its named callees match the Switch 0x710050fcc0 DrawMesFontLClutTypeRGBA_ForHelp's (similarity 0.82: TOAddFontWidthSpace, TOAddPktChangeMacro_help, TODrawScaleButtonIconRGBA, TOGetFontInfo, TOGetGroup); symbols from Fahrenheit's server export
 0x008e7a90 function DrawScaleButtonIconRGBA   # fh v3:exact 0x008e7a90
 0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl
 0x008e7ed0 function GetLocationText           # fh switch:bsim1.00 0x710050f050
@@ -11455,12 +11526,15 @@
 0x00a6cf10 function op_normal_light44_ffx     # fh v3:exact 0x00a6cf10
 0x00a6cfb0 function op_refrection_st_float    # fh v3:cg7 0xa6cfb0
 0x00a6d380 function op_vertex_normal_point44_ffx # fh v3:exact 0x00a6d380
+0x00a6d670 function op_vertex_normal_point44_ffx_2 # callees: its named callees match the Switch 0x71003df590 op_vertex_normal_point44_ffx_2's (similarity 0.78: Ch_DrawCalcShade, Ch_GetChrRenderInstance, MagicFile_GetMagicId, graphicPS2LightingSetupEffect, op_ffxlight_to_omdlight_0279); symbols from Fahrenheit's server export
+0x00a6d890 function op_0437_vertex_normal_point44_ffx # callees: its named callees match the Switch 0x7100871320 op_0437_vertex_normal_point44_ffx's (similarity 1.00: FFXVu0ApplyMatrix, op_ffxlight_to_omdlight, op_matrix_light4_vector, user_aligned_malloc); symbols from Fahrenheit's server export
 0x00a6dbe0 function opp_0437_cmd_a6dbe0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x6000 sets up the part's buffers and calls opus_0437_dot_draw, opus_0437_draw (per bone, bone set 0x0080e160/0x0080e900), 0x00a6ed40 and op_m_copy; ported in crates/ffx-vfx slots
 0x00a6e2e0 function opus_0437_dot_draw        # fh switch:cg2 0x7100870250
 0x00a6e5d0 function opus_0437_dot_set            # layout+callees: sorts between opus_0437_dot_draw and opus_0437_draw, and its named callees match the Switch 0x71008701d0 opus_0437_dot_set's (similarity 1.00: op_xyz_scale); symbols from Fahrenheit's server export
 0x00a6e650 function opus_0437_draw            # fh switch:cg2 0x7100870ea0
 0x00a6ed40 function opus_0437_poly_check         # layout+callees: sorts between opus_0437_draw and opus_0582_draw, and its named callees match the Switch 0x7100870640 opus_0437_poly_check's (similarity 1.00: FFXVu0ApplyMatrix, op_mul_m, op_random, op_xyz_scale, user_free); symbols from Fahrenheit's server export
 0x00a6f4d0 function opp_mdc_draw_a6f4d0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) kinds 0x2000/0x1000 draw a character model with a texture (0x00808a90 record, graphicVFXIsTextureWithBpLoaded) through graphicSetNoLightSpecularPassParam / 0x006439b0 or op1_mdc_ref_nolight, with per-magic alpha and gain cases; ported in crates/ffx-vfx slots
+0x00a70210 function opus_0279_draw               # callees: its named callees match the Switch 0x710086e4f0 opus_0279_draw's (similarity 0.71: op_ffxambient_to_omdambient, op_refrection_st_float, op_spr_alloc, op_spr_free, op_vertex_normal_point44_ffx_2); symbols from Fahrenheit's server export
 0x00a70910 function opp_0582_cmd_a70910         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x8000 allocates the part's tables, calls opus_0582_dot_draw / _break_make / _draw / _break_draw, the character texture bases (Ch_TextureSetClutBase 0x3c00, Ch_TextureSetImageBase 0x2ee0) and Sg_FadeOutW(1); ported in crates/ffx-vfx slots
 0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
 0x00a71780 function opus_0582_break_make      # fh switch:cg4 0x71008725b0
@@ -11476,6 +11550,7 @@
 0x00a75170 function opus_map_del_draw         # fh switch:cg2 0x7100874df0
 0x00a756e0 function opp_chr_center_a756e0       # ours (g_MagicImports slot used by every overlay): (obj, cmd) on g_EtChrHandles[rec+0x18]: kind 0 MsSetChrVisibleAppear; kind 0x1000 sets shader parameter "center" (0x00b7c568) through 0x0063d880 from the part's two points times Ch_GetRootScaledMatrix
 0x00a76720 function opp_part_a76720             # ours (g_MagicImports slot used by every overlay): (obj, cmd) kind 0 clears u16 rec+0xc0, kind 0x1000 calls 0x00a76770(obj, rec); returns cmd+2
+0x00a76770 function opus_0283_draw               # callees: its named callees match the Switch 0x710086ed50 opus_0283_draw's (similarity 0.82: InitVFXRenderData, MagicFile_GetMagicId, graphicVFXGetRenderDataByInstance, graphicVFXUpdate, op_m_copy); symbols from Fahrenheit's server export
 0x00a76b60 function opp_chr_fade_center_a76b60  # ours (g_MagicImports slot used by every overlay): (obj, cmd) on g_EtChrHandles[rec+0x18]: kind 0x1000 bone set 0x0080e160/0x0080e900, part matrices 0x008062c0, per bone the unit's +0x90 point through the inverse into graphicCharacterInstanceSetBTUFadeCenter (0x0063b5d0) / 1000; kind 0x2000 moves a unit by bone record 0x00803200; ported in crates/ffx-vfx slots
 0x00a779e0 function Native_4034_ResultF          # native 0x4034 float handler (g_NativeTables group 4 entry 0x34, ffx-script native_counts); 91 calls in the shipped scripts; calls AtelPopStackInteger, Sg_SetMapAlphaFast; name by id
 0x00a77a10 function Native_4036                  # native 0x4036 int handler (g_NativeTables group 4 entry 0x36, ffx-script native_counts); 32 calls in the shipped scripts; calls AtelPopStackFloat, Sg_GlobalSetWind; name by id

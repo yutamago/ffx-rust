@@ -17,7 +17,9 @@ seeds): 98-99.5% with the defaults.
   tools/naming/calleematch.py --out PROPOSALS.tsv [--min 0.6] [--shared 1]
   tools/naming/calleematch.py --holdout 0.2 [--seed 1]   # measure precision
   wider: --span 0x3000 --file 0x20000 (holdout 97-99.3%, about twice the names);
-  --callers compares named callers too (holdout 99%, a few more)
+  --callers compares named callers too (holdout 99%, a few more);
+  --anywhere --shared 3 --min 0.65 drops the layout: mutual best callee matches
+  over all unused Switch names (holdout 98-100%)
   then: tools/naming/apply.py PROPOSALS.tsv  (repeat: new names make new gaps)
 
 Inputs: $FFX_WORK/decomp/{functions,call_sites}.tsv and
@@ -89,6 +91,8 @@ def main():
                     help="largest Switch distance between the two neighbours")
     ap.add_argument("--span", type=lambda s: int(s, 0), default=0x800)
     ap.add_argument("--callers", action="store_true", help="compare named callers too")
+    ap.add_argument("--anywhere", action="store_true",
+                    help="ignore the layout: mutual best callee matches over all unused Switch names")
     ap.add_argument("--holdout", type=float, default=0)
     ap.add_argument("--seed", type=int, default=1)
     args = ap.parse_args()
@@ -173,6 +177,37 @@ def main():
             else:
                 ci += 1
 
+    if args.anywhere:
+        # no layout: mutual best matches over every unused Switch name, by
+        # callees alone (needs more common callees and a higher similarity)
+        results = []
+        index = defaultdict(set)
+        tc = {}
+        for t in tsorted:
+            tc[t] = their_callee_set(t)
+            for c in tc[t]:
+                index[c].add(t)
+        unnamed = [a for a in order if a not in names and len(ocallees.get(a, ())) >= args.shared]
+        best_of = {}
+        for a in unnamed:
+            cand = set()
+            for c in ocallees[a]:
+                cand |= index.get(c, set())
+            scored = sorted(((jaccard(ocallees[a], tc[t]), t) for t in cand
+                             if len(ocallees[a] & tc[t]) >= args.shared), reverse=True)
+            if scored and scored[0][0] >= args.min and (len(scored) < 2 or scored[1][0] <= scored[0][0] - args.margin):
+                best_of[a] = scored[0]
+        by_name = defaultdict(list)
+        for a, (s, t) in best_of.items():
+            by_name[t].append((s, a))
+        for t, lst in by_name.items():
+            lst.sort(reverse=True)
+            if len(lst) > 1 and lst[1][0] > lst[0][0] - args.margin:
+                continue
+            s, a = lst[0]
+            x = theirs[t][0][0]
+            results.append((a, t, x, "-", "-", s, sorted(ocallees[a] & tc[t])))
+
     # a name two gaps propose (their spans overlap) is ambiguous: drop both
     count = defaultdict(int)
     for r in results:
@@ -187,7 +222,8 @@ def main():
         print(f"holdout {len(hidden)}: {len(got)} recovered, {right} right, {len(results) - len(got)} others")
         return
     symlib.write_tsv(args.out, [
-        (a, t, f"layout+callees: sorts between {p} and {q}, and its named callees match the Switch "
+        (a, t, (f"layout+callees: sorts between {p} and {q}, and its" if p != "-" else
+                "callees: its") + f" named callees match the Switch "
                f"0x{x:x} {t}'s (similarity {s:.2f}: {', '.join(c[:5])}); symbols from Fahrenheit's server export")
         for a, t, x, p, q, s, c in results])
     print(f"{len(results)} proposals -> {args.out}")
