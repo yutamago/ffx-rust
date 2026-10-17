@@ -9,6 +9,11 @@ functions most used), then smaller first.
 Columns: address, module, bytes, callers, name (and calls into imports,
 which need a platform equivalent). Functions too short to hook that only
 return (dbgPrintf, FlushCache) block nobody.
+
+Only logic is listed (symbols/classes.tsv, tools/classify.py), and only
+logic callees block: glue, platform, debug and dead functions are not
+ported exactly, so a port keeps calling the original for them (through
+the bridge). --all lists every category.
 """
 import argparse
 import os
@@ -42,6 +47,7 @@ def main():
     ap.add_argument("--named", action="store_true", help="only functions with a name")
     ap.add_argument("--max-bytes", type=int, default=0)
     ap.add_argument("--min-bytes", type=int, default=5)
+    ap.add_argument("--all", action="store_true", help="every category, not only logic")
     args = ap.parse_args()
 
     names = progress.symbols()
@@ -49,6 +55,11 @@ def main():
     module = progress.placement(rows, names)
     size = {a: s for a, _, s in rows}
     ported = set(progress.ported())
+    category = progress.classes()
+
+    def logic(a):
+        return category.get(a, "logic") == "logic"
+
     callees = defaultdict(set)
     callers = defaultdict(set)
     imports = defaultdict(int)
@@ -70,7 +81,7 @@ def main():
     def blocking(a):
         return [c for c in callees[a]
                 if c != a and c not in ported and c not in stub
-                and progress.KIND.get(module.get(c)) == "game"]
+                and progress.KIND.get(module.get(c)) == "game" and logic(c)]
 
     out = []
     for a, _, s in rows:
@@ -78,6 +89,8 @@ def main():
         if progress.KIND.get(m) != "game" or a in ported or s < args.min_bytes:
             continue
         if args.module and m != args.module:
+            continue
+        if not args.all and not logic(a):
             continue
         if args.named and a not in names:
             continue
