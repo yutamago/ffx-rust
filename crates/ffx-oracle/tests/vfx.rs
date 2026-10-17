@@ -5569,6 +5569,42 @@ fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -
     log
 }
 
+/// [`deref_recorder_with`] with 32-word entries (31 logged words), for
+/// requests too large for the 16-word form.
+fn wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let log = p.alloc(4 + 0x100 * 128);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x07]); // shl ecx, 7
+    let mut pos = 0u32;
+    for (k, &n) in (0u8..).zip(words) {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        if n == 0 {
+            c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+            c.extend((log + 4 + 4 * pos).to_le_bytes());
+            pos += 1;
+        } else {
+            for j in 0..n {
+                c.extend([0x8b, 0x50, 4 * j]); // mov edx, [eax + 4j]
+                c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend((log + 4 + 4 * pos).to_le_bytes());
+                pos += 1;
+            }
+        }
+    }
+    assert!(pos <= 31);
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [count] or [ret]
+    c.extend(ret.unwrap_or(log).to_le_bytes());
+    c.push(0xc3);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
 #[test]
 #[allow(clippy::too_many_lines)]
 fn opp_draw_part_matches_the_original() {
@@ -9106,6 +9142,101 @@ fn lns_lp_t_ot_draw_matches_the_original() {
                     assert_eq!((frame - 8) & !0xf, at);
                     d::ppp_ke_lns_lp_t_ot_draw(o, obj, frame_no, at, &mut call_original);
                     None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn mdl_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_7770);
+        // the renderer's entry points recorded, the request by its 18
+        // words; the level hash, the render-data lookup and the two
+        // alpha helpers from cells
+        let cells = p.alloc(0x10);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
+        deref_recorder_with(&mut p, 0x0064_53d0, &[0, 0], Some(cells + 4));
+        deref_recorder_with(&mut p, 0x0071_2c30, &[0], Some(cells + 8));
+        deref_recorder_with(&mut p, 0x0071_2d00, &[0], Some(cells + 0xc));
+        wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 18], None);
+        wide_recorder(&mut p, 0x0071_0fd0, &[0, 0, 0, 18, 0], None);
+        wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 18, 0], None);
+        deref_recorder(&mut p, 0x0064_5600, &[0, 0]);
+        deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
+        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10), p.alloc(4));
+        let (env, env2, recs, models, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x80),
+        );
+        let slot = p.sym(d::ENV_SLOT);
+        let (cur, cpart, shift) = (
+            p.sym(d::CURRENT_PROGRAM),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+        );
+        let r0 = p.sym(0x00c8_f508);
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(recs, 0x100, &mut rng);
+            p.fill(models, 0x40, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            let s = if rng.chance(20) { 4 * rng.below(4) } else { 0 };
+            p.set(shift, s);
+            p.set(cpart, part);
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, model);
+            // get_ptr32 of the model record's +0x1c: a pointer into models
+            for k in 0..8u32 {
+                let o = rng.below(0x20);
+                p.set(recs + 32 * k + 0x1c, models + o);
+            }
+            p.set(obj + 0x90, models + rng.below(0x20));
+            p.set(obj + 0x94, models + rng.below(0x20));
+            p.set(cells, if rng.chance(10) { 0xec1u32 } else { rng.next() });
+            p.set(cells + 4, u32::from(rng.chance(50)));
+            let (x, y) = (rng.next(), rng.next());
+            p.set(cells + 8, x);
+            p.set(cells + 0xc, y);
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            // the request's untouched words (+0xb, +0x30): the same stale
+            // stack on both sides
+            let n = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * n - 4 - 0x200 - 4 * n - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let (s1, s2) = (rng.next(), rng.next());
+            for base in [at, frame] {
+                p.set(base - 0x78, s1);
+                p.set(base - 0x50, s2);
+            }
+            check_deep_n(
+                &mut p,
+                "pppDrawMdlDraw",
+                0x0073_7770,
+                &[obj, key, prog],
+                |o, frame| {
+                    Some(d::ppp_draw_mdl_draw(
+                        o,
+                        obj,
+                        key,
+                        prog,
+                        frame,
+                        &mut call_original,
+                    ))
                 },
             );
         }
