@@ -379,6 +379,46 @@ pub mod bridge {
         }
         u32::MAX
     }
+
+    /// `g_pppCameraMatrix` (`0x0230ff60`).
+    const CAMERA_MATRIX: u32 = 0x0230_ff60;
+    /// `g_pppWorldMatrix` (`0x0230ffa0`), its translation at `+0x30`.
+    const WORLD_MATRIX: u32 = 0x0230_ffa0;
+    /// `g_pppFpWoodMatrix`: the billboard rotation `pppFpSetWoodMatrix`
+    /// builds from the camera; `pppFpSetDrawMatrix` mode 2 views through it.
+    const FP_WOOD_MATRIX: u32 = 0x0230_fea0;
+    /// `g_pppViewMatrix`.
+    const VIEW_MATRIX: u32 = 0x0230_ff20;
+    /// `g_pppViewMatrixCopy`.
+    const VIEW_MATRIX_COPY: u32 = 0x0230_fe20;
+
+    /// `pppFpSetDrawMatrix(mode)` (`0x0072a260`): `g_pppViewMatrix` for a
+    /// field effect's draws (the mode's low byte): 1 keeps
+    /// `g_pppWorldMatrix`'s rotation with its position moved by
+    /// `g_pppCameraMatrix`; 2 is `g_pppWorldMatrix x g_pppFpWoodMatrix`;
+    /// anything else `g_pppWorldMatrix x g_pppCameraMatrix`. Then copied to
+    /// `g_pppViewMatrixCopy`, which it returns (`FFXVu0CopyMatrix`'s eax).
+    pub fn ppp_fp_set_draw_matrix(mem: &mut impl Mem, mode: u32) -> u32 {
+        use ffx_ps2::vu0::bridge as vu0;
+        use ffx_system::math::bridge as math;
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let (view, world, camera) = (
+            r(mem, VIEW_MATRIX),
+            r(mem, WORLD_MATRIX),
+            r(mem, CAMERA_MATRIX),
+        );
+        match mode & 0xff {
+            1 => {
+                vu0::matrix_copy(mem, view, world);
+                vu0::apply_matrix(mem, view + 0x30, camera, world + 0x30);
+            }
+            2 => math::mul4x4(mem, view, r(mem, FP_WOOD_MATRIX), world),
+            _ => math::mul4x4(mem, view, camera, world),
+        }
+        vu0::matrix_copy(mem, r(mem, VIEW_MATRIX_COPY), view)
+    }
 }
 
 #[cfg(test)]

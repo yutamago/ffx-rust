@@ -3833,3 +3833,35 @@ fn round16_vm_helpers_match_the_original() {
         }
     }
 }
+
+/// The ctrl work's default start callback (`0x008683e0`) on every ctrl
+/// work in use: each worker runs until its init is done (Rust's
+/// `Script_Run` against the original), then the signals are decoded.
+#[test]
+fn ctrl_start_matches_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    for c in ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        clear_stacks(&mut a, &mut b);
+        let ra = match a.call(a.rebase(0x0086_83e0), Conv::Cdecl, &[c]) {
+            Ok(r) => r.eax,
+            Err(e) => {
+                eprintln!("ctrl {c:#x}: the original stops: {e}");
+                continue;
+            }
+        };
+        let rb = hp::atel_ctrl_start(&mut Run(&mut b), c);
+        assert_eq!(ra, rb, "0x008683e0 {c:#x}");
+        native_no_diff(&mut a, &mut b, &format!("0x008683e0 {c:#x}"));
+    }
+}
