@@ -1603,6 +1603,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     });
     local_words(a, b);
     rect_words(a, b);
+    unplaced_rows(a, b, out);
     same("MsCommandCueProcess", a, b);
 }
 
@@ -2090,6 +2091,7 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         })
     });
     local_words(a, b);
+    unplaced_rows(a, b, out);
     same("MsSetDeath", a, b);
     twin("MsSetDeathAll", a, b, 0x0079_1760, &[], 0, |m| {
         dm(m, |m| {
@@ -2099,6 +2101,7 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         0
     });
     local_words(a, b);
+    unplaced_rows(a, b, out);
     same("MsSetDeathAll", a, b);
 }
 
@@ -2598,6 +2601,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                 },
             );
             local_words(a, b);
+            unplaced_rows(a, b, out);
             same("MsDamageCheckDeath", a, b);
         }
     }
@@ -2758,6 +2762,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                 },
             );
             local_words(a, b);
+            unplaced_rows(a, b, out);
             same("MsCommandReturnChrStatusAll", a, b);
         }
         // Poison at a turn's end (the hit motion reads the positions)
@@ -2790,6 +2795,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                 },
             );
             local_words(a, b);
+            unplaced_rows(a, b, out);
             same("MsPoisonProcess", a, b);
         }
     }
@@ -2957,6 +2963,7 @@ fn whole_turn(
         0
     });
     local_words(a, b);
+    unplaced_rows(a, b, out);
     same("MsBattleProcess_InputCue", a, b);
 }
 
