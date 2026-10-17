@@ -4072,7 +4072,7 @@
 0x006ee570	logic	default (no rule: ported to be safe)
 0x006eee40	logic	default (no rule: ported to be safe)
 0x006ef2d0	logic	default (no rule: ported to be safe)
-0x006ef310	logic	default (no rule: ported to be safe)
+0x006ef310	debug	reviewed: a single ret (no-op stub) (system round 22)
 0x006ef320	platform	only called from platform code (0x6efe20 and 6 more)
 0x006ef630	platform	only called from platform code (0x6efe20 and 2 more)
 0x006ef6f0	logic	default (no rule: ported to be safe)
@@ -4186,7 +4186,7 @@
 0x006f2940	dead	unreachable from the entry point and every pointer table
 0x006f2970	dead	unreachable from the entry point and every pointer table
 0x006f29a0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x006f29f0	logic	default (no rule: ported to be safe)
+0x006f29f0	glue	reviewed: thiscall trampoline: calls [ecx+0x10]([ecx+0x14]), returns 0 (script rounds 11-15)
 0x006f2a40	dead	unreachable from the entry point and every pointer table
 0x006f2a80	dead	unreachable from the entry point and every pointer table
 0x006f2ab0	dead	unreachable from the entry point and every pointer table
@@ -5684,7 +5684,7 @@
 0x007571a0	dead	unreachable from the entry point and every pointer table
 0x00757210	logic	default (no rule: ported to be safe)
 0x00757240	logic	default (no rule: ported to be safe)
-0x00757250	glue	thin wrapper: only forwards to glue code (graphicVFXDestroy)
+0x00757250	glue	reviewed: pppDrawFilterDes: only releases the renderer instance (graphicVFXDestroy) (effects round 19)
 0x00757280	logic	default (no rule: ported to be safe)
 0x00757340	dead	unreachable from the entry point and every pointer table
 0x00757370	logic	default (no rule: ported to be safe)
@@ -7761,7 +7761,7 @@
 0x007a4940	logic	default (no rule: ported to be safe)
 0x007a49c0	logic	default (no rule: ported to be safe)
 0x007a49f0	logic	default (no rule: ported to be safe)
-0x007a4a60	logic	default (no rule: ported to be safe)
+0x007a4a60	debug	reviewed: debug native 0x70b1 (script rounds 11-15)
 0x007a4a90	logic	default (no rule: ported to be safe)
 0x007a4b00	logic	default (no rule: ported to be safe)
 0x007a4b90	logic	default (no rule: ported to be safe)
@@ -11020,7 +11020,7 @@
 0x00858490	logic	default (no rule: ported to be safe)
 0x008584d0	logic	default (no rule: ported to be safe)
 0x00858500	logic	default (no rule: ported to be safe)
-0x00858520	logic	default (no rule: ported to be safe)
+0x00858520	debug	reviewed: debug native 0x00f8 (script rounds 11-15)
 0x00858580	logic	default (no rule: ported to be safe)
 0x008585d0	logic	default (no rule: ported to be safe)
 0x00858610	logic	default (no rule: ported to be safe)
@@ -12219,12 +12219,12 @@
 0x00878140	logic	default (no rule: ported to be safe)
 0x008781b0	logic	default (no rule: ported to be safe)
 0x008781d0	logic	default (no rule: ported to be safe)
-0x008781f0	logic	default (no rule: ported to be safe)
-0x00878230	logic	default (no rule: ported to be safe)
+0x008781f0	debug	reviewed: debug native 0xc057 (script rounds 11-15)
+0x00878230	debug	reviewed: debug native 0xc056 (script rounds 11-15)
 0x00878280	logic	default (no rule: ported to be safe)
 0x008782a0	logic	default (no rule: ported to be safe)
 0x008782f0	logic	default (no rule: ported to be safe)
-0x00878330	logic	default (no rule: ported to be safe)
+0x00878330	debug	reviewed: debug native 0xc05b (script rounds 11-15)
 0x00878390	logic	default (no rule: ported to be safe)
 0x008783c0	logic	default (no rule: ported to be safe)
 0x00878470	logic	default (no rule: ported to be safe)
@@ -12236,8 +12236,8 @@
 0x008785b0	logic	default (no rule: ported to be safe)
 0x00878600	logic	default (no rule: ported to be safe)
 0x00878630	logic	default (no rule: ported to be safe)
-0x00878650	logic	default (no rule: ported to be safe)
-0x00878690	logic	default (no rule: ported to be safe)
+0x00878650	debug	reviewed: debug native 0xc00c (script rounds 11-15)
+0x00878690	debug	reviewed: debug native 0xc00b (script rounds 11-15)
 0x008786d0	logic	default (no rule: ported to be safe)
 0x00878700	logic	default (no rule: ported to be safe)
 0x00878750	logic	default (no rule: ported to be safe)
@@ -12245,7 +12245,7 @@
 0x008787d0	logic	default (no rule: ported to be safe)
 0x00878860	logic	default (no rule: ported to be safe)
 0x00878880	logic	default (no rule: ported to be safe)
-0x008788a0	logic	default (no rule: ported to be safe)
+0x008788a0	debug	reviewed: debug native 0xc018 (script rounds 11-15)
 0x008788e0	logic	default (no rule: ported to be safe)
 0x00878920	logic	default (no rule: ported to be safe)
 0x00878960	logic	default (no rule: ported to be safe)
@@ -12256,13 +12256,13 @@
 0x00878a90	logic	default (no rule: ported to be safe)
 0x00878ac0	logic	default (no rule: ported to be safe)
 0x00878ae0	logic	default (no rule: ported to be safe)
-0x00878b00	logic	default (no rule: ported to be safe)
+0x00878b00	debug	reviewed: debug native 0xc022 (script rounds 11-15)
 0x00878b40	logic	default (no rule: ported to be safe)
 0x00878c10	logic	default (no rule: ported to be safe)
 0x00878c70	logic	default (no rule: ported to be safe)
 0x00878ce0	logic	default (no rule: ported to be safe)
 0x00878d90	logic	default (no rule: ported to be safe)
-0x00878e10	logic	default (no rule: ported to be safe)
+0x00878e10	debug	reviewed: debug native 0xc02a (script rounds 11-15)
 0x00878e60	logic	default (no rule: ported to be safe)
 0x00878e80	logic	default (no rule: ported to be safe)
 0x00878ef0	logic	default (no rule: ported to be safe)
@@ -12503,7 +12503,7 @@
 0x00885990	dead	unreachable from the entry point and every pointer table
 0x008859b0	dead	unreachable from the entry point and every pointer table
 0x00885a80	logic	default (no rule: ported to be safe)
-0x00885b00	logic	debug-sounding name, but used by logic: AtelActorSetUp2, AtelCommonSetUp
+0x00885b00	debug	reviewed: AtelSetUpSourceDebug: line table for the script debugger (script rounds 11-15)
 0x00885b80	dead	unreachable from the entry point and every pointer table
 0x00885b90	dead	unreachable from the entry point and every pointer table
 0x00885ba0	logic	default (no rule: ported to be safe)
@@ -13303,7 +13303,7 @@
 0x008aba30	logic	default (no rule: ported to be safe)
 0x008aba60	logic	default (no rule: ported to be safe)
 0x008abab0	logic	default (no rule: ported to be safe)
-0x008abb00	logic	default (no rule: ported to be safe)
+0x008abb00	glue	reviewed: vtable call wrapper (system round 21)
 0x008abb10	dead	unreachable from the entry point and every pointer table
 0x008abd00	logic	debug-sounding name, but used by logic: TOControlMessageWindow, TOControlMessageWindowForMenu, TkBtlEndCtrl
 0x008abd20	logic	debug-sounding name, but used by logic: 0x76e4b0, 0x76f470, MsBattleProcess
@@ -13363,7 +13363,7 @@
 0x008af2a0	dead	unreachable from the entry point and every pointer table
 0x008af380	logic	default (no rule: ported to be safe)
 0x008af4f0	logic	default (no rule: ported to be safe)
-0x008af590	logic	default (no rule: ported to be safe)
+0x008af590	glue	reviewed: TOSetEnvMovieMessage: GS register write (system round 21)
 0x008af5c0	logic	default (no rule: ported to be safe)
 0x008af690	logic	default (no rule: ported to be safe)
 0x008af6a0	logic	default (no rule: ported to be safe)
@@ -13476,7 +13476,7 @@
 0x008b71f0	dead	unreachable from the entry point and every pointer table
 0x008b7240	logic	default (no rule: ported to be safe)
 0x008b78b0	logic	default (no rule: ported to be safe)
-0x008b7be0	logic	default (no rule: ported to be safe)
+0x008b7be0	glue	reviewed: TOGetFontWidthInterMode: glue (system round 21)
 0x008b7c00	logic	default (no rule: ported to be safe)
 0x008b7c40	logic	default (no rule: ported to be safe)
 0x008b7c60	logic	default (no rule: ported to be safe)
@@ -13616,13 +13616,13 @@
 0x008bed50	dead	unreachable from the entry point and every pointer table
 0x008bed70	dead	unreachable from the entry point and every pointer table
 0x008bedb0	dead	unreachable from the entry point and every pointer table
-0x008bedd0	logic	default (no rule: ported to be safe)
+0x008bedd0	glue	reviewed: TOMenuGetNameMes: glue (system round 21)
 0x008bedf0	logic	default (no rule: ported to be safe)
 0x008bee00	logic	default (no rule: ported to be safe)
 0x008bee10	dead	unreachable from the entry point and every pointer table
 0x008bee30	logic	default (no rule: ported to be safe)
 0x008bee50	logic	default (no rule: ported to be safe)
-0x008bee70	logic	default (no rule: ported to be safe)
+0x008bee70	glue	reviewed: TOMenuGetStatusMes: glue (system round 21)
 0x008bee90	logic	default (no rule: ported to be safe)
 0x008beeb0	logic	default (no rule: ported to be safe)
 0x008bef10	logic	default (no rule: ported to be safe)
@@ -14722,7 +14722,7 @@
 0x00901c10	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00901c20	dead	unreachable from the entry point and every pointer table
 0x00901c50	glue	GS packet API (TOMkpEasyMesFontLCenter): appends to or kicks a packet; replaced by ffx-render
-0x00901cb0	logic	default (no rule: ported to be safe)
+0x00901cb0	glue	reviewed: wraps 0x8ed0a0 and TOCtrlPkt: packet emission (system round 22)
 0x00901ce0	dead	unreachable from the entry point and every pointer table
 0x00901d10	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
 0x00901d40	dead	unreachable from the entry point and every pointer table
@@ -14775,10 +14775,10 @@
 0x00903300	glue	GS packet API (TOMkpSetEnvSubFont): appends to or kicks a packet; replaced by ffx-render
 0x00903320	dead	unreachable from the entry point and every pointer table
 0x009034b0	glue	GS packet API (TOMkpShapePartIndexXYWHC2): appends to or kicks a packet; replaced by ffx-render
-0x00903a10	glue	GS packet API (TOMkpShapeXY): appends to or kicks a packet; replaced by ffx-render
+0x00903a10	glue	reviewed: TOMkpShapeXY: packet emission (system round 22)
 0x00903a50	glue	GS packet API (TOMkpShapeXYC2): appends to or kicks a packet; replaced by ffx-render
 0x00903a80	dead	unreachable from the entry point and every pointer table
-0x00903b70	glue	GS packet API (TOMkpShapeXYWHC2): appends to or kicks a packet; replaced by ffx-render
+0x00903b70	glue	reviewed: TOMkpShapeXYWHC2: packet emission (system round 22)
 0x00903bb0	glue	GS packet API (TOMkpShapeXYWHUV): appends to or kicks a packet; replaced by ffx-render
 0x00903ee0	glue	GS packet API (TOMkpShapeXYWHUVC2): appends to or kicks a packet; replaced by ffx-render
 0x00904250	dead	unreachable from the entry point and every pointer table
