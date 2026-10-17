@@ -7492,3 +7492,133 @@ fn round11_lns_and_cluts_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round11b_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_a730);
+        deref_recorder(&mut p, 0x0062_f500, &[0]);
+        let cells = p.alloc(16);
+        for (k, sym) in [0x0079_50f0u32, 0x0079_5a20, 0x0082_aba0, 0x0082_ad70]
+            .into_iter()
+            .enumerate()
+        {
+            float_stub(&mut p, sym, cells + 4 * u32::try_from(k).unwrap());
+        }
+        let (m, v, sa, sb) = (p.alloc(0x40), p.alloc(0x10), p.alloc(0x20), p.alloc(0x20));
+        let eff = p.sym(et::bridge::EFF.sym);
+        let parts = p.alloc(0x200);
+        let pairs = p.sym(op::bridge::PAIR_TABLE.sym);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        for _ in 0..3000 {
+            p.fill(m, 0x40, &mut rng);
+            for i in 0..4 {
+                let x = rng.float();
+                p.set(v + 4 * i, x);
+            }
+            p.check("op_unit_m_scale2", 0x007e_a730, &[m, v], |o| {
+                Some(op::bridge::op_unit_m_scale2(o, m, v))
+            });
+            for (name, at, msg) in [
+                ("op_fp_effect_free", 0x007f_cc40u32, 0x00b5_84e4u32),
+                ("op_fp_effect_init", 0x007f_cc60, 0x00b5_84c8),
+            ] {
+                let ovl = p.sym(op::bridge::OEF2_CLUT_OVL.sym);
+                for i in 0..64 {
+                    p.set(ovl + 4 * i, rng.pick(&[0u32, 0x4000_0000, 1, 0x4000_0001]));
+                }
+                p.check(name, at, &[], |o| {
+                    Some(op::bridge::op_fp_effect_reset(o, msg, &mut call_original))
+                });
+            }
+            // op_et_prayeff_send_read_through
+            for i in 0..512u32 {
+                p.set(eff + 0x20 * i, rng.below(2000));
+                p.set(eff + 0x20 * i + 4, parts + 4 * rng.below(0x60));
+            }
+            let id = rng.below(2000);
+            p.check("op_et_prayeff_send_read_through", 0x007f_c920, &[id], |o| {
+                Some(op::bridge::op_et_prayeff_send_read_through(
+                    o,
+                    id,
+                    &mut call_original,
+                ))
+            });
+            // op_deg_in_check
+            #[allow(clippy::cast_precision_loss)] // small
+            let ang = |r: &mut Xorshift| {
+                f32::from_bits(if r.chance(10) {
+                    r.float()
+                } else {
+                    (r.below(0x3000) as f32 - 0x800 as f32).to_bits()
+                })
+            };
+            let (a, b, c) = (ang(&mut rng), ang(&mut rng), ang(&mut rng));
+            p.check(
+                "op_deg_in_check",
+                0x007e_7f60,
+                &[a.to_bits(), b.to_bits(), c.to_bits()],
+                |o| Some(op::bridge::op_deg_in_check(o, a, b, c)),
+            );
+            // op_str_equal
+            for i in 0..8 {
+                let ch = rng.pick(&[b'a', b'A', b'z', b'Z', b'[', b'@', 0xc1, b'q', 0]);
+                p.set(sa + i, ch);
+                let other = if rng.chance(70) {
+                    ch ^ (u8::from(rng.chance(50)) << 5)
+                } else {
+                    b'q'
+                };
+                p.set(sb + i, other);
+            }
+            p.set(sa + 8, 0u8);
+            p.set(sb + 8, 0u8);
+            let (x, y) = (rng.pick(&[sa, sa, 0]), rng.pick(&[sb, sb, 0]));
+            let nocase = rng.pick(&[0u32, 1, 0x100]);
+            p.check("op_str_equal", 0x007e_2600, &[x, y, nocase], |o| {
+                Some(op::bridge::op_str_equal(o, x, y, nocase))
+            });
+            // op_pair_index
+            let n = rng.pick(&[0u32, 1, 3, 8, u32::MAX, 0x8000_0000]);
+            p.set(pairs, n);
+            for i in 1..10 {
+                p.set(pairs + 8 * i, rng.below(4));
+                p.set(pairs + 8 * i + 4, rng.below(4));
+            }
+            let (a2, b2) = (rng.below(4), rng.below(4));
+            if n.cast_signed() < 9 || n == u32::MAX {
+                p.check("op_pair_index", 0x00a7_0ce0, &[a2, b2], |o| {
+                    Some(op::bridge::op_pair_index(o, a2, b2))
+                });
+            }
+            // opus_cscale_get
+            for k in 0..4 {
+                let x = finite(&mut rng);
+                p.set(cells + 4 * k, x);
+            }
+            if rng.chance(20) {
+                let x: u32 = p.get(cells);
+                p.set(cells + 4, x);
+                p.set(cells + 12, p.get::<u32>(cells + 8));
+            }
+            let chr = rng.below(0xf0);
+            p.set(handles + 4 * chr, rng.next());
+            let battle = rng.pick(&[0u32, 1]);
+            check_st0(
+                &mut p,
+                "opus_cscale_get",
+                0x0080_0c10,
+                &[chr, battle],
+                |o| {
+                    f64::from(opus::bridge::opus_cscale_get(
+                        o,
+                        chr,
+                        battle,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+    }
+}

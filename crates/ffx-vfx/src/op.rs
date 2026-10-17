@@ -2198,4 +2198,130 @@ pub mod bridge {
         OEF2_CLUT_OVL_COUNT.set(mem, (k + 1) as u16);
         k.cast_signed()
     }
+
+    /// `op_unit_m_scale2(m, v)` (`0x007ea730`): `m` zeroed (`memset`), its
+    /// diagonal `v.x`, `v.y`, `v.z`, 1.0. Returns `v` (left in `eax`).
+    pub fn op_unit_m_scale2(mem: &mut impl Mem, m: u32, v: u32) -> u32 {
+        mem.write(m, [0u32; 16]);
+        for (i, at) in [0u32, 0x14, 0x28].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            let x: u32 = mem.read(v.wrapping_add(4 * i as u32));
+            mem.write(m.wrapping_add(at), x87::load(x));
+        }
+        mem.write(m.wrapping_add(0x3c), 1.0f32);
+        v
+    }
+
+    /// `op_fp_effect_free()` (`0x007fcc40`) and `op_fp_effect_init()`
+    /// (`0x007fcc60`): a `dbgPrintf` (`msg`, through `call`), then the
+    /// overlay CLUTs of bit 30 cleared (`op_oef2_tex_clut_ovl_clear`).
+    /// Returns its result.
+    pub fn op_fp_effect_reset<M: Mem>(
+        mem: &mut M,
+        msg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+        let m = Global::<u32>::new(msg).ptr(mem).addr;
+        call(mem, f, &[m]);
+        op_oef2_tex_clut_ovl_clear(mem, 0x4000_0000)
+    }
+
+    /// `op_et_prayeff_send_read_through(id)` (`0x007fc920`): after a
+    /// `dbgPrintf(0x00b58568)` (through `call`), the first `g_EtEff`
+    /// record with that ID gets flag 0x1000 in its part's `u16 +0xb0`.
+    /// Returns the part, or the table's end when there is none.
+    pub fn op_et_prayeff_send_read_through<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+        let m = Global::<u32>::new(0x00b5_8568).ptr(mem).addr;
+        call(mem, f, &[m]);
+        let eff = crate::et::bridge::EFF.ptr(mem);
+        for i in 0..crate::et::bridge::EFFS {
+            let e = eff.at(i).addr;
+            if mem.read::<u32>(e) == id {
+                let part: u32 = mem.read(e + 4);
+                let v: u16 = mem.read(part.wrapping_add(0xb0));
+                mem.write(part.wrapping_add(0xb0), v | 0x1000);
+                return part;
+            }
+        }
+        eff.at(crate::et::bridge::EFFS).addr
+    }
+
+    /// `op_deg_in_check(a, b, c)` (`0x007e7f60`): whether angle `a` lies in
+    /// the arc from `b` to `c` (each truncated, `_ftol2_sse`, to 12 bits),
+    /// the arc wrapping when `b > c`; 1 or 0.
+    pub fn op_deg_in_check(mem: &impl Mem, a: f32, b: f32, c: f32) -> u32 {
+        let t = |x: f32| {
+            (ffx_bridge::x87::ftol(mem, x87::Reg::load_f32(x).value()) & 0xfff).cast_signed()
+        };
+        let (x, y, z) = (t(a), t(b), t(c));
+        let inside = |x: i32, z: i32| x <= z;
+        let r = if y > z {
+            y <= x || inside(x, z)
+        } else {
+            y <= x && inside(x, z)
+        };
+        u32::from(r)
+    }
+
+    /// `op_str_equal_007e2600(a, b, nocase)` (`0x007e2600`): -1 when the
+    /// two strings are equal (ASCII letters folded to lower case when
+    /// `nocase`), else 0; 0 for a null string.
+    pub fn op_str_equal(mem: &impl Mem, a: u32, b: u32, nocase: u32) -> u32 {
+        if a == 0 || b == 0 {
+            return 0;
+        }
+        let fold = |c: u8| {
+            if nocase != 0 && c.wrapping_sub(b'A') <= 0x19 {
+                c.wrapping_add(0x20)
+            } else {
+                c
+            }
+        };
+        let mut i = 0u32;
+        loop {
+            let x = fold(mem.read(a.wrapping_add(i)));
+            let y = fold(mem.read(b.wrapping_add(i)));
+            if x != y {
+                return 0;
+            }
+            if x == 0 {
+                return u32::MAX;
+            }
+            i += 1;
+        }
+    }
+
+    /// `g_OpPairTable` (`0x022fb400`): a count, then (a, b) word pairs from
+    /// entry 1.
+    pub const PAIR_TABLE: Global<u32> = Global::new(0x022f_b400);
+
+    /// `op_pair_index_00a70ce0(a, b)` (`0x00a70ce0`): the index (from 1) of
+    /// the pair (`a`, `b`) in `PAIR_TABLE`, appended when absent (the
+    /// count's carry going into entry 0's second word). Returns the index.
+    pub fn op_pair_index(mem: &mut impl Mem, a: u32, b: u32) -> u32 {
+        let t = PAIR_TABLE.ptr(mem).addr;
+        let n: u32 = mem.read(t);
+        let mut i = 1u32;
+        while i.cast_signed() <= n.cast_signed() {
+            let e = t.wrapping_add(8 * i);
+            if mem.read::<u32>(e) == a && mem.read::<u32>(e + 4) == b {
+                return i;
+            }
+            i += 1;
+        }
+        let (k, carry) = n.overflowing_add(1);
+        let hi: u32 = mem.read(t + 4);
+        mem.write(t + 4, hi.wrapping_add(u32::from(carry)));
+        mem.write(t, k);
+        mem.write(t.wrapping_add(k.wrapping_mul(8)), a);
+        let k: u32 = mem.read(t);
+        mem.write(t.wrapping_add(k.wrapping_mul(8)).wrapping_add(4), b);
+        k
+    }
 }

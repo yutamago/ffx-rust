@@ -1309,6 +1309,38 @@ ported! {
     pppKeLnsCrnUpdate @ 0x0075_aab0 => extern "C" fn ppp_ke_lns_crn_update(obj: u32, key: u32, ctrl: u32) -> u32 {
         prog::bridge::ppp_ke_lns_crn_update(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_unit_m_scale2(m, v)`.
+    op_unit_m_scale2 @ 0x007e_a730 => extern "C" fn op_unit_m_scale2(m: u32, v: u32) -> u32 {
+        op::bridge::op_unit_m_scale2(&mut mem(), m, v)
+    }
+    /// `op_fp_effect_free()`.
+    op_fp_effect_free @ 0x007f_cc40 => extern "C" fn op_fp_effect_free() -> u32 {
+        op::bridge::op_fp_effect_reset(&mut mem(), 0x00b5_84e4, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_fp_effect_init()`.
+    op_fp_effect_init @ 0x007f_cc60 => extern "C" fn op_fp_effect_init() -> u32 {
+        op::bridge::op_fp_effect_reset(&mut mem(), 0x00b5_84c8, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_prayeff_send_read_through(id)`.
+    op_et_prayeff_send_read_through @ 0x007f_c920 => extern "C" fn op_et_prayeff_send_read_through(id: u32) -> u32 {
+        op::bridge::op_et_prayeff_send_read_through(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_deg_in_check(a, b, c)`.
+    op_deg_in_check @ 0x007e_7f60 => extern "C" fn op_deg_in_check(a: u32, b: u32, c: u32) -> u32 {
+        op::bridge::op_deg_in_check(&mem(), f32::from_bits(a), f32::from_bits(b), f32::from_bits(c))
+    }
+    /// `op_str_equal_007e2600(a, b, nocase)`.
+    op_str_equal_007e2600 @ 0x007e_2600 => extern "C" fn op_str_equal(a: u32, b: u32, nocase: u32) -> u32 {
+        op::bridge::op_str_equal(&mem(), a, b, nocase)
+    }
+    /// `op_pair_index_00a70ce0(a, b)`.
+    op_pair_index_00a70ce0 @ 0x00a7_0ce0 => extern "C" fn op_pair_index(a: u32, b: u32) -> u32 {
+        op::bridge::op_pair_index(&mut mem(), a, b)
+    }
+    /// `opus_cscale_get(chr, battle)`: a float in `ST0`.
+    opus_cscale_get @ 0x0080_0c10 => extern "C" fn opus_cscale_get(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_cscale_get(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
