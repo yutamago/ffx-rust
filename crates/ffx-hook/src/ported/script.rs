@@ -2,6 +2,7 @@
 
 use ffx_script::vm::bridge as atel;
 use ffx_script::vm::bridge::globals as g;
+use ffx_script::vm::bridge::helpers as hp;
 use ffx_script::vm::bridge::native;
 use ffx_script::vm::bridge::native_btl;
 use ffx_script::vm::bridge::native_cam;
@@ -15,6 +16,54 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `Script_StopTurn`.
+    Script_StopTurn @ 0x0086_3fe0 => extern "C" fn h_863fe0(w: u32, l: u32) -> u32 {
+        hp::script_stop_turn(&mut mem(), w, l)
+    }
+    /// `Atel_SetLevelVectors`.
+    Atel_SetLevelVectors @ 0x0086_f780 => extern "C" fn h_86f780(w: u32, a: u32, b: u32, c: u32) -> u32 {
+        hp::atel_set_level_vectors(&mut mem(), w, a, b, c)
+    }
+    /// `Atel_SetWorkerFlag200`.
+    Atel_SetWorkerFlag200 @ 0x0087_12a0 => extern "C" fn h_8712a0(w: u32, on: u32) -> u32 {
+        hp::atel_set_worker_flag_200(&mut mem(), w, on)
+    }
+    /// `Atel_BinTableCount`.
+    Atel_BinTableCount @ 0x0086_ac60 => extern "C" fn h_86ac60(b: u32) -> u32 {
+        hp::atel_bin_table_count(&mem(), b)
+    }
+    /// `Atel_BinTableEntryA`.
+    Atel_BinTableEntryA @ 0x0086_ac30 => extern "C" fn h_86ac30(b: u32, i: u32) -> u32 {
+        hp::atel_bin_table_entry_a(&mem(), b, i)
+    }
+    /// `Atel_BinTableEntryB`.
+    Atel_BinTableEntryB @ 0x0086_ac90 => extern "C" fn h_86ac90(b: u32, i: u32) -> u32 {
+        hp::atel_bin_table_entry_b(&mem(), b, i)
+    }
+    /// `AtelGetSnd3dWork`.
+    AtelGetSnd3dWork @ 0x0087_73f0 => extern "C" fn h_8773f0(i: u32) -> u32 {
+        hp::atel_get_snd3d_work(&mem(), i)
+    }
+    /// `AtelSoundTableGet_00876860`.
+    AtelSoundTableGet_00876860 @ 0x0087_6860 => extern "C" fn h_876860(k: u32, i: u32) -> u32 {
+        hp::atel_sound_table_get(&mem(), k, i)
+    }
+    /// `Atel_GetWindowStatus`.
+    Atel_GetWindowStatus @ 0x0086_be60 => extern "C" fn h_86be60(i: u32) -> u32 {
+        hp::atel_get_window_status(&mem(), i)
+    }
+    /// `Atel_WindowsBusy`.
+    Atel_WindowsBusy @ 0x0086_c8b0 => extern "C" fn h_86c8b0() -> u32 {
+        hp::atel_windows_busy(&mem())
+    }
+    /// `Atel_CtrlRunning`.
+    Atel_CtrlRunning @ 0x0086_c530 => extern "C" fn h_86c530(strict: u32) -> u32 {
+        hp::atel_ctrl_running(&mem(), strict)
+    }
+    /// `AtelAllClearBindMask`.
+    AtelAllClearBindMask @ 0x0086_0f50 => extern "C" fn h_860f50() -> u32 {
+        hp::atel_all_clear_bind_mask(&mut mem())
+    }
     /// `AtelGetBasicWork(index)`: a worker of the current ctrl work.
     AtelGetBasicWork @ 0x0086_a830 => extern "C" fn atel_get_basic_work(index: i32) -> u32 {
         atel::atel_get_basic_work(&mut mem(), index)
@@ -2244,6 +2293,22 @@ ported! {
     /// `Native_7052(worker, args, stack)`.
     Native_7052 @ 0x007a_7e10 => extern "C" fn n_7a7e10(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7052(&mut mem(), w, a, s)
+    }
+    /// `AtelCall_Math_ATan2_RF(worker, args, stack)`.
+    AtelCall_Math_ATan2_RF @ 0x0087_7b30 => extern "C" fn n_877b30(w: u32, a: u32, s: u32) -> f64 {
+        native_chr::atel_call_math_atan2_rf(&mut mem(), w, a, s)
+    }
+    /// `Native_5037(worker, args, stack)`.
+    Native_5037 @ 0x00a7_a140 => extern "C" fn n_a7a140(w: u32, a: u32, s: u32) -> u32 {
+        native_chr::native_5037(&mut mem(), w, a, s)
+    }
+    /// `Native_6077_ResultF(worker, args, stack)`.
+    Native_6077_ResultF @ 0x007b_9190 => extern "C" fn n_7b9190(w: u32, a: u32, s: u32) -> f64 {
+        native_chr::native_6077(&mut mem(), w, a, s)
+    }
+    /// `Native_c025(worker, args, stack)`.
+    Native_c025 @ 0x0087_8c70 => extern "C" fn n_878c70(w: u32, a: u32, s: u32) -> u32 {
+        native_chr::native_c025(&mut mem(), w, a, s)
     }
     /// `Native_506d(worker, args, stack)`.
     Native_506d @ 0x00a7_9a80 => extern "C" fn n_a79a80(w: u32, a: u32, s: u32) -> u32 {

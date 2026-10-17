@@ -700,9 +700,10 @@ impl Oracle {
     pub fn write(&mut self, addr: u32, bytes: &[u8]) -> Result<()> {
         self.touch(addr, bytes.len());
         self.uc.mem_write(u64::from(addr), bytes)?;
-        let base = self.uc.get_data().image_base;
-        if addr >= base && addr < base.saturating_add(0x0080_0000) && !bytes.is_empty() {
-            // into the code: drop translations of it
+        if !bytes.is_empty() {
+            // drop any translation of the written bytes: tests write code
+            // anywhere (stubs in .reloc, the stub area), and a stale
+            // translation keeps running the old bytes
             self.uc
                 .ctl_remove_cache(u64::from(addr), u64::from(addr) + bytes.len() as u64)?;
         }

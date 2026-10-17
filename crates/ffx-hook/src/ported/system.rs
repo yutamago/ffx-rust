@@ -265,6 +265,88 @@ impl<M: Mem> tolib::bridge::LimitWindowCalls<M> for GameMenu {
     }
 }
 
+/// A CRT `_CI*` intrinsic through the game's import thunk at `sym`: `x`
+/// in ST0 (`fld qword`), the result read back from ST0 (`fstp qword`).
+fn intrinsic(sym: u32, x: f64) -> f64 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let f = crate::rebase(sym) as u32;
+    // SAFETY: the thunk jumps to the CRT intrinsic, which takes its
+    // argument in ST0 and leaves the result there (eax, ecx, edx, the x87
+    // and SSE registers clobbered; edi kept).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut out = 0f64;
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, x);
+        f64::NAN
+    }
+}
+
+/// A cdecl function of no arguments at `sym` that returns a float in ST0,
+/// read back with `fstp qword`.
+fn st0_result(sym: u32) -> f64 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let f = crate::rebase(sym) as u32;
+    // SAFETY: a cdecl function of no arguments; it leaves its result in
+    // ST0 and keeps edi.
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut out = 0f64;
+        std::arch::asm!(
+            "call {f}",
+            "fstp qword ptr [edi]",
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = f;
+        f64::NAN
+    }
+}
+
+impl<M: Mem> tolib::bridge::PadInput<M> for GameMenu {
+    fn cur_time(&mut self, _mem: &mut M) -> f64 {
+        st0_result(0x0063_0c60)
+    }
+    fn hist(&mut self, mem: &mut M, a: u32, b: u32, c: u32) -> u32 {
+        call_sym(mem, 0x0088_8d70, &[a, b, c])
+    }
+    fn analog(&mut self, mem: &mut M, a: u32, b: u32, axis: u32, d: u32) -> u32 {
+        call_sym(mem, 0x0088_8c20, &[a, b, axis, d])
+    }
+}
+
+impl<M: Mem> tolib::bridge::NearTarget<M> for GameMenu {
+    fn btl_pos(&mut self, mem: &mut M, chr: u32, vec: u32) {
+        call_sym(mem, 0x0079_48e0, &[chr, vec]);
+    }
+    fn dist(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0079_4e00, &[chr])
+    }
+    fn sqrt(&mut self, _mem: &mut M, x: f64) -> f64 {
+        intrinsic(0x0094_97b8, x)
+    }
+    fn acos(&mut self, _mem: &mut M, x: f64) -> f64 {
+        intrinsic(0x0094_98da, x)
+    }
+}
+
 impl<M: Mem> menu::bridge::MagicFileCalls<M> for GameMenu {
     fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>) {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
@@ -4543,6 +4625,1036 @@ ported! {
             |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
             |m, table| tolib::bridge::font_width(m, text, kind, out, table, &mut GameMenu),
         )
+    }
+    /// `TOBtlSearchRevNearTarget()`.
+    TOBtlSearchRevNearTarget @ 0x0089_90f0 => extern "C" fn to_btl_search_rev_near_target() -> u32 {
+        let mut v = [0f32; 4];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = v.as_mut_ptr() as u32;
+        let r = tolib::bridge::btl_search_rev_near_target(&mut mem(), at, &mut GameMenu);
+        std::hint::black_box(&mut v);
+        r
+    }
+    /// `TOInitSceneMessageWindow()`.
+    TOInitSceneMessageWindow @ 0x008a_dbf0 => extern "C" fn to_init_scene_message_window() {
+        tolib::bridge::init_scene_message_window(&mut mem());
+    }
+    /// `TOSetExeMessageArea(bank)`.
+    TOSetExeMessageArea @ 0x008b_86e0 => extern "C" fn to_set_exe_message_area(bank: u32) {
+        tolib::bridge::set_exe_message_area(&mut mem(), bank);
+    }
+    /// `TOInitMessageCallBack(msg)`.
+    TOInitMessageCallBack @ 0x008d_f6d0 => extern "C" fn to_init_message_call_back(msg: u32) {
+        tolib::bridge::init_message_call_back(&mut mem(), msg);
+    }
+    /// `TOMenuMakeSaveFileName()`.
+    TOMenuMakeSaveFileName @ 0x008b_3a40 => extern "C" fn to_menu_make_save_file_name() {
+        let mut m = mem();
+        let lang = instance::bridge::ffx_lang(&m, &mut phyre_printf);
+        tolib::bridge::menu_make_save_file_name(&mut m, lang);
+    }
+    /// `TOFuncMacroCmdValue(cmd)`.
+    TOFuncMacroCmdValue @ 0x008b_6210 => extern "C" fn to_func_macro_cmd_value(cmd: u32) -> u32 {
+        tolib::bridge::func_macro_cmd_value(&mut mem(), cmd)
+    }
+    /// `TOGetPadStatus()`.
+    TOGetPadStatus @ 0x008b_7cd0 => extern "C" fn to_get_pad_status() {
+        tolib::bridge::get_pad_status(&mut mem(), &mut GameMenu);
+    }
+    /// `TOMenuGetPadStatus()`.
+    TOMenuGetPadStatus @ 0x008b_e500 => extern "C" fn to_menu_get_pad_status() {
+        tolib::bridge::menu_get_pad_status(&mut mem(), |_| st0_result(0x0063_0c60), call_sym);
+    }
+    /// `KernelGetSaveItemNum_007724c0(id)`.
+    KernelGetSaveItemNum_007724c0 @ 0x0077_24c0 => extern "C" fn kernel_forward_007724c0(id: u32) -> u32 {
+        tolib::bridge::kernel_forward(&mut mem(), 0x0079_04b0, id, call_sym)
+    }
+    /// `KernelImportantGet_007724f0(id)`.
+    KernelImportantGet_007724f0 @ 0x0077_24f0 => extern "C" fn kernel_forward_007724f0(id: u32) -> u32 {
+        tolib::bridge::kernel_forward(&mut mem(), 0x0079_0800, id, call_sym)
+    }
+    /// `KernelPlayerWord_50_00772370(chr)`.
+    KernelPlayerWord_50_00772370 @ 0x0077_2370 => extern "C" fn kernel_player_word_00772370(chr: u32) -> u32 {
+        tolib::bridge::kernel_player_word(&mut mem(), chr, 0x50, call_sym)
+    }
+    /// `KernelPlayerWord_58_007723e0(chr)`.
+    KernelPlayerWord_58_007723e0 @ 0x0077_23e0 => extern "C" fn kernel_player_word_007723e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_player_word(&mut mem(), chr, 0x58, call_sym)
+    }
+    /// `KernelPlayerWord_54_00772450(chr)`.
+    KernelPlayerWord_54_00772450 @ 0x0077_2450 => extern "C" fn kernel_player_word_00772450(chr: u32) -> u32 {
+        tolib::bridge::kernel_player_word(&mut mem(), chr, 0x54, call_sym)
+    }
+    /// `KernelSaveCommand_30b8_00771c60(chr)`.
+    KernelSaveCommand_30b8_00771c60 @ 0x0077_1c60 => extern "C" fn kernel_save_command_00771c60(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30b8, call_sym)
+    }
+    /// `KernelSaveCommand_30b9_00771c80(chr)`.
+    KernelSaveCommand_30b9_00771c80 @ 0x0077_1c80 => extern "C" fn kernel_save_command_00771c80(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30b9, call_sym)
+    }
+    /// `KernelSaveCommand_30ba_00771cd0(chr)`.
+    KernelSaveCommand_30ba_00771cd0 @ 0x0077_1cd0 => extern "C" fn kernel_save_command_00771cd0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30ba, call_sym)
+    }
+    /// `KernelSaveCommand_30bb_00771d20(chr)`.
+    KernelSaveCommand_30bb_00771d20 @ 0x0077_1d20 => extern "C" fn kernel_save_command_00771d20(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30bb, call_sym)
+    }
+    /// `KernelSaveCommand_30bc_00771d70(chr)`.
+    KernelSaveCommand_30bc_00771d70 @ 0x0077_1d70 => extern "C" fn kernel_save_command_00771d70(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30bc, call_sym)
+    }
+    /// `KernelSaveCommand_30bd_00771dc0(chr)`.
+    KernelSaveCommand_30bd_00771dc0 @ 0x0077_1dc0 => extern "C" fn kernel_save_command_00771dc0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30bd, call_sym)
+    }
+    /// `KernelSaveCommand_30be_00771e10(chr)`.
+    KernelSaveCommand_30be_00771e10 @ 0x0077_1e10 => extern "C" fn kernel_save_command_00771e10(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30be, call_sym)
+    }
+    /// `KernelSaveCommand_30bf_00771e30(chr)`.
+    KernelSaveCommand_30bf_00771e30 @ 0x0077_1e30 => extern "C" fn kernel_save_command_00771e30(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30bf, call_sym)
+    }
+    /// `KernelSaveCommand_30c0_00771e80(chr)`.
+    KernelSaveCommand_30c0_00771e80 @ 0x0077_1e80 => extern "C" fn kernel_save_command_00771e80(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c0, call_sym)
+    }
+    /// `KernelSaveCommand_30c1_00771ed0(chr)`.
+    KernelSaveCommand_30c1_00771ed0 @ 0x0077_1ed0 => extern "C" fn kernel_save_command_00771ed0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c1, call_sym)
+    }
+    /// `KernelSaveCommand_30c2_00771f20(chr)`.
+    KernelSaveCommand_30c2_00771f20 @ 0x0077_1f20 => extern "C" fn kernel_save_command_00771f20(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c2, call_sym)
+    }
+    /// `KernelSaveCommand_30c3_00771f70(chr)`.
+    KernelSaveCommand_30c3_00771f70 @ 0x0077_1f70 => extern "C" fn kernel_save_command_00771f70(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c3, call_sym)
+    }
+    /// `KernelSaveCommand_30c4_00771fc0(chr)`.
+    KernelSaveCommand_30c4_00771fc0 @ 0x0077_1fc0 => extern "C" fn kernel_save_command_00771fc0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c4, call_sym)
+    }
+    /// `KernelSaveCommand_30c5_00771fe0(chr)`.
+    KernelSaveCommand_30c5_00771fe0 @ 0x0077_1fe0 => extern "C" fn kernel_save_command_00771fe0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c5, call_sym)
+    }
+    /// `KernelSaveCommand_30c6_00772030(chr)`.
+    KernelSaveCommand_30c6_00772030 @ 0x0077_2030 => extern "C" fn kernel_save_command_00772030(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c6, call_sym)
+    }
+    /// `KernelSaveCommand_30c7_00772080(chr)`.
+    KernelSaveCommand_30c7_00772080 @ 0x0077_2080 => extern "C" fn kernel_save_command_00772080(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c7, call_sym)
+    }
+    /// `KernelSaveCommand_30c8_007720d0(chr)`.
+    KernelSaveCommand_30c8_007720d0 @ 0x0077_20d0 => extern "C" fn kernel_save_command_007720d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c8, call_sym)
+    }
+    /// `KernelSaveCommand_30c9_00772120(chr)`.
+    KernelSaveCommand_30c9_00772120 @ 0x0077_2120 => extern "C" fn kernel_save_command_00772120(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30c9, call_sym)
+    }
+    /// `KernelSaveCommand_30ca_00772170(chr)`.
+    KernelSaveCommand_30ca_00772170 @ 0x0077_2170 => extern "C" fn kernel_save_command_00772170(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30ca, call_sym)
+    }
+    /// `KernelSaveCommand_30cb_00772190(chr)`.
+    KernelSaveCommand_30cb_00772190 @ 0x0077_2190 => extern "C" fn kernel_save_command_00772190(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30cb, call_sym)
+    }
+    /// `KernelSaveCommand_30cc_007721e0(chr)`.
+    KernelSaveCommand_30cc_007721e0 @ 0x0077_21e0 => extern "C" fn kernel_save_command_007721e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30cc, call_sym)
+    }
+    /// `KernelSaveCommand_30cd_00772230(chr)`.
+    KernelSaveCommand_30cd_00772230 @ 0x0077_2230 => extern "C" fn kernel_save_command_00772230(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30cd, call_sym)
+    }
+    /// `KernelSaveCommand_30ce_00772280(chr)`.
+    KernelSaveCommand_30ce_00772280 @ 0x0077_2280 => extern "C" fn kernel_save_command_00772280(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30ce, call_sym)
+    }
+    /// `KernelSaveCommand_30cf_007722f0(chr)`.
+    KernelSaveCommand_30cf_007722f0 @ 0x0077_22f0 => extern "C" fn kernel_save_command_007722f0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30cf, call_sym)
+    }
+    /// `KernelSaveCommand_30d0_00772350(chr)`.
+    KernelSaveCommand_30d0_00772350 @ 0x0077_2350 => extern "C" fn kernel_save_command_00772350(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d0, call_sym)
+    }
+    /// `KernelSaveCommand_30d1_00772390(chr)`.
+    KernelSaveCommand_30d1_00772390 @ 0x0077_2390 => extern "C" fn kernel_save_command_00772390(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d1, call_sym)
+    }
+    /// `KernelSaveCommand_30d2_00772400(chr)`.
+    KernelSaveCommand_30d2_00772400 @ 0x0077_2400 => extern "C" fn kernel_save_command_00772400(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d2, call_sym)
+    }
+    /// `KernelSaveCommand_30d3_00772470(chr)`.
+    KernelSaveCommand_30d3_00772470 @ 0x0077_2470 => extern "C" fn kernel_save_command_00772470(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d3, call_sym)
+    }
+    /// `KernelSaveCommand_30d4_007724d0(chr)`.
+    KernelSaveCommand_30d4_007724d0 @ 0x0077_24d0 => extern "C" fn kernel_save_command_007724d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d4, call_sym)
+    }
+    /// `KernelSlotAbilityName_11e_00771c30(i)`.
+    KernelSlotAbilityName_11e_00771c30 @ 0x0077_1c30 => extern "C" fn kernel_slot_ability_name_00771c30(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x11e, call_sym)
+    }
+    /// `KernelSlotAbilityName_120_00771ca0(i)`.
+    KernelSlotAbilityName_120_00771ca0 @ 0x0077_1ca0 => extern "C" fn kernel_slot_ability_name_00771ca0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x120, call_sym)
+    }
+    /// `KernelSlotAbilityName_122_00771cf0(i)`.
+    KernelSlotAbilityName_122_00771cf0 @ 0x0077_1cf0 => extern "C" fn kernel_slot_ability_name_00771cf0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x122, call_sym)
+    }
+    /// `KernelSlotAbilityName_124_00771d40(i)`.
+    KernelSlotAbilityName_124_00771d40 @ 0x0077_1d40 => extern "C" fn kernel_slot_ability_name_00771d40(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x124, call_sym)
+    }
+    /// `KernelSlotAbilityName_126_00771d90(i)`.
+    KernelSlotAbilityName_126_00771d90 @ 0x0077_1d90 => extern "C" fn kernel_slot_ability_name_00771d90(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x126, call_sym)
+    }
+    /// `KernelSlotAbilityName_128_00771de0(i)`.
+    KernelSlotAbilityName_128_00771de0 @ 0x0077_1de0 => extern "C" fn kernel_slot_ability_name_00771de0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x128, call_sym)
+    }
+    /// `KernelSlotAbilityName_12a_00771e50(i)`.
+    KernelSlotAbilityName_12a_00771e50 @ 0x0077_1e50 => extern "C" fn kernel_slot_ability_name_00771e50(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x12a, call_sym)
+    }
+    /// `KernelSlotAbilityName_12c_00771ea0(i)`.
+    KernelSlotAbilityName_12c_00771ea0 @ 0x0077_1ea0 => extern "C" fn kernel_slot_ability_name_00771ea0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x12c, call_sym)
+    }
+    /// `KernelSlotAbilityName_12e_00771ef0(i)`.
+    KernelSlotAbilityName_12e_00771ef0 @ 0x0077_1ef0 => extern "C" fn kernel_slot_ability_name_00771ef0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x12e, call_sym)
+    }
+    /// `KernelSlotAbilityName_130_00771f40(i)`.
+    KernelSlotAbilityName_130_00771f40 @ 0x0077_1f40 => extern "C" fn kernel_slot_ability_name_00771f40(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x130, call_sym)
+    }
+    /// `KernelSlotAbilityName_132_00771f90(i)`.
+    KernelSlotAbilityName_132_00771f90 @ 0x0077_1f90 => extern "C" fn kernel_slot_ability_name_00771f90(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x132, call_sym)
+    }
+    /// `KernelSlotAbilityName_134_00772000(i)`.
+    KernelSlotAbilityName_134_00772000 @ 0x0077_2000 => extern "C" fn kernel_slot_ability_name_00772000(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x134, call_sym)
+    }
+    /// `KernelSlotAbilityName_136_00772050(i)`.
+    KernelSlotAbilityName_136_00772050 @ 0x0077_2050 => extern "C" fn kernel_slot_ability_name_00772050(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x136, call_sym)
+    }
+    /// `KernelSlotAbilityName_138_007720a0(i)`.
+    KernelSlotAbilityName_138_007720a0 @ 0x0077_20a0 => extern "C" fn kernel_slot_ability_name_007720a0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x138, call_sym)
+    }
+    /// `KernelSlotAbilityName_13a_007720f0(i)`.
+    KernelSlotAbilityName_13a_007720f0 @ 0x0077_20f0 => extern "C" fn kernel_slot_ability_name_007720f0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x13a, call_sym)
+    }
+    /// `KernelSlotAbilityName_13c_00772140(i)`.
+    KernelSlotAbilityName_13c_00772140 @ 0x0077_2140 => extern "C" fn kernel_slot_ability_name_00772140(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x13c, call_sym)
+    }
+    /// `KernelSlotAbilityName_13e_007721b0(i)`.
+    KernelSlotAbilityName_13e_007721b0 @ 0x0077_21b0 => extern "C" fn kernel_slot_ability_name_007721b0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x13e, call_sym)
+    }
+    /// `KernelSlotAbilityName_140_00772200(i)`.
+    KernelSlotAbilityName_140_00772200 @ 0x0077_2200 => extern "C" fn kernel_slot_ability_name_00772200(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x140, call_sym)
+    }
+    /// `KernelSlotAbilityName_142_00772250(i)`.
+    KernelSlotAbilityName_142_00772250 @ 0x0077_2250 => extern "C" fn kernel_slot_ability_name_00772250(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x142, call_sym)
+    }
+    /// `KernelSlotAbilityName_144_007722c0(i)`.
+    KernelSlotAbilityName_144_007722c0 @ 0x0077_22c0 => extern "C" fn kernel_slot_ability_name_007722c0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x144, call_sym)
+    }
+    /// `KernelSlotAbilityName_146_00772320(i)`.
+    KernelSlotAbilityName_146_00772320 @ 0x0077_2320 => extern "C" fn kernel_slot_ability_name_00772320(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x146, call_sym)
+    }
+    /// `KernelSlotAbilityName_148_007723b0(i)`.
+    KernelSlotAbilityName_148_007723b0 @ 0x0077_23b0 => extern "C" fn kernel_slot_ability_name_007723b0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x148, call_sym)
+    }
+    /// `KernelSlotAbilityName_14a_00772420(i)`.
+    KernelSlotAbilityName_14a_00772420 @ 0x0077_2420 => extern "C" fn kernel_slot_ability_name_00772420(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x14a, call_sym)
+    }
+    /// `KernelSlotAbilityName_14c_00772490(i)`.
+    KernelSlotAbilityName_14c_00772490 @ 0x0077_2490 => extern "C" fn kernel_slot_ability_name_00772490(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_ability_name(&mut mem(), i, 0x14c, call_sym)
+    }
+    /// `TOSetExeMessageWindowArea(bank)`.
+    TOSetExeMessageWindowArea @ 0x008a_f5c0 => extern "C" fn to_set_exe_message_window_area(bank: u32) {
+        tolib::bridge::set_exe_message_window_area(&mut mem(), bank);
+    }
+    /// `TOCheckBtlCommandTarget(chr, cmd)`.
+    TOCheckBtlCommandTarget @ 0x0089_abd0 => extern "C" fn to_check_btl_command_target(chr: u32, cmd: u32) -> u32 {
+        tolib::bridge::btl_check_command_target(&mut mem(), chr, cmd, call_sym)
+    }
+    /// `TOControlMessageWindow()`.
+    TOControlMessageWindow @ 0x008a_b910 => extern "C" fn to_control_message_window() {
+        tolib::bridge::control_message_window(&mut mem(), call_sym);
+    }
+    /// `TOSetMessageType(i, type)`.
+    TOSetMessageType @ 0x008b_8bb0 => extern "C" fn to_set_message_type(i: u32, kind: u32) -> u32 {
+        tolib::bridge::set_message_type(&mut mem(), i, kind, call_sym)
+    }
+    /// `TOGetTextWidth(text, arg)`.
+    TOGetTextWidth @ 0x008b_70c0 => extern "C" fn to_get_text_width(text: u32, arg: u32) -> f32 {
+        let mut w = 0f32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(w) as u32;
+        let r = tolib::bridge::text_width(&mut mem(), text, arg, at, |m, p, out, arg| {
+            call_sym(m, 0x008b_7c00, &[p, 0, out, arg])
+        });
+        std::hint::black_box(&mut w);
+        r
+    }
+    /// `KernelMonsterCapture_00772790(id)`.
+    KernelMonsterCapture_00772790 @ 0x0077_2790 => extern "C" fn kernel_forward_00772790(id: u32) -> u32 {
+        tolib::bridge::kernel_forward(&mut mem(), 0x0079_0af0, id, call_sym)
+    }
+    /// `KernelSaveCommand_30d5_00772530(chr)`.
+    KernelSaveCommand_30d5_00772530 @ 0x0077_2530 => extern "C" fn kernel_save_command_00772530(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d5, call_sym)
+    }
+    /// `KernelSaveCommand_30d6_00772590(chr)`.
+    KernelSaveCommand_30d6_00772590 @ 0x0077_2590 => extern "C" fn kernel_save_command_00772590(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d6, call_sym)
+    }
+    /// `KernelSaveCommand_30d7_007725d0(chr)`.
+    KernelSaveCommand_30d7_007725d0 @ 0x0077_25d0 => extern "C" fn kernel_save_command_007725d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d7, call_sym)
+    }
+    /// `KernelSaveCommand_30d8_00772660(chr)`.
+    KernelSaveCommand_30d8_00772660 @ 0x0077_2660 => extern "C" fn kernel_save_command_00772660(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d8, call_sym)
+    }
+    /// `KernelSaveCommand_30d9_007726b0(chr)`.
+    KernelSaveCommand_30d9_007726b0 @ 0x0077_26b0 => extern "C" fn kernel_save_command_007726b0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30d9, call_sym)
+    }
+    /// `KernelSaveCommand_30da_00772710(chr)`.
+    KernelSaveCommand_30da_00772710 @ 0x0077_2710 => extern "C" fn kernel_save_command_00772710(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30da, call_sym)
+    }
+    /// `KernelSaveCommand_30db_00772770(chr)`.
+    KernelSaveCommand_30db_00772770 @ 0x0077_2770 => extern "C" fn kernel_save_command_00772770(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30db, call_sym)
+    }
+    /// `KernelSaveCommand_30dc_007727d0(chr)`.
+    KernelSaveCommand_30dc_007727d0 @ 0x0077_27d0 => extern "C" fn kernel_save_command_007727d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30dc, call_sym)
+    }
+    /// `KernelSaveCommand_30dd_00772810(chr)`.
+    KernelSaveCommand_30dd_00772810 @ 0x0077_2810 => extern "C" fn kernel_save_command_00772810(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30dd, call_sym)
+    }
+    /// `KernelSaveCommand_30de_00772890(chr)`.
+    KernelSaveCommand_30de_00772890 @ 0x0077_2890 => extern "C" fn kernel_save_command_00772890(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30de, call_sym)
+    }
+    /// `KernelSaveCommand_30df_007728e0(chr)`.
+    KernelSaveCommand_30df_007728e0 @ 0x0077_28e0 => extern "C" fn kernel_save_command_007728e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30df, call_sym)
+    }
+    /// `KernelSaveCommand_30e0_00772950(chr)`.
+    KernelSaveCommand_30e0_00772950 @ 0x0077_2950 => extern "C" fn kernel_save_command_00772950(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e0, call_sym)
+    }
+    /// `KernelSaveCommand_30e1_007729b0(chr)`.
+    KernelSaveCommand_30e1_007729b0 @ 0x0077_29b0 => extern "C" fn kernel_save_command_007729b0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e1, call_sym)
+    }
+    /// `KernelSaveCommand_3000_007729e0(chr)`.
+    KernelSaveCommand_3000_007729e0 @ 0x0077_29e0 => extern "C" fn kernel_save_command_007729e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3000, call_sym)
+    }
+    /// `KernelSaveCommand_30e2_00772a30(chr)`.
+    KernelSaveCommand_30e2_00772a30 @ 0x0077_2a30 => extern "C" fn kernel_save_command_00772a30(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e2, call_sym)
+    }
+    /// `KernelSaveCommand_3001_00772a50(chr)`.
+    KernelSaveCommand_3001_00772a50 @ 0x0077_2a50 => extern "C" fn kernel_save_command_00772a50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3001, call_sym)
+    }
+    /// `KernelSaveCommand_30e3_00772a70(chr)`.
+    KernelSaveCommand_30e3_00772a70 @ 0x0077_2a70 => extern "C" fn kernel_save_command_00772a70(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e3, call_sym)
+    }
+    /// `KernelSaveCommand_3002_00772ac0(chr)`.
+    KernelSaveCommand_3002_00772ac0 @ 0x0077_2ac0 => extern "C" fn kernel_save_command_00772ac0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3002, call_sym)
+    }
+    /// `KernelSaveCommand_30e4_00772ae0(chr)`.
+    KernelSaveCommand_30e4_00772ae0 @ 0x0077_2ae0 => extern "C" fn kernel_save_command_00772ae0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e4, call_sym)
+    }
+    /// `KernelSaveCommand_3003_00772b30(chr)`.
+    KernelSaveCommand_3003_00772b30 @ 0x0077_2b30 => extern "C" fn kernel_save_command_00772b30(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3003, call_sym)
+    }
+    /// `KernelSaveCommand_30e5_00772b50(chr)`.
+    KernelSaveCommand_30e5_00772b50 @ 0x0077_2b50 => extern "C" fn kernel_save_command_00772b50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e5, call_sym)
+    }
+    /// `KernelSaveCommand_3004_00772ba0(chr)`.
+    KernelSaveCommand_3004_00772ba0 @ 0x0077_2ba0 => extern "C" fn kernel_save_command_00772ba0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3004, call_sym)
+    }
+    /// `KernelSaveCommand_30e6_00772bc0(chr)`.
+    KernelSaveCommand_30e6_00772bc0 @ 0x0077_2bc0 => extern "C" fn kernel_save_command_00772bc0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e6, call_sym)
+    }
+    /// `KernelSaveCommand_3005_00772c10(chr)`.
+    KernelSaveCommand_3005_00772c10 @ 0x0077_2c10 => extern "C" fn kernel_save_command_00772c10(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3005, call_sym)
+    }
+    /// `KernelSaveCommand_30e7_00772c30(chr)`.
+    KernelSaveCommand_30e7_00772c30 @ 0x0077_2c30 => extern "C" fn kernel_save_command_00772c30(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e7, call_sym)
+    }
+    /// `KernelSaveCommand_3006_00772c50(chr)`.
+    KernelSaveCommand_3006_00772c50 @ 0x0077_2c50 => extern "C" fn kernel_save_command_00772c50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3006, call_sym)
+    }
+    /// `KernelSaveCommand_30e8_00772ca0(chr)`.
+    KernelSaveCommand_30e8_00772ca0 @ 0x0077_2ca0 => extern "C" fn kernel_save_command_00772ca0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e8, call_sym)
+    }
+    /// `KernelSaveCommand_3007_00772cc0(chr)`.
+    KernelSaveCommand_3007_00772cc0 @ 0x0077_2cc0 => extern "C" fn kernel_save_command_00772cc0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3007, call_sym)
+    }
+    /// `KernelSaveCommand_30e9_00772ce0(chr)`.
+    KernelSaveCommand_30e9_00772ce0 @ 0x0077_2ce0 => extern "C" fn kernel_save_command_00772ce0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30e9, call_sym)
+    }
+    /// `KernelSaveCommand_3008_00772d30(chr)`.
+    KernelSaveCommand_3008_00772d30 @ 0x0077_2d30 => extern "C" fn kernel_save_command_00772d30(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3008, call_sym)
+    }
+    /// `KernelSaveCommand_30ea_00772d50(chr)`.
+    KernelSaveCommand_30ea_00772d50 @ 0x0077_2d50 => extern "C" fn kernel_save_command_00772d50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30ea, call_sym)
+    }
+    /// `KernelSaveCommand_3009_00772da0(chr)`.
+    KernelSaveCommand_3009_00772da0 @ 0x0077_2da0 => extern "C" fn kernel_save_command_00772da0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3009, call_sym)
+    }
+    /// `KernelSaveCommand_300a_00772e20(chr)`.
+    KernelSaveCommand_300a_00772e20 @ 0x0077_2e20 => extern "C" fn kernel_save_command_00772e20(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x300a, call_sym)
+    }
+    /// `KernelSaveCommand_300b_00772ea0(chr)`.
+    KernelSaveCommand_300b_00772ea0 @ 0x0077_2ea0 => extern "C" fn kernel_save_command_00772ea0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x300b, call_sym)
+    }
+    /// `KernelSaveCommand_30ff_00772ec0(chr)`.
+    KernelSaveCommand_30ff_00772ec0 @ 0x0077_2ec0 => extern "C" fn kernel_save_command_00772ec0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x30ff, call_sym)
+    }
+    /// `KernelSaveCommand_300c_00772ee0(chr)`.
+    KernelSaveCommand_300c_00772ee0 @ 0x0077_2ee0 => extern "C" fn kernel_save_command_00772ee0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x300c, call_sym)
+    }
+    /// `KernelSaveCommand_3100_00772f30(chr)`.
+    KernelSaveCommand_3100_00772f30 @ 0x0077_2f30 => extern "C" fn kernel_save_command_00772f30(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3100, call_sym)
+    }
+    /// `KernelSaveCommand_300d_00772f50(chr)`.
+    KernelSaveCommand_300d_00772f50 @ 0x0077_2f50 => extern "C" fn kernel_save_command_00772f50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x300d, call_sym)
+    }
+    /// `KernelSaveCommand_3101_00772fa0(chr)`.
+    KernelSaveCommand_3101_00772fa0 @ 0x0077_2fa0 => extern "C" fn kernel_save_command_00772fa0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3101, call_sym)
+    }
+    /// `KernelSaveCommand_300e_00772fc0(chr)`.
+    KernelSaveCommand_300e_00772fc0 @ 0x0077_2fc0 => extern "C" fn kernel_save_command_00772fc0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x300e, call_sym)
+    }
+    /// `KernelSaveCommand_3102_00773010(chr)`.
+    KernelSaveCommand_3102_00773010 @ 0x0077_3010 => extern "C" fn kernel_save_command_00773010(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3102, call_sym)
+    }
+    /// `KernelSaveCommand_300f_00773030(chr)`.
+    KernelSaveCommand_300f_00773030 @ 0x0077_3030 => extern "C" fn kernel_save_command_00773030(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x300f, call_sym)
+    }
+    /// `KernelSaveCommand_3103_00773080(chr)`.
+    KernelSaveCommand_3103_00773080 @ 0x0077_3080 => extern "C" fn kernel_save_command_00773080(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3103, call_sym)
+    }
+    /// `KernelSaveCommand_3010_007730a0(chr)`.
+    KernelSaveCommand_3010_007730a0 @ 0x0077_30a0 => extern "C" fn kernel_save_command_007730a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3010, call_sym)
+    }
+    /// `KernelSaveCommand_3104_007730c0(chr)`.
+    KernelSaveCommand_3104_007730c0 @ 0x0077_30c0 => extern "C" fn kernel_save_command_007730c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3104, call_sym)
+    }
+    /// `KernelSaveCommand_3011_00773110(chr)`.
+    KernelSaveCommand_3011_00773110 @ 0x0077_3110 => extern "C" fn kernel_save_command_00773110(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3011, call_sym)
+    }
+    /// `KernelSaveCommand_3105_00773130(chr)`.
+    KernelSaveCommand_3105_00773130 @ 0x0077_3130 => extern "C" fn kernel_save_command_00773130(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3105, call_sym)
+    }
+    /// `KernelSaveCommand_3012_00773150(chr)`.
+    KernelSaveCommand_3012_00773150 @ 0x0077_3150 => extern "C" fn kernel_save_command_00773150(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3012, call_sym)
+    }
+    /// `KernelSaveCommand_3106_007731a0(chr)`.
+    KernelSaveCommand_3106_007731a0 @ 0x0077_31a0 => extern "C" fn kernel_save_command_007731a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3106, call_sym)
+    }
+    /// `KernelSaveCommand_3013_007731c0(chr)`.
+    KernelSaveCommand_3013_007731c0 @ 0x0077_31c0 => extern "C" fn kernel_save_command_007731c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3013, call_sym)
+    }
+    /// `KernelSaveCommand_3107_00773210(chr)`.
+    KernelSaveCommand_3107_00773210 @ 0x0077_3210 => extern "C" fn kernel_save_command_00773210(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3107, call_sym)
+    }
+    /// `KernelSaveCommand_3014_00773230(chr)`.
+    KernelSaveCommand_3014_00773230 @ 0x0077_3230 => extern "C" fn kernel_save_command_00773230(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3014, call_sym)
+    }
+    /// `KernelSaveCommand_3108_00773280(chr)`.
+    KernelSaveCommand_3108_00773280 @ 0x0077_3280 => extern "C" fn kernel_save_command_00773280(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3108, call_sym)
+    }
+    /// `KernelSaveCommand_3015_007732a0(chr)`.
+    KernelSaveCommand_3015_007732a0 @ 0x0077_32a0 => extern "C" fn kernel_save_command_007732a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3015, call_sym)
+    }
+    /// `KernelSaveCommand_3109_007732f0(chr)`.
+    KernelSaveCommand_3109_007732f0 @ 0x0077_32f0 => extern "C" fn kernel_save_command_007732f0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3109, call_sym)
+    }
+    /// `KernelSaveCommand_3016_00773310(chr)`.
+    KernelSaveCommand_3016_00773310 @ 0x0077_3310 => extern "C" fn kernel_save_command_00773310(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3016, call_sym)
+    }
+    /// `KernelSaveCommand_311f_00773330(chr)`.
+    KernelSaveCommand_311f_00773330 @ 0x0077_3330 => extern "C" fn kernel_save_command_00773330(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x311f, call_sym)
+    }
+    /// `KernelSaveCommand_3017_00773380(chr)`.
+    KernelSaveCommand_3017_00773380 @ 0x0077_3380 => extern "C" fn kernel_save_command_00773380(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3017, call_sym)
+    }
+    /// `KernelSaveCommand_3120_007733a0(chr)`.
+    KernelSaveCommand_3120_007733a0 @ 0x0077_33a0 => extern "C" fn kernel_save_command_007733a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3120, call_sym)
+    }
+    /// `KernelSaveCommand_3018_007733c0(chr)`.
+    KernelSaveCommand_3018_007733c0 @ 0x0077_33c0 => extern "C" fn kernel_save_command_007733c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3018, call_sym)
+    }
+    /// `KernelSaveCommand_3113_00773410(chr)`.
+    KernelSaveCommand_3113_00773410 @ 0x0077_3410 => extern "C" fn kernel_save_command_00773410(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3113, call_sym)
+    }
+    /// `KernelSaveCommand_3019_00773430(chr)`.
+    KernelSaveCommand_3019_00773430 @ 0x0077_3430 => extern "C" fn kernel_save_command_00773430(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3019, call_sym)
+    }
+    /// `KernelSaveCommand_3114_00773480(chr)`.
+    KernelSaveCommand_3114_00773480 @ 0x0077_3480 => extern "C" fn kernel_save_command_00773480(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3114, call_sym)
+    }
+    /// `KernelSaveCommand_301a_007734a0(chr)`.
+    KernelSaveCommand_301a_007734a0 @ 0x0077_34a0 => extern "C" fn kernel_save_command_007734a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x301a, call_sym)
+    }
+    /// `KernelSaveCommand_3115_007734f0(chr)`.
+    KernelSaveCommand_3115_007734f0 @ 0x0077_34f0 => extern "C" fn kernel_save_command_007734f0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3115, call_sym)
+    }
+    /// `KernelSaveCommand_301b_00773510(chr)`.
+    KernelSaveCommand_301b_00773510 @ 0x0077_3510 => extern "C" fn kernel_save_command_00773510(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x301b, call_sym)
+    }
+    /// `KernelSaveCommand_3116_00773540(chr)`.
+    KernelSaveCommand_3116_00773540 @ 0x0077_3540 => extern "C" fn kernel_save_command_00773540(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3116, call_sym)
+    }
+    /// `KernelSaveCommand_301c_00773560(chr)`.
+    KernelSaveCommand_301c_00773560 @ 0x0077_3560 => extern "C" fn kernel_save_command_00773560(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x301c, call_sym)
+    }
+    /// `KernelSaveCommand_3117_00773580(chr)`.
+    KernelSaveCommand_3117_00773580 @ 0x0077_3580 => extern "C" fn kernel_save_command_00773580(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3117, call_sym)
+    }
+    /// `KernelSaveCommand_301d_007735a0(chr)`.
+    KernelSaveCommand_301d_007735a0 @ 0x0077_35a0 => extern "C" fn kernel_save_command_007735a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x301d, call_sym)
+    }
+    /// `KernelSaveCommand_3118_007735c0(chr)`.
+    KernelSaveCommand_3118_007735c0 @ 0x0077_35c0 => extern "C" fn kernel_save_command_007735c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3118, call_sym)
+    }
+    /// `KernelSaveCommand_301e_007735e0(chr)`.
+    KernelSaveCommand_301e_007735e0 @ 0x0077_35e0 => extern "C" fn kernel_save_command_007735e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x301e, call_sym)
+    }
+    /// `KernelSaveCommand_3119_00773600(chr)`.
+    KernelSaveCommand_3119_00773600 @ 0x0077_3600 => extern "C" fn kernel_save_command_00773600(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3119, call_sym)
+    }
+    /// `KernelSaveCommand_301f_00773620(chr)`.
+    KernelSaveCommand_301f_00773620 @ 0x0077_3620 => extern "C" fn kernel_save_command_00773620(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x301f, call_sym)
+    }
+    /// `KernelSaveCommand_311a_00773640(chr)`.
+    KernelSaveCommand_311a_00773640 @ 0x0077_3640 => extern "C" fn kernel_save_command_00773640(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x311a, call_sym)
+    }
+    /// `KernelSaveCommand_3020_00773660(chr)`.
+    KernelSaveCommand_3020_00773660 @ 0x0077_3660 => extern "C" fn kernel_save_command_00773660(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3020, call_sym)
+    }
+    /// `KernelSaveCommand_311b_00773680(chr)`.
+    KernelSaveCommand_311b_00773680 @ 0x0077_3680 => extern "C" fn kernel_save_command_00773680(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x311b, call_sym)
+    }
+    /// `KernelSaveCommand_3021_007736a0(chr)`.
+    KernelSaveCommand_3021_007736a0 @ 0x0077_36a0 => extern "C" fn kernel_save_command_007736a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3021, call_sym)
+    }
+    /// `KernelSaveCommand_311c_007736c0(chr)`.
+    KernelSaveCommand_311c_007736c0 @ 0x0077_36c0 => extern "C" fn kernel_save_command_007736c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x311c, call_sym)
+    }
+    /// `KernelSaveCommand_3022_007736e0(chr)`.
+    KernelSaveCommand_3022_007736e0 @ 0x0077_36e0 => extern "C" fn kernel_save_command_007736e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3022, call_sym)
+    }
+    /// `KernelSaveCommand_311d_00773700(chr)`.
+    KernelSaveCommand_311d_00773700 @ 0x0077_3700 => extern "C" fn kernel_save_command_00773700(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x311d, call_sym)
+    }
+    /// `KernelSaveCommand_3023_00773720(chr)`.
+    KernelSaveCommand_3023_00773720 @ 0x0077_3720 => extern "C" fn kernel_save_command_00773720(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3023, call_sym)
+    }
+    /// `KernelSaveCommand_311e_00773740(chr)`.
+    KernelSaveCommand_311e_00773740 @ 0x0077_3740 => extern "C" fn kernel_save_command_00773740(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x311e, call_sym)
+    }
+    /// `KernelSaveCommand_3024_00773760(chr)`.
+    KernelSaveCommand_3024_00773760 @ 0x0077_3760 => extern "C" fn kernel_save_command_00773760(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3024, call_sym)
+    }
+    /// `KernelSaveCommand_3025_007737c0(chr)`.
+    KernelSaveCommand_3025_007737c0 @ 0x0077_37c0 => extern "C" fn kernel_save_command_007737c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3025, call_sym)
+    }
+    /// `KernelSaveCommand_3026_007737e0(chr)`.
+    KernelSaveCommand_3026_007737e0 @ 0x0077_37e0 => extern "C" fn kernel_save_command_007737e0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3026, call_sym)
+    }
+    /// `KernelSaveCommand_3027_00773840(chr)`.
+    KernelSaveCommand_3027_00773840 @ 0x0077_3840 => extern "C" fn kernel_save_command_00773840(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3027, call_sym)
+    }
+    /// `KernelSaveCommand_3028_007738c0(chr)`.
+    KernelSaveCommand_3028_007738c0 @ 0x0077_38c0 => extern "C" fn kernel_save_command_007738c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3028, call_sym)
+    }
+    /// `KernelSaveCommand_3029_00773900(chr)`.
+    KernelSaveCommand_3029_00773900 @ 0x0077_3900 => extern "C" fn kernel_save_command_00773900(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3029, call_sym)
+    }
+    /// `KernelSaveCommand_302b_00773950(chr)`.
+    KernelSaveCommand_302b_00773950 @ 0x0077_3950 => extern "C" fn kernel_save_command_00773950(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x302b, call_sym)
+    }
+    /// `KernelSaveCommand_302c_007739a0(chr)`.
+    KernelSaveCommand_302c_007739a0 @ 0x0077_39a0 => extern "C" fn kernel_save_command_007739a0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x302c, call_sym)
+    }
+    /// `KernelSaveCommand_302d_00773a10(chr)`.
+    KernelSaveCommand_302d_00773a10 @ 0x0077_3a10 => extern "C" fn kernel_save_command_00773a10(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x302d, call_sym)
+    }
+    /// `KernelSaveCommand_302e_00773a80(chr)`.
+    KernelSaveCommand_302e_00773a80 @ 0x0077_3a80 => extern "C" fn kernel_save_command_00773a80(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x302e, call_sym)
+    }
+    /// `KernelSaveCommand_302f_00773af0(chr)`.
+    KernelSaveCommand_302f_00773af0 @ 0x0077_3af0 => extern "C" fn kernel_save_command_00773af0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x302f, call_sym)
+    }
+    /// `KernelSaveCommand_3030_00773b40(chr)`.
+    KernelSaveCommand_3030_00773b40 @ 0x0077_3b40 => extern "C" fn kernel_save_command_00773b40(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3030, call_sym)
+    }
+    /// `KernelSaveCommand_3031_00773ba0(chr)`.
+    KernelSaveCommand_3031_00773ba0 @ 0x0077_3ba0 => extern "C" fn kernel_save_command_00773ba0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3031, call_sym)
+    }
+    /// `KernelSaveCommand_3032_00773be0(chr)`.
+    KernelSaveCommand_3032_00773be0 @ 0x0077_3be0 => extern "C" fn kernel_save_command_00773be0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3032, call_sym)
+    }
+    /// `KernelSaveCommand_3033_00773c20(chr)`.
+    KernelSaveCommand_3033_00773c20 @ 0x0077_3c20 => extern "C" fn kernel_save_command_00773c20(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3033, call_sym)
+    }
+    /// `KernelSaveCommand_3034_00773c90(chr)`.
+    KernelSaveCommand_3034_00773c90 @ 0x0077_3c90 => extern "C" fn kernel_save_command_00773c90(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3034, call_sym)
+    }
+    /// `KernelSaveCommand_3035_00773cd0(chr)`.
+    KernelSaveCommand_3035_00773cd0 @ 0x0077_3cd0 => extern "C" fn kernel_save_command_00773cd0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3035, call_sym)
+    }
+    /// `KernelSaveCommand_3036_00773d10(chr)`.
+    KernelSaveCommand_3036_00773d10 @ 0x0077_3d10 => extern "C" fn kernel_save_command_00773d10(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3036, call_sym)
+    }
+    /// `KernelSaveCommand_3037_00773d50(chr)`.
+    KernelSaveCommand_3037_00773d50 @ 0x0077_3d50 => extern "C" fn kernel_save_command_00773d50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3037, call_sym)
+    }
+    /// `KernelSaveCommand_3038_00773d90(chr)`.
+    KernelSaveCommand_3038_00773d90 @ 0x0077_3d90 => extern "C" fn kernel_save_command_00773d90(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3038, call_sym)
+    }
+    /// `KernelSaveCommand_3039_00773dd0(chr)`.
+    KernelSaveCommand_3039_00773dd0 @ 0x0077_3dd0 => extern "C" fn kernel_save_command_00773dd0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3039, call_sym)
+    }
+    /// `KernelSaveCommand_303a_00773e10(chr)`.
+    KernelSaveCommand_303a_00773e10 @ 0x0077_3e10 => extern "C" fn kernel_save_command_00773e10(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x303a, call_sym)
+    }
+    /// `KernelSaveCommand_303b_00773e50(chr)`.
+    KernelSaveCommand_303b_00773e50 @ 0x0077_3e50 => extern "C" fn kernel_save_command_00773e50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x303b, call_sym)
+    }
+    /// `KernelSaveCommand_303c_00773e90(chr)`.
+    KernelSaveCommand_303c_00773e90 @ 0x0077_3e90 => extern "C" fn kernel_save_command_00773e90(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x303c, call_sym)
+    }
+    /// `KernelSaveCommand_303d_00773ed0(chr)`.
+    KernelSaveCommand_303d_00773ed0 @ 0x0077_3ed0 => extern "C" fn kernel_save_command_00773ed0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x303d, call_sym)
+    }
+    /// `KernelSaveCommand_303e_00773f10(chr)`.
+    KernelSaveCommand_303e_00773f10 @ 0x0077_3f10 => extern "C" fn kernel_save_command_00773f10(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x303e, call_sym)
+    }
+    /// `KernelSaveCommand_303f_00773f50(chr)`.
+    KernelSaveCommand_303f_00773f50 @ 0x0077_3f50 => extern "C" fn kernel_save_command_00773f50(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x303f, call_sym)
+    }
+    /// `KernelSaveCommand_3040_00773f90(chr)`.
+    KernelSaveCommand_3040_00773f90 @ 0x0077_3f90 => extern "C" fn kernel_save_command_00773f90(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3040, call_sym)
+    }
+    /// `KernelSaveCommand_3041_00773fd0(chr)`.
+    KernelSaveCommand_3041_00773fd0 @ 0x0077_3fd0 => extern "C" fn kernel_save_command_00773fd0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3041, call_sym)
+    }
+    /// `KernelSaveCommand_3042_00774010(chr)`.
+    KernelSaveCommand_3042_00774010 @ 0x0077_4010 => extern "C" fn kernel_save_command_00774010(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3042, call_sym)
+    }
+    /// `KernelSaveCommand_3043_00774050(chr)`.
+    KernelSaveCommand_3043_00774050 @ 0x0077_4050 => extern "C" fn kernel_save_command_00774050(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3043, call_sym)
+    }
+    /// `KernelSaveCommand_3044_00774090(chr)`.
+    KernelSaveCommand_3044_00774090 @ 0x0077_4090 => extern "C" fn kernel_save_command_00774090(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3044, call_sym)
+    }
+    /// `KernelSaveCommand_3045_007740d0(chr)`.
+    KernelSaveCommand_3045_007740d0 @ 0x0077_40d0 => extern "C" fn kernel_save_command_007740d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3045, call_sym)
+    }
+    /// `KernelSaveCommand_3046_00774110(chr)`.
+    KernelSaveCommand_3046_00774110 @ 0x0077_4110 => extern "C" fn kernel_save_command_00774110(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3046, call_sym)
+    }
+    /// `KernelSaveCommand_3047_00774150(chr)`.
+    KernelSaveCommand_3047_00774150 @ 0x0077_4150 => extern "C" fn kernel_save_command_00774150(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3047, call_sym)
+    }
+    /// `KernelSaveCommand_3048_00774190(chr)`.
+    KernelSaveCommand_3048_00774190 @ 0x0077_4190 => extern "C" fn kernel_save_command_00774190(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3048, call_sym)
+    }
+    /// `KernelSaveCommand_3049_007741d0(chr)`.
+    KernelSaveCommand_3049_007741d0 @ 0x0077_41d0 => extern "C" fn kernel_save_command_007741d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3049, call_sym)
+    }
+    /// `KernelSaveCommand_304a_00774210(chr)`.
+    KernelSaveCommand_304a_00774210 @ 0x0077_4210 => extern "C" fn kernel_save_command_00774210(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x304a, call_sym)
+    }
+    /// `KernelSaveCommand_304b_00774250(chr)`.
+    KernelSaveCommand_304b_00774250 @ 0x0077_4250 => extern "C" fn kernel_save_command_00774250(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x304b, call_sym)
+    }
+    /// `KernelSaveCommand_304c_00774290(chr)`.
+    KernelSaveCommand_304c_00774290 @ 0x0077_4290 => extern "C" fn kernel_save_command_00774290(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x304c, call_sym)
+    }
+    /// `KernelSaveCommand_304d_007742d0(chr)`.
+    KernelSaveCommand_304d_007742d0 @ 0x0077_42d0 => extern "C" fn kernel_save_command_007742d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x304d, call_sym)
+    }
+    /// `KernelSaveCommand_304e_00774310(chr)`.
+    KernelSaveCommand_304e_00774310 @ 0x0077_4310 => extern "C" fn kernel_save_command_00774310(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x304e, call_sym)
+    }
+    /// `KernelSaveCommand_304f_00774350(chr)`.
+    KernelSaveCommand_304f_00774350 @ 0x0077_4350 => extern "C" fn kernel_save_command_00774350(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x304f, call_sym)
+    }
+    /// `KernelSaveCommand_3050_00774370(chr)`.
+    KernelSaveCommand_3050_00774370 @ 0x0077_4370 => extern "C" fn kernel_save_command_00774370(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3050, call_sym)
+    }
+    /// `KernelSaveCommand_3051_007743c0(chr)`.
+    KernelSaveCommand_3051_007743c0 @ 0x0077_43c0 => extern "C" fn kernel_save_command_007743c0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3051, call_sym)
+    }
+    /// `KernelSaveCommand_3052_00774410(chr)`.
+    KernelSaveCommand_3052_00774410 @ 0x0077_4410 => extern "C" fn kernel_save_command_00774410(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3052, call_sym)
+    }
+    /// `KernelSaveCommand_3053_00774430(chr)`.
+    KernelSaveCommand_3053_00774430 @ 0x0077_4430 => extern "C" fn kernel_save_command_00774430(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3053, call_sym)
+    }
+    /// `KernelSaveCommand_3054_00774480(chr)`.
+    KernelSaveCommand_3054_00774480 @ 0x0077_4480 => extern "C" fn kernel_save_command_00774480(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3054, call_sym)
+    }
+    /// `KernelSaveCommand_3055_007744d0(chr)`.
+    KernelSaveCommand_3055_007744d0 @ 0x0077_44d0 => extern "C" fn kernel_save_command_007744d0(chr: u32) -> u32 {
+        tolib::bridge::kernel_save_command(&mut mem(), chr, 0x3055, call_sym)
+    }
+    /// `KernelSlotAbilityName_14e_00772500(i)`.
+    KernelSlotAbilityName_14e_00772500 @ 0x0077_2500 => extern "C" fn kernel_slot_name_00772500(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x14e, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_150_00772560(i)`.
+    KernelSlotAbilityName_150_00772560 @ 0x0077_2560 => extern "C" fn kernel_slot_name_00772560(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x150, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_152_007725f0(i)`.
+    KernelSlotAbilityName_152_007725f0 @ 0x0077_25f0 => extern "C" fn kernel_slot_name_007725f0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x152, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_154_00772680(i)`.
+    KernelSlotAbilityName_154_00772680 @ 0x0077_2680 => extern "C" fn kernel_slot_name_00772680(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x154, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_156_007726e0(i)`.
+    KernelSlotAbilityName_156_007726e0 @ 0x0077_26e0 => extern "C" fn kernel_slot_name_007726e0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x156, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_158_00772740(i)`.
+    KernelSlotAbilityName_158_00772740 @ 0x0077_2740 => extern "C" fn kernel_slot_name_00772740(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x158, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_15a_007727a0(i)`.
+    KernelSlotAbilityName_15a_007727a0 @ 0x0077_27a0 => extern "C" fn kernel_slot_name_007727a0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x15a, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_15c_00772830(i)`.
+    KernelSlotAbilityName_15c_00772830 @ 0x0077_2830 => extern "C" fn kernel_slot_name_00772830(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x15c, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_15e_007728b0(i)`.
+    KernelSlotAbilityName_15e_007728b0 @ 0x0077_28b0 => extern "C" fn kernel_slot_name_007728b0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x15e, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_160_00772920(i)`.
+    KernelSlotAbilityName_160_00772920 @ 0x0077_2920 => extern "C" fn kernel_slot_name_00772920(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x160, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_162_00772980(i)`.
+    KernelSlotAbilityName_162_00772980 @ 0x0077_2980 => extern "C" fn kernel_slot_name_00772980(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x162, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_164_00772a00(i)`.
+    KernelSlotAbilityName_164_00772a00 @ 0x0077_2a00 => extern "C" fn kernel_slot_name_00772a00(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x164, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_166_00772a90(i)`.
+    KernelSlotAbilityName_166_00772a90 @ 0x0077_2a90 => extern "C" fn kernel_slot_name_00772a90(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x166, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_168_00772b00(i)`.
+    KernelSlotAbilityName_168_00772b00 @ 0x0077_2b00 => extern "C" fn kernel_slot_name_00772b00(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x168, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_16a_00772b70(i)`.
+    KernelSlotAbilityName_16a_00772b70 @ 0x0077_2b70 => extern "C" fn kernel_slot_name_00772b70(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x16a, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_16c_00772be0(i)`.
+    KernelSlotAbilityName_16c_00772be0 @ 0x0077_2be0 => extern "C" fn kernel_slot_name_00772be0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x16c, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_16e_00772c70(i)`.
+    KernelSlotAbilityName_16e_00772c70 @ 0x0077_2c70 => extern "C" fn kernel_slot_name_00772c70(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x16e, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_170_00772d00(i)`.
+    KernelSlotAbilityName_170_00772d00 @ 0x0077_2d00 => extern "C" fn kernel_slot_name_00772d00(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x170, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_172_00772d70(i)`.
+    KernelSlotAbilityName_172_00772d70 @ 0x0077_2d70 => extern "C" fn kernel_slot_name_00772d70(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x172, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_174_00772df0(i)`.
+    KernelSlotAbilityName_174_00772df0 @ 0x0077_2df0 => extern "C" fn kernel_slot_name_00772df0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x174, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_176_00772e70(i)`.
+    KernelSlotAbilityName_176_00772e70 @ 0x0077_2e70 => extern "C" fn kernel_slot_name_00772e70(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x176, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_178_00772f00(i)`.
+    KernelSlotAbilityName_178_00772f00 @ 0x0077_2f00 => extern "C" fn kernel_slot_name_00772f00(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x178, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_17a_00772f70(i)`.
+    KernelSlotAbilityName_17a_00772f70 @ 0x0077_2f70 => extern "C" fn kernel_slot_name_00772f70(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x17a, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_17c_00772fe0(i)`.
+    KernelSlotAbilityName_17c_00772fe0 @ 0x0077_2fe0 => extern "C" fn kernel_slot_name_00772fe0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x17c, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_17e_00773050(i)`.
+    KernelSlotAbilityName_17e_00773050 @ 0x0077_3050 => extern "C" fn kernel_slot_name_00773050(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x17e, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_180_007730e0(i)`.
+    KernelSlotAbilityName_180_007730e0 @ 0x0077_30e0 => extern "C" fn kernel_slot_name_007730e0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x180, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_182_00773170(i)`.
+    KernelSlotAbilityName_182_00773170 @ 0x0077_3170 => extern "C" fn kernel_slot_name_00773170(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x182, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_184_007731e0(i)`.
+    KernelSlotAbilityName_184_007731e0 @ 0x0077_31e0 => extern "C" fn kernel_slot_name_007731e0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x184, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_186_00773250(i)`.
+    KernelSlotAbilityName_186_00773250 @ 0x0077_3250 => extern "C" fn kernel_slot_name_00773250(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x186, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_188_007732c0(i)`.
+    KernelSlotAbilityName_188_007732c0 @ 0x0077_32c0 => extern "C" fn kernel_slot_name_007732c0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x188, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_18a_00773350(i)`.
+    KernelSlotAbilityName_18a_00773350 @ 0x0077_3350 => extern "C" fn kernel_slot_name_00773350(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x18a, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_18c_007733e0(i)`.
+    KernelSlotAbilityName_18c_007733e0 @ 0x0077_33e0 => extern "C" fn kernel_slot_name_007733e0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x18c, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_18e_00773450(i)`.
+    KernelSlotAbilityName_18e_00773450 @ 0x0077_3450 => extern "C" fn kernel_slot_name_00773450(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x18e, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotAbilityName_190_007734c0(i)`.
+    KernelSlotAbilityName_190_007734c0 @ 0x0077_34c0 => extern "C" fn kernel_slot_name_007734c0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x190, 0x0077_4720, call_sym)
+    }
+    /// `KernelSlotItemName_08c_00774390(i)`.
+    KernelSlotItemName_08c_00774390 @ 0x0077_4390 => extern "C" fn kernel_slot_name_00774390(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x8c, 0x0077_67a0, call_sym)
+    }
+    /// `KernelSlotItemName_08e_007743e0(i)`.
+    KernelSlotItemName_08e_007743e0 @ 0x0077_43e0 => extern "C" fn kernel_slot_name_007743e0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x8e, 0x0077_67a0, call_sym)
+    }
+    /// `KernelSlotItemName_090_00774450(i)`.
+    KernelSlotItemName_090_00774450 @ 0x0077_4450 => extern "C" fn kernel_slot_name_00774450(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x90, 0x0077_67a0, call_sym)
+    }
+    /// `KernelSlotItemName_092_007744a0(i)`.
+    KernelSlotItemName_092_007744a0 @ 0x0077_44a0 => extern "C" fn kernel_slot_name_007744a0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x92, 0x0077_67a0, call_sym)
+    }
+    /// `KernelSlotItemName_098_007744f0(i)`.
+    KernelSlotItemName_098_007744f0 @ 0x0077_44f0 => extern "C" fn kernel_slot_name_007744f0(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_name(&mut mem(), i, 0x98, 0x0077_67a0, call_sym)
+    }
+    /// `KernelPostRequest1_007739c0(v)`.
+    KernelPostRequest1_007739c0 @ 0x0077_39c0 => extern "C" fn kernel_post_request_007739c0(v: u32) -> u32 {
+        tolib::bridge::kernel_post_request(&mut mem(), v, 1)
+    }
+    /// `KernelPostRequest0_00773a30(v)`.
+    KernelPostRequest0_00773a30 @ 0x0077_3a30 => extern "C" fn kernel_post_request_00773a30(v: u32) -> u32 {
+        tolib::bridge::kernel_post_request(&mut mem(), v, 0)
+    }
+    /// `KernelPostRequest3_00773aa0(v)`.
+    KernelPostRequest3_00773aa0 @ 0x0077_3aa0 => extern "C" fn kernel_post_request_00773aa0(v: u32) -> u32 {
+        tolib::bridge::kernel_post_request(&mut mem(), v, 3)
+    }
+    /// `KernelSlotWord194_00772dc0(i)`.
+    KernelSlotWord194_00772dc0 @ 0x0077_2dc0 => extern "C" fn kernel_slot_word_194(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_word_194(&mem(), i)
+    }
+    /// `KernelGilAfter_00772e40(i)`.
+    KernelGilAfter_00772e40 @ 0x0077_2e40 => extern "C" fn kernel_gil_after(i: u32) -> u32 {
+        tolib::bridge::kernel_gil_after(&mut mem(), i, call_sym)
+    }
+    /// `KernelPlaySfx_00773b10(sfx)`.
+    KernelPlaySfx_00773b10 @ 0x0077_3b10 => extern "C" fn kernel_play_sfx(sfx: u32) -> u32 {
+        tolib::bridge::kernel_play_sfx(&mut mem(), sfx, call_sym)
+    }
+    /// `KernelEventByte_007725b0(i)`.
+    KernelEventByte_007725b0 @ 0x0077_25b0 => extern "C" fn kernel_event_byte(i: u32) -> u32 {
+        tolib::bridge::kernel_event_byte(&mut mem(), i, call_sym)
+    }
+    /// `KernelSetEventByte_00773800(i, v)`.
+    KernelSetEventByte_00773800 @ 0x0077_3800 => extern "C" fn kernel_set_event_byte(i: u32, v: u32) -> u32 {
+        tolib::bridge::kernel_set_event_byte(&mut mem(), i, v, call_sym)
+    }
+    /// `KernelJoined_00772900(chr)`.
+    KernelJoined_00772900 @ 0x0077_2900 => extern "C" fn kernel_joined(chr: u32) -> u32 {
+        tolib::bridge::kernel_joined(&mut mem(), chr, call_sym)
+    }
+    /// `KernelEventBit_00772620(n)`.
+    KernelEventBit_00772620 @ 0x0077_2620 => extern "C" fn kernel_event_bit(n: u32) -> u32 {
+        tolib::bridge::kernel_event_bit(&mut mem(), n, call_sym)
+    }
+    /// `KernelSetEventBit_00773880(n, on)`.
+    KernelSetEventBit_00773880 @ 0x0077_3880 => extern "C" fn kernel_set_event_bit(n: u32, on: u32) -> u32 {
+        tolib::bridge::kernel_set_event_bit(&mut mem(), n, on, call_sym)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
