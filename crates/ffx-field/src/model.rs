@@ -1185,6 +1185,7 @@ pub mod bridge {
 
     /// The fade of a shake or wave: `f32(left) / f32(frames) * swing`,
     /// `left = frames - done`, each int stored as `f32`.
+    #[must_use]
     pub fn shake_fade(frames: i32, done: i32, swing: f64) -> f64 {
         use ffx_bridge::x87::{div, load, mul, store};
         #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
