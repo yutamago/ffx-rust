@@ -4905,7 +4905,7 @@
 0x00788e30 function MsResetAfterImage         # fh v3:exact 0x00788ef0
 0x00788e60 function MsResetBindEffect         # fh v3:exact 0x00788f20
 0x00788e90 function MsSetChrMoveFlagAll       # fh v3:exact 0x00788f50
-0x00789160 function MsAliveProcess            # fh v3:exact+call.cs 0x00789220 cdecl
+0x00789160 function MsAliveProcess            # fh v3:exact+call.cs 0x00789220 cdecl; ours: (i, actor): KO bit still set: HP 0, 1; else MsRelife full and voice 10, 0; ported (battle round 13)
 0x007891b0 function MsBlowProcess             # fh v3:exact+call.cs 0x00789270 cdecl; ours: (i, actor): +0x617 bit 0: MsSetEscapeFlag(i, actor, 1), 1; else MsRelife(i, actor, 1), 0; ported (battle round 12)
 0x007891e0 function DmgCalc_StatBoostAbility  # fh v3:exact 0x007892a0 +DmgCalc_StatBoostAbility
 0x00789290 function DmgCalc_PowerMagicBreak   # fh v3:exact 0x00789350 +DmgCalc_PowerMagicBreak
@@ -4977,7 +4977,7 @@
 0x0078d730 function DmgCalc_ApplyStatUpBuffs  # fh v3:exact 0x0078d7f0 +DmgCalc_ApplyStatUpBuffs
 0x0078d790 function MsSetChrImageDamageAttack # fh v3:exact 0x0078d850
 0x0078d7f0 function MsSetChrWeak              # fh v3:exact+call.cs 0x0078d8b0 cdecl; ours: (i, level) -> the pose +0x63d (0 with +0x450, level unless -1, else by MsCalcWeakLevel: 0/1 with poison-like counts, 2 weak (3 while MsCheckDeathMotion waits or KO'd), 1 underwater, aeons 1/0); +0x63e the level; ported (battle round 12)
-0x0078d8d0 function MsAutoRelifeProcess       # fh v3:exact+call.cs 0x0078d990 cdecl
+0x0078d8d0 function MsAutoRelifeProcess       # fh v3:exact+call.cs 0x0078d990 cdecl; ours: (i, actor, by, helper): helper free to act: +0x6dd = (+0x446 == 1), by's command helper+0x6c6 on i inserted after i's (prio 0), 1; helper +0x6dc cleared; ported (battle round 13)
 0x0078d980 function MsSetDamage               # fh v3:exact 0x0078da40
 0x0078dae0 function SetUpDamageInfo           # fh v3:exact 0x0078dba0 +SetUpDamageInfo
 0x0078db70 function MsSetDamageMotion         # fh v3:exact 0x0078dc30
@@ -4990,9 +4990,9 @@
 0x0078e0a0 function MsSetPartyRelifeTime      # fh v3:exact 0x0078e160
 0x0078e0f0 function DmgCalc_Delay             # fh v3:exact 0x0078e1b0 +DmgCalc_Delay
 0x0078e150 function MsStoneProcess            # fh v3:exact+call.cs 0x0078e210 cdecl
-0x0078e1e0 function MsSubCTB                  # fh v3:exact+call.cs 0x0078e2a0 cdecl
+0x0078e1e0 function MsSubCTB                  # fh v3:exact+call.cs 0x0078e2a0 cdecl; ours: +0x65c += n (0..0xff), number kind 2 with flags bit 2; ported (battle round 13)
 0x0078e230 function MsSubHP                   # fh call.cs cdecl; ours: (i, actor, n, other, x, flags, style): HP -= n (MsCheckRange 0..max; DebugCanTakeDamage), number with flags bit 0; battles 0x159/0, 0x20/1, 0x209/0 special; ported (battle round 12)
-0x0078e3b0 function MsSubMP                   # fh v3:exact+call.cs 0x0078e400 cdecl
+0x0078e3b0 function MsSubMP                   # fh v3:exact+call.cs 0x0078e400 cdecl; ours: MP -= n (0..+0x598, DebugCanTakeDamage), number kind 1 with flags bit 1; ported (battle round 13)
 0x0078e410 function MsThreatOff               # fh v3:exact 0x0078e460
 0x0078e460 function MsThreatProcess           # fh v3:exact+call.cs 0x0078e4b0 cdecl
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
@@ -5357,9 +5357,9 @@
 0x0079ea40 function MsPauseChrEffect             # layout+callees: sorts between MsMagicEffectStart and MsResetWeaponEffectAttribute, and its named callees match the Switch 0x7100352f60 MsPauseChrEffect's (similarity 1.00: MsGetChr, op_et_bindeff_draw_off, op_et_bindeff_draw_on); symbols from Fahrenheit's server export
 0x0079ea90 function MsResetWeaponEffectAttribute # layout+callees: sorts between MsMagicEffectSet and MsSetStealEffect, and its named callees match the Switch 0x71003537e0 MsResetWeaponEffectAttribute's (similarity 1.00: op_et_eff_off_signal); symbols from Fahrenheit's server export
 0x0079eb10 function MsSetChrEffect_0079eb10      # structure: (chr, ...): unless chr is 0xff, starts an effect for it (MsGetEffID, op_et_eff); callers Native_7017 and two battle effect functions; name ours
-0x0079ebe0 function MsSetChrEffectNext_0079ebe0  # structure: (chr, a, b): effect id from the chr's effect counter (+0xe2a, then incremented) with MsGetEffID(.., 0xe, chr), started with op_et_eff; callers MsSetStealEffect, MsSetStealGillEffect, MsStatusDefenseEffect; name ours
-0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl
-0x0079ed20 function MsSetStealGillEffect      # fh call.cs cdecl
+0x0079ebe0 function MsSetChrEffectNext_0079ebe0  # structure: (chr, a, b): effect id from the chr's effect counter (+0xe2a, then incremented) with MsGetEffID(.., 0xe, chr), started with op_et_eff; callers MsSetStealEffect, MsSetStealGillEffect, MsStatusDefenseEffect; name ours; increments g_BtlCommandHold2 (0x0112c8f8) when op_et_eff starts (positive); ported (battle round 13)
+0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl; ours: MsSetChrEffectNext(i, 0, 9 or 10); ported (battle round 13)
+0x0079ed20 function MsSetStealGillEffect      # fh call.cs cdecl; ours: MsSetChrEffectNext(i, 0, 0x4c or 0x4d); ported (battle round 13)
 0x0079ed40 function MsSetWeaponEffectAttribute # fh v3:exact 0x0079ed60
 0x0079ee20 function MsStatusDefenseEffect     # fh v3:exact+call.cs 0x0079ee40 cdecl
 0x0079ef40 function MsStatusEffect            # fh v3:exact 0x0079ef60

@@ -2839,6 +2839,19 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         same("MsAliveProcess", a, b);
         let (by, helper) = (rng.below(ACTORS), w.actor(rng.below(ACTORS)));
         poke(a, b, p + 0x446, &[[0, 1, 2][rng.below(3) as usize]]);
+        // mostly a helper free to act (MsAutoCommandStatusCheck)
+        if rng.below(3) != 0 {
+            for (o, v) in [
+                (0xdce, 0u8),
+                (0x606, 0),
+                (0x607, 0),
+                (0x608, 0),
+                (0x617, 0),
+                (0xdc8, 1),
+            ] {
+                poke(a, b, helper + o, &[v]);
+            }
+        }
         twin(
             "MsAutoRelifeProcess",
             a,
