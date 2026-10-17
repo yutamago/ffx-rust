@@ -624,6 +624,25 @@ platform), `0x00692680` (exception-frame set-up: platform),
 forwards to `Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton`:
 glue, by the forwarder rule).
 
+Round 10:
+
+- `PhyreScene_ApplySettings` (`0x0066f010`): the graphics settings
+  (`g_Settings` `0x022fb504`) to the scene: `+0x24` as a float to the
+  post-process's `+0x12328`, the shadow quality (`+0x30`,
+  `ShadowManager_SetQuality`, then the buffers resized), `+0x44 != 0` to
+  its byte `+0x123d3`, `+0x48` to `+0x1264`, `+0x38` to its rebind, and the
+  anti-aliasing mode `+0x40`: 1 sets the scene's `+0x10dd8` to 1; 2-5 set it
+  to 0 and the post-process's `+0x1231c` to 1-4; anything else sets 2.
+- `PhyreScene_PushPair3890(a, b)` (`0x00656b90`), `GetASpareGradMeshInstance`
+  (`0x006cc980`, 16 slots per set, the set in `0x00cdec24`; prints and
+  returns 0 when full), the float sort's `FloatHeap_MakeHeap`
+  (`0x006c7410`) and `FloatSort_Insertion` (`0x006c7320`), two more cursor
+  steps (`PhyreSceneCursor_Next5`/`6`, `0x00441c60`, `0x00441cc0`).
+
+Not ported in round 10: `0x00667770` (`std::vector<std::string>`
+`push_back`: platform), `0x006d5a00` (frees three `PCluster`s and resets
+`BrokenScreenEffect`: glue).
+
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
 not atomic, and loader threads share strings, so it stays original.
