@@ -2182,8 +2182,9 @@ pub mod bridge {
 
     /// The item menu's cursor cell (`MenuItem_SetCell`).
     pub const MENU_ITEM_CELL: Global<u32> = Global::new(0x0186_a268);
-    /// The item menu's selected list (`MenuItem_SetList`).
-    pub const MENU_ITEM_SELECTED_LIST: Global<u32> = Global::new(0x0186_a258);
+    /// `g_TkMenuItemTarget`: the character the item menu targets, negative
+    /// for none (`MenuItem_SetTarget`; the name-entry window writes it too).
+    pub const MENU_ITEM_TARGET: Global<u32> = Global::new(0x0186_a258);
     /// The Mn2 draw position (`MenuMn2_StepDrawY` adds 16).
     pub const MN2_DRAW_Y: Global<u32> = Global::new(0x0186_a238);
 
@@ -2496,7 +2497,7 @@ pub mod bridge {
     /// or list 3 with a target, is usable when the key-item flag is set;
     /// other lists always.
     pub fn menu_item_is_usable2(mem: &impl Mem, list: i32) -> u32 {
-        if list == 4 || (list == 3 && MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0) {
+        if list == 4 || (list == 3 && MENU_ITEM_TARGET.get(mem).cast_signed() >= 0) {
             u32::from(MENU_ITEM_KEY_USE.get(mem) != 0)
         } else {
             1
@@ -5329,7 +5330,7 @@ pub mod bridge {
     ) -> u32 {
         let f = mem.rebase(0x008a_c2f0);
         let lang = call(mem, f, &[]);
-        let target = MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0;
+        let target = MENU_ITEM_TARGET.get(mem).cast_signed() >= 0;
         mem.rebase(match (lang == 0, target) {
             (true, true) => 0x00c5_a19c,
             (true, false) => 0x00c5_a1cc,
@@ -5346,7 +5347,7 @@ pub mod bridge {
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let target = MENU_ITEM_SELECTED_LIST.get(mem);
+        let target = MENU_ITEM_TARGET.get(mem);
         let f = mem.rebase(0x008a_c2f0);
         let lang = call(mem, f, &[]);
         let english = if lang == 0 {
@@ -5514,6 +5515,527 @@ pub mod bridge {
             0
         } else {
             r
+        }
+    }
+
+    /// `MenuEquip_IsSelectable(id, any)` (`0x008d5750`, own name): the
+    /// equipment slot from `MsGetSaveWeapon(id, &local)` (`local`, its
+    /// name id, unused: `scratch` stands for it) is 0 when empty (`+2`) or
+    /// flagged 2 (`+3`); else 1 with `any`, else 0 for flags 4 or 8, else
+    /// `MenuList_IsEmptySlot(slot)`.
+    pub fn menu_equip_is_selectable<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        any: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x007a_bbd0);
+        let slot = call(mem, f, &[id, scratch]);
+        if mem.read::<u8>(slot.wrapping_add(2)) == 0 {
+            return 0;
+        }
+        let flags: u8 = mem.read(slot.wrapping_add(3));
+        if flags & 2 != 0 {
+            return 0;
+        }
+        if any != 0 {
+            return 1;
+        }
+        if flags & 0xc != 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x008b_f720);
+        call(mem, f, &[slot])
+    }
+
+    /// `TkMenuItemHealAmount(item, player, mp)` (`0x008c69a0`): what the
+    /// item record (`TkMsGetRomItem(item, &local)`, `scratch` standing for
+    /// the unused `local`) restores, by kind (`+0x28`) and power (`+0x2a`):
+    /// 6 power * 50; 7 (the player's byte `+0x31` + power) / 2 * power; 8
+    /// the max HP (or MP with `mp`) * power / 16, truncated; others 0.
+    pub fn tk_menu_item_heal_amount<M: Mem>(
+        mem: &mut M,
+        [item, player, mp]: [u32; 3],
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let f = mem.rebase(0x008a_b280);
+        let rec = call(mem, f, &[item, scratch]);
+        let power = i32::from(mem.read::<u8>(rec.wrapping_add(0x2a)));
+        match mem.read::<u8>(rec.wrapping_add(0x28)) {
+            6 => power * 50,
+            7 => {
+                let f = mem.rebase(0x0078_5330);
+                let p = call(mem, f, &[player]);
+                let b = i32::from(mem.read::<u8>(p.wrapping_add(0x31)));
+                i32::midpoint(b, power) * power // both 0..=255
+            }
+            8 => {
+                let f = mem.rebase(if mp == 0 { 0x008a_9990 } else { 0x008a_99b0 });
+                let max = call(mem, f, &[player]).cast_signed();
+                max.wrapping_mul(power) / 16
+            }
+            _ => 0,
+        }
+    }
+
+    /// The layout `DrawCrossMenuIcon*` share (`0x008e6700`, `0x008e67f0`,
+    /// `0x008e6970`): `DrawCrossMenuIconXYWHRGBA(remapX2(180) + x,
+    /// remapY2(7) + y, remapX2(38), remapY2(46), icon, 0x80 ×4)`, each
+    /// remap a double (`ST0`) and every argument rounded to a float. The
+    /// remaps run in the original's order (Y 46, X 38, Y 7, X 180).
+    #[allow(clippy::many_single_char_names)]
+    fn cross_icon<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        icon: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let h = r(remap(mem, true, 46.0));
+        let w = r(remap(mem, false, 38.0));
+        let top = r(remap(mem, true, 7.0) + f64::from(y));
+        let left = r(remap(mem, false, 180.0) + f64::from(x));
+        let f = mem.rebase(0x008e_6af0);
+        call(mem, f, &[left, top, w, h, icon, 0x80, 0x80, 0x80, 0x80])
+    }
+
+    /// The name after the icon: `ToMakeBtlEasyFont(text, remapX2(240) + x,
+    /// remapY2(8) + y, colour, 0.78, 1.0)`; its result.
+    fn cross_text<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        text: u32,
+        colour: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let top = r(remap(mem, true, 8.0) + f64::from(y));
+        let left = r(remap(mem, false, 240.0) + f64::from(x));
+        let scale = f32::from_bits(0x3f47_ae14).to_bits();
+        let f = mem.rebase(0x0090_5ab0);
+        call(mem, f, &[text, left, top, colour, scale, 1f32.to_bits()])
+    }
+
+    /// `DrawCrossMenuIconItemName(item, x, y, colour)` (`0x008e6700`): the
+    /// item's icon (`MsGetRomItem(item, &text)` record byte `+0x14`) and
+    /// its name (`+0` plus the `text` base the call writes; `scratch`
+    /// stands for that local) at `(x, y)`. Returns `ToMakeBtlEasyFont`'s
+    /// result.
+    pub fn draw_cross_menu_icon_item_name<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        [x, y]: [f32; 2],
+        colour: u32,
+        scratch: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0079_09f0);
+        let rec = call(mem, f, &[item, scratch]);
+        let base: u32 = mem.read(scratch);
+        let text = u32::from(mem.read::<u16>(rec)).wrapping_add(base);
+        let icon = u32::from(mem.read::<u8>(rec.wrapping_add(0x14)));
+        cross_icon(mem, [x, y], icon, remap, call);
+        cross_text(mem, [x, y], text, colour, remap, call)
+    }
+
+    /// The weapon icon of an equipment slot `e`: `2 * +4 + 1 + +5` (as a
+    /// byte); then the name, and with `+4` equal to `+6` the marker icon
+    /// 0x31 over it.
+    fn cross_weapon<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        text: u32,
+        [x, y, colour]: [u32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = [f32::from_bits(x), f32::from_bits(y)];
+        let kind: u8 = mem.read(e.wrapping_add(4));
+        let icon = kind
+            .wrapping_mul(2)
+            .wrapping_add(1)
+            .wrapping_add(mem.read::<u8>(e.wrapping_add(5)));
+        cross_icon(mem, at, u32::from(icon), remap, call);
+        cross_text(mem, at, text, colour, remap, call);
+        if mem.read::<u8>(e.wrapping_add(4)) == mem.read::<u8>(e.wrapping_add(6)) {
+            cross_icon(mem, at, 0x31, remap, call);
+        }
+    }
+
+    /// `DrawCrossMenuIconWeaponName(id, x, y, colour)` (`0x008e67f0`): the
+    /// weapon slot `MsGetSaveWeapon(id, &unused)` (`scratch` standing for
+    /// the local) drawn with `MsGetSaveWeaponName(id)` (see `cross_weapon`).
+    pub fn draw_cross_menu_icon_weapon_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        [x, y, colour]: [u32; 3],
+        scratch: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x007a_bbd0);
+        let e = call(mem, f, &[id, scratch]);
+        let f = mem.rebase(0x007a_bdf0);
+        let text = call(mem, f, &[id]);
+        cross_weapon(mem, e, text, [x, y, colour], remap, call);
+    }
+
+    /// `DrawCrossMenuIconWeaponName2(e, x, y, colour)` (`0x008e6970`): an
+    /// equipment record `e` drawn with `MsWeaponName(+0, +4,
+    /// MsGetSaveConfigHiragana(0))` (see `cross_weapon`).
+    pub fn draw_cross_menu_icon_weapon_name2<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        [x, y, colour]: [u32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x0078_51f0);
+        let hira = call(mem, f, &[0]);
+        let name = u32::from(mem.read::<u16>(e));
+        let kind = u32::from(mem.read::<u8>(e.wrapping_add(4)));
+        let f = mem.rebase(0x007a_0c50);
+        let text = call(mem, f, &[name, kind, hira]);
+        cross_weapon(mem, e, text, [x, y, colour], remap, call);
+    }
+
+    /// `TkMn2DrawGillPlate(x, y, w, h, gil)` (`0x008c0a20`): the plate's
+    /// two halves (`TOMkpShapeXYWHUV(0xc8, …)`: the left at `x` with width
+    /// `w - remapX2(207)`, UVs `(0.0176, 0.885, 0.303, 0.919)`; the right at
+    /// `x + w - remapX2(207)` with width `remapX2(207)`, UVs `(0.303, 0.885,
+    /// 0.506, 0.919)`), then the amount right-aligned:
+    /// `ToGetBtlEasyDigitWidth2(gil, &width, 0.68, 1.0)` (`scratch` standing
+    /// for `width`) and `ToMakeBtlEasyEdgeDigit2(gil, x + w - remapX2(95,
+    /// or 110 for language 3) - width, remapY2(-2) + y, 0x25, 0.68, 1.0)`,
+    /// whose result is returned. Sums are doubles, arguments floats; the
+    /// remaps run in the original's order.
+    #[allow(clippy::many_single_char_names, clippy::too_many_lines)]
+    pub fn tk_mn2_draw_gill_plate<M: Mem>(
+        mem: &mut M,
+        [x, y, w, h]: [f32; 4],
+        gil: u32,
+        scratch: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| v as f32;
+        // the arguments pass through fld/fstp (signalling NaNs quieted)
+        let [x, y, w, h] = [x, y, w, h].map(ffx_bridge::x87::round_trip);
+        let k = f32::from_bits;
+        let (cap, v0, v1) = (k(0x434f_0000), k(0x3f62_8000), k(0x3f6b_4000));
+        let rx = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, v: f32| {
+            r(remap(mem, false, v))
+        };
+        let shape = mem.rebase(0x0090_3bb0);
+        // the left part
+        let left_w = r(f64::from(w) - f64::from(rx(mem, remap, cap)));
+        let b = f32::to_bits;
+        call(
+            mem,
+            shape,
+            &[
+                0xc8,
+                b(x),
+                b(y),
+                b(left_w),
+                b(h),
+                b(k(0x3c90_0000)),
+                b(v0),
+                b(k(0x3e9b_8000)),
+                b(v1),
+            ],
+        );
+        // the right part
+        let right = f64::from(x) + f64::from(w);
+        let cap_w = rx(mem, remap, cap);
+        let right_x = r(right - f64::from(rx(mem, remap, cap)));
+        call(
+            mem,
+            shape,
+            &[
+                0xc8,
+                b(right_x),
+                b(y),
+                b(cap_w),
+                b(h),
+                b(k(0x3e9b_8000)),
+                b(v0),
+                b(k(0x3f01_8000)),
+                b(v1),
+            ],
+        );
+        // the amount
+        let scale = k(0x3f2e_147b);
+        let f = mem.rebase(0x0090_5230);
+        call(mem, f, &[gil, scratch, b(scale), b(1.0)]);
+        let width: f32 = mem.read(scratch);
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let top = r(remap(mem, true, -2.0) + f64::from(y));
+        let margin = k(if lang == 3 { 0x42dc_0000 } else { 0x42be_0000 });
+        let digits_x = r(right - f64::from(rx(mem, remap, margin)) - f64::from(width));
+        let f = mem.rebase(0x0090_5820);
+        call(mem, f, &[gil, b(digits_x), b(top), 0x25, b(scale), b(1.0)])
+    }
+
+    /// `SndSepPlaySimple(sfx)` (`0x00886e80`) through `call`.
+    fn list_sound<M: Mem>(
+        mem: &mut M,
+        sfx: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x0088_6e80);
+        call(mem, f, &[sfx]);
+    }
+
+    /// The list window's scroll end (`0x008b46d4`/`0x008b4796`): the cursor
+    /// (`+0x48`) moves with the top row (`+0x32`) to the target top
+    /// (`+0x34`), the timer (`+0x46`) cleared, state 2.
+    fn list_scroll_end(mem: &mut impl Mem, w: u32) {
+        let target: u16 = mem.read(w.wrapping_add(0x34));
+        mem.write(w.wrapping_add(0x46), 0u16);
+        let top: u16 = mem.read(w.wrapping_add(0x32));
+        let cursor: u16 = mem.read(w.wrapping_add(0x48));
+        mem.write(
+            w.wrapping_add(0x48),
+            cursor.wrapping_add(target.wrapping_sub(top)),
+        );
+        mem.write(w.wrapping_add(0x32), target);
+        mem.write(w.wrapping_add(0x28), 2u32);
+    }
+
+    /// State 2 of `TkMenuListWindowCtrl`: the pad. Returns the next state
+    /// to run now, or `None` to return.
+    #[allow(clippy::similar_names)] // pad, rep
+    fn list_input<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        [pad, rep, trg]: [u16; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |o: u32| w.wrapping_add(o);
+        if trg & 0x20 != 0 {
+            list_confirm(mem, w, call);
+            return None;
+        }
+        if trg & 0x40 != 0 {
+            list_sound(mem, 0x8000_0004, call);
+            mem.write(at(0x28), 0x11u32);
+            return None;
+        }
+        let count = i32::from(mem.read::<u16>(at(0x30)));
+        let rows = i32::from(mem.read::<u16>(at(0x3a)));
+        let cursor = mem.read::<i16>(at(0x48));
+        if rep & 0x1000 != 0 && cursor > 0 {
+            list_sound(mem, 0x8000_0001, call);
+            let c = cursor - 1;
+            mem.write(at(0x48), c);
+            return (c < mem.read::<i16>(at(0x32))).then_some(7);
+        }
+        if rep & 0x4000 != 0 && i32::from(cursor) < count - 1 {
+            list_sound(mem, 0x8000_0001, call);
+            let c = cursor.wrapping_add(1);
+            mem.write(at(0x48), c);
+            let top = i32::from(mem.read::<i16>(at(0x32)));
+            return (i32::from(c) >= top + rows).then_some(0xb);
+        }
+        let top = i32::from(mem.read::<i16>(at(0x32)));
+        if rep & 1 != 0 && pad == 1 && cursor > 0 {
+            let t = (top - rows).max(0);
+            if t != top {
+                mem.write(
+                    at(0x34),
+                    t.to_le_bytes()[..2]
+                        .try_into()
+                        .map_or(0, u16::from_le_bytes),
+                );
+                return Some(8);
+            }
+        }
+        if rep & 2 != 0 && pad == 2 && i32::from(cursor) < count - 1 {
+            let last = count - rows;
+            let t = if top + rows < last {
+                top + rows
+            } else {
+                last.max(0)
+            };
+            if t != top {
+                mem.write(
+                    at(0x34),
+                    t.to_le_bytes()[..2]
+                        .try_into()
+                        .map_or(0, u16::from_le_bytes),
+                );
+                return Some(0xc);
+            }
+        }
+        None
+    }
+
+    /// The list's confirm (`0x008b4835`): the check callback `+0x1c(w,
+    /// cursor, picked)`, if any; refused (0) plays 0x80000003 and stays;
+    /// otherwise state 0xf, with 0x80000001 unless this was the last pick
+    /// (`+0x45 == +0x42 - 1`) of a window without the `+0x37` sound flag.
+    fn list_confirm<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| w.wrapping_add(o);
+        let f: u32 = mem.read(at(0x1c));
+        let mut picked = i32::from(mem.read::<i8>(at(0x45)));
+        if f != 0 {
+            let cursor = i32::from(mem.read::<i16>(at(0x48)));
+            if call(mem, f, &[w, cursor.cast_unsigned(), picked.cast_unsigned()]) == 0 {
+                list_sound(mem, 0x8000_0003, call);
+                return;
+            }
+            picked = i32::from(mem.read::<i8>(at(0x45)));
+        }
+        let last = i32::from(mem.read::<u8>(at(0x42))) - 1;
+        if picked != last || mem.read::<u8>(at(0x37)) != 0 {
+            list_sound(mem, 0x8000_0001, call);
+        }
+        mem.write(at(0x28), 0xfu32);
+    }
+
+    /// `TkMenuListWindowCtrl(w)` (`0x008b44b0`): one frame of a list
+    /// window's state machine (`+0x28`), with the pad read once
+    /// (`TOMenuGetControlPad`, `…Rep`, `…Trg`). A state may hand on to the
+    /// next in the same frame without storing it, as the original's loop
+    /// does: 2 the pad (`list_input`); 7/8 start a scroll up a row / a page
+    /// (timer `+0x46` 0x1000) and 11/12 down (0xf000); 9/10 and 13/14 run
+    /// the timer by 0x199/0x111 to the scroll end, 9 and 13 cut short by
+    /// the held direction; 15 stores a pick, 17 takes one back; 0 and 1
+    /// return to 2.
+    #[allow(clippy::too_many_lines)]
+    pub fn tk_menu_list_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| w.wrapping_add(o);
+        let read_pad = |mem: &mut M, f: u32, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f = mem.rebase(f);
+            call(mem, f, &[]).to_le_bytes()[..2]
+                .try_into()
+                .map_or(0, u16::from_le_bytes)
+        };
+        let pad = read_pad(mem, 0x008b_e410, call);
+        let rep = read_pad(mem, 0x008b_e470, call);
+        let mut trg = read_pad(mem, 0x008b_e4b0, call);
+        let mut state: u32 = mem.read(at(0x28));
+        loop {
+            let timer = |mem: &mut M, d: u16| -> i16 {
+                let v = mem.read::<u16>(at(0x46)).wrapping_add(d);
+                mem.write(at(0x46), v);
+                i16::from_le_bytes(v.to_le_bytes())
+            };
+            state = match state {
+                0 => {
+                    mem.write(at(0x28), 2u32);
+                    return;
+                }
+                1 => {
+                    mem.write(at(0x45), 0u8);
+                    mem.write(at(0x28), 2u32);
+                    return;
+                }
+                2 => match list_input(mem, w, [pad, rep, trg], call) {
+                    Some(s) => s,
+                    None => return,
+                },
+                7 | 0xb => {
+                    list_sound(mem, 0x8000_0001, call);
+                    let top = mem.read::<u16>(at(0x32));
+                    let top = if state == 7 {
+                        top.wrapping_sub(1)
+                    } else {
+                        top.wrapping_add(1)
+                    };
+                    mem.write(at(0x32), top);
+                    mem.write(at(0x34), top);
+                    let (t, next) = if state == 7 {
+                        (0x1000u16, 9)
+                    } else {
+                        (0xf000, 0xd)
+                    };
+                    mem.write(at(0x46), t);
+                    trg = 0;
+                    mem.write(at(0x28), next);
+                    next
+                }
+                8 | 0xc => {
+                    list_sound(mem, 0x8000_0001, call);
+                    let (t, next) = if state == 8 {
+                        (0x1000u16, 0xa)
+                    } else {
+                        (0xf000, 0xe)
+                    };
+                    mem.write(at(0x46), t);
+                    trg = 0;
+                    mem.write(at(0x28), next);
+                    next
+                }
+                9 => {
+                    if timer(mem, 0xfe67) > 0 && trg & 0x1000 == 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    trg = 0;
+                    2
+                }
+                0xd => {
+                    if timer(mem, 0x199) < 0 && trg & 0x4000 == 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    trg = 0;
+                    2
+                }
+                0xa => {
+                    if timer(mem, 0xfeef) > 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    2
+                }
+                0xe => {
+                    if timer(mem, 0x111) < 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    2
+                }
+                0xf => {
+                    let n = mem.read::<i8>(at(0x45));
+                    let cursor: u16 = mem.read(at(0x48));
+                    mem.write(at(0x2c).wrapping_add_signed(2 * i32::from(n)), cursor);
+                    let n = n.wrapping_add(1);
+                    mem.write(at(0x45), n);
+                    if i32::from(n) < i32::from(mem.read::<u8>(at(0x42))) {
+                        mem.write(at(0x28), 2u32);
+                        return;
+                    }
+                    mem.write(at(0x28), 0x10u32);
+                    return;
+                }
+                0x11 => {
+                    let n = mem.read::<i8>(at(0x45)).wrapping_sub(1);
+                    mem.write(at(0x45), n);
+                    mem.write(at(0x28), if n >= 0 { 2u32 } else { 0x12 });
+                    return;
+                }
+                _ => return,
+            };
         }
     }
 

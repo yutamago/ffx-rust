@@ -82,6 +82,8 @@ pub mod bridge {
     /// `g_pppWoodMatrix`: the billboard rotation `pppDrawMatrixWoodSta`
     /// builds.
     pub const WOOD: Global<[f32; 16]> = Global::new(0x0230_fde0);
+    /// `g_pppWoodMatrixWork`: where `pppDrawMatrixWoodSta` builds `WOOD`.
+    pub const WOOD_WORK: Global<[f32; 16]> = Global::new(0x0230_fee0);
     /// `pppKeMatSN`'s two words (`0x00c3e6e0`).
     pub const MAT_SN: Global<[u32; 2]> = Global::new(0x00c3_e6e0);
 
@@ -758,5 +760,42 @@ pub mod bridge {
                 mem.write(out.wrapping_add(1), b | bit);
             }
         }
+    }
+
+    /// `pppDrawMatrixWoodSta()` (`0x00734d90`): `WOOD`, a billboard
+    /// rotation from `VIEW`: row 1 its `+0x10` row (`w` 0) normalised, row
+    /// 0 `(y, -x, 0, 0)` of that normalised, row 2 their outer product
+    /// normalised, row 3 `VIEW`'s translation; built in `0x0230fee0`, then
+    /// copied (`FFXVu0CopyMatrix`, whose eax it returns). The three vectors
+    /// are locals below `frame`.
+    pub fn ppp_draw_matrix_wood_sta(mem: &mut impl Mem, frame: u32) -> u32 {
+        let view = VIEW.ptr(mem).addr;
+        let work = WOOD_WORK.ptr(mem).addr;
+        let (v, b, c) = (
+            frame.wrapping_sub(0x14),
+            frame.wrapping_sub(0x24),
+            frame.wrapping_sub(0x34),
+        );
+        for i in 0..3 {
+            mem.write(at(v, i), round_trip(f(mem, at(view, 4 + i))));
+        }
+        mem.write(at(v, 3), 0.0f32);
+        vu0::normalize(mem, v, v);
+        let row: [u32; 4] = mem.read(v);
+        mem.write(at(work, 4), row);
+        mem.write(at(b, 0), round_trip(f(mem, at(v, 1))));
+        mem.write(at(b, 1), (-Reg::load(f(mem, v))).store());
+        mem.write(at(b, 2), 0.0f32);
+        mem.write(at(b, 3), 0.0f32);
+        vu0::normalize(mem, b, b);
+        let row: [u32; 4] = mem.read(b);
+        mem.write(work, row);
+        vu0::outer_product(mem, c, b, v);
+        vu0::normalize(mem, c, c);
+        let row: [u32; 4] = mem.read(c);
+        mem.write(at(work, 8), row);
+        let row: [u32; 4] = mem.read(at(view, 12));
+        mem.write(at(work, 12), row);
+        vu0::matrix_copy(mem, WOOD.ptr(mem).addr, work)
     }
 }

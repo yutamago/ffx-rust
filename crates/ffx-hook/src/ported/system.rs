@@ -62,6 +62,38 @@ fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
     }
 }
 
+/// MSVCR110's `_CIcos` through the game's import slot (`0x00b0c3b4`,
+/// behind the thunk `0x009498c2`) on a double: loaded with `fld qword`,
+/// the result stored with `fstp qword`.
+fn crt_cos<M>(_mem: &mut M, x: f64) -> f64 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f64;
+        // SAFETY: the slot holds the address of the CRT's intrinsic, which
+        // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the
+        // x87 and SSE registers clobbered); edi, which holds the result's
+        // address, is kept by the callee.
+        unsafe {
+            let f = (crate::rebase(0x00b0_c3b4) as *const usize).read();
+            std::arch::asm!(
+                "fld qword ptr [{x}]",
+                "call {f}",
+                "fstp qword ptr [edi]",
+                x = in(reg) &raw const x,
+                f = in(reg) f,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = x;
+        f64::NAN
+    }
+}
+
 /// `Phyre::PSerialization::PStreamFile::read(buf, n)` (`0x00608090`,
 /// thiscall), not ported yet.
 fn stream_read<M>(_mem: &mut M, stream: u32, buf: u32, n: u32) -> u32 {
@@ -6074,6 +6106,149 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         let at = rec.as_mut_ptr() as usize as u32;
         tolib::bridge::to_make_pkt_box_xywh_rgba(&mut mem(), [x, y, w, h, r, g, b, a], at, call_sym);
+    }
+    /// `TODrawMenuBG()`.
+    TODrawMenuBG @ 0x008f_5c10 => extern "C" fn to_draw_menu_bg() {
+        tolib::bridge::to_draw_menu_bg(&mut mem(), call_sym);
+    }
+    /// `TOMkpCrossExtMesFontLClut(text, window, x, y, flags, scale, extra)`.
+    TOMkpCrossExtMesFontLClut @ 0x0090_16b0 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut(text: u32, window: u32, x: u32, y: u32, flags: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_mkp_cross_ext_mes_font_l_clut(&mut mem(), [text, window, x, y, flags, scale, extra], call_sym);
+    }
+    /// `TOMakePktFont1612Edge(pen, glyph)`.
+    TOMakePktFont1612Edge @ 0x008f_c870 => extern "C" fn to_make_pkt_font_1612_edge(pen: u32, glyph: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Edge, at, call_sym, fcall);
+    }
+    /// `TOMakePktFont1612Shadow(pen, glyph, layer)`.
+    TOMakePktFont1612Shadow @ 0x008f_cca0 => extern "C" fn to_make_pkt_font_1612_shadow(pen: u32, glyph: u32, layer: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Shadow(layer), at, call_sym, fcall);
+    }
+    /// `TOMakePktFont1612Font(pen, glyph, mode)`.
+    TOMakePktFont1612Font @ 0x008f_cad0 => extern "C" fn to_make_pkt_font_1612_font(pen: u32, glyph: u32, mode: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Face(mode), at, call_sym, fcall);
+    }
+    /// `TOMakePktFont1612(pen, glyph)`.
+    TOMakePktFont1612 @ 0x008f_c7c0 => extern "C" fn to_make_pkt_font_1612(pen: u32, glyph: u32) {
+        tolib::bridge::to_make_pkt_font_1612(&mut mem(), pen, glyph, call_sym);
+    }
+    /// `TOMakePktFont1612Font_00906270(pen, glyph)`.
+    TOMakePktFont1612Font_00906270 @ 0x0090_6270 => extern "C" fn to_make_pkt_font_1612_font_default(pen: u32, glyph: u32) {
+        tolib::bridge::to_make_pkt_font_1612_default(&mut mem(), pen, glyph, false, call_sym);
+    }
+    /// `TOMakePktFont1612Shadow_00906290(pen, glyph)`.
+    TOMakePktFont1612Shadow_00906290 @ 0x0090_6290 => extern "C" fn to_make_pkt_font_1612_shadow_default(pen: u32, glyph: u32) {
+        tolib::bridge::to_make_pkt_font_1612_default(&mut mem(), pen, glyph, true, call_sym);
+    }
+    /// `TODrawCrossMenuIconAbilityName(id, x, y, alpha)`.
+    TODrawCrossMenuIconAbilityName @ 0x008f_4f10 => extern "C" fn to_draw_cross_menu_icon_ability_name(id: u32, x: u32, y: u32, alpha: u32) {
+        let mut base = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut base) as usize as u32;
+        tolib::bridge::to_draw_cross_menu_icon_name(
+            &mut mem(),
+            tolib::bridge::CrossMenuIconName::Ability,
+            id,
+            (x, y),
+            alpha,
+            at,
+            call_sym,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
+    /// `TODrawCrossMenuIconCommandName(id, x, y, alpha)`.
+    TODrawCrossMenuIconCommandName @ 0x008f_5000 => extern "C" fn to_draw_cross_menu_icon_command_name(id: u32, x: u32, y: u32, alpha: u32) {
+        let mut base = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut base) as usize as u32;
+        tolib::bridge::to_draw_cross_menu_icon_name(
+            &mut mem(),
+            tolib::bridge::CrossMenuIconName::Command,
+            id,
+            (x, y),
+            alpha,
+            at,
+            call_sym,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
+    /// `TOMkpRotateShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle)`.
+    TOMkpRotateShapeXYWHUVC2 @ 0x0090_2ef0 => extern "C" fn to_mkp_rotate_shape_xywhuv_c2(
+        shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32, c0: u32, c1: u32, angle: u32
+    ) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_mkp_rotate_shape_xywhuv_c2(
+            &mut mem(),
+            [shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle],
+            at,
+            call_sym,
+            fcall,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
+    /// `TODrawBtlNetWindowXYWHType(x, y, w, h, kind)`.
+    TODrawBtlNetWindowXYWHType @ 0x008f_41b0 => extern "C" fn to_draw_btl_net_window_xywh_type(x: f32, y: f32, w: f32, h: f32, kind: u32) {
+        tolib::bridge::to_draw_btl_net_window_xywh_type(
+            &mut mem(),
+            (x, y, w, h),
+            kind,
+            call_sym,
+            fcall,
+            crt_cos,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
+    /// `AdjustButtonIconY(scale, r, g, b, a)`.
+    AdjustButtonIconY @ 0x008e_5280 => extern "C" fn adjust_button_icon_y(_scale: u32, _r: u32, _g: u32, _b: u32, _a: u32) -> f32 {
+        tolib::bridge::adjust_button_icon_y(&mut mem(), call_sym)
+    }
+    /// `TOAddPktChangeMacro_help(key, code, pen, scale, extra, shadow)`.
+    TOAddPktChangeMacro_help @ 0x008e_9ca0 => extern "C" fn to_add_pkt_change_macro_help(key: u32, code: u32, pen: u32, scale: u32, extra: u32, shadow: u32) -> u32 {
+        tolib::bridge::to_add_pkt_change_macro_help(&mut mem(), [key, code, pen, scale, extra, shadow], call_sym)
+    }
+    /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r, g, b, a, scale, extra)`.
+    TOMkpCrossExtMesFontLClutTypeRGBA @ 0x0090_1700 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut_type_rgba(
+        key: u32, text: u32, x: u32, y: u32, mode: u32, kind: u32, r: u32, g: u32, b: u32, a: u32, scale: u32, extra: u32
+    ) {
+        tolib::bridge::to_mkp_cross_ext_mes_font_l_clut_type_rgba(
+            &mut mem(),
+            [key, text, x, y, mode, kind, r, g, b, a, scale, extra],
+            call_sym,
+            fcall,
+        );
+    }
+    /// `TOMakePktFontLItalicEdge(pen, glyph)`.
+    TOMakePktFontLItalicEdge @ 0x008f_ce90 => extern "C" fn to_make_pkt_font_l_italic_edge(pen: u32, glyph: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicEdge, at, call_sym, fcall);
+    }
+    /// `TOMakePktFontLItalicFont(pen, glyph)`.
+    TOMakePktFontLItalicFont @ 0x008f_d0a0 => extern "C" fn to_make_pkt_font_l_italic_font(pen: u32, glyph: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicFace, at, call_sym, fcall);
+    }
+    /// `DrawCrossMenuIconXYWHRGBA(x, y, w, h, icon, r, g, b, a)`.
+    DrawCrossMenuIconXYWHRGBA @ 0x008e_6af0 => extern "C" fn draw_cross_menu_icon_xywh_rgba(
+        x: u32, y: u32, w: u32, h: u32, icon: u32, r: u32, g: u32, b: u32, a: u32
+    ) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::draw_cross_menu_icon_xywh_rgba(&mut mem(), [x, y, w, h, icon, r, g, b, a], at, call_sym);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

@@ -10,8 +10,8 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    draw, et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec,
-    wave, x87,
+    draw, et, fp, heap, lns, mat, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small,
+    tree, vec, wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -9148,96 +9148,610 @@ fn lns_lp_t_ot_draw_matches_the_original() {
     }
 }
 
-#[test]
-#[allow(clippy::too_many_lines)]
-fn mdl_draw_matches_the_original() {
-    use draw::bridge as d;
+/// One `pppDrawMdl*` draw (`sym`) against `rust(oracle, obj, key, prog,
+/// frame)`: every renderer entry point recorded (the request by its 18
+/// words), the level hash, `graphicGetPtrLogCount`, the render-data
+/// lookup, the alpha helpers, the magic file's handle and id and the
+/// language from cells, `FFXVu0MulMatrix` recorded; the port runs with the original's frame pointer,
+/// so pointers to stack locals agree. The request at `frame - req_off`
+/// gets the same stale values in its untouched words (`+8..+0xc`, `+0x30`)
+/// on both sides.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn mdl_case(
+    name: &str,
+    sym: u32,
+    req_off: u32,
+    rust: impl Fn(&mut Oracle, u32, u32, u32, u32) -> u32,
+) {
     for mut p in Pair::all() {
-        let mut rng = Xorshift(0x0073_7770);
-        // the renderer's entry points recorded, the request by its 18
-        // words; the level hash, the render-data lookup and the two
-        // alpha helpers from cells
-        let cells = p.alloc(0x10);
+        let mut rng = Xorshift(sym);
+        let cells = p.alloc(0x20);
         deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
         deref_recorder_with(&mut p, 0x0064_53d0, &[0, 0], Some(cells + 4));
         deref_recorder_with(&mut p, 0x0071_2c30, &[0], Some(cells + 8));
         deref_recorder_with(&mut p, 0x0071_2d00, &[0], Some(cells + 0xc));
+        deref_recorder_with(&mut p, 0x0064_1370, &[], Some(cells + 0x10));
+        deref_recorder_with(&mut p, 0x009d_a390, &[], Some(cells + 0x14));
+        deref_recorder_with(&mut p, 0x009d_a3b0, &[], Some(cells + 0x18));
+        deref_recorder_with(&mut p, 0x008a_c2f0, &[], Some(cells + 0x1c));
+        deref_recorder(&mut p, 0x0064_0060, &[0, 0]);
+        // FFXVu0MulMatrix(dst, a, b) recorded with a's 16 words: the
+        // matrices built on the stack only reach the request as pointers
+        wide_recorder(&mut p, 0x006e_d5c0, &[0, 16, 0], None);
         wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 18], None);
         wide_recorder(&mut p, 0x0071_0fd0, &[0, 0, 0, 18, 0], None);
         wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 18, 0], None);
         deref_recorder(&mut p, 0x0064_5600, &[0, 0]);
         deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
-        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10), p.alloc(4));
+        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
         let (env, env2, recs, models, part) = (
             p.alloc(4),
             p.alloc(0x40),
-            p.alloc(0x100),
-            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x80),
             p.alloc(0x80),
         );
-        let slot = p.sym(d::ENV_SLOT);
-        let (cur, cpart, shift) = (
-            p.sym(d::CURRENT_PROGRAM),
+        let slot = p.sym(draw::bridge::ENV_SLOT);
+        // the view, view-copy, screen, ppp screen and world matrices
+        let matrices = [
+            0x0230_ff20u32,
+            0x0230_fe20,
+            0x0231_1480,
+            0x0230_fe60,
+            0x0230_ffa0,
+        ]
+        .map(|a| p.sym(a));
+        let (pass, map, fp, yiq) = (
+            p.sym(0x0113_335c),
+            p.sym(0x012f_bc40),
+            p.sym(0x00c3_a500),
+            p.sym(0x00c3_a504),
+        );
+        let (cur, cpart, shift, stop) = (
+            p.sym(0x0230_fd20),
             p.sym(0x0230_ffe4),
             p.sym(0x00c8_b500),
+            p.sym(0x0230_fd34),
         );
         let r0 = p.sym(0x00c8_f508);
         for _ in 0..1500 {
             p.fill(obj, 0x200, &mut rng);
-            p.fill(recs, 0x100, &mut rng);
-            p.fill(models, 0x40, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(recs, 0x400, &mut rng);
+            if rng.chance(50) {
+                for m in matrices {
+                    for o in (0..0x40).step_by(4) {
+                        let x = ranged(&mut rng, -2.0, 2.0);
+                        p.set(m + o, x);
+                    }
+                }
+            }
+            // models: small words (flags in the low bits, part offsets),
+            // then the fields the magic-file fixes look for
+            for o in (0..0x24).step_by(4) {
+                let v = (4 * rng.below(0x10)) | rng.below(4);
+                p.set(models + o, v);
+            }
+            for o in (0x24..0x80).step_by(4) {
+                let r = rng.next();
+                let v = rng.pick(&[0x36c0u32, 0x3700, 0x37e0, 0x4000 | 0x37e0, r]);
+                p.set(models + o, v);
+            }
+            for o in (0x10..0x90).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
             p.fill(part, 0x80, &mut rng);
             p.fill(r0, 0x10, &mut rng);
             p.set(prog + 0xc, table);
-            let off = 4 * rng.below(0x10);
-            p.set(table, off);
+            for k in 0..3 {
+                let off = 4 * rng.below(0x10);
+                p.set(table + 4 * k, off);
+            }
+            // the Ts work area: floats, the key's frame and its floats
+            let w = obj + 0xa0 + p.get::<u32>(table + 8);
+            for o in (0..0x1c).step_by(4) {
+                let x = if rng.chance(20) {
+                    ranged(&mut rng, -70000.0, 70000.0)
+                } else {
+                    ranged(&mut rng, -300.0, 300.0)
+                };
+                p.set(w + o, x);
+            }
+            // the Loop draws' ptr32 at +0: null sets the work area up
+            if rng.chance(30) {
+                p.set(w, 0u32);
+            }
+            for o in (8..0x20).step_by(4) {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            if rng.chance(50) {
+                let frame = p.get::<u32>(obj + 0xc);
+                p.set(key, frame);
+            }
+            // the flag bytes of the key: small values hit every branch
+            for o in [8u32, 0xa, 0x20, 0x22] {
+                if rng.chance(70) {
+                    p.set(key + o, u8::try_from(rng.below(8)).unwrap());
+                }
+            }
+            if rng.chance(30) {
+                p.set(key + 0x20, 0xffu8);
+            }
+            for o in [9u32, 0xb, 0xc, 0xd, 0xe, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26] {
+                if rng.chance(50) {
+                    p.set(key + o, 0u8);
+                }
+            }
+            p.set(pass, rng.below(3));
+            let m = rng.next();
+            let maps = [
+                0x17cu32, 0x3e, 0xc6, 0xc2, 0xff, 0x102, 0x103, 0xf4, 0x110, 0x139, 0x7a, m,
+            ];
+            p.set(map, rng.pick(&maps));
+            let f = rng.pick(&[
+                0x2cu32, 0x2d, 0x2e, 0x2f, 0x3f, 0x40, 0xe, 3, 4, 5, 0x12, 0x41,
+            ]);
+            p.set(fp, f);
+            p.set(yiq, rng.pick(&[0x19u32, 5, 0, u32::MAX]));
+            p.set(cells + 0x14, rng.pick(&[0u32, u32::MAX]));
+            let r = rng.next();
+            let magics = [
+                0x296u32, 0x241, 0x29e, 0x29f, 0x2c9, 0x17a, 0x110, 0x111, 0x231, 0x1f9, r,
+            ];
+            p.set(cells + 0x18, rng.pick(&magics));
+            p.set(cells + 0x1c, rng.pick(&[0xbu32, 1]));
+            p.set(stop, u32::from(rng.chance(20)));
             let s = if rng.chance(20) { 4 * rng.below(4) } else { 0 };
             p.set(shift, s);
             p.set(cpart, part);
             p.set(slot, env);
             p.set(env, env2);
             p.set(env2 + 0x20, recs);
-            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            let model = if rng.chance(5) {
+                0xffff
+            } else if rng.chance(30) {
+                rng.pick(&[0x1au32, 0x1c, 0x1e, 0x1f])
+            } else {
+                rng.below(8)
+            };
             p.set(key + 4, model);
             // get_ptr32 of the model record's +0x1c: a pointer into models
-            for k in 0..8u32 {
-                let o = rng.below(0x20);
+            for k in 0..0x20u32 {
+                let o = 4 * rng.below(8);
                 p.set(recs + 32 * k + 0x1c, models + o);
             }
             p.set(obj + 0x90, models + rng.below(0x20));
             p.set(obj + 0x94, models + rng.below(0x20));
-            p.set(cells, if rng.chance(10) { 0xec1u32 } else { rng.next() });
+            let (h1, h2) = (rng.next(), rng.next());
+            let h = rng.pick(&[0xec1u32, 0x169c, h1, h2]);
+            p.set(cells, h);
             p.set(cells + 4, u32::from(rng.chance(50)));
-            let (x, y) = (rng.next(), rng.next());
-            p.set(cells + 8, x);
-            p.set(cells + 0xc, y);
+            // the alpha helpers: often no bits, so added ones show
+            for c in [cells + 8, cells + 0xc] {
+                let x = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(c, x);
+            }
+            let n = if rng.chance(50) { 0 } else { rng.next() };
+            p.set(cells + 0x10, n);
             let r9 = rng.next();
             p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
-            // the request's untouched words (+0xb, +0x30): the same stale
-            // stack on both sides
-            let n = 3;
-            let frame = p.b.stack_range().end - 0x100 - 4 * n - 4 - 0x200 - 4 * n - 4 - 4;
+            let words = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4 - 4;
             let at = (frame - 8) & !0xf;
             let (s1, s2) = (rng.next(), rng.next());
-            for base in [at, frame] {
-                p.set(base - 0x78, s1);
-                p.set(base - 0x50, s2);
+            p.set(at - req_off + 8, s1);
+            p.set(at - req_off + 0x30, s2);
+            check_deep_n(&mut p, name, sym, &[obj, key, prog], |o, frame| {
+                assert_eq!((frame - 8) & !0xf, at);
+                Some(rust(o, obj, key, prog, at))
+            });
+        }
+    }
+}
+
+#[test]
+fn mdl_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlDraw",
+        0x0073_7770,
+        0x80,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_semi_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlSemiDraw",
+        0x0073_7b20,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_semi_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_2_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdl2Draw",
+        0x0073_8530,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_semi2_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlSemi2Draw",
+        0x0073_8a40,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_semi2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_ts_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlTsDraw",
+        0x0073_7f40,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_ts_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_3_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdl3Draw",
+        0x0073_94c0,
+        0x120,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_3_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_semi3_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlSemi3Draw",
+        0x0073_9d30,
+        0x120,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_semi3_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_ts3_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlTs3Draw",
+        0x0073_a370,
+        0xe0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_ts3_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_loop_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlLoopDraw",
+        0x0073_e2b0,
+        0xe0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_loop_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_loop_z_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlLoopZDraw",
+        0x0073_ea40,
+        0xe0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_loop_z_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_loop_dis_pos_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlLoopDisPosDraw",
+        0x0073_f230,
+        0x1a0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_loop_dis_pos_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_ts2_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlTs2Draw",
+        0x0073_8ec0,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_ts2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+/// The `pppKeLns*` draws (`docs/formats/vfx.md`): the updates and the
+/// `KeLns*` drawers recorded (descriptors by their 7 words), the vector
+/// helpers real; the ports run with the original's frame pointer.
+#[allow(clippy::too_many_lines)]
+fn lns_case(name: &str, sym: u32, args: usize, rust: impl Fn(&mut Oracle, [u32; 3], u32) -> u32) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        for u in [0x0075_a2d0u32, 0x0075_aab0, 0x0075_ae90] {
+            deref_recorder(&mut p, u, &[0, 0, 0]);
+        }
+        for d in [0x0076_9340u32, 0x0076_9d70, 0x0076_a1f0] {
+            wide_recorder(&mut p, d, &[7, 0], None);
+        }
+        deref_recorder(&mut p, 0x0076_a690, &[4]);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x200),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(4),
+            p.alloc(0x80),
+        );
+        let cpart = p.sym(0x0230_ffe4);
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            p.set(cpart, part);
+            for o in [4u32, 8, 0xc] {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
             }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            // the object's matrix and position, the work area's floats
+            for o in (0x10..0x50).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
+            let w = obj + 0xa0 + off;
+            for o in (0x2c..0x40).step_by(4) {
+                let x = match rng.below(4) {
+                    0 => ranged(&mut rng, -70000.0, 70000.0),
+                    1 => 3.0e9f32.to_bits(),
+                    _ => ranged(&mut rng, -300.0, 300.0),
+                };
+                p.set(w + o, x);
+            }
+            for o in [0x9cu32, 0xa8] {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(w + o, x);
+            }
+            if rng.chance(50) {
+                p.set(w + 0x8f, 0u8);
+            }
+            let n = u8::try_from(args).unwrap();
+            let frame = p.b.stack_range().end
+                - 0x100
+                - 4 * u32::from(n)
+                - 4
+                - 0x200
+                - 4 * u32::from(n)
+                - 4
+                - 4;
+            let at = (frame - 8) & !0xf;
+            let three = [obj, key, prog];
+            let call_args = if args == 1 { vec![w] } else { three.to_vec() };
+            check_deep_n(&mut p, name, sym, &call_args, |o, frame| {
+                assert_eq!((frame - 8) & !0xf, at);
+                Some(rust(o, if args == 1 { [w, 0, 0] } else { three }, at))
+            });
+        }
+    }
+}
+
+#[test]
+fn lns_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndDraw", 0x0075_9ff0u32),
+        (Lns::Crn, "pppKeLnsCrnDraw", 0x0075_a760),
+        (Lns::Fls, "pppKeLnsFlsDraw", 0x0075_ab50),
+    ] {
+        lns_case(name, sym, 3, |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_draw(o, kind, obj, key, prog, frame, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_t_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndTDraw", 0x0075_a190u32),
+        (Lns::Crn, "pppKeLnsCrnTDraw", 0x0075_a900),
+        (Lns::Fls, "pppKeLnsFlsTDraw", 0x0075_ad00),
+    ] {
+        lns_case(name, sym, 3, |o, [obj, key, prog], _| {
+            l::ppp_ke_lns_t_draw(o, kind, obj, key, prog, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_t_ot_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndTOtDraw", 0x0075_a250u32),
+        (Lns::Crn, "pppKeLnsCrnTOtDraw", 0x0075_a9e0),
+        (Lns::Fls, "pppKeLnsFlsTOtDraw", 0x0075_ade0),
+    ] {
+        lns_case(name, sym, 1, |o, [area, _, _], frame| {
+            l::ppp_ke_lns_t_ot_draw(o, kind, area, frame, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_lp_draw_matches_the_original() {
+    use lns::bridge as l;
+    lns_case(
+        "pppKeLnsLpDraw",
+        0x0075_af80,
+        3,
+        |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_lp_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+/// The `pppKeMdlTfd*` draws: `KeMdl_MkTkClut` and `KeMdl_Draw` recorded
+/// (all their words), the work area's triples and the key's floats in
+/// range.
+fn tfd_case(name: &str, sym: u32, rust: impl Fn(&mut Oracle, u32, u32, u32) -> u32) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        deref_recorder(&mut p, 0x0076_7530, &[0, 0, 0, 0]);
+        deref_recorder(&mut p, 0x0076_6ff0, &[0; 10]);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x80),
+        );
+        let (cpart, stop) = (p.sym(0x0230_ffe4), p.sym(0x0230_fd34));
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(prog + 0xc, table);
+            for k in 0..4 {
+                let off = 4 * rng.below(0x10);
+                p.set(table + 4 * k, off);
+            }
+            p.set(cpart, part);
+            p.set(stop, u32::from(rng.chance(20)));
+            let w = obj + 0xa0 + p.get::<u32>(table + 8);
+            for o in (0..0x28).step_by(4) {
+                let x = ranged(&mut rng, -300.0, 300.0);
+                p.set(w + o, x);
+            }
+            for o in (8..0x38).step_by(4) {
+                if o != 0x1c {
+                    let x = ranged(&mut rng, -50.0, 50.0);
+                    p.set(key + o, x);
+                }
+            }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            if rng.chance(10) {
+                p.set(key + 4, 0xffffu32);
+            }
+            for o in (0x1d..0x22).chain(0x38..0x3d) {
+                if rng.chance(60) {
+                    p.set(key + o, 0u8);
+                }
+            }
+            check_conv(&mut p, name, sym, Conv::Cdecl, &[obj, key, prog], |o| {
+                Some(rust(o, obj, key, prog))
+            });
+        }
+    }
+}
+
+#[test]
+fn ke_mdl_tfd_draws_match_the_original() {
+    use mdl::bridge::{self as d, Tfd};
+    for (kind, uv, name, sym) in [
+        (Tfd::One, false, "pppKeMdlTfdDraw", 0x0074_9810u32),
+        (Tfd::Two, false, "pppKeMdlTfd2Draw", 0x0074_9b40),
+        (Tfd::Three, false, "pppKeMdlTfd3Draw", 0x0074_9e90),
+        (Tfd::One, true, "pppKeMdlTfdUvDraw", 0x0074_9950),
+        (Tfd::Two, true, "pppKeMdlTfdUv2Draw", 0x0074_9c90),
+        (Tfd::Three, true, "pppKeMdlTfdUv3Draw", 0x0074_9ff0),
+    ] {
+        tfd_case(name, sym, |o, obj, key, prog| {
+            d::ppp_ke_mdl_tfd_draw(o, kind, uv, obj, key, prog, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn fp_set_draw_matrix_and_wood_sta_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_a260);
+        // view, camera, world, the field wood matrix, the view copy
+        let matrices = [
+            0x0230_ff20u32,
+            0x0230_ff60,
+            0x0230_ffa0,
+            0x0230_fea0,
+            0x0230_fe20,
+        ]
+        .map(|a| p.sym(a));
+        for _ in 0..1000 {
+            for m in matrices {
+                for o in (0..0x40).step_by(4) {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(m + o, x);
+                }
+            }
+            let r = rng.next();
+            let mode = rng.pick(&[0u32, 1, 2, 3, 0x101, 0x102, r]);
+            check_conv(
+                &mut p,
+                "pppFpSetDrawMatrix",
+                0x0072_a260,
+                Conv::Cdecl,
+                &[mode],
+                |o| Some(fp::bridge::ppp_fp_set_draw_matrix(o, mode)),
+            );
+            // a plain frame: ebp is check_deep_n's frame
             check_deep_n(
                 &mut p,
-                "pppDrawMdlDraw",
-                0x0073_7770,
-                &[obj, key, prog],
-                |o, frame| {
-                    Some(d::ppp_draw_mdl_draw(
-                        o,
-                        obj,
-                        key,
-                        prog,
-                        frame,
-                        &mut call_original,
-                    ))
-                },
+                "pppDrawMatrixWoodSta",
+                0x0073_4d90,
+                &[],
+                |o, frame| Some(mat::bridge::ppp_draw_matrix_wood_sta(o, frame)),
             );
         }
     }
