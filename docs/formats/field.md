@@ -1295,6 +1295,37 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   - 0x17: type 2..0xb; 0x18: the same plus no panel bit and another
     character's.
 
+## The sphere grid's bounds and the sea's effect fade (round 30)
+
+- `AbmapCalcBounds` (`0x00a5ae40`, name ours, from `LoadAbmap`): the
+  grid's extent. Starting from 0.0 (so it always contains the origin), it
+  takes the minimum and maximum over the nodes (`i16` count at `+0`,
+  16-byte records from `+8`: x `+0`, y `+2`, kind `+6`) of
+  `x -/+ w / 2` and `y -/+ h / 2`. `w` and `h` are the kind's size
+  (`+0xf808 + 4 kind`), halved toward zero. The results go to
+  `+0x115fc`/`+0x11600` (minimum) and `+0x11604`/`+0x11608` (maximum),
+  copied to `+0x1160c`, `+0x11610`, `+0x11614`, `+0x11618`.
+- `Yn_SeaFpFade` (`0x00922970`, name ours, from `0x00922600`) fades a
+  field effect by the sea's angle (`Yn_SeaGetAngPtr` `+8`, `lim`) against
+  the fade's own angle (`+8`, `a`). It is a four-state machine at `+0`:
+  - 0, off: when `lim < a < 0` or `0 < a < lim`, the effect (id `+4`) is
+    shown and restarted, and the state becomes 1.
+  - 1, fading in: the count `+0x10` goes up and the weight is
+    `count / frames` (`+0xc`; both ints stored as `f32` first). At the
+    frames the state becomes 2.
+  - 2, on: weight 1.0; when `a < 0` and `a < lim`, or `0 < a` and
+    `a > lim`, the state becomes 3. Equal angles stay on.
+  - 3, fading out: the count goes down; at 0 the effect is hidden and
+    ended, and the state goes back to 0.
+  - For a positive id the weight goes to `+0x2c` of the chunk entry
+    (`0x00c5e480 + 0x38 id`), whose matrix (`rcbgFPmGetMatrix`) is
+    copied into the effect's manager (`pppFpGetMngPtr`, `+0xc`).
+- The Ke* functions left in the worklist (`KeDttSpr_MkGifPk`,
+  `KeDttMdl_MkGifPk`, `KeLnsLp_Update`, `KeThBP_Update`, `KeBornPtCmlp`,
+  `KeVu0ItrsBallLine`) are classed logic by default in `classes.tsv`.
+  The `MkGifPk` ones build GIF packets (replaced by ffx-render); the
+  others are VFX updates for the vfx crate.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
