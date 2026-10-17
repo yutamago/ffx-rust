@@ -7260,3 +7260,132 @@ fn round11f_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11g_matches_the_original() {
+    for mut t in twins() {
+        round11g_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn round11g_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_a11a);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let reset = fk.fake(t, 0x0082_b080, 2, 1);
+    let seq = fk.fake(t, 0x0083_7ac0, 3, 2);
+    let fast = fk.fake(t, 0x0083_7860, 4, 1);
+    let play = fk.fake(t, 0x0083_9b80, 5, 5);
+    // SG_DisposeMotionGroup: clears the entry Ch_DisposeAllMGRP picks, then logs
+    let table = t.a.rebase(0x0130_11e0);
+    let (logger, _) = fk.fake_code(t, 6, 3);
+    let mut stub = vec![0xb8];
+    stub.extend((table + 4).to_le_bytes());
+    stub.extend([
+        0x83, 0x78, 0xfc, 0x00, 0x74, 0x06, 0x66, 0x83, 0x38, 0x02, 0x75, 0x0b,
+    ]);
+    stub.extend([0x83, 0xc0, 0x0c, 0x3d]);
+    stub.extend((table + 50 * 12 + 4).to_le_bytes());
+    stub.extend([0x7c, 0xea, 0xc3, 0xc7, 0x40, 0xfc, 0, 0, 0, 0, 0xe9]);
+    let at = t.a.alloc_code(&[0; 64]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 64]).unwrap(), at);
+    let jmp_from = at + u32::try_from(stub.len()).unwrap() + 4;
+    stub.extend(logger.wrapping_sub(jmp_from).to_le_bytes());
+    t.put(at, &stub);
+    let dispose = t.a.rebase(0x0083_6e20);
+    let mut jmp = vec![0xe9];
+    jmp.extend(at.wrapping_sub(dispose + 5).to_le_bytes());
+    t.put(dispose, &jmp);
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(reset, rng.next());
+        t.put_u32(play, rng.next());
+        t.put_u32(seq, u32::from(rng.next().is_multiple_of(4)));
+        let clip = t.alloc(0x10);
+        let marks = t.alloc(0x20);
+        for k in 0..16 {
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(
+                marks + 2 * k,
+                &((rng.next() % 200) as i16 - 20).to_le_bytes(),
+            );
+        }
+        t.put_u32(clip + 8, marks);
+        t.put_u32(clip + 0xc, rng.next());
+        t.put_u32(
+            fast,
+            if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                clip
+            },
+        );
+        let chr = t.alloc(0x800);
+        let loops = rng.next() % 3;
+        let ends = [rng.next() % 16, rng.next() % 16];
+        let raw = [
+            rng.next() % 0x100,
+            (rng.next() % 0x100).wrapping_sub(0x20)
+                & if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    u32::MAX
+                },
+        ];
+        let args = [chr, rng.next(), rng.next(), loops, raw[0], raw[1]];
+        t.check(
+            &format!("Chr_PlayMotionInclEnd {round}"),
+            0x0083_74c0,
+            &args,
+            |m| {
+                Res::Int(mo::chr_play_motion(
+                    m,
+                    mo::PlayFrames::InclEnd,
+                    args,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        let args = [chr, rng.next(), rng.next(), loops, ends[0], ends[1]];
+        t.check(
+            &format!("Chr_PlayMotionMarks {round}"),
+            0x0083_7350,
+            &args,
+            |m| {
+                Res::Int(mo::chr_play_motion(
+                    m,
+                    mo::PlayFrames::Marks,
+                    args,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        let x = rng.next();
+        t.check(&format!("Ch_DisposeMGRP {round}"), 0x0083_6ad0, &[x], |m| {
+            Res::Int(mo::ch_dispose_mgrp(m, x, &mut |m, f, a| call(m, f, a)))
+        });
+        for k in 0..50 {
+            let e = table + 12 * k;
+            t.put_u32(
+                e,
+                if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(e + 4, &((rng.next() % 4) as i16).to_le_bytes());
+            t.put(e + 6, &(rng.next().to_le_bytes()[..2]));
+            t.put_u32(e + 8, rng.next());
+        }
+        t.check(
+            &format!("Ch_DisposeAllMGRP {round}"),
+            0x0083_6a80,
+            &[],
+            |m| Res::Int(mo::ch_dispose_all_mgrp(m, &mut |m, f, a| call(m, f, a))),
+        );
+    }
+}

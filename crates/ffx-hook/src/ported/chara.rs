@@ -1767,4 +1767,20 @@ ported! {
     SetByte_012fb8fd @ 0x0082_1b20 => extern "C" fn setbyte_012fb8fd(v: u8) {
         mo::bridge::set_byte_012fb8fd(&mut mem(), v);
     }
+    /// `Chr_PlayMotionInclEnd(chr, motion, -, loops, start, end)`.
+    Chr_PlayMotionInclEnd @ 0x0083_74c0 => extern "C" fn chr_play_motion_incl_end(chr: u32, motion: u32, x: u32, loops: u32, start: u32, end: u32) -> u32 {
+        mo::bridge::chr_play_motion(&mut mem(), mo::bridge::PlayFrames::InclEnd, [chr, motion, x, loops, start, end], &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Chr_PlayMotionMarks(chr, motion, -, loops, start, end)`.
+    Chr_PlayMotionMarks @ 0x0083_7350 => extern "C" fn chr_play_motion_marks(chr: u32, motion: u32, x: u32, loops: u32, start: u32, end: u32) -> u32 {
+        mo::bridge::chr_play_motion(&mut mem(), mo::bridge::PlayFrames::Marks, [chr, motion, x, loops, start, end], &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DisposeMGRP(x)`.
+    Ch_DisposeMGRP @ 0x0083_6ad0 => extern "C" fn ch_dispose_mgrp(x: u32) -> u32 {
+        mo::bridge::ch_dispose_mgrp(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DisposeAllMGRP()`.
+    Ch_DisposeAllMGRP @ 0x0083_6a80 => extern "C" fn ch_dispose_all_mgrp() -> u32 {
+        mo::bridge::ch_dispose_all_mgrp(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

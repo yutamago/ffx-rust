@@ -1154,26 +1154,7 @@ pub mod bridge {
         args: [u32; 6],
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let [chr, motion, _, loops, start, end] = args;
-        call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]);
-        call(mem, mem.rebase(RESET_MOTION), &[chr]);
-        if call(mem, mem.rebase(SET_SEQUENCE), &[chr, motion]) != 0 {
-            return u32::MAX;
-        }
-        let fast = call(mem, mem.rebase(SEQ_GET_FAST_MOTION), &[chr]);
-        if fast == 0 {
-            return u32::MAX;
-        }
-        let clip: u32 = mem.read(fast.wrapping_add(0xc));
-        call(
-            mem,
-            mem.rebase(SET_MOTION_SEQ),
-            &[chr, clip, loops, start << 8, end << 8],
-        );
-        mem.write(chr + 0x736, 1u8);
-        mem.write(chr + 0x714, mem.rebase(LOW_SEQUENCE));
-        mem.write(chr + 0x738, 1u8);
-        0
+        chr_play_motion(mem, PlayFrames::Low2, args, call)
     }
 
     /// `ChN_DisposeSystemMGRP(a, b)` (`0x00836830`):
@@ -1231,6 +1212,96 @@ pub mod bridge {
     /// `SetByte_012fb8fd(v)` (`0x00821b20`): the byte at [`BYTE_012FB8FD`].
     pub fn set_byte_012fb8fd<M: Mem>(mem: &mut M, v: u8) {
         mem.write(mem.rebase(BYTE_012FB8FD), v);
+    }
+
+    /// How a `Chr_PlayMotion*` variant takes its frames.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub enum PlayFrames {
+        /// `Ch_MotionSetLow2`: raw, after `MsGetSaveEventAddress()`.
+        Low2,
+        /// `Chr_PlayMotionInclEnd`: the end frame + 1 unless `loops` is 1
+        /// or the end is not positive.
+        InclEnd,
+        /// `Chr_PlayMotionMarks`: indices into the fast motion's `i16`
+        /// mark table (`+8`), the end as for `InclEnd`.
+        Marks,
+    }
+
+    /// `Chr_PlayMotionInclEnd` (`0x008374c0`) and `Chr_PlayMotionMarks`
+    /// (`0x00837350`), `(chr, motion, -, loops, start, end)`: as
+    /// [`ch_motion_set_low2`] with their frames ([`PlayFrames`]).
+    pub fn chr_play_motion<M: Mem>(
+        mem: &mut M,
+        how: PlayFrames,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [chr, motion, _, loops, start, end] = args;
+        if how == PlayFrames::Low2 {
+            call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]);
+        }
+        call(mem, mem.rebase(RESET_MOTION), &[chr]);
+        if call(mem, mem.rebase(SET_SEQUENCE), &[chr, motion]) != 0 {
+            return u32::MAX;
+        }
+        let fast = call(mem, mem.rebase(SEQ_GET_FAST_MOTION), &[chr]);
+        if fast == 0 {
+            return u32::MAX;
+        }
+        let (mut s, mut e) = (start.cast_signed(), end.cast_signed());
+        if how == PlayFrames::Marks {
+            let marks: u32 = mem.read(fast.wrapping_add(8));
+            s = i32::from(mem.read::<i16>(marks.wrapping_add(start.wrapping_mul(2))));
+            e = i32::from(mem.read::<i16>(marks.wrapping_add(end.wrapping_mul(2))));
+        }
+        if how != PlayFrames::Low2 && loops != 1 && e > 0 {
+            e += 1;
+        }
+        let clip: u32 = mem.read(fast.wrapping_add(0xc));
+        let (s, e) = ((s << 8).cast_unsigned(), (e << 8).cast_unsigned());
+        call(mem, mem.rebase(SET_MOTION_SEQ), &[chr, clip, loops, s, e]);
+        mem.write(chr + 0x736, 1u8);
+        mem.write(chr + 0x714, mem.rebase(LOW_SEQUENCE));
+        mem.write(chr + 0x738, 1u8);
+        0
+    }
+
+    /// The loaded motion groups (`Ch_DisposeAllMGRP`): 50 entries of 12
+    /// bytes, used when `+0` is not 0; `i16` kind `+4` (2 the system's),
+    /// `i16` `+6`, key `+8`.
+    pub const MGRP_TABLE: u32 = 0x0130_11e0;
+
+    /// `Ch_DisposeMGRP(x)` (`0x00836ad0`): `SG_DisposeMotionGroup(1, x, 0)`.
+    pub fn ch_dispose_mgrp<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[1, x, 0])
+    }
+
+    /// `Ch_DisposeAllMGRP()` (`0x00836a80`): disposes the first used group
+    /// that is not the system's (`SG_DisposeMotionGroup(kind, +6, key)`)
+    /// and starts over, until none is left. Returns what EAX holds (the
+    /// table's end).
+    pub fn ch_dispose_all_mgrp<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = mem.rebase(MGRP_TABLE);
+        'again: loop {
+            for k in 0..50u32 {
+                let e = table + 12 * k;
+                if mem.read::<u32>(e) != 0 && mem.read::<i16>(e + 4) != 2 {
+                    let a = i32::from(mem.read::<i16>(e + 4)).cast_unsigned();
+                    let b = i32::from(mem.read::<i16>(e + 6)).cast_unsigned();
+                    let key: u32 = mem.read(e + 8);
+                    call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[a, b, key]);
+                    continue 'again;
+                }
+            }
+            return table + 50 * 12 + 4;
+        }
     }
 }
 
