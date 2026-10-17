@@ -160,6 +160,21 @@ pub const SQS_WAVE_INFO_DONE: Global<u32> = Global::new(0x012f_4140);
 pub const SQS_WAVE_INFO_DST: Global<u32> = Global::new(0x012f_4f88);
 /// The straight stream's id (`SqsStraightStreamingStart` sends it).
 pub const SQS_STRAIGHT_STREAM: Global<u32> = Global::new(0x012f_4e70);
+/// The wave ids `SqsSeSeparateDataSend` loads (256 `u32`).
+pub const SQS_SEP_WAVES: u32 = 0x012f_b3c0;
+/// `SqsSeSeparateDataSend`'s messages (`.rdata`): the size error's format
+/// and prefix, the red and reset escapes and the overflow text.
+pub const SQS_SEP_SIZE_FORMAT: u32 = 0x00b5_8e08;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_SIZE_PREFIX: u32 = 0x00b5_8df4;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_RED: u32 = 0x00b1_f84c;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_RESET: u32 = 0x00b1_f854;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_TOO_MANY: u32 = 0x00b5_8dbc;
+/// MSVCR110's `fflush` import slot.
+pub const CRT_FFLUSH: u32 = 0x00b0_c3bc;
 /// What `SqsIopCommandSend` returns.
 pub const SQS_IOP_RESULT: Global<u32> = Global::new(0x012f_4150);
 /// The last SE handle `SqsSePlay`/`SqsSeForcePlay` gave (never 0).
@@ -1069,5 +1084,71 @@ pub mod bridge {
         let buf = super::SQS_RPC_SEND.get(mem);
         mem.write(buf, a);
         sqs_call_rpc(mem, 4, call);
+    }
+
+    // ---- field round 40: separate SE wave data ----
+
+    /// `SqsSeSeparateDataSend(data, size)` (`0x0081e600`): collects the
+    /// wave ids of the chunks in `data` and loads each.
+    /// - A size outside `1..=0x10000` only reports (`dbgPrintf`, a bare
+    ///   `ret`, when bit 0 of `0x012f4148` is set) and returns `size - 1`.
+    /// - While more than 16 bytes are left, a chunk must start with the
+    ///   words `0x65536553`, `0x20202070` and have a positive multiple of 4
+    ///   at `+0xc` (its length); its `u16` id at `+0x11` joins the list at
+    ///   `0x012fb3c0` unless already there (256 at most; reaching 256
+    ///   prints "Too many wave datat..." in red to stderr and flushes it).
+    /// - Each listed id goes to `iSfxLoadData(id, 0)`, then the queue is
+    ///   sent (a tail call to `SqsIopCommandSend`, whose result it returns).
+    pub fn sqs_se_separate_data_send<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        size: u32,
+        call: &mut C,
+    ) -> u32 {
+        if size.wrapping_sub(1) > 0xffff {
+            if super::SQS_DEBUG_FLAGS.get(mem) & 1 != 0 {
+                let f = mem.rebase(super::DBG_PRINTF);
+                let fmt = mem.rebase(super::SQS_SEP_SIZE_FORMAT);
+                let pre = mem.rebase(super::SQS_SEP_SIZE_PREFIX);
+                call(mem, f, &[fmt, pre, size]);
+            }
+            return size.wrapping_sub(1);
+        }
+        let table = mem.rebase(super::SQS_SEP_WAVES);
+        let (mut p, mut left, mut n) = (data, size, 0u32);
+        while left > 0x10 {
+            let [magic, tag, _, len] = mem.read::<[u32; 4]>(p);
+            if magic != 0x6553_6553 || tag != 0x2020_2070 || len.cast_signed() <= 0 || len & 3 != 0
+            {
+                break;
+            }
+            let id = u32::from(mem.read::<u8>(p.wrapping_add(0x12))) << 8
+                | u32::from(mem.read::<u8>(p.wrapping_add(0x11)));
+            let known = (0..n).any(|i| mem.read::<u32>(table + 4 * i) == id);
+            if !known && n < 0x100 {
+                mem.write(table + 4 * n, id);
+                n += 1;
+                if n >= 0x100 {
+                    for msg in [
+                        super::SQS_SEP_RED,
+                        super::SQS_SEP_TOO_MANY,
+                        super::SQS_SEP_RESET,
+                    ] {
+                        print_error(mem, msg, call);
+                    }
+                    let iob = mem.read::<u32>(mem.rebase(crate::yi::CRT_IOB_FUNC));
+                    let fflush = mem.read::<u32>(mem.rebase(super::CRT_FFLUSH));
+                    let stderr = call(mem, iob, &[]).wrapping_add(0x40);
+                    call(mem, fflush, &[stderr]);
+                }
+            }
+            left = left.wrapping_sub(len);
+            p = p.wrapping_add(len);
+        }
+        for i in 0..n {
+            let id = mem.read::<u32>(table + 4 * i);
+            glue(mem, super::I_SFX_LOAD_DATA, &[id, 0], call);
+        }
+        sqs_iop_command_send(mem, call)
     }
 }

@@ -12653,3 +12653,91 @@ fn round39_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0027_0002);
     round39_cases(&mut t, &mut rng, 30);
 }
+
+// ---- round 40 ----
+
+/// Round 40 on `t`: `SqsSeSeparateDataSend` over chunk streams: repeated
+/// ids, a bad chunk, a size cut short, sizes out of range, and more than
+/// 256 distinct ids (the overflow message, `fflush` logged).
+fn round40_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x400));
+    let (stubs, _) = t.cave_from(env.cave_end, &[(None, log_stub(env.log, env.rv, 0x31, 1))]);
+    let slot = t.b.rebase(nkz::CRT_FFLUSH);
+    t.put(slot, stubs[0]);
+    let data = t.alloc(0x1_0000);
+    let table = t.b.rebase(nkz::SQS_SEP_WAVES);
+    for k in 0..rounds {
+        env.reset(t, rng);
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_CMD_TOP, rng.next());
+        t.set(nkz::SQS_CMD_NEXT, rng.next());
+        t.set(nkz::SQS_DEBUG_FLAGS, rng.next());
+        t.fill(table, 0x400, rng);
+        let many = k % 10 == 9;
+        let chunks = if many { 300 } else { rng.below(40) };
+        let pool = if many { 0x1_0000 } else { 1 + rng.below(12) };
+        let mut bytes = vec![];
+        for c in 0..chunks {
+            let len = if many { 0x14 } else { 0x14 + 4 * rng.below(8) };
+            let mut ch: Vec<u8> = (0..len)
+                .map(|_| u8::try_from(rng.below(256)).unwrap())
+                .collect();
+            // a bad chunk ends the walk: its magic, tag or length
+            let bad = if many || rng.below(20) != 0 {
+                0
+            } else {
+                1 + rng.below(5)
+            };
+            let magic: u32 = if bad == 1 { 0x6553_6554 } else { 0x6553_6553 };
+            let tag: u32 = if bad == 2 { 0x2020_2071 } else { 0x2020_2070 };
+            let word = match bad {
+                3 => 0,
+                4 => len + 2,
+                5 => 0x8000_0000 | len,
+                _ => len,
+            };
+            ch[..4].copy_from_slice(&magic.to_le_bytes());
+            ch[4..8].copy_from_slice(&tag.to_le_bytes());
+            ch[0xc..0x10].copy_from_slice(&word.to_le_bytes());
+            let id = if many { c } else { rng.below(pool) };
+            ch[0x11..0x13].copy_from_slice(&u16::try_from(id & 0xffff).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&ch);
+        }
+        bytes.resize(bytes.len() + 0x20, 0);
+        t.write(data, &bytes);
+        let total = u32::try_from(bytes.len() - 0x20).unwrap();
+        let size = match rng.below(7) {
+            0 => 0,
+            1 => 0x1_0001 + rng.below(4),
+            6 => 0x1_0000, // the largest size taken
+            2 => rng.below(total + 1).max(1),
+            _ => total.max(1),
+        };
+        t.same(
+            "SqsSeSeparateDataSend",
+            |o| o.eax(0x0081_e600, &[data, size]),
+            |m| nkz::bridge::sqs_se_separate_data_send(m, data, size, call),
+        );
+    }
+}
+
+/// Round 40: `SqsSeSeparateDataSend`.
+#[test]
+fn round40_sqs_se_separate_data_send_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0028_0001);
+    round40_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 40 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round40_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0028_0002);
+    round40_cases(&mut t, &mut rng, 40);
+}

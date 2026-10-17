@@ -1483,6 +1483,23 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## Separate SE wave data (round 40)
+
+`SqsSeSeparateDataSend(data, size)` (`0x0081e600`) loads the waves a
+block of SE data names:
+- A size outside `1..=0x10000` only reports (`dbgPrintf`, a bare `ret`,
+  when bit 0 of `0x012f4148` is set) and returns `size - 1`.
+- While more than 16 bytes are left, it reads a chunk. A chunk starts with
+  the words `0x65536553` (the bytes `"SeSe"`) and
+  `0x20202070`, and has its length at `+0xc` (positive, a multiple of 4).
+  Anything else ends the walk.
+- A chunk's `u16` id at `+0x11` (unaligned) joins the list at
+  `0x012fb3c0` unless already there, up to 256 ids. Reaching 256 prints
+  "Too many wave datat to be loaded at the same time!!" between red and
+  reset escapes to stderr and flushes it.
+- Each listed id then goes to `iSfxLoadData(id, 0)`, and the queue is sent
+  (a tail call to `SqsIopCommandSend`, whose result it returns).
+
 ## The Sqs IOP command builders (round 39)
 
 The command builders append one 32-byte command (`op`, then up to three

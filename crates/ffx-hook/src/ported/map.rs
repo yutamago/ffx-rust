@@ -3757,6 +3757,11 @@ ported! {
         yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
     }
 
+    /// `SqsSeSeparateDataSend(data, size)`.
+    SqsSeSeparateDataSend @ 0x0081_e600 => extern "C" fn shim_sqs_se_separate_data_send(data: u32, size: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_data_send(&mut mem(), data, size, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsSetCycleMode(a)`.
     SqsSetCycleMode @ 0x0081_e900 => extern "C" fn shim_sqs_set_cycle_mode(a: u32) -> u32 {
         nkz::bridge::sqs_cmd_arg(&mut mem(), 4, a, &mut |_, f, a| call_cdecl(f, a))

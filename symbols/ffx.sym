@@ -6590,7 +6590,7 @@
 0x0081e530 function SqsSePlayState            # () -> 0: prints a message (stderr) on PC; SndGetSePlayState jumps here
 0x0081e550 function SqsSePlaySwitch              # layout+callees: sorts between SqsSePlayState and SqsSeSeparateClear, and its named callees match the Switch 0x7100407050 SqsSePlaySwitch's (similarity 1.00: SqsIopCommandSend); symbols from Fahrenheit's server export
 0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0; ported (field round 33)
-0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710
+0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710; ported (field round 40): (data, size): size outside 1..=0x10000 -> dbgPrintf (flag bit 0), returns size - 1; else collects the u16 ids (+0x11) of chunks "SeSe" 0x20202070 with a positive multiple-of-4 length at +0xc into 0x012fb3c0 (unique, 256 max, a red "Too many wave datat" on stderr at 256), iSfxLoadData(id, 0) each, then SqsIopCommandSend (tail call)
 0x0081e750 function SqsSeSeparateMaskClear    # fh v3:exact 0x0081e860; ported (field round 33): 8 mask words + -1 into the RPC send buffer, iSfxStopAllNonBlockingSound(buf), iSfxUnloadAllData
 0x0081e7a0 function SqsSeSeparatePlaying # (id); SndIsSepPlay for separate SEs; alphabetical slot between SqsSeSeparateMaskClear and SqsSeStop; layout: alphabetical run between SqsSeSeparateMaskClear and SqsSeStop (1 unnamed in the gap); Switch 0x7100408670 SqsSeSeparatePlaying is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 33)
 0x0081e7c0 function SqsSeStop # fh v3:exact 0x0081e8d0; fh v3:exact 0x0081e8d0; ported (field round 33)
@@ -14913,6 +14913,7 @@
 0x012f4f48 label    g_SqsReplyHistory            # 4 x 4 words: SqsIopCommandSend shifts each row down and puts reply +0x10, +0x18, +0x30, +0x34 last; bit 0 of 0x012f4f64 (row 1's newest) set by an SE start
 0x012f4f88 label    g_SqsWaveInfoDst             # IOP address SqsInitWaveInfo sends 0x5000 bytes to
 0x012f4f90 label    g_SqsAdpcmState              # PS-ADPCM history: left s1, s2, right s1, s2 (i32; Sqs_DecodeAdpcm)
+0x012fb3c0 label    g_SqsSepWaves                # the wave ids SqsSeSeparateDataSend loads (256 u32)
 0x012fb7cc label g_BtlCheatPowerup         # u32: the player powerup cheat (MsCheatPlayerPowerup on each turn, MsBattleProcess_InputCue)
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
 0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone
