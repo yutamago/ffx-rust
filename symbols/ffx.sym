@@ -9042,7 +9042,7 @@
 0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
 0x008ade10 function TOOpenWindowAndMessage # cdecl(i): *(u16*)g_TOMessageWindowSlots[i] = 1; 0x00906c80(i); 0x008b8560(i); name ours
 0x008ade50 function TOReset1                  # fh v3:exact 0x008ade00
-0x008adee0 function TOReset2                  # fh v3:exact 0x008ade90
+0x008adee0 function TOReset2                  # fh v3:exact 0x008ade90; (): 0x008adf20, TkMenuInitSeq, TkMenuSetSceneDataAdrs(0, 0x0185f610)/(1, 0x0185fe10)/(2, 0x01841e10), tail TOSeqInitParam
 0x008adf20 function TOSeqClearSlots_008adf20 # (): state and name byte of the 8 slots of scenes 0..2 in g_TOSeqSlots cleared; callers 0x008ad4d0, 0x008adee0; name ours
 0x008adf80 function TOSeqClearScene_008adf80 # cdecl(i) -> i << 8: all 8 slots of scene i: state (u16) and name byte 0; name ours
 0x008ae000 function TOSeqHasScene_008ae000 # cdecl(i, name): 1 when one of scene i's 8 slots (0x01865f28 + i*0x100) is named name; name ours
@@ -9182,7 +9182,8 @@
 0x008b8d10 function TOWideWindowRect_008b8d10 # cdecl(i, out, x, y, w, h) -> y + h: out = TOWideWindowX(i, x), y, that + w, y + h as floats; name ours
 0x008b8d70 function TOGetComName_008b8d70 # cdecl(id): MsGetComData(id, &strings) record's u16 +0 + strings; name ours
 0x008b8d90 function TOGetAbilityName_008b8d90 # cdecl(id): MsGetRomAbility(id, &strings) record's u16 +0 + strings; name ours
-0x008b8db0 function TOStdGetItemName             # layout+callees: sorts between TOSetRectDirect and TOValueToMesFontL, and its named callees match the Switch 0x71004f2560 TOStdGetItemName's (similarity 1.00: MsGetRomItem); symbols from Fahrenheit's server export
+0x008b8db0 function TOStdGetItemName             # layout+callees: sorts between TOSetRectDirect and TOValueToMesFontL, and its named callees match the Switch 0x71004f2560 TOStdGetItemName's (similarity 1.00: MsGetRomItem); symbols from Fahrenheit's server export; cdecl(item): MsGetRomItem(item, &base) record's u16 +0 + base
+0x008b8dd0 function TOStdGetWeaponName        # cdecl(id): tail call MsGetSaveWeaponName(id); sits after TOStdGetItemName; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
 0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth; (text, kind, &w, table) -> next: glyph width (tables via 0x01841da4, kr/ch code-4 pages) -> TOGetFontWidthInPiexl + space (x aspect when 0x018663ec); 0x47 runs; 6 and < 0x30 are 2 bytes
@@ -9207,6 +9208,7 @@
 0x008bdf60 function TOMenuFieldMusic_008bdf60 # (): after the menu: keep white in/out: nothing; clear 11: cross-fade to AtelGetMusicNumber (0x78), else AtelRegistMusicNumber(-1) and fade out; name ours
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
 0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
+0x008be020 function TOBtlEndSetFlagMark       # cdecl(i, k): BtlEnd_SetFlag(i), byte 0x01869f2a + 14k = 0xf; name ours
 0x008be050 function SetEntries_01869f20 # cdecl(v): for the byte 0x01869f18 14-byte entries from 0x01869f22, +2 = v and (v == 3) +0 = 2 * entries after it; caller TkBtlEndCtrl; name ours
 0x008be0a0 function MsExchangeSaveWeapon         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008bb6f8 MsExchangeSaveWeapon, 2 votes, round 1
 0x008be320 function GetU32_00c5a084 # () -> u32 at 0x00c5a084; name ours
@@ -9260,7 +9262,7 @@
 0x008bef30 function TOMenuOpenPktBuffTmp      # fh v3:exact+call.cs 0x008bef00 cdecl; TOSetPktBuffAdrs(0x015c0870, 0x80000, 0x75300); jmp TOOpenPktbuff
 0x008bef50 function TkMenuCtrlHelp            # fh v3:exact 0x008bef20
 0x008bf070 function SeveralStoresSetFieldGlobalConstantsArgumentsAddresses_008bf070 # auto-port shape (several stores: set field/global (constants, arguments, addresses), cdecl): u32[&0x0186a234] = (a1 & 0xffff); u32[&0x0186a230] = (a1 & 0xfff); u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours
-0x008bf0b0 function TOMenuTermHelp            # fh switch:bsim1.00 0x71004c9070
+0x008bf0b0 function TOMenuTermHelp            # fh switch:bsim1.00 0x71004c9070; (): state 0x0186a230 == 3: SndSepPlaySimple(0x8000006c); TkMenuMainSleepMenu(0xb); 0x0186a22c == 0: TkMenuMainActiveMenu(1, 0); state = 0
 0x008bf120 function MenuHelp_Ratio            # (a, b) (b+2)*a*2/4 truncating; own name
 0x008bf140 function MenuHelp_Plus40           # (p) p + 0x40; no caller; own name
 0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0)
@@ -9684,7 +9686,7 @@
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
 0x008e26b0 function TkScreenToMenuY           # (y) -> float(y) * 416 / 1080
 0x008e26d0 function TkMenuCtrlAbilityMap2     # fh v3:exact 0x008e26d0
-0x008e27e0 function TOMenuTermAbilityMap2     # fh switch:bsim1.00 0x71004b6970
+0x008e27e0 function TOMenuTermAbilityMap2     # fh switch:bsim1.00 0x71004b6970; (): TkMenuSetScreenX2Flag(0), SndSepPlaySimple(0x80000001), TkMenuMainSleepMenu(0x13), TkMenuMainActiveMenu(1, 0)
 0x008e2870 function TkMenuCtrlHdd             # fh v3:exact 0x008e2870
 0x008e28e0 function MenuHdd_WindowReset       # (window) +0x1c = 0; own name
 0x008e2930 function MenuHdd_Close             # 0x023cc130 = 0, MenuMain_GetTask()+8 callback (0x008e2910, 0, 0); own name
@@ -9983,6 +9985,7 @@
 0x00906ce0 function TOSetExeWindowArea        # fh v3:exact 0x00906ce0
 0x00906d90 function TOSetWindowRGBA # cdecl(i, r, g, b, a): stores the four colour bytes at +0x58..+0x5b of window i (TO-prefix like its neighbours); name ours
 0x00906dd0 function TOSetWindowRect_00906dd0 # cdecl(i, x, y, w, h): g_Windows[i] +0x10/+0x14 = w/h (u16), +0x28..+0x34 = x, y, x+w, y+h as floats; name ours
+0x00906e60 function TOSetWindowKind           # cdecl(i, kind): u16 +4 of g_Windows[i] = kind, yiWindowSetHandlers(window); name ours
 0x00906fb0 function TOGetWindowStructAdrs     # fh v3:bsim1.00 0x00906fb0 _TOGetWindowStructAdrs
 0x00906fc0 function yiWindowGrowClose         # (window): progress +6 -= 0x2aa (>= 0), drawn x1 = x0 + height +0x10 * progress / 4096; at x0: state 4, handler yiWindowFinishAll; window kind 0 slot +0x6c
 0x00907040 function yiWindowFinishAll         # (window): +0 and state +8 cleared, handler +0x74 = idle 0x00907e50; returns 1 (kind 0 slot +0x70)
@@ -11082,7 +11085,7 @@
 0x00957d30 function lua_yieldk                   # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'attempt to yield across metamethod/C-call boundary'; Switch 0x7100775d18 lua_yieldk (symbols from Fahrenheit's server export)
 0x009da280 function IsLoadTexture             # fh v3:exact 0x009da280; flag 0x01940ab0 set: 1; handle 0x00c64cac -1: 0; else graphicMagicVFXLoadTexture([0x00c64ca0]), set flag, 1
 0x009da2c0 function GetU32_01940ab4 # () -> u32 at 0x01940ab4; name ours
-0x009da2d0 function MagicFile_Cleanup         # fh v3:bsim1.00 0x009da2d0
+0x009da2d0 function MagicFile_Cleanup         # fh v3:bsim1.00 0x009da2d0; (): graphicMagicSetToBeDeletePath(graphicMagicGetPath()), graphicMagicSetPath(0x00b8fbeb); 0x00c64ca8 = 0x00c64ca4 = id, 0x00c64cb0 = handle, id = handle = -1
 0x009da370 function MagicFile_GetEffectOverlayTable # fh v3:exact 0x009da370
 0x009da390 function MagicFile_GetHandle       # fh v3:bsim1.00 0x009da390
 0x009da3a0 function GetU32_00c64ca4 # () -> u32 at 0x00c64ca4; name ours
@@ -11091,9 +11094,9 @@
 0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0
 0x009da420 function MagicFile_IsNexData       # fh v3:bsim1.00 0x009da410
 0x009da430 function MagicFile_Load            # fh v3:exact 0x009da420
-0x009da700 function MagicFile_NeedRestoreCamera  # layout+callees: sorts between MagicFile_Load and MagicFile_SetMagicId, and its named callees match the Switch 0x71007e3120 MagicFile_NeedRestoreCamera's (similarity 1.00: MsGetBattleScene); symbols from Fahrenheit's server export
+0x009da700 function MagicFile_NeedRestoreCamera  # layout+callees: sorts between MagicFile_Load and MagicFile_SetMagicId, and its named callees match the Switch 0x71007e3120 MagicFile_NeedRestoreCamera's (similarity 1.00: MsGetBattleScene); symbols from Fahrenheit's server export; (): 1 if 0x01940abc, previous magic 0x00c64ca8 is 0xa5/0x133, or 0x152 in battle scene 0x018b0046
 0x009da750 function Copy_009da750 # (): 64 bytes 0x022fb620 -> 0x02311480 and 0x022fb660 -> 0x02311440; caller MsScreenProcess; name ours
-0x009da780 function MagicFile_RestoreScreenSetup # layout+callees: sorts between MagicFile_Load and MagicFile_SetMagicId, and its named callees match the Switch 0x71007e3110 MagicFile_RestoreScreenSetup's (similarity 1.00: graphicCameraSetFOVy); symbols from Fahrenheit's server export
+0x009da780 function MagicFile_RestoreScreenSetup # layout+callees: sorts between MagicFile_Load and MagicFile_SetMagicId, and its named callees match the Switch 0x71007e3110 MagicFile_RestoreScreenSetup's (similarity 1.00: graphicCameraSetFOVy); symbols from Fahrenheit's server export; (): graphicCameraSetFOVy(0x022fb600)
 0x009da790 function SetGlobal_00c64ca4 # cdecl(v): *0x00c64ca4 = v, returns v; name ours
 0x009da7a0 function MagicFile_SetMagicId      # fh v3:exact 0x009da780; cdecl(id): 0x2c7 -> 0x296; with handle 0x00c64cac -1 stores g_MagicFile_MagicId and printf(0x00b706bc, id), else printf(0x00b706e0, id) only
 0x009da7f0 function MagicFile_Start           # fh v3:exact 0x009da7d0; () no handle: printf, 0; else graphicSetGameOverNotify(id == 0x29e), *0x022fb6a0(g_MagicImports), printf id, 0xa8 graphicSetChrFogFade(1), 0x1b2/0x262 resetZanmatoSepList; 1
@@ -11103,7 +11106,7 @@
 0x009daca0 function MagicFile_clearAllPreloadedPrx # fh v3:exact 0x009dac80
 0x009dacc0 function MagicFile_ClearPreloadedPrx_009dacc0 # (id, index): PhyreFIOS_UnloadMagicfilePrx of the matching preload handle, "MagicFilePreload: clearPreloadedPrx id=%d, index=%d"; callers MagicFile_Unload, MagicFile_clearAllPreloadedPrx; own name
 0x009dad70 function MagicFile_FindPreloaded_009dad70 # cdecl(id, &out): with 0x0193fd40 set, the first of 12 entries (0x00c64c18, 12 bytes) with id (any for negative) and a positive count (0x0193fd44 + 4 i): *out = &count, 1; else 0; caller MagicFile_isPrxPreloaded; name ours
-0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40
+0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40; cdecl(id): MagicFile_FindPreloaded(id, &e) && e != 0
 0x009dae90 function MagicFile_PreloadPrx_009dae90 # (id, index): with preloading on (0x0193fd40) PhyreFIOS_LoadMagicfilePrx into the handle table 0x00c64c10 (graphicSetMagicFileAsyncLoadEnable(2) around it), "MagicFilePreload: preload for id=%d, index=%d" / "skiped" / "non-null preload handle found"; caller MagicFile_Load; own name
 0x009dafd0 function SetGlobal_0193fdac # cdecl(v): *0x0193fdac = v, returns v; name ours
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0

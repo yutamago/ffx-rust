@@ -4470,6 +4470,60 @@ ported! {
     TOBtlSearchRevNearTarget @ 0x0089_90f0 => extern "C" fn to_btl_search_rev_near_target() {
         tolib::bridge::btl_search_rev_near_target(&mut mem());
     }
+    /// `TOReset2()`.
+    TOReset2 @ 0x008a_dee0 => extern "C" fn to_reset2() -> u32 {
+        tolib::bridge::reset2(&mut mem(), call_sym)
+    }
+    /// `TOStdGetItemName(item)`.
+    TOStdGetItemName @ 0x008b_8db0 => extern "C" fn to_std_get_item_name(item: u32) -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = tolib::bridge::std_get_item_name(&mut mem(), item, at, call_sym);
+        std::hint::black_box(&mut tmp);
+        r
+    }
+    /// `TOStdGetWeaponName(id)`.
+    TOStdGetWeaponName @ 0x008b_8dd0 => extern "C" fn to_std_get_weapon_name(id: u32) -> u32 {
+        tolib::bridge::std_get_weapon_name(&mut mem(), id, call_sym)
+    }
+    /// `TOBtlEndSetFlagMark(i, k)`.
+    TOBtlEndSetFlagMark @ 0x008b_e020 => extern "C" fn to_btl_end_set_flag_mark(i: u32, k: u32) {
+        tolib::bridge::btl_end_set_flag_f(&mut mem(), i, k, call_sym);
+    }
+    /// `TOMenuTermHelp()`.
+    TOMenuTermHelp @ 0x008b_f0b0 => extern "C" fn to_menu_term_help() {
+        tolib::bridge::menu_term_help(&mut mem(), call_sym);
+    }
+    /// `TOMenuTermAbilityMap2()`.
+    TOMenuTermAbilityMap2 @ 0x008e_27e0 => extern "C" fn to_menu_term_ability_map2() {
+        tolib::bridge::menu_term_ability_map2(&mut mem(), call_sym);
+    }
+    /// `TOSetWindowKind(i, kind)`.
+    TOSetWindowKind @ 0x0090_6e60 => extern "C" fn to_set_window_kind(i: u32, kind: u32) {
+        tolib::bridge::set_window_kind(&mut mem(), i, kind, call_sym);
+    }
+    /// `MagicFile_Cleanup()`.
+    MagicFile_Cleanup @ 0x009d_a2d0 => extern "C" fn magic_file_cleanup() {
+        menu::bridge::magic_file_cleanup(&mut mem(), call_sym);
+    }
+    /// `MagicFile_NeedRestoreCamera()`.
+    MagicFile_NeedRestoreCamera @ 0x009d_a700 => extern "C" fn magic_file_need_restore_camera() -> u32 {
+        menu::bridge::magic_file_need_restore_camera(&mut mem(), call_sym)
+    }
+    /// `MagicFile_RestoreScreenSetup()`.
+    MagicFile_RestoreScreenSetup @ 0x009d_a780 => extern "C" fn magic_file_restore_screen_setup() -> u32 {
+        menu::bridge::magic_file_restore_screen_setup(&mut mem(), call_sym)
+    }
+    /// `MagicFile_isPrxPreloaded(id)`.
+    MagicFile_isPrxPreloaded @ 0x009d_ae60 => extern "C" fn magic_file_is_prx_preloaded(id: u32) -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = menu::bridge::magic_file_is_prx_preloaded(&mut mem(), id, at, call_sym);
+        std::hint::black_box(&mut tmp);
+        r
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

@@ -8959,3 +8959,172 @@ fn round15_search_rev_near_target_matches_the_original_on_the_snapshot() {
     };
     round15_search_rev_near_target(&mut a, &mut b, &mut Xorshift(0x4015_0032));
 }
+
+/// Round 15's small forwarding functions over logging stand-ins.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round15_forwarders(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x200);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let rec = alloc(a, b, 4);
+    let logged = [
+        0x008a_df20u32,
+        0x00a7_bb00,
+        0x00a7_c7f0,
+        0x008a_e6f0,
+        0x008b_db60,
+        0x0088_6e80,
+        0x008a_ad70,
+        0x008a_a100,
+        0x008a_b020,
+        0x0090_7d80,
+        0x0064_2070,
+        0x0064_2050,
+        0x0063_95e0,
+        0x007a_bdf0,
+    ];
+    for (k, sym) in logged.into_iter().enumerate() {
+        let k = k as u32;
+        let s = if matches!(sym, 0x008a_df20 | 0x00a7_bb00 | 0x008a_e6f0) {
+            // no arguments: count the call, return a constant
+            let mut v = vec![0x83, 0x05];
+            v.extend_from_slice(&(cells + 0xc).to_le_bytes());
+            v.extend_from_slice(&[0x01, 0xb8]);
+            v.extend_from_slice(&(0x1500_0000 + k).to_le_bytes());
+            v.push(0xc3);
+            stand_in8(a, b, 0xe40 + 0x20 * k, &v)
+        } else {
+            stand_in8(
+                a,
+                b,
+                0xe40 + 0x20 * k,
+                &logger(cursor, 0x1500_0000 + (k << 8)),
+            )
+        };
+        redirect(a, b, sym, s);
+    }
+    let code = |a: &mut Oracle, b: &mut Oracle, off: u32, sym: u32, v: Vec<u8>| {
+        let s = stand_in8(a, b, off, &v);
+        redirect(a, b, sym, s);
+    };
+    // MsGetRomItem(item, &base): base = 0x1234 + item, returns rec
+    let mut v = vec![0x8b, 0x4c, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x04, 0x05];
+    v.extend_from_slice(&0x1234u32.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x01, 0xb8]);
+    v.extend_from_slice(&rec.to_le_bytes());
+    v.push(0xc3);
+    code(a, b, 0x1100, 0x0079_09f0, v);
+    // MagicFile_FindPreloaded(id, &e): e = [cells], returns [cells + 4]
+    let mut v = vec![0x8b, 0x4c, 0x24, 0x08, 0xa1];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x01, 0xa1]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    code(a, b, 0x1130, 0x009d_ad70, v);
+    // MsGetBattleScene: [cells + 8]
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    code(a, b, 0x1150, 0x0078_2970, v);
+    // graphicMagicGetPath: a constant
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&0x0abc_0123u32.to_le_bytes());
+    v.push(0xc3);
+    code(a, b, 0x1160, 0x0064_2030, v);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let tmp = alloc(a, b, 4);
+    let windows = alloc(a, b, 0x100);
+    for k in 0..8u32 {
+        put(
+            a,
+            b,
+            ffx_system::window::bridge::WINDOWS.ptr(a).addr + 4 * k,
+            windows + 0x20 * k,
+        );
+    }
+    for _ in 0..30 {
+        put(a, b, cursor, log);
+        put(a, b, rec, rng.next() as u16);
+        put(
+            a,
+            b,
+            cells,
+            [
+                rng.next() & 1,
+                rng.next() & 1,
+                if rng.next() & 1 == 0 {
+                    0x018b_0046
+                } else {
+                    rng.next()
+                },
+                0,
+            ],
+        );
+        put(a, b, a.rebase(0x0186_a230), rng.next() % 5);
+        put(a, b, a.rebase(0x0186_a22c), (rng.next() & 1) as u16);
+        put(a, b, a.rebase(0x0194_0abc), u32::from(rng.next() % 4 == 0));
+        let prev = [0xa5u32, 0x133, 0x152, 0x151, rng.next()][(rng.next() % 5) as usize];
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), prev, rng.next()],
+        );
+        assert_eq!(eax(a, 0x008a_dee0, &[]), t::reset2(b, call));
+        let item = rng.next() % 0x200;
+        assert_eq!(
+            eax(a, 0x008b_8db0, &[item]),
+            t::std_get_item_name(b, item, tmp, call)
+        );
+        assert_eq!(
+            eax(a, 0x008b_8dd0, &[item]),
+            t::std_get_weapon_name(b, item, call)
+        );
+        let (i, k) = (rng.next() % 8, rng.next() % 8);
+        eax(a, 0x008b_e020, &[i, k]);
+        t::btl_end_set_flag_f(b, i, k, call);
+        eax(a, 0x008b_f0b0, &[]);
+        t::menu_term_help(b, call);
+        eax(a, 0x008e_27e0, &[]);
+        t::menu_term_ability_map2(b, call);
+        let kind = rng.next();
+        eax(a, 0x0090_6e60, &[i, kind]);
+        t::set_window_kind(b, i, kind, call);
+        assert_eq!(
+            eax(a, 0x009d_a700, &[]),
+            mb::magic_file_need_restore_camera(b, call)
+        );
+        assert_eq!(
+            eax(a, 0x009d_a780, &[]),
+            mb::magic_file_restore_screen_setup(b, call)
+        );
+        assert_eq!(
+            eax(a, 0x009d_ae60, &[item]),
+            mb::magic_file_is_prx_preloaded(b, item, tmp, call)
+        );
+        eax(a, 0x009d_a2d0, &[]);
+        mb::magic_file_cleanup(b, call);
+        // the original's scratch word is on its stack
+        let v: u32 = Mem::read(b, tmp);
+        Mem::write(a, tmp, v);
+        same_memory("forwarders", a, b);
+    }
+}
+
+#[test]
+fn round15_forwarders_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round15_forwarders(&mut a, &mut b, &mut Xorshift(0x4015_0041));
+}
+
+#[test]
+fn round15_forwarders_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round15_forwarders(&mut a, &mut b, &mut Xorshift(0x4015_0042));
+}

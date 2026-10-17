@@ -3396,4 +3396,105 @@ pub mod bridge {
     /// written. The getters only write the caller's vector, so there is
     /// nothing to do.
     pub fn btl_search_rev_near_target(_mem: &mut impl Mem) {}
+
+    /// `TOReset2()` (`0x008adee0`): the sequence slots cleared
+    /// (`0x008adf20`), `TkMenuInitSeq()`, the three scene data blocks set
+    /// (`TkMenuSetSceneDataAdrs(0, 0x0185f610)`, `(1, 0x0185fe10)`, `(2,
+    /// 0x01841e10)`), then `TOSeqInitParam()` (its result returned). The
+    /// calls go through `call(sym, args)`.
+    pub fn reset2<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        call(mem, 0x008a_df20, &[]);
+        call(mem, 0x00a7_bb00, &[]);
+        for (i, a) in [(0u32, 0x0185_f610u32), (1, 0x0185_fe10), (2, 0x0184_1e10)] {
+            let a = mem.rebase(a);
+            call(mem, 0x00a7_c7f0, &[i, a]);
+        }
+        call(mem, 0x008a_e6f0, &[])
+    }
+
+    /// `TOStdGetItemName(item)` (`0x008b8db0`): `MsGetRomItem(item, &base)`
+    /// (through `call`, with a scratch word `tmp`) gives a record whose
+    /// first `u16` is the name's offset from `base`.
+    pub fn std_get_item_name<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        tmp: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec = call(mem, 0x0079_09f0, &[item, tmp]);
+        let off = u32::from(mem.read::<u16>(rec));
+        let base: u32 = mem.read(tmp);
+        off.wrapping_add(base)
+    }
+
+    /// `0x008be020(i, k)`: `BtlEnd_SetFlag(i)`, then the byte `+0` of
+    /// entry `k` (14 bytes each) of `0x01869f2a` set to 0xf.
+    pub fn btl_end_set_flag_f<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        k: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008b_db60, &[i]);
+        let at = mem.rebase(0x0186_9f2a).wrapping_add(k.wrapping_mul(14));
+        mem.write(at, 0xfu8);
+    }
+
+    /// `TOMenuTermHelp()` (`0x008bf0b0`): with the help state
+    /// (`0x0186a230`) at 3 the close sound (`SndSepPlaySimple(0x8000006c)`);
+    /// `TkMenuMainSleepMenu(0xb)`; unless `0x0186a22c` is set
+    /// `TkMenuMainActiveMenu(1, 0)`; the state 0.
+    pub fn menu_term_help<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let state = mem.rebase(0x0186_a230);
+        if mem.read::<u32>(state) == 3 {
+            call(mem, 0x0088_6e80, &[0x8000_006c]);
+        }
+        call(mem, 0x008a_ad70, &[0xb]);
+        if mem.read::<u16>(mem.rebase(0x0186_a22c)) == 0 {
+            call(mem, 0x008a_a100, &[1, 0]);
+        }
+        mem.write(state, 0u32);
+    }
+
+    /// `TOMenuTermAbilityMap2()` (`0x008e27e0`): `TkMenuSetScreenX2Flag(0)`,
+    /// `SndSepPlaySimple(0x80000001)`, `TkMenuMainSleepMenu(0x13)`,
+    /// `TkMenuMainActiveMenu(1, 0)`.
+    pub fn menu_term_ability_map2<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008a_b020, &[0]);
+        call(mem, 0x0088_6e80, &[0x8000_0001]);
+        call(mem, 0x008a_ad70, &[0x13]);
+        call(mem, 0x008a_a100, &[1, 0]);
+    }
+
+    /// `0x00906e60(i, kind)`: window `i`'s kind (`u16 +4`) set and its
+    /// handlers installed (`yiWindowSetHandlers(window)`).
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    pub fn set_window_kind<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slot = crate::window::bridge::WINDOWS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(4));
+        let w: u32 = mem.read(slot);
+        mem.write(w.wrapping_add(4), kind as u16);
+        let w: u32 = mem.read(slot);
+        call(mem, 0x0090_7d80, &[w]);
+    }
+
+    /// `0x008b8dd0(id)`: `MsGetSaveWeaponName(id)` (a tail call, through
+    /// `call`).
+    pub fn std_get_weapon_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x007a_bdf0, &[id])
+    }
 }
