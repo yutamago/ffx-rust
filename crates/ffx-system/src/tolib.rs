@@ -4419,4 +4419,20 @@ pub mod bridge {
         }
         total as f32
     }
+
+    /// A kernel accessor: the name function `f` (`Kernel_GetAbilityName`
+    /// or `Kernel_GetItemName`) of the `u16` at `off` of record `i` (0x1d8
+    /// bytes each) of the table `*0x0112a034`.
+    pub fn kernel_slot_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        off: u32,
+        f: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(mem.rebase(0x0112_a034));
+        let id =
+            u32::from(mem.read::<u16>(table.wrapping_add(i.wrapping_mul(0x1d8)).wrapping_add(off)));
+        call(mem, f, &[id])
+    }
 }
