@@ -188,6 +188,7 @@ const SND_STUBS: &[(u32, u32, bool)] = &[
     (s::SQS_SHOUT_STREAMING_START, 3, false),
     (s::I_VOICE_START, 2, false),
     (f::FMOD_FINALIZE, 0, false),
+    (f::MOVIE_SET_VOLUME, 1, false),
     (f::FMOD_INITIALIZE, 0, false),
     (fmod::PUSH_COMMAND, 5, true),
     (fmod::REGIST_COMMAND_SYNC, 5, true),
@@ -1502,6 +1503,75 @@ fn voice_wait() {
             );
         }
         eprintln!("{world}: SndCalcVoiceWait agrees");
+    }
+}
+
+#[test]
+fn bgm_type_save() {
+    let mut rng = Xorshift(0x5eed_0010);
+    for (world, mut a, mut b) in worlds() {
+        let (a, b) = (&mut a, &mut b);
+        let at = a.rebase(0x0112_ca90 + s::SAVE_BGM_TYPE);
+        for i in 0..64u32 {
+            #[allow(clippy::cast_possible_truncation)] // a byte
+            let old = rng.next() as u8;
+            put(a, b, at, old);
+            stub_rets(a, b, &mut rng);
+            let on = match i % 4 {
+                0 => 0,
+                1 => 1,
+                2 => 0x100,
+                _ => rng.word(),
+            };
+            cdecl(
+                "SndSetBgmTypeSave",
+                a,
+                b,
+                sym("SndSetBgmTypeSave"),
+                &[on],
+                |h| Some(s::snd_set_bgm_type_save(h, on)),
+            );
+            // iMusicRefreshBgmType queued the type
+            assert_eq!(logged(a), 1, "SndSetBgmTypeSave({on:#x})");
+            assert_eq!(Mem::read::<u8>(a, at), u8::from(on != 0));
+        }
+        eprintln!("{world}: SndSetBgmTypeSave agrees");
+    }
+}
+
+#[test]
+fn sound_update() {
+    let mut rng = Xorshift(0x5eed_0011);
+    for (world, mut a, mut b) in worlds() {
+        let (a, b) = (&mut a, &mut b);
+        let real = f::SETTINGS.get(a);
+        let fake = alloc(a, b, 0x40);
+        for i in 0..200u32 {
+            stub_rets(a, b, &mut rng);
+            if i == 0 && real != 0 {
+                // the snapshot's own settings
+                f::SETTINGS.set(a, real);
+                f::SETTINGS.set(b, real);
+            } else {
+                set(a, b, f::SETTINGS, fake);
+                for k in 0..16 {
+                    let v = match rng.below(4) {
+                        0 => rng.below(101),
+                        1 => 0,
+                        _ => rng.word(),
+                    };
+                    put(a, b, fake + 4 * k, v);
+                }
+                let mute = if rng.below(2) == 0 { 0 } else { rng.word() };
+                put(a, b, fake + f::SETTINGS_MUTE, mute);
+            }
+            cdecl("iSoundUpdate", a, b, sym("iSoundUpdate"), &[], |h| {
+                Some(f::i_sound_update(h))
+            });
+            // the movie volume and four commands
+            assert_eq!(logged(a), 5, "iSoundUpdate");
+        }
+        eprintln!("{world}: iSoundUpdate agrees");
     }
 }
 

@@ -340,6 +340,7 @@ fn matrices(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
 
 const SET_FUNC_PARAM: [u32; 4] = [0x0042_eec0, 0x0042_eed0, 0x0042_eee0, 0x0042_eef0];
 const RESTORE_VF00: u32 = 0x0042_ef00;
+const ASM_EMU_INIT: u32 = 0x0042_ee40;
 const SET_ZS_FLAG: u32 = 0x0042_ef30;
 const SET_SS_FLAG: u32 = 0x0042_ef20;
 
@@ -352,6 +353,26 @@ fn registers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     set(a, b, ee::VF00, [rng.float(); 4]);
     cdecl(a, RESTORE_VF00, &[]);
     ee::restore_vf00(b);
+    for _ in 0..4 {
+        set(
+            a,
+            b,
+            ee::VF00,
+            [rng.float(), rng.float(), rng.float(), rng.float()],
+        );
+        let sp = ee::GPR.ptr(a).at(ee::SP).addr;
+        let r = [rng.next(), rng.next(), rng.next(), rng.next()];
+        put(a, b, sp, r);
+        // eax is the caller's (dbgPrintf is a bare ret): not compared
+        cdecl(a, ASM_EMU_INIT, &[]);
+        ee::asm_emu_init(b);
+        assert_eq!(words(a, sp, 4), words(b, sp, 4), "AsmEmuInit sp");
+        assert_eq!(
+            words(a, ee::VF00.ptr(a).addr, 4),
+            [0, 0, 0, 0x3f80_0000],
+            "AsmEmuInit vf00"
+        );
+    }
     for start in [0, 0x40, 0x80, rng.next()] {
         set(a, b, ee::STATUS, start);
         cdecl(a, SET_ZS_FLAG, &[]);
