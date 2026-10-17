@@ -2376,4 +2376,1245 @@ pub mod bridge {
             );
         }
     }
+
+    /// `g_TkMenuTutoChosen` (`0x025d16bc`).
+    pub const TUTO_CHOSEN: Global<u32> = Global::new(0x025d_16bc);
+    /// Per message window: 1 when [`set_message_window_position`] split a
+    /// wide window into 300-unit rows (`0x025d0b20`).
+    pub const MESSAGE_WRAPPED: Global<[u32; 8]> = Global::new(0x025d_0b20);
+    /// A word (`0x01327104`) that, set, keeps a type-1 message window from
+    /// being clamped horizontally.
+    pub const MESSAGE_UNCLAMPED: Global<u32> = Global::new(0x0132_7104);
+
+    /// `TOSetMessageWindowPosition(i, anchor, x, y)` (`0x008af850`): the
+    /// anchor and position stored (u16 `+0xc`, `+8`, `+0xa` of the object
+    /// and `+0x18`, `+0x14`, `+0x16` of its `+0x14` record); the size is the
+    /// record's text size (`+0x40`, `+0x42`) plus the frame padding, and
+    /// with the tutorial choice set a text wider than 0x190 becomes 300 wide
+    /// with `width / 300 + 1` rows ([`MESSAGE_WRAPPED`]). The anchor moves
+    /// the position (1 bottom, 2 right, 3 bottom right, 4 centre); the width
+    /// is clamped to 0..=0x200 and `x` into the 512 columns (except for
+    /// magic 0x281 on maps 0x5e and 0x12e, or a type-1 window while
+    /// [`MESSAGE_UNCLAMPED`] is set); the height to 4..=0x7f (mode 1, 0x7b
+    /// rows) or 4..=0x1a0 (0x19c rows) and `y` to 4.. that bound; then
+    /// [`place_message_window`].
+    #[allow(
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::too_many_lines
+    )] // 16-bit arithmetic
+    pub fn set_message_window_position<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        anchor: u32,
+        x: i32,
+        y: i32,
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) {
+        let (mut x, mut y) = (x, y);
+        let slot = MESSAGE_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let obj: u32 = mem.read(slot);
+        let low = |v: i32| v.cast_unsigned() as u16;
+        let a16 = anchor as u16;
+        mem.write(obj.wrapping_add(0xc), a16);
+        mem.write(obj.wrapping_add(8), low(x));
+        mem.write(obj.wrapping_add(0xa), low(y));
+        let rec: u32 = mem.read(obj.wrapping_add(0x14));
+        mem.write(rec.wrapping_add(0x18), a16);
+        mem.write(rec.wrapping_add(0x14), low(x));
+        mem.write(rec.wrapping_add(0x16), low(y));
+        let [l, t, r, b] = frame_padding(mem, i).map(|v| v.cast_unsigned() as u16);
+        let pad_w = u32::from(r.wrapping_add(l));
+        let pad_h = u32::from(b.wrapping_add(t));
+        let rec: u32 = mem.read(obj.wrapping_add(0x14));
+        let text_w: u16 = mem.read(rec.wrapping_add(0x40));
+        let text_h: u16 = mem.read(rec.wrapping_add(0x42));
+        let wrapped = MESSAGE_WRAPPED
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let s16 = |v: u32| i32::from((v as u16).cast_signed());
+        let (rows_h, w_add) =
+            if TUTO_CHOSEN.get(mem) != 0 && i32::from(text_w.cast_signed()) + s16(pad_w) > 0x190 {
+                mem.write(wrapped, 1u32);
+                let rows = i32::from(text_w.cast_signed()) / 300 + 1;
+                let h = rows.wrapping_mul(i32::from(text_h)).cast_unsigned() as u16;
+                (u32::from(h), 300u32)
+            } else {
+                mem.write(wrapped, 0u32);
+                (u32::from(text_h), u32::from(text_w))
+            };
+        let mut h = pad_h.wrapping_add(rows_h);
+        let w = pad_w.wrapping_add(w_add);
+        let (sw, sh) = (s16(w), s16(h));
+        match anchor.wrapping_sub(1) {
+            0 => y = y.wrapping_sub(sh),
+            1 => x = x.wrapping_sub(sw),
+            2 => {
+                x = x.wrapping_sub(sw);
+                y = y.wrapping_sub(sh);
+            }
+            3 => {
+                x = x.wrapping_sub(sw / 2);
+                y = y.wrapping_sub(sh / 2);
+            }
+            _ => {}
+        }
+        let width = if sw > 0x200 {
+            0x200
+        } else if sw < 0 {
+            0
+        } else {
+            w
+        };
+        let width = s16(width);
+        let map = CURRENT_MAP.get(mem);
+        let exempt = ((map == 0x5e || map == 0x12e)
+            && crate::menu::bridge::MAGIC_FILE.get(mem)[0] == 0x281)
+            || (MESSAGE_UNCLAMPED.get(mem) != 0 && crate::window::bridge::window_type(mem, i) == 1);
+        if !exempt {
+            let lim = 0x200 - width;
+            x = if x > lim { lim } else { x.max(0) };
+        }
+        let rows = if crate::menu::bridge::message_window_mode(mem) == 1 {
+            if s16(h) > 0x7f {
+                h = 0x7f;
+            } else if s16(h) < 4 {
+                h = 4;
+            }
+            0x7b
+        } else {
+            if s16(h) > 0x1a0 {
+                h = 0x1a0;
+            } else if s16(h) < 4 {
+                h = 4;
+            }
+            0x19c
+        };
+        let height = s16(h);
+        let lim = rows - height;
+        if y > lim {
+            y = lim;
+        } else if y < 4 {
+            y = 4;
+        }
+        place_message_window(mem, i, [x, y, width, height], screen_wh);
+    }
+
+    /// `0x008afa90(i, anchor, x, y, w, h)`: message window `i` placed with
+    /// an explicit size: the anchor moves the position (1 bottom, 2 right,
+    /// 3 bottom right, 4 centre), `w` is clamped to 0..=0x200, `h` to
+    /// 4..=0x19c, `x` into the 512 columns and `y` to 4..=`0x19c - h`; then
+    /// [`place_message_window`].
+    #[allow(clippy::many_single_char_names)]
+    pub fn set_message_window_rect<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        anchor: u32,
+        rect: [i32; 4],
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) {
+        let [mut x, mut y, w, h] = rect;
+        match anchor.wrapping_sub(1) {
+            0 => y = y.wrapping_sub(h),
+            1 => x = x.wrapping_sub(w),
+            2 => {
+                x = x.wrapping_sub(w);
+                y = y.wrapping_sub(h);
+            }
+            3 => {
+                x = x.wrapping_sub(w / 2);
+                y = y.wrapping_sub(h / 2);
+            }
+            _ => {}
+        }
+        let w = if w > 0x200 { 0x200 } else { w.max(0) };
+        let h = h.clamp(4, 0x19c);
+        let lim = 0x200 - w;
+        let x = if x > lim { lim } else { x.max(0) };
+        let lim = 0x19c - h;
+        let y = if y > lim { lim } else { y.max(4) };
+        place_message_window(mem, i, [x, y, w, h], screen_wh);
+    }
+
+    /// The calls the battle limit-window set-ups make outside this module.
+    pub trait LimitWindowCalls<M> {
+        /// `TOSeqGetNum(i, name, &n)`.
+        fn seq_num(&mut self, mem: &mut M, i: u32, name: u32, out: u32);
+        /// `TOSeqGetPoint(i, name, &x, &y)`.
+        fn seq_point(&mut self, mem: &mut M, i: u32, name: u32, x: u32, y: u32);
+        /// `TOSeqGetColor(i, name, &rgba)`.
+        fn seq_color(&mut self, mem: &mut M, i: u32, name: u32, out: u32);
+        /// `TOInitPadData()`.
+        fn init_pad(&mut self, mem: &mut M);
+        /// `TOBtlInitLimitTimer()`.
+        fn init_limit_timer(&mut self, mem: &mut M);
+        /// `graphicUiRemapX2(v)` or, with `y`, `graphicUiRemapY2(v)`.
+        fn remap(&mut self, mem: &mut M, y: bool, v: f32) -> f32;
+    }
+
+    /// The common start of the limit-window set-ups: `TOSeqGetNum(2,
+    /// "dumm..", 0x0133f778)`, `TOInitPadData()`, `TOBtlInitLimitTimer()`.
+    fn limit_window_start<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        let name = mem.rebase(0x00b5_ecbc);
+        let out = mem.rebase(0x0133_f778);
+        calls.seq_num(mem, 2, name, out);
+        calls.init_pad(mem);
+        calls.init_limit_timer(mem);
+    }
+
+    /// `words` words cleared from the image address `from`.
+    fn zero_words<M: Mem>(mem: &mut M, from: u32, words: u32) {
+        let at = mem.rebase(from);
+        for k in 0..words {
+            mem.write(at.wrapping_add(4 * k), 0u32);
+        }
+    }
+
+    /// `TOSeqGetPoint(2, name, &x, &y)` into image addresses.
+    fn limit_point<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>, name: u32, x: u32) {
+        let (name, x) = (mem.rebase(name), mem.rebase(x));
+        calls.seq_point(mem, 2, name, x, x.wrapping_add(2));
+    }
+
+    /// `TOSeqGetColor(2, name, &rgba)` into an image address.
+    fn limit_color<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>, name: u32, out: u32) {
+        let (name, out) = (mem.rebase(name), mem.rebase(out));
+        calls.seq_color(mem, 2, name, out);
+    }
+
+    /// `TOBtlInitAuronLimitWindow()` (`0x00897970`): the common start, the
+    /// window record `0x0133d6f4` (5 words) cleared, its point from the
+    /// scene (`+2`, `+4`) and the word `+6` 4.
+    pub fn btl_init_auron_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        limit_window_start(mem, calls);
+        zero_words(mem, 0x0133_d6f4, 5);
+        limit_point(mem, calls, 0x00b5_ecc4, 0x0133_d6f6);
+        let at = mem.rebase(0x0133_d6fa);
+        mem.write(at, 4u32);
+    }
+
+    /// `TOBtlInitLuluLimitWindow()` (`0x00897f70`): the common start, the
+    /// record `0x0133d708` (0x2c bytes) cleared, a point (`+2`), `+6` 0xc0,
+    /// two colours (`+8`, `+0xc`) and a second point (`+0x10`).
+    pub fn btl_init_lulu_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        limit_window_start(mem, calls);
+        zero_words(mem, 0x0133_d708, 11);
+        limit_point(mem, calls, 0x00b5_ecf4, 0x0133_d70a);
+        let at = mem.rebase(0x0133_d70e);
+        mem.write(at, 0xc0u16);
+        limit_color(mem, calls, 0x00b5_ecfc, 0x0133_d710);
+        limit_color(mem, calls, 0x00b5_ed04, 0x0133_d714);
+        limit_point(mem, calls, 0x00b5_ed0c, 0x0133_d718);
+    }
+
+    /// `TOBtlInitTidusLimitWindow()` (`0x00898180`): the common start, the
+    /// record `0x0133d734` (6 words) cleared, `+2`, `+4`, `+6` the remapped
+    /// (`graphicUiRemapX2`/`Y2`, then `ftol`) constants at `0x00b5ef70`,
+    /// `0x00b5ef98`, `0x00b5f010`, and a colour at `+0x14`.
+    #[allow(clippy::cast_possible_truncation)] // `mov word, ax`
+    pub fn btl_init_tidus_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        limit_window_start(mem, calls);
+        zero_words(mem, 0x0133_d734, 6);
+        for (k, (c, y)) in [
+            (0x00b5_ef70, false),
+            (0x00b5_ef98, true),
+            (0x00b5_f010, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let c = mem.rebase(c);
+            let v: f32 = mem.read(c);
+            let r = calls.remap(mem, y, v);
+            let w = ffx_bridge::x87::ftol(mem, f64::from(r)) as u16;
+            let at = mem.rebase(0x0133_d736).wrapping_add(2 * k as u32);
+            mem.write(at, w);
+        }
+        limit_color(mem, calls, 0x00b5_ece4, 0x0133_d748);
+    }
+
+    /// `0x00897860()` (from `TOInitBtlWindow`): the 24 floats at
+    /// `0x0133fa08` set from constants (0, 1 and six image floats), then
+    /// four colours from the scene (`0x0133f7d4`, `0x0133fa88`,
+    /// `0x0133fa8c`, `0x0133fa90`).
+    pub fn btl_init_active_chr_cursor<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
+        // which value each float gets: 0 = 0.0, 1 = 1.0, else an image float
+        const SOURCES: [u32; 24] = [
+            0,
+            0x00b4_9998,
+            0,
+            1,
+            0x00b9_2340,
+            0x00b5_f048,
+            0,
+            1,
+            1,
+            0x00b5_f048,
+            0,
+            1,
+            0,
+            0,
+            0x00b1_0f38,
+            1,
+            0x00b5_165c,
+            0x00b5_f044,
+            0x00b1_0f38,
+            1,
+            0x00b4_3d28,
+            0x00b5_f044,
+            0x00b1_0f38,
+            1,
+        ];
+        let base = mem.rebase(0x0133_fa08);
+        for (k, s) in SOURCES.into_iter().enumerate() {
+            let bits = match s {
+                0 => 0u32,
+                1 => 1.0f32.to_bits(),
+                a => {
+                    let a = mem.rebase(a);
+                    mem.read(a)
+                }
+            };
+            #[allow(clippy::cast_possible_truncation)] // 24 entries
+            let at = base.wrapping_add(4 * k as u32);
+            mem.write(at, bits);
+        }
+        for (name, out) in [
+            (0x00b5_ed34, 0x0133_f7d4),
+            (0x00b5_ed3c, 0x0133_fa88),
+            (0x00b5_ed44, 0x0133_fa8c),
+            (0x00b5_ed4c, 0x0133_fa90),
+        ] {
+            limit_color(mem, calls, name, out);
+        }
+    }
+
+    /// Whose overdrive window [`LimitOpenCalls::limit_time`] times.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Limit {
+        /// `NkzGetAuronLimitTime(level)`.
+        Auron,
+        /// `NkzGetLuluLimitTime(group)`.
+        Lulu,
+        /// `NkzGetTidusLimitTime(level)`.
+        Tidus,
+    }
+
+    /// The overdrive-table calls of the limit-window openers.
+    pub trait LimitOpenCalls<M> {
+        /// The time limit (`NkzGet*LimitTime(arg)`).
+        fn limit_time(&mut self, mem: &mut M, who: Limit, arg: u32) -> f32;
+        /// `NkzGetAuronLimitButtonData(level)`.
+        fn auron_buttons(&mut self, mem: &mut M, level: u32) -> u32;
+        /// `NkzSetLuluLimitTbl(group)`.
+        fn lulu_table(&mut self, mem: &mut M, group: u32);
+        /// `NkzTidusLimitTableA(level)` or, with `b`, `NkzTidusLimitTableB`.
+        fn tidus_table(&mut self, mem: &mut M, b: bool, level: u32) -> u32;
+    }
+
+    /// The level of an overdrive command `cmd`: `base`, `base + 0x10`,
+    /// `+ 0x20`, `+ 0x30` give 0..=3, anything else 0.
+    fn limit_level(cmd: u32, base: u32) -> u32 {
+        match cmd.wrapping_sub(base) {
+            0x10 => 1,
+            0x20 => 2,
+            0x30 => 3,
+            _ => 0,
+        }
+    }
+
+    /// The limit timer started (`0x0133f77c` 1) with `t` as its three
+    /// times (`0x0133f78c`, `0x0133f790`, `0x0133f794`).
+    fn start_limit_timer(mem: &mut impl Mem, t: f32) {
+        for (a, v) in [
+            (0x0133_f78c, t.to_bits()),
+            (0x0133_f77c, 1),
+            (0x0133_f790, t.to_bits()),
+            (0x0133_f794, t.to_bits()),
+        ] {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        }
+    }
+
+    /// `TOBtlOpenAuronLimitWindow(cmd)` (`0x00898ad0`): the level from the
+    /// command (0x22, 0x32, 0x42, 0x52), the timer started with its time,
+    /// the button sequence (`NkzGetAuronLimitButtonData`) and its length up
+    /// to the 0xffff end in `0x0133d704`/`0x0133d700`, the window open
+    /// (`0x0133d6f4` 1). Returns 1.
+    pub fn btl_open_auron_limit_window<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        calls: &mut impl LimitOpenCalls<M>,
+    ) -> u32 {
+        let level = limit_level(cmd, 0x22);
+        let t = calls.limit_time(mem, Limit::Auron, level);
+        start_limit_timer(mem, t);
+        let seq = calls.auron_buttons(mem, level);
+        let (seq_at, len_at) = (mem.rebase(0x0133_d704), mem.rebase(0x0133_d700));
+        mem.write(seq_at, seq);
+        let mut n = 0u32;
+        mem.write(len_at, n);
+        while mem.read::<u16>(seq.wrapping_add(n.wrapping_mul(2))) != 0xffff {
+            n = n.wrapping_add(1);
+            mem.write(len_at, n);
+        }
+        let open = mem.rebase(0x0133_d6f4);
+        mem.write(open, 1u16);
+        1
+    }
+
+    /// `TOBtlOpenLuluLimitWindow(cmd)` (`0x00898bf0`): the group `cmd -
+    /// 0x3078`, the timer started with its time, `NkzSetLuluLimitTbl`, then
+    /// `0x0133d71e` the byte `0x0133f798`, `0x0133d71c` 3, `0x0133d71f` 1 and
+    /// the window open (`0x0133d708` 1). Returns 1.
+    pub fn btl_open_lulu_limit_window<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        calls: &mut impl LimitOpenCalls<M>,
+    ) -> u32 {
+        let group = cmd.wrapping_sub(0x3078);
+        let t = calls.limit_time(mem, Limit::Lulu, group);
+        start_limit_timer(mem, t);
+        calls.lulu_table(mem, group);
+        let src = mem.rebase(0x0133_f798);
+        let v: u8 = mem.read(src);
+        let w = mem.rebase(0x0133_d708);
+        mem.write(w.wrapping_add(0x16), v);
+        mem.write(w.wrapping_add(0x14), 3u16);
+        mem.write(w.wrapping_add(0x17), 1u8);
+        mem.write(w, 1u16);
+        1
+    }
+
+    /// `TOBtlOpenTidusLimitWindow(cmd)` (`0x00898ca0`): the level from the
+    /// command (0x20, 0x30, 0x40, 0x50), the timer started with its time,
+    /// table B's value at `+0x10` of the window `0x0133d734`, its `+2` copied
+    /// to `+0xe`, table A's width at `+0xc` and the band `+8`..`+0xa`
+    /// centred on `+6` / 2 from `+2`; the window open. Returns 1.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )] // 16-bit stores
+    pub fn btl_open_tidus_limit_window<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        calls: &mut impl LimitOpenCalls<M>,
+    ) -> u32 {
+        let level = limit_level(cmd, 0x20);
+        let t = calls.limit_time(mem, Limit::Tidus, level);
+        start_limit_timer(mem, t);
+        let w = mem.rebase(0x0133_d734);
+        let b = calls.tidus_table(mem, true, level);
+        mem.write(w.wrapping_add(0x10), b as u16);
+        let x: u16 = mem.read(w.wrapping_add(2));
+        mem.write(w.wrapping_add(0xe), x);
+        let a = calls.tidus_table(mem, false, level) as u16;
+        let width: i16 = mem.read(w.wrapping_add(6));
+        let half = i32::from(width) / 2;
+        let ha = i32::from(a.cast_signed()) / 2;
+        mem.write(w.wrapping_add(0xc), a);
+        let x: u16 = mem.read(w.wrapping_add(2));
+        mem.write(w.wrapping_add(8), ((half - ha) as u16).wrapping_add(x));
+        mem.write(w.wrapping_add(0xa), ((ha + half) as u16).wrapping_add(x));
+        mem.write(w, 1u16);
+        1
+    }
+
+    /// `TOBtlCtrlLimitTimer()` (`0x00891ac0`): while the limit timer runs
+    /// (`0x0133f77c` 2) a frame is counted (`0x0133f788` += 1) and the time
+    /// left (`0x0133f790`) is the limit (`0x0133f78c`) less the frames over
+    /// 30 (25 in video mode 1, PAL). At 0 or below both it and the shown
+    /// time (`0x0133f794`) become 0; otherwise the shown time gets a random
+    /// hundredths digit: `(rnd() % 10 - 10 * ftol(left * -10)) / 100` (the
+    /// battle `rnd`, passed in). A NaN time takes the second path, as the
+    /// original's `fcom` does.
+    #[allow(clippy::cast_possible_truncation)] // values already rounded to f32
+    pub fn btl_ctrl_limit_timer<M: Mem>(mem: &mut M, rnd: impl FnOnce(&mut M) -> u32) {
+        use ffx_bridge::x87;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        if mem.read::<u32>(g(mem, 0x0133_f77c)) != 2 {
+            return;
+        }
+        let frames_at = g(mem, 0x0133_f788);
+        let frames = f64::from(mem.read::<f32>(frames_at));
+        let frames = dword(x87::add(frames, 1.0));
+        mem.write(frames_at, frames as f32);
+        let per_second = if crate::config::bridge::video_mode(mem) == 0 {
+            30.0
+        } else {
+            25.0
+        };
+        let limit = f64::from(mem.read::<f32>(g(mem, 0x0133_f78c)));
+        let left = dword(x87::sub(limit, x87::div(frames, per_second)));
+        let left_at = g(mem, 0x0133_f790);
+        let shown_at = g(mem, 0x0133_f794);
+        mem.write(left_at, left as f32);
+        if left <= 0.0 {
+            mem.write(left_at, 0f32);
+            mem.write(shown_at, 0f32);
+            return;
+        }
+        let digit = rnd(mem).cast_signed() % 10;
+        let tens = x87::ftol(mem, x87::mul(left, -10.0)).cast_signed();
+        let v = digit.wrapping_sub(tens.wrapping_mul(10));
+        let shown = dword(x87::div(f32_of(v), 100.0));
+        mem.write(shown_at, shown as f32);
+    }
+
+    /// `TOBtlMemoryCursorPos()` (`0x008989d0`): unless the command
+    /// `0x0133ca4c` is 0xffff, 0xfffe or 0x3002, the cursor state of the
+    /// `0x023cc092` + 1 command windows (0xf0 bytes each from `0x0133c952`)
+    /// is saved for character `0x023cc088` (0x168 bytes each from
+    /// `0x0133d788`, 0x24 per window): the window kind, the depth and its
+    /// per-level positions and scrolls, and five more cursor words; the
+    /// character's saved flag (`0x0133d770 + i`) set.
+    #[allow(clippy::cast_possible_truncation)] // the image is 32-bit
+    pub fn btl_memory_cursor_pos(mem: &mut impl Mem) {
+        let cmd: u16 = mem.read(mem.rebase(0x0133_ca4c));
+        if matches!(cmd, 0xffff | 0xfffe | 0x3002) {
+            return;
+        }
+        let n = i32::from(mem.read::<i8>(mem.rebase(0x023c_c092)));
+        let chr = i32::from(mem.read::<i16>(mem.rebase(0x023c_c088)));
+        if n >= 0 {
+            let mut dst = mem
+                .rebase(0x0133_d78a)
+                .wrapping_add(chr.wrapping_mul(0x168).cast_unsigned());
+            let mut src = mem.rebase(0x0133_c95a);
+            for _ in 0..=n {
+                let kind = i16::from(mem.read::<i8>(src.wrapping_sub(8)));
+                mem.write(dst.wrapping_sub(2), kind);
+                let depth: i8 = mem.read(src);
+                mem.write(dst, i16::from(depth));
+                for j in 0..i32::from(depth).max(0).cast_unsigned() {
+                    let a: u16 = mem.read(src.wrapping_add(4 + 2 * j));
+                    mem.write(dst.wrapping_add(2 + 2 * j), a);
+                    let b: u16 = mem.read(src.wrapping_add(0xc + 2 * j));
+                    mem.write(dst.wrapping_add(0xa + 2 * j), b);
+                }
+                let v: u16 = mem.read(src.wrapping_add(2));
+                mem.write(dst.wrapping_add(0x12), v);
+                let v: u32 = mem.read(src.wrapping_add(0xce));
+                mem.write(dst.wrapping_add(0x1a), v);
+                for (from, to) in [(0xca, 0x16), (0xcc, 0x18), (0x38, 0x1e), (0x36, 0x14)] {
+                    let v: u16 = mem.read(src.wrapping_add(from));
+                    mem.write(dst.wrapping_add(to), v);
+                }
+                dst = dst.wrapping_add(0x24);
+                src = src.wrapping_add(0xf0);
+            }
+        }
+        let flag = mem.rebase(0x0133_d770).wrapping_add(chr.cast_unsigned());
+        mem.write(flag, 1u8);
+    }
+
+    /// `TOBtlMakeTargetGroupBit()` (`0x00898490`): the 28 group masks at
+    /// `0x0133d0e4` cleared and rebuilt by the selected command's group mode
+    /// (`+0x1a` of its `MsGetComData` record, bits 2-3, kept in
+    /// `0x0133d0e0`): 0 each character of the target union (`0x0133d0dc`)
+    /// alone; 1 the party (`0x0133d0d4`, characters 0..20) and the
+    /// monsters (`0x0133d0d8`, 20..28) by `MsGetChrGroup` (passed in), the
+    /// monsters' groups from mask 20; 2 the party and the monsters as two
+    /// groups (masks 0 and 20); 3 the cursor's character (`0x0133d0d0`)
+    /// alone.
+    pub fn btl_make_target_group_bit<M: Mem>(
+        mem: &mut M,
+        tmp: u32,
+        get_com: impl FnOnce(&mut M, u32, u32) -> u32,
+        mut chr_group: impl FnMut(&mut M, u32) -> u32,
+    ) {
+        let id = u32::from(TARGET_COMMAND.get(mem));
+        let rec = get_com(mem, id, tmp);
+        let groups = mem.rebase(0x0133_d0e4);
+        for k in 0..28u32 {
+            mem.write(groups.wrapping_add(4 * k), 0u32);
+        }
+        let flags: u16 = mem.read(rec.wrapping_add(0x1a));
+        let mode = u32::from(flags >> 2) & 3;
+        let mode_at = mem.rebase(0x0133_d0e0);
+        mem.write(mode_at, mode);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let or = |mem: &mut M, at: u32, bit: u32| {
+            let v: u32 = mem.read(at);
+            mem.write(at, v | bit);
+        };
+        match mode {
+            0 => {
+                for chr in 0..28u32 {
+                    let bit = 1u32 << chr;
+                    if word(mem, 0x0133_d0dc) & bit != 0 {
+                        mem.write(groups.wrapping_add(4 * chr), bit);
+                    }
+                }
+            }
+            1 => {
+                for (range, mask, base) in [(0..20u32, 0x0133_d0d4, 0), (20..28, 0x0133_d0d8, 20)] {
+                    for chr in range {
+                        let bit = 1u32 << chr;
+                        if word(mem, mask) & bit != 0 {
+                            let g = chr_group(mem, chr);
+                            let at = groups
+                                .wrapping_add(4 * base)
+                                .wrapping_add(g.wrapping_mul(4));
+                            or(mem, at, bit);
+                        }
+                    }
+                }
+            }
+            2 => {
+                let party = word(mem, 0x0133_d0d4);
+                mem.write(groups, party);
+                let monsters = word(mem, 0x0133_d0d8);
+                mem.write(groups.wrapping_add(0x50), monsters);
+            }
+            _ => {
+                let c = u32::from(mem.read::<u16>(mem.rebase(0x0133_d0d0)));
+                mem.write(groups.wrapping_add(c.wrapping_mul(4)), 1u32 << (c & 31));
+            }
+        }
+    }
+
+    /// `TOBtlMakeTargetTargetBit()` (`0x00898640`): the target lists
+    /// rebuilt from the group masks (`0x0133d0e4`, 28 words) and the
+    /// selectable mask (`0x0133d174` = the AND of `0x0133d154`,
+    /// `0x0133d168`, `0x0133d16c`, `0x0133d170`): party targets into
+    /// `0x0133d180` (count `0x0133d17c`), monster targets into
+    /// `0x0133d1d4` (count `0x0133d1d0`), by the group mode `0x0133d0e0`:
+    /// 0 the groups listed at `0x0133f0dc`/`0x0133f0f0` (counts
+    /// `0x0133f0d8`/`0x0133f0ec`), 1 groups 0..8 and 20..28, 2 masks 0 and
+    /// 20, 3 the cursor character (`0x0133d0d0`) alone. The command's flags
+    /// (`+0x1a` of its `MsGetComData` record, passed in with a scratch word)
+    /// pick the list: bit 1 the monsters', else the party's, where mode 0
+    /// starts at the cursor character's entry. Then the list (`0x0133d1f8`,
+    /// `0x0133d200`), its count (`0x0133d1f6`), the start (`0x0133d1fc`), bit
+    /// 5 (`0x0133d1fe`), the selected mask (`0x0133d178`) and its highest
+    /// character (`0x0133d1f4`, 0xff in modes 1 and 2), and those into the
+    /// command window `0x023cc092` (0xf0 bytes each from `0x0133c992`).
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // 16-bit counters
+    pub fn btl_make_target_target_bit<M: Mem>(
+        mem: &mut M,
+        tmp: u32,
+        get_com: impl FnOnce(&mut M, u32, u32) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let party = at(mem, 0x0133_d180);
+        let monsters = at(mem, 0x0133_d1d4);
+        for k in 0..20u32 {
+            mem.write(party.wrapping_add(4 * k), 0u32);
+        }
+        for k in 0..8u32 {
+            mem.write(monsters.wrapping_add(4 * k), 0u32);
+        }
+        let id = u32::from(TARGET_COMMAND.get(mem));
+        let rec = get_com(mem, id, tmp);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let mask = word(mem, 0x0133_d16c)
+            & word(mem, 0x0133_d168)
+            & word(mem, 0x0133_d170)
+            & word(mem, 0x0133_d154);
+        let mode = word(mem, 0x0133_d0e0);
+        let (mask_at, n1_at, n2_at) = (
+            at(mem, 0x0133_d174),
+            at(mem, 0x0133_d17c),
+            at(mem, 0x0133_d1d0),
+        );
+        mem.write(mask_at, mask);
+        mem.write(n1_at, 0u16);
+        mem.write(n2_at, 0u16);
+        let groups = at(mem, 0x0133_d0e4);
+        // one target added to a list: the count re-read and stored as
+        // the original does
+        let add = |mem: &mut M, list: u32, n_at: u32, n: &mut u16, v: u32| {
+            let i = u32::from(*n).cast_signed() as i16;
+            mem.write(list.wrapping_add((i32::from(i) * 4).cast_unsigned()), v);
+            let c: u16 = mem.read(n_at);
+            *n = c.wrapping_add(1);
+            mem.write(n_at, *n);
+        };
+        let (mut n1, mut n2) = (0u16, 0u16);
+        match mode {
+            0 => {
+                // the other count is re-read after a list that had entries
+                // to scan (a long list can run into it)
+                let count = word(mem, 0x0133_f0d8).cast_signed();
+                if count > 0 {
+                    let ids = at(mem, 0x0133_f0dc);
+                    for k in 0..count.cast_unsigned() {
+                        let g = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+                        let m: u32 = mem.read(mask_at);
+                        let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                        if v != 0 {
+                            add(mem, party, n1_at, &mut n1, v);
+                        }
+                    }
+                    n2 = mem.read(n2_at);
+                }
+                let count = word(mem, 0x0133_f0ec).cast_signed();
+                if count > 0 {
+                    let ids = at(mem, 0x0133_f0f0);
+                    for k in 0..count.cast_unsigned() {
+                        let g = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+                        let m: u32 = mem.read(mask_at);
+                        let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                        if v != 0 {
+                            add(mem, monsters, n2_at, &mut n2, v);
+                        }
+                    }
+                    n1 = mem.read(n1_at);
+                }
+            }
+            1 => {
+                for g in 0..8u32 {
+                    let m: u32 = mem.read(mask_at);
+                    let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                    if v != 0 {
+                        add(mem, party, n1_at, &mut n1, v);
+                    }
+                }
+                n2 = mem.read(n2_at);
+                for g in 20..28u32 {
+                    let m: u32 = mem.read(mask_at);
+                    let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                    if v != 0 {
+                        add(mem, monsters, n2_at, &mut n2, v);
+                    }
+                }
+                n1 = mem.read(n1_at);
+            }
+            2 => {
+                let v = mem.read::<u32>(groups) & mask;
+                if v != 0 {
+                    n1 = 1;
+                    mem.write(party, v);
+                    mem.write(n1_at, 1u16);
+                }
+                let v = mem.read::<u32>(groups.wrapping_add(0x50)) & mask;
+                if v != 0 {
+                    n2 = 1;
+                    mem.write(n2_at, 1u16);
+                    mem.write(monsters, v);
+                }
+            }
+            3 => {
+                let c: u16 = mem.read(at(mem, 0x0133_d0d0));
+                let bit = 1u32 << (c & 31);
+                if c < 0x14 {
+                    n1 = 1;
+                    mem.write(n1_at, 1u16);
+                    mem.write(party, bit);
+                } else if c < 0x1c {
+                    n2 = 1;
+                    mem.write(n2_at, 1u16);
+                    mem.write(monsters, bit);
+                }
+            }
+            _ => {}
+        }
+        let (start_at, count_at, which_at, list_at, bit5_at) = (
+            at(mem, 0x0133_d1fc),
+            at(mem, 0x0133_d1f6),
+            at(mem, 0x0133_d200),
+            at(mem, 0x0133_d1f8),
+            at(mem, 0x0133_d1fe),
+        );
+        mem.write(start_at, 0u16);
+        let flags: u8 = mem.read(rec.wrapping_add(0x1a));
+        let mut start = 0u16;
+        let (list, which) = if flags & 2 != 0 {
+            mem.write(count_at, n2);
+            mem.write(which_at, 1u16);
+            mem.write(list_at, monsters);
+            (monsters, 1u16)
+        } else {
+            mem.write(which_at, 0u16);
+            mem.write(list_at, party);
+            mem.write(count_at, n1);
+            if mode == 0 {
+                let n = i32::from(n1.cast_signed());
+                let c: u8 = mem.read(at(mem, 0x0133_d0d0));
+                let bit = 1u32 << (c & 31);
+                for k in 0..n.max(0).cast_unsigned() {
+                    if mem.read::<u32>(party.wrapping_add(4 * k)) == bit {
+                        start = k as u16;
+                        mem.write(start_at, start);
+                        break;
+                    }
+                }
+            }
+            (party, 0)
+        };
+        mem.write(bit5_at, u16::from(flags & 0x20 != 0));
+        let sel: u32 =
+            mem.read(list.wrapping_add((i32::from(start.cast_signed()) * 4).cast_unsigned()));
+        mem.write(at(mem, 0x0133_d178), sel);
+        let top_at = at(mem, 0x0133_d1f4);
+        if mode == 0 || mode == 3 {
+            for c in 0..0x1cu16 {
+                if sel & (1 << c) != 0 {
+                    mem.write(top_at, c);
+                }
+            }
+        } else {
+            mem.write(top_at, 0xffu16);
+        }
+        let depth = i32::from(mem.read::<i8>(at(mem, 0x023c_c092)));
+        let w = at(mem, 0x0133_c992).wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+        mem.write(w.wrapping_add(0x96), sel);
+        mem.write(w.wrapping_add(0x92), which);
+        mem.write(w.wrapping_add(0x94), mode as u16);
+        mem.write(w, start);
+    }
+
+    /// `0x0089a2a0(t)`: the limit timer started (`0x0133f77c` 1) with `t`
+    /// as its limit, time left and shown time (as [`start_limit_timer`]
+    /// in another order: the flag first).
+    pub fn btl_start_limit_timer(mem: &mut impl Mem, t: f32) {
+        for (a, v) in [
+            (0x0133_f77c, 1),
+            (0x0133_f78c, t.to_bits()),
+            (0x0133_f790, t.to_bits()),
+            (0x0133_f794, t.to_bits()),
+        ] {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        }
+    }
+
+    /// `0x0089a2d0(x, y)`: the limit timer's position (u16 `0x0133f780`,
+    /// `0x0133f782`).
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    pub fn btl_set_limit_timer_pos(mem: &mut impl Mem, x: u32, y: u32) {
+        let at = mem.rebase(0x0133_f780);
+        mem.write(at, x as u16);
+        mem.write(at.wrapping_add(2), y as u16);
+    }
+
+    /// `TOBtlSetDefaultCursorPos()` (`0x00899ac0`): the command window
+    /// `0x023cc092` restored from character `0x023cc088`'s saved cursor
+    /// (see [`btl_memory_cursor_pos`]) when the saved key (`+0x14`) still
+    /// matches the window's (`+0xa`). A window still at kind 0 looks its
+    /// saved command (`+0xc` + 2 × level) up in its list (`+0x20`, count
+    /// `+0x24`): found, it takes the kind, the position, the level's scroll
+    /// (read through the found index as a window number, as compiled), the
+    /// row scroll clamped to the list's pages (columns `+0x38`, rows
+    /// `+0x3a`), the position and the saved target mask; not found, the
+    /// scroll and position words are cleared. A window of kind 1 with a
+    /// saved mask then selects the target list entry by the saved target
+    /// mode (`+0x1a`; `+0x18` picks the monster list): 0 the entry equal to
+    /// the mask, with its highest character; 1 the first entry sharing a
+    /// bit; 2 the first entry. A zero column count makes the original fault
+    /// (`idiv`); here it gives a zero quotient.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )] // 16-bit stores
+    pub fn btl_set_default_cursor_pos(mem: &mut impl Mem) {
+        let d = i32::from(mem.read::<i8>(mem.rebase(0x023c_c092)));
+        let c = i32::from(mem.read::<i16>(mem.rebase(0x023c_c088)));
+        let e = d.wrapping_add(c.wrapping_mul(10));
+        let saved = mem
+            .rebase(0x0133_d788)
+            .wrapping_add(e.wrapping_mul(0x24).cast_unsigned());
+        let win = mem
+            .rebase(0x0133_c952)
+            .wrapping_add(d.wrapping_mul(0xf0).cast_unsigned());
+        let key: u16 = mem.read(saved.wrapping_add(0x14));
+        if mem.read::<u16>(win.wrapping_add(0xa)) != key {
+            return;
+        }
+        if mem.read::<u8>(win) == 0 {
+            let n = mem.read::<u32>(win.wrapping_add(0x22)).cast_signed();
+            let mut found = None;
+            if n > 0 {
+                let lvl = i32::from(mem.read::<i8>(win.wrapping_add(9)));
+                let at = saved
+                    .wrapping_add(0xc)
+                    .wrapping_add((lvl * 2).cast_unsigned());
+                let target = u32::from(mem.read::<u16>(at));
+                let list: u32 = mem.read(win.wrapping_add(0x1e));
+                for j in 0..n {
+                    let v = i32::from(mem.read::<i16>(list.wrapping_add((j * 2).cast_unsigned())));
+                    if target == v.cast_unsigned() {
+                        found = Some(j);
+                        break;
+                    }
+                }
+            }
+            match found {
+                Some(j) => {
+                    let kind: u8 = mem.read(saved);
+                    mem.write(win, kind);
+                    let lvl = i32::from(mem.read::<i8>(win.wrapping_add(9)));
+                    mem.write(
+                        win.wrapping_add(0xc)
+                            .wrapping_add((lvl * 2).cast_unsigned()),
+                        j as u16,
+                    );
+                    let lvl = i32::from(mem.read::<i8>(win.wrapping_add(9)));
+                    // the scroll is read through the found index as a window number
+                    let other = mem
+                        .rebase(0x0133_c95b)
+                        .wrapping_add(j.wrapping_mul(0xf0).cast_unsigned());
+                    let olvl = i32::from(mem.read::<i8>(other));
+                    let src = mem.rebase(0x0133_d794).wrapping_add(
+                        (olvl.wrapping_add(e.wrapping_mul(0x12)) * 2).cast_unsigned(),
+                    );
+                    let v: u16 = mem.read(src);
+                    mem.write(
+                        win.wrapping_add(0x14)
+                            .wrapping_add((lvl * 2).cast_unsigned()),
+                        v,
+                    );
+                    mem.write(win.wrapping_add(0xa), key);
+                    let cols_u = mem.read::<u16>(win.wrapping_add(0x36));
+                    let cols = i32::from(cols_u.cast_signed());
+                    let q = j.checked_div(cols).unwrap_or(0);
+                    let scroll_at = win.wrapping_add(0x3e);
+                    mem.write(
+                        scroll_at,
+                        (q.wrapping_sub(1)).wrapping_mul(i32::from(cols_u)) as u16,
+                    );
+                    let cols = i32::from(mem.read::<i16>(win.wrapping_add(0x36)));
+                    let rows = i32::from(mem.read::<i16>(win.wrapping_add(0x38)));
+                    let n = mem.read::<u32>(win.wrapping_add(0x22)).cast_signed();
+                    if n < rows.wrapping_mul(cols) {
+                        mem.write(scroll_at, 0u16);
+                    } else {
+                        if j < cols {
+                            mem.write(scroll_at, 0u16);
+                        }
+                        let cols = i32::from(mem.read::<i16>(win.wrapping_add(0x36)));
+                        let n = mem.read::<u32>(win.wrapping_add(0x22)).cast_signed();
+                        let pages = n
+                            .wrapping_sub(1)
+                            .wrapping_add(cols)
+                            .checked_div(cols)
+                            .unwrap_or(0);
+                        if j > pages.wrapping_sub(1).wrapping_mul(cols).wrapping_sub(1) {
+                            let rows: u16 = mem.read(win.wrapping_add(0x38));
+                            let cols: u16 = mem.read(win.wrapping_add(0x36));
+                            let v = (pages as u16).wrapping_sub(rows).wrapping_mul(cols);
+                            mem.write(scroll_at, v);
+                        }
+                    }
+                    mem.write(win.wrapping_add(0x40), j as u16);
+                    let mask: u32 = mem.read(saved.wrapping_add(0x1c));
+                    mem.write(win.wrapping_add(0xd6), mask);
+                }
+                None => mem.write(win.wrapping_add(0x3e), 0u32),
+            }
+        }
+        if mem.read::<u8>(win) != 1 {
+            return;
+        }
+        let mask: u32 = mem.read(saved.wrapping_add(0x1c));
+        if mask == 0 {
+            return;
+        }
+        let party = mem.rebase(0x0133_d180);
+        let monsters = mem.rebase(0x0133_d1d4);
+        let (start_at, which_at, sel_at, top_at, count_at, list_at) = (
+            mem.rebase(0x0133_d1fc),
+            mem.rebase(0x0133_d200),
+            mem.rebase(0x0133_d178),
+            mem.rebase(0x0133_d1f4),
+            mem.rebase(0x0133_d1f6),
+            mem.rebase(0x0133_d1f8),
+        );
+        let (party_n_at, monster_n_at) = (mem.rebase(0x0133_d17c), mem.rebase(0x0133_d1d0));
+        let monster_side = mem.read::<u16>(saved.wrapping_add(0x18)) != 0;
+        let (list, n_at, which, len, tops) = if monster_side {
+            (monsters, monster_n_at, 1u16, 8u32, 20u16..28)
+        } else {
+            (party, party_n_at, 0u16, 20, 0..20)
+        };
+        match mem.read::<i16>(saved.wrapping_add(0x1a)) {
+            0 => {
+                let Some(i) = (0..len).find(|&i| mem.read::<u32>(list.wrapping_add(4 * i)) == mask)
+                else {
+                    return;
+                };
+                mem.write(which_at, which);
+                mem.write(start_at, i as u16);
+                let sel: u32 = mem.read(list.wrapping_add(4 * i));
+                mem.write(sel_at, sel);
+                for c in tops {
+                    if sel & (1 << c) != 0 {
+                        mem.write(top_at, c);
+                    }
+                }
+                let n: u16 = mem.read(n_at);
+                mem.write(list_at, list);
+                mem.write(count_at, n);
+            }
+            1 => {
+                let n: u16 = mem.read(n_at);
+                let n = i32::from(n.cast_signed());
+                if n <= 0 {
+                    return;
+                }
+                let Some(i) = (0..n.cast_unsigned())
+                    .find(|&i| mem.read::<u32>(list.wrapping_add(4 * i)) & mask != 0)
+                else {
+                    return;
+                };
+                mem.write(start_at, i as u16);
+                mem.write(which_at, which);
+                let sel: u32 = mem.read(list.wrapping_add(4 * i));
+                mem.write(sel_at, sel);
+                mem.write(count_at, n as u16);
+                mem.write(top_at, 0xffu16);
+                mem.write(list_at, list);
+            }
+            2 => {
+                mem.write(which_at, which);
+                mem.write(start_at, 0u16);
+                let sel: u32 = mem.read(list);
+                mem.write(sel_at, sel);
+                mem.write(top_at, 0xffu16);
+                let n: u16 = mem.read(n_at);
+                mem.write(list_at, list);
+                mem.write(count_at, n);
+            }
+            _ => {}
+        }
+    }
+
+    /// `TOReset2()` (`0x008adee0`): the sequence slots cleared
+    /// (`0x008adf20`), `TkMenuInitSeq()`, the three scene data blocks set
+    /// (`TkMenuSetSceneDataAdrs(0, 0x0185f610)`, `(1, 0x0185fe10)`, `(2,
+    /// 0x01841e10)`), then `TOSeqInitParam()` (its result returned). The
+    /// calls go through `call(sym, args)`.
+    pub fn reset2<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        call(mem, 0x008a_df20, &[]);
+        call(mem, 0x00a7_bb00, &[]);
+        for (i, a) in [(0u32, 0x0185_f610u32), (1, 0x0185_fe10), (2, 0x0184_1e10)] {
+            let a = mem.rebase(a);
+            call(mem, 0x00a7_c7f0, &[i, a]);
+        }
+        call(mem, 0x008a_e6f0, &[])
+    }
+
+    /// `TOStdGetItemName(item)` (`0x008b8db0`): `MsGetRomItem(item, &base)`
+    /// (through `call`, with a scratch word `tmp`) gives a record whose
+    /// first `u16` is the name's offset from `base`.
+    pub fn std_get_item_name<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        tmp: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec = call(mem, 0x0079_09f0, &[item, tmp]);
+        let off = u32::from(mem.read::<u16>(rec));
+        let base: u32 = mem.read(tmp);
+        off.wrapping_add(base)
+    }
+
+    /// `0x008be020(i, k)`: `BtlEnd_SetFlag(i)`, then the byte `+0` of
+    /// entry `k` (14 bytes each) of `0x01869f2a` set to 0xf.
+    pub fn btl_end_set_flag_f<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        k: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008b_db60, &[i]);
+        let at = mem.rebase(0x0186_9f2a).wrapping_add(k.wrapping_mul(14));
+        mem.write(at, 0xfu8);
+    }
+
+    /// `TOMenuTermHelp()` (`0x008bf0b0`): with the help state
+    /// (`0x0186a230`) at 3 the close sound (`SndSepPlaySimple(0x8000006c)`);
+    /// `TkMenuMainSleepMenu(0xb)`; unless `0x0186a22c` is set
+    /// `TkMenuMainActiveMenu(1, 0)`; the state 0.
+    pub fn menu_term_help<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let state = mem.rebase(0x0186_a230);
+        if mem.read::<u32>(state) == 3 {
+            call(mem, 0x0088_6e80, &[0x8000_006c]);
+        }
+        call(mem, 0x008a_ad70, &[0xb]);
+        if mem.read::<u16>(mem.rebase(0x0186_a22c)) == 0 {
+            call(mem, 0x008a_a100, &[1, 0]);
+        }
+        mem.write(state, 0u32);
+    }
+
+    /// `TOMenuTermAbilityMap2()` (`0x008e27e0`): `TkMenuSetScreenX2Flag(0)`,
+    /// `SndSepPlaySimple(0x80000001)`, `TkMenuMainSleepMenu(0x13)`,
+    /// `TkMenuMainActiveMenu(1, 0)`.
+    pub fn menu_term_ability_map2<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008a_b020, &[0]);
+        call(mem, 0x0088_6e80, &[0x8000_0001]);
+        call(mem, 0x008a_ad70, &[0x13]);
+        call(mem, 0x008a_a100, &[1, 0]);
+    }
+
+    /// `0x00906e60(i, kind)`: window `i`'s kind (`u16 +4`) set and its
+    /// handlers installed (`yiWindowSetHandlers(window)`).
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    pub fn set_window_kind<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slot = crate::window::bridge::WINDOWS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(4));
+        let w: u32 = mem.read(slot);
+        mem.write(w.wrapping_add(4), kind as u16);
+        let w: u32 = mem.read(slot);
+        call(mem, 0x0090_7d80, &[w]);
+    }
+
+    /// `0x008b8dd0(id)`: `MsGetSaveWeaponName(id)` (a tail call, through
+    /// `call`).
+    pub fn std_get_weapon_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x007a_bdf0, &[id])
+    }
+
+    /// `0x008af6a0(id)`: the flag `0x00c59558` set to 1 when `id` is listed
+    /// for the current map in the table at `0x00b5f730` (0x20-byte entries:
+    /// map, then ids up to -1; a map of 0 ends it, and the first entry's map
+    /// is compiled in as 0xa2), else to 0. Skipped while the flag is
+    /// negative, or while the save menu word (`MsGetSaveMenu`) has 0x200 set
+    /// and `0x007851b0` returns 1. Returns 0.
+    pub fn check_map_message<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let menu = call(mem, 0x0078_5290, &[]);
+        if mem.read::<u32>(menu) & 0x200 != 0 && call(mem, 0x0078_51b0, &[]) == 1 {
+            return 0;
+        }
+        let flag = mem.rebase(0x00c5_9558);
+        if mem.read::<u32>(flag).cast_signed() < 0 {
+            return 0;
+        }
+        let map = CURRENT_MAP.get(mem);
+        let table = mem.rebase(0x00b5_f730);
+        let mut k = 0u32;
+        let mut entry_map = 0xa2u32;
+        loop {
+            let entry = table.wrapping_add(k.wrapping_mul(0x20));
+            if map == entry_map {
+                let mut at = entry.wrapping_add(4);
+                loop {
+                    let v: u32 = mem.read(at);
+                    if v == u32::MAX {
+                        break;
+                    }
+                    if v == id {
+                        mem.write(flag, 1u32);
+                        return 0;
+                    }
+                    at = at.wrapping_add(4);
+                }
+            }
+            k = k.wrapping_add(1);
+            entry_map = mem.read(table.wrapping_add(k.wrapping_mul(0x20)));
+            if entry_map == 0 {
+                mem.write(flag, 0u32);
+                return 0;
+            }
+        }
+    }
+
+    /// `0x008b5680()`: with the latch `0x00c5a03c` at 1: the counter
+    /// `0x018663e0` counted; on map `0x00c3347c` (`g_GraphicMapId` equal)
+    /// the second counter `0x018663e4` (unless -1, finished) counted, and at
+    /// 0x3a achievement 0x21 unlocked (`achievementUnlockAchievement`,
+    /// through `call`) and the counter finished; the latch 0xff.
+    pub fn count_map_visits<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let latch = mem.rebase(0x00c5_a03c);
+        if mem.read::<u8>(latch) != 1 {
+            return;
+        }
+        let map: u32 = mem.read(mem.rebase(0x0133_0844));
+        let total = mem.rebase(0x0186_63e0);
+        let t: u32 = mem.read(total);
+        mem.write(total, t.wrapping_add(1));
+        if map == mem.read::<u32>(mem.rebase(0x00c3_347c)) {
+            let counter = mem.rebase(0x0186_63e4);
+            let mut v: u32 = mem.read(counter);
+            if v != u32::MAX {
+                v = v.wrapping_add(1);
+                mem.write(counter, v);
+            }
+            if v == 0x3a {
+                call(mem, 0x0082_2380, &[0x21]);
+                mem.write(counter, u32::MAX);
+            }
+        }
+        mem.write(latch, 0xffu8);
+    }
+
+    /// `0x00906b30(n)`: the 26 collected bits of `0x011307a0` (save data):
+    /// -1 clears them; 0..=0x19 sets bit `n` and unlocks achievement 1, and
+    /// achievement 0x1c once all 26 are set; 0xff sets all and unlocks
+    /// 0x1c (`achievementUnlockAchievement`, through `call`).
+    pub fn collect_bit<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let bits = mem.rebase(0x0113_07a0);
+        if n == u32::MAX {
+            mem.write(bits, 0u32);
+        } else if n <= 0x19 {
+            let v: u32 = mem.read(bits);
+            mem.write(bits, v | (1 << n));
+            call(mem, 0x0082_2380, &[1]);
+            if mem.read::<u32>(bits) == 0x03ff_ffff {
+                call(mem, 0x0082_2380, &[0x1c]);
+            }
+        } else if n == 0xff {
+            mem.write(bits, 0x03ff_ffffu32);
+            call(mem, 0x0082_2380, &[0x1c]);
+        }
+    }
+
+    /// `0x008b3610()`: the 0x400 bytes at `0x008b3630()` (through `call`)
+    /// cleared.
+    pub fn clear_block_159e468<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = call(mem, 0x008b_3630, &[]);
+        mem.write_bytes(at, &[0u8; 0x400]);
+    }
+
+    /// `0x008b7c00(text, kind, out, _)`: `TOGetFontWidth(text, kind, out,
+    /// table)` (`width(table)`, passed in) with table 0 for languages 0, 9
+    /// and 10 (Japanese, Korean, Chinese) and 4 otherwise (`TOGetFFXLang`,
+    /// `lang`, asked up to three times).
+    pub fn font_width_for_lang<M: Mem>(
+        mem: &mut M,
+        mut lang: impl FnMut(&mut M) -> u32,
+        width: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let table = if lang(mem) == 0 || lang(mem) == 9 || lang(mem) == 0xa {
+            0
+        } else {
+            4
+        };
+        width(mem, table)
+    }
 }

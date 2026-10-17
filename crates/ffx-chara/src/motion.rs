@@ -598,6 +598,290 @@ pub mod bridge {
     ) -> u32 {
         u32::from(find(mem, 0, b.cast_signed(), key) != 0)
     }
+
+    /// `Cache_CheckYet(kind, key)` (`0x0083ffe0`, the renderer's): 2 while
+    /// the resource is not read.
+    pub const CACHE_CHECK_YET: u32 = 0x0083_ffe0;
+    /// `Cache_ToTop`, `Cache_Use`, `Cache_Exist3` (`0x00840cf0`,
+    /// `0x00840dd0`, `0x00840790`).
+    pub const CACHE_TO_TOP: u32 = 0x0084_0cf0;
+    pub const CACHE_USE: u32 = 0x0084_0dd0;
+    pub const CACHE_EXIST3: u32 = 0x0084_0790;
+    /// `Cache_Exist_ClothVertexBuff` (`0x00840850`).
+    pub const CACHE_EXIST_CLOTH: u32 = 0x0084_0850;
+    /// `yiAssert(cond, title, fmt, ...)` (`0x0090ae50`).
+    pub const YI_ASSERT: u32 = 0x0090_ae50;
+    /// The motion registry's cache key (kind 2).
+    pub const REG_MOTION_KEY: u32 = 0x0009_03e7;
+
+    /// `Ch_DataReadSync(id)` (`0x0082a040`): `Cache_CheckYet(1, id)`; for
+    /// 2 (not read) `yiAssert(0, "CH Data Read Sync", "%s does not
+    /// read.(can't sync)", ch_create_name(id))`. Returns the state.
+    pub fn ch_data_read_sync<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = call(mem, mem.rebase(CACHE_CHECK_YET), &[1, id]);
+        if r == 2 {
+            let name = crate::texanim::bridge::ch_create_name(mem, id);
+            let (title, fmt) = (mem.rebase(0x00b5_96ec), mem.rebase(0x00b5_96cc));
+            call(mem, mem.rebase(YI_ASSERT), &[0, title, fmt, name]);
+        }
+        r
+    }
+
+    /// `ChN_ReadSystemMGRPsync(a, b)` (`0x00836a50`): `Cache_CheckYet(2,
+    /// b << 16 | a)`, 0 for 2 (not read yet).
+    pub fn chn_read_system_mgrp_sync<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = call(mem, mem.rebase(CACHE_CHECK_YET), &[2, (b << 16) | a]);
+        if r == 2 { 0 } else { r }
+    }
+
+    /// `Ch_RegMotionToTop()` (`0x00837780`), `Ch_RegMotionUse()`
+    /// (`0x00837790`): `Cache_ToTop`/`Cache_Use(2, 0x903e7)`, their
+    /// result.
+    pub fn ch_reg_motion<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(f), &[2, REG_MOTION_KEY])
+    }
+
+    /// `Ch_RegMotionGetExistMem()` (`0x00837730`): whether
+    /// `Cache_Exist3(2, 0x903e7)` finds it.
+    pub fn ch_reg_motion_get_exist_mem<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, mem.rebase(CACHE_EXIST3), &[2, REG_MOTION_KEY]) != 0)
+    }
+
+    /// `Ch_UpdateClothHideFlag(chr)` (`0x00831480`): when the cloth vertex
+    /// buffer of the character's id (`u16` `+0`) is cached, the character
+    /// has a cloth (`+0x834`) and flag bit 21 (`+0x194`), the cloth's
+    /// `+8` = the sign-extended hide byte `+0x180`. Returns what the
+    /// original leaves in EAX: that value, or the cache's answer.
+    pub fn ch_update_cloth_hide_flag<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let cloth: u32 = mem.read(chr + 0x834);
+        let id = u32::from(mem.read::<u16>(chr));
+        let r = call(mem, mem.rebase(CACHE_EXIST_CLOTH), &[1, id]);
+        if cloth != 0 && r != 0 && mem.read::<u32>(chr + 0x194) & 0x20_0000 != 0 {
+            let v = i32::from(mem.read::<i8>(chr + 0x180)).cast_unsigned();
+            mem.write(cloth + 8, v);
+            return v;
+        }
+        r
+    }
+
+    /// `SetField0_006f2f70(p, v)` (`0x006f2f70`): `*p = v`, the old value.
+    pub const SET_FIELD0: u32 = 0x006f_2f70;
+
+    /// `Ch_DrawClothClear(chr)` (`0x00830b90`, ours; `Ch_DrawMain`'s):
+    /// when the cloth vertex buffer of the character's id is cached, the
+    /// character has a cloth (`+0x834`), flag bit 21 (`+0x194`) and the
+    /// renderer is attached ([`crate::sys::bridge::DRAW_DETACHED`] 0): for
+    /// each of the cloth's meshes (count `+0x14`, lists at `+0x30`) and
+    /// the buffer's (at `+4`), each entry `e` of the mesh list (count
+    /// `+0`) whose buffer entry is set and whose `+0x4c` is set gets
+    /// `SetField0_006f2f70(e + 0x48, 0)`. Returns what the original leaves
+    /// in EAX.
+    pub fn ch_draw_cloth_clear<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = u32::from(mem.read::<u16>(chr));
+        let cloth: u32 = mem.read(chr + 0x834);
+        let buf = call(mem, mem.rebase(CACHE_EXIST_CLOTH), &[1, id]);
+        if cloth == 0
+            || buf == 0
+            || mem.read::<u32>(chr + 0x194) & 0x20_0000 == 0
+            || crate::sys::bridge::DRAW_DETACHED.get(mem) != 0
+            || mem.read::<u32>(cloth + 0x14) == 0
+        {
+            return buf;
+        }
+        let mut i = 0u32;
+        while i < mem.read::<u32>(cloth + 0x14) {
+            let list: u32 = mem.read(cloth + 0x30 + 4 * i);
+            let other: u32 = mem.read(buf + 4 + 4 * i);
+            if list != 0 && other != 0 {
+                let mut j = 0u32;
+                while j < mem.read::<u32>(list) {
+                    let e: u32 = mem.read(list + 4 + 4 * j);
+                    if e != 0
+                        && mem.read::<u32>(other + 4 + 4 * j) != 0
+                        && mem.read::<u32>(e + 0x4c) != 0
+                    {
+                        call(mem, mem.rebase(SET_FIELD0), &[e + 0x48, 0]);
+                    }
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+        buf.wrapping_add(4).wrapping_add(4 * i)
+    }
+
+    /// `AtelGetCurCtrlWork()` (`0x0086aff0`, the script module's).
+    pub const CUR_CTRL_WORK: u32 = 0x0086_aff0;
+    /// `g_BtlStatus`: not 0 in battle.
+    pub const BATTLE_STATUS: ffx_bridge::Global<u8> = ffx_bridge::Global::new(0x0112_a8e0);
+
+    /// `Ch_AnimCopyNear(chr)` (`0x00839200`, ours; `SG_ApplyBones`'s): 1
+    /// outside battle, when the current script control work's bit 1 is
+    /// clear and the positions `+0x684` and `+0x694` (x, y, z) are less
+    /// than 2.0 apart on each axis (NaN: not); else 0. In AL.
+    pub fn ch_anim_copy_near<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u8 {
+        let w = call(mem, mem.rebase(CUR_CTRL_WORK), &[]);
+        if BATTLE_STATUS.get(mem) != 0 || mem.read::<u8>(w) & 2 != 0 {
+            return 0;
+        }
+        let near = (0..3).all(|k| {
+            let a = Reg::load(mem.read(chr + 0x684 + 4 * k)).get();
+            let b = Reg::load(mem.read(chr + 0x694 + 4 * k)).get();
+            (a - b).abs() < 2.0
+        });
+        u8::from(near)
+    }
+
+    /// `Ch_SetSequence(chr, seq)` (`0x00837ac0`).
+    pub const SET_SEQUENCE: u32 = 0x0083_7ac0;
+    /// `Ch_TextureSetAnim(chr, a, b)` (`0x0083d040`).
+    pub const TEXTURE_SET_ANIM: u32 = 0x0083_d040;
+    /// `i8` per slot: the system motion set `Ch_SetSysMotion` uses.
+    pub const SYS_MOTION_SETS: ffx_bridge::Global<i8> = ffx_bridge::Global::new(0x00c4_9784);
+
+    /// `Ch_SetSysMotion(chr, slot, motion)` (`0x00837d00`): starts the
+    /// sequence for a system motion of the character's definition
+    /// (`+0x1c4`). With bit 0 of the definition's `+0x70`: the sequence
+    /// table of the slot's set ([`SYS_MOTION_SETS`], 8-byte entries from
+    /// `+0x10` of `+0x6c`) indexed by `motion` (in slot 1, motion 0x10 on a
+    /// character with flag bit 9 of `+0x198` first asks
+    /// `Ch_TextureSetAnim(chr, 4, 1)`). Else the slot's list at `+0x108`
+    /// (count `+8 + 8 * slot`, `u16` pairs (motion, sequence) at `+0xc`),
+    /// the sequence key `definition +0 << 16 | sequence`. A miss in a slot
+    /// other than 0 retries slot 0 (motion 0 in the table form). Returns
+    /// what the original leaves in EAX.
+    pub fn ch_set_sys_motion<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        slot: u32,
+        motion: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let def: u32 = mem.read(chr + 0x1c4);
+        let set_of = |mem: &M, d: u32, s: u32| -> (u32, u32) {
+            let tab: u32 = mem.read(d + 0x6c);
+            let k = i32::from(mem.read::<i8>(SYS_MOTION_SETS.ptr(mem).addr.wrapping_add(s)));
+            (
+                tab,
+                mem.read(tab.wrapping_add((8 * k).cast_unsigned()).wrapping_add(0x10)),
+            )
+        };
+        if mem.read::<u8>(def + 0x70) & 1 != 0 {
+            let (mut slot, mut motion) = (slot, motion);
+            let (mut eax, mut set) = set_of(mem, def, slot);
+            while set != 0 {
+                if mem.read::<u32>(chr + 0x198) & 0x200 != 0 && slot == 1 && motion == 0x10 {
+                    eax = call(mem, mem.rebase(TEXTURE_SET_ANIM), &[chr, 4, slot]);
+                }
+                let seq: u32 = mem.read(set.wrapping_add(4 * motion));
+                if seq != 0 {
+                    return call(mem, mem.rebase(SET_SEQUENCE), &[chr, seq]);
+                }
+                if slot == 0 {
+                    return eax;
+                }
+                let d: u32 = mem.read(chr + 0x1c4);
+                (eax, set) = set_of(mem, d, 0);
+                slot = 0;
+                motion = 0;
+            }
+            return eax;
+        }
+        let list: u32 = mem.read(def + 0x108);
+        if list == 0 {
+            return def;
+        }
+        let mut slot = slot;
+        loop {
+            let e = list.wrapping_add(8 * slot);
+            let count: u32 = mem.read(e + 8);
+            let pairs: u32 = mem.read(e + 0xc);
+            let mut i = 0u32;
+            while i < count {
+                if u32::from(mem.read::<u16>(pairs.wrapping_add(4 * i))) == motion {
+                    let s = u32::from(mem.read::<u16>(pairs.wrapping_add(4 * i + 2)));
+                    let key = s | (mem.read::<u32>(def) << 16);
+                    return call(mem, mem.rebase(SET_SEQUENCE), &[chr, key]);
+                }
+                i += 1;
+            }
+            if slot == 0 {
+                return i;
+            }
+            slot = 0;
+        }
+    }
+
+    /// `Sg_MemSetOwn(p, owner)` (`0x0083c550`), `Cache_Lock` (`0x00840960`).
+    pub const MEM_SET_OWN: u32 = 0x0083_c550;
+    pub const CACHE_LOCK: u32 = 0x0084_0960;
+
+    /// `Ch_RegMotionEntryCache(p)` (`0x008376b0`): the battle idling
+    /// motions at `p` into the cache: named `"[PC Battle Idling]"`, type 3,
+    /// owner 6, entry (2, 0x903e7) used, locked and not yet read. Returns
+    /// `Cache_Entry_NotYet`'s result.
+    pub fn ch_reg_motion_entry_cache<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let h = crate::handle::bridge::MEM_SET_STR;
+        let k = REG_MOTION_KEY;
+        call(mem, mem.rebase(h), &[p, mem.rebase(0x00b5_9a68), u32::MAX]);
+        call(mem, mem.rebase(crate::sys::bridge::MEM_SET_TYPE), &[p, 3]);
+        call(mem, mem.rebase(MEM_SET_OWN), &[p, 6]);
+        call(mem, mem.rebase(crate::sys::bridge::CACHE_ENTRY), &[2, k, p]);
+        call(mem, mem.rebase(CACHE_USE), &[2, k]);
+        call(mem, mem.rebase(CACHE_LOCK), &[2, k]);
+        call(
+            mem,
+            mem.rebase(crate::sys::bridge::CACHE_ENTRY_NOT_YET),
+            &[2, k, 1],
+        )
+    }
+
+    /// `Ch_RomReadChrCB(request)` (`0x0082a6c0`): the read finished:
+    /// `Cache_Entry_NotYet(request +0x14, request +0xc, 0)`.
+    pub fn ch_rom_read_chr_cb<M: Mem>(
+        mem: &mut M,
+        req: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (kind, key) = (mem.read(req + 0x14), mem.read(req + 0xc));
+        call(
+            mem,
+            mem.rebase(crate::sys::bridge::CACHE_ENTRY_NOT_YET),
+            &[kind, key, 0],
+        )
+    }
 }
 
 #[cfg(test)]

@@ -856,6 +856,12 @@ Prints and dumps:
   entry.
 - `0x00760bf0`: the VFX "drawField is not implemented" warning loop
   (listed in round 12).
+- `0x007606f0` and `0x00760f30`: a pixel probe. A cross is drawn at
+  the point `0x00d4b4e8`/`0x00d4b4ec` (skipped at x 0x7fff) from
+  `pppPartDraw` and `pppPartLoop`. The second, while `0x00d4b4d4` is
+  set, reads the 16x16 GS block there back (`sceGsExecStoreImage`) and
+  sends its colour as a packet. No code writes the point (`.bss`, set by
+  a host tool), so it is a debug aid (round 28).
 
 Debug camera:
 - `FreeCamera_handleInput` (`0x00680030`), `FreeCamera_setFreePause`
@@ -1115,6 +1121,151 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   path at `0x023cbc60` contains `"te/test20"` (`strstr` through the
   import table). When the layer is past the limit, `eax` is the map
   number.
+
+## The aeons' stat gains and the effect's stream forwarders (round 24)
+
+- The aeon stat table (`0x00c5a604`, read by `TkMenuCtrlSummon`) has
+  `0x1c`-byte rows. Row 0 is empty, then HP, MP, strength, defence,
+  magic, magic defence, agility, luck, evasion and accuracy. Each row
+  starts with its gain function and ends with the maximum (99999, 9999,
+  then 255). The gain functions (names ours) take `(pc, v)`:
+  - HP (`0x00a5c7b0`): `trunc(sqrt(v) * 0.25 + 16.0)`, at least 1.
+  - MP (`0x00a5c8d0`): `trunc((sqrt(v) + sqrt(v)) / 3.0 + 10.0)`, at
+    least 1.
+  - The other eight (`0x00a5c660`, `0x00a5c740`, `0x00a5c910`,
+    `0x00a5c980`, `0x00a5c9f0`, `0x00a5c860`, `0x00a5c6d0`,
+    `0x00a5c7f0`) have identical bodies: for PCs 8..=17 (the aeons)
+    `v / 2` rounded toward zero, at least 1; any other PC prints
+    `"NKZ:Illigal PC Number %d"` and gives 100. HP and MP don't check the
+    PC.
+  - Both roots use `_CIsqrt` and `_ftol2_sse` at 53-bit precision.
+- Effect forwarders, each returning the last call's `eax`:
+  - `rcefSetVibrate` (`0x0092ec60`, name ours; Fahrenheit's Switch BSim
+    guess was `rcefStreamCue`) calls `TkSetVibrateStream(7, arg,
+    entry)` with entry `id` of kind 5 of the effect data.
+  - `rcefStreamCue` (`0x0092ebf0`) calls `op_oef2_stream_cue(entry, arg,
+    0x800)` with entry `id` of kind 6.
+  - `rcefPlayStream` (`0x0092e6b0`) returns `op_oef2_sound_cue_check
+    (0x800)` when it is non-zero, else plays the entry like
+    `rcefPlaySE`.
+  - `rcefObjAnimeStart`/`rcefObjSetupDraw` (`0x00925590`/`0x00925690`,
+    effect imports, names ours) start the object's animation (`+0x330`)
+    or set up its draw record (`+0x3c0`) from the kind 4 entry of the
+    environment's data (`env +8`), with outputs at `+0x1f0` and `+0x170`.
+- Left for the debug list: `rcefMemDebugInit`/`rcefMemDebugDisp`
+  (`0x009374f0`/`0x00937440`).
+
+## Copies, the morph value, interpolation and colour work (round 25)
+
+- `rcuiScaleVector_copy_00756600` and `rcVec4fToFixed_copy_007e6cc0` are
+  copies of `rcuiScaleVector` and `rcVec4fToFixed` that the compiler
+  kept; their shims use the same bridges.
+- `yiSetMIMeParamDObj` (`0x0090a4d0`): for a display object below
+  `g_YiDObjCount`, copies the float at `p` through the x87 stack into
+  the object's morph value (`0x018df624`, `0xb4` bytes apart) and passes
+  it to `graphicSetMeshVertexColorMorphValue`. Returns 0.
+- `yiGetColorOffsetInt` (`0x00908660`, an effect import, name ours): the
+  colour offsets plus 128.0, truncated into four ints.
+- `rcefLerp` (`0x0092e580`, an effect import, name ours) returns
+  `a + w (b - a)` in `ST0`:
+  - mode 2: `w` is the sine table's entry
+    `trunc(t * 16384) >> 4 & 0xfff`.
+  - mode 1: a cosine ease, `(sin(t * 32768 - 16384) + 1) / 2`, stored
+    as `f32`.
+  - any other mode: `w` is `t`.
+  - `b - a` and the result are stored as `f32`.
+- `rcefColorSet`/`rcefColorFade` (`0x0092e9c0`/`0x0092ea40`, effect
+  imports, names ours) convert colour bytes to floats and start the
+  effect's colour work at `0x025d5a20` with `rcefWorkSetFromVf00` (from
+  the current colour) or `rcefWorkSet` (from colour 0 to colour 1).
+- Not ported:
+  - `0x00a48e40` and `0x0090dd00` have no caller or pointer in the image.
+  - `0x0092e4f0` loops on `rand()` through the import table.
+  - `0x00a45930` sets the ppp matrices and runs a sphere grid ppp part (vfx).
+
+## Screen shake, scene wave and the sphere grid's part start (round 26)
+
+- The screen shake and the scene's wave share a swing: the sine table
+  entry `(0x4000 - trunc(phase * -65536.0 / 6.2831855)) >> 4 & 0xfff`.
+  Faded, it becomes `f32(frames - done) / f32(frames) * swing`, each int
+  stored as `f32` first, so frame counts beyond 2^24 round. The amplitude
+  is `rand() % range + base` through the import table. A zero range
+  faults in the original; the port then uses `base`.
+- `rcefScreenShake` (`0x00924df0`, name ours, from
+  `rcefMainProcRunAfter`): on `+0x214` with mode `+0x1f8`. The swing of
+  the phase `+0x210`, faded over `+0x200` frames for modes from 3, times
+  the amplitude (`+0x20c`, `+0x208`) gives the x offset (odd modes) or
+  the y offset. The phase advances by `+0x1fc` and `+0x204` counts the
+  frames. Within the frames it calls `MsScreenOffset(x, y)`; after them
+  `MsScreenOffset(0, 0)`, and the shake turns off.
+- `rcbgSceneWaveC0Update` (`0x009210e0`, name ours, from `0x00920aa0`):
+  the same with mode `+0xc0`, phase `+0xd4`, step `+0xc4`, frames
+  `+0xc8` (done `+0xd8`; faded for modes 3 and 4), amplitude `+0xcc`
+  (plus the random part only when `+0xd0` is positive). The result goes
+  to `+0xb8` (odd modes) or `+0xbc`. It calls `rcbgSceneWaveC0Stop` after
+  the frames, then `rcbgSceneSetMatrix`.
+- `AbmapStartPart` (`0x00a5bad0`, name ours): starts sphere grid ppp part
+  `n` in the grid's environment (`0x01a86034`) through
+  `pppStartPart(part, 0x1000, id, 1, 0)`; Ghidra shows
+  `get_ptr32_func`'s two leftover pushes as its arguments. It then fills
+  the part: `+0x40` x, y, z, 1.0, `+0x50` three truncated floats,
+  `+0x5c` 1, `+0x60` three floats, `+0x6c` 1.0. Returns the third
+  truncated value.
+- Not ported: `0x00a461b0` and `0x0092f290` write draw packets and VFX
+  render data (replaced by ffx-render).
+
+## The Phyre map load, the sphere grid's warp and a 2D angle (round 27)
+
+- `loadPhyreFieldMap` (`0x00908000`): with a pending map (`0x01934ed0`)
+  and its name (`0x01934ee8`, a string), it switches both map kinds off
+  and prints `"RAM Inuse : %d u:%d"` (0, 0) to `stdout` through
+  `__iob_func`/`fprintf`. Then, for each section `yiMapGetSection` finds
+  (0: 2D, 1: 3D), it switches that kind on, counts it (`0x01934ec4`),
+  loads it (`graphicFieldMapLoad(name, kind)`) and sets the map kind
+  (`0x01934ec0`). The 2D section also sets render status bit 14 and
+  `0x0191389c`. The request is then cleared, followed by
+  `graphicFieldMapInitialize` and `graphicVFXLoadLevelData` (its `eax`
+  is returned). Without a request it only clears `g_BtlMapRead`.
+- `AbmapStartWarp` (`0x00a48a80`, name ours, from `abmap_set_chr_pos`):
+  - plays the warp sound;
+  - writes the character's node position as floats (`+0x11308`/
+    `+0x1130c`, again at `+0x1163c`/`+0x11640`), the target (`+0x11634`)
+    and the character (`+0x11638`);
+  - creates the grid's ppp heap and starts part 2 there
+    (`AbmapStartPart`, scale 0.5);
+  - hooks the warp's draw (`0x00a4c430`, at `+0x115ac`) and
+    `AbmapState_Warping` (`+0x115a8`), saving the previous hooks unless a
+    save slot is taken.
+- `rcAngle2D` (`0x007e6d80`, name ours) returns in `ST0` the direction of
+  `(x1 - x0, y1 - y0)` in `0..2π`:
+  - the quadrant `q` (a NaN counts as negative) turns the vector into
+    non-negative `(a, b)`;
+  - the angle is `atan(b / a)` when `a >= b` (or unordered), else
+    `π/2 - atan(a / b)` stored as `f32`;
+  - then `q π/2` is added (`π/2` the `f64` of an `f32`).
+- `0x007606f0` (six lines as a cross around the point at `0x00d4b4e8`)
+  is a debug pixel probe, listed under "Debug (mod-tool candidates)"
+  since round 28.
+
+## The warp's entry, the blur and the nail's points (round 28)
+
+- `abmap_set_chr_pos` (`0x00a458f0`, Fahrenheit's name): `AbmapStartWarp`
+  and `+0x115c7` = 1; returns the grid.
+- `rcefBlurUpdate` (`0x00924bf0`, name ours, from `rcefMainProcRunAfter`):
+  while on (`+0x228`) with a mode (`+0x218`), calls `Sg_Blur` with the
+  blur `+0x21c`. Mode 2 fades it: `(frames - done) * blur / frames`,
+  integer, with the frames `+0x220` and the count `+0x224`. After the
+  frames it calls `Sg_Blur(0)` and switches off.
+- `rcfxNailUpdate` (`0x00929190`, name ours, `rcfxNailInit`'s update
+  callback): for each of the `+0x1c` points, copies the source point
+  (`ctx +0x24`, picked by the index array `+0x20`) into the base array
+  (`+0x24`). That goes through the matrix `+0x38` into `+0x28`, or is
+  copied there without a matrix, then copied on to `+0x2c`. Finally the
+  `f64` at `ctx` goes to `+0x30` through the x87 stack (on hardware a
+  signalling NaN turns quiet; the oracle's emulator does not, so the test
+  leaves them out).
+- The debug pixel probe `0x007606f0`/`0x00760f30` moved to "Debug
+  (mod-tool candidates)".
 
 ## Floats
 

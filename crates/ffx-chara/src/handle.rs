@@ -321,6 +321,151 @@ pub mod bridge {
             put_c_string(m, at, &s);
         });
     }
+
+    // ---- round 8: setup and per-frame helpers that call other modules
+
+    /// `user_malloc(len)` (`0x00687020`, the system module's).
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    /// `Sg_MemSetStr(p, name, n)` (`0x0083c580`).
+    pub const MEM_SET_STR: u32 = 0x0083_c580;
+    /// `Ch_FunctionHistoryClear()` (`0x00833760`).
+    pub const FUNCTION_HISTORY_CLEAR: u32 = 0x0083_3760;
+    /// `memclear(p, len)` (`0x0062f4e0`).
+    pub const MEMCLEAR: u32 = 0x0062_f4e0;
+    /// `Ch_ModelMapping(header)` (`0x00827590`).
+    pub const MODEL_MAPPING: u32 = 0x0082_7590;
+    /// `g_ChrAllocateErr`.
+    pub const ALLOCATE_ERR: Global<u32> = Global::new(0x012f_bd98);
+
+    /// `Ch_Allocate_InitAll(n)` (`0x00825670`): `n` characters
+    /// (`user_malloc(n * 0x1100)`, twice what they use), each inactive with
+    /// no name (`+4`) and no renderer instance (`+0x830`); the block named
+    /// `"[CHR WORK]"`; the allocation error cleared; then
+    /// `Ch_FunctionHistoryClear()`, whose result it returns.
+    pub fn ch_allocate_init_all<M: Mem>(
+        mem: &mut M,
+        n: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        CHR_COUNT.set(mem, n);
+        ALLOCATE_ERR.set(mem, 0);
+        let arr = call(
+            mem,
+            mem.rebase(USER_MALLOC),
+            &[n.cast_unsigned().wrapping_mul(0x1100)],
+        );
+        CHR_ARRAY.set(mem, arr);
+        let mut i = 0;
+        while i < CHR_COUNT.get(mem) {
+            let c = CHR_ARRAY
+                .get(mem)
+                .wrapping_add(i.cast_unsigned().wrapping_mul(l::SIZE));
+            mem.write(c + l::ACTIVE, 0u8);
+            mem.write(c + 4, 0u32);
+            mem.write(c + 0x830, 0u32);
+            i += 1;
+        }
+        let arr = CHR_ARRAY.get(mem);
+        call(
+            mem,
+            mem.rebase(MEM_SET_STR),
+            &[arr, mem.rebase(0x00b5_94e0), u32::MAX],
+        );
+        call(mem, mem.rebase(FUNCTION_HISTORY_CLEAR), &[])
+    }
+
+    /// `Ch_BlkNew(header, key, x)` (`0x00825860`, ours): the first free
+    /// model block ([`CHR_BLK`], 40 of `0x12c` bytes, free when `+0` is
+    /// -1; none: address 0, as the original) cleared (`memclear`), `+0` =
+    /// `header`, `+4` = `key`, `Ch_ModelMapping(key)`, `+0x14` = `x`,
+    /// `+0x30` and `+0x34` = 1.0, `+0x38` = 0.1. Returns the block.
+    pub fn ch_blk_new<M: Mem>(
+        mem: &mut M,
+        header: u32,
+        key: u32,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = CHR_BLK.ptr(mem).addr;
+        let b = (0..40)
+            .map(|i| base + 0x12c * i)
+            .find(|&e| mem.read::<u32>(e) == u32::MAX)
+            .unwrap_or(0);
+        call(mem, mem.rebase(MEMCLEAR), &[b, 0x12c]);
+        mem.write(b, header);
+        mem.write(b + 4, key);
+        call(mem, mem.rebase(MODEL_MAPPING), &[key]);
+        mem.write(b + 0x30, 1f32);
+        mem.write(b + 0x34, 1f32);
+        mem.write(b + 0x14, x);
+        mem.write(b + 0x38, f32::from_bits(0x3dcc_cccd));
+        b
+    }
+
+    /// `ReturnTableU32_00820580(i)` (`0x00820580`): the frame's work so far.
+    pub const FRAME_WORK: u32 = 0x0082_0580;
+    /// `Ch_ReserveCalcNorm2(chr)` (`0x00835730`).
+    pub const RESERVE_CALC_NORM2: u32 = 0x0083_5730;
+
+    /// `Ch_DrawReserveCalcNorm()` (`0x008336a0`, ours; `Ch_DrawMain`'s):
+    /// the budget left this frame (`500 - ReturnTableU32_00820580(0)`)
+    /// pays for `budget / 40` normal recalculations
+    /// (`Ch_ReserveCalcNorm2`), handed round-robin from the cursor
+    /// [`crate::sys::bridge::CALC_NORM_CURSOR`] to active characters with flag
+    /// bits 1–2 (`+0x194`) and bit 6 (`+0x198`). A full turn with nothing
+    /// to do clears the cursor. Returns what the original leaves in EAX.
+    pub fn ch_draw_reserve_calc_norm<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let cursor = crate::sys::bridge::CALC_NORM_CURSOR;
+        let used = call(mem, mem.rebase(FRAME_WORK), &[0]);
+        let budget = 500i32.wrapping_sub(used.cast_signed());
+        if budget < 39 {
+            return used;
+        }
+        let product = i64::from(budget) * 0x6666_6667;
+        let mut k = budget / 40;
+        let mut last = cursor.get(mem);
+        let arr = CHR_ARRAY.get(mem);
+        if last == 0 {
+            last = arr;
+            cursor.set(mem, last);
+        }
+        if k == 0 {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            // the low half of imul
+            return product as u32;
+        }
+        let mut c = last;
+        let mut eax;
+        loop {
+            let end = CHR_ARRAY
+                .get(mem)
+                .wrapping_add(CHR_COUNT.get(mem).cast_unsigned().wrapping_mul(l::SIZE));
+            eax = end;
+            c = c.wrapping_add(l::SIZE);
+            if c >= end {
+                c = CHR_ARRAY.get(mem);
+            }
+            if c == last {
+                cursor.set(mem, 0);
+                return eax;
+            }
+            if mem.read::<u8>(c + l::ACTIVE) != 0
+                && mem.read::<u8>(c + 0x194) & 6 != 0
+                && mem.read::<u8>(c + 0x198) & 0x40 != 0
+            {
+                eax = call(mem, mem.rebase(RESERVE_CALC_NORM2), &[c]);
+                last = c;
+                cursor.set(mem, last);
+                k -= 1;
+            }
+            if k == 0 {
+                return eax;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

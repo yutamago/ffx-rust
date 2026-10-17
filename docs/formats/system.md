@@ -268,3 +268,68 @@ The help pictures (`getSa_MenuTextureName`, `0x00774ae0`) are
 `help_de`, `help_it` (languages 0..5), `help_kr` and `help_ch` (9, 10).
 Languages 6..8 format an uninitialised buffer in the original; the port
 writes an empty name.
+
+## Overdrive (limit) windows
+
+The battle overdrive windows share a timer: `0x0133f77c` (1 opened, 2
+running), the frame count `0x0133f788` and three times at `0x0133f78c`
+(the limit), `0x0133f790` (time left) and `0x0133f794` (shown).
+
+- `TOBtlInit{Auron,Lulu,Tidus}LimitWindow` (`0x00897970`, `0x00897f70`,
+  `0x00898180`) read `dumm..` from scene 2, reset the pad data and the
+  timer, and clear their window record: Auron `0x0133d6f4`, Lulu
+  `0x0133d708`, Tidus `0x0133d734`. Their points and colours come from
+  the scene; Tidus' band edges are UI-remapped constants.
+- `TOBtlOpen*LimitWindow(cmd)` turn the command into a level (Auron 0x22,
+  0x32, 0x42, 0x52; Tidus 0x20..0x50; Lulu's group is `cmd - 0x3078`).
+  They take the time from `NkzGet*LimitTime` and start the timer. Auron
+  gets the button sequence (0xffff-terminated) and its length; Lulu her
+  limit table; Tidus his band from `NkzTidusLimitTableA/B`, centred on
+  the window.
+- `TOBtlCtrlLimitTimer` (`0x00891ac0`) counts frames while the timer
+  runs. The time left is the limit less frames/30 (25 in PAL mode). At 0
+  or below both times become 0. Otherwise the shown time gets a random
+  hundredths digit from the battle `rnd`, so the display flickers while
+  the value it is derived from does not.
+
+## Message-window position (`TOSetMessageWindowPosition`, `0x008af850`)
+
+The window's text size (`+0x40`, `+0x42` of its `+0x14` record) plus the
+frame padding gives its size. With the tutorial choice set
+(`0x025d16bc`), a text wider than 0x190 becomes 300 wide, with
+`width / 300 + 1` rows, and `0x025d0b20[i]` records it. Anchors 1..4 put
+the point at the bottom, right, bottom-right or centre. The window is
+kept in the 512x412 field (rows to 0x7b in message mode 1). Magic 0x281
+on maps 0x5e and 0x12e, and type-1 windows while `0x01327104` is set,
+may leave it horizontally. `0x008afa90` is the same with an explicit
+size.
+
+## Battle target lists and the saved cursor
+
+`TOBtlMakeTargetTargetBit` (`0x00898640`) fills the party list
+`0x0133d180` (20 entries, count `0x0133d17c`) and the monster list
+`0x0133d1d4` (8, count `0x0133d1d0`). The entries come from the group
+masks of `TOBtlMakeTargetGroupBit`, ANDed with the selectable mask
+`0x0133d174`. Bit 1 of the command's `+0x1a` flags selects the monster
+list. Group mode 0 starts at the cursor character's entry. The counts are
+re-read from memory after each list, so a list longer than its slots
+runs into the next count, as in the original.
+
+`TOBtlSetDefaultCursorPos` (`0x00899ac0`) restores what
+`TOBtlMemoryCursorPos` saved, but only if the window key still matches.
+The scroll is looked up through the found list index used as a window
+number. That is how it is compiled, and the port keeps it.
+`TOBtlSearchRevNearTarget` (`0x008990f0`) writes nothing, but returns
+the index of the target it picks in eax. The decompilation misses that
+return; `TOBtlGetTargetPad` reads it. It is not ported yet.
+
+## Achievement counters
+
+- `0x00906b30(n)` keeps the 26 collection bits at `0x011307a0`, in the
+  save. Each new bit unlocks achievement 1; with all 26 set, it unlocks
+  0x1c. -1 clears the bits and 0xff sets them all.
+- `0x008b5680` counts visits to map `0x00c3347c` while its latch
+  `0x00c5a03c` is set. The 0x3a-th visit unlocks achievement 0x21.
+
+The Steam call itself (`achievementUnlockAchievement`) is platform. The
+counting decides game state, so it is ported.

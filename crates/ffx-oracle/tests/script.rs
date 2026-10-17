@@ -3011,8 +3011,16 @@ fn move_and_message_cases_match_the_original() {
 }
 
 /// Start handlers that are a bare `ret`: `Native_ChrWaitMotion_501e`,
-/// `Native_MusicWaitLoaded`, `Native_00dc`.
-const BARE_RET: [u32; 3] = [0x00a7_9370, 0x0085_9d70, 0x0085_ee00];
+/// `Native_MusicWaitLoaded`, `Native_00dc`, `Native_FadeWait` and
+/// the starts of `0xb009` and `0xb00b`.
+const BARE_RET: [u32; 6] = [
+    0x00a7_9370,
+    0x0085_9d70,
+    0x0085_ee00,
+    0x00a7_7ee0,
+    0x0076_eb30,
+    0x0076_ec20,
+];
 
 /// Every Rust native against the original on each actor of each ctrl work
 /// in use, with small integer and float arguments on the worker's stack
@@ -3050,6 +3058,7 @@ fn natives_match_the_original() {
                 .chain(&ffx_script::vm::bridge::native_msg::PORTED)
                 .chain(&ffx_script::vm::bridge::native_move::PORTED)
                 .chain(&ffx_script::vm::bridge::native_btl::PORTED)
+                .chain(&ffx_script::vm::bridge::native_chr::PORTED)
             {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
                 let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
@@ -3070,6 +3079,11 @@ fn natives_match_the_original() {
                 let args = v::script_worker_level(b, w, lvl) + 0x2c;
                 let what = format!("native {sym:#x} on worker {i} of {c:#x}");
                 clear_stacks(a, b);
+                // ECX = 0 at the call: some natives make their out local
+                // with `push ecx` (`0x70be`'s `MsGetChrDir(i, &out)` writes
+                // nothing without a model), and the ports zero it
+                a.call(a.rebase(BARE_RET[1]), Conv::Thiscall(0), &[])
+                    .unwrap();
                 let ra = match a.call(a.rebase(sym), Conv::Cdecl, &[w, args, s]) {
                     Ok(r) => r,
                     Err(e) => {
@@ -3120,6 +3134,7 @@ fn natives_match_the_original() {
         .chain(&ffx_script::vm::bridge::native_msg::PORTED)
         .chain(&ffx_script::vm::bridge::native_move::PORTED)
         .chain(&ffx_script::vm::bridge::native_btl::PORTED)
+        .chain(&ffx_script::vm::bridge::native_chr::PORTED)
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();

@@ -216,6 +216,55 @@ impl<M> tolib::bridge::PlayerList<M> for GameMenu {
     }
 }
 
+impl<M: Mem> tolib::bridge::LimitOpenCalls<M> for GameMenu {
+    fn limit_time(&mut self, mem: &mut M, who: tolib::bridge::Limit, arg: u32) -> f32 {
+        let m = &*mem;
+        match who {
+            tolib::bridge::Limit::Auron => {
+                ffx_field::nkz::bridge::nkz_get_auron_limit_time(m, arg.cast_signed())
+            }
+            tolib::bridge::Limit::Lulu => ffx_field::nkz::bridge::nkz_get_lulu_limit_time(m),
+            tolib::bridge::Limit::Tidus => {
+                ffx_field::nkz::bridge::nkz_get_tidus_limit_time(m, arg.cast_signed())
+            }
+        }
+    }
+    fn auron_buttons(&mut self, mem: &mut M, level: u32) -> u32 {
+        call_sym(mem, 0x00a5_ca60, &[level])
+    }
+    fn lulu_table(&mut self, mem: &mut M, group: u32) {
+        call_sym(mem, 0x00a5_cc70, &[group]);
+    }
+    fn tidus_table(&mut self, mem: &mut M, b: bool, level: u32) -> u32 {
+        call_sym(mem, if b { 0x00a5_cb80 } else { 0x00a5_cb30 }, &[level])
+    }
+}
+
+impl<M: Mem> tolib::bridge::LimitWindowCalls<M> for GameMenu {
+    fn seq_num(&mut self, mem: &mut M, i: u32, name: u32, out: u32) {
+        call_sym(mem, 0x008a_e410, &[i, name, out]);
+    }
+    fn seq_point(&mut self, mem: &mut M, i: u32, name: u32, x: u32, y: u32) {
+        call_sym(mem, 0x008a_e450, &[i, name, x, y]);
+    }
+    fn seq_color(&mut self, mem: &mut M, i: u32, name: u32, out: u32) {
+        call_sym(mem, 0x008a_e360, &[i, name, out]);
+    }
+    fn init_pad(&mut self, mem: &mut M) {
+        tolib::bridge::init_pad_data(mem);
+    }
+    fn init_limit_timer(&mut self, mem: &mut M) {
+        call_sym(mem, 0x0089_7f00, &[]);
+    }
+    fn remap(&mut self, _mem: &mut M, y: bool, v: f32) -> f32 {
+        if y {
+            ffx_graphic::ui::remap_y2(v)
+        } else {
+            ffx_graphic::ui::remap_x2(v)
+        }
+    }
+}
+
 impl<M: Mem> menu::bridge::MagicFileCalls<M> for GameMenu {
     fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>) {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
@@ -4342,6 +4391,158 @@ ported! {
     /// `TOPlaceMessageWindow(i, x, y, w, h)`.
     TOPlaceMessageWindow @ 0x008a_fbb0 => extern "C" fn to_place_message_window(i: i32, x: i32, y: i32, w: i32, h: i32) {
         tolib::bridge::place_message_window(&mut mem(), i, [x, y, w, h], font_screen_wh);
+    }
+    /// `TOSetMessageWindowPosition(i, anchor, x, y)`.
+    TOSetMessageWindowPosition @ 0x008a_f850 => extern "C" fn to_set_message_window_position(i: i32, anchor: u32, x: i32, y: i32) {
+        tolib::bridge::set_message_window_position(&mut mem(), i, anchor, x, y, font_screen_wh);
+    }
+    /// `TOSetMessageWindowRect(i, anchor, x, y, w, h)`.
+    TOSetMessageWindowRect @ 0x008a_fa90 => extern "C" fn to_set_message_window_rect(i: i32, anchor: u32, x: i32, y: i32, w: i32, h: i32) {
+        tolib::bridge::set_message_window_rect(&mut mem(), i, anchor, [x, y, w, h], font_screen_wh);
+    }
+    /// `TOBtlInitAuronLimitWindow()`.
+    TOBtlInitAuronLimitWindow @ 0x0089_7970 => extern "C" fn to_btl_init_auron_limit_window() {
+        tolib::bridge::btl_init_auron_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitLuluLimitWindow()`.
+    TOBtlInitLuluLimitWindow @ 0x0089_7f70 => extern "C" fn to_btl_init_lulu_limit_window() {
+        tolib::bridge::btl_init_lulu_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitTidusLimitWindow()`.
+    TOBtlInitTidusLimitWindow @ 0x0089_8180 => extern "C" fn to_btl_init_tidus_limit_window() {
+        tolib::bridge::btl_init_tidus_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitActiveChrCursor()`.
+    TOBtlInitActiveChrCursor @ 0x0089_7860 => extern "C" fn to_btl_init_active_chr_cursor() {
+        tolib::bridge::btl_init_active_chr_cursor(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlOpenAuronLimitWindow(cmd)`.
+    TOBtlOpenAuronLimitWindow @ 0x0089_8ad0 => extern "C" fn to_btl_open_auron_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_auron_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlOpenLuluLimitWindow(cmd)`.
+    TOBtlOpenLuluLimitWindow @ 0x0089_8bf0 => extern "C" fn to_btl_open_lulu_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_lulu_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlOpenTidusLimitWindow(cmd)`.
+    TOBtlOpenTidusLimitWindow @ 0x0089_8ca0 => extern "C" fn to_btl_open_tidus_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_tidus_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlCtrlLimitTimer()`.
+    TOBtlCtrlLimitTimer @ 0x0089_1ac0 => extern "C" fn to_btl_ctrl_limit_timer() {
+        tolib::bridge::btl_ctrl_limit_timer(&mut mem(), |m| call_sym(m, 0x0079_89a0, &[]));
+    }
+    /// `TOBtlMemoryCursorPos()`.
+    TOBtlMemoryCursorPos @ 0x0089_89d0 => extern "C" fn to_btl_memory_cursor_pos() {
+        tolib::bridge::btl_memory_cursor_pos(&mut mem());
+    }
+    /// `TOBtlMakeTargetGroupBit()`.
+    TOBtlMakeTargetGroupBit @ 0x0089_8490 => extern "C" fn to_btl_make_target_group_bit() {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        tolib::bridge::btl_make_target_group_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data, |m, chr| {
+            call_sym(m, 0x0079_5040, &[chr])
+        });
+        std::hint::black_box(&mut tmp);
+    }
+    /// `TOBtlMakeTargetTargetBit()`.
+    TOBtlMakeTargetTargetBit @ 0x0089_8640 => extern "C" fn to_btl_make_target_target_bit() {
+        let mut tmp = [0u32; 3];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = tmp.as_mut_ptr() as u32;
+        tolib::bridge::btl_make_target_target_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data);
+        std::hint::black_box(&mut tmp);
+    }
+    /// `TOBtlStartLimitTimer(t)`.
+    TOBtlStartLimitTimer @ 0x0089_a2a0 => extern "C" fn to_btl_start_limit_timer(t: f32) {
+        tolib::bridge::btl_start_limit_timer(&mut mem(), t);
+    }
+    /// `TOBtlSetLimitTimerPos(x, y)`.
+    TOBtlSetLimitTimerPos @ 0x0089_a2d0 => extern "C" fn to_btl_set_limit_timer_pos(x: u32, y: u32) {
+        tolib::bridge::btl_set_limit_timer_pos(&mut mem(), x, y);
+    }
+    /// `TOBtlSetDefaultCursorPos()`.
+    TOBtlSetDefaultCursorPos @ 0x0089_9ac0 => extern "C" fn to_btl_set_default_cursor_pos() {
+        tolib::bridge::btl_set_default_cursor_pos(&mut mem());
+    }
+    /// `TOReset2()`.
+    TOReset2 @ 0x008a_dee0 => extern "C" fn to_reset2() -> u32 {
+        tolib::bridge::reset2(&mut mem(), call_sym)
+    }
+    /// `TOStdGetItemName(item)`.
+    TOStdGetItemName @ 0x008b_8db0 => extern "C" fn to_std_get_item_name(item: u32) -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = tolib::bridge::std_get_item_name(&mut mem(), item, at, call_sym);
+        std::hint::black_box(&mut tmp);
+        r
+    }
+    /// `TOStdGetWeaponName(id)`.
+    TOStdGetWeaponName @ 0x008b_8dd0 => extern "C" fn to_std_get_weapon_name(id: u32) -> u32 {
+        tolib::bridge::std_get_weapon_name(&mut mem(), id, call_sym)
+    }
+    /// `TOBtlEndSetFlagMark(i, k)`.
+    TOBtlEndSetFlagMark @ 0x008b_e020 => extern "C" fn to_btl_end_set_flag_mark(i: u32, k: u32) {
+        tolib::bridge::btl_end_set_flag_f(&mut mem(), i, k, call_sym);
+    }
+    /// `TOMenuTermHelp()`.
+    TOMenuTermHelp @ 0x008b_f0b0 => extern "C" fn to_menu_term_help() {
+        tolib::bridge::menu_term_help(&mut mem(), call_sym);
+    }
+    /// `TOMenuTermAbilityMap2()`.
+    TOMenuTermAbilityMap2 @ 0x008e_27e0 => extern "C" fn to_menu_term_ability_map2() {
+        tolib::bridge::menu_term_ability_map2(&mut mem(), call_sym);
+    }
+    /// `TOSetWindowKind(i, kind)`.
+    TOSetWindowKind @ 0x0090_6e60 => extern "C" fn to_set_window_kind(i: u32, kind: u32) {
+        tolib::bridge::set_window_kind(&mut mem(), i, kind, call_sym);
+    }
+    /// `MagicFile_Cleanup()`.
+    MagicFile_Cleanup @ 0x009d_a2d0 => extern "C" fn magic_file_cleanup() {
+        menu::bridge::magic_file_cleanup(&mut mem(), call_sym);
+    }
+    /// `MagicFile_NeedRestoreCamera()`.
+    MagicFile_NeedRestoreCamera @ 0x009d_a700 => extern "C" fn magic_file_need_restore_camera() -> u32 {
+        menu::bridge::magic_file_need_restore_camera(&mut mem(), call_sym)
+    }
+    /// `MagicFile_RestoreScreenSetup()`.
+    MagicFile_RestoreScreenSetup @ 0x009d_a780 => extern "C" fn magic_file_restore_screen_setup() -> u32 {
+        menu::bridge::magic_file_restore_screen_setup(&mut mem(), call_sym)
+    }
+    /// `MagicFile_isPrxPreloaded(id)`.
+    MagicFile_isPrxPreloaded @ 0x009d_ae60 => extern "C" fn magic_file_is_prx_preloaded(id: u32) -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = menu::bridge::magic_file_is_prx_preloaded(&mut mem(), id, at, call_sym);
+        std::hint::black_box(&mut tmp);
+        r
+    }
+    /// `TOCheckMapMessage(id)`.
+    TOCheckMapMessage @ 0x008a_f6a0 => extern "C" fn to_check_map_message(id: u32) -> u32 {
+        tolib::bridge::check_map_message(&mut mem(), id, call_sym)
+    }
+    /// `TOCountMapVisits()`.
+    TOCountMapVisits @ 0x008b_5680 => extern "C" fn to_count_map_visits() {
+        tolib::bridge::count_map_visits(&mut mem(), call_sym);
+    }
+    /// `TOSetCollectBit(n)`.
+    TOSetCollectBit @ 0x0090_6b30 => extern "C" fn to_set_collect_bit(n: u32) {
+        tolib::bridge::collect_bit(&mut mem(), n, call_sym);
+    }
+    /// `TOClearBlock_008b3610()`.
+    TOClearBlock_008b3610 @ 0x008b_3610 => extern "C" fn to_clear_block_008b3610() {
+        tolib::bridge::clear_block_159e468(&mut mem(), call_sym);
+    }
+    /// `TOGetFontWidthForLang(text, kind, out, _)`.
+    TOGetFontWidthForLang @ 0x008b_7c00 => extern "C" fn to_get_font_width_for_lang(text: u32, kind: u32, out: u32) -> u32 {
+        tolib::bridge::font_width_for_lang(
+            &mut mem(),
+            |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+            |m, table| tolib::bridge::font_width(m, text, kind, out, table, &mut GameMenu),
+        )
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
