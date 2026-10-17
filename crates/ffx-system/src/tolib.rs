@@ -2826,7 +2826,6 @@ pub mod bridge {
         1
     }
 
-
     /// `TOBtlCtrlLimitTimer()` (`0x00891ac0`): while the limit timer runs
     /// (`0x0133f77c` 2) a frame is counted (`0x0133f788` += 1) and the time
     /// left (`0x0133f790`) is the limit (`0x0133f78c`) less the frames over
@@ -2846,7 +2845,11 @@ pub mod bridge {
         let frames = f64::from(mem.read::<f32>(frames_at));
         let frames = dword(x87::add(frames, 1.0));
         mem.write(frames_at, frames as f32);
-        let per_second = if crate::config::bridge::video_mode(mem) == 0 { 30.0 } else { 25.0 };
+        let per_second = if crate::config::bridge::video_mode(mem) == 0 {
+            30.0
+        } else {
+            25.0
+        };
         let limit = f64::from(mem.read::<f32>(g(mem, 0x0133_f78c)));
         let left = dword(x87::sub(limit, x87::div(frames, per_second)));
         let left_at = g(mem, 0x0133_f790);
@@ -2889,7 +2892,7 @@ pub mod bridge {
                 mem.write(dst.wrapping_sub(2), kind);
                 let depth: i8 = mem.read(src);
                 mem.write(dst, i16::from(depth));
-                for j in 0..i32::from(depth).max(0) as u32 {
+                for j in 0..i32::from(depth).max(0).cast_unsigned() {
                     let a: u16 = mem.read(src.wrapping_add(4 + 2 * j));
                     mem.write(dst.wrapping_add(2 + 2 * j), a);
                     let b: u16 = mem.read(src.wrapping_add(0xc + 2 * j));

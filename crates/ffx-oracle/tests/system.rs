@@ -8543,3 +8543,103 @@ fn round14_limit_openers_match_the_original_on_the_snapshot() {
     };
     round14_limit_openers(&mut a, &mut b, &mut Xorshift(0x4014_0022));
 }
+
+/// Round 14's limit timer and command-cursor memory.
+#[allow(clippy::cast_possible_truncation)]
+fn round14_timer_and_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    // rnd stand-in: eax = [cell]
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xda0, &v);
+    redirect(a, b, 0x0079_89a0, s);
+    let w = |a: &mut Oracle, b: &mut Oracle, at: u32, v: u32| {
+        let at = a.rebase(at);
+        put(a, b, at, v);
+    };
+    for k in 0..400 {
+        w(
+            a,
+            b,
+            0x0133_f77c,
+            if k % 5 == 0 { rng.next() % 4 } else { 2 },
+        );
+        let frames = (rng.next() % 2000) as f32 + if k % 3 == 0 { 0.5 } else { 0.0 };
+        w(a, b, 0x0133_f788, frames.to_bits());
+        let limit = match k % 7 {
+            0 => f32::NAN.to_bits(),
+            1 => rng.next(),
+            _ => ((rng.next() % 6000) as f32 / 100.0).to_bits(),
+        };
+        let limit = if f32::from_bits(limit).is_nan() && limit & 0x0040_0000 == 0 {
+            f32::NAN.to_bits()
+        } else {
+            limit
+        };
+        w(a, b, 0x0133_f78c, limit);
+        w(a, b, 0x0133_f794, rng.next());
+        w(a, b, 0x0186_5f00, rng.next() & 1);
+        put(a, b, cell, rng.next());
+        eax(a, 0x0089_1ac0, &[]);
+        t::btl_ctrl_limit_timer(b, |m| eax(m, 0x0079_89a0, &[]));
+        same_memory("limit timer", a, b);
+    }
+    for k in 0..200 {
+        for (from, len) in [
+            (0x0133_c940u32, 0x800u32),
+            (0x0133_d770, 0x18),
+            (0x0133_d788, 0x168 * 8),
+        ] {
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let at = a.rebase(from);
+            a.write(at, &bytes).unwrap();
+            b.write(at, &bytes).unwrap();
+        }
+        // depths up to 4 levels
+        for i in 0..8u32 {
+            let at = a.rebase(0x0133_c95a) + 0xf0 * i;
+            put(a, b, at, (rng.next() % 6) as u8 - 1);
+        }
+        let cmds = [0xffffu16, 0xfffe, 0x3002, 0x3001, 0];
+        w(
+            a,
+            b,
+            0x0133_ca4c,
+            u32::from(cmds[(rng.next() % 5) as usize]) | (rng.next() & 0xffff_0000),
+        );
+        let at = a.rebase(0x023c_c088);
+        put(a, b, at, (rng.next() % 8) as u16);
+        let at = a.rebase(0x023c_c092);
+        put(
+            a,
+            b,
+            at,
+            if k % 9 == 0 {
+                0xffu8
+            } else {
+                (rng.next() % 4) as u8
+            },
+        );
+        eax(a, 0x0089_89d0, &[]);
+        t::btl_memory_cursor_pos(b);
+        same_memory("cursor memory", a, b);
+    }
+}
+
+#[test]
+fn round14_timer_and_cursor_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_timer_and_cursor(&mut a, &mut b, &mut Xorshift(0x4014_0031));
+}
+
+#[test]
+fn round14_timer_and_cursor_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_timer_and_cursor(&mut a, &mut b, &mut Xorshift(0x4014_0032));
+}

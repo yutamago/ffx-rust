@@ -8107,7 +8107,7 @@
 0x00891480 function TOBtlCtrlInfoWin          # fh v3:exact 0x008913f0
 0x00891580 function TOBtlCtrlInfoWinMes       # fh v3:exact 0x008914f0
 0x00891a30 function TOBtlCtrlLibraWindow         # layout: alphabetical run between TOBtlCtrlInfoWinMes and TOBtlCtrlLimitTimer (1 unnamed in the gap); Switch 0x7100494f10 TOBtlCtrlLibraWindow is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00891ac0 function TOBtlCtrlLimitTimer       # fh v3:exact+call.cs 0x00891a30 cdecl
+0x00891ac0 function TOBtlCtrlLimitTimer       # fh v3:exact+call.cs 0x00891a30 cdecl; (): with 0x0133f77c == 2: frames 0x0133f788 += 1, left 0x0133f790 = limit 0x0133f78c - frames/30 (25 in video mode 1); left <= 0: left = shown 0x0133f794 = 0; else shown = (rnd()%10 - 10*ftol(left*-10))/100
 0x00891b80 function TOBtlCtrlLuluLimitWindow  # fh v3:exact 0x00891af0
 0x008920d0 function TOBtlCtrlStatusWin        # fh v3:exact 0x00892040
 0x00892320 function TOBtlCtrlTidusLimitWindow # fh v3:exact 0x00892290
@@ -8164,7 +8164,7 @@
 0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400
 0x008985b0 function TOBtlMakeTargetListBit       # layout: alphabetical run between TOBtlMakeTargetGroupBit and TOBtlMakeTargetTargetBit (1 unnamed in the gap); Switch 0x710049ab50 TOBtlMakeTargetListBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00898640 function TOBtlMakeTargetTargetBit  # fh v3:exact 0x008985b0
-0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940
+0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940; (): unless cmd 0x0133ca4c is 0xffff/0xfffe/0x3002, copies 0x023cc092+1 windows (0xf0 each from 0x0133c952) of cursor state into chr 0x023cc088's 0x168-byte block at 0x0133d788 (0x24 each), flag 0x0133d770[chr] = 1
 0x00898ad0 function TOBtlOpenAuronLimitWindow # fh v3:exact 0x00898a40; cdecl(cmd): level by cmd 0x22/0x32/0x42/0x52 (else 0), timer 0x0133f77c=1 with NkzGetAuronLimitTime in 0x0133f78c/90/94, NkzGetAuronLimitButtonData -> 0x0133d704 and its 0xffff-terminated length -> 0x0133d700, u16 0x0133d6f4=1; returns 1
 0x00898bd0 function TOBtlOpenLibraWindow      # fh v3:exact 0x00898b40
 0x00898bf0 function TOBtlOpenLuluLimitWindow  # fh v3:exact 0x00898b60; cdecl(cmd): group cmd-0x3078, timer as Auron's, NkzSetLuluLimitTbl, 0x0133d71e = byte 0x0133f798, u16 0x0133d71c=3, byte 0x0133d71f=1, u16 0x0133d708=1; returns 1
