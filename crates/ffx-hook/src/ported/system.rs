@@ -5726,6 +5726,10 @@ ported! {
     RelayoutMenuRecords_00775a20 @ 0x0077_5a20 => extern "C" fn relayout_menu_records(_a: u32, _b: u32, recs: u32, last: u32) {
         tolib::bridge::relayout_menu_records(&mut mem(), recs, last, |m| instance::bridge::ffx_lang(m, &mut phyre_printf));
     }
+    /// `MenuCursorBlocked_00775530()`.
+    MenuCursorBlocked_00775530 @ 0x0077_5530 => extern "C" fn menu_cursor_blocked() {
+        tolib::bridge::menu_cursor_blocked(&mut mem(), |m, f, arg| call_ptr(m, f, &[arg]));
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

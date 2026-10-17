@@ -5117,4 +5117,104 @@ pub mod bridge {
             p = p.wrapping_add(0x138);
         }
     }
+
+    /// `0x00775530()`: whether the menu cursor may move from the current
+    /// record (`0x0112a084`) in the pressed direction, left in byte
+    /// `0x0112a039` (1 blocked). The pad word is picked by the record's
+    /// `+2` (0 `0x0112a090`, 1 `0x0112a08c`, 2 `0x0112a094`); its last
+    /// direction bit wins (0x1000 up 0, 0x4000 1, 0x2000 3, 0x8000 2, 0x80
+    /// 5, 0x10 6, 0x40 7, 0x20 4) and is kept in `0x0112a08c`. The
+    /// direction's 12-byte link at `+0x30` names a target record (`+8`,
+    /// relative) and a condition (`+0`, index into the function table
+    /// `*0x00c416d0`, argument `+2`, expected `+4`). Each record at the
+    /// target's address is checked: no condition (negative) or a condition
+    /// whose result disagrees with the expected flag blocks. As compiled,
+    /// the pages after the first are offset by the previous page's record
+    /// count instead of `*0x0112a03c`. The condition calls go through
+    /// `cond(function, argument)`.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn menu_cursor_blocked<M: Mem>(mem: &mut M, mut cond: impl FnMut(&mut M, u32, u32) -> u32) {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let blocked = g(mem, 0x0112_a039);
+        mem.write(blocked, 0u8);
+        let pages = word(mem, 0x0112_a01c);
+        let cur = word(mem, 0x0112_a084);
+        if pages == 0 || cur == 0 {
+            return;
+        }
+        let pad_at = match mem.read::<u8>(cur.wrapping_add(2)) {
+            0 => 0x0112_a090,
+            1 => 0x0112_a08c,
+            2 => 0x0112_a094,
+            _ => return,
+        };
+        let bits = u32::from(mem.read::<u16>(g(mem, pad_at)));
+        if bits == 0 {
+            return;
+        }
+        let last_at = g(mem, 0x0112_a08c);
+        let mut dir = -1i32;
+        for (bit, d) in [
+            (0x1000u32, 0),
+            (0x4000, 1),
+            (0x2000, 3),
+            (0x8000, 2),
+            (0x80, 5),
+            (0x10, 6),
+            (0x40, 7),
+            (0x20, 4),
+        ] {
+            if bits & bit != 0 {
+                dir = d;
+                mem.write(last_at, bit as u16);
+            }
+        }
+        if dir < 0 {
+            return;
+        }
+        let link = (dir * 0xc).cast_unsigned();
+        let base0 = word(mem, 0x0112_a03c);
+        let target = mem
+            .read::<u32>(cur.wrapping_add(link + 0x38))
+            .wrapping_add(base0);
+        if target == 0 {
+            return;
+        }
+        let page_count = word(mem, 0x0112_a080);
+        let mut base = base0;
+        let mut page = 0i32;
+        while page < page_count.cast_signed() {
+            let pages = word(mem, 0x0112_a01c);
+            let entry = pages.wrapping_add((page * 8).cast_unsigned());
+            let n = i32::from(mem.read::<i16>(entry.wrapping_add(4)));
+            let mut rec = mem.read::<u32>(entry).wrapping_add(base);
+            let mut seen = 0u32;
+            for _ in 0..n.max(0) {
+                if rec == target {
+                    let cur = word(mem, 0x0112_a084);
+                    let c = i32::from(mem.read::<i16>(cur.wrapping_add(link + 0x30)));
+                    if c < 0 {
+                        mem.write(blocked, 1u8);
+                        return;
+                    }
+                    let arg =
+                        i32::from(mem.read::<i16>(cur.wrapping_add(link + 0x32))).cast_unsigned();
+                    let table = word(mem, 0x00c4_16d0);
+                    let f: u32 = mem.read(table.wrapping_add((c * 4).cast_unsigned()));
+                    let r = cond(mem, f, arg);
+                    let cur = word(mem, 0x0112_a084);
+                    let expect = mem.read::<u8>(cur.wrapping_add(link + 0x34)) != 0;
+                    if (r != 0) != expect {
+                        mem.write(blocked, 1u8);
+                        return;
+                    }
+                }
+                seen += 1;
+                rec = rec.wrapping_add(0x138);
+            }
+            base = seen;
+            page += 1;
+        }
+    }
 }
