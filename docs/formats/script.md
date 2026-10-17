@@ -533,8 +533,8 @@ the oracle test calls the originals with `ECX` = 0. Left for a later
 round: `0x1005` (`_CIatan2`, the x87 `fpatan`), `0x5037`, `0x6077` (it
 calls `0x007bd500` with no arguments of its own) and `0xc025`. The
 debug ones (`0x70b1`, `0xb002`, `0xc00b`, `0xc00c`, `0xc018`, `0xc022`,
-`0xc028`, `0xc02a`, `0xc056`, `0xc057`, `0xc05b`) are marked in the
-table.
+`0xc028`, `0xc02a`, `0xc03b`, `0xc03c`, `0xc056`, `0xc057`, `0xc05b`)
+are marked in the table.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
@@ -1495,8 +1495,8 @@ API is generated from this table. `-`: none. A result starting with
 | `0xc030` | `Native_c030` | - | TkIsDebug(), then the current ctrl work's +0x1f4 | - | int `0x00878ed0` (native_chr) |
 | `0xc031` | `Native_c031` | v | 0x0086dcd0(v) | - | int `0x00878530` (native_chr) |
 | `0xc036` | `Native_c036` | on | pppFpSetDisp(on != 0) (0x00729050); on != 0 | - | int `0x00878f70` (native_chr) |
-| `0xc03b` | `Native_c03b` | - | 0x007849d0(); 1 | - | int `0x008790b0` (native_chr) |
-| `0xc03c` | `Native_c03c` | - | 0x007848b0(); 1 | - | int `0x008790c0` (native_chr) |
+| `0xc03b` | `Native_c03b` | - | debug (mod-tool candidate): MsDebugFullItem (0x007849d0), the debug cheat that gives every item; 1 | - | int `0x008790b0` (not ported) |
+| `0xc03c` | `Native_c03c` | - | debug (mod-tool candidate): MsDebugFullCommand (0x007848b0), the debug cheat that teaches every command; 1 | - | int `0x008790c0` (not ported) |
 | `0xc051` | `Native_c051` | on | TkSetTGS(on != 0) (0x0088ec10); on != 0 | - | int `0x008793b0` (native_chr) |
 | `0xc052` | `Native_c052` | - | jumps to 0x0088d6d0 | - | int `0x008793e0` (native_chr) |
 | `0xc053` | `Native_c053` | - | four popped and dropped; 0 | - | int `0x008793f0` (native_chr) |

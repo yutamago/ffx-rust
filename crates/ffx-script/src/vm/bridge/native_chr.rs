@@ -1272,16 +1272,6 @@ natives! {
     native_c013(h, w, a, s) => u32::from(call(h, 0x0078_51f0, &[]) == 1);
     /// `0xc014` (`0x008787c0`): 1 when `0x007851b0()` is not 0.
     native_c014(h, w, a, s) => u32::from(call(h, 0x0078_51b0, &[]) != 0);
-    /// `0xc03b` (`0x008790b0`): `0x007849d0()`; 1.
-    native_c03b(h, w, a, s) => {
-        call(h, 0x0078_49d0, &[]);
-        1
-    };
-    /// `0xc03c` (`0x008790c0`): `0x007848b0()`; 1.
-    native_c03c(h, w, a, s) => {
-        call(h, 0x0078_48b0, &[]);
-        1
-    };
     /// `0xc052` (`0x008793e0`): jumps to `0x0088d6d0`.
     native_c052(h, w, a, s) => call(h, 0x0088_d6d0, &[w, a, s]);
     /// `0xc054` (`0x008781b0`): `(n)` -> `TkMalloc(n)` (`0x0088e650`).
@@ -1822,8 +1812,6 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0087_84e0 => Int(native_c002),
         0x0087_87b0 => Int(native_c013),
         0x0087_87c0 => Int(native_c014),
-        0x0087_90b0 => Int(native_c03b),
-        0x0087_90c0 => Int(native_c03c),
         0x0087_93e0 => Int(native_c052),
         0x0087_81b0 => Int(native_c054),
         0x0087_81d0 => Int(native_c055),
@@ -1879,7 +1867,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 217] = [
+pub const PORTED: [(u32, bool); 215] = [
     (0x0087_7b30, true),
     (0x007b_9190, true),
     (0x00a7_a140, false),
@@ -2043,8 +2031,6 @@ pub const PORTED: [(u32, bool); 217] = [
     (0x0087_84e0, false),
     (0x0087_87b0, false),
     (0x0087_87c0, false),
-    (0x0087_90b0, false),
-    (0x0087_90c0, false),
     (0x0087_93e0, false),
     (0x0087_81b0, false),
     (0x0087_81d0, false),

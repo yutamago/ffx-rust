@@ -5555,7 +5555,7 @@
 0x007b9010 function Native_CamSetRoll            # 0x603a: args (degrees) -> cam; 0x007bfa80 stores radians in the camera's +0xc94 (eye half's roll channel)
 0x007b90b0 function Native_CamSetScreenDepth     # 0x603b: args (depth e.g. 404, 624, 1024) -> cam; debug string "MsCameraSetScrDpt"; 0x007bfbd0 (projection distance, i.e. zoom/FOV)
 0x007b9150 function Native_606c                # 0x606c: no args -> the shake with (0, 4); ported in native_chr (script round 12)
-0x007b9190 function Native_6077_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id
+0x007b9190 function Native_6077_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id; ported in native_chr (script round 13)
 0x007b91f0 function Native_6078                # 0x6078 (float): no args -> jumps to 0x007bd510(worker, args, stack) (ST0); ported in native_chr (script round 12)
 0x007b9220 function Native_CamSetPos             # 0x6002: args (x, y, z) floats -> 0; sets the camera eye position (side 1) via Cam_SetPos 0x007bf940; side 1 = "cam", side 0 = "ref" per the debug dump "ref%s\ncam%s" in 0x007d2430; a few hard-coded per-map fixes
 0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
@@ -8315,7 +8315,7 @@
 0x00877aa0 function AtelCall_Math_Cos_RF      # fh v3:cg2 0x877a20 +AtelCall_Math_Cos_RF
 0x00877ad0 function AtelCall_Math_Tan_RF      # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF
 0x00877b00 function AtelCall_Math_ATan_RF     # fh v3:cg2 0x877a80 +AtelCall_Math_ATan_RF
-0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF
+0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF; 0x1005 (float): atan2(y, x) through _CIatan2; ported in native_chr (script round 13)
 0x00877b70 function AtelCall_Math_Sqrt_RF     # 0x1006 float (x) -> sqrt(x); was Native_MathSqrt
 0x00877ba0 function AtelCall_Math_InvSqrt_RF  # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF
 0x00877d30 function Native_1013                # 0x1013 (float): args (v f) -> float: Math_WrapAngle(v) (0x0088bc20); ported in native_chr (script round 12)
@@ -8345,15 +8345,15 @@
 0x00878c10 function Native_c024                # 0xc024 (start): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
 0x00878c60 function Native_c024_Poll           # 0xc024 (poll): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
 0x00878c60 function Native_c024_Poll           # 0xc024 (poll): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
-0x00878c70 function Native_c025                  # native 0xc025 int handler (g_NativeTables group c entry 0x25, ffx-script native_counts); 4 calls in the shipped scripts; calls AtelPopStackInteger, MsGetSaveChrName, MsGetSaveChrNameSize, Msg_Text; name by id
+0x00878c70 function Native_c025                  # native 0xc025 int handler (g_NativeTables group c entry 0x25, ffx-script native_counts); 4 calls in the shipped scripts; calls AtelPopStackInteger, MsGetSaveChrName, MsGetSaveChrNameSize, Msg_Text; name by id; ported in native_chr (script round 13)
 0x00878d60 function Native_c028                # 0xc028: no args -> debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1; debug, not ported (mod-tool candidate)
 0x00878e10 function Native_c02a                # 0xc02a: no args -> debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v; debug, not ported (mod-tool candidate)
 0x00878e60 function Native_c02c                # 0xc02c: args (v int) -> int: the popped value; int: the popped value; ported in native_chr (script round 12)
 0x00878e80 function Native_c02f                # 0xc02f: args (on, v f) -> the current ctrl work's +0x208 = v and +2 bit 0 = on != 0; EAX on != 0; ported in native_chr (script round 12)
 0x00878ed0 function Native_c030                # 0xc030: no args -> TkIsDebug(), then the current ctrl work's +0x1f4; ported in native_chr (script round 12)
 0x00878f70 function Native_c036                # 0xc036: args (on) -> pppFpSetDisp(on != 0) (0x00729050); on != 0; ported in native_chr (script round 12)
-0x008790b0 function Native_c03b                # 0xc03b: no args -> 0x007849d0(); 1; ported in native_chr (script round 12)
-0x008790c0 function Native_c03c                # 0xc03c: no args -> 0x007848b0(); 1; ported in native_chr (script round 12)
+0x008790b0 function Native_c03b                # 0xc03b: no args -> MsDebugFullItem(); 1; debug, not ported (mod-tool candidate)
+0x008790c0 function Native_c03c                # 0xc03c: no args -> MsDebugFullCommand(); 1; debug, not ported (mod-tool candidate)
 0x008793b0 function Native_c051                # 0xc051: args (on) -> TkSetTGS(on != 0) (0x0088ec10); on != 0; ported in native_chr (script round 12)
 0x008793e0 function Native_c052                # 0xc052: no args -> jumps to 0x0088d6d0; ported in native_chr (script round 12)
 0x008793f0 function Native_c053                # 0xc053: no args -> four popped and dropped; 0; ported in native_chr (script round 12)
@@ -11833,7 +11833,7 @@
 0x00a7a070 function Native_507c                # 0x507c: no args -> Ch_NeckSetTargetCamera(model) (0x00835080); ported in native_chr (script round 12)
 0x00a7a090 function Native_507d                # 0x507d: args (b f, a f) -> degrees: Ch_NeckSetRot(model, wrap(b), wrap(a)) (0x00834ff0); ported in native_chr (script round 12)
 0x00a7a120 function Native_5036                # 0x5036: no args -> 0x00a7a980(worker, args, stack, 0); ported in native_chr (script round 12)
-0x00a7a140 function Native_5037                  # native 0x5037 int handler (g_NativeTables group 5 entry 0x37, ffx-script native_counts); 5 calls in the shipped scripts; calls AtelGetBasicWork, AtelGetCharHandle, AtelGetRealVarAdrs, AtelPopStackInteger, Ch_OptposGet; name by id
+0x00a7a140 function Native_5037                  # native 0x5037 int handler (g_NativeTables group 5 entry 0x37, ffx-script native_counts); 5 calls in the shipped scripts; calls AtelGetBasicWork, AtelGetCharHandle, AtelGetRealVarAdrs, AtelPopStackInteger, Ch_OptposGet; name by id; ported in native_chr (script round 13)
 0x00a7a210 function CT_507E_ret               # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls); was Native_ChrSetTalking
 0x00a7a340 function Native_ChrSetHitRadiusScale  # 0x5039: args (scale float; <= 0 = model default +0x1c4->+0x1c) -> previous; chr +0x4e4, collision radius +0x4e8 = mean bbox width * scale; scripts push 6.0, 8.0
 0x00a7a3d0 function Native_503a                # 0x503a (float): args (z f) -> float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model; ported in native_chr (script round 12)

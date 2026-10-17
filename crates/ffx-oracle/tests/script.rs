@@ -122,6 +122,16 @@ impl run::NativeHost for Run<'_> {
         self.0.call(ftol, Conv::Cdecl, &[]).unwrap();
         f80_to_f64(raw)
     }
+    fn call_intrinsic2(&mut self, addr: u32, a: f64, b: f64) -> f64 {
+        let at = self.0.rebase(TRAMPOLINE);
+        let (x, y) = (a.to_bits(), b.to_bits());
+        #[allow(clippy::cast_possible_truncation)] // the two halves
+        let args = [x as u32, (x >> 32) as u32, y as u32, (y >> 32) as u32, addr];
+        let r = self.0.call(at, Conv::Cdecl, &args).unwrap();
+        let raw = r.st0_raw.expect("the intrinsic leaves ST0");
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        f80_to_f64(raw)
+    }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
         // the comparisons leave the stack out, as the originals' locals are
@@ -1926,8 +1936,23 @@ fn fresh_run_pair(
     make_current(&mut a, &mut b, c);
     let speed = a.rebase(run::GAME_SPEED.sym);
     poke(&mut a, &mut b, speed, 1f32.to_bits());
+    let at = a.rebase(TRAMPOLINE);
+    for o in [&mut a, &mut b] {
+        Mem::write_bytes(o, at, &TRAMPOLINE_CODE);
+    }
     (a, b)
 }
+
+/// `graphicFontDraw`'s body (`0x00640660`), which no script code calls:
+/// `fld qword [esp+4]; fld qword [esp+0xc]; call [esp+0x14]; ret` (a
+/// two-operand intrinsic with its operands in ST1 and ST0), then at `+16`
+/// `fstp st(0); ret`. Written into both runs, so the memory diff leaves
+/// it alone.
+const TRAMPOLINE: u32 = 0x0064_0660;
+const TRAMPOLINE_CODE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
 
 #[test]
 fn script_entries_match_the_original() {
