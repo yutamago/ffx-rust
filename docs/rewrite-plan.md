@@ -107,34 +107,36 @@ not replaced yet).
 | debug | debug consoles, debug drawing, host0: readers, Deci2, tweak overlays | not ported now; kept as mod-tool candidates (below) |
 | dead | nothing reaches it (no call, jump or pointer anywhere in the image), or PS2-only (memory card, IOP) | not ported |
 
-Numbers (2026-10-17; functions and size):
+Numbers (2026-10-17, with runtime coverage; functions and size):
 
 | module | logic | glue | platform | debug | dead |
 |---|---|---|---|---|---|
-| vfx | 1532 (498K) | 181 (58K) | 3 (1K) | 19 (4K) | 677 (74K) |
-| system | 1398 (278K) | 101 (73K) | 354 (51K) | 25 (3K) | 1284 (118K) |
-| render | 372 (54K) | 782 (225K) | 29 (3K) | 12 (2K) | 785 (49K) |
-| map | 1000 (204K) | 2 (0K) | 1 (0K) | 212 (59K) | 455 (61K) |
-| battle | 1149 (214K) | 0 | 0 | 142 (96K) | 146 (14K) |
-| menu | 747 (176K) | 0 | 1 (0K) | 186 (25K) | 258 (24K) |
-| script | 1993 (163K) | 0 | 3 (0K) | 18 (9K) | 305 (38K) |
-| pc-ui | 459 (83K) | 204 (58K) | 49 (5K) | 62 (26K) | 434 (33K) |
-| main | 556 (101K) | 5 (2K) | 83 (6K) | 131 (25K) | 98 (14K) |
-| chara | 446 (67K) | 9 (3K) | 0 | 48 (3K) | 107 (10K) |
-| sound | 139 (10K) | 305 (29K) | 37 (1K) | 1 (0K) | 123 (8K) |
-| movie | 52 (6K) | 66 (8K) | 29 (5K) | 25 (7K) | 224 (19K) |
-| ps2-emu | 52 (5K) | 0 | 2 (2K) | 5 (3K) | 63 (4K) |
-| **GAME** | **9895 (1860K)** | **1655 (457K)** | **591 (74K)** | **886 (261K)** | **4959 (467K)** |
+| vfx | 1536 (498K) | 181 (58K) | 3 (1K) | 19 (4K) | 673 (74K) |
+| system | 1425 (281K) | 101 (73K) | 366 (51K) | 24 (3K) | 1246 (115K) |
+| render | 379 (55K) | 778 (225K) | 29 (3K) | 12 (2K) | 782 (49K) |
+| map | 1005 (204K) | 2 (0K) | 1 (0K) | 213 (60K) | 452 (60K) |
+| battle | 1184 (224K) | 0 | 0 | 110 (87K) | 143 (14K) |
+| menu | 782 (184K) | 0 | 1 (0K) | 171 (22K) | 238 (20K) |
+| script | 2051 (183K) | 0 | 3 (0K) | 24 (9K) | 241 (18K) |
+| pc-ui | 474 (85K) | 205 (58K) | 52 (6K) | 60 (26K) | 417 (31K) |
+| main | 563 (103K) | 5 (2K) | 83 (6K) | 126 (25K) | 96 (13K) |
+| chara | 456 (67K) | 9 (3K) | 0 | 39 (3K) | 106 (10K) |
+| sound | 144 (10K) | 305 (29K) | 37 (1K) | 1 (0K) | 118 (8K) |
+| movie | 56 (6K) | 68 (9K) | 28 (5K) | 25 (7K) | 216 (18K) |
+| ps2-emu | 55 (8K) | 0 | 2 (2K) | 0 | 65 (4K) |
+| **GAME** | **10110 (1908K)** | **1654 (457K)** | **605 (74K)** | **824 (246K)** | **4793 (434K)** |
 
-So about 60% of the game code by size is logic and needs an exact port.
-Of the 5,063 functions ported so far, 3,480 are logic; 674 are dead, 378
-glue, 334 debug and 197 platform.
+So about 61% of the game code by size is logic and needs an exact port.
+Of the 5,103 functions ported so far, 3,560 are logic; 642 are dead, 379
+glue, 319 debug and 202 platform.
 
 How the evidence works, in order (first rule that fires): reachability
 from the PE entry point and from every function address found in the
 image's data (vtables, native and overlay tables, exception tables) or as
 an immediate in code, plus Ghidra's calls and objdump's direct
-call/jmp/jcc edges (Ghidra leaves out tail jumps); then name rules (the
+call/jmp/jcc edges (Ghidra leaves out tail jumps), with the 676 blocks
+those reach that Ghidra made no function for (thunks, tail-call targets)
+as nodes of their own; then name rules (the
 PC-only rules stop at 0x00760000, where the PS2 game code starts and
 porters reuse words like Menu*, Save*); then Iggy/PhyreEngine calls and
 Win32 imports; then propagation (a function only debug code calls is
@@ -143,13 +145,31 @@ logic: skipping something necessary breaks parity, porting something
 unnecessary only costs time. A debug-sounding name that logic calls (an
 "is debug" flag the battle code reads, an rc math helper) is logic.
 
-Not done yet: **runtime coverage**. Dead is a static verdict (no reference
-of any kind; a sample of 40 checked against the disassembly and raw
-dwords had none from live code). Confirming it at runtime needs a run of
-the game with one-shot breakpoints (an `int3` on each candidate's first
-byte, a vectored exception handler that records the hit and restores the
-byte) in `ffx-hook`, during the three replays and a longer session; the
-functions that fire move out of dead.
+**Runtime coverage** checks the static verdict. `ffx-hook`'s coverage mode
+(`FFX_COVERAGE=<list>`, `crates/ffx-hook/src/coverage.rs`) puts a one-time
+`int3` on the first byte of every dead and debug candidate; the vectored
+handler restores the byte, logs the address and resumes. `tools/coverage-run.sh`
+runs it on the original code (`--hook-disable replacements`, so ported
+functions count too) through the three replays and the coverage session
+(`tools/replays/coverage-session.txt`: boot, load, walk and talk, a battle
+with attacks, skills, a summon attempt and items, every main menu screen,
+the PC menu) on all five saves; `tools/coverage.py merge` keeps the union in
+`symbols/coverage.txt`, which `tools/classify.py` reads: a function that ran
+is a root, and one no static reference reaches is logic (debug when it
+looks like debug); a debug-named function that ran and that logic calls is
+logic. Of 5,844 armed candidates, 63 ran. Of the 34 that were dead in the
+first classification, the better static graph (blocks Ghidra misses,
+fall-through) already explained 32; the last two (`MenuTuto_GetChoice` and
+its neighbour, reached only at run time) moved to logic. Of the 29 debug
+functions that ran, 5 moved to logic (two VU-emulation helpers with an
+assert, `rcuiCopyMatrix`/`rcuiMulMatrix` that the movie camera uses, one
+battle helper); the other 24 are debug code the release build calls every
+frame or at start-up without doing anything visible (the PC tweak overlays'
+init and render, `Sg_MainDebug`, `Native_DebugPrint`, `dbgPrintf`).
+The saves load on Besaid (bsil0000, three) and in Kilika (kami0100, two).
+Not covered yet: saving (not scripted), whether the blind summon attempt
+actually summoned (the battle menu is driven without checking the screen),
+and later content; dead stays a static verdict there.
 
 ### Debug code worth keeping (mod-tool candidates)
 

@@ -89,6 +89,19 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
   reports whether the game read it and survived; it found that grown PS2
   files were cut at their original size (`docs/hooking.md`).
 
+## Coverage mode
+
+`FFX_COVERAGE=<file>` (passed on by `tools/run-game.sh`, `/p` in `WSLENV`)
+makes `ffx-hook` put a one-time `int3` on the first byte of every function
+listed in `<file>` (`<address> <first byte>` lines, from
+`tools/coverage.py candidates`) whose byte no hook or patch owns. The
+vectored handler (`log.rs`) restores the byte, appends the address to
+`<file>.hits` and resumes the function. Keep `<file>` on the Windows drive:
+the hits file is opened once per first hit. `tools/coverage-run.sh` runs
+the replays and `tools/replays/coverage-session.txt` on every save in the
+game slot and merges the hits into `symbols/coverage.txt`; the last run's
+logs and outputs are in `~/ffx-work/agents/coverage/`.
+
 ## Snapshots and replays
 
 Two tools for checking Rust replacements against the original code on real
@@ -191,6 +204,9 @@ cargo build --release -p ffx-harness --bin game-slot
 target/release/game-slot status              # holder and queue
 target/release/game-slot run -- <command>    # waits, runs it in the slot
 ```
+
+Test games play their sound at 5% master volume (`FFX_TEST_VOLUME`,
+0-100), set in the sandbox's `GameSetting.ini`, never the user's.
 
 `tools/run-game.sh` refuses to start a game while someone else holds the
 slot. A test stopped mid-run leaves its game running; the next

@@ -45,6 +45,9 @@ pub const VU0_MATRIX1: u32 = 0x00c8_f7a0;
 pub const VU0_MATRIX2: u32 = 0x00c8_f7e0;
 /// The sine table (4096 `f32`s, a quarter turn in 1024).
 pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+/// `SndSepPlaySimple(sfx)` (`0x00886e80`).
+pub const SND_SEP_PLAY_SIMPLE: u32 = 0x0088_6e80;
+
 /// 256.0 (`f32`, `.rdata`): the cursor distance (`AbmapResetCursorCamera`).
 pub const CURSOR_DISTANCE: u32 = 0x00b5_01c0;
 /// 32.0 (`f64`, `.rdata`): how far the cursor sits below the character.
@@ -888,5 +891,17 @@ pub mod bridge {
         };
         let l = x87::load(x87::store(f64::from(level.wrapping_add(0x32))));
         ftol(mem, x87::load(ti) * l * x87::load(tj))
+    }
+
+    /// `abmap_snd_chg_panel0()` (`0x00a45910`) and `abmap_snd_chg_panel1`
+    /// (`0x00a45920`): `SndSepPlaySimple` of sound 0x8000006d or
+    /// 0x8000006e; returns its `eax`.
+    pub fn abmap_snd_chg_panel<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        which: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[0x8000_006d + which])
     }
 }
