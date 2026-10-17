@@ -5812,6 +5812,89 @@ pub mod bridge {
         to_get_save_chr_name(mem, i, call)
     }
 
+    /// The battle message windows `TODrawAMES*` open (`0x0089b140`..):
+    /// the slot set up as kind/type `kind_type`, both texts `text`, the
+    /// position `(anchor, x, y)`, value 4, made active and opened. Returns
+    /// what `TOOpenWindowAndMessage` leaves in `eax`.
+    fn open_battle_message<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        kind_type: [u32; 2],
+        position: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const INIT_SLOT: u32 = 0x008a_da30;
+        const KIND_AND_TYPE: u32 = 0x008b_0000;
+        const TEXTS: u32 = 0x008b_89d0;
+        const POSITION: u32 = 0x008a_f850;
+        const VALUE: u32 = 0x008a_fb90;
+        const ACTIVE: u32 = 0x008a_f7d0;
+        const OPEN: u32 = 0x008a_de10;
+        let [anchor, x, y] = position;
+        call(mem, INIT_SLOT, &[window]);
+        call(mem, KIND_AND_TYPE, &[window, kind_type[0], kind_type[1]]);
+        call(mem, TEXTS, &[window, text, text]);
+        call(mem, POSITION, &[window, anchor, x, y]);
+        call(mem, VALUE, &[window, 4]);
+        call(mem, ACTIVE, &[window]);
+        call(mem, OPEN, &[window])
+    }
+
+    /// `TODrawAMES(window, text, x, y, anchor)` (`0x0089b140`): a battle
+    /// message at `(x, y)`, kind 0 type 0. On map 0x185 (`g_CurrentMapNo`)
+    /// a message at (0xfa, 0x96) moves up to y 0x8c when the language
+    /// (`TOGetFFXLang`, through `0x008ac2f0`) is 2..=5.
+    pub fn to_draw_ames<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const MAP_NO: u32 = 0x012f_bc40;
+        const LANG: u32 = 0x008a_c2f0;
+        let [window, text, x, mut y, anchor] = args;
+        if mem.read::<u32>(mem.rebase(MAP_NO)) == 0x185 && x == 0xfa && y == 0x96 {
+            let lang = call(mem, LANG, &[]).cast_signed();
+            if lang > 1 && call(mem, LANG, &[]).cast_signed() <= 5 {
+                y = 0x8c;
+            }
+        }
+        open_battle_message(mem, window, text, [0, 0], [anchor, x, y], &mut call)
+    }
+
+    /// `TODrawAMES_CENTERMES(window, text)` (`0x0089b1d0`): a battle
+    /// message centred at (0x100, 0xe0), kind 1 type 0x2402.
+    pub fn to_draw_ames_centermes<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        open_battle_message(mem, window, text, [1, 0x2402], [4, 0x100, 0xe0], &mut call)
+    }
+
+    /// `TODrawAMES_EVJIMAKU(window, text)` (`0x0089b230`): an event
+    /// subtitle at (0x100, 0x1c0), kind 1 type 0x2002.
+    pub fn to_draw_ames_evjimaku<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        open_battle_message(mem, window, text, [1, 0x2002], [4, 0x100, 0x1c0], &mut call)
+    }
+
+    /// `TODrawAMES_EVJIMAKU_ALBHED(window, text)` (`0x0089b290`): the
+    /// subtitle with the Al Bhed type bit 0x4000 (type 0x6002).
+    pub fn to_draw_ames_evjimaku_albhed<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        open_battle_message(mem, window, text, [1, 0x6002], [4, 0x100, 0x1c0], &mut call)
+    }
+
     /// `TOGetSaveChrName(i)` (`0x008ac850`): characters from 0x14 on come
     /// from `MsGetRamChrName(i)`; the others from `MsGetSaveChrName(i)`,
     /// after `MsGetSaveConfigEnglish()` when the language
@@ -7633,6 +7716,44 @@ pub mod bridge {
         );
     }
 
+    /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`
+    /// (`0x00905890`): `value` drawn by `ToMakeBtlEasyEdgeDigit` with its
+    /// right edge at `x`. The digit count is that of `value` (1 for 0,
+    /// the sign not counted); the width comes from
+    /// `ToGetBtlEasyDigitWidth(digits, value, &w, scale, extra)` into
+    /// `scratch` (4 bytes, the original reuses its `value` slot), and the
+    /// text starts at `x - w` (rounded to `f32`). The floats are passed on
+    /// through `fld`/`fstp dword`. Returns what the drawer leaves in `eax`.
+    pub fn to_make_btl_easy_edge_digit_right<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        const WIDTH: u32 = 0x0090_5190;
+        const DRAW: u32 = 0x0090_57c0;
+        let [value, x, y, alpha, scale, extra] = args;
+        let rt = |bits: u32| x87::round_trip(f32::from_bits(bits)).to_bits();
+        let mut digits = 0u32;
+        let mut v = value.cast_signed();
+        if v == 0 {
+            digits = 1;
+        }
+        while v != 0 {
+            digits += 1;
+            v /= 10;
+        }
+        call(mem, WIDTH, &[digits, value, scratch, rt(scale), rt(extra)]);
+        let width: u32 = mem.read(scratch);
+        let left = x87::store(x87::sub(x87::load(x), x87::load(width)));
+        call(
+            mem,
+            DRAW,
+            &[digits, value, left, rt(y), alpha, rt(scale), rt(extra)],
+        )
+    }
+
     /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`
     /// (`0x009057c0`): `value` written by `TOValueToMesFontL` into the
     /// 32-byte `text` and laid out with `ToMakeBtlEasyEdgeFont`.
@@ -8096,6 +8217,67 @@ pub mod bridge {
             }
             p = call(mem, 0x008d_fd80, &[p]);
         }
+    }
+
+    /// `TOCountMessageWordsAbove_008b8140(window, text, limit)`
+    /// (`0x008b8140`): [`count_message_words`] up to the first code at or
+    /// below `limit` (compared signed) instead of the first line code.
+    pub fn count_message_words_above<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        limit: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if i32::from(c) <= limit.cast_signed() {
+                return n;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                2 => {
+                    let next: u8 = mem.read(p.wrapping_add(1));
+                    if c == 0x10 && (0x50..0x60).contains(&next) {
+                        n = n.wrapping_add(call(mem, 0x008b_6b00, &[window, p]));
+                    }
+                    let c: u8 = mem.read(p);
+                    if c == 0xb {
+                        n = n.wrapping_add(1);
+                    }
+                    if c == 9 && mem.read::<u8>(p.wrapping_add(1)) >= 0xc0 {
+                        n = n.wrapping_add(1);
+                    }
+                }
+                3 => n = n.wrapping_add(call(mem, 0x008b_6b00, &[window, p])),
+                4 => n = n.wrapping_add(1),
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `TOGetMessageSizePacked_008b7170(text)` (`0x008b7170`): the size of
+    /// a message in window 0 at mode 0 (`TOGetMessageWH`) as one word, the
+    /// height (`i16`) shifted up 16 and OR-ed with the width's 64-bit
+    /// truncation (inline `fistp qword`, low half). `scratch` (8 bytes)
+    /// stands in for the original's stack.
+    pub fn message_size_packed<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(
+            mem,
+            0x008b_9650,
+            &[0, text, scratch, scratch.wrapping_add(4), 0, 0],
+        );
+        let width: f32 = mem.read(scratch);
+        let height: i16 = mem.read(scratch.wrapping_add(4));
+        (i32::from(height).cast_unsigned() << 16)
+            | ffx_bridge::x87::ftol2(ffx_bridge::x87::load(width.to_bits()))
     }
 
     /// `0x008b7130(text, &w, &h)`: the size of a message in window 0 at

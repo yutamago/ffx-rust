@@ -5854,6 +5854,22 @@ ported! {
             tolib::bridge::scale_button_icon_width(m, id, s, |_, v| ffx_graphic::ui::remap_x2(v))
         })
     }
+    /// `TODrawAMES(window, text, x, y, anchor)`.
+    TODrawAMES @ 0x0089_b140 => extern "C" fn to_draw_ames(window: u32, text: u32, x: u32, y: u32, anchor: u32) -> u32 {
+        tolib::bridge::to_draw_ames(&mut mem(), [window, text, x, y, anchor], call_sym)
+    }
+    /// `TODrawAMES_CENTERMES(window, text)`.
+    TODrawAMES_CENTERMES @ 0x0089_b1d0 => extern "C" fn to_draw_ames_centermes(window: u32, text: u32) -> u32 {
+        tolib::bridge::to_draw_ames_centermes(&mut mem(), window, text, call_sym)
+    }
+    /// `TODrawAMES_EVJIMAKU(window, text)`.
+    TODrawAMES_EVJIMAKU @ 0x0089_b230 => extern "C" fn to_draw_ames_evjimaku(window: u32, text: u32) -> u32 {
+        tolib::bridge::to_draw_ames_evjimaku(&mut mem(), window, text, call_sym)
+    }
+    /// `TODrawAMES_EVJIMAKU_ALBHED(window, text)`.
+    TODrawAMES_EVJIMAKU_ALBHED @ 0x0089_b290 => extern "C" fn to_draw_ames_evjimaku_albhed(window: u32, text: u32) -> u32 {
+        tolib::bridge::to_draw_ames_evjimaku_albhed(&mut mem(), window, text, call_sym)
+    }
     /// `TOBtlGetChrName(i)`.
     TOBtlGetChrName @ 0x0089_76f0 => extern "C" fn to_btl_get_chr_name(i: u32) -> u32 {
         tolib::bridge::to_btl_get_chr_name(&mut mem(), i, call_sym)
@@ -5997,6 +6013,15 @@ ported! {
         let at = (&raw mut width) as usize as u32;
         tolib::bridge::to_make_btl_easy_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
     }
+    /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
+        value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32
+    ) -> u32 {
+        let mut scratch = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(scratch) as usize as u32;
+        tolib::bridge::to_make_btl_easy_edge_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym)
+    }
     /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigit @ 0x0090_57c0 => extern "C" fn to_make_btl_easy_edge_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
         let mut text = [0u32; 8];
@@ -6044,6 +6069,17 @@ ported! {
     /// `TODrawScaleButtonIconRGBA(c, x, y, scale, r, g, b, a)`.
     TODrawScaleButtonIconRGBA @ 0x008f_8ee0 => extern "C" fn to_draw_scale_button_icon_rgba(c: u32, x: u32, y: u32, scale: u32, r: u32, g: u32, b: u32, a: u32) {
         tolib::bridge::to_draw_scale_button_icon_rgba(&mut mem(), [c, x, y, scale, r, g, b, a], call_sym);
+    }
+    /// `TOCountMessageWordsAbove_008b8140(window, text, limit)`.
+    TOCountMessageWordsAbove_008b8140 @ 0x008b_8140 => extern "C" fn to_count_message_words_above(window: u32, text: u32, limit: u32) -> u32 {
+        tolib::bridge::count_message_words_above(&mut mem(), window, text, limit, call_sym)
+    }
+    /// `TOGetMessageSizePacked_008b7170(text)`.
+    TOGetMessageSizePacked_008b7170 @ 0x008b_7170 => extern "C" fn to_get_message_size_packed(text: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::message_size_packed(&mut mem(), text, at, call_sym)
     }
     /// `TOCountMessageWords_008b80b0(window, text)`.
     TOCountMessageWords_008b80b0 @ 0x008b_80b0 => extern "C" fn to_count_message_words(window: u32, text: u32) -> u32 {

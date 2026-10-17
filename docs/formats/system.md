@@ -792,3 +792,41 @@ width is an `f32`, rounded after each step:
 
 `TOBtlGetChrName` (`0x008976f0`) is a tail jump to `TOGetSaveChrName`
 (`0x008ac850`).
+
+`TOCountMessageWordsAbove_008b8140(window, text, limit)` counts words the
+way `TOCountMessageWords_008b80b0` does. It stops at the first byte at or
+below `limit` (compared signed) rather than at the first line code.
+
+`TOGetMessageSizePacked_008b7170(text)` measures the text with
+`TOGetMessageWH(0, text, &w, &h, 0, 0)`. It returns the `i16` height
+shifted up 16 bits, OR-ed with the low half of the width's inline
+`fistp qword` truncation. That low half is 0 for NaN or out-of-range
+widths, and a negative width sets the upper bits too.
+
+## Battle message openers (`TODrawAMES*`)
+
+Four openers each do the same steps on a message slot:
+`TOInitMessageSlot_008ada30`, `TOSetWindowKindAndType_008b0000`,
+`TOSetMessageWindowTexts_008b89d0` (the text twice),
+`TOSetMessageWindowPosition`, `TOSetMessageWindowValue(…, 4)`,
+`TOSetMessageWindowActive` and `TOOpenWindowAndMessage`. They return the
+last call's `eax`.
+
+| Function | Kind, type | Position (anchor, x, y) |
+|---|---|---|
+| `TODrawAMES` (`0x0089b140`) | 0, 0 | arguments |
+| `TODrawAMES_CENTERMES` (`0x0089b1d0`) | 1, 0x2402 | 4, 0x100, 0xe0 |
+| `TODrawAMES_EVJIMAKU` (`0x0089b230`) | 1, 0x2002 | 4, 0x100, 0x1c0 |
+| `TODrawAMES_EVJIMAKU_ALBHED` (`0x0089b290`) | 1, 0x6002 | 4, 0x100, 0x1c0 |
+
+On map 0x185, `TODrawAMES` moves a message at (0xfa, 0x96) up to y 0x8c
+when the language is 2..=5. The last three names are inferred from the
+Switch build's five `TODrawAMES*` names; their position and type bits
+fit the names.
+
+`ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`
+(`0x00905890`) right-aligns a number at `x`. It counts the digits of
+`value` (1 for 0, the sign not counted) and gets the width from
+`ToGetBtlEasyDigitWidth`. It then draws with `ToMakeBtlEasyEdgeDigit` from
+`x - width`, rounded to `f32`. The original stores the width in its own
+`value` argument slot.
