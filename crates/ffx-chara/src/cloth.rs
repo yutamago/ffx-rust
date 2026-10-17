@@ -482,8 +482,8 @@ pub mod bridge {
     /// the cached cloth mesh data of the character's id (`u16` `+0`).
     /// Without data: each model's mesh blocks and list freed, its `+0x2c`
     /// and `+0x30` cleared; returns 0. With data: the bounding box (6 `f32`
-    /// × 1000 into `+0x840`..`+0x854`) and its inverse extents (`1 / (max
-    /// - min)` into `+0x858`..`+0x860`); then from data `+0x18` records
+    /// × 1000 into `+0x840`..`+0x854`) and its inverse extents
+    /// (`1 / (max - min)` into `+0x858`..`+0x860`); then from data `+0x18` records
     /// (`u16` model, mesh, triangle count; 8 bytes, then 0x20 bytes per
     /// triangle: three `u16` vertices and a `u16` value) up to model
     /// 0xffff: the model's mesh list (`+0x2c`, `u16` `+0x18` of its data
@@ -597,11 +597,15 @@ pub mod bridge {
             while t < i32::from(mem.read::<i16>(b + 0x40)) {
                 for k in 0..3 {
                     let v: u16 = mem.read(p + 2 * k);
-                    let tri_now: u32 = mem.read::<u32>(b + 0x44).wrapping_add((6 * t).cast_unsigned());
+                    let tri_now: u32 = mem
+                        .read::<u32>(b + 0x44)
+                        .wrapping_add((6 * t).cast_unsigned());
                     mem.write(tri_now + 2 * k, v);
                 }
                 for k in 0..3 {
-                    let tri_now: u32 = mem.read::<u32>(b + 0x44).wrapping_add((6 * t).cast_unsigned());
+                    let tri_now: u32 = mem
+                        .read::<u32>(b + 0x44)
+                        .wrapping_add((6 * t).cast_unsigned());
                     let vtx = i32::from(mem.read::<i16>(tri_now + 2 * k));
                     let flags: u32 = mem.read(model(mem, m) + 0x30);
                     mem.write(flags.wrapping_add(vtx.cast_unsigned()), 1u8);
