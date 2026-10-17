@@ -1773,9 +1773,9 @@ ported! {
     Ch_ReadEventMgrp @ 0x0083_7670 => extern "C" fn ch_read_event_mgrp(x: u32) -> u32 {
         mo::bridge::ch_read_event_mgrp(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
     }
-    /// `Ch_SaveMotionByte(chr)`.
-    Ch_SaveMotionByte @ 0x0083_03a0 => extern "C" fn ch_save_motion_byte(chr: u32) -> u32 {
-        mo::bridge::ch_save_motion_byte(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    /// `Ch_IsShadowHidden(chr)`.
+    Ch_IsShadowHidden @ 0x0083_03a0 => extern "C" fn ch_is_shadow_hidden(chr: u32) -> u32 {
+        mo::bridge::ch_is_shadow_hidden(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `SetByte_012fb8fd(v)`.
     SetByte_012fb8fd @ 0x0082_1b20 => extern "C" fn setbyte_012fb8fd(v: u8) {
@@ -1842,5 +1842,13 @@ ported! {
     /// `Ch_DrawInitAll()`.
     Ch_DrawInitAll @ 0x0082_ed30 => extern "C" fn ch_draw_init_all() {
         c::ch_draw_init_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawShadow(on)`.
+    Ch_DrawShadow @ 0x0083_0180 => extern "C" fn ch_draw_shadow(on: u32) {
+        c::ch_draw_shadow(&mut mem(), on, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawSingleShadow(chr)`.
+    Ch_DrawSingleShadow @ 0x0083_0240 => extern "C" fn ch_draw_single_shadow(chr: u32) {
+        c::ch_draw_single_shadow(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a));
     }
 }

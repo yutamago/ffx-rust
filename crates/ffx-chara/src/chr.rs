@@ -1539,6 +1539,108 @@ pub mod bridge {
         call(mem, mem.rebase(GUI_SET_CALC_NORM_ALL), &[0]);
         call(mem, mem.rebase(INIT_CIRCLE_TABLE), &[]);
     }
+
+    /// The shadow globals: mode (`u8`, `g_ChrShadowMode`; 0 lets each
+    /// character's `i8` `+0x183` decide, else mode + 1) and direction (two
+    /// `i32`, `g_ChrShadowDir`), and the callees `Sg_GetSpadPtr()`
+    /// (`0x00843220`), `Ch_IsShadowHidden(chr)` (`0x008303a0`),
+    /// `Ch_IsNotExceptionId(id)` (`0x00831780`), `Ch_DrawShadowQuad(chr,
+    /// p2, p3)` (`0x0082e3e0`) and the shadow direction setter
+    /// `0x00642fb0(x, y)`.
+    pub const SHADOW_MODE: u32 = 0x0130_08bd;
+    pub const SHADOW_DIR: u32 = 0x0130_08c4;
+    pub const GET_SPAD_PTR: u32 = 0x0084_3220;
+    pub const IS_SHADOW_HIDDEN: u32 = 0x0083_03a0;
+    pub const IS_NOT_EXCEPTION_ID: u32 = 0x0083_1780;
+    pub const DRAW_SHADOW_QUAD: u32 = 0x0082_e3e0;
+    pub const SET_SHADOW_DIR: u32 = 0x0064_2fb0;
+
+    /// The shadow mode of a character that may draw one (active, flag bit
+    /// 4 of `+0x198`, not hidden, `+0x186` not 2 or 3); `None` otherwise.
+    fn shadow_mode<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<i32> {
+        if mem.read::<u8>(chr + 2) == 0 || mem.read::<u8>(chr + 0x198) & 0x10 == 0 {
+            return None;
+        }
+        if call(mem, mem.rebase(IS_SHADOW_HIDDEN), &[chr]) != 0
+            || matches!(mem.read::<u8>(chr + 0x186), 2 | 3)
+        {
+            return None;
+        }
+        let g = mem.read::<u8>(mem.rebase(SHADOW_MODE));
+        Some(if g == 0 {
+            i32::from(mem.read::<i8>(chr + 0x183))
+        } else {
+            i32::from(g) - 1
+        })
+    }
+
+    /// `Ch_DrawShadow(on)` (`0x00830180`): with `on`, every character in
+    /// shadow mode 1 that is not an exception id gets its shadow quad
+    /// (`Ch_DrawShadowQuad(chr, chr + 0x114, Sg_GetSpadPtr())`).
+    pub fn ch_draw_shadow<M: Mem>(
+        mem: &mut M,
+        on: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if on == 0 {
+            return;
+        }
+        let spad = call(mem, mem.rebase(GET_SPAD_PTR), &[]);
+        let end = |mem: &M| {
+            let n = crate::handle::bridge::CHR_COUNT.get(mem).cast_unsigned();
+            crate::handle::bridge::CHR_ARRAY
+                .get(mem)
+                .wrapping_add(n.wrapping_mul(0x880))
+        };
+        let mut chr = crate::handle::bridge::CHR_ARRAY.get(mem);
+        if chr == end(mem) {
+            return;
+        }
+        loop {
+            if shadow_mode(mem, chr, call) == Some(1) {
+                let id = u32::from(mem.read::<u16>(chr));
+                if call(mem, mem.rebase(IS_NOT_EXCEPTION_ID), &[id]) != 0 {
+                    call(mem, mem.rebase(DRAW_SHADOW_QUAD), &[chr, chr + 0x114, spad]);
+                }
+            }
+            chr = chr.wrapping_add(0x880);
+            if chr == end(mem) {
+                return;
+            }
+        }
+    }
+
+    /// `Ch_DrawSingleShadow(chr)` (`0x00830240`): one character's shadow:
+    /// mode 3 first points the shadow direction ([`SHADOW_DIR`] as floats,
+    /// `0x00642fb0`), modes 3 and 1 draw the quad (`Ch_DrawShadowQuad(chr,
+    /// chr + 0x114, 0)`), for ids that are not exceptions.
+    pub fn ch_draw_single_shadow<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let Some(mode) = shadow_mode(mem, chr, call) else {
+            return;
+        };
+        if mode != 3 && mode != 1 {
+            return;
+        }
+        let id = u32::from(mem.read::<u16>(chr));
+        if call(mem, mem.rebase(IS_NOT_EXCEPTION_ID), &[id]) == 0 {
+            return;
+        }
+        if mode == 3 {
+            #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+            let [x, y] =
+                [0u32, 4].map(|o| (mem.read::<i32>(mem.rebase(SHADOW_DIR) + o) as f32).to_bits());
+            call(mem, mem.rebase(SET_SHADOW_DIR), &[x, y]);
+        }
+        call(mem, mem.rebase(DRAW_SHADOW_QUAD), &[chr, chr + 0x114, 0]);
+    }
 }
 
 #[cfg(test)]

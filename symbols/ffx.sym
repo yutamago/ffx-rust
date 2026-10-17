@@ -6962,7 +6962,7 @@
 0x00830320 function Ch_EnableGetTexture       # fh v3:bsim1.00 0x008303a0
 0x00830330 function Ch_EnableSetTexture          # layout+callees: sorts between Ch_EnableGetTexture and Ch_EngineSetFast, and its named callees match the Switch 0x7100419400 Ch_EnableSetTexture's (similarity 1.00: Gui_ButtonSetTexture); symbols from Fahrenheit's server export
 0x00830370 function Ch_EngineSetFast          # fh v3:bsim1.00 0x008303f0
-0x008303a0 function Ch_SaveMotionByte         # (chr): 0x022fd6c0 = 0x023c4450 = MsGetSaveEventAddress() + 0xd2; in battle (MsBattleCheck) and chr +0x186 not 2/3 returns that byte, else 0; name ours
+0x008303a0 function Ch_IsShadowHidden         # (chr): 0x022fd6c0 = 0x023c4450 = MsGetSaveEventAddress() + 0xd2; in battle (MsBattleCheck) and chr +0x186 not 2/3 returns that byte, else 0; Ch_DrawShadow and Ch_DrawSingleShadow skip a character when it is non-zero; name ours
 0x008303f0 function Ch_GetNbElem              # fh v3:exact 0x00830470
 0x00830410 function Ch_GetNbModel             # fh v3:exact 0x00830490
 0x00830440 function Ch_GetShadowDirH          # chr +0x6d8 (Ch_SetShadowDirH's); Switch name, in name order after Ch_GetNbModel

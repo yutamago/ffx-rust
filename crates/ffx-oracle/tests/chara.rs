@@ -7239,11 +7239,11 @@ fn round11f_on(t: &mut Twin) {
             |m| Res::Int(mo::ch_read_event_mgrp(m, a, &mut |m, f, a| call(m, f, a))),
         );
         t.check(
-            &format!("Ch_SaveMotionByte {round}"),
+            &format!("Ch_IsShadowHidden {round}"),
             0x0083_03a0,
             &[chr],
             |m| {
-                Res::Int(mo::ch_save_motion_byte(m, chr, &mut |m, f, a| {
+                Res::Int(mo::ch_is_shadow_hidden(m, chr, &mut |m, f, a| {
                     call(m, f, a)
                 }))
             },
@@ -8050,5 +8050,69 @@ fn round12d_on(t: &mut Twin) {
             c::ch_draw_init_all(m, &mut |m, f, a| call(m, f, a));
             Res::Void
         });
+    }
+}
+
+#[test]
+fn round12e_matches_the_original() {
+    for mut t in twins() {
+        round12e_on(&mut t);
+    }
+}
+
+fn round12e_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0012_e12e);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let spad = fk.fake(t, 0x0084_3220, 1, 0);
+    let hidden = fk.fake(t, 0x0083_03a0, 2, 1);
+    let not_exc = fk.fake(t, 0x0083_1780, 3, 1);
+    let quad = fk.fake(t, 0x0082_e3e0, 4, 3);
+    let dir = fk.fake(t, 0x0064_2fb0, 5, 2);
+    let (mode, dirs) = (t.a.rebase(0x0130_08bd), t.a.rebase(0x0130_08c4));
+    let (count, array) = (t.a.rebase(0x023c_44e0), t.a.rebase(0x023c_44e4));
+    for round in 0..32u32 {
+        fk.reset(t);
+        for r in [spad, quad, dir] {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(hidden, u32::from(rng.next().is_multiple_of(5)));
+        t.put_u32(not_exc, u32::from(!rng.next().is_multiple_of(5)));
+        t.put(mode, &[(rng.next() % 5).to_le_bytes()[0]]);
+        t.put_u32(dirs, rng.next() % 0x2000_0000);
+        t.put_u32(dirs + 4, rng.next());
+        let n = rng.next() % 4;
+        let chrs = t.alloc(0x880 * 3 + 4);
+        t.put_u32(count, n);
+        t.put_u32(array, chrs);
+        for k in 0..n.max(1) {
+            let chr = chrs + 0x880 * k;
+            t.put(chr, &rng.next().to_le_bytes());
+            t.put(chr + 0x183, &[(rng.next() % 5).to_le_bytes()[0]]);
+            t.put(chr + 0x186, &[(rng.next() % 5).to_le_bytes()[0]]);
+            t.put(
+                chr + 0x198,
+                &[if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    0x10
+                }],
+            );
+            t.put(chr + 2, &[u8::from(!rng.next().is_multiple_of(4))]);
+        }
+        let on = rng.next() % 3;
+        t.check(&format!("Ch_DrawShadow {round}"), 0x0083_0180, &[on], |m| {
+            c::ch_draw_shadow(m, on, &mut |m, f, a| call(m, f, a));
+            Res::Void
+        });
+        t.check(
+            &format!("Ch_DrawSingleShadow {round}"),
+            0x0083_0240,
+            &[chrs],
+            |m| {
+                c::ch_draw_single_shadow(m, chrs, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            },
+        );
     }
 }
