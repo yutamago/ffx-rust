@@ -6461,6 +6461,35 @@ fn menu_weapon_prices_match_the_original() {
         t.twin("MenuShop_WeaponSellPrice", 0x008d_9410, &[e], U32, |o| {
             u64::from(tk::menu_shop_weapon_sell_price(o, e, &mut callback))
         });
+        // what the shop compares the prices with: the gil (MsGetGIL) and
+        // the count held (MsGetSaveItemNum), constants around the edges
+        let gil = match t.rng.below(3) {
+            0 => t.rng.next(),
+            _ => t.rng.below(0x400),
+        };
+        return_const(&mut t, 0x0078_4e80, gil);
+        let held = t.rng.pick(&[0u32, 98, 99, 100, 0xffff_ffff]);
+        return_const(&mut t, 0x0079_04b0, held);
+        let open = t.rng.pick(&[0u32, 1, 0x100]);
+        t.put(t.sym(0x0186_ab14), open);
+        if round % 4 == 1 {
+            // exactly the price
+            let f = t.sym(0x008d_9370);
+            let price = callback(&mut t.b, f, &[e]);
+            return_const(&mut t, 0x0078_4e80, price);
+        }
+        t.twin("MenuWShop_CanAfford", 0x008d_85d0, &[e], U32, |o| {
+            u64::from(tk::menu_wshop_can_afford(o, e, &mut callback))
+        });
+        let id = t.rng.next();
+        if round % 4 == 3 {
+            let f = t.sym(0x008d_b3b0);
+            let price = callback(&mut t.b, f, &[id]);
+            return_const(&mut t, 0x0078_4e80, price);
+        }
+        t.twin("MenuShop_CanBuy", 0x008d_ab30, &[id], U32, |o| {
+            u64::from(tk::menu_shop_can_buy(o, id, &mut callback))
+        });
     }
     eprintln!("{} calls", t.calls);
 }
@@ -6836,6 +6865,39 @@ fn menu_item_keys_match_matches_the_original() {
                 &mut callback,
             ))
         });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round18_windows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_9140) else {
+        return;
+    };
+    // the windows come from the 32 slots: a dozen calls at most
+    for round in 0..6u32 {
+        // the item and key-item counts (TOAmapGetItemListMax,
+        // TkMenuGetImportantCounter), odd, even and negative
+        let n = t
+            .rng
+            .pick(&[0u32, 1, 2, 7, 0xffff_ffff, 0xffff_fffe, 0x2_0001]);
+        return_const(&mut t, 0x008c_8c30, n);
+        return_const(&mut t, 0x008c_8a10, n.wrapping_add(1));
+        t.scramble(0x0186_a3ac, 4);
+        let kind = if round < 4 { round } else { t.rng.next() };
+        t.twin("MenuItem_OpenListWindow", 0x008c_9140, &[kind], U32, |o| {
+            u64::from(tk::menu_item_open_list_window(o, kind, &mut callback))
+        });
+        let chr = t.rng.below(0x14);
+        t.scramble(0x023c_c3bc, 0x10);
+        t.twin(
+            "MenuNameEntry_OpenCharWindow",
+            0x008c_43f0,
+            &[chr],
+            U32,
+            |o| u64::from(tk::menu_name_entry_open_char_window(o, chr, &mut callback)),
+        );
     }
     eprintln!("{} calls", t.calls);
 }

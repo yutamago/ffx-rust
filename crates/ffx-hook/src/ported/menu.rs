@@ -3225,6 +3225,22 @@ ported! {
     MenuItem_KeysMatch @ 0x008c_5390 => extern "C" fn menu_item_keys_match(t: i32) -> u32 {
         tk::menu_item_keys_match(&mut mem(), t, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_OpenListWindow(kind)`: the window.
+    MenuItem_OpenListWindow_008c9140 @ 0x008c_9140 => extern "C" fn menu_item_open_list_window(kind: u32) -> u32 {
+        tk::menu_item_open_list_window(&mut mem(), kind, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_CanAfford(e)`: 1 or 0.
+    MenuWShop_CanAfford @ 0x008d_85d0 => extern "C" fn menu_wshop_can_afford(e: u32) -> u32 {
+        tk::menu_wshop_can_afford(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_CanBuy(id)`: 1 or 0.
+    MenuShop_CanBuy @ 0x008d_ab30 => extern "C" fn menu_shop_can_buy(id: u32) -> u32 {
+        tk::menu_shop_can_buy(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_OpenCharWindow(chr)`: the window.
+    MenuNameEntry_OpenCharWindow @ 0x008c_43f0 => extern "C" fn menu_name_entry_open_char_window(chr: u32) -> u32 {
+        tk::menu_name_entry_open_char_window(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {
         tk::menu_shop_weapon_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))

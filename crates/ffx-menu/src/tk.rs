@@ -5576,6 +5576,146 @@ pub mod bridge {
         }
     }
 
+    /// `MenuItem_OpenListWindow(kind)` (`0x008c9140`, own name): a window from
+    /// `TkMenuMainAllocWindow()` with the item list's callbacks (`+0xc`
+    /// `0x008c6dd0`, `+0x10` `0x008c7750`, `+0x14` `0x008c93e0`), `kind` at
+    /// `+0x43`, layer 1, `+0x42` = 1 and the cursor words cleared; then by
+    /// kind: 0 (items) and 1 (key items) half the count (rounded up,
+    /// `TOAmapGetItemListMax()` or `TkMenuGetImportantCounter()`) as rows
+    /// (`+0x30`) and the count at `+0x94`, columns 3 or 0 (`+0x36`), 10 rows
+    /// shown at `0x32001d`; 2 (the usable list) `MenuItem_UsableByte` as its
+    /// check, 3 columns, 9 rows at `0x50001d`. Kinds 0 and 2 clear
+    /// `0x0186a3ac`. Registered (`TkMenuMainRegistWindow`) and returned.
+    pub fn menu_item_open_list_window<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        let at = |o: u32| w.wrapping_add(o);
+        mem.write(at(0x48), 0u16);
+        mem.write(at(0x32), 0u32);
+        mem.write(at(0x43), kind.to_le_bytes()[0]);
+        for (o, f) in [
+            (0xcu32, 0x008c_6dd0u32),
+            (0x10, 0x008c_7750),
+            (0x14, 0x008c_93e0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(at(o), handler);
+        }
+        mem.write(at(0x3e), 1u16);
+        mem.write(at(0x42), 1u8);
+        mem.write(at(0x58), 0u32);
+        mem.write(at(0x5c), 0u32);
+        let page = mem.rebase(0x0186_a3ac);
+        let list = match kind {
+            0 => {
+                mem.write(page, 0u16);
+                Some((0x008c_8c30, 3u8))
+            }
+            1 => {
+                mem.write(at(0x42), 1u8);
+                Some((0x008c_8a10, 0))
+            }
+            2 => {
+                let usable = mem.rebase(0x008c_6a30);
+                mem.write(at(0x1c), usable);
+                mem.write(at(0x36), 3u8);
+                mem.write(at(0x3a), 9u16);
+                mem.write(at(0x4a), 0x0050_001du32);
+                mem.write(at(0x42), 1u8);
+                mem.write(page, 0u16);
+                None
+            }
+            _ => None,
+        };
+        if let Some((count, columns)) = list {
+            let count = mem.rebase(count);
+            let n = call(mem, count, &[]).cast_signed();
+            // the rows rounded up (toward zero for a negative count), as a word
+            let rows = (n.wrapping_add(1) / 2).to_le_bytes();
+            mem.write(at(0x30), u16::from_le_bytes([rows[0], rows[1]]));
+            let n = call(mem, count, &[]);
+            mem.write(at(0x94), n);
+            mem.write(at(0x36), columns);
+            mem.write(at(0x4a), 0x0032_001du32);
+            mem.write(at(0x3a), 10u16);
+        }
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuWShop_CanAfford(e)` (`0x008d85d0`, own name): 0 while
+    /// `0x0186ab14` is 0, else whether [`menu_shop_weapon_price`]`(e)` is at
+    /// most `MsGetGIL()` (signed).
+    pub fn menu_wshop_can_afford<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(mem.rebase(0x0186_ab14)) == 0 {
+            return 0;
+        }
+        let price = menu_shop_weapon_price(mem, e, call);
+        let gil = mem.rebase(0x0078_4e80);
+        u32::from(price <= call(mem, gil, &[]).cast_signed())
+    }
+
+    /// `MenuShop_CanBuy(id)` (`0x008dab30`, own name): whether the party
+    /// holds fewer than 99 (`MsGetSaveItemNum`, signed) and
+    /// [`menu_shop_price`]`(id)` is at most `MsGetGIL()`.
+    pub fn menu_shop_can_buy<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let price = menu_shop_price(mem, id, call);
+        let held = mem.rebase(0x0079_04b0);
+        if call(mem, held, &[id]).cast_signed() >= 99 {
+            return 0;
+        }
+        let gil = mem.rebase(0x0078_4e80);
+        u32::from(price <= call(mem, gil, &[]).cast_signed())
+    }
+
+    /// `MenuNameEntry_OpenCharWindow(chr)` (`0x008c43f0`, own name): a window
+    /// from `TkMenuMainAllocWindow()` with the name entry's character
+    /// callbacks (`+8` `0x008c3530`, `+0xc` `0x008c3ce0`, `+0x10`
+    /// `0x008c3ec0`, `+0x14` `0x008c44b0`), layer 3, `chr` at `+0x58`;
+    /// registered (`TkMenuMainRegistWindow`); then `chr` into `0x023cc3c4`,
+    /// `0x023cc3c0`, `0x023cc3bc` and `0x023cc3c8` = 0. Returns the window.
+    pub fn menu_name_entry_open_char_window<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        for (o, f) in [
+            (8u32, 0x008c_3530u32),
+            (0xc, 0x008c_3ce0),
+            (0x10, 0x008c_3ec0),
+            (0x14, 0x008c_44b0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        mem.write(w.wrapping_add(0x58), chr);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        for a in [0x023c_c3c4, 0x023c_c3c0, 0x023c_c3bc] {
+            let a = mem.rebase(a);
+            mem.write(a, chr);
+        }
+        let a = mem.rebase(0x023c_c3c8);
+        mem.write(a, 0u32);
+        w
+    }
+
     /// The base value of an equipment entry `e` (shared by
     /// `0x008d9370` and `0x008d9410`): the first words of its abilities'
     /// records (`u16` ids at `+0xe`, `byte +0xb` of them; 0 and 0xff empty)
