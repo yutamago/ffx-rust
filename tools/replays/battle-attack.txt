@@ -12,10 +12,10 @@ battle 3 0 0
 waitfor 0x0112a8e0:1 01 ff 4000
 trace *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x72c0:4
 wait 60
-shot C:\Users\USER\AppData\Local\Temp\ffx-snap\battle-attack-1.bmp
+shot $OUT\battle-attack-1.bmp
 press circle 4 30
 press circle 4 400
 press circle 4 30
 press circle 4 400
 wait 100
-shot C:\Users\USER\AppData\Local\Temp\ffx-snap\battle-attack-2.bmp
+shot $OUT\battle-attack-2.bmp
