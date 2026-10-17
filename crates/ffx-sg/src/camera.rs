@@ -43,6 +43,23 @@ pub mod bridge {
     /// 8 bytes per camera (`Cam_SetChannelSuspended`).
     pub const CHANNELS: Global<u32> = Global::new(0x0113_81a8);
 
+    /// `g_Screens`: three screens of 0x1c0 bytes; `+0xc0` (a byte) says
+    /// whether the screen views one of the battle cameras, `+0xc1`
+    /// (`g_DebugCamera` for the first) which.
+    pub const SCREENS: u32 = 0x0113_7000;
+    pub const SCREEN_SIZE: u32 = 0x1c0;
+    pub const SCREEN_CAMERA_ON: u32 = 0xc0;
+    pub const SCREEN_CAMERA: u32 = 0xc1;
+
+    /// `Cam_SetScreenCameraOn(screen, on)` (`0x007bc930`): the screen's
+    /// camera byte (`+0xc0`) for screens 0..=2, the others ignored.
+    pub fn set_screen_camera_on(mem: &mut impl Mem, screen: u32, on: u8) {
+        if screen <= 2 {
+            let at = mem.rebase(SCREENS) + SCREEN_SIZE * screen + SCREEN_CAMERA_ON;
+            mem.write(at, on);
+        }
+    }
+
     fn bits(x: f32) -> u32 {
         x87::round_trip(x).to_bits()
     }

@@ -1435,6 +1435,10 @@ ported! {
     sg_calcenvelope_normW @ 0x0084_5ec0 => extern "C" fn sg_calcenvelope_norm_w(lists: u32, out: u32, m: u32) {
         envelope::bridge::calc_envelope_norm_w(&mut mem(), lists, out, m);
     }
+    /// `Cam_SetScreenCameraOn(screen, on)`.
+    Cam_SetScreenCameraOn @ 0x007b_c930 => extern "C" fn cam_set_screen_camera_on(screen: u32, on: u32) {
+        camera::bridge::set_screen_camera_on(&mut mem(), screen, ffx_sg::lo8(on));
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

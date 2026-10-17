@@ -4938,3 +4938,44 @@ fn normal_envelope_snapshot() {
     let mut rng = Xorshift(0x5eed_0e02);
     normal_envelope_cases(&mut a, &mut b, &mut rng, 2000);
 }
+
+// Main round 13: the screens' camera bytes.
+fn screen_camera_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    for _ in 0..rounds {
+        let screen = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(5)
+        };
+        let on = rng.next();
+        twin(
+            "Cam_SetScreenCameraOn",
+            a,
+            b,
+            0x007b_c930,
+            &[screen, on],
+            |m| {
+                c::set_screen_camera_on(m, screen, ffx_sg::lo8(on));
+            },
+        );
+    }
+}
+
+#[test]
+fn screen_camera_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e11);
+    screen_camera_cases(&mut a, &mut b, &mut rng, 500);
+}
+
+#[test]
+fn screen_camera_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e12);
+    screen_camera_cases(&mut a, &mut b, &mut rng, 500);
+}

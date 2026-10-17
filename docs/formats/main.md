@@ -709,3 +709,12 @@ The products run as `sg_VmulScalar` (x), `sg_VmaddaScalar` (y) into the
 accumulator and `sg_VmaddScalar` (z); weights scale with `opus_vec3_scale`.
 A loop ends when a0 equals t8 in both words; a count equal to r0 (0)
 skips a weighted list.
+
+## Round 13: the screens' cameras
+
+`g_Screens` (`0x01137000`, three screens of 0x1c0 bytes) holds per screen
+a byte at `+0xc0` (the screen views one of the battle cameras; the
+screen's per-frame code then sets `g_Camera` to `g_Cameras + 0xda0 n`)
+and the camera `n` at `+0xc1` (`g_DebugCamera` for screen 0).
+`Cam_SetScreenCameraOn(screen, on)` (`0x007bc930`) sets the first for
+screens 0..2 and ignores the others.
