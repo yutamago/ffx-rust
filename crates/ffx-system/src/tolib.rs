@@ -3618,7 +3618,6 @@ pub mod bridge {
         width(mem, table)
     }
 
-
     /// The calls [`btl_search_rev_near_target`] makes outside this module.
     pub trait NearTarget<M> {
         /// `MsGetChrBtlPos(chr, vec)` into the 16-byte scratch `vec`.
@@ -3699,7 +3698,9 @@ pub mod bridge {
         let mut i = 0;
         while i < count(mem, n2_at) {
             for chr in 20..28u32 {
-                if entry(mem, monsters, i) & (1 << chr) != 0 && (near <= 0 || calls.dist(mem, chr) == 0) {
+                if entry(mem, monsters, i) & (1 << chr) != 0
+                    && (near <= 0 || calls.dist(mem, chr) == 0)
+                {
                     let p = pos(mem, calls, chr);
                     am[0] = dword(add(am[0], p[0]));
                     am[1] = 0.0;
@@ -3774,7 +3775,10 @@ pub mod bridge {
                 } else {
                     dword(div(dot, mul(dl, ql)))
                 };
-                let deg = dword(div(mul(calls.acos(mem, cos), 180.0), 3.141_592_741_012_573_2));
+                let deg = dword(div(
+                    mul(calls.acos(mem, cos), 180.0),
+                    3.141_592_741_012_573_2,
+                ));
                 let ratio = dword(div(ql, unit));
                 let score = dword(mul(deg, ratio));
                 if j == 0 || best_score > score {

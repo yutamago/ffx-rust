@@ -9228,3 +9228,146 @@ fn round15_counters_match_the_original_on_the_snapshot() {
     };
     round15_counters(&mut a, &mut b, &mut Xorshift(0x4015_0052));
 }
+
+/// Round 16's reverse nearest-target search over stand-in positions and
+/// distances, with the CRT's `_CIsqrt` and `_CIacos`.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::items_after_statements
+)]
+fn round16_near_target(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let table = alloc(a, b, 32 * 16);
+    let dists = alloc(a, b, 32);
+    let vec = alloc(a, b, 16);
+    let mut pos = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x04, 0x05,
+    ];
+    pos.extend_from_slice(&table.to_le_bytes());
+    pos.extend_from_slice(&[
+        0x8b, 0x4c, 0x24, 0x08, 0x8b, 0x10, 0x89, 0x11, 0x8b, 0x50, 0x04, 0x89, 0x51, 0x04, 0x8b,
+        0x50, 0x08, 0x89, 0x51, 0x08, 0x8b, 0x50, 0x0c, 0x89, 0x51, 0x0c, 0x31, 0xc0, 0xc3,
+    ]);
+    let s = stand_in8(a, b, 0xe40, &pos);
+    redirect(a, b, 0x0079_48e0, s);
+    let mut dist = vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x1f, 0x0f, 0xb6, 0x80];
+    dist.extend_from_slice(&dists.to_le_bytes());
+    dist.push(0xc3);
+    let s = stand_in8(a, b, 0xe80, &dist);
+    redirect(a, b, 0x0079_4e00, s);
+    // fld qword [esp+4]; call [esp+0xc]; ret; ... ; fstp st(0); ret
+    let tramp = stand_in8(
+        a,
+        b,
+        0xea0,
+        &[
+            0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90,
+            0x90, 0x90, 0xdd, 0xd8, 0xc3,
+        ],
+    );
+    struct Calls(u32);
+    impl Calls {
+        fn intrinsic(&self, m: &mut Oracle, sym: u32, x: f64) -> f64 {
+            let f = m.rebase(sym);
+            let bits = x.to_bits();
+            let r = m
+                .call(self.0, Conv::Cdecl, &[bits as u32, (bits >> 32) as u32, f])
+                .unwrap()
+                .st0
+                .unwrap();
+            m.call(self.0 + 16, Conv::Cdecl, &[]).unwrap();
+            r
+        }
+    }
+    impl t::NearTarget<Oracle> for Calls {
+        fn btl_pos(&mut self, m: &mut Oracle, chr: u32, vec: u32) {
+            eax(m, 0x0079_48e0, &[chr, vec]);
+        }
+        fn dist(&mut self, m: &mut Oracle, chr: u32) -> u32 {
+            eax(m, 0x0079_4e00, &[chr])
+        }
+        fn sqrt(&mut self, m: &mut Oracle, x: f64) -> f64 {
+            self.intrinsic(m, 0x0094_97b8, x)
+        }
+        fn acos(&mut self, m: &mut Oracle, x: f64) -> f64 {
+            self.intrinsic(m, 0x0094_98da, x)
+        }
+    }
+    let mut calls = Calls(tramp);
+    let mask = |rng: &mut Xorshift, lo: u32, n: u32| {
+        let m = (rng.next() & ((1 << n) - 1)) << lo;
+        if m == 0 {
+            1 << (lo + rng.next() % n)
+        } else {
+            m
+        }
+    };
+    for k in 0..400u32 {
+        for chr in 0..32u32 {
+            let v: [f32; 4] = if k % 9 == 0 && chr % 3 == 0 {
+                [0.0, 0.0, 0.0, 1.0]
+            } else {
+                [
+                    (rng.next() % 4000) as f32 / 10.0 - 200.0,
+                    (rng.next() % 100) as f32 / 10.0,
+                    (rng.next() % 4000) as f32 / 10.0 - 200.0,
+                    1.0,
+                ]
+            };
+            put(a, b, table + 16 * chr, v);
+            put(a, b, dists + chr, (rng.next() % 3 == 0) as u8 ^ 1);
+        }
+        let n1 = rng.next() % 4 + u32::from(k % 7 != 0);
+        let n2 = rng.next() % 4 + u32::from(k % 5 != 0);
+        for i in 0..20 {
+            put(
+                a,
+                b,
+                a.rebase(0x0133_d180) + 4 * i,
+                if i < n1 { mask(rng, 0, 20) } else { 0 },
+            );
+        }
+        for i in 0..8 {
+            put(
+                a,
+                b,
+                a.rebase(0x0133_d1d4) + 4 * i,
+                if i < n2 { mask(rng, 20, 8) } else { 0 },
+            );
+        }
+        put(a, b, a.rebase(0x0133_d17c), n1 as u16);
+        put(a, b, a.rebase(0x0133_d1d0), n2 as u16);
+        put(a, b, a.rebase(0x0133_d1f4), (rng.next() % 28) as u16);
+        let n_other = {
+            let c: u16 = Mem::read(a, a.rebase(0x0133_d1f4));
+            if c < 0x14 { n2 } else { n1 }
+        };
+        let want = eax(a, 0x0089_90f0, &[]);
+        let got = t::btl_search_rev_near_target(b, vec, &mut calls);
+        if n_other > 0 {
+            assert_eq!(want, got, "case {k}");
+        }
+        let v: [u32; 4] = Mem::read(b, vec);
+        Mem::write(a, vec, v);
+        same_memory("reverse near target", a, b);
+    }
+}
+
+#[test]
+fn round16_near_target_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_near_target(&mut a, &mut b, &mut Xorshift(0x4016_0001));
+}
+
+#[test]
+fn round16_near_target_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_near_target(&mut a, &mut b, &mut Xorshift(0x4016_0002));
+}

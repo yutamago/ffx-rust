@@ -8856,7 +8856,7 @@
 0x00898dc0 function TOBwakkStart              # g_MagicImports slot 656 (10 overlays): 0x0133f520 = 0; TOSeqStartSceneDrawContinue(2, "bwakk"); byte 0x0133c93f = 1; hidden from the dump
 0x00898df0 function TOBtlPadScrollDown        # fh v3:exact 0x00898d60; 0x0133c938 == 0: 0x0133f7a8 = w+0x3c; w+0x3c += TOGetLineFeedHeight(), w+0x88 = 0x00898e40
 0x00898e20 function TOBtlPadScrollUp          # fh v3:exact 0x00898d90; w+0x3c -= TOGetLineFeedHeight(), w+0x88 = 0x00898e40 (ret)
-0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060; (): writes nothing outside its frame; returns in eax the chosen target index (nearest / angle-weighted from MsGetChrBtlPos, MsGetChrDist, _CIsqrt, _CIacos), read by TOBtlGetTargetPad 0x0089d4bb
+0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060; (): returns (eax, the decompilation drops it) the other side's list index with the lowest angle-from-axis (deg, _CIacos) x distance / nearest distance (min 1), the axis between the party (0x0133d180) and monster (0x0133d1d4; distance-0 ones if any) mean x/z positions, from the cursor 0x0133d1f4; ties to the first entry's last target; writes nothing; read by TOBtlGetTargetPad 0x0089d4bb
 0x008997c0 function TOBtlSetChangeHelpMes     # fh v3:exact 0x00899730
 0x00899870 function TOBtlSetCommand           # fh v3:exact 0x008997e0
 0x00899970 function TOBtlSetCommandHelpMes       # layout+callees: sorts between TOBtlSetCommand and TOBtlSetCurPos, and its named callees match the Switch 0x710049e4c0 TOBtlSetCommandHelpMes's (similarity 1.00: MsGetComData, TOGetMessageWH); symbols from Fahrenheit's server export

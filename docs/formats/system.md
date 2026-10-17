@@ -319,9 +319,15 @@ runs into the next count, as in the original.
 `TOBtlMemoryCursorPos` saved, but only if the window key still matches.
 The scroll is looked up through the found list index used as a window
 number. That is how it is compiled, and the port keeps it.
-`TOBtlSearchRevNearTarget` (`0x008990f0`) writes nothing, but returns
-the index of the target it picks in eax. The decompilation misses that
-return; `TOBtlGetTargetPad` reads it. It is not ported yet.
+`TOBtlSearchRevNearTarget` (`0x008990f0`) writes nothing. It returns, in
+eax, the index of the target it picks; the decompilation misses that
+return, and `TOBtlGetTargetPad` reads it. The axis runs between the mean
+x/z positions of the two sides; on the monster side only those at
+distance 0 count, if there are any. From the cursor character, each
+target on the other side scores its angle from that axis (degrees,
+`_CIacos`) times its distance, divided by the nearest distance (at least
+1). The lowest score wins. If the other side's list is empty, the
+original returns an uninitialised word; the port returns 0.
 
 ## Achievement counters
 
