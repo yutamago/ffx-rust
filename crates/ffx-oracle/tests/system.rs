@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    accessor, btl, cd, config, container, daps, dtor, files, fixup, instance, math, menu, msg,
-    names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, instance, math, menu,
+    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
 };
 
 /// The game thread's x87 control word.
@@ -16386,4 +16386,294 @@ fn round29_quick_recover_matches_the_original_on_the_snapshot() {
         return;
     };
     round29_quick_recover(&mut a, &mut b, &mut Xorshift(0x4029_0012));
+}
+
+/// A cdecl stand-in copying a tag and its first `n` arguments to `*cursor`
+/// (advanced past them), then running `tail` (which may set `eax`) and
+/// returning.
+fn copy_logger(cursor: u32, tag: u32, n: u8, tail: &[u8]) -> Vec<u8> {
+    // push esi; push edi; lea esi, [esp+0xc]; mov edi, [cursor]
+    let mut v = vec![0x56, 0x57, 0x8d, 0x74, 0x24, 0x0c, 0x8b, 0x3d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    // mov dword [edi], tag; add edi, 4; mov ecx, n; rep movsd
+    v.extend_from_slice(&[0xc7, 0x07]);
+    v.extend_from_slice(&tag.to_le_bytes());
+    v.extend_from_slice(&[0x83, 0xc7, 0x04, 0xb9, n, 0, 0, 0, 0xf3, 0xa5, 0x89, 0x3d]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x5f, 0x5e]);
+    v.extend_from_slice(tail);
+    v.push(0xc3);
+    assert!(v.len() <= 0x80, "a stand-in slot");
+    v
+}
+
+/// `eax = table[([esp+off] >> shift) & 7]`.
+fn table_tail(off: u8, shift: u8, table: u32) -> Vec<u8> {
+    let mut v = vec![
+        0x8b, 0x44, 0x24, off, 0xc1, 0xe8, shift, 0x83, 0xe0, 0x07, 0x8b, 0x04, 0x85,
+    ];
+    v.extend_from_slice(&table.to_le_bytes());
+    v
+}
+
+/// `TOBtlDrawCommandWindow` over stand-ins for the clock, the cosine, the
+/// draw calls, the command checks and the getters; the remaps and the
+/// truncations are the original's.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names
+)]
+fn round30_command_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use cmdwin::bridge as c;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let clock = alloc(a, b, 8);
+    let scratch = alloc(a, b, 8);
+    let win = alloc(a, b, 0x100);
+    let list = alloc(a, b, 0x80);
+    let records = alloc(a, b, 8 * 0x20);
+    let weapons = alloc(a, b, 8 * 8);
+    let tables = alloc(a, b, 6 * 0x20);
+    let strings = 0x0123_4000u32;
+    let slot = a.rebase(0x00b0_c3b4);
+    let fcos = a.rebase(0x00b0_bfc0);
+    a.write(fcos, &[0xd9u8, 0xff, 0xc3]).unwrap();
+    b.write(fcos, &[0xd9u8, 0xff, 0xc3]).unwrap();
+    put(a, b, slot, fcos);
+    let stand = |a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, code: &[u8]| {
+        let s = stand_in8(a, b, 0x80 * k, code);
+        if sym != 0 {
+            redirect(a, b, sym, s);
+        }
+        s
+    };
+    // graphicGetTime: fld qword [clock]
+    let mut v = vec![0xdd, 0x05];
+    v.extend_from_slice(&clock.to_le_bytes());
+    v.push(0xc3);
+    stand(a, b, 0, 0x0064_1410, &v);
+    // fld qword [esp+4]; call [slot]; ret
+    let mut v = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x15];
+    v.extend_from_slice(&slot.to_le_bytes());
+    v.push(0xc3);
+    let cos_thunk = stand(a, b, 1, 0, &v);
+    for (k, sym, n) in [
+        (2, 0x0090_3ee0u32, 11u8),
+        (3, 0x008e_7d30, 12),
+        (4, 0x008e_6cc0, 7),
+        (5, 0x008f_dee0, 4),
+        (6, 0x008e_6af0, 9),
+        (7, 0x0090_55c0, 6),
+        (8, 0x0090_4ba0, 10),
+    ] {
+        stand(a, b, k, sym, &copy_logger(cursor, sym, n, &[]));
+    }
+    let draw_step = stand(a, b, 9, 0, &copy_logger(cursor, 0x88, 1, &[]));
+    // TOCheckBtlCommandUse(chr, command): table 0 by the command
+    stand(
+        a,
+        b,
+        10,
+        0x0089_aca0,
+        &copy_logger(cursor, 0x0089_aca0, 2, &table_tail(8, 0, tables)),
+    );
+    // MsGetComData(id, &strings): *strings = strings; records + (id & 7) * 0x20
+    let mut tail = vec![0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00];
+    tail.extend_from_slice(&strings.to_le_bytes());
+    tail.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x05, 0x05,
+    ]);
+    tail.extend_from_slice(&records.to_le_bytes());
+    stand(
+        a,
+        b,
+        11,
+        0x0079_a4b0,
+        &copy_logger(cursor, 0x0079_a4b0, 1, &tail),
+    );
+    // the counts: tables 1..=4
+    for (k, sym, n, off, shift) in [
+        (12, 0x0079_04b0u32, 1u8, 4u8, 0u8),
+        (13, 0x0078_cf70, 2, 8, 5),
+        (14, 0x0079_add0, 1, 4, 0),
+        (15, 0x0079_ae50, 1, 4, 0),
+    ] {
+        let table = tables + 0x20 * (k - 11);
+        stand(
+            a,
+            b,
+            k,
+            sym,
+            &copy_logger(cursor, sym, n, &table_tail(off, shift, table)),
+        );
+    }
+    // MsGetSaveWeapon(id, &x): weapons + (id & 7) * 8
+    let mut tail = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x03, 0x05,
+    ];
+    tail.extend_from_slice(&weapons.to_le_bytes());
+    stand(
+        a,
+        b,
+        16,
+        0x007a_bbd0,
+        &copy_logger(cursor, 0x007a_bbd0, 1, &tail),
+    );
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let call_at =
+        |m: &mut Oracle, at: u32, args: &[u32]| m.call(at, Conv::Cdecl, args).unwrap().eax;
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let cos = |m: &mut Oracle, v: f64| {
+        let bits = v.to_bits();
+        m.call(cos_thunk, Conv::Cdecl, &[bits as u32, (bits >> 32) as u32])
+            .unwrap()
+            .st0
+            .unwrap()
+    };
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let frame_word = a.stack_range().end - 0x114;
+    let pick = |rng: &mut Xorshift, v: &[i32]| v[(rng.next() % v.len() as u32) as usize];
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        for t in 0..8 {
+            put(
+                a,
+                b,
+                tables + 4 * t,
+                pick(rng, &[0, 1, -1, -2, -4, -4, 5, 0x10]),
+            );
+            for g in 1..5 {
+                put(
+                    a,
+                    b,
+                    tables + 0x20 * g + 4 * t,
+                    pick(rng, &[-3, 0, 1, 7, 99, 1234, 9999, -1, i32::MAX]),
+                );
+            }
+            put(a, b, records + 0x20 * t, (rng.next() % 0x400) as u16);
+            put(a, b, records + 0x20 * t + 0x14, rng.next() as u8);
+            put(
+                a,
+                b,
+                weapons + 8 * t + 4,
+                [
+                    rng.next() as u8 % 4,
+                    rng.next() as u8 % 4,
+                    rng.next() as u8 % 4,
+                ],
+            );
+        }
+        for e in 0..0x40 {
+            let id = if rng.next().is_multiple_of(6) {
+                0xff
+            } else {
+                rng.next() % 0x40
+            };
+            put(a, b, list + 2 * e, id as u16);
+        }
+        // k = 0: the cursor plate with cos(5t) just under 0.5, which the f32
+        // rounding of the cosine lifts to 0.5 (alpha 112, not 111)
+        let columns = if k == 0 {
+            2
+        } else {
+            pick(rng, &[1, 2, 2, 2, 3, 4, -1, 1]) as i16
+        };
+        let count = pick(rng, &[0, 1, 3, 5, 8, 12, 17, 24, 31, -2]);
+        let first = (rng.next() % 30) as i16 - 3;
+        let at = if k == 0 {
+            1
+        } else {
+            (rng.next() % 16) as i16 - 2
+        };
+        let pitch = if rng.next().is_multiple_of(8) {
+            -((rng.next() % 300) as i16)
+        } else {
+            100 + (rng.next() % 800) as i16
+        };
+        let fl = |rng: &mut Xorshift, m: u32, d: f32| (rng.next() % m) as f32 / d;
+        // the window's clock: elapsed from -0.2 to 0.7 s, sometimes exactly
+        // 0.3 (the ripples' start), not opened yet, or opened in the future
+        let now = f64::from(1 + rng.next() % 1000) / 8.0;
+        let opened = match rng.next() % 8 {
+            0 => 0f32,
+            1 => -1.5,
+            2 => now as f32 - 0.3,
+            _ => (now - f64::from(fl(rng, 9000, 10000.0)) + 0.2) as f32,
+        };
+        let now = if k == 0 {
+            let now = (0.5f64.acos() + 1e-9 / 0.75f64.sqrt()) / 5.0;
+            put(a, b, win + 0xdc, opened);
+            now
+        } else if rng.next().is_multiple_of(10) {
+            put(a, b, clock, 1.0f64 + f64::from(0.3f32));
+            put(a, b, win + 0xdc, 1.0f32);
+            1.0 + f64::from(0.3f32)
+        } else {
+            put(a, b, win + 0xdc, opened);
+            now
+        };
+        put(a, b, clock, now);
+        put(a, b, win + 8, rng.next() as u16);
+        put(a, b, win + 0x20, list);
+        put(a, b, win + 0x24, count);
+        let parts = pick(rng, &[0, 1, 2, 3, 4, 6, 6]) as i16;
+        put(a, b, win + 0x28, parts);
+        put(a, b, win + 0x2a, (rng.next() % 3) as i16);
+        for p in 0..6 {
+            let kind = pick(rng, &[1, 2, 3, 4, 5, 6, 7, 0x10, 0x10, 0, 9, 0x11]) as u8;
+            put(a, b, win + 0x2c + 2 * p, [rng.next() as u8, kind]);
+        }
+        put(a, b, win + 0x38, columns);
+        put(a, b, win + 0x3a, (1 + rng.next() % 5) as i16);
+        put(a, b, win + 0x40, first);
+        put(a, b, win + 0x42, first + at);
+        put(a, b, win + 0x62, pitch);
+        put(a, b, win + 0x66, (50 + rng.next() % 600) as i16);
+        for o in [0x68, 0x6c, 0x70, 0x74, 0x7c] {
+            put(a, b, win + o, fl(rng, 400_000, 200.0) - 50.0);
+        }
+        put(a, b, win + 0x88, draw_step);
+        put(a, b, win + 0xe0, 0u32);
+        put(a, b, win + 0xe4, rng.next() % 2);
+        // the original's frame word under the counts' alpha (stack garbage
+        // until the panel or a label sets it): planted in its frame
+        let garbage = rng.next();
+        Mem::write(a, frame_word, garbage);
+        put(a, b, scratch + 4, garbage);
+        let r = eax(a, 0x0089_f370, &[win]);
+        let ours = c::to_btl_draw_command_window(b, win, scratch, call, call_at, fcall, cos, remap);
+        assert_eq!(r, ours, "command window {k}");
+        let v: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("command window {k}"), a, b);
+    }
+}
+
+#[test]
+fn round30_command_window_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round30_command_window(&mut a, &mut b, &mut Xorshift(0x4030_0011));
+}
+
+#[test]
+fn round30_command_window_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round30_command_window(&mut a, &mut b, &mut Xorshift(0x4030_0012));
 }

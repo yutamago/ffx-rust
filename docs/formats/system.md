@@ -1005,3 +1005,80 @@ A text no wider than `w` is drawn as is. A wider one:
   `left + w - ellipsis width` stops it. A `G` (0x47) there is narrowed by
   the `G` glyph's width until it fits and is drawn. The ellipsis follows
   at the cursor. A text that ends first gets no ellipsis.
+
+## The battle command window (round 30)
+
+`TOBtlDrawCommandWindow(w)` (`0x0089f370`, cdecl, returns 0;
+`crates/ffx-system/src/cmdwin.rs`) draws the command, skill and item
+lists of a battle. The TO window fields it reads:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0x08` | i16 | acting character |
+| `+0x20`, `+0x24` | u16 *, i32 | command IDs, their count |
+| `+0x28` | i16 | parts per row |
+| `+0x2a` | i16 | 1: show counts of 0 or less |
+| `+0x2c` | byte pairs | the parts; the kind is the second byte |
+| `+0x38`, `+0x3a` | i16 | columns, visible rows |
+| `+0x40`, `+0x42` | i16 | first visible entry, cursor |
+| `+0x62`, `+0x66` | i16 | cell width, label width |
+| `+0x68..+0x74` | f32 x 4 | box (x0, y0, x1, y1), the scissor |
+| `+0x7c` | f32 | rows' top |
+| `+0x88` | code | the window's own draw step, called with `w` |
+| `+0xdc`, `+0xe0` | f32 | when it opened, time since (written) |
+| `+0xe4` | u32 | labels after an icon (non-zero) or centred (0) |
+
+All sizes are PS2 units through `graphicUiRemapX2`/`Y2`, except the cell
+width `+0x62`, which is used as is.
+
+**Panel animation** (two or more columns). `+0xe0` is
+`graphicGetTime() - +0xdc` when `+0xdc > 0`, else 0.
+
+- Cursor plate, when `cursor - first` is in `0..3 cols`: the sheet
+  (`TOMkpShapeXYWHUVC2` shape -1) at `X2(154) + col × +0x62`,
+  `Y2(835 + 52 row)`, `+0x62` × `Y2(50)`, UV 1619, 105 to 1920, 156. Its
+  alpha is `trunc(cos(5 t) × 32 + 96)`, the cosine rounded to f32.
+- Three plate rows `k` at `t = +0xe0 - 0.1 k` (each step rounded to f32).
+  A row's plate slides to `((X2(154) + +0x62) t / 0.1 - +0x62`, held
+  between `-+0x62` and `X2(154)`: `Y2(835 + 52k)`, `+0x62` × `Y2(50)`,
+  UV 0, 0 to 438, 50, colour 0x60808080. Its gloss strip at the same x:
+  `Y2(838 + 52k)`, `X2(234)` × `Y2(44)`, UV 1553, `53k + 270` to 1788,
+  `53k + 315`, 0x40808080. A second plate slides to
+  `(X2(154) + 2 × +0x62) t / 0.1 - +0x62`, held up to `X2(154) + +0x62`.
+- From `+0xe0 ≥ 0.3` (the f32 0.3), the ripples: eight
+  `DrawWaterWaveShapeC2` pieces per row, half a cell wide (`+0x62 × 0.5`)
+  and `Y2(3)` high, `uw` 210, `vh` 3, speeds 40. Two strips, at
+  `Y2(835 + 52k)` (`v = 20(k + 1)`) and `Y2(880 + 52k)` (`v = 50(k + 1)`).
+  Each strip has two tiles: the left tile at `X2(154)` and `+ ½` cell,
+  with `u` 0 and 210, and the right tile at `+ 1` and `+ 1½` cells, with
+  `u` `20k` and `20k + 210`. A tile's first piece fades from 0x00808080
+  to 0x40808080, the second back. Pieces go tile by tile, upper strip
+  first.
+
+**Frame.** `DrawCrossMenuScrollParts(X2(150) + +0x62, Y2(835), X2(8),
+Y2(154), first / cols, rows, lines)`. `lines` is
+`(count - 1 + cols) / cols`, its low word sign-extended. Then
+`TOMakePktScissor` of the box, each edge truncated (`ftol2_sse`), and
+`+0x88(w)`.
+
+**Rows.** Entries run from `max(first, 0)` (the count when `first` is
+past it) for `cols × rows`, capped at the count. An entry of 0xff, or
+one `TOCheckBtlCommandUse(chr, id)` answers -4, is skipped. The cell's
+`x` is `(i % cols) × +0x62 + trunc(+0x68)`. Its `y` is
+`trunc(Y2((i - first) / cols × 52) + +0x7c)`. `MsGetComData(id,
+&strings)` gives the record, and the label is `strings + record[0]`.
+The parts, by kind:
+
+| Kind | Draws |
+|---|---|
+| 1 | `DrawCrossMenuIconXYWHRGBA(X2(37) + x, Y2(3) + y, X2(29), Y2(36), record[0x14], 0x80 x 4)` |
+| 2, 4, 5, 6 | `MsGetSaveItemNum(id)`, `MsGetCommandMP(chr, record)`, `MsGetRamChrHP(id)`, `MsGetRamChrMP(id)`: when above 0 or `+0x2a == 1`, `ToMakeBtlEasyDigitRight(n, (x + +0x62) - X2(28), y, alpha, 0.78, 1.0)` |
+| 7 | `MsGetSaveWeapon(id)` record `p`: icon `2 p[4] + 1 + p[5]` at `X2(37) + x`, `Y2(2) + y`; when `p[4] == p[6]` icon 0x31 there too |
+| 0x10 | `QuickRecoverMenuDraw(label, x', y, +0x66, alpha, 0.78, 1.0, align, cursor row, 0)`. With `+0xe4` set, `x' = X2(72) + x` and `align` 0; otherwise `x' = +0x62 × 0.5 + x` and `align` 1 |
+
+Other kinds draw nothing. The counts' alpha is the low byte of one word
+of the original's frame. The panel's loops leave 0x9c (156) in it, or
+after the ripples the bits of 150.0 (low byte 0). A label sets the low
+byte to 1 when `TOCheckBtlCommandUse` was negative, else 0, and passes
+the whole word as its alpha. With one column, nothing sets it before
+the first label: the counts then get stack garbage.
