@@ -5340,3 +5340,128 @@ fn pc_read_snapshot() {
     let mut rng = Xorshift(0x5eed_0e62);
     pc_read_cases(&mut a, &mut b, &mut rng, 200);
 }
+
+// Main round 14: the CD read queue (`cd_read_q_clear`,
+// `CDfileReadSector_CD`).
+
+/// Busy bytes and ids of the 64 requests, from a few ids so some match.
+fn fill_read_queue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, all_busy: bool) {
+    use ffx_sg::cdread::bridge as c;
+    let base = c::CHANNELS.ptr(a).addr;
+    for i in 0..64 {
+        let r = base + 0x38 * i;
+        for k in 0..14 {
+            put(a, b, r + 4 * k, rng.next());
+        }
+        let busy = if all_busy || rng.below(3) != 0 {
+            rng.next() | 1
+        } else {
+            0
+        };
+        put(a, b, r + 0x31, ffx_sg::lo8(busy));
+        let id = match rng.below(4) {
+            0 => rng.next(),
+            _ => rng.below(6),
+        };
+        put(a, b, r + 0x24, id);
+    }
+}
+
+fn read_q_clear_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::cdread::bridge as c;
+    for _ in 0..rounds {
+        fill_read_queue(a, b, rng, false);
+        let id = match rng.below(4) {
+            0 => rng.next(),
+            1 => 0u32.wrapping_sub(rng.below(3)),
+            _ => rng.below(6),
+        };
+        twin("cd_read_q_clear", a, b, 0x0076_e130, &[id], |m| {
+            c::cd_read_q_clear(m, id.cast_signed());
+        });
+    }
+}
+
+#[test]
+fn read_q_clear_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e71);
+    read_q_clear_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn read_q_clear_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e72);
+    let id = 0;
+    twin(
+        "cd_read_q_clear (game)",
+        &mut a,
+        &mut b,
+        0x0076_e130,
+        &[id],
+        |m| {
+            ffx_sg::cdread::bridge::cd_read_q_clear(m, 0);
+        },
+    );
+    read_q_clear_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+fn read_sector_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::cdread::bridge as c;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 96, c::MOVIE_ERR, 3, 0);
+    let opts = block(a, b, rng, 0x20);
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        if !(from_game && n == 0) {
+            let all = rng.below(5) == 0;
+            fill_read_queue(a, b, rng, all);
+            let id = match rng.below(4) {
+                0 => 0xffff - rng.below(2),
+                1 => rng.next(),
+                _ => rng.below(0x1000),
+            };
+            set(a, b, c::READ_ID, id.cast_signed());
+            set(a, b, c::CHANNEL_KEEP_NAMES, rng.below(2) * rng.next());
+        }
+        let args = [
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            if rng.below(2) == 0 { 0 } else { opts },
+        ];
+        twin("CDfileReadSector_CD", a, b, 0x0076_bdd0, &args, |m| {
+            c::cd_file_read_sector(&mut H(m), args[0], args[1], args[2], args[3], args[4])
+        });
+    }
+}
+
+#[test]
+fn read_sector_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e73);
+    read_sector_cases(&mut a, &mut b, &mut rng, 300, false);
+}
+
+#[test]
+fn read_sector_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e74);
+    read_sector_cases(&mut a, &mut b, &mut rng, 100, true);
+}

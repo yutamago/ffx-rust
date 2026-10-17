@@ -6,6 +6,7 @@
 
 pub mod assert;
 pub mod camera;
+pub mod cdread;
 pub mod chpacket;
 pub mod cloth;
 pub mod control;

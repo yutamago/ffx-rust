@@ -767,3 +767,29 @@ returned, then -1 (also with no id table).
 read a file through `_Sg_PcRead(path, kind)` (`0x0083b1d0`, kind 0 and
 1, platform) and set the memory manager's current address
 (`Sg_MemSetCurrentAddr`, `0x0083c4e0`) to the result, which they return.
+
+## Round 14: the CD read queue (`crates/ffx-sg/src/cdread.rs`)
+
+The PS2 CD-library emulation (`libmscd.c`) keeps 64 read requests
+(`READ_Q_CNT`) at `g_CdChannels` (`0x01127c80`, 0x38 bytes each): size
+at `+0` and `+0x2c`, buffer `+4`, PS2 file number `+8` (-1 for a read
+by sector, as `+0x28`), the caller's four option words `+0xc..+0x1c`,
+start sector `+0x1c`, callback `+0x20`, request id `+0x24`, busy byte
+`+0x31`, cancel byte `+0x33`, a word at `+0x34`. Their names (0x80
+bytes each) are at `g_CdChannelNames` (`0x022fb6c0`). Ids come from
+`g_CdReadId` (`0x01128a80`): incremented per request, back to 1 past
+0xffff. Request 64 would start at `g_CdReadId` itself.
+
+`cd_read_q_clear(id)` (`0x0076e130`, `g_CdLib + 0x1c`) sets the cancel
+byte of every busy request with that id, or of every busy request when
+`id < 1`. Its `eax` is the loop pointer, garbage.
+
+`CDfileReadSector_CD(sector, buffer, size, callback, opts)`
+(`0x0076bdd0`, `g_CdLib + 0x78`) queues a read by sector in the first
+request whose busy byte is clear: busy set, buffer, file number and
+`+0x28` -1, the option words from `opts + 0xc..+0x1c` (zeros without
+`opts`), callback, a new id, size twice, sector, name `"DVD FILE"`
+(unless `g_CdChannelKeepNames`), `+0x34` cleared; it returns the id.
+With all 64 busy the assertion `q_cnt != READ_Q_CNT` (`libmscd.c`,
+line 0x6a7) goes to `movie_err` and request 64 is written anyway, its
+size landing on `g_CdReadId` after the id was taken.

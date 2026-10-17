@@ -4,7 +4,7 @@
 
 use ffx_sg::quat::Crt;
 use ffx_sg::{
-    camera, chpacket, cloth, control, envelope, gs, light, player, quat, seq, state, vec,
+    camera, cdread, chpacket, cloth, control, envelope, gs, light, player, quat, seq, state, vec,
 };
 
 use super::{mem, ported};
@@ -17,6 +17,14 @@ ported! {
     /// `get_read_buffer()`.
     get_read_buffer @ 0x0076_dc50 => extern "C" fn get_read_buffer() -> u32 {
         state::bridge::get_read_buffer(&mem())
+    }
+    /// `CDfileReadSector_CD(sector, buffer, size, callback, opts)`.
+    CDfileReadSector_CD @ 0x0076_bdd0 => extern "C" fn cd_file_read_sector(sector: u32, buffer: u32, size: u32, callback: u32, opts: u32) -> i32 {
+        cdread::bridge::cd_file_read_sector(&mut mem(), sector, buffer, size, callback, opts)
+    }
+    /// `cd_read_q_clear(id)`.
+    cd_read_q_clear @ 0x0076_e130 => extern "C" fn cd_read_q_clear(id: i32) {
+        cdread::bridge::cd_read_q_clear(&mut mem(), id);
     }
     /// `read_err_disp_set(v)` (a byte).
     read_err_disp_set @ 0x0076_e5e0 => extern "C" fn read_err_disp_set(v: u32) {

@@ -4200,6 +4200,7 @@
 0x0076b7e0 function eiWaitLoop                # fh switch:bsim1.00 0x71002f17e0
 0x0076b8d0 function eidprintfPrint            # fh v3:exact 0x0076b9e0
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
+0x0076bdd0 function CDfileReadSector_CD # cdecl(sector, buffer, size, callback, opts) -> id: queues a read by sector in the first free g_CdChannels request (+0x1c sector, +4 buffer, +0/+0x2c size, +0x20 callback, +8/+0x28 -1, opts' words +0xc..+0x18 or 0), name "DVD FILE" unless g_CdChannelKeepNames, returns the new g_CdReadId; all 64 busy: "q_cnt != READ_Q_CNT" (libmscd.c 0x6a7) to movie_err and request 64 written anyway; g_CdLib slot +0x78 (CdEnvInit; the HDD path 0x00a42870 wraps it); name from Fahrenheit's Switch CDfileReadSector_CD (0x710031f090, 396 bytes against our 408, sole callee movie_err; of the five Switch users of "q_cnt != READ_Q_CNT" the others are 224, 280, 828 and 1224 bytes); ported in ffx_sg::cdread (main round 14)
 0x0076bf70 function cd_ModuleFileRead_0076bf70   # (file, sector, size, ...): a libmscd.c read request (cd_module_file_sector_rel / cd_size_from_table, CDfileName_PC), "q_cnt != READ_Q_CNT" assert, "HDD FILE" / "DVD FILE"; own name
 0x0076c250 function cd_module_file_sector_rel # cdecl(n): cd_file_sector(n + g_CdLib+0x20, the module's first file number), a tail jump; callers 0x0076b970, 0x0076bf70; name ours
 0x0076c270 function cd_module_file_sector     # (module, n): cd_file_sector(i16 [g_CdLib+0x2c][module] + n); name ours
@@ -4236,6 +4237,7 @@
 0x0076dec0 function printf_init_over             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'pach dbgPrintf(%d)\\n'; Switch 0x7100320220 printf_init_over (symbols from Fahrenheit's server export)
 0x0076df40 function printf_mask_set              # layout: alphabetical run between printf_init_over and printf_write (1 unnamed in the gap); Switch 0x710031ff40 printf_mask_set is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0076df80 function printf_write                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '------------- dbgPrintf.log write done. -------------\\n'; Switch 0x7100320310 printf_write (symbols from Fahrenheit's server export)
+0x0076e130 function cd_read_q_clear # cdecl(id): sets the cancel byte (+0x33) of each busy (+0x31) g_CdChannels request whose id (+0x24) is id, of all busy ones when id < 1; returns garbage in eax; g_CdLib slot +0x1c (CdEnvInit 0x0076cff0); name from Fahrenheit's Switch cd_read_q_clear (0x710031e6f0, an 80-byte libmscd.c function without calls; shape lead, not a matched body); ported in ffx_sg::cdread (main round 14)
 0x0076e5e0 function read_err_disp_set         # (v): byte 0x01128a87 = v; Fahrenheit Switch BSim 1.00 0x710031ea70
 0x0076e630 function read_thread_init          # fh v3:bsim1.00 0x0076e740
 0x0076e640 function sa_read_callback          # fh v3:exact 0x0076e750
@@ -14867,6 +14869,7 @@
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
 0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
 0x01127c80 label g_CdChannels # CD channel records, 0x38 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
+0x01128a80 label g_CdReadId # i32: last read-request id, 1..=0xffff (Cd_QueueRead, CDfileReadSector_CD wrap it to 1 past 0xffff); request 64 of g_CdChannels starts here, so an overfull queue overwrites it; name ours
 0x01128a90 label    g_Cd_ExSizes              # u32 per PS2 file number: pc_sizetbl_set_Ex() (CdEnvInit); CDfileSize_CD_EX indexes it with number + g_CdLib_FileBase
 0x01128a94 label    g_Cd_ExSizeCount          # entries of g_Cd_ExSizes (pc_sizetbl_set_Ex); CDfileSize_CD_EX returns -1 at or past it
 0x01128aac label    g_Cd_DiskOpenCheck        # byte: disk_open_check_set; CdEnvInit clears it; the read loop 0x0076ccb0 reads it
