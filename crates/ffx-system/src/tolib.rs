@@ -8826,4 +8826,104 @@ pub mod bridge {
         ];
         call(mem, BTL_EASY_FONT, &args);
     }
+
+    /// `TOMkpRotateShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0,
+    /// c1, angle)` (`0x00902ef0`): a UI shape quad turned by `angle`
+    /// (radians) about its centre, drawn as four vertices by
+    /// `graphicDrawUIElement(rec, texture, 1, 4, 0)` without clipping.
+    ///
+    /// Shape -1 divides the UVs by the size of image 0x3e80
+    /// (`TOGetImageWH`) and uses its texture; shapes 0..=0xc6 and
+    /// 0xc8..=0x18e use sheet 0x3e00, 0x190..=0x256 sheet 0x3f00 and
+    /// 0x258..=0x289 sheet 0x3dc0 (`TOGetShapTextureName`). Other shapes
+    /// leave the texture unset in the original (a stale stack word); the
+    /// port passes 0.
+    ///
+    /// With the half size `hw`, `hh` (by the f64 `0x00b92220`, 0.5), the
+    /// centre `c` and `cos`, `sin` of the angle (`CIcos`/`CIsin`,
+    /// `0x0088b3e0`/`0x0088c3a0`, through `fcall`), the corners are
+    /// `c + R(∓hw, ∓hh)` in the order (-hw, -hh), (hw, -hh), (hw, hh),
+    /// (-hw, hh), each through `graphicUiRemapX2`/`Y2` (`remap`). The
+    /// vertices carry the UVs (u0, v1), (u1, v1), (u1, v0), (u0, v0) and
+    /// the colours `c0`, `c1`, `c1`, `c0`. `scratch` (0xa0 bytes) holds the
+    /// image size at `+0` and the record at `+8`.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    pub fn to_mkp_rotate_shape_xywhuv_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 12],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        const IMAGE_WH: u32 = 0x008a_c400;
+        const SHAPE_TEXTURE: u32 = 0x008a_c8c0;
+        const DRAW_UI: u32 = 0x0063_eee0;
+        const CI_COS: u32 = 0x0088_b3e0;
+        const CI_SIN: u32 = 0x0088_c3a0;
+        let [shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle] = args;
+        let float = |bits: u32| f64::from(f32::from_bits(bits));
+        let half: f64 = mem.read(mem.rebase(0x00b9_2220));
+        let half_w = (float(w) * half) as f32;
+        let half_h = (float(h) * half) as f32;
+        let centre_x = f64::from((float(w) * half + float(x)) as f32);
+        let centre_y = f64::from((float(h) * half + float(y)) as f32);
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let rec = scratch.wrapping_add(8);
+        let mut uv = [u0, v0, u1, v1].map(f32::from_bits);
+        let texture = if shape == u32::MAX {
+            call(mem, IMAGE_WH, &[0x3e80, scratch, scratch.wrapping_add(4)]);
+            let image_w = f64::from(mem.read::<f32>(scratch));
+            let image_h = f64::from(mem.read::<f32>(scratch.wrapping_add(4)));
+            for (k, v) in uv.iter_mut().enumerate() {
+                let size = if k % 2 == 0 { image_w } else { image_h };
+                *v = (f64::from(*v) / size) as f32;
+            }
+            call(mem, SHAPE_TEXTURE, &[0x3e80])
+        } else {
+            let mut texture = 0;
+            for (first, last, sheet) in [
+                (0, 0xc6, 0x3e00),
+                (200, 0x18e, 0x3e00),
+                (400, 0x256, 0x3f00),
+                (600, 0x289, 0x3dc0),
+            ] {
+                if (first..=last).contains(&shape) {
+                    texture = call(mem, SHAPE_TEXTURE, &[sheet]);
+                }
+            }
+            texture
+        };
+        let [u0, v0, u1, v1] = uv;
+        let cos = f64::from(fcall(mem, CI_COS, &[angle]) as f32);
+        let sin = f64::from(fcall(mem, CI_SIN, &[angle]) as f32);
+        let (hw, hh) = (f64::from(half_w), f64::from(half_h));
+        // the original's products and sums, each kept at double precision
+        let left_x = -hw * cos + centre_x;
+        let left_y = sin * -hw + centre_y;
+        let right_x = cos * hw + centre_x;
+        let right_y = sin * hw + centre_y;
+        let (sin_hh, cos_hh) = (sin * hh, cos * hh);
+        let (sin_neg_hh, cos_neg_hh) = (-hh * sin, -hh * cos);
+        let corners = [
+            (left_x - sin_hh, left_y + cos_hh, u0, v1, c0),
+            (right_x - sin_hh, right_y + cos_hh, u1, v1, c1),
+            (right_x - sin_neg_hh, cos_neg_hh + right_y, u1, v0, c1),
+            (left_x - sin_neg_hh, cos_neg_hh + left_y, u0, v0, c0),
+        ];
+        for (k, (vx, vy, u, v, colour)) in (0u32..).zip(corners) {
+            let vertex = rec.wrapping_add(0x20 * k);
+            let vx = remap(mem, false, vx as f32);
+            let vy = remap(mem, true, vy as f32);
+            for (off, value) in [(0, vx), (4, vy), (8, u), (0xc, v)] {
+                mem.write(vertex.wrapping_add(off), value);
+            }
+            for (byte, value) in (0u32..).zip(colour.to_le_bytes()) {
+                mem.write(vertex.wrapping_add(0x10 + 4 * byte), u32::from(value));
+            }
+        }
+        call(mem, DRAW_UI, &[rec, texture, 1, 4, 0]);
+    }
 }

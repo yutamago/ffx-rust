@@ -14156,6 +14156,140 @@ fn round25_icon_names_match_the_original_on_the_snapshot() {
     round25_icon_names(&mut a, &mut b, &mut Xorshift(0x4025_0042));
 }
 
+/// Round 25's turned shape quad with `fcos`/`fsin` in the C runtime's
+/// slots, `TOGetImageWH` from cells, a logging texture-name stand-in, the
+/// original remaps and a `graphicDrawUIElement` stand-in logging all four
+/// vertices.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
+fn round25_rotate_shape(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 8);
+    let scratch = alloc(a, b, 0xa0);
+    for (slot, code, at) in [
+        (0x00b0_c3b4u32, [0xd9u8, 0xff, 0xc3], 0x00b0_bfc0u32),
+        (0x00b0_c3b8, [0xd9, 0xfe, 0xc3], 0x00b0_bfc8),
+    ] {
+        let at = a.rebase(at);
+        a.write(at, &code).unwrap();
+        b.write(at, &code).unwrap();
+        let slot = a.rebase(slot);
+        put(a, b, slot, at);
+    }
+    let s = stand_in8(a, b, 0x40, &logger_args(cursor, 1));
+    redirect(a, b, 0x008a_c8c0, s);
+    let mut v = logger(cursor, 0x3e3e);
+    v.pop();
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let words: Vec<u8> = (0..0x26u8).map(|k| 4 * k).collect();
+    let s = stand_in8(a, b, 0x200, &record_words_logger(cursor, &words));
+    redirect(a, b, 0x0063_eee0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let shapes = [
+        u32::MAX,
+        0,
+        5,
+        0xc6,
+        0xc7,
+        200,
+        0x18e,
+        0x18f,
+        400,
+        0x256,
+        600,
+        0x289,
+        0x28a,
+        0xffff_fffe,
+    ];
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize],
+                [128.0f32, 512.0][(rng.next() % 2) as usize],
+            ],
+        );
+        let fl = |rng: &mut Xorshift, m: u32, d: f32, o: f32| {
+            ((rng.next() % m) as f32 / d - o).to_bits()
+        };
+        let shape = shapes[(rng.next() as usize) % shapes.len()];
+        let angle = if k % 7 == 0 {
+            0.0f32.to_bits()
+        } else {
+            fl(rng, 20000, 1000.0, 10.0)
+        };
+        let args = [
+            shape,
+            fl(rng, 6000, 3.0, 50.0),
+            fl(rng, 4000, 3.0, 50.0),
+            fl(rng, 3000, 7.0, 0.0),
+            fl(rng, 3000, 7.0, 0.0),
+            fl(rng, 0x400, 1.0, 0.0),
+            fl(rng, 0x400, 1.0, 0.0),
+            fl(rng, 0x400, 1.0, 0.0),
+            fl(rng, 0x400, 1.0, 0.0),
+            rng.next(),
+            rng.next(),
+            angle,
+        ];
+        let texture_known = shape == u32::MAX
+            || shape <= 0xc6
+            || (200..=0x289).contains(&shape)
+                && !(0x18f..400).contains(&shape)
+                && !(0x257..600).contains(&shape);
+        if !texture_known {
+            // the original passes a stale stack word as the texture
+            continue;
+        }
+        eax(a, 0x0090_2ef0, &args);
+        t::to_mkp_rotate_shape_xywhuv_c2(b, args, scratch, call, fcall, remap);
+        let v: [u32; 0x28] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("rotate shape {k}"), a, b);
+    }
+}
+
+#[test]
+fn round25_rotate_shape_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round25_rotate_shape(&mut a, &mut b, &mut Xorshift(0x4025_0051));
+}
+
+#[test]
+fn round25_rotate_shape_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round25_rotate_shape(&mut a, &mut b, &mut Xorshift(0x4025_0052));
+}
+
 #[test]
 fn round25_wrappers_match_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

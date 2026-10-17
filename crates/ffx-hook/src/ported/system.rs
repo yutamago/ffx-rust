@@ -6148,6 +6148,22 @@ ported! {
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
         );
     }
+    /// `TOMkpRotateShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle)`.
+    TOMkpRotateShapeXYWHUVC2 @ 0x0090_2ef0 => extern "C" fn to_mkp_rotate_shape_xywhuv_c2(
+        shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32, c0: u32, c1: u32, angle: u32
+    ) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_mkp_rotate_shape_xywhuv_c2(
+            &mut mem(),
+            [shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle],
+            at,
+            call_sym,
+            fcall,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        );
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
