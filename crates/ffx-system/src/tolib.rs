@@ -4973,4 +4973,47 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// `0x00775820(_, image, kind, &w, &h)`: the texture size of a menu
+    /// picture on screens 5 and 0xb (`0x00c416c0`): each known image needs
+    /// its kind, then gets (w, h) of 0x200², 0x1e0², 0x100², 0x100×0x80,
+    /// 0x80×0x100, 0x80² or 0x80×0x40; anything else leaves both alone.
+    pub fn menu_picture_size(mem: &mut impl Mem, image: u32, kind: u32, w: u32, h: u32) {
+        const BIG: (u16, u16) = (0x200, 0x200);
+        let table: &[(u32, u32, (u16, u16))] = match mem.read::<u32>(mem.rebase(0x00c4_16c0)) {
+            5 => &[
+                (5, 5, BIG),
+                (6, 0x10, BIG),
+                (7, 0xf, BIG),
+                (0xc, 10, (0x1e0, 0x1e0)),
+                (0x10, 0xe, (0x80, 0x80)),
+                (10, 8, (0x100, 0x80)),
+                (8, 6, (0x100, 0x100)),
+                (0x11, 0xd, (0x80, 0x40)),
+                (9, 7, (0x80, 0x100)),
+                (0xb, 9, (0x100, 0x80)),
+                (0xe, 0xb, (0x100, 0x100)),
+                (0xf, 0xc, (0x80, 0x100)),
+            ],
+            0xb => &[
+                (0x13, 5, BIG),
+                (0x14, 0x10, BIG),
+                (0x15, 0xf, BIG),
+                (0x1a, 10, (0x1e0, 0x1e0)),
+                (0x1c, 0xb, (0x100, 0x100)),
+                (0x1d, 0xc, (0x80, 0x100)),
+                (0x19, 9, (0x100, 0x80)),
+                (0x1e, 0xe, (0x80, 0x80)),
+                (0x18, 8, (0x100, 0x80)),
+                (0x16, 6, (0x100, 0x100)),
+                (0x1f, 0xd, (0x80, 0x40)),
+                (0x17, 7, (0x80, 0x100)),
+            ],
+            _ => &[],
+        };
+        if let Some(&(_, _, (sw, sh))) = table.iter().find(|&&(i, k, _)| i == image && k == kind) {
+            mem.write(w, sw);
+            mem.write(h, sh);
+        }
+    }
 }

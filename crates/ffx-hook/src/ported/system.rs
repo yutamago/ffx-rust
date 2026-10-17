@@ -5718,6 +5718,10 @@ ported! {
     PatchMenuRecords_007767d0 @ 0x0077_67d0 => extern "C" fn patch_menu_records() {
         tolib::bridge::patch_menu_records(&mut mem(), call_sym);
     }
+    /// `MenuPictureSize_00775820(_, image, kind, &w, &h)`.
+    MenuPictureSize_00775820 @ 0x0077_5820 => extern "C" fn menu_picture_size(_a: u32, image: u32, kind: u32, w: u32, h: u32) {
+        tolib::bridge::menu_picture_size(&mut mem(), image, kind, w, h);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
