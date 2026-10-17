@@ -2808,4 +2808,36 @@ ported! {
     MsMagicEffectEnd @ 0x0079_e830 => extern "C" fn ms_magic_effect_end(i: u32) -> i32 {
         chrdmg::ms_magic_effect_end(&mut mem(), &mut call_ptr, i)
     }
+    /// `MsSetChrDirF(i, dir)` (`dir` an `f32`).
+    MsSetChrDirF @ 0x0079_5e20 => extern "C" fn ms_set_chr_dir_f(i: u32, dir: u32) -> i32 {
+        chrdmg::ms_set_chr_dir_f(&mut mem(), i, dir)
+    }
+    /// `MsSetChrPosReset(i, pos)`.
+    MsSetChrPosReset @ 0x0079_6220 => extern "C" fn ms_set_chr_pos_reset(i: u32, pos: u32) -> i32 {
+        chrdmg::ms_set_chr_pos_reset(&mut mem(), i, pos)
+    }
+    /// `MsStoneMove(i)`.
+    MsStoneMove @ 0x007a_2750 => extern "C" fn ms_stone_move(i: u32) {
+        script!(s);
+        chrdmg::ms_stone_move(&mut mem(), &mut s, i);
+    }
+    /// `MsEffectEndMotion(i, kind)`.
+    MsEffectEndMotion @ 0x0078_7950 => extern "C" fn ms_effect_end_motion(i: u32, kind: u32) {
+        script!(s);
+        chrdmg::ms_effect_end_motion(&mut mem(), &mut s, i, kind);
+    }
+    /// `MsCommandReturnChrStatusAll(all)`.
+    MsCommandReturnChrStatusAll @ 0x0079_3e00 => extern "C" fn ms_command_return_chr_status_all(all: u32) {
+        let mut m = mem();
+        script!(s);
+        chrdmg::ms_command_return_chr_status_all(&mut target::Dm::new(&mut m), &host(), &mut s, all);
+    }
+    /// `MsRelife(i, actor, full)`.
+    MsRelife @ 0x0078_d530 => extern "C" fn ms_relife(i: u32, actor: u32, full: u32) {
+        chrdmg::ms_relife(&mut mem(), &mut call_ptr, i, actor, full);
+    }
+    /// `MsBlowProcess(i, actor)`.
+    MsBlowProcess @ 0x0078_91b0 => extern "C" fn ms_blow_process(i: u32, actor: u32) -> u32 {
+        chrdmg::ms_blow_process(&mut mem(), &mut call_ptr, i, actor)
+    }
 }

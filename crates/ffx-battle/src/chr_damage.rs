@@ -8,6 +8,7 @@
 //! effects vfx's: those go to the game's code through `call`.
 
 /// The game's memory, through [`ffx_bridge::Mem`].
+#[allow(clippy::many_single_char_names)] // indices, actors, coordinates
 pub mod bridge {
     use ffx_bridge::{IMAGE_BASE, Mem};
 
@@ -222,5 +223,217 @@ pub mod bridge {
         call(mem, f, &[e]);
         mem.write(a.wrapping_add(0xea0), 0u32);
         -1
+    }
+
+    /// `MsSetChrDirF(i, dir)` (`0x00795e20`): actor `i`'s character turned
+    /// to `dir` (`f32` bits, `Ch_SetDirF`): -1; 0 for a non-actor or one
+    /// without a character.
+    pub fn ms_set_chr_dir_f(mem: &mut impl Mem, i: u32, dir: u32) -> i32 {
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let chr: u32 = mem.read(ms_get_chr(mem, i));
+        if chr == 0 {
+            return 0;
+        }
+        ffx_chara::chr::bridge::ch_set_dir_f(mem, chr, f32::from_bits(dir));
+        -1
+    }
+
+    /// `MsSetChrPosReset(i, pos)` (`0x00796220`): actor `i`'s character put
+    /// at `pos` (x, y, z; on the ground, x and z only, without `+0x34`:
+    /// `Ch_SetPos3`, `Ch_SetPos`) with its cloth reset (`Ch_ClothReset`):
+    /// -1; 0 for a non-actor or one without a character.
+    pub fn ms_set_chr_pos_reset(mem: &mut impl Mem, i: u32, pos: u32) -> i32 {
+        use ffx_chara::chr::bridge::{ch_set_pos, ch_set_pos3};
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        let chr: u32 = mem.read(a);
+        if chr == 0 {
+            return 0;
+        }
+        let [x, y, z]: [u32; 3] = mem.read(pos);
+        let f = f32::from_bits;
+        if byte(mem, a, 0x34) == 0 {
+            ch_set_pos3(mem, chr, f(x), f(y), f(z));
+        } else {
+            ch_set_pos(mem, chr, f(x), f(z));
+        }
+        ffx_chara::cloth::bridge::ch_cloth_reset(mem, chr);
+        -1
+    }
+
+    /// `MsStoneMove(i)` (`0x007a2750`): a petrified actor shatters out of
+    /// place: `parse::COMMAND_HOLD` counted up and motion 0x4f
+    /// (`MsSetMotion(i, 0x4f, 1, 0, 1)`).
+    pub fn ms_stone_move<M: Mem>(mem: &mut M, s: &mut Script<'_, M>, i: u32) {
+        use crate::parse::bridge::COMMAND_HOLD;
+        COMMAND_HOLD.set(mem, COMMAND_HOLD.get(mem).wrapping_add(1));
+        crate::atel::bridge::ms_set_motion(mem, s, i, 0x4f, 1, 0, 1, 0, 0);
+    }
+
+    /// `MsEffectEndMotion(i, kind)` (`0x00787950`): once actor `i & 0xff`'s
+    /// effect lets go of its motion (`MsEffectResetMotionDisable`): its move
+    /// flag cleared (not for kind 3), then by `kind`: 1 and 6 kept in
+    /// `+0x449` (`+0x41c` cleared), 4 `+0x44f` 2 (1 for an aeon), 5
+    /// `+0x44f` 3; kinds 0 and 3-5 (and any with its death playing,
+    /// `+0x436`, as motion 8) go back to motion 0 (`MsSetMotion(i, m, 0, 0,
+    /// 1)`); `+0x450` cleared and its pose redone first.
+    pub fn ms_effect_end_motion<M: Mem>(mem: &mut M, s: &mut Script<'_, M>, i: u32, kind: u32) {
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        if crate::minor::bridge::ms_effect_reset_motion_disable(mem, a) == 0 {
+            return;
+        }
+        if kind != 3 {
+            crate::body::bridge::ms_set_chr_move_flag(mem, i, 0);
+        }
+        let mut motion = 0;
+        let mut play = match kind {
+            1 | 6 => {
+                mem.write(a.wrapping_add(0x449), kind.to_le_bytes()[0]);
+                mem.write(a.wrapping_add(0x41c), 0u8);
+                false
+            }
+            4 => {
+                let aeon = crate::damage::bridge::ms_get_ram_chr_summon(mem, i) != 0;
+                mem.write(a.wrapping_add(0x44f), 2 - u8::from(aeon));
+                true
+            }
+            0 | 3 => true,
+            5 => {
+                mem.write(a.wrapping_add(0x44f), 3u8);
+                true
+            }
+            _ => false,
+        };
+        if byte(mem, a, 0x436) != 0 {
+            play = true;
+            motion = 8;
+        }
+        mem.write(a.wrapping_add(0x450), 0u8);
+        crate::input::bridge::ms_set_chr_weak(mem, i, u32::MAX);
+        if play {
+            crate::atel::bridge::ms_set_motion(mem, s, i, motion, 0, 0, 1, 0, 0);
+        }
+    }
+
+    /// `MsCommandReturnChrStatusAll(all)` (`0x00793e00`): after a command
+    /// every one of the 0x5d records (actors, then weapons) gets `+0x30`
+    /// set and `+0x28` 0xff; with `all` each actor is put back: its head
+    /// target (`msResetHeadTarget`), [`ms_effect_end_motion`] kind 0,
+    /// `+0x510` cleared, its character's normals (`+0x33`) and matrix
+    /// reset (`Ch_SetCalcNorm`, `Ch_SetOrgMatrix`), `+0x719` and `+0x40f`
+    /// set, `+0x411`, `+0x425`, `+0x414` and `+0x404` cleared, its
+    /// specular back to `+0x44` over 0x1e frames and shown
+    /// (`msSetChrVisibleReq(i, 2, 1)`). A petrified one that ran away
+    /// (`+0xdce` without `+0xdcf`) out of its place
+    /// ([`crate::pos::bridge::ms_check_btl_pos`], `+0x34` flat) shatters
+    /// ([`ms_stone_move`]) unless directions are free (`DIR_FREE`).
+    pub fn ms_command_return_chr_status_all<'d>(
+        mem: &mut Dm<'d>,
+        host: &Host<'_>,
+        s: &mut Script<'_, Dm<'d>>,
+        all: u32,
+    ) {
+        for i in 0..0x5d {
+            let p = ms_get_chr(mem, i);
+            mem.write(p.wrapping_add(0x30), 1u8);
+            mem.write(p.wrapping_add(0x28), 0xffu8);
+            if i >= 0x1f {
+                continue;
+            }
+            if all != 0 {
+                crate::atel::bridge::ms_reset_head_target(mem, &mut *s.call, p);
+                ms_effect_end_motion(mem, s, i, 0);
+                let chr: u32 = mem.read(p);
+                mem.write(p.wrapping_add(0x510), 0u8);
+                if chr != 0 {
+                    let norm = i32::from(mem.read::<i8>(p.wrapping_add(0x33)));
+                    ffx_chara::parts::bridge::ch_set_calc_norm(mem, chr, norm.cast_unsigned());
+                    ffx_chara::chr::bridge::ch_set_org_matrix(mem, chr, 0);
+                }
+                mem.write(p.wrapping_add(0x719), 1u8);
+                mem.write(p.wrapping_add(0x411), 0u16);
+                mem.write(p.wrapping_add(0x40f), 1u8);
+                mem.write(p.wrapping_add(0x425), 0u8);
+                mem.write(p.wrapping_add(0x414), 0u8);
+                mem.write(p.wrapping_add(0x404), 0u16);
+                let spec: u32 = mem.read(p.wrapping_add(0x44));
+                crate::body::bridge::ms_set_chr_specular(mem, i, spec, 0x1e);
+                crate::visible::bridge::ms_set_chr_visible_req(mem, &mut *s.call, i, 2, 1);
+            }
+            if byte(mem, p, 0xdce) != 0
+                && byte(mem, p, 0xdcf) == 0
+                && crate::minor::bridge::DIR_FREE.get(mem) == 0
+            {
+                let flat = i32::from(mem.read::<i8>(p.wrapping_add(0x34))).cast_unsigned();
+                if crate::pos::bridge::ms_check_btl_pos(mem, host.trig, i, p, flat) != 0 {
+                    ms_stone_move(mem, s, i);
+                }
+            }
+        }
+    }
+
+    /// `MsRelife(i, actor, full)` (`0x0078d530`): the actor comes back: at
+    /// least 1 HP, its eternal revival (`MsSetEternalRelife`), KO bit
+    /// (`+0x606` bit 0) and states cleared (`+0xdcc` word, `+0xdd0` half,
+    /// `+0xe17`, `+0x700` half, `+0x449`, `+0x3f4`, `+0xdec`, `+0xf5f`;
+    /// `+0x3f5` from `+0x3f6`), out of `minor::STONE_EXCLUDED`, its weight
+    /// (`+0x4dc`), back from running away (`MsSetEscapeFlag(i, actor, 0)`),
+    /// its wait `+0x65c` from `+0x65d`, `+0x41c` set and its body hit on;
+    /// with `full` also `+0x43e`, its pose and automatic statuses redone.
+    pub fn ms_relife<M: Mem>(mem: &mut M, call: Call<'_, M>, i: u32, actor: u32, full: u32) {
+        use crate::minor::bridge::STONE_EXCLUDED;
+        let w = |mem: &mut M, o: u32, v: u8| mem.write(actor.wrapping_add(o), v);
+        let hp: i32 = mem.read(actor.wrapping_add(0x5d0));
+        if hp < 1 {
+            mem.write(actor.wrapping_add(0x5d0), 1i32);
+        }
+        crate::actor::bridge::ms_set_eternal_relife(mem, actor);
+        let st: u16 = mem.read(actor.wrapping_add(0x606));
+        mem.write(actor.wrapping_add(0x606), st & 0xfffe);
+        let v = byte(mem, actor, 0x3f6);
+        w(mem, 0x3f5, v);
+        mem.write(actor.wrapping_add(0xdcc), 0u32);
+        mem.write(actor.wrapping_add(0xdd0), 0u16);
+        w(mem, 0xe17, 0);
+        mem.write(actor.wrapping_add(0x700), 0u16);
+        let bits = STONE_EXCLUDED.get(mem) & !1u32.wrapping_shl(i & 0xff);
+        STONE_EXCLUDED.set(mem, bits);
+        let weight: u32 = mem.read(actor.wrapping_add(0x4dc));
+        crate::body::bridge::ms_set_chr_weight2(mem, actor, weight);
+        ms_set_escape_flag(mem, &mut *call, i, actor, 0);
+        w(mem, 0x449, 0);
+        let v = byte(mem, actor, 0x65d);
+        w(mem, 0x65c, v);
+        w(mem, 0x41c, 1);
+        w(mem, 0x3f4, 0);
+        w(mem, 0xdec, 0);
+        w(mem, 0xf5f, 0);
+        crate::body::bridge::ms_set_chr_body_hit(mem, actor, 3, 1);
+        if full != 0 {
+            w(mem, 0x43e, 1);
+            crate::input::bridge::ms_set_chr_weak(mem, i, u32::MAX);
+            crate::actor::bridge::ms_reset_auto_status(mem, actor);
+            crate::actor::bridge::ms_set_auto_status(mem, actor);
+        }
+    }
+
+    /// `MsBlowProcess(i, actor)` (`0x007891b0`): an actor knocked out of
+    /// the battle (`+0x617` bit 0) runs away for good
+    /// ([`ms_set_escape_flag`]): 1; else it comes back ([`ms_relife`],
+    /// full): 0.
+    pub fn ms_blow_process<M: Mem>(mem: &mut M, call: Call<'_, M>, i: u32, actor: u32) -> u32 {
+        if byte(mem, actor, 0x617) & 1 != 0 {
+            ms_set_escape_flag(mem, call, i, actor, 1);
+            return 1;
+        }
+        ms_relife(mem, call, i, actor, 1);
+        0
     }
 }

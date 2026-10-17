@@ -804,6 +804,77 @@ fn parse_callees(
     same("MsGetAeonCommand", a, b);
 }
 
+/// Actors turned, placed, coming back, running away and leaving their
+/// effects' motions (`ffx_battle::chr_damage`), on the characters
+/// [`visible`] set.
+fn comebacks(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, block: u32, pos: u32) {
+    use ffx_battle::chr_damage::bridge as cd;
+    let mut call = script_call;
+    let i = [rng.below(ACTORS), rng.below(0x40)][rng.below(4).min(1) as usize];
+    let dir = battle_common::world::quiet(rng.next());
+    twin("MsSetChrDirF", a, b, 0x0079_5e20, &[i, dir], ALL, |m| {
+        cd::ms_set_chr_dir_f(m, i, dir).cast_unsigned()
+    });
+    same("MsSetChrDirF", a, b);
+    let v: Vec<u8> = (0..4)
+        .flat_map(|_| battle_common::world::quiet(rng.next()).to_le_bytes())
+        .collect();
+    poke(a, b, pos, &v);
+    let p = w.actor(i % ACTORS);
+    poke(a, b, p + 0x34, &[u8::from(rng.below(2) == 0)]);
+    // only real characters (a battle snapshot's) have a cloth to reset:
+    // the fake ones go
+    let chr = u32::from_le_bytes(b.read(p, 4).unwrap().try_into().unwrap());
+    if w.synthetic || !readable(a, chr, 0x1000) {
+        poke(a, b, p, &[0; 4]);
+    }
+    twin("MsSetChrPosReset", a, b, 0x0079_6220, &[i, pos], ALL, |m| {
+        cd::ms_set_chr_pos_reset(m, i, pos).cast_unsigned()
+    });
+    same("MsSetChrPosReset", a, b);
+    // coming back (or blown away)
+    let i = rng.below(ACTORS);
+    let p = w.actor(i);
+    poke(a, b, p + 0x5d0, &rng.range(-3, 3).to_le_bytes());
+    poke(a, b, p + 0x617, &[u8::from(rng.below(3) == 0)]);
+    let weight = battle_common::world::quiet(rng.next());
+    poke(a, b, p + 0x4dc, &weight.to_le_bytes());
+    let full = rng.below(2);
+    if rng.below(2) == 0 {
+        twin("MsRelife", a, b, 0x0078_d530, &[i, p, full], 0, |m| {
+            cd::ms_relife(m, &mut call, i, p, full);
+            0
+        });
+        same("MsRelife", a, b);
+    } else {
+        twin("MsBlowProcess", a, b, 0x0078_91b0, &[i, p], ALL, |m| {
+            cd::ms_blow_process(m, &mut call, i, p)
+        });
+        same("MsBlowProcess", a, b);
+    }
+    // an effect letting go of a motion; a stone shattering
+    let i = rng.below(ACTORS);
+    let p = w.actor(i);
+    for o in [0x436, 0x450] {
+        poke(a, b, p + o, &[u8::from(rng.below(3) == 0)]);
+    }
+    let kind = [0, 1, 3, 4, 5, 6, rng.next()][rng.below(7) as usize];
+    queue(a, b, rng);
+    twin("MsEffectEndMotion", a, b, 0x0078_7950, &[i, kind], 0, |m| {
+        script!(s, block);
+        cd::ms_effect_end_motion(m, &mut s, i, kind);
+        0
+    });
+    same("MsEffectEndMotion", a, b);
+    queue(a, b, rng);
+    twin("MsStoneMove", a, b, 0x007a_2750, &[i], 0, |m| {
+        script!(s, block);
+        cd::ms_stone_move(m, &mut s, i);
+        0
+    });
+    same("MsStoneMove", a, b);
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let rec = scratch(a, b, 0xa0);
@@ -835,6 +906,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let block = scratch(a, b, 0x20);
     let worker = scratch(a, b, 0x100);
     let chars = scratch(a, b, 0x3000);
+    let pos = scratch(a, b, 0x10);
     let words: Vec<u8> = (0..0xc00)
         .flat_map(|_| battle_common::world::quiet(rng.next()).to_le_bytes())
         .collect();
@@ -855,6 +927,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         calls(a, b, rng, &w, block, worker);
         defense(a, b, rng, &w, block);
         visible(a, b, rng, &w, block, chars, worker);
+        comebacks(a, b, rng, &w, block, pos);
         // the sign window opens now and then
         let open = rng.below(2);
         poke(a, b, rec + 0x78, &open.to_le_bytes());

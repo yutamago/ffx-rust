@@ -2177,6 +2177,7 @@ fn input(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         (st::SCENE_GROUP.ptr(b).addr, 4),
         (ffx_battle::actor::bridge::MON_TOP.ptr(b).addr, 4),
         (ffx_battle::menu::bridge::PARTY.ptr(b).addr, 7),
+        (ffx_battle::minor::bridge::DIR_FREE.ptr(b).addr, 1),
     ];
     let saved: Vec<Vec<u8>> = keep.iter().map(|&(at, n)| b.read(at, n).unwrap()).collect();
     turns(a, b, rng, w, out, rec);
@@ -2651,6 +2652,42 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             })
         });
         same("MsMagicEffectEnd", a, b);
+        // a command's end: everyone put back, the petrified that ran away
+        // out of place shattering (their positions read)
+        for q in 0..ACTORS {
+            for o in [0xdce, 0xdcf] {
+                poke(a, b, w.actor(q) + o, &[flag(rng, 3)]);
+            }
+        }
+        set(a, b, mn::DIR_FREE, flag(rng, 4));
+        let all = rng.below(2);
+        let out_ok = (0..ACTORS).all(|q| {
+            let f = b.read(w.actor(q) + 0xdce, 2).unwrap();
+            f[0] == 0
+                || f[1] != 0
+                || (writes(a, b, 0x0079_56e0, q, out + 0x40)
+                    && writes(a, b, 0x0079_48e0, q, out + 0x40))
+        });
+        if out_ok && placed(a, b, w, out) {
+            twin(
+                "MsCommandReturnChrStatusAll",
+                a,
+                b,
+                0x0079_3e00,
+                &[all],
+                0,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        cd::ms_command_return_chr_status_all(m, &h, &mut s, all);
+                    });
+                    0
+                },
+            );
+            local_words(a, b);
+            register_rows(a, b);
+            same("MsCommandReturnChrStatusAll", a, b);
+        }
         // Poison at a turn's end (the hit motion reads the positions)
         let i = rng.below(ACTORS);
         let end = [i, 0xff, rng.below(ACTORS)][rng.below(3) as usize];

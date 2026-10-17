@@ -4851,7 +4851,7 @@
 0x00787840 function MsEffectCheckMotion       # fh v3:exact 0x00787900
 0x007878a0 function MsEffectCheckMotion2         # layout: alphabetical run between MsEffectCheckMotion and MsEffectCheckTarget (1 unnamed in the gap); Switch 0x7100351240 MsEffectCheckMotion2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787900 function MsEffectCheckTarget       # fh v3:exact 0x007879c0
-0x00787950 function MsEffectEndMotion         # fh v3:exact 0x00787a10
+0x00787950 function MsEffectEndMotion         # fh v3:exact 0x00787a10; ours: (i, kind): after MsEffectResetMotionDisable: move flag off (not kind 3), kinds 1/6 +0x449, 4/5 +0x44f, motion 0 for 0/3/4/5 (8 with +0x436); +0x450 cleared, MsSetChrWeak; ported (battle round 12)
 0x00787a40 function MsEffectEnvFree           # fh v3:cg2 0x787b00
 0x00787a60 function MsEffectEnvInit              # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f540 MsEffectEnvInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787a70 function MsEffectFileNumber           # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f6a0 MsEffectFileNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -4893,7 +4893,7 @@
 0x00788e60 function MsResetBindEffect         # fh v3:exact 0x00788f20
 0x00788e90 function MsSetChrMoveFlagAll       # fh v3:exact 0x00788f50
 0x00789160 function MsAliveProcess            # fh v3:exact+call.cs 0x00789220 cdecl
-0x007891b0 function MsBlowProcess             # fh v3:exact+call.cs 0x00789270 cdecl
+0x007891b0 function MsBlowProcess             # fh v3:exact+call.cs 0x00789270 cdecl; ours: (i, actor): +0x617 bit 0: MsSetEscapeFlag(i, actor, 1), 1; else MsRelife(i, actor, 1), 0; ported (battle round 12)
 0x007891e0 function DmgCalc_StatBoostAbility  # fh v3:exact 0x007892a0 +DmgCalc_StatBoostAbility
 0x00789290 function DmgCalc_PowerMagicBreak   # fh v3:exact 0x00789350 +DmgCalc_PowerMagicBreak
 0x007892e0 function MsCalcCommand             # fh v3:exact+call.cs 0x007893a0 cdecl
@@ -4958,7 +4958,7 @@
 0x0078d4b0 function MsOrderInit               # fh v3:bsim1.00 0x0078d570
 0x0078d4c0 function MsOrderRegist             # fh v3:exact 0x0078d580
 0x0078d4e0 function MsProvOff                 # fh v3:exact 0x0078d5a0
-0x0078d530 function MsRelife                  # fh v3:exact 0x0078d5f0
+0x0078d530 function MsRelife                  # fh v3:exact 0x0078d5f0; ours: (i, actor, full): revival: HP >= 1, KO states cleared, weight, MsSetEscapeFlag(.., 0), body hit; full: +0x43e, pose, automatic statuses; ported (battle round 12)
 0x0078d620 function MsResetAvoidFlag             # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100342ba0 MsResetAvoidFlag, 2 votes, round 2
 0x0078d680 function MsResetChrPos             # fh v3:exact 0x0078d740
 0x0078d730 function DmgCalc_ApplyStatUpBuffs  # fh v3:exact 0x0078d7f0 +DmgCalc_ApplyStatUpBuffs
@@ -5094,7 +5094,7 @@
 0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
 0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0
-0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10
+0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10; ours: (all): 0x5d records +0x30 = 1, +0x28 = 0xff; with all each actor reset (head target, MsEffectEndMotion 0, normals, matrix, specular, visible); ran-away petrified out of place: MsStoneMove; ported (battle round 12)
 0x00793ef0 function MsCommandStartChrStatusAll # fh v3:exact 0x00793f00
 0x00793f10 function MsDetachWeapon               # layout: alphabetical run between MsCommandStartChrStatusAll and MsGetChr (1 unnamed in the gap); Switch 0x71003472c0 MsDetachWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00794020 function MsGetChr                  # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; was Battle_Actor
@@ -5154,14 +5154,14 @@
 0x00795c00 function MsHideArm                 # fh v3:exact 0x00795c10
 0x00795c40 function MsResetNormalCalc         # fh v3:exact 0x00795c50
 0x00795c70 function MsReturnCameraVisible     # fh v3:exact 0x00795c80
-0x00795e20 function MsSetChrDirF              # fh v3:cg7 0x795e30
+0x00795e20 function MsSetChrDirF              # fh v3:cg7 0x795e30; ours: (i, dir f32): Ch_SetDirF on actor i's character, -1; 0 without one; ported (battle round 12)
 0x00795e70 function MsSetChrDirLeave             # layout: alphabetical run between MsSetChrDirF and MsSetChrDirTarget (1 unnamed in the gap); Switch 0x710034a650 MsSetChrDirLeave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00795eb0 function MsSetChrDirTarget         # fh v3:exact 0x00795ec0
 0x007960d0 function MsSetChrMotionLevel       # fh v3:cg2 0x7960e0
 0x00796110 function MsSetChrMoveFlag          # fh v3:cg4 0x796120
 0x00796150 function MsSetChrPos               # fh v3:exact 0x00796160
 0x007961d0 function MsSetChrPos2D                # layout: alphabetical run between MsSetChrPos and MsSetChrPosReset (1 unnamed in the gap); Switch 0x7100349c10 MsSetChrPos2D is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00796220 function MsSetChrPosReset          # fh v3:exact 0x00796230
+0x00796220 function MsSetChrPosReset          # fh v3:exact 0x00796230; ours: (i, pos): Ch_SetPos3 (Ch_SetPos with +0x34) and Ch_ClothReset, -1; 0 without a character; ported (battle round 12)
 0x007962b0 function MsSetChrShadow            # fh v3:bsim1.00 0x007962c0
 0x007962d0 function MsSetChrShadowMode        # fh v3:exact 0x007962e0
 0x00796360 function MsSetChrSpecular          # fh v3:exact 0x00796370
@@ -5404,7 +5404,7 @@
 0x007a2670 function MsStoneEffectCheck        # fh v3:exact 0x007a2690
 0x007a2690 function MsStoneEffectProcess      # fh v3:exact 0x007a26b0
 0x007a2730 function MsMessageCueInit          # fh switch:bsim1.00 0x710035e990
-0x007a2750 function MsStoneMove               # fh v3:exact 0x007a2770
+0x007a2750 function MsStoneMove               # fh v3:exact 0x007a2770; ours: (i): 0x0112ca0d counted, MsSetMotion(i, 0x4f, 1, 0, 1); ported (battle round 12)
 0x007a2780 function MsStoneRegist             # fh v3:exact 0x007a27a0
 0x007a27e0 function Native_707e              # 0x707e: (k): battle flag k - 1 (2: both 0x0112a8f9 and 0x0112a8f8), 0 for k without one; ported in native_btl/native_move (script round 10)
 0x007a29a0 function Native_7012                # 0x7012: actor +0x435 = 0; state +0xdfb 2 -> 3, else +0x432 = 0; 0; ported in native_btl/native_move (script round 9)
