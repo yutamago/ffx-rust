@@ -1534,6 +1534,13 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     for o in [0x433, 0x50e, 0x608, 0x6e0, 0x717, 0x508, 0x436, 0xdf4] {
         poke(a, b, actor + o, &[flag(rng, 12)]);
     }
+    // the payment's motion actor (Yojimbo's, +0x6d1)
+    poke(
+        a,
+        b,
+        actor + 0x6d1,
+        &[u8::try_from(rng.below(ACTORS)).unwrap()],
+    );
     // MP enough at times (MsCalcMagic)
     if rng.below(2) == 0 {
         poke(a, b, actor + 0x5d4, &0x7fffu32.to_le_bytes());
