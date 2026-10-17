@@ -7092,6 +7092,316 @@ pub mod bridge {
             p = p.wrapping_add(1);
         }
     }
+
+    /// The menu's VRAM save buffer (`0x01340870`, 13 blocks of 64 KiB; the
+    /// start of a 5 MiB area battle uses as `g_BtlEffectOverlayDefault`).
+    pub const VRAM_SAVE: u32 = 0x0134_0870;
+
+    /// The blocks of `MenuMain_RestoreVram`/`MenuMain_SaveVram`: `block(buf,
+    /// vram, 0x10000)` for 13 blocks of 64 KiB, the buffer from
+    /// [`VRAM_SAVE`] and the GS address from `0xbc000` on (`0x4000` apart).
+    /// Returns the last block's result.
+    fn vram_blocks<M: Mem>(
+        mem: &mut M,
+        block: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(block);
+        let mut buf = mem.rebase(VRAM_SAVE);
+        let mut vram = 0xb_c000u32;
+        let mut r = 0;
+        for _ in 0..13 {
+            r = call(mem, f, &[buf, vram, 0x1_0000]);
+            buf = buf.wrapping_add(0x1_0000);
+            vram = vram.wrapping_add(0x4000);
+        }
+        r
+    }
+
+    /// `MenuMain_RestoreVram()` (`0x008aa690`, own name): the VRAM the menu
+    /// saved on opening uploaded back (`MenuMain_LoadVramBlock`, see
+    /// [`vram_blocks`]) when it closes (`0x008a9ca0`).
+    pub fn menu_main_restore_vram<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        vram_blocks(mem, 0x008a_a710, call)
+    }
+
+    /// `MenuMain_SaveVram()` (`0x008aab90`, own name): 13 blocks of VRAM
+    /// read into the save buffer (`MenuMain_StoreVramBlock`, see
+    /// [`vram_blocks`]) when the menu opens (`0x008a9ca0`).
+    pub fn menu_main_save_vram<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        vram_blocks(mem, 0x008a_ac10, call)
+    }
+
+    /// The ability menu's command id (`u16`, `0x0186a3a8`).
+    pub const ABILITY_COMMAND: Global<u16> = Global::new(0x0186_a3a8);
+    /// 1 when the ability menu's command takes one target (`0x0186a391`).
+    pub const ABILITY_SINGLE: Global<u8> = Global::new(0x0186_a391);
+
+    /// Heals every member of a list: `TkMenuAddHPCapped(chr,
+    /// TkMenuItemHealAmount(command, chr, 0))` for `get(i)`, `i < count()`.
+    /// Returns what `eax` holds after: the count, or the last heal's result.
+    fn heal_list<M: Mem>(
+        mem: &mut M,
+        count: u32,
+        get: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let max = mem.rebase(count);
+        let n = call(mem, max, &[]);
+        let mut last = n;
+        let get = mem.rebase(get);
+        let amount = mem.rebase(0x008c_69a0);
+        let add = mem.rebase(0x008c_8d10);
+        let mut i = 0u32;
+        #[allow(clippy::cast_possible_wrap)]
+        while (i as i32) < n as i32 {
+            let chr = call(mem, get, &[i]);
+            let cmd = u32::from(ABILITY_COMMAND.get(mem));
+            let heal = call(mem, amount, &[cmd, chr, 0]);
+            last = call(mem, add, &[chr, heal]);
+            i += 1;
+        }
+        last
+    }
+
+    /// `MenuAbility_ApplyHeal(target, user)` (`0x008c6d00`): the ability
+    /// menu's command ([`ABILITY_COMMAND`]) heals. One target
+    /// ([`ABILITY_SINGLE`] = 1): `TkMenuAddHPCapped(target,
+    /// Cmd_HealAmount(command, user))`, its result returned. Otherwise the
+    /// command record (`MsGetRomPlyCommand(command, local)`) picks the
+    /// lists by its `+0x22`: bit 7 every aeon (`TkMenuGetSummonListMax`,
+    /// `TkMenuGetSummonFromIndex`), bit 6 every party member
+    /// (`TkMenuGetPlayerListMax`, `TkMenuGetPlayerFromIndex2`), each healed
+    /// by `TkMenuItemHealAmount(command, chr, 0)` (not `Cmd_HealAmount`'s
+    /// amount, which is computed and dropped). Returns what the original
+    /// leaves in `eax`: the record, a list's count or the last heal's
+    /// result. `local` is the record lookup's 8-byte out slot.
+    pub fn menu_ability_apply_heal<M: Mem>(
+        mem: &mut M,
+        target: u32,
+        user: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let cmd = u32::from(ABILITY_COMMAND.get(mem));
+        let f = mem.rebase(0x008c_6920);
+        let amount = call(mem, f, &[cmd, user]);
+        if ABILITY_SINGLE.get(mem) == 1 {
+            let f = mem.rebase(0x008c_8d10);
+            return call(mem, f, &[target, amount]);
+        }
+        let cmd = u32::from(ABILITY_COMMAND.get(mem));
+        let f = mem.rebase(0x0079_0a90);
+        let rec = call(mem, f, &[cmd, local]);
+        let mut r = rec;
+        if mem.read::<u8>(rec.wrapping_add(0x22)) & 0x80 != 0 {
+            r = heal_list(mem, 0x008a_9bf0, 0x008a_9bc0, call);
+        }
+        if mem.read::<u8>(rec.wrapping_add(0x22)) & 0x40 != 0 {
+            r = heal_list(mem, 0x008a_9b30, 0x008a_9ad0, call);
+        }
+        r
+    }
+
+    /// `TkMn2DrawCommonPlateL(plate)` (`0x008bf9b0`): the menu draw cursor
+    /// ([`MN2_DRAW_Y`]) stepped by 16, then the two-part plate writer
+    /// `0x008f0990(cursor, +0x10, +0x14, x, y, w, +8, +0xc)` (`x`, `y`, `w`
+    /// the plate's `i16`s at 0, 2, 4) writes there and its end becomes the
+    /// cursor (returned).
+    pub fn tk_mn2_draw_common_plate_l<M: Mem>(
+        mem: &mut M,
+        plate: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let half = |mem: &mut M, o: u32| {
+            #[allow(clippy::cast_sign_loss)]
+            let v = i32::from(mem.read::<i16>(plate.wrapping_add(o))) as u32;
+            v
+        };
+        let word = |mem: &mut M, o: u32| mem.read::<u32>(plate.wrapping_add(o));
+        let y = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        let mut args = [
+            y,
+            0,
+            word(mem, 0x14),
+            half(mem, 0),
+            half(mem, 2),
+            half(mem, 4),
+            word(mem, 8),
+            word(mem, 0xc),
+        ];
+        MN2_DRAW_Y.set(mem, y);
+        // `+0x10` is read after the cursor's store, as the original
+        args[1] = word(mem, 0x10);
+        let f = mem.rebase(0x008f_0990);
+        let end = call(mem, f, &args);
+        MN2_DRAW_Y.set(mem, end);
+        end
+    }
+
+    /// A window from `TkMenuMainAllocWindow()` with the given `(offset,
+    /// handler)` callbacks; returned unregistered.
+    fn alloc_window<M: Mem>(
+        mem: &mut M,
+        handlers: &[(u32, u32)],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        for &(o, f) in handlers {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        w
+    }
+
+    /// `MenuShop_OpenWindow3()` (`0x008da9c0`, own name): a window with
+    /// callbacks `+0xc` `0x008d9e10`, `+0x10` `0x008da6b0`, `+0x14`
+    /// `0x008dab10`, layer 2 (`+0x3e`), `+0x36` = 3, kept in
+    /// [`WSHOP_WINDOW3`] (what `TkMenuWShopCloseWindow3` closes) and
+    /// registered; returned. The shop's opener `0x008da7a0` calls it.
+    pub fn menu_shop_open_window3<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = alloc_window(
+            mem,
+            &[(0xc, 0x008d_9e10), (0x10, 0x008d_a6b0), (0x14, 0x008d_ab10)],
+            call,
+        );
+        mem.write(w.wrapping_add(0x3e), 2u8);
+        mem.write(w.wrapping_add(0x36), 3u8);
+        WSHOP_WINDOW3.set(mem, w);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuStatus_OpenMainWindow()` (`0x008d3100`, own name): a window
+    /// with callbacks `+0xc` `0x008d26c0`, `+0x10` `0x008d2710`, `+0x14`
+    /// `0x008d31f0`, layer 2 (`+0x3e`), `+0x36` = 3, the fade step `0x155`
+    /// (`+0x54`), registered and returned; the status menu's set-up
+    /// (`0x008d1d80`) keeps it in `0x0186a838`.
+    pub fn menu_status_open_main_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = alloc_window(
+            mem,
+            &[(0xc, 0x008d_26c0), (0x10, 0x008d_2710), (0x14, 0x008d_31f0)],
+            call,
+        );
+        mem.write(w.wrapping_add(0x3e), 2u8);
+        mem.write(w.wrapping_add(0x36), 3u8);
+        mem.write(w.wrapping_add(0x54), 0x155u16);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuSummon_OpenWindow()` (`0x008cd1b0`, own name): the aeon menu's
+    /// window ([`SUMMON_WINDOW`], closed by `TkMenuSummonCloseWindow`) with
+    /// callbacks `+8` `0x008ccac0`, `+0xc` `0x008cced0`, `+0x10`
+    /// `0x008cebe0`, `+0x14` `0x008cd230`, `+0x1c` `0x008ccad0` and the
+    /// fade step `0x155` (`+0x54`), registered. Returns what
+    /// `TkMenuMainRegistWindow` returns.
+    pub fn menu_summon_open_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = alloc_window(
+            mem,
+            &[
+                (8, 0x008c_cac0),
+                (0xc, 0x008c_ced0),
+                (0x10, 0x008c_ebe0),
+                (0x14, 0x008c_d230),
+                (0x1c, 0x008c_cad0),
+            ],
+            call,
+        );
+        SUMMON_WINDOW.set(mem, w);
+        mem.write(w.wrapping_add(0x54), 0x155u16);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w])
+    }
+
+    /// The HDD-install flag (`u8`, `0x0133c913`; printed as `ffx_hddmode`).
+    pub const HDD_MODE: Global<u8> = Global::new(0x0133_c913);
+
+    /// `TkRefreshHDDMode()` (`0x0088e930`): the sound driver's wave and
+    /// music info paths, `SqsInitWaveInfoHdd(get_hdd_name(0x2c))` and
+    /// `SqsInitMusicInfoHdd(get_hdd_name(0x2d))`, or the empty string
+    /// (`0x00b8fbeb`) for each when [`HDD_MODE`] is 0. Returns the music
+    /// call's result.
+    pub fn tk_refresh_hdd_mode<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut last = 0;
+        for (name, init) in [(0x2cu32, 0x0081_d470u32), (0x2d, 0x0081_d3c0)] {
+            let path = if HDD_MODE.get(mem) == 0 {
+                mem.rebase(0x00b8_fbeb)
+            } else {
+                let f = mem.rebase(0x0077_7eb0);
+                call(mem, f, &[name])
+            };
+            let f = mem.rebase(init);
+            last = call(mem, f, &[path]);
+        }
+        last
+    }
+
+    /// `SsSetProjectBase(path)` (`0x00887a90`): a jump to
+    /// `SqsSetProjectBase(path)`, whose result it returns.
+    pub fn ss_set_project_base<M: Mem>(
+        mem: &mut M,
+        path: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0081_eab0);
+        call(mem, f, &[path])
+    }
+
+    /// `TkMn2StringWidth(text)` (`0x008c2cb0`): the width half of
+    /// `TOGetMessageSizePacked(text)` (its low 16 bits, zero-extended).
+    pub fn tk_mn2_string_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008b_7170);
+        call(mem, f, &[text]) & 0xffff
+    }
+
+    /// `MenuItem_LoadTargetKeys(target)` (`0x008c5320`, own name): for
+    /// `target >= 0`, the key string of the target's message
+    /// (`TOMenuGetNameMes` of the `u16` id at `0x00c5a0d8 + 4 * target`,
+    /// or `0x00c5a120` when `TOGetFFXLang()` is not 0) parsed into
+    /// [`ITEM_KEYS`] ([`menu_parse_item_keys`], a tail jump). A negative
+    /// target does nothing. Its `eax` is the parser's leftover (unread).
+    pub fn menu_item_load_target_keys<M: Mem>(
+        mem: &mut M,
+        target: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if target < 0 {
+            return;
+        }
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let table = mem.rebase(if lang == 0 { 0x00c5_a0d8 } else { 0x00c5_a120 });
+        let id: u16 = mem.read(table.wrapping_add(target.cast_unsigned().wrapping_mul(4)));
+        let f = mem.rebase(0x008b_edd0);
+        let s = call(mem, f, &[u32::from(id)]);
+        menu_parse_item_keys(mem, s);
+    }
 }
 
 #[cfg(test)]

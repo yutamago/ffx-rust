@@ -3382,4 +3382,52 @@ ported! {
     TkMenuListWindowCtrl_008b44b0 @ 0x008b_44b0 => extern "C" fn tk_menu_list_window_ctrl(w: u32) {
         tk::tk_menu_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuMain_RestoreVram()`.
+    MenuMain_RestoreVram @ 0x008a_a690 => extern "C" fn menu_main_restore_vram() -> u32 {
+        tk::menu_main_restore_vram(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_SaveVram()`.
+    MenuMain_SaveVram @ 0x008a_ab90 => extern "C" fn menu_main_save_vram() -> u32 {
+        tk::menu_main_save_vram(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuAbility_ApplyHeal(target, user)`.
+    MenuAbility_ApplyHeal_008c6d00 @ 0x008c_6d00 => extern "C" fn menu_ability_apply_heal(target: u32, user: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_ability_apply_heal(&mut m, target, user, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawCommonPlateL(plate)`.
+    TkMn2DrawCommonPlateL @ 0x008b_f9b0 => extern "C" fn tk_mn2_draw_common_plate_l(plate: u32) -> u32 {
+        tk::tk_mn2_draw_common_plate_l(&mut mem(), plate, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_OpenWindow3()`: the window.
+    MenuShop_OpenWindow3 @ 0x008d_a9c0 => extern "C" fn menu_shop_open_window3() -> u32 {
+        tk::menu_shop_open_window3(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_OpenMainWindow()`: the window.
+    MenuStatus_OpenMainWindow @ 0x008d_3100 => extern "C" fn menu_status_open_main_window() -> u32 {
+        tk::menu_status_open_main_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_OpenWindow()`.
+    MenuSummon_OpenWindow @ 0x008c_d1b0 => extern "C" fn menu_summon_open_window() -> u32 {
+        tk::menu_summon_open_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkRefreshHDDMode()`.
+    TkRefreshHDDMode @ 0x0088_e930 => extern "C" fn tk_refresh_hdd_mode() -> u32 {
+        tk::tk_refresh_hdd_mode(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `SsSetProjectBase(path)`.
+    SsSetProjectBase @ 0x0088_7a90 => extern "C" fn ss_set_project_base(path: u32) -> u32 {
+        tk::ss_set_project_base(&mut mem(), path, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2StringWidth(text)`.
+    TkMn2StringWidth @ 0x008c_2cb0 => extern "C" fn tk_mn2_string_width(text: u32) -> u32 {
+        tk::tk_mn2_string_width(&mut mem(), text, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_LoadTargetKeys(target)`: void (the parser's `eax` is unread).
+    MenuItem_LoadTargetKeys @ 0x008c_5320 => extern "C" fn menu_item_load_target_keys(target: i32) {
+        tk::menu_item_load_target_keys(&mut mem(), target, &mut |_, f, a| call_ptr(f, a));
+    }
 }
