@@ -15281,6 +15281,125 @@ fn round27_digit_right_matches_the_original_on_the_snapshot() {
     round27_digit_right(&mut a, &mut b, &mut Xorshift(0x4027_0052));
 }
 
+/// Round 27's battle help-text setters and digit labels over stand-ins for
+/// `TOGetMessageWH` and `ToMakeBtlEasyDigitRight` (logging their words),
+/// `MsGetComData` (logs the command, `*strings = cells[0]`, returns
+/// `cells + 4`) and the language (`cells[4]`).
+#[allow(clippy::many_single_char_names, clippy::cast_possible_truncation)]
+fn round27_help(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let strings = alloc(a, b, 0x200);
+    let scratch = alloc(a, b, 4);
+    for (k, (sym, n)) in (0u32..).zip([(0x008b_9650u32, 6u8), (0x0090_55c0, 6)]) {
+        let mut v = marker(cursor, 0x7d00 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x40 + 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // MsGetComData(command, &strings)
+    let mut v = marker(cursor, 0x7e00);
+    v.pop();
+    v.extend_from_slice(&logger_args(cursor, 1));
+    v.truncate(v.len() - 5); // drop "mov eax, [esp+4]; ret"
+    v.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x08, 0xa1]); // mov ecx, [esp+8]; mov eax, [cells]
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x01, 0xb8]); // mov [ecx], eax; mov eax, cells + 4
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x200, &v);
+    redirect(a, b, 0x0079_a4b0, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 0xc).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x280, &v);
+    redirect(a, b, 0x0064_10e0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        let text: Vec<u8> = (0..0x200)
+            .map(|_| {
+                if rng.next().is_multiple_of(9) {
+                    0
+                } else {
+                    rng.next() as u8 | 1
+                }
+            })
+            .collect();
+        let text: [u8; 0x200] = text.try_into().unwrap();
+        put(a, b, strings, text);
+        let off = rng.next() % 0x100;
+        put(a, b, cells, strings);
+        put(a, b, cells + 4, [0u32, off]);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [0u32, 1, 8, 9, 0xb, 0xc, u32::MAX][(rng.next() % 7) as usize],
+        );
+        // the help buffer holds an older text: the copy clears it first
+        let old: [u32; 0x20] = std::array::from_fn(|_| rng.next());
+        put(a, b, a.rebase(0x0133_f538), old);
+        match k % 4 {
+            0 => {
+                let p = if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    strings + rng.next() % 0x100
+                };
+                let ra = eax(a, 0x0089_9ec0, &[p]);
+                if let Some(rb) = t::to_btl_set_direct_help_mes(b, p, call) {
+                    assert_eq!(ra, rb, "direct help {k}");
+                }
+            }
+            1 => {
+                let command = rng.next();
+                assert_eq!(
+                    eax(a, 0x0089_9970, &[command]),
+                    t::to_btl_set_command_help_mes(b, command, scratch, call),
+                    "command help {k}"
+                );
+                let v: u32 = Mem::read(b, scratch);
+                Mem::write(a, scratch, v);
+            }
+            n => {
+                let which = (n - 2) as u8;
+                let int = |rng: &mut Xorshift| match rng.next() % 4 {
+                    0 => rng.next(),
+                    _ => (rng.next() % 2000).wrapping_sub(300),
+                };
+                let args = [rng.next(), rng.next(), int(rng), int(rng), rng.next()];
+                let f = [0x008f_3300, 0x008f_3420][usize::from(which)];
+                assert_eq!(
+                    eax(a, f, &args),
+                    t::to_mkp_btl_digit_right(b, which, args, call),
+                    "digit label {which} {k}"
+                );
+            }
+        }
+        same_memory(&format!("help {k}"), a, b);
+    }
+}
+
+#[test]
+fn round27_help_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round27_help(&mut a, &mut b, &mut Xorshift(0x4027_0061));
+}
+
+#[test]
+fn round27_help_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round27_help(&mut a, &mut b, &mut Xorshift(0x4027_0062));
+}
+
 /// `TODrawKick` and `TOCtrlPkt` over logging stand-ins for the PS2 layer's
 /// `FlushCache`, `sceDmaSend` and `sceGsSyncPath`.
 fn round27_kick(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {

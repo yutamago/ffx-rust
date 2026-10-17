@@ -6072,6 +6072,67 @@ pub mod bridge {
         0xfe + u32::from(mem.read::<u32>(mem.rebase(0x0133_c94c)) != 0x100)
     }
 
+    /// The battle help text buffer (0x80 bytes) and the size
+    /// `TOGetMessageWH` gives it: width (`f32`) `0x0133f534`, height
+    /// `0x0133f530`.
+    const HELP_TEXT: u32 = 0x0133_f538;
+
+    /// The help text's copy and size, as `TOBtlSetDirectHelpMes` and
+    /// `TOBtlSetCommandHelpMes` set them: the buffer cleared, `text` copied
+    /// up to its terminator (unbounded, as the original), then
+    /// `TOGetMessageWH(0, buffer, &w, &h, 0, 0)`; its `eax`.
+    fn set_help_text<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let buffer = mem.rebase(HELP_TEXT);
+        for k in 0..0x20 {
+            mem.write(buffer.wrapping_add(4 * k), 0u32);
+        }
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(text.wrapping_add(k));
+            mem.write(buffer.wrapping_add(k), c);
+            if c == 0 {
+                break;
+            }
+            k = k.wrapping_add(1);
+        }
+        let (w, h) = (mem.rebase(0x0133_f534), mem.rebase(0x0133_f530));
+        call(mem, 0x008b_9650, &[0, buffer, w, h, 0, 0])
+    }
+
+    /// `TOBtlSetDirectHelpMes(text)` (`0x00899ec0`): the help text set to
+    /// `text` (nothing for null). Returns `TOGetMessageWH`'s `eax`, `None`
+    /// where the original leaves the caller's.
+    pub fn to_btl_set_direct_help_mes<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        (text != 0).then(|| set_help_text(mem, text, &mut call))
+    }
+
+    /// `TOBtlSetCommandHelpMes(command)` (`0x00899970`): the help text of
+    /// a command (`MsGetComData(command & 0xffff, &strings)`, its help at
+    /// `strings + u16 [entry + 8]`), measured once in place and once after
+    /// the copy. `scratch` (4 bytes) stands in for the original's
+    /// `strings` local. Returns the last `TOGetMessageWH`'s `eax`.
+    pub fn to_btl_set_command_help_mes<M: Mem>(
+        mem: &mut M,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let entry = call(mem, 0x0079_a4b0, &[command & 0xffff, scratch]);
+        let strings: u32 = mem.read(scratch);
+        let text = u32::from(mem.read::<u16>(entry.wrapping_add(8))).wrapping_add(strings);
+        let (w, h) = (mem.rebase(0x0133_f534), mem.rebase(0x0133_f530));
+        call(mem, 0x008b_9650, &[0, text, w, h, 0, 0]);
+        set_help_text(mem, text, &mut call)
+    }
+
     /// `TOBtlOpenSimpleHelpMes(i, message)` (`0x0089dba0`): opens help
     /// line `i` (16-byte entries at `0x0133f510`: `+0` 1, `+4` 7, `+8` the
     /// message, `+0xc`/`+0xe` sizes), measures it with
@@ -7714,6 +7775,58 @@ pub mod bridge {
             0x0090_5440,
             &[n, value, left.to_bits(), y, alpha, scale, extra],
         );
+    }
+
+    /// The battle digit labels `0x008f3300` and `0x008f3420` (`which` 0
+    /// and 1, both called by `0x0076f850`): `ToMakeBtlEasyDigitRight(value,
+    /// x + dx, y + dy, alpha, scale, 0.0)` with the integer `x`, `y` turned
+    /// into `f32` first and each sum rounded to `f32` (`dx` is a double).
+    /// By the language (`TOGetFFXLang`, through `0x008ac2f0`):
+    /// - `0x008f3300`: dx 4.0 (`0x00b43d80`), scale 0.8 (`0x00b34254`), dy
+    ///   -3.0 (`0x00b59884`), or -2.0 (`0x00b41da4`) for languages 1..=8 and
+    ///   from 12.
+    /// - `0x008f3420`: dx 0.0 (`0x00b0db90`), dy -5.5 (`0x00b66e38`) with
+    ///   scale 0.77 (`0x00b66c18`) for language 0, -6.0 (`0x00b66e3c`) for 9,
+    ///   else -5.0 (`0x00b499b8`), scale 0.8.
+    ///
+    /// Returns the first argument (left in `eax`).
+    pub fn to_mkp_btl_digit_right<M: Mem>(
+        mem: &mut M,
+        which: u8,
+        args: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        const LANG: u32 = 0x008a_c2f0;
+        const DRAW: u32 = 0x0090_55c0;
+        let image_f32 = |mem: &M, a: u32| -> u32 {
+            x87::round_trip(f32::from_bits(mem.read(mem.rebase(a)))).to_bits()
+        };
+        let [ret, value, x, y, alpha] = args;
+        let (dx, dy, scale) = if which == 0 {
+            let mut dy = image_f32(mem, 0x00b5_9884);
+            let lang = call(mem, LANG, &[]).cast_signed();
+            if lang != 0 && (lang <= 8 || lang > 0xb) {
+                dy = image_f32(mem, 0x00b4_1da4);
+            }
+            (0x00b4_3d80, dy, image_f32(mem, 0x00b3_4254))
+        } else {
+            let mut scale = image_f32(mem, 0x00b3_4254);
+            let mut dy = image_f32(mem, 0x00b6_6e38);
+            match call(mem, LANG, &[]) {
+                0 => scale = image_f32(mem, 0x00b6_6c18),
+                9 => dy = image_f32(mem, 0x00b6_6e3c),
+                _ => dy = image_f32(mem, 0x00b4_99b8),
+            }
+            (0x00b0_db90, dy, scale)
+        };
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let int_f32 = |v: u32| f64::from(v.cast_signed() as f32);
+        let dx: f64 = mem.read(mem.rebase(dx));
+        let x = x87::store(x87::add(int_f32(x), dx));
+        let y = x87::store(x87::add(int_f32(y), x87::load(dy)));
+        call(mem, DRAW, &[value, x, y, alpha, scale, 0]);
+        ret
     }
 
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`
