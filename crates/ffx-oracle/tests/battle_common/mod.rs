@@ -119,13 +119,40 @@ pub fn twin(
     mask: u32,
     rust: impl FnOnce(&mut Oracle) -> u32,
 ) {
-    let ra = a
+    let r = a
         .call(a.rebase(sym), Conv::Cdecl, args)
-        .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"))
-        .eax
-        & mask;
+        .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+    // A float the original leaves in ST0 is a result its callers use: a
+    // port without one (void or an integer) drops it (use [`ftwin`]).
+    assert!(
+        r.st0.is_none(),
+        "{what} {args:x?}: the original returns {:?} in ST0",
+        r.st0
+    );
+    let ra = r.eax & mask;
     let rb = rust(b) & mask;
     assert_eq!(ra, rb, "{what} {args:x?}: result");
+}
+
+/// [`twin`] for a function returning an `f32` in ST0: the port's result
+/// (bits) against ST0 rounded to `f32` as a caller's `fstp dword` would.
+pub fn ftwin(
+    what: &str,
+    a: &mut Oracle,
+    b: &mut Oracle,
+    sym: u32,
+    args: &[u32],
+    rust: impl FnOnce(&mut Oracle) -> u32,
+) {
+    let r = a
+        .call(a.rebase(sym), Conv::Cdecl, args)
+        .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+    let st0 = r
+        .st0_raw
+        .unwrap_or_else(|| panic!("{what} {args:x?}: no float in ST0"));
+    let ra = crt::f80_to_f32(st0);
+    let rb = rust(b);
+    assert_eq!(ra, rb, "{what} {args:x?}: float result");
 }
 
 /// Both wrote the same.
@@ -139,3 +166,59 @@ pub fn readable(o: &mut Oracle, addr: u32, len: usize) -> bool {
 }
 
 pub const ALL: u32 = u32::MAX;
+
+/// `0x00780b40` (`MsBattleAllFree`, never called here): where the
+/// recording stubs go in both oracles (the heap is not executable).
+pub const STUBS: u32 = 0x0078_0b40;
+
+/// `AtelDecodeSignal` and `AtelDecodeCommand` as stubs in one oracle,
+/// each counting its calls and recording its two arguments at `rec`
+/// (+0, +0x10): running the scripts' code would reach the OS's waits.
+pub fn script_stubs(o: &mut Oracle, rec: u32) {
+    let base = o.rebase(STUBS);
+    for (k, f) in [
+        ffx_battle::atel::bridge::ATEL_DECODE_SIGNAL,
+        ffx_battle::atel::bridge::ATEL_DECODE_COMMAND,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = rec + 0x10 * u32::try_from(k).unwrap();
+        let mut code = vec![0xff, 0x05];
+        code.extend(r.to_le_bytes());
+        for (arg, to) in [(4u8, r + 4), (8, r + 8)] {
+            code.extend([0x8b, 0x44, 0x24, arg, 0xa3]);
+            code.extend(to.to_le_bytes());
+        }
+        code.extend([0x31, 0xc0, 0xc3]);
+        let at = base + 0x20 * u32::try_from(k).unwrap();
+        o.write(at, &code).unwrap();
+        // the function jumps to its stub
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// Replaces the function at `f` (ffx.sym address) in one oracle by a stub
+/// at `at` (ffx.sym address, unused code) that counts its calls at `rec`,
+/// keeps its `n` arguments at `rec + 4` on and returns `ret`: callees of
+/// other modules whose effects the test checks through what they got.
+pub fn recording_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32) {
+    let at = o.rebase(at);
+    let mut code = vec![0xff, 0x05];
+    code.extend(rec.to_le_bytes());
+    for k in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0xa3]);
+        code.extend((rec + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    code.push(0xb8);
+    code.extend(ret.to_le_bytes());
+    code.push(0xc3);
+    o.write(at, &code).unwrap();
+    let entry = o.rebase(f);
+    let rel = at.wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
+}
