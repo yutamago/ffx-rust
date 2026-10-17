@@ -40,6 +40,7 @@ pub mod minor;
 pub mod misc;
 pub mod parse;
 pub mod pos;
+pub mod predict;
 pub mod process;
 pub mod rng;
 pub mod save;

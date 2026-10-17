@@ -396,6 +396,40 @@ channel's target and, for the current request, the position now and
 targets of axes without a move. Floats are copied through the x87 there
 (a signalling NaN comes out quiet).
 
+## Moving the actors: `MsMoveChr`
+
+`MsGetMoveTargetDist` (`0x007ab540`, `ffx_battle::predict`; cdecl, 11
+words: `i, kind, with, speed, n, accel, brake, a, b, c, gravity`) starts
+a move: frame `+0x452` 0, kind `+0x415` = `kind & 0x3f`, `+0x417` 0, `n`
+frames (`+0x45a`, `u16`) split into accelerating `n * accel / 128`
+(`+0x454`), braking `n * brake / 128` (`+0x458`, both signed and
+truncated) and the rest cruising (`+0x456`); the start speed `+0x45c` is
+`speed`, or the speed now (`+0x460`) when `kind` has bit 0x40; `with`
+(`+0x416`), `a`, `b`, `c` (`+0x488`, `+0x48c`, `+0x498`), the start
+position (`+0x390`, `MsGetChrPos`), the gravity `+0x4a8` (a zero stored
+as +0.0 with `+0x419` 0, else `+0x419` 0xff), and the distance to
+`MsGetMoveTargetPos`'s point (`+0x4a4`, 2D for a flying actor `+0x34`),
+`+0x4a0` 0. For a kind `MsGetMoveTargetPos` writes nothing for (the
+summoner's kinds without a summoner) the original measures to its stack
+garbage; the port to the zero vector.
+
+`MsCameraMoveCalc(near, &value, start, mv)` (`0x007bda80`,
+`ffx_battle::camera`) steps an eased value from `start` towards `*value`
+(first brought within pi of `start` with `near`, `MsNearRag`) by the move
+block `mv` (eight `i16`): `[0]` the curve, 1 linear (`start + (v - start)
+* frame / length`), 3 a cosine (`_CIcos(frame * pi / length)` on a double,
+then `start + (1 - c)(v - start) / 2`), 2 accelerate, cruise and brake
+(`[2]` the frames whose mean speed starts it, `[3]`, `[4]`, `[5]` the
+three phases; the cruising phase also stores its partial sum in `*value`
+first); other curves leave `*value`. `[7]` (the frame) then counts up and
+past `[6]` (the length) the length becomes 0. 0 for a length of 0
+(nothing changes), else 1. `MsGetChrPredictPos` builds its block on its
+stack (curve 2, `[1]` left as stack garbage, which curve 2 never reads).
+
+`MsCheckNeckMotion` (`0x007ab700`, was `FUN_007ab700`): 0 for the motions
+(`+0x3f0`) 0x20-0x24 and 0x48-0x4c, else -1; `MsMoveChr` sets a neck
+target only on -1.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

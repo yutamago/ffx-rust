@@ -6133,6 +6133,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let cam = scratch(a, b, 0x40);
     let mrec = scratch(a, b, (EXCHANGE_REC * 10) as usize);
     let mut r15 = Xorshift(0x15e5_0001 ^ u32::from(synthetic));
+    let mut r16 = Xorshift(0x16e5_0001 ^ u32::from(synthetic));
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -6158,6 +6159,116 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
         save_params(a, b, &mut r15, &w, out, effrec, xrec);
         messages_and_cameras(a, b, &mut r15, mrec);
+        moves(a, b, &mut r16, &w, out);
+    }
+}
+
+/// `_CIcos` on a double as the patched thunk computes it (`x²`,
+/// [`battle_common::crt`]).
+fn cos_stand_in(x: f64) -> f64 {
+    ffx_bridge::x87::mul(x, x)
+}
+
+/// Zeroes the top of `o`'s stack, where the next original's locals go
+/// (a port's frames start zeroed).
+fn zero_stack(o: &mut Oracle) {
+    let r = o.stack_range();
+    o.write(r.start, &vec![0; (r.end - r.start) as usize])
+        .unwrap();
+}
+
+/// The move step's pieces (round 16): `MsCheckNeckMotion`,
+/// `MsGetMoveTargetDist`, `MsCameraMoveCalc`, on the dressed actors.
+fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    use ffx_battle::camera::bridge as cam;
+    use ffx_battle::predict::bridge as pr;
+    let h = host();
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    let motion =
+        [0x1fu8, 0x20, 0x22, 0x24, 0x25, 0x47, 0x48, 0x4c, 0x4d, 0][rng.below(10) as usize];
+    poke(a, b, actor + 0x3f0, &[motion]);
+    twin("MsCheckNeckMotion", a, b, 0x007a_b700, &[actor], ALL, |m| {
+        pr::ms_check_neck_motion(m, actor)
+    });
+    // MsGetMoveTargetDist (the original's locals zeroed like the Rust
+    // frame: a kind MsGetMoveTargetPos writes nothing for, the summoner's
+    // without one, leaves them as they were; kind 17 left out: on the
+    // field snapshot the original's VU registers 0 and 2 end up holding
+    // the actor and the caller's ebx where the port leaves zeros, an open
+    // question for MsGetMoveTargetPos itself; 15 reads its handle's
+    // optional position, which faults on these synthetic handles)
+    let kind = u32::from([1u8, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14, 18][rng.below(13) as usize])
+        | [0, 0x40, 0x80, 0xc0][rng.below(4) as usize];
+    let n = [0, 1, 7, 30, 0xffff, 0x1_0005][rng.below(6) as usize];
+    let accel = rng.range(-300, 300).cast_unsigned();
+    let brake = rng.range(-300, 300).cast_unsigned();
+    let gravity = [0, 0x8000_0000, float(rng), float(rng)][rng.below(4) as usize];
+    let args = [
+        i,
+        kind,
+        rng.below(ACTORS),
+        float(rng),
+        n,
+        accel,
+        brake,
+        float(rng),
+        float(rng),
+        float(rng),
+        gravity,
+    ];
+    // kind 9's turn (MsTurnMoveVector, tested in `calls`) carries its
+    // frame's garbage into the VU registers: off here
+    poke(a, b, actor + 0x411, &[0]);
+    zero_stack(a);
+    twin("MsGetMoveTargetDist", a, b, 0x007a_b540, &args, 0, |m| {
+        dm(m, |m| {
+            pr::ms_get_move_target_dist(
+                m,
+                &h,
+                args[0],
+                args[1],
+                args[2],
+                args[3],
+                args[4],
+                args[5],
+                args[6],
+                [args[7], args[8], args[9]],
+                args[10],
+                Some(HARNESS.ebx),
+            );
+        });
+        0
+    });
+    local_words(a, b);
+    same(&format!("MsGetMoveTargetDist {args:x?}"), a, b);
+    // MsCameraMoveCalc on a move block in `out`
+    for _ in 0..4 {
+        let mv = out + 0x40;
+        let small = |rng: &mut Xorshift| u16::try_from(rng.below(12)).unwrap();
+        let mut words = [
+            u16::try_from(rng.below(5)).unwrap(),
+            0,
+            small(rng),
+            small(rng),
+            small(rng),
+            small(rng),
+            small(rng),
+            small(rng),
+        ];
+        if rng.below(6) == 0 {
+            words[2] = 0xfffe;
+        }
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        poke(a, b, mv, &bytes);
+        poke(a, b, out, &float(rng).to_le_bytes());
+        let near = rng.below(2);
+        let start = float(rng);
+        let args = [near, out, start, mv];
+        twin("MsCameraMoveCalc", a, b, 0x007b_da80, &args, ALL, |m| {
+            cam::ms_camera_move_calc(m, &cos_stand_in, near, out, start, mv)
+        });
+        same("MsCameraMoveCalc", a, b);
     }
 }
 
