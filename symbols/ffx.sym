@@ -11956,6 +11956,8 @@
 0x00a44820 function sceCdSync                 # fh v3:cg5 0xa44820
 0x00a44840 function MyProfilerAddMarker       # fh v3:cg6 0xa44840
 0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
+0x00a44b80 function JobScheduleWait_Ch_CalcMiddle_Batch # JobSchedule_JobScheduler_waitForComplete(0) only; Ch_CalcMiddle (0x00833390) calls it before and after queueing the batches (0x00a44b90)
+0x00a44b90 function JobSchedule_Ch_CalcMiddle_Batch # (chars, pass, count): queues Ch_CalcMiddle_Batch as a job (0x0071e720, worker threads); Ch_CalcMiddle (0x00833390) calls it once per ~200 elements, so battles run several batches (Ch_Neck/Ch_CalcElement) at once
 0x00a44bd0 function str_replace               # fh v3:exact 0x00a44bd0
 0x00a45000 function abmCalcChrMoveCurMoveCheck # fh v3:exact 0x00a45000
 0x00a45440 function AbmapSetHelpMessage_copy_00a45440 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
