@@ -4775,4 +4775,55 @@ pub mod bridge {
                 && mem.read::<u16>(rec.wrapping_add(6)) == 0xbb,
         )
     }
+
+    /// `TOInitFont1208()` (`0x00821aa0`): 0x38 bytes at `0x012fbbbc` and
+    /// `g_GsRegisterSink` cleared.
+    pub fn init_font_1208(mem: &mut impl Mem) {
+        let at = mem.rebase(0x012f_bbbc);
+        mem.write_bytes(at, &[0u8; 0x38]);
+        mem.write(mem.rebase(0x0230_56e8), 0u32);
+    }
+
+    /// `EventFontTextureArrayReset()` (`0x008ab550`): the interned-name
+    /// count (`0x01841d90`) and its 0x4000-byte slots (`0x025cc5a0`)
+    /// cleared.
+    pub fn event_font_texture_array_reset(mem: &mut impl Mem) {
+        mem.write(mem.rebase(0x0184_1d90), 0u32);
+        let at = mem.rebase(0x025c_c5a0);
+        mem.write_bytes(at, &[0u8; 0x4000]);
+    }
+
+    /// `0x008a2030(max)`: the gil-input record (`0x01340454`, 7 words)
+    /// cleared and set up: the gil (`MsGetGIL`, through `call`) at `+8` and
+    /// `+0x14`, the start value `+0xc` = the gil, or `max` when that is not
+    /// negative and lower; `+2` the number of digits of that value
+    /// (`sprintf("%d")`, minus one); `0x023cc038` cleared. Returns the
+    /// digit count less one.
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    pub fn init_gil_input<M: Mem>(
+        mem: &mut M,
+        max: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec = mem.rebase(0x0134_0454);
+        for k in 0..7u32 {
+            mem.write(rec.wrapping_add(4 * k), 0u32);
+        }
+        let gil = call(mem, 0x0078_4e80, &[]);
+        mem.write(rec.wrapping_add(8), gil);
+        let start = if max.cast_signed() < 0 || gil.cast_signed() < max.cast_signed() {
+            gil
+        } else {
+            max
+        };
+        mem.write(rec.wrapping_add(0x14), gil);
+        mem.write(rec.wrapping_add(4), 0u32);
+        mem.write(rec.wrapping_add(0xc), start);
+        mem.write(rec.wrapping_add(0x10), 0u32);
+        let digits = start.cast_signed().to_string().len() as u32;
+        mem.write(mem.rebase(0x023c_c038), 0u32);
+        let n = digits.wrapping_sub(1);
+        mem.write(rec.wrapping_add(2), n as u16);
+        n
+    }
 }

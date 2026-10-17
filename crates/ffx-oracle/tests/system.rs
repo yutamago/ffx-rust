@@ -10570,7 +10570,14 @@ fn round18_helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             a,
             b,
             rec + 4,
-            [want, if rng.next() & 3 == 0 { 0 } else { 0xbb }],
+            [
+                want,
+                if rng.next().trailing_zeros() >= 2 {
+                    0
+                } else {
+                    0xbb
+                },
+            ],
         );
         let r = if rng.next().is_multiple_of(9) { 0 } else { rec };
         assert_eq!(

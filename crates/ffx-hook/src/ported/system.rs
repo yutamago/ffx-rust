@@ -5694,6 +5694,18 @@ ported! {
     IsLangSpecialRecord_00774680 @ 0x0077_4680 => extern "C" fn is_lang_special_record(rec: u32) -> u32 {
         tolib::bridge::is_lang_special_record(&mut mem(), rec, |m| instance::bridge::ffx_lang(m, &mut phyre_printf))
     }
+    /// `TOInitFont1208()`.
+    TOInitFont1208 @ 0x0082_1aa0 => extern "C" fn to_init_font_1208() {
+        tolib::bridge::init_font_1208(&mut mem());
+    }
+    /// `EventFontTextureArrayReset()`.
+    EventFontTextureArrayReset @ 0x008a_b550 => extern "C" fn event_font_texture_array_reset() {
+        tolib::bridge::event_font_texture_array_reset(&mut mem());
+    }
+    /// `TOInitGilInput(max)`.
+    TOInitGilInput @ 0x008a_2030 => extern "C" fn to_init_gil_input(max: u32) -> u32 {
+        tolib::bridge::init_gil_input(&mut mem(), max, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
