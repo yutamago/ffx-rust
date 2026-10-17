@@ -3549,6 +3549,21 @@ ported! {
         abmap::bridge::abmap_start_part(&mut mem(), [part, n, x, y, z, a, b, c, d, e, f], &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `loadPhyreFieldMap()`.
+    loadPhyreFieldMap @ 0x0090_8000 => extern "C" fn shim_load_phyre_field_map() {
+        yi::bridge::load_phyre_field_map(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapStartWarp(chr, target)`.
+    AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
+        abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcAngle2D(x0, y0, x1, y1)` (a float in `ST0`).
+    rcAngle2D @ 0x007e_6d80 => extern "C" fn shim_rc_angle_2d(x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
+        geom::bridge::rc_angle_2d(&mut mem(), [x0, y0, x1, y1], |_, f, a| call_float(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

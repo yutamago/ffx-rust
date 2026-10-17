@@ -56,6 +56,8 @@ pub const CLIP_FACTOR: Global<f64> = Global::new(0x00b2_c5d0);
 
 /// Offset of a matrix's translation row.
 pub const MAT_TRANSLATE: u32 = 0x30;
+/// π/2 (`f64` of an `f32`, `.rdata`): `rcAngle2D`'s quarter turn.
+pub const HALF_PI: u32 = 0x00b5_82e8;
 
 /// One axis of the box's centre: `(max + min) * 0.5` (`rcBBoxGetCenter`).
 #[must_use]
@@ -343,6 +345,42 @@ pub mod bridge {
     /// `rcMat4fSetScale0001(m)` (`0x0092de80`): by 0.001.
     pub fn rc_mat4f_set_scale_0001(mem: &mut impl Mem, m: u32) -> u32 {
         uniform_scale(mem, m, super::SCALE_0001)
+    }
+
+    /// `rcAngle2D(x0, y0, x1, y1)` (`0x007e6d80`, from `0x007e6e50`; name
+    /// ours): the direction of `(x1 - x0, y1 - y0)` (both `f32`) in
+    /// `0..2π`: the quadrant `q` (0 for x, y >= 0, 1 for x < 0 <= y, 2 for
+    /// both negative, 3 for y < 0 <= x; NaN counts as negative) turns the
+    /// vector into `(a, b)` with `a, b >= 0`, then `atan(b / a)` when
+    /// `a >= b` (or unordered), else `π/2 - atan(a / b)` (stored as
+    /// `f32`), plus `q π/2` (`π/2` the `f64` of an `f32`). Returned in
+    /// `ST0`.
+    pub fn rc_angle_2d<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        mut fcall: impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) -> f32 {
+        use crate::camera::FArgs;
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let [x0, y0, x1, y1] = args;
+        let dx = load(store(sub(load(x1), load(x0))));
+        let dy = load(store(sub(load(y1), load(y0))));
+        let neg = |v: f64| !(v >= 0.0);
+        let (q, a, b) = match (neg(dx), neg(dy)) {
+            (false, false) => (0.0, dx, dy),
+            (false, true) => (3.0, -dy, dx),
+            (true, false) => (1.0, dy, -dx),
+            (true, true) => (2.0, -dx, -dy),
+        };
+        let atan = mem.rebase(crate::camera::CI_ATAN);
+        let c: f64 = mem.read(mem.rebase(super::HALF_PI));
+        let r = if a < b {
+            let t = fcall(mem, atan, FArgs::St0(div(a, b)));
+            store(sub(c, t))
+        } else {
+            store(fcall(mem, atan, FArgs::St0(div(b, a))))
+        };
+        f32::from_bits(store(add(mul(c, q), load(r))))
     }
 
     fn uniform_scale(mem: &mut impl Mem, m: u32, k: u32) -> u32 {
