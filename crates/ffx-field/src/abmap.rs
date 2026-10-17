@@ -86,6 +86,12 @@ pub const ABMAP_FOR_EACH_NODE: u32 = 0x00a5_9710;
 pub const ABMAP_FOR_NODE_AND_LINKED: u32 = 0x00a5_9760;
 /// `AbmapItemNodeEffect` (`0x00a49440`), the iterators' callback.
 pub const ITEM_NODE_EFFECT: u32 = 0x00a4_9440;
+/// `AbmapItemUsableAt` (`0x00a49310`).
+pub const ITEM_USABLE_AT: u32 = 0x00a4_9310;
+/// The command menu's (pad 7) handler, which opens the item menu.
+pub const COMMAND_MENU_STEP: u32 = 0x00a5_6330;
+/// The item menu's (pad 8) handler, which goes back to the command menu.
+pub const ITEM_MENU_STEP: u32 = 0x00a5_60d0;
 /// `AbmapItemApplyNode` (`0x00a5b490`), the iterators' callback.
 pub const ITEM_APPLY_NODE: u32 = 0x00a5_b490;
 /// `0x00a5d120(kind, node, row, chr)`: a special item's abilities.
@@ -1539,5 +1545,97 @@ pub mod bridge {
                 return c.cast_unsigned();
             }
         }
+    }
+
+    // ---- round 21 ----
+
+    /// `AbmapItemEffectAtNode(chr, node, item, work)` (`0x00a493b0`, from
+    /// `AbmapTryUseItem`; name ours): [`abmap_item_usable_at`] for the one
+    /// node `node` (index): 0 when the item is not held, else
+    /// `AbmapItemNodeEffect` of the node with the same context (`work`, the
+    /// original's locals) and its `eax`.
+    pub fn abmap_item_effect_at_node<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [chr, node, item] = args;
+        let f = mem.rebase(super::MS_GET_SAVE_ITEM_NUM);
+        if call(mem, f, &[item]) == 0 {
+            return 0;
+        }
+        mem.write(work.wrapping_add(4), chr);
+        mem.write(work.wrapping_add(0xc), 0u32);
+        mem.write(work.wrapping_add(8), 1u32.wrapping_shl(chr));
+        let excel = item_excel(mem, item, work.wrapping_add(0x14), call);
+        mem.write(work, excel);
+        let nd = ABMAP
+            .get(mem)
+            .wrapping_add(0x28u32.wrapping_mul(node))
+            .wrapping_add(0x808);
+        let f = mem.rebase(super::ITEM_NODE_EFFECT);
+        call(mem, f, &[nd, work])
+    }
+
+    /// Shows pad `pad` (`+0x23` = 1, `+0x24` = 3, `+0x25` = 1) and makes it
+    /// the current menu (`+0x2700`) with the handler `step` (`+0x2704`).
+    fn open_menu_pad(mem: &mut impl Mem, pad: u32, step: u32) -> u32 {
+        let base: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+        let p = base.wrapping_add(0x340 * pad);
+        mem.write(p.wrapping_add(0x23), 0x0301u16);
+        mem.write(p.wrapping_add(0x25), 1u8);
+        #[allow(clippy::cast_possible_truncation)] // a pad index
+        mem.write(base.wrapping_add(0x2700), pad as u16);
+        let step = mem.rebase(step);
+        mem.write(base.wrapping_add(0x2704), step);
+        base
+    }
+
+    /// `AbmapEnterCommandMenu()` (`0x00a59950`, from the item menu's
+    /// handler `0x00a560d0`; name ours): [`abmap_mark_empty_menus`], then
+    /// pad 7 shown and current with the handler `0x00a56330`, bit 3 of its
+    /// `+0x24` set. Returns the pad array (left in `eax`).
+    pub fn abmap_enter_command_menu<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        abmap_mark_empty_menus(mem, call);
+        let base = open_menu_pad(mem, 7, super::COMMAND_MENU_STEP);
+        let at = base.wrapping_add(0x16e4);
+        let v: u8 = mem.read(at);
+        mem.write(at, v | 8);
+        base
+    }
+
+    /// `AbmapEnterItemMenu()` (`0x00a598a0`, from the command menu's
+    /// handler `0x00a56330`; name ours): every item menu entry (`+0x1a44`,
+    /// 12 bytes, the `i16` count at `+0x1a1e` read again after each) marked
+    /// when `AbmapItemUsableAt(current chr, its node, the entry's item
+    /// +4)` is 0, then pad 8 shown and current with the handler
+    /// `0x00a560d0`. Returns 8 (left in `eax`).
+    pub fn abmap_enter_item_menu<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let chr = u32::from(mem.read::<u8>(g.wrapping_add(super::CURRENT_CHR)));
+        let node = u32::from(mem.read::<u16>(g.wrapping_add(0x110cc + 0x50 * chr)));
+        let pad: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+        let count = |mem: &M| i32::from(mem.read::<i16>(pad.wrapping_add(0x1a1e)));
+        let mut i = 0;
+        let mut e = pad.wrapping_add(0x1a44);
+        while i < count(mem) {
+            let g = ABMAP.get(mem);
+            let chr = u32::from(mem.read::<u8>(g.wrapping_add(super::CURRENT_CHR)));
+            let item = u32::from(mem.read::<u16>(e.wrapping_add(4)));
+            let f = mem.rebase(super::ITEM_USABLE_AT);
+            let r = call(mem, f, &[chr, node, item]);
+            mem.write(e, u8::from(r == 0));
+            i += 1;
+            e = e.wrapping_add(0xc);
+        }
+        open_menu_pad(mem, 8, super::ITEM_MENU_STEP);
+        8
     }
 }
