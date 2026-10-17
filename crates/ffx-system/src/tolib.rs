@@ -5016,4 +5016,105 @@ pub mod bridge {
             mem.write(h, sh);
         }
     }
+
+    /// `0x00775a20(_, _, recs, last)`: on screen 8 (`0x00c416c0`) the
+    /// layout of records `0..=last` (0x138 bytes from `recs`; halfwords
+    /// from `+4`: x, y, w, h, and the value index at `+0x26`) is moved for
+    /// the language (`TOGetFFXLang`, `lang`; 3 and 5 are the wide
+    /// layouts): fixed (x, y, w, h) rewrites of known boxes, and for value
+    /// entries of -400 in `*0x0112a0a4` the boxes matching the language
+    /// special-record test of [`is_lang_special_record`].
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn relayout_menu_records<M: Mem>(
+        mem: &mut M,
+        recs: u32,
+        last: u32,
+        mut lang: impl FnMut(&mut M) -> u32,
+    ) {
+        if mem.read::<u32>(mem.rebase(0x00c4_16c0)) != 8 || last.cast_signed() < 0 {
+            return;
+        }
+        let wide = |l: u32| l == 3 || l == 5;
+        let mut p = recs.wrapping_add(4);
+        for _ in 0..=last {
+            let h = |mem: &M, k: u32| -> i16 { mem.read(p.wrapping_add(2 * k)) };
+            let set = |mem: &mut M, vals: &[(u32, u16)]| {
+                for &(k, v) in vals {
+                    mem.write(p.wrapping_add(2 * k), v);
+                }
+            };
+            let idx = h(mem, 0x11);
+            let x = h(mem, 0);
+            let mut done = false;
+            if x == 0x236 {
+                if h(mem, 1) == 0xb3 {
+                    set(mem, &[(0, 0x23a), (1, 0xaf), (2, 0xa5), (3, 0x2a)]);
+                    done = true;
+                } else if h(mem, 1) == 0x8a {
+                    set(mem, &[(0, 0x23a), (1, 0x89), (2, 0xa0), (3, 0x8a)]);
+                    done = true;
+                }
+            }
+            if !done {
+                if x == 0x20e && h(mem, 1) == 0xb3 && h(mem, 2) == 0xff && h(mem, 3) == 0x37 {
+                    set(mem, &[(0, 0x236), (1, 0xb3), (2, 0xaa), (3, 0x24)]);
+                } else {
+                    let table: u32 = mem.read(mem.rebase(0x0112_a0a4));
+                    let entry: u32 =
+                        mem.read(table.wrapping_add((i32::from(idx) * 4).cast_unsigned()));
+                    if entry == 0xffff_fe70 {
+                        if idx >= 9 && x == 0x23e && h(mem, 1) == 0xc5 {
+                            let x = match lang(mem) {
+                                2 | 3 => 0x25a,
+                                10 | 11 => 0x276,
+                                _ => 0x266,
+                            };
+                            set(mem, &[(0, x), (1, 0xbb)]);
+                        } else if (2..9).contains(&idx) {
+                            let y = h(mem, 1);
+                            if x == 0x20e && y == 0x71 && h(mem, 2) == 0xff {
+                                set(mem, &[(3, 0xc2)]);
+                                if wide(lang(mem)) {
+                                    set(mem, &[(0, 0x222), (1, 0x80), (2, 0xdc), (3, 0xb1)]);
+                                } else {
+                                    set(mem, &[(0, 0x236), (1, 0x8a), (2, 0xaa), (3, 0x89)]);
+                                }
+                            } else if x == 0x23e && y == 0x7e {
+                                if wide(lang(mem)) {
+                                    set(mem, &[(0, 0x24d), (1, 0x8c)]);
+                                } else {
+                                    set(mem, &[(0, 0x261), (1, 0x92)]);
+                                }
+                            } else if x == 0x27a && y == 0xae {
+                                if wide(lang(mem)) {
+                                    set(mem, &[(0, 0x25c), (1, 0xbd)]);
+                                } else {
+                                    set(mem, &[(0, 0x270), (1, 0xb3)]);
+                                }
+                            } else if x == 0x27a && y == 0xc6 {
+                                if wide(lang(mem)) {
+                                    set(mem, &[(0, 0x25c), (1, 0xcb)]);
+                                } else {
+                                    set(mem, &[(0, 0x270), (1, 0xc1)]);
+                                }
+                            } else if x == 0x28c && y == 0x107 {
+                                if wide(lang(mem)) {
+                                    set(mem, &[(0, 0x28c), (1, 0xff)]);
+                                } else {
+                                    set(mem, &[(0, 0x282), (1, 0xeb)]);
+                                }
+                            } else if x == 0x28c && y == 0x119 {
+                                if wide(lang(mem)) {
+                                    set(mem, &[(0, 0x28c), (1, 0x111)]);
+                                } else {
+                                    set(mem, &[(0, 0x282), (1, 0xf9)]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            p = p.wrapping_add(0x138);
+        }
+    }
 }
