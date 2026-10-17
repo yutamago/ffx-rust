@@ -673,3 +673,41 @@ as glue too); `0x00651800` (`MultiByteToWideChar` conversion: platform);
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
 not atomic, and loader threads share strings, so it stays original.
+
+Round 12:
+
+- `TextureAnimationInfo_update(this, dt)` (`0x006b4450`, slot 1 of
+  `TextureAnimationInfo_vftable` and `TextureAnimationInfoChar_vftable`):
+  while playing (byte `+0x1c`) the timer `+0x14` grows by `dt`, stored as a
+  float; once it reaches the period `+0x10` (`fcompp; test ah, 0x41; jp`:
+  an ordered `period <= timer`) it restarts at 0 and the frame `+0x18`
+  becomes `(frame + 1 + count) % count` (count `+8`, bit 31 a flag).
+- `TextureAnimationManager_GetByIndexList(this, list, i, absolute)`
+  (`0x006b2140`): index `i` of the list (`+8` count, `+0xc` words, -1 for
+  none), plus the manager's `+0x10` unless `absolute`, picks a word of
+  `+0x60` (`+0x5c` count); 0 out of range.
+- `tex_anim_no_set_old(i, a, v)` (`0x007807c0`): only for `a == 4` and a
+  loaded `g_ChrTexAnim[i]`: `+8 = v`, and each of the eight old-format
+  animations (`0x34` bytes from work `+0x400`) gets `+0xc`, `+0x1c`,
+  `+0x20`, `+0x34` and `+0x38` zeroed (the last two lie in the next
+  animation: the compiler's unrolled loop). Its `eax` (the work buffer, or
+  `i`) is what `tex_anim_no_set` returns; for `a != 4` it is the caller's,
+  which `tex_anim_no_set` (`0x0077e940`) loads with `v` before the call.
+- `texanim_malloc_memory_set(i, delta)` (`0x0077ea10`): `dbgPrintf`
+  "Sa:Movie Malloc Move %x", then entry `i`'s work buffer moves by `delta`.
+- The PRX loader's state `g_PrxState` (`0x00ce83c4`): 1 loading, 2 loading
+  asynchronously (`MagicDLLAsyncLoad`), 3 done, 0 unloaded;
+  `PhyreFIOS_LoadPrxInProgress` (`0x006f9ba0`) is 1 or 2. `0x00ce83c0` is
+  the `HMODULE` (`g_PrxModule`), not a count.
+- `SpdCtrl_Init` (`0x006f72f0`), `CheckAutobtlKey`/`CheckInvincibleKey`
+  (`0x006f7580`/`0x006f76c0`: buttons `0x20000`/`0x200000`),
+  `setLuluODKeyboardInput(left, right)` (`0x00645eb0`: exactly one of
+  `0x8000`/`0x2000`), `SplitScreenStart(kind)` (`0x00638d40`),
+  `graphicMagic0146SetKey(v)` (`0x00641e40`: the scene's byte `+3` and
+  `g_GraphicLevelFilter`), `graphicResetLoadingScreen()` (`0x00642c80`: the
+  loading screen `g_LoadingScreen` in state 3 goes to 1, in state 0 is
+  reset), `ScreenFadeDelegations_processRenderDelegation(d)` (`0x006ae5b0`:
+  unless the post-process's fade colour is locked (`+0x123a0`), `d +0x1c`
+  to `+0x1239c` and the four floats `d +0xc..+0x18` to
+  `+0x1238c..+0x12398`; then `renderScreenFade(d[0], d[1], d[2],
+  g_ScreenFadeByte)`).

@@ -497,20 +497,21 @@ pub mod bridge {
         a.wrapping_add(b).wrapping_mul(4)
     }
 
-    /// The PRX loader's state : 3 when a load completed.
+    /// `g_PrxState`: the PRX loader's state (1 loading, 2 loading
+    /// asynchronously, 3 done, 0 unloaded).
     pub const PRX_STATE: Global<u32> = Global::new(0x00ce_83c4);
-    /// The PRX loader's pending count.
-    pub const PRX_PENDING: Global<u32> = Global::new(0x00ce_83c0);
+    /// `g_PrxModule`: the loaded PRX library (`HMODULE`).
+    pub const PRX_MODULE: Global<u32> = Global::new(0x00ce_83c0);
 
     /// `Compare_006f9b70()`: the PRX load completed.
     pub fn prx_complete(m: &impl Mem) -> u32 {
         u32::from(PRX_STATE.get(m) == 3)
     }
 
-    /// `PhyreFIOS_LoadPrxIdle()` (`0x006f9b80`): complete and nothing
-    /// pending.
+    /// `PhyreFIOS_LoadPrxIdle()` (`0x006f9b80`): complete and no
+    /// library held.
     pub fn prx_idle(m: &impl Mem) -> u32 {
-        u32::from(PRX_STATE.get(m) == 3 && PRX_PENDING.get(m) == 0)
+        u32::from(PRX_STATE.get(m) == 3 && PRX_MODULE.get(m) == 0)
     }
 
     // ---- round 9 ----
@@ -1000,5 +1001,283 @@ pub mod bridge {
             Conv::Thiscall(scene),
             &[arg],
         )
+    }
+
+    // ---- round 12 ----
+
+    /// `PhyreFIOS_LoadPrxInProgress()` (`0x006f9ba0`): the PRX loader's
+    /// state is 1 (a synchronous load) or 2 (an asynchronous one).
+    pub fn prx_in_progress(m: &impl Mem) -> u32 {
+        u32::from(matches!(PRX_STATE.get(m), 1 | 2))
+    }
+
+    /// `TextureAnimationInfo_update(this, dt)` (`0x006b4450`, slot 1 of
+    /// `TextureAnimationInfo_vftable` and `..Char_vftable`): while playing
+    /// (byte `+0x1c`), the timer `+0x14` grows by `dt` (stored as a float);
+    /// once it reaches the period `+0x10` (an ordered compare) it restarts
+    /// at 0 and the frame `+0x18` steps by one modulo the count (`+8`,
+    /// bit 31 a flag; `(frame + 1 + count) % count`, unsigned). With a
+    /// count of 0 the original faults (`div`); this leaves the frame.
+    pub fn tex_anim_info_update(m: &mut impl Mem, this: u32, dt: f32) {
+        if m.read::<u8>(this + 0x1c) == 0 {
+            return;
+        }
+        let t = x87::Reg::load(dt).add_m32(m.read(this + 0x14)).store();
+        m.write(this + 0x14, t);
+        let period: f32 = m.read(this + 0x10);
+        let reached = matches!(
+            x87::load(period.to_bits()).partial_cmp(&x87::load(t.to_bits())),
+            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+        );
+        if !reached {
+            return;
+        }
+        m.write(this + 0x14, 0u32);
+        let count = m.read::<u32>(this + 8) & 0x7fff_ffff;
+        let v = m
+            .read::<u32>(this + 0x18)
+            .wrapping_add(1)
+            .wrapping_add(count);
+        if let Some(r) = v.checked_rem(count) {
+            m.write(this + 0x18, r);
+        }
+    }
+
+    /// `TextureAnimationManager_GetByIndexList(this, list, i, absolute)`
+    /// (`0x006b2140`): entry `i` of the index list (`+8` count, bit 31 a
+    /// flag; `+0xc` the indices), unless -1, plus `+0x10` unless
+    /// `absolute`, picks a word of `+0x60` (`+0x5c` count, bit 31 a flag);
+    /// 0 for a null list or any index out of range.
+    pub fn tex_anim_by_index_list(
+        m: &impl Mem,
+        this: u32,
+        list: u32,
+        i: u32,
+        absolute: u32,
+    ) -> u32 {
+        if list == 0 || i >= m.read::<u32>(list + 8) & 0x7fff_ffff {
+            return 0;
+        }
+        let indices: u32 = m.read(list + 0xc);
+        let mut k: u32 = m.read(indices.wrapping_add(i.wrapping_mul(4)));
+        if k == u32::MAX {
+            return 0;
+        }
+        if absolute == 0 {
+            k = k.wrapping_add(m.read(this + 0x10));
+        }
+        if k >= m.read::<u32>(this + 0x5c) & 0x7fff_ffff {
+            return 0;
+        }
+        let words: u32 = m.read(this + 0x60);
+        m.read(words.wrapping_add(k.wrapping_mul(4)))
+    }
+
+    /// `tex_anim_no_set_old(i, a, v)` (`0x007807c0`): for `a == 4` and a
+    /// loaded `g_ChrTexAnim[i]` (`+0` set), `+8 = v` and the eight old-format
+    /// animations of its work buffer (`0x34` bytes each from `+0x400`) get
+    /// `+0xc`, `+0x1c`, `+0x20`, `+0x34` and `+0x38` zeroed. Returns its
+    /// `eax`: the work buffer then, `i` for an empty entry, and for
+    /// `a != 4` the `eax` it was called with, which its one caller
+    /// (`tex_anim_no_set`) sets to `v` before the call.
+    pub fn tex_anim_no_set_old(m: &mut impl Mem, i: u32, a: u32, v: u32) -> u32 {
+        use crate::texanim::bridge::CHR_TEXANIM;
+        if a != 4 {
+            return v;
+        }
+        let e = CHR_TEXANIM.ptr(m).addr.wrapping_add(i.wrapping_mul(0x30));
+        if m.read::<u32>(e) == 0 {
+            return i;
+        }
+        m.write(e + 8, v);
+        let work: u32 = m.read(e + 4);
+        for k in 0..8u32 {
+            let at = work.wrapping_add(0x400 + 0x34 * k);
+            for off in [0xc, 0x1c, 0x20, 0x34, 0x38] {
+                m.write(at.wrapping_add(off), 0u32);
+            }
+        }
+        work
+    }
+
+    /// `dbgPrintf` and the format `texanim_malloc_memory_set` passes it.
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const MALLOC_MOVE_FORMAT: u32 = 0x00b5_4480;
+
+    /// `texanim_malloc_memory_set(i, delta)` (`0x0077ea10`): prints the
+    /// delta, then moves `g_ChrTexAnim[i]`'s work buffer (`+4`) by it.
+    /// Returns `i * 0x30` (`eax`).
+    pub fn texanim_malloc_memory_set(h: &mut impl Host, i: u32, delta: u32) -> u32 {
+        use crate::texanim::bridge::CHR_TEXANIM;
+        let fmt = h.rebase(MALLOC_MOVE_FORMAT);
+        h.call_sym(DBG_PRINTF, Conv::Cdecl, &[fmt, delta]);
+        let off = i.wrapping_mul(0x30);
+        let at = CHR_TEXANIM.ptr(h).addr.wrapping_add(off) + 4;
+        let v = h.read::<u32>(at).wrapping_add(delta);
+        h.write(at, v);
+        off
+    }
+
+    /// `Sg_SetMuteSound`.
+    pub const SG_SET_MUTE_SOUND: u32 = 0x0082_1c60;
+    /// The speed control's state (`SpdCtrl_Init`): three words, a byte
+    /// flag, a word.
+    pub const SPD_CTRL_B4: Global<u32> = Global::new(0x00ce_82b4);
+    pub const SPD_CTRL_B8: Global<u32> = Global::new(0x00ce_82b8);
+    pub const SPD_CTRL_ENABLED: Global<u8> = Global::new(0x00ce_82bc);
+    pub const SPD_CTRL_C0: Global<u32> = Global::new(0x00ce_82c0);
+
+    /// `SpdCtrl_Init()` (`0x006f72f0`): the speed control's state cleared,
+    /// the sound unmuted (`Sg_SetMuteSound(0)`), then `+0xc0` cleared again
+    /// and the enabled byte set. Returns the mute call's `eax`.
+    pub fn spd_ctrl_init(h: &mut impl Host) -> u32 {
+        SPD_CTRL_C0.set(h, 0);
+        SPD_CTRL_B8.set(h, 0);
+        SPD_CTRL_B4.set(h, 0);
+        let r = h.call_sym(SG_SET_MUTE_SOUND, Conv::Cdecl, &[0]);
+        SPD_CTRL_C0.set(h, 0);
+        SPD_CTRL_ENABLED.set(h, 1);
+        r
+    }
+
+    /// `inputIsPressButton`.
+    pub const INPUT_IS_PRESS_BUTTON: u32 = 0x0063_0cf0;
+    /// `CheckAutobtlKey`'s and `CheckInvincibleKey`'s flags and buttons.
+    pub const AUTOBTL_KEY: Global<u32> = Global::new(0x00ce_82c8);
+    pub const INVINCIBLE_KEY: Global<u32> = Global::new(0x00ce_82cc);
+    pub const AUTOBTL_BUTTON: u32 = 0x2_0000;
+    pub const INVINCIBLE_BUTTON: u32 = 0x20_0000;
+
+    /// `CheckAutobtlKey()` (`0x006f7580`) and `CheckInvincibleKey()`
+    /// (`0x006f76c0`): the flag is cleared, then set (and 1 returned)
+    /// while `button` is pressed; else the flag (0).
+    pub fn check_key(h: &mut impl Host, flag: Global<u32>, button: u32) -> u32 {
+        flag.set(h, 0);
+        if h.call_sym(INPUT_IS_PRESS_BUTTON, Conv::Cdecl, &[button]) != 0 {
+            flag.set(h, 1);
+            return 1;
+        }
+        flag.get(h)
+    }
+
+    /// `setLuluODKeyboardInput(left, right)` (`0x00645eb0`): with exactly
+    /// one of buttons 0x8000 (to `*left`) and 0x2000 (to `*right`)
+    /// pressed, that word becomes 1.
+    pub fn set_lulu_od_keyboard_input(h: &mut impl Host, left: u32, right: u32) {
+        let a = h.call_sym(INPUT_IS_PRESS_BUTTON, Conv::Cdecl, &[0x8000]) != 0;
+        let b = h.call_sym(INPUT_IS_PRESS_BUTTON, Conv::Cdecl, &[0x2000]) != 0;
+        match (a, b) {
+            (true, false) => h.write(left, 1u32),
+            (false, true) => h.write(right, 1u32),
+            _ => {}
+        }
+    }
+
+    /// `PhyreScene_GetSplitScreenStat`, `..SetSplitScreenStat`,
+    /// `..SetSplitScreenType`.
+    pub const SCENE_GET_SPLIT_SCREEN_STAT: u32 = 0x0065_17d0;
+    pub const SCENE_SET_SPLIT_SCREEN_STAT: u32 = 0x0065_4550;
+    pub const SCENE_SET_SPLIT_SCREEN_TYPE: u32 = 0x0065_4570;
+
+    /// `SplitScreenStart(kind)` (`0x00638d40`): when the scene is not split
+    /// yet, it becomes split (stat 1) of type 1 for `kind == 1`, else 0.
+    /// Returns the last call's `eax`.
+    pub fn split_screen_start(h: &mut impl Host, kind: u32) -> u32 {
+        use crate::scene::bridge::SCENE;
+        let scene = SCENE.get(h);
+        let stat = h.call_sym(SCENE_GET_SPLIT_SCREEN_STAT, Conv::Thiscall(scene), &[]);
+        if stat != 0 {
+            return stat;
+        }
+        let scene = SCENE.get(h);
+        h.call_sym(SCENE_SET_SPLIT_SCREEN_STAT, Conv::Thiscall(scene), &[1]);
+        let scene = SCENE.get(h);
+        h.call_sym(
+            SCENE_SET_SPLIT_SCREEN_TYPE,
+            Conv::Thiscall(scene),
+            &[u32::from(kind == 1)],
+        )
+    }
+
+    /// `PhyreScene_SetByte03`.
+    pub const SCENE_SET_BYTE_03: u32 = 0x0066_d1b0;
+
+    /// `graphicMagic0146SetKey(v)` (`0x00641e40`): the scene's byte `+3`
+    /// (`PhyreScene_SetByte03`) and `g_GraphicLevelFilter` get `v`'s low
+    /// byte. Returns the call's `eax`.
+    pub fn magic_0146_set_key(h: &mut impl Host, v: u32) -> u32 {
+        use crate::scene::bridge::SCENE;
+        let scene = SCENE.get(h);
+        let r = h.call_sym(SCENE_SET_BYTE_03, Conv::Thiscall(scene), &[v]);
+        #[allow(clippy::cast_possible_truncation)] // the byte store
+        crate::vfx::bridge::LEVEL_FILTER.set(h, v as u8);
+        r
+    }
+
+    /// `g_LoadingScreen` and its `setParameterManually` and `Reset_006e4fd0`.
+    pub const LOADING_SCREEN: Global<u32> = Global::new(0x00ce_517c);
+    pub const LOADING_SCREEN_SET_PARAMETER: u32 = 0x006e_4ff0;
+    pub const LOADING_SCREEN_RESET: u32 = 0x006e_4fd0;
+
+    /// `graphicResetLoadingScreen()` (`0x00642c80`): by the loading
+    /// screen's state (`+0x10`): 3 becomes 1 (`setParameterManually(null,
+    /// &1, null)`), 0 resets it; others stay.
+    pub fn reset_loading_screen(h: &mut impl Host) {
+        let ls = LOADING_SCREEN.get(h);
+        match h.read::<u32>(ls + 0x10) {
+            3 => {
+                let one = h.scratch();
+                h.write(one, 1u32);
+                h.call_sym(
+                    LOADING_SCREEN_SET_PARAMETER,
+                    Conv::Thiscall(ls),
+                    &[0, one, 0],
+                );
+            }
+            0 => {
+                h.call_sym(LOADING_SCREEN_RESET, Conv::Thiscall(ls), &[]);
+            }
+            _ => {}
+        }
+    }
+
+    /// `PostProcessManager_renderScreenFade` and the byte it gets last.
+    pub const POST_PROCESS_RENDER_SCREEN_FADE: u32 = 0x0069_7490;
+    pub const SCREEN_FADE_BYTE: Global<u8> = Global::new(0x00cc_caa4);
+
+    /// `ScreenFadeDelegations_processRenderDelegation(d)` (`0x006ae5b0`):
+    /// for a delegation `d` (words `+0..+8`, floats `+0xc..+0x18`, a word
+    /// `+0x1c`), unless the post-process's colour is locked (byte
+    /// `+0x123a0`): `+0x1c` to its `+0x1239c` and the four floats (through
+    /// the x87) to `+0x1238c..+0x12398`; then
+    /// `renderScreenFade(d[0], d[1], d[2], g_ScreenFadeByte)`.
+    pub fn screen_fade_process(h: &mut impl Host, d: u32) {
+        use crate::managers::bridge::POST_PROCESS;
+        if d == 0 {
+            return;
+        }
+        let mut floats = [0u32; 4];
+        for (k, f) in (0u32..).zip(floats.iter_mut()) {
+            *f = rt(h.read(d + 0xc + 4 * k));
+        }
+        let (a, b, c, last): (u32, u32, u32, u32) =
+            (h.read(d), h.read(d + 4), h.read(d + 8), h.read(d + 0x1c));
+        let pp = POST_PROCESS.get(h);
+        if h.read::<u8>(pp + 0x123a0) == 0 {
+            h.write(pp + 0x1239c, last);
+        }
+        let pp = POST_PROCESS.get(h);
+        if h.read::<u8>(pp + 0x123a0) == 0 {
+            for (k, f) in (0u32..).zip(floats) {
+                h.write(pp + 0x1238c + 4 * k, f);
+            }
+        }
+        let byte = u32::from(SCREEN_FADE_BYTE.get(h));
+        let pp = POST_PROCESS.get(h);
+        h.call_sym(
+            POST_PROCESS_RENDER_SCREEN_FADE,
+            Conv::Thiscall(pp),
+            &[a, b, c, byte],
+        );
     }
 }

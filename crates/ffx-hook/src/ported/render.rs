@@ -1216,6 +1216,60 @@ ported! {
     ShadowManager_ResetSolution @ 0x006c_eb10 => extern "thiscall" fn shadow_reset_solution(this: u32, keep: u32) -> u32 {
         ut::shadow_reset_solution(&mut mem(), this, keep)
     }
+
+    // ---- round 12 ----
+    /// `PhyreFIOS_LoadPrxInProgress()`.
+    PhyreFIOS_LoadPrxInProgress @ 0x006f_9ba0 => extern "C" fn prx_in_progress() -> u32 {
+        ut::prx_in_progress(&mem())
+    }
+    /// `TextureAnimationInfo_update(this, dt)` (the float by its bits).
+    TextureAnimationInfo_update @ 0x006b_4450 => extern "thiscall" fn tex_anim_info_update(this: u32, dt: u32) {
+        ut::tex_anim_info_update(&mut mem(), this, f32::from_bits(dt));
+    }
+    /// `TextureAnimationManager_GetByIndexList(this, list, i, absolute)`.
+    TextureAnimationManager_GetByIndexList @ 0x006b_2140 => extern "thiscall" fn tex_anim_by_index_list(this: u32, list: u32, i: u32, absolute: u32) -> u32 {
+        ut::tex_anim_by_index_list(&mem(), this, list, i, absolute)
+    }
+    /// `tex_anim_no_set_old(i, a, v)`.
+    tex_anim_no_set_old @ 0x0078_07c0 => extern "C" fn tex_anim_no_set_old(i: u32, a: u32, v: u32) -> u32 {
+        ut::tex_anim_no_set_old(&mut mem(), i, a, v)
+    }
+    /// `texanim_malloc_memory_set(i, delta)`.
+    texanim_malloc_memory_set @ 0x0077_ea10 => extern "C" fn texanim_malloc_memory_set(i: u32, delta: u32) -> u32 {
+        ut::texanim_malloc_memory_set(&mut mem(), i, delta)
+    }
+    /// `SpdCtrl_Init()`.
+    SpdCtrl_Init @ 0x006f_72f0 => extern "C" fn spd_ctrl_init() -> u32 {
+        ut::spd_ctrl_init(&mut mem())
+    }
+    /// `CheckAutobtlKey()`.
+    CheckAutobtlKey @ 0x006f_7580 => extern "C" fn check_autobtl_key() -> u32 {
+        ut::check_key(&mut mem(), ut::AUTOBTL_KEY, ut::AUTOBTL_BUTTON)
+    }
+    /// `CheckInvincibleKey()`.
+    CheckInvincibleKey @ 0x006f_76c0 => extern "C" fn check_invincible_key() -> u32 {
+        ut::check_key(&mut mem(), ut::INVINCIBLE_KEY, ut::INVINCIBLE_BUTTON)
+    }
+    /// `setLuluODKeyboardInput(left, right)`.
+    setLuluODKeyboardInput @ 0x0064_5eb0 => extern "C" fn set_lulu_od_keyboard_input(left: u32, right: u32) {
+        ut::set_lulu_od_keyboard_input(&mut mem(), left, right);
+    }
+    /// `SplitScreenStart(kind)`.
+    SplitScreenStart @ 0x0063_8d40 => extern "C" fn split_screen_start(kind: u32) -> u32 {
+        ut::split_screen_start(&mut mem(), kind)
+    }
+    /// `graphicMagic0146SetKey(v)`.
+    graphicMagic0146SetKey @ 0x0064_1e40 => extern "C" fn graphic_magic_0146_set_key(v: u32) -> u32 {
+        ut::magic_0146_set_key(&mut mem(), v)
+    }
+    /// `graphicResetLoadingScreen()`.
+    graphicResetLoadingScreen @ 0x0064_2c80 => extern "C" fn graphic_reset_loading_screen() {
+        ut::reset_loading_screen(&mut mem());
+    }
+    /// `ScreenFadeDelegations_processRenderDelegation(d)`.
+    ScreenFadeDelegations_processRenderDelegation @ 0x006a_e5b0 => extern "C" fn screen_fade_process(d: u32) {
+        ut::screen_fade_process(&mut mem(), d);
+    }
 }
 
 /// A singleton's pointer.

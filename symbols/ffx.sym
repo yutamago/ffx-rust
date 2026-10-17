@@ -1830,6 +1830,7 @@
 0x00641da0 function graphicLevelGetNameHash   # fh v3:bsim1.00 0x00641f50
 0x00641db0 function graphicLevelSetName          # layout+callees: sorts between graphicLevelGetNameHash and graphicLockScreenFadeColor, and its named callees match the Switch 0x71001d4770 graphicLevelSetName's (similarity 1.00: PhyreScene_setCurrentLevelName, PhyreScene_setCurrentLevelNameHash, PostProcessManager_GetInstance, PostProcessManager_setHDAOSetting, hashU); symbols from Fahrenheit's server export
 0x00641e20 function graphicLockScreenFadeColor # fh v3:bsim1.00 0x00641fd0
+0x00641e40 function graphicMagic0146SetKey    # cdecl(v): PhyreScene_SetByte03(v) (the byte graphicGetMagic0146Key reads) and g_GraphicLevelFilter = v; alphabetical run between graphicLockScreenFadeColor and graphicMagic0708ConvBallChr; name ours
 0x00641e60 function graphicMagic0708ConvBallChr  # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'Ball_Center'; Switch 0x71001cced0 graphicMagic0708ConvBallChr (symbols from Fahrenheit's server export)
 0x00642030 function graphicMagicGetPath       # fh v3:bsim1.00 0x006421e0
 0x00642040 function graphicMagicGetToBeDeletePath # fh v3:bsim1.00 0x006421f0
@@ -1872,6 +1873,7 @@
 0x00642c30 function graphicRenderVideo           # layout+callees: sorts between graphicRender and graphicResetButtonIconScale, and its named callees match the Switch 0x71001cc390 graphicRenderVideo's (similarity 1.00: PhyFMVPlayerManager_GetInstance, PhyFMVPlayerManager_Render); symbols from Fahrenheit's server export
 0x00642c60 function graphicResetButtonIconScale # fh v3:cg7 0x642e10
 0x00642c70 function graphicResetHasRunDrawFocusInThisFrame # fh v3:cg3 0x642e20
+0x00642c80 function graphicResetLoadingScreen # cdecl(): g_LoadingScreen state +0x10: 3 -> LoadingScreen_setParameterManually(0, &1, 0), 0 -> Reset_006e4fd0; alphabetical run between graphicResetHasRunDrawFocusInThisFrame and graphicResetYIQ; name ours
 0x00642cc0 function graphicResetYIQ           # fh v3:bsim1.00 0x00642e70
 0x00642cf0 function graphicScreenGetDttOffset # fh v3:exact 0x00642ea0
 0x00642d10 function graphicScreenGetOffset    # fh v3:exact 0x00642ec0
@@ -2690,6 +2692,7 @@
 0x006b1ef0 function TextureAnimationManager_FindAnimation # structure: thiscall(mgr, name): the first 0x20-byte entry of +0x68 (+0x64 of them, bit 31 a flag) whose PString +0x18 equals name, else 0; name ours
 0x006b2070 function TextureAnimationManager_getMaterialByLayNum # fh v3:exact 0x006b21c0 TextureAnimationManager::getMaterialByLayNum
 0x006b20a0 function TextureAnimationManager_FindMaterialIndex # structure: thiscall(mgr, name): the index of the first material of +0x78 (+0x74, bit 31 a flag) whose PString +0x10 equals name, else -1; 0x00643a40 calls it on TextureAnimationManager_GetInstance; name ours
+0x006b2140 function TextureAnimationManager_GetByIndexList # thiscall(mgr, list, i, absolute), ret 0xc: index list entry i (+8 count, +0xc words; -1 none) plus +0x10 unless absolute picks a word of +0x60 (+0x5c count); 0 when out of range; name ours
 0x006b22c0 function TextureAnimation_NextFrame # thiscall(this): v = +0x18 + 1 + count (+8 & 0x7fffffff); +0x18 = v % count; eax = v / count, edx = the frame; name ours
 0x006b2380 function TextureAnimation_PrevFrame # thiscall(this): as TextureAnimation_NextFrame with -1; name ours
 0x006b28f0 function PhyreCursor_IsValid_006b28f0 # as PhyreCursor_IsValid_00660240; name ours
@@ -2700,6 +2703,7 @@
 0x006b3650 function TextureAnimation_SetByte1c # thiscall(this, v), ret 4: byte +0x1c = v; name ours
 0x006b42c0 function TextureAnimationManager_SetFrame # structure: thiscall(mgr, i, frame, absolute), ret 0xc: material i (+8 + +0xc unless absolute) names a texture animation (TextureAnimation_FindByName): +0x1c = 0, +0x18 = frame when below its count; al 1 (0 when not found); name ours
 0x006b4330 function TextureAnimationManager_unregisterChararcterInstance # fh v3:exact 0x006b4480 TextureAnimationManager::unregisterChararcterInstance
+0x006b4450 function TextureAnimationInfo_update # thiscall(this, float dt), ret 4: slot 1 of TextureAnimationInfo_vftable and TextureAnimationInfoChar_vftable; while +0x1c, timer +0x14 += dt, at period +0x10 restarts and frame +0x18 steps modulo +8; name ours
 0x006b47e0 function ParamList_SetAllFloat     # structure: thiscall(this, f): each 0x20-byte entry of +0x80 (+0x7c, bit 31 a flag) gets virtual 1(f); name ours
 0x006b4950 function DebugMenuManager_CreateInstance # fh v3:exact 0x006b4aa0 DebugMenuManager::CreateInstance
 0x006b4990 function DebugMenuManager_Destroy # (): virtual destructor (1) of g_DebugMenuManager, then clears it; name ours
@@ -14521,6 +14525,7 @@
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
 0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
+0x00cccaa4 label    g_ScreenFadeByte          # u8: the last argument ScreenFadeDelegations_processRenderDelegation passes to PostProcessManager_renderScreenFade; name ours
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy
 0x00cccab8 label    g_RenderFlag              # the byte ReturnGlobalSx8_006bc960 returns sign-extended
@@ -14532,6 +14537,7 @@
 0x00cdedf0 label    g_DynGeoFillBuffer        # graphicDynGeoFillBufferIsValid: *(*this) != 0
 0x00ce5170 label    g_FogEffectManager        # Phyre_FogEffectManager_GetInstance; graphicSetChrFogFade
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
+0x00ce517c label    g_LoadingScreen           # the LoadingScreen graphicResetLoadingScreen calls LoadingScreen_setParameterManually and Reset_006e4fd0 on (state +0x10)
 0x00ce6ea4 label    g_TipSystem               # TipSystem_Get; graphicPushTip, graphicPushTipByLocId
 0x00ce6ee0 label g_SaveFolder # UTF-16 save folder, set by SetUpDefaultSaveFolder (Documents\Square Enix\...\FINAL FANTASY X\)
 0x00ce72e0 label g_SaveFolderSet # 1 once SetUpDefaultSaveFolder filled g_SaveFolder
@@ -14544,8 +14550,14 @@
 0x00ce7310 label g_SaveMachineBusy # 1 from SaveDataMachine_StartLoad until the load is done
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
-0x00ce83c0 label    g_PrxPending              # PhyreFIOS_LoadPrxIdle tests it 0
-0x00ce83c4 label    g_PrxState                # 3 when a PRX load completed (Compare_006f9b70, PhyreFIOS_LoadPrxIdle)
+0x00ce82b4 label    g_SpdCtrl_b4              # cleared by SpdCtrl_Init; name ours
+0x00ce82b8 label    g_SpdCtrl_b8              # cleared by SpdCtrl_Init; name ours
+0x00ce82bc label    g_SpdCtrl_Ready           # u8: SpdCtrl_Init sets it 1 after Sg_SetMuteSound(0); name ours
+0x00ce82c0 label    g_SpdCtrl_c0              # cleared by SpdCtrl_Init, before and after Sg_SetMuteSound(0); name ours
+0x00ce82c8 label    g_AutobtlKey              # CheckAutobtlKey: 1 while button 0x20000 is pressed (inputIsPressButton), else 0
+0x00ce82cc label    g_InvincibleKey           # CheckInvincibleKey: 1 while button 0x200000 is pressed (inputIsPressButton), else 0
+0x00ce83c0 label    g_PrxModule               # the HMODULE PhyreFIOS_LoadsPrx and MagicDLLAsyncLoad keep from LoadLibraryA; PhyreFIOS_LoadPrxIdle tests it 0
+0x00ce83c4 label    g_PrxState                # the PRX loader: 1 loading, 2 loading asynchronously (PhyreFIOS_LoadPrxInProgress), 3 done (Compare_006f9b70, PhyreFIOS_LoadPrxIdle), 0 unloaded (PhyreFIOS_UnloadPrx)
 0x00ce9010 label    g_FmodManager             # FmodManager* (0x50 bytes; +8 FfxFmod, +0x10 queue mutex, +0x14 sync mutex, +0x18/+0x1c events, +0x28/+0x2c ring write/read, +0x30.. sync command); iFmodInitialize
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
 0x00ce9020 label g_UserHeapFirstBlock # the 16-byte block malloc_pool_init allocates to prove the heap; name ours

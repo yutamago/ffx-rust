@@ -4465,7 +4465,7 @@ fn round7_matches_the_original() {
                     if rng.chance(2) { 3 } else { rng.below(5) },
                 );
                 t.global(
-                    ut::PRX_PENDING.sym,
+                    ut::PRX_MODULE.sym,
                     if rng.chance(2) { 0 } else { rng.next() },
                 );
                 t.check(&what, 0x006f_9b70, Conv::Cdecl, &[], |g| {
@@ -5123,5 +5123,319 @@ fn round11_matches_the_original() {
                 });
             }
         }
+    }
+}
+
+// ---- round 12 ----
+
+/// Writes `mov eax, [esp+4]; and eax, mask; ret` over the original at
+/// `sym`: a button check pressing the buttons of `mask`.
+fn stub_buttons(t: &mut Twins, sym: u32, mask: u32) {
+    let at = t.rebase(sym);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x25];
+    c.extend(mask.to_le_bytes());
+    c.push(0xc3);
+    t.write(at, &c);
+}
+
+/// One round-12 case on `t` (`real`: a snapshot, whose globals the case
+/// reads rather than sets where it can).
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one arm per function
+fn round12_case(t: &mut Twins, rng: &mut Rng, case: u32, real: bool, what: &str) {
+    use ffx_graphic::texanim::bridge as ta;
+    use ffx_graphic::util::bridge as ut;
+    match case {
+        0 => {
+            if !real {
+                let s = [0, 1, 2, 3, rng.next()][rng.below(5) as usize];
+                t.global(ut::PRX_STATE.sym, s);
+            }
+            t.check(what, 0x006f_9ba0, Conv::Cdecl, &[], |g| {
+                Out::U32(ut::prx_in_progress(g))
+            });
+        }
+        1 => {
+            let this = t.alloc(&rng.bytes(0x20));
+            t.w8(this + 0x1c, [0, 1, 0xff][rng.below(3) as usize]);
+            let count = if rng.chance(8) {
+                rng.next() | 1
+            } else {
+                1 + rng.below(8)
+            } | (rng.next() & 0x8000_0000);
+            t.w32(this + 8, count);
+            t.w32(
+                this + 0x18,
+                if rng.chance(4) {
+                    rng.next()
+                } else {
+                    rng.below(9)
+                },
+            );
+            let period = if rng.chance(2) {
+                (rng.below(100) as f32) / 10.0
+            } else {
+                rng.float()
+            };
+            let timer = if rng.chance(2) {
+                (rng.below(100) as f32) / 10.0
+            } else {
+                rng.float()
+            };
+            let dt = if rng.chance(2) {
+                (rng.below(30) as f32) / 10.0
+            } else {
+                rng.float()
+            };
+            // the timer reaching the period exactly
+            let (timer, period) = if rng.chance(4) {
+                let a = rng.below(8) as f32;
+                let dt_int = dt.trunc();
+                (a, a + dt_int)
+            } else {
+                (timer, period)
+            };
+            let dt = if timer.fract() == 0.0 && period.fract() == 0.0 && rng.chance(2) {
+                period - timer
+            } else {
+                dt
+            };
+            t.write(this + 0x10, &period.to_le_bytes());
+            t.write(this + 0x14, &timer.to_le_bytes());
+            t.check(
+                what,
+                0x006b_4450,
+                Conv::Thiscall(this),
+                &[dt.to_bits()],
+                |g| {
+                    ut::tex_anim_info_update(g, this, dt);
+                    Out::None
+                },
+            );
+        }
+        2 => {
+            let n = rng.below(6);
+            let mut idx = Vec::new();
+            for _ in 0..n {
+                let v = match rng.below(4) {
+                    0 => u32::MAX,
+                    1 => rng.next(),
+                    _ => rng.below(10),
+                };
+                idx.extend(v.to_le_bytes());
+            }
+            idx.extend([0; 4]);
+            let words = t.alloc(&idx);
+            let list = t.alloc(&rng.bytes(0x10));
+            t.w32(list + 8, n | (rng.next() & 0x8000_0000));
+            t.w32(list + 0xc, words);
+            let list = if rng.chance(8) { 0 } else { list };
+            let mgr = t.alloc(&rng.bytes(0x70));
+            let m = rng.below(12);
+            let items = t.alloc(&rng.bytes(4 * m as usize + 4));
+            t.w32(mgr + 0x10, rng.below(4));
+            t.w32(mgr + 0x5c, m | (rng.next() & 0x8000_0000));
+            t.w32(mgr + 0x60, items);
+            let i = if rng.chance(8) {
+                rng.next()
+            } else {
+                rng.below(7)
+            };
+            let abs = if rng.chance(2) { 0 } else { rng.next() };
+            t.check(
+                what,
+                0x006b_2140,
+                Conv::Thiscall(mgr),
+                &[list, i, abs],
+                |g| Out::U32(ut::tex_anim_by_index_list(g, mgr, list, i, abs)),
+            );
+        }
+        3 => {
+            let i = rng.below(64);
+            let e = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i;
+            // a snapshot's entries keep their loaded word; their buffers may
+            // be stale, so each gets a fresh one
+            if !real {
+                t.w32(e, u32::from(!rng.chance(4)));
+            }
+            let work = t.alloc(&rng.bytes(0x600));
+            t.w32(e + 4, work);
+            let a = if rng.chance(4) { rng.below(8) } else { 4 };
+            let v = rng.next();
+            t.check(what, 0x0078_07c0, Conv::Cdecl, &[i, a, v], |g| {
+                let r = ut::tex_anim_no_set_old(g, i, a, v);
+                // for a != 4 the original's eax is its caller's
+                if a == 4 { Out::U32(r) } else { Out::None }
+            });
+        }
+        4 => {
+            t.stub_sym(ut::DBG_PRINTF, Conv::Cdecl, 2, rng.next());
+            let i = rng.below(64);
+            let d = rng.next();
+            t.check(what, 0x0077_ea10, Conv::Cdecl, &[i, d], |g| {
+                Out::U32(ut::texanim_malloc_memory_set(g, i, d))
+            });
+        }
+        5 => {
+            // a mute call that writes g_SpdCtrl_c0 (`mov dword [c0], v;
+            // mov eax, r; ret`): the clear after it must show
+            let at = t.rebase(ut::SG_SET_MUTE_SOUND);
+            let c0 = t.rebase(ut::SPD_CTRL_C0.sym);
+            let mut c = vec![0xc7, 0x05];
+            c.extend(c0.to_le_bytes());
+            c.extend((rng.next() | 1).to_le_bytes());
+            c.push(0xb8);
+            c.extend(rng.next().to_le_bytes());
+            c.push(0xc3);
+            t.write(at, &c);
+            if !real {
+                for g in [
+                    ut::SPD_CTRL_B4.sym,
+                    ut::SPD_CTRL_B8.sym,
+                    ut::SPD_CTRL_ENABLED.sym,
+                    ut::SPD_CTRL_C0.sym,
+                ] {
+                    t.global(g, rng.next());
+                }
+            }
+            t.check(what, 0x006f_72f0, Conv::Cdecl, &[], |g| {
+                Out::U32(ut::spd_ctrl_init(g))
+            });
+        }
+        6 => {
+            let mask =
+                [0, ut::AUTOBTL_BUTTON | ut::INVINCIBLE_BUTTON, rng.next()][rng.below(3) as usize];
+            stub_buttons(t, ut::INPUT_IS_PRESS_BUTTON, mask);
+            if !real {
+                t.global(ut::AUTOBTL_KEY.sym, rng.next());
+                t.global(ut::INVINCIBLE_KEY.sym, rng.next());
+            }
+            if rng.chance(2) {
+                t.check(what, 0x006f_7580, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::check_key(g, ut::AUTOBTL_KEY, ut::AUTOBTL_BUTTON))
+                });
+            } else {
+                t.check(what, 0x006f_76c0, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::check_key(g, ut::INVINCIBLE_KEY, ut::INVINCIBLE_BUTTON))
+                });
+            }
+        }
+        7 => {
+            let mask = [0, 0x8000, 0x2000, 0xa000, rng.next()][rng.below(5) as usize];
+            stub_buttons(t, ut::INPUT_IS_PRESS_BUTTON, mask);
+            let out = t.alloc(&rng.bytes(8));
+            t.check(what, 0x0064_5eb0, Conv::Cdecl, &[out, out + 4], |g| {
+                ut::set_lulu_od_keyboard_input(g, out, out + 4);
+                Out::None
+            });
+        }
+        8 => {
+            if !real || t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 {
+                let scene = t.zeros(0x10);
+                t.global(scene::bridge::SCENE.sym, scene);
+            }
+            let stat = if rng.chance(2) { 0 } else { rng.next() };
+            t.stub_sym(ut::SCENE_GET_SPLIT_SCREEN_STAT, Conv::Thiscall(0), 0, stat);
+            t.stub_sym(
+                ut::SCENE_SET_SPLIT_SCREEN_STAT,
+                Conv::Thiscall(0),
+                1,
+                rng.next(),
+            );
+            t.stub_sym(
+                ut::SCENE_SET_SPLIT_SCREEN_TYPE,
+                Conv::Thiscall(0),
+                1,
+                rng.next(),
+            );
+            let kind = [0, 1, 2, rng.next()][rng.below(4) as usize];
+            t.check(what, 0x0063_8d40, Conv::Cdecl, &[kind], |g| {
+                Out::U32(ut::split_screen_start(g, kind))
+            });
+        }
+        9 => {
+            if !real || t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 {
+                let scene = t.zeros(0x10);
+                t.global(scene::bridge::SCENE.sym, scene);
+            }
+            t.stub_sym(ut::SCENE_SET_BYTE_03, Conv::Thiscall(0), 1, rng.next());
+            let v = rng.next();
+            t.check(what, 0x0064_1e40, Conv::Cdecl, &[v], |g| {
+                Out::U32(ut::magic_0146_set_key(g, v))
+            });
+        }
+        10 => {
+            // the loading screen's own methods run, original on both sides
+            let ls = t.rebase(ut::LOADING_SCREEN.sym);
+            if !real || t.r32(ls) == 0 {
+                let o = t.alloc(&float_bytes(rng, 0x20));
+                t.w32(ls, o);
+            }
+            let o = t.r32(ls);
+            if !real || rng.chance(2) {
+                t.w32(o + 0x10, [0, 3, 1, rng.next()][rng.below(4) as usize]);
+            }
+            t.check(what, 0x0064_2c80, Conv::Cdecl, &[], |g| {
+                ut::reset_loading_screen(g);
+                Out::None
+            });
+        }
+        _ => {
+            use ffx_graphic::managers::bridge::POST_PROCESS;
+            t.stub_sym(
+                ut::POST_PROCESS_RENDER_SCREEN_FADE,
+                Conv::Thiscall(0),
+                4,
+                rng.next(),
+            );
+            let pp = t.rebase(POST_PROCESS.sym);
+            if !real || t.r32(pp) == 0 {
+                let o = t.alloc(&rng.bytes(0x12400));
+                t.w32(pp, o);
+            }
+            let o = t.r32(pp);
+            if !real || rng.chance(2) {
+                t.w8(o + 0x123a0, u8::from(rng.chance(3)));
+            }
+            if !real {
+                t.global(ut::SCREEN_FADE_BYTE.sym, rng.next());
+            }
+            let d = t.alloc(&float_bytes(rng, 0x20));
+            for k in 0..3 {
+                t.w32(d + 4 * k, rng.next());
+            }
+            t.w32(d + 0x1c, rng.next());
+            let d = if rng.chance(8) { 0 } else { d };
+            t.check(what, 0x006a_e5b0, Conv::Cdecl, &[d], |g| {
+                ut::screen_fade_process(g, d);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn round12_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1212_0012);
+    for round in 0..3600 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round12_case(&mut t, &mut rng, round % 12, false, &what);
+    }
+}
+
+#[test]
+fn snapshot_round12_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5012_0012);
+    for round in 0..600 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round12_case(&mut t, &mut rng, round % 12, true, &what);
     }
 }
