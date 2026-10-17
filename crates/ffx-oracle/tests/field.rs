@@ -11585,3 +11585,98 @@ fn round29_achievements_and_special_kinds_match_the_original() {
         }
     }
 }
+
+/// Copies 0x40 bytes from `src` to the stand-in's second argument
+/// (`rcbgFPmGetMatrix(fp, out)`'s shape).
+fn copy64_stub(src: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x10, 0xbe];
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 0x40, 0x00, 0x00, 0x00, 0xf3, 0xa4, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Round 30: the sphere grid's bounds and the sea's field-effect fade.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round30_grid_bounds_and_sea_fade_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001e_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (angv, mngv, mat) = (t.alloc(4), t.alloc(4), t.alloc(0x40));
+    // pppFpGetMngPtr(id, 0, &out): out = *mngv
+    let mut mng_stub = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+    mng_stub.extend_from_slice(&mngv.to_le_bytes());
+    mng_stub.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(model::YN_SEA_GET_ANG_PTR), log_stub(log, angv, 360, 0)),
+        (Some(model::PPP_FP_ID_DISP_ON), log_stub(log, rv, 361, 1)),
+        (Some(model::PPP_FP_ID_DISP_OFF), log_stub(log, rv, 362, 1)),
+        (Some(model::FP_RESTART), log_stub(log, rv, 363, 1)),
+        (Some(model::FP_END), log_stub(log, rv, 364, 1)),
+        (Some(model::FPM_GET_MATRIX), copy64_stub(mat)),
+        (Some(model::PPP_FP_GET_MNG_PTR), mng_stub),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let (fade, ang, mng) = (t.alloc(0x14), t.alloc(0x10), t.alloc(0x50));
+    t.put(angv, ang);
+    let chunks = t.b.rebase(model::CHUNK_IDS);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        // the bounds
+        let n = rng.range(0, 60);
+        t.put(grid, i16::try_from(n).unwrap());
+        t.fill(grid + 0x115f0, 0x30, &mut rng);
+        for i in 0..61u32 {
+            let r = grid + 8 + 0x10 * i;
+            t.fill(r, 0x10, &mut rng);
+            t.put(r + 6, u16::try_from(rng.below(8)).unwrap());
+        }
+        t.fill(grid + 0xf808, 0x20, &mut rng);
+        t.same(
+            "AbmapCalcBounds",
+            |o| o.eax(0x00a5_ae40, &[]),
+            abmap::bridge::abmap_calc_bounds,
+        );
+        // the fade
+        t.put(fade, rng.below(5));
+        t.put(fade + 4, rng.range(-1, 13));
+        let a = match k % 4 {
+            0 => float_in(&mut rng, -40, 40),
+            1 => 0u32,
+            _ => float_in(&mut rng, -4, 4),
+        };
+        t.put(fade + 8, a);
+        t.put(fade + 0xc, rng.range(-1, 30));
+        t.put(fade + 0x10, rng.range(-2, 32));
+        t.put(
+            ang + 8,
+            if rng.below(3) == 0 {
+                a
+            } else {
+                float_in(&mut rng, -40, 40)
+            },
+        );
+        if k % 5 == 2 {
+            // counts beyond f32's integers
+            let big = rng.range(0x0100_0001, 0x7fff_0000);
+            t.put(fade + 0xc, big);
+            t.put(fade + 0x10, rng.range(1, big));
+        }
+        for i in 0..16 {
+            t.put(mat + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        t.put(mngv, if rng.below(3) == 0 { 0 } else { mng });
+        t.fill(chunks, 0x38 * 14, &mut rng);
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "Yn_SeaFpFade",
+            |o| o.void(0x0092_2970, &[fade]),
+            |m| model::bridge::yn_sea_fp_fade(m, fade, work, call),
+        );
+    }
+}

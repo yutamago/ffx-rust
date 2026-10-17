@@ -3593,6 +3593,20 @@ ported! {
         abmap::bridge::abmap_special_effect(&mut mem(), [kind, node, row, chr], &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `AbmapCalcBounds()`.
+    AbmapCalcBounds @ 0x00a5_ae40 => extern "C" fn shim_abmap_calc_bounds() -> u32 {
+        abmap::bridge::abmap_calc_bounds(&mut mem())
+    }
+
+    /// `Yn_SeaFpFade(fade)`.
+    Yn_SeaFpFade @ 0x0092_2970 => extern "C" fn shim_yn_sea_fp_fade(fade: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x50]);
+        let mut work = Locals([0; 0x50]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::yn_sea_fp_fade(&mut mem(), fade, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

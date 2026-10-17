@@ -2034,4 +2034,63 @@ pub mod bridge {
         };
         u32::from(r)
     }
+
+    // ---- round 30 ----
+
+    /// `AbmapCalcBounds()` (`0x00a5ae40`, from `LoadAbmap`; name ours):
+    /// the grid's extent: from 0.0, the minimum and maximum over the `i16`
+    /// count (`+0`) of nodes (`+8`, 16 bytes: `i16` x `+0`, y `+2`, kind
+    /// `+6`) of `x -/+ w / 2` and `y -/+ h / 2` (the kind's size, `i16`s at
+    /// `+0xf808 + 4 kind`; halves toward zero) as floats into
+    /// `+0x115fc`/`+0x11600` (minimum x, y) and `+0x11604`/`+0x11608`
+    /// (maximum), copied to `+0x1160c`, `+0x11610`, `+0x11614` and
+    /// `+0x11618`. Returns the grid (left in `eax`).
+    pub fn abmap_calc_bounds(mem: &mut impl Mem) -> u32 {
+        let g = ABMAP.get(mem);
+        for at in [0x11608, 0x11604, 0x11600, 0x115fc] {
+            mem.write(g.wrapping_add(at), 0u32);
+        }
+        let f = |v: i32| -> f32 {
+            #[allow(clippy::cast_precision_loss)] // i16 sums: exact
+            let x = v as f32;
+            x
+        };
+        let mut n = i32::from(mem.read::<i16>(g));
+        let mut rec = g.wrapping_add(8);
+        while n != 0 {
+            n = n.wrapping_sub(1);
+            let x = i32::from(mem.read::<i16>(rec));
+            let y = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+            let kind = u32::from(mem.read::<u16>(rec.wrapping_add(6)));
+            let size = g.wrapping_add(0xf808).wrapping_add(kind.wrapping_mul(4));
+            let hw = i32::from(mem.read::<i16>(size)) / 2;
+            let hh = i32::from(mem.read::<i16>(size.wrapping_add(2))) / 2;
+            let ext = [
+                (0x115fc, f(x - hw), false),
+                (0x11600, f(y - hh), false),
+                (0x11604, f(hw + x), true),
+                (0x11608, f(hh + y), true),
+            ];
+            for (at, v, max) in ext {
+                let cur = f32::from_bits(mem.read::<u32>(g.wrapping_add(at)));
+                if (max && v > cur) || (!max && v < cur) {
+                    mem.write(g.wrapping_add(at), v.to_bits());
+                }
+            }
+            rec = rec.wrapping_add(0x10);
+        }
+        for (from, to) in [
+            (0x115fc, 0x1160c),
+            (0x11604, 0x11614),
+            (0x11600, 0x11610),
+            (0x11608, 0x11618),
+        ] {
+            let v = mem.read::<u32>(g.wrapping_add(from));
+            mem.write(
+                g.wrapping_add(to),
+                ffx_bridge::x87::round_trip(f32::from_bits(v)).to_bits(),
+            );
+        }
+        g
+    }
 }
