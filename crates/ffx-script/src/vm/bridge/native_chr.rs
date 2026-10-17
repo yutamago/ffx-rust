@@ -1272,16 +1272,6 @@ natives! {
     native_c013(h, w, a, s) => u32::from(call(h, 0x0078_51f0, &[]) == 1);
     /// `0xc014` (`0x008787c0`): 1 when `0x007851b0()` is not 0.
     native_c014(h, w, a, s) => u32::from(call(h, 0x0078_51b0, &[]) != 0);
-    /// `0xc03b` (`0x008790b0`): `0x007849d0()`; 1.
-    native_c03b(h, w, a, s) => {
-        call(h, 0x0078_49d0, &[]);
-        1
-    };
-    /// `0xc03c` (`0x008790c0`): `0x007848b0()`; 1.
-    native_c03c(h, w, a, s) => {
-        call(h, 0x0078_48b0, &[]);
-        1
-    };
     /// `0xc052` (`0x008793e0`): jumps to `0x0088d6d0`.
     native_c052(h, w, a, s) => call(h, 0x0088_d6d0, &[w, a, s]);
     /// `0xc054` (`0x008781b0`): `(n)` -> `TkMalloc(n)` (`0x0088e650`).
@@ -1585,6 +1575,78 @@ pub fn native_504d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
     0.0
 }
 
+// ---- round 13: the four left over ----
+
+/// `AtelCall_Math_ATan2_RF` (`0x00877b30`, `0x1005`, float, Fahrenheit's
+/// name): `(y f, x f)` -> `atan2(y, x)` through the game's own
+/// `_CIatan2` (the import thunk `0x009498bc`), rounded to `f32`.
+pub fn atel_call_math_atan2_rf<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
+    let x = r32(x87::load(atel_pop_stack_float(h, s)));
+    let y = x87::load(atel_pop_stack_float(h, s));
+    let f = h.rebase(0x0094_98bc);
+    r32(h.call_intrinsic2(f, y, x))
+}
+
+/// `0x6077` (`0x007b9190`, float): the camera's `+0xc90` angle
+/// (`0x007bd500`, `ST0`, rounded to `f32`) in degrees: `MsNearRag(0, v) *
+/// 180 / pi`, rounded to `f32`.
+pub fn native_6077<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> f64 {
+    let v = x87::store(callf(h, 0x007b_d500, &[]));
+    let r = callf(h, 0x007c_04c0, &[x87::store(0.0), v]);
+    r32(x87::div(x87::mul(r, 180.0), PI_F32))
+}
+
+/// `0x5037` (`0x00a7a140`): `(worker, &x, &y, &z)`: the model's point 0
+/// (`Ch_OptposGet`, `0x008354f0`) into the three variables (null ones
+/// skipped); 0.
+pub fn native_5037<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [i, vx, vy, vz] = pops::<4>(h, s);
+    let px = super::atel_get_real_var_adrs(h, w, vx);
+    let py = super::atel_get_real_var_adrs(h, w, vy);
+    let pz = super::atel_get_real_var_adrs(h, w, vz);
+    let c = chr_of(h, i);
+    if c != 0 {
+        let v = h.scratch();
+        for k in 0..4 {
+            h.write(v + k * 4, 0_u32);
+        }
+        call(h, 0x0083_54f0, &[c, 0, v]);
+        for (p, k) in [(px, 0), (py, 4), (pz, 8)] {
+            if p != 0 {
+                let x = x87::store(x87::load(h.read(v + k)));
+                h.write(p, x);
+            }
+        }
+    }
+    0
+}
+
+/// `0xc025` (`0x00878c70`): `(msg)`: copies the message text
+/// (`Msg_Text`, `0x0086bf30`) over the player's name
+/// (`MsGetSaveChrName(0)`, `0x00784fb0`) when it is shorter than
+/// `MsGetSaveChrNameSize(0)` (`0x00784fe0`); 1 when it did, else 0.
+pub fn native_c025<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let p = call(h, 0x0086_bf30, &[v]);
+    let n = call(h, 0x0078_4fe0, &[0]);
+    let mut len = 0_u32;
+    while h.read::<u8>(p.wrapping_add(len)) != 0 && len < 0x1_0000 {
+        len += 1;
+    }
+    if len >= n {
+        return 0;
+    }
+    let q = call(h, 0x0078_4fb0, &[0]);
+    if q == 0 {
+        return 0;
+    }
+    for k in 0..=len {
+        let b = h.read::<u8>(p.wrapping_add(k));
+        h.write(q.wrapping_add(k), b);
+    }
+    1
+}
+
 /// The Rust version of a group 1, 4, 5, 6, 11 or 12 handler, if there is
 /// one.
 #[must_use]
@@ -1592,6 +1654,10 @@ pub fn native_504d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
     use Native::{Float, Int};
     Some(match sym {
+        0x0087_7b30 => Float(atel_call_math_atan2_rf),
+        0x007b_9190 => Float(native_6077),
+        0x00a7_a140 => Int(native_5037),
+        0x0087_8c70 => Int(native_c025),
         0x00a7_9820 => Int(native_chr_load_system_mgrp),
         0x0076_e980 | 0x00a7_9970 | 0x00a7_9a10 => Int(native_done),
         0x00a7_9980 => Int(native_chr_load_system_mgrp_result),
@@ -1746,8 +1812,6 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0087_84e0 => Int(native_c002),
         0x0087_87b0 => Int(native_c013),
         0x0087_87c0 => Int(native_c014),
-        0x0087_90b0 => Int(native_c03b),
-        0x0087_90c0 => Int(native_c03c),
         0x0087_93e0 => Int(native_c052),
         0x0087_81b0 => Int(native_c054),
         0x0087_81d0 => Int(native_c055),
@@ -1803,7 +1867,11 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 213] = [
+pub const PORTED: [(u32, bool); 215] = [
+    (0x0087_7b30, true),
+    (0x007b_9190, true),
+    (0x00a7_a140, false),
+    (0x0087_8c70, false),
     (0x00a7_9820, false),
     (0x00a7_9970, false),
     (0x00a7_9980, false),
@@ -1963,8 +2031,6 @@ pub const PORTED: [(u32, bool); 213] = [
     (0x0087_84e0, false),
     (0x0087_87b0, false),
     (0x0087_87c0, false),
-    (0x0087_90b0, false),
-    (0x0087_90c0, false),
     (0x0087_93e0, false),
     (0x0087_81b0, false),
     (0x0087_81d0, false),
