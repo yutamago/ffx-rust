@@ -3298,3 +3298,286 @@ fn vm_helpers_match_the_original() {
         no_diff(&mut a, &mut b, &format!("globals round {round}"));
     }
 }
+
+/// Round 14's VM helpers against the original: the worker setters on
+/// every actor, the script-block getters on every ctrl work in use, the
+/// flag, sprite and record setters on random state; results and memory.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per helper family
+fn more_vm_helpers_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0014);
+    // a float that is not a signalling NaN (the emulator keeps those)
+    let f32v = |rng: &mut Xorshift| loop {
+        let v = stored_value(rng);
+        let f = f32::from_bits(v);
+        if !f.is_nan() || v & 0x0040_0000 != 0 {
+            return v;
+        }
+    };
+    let level_setters: [(u32, u32); 4] = [
+        (0x0086_f040, 0x5ec),
+        (0x0087_15c0, 0x5c8),
+        (0x0087_1610, 0x5c4),
+        (0x0087_1630, 0x5c0),
+    ];
+    let st0_setters: [(u32, u32, bool); 6] = [
+        (0x0087_1500, 0x5f8, false),
+        (0x0087_1520, 0x5f4, false),
+        (0x0087_1540, 0x880, true),
+        (0x0087_1560, 0x87c, true),
+        (0x0087_1580, 0x874, true),
+        (0x0087_15a0, 0x878, true),
+    ];
+    let all: [(u32, u32, u32); 7] = [
+        (0x0086_f0d0, 0x5f0, 0x4c),
+        (0x0086_f170, 0x5f8, 0x4c),
+        (0x0086_f1c0, 0x5f4, 0x4c),
+        (0x0086_f350, 0x5c8, 0x4c),
+        (0x0086_f210, 0x880, 0x44),
+        (0x0086_f260, 0x87c, 0x44),
+        (0x0086_f2b0, 0x874, 0x44),
+    ];
+    for c in in_use(&b) {
+        make_current(&mut a, &mut b, c);
+        for w in actors(&mut a, &mut b) {
+            let what = format!("worker {w:#x}");
+            for on in [1, 0, 3] {
+                let ra = orig(&mut a, 0x0087_0fe0, &[w, on]);
+                assert_eq!(
+                    ra,
+                    hp::atel_set_worker_flag36_8(&mut b, w, on),
+                    "0x00870fe0 {what}"
+                );
+            }
+            for i in 0..3 {
+                let v = f32v(&mut rng);
+                let ra = orig(&mut a, 0x0087_0d10, &[w, i, v]);
+                assert_eq!(
+                    ra,
+                    hp::atel_set_level_f74(&mut b, w, i, v),
+                    "0x00870d10 {what}"
+                );
+            }
+            for (f, off) in level_setters {
+                let v = f32v(&mut rng);
+                let ra = orig(&mut a, f, &[w, v]);
+                assert_eq!(
+                    ra,
+                    hp::atel_set_cur_level_f32(&mut b, w, off, v),
+                    "{f:#x} {what}"
+                );
+            }
+            for (f, off, turn) in st0_setters {
+                let (i, v) = (rng.below(9), f32v(&mut rng));
+                let ra = orig_float(&mut a, f, &[w, i, v]);
+                let rb = if turn {
+                    hp::atel_set_turn_f32(&mut b, w, i, off, v)
+                } else {
+                    hp::atel_set_level_f32(&mut b, w, i, off, v)
+                };
+                assert!(same_float(ra, ffx_bridge::x87::store(rb)), "{f:#x} {what}");
+            }
+            for (f, off, step) in all {
+                let v = f32v(&mut rng);
+                let ra = orig(&mut a, f, &[w, v]);
+                assert_eq!(
+                    ra,
+                    hp::atel_set_all_f32(&mut b, w, off, step, v),
+                    "{f:#x} {what}"
+                );
+            }
+            let v = f32v(&mut rng);
+            let ra = orig_float(&mut a, 0x0086_f300, &[w, v]);
+            hp::atel_set_all_f32(&mut b, w, 0x878, 0x44, v);
+            assert!(same_float(ra, v), "0x0086f300 {what}");
+            no_diff(&mut a, &mut b, &format!("worker setters {what}"));
+        }
+        let bin = Mem::read::<u32>(&b, c + 0x48);
+        if bin != 0 {
+            let what = format!("ctrl {c:#x}");
+            assert_eq!(
+                orig(&mut a, 0x0086_adc0, &[bin]),
+                hp::atel_get_bin_hdr_expand_sp_flags(&b, bin),
+                "0x0086adc0 {what}"
+            );
+            assert_eq!(
+                orig(&mut a, 0x0086_acc0, &[bin]),
+                hp::atel_get_bin_hdr_expand_24(&b, bin),
+                "0x0086acc0 {what}"
+            );
+            assert_eq!(
+                orig(&mut a, 0x0086_aa70, &[bin]),
+                hp::atel_get_bin_hdr_expand_name(&b, bin),
+                "0x0086aa70 {what}"
+            );
+            assert_eq!(
+                orig(&mut a, 0x0086_ad20, &[bin]),
+                hp::atel_get_bin_hdr_expand_sound_event(&b, bin),
+                "0x0086ad20 {what}"
+            );
+            for i in 0..4 {
+                assert_eq!(
+                    orig(&mut a, 0x0086_aaf0, &[bin, i]),
+                    hp::atel_get_bin_hdr_table18_a(&b, bin, i),
+                    "0x0086aaf0 {what}"
+                );
+                assert_eq!(
+                    orig(&mut a, 0x0086_aac0, &[bin, i]),
+                    hp::atel_get_bin_hdr_table18_b(&b, bin, i),
+                    "0x0086aac0 {what}"
+                );
+            }
+        }
+        // the +8 block's string table, where +8 is a block (or 0)
+        let e = Mem::read::<u32>(&b, c + 8);
+        if e == 0 || (e.trailing_zeros() >= 2 && (0x0040_0000..0x7000_0000).contains(&e)) {
+            let t = if e == 0 {
+                1
+            } else {
+                Mem::read::<u32>(&b, e + 0x44)
+            };
+            if t != 0 {
+                for i in 0..2 {
+                    assert_eq!(
+                        orig(&mut a, 0x0088_58c0, &[c, i]),
+                        hp::atel_get_block_string(&b, c, i),
+                        "0x008858c0 ctrl {c:#x}"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(
+        orig(&mut a, 0x0086_ae20, &[]),
+        hp::atel_get_bindp_list(&b),
+        "AtelGetBindpList"
+    );
+    let strs = a.alloc(0x40).unwrap();
+    assert_eq!(b.alloc(0x40).unwrap(), strs);
+    for round in 0..40 {
+        for at in [
+            0x0132_6b70,
+            0x0132_6b74,
+            0x0132_6b90,
+            0x0132_5db0,
+            0x00c5_273c,
+        ] {
+            let p = a.rebase(at);
+            poke(&mut a, &mut b, p, rng.next());
+        }
+        let g = a.rebase(0x0132_5ba3);
+        poke(&mut a, &mut b, g, u8::try_from(rng.below(256)).unwrap());
+        let n = rng.below(40);
+        let ra = orig(&mut a, 0x0086_3860, &[n]);
+        assert_eq!(ra, hp::atel_clear_effect_flag(&mut b, n), "0x00863860");
+        let ra = orig(&mut a, 0x0087_02f0, &[n]);
+        assert_eq!(ra, hp::atel_set_effect_flag2(&mut b, n), "0x008702f0");
+        let n = rng.below(40);
+        let ra = orig(&mut a, 0x0086_3af0, &[n]);
+        assert_eq!(ra, hp::atel_clear_effect_flag2(&mut b, n), "0x00863af0");
+        let k = rng.below(12);
+        let on = rng.below(2);
+        let ra = orig(&mut a, 0x0087_0250, &[k, on]);
+        let rb = hp::atel_set_love_param_disable(&mut b, k, on);
+        if k < 8 {
+            assert_eq!(ra, rb, "AtelSetLoveParamDisable {k}");
+        }
+        for (f, set) in [
+            (
+                0x0087_0160,
+                hp::atel_set_guide_map_draw_bliz_flag as fn(&mut Oracle, u32) -> u32,
+            ),
+            (0x0087_0190, hp::atel_set_guide_map_draw_flag),
+            (0x0087_01c0, hp::atel_set_guide_map_force_draw_flag),
+            (0x0086_f3d0, hp::atel_set_ctrl_flag_1325db0),
+        ] {
+            let on = rng.below(3);
+            assert_eq!(orig(&mut a, f, &[on]), set(&mut b, on), "{f:#x}");
+        }
+        let m = rng.next();
+        assert_eq!(
+            orig(&mut a, 0x0086_2d50, &[m]),
+            hp::atel_get_battle_map_id(&b, m),
+            "0x00862d50"
+        );
+        for i in [u32::MAX, 0, 5, 127, 128] {
+            assert_eq!(
+                orig(&mut a, 0x0087_47b0, &[i]),
+                hp::atel_get_sprite(&b, i),
+                "0x008747b0 {i}"
+            );
+            assert_eq!(
+                orig(&mut a, 0x0087_47f0, &[i]),
+                hp::atel_clear_sprite(&mut b, i),
+                "0x008747f0 {i}"
+            );
+            let on = rng.below(3);
+            assert_eq!(
+                orig(&mut a, 0x0087_4970, &[i, on]),
+                hp::atel_set_sprite_flag(&mut b, i, on),
+                "0x00874970 {i}"
+            );
+            let v = rng.next();
+            assert_eq!(
+                orig(&mut a, 0x0087_49b0, &[i, v]),
+                hp::atel_set_sprite_13(&mut b, i, v),
+                "0x008749b0 {i}"
+            );
+            let (x, y) = (rng.next(), rng.next());
+            assert_eq!(
+                orig(&mut a, 0x0087_4b30, &[i, x, y]),
+                hp::atel_set_sprite_pos(&mut b, i, x, y),
+                "0x00874b30 {i}"
+            );
+        }
+        for i in [u32::MAX, 0, 9, 15, 16] {
+            assert_eq!(
+                orig(&mut a, 0x0087_72f0, &[i]),
+                hp::atel_clear_snd3d_work(&mut b, i),
+                "AtelClearSnd3dWork {i}"
+            );
+        }
+        assert_eq!(
+            orig(&mut a, 0x0087_4fb0, &[]),
+            hp::atel_clear_records_1327f50(&mut b),
+            "0x00874fb0"
+        );
+        // strings: a run of one character, then others
+        let ch = b'a' + u8::try_from(rng.below(3)).unwrap();
+        let mut s: Vec<u8> = (0..rng.below(20))
+            .map(|_| {
+                if rng.below(2) == 0 {
+                    ch
+                } else {
+                    b'a' + u8::try_from(rng.below(3)).unwrap()
+                }
+            })
+            .collect();
+        s.push(0);
+        for o in [&mut a, &mut b] {
+            Mem::write_bytes(o, strs, &s);
+        }
+        assert_eq!(
+            orig(&mut a, 0x0087_19c0, &[strs]),
+            hp::atel_strlen(&b, strs),
+            "0x008719c0"
+        );
+        let n = rng.below(6).wrapping_sub(1);
+        let ra = orig(&mut a, 0x0087_7610, &[strs, n, u32::from(ch)]);
+        assert_eq!(
+            ra,
+            hp::atel_str_trim_leading(&mut b, strs, n, u32::from(ch)),
+            "0x00877610 {s:?} {n}"
+        );
+        no_diff(&mut a, &mut b, &format!("globals round {round}"));
+    }
+    let ra = orig_float(&mut a, 0x007a_3ac0, &[]);
+    assert!(
+        same_float(ra, ffx_bridge::x87::store(hp::atel_get_battle_count_f(&b))),
+        "0x007a3ac0"
+    );
+}
