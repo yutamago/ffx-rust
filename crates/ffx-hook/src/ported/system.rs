@@ -5992,6 +5992,24 @@ ported! {
     TODrawScaleButtonIconRGBA @ 0x008f_8ee0 => extern "C" fn to_draw_scale_button_icon_rgba(c: u32, x: u32, y: u32, scale: u32, r: u32, g: u32, b: u32, a: u32) {
         tolib::bridge::to_draw_scale_button_icon_rgba(&mut mem(), [c, x, y, scale, r, g, b, a], call_sym);
     }
+    /// `TOCountMessageWords_008b80b0(window, text)`.
+    TOCountMessageWords_008b80b0 @ 0x008b_80b0 => extern "C" fn to_count_message_words(window: u32, text: u32) -> u32 {
+        tolib::bridge::count_message_words(&mut mem(), window, text, call_sym)
+    }
+    /// `TOGetMessageSize_008b7130(text, &w, &h)`.
+    TOGetMessageSize_008b7130 @ 0x008b_7130 => extern "C" fn to_get_message_size(text: u32, w: u32, h: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::message_size(&mut mem(), text, w, h, at, call_sym)
+    }
+    /// `TOFirstInitMessageNormal(window, text, pos)`.
+    TOFirstInitMessageNormal @ 0x008d_f520 => extern "C" fn to_first_init_message_normal(window: u32, text: u32, pos: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_first_init_message_normal(&mut mem(), window, text, pos, at, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

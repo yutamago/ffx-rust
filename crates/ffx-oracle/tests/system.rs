@@ -13279,6 +13279,111 @@ fn round22_icons_match_the_original_on_the_snapshot() {
     round22_icons(&mut a, &mut b, &mut Xorshift(0x4022_0032));
 }
 
+/// Round 22's message word count, size and centring over stand-ins for
+/// the word count and message size.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round22_message(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x800);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 8);
+    // TOGetChangeMacroWordCount: logs (window, code), returns window ^ key
+    let s = stand_in8(a, b, 0x40, &logger_args(cursor, 2));
+    redirect(a, b, 0x008b_6b00, s);
+    // TOGetMessageWH: logs its scalar words, *w = cells[0], *h = cells[1]
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x04, 0x89, 0x01, 0x8b, 0x44, 0x24, 0x14, 0x89, 0x41, 0x04, 0x8b, 0x44,
+        0x24, 0x18, 0x89, 0x41, 0x08, 0x83, 0x05,
+    ]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x0c, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x10, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x66, 0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008b_9650, s);
+    let text = alloc(a, b, 0x100);
+    let window = alloc(a, b, 0x60);
+    let out = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, 8);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..1000u32 {
+        put(a, b, cursor, log);
+        let mut bytes = vec![0u8; 0x100];
+        let mut i = 0usize;
+        for _ in 0..rng.next() % 0x18 {
+            let c =
+                [3u8, 5, 7, 9, 0xb, 0x10, 0x12, 0x20, 0x31, 0x45, 0x80][(rng.next() % 11) as usize];
+            bytes[i] = c;
+            i += 1;
+            if c < 0x30 {
+                bytes[i] = [0x50u8, 0x5f, 0x60, 0xc0, 0xbf, 0x31][(rng.next() % 6) as usize];
+                i += 1;
+            }
+        }
+        bytes[i] = (rng.next() % 3) as u8;
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let w = rng.next() % 4;
+        assert_eq!(
+            eax(a, 0x008b_80b0, &[w, text]),
+            t::count_message_words(b, w, text, call),
+            "words {k}"
+        );
+        put(
+            a,
+            b,
+            cells,
+            [((rng.next() % 6000) as f32 / 7.0).to_bits(), rng.next()],
+        );
+        put(a, b, out, [rng.next(), rng.next()]);
+        assert_eq!(
+            eax(a, 0x008b_7130, &[text, out, out + 4]),
+            t::message_size(b, text, out, out + 4, scratch, call),
+            "size {k}"
+        );
+        let v: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("message size", a, b);
+        let edges = [
+            (rng.next() % 300) as f32 / 3.0,
+            (rng.next() % 600) as f32 / 1.5,
+        ];
+        put(a, b, window + 0x48, edges[0]);
+        put(a, b, window + 0x50, edges[1]);
+        put(a, b, window + 4, (rng.next() % 8) as u16);
+        put(a, b, window + 0x1a, (rng.next() % 4) as u16);
+        put(a, b, out, [rng.next(), rng.next()]);
+        assert_eq!(
+            eax(a, 0x008d_f520, &[window, text, out]),
+            t::to_first_init_message_normal(b, window, text, out, scratch, call),
+            "centre {k}"
+        );
+        let v: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("message centre", a, b);
+    }
+}
+
+#[test]
+fn round22_message_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round22_message(&mut a, &mut b, &mut Xorshift(0x4022_0041));
+}
+
+#[test]
+fn round22_message_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round22_message(&mut a, &mut b, &mut Xorshift(0x4022_0042));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

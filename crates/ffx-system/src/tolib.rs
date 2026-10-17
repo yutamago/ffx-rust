@@ -7952,4 +7952,100 @@ pub mod bridge {
             call(mem, 0x008e_7a90, &with(0x270));
         }
     }
+
+    /// `0x008b80b0(window, text)`: the number of words in a message up to
+    /// its first line code (0..=2): glyphs (group 4) count one, macros
+    /// (group 3) and `0x10 n` counters (0x50..0x60) their words
+    /// (`TOGetChangeMacroWordCount`), `0xb` icons and `9 n` codes from
+    /// 0xc0 one each.
+    pub fn count_message_words<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c <= 2 {
+                return n;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                2 => {
+                    let next: u8 = mem.read(p.wrapping_add(1));
+                    if c == 0x10 && (0x50..0x60).contains(&next) {
+                        n = n.wrapping_add(call(mem, 0x008b_6b00, &[window, p]));
+                    }
+                    let c: u8 = mem.read(p);
+                    if c == 0xb {
+                        n = n.wrapping_add(1);
+                    }
+                    if c == 9 && mem.read::<u8>(p.wrapping_add(1)) >= 0xc0 {
+                        n = n.wrapping_add(1);
+                    }
+                }
+                3 => n = n.wrapping_add(call(mem, 0x008b_6b00, &[window, p])),
+                4 => n = n.wrapping_add(1),
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `0x008b7130(text, &w, &h)`: the size of a message in window 0 at
+    /// mode 0 (`TOGetMessageWH`), the width through `ftol`. `scratch` (8
+    /// bytes) stands in for the original's stack. Returns 0.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn message_size<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        w: u32,
+        h: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(
+            mem,
+            0x008b_9650,
+            &[0, text, scratch, scratch.wrapping_add(4), 0, 0],
+        );
+        let width: f32 = mem.read(scratch);
+        let v = ffx_bridge::x87::ftol(mem, f64::from(width));
+        mem.write(w, v);
+        let height: i16 = mem.read(scratch.wrapping_add(4));
+        mem.write(h, i32::from(height));
+        0
+    }
+
+    /// `TOFirstInitMessageNormal(window, text, pos)` (`0x008df520`):
+    /// centres a message in its window: `pos + 4` becomes the left edge
+    /// plus half of what the width leaves of the window (edges `+0x48` and
+    /// `+0x50`), the width from
+    /// `TOGetMessageWH(+4, text, &w, &h, +0x1a, 0x103)`. `scratch` (8
+    /// bytes) stands in for the original's stack. Returns `pos`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_first_init_message_normal<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        pos: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = i32::from(mem.read::<i16>(window.wrapping_add(4))).cast_unsigned();
+        let mode = i32::from(mem.read::<i16>(window.wrapping_add(0x1a))).cast_unsigned();
+        mem.write(scratch.wrapping_add(4), window);
+        call(
+            mem,
+            0x008b_9650,
+            &[id, text, scratch, scratch.wrapping_add(4), mode, 0x103],
+        );
+        let f = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let half: f64 = mem.read(mem.rebase(0x00b9_2220));
+        let left = f(mem, window.wrapping_add(0x48));
+        let x = ((f(mem, window.wrapping_add(0x50)) - left) - f(mem, scratch)) * half + left;
+        mem.write(pos.wrapping_add(4), x as f32);
+        pos
+    }
 }
