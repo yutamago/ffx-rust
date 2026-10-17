@@ -5474,6 +5474,7 @@
 0x007e6610 function op_pad_set                # fh v3:exact 0x007e6520
 0x007e6700 function op_random                 # fh v3:exact 0x007e6610
 0x007e6780 function op_random_p               # fh v3:exact 0x007e6690
+0x007e67f0 function op_spline_draw_path3         # layout: alphabetical run between op_random_p and op_spr_alloc (1 unnamed in the gap); Switch 0x71003caf40 op_spline_draw_path3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007e6a00 function op_spr_alloc              # fh v3:bsim1.00 0x007e6910
 0x007e6a30 function op_spr_check                 # layout: alphabetical run between op_spr_alloc and op_spr_free (1 unnamed in the gap); Switch 0x71003cb490 op_spr_check is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007e6a60 function op_spr_free               # fh v3:bsim1.00 0x007e6970
@@ -8721,6 +8722,7 @@
 0x008bed70 function TOMenuGetMenu2Mes         # (id) -> MsMenuGetText(2, ...); see TOMenuGetArmsHelp
 0x008bedb0 function TOMenuGetNameHelp         # (id) -> MsMenuGetHelp(10, ...); TOMenuGetNameMes (fh) is table 10; see TOMenuGetArmsHelp
 0x008bedd0 function TOMenuGetNameMes          # fh switch:bsim1.00 0x71004ec370
+0x008bedf0 function TOMenuGetPacketBuffAdrs      # layout: alphabetical run between TOMenuGetNameMes and TOMenuGetPacketBuffSize (1 unnamed in the gap); Switch 0x71004ec150 TOMenuGetPacketBuffAdrs is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); xor eax,eax; ret: no PS2 packet buffer on PC, TkMn2DrawInitPacket its only caller
 0x008bee00 function TOMenuGetPacketBuffSize   # () -> 0x100000; the Switch's TOMenuGetPacketBuffSize sorts between TOMenuGetNameMes and TOMenuGetSaveHelp, as here, and TkMn2DrawInitPacket (0x008c0be0) calls it with the buffer address to rewind the draw cursor by half of it
 0x008bee10 function TOMenuGetSaveHelp         # (id) -> MsMenuGetHelp(3, ...); TkMenuSaveMes is table 3; see TOMenuGetArmsHelp
 0x008bee30 function TOMenuGetSaveMes          # (id) -> MsMenuGetText(3, ...); see TOMenuGetArmsHelp
@@ -8813,6 +8815,7 @@
 0x008c2cb0 function TkMn2StringWidth             # layout: alphabetical run between TkMn2SetOverDriveId and TkMn2TransCharFace (2 unnamed in the gap); Switch 0x71004c6480 TkMn2StringWidth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c2cd0 function TkMn2StringWidthHeight       # layout: alphabetical run between TkMn2SetOverDriveId and TkMn2TransCharFace (2 unnamed in the gap); Switch 0x71004c64a0 TkMn2StringWidthHeight is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00
+0x008c30e0 function TkFindLegendWeapon_008c30e0  # (kind) -> the saved weapon whose flags +3 bit 2 (legend) are set and +4 == kind, from MsGetSaveWeaponList; dbgPrintf "TK:Found Legend weapon(%d)" / "not found"; only caller TkSetLegendAbility (the Switch inlines it there, hence the string match); own name
 0x008c3170 function TkSetLegendAbility        # fh call.cs cdecl
 0x008c32d0 function MenuItem_Plus10           # (p) p + 0x10; no caller; own name
 0x008c32e0 function Gs_Pack4b                 # copy of Gs_Pack4; own name

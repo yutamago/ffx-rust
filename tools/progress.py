@@ -43,7 +43,10 @@ MODULES = [
                        r"[a-z]?printf$|f?open$|f?close$|malloc$|free$|calloc$|realloc$|qsort$)"),
     ("battle", "game", r"^(Ms|ms)[A-Z_]|^(brnd|rnd)$|^(DmgCalc|Battle|Mon|Enc|Dmg)_"),
     ("script", "game", r"^(Atel|CT_|Native_|Script_|Worker_|Event_)"),
-    ("menu", "game", r"^(Tk|TK|tk)[A-Z_]|^(Gu_|Msg_|Text_)"),
+    # own names of the PS2 menu code (MenuItem_*, MenuSummon_*, ...); the PC
+    # port's MenuManager/MenuTextureManager/MenuDynamicGeometry are pc-ui
+    ("menu", "game", r"^(Tk|TK|tk)[A-Z_]|^(Gu_|Msg_|Text_)|"
+                     r"^Menu(?!Manager|TextureManager|DynamicGeometry)[A-Za-z0-9]+_"),
     ("vfx", "game", r"^(ppp|ClassVFX|VFX|graphicVFX|op[a-z]*_|BrokenScreenEffect|VfxShader)"),
     ("render", "game", r"^(graphic|Graphic|PhyreScene|Shadow|PostProcess|Distortion|TextureAnimation|DynGeo|"
                        r"RadialLine|tex_|Cache_|Render_)"),
