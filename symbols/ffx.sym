@@ -1634,6 +1634,7 @@
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
 0x00637d90 function FlashSpriteRenderer_Initialize # fh switch:bsim1.00 0x71000028f0 FlashSpriteRenderer::Initialize
 0x00637f50 function inverseMatrix             # fh switch:bsim1.00 0x71001d16f0
+0x00637f80 function PhyreCursor_IsValid_copy_00637f80 # the same code as PhyreCursor_IsValid_00660240 (0x00660240; call targets equal), a copy the compiler kept; own name
 0x006386c0 function ShaderParamBuffer_SetValue2  # structure: byte-identical twin of ShaderParamBuffer_SetValue 0x00638780 (another template instance); callers graphicSgSetSpecular, PostProcessManager_renderFocusFrame, VFXDynamicGeometry_setPointLightParameters; name ours
 0x00638720 function ShaderParam_CopyToBuffer_00638720 # thiscall(buffer, param, src): copies the parameter's bytes (+8 offset, +0xa size & 0x1fff) into the buffer when they fit, 1 for no source; callers batchSetClothVertexBuffers, the deferred-lighting shadows; same code as ShaderParam_CopyToBuffer_00698960; the render agent's finding (shader parameters into material buffers); own name
 0x00638780 function ShaderParamBuffer_SetValue   # structure: thiscall(buffer {u32 size, data...}, param {+8 u16 offset, +10 u16 size & 0x1fff}, src): memcpy src into the buffer at the parameter's offset; 1 for a null src, 3 out of range, 0 done; a template instance inlined on the Switch (memcpy in PostProcessManager::copyBuffer); twin of 0x006386c0; name ours
@@ -2599,6 +2600,8 @@
 0x006a0440 function FieldAddrc_006a0440          # auto-port shape (return argument + offset, cdecl): return (a0 + 0xc); callers: no direct caller; name ours
 0x006a0450 function FieldAddrc_006a0450          # auto-port shape (return argument + offset, cdecl): return (a0 + 0xc); callers: no direct caller; name ours
 0x006a06c0 function FieldAddr10_006a06c0         # auto-port shape (return argument + offset, stdcall): return (a0 + 0x10); callers: no direct caller; name ours
+0x006a0890 function std_Tree_Lrotate_copy_006a0890 # the same code as std_Tree_Lrotate_00a41930 (0x00a41930; call targets equal), a copy the compiler kept; own name
+0x006a0b50 function std_Tree_Rrotate_copy_006a0b50 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
 0x006a1040 function ClassDynamicGeometry_clear # fh v3:exact 0x006a1180 ClassDynamicGeometry::clear
 0x006a1200 function ClassCharacter_clearInstanceList # fh v3:exact 0x006a1340 ClassCharacter::clearInstanceList
 0x006a1590 function ClassCharacterInstance_destroyClothInstances # fh v3:exact 0x006a16d0 ClassCharacterInstance::destroyClothInstances
@@ -2804,6 +2807,8 @@
 0x006d7570 function PhyFMVPlayerManager_Render   # layout+callees: sorts between PhyFMVPlayerManager_PlayVideo and PhyFMVPlayerManager_UpdateTexture, and its named callees match the Switch 0x7100267a00 PhyFMVPlayerManager_Render's (similarity 0.62: Phyre_PCamera_updateViewMatrices, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x006d7680 function PhyFMVPlayerManager_UpdateTexture # fh v3:exact+call.cs 0x006d77b0 thiscall PhyFMVPlayerManager::UpdateTexture
 0x006d7b20 function Identity_006d7b20            # auto-port shape (pass-through, stdcall): return a0; callers: no direct caller; name ours
+0x006d7b80 function std_Tree_Lrotate_copy_006d7b80 # the same code as std_Tree_Lrotate_00a41930 (0x00a41930; call targets equal), a copy the compiler kept; own name
+0x006d7cc0 function std_Tree_Rrotate_copy_006d7cc0 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
 0x006d82f0 function PhyFMVPlayerManager_createVideoIndexMap # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Video/JP/FFX_VideoList.txt'; Switch 0x71002660d0 PhyFMVPlayerManager::createVideoIndexMap (symbols from Fahrenheit's server export)
 0x006d86e0 function PhyFMVPlayerManager_doOnShaderBinFilesLoaded # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'imageWidth'; Switch 0x7100265c60 PhyFMVPlayerManager::doOnShaderBinFilesLoaded (symbols from Fahrenheit's server export)
 0x006d9180 function PhyFMVPlayerManager_fmvPlayer_terminate # fh switch:bsim1.00 0x71002671f0 PhyFMVPlayerManager::fmvPlayer_terminate
@@ -2997,6 +3002,7 @@
 0x006f2ed0 function Mutex_Lock                # (mutex): WaitForSingleObject(*mutex, INFINITE) (import 0x00b0c0f8)
 0x006f2f50 function Mutex_Unlock              # (mutex): ReleaseMutex(*mutex) (import 0x00b0c1c0)
 0x006f2f70 function SetField0_006f2f70           # auto-port shape (store argument to field, cdecl): t0 = u32[a0]; u32[a0] = a1; return t0; callers: ; name ours
+0x006f3000 function SignalSema_copy_006f3000     # the same code as SignalSema (0x006f2ce0; call targets equal), a copy the compiler kept; own name
 0x006f32e0 function Pause_HideScreen             # the pause screen's Flash "hidePause" (Pause_Update calls it when Start ends the pause)
 0x006f3fe0 function CopyThisTo_006f3fe0 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x006f4030 function AssetListReader_clear     # fh v3:exact 0x006f4170 AssetListReader::clear
@@ -3801,6 +3807,7 @@
 0x0074b670 function Vec3SubScalars_0074b670      # structure: (dst, src, x, y, z): dst.xyz = src.xyz - (x, y, z), then restoreVf00Register; the subtracting twin of Vec3AddScalars_00735100, next to pppVu0AddY/AddZ; name ours
 0x0074b6a0 function pppNeiDrawShapePointLightDraw # ppp program table record "pppNeiDrawShapePointLight" draw; not a function start in the Ghidra dump
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
+0x0074bde0 function pppVu0MaddW_copy_0074bde0    # the same code as pppVu0MaddW (0x0072c650; call targets equal), a copy the compiler kept; own name
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
 0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
@@ -3836,6 +3843,7 @@
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
 0x00756270 function pppDrawRainDes            # ppp program table record "pppDrawRain" +0x24 destructor
 0x007562c0 function pppDrawRainDraw           # ppp program table record "pppDrawRain" draw
+0x00756600 function rcuiScaleVector_copy_00756600 # the same code as rcuiScaleVector (0x00930f30; call targets equal), a copy the compiler kept; own name
 0x007566a0 function pppDrawSpriteCon          # ppp program table record "pppDrawSprite" (0x00c3df00) +0x1c set-up
 0x007566d0 function pppDrawSpriteDes          # ppp program table record "pppDrawSprite" +0x24 destructor; not a function start in the Ghidra dump
 0x007566e0 function pppDrawSprite             # ppp program table record "pppDrawSprite" (0x00c3df00) +0xc draw
@@ -4018,6 +4026,8 @@
 0x0075e430 function pppKeDrct                 # fh v3:exact 0x0075e520
 0x0075e470 function pppKeDrctCon              # fh v3:exact 0x0075e560
 0x0075e4b0 function op_word_copy              # (dst, src) *dst = *src (one word); 1 caller
+0x0075e670 function pppVu0MaddaY_copy_0075e670   # the same code as pppVu0MaddaY (0x0072c590; call targets equal), a copy the compiler kept; own name
+0x0075e6d0 function pppVu0MaddaZ_copy_0075e6d0   # the same code as pppVu0MaddaZ (0x0072c5f0; call targets equal), a copy the compiler kept; own name
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
 0x0075ee70 function KeVu0GetDist                 # layout+callees: sorts between KeVu0CopyVecXYZ and KeVu0RndI, and its named callees match the Switch 0x7100307e30 KeVu0GetDist's (similarity 1.00: FFXVu0SubVector); symbols from Fahrenheit's server export
@@ -5100,6 +5110,7 @@
 0x007a2a20 function Native_ActorQueueMotion      # 0x7016: args (motion) -> 0; self actor: clears motion state (0x007ab6c0) and sets +0x3f2 = motion; 0x007aa160 plays it next frame through 0x007ab360 (255 = none, idle); used after 0x7007/0x7008
 0x007a2a80 function Native_707a                # 0x707a: (selector): 0x0079a920(picked, its -16 pick, 0, 0, 0); ported in native_btl/native_move (script round 9)
 0x007a2b10 function Native_7039                # 0x7039: 0x0078cca0(actor, record), 0x007a8f20(); 0; ported in native_btl/native_move (script round 9)
+0x007a2c50 function Native_01b2_copy_007a2c50    # the same code as Native_01b2 (0x00859360; call targets equal), a copy the compiler kept; own name
 0x007a2ca0 function Native_70ed                  # native 0x70ed int handler (g_NativeTables group 7 entry 0xed, ffx-script native_counts); 8 calls in the shipped scripts; calls AtelPopStackInteger, MsSaveItemUse; name by id
 0x007a2ce0 function Native_7086                # 0x7086: 0x0078e5a0(actor); 0; ported in native_btl/native_move (script round 9)
 0x007a2d00 function Native_7031                # 0x7031: actor +0x432 = 1; 0; ported in native_btl/native_move (script round 9)
@@ -5483,6 +5494,7 @@
 0x007b8c30 function Native_6051                  # native 0x6051 int handler (g_NativeTables group 6 entry 0x51, ffx-script native_counts); 10 calls in the shipped scripts; calls AtelPopStackInteger, MsScreenLinkSet; name by id
 0x007b8cc0 function Native_6055                  # native 0x6055 int handler (g_NativeTables group 6 entry 0x55, ffx-script native_counts); 5 calls in the shipped scripts; calls AtelPopStackInteger, MsScreenMoveAcc; name by id
 0x007b8d70 function Native_6058                  # native 0x6058 int handler (g_NativeTables group 6 entry 0x58, ffx-script native_counts); 1 calls in the shipped scripts; calls AtelPopStackInteger, MsScreenMoveAcc; name by id
+0x007b8e00 function Native_607b_copy_007b8e00    # the same code as Native_607b (0x007b8e40; call targets equal), a copy the compiler kept; own name
 0x007b8e40 function Native_607b                  # native 0x607b start handler (g_NativeTables group 6 entry 0x7b, ffx-script native_counts); 4 calls in the shipped scripts; calls AtelGetBattleIdAdrs2, AtelPopStackInteger; name by id
 0x007b8e60 function Native_607b_Poll             # native 0x607b poll handler (g_NativeTables group 6 entry 0x7b, ffx-script native_counts); 4 calls in the shipped scripts; calls MsScreenMoveCheck; name by id
 0x007b8e80 function Native_Cam_605c            # 0x605c: returns 0x007bb8c0(w, a, s, 0, 1); ported in native_cam
@@ -5786,6 +5798,7 @@
 0x007e6c70 function op_word_copy4             # the op_word_copy body again
 0x007e6c80 function op_or64                   # (dst, a, b) 64-bit dst = *a | *b
 0x007e6ca0 function op_vec_xz_add             # (dst, v, x, _, z) dst.x = v.x + x, dst.z = v.z + z
+0x007e6cc0 function rcVec4fToFixed_copy_007e6cc0 # the same code as rcVec4fToFixed (0x00925950; call targets equal), a copy the compiler kept; own name
 0x007e79a0 function op_apply_m_w1             # fh v3:exact 0x007e78b0
 0x007e7ed0 function op_deg_get                # fh v3:exact 0x007e7de0
 0x007e7f60 function op_deg_in_check              # layout: alphabetical run between op_deg_get and op_length_get (1 unnamed in the gap); Switch 0x71003dd2e0 op_deg_in_check is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6087,14 +6100,19 @@
 0x008069d0 function opusIterNe_008069d0       # thiscall (other) -> *this != *other as 1/0 (an MSVC iterator compare)
 0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
 0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
+0x00806b20 function StdMap_NewHead_copy_00806b20 # the same code as StdMap_NewHead_0069a1b0 (0x0069a1b0; call targets equal), a copy the compiler kept; own name
 0x00806b50 function opusPlus0c                # (p) -> p + 0xc
 0x00806b70 function opusTree_FreeSubtree_00806b70 # structure: as opusTree_FreeSubtree_00806bb0, for the other opus container instance; name ours
 0x00806bb0 function opusTree_FreeSubtree_00806bb0 # structure: (node): frees the node's subtree recursively, unless its leaf flag (+0xd) is set, with operator_delete; MSVC map/set node erase of an opus container; twin of 0x00806b70; name ours
+0x00806cb0 function std_Tree_Lrotate_copy_00806cb0 # the same code as std_Tree_Lrotate_00a41930 (0x00a41930; call targets equal), a copy the compiler kept; own name
+0x00806d10 function std_Tree_Lrotate_copy_00806d10 # the same code as std_Tree_Lrotate_00a41930 (0x00a41930; call targets equal), a copy the compiler kept; own name
 0x00806d70 function opusTree_Max              # (node) the rightmost node below node (+8 until the next is nil)
 0x00806db0 function opusTree_Min              # (node) the leftmost node below node (+0 until the next is nil)
 0x00806e10 function FieldAddr10_00806e10         # auto-port shape (return argument + offset, cdecl): return (a0 + 0x10); callers: no direct caller; name ours
 0x00806e30 function FieldAddr4_00806e30          # auto-port shape (return argument + offset, cdecl): return (a0 + 0x4); callers: no direct caller; name ours
 0x00806e40 function FieldAddr4_00806e40          # auto-port shape (return argument + offset, cdecl): return (a0 + 0x4); callers: no direct caller; name ours
+0x00806eb0 function std_Tree_Rrotate_copy_00806eb0 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
+0x00806f10 function std_Tree_Rrotate_copy_00806f10 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780
 0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
@@ -7337,6 +7355,7 @@
 0x00856460 function Native_SetTouchRange         # 0x0085: args (float r) -> 1; worker transform (0x0086c2b0) +0x48 = r, sets dirty bit ctx+0x36 |= 1; debug panel labels +0x48 "TCR:" (0x0087ace0, table 0x00c539c8); shared init worker pushes 10.0; ported in native_btl/native_move (script round 10)
 0x00856520 function Native_023d              # 0x023d: 0x00647e40(), a pending [0x025d5ebc] cleared after 0x00642390(7), then 0x00786b00(), 0x00782050(), 0x0088d1c0(0), 0x00643e70(); 1; ported in native_move (script round 11)
 0x00856570 function Native_00a2              # 0x00a2: (window, a, b, c, d) bytes: the window's +0x10 = a << 24 | d << 16 | c << 8 | b (pushed and popped back); it; ported in native_move (script round 11)
+0x00856600 function Native_SetTouchRange_copy_00856600 # the same code as Native_SetTouchRange (0x00856460; call targets equal), a copy the compiler kept; own name
 0x00856630 function Native_AlwaysTrue019c        # 0x019c () -> 1; no pops, constant 1 (PS2 check stubbed on PC?); scripts use it inside conditions ("pushimm 32; and; land; func 0x019c; land")
 0x00856660 function Native_00e9              # 0x00e9: (on): the current ctrl work's +1 bit 4; on != 0; ported in native_move (script round 11)
 0x008566b0 function Native_ControlEnable         # 0x005d: no args -> 1; FUN_00871ab0: type-1 party workers (+0x40 != -1, flag 0x200) get flag 0x20, player worker's model goes to FUN_0082dad0, context byte 0 |= 2
@@ -7379,6 +7398,7 @@
 0x00857690 function Native_0245              # 0x0245: 0x007fb680(); 1; ported in native_move (script round 11)
 0x008576d0 function Native_01a6              # 0x01a6: fills the empty party slots (0x007852f0) with the lowest characters 0..=7 that are available (0x00785380 1) and not already in a slot, then 0x00786950(slots); 1; ported in native_move (script round 11)
 0x008577c0 function Native_SetTYZAngle           # 0x008d: args (float a) -> -; transform +0x4c = a, dirty bit; debug label "TYZ:" (0x0087ae00); init pushes 1.0471976 (60 deg), same as 0x0063 (+0x3c, "TZX:"); ? vertical angle of the talk/touch area; ported in native_btl/native_move (script round 10)
+0x008577f0 function Native_01de_Poll_copy_008577f0 # the same code as Native_01de_Poll (0x008579d0; call targets equal), a copy the compiler kept; own name
 0x00857820 function Native_00a7              # 0x00a7: (worker): its +0x34 bit 1 cleared; 0; ported in native_btl/native_move (script round 10)
 0x00857850 function Native_00f2              # 0x00f2: (v) -> 0x00870190(v); ported in native_move (script round 11)
 0x00857870 function Native_MsgSetText            # 0x0064: args (window, msg); window (FUN_0086be90) +0x08/+0x0c = Msg_Text(msg), +0x16 = Msg_Flags(msg); g 0x01325ac0 = msg
@@ -7421,6 +7441,7 @@
 0x00858360 function Native_MsgSetStyle           # 0x0066: args (window, style) -> window; window +0x20 byte, passed to 0x00906e60 (window object +4) when shown (0x00858b50); ?frame/style; scripts mostly 0/1
 0x00858390 function Native_01a8              # 0x01a8: (chr): +0x54 of 0x00785330(chr); ported in native_move (script round 11)
 0x008583b0 function Native_MinimapSetMarker      # 0x0148 (marker, worker) -> value; worker +0xbc = marker | 0x80000000 (0 = default), +0xb4 = -10000.0; read by Minimap_GetWorkerMarker 0x0086b740 for the field minimap 0x0091da80
+0x00858400 function Native_00f6_Poll_copy_00858400 # the same code as Native_00f6_Poll (0x00857ff0; call targets equal), a copy the compiler kept; own name
 0x00858430 function Native_0255              # 0x0255: bits 14-15 of *0x00785290(); ported in native_move (script round 11)
 0x00858460 function Native_MapJump               # 0x010b (map, entrance) -> 0; 0x0086ff40 -> 0x0088ea60: game state 0x0112ca90 +0 = map, +2 = previous map, +0xc = entrance; scripts push (263, 0) then end
 0x00858490 function Native_01e0              # 0x01e0: (v): a worker with a character gets 0x0082a9d0(chr, v); 1, else 0; ported in native_move (script round 11)
@@ -7551,6 +7572,7 @@
 0x0085ab80 function Native_SetMoveParam3C        # 0x006d: args (float a) -> a; move block +0x3c for all 9 levels (0x0086f1c0); 0x0086d300 default pi; init pushes 0.1309 (7.5 deg); ? angle limit used while moving; ported in native_btl/native_move (script round 10)
 0x0085abb0 function Native_GetTurnMotion         # 0x00c7: args (kind) -> ctx+0xae0[kind], the motion set by 0x00c5
 0x0085abd0 function Native_MsgWaitEx             # 0x0084 start: args (window, x) -> -; window clamped to 0..7, saved with x (x is always 1 in the scripts) in the call state; window +0x1d |= 0x10; end slot 0x0085b6d0
+0x0085ac20 function Native_01c4_copy_0085ac20    # the same code as Native_01c4 (0x0085a840; call targets equal), a copy the compiler kept; own name
 0x0085ac50 function Native_01f9              # 0x01f9: (chr): Native_00cb on it, then 0x00786aa0(chr, 0); 1; ported in native_move (script round 11)
 0x0085ac90 function Native_010d              # 0x010d: (i) up to 0xfe: 0x0088e790(0xa004 + i); 1, else 0; ported in native_move (script round 11)
 0x0085acd0 function Native_SetMoveParam40        # 0x006e: args (float a) -> a; move block +0x40 for all 9 levels (0x0086f170); default pi; init 0.1309; ? second angle limit; ported in native_btl/native_move (script round 10)
@@ -7670,10 +7692,12 @@
 0x0085d3a0 function Native_0217              # 0x0217: 0x00798b60(); 1; ported in native_move (script round 11)
 0x0085d3c0 function Native_ChrLoadAlias          # 0x0134 (chr id): tail call to Native_ChrLoad 0x0085d000
 0x0085d3d0 function Native_017b              # 0x017b: 0x00863860(v); v; ported in native_move (script round 11)
+0x0085d3f0 function Native_01ac_copy_0085d3f0    # the same code as Native_01ac (0x00858950; call targets equal), a copy the compiler kept; own name
 0x0085d410 function Native_LineGetCrossSide      # 0x008b: args () -> side or -1; 0x008632b0 (types 5/6: per-actor table at worker[0xb9]) else bits 1-2 of ctx+0x36, which the line-crossing code (0x00860000.c ~6720/6955) sets to 2 or 0 for the side crossed; 3 -> -1; used in e2 of type-5 workers; ? which side the player crossed from
 0x0085d460 function Native_0203              # 0x0203 start: (chr) into the args, state 0; chr; ported in native_move (script round 11)
 0x0085d480 function Native_017c              # 0x017c: (track): 0x008869e0, 0x008868b0, current music = track; 1; ported in native_move (script round 11)
 0x0085d4e0 function Native_0044              # 0x0044: the flag word 0x00888c40(0, 0, 0x0086af30()); ported in native_move (script round 11)
+0x0085d500 function Native_01af_copy_0085d500    # the same code as Native_01af (0x00858e70; call targets equal), a copy the compiler kept; own name
 0x0085d550 function Native_0203_Poll         # 0x0203 poll: steps the args' state: 0 waits for 0x0086ade0() to clear; 1 for the loader's +8(1), 0x00887b30() and 0x0076f060() (then 0x0086f460(worker id)); 2 0x00836a40(chr, 0); 3 waits for 0x00836a50(chr, 0) (then 0x00829ef0); 4 for 0x0082a040(chr), then done (5); ported in native_move (script round 11)
 0x0085d6b0 function Native_VoiceStart            # 0x00d6 start: args () -> -; "VoiceStartInit!"; delay 0x01325ad8 = 0x0067a9d0(id, 2); wait count from g_ScriptState+0x214 or 0x00885d20
 0x0085d780 function Native_021a              # 0x021a: (b, a) -> 0x00872aa0(0, b, a, 0); ported in native_move (script round 11)
@@ -7779,6 +7803,7 @@
 0x0085fca0 function Native_0231              # 0x0231: (worker): its +0x38 bit 11; 1; ported in native_move (script round 11)
 0x0085fce0 function Native_0196              # 0x0196: (v): attached workers (+0xaa 4, 5) get 0x00862800(worker, v, +0xa8); 1; ported in native_move (script round 11)
 0x0085fd20 function Native_WaitFrames_01d1       # 0x01d1 start (frames) -> result slot
+0x0085fd40 function Native_0139_Result_copy_0085fd40 # the same code as Native_0139_Result (0x0085f900; call targets equal), a copy the compiler kept; own name
 0x0085fe30 function Native_0132              # 0x0132: (worker, on): for a trigger worker (types 2, 3, 5, 6) +0x34 bit 7 = on; 1, else 0; ported in native_move (script round 11)
 0x0085fea0 function Native_SetPos_0126           # 0x0126 (x, y, z floats) -> 0; Worker_SetPos 0x00870b20 (also moves the model, and the player record if this is the player); ported in native_move (script round 11)
 0x0085ff30 function Native_SfxPlayEx             # 0x00fd (sfx, pan, volume 0-127) -> sfx; Sfx_Play 0x00886e50 -> FMOD cmd 0x33 (FmodSfx_Start)
@@ -9712,6 +9737,7 @@
 0x008ed050 function Identity_008ed050 # cdecl(x) -> x (frame-pointer build), jumps to Identity_008ed040; name ours
 0x008ed190 function TOAdpEasyMesFontLClutRGBAInterMode # layout+callees: sorts between TOAdpCrossFontS_ASCII and TOAdpEasyShapeXYWHC2, and its named callees match the Switch 0x71005104b0 TOAdpEasyMesFontLClutRGBAInterMode's (similarity 1.00: TOGetFontInfoInterMode, TOMakePktFont1612Font, TOMakePktFont1612Shadow, TOSkipCode); symbols from Fahrenheit's server export
 0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
+0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
 0x008ee600 function TOAdpFontM_ASCII_SaMenu      # layout+callees: sorts between TOAdpFontM_ASCII and TOAdpGsDirectRGBA, and its named callees match the Switch 0x7100514720 TOAdpFontM_ASCII_SaMenu's (similarity 1.00: BeginScissor_XYUV, TOGetImageWH, TOGetTextureName, graphicFontDraw); symbols from Fahrenheit's server export
 0x008ef670 function TOAdpALPHA # cdecl(p, A, B, C, D, FIX) -> p + 0x10: GS register 0x42 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
@@ -11380,7 +11406,9 @@
 0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
 0x00a44bd0 function str_replace               # fh v3:exact 0x00a44bd0
 0x00a45000 function abmCalcChrMoveCurMoveCheck # fh v3:exact 0x00a45000
+0x00a45440 function AbmapSetHelpMessage_copy_00a45440 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
 0x00a454a0 function AbmapSetHelpMessage       # fh v3:cg2 0xa454a0 +AbmapSetHelpMessage
+0x00a45500 function AbmapSetHelpMessage_copy_00a45500 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
 0x00a45570 function LoadAbmap                 # fh v3:exact 0x00a45570 +LoadAbmap
 0x00a457d0 function abmap_test_panel             # (bit, node) -> node panel bits (+0x829) & 1 << bit; 0x00a5d120
 0x00a45800 function abmap_other_has_panel        # (chr, node) -> 1 when another of the first seven characters who has joined (MsGetSavePlyJoined 1) has its panel bit on the node; 0x00a5d120
@@ -11611,6 +11639,7 @@
 0x00a787d0 function Native_ChrWaitMotion_5003    # 0x5003 start: no-op (reads the model)
 0x00a787e0 function Native_5052                  # native 0x5052 int handler (g_NativeTables group 5 entry 0x52, ffx-script native_counts); 1 calls in the shipped scripts; calls AtelGetBasicWork, AtelGetCharHandle, AtelPopStackFloat, AtelPopStackInteger, Ch_BindToElemDirectOfs; name by id
 0x00a788a0 function Native_ChrWaitMotion_Poll_5003 # 0x5003 poll: done (5) when model +0x736 is 0 (?motion playing flag)
+0x00a788d0 function Native_501f_copy_00a788d0    # the same code as Native_501f (0x00a79450; call targets equal), a copy the compiler kept; own name
 0x00a78940 function Native_ChrReleaseMotion      # 0x5005: no args -> 0; Chr_ReleaseMotion: ends the scripted motion so the automatic stand/walk/run motions (0x75c table, 0x00835d30) take over
 0x00a78960 function Native_5054                  # native 0x5054 int handler (g_NativeTables group 5 entry 0x54, ffx-script native_counts); 349 calls in the shipped scripts; calls AtelGetCharHandle, AtelPopStackInteger, Ch_ModelSetHide; name by id
 0x00a789a0 function Native_5007                  # native 0x5007 int handler (g_NativeTables group 5 entry 0x7, ffx-script native_counts); 66 calls in the shipped scripts; calls AtelGetCharHandle, AtelPopStackFloat, AtelPopStackInteger, Ch_SetScale; name by id
@@ -11644,6 +11673,7 @@
 0x00a79210 function GetFieldc_00a79210           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
 0x00a79220 function Native_5019                  # native 0x5019 int handler (g_NativeTables group 5 entry 0x19, ffx-script native_counts); 2 calls in the shipped scripts; calls Native_PlayMotionCommon; name by id
 0x00a79270 function Native_ChrPlayMotion         # 0x501a: args (motion, unused, loops, start frame, end frame; -1 = end) -> 0; Native_PlayMotionCommon mode 1 (Chr_PlayMotion); scripts push e.g. (0x1109e, 0, 1, 0, 20)
+0x00a79290 function Native_504f_Poll_copy_00a79290 # the same code as Native_504f_Poll (0x00a79380; call targets equal), a copy the compiler kept; own name
 0x00a792d0 function Native_ChrSetMotion_501b     # 0x501b: args (motion) -> 0; SG_SetMotion on the worker's chr
 0x00a79300 function GetFieldc_00a79300           # auto-port shape (return field u32, cdecl): t0 = u32[(a1 + 0xc)]; return t0; callers: no direct caller; name ours
 0x00a79340 function Native_504f                  # native 0x504f start handler (g_NativeTables group 5 entry 0x4f, ffx-script native_counts); 997 calls in the shipped scripts; calls AtelPopStackInteger; name by id
@@ -11716,6 +11746,7 @@
 0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr
 0x00a7a6b0 function Native_5088                  # native 0x5088 int handler (g_NativeTables group 5 entry 0x88, ffx-script native_counts); 65 calls in the shipped scripts; calls AtelGetCharHandle, AtelPopStackFloat, AtelPopStackInteger, Ch_SetShadeID; name by id
 0x00a7a700 function Native_5089                  # native 0x5089 int handler (g_NativeTables group 5 entry 0x89, ffx-script native_counts); 7 calls in the shipped scripts; calls Native_PlayMotionCommon; name by id
+0x00a7a740 function Native_5019_copy_00a7a740    # the same code as Native_5019 (0x00a79220; call targets equal), a copy the compiler kept; own name
 0x00a7a760 function Native_508b                  # native 0x508b int handler (g_NativeTables group 5 entry 0x8b, ffx-script native_counts); 5 calls in the shipped scripts; calls Native_PlayMotionCommon; name by id
 0x00a7a780 function Native_ChrPlayMotion2        # 0x5042: same body as 0x501a (Native_PlayMotionCommon mode 1)
 0x00a7a7e0 function Native_508d                  # native 0x508d int handler (g_NativeTables group 5 entry 0x8d, ffx-script native_counts); 1 calls in the shipped scripts; calls AtelGetCharHandle, AtelPopStackInteger, Ch_TextureSetAnimTimer; name by id
