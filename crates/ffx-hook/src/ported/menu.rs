@@ -3047,4 +3047,48 @@ ported! {
     MenuKaizou_InitList @ 0x008d_55e0 => extern "C" fn menu_kaizou_init_list(w: u32) {
         tk::menu_kaizou_init_list(&mut mem(), w);
     }
+    /// `MenuSummon_GetStat(base, desc, max)`.
+    MenuSummon_GetStat @ 0x008c_eca0 => extern "C" fn menu_summon_get_stat(base: u32, desc: u32, max: u32) -> u32 {
+        tk::menu_summon_get_stat(&mem(), base, desc, max)
+    }
+    /// `MenuSummon_SetStat(base, desc, max, v)`.
+    MenuSummon_SetStat @ 0x008c_ee70 => extern "C" fn menu_summon_set_stat(base: u32, desc: u32, max: u32, v: u32) {
+        tk::menu_summon_set_stat(&mut mem(), base, desc, max, v);
+    }
+    /// `Menu_FindByte(bytes, v, from, to)`.
+    Menu_FindByte @ 0x008c_9bc0 => extern "C" fn menu_find_byte(bytes: u32, v: u32, from: i32, to: i32) -> i32 {
+        tk::menu_find_byte(&mem(), bytes, v, from, to)
+    }
+    /// `Menu_FindFlagged(entries, from, to)`.
+    Menu_FindFlagged @ 0x008c_9b90 => extern "C" fn menu_find_flagged(entries: u32, from: i32, to: i32) -> i32 {
+        tk::menu_find_flagged(&mem(), entries, from, to)
+    }
+    /// `Menu_FadeStep(obj)`.
+    Menu_FadeStep @ 0x008e_2b30 => extern "C" fn menu_fade_step(obj: u32) -> u32 {
+        tk::menu_fade_step(&mut mem(), obj)
+    }
+    /// `Menu_ParseItemKeys(s)`.
+    Menu_ParseItemKeys @ 0x008c_5280 => extern "C" fn menu_parse_item_keys(s: u32) {
+        tk::menu_parse_item_keys(&mut mem(), s);
+    }
+    /// `MenuScene_ResetGroup(scene, off, on)`.
+    MenuScene_ResetGroup @ 0x00a7_ba70 => extern "C" fn menu_scene_reset_group(scene: u32, off: u32, on: u32) -> u32 {
+        tk::menu_scene_reset_group(&mut mem(), scene, off, on)
+    }
+    /// `MenuParty_CursorPrev()`.
+    MenuParty_CursorPrev @ 0x008c_ba60 => extern "C" fn menu_party_cursor_prev() {
+        tk::menu_party_cursor_prev(&mut mem());
+    }
+    /// `MenuParty_CursorNext()`.
+    MenuParty_CursorNext @ 0x008c_ba20 => extern "C" fn menu_party_cursor_next() {
+        tk::menu_party_cursor_next(&mut mem());
+    }
+    /// `Menu_Scale32(a, b)`.
+    Menu_Scale32 @ 0x008b_f100 => extern "C" fn menu_scale32(a: i32, b: i32) -> i32 {
+        tk::menu_scale32(a, b)
+    }
+    /// `Menu_EaseCounter(-, counter, a, b)`.
+    Menu_EaseCounter @ 0x008b_f7e0 => extern "C" fn menu_ease_counter(_x: u32, counter: u32, a: u32, b: u32) {
+        tk::menu_ease_counter(&mut mem(), counter, a, b);
+    }
 }

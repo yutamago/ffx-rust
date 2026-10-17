@@ -4976,6 +4976,245 @@ pub mod bridge {
         mem.write(mem.rebase(0x0186_aa3c), k);
         tk_mn2_init_status_bg(mem);
     }
+
+    /// `MenuSummon_GetStat(base, desc, max)` (`0x008ceca0`): a summon
+    /// stat field of the record at `base`, by its descriptor (`u16` offsets
+    /// `+0xc` for the maximum, `+0xe` for the current value; `+0x10` 4 for
+    /// a `u32`, else a byte).
+    pub fn menu_summon_get_stat(mem: &impl Mem, base: u32, desc: u32, max: u32) -> u32 {
+        let off = u32::from(mem.read::<u16>(desc + if max != 0 { 0xc } else { 0xe }));
+        if mem.read::<u32>(desc + 0x10) == 4 {
+            mem.read(base.wrapping_add(off))
+        } else {
+            u32::from(mem.read::<u8>(base.wrapping_add(off)))
+        }
+    }
+
+    /// `MenuSummon_SetStat(base, desc, max, v)` (`0x008cee70`): the store
+    /// [`menu_summon_get_stat`] reads.
+    pub fn menu_summon_set_stat(mem: &mut impl Mem, base: u32, desc: u32, max: u32, v: u32) {
+        let off = u32::from(mem.read::<u16>(desc + if max != 0 { 0xc } else { 0xe }));
+        if mem.read::<u32>(desc + 0x10) == 4 {
+            mem.write(base.wrapping_add(off), v);
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // the low byte, as stored
+            mem.write(base.wrapping_add(off), v as u8);
+        }
+    }
+
+    /// `Menu_FindByte(bytes, v, from, to)` (`0x008c9bc0`): the first index
+    /// in `from..to` whose byte is `v`, else -1.
+    pub fn menu_find_byte(mem: &impl Mem, bytes: u32, v: u32, from: i32, to: i32) -> i32 {
+        (from..to)
+            .find(|&i| u32::from(mem.read::<u8>(bytes.wrapping_add(i.cast_unsigned()))) == v)
+            .unwrap_or(-1)
+    }
+
+    /// `Menu_FindFlagged(entries, from, to)` (`0x008c9b90`): the first index
+    /// in `from..to` whose 4-byte entry has byte `+2` set, else -1.
+    pub fn menu_find_flagged(mem: &impl Mem, entries: u32, from: i32, to: i32) -> i32 {
+        (from..to)
+            .find(|&i| {
+                mem.read::<u8>(entries.wrapping_add(4u32.wrapping_mul(i.cast_unsigned())) + 2) != 0
+            })
+            .unwrap_or(-1)
+    }
+
+    /// `Menu_FadeStep(obj)` (`0x008e2b30`): `+0x64` += `+0x68`, at least 0
+    /// and at most 0x80. Returns the value before the upper clamp (EAX).
+    pub fn menu_fade_step(mem: &mut impl Mem, obj: u32) -> u32 {
+        let v = mem
+            .read::<i32>(obj + 0x64)
+            .wrapping_add(mem.read(obj + 0x68))
+            .max(0);
+        mem.write(obj + 0x64, v.min(0x80));
+        v.cast_unsigned()
+    }
+
+    /// The menu item key list `Menu_ParseItemKeys` fills (32 entries of 4
+    /// bytes, `g_TkMenuItemKeyUse`).
+    pub const ITEM_KEYS: u32 = 0x0186_a280;
+
+    /// `Menu_ParseItemKeys(s)` (`0x008c5280`): splits a key string into
+    /// the [`ITEM_KEYS`] entries: a byte, then (kind 4) a second byte, and
+    /// for a value in 6..=0x2f one argument byte; the unused entries after
+    /// the last are cleared (their first byte).
+    #[allow(clippy::many_single_char_names)] // string, pointer, entry, bytes
+    pub fn menu_parse_item_keys<M: Mem>(mem: &mut M, s: u32) {
+        let table = mem.rebase(ITEM_KEYS);
+        let mut p = s;
+        let mut i = 0u32;
+        let next = |mem: &M, p: &mut u32| {
+            let b: u8 = mem.read(*p);
+            *p = p.wrapping_add(1);
+            b
+        };
+        let mut b = next(mem, &mut p);
+        while b != 0 {
+            let e = table.wrapping_add(4 * i);
+            mem.write(e, b);
+            if b == 4 {
+                let k = next(mem, &mut p);
+                mem.write(e + 1, k);
+                if k.wrapping_sub(6) <= 0x29 {
+                    let a = next(mem, &mut p);
+                    mem.write(e + 2, a);
+                    mem.write(e + 3, 0u8);
+                } else {
+                    mem.write(e + 2, 0u8);
+                }
+            } else if b.wrapping_sub(6) <= 0x29 {
+                let a = next(mem, &mut p);
+                mem.write(e + 1, a);
+                mem.write(e + 2, 0u8);
+            } else {
+                mem.write(e + 1, 0u8);
+            }
+            b = next(mem, &mut p);
+            i += 1;
+        }
+        while i < 0x20 {
+            mem.write(table.wrapping_add(4 * i), 0u8);
+            i += 1;
+        }
+    }
+
+    /// `g_TkMenuSceneData` (pointers per scene).
+    pub const MENU_SCENE_DATA: u32 = 0x022f_b4dc;
+
+    /// `MenuScene_ResetGroup(scene, off, on)` (`0x00a7ba70`): the group at
+    /// `off` in scene `scene`'s data (none for 0 or no data: 0) gets its
+    /// list offset's top bits cleared; each of its 20-byte entries is shown
+    /// (bit 31 set) or hidden (bits 30, 31 cleared) and reset (`+8` 0,
+    /// `u16` `+0xc` -1, `u16` `+4` 0, `+0xe` 0). Returns the group.
+    #[allow(clippy::many_single_char_names)] // group, value, entry, word, count
+    pub fn menu_scene_reset_group(mem: &mut impl Mem, scene: u32, off: u32, on: u32) -> u32 {
+        if off == 0 {
+            return 0;
+        }
+        let at = mem
+            .rebase(MENU_SCENE_DATA)
+            .wrapping_add(4u32.wrapping_mul(scene));
+        let data: u32 = mem.read(at);
+        if data == 0 {
+            return 0;
+        }
+        let g = data.wrapping_add(off);
+        if g == 0 {
+            return 0;
+        }
+        let v = mem.read::<u32>(g + 4) & 0x3fff_ffff;
+        mem.write(g + 4, v);
+        let list = (mem.read::<u32>(g + 4) & 0x3fff_ffff).wrapping_add(mem.read::<u32>(at));
+        let n: i32 = mem.read(list);
+        let mut e = list.wrapping_add(4);
+        for _ in 0..n.max(0) {
+            let w: u32 = mem.read(e);
+            mem.write(
+                e,
+                if on == 0 {
+                    w & 0x3fff_ffff
+                } else {
+                    w | 0x8000_0000
+                },
+            );
+            mem.write(e + 8, 0u32);
+            mem.write(e + 0xc, 0xffffu16);
+            mem.write(e + 4, 0u16);
+            mem.write(e + 0xe, 0u32);
+            e = e.wrapping_add(0x14);
+        }
+        g
+    }
+
+    /// The party-select cursor (`i8`), the slot count (`i32`) and the slot
+    /// pointers (`0x0186a44c`, each with `+0xc` 1 when selectable).
+    pub const PARTY_CURSOR: u32 = 0x0186_a444;
+    pub const PARTY_COUNT: u32 = 0x0186_a448;
+    pub const PARTY_SLOTS: u32 = 0x0186_a44c;
+
+    /// `MenuParty_CursorPrev()` (`0x008cba60`): the cursor moves back
+    /// (wrapping to the last slot) to the previous selectable slot.
+    pub fn menu_party_cursor_prev(mem: &mut impl Mem) {
+        let (cur, n) = (
+            mem.rebase(PARTY_CURSOR),
+            mem.read::<i32>(mem.rebase(PARTY_COUNT)),
+        );
+        let slots: u32 = mem.read(mem.rebase(PARTY_SLOTS));
+        let mut c: i8 = mem.read(cur);
+        loop {
+            c = c.wrapping_sub(1);
+            mem.write(cur, c);
+            if c < 0 {
+                #[allow(clippy::cast_possible_truncation)] // the low byte
+                {
+                    c = n.wrapping_sub(1) as i8;
+                }
+                mem.write(cur, c);
+            }
+            let s: u32 =
+                mem.read(slots.wrapping_add(4u32.wrapping_mul(i32::from(c).cast_unsigned())));
+            if mem.read::<u32>(s.wrapping_add(0xc)) == 1 {
+                return;
+            }
+        }
+    }
+
+    /// `MenuParty_CursorNext()` (`0x008cba20`): the cursor moves on
+    /// (wrapping to 0) to the next selectable slot.
+    pub fn menu_party_cursor_next(mem: &mut impl Mem) {
+        let (cur, n) = (
+            mem.rebase(PARTY_CURSOR),
+            mem.read::<i32>(mem.rebase(PARTY_COUNT)),
+        );
+        let slots: u32 = mem.read(mem.rebase(PARTY_SLOTS));
+        let mut c: i8 = mem.read(cur);
+        loop {
+            c = c.wrapping_add(1);
+            if i32::from(c) >= n {
+                c = 0;
+            }
+            let s: u32 =
+                mem.read(slots.wrapping_add(4u32.wrapping_mul(i32::from(c).cast_unsigned())));
+            if mem.read::<u32>(s.wrapping_add(0xc)) == 1 {
+                break;
+            }
+        }
+        mem.write(cur, c);
+    }
+
+    /// `Menu_Scale32(a, b)` (`0x008bf100`): `a + a × b / 32`, the division
+    /// truncating toward 0.
+    #[must_use]
+    pub fn menu_scale32(a: i32, b: i32) -> i32 {
+        a.wrapping_mul(b) / 32 + a
+    }
+
+    /// `Menu_EaseCounter(-, counter, a, b)` (`0x008bf7e0`): a non-zero
+    /// counter moves 0x199 toward 0; reaching or passing 0 it becomes 0 and
+    /// `*a` = `*b` (taken before).
+    #[allow(clippy::many_single_char_names)] // the two targets, counter, value
+    pub fn menu_ease_counter(mem: &mut impl Mem, counter: u32, a: u32, b: u32) {
+        let c: i32 = mem.read(counter);
+        let v: u32 = mem.read(b);
+        if c > 0 {
+            let n = c.wrapping_sub(0x199);
+            mem.write(counter, n);
+            if n <= 0 {
+                mem.write(counter, 0u32);
+                mem.write(a, v);
+                mem.write(b, v);
+            }
+        } else if c != 0 {
+            let n = c.wrapping_add(0x199);
+            mem.write(counter, n);
+            if n >= 0 {
+                mem.write(counter, 0u32);
+                mem.write(a, v);
+                mem.write(b, v);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

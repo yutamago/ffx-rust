@@ -5762,3 +5762,165 @@ fn save_paths_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Menu leaves (round 15): summon stat fields, list searches, the fade
+/// step, the item key parser, scene group resets, the party cursor.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
+fn menu_leaves_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_0015) else {
+        return;
+    };
+    for round in 0..48u32 {
+        // summon stats
+        let base = t.alloc_random(0x40);
+        let mut d = t.rng.bytes(0x14);
+        d[0xc] = (t.rng.next() % 0x3c) as u8;
+        d[0xd] = 0;
+        d[0xe] = (t.rng.next() % 0x3c) as u8;
+        d[0xf] = 0;
+        d[0x10..0x14]
+            .copy_from_slice(&(if t.rng.next() % 2 == 0 { 4u32 } else { 1 }).to_le_bytes());
+        let desc = t.alloc(&d);
+        let max = t.rng.next() % 2;
+        t.twin(
+            "MenuSummon_GetStat",
+            0x008c_eca0,
+            &[base, desc, max],
+            U32,
+            |m| u64::from(tk::menu_summon_get_stat(m, base, desc, max)),
+        );
+        let v = t.rng.next();
+        t.twin(
+            "MenuSummon_SetStat",
+            0x008c_ee70,
+            &[base, desc, max, v],
+            VOID,
+            |m| {
+                tk::menu_summon_set_stat(m, base, desc, max, v);
+                0
+            },
+        );
+        // searches
+        let mut b = t.rng.bytes(0x40);
+        for x in &mut b {
+            *x %= 6;
+        }
+        let bytes = t.alloc(&b);
+        let (from, to) = ((t.rng.next() % 20) as i32 - 2, (t.rng.next() % 20) as i32);
+        let val = t.rng.next() % 6;
+        t.twin(
+            "Menu_FindByte",
+            0x008c_9bc0,
+            &[bytes, val, from as u32, to as u32],
+            U32,
+            |m| u64::from(tk::menu_find_byte(m, bytes, val, from, to).cast_unsigned()),
+        );
+        let (from, to) = ((t.rng.next() % 12) as i32, (t.rng.next() % 16) as i32);
+        t.twin(
+            "Menu_FindFlagged",
+            0x008c_9b90,
+            &[bytes, from as u32, to as u32],
+            U32,
+            |m| u64::from(tk::menu_find_flagged(m, bytes, from, to).cast_unsigned()),
+        );
+        // fade
+        let obj = t.alloc_random(0x70);
+        let (p, q) = (
+            (t.rng.next() % 0x200) as i32 - 0x100,
+            (t.rng.next() % 0x80) as i32 - 0x40,
+        );
+        t.put(obj + 0x64, p);
+        t.put(obj + 0x68, q);
+        t.twin("Menu_FadeStep", 0x008e_2b30, &[obj], U32, |m| {
+            u64::from(tk::menu_fade_step(m, obj))
+        });
+        // item keys
+        let n = t.rng.next() % 40;
+        let mut keys: Vec<u8> = (0..n)
+            .map(|_| [4u8, 4, 7, 0x2f, 0x30, 1, 0x10, 0x5][(t.rng.next() % 8) as usize])
+            .collect();
+        keys.push(0);
+        keys.extend([0x33, 0x44, 0]);
+        let ks = t.alloc(&keys);
+        t.scramble(0x0186_a280, 0x80);
+        t.twin("Menu_ParseItemKeys", 0x008c_5280, &[ks], VOID, |m| {
+            tk::menu_parse_item_keys(m, ks);
+            0
+        });
+        // scene group
+        let scene = t.rng.next() % 4;
+        let data = t.alloc_random(0x200);
+        let group = 0x10 + (t.rng.next() % 4) * 8;
+        let list = 0x80;
+        let top = t.rng.next() & 0xc000_0000;
+        t.put(data + group + 4, list | top);
+        let n = t.rng.next() % 5;
+        t.put(data + list, n);
+        let slot = t.sym(0x022f_b4dc) + 4 * scene;
+        t.put(slot, if round % 8 == 7 { 0 } else { data });
+        let off = if round % 6 == 5 { 0 } else { group };
+        let on = t.rng.next() % 2;
+        t.twin(
+            "MenuScene_ResetGroup",
+            0x00a7_ba70,
+            &[scene, off, on],
+            U32,
+            |m| u64::from(tk::menu_scene_reset_group(m, scene, off, on)),
+        );
+        // party cursor
+        let count = 1 + t.rng.next() % 6;
+        let mut slots = vec![];
+        let mut any = false;
+        for k in 0..count {
+            let mut e = t.rng.bytes(0x10);
+            let sel = t.rng.next() % 2 == 0 || (k == count - 1 && !any);
+            any |= sel;
+            e[0xc..0x10].copy_from_slice(&u32::from(sel).to_le_bytes());
+            slots.extend(t.alloc(&e).to_le_bytes());
+        }
+        let table = t.alloc(&slots);
+        t.put(t.sym(0x0186_a44c), table);
+        t.put(t.sym(0x0186_a448), count);
+        let c0 = (t.rng.next() % count) as u8;
+        t.put(t.sym(0x0186_a444), c0);
+        t.twin("MenuParty_CursorPrev", 0x008c_ba60, &[], VOID, |m| {
+            tk::menu_party_cursor_prev(m);
+            0
+        });
+        t.twin("MenuParty_CursorNext", 0x008c_ba20, &[], VOID, |m| {
+            tk::menu_party_cursor_next(m);
+            0
+        });
+        // arithmetic and the counter
+        let (a, b) = (t.rng.next() as i32 >> 8, (t.rng.next() % 64) as i32 - 32);
+        t.twin(
+            "Menu_Scale32",
+            0x008b_f100,
+            &[a as u32, b as u32],
+            U32,
+            |_| u64::from(tk::menu_scale32(a, b).cast_unsigned()),
+        );
+        let cell = t.alloc_random(12);
+        let c =
+            [(t.rng.next() % 0x800) as i32 - 0x400, 0, 0x199, -0x199][(t.rng.next() % 4) as usize];
+        t.put(cell, c);
+        t.twin(
+            "Menu_EaseCounter",
+            0x008b_f7e0,
+            &[0, cell, cell + 4, cell + 8],
+            VOID,
+            |m| {
+                tk::menu_ease_counter(m, cell, cell + 4, cell + 8);
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
