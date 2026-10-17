@@ -597,3 +597,16 @@ velocity when free), the rods run, map 0x107 lifts two points of character
 pushed out of the spheres (kind 0), capsules (2) and planes (1) by the
 radius times `Ch_UseLargeCollisionRad`, and out of the floor by 1.2 its
 depth; written to its vertex with `w = 1`, its velocity the damped change.
+
+## Round 11: the main loop's callees
+
+`ExportValidateInterface(id)` (`0x008202e0`) answers 1 for the interface
+ids 0x40400003 and 0x40800001..0x40800003, else 0.
+
+Glue (GS packets and the PS2 DMA FIFO, left to the original):
+`Sg_MFIFOSpadSync` (`0x008432d0`, a wait on the GS register sink's bit 8),
+`Sg_MFIFOEnd` (`0x00843260`, an end tag sent to the FIFO),
+`Sg_AccSetFrameMap` (`0x0082bc50`), `Sg_DrawSetEnvironment` (`0x0082c7b0`),
+`Sg_DrawSetEnvironmentInit` (`0x0082c8d0`) and
+`Sg_DrawSetEnvironmentInitMovie` (`0x0082caa0`), which build GS register
+packets.

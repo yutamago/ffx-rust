@@ -1339,6 +1339,10 @@ ported! {
     Sg_ClothStep @ 0x0082_2de0 => extern "C" fn sg_cloth_step(chr: u32) {
         cloth::bridge::cloth_step(&mut mem(), chr, &mut crt);
     }
+    /// `ExportValidateInterface(id)`.
+    ExportValidateInterface @ 0x0082_02e0 => extern "C" fn export_validate_interface(id: u32) -> u32 {
+        control::bridge::export_validate_interface(id)
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())

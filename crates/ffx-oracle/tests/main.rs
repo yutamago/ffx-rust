@@ -2462,6 +2462,7 @@ fn control_synthetic() {
     push_apart_cases(&mut a, &mut b, &mut rng, 600);
     cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
+    round11_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2489,6 +2490,7 @@ fn control_snapshot() {
     push_apart_cases(&mut a, &mut b, &mut rng, 600);
     cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
+    round11_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -4502,6 +4504,29 @@ fn cloth_step_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: 
         );
         twin("Sg_ClothStep", a, b, 0x0082_2de0, &[chr], |m| {
             cl::cloth_step(&mut H(m), chr, &mut stand_in);
+        });
+    }
+}
+
+// Main round 11.
+fn round11_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    for n in 0..rounds {
+        let ids = [
+            0x4040_0003,
+            0x4080_0001,
+            0x4080_0002,
+            0x4080_0003,
+            0x4080_0004,
+            0x4040_0002,
+        ];
+        let id = if n % 3 == 0 {
+            rng.next()
+        } else {
+            ids[rng.below(6) as usize]
+        };
+        twin("ExportValidateInterface", a, b, 0x0082_02e0, &[id], |_| {
+            c::export_validate_interface(id)
         });
     }
 }

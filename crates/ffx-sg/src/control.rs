@@ -320,6 +320,14 @@ pub mod bridge {
     /// `g_FFXIsDebug`.
     pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
 
+    /// `ExportValidateInterface(id)` (`0x008202e0`): 1 for the interface
+    /// ids the executable exports (0x40400003, 0x40800001..=0x40800003),
+    /// else 0.
+    #[must_use]
+    pub const fn export_validate_interface(id: u32) -> u32 {
+        matches!(id, 0x4040_0003 | 0x4080_0001 | 0x4080_0002 | 0x4080_0003) as u32
+    }
+
     /// `Sg_InitArgs(argc, argv)` (`0x00820310`): the L/R button mode 0,
     /// `0x012fb8fa` 0xff and `0x012fb8f9`, `0x012fb8f8` 0; in a debug
     /// build with an argument, the user name from `argv[1]`
