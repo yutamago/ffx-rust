@@ -7,6 +7,31 @@
 //! take the object and the command's address and return the next
 //! command's.
 
+/// `opus_encount0`'s particle grid, `nz` planes of `ny` rows of `nx`
+/// particles in the order the original lays them out: each is `[x, y, z,
+/// 1, t, 0, 0, 1]`, `x` from 0 down by 64 along a row, `y` from 0 down by
+/// 64 per row, `z` from 0 down by 64 per plane, and `t` from 2112 up by 64
+/// per particle. Each step is the x87's: the `f32` value plus 64.0 in 53
+/// bits, rounded to `f32` where the original stores it.
+pub fn encount0_grid(nx: u16, ny: u16, nz: u16, mut put: impl FnMut([f32; 8])) {
+    #[allow(clippy::cast_possible_truncation)] // the original's fstp
+    let step = |v: f32, d: f64| (f64::from(v) + d) as f32;
+    let (mut t, mut z) = (2112.0f32, 0.0f32);
+    for _ in 0..nz {
+        let mut y = 0.0f32;
+        for _ in 0..ny {
+            let mut x = 0.0f32;
+            for _ in 0..nx {
+                put([x, y, z, 1.0, t, 0.0, 0.0, 1.0]);
+                t = step(t, 64.0);
+                x = step(x, -64.0);
+            }
+            y = step(y, -64.0);
+        }
+        z = step(z, -64.0);
+    }
+}
+
 /// The objects where the game keeps them.
 pub mod bridge {
     use ffx_bridge::{Global, Mem, Ptr};
@@ -18,6 +43,263 @@ pub mod bridge {
     pub const WEAPONS: Global<u32> = Global::new(0x0119_fea0);
     /// `g_OpusMonsters`: the eight monster objects.
     pub const MONSTERS: Global<u32> = Global::new(0x0119_fed0);
+
+    /// `opus_encount0_init(obj)` (`0x007f8480`): `f32 +0x20` = 16, `+0x24`
+    /// = 32, `+0x28` = 0, and the 0x20-byte particles from `+0x30` laid
+    /// out by [`super::encount0_grid`] for the `u16` counts `+2` (x), `+4`
+    /// (y) and `+6` (z). Returns `eax` as left: the z count (0 for none).
+    pub fn opus_encount0_init(mem: &mut impl Mem, obj: u32) -> u32 {
+        mem.write(obj.wrapping_add(0x20), 16.0f32);
+        mem.write(obj.wrapping_add(0x24), 32.0f32);
+        mem.write(obj.wrapping_add(0x28), 0.0f32);
+        let count = |at: u32| mem.read::<u16>(obj.wrapping_add(at));
+        let (nx, ny, nz) = (count(2), count(4), count(6));
+        let mut at = obj.wrapping_add(0x30);
+        super::encount0_grid(nx, ny, nz, |p| {
+            mem.write(at, p);
+            at = at.wrapping_add(0x20);
+        });
+        u32::from(nz)
+    }
+
+    /// `Ch_OptposGetElement(chr, i, out)`, called through `call`.
+    const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
+    /// `Ch_ElemGetBaseMatrix(chr, e, out)`, called through `call`.
+    const CH_ELEM_GET_BASE_MATRIX: u32 = 0x0083_3b80;
+
+    /// `opus_get_bone_matrix(out, chr, bone)` (`0x00805430`): the base
+    /// matrix of a character's element into `out` (`Ch_ElemGetBaseMatrix`).
+    /// With bit 0x8000 the bone is an option position (`bone & 0xff`):
+    /// `Ch_OptposGetElement` gives its element and an offset (16 bytes at
+    /// `frame`, the original's local), and `out + 0x30` becomes that offset
+    /// through the matrix (`op_apply_m_w1`). Otherwise the emulated EE
+    /// register `g_Ee_Gpr` (`0x00c8f508..`, 16 bytes) is copied to `out +
+    /// 0x40`. Returns `eax` as left: `0x00c8f93c` (`op_apply_m_w1`'s last
+    /// load), or `0x00c8f514`; no caller reads it.
+    pub fn opus_get_bone_matrix<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        chr: u32,
+        bone: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = Global::<u32>::new(CH_ELEM_GET_BASE_MATRIX).ptr(mem).addr;
+        if bone & 0x8000 != 0 {
+            let f = Global::<u32>::new(CH_OPTPOS_GET_ELEMENT).ptr(mem).addr;
+            let e = call(mem, f, &[chr, bone & 0xff, frame]);
+            call(mem, base, &[chr, e, out]);
+            crate::op::bridge::op_apply_m_w1(mem, out.wrapping_add(0x30), out, frame);
+            return Global::<u32>::new(0x00c8_f93c).get(mem);
+        }
+        call(mem, base, &[chr, bone, out]);
+        let gpr: [u32; 4] = mem.read(Global::<u32>::new(0x00c8_f508).ptr(mem).addr);
+        mem.write(out.wrapping_add(0x40), gpr);
+        gpr[3]
+    }
+
+    /// `MsGetChrScale(chr, out)`, called through `call`.
+    const MS_GET_CHR_SCALE: u32 = 0x0079_5720;
+    /// `Ch_GetScaleX/Y/Z(h)` and `Ch_GetDataScale(h)`, called through
+    /// `fcall` (they return in `ST0`).
+    const CH_GET_SCALE: [u32; 3] = [0x0082_ad30, 0x0082_ad40, 0x0082_ad50];
+    const CH_GET_DATA_SCALE: u32 = 0x0082_ab60;
+
+    /// `opus_rt_m_chara(m, chr, k, angles, trans, battle)` (`0x008062c0`):
+    /// `m` becomes a character's scale matrix, then turned and moved.
+    /// The scale (`frame - 0x20`, the original's 16-byte local) is the
+    /// battle character's (`MsGetChrScale(chr, local)`) when `battle` is set
+    /// and `chr < 0x20` (signed), else `Ch_GetScaleX/Y/Z` of its handle
+    /// (`g_EtChrHandles[chr]`); it is scaled by `Ch_GetDataScale * k *
+    /// 0.001f * (1/256)` (53 bits, stored as an `f32`, `op_xyz_scale`) and
+    /// set as `m`'s diagonal (`op_unit_m_scale2`). Then `angles` and
+    /// `trans` (either may be 0) through `op_rt_m`, `op_rot_m` or
+    /// `op_trans_m`. No caller reads `eax`.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)] // the original's six, the local and two calls
+    pub fn opus_rt_m_chara<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        chr: u32,
+        k: f32,
+        angles: u32,
+        trans: u32,
+        battle: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use crate::op::bridge as op;
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let v = frame.wrapping_sub(0x20);
+        #[allow(clippy::cast_possible_wrap)] // cmp eax, 0x20; jge
+        if battle == 0 || chr as i32 >= 0x20 {
+            for (i, f) in CH_GET_SCALE.into_iter().enumerate() {
+                let f = Global::<u32>::new(f).ptr(mem).addr;
+                // fstp m32
+                let x = ffx_bridge::x87::store(fcall(mem, f, &[h]));
+                #[allow(clippy::cast_possible_truncation)] // 0..3
+                mem.write(v.wrapping_add(4 * i as u32), x);
+            }
+        } else {
+            let f = Global::<u32>::new(MS_GET_CHR_SCALE).ptr(mem).addr;
+            call(mem, f, &[chr, v]);
+        }
+        let f = Global::<u32>::new(CH_GET_DATA_SCALE).ptr(mem).addr;
+        // an fld m32 in the callee: exact
+        let ds = f32::from_bits(ffx_bridge::x87::store(fcall(mem, f, &[h])));
+        let milli: f64 = mem.read(Global::<u32>::new(0x00b4_7c68).ptr(mem).addr);
+        let byte: f64 = mem.read(Global::<u32>::new(0x00b5_0198).ptr(mem).addr);
+        let s = Reg::load_f32(ds)
+            .mem(MUL, k)
+            .constant(MUL, milli)
+            .constant(MUL, byte)
+            .store();
+        // fstp [ebp - 0x24]; fld; fstp [esp]
+        let s = crate::x87::load_f32(s);
+        op::op_xyz_scale(mem, v, v, s.to_bits());
+        op::op_unit_m_scale2(mem, m, v);
+        match (angles, trans) {
+            (0, 0) => {}
+            (0, t) => {
+                op::op_trans_m(mem, m, m, t);
+            }
+            (a, 0) => op::op_rot_m(mem, m, m, a),
+            (a, t) => op::op_rt_m_zyx(mem, m, m, a, t),
+        }
+    }
+
+    /// `0x0080e160(pk, mats, obj, unit, tex)` and `0x0080e230` (`clear`
+    /// false): the 0x50-byte `op1_mdc_draw` packet header at `pk` for an
+    /// opus model unit: `+0` the unit's `u16 +0xc0`, `+4` `obj +0x28`, `u16
+    /// +8` the unit's `+0xc2`, `+0xc` 0, `+0x10` 0, `+0x18` RGB 0x80 with the
+    /// unit's `+0xcb` as A, `+0x1c` the unit's `+0xc8` with its top byte
+    /// cleared, `+0x20`/`+0x24`/`+0x28`/`+0x2c` the four 0x40-byte matrices
+    /// of `mats` (`+0xc0`, `+0`, `+0x40`, `+0x80`), `+0x34` `obj +0x54`,
+    /// `+0x38` 0, `+0x40` the unit's `+0xc4`, `+0x44` 0, `u16 +0x4c`
+    /// 0x8080. `0x0080e160` also clears `+0x14` and `+0x3c`. Returns the
+    /// model, `op_oef2_a_get(obj +0x60 [unit +0x1e], 4, tex)`, or 0 when
+    /// `tex` is -1.
+    #[allow(clippy::many_single_char_names)] // packet fields
+    pub fn opus_mdc_packet_set(
+        mem: &mut impl Mem,
+        pk: u32,
+        mats: u32,
+        obj: u32,
+        unit: u32,
+        tex: u32,
+        clear: bool,
+    ) -> u32 {
+        let at = |o: u32| pk.wrapping_add(o);
+        let c: u32 = mem.read(unit.wrapping_add(0xc8));
+        let a: u8 = mem.read(unit.wrapping_add(0xcb));
+        mem.write(at(0x1c), c & 0x00ff_ffff);
+        mem.write(at(0x18), [0x80u8, 0x80, 0x80, a]);
+        if clear {
+            mem.write(at(0x14), 0u32);
+        }
+        mem.write(at(0x10), 0u32);
+        let n: u16 = mem.read(unit.wrapping_add(0xc0));
+        mem.write(at(0), u32::from(n));
+        let v: u32 = mem.read(obj.wrapping_add(0x28));
+        mem.write(at(4), v);
+        mem.write(at(0xc), 0u32);
+        let v: u32 = mem.read(unit.wrapping_add(0xc4));
+        mem.write(at(0x40), v);
+        mem.write(at(0x38), 0u32);
+        if clear {
+            mem.write(at(0x3c), 0u32);
+        }
+        mem.write(at(0x4c), 0x8080u16);
+        let v: u32 = mem.read(obj.wrapping_add(0x54));
+        mem.write(at(0x34), v);
+        let v: u16 = mem.read(unit.wrapping_add(0xc2));
+        mem.write(at(8), v);
+        mem.write(at(0x28), mats.wrapping_add(0x40));
+        mem.write(at(0x2c), mats.wrapping_add(0x80));
+        mem.write(at(0x24), mats);
+        mem.write(at(0x20), mats.wrapping_add(0xc0));
+        mem.write(at(0x44), 0u32);
+        if tex == u32::MAX {
+            return 0;
+        }
+        let g = u32::from(mem.read::<u8>(unit.wrapping_add(0x1e)));
+        let oef: u32 = mem.read(obj.wrapping_add(0x60 + 4 * g));
+        crate::op::bridge::op_oef2_a_get(mem, oef, 4, tex)
+    }
+
+    /// `opus_no_get(obj, unit, no)`, called through `call`.
+    const OPUS_NO_GET: u32 = 0x0080_1060;
+
+    /// `0x0080e900(pk, mats, obj, unit, nos)`: the four lights of an
+    /// `op1_mdc_draw` packet (`0x0080e030`). Both light matrices, `pk +0x24`
+    /// (colours) and `pk +0x28` (positions), start as four rows of the
+    /// emulated EE register `g_Ee_Gpr` (`0x00c8f508`, 16 bytes); then for
+    /// each unit number `u16 nos[1..=4]` that is not 0, the light unit
+    /// (`opus_no_get(obj, unit, no)`, through `call`) gives row `i`: its
+    /// position (`+0x90..`) with `w` = `+0x4c * 0.0625`, and its colour from
+    /// `+0xc8`: R, G, B each `+0x3c * (1/32768) * c` (53 bits), A `a *
+    /// (1/256)`. Last, `pk +0x4c` and `+0x4d` are `ftol(unit +0x30) / 2` and
+    /// `ftol(unit +0x4c) / 2`, at most 0x80 and negative as 0. No caller
+    /// reads `eax`.
+    #[allow(clippy::many_single_char_names)] // packet fields
+    pub fn opus_mdc_light_set<M: Mem>(
+        mem: &mut M,
+        pk: u32,
+        obj: u32,
+        unit: u32,
+        nos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let col: u32 = mem.read(pk.wrapping_add(0x24));
+        let pos: u32 = mem.read(pk.wrapping_add(0x28));
+        let gpr = Global::<u32>::new(0x00c8_f508).ptr(mem).addr;
+        for m in [col, pos] {
+            for row in 0..4u32 {
+                for w in 0..4u32 {
+                    let v: u32 = mem.read(gpr + 4 * w);
+                    mem.write(m.wrapping_add(0x10 * row + 4 * w), v);
+                }
+            }
+        }
+        let get = Global::<u32>::new(OPUS_NO_GET).ptr(mem).addr;
+        let k16: f64 = mem.read(Global::<u32>::new(0x00b9_21e0).ptr(mem).addr);
+        let k15: f64 = mem.read(Global::<u32>::new(0x00b1_70b0).ptr(mem).addr);
+        let k8: f64 = mem.read(Global::<u32>::new(0x00b5_0198).ptr(mem).addr);
+        for i in 0..4u32 {
+            let no: u16 = mem.read(nos.wrapping_add(2 + 2 * i));
+            if no == 0 {
+                continue;
+            }
+            let l = call(mem, get, &[obj, unit, u32::from(no)]);
+            let (p, c) = (pos.wrapping_add(0x10 * i), col.wrapping_add(0x10 * i));
+            let xyz: [u32; 3] = mem.read(l.wrapping_add(0x90));
+            mem.write(p, xyz);
+            let r: f32 = mem.read(l.wrapping_add(0x4c));
+            mem.write(
+                p.wrapping_add(0xc),
+                Reg::load_f32(r).constant(MUL, k16).store(),
+            );
+            let rgba: [u8; 4] = mem.read(l.wrapping_add(0xc8));
+            let s: f32 = mem.read(l.wrapping_add(0x3c));
+            // (s * 1/32768) at 53 bits, times the channel (exact as f32)
+            let sk = Reg::load_f32(s).constant(MUL, k15);
+            for (j, &ch) in rgba[..3].iter().enumerate() {
+                let v = sk.mem(MUL, f32::from(ch)).store();
+                #[allow(clippy::cast_possible_truncation)] // 0..3
+                mem.write(c.wrapping_add(4 * j as u32), v);
+            }
+            let a = Reg::load_f32(f32::from(rgba[3])).constant(MUL, k8).store();
+            mem.write(c.wrapping_add(0xc), a);
+        }
+        for (src, dst) in [(0x30u32, 0x4cu32), (0x4c, 0x4d)] {
+            let x: f32 = mem.read(unit.wrapping_add(src));
+            let v =
+                ffx_bridge::x87::ftol(mem, crate::x87::Reg::load_f32(x).value()).cast_signed() / 2;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=0x80
+            let b = v.clamp(0, 0x80) as u8;
+            mem.write(pk.wrapping_add(dst), b);
+        }
+    }
 
     /// `opus_get_weapon_index(obj)` (`0x00801000`): its slot, or -1.
     pub fn opus_get_weapon_index(mem: &impl Mem, obj: u32) -> i32 {

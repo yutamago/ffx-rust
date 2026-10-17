@@ -183,6 +183,64 @@ pub mod bridge {
         }
     }
 
+    /// The four bind effects of character `h` (`find_chr`), each found by
+    /// its ID (`0x40000400`, `0x500`, `0x600`, `0x700` plus the record
+    /// index) and handed to `f`, which returns what the original leaves in
+    /// `eax` for a found one. Returns that `eax`: the end of `g_EtChr` for
+    /// an unknown handle, `f`'s for a found last effect, else the end of
+    /// `g_EtEff`; 0 for null (the original leaves its caller's `eax`).
+    fn bind_effects<M: Mem>(
+        mem: &mut M,
+        handle: u32,
+        mut found: impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        if handle == 0 {
+            return 0;
+        }
+        let Some(index) = find_chr(mem, handle) else {
+            return CHR.ptr(mem).at(CHRS).addr;
+        };
+        let mut eax = 0;
+        for kind in [0x400, 0x500, 0x600, 0x700] {
+            eax = match find_eff(mem, (0x4000_0000 + kind) + index) {
+                Some(eff) => {
+                    let rec = EFF.ptr(mem).at(eff).addr;
+                    found(mem, rec)
+                }
+                None => EFF.ptr(mem).at(EFFS).addr,
+            };
+        }
+        eax
+    }
+
+    /// `op_et_bindeff_send_common_signal(h, bits)` (`0x007fbdf0`, the tail
+    /// of `MsEffectSendSignal`): `bits` OR-ed into the record flags (`+0xc`)
+    /// of character `h`'s four bind effects. Returns `eax` as left
+    /// ([`bind_effects`]; a found last effect leaves its record).
+    pub fn op_et_bindeff_send_common_signal(mem: &mut impl Mem, h: u32, bits: u32) -> u32 {
+        bind_effects(mem, h, |mem, r| {
+            let p = Ptr::<u32>::new(r + 0xc);
+            let v = p.get(mem) | bits;
+            p.set(mem, v);
+            r
+        })
+    }
+
+    /// `op_et_bindeff_send_signal(h, bits)` (`0x007fbef0`, from
+    /// `opu_et_etc`): the `u16` `bits` OR-ed into the signals (`+0xb0`) of
+    /// the objects of character `h`'s four bind effects. Returns `eax` as
+    /// left ([`bind_effects`]; a found last effect leaves its object).
+    pub fn op_et_bindeff_send_signal(mem: &mut impl Mem, h: u32, bits: u32) -> u32 {
+        bind_effects(mem, h, |mem, r| {
+            let obj = mem.read::<u32>(r + 4);
+            let p = Ptr::<u16>::new(obj.wrapping_add(0xb0));
+            #[allow(clippy::cast_possible_truncation)] // a u16 argument
+            let v = p.get(mem) | bits as u16;
+            p.set(mem, v);
+            obj
+        })
+    }
+
     /// `op_et_eff_off_signal(id)` (`0x007fc450`).
     pub fn op_et_eff_off_signal(mem: &mut impl Mem, id: u32) {
         signal(mem, id, 0x4000);
@@ -910,6 +968,43 @@ pub mod bridge {
                 mem.write(at, 0u32);
             }
         }
+        units_off(mem, list, call, |mem, unit| {
+            mem.read::<u8>(unit + 0x1e) == group
+        });
+    }
+
+    /// `opu_unit_free_by_id(list, id)` (`0x007fde30`): the first `g_EtEff`
+    /// record whose id (`+0`) is `id` (nothing when none) is freed
+    /// (`opu_eff_free_by_id(id)`), and every unit of the list's index lists
+    /// `+0x10`, `+0x14`, `+0x18` whose record index (`u16 +0x14`) is that
+    /// record's is shut down as in [`opu_unit_free_by_oef2`]. Callees
+    /// through `call`; no caller reads `eax`.
+    pub fn opu_unit_free_by_id<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let Some(k) = (0..EFFS).find(|&i| mem.read::<u32>(EFF.ptr(mem).at(i).addr) == id) else {
+            return;
+        };
+        let free = Global::<u32>::new(0x007f_e920).ptr(mem).addr;
+        call(mem, free, &[id]);
+        units_off(mem, list, call, |mem, unit| {
+            u32::from(mem.read::<u16>(unit + 0x14)) == k
+        });
+    }
+
+    /// The units of a list's index lists `+0x10`, `+0x14`, `+0x18` that
+    /// `pick` (given the unit, `+0x20 + 0x100 * no`) shut down:
+    /// `opus_prog_off`, `opus_draw_off`, `yonExtMapDeleteId`; the list
+    /// entry is read again in place, as `opus_prog_off` moves the rest down.
+    fn units_off<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        pick: impl Fn(&M, u32) -> bool,
+    ) {
         let calls =
             [0x0080_14c0u32, 0x0080_0d10, 0x0080_7830].map(|f| Global::<u32>::new(f).ptr(mem).addr);
         for at in [0x10u32, 0x14, 0x18] {
@@ -921,8 +1016,7 @@ pub mod bridge {
                 }
                 let no = i32::from(u.cast_signed()).cast_unsigned();
                 let base: u32 = mem.read(list.wrapping_add(0x20));
-                if mem.read::<u8>(no.wrapping_shl(8).wrapping_add(base).wrapping_add(0x1e)) == group
-                {
+                if pick(mem, no.wrapping_shl(8).wrapping_add(base)) {
                     call(mem, calls[0], &[list, u32::from(u)]);
                     call(mem, calls[1], &[list, u32::from(u)]);
                     call(mem, calls[2], &[no]);

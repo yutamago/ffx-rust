@@ -819,6 +819,88 @@ pub mod bridge {
         }
     }
 
+    /// The tag after `t` (as in [`op_md_packet_set_addr`]): 0x10 bytes
+    /// plus its count (`i16 +2`) times its type's size (`i8 +1` & 7).
+    fn md_next_tag(mem: &impl Mem, t: u32) -> u32 {
+        let kind = u32::from(mem.read::<u8>(t.wrapping_add(1)) & 7);
+        let n = i32::from(mem.read::<i16>(t.wrapping_add(2)));
+        let size: u32 = mem.read(MD_TAG_SIZES.ptr(mem).addr + 4 * kind);
+        t.wrapping_add(0x10)
+            .wrapping_add(n.cast_unsigned().wrapping_mul(size))
+    }
+
+    /// A tag's `u` (`+8 & 0x3fff`) and `v` (`+0xc >> 5 & 0x3fff`).
+    #[allow(clippy::cast_possible_truncation)] // 14-bit fields
+    fn md_tag_uv(mem: &impl Mem, t: u32) -> (u16, u16) {
+        let u = mem.read::<u16>(t.wrapping_add(8)) & 0x3fff;
+        let v = (mem.read::<u32>(t.wrapping_add(0xc)) >> 5 & 0x3fff) as u16;
+        (u, v)
+    }
+
+    /// `op_md_tex0_change_limit(packet, tex0, lo, hi)` (`0x00a69ca0`; the
+    /// `tex0` argument is not read): the texture coordinates of the tags
+    /// with type bit 2, the 14-bit `u` in `+8` and `v` in `+0xc >> 5`,
+    /// moved so that the smallest becomes 0x3fff. First the lowest `u -
+    /// 0x3fff` and `v - 0x3fff` (`i16`, starting at 0x3fff) over all those
+    /// tags; then each with `lo <= u <= hi` (`u16`s) gets `u - low_u` and
+    /// `v - low_v` (16-bit, 0 when negative) back into its fields, the
+    /// other bits kept (`+8 & 0xffffc000`, `+0xc & 0xfff8001f`; a result
+    /// over 0x3fff spills into the bits above, as in the original). Returns
+    /// the end tag (type 0xff), as left in `eax`.
+    pub fn op_md_tex0_change_limit(mem: &mut impl Mem, packet: u32, lo: u32, hi: u32) -> u32 {
+        let first = packet.wrapping_add(0x20);
+        let (mut low_u, mut low_v) = (0x3fffu16, 0x3fffu16);
+        let mut t = first;
+        loop {
+            let kind = mem.read::<u8>(t.wrapping_add(1));
+            if kind == 0xff {
+                break;
+            }
+            if kind & 2 != 0 {
+                let (u, v) = md_tag_uv(mem, t);
+                let (du, dv) = (u.wrapping_sub(0x3fff), v.wrapping_sub(0x3fff));
+                if du.cast_signed() < low_u.cast_signed() {
+                    low_u = du;
+                }
+                if dv.cast_signed() < low_v.cast_signed() {
+                    low_v = dv;
+                }
+            }
+            t = md_next_tag(mem, t);
+        }
+        #[allow(clippy::cast_possible_truncation)] // u16 arguments
+        let (lo, hi) = (lo as u16, hi as u16);
+        let clamp = |d: u16| if d.cast_signed() < 0 { 0 } else { u32::from(d) };
+        let mut t = first;
+        loop {
+            let kind = mem.read::<u8>(t.wrapping_add(1));
+            if kind == 0xff {
+                return t;
+            }
+            let (u, v) = md_tag_uv(mem, t);
+            if kind & 2 != 0 && lo <= u && u <= hi {
+                let c: u32 = mem.read(t.wrapping_add(0xc));
+                let a: u32 = mem.read(t.wrapping_add(8));
+                mem.write(
+                    t.wrapping_add(8),
+                    a & 0xffff_c000 | clamp(u.wrapping_sub(low_u)),
+                );
+                mem.write(
+                    t.wrapping_add(0xc),
+                    clamp(v.wrapping_sub(low_v)) << 5 | c & 0xfff8_001f,
+                );
+            }
+            t = md_next_tag(mem, t);
+        }
+    }
+
+    /// `op_md_tex0_change(packet, tex0)` (`0x00a69c80`):
+    /// [`op_md_tex0_change_limit`] over every `u` (0..=0x4000); returns its
+    /// `eax`.
+    pub fn op_md_tex0_change(mem: &mut impl Mem, packet: u32) -> u32 {
+        op_md_tex0_change_limit(mem, packet, 0, 0x4000)
+    }
+
     /// `0x00a698c0(packet)`: the size of the packet's vertex block after
     /// its tags: walking the tags from `+0x20` (as in
     /// [`op_md_packet_set_addr`]), 0 at a type nibble (`+1` & 0xf0) of 0x10
@@ -1040,6 +1122,53 @@ pub mod bridge {
     const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
     /// The second word of `g_OpOef2StreamCues` (`0x023c364c`).
     pub const STREAM_CUE2: Global<u32> = Global::new(0x023c_364c);
+
+    /// `op_oef2_sound_init_00800440()` (`0x00800440`, from the op layer's
+    /// set-up `0x007ff960`): the 32-entry cue ring and its arguments, the
+    /// 64 words from `0x023c36a0` (two 32-slot tables, the second
+    /// `g_OpOef2Seps`), the ring head and count, both stream cues and the
+    /// byte `0x023c3644` cleared; the volume and pan curve constants
+    /// (`0x023c3660..0x023c368f`) set from the image's floats, each copied
+    /// as it is (`fld`/`fstp` of a normal `f32` keeps its bits). Returns 0
+    /// (left in `eax`).
+    pub fn op_oef2_sound_init(mem: &mut impl Mem) -> u32 {
+        let cues = SOUND_CUES.ptr(mem).addr;
+        let args = SOUND_CUE_ARGS.ptr(mem).addr;
+        let slots = Global::<u32>::new(0x023c_36a0).ptr(mem).addr;
+        for i in 0..32u32 {
+            mem.write(cues + 4 * i, 0u32);
+            mem.write(args + 4 * i, 0u32);
+            for k in 0..2u32 {
+                mem.write(slots + 8 * i + 4 * k, 0u32);
+                mem.write(slots + 0x100 + 8 * i + 4 * k, 0u32);
+            }
+        }
+        for a in [0x023c_3640u32, 0x023c_364c, 0x023c_3648] {
+            let at = Global::<u32>::new(a).ptr(mem).addr;
+            mem.write(at, 0u32);
+        }
+        let at = Global::<u8>::new(0x023c_3644).ptr(mem).addr;
+        mem.write(at, 0u8);
+        // (destination, the image's f32 constant)
+        for (to, from) in [
+            (0x023c_3660u32, 0x00b4_1d84u32),
+            (0x023c_3664, 0x00b4_1d9c),
+            (0x023c_3668, 0x00b4_f5e4),
+            (0x023c_366c, 0x00b4_3db8),
+            (0x023c_3670, 0x00b5_83dc),
+            (0x023c_3674, 0x00b5_870c),
+            (0x023c_3678, 0x00b4_3db8),
+            (0x023c_367c, 0x00b4_1d84),
+            (0x023c_3688, 0x00b5_83dc),
+            (0x023c_3684, 0x00b5_8714),
+            (0x023c_3680, 0x00b5_8708),
+            (0x023c_368c, 0x00b5_8704),
+        ] {
+            let v = Global::<u32>::new(from).get(mem);
+            Global::<u32>::new(to).set(mem, v);
+        }
+        0
+    }
 
     /// The separate-sound ID of a kind-1 cue (`+8` points at its record,
     /// the ID at `+8`).

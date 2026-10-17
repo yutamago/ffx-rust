@@ -264,3 +264,177 @@ the two line segments, the alpha falling by `128 / n` per point (not below
 instance gets `m` times `g_pppFillMatrix`, bounds of +-100000 and
 `graphicVFXSetVisible` / `graphicVFXUpdate`. A failed allocation returns
 before `op_spr_free`.
+
+## Texture mip filters
+
+The op layer builds a texture's smaller levels on the CPU (caller
+`0x00a384d0`), per row, for 32-bit RGBA texels (`size` 4) or 8-bit ones
+(`size` 1); other sizes leave the level alone.
+
+| Function | Filter | Rounding |
+| --- | --- | --- |
+| `op_texels_halve_00a385f0` | two neighbours in a row | up: `(a \| b) - ((a ^ b) >> 1 & 0x7f7f7f7f)` per byte |
+| `op_texels_halve_v_00a38560` | two neighbours in a column | as above |
+| `op_texels_box_00a38670` | 2x2 box from two rows | nearest: `(a + b + c + d + 2) >> 2` per byte |
+
+For 32-bit texels the box filter sums bytes 0 and 2 in one masked word
+(`& 0x00ff00ff`) and bytes 1 and 3 in another (`>> 2 & 0x3fc03fc0`), so no
+carry crosses a byte; the result is bit-exact to the per-byte formula.
+
+## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
+
+The tail draws save the emulated VU0 registers they use and restore them
+after drawing: `pppKeShpTail3VfCopy_00751680` copies `0x00c8f7b0..0x00c8f7ef`
+to `dst + 0xc0`, and `pppKeShpTail3XVfCopy_00753080` (for `pppKeShpTail3XDraw`)
+also `0x00c8f930..0x00c8f95f` to `dst + 0x100`; `pppKeShpTail3VfLoad_00751740` (and its byte-identical copy
+`pppKeShpTail3XVfLoad_00751ab0`) loads a saved block back:
+
+| Block words | VU0 registers |
+| --- | --- |
+| `0x00..0x1f` | `0x00c8f830..0x00c8f8af` |
+| `0x20..0x27` | `0x00c8f7f0..0x00c8f80f` |
+| `0x40..0x4b` | `0x00c8f930..0x00c8f95f` |
+
+## Bind-effect signals (`op_et_bindeff_send_*`)
+
+A character's bind effects are the `g_EtEff` records with IDs `0x40000400`,
+`0x40000500`, `0x40000600` and `0x40000700` plus the character's `g_EtChr`
+record index (`et.rs`). Two senders reach all four:
+
+| Function | Caller | Writes |
+| --- | --- | --- |
+| `op_et_bindeff_send_common_signal` (`0x007fbdf0`) | `MsEffectSendSignal` (tail call) | record flags `+0xc` \|= `bits` |
+| `op_et_bindeff_send_signal` (`0x007fbef0`) | `opu_et_etc` | object signals `u16 +0xb0` \|= `bits` |
+
+Each effect is the first record with its ID; a missing one is skipped. Both
+return `eax` as the last search leaves it (the record, or the object, of
+the `0x700` effect; the end of `g_EtEff` without it; the end of `g_EtChr`
+for an unknown handle). The names come from Fahrenheit's Switch call graph.
+
+## Sound cues (`op_oef2_sound_init_00800440`)
+
+The op layer's set-up (`0x007ff960`) clears the oef2 sound state: the
+32-cue ring `g_OpOef2SoundCueRing` and its arguments, the 64 words from
+`0x023c36a0` (two tables of 32 slots, the second `g_OpOef2Seps`), the ring
+head and count, both `g_OpOef2StreamCues` and the byte `0x023c3644`. It
+then sets the curve constants `op_3d_vol_pan_get` reads, copied from
+`f32` constants in the image:
+
+| Address | Value |
+| --- | --- |
+| `0x023c3660`, `0x023c367c` | 32 |
+| `0x023c3664` | 512 |
+| `0x023c3668` (`g_OpSoundCurves`) | 127 |
+| `0x023c366c`, `0x023c3678` | 96 |
+| `0x023c3670`, `0x023c3688` | 64 |
+| `0x023c3674` | 768 |
+| `0x023c3680` | 129.0667 |
+| `0x023c3684` | -0.0645833 |
+| `0x023c368c` | 1/24 |
+
+## Model texture coordinates (`op_md_tex0_change*`)
+
+`op_md_tex0_change_limit(packet, tex0, lo, hi)` (`0x00a69ca0`) walks a model
+packet's tags (from `+0x20` to type `0xff`, as `op_md_packet_set_addr`).
+Tags with type bit 2 carry a 14-bit `u` in `+8` (bits 0..13) and `v` in
+`+0xc` (bits 5..18). It finds the smallest `u` and `v` over those tags and
+rebases every tag with `lo <= u <= hi`: `u' = u - u_min + 0x3fff`, the same
+for `v`. Results reach 0x7ffe and spill into the bit above each field, as in
+the original. The PC build never reads `tex0`.
+`op_md_tex0_change(packet, tex0)` (`0x00a69c80`) is the call with `lo` 0 and
+`hi` 0x4000. Both return the end tag.
+
+## Encounter grid (`opus_encount0_init`)
+
+`opus_encount0_init(obj)` (`0x007f8480`) sets `f32 +0x20` = 16, `+0x24` = 32,
+`+0x28` = 0 and lays out `u16 +6` planes of `u16 +4` rows of `u16 +2`
+particles, 0x20 bytes each from `+0x30`:
+
+| Offset | Value |
+| --- | --- |
+| `+0`, `+4`, `+8` | x, y, z: 0, then down by 64 per particle, row and plane |
+| `+0xc`, `+0x1c` | 1 |
+| `+0x10` | 2112, up by 64 per particle across the whole grid |
+| `+0x14`, `+0x18` | 0 |
+
+Each step adds 64.0 in 53 bits to the stored `f32` and rounds at the store.
+Returns the plane count (0 for none) in `eax`.
+
+## Render-data counts (`clearVFXRenderDataShp*`, `caculateVFXRenderDataShapeFieldBufferSize`)
+
+A VFX render data (`graphicVFXGetRenderDataByInstance`) has `i32 +0x90`
+parts of 0x6c bytes at `[+0x94]`. A part keeps its index count at `+4`, its
+vertex count at `+8`, its index buffer at `+0x1c` (`[+0x68]` entries of 2
+bytes), and from `+0x2c` one 0x1c-byte record per dynamic-geometry buffer
+whose first two words are that buffer's index and vertex counts.
+
+| Function | Effect |
+| --- | --- |
+| `clearVFXRenderDataShp` (`0x00713290`) | every part's counts set to 0, also in the current buffer's record (`graphicDynGeoMemManagerGetCurrentBufferId`) |
+| `clearVFXRenderDataShpWithMemset` (`0x00713320`) | the same, each index buffer zeroed first |
+| `caculateVFXRenderDataShapeFieldBufferSize` (`0x00712bd0`) | the first part's vertex count += 6n, index count += 4n, for `n` the `i16 +2` of shape entry `k` (`get_ptr32(*shape)`, offset `i16 +0x10 + 8k`) |
+
+All three return 1, or 0 when the instance has no render data. They are
+bookkeeping for the PC renderer's buffers, ported in `draw.rs`.
+
+## Bone matrices (`opus_get_bone_matrix`)
+
+`opus_get_bone_matrix(out, chr, bone)` (`0x00805430`) puts a character
+element's base matrix in `out` (`Ch_ElemGetBaseMatrix`) for the opus
+effects that follow bones. A bone with bit 0x8000 is an option position:
+`Ch_OptposGetElement(chr, bone & 0xff, local)` returns the element it hangs
+from and a 16-byte offset in the caller's local, and `out + 0x30` becomes
+that offset through the matrix (`op_apply_m_w1`). Without the bit the
+function also copies the emulated EE register `g_Ee_Gpr` (`0x00c8f508`, 16
+bytes) to `out + 0x40`. The port keeps the local in a per-call stack buffer
+in the shim.
+
+## Character scale matrices (`opus_rt_m_chara`)
+
+`opus_rt_m_chara(m, chr, k, angles, trans, battle)` (`0x008062c0`) builds
+the matrix an opus effect uses to follow a character at its size. The
+scale is the battle character's (`MsGetChrScale(chr, local)`) when `battle`
+is set and `chr` (signed) is below 0x20, else `Ch_GetScaleX/Y/Z` of
+`g_EtChrHandles[chr]`. It is multiplied by `Ch_GetDataScale * k * 0.001f *
+(1/256)`, computed at 53 bits and stored as an `f32` (`op_xyz_scale`), and
+becomes `m`'s diagonal (`op_unit_m_scale2`). Then `m` is turned by
+`angles` and moved by `trans` (`op_rt_m`; `op_rot_m` or `op_trans_m` when
+only one is given). Callers pass `k` = 256.0 from the overlays, or the
+effect's own scale (`+0x3c`). The scale vector is a 16-byte local of the
+original's 16-byte-aligned frame (`[ebp - 0x20]`); the shim keeps it in a
+stack buffer.
+
+## Freeing units by effect (`opu_unit_free_by_id`, `opu_unit_free_by_oef2`)
+
+An opus list keeps three index lists of its units (`+0x10`, `+0x14`,
+`+0x18`: `u16` unit numbers ending in a negative one). Both functions shut
+units down the same way: `opus_prog_off`, `opus_draw_off` and
+`yonExtMapDeleteId` for each match, then the same list entry is read again,
+because `opus_prog_off` moves the rest of the list down.
+`opu_unit_free_by_id(list, id)` (`0x007fde30`) looks up the first
+`g_EtEff` record (`0x012a4100`, 512 records of 0x20 bytes) whose id (`+0`)
+is `id`, frees it (`opu_eff_free_by_id`) and shuts down the units whose
+record index (`u16 +0x14` of the 0x100-byte unit) is that record's.
+`opu_unit_free_by_oef2(list, oef)` (`0x007fdf70`) works by oef2 slot
+group instead (`u8 +0x1e`). Both are in `et.rs`.
+
+## Model-draw packets (`0x0080e160`, `0x0080e230`, `0x0080e900`)
+
+Before `op1_mdc_draw`, the opus model units (`0x0080df10`, `0x0080e030`)
+fill a 0x50-byte packet header with `0x0080e160(pk, mats, obj, unit, tex)`:
+`+0` the unit's `u16 +0xc0`, `+4` `obj +0x28`, `u16 +8` the unit's `+0xc2`,
+`+0x18` RGB 0x80 and the unit's `+0xcb` as A, `+0x1c` the unit's `+0xc8`
+without its top byte, `+0x20`/`+0x24`/`+0x28`/`+0x2c` the matrices at
+`mats + 0xc0`, `+0`, `+0x40`, `+0x80`, `+0x34` `obj +0x54`, `+0x40` the
+unit's `+0xc4`, `u16 +0x4c` 0x8080; `+0xc`, `+0x10`, `+0x14`, `+0x38`,
+`+0x3c` and `+0x44` are 0. It returns the model, `op_oef2_a_get(obj +0x60
+[unit +0x1e], 4, tex)` (0 when `tex` is -1). `0x0080e230` is the same
+without clearing `+0x14` and `+0x3c`.
+
+`0x0080e900(pk, mats, obj, unit, nos)` then sets four lights: the colour
+matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
+`g_Ee_Gpr`; each nonzero unit number `nos[1..=4]` names a light unit
+(`opus_no_get`) whose row gets its position (`+0x90`) with `w = +0x4c *
+0.0625`, and colour `+0x3c * (1/32768) * c` for R, G, B (53 bits) and
+`a / 256`. `pk +0x4c` and `+0x4d` become `ftol(unit +0x30) / 2` and
+`ftol(unit +0x4c) / 2`, clamped to 0..0x80.

@@ -42,6 +42,29 @@ pub fn ppp_view_out_code(x: f32, y: f32) -> u32 {
     code
 }
 
+/// The four-texel average of [`bridge::op_texels_box`] (`row_a[2i]`,
+/// `row_b[2i]`, `row_a[2i + 1]`, `row_b[2i + 1]`): per byte of the RGBA
+/// words, `(a + b + c + d + 2) >> 2`, carried in two halves (bytes 0
+/// and 2 low, 1 and 3 through `>> 2` of each word) as the original
+/// does, so no carry crosses a byte.
+#[must_use]
+pub fn box4(texels: [u32; 4]) -> u32 {
+    // the original adds row b's right texel and the rounding first, then
+    // row a's left, row a's right and row b's left
+    let [a_left, b_left, a_right, b_right] = texels;
+    let sum = |part: fn(u32) -> u32, round: u32| {
+        part(b_right)
+            .wrapping_add(round)
+            .wrapping_add(part(a_left))
+            .wrapping_add(part(a_right))
+            .wrapping_add(part(b_left))
+    };
+    let high = sum(|x| x >> 2 & 0xffc0_3fc0, 0xff80_0080);
+    let low = sum(|x| x & 0x00ff_00ff, 0x0002_0002) >> 2;
+    let top = sum(|x| x >> 2 & 0x3fc0_3fc0, 0x0080_0080);
+    (high ^ low) & 0x00ff_00ff ^ top
+}
+
 /// The helpers over game memory.
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -399,6 +422,54 @@ pub mod bridge {
         }
     }
 
+    /// `op_texels_box_00a38670(dst, row_a, row_b, n, size)` (`0x00a38670`):
+    /// a mip level from two rows: texel `i` is the 2x2 average of `row_a`
+    /// and `row_b`'s texels `2i`, `2i + 1`, rounding to nearest: `size` 4
+    /// per byte of each RGBA word ([`super::box4`]), `size` 1 single bytes
+    /// (`(sum + 2) >> 2`); other sizes do nothing. Returns `eax` as left:
+    /// `row_a - row_b` (size 4), the last average (size 1), 0 for `n` 0,
+    /// else `size`.
+    pub fn op_texels_box(
+        mem: &mut impl Mem,
+        dst: u32,
+        row_a: u32,
+        row_b: u32,
+        n: u32,
+        size: u32,
+    ) -> u32 {
+        if size != 4 && size != 1 {
+            return size;
+        }
+        if n == 0 {
+            return 0;
+        }
+        if size == 4 {
+            for i in 0..n {
+                let (a, b) = (row_a.wrapping_add(8 * i), row_b.wrapping_add(8 * i));
+                let v = super::box4([
+                    mem.read(a),
+                    mem.read(b),
+                    mem.read(a.wrapping_add(4)),
+                    mem.read(b.wrapping_add(4)),
+                ]);
+                mem.write(dst.wrapping_add(4 * i), v);
+            }
+            return row_a.wrapping_sub(row_b);
+        }
+        let mut last = 0;
+        for i in 0..n {
+            let (a, b) = (row_a.wrapping_add(2 * i), row_b.wrapping_add(2 * i));
+            let sum = [a, a.wrapping_add(1), b, b.wrapping_add(1)]
+                .into_iter()
+                .map(|x| u32::from(mem.read::<u8>(x)))
+                .sum::<u32>();
+            last = (sum + 2) >> 2;
+            #[allow(clippy::cast_possible_truncation)] // at most 255
+            mem.write(dst.wrapping_add(i), last as u8);
+        }
+        last
+    }
+
     /// `op_texels_halve_v_00a38560(dst, dst_step, src, src_step, n, size)`
     /// (`0x00a38560`): [`op_texels_halve`] down a column: texel `i`
     /// (`dst + i dst_step`) is the average of `src + 2i src_step` and the
@@ -489,6 +560,37 @@ pub mod bridge {
         let vf: [u32; 16] = mem.read(Global::<u32>::new(0x00c8_f7b0).ptr(mem).addr);
         mem.write(dst.wrapping_add(0xc0), vf);
         vf[15]
+    }
+
+    /// `pppKeShpTail3XVfCopy_00753080(dst)` (`0x00753080`, for
+    /// `pppKeShpTail3XDraw`): as [`ppp_ke_shp_tail3_vf_copy`] (the 16
+    /// words at `0x00c8f7b0` to `dst + 0xc0`), then the 12 at `0x00c8f930`
+    /// to `dst + 0x100`. Returns the last word, as left in `eax`.
+    pub fn ppp_ke_shp_tail3x_vf_copy(mem: &mut impl Mem, dst: u32) -> u32 {
+        ppp_ke_shp_tail3_vf_copy(mem, dst);
+        let vf: [u32; 12] = mem.read(Global::<u32>::new(0x00c8_f930).ptr(mem).addr);
+        mem.write(dst.wrapping_add(0x100), vf);
+        vf[11]
+    }
+
+    /// `pppKeShpTail3VfLoad_00751740(src)` (`0x00751740`) and its copy
+    /// `pppKeShpTail3XVfLoad_00751ab0` (`0x00751ab0`): the emulated VU0
+    /// registers back from a saved block, the other way round from
+    /// [`ppp_ke_shp_tail3_vf_copy`]: `src` words `0..0x20` to
+    /// `0x00c8f830..0x00c8f8af`, `0x20..0x28` to `0x00c8f7f0..0x00c8f80f`,
+    /// `0x40..0x4c` to `0x00c8f930..0x00c8f95f`, in that order. Returns the
+    /// last word (`src + 0x12c`), as left in `eax`; the FPU is not touched.
+    pub fn ppp_ke_shp_tail3_vf_load(mem: &mut impl Mem, src: u32) -> u32 {
+        let a: [u32; 0x20] = mem.read(src);
+        let at = Global::<u32>::new(0x00c8_f830).ptr(mem).addr;
+        mem.write(at, a);
+        let b: [u32; 8] = mem.read(src.wrapping_add(0x80));
+        let at = Global::<u32>::new(0x00c8_f7f0).ptr(mem).addr;
+        mem.write(at, b);
+        let c: [u32; 12] = mem.read(src.wrapping_add(0x100));
+        let at = Global::<u32>::new(0x00c8_f930).ptr(mem).addr;
+        mem.write(at, c);
+        c[11]
     }
 
     /// `pppDataLastPair_00761250(data, a, b)` (`0x00761250`, for

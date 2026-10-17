@@ -20,6 +20,123 @@ pub mod bridge {
     /// `g_pppCurrentProgram`.
     pub const CURRENT_PROGRAM: u32 = 0x0230_fd20;
 
+    /// `graphicVFXGetRenderDataByInstance(lo, hi)`, called through `call`.
+    const GET_RENDER_DATA: u32 = 0x0064_53d0;
+    /// `graphicDynGeoMemManagerGetCurrentBufferId()`, called through `call`.
+    const CURRENT_BUFFER_ID: u32 = 0x0063_ff50;
+
+    /// A render data's parts: `i32 +0x90` of them, 0x6c bytes each from
+    /// `[+0x94]` (reread for every access, as the original does). A part
+    /// keeps its index count at `+4` and vertex count at `+8`, and one
+    /// 0x1c-byte record per dynamic-geometry buffer from `+0x2c` whose first
+    /// two words take those counts.
+    fn rd_part(mem: &impl Mem, rd: u32, i: u32) -> u32 {
+        mem.read::<u32>(rd.wrapping_add(0x94))
+            .wrapping_add(i.wrapping_mul(0x6c))
+    }
+
+    /// `caculateVFXRenderDataShapeFieldBufferSize(lo, hi, shape, n)`
+    /// (`0x00712bd0`): with the render data of instance `(lo, hi)`, the
+    /// shape's entry `n` (`get_ptr32(*shape)`, its `i16 +0x10 + 8n` the
+    /// entry's offset) adds 6 x its `i16 +2` to the first part's vertex
+    /// count (`+8`) and 4 x it to its index count (`+4`). Returns 1, or 0
+    /// without render data.
+    pub fn caculate_vfx_render_data_shape_field_buffer_size<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [lo, hi, shape, n] = args;
+        let f = g(mem, GET_RENDER_DATA);
+        let rd = call(mem, f, &[lo, hi]);
+        if rd == 0 {
+            return 0;
+        }
+        let f = g(mem, GET_PTR32);
+        let arg: u32 = mem.read(shape);
+        let base = call(mem, f, &[arg]);
+        let n = n & 0xffff;
+        let off = i32::from(mem.read::<i16>(base.wrapping_add(0x10 + 8 * n)));
+        let entry = base.wrapping_add(off.cast_unsigned());
+        let count = |mem: &M| i32::from(mem.read::<i16>(entry.wrapping_add(2))).cast_unsigned();
+        let at = rd_part(mem, rd, 0).wrapping_add(8);
+        let v = mem.read::<u32>(at).wrapping_add(count(mem).wrapping_mul(6));
+        mem.write(at, v);
+        let at = rd_part(mem, rd, 0).wrapping_add(4);
+        let v = mem.read::<u32>(at).wrapping_add(count(mem).wrapping_mul(4));
+        mem.write(at, v);
+        1
+    }
+
+    /// The part loop of [`clear_vfx_render_data_shp`]: for each part, its
+    /// counts cleared and copied into the current buffer's record
+    /// (`+0x2c + 0x1c id`: index count, vertex count); `zero` first runs
+    /// on the part (the memset of the `WithMemset` form).
+    fn clear_parts<M: Mem>(mem: &mut M, rd: u32, id: u32, mut zero: impl FnMut(&mut M, u32)) {
+        let rec = id.wrapping_mul(0x1c);
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<i32>(rd.wrapping_add(0x90)) {
+            zero(mem, rd_part(mem, rd, i));
+            mem.write(rd_part(mem, rd, i).wrapping_add(8), 0u32);
+            mem.write(rd_part(mem, rd, i).wrapping_add(4), 0u32);
+            let p = rd_part(mem, rd, i);
+            let v: u32 = mem.read(p.wrapping_add(8));
+            mem.write(p.wrapping_add(0x30).wrapping_add(rec), v);
+            let p = rd_part(mem, rd, i);
+            let v: u32 = mem.read(p.wrapping_add(4));
+            mem.write(p.wrapping_add(0x2c).wrapping_add(rec), v);
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `clearVFXRenderDataShp(lo, hi)` (`0x00713290`): every part of the
+    /// render data of instance `(lo, hi)` gets index and vertex counts 0,
+    /// also in its record for the current dynamic-geometry buffer
+    /// (`graphicDynGeoMemManagerGetCurrentBufferId`). Returns 1, or 0
+    /// without render data.
+    pub fn clear_vfx_render_data_shp<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = g(mem, GET_RENDER_DATA);
+        let rd = call(mem, f, &[lo, hi]);
+        if rd == 0 {
+            return 0;
+        }
+        let f = g(mem, CURRENT_BUFFER_ID);
+        let id = call(mem, f, &[]);
+        clear_parts(mem, rd, id, |_, _| {});
+        1
+    }
+
+    /// `clearVFXRenderDataShpWithMemset(lo, hi)` (`0x00713320`):
+    /// [`clear_vfx_render_data_shp`], each part's index buffer (`[+0x1c]`,
+    /// `2 x [+0x68]` bytes) zeroed first (the CRT `memset`).
+    pub fn clear_vfx_render_data_shp_with_memset<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = g(mem, GET_RENDER_DATA);
+        let rd = call(mem, f, &[lo, hi]);
+        if rd == 0 {
+            return 0;
+        }
+        let f = g(mem, CURRENT_BUFFER_ID);
+        let id = call(mem, f, &[]);
+        clear_parts(mem, rd, id, |mem, p| {
+            let buf: u32 = mem.read(p.wrapping_add(0x1c));
+            let n = mem.read::<u32>(p.wrapping_add(0x68)).wrapping_mul(2);
+            for k in 0..n {
+                mem.write(buf.wrapping_add(k), 0u8);
+            }
+        });
+        1
+    }
+
     /// The 64-bit renderer instance of object `obj` in the current program:
     /// `(program, obj + sign(program))`.
     pub(crate) fn instance(mem: &impl Mem, obj: u32) -> [u32; 2] {

@@ -1101,8 +1101,30 @@ fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out:
         ("op_et_eff_flags_or", 0x007f_c510, e::op_et_eff_flags_or),
         ("op_et_eff_signal_or", 0x007f_c550, e::op_et_eff_signal_or),
     ];
+    let sends: [(&str, u32, ByHandle2); 2] = [
+        (
+            "op_et_bindeff_send_common_signal",
+            0x007f_bdf0,
+            e::op_et_bindeff_send_common_signal,
+        ),
+        (
+            "op_et_bindeff_send_signal",
+            0x007f_bef0,
+            e::op_et_bindeff_send_signal,
+        ),
+    ];
     for _ in 0..8 {
         let h = rng.pick(handles);
+        let (name, sym, f) = rng.pick(&sends);
+        let any = rng.next();
+        let bits = rng.pick(&[0x4000u32, 0x8000, 1, any]);
+        // a null handle leaves the caller's eax
+        p.check(
+            &format!("{name}({h:#x}, {bits:#x}) {what}"),
+            sym,
+            &[h, bits],
+            |m| (h != 0).then_some(f(m, h, bits)),
+        );
         let (name, sym, f) = rng.pick(&switches);
         let on = rng.pick(&[0u32, 1, 0x100]);
         p.check(
@@ -7132,6 +7154,33 @@ fn round10d_helpers_match_the_original() {
                 et::bridge::opu_unit_free_by_oef2(m, list, o, &mut call_original);
                 None
             });
+            // opu_unit_free_by_id: a record's id (or none), units of that
+            // record index (u16 +0x14) and others
+            let j = rng.below(512);
+            let id: u32 = p.get(eff + 0x20 * j);
+            let id = if rng.chance(15) { rng.next() } else { id };
+            // a second record with the id: the first one counts
+            if j < 511 && rng.chance(30) {
+                p.set(eff + 0x20 * (j + 1), id);
+            }
+            for i in 0..16 {
+                let any = rng.below(512);
+                let r = rng.pick(&[j, j, j + 1, any]);
+                p.set(units + 0x100 * i + 0x14, u16::try_from(r).unwrap());
+            }
+            for (k, at) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+                let li = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, li);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(li + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                }
+                p.set(li + 2 * n, 0xffffu16);
+            }
+            p.check("opu_unit_free_by_id", 0x007f_de30, &[list, id], |m| {
+                et::bridge::opu_unit_free_by_id(m, list, id, &mut call_original);
+                None
+            });
             // Vec4Max
             let k = [rng.float(), rng.float(), rng.float(), rng.float()];
             for i in 0..4 {
@@ -10397,6 +10446,498 @@ fn texels_halve_matches_the_original() {
 }
 
 #[test]
+fn vfx_render_data_counts_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_3290);
+        let (rd, parts, bufs) = (p.alloc(0x100), p.alloc(0x6c * 8), p.alloc(0x400));
+        // the shape in the middle of its block: entries before and after it
+        let shape = p.alloc(0x500) + 0x100;
+        let (get_rd, get_id, get_ptr) =
+            (p.sym(0x0064_53d0), p.sym(0x0063_ff50), p.sym(0x00a4_4650));
+        for _ in 0..300 {
+            p.fill(rd, 0x100, &mut rng);
+            p.fill(parts, 0x6c * 8, &mut rng);
+            p.fill(shape - 0x100, 0x500, &mut rng);
+            p.fill(bufs, 0x400, &mut rng);
+            let found = if rng.chance(15) { 0 } else { rd };
+            let id = rng.below(3);
+            for o in [&mut p.a, &mut p.b] {
+                o.stub_return(get_rd, found).unwrap();
+                o.stub_return(get_id, id).unwrap();
+                o.stub_return(get_ptr, shape).unwrap();
+            }
+            let n = rng.pick(&[0i32, 1, 3, 5, -1]);
+            p.set(rd + 0x90, n);
+            p.set(rd + 0x94, parts);
+            for i in 0..5 {
+                let part = parts + 0x6c * i;
+                p.set(part + 0x1c, bufs + 0x80 * i);
+                p.set(part + 0x68, rng.below(0x40));
+            }
+            // shape entries: offsets to small records with an i16 count
+            let k = rng.below(8);
+            let off = rng.pick(&[0x100 + 8 * i16::try_from(k).unwrap(), -0x80, -2]);
+            p.set(shape + 0x10 + 8 * k, off);
+            let (lo, hi) = (rng.next(), rng.next());
+            p.check("0x00713290", 0x0071_3290, &[lo, hi], |m| {
+                Some(draw::bridge::clear_vfx_render_data_shp(
+                    m,
+                    lo,
+                    hi,
+                    &mut call_original,
+                ))
+            });
+            p.fill(parts, 0x6c * 8, &mut rng);
+            for i in 0..5 {
+                let part = parts + 0x6c * i;
+                p.set(part + 0x1c, bufs + 0x80 * i);
+                p.set(part + 0x68, rng.below(0x40));
+            }
+            p.check("0x00713320", 0x0071_3320, &[lo, hi], |m| {
+                Some(draw::bridge::clear_vfx_render_data_shp_with_memset(
+                    m,
+                    lo,
+                    hi,
+                    &mut call_original,
+                ))
+            });
+            let arg = rng.next();
+            p.set(bufs, arg);
+            let n = k | rng.pick(&[0u32, 0xffff_0000]);
+            p.check("0x00712bd0", 0x0071_2bd0, &[lo, hi, bufs, n], |m| {
+                Some(
+                    draw::bridge::caculate_vfx_render_data_shape_field_buffer_size(
+                        m,
+                        [lo, hi, bufs, n],
+                        &mut call_original,
+                    ),
+                )
+            });
+        }
+    }
+}
+
+/// [`check_deep`] for any number of arguments and an original that aligns
+/// its frame (`push ebx; mov ebx, esp; sub esp, 8; and esp, -16; add esp,
+/// 4; push ebp; ...; mov ebp, esp`): `rust` gets that `ebp`. Only memory is
+/// compared (no caller reads the original's `eax`).
+fn check_deep_aligned(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    args: &[u32],
+    rust: impl FnOnce(&mut Oracle, u32),
+) {
+    let n = u8::try_from(args.len()).unwrap();
+    let at = p.sym(THUNK);
+    let mut c = vec![0x81, 0xec, 0, 2, 0, 0]; // sub esp, 0x200
+    for _ in 0..n {
+        c.extend([0xff, 0xb4, 0x24, 4 * n, 0x02, 0, 0]); // push [esp + 0x200 + 4n]
+    }
+    c.push(0xe8); // call sym
+    let call_end = at + u32::try_from(c.len()).unwrap() + 4;
+    c.extend(p.sym(sym).wrapping_sub(call_end).to_le_bytes());
+    c.extend([0x81, 0xc4, 4 * n, 0x02, 0, 0]); // add esp, 0x200 + 4n
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    let words = 4 * u32::from(n);
+    // the original's entry esp, then ebp = (esp - 12) & -16
+    let entry = p.b.stack_range().end - 0x100 - words - 4 - 0x200 - words - 4;
+    let frame = (entry - 12) & !0xf;
+    let r =
+        p.a.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    assert!(
+        r.st0.is_none(),
+        "{}: {what}: the original returns {:?} in ST0",
+        p.name,
+        r.st0
+    );
+    rust(&mut p.b, frame);
+    p.same(what);
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)] // the original's arguments
+fn opus_rt_m_chara_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_62c0);
+        let (m, angles, trans) = (p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (vu0, vu1) = (p.sym(0x00c8_f570), p.sym(0x00c8_f960));
+        // real characters on a snapshot: the g_EtChr indices with a handle
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let mut chrs = Vec::new();
+        if p.snapshot() {
+            for i in 0..0x30u32 {
+                let h: u32 = p.get(handles + 4 * i);
+                if h != 0 {
+                    chrs.push(i);
+                }
+            }
+        }
+        let real = !chrs.is_empty();
+        let cells = p.alloc(0x10);
+        if !real {
+            // the character calls stand in: floats from `cells`, and a
+            // battle scale of 1.0 | chr in all three (mov eax, [esp + 4];
+            // mov ecx, [esp + 8]; or eax, 0x3f800000; mov [ecx], eax;
+            // mov [ecx + 4], eax; mov [ecx + 8], eax; ret)
+            for (i, f) in [0x0082_ad30u32, 0x0082_ad40, 0x0082_ad50, 0x0082_ab60]
+                .into_iter()
+                .enumerate()
+            {
+                float_stub(&mut p, f, cells + 4 * u32::try_from(i).unwrap());
+            }
+            let ms = p.sym(0x0079_5720);
+            let code = [
+                0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x0d, 0, 0, 0x80, 0x3f, 0x89, 0x01,
+                0x89, 0x41, 0x04, 0x89, 0x41, 0x08, 0xc3,
+            ];
+            for o in [&mut p.a, &mut p.b] {
+                o.write(ms, &code).unwrap();
+            }
+            chrs.extend(0..0x30);
+        }
+        for _ in 0..300 {
+            for i in (0..0x40).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(m + i, v);
+            }
+            for i in (0..0x10).step_by(4) {
+                let (a, t) = (finite(&mut rng), rng.float());
+                p.set(angles + i, a);
+                p.set(trans + i, t);
+            }
+            // no NaNs from the ST0 stand-ins: the oracle's ST0 result
+            // (f80_to_f64) drops their sign and payload, the hardware keeps
+            // them
+            for i in (0..0x10).step_by(4) {
+                let v = rng.float();
+                let v = if x87::is_nan(v) { finite(&mut rng) } else { v };
+                p.set(cells + i, v);
+            }
+            p.fill(vu0, 0x40, &mut rng);
+            p.fill(vu1, 0x40, &mut rng);
+            let chr = rng.pick(&chrs);
+            let any = rng.float();
+            let k = rng.pick(&[0x4380_0000u32, any]);
+            let a = rng.pick(&[0, angles]);
+            let t = rng.pick(&[0, trans]);
+            let battle = rng.below(2);
+            let args = [m, chr, k, a, t, battle];
+            // the scale local at [ebp - 0x20]: what was on the stack before
+            let entry = p.b.stack_range().end - 0x100 - 24 - 4 - 0x200 - 24 - 4;
+            let local = ((entry - 12) & !0xf) - 0x20;
+            for i in (0..0x10).step_by(4) {
+                let v = rng.float();
+                p.set(local + i, v);
+            }
+            check_deep_aligned(&mut p, "0x008062c0", 0x0080_62c0, &args, |o, frame| {
+                opus::bridge::opus_rt_m_chara(
+                    o,
+                    m,
+                    chr,
+                    f32::from_bits(k),
+                    a,
+                    t,
+                    battle,
+                    frame,
+                    &mut call_original,
+                    &mut call_original_f,
+                );
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opus_mdc_packets_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_e160);
+        let (pk, mats, obj, unit) = (p.alloc(0x60), p.alloc(0x100), p.alloc(0xa0), p.alloc(0x100));
+        let oef = p.alloc(0x400);
+        let lights = p.alloc(0x100 * 16);
+        let (col, pos, nos) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x10));
+        let gpr = p.sym(0x00c8_f508);
+        // opus_no_get stands in: unit `no` of `lights` (movzx eax, word
+        // [esp + 0xc]; shl eax, 8; add eax, lights; ret)
+        let mut code = vec![0x0f, 0xb7, 0x44, 0x24, 0x0c, 0xc1, 0xe0, 0x08, 0x05];
+        code.extend(lights.to_le_bytes());
+        code.push(0xc3);
+        let get = p.sym(0x0080_1060);
+        p.a.write(get, &code).unwrap();
+        p.b.write(get, &code).unwrap();
+        let float = |rng: &mut Xorshift| {
+            if rng.chance(50) {
+                rng.float()
+            } else {
+                // around the 0..0x100 the clamp sees
+                let x = f32::from_bits(rng.float()).abs() % 600.0 - 100.0;
+                x.to_bits()
+            }
+        };
+        for _ in 0..500 {
+            p.fill(pk, 0x60, &mut rng);
+            p.fill(obj, 0xa0, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            // the oef2 block: table 4 at a small offset, of small offsets
+            p.fill(oef, 0x400, &mut rng);
+            p.set(oef + 0x10, 0x100u32 + 4 * rng.below(16));
+            p.set(unit + 0x1e, u8::try_from(rng.below(4)).unwrap());
+            for g in 0..4 {
+                p.set(obj + 0x60 + 4 * g, if rng.chance(10) { 0 } else { oef });
+            }
+            // the entry is tex & 0xff: high bits too
+            let (n, high) = (rng.below(0x40), rng.next() & 0xffff_ff00);
+            let tex = rng.pick(&[u32::MAX, n, high | n]);
+            let o: u32 = p.get(obj + 0x60 + 4 * u32::from(p.get::<u8>(unit + 0x1e)));
+            let tex = if o == 0 { u32::MAX } else { tex };
+            for (name, sym, clear) in [
+                ("0x0080e160", 0x0080_e160u32, true),
+                ("0x0080e230", 0x0080_e230, false),
+            ] {
+                p.check(name, sym, &[pk, mats, obj, unit, tex], |m| {
+                    Some(opus::bridge::opus_mdc_packet_set(
+                        m, pk, mats, obj, unit, tex, clear,
+                    ))
+                });
+            }
+            // the lights
+            p.set(pk + 0x24, col);
+            p.set(pk + 0x28, pos);
+            p.fill(col, 0x40, &mut rng);
+            p.fill(pos, 0x40, &mut rng);
+            p.fill(gpr, 0x10, &mut rng);
+            p.fill(lights, 0x100 * 16, &mut rng);
+            for i in 0..16 {
+                let l = lights + 0x100 * i;
+                for at in [0x3cu32, 0x4c, 0x90, 0x94, 0x98] {
+                    let v = rng.float();
+                    p.set(l + at, v);
+                }
+            }
+            for i in 0..5 {
+                let no = if rng.chance(25) { 0 } else { rng.below(16) };
+                p.set(nos + 2 * i, u16::try_from(no).unwrap());
+            }
+            for at in [0x30u32, 0x4c] {
+                let v = float(&mut rng);
+                p.set(unit + at, v);
+            }
+            p.check(
+                "0x0080e900",
+                0x0080_e900,
+                &[pk, mats, obj, unit, nos],
+                |m| {
+                    opus::bridge::opus_mdc_light_set(m, pk, obj, unit, nos, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn opus_get_bone_matrix_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_5430);
+        let out = p.alloc(0x60);
+        let (gpr, vu) = (p.sym(0x00c8_f508), p.sym(0x00c8_f780));
+        // real characters on a snapshot: the g_EtChr handles
+        let chr_at = p.sym(et::bridge::CHR.sym);
+        let mut handles = Vec::new();
+        if p.snapshot() {
+            for i in 0..et::bridge::CHRS {
+                let h: u32 = p.get(chr_at + 0x20 * i);
+                if h != 0 && !handles.contains(&h) {
+                    handles.push(h);
+                }
+            }
+        }
+        let real = !handles.is_empty();
+        if !real {
+            // the character calls stand in: an element number, no matrix
+            // (the matrix call records its element: mov eax, [esp + 8];
+            // mov [seen], eax; xor eax, eax; ret)
+            let (optpos, base) = (p.sym(0x0083_5660), p.sym(0x0083_3b80));
+            let seen = p.alloc(4);
+            let mut code = vec![0x8b, 0x44, 0x24, 0x08, 0xa3];
+            code.extend(seen.to_le_bytes());
+            code.extend([0x31, 0xc0, 0xc3]);
+            for o in [&mut p.a, &mut p.b] {
+                o.stub_return(optpos, 7).unwrap();
+                o.write(base, &code).unwrap();
+            }
+            handles.push(p.alloc(0x40));
+        }
+        for _ in 0..300 {
+            for i in (0..0x60).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(out + i, v);
+            }
+            p.fill(gpr, 0x10, &mut rng);
+            p.fill(vu, 0x1e0, &mut rng);
+            let chr = rng.pick(&handles);
+            // the option-position form passes the original's stack local to
+            // Ch_OptposGetElement: only real characters fill it
+            let bone = if real && rng.chance(50) {
+                0x8000 | rng.below(4) | rng.pick(&[0u32, 0x100])
+            } else if real {
+                rng.below(4)
+            } else {
+                rng.below(4) | rng.pick(&[0u32, 0x100, 0x1_0000])
+            };
+            // the original's local is at [ebp - 0x14]
+            check_deep3(
+                &mut p,
+                "0x00805430",
+                0x0080_5430,
+                [out, chr, bone],
+                |m, frame| {
+                    opus::bridge::opus_get_bone_matrix(
+                        m,
+                        out,
+                        chr,
+                        bone,
+                        frame - 0x14,
+                        &mut call_original,
+                    )
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn md_tex0_change_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_9ca0);
+        let packet = p.alloc(0x2000);
+        let sizes = p.sym(op::bridge::MD_TAG_SIZES.sym);
+        for _ in 0..1500 {
+            p.fill(packet, 0x2000, &mut rng);
+            let mut t = packet + 0x20;
+            for _ in 0..rng.below(8) {
+                let kind = u8::try_from(rng.below(0xff)).unwrap();
+                p.set(t + 1, kind);
+                p.set(t + 2, u16::try_from(rng.below(12)).unwrap());
+                // coordinates near the 14-bit range's ends and in between
+                let any = rng.below(0x4000);
+                let u = rng.pick(&[0u32, 1, 0x3fff, 0x3ffe, 0x2000, any]);
+                let any = rng.below(0x4000);
+                let v = rng.pick(&[0u32, 1, 0x3fff, 0x1000, any]);
+                let w8: u32 = p.get(t + 8);
+                let wc: u32 = p.get(t + 0xc);
+                p.set(t + 8, w8 & !0x3fff | u);
+                p.set(t + 0xc, wc & !(0x3fff << 5) | v << 5);
+                let size: u32 = p.get(sizes + 4 * u32::from(kind & 7));
+                t += 0x10 + u32::from(p.get::<u16>(t + 2)) * size;
+            }
+            p.set(t + 1, 0xffu8);
+            let tex0 = rng.next();
+            let any = rng.below(0x4000);
+            let lo = rng.pick(&[0u32, 0x100, any, 0xffff_0010]);
+            let any = rng.below(0x4000);
+            let hi = rng.pick(&[0x4000u32, 0x3fff, any, 0x1_2000]);
+            p.check("0x00a69ca0", 0x00a6_9ca0, &[packet, tex0, lo, hi], |m| {
+                Some(op::bridge::op_md_tex0_change_limit(m, packet, lo, hi))
+            });
+            p.check("0x00a69c80", 0x00a6_9c80, &[packet, tex0], |m| {
+                Some(op::bridge::op_md_tex0_change(m, packet))
+            });
+        }
+    }
+}
+
+#[test]
+fn opus_encount0_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_8480);
+        let obj = p.alloc(0x30 + 0x20 * 0x200);
+        for _ in 0..200 {
+            p.fill(obj, 0x30 + 0x20 * 0x200, &mut rng);
+            let n = |rng: &mut Xorshift| {
+                let any = rng.below(8);
+                u16::try_from(rng.pick(&[0u32, 1, 2, any])).unwrap()
+            };
+            let (nx, ny, nz) = (n(&mut rng), n(&mut rng), n(&mut rng));
+            p.set(obj + 2, nx);
+            p.set(obj + 4, ny);
+            p.set(obj + 6, nz);
+            p.check("0x007f8480", 0x007f_8480, &[obj], |m| {
+                Some(opus::bridge::opus_encount0_init(m, obj))
+            });
+        }
+        // one long row of 0x200 particles
+        p.set(obj + 2, 0x200u16);
+        p.set(obj + 4, 1u16);
+        p.set(obj + 6, 1u16);
+        p.check("0x007f8480 long", 0x007f_8480, &[obj], |m| {
+            Some(opus::bridge::opus_encount0_init(m, obj))
+        });
+    }
+}
+
+#[test]
+fn shp_tail3x_vf_copy_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_3080);
+        let (dst, vf) = (p.alloc(0x200), p.sym(0x00c8_f7b0));
+        for _ in 0..500 {
+            p.fill(dst, 0x200, &mut rng);
+            p.fill(vf, 0x1c0, &mut rng);
+            p.check("0x00753080", 0x0075_3080, &[dst], |m| {
+                Some(small::bridge::ppp_ke_shp_tail3x_vf_copy(m, dst))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::similar_names)] // rng and ring
+fn oef2_sound_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_0440);
+        let ring = p.sym(0x023c_3500);
+        for _ in 0..50 {
+            p.fill(ring, 0x400, &mut rng);
+            p.check("0x00800440", 0x0080_0440, &[], |m| {
+                Some(op::bridge::op_oef2_sound_init(m))
+            });
+        }
+    }
+}
+
+#[test]
+fn texels_box_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_8670);
+        let (dst, a, b) = (p.alloc(0x200), p.alloc(0x400), p.alloc(0x400));
+        for _ in 0..3000 {
+            p.fill(dst, 0x200, &mut rng);
+            p.fill(a, 0x400, &mut rng);
+            p.fill(b, 0x400, &mut rng);
+            // all-ones and all-zero texels drive every carry
+            if rng.chance(20) {
+                for o in (0..0x400).step_by(4) {
+                    p.set(a + o, rng.pick(&[0u32, u32::MAX, 0xff00_ff00, 0x00ff_00ff]));
+                    p.set(b + o, rng.pick(&[0u32, u32::MAX, 0xfefe_fefe, 0x0101_0101]));
+                }
+            }
+            let size = rng.pick(&[4u32, 4, 1, 1, 0, 2, 3, 8]);
+            let big = rng.below(0x80);
+            let n = rng.pick(&[0u32, 1, 2, big]);
+            let (ra, rb) = if rng.chance(50) { (a, b) } else { (b, a) };
+            p.check("0x00a38670", 0x00a3_8670, &[dst, ra, rb, n, size], |m| {
+                Some(small::bridge::op_texels_box(m, dst, ra, rb, n, size))
+            });
+        }
+    }
+}
+
+#[test]
 fn opus_0437_fade_step_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a6_e260);
@@ -10482,6 +11023,23 @@ fn shp_tail3_vf_copy_matches_the_original() {
             p.check("0x00751680", 0x0075_1680, &[dst], |m| {
                 Some(small::bridge::ppp_ke_shp_tail3_vf_copy(m, dst))
             });
+        }
+    }
+}
+
+#[test]
+fn shp_tail3_vf_load_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_1740);
+        let (src, vf) = (p.alloc(0x200), p.sym(0x00c8_f7b0));
+        for _ in 0..500 {
+            p.fill(src, 0x200, &mut rng);
+            p.fill(vf, 0x1c0, &mut rng);
+            for (what, sym) in [("0x00751740", 0x0075_1740), ("0x00751ab0", 0x0075_1ab0)] {
+                p.check(what, sym, &[src], |m| {
+                    Some(small::bridge::ppp_ke_shp_tail3_vf_load(m, src))
+                });
+            }
         }
     }
 }
