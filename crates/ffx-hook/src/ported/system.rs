@@ -6049,6 +6049,35 @@ ported! {
     TOBtlDrawInfoWinMes @ 0x0089_5140 => extern "C" fn to_btl_draw_info_win_mes() {
         tolib::bridge::to_btl_draw_info_win_mes(&mut mem(), call_sym);
     }
+    /// `TOBtlDrawHelpWin()`.
+    TOBtlDrawHelpWin @ 0x0089_36d0 => extern "C" fn to_btl_draw_help_win() {
+        let mut width = 0f32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(width) as u32;
+        tolib::bridge::to_btl_draw_help_win(&mut mem(), at, call_sym, fcall);
+        std::hint::black_box(&mut width);
+    }
+    /// `TOGetPadStatusPrepare(w)`.
+    TOGetPadStatusPrepare @ 0x0089_d610 => extern "C" fn to_get_pad_status_prepare(w: u32) {
+        tolib::bridge::to_get_pad_status_prepare(&mut mem(), w, call_sym);
+    }
+    /// `TOBtlGetLeftPad(w)`.
+    TOBtlGetLeftPad @ 0x008a_22f0 => extern "C" fn to_btl_get_left_pad(w: u32) {
+        tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x2000, call_sym);
+    }
+    /// `TOBtlGetRightPad(w)`.
+    TOBtlGetRightPad @ 0x008a_2690 => extern "C" fn to_btl_get_right_pad(w: u32) {
+        tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x8000, call_sym);
+    }
+    /// `MenuItem_ApplyHeal_008c8c40(target)`.
+    MenuItem_ApplyHeal_008c8c40 @ 0x008c_8c40 => extern "C" fn menu_item_apply_heal(target: u32) -> u32 {
+        let mut strings = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(strings) as u32;
+        let r = tolib::bridge::menu_item_apply_heal(&mut mem(), target, at, call_sym);
+        std::hint::black_box(&mut strings);
+        r
+    }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32

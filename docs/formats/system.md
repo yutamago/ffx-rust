@@ -890,3 +890,79 @@ four lines (`g_BtlInfoWinLines`, `0x0133f618`, 0x1c bytes each: `+0`
 4-byte steps), then `CloseScissor`. It draws nothing while libra's auto
 mode (`0x0133d6e0`) is 1, `g_BtlInfoWinShown` (`0x0133c93d`) is clear or
 bit 0x400 of the menu settings (`MsGetSaveMenu`) is clear.
+
+## Battle help window and command pads (round 28)
+
+`TOBtlDrawHelpWin()` (`0x008936d0`) draws the help band
+(`TOMkpShapeXYWHUVC2(-1, ...)` at `remapX2(145), remapY2(96)`, size
+`remapX2(1600) × remapY2(55)`, grey 0x80808080/0x808080) and its frame
+(`TOMkpShapeXYWHUV(0x3e, ...)`, `remapX2(95) × remapY2(22)` at y
+`remapY2(78)`) inside `TODrawScissorXYWH(0, 0, 0x200, 0x1a0)`, then the help
+text `g_BtlHelpText` with `TOMkpCrossExtMesFontLClut(0, text, x, y, 0,
+0.78, 1.0)` at `remapX2(235)`, `remapY2(101)`. Nothing is drawn while
+libra's auto mode is 1 or menu bit 0x400 is clear; while the window is
+closed (`g_BtlHelpWinOpen` not 1) it only resets `g_BtlHelpScroll`
+(`0x0133c940`).
+
+A text wider (`ToGetCrossExtMesFontWidth`) than `remapX2(435)` scrolls
+when the info window is shown or libra's auto mode is not 0. Inside
+`OpenFontScissor(40, 40, 178, 62)`:
+
+1. `scroll -= 0.8` (stored as `f32`).
+2. The text is drawn at `x + scroll`.
+3. While `x + scroll + width < 158`, it is drawn again at `x + scroll +
+   width + 20`.
+4. Once `x + scroll + width < 40`, `scroll = (width + 20) + scroll`.
+
+The sums are doubles of `f32` values, in that order.
+
+Battle command list windows (`w`, the 0xf0-byte levels at `0x0133c900`)
+take the TO pad words at `0x025d09d2` (held, triggered `+2`, repeated
+`+4`):
+
+| offset | field |
+|---|---|
+| `+1` | `u8`, stepped when going back a level |
+| `+8` | `i16` actor |
+| `+0xa` | `i8` picks needed |
+| `+0xb` | `i8` picks made |
+| `+0xe` | `i16[]` cursor of each pick |
+| `+0x16` | `u16[]` command of each pick |
+| `+0x1e` | `u16` command under the cursor |
+| `+0x20` | the window's `i16` command list |
+| `+0x38`, `+0x3a` | `i16` columns, rows shown |
+| `+0x40`, `+0x42`, `+0x44` | `i16` first shown entry, cursor, entries |
+| `+0x88` | step function (`0x00898e40` idle) |
+
+`TOGetPadStatusPrepare(w)` (`0x0089d610`) runs while the battle windows
+are open and the window is idle. Cancel (0x40) undoes the last pick
+(slots back to 0xff, `MsSetUseItem(0)`, click 4) or goes back a level
+(`TOBtlSetPrevAction`, click 4). Confirm (0x20) asks
+`TOCheckBtlCommandUse(actor, command)`: a usable command is recorded as
+a pick; with more picks needed `MsSetUseItem(first pick)`, else
+`TOBtlSetNextAction(actor, command)`. Otherwise, unless opposite
+directions are held, up/down move by a row and wrap into the list,
+left/right move by one and clamp. The first shown entry follows the
+cursor by a row, with `TOBtlPadScrollDown`/`Up` as the step function,
+and is clamped to the list.
+
+`TOBtlGetLeftPad(w)` (`0x008a22f0`) and `TOBtlGetRightPad(w)`
+(`0x008a2690`) are the same function with cancel on 0x2000 and 0x8000.
+Their confirm checks the current pick's command. 0x10 uses the
+character's skip command (`MsMenuGetChrSkipCommand`): `g_BtlCommandRec`
+(`0x023cc040`) gets the actor, the command, target 0xff and the actor's
+bit (also in `0x0133d178`), `MsSetBtlCommand` takes it, and the windows
+close (`TOCloseBtlWindow(g_BtlWindowChr)`, `TOBtlCloseHelpWin`,
+`TOSeqInitAllScene(2)`, `g_BtlWindowChr = 0xff`). 0x04 with no aeon out
+calls `TOBtlSetNextAction(actor, 0x3002)`. Going back a level clicks 1
+here. Only up/down move, and the scroll does not change the step
+function.
+
+A zero column count makes the originals divide by zero; the ports take
+the quotient as 0.
+
+`MenuItem_ApplyHeal_008c8c40(target)` (`0x008c8c40`, from
+`TkMenuCtrlItem`) heals with the item in use (`u16` at `0x0186a3a8`):
+`target` alone when `0x0186a391` is 1, else every aeon and then every
+party member its record's `+0x22` bits 0x80 and 0x40 select. Each gets
+`TkMenuItemHealAmount_008c69a0(item, who, 0)` through `TkMenuAddHPCapped`.

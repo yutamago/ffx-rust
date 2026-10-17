@@ -15809,3 +15809,315 @@ fn round28_icons_match_the_original_on_the_snapshot() {
     };
     round28_icons(&mut a, &mut b, &mut Xorshift(0x4028_0022));
 }
+
+/// A logging stand-in (`logger_args`) that returns `[cell]` instead.
+fn logger_returning(cursor: u32, n: u8, cell: u32) -> Vec<u8> {
+    let mut v = logger_args(cursor, n);
+    v.truncate(v.len() - 5); // drop "mov eax, [esp+4]; ret"
+    v.push(0xa1);
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    v
+}
+
+/// `TOBtlDrawHelpWin` over logging stand-ins for the scissors, shapes,
+/// font width and font drawing.
+#[allow(clippy::cast_precision_loss, clippy::similar_names)] // small test floats; cell/call
+fn round28_help_win(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x800);
+    let cursor = alloc(a, b, 4);
+    let cell = alloc(a, b, 4);
+    let scratch = alloc(a, b, 4);
+    for (k, (sym, n)) in (0u32..).zip([
+        (0x008f_9230u32, 4u8),
+        (0x0090_3ee0, 11),
+        (0x0090_3bb0, 9),
+        (0x008e_8940, 4),
+        (0x0090_16b0, 7),
+    ]) {
+        let mut v = marker(cursor, 0x2820 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x280, &marker(cursor, 0x2830));
+    redirect(a, b, 0x008e_5cd0, s);
+    // ToGetCrossExtMesFontWidth(kind, text, &w, scale, extra): w = [cell]
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    for (k, off) in [4u8, 8, 0x10, 0x14].into_iter().enumerate() {
+        log_arg(&mut v, off, 4 * u8::try_from(k).unwrap());
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x10, 0xa1]);
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x01, 0xc3]);
+    let s = stand_in8(a, b, 0x300, &v);
+    redirect(a, b, 0x0090_5320, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let [libra, open, shown, settings] =
+        [0x0133_d6e0, 0x0133_c93c, 0x0133_c93d, 0x0113_079c].map(|x| a.rebase(x));
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        put(a, b, libra, [0u32, 0, 1, 2][(rng.next() % 4) as usize]);
+        put(a, b, open, [1u8, 1, 1, 0, 2][(rng.next() % 5) as usize]);
+        put(a, b, shown, (rng.next() % 2) as u8);
+        put(
+            a,
+            b,
+            settings,
+            rng.next() | (0x400 * u32::from(!rng.next().is_multiple_of(4))),
+        );
+        put(a, b, cell, (rng.next() % 9000) as f32 / 8.0);
+        let scroll = -((rng.next() % 9000) as f32 / 8.0) + 40.0;
+        t::HELP_SCROLL.set(a, scroll);
+        t::HELP_SCROLL.set(b, scroll);
+        eax(a, 0x0089_36d0, &[]);
+        t::to_btl_draw_help_win(b, scratch, call, fcall);
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("help window {k}"), a, b);
+    }
+}
+
+#[test]
+fn round28_help_win_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round28_help_win(&mut a, &mut b, &mut Xorshift(0x4028_0031));
+}
+
+#[test]
+fn round28_help_win_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round28_help_win(&mut a, &mut b, &mut Xorshift(0x4028_0032));
+}
+
+/// `TOGetPadStatusPrepare` over logging stand-ins for the click, the item
+/// in use and the battle action calls.
+#[allow(
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+fn round28_pad_prepare(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x100);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let w = alloc(a, b, 0x100);
+    let list = alloc(a, b, 0x200) + 0x100;
+    for (k, (sym, n)) in (0u32..).zip([(0x0079_0790u32, 1u8), (0x0088_6ba0, 1)]) {
+        let mut v = marker(cursor, 0x2840 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x100, &marker(cursor, 0x2850));
+    redirect(a, b, 0x0089_a630, s);
+    let s = stand_in8(a, b, 0x180, &logger_returning(cursor, 2, cells));
+    redirect(a, b, 0x0089_aca0, s);
+    let s = stand_in8(a, b, 0x200, &logger_returning(cursor, 2, cells + 4));
+    redirect(a, b, 0x0089_a330, s);
+    // the side pads' skip command, battle command, window and scene calls
+    let s = stand_in8(a, b, 0x280, &logger_returning(cursor, 1, cells + 8));
+    redirect(a, b, 0x0078_fb80, s);
+    let s = stand_in8(a, b, 0x300, &logger_returning(cursor, 1, cells + 0xc));
+    redirect(a, b, 0x0078_4ff0, s);
+    for (k, (sym, n)) in (0u32..).zip([(0x0079_2d60u32, 3u8), (0x0089_ade0, 1), (0x008a_e5a0, 1)]) {
+        let mut v = marker(cursor, 0x2860 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x380 + 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x500, &marker(cursor, 0x2870));
+    redirect(a, b, 0x0089_0eb0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let [open, libra, depth, pad] =
+        [0x023c_c08c, 0x0133_d6e0, 0x023c_c092, 0x025d_09d2].map(|x| a.rebase(x));
+    let idle = a.rebase(t::SCROLL_DONE);
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [0u32, 1, 0xfe, u32::MAX][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 4, [0u32, 1, 2][(rng.next() % 3) as usize]);
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 0x0001_0000, 0x3002, rng.next()][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 0xc, u32::from(rng.next().is_multiple_of(3)));
+        put(a, b, open, u32::from(!rng.next().is_multiple_of(8)));
+        put(a, b, libra, [0u32, 0, 0, 1, 2][(rng.next() % 5) as usize]);
+        put(a, b, depth, [0i8, 1, 2, -1][(rng.next() % 4) as usize]);
+        let held = [
+            0u16,
+            0x9000,
+            0x3000,
+            0xc000,
+            0x6000,
+            0x1000,
+            0xa000,
+            rng.next() as u16,
+        ][(rng.next() % 8) as usize];
+        let trigger = [
+            0u16,
+            0,
+            0,
+            0x40,
+            0x20,
+            0x04,
+            0x10,
+            0x2000,
+            0x8000,
+            rng.next() as u16,
+        ][(rng.next() % 10) as usize];
+        let rep =
+            [0x1000u16, 0x4000, 0x8000, 0x2000, 0, rng.next() as u16][(rng.next() % 6) as usize];
+        put(a, b, pad, [held, trigger, rep]);
+        let bytes: [u32; 0x40] = std::array::from_fn(|_| rng.next());
+        put(a, b, w, bytes);
+        let items: [u32; 0x40] = std::array::from_fn(|_| rng.next());
+        put(a, b, list - 0x40, items);
+        put(a, b, w + 0x20, list);
+        put(
+            a,
+            b,
+            w + 0x88,
+            if rng.next().is_multiple_of(8) {
+                rng.next()
+            } else {
+                idle
+            },
+        );
+        let count = (1 + rng.next() % 20) as i16;
+        let step = (1 + rng.next() % 4) as i16;
+        let rows = (1 + rng.next() % 5) as i16;
+        put(a, b, w + 0x38, [step, rows]);
+        put(a, b, w + 0x44, count);
+        put(a, b, w + 0x40, (rng.next() % 14) as i16 - 2);
+        put(a, b, w + 0x42, (rng.next() % (count as u32 + 4)) as i16 - 2);
+        put(
+            a,
+            b,
+            w + 0xa,
+            [(1 + rng.next() % 3) as i8, (rng.next() % 4) as i8 - 1],
+        );
+        put(a, b, a.rebase(0x023c_c088), rng.next() as u16);
+        match k % 3 {
+            0 => {
+                eax(a, 0x0089_d610, &[w]);
+                t::to_get_pad_status_prepare(b, w, call);
+            }
+            n => {
+                let (f, cancel) = [(0x008a_22f0, 0x2000), (0x008a_2690, 0x8000)][n as usize - 1];
+                eax(a, f, &[w]);
+                t::to_btl_get_side_pad(b, w, cancel, call);
+            }
+        }
+        same_memory(&format!("pad prepare {k}"), a, b);
+    }
+}
+
+#[test]
+fn round28_pad_prepare_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round28_pad_prepare(&mut a, &mut b, &mut Xorshift(0x4028_0041));
+}
+
+#[test]
+fn round28_pad_prepare_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round28_pad_prepare(&mut a, &mut b, &mut Xorshift(0x4028_0042));
+}
+
+/// `MenuItem_ApplyHeal_008c8c40` over logging stand-ins for the heal
+/// amount, the HP change, the item record and the party and aeon lists.
+#[allow(clippy::cast_possible_truncation)]
+fn round28_item_heal(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let record = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 4);
+    // TkMenuItemHealAmount_008c69a0(item, who, mp): logs, returns who
+    let mut v = logger_args(cursor, 3);
+    v.truncate(v.len() - 5);
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0, &v);
+    redirect(a, b, 0x008c_69a0, s);
+    for (k, (sym, n)) in (1u32..).zip([(0x008c_8d10u32, 2u8), (0x008a_9bc0, 1), (0x008a_9ad0, 1)]) {
+        let mut v = marker(cursor, 0x2880 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x200, &logger_returning(cursor, 1, cells));
+    redirect(a, b, 0x008a_b280, s);
+    let s = stand_in8(a, b, 0x280, &logger_returning(cursor, 0, cells + 4));
+    redirect(a, b, 0x008a_9bf0, s);
+    let s = stand_in8(a, b, 0x300, &logger_returning(cursor, 0, cells + 8));
+    redirect(a, b, 0x008a_9b30, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let [item, single] = [0x0186_a3a8, 0x0186_a391].map(|x| a.rebase(x));
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, record);
+        let count = |rng: &mut Xorshift| [0u32, 1, 3, 8, u32::MAX][(rng.next() % 5) as usize];
+        put(a, b, cells + 4, count(rng));
+        put(a, b, cells + 8, count(rng));
+        put(a, b, record + 0x20, rng.next());
+        put(a, b, item, rng.next() as u16);
+        put(a, b, single, [0u8, 1, 1, 2][(rng.next() % 4) as usize]);
+        let target = rng.next() % 0x20;
+        assert_eq!(
+            eax(a, 0x008c_8c40, &[target]),
+            t::menu_item_apply_heal(b, target, scratch, call),
+            "item heal {k}"
+        );
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("item heal {k}"), a, b);
+    }
+}
+
+#[test]
+fn round28_item_heal_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round28_item_heal(&mut a, &mut b, &mut Xorshift(0x4028_0051));
+}
+
+#[test]
+fn round28_item_heal_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round28_item_heal(&mut a, &mut b, &mut Xorshift(0x4028_0052));
+}
