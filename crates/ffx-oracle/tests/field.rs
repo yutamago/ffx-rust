@@ -6045,7 +6045,7 @@ impl LoadEnv {
             (yi::TK_RESTART_SYNC_H, 1),
             (yi::TK_GET_SYNC_H, 1),
             (yi::TK_SYNC_H_WAIT, 1),
-            (yi::TK_CLEAR_ALARM, 1),
+            (yi::SG_ID_FIXUP_AND_SET, 1),
             (yi::PPP_FP_FREE, 0),
             (yi::GRAPHIC_CLUSTER_DELAY_RELEASE, 0),
             (yi::CACHE_CLEAR, 0),
@@ -6602,6 +6602,15 @@ fn round8_background_files_and_renderer_reset_match_the_original() {
                 "yiResetObj",
                 |o| o.void(0x0090_9ea0, &[]),
                 |m| yi::bridge::yi_reset_obj(m, call),
+            );
+            // round 37: yiReset, the same teardown and the texture reset
+            t.put(t.b.rebase(0x0191_38a0), rng.below(2));
+            t.put(t.b.rebase(0x0191_38a4), rng.below(2) * rng.next());
+            t.put(t.b.rebase(0x0193_4ec4), rng.range(-1, 2));
+            t.same(
+                "yiReset",
+                |o| o.eax(0x0090_9e60, &[]),
+                |m| yi::bridge::yi_reset(m, call),
             );
         }
     }
@@ -7434,6 +7443,27 @@ fn round9_parse_tasks_yi_and_swizzle_match_the_original() {
             "Yn_PreBgChangeStage",
             |o| o.void(0x0091_a0d0, &[stage.cast_unsigned()]),
             |m| guide::bridge::yn_pre_bg_change_stage(m, stage, call),
+        );
+        // round 37: the ID map pages of a map file (none, another tag, or
+        // MAP1 with some sections)
+        let mapf = t.alloc(0x80);
+        t.fill(mapf, 0x80, &mut rng);
+        t.write(mapf, if rng.below(4) == 0 { b"MAPX" } else { b"MAP1" });
+        for i in 0..6 {
+            t.put(mapf + 0x10 + 4 * i, rng.below(2) * 0x40);
+        }
+        let md = t.b.rebase(0x0191_38a8);
+        t.put(md, if rng.below(5) == 0 { 0 } else { mapf });
+        let page = stage.cast_unsigned();
+        t.same(
+            "yiSetIDPage",
+            |o| o.eax(0x0090_a4a0, &[page]),
+            |m| yi::bridge::yi_set_id_page(m, page, call),
+        );
+        t.same(
+            "yiSetPreBgPage",
+            |o| o.eax(0x0090_a6f0, &[page]),
+            |m| yi::bridge::yi_set_pre_bg_page(m, page, call),
         );
         // the renderer
         let r = t.alloc(0xb_b000);
@@ -11842,4 +11872,1027 @@ fn round32_ke_lens_flare_update_matches_the_original() {
             |m| ke::bridge::ke_lns_lp_update(m, lp, work, call, &mut *fcall),
         );
     }
+}
+
+// ---- round 33 ----
+
+/// A [`log_stub_from`] of all `args` in `1 << shift`-byte entries, its
+/// return replaced by `tail`.
+fn log_tail(log: u32, id: u32, args: u32, shift: u8, tail: &[u8]) -> Vec<u8> {
+    let mut c = log_stub_from(log, 0, id, 0, args);
+    c[8] = shift;
+    c.truncate(c.len() - 6);
+    c.extend_from_slice(tail);
+    c
+}
+
+/// Returns `-n` (non-zero) while the counter `n` at `cnt` is above 0,
+/// counting it down; then 0.
+fn retry_tail(cnt: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend_from_slice(&cnt.to_le_bytes());
+    c.extend_from_slice(&[0x85, 0xc0, 0x74, 0x08, 0xff, 0x0d]);
+    c.extend_from_slice(&cnt.to_le_bytes());
+    c.extend_from_slice(&[0xf7, 0xd8, 0xc3]);
+    c
+}
+
+/// Returns the counter at `cnt`, counting it down (n, n - 1, .., 0, -1).
+fn down_tail(cnt: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend_from_slice(&cnt.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x0d]);
+    c.extend_from_slice(&cnt.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 33's stand-ins: the SIF calls (logged, with retry counters),
+/// the FMOD glue (logged, returning `rv`) and the CRT's `__iob_func` /
+/// `fprintf` (through their import slots).
+struct SqsEnv {
+    log: u32,
+    log9: u32,
+    rv: u32,
+    check_cnt: u32,
+    call_cnt: u32,
+    dma_cnt: u32,
+    /// Where the next stand-in may go in [`CAVE`].
+    cave_end: u32,
+}
+
+impl SqsEnv {
+    const GLUE: [(u32, u32); 13] = [
+        (nkz::I_SFX_FORCE_START, 3),
+        (nkz::I_SFX_IS_PLAYING, 1),
+        (nkz::I_SFX_LOAD_DATA, 2),
+        (nkz::I_SFX_PLAY_BATTLE_STREAMING, 3),
+        (nkz::I_SFX_SET_PAN, 2),
+        (nkz::I_SFX_SET_PAN_TRANSLATE, 3),
+        (nkz::I_SFX_SET_VOLUME, 2),
+        (nkz::I_SFX_SET_VOLUME_TRANSLATE, 3),
+        (nkz::I_SFX_START, 3),
+        (nkz::I_SFX_STOP, 1),
+        (nkz::I_SFX_STOP_ALL_NON_BLOCKING_SOUND, 1),
+        (nkz::I_SFX_STOP_NON_BLOCKING_SOUND, 1),
+        (nkz::I_SFX_UNLOAD_ALL_DATA, 0),
+    ];
+
+    fn install(t: &mut Twin) -> Self {
+        let (log, log9) = (t.alloc(4 + 0x20 * 64), t.alloc(4 + 0x40 * 32));
+        let (rv, file) = (t.alloc(4), t.alloc(0x80));
+        let (check_cnt, call_cnt, dma_cnt) = (t.alloc(4), t.alloc(4), t.alloc(4));
+        let mut list: Vec<(Option<u32>, Vec<u8>)> = vec![
+            (
+                Some(nkz::SIF_CHECK_STAT_RPC),
+                log_tail(log, 1, 1, 5, &retry_tail(check_cnt)),
+            ),
+            (
+                Some(nkz::SIF_CALL_RPC),
+                log_tail(log9, 2, 9, 6, &retry_tail(call_cnt)),
+            ),
+            (
+                Some(nkz::SIF_DMA_STAT),
+                log_tail(log, 3, 1, 5, &down_tail(dma_cnt)),
+            ),
+        ];
+        for (id, (f, n)) in (0x10u32..).zip(Self::GLUE) {
+            list.push((Some(f), log_stub(log, rv, id, n)));
+        }
+        // __iob_func: the fake FILE array; fprintf(stream, format) logged
+        let mut iob = vec![0xb8];
+        iob.extend_from_slice(&file.to_le_bytes());
+        iob.push(0xc3);
+        list.push((None, iob));
+        list.push((None, log_stub(log, rv, 0x30, 2)));
+        let (at, cave_end) = t.cave_from(0, &list);
+        let n = at.len();
+        let iob_slot = t.b.rebase(yi::CRT_IOB_FUNC);
+        let fprintf_slot = t.b.rebase(yi::CRT_FPRINTF);
+        t.put(iob_slot, at[n - 2]);
+        t.put(fprintf_slot, at[n - 1]);
+        Self {
+            log,
+            log9,
+            rv,
+            check_cnt,
+            call_cnt,
+            dma_cnt,
+            cave_end,
+        }
+    }
+
+    fn reset(&self, t: &mut Twin, rng: &mut Xorshift) {
+        t.put(self.log, 0u32);
+        t.put(self.log9, 0u32);
+        t.put(self.rv, rng.next());
+        t.put(self.check_cnt, rng.below(3));
+        t.put(self.call_cnt, rng.below(3));
+        t.put(self.dma_cnt, rng.below(3));
+    }
+}
+
+/// Round 33 on `t`: the Sqs IOP calls and SE wrappers (stand-ins from
+/// [`SqsEnv`]), `SqsCmdSetC4C6`, the ADPCM decoder and `Sg_MemSetFree`.
+#[allow(clippy::too_many_lines)] // one function after another
+fn round33_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let g = |t: &Twin, a: u32| t.b.rebase(a);
+    let (send, recv, send2, recv2) = (t.alloc(0x40), t.alloc(0x400), t.alloc(0x40), t.alloc(0x40));
+    for k in 0..rounds {
+        env.reset(t, rng);
+        let cmd = rng.next();
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_RPC_SEND2, send2);
+        t.set(nkz::SQS_RPC_RECV2, recv2);
+        t.same(
+            "Sqs_CallRpc",
+            |o| o.eax(0x0081_cbd0, &[cmd]),
+            |m| nkz::bridge::sqs_call_rpc(m, cmd, call),
+        );
+        env.reset(t, rng);
+        let (end, arg) = (rng.next(), rng.next());
+        t.same(
+            "Sqs_CallRpc2",
+            |o| o.eax(0x0081_cc20, &[cmd, 7, end, arg]),
+            |m| nkz::bridge::sqs_call_rpc2(m, cmd, end, arg, call),
+        );
+        // the command queue and the reply histories
+        env.reset(t, rng);
+        let top = rng.next();
+        t.set(nkz::SQS_CMD_TOP, top);
+        t.set(nkz::SQS_CMD_NEXT, top.wrapping_add(rng.below(0x400)));
+        let h = g(t, nkz::SQS_REPLY_HISTORY);
+        t.fill(h, 0x40, rng);
+        let r = g(t, nkz::SQS_REPLY);
+        t.fill(r, 0x40, rng);
+        t.set(nkz::SQS_IOP_RESULT, rng.next());
+        t.same(
+            "SqsIopCommandSend",
+            |o| o.eax(0x0081_d5f0, &[]),
+            |m| nkz::bridge::sqs_iop_command_send(m, call),
+        );
+        // the DMA wait: with `wait`, the counter runs out (to -1)
+        env.reset(t, rng);
+        let wait = u32::from(rng.below(2) == 0) * rng.next();
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        t.same(
+            "SqsSifDmaState",
+            |o| o.eax(0x0081_eef0, &[rng.next(), wait]),
+            |m| nkz::bridge::sqs_sif_dma_state(m, wait, call),
+        );
+        // SE starts: the handle (wrapping past 0) and the started bit
+        let (id, pan, vol) = (rng.next(), rng.next(), rng.next());
+        for (name, f, start) in [
+            ("SqsSePlay", 0x0081_e4e0, nkz::I_SFX_START),
+            ("SqsSeForcePlay", 0x0081_e410, nkz::I_SFX_FORCE_START),
+        ] {
+            env.reset(t, rng);
+            let h = match rng.below(3) {
+                0 => u32::MAX,
+                1 => 0,
+                _ => rng.next(),
+            };
+            t.set(nkz::SQS_SE_HANDLE, h);
+            t.set(nkz::SQS_SE_STARTED, rng.next());
+            t.same(
+                name,
+                |o| o.eax(f, &[9, id, pan, vol]),
+                |m| nkz::bridge::sqs_se_play(m, start, [id, pan, vol], call),
+            );
+        }
+        env.reset(t, rng);
+        t.same(
+            "SqsSeStop",
+            |o| o.eax(0x0081_e7c0, &[9, id]),
+            |m| nkz::bridge::sqs_se_stop(m, id, call),
+        );
+        for (name, f, glue) in [
+            ("SqsSePanDirect", 0x0081_e460, nkz::I_SFX_SET_PAN),
+            ("SqsSeVolumeDirect", 0x0081_e820, nkz::I_SFX_SET_VOLUME),
+        ] {
+            env.reset(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[9, id, pan]),
+                |m| nkz::bridge::sqs_se_direct(m, glue, id, pan, call),
+            );
+        }
+        for (name, f, glue) in [
+            (
+                "SqsSePanTranslate",
+                0x0081_e480,
+                nkz::I_SFX_SET_PAN_TRANSLATE,
+            ),
+            (
+                "SqsSeVolumeTranslate",
+                0x0081_e860,
+                nkz::I_SFX_SET_VOLUME_TRANSLATE,
+            ),
+        ] {
+            env.reset(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[9, id, pan, vol]),
+                |m| nkz::bridge::sqs_se_translate(m, glue, [id, pan, vol], call),
+            );
+        }
+        env.reset(t, rng);
+        t.same(
+            "SqsSeVolumeFadeOut",
+            |o| o.eax(0x0081_e840, &[9, id, pan]),
+            |m| nkz::bridge::sqs_se_volume_fade_out(m, id, pan, call),
+        );
+        for (name, f) in [
+            ("SqsSeBlockPlaying", 0x0081_e3e0),
+            ("SqsSeSeparatePlaying", 0x0081_e7a0),
+        ] {
+            env.reset(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[id]),
+                |m| nkz::bridge::sqs_se_playing(m, id, call),
+            );
+        }
+        env.reset(t, rng);
+        let sid = if k % 2 == 0 { u32::MAX } else { id };
+        t.fill(send, 0x40, rng);
+        t.same(
+            "SqsSeSeparateClear",
+            |o| o.eax(0x0081_e5d0, &[sid]),
+            |m| nkz::bridge::sqs_se_separate_clear(m, sid, call),
+        );
+        env.reset(t, rng);
+        let mask: [u32; 8] = std::array::from_fn(|_| rng.next());
+        t.same(
+            "SqsSeSeparateMaskClear",
+            |o| o.eax(0x0081_e750, &mask),
+            |m| nkz::bridge::sqs_se_separate_mask_clear(m, mask, call),
+        );
+        // a wave file ("WD") or not
+        env.reset(t, rng);
+        let wave = t.alloc(8);
+        let tag = if k % 3 == 0 { rng.next() } else { 0x4457 };
+        t.put(wave, tag);
+        t.put(wave + 2, u16::try_from(rng.below(0x1_0000)).unwrap());
+        t.same(
+            "SqsBattleWaveDataSend",
+            |o| o.eax(0x0081_cf90, &[wave, rng.next()]),
+            |m| nkz::bridge::sqs_battle_wave_data_send(m, wave, call),
+        );
+        // the battle stream: no magic file, no stream id, or both
+        env.reset(t, rng);
+        let magic = g(t, 0x00c6_4ca0);
+        t.put(magic, if k % 3 == 0 { u32::MAX } else { rng.below(100) });
+        t.set(
+            nkz::BATTLE_STREAM,
+            if k % 3 == 1 { u32::MAX } else { rng.next() },
+        );
+        let (a, b) = (rng.next(), rng.next());
+        t.same(
+            "SqsBattleStreamingStart",
+            |o| o.eax(0x0081_cf40, &[9, a, b]),
+            |m| nkz::bridge::sqs_battle_streaming_start(m, a, b, call),
+        );
+        // the IOP command handler
+        let (ctx, rec, c) = (t.alloc(0x220 + 4), t.alloc(0xc8), t.alloc(4));
+        t.fill(ctx, 0x220, rng);
+        t.put(ctx + 0x220, rec);
+        t.fill(c, 4, rng);
+        t.same(
+            "SqsCmdSetC4C6",
+            |o| o.eax(0x0081_c260, &[ctx, c]),
+            |m| nkz::bridge::sqs_cmd_set_c4_c6(m, ctx, c),
+        );
+        // Sg_MemSetFree: a header, its heap's lowest freed block
+        let block = t.alloc(0x10);
+        t.fill(block, 0x10, rng);
+        let heaps = g(t, yi::MEM_HEAPS);
+        t.fill(heaps, 0x60, rng);
+        if k % 2 == 0 {
+            let w = t.b.read::<u32>(block + 0xc);
+            let heap = (w >> 27) & 3;
+            let low = block.wrapping_add(rng.below(0x40)).wrapping_sub(0x20);
+            t.put(heaps + 0x18 * heap + 0x14, low);
+        }
+        t.same(
+            "Sg_MemSetFree",
+            |o| o.eax(0x0083_bdb0, &[block]),
+            |m| yi::bridge::sg_mem_set_free(m, block),
+        );
+    }
+    // the ADPCM decoder: random data and history, the game's filters or
+    // random ones (the products wrap)
+    let (src, dst) = (t.alloc(7200), t.alloc(0x6400));
+    let coefs = g(t, nkz::SQS_ADPCM_COEFS);
+    let state = g(t, nkz::SQS_ADPCM_STATE);
+    let game: Vec<u8> = (0..0x80).map(|i| t.b.read::<u8>(coefs + i)).collect();
+    for k in 0..rounds.div_ceil(4) {
+        t.fill(src, 7200, rng);
+        t.fill(state, 0x10, rng);
+        if k % 2 == 0 {
+            t.write(coefs, &game);
+        } else {
+            t.fill(coefs, 0x80, rng);
+        }
+        t.same(
+            "Sqs_DecodeAdpcm",
+            |o| o.eax(0x0081_cc70, &[src, dst]),
+            |m| nkz::bridge::sqs_decode_adpcm(m, src, dst),
+        );
+    }
+}
+
+/// Round 33: the Sqs IOP calls and SE wrappers, the IOP command handler
+/// `SqsCmdSetC4C6`, `Sqs_DecodeAdpcm` and `Sg_MemSetFree`, synthetic.
+#[test]
+fn round33_sqs_adpcm_and_sg_mem_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0021_0001);
+    round33_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 33 on the snapshot (`FFX_SNAPSHOT`): the game's own Sqs state,
+/// filters and heaps under the same cases.
+#[test]
+fn round33_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0021_0002);
+    round33_cases(&mut t, &mut rng, 40);
+}
+
+// ---- round 34 ----
+
+/// Round 34 on `t`: `yiPolyBufUnpack`, every size and count, `TOPS` on or
+/// off, random rows.
+fn round34_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (buf, src, code) = (t.alloc(0x1_0000), t.alloc(0x1000), t.alloc(4));
+    for k in 0..rounds {
+        t.fill(src, 0x1000, rng);
+        t.put(buf + 0x4070, rng.below(0x400));
+        let op = (k % 16) | (rng.below(8) << 4);
+        let num = match rng.below(4) {
+            0 => 0,
+            1 => 1,
+            _ => rng.below(256),
+        };
+        let w = (op << 24)
+            | (num << 16)
+            | (rng.below(2) << 15)
+            | (rng.next() & 0x7c00)
+            | rng.below(0x400);
+        t.put(code, w);
+        t.same(
+            "yiPolyBufUnpack",
+            |o| o.eax(0x0091_1620, &[buf, src, code]),
+            |m| yi::bridge::yi_poly_buf_unpack(m, buf, src, code),
+        );
+    }
+}
+
+/// A random VIF code stream of about `n` words: every command the poly
+/// buffer knows (and some it ignores), small skips; data words keep a zero
+/// command byte, so a stream read past an `UNPACK`'s data decodes as `NOP`s.
+fn vif_stream(rng: &mut Xorshift, n: usize, end: bool) -> Vec<u32> {
+    const CMDS: [u32; 17] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 0x10, 0x20, 0x30, 0x31, 0x4a, 0x50, 0x51, 0x60, 0x6f,
+    ];
+    let data = |rng: &mut Xorshift| rng.next() & 0x00ff_ffff;
+    let mut v = vec![];
+    while v.len() < n {
+        let cmd = CMDS[rng.below(17) as usize];
+        let imm = match cmd {
+            0x4a => rng.below(4) << 16,
+            0x50 | 0x51 => rng.below(4),
+            0x60..=0x7f => (rng.below(16) << 16) | (rng.next() & 0x83ff),
+            _ => rng.next() & 0x00ff_ffff,
+        };
+        let cmd = if cmd >= 0x60 {
+            cmd | rng.below(0x20)
+        } else {
+            cmd
+        };
+        v.push((rng.below(2) << 31) | (cmd << 24) | imm);
+        let extra = match cmd {
+            0x20 => 1,
+            0x30 | 0x31 => 4,
+            0x4a => ((imm >> 16) & 0xff) * 2,
+            0x50 | 0x51 => imm * 4,
+            0x60..=0x7f => ((imm >> 16) & 0xff) * 4,
+            _ => 0,
+        };
+        for _ in 0..extra {
+            v.push(data(rng));
+        }
+    }
+    if end {
+        v.push([0x14u32, 0x15, 0x17][rng.below(3) as usize] << 24);
+    }
+    v
+}
+
+/// Round 35 on `t`: `yiPolyBufExecVif` over random streams, stopping by
+/// count or at a microprogram call, from either double-buffer state.
+fn round35_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (buf, codes) = (t.alloc(0x1_0000), t.alloc(0x4000));
+    for k in 0..rounds {
+        let n = 1 + rng.below(0x200) as usize;
+        let v = vif_stream(rng, n, k % 3 == 0);
+        let mut bytes = vec![0u8; 0x4000];
+        for (i, w) in v.iter().enumerate() {
+            bytes[4 * i..4 * i + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        t.write(codes, &bytes);
+        t.fill(buf + 0x4000, 0x88, rng);
+        t.put(buf + 0x4070, rng.below(0x400));
+        t.put(buf + 0x4074, rng.below(0x400));
+        t.put(buf + 0x4078, rng.below(0x400));
+        let len = u32::try_from(v.len()).unwrap();
+        let words = match rng.below(4) {
+            0 => 0,
+            1 => 1 + rng.below(len),
+            _ => len,
+        };
+        t.same(
+            "yiPolyBufExecVif",
+            |o| o.eax(0x0091_13a0, &[buf, codes, words]),
+            |m| yi::bridge::yi_poly_buf_exec_vif(m, buf, codes, words),
+        );
+    }
+}
+
+/// Round 35: the poly buffer's VIF interpreter (`yiPolyBufExecVif`).
+#[test]
+fn round35_poly_buf_exec_vif_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0023_0001);
+    round35_cases(&mut t, &mut rng, 300);
+}
+
+/// Round 35 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round35_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0023_0002);
+    round35_cases(&mut t, &mut rng, 60);
+}
+
+/// Round 34: the poly buffer's VIF `UNPACK` (`yiPolyBufUnpack`), synthetic.
+#[test]
+fn round34_poly_buf_unpack_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0022_0001);
+    round34_cases(&mut t, &mut rng, 400);
+}
+
+/// Round 34 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round34_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0022_0002);
+    round34_cases(&mut t, &mut rng, 100);
+}
+
+// ---- round 36 ----
+
+/// Round 36 on `t`: the standby requests, `SqsDataSendingCompleted`, the
+/// info file paths and `SqsSetProjectBase` (its pointer result through a
+/// second `FFXSifCallRpc` stand-in).
+#[allow(clippy::too_many_lines)] // one function after another
+fn round36_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv, send2, recv2) = (t.alloc(0x40), t.alloc(0x400), t.alloc(0x40), t.alloc(0x40));
+    let path = t.alloc(0x40);
+    let state = |t: &mut Twin, rng: &mut Xorshift| {
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_RPC_SEND2, send2);
+        t.set(nkz::SQS_RPC_RECV2, recv2);
+        let count = rng.next();
+        t.set(nkz::SQS_STANDBY_SENT, count);
+        t.set(
+            nkz::SQS_IOP_RESULT,
+            if rng.below(2) == 0 { count } else { rng.next() },
+        );
+        let top = rng.next();
+        t.set(nkz::SQS_CMD_TOP, top);
+        let next = match rng.below(3) {
+            0 => top, // an empty queue is not sent
+            _ => top.wrapping_add(rng.below(0x100)).wrapping_sub(0x40),
+        };
+        t.set(nkz::SQS_CMD_NEXT, next);
+        t.set(nkz::SQS_REPLY_PENDING, rng.below(2));
+        t.set(nkz::SQS_RPC_FLAGS, rng.next());
+        t.fill(recv2, 0x40, rng);
+        let h = t.b.rebase(nkz::SQS_REPLY_HISTORY);
+        t.fill(h, 0x40, rng);
+    };
+    for _ in 0..rounds {
+        env.reset(t, rng);
+        state(t, rng);
+        t.same(
+            "SqsReportStandby",
+            |o| o.eax(0x0081_e260, &[]),
+            |m| nkz::bridge::sqs_report_standby(m, call),
+        );
+        env.reset(t, rng);
+        state(t, rng);
+        let flush = rng.below(2) * rng.next();
+        t.same(
+            "SqsReportStandbyStatus",
+            |o| o.eax(0x0081_e2d0, &[flush]),
+            |m| nkz::bridge::sqs_report_standby_status(m, flush, call),
+        );
+        env.reset(t, rng);
+        let wait = rng.below(2) * rng.next();
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        t.same(
+            "SqsDataSendingCompleted",
+            |o| o.eax(0x0081_cfd0, &[wait]),
+            |m| nkz::bridge::sqs_data_sending_completed(m, wait, call),
+        );
+        // a path of 0..62 non-NUL bytes, then the NUL
+        let n = rng.below(63);
+        let mut p: Vec<u8> = (0..n)
+            .map(|_| 1 + u8::try_from(rng.below(255)).unwrap())
+            .collect();
+        p.push(0);
+        t.write(path, &p);
+        t.fill(send, 0x40, rng);
+        for (name, f, cmd) in [
+            ("SqsInitMusicInfoHdd", 0x0081_d3c0, 7),
+            ("SqsInitWaveInfoHdd", 0x0081_d470, 6),
+        ] {
+            env.reset(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[path]),
+                |m| nkz::bridge::sqs_init_info_hdd(m, path, cmd, call),
+            );
+        }
+        env.reset(t, rng);
+        t.same(
+            "SqsSetProjectBase",
+            |o| o.eax(0x0081_eab0, &[path]),
+            |m| nkz::bridge::sqs_set_project_base(m, path, call),
+        );
+    }
+    // FFXSifCallRpc giving a pointer (0 now and then): the word it reads
+    let (rv, word) = (t.alloc(4), t.alloc(4));
+    let stub = log_stub(env.log9, rv, 0x40, 2);
+    t.cave_from(env.cave_end, &[(Some(nkz::SIF_CALL_RPC), stub)]);
+    for k in 0..rounds {
+        env.reset(t, rng);
+        t.put(rv, if k % 4 == 0 { 0 } else { word });
+        t.put(word, rng.next());
+        t.same(
+            "SqsSetProjectBase (pointer)",
+            |o| o.eax(0x0081_eab0, &[path]),
+            |m| nkz::bridge::sqs_set_project_base(m, path, call),
+        );
+    }
+}
+
+/// Round 36: the Sqs standby requests, data sends and info paths.
+#[test]
+fn round36_sqs_standby_and_paths_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0024_0001);
+    round36_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 36 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round36_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0024_0002);
+    round36_cases(&mut t, &mut rng, 40);
+}
+
+// ---- round 38 ----
+
+/// The `rcVu0*` copies ported in round 45, with their step.
+const RC_VU0_COPIES: [(u32, vu0::bridge::Vu0Op); 13] = {
+    use vu0::bridge::Vu0Op::{Add3, Add4, Sub3, Sub4};
+    [
+        (0x0091_f650, Add3),
+        (0x0092_4770, Add3),
+        (0x0092_4860, Sub3),
+        (0x0092_4fc0, Add4),
+        (0x0092_50d0, Sub4),
+        (0x0092_85a0, Add3),
+        (0x0092_8df0, Add3),
+        (0x0092_8ee0, Sub3),
+        (0x0092_9300, Sub3),
+        (0x0092_9440, Add3),
+        (0x0092_95e0, Add3),
+        (0x0092_f790, Add3),
+        (0x0092_f880, Add4),
+    ]
+};
+
+/// Round 38 on `t`: the two VU0 subtractions (`rcVu0Sub` and its twin),
+/// `a` apart from or the same as `b` or `c`.
+fn round38_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (a, b, c) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    let vf00 = t.b.rebase(vu0::VU0_VF00);
+    for k in 0..rounds {
+        for v in [a, b, c] {
+            for i in 0..4 {
+                let x = if k % 2 == 0 {
+                    rng.float()
+                } else {
+                    rng.any_float()
+                };
+                t.put(v + 4 * i, x);
+            }
+        }
+        t.fill(vf00, 0x10, rng);
+        let dst = [a, a, b, c][rng.below(4) as usize];
+        for f in [0x0091_f740, 0x0092_d720] {
+            t.same(
+                "rcVu0Sub",
+                |o| o.eax(f, &[dst, b, c]),
+                |m| vu0::bridge::rc_vu0_sub(m, dst, b, c),
+            );
+        }
+        // round 45: the other copies of the template
+        for (f, op) in RC_VU0_COPIES {
+            t.fill(vf00, 0x10, rng); // only the subtractions restore it
+            t.same(
+                "rcVu0 copy",
+                |o| o.eax(f, &[dst, b, c]),
+                |m| vu0::bridge::rc_vu0_op(m, op, dst, b, c),
+            );
+        }
+    }
+}
+
+/// Round 38: `rcVu0Sub` (`0x0091f740`) and `rcVu0Sub_0092d720`.
+#[test]
+fn round38_vu0_sub_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0026_0001);
+    round38_cases(&mut t, &mut rng, 400);
+}
+
+/// Round 38 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round38_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0026_0002);
+    round38_cases(&mut t, &mut rng, 100);
+}
+
+// ---- round 39 ----
+
+/// Round 39 on `t`: the IOP command builders over the queue at
+/// `0x012f4a00..0x012f4e00`, empty to full (a full queue is sent first,
+/// with the `dbgPrintf` on or off), and `SqsInitWaveInfo`.
+#[allow(clippy::too_many_lines)] // one function after another
+fn round39_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x400));
+    let top = t.b.rebase(nkz::SQS_CMD_BUF);
+    let queue = |t: &mut Twin, rng: &mut Xorshift| {
+        env.reset(t, rng);
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_CMD_TOP, top);
+        let n = match rng.below(3) {
+            0 => 0x1f, // the last slot: sent first
+            1 => 0x20, // past it
+            _ => rng.below(0x20),
+        };
+        t.set(nkz::SQS_CMD_NEXT, top + 0x20 * n);
+        t.fill(top, 0x400, rng);
+        t.set(nkz::SQS_DEBUG_FLAGS, rng.next());
+        let h = t.b.rebase(nkz::SQS_REPLY_HISTORY);
+        t.fill(h, 0x40, rng);
+    };
+    for _ in 0..rounds {
+        let a = rng.next();
+        for (name, f, op) in [
+            ("SqsSetCycleMode", 0x0081_e900, 4),
+            ("SqsSetReverbPlaySwitch", 0x0081_ec20, 0xc),
+            ("SqsSetStraightStreamAreaSize", 0x0081_ef50, 5),
+        ] {
+            queue(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[a]),
+                |m| nkz::bridge::sqs_cmd_arg(m, op, a, call),
+            );
+        }
+        queue(t, rng);
+        t.same(
+            "SqsAllVoiceTerminate",
+            |o| o.eax(0x0081_ce70, &[]),
+            |m| nkz::bridge::sqs_all_voice_terminate(m, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsMusicDataRead",
+            |o| o.eax(0x0081_d820, &[a]),
+            |m| nkz::bridge::sqs_music_data_read(m, a, call),
+        );
+        queue(t, rng);
+        let mode = [0, 1, 2, 3, 4, u32::MAX, a][rng.below(7) as usize];
+        t.same(
+            "SqsSetPlayMode",
+            |o| o.eax(0x0081_ea00, &[mode]),
+            |m| nkz::bridge::sqs_set_play_mode(m, mode, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsShoutStreamingStart",
+            |o| o.eax(0x0081_ee20, &[a]),
+            |m| nkz::bridge::sqs_shout_streaming_start(m, a, call),
+        );
+        queue(t, rng);
+        t.set(nkz::SQS_STRAIGHT_STREAM, rng.next());
+        t.same(
+            "SqsStraightStreamingStart",
+            |o| o.eax(0x0081_f6c0, &[]),
+            |m| nkz::bridge::sqs_straight_streaming_start(m, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingStop",
+            |o| o.eax(0x0081_f770, &[]),
+            |m| nkz::bridge::sqs_straight_streaming_stop(m, call),
+        );
+        let v = rng.next();
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingVolumeDirect",
+            |o| o.eax(0x0081_f800, &[v]),
+            |m| nkz::bridge::sqs_straight_streaming_volume_direct(m, v, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingVolumeTranslate",
+            |o| o.eax(0x0081_f880, &[a, v]),
+            |m| nkz::bridge::sqs_straight_streaming_volume_translate(m, a, v, call),
+        );
+        // the wave info: done already, without or with a source
+        queue(t, rng);
+        t.set(nkz::SQS_WAVE_INFO_DONE, u32::from(rng.below(4) == 0));
+        t.set(nkz::SQS_WAVE_INFO_DST, rng.next());
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        let dma = t.b.rebase(nkz::SIF_DMA);
+        t.fill(dma, 0x20, rng);
+        let src = rng.below(2) * rng.next();
+        t.same(
+            "SqsInitWaveInfo",
+            |o| o.void(0x0081_d3f0, &[src, 7, a]),
+            |m| nkz::bridge::sqs_init_wave_info(m, src, a, call),
+        );
+    }
+}
+
+/// Round 39: the Sqs IOP command builders.
+#[test]
+fn round39_sqs_command_builders_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0027_0001);
+    round39_cases(&mut t, &mut rng, 150);
+}
+
+/// Round 39 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round39_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0027_0002);
+    round39_cases(&mut t, &mut rng, 30);
+}
+
+// ---- round 40 ----
+
+/// Round 40 on `t`: `SqsSeSeparateDataSend` over chunk streams: repeated
+/// ids, a bad chunk, a size cut short, sizes out of range, and more than
+/// 256 distinct ids (the overflow message, `fflush` logged).
+fn round40_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x400));
+    let (stubs, _) = t.cave_from(env.cave_end, &[(None, log_stub(env.log, env.rv, 0x31, 1))]);
+    let slot = t.b.rebase(nkz::CRT_FFLUSH);
+    t.put(slot, stubs[0]);
+    let data = t.alloc(0x1_0000);
+    let table = t.b.rebase(nkz::SQS_SEP_WAVES);
+    for k in 0..rounds {
+        env.reset(t, rng);
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_CMD_TOP, rng.next());
+        t.set(nkz::SQS_CMD_NEXT, rng.next());
+        t.set(nkz::SQS_DEBUG_FLAGS, rng.next());
+        t.fill(table, 0x400, rng);
+        let many = k % 10 == 9;
+        let chunks = if many { 300 } else { rng.below(40) };
+        let pool = if many { 0x1_0000 } else { 1 + rng.below(12) };
+        let mut bytes = vec![];
+        for c in 0..chunks {
+            let len = if many { 0x14 } else { 0x14 + 4 * rng.below(8) };
+            let mut ch: Vec<u8> = (0..len)
+                .map(|_| u8::try_from(rng.below(256)).unwrap())
+                .collect();
+            // a bad chunk ends the walk: its magic, tag or length
+            let bad = if many || rng.below(20) != 0 {
+                0
+            } else {
+                1 + rng.below(5)
+            };
+            let magic: u32 = if bad == 1 { 0x6553_6554 } else { 0x6553_6553 };
+            let tag: u32 = if bad == 2 { 0x2020_2071 } else { 0x2020_2070 };
+            let word = match bad {
+                3 => 0,
+                4 => len + 2,
+                5 => 0x8000_0000 | len,
+                _ => len,
+            };
+            ch[..4].copy_from_slice(&magic.to_le_bytes());
+            ch[4..8].copy_from_slice(&tag.to_le_bytes());
+            ch[0xc..0x10].copy_from_slice(&word.to_le_bytes());
+            let id = if many { c } else { rng.below(pool) };
+            ch[0x11..0x13].copy_from_slice(&u16::try_from(id & 0xffff).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&ch);
+        }
+        bytes.resize(bytes.len() + 0x20, 0);
+        t.write(data, &bytes);
+        let total = u32::try_from(bytes.len() - 0x20).unwrap();
+        let size = match rng.below(7) {
+            0 => 0,
+            1 => 0x1_0001 + rng.below(4),
+            6 => 0x1_0000, // the largest size taken
+            2 => rng.below(total + 1).max(1),
+            _ => total.max(1),
+        };
+        t.same(
+            "SqsSeSeparateDataSend",
+            |o| o.eax(0x0081_e600, &[data, size]),
+            |m| nkz::bridge::sqs_se_separate_data_send(m, data, size, call),
+        );
+        // round 44: SndStandbyShoutStream on a header (length in range or not)
+        env.reset(t, rng);
+        let len = match rng.below(5) {
+            0 => 0,
+            1 => 0x1_0000,
+            2 => 0x1_0001,
+            3 => 0x8000_0000 | rng.next(),
+            _ => 1 + rng.below(0x1_0000),
+        };
+        t.put(data + 0xc, len);
+        t.put(data + 8, rng.next());
+        t.same(
+            "SndStandbyShoutStream",
+            |o| o.eax(0x0081_e3b0, &[data]),
+            |m| nkz::bridge::snd_standby_shout_stream(m, data, call),
+        );
+    }
+}
+
+/// Round 40: `SqsSeSeparateDataSend`.
+#[test]
+fn round40_sqs_se_separate_data_send_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0028_0001);
+    round40_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 40 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round40_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0028_0002);
+    round40_cases(&mut t, &mut rng, 40);
+}
+
+// ---- round 41 ----
+
+/// A `rcPrimDraw2D` stand-in: the vertices its second argument points at
+/// (four words each, the count its third) to `log`, its other arguments at
+/// `tail`, then a call count; returns 0x1234.
+fn prim_draw_stub(log: u32, tail: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x10]; mov edi, log;
+    // mov ecx, [esp + 0x14]; shl ecx, 2; rep movsd; pop edi; pop esi
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[
+        0x8b, 0x4c, 0x24, 0x14, 0xc1, 0xe1, 0x02, 0xf3, 0xa5, 0x5f, 0x5e,
+    ]);
+    for (arg, at) in [(4u8, 0u32), (0xc, 4), (0x10, 8)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0xa3]); // mov eax, [esp + arg]; mov [tail + at], eax
+        c.extend_from_slice(&(tail + at).to_le_bytes());
+    }
+    c.extend_from_slice(&[0xff, 0x05]); // inc dword [tail + 0xc]
+    c.extend_from_slice(&(tail + 0xc).to_le_bytes());
+    c.push(0xb8); // mov eax, 0x1234; ret
+    c.extend_from_slice(&0x1234u32.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 41 on `t`: `rcPrimLine`, `rcPrimCircleLine` and `rcPrimTri` with
+/// the UI type
+/// on or off, its vertices
+/// and arguments logged by the `rcPrimDraw2D` stand-in, the UI type
+/// calls by another.
+fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, log2, rv) = (t.alloc(0x420), t.alloc(4 + 0x20 * 4), t.alloc(4));
+    // cgraphicSetNowUIType logged (the image has no UI state behind it)
+    t.cave(&[
+        (
+            Some(rcui::bridge::RC_PRIM_DRAW_2D),
+            prim_draw_stub(log, log + 0x410),
+        ),
+        (
+            Some(rcui::bridge::SET_NOW_UI_TYPE),
+            log_stub(log2, rv, 1, 1),
+        ),
+    ]);
+    for _ in 0..rounds {
+        let a: [u32; 6] = [
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.next(),
+            rng.below(2) * rng.next(),
+        ];
+        t.fill(log, 0x41c, rng);
+        t.put(log2, 0u32);
+        t.put(rv, rng.next());
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "rcPrimLine",
+            |o| o.eax(0x0092_6c00, &a),
+            |m| rcui::bridge::rc_prim_line(m, a, work, call),
+        );
+        // the circle: its centre, radius and the same colour and UI flag
+        let c = [a[0], a[1], rng.any_float(), a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x410, rng); // every vertex is written
+        t.same(
+            "rcPrimCircleLine",
+            |o| o.eax(0x0092_5ea0, &c),
+            |m| rcui::bridge::rc_prim_circle_line(m, c, work, call),
+        );
+        // the triangle: an angle anywhere (specials and huge values too)
+        let angle = match rng.below(3) {
+            0 => rng.float(),
+            1 => float_in(rng, -4000, 4000),
+            _ => {
+                #[allow(clippy::cast_precision_loss)]
+                let v = rng.next() as f32 / 65_536.0 - 32_768.0;
+                v.to_bits()
+            }
+        };
+        let tri = [a[0], a[1], c[2], angle, a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x30, rng);
+        t.same(
+            "rcPrimTri",
+            |o| o.eax(0x0092_70c0, &tri),
+            |m| rcui::bridge::rc_prim_tri(m, tri, work, call),
+        );
+    }
+}
+
+/// Round 41: `rcPrimLine`.
+#[test]
+fn round41_prim_line_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0029_0001);
+    round41_cases(&mut t, &mut rng, 300);
+}
+
+/// Round 41 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round41_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0029_0002);
+    round41_cases(&mut t, &mut rng, 60);
 }

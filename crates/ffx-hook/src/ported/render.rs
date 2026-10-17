@@ -6,6 +6,7 @@ use super::{mem, ported};
 use ffx_bridge::Global;
 use ffx_graphic::{cache, managers, scene, ui, vfx};
 
+use ffx_graphic::material::bridge as mt;
 use ffx_graphic::state::bridge as st;
 use ffx_graphic::texanim::bridge as ta;
 use ffx_graphic::util::bridge as ut;
@@ -1215,6 +1216,101 @@ ported! {
     /// `ShadowManager_ResetSolution(this, keep)`.
     ShadowManager_ResetSolution @ 0x006c_eb10 => extern "thiscall" fn shadow_reset_solution(this: u32, keep: u32) -> u32 {
         ut::shadow_reset_solution(&mut mem(), this, keep)
+    }
+
+    // ---- round 12 ----
+    /// `PhyreFIOS_LoadPrxInProgress()`.
+    PhyreFIOS_LoadPrxInProgress @ 0x006f_9ba0 => extern "C" fn prx_in_progress() -> u32 {
+        ut::prx_in_progress(&mem())
+    }
+    /// `TextureAnimationInfo_update(this, dt)` (the float by its bits).
+    TextureAnimationInfo_update @ 0x006b_4450 => extern "thiscall" fn tex_anim_info_update(this: u32, dt: u32) {
+        ut::tex_anim_info_update(&mut mem(), this, f32::from_bits(dt));
+    }
+    /// `TextureAnimationManager_GetByIndexList(this, list, i, absolute)`.
+    TextureAnimationManager_GetByIndexList @ 0x006b_2140 => extern "thiscall" fn tex_anim_by_index_list(this: u32, list: u32, i: u32, absolute: u32) -> u32 {
+        ut::tex_anim_by_index_list(&mem(), this, list, i, absolute)
+    }
+    /// `tex_anim_no_set_old(i, a, v)`.
+    tex_anim_no_set_old @ 0x0078_07c0 => extern "C" fn tex_anim_no_set_old(i: u32, a: u32, v: u32) -> u32 {
+        ut::tex_anim_no_set_old(&mut mem(), i, a, v)
+    }
+    /// `texanim_malloc_memory_set(i, delta)`.
+    texanim_malloc_memory_set @ 0x0077_ea10 => extern "C" fn texanim_malloc_memory_set(i: u32, delta: u32) -> u32 {
+        ut::texanim_malloc_memory_set(&mut mem(), i, delta)
+    }
+    /// `SpdCtrl_Init()`.
+    SpdCtrl_Init @ 0x006f_72f0 => extern "C" fn spd_ctrl_init() -> u32 {
+        ut::spd_ctrl_init(&mut mem())
+    }
+    /// `CheckAutobtlKey()`.
+    CheckAutobtlKey @ 0x006f_7580 => extern "C" fn check_autobtl_key() -> u32 {
+        ut::check_key(&mut mem(), ut::AUTOBTL_KEY, ut::AUTOBTL_BUTTON)
+    }
+    /// `CheckInvincibleKey()`.
+    CheckInvincibleKey @ 0x006f_76c0 => extern "C" fn check_invincible_key() -> u32 {
+        ut::check_key(&mut mem(), ut::INVINCIBLE_KEY, ut::INVINCIBLE_BUTTON)
+    }
+    /// `setLuluODKeyboardInput(left, right)`.
+    setLuluODKeyboardInput @ 0x0064_5eb0 => extern "C" fn set_lulu_od_keyboard_input(left: u32, right: u32) {
+        ut::set_lulu_od_keyboard_input(&mut mem(), left, right);
+    }
+    /// `SplitScreenStart(kind)`.
+    SplitScreenStart @ 0x0063_8d40 => extern "C" fn split_screen_start(kind: u32) -> u32 {
+        ut::split_screen_start(&mut mem(), kind)
+    }
+    /// `graphicMagic0146SetKey(v)`.
+    graphicMagic0146SetKey @ 0x0064_1e40 => extern "C" fn graphic_magic_0146_set_key(v: u32) -> u32 {
+        ut::magic_0146_set_key(&mut mem(), v)
+    }
+    /// `graphicResetLoadingScreen()`.
+    graphicResetLoadingScreen @ 0x0064_2c80 => extern "C" fn graphic_reset_loading_screen() {
+        ut::reset_loading_screen(&mut mem());
+    }
+    /// `ScreenFadeDelegations_processRenderDelegation(d)`.
+    ScreenFadeDelegations_processRenderDelegation @ 0x006a_e5b0 => extern "C" fn screen_fade_process(d: u32) {
+        ut::screen_fade_process(&mut mem(), d);
+    }
+
+    // ---- round 13 ----
+    /// `ShadowManager_AverageCasterValue(this)` (fastcall, `ST0`).
+    ShadowManager_AverageCasterValue @ 0x006c_cad0 => extern "fastcall" fn shadow_average_caster_value(this: u32) -> f32 {
+        ut::shadow_average_caster_value(&mut mem(), this)
+    }
+    /// `graphicAddMeshMatrix(list, matrix, id)`.
+    graphicAddMeshMatrix @ 0x0063_9170 => extern "C" fn graphic_add_mesh_matrix(list: u32, matrix: u32, id: u32) {
+        ut::add_mesh_matrix(&mut mem(), list, matrix, id);
+    }
+    /// `graphicSetTextureAnimationFrameByName(frame, name)`.
+    graphicSetTextureAnimationFrameByName @ 0x0064_3a40 => extern "C" fn graphic_set_tex_anim_frame_by_name(frame: u32, name: u32) -> u32 {
+        ut::tex_anim_set_frame_by_name(&mut mem(), frame, name)
+    }
+    /// `graphicSetColourPair_00643b30(r, g, b, r2, g2, b2, second)` (the
+    /// floats by their bits).
+    graphicSetColourPair_00643b30 @ 0x0064_3b30 => extern "C" fn graphic_set_colour_pair(r: u32, g: u32, b: u32, r2: u32, g2: u32, b2: u32, second: u32) -> u32 {
+        let c = [r, g, b, r2, g2, b2].map(f32::from_bits);
+        ut::graphic_set_colour_pair(&mut mem(), c, second)
+    }
+
+    // ---- round 14: the segments' shader parameters ----
+    /// `graphicCharacterInstanceSetMeshColor(list, _, r, g, b, a)` (the
+    /// floats by their bits).
+    graphicCharacterInstanceSetMeshColor @ 0x0063_bb30 => extern "C" fn set_mesh_colour(list: u32, _unused: u32, r: u32, g: u32, b: u32, a: u32) {
+        let c = [r, g, b, a].map(f32::from_bits);
+        mt::set_mesh_colour(&mut mem(), list, c);
+    }
+    /// `graphicCharacterInstanceSetMeshSegmentColor(list, id, r, g, b, a, hide)`.
+    graphicCharacterInstanceSetMeshSegmentColor @ 0x0063_bc80 => extern "C" fn set_mesh_segment_colour(list: u32, id: u32, r: u32, g: u32, b: u32, a: u32, hide: u32) {
+        let c = [r, g, b, a].map(f32::from_bits);
+        mt::set_mesh_segment_colour(&mut mem(), list, id, c, hide);
+    }
+    /// `graphicCharacterInstanceSetMeshAlphaThreshold(list)`.
+    graphicCharacterInstanceSetMeshAlphaThreshold @ 0x0063_b9e0 => extern "C" fn set_mesh_alpha_threshold(list: u32) {
+        mt::set_mesh_alpha_threshold(&mut mem(), list);
+    }
+    /// `PhyreScene_SetLayerMaterialAlpha(this, layer, alpha)`.
+    PhyreScene_SetLayerMaterialAlpha @ 0x0065_82e0 => extern "thiscall" fn scene_set_layer_material_alpha(this: u32, layer: u32, alpha: u32) {
+        mt::scene_set_layer_material_alpha(&mut mem(), this, layer, alpha);
     }
 }
 

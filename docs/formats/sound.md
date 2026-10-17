@@ -128,6 +128,12 @@ clamped to -1..1 (`0x0070ef80`); a volume translation over `n` frames runs
 `FmodMusic +0x18` and raises the start signal at `+0x20`
 (`FmodManager_signalMusicStart`, for music ids below 0xb6).
 
+`iSoundUpdate()` (`0x0067a600`) applies the PC settings (`g_Settings`,
+`0x022fb504`): the volumes at `+0x14`, `+0x1c`, `+0x18`, `+0x20` (0..100;
+all 0 while `+0x10`, sound off, is set) go out as commands 0x42, 0x43,
+0x44, 0x45; the first also to the movie player
+(`PhyFMVPlayerManager_SetVolume_006dabf0`) as `f32(f32(v) / 100.0)`.
+
 ## The FMOD thread (`FfxFmod`, `ffx_sound::ffxfmod`)
 
 The FMOD thread runs each queued command through the handler table at
@@ -204,6 +210,11 @@ first stack word), called through the jmp thunks at `0x00948c70..`
 | `0x013300e0` | u8[256] | volume per music |
 | `0x00c54dd0` | u32 | last faded-out music (-1 in the image) |
 | `0x00c54db0` | i16[16] | default common waves (0, 1, 0x7d5, then -1) |
+
+**BGM type** (`SndSetBgmTypeSave(on)`, `0x008cc150`, from script natives
+0x0264 and 0x0267): the save data's byte `+0x5ec`
+(`MsGetSaveEventAddress`) becomes `on != 0`; `iMusicRefreshBgmType`
+(`0x008cc170`) then queues `iMuiscSetBgmType(byte & 1)` to FMOD.
 
 **Sound-effect ids**: bit 31 clear is a separate SE (kind 1), set a block SE
 (kind 0); every `SndSep*` entry passes `(kind, id & 0x7fffffff)` to `Sqs*`.

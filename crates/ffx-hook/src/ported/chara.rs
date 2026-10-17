@@ -17,19 +17,20 @@ use ffx_chara::texture::bridge as tx;
 
 use super::{mem, ported};
 
-/// Scratch memory for ports whose originals use a stack buffer that only
-/// lives during the call (the game calls them from one thread).
-static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 0x280];
+/// Words of scratch for ports whose originals use a stack buffer that only
+/// lives during the call; each call gets its own on its stack
+/// ([`scratch`]). Per call, not shared: the game runs `Ch_CalcMiddle_Batch`
+/// (`0x00833530`: `Ch_Neck`, `Ch_CalcElement`, `Ch_ElemCalcQuaternion`, ...)
+/// and `Ch_Cloth_PerCharacter` as job-scheduler jobs on several worker
+/// threads at once (docs/hooking.md, "Threads"), and one port can reach
+/// another through the game's code.
+const SCRATCH_WORDS: usize = 0x280;
 
-/// `Ch_CalcElement`'s frame (0xc11c bytes, its 512 skeleton matrices).
-#[allow(dead_code)] // Ch_CalcElement is not hooked (see its entry below)
-static CALC_SCRATCH: [core::sync::atomic::AtomicU32; 0x3047] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 0x3047];
-
-/// [`SCRATCH`]'s address.
-fn scratch() -> u32 {
-    u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
+/// A fresh frame of [`SCRATCH_WORDS`] on this stack; hold it while its
+/// address is in use (`scratch().at()` as an argument lives until the
+/// statement ends).
+fn scratch() -> super::StackFrame<SCRATCH_WORDS> {
+    super::StackFrame::new()
 }
 
 /// A C runtime intrinsic through the game's import thunk `f`: the operands
@@ -1630,7 +1631,7 @@ ported! {
     }
     /// `Ch_MgrpRead(id, n)`: 0, or -1.
     Ch_MgrpRead @ 0x0082_a4c0 => extern "C" fn ch_mgrp_read(id: u32, n: u32) -> u32 {
-        sy::ch_mgrp_read(&mut mem(), id, n, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        sy::ch_mgrp_read(&mut mem(), id, n, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `Ch_ModelSetHide(chr, i, hide)`: the old hide byte.
     Ch_ModelSetHide @ 0x0082_aea0 => extern "C" fn ch_model_set_hide(chr: u32, i: u32, hide: u32) -> u32 {
@@ -1638,11 +1639,11 @@ ported! {
     }
     /// `Ch_TextureLoadAnim(chr)`.
     Ch_TextureLoadAnim @ 0x0083_1110 => extern "C" fn ch_texture_load_anim(chr: u32) {
-        ta::ch_texture_load_anim(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+        ta::ch_texture_load_anim(&mut mem(), chr, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `Ch_TextureLoadImage(chr, x)`.
     Ch_TextureLoadImage @ 0x0083_1300 => extern "C" fn ch_texture_load_image(chr: u32, x: u32) {
-        ta::ch_texture_load_image(&mut mem(), chr, x, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+        ta::ch_texture_load_image(&mut mem(), chr, x, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `Ch_RomReadChrCB(request)`.
     Ch_RomReadChrCB @ 0x0082_a6c0 => extern "C" fn ch_rom_read_chr_cb(req: u32) -> u32 {
@@ -1681,7 +1682,7 @@ ported! {
     }
     /// `Ch_ClutCreate(chr)`.
     Ch_ClutCreate @ 0x0083_c710 => extern "C" fn ch_clut_create(chr: u32) -> u32 {
-        tx::ch_clut_create(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        tx::ch_clut_create(&mut mem(), chr, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `Ch_ClothMeshMapping(chr)`: 1 with mesh data, else 0.
     Ch_ClothMeshMapping @ 0x0082_6340 => extern "C" fn ch_cloth_mesh_mapping(chr: u32) -> u32 {
@@ -1693,7 +1694,7 @@ ported! {
     }
     /// `Ch_ModelCreatePacket(chr)`: vertex, normal and physics blocks.
     Ch_ModelCreatePacket @ 0x0082_7280 => extern "C" fn ch_model_create_packet(chr: u32) -> u32 {
-        c::ch_model_create_packet(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        c::ch_model_create_packet(&mut mem(), chr, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `chr_texanim_set_new(id, handle, def)`.
     chr_texanim_set_new @ 0x0077_f9c0 => extern "C" fn chr_texanim_set_new(id: u32, handle: u32, def: u32) -> u32 {
@@ -1721,7 +1722,7 @@ ported! {
         let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
-        p::ch_neck(&mut mem(), chr, scratch(), &mut c)
+        p::ch_neck(&mut mem(), chr, scratch().at(), &mut c)
     }
     /// `Ch_NeckInit(chr)`.
     Ch_NeckInit @ 0x0083_4e60 => extern "C" fn ch_neck_init(chr: u32) {
@@ -1729,11 +1730,11 @@ ported! {
         let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
-        p::ch_neck_init(&mut mem(), chr, scratch(), &mut c);
+        p::ch_neck_init(&mut mem(), chr, scratch().at(), &mut c);
     }
     /// `Ch_ElemCalcQuaternion(e)`.
     Ch_ElemCalcQuaternion @ 0x0083_3960 => extern "C" fn ch_elem_calc_quaternion(e: u32) {
-        p::ch_elem_calc_quaternion(&mut mem(), e, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+        p::ch_elem_calc_quaternion(&mut mem(), e, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `Ch_Mouth(chr)`.
     Ch_Mouth @ 0x0083_44f0 => extern "C" fn ch_mouth(chr: u32) -> u32 {
@@ -1754,7 +1755,7 @@ ported! {
     }
     /// `Ch_DrawQuad(m, p2, p3, p4, w, h, y, u0, v0, u1, v1)`.
     Ch_DrawQuad @ 0x0083_1d10 => extern "C" fn ch_draw_quad(m: u32, p2: u32, _p3: u32, _p4: u32, w: u32, h: u32, y: u32, u0: u32, v0: u32, u1: u32, v1: u32) -> u32 {
-        p::ch_draw_quad(&mut mem(), m, p2, [w, h], y, [u0, v0, u1, v1], scratch(), &mut |_, f, a| {
+        p::ch_draw_quad(&mut mem(), m, p2, [w, h], y, [u0, v0, u1, v1], scratch().at(), &mut |_, f, a| {
             super::call_cdecl(f, a)
         })
     }
@@ -1800,7 +1801,7 @@ ported! {
     }
     /// `Ch_MemMoveEventMgrp()`.
     Ch_MemMoveEventMgrp @ 0x0083_7050 => extern "C" fn ch_mem_move_event_mgrp() -> u32 {
-        mo::bridge::ch_mem_move_event_mgrp(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        mo::bridge::ch_mem_move_event_mgrp(&mut mem(), scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `Ch_InitCircleTable()`.
     Ch_InitCircleTable @ 0x0082_e5a0 => extern "C" fn ch_init_circle_table() {
@@ -1812,16 +1813,29 @@ ported! {
         let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
-        p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
+        p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch().at(), &mut c)
     }
-    // Ch_CalcElement (0x00832760) is ported (parts::ch_calc_element, oracle
-    // parity on the image and both snapshots) but not hooked: in the game it
-    // garbles the battle models' skeletons (battle-attack replay, 2026-10-17),
-    // which the oracle does not reproduce. Hook it again once that is found.
+    /// `Ch_CalcElement(chr)`. Its frame (0xc11c bytes, the 512 skeleton
+    /// matrices the upload reads) lives on this stack, as the original's
+    /// does: the game calls it from several job-scheduler worker threads at
+    /// once (see [`SCRATCH`]), and a shared static frame let one thread's
+    /// matrices overwrite another's before their upload (every battle model
+    /// garbled, 2026-10-17).
+    Ch_CalcElement @ 0x0083_2760 => extern "C" fn ch_calc_element(chr: u32) {
+        // 48 KB: JobWorker threads commit 128 KB of stack (0x00703a50's
+        // CreateThread, 1 MB reserved), and the original takes as much
+        let mut frame = super::StackFrame::<{ p::CALC_ELEMENT_SCRATCH as usize / 4 }>::new();
+        let at = frame.at();
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_calc_element(&mut mem(), chr, at, &mut c);
+    }
     /// `Ch_MemMove()`: the whole function (the dump splits it at the early
     /// return).
     Ch_MemMove @ 0x0082_6fa0 => extern "C" fn ch_mem_move() -> u32 {
-        c::ch_mem_move(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        c::ch_mem_move(&mut mem(), scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `Ch_BlkDispose(blk)`.
     Ch_BlkDispose @ 0x0082_58d0 => extern "C" fn ch_blk_dispose(blk: u32) -> u32 {
@@ -1857,7 +1871,7 @@ ported! {
         let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
-        p::ch_cull_by_distance(&mut mem(), chr, scratch(), &mut c)
+        p::ch_cull_by_distance(&mut mem(), chr, scratch().at(), &mut c)
     }
     /// `Ch_BlkAllocate_00825760(id, data)`.
     Ch_BlkAllocate_00825760 @ 0x0082_5760 => extern "C" fn ch_blk_allocate(id: u32, data: u32) -> u32 {
@@ -1865,7 +1879,7 @@ ported! {
     }
     /// `Ch_GetCharID(id)`.
     Ch_GetCharID @ 0x0082_a080 => extern "C" fn ch_get_char_id(id: u32) -> u32 {
-        sy::ch_get_char_id(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        sy::ch_get_char_id(&mut mem(), id, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `ChN_ReadSystemMGRP(a, b)`.
     ChN_ReadSystemMGRP @ 0x0083_6870 => extern "C" fn chn_read_system_mgrp(a: u32, b: u32) -> u32 {
@@ -1889,11 +1903,11 @@ ported! {
         let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
-        p::sg_id_walk(&mut mem(), chr, p, i, scratch(), &mut c)
+        p::sg_id_walk(&mut mem(), chr, p, i, scratch().at(), &mut c)
     }
     /// `Ch_DataRead(id)`.
     Ch_DataRead @ 0x0082_9ef0 => extern "C" fn ch_data_read(id: u32) -> u32 {
-        sy::ch_data_read(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+        sy::ch_data_read(&mut mem(), id, scratch().at(), &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `Ch_RomReadEventMGRPcb(req)`.
     Ch_RomReadEventMGRPcb @ 0x0082_a7d0 => extern "C" fn ch_rom_read_event_mgrp_cb(req: u32) -> u32 {

@@ -3129,6 +3129,38 @@ ported! {
     TkMn2DrawInitPacket @ 0x008c_0be0 => extern "C" fn tk_mn2_draw_init_packet() -> u32 {
         tk::tk_mn2_draw_init_packet(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2DrawKickPacketBody(clear)`.
+    TkMn2DrawKickPacketBody @ 0x008c_0c50 => extern "C" fn tk_mn2_draw_kick_packet_body(clear: u32) -> u32 {
+        tk::tk_mn2_draw_kick_packet_body(&mut mem(), clear, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawKickSyncPacket()`.
+    TkMn2DrawKickSyncPacket @ 0x008c_0cc0 => extern "C" fn tk_mn2_draw_kick_sync_packet() -> u32 {
+        tk::tk_mn2_draw_kick_sync_packet(&mut mem(), 1, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawKickSyncPacket2()`.
+    TkMn2DrawKickSyncPacket2 @ 0x008c_0cd0 => extern "C" fn tk_mn2_draw_kick_sync_packet2() -> u32 {
+        tk::tk_mn2_draw_kick_sync_packet(&mut mem(), 0, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMn2_EmitPacket(a, b, kind)`: the new cursor.
+    MenuMn2_EmitPacket @ 0x008c_11b0 => extern "C" fn menu_mn2_emit_packet(a: u32, b: u32, kind: u32) -> u32 {
+        tk::menu_mn2_emit_packet(&mut mem(), [a, b, kind], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `TkSndIsRead()`: 1 or 0.
+    TkSndIsRead @ 0x0088_6600 => extern "C" fn tk_snd_is_read() -> u32 {
+        tk::tk_snd_is_read(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSetSyncVCallback(id, f)`.
+    TkSetSyncVCallback @ 0x0088_7ed0 => extern "C" fn tk_set_sync_v_callback(id: u32, f: u32) -> u32 {
+        tk::tk_set_sync_v_callback(&mut mem(), id, f, &mut |_, g, a| call_ptr(g, a))
+    }
+    /// `TkSyncVEI()`.
+    TkSyncVEI @ 0x0088_7f40 => extern "C" fn tk_sync_v_ei() -> u32 {
+        tk::tk_sync_v_ei(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_SellPrice(id)`.
+    MenuShop_SellPrice @ 0x008d_b400 => extern "C" fn menu_shop_sell_price(id: u32) -> u32 {
+        tk::menu_shop_sell_price(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkFree(p)`: the last memory check's result.
     TkFree @ 0x0088_d520 => extern "C" fn tk_free(p: u32) -> u32 {
         tk::tk_free(&mut mem(), p, &mut |_, f, a| call_ptr(f, a))
@@ -3136,6 +3168,34 @@ ported! {
     /// `TkSndUpdateMain()`.
     TkSndUpdateMain @ 0x0088_7bd0 => extern "C" fn tk_snd_update_main() -> u32 {
         tk::tk_snd_update_main(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Math_YawPitchTo(yaw, pitch, fx, fy, fz, tx, ty, tz)`.
+    Math_YawPitchTo @ 0x0088_b4d0 => extern "C" fn math_yaw_pitch_to(yaw: u32, pitch: u32, fx: f32, fy: f32, fz: f32, tx: f32, ty: f32, tz: f32) -> u32 {
+        tk::math_yaw_pitch_to(&mut mem(), yaw, pitch, [fx, fy, fz], [tx, ty, tz], &mut |_, a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
+    }
+    /// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)`: 1 or 0.
+    Math_FacingWithin @ 0x0088_b780 => extern "C" fn math_facing_within(heading: f32, tol: f32, x0: f32, z0: f32, x1: f32, z1: f32) -> u32 {
+        tk::math_facing_within(&mut mem(), heading, tol, [x0, z0], [x1, z1], &mut |_, a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
+    }
+    /// `Math_PolarToVector(out, r, yaw, pitch)`.
+    Math_PolarToVector @ 0x0088_a3a0 => extern "C" fn math_polar_to_vector(out: u32, r: f32, yaw: f32, pitch: f32) {
+        tk::math_polar_to_vector(&mut mem(), out, [r, yaw, pitch], &mut |_, cos, v| crt_x87(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }, v, None));
+    }
+    /// `Math_SegmentsCross(a, b, c, d)`: 1, -1 or 0.
+    Math_SegmentsCross @ 0x0088_9bb0 => extern "C" fn math_segments_cross(a: u32, b: u32, c: u32, d: u32) -> i32 {
+        tk::math_segments_cross(&mem(), [a, b, c, d])
+    }
+    /// `TkSndUpdate()`.
+    TkSndUpdate @ 0x0088_7b60 => extern "C" fn tk_snd_update() -> u32 {
+        tk::tk_snd_update(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSndUpdate2()`.
+    TkSndUpdate2 @ 0x0088_7b80 => extern "C" fn tk_snd_update2() -> u32 {
+        tk::tk_snd_update2(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSndUpdate3(last)`: the sync counter.
+    TkSndUpdate3 @ 0x0088_7ba0 => extern "C" fn tk_snd_update3(last: u32) -> u32 {
+        tk::tk_snd_update3(&mut mem(), last, &mut |_, f, a| call_ptr(f, a))
     }
     /// `TkMsImportantSet(n)`.
     TkMsImportantSet @ 0x0088_e790 => extern "C" fn tk_ms_important_set(n: u32) -> u32 {
@@ -3169,6 +3229,10 @@ ported! {
     MenuItem_CursorTable @ 0x008c_4ff0 => extern "C" fn menu_item_cursor_table() -> u32 {
         tk::menu_item_cursor_table(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_CursorCount()`.
+    MenuItem_CursorCount @ 0x008c_5030 => extern "C" fn menu_item_cursor_count() -> u32 {
+        tk::menu_item_cursor_count(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuItem_CellTable()`.
     MenuItem_CellTable @ 0x008c_4f80 => extern "C" fn menu_item_cell_table() -> u32 {
         tk::menu_item_cell_table(&mut mem(), &mut |_, f, a| call_ptr(f, a))
@@ -3188,6 +3252,78 @@ ported! {
     /// `MenuNameEntry_RegistWindow()`: the window.
     MenuNameEntry_RegistWindow @ 0x008c_4450 => extern "C" fn menu_name_entry_regist_window() -> u32 {
         tk::menu_name_entry_regist_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_OpenWindow(a, index, b, c)`: the window.
+    MenuStatus_OpenWindow @ 0x008d_3140 => extern "C" fn menu_status_open_window(a: u32, index: u32, b: u32, c: u32) -> u32 {
+        tk::menu_status_open_window(&mut mem(), [a, index, b, c], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `MenuItem_KeysMatch(t)`: 1 or 0.
+    MenuItem_KeysMatch @ 0x008c_5390 => extern "C" fn menu_item_keys_match(t: i32) -> u32 {
+        tk::menu_item_keys_match(&mut mem(), t, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_OpenListWindow(kind)`: the window.
+    MenuItem_OpenListWindow_008c9140 @ 0x008c_9140 => extern "C" fn menu_item_open_list_window(kind: u32) -> u32 {
+        tk::menu_item_open_list_window(&mut mem(), kind, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_CanAfford(e)`: 1 or 0.
+    MenuWShop_CanAfford @ 0x008d_85d0 => extern "C" fn menu_wshop_can_afford(e: u32) -> u32 {
+        tk::menu_wshop_can_afford(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_CanBuy(id)`: 1 or 0.
+    MenuShop_CanBuy @ 0x008d_ab30 => extern "C" fn menu_shop_can_buy(id: u32) -> u32 {
+        tk::menu_shop_can_buy(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_OpenCharWindow(chr)`: the window.
+    MenuNameEntry_OpenCharWindow @ 0x008c_43f0 => extern "C" fn menu_name_entry_open_char_window(chr: u32) -> u32 {
+        tk::menu_name_entry_open_char_window(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_TargetNeedsRecovery(kind, all, chr)`: 1 or 0.
+    MenuItem_TargetNeedsRecovery_008c6a70 @ 0x008c_6a70 => extern "C" fn menu_item_target_needs_recovery(kind: u32, _all: u32, chr: u32) -> u32 {
+        tk::menu_item_target_needs_recovery(&mem(), kind, chr)
+    }
+    /// `Msg_PollClose(i)`: 1 or 0.
+    Msg_PollClose @ 0x0086_0aa0 => extern "C" fn msg_poll_close(i: u32) -> u32 {
+        tk::msg_poll_close(&mut mem(), i, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_GrowInfo(stat, chr, cost, gain)`: 1 or 0.
+    MenuSummon_GrowInfo @ 0x008c_d320 => extern "C" fn menu_summon_grow_info(stat: i32, chr: u32, cost: u32, gain: u32) -> u32 {
+        tk::menu_summon_grow_info(&mut mem(), stat, chr, [cost, gain], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_LoadLayout()`: the last lookup's result.
+    MenuNameEntry_LoadLayout @ 0x008c_5050 => extern "C" fn menu_name_entry_load_layout() -> u32 {
+        tk::menu_name_entry_load_layout(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_DrawFaceSlide(x, y, w, h, t, cur, next)`.
+    MenuSummon_DrawFaceSlide @ 0x008d_34a0 => extern "C" fn menu_summon_draw_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_summon_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_BuildCommandList(chr)`.
+    MenuSummon_BuildCommandList @ 0x008d_2b40 => extern "C" fn menu_summon_build_command_list(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_summon_build_command_list(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuStopScene(scene, group)`: the entry.
+    TkMenuStopScene @ 0x00a7_c8a0 => extern "C" fn tk_menu_stop_scene(scene: u32, group: u32) -> u32 {
+        tk::tk_menu_stop_scene(&mut mem(), scene, group, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_WeaponByte4(w)`.
+    MenuKaizou_WeaponByte4 @ 0x008d_56f0 => extern "C" fn menu_kaizou_weapon_byte4(w: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_kaizou_weapon_byte4(&mut m, w, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_BusyMask()`.
+    MenuMain_BusyMask @ 0x008a_a610 => extern "C" fn menu_main_busy_mask() -> u32 {
+        tk::menu_main_busy_mask(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSubWindow4()`: the window.
+    MenuWShop_OpenSubWindow4 @ 0x008d_83e0 => extern "C" fn menu_wshop_open_sub_window4() -> u32 {
+        tk::menu_wshop_open_sub_window4(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {

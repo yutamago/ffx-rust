@@ -3649,6 +3649,344 @@ ported! {
     yiDisableHamonEff @ 0x0090_8450 => extern "C" fn shim_yi_disable_hamon_eff() -> u32 {
         yi::bridge::yi_disable_hamon_eff(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
     }
+
+    // ---- field round 33: the Sqs IOP calls and SE wrappers ----
+
+    /// `Sqs_CallRpc(cmd)`.
+    Sqs_CallRpc @ 0x0081_cbd0 => extern "C" fn shim_sqs_call_rpc(cmd: u32) -> u32 {
+        nkz::bridge::sqs_call_rpc(&mut mem(), cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Sqs_CallRpc2(cmd, _, end, arg)`.
+    Sqs_CallRpc2 @ 0x0081_cc20 => extern "C" fn shim_sqs_call_rpc2(cmd: u32, _b: u32, end: u32, arg: u32) -> u32 {
+        nkz::bridge::sqs_call_rpc2(&mut mem(), cmd, end, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsIopCommandSend()`.
+    SqsIopCommandSend @ 0x0081_d5f0 => extern "C" fn shim_sqs_iop_command_send() -> u32 {
+        nkz::bridge::sqs_iop_command_send(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSifDmaState(_, wait)`.
+    SqsSifDmaState @ 0x0081_eef0 => extern "C" fn shim_sqs_sif_dma_state(_a: u32, wait: u32) -> u32 {
+        nkz::bridge::sqs_sif_dma_state(&mut mem(), wait, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSePlay(_, id, pan, volume)`.
+    SqsSePlay @ 0x0081_e4e0 => extern "C" fn shim_sqs_se_play(_k: u32, id: u32, pan: u32, volume: u32) -> u32 {
+        nkz::bridge::sqs_se_play(&mut mem(), nkz::I_SFX_START, [id, pan, volume], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeForcePlay(_, id, pan, volume)`.
+    SqsSeForcePlay @ 0x0081_e410 => extern "C" fn shim_sqs_se_force_play(_k: u32, id: u32, pan: u32, volume: u32) -> u32 {
+        nkz::bridge::sqs_se_play(&mut mem(), nkz::I_SFX_FORCE_START, [id, pan, volume], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeStop(_, id)`.
+    SqsSeStop @ 0x0081_e7c0 => extern "C" fn shim_sqs_se_stop(_k: u32, id: u32) -> u32 {
+        nkz::bridge::sqs_se_stop(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSePanDirect(_, id, pan)`.
+    SqsSePanDirect @ 0x0081_e460 => extern "C" fn shim_sqs_se_pan_direct(_k: u32, id: u32, pan: u32) -> u32 {
+        nkz::bridge::sqs_se_direct(&mut mem(), nkz::I_SFX_SET_PAN, id, pan, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeVolumeDirect(_, id, volume)`.
+    SqsSeVolumeDirect @ 0x0081_e820 => extern "C" fn shim_sqs_se_volume_direct(_k: u32, id: u32, v: u32) -> u32 {
+        nkz::bridge::sqs_se_direct(&mut mem(), nkz::I_SFX_SET_VOLUME, id, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSePanTranslate(_, id, frames, pan)`.
+    SqsSePanTranslate @ 0x0081_e480 => extern "C" fn shim_sqs_se_pan_translate(_k: u32, id: u32, frames: u32, pan: u32) -> u32 {
+        nkz::bridge::sqs_se_translate(&mut mem(), nkz::I_SFX_SET_PAN_TRANSLATE, [id, frames, pan], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeVolumeTranslate(_, id, frames, volume)`.
+    SqsSeVolumeTranslate @ 0x0081_e860 => extern "C" fn shim_sqs_se_volume_translate(_k: u32, id: u32, frames: u32, v: u32) -> u32 {
+        nkz::bridge::sqs_se_translate(&mut mem(), nkz::I_SFX_SET_VOLUME_TRANSLATE, [id, frames, v], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeVolumeFadeOut(_, id, frames)`.
+    SqsSeVolumeFadeOut @ 0x0081_e840 => extern "C" fn shim_sqs_se_volume_fade_out(_k: u32, id: u32, frames: u32) -> u32 {
+        nkz::bridge::sqs_se_volume_fade_out(&mut mem(), id, frames, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeBlockPlaying(id)`.
+    SqsSeBlockPlaying @ 0x0081_e3e0 => extern "C" fn shim_sqs_se_block_playing(id: u32) -> u32 {
+        nkz::bridge::sqs_se_playing(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparatePlaying(id)`.
+    SqsSeSeparatePlaying @ 0x0081_e7a0 => extern "C" fn shim_sqs_se_separate_playing(id: u32) -> u32 {
+        nkz::bridge::sqs_se_playing(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparateClear(id)`.
+    SqsSeSeparateClear @ 0x0081_e5d0 => extern "C" fn shim_sqs_se_separate_clear(id: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_clear(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparateMaskClear(m0..m7)`.
+    SqsSeSeparateMaskClear @ 0x0081_e750 => extern "C" fn shim_sqs_se_separate_mask_clear(m0: u32, m1: u32, m2: u32, m3: u32, m4: u32, m5: u32, m6: u32, m7: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_mask_clear(&mut mem(), [m0, m1, m2, m3, m4, m5, m6, m7], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsBattleWaveDataSend(wave)`.
+    SqsBattleWaveDataSend @ 0x0081_cf90 => extern "C" fn shim_sqs_battle_wave_data_send(wave: u32) -> u32 {
+        nkz::bridge::sqs_battle_wave_data_send(&mut mem(), wave, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsBattleStreamingStart(_, a, b)`.
+    SqsBattleStreamingStart @ 0x0081_cf40 => extern "C" fn shim_sqs_battle_streaming_start(_k: u32, a: u32, b: u32) -> u32 {
+        nkz::bridge::sqs_battle_streaming_start(&mut mem(), a, b, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsCmdSetC4C6(ctx, cmd)`.
+    SqsCmdSetC4C6 @ 0x0081_c260 => extern "C" fn shim_sqs_cmd_set_c4_c6(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_set_c4_c6(&mut mem(), ctx, cmd)
+    }
+
+    /// `Sqs_DecodeAdpcm(src, dst)`.
+    Sqs_DecodeAdpcm @ 0x0081_cc70 => extern "C" fn shim_sqs_decode_adpcm(src: u32, dst: u32) -> u32 {
+        nkz::bridge::sqs_decode_adpcm(&mut mem(), src, dst)
+    }
+
+    /// `yiPolyBufUnpack(buf, src, code)`.
+    yiPolyBufUnpack @ 0x0091_1620 => extern "C" fn shim_yi_poly_buf_unpack(buf: u32, src: u32, code: u32) -> u32 {
+        yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
+    }
+
+    /// `rcPrimLine(x0, y0, x1, y1, colour, ui)`: the vertices in a local
+    /// buffer, as the original's.
+    rcPrimLine @ 0x0092_6c00 => extern "C" fn shim_rc_prim_line(x0: u32, y0: u32, x1: u32, y1: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 8]);
+        let mut v = Verts([0; 8]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_line(&mut mem(), [x0, y0, x1, y1, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcPrimCircleLine(x, y, r, colour, ui)`: the 65 vertices in a local
+    /// buffer, as the original's.
+    rcPrimCircleLine @ 0x0092_5ea0 => extern "C" fn shim_rc_prim_circle_line(x: u32, y: u32, r: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 65 * 4]);
+        let mut v = Verts([0; 65 * 4]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_circle_line(&mut mem(), [x, y, r, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local
+    /// buffer, as the original's.
+    rcPrimTri @ 0x0092_70c0 => extern "C" fn shim_rc_prim_tri(x: u32, y: u32, r: u32, angle: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 12]);
+        let mut v = Verts([0; 12]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SndStandbyShoutStream(data)`.
+    SndStandbyShoutStream @ 0x0081_e3b0 => extern "C" fn shim_snd_standby_shout_stream(data: u32) -> u32 {
+        nkz::bridge::snd_standby_shout_stream(&mut mem(), data, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparateDataSend(data, size)`.
+    SqsSeSeparateDataSend @ 0x0081_e600 => extern "C" fn shim_sqs_se_separate_data_send(data: u32, size: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_data_send(&mut mem(), data, size, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSetCycleMode(a)`.
+    SqsSetCycleMode @ 0x0081_e900 => extern "C" fn shim_sqs_set_cycle_mode(a: u32) -> u32 {
+        nkz::bridge::sqs_cmd_arg(&mut mem(), 4, a, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSetReverbPlaySwitch(a)`.
+    SqsSetReverbPlaySwitch @ 0x0081_ec20 => extern "C" fn shim_sqs_set_reverb_play_switch(a: u32) -> u32 {
+        nkz::bridge::sqs_cmd_arg(&mut mem(), 0xc, a, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSetStraightStreamAreaSize(a)`.
+    SqsSetStraightStreamAreaSize @ 0x0081_ef50 => extern "C" fn shim_sqs_set_straight_stream_area_size(a: u32) -> u32 {
+        nkz::bridge::sqs_cmd_arg(&mut mem(), 5, a, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsAllVoiceTerminate()`.
+    SqsAllVoiceTerminate @ 0x0081_ce70 => extern "C" fn shim_sqs_all_voice_terminate() -> u32 {
+        nkz::bridge::sqs_all_voice_terminate(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsMusicDataRead(a)`.
+    SqsMusicDataRead @ 0x0081_d820 => extern "C" fn shim_sqs_music_data_read(a: u32) -> u32 {
+        nkz::bridge::sqs_music_data_read(&mut mem(), a, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSetPlayMode(mode)`.
+    SqsSetPlayMode @ 0x0081_ea00 => extern "C" fn shim_sqs_set_play_mode(mode: u32) -> u32 {
+        nkz::bridge::sqs_set_play_mode(&mut mem(), mode, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsShoutStreamingStart(a)`.
+    SqsShoutStreamingStart @ 0x0081_ee20 => extern "C" fn shim_sqs_shout_streaming_start(a: u32) -> u32 {
+        nkz::bridge::sqs_shout_streaming_start(&mut mem(), a, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsStraightStreamingStart()`.
+    SqsStraightStreamingStart @ 0x0081_f6c0 => extern "C" fn shim_sqs_straight_streaming_start() -> u32 {
+        nkz::bridge::sqs_straight_streaming_start(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsStraightStreamingStop()`.
+    SqsStraightStreamingStop @ 0x0081_f770 => extern "C" fn shim_sqs_straight_streaming_stop() -> u32 {
+        nkz::bridge::sqs_straight_streaming_stop(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsStraightStreamingVolumeDirect(v)`.
+    SqsStraightStreamingVolumeDirect @ 0x0081_f800 => extern "C" fn shim_sqs_straight_streaming_volume_direct(v: u32) -> u32 {
+        nkz::bridge::sqs_straight_streaming_volume_direct(&mut mem(), v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsStraightStreamingVolumeTranslate(frames, v)`.
+    SqsStraightStreamingVolumeTranslate @ 0x0081_f880 => extern "C" fn shim_sqs_straight_streaming_volume_translate(frames: u32, v: u32) -> u32 {
+        nkz::bridge::sqs_straight_streaming_volume_translate(&mut mem(), frames, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsInitWaveInfo(src, _, a)`: void, the thunk keeps the caller's
+    /// `eax` as the original's early return does (no caller reads it).
+    SqsInitWaveInfo @ 0x0081_d3f0 => extern "C" fn shim_sqs_init_wave_info(src: u32, _b: u32, a: u32) {
+        nkz::bridge::sqs_init_wave_info(&mut mem(), src, a, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcVu0Add(a, b, c)`.
+    rcVu0Add @ 0x0091_f650 => extern "C" fn shim_rc_vu0_add(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_00924770(a, b, c)`.
+    rcVu0Add_00924770 @ 0x0092_4770 => extern "C" fn shim_rc_vu0_add_00924770(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00924860(a, b, c)`.
+    rcVu0Sub_00924860 @ 0x0092_4860 => extern "C" fn shim_rc_vu0_sub_00924860(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Add4(a, b, c)`.
+    rcVu0Add4 @ 0x0092_4fc0 => extern "C" fn shim_rc_vu0_add4(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add4, a, b, c)
+    }
+
+    /// `rcVu0Sub4(a, b, c)`.
+    rcVu0Sub4 @ 0x0092_50d0 => extern "C" fn shim_rc_vu0_sub4(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub4, a, b, c)
+    }
+
+    /// `rcVu0Add_009285a0(a, b, c)`.
+    rcVu0Add_009285a0 @ 0x0092_85a0 => extern "C" fn shim_rc_vu0_add_009285a0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_00928df0(a, b, c)`.
+    rcVu0Add_00928df0 @ 0x0092_8df0 => extern "C" fn shim_rc_vu0_add_00928df0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00928ee0(a, b, c)`.
+    rcVu0Sub_00928ee0 @ 0x0092_8ee0 => extern "C" fn shim_rc_vu0_sub_00928ee0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00929300(a, b, c)`.
+    rcVu0Sub_00929300 @ 0x0092_9300 => extern "C" fn shim_rc_vu0_sub_00929300(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Add_00929440(a, b, c)`.
+    rcVu0Add_00929440 @ 0x0092_9440 => extern "C" fn shim_rc_vu0_add_00929440(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_009295e0(a, b, c)`.
+    rcVu0Add_009295e0 @ 0x0092_95e0 => extern "C" fn shim_rc_vu0_add_009295e0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_0092f790(a, b, c)`.
+    rcVu0Add_0092f790 @ 0x0092_f790 => extern "C" fn shim_rc_vu0_add_0092f790(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add4_0092f880(a, b, c)`.
+    rcVu0Add4_0092f880 @ 0x0092_f880 => extern "C" fn shim_rc_vu0_add4_0092f880(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add4, a, b, c)
+    }
+
+    /// `rcVu0Sub(a, b, c)`.
+    rcVu0Sub @ 0x0091_f740 => extern "C" fn shim_rc_vu0_sub(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_sub(&mut mem(), a, b, c)
+    }
+
+    /// `rcVu0Sub_0092d720(a, b, c)`: the same code.
+    rcVu0Sub_0092d720 @ 0x0092_d720 => extern "C" fn shim_rc_vu0_sub_0092d720(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_sub(&mut mem(), a, b, c)
+    }
+
+    /// `yiSetIDPage(page)`.
+    yiSetIDPage @ 0x0090_a4a0 => extern "C" fn shim_yi_set_id_page(page: u32) -> u32 {
+        yi::bridge::yi_set_id_page(&mut mem(), page, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiSetPreBgPage(page)`.
+    yiSetPreBgPage @ 0x0090_a6f0 => extern "C" fn shim_yi_set_pre_bg_page(page: u32) -> u32 {
+        yi::bridge::yi_set_pre_bg_page(&mut mem(), page, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiReset()`.
+    yiReset @ 0x0090_9e60 => extern "C" fn shim_yi_reset() -> u32 {
+        yi::bridge::yi_reset(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsReportStandby()`.
+    SqsReportStandby @ 0x0081_e260 => extern "C" fn shim_sqs_report_standby() -> u32 {
+        nkz::bridge::sqs_report_standby(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsReportStandbyStatus(flush)`.
+    SqsReportStandbyStatus @ 0x0081_e2d0 => extern "C" fn shim_sqs_report_standby_status(flush: u32) -> u32 {
+        nkz::bridge::sqs_report_standby_status(&mut mem(), flush, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsDataSendingCompleted(wait)`.
+    SqsDataSendingCompleted @ 0x0081_cfd0 => extern "C" fn shim_sqs_data_sending_completed(wait: u32) -> u32 {
+        nkz::bridge::sqs_data_sending_completed(&mut mem(), wait, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsInitMusicInfoHdd(path)`.
+    SqsInitMusicInfoHdd @ 0x0081_d3c0 => extern "C" fn shim_sqs_init_music_info_hdd(path: u32) -> u32 {
+        nkz::bridge::sqs_init_info_hdd(&mut mem(), path, 7, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsInitWaveInfoHdd(path)`.
+    SqsInitWaveInfoHdd @ 0x0081_d470 => extern "C" fn shim_sqs_init_wave_info_hdd(path: u32) -> u32 {
+        nkz::bridge::sqs_init_info_hdd(&mut mem(), path, 6, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSetProjectBase(path)`.
+    SqsSetProjectBase @ 0x0081_eab0 => extern "C" fn shim_sqs_set_project_base(path: u32) -> u32 {
+        nkz::bridge::sqs_set_project_base(&mut mem(), path, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiPolyBufExecVif(buf, codes, words)`.
+    yiPolyBufExecVif @ 0x0091_13a0 => extern "C" fn shim_yi_poly_buf_exec_vif(buf: u32, codes: u32, words: u32) -> u32 {
+        yi::bridge::yi_poly_buf_exec_vif(&mut mem(), buf, codes, words)
+    }
+
+    /// `Sg_MemSetFree(block)`.
+    Sg_MemSetFree @ 0x0083_bdb0 => extern "C" fn shim_sg_mem_set_free(block: u32) -> u32 {
+        yi::bridge::sg_mem_set_free(&mut mem(), block)
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

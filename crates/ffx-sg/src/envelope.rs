@@ -11,6 +11,101 @@ pub mod bridge {
 
     use crate::scratch::{SCRATCH, Scratch};
 
+    /// The VU0 accumulator `sg_calcenvelope_normW`'s translated code uses
+    /// (`ACC.xyz`, three `f32`).
+    pub const VU0_ACC: u32 = 0x00c8_f790;
+    /// `g_ChrPacketState` (`u16`).
+    pub const CHR_PACKET_STATE: Global<u16> = Global::new(0x0130_366c);
+    /// The `u16` beside it that `Ch_EffectPacketCreateMain` sets.
+    pub const CHR_PACKET_WORD: Global<u16> = Global::new(0x0130_3684);
+
+    /// `Sg_SetChrPacketState(v)` (`0x00845c30`): `g_ChrPacketState = v`.
+    pub fn set_chr_packet_state(mem: &mut impl Mem, v: u16) {
+        CHR_PACKET_STATE.set(mem, v);
+    }
+
+    /// `Sg_SetChrPacketWord(v)` (`0x00845c40`): the `u16` at `0x01303684`.
+    pub fn set_chr_packet_word(mem: &mut impl Mem, v: u16) {
+        CHR_PACKET_WORD.set(mem, v);
+    }
+
+    /// `sg_Daddiu(dst, src, imm)` (`0x00845cc0`): the 64-bit `src` plus the
+    /// sign-extended `imm` (MIPS `daddiu`); returns the low word.
+    pub fn daddiu(mem: &mut impl Mem, dst: u32, src: u32, imm: u32) -> u32 {
+        let x: u64 = mem.read(src);
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        let r = x.wrapping_add(i64::from(imm as i32) as u64);
+        mem.write(dst, r);
+        #[allow(clippy::cast_possible_truncation)]
+        let low = r as u32;
+        low
+    }
+
+    /// `sg_SetFloat(dst, x)` (`0x00845cf0`): `x` through the x87 (a
+    /// signalling NaN comes out quiet); returns `dst`.
+    pub fn set_float(mem: &mut impl Mem, dst: u32, x: f32) -> u32 {
+        mem.write(dst, x87::round_trip(x));
+        dst
+    }
+
+    /// `sg_Sll(dst, src, n)` (`0x00845d70`): `src << (n & 31)` (MIPS
+    /// `sll`); returns `dst`.
+    pub fn sll(mem: &mut impl Mem, dst: u32, src: u32, n: u32) -> u32 {
+        let x: u32 = mem.read(src);
+        mem.write(dst, x << (n & 31));
+        dst
+    }
+
+    /// `v * s` component by component as the three helpers compute it:
+    /// `x` and `y` multiply registers, `z` is `s * [v.z]`; each plus
+    /// `add[i]` (a memory operand) when given.
+    fn scaled(mem: &impl Mem, v: u32, s: f32, add: Option<[f32; 3]>) -> [f32; 3] {
+        use x87::Reg;
+        let c = |k: u32| mem.read::<f32>(v + 4 * k);
+        let s = Reg::load(s);
+        let p = [Reg::load(c(0)) * s, Reg::load(c(1)) * s, s.mul_m32(c(2))];
+        match add {
+            None => p.map(Reg::store),
+            Some(a) => [
+                (p[0] + Reg::load(a[0])).store(),
+                p[1].add_m32(a[1]).store(),
+                p[2].add_m32(a[2]).store(),
+            ],
+        }
+    }
+
+    /// `sg_VmulScalar(dst, v, s)` (`0x00845e80`): `dst = v s`; returns
+    /// `dst`.
+    pub fn vmul_scalar(mem: &mut impl Mem, dst: u32, v: u32, s: f32) -> u32 {
+        let r = scaled(mem, v, s, None);
+        for (k, x) in (0u32..).zip(r) {
+            mem.write(dst + 4 * k, x);
+        }
+        dst
+    }
+
+    /// `sg_VmaddScalar(dst, v, -, -, s)` (`0x00845e40`): `dst = ACC + v s`
+    /// (VU0 `vmadd`); returns `dst`.
+    pub fn vmadd_scalar(mem: &mut impl Mem, dst: u32, v: u32, s: f32) -> u32 {
+        let acc = mem.rebase(VU0_ACC);
+        // each component reads its accumulator lane after the previous
+        // store, as the original
+        for k in 0..3u32 {
+            let a: [f32; 3] = mem.read(acc);
+            let r = scaled(mem, v, s, Some(a));
+            mem.write(dst + 4 * k, r[k as usize]);
+        }
+        dst
+    }
+
+    /// `sg_VmaddaScalar(-, v, -, s)` (`0x00845df0`): `ACC += v s` (VU0
+    /// `vmadda`); returns `v`.
+    pub fn vmadda_scalar(mem: &mut impl Mem, v: u32, s: f32) -> u32 {
+        let acc = mem.rebase(VU0_ACC);
+        vmadd_scalar(mem, acc, v, s);
+        v
+    }
+
     /// 1000 (`f64`).
     pub const THOUSAND: Global<f64> = Global::new(0x00b0_dba0);
 
