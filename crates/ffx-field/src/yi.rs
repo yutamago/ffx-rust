@@ -4911,4 +4911,81 @@ pub mod bridge {
         }
         heap * 3
     }
+
+    /// `yiPolyBufUnpack(buf, src, code)` (`0x00911620`, name ours; from
+    /// the poly buffer's VIF interpreter `0x009113a0`): a VIF `UNPACK`
+    /// into the buffer's VU memory (`buf`, 16 bytes a row).
+    /// - `code`'s bits 0..9 are the row, plus the buffer's `TOPS`
+    ///   (`+0x4070`) when bit 15 is set.
+    /// - Its byte `+2` is the row count, reread for each row.
+    /// - Bits 24..25 are the element size: 32, 16 or 8 bits, or 3 for
+    ///   `V4-5`; bits 26..27 the element count less one. One element
+    ///   (`S-*`) fills all four words of the row.
+    /// - Elements are unsigned; 16- and 8-bit ones are taken from the
+    ///   low end of each source word, which carries over to the next row.
+    ///
+    /// Returns the source words read.
+    pub fn yi_poly_buf_unpack<M: Mem>(mem: &mut M, buf: u32, src: u32, code: u32) -> u32 {
+        let w = mem.read::<u32>(code);
+        let op = (w >> 24) & 0x7f;
+        let (vl, vn) = (op & 3, (op >> 2) & 3);
+        let mut row = w & 0x3ff;
+        if w & 0x8000 != 0 {
+            row = row.wrapping_add(mem.read::<u32>(buf.wrapping_add(0x4070)));
+        }
+        let mut at = buf.wrapping_add(row << 4);
+        let mut p = src;
+        // the source word and the bits left in it (16- and 8-bit elements)
+        let (mut word, mut left) = (0u32, 0u32);
+        let mut i = 0;
+        while i < u32::from(mem.read::<u8>(code.wrapping_add(2))) {
+            let mut take = |mem: &M| -> u32 {
+                match vl {
+                    0 => {
+                        let v = mem.read::<u32>(p);
+                        p = p.wrapping_add(4);
+                        v
+                    }
+                    _ => {
+                        let bits = if vl == 2 { 8 } else { 16 };
+                        if left == 0 {
+                            word = mem.read::<u32>(p);
+                            p = p.wrapping_add(4);
+                            left = 32 - bits;
+                        } else {
+                            word >>= bits;
+                            left -= bits;
+                        }
+                        word
+                    }
+                }
+            };
+            let v: [u32; 4] = if vl == 3 {
+                let v = take(mem);
+                [
+                    (v & 0x1f) << 3,
+                    (v >> 2) & 0xf8,
+                    (v >> 7) & 0xf8,
+                    (v >> 8) & 0x80,
+                ]
+            } else {
+                let mask = [u32::MAX, 0xffff, 0xff][vl as usize];
+                if vn == 0 {
+                    [take(mem) & mask; 4]
+                } else {
+                    for j in 0..=vn {
+                        let v = take(mem) & mask;
+                        mem.write(at.wrapping_add(4 * j), v);
+                    }
+                    at = at.wrapping_add(0x10);
+                    i += 1;
+                    continue;
+                }
+            };
+            mem.write(at, v);
+            at = at.wrapping_add(0x10);
+            i += 1;
+        }
+        (p.wrapping_sub(src).cast_signed() >> 2).cast_unsigned()
+    }
 }

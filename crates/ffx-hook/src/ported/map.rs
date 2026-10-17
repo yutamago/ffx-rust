@@ -3752,6 +3752,11 @@ ported! {
         nkz::bridge::sqs_decode_adpcm(&mut mem(), src, dst)
     }
 
+    /// `yiPolyBufUnpack(buf, src, code)`.
+    yiPolyBufUnpack @ 0x0091_1620 => extern "C" fn shim_yi_poly_buf_unpack(buf: u32, src: u32, code: u32) -> u32 {
+        yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
+    }
+
     /// `Sg_MemSetFree(block)`.
     Sg_MemSetFree @ 0x0083_bdb0 => extern "C" fn shim_sg_mem_set_free(block: u32) -> u32 {
         yi::bridge::sg_mem_set_free(&mut mem(), block)

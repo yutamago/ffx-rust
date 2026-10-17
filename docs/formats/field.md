@@ -1483,6 +1483,30 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The poly buffer's VIF unpack (round 34)
+
+The yi poly buffer (`yiPolyBufClear`, `0x00911970`) is 0x4000 bytes of
+emulated VU memory followed by VIF registers at `+0x4000..+0x4084`
+(`+0x4070` `TOPS`). Its VIF code interpreter (`0x009113a0`) hands
+`UNPACK` codes to `yiPolyBufUnpack(buf, src, code)` (`0x00911620`, name
+ours), which returns the number of source words it read:
+
+- The destination row is `code & 0x3ff`, plus `TOPS` when bit 15 is set;
+  each row is 16 bytes. The row count is the byte at `code + 2`, reread
+  for each row.
+- Bits 24..25 give the element size and bits 26..27 the elements per row
+  less one:
+  - 32 bits: words copied.
+  - 16 and 8 bits: taken unsigned (bit 14, `USN`, is ignored) from the low
+    end of each source word up; a partly used word carries over to the
+    next row.
+  - 3 (`V4-5`, the count ignored): one 16-bit element per row, giving
+    `(v & 0x1f) << 3`, `(v >> 2) & 0xf8`, `(v >> 7) & 0xf8` and
+    `(v >> 8) & 0x80`.
+- With one element (`S-32`, `S-16`, `S-8`) the value fills all four
+  words of the row. Otherwise only the first `count` words are written.
+- The address is not wrapped to the buffer.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

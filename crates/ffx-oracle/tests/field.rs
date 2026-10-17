@@ -12191,3 +12191,50 @@ fn round33_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0021_0002);
     round33_cases(&mut t, &mut rng, 40);
 }
+
+// ---- round 34 ----
+
+/// Round 34 on `t`: `yiPolyBufUnpack`, every size and count, `TOPS` on or
+/// off, random rows.
+fn round34_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (buf, src, code) = (t.alloc(0x1_0000), t.alloc(0x1000), t.alloc(4));
+    for k in 0..rounds {
+        t.fill(src, 0x1000, rng);
+        t.put(buf + 0x4070, rng.below(0x400));
+        let op = (k % 16) | (rng.below(8) << 4);
+        let num = match rng.below(4) {
+            0 => 0,
+            1 => 1,
+            _ => rng.below(256),
+        };
+        let w = (op << 24)
+            | (num << 16)
+            | (rng.below(2) << 15)
+            | (rng.next() & 0x7c00)
+            | rng.below(0x400);
+        t.put(code, w);
+        t.same(
+            "yiPolyBufUnpack",
+            |o| o.eax(0x0091_1620, &[buf, src, code]),
+            |m| yi::bridge::yi_poly_buf_unpack(m, buf, src, code),
+        );
+    }
+}
+
+/// Round 34: the poly buffer's VIF `UNPACK` (`yiPolyBufUnpack`), synthetic.
+#[test]
+fn round34_poly_buf_unpack_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0022_0001);
+    round34_cases(&mut t, &mut rng, 400);
+}
+
+/// Round 34 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round34_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0022_0002);
+    round34_cases(&mut t, &mut rng, 100);
+}

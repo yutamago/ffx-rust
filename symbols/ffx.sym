@@ -10637,6 +10637,7 @@
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
 0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
+0x00911620 function yiPolyBufUnpack          # (buf, src, code) -> source words read: a VIF UNPACK (code bits 24..25 size 32/16/8/V4-5, 26..27 count - 1, 0..9 row + TOPS +0x4070 when bit 15, byte +2 rows) into the poly buffer's VU memory; from 0x009113a0 (the poly buffer's VIF interpreter); name ours; ported (field round 34)
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
