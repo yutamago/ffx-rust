@@ -3955,4 +3955,128 @@ pub mod bridge {
         mem.write(at, 0u8);
         out
     }
+
+
+    /// The input calls of [`get_pad_status`].
+    pub trait PadInput<M> {
+        /// `inputGetCurTime()`, the value left in ST0.
+        fn cur_time(&mut self, mem: &mut M) -> f64;
+        /// `TkGetControlerHist(a, b, c)`.
+        fn hist(&mut self, mem: &mut M, a: u32, b: u32, c: u32) -> u32;
+        /// `TkGetControlerAnalogHist(a, b, axis, d)`.
+        fn analog(&mut self, mem: &mut M, a: u32, b: u32, axis: u32, d: u32) -> u32;
+    }
+
+    /// `TOGetPadStatus()` (`0x008b7cd0`): the TO library's pad words.
+    /// `0x025d09d2` held, `+2` triggered, `+4` repeated buttons; the same
+    /// at `0x025d09e2` with the d-pad bits made from the left stick
+    /// (`0x025d09de` x, `0x025d09df` y, below 0x18 or above 0xe8). All are
+    /// cleared, and refilled only while `0x025d09c1` or `g_TOPadGetCtrl`
+    /// (`0x025d09c0`) is set: the d-pad's own set if any d-pad button is
+    /// held, else the stick's. Each button but 0x800 and 0x100 repeats: a
+    /// fresh press (count `0x025d09c2 + k` 0) repeats at once; while held
+    /// (not freshly triggered) the count rises and the held time
+    /// (`0x025d0a00 + 4k`) adds the time since the last frame
+    /// (`0x025d0a40 + 4k`, from `inputGetCurTime`); past 0.2333 s it
+    /// repeats and restarts at 0.1333 s with count 4; a released button
+    /// resets both. The chosen set is copied to the other; the control
+    /// flag is cleared.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // `mov word`
+    pub fn get_pad_status<M: Mem>(mem: &mut M, calls: &mut impl PadInput<M>) {
+        use ffx_bridge::x87::{add, sub};
+        let base = mem.rebase(0x025d_09c0);
+        let w = |off: u32| base.wrapping_add(off);
+        let prev_alt: u16 = mem.read(w(0x22));
+        let prev: u16 = mem.read(w(0x12));
+        let t = dword(calls.cur_time(mem));
+        mem.write(w(0x12), 0u32);
+        mem.write(w(0x16), 0u16);
+        mem.write(w(0x22), 0u32);
+        mem.write(w(0x26), 0u16);
+        if mem.read::<u8>(w(1)) == 0 && mem.read::<u8>(w(0)) == 0 {
+            return;
+        }
+        let h = calls.hist(mem, 0, 0, 0) as u16;
+        mem.write(w(0x12), h);
+        mem.write(w(0x14), (h ^ prev) & h);
+        let sx = calls.analog(mem, 0, 0, 2, 0) as u8;
+        mem.write(w(0x1e), sx);
+        let sy = calls.analog(mem, 0, 0, 3, 0) as u8;
+        let held: u16 = mem.read(w(0x12));
+        mem.write(w(0x1f), sy);
+        let mut alt = held & 0xfff;
+        mem.write(w(0x22), alt);
+        for (on, bit) in [(sy < 0x18, 0x1000u16), (sy > 0xe8, 0x4000)] {
+            if on {
+                alt |= bit;
+                mem.write(w(0x22), alt);
+            }
+        }
+        let sx: u8 = mem.read(w(0x1e));
+        for (on, bit) in [(sx < 0x18, 0x8000u16), (sx > 0xe8, 0x2000)] {
+            if on {
+                alt |= bit;
+                mem.write(w(0x22), alt);
+            }
+        }
+        mem.write(w(0x24), (alt ^ prev_alt) & alt);
+        let (held_at, trg_at, rep_at) = if held & 0xf000 == 0 {
+            (w(0x22), w(0x24), w(0x26))
+        } else {
+            (w(0x12), w(0x14), w(0x16))
+        };
+        let limit = 0.233_333_319_425_582_89;
+        let restart = f64::from(f32::from_bits(0x3e08_8888));
+        for k in 0..16u32 {
+            let bit = 1u16 << k;
+            if bit == 0x800 || bit == 0x100 {
+                continue;
+            }
+            let cnt_at = w(2 + k);
+            let acc_at = mem.rebase(0x025d_0a00).wrapping_add(4 * k);
+            let last_at = mem.rebase(0x025d_0a40).wrapping_add(4 * k);
+            let or_rep = |mem: &mut M| {
+                let r: u16 = mem.read(rep_at);
+                mem.write(rep_at, r | bit);
+            };
+            let mut skip = false;
+            if mem.read::<u16>(trg_at) & bit != 0 {
+                if mem.read::<u8>(cnt_at) == 0 {
+                    or_rep(mem);
+                }
+                skip = mem.read::<u16>(trg_at) & bit != 0;
+            }
+            if !skip {
+                let c: u8 = mem.read(cnt_at);
+                mem.write(cnt_at, c.wrapping_add(1));
+                let last = f64::from(mem.read::<f32>(last_at));
+                let acc = f64::from(mem.read::<f32>(acc_at));
+                mem.write(acc_at, dword(add(sub(t, last), acc)) as f32);
+            }
+            if mem.read::<u16>(held_at) & bit == 0 {
+                mem.write(cnt_at, 0u8);
+                mem.write(acc_at, 0f32);
+            }
+            if f64::from(mem.read::<f32>(acc_at)) > limit {
+                or_rep(mem);
+                mem.write(cnt_at, 4u8);
+                mem.write(acc_at, restart as f32);
+            }
+            mem.write(last_at, t as f32);
+        }
+        let held: u16 = mem.read(w(0x12));
+        if held & 0xf000 == 0 {
+            for off in [0x12u32, 0x14, 0x16] {
+                let v: u16 = mem.read(w(off + 0x10));
+                mem.write(w(off), v);
+            }
+        } else {
+            mem.write(w(0x22), held);
+            for off in [0x14u32, 0x16] {
+                let v: u16 = mem.read(w(off));
+                mem.write(w(off + 0x10), v);
+            }
+        }
+        mem.write(w(0), 0u8);
+    }
 }

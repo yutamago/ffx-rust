@@ -294,6 +294,44 @@ fn intrinsic(sym: u32, x: f64) -> f64 {
     }
 }
 
+/// A cdecl function of no arguments at `sym` that returns a float in ST0,
+/// read back with `fstp qword`.
+fn st0_result(sym: u32) -> f64 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let f = crate::rebase(sym) as u32;
+    // SAFETY: a cdecl function of no arguments; it leaves its result in
+    // ST0 and keeps edi.
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut out = 0f64;
+        std::arch::asm!(
+            "call {f}",
+            "fstp qword ptr [edi]",
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = f;
+        f64::NAN
+    }
+}
+
+impl<M: Mem> tolib::bridge::PadInput<M> for GameMenu {
+    fn cur_time(&mut self, _mem: &mut M) -> f64 {
+        st0_result(0x0063_0c60)
+    }
+    fn hist(&mut self, mem: &mut M, a: u32, b: u32, c: u32) -> u32 {
+        call_sym(mem, 0x0088_8d70, &[a, b, c])
+    }
+    fn analog(&mut self, mem: &mut M, a: u32, b: u32, axis: u32, d: u32) -> u32 {
+        call_sym(mem, 0x0088_8c20, &[a, b, axis, d])
+    }
+}
+
 impl<M: Mem> tolib::bridge::NearTarget<M> for GameMenu {
     fn btl_pos(&mut self, mem: &mut M, chr: u32, vec: u32) {
         call_sym(mem, 0x0079_48e0, &[chr, vec]);
@@ -4618,6 +4656,10 @@ ported! {
     /// `TOFuncMacroCmdValue(cmd)`.
     TOFuncMacroCmdValue @ 0x008b_6210 => extern "C" fn to_func_macro_cmd_value(cmd: u32) -> u32 {
         tolib::bridge::func_macro_cmd_value(&mut mem(), cmd)
+    }
+    /// `TOGetPadStatus()`.
+    TOGetPadStatus @ 0x008b_7cd0 => extern "C" fn to_get_pad_status() {
+        tolib::bridge::get_pad_status(&mut mem(), &mut GameMenu);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
