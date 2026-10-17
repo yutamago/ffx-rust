@@ -1483,7 +1483,7 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
-## 2D lines and circles (rounds 41, 42)
+## 2D lines, circles and triangles (rounds 41-43)
 
 `rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
 vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
@@ -1502,6 +1502,22 @@ Here `k = r * 1.1666666 * 416 / 448` (constants at `0x00b67698`,
 `0x00b41d30`, `0x00b50210`, each step in `f64` at 53 bits), the height
 corrected for the screen's aspect. It calls `rcPrimDraw2D(0x42, verts,
 0x41, colour)` with the same UI type calls as `rcPrimLine`.
+
+`rcPrimTri(x, y, r, angle, colour, ui)` (`0x009270c0`) draws the
+triangle inscribed in that circle:
+- Its corners sit at `angle` and a third of a turn on either side.
+- `i = ftol(angle * A / B)` (`A`, `B` the `f64` at `0x00b51558` and
+  `0x00b39378`) indexes the `ppp` sine table (`0x00c44bf0`, 4096 `f32`)
+  as `(i + o) >> 4 & 0xfff`.
+- Corner `k` is `(x + t(a) r, y + t(b) r * 1.1666666 * 416 / 448)` with
+  `(a, b)` = (0x4000, 0x8000), (0xa38e, 0xe38e), (0xdc71, 0x11c71) (the
+  cosine and sine of each).
+- Each step runs at 53 bits in the original's operand order and is
+  rounded to `f32` at the store.
+- Depths are 256.0 for the first corner and the `f32` at `0x00b664d8` for
+  the others; `w` is 0.
+- It is drawn with `rcPrimDraw2D(0x4c, verts, 3, colour)` and the same UI
+  type calls.
 
 ## Separate SE wave data (round 40)
 

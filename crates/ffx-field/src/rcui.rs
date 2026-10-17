@@ -879,4 +879,67 @@ pub mod bridge {
         mem.write(work.wrapping_add(0x20), [0u32; 63 * 4]);
         draw_2d(mem, [0x42, work, 0x41, colour], ui, call)
     }
+
+    /// The `ppp` sine table (4096 `f32`, a full turn).
+    pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+    /// `rcPrimTri`'s angle scale: times `0x00b51558`, over `0x00b39378`
+    /// (`f64` each), truncated to the table's 16.4 index.
+    pub const TRI_ANGLE: [u32; 2] = [0x00b5_1558, 0x00b3_9378];
+    /// The depth of `rcPrimTri`'s second and third vertices (`f32`).
+    pub const TRI_DEPTH: u32 = 0x00b6_64d8;
+
+    /// `rcPrimTri(x, y, r, angle, colour, ui)` (`0x009270c0`): a triangle
+    /// inscribed in the circle of [`rc_prim_circle_line`], its corners at
+    /// `angle` and a third of a turn on either side. With `i` the angle as
+    /// a table index (`angle * A / B`, `_ftol2_sse`) and `t(o)` the sine
+    /// table at `(i + o) >> 4 & 0xfff` (arithmetic shift), each corner is
+    /// `x + t(a) * r`, `y + t(b) * r * 1.1666666 * 416 / 448`, for `(a, b)` =
+    /// (0x4000, 0x8000), (0xa38e, 0xe38e), (0xdc71, 0x11c71): every step at
+    /// the x87's 53 bits in the original's operand order, rounded to `f32`
+    /// at the store. Depths: 256.0 for the first, `0x00b664d8` for the
+    /// others; `w` 0. Drawn as `rcPrimDraw2D(0x4c, work, 3, colour)` with
+    /// the UI type calls of [`rc_prim_line`].
+    pub fn rc_prim_tri<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 6],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store};
+        let [x, y, r, angle, colour, ui] = args;
+        let rd = |mem: &M, a: u32| mem.read::<f64>(mem.rebase(a));
+        let (sa, sb) = (rd(mem, TRI_ANGLE[0]), rd(mem, TRI_ANGLE[1]));
+        let i = ftol(mem, div(mul(load(angle), sa), sb)).cast_signed();
+        let table = mem.rebase(SIN_TABLE);
+        let t = |mem: &M, o: i32| -> f64 {
+            let k = (i.wrapping_add(o) >> 4) & 0xfff;
+            load(mem.read::<u32>(table + 4 * k.cast_unsigned()))
+        };
+        let [c1, c2, c3] = CIRCLE_FACTORS.map(|a| rd(mem, a));
+        let (x, y, r) = (load(x), load(y), load(r));
+        let depth = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(PRIM_DEPTH))).to_bits();
+        let depth2 = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(TRI_DEPTH))).to_bits();
+        let v0x = add(mul(t(mem, 0x4000), r), x);
+        let v0y = add(div(mul(mul(mul(r, t(mem, 0x8000)), c1), c2), c3), y);
+        let v1x = add(x, mul(t(mem, 0xa38e), r));
+        let v1y = add(div(mul(mul(mul(t(mem, 0xe38e), r), c1), c2), c3), y);
+        let v2x = add(mul(t(mem, 0xdc71), r), x);
+        let v2y = add(y, div(mul(c2, mul(c1, mul(t(mem, 0x1_1c71), r))), c3));
+        let v = [
+            store(v0x),
+            store(v0y),
+            depth,
+            0,
+            store(v1x),
+            store(v1y),
+            depth2,
+            0,
+            store(v2x),
+            store(v2y),
+            depth2,
+            0,
+        ];
+        mem.write(work, v);
+        draw_2d(mem, [0x4c, work, 3, colour], ui, call)
+    }
 }

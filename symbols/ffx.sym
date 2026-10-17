@@ -11080,7 +11080,7 @@
 0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0; ported (field round 42): (x, y, r, colour, ui): 65 stack vertices, the box (x - r, y - k), (x + r, y + k) at depth 256 and 63 zero ones, k = r * 1.1666666 * 416 / 448 (f64), rcPrimDraw2D(0x42, verts, 0x41, colour) with the UI type as rcPrimLine; returns cgraphicSetNowUIType(0)'s eax
 0x00925f80 function rcPrimDraw2D              # fh v3:exact 0x00925f80
 0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00; ported (field round 41): (x0, y0, x1, y1, colour, ui): vertices (x, y, 256.0, 0) on the stack, rcPrimDraw2D(0x41, verts, 2, colour) between cgraphicSetNowUIType(2) (when ui) and cgraphicSetNowUIType(0), whose eax it returns
-0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0
+0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0; ported (field round 43): (x, y, r, angle, colour, ui): the triangle inscribed in rcPrimCircleLine's circle, corners at angle and +-1/3 turn through g_pppSinTable 0x00c44bf0 (index ftol(angle * [0x00b51558] / [0x00b39378]), (i + off) >> 4 & 0xfff), y scaled by 1.1666666 * 416 / 448; depths 256.0 and [0x00b664d8]; rcPrimDraw2D(0x4c, verts, 3, colour) with rcPrimLine's UI calls
 0x00927230 function rcPrimTriLine                # layout+callees: sorts between rcPrimTri and rcPrint, and its named callees match the Switch 0x7100551970 rcPrimTriLine's (similarity 0.67: cgraphicSetNowUIType, rcPrimDraw2D); symbols from Fahrenheit's server export
 0x009273b0 function rcCopyQword_009273b0      # (dst, src): as rcCopyQword_0091cb40
 0x009273e0 function rcVectorToFixed_009273e0  # (dst, v): v through vf31 as 12.4 fixed point (rcVec4fToFixed); rcPrimDraw2D

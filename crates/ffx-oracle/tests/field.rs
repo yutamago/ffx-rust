@@ -12767,7 +12767,8 @@ fn prim_draw_stub(log: u32, tail: u32) -> Vec<u8> {
     c
 }
 
-/// Round 41 on `t`: `rcPrimLine` and `rcPrimCircleLine` with the UI type
+/// Round 41 on `t`: `rcPrimLine`, `rcPrimCircleLine` and `rcPrimTri` with
+/// the UI type
 /// on or off, its vertices
 /// and arguments logged by the `rcPrimDraw2D` stand-in, the UI type
 /// calls by another.
@@ -12811,6 +12812,24 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             "rcPrimCircleLine",
             |o| o.eax(0x0092_5ea0, &c),
             |m| rcui::bridge::rc_prim_circle_line(m, c, work, call),
+        );
+        // the triangle: an angle anywhere (specials and huge values too)
+        let angle = match rng.below(3) {
+            0 => rng.float(),
+            1 => float_in(rng, -4000, 4000),
+            _ => {
+                #[allow(clippy::cast_precision_loss)]
+                let v = rng.next() as f32 / 65_536.0 - 32_768.0;
+                v.to_bits()
+            }
+        };
+        let tri = [a[0], a[1], c[2], angle, a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x30, rng);
+        t.same(
+            "rcPrimTri",
+            |o| o.eax(0x0092_70c0, &tri),
+            |m| rcui::bridge::rc_prim_tri(m, tri, work, call),
         );
     }
 }

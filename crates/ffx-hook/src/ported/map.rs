@@ -3777,6 +3777,16 @@ ported! {
         rcui::bridge::rc_prim_circle_line(&mut mem(), [x, y, r, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local
+    /// buffer, as the original's.
+    rcPrimTri @ 0x0092_70c0 => extern "C" fn shim_rc_prim_tri(x: u32, y: u32, r: u32, angle: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 12]);
+        let mut v = Verts([0; 12]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsSeSeparateDataSend(data, size)`.
     SqsSeSeparateDataSend @ 0x0081_e600 => extern "C" fn shim_sqs_se_separate_data_send(data: u32, size: u32) -> u32 {
         nkz::bridge::sqs_se_separate_data_send(&mut mem(), data, size, &mut |_, f, a| call_cdecl(f, a))
