@@ -213,6 +213,21 @@ impl<M> tolib::bridge::MenuMusic<M> for GameMenu {
     }
 }
 
+/// `graphicFontGetScreenWH(&w, &h)` (the original, or its hook).
+fn font_screen_wh<M>(m: &mut M) -> (i32, i32) {
+    let mut wh = [0i32; 2];
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let at = wh.as_mut_ptr() as u32;
+    call_sym(m, 0x0064_0db0, &[at, at + 4]);
+    std::hint::black_box(&mut wh);
+    (wh[0], wh[1])
+}
+
+/// `SndIsSepPlay(id)` or, with `stop`, `SndSepStop(id)` (their hooks).
+fn limit_sound<M>(m: &mut M, stop: bool, id: u32) -> u32 {
+    call_sym(m, if stop { 0x0088_6eb0 } else { 0x0088_6680 }, &[id])
+}
+
 /// The heap's Win32 calls, through the game's own import slots (so they are
 /// the calls the originals make, to the same critical sections).
 struct GameOs;
@@ -3974,7 +3989,7 @@ ported! {
             |m, i, n, x, y| {
                 scene::bridge::get_point(m, i.cast_signed(), n, [x, y], menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
             },
-            |m, stop, id| call_sym(m, if stop { 0x0088_6eb0 } else { 0x0088_6680 }, &[id]),
+            limit_sound,
         )
     }
     /// `TOLoadMenuOpen(menu)`.
@@ -4060,14 +4075,66 @@ ported! {
     }
     /// `TOGetFontWidthInPiexl(a, b)`.
     TOGetFontWidthInPiexl @ 0x008f_a6b0 => extern "C" fn to_get_font_width_in_piexl(a: f32, b: f32) -> f32 {
-        tolib::bridge::font_width_in_pixel(&mut mem(), a, b, |m| {
-            let mut wh = [0i32; 2];
-            #[allow(clippy::cast_possible_truncation)] // 32-bit process
-            let at = wh.as_mut_ptr() as u32;
-            call_sym(m, 0x0064_0db0, &[at, at + 4]);
-            std::hint::black_box(&mut wh);
-            (wh[0], wh[1])
-        })
+        tolib::bridge::font_width_in_pixel(&mut mem(), a, b, font_screen_wh)
+    }
+    /// `TOWideWindowX(i, x)`.
+    TOWideWindowX_008b8430 @ 0x008b_8430 => extern "C" fn to_wide_window_x(i: i32, x: f32) -> f32 {
+        tolib::bridge::wide_window_x(&mut mem(), i, x, font_screen_wh)
+    }
+    /// `TOGetFontSpaceInPiexl(kind)`.
+    TOGetFontSpaceInPiexl @ 0x008f_a570 => extern "C" fn to_get_font_space_in_piexl(kind: u32) -> f32 {
+        tolib::bridge::font_space_in_pixel(
+            &mut mem(),
+            kind,
+            |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+            font_screen_wh,
+        )
+    }
+    /// `TOInitMessageSlot(i)`.
+    TOInitMessageSlot_008ada30 @ 0x008a_da30 => extern "C" fn to_init_message_slot(i: i32) -> u32 {
+        tolib::bridge::init_message_slot(&mut mem(), i)
+    }
+    /// `TOSeqInitScene(i)`.
+    TOSeqInitScene @ 0x008a_eec0 => extern "C" fn to_seq_init_scene(i: i32) -> u32 {
+        scene::bridge::init_scene(&mut mem(), i)
+    }
+    /// `TOGetImageWH(id, &w, &h)`.
+    TOGetImageWH @ 0x008a_c400 => extern "C" fn to_get_image_wh(id: u32, w: u32, h: u32) -> u32 {
+        tolib::bridge::get_image_wh(
+            &mut mem(),
+            id,
+            [w, h],
+            |m| ffx_menu::tk::bridge::tk_get_lang(m).cast_unsigned(),
+            |m| call_sym(m, 0x0078_16f0, &[]),
+        )
+    }
+    /// `TOBtlLimitTimerStop()` (two copies).
+    TOBtlLimitTimerStop_0089ab20 @ 0x0089_ab20 => extern "C" fn to_btl_limit_timer_stop_0089ab20() -> u32 {
+        tolib::bridge::limit_timer_stop(&mut mem(), limit_sound)
+    }
+    /// `TOBtlLimitTimerStop()`, second copy.
+    TOBtlLimitTimerStop_0089aba0 @ 0x0089_aba0 => extern "C" fn to_btl_limit_timer_stop_0089aba0() -> u32 {
+        tolib::bridge::limit_timer_stop(&mut mem(), limit_sound)
+    }
+    /// `TOBtlLimitTimerStart()`.
+    TOBtlLimitTimerStart_0089ab50 @ 0x0089_ab50 => extern "C" fn to_btl_limit_timer_start() {
+        tolib::bridge::limit_timer_start(&mut mem(), |m, play, id| call_sym(m, if play { 0x0088_6e80 } else { 0x0088_6680 }, &[id]));
+    }
+    /// `TOCopyWindowLayout(table, i)`.
+    TOCopyWindowLayout_00905e90 @ 0x0090_5e90 => extern "C" fn to_copy_window_layout(table: u32, i: u32) -> u32 {
+        tolib::bridge::copy_window_layout(&mut mem(), table, i)
+    }
+    /// `TOMenuInit()`.
+    TOMenuInit @ 0x008b_e800 => extern "C" fn to_menu_init() -> u32 {
+        tolib::bridge::menu_init(&mut mem())
+    }
+    /// `TOMenuInitBrush()`.
+    TOMenuInitBrush @ 0x0090_0f40 => extern "C" fn to_menu_init_brush() -> u32 {
+        tolib::bridge::menu_init_brush(&mut mem())
+    }
+    /// `TOAmapMakeItemList(k)`.
+    TOAmapMakeItemList @ 0x008c_6730 => extern "C" fn to_amap_make_item_list(k: u32) -> u32 {
+        tolib::bridge::amap_make_item_list(&mut mem(), k, |m, mode| call_sym(m, 0x008c_8e60, &[mode]))
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

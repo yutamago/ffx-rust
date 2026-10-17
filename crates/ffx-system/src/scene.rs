@@ -278,4 +278,18 @@ pub mod bridge {
     pub fn has_scene(mem: &impl Mem, i: i32, name: u32) -> u32 {
         u32::from(find(mem, i, name).is_some())
     }
+
+    /// `TOSeqInitScene(i)` (`0x008aeec0`): every running slot of scene `i`
+    /// stopped (state 4, name cleared) except those kept (`u16` 1 at
+    /// `+2`). Returns `i << 8` (left in `eax`).
+    pub fn init_scene(mem: &mut impl Mem, i: i32) -> u32 {
+        for j in 0..8 {
+            let s = slot(mem, i, j);
+            if mem.read::<u16>(s.wrapping_add(2)) != 1 && running(mem, s) {
+                mem.write(s, 4u16);
+                mem.write(s.wrapping_add(8), 0u8);
+            }
+        }
+        i.cast_unsigned().wrapping_shl(8)
+    }
 }

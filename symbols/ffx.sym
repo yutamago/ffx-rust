@@ -7590,7 +7590,10 @@
 0x0089a630 function TOBtlSetPrevAction        # fh v3:exact 0x0089a5a0
 0x0089a850 function SetByte_0133d782 # cdecl(v): byte 0x0133d782 = v; name ours
 0x0089a8b0 function TOBtlSetTargetHelpMes     # fh v3:exact 0x0089a820
+0x0089ab20 function TOBtlLimitTimerStop_0089ab20 # (): 0x0133f77c = 1; SndIsSepPlay(0x8000004e): SndSepStop; name ours
+0x0089ab50 function TOBtlLimitTimerStart_0089ab50 # (): 0x0133f77c != 2: = 2, SndSepPlaySimple(0x8000004e) unless playing; name ours
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
+0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40
 0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
@@ -7769,7 +7772,7 @@
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
 0x008ac3d0 function TOGetFontWidthTblAdrs     # fh v3:bsim1.00 0x008ac380
 0x008ac3f0 function TOGetWord_01841d98        # () -> [0x01841d98]; between TOGetFontWidthTblAdrs and TOGetImageWH; name ours
-0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl
+0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl; (id, &w, &h): constant sizes for 0x2eac..0x132f0c, or i16 pairs from 0x01841dac (0x3c00 by TkGetLang, 0x3d00 by MsBattleGetStatus); returns &h
 0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
@@ -7782,6 +7785,7 @@
 0x008ad4d0 function TOInit                       # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOInit(): about to read menu base_ftc file!!!!\\n'; Switch 0x71004f38b0 TOInit (symbols from Fahrenheit's server export)
 0x008ad780 function TOInitBattleFontPath      # fh v3:bsim0.92 0x008ad730
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
+0x008ada30 function TOInitMessageSlot_008ada30 # cdecl(i): g_TOMessageWindowSlots[i] zeroed, parts = window i, message i, entry i; window memset 0x7c, TOInitMessage(i), tags +2/+4 = i, slot +4 = -1, message handler 0x008b64a0; name ours
 0x008adbd0 function TOInitPadData             # fh v3:bsim1.00 0x008adb80; memset(0x025d09c0, 0, 0xc0), 0x025d09de = 0x80808080
 0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
 0x008ade10 function TOOpenWindowAndMessage # cdecl(i): *(u16*)g_TOMessageWindowSlots[i] = 1; 0x00906c80(i); 0x008b8560(i); name ours
@@ -7802,7 +7806,7 @@
 0x008ae530 function TOSeqGetSceneState_008ae530 # cdecl(i, name): i16 state of scene i's slot named name, 0 when none; callers 0x008974a0, 0x008fdf20; name ours
 0x008ae5a0 function TOSeqInitAllScene         # fh v3:exact 0x008ae550
 0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0
-0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70
+0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70; every running slot of scene i stopped (state 4, name cleared) unless kept (+2 == 1); returns i << 8
 0x008af060 function TOSeqSetScenePosByName # cdecl(i, name, x, y): every slot of scene i named name: TkMenuSetScenePos(i, slot +0x1c, x, y); name ours
 0x008af0d0 function TOSeqStartScene           # fh v3:exact 0x008af080
 0x008af1b0 function TOSeqStartSceneDrawContinue # fh v3:exact 0x008af160
@@ -7892,6 +7896,7 @@
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
+0x008b8430 function TOWideWindowX_008b8430 # cdecl(i, x) -> float: type-1 window and 0x01340824/0x0133c948/0x01327100 clear: (w - 512 h/416) / (2 w/512) + x (h/416)/(w/512) from graphicFontGetScreenWH; else x; name ours
 0x008b84f0 function TOMacroSetByte1 # cdecl(win, n, v): byte 1 of macro record n of message window win (the table at 0x01869ab0, as TOMacroSetType sets byte 0); callers 0x008c2c60, 0x00a59350; name ours
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
 0x008b8530 function TOIsMessageStatus3Pressed # (i) -> 1 when TOGetMessageStatus(i) == 3 and bit 0x20 of the pad byte 0x025d09d4; name ours
@@ -8416,7 +8421,7 @@
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
-0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570
+0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570; spaces 0x018716b4/b8 computed once: langs 1..8 both trunc(ws*0.7+0.5)/ws, else trunc(ws*0.5+0.5)/ws and the 0.7 one; kind 1/3 the second
 0x008fa6b0 function TOGetFontWidthInPiexl     # fh v3:exact 0x008fa6b0
 0x008fa7b0 function TOGetGsRegWord            # () -> edx:eax 0x2005d40621313e00 (a GS register word); name ours, between TOGetFontWidthInPiexl and TOGetScaleButtonIconWidth
 0x008fa800 function TOGetScaleButtonIconWidth # fh v3:exact 0x008fa800
@@ -8536,6 +8541,7 @@
 0x00905930 function ToMakeBtlEasyEdgeFont     # fh v3:exact+call.cs 0x00905930 cdecl
 0x00905970 function ToMakeBtlEasyEdgeFontA    # fh v3:exact 0x00905970
 0x00905ab0 function ToMakeBtlEasyFont         # fh v3:exact+call.cs 0x00905ab0 cdecl
+0x00905e90 function TOCopyWindowLayout_00905e90 # cdecl(table, i): i < count: entry i (n, then n 12-byte records; layout 0x43 n = 1) memcpy'd to 0x01876148; returns it, else 0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
 0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
