@@ -2190,6 +2190,7 @@ fn input(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32, rec: u32) {
         (ffx_battle::menu::bridge::PARTY.ptr(b).addr, 7),
         (ffx_battle::minor::bridge::DIR_FREE.ptr(b).addr, 1),
         (ffx_battle::menu::bridge::END_FORCED.ptr(b).addr, 1),
+        (ffx_battle::actor::bridge::CHR_SPARE.ptr(b).addr + 0x436, 1),
     ];
     let saved: Vec<Vec<u8>> = keep.iter().map(|&(at, n)| b.read(at, n).unwrap()).collect();
     // its own random stream: the other checks see the same cases with or
@@ -2613,6 +2614,10 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             .map(|_| [0xff, u8::try_from(rng.below(ACTORS)).unwrap()][rng.below(2) as usize])
             .collect();
         poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+        // a free slot (0xff) names the spare record: its +0x436 does not
+        // count
+        let spare = ffx_battle::actor::bridge::CHR_SPARE.ptr(b).addr;
+        poke(a, b, spare + 0x436, &[flag(rng, 2)]);
         for q in 0..ACTORS {
             let p = w.actor(q);
             for o in [0x436, 0x41c, 0xde7, 0x508, 0x432, 0x41d, 0xe13] {
