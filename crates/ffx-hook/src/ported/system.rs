@@ -6075,6 +6075,14 @@ ported! {
         let at = rec.as_mut_ptr() as usize as u32;
         tolib::bridge::to_make_pkt_box_xywh_rgba(&mut mem(), [x, y, w, h, r, g, b, a], at, call_sym);
     }
+    /// `TODrawMenuBG()`.
+    TODrawMenuBG @ 0x008f_5c10 => extern "C" fn to_draw_menu_bg() {
+        tolib::bridge::to_draw_menu_bg(&mut mem(), call_sym);
+    }
+    /// `TOMkpCrossExtMesFontLClut(text, window, x, y, flags, scale, extra)`.
+    TOMkpCrossExtMesFontLClut @ 0x0090_16b0 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut(text: u32, window: u32, x: u32, y: u32, flags: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_mkp_cross_ext_mes_font_l_clut(&mut mem(), [text, window, x, y, flags, scale, extra], call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

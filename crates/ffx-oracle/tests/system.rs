@@ -13814,6 +13814,50 @@ fn round24_boxes_match_the_original_on_the_snapshot() {
     round24_boxes(&mut a, &mut b, &mut Xorshift(0x4024_0012));
 }
 
+/// Round 25's menu background and message-font wrapper over logging
+/// stand-ins.
+fn round25_wrappers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x40, &logger_args(cursor, 9));
+    redirect(a, b, 0x0090_3bb0, s);
+    let s = stand_in8(a, b, 0xc0, &logger_args(cursor, 12));
+    redirect(a, b, 0x0090_1700, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..50u32 {
+        put(a, b, cursor, log);
+        eax(a, 0x008f_5c10, &[]);
+        t::to_draw_menu_bg(b, call);
+        let args: [u32; 7] = std::array::from_fn(|i| {
+            if (2..4).contains(&i) || i >= 5 {
+                (rng.next() % 4000) * 0x0001_0000 + 0x4000_0000
+            } else {
+                rng.next()
+            }
+        });
+        eax(a, 0x0090_16b0, &args);
+        t::to_mkp_cross_ext_mes_font_l_clut(b, args, call);
+        same_memory(&format!("wrappers {k}"), a, b);
+    }
+}
+
+#[test]
+fn round25_wrappers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round25_wrappers(&mut a, &mut b, &mut Xorshift(0x4025_0011));
+}
+
+#[test]
+fn round25_wrappers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round25_wrappers(&mut a, &mut b, &mut Xorshift(0x4025_0012));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

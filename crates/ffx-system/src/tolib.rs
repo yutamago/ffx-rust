@@ -8441,4 +8441,38 @@ pub mod bridge {
         let [x, y, w, h, r, g, b, a] = args;
         int_box(mem, [x, y, w, h], [[r, g, b, a]; 2], rec, &mut call);
     }
+
+    /// `TODrawMenuBG()` (`0x008f5c10`): the menu background, shape -2
+    /// (`TOMkpShapeXYWHUV`) over the box `0, 0` + (`0x00b41d9c`,
+    /// `0x00b41d98`) (512 × 416) with UVs `0, 0`..(`0x00b4a1ac`,
+    /// `0x00b55178`) (1920, 1024), constants read from the image.
+    pub fn to_draw_menu_bg<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let k = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let zero = 0.0f32.to_bits();
+        let (w, h) = (k(mem, 0x00b4_1d9c), k(mem, 0x00b4_1d98));
+        let (u1, v1) = (k(mem, 0x00b4_a1ac), k(mem, 0x00b5_5178));
+        call(
+            mem,
+            0x0090_3bb0,
+            &[0xffff_fffe, zero, zero, w, h, zero, zero, u1, v1],
+        );
+    }
+
+    /// `TOMkpCrossExtMesFontLClut(text, window, x, y, flags, scale, extra)`
+    /// (`0x009016b0`): `TOMkpCrossExtMesFontLClutTypeRGBA` with type 0
+    /// and grey (0x80) colour.
+    pub fn to_mkp_cross_ext_mes_font_l_clut<M: Mem>(
+        mem: &mut M,
+        args: [u32; 7],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [text, window, x, y, flags, scale, extra] = args;
+        call(
+            mem,
+            0x0090_1700,
+            &[
+                text, window, x, y, flags, 0, 0x80, 0x80, 0x80, 0x80, scale, extra,
+            ],
+        );
+    }
 }
