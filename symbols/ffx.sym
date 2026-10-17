@@ -5335,6 +5335,7 @@
 0x007e5660 function op_vec_zero               # (dst) four zero words
 0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
 0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
+0x007e5d40 function op_random_per_call_007e5d40  # structure: () -> op_random_per(); called by two opp draw functions (0x00a6e540, 0x00a744e0); name ours
 0x007e5d50 function op_irandom_p                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b1638 op_irandom_p, 3 votes, round 1
 0x007e5f30 function CopyFields_007e5f30          # auto-port shape (several stores: copy into field, cdecl): t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; u16[a0] = (a1 & 0xffff); u16[(a0 + 0x2)] = (a2 & 0xffff); u16[(a0 + 0x4)] = (a3 & 0xffff); u16[(a0 + 0x6)] = 0xffff; return 0xffff; callers: ; name ours
 0x007e63a0 function op_num                    # fh v3:bsim1.00 0x007e62b0
@@ -5625,6 +5626,8 @@
 0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
 0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
 0x00806b50 function opusPlus0c                # (p) -> p + 0xc
+0x00806b70 function opusTree_FreeSubtree_00806b70 # structure: as opusTree_FreeSubtree_00806bb0, for the other opus container instance; name ours
+0x00806bb0 function opusTree_FreeSubtree_00806bb0 # structure: (node): frees the node's subtree recursively, unless its leaf flag (+0xd) is set, with operator_delete; MSVC map/set node erase of an opus container; twin of 0x00806b70; name ours
 0x00806d70 function opusTree_Max              # (node) the rightmost node below node (+8 until the next is nil)
 0x00806db0 function opusTree_Min              # (node) the leftmost node below node (+0 until the next is nil)
 0x00806e10 function FieldAddr10_00806e10         # auto-port shape (return argument + offset, cdecl): return (a0 + 0x10); callers: no direct caller; name ours
@@ -6061,6 +6064,8 @@
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
 0x0082d910 function Sg_PlayerInitAll          # fh v3:bsim1.00 0x0082d990
 0x0082d990 function Sg_PlayerSetDirFix        # (on, degrees): byte 0x013007c4, f32 0x013007c8 = Angle_Wrap(deg * pi / 180), read by Sg_ControlPlayer; Switch name by position (Player functions) and arguments
+0x0082d9d0 function Sg_PlayerSetDiving           # layout: the two unnamed functions after Sg_PlayerSetDirFix take the Switch player file's names sorting there: Sg_PlayerSetDiving (12 bytes; ours 13, stores byte 0x013007c5) and Sg_PlayerSetSpeed (72; ours 70)
+0x0082d9e0 function Sg_PlayerSetSpeed            # layout: second of the two (see Sg_PlayerSetDiving)
 0x0082da60 function Sg_SetExecFrames          # fh v3:exact 0x0082dae0
 0x0082da90 function Sg_SetExecSpecialSpeed    # fh v3:bsim1.00 0x0082db10
 0x0082daa0 function Sg_SetLRButtonMode        # fh v3:bsim1.00 0x0082db20
@@ -6436,6 +6441,7 @@
 0x0083d920 function Ch_IdGetWater             # chr +0x828 bits 13-14; Switch name, in name order before Ch_IdSetDefPid
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
 0x0083e3e0 function Sg_VectorGetLengthXZ      # (a, b) -> |b - a| in the x-z plane (_CIsqrt); the id map functions
+0x0083e420 function Sg_CalcTriangleNormal_0083e420 # structure: (v0, v1, v2, out) with s16 vertices: the normalised cross product of the two edges (FFXVu0OuterProduct, FFXVu0Normalize); next to Sg_VectorGetLengthXZ; name ours
 0x0083e5c0 function Sg_Debug                  # fh switch:bsim0.93 0x7100429320
 0x0083e8d0 function Sg_IdEventInitAll         # (): clears the id events 0x01301a98..ae4 and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
 0x0083e960 function Sg_IdGetMapTable          # (i) -> g_ChrIdMapTable[i]
@@ -6992,6 +6998,7 @@
 0x008635c0 function AtelSearchReplySignal     # (worker, level) -> the last reply matching the level's wait (+0x2c entry, +0x2e worker, +0x30 level); Script_Run wait state 1
 0x00863620 function AtelClearAllMenuMask      # fh v3:cg2 0x8635c0
 0x00863750 function AtelInitLevelMove         # (worker, level, n): type 1 workers' move (+0x5b8+n*0x4c) and turn (+0x864+n*0x44) blocks reset from the position
+0x00863860 function AtelClearEffectFlag_00863860 # structure: (bit): clears bit n of g_AtelEffectFlags, the reverse of AtelSetEffectFlag; callers two effect natives; name ours
 0x00863880 function AtelClearEffectParam      # fh v3:cg2 0x863820
 0x008638b0 function AtelClearForcePlaceId     # fh v3:bsim1.00 0x00863850
 0x008639e0 function AtelResetLevel            # (worker, n): level back to entry 0 (call depth, header, PC, state, float accumulator 0.0)
@@ -7220,6 +7227,8 @@
 0x00870190 function AtelSetGuideMapDrawFlag      # layout: alphabetical run between AtelSetForcePlaceId and AtelSetHelpEventFlag (3 unnamed in the gap); Switch 0x71004731c0 AtelSetGuideMapDrawFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008701c0 function AtelSetGuideMapForceDrawFlag # layout: alphabetical run between AtelSetForcePlaceId and AtelSetHelpEventFlag (3 unnamed in the gap); Switch 0x71004731e0 AtelSetGuideMapForceDrawFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008701f0 function AtelSetHelpEventFlag      # fh v3:exact 0x00870190
+0x00870240 function AtelSetInWater               # layout: the two unnamed functions between AtelSetHelpEventFlag and AtelSetMCFPInWater take the Switch names sorting there, in order: AtelSetInWater (12 bytes; ours 13, stores byte 0x01326b83) and AtelSetLoveParamDisable (64; ours 42)
+0x00870250 function AtelSetLoveParamDisable      # layout: second of the two (see AtelSetInWater); (i, on): sets or clears bit i (< 8) of the love-parameter disable mask
 0x00870280 function AtelSetMCFPInWater        # fh v3:bsim1.00 0x00870220
 0x008702e0 function AtelSetMenuExecStatus     # fh v3:bsim1.00 0x00870280
 0x008703b0 function AtelSetMoveHokanMode      # fh switch:bsim1.00 0x71004729f0
