@@ -7001,6 +7001,7 @@
 0x00831ca0 function Sg_PLightSetPos           # (i, mask, x, y, z): position (+0) components whose bit 1/2/4 is set; Sg_PLightGetPos reads them
 0x00831ce0 function Sg_PLightSetRadius        # (i, r): f32 +0x20 (Sg_PLightGetRadius's)
 0x00831d00 function Ch_SetShadeByLight        # (v): g_ChrShadeByLight = v; WMainProc's key handler
+0x00831d10 function Ch_DrawQuad               # (m, p2, p3, p4, w, h, y, u0, v0, u1, v1): appends a quad (corners ±h/2, y, ±w/2 through FFXVu0RotTransPers) to graphicShaderGetVertexInfo's vertex, normal, uv and index lists; returns p2; name ours
 0x00831f00 function ch_TextureLoad            # (tex, n) each texture with a base (u16 +0x38 != -1): +0x3a = it, Sg_GsloadSetBase; the DMA calls are no-ops here. fh: v3:cg6 0x831f80
 0x00832050 function Ch_TextureSetBase        # ours: (tex, n, base, i) texture i (or all n with i = -1) gets base: u16 +0x38/+0x3a, Sg_GsloadSetBase; returns base + u16 +0x36 (base -1 stays)
 0x008320e0 function Ch_SysSet6e0             # ours: g_Chr6e0 = v (no reader found)

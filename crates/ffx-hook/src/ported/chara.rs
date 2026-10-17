@@ -1737,4 +1737,22 @@ ported! {
             &mut |_, f, a| st0_cdecl(f, a),
         );
     }
+    /// `Ch_DrawQuad(m, p2, p3, p4, w, h, y, u0, v0, u1, v1)`.
+    Ch_DrawQuad @ 0x0083_1d10 => extern "C" fn ch_draw_quad(
+        m: u32,
+        p2: u32,
+        _p3: u32,
+        _p4: u32,
+        w: u32,
+        h: u32,
+        y: u32,
+        u0: u32,
+        v0: u32,
+        u1: u32,
+        v1: u32,
+    ) -> u32 {
+        p::ch_draw_quad(&mut mem(), m, p2, [w, h], y, [u0, v0, u1, v1], scratch(), &mut |_, f, a| {
+            super::call_cdecl(f, a)
+        })
+    }
 }

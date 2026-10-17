@@ -7078,3 +7078,67 @@ fn round11d_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11e_matches_the_original() {
+    for mut t in twins() {
+        round11e_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
+fn round11e_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_e11e);
+    let fk = Fakes::new(t);
+    let info = fk.fake(t, 0x0064_3db0, 1, 0);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..32u32 {
+        fk.reset(t);
+        let shader = t.alloc(0x100);
+        let vi = t.alloc(0x20);
+        t.put_u32(shader + 0x94, vi);
+        t.put_u32(info, shader);
+        let n = rng.next() % 8;
+        t.put_u32(vi + 4, n);
+        t.put_u32(vi + 8, rng.next() % 12);
+        for (off, size) in [(0xcu32, 12u32), (0x14, 16), (0x18, 8), (0x1c, 2)] {
+            let buf = t.alloc(usize::try_from(size * 32).unwrap());
+            t.put_u32(vi + off, buf);
+        }
+        let m = t.alloc(0x40);
+        for k in 0..16 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(m + 4 * k, v);
+        }
+        let args: Vec<u32> = [m, rng.next(), rng.next(), rng.next()]
+            .into_iter()
+            .chain((0..7).map(|_| f(&mut rng, -4, 4)))
+            .collect();
+        let scratch = t.alloc(p::QUAD_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_1d10);
+        let ra = t.a.call(at, Conv::Cdecl, &args).unwrap();
+        let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+        let rb = p::ch_draw_quad(
+            &mut t.b,
+            args[0],
+            args[1],
+            [args[4], args[5]],
+            args[6],
+            [args[7], args[8], args[9], args[10]],
+            scratch,
+            &mut |m, f, a| call(m, f, a),
+        );
+        assert_eq!(ra.eax, rb, "{}: Ch_DrawQuad {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::QUAD_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_DrawQuad {round} memory",
+            t.name
+        );
+    }
+}

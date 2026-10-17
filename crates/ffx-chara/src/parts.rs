@@ -971,6 +971,103 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `graphicShaderGetVertexInfo()` (`0x00643db0`) and
+    /// `FFXVu0RotTransPers(out, m, v, n)` (`0x006ed840`).
+    pub const GET_VERTEX_INFO: u32 = 0x0064_3db0;
+    pub const ROT_TRANS_PERS: u32 = 0x006e_d840;
+    /// Bytes of scratch `ch_draw_quad` needs: the original's frame
+    /// (offset `0x88 - n` stands for `[ebp - n]`).
+    pub const QUAD_SCRATCH: u32 = 0x88;
+
+    /// `Ch_DrawQuad(m, p2, p3, p4, w, h, y, u0, v0, u1, v1)` (`0x00831d10`):
+    /// appends a quad to the character shader's vertex lists (`+0x94` of
+    /// `graphicShaderGetVertexInfo()`: vertex count `+4`, index count `+8`,
+    /// positions (12 bytes) `+0xc`, normals (16) `+0x14`, texture
+    /// coordinates (8) `+0x18`, `u16` indices `+0x1c`). Its corners (±h/2,
+    /// `y`, ±w/2) go through `m` (`FFXVu0RotTransPers`), the coordinates
+    /// are (u0, v0), (u0, v1), (u1, v1), (u1, v0), the normals (0, 0, 0,
+    /// 1), the two triangles n, n+2, n+1 and n, n+3, n+2. Every float
+    /// through x87. Returns `p2` (what EAX holds); `p3`, `p4` are unused.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ch_draw_quad<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        p2: u32,
+        size: [u32; 2],
+        y: u32,
+        uv: [u32; 4],
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let ld = |b: u32| crate::x87::load(f32::from_bits(b));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let half = |mem: &M, b: u32| {
+            (f64::from(f32::from_bits(b)) * mem.read::<f64>(mem.rebase(0x00b9_2220))) as f32
+        };
+        let at = |n: u32| scratch + 0x88 - n;
+        let (a, b) = (half(mem, size[0]), half(mem, size[1]));
+        let y = ld(y);
+        let corners = [
+            [-b, y, -a, 1.0],
+            [b, y, -a, 1.0],
+            [b, y, a, 1.0],
+            [-b, y, a, 1.0],
+        ];
+        for (k, c) in (0u32..).zip(corners) {
+            for (i, v) in (0u32..).zip(c) {
+                mem.write(at(0x64) + 0x10 * k + 4 * i, v);
+            }
+        }
+        let [u0, v0, u1, v1] = uv.map(ld);
+        for (k, (u, v)) in (0u32..).zip([(u0, v0), (u0, v1), (u1, v1), (u1, v0)]) {
+            mem.write(at(0x24) + 4 * k, u);
+            mem.write(at(0x14) + 4 * k, v);
+        }
+        let info = call(mem, mem.rebase(GET_VERTEX_INFO), &[]);
+        let vi: u32 = mem.read(info.wrapping_add(0x94));
+        let n: u32 = mem.read(vi.wrapping_add(4));
+        let rtp = mem.rebase(ROT_TRANS_PERS);
+        for k in 0..4u32 {
+            let out = at(0x74);
+            call(mem, rtp, &[out, m, at(0x64) + 0x10 * k, 1]);
+            let j = n.wrapping_add(k);
+            for i in 0..3 {
+                let v = crate::x87::load(mem.read::<f32>(out + 4 * i));
+                let base: u32 = mem.read(vi.wrapping_add(0xc));
+                mem.write(base.wrapping_add(j.wrapping_mul(12)).wrapping_add(4 * i), v);
+            }
+            for (i, src) in [at(0x24), at(0x14)].into_iter().enumerate() {
+                let v = crate::x87::load(mem.read::<f32>(src + 4 * k));
+                let base: u32 = mem.read(vi.wrapping_add(0x18));
+                #[allow(clippy::cast_possible_truncation)] // 0 or 1
+                mem.write(
+                    base.wrapping_add(j.wrapping_mul(8))
+                        .wrapping_add(4 * i as u32),
+                    v,
+                );
+            }
+            for (i, v) in (0u32..).zip([0f32, 0.0, 0.0, 1.0]) {
+                let base: u32 = mem.read(vi.wrapping_add(0x14));
+                mem.write(base.wrapping_add(j.wrapping_mul(16)).wrapping_add(4 * i), v);
+            }
+        }
+        let n: u32 = mem.read(vi.wrapping_add(4));
+        let i: u32 = mem.read(vi.wrapping_add(8));
+        for (k, d) in (0u32..).zip([0u32, 2, 1, 0, 3, 2]) {
+            let base: u32 = mem.read(vi.wrapping_add(0x1c));
+            #[allow(clippy::cast_possible_truncation)] // the low half, as stored
+            mem.write(
+                base.wrapping_add(i.wrapping_add(k).wrapping_mul(2)),
+                n.wrapping_add(d) as u16,
+            );
+        }
+        let i: u32 = mem.read(vi.wrapping_add(8));
+        mem.write(vi.wrapping_add(8), i.wrapping_add(6));
+        let n: u32 = mem.read(vi.wrapping_add(4));
+        mem.write(vi.wrapping_add(4), n.wrapping_add(4));
+        p2
+    }
 }
 
 #[cfg(test)]
