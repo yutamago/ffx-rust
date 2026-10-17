@@ -8782,7 +8782,7 @@
 0x00891480 function TOBtlCtrlInfoWin          # fh v3:exact 0x008913f0
 0x00891580 function TOBtlCtrlInfoWinMes       # fh v3:exact 0x008914f0
 0x00891a30 function TOBtlCtrlLibraWindow         # layout: alphabetical run between TOBtlCtrlInfoWinMes and TOBtlCtrlLimitTimer (1 unnamed in the gap); Switch 0x7100494f10 TOBtlCtrlLibraWindow is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00891ac0 function TOBtlCtrlLimitTimer       # fh v3:exact+call.cs 0x00891a30 cdecl
+0x00891ac0 function TOBtlCtrlLimitTimer       # fh v3:exact+call.cs 0x00891a30 cdecl; (): with 0x0133f77c == 2: frames 0x0133f788 += 1, left 0x0133f790 = limit 0x0133f78c - frames/30 (25 in video mode 1); left <= 0: left = shown 0x0133f794 = 0; else shown = (rnd()%10 - 10*ftol(left*-10))/100
 0x00891b80 function TOBtlCtrlLuluLimitWindow  # fh v3:exact 0x00891af0
 0x008920d0 function TOBtlCtrlStatusWin        # fh v3:exact 0x00892040
 0x00892320 function TOBtlCtrlTidusLimitWindow # fh v3:exact 0x00892290
@@ -8824,30 +8824,30 @@
 0x008977c0 function TOBwakkCheckTerm          # g_MagicImports slot 652 (10 overlays): with byte 0x0133c93f 1, TOSeqCheckTermScene(2, "bwakk"); hidden from the dump
 0x008977e0 function TOBgoodCheckTerm          # g_MagicImports slot 653 (10 overlays): TOSeqCheckTermScene(2, "bgood"); hidden from the dump
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
-0x00897860 function TOBtlInitActiveChrCursor     # layout+callees: sorts between TOBtlInit and TOBtlInitAuronLimitWindow, and its named callees match the Switch 0x7100493ec0 TOBtlInitActiveChrCursor's (similarity 1.00: TOSeqGetColor); symbols from Fahrenheit's server export
-0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0
+0x00897860 function TOBtlInitActiveChrCursor     # layout+callees: sorts between TOBtlInit and TOBtlInitAuronLimitWindow, and its named callees match the Switch 0x7100493ec0 TOBtlInitActiveChrCursor's (similarity 1.00: TOSeqGetColor); symbols from Fahrenheit's server export; (): 24 floats 0x0133fa08..0x0133fa64 from 0/1 and the image floats 0x00b49998, 0x00b92340, 0x00b5f048, 0x00b10f38, 0x00b5165c, 0x00b5f044, 0x00b43d28; TOSeqGetColor into 0x0133f7d4, 0x0133fa88/8c/90; caller TOInitBtlWindow; name ours
+0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0; TOSeqGetNum(2, 0x00b5ecbc, 0x0133f778), TOInitPadData, TOBtlInitLimitTimer, 5 words 0x0133d6f4 = 0, TOSeqGetPoint(2, 0x00b5ecc4, +2, +4), dword +6 = 4
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
 0x00897af0 function TOBtlInitEnemyLimit          # layout+callees: sorts between TOBtlInitChrNum and TOBtlInitInfoWinMes, and its named callees match the Switch 0x71004942e0 TOBtlInitEnemyLimit's (similarity 1.00: MsGetChrLimitBarFlag, MsGetChrLimitGauge, MsGetChrLimitGaugeMax); symbols from Fahrenheit's server export
 0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40; battle info window 0x0133f5bc..0x0133f6a2 laid out from graphicUiRemapX2/Y2 of x 700, 1400 and y 101, 109, 160
 0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
 0x00897f00 function TOBtlInitLimitTimer          # structure: (): zeroes the limit timer state 0x0133f77c..0x0133f794, its position from TOSeqGetPoint(2, "dum201"), stops sound effect 0x8000004e if playing; callers are the Tidus/Auron/Lulu limit window init and control functions; Switch TOBtlInitLimitTimer (104 bytes) is the one unused name sorting between TOBtlInitInfoWinMes and TOBtlInitLuluLimitWindow here (with TOBtlInitLibraWindow, which is our TOBtlLibraGetRects 0x00897dc0)
-0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0
+0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0; same start, 0x2c bytes 0x0133d708 cleared, point +2, u16 +6 = 0xc0, colours +8/+0xc, point +0x10
 0x00898010 function TOBtlInitStatusWin        # fh v3:exact 0x00897f80
 0x00898130 function TOBtlInitTargetBit        # fh switch:bsim1.00 0x710049aae0
-0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0
+0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0; same start, 6 words 0x0133d734 = 0, u16 +2/+4/+6 = ftol(graphicUiRemapX2/Y2/X2 of 0x00b5ef70/0x00b5ef98/0x00b5f010), colour +0x14
 0x00898230 function TODum225GetNum            # g_MagicImports slot 655 (10 overlays): TOInitPadData(); TOSeqGetNum(2, "dum225", 0x0133f778); byte 0x0133c93f = 0; hidden from the dump
 0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0
 0x00898330 function TOBtlMakeTargetChrStatusBit # fh v3:exact 0x008982a0
 0x008983f0 function TOBtlMakeTargetCommandBit    # layout: alphabetical run between TOBtlMakeTargetChrStatusBit and TOBtlMakeTargetGroupBit (1 unnamed in the gap); Switch 0x710049b3c0 TOBtlMakeTargetCommandBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400
+0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400; (): 28 masks 0x0133d0e4 cleared; mode = (MsGetComData(0x0133d0d2)+0x1a >> 2) & 3 -> 0x0133d0e0: 0 one per union bit (0x0133d0dc), 1 party 0x0133d0d4 / monsters 0x0133d0d8 by MsGetChrGroup (monsters from mask 20), 2 party in mask 0 and monsters in mask 20, 3 the cursor chr 0x0133d0d0 alone
 0x008985b0 function TOBtlMakeTargetListBit       # layout: alphabetical run between TOBtlMakeTargetGroupBit and TOBtlMakeTargetTargetBit (1 unnamed in the gap); Switch 0x710049ab50 TOBtlMakeTargetListBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00898640 function TOBtlMakeTargetTargetBit  # fh v3:exact 0x008985b0
-0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940
-0x00898ad0 function TOBtlOpenAuronLimitWindow # fh v3:exact 0x00898a40
+0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940; (): unless cmd 0x0133ca4c is 0xffff/0xfffe/0x3002, copies 0x023cc092+1 windows (0xf0 each from 0x0133c952) of cursor state into chr 0x023cc088's 0x168-byte block at 0x0133d788 (0x24 each), flag 0x0133d770[chr] = 1
+0x00898ad0 function TOBtlOpenAuronLimitWindow # fh v3:exact 0x00898a40; cdecl(cmd): level by cmd 0x22/0x32/0x42/0x52 (else 0), timer 0x0133f77c=1 with NkzGetAuronLimitTime in 0x0133f78c/90/94, NkzGetAuronLimitButtonData -> 0x0133d704 and its 0xffff-terminated length -> 0x0133d700, u16 0x0133d6f4=1; returns 1
 0x00898bd0 function TOBtlOpenLibraWindow      # fh v3:exact 0x00898b40
-0x00898bf0 function TOBtlOpenLuluLimitWindow  # fh v3:exact 0x00898b60
+0x00898bf0 function TOBtlOpenLuluLimitWindow  # fh v3:exact 0x00898b60; cdecl(cmd): group cmd-0x3078, timer as Auron's, NkzSetLuluLimitTbl, 0x0133d71e = byte 0x0133f798, u16 0x0133d71c=3, byte 0x0133d71f=1, u16 0x0133d708=1; returns 1
 0x00898c60 function TOBtlOpenSignWindow       # fh v3:exact 0x00898bd0
-0x00898ca0 function TOBtlOpenTidusLimitWindow # fh v3:exact 0x00898c10
+0x00898ca0 function TOBtlOpenTidusLimitWindow # fh v3:exact 0x00898c10; cdecl(cmd): level by cmd 0x20/0x30/0x40/0x50, timer, window 0x0133d734: +0x10 TableB, +0xe = +2, +0xc TableA, +8/+0xa = +2 + (+6)/2 -/+ A/2, +0 = 1; returns 1
 0x00898dc0 function TOBwakkStart              # g_MagicImports slot 656 (10 overlays): 0x0133f520 = 0; TOSeqStartSceneDrawContinue(2, "bwakk"); byte 0x0133c93f = 1; hidden from the dump
 0x00898df0 function TOBtlPadScrollDown        # fh v3:exact 0x00898d60; 0x0133c938 == 0: 0x0133f7a8 = w+0x3c; w+0x3c += TOGetLineFeedHeight(), w+0x88 = 0x00898e40
 0x00898e20 function TOBtlPadScrollUp          # fh v3:exact 0x00898d90; w+0x3c -= TOGetLineFeedHeight(), w+0x88 = 0x00898e40 (ret)
@@ -9109,7 +9109,8 @@
 0x008af730 function TOMessageSlotCursor_008af730 # cdecl(i, x, y, v): +0x18 part bytes +2/+3 = x, y clamped 0..7, +0x10/+0xc = v; +0x14 part handler 0x008b62b0; name ours
 0x008af7d0 function TOSetMessageWindowActive  # (i): u16 +6 of the 8 message-window objects (0x01865b3c) to 0, then window i's to 1; leaves its object in eax; name ours (TOSet... by the file's alphabetical order)
 0x008af840 function TOSetMessageWindowMode    # (v): g_MessageWindowMode = v, returns v; name ours (TOGetMessageWindowMode's setter, in the file's order)
-0x008af850 function TOSetMessageWindowPosition   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004f9960 TOSetMessageWindowPosition, 2 votes, round 2
+0x008af850 function TOSetMessageWindowPosition   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004f9960 TOSetMessageWindowPosition, 2 votes, round 2; cdecl(i, anchor, x, y): stores anchor/x/y (obj +0xc/+8/+0xa, record +0x18/+0x14/+0x16), size = record +0x40/+0x42 + padding (tutorial choice 0x025d16bc: >0x190 wide becomes 300 x rows, flag 0x025d0b20[i]), anchor 1-4 moves, clamps (not magic 0x281 on maps 0x5e/0x12e, nor type 1 with 0x01327104 set), then TOPlaceMessageWindow
+0x008afa90 function TOSetMessageWindowRect    # cdecl(i, anchor, x, y, w, h): anchor 1-4 moves by w/h, w 0..0x200, h 4..0x19c, x 0..0x200-w, y 4..0x19c-h, then TOPlaceMessageWindow; the sized sibling of TOSetMessageWindowPosition; name ours
 0x008afb90 function TOSetMessageWindowValue   # (i, v): u16 +4 of window i's object = v; name ours
 0x008afbb0 function TOPlaceMessageWindow      # cdecl(i, x, y, w, h): padding 0x00c59ed8[style] off/on around ftol (mode != 1), map 0x17 (400,0x110) -45/+5, screen h >= 0x2d0 keeps it in y 31.2..384.8 and x 38.4..473.6 (type 1: 7.5%..92.5% of the width via h/416 and the 4:3 offset, +-10), TOSetWindowRect (map 0x15b 0x1d8x0xf6 -> 0x1ba wide), TOSetMessageArea_008b8b20 padded; callers 0x008af..; name ours
 0x008b0020 function TOMessageSlotMode1_008b0020 # cdecl(i, a, b, c): message slot i: +0x14 part +0x1c = 1, +0x18 part bytes 1/2/3/7/6 = 0, a, b, 0, c, handler +0xfc = 0x008b64e0; name ours
