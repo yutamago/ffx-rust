@@ -7476,3 +7476,245 @@ fn round11_system_functions_match_the_original_on_the_snapshot() {
     };
     round11(&mut a, &mut b, &mut Xorshift(0x4011_0002));
 }
+
+/// Round 12: the next logic-class system functions.
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::items_after_statements
+)] // one script; a, b: the oracles; the callback adapters sit by their use
+fn round12(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let orig = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().eax
+    };
+    // texture files registered and copied
+    let file = alloc(a, b, 0x400);
+    for slot in 0..8u16 {
+        for version in [0xc7u16, 0xc8] {
+            let bytes: Vec<u8> = (0..0x400).map(|_| (rng.next() & 0xff) as u8).collect();
+            a.write(file, &bytes).unwrap();
+            b.write(file, &bytes).unwrap();
+            put(a, b, file + 4, version);
+            put(a, b, file + 8, slot);
+            put(a, b, file + 0x20, 0x100u32);
+            put(a, b, file + 0x24, rng.next() % 0x100);
+            put(a, b, file + 0x30, 0x200u32);
+            put(a, b, file + 0x10, rng.next() % 0x100);
+            assert_eq!(
+                eax(a, 0x008a_c130, &[file]),
+                t::ftc_transfer(b, file),
+                "{slot} {version:#x}"
+            );
+            same_memory("texture files", a, b);
+        }
+    }
+    // the player list over stand-ins: party and reserve arrays with
+    // counts, the joined test a bit mask
+    let cells = alloc(a, b, 0x40);
+    let party = cells + 0x10;
+    let reserve = cells + 0x20;
+    for (k, (f, list)) in [(0x0078_5270u32, party), (0x0078_52d0, reserve)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = u32::try_from(k).unwrap();
+        // mov eax, [esp+4]; mov ecx, [cells + 4k]; mov [eax], ecx; mov eax, list; ret
+        let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+        code.extend_from_slice(&(cells + 4 * k).to_le_bytes());
+        code.extend_from_slice(&[0x89, 0x08, 0xb8]);
+        code.extend_from_slice(&list.to_le_bytes());
+        code.push(0xc3);
+        let s = stand_in8(a, b, 0xa00 + 0x20 * k, &code);
+        redirect(a, b, f, s);
+    }
+    let mut code = vec![0x8b, 0x4c, 0x24, 0x04, 0xa1];
+    code.extend_from_slice(&(cells + 8).to_le_bytes());
+    code.extend_from_slice(&[0xd3, 0xe8, 0x83, 0xe0, 0x01, 0xc3]);
+    let join = stand_in8(a, b, 0xa40, &code);
+    redirect(a, b, 0x0078_53a0, join);
+    struct Players<'f>(&'f dyn Fn(&mut Oracle, u32, &[u32]) -> u32);
+    impl t::PlayerList<Oracle> for Players<'_> {
+        fn in_party(&mut self, m: &mut Oracle, c: u32) -> u32 {
+            (self.0)(m, 0x0078_5270, &[c])
+        }
+        fn out_party(&mut self, m: &mut Oracle, c: u32) -> u32 {
+            (self.0)(m, 0x0078_52d0, &[c])
+        }
+        fn joined(&mut self, m: &mut Oracle, c: u32) -> u32 {
+            (self.0)(m, 0x0078_53a0, &[c])
+        }
+    }
+    let count = alloc(a, b, 4);
+    for _ in 0..12 {
+        put(a, b, cells, [rng.next() % 5, rng.next() % 5, rng.next()]);
+        for k in 0..16u32 {
+            put(
+                a,
+                b,
+                party + k,
+                [0xffu8, 7, 0, 1, 2, 3, 4, 5, 6][(rng.next() % 9) as usize],
+            );
+        }
+        let flags = [0u32, 0x1_0000, 0x2_0003][(rng.next() % 3) as usize];
+        eax(a, 0x008a_8f40, &[flags]);
+        t::player_list_init(b, flags, count, &mut Players(&orig));
+        let v: u32 = Mem::read(b, count);
+        Mem::write(a, count, v);
+        same_memory("player list", a, b);
+    }
+    // the battle info window, the remaps through the render module's
+    // originals on b
+    assert_eq!(
+        eax(a, 0x0089_7bd0, &[]),
+        t::btl_init_info_win_mes(b, |m, y, v| {
+            let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+            let r = m
+                .call(at, Conv::Cdecl, &[v.to_bits()])
+                .unwrap()
+                .st0
+                .unwrap();
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let r = r as f32;
+            r
+        })
+    );
+    same_memory("battle info window", a, b);
+    // message-window priorities
+    let slots = window::bridge::MSG_WINDOW_SLOTS.ptr(b).addr;
+    let out = alloc(a, b, 0x10);
+    for _ in 0..20 {
+        for k in 0..8u32 {
+            let s = alloc(a, b, 8);
+            put(
+                a,
+                b,
+                s,
+                [
+                    u16::try_from(rng.next() % 3).unwrap(),
+                    0,
+                    u16::try_from(rng.next() % 9).unwrap().wrapping_sub(4),
+                    0,
+                ],
+            );
+            put(a, b, slots + 4 * k, s);
+        }
+        assert_eq!(
+            eax(a, 0x008b_00a0, &[out]),
+            t::sort_message_window_priority(b, out)
+        );
+        same_memory("message priorities", a, b);
+    }
+    // character widths: TOGetFFXLang from a cell, width tables filled
+    let lang_cell = alloc(a, b, 4);
+    let mut code = vec![0xa1];
+    code.extend_from_slice(&lang_cell.to_le_bytes());
+    code.push(0xc3);
+    let get_lang = stand_in8(a, b, 0xa60, &code);
+    redirect(a, b, 0x0064_10e0, get_lang);
+    let tex = t::TEXTURES.ptr(b).addr;
+    for slot in 0..6u32 {
+        let tbl = random_block(a, b, rng, 0x2400);
+        put(
+            a,
+            b,
+            tex + 16 * slot + 4,
+            if slot == 5 && rng.next().is_multiple_of(2) {
+                0
+            } else {
+                tbl + 0x400
+            },
+        );
+    }
+    let wh = alloc(a, b, 8);
+    struct Fw<'f>(&'f dyn Fn(&mut Oracle, u32, &[u32]) -> u32, u32);
+    impl t::FontWidth<Oracle> for Fw<'_> {
+        fn screen_wh(&mut self, m: &mut Oracle) -> (i32, i32) {
+            (self.0)(m, 0x0064_0db0, &[self.1, self.1 + 4]);
+            (Mem::read(m, self.1), Mem::read(m, self.1 + 4))
+        }
+        fn lang(&mut self, m: &mut Oracle) -> u32 {
+            (self.0)(m, 0x0064_10e0, &[])
+        }
+        fn width(&mut self, m: &mut Oracle, w: f32, s: f32) -> f32 {
+            let wh = self.1;
+            t::font_width_in_pixel(m, w, s, |m| {
+                let at = m.rebase(0x0064_0db0);
+                m.call(at, Conv::Cdecl, &[wh, wh + 4]).unwrap();
+                (Mem::read(m, wh), Mem::read(m, wh + 4))
+            })
+        }
+        fn space(&mut self, m: &mut Oracle, k: u32) -> f32 {
+            let wh = self.1;
+            t::font_space_in_pixel(
+                m,
+                k,
+                |m| {
+                    let at = m.rebase(0x0064_10e0);
+                    m.call(at, Conv::Cdecl, &[]).unwrap().eax
+                },
+                |m| {
+                    let at = m.rebase(0x0064_0db0);
+                    m.call(at, Conv::Cdecl, &[wh, wh + 4]).unwrap();
+                    (Mem::read(m, wh), Mem::read(m, wh + 4))
+                },
+            )
+        }
+    }
+    let text = alloc(a, b, 0x10);
+    let width = alloc(a, b, 4);
+    for n in 0..300 {
+        let mut bytes: Vec<u8> = (0..8)
+            .map(|_| {
+                [
+                    4u8, 6, 0x26, 0x27, 0x28, 0x2a, 0x2c, 0x2f, 0x30, 0x47, 0x47, 0x50, 0x10,
+                ][(rng.next() % 13) as usize]
+            })
+            .collect();
+        bytes.push(0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        put(a, b, lang_cell, [0u32, 1, 9, 10][(rng.next() % 4) as usize]);
+        set(a, b, t::FONT_ASPECT_ON, rng.next() % 2);
+        set(
+            a,
+            b,
+            t::FONT_SCALES,
+            [[0.0f32, 3.75][(rng.next() % 2) as usize], 2.5],
+        );
+        set(
+            a,
+            b,
+            t::FONT_SPACES,
+            [[0.0f32, 4.0][(rng.next() % 2) as usize], 6.0],
+        );
+        let kind = rng.next() % 5;
+        let table = rng.next() % 5; // table 5 may be null; the original only checks it for code 6
+        put(a, b, width, rng.next() % 64);
+        assert_eq!(
+            eax(a, 0x008b_9330, &[text, kind, width, table]),
+            t::font_width(b, text, kind, width, table, &mut Fw(&orig, wh)),
+            "{n} {bytes:x?}"
+        );
+        let v: [u32; 2] = Mem::read(b, wh);
+        Mem::write(a, wh, v);
+        same_memory("character widths", a, b);
+    }
+}
+
+#[test]
+fn round12_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round12(&mut a, &mut b, &mut Xorshift(0x4012_0001));
+}
+
+#[test]
+fn round12_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round12(&mut a, &mut b, &mut Xorshift(0x4012_0002));
+}

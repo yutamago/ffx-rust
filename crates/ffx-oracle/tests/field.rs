@@ -9984,3 +9984,413 @@ fn round18_abmap_and_nkz_match_the_original() {
         );
     }
 }
+
+/// `mov eax, [esp + 4]; and eax, 7; shl eax, 6; add eax, base; ret`: an
+/// excel lookup stand-in, row `i & 7` of 64-byte rows at `base`.
+fn excel_rows_stub(base: u32) -> Vec<u8> {
+    let mut c = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x06, 0x05,
+    ];
+    c.extend_from_slice(&base.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 19: items over the sphere grid (the iterators' wrappers with
+/// their original callbacks, and the callbacks themselves) and the node
+/// kinds' shapes, the excel lookups and item records stood in.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round19_abmap_items_and_kinds_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (heldv, recv, specv, rows) = (t.alloc(4), t.alloc(4), t.alloc(4), t.alloc(0x200));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(abmap::MS_GET_SAVE_ITEM_NUM),
+            log_stub(env.log, heldv, 190, 1),
+        ),
+        (
+            Some(abmap::MS_GET_ROM_ITEM),
+            log_stub_from(env.log, recv, 191, 0, 1),
+        ),
+        (Some(abmap::MS_GET_EXCEL_DATA), excel_rows_stub(rows)),
+        (
+            Some(abmap::ABMAP_SPECIAL_EFFECT),
+            log_stub(env.log, specv, 192, 4),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let rec = t.alloc(0x60);
+    t.put(recv, rec);
+    let shapes: Vec<u32> = (0..8).map(|_| t.alloc(0x40)).collect();
+    let tables = t.b.rebase(abmap::KIND_SHAPE_TABLES);
+    let classes = t.b.rebase(abmap::SIZE_CLASS_SHAPES);
+    for k in 0..30u32 {
+        env.reset(&mut t, &mut rng);
+        t.fill(rows, 0x200, &mut rng);
+        for r in 0..8 {
+            t.put(rows + 0x40 * r + 0x16, u8::try_from(rng.below(20)).unwrap());
+            let fl = match rng.below(3) {
+                0 => 0u16,
+                1 => 0x8000 | u16::try_from(rng.below(0x100)).unwrap(),
+                _ => u16::try_from(1 + rng.below(0x7fff)).unwrap(),
+            };
+            t.put(rows + 0x40 * r + 0x10, fl);
+            t.put(
+                rows + 0x40 * r + 0xc,
+                if rng.below(3) == 0 { 0x20u8 } else { 1 },
+            );
+            t.put(rows + 0x40 * r + 0xd, u8::try_from(rng.below(3)).unwrap());
+        }
+        t.fill(rec, 0x60, &mut rng);
+        t.put(
+            rec + 0x5d,
+            if rng.below(4) == 0 {
+                0xffu8
+            } else {
+                u8::try_from(rng.below(8)).unwrap()
+            },
+        );
+        // the grid
+        let (nodes, links) = (rng.range(1, 30), rng.range(0, 40));
+        t.put(grid + 2, i16::try_from(nodes).unwrap());
+        t.put(grid + 4, i16::try_from(links).unwrap());
+        for n in 0..31u32 {
+            let nd = grid + 0x808 + 0x28 * n;
+            t.fill(nd, 0x28, &mut rng);
+            for s in 0..5u32 {
+                let l = if rng.below(2) == 0 {
+                    0
+                } else {
+                    grid + 0xa808 + 0x14 * rng.below(40)
+                };
+                t.put(nd + 0xc + 4 * s, l);
+            }
+        }
+        for l in 0..41u32 {
+            let at = grid + 0xa808 + 0x14 * l;
+            t.fill(at, 0x14, &mut rng);
+            t.put(at, u16::try_from(rng.below(31)).unwrap());
+            t.put(at + 2, u16::try_from(rng.below(31)).unwrap());
+        }
+        t.put(heldv, rng.below(3));
+        t.put(specv, rng.next());
+        let chr = rng.below(7);
+        let node = grid + 0x808 + 0x28 * rng.below(u32::try_from(nodes).unwrap());
+        let item = rng.next();
+        let work = t.stack_scratch(0);
+        t.same(
+            "AbmapItemUsableAt",
+            |o| o.eax(0x00a4_9310, &[chr, node, item]),
+            |o| abmap::bridge::abmap_item_usable_at(o, [chr, node, item], work, call),
+        );
+        let mark = rng.next();
+        t.same(
+            "AbmapItemApplyAt",
+            |o| o.eax(0x00a5_b400, &[chr, node, item, mark]),
+            |o| abmap::bridge::abmap_item_apply_at(o, [chr, node, item, mark], work, call),
+        );
+        // the callbacks on their own
+        let ctx = t.alloc(0x14);
+        t.put(ctx, rows + 0x40 * rng.below(8));
+        t.put(ctx + 4, chr);
+        t.put(ctx + 8, 1u32 << chr);
+        t.put(ctx + 0xc, rng.next() & 0xff);
+        t.put(ctx + 0x10, u8::try_from(rng.below(0x100)).unwrap());
+        t.same(
+            "AbmapItemNodeEffect",
+            |o| o.eax(0x00a4_9440, &[node, ctx]),
+            |o| abmap::bridge::abmap_item_node_effect(o, node, ctx, work, call),
+        );
+        t.same(
+            "AbmapItemApplyNode",
+            |o| o.eax(0x00a5_b490, &[node, ctx]),
+            |o| abmap::bridge::abmap_item_apply_node(o, node, ctx, work, call),
+        );
+        // the kinds' shapes
+        if k % 3 == 0 {
+            for &s in &shapes {
+                t.fill(s, 0x40, &mut rng);
+                t.put(s + 0x10, i16::try_from(rng.range(0, 0x20)).unwrap());
+                t.put(s + 0x20, i16::try_from(rng.range(-0x200, 0x200)).unwrap());
+                t.put(s + 0x2c, i16::try_from(rng.range(-0x200, 0x400)).unwrap());
+            }
+            // every entry is read (`+0x10`), so none is null
+            for i in 0..40 {
+                t.put(tables + 4 * i, shapes[rng.below(8) as usize]);
+            }
+            for i in 0..3 {
+                t.put(classes + 4 * i, shapes[rng.below(8) as usize]);
+            }
+            t.same(
+                "AbmapSetupKindShapes",
+                |o| o.eax(0x00a5_b230, &[]),
+                |o| abmap::bridge::abmap_setup_kind_shapes(o, work, call),
+            );
+        }
+    }
+}
+
+/// Copies the three words at `src` through its three pointer arguments
+/// (`graphicGetFogColor`'s shape).
+fn fill3_stub(src: u32) -> Vec<u8> {
+    let mut c = vec![];
+    for i in 0..3u8 {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, 4 + 4 * i, 0x8b, 0x0d]);
+        c.extend_from_slice(&(src + 4 * u32::from(i)).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x08]);
+    }
+    c.push(0xc3);
+    c
+}
+
+/// `fld dword [at]; ret`: a stand-in returning a float in ST0.
+fn fld_stub(at: u32) -> Vec<u8> {
+    let mut c = vec![0xd9, 0x05];
+    c.extend_from_slice(&at.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Rounds 19 and 20: fog and background colour, the PC renderer's getters and
+/// setters stood in.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round19_fog_and_back_colour_match_the_original() {
+    use yi::fog;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_0002);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (gets, magicv, rgb) = (t.alloc(0xc), t.alloc(4), t.alloc(0xc));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(fog::GET_NEAR), fld_stub(gets)),
+        (Some(fog::GET_FAR), fld_stub(gets + 4)),
+        (Some(fog::GET_LIMIT), fld_stub(gets + 8)),
+        (Some(fog::SET_COLOUR), log_stub(log, rv, 195, 3)),
+        (Some(fog::SET_NEAR), log_stub(log, rv, 196, 1)),
+        (Some(fog::SET_FAR), log_stub(log, rv, 197, 1)),
+        (Some(fog::SET_LIMIT), log_stub(log, rv, 198, 1)),
+        (Some(fog::SET_FOG_643180), log_stub(log, rv, 199, 1)),
+        (Some(fog::SET_BACKGROUND), log_stub(log, rv, 200, 4)),
+        (Some(fog::SET_DISTORTION), log_stub(log, rv, 201, 1)),
+        (Some(fog::MAGIC_GET_ID), log_stub(log, magicv, 202, 0)),
+        (Some(fog::GET_COLOUR), fill3_stub(rgb)),
+        (Some(fog::GET_AMBIENT), fill3_stub(rgb)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (out, c) = (t.alloc(0x10), t.alloc(0x10));
+    let at = |t: &Twin, a: u32| t.b.rebase(a);
+    for k in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        t.set(
+            yi::CURRENT_MAP,
+            if k % 2 == 0 {
+                fog::PC_FOG_MAP
+            } else {
+                rng.below(0x200)
+            },
+        );
+        t.set(yi::RENDER_STATUS, rng.next());
+        t.put(at(&t, fog::SCALE), float_in(&mut rng, 1, 64));
+        for a in [fog::LIMIT, fog::NEAR, fog::FAR] {
+            let v = if k % 7 == 3 {
+                rng.next()
+            } else {
+                float_in(&mut rng, -100, 4000)
+            };
+            t.put(at(&t, a), v);
+        }
+        for i in 0..3 {
+            t.put(gets + 4 * i, float_in(&mut rng, -100, 4000));
+        }
+        t.fill(out, 0xc, &mut rng);
+        t.same(
+            "yiGetFogParam",
+            |o| o.void(0x0090_8bb0, &[out, out + 4, out + 8]),
+            |m| yi::bridge::yi_get_fog_param(m, [out, out + 4, out + 8], fcall),
+        );
+        for i in 0..4 {
+            let v = match rng.below(3) {
+                0 => rng.below(0x100),
+                1 => rng.next(),
+                _ => rng.range(-300, 300).cast_unsigned(),
+            };
+            t.put(c + 4 * i, v);
+        }
+        t.put(
+            magicv,
+            if rng.below(3) == 0 {
+                fog::MAGIC_KEEP_BACK
+            } else {
+                rng.below(0x400)
+            },
+        );
+        t.put(at(&t, fog::COLOUR), rng.next());
+        for i in 0..3 {
+            let v = if k % 9 == 5 {
+                rng.next()
+            } else {
+                float_in(&mut rng, -8, 24)
+            };
+            t.put(rgb + 4 * i, v);
+        }
+        for i in 0..4 {
+            let sc = at(&t, 0x018d_f00c) + 4 * i;
+            t.put(sc, float_in(&mut rng, -16, 48));
+            let of = at(&t, 0x018d_f01c) + 4 * i;
+            t.put(of, float_in(&mut rng, -2000, 2000));
+        }
+        t.fill(out, 0x10, &mut rng);
+        let work = t.stack_scratch(0);
+        t.same(
+            "yiGetFogColor",
+            |o| o.eax(0x0090_8980, &[out]),
+            |m| yi::bridge::yi_get_fog_color(m, out, work, call),
+        );
+        t.same(
+            "yiSetBackColor",
+            |o| o.void(0x0090_a040, &[c]),
+            |m| yi::bridge::yi_set_back_color(m, c, call),
+        );
+        t.same(
+            "yiSetFogColor",
+            |o| o.void(0x0090_a2c0, &[c]),
+            |m| yi::bridge::yi_set_fog_color(m, c, call),
+        );
+        let args = if k % 5 == 4 {
+            [rng.next(), rng.next(), rng.next()]
+        } else {
+            [
+                float_in(&mut rng, -100, 4000),
+                float_in(&mut rng, -100, 4000),
+                float_in(&mut rng, -10, 300),
+            ]
+        };
+        t.same(
+            "yiSetFogParam",
+            |o| o.void(0x0090_a350, &args),
+            |m| yi::bridge::yi_set_fog_param(m, args, call),
+        );
+        t.same(
+            "yiDisableHamonEff",
+            |o| o.eax(0x0090_8450, &[]),
+            |m| yi::bridge::yi_disable_hamon_eff(m, call),
+        );
+    }
+}
+
+/// Round 20: the sphere grid's pad slides, rectangle tweens, node flag
+/// masks and the empty-menu marks.
+#[test]
+fn round20_abmap_pads_and_tweens_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (spv, maxv) = (t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(abmap::MS_GET_SAVE_SP), log_stub(log, spv, 210, 1)),
+        (
+            Some(abmap::TO_AMAP_MAKE_ITEM_LIST),
+            log_stub(log, rv, 211, 1),
+        ),
+        (
+            Some(abmap::TO_AMAP_GET_ITEM_LIST_MAX),
+            log_stub(log, maxv, 212, 0),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let pads = t.alloc(0x340 * 4);
+    t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
+    for k in 0..300u32 {
+        env.reset(&mut t, &mut rng);
+        t.fill(pads, 0x340 * 4, &mut rng);
+        let pad = rng.below(4);
+        let p = pads + 0x340 * pad;
+        t.put(p + 0x23, u8::try_from(rng.below(2)).unwrap());
+        if rng.below(2) == 0 {
+            t.put(p + 0x34, 0u32);
+        }
+        t.put(
+            p + 0x29,
+            u8::try_from(rng.below(4)).unwrap() + if k % 7 == 0 { 0xfc } else { 0 },
+        );
+        t.same(
+            "AbmapPadStartSlideOut",
+            |o| o.void(0x00a4_8c20, &[pad]),
+            |m| abmap::bridge::abmap_pad_start_slide_out(m, pad),
+        );
+        t.same(
+            "AbmapPadStartSlideIn",
+            |o| o.void(0x00a4_8f20, &[pad]),
+            |m| abmap::bridge::abmap_pad_start_slide_in(m, pad),
+        );
+        t.put(p + 0x29, u8::try_from(rng.below(4)).unwrap());
+        t.same(
+            "AbmapPadSlideOutStep",
+            |o| o.void(0x00a5_9800, &[p]),
+            |m| abmap::bridge::abmap_pad_slide_out_step(m, p),
+        );
+        t.put(p + 0x29, u8::try_from(rng.below(4)).unwrap());
+        t.same(
+            "AbmapPadSlideInStep",
+            |o| o.void(0x00a5_a270, &[p]),
+            |m| abmap::bridge::abmap_pad_slide_in_step(m, p),
+        );
+        t.put(p + 0x32, u8::try_from(rng.below(5)).unwrap());
+        t.same(
+            "AbmapRectTweenIn",
+            |o| o.void(0x00a5_a080, &[p]),
+            |m| abmap::bridge::abmap_rect_tween_in(m, p),
+        );
+        t.put(p + 0x32, u8::try_from(rng.below(5)).unwrap());
+        t.same(
+            "AbmapRectTweenOut",
+            |o| o.void(0x00a5_a170, &[p]),
+            |m| abmap::bridge::abmap_rect_tween_out(m, p),
+        );
+        // the nodes
+        let nodes = rng.below(40);
+        t.put(grid + 2, u16::try_from(nodes).unwrap());
+        t.fill(grid + 0x808, 0x28 * 41, &mut rng);
+        for n in 0..41 {
+            if rng.below(3) == 0 {
+                t.put(grid + 0x808 + 0x28 * n + 6, -1i16);
+            }
+        }
+        let mask = rng.next();
+        t.same(
+            "AbmapMaskNodeFlags",
+            |o| o.void(0x00a4_7400, &[mask]),
+            #[allow(clippy::cast_possible_truncation)]
+            |m| abmap::bridge::abmap_mask_node_flags(m, mask as u8),
+        );
+        // the menus
+        t.put(pads + 0x16de, i16::try_from(rng.range(-2, 6)).unwrap());
+        t.put(
+            grid + abmap::CURRENT_CHR,
+            u8::try_from(rng.below(7)).unwrap(),
+        );
+        t.put(spv, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.put(maxv, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.same(
+            "AbmapMarkEmptyMenus",
+            |o| o.eax(0x00a5_aca0, &[]),
+            |m| abmap::bridge::abmap_mark_empty_menus(m, call),
+        );
+    }
+}

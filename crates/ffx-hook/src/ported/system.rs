@@ -204,6 +204,33 @@ impl<M> tolib::bridge::SummonList<M> for GameMenu {
     }
 }
 
+impl<M> tolib::bridge::PlayerList<M> for GameMenu {
+    fn in_party(&mut self, mem: &mut M, count: u32) -> u32 {
+        call_sym(mem, 0x0078_5270, &[count])
+    }
+    fn out_party(&mut self, mem: &mut M, count: u32) -> u32 {
+        call_sym(mem, 0x0078_52d0, &[count])
+    }
+    fn joined(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0078_53a0, &[chr])
+    }
+}
+
+impl<M: Mem> tolib::bridge::FontWidth<M> for GameMenu {
+    fn screen_wh(&mut self, mem: &mut M) -> (i32, i32) {
+        font_screen_wh(mem)
+    }
+    fn lang(&mut self, mem: &mut M) -> u32 {
+        instance::bridge::ffx_lang(mem, &mut phyre_printf)
+    }
+    fn width(&mut self, mem: &mut M, width: f32, scale: f32) -> f32 {
+        font_width(mem, width, scale)
+    }
+    fn space(&mut self, mem: &mut M, kind: u32) -> f32 {
+        font_space(mem, kind)
+    }
+}
+
 impl<M> tolib::bridge::MenuMusic<M> for GameMenu {
     fn keep_white_in_out(&mut self, mem: &mut M) -> u32 {
         call_sym(mem, 0x0086_bc30, &[])
@@ -4211,6 +4238,32 @@ ported! {
     /// `TOSummonListInit()`.
     TOSummonListInit_008a9090 @ 0x008a_9090 => extern "C" fn to_summon_list_init() {
         tolib::bridge::summon_list_init(&mut mem(), &mut GameMenu);
+    }
+    /// `TOFTCTransfer(file)`.
+    TOFTCTransfer @ 0x008a_c130 => extern "C" fn to_ftc_transfer(file: u32) -> u32 {
+        tolib::bridge::ftc_transfer(&mut mem(), file)
+    }
+    /// `TOPlayerListInit(flags)`.
+    TOPlayerListInit_008a8f40 @ 0x008a_8f40 => extern "C" fn to_player_list_init(flags: u32) {
+        let mut count = 0i32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(count) as u32;
+        tolib::bridge::player_list_init(&mut mem(), flags, at, &mut GameMenu);
+        std::hint::black_box(&mut count);
+    }
+    /// `TOBtlInitInfoWinMes()`.
+    TOBtlInitInfoWinMes @ 0x0089_7bd0 => extern "C" fn to_btl_init_info_win_mes() -> u32 {
+        tolib::bridge::btl_init_info_win_mes(&mut mem(), |_, y, v| {
+            if y { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) }
+        })
+    }
+    /// `TOSortMessageWindowPriority(out)`.
+    TOSortMessageWindowPriority @ 0x008b_00a0 => extern "C" fn to_sort_message_window_priority(out: u32) -> u32 {
+        tolib::bridge::sort_message_window_priority(&mut mem(), out)
+    }
+    /// `TOGetFontWidth(text, kind, &width, table)`.
+    TOGetFontWidth @ 0x008b_9330 => extern "C" fn to_get_font_width(text: u32, kind: u32, out: u32, table: u32) -> u32 {
+        tolib::bridge::font_width(&mut mem(), text, kind, out, table, &mut GameMenu)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
