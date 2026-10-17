@@ -530,6 +530,49 @@ pub mod bridge {
         b
     }
 
+    /// `pppDataSetTex_007628c0(data, base, a, b)` (`0x007628c0`): walks
+    /// the records as [`ppp_data_last_pair`] does; a record of kind 2, 3,
+    /// 6 or 7 gets the first two words of the 12-byte texture record
+    /// `u8 +4 + base` of `0x00d4be38` (`g_pppPmcomTexRecs`) at
+    /// `+8` and `+0xc`, and the last such pair goes to `a` and `b` (0 for
+    /// none). Returns `b`, as left in `eax`.
+    pub fn ppp_data_set_tex(mem: &mut impl Mem, data: u32, base: u32, a: u32, b: u32) -> u32 {
+        let table = Global::<u32>::new(0x00d4_be38).ptr(mem).addr;
+        let mut rec = data.wrapping_add(mem.read::<u32>(data.wrapping_add(4)));
+        let (mut first, mut second) = (0u32, 0u32);
+        loop {
+            let kind: i8 = mem.read(rec.wrapping_add(1));
+            if kind == -1 {
+                break;
+            }
+            let (size, tex) = match kind {
+                0 => (20, false),
+                1 => (28, false),
+                2 => (32, true),
+                3 | 6 => (40, true),
+                4 => (24, false),
+                5 => (32, false),
+                7 => (48, true),
+                _ => (0, false),
+            };
+            if tex {
+                let i = u32::from(mem.read::<u8>(rec.wrapping_add(4))).wrapping_add(base);
+                let at = table.wrapping_add(i.wrapping_mul(12));
+                first = mem.read(at);
+                mem.write(rec.wrapping_add(8), first);
+                second = mem.read(at.wrapping_add(4));
+                mem.write(rec.wrapping_add(0xc), second);
+            }
+            let n = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+            rec = rec
+                .wrapping_add(n.wrapping_mul(size).cast_unsigned())
+                .wrapping_add(0x10);
+        }
+        mem.write(a, first);
+        mem.write(b, second);
+        b
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,

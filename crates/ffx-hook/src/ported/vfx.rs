@@ -3276,6 +3276,10 @@ ported! {
     pppDataLastPair_00761250 @ 0x0076_1250 => extern "C" fn ppp_data_last_pair(data: u32, a: u32, b: u32) -> u32 {
         small::bridge::ppp_data_last_pair(&mut mem(), data, a, b)
     }
+    /// `pppDataSetTex_007628c0(data, base, a, b)`.
+    pppDataSetTex_007628c0 @ 0x0076_28c0 => extern "C" fn ppp_data_set_tex(data: u32, base: u32, a: u32, b: u32) -> u32 {
+        small::bridge::ppp_data_set_tex(&mut mem(), data, base, a, b)
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {
