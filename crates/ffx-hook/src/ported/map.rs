@@ -3314,6 +3314,37 @@ ported! {
         abmap::bridge::abmap_enter_item_menu(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `yiDisposeAnimDObj(obj, kind)`.
+    yiDisposeAnimDObj @ 0x0090_84b0 => extern "C" fn shim_yi_dispose_anim_dobj(obj: u32, kind: u32) -> u32 {
+        yi::bridge::yi_dispose_anim_dobj(&mut mem(), obj, kind, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjFini(obj)`.
+    rcefObjFini @ 0x0092_fee0 => extern "C" fn shim_rcef_obj_fini(o: u32) -> u32 {
+        task::bridge::rcef_obj_fini(&mut mem(), o, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapFillCommandMenu(pad, kind)`.
+    AbmapFillCommandMenu @ 0x00a4_59e0 => extern "C" fn shim_abmap_fill_command_menu(pad: u32, kind: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_fill_command_menu(&mut mem(), pad, kind, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_GuideEdgeFade(p, a, b, rect, out)`.
+    Yn_GuideEdgeFade @ 0x0091_f530 => extern "C" fn shim_yn_guide_edge_fade(p: u32, a: u32, b: u32, rect: u32, out: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        guide::bridge::yn_guide_edge_fade(&mut mem(), [p, a, b, rect, out], w)
+    }
+
+    /// `rcbgSceneSetChadist(scene)`.
+    rcbgSceneSetChadist @ 0x0092_0790 => extern "C" fn shim_rcbg_scene_set_chadist(scene: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_scene_set_chadist(&mut mem(), scene, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

@@ -166,6 +166,14 @@ pub const MODEL_UPDATE: u32 = 0x0092_83e0;
 pub const MODEL_DRAW: u32 = 0x0092_8020;
 /// `rcbgSceneDraw(scene)` (`0x00920740`).
 pub const SCENE_DRAW: u32 = 0x0092_0740;
+/// `Ch_GetPos(chr, &x, &y, &z)` (`0x0082ac90`).
+pub const CH_GET_POS: u32 = 0x0082_ac90;
+/// `graphicSetChadist(distance)` (`0x00642ef0`, a float argument).
+pub const GRAPHIC_SET_CHADIST: u32 = 0x0064_2ef0;
+/// 98.0 (`f32`, `.rdata`): the character distance without a player.
+pub const CHADIST_DEFAULT: u32 = 0x00b5_eee0;
+/// 0.1 (`f64` of an `f32`, `.rdata`): view z to character distance.
+pub const CHADIST_SCALE: u32 = 0x00b9_21f0;
 /// `rcFree` (`0x009258e0`): a jump to `user_free`; the `rcbg*Fini`
 /// functions free through it.
 pub const RC_FREE: u32 = 0x0092_58e0;
@@ -914,6 +922,51 @@ pub mod bridge {
         let scene = mem.read::<u32>(m.wrapping_add(8));
         let f = mem.rebase(super::SCENE_DRAW);
         Some(call(mem, f, &[scene]))
+    }
+
+    /// `rcbgSceneSetChadist(scene, work)` (`0x00920790`, also through
+    /// the jump at `0x00920780`; name ours): `+0x104` = 1; the character
+    /// distance `+0x100` is the player's position (`Ch_GetPos` into
+    /// `work`, w 1.0) through the camera matrix (`FFXVu0ApplyMatrix`), its
+    /// z times 0.1 (an `f64` of an `f32`), or 98.0 without a player. Clears
+    /// `+0x10` of Yn's map (of address 0 without Yn's state, as the
+    /// original), then `graphicSetChadist(distance)`, whose `eax` is
+    /// returned.
+    pub fn rcbg_scene_set_chadist<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        mem.write(scene.wrapping_add(0x104), 1u32);
+        let f = mem.rebase(crate::camera::SG_GET_PLAYER);
+        let ply = call(mem, f, &[]);
+        let d = if ply == 0 {
+            let c: f32 = mem.read(mem.rebase(super::CHADIST_DEFAULT));
+            x87::round_trip(c).to_bits()
+        } else {
+            let f = mem.rebase(super::CH_GET_POS);
+            call(
+                mem,
+                f,
+                &[ply, work, work.wrapping_add(4), work.wrapping_add(8)],
+            );
+            mem.write(work.wrapping_add(0xc), 1.0f32.to_bits());
+            let f = mem.rebase(crate::yi::VU0_APPLY_MATRIX);
+            let m = mem.rebase(crate::camera::CAMERA_MATRIX);
+            call(mem, f, &[work, m, work]);
+            let z = x87::load(mem.read(work.wrapping_add(8)));
+            let k: f64 = mem.read(mem.rebase(super::CHADIST_SCALE));
+            x87::store(x87::mul(z, k))
+        };
+        mem.write(scene.wrapping_add(0x100), d);
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        let m = if s == 0 { 0 } else { mem.read::<u32>(s) };
+        mem.write(m.wrapping_add(0x10), 0u32);
+        let d: f32 = mem.read(scene.wrapping_add(0x100));
+        let f = mem.rebase(super::GRAPHIC_SET_CHADIST);
+        call(mem, f, &[x87::round_trip(d).to_bits()])
     }
 
     /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's
