@@ -13838,6 +13838,9 @@
 0x008bed70	dead	unreachable from the entry point and every pointer table
 0x008bedb0	dead	unreachable from the entry point and every pointer table
 0x008bedd0	logic	default (no rule: ported to be safe)
+0x008bee00	logic	default (no rule: ported to be safe)
+0x008bee10	dead	unreachable from the entry point and every pointer table
+0x008bee30	logic	default (no rule: ported to be safe)
 0x008bee50	logic	default (no rule: ported to be safe)
 0x008bee70	logic	default (no rule: ported to be safe)
 0x008bee90	logic	default (no rule: ported to be safe)

@@ -1317,7 +1317,7 @@ ported! {
         ffx_auto::call(&mut mem(), &t::R_008BE3F0, &[a0])
     }
     /// return constant: `return 0x200000`.
-    ReturnConst200000_008bec80 @ 0x008b_ec80 => extern "C" fn auto_008bec80() -> u32 {
+    TOMenuGetHelpWorkSize @ 0x008b_ec80 => extern "C" fn auto_008bec80() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_008BEC80, &[])
     }
     /// several stores: set field/global (constants, arguments, addresses): `u32[&0x0186a234] = (a1 & 0xffff); u32[&0x0186a230] = (a1 & 0xfff); u32[(a0 + 0x1c)] = 0x0; return a0`.

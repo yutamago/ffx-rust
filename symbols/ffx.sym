@@ -8264,15 +8264,34 @@
 0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
 0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl
 0x008bea30 function TOMenuGetAbilitymapWorkAdrs # fh v3:bsim1.00 0x008bea00
-0x008beb70 function TOGetPlyCommandHelp_008beb70 # cdecl(id): MsGetRomPlyCommand record u16 +8 (+0xc with hiragana) + strings; name ours
-0x008bebb0 function TOGetPlyCommandName_008bebb0 # cdecl(id): MsGetRomPlyCommand record u16 +0 (+4 with MsGetSaveConfigHiragana) + strings; name ours
-0x008bebf0 function TOGetImportantHelp_008bebf0 # cdecl(id): MsImportantPtr record u16 +8 (+0xc with hiragana) + strings; name ours
-0x008bec30 function TOGetImportantName_008bec30 # cdecl(id): MsImportantPtr record u16 +0 (+4 with hiragana) + strings; name ours
-0x008bec70 function ReturnAddress_008bec70 # () -> 0x023cc480 (an address in the image); name ours
-0x008bec80 function ReturnConst200000_008bec80   # auto-port shape (return constant, cdecl): return 0x200000; callers: ; name ours
+0x008bea50 function TOMenuGetArmsHelp         # (id) -> MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); first of the TOMenuGet{menu}Help/Mes pairs laid out alphabetically after TOMenuGetAbilitymapWorkAdrs (Arms 5, Build 6, Config 7, GetCommand*, GetImportant*, HelpWork*, Item 8, Main 9, Menu1 1, Menu2 2, Name 10, PacketBuff*, Save 3, Status 11, Summon 12; anchors TOMenuGetNameMes/StatusMes/SummonMes); table 5 is Arms in the TkMenu copy too
+0x008bea70 function TOMenuGetArmsMes          # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()); see TOMenuGetArmsHelp
+0x008bea90 function TOMenuGetBuildHelp        # (id) -> MsMenuGetHelp(6, ...); see TOMenuGetArmsHelp
+0x008beab0 function TOMenuGetBuildMes         # (id) -> MsMenuGetText(6, ...); see TOMenuGetArmsHelp
+0x008bead0 function TOMenuGetConfigHelp       # (id) -> MsMenuGetHelp(7, ...); see TOMenuGetArmsHelp (TkMenuConfigMes is table 7 too)
+0x008beaf0 function TOMenuGetConfigMes        # (id) -> MsMenuGetText(7, ...); see TOMenuGetArmsHelp
+0x008beb70 function TOMenuGetGetCommandHelp   # cdecl(id): MsGetRomPlyCommand record u16 +8 (+0xc with hiragana) + strings; Switch TOMenuGetGetCommandHelp (76 bytes) sorts here between TOMenuGetConfigMes and TOMenuGetItemHelp, and TkMenuGetCommandHelp (0x008dde10) is the same body in the TkMenu copy; was TOGetPlyCommandHelp_008beb70
+0x008bebb0 function TOMenuGetGetCommandName   # cdecl(id): MsGetRomPlyCommand record u16 +0 (+4 with hiragana) + strings; Switch name sorting here (see TOMenuGetGetCommandHelp); TkMenuGetCommandName (0x008dde50) is the TkMenu copy; was TOGetPlyCommandName_008bebb0
+0x008bebf0 function TOMenuGetGetImportantHelp # cdecl(id): MsImportantPtr record u16 +8 (+0xc with hiragana) + strings; Switch name sorting here after TOMenuGetGetCommandName (see TOMenuGetGetCommandHelp); was TOGetImportantHelp_008bebf0
+0x008bec30 function TOMenuGetGetImportantName # cdecl(id): MsImportantPtr record u16 +0 (+4 with hiragana) + strings; Switch name sorting here (see TOMenuGetGetCommandHelp); was TOGetImportantName_008bec30
+0x008bec70 function TOMenuGetHelpWorkAdrs     # () -> 0x023cc480: the help work area; Switch TOMenuGetHelpWorkAdrs (12 bytes) and TOMenuGetHelpWorkSize sort between TOMenuGetGetImportantName and TOMenuGetItemHelp, as this pair does, and one function (0x00774c00 here, FUN_710032a6e0 there) calls both; was ReturnAddress_008bec70
+0x008bec80 function TOMenuGetHelpWorkSize     # () -> 0x200000: the help work area's size; see TOMenuGetHelpWorkAdrs; was ReturnConst200000_008bec80
+0x008bec90 function TOMenuGetItemHelp         # (id) -> MsMenuGetHelp(8, ...); see TOMenuGetArmsHelp
+0x008becb0 function TOMenuGetItemMes          # (id) -> MsMenuGetText(8, ...); see TOMenuGetArmsHelp
+0x008becd0 function TOMenuGetMainHelp         # (id) -> MsMenuGetHelp(9, ...); table 9 is TkMenuMainHelp's too; see TOMenuGetArmsHelp
+0x008becf0 function TOMenuGetMainMes          # (id) -> MsMenuGetText(9, ...); see TOMenuGetArmsHelp
+0x008bed10 function TOMenuGetMenu1Help        # (id) -> MsMenuGetHelp(1, ...); table 1 is TkMenuMenu1Help's too; see TOMenuGetArmsHelp
+0x008bed30 function TOMenuGetMenu1Mes         # (id) -> MsMenuGetText(1, ...); see TOMenuGetArmsHelp
+0x008bed50 function TOMenuGetMenu2Help        # (id) -> MsMenuGetHelp(2, ...); see TOMenuGetArmsHelp
+0x008bed70 function TOMenuGetMenu2Mes         # (id) -> MsMenuGetText(2, ...); see TOMenuGetArmsHelp
+0x008bedb0 function TOMenuGetNameHelp         # (id) -> MsMenuGetHelp(10, ...); TOMenuGetNameMes (fh) is table 10; see TOMenuGetArmsHelp
 0x008bedd0 function TOMenuGetNameMes          # fh switch:bsim1.00 0x71004ec370
+0x008bee00 function TOMenuGetPacketBuffSize   # () -> 0x100000; the Switch's TOMenuGetPacketBuffSize sorts between TOMenuGetNameMes and TOMenuGetSaveHelp, as here, and TkMn2DrawInitPacket (0x008c0be0) calls it with the buffer address to rewind the draw cursor by half of it
+0x008bee10 function TOMenuGetSaveHelp         # (id) -> MsMenuGetHelp(3, ...); TkMenuSaveMes is table 3; see TOMenuGetArmsHelp
+0x008bee30 function TOMenuGetSaveMes          # (id) -> MsMenuGetText(3, ...); see TOMenuGetArmsHelp
+0x008bee50 function TOMenuGetStatusHelp       # (id) -> MsMenuGetHelp(11, ...); TOMenuGetStatusMes (fh) is table 11; see TOMenuGetArmsHelp
 0x008bee70 function TOMenuGetStatusMes        # fh switch:bsim1.00 0x71004ec3a0
-0x008bee90 function TkMenuItemHelp            # fh switch:bsim1.00 0x71004c36e0
+0x008bee90 function TOMenuGetSummonHelp       # (id) -> MsMenuGetHelp(12, ...): the last pair of the TOMenuGet run before TOMenuHelpSetExtMode, with TOMenuGetSummonMes (table 12); see TOMenuGetArmsHelp; was TkMenuItemHelp (fh switch:bsim1.00 0x71004c36e0)
 0x008beeb0 function TOMenuGetSummonMes        # fh switch:bsim1.00 0x71004ec3d0
 0x008bef10 function TOMenuHelpSetExtMode      # fh v3:bsim1.00 0x008beee0
 0x008bef30 function TOMenuOpenPktBuffTmp      # fh v3:exact+call.cs 0x008bef00 cdecl; TOSetPktBuffAdrs(0x015c0870, 0x80000, 0x75300); jmp TOOpenPktbuff
@@ -8281,7 +8300,7 @@
 0x008bf0b0 function TOMenuTermHelp            # fh switch:bsim1.00 0x71004c9070
 0x008bf120 function MenuHelp_Ratio            # (a, b) (b+2)*a*2/4 truncating; own name
 0x008bf140 function MenuHelp_Plus40           # (p) p + 0x40; no caller; own name
-0x008bf150 function TkMenuItemMes             # fh switch:bsim1.00 0x71004c34c0
+0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0)
 0x008bf720 function MenuList_IsEmptySlot      # (entry) u16 at +0xc+2*byte(+0xb) is 0 or 0xff; own name
 0x008bf8f0 function TkMn2DrawCharFace         # fh switch:bsim1.00 0x71004c5760
 0x008bf9b0 function TkMn2DrawCommonPlateL     # fh switch:bsim1.00 0x71004c66f0
@@ -8292,8 +8311,10 @@
 0x008c0580 function TkMn2DrawCrossCmdCursor      # layout: third of the three (see TkMn2DrawCommonWindowType); draws the blinking command cursor (TkMenuGetTimer blink bit, x offset 3*cos(time), TOMkpShapeXYWHUV)
 0x008c0670 function TkMn2DrawCrossCursor      # fh v3:exact+call.cs 0x008c0640 cdecl
 0x008c0a10 function MenuMn2_StepDrawY         # 0x0186a238 += 16; own name
-0x008c0c50 function TkMn2DrawFlush_008c0c50      # structure: (kick): records the high-water marks of the menu draw cursor (g_TkMn2DrawY), clears the scissor and, when asked, waits for VU1 (TkVU1SyncPath); callers TkMn2DrawKickSyncPacket and its neighbours; name ours
+0x008c0be0 function TkMn2DrawInitPacket       # (): g_TkMn2DrawY from the menu packet buffer address (rewound by half of TOMenuGetPacketBuffSize when unchanged), font shade 0x80; the Switch's TkMn2DrawInitPacket calls TOMenuGetPacketBuffAdrs and TOMenuGetPacketBuffSize and sorts between TkMn2DrawCross* and TkMn2DrawKickPacket, as here; 15 callers (the menu draw roots)
+0x008c0c50 function TkMn2DrawKickPacketBody   # (sync): records the high-water marks of the menu draw cursor (g_TkMn2DrawY), clears the scissor and, when asked, waits for VU1 (TkVU1SyncPath); the Switch's TkMn2DrawKickPacketBody (scissor, TkVU1SyncPath, dbgPrintf) is called by TkMn2DrawKickPacket and TkMn2DrawKickSyncPacket and sorts between them, as here; was TkMn2DrawFlush_008c0c50
 0x008c0cc0 function TkMn2DrawKickSyncPacket   # fh call.cs cdecl
+0x008c0cd0 function TkMn2DrawKickSyncPacket2  # TkMn2DrawKickPacketBody + TkVU1SyncPath; the Switch's TkMn2DrawKickSyncPacket2 sorts right after TkMn2DrawKickSyncPacket, as here
 0x008c0dd0 function MenuMn2_StepDrawY80       # g_TkMn2DrawY = MenuMn2_Plus80(y + 16); own name
 0x008c0e00 function TkMenuDrawMenuAbility     # fh switch:bsim1.00 0x71004c1b70
 0x008c0e30 function TkMenuDrawMenuCommand     # fh switch:bsim1.00 0x71004c1c90
@@ -8527,6 +8548,11 @@
 0x008dc6b0 function MenuDraw_SpriteV          # (p, x, y, entry) MenuDraw_Sp3UBody; own name
 0x008dc6e0 function MenuDraw_SpriteV8         # (p, x, y, entry) ox = 8; own name
 0x008dc710 function MenuDraw_Sp3UBody         # (p, _, x, y, entry, ox, oy, alpha) the same flipped vertically, u clamped to 0xff0; own name
+0x008dc8f0 function TkMenuArmsHelp            # (id) -> MsMenuGetHelp(5, ...); first of the TkMenu{menu}Help/Mes pairs laid out alphabetically before TkMenuDraw* (Arms 5, Build 6, Config 7) and after TkMenuGetCommand*/GetImportant* (Item 8, Main 9, Menu1 1, Menu2 2, Name 10, Save 3, Status 11, Summon 12); anchors TkMenuConfigMes, TkMenuMainHelp/Mes, TkMenuMenu1Help/Mes, TkMenuStatusMes, TkMenuSaveMes
+0x008dc910 function TkMenuArmsMes             # (id) -> MsMenuGetText(5, ...); see TkMenuArmsHelp
+0x008dc930 function TkMenuBuildHelp           # (id) -> MsMenuGetHelp(6, ...); see TkMenuArmsHelp
+0x008dc950 function TkMenuBuildMes            # (id) -> MsMenuGetText(6, ...); see TkMenuArmsHelp
+0x008dc970 function TkMenuConfigHelp          # (id) -> MsMenuGetHelp(7, ...), or table 14 when MsGetSaveConfigEnglish; right before TkMenuConfigMes; see TkMenuArmsHelp
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
@@ -8593,16 +8619,25 @@
 0x008ddde0 function TkMenuFukiWin2RNA            # layout: alphabetical run between TkMenuEquipWin and TkMenuGetCommandHelp (8 unnamed in the gap); Switch 0x71004c1220 TkMenuFukiWin2RNA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
 0x008dde50 function TkMenuGetCommandName      # (id) MsGetRomPlyCommand strings + u16 [record + 4*hiragana]; no direct caller; own name
-0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
-0x008ddee0 function TOMenuGetGetImportantName # fh v3:cg2 0x8ddec0
-0x008ddf20 function TOMenuGetItemHelp         # (id) -> MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()): an item help text; caller TkMenuCtrlItem; the Switch's TOMenuGet*Help functions are exactly this shape and TOMenuGetItemHelp sorts right after TOMenuGetGetImportantName, as here; was TkMenuSaveMes (fh switch:bsim1.00 0x71004c3430), which calls MsMenuGetText, not MsMenuGetHelp: that is 0x008de080
+0x008ddea0 function TkMenuGetImportantHelp    # (id) MsImportantPtr help text; same body as TOMenuGetGetImportantHelp (0x008bebf0) but in the TkMenu run: after TkMenuGetCommandHelp/Name and before TkMenuItemHelp, where the Switch's TkMenuGetImportantHelp sorts; was TOMenuGetGetImportantHelp (fh v3:cg3 0x8dde80)
+0x008ddee0 function TkMenuGetImportantName    # (id) MsImportantPtr name; the TkMenu copy of TOMenuGetGetImportantName (0x008bec30); Switch TkMenuGetImportantName sorts here (see TkMenuGetImportantHelp); was TOMenuGetGetImportantName (fh v3:cg2 0x8ddec0)
+0x008ddf20 function TkMenuItemHelp            # (id) -> MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()): an item help text; caller TkMenuCtrlItem; table 8 pair in the TkMenu run between TkMenuGetImportantName and TkMenuMainHelp (see TkMenuArmsHelp); the TOMenuGet copy is 0x008bec90; was TOMenuGetItemHelp
+0x008ddf40 function TkMenuItemMes             # (id) -> MsMenuGetText(8, ...); see TkMenuItemHelp
 0x008ddf60 function TkMenuMainHelp            # fh switch:bsim1.00 0x71004c35b0
 0x008ddf80 function TkMenuMainMes             # fh switch:bsim1.00 0x71004c33a0
 0x008ddfa0 function TkMenuMenu1Help           # fh switch:bsim1.00 0x71004c35e0
 0x008ddfc0 function TkMenuMenu1Mes            # fh switch:bsim1.00 0x71004c33d0
+0x008ddfe0 function TkMenuMenu2Help           # (id) -> MsMenuGetHelp(2, ...); see TkMenuArmsHelp
+0x008de000 function TkMenuMenu2Mes            # (id) -> MsMenuGetText(2, ...); see TkMenuArmsHelp
+0x008de020 function TkMenuNameHelp            # (id) -> MsMenuGetHelp(10, ...); see TkMenuArmsHelp
+0x008de040 function TkMenuNameMes             # (id) -> MsMenuGetText(10, ...); see TkMenuArmsHelp
+0x008de060 function TkMenuSaveHelp            # (id) -> MsMenuGetHelp(3, ...); before TkMenuSaveMes (table 3); see TkMenuArmsHelp
 0x008de080 function TkMenuSaveMes             # (id) -> MsMenuGetText(3, id, MsGetSaveConfigHiragana()): a save/load menu message; the Switch's TkMenuSaveMes (0x71004c3430, 44 bytes) calls MsGetSaveConfigHiragana and MsMenuGetText and is called by TkMenuJumpToLoadedScene, as here; cg-match lead (3 votes); callers TkMenuCtrlSaveLoad, TkMenuJumpToLoadedScene and the save screens; was TkMenuSaveMesText_008de080
 0x008de0a0 function MenuDraw_GifTag           # (packet, a, b, c) 64-byte GIF header, returns packet + 0x40; own name
+0x008de120 function TkMenuStatusHelp          # (id) -> MsMenuGetHelp(11, ...); before TkMenuStatusMes (table 11); see TkMenuArmsHelp
 0x008de140 function TkMenuStatusMes           # fh switch:bsim1.00 0x71004c3520
+0x008de160 function TkMenuSummonHelp          # (id) -> MsMenuGetHelp(12, ...); see TkMenuArmsHelp
+0x008de180 function TkMenuSummonMes           # (id) -> MsMenuGetText(12, ...); see TkMenuArmsHelp
 0x008de1a0 function MenuStatus_Plus10         # (p) p + 0x10; no caller; own name
 0x008de1b0 function Gs_Pack4                  # (a, b, c, d) u64 a | b<<32 | c<<16 | d<<48; own name
 0x008de1d0 function Gs_Pack5                  # (a, b, c, d, e) Gs_Pack4 with e & 0x0ffffff0 folded in at <<12; own name
