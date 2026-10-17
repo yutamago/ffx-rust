@@ -537,6 +537,117 @@ pub mod bridge {
         }
         id
     }
+
+    /// `g_BtlDebugCameraSleep`: the debug camera sleep last applied (-1
+    /// after `MsDebugCameraSleepInit`).
+    pub const DEBUG_CAMERA_SLEEP: Global<u32> = Global::new(0x0113_34c8);
+    /// The debug camera sleep switch `MsBattleProcess` applies each frame.
+    pub const DEBUG_CAMERA_SLEEP_ON: Global<u8> = Global::new(0x0112_a8fc);
+
+    /// `0x007921c0(v)` (`MsDebugCameraSleep`, name ours): when `v` changes,
+    /// every camera's four request slots get `v & 1` as their off flag
+    /// (`+5`).
+    pub fn ms_debug_camera_sleep(mem: &mut impl Mem, v: u32) {
+        if DEBUG_CAMERA_SLEEP.get(mem) == v {
+            return;
+        }
+        let b = (v & 1).to_le_bytes()[0];
+        let base = SLOTS_AT.ptr(mem).addr + 5;
+        for cam in 0..3 {
+            for k in 0..4 {
+                mem.write(base + cam * CAMERA_SIZE + 8 * k, b);
+            }
+        }
+        DEBUG_CAMERA_SLEEP.set(mem, v);
+    }
+
+    /// The constants `MsCameraInit` loads: the roll, the cameras' scales
+    /// and the screens' projection (`MsSetScreen`).
+    const INIT_ROLL: u32 = 0x00b5_5178;
+    const SCREEN_ARGS: [u32; 9] = [
+        0x00b4_1d9c,
+        0x00b3_4254,
+        0x00b5_5198,
+        0x00b5_1a20,
+        0x00b5_1a20,
+        0,
+        0x00b5_519c,
+        0,
+        0x00b4_3ddc,
+    ];
+    /// The display size (`i32`), the screens' widths and heights.
+    pub const DISPLAY_SIZE: Global<[i32; 2]> = Global::new(0x00c4_4240);
+
+    /// `MsCameraInit()` (`0x007bd5d0`): the matrix roll and `g_Camera`,
+    /// `g_Screen` reset, the effect camera and splines initialised; the
+    /// three cameras cleared (`MsStructClear`) with `+0` -1.0, their two
+    /// halves numbered and linked (`+0xbc`, `+0x30`), the four scales
+    /// (`+0xcc0` and per half `+0x14c`, `+0x150`) 1.0 or the roll value;
+    /// the three screens cleared, numbered (`+0xc1`), `+0xd0` -1, their
+    /// sizes (`+0x38`, `+0x3c`, and four corners) from the display size,
+    /// and their projection set (`MsSetScreen`); screen 0 on (`+0xc0`); the
+    /// script cameras reset (`MsAtelCameraInit`).
+    pub fn ms_camera_init(mem: &mut impl Mem) {
+        use ffx_bridge::x87::store;
+        let roll = x87_copy(Global::<u32>::new(INIT_ROLL).get(mem));
+        MATRIX_ROLL.set(mem, roll);
+        let cameras = CAMERAS.ptr(mem).addr;
+        let screens = SCREENS.ptr(mem).addr;
+        CAMERA.set(mem, cameras);
+        crate::misc::bridge::SCREEN.set(mem, screens);
+        MATRIX_ON.set(mem, 0);
+        PRIORITY_MASK.set(mem, 0);
+        ms_effect_camera_init(mem);
+        crate::misc::bridge::ms_spline_init(mem);
+        let one = 1.0f32.to_bits();
+        let minus_one = x87_copy(MINUS_ONE.get(mem));
+        for c in 0..3 {
+            let base = cameras + c * CAMERA_SIZE;
+            let e = base + 4;
+            crate::util::bridge::ms_struct_clear(mem, base, 0xda0);
+            mem.write(e, minus_one);
+            mem.write(e + 0xc88, 0xffu8);
+            for k in 0..2u32 {
+                let at = e + 0xb8 + k * 0x61c;
+                mem.write(at - 0x8c, k.to_le_bytes()[0]);
+                mem.write(at, (e + 0x698).wrapping_sub(k * 0x61c));
+            }
+            for j in 0..4 {
+                mem.write(e + 0xcbc + 0x30 * j, roll);
+                for k in 0..2 {
+                    let at = e + 0x148 + 0x130 * j + 0x61c * k;
+                    mem.write(at + 4, one);
+                    mem.write(at, one);
+                }
+            }
+        }
+        let [w, h] = DISPLAY_SIZE.get(mem);
+        let (w, h) = (store(f64::from(w)), store(f64::from(h)));
+        let args = SCREEN_ARGS.map(|a| {
+            if a == 0 {
+                one
+            } else {
+                Global::<u32>::new(a).get(mem)
+            }
+        });
+        for n in 0..3u32 {
+            let base = screens + n * SCREEN_SIZE;
+            crate::util::bridge::ms_struct_clear(mem, base, 0x1c0);
+            mem.write(base + 0xc1, n.to_le_bytes()[0]);
+            mem.write(base + 0xd0, u32::MAX);
+            mem.write(base + 0x38, w);
+            mem.write(base + 0x3c, h);
+            for o in [0x4c, 0x8c, 0x5c, 0x9c] {
+                mem.write(base + o, h);
+            }
+            for o in [0x48, 0x88, 0x58, 0x98] {
+                mem.write(base + o, w);
+            }
+            ms_set_screen(mem, n.cast_signed(), args);
+        }
+        mem.write(screens + 0xc0, 1u8);
+        crate::minor::bridge::ms_atel_camera_init(mem);
+    }
 }
 
 #[cfg(test)]

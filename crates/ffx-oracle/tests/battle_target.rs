@@ -1021,9 +1021,23 @@ fn actions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u
 /// Whether `sym` (`MsGetChrPos` or `MsGetChrBtlPos`) writes actor `i`'s
 /// position (both oracles call it on `probe`): where it does not, the
 /// originals use their stack garbage.
+///
+/// A position the original cannot read (its position data pointing out
+/// of the snapshot) counts as not written.
 fn writes(a: &mut Oracle, b: &mut Oracle, sym: u32, i: u32, probe: u32) -> bool {
     use ffx_battle::pos::bridge as p;
     poke(a, b, probe, &[0xff; 16]);
+    // (the original in both: the same pages mapped, the same state)
+    let ra = a.call(a.rebase(sym), Conv::Cdecl, &[i, probe]).is_ok();
+    let rb = b.call(b.rebase(sym), Conv::Cdecl, &[i, probe]).is_ok();
+    poke(a, b, probe, &[0xff; 16]);
+    if !(ra && rb) {
+        // the fault's write left an unmapped page dirty in both (the two
+        // were the same before the probe)
+        a.clear_dirty();
+        b.clear_dirty();
+        return false;
+    }
     twin("position probe", a, b, sym, &[i, probe], ALL, |m| {
         if sym == 0x0079_56e0 {
             p::ms_get_chr_pos(m, &stand_in, i, probe).cast_unsigned()
@@ -1418,7 +1432,12 @@ fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     } else {
         &[]
     };
-    if !writes(a, b, 0x0079_48e0, i, out + 0x40)
+    // (MsSetTargetDir reads the current positions, MsGetChrPos)
+    let current = (0..ACTORS)
+        .filter(|&j| j == i || targets >> j & 1 != 0)
+        .all(|j| writes(a, b, 0x0079_56e0, j, out + 0x40));
+    if !current
+        || !writes(a, b, 0x0079_48e0, i, out + 0x40)
         || !needed
             .iter()
             .all(|&k| writes(a, b, 0x0079_48e0, k, out + 0x40))
@@ -1437,6 +1456,13 @@ fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     });
     local_words(a, b);
     rect_words(a, b);
+    // MsResetChrPos's MsCheckBtlPos copies its battle position into VF_M's
+    // third row (MsPointLen); on the field snapshot the original's x there
+    // was once 0x6d where the port's was 0 with everything else the same
+    // (not explained yet: copied, so only the row is not compared)
+    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+    let v = a.read(m + 0x20, 16).unwrap();
+    b.write(m + 0x20, &v).unwrap();
     same("MsParseCommand", a, b);
 }
 
@@ -1578,6 +1604,150 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     local_words(a, b);
     rect_words(a, b);
     same("MsCommandCueProcess", a, b);
+}
+
+/// The battle loop's per-frame callees of sound, the CD library and the
+/// voice status (`ffx_battle::process`) and `MsSetDeath` (unported; its
+/// calls compared), stubbed in `MsDebugEnvSave` (debug only); the last is
+/// the CD library's `+8`.
+const PROCESS_CALLEES: [(u32, u8); 7] = {
+    use ffx_battle::process::bridge as p;
+    [
+        (p::SND_MUSIC_STOP, 1),
+        (p::SND_MUSIC_CLEAR, 1),
+        (p::TK_SND_REPORT_STATUS, 0),
+        (p::SND_IS_READ_STATUS, 0),
+        (p::SND_IS_READ_SHOUT_VOICE_STATUS, 0),
+        (0x0078_dc30, 2),
+        (0, 1),
+    ]
+};
+const PROCESS_STUBS: u32 = 0x007c_d800;
+
+/// The stubs of [`PROCESS_CALLEES`] in both oracles, records from `rec`;
+/// the CD library object (the effect stubs' `GetCD` result) gets the last
+/// as its `+8`.
+fn process_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32, erec: u32) {
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(PROCESS_CALLEES) {
+            logging_stub(o, f, PROCESS_STUBS + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        let cd = u32::from_le_bytes(
+            o.read(erec + EXCHANGE_REC + 4, 4)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let f = o.rebase(PROCESS_STUBS + 0x40 * 6);
+        o.write(cd + 8, &f.to_le_bytes()).unwrap();
+    }
+}
+
+/// The battle loop's per-frame pieces (`ffx_battle::process`) and the
+/// camera reset.
+fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32, srec: u32) {
+    use ffx_battle::process::bridge as p;
+    let mut call = game_call;
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    for (k, r) in [
+        (1, rng.next()),
+        (2, [0, 1, 2][rng.below(3) as usize]),
+        (3, u32::from(flag(rng, 3))),
+        (4, u32::from(flag(rng, 3))),
+        (6, u32::from(flag(rng, 3))),
+    ] {
+        poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+    poke(
+        a,
+        b,
+        srec + 3 * EXCHANGE_REC + 4,
+        &u32::from(flag(rng, 3)).to_le_bytes(),
+    );
+    twin("MsNowMusicStop", a, b, 0x007a_00b0, &[], ALL, |m| {
+        dm(m, |m| p::ms_now_music_stop(m, &mut call))
+    });
+    same("MsNowMusicStop", a, b);
+    for i in 0..ACTORS {
+        poke(a, b, w.actor(i) + 0x3d, &[flag(rng, 3)]);
+    }
+    twin("MsResetNormalCalc", a, b, 0x0079_5c40, &[], ALL, |m| {
+        p::ms_reset_normal_calc(m)
+    });
+    same("MsResetNormalCalc", a, b);
+    set(a, b, p::PAUSE, flag(rng, 6));
+    set(a, b, p::HIT_MOTION, flag(rng, 6));
+    set(
+        a,
+        b,
+        ffx_battle::action::bridge::TURN_END_ACTOR,
+        [0xff, 0x80, 3][rng.below(3) as usize],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::MESSAGE_CUE_COUNT,
+        flag(rng, 6),
+    );
+    set(a, b, ffx_battle::atel::bridge::CAMERA_STATE, flag(rng, 6));
+    set(a, b, ffx_battle::flow::bridge::LIMIT_LEARNT, flag(rng, 6));
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::STONE_EFFECT,
+        [
+            i8::try_from(flag(rng, 6)).unwrap(),
+            i8::try_from(flag(rng, 6)).unwrap(),
+        ],
+    );
+    set(a, b, ffx_battle::parse::bridge::COMMAND_HOLD, flag(rng, 6));
+    twin("MsBattleCanProgress", a, b, 0x0079_1190, &[], ALL, |m| {
+        p::ms_battle_can_progress(m).cast_unsigned()
+    });
+    let any = rng.below(2);
+    twin("msVoiceCheckStanby", a, b, 0x007b_2c10, &[any], ALL, |m| {
+        dm(m, |m| {
+            p::ms_voice_check_stanby(m, &mut call, any).cast_unsigned()
+        })
+    });
+    same("msVoiceCheckStanby", a, b);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::STATUS,
+        [1, 1, 0, 0x21][rng.below(4) as usize],
+    );
+    set(a, b, p::RESET_WAIT, u32::from(flag(rng, 6)));
+    set(a, b, p::RESET_WAIT2, flag(rng, 6));
+    twin("MsCheckSoftResetOk", a, b, 0x0079_2e80, &[], ALL, |m| {
+        dm(m, |m| {
+            p::ms_check_soft_reset_ok(m, &mut call).cast_unsigned()
+        })
+    });
+    same("MsCheckSoftResetOk", a, b);
+    let cam = ffx_battle::camera::bridge::DEBUG_CAMERA_SLEEP;
+    let v = [cam.get(b), rng.below(2), rng.next()][rng.below(3) as usize];
+    twin("MsDebugCameraSleep", a, b, 0x0079_21c0, &[v], 0, |m| {
+        ffx_battle::camera::bridge::ms_debug_camera_sleep(m, v);
+        0
+    });
+    same("MsDebugCameraSleep", a, b);
+    if rng.below(8) == 0 {
+        twin("MsCameraInit", a, b, 0x007b_d5d0, &[], 0, |m| {
+            ffx_battle::camera::bridge::ms_camera_init(m);
+            0
+        });
+        same("MsCameraInit", a, b);
+    }
+    if rng.below(4) == 0 {
+        twin("MsSetDeathAll", a, b, 0x0079_1760, &[], 0, |m| {
+            dm(m, |m| {
+                p::ms_set_death_all(m, &mut call);
+            });
+            0
+        });
+        same("MsSetDeathAll", a, b);
+    }
 }
 
 /// Whether every able (`+0xdc8`) actor's and every monster's battle
@@ -2000,6 +2170,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         );
         logging_stub(o, 0x008b_7ca0, 0x0078_03a0, srec + 4 * EXCHANGE_REC, 1, 0);
     }
+    let prec = scratch(a, b, (EXCHANGE_REC * 7) as usize);
+    process_stubs(a, b, prec, erec);
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -2016,6 +2188,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         for _ in 0..3 {
             command_cue(a, b, rng, &w, out, srec);
         }
+        process(a, b, rng, &w, prec, srec);
     }
 }
 

@@ -6,6 +6,7 @@ use ffx_battle::atel::bridge as atel;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::parse::bridge as parse;
+use ffx_battle::process::bridge as process;
 use ffx_battle::status::bridge as status;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
@@ -2529,5 +2530,37 @@ ported! {
         let mut m = mem();
         script!(s);
         parse::ms_command_cue_process(&mut target::Dm::new(&mut m), &host(), &mut s)
+    }
+    /// `MsNowMusicStop()`: sound through the game.
+    MsNowMusicStop @ 0x007a_00b0 => extern "C" fn ms_now_music_stop() -> u32 {
+        process::ms_now_music_stop(&mut mem(), &mut call_ptr)
+    }
+    /// `MsResetNormalCalc()`.
+    MsResetNormalCalc @ 0x0079_5c40 => extern "C" fn ms_reset_normal_calc() -> u32 {
+        process::ms_reset_normal_calc(&mut mem())
+    }
+    /// `MsBattleCanProgress()` (`0x00791190`).
+    MsBattleCanProgress @ 0x0079_1190 => extern "C" fn ms_battle_can_progress() -> i32 {
+        process::ms_battle_can_progress(&mem())
+    }
+    /// `MsSetDeathAll()` (`0x00791760`): `MsSetDeath` through the game.
+    MsSetDeathAll @ 0x0079_1760 => extern "C" fn ms_set_death_all() {
+        process::ms_set_death_all(&mut mem(), &mut call_ptr);
+    }
+    /// `msVoiceCheckStanby(any)`: the CD library and sound through the game.
+    msVoiceCheckStanby @ 0x007b_2c10 => extern "C" fn ms_voice_check_stanby(any: u32) -> i32 {
+        process::ms_voice_check_stanby(&mut mem(), &mut call_ptr, any)
+    }
+    /// `MsCheckSoftResetOk()` (`0x00792e80`).
+    MsCheckSoftResetOk @ 0x0079_2e80 => extern "C" fn ms_check_soft_reset_ok() -> i32 {
+        process::ms_check_soft_reset_ok(&mut mem(), &mut call_ptr)
+    }
+    /// `MsDebugCameraSleep(v)` (`0x007921c0`).
+    MsDebugCameraSleep @ 0x0079_21c0 => extern "C" fn ms_debug_camera_sleep(v: u32) {
+        camera::ms_debug_camera_sleep(&mut mem(), v);
+    }
+    /// `MsCameraInit()`.
+    MsCameraInit @ 0x007b_d5d0 => extern "C" fn ms_camera_init() {
+        camera::ms_camera_init(&mut mem());
     }
 }

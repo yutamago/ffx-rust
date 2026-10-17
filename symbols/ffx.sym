@@ -4788,10 +4788,13 @@
 0x00790be0 function MsSetMonsterCheck         # fh v3:bsim1.00 0x00790c30
 0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
+0x00791190 function MsBattleCanProgress       # ours: -1 when no pause (0x0112c9d0), hit motion, turn end, message, camera state, overdrive learnt, stone effect or command hold holds the battle (MsBattleProcess)
 0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
+0x00791760 function MsSetDeathAll             # ours: MsSetDeath(i, 1) for every actor, each frame (MsBattleProcess)
 0x00791fa0 function MsSetTargetsMotion        # (chr, cue, k, &far): entry k's command (MsGetCommand) and targets +0x10: out of reach (+0x4ff > MsGetCommandFar) counted in far, KO'd skipped unless command +0x1a bit 6; the rest +0xded = chr, MsSetMotion(+0x422, 0x1c, 0, 0, 1), head target (MsSetHeadTarget / msResetHeadTarget by +0x1c bit 27); kept targets to +0x10 and g_BtlChrSet; -1/0; name ours
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
+0x007921c0 function MsDebugCameraSleep        # ours: (v) when v differs from g_BtlDebugCameraSleep, every camera request slot's off flag (+5) = v & 1 (MsBattleProcess, with 0x0112a8fc)
 0x00792200 function MsDebugCameraSleepInit    # fh v3:bsim1.00 0x00792250
 0x00792210 function MsCommandCueProcess       # ours: per frame (MsBattleProcess): moves the command cue's first entry on (states 2-6, start: turn globals, MsCalcMagic/MsActionTarget/MsSetTargetsMotion/MsCalcCommand) and parses a started one (MsParseCommand)
 0x00792840 function MsGetActiveCursorFlag        # layout+callees: sorts between MsDebugCameraSleepInit and MsInsertBtlCommand, and its named callees match the Switch 0x7100367960 MsGetActiveCursorFlag's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
@@ -4802,6 +4805,7 @@
 0x00792d60 function MsSetBtlCommand           # fh v3:exact 0x00792d70
 0x00792de0 function MsSetBtlTarget            # fh v3:exact 0x00792df0
 0x00792e50 function MsSetMenuCommand          # fh v3:exact 0x00792e60
+0x00792e80 function MsCheckSoftResetOk        # ours: -1 when a soft reset may end the battle (no read, sound transfer, voice, effect, waits; status 1) (MsBattleProcess)
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
@@ -14032,6 +14036,7 @@
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a8fc label g_BtlDebugCameraSleepOn   # u8 MsBattleProcess passes to MsDebugCameraSleep each frame
 0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
 0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
@@ -14098,6 +14103,7 @@
 0x0112c020 label g_BtlReadCueIndex            # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
 0x0112c023 label g_BtlCommandStarted       # u8: set when a command starts (MsCommandCueProcess), cleared when an aeon is called (MsParseCommand)
+0x0112c024 label g_BtlResetWait            # u32: a soft reset waits while set (MsCheckSoftResetOk)
 0x0112c029 label g_SepTransFlag            # u16 cleared by MsSEPtransInit
 0x0112c02b label g_BtlLimitLearnt          # u8 set when MsLimitTidusLearn teaches an overdrive
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
@@ -14128,10 +14134,12 @@
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
 0x0112c9cf label g_BtlRegMotionFlag           # u8; with the one before it (same function, ffx_battle::misc)
+0x0112c9d0 label g_BtlPause                # u8 counted down by MsBattleProcess; the battle waits while set (MsBattleCanProgress)
 0x0112c9d1 label g_BtlTitleWindow             # 2 x i8, the battle title window's position bytes (MsMenuCloseTitleWindow moves or clears them)
 0x0112c9d3 label g_BtlNumbersKind1         # u8 count of kind-1 damage numbers (MsNumberCalcProcess); 0x0112c9d4 kinds 1-2, 0x0112c9d5 all
 0x0112c9d4 label g_BtlNumbersKind12        # u8 (MsNumberCalcProcess)
 0x0112c9d5 label g_BtlNumbersShown         # u8 (MsNumberCalcProcess)
+0x0112c9d6 label g_BtlResetWait2           # u8: a soft reset waits while set (MsCheckSoftResetOk)
 0x0112c9d7 label g_BtlEffectCameraMode     # u8 (MsEffectCameraCall's second argument)
 0x0112c9d8 label g_BtlEffectOverlayBusy    # u8: the overlay effect stands in while a magic file loads (MsEffectRead, MsEffectReadComplete)
 0x0112c9db label g_BtlChrScripts           # u8, actors' monster-file handlers usable (MsAtelGetHandler kind 3); MsBattleExe, 0x00784070 write it
@@ -14145,6 +14153,7 @@
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
 0x0112c9e8 label g_BtlSummoner             # i8, the summoner's actor index (MsGetMoveTargetPos kinds 4, 5, 18)
 0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
+0x0112c9ea label g_BtlHitMotion            # u8 MsCheckChrHitMotionAll each frame (MsBattleProcess); the battle waits while set
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
 0x0112c9f5 label g_BtlPartyLeaves          # u8: set by a party swap (0x3002) or an escape (0x3018) in MsParseCommand; MsCommandCueProcess waits while set
