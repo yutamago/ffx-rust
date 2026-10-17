@@ -8837,6 +8837,108 @@ fn wave_omd_make_matches_the_original() {
     }
 }
 
+/// An `fptan` stand-in for the CRT's `_CItan` (its import slot
+/// `0x00b0c3a0` pointed at `0x00b0bfd0`) and a thunk, `fld qword [esp +
+/// 4]; jmp [slot]`, for the bridge's side; returns the thunk.
+fn tan_stand_in(p: &mut Pair) -> u32 {
+    let at = p.sym(0x00b0_bfd0);
+    let code = [0xd9u8, 0xf2, 0xdd, 0xd8, 0xc3]; // fptan; fstp st0; ret
+    p.a.write(at, &code).unwrap();
+    p.b.write(at, &code).unwrap();
+    let slot = p.sym(0x00b0_c3a0);
+    p.set(slot, at);
+    let t = p.sym(0x00b0_bba0);
+    let mut c = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x25]; // fld qword [esp+4]; jmp [slot]
+    c.extend(slot.to_le_bytes());
+    p.a.write(t, &c).unwrap();
+    p.b.write(t, &c).unwrap();
+    t
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn wave_0154_omd_make_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_67c0);
+        x87_crt_stand_ins(&mut p);
+        let tan = tan_stand_in(&mut p);
+        let fov = p.alloc(4);
+        float_stub(&mut p, 0x0063_9570, fov);
+        let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
+        let omd = p.alloc(0x14800);
+        let (view, proj) = (p.alloc(0x40), p.alloc(0x40));
+        let shift = p.sym(0x00c8_b500);
+        for _ in 0..30 {
+            p.fill(omd, 0x14800, &mut rng);
+            p.fill(obj, 0x40, &mut rng);
+            p.fill(wv, 0x60, &mut rng);
+            p.fill(uv, 8, &mut rng);
+            let x = ranged(&mut rng, 0.5, 20.0);
+            p.set(obj + 0x30, x);
+            let x = ranged(&mut rng, -0.5, 1.0);
+            p.set(obj + 0x34, x);
+            for (o, lo, hi) in [
+                (0x30u32, 0.0f32, 4096.0f32),
+                (0x34, -200.0, 200.0),
+                (0x38, -10.0, 10.0),
+                (0x3c, 0.0, 512.0),
+                (0x40, -30.0, 30.0),
+                (0x44, -3.0, 3.0),
+                (0x48, -0.5, 0.5),
+                (0x4c, -40.0, 40.0),
+            ] {
+                let x = ranged(&mut rng, lo, hi);
+                p.set(wv + o, x);
+            }
+            for m in [view, proj] {
+                for i in 0..16u32 {
+                    let x = if i % 5 == 0 {
+                        ranged(&mut rng, 0.5, 1.5)
+                    } else if i == 14 {
+                        ranged(&mut rng, 200.0, 900.0)
+                    } else if (12..14).contains(&i) {
+                        ranged(&mut rng, -200.0, 200.0)
+                    } else if i == 15 {
+                        1.0f32.to_bits()
+                    } else {
+                        ranged(&mut rng, -0.3, 0.3)
+                    };
+                    p.set(m + 4 * i, x);
+                }
+            }
+            let f = ranged(&mut rng, 0.3, 1.5);
+            p.set(fov, f);
+            p.set(shift, rng.pick(&[0u32, 0, 4, 0xc, 0x10]));
+            check_deep_n(
+                &mut p,
+                "opus_0154_wave_omd_make",
+                0x007f_67c0,
+                &[obj, wv, uv, omd, view, proj],
+                |o, frame| {
+                    Some(wave::bridge::opus_0154_wave_omd_make(
+                        o,
+                        obj,
+                        wv,
+                        uv,
+                        omd,
+                        view,
+                        proj,
+                        frame,
+                        &mut call_original,
+                        &mut call_original_f,
+                        &mut |m, x| {
+                            let b = x.to_bits();
+                            #[allow(clippy::cast_possible_truncation)]
+                            let w = [b as u32, (b >> 32) as u32];
+                            call_original_f(m, tan, &w)
+                        },
+                    ))
+                },
+            );
+        }
+    }
+}
+
 /// `fcos`/`fsin` stand-ins for the CRT's `_CIcos`/`_CIsin` (their import
 /// slots `0x00b0c3b4`, `0x00b0c3b8` pointed at `0x00b0bfc0`, `0x00b0bfc8`)
 /// and a thunk at [`THUNK`], `fld dword [esp + 4]; jmp [slot]`, for the

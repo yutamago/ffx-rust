@@ -417,4 +417,391 @@ pub mod bridge {
         let n = i32::from(mem.read::<i16>(h(0x14))).cast_unsigned();
         (n << 4).wrapping_add(mem.read(h(0xc))).wrapping_add(omd)
     }
+
+    /// The slope mean of the wave meshes: `prev` and `cur` (4096ths, a
+    /// quarter turn subtracted) as signed half turns, averaged toward
+    /// zero.
+    fn mean(prev: u32, cur: u32) -> u32 {
+        let s = |x: u32| {
+            if x >= 0x800 {
+                x.cast_signed() - 0x1000
+            } else {
+                x.cast_signed()
+            }
+        };
+        #[allow(clippy::manual_midpoint)] // cdq; sub; sar: toward zero
+        let m = (s(cur) + s(prev)) / 2;
+        m.cast_unsigned() & 0xfff
+    }
+
+    /// `opus_0154_wave_omd_make(obj, wave, uv, omd, view, proj)`
+    /// (`0x007f67c0`): the 33 x 33 vertex disc of effect 0154 (1024 quads
+    /// at `+0x30`, vertices `+0xc040`, normals `+0x10450`), its colours
+    /// all `0x80808080` (the first through `g_pppColorConShift`, which is
+    /// then cleared; the emulated `v0` keeps the colour).
+    ///
+    /// - Sector `j`, ring `i`: the angle `128 j + u` (`u` growing by
+    ///   `wave +0x4c` per ring), radius from 0 by a step from `obj +0x30`
+    ///   growing by `+0x34` (ring 32 also adding 5 steps), normal (cos,
+    ///   sin).
+    /// - Heights `(A_end - A) sin(ang_end - ang)` from the ring
+    ///   recurrences of `wave +0x30`.. (as in `opus_wave_omd_make`, ring
+    ///   32 adding `100 Z` to `A`), `w` 1.
+    /// - Normals tilt by the running mean of the slope angle
+    ///   (`op_deg_get`, the later rings measured backwards).
+    /// - Texture coordinates: the outer radius projected through `proj *
+    ///   view` over `z tan(fovy / 2)` (`1.7777` wide), centred at
+    ///   `(1 + p) / 2`, scaled by `wave +0x3c` / 256, in 4096ths.
+    ///
+    /// Callees through `call`, `fcall` (`ST0`) and `tan` (the CRT's
+    /// `_CItan`); the locals lie below `frame` (from `frame - 0xe4`).
+    /// Returns the end of the normals.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::many_single_char_names
+    )]
+    pub fn opus_0154_wave_omd_make<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        wave: u32,
+        uv: u32,
+        omd: u32,
+        view: u32,
+        proj: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+        tan: &mut impl FnMut(&mut M, f64) -> f64,
+    ) -> u32 {
+        const N: u32 = 33;
+        let h = |o: u32| omd.wrapping_add(o);
+        mem.write(h(0x10), 0x0441_0400u32);
+        mem.write(h(8), 0xc040u32);
+        mem.write(h(0xc), 0x0001_0450u32);
+        mem.write(h(0), 0x10u32);
+        mem.write(h(4), 0x20u32);
+        mem.write(h(0x14), 0x441u16);
+        mem.write(h(0x21), 6u8);
+        let x: u16 = mem.read(h(0x10));
+        mem.write(h(0x22), x);
+        let x: u32 = mem.read(uv);
+        mem.write(h(0x28), x);
+        let x: u32 = mem.read(uv.wrapping_add(4));
+        mem.write(h(0x2c), x);
+        let mut vp = mem.read::<u32>(h(8)).wrapping_add(omd);
+        let mut np = mem.read::<u32>(h(0xc)).wrapping_add(omd);
+        // the disc
+        let five = Reg::Num(c64(mem, 0x00b4_1d20));
+        let k128 = Reg::Num(c64(mem, 0x00b4_c170));
+        for j in 0..N {
+            let mut r = 0f32;
+            let mut step = q(f(mem, obj.wrapping_add(0x30)));
+            let mut u = 0f32;
+            #[allow(clippy::cast_precision_loss)] // fild, fstp m32: exact
+            let jb = Reg::load_f32(j as f32).reg(MUL, k128);
+            for i in 0..N {
+                if i == 0x20 {
+                    r = Reg::load_f32(step).reg(MUL, five).mem(ADD, r).store();
+                }
+                let t = Reg::load_f32(u).reg(ADD, jb).store();
+                let a = ffx_bridge::x87::ftol(mem, f64::from(t)) & 0xfff;
+                let ca = (a + 0x400) & 0xfff;
+                let c = q(sin(mem, ca));
+                mem.write(np, c);
+                let sn = q(sin(mem, a));
+                mem.write(np.wrapping_add(4), sn);
+                let rs = Reg::load_f32(r).mem(MUL, sin(mem, a)).store();
+                let x = Reg::load_f32(sin(mem, ca))
+                    .reg(MUL, Reg::load_f32(r))
+                    .store();
+                mem.write(vp, x);
+                mem.write(vp.wrapping_add(4), rs);
+                step = Reg::load_f32(step)
+                    .mem(ADD, f(mem, obj.wrapping_add(0x34)))
+                    .store();
+                r = Reg::load_f32(r).reg(ADD, Reg::load_f32(step)).store();
+                u = Reg::load_f32(u)
+                    .mem(ADD, f(mem, wave.wrapping_add(0x4c)))
+                    .store();
+                vp = vp.wrapping_add(0x10);
+                np = np.wrapping_add(0x10);
+            }
+        }
+        // the ring recurrences, first to their ends
+        let start = |mem: &M| {
+            (
+                q(f(mem, wave.wrapping_add(0x40))),
+                q(f(mem, wave.wrapping_add(0x44))),
+                q(f(mem, wave.wrapping_add(0x30))),
+                q(f(mem, wave.wrapping_add(0x34))),
+            )
+        };
+        let (mut amp, mut z, mut ang, mut dang) = start(mem);
+        for _ in 0..N {
+            z = Reg::load_f32(z)
+                .mem(ADD, f(mem, wave.wrapping_add(0x48)))
+                .store();
+            amp = Reg::load_f32(z).mem(ADD, amp).store();
+            dang = Reg::load_f32(dang)
+                .mem(ADD, f(mem, wave.wrapping_add(0x38)))
+                .store();
+            ang = Reg::load_f32(dang).mem(ADD, ang).store();
+        }
+        let (amp_end, ang_end) = (q(amp), q(ang));
+        let (mut amp, mut z, mut ang, mut dang) = start(mem);
+        let hundred = Reg::Num(c64(mem, 0x00b9_22e0));
+        for i in 0..N {
+            if i == 0x20 {
+                amp = hundred
+                    .reg(MUL, Reg::load_f32(z))
+                    .reg(ADD, Reg::load_f32(amp))
+                    .store();
+            }
+            let base = mem.read::<u32>(h(8)).wrapping_add(16 * i).wrapping_add(0xc);
+            let idx = ffx_bridge::x87::ftol(
+                mem,
+                Reg::load_f32(ang_end).reg(SUB, Reg::load_f32(ang)).value(),
+            );
+            let hgt = Reg::load_f32(amp_end)
+                .reg(SUB, Reg::load_f32(amp))
+                .reg(MUL, Reg::load_f32(sin(mem, idx)))
+                .store();
+            let mut p = base.wrapping_add(omd);
+            for _ in 0..N {
+                mem.write(p.wrapping_sub(4), hgt);
+                mem.write(p, 1.0f32);
+                p = p.wrapping_add(0x210);
+            }
+            z = Reg::load_f32(z)
+                .mem(ADD, f(mem, wave.wrapping_add(0x48)))
+                .store();
+            amp = Reg::load_f32(amp).reg(ADD, Reg::load_f32(z)).store();
+            dang = Reg::load_f32(dang)
+                .mem(ADD, f(mem, wave.wrapping_add(0x38)))
+                .store();
+            ang = Reg::load_f32(ang).reg(ADD, Reg::load_f32(dang)).store();
+        }
+        // the normals tilt by the running slope mean
+        let deg = g(mem, 0x007e_7ed0);
+        let slope = |mem: &mut M, fcall: &mut dyn FnMut(&mut M, u32, &[u32]) -> f64, i: u32| {
+            let at = mem.read::<u32>(h(8)).wrapping_add(16 * i).wrapping_add(omd);
+            let w = |mem: &M, o: u32| q(f(mem, at.wrapping_add(o))).to_bits();
+            let args = if i == 0 {
+                [w(mem, 0), w(mem, 8), w(mem, 0x10), w(mem, 0x18), 0]
+            } else {
+                [w(mem, 0x10), w(mem, 0x18), w(mem, 0), w(mem, 8), 0]
+            };
+            #[allow(clippy::cast_possible_truncation)] // fstp m32
+            let d = fcall(mem, deg, &args) as f32;
+            d
+        };
+        let mut d = slope(mem, fcall, 0);
+        let mut prev = ffx_bridge::x87::ftol(mem, f64::from(d)).wrapping_sub(0x400) & 0xfff;
+        for i in 0..N {
+            let cur = if i == 0 {
+                prev
+            } else {
+                if i != 0x20 {
+                    d = slope(mem, fcall, i);
+                }
+                ffx_bridge::x87::ftol(mem, f64::from(d)).wrapping_sub(0x400) & 0xfff
+            };
+            prev = mean(prev, cur);
+            let co = q(sin(mem, prev + 0x400));
+            let si = q(sin(mem, prev));
+            let mut p = mem
+                .read::<u32>(h(0xc))
+                .wrapping_add(16 * i)
+                .wrapping_add(omd);
+            for _ in 0..N {
+                let x = Reg::load_f32(f(mem, p)).reg(MUL, Reg::load_f32(si)).store();
+                mem.write(p, x);
+                let y = Reg::load_f32(f(mem, p.wrapping_add(4)))
+                    .reg(MUL, Reg::load_f32(si))
+                    .store();
+                mem.write(p.wrapping_add(4), y);
+                mem.write(p.wrapping_add(8), co);
+                p = p.wrapping_add(0x210);
+            }
+        }
+        // the outer radius
+        let mut big = 0f32;
+        let mut step = q(f(mem, obj.wrapping_add(0x30)));
+        for _ in 0..N {
+            step = Reg::load_f32(step)
+                .mem(ADD, f(mem, obj.wrapping_add(0x34)))
+                .store();
+            big = Reg::load_f32(big).reg(ADD, Reg::load_f32(step)).store();
+        }
+        // the projected extent
+        let fov = fcall(mem, g(mem, 0x0063_9570), &[]);
+        let half = Reg::Num(fov).constant(MUL, c64(mem, 0x00b9_2220)).value();
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let t = q(tan(mem, half) as f32);
+        let (ta4, te4, t64, t24, t14) = (
+            frame.wrapping_sub(0xa4),
+            frame.wrapping_sub(0xe4),
+            frame.wrapping_sub(0x64),
+            frame.wrapping_sub(0x24),
+            frame.wrapping_sub(0x14),
+        );
+        let copy = g(mem, 0x006e_d360);
+        call(mem, copy, &[ta4, view]);
+        call(mem, copy, &[te4, proj]);
+        call(mem, g(mem, 0x006e_d5c0), &[t64, te4, ta4]);
+        let apply = g(mem, 0x006e_d2e0);
+        let aspect = c64(mem, 0x00b4_3d68);
+        let put4 = |mem: &mut M, v: [f32; 4]| {
+            for (i, x) in (0u32..).zip(v) {
+                mem.write(t14 + 4 * i, x);
+            }
+        };
+        let pz = |mem: &M| Reg::load_f32(f(mem, t24 + 8)).mem(MUL, t);
+        put4(mem, [0.0, 0.0, 0.0, 1.0]);
+        call(mem, apply, &[t24, t64, t14]);
+        let u0 = Reg::load_f32(f(mem, t24))
+            .reg(DIV, pz(mem).constant(MUL, aspect))
+            .store();
+        let v0 = pz(mem).mem(|a, b| b / a, f(mem, t24 + 4)).store();
+        mem.write(t14, q(big));
+        call(mem, apply, &[t24, t64, t14]);
+        let u_r = Reg::load_f32(f(mem, t24))
+            .reg(DIV, pz(mem).constant(MUL, aspect))
+            .store();
+        // fchs
+        let negb = f32::from_bits(big.to_bits() ^ 0x8000_0000);
+        mem.write(t14, q(negb));
+        call(mem, apply, &[t24, t64, t14]);
+        let u_l = Reg::load_f32(f(mem, t24))
+            .reg(DIV, pz(mem).constant(MUL, aspect))
+            .store();
+        put4(mem, [0.0, q(big), 0.0, 1.0]);
+        call(mem, apply, &[t24, t64, t14]);
+        let v_r = Reg::load_f32(f(mem, t24 + 4)).reg(DIV, pz(mem)).store();
+        mem.write(t14 + 4, q(negb));
+        call(mem, apply, &[t24, t64, t14]);
+        let v_l = Reg::load_f32(f(mem, t24 + 4)).reg(DIV, pz(mem)).store();
+        let zero = Reg::Num(0.0);
+        let abs = |x: f32| -> f32 {
+            if x < 0.0 {
+                zero.reg(SUB, Reg::load_f32(x)).store()
+            } else {
+                x
+            }
+        };
+        let da = abs(Reg::load_f32(u_r).reg(SUB, Reg::load_f32(u0)).store());
+        let db = abs(Reg::load_f32(u_l).reg(SUB, Reg::load_f32(u0)).store());
+        let dc = abs(Reg::load_f32(v_r).reg(SUB, Reg::load_f32(v0)).store());
+        let dd = abs(Reg::load_f32(v_l).reg(SUB, Reg::load_f32(v0)).store());
+        let half_r = Reg::Num(c64(mem, 0x00b9_2220));
+        let one = Reg::Num(1.0);
+        let u_c = Reg::load_f32(u0).reg(ADD, one).reg(MUL, half_r).store();
+        let v_c = one.mem(ADD, v0).reg(MUL, half_r).store();
+        let two_r = Reg::load_f32(big).reg(ADD, Reg::load_f32(big));
+        let us = Reg::load_f32(db)
+            .reg(ADD, Reg::load_f32(da))
+            .reg(DIV, two_r)
+            .store();
+        let us = Reg::load_f32(us).reg(MUL, half_r).store();
+        let vs = Reg::load_f32(dd)
+            .reg(ADD, Reg::load_f32(dc))
+            .reg(DIV, two_r)
+            .store();
+        let vs = half_r.reg(MUL, Reg::load_f32(vs)).store();
+        let rot = Reg::load_f32(f(mem, wave.wrapping_add(0x3c)))
+            .constant(MUL, c64(mem, 0x00b5_0198))
+            .store();
+        let scale = Reg::Num(c64(mem, 0x00b5_15c8));
+        let (ucr, vcr, rotr) = (Reg::load_f32(u_c), Reg::load_f32(v_c), Reg::load_f32(rot));
+        let texc = |mem: &M, x: f32, y: f32| -> (u16, u16) {
+            let u = Reg::load_f32(x)
+                .mem(MUL, us)
+                .reg(MUL, rotr)
+                .reg(ADD, ucr)
+                .reg(MUL, scale)
+                .value();
+            let v = Reg::load_f32(vs)
+                .mem(MUL, y)
+                .reg(MUL, rotr)
+                .reg(ADD, vcr)
+                .reg(MUL, scale)
+                .value();
+            #[allow(clippy::cast_possible_truncation)] // the u16 stores
+            (
+                ffx_bridge::x87::ftol(mem, u) as u16,
+                0x1000u16.wrapping_sub(ffx_bridge::x87::ftol(mem, v) as u16),
+            )
+        };
+        // the quads, the colours constant
+        let regs = crate::md::bridge::SPR_BOUNCE.ptr(mem).addr;
+        let shift = g(mem, 0x00c8_b500);
+        let mut rec = omd.wrapping_add(0x30);
+        for s in 0..32u32 {
+            let a = 0x80 * s;
+            let ca = (a + 0x400) & 0xfff;
+            let a2 = (a + 0x80) & 0xfff;
+            let ca2 = (ca + 0x80) & 0xfff;
+            let mut r = 0f32;
+            let mut step = q(f(mem, obj.wrapping_add(0x30)));
+            for k in 0..32u32 {
+                #[allow(clippy::cast_possible_truncation)] // u16 indices
+                let v = (N * s + k) as u16;
+                for (n, i) in (0u32..).zip([
+                    v,
+                    v.wrapping_add(1),
+                    v.wrapping_add(0x21),
+                    v.wrapping_add(0x22),
+                ]) {
+                    mem.write(rec.wrapping_add(0x10 + 2 * n), i);
+                }
+                let sh: u32 = mem.read(shift);
+                mem.write(regs, 0x8080_8080u32);
+                mem.write(regs + 4, 0xffff_ffffu32);
+                mem.write(rec.wrapping_add(sh), 0x8080_8080u32);
+                for o in [4u32, 8, 0xc] {
+                    let c: u32 = mem.read(regs);
+                    mem.write(rec.wrapping_add(o), c);
+                }
+                mem.write(shift, 0u32);
+                let sa = sin(mem, a);
+                let y = Reg::load_f32(sa).reg(MUL, Reg::load_f32(r)).store();
+                let x = Reg::load_f32(sin(mem, ca))
+                    .reg(MUL, Reg::load_f32(r))
+                    .store();
+                let (uu, vv) = texc(mem, x, y);
+                mem.write(rec.wrapping_add(0x18), uu);
+                mem.write(rec.wrapping_add(0x1a), vv);
+                let y = Reg::load_f32(sin(mem, a2))
+                    .reg(MUL, Reg::load_f32(r))
+                    .store();
+                let x = Reg::load_f32(r).mem(MUL, sin(mem, ca2)).store();
+                let (uu, vv) = texc(mem, x, y);
+                mem.write(rec.wrapping_add(0x20), uu);
+                mem.write(rec.wrapping_add(0x22), vv);
+                step = Reg::load_f32(step)
+                    .mem(ADD, f(mem, obj.wrapping_add(0x34)))
+                    .store();
+                r = Reg::load_f32(r).reg(ADD, Reg::load_f32(step)).store();
+                let y = Reg::load_f32(sa).reg(MUL, Reg::load_f32(r)).store();
+                let x = Reg::load_f32(sin(mem, ca))
+                    .reg(MUL, Reg::load_f32(r))
+                    .store();
+                let (uu, vv) = texc(mem, x, y);
+                mem.write(rec.wrapping_add(0x1c), uu);
+                mem.write(rec.wrapping_add(0x1e), vv);
+                let y = Reg::load_f32(sin(mem, a2))
+                    .reg(MUL, Reg::load_f32(r))
+                    .store();
+                let x = Reg::load_f32(r).mem(MUL, sin(mem, ca2)).store();
+                let (uu, vv) = texc(mem, x, y);
+                mem.write(rec.wrapping_add(0x24), uu);
+                mem.write(rec.wrapping_add(0x26), vv);
+                rec = rec.wrapping_add(0x28);
+            }
+        }
+        mem.write(rec.wrapping_add(1), 0xffu8);
+        let n = i32::from(mem.read::<i16>(h(0x14))).cast_unsigned();
+        (n << 4).wrapping_add(omd).wrapping_add(mem.read(h(0xc)))
+    }
 }

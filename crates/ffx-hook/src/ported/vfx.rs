@@ -70,6 +70,31 @@ fn crt_trig(cos: bool, x: f32) -> f32 {
     out
 }
 
+/// MSVCR110's `_CItan` through the game's import slot (`0x00b0c3a0`): the
+/// operand loaded as `fld qword`, the result stored as `fstp qword`
+/// through `edi`.
+fn crt_tan(x: f64) -> f64 {
+    let slot = crate::rebase(0x00b0_c3a0) as *const usize;
+    let mut out = 0f64;
+    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi (which the callee keeps), leaving the
+    // x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
 /// MSVCR110's `rand()`, through the game's import slot (`0x00b0c420`).
 fn crt_rand() -> u32 {
     // SAFETY: the slot holds the address of the CRT's cdecl `rand()`.
@@ -1562,6 +1587,17 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0x90;
         wave::bridge::opus_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, light, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_0154_wave_omd_make(obj, wave, uv, omd, view, proj)`: its
+    /// stack locals in a buffer on this shim's stack (the frame pointer at
+    /// its end).
+    opus_0154_wave_omd_make @ 0x007f_67c0 => extern "C" fn opus_0154_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, proj: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xf0]);
+        let mut locals = Locals([0; 0xf0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        wave::bridge::opus_0154_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, proj, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a), &mut |_, x| crt_tan(x))
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
