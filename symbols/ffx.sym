@@ -10043,6 +10043,7 @@
 0x009085d0 function yiFieldMapRead            # fh v3:bsim1.00 0x009085d0
 0x00908600 function yiFieldMapReadNB          # fh v3:cg3 0x908600
 0x00908630 function yiFieldObjReadNB          # fh switch:bsim1.00 0x710052ac80
+0x00908660 function yiGetColorOffsetInt       # (out) -> last: the four colour offsets (0x018df01c) + 128.0, _ftol2_sse each; g_MagicImports (0x00c65594); name ours
 0x009086b0 function yiCheckDObj                  # (index) -> 0 when index < g_YiDObjCount, else -1; script native 0x0091c780
 0x009086d0 function yiGetBackColor            # fh v3:exact 0x009086d0
 0x009087f0 function yiGetBattleCenter         # fh v3:exact 0x009087f0
@@ -10750,6 +10751,7 @@
 0x0092e1e0 function rcbgChrFindById              # (id) -> first character (Ch_HandleRewind / Ch_HandleGetNext) whose Ch_GetId is id, else 0; rcbgFPm097's process
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
 0x0092e400 function rcAngleDiff                  # (float a, float b) -> |a - b| as f32, 2pi - it past pi (doubles 0x00b92288, 0x00b39378); g_MagicImports
+0x0092e580 function rcefLerp                  # (a, b, t, mode) -> ST0: a + w (b - a), w = t, sin table (mode 2, t * 16384) or cosine ease (mode 1, (sin(t * 32768 - 16384) + 1) / 2); g_MagicImports (0x00c65470); name ours
 0x0092e620 function rcefIsBattle              # fh v3:bsim1.00 0x0092e620
 0x0092e630 function rcefScaleMatrix100        # (m): three rows times 100.0 (rcbgScaleVector_0092d690); rcefGetChrMatrix
 0x0092e680 function rcefPlaySE                # fh v3:exact 0x0092e680
@@ -10763,6 +10765,8 @@
 0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
+0x0092e9c0 function rcefColorSet              # (r, g, b, a, v): the bytes as floats, rcefWorkSetFromVf00(0x025d5a20, colour, v); g_MagicImports (0x00c6544c); name ours
+0x0092ea40 function rcefColorFade             # (r0, g0, b0, a0, r1, g1, b1, a1, v): both colours as floats, rcefWorkSet(0x025d5a20, c0, c1, v); name ours
 0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
 0x0092eb70 function rcefWeaponSetHide         # (chr, show): Ch_SetHideEffect(MsGetWeaponHandle(chr, 0), show == 0) when the handle is non-zero; name ours
 0x0092eba0 function rcefPostRequest           # (a, f, b, c, d) -> d: g_RcefRequest = a, f (float), b, 0, c, d; g_RcefRequestPending = 1; g_MagicImports (0x00c65494); nothing in the PC build reads the request; name ours
@@ -14649,6 +14653,7 @@
 0x018df178 label    g_YiBackColor                # background RGBA bytes (yiGetBackColor: scaled by g_YiColorScale plus g_YiColorOffset when render status bits 0 and 2)
 0x018df588 label    g_YiDObjCount                # display objects in use (yiGetMatrixDObj bound)
 0x018df59c label    g_YiDObjs                    # display objects, 0xb4 bytes each: +0 matrix, +0x40 rotation, +0x50 translation, +0x74 u16 group (yiGetMatrixGroup), +0x76 u16 rotation order (yiRotMatrixSeq; 0x00908190)
+0x018df624 label    g_YiDObjMorphValue           # f32 per display object (0xb4 bytes apart): yiSetMIMeParamDObj
 0x019138a0 label    g_YiMapRead                  # non-zero once a map is read: gates yiCallFieldParticle
 0x019138a8 label    g_YiMapData                  # the map data read (yiMapReadMaster, yiObjReadCallback); +4 its status (yiGetMapStatus)
 0x01931208 label    g_YiFieldVec4                # four floats (yiSetFieldVec4, yiSetFieldVec4i); ?meaning
@@ -14782,6 +14787,7 @@
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
+0x025d5a20 label    g_RcefColorWork              # the effect's colour work (rcefWorkSet layout, +0x1c0..): rcefColorSet/rcefColorFade
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
 0x025d5a28 label    g_RcefOef2                   # the effect's oef2 data: rcefPlaySE's op_oef2_a_get(it, 6, id)
 0x025d5c18 label    g_RcefRequest                # rcefPostRequest's words: a, f, b, 0, c, d (+0..+0x14); no reader in the PC build

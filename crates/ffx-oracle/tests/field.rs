@@ -11054,3 +11054,102 @@ fn round24_aeon_gains_and_streams_match_the_original() {
         );
     }
 }
+
+/// Round 25: the compiler's copies of `rcuiScaleVector` and
+/// `rcVec4fToFixed`, the display objects' morph value, the colour offset
+/// as ints, the effect's interpolation and colour work.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round25_copies_morph_lerp_and_colours_match_the_original() {
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0019_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let list: Vec<(Option<u32>, Vec<u8>)> =
+        vec![(Some(yi::SET_MORPH_VALUE), log_stub(log, rv, 290, 2))];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (dst, v, p) = (t.alloc(0x10), t.alloc(0x10), t.alloc(4));
+    let work_at = t.b.rebase(tb::COLOR_WORK);
+    for k in 0..300u32 {
+        env.reset(&mut t, &mut rng);
+        for i in 0..4 {
+            let x = if k % 13 == 7 {
+                rng.next() | 0x0040_0000
+            } else {
+                float_in(&mut rng, -3000, 3000)
+            };
+            t.put(v + 4 * i, x);
+        }
+        t.fill(dst, 0x10, &mut rng);
+        let (s, a, b, c) = (
+            float_in(&mut rng, -8, 8),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        );
+        t.same(
+            "rcuiScaleVector_copy_00756600",
+            |o| o.eax(0x0075_6600, &[dst, v, s, a, b, c]),
+            |m| vu0::bridge::rcui_scale_vector(m, dst, v, s, [a, b, c]),
+        );
+        t.same(
+            "rcVec4fToFixed_copy_007e6cc0",
+            |o| o.eax(0x007e_6cc0, &[dst, v]),
+            |m| model::bridge::rc_vec4f_to_fixed(m, dst, v),
+        );
+        // the morph value
+        t.set(yi::DOBJ_COUNT, rng.below(0x40));
+        let obj = rng.below(0x50);
+        t.put(p, float_in(&mut rng, -4, 4));
+        t.same(
+            "yiSetMIMeParamDObj",
+            |o| o.eax(0x0090_a4d0, &[obj, p]),
+            |m| yi::bridge::yi_set_mime_param_dobj(m, obj, p, call),
+        );
+        // the colour offset
+        for i in 0..4 {
+            let at = t.b.rebase(0x018d_f01c) + 4 * i;
+            t.put(at, float_in(&mut rng, -400, 400));
+        }
+        t.same(
+            "yiGetColorOffsetInt",
+            |o| o.eax(0x0090_8660, &[dst]),
+            |m| yi::bridge::yi_get_color_offset_int(m, dst),
+        );
+        // the interpolation
+        let mode = rng.below(4);
+        let (a0, b0) = (float_in(&mut rng, -500, 500), float_in(&mut rng, -500, 500));
+        let tt = if k % 5 == 0 {
+            float_in(&mut rng, -4, 4)
+        } else {
+            float_in(&mut rng, 0, 1)
+        };
+        t.same(
+            "rcefLerp",
+            |o| o.float(0x0092_e580, &[a0, b0, tt, mode]),
+            |m| bits(tb::rcef_lerp(m, [a0, b0, tt, mode])),
+        );
+        // the colour work
+        t.fill(work_at + 0x1c0, 0x40, &mut rng);
+        let cols: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+        let work = t.stack_scratch(0);
+        t.same(
+            "rcefColorSet",
+            |o| o.void(0x0092_e9c0, &cols[..5]),
+            |m| {
+                let a = [cols[0], cols[1], cols[2], cols[3], cols[4]];
+                tb::rcef_color_set(m, a, work);
+            },
+        );
+        t.fill(work_at + 0x1c0, 0x40, &mut rng);
+        let mut a9 = [0u32; 9];
+        a9.copy_from_slice(&cols);
+        t.same(
+            "rcefColorFade",
+            |o| o.void(0x0092_ea40, &a9),
+            |m| tb::rcef_color_fade(m, a9, work),
+        );
+    }
+}

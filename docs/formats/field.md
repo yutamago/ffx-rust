@@ -1149,6 +1149,34 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - Left for the debug list: `rcefMemDebugInit`/`rcefMemDebugDisp`
   (`0x009374f0`/`0x00937440`).
 
+## Copies, the morph value, interpolation and colour work (round 25)
+
+- `rcuiScaleVector_copy_00756600` and `rcVec4fToFixed_copy_007e6cc0` are
+  copies of `rcuiScaleVector` and `rcVec4fToFixed` that the compiler
+  kept; their shims use the same bridges.
+- `yiSetMIMeParamDObj` (`0x0090a4d0`): for a display object below
+  `g_YiDObjCount`, copies the float at `p` through the x87 stack into
+  the object's morph value (`0x018df624`, `0xb4` bytes apart) and passes
+  it to `graphicSetMeshVertexColorMorphValue`. Returns 0.
+- `yiGetColorOffsetInt` (`0x00908660`, an effect import, name ours): the
+  colour offsets plus 128.0, truncated into four ints.
+- `rcefLerp` (`0x0092e580`, an effect import, name ours) returns
+  `a + w (b - a)` in `ST0`:
+  - mode 2: `w` is the sine table's entry
+    `trunc(t * 16384) >> 4 & 0xfff`.
+  - mode 1: a cosine ease, `(sin(t * 32768 - 16384) + 1) / 2`, stored
+    as `f32`.
+  - any other mode: `w` is `t`.
+  - `b - a` and the result are stored as `f32`.
+- `rcefColorSet`/`rcefColorFade` (`0x0092e9c0`/`0x0092ea40`, effect
+  imports, names ours) convert colour bytes to floats and start the
+  effect's colour work at `0x025d5a20` with `rcefWorkSetFromVf00` (from
+  the current colour) or `rcefWorkSet` (from colour 0 to colour 1).
+- Not ported:
+  - `0x00a48e40` and `0x0090dd00` have no caller or pointer in the image.
+  - `0x0092e4f0` loops on `rand()` through the import table.
+  - `0x00a45930` runs a ppp part for the sphere grid's cursor.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
