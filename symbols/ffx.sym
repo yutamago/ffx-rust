@@ -4941,7 +4941,7 @@
 0x0078c640 function DmgCalc_HitKind           # (flags, counts): DmgCalc's result +1: 1 when counts[1] and no flags, 2 when only counts[0]; ported
 0x0078c670 function DmgCalc_IsDistill         # -1 when (u8)arg & 0x3e: the distill statuses (status bits 2, 1-5; InflictStatus_Extra clears the others when one lands); ported
 0x0078c690 function MsCheckUseCommand         # fh v3:exact 0x0078c750
-0x0078c740 function MsDamageCheckDeath        # fh v3:exact+call.cs 0x0078c800 cdecl
+0x0078c740 function MsDamageCheckDeath        # fh v3:exact+call.cs 0x0078c800 cdecl; ours: (i, j, no_reward, flags): j dies of i's hit (+0x617 bit 0 or HP < 1): kill counts, capture, overkill (+0xf60 spent, no g_BtlNoOverkill: +0xf5f, word kind 5), KO, statuses off, cues cleaned, action 4, MsGetItem, Auto-Life/Phoenix, MsLimitTypeDeathCheck, MsSetDeath, forceAutoBattleOff for aeons/the sisters; ported (battle round 12)
 0x0078ca20 function MsDamageSetMotion         # fh v3:exact+call.cs 0x0078cae0 cdecl
 0x0078cca0 function MsDeathTerminate          # fh switch:bsim1.00 0x7100344450
 0x0078cce0 function MsGetChrVigor             # fh v3:exact 0x0078cda0
@@ -5701,7 +5701,7 @@
 0x007b0ca0 function MsCountChrActing          # ours: actors whose command stage +0xdf0 is not 0 (MsLimitTypeProcess waits for none)
 0x007b0cd0 function MsLimitTidusLearn         # fh v3:exact+call.cs 0x007b0ce0 cdecl
 0x007b0d50 function MsLimitTypeDamageCheck    # fh v3:exact+call.cs 0x007b0d60 cdecl
-0x007b0f80 function MsLimitTypeDeathCheck     # fh call.cs cdecl
+0x007b0f80 function MsLimitTypeDeathCheck     # fh call.cs cdecl; ours: Comrade (7) for the party when a monster kills one, Slayer (8)/Hero (9) for a party member's kill; ported (battle round 12)
 0x007b1090 function MsLimitTypeEscapeCheck    # fh v3:exact 0x007b10a0
 0x007b10c0 function MsLimitTypeExpGet            # layout: alphabetical run between MsLimitTypeEscapeCheck and MsLimitTypeProcess (1 unnamed in the gap); Switch 0x7100359860 MsLimitTypeExpGet is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007b1180 function MsLimitTypeProcess        # fh v3:exact 0x007b1190
@@ -5725,10 +5725,11 @@
 0x007b2430 function MsRegistInputCue          # fh v3:exact 0x007b2440
 0x007b24a0 function MsAutoCommandStatusCheck  # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it; was Battle_ActorCanAct
 0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl
-0x007b26d0 function MsAutoInsertCommand_007b26d0 # structure: (chr, command, target, ...): clears a command struct (MsStructClear), fills it and queues it (MsInsertBtlCommand); callers MsAutoCureProcess, MsAutoPhenixProcess, MsAutoPotionProcess (the auto-item abilities); name ours
-0x007b27b0 function MsAutoPhenixProcess       # fh v3:exact 0x007b27c0
+0x007b26d0 function MsAutoInsertCommand_007b26d0 # structure: (chr, command, target, ...): clears a command struct (MsStructClear), fills it and queues it (MsInsertBtlCommand); callers MsAutoCureProcess, MsAutoPhenixProcess, MsAutoPotionProcess (the auto-item abilities); name ours; ported (battle round 12)
+0x007b2740 function MsAutoInsertAbility       # ours: (i, target, after, id, prio): a cleared 0x48-byte block with command id (second 0xff) on target alone inserted (MsInsertBtlCommand(block, prio, 1, after)); MsAutoRelifeProcess_007b2910's; ported (battle round 12)
+0x007b27b0 function MsAutoPhenixProcess       # fh v3:exact 0x007b27c0; ours: the first of i's side with +0x6bc bit 12 free to act throws a Phoenix Down (0x2006, the party's from the bag) via MsAutoInsertCommand_007b26d0; ported (battle round 12)
 0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl
-0x007b2910 function MsAutoRelifeProcess_007b2910 # fh v3:exact 0x007b2920
+0x007b2910 function MsAutoRelifeProcess_007b2910 # fh v3:exact 0x007b2920; ours: status bit 9 (Auto-Life): command 0x311f on itself via MsAutoInsertAbility; else +0x5ca cleared, -1; ported (battle round 12)
 0x007b2950 function MsAddYoujinbouCom         # fh switch:bsim1.00 0x7100381b80
 0x007b2980 function MsCheckSummon             # fh v3:exact 0x007b2990
 0x007b2ad0 function MsDeathYoujinbou          # fh v3:exact 0x007b2ae0
@@ -14432,6 +14433,7 @@
 0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
 0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
 0x0112a911 label g_BtlDebugRareSteal          # u8, Battle_Steal always takes the rare item
+0x0112a914 label g_BtlNoOverkill          # u8: set, no kill counts as an overkill (MsDamageCheckDeath)
 0x0112a915 label g_BtlMenuLook             # u8 set: MsMenuCheckLook always reports a looker
 0x0112a916 label g_BtlLimitFrozen          # u8 set: MsLimitUp fills no overdrive gauge
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)

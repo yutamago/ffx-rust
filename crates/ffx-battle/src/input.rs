@@ -8,8 +8,8 @@
 //! plain turn. Also the damage numbers (`MsNumberRegist`) and HP loss
 //! (`MsSubHP`) those use.
 //!
-//! The menu is another module's and `MsDamageCheckDeath` not ported yet:
-//! those go to the game's code through `s.call`.
+//! The menu is another module's: it goes to the game's code through
+//! `s.call`.
 
 /// The game's memory, through [`ffx_bridge::Mem`].
 #[allow(clippy::many_single_char_names)] // indices, actors, the script calls
@@ -41,8 +41,6 @@ pub mod bridge {
     pub const DBG_PRINTF: u32 = 0x0062_f500;
     /// `TOSetBtlActiveChr` (menu): the actor's battle menu opens.
     pub const TO_SET_BTL_ACTIVE_CHR: u32 = 0x0089_bb10;
-    /// `MsDamageCheckDeath` (not ported yet).
-    pub const MS_DAMAGE_CHECK_DEATH: u32 = 0x0078_c740;
     /// "battle internal error : %s\n" (`MsBattleError`).
     pub const BATTLE_ERROR_FORMAT: u32 = 0x00b5_4d44;
     /// `MsBattleError("send_menu")`'s message.
@@ -417,7 +415,7 @@ pub mod bridge {
     /// every able actor with Regen (`+0x612`, alive, not KO'd or out)
     /// gets `(+0x6d2 · max HP >> 8) + 100` HP back (a Zombie, `+0x606`
     /// bit 1, loses it: `+0xded` its own, the number style 0x81 with
-    /// `+0xddb`, then `MsDamageCheckDeath` through the game, the hit
+    /// `+0xddb`, then [`crate::death::bridge::ms_damage_check_death`], the hit
     /// motion 8 unless that killed it; else the standing motion 2 when it
     /// may), its pose and automatic statuses redone, `+0xdd0` and the
     /// count `+0x6d2` cleared; the actor's 13 status counts (`+0x608`, 1
@@ -469,8 +467,9 @@ pub mod bridge {
                         c,
                     );
                     let motion = if zombie {
-                        let f = code(mem, MS_DAMAGE_CHECK_DEATH);
-                        ((s.call)(mem, f, &[j, j, 0, 1]) == 0).then_some(8)
+                        let dead =
+                            crate::death::bridge::ms_damage_check_death(mem, host, s, j, j, 0, 1);
+                        (dead == 0).then_some(8)
                     } else {
                         (crate::actor::bridge::ms_check_set_motion(mem, c, 2) != 0).then_some(2)
                     };

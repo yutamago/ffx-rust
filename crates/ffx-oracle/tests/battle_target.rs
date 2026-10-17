@@ -2123,11 +2123,15 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
     same("MsSetDeathAll", a, b);
 }
 
-/// The game's functions an actor's turn start calls, stubbed:
-/// `TOSetBtlActiveChr` (menu) and `MsDamageCheckDeath` (not ported).
-const INPUT_CALLEES: [(u32, u8); 2] = [
+/// The game's functions an actor's turn start and a death call, stubbed:
+/// `TOSetBtlActiveChr` (menu), `MsGetItem` (not ported),
+/// `forceAutoBattleOff` and `TOBtlCloseSignWindow` (system); the first
+/// four arguments logged.
+const INPUT_CALLEES: [(u32, u8); 4] = [
     (ffx_battle::input::bridge::TO_SET_BTL_ACTIVE_CHR, 1),
-    (ffx_battle::input::bridge::MS_DAMAGE_CHECK_DEATH, 4),
+    (ffx_battle::death::bridge::MS_GET_ITEM, 4),
+    (ffx_battle::death::bridge::FORCE_AUTO_BATTLE_OFF, 0),
+    (ffx_battle::death::bridge::TO_BTL_CLOSE_SIGN_WINDOW, 0),
 ];
 const INPUT_STUBS: u32 = PROCESS_STUBS + 0x40 * 16;
 
@@ -2178,6 +2182,7 @@ fn input(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
 /// HP loss, Regen, Doom, Provoke, Berserk, the menu.
 fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
     use ffx_battle::atel::bridge::Script;
+    use ffx_battle::death::bridge as d;
     use ffx_battle::input::bridge as ip;
     use ffx_battle::minor::bridge as mn;
     use ffx_battle::state::bridge as st;
@@ -2206,7 +2211,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             rng.byte(),
         ),
     ][rng.below(5) as usize];
-    battle_num(a, b, rec + 0x1e0, id, g);
+    battle_num(a, b, rec + 0x3e0, id, g);
     // the monsters (MsGetMon) are the actors from 0x14
     set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
     set(a, b, st::INPUT_CUE_COUNT, 0);
@@ -2264,7 +2269,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     });
     same("MsSetChrWeak", a, b);
     // the damage numbers: a pool of 0x80 records, some taken
-    let pool = rec + 0x200;
+    let pool = rec + 0x400;
     let mut recs = vec![0u8; 0x80 * 0x14];
     let full = rng.below(6) == 0;
     for r in recs.chunks_mut(0x14) {
@@ -2431,12 +2436,97 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         local_words(a, b);
         same("MsCheatPlayerPowerup", a, b);
     }
-    // Regen and the status counts before a turn
-    for (k, (_, n)) in (0u32..).zip(INPUT_CALLEES) {
-        let _ = n;
-        let r = [0u32, 1][rng.below(2) as usize];
-        poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    // the overdrive modes of a death
+    let (i, j) = (rng.below(ACTORS), rng.below(ACTORS));
+    let args = [i, w.actor(i), j, w.actor(j)];
+    twin(
+        "MsLimitTypeDeathCheck",
+        a,
+        b,
+        0x007b_0f80,
+        &args,
+        ALL,
+        |m| d::ms_limit_type_death_check(m, i, args[1], j, args[3]),
+    );
+    same("MsLimitTypeDeathCheck", a, b);
+    // Auto-Life and Auto-Phoenix (an item in the bag at times)
+    let (i, killer) = (rng.below(ACTORS), rng.below(ACTORS));
+    let actor = w.actor(i);
+    for q in 0..ACTORS {
+        let bits = [0u16, 0x1000, half16(rng)][rng.below(3) as usize];
+        poke(a, b, w.actor(q) + 0x6bc, &bits.to_le_bytes());
     }
+    let status = [0, 0x200, u32::from(half16(rng))][rng.below(3) as usize];
+    twin(
+        "MsAutoRelifeProcess",
+        a,
+        b,
+        0x007b_2910,
+        &[i, actor, killer, status],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                d::ms_auto_relife_process(m, &h, &mut s, i, actor, killer, status).cast_unsigned()
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsAutoRelifeProcess", a, b);
+    twin(
+        "MsAutoPhenixProcess",
+        a,
+        b,
+        0x007b_27b0,
+        &[i, actor, killer],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                d::ms_auto_phenix_process(m, &h, &mut s, i, actor, killer)
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsAutoPhenixProcess", a, b);
+    // deaths by damage (the spoils and auto-battle through the stubs)
+    set(a, b, d::NO_OVERKILL, flag(rng, 3));
+    let i = rng.below(ACTORS);
+    let j = [rng.below(ACTORS), 8 + rng.below(7), 0xf + rng.below(3)][rng.below(3) as usize];
+    let v = w.actor(j);
+    poke(a, b, v + 0x617, &[flag(rng, 4)]);
+    poke(a, b, v + 0x10, &[flag(rng, 6) ^ 1]);
+    poke(a, b, v + 0x701, &[[0, 0, 1, 3][rng.below(4) as usize]]);
+    for o in [0xdcd, 0xdce, 0xdd0, 0x6d0, 0x3f5] {
+        poke(a, b, v + o, &[flag(rng, 3)]);
+    }
+    poke(a, b, v + 0xf60, &rng.range(-2, 3).to_le_bytes());
+    let no_reward = u32::from(flag(rng, 3));
+    let flags = rng.below(3);
+    let dying_ok =
+        writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40);
+    if dying_ok && placed(a, b, w, out) {
+        twin(
+            "MsDamageCheckDeath",
+            a,
+            b,
+            0x0078_c740,
+            &[i, j, no_reward, flags],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    d::ms_damage_check_death(m, &h, &mut s, i, j, no_reward, flags)
+                })
+            },
+        );
+        local_words(a, b);
+        let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+        let x = a.read(m + 0x20, 16).unwrap();
+        b.write(m + 0x20, &x).unwrap();
+        same("MsDamageCheckDeath", a, b);
+    }
+    // Regen and the status counts before a turn
     let i = rng.below(ACTORS);
     let actor = w.actor(i);
     if placed(a, b, w, out) {
@@ -2925,7 +3015,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let prec = scratch(a, b, (EXCHANGE_REC * 13) as usize);
     process_stubs(a, b, prec, erec);
     // the input stubs' records, then a damage number pool
-    let irec = scratch(a, b, 0x200 + 0x80 * 0x14);
+    let irec = scratch(a, b, 0x400 + 0x80 * 0x14);
     for o in [&mut *a, &mut *b] {
         for (k, (f, n)) in (0u32..).zip(INPUT_CALLEES) {
             logging_stub(o, f, INPUT_STUBS + 0x40 * k, irec + EXCHANGE_REC * k, n, 0);

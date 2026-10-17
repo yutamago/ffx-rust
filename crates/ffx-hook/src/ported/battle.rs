@@ -2687,7 +2687,7 @@ ported! {
         script!(s);
         input::ms_status_end_motion(&mut mem(), &mut s, i, actor);
     }
-    /// `MsCheckStatusBeforeAction(i, actor)`: `MsDamageCheckDeath` through the game.
+    /// `MsCheckStatusBeforeAction(i, actor)`.
     MsCheckStatusBeforeAction @ 0x007a_f4f0 => extern "C" fn ms_check_status_before_action(i: u32, actor: u32) -> u32 {
         let mut m = mem();
         script!(s);
@@ -2715,10 +2715,45 @@ ported! {
         script!(s);
         input::ms_set_provoking_command(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag)
     }
-    /// `MsBattleProcess_InputCue_00792a90()`: the menu and `MsDamageCheckDeath` through the game.
+    /// `MsBattleProcess_InputCue_00792a90()`: the menu through the game.
     MsBattleProcess_InputCue_00792a90 @ 0x0079_2a90 => extern "C" fn ms_battle_process_input_cue() {
         let mut m = mem();
         script!(s);
         input::ms_battle_process_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `MsLimitTypeDeathCheck(i, actor, j, victim)`.
+    MsLimitTypeDeathCheck @ 0x007b_0f80 => extern "C" fn ms_limit_type_death_check(i: u32, actor: u32, j: u32, victim: u32) -> u32 {
+        death::ms_limit_type_death_check(&mut mem(), i, actor, j, victim)
+    }
+    /// `0x007b2740(i, target, after, id, prio)` (`MsAutoInsertAbility`).
+    MsAutoInsertAbility @ 0x007b_2740 => extern "C" fn ms_auto_insert_ability(i: u32, target: u32, after: u32, id: u32, prio: u32) {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_insert_ability(&mut target::Dm::new(&mut m), &host(), &mut s, i & 0xff, target & 0xff, after, id, prio);
+    }
+    /// `MsAutoInsertCommand_007b26d0(i, target, after, item, prio)`.
+    MsAutoInsertCommand_007b26d0 @ 0x007b_26d0 => extern "C" fn ms_auto_insert_command(i: u32, target: u32, after: u32, item: u32, prio: u32) {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_insert_command(&mut target::Dm::new(&mut m), &host(), &mut s, i & 0xff, target & 0xff, after, item & 0xffff, prio);
+    }
+    /// `MsAutoRelifeProcess_007b2910(i, actor, killer, status)`.
+    MsAutoRelifeProcess_007b2910 @ 0x007b_2910 => extern "C" fn ms_auto_relife_process(i: u32, actor: u32, killer: u32, status: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_relife_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, killer, status)
+    }
+    /// `MsAutoPhenixProcess(i, actor, killer)`.
+    MsAutoPhenixProcess @ 0x007b_27b0 => extern "C" fn ms_auto_phenix_process(i: u32, actor: u32, killer: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_phenix_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, killer)
+    }
+    /// `MsDamageCheckDeath(i, j, no_reward, flags)`: `MsGetItem`, the sign
+    /// window and `forceAutoBattleOff` through the game.
+    MsDamageCheckDeath @ 0x0078_c740 => extern "C" fn ms_damage_check_death(i: u32, j: u32, no_reward: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_damage_check_death(&mut target::Dm::new(&mut m), &host(), &mut s, i, j, no_reward, flags)
     }
 }
