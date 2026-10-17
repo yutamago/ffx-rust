@@ -11459,7 +11459,11 @@ fn round19_text_matches_the_original_on_the_snapshot() {
 
 /// Round 20's button icon width, with the original `graphicUiRemapX2` on
 /// both sides.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
 fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let g = |a: &Oracle, x: u32| a.rebase(x);
