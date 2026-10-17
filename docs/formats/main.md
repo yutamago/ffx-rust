@@ -400,3 +400,16 @@ behind them stays with those modules, which the bridges call.
   loop operand is 1); 2 wait for `+0x728` 0; 3 wait a count (`+0x72a`); 4
   jump; 6 wait until `+0x737` reaches the operand. A wait returns 1 with
   the script unmoved, a step 0, an unknown code -1 (printed).
+
+## The frame's pad (round 9)
+
+`Sg_ControlMain()` (`0x0082d070`) reads pad 0 each frame. The held buttons
+come from `TkGetControlerHist(0, 0, 0)` (16 bits, `0x023c44ac`) and the
+four stick axes from `TkGetControlerAnalogHist(0, 0, axis, 0)` (axis 0..3
+into `0x023c44a7` down to `0x023c44a4`). Pressed buttons (`0x023c44a8`)
+are the ones newly held since last frame (`0x023c44b0`). Then the free
+camera runs (`Sg_ControlCamera`). A debug build without the L/R button
+mode steps the frames per step (`0x00c496d4`): 8+4 with 4 pressed raises
+it, 4+8 with 8 pressed lowers it, and below 0 it returns to 0 and sets
+`0x013007b3`. Button 4 alone requests `0x023c44b4`; button 1 is copied to
+`0x013007b1`.

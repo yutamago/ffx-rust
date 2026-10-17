@@ -1351,6 +1351,10 @@ ported! {
     SG_SeqStep @ 0x0083_7900 => extern "C" fn sg_seq_step(chr: u32) -> u32 {
         seq::bridge::seq_step(&mut mem(), chr)
     }
+    /// `Sg_ControlMain()`.
+    Sg_ControlMain @ 0x0082_d070 => extern "C" fn sg_control_main() -> u32 {
+        state::bridge::control_main(&mut mem())
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

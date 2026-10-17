@@ -2453,6 +2453,7 @@ fn control_synthetic() {
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
     round7_main_cases(&mut a, &mut b, &mut rng, 300);
     round8_main_cases(&mut a, &mut b, &mut rng, 300, false);
+    round9_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2471,6 +2472,7 @@ fn control_snapshot() {
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
     round7_main_cases(&mut a, &mut b, &mut rng, 300);
     round8_main_cases(&mut a, &mut b, &mut rng, 300, true);
+    round9_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3562,4 +3564,75 @@ fn round8_main_cases(
         });
     }
     let _ = f;
+}
+
+// Main round 9: the frame's pad.
+
+/// A recording stub over `sym` whose answer is `table[arg]`, the argument
+/// `k` (0-based) indexing words at `table` (an image address).
+fn table_stub(a: &mut Oracle, b: &mut Oracle, slot: u32, sym: u32, arg: u8, table: u32) {
+    for o in [a, b] {
+        let code = o.rebase(REC_CODE) + 0x60 * slot;
+        let t = o.rebase(table);
+        // mov eax, [esp+4+4k]; mov eax, [eax*4 + table]; ret
+        let mut s = vec![0x8b, 0x44, 0x24, 4 + 4 * arg, 0x8b, 0x04, 0x85];
+        s.extend(t.to_le_bytes());
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+/// Answers for the pad stubs (words by axis; the buttons at slot 0).
+const PAD_ANSWERS: u32 = 0x0270_fe40;
+
+fn round9_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    recorder(a, b, 41, st::TK_GET_CONTROLER_HIST, 3, 0);
+    table_stub(a, b, 42, st::TK_GET_CONTROLER_ANALOG_HIST, 2, PAD_ANSWERS);
+    let rets = a.rebase(REC_RETS);
+    let answers = a.rebase(PAD_ANSWERS);
+    for _ in 0..rounds {
+        let held = if rng.below(2) == 0 {
+            rng.next()
+        } else {
+            rng.below(16) | rng.next() & 0x400
+        };
+        put(a, b, rets + 4 * 41, held);
+        for k in 0..4 {
+            put(a, b, answers + 4 * k, rng.next());
+        }
+        set(
+            a,
+            b,
+            st::PAD_LAST,
+            if rng.below(2) == 0 {
+                rng.next()
+            } else {
+                rng.below(16)
+            },
+        );
+        set(a, b, st::IS_DEBUG, u8::from(rng.below(4) != 0));
+        set(a, b, st::LR_BUTTON_MODE, u8::from(rng.below(3) == 0));
+        let lv = [0u8, 1, 0x7f, 0x80, 0xff, 5][rng.below(6) as usize];
+        set(a, b, st::EXEC_FRAMES, lv);
+        set(
+            a,
+            b,
+            st::FREE_CAM_YAW,
+            f32::from_bits(bounded(rng) & 0xbfff_ffff),
+        );
+        set(
+            a,
+            b,
+            st::FREE_CAM_PITCH,
+            f32::from_bits(bounded(rng) & 0xbfff_ffff),
+        );
+        twin("Sg_ControlMain", a, b, 0x0082_d070, &[], |m| {
+            st::control_main(&mut H(m))
+        });
+    }
 }
