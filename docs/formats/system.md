@@ -339,3 +339,33 @@ original returns an uninitialised word; the port returns 0.
 
 The Steam call itself (`achievementUnlockAchievement`) is platform. The
 counting decides game state, so it is ported.
+
+## Pad repeat (`TOGetPadStatus`, `TOMenuGetPadStatus`)
+
+Both functions build three pad words each for the d-pad (`0x025d09d2`
+held, triggered, repeated) and for a stick-made d-pad (`0x025d09e2`; the
+left stick below 0x18 or above 0xe8 adds 0x1000, 0x4000, 0x8000 or
+0x2000). Repeats are timed with `inputGetCurTime`, not counted in frames.
+The per-button state is a count at `0x025d09c2 + k`, a held time at
+`0x025d0a00 + 4k` and the last frame's time at `0x025d0a40 + 4k`.
+Buttons 0x800 and 0x100 never repeat.
+
+| | first repeat | then every | count after a repeat |
+|---|---|---|---|
+| `TOGetPadStatus` (`0x008b7cd0`) | 0.2333 s | 0.1 s (restart 0.1333) | 4 |
+| `TOMenuGetPadStatus` (`0x008be500`) | 0.4667 s | 0.1667 s (restart 0.3) | 9 |
+
+`TOGetPadStatus` runs only while `0x025d09c1` or `g_TOPadGetCtrl` is set.
+It uses the d-pad set if any d-pad button is held, else the stick set,
+then copies the chosen set over the other. The menu version always uses
+the stick set. It also ORs both pads into `+6..+0xa`, and with the dummy
+controller on it takes everything from the dummy.
+
+## Kernel menu accessors (`0x00771c30..0x007724f0`)
+
+These 58 small entries come from a table; nothing calls them directly.
+29 ask `MsGetSaveCommand(chr, cmd)` for a fixed command (0x30b8 onward).
+24 name the ability in a u16 slot (`+0x11e..+0x14c`) of record `i`
+(0x1d8 bytes each) of `*0x0112a034`. Three read a word of
+`MsGetSavePlayerPtr(chr)` (`+0x50`, `+0x54`, `+0x58`). The last two
+forward to `MsGetSaveItemNum` and `MsImportantGet`.

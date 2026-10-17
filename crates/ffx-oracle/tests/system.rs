@@ -9706,3 +9706,136 @@ fn round16_menu_pad_status_matches_the_original_on_the_snapshot() {
     };
     round16_menu_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0042));
 }
+
+/// Round 16's kernel menu accessors over stand-in save getters.
+#[allow(clippy::cast_possible_truncation)]
+fn round16_kernel_accessors(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let rec = alloc(a, b, 0x80);
+    let table = alloc(a, b, 0x1d8 * 8);
+    // MsGetSaveCommand(chr, cmd): chr * 0x100 ^ cmd ^ key
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x08, 0x33, 0x44, 0x24, 0x08, 0x35,
+    ];
+    v.extend_from_slice(&0x1600_0001u32.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1040, &v);
+    redirect(a, b, 0x0078_5020, s);
+    // MsGetSavePlayerPtr: rec + 8 * (chr & 3)
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0xc1, 0xe0, 0x03, 0x05,
+    ];
+    v.extend_from_slice(&rec.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1060, &v);
+    redirect(a, b, 0x0077_6f50, s);
+    // Kernel_GetAbilityName, MsGetSaveItemNum, MsImportantGet: arg ^ key
+    for (k, sym) in [0x0077_4720u32, 0x0079_04b0, 0x0079_0800]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+        v.extend_from_slice(&(0x1600_0100u32 + 0x100 * k as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x1080 + 0x10 * k as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cases: [(char, u32, u32); 58] = [
+        ('C', 0x007724c0, 0x7904b0),
+        ('C', 0x007724f0, 0x790800),
+        ('B', 0x00772370, 0x50),
+        ('B', 0x007723e0, 0x58),
+        ('B', 0x00772450, 0x54),
+        ('A', 0x00771c60, 0x30b8),
+        ('A', 0x00771c80, 0x30b9),
+        ('A', 0x00771cd0, 0x30ba),
+        ('A', 0x00771d20, 0x30bb),
+        ('A', 0x00771d70, 0x30bc),
+        ('A', 0x00771dc0, 0x30bd),
+        ('A', 0x00771e10, 0x30be),
+        ('A', 0x00771e30, 0x30bf),
+        ('A', 0x00771e80, 0x30c0),
+        ('A', 0x00771ed0, 0x30c1),
+        ('A', 0x00771f20, 0x30c2),
+        ('A', 0x00771f70, 0x30c3),
+        ('A', 0x00771fc0, 0x30c4),
+        ('A', 0x00771fe0, 0x30c5),
+        ('A', 0x00772030, 0x30c6),
+        ('A', 0x00772080, 0x30c7),
+        ('A', 0x007720d0, 0x30c8),
+        ('A', 0x00772120, 0x30c9),
+        ('A', 0x00772170, 0x30ca),
+        ('A', 0x00772190, 0x30cb),
+        ('A', 0x007721e0, 0x30cc),
+        ('A', 0x00772230, 0x30cd),
+        ('A', 0x00772280, 0x30ce),
+        ('A', 0x007722f0, 0x30cf),
+        ('A', 0x00772350, 0x30d0),
+        ('A', 0x00772390, 0x30d1),
+        ('A', 0x00772400, 0x30d2),
+        ('A', 0x00772470, 0x30d3),
+        ('A', 0x007724d0, 0x30d4),
+        ('D', 0x00771c30, 0x11e),
+        ('D', 0x00771ca0, 0x120),
+        ('D', 0x00771cf0, 0x122),
+        ('D', 0x00771d40, 0x124),
+        ('D', 0x00771d90, 0x126),
+        ('D', 0x00771de0, 0x128),
+        ('D', 0x00771e50, 0x12a),
+        ('D', 0x00771ea0, 0x12c),
+        ('D', 0x00771ef0, 0x12e),
+        ('D', 0x00771f40, 0x130),
+        ('D', 0x00771f90, 0x132),
+        ('D', 0x00772000, 0x134),
+        ('D', 0x00772050, 0x136),
+        ('D', 0x007720a0, 0x138),
+        ('D', 0x007720f0, 0x13a),
+        ('D', 0x00772140, 0x13c),
+        ('D', 0x007721b0, 0x13e),
+        ('D', 0x00772200, 0x140),
+        ('D', 0x00772250, 0x142),
+        ('D', 0x007722c0, 0x144),
+        ('D', 0x00772320, 0x146),
+        ('D', 0x007723b0, 0x148),
+        ('D', 0x00772420, 0x14a),
+        ('D', 0x00772490, 0x14c),
+    ];
+    for _ in 0..4 {
+        let bytes: Vec<u8> = (0..0x80).map(|_| rng.next() as u8).collect();
+        a.write(rec, &bytes).unwrap();
+        b.write(rec, &bytes).unwrap();
+        let bytes: Vec<u8> = (0..0x1d8 * 8).map(|_| rng.next() as u8).collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        for &(kind, at, p) in &cases {
+            let arg = rng.next() % 8;
+            let want = eax(a, at, &[arg]);
+            let got = match kind {
+                'A' => t::kernel_save_command(b, arg, p, call),
+                'B' => t::kernel_player_word(b, arg, p, call),
+                'C' => t::kernel_forward(b, p, arg, call),
+                _ => t::kernel_slot_ability_name(b, arg, p, call),
+            };
+            assert_eq!(want, got, "{at:#x}");
+        }
+        same_memory("kernel accessors", a, b);
+    }
+}
+
+#[test]
+fn round16_kernel_accessors_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4016_0051));
+}
+
+#[test]
+fn round16_kernel_accessors_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4016_0052));
+}
