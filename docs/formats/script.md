@@ -519,6 +519,23 @@ keep the auto-port's shim and name on main. Starts that are a bare `ret`
 (`Native_MusicWaitLoaded`, `Native_00dc`) leave `EAX` as it was, which
 the dispatch ignores.
 
+Round 12 finished group 7 (50 more handlers in `native_btl`: the voice
+and motion starts `0x706e`/`0x704b`/`0x7050`, whose polls are
+`0x007a8700`; the picked-actor getters and setters through
+`Battle_FirstSelectedActor`; `0x7107`, `0x7023`, `0x70be`, `0x70c3`
+with their `f32` steps) and added `native_chr` for the other groups the
+shipped scripts call: math (group 1), `Sg_*` scene effects (4), `Ch_*`
+model natives (5), the rest of the camera and screen natives (6), the
+movie player (11) and group 12's system natives. Natives that build an
+out local with `push ecx` (`0x70be`'s `MsGetChrDir` writes nothing
+without a model) read the caller's `ECX` there; the ports zero it, and
+the oracle test calls the originals with `ECX` = 0. Left for a later
+round: `0x1005` (`_CIatan2`, the x87 `fpatan`), `0x5037`, `0x6077` (it
+calls `0x007bd500` with no arguments of its own) and `0xc025`. The
+debug ones (`0x70b1`, `0xb002`, `0xc00b`, `0xc00c`, `0xc018`, `0xc022`,
+`0xc028`, `0xc02a`, `0xc056`, `0xc057`, `0xc05b`) are marked in the
+table.
+
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
 returns 0, so leaving them out changes nothing: the round-11 ports drop
@@ -1539,11 +1556,10 @@ the tests reach.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Now: the natives, most used first. Done: every group-0 native the
-   shipped scripts call (435, round 11; the other 180 entries of the
-   group-0 table at `0x00c50050` have no call in any shipped script) and
-   the rest in the table. Next: the rest of group 7 (`0x7035`, `0x7014`,
-   `0x706e`, `0x708e`, `0x7107`, ...).
+2. Now: the natives, most used first. Done: every native the shipped
+   scripts call (rounds 1-12; the group-0 table at `0x00c50050` has 180
+   more entries no shipped script calls) but `0x1005`, `0x5037`,
+   `0x6077`, `0xc025` and the debug ones. Next: those four.
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 
