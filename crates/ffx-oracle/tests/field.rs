@@ -9796,3 +9796,73 @@ fn round16_rcui_and_anime_match_the_original() {
         );
     }
 }
+
+/// Round 17: `FFXSamp0TransMatrix`, the vector scale, the sphere grid's
+/// panel sounds (`SndSepPlaySimple` stood in) and the 2D segment
+/// intersection.
+#[test]
+fn round17_field_helpers_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0011_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![(
+        Some(abmap::SND_SEP_PLAY_SIMPLE),
+        log_stub(env.log, env.rv, 170, 1),
+    )];
+    t.cave_from(env.cave_end, &list);
+    let (dst, m, v, out) = (t.alloc(0x40), t.alloc(0x40), t.alloc(0x10), t.alloc(0x10));
+    let pts: Vec<u32> = (0..4).map(|_| t.alloc(8)).collect();
+    for k in 0..60u32 {
+        env.reset(&mut t, &mut rng);
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        for i in 0..4 {
+            t.put(v + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        t.same(
+            "FFXSamp0TransMatrix",
+            |o| o.eax(0x0093_d830, &[dst, m, v]),
+            |o| rcui::bridge::ffx_samp0_trans_matrix(o, dst, m, v),
+        );
+        let s = float_in(&mut rng, -8, 8);
+        t.same(
+            "rcuiScaleVec4",
+            |o| o.eax(0x0093_d7d0, &[out, v, s]),
+            |o| rcui::bridge::rcui_scale_vec4(o, out, v, s),
+        );
+        let which = rng.below(2);
+        t.same(
+            "abmap_snd_chg_panel",
+            |o| o.eax(0x00a4_5910 + 0x10 * which, &[]),
+            |o| abmap::bridge::abmap_snd_chg_panel(o, which, call),
+        );
+        for &p in &pts {
+            t.put(p, float_in(&mut rng, -10, 10));
+            t.put(p + 4, float_in(&mut rng, -10, 10));
+        }
+        if k % 6 == 0 {
+            // parallel segments
+            let (ax, ay) = (
+                Mem::read::<u32>(&t.b, pts[0]),
+                Mem::read::<u32>(&t.b, pts[0] + 4),
+            );
+            let (bx, by) = (
+                Mem::read::<u32>(&t.b, pts[1]),
+                Mem::read::<u32>(&t.b, pts[1] + 4),
+            );
+            t.put(pts[2], ax);
+            t.put(pts[2] + 4, ay);
+            t.put(pts[3], bx);
+            t.put(pts[3] + 4, by);
+        }
+        let p = [pts[0], pts[1], pts[2], pts[3]];
+        t.same(
+            "yiSegIntersect2",
+            |o| o.eax(0x0091_cd00, &[p[0], p[1], p[2], p[3], out]),
+            |o| yi::bridge::yi_seg_intersect2(o, p, out),
+        );
+    }
+}

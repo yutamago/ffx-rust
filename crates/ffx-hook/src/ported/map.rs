@@ -3130,6 +3130,27 @@ ported! {
     rcbgAnimeLoadConfig @ 0x0093_a650 => extern "C" fn shim_rcbg_anime_load_config(anime: u32, p: u32) -> u32 {
         model::bridge::rcbg_anime_load_config(&mut mem(), anime, p, &mut |_, f, a| call_cdecl(f, a))
     }
+    // ---- round 17 ----
+    /// `FFXSamp0TransMatrix(dst, m, t)`.
+    FFXSamp0TransMatrix @ 0x0093_d830 => extern "C" fn shim_ffx_samp0_trans_matrix(dst: u32, m: u32, t: u32) -> u32 {
+        rcui::bridge::ffx_samp0_trans_matrix(&mut mem(), dst, m, t)
+    }
+    /// `rcuiScaleVec4(dst, v, s)`.
+    rcuiScaleVec4 @ 0x0093_d7d0 => extern "C" fn shim_rcui_scale_vec4(dst: u32, v: u32, s: u32) -> u32 {
+        rcui::bridge::rcui_scale_vec4(&mut mem(), dst, v, s)
+    }
+    /// `abmap_snd_chg_panel0()`.
+    abmap_snd_chg_panel0 @ 0x00a4_5910 => extern "C" fn shim_abmap_snd_chg_panel0() -> u32 {
+        abmap::bridge::abmap_snd_chg_panel(&mut mem(), 0, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `abmap_snd_chg_panel1()`.
+    abmap_snd_chg_panel1 @ 0x00a4_5920 => extern "C" fn shim_abmap_snd_chg_panel1() -> u32 {
+        abmap::bridge::abmap_snd_chg_panel(&mut mem(), 1, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiSegIntersect2(a, b, c, d, out)`.
+    yiSegIntersect2 @ 0x0091_cd00 => extern "C" fn shim_yi_seg_intersect2(a: u32, b: u32, c: u32, d: u32, out: u32) -> u32 {
+        yi::bridge::yi_seg_intersect2(&mut mem(), [a, b, c, d], out)
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

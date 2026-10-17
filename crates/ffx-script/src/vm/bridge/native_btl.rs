@@ -9,6 +9,7 @@
 use ffx_bridge::{Global, x87};
 
 use super::native::Native;
+use super::native_map::pop_st0;
 use super::run::NativeHost;
 use super::{atel_get_battle_id_adrs2, atel_pop_stack_float, atel_pop_stack_integer};
 
@@ -1037,6 +1038,366 @@ pub fn native_70a5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
+fn ld(h: &impl NativeHost, at: u32) -> f64 {
+    x87::load(h.read(at))
+}
+
+/// The battle flag bytes `Native_707d`/`Native_707e` set and read, by
+/// selector (`0x0112a8f8`.. ; `None`: a selector without a byte).
+const BTL_FLAGS: [Option<u32>; 26] = [
+    None,
+    Some(0x0112_a8f9),
+    Some(0x0112_a8f9),
+    Some(0x0112_a8fa),
+    Some(0x0112_a901),
+    Some(0x0112_a90c),
+    Some(0x0112_a908),
+    Some(0x0112_a909),
+    Some(0x0112_a90a),
+    Some(0x0112_a90b),
+    None,
+    None,
+    Some(0x0112_a8f8),
+    Some(0x0112_a90d),
+    Some(0x0112_a90e),
+    Some(0x0112_a90f),
+    Some(0x0112_a910),
+    Some(0x0112_a911),
+    Some(0x0112_a912),
+    Some(0x0112_a913),
+    Some(0x0112_a914),
+    None,
+    None,
+    Some(0x0112_a922),
+    Some(0x0112_a915),
+    Some(0x0112_a923),
+];
+
+/// `x` rounded to `f32` and loaded back (an `fstp m32`/`fld m32` pair).
+fn r32(x: f64) -> f64 {
+    x87::load(x87::store(x))
+}
+
+/// `Native_702c` (`0x007a45c0`, `0x702c`): `(m, p8, p7, p6, p5, p4, p3,
+/// p2, p1)` (eight floats then a mode): the actor's jump to its target.
+/// The frames from the distance (`0x007a9ac0`, then `0x007c2ec0` or
+/// `0x007c3030` for `+0x34`), the speed `p8` and acceleration `p6` (the
+/// root of `2 * p6 * d + p8^2` when `p6` is not 0), the turn (`0x007c4990`,
+/// `0x00794d20`, `0x007c04c0`) and the per-frame steps in `+0x46c`..`+0x484`;
+/// then `0x007a87f0(&to, &from, actor, 0x10, 1)`'s `EAX` (0 without an
+/// actor).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // one x87 sequence
+pub fn native_702c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let p1 = popf(h, s);
+    let p2 = popf(h, s);
+    let p3 = popf(h, s);
+    let p4 = popf(h, s);
+    let p5 = popf(h, s);
+    let p6 = popf(h, s);
+    let p7 = popf(h, s);
+    let p8 = popf(h, s);
+    let mode = pop(h, s);
+    if id == 0xff {
+        return 0;
+    }
+    let c = chr(h, id);
+    // the originals' stack locals: to (16), from (16), three floats
+    let sc = h.scratch();
+    let (v14, v24, v30, v40, v34) = (sc, sc + 16, sc + 32, sc + 36, sc + 40);
+    for i in 0..11 {
+        h.write(sc + i * 4, 0_u32);
+    }
+    h.write(c + 0x460, x87::store(x87::load(p8)));
+    h.write(c + 0x464, x87::store(x87::load(p7)));
+    h.write(c + 0x468, x87::store(x87::load(p6)));
+    #[allow(clippy::cast_possible_truncation)] // the original stores CL
+    h.write(c + 0x415, (mode as u8) | 0x80);
+    h.write(c + 0x417, 0_u8);
+    h.write(c + 0x488, x87::store(0.0));
+    h.write(c + 0x498, x87::store(0.0));
+    call(h, 0x0079_56e0, &[id, v24]);
+    let r38 = r32(callf(h, 0x007a_9ac0, &[id, c, mode, v14, 0]));
+    let f = if h.read::<u8>(c + 0x34) == 0 {
+        0x007c_2ec0
+    } else {
+        0x007c_3030
+    };
+    let d = r32(callf(h, f, &[v24, v14]));
+    let e = r32(x87::sub(d, r38));
+    let (p6f, p8f) = (x87::load(p6), x87::load(p8));
+    let t = if p6f == 0.0 {
+        x87::div(e, p8f)
+    } else {
+        let q = x87::add(x87::mul(x87::mul(2.0, p6f), e), x87::mul(p8f, p8f));
+        let sq = r32(x87::sqrt(q));
+        x87::div(x87::sub(sq, p8f), p6f)
+    };
+    let n = x87::ftol(h, t);
+    h.write(c + 0x452, 0_u16);
+    #[allow(clippy::cast_possible_truncation)] // the original stores DI
+    h.write(c + 0x45a, n as u16);
+    call(h, 0x007c_4990, &[v14, v24, v30, v40, 0]);
+    call(h, 0x0079_4d20, &[id, v34]);
+    let a34 = h.read::<u32>(v34);
+    let a = r32(callf(h, 0x007c_04c0, &[x87::store(0.0), a34]));
+    let b30 = h.read::<u32>(v30);
+    let b = r32(callf(h, 0x007c_04c0, &[x87::store(a), b30]));
+    let g = r32(x87::sub(b, a));
+    h.write(c + 0x494, x87::store(g));
+    let ag = if g < 0.0 { r32(-g) } else { g };
+    h.write(c + 0x490, x87::store(a));
+    let nf = r32(f64::from(n.cast_signed()));
+    if h.read::<u8>(c + 0x41b) == 0 {
+        let v = x87::div(x87::mul(ag, x87::load(p1)), nf);
+        h.write(c + 0x46c, x87::store(v));
+    } else {
+        h.write(c + 0x46c, x87::store(0.0));
+    }
+    let hh = r32(x87::mul(x87::sub(b, a), x87::load(p5)));
+    let bn = r32(x87::sub(b, hh));
+    let ah2 = if hh < 0.0 { r32(-hh) } else { hh };
+    h.write(c + 0x470, x87::store(bn));
+    let q = x87::div(ah2, nf);
+    let p4f = x87::load(p4);
+    let v = x87::sub(q, x87::mul(x87::mul(nf, p4f), 0.5));
+    h.write(c + 0x474, x87::store(v));
+    h.write(c + 0x478, x87::store(p4f));
+    let v40v = h.read::<u32>(v40);
+    let cf = r32(callf(h, 0x007c_04c0, &[x87::store(0.0), v40v]));
+    let k = r32(x87::mul(cf, x87::load(p3)));
+    let cn = r32(x87::sub(cf, k));
+    let ak = if k < 0.0 { r32(-k) } else { k };
+    h.write(c + 0x47c, x87::store(cn));
+    let p2f = x87::load(p2);
+    let akk = x87::mul(ak, 2.0);
+    let two_n = r32(f64::from(n.wrapping_add(n).cast_signed()));
+    let v = x87::div(x87::sub(akk, x87::mul(nf, x87::mul(nf, p2f))), two_n);
+    h.write(c + 0x480, x87::store(v));
+    h.write(c + 0x484, x87::store(p2f));
+    call(h, 0x007a_87f0, &[v14, v24, id, 0x10, 1])
+}
+
+/// `Native_70b0` (`0x007a4f80`, `0x70b0`): `(selector)`: for the picked
+/// actor, a count from its `+0x40e` (scaled by `+0x3fc / +0x400` when
+/// `+0x400` is larger) and, when `0x007b4a70(it)` has bits 0-1, the steps
+/// of `+0x4cc` growing by `+0x4d0` (capped at `0x007a88e0(it)`) it takes to
+/// cover the distance `0x007a9fc0(i, 12) - +0x4bc`.
+#[allow(clippy::neg_cmp_op_on_partial_ord, clippy::verbose_bit_mask)] // NaN ends the loop as in the original
+pub fn native_70b0<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let p = pop(h, s);
+    let i = call(h, GET_ONE, &[id, p, 0, 1]);
+    let mut x = r32(callf(h, 0x007a_9fc0, &[i, 0xc]));
+    let c = chr(h, i);
+    let r = call(h, 0x007b_4a70, &[c]);
+    let cx = u32::from(h.read::<u16>(c + 0x400));
+    let mut n = u32::from(h.read::<u8>(c + 0x40e));
+    let ax = u32::from(h.read::<u16>(c + 0x3fc));
+    if cx > ax {
+        n = (ax * n)
+            .cast_signed()
+            .wrapping_div(cx.cast_signed())
+            .cast_unsigned();
+    }
+    if r & 3 == 0 {
+        return n;
+    }
+    x = r32(x87::sub(x, ld(h, c + 0x4bc)));
+    let mut v = r32(ld(h, c + 0x4cc));
+    let cap = r32(callf(h, 0x007a_88e0, &[c]));
+    let step = r32(ld(h, c + 0x4d0));
+    if !(x > 0.0) {
+        return n;
+    }
+    loop {
+        v = r32(x87::add(v, step));
+        if v > cap {
+            v = cap;
+        }
+        n = n.wrapping_add(1);
+        x = r32(x87::sub(x, v));
+        if !(x > 0.0) {
+            return n;
+        }
+    }
+}
+
+/// `Native_7028` (`0x007a6970`, `0x7028`): `(x, y, z)` floats into the
+/// actor's `+0x3a0`..`+0x3a8` (z first) and its model's
+/// `0x0082b560(model, 7, z, y, x)`; 0.
+pub fn native_7028<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a = popf(h, s);
+    let b = popf(h, s);
+    let c3 = popf(h, s);
+    let id = actor(h, w);
+    if id == 0xff {
+        return 0;
+    }
+    let c = chr(h, id);
+    let (a, b, c3) = (r32(x87::load(a)), r32(x87::load(b)), r32(x87::load(c3)));
+    h.write(c + 0x3a0, x87::store(c3));
+    h.write(c + 0x3a4, x87::store(b));
+    h.write(c + 0x3a8, x87::store(a));
+    let m = h.read::<u32>(c);
+    if m != 0 {
+        call(
+            h,
+            0x0082_b560,
+            &[m, 7, x87::store(c3), x87::store(b), x87::store(a)],
+        );
+    }
+    0
+}
+
+/// `Native_707d` (`0x007a81f0`, `0x707d`): `(k, v)`: battle flag `k` =
+/// `v & 1` ([`BTL_FLAGS`]; `k` 2 sets two, 25 takes all of `v`'s low
+/// byte); `k` 0, 10, 11, 21, 22 call the battle module instead; `v`.
+pub fn native_707d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let b = (v & 1) as u8;
+    let k = pop(h, s);
+    match k {
+        0 => {
+            call(h, 0x0078_49d0, &[]);
+        }
+        2 => {
+            h.write(h.rebase(0x0112_a8f9), b);
+            h.write(h.rebase(0x0112_a8f8), b);
+        }
+        10 => {
+            call(h, 0x0078_4ae0, &[]);
+            call(h, 0x0078_49c0, &[]);
+        }
+        11 => {
+            let g = u32::from(h.read::<u8>(h.rebase(0x0113_2089)));
+            let e = call(h, 0x007a_bbd0, &[g, 0]);
+            while call(h, 0x007a_b910, &[e]) != 0 {}
+        }
+        21 => {
+            call(h, 0x0078_48b0, &[]);
+        }
+        22 => {
+            call(h, 0x0078_4b60, &[]);
+        }
+        25 => {
+            #[allow(clippy::cast_possible_truncation)] // the original stores AL
+            h.write(h.rebase(0x0112_a923), v as u8);
+        }
+        _ => {
+            if let Some(Some(f)) = BTL_FLAGS.get(k as usize) {
+                h.write(h.rebase(*f), b);
+            }
+        }
+    }
+    v
+}
+
+/// `Native_707e` (`0x007a27e0`, `0x707e`): `(k)`: battle flag `k - 1`
+/// (signed; 25 unsigned; 2 is whether both `0x0112a8f9` and `0x0112a8f8`
+/// are set), 0 for selectors without one.
+pub fn native_707e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let k = pop(h, s);
+    let byte = |h: &H, a: u32| h.read::<u8>(h.rebase(a));
+    match k {
+        2 => u32::from(byte(h, 0x0112_a8f9) != 0 && byte(h, 0x0112_a8f8) != 0),
+        12 => i32::from(byte(h, 0x0112_a8f8).cast_signed()).cast_unsigned(),
+        25 => u32::from(byte(h, 0x0112_a923)),
+        1 | 3..=9 | 13..=20 | 23 | 24 => match BTL_FLAGS[k as usize] {
+            Some(f) => i32::from(byte(h, f).cast_signed()).cast_unsigned(),
+            None => 0,
+        },
+        _ => 0,
+    }
+}
+
+/// `Native_700d` (`0x007a63f0`, `0x700d`): `(mode, k)`: unless the actor
+/// is locked (`+0x44e`: a negative `k` then gives 1 for a set sign bit,
+/// else 0), with `|k|` (only made positive without the lock),
+/// `0x007a87f0(&to, &from, actor, k, 0)` for the target `0x007a9ac0`
+/// finds and the actor's position (`0x007956e0`).
+pub fn native_700d<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let mut k = pop(h, s);
+    let mode = pop(h, s);
+    let id = actor(h, w);
+    if id == 0xff {
+        return 0;
+    }
+    let c = chr(h, id);
+    let lock = h.read::<i8>(c + 0x44e);
+    if lock != 0 {
+        if k.cast_signed() < 0 {
+            return u32::from(lock < 0);
+        }
+    } else if k.cast_signed() < 0 {
+        k = k.wrapping_neg();
+    }
+    let sc = h.scratch();
+    for i in 0..8 {
+        h.write(sc + i * 4, 0_u32);
+    }
+    let (from, to) = (sc, sc + 16);
+    call(h, 0x0079_56e0, &[id, from]);
+    callf(h, 0x007a_9ac0, &[id, c, mode, to, 0]);
+    call(h, 0x007a_87f0, &[to, from, id, k, 0])
+}
+
+/// `Native_7032` (`0x007a6f70`, `0x7032`): `(selector, degrees)`: the
+/// angle (radians, `0x007c04c0(0, it)`) into `+0x514` and `+0x518` of
+/// every picked actor, `+0x512` = 1; 0.
+pub fn native_7032<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let d = pop_st0(h, s);
+    let pi = h.read::<f64>(h.rebase(0x00b9_2288));
+    let k = h.read::<f64>(h.rebase(0x00b4_8378));
+    let t = x87::store(x87::div(x87::mul(d, pi), k));
+    let v = x87::store(callf(h, 0x007c_04c0, &[x87::store(0.0), t]));
+    let p = pop(h, s);
+    let id = actor(h, w);
+    let m = call(h, GET_BIT, &[id, p, 0, 1]);
+    for i in 0..31u32 {
+        if (m >> i) & 1 != 0 {
+            let c = chr(h, i);
+            h.write(c + 0x512, 1_u8);
+            h.write(c + 0x514, v);
+            h.write(c + 0x518, v);
+        }
+    }
+    0
+}
+
+/// `Native_7052` (`0x007a7e10`, `0x7052`): `(a, b, v)`: picked actor `a`
+/// targets picked actor `b` (`+0x43f` = b, `+0x441` = v, `0x00796f20`,
+/// its position (`0x00796ea0`) handed to `0x00796150(a, ..)`), `b`'s
+/// `+0x440` counts up; 0.
+pub fn native_7052<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let v = pop(h, s);
+    let pb = pop(h, s);
+    let pa = pop(h, s);
+    let i = call(h, GET_ONE, &[id, pa, 0, 1]);
+    let j = call(h, GET_ONE, &[id, pb, 0, 1]);
+    if i.cast_signed() < 0 || j.cast_signed() < 0 {
+        return 0;
+    }
+    let c = chr(h, i);
+    #[allow(clippy::cast_possible_truncation)] // the original stores BL, AL
+    {
+        h.write(c + 0x43f, j as u8);
+        h.write(c + 0x441, v as u8);
+    }
+    call(h, 0x0079_6f20, &[c, 0, 0]);
+    let o = h.scratch();
+    for k in 0..4 {
+        h.write(o + k * 4, 0_u32);
+    }
+    call(h, 0x0079_6ea0, &[c, o]);
+    call(h, 0x0079_6150, &[i, o]);
+    let d = chr(h, j);
+    let n = h.read::<u8>(d + 0x440);
+    h.write(d + 0x440, n.wrapping_add(1));
+    0
+}
+
 /// The Rust version of a battle handler, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -1123,12 +1484,28 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_7cb0 => Int(native_70cc),
         0x007a_7f20 => Int(native_70ce),
         0x007a_76f0 => Int(native_70a5),
+        0x007a_45c0 => Int(native_702c),
+        0x007a_4f80 => Int(native_70b0),
+        0x007a_6970 => Int(native_7028),
+        0x007a_81f0 => Int(native_707d),
+        0x007a_27e0 => Int(native_707e),
+        0x007a_63f0 => Int(native_700d),
+        0x007a_6f70 => Int(native_7032),
+        0x007a_7e10 => Int(native_7052),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 83] = [
+pub const PORTED: [(u32, bool); 91] = [
+    (0x007a_4f80, false),
+    (0x007a_6970, false),
+    (0x007a_81f0, false),
+    (0x007a_27e0, false),
+    (0x007a_63f0, false),
+    (0x007a_6f70, false),
+    (0x007a_7e10, false),
+    (0x007a_45c0, false),
     (0x007a_50c0, false),
     (0x007a_5930, false),
     (0x007a_4d50, false),
