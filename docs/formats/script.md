@@ -645,6 +645,20 @@ vibration tables give), `AtelBindEff2OffSome`, `AtelMapLoad`,
 (`0x00879cf0`) and `AtelPCOpen2` open `host0:` files, the PS2 development
 host: platform code, left to the original.
 
+The natives no shipped script calls continue in
+`ffx_script::vm::bridge::native_mods`, last in the dispatch chain. Group
+1's maths: `0x100b` (`v << 15`), `0x100c` (`x * 32768.0`, the double at
+`0x00b51588`, rounded to `f32` before `_ftol2_sse` truncates it: without
+SSE2 the x87 path keeps the low word of a 64-bit truncation, where that
+rounding shows for integers past 24 bits), the angle conversions
+`0x100d`-`0x1010` and the sine/cosine tables `0x1008`/`0x1009`, `CItan`
+(`0x1003`), `atan` (`0x1004`) through the game's own `_CIatan` on the
+popped `ST0` (`NativeHost::call_intrinsic1`, the one-operand form of
+`call_intrinsic2`), `1 / sqrt(v)` (`0x1007`, both steps rounded to `f32`),
+and the vector natives `0x1011`-`0x1018` over `Math_Atan2XZ`,
+`Math_YawPitchTo`, `Math_AngleStep`, `Math_InRadius`, `TkMtCalcSpline` and
+`0x0088a3a0`, whose variable arguments go through `AtelGetRealVarAdrs`.
+
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
 returns 0, so leaving them out changes nothing: the round-11 ports drop
@@ -1131,15 +1145,33 @@ API is generated from this table. `-`: none. A result starting with
 | `0x1000` | `Native_1000` | slot int, a int, b int, v int | 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b) | - | int `0x008779c0` (native_chr) |
 | `0x1001` | `AtelCall_Math_Sin_RF` | v f | float: CIsin(v) (0x0088c3a0) | - | float `0x00877a70` (native_chr) |
 | `0x1002` | `AtelCall_Math_Cos_RF` | v f | float: CIcos(v) (0x0088b3e0) | - | float `0x00877aa0` (native_chr) |
+| `0x1003` | `AtelCall_Math_Tan_RF` | v f | float: CItan(v) (0x0088c420) | - | float `0x00877ad0` (native_mods) |
+| `0x1004` | `AtelCall_Math_ATan_RF` | v f | float: atan(v) through the game's _CIatan (import thunk 0x00949d5c), rounded to f32 | - | float `0x00877b00` (native_mods) |
 | `0x1005` | `AtelCall_Math_ATan2_RF` | y f, x f | float: atan2(y, x) through the game's _CIatan2 (import thunk 0x009498bc), rounded to f32 | - | float `0x00877b30` (native_chr) |
 | `0x1006` | `AtelCall_Math_Sqrt_RF` | x f | float: sqrt(x) as f32 | - | float `0x00877b70` (native_move) |
+| `0x1007` | `AtelCall_Math_InvSqrt_RF` | v f | float: 1 / sqrt(v), the root and the quotient rounded to f32 | - | float `0x00877ba0` (native_mods) |
+| `0x1008` | `Native_1008` | angle int | int: Math_SinTable2(angle) (0x0088c380) | - | int `0x00877bd0` (native_mods) |
+| `0x1009` | `Native_1009` | angle int | int: Math_CosTable(angle) (0x0088c120) | - | int `0x00877bf0` (native_mods) |
 | `0x100a` | `Native_100a` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
+| `0x100b` | `Native_100b` | v int | int: v << 15 | - | int `0x008778d0` (native_mods) |
+| `0x100c` | `AtelCall_Math_Ftoul_RI` | x f | int: x times the double at 0x00b51588, rounded to f32, truncated (_ftol2_sse) | - | int `0x008778f0` (native_mods) |
+| `0x100d` | `Native_100d` | angle f | int: Math_AngleTo15Bits(angle) (0x0088c040) | - | int `0x00877920` (native_mods) |
+| `0x100e` | `Native_100e` | angle f | int: Math_AngleTo12Bits(angle) (0x0088bfe0) | - | int `0x00877950` (native_mods) |
+| `0x100f` | `Native_100f` | a int | float: Math_AngleFrom15Bits(a) (0x0088c0e0) | - | float `0x00877980` (native_mods) |
+| `0x1010` | `Native_1010` | a int | float: Math_AngleFrom12Bits(a) (0x0088c0a0) | - | float `0x008779a0` (native_mods) |
+| `0x1011` | `Native_1011` | x0 f, z0 f, x1 f, z1 f | float: Math_Atan2XZ(x0, z0, x1, z1) (0x0088b430) | - | float `0x00877c10` (native_mods) |
+| `0x1012` | `Native_1012` | yaw var, pitch var, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | float: the yaw; Math_YawPitchTo (0x0088b4d0) writes the yaw and pitch from the first point to the second into the variables | - | float `0x00877c80` (native_mods) |
 | `0x1013` | `Native_1013` | v f | float: Math_WrapAngle(v) (0x0088bc20) | - | float `0x00877d30` (native_chr) |
+| `0x1014` | `Native_1014` | cur f, target f, step f | float: Math_AngleStep(cur, target, step) (0x0088b570) | - | float `0x00877d60` (native_mods) |
 | `0x1015` | `Native_1015` | - | six floats: 0x0088b780(f6, ..., f1)'s EAX | - | int `0x00877dc0` (native_chr) |
+| `0x1016` | `Native_1016` | r f, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | int: Math_InRadius(r, x0 - x1, y0 - y1, z0 - z1) (0x0088b730), the differences rounded to f32 | - | int `0x00877e50` (native_mods) |
+| `0x1017` | `Native_1017` | out var, points var, n int, t f | 0.0: TkMtCalcSpline(out, points, n, t) (0x0088a4a0) on the variables | - | float `0x00877ef0` (native_mods) |
+| `0x1018` | `Native_1018` | out var, a f, b f, c f | 0.0: 0x0088a3a0(out, a, b, c) on the variable | - | float `0x00877f60` (native_mods) |
 | `0x1019` | `AtelCall_Math_Abs_RF` | - | |v| rounded to f32 | - | float `0x00877fd0` (native_chr) |
 | `0x101a` | `Native_101a` | x1 f, z1 f, x2 f, z2 f | float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps | - | float `0x00877ff0` (native_chr) |
 | `0x101b` | `Native_101b` | x1 f, y1 f, z1 f, x2 f, y2 f, z2 f | float: the 3D distance, as 0x101a | - | float `0x00878060` (native_chr) |
 | `0x101c` | `Native_101c` | - | 0x00878140(worker, args, stack)'s record +4 = 0; 0 | - | int `0x008780f0` (native_chr) |
+| `0x101d` | `Native_101d` | as 0x00878140 | 0: 0x00878140(worker, args, stack)'s record +4 = 1 (0x101c sets 0) | - | int `0x00878110` (native_mods) |
 | `0x4001` | `Native_4001` | v f | 0: Sg_SetSuimen(v) (0x00836640) | - | int `0x00a77b90` (native_chr) |
 | `0x4003` | `Atel_Sg_Flash` | d int, c int, b int, a int | 0: Sg_Flash(d, c, b, a) (0x0082cca0) | - | int `0x00a77d30` (native_chr) |
 | `0x4004` | `Native_FadeIn` | frames int | 0 (fade in) | - | int `0x00a77d80` (native_move) |

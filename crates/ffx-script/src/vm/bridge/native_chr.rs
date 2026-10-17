@@ -1963,7 +1963,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x00a7_7ac0 => Float(native_4039),
         0x00a7_86e0 => Float(native_504d),
         0x0087_78b0 | 0x0087_8e60 => Int(native_pop_one),
-        _ => return None,
+        _ => return super::native_mods::find(sym),
     })
 }
 

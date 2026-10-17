@@ -8811,21 +8811,35 @@
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function AtelSetUpCallFunc         # (group, table); was Script_SetNativeTable; ported in helpers (script round 15)
 0x008778b0 function Native_100a                # 0x100a: args (v int) -> int: the popped value; int: the popped value; ported in native_chr (script round 12)
-0x008778f0 function AtelCall_Math_Ftoul_RI    # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI
+0x008778d0 function Native_100b # 0x100b: (v) -> v << 15; ported in native_mods (script round 19); name ours
+0x008778f0 function AtelCall_Math_Ftoul_RI # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI; 0x100c: (x f) -> ftol(f32(x * double 0x00b51588)); ported in native_mods (script round 19)
+0x00877920 function Native_100d # 0x100d: (a f) -> Math_AngleTo15Bits(a); ported in native_mods (script round 19); name ours
+0x00877950 function Native_100e # 0x100e: (a f) -> Math_AngleTo12Bits(a); ported in native_mods (script round 19); name ours
+0x00877980 function Native_100f # 0x100f: (a) -> Math_AngleFrom15Bits(a); ported in native_mods (script round 19); name ours
+0x008779a0 function Native_1010 # 0x1010: (a) -> Math_AngleFrom12Bits(a); ported in native_mods (script round 19); name ours
 0x008779c0 function Native_1000                # 0x1000: args (slot int, a int, b int, v int) -> 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b); ported in native_chr (script round 12)
 0x00877a70 function AtelCall_Math_Sin_RF      # fh v3:cg2 0x8779f0 +AtelCall_Math_Sin_RF
 0x00877aa0 function AtelCall_Math_Cos_RF      # fh v3:cg2 0x877a20 +AtelCall_Math_Cos_RF
-0x00877ad0 function AtelCall_Math_Tan_RF      # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF
-0x00877b00 function AtelCall_Math_ATan_RF     # fh v3:cg2 0x877a80 +AtelCall_Math_ATan_RF
+0x00877ad0 function AtelCall_Math_Tan_RF # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF; 0x1003: (v f) -> CItan(v); ported in native_mods (script round 19)
+0x00877b00 function AtelCall_Math_ATan_RF # fh v3:cg2 0x877a80 +AtelCall_Math_ATan_RF; 0x1004: (v f) -> atan(v) (_CIatan) as f32; ported in native_mods (script round 19)
 0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF; 0x1005 (float): atan2(y, x) through _CIatan2; ported in native_chr (script round 13)
 0x00877b70 function AtelCall_Math_Sqrt_RF     # 0x1006 float (x) -> sqrt(x); was Native_MathSqrt
-0x00877ba0 function AtelCall_Math_InvSqrt_RF  # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF
+0x00877ba0 function AtelCall_Math_InvSqrt_RF # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF; 0x1007: (v f) -> 1 / f32(sqrt(v)) as f32; ported in native_mods (script round 19)
+0x00877bd0 function Native_1008 # 0x1008: (angle) -> Math_SinTable2(angle); ported in native_mods (script round 19); name ours
+0x00877bf0 function Native_1009 # 0x1009: (angle) -> Math_CosTable(angle); ported in native_mods (script round 19); name ours
+0x00877c10 function Native_1011 # 0x1011: (x0, z0, x1, z1 f) -> Math_Atan2XZ; ported in native_mods (script round 19); name ours
+0x00877c80 function Native_1012 # 0x1012: (&yaw, &pitch, from xyz, to xyz) -> Math_YawPitchTo into the variables; the yaw; ported in native_mods (script round 19); name ours
 0x00877d30 function Native_1013                # 0x1013 (float): args (v f) -> float: Math_WrapAngle(v) (0x0088bc20); ported in native_chr (script round 12)
+0x00877d60 function Native_1014 # 0x1014: (cur, target, step f) -> Math_AngleStep; ported in native_mods (script round 19); name ours
 0x00877dc0 function Native_1015                # 0x1015: no args -> six floats: 0x0088b780(f6, ..., f1)'s EAX; ported in native_chr (script round 12)
+0x00877e50 function Native_1016 # 0x1016: (r, p0 xyz, p1 xyz f) -> Math_InRadius(r, p0 - p1); ported in native_mods (script round 19); name ours
+0x00877ef0 function Native_1017 # 0x1017: (&out, &points, n, t f): TkMtCalcSpline; 0.0; ported in native_mods (script round 19); name ours
+0x00877f60 function Native_1018 # 0x1018: (&out, a, b, c f): 0x0088a3a0; 0.0; ported in native_mods (script round 19); name ours
 0x00877fd0 function AtelCall_Math_Abs_RF      # fh v3:exact 0x00877f50 +AtelCall_Math_Abs_RF
 0x00877ff0 function Native_101a                # 0x101a (float): args (x1 f, z1 f, x2 f, z2 f) -> float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps; ported in native_chr (script round 12)
 0x00878060 function Native_101b                # 0x101b (float): args (x1 f, y1 f, z1 f, x2 f, y2 f, z2 f) -> float: the 3D distance, as 0x101a; ported in native_chr (script round 12)
 0x008780f0 function Native_101c                # 0x101c: no args -> 0x00878140(worker, args, stack)'s record +4 = 0; 0; ported in native_chr (script round 12)
+0x00878110 function Native_101d # 0x101d: 0x00878140's record +4 = 1; 0; ported in native_mods (script round 19); name ours
 0x008781b0 function Native_c054                # 0xc054: args (n) -> TkMalloc(n) (0x0088e650); ported in native_chr (script round 12)
 0x008781d0 function Native_c055                # 0xc055: args (p) -> TkFree(p) (0x0088d520); 1; ported in native_chr (script round 12)
 0x008781f0 function Native_c057                # 0xc057: no args -> debug (mod-tool candidate): copies 0x68c0 bytes from the address + 0x40 into g_SaveData and TkFlushSyncH ('copy to saveram'); 1; debug, not ported (mod-tool candidate)

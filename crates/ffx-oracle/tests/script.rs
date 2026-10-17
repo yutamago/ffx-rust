@@ -132,6 +132,16 @@ impl run::NativeHost for Run<'_> {
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
         f80_to_f64(raw)
     }
+    fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
+        let at = self.0.rebase(TRAMPOLINE);
+        let x = a.to_bits();
+        #[allow(clippy::cast_possible_truncation)] // the two halves
+        let args = [x as u32, (x >> 32) as u32, addr];
+        let r = self.0.call(at + 19, Conv::Cdecl, &args).unwrap();
+        let raw = r.st0_raw.expect("the intrinsic leaves ST0");
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        f80_to_f64(raw)
+    }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
         // the comparisons leave the stack out, as the originals' locals are
@@ -1946,12 +1956,13 @@ fn fresh_run_pair(
 /// `graphicFontDraw`'s body (`0x00640660`), which no script code calls:
 /// `fld qword [esp+4]; fld qword [esp+0xc]; call [esp+0x14]; ret` (a
 /// two-operand intrinsic with its operands in ST1 and ST0), then at `+16`
-/// `fstp st(0); ret`. Written into both runs, so the memory diff leaves
-/// it alone.
+/// `fstp st(0); ret`, and at `+19` the one-operand form `fld qword
+/// [esp+4]; call [esp+0xc]; ret`. Written into both runs, so the memory
+/// diff leaves it alone.
 const TRAMPOLINE: u32 = 0x0064_0660;
-const TRAMPOLINE_CODE: [u8; 19] = [
+const TRAMPOLINE_CODE: [u8; 28] = [
     0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3, 0x90, 0x90, 0x90,
-    0xdd, 0xd8, 0xc3,
+    0xdd, 0xd8, 0xc3, 0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3,
 ];
 
 #[test]
@@ -3086,6 +3097,7 @@ fn natives_match_the_original() {
                 .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
                 .chain(&ffx_script::vm::bridge::native_sys::PORTED)
                 .chain(&ffx_script::vm::bridge::native_chr::PORTED)
+                .chain(&ffx_script::vm::bridge::native_mods::PORTED)
             {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
                 let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
@@ -3164,6 +3176,7 @@ fn natives_match_the_original() {
         .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
         .chain(&ffx_script::vm::bridge::native_sys::PORTED)
         .chain(&ffx_script::vm::bridge::native_chr::PORTED)
+        .chain(&ffx_script::vm::bridge::native_mods::PORTED)
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();
@@ -4559,5 +4572,113 @@ fn round19_setup_matches_the_original() {
         }
     }
     eprintln!("{compared} round-19 setup cases compared ({stops} stopped in the original)");
+    assert!(compared > 0, "nothing ran");
+}
+
+/// Round 19's natives (`native_mods`) on every actor of every ctrl work in
+/// use, each with several random argument stacks: integers small and
+/// large, floats in and out of the angle range; results and memory.
+#[test]
+fn round19_natives_match_the_original() {
+    use ffx_script::vm::bridge::native::{self, Native};
+    use ffx_script::vm::bridge::native_mods::PORTED;
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut rng = Xorshift(0x5eed_0019);
+    let (mut compared, mut stops) = (0, 0);
+    for c in ctrls {
+        let mut pair = Some(fresh_run_pair(&pages, &exe, c));
+        let n = {
+            let (a, b) = pair.as_mut().unwrap();
+            actors(a, b).len().min(8)
+        };
+        // 0x100c on integers past f32's 24 bits, with and without SSE2:
+        // the product's rounding to f32 shows in the x87 truncation's low
+        // word (SSE2's gives 0x80000000 for all of them)
+        {
+            let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+            let w = actors(a, b)[0];
+            let sse = a.rebase(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+            let had = Mem::read::<u32>(b, sse);
+            for flag in [had, 0] {
+                poke(a, b, sse, flag);
+                for x in [0x0100_0001u32, 0x0123_4567, 0x7fff_ffff, 3] {
+                    let what = format!("0x100c {x:#x} sse {flag}");
+                    native_case(a, b, w, 0x0087_78f0, &[(stack::INT, x)], &what);
+                    compared += 1;
+                }
+            }
+            poke(a, b, sse, had);
+        }
+        for i in 0..n {
+            for &(sym, float) in &PORTED {
+                for round in 0..3 {
+                    let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+                    let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
+                    orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]);
+                    let s = w + worker::STACK;
+                    poke(a, b, s, 0i32);
+                    for _ in 0..8 {
+                        let (kind, val) = match rng.below(4) {
+                            0 => {
+                                #[allow(clippy::cast_precision_loss)] // small
+                                let f = (rng.below(4000) as f32 - 2000.0) / 300.0;
+                                (stack::FLOAT, f.to_bits())
+                            }
+                            1 => (stack::INT, rng.next() & 0xffff),
+                            _ => (stack::INT, rng.below(4)),
+                        };
+                        push_both(a, b, s, kind, val);
+                    }
+                    let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+                    let args = v::script_worker_level(b, w, lvl) + 0x2c;
+                    let what = format!("native {sym:#x} round {round} on worker {i} of {c:#x}");
+                    clear_stacks(a, b);
+                    a.call(a.rebase(BARE_RET[1]), Conv::Thiscall(0), &[])
+                        .unwrap();
+                    let ra = match a.call(a.rebase(sym), Conv::Cdecl, &[w, args, s]) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            eprintln!("{what}: the original stops: {e}");
+                            stops += 1;
+                            pair = None;
+                            continue;
+                        }
+                    };
+                    match native::find::<Run>(sym) {
+                        Some(Native::Int(f)) => {
+                            assert!(!float, "{what}");
+                            assert!(ra.st0_raw.is_none(), "{what}: the original returns ST0");
+                            let rb = f(&mut Run(b), w, args, s);
+                            assert_eq!(ra.eax, rb, "{what}: EAX");
+                        }
+                        Some(Native::Float(f)) => {
+                            assert!(float, "{what}");
+                            let raw = ra.st0_raw.expect("ST0");
+                            orig(a, FTOL2, &[]);
+                            let rb = f(&mut Run(b), w, args, s);
+                            let x = f80_to_f64(raw);
+                            assert!(
+                                x.to_bits() == rb.to_bits() || (x.is_nan() && rb.is_nan()),
+                                "{what}: ST0 {x} vs {rb}"
+                            );
+                        }
+                        None => panic!("{what}: not in find"),
+                    }
+                    native_no_diff(a, b, &what);
+                    compared += 1;
+                }
+            }
+        }
+    }
+    eprintln!("{compared} round-19 native calls compared ({stops} stopped in the original)");
     assert!(compared > 0, "nothing ran");
 }

@@ -117,6 +117,13 @@ pub trait NativeHost: Host {
         let _ = (addr, a, b);
         f64::NAN
     }
+    /// Calls a one-operand CRT intrinsic (`_CIatan` through the game's
+    /// import thunk at `addr`, rebased) with `a` in `ST0`; returns its
+    /// `ST0` as an `fstp m64` stores it. The default returns NaN.
+    fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
+        let _ = (addr, a);
+        f64::NAN
+    }
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -175,6 +182,23 @@ impl NativeHost for ffx_bridge::RawMem {
                 "fstp qword ptr [edi]",
                 a = in(reg) &raw const a,
                 b = in(reg) &raw const b,
+                f = in(reg) addr,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(target_arch = "x86")]
+    fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
+        let mut out = 0f64;
+        // SAFETY: as call_intrinsic2, with the one operand in ST0.
+        unsafe {
+            std::arch::asm!(
+                "fld qword ptr [{a}]",
+                "call {f}",
+                "fstp qword ptr [edi]",
+                a = in(reg) &raw const a,
                 f = in(reg) addr,
                 in("edi") &raw mut out,
                 clobber_abi("C"),

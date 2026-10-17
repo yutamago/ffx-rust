@@ -9,6 +9,7 @@ use ffx_script::vm::bridge::native_btl2;
 use ffx_script::vm::bridge::native_cam;
 use ffx_script::vm::bridge::native_chr;
 use ffx_script::vm::bridge::native_map;
+use ffx_script::vm::bridge::native_mods;
 use ffx_script::vm::bridge::native_move;
 use ffx_script::vm::bridge::native_msg;
 use ffx_script::vm::bridge::native_sys;
@@ -5442,5 +5443,77 @@ ported! {
     /// `Native_00b8(worker, args, stack)`.
     Native_00b8 @ 0x0085_9220 => extern "C" fn n_859220(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_00b8(&mut mem(), w, a, s)
+    }
+    /// `Native_100b(worker, args, stack)`.
+    Native_100b @ 0x0087_78d0 => extern "C" fn n_8778d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_100b(&mut mem(), w, a, s)
+    }
+    /// `AtelCall_Math_Ftoul_RI(worker, args, stack)`.
+    AtelCall_Math_Ftoul_RI @ 0x0087_78f0 => extern "C" fn n_8778f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::atel_call_math_ftoul_ri(&mut mem(), w, a, s)
+    }
+    /// `Native_100d(worker, args, stack)`.
+    Native_100d @ 0x0087_7920 => extern "C" fn n_877920(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_100d(&mut mem(), w, a, s)
+    }
+    /// `Native_100e(worker, args, stack)`.
+    Native_100e @ 0x0087_7950 => extern "C" fn n_877950(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_100e(&mut mem(), w, a, s)
+    }
+    /// `Native_100f(worker, args, stack)`.
+    Native_100f @ 0x0087_7980 => extern "C" fn n_877980(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_100f(&mut mem(), w, a, s)
+    }
+    /// `Native_1010(worker, args, stack)`.
+    Native_1010 @ 0x0087_79a0 => extern "C" fn n_8779a0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_1010(&mut mem(), w, a, s)
+    }
+    /// `AtelCall_Math_Tan_RF(worker, args, stack)`.
+    AtelCall_Math_Tan_RF @ 0x0087_7ad0 => extern "C" fn n_877ad0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::atel_call_math_tan_rf(&mut mem(), w, a, s)
+    }
+    /// `AtelCall_Math_ATan_RF(worker, args, stack)`.
+    AtelCall_Math_ATan_RF @ 0x0087_7b00 => extern "C" fn n_877b00(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::atel_call_math_atan_rf(&mut mem(), w, a, s)
+    }
+    /// `AtelCall_Math_InvSqrt_RF(worker, args, stack)`.
+    AtelCall_Math_InvSqrt_RF @ 0x0087_7ba0 => extern "C" fn n_877ba0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::atel_call_math_inv_sqrt_rf(&mut mem(), w, a, s)
+    }
+    /// `Native_1008(worker, args, stack)`.
+    Native_1008 @ 0x0087_7bd0 => extern "C" fn n_877bd0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_1008(&mut mem(), w, a, s)
+    }
+    /// `Native_1009(worker, args, stack)`.
+    Native_1009 @ 0x0087_7bf0 => extern "C" fn n_877bf0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_1009(&mut mem(), w, a, s)
+    }
+    /// `Native_1011(worker, args, stack)`.
+    Native_1011 @ 0x0087_7c10 => extern "C" fn n_877c10(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_1011(&mut mem(), w, a, s)
+    }
+    /// `Native_1012(worker, args, stack)`.
+    Native_1012 @ 0x0087_7c80 => extern "C" fn n_877c80(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_1012(&mut mem(), w, a, s)
+    }
+    /// `Native_1014(worker, args, stack)`.
+    Native_1014 @ 0x0087_7d60 => extern "C" fn n_877d60(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_1014(&mut mem(), w, a, s)
+    }
+    /// `Native_1016(worker, args, stack)`.
+    Native_1016 @ 0x0087_7e50 => extern "C" fn n_877e50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_1016(&mut mem(), w, a, s)
+    }
+    /// `Native_1017(worker, args, stack)`.
+    Native_1017 @ 0x0087_7ef0 => extern "C" fn n_877ef0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_1017(&mut mem(), w, a, s)
+    }
+    /// `Native_1018(worker, args, stack)`.
+    Native_1018 @ 0x0087_7f60 => extern "C" fn n_877f60(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_1018(&mut mem(), w, a, s)
+    }
+    /// `Native_101d(worker, args, stack)`.
+    Native_101d @ 0x0087_8110 => extern "C" fn n_878110(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_101d(&mut mem(), w, a, s)
     }
 }
