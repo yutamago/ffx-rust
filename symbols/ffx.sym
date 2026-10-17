@@ -11077,7 +11077,7 @@
 0x00925b60 function rcPrimBox                 # fh v3:exact 0x00925b60
 0x00925c50 function rcPrimBoxLine                # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551660 rcPrimBoxLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925db0 function rcPrimCircle                 # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551e10 rcPrimCircle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0
+0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0; ported (field round 42): (x, y, r, colour, ui): 65 stack vertices, the box (x - r, y - k), (x + r, y + k) at depth 256 and 63 zero ones, k = r * 1.1666666 * 416 / 448 (f64), rcPrimDraw2D(0x42, verts, 0x41, colour) with the UI type as rcPrimLine; returns cgraphicSetNowUIType(0)'s eax
 0x00925f80 function rcPrimDraw2D              # fh v3:exact 0x00925f80
 0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00; ported (field round 41): (x0, y0, x1, y1, colour, ui): vertices (x, y, 256.0, 0) on the stack, rcPrimDraw2D(0x41, verts, 2, colour) between cgraphicSetNowUIType(2) (when ui) and cgraphicSetNowUIType(0), whose eax it returns
 0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0

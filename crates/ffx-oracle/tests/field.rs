@@ -12744,36 +12744,42 @@ fn round40_on_a_snapshot_matches_the_original() {
 
 // ---- round 41 ----
 
-/// A `rcPrimDraw2D` stand-in: the eight vertex words its second argument
-/// points at to `log`, its other arguments after them, a call count at
-/// `log + 0x2c`; returns 0x1234.
-fn prim_draw_stub(log: u32) -> Vec<u8> {
-    let mut c = vec![0x8b, 0x4c, 0x24, 0x08]; // mov ecx, [esp + 8]
-    for i in 0..8u8 {
-        c.extend_from_slice(&[0x8b, 0x41, 4 * i, 0xa3]); // mov eax, [ecx + 4i]; mov [log + 4i], eax
-        c.extend_from_slice(&(log + 4 * u32::from(i)).to_le_bytes());
+/// A `rcPrimDraw2D` stand-in: the vertices its second argument points at
+/// (four words each, the count its third) to `log`, its other arguments at
+/// `tail`, then a call count; returns 0x1234.
+fn prim_draw_stub(log: u32, tail: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x10]; mov edi, log;
+    // mov ecx, [esp + 0x14]; shl ecx, 2; rep movsd; pop edi; pop esi
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[
+        0x8b, 0x4c, 0x24, 0x14, 0xc1, 0xe1, 0x02, 0xf3, 0xa5, 0x5f, 0x5e,
+    ]);
+    for (arg, at) in [(4u8, 0u32), (0xc, 4), (0x10, 8)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0xa3]); // mov eax, [esp + arg]; mov [tail + at], eax
+        c.extend_from_slice(&(tail + at).to_le_bytes());
     }
-    for (arg, at) in [(4u8, 0x20u32), (0xc, 0x24), (0x10, 0x28)] {
-        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0xa3]); // mov eax, [esp + arg]; mov [log + at], eax
-        c.extend_from_slice(&(log + at).to_le_bytes());
-    }
-    c.extend_from_slice(&[0xff, 0x05]); // inc dword [log + 0x2c]
-    c.extend_from_slice(&(log + 0x2c).to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]); // inc dword [tail + 0xc]
+    c.extend_from_slice(&(tail + 0xc).to_le_bytes());
     c.push(0xb8); // mov eax, 0x1234; ret
     c.extend_from_slice(&0x1234u32.to_le_bytes());
     c.push(0xc3);
     c
 }
 
-/// Round 41 on `t`: `rcPrimLine` with the UI type on or off, its vertices
+/// Round 41 on `t`: `rcPrimLine` and `rcPrimCircleLine` with the UI type
+/// on or off, its vertices
 /// and arguments logged by the `rcPrimDraw2D` stand-in, the UI type
 /// calls by another.
 fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
     let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
-    let (log, log2, rv) = (t.alloc(0x30), t.alloc(4 + 0x20 * 4), t.alloc(4));
+    let (log, log2, rv) = (t.alloc(0x420), t.alloc(4 + 0x20 * 4), t.alloc(4));
     // cgraphicSetNowUIType logged (the image has no UI state behind it)
     t.cave(&[
-        (Some(rcui::bridge::RC_PRIM_DRAW_2D), prim_draw_stub(log)),
+        (
+            Some(rcui::bridge::RC_PRIM_DRAW_2D),
+            prim_draw_stub(log, log + 0x410),
+        ),
         (
             Some(rcui::bridge::SET_NOW_UI_TYPE),
             log_stub(log2, rv, 1, 1),
@@ -12788,7 +12794,7 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             rng.next(),
             rng.below(2) * rng.next(),
         ];
-        t.fill(log, 0x2c, rng);
+        t.fill(log, 0x41c, rng);
         t.put(log2, 0u32);
         t.put(rv, rng.next());
         let work = t.stack_scratch(0x100);
@@ -12796,6 +12802,15 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             "rcPrimLine",
             |o| o.eax(0x0092_6c00, &a),
             |m| rcui::bridge::rc_prim_line(m, a, work, call),
+        );
+        // the circle: its centre, radius and the same colour and UI flag
+        let c = [a[0], a[1], rng.any_float(), a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x410, rng); // every vertex is written
+        t.same(
+            "rcPrimCircleLine",
+            |o| o.eax(0x0092_5ea0, &c),
+            |m| rcui::bridge::rc_prim_circle_line(m, c, work, call),
         );
     }
 }

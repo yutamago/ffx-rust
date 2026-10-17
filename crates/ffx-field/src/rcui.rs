@@ -822,12 +822,61 @@ pub mod bridge {
         let depth = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(PRIM_DEPTH)));
         let f = |b: u32| ffx_bridge::x87::round_trip(f32::from_bits(b));
         mem.write(work, [f(x0), f(y0), depth, 0.0, f(x1), f(y1), depth, 0.0]);
+        draw_2d(mem, [0x41, work, 2, colour], ui, call)
+    }
+
+    /// `rcPrimDraw2D(kind, verts, n, colour)` between
+    /// `cgraphicSetNowUIType(2)` (when `ui` is set) and
+    /// `cgraphicSetNowUIType(0)`, whose `eax` it returns.
+    fn draw_2d<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        draw: [u32; 4],
+        ui: u32,
+        call: &mut C,
+    ) -> u32 {
         let ui_type = mem.rebase(SET_NOW_UI_TYPE);
         if ui != 0 {
             call(mem, ui_type, &[2]);
         }
-        let draw = mem.rebase(RC_PRIM_DRAW_2D);
-        call(mem, draw, &[0x41, work, 2, colour]);
+        let f = mem.rebase(RC_PRIM_DRAW_2D);
+        call(mem, f, &draw);
         call(mem, ui_type, &[0])
+    }
+
+    /// The circle's height factor: 1.1666666 (`f64`, `0x00b67698`) times
+    /// 416.0 (`0x00b41d30`) over 448.0 (`0x00b50210`).
+    pub const CIRCLE_FACTORS: [u32; 3] = [0x00b6_7698, 0x00b4_1d30, 0x00b5_0210];
+
+    /// `rcPrimCircleLine(x, y, r, colour, ui)` (`0x00925ea0`): a circle
+    /// for the renderer as 65 vertices at `work` (0x410 bytes): its box
+    /// `(x - r, y - k)` and `(x + r, y + k)` (depth 256.0, `w` 0), then 63
+    /// zero vertices, `k = r * 1.1666666 * 416 / 448` (each step in `f64`,
+    /// at the x87's 53 bits), drawn as `rcPrimDraw2D(0x42, work, 0x41,
+    /// colour)` with the UI type as in [`rc_prim_line`].
+    pub fn rc_prim_circle_line<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 5],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let [x, y, r, colour, ui] = args;
+        let [c1, c2, c3] = CIRCLE_FACTORS.map(|a| mem.read::<f64>(mem.rebase(a)));
+        let (x, y, r) = (load(x), load(y), load(r));
+        let k = div(mul(mul(c1, r), c2), c3);
+        let depth = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(PRIM_DEPTH))).to_bits();
+        let v = [
+            store(sub(x, r)),
+            store(sub(y, k)),
+            depth,
+            0,
+            store(add(r, x)),
+            store(add(k, y)),
+            depth,
+            0,
+        ];
+        mem.write(work, v);
+        mem.write(work.wrapping_add(0x20), [0u32; 63 * 4]);
+        draw_2d(mem, [0x42, work, 0x41, colour], ui, call)
     }
 }

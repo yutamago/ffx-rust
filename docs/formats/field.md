@@ -1483,7 +1483,7 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
-## A 2D line (round 41)
+## 2D lines and circles (rounds 41, 42)
 
 `rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
 vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
@@ -1492,6 +1492,16 @@ through the x87 stack, so a signalling NaN turns quiet; 256.0 comes from
 (`0x00925f80`, the renderer), with `cgraphicSetNowUIType(2)` before it when
 `ui` is set and `cgraphicSetNowUIType(0)` after. It returns that last
 call's `eax`, which the stack-cookie check leaves alone.
+
+`rcPrimCircleLine(x, y, r, colour, ui)` (`0x00925ea0`) hands the renderer
+a circle as 65 vertices on its stack:
+- the box `(x - r, y - k)` and `(x + r, y + k)`, depth 256.0 and `w` 0;
+- then 63 zero vertices.
+
+Here `k = r * 1.1666666 * 416 / 448` (constants at `0x00b67698`,
+`0x00b41d30`, `0x00b50210`, each step in `f64` at 53 bits), the height
+corrected for the screen's aspect. It calls `rcPrimDraw2D(0x42, verts,
+0x41, colour)` with the same UI type calls as `rcPrimLine`.
 
 ## Separate SE wave data (round 40)
 
