@@ -2178,6 +2178,7 @@ fn input(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         (ffx_battle::actor::bridge::MON_TOP.ptr(b).addr, 4),
         (ffx_battle::menu::bridge::PARTY.ptr(b).addr, 7),
         (ffx_battle::minor::bridge::DIR_FREE.ptr(b).addr, 1),
+        (ffx_battle::menu::bridge::END_FORCED.ptr(b).addr, 1),
     ];
     let saved: Vec<Vec<u8>> = keep.iter().map(|&(at, n)| b.read(at, n).unwrap()).collect();
     turns(a, b, rng, w, out, rec);
@@ -2270,7 +2271,8 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             p + 0x591,
             &[[0x11, 0, rng.byte()][rng.below(3) as usize]],
         );
-        let st6: u16 = [0, 2, 0x100, 0x200, 0x400, 0x500, half16(rng)][rng.below(7) as usize];
+        let st6: u16 =
+            [0, 2, 0x100, 0x200, 0x300, 0x400, 0x500, half16(rng)][rng.below(8) as usize];
         poke(a, b, p + 0x606, &st6.to_le_bytes());
         let s16: u16 = [0, 0x4000, 0x800, 0x2040, 0x10c0, half16(rng)][rng.below(6) as usize];
         poke(a, b, p + 0x616, &s16.to_le_bytes());
@@ -2778,8 +2780,27 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         st::COMMAND_CUE_COUNT,
         i8::try_from(rng.below(3)).unwrap(),
     );
+    // mostly a fight still on (MsGetBattleEndStatus 0): three party
+    // members and three monsters in it, the entries theirs
+    let on = rng.below(3) != 0;
+    if on {
+        let mut party = vec![0xffu8; 7];
+        party[..3].copy_from_slice(&[0, 1, 2]);
+        poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+        set(a, b, ffx_battle::menu::bridge::END_FORCED, 0);
+        for q in [0, 1, 2, 0x14, 0x15, 0x16] {
+            let p = w.actor(q);
+            for (o, v) in [(0xdd2, 1), (0xdd3, 1), (0xdc8, 1), (0xdcc, 0), (0xdce, 0)] {
+                poke(a, b, p + o, &[v]);
+            }
+            if b.read(p + 0x5d0, 1).unwrap()[0] == 0 {
+                poke(a, b, p + 0x5d0, &100i32.to_le_bytes());
+            }
+        }
+    }
     let entries: Vec<u8> = (0..n * 8)
         .map(|k| match k % 8 {
+            0 if on => [0, 1, 2, 0x14][rng.below(4) as usize],
             0 => u8::try_from(rng.below(ACTORS)).unwrap(),
             1 => [0, 0, 1, rng.byte()][rng.below(4) as usize],
             3 => flag(rng, 5),
@@ -2794,7 +2815,12 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         flag(rng, 8),
     );
     set(a, b, mn::NUMBERS_KIND1, flag(rng, 3));
-    set(a, b, ffx_battle::atel::bridge::CAMERA_STATE, flag(rng, 6));
+    set(
+        a,
+        b,
+        ffx_battle::atel::bridge::CAMERA_STATE,
+        [0, 0, 0, 0, 1, 2][rng.below(6) as usize],
+    );
     set(a, b, ip::AUTO_OFF, flag(rng, 3));
     set(a, b, ip::CHEAT_POWERUP, u32::from(flag(rng, 6)));
     if !placed(a, b, w, out) {
