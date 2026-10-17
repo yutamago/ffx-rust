@@ -1675,6 +1675,26 @@ ported! {
     pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `pppKeTkFadeDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppKeTkFadeDraw @ 0x0072_ee50 => extern "C" fn ppp_ke_tk_fade_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xc0]);
+        let mut locals = Locals([0; 0xc0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        draw::bridge::ppp_ke_tk_fade_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsLpTOtDraw(obj, _, frame_no)`: its stack locals in a buffer
+    /// on this shim's stack (the frame pointer at its end).
+    pppKeLnsLpTOtDraw @ 0x0075_b230 => extern "C" fn ppp_ke_lns_lp_t_ot_draw(obj: u32, _unused: u32, frame_no: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xe0]);
+        let mut locals = Locals([0; 0xe0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        draw::bridge::ppp_ke_lns_lp_t_ot_draw(&mut mem(), obj, frame_no, frame, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

@@ -1541,6 +1541,7 @@
 0x0062fc20 function sceRemove                 # fh v3:cg8 0x62fdd0
 0x0062fc70 function FFXVpu0Reset              # fh v3:cg2 0x62fe20
 0x0062fca0 function FFXVu0CopyVectorXYZ       # fh v3:bsim1.00 0x0062fe50
+0x0062fcd0 function FFXVu0FTOI4Vector         # (dst, src) a bare ret in FFX.exe (the VU0 float-to-12.4 conversion left out): pppKeLnsLpTOtDraw (0x0075b230) reads its dst uninitialised; ours
 0x0062fce0 function FFXVu0InnerProduct        # fh v3:bsim1.00 0x0062fe90
 0x0062fd10 function FFXVu0InterVector         # fh v3:exact 0x0062fec0
 0x0062fd70 function FFXVu0InterVectorXYZ      # fh v3:exact 0x0062ff20
@@ -3602,7 +3603,7 @@
 0x0072edb0 function pppVtMimeCon2             # ppp program table record "pppVtMime" (0x00c3b278) +0x20 second set-up; "pppVtMime" (0x00c3c920) +0x20 second set-up
 0x0072ede0 function pppVtMimeDes              # fh v3:exact 0x0072eec0
 0x0072ee20 function pppKeTkFadeCon            # ppp program table record "pppKeTkFade" (0x00c3d758) +0x1c set-up; "pppKeTkFade" (0x00c3d758) +0x20 second set-up
-0x0072ee50 function pppKeTkFadeDraw           # ppp program table record "pppKeTkFade" draw; not a function start in the Ghidra dump
+0x0072ee50 function pppKeTkFadeDraw           # ppp program table record "pppKeTkFade" draw; not a function start in the Ghidra dump; ours: = draw::bridge::ppp_ke_tk_fade_draw: steps the [pos, speed, accel] fade, builds a 256-entry CSM1 CLUT ramp (+0x18 to +0x14, split at ftol(pos)) in SPR and uploads it (sceGsExecLoadImage, a stub on PC) (oracle parity)
 0x0072f3c0 function VFX_Copy16To_0072f3c0     # the same code as VFX_Copy16To (callers: op_shape_draw, sg_calcenvelope_normW)
 0x0072f420 function pppVu0RNext              # vrnext as the PC port emulates it: *out = g_Vu0_R stepped (when g_Vu0_RSeeded, which it does not set) else 1.0; the rand programs' draws (pppRandFloat ...) call it after srand
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
@@ -3972,7 +3973,7 @@
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
 0x0075b160 function pppKeLnsLpTDraw           # ppp program table record "pppKeLnsLpT" draw
-0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0)
+0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0); ours: = draw::bridge::ppp_ke_lns_lp_t_ot_draw: lens-flare occlusion: counts depth texels below the point in the clamped box, visibility +0x7c *= count/(hx*hy), +0xac = that (oracle parity; FFXVu0FTOI4Vector and sceGsExecStoreImage are stubs on PC)
 0x0075b680 function magic_nop_0075b680        # g_MagicImports slot 422 (4 overlays): a lone ret; hidden from the dump
 0x0075b690 function pppKeAcmCic               # ppp program table record "pppKeAcmCic" step
 0x0075b6b0 function pppKeAccSpdSv             # ppp program table record "pppKeAccSpdSv" step; not a function start in the Ghidra dump
@@ -14322,6 +14323,8 @@
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
 0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
+0x00c3e6a0 label    g_pppClutCsmStep          # 32 signed bytes: the CLUT entry step (in u32 entries) after entry i & 0x1f in CSM1 order (1, 9, -15, ...); pppKeTkFadeDraw (0x0072ee50) copies it to its buffer +0x400; ours
+0x00c3e6c0 label    g_pppClutCsmPos           # 32 bytes: entry i & 0x1f's position within its 32-entry block in CSM1 order (0..7, 0x10..0x17, 8..0xf, 0x18..0x1f); pppKeTkFadeDraw (0x0072ee50) starts its tail fill there; ours
 0x00c3e6e0 label    g_pppKeMatSNWords         # two words pppKeMatSN copies to area 0 +0x70/+0x74
 0x00c41758 label    g_HddPassNames            # "ffxpassf" (+0) and "ffxpassr" (+0xc), written by hdd_set_pass_names
 0x00c42130 label g_ChrTexAnimSwizzle        # two 64-byte index tables (0x00c42130, 0x00c42170) for chr_texanim_clut_swizzle
@@ -15274,6 +15277,7 @@
 0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x0230fff0 label    g_pppOtList               # the draw list of the pppKeLns...T programs: their TCon pppOtFunc_Reg(0x0230fff0, node, draw, area), TDes pppOtFunc_Lev(0x0230fff0, node); +4 tail, +0xc u16 count
+0x0230fffe label    g_pppLensView             # u16: the view the pppKeLns...T draws run in; pppKeLnsLpTOtDraw (0x0075b230) zeroes +0x7c when an object's u16 +0xcc differs; ours
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c48 label    g_CdLib_08                # g_CdLib + 8 (wait, docs/formats/system.md): Ch_ReadSync 0x0082a5e0 tail-jumps through it

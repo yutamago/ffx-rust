@@ -265,4 +265,306 @@ pub mod bridge {
         }
         eax
     }
+
+    const SPR_ALLOC: u32 = 0x007e_6a00;
+    const SPR_FREE: u32 = 0x007e_6a60;
+    const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    const SYNC_PATH: u32 = 0x0062_f880;
+    const SET_DEF_LOAD_IMAGE: u32 = 0x0062_f820;
+    const EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+    const SET_DEF_STORE_IMAGE: u32 = 0x0062_f830;
+    const EXEC_STORE_IMAGE: u32 = 0x0062_f7b0;
+    const SUB_VECTOR: u32 = 0x006e_d940;
+    const DIV_VECTOR: u32 = 0x006e_d3a0;
+    const ADD_VECTOR: u32 = 0x006e_d290;
+    const FTOI4_VECTOR: u32 = 0x0062_fcd0;
+    const GET_DBUFF_DC: u32 = 0x0082_0530;
+    /// The CLUT's 32-entry step table (signed entry deltas, CSM1 order).
+    const CLUT_STEP: u32 = 0x00c3_e6a0;
+    /// The CLUT's 32-entry position table (entry `i` within its block).
+    const CLUT_POS: u32 = 0x00c3_e6c0;
+    /// `g_pppStop`.
+    const STOP: u32 = 0x0230_fd34;
+    /// The current lens-flare view (`u16`).
+    const LENS_VIEW: u32 = 0x0230_fffe;
+
+    fn f(mem: &impl Mem, at: u32) -> f64 {
+        ffx_bridge::x87::load(mem.read(at))
+    }
+
+    fn sbyte(mem: &impl Mem, at: u32) -> u32 {
+        i32::from(mem.read::<u8>(at).cast_signed()).cast_unsigned()
+    }
+
+    /// `pppKeTkFadeDraw(obj, key, prog)` (`0x0072ee50`): the fade's work
+    /// area `[pos, speed, accel]` at `obj + 0xa0 + [[prog + 0xc]]` steps
+    /// (`speed += accel`, `pos += speed`, the key's `+8..+0x10` added on
+    /// its frame) unless stopped; then, unless the key's texture (`+4`) is
+    /// `0xffff`, a 256-entry CLUT in a scratch buffer: `n = ftol(pos)`
+    /// clamped to `[-0x100, 0xff]`; for `n >= 0` the first `n` entries hold
+    /// colour `+0x18` and a ramp from it to colour `+0x14` fills the rest,
+    /// for `n < 0` the ramp covers the first `n + 0x100` and `+0x14` the
+    /// rest (entries in CSM1 order, through the tables at `0x00c3e6a0`).
+    /// The upload (`sceGsSetDefLoadImage`, `sceGsExecLoadImage` to the
+    /// texture's CLUT at `+0x10`) is the renderer seam, a call through
+    /// `call` (no-op stubs in `FFX.exe`); the locals lie below `frame`.
+    /// Returns what the original leaves in eax.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_ke_tk_fade_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, ftol2, load, store};
+        let off: u32 = mem.read(mem.read::<u32>(prog.wrapping_add(0xc)));
+        let w = obj.wrapping_add(off).wrapping_add(0xa0);
+        let mut eax = mem.read::<u32>(prog.wrapping_add(0xc));
+        if mem.read::<u32>(g(mem, STOP)) == 0 {
+            let speed = store(add(f(mem, w.wrapping_add(8)), f(mem, w.wrapping_add(4))));
+            mem.write(w.wrapping_add(4), speed);
+            let pos = store(add(f(mem, w), load(speed)));
+            mem.write(w, pos);
+            eax = mem.read(obj.wrapping_add(0xc));
+            if eax == mem.read::<u32>(key) {
+                mem.write(w, store(add(load(pos), f(mem, key.wrapping_add(8)))));
+                mem.write(
+                    w.wrapping_add(4),
+                    store(add(load(speed), f(mem, key.wrapping_add(0xc)))),
+                );
+                let accel = store(add(
+                    f(mem, key.wrapping_add(0x10)),
+                    f(mem, w.wrapping_add(8)),
+                ));
+                mem.write(w.wrapping_add(8), accel);
+            }
+        }
+        let tex_id: u32 = mem.read(key.wrapping_add(4));
+        if tex_id == 0xffff {
+            return eax;
+        }
+        let buf = call(mem, g(mem, SPR_ALLOC), &[0x420]);
+        for i in 0..8 {
+            let v: u32 = mem.read(g(mem, CLUT_STEP).wrapping_add(4 * i));
+            mem.write(buf.wrapping_add(0x400 + 4 * i), v);
+        }
+        let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+        let rec = mem
+            .read::<u32>(env.wrapping_add(0x20))
+            .wrapping_add(tex_id << 5);
+        let tex: u32 = mem.read(rec.wrapping_add(0x10));
+        let tex = tex | (tex.cast_signed() >> 31).cast_unsigned();
+        let step =
+            |mem: &M, i: u32| sbyte(mem, buf.wrapping_add(0x400 + (i & 0x1f))).wrapping_mul(4);
+        let n = ftol(mem, f(mem, w)).cast_signed();
+        let (end_c, start_c) = (
+            mem.read::<u32>(key.wrapping_add(0x14)),
+            mem.read::<u32>(key.wrapping_add(0x18)),
+        );
+        let (mut at, from, to, div);
+        if n < 0 {
+            // the tail [n, 0x100) is the end colour, the ramp [0, n) before it
+            let n = n.max(-0x100) + 0x100;
+            let pos = sbyte(mem, g(mem, CLUT_POS).wrapping_add(n.cast_unsigned() & 0x1f))
+                .wrapping_add(n.cast_unsigned() & 0xe0);
+            let mut p = buf.wrapping_add(pos.wrapping_mul(4));
+            for i in n..0x100 {
+                mem.write(p, end_c);
+                p = p.wrapping_add(step(mem, i.cast_unsigned()));
+            }
+            #[allow(clippy::cast_precision_loss)] // fild of a byte count
+            let d = n as f32;
+            (at, from, to, div) = (buf, 0, n, d);
+        } else {
+            // the head [0, n) is the start colour, the ramp [n, 0x100) after it
+            let n = n.min(0xff);
+            let mut p = buf;
+            for i in 0..n {
+                mem.write(p, start_c);
+                p = p.wrapping_add(step(mem, i.cast_unsigned()));
+            }
+            #[allow(clippy::cast_precision_loss)] // 256 - n, exact
+            let d = (0x100 - n) as f32;
+            (at, from, to, div) = (p, n, 0x100, d);
+        }
+        // the ramp: start + i (end - start) / div, per channel, on the stack
+        let (s, e) = (frame.wrapping_sub(0x14), frame.wrapping_sub(0x24));
+        for (k, b) in (0u32..).zip(start_c.to_le_bytes()) {
+            mem.write(s.wrapping_add(4 * k), f32::from(b).to_bits());
+        }
+        for (k, b) in (0u32..).zip(end_c.to_le_bytes()) {
+            mem.write(e.wrapping_add(4 * k), f32::from(b).to_bits());
+        }
+        call(mem, g(mem, SUB_VECTOR), &[e, e, s]);
+        call(mem, g(mem, DIV_VECTOR), &[e, e, div.to_bits()]);
+        for i in from..to {
+            let mut c = 0u32;
+            for k in (0..4).rev() {
+                c = (c << 8) | ftol2(f(mem, s.wrapping_add(4 * k)));
+            }
+            mem.write(at, c);
+            call(mem, g(mem, ADD_VECTOR), &[s, s, e]);
+            at = at.wrapping_add(step(mem, i.cast_unsigned()));
+        }
+        // the renderer seam: the CLUT upload
+        let lp = frame.wrapping_sub(0x80);
+        call(
+            mem,
+            g(mem, SET_DEF_LOAD_IMAGE),
+            &[
+                lp,
+                (tex >> 7) & 0x3fff,
+                4,
+                (tex >> 21) & 0xf,
+                0,
+                0,
+                0x10,
+                0x10,
+            ],
+        );
+        call(mem, g(mem, FLUSH_CACHE), &[0]);
+        call(mem, g(mem, EXEC_LOAD_IMAGE), &[lp, buf]);
+        call(mem, g(mem, SYNC_PATH), &[0, 0]);
+        call(mem, g(mem, SPR_FREE), &[0x420])
+    }
+
+    /// `pppKeLnsLpTOtDraw(obj, _, frame_no)` (`0x0075b230`): the lens
+    /// flare's occlusion test. Off its view (`u16` `+0xcc` against
+    /// `0x0230fffe`) the visibility `+0x7c` is 0; at 0 it stays; off its
+    /// frame (`+0x8c` and `frame_no` modulo `+0x8d + 1` differ) it decays
+    /// by `+0xac`. Otherwise the `+0xd0 x +0xd1` half-extent box (in 1/8
+    /// pixels) round the projected point (`FFXVu0FTOI4Vector(+0xc0)`),
+    /// clamped to the draw buffer's scissor, is read back from the depth
+    /// buffer into a scratch buffer (`sceGsSetDefStoreImage`,
+    /// `sceGsExecStoreImage`: the renderer seam, calls through `call`;
+    /// no-op stubs in `FFX.exe`), the texels whose 24-bit z lies below the
+    /// point's are counted, and with `v = count / (+0xd0 * +0xd1)` the
+    /// visibility becomes `v * +0x7c` and `+0xac` becomes `v` (both 0 for
+    /// an empty box). The locals lie below `frame`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_ke_lns_lp_t_ot_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        frame_no: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let at = |o: u32| obj.wrapping_add(o);
+        if mem.read::<u16>(at(0xcc)) != mem.read::<u16>(g(mem, LENS_VIEW)) {
+            mem.write(at(0x7c), 0u32);
+            return;
+        }
+        // fucompp: equal to 0.0 (not unordered)
+        if f(mem, at(0x7c)) == 0.0 {
+            return;
+        }
+        let m = i32::from(mem.read::<u8>(at(0x8d))) + 1;
+        let a = i32::from(mem.read::<u8>(at(0x8c)));
+        if a % m != frame_no.cast_signed().wrapping_rem(m) {
+            let v = store(mul(f(mem, at(0xac)), f(mem, at(0x7c))));
+            mem.write(at(0x7c), v);
+            return;
+        }
+        let slot = frame.wrapping_sub(0x98);
+        mem.write(slot, m.cast_unsigned());
+        let dc = call(mem, g(mem, GET_DBUFF_DC), &[slot]);
+        let gs = if mem.read::<u8>(slot) & 1 != 0 {
+            dc.wrapping_add(0x190)
+        } else {
+            dc.wrapping_add(0x60)
+        };
+        let ox = u32::from(mem.read::<u16>(gs.wrapping_add(0x18)));
+        let oy = u32::from(mem.read::<u16>(gs.wrapping_add(0x1c)));
+        let sx: u32 = mem.read(gs.wrapping_add(0x24));
+        let sy: u32 = mem.read(gs.wrapping_add(0x28));
+        let x0 = ((sx & 0x7ff) << 4).wrapping_add(ox).cast_signed();
+        let x1 = ((((sx >> 16) & 0x7ff) + 1) << 4)
+            .wrapping_add(ox)
+            .cast_signed();
+        let y0 = ((sy & 0x7ff) << 4).wrapping_add(oy).cast_signed();
+        let y1 = ((((sy >> 16) & 0x7ff) + 1) << 4)
+            .wrapping_add(oy)
+            .cast_signed();
+        let v = frame.wrapping_sub(0x14);
+        call(mem, g(mem, FTOI4_VECTOR), &[v, at(0xc0)]);
+        let px = mem.read::<u32>(v).cast_signed();
+        let py = mem.read::<u32>(v.wrapping_add(4)).cast_signed();
+        let hx = i32::from(mem.read::<u8>(at(0xd0)));
+        let hy = i32::from(mem.read::<u8>(at(0xd1)));
+        // clamped low end first, as the original
+        let clamp = |x: i32, lo: i32, hi: i32| {
+            if x < lo {
+                lo
+            } else if x > hi {
+                hi
+            } else {
+                x
+            }
+        };
+        let left = clamp(px.wrapping_sub(hx * 8), x0, x1);
+        let top = clamp(py.wrapping_sub(hy * 8), y0, y1);
+        let right = clamp(px.wrapping_add(hx * 8), x0, x1);
+        let bottom = clamp(py.wrapping_add(hy * 8), y0, y1);
+        let w = right.wrapping_sub(left).wrapping_add(0xf) >> 4;
+        let h = bottom.wrapping_sub(top).wrapping_add(0xf) >> 4;
+        if w <= 0 || h <= 0 {
+            mem.write(at(0x7c), 0u32);
+            mem.write(at(0xac), 0u32);
+            return;
+        }
+        let wa = (w.wrapping_add(7)) & !7;
+        let buf = call(mem, g(mem, SPR_ALLOC), &[0x3060]);
+        let ha = (h + 3) & !3;
+        let tx = left.wrapping_sub(ox.cast_signed()) >> 4;
+        let ty = top.wrapping_sub(oy.cast_signed()) >> 4;
+        let psm = u32::from(mem.read::<u16>(gs.wrapping_add(2)) & 0x3f);
+        let fbp = u32::from((mem.read::<u16>(gs.wrapping_add(0xc)) & 0x1ff) << 5);
+        // the renderer seam: the depth readback
+        let lp = frame.wrapping_sub(0x80);
+        call(
+            mem,
+            g(mem, SET_DEF_STORE_IMAGE),
+            &[
+                lp,
+                fbp,
+                psm,
+                0x31,
+                tx.cast_unsigned(),
+                ty.cast_unsigned(),
+                wa.cast_unsigned(),
+                ha.cast_unsigned(),
+            ],
+        );
+        call(mem, g(mem, FLUSH_CACHE), &[0]);
+        let mut p = buf.wrapping_add(0x60);
+        call(mem, g(mem, EXEC_STORE_IMAGE), &[lp, p]);
+        call(mem, g(mem, SYNC_PATH), &[0, 0]);
+        let z = (mem.read::<u32>(v.wrapping_add(8)).cast_signed() >> 4).cast_unsigned();
+        let pad = (wa - w).wrapping_mul(3).cast_unsigned();
+        let mut count = 0.0f32;
+        for _ in 0..h {
+            for _ in 0..w {
+                let t = u32::from_le_bytes([
+                    mem.read(p),
+                    mem.read(p.wrapping_add(1)),
+                    mem.read(p.wrapping_add(2)),
+                    0,
+                ]);
+                if t < z {
+                    count += 1.0;
+                }
+                p = p.wrapping_add(3);
+            }
+            p = p.wrapping_add(pad);
+        }
+        call(mem, g(mem, SPR_FREE), &[0x3060]);
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+        let area = hy.wrapping_mul(hx) as f32;
+        let vis = store(div(f64::from(count), load(area.to_bits())));
+        mem.write(at(0x7c), store(mul(load(vis), f(mem, at(0x7c)))));
+        mem.write(at(0xac), vis);
+    }
 }
