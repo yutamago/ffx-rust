@@ -10313,7 +10313,7 @@
 0x00905e90 function TOCopyWindowLayout_00905e90 # cdecl(table, i): i < count: entry i (n, then n 12-byte records; layout 0x43 n = 1) memcpy'd to 0x01876148; returns it, else 0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
-0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
+0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0; (id, scale) -> f32: ids 0x258..0x263/0x264..0x267/0x268/0x269 give graphicUiRemapX2(ftol(scale*54/64/64.5/147.4 + 0.5)); char 0x025d16e4 digits/space 9.0, ':;' 13.6, '@'..'O' 20.0 or 9.0 ('@' 33.5)
 0x00906420 function graphicDrawUIElementAfterSet # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100501fe0 graphicDrawUIElementAfterSet, 3 votes, round 1
 0x00906680 function SeveralStoresSetTableConstantsArgumentsAddresses_00906680 # auto-port shape (several stores: set table (constants, arguments, addresses), cdecl): u32[((a4 << 0x5) + &0x025d1710)] = a0; u32[((a4 << 0x5) + &0x025d1714)] = a1; u32[((a4 << 0x5) + &0x025d1718)] = a2; u32[((a4 << 0x5) + &0x025d171c)] = a3; return a3; callers: no direct caller; name ours
 0x009066f0 function TOShiftListedId # cdecl(id): 0x40e..=0x46e and 0x40e or in the zero-terminated table 0x00b66e44: id + 100; else id; name ours

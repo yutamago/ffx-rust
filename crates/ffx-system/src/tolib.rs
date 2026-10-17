@@ -5704,4 +5704,64 @@ pub mod bridge {
         call(mem, 0x0090_6e60, &[window, kind]);
         call(mem, 0x008b_8bb0, &[window, message_type])
     }
+
+    /// `getScaleButtonIconWidth(id, scale)` (`0x009062b0`): the width of a
+    /// button icon for the HD UI.
+    ///
+    /// Button ids 0x258..=0x263 and 0x264..=0x267 give
+    /// `remap(ftol(0.5 + scale × 54.0))` and `remap(ftol(0.5 + scale ×
+    /// 64.0))`; 0x268 and 0x269 give `remap(ftol(scale × 64.5 + 0.5))` and
+    /// `remap(ftol(scale × 147.4 + 0.5))` (constants at `0x00b5f1f8`,
+    /// `0x00b41308`, `0x00b66cb0`, `0x00b66cd0`, `0x00b92220`; the rounded
+    /// value goes through an f32 before `remap`, `graphicUiRemapX2`), any
+    /// other id 0. The character `0x025d16e4` then overrides it: digits and
+    /// space 9.0, `:`/`;` 13.6, `@`..`O` 20.0 when the low nibble is a
+    /// multiple of 3 and 9.0 otherwise (`@` itself 33.5). Constants are read
+    /// from the image.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn scale_button_icon_width<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        scale: f32,
+        mut remap: impl FnMut(&mut M, f32) -> f32,
+    ) -> f32 {
+        let d = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let f = |mem: &M, a: u32| -> f32 { mem.read(mem.rebase(a)) };
+        let half = d(mem, 0x00b9_2220);
+        let s = f64::from(scale);
+        let factor = match id {
+            0x258..=0x263 => Some(d(mem, 0x00b5_f1f8)),
+            0x264..=0x267 => Some(d(mem, 0x00b4_1308)),
+            0x268 => Some(d(mem, 0x00b6_6cb0)),
+            0x269 => Some(d(mem, 0x00b6_6cd0)),
+            _ => None,
+        };
+        let mut r = 0.0f32;
+        if let Some(k) = factor {
+            let i = ffx_bridge::x87::ftol(mem, s * k + half).cast_signed();
+            r = remap(mem, i as f32);
+        }
+        let c: u32 = mem.read(mem.rebase(0x025d_16e4));
+        if c.wrapping_sub(0x30) <= 9 || c == 0x20 {
+            return f(mem, 0x00b5_5140);
+        }
+        if c.wrapping_sub(0x3a) <= 1 {
+            return f(mem, 0x00b6_6d78);
+        }
+        if c.wrapping_sub(0x40) <= 0xf {
+            r = if (c & 0xf).is_multiple_of(3) {
+                f(mem, 0x00b4_ae10)
+            } else {
+                f(mem, 0x00b5_5140)
+            };
+            if c == 0x40 {
+                r = f(mem, 0x00b6_6d7c);
+            }
+        }
+        r
+    }
 }

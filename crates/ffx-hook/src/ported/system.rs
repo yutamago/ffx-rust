@@ -5766,6 +5766,10 @@ ported! {
     TOSetWindowKindAndType_008b0000 @ 0x008b_0000 => extern "C" fn to_set_window_kind_and_type(window: u32, kind: u32, message_type: u32) -> u32 {
         tolib::bridge::to_set_window_kind_and_type(&mut mem(), window, kind, message_type, call_sym)
     }
+    /// `getScaleButtonIconWidth(id, scale)`.
+    getScaleButtonIconWidth @ 0x0090_62b0 => extern "C" fn get_scale_button_icon_width(id: u32, scale: f32) -> f32 {
+        tolib::bridge::scale_button_icon_width(&mut mem(), id, scale, |_, v| ffx_graphic::ui::remap_x2(v))
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

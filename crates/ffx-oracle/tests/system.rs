@@ -11457,6 +11457,71 @@ fn round19_text_matches_the_original_on_the_snapshot() {
     round19_text(&mut a, &mut b, &mut Xorshift(0x4019_0052));
 }
 
+/// Round 20's button icon width, with the original `graphicUiRemapX2` on
+/// both sides.
+#[allow(clippy::cast_possible_truncation)]
+fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let chars = [
+        0x20u32, 0x30, 0x35, 0x39, 0x3a, 0x3b, 0x3c, 0x2f, 0x40, 0x41, 0x43, 0x4f, 0x50, 0,
+    ];
+    for k in 0..2000u32 {
+        let id = match rng.next() % 4 {
+            0 => 0x258 + rng.next() % 0x14,
+            1 => 0x268 + rng.next() % 2,
+            2 => 0x250 + rng.next() % 0x30,
+            _ => rng.next(),
+        };
+        let scale = match rng.next() % 4 {
+            0 => (rng.next() % 400) as f32 / 100.0,
+            1 => f32::from_bits(rng.next() & 0xbfff_ffff),
+            2 => -((rng.next() % 400) as f32) / 37.0,
+            _ => 1.0,
+        };
+        let c = if rng.next().is_multiple_of(5) {
+            rng.next() % 0x80
+        } else {
+            chars[(rng.next() % 14) as usize]
+        };
+        put(a, b, g(a, 0x025d_16e4), c);
+        let want = a
+            .call(g(a, 0x0090_62b0), Conv::Cdecl, &[id, scale.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap();
+        let got = t::scale_button_icon_width(b, id, scale, |m, v| {
+            let at = m.rebase(0x0064_47e0);
+            m.call(at, Conv::Cdecl, &[v.to_bits()])
+                .unwrap()
+                .st0
+                .unwrap() as f32
+        });
+        assert_eq!(
+            (want as f32).to_bits(),
+            got.to_bits(),
+            "icon width {k}: id {id:#x} scale {scale} char {c:#x}"
+        );
+        same_memory("icon width", a, b);
+    }
+}
+
+#[test]
+fn round20_icon_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round20_icon(&mut a, &mut b, &mut Xorshift(0x4020_0011));
+}
+
+#[test]
+fn round20_icon_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round20_icon(&mut a, &mut b, &mut Xorshift(0x4020_0012));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {
