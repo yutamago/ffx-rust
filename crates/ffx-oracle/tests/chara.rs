@@ -6824,3 +6824,100 @@ fn round11_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11b_matches_the_original() {
+    for mut t in twins() {
+        round11b_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+fn round11b_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_b11b);
+    let fk = Fakes::new(t);
+    let elem = fk.fake(t, 0x0083_5660, 1, 3);
+    let limit = fk.fake(t, 0x0083_4fd0, 2, 3);
+    let pop = t.b.rebase(FPU_POP);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..32u32 {
+        fk.reset(t);
+        t.put_u32(elem, if round % 8 == 7 { 0 } else { rng.next() % 4 });
+        t.put_u32(limit, rng.next());
+        let chr = t.alloc(0x500);
+        for k in 0..0x140 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(chr + 4 * k, v);
+        }
+        let elems = t.alloc(0x160 * 4);
+        for k in 0..0x160 {
+            let v = f(&mut rng, -3, 3);
+            t.put_u32(elems + 4 * k, v);
+        }
+        let bones = t.alloc(0xc8);
+        for k in 0..0x32 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(bones + 4 * k, v);
+        }
+        for k in 0..4 {
+            t.put_u32(elems + 0x160 * k, bones);
+        }
+        t.put_u32(chr + 0x328, elems);
+        let scratch = t.alloc(p::NECK_INIT_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_4e60);
+        t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |_: &mut Oracle, _: u32, _: &[f64]| f32::NAN;
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_neck_init(&mut t.b, chr, scratch, &mut c);
+        }
+        let s = Oracle::read(&mut t.b, scratch, p::NECK_INIT_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_NeckInit {round}",
+            t.name
+        );
+        // Ch_ElemCalcQuaternion
+        let e = t.alloc(0x100);
+        for k in 0..0x40 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(e + 4 * k, v);
+        }
+        let other = t.alloc(0x40);
+        for k in 0..0x10 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(other + 4 * k, v);
+        }
+        t.put_u32(e + 0xcc, other);
+        let w = [0f32, 1.0, 0.5, 0.25][usize::try_from(rng.next() % 4).unwrap()];
+        t.put_u32(e + 0xe0, w.to_bits());
+        let scratch = t.alloc(p::ELEM_QUAT_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_3960);
+        t.a.call(at, Conv::Cdecl, &[e]).unwrap();
+        let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+        p::ch_elem_calc_quaternion(&mut t.b, e, scratch, &mut |m, f, a| call(m, f, a));
+        let s = Oracle::read(&mut t.b, scratch, p::ELEM_QUAT_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_ElemCalcQuaternion {round}",
+            t.name
+        );
+    }
+}

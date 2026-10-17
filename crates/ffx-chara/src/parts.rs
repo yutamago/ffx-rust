@@ -751,6 +751,98 @@ pub mod bridge {
         let wb = bits(mem, chr + 0x418);
         (c.call)(mem, set, &[chr, elem, mat, wb])
     }
+
+    /// `Ch_NeckSetLimit(chr, lo, hi)` (`0x00834fd0`), `FFXVu0RotMatrixX`
+    /// (`0x006ed780`), `FFXVu0CopyMatrix` (`0x006ed360`).
+    pub const NECK_SET_LIMIT: u32 = 0x0083_4fd0;
+    pub const ROT_MATRIX_X: u32 = 0x006e_d780;
+    pub const COPY_MATRIX: u32 = 0x006e_d360;
+    /// Bytes of scratch `ch_neck_init` needs (its matrix).
+    pub const NECK_INIT_SCRATCH: u32 = 0x40;
+
+    /// `Ch_NeckInit(chr)` (`0x00834e60`): neck limits 20 and 160
+    /// (`Ch_NeckSetLimit`); with a head (option point 9's element, 0x160
+    /// bytes each at `+0x328`), its rest turn (x, y, z angles at the
+    /// element's `+0xe4`..`+0xec`) times its bone matrix (`+0x88` of the
+    /// element's `+0` pointer) becomes `+0x42c`, copied to `+0x46c` and as
+    /// a quaternion to `+0x4ac`; `+0x41c` = the wrapped quarter turn. The
+    /// original returns nothing usable (EAX is `Angle_Wrap`'s status word).
+    pub fn ch_neck_init<M: Mem>(mem: &mut M, chr: u32, scratch: u32, c: &mut NeckCalls<'_, M>) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        let (lo, hi) = (
+            bits(mem, r(mem, 0x00b4_ae10)),
+            bits(mem, r(mem, 0x00b5_4c78)),
+        );
+        (c.call)(mem, r(mem, NECK_SET_LIMIT), &[chr, lo, hi]);
+        let elem = (c.call)(mem, r(mem, OPTPOS_GET_ELEMENT), &[chr, 9, 0]);
+        if elem == 0 {
+            return;
+        }
+        let e = elem.wrapping_mul(0x160).wrapping_add(mem.read(chr + 0x328));
+        let m = scratch;
+        (c.call)(mem, r(mem, UNIT_MATRIX), &[m]);
+        for (f, off) in [
+            (ROT_MATRIX_X, 0xe4u32),
+            (ROT_MATRIX_Y, 0xe8),
+            (ROT_MATRIX_Z, 0xec),
+        ] {
+            let a = bits(mem, e.wrapping_add(off));
+            (c.call)(mem, r(mem, f), &[m, m, a]);
+        }
+        let bone = mem.read::<u32>(e).wrapping_add(0x88);
+        (c.call)(mem, r(mem, MUL_MATRIX), &[chr + 0x42c, bone, m]);
+        (c.call)(mem, r(mem, COPY_MATRIX), &[chr + 0x46c, chr + 0x42c]);
+        (c.call)(
+            mem,
+            r(mem, MATRIX_TO_QUATERNION),
+            &[chr + 0x46c, chr + 0x4ac],
+        );
+        let quarter = bits(mem, r(mem, 0x00b5_99c0));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let w = (c.fcall)(mem, r(mem, ANGLE_WRAP), &[quarter]) as f32;
+        mem.write(chr + 0x41c, w);
+    }
+
+    /// Bytes of scratch `ch_elem_calc_quaternion` needs (two quaternions,
+    /// the original's `[ebp-0x24]` and `[ebp-0x14]`).
+    pub const ELEM_QUAT_SCRATCH: u32 = 0x20;
+
+    /// `Ch_ElemCalcQuaternion(e)` (`0x00833960`): an element whose blend
+    /// (`f32` `+0xe0`) is not 0 takes the matrix at `[+0xcc]` into `+0x88`:
+    /// copied at 1, else slerped (quaternions of both by the blend); its
+    /// position `+0xb8`..`+0xc0` is kept (floats through x87). The original
+    /// returns nothing usable (EAX holds its frame cookie at 0).
+    pub fn ch_elem_calc_quaternion<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let w = f64::from(mem.read::<f32>(e + 0xe0));
+        if w == 0.0 {
+            return;
+        }
+        let keep = [0u32, 4, 8].map(|k| crate::x87::load(mem.read(e + 0xb8 + k)));
+        let mat = e + 0x88;
+        #[allow(clippy::float_cmp)] // the original's fucompp with 1
+        if w == 1.0 {
+            let src: u32 = mem.read(e + 0xcc);
+            call(mem, mem.rebase(COPY_MATRIX), &[mat, src]);
+        } else {
+            let (a, b) = (scratch, scratch + 0x10);
+            let to_q = mem.rebase(MATRIX_TO_QUATERNION);
+            call(mem, to_q, &[mat, a]);
+            let src: u32 = mem.read(e + 0xcc);
+            call(mem, to_q, &[src, b]);
+            let k = crate::x87::load(mem.read::<f32>(e + 0xe0)).to_bits();
+            call(mem, mem.rebase(QUATERNION_SLERP), &[a, b, k, b]);
+            call(mem, mem.rebase(QUATERNION_TO_MATRIX), &[b, mat]);
+        }
+        for (k, v) in (0u32..).zip(keep) {
+            mem.write(e + 0xb8 + 4 * k, v);
+        }
+    }
 }
 
 #[cfg(test)]

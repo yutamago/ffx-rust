@@ -1708,4 +1708,16 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_neck(&mut mem(), chr, scratch(), &mut c)
     }
+    /// `Ch_NeckInit(chr)`.
+    Ch_NeckInit @ 0x0083_4e60 => extern "C" fn ch_neck_init(chr: u32) {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_neck_init(&mut mem(), chr, scratch(), &mut c);
+    }
+    /// `Ch_ElemCalcQuaternion(e)`.
+    Ch_ElemCalcQuaternion @ 0x0083_3960 => extern "C" fn ch_elem_calc_quaternion(e: u32) {
+        p::ch_elem_calc_quaternion(&mut mem(), e, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }
