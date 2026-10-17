@@ -5095,4 +5095,68 @@ pub mod bridge {
             }
         }
     }
+
+    // ---- field round 37: the map's alarm pages, yiReset ----
+
+    /// The map file's section `page + 2` (an alarm table) to `TkClearAlarm`;
+    /// whether there was one.
+    fn clear_alarm_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        page: u32,
+        call: &mut C,
+    ) -> bool {
+        let map = super::MAP_DATA.get(mem);
+        if map == 0 {
+            return false;
+        }
+        let s = yi_map_get_section(mem, map, page.wrapping_add(2));
+        if s == 0 {
+            return false;
+        }
+        let f = mem.rebase(super::TK_CLEAR_ALARM);
+        call(mem, f, &[s]);
+        true
+    }
+
+    /// `yiSetIDPage(page)` (`0x0090a4a0`): with a map file
+    /// (`g_YiMapData`), its section `page + 2` to `TkClearAlarm` when it
+    /// has one. Returns 0.
+    pub fn yi_set_id_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        page: u32,
+        call: &mut C,
+    ) -> u32 {
+        clear_alarm_page(mem, page, call);
+        0
+    }
+
+    /// `yiSetPreBgPage(page)` (`0x0090a6f0`): as [`yi_set_id_page`], then,
+    /// when the section was there, `Yn_PreBgChangeStage(page)`. Returns 0.
+    pub fn yi_set_pre_bg_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        page: u32,
+        call: &mut C,
+    ) -> u32 {
+        if clear_alarm_page(mem, page, call) {
+            crate::guide::bridge::yn_pre_bg_change_stage(mem, page.cast_signed(), call);
+        }
+        0
+    }
+
+    /// `yiReset()` (`0x00909e60`): [`yi_reset_obj`], a GS path sync,
+    /// [`yi_render_resettex`] of `g_YiRender`, both map ids
+    /// (`0x01934edc`) -1, `TkClearAlarm(0)`, whose result it returns.
+    pub fn yi_reset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        yi_reset_obj(mem, call);
+        let f = mem.rebase(super::GS_SYNC_PATH);
+        call(mem, f, &[0, 0]);
+        let r = super::state::RENDER.ptr(mem).addr;
+        yi_render_resettex(mem, r);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        let f = mem.rebase(super::TK_CLEAR_ALARM);
+        call(mem, f, &[0])
+    }
 }

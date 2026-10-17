@@ -10565,7 +10565,7 @@
 0x00909e10 function yiRenderDisable           # fh v3:bsim1.00 0x00909e10
 0x00909e20 function yiRenderEnable            # fh v3:bsim1.00 0x00909e20
 0x00909e30 function yiTexSwapSetFrame            # (index, frame) -> 0: texture swap entry (g_YiRender + 0x9d9c8, 0x720 each) bit 0 and frame (+4) when index < count (+0x9d9c4) and frame < its frame count (+0x1c); script native 0x008574c0
-0x00909e60 function yiReset                   # fh v3:exact 0x00909e60
+0x00909e60 function yiReset                   # fh v3:exact 0x00909e60; ported (field round 37): yiResetObj, sceGsSyncPath(0, 0), yiRender_resettex(&g_YiRender), map ids 0x01934edc/ee0 = -1, returns TkClearAlarm(0)
 0x00909ea0 function yiResetObj                # fh v3:exact 0x00909ea0
 0x00909ff0 function yiSetColorOffset             # (rgba ints): g_YiColorOffset = channel - 128 as floats (fild); in g_MagicImports
 0x0090a040 function yiSetBackColor            # fh v3:exact 0x0090a040
@@ -10581,13 +10581,13 @@
 0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
-0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0
+0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 to TkClearAlarm when present
 0x0090a4d0 function yiSetMIMeParamDObj           # layout and calls: the one unused Switch name between yiSetIDPage and yiSetMatrixDObj that fits (yiSetMIMeParamDObj, 76 bytes, calls graphicSetMeshVertexColorMorphValue; ours 56 bytes): (dobj, &value): stores the value in the DObj record (0x018df624 + dobj * 0xb4) when dobj < g_YiDObjCount and passes it to 0x00643700
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
 0x0090a5c0 function yiSetColorDObj               # (index, a, b) -> 0/-1: the low bytes of a's and b's four words into the object's colours (+0x90..+0x97)
 0x0090a640 function yiSetViewMatrices         # (m, view): m to g_YiViewMatrix (+0x20/+0x24 to 0x018df168), view as yiSetBattleView
-0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0
+0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0; ported (field round 37): (page) -> 0: as yiSetIDPage, then Yn_PreBgChangeStage(page) when the section was present
 0x0090a730 function yiSetViewAdjust              # (m): g_YiViewAdjust = m
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
 0x0090a830 function yiSetRotTransGroup           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710052bfc0 yiSetRotTransGroup, 2 votes, round 1

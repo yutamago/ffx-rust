@@ -3757,6 +3757,21 @@ ported! {
         yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
     }
 
+    /// `yiSetIDPage(page)`.
+    yiSetIDPage @ 0x0090_a4a0 => extern "C" fn shim_yi_set_id_page(page: u32) -> u32 {
+        yi::bridge::yi_set_id_page(&mut mem(), page, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiSetPreBgPage(page)`.
+    yiSetPreBgPage @ 0x0090_a6f0 => extern "C" fn shim_yi_set_pre_bg_page(page: u32) -> u32 {
+        yi::bridge::yi_set_pre_bg_page(&mut mem(), page, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiReset()`.
+    yiReset @ 0x0090_9e60 => extern "C" fn shim_yi_reset() -> u32 {
+        yi::bridge::yi_reset(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsReportStandby()`.
     SqsReportStandby @ 0x0081_e260 => extern "C" fn shim_sqs_report_standby() -> u32 {
         nkz::bridge::sqs_report_standby(&mut mem(), &mut |_, f, a| call_cdecl(f, a))

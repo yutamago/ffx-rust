@@ -6603,6 +6603,15 @@ fn round8_background_files_and_renderer_reset_match_the_original() {
                 |o| o.void(0x0090_9ea0, &[]),
                 |m| yi::bridge::yi_reset_obj(m, call),
             );
+            // round 37: yiReset, the same teardown and the texture reset
+            t.put(t.b.rebase(0x0191_38a0), rng.below(2));
+            t.put(t.b.rebase(0x0191_38a4), rng.below(2) * rng.next());
+            t.put(t.b.rebase(0x0193_4ec4), rng.range(-1, 2));
+            t.same(
+                "yiReset",
+                |o| o.eax(0x0090_9e60, &[]),
+                |m| yi::bridge::yi_reset(m, call),
+            );
         }
     }
 }
@@ -7434,6 +7443,27 @@ fn round9_parse_tasks_yi_and_swizzle_match_the_original() {
             "Yn_PreBgChangeStage",
             |o| o.void(0x0091_a0d0, &[stage.cast_unsigned()]),
             |m| guide::bridge::yn_pre_bg_change_stage(m, stage, call),
+        );
+        // round 37: the alarm pages of a map file (none, another tag, or
+        // MAP1 with some sections)
+        let mapf = t.alloc(0x80);
+        t.fill(mapf, 0x80, &mut rng);
+        t.write(mapf, if rng.below(4) == 0 { b"MAPX" } else { b"MAP1" });
+        for i in 0..6 {
+            t.put(mapf + 0x10 + 4 * i, rng.below(2) * 0x40);
+        }
+        let md = t.b.rebase(0x0191_38a8);
+        t.put(md, if rng.below(5) == 0 { 0 } else { mapf });
+        let page = stage.cast_unsigned();
+        t.same(
+            "yiSetIDPage",
+            |o| o.eax(0x0090_a4a0, &[page]),
+            |m| yi::bridge::yi_set_id_page(m, page, call),
+        );
+        t.same(
+            "yiSetPreBgPage",
+            |o| o.eax(0x0090_a6f0, &[page]),
+            |m| yi::bridge::yi_set_pre_bg_page(m, page, call),
         );
         // the renderer
         let r = t.alloc(0xb_b000);
