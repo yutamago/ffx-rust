@@ -4948,3 +4948,335 @@ fn round7b_on(t: &mut Twin) {
         );
     }
 }
+
+/// Stand-ins for the callees of round 8's functions: the code at `f`
+/// (in both oracles) logs `id` and its first `n` arguments at the log
+/// pointer `log` (advanced past them) and returns the word at `ret`.
+struct Fakes {
+    log: u32,
+    start: u32,
+}
+
+impl Fakes {
+    fn new(t: &mut Twin) -> Self {
+        let log = t.alloc(8);
+        let start = t.alloc(0x1000);
+        t.put_u32(log, start);
+        Self { log, start }
+    }
+
+    /// Replaces the function at `sym` (an ffx.sym address); returns the
+    /// address of its result word.
+    fn fake(&self, t: &mut Twin, sym: u32, id: u32, n: u8) -> u32 {
+        let ret = t.alloc(4);
+        let mut c = vec![0x8b, 0x0d];
+        c.extend(self.log.to_le_bytes());
+        c.extend([0xc7, 0x01]);
+        c.extend(id.to_le_bytes());
+        for k in 0..n {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * k]);
+        }
+        c.extend([0x83, 0x05]);
+        c.extend(self.log.to_le_bytes());
+        c.push(4 * (n + 1));
+        c.push(0xa1);
+        c.extend(ret.to_le_bytes());
+        c.push(0xc3);
+        let at = t.a.rebase(sym);
+        t.put(at, &c);
+        ret
+    }
+
+    /// Empties the log.
+    fn reset(&self, t: &mut Twin) {
+        t.put_u32(self.log, self.start);
+    }
+}
+
+#[test]
+fn round8_matches_the_original() {
+    for mut t in twins() {
+        round8_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::many_single_char_names)] // t, c, m, f, a, x, y, v, p
+fn round8_on(t: &mut Twin) {
+    use ffx_chara::chr::bridge as c;
+    use ffx_chara::motion::bridge as mo;
+    use ffx_chara::sys::bridge as sy;
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x0008_8888);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let scene = fk.fake(t, 0x0078_2970, 1, 0);
+    let hash = fk.fake(t, 0x0064_1da0, 2, 0);
+    let hide = fk.fake(t, 0x0082_ba30, 3, 3);
+    let visible = fk.fake(t, 0x0063_c390, 4, 2);
+    let coeff = fk.fake(t, 0x0063_cdd0, 5, 2);
+    let color = fk.fake(t, 0x0063_d050, 6, 4);
+    let fade = fk.fake(t, 0x0082_b990, 7, 3);
+    let check_yet = fk.fake(t, 0x0083_ffe0, 8, 2);
+    let to_top = fk.fake(t, 0x0084_0cf0, 9, 2);
+    let used = fk.fake(t, 0x0084_0dd0, 10, 2);
+    let exist3 = fk.fake(t, 0x0084_0790, 11, 2);
+    let exist_cloth = fk.fake(t, 0x0084_0850, 12, 2);
+    let assert = fk.fake(t, 0x0090_ae50, 13, 4);
+    let tex_anim = fk.fake(t, 0x0077_e940, 14, 5);
+    let gui = fk.fake(t, 0x0084_c9d0, 15, 0);
+    let rets = [
+        scene,
+        hash,
+        hide,
+        visible,
+        coeff,
+        color,
+        fade,
+        check_yet,
+        to_top,
+        used,
+        exist3,
+        exist_cloth,
+        assert,
+        tex_anim,
+        gui,
+    ];
+    // compared unrelocated (the image has no relocation for it)
+    let the_scene = 0x0237_0000;
+    let chrs = live_characters(t, &mut rng);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for r in rets {
+            t.put_u32(r, rng.next() % 4);
+        }
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        // Ch_SetHideEvent: the special scene, level and character
+        t.put_u32(
+            scene,
+            if round % 2 == 0 {
+                the_scene
+            } else {
+                rng.next()
+            },
+        );
+        t.put_u32(
+            hash,
+            if round % 3 == 0 {
+                0x21e8
+            } else {
+                rng.next() % 3
+            },
+        );
+        if round % 4 < 2 {
+            t.put(chr, &0x108au16.to_le_bytes());
+        }
+        let flags = rng.next();
+        t.check(
+            &format!("Ch_SetHideEvent {round}"),
+            0x0082_b2c0,
+            &[chr, flags],
+            |m| {
+                Res::Int(c::ch_set_hide_event(m, chr, flags, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let v = [0, 1, 0x100, rng.next()][rng.next() as usize % 4];
+        t.check(
+            &format!("Ch_SetResHide {round}"),
+            0x0082_b4e0,
+            &[chr, v],
+            |m| Res::Int(c::ch_set_res_hide(m, chr, v, &mut |m, f, a| call(m, f, a))),
+        );
+        t.put_u32(chr + 0x174, any_float(&mut rng));
+        let z = any_float(&mut rng);
+        t.check(
+            &format!("Ch_SetClipZ {round}"),
+            0x0082_b150,
+            &[chr, z],
+            |m| {
+                Res::Float(c::ch_set_clip_z(m, chr, fl(z), &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let p = t.alloc(4);
+        t.put_u32(p, any_float(&mut rng));
+        t.check(
+            &format!("Ch_CalcLight {round}"),
+            0x0083_c6f0,
+            &[chr, p],
+            |m| Res::Int(c::ch_calc_light(m, chr, p, &mut |m, f, a| call(m, f, a))),
+        );
+        for k in 0..3 {
+            t.put_u32(chr + 0xbc + 4 * k, small_float(&mut rng));
+        }
+        // around the 1.3 limit, sometimes anything
+        #[allow(clippy::cast_precision_loss)]
+        let col = [0; 3].map(|_| {
+            if rng.next().is_multiple_of(3) {
+                any_float(&mut rng)
+            } else {
+                ((rng.next() % 3000) as f32 / 1000.0).to_bits()
+            }
+        });
+        let frames = rng.next() % 60;
+        t.check(
+            &format!("Ch_SetShadeCol {round}"),
+            0x0082_b5d0,
+            &[chr, col[0], col[1], col[2], frames],
+            |m| {
+                Res::Int(c::ch_set_shade_col(
+                    m,
+                    chr,
+                    col.map(fl),
+                    frames,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        // the cache
+        let id = rng.next();
+        t.check(
+            &format!("Ch_DataReadSync {round}"),
+            0x0082_a040,
+            &[id],
+            |m| Res::Int(mo::ch_data_read_sync(m, id, &mut |m, f, a| call(m, f, a))),
+        );
+        let (x, y) = (rng.next() % 0x2_0000, rng.next() % 0x2_0000);
+        t.check(
+            &format!("ChN_ReadSystemMGRPsync {round}"),
+            0x0083_6a50,
+            &[x, y],
+            |m| {
+                Res::Int(mo::chn_read_system_mgrp_sync(m, x, y, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.check(
+            &format!("Ch_RegMotionToTop {round}"),
+            0x0083_7780,
+            &[],
+            |m| {
+                Res::Int(mo::ch_reg_motion(m, mo::CACHE_TO_TOP, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.check(&format!("Ch_RegMotionUse {round}"), 0x0083_7790, &[], |m| {
+            Res::Int(mo::ch_reg_motion(m, mo::CACHE_USE, &mut |m, f, a| {
+                call(m, f, a)
+            }))
+        });
+        t.check(
+            &format!("Ch_RegMotionGetExistMem {round}"),
+            0x0083_7730,
+            &[],
+            |m| {
+                Res::Int(mo::ch_reg_motion_get_exist_mem(m, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let cloth = if round % 3 == 0 { 0 } else { t.alloc(0x10) };
+        t.put_u32(chr + 0x834, cloth);
+        t.put_u32(chr + 0x194, rng.next());
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(chr + 0x180, &[rng.next() as u8]);
+        t.check(
+            &format!("Ch_UpdateClothHideFlag {round}"),
+            0x0083_1480,
+            &[chr],
+            |m| {
+                Res::Int(mo::ch_update_cloth_hide_flag(m, chr, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.put_u32(chr + 0x6fc, rng.next() % 2);
+        let (a, b) = (rng.next(), rng.next());
+        t.check(
+            &format!("Ch_TextureSetAnim {round}"),
+            0x0083_d040,
+            &[chr, a, b],
+            |m| {
+                Res::Int(ta::ch_texture_set_anim(m, chr, a, b, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let dbg = t.a.rebase(0x0133_c910);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(dbg, &[(rng.next() % 2) as u8]);
+        let v = [0, 1, 2, 3, 0xffff_ffff, rng.next()][rng.next() as usize % 6];
+        t.check(
+            &format!("Ch_EnableSetTexture {round}"),
+            0x0083_0330,
+            &[v],
+            |m| {
+                Res::Int(
+                    sy::ch_enable_set_texture(m, v, &mut |m, f, a| call(m, f, a)).cast_unsigned(),
+                )
+            },
+        );
+        // the neck
+        let q = ffx_sg::quat::bridge::matrix_to_quaternion;
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(
+            chr + 0x40d,
+            &[(rng.next() % 5) as u8, (rng.next() % 5) as u8],
+        );
+        for k in 0..12 {
+            t.put_u32(chr + 0x46c + 4 * k, small_float(&mut rng));
+        }
+        match round % 4 {
+            0 => t.check(
+                &format!("Ch_NeckSetTargetCamera {round}"),
+                0x0083_5080,
+                &[chr],
+                |m| {
+                    c::ch_neck_set_target_camera(m, chr, q);
+                    Res::Void
+                },
+            ),
+            1 => {
+                let target = rng.next();
+                t.check(
+                    &format!("Ch_NeckSetTarget {round}"),
+                    0x0083_5050,
+                    &[chr, target],
+                    |m| {
+                        c::ch_neck_set_target(m, chr, target, q);
+                        Res::Void
+                    },
+                );
+            }
+            2 => {
+                let pos = random_block(t, &mut rng, 16);
+                t.check(
+                    &format!("Ch_NeckSetTargetPos {round}"),
+                    0x0083_50a0,
+                    &[chr, pos],
+                    |m| {
+                        c::ch_neck_set_target_pos(m, chr, pos, q);
+                        Res::Void
+                    },
+                );
+            }
+            _ => {
+                let (x, y) = (any_float(&mut rng), any_float(&mut rng));
+                t.check(
+                    &format!("Ch_NeckSetRot {round}"),
+                    0x0083_4ff0,
+                    &[chr, x, y],
+                    |m| {
+                        c::ch_neck_set_rot(m, chr, fl(x), fl(y), q);
+                        Res::Void
+                    },
+                );
+            }
+        }
+    }
+}

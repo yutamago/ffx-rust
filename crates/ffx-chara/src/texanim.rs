@@ -507,4 +507,31 @@ pub mod bridge {
         let at = CREATE_CHRPATH.ptr(mem).addr;
         print_parts(mem, at, b"/ffx/proj2/chr/data/", b'/', id)
     }
+
+    /// `tex_anim_no_set` (`0x0077e940`, the renderer's).
+    pub const TEX_ANIM_NO_SET: u32 = 0x0077_e940;
+
+    /// `Ch_TextureSetAnim(chr, a, b)` (`0x0083d040`): with texture
+    /// animations (`+0x6fc`), `tex_anim_no_set(+0x700, a, b, name +4,
+    /// instance +0x830)`. Returns what the original leaves in EAX: that
+    /// call's result, else `chr`.
+    pub fn ch_texture_set_anim<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(chr + 0x6fc) == 0 {
+            return chr;
+        }
+        let args = [
+            mem.read(chr + 0x700),
+            a,
+            b,
+            mem.read(chr + 4),
+            mem.read(chr + 0x830),
+        ];
+        call(mem, mem.rebase(TEX_ANIM_NO_SET), &args)
+    }
 }

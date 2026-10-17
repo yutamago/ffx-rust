@@ -197,6 +197,29 @@ pub mod bridge {
         }
     }
 
+    /// `g_FFXIsDebug`: debug build features on.
+    pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+    /// `Gui_ButtonSetTexture` (`0x0084c9d0`, the PC UI's).
+    pub const GUI_BUTTON_SET_TEXTURE: u32 = 0x0084_c9d0;
+
+    /// `Ch_EnableSetTexture(v)` (`0x00830330`): the texture switch
+    /// ([`ENABLE_TEXTURE`]) = bit 0 of `v`; when `v` differs from the old
+    /// value in a debug build, `Gui_ButtonSetTexture()`. Returns the old
+    /// value (sign-extended).
+    pub fn ch_enable_set_texture<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let old = i32::from(ENABLE_TEXTURE.get(mem));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // bit 0
+        ENABLE_TEXTURE.set(mem, (v & 1) as i8);
+        if v.cast_signed() != old && IS_DEBUG.get(mem) != 0 {
+            call(mem, mem.rebase(GUI_BUTTON_SET_TEXTURE), &[]);
+        }
+        old
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))
