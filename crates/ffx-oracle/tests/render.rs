@@ -5878,3 +5878,157 @@ fn snapshot_round14_matches_the_original() {
         round14_case(&mut t, &mut rng, round % 4, &what);
     }
 }
+
+// ---- round 15 ----
+
+#[allow(clippy::too_many_lines)] // one arm per function
+fn round15_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::material::bridge as mt;
+    use ffx_graphic::util::bridge as ut;
+    match case {
+        0 => {
+            let (list, ids) = build_material_list(t, rng, 0x30);
+            let size = [16, 12, 4][rng.below(3) as usize];
+            let param = build_param(t, rng, 0x30, size, false);
+            t.stub_sym(
+                mt::FIND_PARAMETER,
+                Conv::Thiscall(0),
+                1,
+                if rng.chance(6) { 0 } else { param },
+            );
+            t.stub_sym(mt::FORCE_TRANSPARENT, Conv::Cdecl, 2, rng.next());
+            let id = if !ids.is_empty() && rng.chance(2) {
+                ids[rng.below(ids.len() as u32) as usize]
+            } else {
+                rng.below(5)
+            };
+            let a = match rng.below(4) {
+                0 => 0.0f32,
+                1 => 1.0,
+                2 => 0.5,
+                _ => rng.float(),
+            };
+            let x = rng.next();
+            t.check(
+                what,
+                0x0063_bc50,
+                Conv::Cdecl,
+                &[list, x, id, a.to_bits()],
+                |g| {
+                    mt::set_mesh_segment_alpha(g, list, id, a);
+                    Out::None
+                },
+            );
+        }
+        1 => {
+            let scene = t.alloc(&rng.bytes(0x1130));
+            t.w8(scene + 0x93c, u8::from(!rng.chance(5)));
+            t.w32(scene + 0x1128, if rng.chance(5) { 0 } else { rng.next() });
+            t.global(scene::bridge::SCENE.sym, scene);
+            let buf = t.alloc(&rng.bytes(0x34));
+            t.w32(buf, 0x30);
+            let mat = t.zeros(8);
+            t.w32(mat + 4, buf);
+            t.stub_sym(mt::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+            t.stub_sym(mt::TEX_ANIM_MATERIAL_BY_LAYER, Conv::Thiscall(0), 1, mat);
+            let param = build_param(t, rng, 0x30, 16, true);
+            t.stub_sym(mt::FIND_PARAMETER, Conv::Thiscall(0), 1, param);
+            let (layer, alpha) = (rng.next(), rng.below(0x200));
+            t.check(what, 0x0063_9d20, Conv::Cdecl, &[layer, alpha], |g| {
+                mt::change_layer_alpha(g, layer, alpha);
+                Out::None
+            });
+        }
+        2 => {
+            let n = rng.below(5);
+            let mut arr = Vec::new();
+            let small = |rng: &mut Rng| -> f32 {
+                match rng.below(6) {
+                    0 | 1 => rng.float(),
+                    // signed zeros: equal, but not the same bits
+                    2 => [0.0, -0.0][rng.below(2) as usize],
+                    _ => rng.below(9) as f32 - 4.0,
+                }
+            };
+            for _ in 0..n {
+                let b: Vec<u8> = (0..8).flat_map(|_| small(rng).to_le_bytes()).collect();
+                let b = t.alloc(&b);
+                let inst = t.alloc(&rng.bytes(0x20));
+                t.w32(inst + 0x1c, b);
+                arr.extend(inst.to_le_bytes());
+            }
+            arr.extend([0; 4]);
+            let arr = t.alloc(&arr);
+            let list = t.zeros(8);
+            t.w32(list, n | (rng.next() & 0x8000_0000));
+            t.w32(list + 4, arr);
+            t.stub_sym(
+                ut::CH_GET_CHR_RENDER_INSTANCE,
+                Conv::Cdecl,
+                1,
+                if rng.chance(8) { 0 } else { list },
+            );
+            let out = t.alloc(&rng.bytes(0x20));
+            let chr = rng.next();
+            t.check(
+                what,
+                0x0063_a2b0,
+                Conv::Cdecl,
+                &[chr, out, out + 0x10],
+                |g| {
+                    ut::character_bounding_box(g, chr, out, out + 0x10);
+                    Out::None
+                },
+            );
+        }
+        _ => {
+            // the inverse and the 3x4 conversion run, original on both sides
+            if t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 || rng.chance(2) {
+                let scene = t.alloc(&rng.bytes(0x10dd0));
+                t.global(scene::bridge::SCENE.sym, scene);
+            }
+            let vals: Vec<u8> = (0..16)
+                .flat_map(|_| {
+                    let f = match rng.below(4) {
+                        0 => rng.float(),
+                        1 => 0.0,
+                        _ => (rng.below(200) as f32 - 100.0) / 7.0,
+                    };
+                    f.to_le_bytes()
+                })
+                .collect();
+            let m = t.alloc(&vals);
+            t.check(what, 0x0063_8aa0, Conv::Cdecl, &[m], |g| {
+                ut::split_screen_set_camera(g, m);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn round15_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1515_0015);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round15_case(&mut t, &mut rng, round % 4, &what);
+    }
+}
+
+#[test]
+fn snapshot_round15_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5015_0015);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round15_case(&mut t, &mut rng, round % 4, &what);
+    }
+}

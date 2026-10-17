@@ -779,3 +779,24 @@ is at least 4 and offset + size is within the size word
 The originals copy `size` bytes from a 16-byte (`AlphaThreshold`: 4-byte)
 local; a larger parameter would copy their stack frame. The ports write
 zeros past the value.
+
+Round 15:
+
+- `graphicCharacterInstanceSetMeshSegmentAlpha(list, _, id, a)`
+  (`0x0063bc50`): `graphicCharacterInstanceSetMeshSegmentColor(list, id, 1,
+  1, 1, a, 1)`; `graphicChangeLayerAlpha(layer, alpha)` (`0x00639d20`):
+  `PhyreScene_SetLayerMaterialAlpha` on `g_PhyreScene`.
+- `graphicCharacterInstanceGetBoundingBox(chr, max, min)` (`0x0063a2b0`):
+  `min` starts at `16777216` (the `f32` at `0x00b41da0`) and `max` at
+  `-16777216` (`0x00b41db4`) on each axis; then for each mesh instance of
+  `Ch_GetChrRenderInstance(chr)` (its `+0x1c` bounds: the corner at
+  `+0..+8`, the extent at `+0x10..+0x18`) and axis, `corner + extent`
+  (stored as a float) replaces `max` when greater and the corner replaces
+  `min` when smaller (ordered compares: NaNs never replace, and equal
+  values, `0` and `-0` included, keep the old bits).
+- `SplitScreenSetCamera(m)` (`0x00638aa0`): `sceVu0InversMatrix4x4` of a
+  copy of the 4x4 `m`; elements 0, 1, 6, 10, 12, 13 change sign (the code
+  also negates 4, 5, 8 and 9 twice); `PMatrix4_toWorldMatrix3x4` of the
+  identity and then of that matrix into one 3x4, copied to `g_PhyreScene
+  +0x10d94..+0x10dc0`. Its one caller (`0x007bc980`) calls it next to
+  `SplitScreenStart`.

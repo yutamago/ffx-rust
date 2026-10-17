@@ -1644,6 +1644,7 @@
 0x006386c0 function ShaderParamBuffer_SetValue2  # structure: byte-identical twin of ShaderParamBuffer_SetValue 0x00638780 (another template instance); callers graphicSgSetSpecular, PostProcessManager_renderFocusFrame, VFXDynamicGeometry_setPointLightParameters; name ours
 0x00638720 function ShaderParam_CopyToBuffer_00638720 # thiscall(buffer, param, src): copies the parameter's bytes (+8 offset, +0xa size & 0x1fff) into the buffer when they fit, 1 for no source; callers batchSetClothVertexBuffers, the deferred-lighting shadows; same code as ShaderParam_CopyToBuffer_00698960; the render agent's finding (shader parameters into material buffers); own name
 0x00638780 function ShaderParamBuffer_SetValue   # structure: thiscall(buffer {u32 size, data...}, param {+8 u16 offset, +10 u16 size & 0x1fff}, src): memcpy src into the buffer at the parameter's offset; 1 for a null src, 3 out of range, 0 done; a template instance inlined on the Switch (memcpy in PostProcessManager::copyBuffer); twin of 0x006386c0; name ours
+0x00638aa0 function SplitScreenSetCamera      # cdecl(m): sceVu0InversMatrix4x4 of a copy of m, signs of elements 0, 1, 6, 10, 12, 13 flipped, PMatrix4_toWorldMatrix3x4 into g_PhyreScene +0x10d94..+0x10dc0; called next to SplitScreenStart (0x007bca8a); alphabetical before SplitScreenStart; name ours
 0x00638d40 function SplitScreenStart             # callees: its named callees match the Switch 0x71001d1df0 SplitScreenStart's (similarity 1.00: PhyreScene_GetSplitScreenStat, PhyreScene_SetSplitScreenStat, PhyreScene_SetSplitScreenType); symbols from Fahrenheit's server export
 0x00638d90 function cgraphicSetNowUIType      # fh v3:bsim1.00 0x00638f40
 0x00638e00 function debugDrawKeTh             # fh v3:bsim1.00 0x00638fb0
@@ -1678,10 +1679,12 @@
 0x00639600 function graphicCameraSetLookAt       # layout: alphabetical run between graphicCameraSetFOVy and graphicCameraSetWorldMatrix (1 unnamed in the gap); Switch 0x71001d13c0 graphicCameraSetLookAt is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639860 function graphicCameraSetWorldMatrix # cdecl(view matrix*): the camera's view for the renderer; Cam_Apply passes 0x02311440; was Render_SetView
 0x00639b30 function graphicCameraSetWorldMatrixSub # fh v3:exact 0x00639ce0
+0x00639d20 function graphicChangeLayerAlpha   # cdecl(layer, alpha): PhyreScene_SetLayerMaterialAlpha on g_PhyreScene; alphabetical run between graphicCameraSetWorldMatrixSub and graphicCharacterInsertDrawSituation; name ours
 0x00639ff0 function graphicCharacterInsertDrawSituation # fh v3:exact 0x0063a1b0
 0x0063a010 function graphicCharacterInstanceAddToPipeline # layout: alphabetical run between graphicCharacterInsertDrawSituation and graphicCharacterInstanceDestroy (1 unnamed in the gap); Switch 0x71001ce510 graphicCharacterInstanceAddToPipeline is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0063a030 function graphicCharacterInstanceDestroy # fh v3:exact 0x0063a1f0
 0x0063a160 function graphicCharacterInstanceDestroyClothVertexBuffers # fh v3:exact 0x0063a320
+0x0063a2b0 function graphicCharacterInstanceGetBoundingBox # cdecl(chr, max, min): over Ch_GetChrRenderInstance(chr)'s instances' +0x1c bounds (corner, extent), the largest corner + extent and the smallest corner per axis from -/+16777216; alphabetical run between graphicCharacterInstanceDestroyClothVertexBuffers and graphicCharacterInstanceGetClothVertexBuffers; name ours
 0x0063a810 function graphicCharacterInstanceGetClothVertexBuffers # fh v3:bsim0.91 0x0063a9d0
 0x0063b1b0 function graphicCharacterInstanceGetMaxiumBoundingBox # fh v3:exact 0x0063b370
 0x0063b200 function graphicCharacterInstanceInitClothList # layout: alphabetical run between graphicCharacterInstanceGetMaxiumBoundingBox and graphicCharacterInstanceOutputAllVertexBuffers (2 unnamed in the gap); Switch 0x71001ceaf0 graphicCharacterInstanceInitClothList is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

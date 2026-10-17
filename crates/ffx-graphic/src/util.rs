@@ -1437,4 +1437,99 @@ pub mod bridge {
         crate::state::bridge::scene_set_colour_pair(h, scene, c, flag);
         flag
     }
+
+    // ---- round 15 ----
+
+    /// `Ch_GetChrRenderInstance` and the bounds' starting values (the
+    /// `f32`s `16777216` and `-16777216`).
+    pub const CH_GET_CHR_RENDER_INSTANCE: u32 = 0x0082_6b70;
+    pub const BOUNDS_START_MIN: u32 = 0x00b4_1da0;
+    pub const BOUNDS_START_MAX: u32 = 0x00b4_1db4;
+
+    /// `graphicCharacterInstanceGetBoundingBox(chr, max, min)`
+    /// (`0x0063a2b0`): over the character's mesh instances (`+0x1c` their
+    /// bounds: the corner `+0..+8`, the extent `+0x10..+0x18`), the largest
+    /// `corner + extent` (stored as a float) and the smallest corner per
+    /// axis, from `-16777216` and `16777216`; ordered compares (a NaN never
+    /// wins). Nothing without a render instance.
+    pub fn character_bounding_box(h: &mut impl Host, chr: u32, max: u32, min: u32) {
+        let list = h.call_sym(CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, &[chr]);
+        if list == 0 {
+            return;
+        }
+        let lo = rt(h.read(h.rebase(BOUNDS_START_MIN)));
+        for k in [8, 4, 0] {
+            h.write(min + k, lo);
+        }
+        let hi = rt(h.read(h.rebase(BOUNDS_START_MAX)));
+        for k in [8, 4, 0] {
+            h.write(max + k, hi);
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            for c in 0..3u32 {
+                let arr: u32 = h.read(list + 4);
+                let inst: u32 = h.read(arr.wrapping_add(4 * i));
+                let b: u32 = h.read(inst + 0x1c);
+                // the sum of the copies (each a float store), stored
+                let s = x87::store(x87::add(
+                    x87::load(rt(h.read(b + 4 * c))),
+                    x87::load(rt(h.read(b + 0x10 + 4 * c))),
+                ));
+                if x87::load(s) > x87::load(h.read(max + 4 * c)) {
+                    let s = x87::store(x87::add(
+                        x87::load(rt(h.read(b + 4 * c))),
+                        x87::load(rt(h.read(b + 0x10 + 4 * c))),
+                    ));
+                    h.write(max + 4 * c, s);
+                }
+                let arr: u32 = h.read(list + 4);
+                let inst: u32 = h.read(arr.wrapping_add(4 * i));
+                let b: u32 = h.read(inst + 0x1c);
+                let corner = rt(h.read(b + 4 * c));
+                if x87::load(corner) < x87::load(h.read(min + 4 * c)) {
+                    let corner = rt(h.read(b + 4 * c));
+                    h.write(min + 4 * c, corner);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// `sceVu0InversMatrix4x4(dst, m)` and `PMatrix4_toWorldMatrix3x4(dst,
+    /// m)` (`thiscall`).
+    pub const VU0_INVERSE_MATRIX: u32 = 0x006e_d460;
+    pub const TO_WORLD_MATRIX_3X4: u32 = 0x0045_1190;
+
+    /// `SplitScreenSetCamera(m)` (`0x00638aa0`): the inverse of the 4x4
+    /// `m` (`sceVu0InversMatrix4x4` on a copy) with the signs of elements
+    /// 0, 1, 6, 10, 12 and 13 flipped (4, 5, 8 and 9 are flipped twice), as
+    /// a 3x4 world matrix (`PMatrix4_toWorldMatrix3x4`, first of the
+    /// identity, then of it) into the scene's `+0x10d94..+0x10dc0`. The
+    /// original's locals live in [`Host::scratch`].
+    pub fn split_screen_set_camera(h: &mut impl Host, m: u32) {
+        let s = h.scratch();
+        let (inv, ident, out) = (s, s + 0x40, s + 0x80);
+        for k in 0..16 {
+            let v = rt(h.read(m + 4 * k));
+            h.write(inv + 4 * k, v);
+        }
+        h.call_sym(VU0_INVERSE_MATRIX, Conv::Cdecl, &[inv, inv]);
+        // fld; fchs; fstp, in the original's order
+        for k in [0u32, 1, 4, 5, 8, 9, 12, 13, 4, 5, 6, 8, 9, 10] {
+            let v = rt(h.read(inv + 4 * k)) ^ 0x8000_0000;
+            h.write(inv + 4 * k, v);
+        }
+        for k in 0..16 {
+            let one = if k % 5 == 0 { 1f32.to_bits() } else { 0 };
+            h.write(ident + 4 * k, one);
+        }
+        h.call_sym(TO_WORLD_MATRIX_3X4, Conv::Thiscall(out), &[ident]);
+        h.call_sym(TO_WORLD_MATRIX_3X4, Conv::Thiscall(out), &[inv]);
+        let scene = crate::scene::bridge::SCENE.get(h);
+        for k in 0..12 {
+            let v = rt(h.read(out + 4 * k));
+            h.write(scene + 0x10d94 + 4 * k, v);
+        }
+    }
 }

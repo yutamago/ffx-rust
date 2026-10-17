@@ -229,4 +229,17 @@ pub mod bridge {
         let buf: u32 = h.read(mat + 4);
         h.call_sym(SHADER_PARAM_SET_VALUE, Conv::Thiscall(buf), &[param, v]);
     }
+
+    /// `graphicCharacterInstanceSetMeshSegmentAlpha(list, _, id, a)`
+    /// (`0x0063bc50`): `SetMeshSegmentColor(list, id, 1, 1, 1, a, 1)`.
+    pub fn set_mesh_segment_alpha(h: &mut impl Host, list: u32, id: u32, a: f32) {
+        set_mesh_segment_colour(h, list, id, [1.0, 1.0, 1.0, a], 1);
+    }
+
+    /// `graphicChangeLayerAlpha(layer, alpha)` (`0x00639d20`):
+    /// [`scene_set_layer_material_alpha`] on `g_PhyreScene`.
+    pub fn change_layer_alpha(h: &mut impl Host, layer: u32, alpha: u32) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        scene_set_layer_material_alpha(h, scene, layer, alpha);
+    }
 }

@@ -1312,6 +1312,24 @@ ported! {
     PhyreScene_SetLayerMaterialAlpha @ 0x0065_82e0 => extern "thiscall" fn scene_set_layer_material_alpha(this: u32, layer: u32, alpha: u32) {
         mt::scene_set_layer_material_alpha(&mut mem(), this, layer, alpha);
     }
+
+    // ---- round 15 ----
+    /// `graphicCharacterInstanceSetMeshSegmentAlpha(list, _, id, a)`.
+    graphicCharacterInstanceSetMeshSegmentAlpha @ 0x0063_bc50 => extern "C" fn set_mesh_segment_alpha(list: u32, _unused: u32, id: u32, a: u32) {
+        mt::set_mesh_segment_alpha(&mut mem(), list, id, f32::from_bits(a));
+    }
+    /// `graphicChangeLayerAlpha(layer, alpha)`.
+    graphicChangeLayerAlpha @ 0x0063_9d20 => extern "C" fn graphic_change_layer_alpha(layer: u32, alpha: u32) {
+        mt::change_layer_alpha(&mut mem(), layer, alpha);
+    }
+    /// `graphicCharacterInstanceGetBoundingBox(chr, max, min)`.
+    graphicCharacterInstanceGetBoundingBox @ 0x0063_a2b0 => extern "C" fn character_bounding_box(chr: u32, max: u32, min: u32) {
+        ut::character_bounding_box(&mut mem(), chr, max, min);
+    }
+    /// `SplitScreenSetCamera(m)`.
+    SplitScreenSetCamera @ 0x0063_8aa0 => extern "C" fn split_screen_set_camera(m: u32) {
+        ut::split_screen_set_camera(&mut mem(), m);
+    }
 }
 
 /// A singleton's pointer.
