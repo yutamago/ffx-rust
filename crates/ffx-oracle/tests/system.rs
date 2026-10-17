@@ -15571,3 +15571,241 @@ fn round19_cursor_matches_the_original_on_the_snapshot() {
     };
     round19_cursor(&mut a, &mut b, &mut Xorshift(0x4019_0022));
 }
+
+/// Appends `mov eax, [esp+off]; mov [ecx+at], eax`.
+fn log_arg(v: &mut Vec<u8>, off: u8, at: u8) {
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, off, 0x89, 0x41, at]);
+}
+
+/// A stand-in that logs the low half of the word its pointer argument `+4`
+/// points at
+/// and the words at `[esp+offs]`, then (with `out` set) stores `[cell]`
+/// through the pointer at `[esp+out]` and steps `[cell]` by 0x00400000.
+fn deref_logger(cursor: u32, offs: &[u8], out: Option<(u8, u32)>) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    // mov eax, [esp+4]; mov eax, [eax]; and eax, 0xffff (the rest of the
+    // original's text buffer is stack garbage); mov [ecx], eax
+    v.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x25, 0xff, 0xff, 0, 0, 0x89, 0x01,
+    ]);
+    for (k, &off) in (1u8..).zip(offs) {
+        log_arg(&mut v, off, 4 * k);
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(4 * (1 + u8::try_from(offs.len()).unwrap()));
+    if let Some((at, cell)) = out {
+        v.push(0xa1);
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.extend_from_slice(&[0x8b, 0x4c, 0x24, at, 0x89, 0x01, 0x81, 0x05]);
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.extend_from_slice(&0x0040_0000u32.to_le_bytes());
+    }
+    v.push(0xc3);
+    v
+}
+
+/// `TOMenuDrawTimer` over logging stand-ins for the battle font's width
+/// and drawing calls, the language and the letter space.
+#[allow(clippy::cast_precision_loss)] // small test floats
+fn round28_timer(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x200);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, 0x10);
+    // ToGetBtlEasyFontWidth(text, &w, alpha, scale, wide)
+    let s = stand_in8(
+        a,
+        b,
+        0x40,
+        &deref_logger(cursor, &[0xc, 0x10, 0x14], Some((8, cells))),
+    );
+    redirect(a, b, 0x0090_5290, s);
+    // ToGetBtlEasyDigitWidth2(value, &w, scale, wide): logs value as a word
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    for (k, off) in [4u8, 0xc, 0x10].into_iter().enumerate() {
+        log_arg(&mut v, off, 4 * u8::try_from(k).unwrap());
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x0c, 0xa1]);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x08, 0x89, 0x01, 0xc3]);
+    let s = stand_in8(a, b, 0xc0, &v);
+    redirect(a, b, 0x0090_5230, s);
+    // ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, wide)
+    let s = stand_in8(
+        a,
+        b,
+        0x140,
+        &deref_logger(cursor, &[8, 0xc, 0x10, 0x14, 0x18], None),
+    );
+    redirect(a, b, 0x0090_5930, s);
+    let s = stand_in8(a, b, 0x1c0, &logger_args(cursor, 6));
+    redirect(a, b, 0x0090_5820, s);
+    // TOGetFFXLang counts its calls in cells + 0xc
+    let mut v = vec![0xff, 0x05];
+    v.extend_from_slice(&(cells + 0xc).to_le_bytes());
+    v.push(0xa1);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x240, &v);
+    redirect(a, b, 0x008a_c2f0, s);
+    // TOGetFontSpaceInPiexl: fld dword [cells + 8]
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x2c0, &v);
+    redirect(a, b, 0x008f_a570, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let float = |rng: &mut Xorshift, range: u32| ((rng.next() % range) as f32 / 8.0).to_bits();
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, float(rng, 800));
+        put(
+            a,
+            b,
+            cells + 4,
+            [0u32, 1, 8, 9, 0xb, u32::MAX][(rng.next() % 6) as usize],
+        );
+        put(a, b, cells + 8, float(rng, 200));
+        put(a, b, cells + 0xc, 0u32);
+        let frames = match rng.next() % 4 {
+            0 => rng.next(),
+            1 => rng.next() % 3600,
+            _ => rng.next() % 4_000_000,
+        };
+        let kind = [0x25, 0x24, rng.next()][(rng.next() % 3) as usize];
+        let args = [
+            frames,
+            float(rng, 8000),
+            float(rng, 4000),
+            rng.next() % 0x100,
+            kind,
+        ];
+        eax(a, 0x008e_19f0, &args);
+        t::to_menu_draw_timer(b, args, scratch, call, fcall);
+        let v: [u32; 4] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("timer {k}"), a, b);
+    }
+}
+
+#[test]
+fn round28_timer_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round28_timer(&mut a, &mut b, &mut Xorshift(0x4028_0011));
+}
+
+#[test]
+fn round28_timer_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round28_timer(&mut a, &mut b, &mut Xorshift(0x4028_0012));
+}
+
+/// `DrawCrossCtbIcon` and `TOBtlDrawInfoWinMes` over logging stand-ins for
+/// the shape, font, scissor and button-data calls.
+#[allow(clippy::cast_precision_loss)] // small test floats
+fn round28_icons(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    for (k, (sym, n)) in (0u32..).zip([
+        (0x008b_1350u32, 2u8),
+        (0x0090_3bb0, 9),
+        (0x008e_8940, 4),
+        (0x0090_16b0, 7),
+    ]) {
+        let mut v = marker(cursor, 0x2800 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x200, &marker(cursor, 0x2810));
+    redirect(a, b, 0x008b_1330, s);
+    let s = stand_in8(a, b, 0x280, &marker(cursor, 0x2811));
+    redirect(a, b, 0x008e_5cd0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let float = |rng: &mut Xorshift| match rng.next() % 8 {
+        0 => -((rng.next() % 4000) as f32 / 16.0),
+        _ => (rng.next() % 16000) as f32 / 16.0,
+    };
+    let [libra, shown, settings, boxes, lines] = [
+        0x0133_d6e0,
+        0x0133_c93d,
+        0x0113_079c,
+        0x0133_f694,
+        0x0133_f618,
+    ]
+    .map(|x| a.rebase(x));
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        if k % 4 == 3 {
+            put(a, b, libra, rng.next() % 3);
+            put(a, b, shown, (rng.next() % 2) as u8);
+            put(a, b, settings, rng.next());
+            for off in (0..0x10).step_by(4) {
+                put(a, b, boxes + off, (rng.next() % 2000) as i16 - 300);
+            }
+            for line in 0..4 {
+                let at = lines + 0x1c * line;
+                put(a, b, at, [0i16, 1, -1][(rng.next() % 3) as usize]);
+                put(a, b, at + 0xc, float(rng).to_bits());
+                put(a, b, at + 0x10, float(rng).to_bits());
+                put(a, b, at + 0x18, rng.next());
+            }
+            eax(a, 0x0089_5140, &[]);
+            t::to_btl_draw_info_win_mes(b, call);
+        } else {
+            let id = match rng.next() % 4 {
+                0 => rng.next(),
+                _ => 0x1b0 + rng.next() % 0x2c,
+            };
+            let args = [
+                id,
+                float(rng).to_bits(),
+                float(rng).to_bits(),
+                float(rng).to_bits(),
+                float(rng).to_bits(),
+            ];
+            assert_eq!(
+                eax(a, 0x0089_e660, &args),
+                t::draw_cross_ctb_icon(b, args, call, fcall),
+                "icon {k} {id:#x}"
+            );
+        }
+        same_memory(&format!("icons {k}"), a, b);
+    }
+}
+
+#[test]
+fn round28_icons_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round28_icons(&mut a, &mut b, &mut Xorshift(0x4028_0021));
+}
+
+#[test]
+fn round28_icons_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round28_icons(&mut a, &mut b, &mut Xorshift(0x4028_0022));
+}

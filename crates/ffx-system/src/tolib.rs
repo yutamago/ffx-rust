@@ -10192,4 +10192,292 @@ pub mod bridge {
             call(mem, DRAW_UI, &[rec, texture, 1, 0, 0]);
         }
     }
+
+    /// `TOMenuDrawTimer(frames, x, y, alpha, kind)` (`0x008e19f0`): a play
+    /// time in frames (60 a second) drawn right-aligned at `x` as
+    /// hours, a `J` separator and minutes, in the battle edge font at
+    /// scale 0.63 (`0x00b66864`) and 1.5 (`0x00b3eb58`). The minutes
+    /// (`frames / 60 % 60`, `"%02d"`) are measured with
+    /// `ToGetBtlEasyFontWidth` and drawn with `ToMakeBtlEasyEdgeFont` at
+    /// `x - width`; each next piece goes left by its width plus one letter
+    /// space (`TOGetFontSpaceInPiexl(0)`), two for languages 1..=8. The
+    /// separator is drawn only for `kind` 0x25 (with 0x25 as its alpha);
+    /// the hours (`frames / 3600`, at most 999) are measured with
+    /// `ToGetBtlEasyDigitWidth2` and drawn with `ToMakeBtlEasyEdgeDigit2`.
+    /// Every `y` is `y - graphicUiRemapY2(9.0)`. Each position is rounded
+    /// to `f32`; the sums before it are doubles.
+    ///
+    /// `scratch` stands for the original's frame (0x10 bytes): the width at
+    /// `+0`, the separator text at `+4`, the minutes at `+8`. Float results
+    /// (ST0) come through `fcall`.
+    pub fn to_menu_draw_timer<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87;
+        const LANG: u32 = 0x008a_c2f0;
+        const SPACE: u32 = 0x008f_a570;
+        const REMAP_Y2: u32 = 0x0064_4820;
+        const FONT_WIDTH: u32 = 0x0090_5290;
+        const EDGE_FONT: u32 = 0x0090_5930;
+        const DIGIT_WIDTH2: u32 = 0x0090_5230;
+        const EDGE_DIGIT2: u32 = 0x0090_5820;
+        let image_f32 = |mem: &M, a: u32| -> u32 {
+            x87::round_trip(f32::from_bits(mem.read(mem.rebase(a)))).to_bits()
+        };
+        let [frames, x, y, alpha, kind] = args;
+        let (width, sep, minutes) = (scratch, scratch.wrapping_add(4), scratch.wrapping_add(8));
+        let hours = (frames / 3600).min(999);
+        let mins = frames / 60 % 60;
+        #[allow(clippy::cast_possible_truncation)] // mins < 60
+        let digits = [b'0' + (mins / 10) as u8, b'0' + (mins % 10) as u8, 0];
+        mem.write(minutes, digits);
+        mem.write(sep, 0x4au16);
+        let scale = image_f32(mem, 0x00b6_6864);
+        let wide = image_f32(mem, 0x00b3_eb58);
+        let nine = image_f32(mem, 0x00b5_5140);
+        let two: f64 = mem.read(mem.rebase(0x00b9_2270));
+        let w = |mem: &M| f64::from(mem.read::<f32>(width));
+        // y - graphicUiRemapY2(9.0), rounded to f32
+        let low_y = |mem: &mut M, fcall: &mut dyn FnMut(&mut M, u32, &[u32]) -> f64| {
+            let r = fcall(mem, REMAP_Y2, &[nine]);
+            x87::store(x87::sub(x87::load(y), r))
+        };
+        // x less one piece: its width and one letter space (two for 1..=8)
+        let left_of = |mem: &mut M,
+                       x: u32,
+                       call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                       fcall: &mut dyn FnMut(&mut M, u32, &[u32]) -> f64| {
+            let lang = call(mem, LANG, &[]).cast_signed();
+            let double = lang > 0 && call(mem, LANG, &[]).cast_signed() < 9;
+            let mut gap = fcall(mem, SPACE, &[0]);
+            if double {
+                gap = x87::mul(gap, two);
+            }
+            x87::store(x87::sub(x87::load(x), x87::add(gap, w(mem))))
+        };
+        call(mem, FONT_WIDTH, &[minutes, width, alpha, scale, wide]);
+        let x = x87::store(x87::sub(x87::load(x), w(mem)));
+        let ly = low_y(mem, &mut fcall);
+        call(mem, EDGE_FONT, &[minutes, x, ly, alpha, scale, wide]);
+        call(mem, FONT_WIDTH, &[sep, width, alpha, scale, wide]);
+        let x = left_of(mem, x, &mut call, &mut fcall);
+        if kind == 0x25 {
+            let ly = low_y(mem, &mut fcall);
+            call(mem, EDGE_FONT, &[sep, x, ly, 0x25, scale, wide]);
+        }
+        call(mem, DIGIT_WIDTH2, &[hours, width, scale, wide]);
+        let x = left_of(mem, x, &mut call, &mut fcall);
+        let ly = low_y(mem, &mut fcall);
+        call(mem, EDGE_DIGIT2, &[hours, x, ly, alpha, scale, wide]);
+    }
+
+    /// `DrawCrossCtbIcon(id, x, y, w, h)` (`0x0089e660`): a battle command
+    /// or CTB icon from the cross-menu sheet, drawn with
+    /// `TOMkpShapeXYWHUV(400, x, y, w, h, u0, v0, u1, v1)` between
+    /// `setButtonData(-1, id)` and, for ids 0x1b6/0x1b7 and the unknown
+    /// ones, `resetButtonData()` (the other ids return without it). UVs are
+    /// texels over 1024 (`0x00b58b50`); positions and products are doubles
+    /// rounded to `f32` where the original stores. By `id`:
+    /// - 0x1b8..=0x1c2: `u0` texel `id % 2 × 129 + 768`, 120 wide; `v0`
+    ///   texel `(id - 0x1b8) / 2 × 96`, 80 high.
+    /// - 0x1c3..=0x1ca: a frame (`u, v` 0.875977/0.46875 to
+    ///   0.993164/0.546875), then the icon at `x + 0.3w`, `y + 0.2h`, size
+    ///   `0.4w × 0.6h`, `u0` texel `(id - 0x1c3) × 31 + 769`, 30 wide, `v`
+    ///   0.810547 to 0.855469.
+    /// - 0x1cb..=0x1d2: a frame (0.75/0.5625 to 0.867188/0.640625), then the
+    ///   icon at `x + 0.52w`, `y + 0.55h`, size `0.288w × 0.4h`, `u0` texel
+    ///   `(id - 0x1cb) % 4 × 60 + 769` (one more for 0x1cf), 47 wide; `v0`
+    ///   0.873047 below 0x1cf else 0.931641, 50 high.
+    /// - 0x1d3, 0x1d4: the two frames alone.
+    /// - 0x1b6, 0x1b7: two arrow halves sized by `graphicUiRemapX2`/`Y2`
+    ///   (through `fcall`), not by `w`, `h`.
+    ///
+    /// Returns what the last call leaves in `eax`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn draw_cross_ctb_icon<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
+        const SET_BUTTON: u32 = 0x008b_1350;
+        const RESET_BUTTON: u32 = 0x008b_1330;
+        const SHAPE: u32 = 0x0090_3bb0;
+        const REMAP_X2: u32 = 0x0064_47e0;
+        const REMAP_Y2: u32 = 0x0064_4820;
+        let f = |mem: &M, a: u32| -> u32 {
+            round_trip(f32::from_bits(mem.read(mem.rebase(a)))).to_bits()
+        };
+        let d = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let int_f32 = |v: i32| f64::from(v as f32);
+        let id = args[0];
+        let [x, y, w, h] =
+            [args[1], args[2], args[3], args[4]].map(|v| round_trip(f32::from_bits(v)).to_bits());
+        let n = id.cast_signed();
+        let (fx, fy, fw, fh) = (load(x), load(y), load(w), load(h));
+        let texel = d(mem, 0x00b5_8b50);
+        call(mem, SET_BUTTON, &[u32::MAX, id]);
+        let rel = |base: u32| id.wrapping_sub(base);
+        let shape = |mem: &mut M,
+                     call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                     xywh: [u32; 4],
+                     uv: [u32; 4]| {
+            let [x, y, w, h] = xywh;
+            let [u0, v0, u1, v1] = uv;
+            call(mem, SHAPE, &[400, x, y, w, h, u0, v0, u1, v1])
+        };
+        if rel(0x1b8) <= 10 {
+            let a = store(add(
+                mul(int_f32(n % 2), d(mem, 0x00b5_f210)),
+                d(mem, 0x00b5_f298),
+            ));
+            let b = store(mul(
+                int_f32(rel(0x1b8).cast_signed() / 2),
+                d(mem, 0x00b5_ee40),
+            ));
+            let b80 = store(add(d(mem, 0x00b5_f200), load(b)));
+            let v1 = store(mul(load(b80), texel));
+            let a120 = store(add(d(mem, 0x00b5_f208), load(a)));
+            let u1 = store(mul(load(a120), texel));
+            let v0 = store(mul(load(b), texel));
+            let u0 = store(mul(load(a), texel));
+            return shape(mem, &mut call, [x, y, w, h], [u0, v0, u1, v1]);
+        }
+        if rel(0x1c3) <= 7 {
+            let frame = [0x00b5_f158, 0x00b5_f0d8, 0x00b5_f168, 0x00b5_f0f4].map(|a| f(mem, a));
+            shape(mem, &mut call, [x, y, w, h], frame);
+            let t = int_f32(rel(0x1c3).cast_signed());
+            let u0 = store(mul(
+                add(mul(t, d(mem, 0x00b5_99d8)), d(mem, 0x00b5_f2a0)),
+                texel,
+            ));
+            let u1 = store(add(d(mem, 0x00b5_f170), load(u0)));
+            let uv = [u0, f(mem, 0x00b5_f140), u1, f(mem, 0x00b5_f148)];
+            let h2 = store(mul(d(mem, 0x00b4_8320), fh));
+            let w2 = store(mul(d(mem, 0x00b4_8318), fw));
+            let y2 = store(add(mul(fh, d(mem, 0x00b3_eb60)), fy));
+            let x2 = store(add(mul(fw, d(mem, 0x00b4_8308)), fx));
+            return shape(mem, &mut call, [x2, y2, w2, h2], uv);
+        }
+        if rel(0x1cb) <= 7 {
+            let frame = [0x00b4_3d18, 0x00b5_f104, 0x00b5_f14c, 0x00b5_f110].map(|a| f(mem, a));
+            shape(mem, &mut call, [x, y, w, h], frame);
+            let t = int_f32(rel(0x1cb).cast_signed() % 4);
+            let base = store(mul(
+                add(mul(t, d(mem, 0x00b4_a180)), d(mem, 0x00b5_f2a0)),
+                texel,
+            ));
+            let u0 = if id == 0x1cf {
+                store(add(texel, load(base)))
+            } else {
+                base
+            };
+            let v0 = f(mem, if n >= 0x1cf { 0x00b5_f15c } else { 0x00b5_f154 });
+            let v1 = store(add(d(mem, 0x00b5_f180), load(v0)));
+            let u1 = store(add(d(mem, 0x00b5_f178), load(u0)));
+            let h2 = store(mul(d(mem, 0x00b4_8318), fh));
+            let w2 = store(mul(d(mem, 0x00b5_f190), fw));
+            let y2 = store(add(mul(fh, d(mem, 0x00b5_f1a0)), fy));
+            let x2 = store(add(mul(fw, d(mem, 0x00b5_f198)), fx));
+            return shape(mem, &mut call, [x2, y2, w2, h2], [u0, v0, u1, v1]);
+        }
+        match id {
+            0x1d3 => {
+                let uv = [0x00b5_f158, 0x00b5_f104, 0x00b5_f168, 0x00b5_f110].map(|a| f(mem, a));
+                return shape(mem, &mut call, [x, y, w, h], uv);
+            }
+            0x1d4 => {
+                let uv = [0x00b4_3d18, 0x00b5_f114, 0x00b5_f14c, 0x00b5_f134].map(|a| f(mem, a));
+                return shape(mem, &mut call, [x, y, w, h], uv);
+            }
+            0x1b6 | 0x1b7 => {
+                let remap =
+                    |mem: &mut M,
+                     fcall: &mut dyn FnMut(&mut M, u32, &[u32]) -> f64,
+                     sym: u32,
+                     at: u32| { fcall(mem, sym, &[f(mem, at)]) };
+                let up = id == 0x1b6;
+                // the upper half: 14 × 15 at x + remapX2(11) - 1, y - 11 (or 2)
+                let h1 = store(remap(mem, &mut fcall, REMAP_Y2, 0x00b5_99e8));
+                let w1 = store(remap(mem, &mut fcall, REMAP_X2, 0x00b5_4f84));
+                let lift = d(mem, if up { 0x00b5_f1b0 } else { 0x00b9_2270 });
+                let y1 = store(sub(fy, lift));
+                let r = remap(mem, &mut fcall, REMAP_X2, 0x00b5_f2ec);
+                let x1 = store(sub(add(r, fx), d(mem, 0x00b9_2248)));
+                let uv = [0x00b5_f12c, 0x00b5_f160, 0x00b5_f13c, 0x00b5_f164].map(|a| f(mem, a));
+                shape(mem, &mut call, [x1, y1, w1, h1], uv);
+                // the lower half: 24 × 12
+                let h2 = store(remap(mem, &mut fcall, REMAP_Y2, 0x00b4_7de8));
+                let w2 = store(remap(mem, &mut fcall, REMAP_X2, 0x00b5_4f90));
+                let y2 = if up {
+                    let r = remap(mem, &mut fcall, REMAP_Y2, 0x00b5_9830);
+                    store(sub(sub(fy, r), d(mem, 0x00b2_c5c8)))
+                } else {
+                    let r = remap(mem, &mut fcall, REMAP_Y2, 0x00b5_ee70);
+                    store(add(add(r, fy), d(mem, 0x00b9_2270)))
+                };
+                let r = remap(mem, &mut fcall, REMAP_X2, 0x00b5_f2ec);
+                let x2 = store(add(r, fx));
+                let uv = if up {
+                    [0x00b5_f118, 0x00b5_f120, 0x00b5_f138, 0x00b5_f130]
+                } else {
+                    [0x00b5_f118, 0x00b5_f144, 0x00b5_f138, 0x00b5_f150]
+                };
+                let uv = uv.map(|a| f(mem, a));
+                shape(mem, &mut call, [x2, y2, w2, h2], uv);
+            }
+            _ => {}
+        }
+        call(mem, RESET_BUTTON, &[])
+    }
+
+    /// `TOBtlDrawInfoWinMes()` (`0x00895140`): with libra's auto mode
+    /// ([`LIBRA_AUTO`]) not 1, the info window shown (`0x0133c93d`) and
+    /// bit 0x400 of the menu settings (`MsGetSaveMenu`), the window's four
+    /// text lines (0x1c-byte records from `0x0133f618`: `+0` an `i16`
+    /// shown flag, `+0xc`/`+0x10` the float position, `+0x18` the text)
+    /// drawn with `TOMkpCrossExtMesFontLClut(0, text, x, y, 0, 0.78, 1.0)`
+    /// inside a font scissor over the `i16` box at `0x0133f694..0x0133f6a2`
+    /// (`OpenFontScissor`, `CloseScissor`).
+    pub fn to_btl_draw_info_win_mes<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::round_trip;
+        let byte = |mem: &M, a: u32| -> u8 { mem.read(mem.rebase(a)) };
+        if LIBRA_AUTO.get(mem) == 1 || byte(mem, 0x0133_c93d) == 0 {
+            return;
+        }
+        let settings = call(mem, 0x0078_5290, &[]);
+        if mem.read::<u32>(settings) & 0x400 == 0 {
+            return;
+        }
+        let corner = |mem: &M, a: u32| f32::from(mem.read::<i16>(mem.rebase(a))).to_bits();
+        let bx = [0x0133_f694, 0x0133_f698, 0x0133_f69c, 0x0133_f6a0].map(|a| corner(mem, a));
+        call(mem, 0x008e_8940, &bx);
+        let scale = round_trip(f32::from_bits(mem.read(mem.rebase(0x00b5_ee10)))).to_bits();
+        let rt = |mem: &M, a: u32| round_trip(f32::from_bits(mem.read(a))).to_bits();
+        for k in 0..4u32 {
+            let line = mem.rebase(0x0133_f618).wrapping_add(k * 0x1c);
+            if mem.read::<i16>(line) != 0 {
+                let text: u32 = mem.read(line.wrapping_add(0x18));
+                let (x, y) = (
+                    rt(mem, line.wrapping_add(0xc)),
+                    rt(mem, line.wrapping_add(0x10)),
+                );
+                call(
+                    mem,
+                    0x0090_16b0,
+                    &[0, text, x, y, 0, scale, 1.0f32.to_bits()],
+                );
+            }
+        }
+        call(mem, 0x008e_5cd0, &[]);
+    }
 }

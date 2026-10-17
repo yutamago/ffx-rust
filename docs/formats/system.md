@@ -853,3 +853,40 @@ double.
 |---|---|---|---|
 | `0x008f3300` | 4.0 | -3.0; -2.0 for languages 1..=8 and from 12 | 0.8 |
 | `0x008f3420` | 0.0 | -5.5 (language 0), -6.0 (9), else -5.0 | 0.77 for language 0, else 0.8 |
+
+## Play time, cross icons, info window (round 28)
+
+`TOMenuDrawTimer(frames, x, y, alpha, kind)` (`0x008e19f0`) draws a play
+time right-aligned at `x` in the battle edge font, scale 0.63 and 1.5
+(`0x00b66864`, `0x00b3eb58`): the minutes (`frames / 60 % 60`, `"%02d"`),
+a `J` (0x4a, the font's separator) and the hours (`frames / 3600`, at
+most 999). Each piece moves left by its width (`ToGetBtlEasyFontWidth`,
+`ToGetBtlEasyDigitWidth2`) and one letter space
+(`TOGetFontSpaceInPiexl(0)`), two for languages 1..=8. The separator is
+drawn only for `kind` 0x25, with 0x25 as its alpha. Every piece's `y` is
+`y - graphicUiRemapY2(9.0)`. Sums are doubles, each position rounded to
+`f32`.
+
+`DrawCrossCtbIcon(id, x, y, w, h)` (`0x0089e660`) draws battle icons
+from the cross-menu sheet with `TOMkpShapeXYWHUV(400, ...)` after
+`setButtonData(-1, id)`. Only ids 0x1b6, 0x1b7 and the ones it does not
+know end with `resetButtonData()`. UVs are texels over 1024.
+
+| ids | quads |
+|---|---|
+| 0x1b8..=0x1c2 | one: `u0 = (id % 2 × 129 + 768)`, width 120; `v0 = (id - 0x1b8) / 2 × 96`, height 80 |
+| 0x1c3..=0x1ca | a frame, then `x + 0.3w, y + 0.2h, 0.4w × 0.6h` with `u0 = (id - 0x1c3) × 31 + 769`, width 30, `v` 0.8105..0.8555 |
+| 0x1cb..=0x1d2 | a frame, then `x + 0.52w, y + 0.55h, 0.288w × 0.4h` with `u0 = (id - 0x1cb) % 4 × 60 + 769` (+1 for 0x1cf), width 47; `v0` 0.873 below 0x1cf else 0.9316, height 50 |
+| 0x1d3, 0x1d4 | the frames alone |
+| 0x1b6, 0x1b7 | two arrow halves, sized `remapX2(14) × remapY2(15)` and `remapX2(24) × remapY2(12)` |
+
+The multipliers are doubles of `f32` values (0.3 is `0.30000001192…`).
+
+`TOBtlDrawInfoWinMes()` (`0x00895140`) draws the battle info window's
+four lines (`g_BtlInfoWinLines`, `0x0133f618`, 0x1c bytes each: `+0`
+`i16` shown, `+0xc`/`+0x10` position, `+0x18` text) with
+`TOMkpCrossExtMesFontLClut(0, text, x, y, 0, 0.78, 1.0)` inside
+`OpenFontScissor` of the `i16` box at `0x0133f694` (x0, y0, x1, y1 at
+4-byte steps), then `CloseScissor`. It draws nothing while libra's auto
+mode (`0x0133d6e0`) is 1, `g_BtlInfoWinShown` (`0x0133c93d`) is clear or
+bit 0x400 of the menu settings (`MsGetSaveMenu`) is clear.

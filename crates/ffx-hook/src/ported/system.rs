@@ -6033,6 +6033,22 @@ ported! {
         let at = std::ptr::addr_of_mut!(scratch) as usize as u32;
         tolib::bridge::to_btl_set_command_help_mes(&mut mem(), command, at, call_sym)
     }
+    /// `TOMenuDrawTimer(frames, x, y, alpha, kind)`.
+    TOMenuDrawTimer @ 0x008e_19f0 => extern "C" fn to_menu_draw_timer(frames: u32, x: u32, y: u32, alpha: u32, kind: u32) {
+        let mut frame = [0u32; 4];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = frame.as_mut_ptr() as u32;
+        tolib::bridge::to_menu_draw_timer(&mut mem(), [frames, x, y, alpha, kind], at, call_sym, fcall);
+        std::hint::black_box(&mut frame);
+    }
+    /// `DrawCrossCtbIcon(id, x, y, w, h)`.
+    DrawCrossCtbIcon @ 0x0089_e660 => extern "C" fn draw_cross_ctb_icon(id: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        tolib::bridge::draw_cross_ctb_icon(&mut mem(), [id, x, y, w, h], call_sym, fcall)
+    }
+    /// `TOBtlDrawInfoWinMes()`.
+    TOBtlDrawInfoWinMes @ 0x0089_5140 => extern "C" fn to_btl_draw_info_win_mes() {
+        tolib::bridge::to_btl_draw_info_win_mes(&mut mem(), call_sym);
+    }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32
