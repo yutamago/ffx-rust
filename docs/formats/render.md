@@ -834,3 +834,16 @@ Round 17:
   elsewhere `Phyre_CharacterLighting_resetShadeCoeff(inst)` (`0x006aafa0`:
   the default from `0x006a8c40`); then the tweak utility's
   `setShadeCoeff_dbgHook(inst, 0.0, 0)`.
+
+Round 18:
+
+- `SpecularMapParamsManager_SetParams(this, id, a, f0, f1, f2, b, g0, g1,
+  g2, g3)` (`0x006c7090`, `thiscall`, `ret 0x28`; `0x006439b0` calls it on
+  the manager): nothing while `g_GraphicSkipFrame` is set. An `id` not in
+  the four slots `+0..+0xc` takes the first empty one (its flag at
+  `+0x5a0 + 4i` set to 1) and gets `SpecularMapParamsManager_AddSpecularEvent(id)`
+  (also when no slot is free). Then
+  `SpecularMapParamsManager_UpdateParams_006c6c30` (`0x006c6c30`, ten
+  words, `ret 0x28`, `ecx` unused) with the same words, the seven floats
+  copied through the x87. `ffx_graphic::host::Host::call` passes up to
+  twelve words to a `thiscall` for it.

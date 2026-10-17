@@ -1350,6 +1350,13 @@ ported! {
     graphicCharacterLightingSetShadeCoeff_debug @ 0x0063_cec0 => extern "C" fn set_shade_coeff_debug(list: u32) {
         ut::set_shade_coeff_debug(&mut mem(), list);
     }
+
+    // ---- round 18 ----
+    /// `SpecularMapParamsManager_SetParams(this, id, a, f0, f1, f2, b, g0,
+    /// g1, g2, g3)` (the floats by their bits).
+    SpecularMapParamsManager_SetParams @ 0x006c_7090 => extern "thiscall" fn specular_set_params(this: u32, id: u32, a: u32, f0: u32, f1: u32, f2: u32, b: u32, g0: u32, g1: u32, g2: u32, g3: u32) {
+        ut::specular_set_params(&mut mem(), this, [id, a, f0, f1, f2, b, g0, g1, g2, g3]);
+    }
 }
 
 /// A singleton's pointer.

@@ -1693,4 +1693,38 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    // ---- round 18 ----
+
+    /// `SpecularMapParamsManager_AddSpecularEvent` and
+    /// `SpecularMapParamsManager_UpdateParams_006c6c30` (`thiscall`, ten
+    /// words, `this` unused).
+    pub const SPECULAR_ADD_EVENT: u32 = 0x006c_56f0;
+    pub const SPECULAR_UPDATE_PARAMS: u32 = 0x006c_6c30;
+
+    /// `SpecularMapParamsManager_SetParams(this, id, a, f0, f1, f2, b, g0,
+    /// g1, g2, g3)` (`0x006c7090`): unless the frame is skipped, an `id`
+    /// not among the four slots (`+0`) takes the first empty one (its flag
+    /// `+0x5a0` set) and gets a specular event (`AddSpecularEvent(id)`,
+    /// even when no slot was free); then `UpdateParams` with the same
+    /// words, the seven floats through the x87.
+    pub fn specular_set_params(h: &mut impl Host, this: u32, p: [u32; 10]) {
+        use crate::state::bridge::SKIP_FRAME;
+        if SKIP_FRAME.get(h) != 0 {
+            return;
+        }
+        let id = p[0];
+        if !(0..4u32).any(|i| h.read::<u32>(this + 4 * i) == id) {
+            if let Some(i) = (0..4u32).find(|&i| h.read::<u32>(this + 4 * i) == 0) {
+                h.write(this + 4 * i, id);
+                h.write(this + 0x5a0 + 4 * i, 1u32);
+            }
+            h.call_sym(SPECULAR_ADD_EVENT, Conv::Thiscall(this), &[id]);
+        }
+        let mut args = p;
+        for k in [2, 3, 4, 6, 7, 8, 9] {
+            args[k] = rt(args[k]);
+        }
+        h.call_sym(SPECULAR_UPDATE_PARAMS, Conv::Thiscall(this), &args);
+    }
 }

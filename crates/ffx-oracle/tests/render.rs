@@ -6296,3 +6296,93 @@ fn snapshot_round17_matches_the_original() {
         round17_case(&mut t, &mut rng, round % 2, &what);
     }
 }
+
+// ---- round 18 ----
+
+/// A recording stub over the `thiscall` at `sym` taking ten words
+/// (`ret 0x28`): logs the tag, `ecx` and the ten words over two entries.
+fn stub_thiscall10(t: &mut Twins, sym: u32, ret: u32) {
+    let at = t.rebase(sym);
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    for i in 0..10u8 {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+    }
+    c.extend([0x83, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.push(2); // add dword [log], 2
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x28, 0x00]); // ret 0x28
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+fn round18_case(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::state::bridge::SKIP_FRAME;
+    use ffx_graphic::util::bridge as ut;
+    t.global(SKIP_FRAME.sym, u32::from(rng.chance(8)));
+    t.stub_sym(ut::SPECULAR_ADD_EVENT, Conv::Thiscall(0), 1, rng.next());
+    stub_thiscall10(t, ut::SPECULAR_UPDATE_PARAMS, rng.next());
+    let mgr = t.alloc(&rng.bytes(0x5b0));
+    let ids = [0, 7, 9, 0x1234, rng.next()];
+    for i in 0..4 {
+        let v = if rng.chance(3) {
+            0
+        } else {
+            ids[rng.below(5) as usize]
+        };
+        t.w32(mgr + 4 * i, v);
+    }
+    let mut p = [0u32; 10];
+    p[0] = ids[rng.below(5) as usize];
+    p[1] = rng.next();
+    p[5] = rng.next();
+    for k in [2, 3, 4, 6, 7, 8, 9] {
+        p[k] = rng.float().to_bits();
+    }
+    t.check(what, 0x006c_7090, Conv::Thiscall(mgr), &p, |g| {
+        ut::specular_set_params(g, mgr, p);
+        Out::None
+    });
+}
+
+#[test]
+fn round18_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1818_0018);
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round18_case(&mut t, &mut rng, &what);
+    }
+}
+
+#[test]
+fn snapshot_round18_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5018_0018);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round18_case(&mut t, &mut rng, &what);
+    }
+}
