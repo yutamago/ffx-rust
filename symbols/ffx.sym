@@ -38,6 +38,7 @@
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
+0x0040d2c0 function vpx_setup_rtcd_0040d2c0      # libvpx run-time CPU detection: SIMD caps from the VPX_SIMD_CAPS / VPX_SIMD_CAPS_MASK environment variables or CPUID (MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, AVX), then stores the matching DSP routine (0x00a7c920..0x00a8d87a and C wrappers near 0x00417830) in each function pointer; own name
 0x0042d3c0 function ReturnConst2_0042d3c0        # auto-port shape (return constant, cdecl): return 0x2; callers: no direct caller; name ours
 0x0042e060 function ReturnFieldU32PointerChain_0042e060 # auto-port shape (return field u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x10)]; t1 = u32[(a0 + 0x14)]; return t0; callers: ; name ours
 0x0042e1d0 function SetGlobals_0042e1d0          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x00c8b248] = a0; u32[&0x00c8b24c] = a1; u32[&0x00c8b244] = a2; u32[&0x00c8b240] = a3; return a3; callers: ; name ours
