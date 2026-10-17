@@ -188,6 +188,7 @@
 0x00441240 function Phyre_PCluster_deleteObject # fh v3:exact 0x00441310 Phyre::PCluster::deleteObject
 0x00441620 function Phyre_PCluster_fixupInstances # fh v3:exact 0x004416f0 Phyre::PCluster::fixupInstances
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
+0x00441dc0 function PhyreSceneCursor_SetNode  # structure: thiscall(cursor, node), ret 4: cursor words from the node (+0x34, +0x8, +0x3c count, +0x2c's +0x1c stride and +0x8c), skipping while +4 == +0; the cursor steps' set-up; name ours
 0x00441f20 function Phyre_PCluster_resolveAssetReferences # fh v3:exact 0x00441ff0 Phyre::PCluster::resolveAssetReferences
 0x004429e0 function Phyre_PWorld_PWorld       # fh v3:exact 0x00442ab0 Phyre::PWorld::PWorld
 0x00442e30 function Phyre_PWorld_Bind         # fh v3:cg4 0x442f00 Phyre::PWorld::Bind
@@ -1871,6 +1872,7 @@
 0x00644ca0 function graphicVFXAddDrawCharacterEvent # layout: alphabetical run between graphicVFX2DUpdate and graphicVFXAddScreenFadeEvent (6 unnamed in the gap); Switch 0x71001cea50 graphicVFXAddDrawCharacterEvent is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00644cf0 function graphicVFXAddDrawZPrePassEvent # layout: alphabetical run between graphicVFX2DUpdate and graphicVFXAddScreenFadeEvent (6 unnamed in the gap); Switch 0x71001ceaa0 graphicVFXAddDrawZPrePassEvent is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00644d40 function graphicVFXAddScreenFadeEvent # fh v3:exact 0x00644ef0
+0x00644db0 function graphicVFXUpdateType4     # structure: cdecl(lo, hi): graphicVFXUpdateWithType(lo, hi, 4), as graphicGuidemapUpdate does with 3; name ours
 0x00644de0 function graphicVFXCreate          # fh call.cs cdecl
 0x00645040 function graphicVFXCreateDataBuffer # fh v3:exact 0x006451f0
 0x00645280 function graphicVFXDestroy         # fh v3:exact+call.cs 0x00645430 cdecl
@@ -1991,6 +1993,7 @@
 0x00651400 function PhyreScene_ForceTransparent # fh v3:exact 0x006515b0 PhyreScene::ForceTransparent
 0x006517d0 function PhyreScene_GetSplitScreenStat # thiscall(this): u32 +0x10d8c; name Fahrenheit's (Switch BSim)
 0x00651be0 function PhyreScene_preRender         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f2cf0 PhyreScene::preRender, 2 votes, round 2
+0x00652250 function SegmentList_AllReady      # structure: fastcall(this): with +0x24 pending, 1 when every non-null entry of +0x54 (+0x58 of them) has scene state *(g_PhyreScene +0x60)[i] == 1 (then +0x24 cleared), else 0; name ours
 0x006523e0 function PhyreScene_isFading # thiscall(this) -> al: byte +0x10dcc set or g_MovieFading; name ours
 0x00652470 function ClipOutcode               # structure: cdecl(v): homogeneous-point outcode, bits 0-2 x/y/z > w, bits 3-5 x/y/z < -w; 8 calls for a box's corners in 0x00660000's frustum test; name ours
 0x006526a0 function PhyreScene_Project3DPointOntoScreen # fh v3:exact 0x00652850 PhyreScene::Project3DPointOntoScreen
@@ -2051,6 +2054,14 @@
 0x0065e650 function PhyreScene_GetField0dd8 # thiscall(this): u32 at +0xdd8; name ours
 0x0065e660 function PhyreScene_getViewProjectionMatrix # fh v3:exact 0x0065e7e0 PhyreScene::getViewProjectionMatrix
 0x0065e9e0 function PhyreScene_getYIQParam    # fh v3:exact 0x0065eb60 PhyreScene::getYIQParam
+0x0065eaf0 function PhyreSceneCursor_Seek1    # structure: fastcall(cursor): unless PhyreCursor_IsValid (0x00660240), steps +0x18 to *node (0 at the end node +0x14) until valid; then PhyreSceneCursor_SetNode, or the first five words cleared; name ours
+0x0065ebd0 function PhyreSceneCursor_Seek2    # structure: as PhyreSceneCursor_Seek1 with the check 0x006602a0; name ours
+0x0065ec40 function PhyreSceneCursor_Seek3    # structure: as PhyreSceneCursor_Seek1 with the check 0x006602d0; name ours
+0x0065ecb0 function PhyreSceneCursor_Seek4    # structure: as PhyreSceneCursor_Seek1 with the check 0x00660300; name ours
+0x0065ed20 function PhyreSceneCursor_Next1    # structure: as PhyreSceneCursor_Seek1 but steps before the first check (0x00660240); name ours
+0x0065ed80 function PhyreSceneCursor_Next2    # structure: as PhyreSceneCursor_Next1 with the check 0x00660270; name ours
+0x0065ede0 function PhyreSceneCursor_Next3    # structure: as PhyreSceneCursor_Next1 with the check 0x006602a0; name ours
+0x0065ee40 function PhyreSceneCursor_Next4    # structure: as PhyreSceneCursor_Next1 with the check 0x00660300; name ours
 0x0065f050 function PhyreScene_hide2DLayer    # fh v3:exact 0x0065f1d0 PhyreScene::hide2DLayer
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene
@@ -2128,7 +2139,9 @@
 0x0066d940 function PhyreScene_setMinimapCameraWorldMatrix # fh v3:exact 0x0066dad0 PhyreScene::setMinimapCameraWorldMatrix
 0x0066db00 function PhyreScene_setObjectRotation # fh v3:exact 0x0066dc90 PhyreScene::setObjectRotation
 0x0066e3e0 function PhyreScene_setObjectTranslation # fh v3:exact 0x0066e570 PhyreScene::setObjectTranslation
+0x0066e7b0 function PhyreScene_SetMeshesVisible # structure: thiscall(scene, on): every mesh of +0x11d0 (+0x11c8) with a draw entry (+0x1c) gets the entry's +0x1c = mesh or 0; 0x00643df0 wraps it with on = (arg != 0); name ours
 0x0066e800 function PhyreScene_setTextureVideoInfo # fh v3:exact 0x0066e990 PhyreScene::setTextureVideoInfo
+0x0066ea70 function PhyreScene_SetColourPair  # structure: thiscall(scene, r, g, b, r2, g2, b2, second): (r, g, b, 1) and (r2, g2, b2, 0) at +0xfc8c, or +0xfcac with second; 0x00643b30 wraps it; name ours
 0x0066ed00 function PhyreScene_setupColorCorrection # str-match switch: only user of 2 string(s) held once by both builds, e.g. '_ColorCorrection'; Switch 0x71001ed590 PhyreScene::setupColorCorrection (symbols from Fahrenheit's server export)
 0x0066f140 function PhyreScene_setupPostProcessParams # fh switch:bsim1.00 0x71001f1570 PhyreScene::setupPostProcessParams
 0x0066f2f0 function PhyreScene_show2DLayer    # fh v3:exact 0x0066f480 PhyreScene::show2DLayer
@@ -2519,7 +2532,9 @@
 0x006b1ce0 function TextureAnimation_GetFloatPair2c # thiscall(this, out), ret 4: out[0..2] = floats +0x2c, +0x30; returns out; name ours
 0x006b1d10 function TextureAnimation_FindByName # thiscall(this, name), ret 4: the first of +0x7c entries (0x20 bytes from +0x80, PString name at +4) whose name is the pointer or (name set) equal text; 0 otherwise; name ours
 0x006b1e40 function TextureAnimation_FindMaterial # thiscall(this, list, index, name), ret 0xc: slot index of list (+8 count, +0xc slots, -1 none) in the first texture set (+0x64 count, 0x20 bytes from +0x68: +0 count, +4 materials, +0x18 PString name) named name; 0 when missing; name ours
+0x006b1ef0 function TextureAnimationManager_FindAnimation # structure: thiscall(mgr, name): the first 0x20-byte entry of +0x68 (+0x64 of them, bit 31 a flag) whose PString +0x18 equals name, else 0; name ours
 0x006b2070 function TextureAnimationManager_getMaterialByLayNum # fh v3:exact 0x006b21c0 TextureAnimationManager::getMaterialByLayNum
+0x006b20a0 function TextureAnimationManager_FindMaterialIndex # structure: thiscall(mgr, name): the index of the first material of +0x78 (+0x74, bit 31 a flag) whose PString +0x10 equals name, else -1; 0x00643a40 calls it on TextureAnimationManager_GetInstance; name ours
 0x006b22c0 function TextureAnimation_NextFrame # thiscall(this): v = +0x18 + 1 + count (+8 & 0x7fffffff); +0x18 = v % count; eax = v / count, edx = the frame; name ours
 0x006b2380 function TextureAnimation_PrevFrame # thiscall(this): as TextureAnimation_NextFrame with -1; name ours
 0x006b28f0 function PhyreCursor_IsValid_006b28f0 # as PhyreCursor_IsValid_00660240; name ours
@@ -2528,6 +2543,7 @@
 0x006b3060 function TextureAnimationManager_setAnimatedMaterialsChar # fh v3:exact 0x006b31b0 TextureAnimationManager::setAnimatedMaterialsChar
 0x006b3650 function TextureAnimation_SetByte1c # thiscall(this, v), ret 4: byte +0x1c = v; name ours
 0x006b4330 function TextureAnimationManager_unregisterChararcterInstance # fh v3:exact 0x006b4480 TextureAnimationManager::unregisterChararcterInstance
+0x006b47e0 function ParamList_SetAllFloat     # structure: thiscall(this, f): each 0x20-byte entry of +0x80 (+0x7c, bit 31 a flag) gets virtual 1(f); name ours
 0x006b4950 function DebugMenuManager_CreateInstance # fh v3:exact 0x006b4aa0 DebugMenuManager::CreateInstance
 0x006b4990 function DebugMenuManager_Destroy # (): virtual destructor (1) of g_DebugMenuManager, then clears it; name ours
 0x006b49b0 function DebugMenuManager_GetInstance # () -> g_DebugMenuManager; name Fahrenheit's (Switch BSim)
@@ -2585,6 +2601,7 @@
 0x006c35d0 function BlurEffect_doOnShaderClusterLoaded # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'BlurEffect_frontBuffer'; Switch 0x710024d3e0 BlurEffect::doOnShaderClusterLoaded (symbols from Fahrenheit's server export)
 0x006c4000 function Compute_006c4000             # auto-port shape (arithmetic on arguments, cdecl): return (a0 + a1); callers: no direct caller; name ours
 0x006c44d0 function BlurEffect_SetField84 # thiscall(this, v), ret 4: +0x84 = v (BlurEffect_activate zeroes it); name ours
+0x006c4620 function BlurEffectEx_SetPositiveParams # structure: thiscall(this, a, b, c, d), ret 0x10: each float above 0 to +0x5c..+0x68; 0x00643830 calls it on BlurEffectEx_GetInstance; name ours
 0x006c46e0 function BlurEffect_SetFloats74     # thiscall(this, a, b, c, d), ret 0x10: floats +0x74..+0x80; name ours
 0x006c4710 function BlurEffect_SetFloats6c # thiscall(this, a, b), ret 8: floats +0x6c, +0x70; name ours
 0x006c47a0 function SetFields_006c47a0           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u8[(a0 + 0x58)] = 0x0; u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x48)] = 0x0; u32[(a0 + 0x4c)] = 0x0; u32[(a0 + 0x50)] = 0x0; u32[(a0 + 0x54)] = 0x0; return 0x0; callers: ; name ours
@@ -2599,6 +2616,8 @@
 0x006c5b60 function SpecularMapParamsManager_renderSpecularPass # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2478 SpecularMapParamsManager::renderSpecularPass, 2 votes, round 2
 0x006c6830 function SpecularMapParamsManager_setShadeSpecularMapParams # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SpecularPower'; Switch 0x7100284370 SpecularMapParamsManager::setShadeSpecularMapParams (symbols from Fahrenheit's server export)
 0x006c7250 function FloatHeap_AdjustHeap      # structure: cdecl(base, hole, len, &value, less): std::_Adjust_heap on floats with a bool less(a, b) callback; name ours
+0x006c74d0 function FloatSort_Median3         # structure: cdecl(a, b, c, less): orders three floats by less (std::_Med3); name ours
+0x006c7730 function FloatHeap_PushHeap        # structure: cdecl(base, hole, top, &value, less): std::_Push_heap on floats; name ours
 0x006c8040 function ShadowManager_AlreadyinShadowMap # fh v3:exact 0x006c8180 ShadowManager::AlreadyinShadowMap
 0x006cc8b0 function Compute_006cc8b0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 == 0x1); callers: no direct caller; name ours
 0x006cc8c0 function Compute_006cc8c0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 != 0x2083); callers: no direct caller; name ours
@@ -2607,6 +2626,7 @@
 0x006ce4f0 function ShadowManager_InsertIntoShadowMap # fh v3:exact 0x006ce620 ShadowManager::InsertIntoShadowMap
 0x006ce9d0 function ShadowManager_RemoveFromShadowMap # fh v3:exact 0x006ceb00 ShadowManager::RemoveFromShadowMap
 0x006cea80 function ShadowManager_SetFloats401c # thiscall(this, a, b), ret 8: floats +0x401c = a, +0x4018 = b; name ours
+0x006ceaa0 function ShadowManager_SetQuality  # structure: thiscall(sm, q): +0x4060 = q, +0x4064 = 1, g_ShadowSize 0x1000/0x800/0x400 for q 1/2/3; 0x0066f010 calls it after ShadowManager_getInstance; name ours
 0x006d1780 function ShadowManager_clearCascades # thiscall(this): 64 words from +0xfe8 to 0; name ours
 0x006d18b0 function ShadowManager_createshadowbuffer # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ShadowManager_TempShadowMaptarget'; Switch 0x7100278090 ShadowManager::createshadowbuffer (symbols from Fahrenheit's server export)
 0x006d22e0 function ShadowManager_getCascade # thiscall(this, i), ret 4: word i from +0x60; name ours
@@ -2614,6 +2634,7 @@
 0x006d23a0 function ShadowManager_GetCascadeMatrix # structure: thiscall(this, out, i), ret 8: copies the 4x4 matrix at this +0x210 + 64 i to out; PhyreScene callers after ShadowManager_getInstance; name ours
 0x006d2520 function ShadowManager_getTextureSampler # thiscall(this) -> this + 0x3fc4; name Fahrenheit's (Switch BSim)
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
+0x006d3560 function ShadowEntry_Init          # structure: thiscall(this, owner), ret 4: owner +0, 2 at +4, 1.0 at +0x30..+0x3c, the rest of +0xc..+0x50 and +0xa0/+0xa4 cleared; returns this; name ours (layout only)
 0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1
 0x006d4e00 function SetFieldConst4_006d4e00      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x1; callers: ; name ours
 0x006d4e10 function SetFieldConst5_006d4e10      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x5)] = 0x1; callers: ; name ours
@@ -2872,6 +2893,7 @@
 0x006f99c0 function ReturnConst1c_006f99c0       # auto-port shape (return constant, stdcall): return 0x1c; callers: no direct caller; name ours
 0x006f9a30 function ShadowDynamicMeshInstance_populatePreprocessData # fh switch:bsim0.96 0x71001ca740 ShadowDynamicMeshInstance::populatePreprocessData
 0x006f9b70 function Compare_006f9b70             # auto-port shape (compare, cdecl): t0 = u32[&0x00ce83c4]; return (t0 == 0x3); callers: ; name ours
+0x006f9b80 function PhyreFIOS_LoadPrxIdle     # structure: 1 when the PRX state 0x00ce83c4 is 3 (Compare_006f9b70) and 0x00ce83c0 is 0; name ours
 0x006f9ba0 function PhyreFIOS_LoadPrxInProgress # fh v3:exact 0x006f9c80 PhyreFIOS::LoadPrxInProgress
 0x006f9bc0 function PhyreFIOS_LoadsPrx        # fh v3:exact 0x006f9ca0 PhyreFIOS::LoadsPrx
 0x006f9cc0 function MagicDLLAsyncLoad         # fh v3:exact 0x006f9da0
@@ -4140,12 +4162,14 @@
 0x0077f210 function chr_texanim_draw_sub_new  # fh v3:exact 0x0077f300
 0x0077f970 function chr_texanim_memory_move_new # Switch name (0x7100330d60): in the new-format file (between chr_texanim_draw_sub_new and _set_new); entry source, record words into work +0xd28
 0x0077f9c0 function chr_texanim_set_new       # fh v3:exact 0x0077fa90
+0x0077fc90 function TexAnim_StartNew          # structure: cdecl(i, which, pos): g_ChrTexAnim[i]'s work animation which (0x34 bytes) restarted: u16 +0x24 = pos, +0xc/+0x1c/+0x20 and floats +0x2c..+0x38 = 0; returns 0 (i when unloaded); new-format file (before tex_anim_no_set_new); name ours
 0x0077fce0 function tex_anim_no_set_new       # fh v3:exact 0x0077fdb0
 0x0077fda0 function TexAnim_ResetPos          # cdecl(i, which, v): g_ChrTexAnim[i]'s work animation which (0x34 bytes: +0xc = v, +0x1c, +0x20, floats +0x2c..0x38 = 0), or every active one (+0xd08 + n == 1) for which 1; name ours
 0x0077fe30 function tex_anim_timer            # fh v3:exact 0x0077ff00
 0x0077fe50 function chr_texanim_draw_sub_old  # fh v3:exact 0x0077ff20
 0x007803a0 function chr_texanim_memory_move_old # Switch name (0x71003328f0): in the old-format file (between chr_texanim_draw_sub_old and _set_old); work +0x5b8
 0x007803f0 function chr_texanim_set_old       # fh v3:exact 0x007804c0
+0x00780750 function TexAnim_StartOld          # structure: as TexAnim_StartNew at +0x400 of the work buffer; old-format file (before tex_anim_no_set_old); name ours
 0x007807c0 function tex_anim_no_set_old       # fh v3:exact 0x00780890
 0x007808f0 function tex_anim_pos_set_old      # fh v3:exact 0x007809c0
 0x00780b40 function MsBattleAllFree           # fh v3:exact 0x00780c10
@@ -12657,6 +12681,7 @@
 0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy
+0x00cccab8 label    g_RenderFlag              # the byte ReturnGlobalSx8_006bc960 returns sign-extended
 0x00cccb00 label    g_GraphicPauseGame        # graphicCheckPauseGame returns it; graphicPauseGameDestroy deletes it
 0x00cdec1c label    g_SpecularMapParamsManager # SpecularMapParamsManager_GetInstance
 0x00cdec28 label    g_ShadowManager           # ShadowManager_getInstance
@@ -12676,6 +12701,8 @@
 0x00ce7310 label g_SaveMachineBusy # 1 from SaveDataMachine_StartLoad until the load is done
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
+0x00ce83c0 label    g_PrxPending              # PhyreFIOS_LoadPrxIdle tests it 0
+0x00ce83c4 label    g_PrxState                # 3 when a PRX load completed (Compare_006f9b70, PhyreFIOS_LoadPrxIdle)
 0x00ce9010 label    g_FmodManager             # FmodManager* (0x50 bytes; +8 FfxFmod, +0x10 queue mutex, +0x14 sync mutex, +0x18/+0x1c events, +0x28/+0x2c ring write/read, +0x30.. sync command); iFmodInitialize
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
 0x00ce9020 label g_UserHeapFirstBlock # the 16-byte block malloc_pool_init allocates to prove the heap; name ours
