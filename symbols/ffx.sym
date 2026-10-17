@@ -9266,6 +9266,7 @@
 0x0091da80 function rcbgGuideUpdateEx         # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0; was Guide_Update
 0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
+0x0091f530 function Yn_GuideEdgeFade          # (p, a, b, rect, out) -> 1 beyond: h = |rect x0 - x1| / 2, r = distance of p from segment a-b (Yn_NearestOnLine2D, clamped); r^2 > (0.2h)^2 -> out 1.0, returns 1; else out = (r - 0.15h)/(0.05h) clamped 0..1, returns 0; from 0x0091cf10; name ours
 0x0091f640 function Guide_SetEnabled             # (on): g_GuideEnabled; from BasicDebugTweakUtil_handleInput
 0x0091f6b0 function rcbgScaleVector_0091f6b0  # the same code as rcbgScaleVector 0x009200a0
 0x0091f710 function rcCopyQword_0091f710      # (dst, src): as rcCopyQword_0091cb40
@@ -9303,6 +9304,8 @@
 0x00920670 function rcbgSceneDelObject        # (scene, obj): the object's delete function, the table shifted and shrunk (rcRealloc rcbgScene.c 0xba)
 0x009206f0 function rcbgSceneDelObjects       # (scene, kind): rcbgSceneDelObject of the first of kind until none
 0x00920740 function rcbgSceneDraw             # fh v3:exact 0x00920740
+0x00920780 function rcbgSceneSetChadist_thunk # (scene): jmp rcbgSceneSetChadist (from 0x00921610); name ours
+0x00920790 function rcbgSceneSetChadist       # (scene): +0x104 = 1, +0x100 = player position through g_CameraMatrix, z * 0.1 (98.0 without Sg_GetPlayer); Yn map +0x10 = 0; graphicSetChadist(+0x100); name ours
 0x00920830 function rcbgSceneDrawLayer        # fh switch:bsim1.00 0x7100547250
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
 0x00920950 function rcbgSceneGetObject           # (scene, kind, n) -> the n-th object of scene +0x10 (count +0xc) whose first word is kind, else 0
@@ -10281,6 +10284,7 @@
 0x00a458f0 function abmap_set_chr_pos         # fh v3:exact 0x00a458f0
 0x00a45910 function abmap_snd_chg_panel0      # fh v3:cg2 0xa45910
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
+0x00a459e0 function AbmapFillCommandMenu      # (pad, kind): each MsMenuStatusNum entry of kind (byte 0) appended to menu pad (inlined addMenuPrim: +0x40 command id +2, +0x48 id - 0x3000, count +0x1e max 0x40, page flag +0x28); eiAbmStart: pads 3/2/4/5, kinds 0x40/0x41/0x45/0x44; name ours
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
 0x00a47400 function AbmapMaskNodeFlags        # (mask): ANDs mask into +0x22 of every node (+0x808, 0x28 bytes, i16 count +2) whose kind +6 is not -1; name ours
