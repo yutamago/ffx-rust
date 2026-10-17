@@ -3787,6 +3787,16 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `InitVFXKeThRenderData(a, b, c)`: the arrays and names in a local
+    /// buffer, as the original's.
+    InitVFXKeThRenderData @ 0x0076_58b0 => extern "C" fn shim_init_vfx_ke_th_render_data(a: u32, b: u32, c: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Work([u8; ke::bridge::KE_TH_WORK as usize]);
+        let mut v = Work([0; ke::bridge::KE_TH_WORK as usize]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        ke::bridge::init_vfx_ke_th_render_data(&mut mem(), [a, b, c], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `pppDrawCrosshair()`.
     pppDrawCrosshair @ 0x0076_06f0 => extern "C" fn shim_ppp_draw_crosshair() -> u32 {
         ke::bridge::ppp_draw_crosshair(&mut mem(), &mut |_, f, a| call_cdecl(f, a))

@@ -13186,3 +13186,89 @@ fn round50_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0032_0002);
     round50_cases(&mut t, &mut rng);
 }
+
+// ---- round 51 ----
+
+/// A `graphicVFXCreateDataBuffer` stand-in: its three 20-word arrays (args
+/// 4, 5, 7) to `log`, `log + 0x50`, `log + 0xa0`, the first 10 bytes of its
+/// first `n` (arg 3) 256-byte names (arg 6) to 16-byte slots from
+/// `log + 0xf0`, its first three arguments to `log + 0x14f0`; returns
+/// 0x5678.
+fn vfx_buffer_stub(log: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57]; // push esi; push edi (args from [esp + 0xc])
+    let arg = |i: u8| 0x0c + 4 * (i - 1);
+    for (a, dst) in [(4u8, log), (5, log + 0x50), (7, log + 0xa0)] {
+        c.extend_from_slice(&[0x8b, 0x74, 0x24, arg(a), 0xbf]); // mov esi, [esp + a]; mov edi, dst
+        c.extend_from_slice(&dst.to_le_bytes());
+        c.extend_from_slice(&[0xb9, 20, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 20; rep movsd
+    }
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, arg(6), 0xbf]); // the names
+    c.extend_from_slice(&(log + 0xf0).to_le_bytes());
+    // mov ecx, [esp + n]; test ecx, ecx; jle end; per name: its first 10
+    // bytes (movsd; movsd; movsw) to a 16-byte slot, the source on by 256
+    // (the rest of a slot is uninitialised in the original)
+    c.extend_from_slice(&[0x8b, 0x4c, 0x24, arg(3), 0x85, 0xc9, 0x7e, 0x10]);
+    c.extend_from_slice(&[
+        0xa5, 0xa5, 0x66, 0xa5, 0x81, 0xc6, 0xf6, 0, 0, 0, 0x83, 0xc7, 0x06, 0x49, 0x75, 0xf0,
+    ]);
+    for i in 0..3u8 {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg(i + 1), 0xa3]); // mov eax, [esp + arg]; mov [tail + 4i], eax
+        c.extend_from_slice(&(log + 0x14f0 + 4 * u32::from(i)).to_le_bytes());
+    }
+    c.extend_from_slice(&[0x5f, 0x5e, 0xb8]); // pop edi; pop esi; mov eax, 0x5678; ret
+    c.extend_from_slice(&0x5678u32.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 51 on `t`: `InitVFXKeThRenderData` with texture counts around
+/// the clamp (negative, 0, 1..20, over 20), the three renderer calls
+/// logged (the data buffer's arrays and names copied out).
+fn round51_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, buf, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(0x1500), t.alloc(4));
+    let [create, buffer, render] = ke::bridge::GRAPHIC_VFX_CREATE;
+    t.cave(&[
+        (Some(create), log_stub(log, rv, 1, 3)),
+        (Some(buffer), vfx_buffer_stub(buf)),
+        (Some(render), log_stub(log, rv, 2, 2)),
+    ]);
+    let at = t.b.rebase(ke::bridge::KE_TH_TEXTURES);
+    for k in 0..60 {
+        let n = match k % 5 {
+            0 => rng.range(-5, 0),
+            1 => rng.range(21, 1000),
+            _ => rng.range(1, 20),
+        };
+        t.put(at, n);
+        t.put(log, 0u32);
+        t.put(rv, if k % 3 == 0 { 0 } else { rng.next() });
+        t.fill(buf, 0x1500, rng);
+        let work = t.stack_scratch(0x100);
+        t.fill(work, 0x1500, rng);
+        let a = [rng.next(), rng.next(), rng.next()];
+        t.same(
+            "InitVFXKeThRenderData",
+            |o| o.eax(0x0076_58b0, &a),
+            |m| ke::bridge::init_vfx_ke_th_render_data(m, a, work, call),
+        );
+    }
+}
+
+/// Round 51: `InitVFXKeThRenderData`.
+#[test]
+fn round51_ke_th_render_data_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0033_0001);
+    round51_cases(&mut t, &mut rng);
+}
+
+/// Round 51 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round51_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0033_0002);
+    round51_cases(&mut t, &mut rng);
+}

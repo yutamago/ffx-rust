@@ -1483,6 +1483,22 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The Ke thing effects' render data (round 51)
+
+`InitVFXKeThRenderData(a, b, c)` (`0x007658b0`) sets up the renderer's
+data for the Ke thing effects:
+- The texture count (`i32` at `0x02305840`) is clamped to 20 and written
+  back.
+- Its locals hold three 20-word arrays, zeroed, then 0x50c, 0xc18 and 0
+  for each texture (width, height, flags), and twenty 256-byte name slots,
+  each texture's holding `"NoTexture"` (`sprintf`). Later slots and the
+  bytes after each string are left uninitialised.
+- It then calls `graphicVFXCreate(a, b, c)`, `graphicVFXCreateDataBuffer(a,
+  b, count, widths, heights, names, flags)` and
+  `graphicVFXGetRenderDataByInstance(a, b)`, all renderer glue.
+- It returns 1 when the last of these gives non-zero, else 0
+  (`neg; sbb; neg`).
+
 ## The effect crosshair (round 50)
 
 `pppDrawCrosshair()` (`0x007606f0`, name ours; from `pppPartDraw` and

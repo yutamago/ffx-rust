@@ -1870,6 +1870,61 @@ pub mod bridge {
         }
         r
     }
+
+    // ---- field round 51 ----
+
+    /// The Ke thing effects' texture count (`i32`, clamped to 20 by
+    /// `InitVFXKeThRenderData`).
+    pub const KE_TH_TEXTURES: u32 = 0x0230_5840;
+    /// `graphicVFXCreate(a, b, c)`, `graphicVFXCreateDataBuffer(a, b, n,
+    /// w, h, names, flags)`, `graphicVFXGetRenderDataByInstance(a, b)`
+    /// (glue).
+    pub const GRAPHIC_VFX_CREATE: [u32; 3] = [0x0064_4de0, 0x0064_5040, 0x0064_53d0];
+    /// The size of `InitVFXKeThRenderData`'s locals: three 20-word arrays
+    /// and twenty 256-byte names.
+    pub const KE_TH_WORK: u32 = 3 * 0x50 + 20 * 0x100;
+
+    /// `InitVFXKeThRenderData(a, b, c)` (`0x007658b0`): the renderer's data
+    /// for the Ke thing effects.
+    /// - The texture count (`0x02305840`) is clamped to 20 (signed) and
+    ///   written back.
+    /// - In `work` (the original's locals, [`KE_TH_WORK`] bytes): three
+    ///   20-word arrays, zeroed, then for each texture 0x50c, 0xc18 and 0
+    ///   (width, height, flags), and a 256-byte name slot per texture
+    ///   holding `"NoTexture"` (`sprintf`; later slots are not written).
+    /// - Then `graphicVFXCreate(a, b, c)`, `graphicVFXCreateDataBuffer(a,
+    ///   b, count, widths, heights, names, flags)` and
+    ///   `graphicVFXGetRenderDataByInstance(a, b)`; returns 1 when that
+    ///   gave a render data pointer, else 0 (`neg`/`sbb`/`neg`).
+    pub fn init_vfx_ke_th_render_data<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b, c]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let (w, h, flags, names) = (work, work + 0x50, work + 0xa0, work + 0xf0);
+        for arr in [w, h, flags] {
+            mem.write(arr, [0u32; 20]);
+        }
+        let at = mem.rebase(KE_TH_TEXTURES);
+        if mem.read::<i32>(at) > 0x14 {
+            mem.write(at, 0x14i32);
+        }
+        let mut i = 0i32;
+        while i < mem.read::<i32>(at) {
+            let k = i.cast_unsigned();
+            mem.write(names + 0x100 * k, *b"NoTexture\0");
+            mem.write(w + 4 * k, 0x50cu32);
+            mem.write(h + 4 * k, 0xc18u32);
+            mem.write(flags + 4 * k, 0u32);
+            i += 1;
+        }
+        let [create, buffer, render] = GRAPHIC_VFX_CREATE.map(|f| mem.rebase(f));
+        call(mem, create, &[a, b, c]);
+        let n = mem.read::<u32>(at);
+        call(mem, buffer, &[a, b, n, w, h, names, flags]);
+        u32::from(call(mem, render, &[a, b]) != 0)
+    }
 }
 
 #[cfg(test)]
