@@ -8213,7 +8213,7 @@ fn md_spr_init_matches_the_original() {
 fn node_requeue_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a3_9f00);
-        let (pool, n) = (p.alloc(0x400), p.alloc(0x40));
+        let (pool, n, set) = (p.alloc(0x400), p.alloc(0x40), p.alloc(0x400));
         for _ in 0..3000 {
             // every word a pointer within the pool (4-aligned, room for
             // the +0x68 reads), the node's links too; now and then the node
@@ -8241,6 +8241,12 @@ fn node_requeue_matches_the_original() {
             p.set(n + 0x30, state | low);
             p.check("0x00a39f00", 0x00a3_9f00, &[n], |o| {
                 Some(small::bridge::op_node_requeue(o, n))
+            });
+            // the set's initialisation
+            p.fill(set, 0x400, &mut rng);
+            let (count, v) = (rng.pick(&[0u32, 1, 2, 7, 9, u32::MAX]), rng.next());
+            p.check("0x00a39bc0", 0x00a3_9bc0, &[set, count, v], |o| {
+                Some(small::bridge::op_node_pool_init(o, set, count, v))
             });
         }
     }

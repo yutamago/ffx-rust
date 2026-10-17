@@ -343,4 +343,58 @@ pub mod bridge {
         }
         out
     }
+
+    /// `0x00a39bc0(set, n, v)`: a set of seven lists and `n` nodes (the
+    /// lists `op_node_requeue` moves between): `+0xc` low three bits
+    /// cleared, `+0`, `+4` = `v`, `+8` = `n`; list heads at `+0x10 +
+    /// 0x38 k` (`k` 0..7: `+0x14`, `+0x18`, `+0x28`, `+0x2c` 0, previous
+    /// and next itself, `+0x30` = `0x70000000`); nodes at `+0x1a8 + 0x38
+    /// i`, owner `set`, chained from the first list's head and back, `+0x30`
+    /// 0; `+0x198`..`+0x1a4` 0. Returns `set`.
+    pub fn op_node_pool_init(mem: &mut impl Mem, set: u32, n: u32, v: u32) -> u32 {
+        let at = |o: u32| set.wrapping_add(o);
+        let f: u32 = mem.read(at(0xc));
+        mem.write(at(0xc), f & !7);
+        mem.write(at(4), v);
+        mem.write(at(0), v);
+        mem.write(at(8), n);
+        for k in 0..7u32 {
+            let h = 0x10 + 0x38 * k;
+            for o in [0x14u32, 0x18, 0x28, 0x2c] {
+                mem.write(at(h + o), 0u32);
+            }
+            mem.write(at(h + 0x1c), at(h));
+            mem.write(at(h + 0x20), at(h));
+            mem.write(at(h + 0x30), 0x7000_0000u32);
+        }
+        let head = at(0x10);
+        let count = n.cast_signed();
+        let mut i = 0i32;
+        while i < count {
+            let iu = i.cast_unsigned();
+            let node = at(0x1a8u32.wrapping_add(iu.wrapping_mul(0x38)));
+            mem.write(node.wrapping_add(0x18), set);
+            let prev = if i == 0 {
+                head
+            } else {
+                node.wrapping_sub(0x38)
+            };
+            mem.write(node.wrapping_add(0x20), prev);
+            let next = if i == count.wrapping_sub(1) {
+                head
+            } else {
+                node.wrapping_add(0x38)
+            };
+            mem.write(node.wrapping_add(0x1c), next);
+            mem.write(node.wrapping_add(0x30), 0u32);
+            i += 1;
+        }
+        mem.write(at(0x2c), at(0x1a8));
+        let last = n.wrapping_mul(7).wrapping_add(0x2e).wrapping_mul(8);
+        mem.write(at(0x30), at(last));
+        for o in [0x198u32, 0x19c, 0x1a0, 0x1a4] {
+            mem.write(at(o), 0u32);
+        }
+        set
+    }
 }

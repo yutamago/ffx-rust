@@ -1477,6 +1477,10 @@ ported! {
     op_rgb_to_hsv_00807e90 @ 0x0080_7e90 => extern "C" fn op_rgb_to_hsv(out: u32, src: u32, n: u32) -> u32 {
         small::bridge::op_rgb_to_hsv(&mut mem(), out, src, n)
     }
+    /// `op_node_pool_init_00a39bc0(set, n, v)`.
+    op_node_pool_init_00a39bc0 @ 0x00a3_9bc0 => extern "C" fn op_node_pool_init(set: u32, n: u32, v: u32) -> u32 {
+        small::bridge::op_node_pool_init(&mut mem(), set, n, v)
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
