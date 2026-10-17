@@ -375,9 +375,15 @@ pub fn atel_get_bin_hdr_expand_24(m: &impl Mem, b: u32) -> u32 {
 /// `0x0086aa70(block)`: the expansion header's `+0x10` string (relative
 /// to the block), the empty string `0x00b8fbeb` without one.
 pub fn atel_get_bin_hdr_expand_name(m: &impl Mem, b: u32) -> u32 {
-    let Some(e) = expansion(m, b) else { return m.rebase(EMPTY) };
+    let Some(e) = expansion(m, b) else {
+        return m.rebase(EMPTY);
+    };
     let t = m.read::<u32>(e + 0x10);
-    if t == 0 { m.rebase(EMPTY) } else { b.wrapping_add(t) }
+    if t == 0 {
+        m.rebase(EMPTY)
+    } else {
+        b.wrapping_add(t)
+    }
 }
 
 /// `AtelGetBindpList()` (`0x0086ae20`): the first ctrl work's script
@@ -388,7 +394,9 @@ pub fn atel_get_bindp_list(m: &impl Mem) -> u32 {
     if b == 0 {
         return none;
     }
-    let Some(e) = expansion(m, b) else { return none };
+    let Some(e) = expansion(m, b) else {
+        return none;
+    };
     let t = m.read::<u32>(e + 0x28);
     if t == 0 { none } else { b.wrapping_add(t) }
 }
@@ -439,7 +447,8 @@ pub fn atel_get_block_string(m: &impl Mem, c: u32, i: u32) -> u32 {
     if t == 0 {
         return m.rebase(EMPTY);
     }
-    m.read::<u32>(t.wrapping_add(i.wrapping_mul(4))).wrapping_add(t)
+    m.read::<u32>(t.wrapping_add(i.wrapping_mul(4)))
+        .wrapping_add(t)
 }
 
 /// Sprite record i clamped to 0..127 (`0x1c` bytes from `0x01327148`).
@@ -563,7 +572,11 @@ fn put_f32(m: &mut impl Mem, at: u32, v: u32) {
 /// `0x00870d10(worker, i, v f)`: the worker's `+(i + 0x14) * 0x4c` = v;
 /// `EAX` the worker.
 pub fn atel_set_level_f74(m: &mut impl Mem, w: u32, i: u32, v: u32) -> u32 {
-    put_f32(m, w.wrapping_add(i.wrapping_add(0x14).wrapping_mul(0x4c)), v);
+    put_f32(
+        m,
+        w.wrapping_add(i.wrapping_add(0x14).wrapping_mul(0x4c)),
+        v,
+    );
     w
 }
 
@@ -592,8 +605,8 @@ pub fn atel_set_turn_f32(m: &mut impl Mem, w: u32, i: u32, off: u32, v: u32) -> 
 }
 
 /// The same field of all nine levels (`+off + l*0x4c`) or turn blocks
-/// (`+off + l*0x44`) = v (`0x0086f0d0` and the like); with `keep` the
-/// last store is an `fst`, so v is left in `ST0` (`0x0086f300`).
+/// (`+off + l*0x44`) = v (`0x0086f0d0` and the like; `0x0086f300`'s last
+/// store is an `fst`, so its shim returns v in `ST0`); `EAX` the worker.
 pub fn atel_set_all_f32(m: &mut impl Mem, w: u32, off: u32, step: u32, v: u32) -> u32 {
     for l in 0..9 {
         put_f32(m, w + off + l * step, v);
