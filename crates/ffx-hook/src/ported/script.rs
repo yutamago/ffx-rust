@@ -16,6 +16,10 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `AtelRequireCtrlWork`.
+    AtelRequireCtrlWork @ 0x0086_ee10 => extern "C" fn h_86ee10(i: u32, blk: u32, a: u32, b: u32) -> u32 {
+        hp::atel_require_ctrl_work(&mut mem(), i, blk, a, b)
+    }
     /// `AtelSetUpCallFunc`.
     AtelSetUpCallFunc @ 0x0087_7880 => extern "C" fn h_877880(g: u32, t: u32) -> u32 {
         hp::atel_set_up_call_func(&mut mem(), g, t)

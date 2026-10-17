@@ -559,6 +559,14 @@ sprite records (`0x01327148`, 0x1c bytes, 128), `AtelClearSnd3dWork`, two
 string helpers and the level and turn-block float setters. Seven of
 those (`0x00871500`..`0x008715a0`, `0x0086f300`) end with `fst`, not
 `fstp`, so they return the value in `ST0`.
+Round 15 added `AtelRequireCtrlWork` (`0x0086ee10`, the ctrl work's
+setup for a script block: id, block, its worker/variable counts, the
+callbacks, the flag words, scales of 1.0, the cleared slots and
+`g_AtelBasicWorkCache` = 0), `AtelSetUpCallFunc`, `AtelGetSaveDic`,
+`AtelGetSaveDicName`, `AtelUcOff` (the player's control taken from every
+type-1 worker), `0x00877520` (a number as digits over the divisor table
+`0x00c52b18`) and `0x0086db80`, and shims for `0x007a3ac0` and the four
+group-8 natives the dump now has starts for.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)

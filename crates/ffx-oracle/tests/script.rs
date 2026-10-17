@@ -3647,6 +3647,23 @@ fn round15_vm_helpers_match_the_original() {
         );
         no_diff(&mut a, &mut b, &format!("0x00877520 {v}"));
     }
+    // AtelRequireCtrlWork on a ctrl work not in use, with and without a
+    // block (a used one's)
+    let used = in_use(&b);
+    let blk = Mem::read::<u32>(&b, used[0] + 0x48);
+    let free = (0..7)
+        .find(|&i| !used.contains(&(a.rebase(0x0132_5ba0) + i * 0x238)))
+        .unwrap();
+    for block in [blk, 0] {
+        let (x, y) = (rng.next(), rng.next());
+        let ra = orig(&mut a, 0x0086_ee10, &[free, block, x, y]);
+        assert_eq!(
+            ra,
+            hp::atel_require_ctrl_work(&mut b, free, block, x, y),
+            "AtelRequireCtrlWork"
+        );
+        no_diff(&mut a, &mut b, "AtelRequireCtrlWork");
+    }
     let tables = a.rebase(0x0132_8558);
     let saved: [u32; 16] = Mem::read(&b, tables);
     for g in 0..16 {

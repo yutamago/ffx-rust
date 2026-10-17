@@ -757,3 +757,93 @@ pub fn atel_uc_off(h: &mut impl ffx_bridge::Host) -> u32 {
     h.write(c, b & 0xfd);
     c
 }
+
+/// `g_AtelBasicWorkCache` (`0x013270e4`).
+const BASIC_WORK_CACHE: u32 = 0x0132_70e4;
+
+/// `AtelRequireCtrlWork(i, block, a, b)` (`0x0086ee10`): ctrl work i
+/// (`g_AtelCtrlWorks + i*0x238`) set up for a script block: its id, the
+/// block (`+0x48`) and its counts (`+0x36`, `+0x34`, `+0x14`, `+0x1c`,
+/// `+0x16` of the block, or zeros without one), `a` and `b` (`+0x1c`,
+/// `+0x24`), the callbacks (`+0x50` = `0x008683e0`), the flag words
+/// (`+0` 0x9880, `+2` 0xc8 keeping bit 4, `+3` 0x30, `+4` 0x20004,
+/// `+0x210` `& !0x36 | 0x49`), two scales of 1.0 and cleared slots; also
+/// `g_AtelBasicWorkCache` = 0. Returns the ctrl work.
+#[allow(clippy::too_many_lines)] // one store per field
+pub fn atel_require_ctrl_work(m: &mut impl Mem, i: u32, block: u32, a: u32, b: u32) -> u32 {
+    let c = m.rebase(0x0132_5ba0).wrapping_add(i.wrapping_mul(0x238));
+    let one = 1f32.to_bits();
+    for (off, v) in [
+        (0x228, 0),
+        (0x22c, 0),
+        (0x230, 0),
+        (0x234, one),
+        (0x224, one),
+    ] {
+        m.write(c + off, v);
+    }
+    m.write(c + 0x1a, u16::try_from(i & 0xffff).unwrap_or(0));
+    m.write(c + 0x1c, a);
+    m.write(c + 0x218, 0_u32);
+    m.write(c + 0x24, b);
+    m.write(c + 0x21c, 0_u32);
+    m.write(c + 0x220, 0_u32);
+    m.write(c + 0xa, 0xffff_u16);
+    m.write(c + 0x1ec, 0_u32);
+    m.write(c + 0x1e8, 0xffff_u16);
+    m.write(c + 0x1f0, 0_u32);
+    let f2 = m.read::<u8>(c + 2);
+    m.write(c + 0x208, 0_u32);
+    m.write(c + 2, f2 & 0x10 | 0xc8);
+    let fl = m.read::<u32>(c + 0x210);
+    for off in [0x20c, 0x20, 0x28, 0x2c, 0x30, 0x4c] {
+        m.write(c + off, 0_u32);
+    }
+    m.write(c + 0x50, m.rebase(0x0086_83e0));
+    for off in [0x58, 0x5c, 0x60, 0x34, 0x44] {
+        m.write(c + off, 0_u32);
+    }
+    m.write(c + 0x1ea, 0_u8);
+    for off in [0x200, 0x204, 0x1f8, 0x1fc, 0x1f4] {
+        m.write(c + off, 0_u32);
+    }
+    m.write(c + 4, 0x0002_0004_u32);
+    m.write(c + 0x1e7, 0xff_u8);
+    m.write(c + 0x54, 0_u32);
+    m.write(c + 8, 0_u8);
+    m.write(c + 0x48, block);
+    m.write(c + 0x1e4, 0_u8);
+    m.write(c, 0x9880_u16);
+    m.write(c + 3, 0x30_u8);
+    m.write(c + 0x210, fl & 0xffff_ffc9 | 0x49);
+    m.write(c + 0x214, u32::MAX);
+    if block == 0 {
+        m.write(c + 0xc, 0_u16);
+        m.write(c + 0x10, 0_u32);
+        m.write(c + 0x14, 0_u32);
+        m.write(c + 0x18, 0_u16);
+    } else {
+        let n36 = m.read::<u16>(block + 0x36);
+        m.write(c + 0xc, n36);
+        let n34 = m.read::<u16>(block + 0x34);
+        m.write(c + 0x10, n34);
+        m.write(c + 0x12, n36);
+        let n14 = m.read::<u16>(block + 0x14);
+        m.write(c + 0x14, n14);
+        let n1c = m.read::<u16>(block + 0x1c);
+        m.write(c + 0x18, n1c);
+        let n16 = m.read::<u16>(block + 0x16);
+        m.write(c + 0x16, n16);
+    }
+    for off in [0x64, 0x74, 0x84, 0x94] {
+        m.write(c + off, u32::MAX);
+    }
+    for k in 0..0x20 {
+        m.write(c + 0xa4 + k * 8, 0_u16);
+    }
+    m.write(m.rebase(BASIC_WORK_CACHE), 0_u32);
+    for k in 0..8 {
+        m.write(c + 0x1a4 + k * 8, 0_u32);
+    }
+    c
+}

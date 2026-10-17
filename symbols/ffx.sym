@@ -8432,7 +8432,7 @@
 0x0086ec80 function AtelRegistSignalWithoutSameTag2# (request) -> 0 when a request for that entry is queued, else AtelRegistSignalMain
 0x0086ed40 function AtelRemoveCtrlWork        # fh v3:exact 0x0086ecd0
 0x0086ed80 function AtelRequestMapCamera      # fh v3:exact 0x0086ed10
-0x0086ee10 function AtelRequireCtrlWork       # fh v3:cg3 0x86eda0
+0x0086ee10 function AtelRequireCtrlWork       # fh v3:cg3 0x86eda0; (i, block, a, b): sets ctrl work i up for a script block -> the ctrl work; ported in helpers (script round 15)
 0x0086f040 function Atel_SetCurLevel5ec        # (worker, v f): the current level's +0x5ec; name ours; ported in helpers (script round 14)
 0x0086f080 function Native_SetFields_0086f080    # auto-port shape (several stores: set field (constants, arguments, addresses), cdecl): u16[(a0 + 0x5bc)] = (a1 & 0xffff); u16[(a0 + 0x608)] = (a1 & 0xffff); u16[(a0 + 0x654)] = (a1 & 0xffff); u16[(a0 + 0x6a0)] = (a1 & 0xffff); u16[(a0 + 0x6ec)] = (a1 & 0xffff); u16[(a0 + 0x738)] = (a1 & 0xffff); u16[(a0 + 0x784)] = (a1 & 0xffff); u16[(a0 + 0x7d0)] = (a1 & 0xffff); u16[(a0 + 0x81c)] = (a1 & 0xffff); return a0; callers: Native_SetMoveMOT; name ours
 0x0086f0d0 function Atel_SetAllLevels5f0       # (worker, v f): +0x5f0 of all nine levels; name ours; ported in helpers (script round 14)
