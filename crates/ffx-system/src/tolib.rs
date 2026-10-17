@@ -7425,4 +7425,288 @@ pub mod bridge {
         }
         1
     }
+
+    /// The battle text cursor at `0x025d09a0` the `ToMakeBtlEasy*` writers
+    /// lay glyphs out with: `+0` the colour words, `+4`/`+8` the pen
+    /// position (f32 bits), `+0xc..+0x18` cleared, `+0x1a` the icon mode 0,
+    /// `+0x1b` the alpha. The glyph record at `0x01841d50` is cleared too.
+    fn btl_easy_cursor<M: Mem>(mem: &mut M, colour: u32, x: u32, y: u32, alpha: u32) -> u32 {
+        clear_glyph_record(mem);
+        let c = mem.rebase(0x025d_09a0);
+        for k in 0..7 {
+            mem.write(c.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(c, colour);
+        mem.write(c.wrapping_add(4), x);
+        mem.write(c.wrapping_add(8), y);
+        #[allow(clippy::cast_possible_truncation)] // mov byte, al
+        mem.write(c.wrapping_add(0x1b), alpha as u8);
+        c
+    }
+
+    /// The number of decimal digits of `value` (1 for 0).
+    fn digit_count(value: u32) -> u32 {
+        let mut q = value.cast_signed();
+        if q == 0 {
+            return 1;
+        }
+        let mut n = 0;
+        while q != 0 {
+            q /= 10;
+            n += 1;
+        }
+        n
+    }
+
+    /// `ToMakeBtlEasyDigit(digits, value, x, y, alpha, scale)`
+    /// (`0x00905440`): lays out `value` (`TOValueToMesFontL` into the
+    /// 32-byte `text`, the original's stack) from pen `x, y`: each glyph
+    /// gets its record (`TOGetFontInfo`), its shadow and face packets
+    /// (`TOMakePktBtlEasyFontShadow`, `TOMakePktBtlEasyFont`) and moves the
+    /// pen (`TOAddFontWidthSpace`). Float arguments are f32 bits.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_make_btl_easy_digit<M: Mem>(
+        mem: &mut M,
+        digits: u32,
+        value: u32,
+        x: u32,
+        y: u32,
+        alpha: u32,
+        scale: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008b_9140, &[value, text, digits]);
+        let cursor = btl_easy_cursor(mem, 0x8080_8080, x, y, alpha);
+        let record = mem.rebase(0x0184_1d50);
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            call(mem, 0x008b_7240, &[p, record]);
+            call(mem, 0x008f_bae0, &[cursor, record, scale]);
+            call(mem, 0x008f_b940, &[cursor, record, scale]);
+            call(mem, 0x008e_8ed0, &[cursor, record, scale]);
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `ToMakeBtlEasyDigit2(value, x, y, alpha, scale, extra)`
+    /// (`0x00905550`): [`to_make_btl_easy_digit`] with as many digits as
+    /// `value` has.
+    pub fn to_make_btl_easy_digit2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        call(mem, 0x0090_5440, &[n, value, x, y, alpha, scale, extra]);
+    }
+
+    /// `ToMakeBtlEasyDigitRight(value, x, y, alpha, scale, extra)`
+    /// (`0x009055c0`): [`to_make_btl_easy_digit2`] right-aligned on `x`:
+    /// the pen starts at `x` less the number's width
+    /// (`ToGetBtlEasyDigitWidth` into `width`, the original's argument
+    /// slot).
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_make_btl_easy_digit_right<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        mem.write(width, value);
+        call(mem, 0x0090_5190, &[n, value, width, scale, extra]);
+        let w: f32 = mem.read(width);
+        let left = (f64::from(f32::from_bits(x)) - f64::from(w)) as f32;
+        mem.write(width, left);
+        call(
+            mem,
+            0x0090_5440,
+            &[n, value, left.to_bits(), y, alpha, scale, extra],
+        );
+    }
+
+    /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`
+    /// (`0x009057c0`): `value` written by `TOValueToMesFontL` into the
+    /// 32-byte `text` and laid out with `ToMakeBtlEasyEdgeFont`.
+    pub fn to_make_btl_easy_edge_digit<M: Mem>(
+        mem: &mut M,
+        digits: u32,
+        args: [u32; 6],
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        call(mem, 0x008b_9140, &[value, text, digits]);
+        call(mem, 0x0090_5930, &[text, x, y, alpha, scale, extra]);
+    }
+
+    /// `ToMakeBtlEasyEdgeDigit2(value, x, y, alpha, scale, extra)`
+    /// (`0x00905820`): [`to_make_btl_easy_edge_digit`] with as many digits
+    /// as `value` has.
+    pub fn to_make_btl_easy_edge_digit2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        call(mem, 0x0090_57c0, &[n, value, x, y, alpha, scale, extra]);
+    }
+
+    /// `ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, extra)`
+    /// (`0x00905930`): `ToMakeBtlEasyEdgeFontA` with edge alpha 0x80.
+    pub fn to_make_btl_easy_edge_font<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [text, x, y, alpha, scale, extra] = args;
+        call(mem, 0x0090_5970, &[text, x, y, alpha, scale, extra, 0x80]);
+    }
+
+    /// `ToMakeBtlEasyEdgeFontA(text, x, y, alpha, scale, extra, edge)`
+    /// (`0x00905970`): lays out an edged battle text from pen `x, y`
+    /// (colour 0x80 grey with edge alpha `edge`): line codes (group 1) move
+    /// the pen back to `x` and 16.0 down; glyphs (group 4) get their record,
+    /// the edge and face packets (`TOMakeBtlEasyFontEdge` with the UI draw
+    /// type 1 and shadow type 0, `TOMakePktBtlEasyFont` with shadow type
+    /// 1, then draw type 0) and move the pen (`TOAddFontWidthSpace`).
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_make_btl_easy_edge_font_a<M: Mem>(
+        mem: &mut M,
+        args: [u32; 7],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [text, x, y, alpha, scale, _extra, edge] = args;
+        let colour = 0x0080_8080 | (edge & 0xff) << 24;
+        let cursor = btl_easy_cursor(mem, colour, x, y, alpha);
+        let record = mem.rebase(0x0184_1d50);
+        let down: f64 = mem.read(mem.rebase(0x00b3_13a0));
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    mem.write(cursor.wrapping_add(4), x);
+                    let pen: f32 = mem.read(cursor.wrapping_add(8));
+                    mem.write(cursor.wrapping_add(8), (f64::from(pen) + down) as f32);
+                }
+                4 => {
+                    call(mem, 0x008b_7240, &[p, record]);
+                    call(mem, 0x0064_3af0, &[1]);
+                    call(mem, 0x0064_0dd0, &[0]);
+                    call(mem, 0x008f_ae40, &[cursor, record, scale]);
+                    call(mem, 0x0064_0dd0, &[1]);
+                    call(mem, 0x008f_b940, &[cursor, record, scale]);
+                    call(mem, 0x0064_3af0, &[0]);
+                    call(mem, 0x008e_8ed0, &[cursor, record, scale]);
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `ToMakeBtlEasyFont(text, x, y, alpha, scale)` (`0x00905ab0`): lays
+    /// out a battle text from pen `x, y` in grey 0x80: line codes move the
+    /// pen back to `x` and 16.0 down; glyphs get their record, the shadow
+    /// (unless `0x018716bc`, with UI draw type 1 and shadow types 0/1
+    /// around it) and face packets and move the pen
+    /// (`TOAddFontWidthSpace`); `0xb n` button icons (`setButtonData(n, -1)`,
+    /// then `resetButtonData`) are drawn at the pen
+    /// (`TODrawScaleButtonIconRGBA(n, x, y + 1.7, 0.6, grey)`, or `+ 3.2`
+    /// at 0.73 for icon modes 1 and 3) unless `n` is 0x4a, and move it by
+    /// the icon width (`TOGetScaleButtonIconWidth` through `fcall`) plus
+    /// 1.0 (1.5).
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_make_btl_easy_font<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let [text, x, y, alpha, scale] = args;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let cursor = btl_easy_cursor(mem, 0x8080_8080, x, y, alpha);
+        let record = g(mem, 0x0184_1d50);
+        let down: f64 = mem.read(g(mem, 0x00b3_13a0));
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    mem.write(cursor.wrapping_add(4), x);
+                    let pen: f32 = mem.read(cursor.wrapping_add(8));
+                    mem.write(cursor.wrapping_add(8), (f64::from(pen) + down) as f32);
+                }
+                2 => {
+                    if c == 0xb {
+                        let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                        call(mem, 0x008b_1350, &[n, 0xffff_ffff]);
+                        let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                        if n != 0x4a {
+                            let wide = matches!(mem.read::<u8>(cursor.wrapping_add(0x1a)), 1 | 3);
+                            let (size, drop) = if wide {
+                                (g(mem, 0x00b6_55e4), g(mem, 0x00b6_6c88))
+                            } else {
+                                (g(mem, 0x00b3_eb48), g(mem, 0x00b5_83a0))
+                            };
+                            let size: u32 = mem.read(size);
+                            let drop: f64 = mem.read(drop);
+                            let pen_y: f32 = mem.read(cursor.wrapping_add(8));
+                            let icon_y = (f64::from(pen_y) + drop) as f32;
+                            let pen_x: u32 = mem.read(cursor.wrapping_add(4));
+                            call(
+                                mem,
+                                0x008f_8ee0,
+                                &[n, pen_x, icon_y.to_bits(), size, 0x80, 0x80, 0x80, 0x80],
+                            );
+                            let wide = matches!(mem.read::<u8>(cursor.wrapping_add(0x1a)), 1 | 3);
+                            let (size, gap) = if wide {
+                                (
+                                    mem.read::<u32>(g(mem, 0x00b6_55e4)),
+                                    mem.read::<f64>(g(mem, 0x00b4_1d00)),
+                                )
+                            } else {
+                                (mem.read::<u32>(g(mem, 0x00b3_eb48)), 1.0)
+                            };
+                            let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                            let icon = fcall(mem, 0x008f_a800, &[n, size]);
+                            let pen_x: f32 = mem.read(cursor.wrapping_add(4));
+                            mem.write(
+                                cursor.wrapping_add(4),
+                                ((icon + gap) + f64::from(pen_x)) as f32,
+                            );
+                        }
+                    }
+                    call(mem, 0x008b_1330, &[]);
+                }
+                4 => {
+                    call(mem, 0x008b_7240, &[p, record]);
+                    if mem.read::<u32>(g(mem, 0x0187_16bc)) == 0 {
+                        call(mem, 0x0064_3af0, &[1]);
+                        call(mem, 0x0064_0dd0, &[0]);
+                        call(mem, 0x008f_bae0, &[cursor, record, scale]);
+                        call(mem, 0x0064_0dd0, &[1]);
+                        call(mem, 0x008f_b940, &[cursor, record, scale]);
+                        call(mem, 0x0064_3af0, &[0]);
+                    } else {
+                        call(mem, 0x008f_b940, &[cursor, record, scale]);
+                    }
+                    call(mem, 0x008e_8ed0, &[cursor, record, scale]);
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
 }

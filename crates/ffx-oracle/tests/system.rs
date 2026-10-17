@@ -12915,6 +12915,182 @@ fn round21_btl_matches_the_original_on_the_snapshot() {
     round21_btl(&mut a, &mut b, &mut Xorshift(0x4021_0052));
 }
 
+/// Round 22's battle font layout over the original glyph records and pen
+/// advance, with the packet writers stand-ins that log the pen position,
+/// colour and scale they are given.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round22_layout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let mut off = 0x40u32;
+    let mut stand = |a: &mut Oracle, b: &mut Oracle, sym: u32, code: &[u8]| {
+        let s = stand_in8(a, b, off, code);
+        redirect(a, b, sym, s);
+        // room for the eight-word logger
+        off += 0x60;
+    };
+    // the packet writers: log the pen (+4, +8), the scale and the colour
+    let mut pen = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x15];
+    pen.extend_from_slice(&cursor.to_le_bytes());
+    pen.extend_from_slice(&[
+        0x8b, 0x48, 0x04, 0x89, 0x0a, 0x8b, 0x48, 0x08, 0x89, 0x4a, 0x04, 0x8b, 0x4c, 0x24, 0x0c,
+        0x89, 0x4a, 0x08, 0x8b, 0x08, 0x89, 0x4a, 0x0c, 0x83, 0x05,
+    ]);
+    pen.extend_from_slice(&cursor.to_le_bytes());
+    pen.extend_from_slice(&[0x10, 0xc3]);
+    for sym in [0x008f_bae0u32, 0x008f_b940, 0x008f_ae40] {
+        stand(a, b, sym, &pen);
+    }
+    stand(a, b, 0x0064_3af0, &logger(cursor, 0x2201_0001));
+    stand(a, b, 0x0064_0dd0, &logger(cursor, 0x2201_0002));
+    stand(a, b, 0x008b_1350, &logger_args(cursor, 2));
+    stand(a, b, 0x008b_1330, &marker(cursor, 0x2201_0003));
+    stand(a, b, 0x008f_8ee0, &logger_args(cursor, 8));
+    stand(a, b, 0x008f_a800, &[0xdb, 0x44, 0x24, 0x04, 0xc3]);
+    // the language, English flag, width table and join test from cells
+    for (i, sym) in [0x008a_c2f0u32, 0x0078_51d0, 0x008a_c3d0, 0x008b_5760]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + 4 * i as u32).to_le_bytes());
+        v.push(0xc3);
+        stand(a, b, sym, &v);
+    }
+    let table = alloc(a, b, 0x2000);
+    let widths: Vec<u8> = (0..0x2000).map(|_| (rng.next() % 0x60) as u8).collect();
+    a.write(table, &widths).unwrap();
+    b.write(table, &widths).unwrap();
+    let text = alloc(a, b, 0x100);
+    let scratch = alloc(a, b, 0x20);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, [0u32, 3][(rng.next() % 2) as usize]);
+        put(a, b, cells + 4, rng.next() % 2);
+        put(a, b, cells + 8, table + 0x1000);
+        put(a, b, cells + 12, rng.next() % 2);
+        put(
+            a,
+            b,
+            g(a, 0x0187_16bc),
+            u32::from(rng.next().is_multiple_of(3)),
+        );
+        let mut bytes = vec![0u8; 0x100];
+        let mut i = 0usize;
+        for _ in 0..rng.next() % 0x14 {
+            match rng.next() % 8 {
+                0 => bytes[i] = (1 + rng.next() % 3) as u8,
+                1 => {
+                    bytes[i] = 0xb;
+                    i += 1;
+                    bytes[i] = [0x4au8, 0x30, 0x41, 0x60][(rng.next() % 4) as usize];
+                }
+                2 => {
+                    bytes[i] = 7;
+                    i += 1;
+                    bytes[i] = 0xe2;
+                }
+                _ => bytes[i] = (0x30 + rng.next() % 0x60) as u8,
+            }
+            i += 1;
+        }
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let x = ((rng.next() % 6000) as f32 / 10.0).to_bits();
+        let y = ((rng.next() % 4000) as f32 / 10.0).to_bits();
+        let alpha = rng.next() % 0x100;
+        let scale = [1.0f32, 0.75, 1.25][(rng.next() % 3) as usize].to_bits();
+        let extra = [1.0f32, 0.5][(rng.next() % 2) as usize].to_bits();
+        let edge = rng.next() % 0x100;
+        let value = [
+            rng.next() % 10,
+            rng.next() % 100_000,
+            rng.next() % 1_000_000_000,
+            0,
+        ][(rng.next() % 4) as usize];
+        let digits = rng.next() % 9;
+        // the icon mode is set by the callers; seed it
+        put(a, b, g(a, 0x025d_09ba), (rng.next() % 4) as u8);
+        match k % 8 {
+            0 => {
+                eax(a, 0x0090_5ab0, &[text, x, y, alpha, scale]);
+                t::to_make_btl_easy_font(b, [text, x, y, alpha, scale], call, fcall);
+            }
+            1 => {
+                eax(a, 0x0090_5970, &[text, x, y, alpha, scale, extra, edge]);
+                t::to_make_btl_easy_edge_font_a(b, [text, x, y, alpha, scale, extra, edge], call);
+            }
+            2 => {
+                eax(a, 0x0090_5930, &[text, x, y, alpha, scale, extra]);
+                t::to_make_btl_easy_edge_font(b, [text, x, y, alpha, scale, extra], call);
+            }
+            3 => {
+                eax(a, 0x0090_5440, &[digits, value, x, y, alpha, scale]);
+                t::to_make_btl_easy_digit(b, digits, value, x, y, alpha, scale, scratch, call);
+            }
+            4 => {
+                eax(a, 0x0090_5550, &[value, x, y, alpha, scale, extra]);
+                t::to_make_btl_easy_digit2(b, [value, x, y, alpha, scale, extra], call);
+            }
+            5 => {
+                eax(a, 0x0090_55c0, &[value, x, y, alpha, scale, extra]);
+                t::to_make_btl_easy_digit_right(
+                    b,
+                    [value, x, y, alpha, scale, extra],
+                    scratch,
+                    call,
+                );
+            }
+            6 => {
+                eax(a, 0x0090_57c0, &[digits, value, x, y, alpha, scale, extra]);
+                t::to_make_btl_easy_edge_digit(
+                    b,
+                    digits,
+                    [value, x, y, alpha, scale, extra],
+                    scratch,
+                    call,
+                );
+            }
+            _ => {
+                eax(a, 0x0090_5820, &[value, x, y, alpha, scale, extra]);
+                t::to_make_btl_easy_edge_digit2(b, [value, x, y, alpha, scale, extra], call);
+            }
+        }
+        let v: [u32; 8] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("battle font layout", a, b);
+    }
+}
+
+#[test]
+fn round22_layout_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round22_layout(&mut a, &mut b, &mut Xorshift(0x4022_0011));
+}
+
+#[test]
+fn round22_layout_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round22_layout(&mut a, &mut b, &mut Xorshift(0x4022_0012));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

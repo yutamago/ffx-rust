@@ -5926,6 +5926,47 @@ ported! {
         let at = (&raw mut word) as usize as u32;
         tolib::bridge::to_btl_set_next_action(&mut mem(), chr, command, at, call_sym)
     }
+    /// `ToMakeBtlEasyDigit(digits, value, x, y, alpha, scale)`.
+    ToMakeBtlEasyDigit @ 0x0090_5440 => extern "C" fn to_make_btl_easy_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32) {
+        let mut text = [0u32; 8];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = text.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_btl_easy_digit(&mut mem(), digits, value, x, y, alpha, scale, at, call_sym);
+    }
+    /// `ToMakeBtlEasyDigit2(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyDigit2 @ 0x0090_5550 => extern "C" fn to_make_btl_easy_digit2(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_make_btl_easy_digit2(&mut mem(), [value, x, y, alpha, scale, extra], call_sym);
+    }
+    /// `ToMakeBtlEasyDigitRight(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyDigitRight @ 0x0090_55c0 => extern "C" fn to_make_btl_easy_digit_right(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        let mut width = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut width) as usize as u32;
+        tolib::bridge::to_make_btl_easy_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeDigit @ 0x0090_57c0 => extern "C" fn to_make_btl_easy_edge_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        let mut text = [0u32; 8];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = text.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_btl_easy_edge_digit(&mut mem(), digits, [value, x, y, alpha, scale, extra], at, call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeDigit2(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeDigit2 @ 0x0090_5820 => extern "C" fn to_make_btl_easy_edge_digit2(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_make_btl_easy_edge_digit2(&mut mem(), [value, x, y, alpha, scale, extra], call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyEdgeFont @ 0x0090_5930 => extern "C" fn to_make_btl_easy_edge_font(text: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        tolib::bridge::to_make_btl_easy_edge_font(&mut mem(), [text, x, y, alpha, scale, extra], call_sym);
+    }
+    /// `ToMakeBtlEasyEdgeFontA(text, x, y, alpha, scale, extra, edge)`.
+    ToMakeBtlEasyEdgeFontA @ 0x0090_5970 => extern "C" fn to_make_btl_easy_edge_font_a(text: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32, edge: u32) {
+        tolib::bridge::to_make_btl_easy_edge_font_a(&mut mem(), [text, x, y, alpha, scale, extra, edge], call_sym);
+    }
+    /// `ToMakeBtlEasyFont(text, x, y, alpha, scale)`.
+    ToMakeBtlEasyFont @ 0x0090_5ab0 => extern "C" fn to_make_btl_easy_font(text: u32, x: u32, y: u32, alpha: u32, scale: u32) {
+        tolib::bridge::to_make_btl_easy_font(&mut mem(), [text, x, y, alpha, scale], call_sym, fcall);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
