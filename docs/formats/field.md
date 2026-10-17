@@ -1328,6 +1328,32 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   `KeVu0ItrsBallLine`) belong to the Ke effect library in `ke.rs` and
   stay on the list as large logic.
 
+## The Ke library: ray-sphere test and particle gap filling (round 31)
+
+- `KeVu0ItrsBallLine` (`0x0075eed0`, from `pppKeHitChkPxB`): the ray
+  `p + t d` (`p` at `+0`, `d` at `+0x10`) against the sphere of radius
+  `+0x20` around the origin. With `a = d.d`, `b = 2 p.d` and
+  `c = p.p - r²` (each partial sum stored as `f32`), it returns 0 when
+  `b² - 4ac < 0`. Otherwise it stores the entry point
+  `t = (-b - f32(sqrt(disc))) / f32(2a)` at `+0x24` and returns 1.
+- `KeBornPtCmlp` (`0x00759400`, from `pppKeBornPtCmpl`) spawns the
+  particle objects that fill the gap between the previous point and this
+  frame's:
+  - It first creates one object (`pppCreatePObject(part, pd[8] * 16 +
+    part +0x3c)`; a zero address gives no object and a failed creation
+    returns at once), stores it to `out`, sets its owner (`+4`) and its
+    position (`+0xa0 + pd[0xc]`, `dst`) to the point at
+    `pc + prog[0xc][1] + 0xa0`.
+  - Without a previous point (`pc + prog[0xc][0] + 0xa0` null), the step
+    `+0xa8` there becomes `1 / f32(pd[4] + 1)`.
+  - Otherwise, for `f` from `pd[4]` down by 1.0 while above 0, it creates
+    another object at `prev + (dst - prev) * f32(f * step)`.
+  - The previous point then becomes `dst`.
+  - A zero object address leaves `out` 0 and the original writes through
+    address 0; the test leaves that pairing out.
+- Test note: dyadic test floats make some `f32` stores exact (doubling is
+  exact), so the ray test also uses non-dyadic inputs.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
