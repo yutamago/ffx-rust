@@ -98,6 +98,18 @@ pub const ABMAP_PPP_DATA: u32 = 0x0230_5800;
 pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
 /// `pppStartPart(part, flags, id, a, b)` (`0x007123c0`).
 pub const PPP_START_PART: u32 = 0x0071_23c0;
+/// `pppCreateHeap(env, buffer, size)` (`0x0072c480`).
+pub const PPP_CREATE_HEAP: u32 = 0x0072_c480;
+/// The sphere grid's ppp heap (0x7d000 bytes).
+pub const ABMAP_PPP_HEAP: u32 = 0x016c_1870;
+/// The warp's ppp part.
+pub const ABMAP_WARP_PART: u32 = 0x01a8_6060;
+/// 0.5 (`f32`, `.rdata`): the warp part's scale.
+pub const WARP_PART_SCALE: u32 = 0x00b9_2194;
+/// The warp's draw hook (`0x00a4c430`).
+pub const WARP_DRAW: u32 = 0x00a4_c430;
+/// `AbmapState_Warping` (`0x00a47f00`).
+pub const STATE_WARPING: u32 = 0x00a4_7f00;
 /// `MsMenuStatusNumSize()` (`0x00790220`).
 pub const MS_MENU_STATUS_NUM_SIZE: u32 = 0x0079_0220;
 /// `MsMenuStatusNum(i, 0)` (`0x00790200`): a menu status entry.
@@ -1779,5 +1791,78 @@ pub mod bridge {
         mem.write(part.wrapping_add(0x68), rt(f));
         mem.write(part.wrapping_add(0x6c), 1.0f32.to_bits());
         ic
+    }
+
+    // ---- round 27 ----
+
+    /// `AbmapStartWarp(chr, target)` (`0x00a48a80`, from
+    /// `abmap_set_chr_pos`; name ours): the warp sound (`0x80000070`), the
+    /// character's node (`+0x110cc + 0x50 chr`) position as floats into
+    /// `+0x11308`/`+0x1163c` and `+0x1130c`/`+0x11640`, `+0x11620` 0.0,
+    /// `+0x11634` the target, `+0x11638` the character, the grid's ppp
+    /// heap (`pppCreateHeap`), [`abmap_start_part`] of part 2 at that
+    /// position (scale 0.5), and the state hooks: `+0x115ac` the warp's
+    /// draw (`0x00a4c430`) and `+0x115a8` `AbmapState_Warping`, each saved
+    /// first unless one is saved already. Returns what the original leaves
+    /// in `eax`.
+    pub fn abmap_start_warp<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        chr: u32,
+        target: u32,
+        call: &mut C,
+    ) -> u32 {
+        let g0 = ABMAP.get(mem);
+        let node = u32::from(
+            mem.read::<u16>(
+                g0.wrapping_add(0x110cc)
+                    .wrapping_add(chr.wrapping_mul(0x50)),
+            ),
+        );
+        let nd = g0.wrapping_add(node.wrapping_mul(0x28));
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[0x8000_0070]);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1164c), 0u8);
+        mem.write(g.wrapping_add(0x1164d), 0u8);
+        let coord =
+            |mem: &M, at: u32| -> u32 { f32::from(mem.read::<i16>(nd.wrapping_add(at))).to_bits() };
+        let x = coord(mem, 0x808);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11308), x);
+        mem.write(g.wrapping_add(0x1163c), x);
+        let y = coord(mem, 0x80a);
+        mem.write(g.wrapping_add(0x1130c), y);
+        mem.write(g.wrapping_add(0x11640), y);
+        mem.write(g.wrapping_add(0x11620), 0u32);
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit argument
+        mem.write(g.wrapping_add(0x11634), target as u16);
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        mem.write(g.wrapping_add(0x11638), chr as u8);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(super::WARP_PART_SCALE)))
+            .to_bits();
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let (x, y) = (coord(mem, 0x808), coord(mem, 0x80a));
+        let mut eax = abmap_start_part(mem, [part, 2, x, y, 0, 0, 0, 0, h, h, h], call);
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b4)) == 0 {
+            let v = mem.read::<u32>(g.wrapping_add(0x115ac));
+            mem.write(g.wrapping_add(0x115b4), v);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115ac), mem.rebase(super::WARP_DRAW));
+            eax = g;
+        }
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let v = mem.read::<u32>(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), v);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115a8), mem.rebase(super::STATE_WARPING));
+            eax = g;
+        }
+        eax
     }
 }

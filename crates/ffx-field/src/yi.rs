@@ -60,6 +60,14 @@ pub const CAMERA_IDS: Global<[u32; 2]> = Global::new(0x0193_4ed4);
 pub const MAP_IDS: Global<[u32; 2]> = Global::new(0x0193_4edc);
 /// 0 after a 2D map is loaded, 1 after a 3D one (`0x01934ec0`).
 pub const MAP_KIND: Global<u32> = Global::new(0x0193_4ec0);
+/// The map data `loadPhyreFieldMap` waits for (0 when none).
+pub const PENDING_MAP: Global<u32> = Global::new(0x0193_4ed0);
+/// Its name, a string `graphicFieldMapLoad` takes (empty when none).
+pub const PENDING_MAP_NAME: u32 = 0x0193_4ee8;
+/// `g_BtlMapRead`, cleared by `loadPhyreFieldMap` without a request.
+pub const BTL_MAP_READ: Global<u32> = Global::new(0x0112_ca68);
+/// `"RAM Inuse : %d u:%d\n"` (`.rdata`).
+pub const RAM_INUSE: u32 = 0x00b6_6f0c;
 /// `graphicSetHas2dMap(on)` (`0x00643450`).
 pub const GRAPHIC_SET_HAS_2D_MAP: u32 = 0x0064_3450;
 /// `graphicSetHas3dMap(on)` (`0x00643470`).
@@ -2920,6 +2928,60 @@ pub mod bridge {
             mem.write(out.wrapping_add(4 * i), last);
         }
         last
+    }
+
+    /// `loadPhyreFieldMap()` (`0x00908000`): with a map read pending
+    /// ([`PENDING_MAP`] and the name at [`PENDING_MAP_NAME`]), both map
+    /// kinds off, `"RAM Inuse : %d u:%d\n"` (0, 0) to `stdout`, then each
+    /// section the map has (`yiMapGetSection` 0: 2D, 1: 3D) switched on,
+    /// counted ([`MAP2D_LOADS`]) and loaded (`graphicFieldMapLoad(name,
+    /// kind)`, [`MAP_KIND`]); the 2D one also sets render status bit 14
+    /// and [`MAP_SECTION`]. The request is cleared,
+    /// `graphicFieldMapInitialize` and `graphicVFXLoadLevelData` follow;
+    /// returns the last one's `eax`. Without a request it clears
+    /// [`BTL_MAP_READ`] and leaves `eax` alone (`None`).
+    pub fn load_phyre_field_map<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> Option<u32> {
+        let name = mem.rebase(super::PENDING_MAP_NAME);
+        if super::PENDING_MAP.get(mem) == 0 || mem.read::<u8>(name) == 0 {
+            super::BTL_MAP_READ.set(mem, 0);
+            return None;
+        }
+        let has2d = mem.rebase(super::GRAPHIC_SET_HAS_2D_MAP);
+        let has3d = mem.rebase(super::GRAPHIC_SET_HAS_3D_MAP);
+        call(mem, has2d, &[0]);
+        call(mem, has3d, &[0]);
+        let iob = mem.read::<u32>(mem.rebase(super::CRT_IOB_FUNC));
+        let file = call(mem, iob, &[]);
+        let fprintf = mem.read::<u32>(mem.rebase(super::CRT_FPRINTF));
+        let text = mem.rebase(super::RAM_INUSE);
+        call(mem, fprintf, &[file.wrapping_add(0x20), text, 0, 0]);
+        let load = mem.rebase(super::GRAPHIC_FIELD_MAP_LOAD);
+        let map = super::PENDING_MAP.get(mem);
+        let s2 = yi_map_get_section(mem, map, 0);
+        if s2 != 0 {
+            call(mem, has2d, &[1]);
+            super::MAP2D_LOADS.set(mem, super::MAP2D_LOADS.get(mem).wrapping_add(1));
+            call(mem, load, &[name, 0]);
+            RENDER_STATUS.set(mem, RENDER_STATUS.get(mem) | 0x4000);
+            super::MAP_KIND.set(mem, 0);
+            super::MAP_SECTION.set(mem, s2);
+        }
+        let map = super::PENDING_MAP.get(mem);
+        if yi_map_get_section(mem, map, 1) != 0 {
+            call(mem, has3d, &[1]);
+            super::MAP2D_LOADS.set(mem, super::MAP2D_LOADS.get(mem).wrapping_add(1));
+            call(mem, load, &[name, 1]);
+            super::MAP_KIND.set(mem, 1);
+        }
+        super::PENDING_MAP.set(mem, 0);
+        mem.write(name, 0u8);
+        let f = mem.rebase(super::GRAPHIC_FIELD_MAP_INITIALIZE);
+        call(mem, f, &[]);
+        let f = mem.rebase(super::GRAPHIC_VFX_LOAD_LEVEL_DATA);
+        Some(call(mem, f, &[]))
     }
 
     /// `yiKeyFrame_attachDObj(scene, obj, anim, arg)` (`0x009144a0`): puts
