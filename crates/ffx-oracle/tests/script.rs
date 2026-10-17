@@ -3070,6 +3070,11 @@ fn natives_match_the_original() {
                 let args = v::script_worker_level(b, w, lvl) + 0x2c;
                 let what = format!("native {sym:#x} on worker {i} of {c:#x}");
                 clear_stacks(a, b);
+                // ECX = 0 at the call: some natives make their out local
+                // with `push ecx` (`0x70be`'s `MsGetChrDir(i, &out)` writes
+                // nothing without a model), and the ports zero it
+                a.call(a.rebase(BARE_RET[1]), Conv::Thiscall(0), &[])
+                    .unwrap();
                 let ra = match a.call(a.rebase(sym), Conv::Cdecl, &[w, args, s]) {
                     Ok(r) => r,
                     Err(e) => {
