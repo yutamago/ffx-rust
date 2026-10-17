@@ -487,6 +487,11 @@ pub mod fog {
     pub const GET_FAR: u32 = 0x0064_11b0;
     /// `graphicGetFogLimit` (`0x006411c0`, returns in ST0).
     pub const GET_LIMIT: u32 = 0x0064_11c0;
+    /// `graphicGetFogColor(r, g, b)` (`0x00641160`, float pointers).
+    pub const GET_COLOUR: u32 = 0x0064_1160;
+    /// `graphicGetGlobalAmbientColor(r, g, b)` (`0x00641230`), what
+    /// `yiGetFogColor` reads instead with render status bit 2.
+    pub const GET_AMBIENT: u32 = 0x0064_1230;
     /// `graphicSetFogColour(r, g, b)` (`0x00643150`, floats).
     pub const SET_COLOUR: u32 = 0x0064_3150;
     /// `graphicSetFogNear(x)` (`0x006431e0`).
@@ -4515,6 +4520,63 @@ pub mod bridge {
     }
 
     // ---- round 19 ----
+
+    /// `yiGetFogColor(out)` (`0x00908980`): four ints. With render status
+    /// bit 2 the fog colour bytes are clamped through the colour scale and
+    /// offset as in [`yi_get_back_color`], else the raw bytes; then the
+    /// first three are replaced by the PC renderer's colour times 255.0
+    /// (`graphicGetGlobalAmbientColor` with bit 2, else
+    /// `graphicGetFogColor`, into the original's locals at `work`, 12
+    /// bytes), each product kept at the x87's precision. Returns the last
+    /// conversion.
+    pub fn yi_get_fog_color<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{Reg, ftol};
+        let at = mem.rebase(super::fog::COLOUR);
+        let c: [u8; 4] = mem.read(at);
+        let status = RENDER_STATUS.get(mem);
+        let top: f64 = mem.read(mem.rebase(super::fog::BYTE_MAX));
+        if status & 4 == 0 {
+            mem.write(out, c.map(u32::from));
+        } else {
+            let top_f = state::BACK_MAX_F32.get(mem);
+            let scale = state::COLOR_SCALE.get(mem);
+            let offset = COLOR_OFFSET.get(mem);
+            let mut w = [0u32; 4];
+            for i in 0..4 {
+                let x = Reg::load(scale[i]).mul_m32(f32::from(c[i])).store();
+                let mut v = Reg::load(x).add_m32(f32::from_bits(offset[i])).store();
+                // below 0.0 (not unordered): +0.0
+                if f64::from(v) < 0.0 {
+                    v = 0.0;
+                }
+                // above 255.0 (not equal, not unordered): 255.0f
+                if f64::from(v) > top {
+                    v = top_f;
+                }
+                w[i] = ftol(mem, f64::from(v));
+            }
+            mem.write(out, w);
+        }
+        let f = if status & 4 == 0 {
+            super::fog::GET_COLOUR
+        } else {
+            super::fog::GET_AMBIENT
+        };
+        let f = mem.rebase(f);
+        call(mem, f, &[work, work.wrapping_add(4), work.wrapping_add(8)]);
+        let mut last = 0;
+        for i in 0..3u32 {
+            let v = x87::load(mem.read(work.wrapping_add(4 * i)));
+            last = ftol(mem, v * top);
+            mem.write(out.wrapping_add(4 * i), last);
+        }
+        last
+    }
 
     /// The fog distances' unit: scale factor times the two `.rdata`
     /// factors, at the x87's precision.

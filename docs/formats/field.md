@@ -964,6 +964,35 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   colour scale and offset, kept on the x87 stack in a different order
   from `yiGetBackColor`'s; next).
 
+## Fog colour and the sphere grid's pads (round 20)
+
+- `yiGetFogColor` (`0x00908980`): with render status bit 2 the fog colour
+  bytes go through the colour scale and offset, clamped to 0..=255.0 and
+  converted (`_ftol2_sse`), as in `yiGetBackColor`; else the raw bytes.
+  Either way the first three are then replaced by the PC renderer's
+  colour times 255.0, read from `graphicGetGlobalAmbientColor` (bit 2) or
+  `graphicGetFogColor`; each product stays on the x87 stack. The x87
+  stack juggling of the clamps does not change the values (all are
+  `f32`-exact). Returns the last conversion.
+- `AbmapPadStartSlideOut`/`In` (`0x00a48c20`/`0x00a48f20`) install the
+  pad steps `AbmapPadSlideOutStep`/`InStep` (`0x00a59800`/`0x00a5a270`) at
+  `+0x34`: three frames moving `+0xa` from `+2` by `n h / 3 + h / 6` (`h`
+  at `+6`) and setting the shown flag `+0x23`.
+- `AbmapRectTweenIn`/`Out` (`0x00a5a080`/`0x00a5a170`): a rectangle at
+  `+8` tweened between `+0` and `+0x2a` over four frames (counter `+0x32`,
+  16.16 steps of a quarter), its cells `(y + 15) / 16` and `(h + 15) / 20`
+  at `+0x14`.
+- `AbmapMaskNodeFlags` (`0x00a47400`): a mask ANDed into every node's
+  `+0x22`.
+- `AbmapMarkEmptyMenus` (`0x00a5aca0`): marks the first menu entry when
+  the character has no sphere points and the second when the item list is
+  empty. It calls `TOAmapGetItemListMax` through the jump at
+  `0x008c6700`.
+- Not ported: `0x0092eba0` (stores five arguments in `0x025d5c18..2c`
+  and sets `0x025d5c34`, which `0x009304e0` waits on; no name yet).
+  `0x0083bdb0` is a `Sg_Mem` pool helper (system). The `Sqs*` functions
+  stay with the sound agent.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

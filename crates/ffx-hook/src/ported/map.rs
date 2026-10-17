@@ -3219,6 +3219,54 @@ ported! {
         yi::bridge::yi_get_fog_param(&mut mem(), [near, far, limit], &mut |_, f, a| call_float(f, a));
     }
 
+    /// `AbmapPadStartSlideOut(pad)`.
+    AbmapPadStartSlideOut @ 0x00a4_8c20 => extern "C" fn shim_abmap_pad_start_slide_out(pad: u32) {
+        abmap::bridge::abmap_pad_start_slide_out(&mut mem(), pad);
+    }
+
+    /// `AbmapPadStartSlideIn(pad)`.
+    AbmapPadStartSlideIn @ 0x00a4_8f20 => extern "C" fn shim_abmap_pad_start_slide_in(pad: u32) {
+        abmap::bridge::abmap_pad_start_slide_in(&mut mem(), pad);
+    }
+
+    /// `AbmapPadSlideOutStep(p)`.
+    AbmapPadSlideOutStep @ 0x00a5_9800 => extern "C" fn shim_abmap_pad_slide_out_step(p: u32) {
+        abmap::bridge::abmap_pad_slide_out_step(&mut mem(), p);
+    }
+
+    /// `AbmapPadSlideInStep(p)`.
+    AbmapPadSlideInStep @ 0x00a5_a270 => extern "C" fn shim_abmap_pad_slide_in_step(p: u32) {
+        abmap::bridge::abmap_pad_slide_in_step(&mut mem(), p);
+    }
+
+    /// `AbmapRectTweenIn(r)`.
+    AbmapRectTweenIn @ 0x00a5_a080 => extern "C" fn shim_abmap_rect_tween_in(r: u32) {
+        abmap::bridge::abmap_rect_tween_in(&mut mem(), r);
+    }
+
+    /// `AbmapRectTweenOut(r)`.
+    AbmapRectTweenOut @ 0x00a5_a170 => extern "C" fn shim_abmap_rect_tween_out(r: u32) {
+        abmap::bridge::abmap_rect_tween_out(&mut mem(), r);
+    }
+
+    /// `AbmapMaskNodeFlags(mask)`.
+    AbmapMaskNodeFlags @ 0x00a4_7400 => extern "C" fn shim_abmap_mask_node_flags(mask: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        abmap::bridge::abmap_mask_node_flags(&mut mem(), mask as u8);
+    }
+
+    /// `AbmapMarkEmptyMenus()`.
+    AbmapMarkEmptyMenus @ 0x00a5_aca0 => extern "C" fn shim_abmap_mark_empty_menus() -> u32 {
+        abmap::bridge::abmap_mark_empty_menus(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiGetFogColor(out)`.
+    yiGetFogColor @ 0x0090_8980 => extern "C" fn shim_yi_get_fog_color(out: u32) -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_get_fog_color(&mut mem(), out, t, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

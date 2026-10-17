@@ -53,6 +53,21 @@ pub const OP_OEF2_A_GET: u32 = 0x007e_3810;
 pub const KIND_IDS: u32 = 0x00c8_6008;
 /// `g_AbmapPad` (`0x01a86108`): the menu pads, 0x340 bytes each.
 pub const ABMAP_PAD: u32 = 0x01a8_6108;
+
+/// `AbmapPadSlideOutStep` (`0x00a59800`), the pad step `AbmapPadStartSlideOut`
+/// installs.
+pub const PAD_SLIDE_OUT_STEP: u32 = 0x00a5_9800;
+/// `AbmapPadSlideInStep` (`0x00a5a270`), the pad step `AbmapPadStartSlideIn`
+/// installs.
+pub const PAD_SLIDE_IN_STEP: u32 = 0x00a5_a270;
+/// `MsGetSaveSP(chr)` (`0x007853e0`).
+pub const MS_GET_SAVE_SP: u32 = 0x0078_53e0;
+/// `TOAmapMakeItemList(kind)` (`0x008c6730`).
+pub const TO_AMAP_MAKE_ITEM_LIST: u32 = 0x008c_6730;
+/// The jump to `TOAmapGetItemListMax` the original calls (`0x008c6700`).
+pub const TO_AMAP_GET_ITEM_LIST_MAX: u32 = 0x008c_6700;
+/// The grid's current character byte (`g_Abmap + 0x115bc`).
+pub const CURRENT_CHR: u32 = 0x115bc;
 /// `MsGetSavePlayerPtr(chr)` (`0x00785330`).
 pub const MS_GET_SAVE_PLAYER_PTR: u32 = 0x0078_5330;
 /// `MsGetSaveItemNum(item)` (`0x007904b0`).
@@ -1314,5 +1329,215 @@ pub mod bridge {
             }
         }
         130
+    }
+
+    // ---- round 20 ----
+
+    /// A pad (`g_AbmapPad + 0x340 * pad`).
+    fn pad_at(mem: &impl Mem, pad: u32) -> u32 {
+        let base: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+        pad.wrapping_mul(0x340).wrapping_add(base)
+    }
+
+    /// `(n * h) / 3 + h / 6` as the original's magic-number divisions
+    /// (both truncate toward zero), plus `base`, as an `i16`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the original's 16-bit add
+    fn pad_offset(n: i32, h: i32, base: u16) -> u16 {
+        let v = n.wrapping_mul(h) / 3 + h / 6;
+        (v as u16).wrapping_add(base)
+    }
+
+    /// `AbmapPadStartSlideOut(pad)` (`0x00a48c20`): unless the pad is hidden
+    /// (`+0x23` 0) and idle (`+0x34` null), restarts its step counter
+    /// (`+0x29`) and installs [`abmap_pad_slide_out_step`].
+    pub fn abmap_pad_start_slide_out(mem: &mut impl Mem, pad: u32) {
+        let p = pad_at(mem, pad);
+        if mem.read::<u8>(p.wrapping_add(0x23)) != 0 || mem.read::<u32>(p.wrapping_add(0x34)) != 0 {
+            mem.write(p.wrapping_add(0x29), 0u8);
+            let f = mem.rebase(super::PAD_SLIDE_OUT_STEP);
+            mem.write(p.wrapping_add(0x34), f);
+        }
+    }
+
+    /// `AbmapPadStartSlideIn(pad)` (`0x00a48f20`): unless the pad is shown
+    /// (`+0x23` set) and idle, restarts its counter and installs
+    /// [`abmap_pad_slide_in_step`].
+    pub fn abmap_pad_start_slide_in(mem: &mut impl Mem, pad: u32) {
+        let p = pad_at(mem, pad);
+        if mem.read::<u8>(p.wrapping_add(0x23)) == 0 || mem.read::<u32>(p.wrapping_add(0x34)) != 0 {
+            mem.write(p.wrapping_add(0x29), 0u8);
+            let f = mem.rebase(super::PAD_SLIDE_IN_STEP);
+            mem.write(p.wrapping_add(0x34), f);
+        }
+    }
+
+    /// `AbmapPadSlideOutStep(p)` (`0x00a59800`): counts `+0x29` up; from 3 the
+    /// pad is hidden (`+0x23` 0) and the step removed (`+0x34`), else its
+    /// position `+0xa` is `+2 + n h / 3 + h / 6` (`h` the `i16` at `+6`,
+    /// its height: half, then five sixths of the way out).
+    pub fn abmap_pad_slide_out_step(mem: &mut impl Mem, p: u32) {
+        let n = mem.read::<u8>(p.wrapping_add(0x29)).wrapping_add(1);
+        mem.write(p.wrapping_add(0x29), n);
+        if n >= 3 {
+            mem.write(p.wrapping_add(0x23), 0u8);
+            mem.write(p.wrapping_add(0x34), 0u32);
+            return;
+        }
+        let h = i32::from(mem.read::<i16>(p.wrapping_add(6)));
+        let base: u16 = mem.read(p.wrapping_add(2));
+        mem.write(p.wrapping_add(0xa), pad_offset(i32::from(n), h, base));
+    }
+
+    /// `AbmapPadSlideInStep(p)` (`0x00a5a270`): the reverse of
+    /// [`abmap_pad_slide_out_step`]: the pad is shown (`+0x23` 1); from 3 the
+    /// step is removed and `+0xa` is `+2`, else `+2 + (3 - n) h / 3 + h /
+    /// 6`.
+    pub fn abmap_pad_slide_in_step(mem: &mut impl Mem, p: u32) {
+        let n = mem.read::<u8>(p.wrapping_add(0x29)).wrapping_add(1);
+        mem.write(p.wrapping_add(0x29), n);
+        mem.write(p.wrapping_add(0x23), 1u8);
+        let base: u16 = mem.read(p.wrapping_add(2));
+        if n >= 3 {
+            mem.write(p.wrapping_add(0x34), 0u32);
+            mem.write(p.wrapping_add(0xa), base);
+            return;
+        }
+        let h = i32::from(mem.read::<i16>(p.wrapping_add(6)));
+        mem.write(p.wrapping_add(0xa), pad_offset(3 - i32::from(n), h, base));
+    }
+
+    /// One coordinate of a rectangle tween: `from + ((to - from) * t >>
+    /// 16)`, in 32 bits, as an `i16`.
+    #[allow(clippy::cast_possible_truncation)] // the original's 16-bit store
+    fn tween(from: i16, to: i16, t: i32) -> i16 {
+        let d = i32::from(to).wrapping_sub(i32::from(from)).wrapping_mul(t) >> 16;
+        d.wrapping_add(i32::from(from)) as i16
+    }
+
+    /// The cell coordinates of a rectangle's `+0xc` and `+0xe`:
+    /// `(y + 15) / 16` and `(h + 15) / 20`, truncating, to `+0x14` and
+    /// `+0x16`.
+    #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+    fn rect_cells(y: i16, h: i16) -> (i16, i16) {
+        (
+            ((i32::from(y) + 15) / 16) as i16,
+            ((i32::from(h) + 15) / 20) as i16,
+        )
+    }
+
+    /// The four `i16`s at `r + at`.
+    fn rect(mem: &impl Mem, r: u32, at: u32) -> [i16; 4] {
+        mem.read(r.wrapping_add(at))
+    }
+
+    /// `AbmapRectTweenIn(r)` (`0x00a5a080`): counts `+0x32` up; below 4 the
+    /// rectangle `+8` moves `n / 4` of the way from `+0` to `+0x2a`, else
+    /// it is `+0x2a` and the step (`+0x34`) is removed; then the cells
+    /// ([`rect_cells`]).
+    pub fn abmap_rect_tween_in(mem: &mut impl Mem, r: u32) {
+        let n = mem.read::<u8>(r.wrapping_add(0x32)).wrapping_add(1);
+        mem.write(r.wrapping_add(0x32), n);
+        let to = rect(mem, r, 0x2a);
+        if n >= 4 {
+            mem.write(r.wrapping_add(8), to);
+            mem.write(r.wrapping_add(0x34), 0u32);
+        } else {
+            let from = rect(mem, r, 0);
+            let t = (i32::from(n) << 16) >> 2;
+            let v = [0, 1, 2, 3].map(|i| tween(from[i], to[i], t));
+            mem.write(r.wrapping_add(8), v);
+        }
+        let v = rect(mem, r, 8);
+        let (a, b) = rect_cells(v[2], v[3]);
+        mem.write(r.wrapping_add(0x14), a);
+        mem.write(r.wrapping_add(0x16), b);
+    }
+
+    /// `AbmapRectTweenOut(r)` (`0x00a5a170`): the reverse of
+    /// [`abmap_rect_tween_in`]: `(3 - n) / 4` of the way from `+0` to
+    /// `+0x2a`; from 4 the rectangle is `+0` with its saved cells (`+0x10`,
+    /// `+0x12`) and the step removed.
+    pub fn abmap_rect_tween_out(mem: &mut impl Mem, r: u32) {
+        let n = mem.read::<u8>(r.wrapping_add(0x32)).wrapping_add(1);
+        mem.write(r.wrapping_add(0x32), n);
+        let from = rect(mem, r, 0);
+        if n >= 4 {
+            mem.write(r.wrapping_add(8), from);
+            let cells: [i16; 2] = mem.read(r.wrapping_add(0x10));
+            mem.write(r.wrapping_add(0x14), cells[0]);
+            mem.write(r.wrapping_add(0x34), 0u32);
+            mem.write(r.wrapping_add(0x16), cells[1]);
+            return;
+        }
+        let to = rect(mem, r, 0x2a);
+        let t = ((3 - i32::from(n)) << 16) / 4;
+        let v = [0, 1, 2, 3].map(|i| tween(from[i], to[i], t));
+        mem.write(r.wrapping_add(8), v);
+        let (a, b) = rect_cells(v[2], v[3]);
+        mem.write(r.wrapping_add(0x14), a);
+        mem.write(r.wrapping_add(0x16), b);
+    }
+
+    /// `AbmapMaskNodeFlags(mask)` (`0x00a47400`): ANDs `mask` into the
+    /// flags byte (`+0x22`) of every node (`+0x808`, 0x28 bytes, the `i16`
+    /// count at `+2`) whose kind (`+6`) is not -1.
+    pub fn abmap_mask_node_flags(mem: &mut impl Mem, mask: u8) {
+        let g = ABMAP.get(mem);
+        // a negative count runs (practically) forever in the original
+        let n = i32::from(mem.read::<i16>(g.wrapping_add(2))).cast_unsigned();
+        for i in 0..n {
+            let nd = g.wrapping_add(0x808).wrapping_add(0x28u32.wrapping_mul(i));
+            if mem.read::<i16>(nd.wrapping_add(6)) != -1 {
+                let f: u8 = mem.read(nd.wrapping_add(0x22));
+                mem.write(nd.wrapping_add(0x22), f & mask);
+            }
+        }
+    }
+
+    /// `AbmapMarkEmptyMenus()` (`0x00a5aca0`): the pad's menu entries
+    /// (`+0x1704`, 12 bytes, the `i16` count at `+0x16de` read again after
+    /// each): entry 0 is marked (1) when the current character has no
+    /// sphere points (`MsGetSaveSP`), entry 1 when the item list
+    /// (`TOAmapMakeItemList(3)`, `TOAmapGetItemListMax`) is empty, the rest
+    /// cleared. Returns what the original leaves in `eax`: the last count
+    /// read, or 0.
+    pub fn abmap_mark_empty_menus<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let pad: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+        let count = |mem: &M| i32::from(mem.read::<i16>(pad.wrapping_add(0x16de)));
+        if count(mem) <= 0 {
+            return 0;
+        }
+        let mut i = 0i32;
+        let mut e = pad.wrapping_add(0x1704);
+        loop {
+            mem.write(e, 0u8);
+            let r = match i {
+                0 => {
+                    let g = ABMAP.get(mem);
+                    let chr: u8 = mem.read(g.wrapping_add(super::CURRENT_CHR));
+                    let f = mem.rebase(super::MS_GET_SAVE_SP);
+                    Some(call(mem, f, &[u32::from(chr)]))
+                }
+                1 => {
+                    let f = mem.rebase(super::TO_AMAP_MAKE_ITEM_LIST);
+                    call(mem, f, &[3]);
+                    let f = mem.rebase(super::TO_AMAP_GET_ITEM_LIST_MAX);
+                    Some(call(mem, f, &[]))
+                }
+                _ => None,
+            };
+            if r == Some(0) {
+                mem.write(e, 1u8);
+            }
+            let c = count(mem);
+            i += 1;
+            e = e.wrapping_add(0xc);
+            if i >= c {
+                return c.cast_unsigned();
+            }
+        }
     }
 }
