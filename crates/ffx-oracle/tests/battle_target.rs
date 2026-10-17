@@ -292,21 +292,6 @@ const HARNESS: t::Regs = t::Regs {
 /// unwritten: the original's stack garbage reaches the `w` words of
 /// `VF_B`'s neighbour, `VF0` and `VF2` through `MsVectorRect2Polar`, so
 /// those are copied too.
-/// `VF_M`'s third row and the first row's x, copied from `a`:
-/// `MsResetChrPos`'s `MsCheckBtlPos` copies its battle position into the
-/// third row (`MsPointLen`), and on the field snapshot the original's x there was once
-/// 0x6d where the port's was 0 with everything else the same; on the image
-/// the third row's x was 0x6e and the first row's 0x8000006e, the port's
-/// 0. Small integers: likely a caller's register word (the target chain's
-/// short calls, unknown from outside it), not explained yet.
-fn register_rows(a: &mut Oracle, b: &mut Oracle) {
-    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
-    let v = a.read(m + 0x20, 16).unwrap();
-    b.write(m + 0x20, &v).unwrap();
-    let v = a.read(m, 4).unwrap();
-    b.write(m, &v).unwrap();
-}
-
 fn local_words(a: &mut Oracle, b: &mut Oracle) {
     let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
     let vb = ffx_battle::vector::bridge::VF_B.ptr(a).addr;
@@ -1477,7 +1462,7 @@ fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     });
     local_words(a, b);
     rect_words(a, b);
-    register_rows(a, b);
+    unplaced_rows(a, b, out);
     same("MsParseCommand", a, b);
 }
 
@@ -1618,7 +1603,6 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     });
     local_words(a, b);
     rect_words(a, b);
-    register_rows(a, b);
     same("MsCommandCueProcess", a, b);
 }
 
@@ -1779,11 +1763,6 @@ fn process(
         poke(a, b, q + 0x34, &[flag(rng, 2)]);
     }
     let i = rng.below(ACTORS);
-    let row = |a: &mut Oracle, b: &mut Oracle| {
-        let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
-        let v = a.read(m + 0x20, 16).unwrap();
-        b.write(m + 0x20, &v).unwrap();
-    };
     let placed_now = |a: &mut Oracle, b: &mut Oracle, j: u32| {
         writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40)
     };
@@ -1794,7 +1773,6 @@ fn process(
             dm(m, |m| p::ms_motion_pos_check(m, &h, i, actor));
             0
         });
-        row(a, b);
         same("MsMotionPosCheck", a, b);
     }
     if (0..ACTORS).all(|j| {
@@ -1805,7 +1783,6 @@ fn process(
             dm(m, |m| p::ms_motion_pos_check_all(m, &h));
             0
         });
-        row(a, b);
         same("MsMotionPosCheckAll", a, b);
     }
     // overdrive modes to announce
@@ -2100,7 +2077,8 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         .collect();
     if !dying.iter().all(|&j| {
         writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40)
-    }) {
+    }) || !placed(a, b, w, out)
+    {
         return;
     }
     let j = dying.first().copied().unwrap_or(0);
@@ -2112,9 +2090,6 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         })
     });
     local_words(a, b);
-    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
-    let v = a.read(m + 0x20, 16).unwrap();
-    b.write(m + 0x20, &v).unwrap();
     same("MsSetDeath", a, b);
     twin("MsSetDeathAll", a, b, 0x0079_1760, &[], 0, |m| {
         dm(m, |m| {
@@ -2124,8 +2099,6 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         0
     });
     local_words(a, b);
-    let v = a.read(m + 0x20, 16).unwrap();
-    b.write(m + 0x20, &v).unwrap();
     same("MsSetDeathAll", a, b);
 }
 
@@ -2625,9 +2598,6 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                 },
             );
             local_words(a, b);
-            let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
-            let x = a.read(m + 0x20, 16).unwrap();
-            b.write(m + 0x20, &x).unwrap();
             same("MsDamageCheckDeath", a, b);
         }
     }
@@ -2788,7 +2758,6 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                 },
             );
             local_words(a, b);
-            register_rows(a, b);
             same("MsCommandReturnChrStatusAll", a, b);
         }
         // Poison at a turn's end (the hit motion reads the positions)
@@ -2821,7 +2790,6 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                 },
             );
             local_words(a, b);
-            register_rows(a, b);
             same("MsPoisonProcess", a, b);
         }
     }
@@ -2989,17 +2957,49 @@ fn whole_turn(
         0
     });
     local_words(a, b);
-    register_rows(a, b);
     same("MsBattleProcess_InputCue", a, b);
 }
 
-/// Whether every able (`+0xdc8`) actor's and every monster's battle
-/// position is written (`MsCalcChrDir`'s centres and turning monsters).
+/// After a call: when some actor's battle position cannot be located any
+/// more (the call gave it a bad position record: an aeon summoned in by
+/// an exchange takes the summoner's group, the spare record's when there
+/// is none), `MsCheckBtlPos` left that vector's x and z alone and the
+/// original's `MsPointLen` loaded its stack garbage into `VF_M`'s first
+/// row (the difference) and third row (the vector): those two words are
+/// copied from `a`. With every actor placed they are compared
+/// (`docs/formats/battle.md`).
+fn unplaced_rows(a: &mut Oracle, b: &mut Oracle, probe: u32) {
+    let probe = probe + 0x40;
+    let keep = a.read(probe, 16).unwrap();
+    // (the probes' own register traffic, the emulated EE and VU0
+    // registers, put back after)
+    let regs = ffx_battle::vector::bridge::VF_M.ptr(b).addr - 0x300;
+    let saved = b.read(regs, 0x400).unwrap();
+    let lost = (0..ACTORS).any(|k| {
+        b.write(probe, &[0xee; 16]).unwrap();
+        ffx_battle::pos::bridge::ms_get_chr_btl_pos(b, &stand_in, k, probe);
+        b.read(probe, 12).unwrap().contains(&0xee)
+    });
+    b.write(probe, &keep).unwrap();
+    b.write(regs, &saved).unwrap();
+    if lost {
+        let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+        for at in [m, m + 0x20] {
+            let v = a.read(at, 16).unwrap();
+            b.write(at, &v).unwrap();
+        }
+    }
+}
+
+/// Whether every actor's battle position is written (`MsGetChrBtlPos`):
+/// `MsCalcChrDir`'s centres, turning monsters and `MsCheckBtlPos`, which
+/// any actor may reach (`MsResetChrPos`). For an actor whose position
+/// record cannot be located the original leaves its vector's x and z
+/// alone and `MsPointLen` subtracts its stack garbage
+/// (`docs/formats/battle.md`).
 fn placed(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32) -> bool {
-    (0..ACTORS).all(|k| {
-        (k < 0x14 && b.read(w.actor(k) + 0xdc8, 1).unwrap()[0] == 0)
-            || writes(a, b, 0x0079_48e0, k, out + 0x40)
-    })
+    let _ = w;
+    (0..ACTORS).all(|k| writes(a, b, 0x0079_48e0, k, out + 0x40))
 }
 
 /// Party members and aeons coming and going (`ffx_battle::exchange`).

@@ -162,6 +162,29 @@ models listed at `0x00c43984`, `MsCheckBoundWeapon`, `0x007ad130`). The
 manager stops at the first read still running; kind 1 entries and kinds
 above 3 are never queued (to start, the manager would spin on them).
 
+## Stack garbage in `MsCheckBtlPos`
+
+`MsCheckBtlPos` (`0x007a9230`) reads an actor's position
+(`MsGetChrPos`) and battle position (`MsGetChrBtlPos`, `0x007948e0`)
+into two vectors on its stack and compares them with `MsPointLen`
+(`0x007c2ec0`), which loads the first into `VF_M`'s first row
+(`0x00c8f7d0`), the second into its third row (`0x00c8f7f0`) and leaves
+the difference in the first row. When the actor's position record cannot
+be located (`MsBtlGetPos`, `0x007abfe0`: group `+0x4fc` beyond the
+position file's count, or a bad kind or index), `MsGetChrBtlPos` leaves
+the vector's x and z alone and lifts its y: the original then subtracts
+whatever its stack held. A write watch on those words (round 13) caught
+`MsPointLen` storing x = `0x6e` and `0x71` this way, the first row's x
+`0x8000006e` (0 − x). The value is read: `MsPointLen`'s length decides
+`MsCheckBtlPos`'s result, so the original's behaviour there depends on
+stack contents. The port uses zeros and does not try to reproduce it.
+
+One way a battle reaches it: an aeon summoned in by an exchange
+(`MsExchangeChr`, `0x007adae0`) takes the summoner's group (`+0x4fc`), and
+with no summoner (0xff) that is the spare record's. The oracle tests
+require every actor to be placed before such calls; after one, if an
+actor lost its place, they copy those two rows from the original.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.
