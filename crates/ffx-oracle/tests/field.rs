@@ -10394,3 +10394,186 @@ fn round20_abmap_pads_and_tweens_match_the_original() {
         );
     }
 }
+
+/// `AbmapItemNodeEffect`'s stand-in: copies the context's first four
+/// words and the node to `buf` (the context is a stack buffer) and returns
+/// the word at `rv`.
+fn ctx_copy_stub(buf: u32, rv: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08];
+    for i in 0..4u8 {
+        if i == 0 {
+            c.extend_from_slice(&[0x8b, 0x08]);
+        } else {
+            c.extend_from_slice(&[0x8b, 0x48, 4 * i]);
+        }
+        c.extend_from_slice(&[0x89, 0x0d]);
+        c.extend_from_slice(&(buf + 4 * u32::from(i)).to_le_bytes());
+    }
+    c.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x04, 0x89, 0x0d]);
+    c.extend_from_slice(&(buf + 0x10).to_le_bytes());
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 21: the effect request, the effect finalisers, detaching all of
+/// an object's animations, Yn's scene draw and the sphere grid's menus.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round21_requests_finis_and_menus_match_the_original() {
+    use ffx_field::abmap;
+    use task::{bridge as tb, header};
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0015_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (heldv, recv, rows, ctxv, ctxbuf) = (
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x200),
+        t.alloc(4),
+        t.alloc(0x14),
+    );
+    let (usev, spv, maxv) = (t.alloc(4), t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(abmap::MS_GET_SAVE_ITEM_NUM), log_stub(log, heldv, 230, 1)),
+        (
+            Some(abmap::MS_GET_ROM_ITEM),
+            log_stub_from(log, recv, 231, 0, 1),
+        ),
+        (Some(abmap::MS_GET_EXCEL_DATA), excel_rows_stub(rows)),
+        (Some(abmap::ITEM_NODE_EFFECT), ctx_copy_stub(ctxbuf, ctxv)),
+        (Some(abmap::ITEM_USABLE_AT), log_stub(log, usev, 232, 3)),
+        (Some(model::SCENE_DRAW), log_stub(log, rv, 233, 1)),
+        (Some(abmap::MS_GET_SAVE_SP), log_stub(log, spv, 234, 1)),
+        (
+            Some(abmap::TO_AMAP_MAKE_ITEM_LIST),
+            log_stub(log, rv, 235, 1),
+        ),
+        (
+            Some(abmap::TO_AMAP_GET_ITEM_LIST_MAX),
+            log_stub(log, maxv, 236, 0),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let task = t.alloc(0xbc);
+    let scene = t.alloc(0x9cac0 + 0x28 * 0x40);
+    let (sys, map) = (t.alloc(0x20), t.alloc(0x20));
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let pads = t.alloc(0x2710);
+    t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
+    let rec = t.alloc(0x60);
+    t.put(recv, rec);
+    for k in 0..200u32 {
+        env.reset(&mut t, &mut rng);
+        // the request
+        let mut args = [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()];
+        if k % 3 != 0 {
+            args[1] = float_in(&mut rng, -1000, 1000);
+        } else if args[1] & 0x7f80_0000 == 0x7f80_0000 {
+            args[1] |= 0x0040_0000; // no signalling NaNs (the emulator keeps them)
+        }
+        t.same(
+            "rcefPostRequest",
+            |o| o.eax(0x0092_eba0, &args),
+            |m| tb::rcef_post_request(m, args),
+        );
+        t.fill(task, 0xbc, &mut rng);
+        t.put(task + header::LEVEL, rng.range(-1, 8));
+        t.set(tb::REQUEST_PENDING, rng.below(2));
+        t.same(
+            "rcEffectTaskRequestWait",
+            |o| o.void(0x0093_04e0, &[task]),
+            |m| tb::rc_effect_task_request_wait(m, task),
+        );
+        // the finalisers
+        let id = rng.next();
+        t.set(tb::CURRENT_PROGRAM, rng.next());
+        t.same(
+            "rcefAnimeFini",
+            |o| o.eax(0x0092_f4a0, &[id]),
+            |m| tb::rcef_anime_fini(m, id, call),
+        );
+        t.put(rv, rng.below(2));
+        t.same(
+            "rcefModelFini",
+            |o| o.eax(0x0092_f710, &[id]),
+            |m| tb::rcef_model_fini(m, id, call),
+        );
+        // the animation slots
+        t.fill(scene + 0x9cac0, 0x28 * 0x40, &mut rng);
+        for i in 0..0x40 {
+            let e = scene + 0x9cac0 + 0x28 * i;
+            t.put(e + 4, u16::try_from(rng.below(4)).unwrap());
+            t.put(e + 6, u16::try_from(rng.below(5)).unwrap());
+        }
+        t.put(scene + 0x9cabc, rng.below(70));
+        let obj = rng.below(6);
+        t.same(
+            "yiAnimDetachAll",
+            |o| o.eax(0x0091_49a0, &[scene, obj]),
+            |m| yi::bridge::yi_anim_detach_all(m, scene, obj, call),
+        );
+        // Yn's scene
+        let (s, m0) = match rng.below(3) {
+            0 => (0, 0),
+            1 => (sys, 0),
+            _ => (sys, map),
+        };
+        t.set(guide::YN_MAP_SYSTEM, s);
+        t.put(sys, m0);
+        t.put(map + 8, if rng.below(4) == 0 { 0 } else { rng.next() });
+        t.same(
+            "Yn_DrawScene",
+            |o| {
+                let e = o.eax(0x0091_a240, &[]);
+                (s != 0 && m0 != 0).then_some(e)
+            },
+            |m| model::bridge::yn_draw_scene(m, call),
+        );
+        // the sphere grid
+        t.fill(rows, 0x200, &mut rng);
+        t.fill(rec, 0x60, &mut rng);
+        t.put(
+            rec + 0x5d,
+            if rng.below(4) == 0 {
+                0xffu8
+            } else {
+                u8::try_from(rng.below(8)).unwrap()
+            },
+        );
+        t.put(heldv, rng.below(3));
+        t.put(ctxv, rng.next());
+        t.fill(ctxbuf, 0x14, &mut rng);
+        let (chr, node, item) = (rng.below(40), rng.below(0x400), rng.next());
+        let work = t.stack_scratch(0);
+        t.same(
+            "AbmapItemEffectAtNode",
+            |o| o.eax(0x00a4_93b0, &[chr, node, item]),
+            |m| abmap::bridge::abmap_item_effect_at_node(m, [chr, node, item], work, call),
+        );
+        t.fill(pads, 0x2710, &mut rng);
+        t.put(pads + 0x16de, i16::try_from(rng.range(-2, 6)).unwrap());
+        t.put(pads + 0x1a1e, i16::try_from(rng.range(-2, 12)).unwrap());
+        t.put(
+            grid + abmap::CURRENT_CHR,
+            u8::try_from(rng.below(7)).unwrap(),
+        );
+        t.put(spv, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.put(maxv, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.same(
+            "AbmapEnterCommandMenu",
+            |o| o.eax(0x00a5_9950, &[]),
+            |m| abmap::bridge::abmap_enter_command_menu(m, call),
+        );
+        t.put(usev, rng.below(2));
+        t.same(
+            "AbmapEnterItemMenu",
+            |o| o.eax(0x00a5_98a0, &[]),
+            |m| abmap::bridge::abmap_enter_item_menu(m, call),
+        );
+    }
+}

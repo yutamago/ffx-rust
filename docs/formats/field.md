@@ -993,6 +993,52 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   `0x0083bdb0` is a `Sg_Mem` pool helper (system). The `Sqs*` functions
   stay with the sound agent.
 
+## Effect requests, finalisers and the sphere grid's menus (round 21)
+
+- `rcefPostRequest` (`0x0092eba0`, name ours; an exported effect import,
+  `g_MagicImports` at `0x00c65494`): stores `a, f, b, 0, c, d` at
+  `0x025d5c18` (`f` a float copied through the x87 stack, so a signalling
+  NaN turns quiet) and sets `0x025d5c34`. Returns `d`. Nothing in the PC
+  build reads the request or clears the flag;
+  `rcEffectTaskRequestWait` (`0x009304e0`) is the sequence that waits for
+  the flag to be 0.
+- `rcefAnimeFini` (`0x0092f4a0`): `graphicVFXDestroy` of the handle
+  `id << 32`. `rcefModelFini` (`0x0092f710`): the handle
+  `(id << 32) + g_pppCurrentProgram` (sign-extended), destroyed when
+  `graphicVFXGetRenderDataByInstance` finds it. Both return the last
+  call's `eax`.
+- `yiAnimDetachAll` (`0x009149a0`, name ours): `yiAnimDetach` without the
+  kind test; `yiDisposeAnimDObj` uses it for a negative kind.
+- `Yn_DrawScene` (`0x0091a240`, name ours) jumps through `0x00921a10` and
+  `0x009215e0` to `rcbgSceneDraw(map +8)` when Yn's state and its map
+  exist; otherwise `eax` is left as it was (the state pointer when only
+  the map is missing). Its one caller ignores `eax`, so the shim is void.
+- `AbmapItemEffectAtNode` (`0x00a493b0`, name ours, from
+  `AbmapTryUseItem`): `AbmapItemUsableAt` for a single node index, same
+  context layout (`+0x10` stays uninitialised).
+- `AbmapEnterCommandMenu` (`0x00a59950`) and `AbmapEnterItemMenu`
+  (`0x00a598a0`), names ours, hand over between the two menu pads. Each
+  pad is `0x340` bytes, so `+0x16e3` is pad 7's `+0x23` and `+0x1a23` is
+  pad 8's. Entering shows the pad (`+0x23` 1, `+0x24` 3, `+0x25` 1),
+  stores the pad number at `+0x2700` and the handler at `+0x2704`
+  (`0x00a56330` for the command menu, `0x00a560d0` for the item menu).
+  The command menu runs `AbmapMarkEmptyMenus` first and sets bit 3 of
+  `+0x24`. The item menu marks the items `AbmapItemUsableAt` rejects at
+  the current character's node.
+- Not ported:
+  - `0x00916130` (`yiRender`'s 72 CLUTs of 256 entries, from
+    `0x00908400`) rebuilds byte 1 of each entry from an uninitialised
+    local (`[ebp-0x14]`), so its result depends on stale stack contents.
+  - `0x00911620` is VIF unpack emulation (render, replaced by
+    ffx-render).
+  - `0x006e9920`, `0x006e9ae0`, `0x006ea140`, `0x006eab10` and
+    `0x006eb1a0` are `std::map` and dlmalloc copies, and `0x0064e9e0` is
+    a reference-count release: platform code that classes.tsv still has
+    as logic.
+  - `0x0067c170`/`0x0067c210`/`0x0067c2d0` are `MenuManager` vertex and
+    material set-up for PhyreEngine (glue).
+  - The `0x0081xxxx` functions are the sound sequencer's (sound agent).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

@@ -9052,6 +9052,7 @@
 0x009148a0 function yiLerpVec2                   # (t, a, b, out): out = a + (b - a) * t, two floats
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)
+0x009149a0 function yiAnimDetachAll           # (scene, obj) -> 0: yiAnimDetach without the kind check (every active slot of obj at +0x9cac0 cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off); yiDisposeAnimDObj with a negative kind; name ours
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x00915120 function yiKeyFrameWrapAngles      # (v): four floats past pi less (1 - ftol(x / -2pi)) * 2pi, below -pi plus it (doubles 0x00b67118..38); yiKeyFrame_main; name ours
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
@@ -9117,6 +9118,7 @@
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
 0x0091a0f0 function Yn_MapPartMoveTo             # (part, x, y, frames): move from the position (+0x64 = +0x4c, +0x6c = +0x50) to x, y (+0x68, +0x70) over frames (+0x7c), counter +0x80 = 0; native 0x8055 (0x0091c2d0)
 0x0091a150 function Yn_MapPartScaleTo            # (part, sx, sy, frames): scale from +0x44/+0x48 (into +0x54/+0x5c) to sx, sy (+0x58/+0x60; 0.0 keeps it) over frames (+0x74), counter +0x78; native 0x804f (0x0091c150, one value for both)
+0x0091a240 function Yn_DrawScene              # (): through 0x00921a10/0x009215e0, rcbgSceneDraw(map +8) when g_YnMapSystem and its map exist; name ours
 0x0091a260 function Yn_SceneSet104               # (v): scene +0x104 (g_YnMapSystem map +8); script native 0x0091af80
 0x0091a2a0 function Yn_MapPartAnimeGetCount      # (part) -> the animation's frame count (+0x98), 0 past the count; native 0x801c slot 0 (0x0091b3e0)
 0x0091a2e0 function Yn_MapPartGetAlpha           # (part) -> the colour's alpha byte (+0x43); native 0x8031 (0x0091b720)
@@ -9612,6 +9614,7 @@
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
 0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
+0x0092eba0 function rcefPostRequest           # (a, f, b, c, d) -> d: g_RcefRequest = a, f (float), b, 0, c, d; g_RcefRequestPending = 1; g_MagicImports (0x00c65494); nothing in the PC build reads the request; name ours
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
 0x0092ec20 function rcefVecToAngle            # (v) -> float: acos(-v.z) (_CIacos), 2pi minus it when v.x > 0
 0x0092ec60 function rcefStreamCue_0092ec60    # fh switch:bsim1.00 0x71005582b0
@@ -9669,6 +9672,7 @@
 0x00930490 function rcEffectTaskParWait       # fh v3:bsim1.00 0x00930490
 0x009304b0 function rcEffectTaskPrayWait      # fh v3:exact 0x009304b0
 0x009304d0 function rcefTaskRetSeqCont_thunk  # g_MagicImports slot 430 (39 overlays), between rcEffectTaskPrayWait and rcEffectTaskTaskWait: jmp rcefTaskRetSeqCont; hidden from the dump
+0x009304e0 function rcEffectTaskRequestWait   # sequence (task): rcefTaskRetSeqCont once g_RcefRequestPending is 0 (never cleared on PC); next to rcEffectTaskFlagWait; name ours
 0x00930520 function rcEffectTaskTaskWait      # fh v3:exact 0x00930520
 0x00930550 function rcefChrNew                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100555d40 rcefChrNew, 3 votes, round 2
 0x00930710 function rcefChrFini               # fh switch:bsim1.00 0x7100555f00
@@ -10291,6 +10295,7 @@
 0x00a48f50 function AbmapCtrlTilt             # fh v3:cg2 0xa48f50 +AbmapCtrlTilt
 0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom
 0x00a49310 function AbmapItemUsableAt         # (chr, node, item) -> bits: 0 unless held (MsGetSaveItemNum), else the ability bits the item grants chr over its nodes (AbmapForEachNode/AbmapForNodeAndLinked with AbmapItemNodeEffect); name ours
+0x00a493b0 function AbmapItemEffectAtNode     # (chr, node, item) -> bits: AbmapItemUsableAt for one node index: 0 unless held, else AbmapItemNodeEffect(g_Abmap +0x808 + 0x28 node, ctx); from AbmapTryUseItem; name ours
 0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
@@ -10317,6 +10322,8 @@
 0x00a59760 function AbmapForNodeAndLinked     # (node, f, arg): f on the node, then on the other end of each link (+0xa808, 0x14 bytes) touching it, until non-zero
 0x00a59800 function AbmapPadSlideOutStep      # (p): +0x29++; from 3 hidden (+0x23 0) and step cleared, else +0xa = +2 + n h/3 + h/6 (h the i16 +6); name ours
 0x00a59860 function SeveralStoresSetDerefConstantsArgumentsAddresses_00a59860 # auto-port shape (several stores: set deref (constants, arguments, addresses), cdecl): t0 = u32[&0x01a86108]; u16[(((a0 * 0x340) + t0) + 0x23)] = 0x301; u8[(((a0 * 0x340) + t0) + 0x25)] = 0x1; u16[(t0 + 0x2700)] = (a0 & 0xffff); u32[(t0 + 0x2704)] = a1; return ((a0 * 0x340) + t0); callers: no direct caller; name ours
+0x00a598a0 function AbmapEnterItemMenu        # () -> 8: item menu entries (+0x1a44, 12 bytes, i16 count +0x1a1e) marked where AbmapItemUsableAt(chr, its node, item +4) is 0; pad 8 shown, menu +0x2700 = 8, handler 0x00a560d0; called from 0x00a56330; name ours
+0x00a59950 function AbmapEnterCommandMenu     # () -> pads: AbmapMarkEmptyMenus, pad 7 shown (+0x23 1, +0x24 3|8, +0x25 1), menu +0x2700 = 7, handler 0x00a56330; called from 0x00a560d0; name ours
 0x00a59990 function AbmapState_MovingToTarget # fh v3:exact+call.cs 0x00a59990
 0x00a59e80 function AbmapState_HomeOnNode     # fh v3:exact 0x00a59e80 +AbmapState_HomeOnNode
 0x00a5a080 function AbmapRectTweenIn          # (r): +0x32++; below 4 the rect +8 moves n/4 from +0 to +0x2a (16.16), else it is +0x2a and step +0x34 cleared; cells +0x14 = (y+15)/16, +0x16 = (h+15)/20; name ours
@@ -13433,4 +13440,6 @@
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
+0x025d5c18 label    g_RcefRequest                # rcefPostRequest's words: a, f, b, 0, c, d (+0..+0x14); no reader in the PC build
+0x025d5c34 label    g_RcefRequestPending         # set by rcefPostRequest, awaited (0) by rcEffectTaskRequestWait; never cleared on PC
 0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)
