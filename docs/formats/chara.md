@@ -203,6 +203,17 @@ and changes nothing.
 - `Ch_ClutMapping` (`0x0083ca20`) lays the cluts out after the clut table,
   each at a 128-byte boundary less 0x20, size `(header & 0x7fff) + 2`
   × 16 bytes, copying them when asked.
+- `Ch_ModelCreatePacket` (`0x00827280`) gives each model (0x38 bytes at
+  the character's `+0x1bc`) the blocks it lacks. Each block is named
+  `"<name>:vtex"`, `":norm"` or `":physics"`:
+  - `+8`, the vertices: `u16` count `+4`, `i16` triples at `+8`, as
+    `f32` x, y, z, 1;
+  - `+4`, the normals: count `+0x16`, triples at `+0xc`, normalised;
+  - `+0xc`, room for the cloth table's points: 0x30 bytes each. The
+    point count is the sum of each entry's `i8` `+0x13` and `i16`
+    `+0x1c`, and is kept at `+0x10`.
+
+  Character 0x402e stays hidden during magic 0x295.
 
 ## Cloth
 
@@ -293,6 +304,24 @@ texture-list entry's base pointers: the image texture's (index `+2`) into
 bits 0..13 of `+0x14`, the clut texture's (index `+0`) into bits 7..20 of
 `+0x18`.
 
+`chr_texanim_set` (`0x0077c950`) takes the first free entry, copying
+the source's kind (byte `+0`, to `+0xc`) and form (byte `+2`, to `+0xd`).
+A kind-2 source gets a work buffer from `chr_texanim_set_old`
+(`0x007803f0`, `0x5d8` bytes) or `chr_texanim_set_new` (`0x0077f9c0`,
+`0xd4c` bytes). The buffer holds slots of `0x34` bytes (old: 16 from
+`+0x40c`; new: 32 from `+0x0`), one mode byte per slot (old `+0x5a8`,
+new `+0xd08`, copied from the source's `+0xc`; -1 for none), the handle
+(old `+0x404`, new `+4`) and the slot count (old `+0x400`, new `+0`).
+The source's per-slot records (`[src+8]`, `0x90` bytes old, `0x110`
+new) give a mode-2 slot its scroll position. `chr_texanim_main_sub_old`
+(`0x0077ff00`) steps an old buffer each frame. A slot plays the frame
+list of the entry's track (`+8`): frames of 4 bytes, holding an `i16`
+time, a rectangle index (byte 2) and a random-wait scale (byte 3). Its
+play modes are 1 and 4 (hold), 2 (blink: wait 60-149 frames, then 4
+steps per frame) and 3 (step and scroll). For mode 3 it then copies the
+frame's rectangle (12 bytes from `[src+4]`: x, y, width, height, pixel
+offset) into the destination, row by row with `memcpy`.
+
 ## Motion sequences
 
 A sequence (`+0x714`) is a byte code `Ch_GetSeqFrame` (`0x00836af0`)
@@ -306,6 +335,10 @@ the high one `0xff`. `Ch_SetSequence` (`0x00837ac0`) starts motion
 `character << 16 | number` from the sequence table (`g_ChrSequences`,
 chains by character from `Ch_SeqLink`); another character's motion must
 be in the model block's lists and is kept at `+0x758`.
+`Ch_SetMotionSeq` (`0x00839b80`) plays a clip from a start to an end
+frame (×256; a negative end means the clip's length). One case is
+special: Tidus (`"c001"`) on map 0x7a, playing 0x3000 to -0x100, stops
+at 0x2800.
 
 ## Texture layout
 
