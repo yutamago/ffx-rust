@@ -1354,6 +1354,40 @@ ported! {
     op_oef2_sep_wave_load @ 0x007f_ffa0 => extern "C" fn op_oef2_sep_wave_load(cue: u32, mask: u32) -> u32 {
         op::bridge::op_oef2_sep_wave_load(&mut mem(), cue, mask, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_ffxlight_to_omdlight(colours, dirs)`: its local in a buffer on
+    /// this shim's stack.
+    op_ffxlight_to_omdlight @ 0x00a6_90c0 => extern "C" fn op_ffxlight_to_omdlight(colours: u32, dirs: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x20]);
+        let mut locals = Locals([0; 0x20]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x20;
+        op::bridge::op_ffxlight_to_omdlight(&mut mem(), colours, dirs, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_vn_index_sub(tri, table)`.
+    op_md_vn_index_sub @ 0x00a6_9fe0 => extern "C" fn op_md_vn_index_sub(tri: u32, table: u32) -> u32 {
+        op::bridge::op_md_vn_index_sub(&mut mem(), tri, table)
+    }
+    /// `op_error_007e1450(code, arg)`.
+    op_error_007e1450 @ 0x007e_1450 => extern "C" fn op_error(code: u32, arg: u32) -> u32 {
+        op::bridge::op_error(&mut mem(), code, arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppVu0Length_copy_0072ab20(v)`: a float in `ST0`.
+    pppVu0Length_copy_0072ab20 @ 0x0072_ab20 => extern "C" fn ppp_vu0_length_copy(v: u32) -> f32 {
+        vec::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `op_spline(t, y, x, d, n)`: a float in `ST0`.
+    op_spline @ 0x007e_9e20 => extern "C" fn op_spline(t: f32, y: u32, x: u32, d: u32, n: u32) -> f32 {
+        op::bridge::op_spline(&mem(), t, y, x, d, n)
+    }
+    /// `op_spline_table(d, x, y, n)`.
+    op_spline_table @ 0x007e_9f20 => extern "C" fn op_spline_table(d: u32, x: u32, y: u32, n: u32) {
+        op::bridge::op_spline_table(&mut mem(), d, x, y, n);
+    }
+    /// `opd_num_init(x)`.
+    opd_num_init @ 0x00a5_dda0 => extern "C" fn opd_num_init(x: u32) -> u32 {
+        op::bridge::opd_num_init(&mut mem(), x, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

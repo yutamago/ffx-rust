@@ -7728,3 +7728,121 @@ fn fog_and_sep_waves_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round12_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_90c0);
+        x87_crt_stand_ins(&mut p);
+        // the light getters fill their output from cells
+        let cells = p.alloc(0x40);
+        for sym in [0x0083_61c0u32, 0x0083_60f0] {
+            copy_recorder(&mut p, sym, 2, 1, From::At(cells), 4);
+        }
+        // one word: code 3's message has no argument after it
+        deref_recorder(&mut p, 0x0062_f500, &[0]);
+        let dma = p.alloc(4);
+        deref_recorder_with(&mut p, 0x0062_f6e0, &[0], Some(dma));
+        deref_recorder(&mut p, 0x00a5_e4a0, &[]);
+        let (a, b, v) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x10));
+        let (tri, table) = (p.alloc(0x20), p.alloc(0x40 * 8));
+        let (xs, ys, ds) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let scratch = p.alloc(0x100);
+        let (file, line) = (p.sym(0x0113_fc58), p.sym(0x0113_fc5c));
+        for _ in 0..2000 {
+            p.fill(cells, 0x40, &mut rng);
+            p.fill(a, 0x40, &mut rng);
+            p.fill(b, 0x40, &mut rng);
+            for i in 0..4 {
+                let x = rng.float();
+                p.set(cells + 4 * i, x);
+            }
+            check_deep_n(
+                &mut p,
+                "op_ffxlight_to_omdlight",
+                0x00a6_90c0,
+                &[a, b],
+                |o, frame| {
+                    Some(op::bridge::op_ffxlight_to_omdlight(
+                        o,
+                        a,
+                        b,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // op_md_vn_index_sub
+            p.fill(table, 0x200, &mut rng);
+            for k in 0..3u32 {
+                p.set(tri + 2 * k, u16::try_from(rng.below(8)).unwrap());
+                p.set(tri + 0x14 + 2 * k, rng.pick(&[0u16, 1, 2, 0x8001, 0xffff]));
+            }
+            for l in 0..8u32 {
+                p.set(table + 0x40 * l, rng.pick(&[0u16, 1, 3, 5, 0x8000]));
+                for i in 0..6 {
+                    p.set(
+                        table + 0x40 * l + 2 + 2 * i,
+                        rng.pick(&[0u16, 1, 2, 0x8001, 0xffff]),
+                    );
+                }
+            }
+            p.check("op_md_vn_index_sub", 0x00a6_9fe0, &[tri, table], |o| {
+                Some(op::bridge::op_md_vn_index_sub(o, tri, table))
+            });
+            // op_error
+            p.set(file, rng.pick(&[0u32, 0x1234]));
+            p.set(line, rng.pick(&[0u32, 7]));
+            let code = rng.below(14);
+            let arg = rng.next();
+            p.check("op_error", 0x007e_1450, &[code, arg], |o| {
+                Some(op::bridge::op_error(o, code, arg, &mut call_original))
+            });
+            // pppVu0Length_copy
+            for i in 0..4 {
+                let x = rng.float();
+                p.set(v + 4 * i, x);
+            }
+            check_st0(&mut p, "pppVu0Length_copy", 0x0072_ab20, &[v], |o| {
+                f64::from(vec::bridge::ppp_vu0_length(o, v))
+            });
+            // op_spline_table, then op_spline over it
+            let n = rng.pick(&[2u32, 3, 4, 5, 8, 12]);
+            let mut x = 0f32;
+            for i in 0..16 {
+                if rng.chance(85) {
+                    x += f32::from_bits(finite(&mut rng)).abs().min(100.0);
+                }
+                p.set(xs + 4 * i, x);
+                let y = finite(&mut rng);
+                p.set(ys + 4 * i, y);
+            }
+            p.fill(ds, 0x40, &mut rng);
+            // a scratch stack for its buffer
+            p.put(op::bridge::SPR_TOP, 0i8);
+            let spr = p.sym(op::bridge::SPR_STACK.sym);
+            p.set(spr, scratch);
+            p.check("op_spline_table", 0x007e_9f20, &[ds, xs, ys, n], |o| {
+                op::bridge::op_spline_table(o, ds, xs, ys, n);
+                None
+            });
+            let any = f32::from_bits(finite(&mut rng));
+            let t = rng.pick(&[0.0f32, x / 2.0, x, -1.0, x * 2.0, any]);
+            let nn = rng.pick(&[n, 1, 2, 0]);
+            check_st0(
+                &mut p,
+                "op_spline",
+                0x007e_9e20,
+                &[t.to_bits(), ys, xs, ds, nn],
+                |o| f64::from(op::bridge::op_spline(o, t, ys, xs, ds, nn)),
+            );
+            // opd_num_init
+            p.set(dma, rng.next());
+            let xv = rng.next();
+            p.check("opd_num_init", 0x00a5_dda0, &[xv], |o| {
+                Some(op::bridge::opd_num_init(o, xv, &mut call_original))
+            });
+        }
+    }
+}

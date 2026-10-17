@@ -77,4 +77,42 @@ pub mod bridge {
             mem.write(dst + 4 * i, v);
         }
     }
+
+    /// `pppVu0Length_copy_0072ab20(v)` (`0x0072ab20`): `|v.xyz|` through
+    /// the emulated VU0 registers: the squares into `0x00c8f830`.., the
+    /// running sums into `0x00c8f820`.., `_CIsqrt` of their `fabs` (exact
+    /// in 53 bits, then `f32`) into `0x00c8f788`, plus `vf00.x` into
+    /// `0x00c8f830`. Returns it in `ST0`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_vu0_length(mem: &mut impl Mem, v: u32) -> f32 {
+        use crate::x87::{ADD, MUL, Reg};
+        let reg = |a: u32| ffx_bridge::Global::<u32>::new(a);
+        let (sq, acc, q) = (
+            reg(0x00c8_f830).ptr(mem).addr,
+            reg(0x00c8_f820).ptr(mem).addr,
+            reg(0x00c8_f788).ptr(mem).addr,
+        );
+        let vv: [u32; 4] = mem.read(v);
+        mem.write(sq, vv);
+        let c: [f32; 4] = mem.read(v);
+        for i in 0..3u32 {
+            let x: f32 = mem.read(sq + 4 * i);
+            let p = Reg::load_f32(x).mem(MUL, c[i as usize]).store();
+            mem.write(sq + 4 * i, p);
+        }
+        let s0: f32 = mem.read(sq);
+        mem.write(acc, crate::x87::load_f32(s0));
+        let s1 = Reg::load_f32(s0).mem(ADD, mem.read(sq + 4)).store();
+        mem.write(acc + 4, s1);
+        let s2 = Reg::load_f32(mem.read(sq + 8)).mem(ADD, s1).store();
+        mem.write(acc + 8, s2);
+        let a = f32::from_bits(s2.to_bits() & 0x7fff_ffff);
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let root = f64::from(crate::x87::load_f32(a)).sqrt() as f32;
+        mem.write(q, root);
+        let vx: f32 = mem.read(crate::prog::bridge::VF00.ptr(mem).addr);
+        let out = Reg::load_f32(vx).mem(ADD, root).store();
+        mem.write(sq, out);
+        out
+    }
 }

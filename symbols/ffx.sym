@@ -5777,6 +5777,7 @@
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
+0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
@@ -11660,6 +11661,7 @@
 0x00a64b20 function opd_heap_display_set      # fh v3:exact 0x00a64b20
 0x00a64b60 function opd_heap_display_set_par  # fh v3:exact 0x00a64b60
 0x00a65060 function opd_unit_osu                 # str-match switch: only user of 45 string(s) held once by both builds, e.g. '     (%3d)umax'; Switch 0x710086a720 opd_unit_osu (symbols from Fahrenheit's server export)
+0x00a65570 function opd_debug_flags_str_00a65570 # ours: (buf, flags) formats a flag word as letters ("x"/"y"/"z"/"t"/"u" or "." per bit) with the CRT's sprintf (0x00b0c3dc); called only by the op debug display 0x00a64c40/0x00a64ca0/0x00a64d00: debug
 0x00a65750 function op1_md_draw               # fh v3:exact 0x00a65750
 0x00a657c0 function op1_md_draw_eiabm            # layout: the three unnamed functions between op1_md_draw and op1_mdc_ref_nolight take the Switch names that sort there, in order: op1_md_draw_eiabm (9400 bytes; ours 10573, "NoTexture"), op1_md_draw_eiabm_sphe (3168; 2892), op1_mdc_draw (388; 376)
 0x00a68140 function op1_md_draw_eiabm_sphe       # layout: second of the three (see op1_md_draw_eiabm)
@@ -14372,6 +14374,7 @@
 0x01139e24 label g_CameraMatrixLookAt      # vec4 (MsSetCameraMatrix)
 0x01139e34 label g_CameraMatrixEye         # vec4 (MsSetCameraMatrix)
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
+0x0113e238 label    g_OpLastError                # op_error_007e1450's code + 1
 0x0113e23c label g_BtlPosState             # 0x34 bytes (three 1.0 scales at +0x10) and 6 words after it (+0x3c points back here), reset by MsBtlPosInit
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
