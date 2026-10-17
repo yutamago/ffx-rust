@@ -272,4 +272,10 @@ pub mod bridge {
         }
         out[3]
     }
+
+    /// `0x008ae000(i, name)`: 1 when one of scene `i`'s eight slots is
+    /// named `name` (any state), else 0.
+    pub fn has_scene(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        u32::from(find(mem, i, name).is_some())
+    }
 }

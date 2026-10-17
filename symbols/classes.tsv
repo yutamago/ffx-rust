@@ -64,14 +64,14 @@
 0x0042d3c0	logic	default (no rule: ported to be safe)
 0x0042d3d0	logic	default (no rule: ported to be safe)
 0x0042d410	dead	unreachable from the entry point and every pointer table
-0x0042d470	debug	imports _wassert
-0x0042def0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0042df70	debug	imports _wassert
+0x0042d470	logic	default (no rule: ported to be safe)
+0x0042def0	dead	unreachable from the entry point and every pointer table
+0x0042df70	logic	default (no rule: ported to be safe)
 0x0042e060	logic	default (no rule: ported to be safe)
 0x0042e080	dead	unreachable from the entry point and every pointer table
 0x0042e0c0	logic	default (no rule: ported to be safe)
-0x0042e0d0	debug	imports _wassert
-0x0042e160	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0042e0d0	logic	default (no rule: ported to be safe)
+0x0042e160	dead	unreachable from the entry point and every pointer table
 0x0042e1d0	logic	default (no rule: ported to be safe)
 0x0042e200	logic	default (no rule: ported to be safe)
 0x0042e230	dead	unreachable from the entry point and every pointer table
@@ -459,7 +459,7 @@
 0x00624910	logic	default (no rule: ported to be safe)
 0x006249c0	dead	unreachable from the entry point and every pointer table
 0x00629ab0	glue	calls PhyreEngine Phyre_PFramework_PApplication_onExit, Phyre_PFramework_PApplication_onInit
-0x00629b90	dead	unreachable from the entry point and every pointer table
+0x00629b90	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_PushInto_00629b90
 0x00629c20	dead	unreachable from the entry point and every pointer table
 0x00629c60	dead	unreachable from the entry point and every pointer table
 0x00629ca0	platform	platform name (PC port: input, saves, loaders, app lifecycle): Input_KeyDown
@@ -483,9 +483,9 @@
 0x0062f5b0	logic	default (no rule: ported to be safe)
 0x0062f610	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceClose
 0x0062f630	logic	default (no rule: ported to be safe)
-0x0062f650	debug	only called from debug code (0x84ed10 and 1 more)
+0x0062f650	logic	default (no rule: ported to be safe)
 0x0062f660	dead	unreachable from the entry point and every pointer table
-0x0062f670	debug	only called from debug code (0x84ed10 and 1 more)
+0x0062f670	logic	default (no rule: ported to be safe)
 0x0062f680	debug	debug name: sceDeci2Open
 0x0062f690	debug	debug name: sceDeci2ReqSend
 0x0062f6a0	logic	default (no rule: ported to be safe)
@@ -524,21 +524,21 @@
 0x0062f8e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceLseek
 0x0062f8f0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceLseek64
 0x0062f900	dead	unreachable from the entry point and every pointer table
-0x0062f910	dead	PS2-only API (sceMcClose): memory card or IOP
+0x0062f910	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMcClose
 0x0062f920	dead	unreachable from the entry point and every pointer table
 0x0062f930	dead	unreachable from the entry point and every pointer table
-0x0062f940	dead	PS2-only API (sceMcFormat): memory card or IOP
-0x0062f950	dead	PS2-only API (sceMcGetDir): memory card or IOP
+0x0062f940	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMcFormat
+0x0062f950	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMcGetDir
 0x0062f960	dead	unreachable from the entry point and every pointer table
-0x0062f970	dead	PS2-only API (sceMcGetInfo): memory card or IOP
+0x0062f970	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMcGetInfo
 0x0062f990	logic	default (no rule: ported to be safe)
 0x0062f9a0	logic	default (no rule: ported to be safe)
 0x0062f9b0	logic	default (no rule: ported to be safe)
 0x0062f9c0	dead	unreachable from the entry point and every pointer table
 0x0062f9d0	dead	unreachable from the entry point and every pointer table
 0x0062f9e0	dead	unreachable from the entry point and every pointer table
-0x0062f9f0	dead	PS2-only API (sceMcSync): memory card or IOP
-0x0062fa10	dead	PS2-only API (sceMcWrite): memory card or IOP
+0x0062f9f0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMcSync
+0x0062fa10	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMcWrite
 0x0062fa20	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceMount
 0x0062fa30	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceOpen
 0x0062fb10	logic	default (no rule: ported to be safe)
@@ -555,7 +555,7 @@
 0x0062fbc0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): scePadSetActAlign
 0x0062fbd0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): scePadSetActDirect
 0x0062fbe0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): scePadSetMainMode
-0x0062fbf0	logic	debug-sounding name, but used by logic: 0x75ff00, 0x760080, 0x7629e0
+0x0062fbf0	debug	debug name: scePrintf
 0x0062fc00	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceRead
 0x0062fc20	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceRemove
 0x0062fc30	dead	unreachable from the entry point and every pointer table
@@ -1342,8 +1342,8 @@
 0x00647cb0	dead	unreachable from the entry point and every pointer table
 0x00647cf0	dead	unreachable from the entry point and every pointer table
 0x00647d10	dead	unreachable from the entry point and every pointer table
-0x00647d40	dead	unreachable from the entry point and every pointer table
-0x00647d50	dead	unreachable from the entry point and every pointer table
+0x00647d40	logic	default (no rule: ported to be safe)
+0x00647d50	logic	default (no rule: ported to be safe)
 0x00647d70	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataCheckCrc
 0x00647dd0	dead	unreachable from the entry point and every pointer table
 0x00647df0	dead	unreachable from the entry point and every pointer table
@@ -1552,7 +1552,7 @@
 0x00651de0	glue	calls PhyreEngine Phyre_CharacterLighting_GetInstance
 0x006521d0	dead	unreachable from the entry point and every pointer table
 0x00652250	logic	default (no rule: ported to be safe)
-0x006522b0	glue	only called from glue code (graphicMagicVFXLoadTexture)
+0x006522b0	logic	default (no rule: ported to be safe)
 0x006522e0	dead	unreachable from the entry point and every pointer table
 0x00652310	logic	default (no rule: ported to be safe)
 0x006523e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isFading
@@ -1780,7 +1780,7 @@
 0x0065efa0	glue	only called from glue code (PhyreScene_render)
 0x0065efd0	glue	only called from glue code (PhyreScene_loadMagicVFXTexture)
 0x0065f050	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_hide2DLayer
-0x0065f0e0	glue	only called from glue code (graphic2DHideLayer)
+0x0065f0e0	logic	default (no rule: ported to be safe)
 0x0065f1f0	glue	only called from glue code (PhyreScene_render)
 0x0065f240	dead	unreachable from the entry point and every pointer table
 0x0065f290	glue	only called from glue code (PhyreScene_bootInit)
@@ -2022,7 +2022,7 @@
 0x0066f010	logic	default (no rule: ported to be safe)
 0x0066f140	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setupPostProcessParams
 0x0066f2f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_show2DLayer
-0x0066f380	glue	only called from glue code (graphic2DShowLayer)
+0x0066f380	logic	default (no rule: ported to be safe)
 0x0066f480	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_showAutoSavingPrompt
 0x0066f4d0	dead	unreachable from the entry point and every pointer table
 0x0066f500	dead	unreachable from the entry point and every pointer table
@@ -2947,7 +2947,7 @@
 0x0069fc70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances
 0x0069fcb0	logic	default (no rule: ported to be safe)
 0x0069fd70	dead	unreachable from the entry point and every pointer table
-0x0069fdc0	dead	unreachable from the entry point and every pointer table
+0x0069fdc0	logic	default (no rule: ported to be safe)
 0x0069fe50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_UpdateDeletePool
 0x006a0070	logic	default (no rule: ported to be safe)
 0x006a0100	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassChrShaderRender_VertexInstanceSetup
@@ -3117,7 +3117,7 @@
 0x006ae240	platform	imports InterlockedCompareExchange, ReleaseMutex, WaitForSingleObject
 0x006ae340	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData
 0x006ae450	platform	imports ReleaseMutex, WaitForSingleObject
-0x006ae530	glue	only called from glue code (graphicIsEscMenuActive)
+0x006ae530	logic	default (no rule: ported to be safe)
 0x006ae5b0	logic	default (no rule: ported to be safe)
 0x006ae650	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006ae6d0	dead	unreachable from the entry point and every pointer table
@@ -3901,7 +3901,7 @@
 0x006d7cc0	logic	default (no rule: ported to be safe)
 0x006d7d20	dead	unreachable from the entry point and every pointer table
 0x006d7d80	dead	unreachable from the entry point and every pointer table
-0x006d7d90	dead	unreachable from the entry point and every pointer table
+0x006d7d90	glue	only called from glue code (0x6d8cb0)
 0x006d7e20	dead	unreachable from the entry point and every pointer table
 0x006d7e60	dead	unreachable from the entry point and every pointer table
 0x006d7ea0	dead	unreachable from the entry point and every pointer table
@@ -3920,7 +3920,7 @@
 0x006d8930	dead	unreachable from the entry point and every pointer table
 0x006d8940	logic	default (no rule: ported to be safe)
 0x006d8a00	logic	default (no rule: ported to be safe)
-0x006d8cb0	dead	unreachable from the entry point and every pointer table
+0x006d8cb0	glue	calls PhyreEngine Phyre_PhyrePrintf
 0x006d8ee0	dead	unreachable from the entry point and every pointer table
 0x006d8f30	glue	calls PhyreEngine Phyre_PhyrePrintf
 0x006d8f80	glue	calls PhyreEngine Phyre_PhyrePrintf
@@ -4045,7 +4045,7 @@
 0x006deb10	dead	unreachable from the entry point and every pointer table
 0x006deb90	platform	imports CreateMutexW
 0x006dec20	glue	only called from glue code (graphicFinalize)
-0x006dec90	dead	unreachable from the entry point and every pointer table
+0x006dec90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): DynGeoMemManager_selectBuffer
 0x006deca0	dead	unreachable from the entry point and every pointer table
 0x006dece0	platform	imports ReleaseMutex, WaitForSingleObject
 0x006ded40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): DynGeoMemManager_swapDynGeoMemory
@@ -4248,37 +4248,37 @@
 0x006eee40	logic	default (no rule: ported to be safe)
 0x006ef2d0	logic	default (no rule: ported to be safe)
 0x006ef310	logic	default (no rule: ported to be safe)
-0x006ef320	dead	unreachable from the entry point and every pointer table
-0x006ef630	dead	unreachable from the entry point and every pointer table
+0x006ef320	logic	default (no rule: ported to be safe)
+0x006ef630	logic	default (no rule: ported to be safe)
 0x006ef6f0	logic	default (no rule: ported to be safe)
-0x006efbd0	dead	unreachable from the entry point and every pointer table
-0x006efc50	dead	unreachable from the entry point and every pointer table
-0x006efcd0	dead	unreachable from the entry point and every pointer table
-0x006efd10	dead	unreachable from the entry point and every pointer table
-0x006efde0	dead	unreachable from the entry point and every pointer table
-0x006efe20	dead	unreachable from the entry point and every pointer table
+0x006efbd0	logic	default (no rule: ported to be safe)
+0x006efc50	logic	default (no rule: ported to be safe)
+0x006efcd0	logic	default (no rule: ported to be safe)
+0x006efd10	platform	imports _wfopen
+0x006efde0	logic	default (no rule: ported to be safe)
+0x006efe20	logic	default (no rule: ported to be safe)
 0x006efeb0	logic	default (no rule: ported to be safe)
-0x006eff00	dead	unreachable from the entry point and every pointer table
-0x006eff70	dead	unreachable from the entry point and every pointer table
-0x006effa0	dead	unreachable from the entry point and every pointer table
+0x006eff00	logic	default (no rule: ported to be safe)
+0x006eff70	logic	default (no rule: ported to be safe)
+0x006effa0	logic	default (no rule: ported to be safe)
 0x006f0020	logic	default (no rule: ported to be safe)
-0x006f0050	dead	unreachable from the entry point and every pointer table
+0x006f0050	logic	default (no rule: ported to be safe)
 0x006f0070	platform	imports _wfopen
-0x006f0140	dead	unreachable from the entry point and every pointer table
+0x006f0140	logic	default (no rule: ported to be safe)
 0x006f01d0	platform	only called from platform code (SaveDataManager_doLoad)
-0x006f0220	dead	unreachable from the entry point and every pointer table
-0x006f0290	dead	unreachable from the entry point and every pointer table
+0x006f0220	logic	default (no rule: ported to be safe)
+0x006f0290	logic	default (no rule: ported to be safe)
 0x006f0330	logic	default (no rule: ported to be safe)
-0x006f04c0	dead	unreachable from the entry point and every pointer table
+0x006f04c0	logic	default (no rule: ported to be safe)
 0x006f0510	logic	debug-sounding name, but used by logic: 0x6f1c40
-0x006f05b0	dead	unreachable from the entry point and every pointer table
-0x006f0630	dead	unreachable from the entry point and every pointer table
+0x006f05b0	logic	default (no rule: ported to be safe)
+0x006f0630	logic	default (no rule: ported to be safe)
 0x006f0670	platform	imports GetTickCount
-0x006f06e0	dead	unreachable from the entry point and every pointer table
+0x006f06e0	logic	default (no rule: ported to be safe)
 0x006f07a0	platform	only called from platform code (SaveDataManager_doSave)
 0x006f0800	logic	default (no rule: ported to be safe)
-0x006f0860	dead	unreachable from the entry point and every pointer table
-0x006f0950	dead	unreachable from the entry point and every pointer table
+0x006f0860	platform	imports _wfopen
+0x006f0950	logic	default (no rule: ported to be safe)
 0x006f0a70	platform	imports CreateFileW, GetFileTime
 0x006f0c60	platform	imports _wfopen
 0x006f0fb0	logic	default (no rule: ported to be safe)
@@ -4323,7 +4323,7 @@
 0x006f1d10	platform	only called from platform code (SaveDataToLoadAllAlBhed)
 0x006f1d70	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_doSave
 0x006f1db0	logic	default (no rule: ported to be safe)
-0x006f1dc0	dead	unreachable from the entry point and every pointer table
+0x006f1dc0	logic	default (no rule: ported to be safe)
 0x006f1e10	dead	unreachable from the entry point and every pointer table
 0x006f1e40	dead	unreachable from the entry point and every pointer table
 0x006f1e90	dead	unreachable from the entry point and every pointer table
@@ -4347,7 +4347,7 @@
 0x006f2430	dead	unreachable from the entry point and every pointer table
 0x006f2450	dead	unreachable from the entry point and every pointer table
 0x006f24d0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveData_ClearWord8_006f24d0
-0x006f24f0	dead	unreachable from the entry point and every pointer table
+0x006f24f0	logic	default (no rule: ported to be safe)
 0x006f2500	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_setCbResult
 0x006f2520	dead	unreachable from the entry point and every pointer table
 0x006f2530	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_setSaveDataIconString
@@ -4542,10 +4542,10 @@
 0x006f9ac0	logic	default (no rule: ported to be safe)
 0x006f9af0	logic	default (no rule: ported to be safe)
 0x006f9b60	platform	only called from platform code (Game_InitFileSystem)
-0x006f9b70	dead	unreachable from the entry point and every pointer table
-0x006f9b80	dead	unreachable from the entry point and every pointer table
+0x006f9b70	logic	default (no rule: ported to be safe)
+0x006f9b80	logic	default (no rule: ported to be safe)
 0x006f9ba0	logic	default (no rule: ported to be safe)
-0x006f9bc0	glue	calls PhyreEngine Phyre_PhyreOS_Sleep
+0x006f9bc0	logic	default (no rule: ported to be safe)
 0x006f9cc0	logic	default (no rule: ported to be safe)
 0x006f9d10	platform	only called from platform code (fiosFinalize)
 0x006f9d20	logic	default (no rule: ported to be safe)
@@ -4603,10 +4603,10 @@
 0x006fb550	dead	unreachable from the entry point and every pointer table
 0x006fb5d0	dead	unreachable from the entry point and every pointer table
 0x006fb640	dead	unreachable from the entry point and every pointer table
-0x006fb6c0	dead	unreachable from the entry point and every pointer table
+0x006fb6c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): user_aligned_free
 0x006fb770	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): UserHeap_AlignedMalloc
 0x006fb820	dead	unreachable from the entry point and every pointer table
-0x006fb8b0	dead	unreachable from the entry point and every pointer table
+0x006fb8b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): user_free
 0x006fb910	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): UserHeap_Malloc
 0x006fb9a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): UserHeap_Destroy
 0x006fb9b0	logic	default (no rule: ported to be safe)
@@ -4691,9 +4691,9 @@
 0x00702590	glue	only called from glue code (FFEscMenu_updateSpecialFeaturePage)
 0x00702660	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): FFEscMenu_updateSpecialFeaturePage
 0x007029e0	glue	only called from glue code (FFEscMenu_resume and 1 more)
-0x00702a10	dead	unreachable from the entry point and every pointer table
+0x00702a10	logic	default (no rule: ported to be safe)
 0x00702a30	logic	default (no rule: ported to be safe)
-0x00702a50	dead	unreachable from the entry point and every pointer table
+0x00702a50	logic	default (no rule: ported to be safe)
 0x00702a70	logic	default (no rule: ported to be safe)
 0x00702a80	logic	default (no rule: ported to be safe)
 0x00702be0	platform	only called from platform code (0x6f0c60)
@@ -4701,7 +4701,7 @@
 0x00702d20	logic	default (no rule: ported to be safe)
 0x00702d90	platform	only called from platform code (0x6f0c60)
 0x00702e90	logic	default (no rule: ported to be safe)
-0x00702ef0	dead	unreachable from the entry point and every pointer table
+0x00702ef0	logic	default (no rule: ported to be safe)
 0x00702f80	logic	default (no rule: ported to be safe)
 0x00702fa0	logic	default (no rule: ported to be safe)
 0x00702fd0	dead	unreachable from the entry point and every pointer table
@@ -5333,7 +5333,7 @@
 0x00728e40	logic	default (no rule: ported to be safe)
 0x00728f10	logic	default (no rule: ported to be safe)
 0x00729050	logic	default (no rule: ported to be safe)
-0x00729060	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x00729060	debug	debug name: pppFpDispDebug
 0x007291c0	logic	default (no rule: ported to be safe)
 0x00729280	debug	only called from debug code (0x933aa0)
 0x00729290	logic	default (no rule: ported to be safe)
@@ -6267,7 +6267,7 @@
 0x0076dc70	platform	only called from platform code (CdEnvInit)
 0x0076dd10	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0076de70	dead	unreachable from the entry point and every pointer table
-0x0076de90	logic	debug-sounding name, but used by logic: TkInit
+0x0076de90	debug	debug name: printf_cut
 0x0076dec0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0076df40	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0076df80	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -6788,7 +6788,7 @@
 0x00777e90	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): get_hdd_status
 0x00777eb0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): get_hdd_name
 0x00777ed0	dead	unreachable from the entry point and every pointer table
-0x00777f00	platform	only called from platform code (hdd_set_pass_names)
+0x00777f00	logic	default (no rule: ported to be safe)
 0x007783f0	dead	unreachable from the entry point and every pointer table
 0x00778550	logic	default (no rule: ported to be safe)
 0x007785e0	dead	unreachable from the entry point and every pointer table
@@ -7123,7 +7123,7 @@
 0x007851c0	logic	default (no rule: ported to be safe)
 0x007851d0	logic	default (no rule: ported to be safe)
 0x007851f0	logic	default (no rule: ported to be safe)
-0x00785230	dead	unreachable from the entry point and every pointer table
+0x00785230	logic	default (no rule: ported to be safe)
 0x00785240	logic	default (no rule: ported to be safe)
 0x00785250	logic	default (no rule: ported to be safe)
 0x00785270	logic	default (no rule: ported to be safe)
@@ -7747,7 +7747,7 @@
 0x0079e5e0	logic	default (no rule: ported to be safe)
 0x0079e630	logic	default (no rule: ported to be safe)
 0x0079e670	logic	default (no rule: ported to be safe)
-0x0079e6a0	dead	unreachable from the entry point and every pointer table
+0x0079e6a0	logic	default (no rule: ported to be safe)
 0x0079e730	logic	default (no rule: ported to be safe)
 0x0079e7a0	logic	default (no rule: ported to be safe)
 0x0079e7b0	logic	default (no rule: ported to be safe)
@@ -8558,7 +8558,7 @@
 0x007bcdd0	logic	default (no rule: ported to be safe)
 0x007bce20	dead	unreachable from the entry point and every pointer table
 0x007bce80	logic	default (no rule: ported to be safe)
-0x007bcf20	debug	only called from debug code (Ms_Gui_BattleProc and 2 more)
+0x007bcf20	logic	default (no rule: ported to be safe)
 0x007bcf50	logic	default (no rule: ported to be safe)
 0x007bd000	logic	default (no rule: ported to be safe)
 0x007bd0d0	dead	unreachable from the entry point and every pointer table
@@ -8718,14 +8718,14 @@
 0x007c86c0	dead	unreachable from the entry point and every pointer table
 0x007c86d0	dead	unreachable from the entry point and every pointer table
 0x007c86e0	debug	debug name: Gui_MasakiInit
-0x007c8930	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
-0x007c8950	debug	only called from debug code (Ms_Gui_BattleConfigProc and 10 more)
-0x007c89a0	debug	only called from debug code (Ms_Gui_BattleConfigProc and 10 more)
-0x007c8a80	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
-0x007c8b00	debug	only called from debug code (Ms_Gui_CameraProc)
-0x007c8b50	debug	only called from debug code (Ms_Gui_CameraProc)
-0x007c8bb0	debug	only called from debug code (0x7cfca0 and 3 more)
-0x007c8c50	debug	only called from debug code (Ms_Gui_InfoProc and 3 more)
+0x007c8930	logic	default (no rule: ported to be safe)
+0x007c8950	logic	default (no rule: ported to be safe)
+0x007c89a0	logic	default (no rule: ported to be safe)
+0x007c8a80	logic	default (no rule: ported to be safe)
+0x007c8b00	logic	default (no rule: ported to be safe)
+0x007c8b50	logic	default (no rule: ported to be safe)
+0x007c8bb0	logic	default (no rule: ported to be safe)
+0x007c8c50	logic	default (no rule: ported to be safe)
 0x007c90f0	debug	debug name: MsDebugBattlePosInit
 0x007c9210	debug	only called from debug code (0x7d7450)
 0x007c9360	dead	unreachable from the entry point and every pointer table
@@ -8776,14 +8776,14 @@
 0x007cf2c0	dead	unreachable from the entry point and every pointer table
 0x007cf2e0	dead	unreachable from the entry point and every pointer table
 0x007cf300	dead	unreachable from the entry point and every pointer table
-0x007cf330	debug	only called from debug code (0x7d2f10 and 1 more)
+0x007cf330	logic	default (no rule: ported to be safe)
 0x007cf380	debug	only called from debug code (0x7cd0f0)
 0x007cf410	dead	unreachable from the entry point and every pointer table
 0x007cf540	debug	only called from debug code (0x7cf180)
 0x007cf590	debug	only called from debug code (Ms_Gui_BattleProc)
 0x007cf640	logic	default (no rule: ported to be safe)
 0x007cf6a0	dead	unreachable from the entry point and every pointer table
-0x007cf6c0	debug	only called from debug code (Ms_Gui_BattleProc and 5 more)
+0x007cf6c0	logic	default (no rule: ported to be safe)
 0x007cf730	dead	unreachable from the entry point and every pointer table
 0x007cf780	dead	unreachable from the entry point and every pointer table
 0x007cf820	dead	unreachable from the entry point and every pointer table
@@ -8793,50 +8793,50 @@
 0x007cf9f0	dead	unreachable from the entry point and every pointer table
 0x007cfaa0	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007cfb20	debug	debug name: MsDebugGetCameraMode
-0x007cfb60	debug	only called from debug code (0x7d42f0 and 2 more)
+0x007cfb60	logic	default (no rule: ported to be safe)
 0x007cfba0	debug	only called from debug code (Ms_Gui_InfoProc)
-0x007cfca0	debug	only called from debug code (Ms_Gui_InfoProc and 1 more)
+0x007cfca0	logic	default (no rule: ported to be safe)
 0x007cfcd0	debug	debug name: Ms_Gui_InfoProc
-0x007d0af0	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d0af0	logic	default (no rule: ported to be safe)
 0x007d0c90	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
 0x007d0ee0	debug	only called from debug code (Ms_Gui_MapDataProc)
 0x007d1030	debug	only called from debug code (Ms_Gui_MapDataProc)
 0x007d10c0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d1220	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
-0x007d12a0	debug	only called from debug code (Ms_Gui_CameraProc)
-0x007d1300	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d1220	logic	default (no rule: ported to be safe)
+0x007d12a0	logic	default (no rule: ported to be safe)
+0x007d1300	logic	default (no rule: ported to be safe)
 0x007d14f0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d1790	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d1790	logic	default (no rule: ported to be safe)
 0x007d1940	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d1bd0	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
+0x007d1bd0	logic	default (no rule: ported to be safe)
 0x007d1f50	debug	debug name: MsDebugBtlPrint
 0x007d23d0	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d2410	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007d2420	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007d2430	debug	debug name: MsDebugOutCamera
-0x007d2f10	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
+0x007d2f10	logic	default (no rule: ported to be safe)
 0x007d2f50	debug	only called from debug code (Ms_Gui_ReferencePos)
-0x007d2fc0	debug	only called from debug code (Ms_Gui_CameraProc and 2 more)
-0x007d3420	debug	only called from debug code (Ms_Gui_ReferencePos and 1 more)
+0x007d2fc0	logic	default (no rule: ported to be safe)
+0x007d3420	logic	default (no rule: ported to be safe)
 0x007d34a0	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d36b0	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d3700	debug	debug name: MsDebugSplinePrint
-0x007d38c0	debug	only called from debug code (Ms_Gui_CameraProc)
-0x007d3f40	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d38c0	logic	default (no rule: ported to be safe)
+0x007d3f40	logic	default (no rule: ported to be safe)
 0x007d42e0	debug	only called from debug code (Ms_Gui_ReferencePos)
-0x007d42f0	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d42f0	logic	default (no rule: ported to be safe)
 0x007d44a0	debug	debug name: Ms_Gui_CameraProc
 0x007d5480	debug	debug name: Ms_Gui_MapDataProc
-0x007d6470	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d6470	logic	default (no rule: ported to be safe)
 0x007d6530	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d66d0	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d66d0	logic	default (no rule: ported to be safe)
 0x007d6850	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d6a50	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d6a50	logic	default (no rule: ported to be safe)
 0x007d6bb0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d6dc0	debug	only called from debug code (Ms_Gui_CameraProc)
+0x007d6dc0	logic	default (no rule: ported to be safe)
 0x007d6ed0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d70d0	debug	only called from debug code (Ms_Gui_CameraProc)
-0x007d7130	debug	only called from debug code (0x7d1220 and 2 more)
+0x007d70d0	logic	default (no rule: ported to be safe)
+0x007d7130	logic	default (no rule: ported to be safe)
 0x007d71d0	debug	only called from debug code (Ms_Gui_MapDataProc)
 0x007d72e0	debug	only called from debug code (Ms_Gui_BattleProc)
 0x007d73e0	debug	only called from debug code (Ms_Gui_BattleProc)
@@ -8855,7 +8855,7 @@
 0x007d9700	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
 0x007d9950	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
 0x007d9ab0	debug	only called from debug code (MsDebugBtlPrint)
-0x007d9af0	debug	only called from debug code (0x7d38c0)
+0x007d9af0	logic	default (no rule: ported to be safe)
 0x007d9b00	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d9c20	debug	debug name: Ms_Gui_ReferencePos
 0x007dabc0	debug	only called from debug code (Ms_Gui_ReferencePos)
@@ -9163,7 +9163,7 @@
 0x007fb170	logic	default (no rule: ported to be safe)
 0x007fb1e0	logic	default (no rule: ported to be safe)
 0x007fb240	logic	default (no rule: ported to be safe)
-0x007fb250	dead	unreachable from the entry point and every pointer table
+0x007fb250	logic	default (no rule: ported to be safe)
 0x007fb290	logic	default (no rule: ported to be safe)
 0x007fb360	logic	default (no rule: ported to be safe)
 0x007fb470	logic	default (no rule: ported to be safe)
@@ -9248,7 +9248,7 @@
 0x007fdf70	logic	default (no rule: ported to be safe)
 0x007fe0f0	logic	default (no rule: ported to be safe)
 0x007fe1a0	logic	default (no rule: ported to be safe)
-0x007fe200	dead	unreachable from the entry point and every pointer table
+0x007fe200	logic	default (no rule: ported to be safe)
 0x007fe280	logic	default (no rule: ported to be safe)
 0x007fe340	logic	default (no rule: ported to be safe)
 0x007fe430	dead	unreachable from the entry point and every pointer table
@@ -9733,9 +9733,9 @@
 0x0081d3f0	logic	default (no rule: ported to be safe)
 0x0081d470	logic	default (no rule: ported to be safe)
 0x0081d4a0	dead	unreachable from the entry point and every pointer table
-0x0081d5f0	dead	PS2-only API (SqsIopCommandSend): memory card or IOP
-0x0081d700	dead	PS2-only API (SqsIopSoundErrorStatus): memory card or IOP
-0x0081d710	dead	PS2-only API (SqsIopSoundSystemStatus): memory card or IOP
+0x0081d5f0	logic	default (no rule: ported to be safe)
+0x0081d700	logic	default (no rule: ported to be safe)
+0x0081d710	logic	default (no rule: ported to be safe)
 0x0081d720	dead	unreachable from the entry point and every pointer table
 0x0081d7a0	dead	unreachable from the entry point and every pointer table
 0x0081d820	logic	default (no rule: ported to be safe)
@@ -9836,7 +9836,7 @@
 0x00820550	logic	default (no rule: ported to be safe)
 0x00820570	debug	only called from debug code (WMainProc)
 0x00820580	logic	default (no rule: ported to be safe)
-0x00820590	dead	unreachable from the entry point and every pointer table
+0x00820590	logic	default (no rule: ported to be safe)
 0x008205a0	logic	default (no rule: ported to be safe)
 0x008205d0	logic	default (no rule: ported to be safe)
 0x008205e0	logic	default (no rule: ported to be safe)
@@ -10137,10 +10137,10 @@
 0x0082cce0	logic	default (no rule: ported to be safe)
 0x0082ccf0	logic	default (no rule: ported to be safe)
 0x0082cd20	debug	only called from debug code (0x854420)
-0x0082cd30	debug	only called from debug code (Sg_ToggleFocus and 1 more)
-0x0082cd40	debug	only called from debug code (0x854980)
+0x0082cd30	logic	default (no rule: ported to be safe)
+0x0082cd40	logic	default (no rule: ported to be safe)
 0x0082cd50	logic	default (no rule: ported to be safe)
-0x0082cd80	debug	only called from debug code (0x854980)
+0x0082cd80	logic	default (no rule: ported to be safe)
 0x0082cdc0	logic	default (no rule: ported to be safe)
 0x0082ce20	logic	default (no rule: ported to be safe)
 0x0082ce80	logic	default (no rule: ported to be safe)
@@ -10179,10 +10179,10 @@
 0x0082e610	dead	unreachable from the entry point and every pointer table
 0x0082eaf0	logic	default (no rule: ported to be safe)
 0x0082eb60	logic	default (no rule: ported to be safe)
-0x0082eb80	debug	only called from debug code (0x852a30)
-0x0082eb90	debug	only called from debug code (0x852a30)
+0x0082eb80	logic	default (no rule: ported to be safe)
+0x0082eb90	logic	default (no rule: ported to be safe)
 0x0082eba0	logic	default (no rule: ported to be safe)
-0x0082ebe0	debug	only called from debug code (0x852a30)
+0x0082ebe0	logic	default (no rule: ported to be safe)
 0x0082ebf0	debug	only called from debug code (0x8523e0)
 0x0082ec30	debug	only called from debug code (0x8523e0)
 0x0082ec60	debug	only called from debug code (0x8523e0)
@@ -10192,9 +10192,9 @@
 0x0082ed50	logic	default (no rule: ported to be safe)
 0x0082fe00	logic	default (no rule: ported to be safe)
 0x008300b0	logic	default (no rule: ported to be safe)
-0x008300d0	debug	only called from debug code (0x852a30)
-0x008300e0	debug	only called from debug code (0x852a30)
-0x008300f0	debug	only called from debug code (0x852a30)
+0x008300d0	logic	default (no rule: ported to be safe)
+0x008300e0	logic	default (no rule: ported to be safe)
+0x008300f0	logic	default (no rule: ported to be safe)
 0x00830100	logic	default (no rule: ported to be safe)
 0x00830120	logic	default (no rule: ported to be safe)
 0x00830140	logic	default (no rule: ported to be safe)
@@ -10642,7 +10642,7 @@
 0x0083f710	dead	unreachable from the entry point and every pointer table
 0x0083f780	logic	default (no rule: ported to be safe)
 0x0083f7a0	logic	default (no rule: ported to be safe)
-0x0083f7f0	debug	only called from debug code (Ms_Gui_CameraProc)
+0x0083f7f0	logic	default (no rule: ported to be safe)
 0x0083f800	debug	only called from debug code (Send_DebugFont)
 0x0083f850	dead	unreachable from the entry point and every pointer table
 0x0083f870	dead	unreachable from the entry point and every pointer table
@@ -10759,9 +10759,9 @@
 0x00843050	dead	unreachable from the entry point and every pointer table
 0x00843070	dead	unreachable from the entry point and every pointer table
 0x00843080	dead	unreachable from the entry point and every pointer table
-0x00843090	debug	only called from debug code (0x852a30)
-0x008430a0	debug	only called from debug code (0x852a30)
-0x008430d0	debug	only called from debug code (0x852a30)
+0x00843090	logic	default (no rule: ported to be safe)
+0x008430a0	logic	default (no rule: ported to be safe)
+0x008430d0	logic	default (no rule: ported to be safe)
 0x008430e0	dead	unreachable from the entry point and every pointer table
 0x008430f0	dead	unreachable from the entry point and every pointer table
 0x00843100	dead	unreachable from the entry point and every pointer table
@@ -10876,8 +10876,8 @@
 0x00848d10	debug	debug name: Gu_SetTexFlush
 0x00848d60	debug	only called from debug code (0x847720 and 4 more)
 0x00848f00	debug	debug name: Gu_WindowSetHokanEnable
-0x00848f10	debug	only called from debug code (0x849510 and 2 more)
-0x00848f20	debug	debug name: Gui_WindowSetGlobalTrans
+0x00848f10	logic	default (no rule: ported to be safe)
+0x00848f20	logic	debug-sounding name, but used by logic: 0x849510
 0x00848f50	dead	unreachable from the entry point and every pointer table
 0x00848f60	debug	only called from debug code (Gu_Printf and 2 more)
 0x00848fe0	debug	only called from debug code (Gu_Printf and 1 more)
@@ -10894,7 +10894,7 @@
 0x00849440	debug	debug name: Gu_MouseInRect
 0x00849490	debug	debug name: Gu_WindowMouseIn
 0x008494f0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00849510	debug	only called from debug code (0x849a10 and 1 more)
+0x00849510	logic	default (no rule: ported to be safe)
 0x008495e0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00849610	debug	debug name: Gu_ControlSetText
 0x008496d0	debug	debug name: Gu_WindowControlSetRect
@@ -10949,15 +10949,15 @@
 0x0084ac80	debug	only called from debug code (Gu_Main)
 0x0084aec0	debug	debug name: Gu_WindowGetArg
 0x0084aed0	debug	debug name: Gu_WindowGetClientH
-0x0084aee0	debug	debug name: Gu_WindowGetClientW
+0x0084aee0	logic	debug-sounding name, but used by logic: 0x8555e9
 0x0084aef0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0084af00	debug	debug name: Gu_WindowGetClientTop
-0x0084af10	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0084af10	logic	debug-sounding name, but used by logic: 0x8555e9
 0x0084af20	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0084af30	debug	debug name: Gu_WindowGetHeight
 0x0084af40	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0084af60	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0084af90	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0084af90	logic	debug-sounding name, but used by logic: 0x8555e9
 0x0084afa0	debug	debug name: Gu_WindowGetWidth
 0x0084afb0	debug	debug name: Gu_WindowGetLeft
 0x0084afc0	debug	debug name: Gu_WindowGetX
@@ -10971,11 +10971,11 @@
 0x0084b580	debug	debug name: Gu_WindowSetClientH
 0x0084b5b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0084b5d0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0084b600	debug	debug name: Gu_WindowSetFlag2
+0x0084b600	logic	debug-sounding name, but used by logic: 0x8555e9
 0x0084b620	debug	debug name: Gu_WindowSetLocalTrans
 0x0084b660	debug	debug name: Gu_WindowSetParent
 0x0084b670	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0084b680	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0084b680	logic	debug-sounding name, but used by logic: 0x8555e9
 0x0084b6a0	debug	debug name: Gu_WindowSetTitle
 0x0084b6b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0084b6e0	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -11005,11 +11005,11 @@
 0x0084d5b0	dead	unreachable from the entry point and every pointer table
 0x0084d5e0	debug	only called from debug code (gui_chr_GWM_SELECTOR)
 0x0084d730	dead	unreachable from the entry point and every pointer table
-0x0084d790	dead	unreachable from the entry point and every pointer table
+0x0084d790	logic	default (no rule: ported to be safe)
 0x0084d8a0	debug	debug name: Gui_SettingSaveLight
 0x0084d940	debug	only called from debug code (0x84dac0 and 1 more)
 0x0084dac0	debug	only called from debug code (SgGu_LightEdit)
-0x0084e100	debug	only called from debug code (SgGu_LightEdit and 1 more)
+0x0084e100	debug	only called from debug code (SgGu_BgColor and 1 more)
 0x0084e3c0	debug	only called from debug code (0x84e590)
 0x0084e590	debug	only called from debug code (SgGu_LightEdit)
 0x0084e7c0	debug	debug name: SgGu_BgColor
@@ -11018,7 +11018,7 @@
 0x0084eb10	logic	default (no rule: ported to be safe)
 0x0084eb60	debug	only called from debug code (0x84dac0 and 2 more)
 0x0084ebd0	debug	only called from debug code (0x84dac0 and 2 more)
-0x0084ed10	debug	only called from debug code (SystemOnHost)
+0x0084ed10	logic	default (no rule: ported to be safe)
 0x0084ede0	debug	only called from debug code (0x84f080 and 9 more)
 0x0084ef10	debug	only called from debug code (Gu_VSyncMain)
 0x0084efd0	debug	only called from debug code (WMainProc)
@@ -11058,7 +11058,7 @@
 0x00851910	debug	only called from debug code (Gu_VSync)
 0x00851920	debug	only called from debug code (Gu_VSyncMain)
 0x00851ae0	debug	only called from debug code (Gu_MouseSetWindow and 2 more)
-0x00851b20	debug	only called from debug code (0x852080 and 2 more)
+0x00851b20	logic	default (no rule: ported to be safe)
 0x00851c70	debug	only calls debug code (Gu_WindowAddButton, Gu_WindowAddStatic, Gu_WindowControlSetTextf)
 0x00851d10	dead	unreachable from the entry point and every pointer table
 0x00851d20	dead	unreachable from the entry point and every pointer table
@@ -11074,10 +11074,10 @@
 0x008523e0	debug	only called from debug code (0x851e10)
 0x00852a30	debug	only called from debug code (0x851e40)
 0x00853000	debug	only called from debug code (0x852080)
-0x00853070	dead	unreachable from the entry point and every pointer table
-0x008530d0	dead	unreachable from the entry point and every pointer table
-0x00853140	dead	unreachable from the entry point and every pointer table
-0x00853170	dead	unreachable from the entry point and every pointer table
+0x00853070	logic	default (no rule: ported to be safe)
+0x008530d0	logic	default (no rule: ported to be safe)
+0x00853140	logic	default (no rule: ported to be safe)
+0x00853170	logic	default (no rule: ported to be safe)
 0x00853310	debug	only called from debug code (0x84e590)
 0x008533b0	debug	only called from debug code (Gui_SettingSaveLight and 1 more)
 0x00853400	debug	only called from debug code (0x8533b0)
@@ -11111,8 +11111,8 @@
 0x00855430	debug	debug name: Gui_ProgAvarage
 0x008554b0	debug	only called from debug code (Gui_ProgAvarage)
 0x00855570	debug	only called from debug code (Gui_ProgAvarage)
-0x008555e9	dead	unreachable from the entry point and every pointer table
-0x00855a30	dead	unreachable from the entry point and every pointer table
+0x008555e9	logic	default (no rule: ported to be safe)
+0x00855a30	logic	default (no rule: ported to be safe)
 0x00855ad0	dead	unreachable from the entry point and every pointer table
 0x00855b00	dead	unreachable from the entry point and every pointer table
 0x00855b30	dead	unreachable from the entry point and every pointer table
@@ -11870,13 +11870,13 @@
 0x0086a990	logic	default (no rule: ported to be safe)
 0x0086a9a0	logic	default (no rule: ported to be safe)
 0x0086a9b0	logic	default (no rule: ported to be safe)
-0x0086a9c0	dead	unreachable from the entry point and every pointer table
+0x0086a9c0	logic	default (no rule: ported to be safe)
 0x0086a9d0	logic	default (no rule: ported to be safe)
 0x0086a9e0	logic	default (no rule: ported to be safe)
 0x0086a9f0	dead	unreachable from the entry point and every pointer table
 0x0086aa20	logic	default (no rule: ported to be safe)
 0x0086aa40	dead	unreachable from the entry point and every pointer table
-0x0086aa70	dead	unreachable from the entry point and every pointer table
+0x0086aa70	logic	default (no rule: ported to be safe)
 0x0086aaa0	dead	unreachable from the entry point and every pointer table
 0x0086aac0	logic	default (no rule: ported to be safe)
 0x0086aaf0	logic	default (no rule: ported to be safe)
@@ -11884,12 +11884,12 @@
 0x0086ab50	dead	unreachable from the entry point and every pointer table
 0x0086ab80	logic	default (no rule: ported to be safe)
 0x0086abe0	dead	unreachable from the entry point and every pointer table
-0x0086ac10	dead	unreachable from the entry point and every pointer table
+0x0086ac10	logic	default (no rule: ported to be safe)
 0x0086ac30	logic	default (no rule: ported to be safe)
 0x0086ac60	logic	default (no rule: ported to be safe)
 0x0086ac90	logic	default (no rule: ported to be safe)
 0x0086acc0	logic	default (no rule: ported to be safe)
-0x0086acf0	dead	unreachable from the entry point and every pointer table
+0x0086acf0	logic	default (no rule: ported to be safe)
 0x0086ad20	logic	default (no rule: ported to be safe)
 0x0086ad50	dead	unreachable from the entry point and every pointer table
 0x0086adc0	logic	default (no rule: ported to be safe)
@@ -11938,14 +11938,14 @@
 0x0086b5e0	dead	unreachable from the entry point and every pointer table
 0x0086b600	dead	unreachable from the entry point and every pointer table
 0x0086b620	dead	unreachable from the entry point and every pointer table
-0x0086b660	dead	unreachable from the entry point and every pointer table
-0x0086b680	dead	unreachable from the entry point and every pointer table
-0x0086b6c0	dead	unreachable from the entry point and every pointer table
+0x0086b660	debug	only called from debug code (AtelGetDebugSubCodeString)
+0x0086b680	logic	default (no rule: ported to be safe)
+0x0086b6c0	logic	default (no rule: ported to be safe)
 0x0086b6d0	dead	unreachable from the entry point and every pointer table
 0x0086b700	logic	default (no rule: ported to be safe)
 0x0086b710	logic	default (no rule: ported to be safe)
 0x0086b740	logic	default (no rule: ported to be safe)
-0x0086b910	dead	unreachable from the entry point and every pointer table
+0x0086b910	logic	default (no rule: ported to be safe)
 0x0086b940	dead	unreachable from the entry point and every pointer table
 0x0086b9a0	logic	default (no rule: ported to be safe)
 0x0086b9e0	logic	default (no rule: ported to be safe)
@@ -11955,7 +11955,7 @@
 0x0086ba90	logic	default (no rule: ported to be safe)
 0x0086bae0	logic	default (no rule: ported to be safe)
 0x0086bb80	logic	default (no rule: ported to be safe)
-0x0086bba0	dead	unreachable from the entry point and every pointer table
+0x0086bba0	debug	only called from debug code (AtelGetDebugSubCodeString)
 0x0086bbd0	dead	unreachable from the entry point and every pointer table
 0x0086bbf0	logic	default (no rule: ported to be safe)
 0x0086bc10	logic	default (no rule: ported to be safe)
@@ -11964,7 +11964,7 @@
 0x0086bc50	logic	default (no rule: ported to be safe)
 0x0086bc60	logic	default (no rule: ported to be safe)
 0x0086bcb0	logic	default (no rule: ported to be safe)
-0x0086bd40	dead	unreachable from the entry point and every pointer table
+0x0086bd40	logic	default (no rule: ported to be safe)
 0x0086bd50	dead	unreachable from the entry point and every pointer table
 0x0086bd90	logic	default (no rule: ported to be safe)
 0x0086be50	logic	default (no rule: ported to be safe)
@@ -11985,7 +11985,7 @@
 0x0086c1a0	logic	default (no rule: ported to be safe)
 0x0086c200	logic	default (no rule: ported to be safe)
 0x0086c210	dead	unreachable from the entry point and every pointer table
-0x0086c230	dead	unreachable from the entry point and every pointer table
+0x0086c230	debug	only called from debug code (AtelGetDebugSubCodeString)
 0x0086c250	dead	unreachable from the entry point and every pointer table
 0x0086c280	logic	default (no rule: ported to be safe)
 0x0086c290	logic	default (no rule: ported to be safe)
@@ -12004,7 +12004,7 @@
 0x0086c530	logic	default (no rule: ported to be safe)
 0x0086c570	logic	default (no rule: ported to be safe)
 0x0086c610	logic	default (no rule: ported to be safe)
-0x0086c6e0	dead	unreachable from the entry point and every pointer table
+0x0086c6e0	logic	default (no rule: ported to be safe)
 0x0086c730	logic	default (no rule: ported to be safe)
 0x0086c7d0	dead	unreachable from the entry point and every pointer table
 0x0086c7f0	dead	unreachable from the entry point and every pointer table
@@ -12018,7 +12018,7 @@
 0x0086c920	dead	unreachable from the entry point and every pointer table
 0x0086c930	dead	unreachable from the entry point and every pointer table
 0x0086c9c0	dead	unreachable from the entry point and every pointer table
-0x0086ca10	dead	unreachable from the entry point and every pointer table
+0x0086ca10	logic	default (no rule: ported to be safe)
 0x0086ca20	logic	default (no rule: ported to be safe)
 0x0086cae0	logic	default (no rule: ported to be safe)
 0x0086cb00	logic	default (no rule: ported to be safe)
@@ -12208,7 +12208,7 @@
 0x00871890	logic	default (no rule: ported to be safe)
 0x00871950	logic	default (no rule: ported to be safe)
 0x00871980	logic	default (no rule: ported to be safe)
-0x008719c0	dead	unreachable from the entry point and every pointer table
+0x008719c0	logic	default (no rule: ported to be safe)
 0x008719e0	logic	default (no rule: ported to be safe)
 0x00871ab0	logic	default (no rule: ported to be safe)
 0x00871ba0	dead	unreachable from the entry point and every pointer table
@@ -12242,7 +12242,7 @@
 0x008725e0	logic	default (no rule: ported to be safe)
 0x00872600	dead	unreachable from the entry point and every pointer table
 0x00872620	dead	unreachable from the entry point and every pointer table
-0x00872630	dead	unreachable from the entry point and every pointer table
+0x00872630	logic	default (no rule: ported to be safe)
 0x00872650	logic	default (no rule: ported to be safe)
 0x008726a0	dead	unreachable from the entry point and every pointer table
 0x008726b0	dead	unreachable from the entry point and every pointer table
@@ -12288,10 +12288,10 @@
 0x00873ae0	logic	default (no rule: ported to be safe)
 0x00873af0	logic	default (no rule: ported to be safe)
 0x00873b00	logic	default (no rule: ported to be safe)
-0x00873b10	dead	unreachable from the entry point and every pointer table
-0x00873b20	dead	unreachable from the entry point and every pointer table
-0x00873b30	dead	unreachable from the entry point and every pointer table
-0x00873b40	dead	unreachable from the entry point and every pointer table
+0x00873b10	logic	default (no rule: ported to be safe)
+0x00873b20	logic	default (no rule: ported to be safe)
+0x00873b30	logic	default (no rule: ported to be safe)
+0x00873b40	logic	default (no rule: ported to be safe)
 0x00873b50	logic	default (no rule: ported to be safe)
 0x00873b80	logic	default (no rule: ported to be safe)
 0x00873b90	logic	default (no rule: ported to be safe)
@@ -12327,7 +12327,7 @@
 0x008742b0	logic	default (no rule: ported to be safe)
 0x008743e0	logic	default (no rule: ported to be safe)
 0x00874420	logic	default (no rule: ported to be safe)
-0x008747b0	dead	unreachable from the entry point and every pointer table
+0x008747b0	logic	default (no rule: ported to be safe)
 0x008747f0	logic	default (no rule: ported to be safe)
 0x00874840	dead	unreachable from the entry point and every pointer table
 0x008748a0	logic	default (no rule: ported to be safe)
@@ -12409,10 +12409,10 @@
 0x00877450	logic	default (no rule: ported to be safe)
 0x00877460	logic	default (no rule: ported to be safe)
 0x00877470	logic	default (no rule: ported to be safe)
-0x00877520	dead	unreachable from the entry point and every pointer table
+0x00877520	logic	default (no rule: ported to be safe)
 0x00877580	dead	unreachable from the entry point and every pointer table
 0x008775e0	dead	unreachable from the entry point and every pointer table
-0x00877610	dead	unreachable from the entry point and every pointer table
+0x00877610	logic	default (no rule: ported to be safe)
 0x00877660	logic	default (no rule: ported to be safe)
 0x00877730	logic	default (no rule: ported to be safe)
 0x00877770	dead	unreachable from the entry point and every pointer table
@@ -12611,7 +12611,7 @@
 0x0087bb90	logic	default (no rule: ported to be safe)
 0x0087bc20	logic	default (no rule: ported to be safe)
 0x0087bc50	dead	unreachable from the entry point and every pointer table
-0x0087bc90	dead	unreachable from the entry point and every pointer table
+0x0087bc90	logic	default (no rule: ported to be safe)
 0x0087bd90	dead	unreachable from the entry point and every pointer table
 0x0087bdcd	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0087d690	dead	unreachable from the entry point and every pointer table
@@ -12622,7 +12622,7 @@
 0x0087ddd0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0087de30	dead	unreachable from the entry point and every pointer table
 0x0087df90	dead	unreachable from the entry point and every pointer table
-0x0087e0c0	dead	unreachable from the entry point and every pointer table
+0x0087e0c0	logic	default (no rule: ported to be safe)
 0x0087e110	dead	unreachable from the entry point and every pointer table
 0x0087e140	dead	unreachable from the entry point and every pointer table
 0x0087e160	dead	unreachable from the entry point and every pointer table
@@ -12646,9 +12646,9 @@
 0x0087e690	dead	unreachable from the entry point and every pointer table
 0x0087e6b0	dead	unreachable from the entry point and every pointer table
 0x0087e6d0	dead	unreachable from the entry point and every pointer table
-0x0087e750	dead	unreachable from the entry point and every pointer table
-0x0087e7c0	dead	unreachable from the entry point and every pointer table
-0x0087e880	dead	unreachable from the entry point and every pointer table
+0x0087e750	debug	only calls debug code (0x87e880, TkPutDebugFontString)
+0x0087e7c0	debug	only calls debug code (0x87e880, TkPutDebugFontString)
+0x0087e880	debug	only calls debug code (TkPutDebugFontString, TkPutDebugFontStringP)
 0x0087e950	dead	unreachable from the entry point and every pointer table
 0x0087e960	dead	unreachable from the entry point and every pointer table
 0x0087ea00	dead	unreachable from the entry point and every pointer table
@@ -12665,52 +12665,52 @@
 0x0087f1c0	debug	only called from debug code (0x87f0d0)
 0x0087f280	dead	unreachable from the entry point and every pointer table
 0x0087f330	dead	unreachable from the entry point and every pointer table
-0x0087f390	dead	unreachable from the entry point and every pointer table
-0x0087f4a0	dead	unreachable from the entry point and every pointer table
+0x0087f390	logic	default (no rule: ported to be safe)
+0x0087f4a0	logic	default (no rule: ported to be safe)
 0x0087f5d0	dead	unreachable from the entry point and every pointer table
-0x0087f660	dead	unreachable from the entry point and every pointer table
+0x0087f660	logic	default (no rule: ported to be safe)
 0x0087f780	dead	unreachable from the entry point and every pointer table
-0x0087f810	dead	unreachable from the entry point and every pointer table
-0x0087f900	dead	unreachable from the entry point and every pointer table
-0x0087fb10	dead	unreachable from the entry point and every pointer table
+0x0087f810	logic	default (no rule: ported to be safe)
+0x0087f900	logic	default (no rule: ported to be safe)
+0x0087fb10	logic	default (no rule: ported to be safe)
 0x0087fc20	dead	unreachable from the entry point and every pointer table
-0x0087fca0	dead	unreachable from the entry point and every pointer table
-0x008807b0	dead	unreachable from the entry point and every pointer table
-0x00881be0	dead	unreachable from the entry point and every pointer table
+0x0087fca0	logic	default (no rule: ported to be safe)
+0x008807b0	logic	default (no rule: ported to be safe)
+0x00881be0	logic	default (no rule: ported to be safe)
 0x00881d40	dead	unreachable from the entry point and every pointer table
-0x00881e10	dead	unreachable from the entry point and every pointer table
+0x00881e10	logic	default (no rule: ported to be safe)
 0x00881f40	dead	unreachable from the entry point and every pointer table
-0x00881fe0	dead	unreachable from the entry point and every pointer table
-0x008820a0	dead	unreachable from the entry point and every pointer table
-0x008822c0	dead	unreachable from the entry point and every pointer table
+0x00881fe0	logic	default (no rule: ported to be safe)
+0x008820a0	logic	default (no rule: ported to be safe)
+0x008822c0	logic	default (no rule: ported to be safe)
 0x00882580	dead	unreachable from the entry point and every pointer table
 0x00882750	dead	unreachable from the entry point and every pointer table
-0x008827b0	dead	unreachable from the entry point and every pointer table
-0x00882880	dead	unreachable from the entry point and every pointer table
-0x00882990	dead	unreachable from the entry point and every pointer table
-0x00882ac0	dead	unreachable from the entry point and every pointer table
-0x00882bb0	dead	unreachable from the entry point and every pointer table
-0x00882d50	dead	unreachable from the entry point and every pointer table
-0x00882f40	dead	unreachable from the entry point and every pointer table
+0x008827b0	logic	default (no rule: ported to be safe)
+0x00882880	logic	default (no rule: ported to be safe)
+0x00882990	logic	default (no rule: ported to be safe)
+0x00882ac0	logic	default (no rule: ported to be safe)
+0x00882bb0	logic	default (no rule: ported to be safe)
+0x00882d50	logic	default (no rule: ported to be safe)
+0x00882f40	logic	default (no rule: ported to be safe)
 0x00883040	dead	unreachable from the entry point and every pointer table
-0x00883340	dead	unreachable from the entry point and every pointer table
+0x00883340	logic	default (no rule: ported to be safe)
 0x00883620	dead	unreachable from the entry point and every pointer table
-0x008838d0	dead	unreachable from the entry point and every pointer table
-0x00883960	dead	unreachable from the entry point and every pointer table
+0x008838d0	logic	default (no rule: ported to be safe)
+0x00883960	logic	default (no rule: ported to be safe)
 0x00883c40	dead	unreachable from the entry point and every pointer table
-0x00883e80	dead	unreachable from the entry point and every pointer table
+0x00883e80	logic	default (no rule: ported to be safe)
 0x008840d0	dead	unreachable from the entry point and every pointer table
-0x00884290	dead	unreachable from the entry point and every pointer table
-0x00884430	dead	unreachable from the entry point and every pointer table
-0x008845a0	dead	unreachable from the entry point and every pointer table
+0x00884290	logic	default (no rule: ported to be safe)
+0x00884430	logic	default (no rule: ported to be safe)
+0x008845a0	logic	default (no rule: ported to be safe)
 0x00884780	dead	unreachable from the entry point and every pointer table
-0x008848a0	dead	unreachable from the entry point and every pointer table
+0x008848a0	logic	default (no rule: ported to be safe)
 0x00884c90	dead	unreachable from the entry point and every pointer table
-0x00884cc0	dead	unreachable from the entry point and every pointer table
-0x00884d90	dead	unreachable from the entry point and every pointer table
-0x00884fe0	dead	unreachable from the entry point and every pointer table
-0x00885040	dead	unreachable from the entry point and every pointer table
-0x008850c0	dead	unreachable from the entry point and every pointer table
+0x00884cc0	logic	default (no rule: ported to be safe)
+0x00884d90	logic	default (no rule: ported to be safe)
+0x00884fe0	logic	default (no rule: ported to be safe)
+0x00885040	logic	default (no rule: ported to be safe)
+0x008850c0	logic	default (no rule: ported to be safe)
 0x00885110	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00885120	logic	default (no rule: ported to be safe)
 0x00885150	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -12727,13 +12727,13 @@
 0x008854c0	debug	only called from debug code (TkRemove)
 0x00885500	dead	unreachable from the entry point and every pointer table
 0x00885690	dead	unreachable from the entry point and every pointer table
-0x008856b0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00885860	dead	unreachable from the entry point and every pointer table
+0x008856b0	debug	debug name: AtelGetDebugSubCodeString
+0x00885860	logic	default (no rule: ported to be safe)
 0x008858a0	dead	unreachable from the entry point and every pointer table
-0x008858c0	dead	unreachable from the entry point and every pointer table
+0x008858c0	logic	default (no rule: ported to be safe)
 0x008858f0	dead	unreachable from the entry point and every pointer table
 0x00885910	dead	unreachable from the entry point and every pointer table
-0x00885930	dead	unreachable from the entry point and every pointer table
+0x00885930	logic	default (no rule: ported to be safe)
 0x00885990	dead	unreachable from the entry point and every pointer table
 0x008859b0	dead	unreachable from the entry point and every pointer table
 0x00885a80	logic	default (no rule: ported to be safe)
@@ -12760,13 +12760,13 @@
 0x00885ff0	logic	default (no rule: ported to be safe)
 0x00886000	logic	default (no rule: ported to be safe)
 0x008860f0	logic	default (no rule: ported to be safe)
-0x00886120	dead	unreachable from the entry point and every pointer table
-0x00886130	dead	unreachable from the entry point and every pointer table
+0x00886120	logic	default (no rule: ported to be safe)
+0x00886130	logic	default (no rule: ported to be safe)
 0x00886140	logic	default (no rule: ported to be safe)
 0x00886190	logic	default (no rule: ported to be safe)
-0x008861d0	dead	unreachable from the entry point and every pointer table
+0x008861d0	logic	default (no rule: ported to be safe)
 0x008861e0	logic	default (no rule: ported to be safe)
-0x008863b0	dead	unreachable from the entry point and every pointer table
+0x008863b0	logic	default (no rule: ported to be safe)
 0x008863c0	logic	default (no rule: ported to be safe)
 0x008863d0	logic	default (no rule: ported to be safe)
 0x008863f0	logic	default (no rule: ported to be safe)
@@ -12774,13 +12774,13 @@
 0x00886410	logic	default (no rule: ported to be safe)
 0x00886420	dead	unreachable from the entry point and every pointer table
 0x00886440	logic	default (no rule: ported to be safe)
-0x00886450	dead	unreachable from the entry point and every pointer table
+0x00886450	logic	default (no rule: ported to be safe)
 0x008864b0	logic	default (no rule: ported to be safe)
 0x008864e0	dead	unreachable from the entry point and every pointer table
 0x00886500	logic	default (no rule: ported to be safe)
 0x00886550	logic	default (no rule: ported to be safe)
 0x008865e0	logic	default (no rule: ported to be safe)
-0x00886600	dead	unreachable from the entry point and every pointer table
+0x00886600	logic	default (no rule: ported to be safe)
 0x00886640	logic	default (no rule: ported to be safe)
 0x00886650	logic	default (no rule: ported to be safe)
 0x00886660	debug	only called from debug code (Ms_Gui_BattleInfoProc)
@@ -12869,9 +12869,9 @@
 0x008879b0	logic	default (no rule: ported to be safe)
 0x00887a90	logic	default (no rule: ported to be safe)
 0x00887ab0	logic	default (no rule: ported to be safe)
-0x00887ac0	dead	unreachable from the entry point and every pointer table
-0x00887ad0	dead	unreachable from the entry point and every pointer table
-0x00887af0	dead	unreachable from the entry point and every pointer table
+0x00887ac0	logic	default (no rule: ported to be safe)
+0x00887ad0	logic	default (no rule: ported to be safe)
+0x00887af0	logic	default (no rule: ported to be safe)
 0x00887b00	logic	default (no rule: ported to be safe)
 0x00887b10	logic	default (no rule: ported to be safe)
 0x00887b20	logic	default (no rule: ported to be safe)
@@ -12891,7 +12891,7 @@
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
 0x00887d10	logic	debug-sounding name, but used by logic: 0x858520, 0x858740, 0x8783c0
-0x00887d20	dead	unreachable from the entry point and every pointer table
+0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)
 0x00887db0	dead	unreachable from the entry point and every pointer table
@@ -12927,7 +12927,7 @@
 0x008883a0	logic	default (no rule: ported to be safe)
 0x008883c0	dead	unreachable from the entry point and every pointer table
 0x00888400	dead	unreachable from the entry point and every pointer table
-0x00888420	logic	debug-sounding name, but used by logic: 0x8b3510, 0x8b3580, TkMcGetLoadFilePos
+0x00888420	logic	debug-sounding name, but used by logic: 0x8b3510, 0x8b3580
 0x00888430	logic	default (no rule: ported to be safe)
 0x00888440	dead	unreachable from the entry point and every pointer table
 0x00888480	logic	default (no rule: ported to be safe)
@@ -12960,7 +12960,7 @@
 0x00888a70	logic	default (no rule: ported to be safe)
 0x00888b60	logic	default (no rule: ported to be safe)
 0x00888b80	logic	default (no rule: ported to be safe)
-0x00888ba0	dead	unreachable from the entry point and every pointer table
+0x00888ba0	logic	default (no rule: ported to be safe)
 0x00888bc0	logic	default (no rule: ported to be safe)
 0x00888c00	logic	default (no rule: ported to be safe)
 0x00888c20	logic	default (no rule: ported to be safe)
@@ -13061,7 +13061,7 @@
 0x0088c800	logic	default (no rule: ported to be safe)
 0x0088c810	logic	default (no rule: ported to be safe)
 0x0088c820	logic	default (no rule: ported to be safe)
-0x0088c850	dead	unreachable from the entry point and every pointer table
+0x0088c850	logic	default (no rule: ported to be safe)
 0x0088c860	logic	default (no rule: ported to be safe)
 0x0088cac0	logic	default (no rule: ported to be safe)
 0x0088ccf0	logic	default (no rule: ported to be safe)
@@ -13081,7 +13081,7 @@
 0x0088d570	logic	default (no rule: ported to be safe)
 0x0088d580	logic	default (no rule: ported to be safe)
 0x0088d590	logic	default (no rule: ported to be safe)
-0x0088d5b0	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0088d5b0	debug	debug name: TkGetDebugMenuStatus
 0x0088d5c0	logic	default (no rule: ported to be safe)
 0x0088d5d0	logic	default (no rule: ported to be safe)
 0x0088d5e0	logic	default (no rule: ported to be safe)
@@ -13096,7 +13096,7 @@
 0x0088d670	logic	default (no rule: ported to be safe)
 0x0088d680	logic	default (no rule: ported to be safe)
 0x0088d690	logic	default (no rule: ported to be safe)
-0x0088d6a0	dead	unreachable from the entry point and every pointer table
+0x0088d6a0	logic	default (no rule: ported to be safe)
 0x0088d6b0	dead	unreachable from the entry point and every pointer table
 0x0088d6c0	dead	unreachable from the entry point and every pointer table
 0x0088d6d0	logic	default (no rule: ported to be safe)
@@ -13137,36 +13137,36 @@
 0x0088ec70	dead	unreachable from the entry point and every pointer table
 0x0088ec90	dead	unreachable from the entry point and every pointer table
 0x0088ecf0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0088ed10	dead	unreachable from the entry point and every pointer table
-0x0088edc0	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0088ed10	debug	only called from debug code (TkPutDebugFontStringPREuc)
+0x0088edc0	debug	debug name: TkGetDebugFontBuffer
 0x0088edf0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0088ee10	dead	unreachable from the entry point and every pointer table
-0x0088ee70	dead	unreachable from the entry point and every pointer table
+0x0088ee70	debug	only called from debug code (TkPutDebugFontStringPR)
 0x0088eed0	dead	unreachable from the entry point and every pointer table
 0x0088eff0	dead	unreachable from the entry point and every pointer table
-0x0088f140	debug	debug name: TkPutDebugFontString
-0x0088f160	dead	unreachable from the entry point and every pointer table
-0x0088f240	debug	only called from debug code (TkPutDebugFontString and 2 more)
-0x0088f4c0	debug	debug name: TkPutDebugFontStringP
-0x0088f4e0	debug	debug name: TkPutDebugFontStringPEuc
-0x0088f5c0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0088f5f0	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0088f140	logic	debug-sounding name, but used by logic: 0x87a850, 0x87a8b0, 0x87a910
+0x0088f160	logic	default (no rule: ported to be safe)
+0x0088f240	logic	default (no rule: ported to be safe)
+0x0088f4c0	logic	debug-sounding name, but used by logic: 0x87a4a0, 0x87a4f0, 0x87a550
+0x0088f4e0	logic	debug-sounding name, but used by logic: 0x87f810, 0x87f900, 0x87fca0
+0x0088f5c0	debug	debug name: TkPutDebugFontStringPR
+0x0088f5f0	debug	debug name: TkPutDebugFontStringPREuc
 0x0088f690	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0088f6c0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0088f760	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0088fab0	debug	debug name: TkSetDebugFontBuffer
-0x0088faf0	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0088faf0	logic	debug-sounding name, but used by logic: 0x87f390, 0x87f4a0, 0x87f660
 0x0088fb10	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0088fb30	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0088fca0	dead	unreachable from the entry point and every pointer table
-0x0088fd50	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0088ff70	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0088fb30	logic	default (no rule: ported to be safe)
+0x0088fca0	logic	default (no rule: ported to be safe)
+0x0088fd50	logic	default (no rule: ported to be safe)
+0x0088ff70	logic	default (no rule: ported to be safe)
 0x00890150	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00890320	dead	unreachable from the entry point and every pointer table
-0x008903d0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x008904e0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00890500	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x008906d0	dead	unreachable from the entry point and every pointer table
+0x00890320	logic	default (no rule: ported to be safe)
+0x008903d0	logic	default (no rule: ported to be safe)
+0x008904e0	logic	debug-sounding name, but used by logic: 0x884430
+0x00890500	logic	default (no rule: ported to be safe)
+0x008906d0	logic	default (no rule: ported to be safe)
 0x00890780	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x008907e0	dead	unreachable from the entry point and every pointer table
 0x00890860	dead	unreachable from the entry point and every pointer table
@@ -13339,7 +13339,7 @@
 0x0089dc40	logic	default (no rule: ported to be safe)
 0x0089dc70	dead	unreachable from the entry point and every pointer table
 0x0089dcb0	dead	unreachable from the entry point and every pointer table
-0x0089dde0	logic	debug-sounding name, but used by logic: TODrawMessage, TOSwapInternationalEnvExecNonBlock
+0x0089dde0	debug	debug name: TODapsPrintf
 0x0089de30	logic	default (no rule: ported to be safe)
 0x0089dec0	logic	default (no rule: ported to be safe)
 0x0089df20	dead	unreachable from the entry point and every pointer table
@@ -13780,14 +13780,14 @@
 0x008ba5c0	logic	default (no rule: ported to be safe)
 0x008ba660	logic	default (no rule: ported to be safe)
 0x008bb690	logic	default (no rule: ported to be safe)
-0x008bbb10	dead	unreachable from the entry point and every pointer table
-0x008bbca0	dead	unreachable from the entry point and every pointer table
-0x008bbed0	dead	unreachable from the entry point and every pointer table
+0x008bbb10	logic	default (no rule: ported to be safe)
+0x008bbca0	logic	default (no rule: ported to be safe)
+0x008bbed0	logic	default (no rule: ported to be safe)
 0x008bc100	logic	default (no rule: ported to be safe)
 0x008bc340	logic	default (no rule: ported to be safe)
-0x008bd020	dead	unreachable from the entry point and every pointer table
-0x008bd280	dead	unreachable from the entry point and every pointer table
-0x008bd670	dead	unreachable from the entry point and every pointer table
+0x008bd020	logic	default (no rule: ported to be safe)
+0x008bd280	logic	default (no rule: ported to be safe)
+0x008bd670	logic	default (no rule: ported to be safe)
 0x008bda00	logic	default (no rule: ported to be safe)
 0x008bda10	logic	default (no rule: ported to be safe)
 0x008bda20	logic	default (no rule: ported to be safe)
@@ -13807,7 +13807,7 @@
 0x008be020	logic	default (no rule: ported to be safe)
 0x008be050	logic	default (no rule: ported to be safe)
 0x008be0a0	logic	default (no rule: ported to be safe)
-0x008be0d0	dead	unreachable from the entry point and every pointer table
+0x008be0d0	logic	default (no rule: ported to be safe)
 0x008be320	logic	default (no rule: ported to be safe)
 0x008be330	logic	default (no rule: ported to be safe)
 0x008be350	logic	default (no rule: ported to be safe)
@@ -13823,7 +13823,7 @@
 0x008be500	logic	default (no rule: ported to be safe)
 0x008be800	logic	default (no rule: ported to be safe)
 0x008be840	logic	default (no rule: ported to be safe)
-0x008be910	debug	only called from debug code (Ms_Gui_CameraProc)
+0x008be910	logic	default (no rule: ported to be safe)
 0x008be960	dead	unreachable from the entry point and every pointer table
 0x008be9b0	dead	unreachable from the entry point and every pointer table
 0x008bea00	dead	unreachable from the entry point and every pointer table
@@ -14339,8 +14339,8 @@
 0x008db790	logic	default (no rule: ported to be safe)
 0x008db7a0	logic	default (no rule: ported to be safe)
 0x008db7e0	logic	default (no rule: ported to be safe)
-0x008db840	dead	unreachable from the entry point and every pointer table
-0x008db860	dead	unreachable from the entry point and every pointer table
+0x008db840	logic	ran in the coverage sessions (no static reference)
+0x008db860	logic	ran in the coverage sessions (no static reference)
 0x008db870	logic	default (no rule: ported to be safe)
 0x008db920	dead	unreachable from the entry point and every pointer table
 0x008db9d0	dead	unreachable from the entry point and every pointer table
@@ -14652,7 +14652,7 @@
 0x008eb240	logic	default (no rule: ported to be safe)
 0x008eb270	logic	default (no rule: ported to be safe)
 0x008eb480	dead	unreachable from the entry point and every pointer table
-0x008eb4e0	dead	unreachable from the entry point and every pointer table
+0x008eb4e0	logic	default (no rule: ported to be safe)
 0x008eb590	dead	unreachable from the entry point and every pointer table
 0x008eb5f0	dead	unreachable from the entry point and every pointer table
 0x008eb740	dead	unreachable from the entry point and every pointer table
@@ -14717,7 +14717,7 @@
 0x008ef970	logic	default (no rule: ported to be safe)
 0x008efa00	logic	default (no rule: ported to be safe)
 0x008efad0	dead	unreachable from the entry point and every pointer table
-0x008efb60	dead	unreachable from the entry point and every pointer table
+0x008efb60	logic	default (no rule: ported to be safe)
 0x008efb90	logic	default (no rule: ported to be safe)
 0x008efbc0	dead	unreachable from the entry point and every pointer table
 0x008efbf0	logic	default (no rule: ported to be safe)
@@ -14855,7 +14855,7 @@
 0x008fabe0	logic	default (no rule: ported to be safe)
 0x008fac10	logic	default (no rule: ported to be safe)
 0x008fac50	dead	unreachable from the entry point and every pointer table
-0x008fac80	dead	unreachable from the entry point and every pointer table
+0x008fac80	logic	default (no rule: ported to be safe)
 0x008faca0	logic	default (no rule: ported to be safe)
 0x008facc0	dead	unreachable from the entry point and every pointer table
 0x008facf0	logic	default (no rule: ported to be safe)
@@ -16204,7 +16204,7 @@
 0x00931910	debug	debug name: rcuiCameraProc
 0x00931e90	debug	only called from debug code (0x935000)
 0x00932320	debug	only called from debug code (0x931e90)
-0x009323b0	debug	only called from debug code (0x932320)
+0x009323b0	debug	debug name: rcuiCollectChrHandlesByGroup
 0x00932470	debug	debug name: rcuiChrMotionSetup
 0x00932570	debug	debug name: rcuiCollectChrHandles
 0x009325c0	debug	only called from debug code (0x935000)
@@ -16235,13 +16235,13 @@
 0x009365c0	debug	only calls debug code (0x93c060, Gu_PrintSetX, Gu_PrintSetY)
 0x00936840	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY, Gu_WindowControlSetText)
 0x00936a00	debug	only called from debug code (0x9325c0)
-0x00937190	logic	debug-sounding name, but used by logic: 0x92cf00
+0x00937190	debug	debug name: rcuiVramWrite
 0x00937400	dead	unreachable from the entry point and every pointer table
 0x00937440	logic	debug-sounding name, but used by logic: rcefMainCreateTask
 0x009374f0	logic	debug-sounding name, but used by logic: rcefMainCreateTask
-0x00937540	debug	only called from debug code (rcuiResetChrPos)
+0x00937540	debug	debug name: rcuiVu0AddVector
 0x00937610	debug	debug name: rcuiScaleVector_00937610
-0x009376b0	debug	only called from debug code (rcuiResetChrPos)
+0x009376b0	debug	debug name: rcuiVu0SubVector
 0x00937780	debug	debug name: rcuiAddItems
 0x009377e0	debug	only called from debug code (rcuiMakeFullPath)
 0x00937940	debug	debug name: rcuiGetStageName
@@ -16330,17 +16330,17 @@
 0x0093cbc0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093cbf0	debug	debug name: rcuiApplyMatrix
 0x0093cc90	dead	unreachable from the entry point and every pointer table
-0x0093cd20	dead	unreachable from the entry point and every pointer table
-0x0093ce10	debug	debug name: rcuiCopyMatrix
+0x0093cd20	debug	unreachable from the entry point and every pointer table; debug name or strings
+0x0093ce10	logic	ran in the coverage sessions, called by logic: rcuiMulMatrix
 0x0093ce50	debug	debug name: rcuiCopyVector
 0x0093ce80	dead	unreachable from the entry point and every pointer table
 0x0093cfa0	dead	unreachable from the entry point and every pointer table
 0x0093cff0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d030	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d060	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0093d090	dead	unreachable from the entry point and every pointer table
+0x0093d090	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d160	dead	unreachable from the entry point and every pointer table
-0x0093d1b0	debug	debug name: rcuiMulMatrix
+0x0093d1b0	logic	ran in the coverage sessions, called by logic: 0x93d5a0, 0x93d620, 0x93d690
 0x0093d290	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d2c0	dead	unreachable from the entry point and every pointer table
 0x0093d340	dead	unreachable from the entry point and every pointer table
@@ -16351,7 +16351,7 @@
 0x0093d5a0	logic	default (no rule: ported to be safe)
 0x0093d620	logic	default (no rule: ported to be safe)
 0x0093d690	logic	default (no rule: ported to be safe)
-0x0093d710	debug	only called from debug code (0x93fd60)
+0x0093d710	debug	debug name: rcuiProjectToInt
 0x0093d7d0	dead	unreachable from the entry point and every pointer table
 0x0093d800	dead	unreachable from the entry point and every pointer table
 0x0093d830	logic	default (no rule: ported to be safe)
@@ -16443,10 +16443,10 @@
 0x009436c0	dead	unreachable from the entry point and every pointer table
 0x009436d0	dead	unreachable from the entry point and every pointer table
 0x009436f0	dead	unreachable from the entry point and every pointer table
-0x009437b0	dead	unreachable from the entry point and every pointer table
-0x009437c0	dead	unreachable from the entry point and every pointer table
-0x009437f0	dead	unreachable from the entry point and every pointer table
-0x00943800	dead	unreachable from the entry point and every pointer table
+0x009437b0	logic	default (no rule: ported to be safe)
+0x009437c0	logic	default (no rule: ported to be safe)
+0x009437f0	logic	default (no rule: ported to be safe)
+0x00943800	logic	default (no rule: ported to be safe)
 0x00943810	dead	unreachable from the entry point and every pointer table
 0x00943830	dead	unreachable from the entry point and every pointer table
 0x00943880	dead	unreachable from the entry point and every pointer table
@@ -16497,7 +16497,7 @@
 0x00944d50	dead	unreachable from the entry point and every pointer table
 0x00944e20	dead	unreachable from the entry point and every pointer table
 0x00944e80	dead	unreachable from the entry point and every pointer table
-0x00944f00	platform	only called from platform code (0x944ba0)
+0x00944f00	logic	default (no rule: ported to be safe)
 0x00944f80	platform	imports EnterCriticalSection, LeaveCriticalSection
 0x00945050	dead	unreachable from the entry point and every pointer table
 0x00945070	dead	unreachable from the entry point and every pointer table
@@ -16555,8 +16555,8 @@
 0x009469d0	dead	unreachable from the entry point and every pointer table
 0x00946a10	dead	unreachable from the entry point and every pointer table
 0x00946b20	platform	imports EnterCriticalSection, InitializeCriticalSection, LeaveCriticalSection
-0x00946c40	dead	unreachable from the entry point and every pointer table
-0x00946cc0	dead	unreachable from the entry point and every pointer table
+0x00946c40	platform	imports EnterCriticalSection
+0x00946cc0	platform	imports LeaveCriticalSection
 0x00946d30	dead	unreachable from the entry point and every pointer table
 0x00946d50	dead	unreachable from the entry point and every pointer table
 0x00946d70	dead	unreachable from the entry point and every pointer table
@@ -16565,7 +16565,7 @@
 0x00946dd0	dead	unreachable from the entry point and every pointer table
 0x00946df0	dead	unreachable from the entry point and every pointer table
 0x00946ef0	dead	unreachable from the entry point and every pointer table
-0x00946f50	dead	unreachable from the entry point and every pointer table
+0x00946f50	platform	imports CreateEventA, InitializeCriticalSection
 0x009470b0	dead	unreachable from the entry point and every pointer table
 0x009470f0	logic	default (no rule: ported to be safe)
 0x00947140	dead	unreachable from the entry point and every pointer table
@@ -16575,7 +16575,7 @@
 0x009473c0	logic	default (no rule: ported to be safe)
 0x00947430	logic	default (no rule: ported to be safe)
 0x00947490	dead	unreachable from the entry point and every pointer table
-0x009474f0	dead	unreachable from the entry point and every pointer table
+0x009474f0	logic	default (no rule: ported to be safe)
 0x00947570	logic	default (no rule: ported to be safe)
 0x00947590	logic	default (no rule: ported to be safe)
 0x00947630	logic	default (no rule: ported to be safe)
@@ -16594,7 +16594,7 @@
 0x00947ba0	dead	unreachable from the entry point and every pointer table
 0x00947c10	dead	unreachable from the entry point and every pointer table
 0x00947c90	dead	unreachable from the entry point and every pointer table
-0x00947cc0	dead	unreachable from the entry point and every pointer table
+0x00947cc0	logic	default (no rule: ported to be safe)
 0x00947d20	dead	unreachable from the entry point and every pointer table
 0x00947d60	dead	unreachable from the entry point and every pointer table
 0x00947da0	dead	unreachable from the entry point and every pointer table
@@ -16837,7 +16837,7 @@
 0x009de7c0	dead	unreachable from the entry point and every pointer table
 0x009de7f0	dead	unreachable from the entry point and every pointer table
 0x009de820	dead	unreachable from the entry point and every pointer table
-0x009de850	dead	unreachable from the entry point and every pointer table
+0x009de850	logic	default (no rule: ported to be safe)
 0x009de880	dead	unreachable from the entry point and every pointer table
 0x009de8a0	dead	unreachable from the entry point and every pointer table
 0x009de8c0	dead	unreachable from the entry point and every pointer table
@@ -16976,7 +16976,7 @@
 0x00a27160	dead	unreachable from the entry point and every pointer table
 0x00a27170	logic	default (no rule: ported to be safe)
 0x00a273b0	logic	default (no rule: ported to be safe)
-0x00a28310	dead	unreachable from the entry point and every pointer table
+0x00a28310	glue	only called from glue code (0x6d8cb0)
 0x00a28330	logic	default (no rule: ported to be safe)
 0x00a28350	glue	calls PhyreEngine Phyre_PEventFlagWin32_wait
 0x00a28870	dead	unreachable from the entry point and every pointer table
@@ -17118,7 +17118,7 @@
 0x00a3d310	logic	default (no rule: ported to be safe)
 0x00a3d3c0	logic	default (no rule: ported to be safe)
 0x00a3d3d0	logic	default (no rule: ported to be safe)
-0x00a3d410	dead	unreachable from the entry point and every pointer table
+0x00a3d410	logic	default (no rule: ported to be safe)
 0x00a3d4f0	dead	unreachable from the entry point and every pointer table
 0x00a3d510	dead	unreachable from the entry point and every pointer table
 0x00a3d540	dead	unreachable from the entry point and every pointer table
@@ -17225,9 +17225,9 @@
 0x00a44740	logic	default (no rule: ported to be safe)
 0x00a44750	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): FFXSifCallRpc
 0x00a44760	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): FFXSifCheckStatRpc
-0x00a44770	dead	PS2-only API (sceSifDmaStat): memory card or IOP
+0x00a44770	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceSifDmaStat
 0x00a44780	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): FFXSifInitRpc
-0x00a44790	dead	PS2-only API (sceSifSetDma): memory card or IOP
+0x00a44790	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceSifSetDma
 0x00a447a0	logic	default (no rule: ported to be safe)
 0x00a447b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceCdGetDiskType
 0x00a447c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sceCdRead

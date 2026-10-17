@@ -18,6 +18,7 @@ pub mod replay;
 pub mod screens;
 pub mod slot;
 
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -365,17 +366,28 @@ fn prepare_home(home: &Path, copy: bool, saves: &[(String, PathBuf)]) -> Result<
 }
 
 /// Tests run in a 1280x720 window whatever the user plays at: screenshots
-/// keep one size and the desktop stays usable.
+/// keep one size and the desktop stays usable. Their sound plays at 5% of
+/// the master volume (`FFX_TEST_VOLUME`, 0-100): several games may run at
+/// once. Only the sandbox's settings are changed, never the user's.
 fn test_display(settings: &Path) -> Result<()> {
     let old = std::fs::read_to_string(settings).unwrap_or_else(|_| "Language=en\n".into());
+    let volume = std::env::var("FFX_TEST_VOLUME")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+        .map_or(5, |v| v.min(100));
     let mut out = String::new();
     for line in old.lines() {
-        if !line.starts_with("Resolution=") && !line.starts_with("ScreenMode=") {
+        if !line.starts_with("Resolution=")
+            && !line.starts_with("ScreenMode=")
+            && !line.starts_with("MasterVolume=")
+            && !line.starts_with("Mute=")
+        {
             out.push_str(line);
             out.push('\n');
         }
     }
     out.push_str("Resolution=1280*720\nScreenMode=SM_WINDOW\n");
+    let _ = writeln!(out, "Mute=Off\nMasterVolume={volume}");
     std::fs::create_dir_all(settings.parent().unwrap_or(settings))?;
     std::fs::write(settings, out)?;
     Ok(())
