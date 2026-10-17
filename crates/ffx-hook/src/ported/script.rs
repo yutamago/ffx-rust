@@ -16,6 +16,50 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `AtelSetUpCallFunc`.
+    AtelSetUpCallFunc @ 0x0087_7880 => extern "C" fn h_877880(g: u32, t: u32) -> u32 {
+        hp::atel_set_up_call_func(&mut mem(), g, t)
+    }
+    /// `AtelGetSaveDic`.
+    AtelGetSaveDic @ 0x0086_c410 => extern "C" fn h_86c410() -> u32 {
+        hp::atel_get_save_dic(&mut mem())
+    }
+    /// `AtelGetSaveDicName`.
+    AtelGetSaveDicName @ 0x0086_c430 => extern "C" fn h_86c430(i: u32, d: u32) -> u32 {
+        hp::atel_get_save_dic_name(&mut mem(), i, d)
+    }
+    /// `Atel_PutDigits`.
+    Atel_PutDigits @ 0x0087_7520 => extern "C" fn h_877520(v: u32, dst: u32, b: u32) -> u32 {
+        hp::atel_put_digits(&mut mem(), v, dst, b)
+    }
+    /// `Atel_CopyTurnAngles`.
+    Atel_CopyTurnAngles @ 0x0086_db80 => extern "C" fn h_86db80(w: u32, m: u32) -> u32 {
+        hp::atel_copy_turn_angles(&mut mem(), w, m)
+    }
+    /// `AtelUcOff`.
+    AtelUcOff @ 0x0087_19e0 => extern "C" fn h_8719e0() -> u32 {
+        hp::atel_uc_off(&mut mem())
+    }
+    /// `Atel_GetBattleCountF`.
+    Atel_GetBattleCountF @ 0x007a_3ac0 => extern "C" fn h_7a3ac0() -> f64 {
+        hp::atel_get_battle_count_f(&mem())
+    }
+    /// `Native_8007(worker, args, stack)`.
+    Native_8007 @ 0x0091_b050 => extern "C" fn n_91b050(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8007(&mut mem(), w, a, s)
+    }
+    /// `Native_8008(worker, args, stack)`.
+    Native_8008 @ 0x0091_b060 => extern "C" fn n_91b060(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8008(&mut mem(), w, a, s)
+    }
+    /// `Native_802c(worker, args, stack)`.
+    Native_802c @ 0x0091_b680 => extern "C" fn n_91b680(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_802c(&mut mem(), w, a, s)
+    }
+    /// `Native_802d(worker, args, stack)`.
+    Native_802d @ 0x0091_b690 => extern "C" fn n_91b690(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_802d(&mut mem(), w, a, s)
+    }
     /// `AtelClearEffectFlag_00863860`.
     AtelClearEffectFlag_00863860 @ 0x0086_3860 => extern "C" fn h_863860(n: u32) -> u32 {
         hp::atel_clear_effect_flag(&mut mem(), n)
