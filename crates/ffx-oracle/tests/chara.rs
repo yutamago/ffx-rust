@@ -8470,6 +8470,7 @@ fn round14_matches_the_original() {
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss
 )]
+#[allow(clippy::many_single_char_names)]
 fn round14_on(t: &mut Twin) {
     let mut rng = Xorshift(0x0014_0014);
     let pop = t.b.rebase(FPU_POP);
