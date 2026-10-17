@@ -264,3 +264,71 @@ the two line segments, the alpha falling by `128 / n` per point (not below
 instance gets `m` times `g_pppFillMatrix`, bounds of +-100000 and
 `graphicVFXSetVisible` / `graphicVFXUpdate`. A failed allocation returns
 before `op_spr_free`.
+
+## High range (`0x00a30000..0x00a80000`)
+
+Ported in `crates/ffx-vfx/src/hi_md.rs` and `hi_opus.rs`; the shims are
+`crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
+`crates/ffx-oracle/tests/vfx_hi.rs`.
+
+What else lies in the range is not effect logic:
+
+- `0x00a34000..0x00a3e000` is Iggy's GDraw back end for D3D11 (its
+  allocations are tagged `gdraw_d3d1x_shared.inl`; `0x00a35780` fills the
+  GDraw function table at `0x01a85828` and allocates the context
+  `[0x01a858b4]`). The `op_node_*` and `op_texels_*` functions ported
+  earlier are its handle cache and mip builder (state 5 is GDraw's
+  user-owned handle). Middleware, left original.
+- `0x00a5d120..0x00a65570` is the op debug display (`opd_*`): the
+  `op_num_*` wrappers reach the digit-sprite writers only under
+  `g_OpDebugMode` or `0x02322794`, and the command printers
+  `0x00a64c00..0x00a64ff0` only call `op_num` (`0x007e63a0`), a bare `ret`.
+
+### Model packets
+
+A model list holds `u16 +4` packets, each a `ptr32` at `+0x10 + 0x10 k`.
+A packet's tags start at `+0x20`: type byte `+1`, `i16` count `+2`.
+
+- `op_md_copy(src, dst)` (`0x00a69290`) copies `op_md_packet_size(src)`
+  bytes (`0x00a698c0`) 16 at a time, one word at a time from the start; a
+  size of 0 goes to `dbgPrintf` (`"op_md_copy error !!!"`, `0x00b7c3b4`)
+  and `debug_exit_trace(1)`, both bare `ret`s here.
+- `op_md_list_count10_00a6a2b0(list)` sums the counts of each packet's
+  leading tags of type 0x10, stepping `0x20 + 0x1c n`
+  (`opp_0437_cmd_a6dbe0` kind 0x4000 sizes its buffer with it).
+- `opus_0582_break_bytes_00a72310(list)` is `0x40 + 0x300` per element
+  of every tag up to the end tag (type 0xff), with the same step
+  (`opp_0582_cmd_a70910` kind 0x4000).
+
+### oef2 entry links
+
+`op_oef2_entry_link_00a6a320(e, i)` (`0x00a6a320`, from `opu_part_init`
+kind 0x2000): `t = ptr32(e + 0x14)`. Below `0x100000`, `t` is an offset
+from `e` and so is the link `ptr32(e + t + 32 i + 0x1c)` (0 when null);
+otherwise the link is the absolute `ptr32(t + 32 i + 0x1c)`, 0 when it
+is `e` itself.
+
+### Lights
+
+`op_normal_light44_ffx(obj, model, work)` (`0x00a6cf10`) fills the work
+area `w = [work + 0x390]`: `op_ffxlight_to_omdlight(w + 0x80, w + 0xc0)`,
+then `op_matrix_light4_vector(w + 0x40, model +0x28, model +0x2c)` and
+`op_matrix_light4_vector(w + 0xc0, w + 0xc0, model +0x2c)`. Its `eax` is
+the last copy's last word, the light matrix's `w` 0.
+
+### `opus_0437` dots
+
+The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
+(counted up, taken modulo the count), 32-byte entries from `b + 0x10`.
+
+- `opus_0437_dot_init_00a6e540(b, n)` (`0x00a6e540`, kind 0 of
+  `opp_0437_cmd_a6dbe0`): both halves of each entry the EE's `r0`, then
+  `u16 +0x1c` 0x20, `u16 +0xc` 0x8080, `u8 +0xf` 0x80 and `u8 +0xe`
+  `0x40 + op_random_per_call_007e5d40(0x40)`. `op_random_per` reads four
+  words; the three past the pushed one are the caller's `edi`, `esi`,
+  `ebx` the original saved on entry, and only reach VU0 registers
+  (`0x00c8f974..0x00c8f97c`). The hook passes 0 for them.
+- `opus_0437_dot_set(b, pos, colour)` (`0x00a6e5d0`, kind 0x1000): the
+  entry's first half `op_xyz_scale(e, pos, 1.0)`, its second the colour
+  (through the EE's `v0`, `0x00c8f528`), `u16 +0x1c` cleared. An empty
+  buffer divides by zero in the original.

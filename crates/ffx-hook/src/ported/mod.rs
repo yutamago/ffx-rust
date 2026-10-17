@@ -34,6 +34,7 @@ mod sound;
 mod system;
 mod text;
 mod vfx;
+mod vfx_hi;
 
 /// Every replacement, for the hook table.
 #[must_use]
@@ -55,6 +56,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(system::hooks());
     all.extend(text::hooks());
     all.extend(vfx::hooks());
+    all.extend(vfx_hi::hooks());
     all
 }
 
