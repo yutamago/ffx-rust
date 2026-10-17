@@ -388,6 +388,14 @@ pub mod bridge {
         r
     }
 
+    /// `Sg_PcReadD(path)` (`0x0083ae50`): [`pc_read`] with
+    /// `_Sg_PcRead(path, 1)`.
+    pub fn pc_read_d(h: &mut impl Host, path: u32) -> u32 {
+        let r = call_sym(h, SG_PC_READ_FILE, &[path, 1]);
+        call_sym(h, SG_MEM_SET_CURRENT_ADDR, &[r]);
+        r
+    }
+
     /// `Sg_DrawFilter()` (`0x0082c0c0`): the frame's focus and fades.
     ///
     /// With a fade or the focus running, the filter packet is started; the

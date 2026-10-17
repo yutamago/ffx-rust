@@ -5315,6 +5315,11 @@ fn pc_read_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32
         twin("Sg_PcRead", a, b, 0x0083_ae30, &[path], |m| {
             c::pc_read(&mut H(m), path)
         });
+        put(a, b, log, 0u32);
+        put(a, b, rets + 4 * 94, rng.next());
+        twin("Sg_PcReadD", a, b, 0x0083_ae50, &[path], |m| {
+            c::pc_read_d(&mut H(m), path)
+        });
     }
 }
 

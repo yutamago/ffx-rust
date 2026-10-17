@@ -1464,6 +1464,10 @@ ported! {
     Sg_PcRead @ 0x0083_ae30 => extern "C" fn sg_pc_read(path: u32) -> u32 {
         control::bridge::pc_read(&mut mem(), path)
     }
+    /// `Sg_PcReadD(path)`.
+    Sg_PcReadD @ 0x0083_ae50 => extern "C" fn sg_pc_read_d(path: u32) -> u32 {
+        control::bridge::pc_read_d(&mut mem(), path)
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);
