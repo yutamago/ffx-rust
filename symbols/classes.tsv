@@ -534,8 +534,8 @@
 0x0062fa10	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceMcWrite
 0x0062fa20	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceMount
 0x0062fa30	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceOpen
-0x0062fb10	platform	unnamed, in the PS2 SDK stub file between sceOpen and scePadGetState
-0x0062fb20	platform	unnamed, in the PS2 SDK stub file between sceOpen and scePadGetState
+0x0062fb10	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): scePadEnterPressMode
+0x0062fb20	platform	unnamed, in the PS2 SDK stub file between scePadEnterPressMode and scePadGetState
 0x0062fb30	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): scePadGetState
 0x0062fb40	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): scePadInfoAct
 0x0062fb50	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): scePadInfoComb
@@ -825,7 +825,7 @@
 0x00638fd0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapGetVertexInfo
 0x00638ff0	dead	unreachable from the entry point and every pointer table
 0x00639060	dead	unreachable from the entry point and every pointer table
-0x006390c0	logic	default (no rule: ported to be safe)
+0x006390c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapResetSegments
 0x006390d0	logic	default (no rule: ported to be safe)
 0x006390f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapUpdate
 0x00639110	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicActivateBlurEffectEx
@@ -862,7 +862,7 @@
 0x00639860	logic	scene state the renderer needs (original look first): graphicCameraSetWorldMatrix
 0x00639b30	logic	scene state the renderer needs (original look first): graphicCameraSetWorldMatrixSub
 0x00639d10	platform	only called from platform code (FFXApplication_render)
-0x00639d20	glue	thin wrapper: only forwards to glue code (PhyreScene_SetLayerMaterialAlpha)
+0x00639d20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicChangeLayerAlpha
 0x00639d40	logic	default (no rule: ported to be safe)
 0x00639d60	logic	default (no rule: ported to be safe)
 0x00639d90	logic	default (no rule: ported to be safe)
@@ -872,7 +872,7 @@
 0x0063a010	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceAddToPipeline
 0x0063a030	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceDestroy
 0x0063a160	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceDestroyClothVertexBuffers
-0x0063a2b0	logic	default (no rule: ported to be safe)
+0x0063a2b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceGetBoundingBox
 0x0063a410	glue	calls PhyreEngine Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton
 0x0063a610	glue	calls PhyreEngine Phyre_PhyreFree, Phyre_PhyreMalloc_0042fb80
 0x0063a810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceGetClothVertexBuffers
@@ -1167,7 +1167,7 @@
 0x00643940	glue	thin wrapper: only forwards to glue code (PostProcessManager_GetInstance)
 0x00643960	dead	unreachable from the entry point and every pointer table
 0x00643980	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetSpecularMapParams
-0x006439b0	logic	default (no rule: ported to be safe)
+0x006439b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetSpecularMapParamsEx
 0x00643a00	glue	thin wrapper: only forwards to glue code (TextureAnimationManager_GetInstance, TextureAnimationManager_SetPaused)
 0x00643a20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureAnimationSetFrame
 0x00643a40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetTextureAnimationFrameByName
@@ -1499,7 +1499,7 @@
 0x006514f0	dead	unreachable from the entry point and every pointer table
 0x00651520	dead	unreachable from the entry point and every pointer table
 0x00651530	dead	unreachable from the entry point and every pointer table
-0x00651650	logic	default (no rule: ported to be safe)
+0x00651650	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetScreenAdjustedView_00651650
 0x006517d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetSplitScreenStat
 0x00651800	platform	reviewed: MultiByteToWideChar (PC2 render/pc-ui round 1)
 0x006518c0	glue	only called from glue code (PhyreScene_fieldMapInitialize)
@@ -2369,8 +2369,8 @@
 0x0068a260	dead	unreachable from the entry point and every pointer table
 0x0068a2d0	dead	unreachable from the entry point and every pointer table
 0x0068a330	dead	unreachable from the entry point and every pointer table
-0x0068a3a0	logic	default (no rule: ported to be safe)
-0x0068a420	glue	only called from glue code (0x68a660)
+0x0068a3a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): GuiTouch_update
+0x0068a420	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): GuiTouch_initGroup
 0x0068a660	glue	calls PhyreEngine Phyre_PhyreFree, Phyre_PhyreMalloc_0042fb80
 0x0068a7d0	dead	unreachable from the entry point and every pointer table
 0x0068a850	dead	unreachable from the entry point and every pointer table
@@ -3517,8 +3517,8 @@
 0x006c5ec0	glue	calls PhyreEngine Phyre_PhyreFree
 0x006c6390	glue	calls PhyreEngine Phyre_PhyreFree
 0x006c6830	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_setShadeSpecularMapParams
-0x006c6c30	glue	calls PhyreEngine Phyre_PhyreFree
-0x006c7090	logic	default (no rule: ported to be safe)
+0x006c6c30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_UpdateParams_006c6c30
+0x006c7090	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_SetParams
 0x006c7120	dead	unreachable from the entry point and every pointer table
 0x006c7140	dead	unreachable from the entry point and every pointer table
 0x006c7160	dead	unreachable from the entry point and every pointer table
@@ -6028,10 +6028,10 @@
 0x0076b770	dead	unreachable from the entry point and every pointer table
 0x0076b7e0	dead	unreachable from the entry point and every pointer table
 0x0076b800	dead	unreachable from the entry point and every pointer table
-0x0076b860	logic	default (no rule: ported to be safe)
+0x0076b860	debug	reviewed: vsprintf into a debug ring buffer (main round 13)
 0x0076b8d0	logic	debug-sounding name, but used by logic: pppDataRcv
 0x0076b970	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Cd_QueueRead
-0x0076bdd0	logic	default (no rule: ported to be safe)
+0x0076bdd0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileReadSector_CD
 0x0076bf70	logic	default (no rule: ported to be safe)
 0x0076c250	logic	default (no rule: ported to be safe)
 0x0076c270	logic	default (no rule: ported to be safe)
@@ -6086,7 +6086,7 @@
 0x0076e1c0	logic	default (no rule: ported to be safe)
 0x0076e4b0	logic	default (no rule: ported to be safe)
 0x0076e5e0	logic	default (no rule: ported to be safe)
-0x0076e630	logic	default (no rule: ported to be safe)
+0x0076e630	platform	reviewed: read_thread_init: registers a background thread function (main round 13)
 0x0076e640	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_read_callback
 0x0076e660	logic	default (no rule: ported to be safe)
 0x0076e780	logic	default (no rule: ported to be safe)
@@ -6853,7 +6853,7 @@
 0x00782670	logic	default (no rule: ported to be safe)
 0x007826b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00782750	logic	default (no rule: ported to be safe)
-0x00782770	logic	default (no rule: ported to be safe)
+0x00782770	debug	reviewed: MsEnvInit: acts only under FFXIsDebug, building a host0: cddata path (battle round 14)
 0x007827f0	logic	default (no rule: ported to be safe)
 0x007828a0	logic	default (no rule: ported to be safe)
 0x00782940	logic	default (no rule: ported to be safe)
@@ -10253,7 +10253,7 @@
 0x0083b110	logic	default (no rule: ported to be safe)
 0x0083b140	dead	unreachable from the entry point and every pointer table
 0x0083b1d0	platform	reviewed: Sg_PcRead: file read (main round 8)
-0x0083b310	logic	default (no rule: ported to be safe)
+0x0083b310	debug	reviewed: Shift-JIS to JIS conversion reached only from Sg_Assert (main round 13)
 0x0083b380	logic	default (no rule: ported to be safe)
 0x0083b420	logic	default (no rule: ported to be safe)
 0x0083b460	logic	default (no rule: ported to be safe)
@@ -10400,7 +10400,7 @@
 0x0083fc30	debug	only called from debug code (Gui_ChrMenuInit and 3 more)
 0x0083fc50	logic	default (no rule: ported to be safe)
 0x0083fd20	debug	only called from debug code (Sg_MainDebug)
-0x0083fd60	logic	default (no rule: ported to be safe)
+0x0083fd60	glue	reviewed: Sg_SaveVramResource: GS VRAM upload (main round 13)
 0x0083fe10	debug	only called from debug code (0x83ff00 and 8 more)
 0x0083fe60	debug	only called from debug code (Gui_ChrMenuInit and 3 more)
 0x0083fec0	debug	only called from debug code (0x84ccc0)
@@ -10977,7 +10977,7 @@
 0x00857ea0	logic	default (no rule: ported to be safe)
 0x00857ef0	logic	default (no rule: ported to be safe)
 0x00857f40	logic	default (no rule: ported to be safe)
-0x00857f70	logic	default (no rule: ported to be safe)
+0x00857f70	debug	reviewed: native 0x01ed: an endless loop (script round 19)
 0x00857fc0	logic	default (no rule: ported to be safe)
 0x00857ff0	logic	default (no rule: ported to be safe)
 0x00858020	logic	default (no rule: ported to be safe)
@@ -12290,8 +12290,8 @@
 0x00879b60	logic	default (no rule: ported to be safe)
 0x00879c30	platform	thin wrapper: only forwards to platform code (FlushCache, sceClose)
 0x00879c60	logic	default (no rule: ported to be safe)
-0x00879cf0	logic	default (no rule: ported to be safe)
-0x00879d60	logic	default (no rule: ported to be safe)
+0x00879cf0	platform	reviewed: AtelPCOpen: opens host0: files on the PS2 dev host (script round 19)
+0x00879d60	platform	reviewed: AtelPCOpen2: opens host0: files on the PS2 dev host (script round 19)
 0x00879de0	platform	thin wrapper: only forwards to platform code (FlushCache, sceRead)
 0x00879e10	platform	thin wrapper: only forwards to platform code (sceLseek)
 0x00879e50	platform	thin wrapper: only forwards to platform code (sceWrite)
@@ -12815,10 +12815,10 @@
 0x0088ccf0	logic	default (no rule: ported to be safe)
 0x0088ce80	logic	default (no rule: ported to be safe)
 0x0088d120	logic	default (no rule: ported to be safe)
-0x0088d140	logic	default (no rule: ported to be safe)
+0x0088d140	platform	reviewed: TkCdRead: dispatches through the GetCD() object (menu round 19)
 0x0088d190	platform	reviewed: TkCdReadNB: dispatches through the GetCD() object (menu round 15)
 0x0088d1c0	platform	reviewed: TkCdReadSync: dispatches through the GetCD() object (menu round 15)
-0x0088d1d0	logic	default (no rule: ported to be safe)
+0x0088d1d0	platform	reviewed: TkCdReadWithMalloc: dispatches through the GetCD() object (menu round 19)
 0x0088d240	logic	default (no rule: ported to be safe)
 0x0088d2c0	logic	default (no rule: ported to be safe)
 0x0088d390	platform	reviewed: TkCdSize: dispatches through the GetCD() object (menu round 15)
@@ -13228,16 +13228,16 @@
 0x008aa610	logic	default (no rule: ported to be safe)
 0x008aa690	logic	default (no rule: ported to be safe)
 0x008aa6d0	dead	unreachable from the entry point and every pointer table
-0x008aa710	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
+0x008aa710	glue	reviewed: MenuMain_LoadVramBlock: sceGsSetDef*Image/FlushCache/sceGsExec*Image only (menu round 19)
 0x008aa780	logic	default (no rule: ported to be safe)
 0x008aaab0	logic	default (no rule: ported to be safe)
 0x008aab00	logic	default (no rule: ported to be safe)
 0x008aab20	logic	default (no rule: ported to be safe)
 0x008aab90	logic	default (no rule: ported to be safe)
 0x008aabd0	dead	unreachable from the entry point and every pointer table
-0x008aac10	glue	GS/DMA packet writer (sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath; writes no game state): replaced by ffx-render
+0x008aac10	glue	reviewed: MenuMain_StoreVramBlock: GS image transfer only (menu round 19)
 0x008aac80	logic	default (no rule: ported to be safe)
-0x008aacf0	glue	GS/DMA packet writer (sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath; writes no game state): replaced by ffx-render
+0x008aacf0	glue	reviewed: MenuMain_StoreFrameBlock: GS image transfer only (menu round 19)
 0x008aad60	logic	default (no rule: ported to be safe)
 0x008aad70	logic	default (no rule: ported to be safe)
 0x008aadd0	logic	default (no rule: ported to be safe)
@@ -15943,7 +15943,7 @@
 0x00930920	logic	default (no rule: ported to be safe)
 0x00930a10	dead	unreachable from the entry point and every pointer table
 0x00930ba0	debug	only called from debug code (0x933aa0 and 1 more)
-0x00930c00	logic	default (no rule: ported to be safe)
+0x00930c00	debug	debug name: rcuiSeaAddUvSpd
 0x00930c60	dead	unreachable from the entry point and every pointer table
 0x00930d80	debug	debug name: Gui_YanagiInit
 0x00930db0	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -16196,7 +16196,7 @@
 0x009436d0	dead	unreachable from the entry point and every pointer table
 0x009436f0	dead	unreachable from the entry point and every pointer table
 0x009437b0	logic	default (no rule: ported to be safe)
-0x009437c0	logic	default (no rule: ported to be safe)
+0x009437c0	platform	reviewed: Win32 memory (GlobalMemoryStatusEx) (main round 13)
 0x009437f0	logic	default (no rule: ported to be safe)
 0x00943800	logic	default (no rule: ported to be safe)
 0x00943810	dead	unreachable from the entry point and every pointer table
@@ -16211,7 +16211,7 @@
 0x009439f0	platform	only called from platform code (0x942680)
 0x00943a50	platform	only called from platform code (0x944080 and 2 more)
 0x00943b10	dead	unreachable from the entry point and every pointer table
-0x00943c50	logic	default (no rule: ported to be safe)
+0x00943c50	platform	reviewed: Win32 memory (PageAlloc) (main round 13)
 0x00943cf0	dead	unreachable from the entry point and every pointer table
 0x00943d30	dead	unreachable from the entry point and every pointer table
 0x00943e10	dead	unreachable from the entry point and every pointer table
@@ -16249,7 +16249,7 @@
 0x00944d50	dead	unreachable from the entry point and every pointer table
 0x00944e20	dead	unreachable from the entry point and every pointer table
 0x00944e80	dead	unreachable from the entry point and every pointer table
-0x00944f00	logic	default (no rule: ported to be safe)
+0x00944f00	platform	reviewed: Win32 memory (VirtualFree) (main round 13)
 0x00944f80	platform	imports EnterCriticalSection, LeaveCriticalSection
 0x00945050	dead	unreachable from the entry point and every pointer table
 0x00945070	dead	unreachable from the entry point and every pointer table
@@ -16896,7 +16896,7 @@
 0x00a42810	logic	default (no rule: ported to be safe)
 0x00a42830	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileName_PC
 0x00a42850	dead	unreachable from the entry point and every pointer table
-0x00a42870	logic	default (no rule: ported to be safe)
+0x00a42870	platform	thin wrapper: only forwards to platform code (CDfileReadSector_CD)
 0x00a42880	logic	default (no rule: ported to be safe)
 0x00a428a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_PC
 0x00a429d0	logic	default (no rule: ported to be safe)
@@ -16906,7 +16906,7 @@
 0x00a42ba0	logic	default (no rule: ported to be safe)
 0x00a42c00	logic	default (no rule: ported to be safe)
 0x00a42f30	logic	default (no rule: ported to be safe)
-0x00a42f50	logic	default (no rule: ported to be safe)
+0x00a42f50	debug	reviewed: file-open error print plus movie_err (main round 13)
 0x00a42fa0	logic	default (no rule: ported to be safe)
 0x00a42fc0	logic	default (no rule: ported to be safe)
 0x00a43080	logic	default (no rule: ported to be safe)
@@ -17421,7 +17421,7 @@
 0x00a78210	logic	default (no rule: ported to be safe)
 0x00a78270	logic	default (no rule: ported to be safe)
 0x00a782a0	logic	default (no rule: ported to be safe)
-0x00a782c0	logic	default (no rule: ported to be safe)
+0x00a782c0	debug	reviewed: native 0x401e Sg_Test: map-test setup (script round 19)
 0x00a78300	logic	default (no rule: ported to be safe)
 0x00a78320	logic	default (no rule: ported to be safe)
 0x00a78340	logic	default (no rule: ported to be safe)
