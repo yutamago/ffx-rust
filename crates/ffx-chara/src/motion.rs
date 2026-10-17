@@ -1189,10 +1189,10 @@ pub mod bridge {
         call(mem, mem.rebase(0x0082_a7f0), &[i])
     }
 
-    /// `Ch_SaveMotionByte(chr)` (`0x008303a0`): points both globals at the
+    /// `Ch_IsShadowHidden(chr)` (`0x008303a0`): points both globals at the
     /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is
     /// neither 2 nor 3 gets that byte, else 0.
-    pub fn ch_save_motion_byte<M: Mem>(
+    pub fn ch_is_shadow_hidden<M: Mem>(
         mem: &mut M,
         chr: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
