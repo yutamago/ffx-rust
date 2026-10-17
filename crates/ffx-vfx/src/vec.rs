@@ -125,4 +125,36 @@ pub mod bridge {
         }
         restore_vf00(mem);
     }
+
+    /// `op_rot_point_007ea9d0(x0, y0, ang, x1, y1, ox, oy)` (`0x007ea9d0`):
+    /// the point (`x1`, `y1`) turned by `-ang` about (`x0`, `y0`) into
+    /// `*ox`, `*oy`: `c`, `s` the CRT's `_CIcos`/`_CIsin` of `-ang` (through
+    /// `trig`, `true` for the cosine; each stored as `f32`), `dx`, `dy` the
+    /// offsets as `f32`, then `x0 + (c dx + s dy)` and `(c dy - s dx) + y0`
+    /// in 53 bits. Returns `oy` (left in `eax`).
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    pub fn op_rot_point<M: Mem>(
+        mem: &mut M,
+        x0: f32,
+        y0: f32,
+        ang: f32,
+        p1: [f32; 2],
+        out: [u32; 2],
+        trig: &mut impl FnMut(&mut M, bool, f32) -> f32,
+    ) -> u32 {
+        use crate::x87::{ADD, MUL, Reg, SUB};
+        let a = f32::from_bits(crate::x87::load(ang.to_bits()) ^ 0x8000_0000);
+        let c = trig(mem, true, a);
+        let s = trig(mem, false, a);
+        let dx = Reg::load_f32(p1[0]).reg(SUB, Reg::load_f32(x0)).store();
+        let dy = Reg::load_f32(p1[1]).mem(SUB, y0).store();
+        let (cr, sr) = (Reg::load_f32(c), Reg::load_f32(s));
+        let sum = cr.mem(MUL, dx).reg(ADD, sr.mem(MUL, dy));
+        let x = Reg::load_f32(x0).reg(ADD, sum).store();
+        mem.write(out[0], x);
+        let d = cr.mem(MUL, dy).reg(SUB, sr.mem(MUL, dx));
+        let y = d.mem(ADD, y0).store();
+        mem.write(out[1], y);
+        out[1]
+    }
 }

@@ -8040,3 +8040,87 @@ fn eiabm_sphe_matches_the_original() {
         }
     }
 }
+
+/// `fcos`/`fsin` stand-ins for the CRT's `_CIcos`/`_CIsin` (their import
+/// slots `0x00b0c3b4`, `0x00b0c3b8` pointed at `0x00b0bfc0`, `0x00b0bfc8`)
+/// and a thunk at [`THUNK`], `fld dword [esp + 4]; jmp [slot]`, for the
+/// bridge's side; returns the thunk for cos and sin.
+fn trig_stand_ins(p: &mut Pair) -> (u32, u32) {
+    let mut thunks = [0u32; 2];
+    for (k, (slot, code, at)) in [
+        (0x00b0_c3b4u32, [0xd9u8, 0xff, 0xc3], 0x00b0_bfc0u32),
+        (0x00b0_c3b8, [0xd9, 0xfe, 0xc3], 0x00b0_bfc8),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let at = p.sym(at);
+        p.a.write(at, &code).unwrap();
+        p.b.write(at, &code).unwrap();
+        let s = p.sym(slot);
+        p.set(s, at);
+        let t = p.sym(THUNK) + 0x10 * u32::try_from(k).unwrap();
+        let mut c = vec![0xd9, 0x44, 0x24, 0x04, 0xff, 0x25]; // fld dword [esp+4]; jmp [slot]
+        c.extend(s.to_le_bytes());
+        p.a.write(t, &c).unwrap();
+        p.b.write(t, &c).unwrap();
+        thunks[k] = t;
+    }
+    (thunks[0], thunks[1])
+}
+
+#[test]
+fn rotated_points_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_a9d0);
+        let (cos, sin) = trig_stand_ins(&mut p);
+        let out = p.alloc(8);
+        for _ in 0..3000 {
+            let w: Vec<u32> = (0..5)
+                .map(|_| {
+                    if rng.chance(10) {
+                        rng.float()
+                    } else {
+                        finite(&mut rng)
+                    }
+                })
+                .collect();
+            #[allow(clippy::cast_precision_loss)] // small
+            let small = (rng.below(700) as f32 / 100.0 - 3.5).to_bits();
+            let ang = rng.pick(&[w[2], small]);
+            let args = [w[0], w[1], ang, w[3], w[4], out, out + 4];
+            p.check("op_rot_point", 0x007e_a9d0, &args, |o| {
+                Some(vec::bridge::op_rot_point(
+                    o,
+                    f32::from_bits(w[0]),
+                    f32::from_bits(w[1]),
+                    f32::from_bits(ang),
+                    [f32::from_bits(w[3]), f32::from_bits(w[4])],
+                    [out, out + 4],
+                    &mut |o, c, x| {
+                        let r = o
+                            .call(if c { cos } else { sin }, Conv::Cdecl, &[x.to_bits()])
+                            .unwrap();
+                        st0_f32(&r)
+                    },
+                ))
+            });
+        }
+    }
+}
+
+/// `ST0` stored as `fstp dword`: a NaN keeps its sign and top fraction
+/// bits.
+fn st0_f32(r: &ffx_oracle::Ret) -> f32 {
+    let raw = r.st0_raw.expect("a float in ST0");
+    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
+    let se = u16::from_le_bytes([raw[8], raw[9]]);
+    if se & 0x7fff == 0x7fff && mant << 1 != 0 {
+        let frac = u32::try_from((mant >> 40) & 0x7f_ffff).unwrap();
+        f32::from_bits(u32::from(se >> 15) << 31 | 0x7f80_0000 | frac)
+    } else {
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let v = r.st0.unwrap_or(f64::NAN) as f32;
+        v
+    }
+}

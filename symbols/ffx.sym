@@ -5885,6 +5885,7 @@
 0x007ea760 function op_vector_m                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '*** Calling op_vector_m() math.c:%d ***\\n'; Switch 0x71003dd0f0 op_vector_m (symbols from Fahrenheit's server export)
 0x007ea850 function op_xyz_scale                 # structure: VU0-emulated (dst, src, s): dst.xyz = src.xyz * s, dst.w = src.w; Switch op_xyz_scale (160 bytes) follows op_vector_m in the sorted names, as here; 27 callers
 0x007ea8f0 function op_xyzw_scale                # structure: VU0-emulated (dst, src, s): all four components scaled; Switch op_xyzw_scale (192 bytes) follows op_xyz_scale, as here
+0x007ea9d0 function op_rot_point_007ea9d0      # ours: (x0, y0, ang, x1, y1, *ox, *oy) -> oy: (x1, y1) turned by -ang about (x0, y0) with _CIcos/_CIsin (thunks 0x009498c2/0x009498c8), each f32; x0 + (c dx + s dy), (c dy - s dx) + y0
 0x007eaa60 function op_color_shift_store_half # (src, base) u16 base + g_pppColorConShift = *src; the shift cleared
 0x007eaa90 function op_log2_ceil              # (n) -> the smallest k with 2^k >= n (0 for n <= 1)
 0x007eaac0 function magic_ret0_007eaac0       # g_MagicImports slot 252 (2 overlays): xor eax, eax; ret; hidden from the dump
