@@ -11153,3 +11153,100 @@ fn round25_copies_morph_lerp_and_colours_match_the_original() {
         );
     }
 }
+
+/// Round 26: the effect's screen shake, the scene's wave and the sphere
+/// grid's part start.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round26_shake_wave_and_part_start_match_the_original() {
+    use ffx_field::abmap;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001a_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (randv, tabv) = (t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(tb::MS_SCREEN_OFFSET), log_stub(log, rv, 300, 2)),
+        (Some(model::SCENE_WAVE_C0_STOP), log_stub(log, rv, 301, 1)),
+        (Some(abmap::GET_PTR32_FUNC), log_stub(log, tabv, 302, 1)),
+        (Some(abmap::PPP_START_PART), log_stub(log, rv, 303, 5)),
+        (None, log_stub(log, randv, 304, 0)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let rand = *stubs.last().unwrap();
+    t.put(t.b.rebase(model::RAND_IMPORT), rand);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (e, s) = (t.alloc(0x220), t.alloc(0xe0));
+    let (part, tab, data) = (t.alloc(0x80), t.alloc(0x40), t.alloc(0x20));
+    let slot = t.alloc(4);
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    t.put(t.b.rebase(abmap::ABMAP_PPP_DATA), data);
+    t.put(tabv, tab);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        t.put(randv, rng.below(0x8000));
+        // the shake
+        t.fill(e + 0x1f0, 0x30, &mut rng);
+        t.put(e + 0x214, rng.below(3));
+        t.put(e + 0x1f8, rng.below(6));
+        t.put(e + 0x210, float_in(&mut rng, -10, 10));
+        t.put(e + 0x1fc, float_in(&mut rng, -1, 1));
+        t.put(e + 0x200, rng.range(-2, 20));
+        t.put(e + 0x204, rng.range(0, 22));
+        if k % 11 == 3 {
+            // frames beyond f32's integers
+            t.put(e + 0x200, rng.range(0x0100_0001, 0x7fff_ffff));
+        }
+        let range = if rng.below(2) == 0 {
+            rng.range(1, 60)
+        } else {
+            rng.range(-60, -1)
+        };
+        t.put(e + 0x20c, range);
+        t.put(e + 0x208, rng.range(-100, 100));
+        t.same(
+            "rcefScreenShake",
+            |o| o.void(0x0092_4df0, &[e]),
+            |m| tb::rcef_screen_shake(m, e, call),
+        );
+        // the wave
+        t.fill(s + 0xb0, 0x30, &mut rng);
+        t.put(s + 0xc0, rng.below(6));
+        t.put(s + 0xd4, float_in(&mut rng, -10, 10));
+        t.put(s + 0xc4, float_in(&mut rng, -1, 1));
+        t.put(s + 0xc8, rng.range(-2, 20));
+        t.put(s + 0xd8, rng.range(0, 22));
+        if k % 11 == 4 {
+            t.put(s + 0xc8, rng.range(0x0100_0001, 0x7fff_ffff));
+        }
+        t.put(s + 0xd0, rng.range(-3, 40));
+        t.put(s + 0xcc, rng.range(-100, 100));
+        if k % 9 == 0 {
+            t.put(s + 0xcc, rng.next());
+        }
+        t.same(
+            "rcbgSceneWaveC0Update",
+            |o| o.void(0x0092_10e0, &[s]),
+            |m| model::bridge::rcbg_scene_wave_c0_update(m, s, call),
+        );
+        // the part start
+        t.fill(part, 0x80, &mut rng);
+        t.fill(tab, 0x40, &mut rng);
+        t.fill(data, 0x20, &mut rng);
+        let mut a = [0u32; 11];
+        a[0] = part;
+        a[1] = rng.below(0x10);
+        for v in &mut a[2..] {
+            *v = float_in(&mut rng, -3000, 3000);
+        }
+        if k % 7 == 0 {
+            a[7] = rng.next() | 0x0040_0000;
+        }
+        t.same(
+            "AbmapStartPart",
+            |o| o.eax(0x00a5_bad0, &a),
+            |m| abmap::bridge::abmap_start_part(m, a, call),
+        );
+    }
+}

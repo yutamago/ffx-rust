@@ -42,10 +42,11 @@ STREAK_WIDTH = 2
 MASKS = {
     "menu-browse-2.bmp": [(140, 575, 165, 605)],
     # a searchlight beam's lower end (blocks at y 240, x 1000-1120; up to 41 seen)
-    "field-walk-1.bmp": [(1000, 240, 1120, 280)],
+    # and the save sphere's pulsing glow (field-walk-1 only; 21.5 seen)
+    "field-walk-1.bmp": [(1000, 240, 1120, 280), (480, 300, 580, 420)],
     "field-walk-2.bmp": [(1000, 240, 1120, 280)],
 }
-BLOCK = 40
+BLOCK = 20
 COARSE = 25
 SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
 
@@ -82,9 +83,14 @@ for a_path in sorted(a_dir.glob("*.bmp")):
                     x0 <= k[0] * BLOCK < x1 and y0 <= k[1] * BLOCK < y1
                     for x0, y0, x1, y1 in MASKS.get(a_path.name, ()))]:
                 del m[k]
-        limit = max(COARSE, 2 * max(abs(ma[k] - mb[k]) for k in ma))
-        worst = max(ma, key=lambda k: abs(ma[k] - mr[k]))
-        d = abs(ma[worst] - mr[worst])
+        # the deck's light level steps with the wall clock (whole picture,
+        # 7.8 to 29.1 seen on one floor block): compare after removing the
+        # median shift, so only local differences (a missing model) count
+        shift = sorted(ma[k] - mr[k] for k in ma)[len(ma) // 2]
+        shift_b = sorted(ma[k] - mb[k] for k in ma)[len(ma) // 2]
+        limit = max(COARSE, 2 * max(abs(ma[k] - mb[k] - shift_b) for k in ma))
+        worst = max(ma, key=lambda k: abs(ma[k] - mr[k] - shift))
+        d = abs(ma[worst] - mr[worst] - shift)
         print(f"{a_path.name}: largest block difference {d:.1f} at x {worst[0] * BLOCK}, y {worst[1] * BLOCK} (limit {limit:.1f})")
         bad += d > limit
         continue

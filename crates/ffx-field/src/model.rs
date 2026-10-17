@@ -166,6 +166,16 @@ pub const MODEL_UPDATE: u32 = 0x0092_83e0;
 pub const MODEL_DRAW: u32 = 0x0092_8020;
 /// `rcbgSceneDraw(scene)` (`0x00920740`).
 pub const SCENE_DRAW: u32 = 0x0092_0740;
+/// -65536.0 (`f64`, `.rdata`): the shakes' and waves' phase scale.
+pub const SWING_SCALE: u32 = 0x00b6_77a0;
+/// 6.2831855 (`f64` of an `f32`, `.rdata`): a turn.
+pub const SWING_TURN: u32 = 0x00b3_9378;
+/// `g_pppSinTable` (4096 `f32`s).
+pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+/// The import table's `rand` (MSVCR110).
+pub const RAND_IMPORT: u32 = 0x00b0_c420;
+/// `rcbgSceneWaveC0Stop(scene)` (`0x00921200`).
+pub const SCENE_WAVE_C0_STOP: u32 = 0x0092_1200;
 /// The jump to `rcbgSceneSetChadist` (`0x00920780`).
 pub const SCENE_SET_CHADIST_THUNK: u32 = 0x0092_0780;
 /// `Yn_MapPartCount()` (`0x0091a3d0`).
@@ -1157,6 +1167,96 @@ pub mod bridge {
         let f = mem.rebase(super::TRX_SET_NO);
         call(mem, f, &[p.wrapping_add(0x20), n]);
         call(mem, f, &[p.wrapping_add(0x60), n])
+    }
+
+    /// The swing of the screen shakes and waves: the sine table entry
+    /// `(0x4000 - trunc(phase * -65536.0 / 6.2831855)) >> 4 & 0xfff`.
+    pub fn shake_swing(mem: &impl Mem, phase: u32) -> f64 {
+        use ffx_bridge::x87::{div, ftol, load, mul};
+        let c = |at: u32| mem.read::<f64>(mem.rebase(at));
+        let x = div(
+            mul(load(phase), c(super::SWING_SCALE)),
+            c(super::SWING_TURN),
+        );
+        let i = 0x4000i32.wrapping_sub(ftol(mem, x).cast_signed()) >> 4 & 0xfff;
+        let at = mem.rebase(super::SIN_TABLE) + 4 * i.cast_unsigned();
+        load(mem.read::<u32>(at))
+    }
+
+    /// The fade of a shake or wave: `f32(left) / f32(frames) * swing`,
+    /// `left = frames - done`, each int stored as `f32`.
+    #[must_use]
+    pub fn shake_fade(frames: i32, done: i32, swing: f64) -> f64 {
+        use ffx_bridge::x87::{div, load, mul, store};
+        #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
+        let st = |v: i32| load(store(f64::from(v as f32)));
+        let r = st(frames.wrapping_sub(done));
+        let q = st(frames);
+        load(store(mul(div(r, q), swing)))
+    }
+
+    /// `rand() % range + base` through the import table (a zero range
+    /// faults in the original; the port gives `base`).
+    pub fn shake_random<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        range: i32,
+        base: i32,
+        call: &mut C,
+    ) -> i32 {
+        let f = mem.read::<u32>(mem.rebase(super::RAND_IMPORT));
+        let r = call(mem, f, &[]).cast_signed();
+        r.checked_rem(range).unwrap_or(0).wrapping_add(base)
+    }
+
+    /// `rcbgSceneWaveC0Update(scene)` (`0x009210e0`, from `0x00920aa0`;
+    /// name ours): while a wave runs (mode `+0xc0`), the swing of the
+    /// phase `+0xd4` ([`shake_swing`]), faded over the frames `+0xc8`
+    /// (done `+0xd8`) for modes 3 and 4, times the amplitude (`+0xcc`,
+    /// plus `rand() % +0xd0` when that is positive) into `+0xb8` (odd
+    /// modes) or `+0xbc`; the phase advances by `+0xc4`, the count by one,
+    /// the wave stops (`rcbgSceneWaveC0Stop`) after its frames, then
+    /// `rcbgSceneSetMatrix`.
+    pub fn rcbg_scene_wave_c0_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let mode = mem.read::<i32>(s.wrapping_add(0xc0));
+        if mode == 0 {
+            return;
+        }
+        let mut swing = shake_swing(mem, mem.read(s.wrapping_add(0xd4)));
+        let frames = mem.read::<i32>(s.wrapping_add(0xc8));
+        if mode.wrapping_sub(1) / 2 == 1 && frames > 0 {
+            let done = mem.read::<i32>(s.wrapping_add(0xd8));
+            swing = shake_fade(frames, done, swing);
+        }
+        let range = mem.read::<i32>(s.wrapping_add(0xd0));
+        let base = mem.read::<i32>(s.wrapping_add(0xcc));
+        let amp = if range > 0 {
+            shake_random(mem, range, base, call)
+        } else {
+            base
+        };
+        #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
+        let amp = load(store(f64::from(amp as f32)));
+        let w = store(mul(amp, swing));
+        let at = if mode & 1 != 0 { 0xb8 } else { 0xbc };
+        mem.write(s.wrapping_add(at), w);
+        let p = store(add(
+            load(mem.read(s.wrapping_add(0xc4))),
+            load(mem.read(s.wrapping_add(0xd4))),
+        ));
+        let done = mem.read::<i32>(s.wrapping_add(0xd8)).wrapping_add(1);
+        mem.write(s.wrapping_add(0xd8), done);
+        mem.write(s.wrapping_add(0xd4), p);
+        if frames > 0 && done >= frames {
+            let f = mem.rebase(super::SCENE_WAVE_C0_STOP);
+            call(mem, f, &[s]);
+        }
+        let f = mem.rebase(crate::scene::SCENE_SET_MATRIX);
+        call(mem, f, &[s]);
     }
 
     /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's
