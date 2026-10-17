@@ -5553,7 +5553,18 @@ fn x87_call(o: &mut Oracle, slot: u32, a: f64, b: Option<f64>) -> f64 {
     let r = o.call(at, Conv::Cdecl, &w).unwrap();
     let pop = o.rebase(X87_CODE + 0x60);
     o.call(pop, Conv::Cdecl, &[]).unwrap();
-    r.st0.expect("a float result")
+    let v = r.st0.expect("a float result");
+    if !v.is_nan() {
+        return v;
+    }
+    // `st0` makes every NaN the same: the sign and payload from the 80 bits
+    let raw = r.st0_raw.expect("a float result");
+    let mut m = [0; 8];
+    m.copy_from_slice(&raw[..8]);
+    let sign = u64::from(raw[9] >> 7) << 63;
+    f64::from_bits(
+        sign | 0x7ff0_0000_0000_0000 | ((u64::from_le_bytes(m) >> 11) & 0x000f_ffff_ffff_ffff),
+    )
 }
 
 #[test]
@@ -6018,6 +6029,13 @@ fn menu_wrappers_match_the_original() {
             o.write(at, &[0x31, 0xc0, 0xc3]).unwrap();
         }
     }
+    // dbgPrintf (a bare ret on PC) counting its calls: inc dword [n]; ret
+    let n = t.alloc(&[0; 4]);
+    let code = [&[0xff, 0x05][..], &n.to_le_bytes(), &[0xc3]].concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0062_f500);
+        o.write(at, &code).unwrap();
+    }
     let w = u64::from;
     for round in 0..48u32 {
         t.twin("TkSyncV", 0x0088_7f00, &[], U32, |o| {
@@ -6027,6 +6045,24 @@ fn menu_wrappers_match_the_original() {
         t.put(t.sym(0x0186_a244), copy);
         t.twin("TkMn2DrawInitPacket", 0x008c_0be0, &[], U32, |o| {
             w(tk::tk_mn2_draw_init_packet(o, &mut callback))
+        });
+        // the cursor, its start and the two marks around each other and the
+        // 0x02000000 limit
+        for a in [0x0186_a238u32, 0x0186_a240, 0x0186_a244, 0x0186_a248] {
+            let v = match t.rng.below(4) {
+                0 => 0x01ff_fff0 + t.rng.below(0x20),
+                1 => t.rng.below(0x100),
+                _ => t.rng.next(),
+            };
+            t.put(t.sym(a), v);
+        }
+        if round % 6 == 0 {
+            // one step short of the limit
+            t.put(t.sym(0x0186_a238), 0x01ff_fff0u32);
+        }
+        let clear = t.rng.pick(&[0, 1, 0x100]);
+        t.twin("TkMn2DrawKickPacketBody", 0x008c_0c50, &[clear], U32, |o| {
+            w(tk::tk_mn2_draw_kick_packet_body(o, clear, &mut callback))
         });
         let p = t.rng.next();
         t.twin("TkFree", 0x0088_d520, &[p], U32, |o| {
@@ -6121,6 +6157,57 @@ fn menu_wrappers_match_the_original() {
             x87_call(&mut t.b, 0x00b0_c3b0, a, Some(b))
         });
         same_float(&format!("Math_Atan2XZ {v:?}"), r.st0, want);
+        // Math_FacingWithin: finite headings (Math_WrapAngle never ends
+        // for an infinity), tolerances around the difference, NaN
+        let heading = if round % 7 == 0 {
+            f32::NAN
+        } else {
+            f32::from(i16::try_from(t.rng.below(4000)).unwrap_or(0) - 2000) / 100.0
+        };
+        let tol = match t.rng.below(6) {
+            0 => f32::NAN,
+            1 => -1.0,
+            2 => 0.0,
+            _ => f32::from(u16::try_from(t.rng.below(400)).unwrap_or(0)) / 100.0,
+        };
+        let q: [f32; 4] = std::array::from_fn(|_| pick(&mut t));
+        let args = [heading, tol, q[0], q[1], q[2], q[3]].map(f32::to_bits);
+        t.twin("Math_FacingWithin", 0x0088_b780, &args, U32, |o| {
+            w(tk::math_facing_within(
+                o,
+                heading,
+                tol,
+                [q[0], q[1]],
+                [q[2], q[3]],
+                &mut |o, a, b| x87_call(o, 0x00b0_c3b0, a, Some(b)),
+            ))
+        });
+        // Math_YawPitchTo from and to points sharing axes or not
+        let mut p: [f32; 6] = std::array::from_fn(|_| pick(&mut t));
+        match round % 4 {
+            1 => p[3] = p[0],
+            2 => p[5] = p[2],
+            3 => {
+                let k = t.rng.below(3) as usize;
+                p[k] = f32::INFINITY;
+                p[3 + k] = f32::INFINITY;
+            }
+            _ => {}
+        }
+        let (yaw, pitch) = (t.alloc_random(4), t.alloc_random(4));
+        let pitch = if round % 8 == 0 { yaw } else { pitch };
+        let mut args = vec![yaw, pitch];
+        args.extend(p.map(f32::to_bits));
+        t.twin("Math_YawPitchTo", 0x0088_b4d0, &args, U32, |o| {
+            w(tk::math_yaw_pitch_to(
+                o,
+                yaw,
+                pitch,
+                [p[0], p[1], p[2]],
+                [p[3], p[4], p[5]],
+                &mut |o, a, b| x87_call(o, 0x00b0_c3b0, a, Some(b)),
+            ))
+        });
     }
     eprintln!("{} calls", t.calls);
 }
@@ -6260,6 +6347,17 @@ fn menu_selectors_match_the_original() {
         t.twin("MenuItem_CursorTable", 0x008c_4ff0, &[], U32, |o| {
             w(tk::menu_item_cursor_table(o, &mut callback))
         });
+        // the table as the image has it, or cut short at a random entry
+        if round % 4 == 3 {
+            let f = t.sym(0x008c_4ff0);
+            let table = callback(&mut t.b, f, &[]);
+            let k = t.rng.below(6);
+            let v = u16::try_from(t.rng.below(3)).unwrap_or(0);
+            t.put(table + 4 * k, v);
+        }
+        t.twin("MenuItem_CursorCount", 0x008c_5030, &[], U32, |o| {
+            w(tk::menu_item_cursor_count(o, &mut callback))
+        });
         t.twin("MenuItem_CellTable", 0x008c_4f80, &[], U32, |o| {
             w(tk::menu_item_cell_table(o, &mut callback))
         });
@@ -6314,6 +6412,13 @@ fn menu_selectors_match_the_original() {
         if round % 8 == 0 {
             t.twin("MenuNameEntry_RegistWindow", 0x008c_4450, &[], U32, |o| {
                 w(tk::menu_name_entry_regist_window(o, &mut callback))
+            });
+        }
+        if round % 8 == 4 {
+            let index = t.rng.pick(&[0u32, 1, 2, 3, 4, 5, 6]);
+            let args = [t.rng.next(), index, t.rng.next(), t.rng.next()];
+            t.twin("MenuStatus_OpenWindow", 0x008d_3140, &args, U32, |o| {
+                w(tk::menu_status_open_window(o, args, &mut callback))
             });
         }
     }
@@ -6663,6 +6768,73 @@ fn tk_menu_list_window_ctrl_matches_the_original() {
         t.twin("TkMenuListWindowCtrl", 0x008b_44b0, &[w], VOID, |o| {
             tk::tk_menu_list_window_ctrl(o, w, &mut callback);
             0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_item_keys_match_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_5390) else {
+        return;
+    };
+    for round in 0..400u32 {
+        // a key string of tokens of each shape (kind 4's second byte on
+        // both sides of 0x2f; 6..=0x2f with an argument; lone bytes)
+        let mut keys = Vec::new();
+        for _ in 0..t.rng.below(6) {
+            match t.rng.below(4) {
+                0 => {
+                    let c = u8::try_from(t.rng.below(0x40)).unwrap_or(0).max(1);
+                    keys.extend([4, c]);
+                    if c <= 0x2f || t.rng.below(4) == 0 {
+                        keys.push(u8::try_from(1 + t.rng.below(0xff)).unwrap_or(1));
+                    }
+                }
+                1 => {
+                    let any = u8::try_from(6 + t.rng.below(0x2a)).unwrap_or(6);
+                    let b = t.rng.pick(&[6, 0x2f, any]);
+                    keys.extend([b, u8::try_from(1 + t.rng.below(0xff)).unwrap_or(1)]);
+                }
+                _ => keys.push(t.rng.pick(&[1u8, 2, 3, 5, 0x30, 0x31, 0x80, 0xff])),
+            }
+        }
+        keys.push(0);
+        let keys = t.alloc(&keys);
+        // the entries Menu_ParseItemKeys makes of it, sometimes from
+        // another string or with one byte changed
+        let parsed = if round % 4 == 0 {
+            let mut other: Vec<u8> = (0..t.rng.below(6))
+                .map(|_| t.rng.pick(&[1u8, 4, 6, 0x10, 0x30, 0x40]))
+                .collect();
+            other.push(0);
+            t.alloc(&other)
+        } else {
+            keys
+        };
+        let f = t.sym(0x008c_5280);
+        for o in [&mut t.a, &mut t.b] {
+            o.call(f, Conv::Cdecl, &[parsed]).unwrap();
+        }
+        if round % 2 == 1 {
+            // mostly in the first entries, where the tokens are
+            let k = t.rng.below(if round % 4 == 1 { 0xc } else { 0x20 });
+            let v = u8::try_from(t.rng.below(4)).unwrap_or(0);
+            t.put(t.sym(tk::ITEM_KEYS) + k, v);
+        }
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        // TOMenuGetNameMes: the string (or an empty one)
+        let s = if round % 16 == 0 { t.alloc(&[0]) } else { keys };
+        return_const(&mut t, 0x008b_edd0, s);
+        let target = t.rng.below(0x14).wrapping_sub(2);
+        t.twin("MenuItem_KeysMatch", 0x008c_5390, &[target], U32, |o| {
+            u64::from(tk::menu_item_keys_match(
+                o,
+                target.cast_signed(),
+                &mut callback,
+            ))
         });
     }
     eprintln!("{} calls", t.calls);

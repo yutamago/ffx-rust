@@ -235,9 +235,11 @@ pub fn atan2_xz(
     z1: f32,
     intrinsic: impl FnOnce(f64, f64) -> f64,
 ) -> f32 {
-    let r = |v: f32| f64::from(ffx_bridge::x87::round_trip(v));
-    let dx = (r(x1) - r(x0)) as f32;
-    let dz = (r(z1) - r(z0)) as f32;
+    use ffx_bridge::x87::{load, store, sub};
+    // x87 subtraction: ∞ - ∞ is the negative indefinite NaN
+    let d = |a: f32, b: f32| f32::from_bits(store(sub(load(a.to_bits()), load(b.to_bits()))));
+    let dx = d(x1, x0);
+    let dz = d(z1, z0);
     #[allow(clippy::float_cmp)] // fucompp against 0
     if dx.abs() == 0.0 {
         return if dz >= 0.0 {
@@ -251,6 +253,49 @@ pub fn atan2_xz(
         return if dx >= 0.0 { -0.0 } else { PI_F32 };
     }
     intrinsic(f64::from(dz), f64::from(dx)) as f32
+}
+
+/// `Math_YawPitchTo(*yaw, *pitch, from, to)` (`0x0088b4d0`): the yaw
+/// [`atan2_xz`] from `from` to `to` on the XZ plane, and the pitch
+/// [`atan2_xz`] from `(0, from.y)` to `(h, to.y)`, `h` the horizontal
+/// distance: the differences stored as floats, `sqrt(dx² + dz²)` at 53
+/// bits stored as a float. `(yaw, pitch)`.
+#[must_use]
+pub fn yaw_pitch_to(
+    from: [f32; 3],
+    to: [f32; 3],
+    mut intrinsic: impl FnMut(f64, f64) -> f64,
+) -> (f32, f32) {
+    use ffx_bridge::x87::{add, load, mul, sqrt, store, sub};
+    let [fx, fy, fz] = from;
+    let [tx, ty, tz] = to;
+    let yaw = atan2_xz(fx, fz, tx, tz, &mut intrinsic);
+    let dx = load(store(sub(load(tx.to_bits()), load(fx.to_bits()))));
+    let dz = load(store(sub(load(tz.to_bits()), load(fz.to_bits()))));
+    let h = f32::from_bits(store(sqrt(add(mul(dx, dx), mul(dz, dz)))));
+    let pitch = atan2_xz(0.0, fy, h, ty, &mut intrinsic);
+    (yaw, pitch)
+}
+
+/// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)` (`0x0088b780`, own
+/// name): whether the direction [`atan2_xz`] from `(x0, z0)` to `(x1, z1)`
+/// lies within `tol` of `heading`: the difference stored as a float,
+/// [`wrap_angle`]d, [`min_abs`] with `tol`, then strictly below `tol`
+/// (false with a NaN). The script's talk-angle check (`Native_SetTalkAngle`,
+/// `Native_1015`) asks it. Like [`wrap_angle`], it never ends for an
+/// infinite difference.
+#[must_use]
+pub fn facing_within(
+    heading: f32,
+    tol: f32,
+    from: [f32; 2],
+    to: [f32; 2],
+    intrinsic: impl FnOnce(f64, f64) -> f64,
+) -> bool {
+    use ffx_bridge::x87::{load, store, sub};
+    let a = atan2_xz(from[0], from[1], to[0], to[1], intrinsic);
+    let d = f32::from_bits(store(sub(load(a.to_bits()), load(heading.to_bits()))));
+    min_abs(wrap_angle(d), tol) < tol
 }
 
 /// The float constants `Math_Atan2XZ` loads: π/2 (`0x00b43d38`) and π

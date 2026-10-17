@@ -3129,6 +3129,10 @@ ported! {
     TkMn2DrawInitPacket @ 0x008c_0be0 => extern "C" fn tk_mn2_draw_init_packet() -> u32 {
         tk::tk_mn2_draw_init_packet(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2DrawKickPacketBody(clear)`.
+    TkMn2DrawKickPacketBody @ 0x008c_0c50 => extern "C" fn tk_mn2_draw_kick_packet_body(clear: u32) -> u32 {
+        tk::tk_mn2_draw_kick_packet_body(&mut mem(), clear, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkFree(p)`: the last memory check's result.
     TkFree @ 0x0088_d520 => extern "C" fn tk_free(p: u32) -> u32 {
         tk::tk_free(&mut mem(), p, &mut |_, f, a| call_ptr(f, a))
@@ -3136,6 +3140,14 @@ ported! {
     /// `TkSndUpdateMain()`.
     TkSndUpdateMain @ 0x0088_7bd0 => extern "C" fn tk_snd_update_main() -> u32 {
         tk::tk_snd_update_main(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Math_YawPitchTo(yaw, pitch, fx, fy, fz, tx, ty, tz)`.
+    Math_YawPitchTo @ 0x0088_b4d0 => extern "C" fn math_yaw_pitch_to(yaw: u32, pitch: u32, fx: f32, fy: f32, fz: f32, tx: f32, ty: f32, tz: f32) -> u32 {
+        tk::math_yaw_pitch_to(&mut mem(), yaw, pitch, [fx, fy, fz], [tx, ty, tz], &mut |_, a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
+    }
+    /// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)`: 1 or 0.
+    Math_FacingWithin @ 0x0088_b780 => extern "C" fn math_facing_within(heading: f32, tol: f32, x0: f32, z0: f32, x1: f32, z1: f32) -> u32 {
+        tk::math_facing_within(&mut mem(), heading, tol, [x0, z0], [x1, z1], &mut |_, a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
     }
     /// `TkSndUpdate()`.
     TkSndUpdate @ 0x0088_7b60 => extern "C" fn tk_snd_update() -> u32 {
@@ -3181,6 +3193,10 @@ ported! {
     MenuItem_CursorTable @ 0x008c_4ff0 => extern "C" fn menu_item_cursor_table() -> u32 {
         tk::menu_item_cursor_table(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_CursorCount()`.
+    MenuItem_CursorCount @ 0x008c_5030 => extern "C" fn menu_item_cursor_count() -> u32 {
+        tk::menu_item_cursor_count(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuItem_CellTable()`.
     MenuItem_CellTable @ 0x008c_4f80 => extern "C" fn menu_item_cell_table() -> u32 {
         tk::menu_item_cell_table(&mut mem(), &mut |_, f, a| call_ptr(f, a))
@@ -3200,6 +3216,14 @@ ported! {
     /// `MenuNameEntry_RegistWindow()`: the window.
     MenuNameEntry_RegistWindow @ 0x008c_4450 => extern "C" fn menu_name_entry_regist_window() -> u32 {
         tk::menu_name_entry_regist_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_OpenWindow(a, index, b, c)`: the window.
+    MenuStatus_OpenWindow @ 0x008d_3140 => extern "C" fn menu_status_open_window(a: u32, index: u32, b: u32, c: u32) -> u32 {
+        tk::menu_status_open_window(&mut mem(), [a, index, b, c], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `MenuItem_KeysMatch(t)`: 1 or 0.
+    MenuItem_KeysMatch @ 0x008c_5390 => extern "C" fn menu_item_keys_match(t: i32) -> u32 {
+        tk::menu_item_keys_match(&mut mem(), t, &mut |_, f, a| call_ptr(f, a))
     }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {

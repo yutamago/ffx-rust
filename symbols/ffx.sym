@@ -9020,10 +9020,11 @@
 0x0088b3e0 function CIcos                     # fh v3:bsim1.00 0x0088b350 +_CIcos
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
-0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
+0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz): yaw Math_Atan2XZ on XZ, pitch Math_Atan2XZ(0, fy, sqrt(dx^2+dz^2), ty); eax = yaw
 0x0088b570 function Math_AngleStep            # (cur, target, step) -> ST0: cur turned toward target by at most step the short way (Math_WrapAngle, Math_MinAbs), wrapped; the target itself when closer; name ours
 0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
+0x0088b780 function Math_FacingWithin         # (heading, tol, x0, z0, x1, z1) -> eax 1 when Math_MinAbs(Math_WrapAngle(Math_Atan2XZ(x0, z0, x1, z1) - heading), tol) < tol; the talk-angle check (Native_SetTalkAngle, Native_1015); name ours
 0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
@@ -9727,7 +9728,7 @@
 0x008c0a20 function TkMn2DrawGillPlate           # layout+callees: sorts between TkMn2DrawCrossRect and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c7fc0 TkMn2DrawGillPlate's (similarity 1.00: TOGetFFXLang, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyEdgeDigit2, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008c0be0 function TkMn2DrawInitPacket       # (): g_TkMn2DrawY from the menu packet buffer address (rewound by half of TOMenuGetPacketBuffSize when unchanged), font shade 0x80; the Switch's TkMn2DrawInitPacket calls TOMenuGetPacketBuffAdrs and TOMenuGetPacketBuffSize and sorts between TkMn2DrawCross* and TkMn2DrawKickPacket, as here; 15 callers (the menu draw roots)
 0x008c0c40 function TkMn2DrawKickPacket          # layout+callees: sorts between TkMn2DrawInitPacket and TkMn2DrawKickPacketBody, and its named callees match the Switch 0x71004c5650 TkMn2DrawKickPacket's (similarity 1.00: TkMn2DrawKickPacketBody); symbols from Fahrenheit's server export
-0x008c0c50 function TkMn2DrawKickPacketBody   # (sync): records the high-water marks of the menu draw cursor (g_TkMn2DrawY), clears the scissor and, when asked, waits for VU1 (TkVU1SyncPath); the Switch's TkMn2DrawKickPacketBody (scissor, TkVU1SyncPath, dbgPrintf) is called by TkMn2DrawKickPacket and TkMn2DrawKickSyncPacket and sorts between them, as here; was TkMn2DrawFlush_008c0c50
+0x008c0c50 function TkMn2DrawKickPacketBody   # (clear): records the high-water marks of the menu draw cursor (0x0186a248 bytes used since 0x0186a244, g_TkMn2Work the cursor), clears the scissor when clear is set, steps the cursor 16, TkVU1SyncPath, dbgPrintf at >= 0x02000000, then TkMn2DrawInitPacket (tail); the Switch's TkMn2DrawKickPacketBody (scissor, TkVU1SyncPath, dbgPrintf) is called by TkMn2DrawKickPacket and TkMn2DrawKickSyncPacket and sorts between them, as here; was TkMn2DrawFlush_008c0c50
 0x008c0cc0 function TkMn2DrawKickSyncPacket   # fh call.cs cdecl
 0x008c0cd0 function TkMn2DrawKickSyncPacket2  # TkMn2DrawKickPacketBody + TkVU1SyncPath; the Switch's TkMn2DrawKickSyncPacket2 sorts right after TkMn2DrawKickSyncPacket, as here
 0x008c0dd0 function MenuMn2_StepDrawY80       # g_TkMn2DrawY = MenuMn2_Plus80(y + 16); own name
@@ -9812,8 +9813,10 @@
 0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
+0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5280 function Menu_ParseItemKeys        # (s): splits a key string into the 32 4-byte entries at 0x0186a280 (g_TkMenuItemKeyUse): kind 4 takes a second byte, values 6..0x2f an argument byte; the rest cleared; name ours
+0x008c5390 function MenuItem_KeysMatch        # (t) -> 1 when g_TkMenuItemKeyUse (Menu_ParseItemKeys' entries) spells TOMenuGetNameMes(u16 0x00c5a0d8[4t]) token by token (6..0x2f + arg, 4 + byte (+ byte when <= 0x2f), others alone; each entry then 0) up to the string's end and an entry starting 0; 0 for t < 0 or an empty string; callers pass g_TkMenuItemTarget; name ours
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
 0x008c5450 function TkMenuCtrlItem            # fh v3:exact 0x008c5420
 0x008c60b0 function TkMenuCtrlAbility         # fh v3:exact 0x008c6080
@@ -9939,6 +9942,7 @@
 0x008d2dc0 function TkMenuGetCommandOffset    # fh v3:exact 0x008d2d90
 0x008d2e10 function TkMenuGetDispCommand         # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e5df0 TkMenuGetDispCommand's (similarity 0.73: MsGetSaveCommand, MsGetSaveCommandMenuPanel, MsGetSavePlayerPtr, MsGetSavePlyJoin, MsGetSaveWeapon); symbols from Fahrenheit's server export
 0x008d30c0 function MenuMn2_Ease              # (t, dir) Math_CosLookup(t) & 0xffff, mirrored for dir < 0; own name
+0x008d3140 function MenuStatus_OpenWindow     # (a, index, b, c): TkMenuMainAllocWindow into g_TkMenuStatusWindows[index]: +8 0x008d2670, +0xc TkMn2WindowStepFade, +0x10 0x008d2790, +0x14 TkMenuWindowFadedOut, +0x3e index + 3, +0x5c c, +0x64 a, +0x58 b, +0x60 index, +0x68 kind (index 0..4 -> 1,2,3,5,4, else 0), +0x54 = 0xaa; TkMenuMainRegistWindow; returns it; name ours
 0x008d3200 function TkMenuWindowFadedOut      # (window) -> whether the fade +0x52 is 0
 0x008d3220 function MenuStatus_OffsetRect     # (dx, dy, out, rect, sized) 24-byte rect copy moved; size from 0x0186a8a4 when sized; own name
 0x008d3280 function TkMn2StepStatusBG         # (): i16 0x0186aa00 += step (0x0186a9fc), kept in 0..0x1000

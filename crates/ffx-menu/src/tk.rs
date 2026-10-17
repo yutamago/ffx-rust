@@ -5339,6 +5339,21 @@ pub mod bridge {
         })
     }
 
+    /// `MenuItem_CursorCount()` (`0x008c5030`, own name): the entries of
+    /// [`menu_item_cursor_table`] (4 bytes each) before the first whose
+    /// `u16` is 0.
+    pub fn menu_item_cursor_count<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = menu_item_cursor_table(mem, call);
+        let mut n = 0u32;
+        while mem.read::<u16>(table.wrapping_add(4 * n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
     /// `MenuItem_CellTable()` (`0x008c4f80`, own name): with an item-menu
     /// target `t` (`0x0186a258` >= 0) entry `t` of `0x00c5a0d8` (Japanese,
     /// `MsGetSaveConfigEnglish` asked but unused) or `0x00c5a120`; without
@@ -5454,6 +5469,111 @@ pub mod bridge {
         let f = mem.rebase(0x008a_ab00);
         call(mem, f, &[w]);
         w
+    }
+
+    /// `MenuStatus_OpenWindow(a, index, b, c)` (`0x008d3140`, own name): a
+    /// window from `TkMenuMainAllocWindow()` kept in [`STATUS_WINDOWS`]
+    /// `[index]`, with the status window's callbacks (`+8` `0x008d2670`,
+    /// `+0xc` `TkMn2WindowStepFade`, `+0x10` `0x008d2790`, `+0x14`
+    /// `TkMenuWindowFadedOut`), layer `index + 3` (`+0x3e`), `c` at `+0x5c`,
+    /// `a` at `+0x64`, `b` at `+0x58`, `index` at `+0x60`, the kind at
+    /// `+0x68` (index 0..=4 → 1, 2, 3, 5, 4; else 0) and the fade step
+    /// `0xaa` (`+0x54`); registered (`TkMenuMainRegistWindow`) and returned.
+    pub fn menu_status_open_window<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let index = args[1];
+        let kind: u32 = match index {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+            3 => 5,
+            4 => 4,
+            _ => 0,
+        };
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        let slot = STATUS_WINDOWS
+            .ptr(mem)
+            .addr
+            .wrapping_add(index.wrapping_mul(4));
+        mem.write(slot, w);
+        for (o, f) in [
+            (8u32, 0x008d_2670u32),
+            (0xc, 0x008d_26d0),
+            (0x10, 0x008d_2790),
+            (0x14, 0x008d_3200),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), index.to_le_bytes()[0].wrapping_add(3));
+        mem.write(w.wrapping_add(0x5c), args[3]);
+        mem.write(w.wrapping_add(0x64), args[0]);
+        mem.write(w.wrapping_add(0x58), args[2]);
+        mem.write(w.wrapping_add(0x60), index);
+        mem.write(w.wrapping_add(0x68), kind);
+        mem.write(w.wrapping_add(0x54), 0xaau16);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `MenuItem_KeysMatch(t)` (`0x008c5390`, own name): whether the item
+    /// keys [`menu_parse_item_keys`] left in [`ITEM_KEYS`] spell target `t`'s
+    /// key string (`TOMenuGetNameMes` of the `u16` at `0x00c5a0d8 + 4t`):
+    /// token by token, each 4-byte entry its bytes then a 0 (a value in
+    /// 6..=0x2f with its argument byte; kind 4 with its byte, and for a byte
+    /// up to 0x2f one more), until the string's end meets an entry starting
+    /// with 0. 0 for a negative `t` or an empty string.
+    pub fn menu_item_keys_match<M: Mem>(
+        mem: &mut M,
+        t: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if t < 0 {
+            return 0;
+        }
+        let id: u16 = mem.read(
+            mem.rebase(0x00c5_a0d8)
+                .wrapping_add(t.cast_unsigned().wrapping_mul(4)),
+        );
+        let name_mes = mem.rebase(0x008b_edd0);
+        let mut at = call(mem, name_mes, &[u32::from(id)]);
+        if mem.read::<u8>(at) == 0 {
+            return 0;
+        }
+        let mut key = mem.rebase(ITEM_KEYS);
+        let mut next = |mem: &M| {
+            let v = mem.read::<u8>(at);
+            at = at.wrapping_add(1);
+            v
+        };
+        loop {
+            let b = next(mem);
+            let entry: [u8; 4] = mem.read(key);
+            // the entry's expected bytes, ending with its 0
+            let (want, n) = if b == 0 {
+                return u32::from(entry[0] == 0);
+            } else if b.wrapping_sub(6) <= 0x29 {
+                ([b, next(mem), 0, 0], 3)
+            } else if b == 4 {
+                let c = next(mem);
+                if c <= 0x2f {
+                    ([4, c, next(mem), 0], 4)
+                } else {
+                    ([4, c, 0, 0], 3)
+                }
+            } else {
+                ([b, 0, 0, 0], 2)
+            };
+            if entry[..n] != want[..n] {
+                return 0;
+            }
+            key = key.wrapping_add(4);
+        }
     }
 
     /// The base value of an equipment entry `e` (shared by
@@ -6120,6 +6240,44 @@ pub mod bridge {
         half
     }
 
+    /// `TkMn2DrawKickPacketBody(clear)` (`0x008c0c50`): the menu packet's
+    /// high-water marks first (unsigned): `0x0186a248` takes the bytes used
+    /// (`g_TkMn2DrawY - 0x0186a244`) and `g_TkMn2Work` the cursor when
+    /// larger. Then the full-screen scissor (`TkMn2DrawScissorClear`) when
+    /// `clear` is set, a 16-byte step of the cursor (`MenuMn2_StepDrawY`),
+    /// `TkVU1SyncPath()`, `dbgPrintf("TK:MN:Packet Over\n")` once the cursor
+    /// reaches `0x02000000`, and [`tk_mn2_draw_init_packet`] for the next
+    /// frame (a tail jump: its result).
+    pub fn tk_mn2_draw_kick_packet_body<M: Mem>(
+        mem: &mut M,
+        clear: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let y = MN2_DRAW_Y.get(mem);
+        let used = y.wrapping_sub(mem.read(mem.rebase(0x0186_a244)));
+        let peak = mem.rebase(0x0186_a248);
+        if mem.read::<u32>(peak) < used {
+            mem.write(peak, used);
+        }
+        let work = mem.rebase(0x0186_a240);
+        if mem.read::<u32>(work) < y {
+            mem.write(work, y);
+        }
+        if clear != 0 {
+            let f = mem.rebase(0x008c_1370);
+            call(mem, f, &[]);
+        }
+        let y = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        MN2_DRAW_Y.set(mem, y);
+        let f = mem.rebase(0x0088_ec60);
+        call(mem, f, &[]);
+        if MN2_DRAW_Y.get(mem) >= 0x0200_0000 {
+            let (f, text) = (mem.rebase(0x0062_f500), mem.rebase(0x00b6_5768));
+            call(mem, f, &[text]);
+        }
+        tk_mn2_draw_init_packet(mem, call)
+    }
+
     /// `TkFree(p)` (`0x0088d520`): `user_free_thunk(p)`, then
     /// `Sg_MemCheck` on pools 0 and 1 (with the source file `0x00b5e968`
     /// and lines 480, 481). Returns the last check's result.
@@ -6134,6 +6292,43 @@ pub mod bridge {
         let f = mem.rebase(0x0083_b7b0);
         call(mem, f, &[0, file, 0x1e0]);
         call(mem, f, &[1, file, 0x1e1])
+    }
+
+    /// `Math_YawPitchTo(yaw, pitch, from, to)` (`0x0088b4d0`):
+    /// [`crate::math::yaw_pitch_to`] (`atan2` the C runtime's `_CIatan2`)
+    /// stored at `*yaw`, then `*pitch`; `eax` is left holding `yaw`.
+    pub fn math_yaw_pitch_to<M: Mem>(
+        mem: &mut M,
+        yaw: u32,
+        pitch: u32,
+        from: [f32; 3],
+        to: [f32; 3],
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        let (y, p) = crate::math::yaw_pitch_to(from, to, |a, b| atan2(mem, a, b));
+        mem.write(yaw, y.to_bits());
+        mem.write(pitch, p.to_bits());
+        yaw
+    }
+
+    /// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)` (`0x0088b780`, own
+    /// name): [`crate::math::facing_within`] as 1 or 0 (`atan2` the C
+    /// runtime's `_CIatan2`).
+    pub fn math_facing_within<M: Mem>(
+        mem: &mut M,
+        heading: f32,
+        tol: f32,
+        from: [f32; 2],
+        to: [f32; 2],
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        u32::from(crate::math::facing_within(
+            heading,
+            tol,
+            from,
+            to,
+            |a, b| atan2(mem, a, b),
+        ))
     }
 
     /// `TkSndUpdate()` (`0x00887b60`): `SndExecMusicClearQue(1, 0)` (every
