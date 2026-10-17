@@ -6922,3 +6922,96 @@ fn round11b_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round11c_matches_the_original() {
+    for mut t in twins() {
+        round11c_on(&mut t);
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round11c_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_c11c);
+    let fk = Fakes::new(t);
+    let elem = fk.fake(t, 0x0083_5660, 1, 3);
+    let pos_set = fk.fake(t, 0x0077_e9a0, 2, 3);
+    let pop = t.b.rebase(FPU_POP);
+    let (mode, shape, th) = (
+        t.a.rebase(0x0130_08d9),
+        t.a.rebase(0x0130_08da),
+        t.a.rebase(0x00c4_9718),
+    );
+    for round in 0..96u32 {
+        fk.reset(t);
+        t.put_u32(elem, if round % 8 == 7 { 0 } else { rng.next() % 4 });
+        t.put_u32(pos_set, rng.next());
+        t.put(mode, &[(rng.next() % 5) as u8]);
+        t.put(shape, &[(rng.next() % 8) as u8]);
+        t.put(th, &((rng.next() % 200) as i16).to_le_bytes());
+        let chr = t.alloc(0x800);
+        for k in 0..0x200 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        t.put(chr + 0x4d4, &[u8::from(rng.next().is_multiple_of(2))]);
+        let open = (rng.next() % 90) as i16 - 10;
+        t.put(chr + 0x4dc, &open.to_le_bytes());
+        let goal = if rng.next().is_multiple_of(4) {
+            0
+        } else {
+            (rng.next() % 90) as i16 - 10
+        };
+        t.put(chr + 0x4de, &goal.to_le_bytes());
+        if rng.next().is_multiple_of(4) {
+            t.put(chr + 0x4dc, &goal.to_le_bytes());
+        }
+        t.put(chr + 0x4e1, &[(rng.next() % 3) as u8]);
+        t.put(chr + 0x4e3, &[1 + (rng.next() % 20) as u8]);
+        t.put_u32(chr + 0x6fc, rng.next() % 2);
+        let model = t.alloc(0x80);
+        for k in 0..3 {
+            t.put_u32(
+                model + 0x44 + 4 * k,
+                (((rng.next() % 64) as f32) / 16.0 - 2.0).to_bits(),
+            );
+        }
+        t.put(
+            model + 0x42,
+            &[
+                (rng.next() % 4) as u8,
+                u8::from(rng.next().is_multiple_of(2)),
+            ],
+        );
+        t.put_u32(chr + 0x1c4, model);
+        let elems = t.alloc(0x160 * 4);
+        t.put_u32(chr + 0x328, elems);
+        let at = t.a.rebase(0x0083_44f0);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |_: &mut Oracle, _: u32, _: &[f64]| f32::NAN;
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_mouth(&mut t.b, chr, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_Mouth {round}", t.name);
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_Mouth {round} memory",
+            t.name
+        );
+    }
+}

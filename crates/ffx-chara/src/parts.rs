@@ -843,6 +843,134 @@ pub mod bridge {
             mem.write(e + 0xb8 + 4 * k, v);
         }
     }
+
+    /// The mouth mode (`i8`: 1 a scripted shape, 2 shut, 3 talking, others
+    /// follow the character's talk byte `+0x4d4`) and the shape index
+    /// (`i8`) `Ch_Mouth` reads, the shapes (`u8`), the open threshold
+    /// (`i16`, `g_ChrMouthTh`).
+    pub const MOUTH_MODE: u32 = 0x0130_08d9;
+    pub const MOUTH_SHAPE: u32 = 0x0130_08da;
+    pub const MOUTH_SHAPES: u32 = 0x00c4_971c;
+    pub const MOUTH_TH: u32 = 0x00c4_9718;
+    /// `TexAnim_PosSet(anim, which, pos)` (`0x0077e9a0`).
+    pub const TEX_ANIM_POS_SET: u32 = 0x0077_e9a0;
+
+    /// `Ch_Mouth(chr)` (`0x008344f0`): the mouth opening `+0x4dc` (tenths
+    /// of a degree) moves toward a goal `+0x4de` by a step `+0x4e3`
+    /// (1-20) while a counter `+0x4e1` (1-4) runs; a new goal (talking:
+    /// `rand` % 100 − 30, at least 0; else 0) comes when the counter runs
+    /// out, or at once when not talking and not shut. Mode 1 takes the goal
+    /// from the shape table. The opening turns the jaw element (option
+    /// point 13) about the model's axis (byte `+0x42` of `+0x1c4`; its
+    /// rest angles `+0x44`..`+0x4c`, negated with byte `+0x43`), and with
+    /// a mouth texture (`+0x6fc`) shows its open frame past the threshold
+    /// (`TexAnim_PosSet(+0x700, 1, open)`). Returns what EAX holds.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_mouth<M: Mem>(mem: &mut M, chr: u32, c: &mut NeckCalls<'_, M>) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let rand_at: u32 = mem.read(r(mem, crate::texanim::bridge::RAND_SLOT));
+        let mode = mem.read::<i8>(r(mem, MOUTH_MODE));
+        let talking = mode == 1 || (mode != 2 && (mode == 3 || mem.read::<u8>(chr + 0x4d4) != 0));
+        let new_goal = |mem: &mut M, c: &mut NeckCalls<'_, M>, zero: bool| {
+            if zero {
+                mem.write(chr + 0x4de, 0u16);
+            }
+            let x = (c.call)(mem, rand_at, &[]).cast_signed() >> 5;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            mem.write(chr + 0x4e1, ((x & 3) + 1) as u8);
+            let x = (c.call)(mem, rand_at, &[]).cast_signed() >> 5;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            mem.write(chr + 0x4e3, ((x & 0xff) % 20 + 1) as u8);
+        };
+        if talking {
+            if mem.read::<u8>(chr + 0x4e1) == 0 {
+                let x = (c.call)(mem, rand_at, &[]).cast_signed() >> 5;
+                #[allow(clippy::cast_possible_truncation)]
+                let mut g = x as i16;
+                mem.write(chr + 0x4de, g);
+                if g < 0 {
+                    g = g.wrapping_neg();
+                    mem.write(chr + 0x4de, g);
+                }
+                let g = (mem.read::<i16>(chr + 0x4de) % 100).wrapping_sub(30);
+                mem.write(chr + 0x4de, g);
+                new_goal(mem, c, g < 0);
+            }
+        } else {
+            let goal: u16 = mem.read(chr + 0x4de);
+            if mem.read::<u16>(chr + 0x4dc) == goal && goal == 0 {
+                return 0;
+            }
+            new_goal(mem, c, true);
+        }
+        if mem.read::<i8>(r(mem, MOUTH_MODE)) == 1 {
+            let k = i32::from(mem.read::<i8>(r(mem, MOUTH_SHAPE))).cast_unsigned();
+            let v = mem.read::<u8>(r(mem, MOUTH_SHAPES).wrapping_add(k));
+            mem.write(chr + 0x4de, u16::from(v));
+        }
+        let cur = mem.read::<i16>(chr + 0x4dc);
+        let goal = mem.read::<i16>(chr + 0x4de);
+        let n = mem.read::<u8>(chr + 0x4e1).wrapping_sub(1);
+        mem.write(chr + 0x4e1, n);
+        if cur != goal {
+            let step = i16::from(mem.read::<u8>(chr + 0x4e3));
+            let v = if cur > goal {
+                cur.wrapping_sub(step)
+            } else {
+                step.wrapping_add(cur)
+            };
+            mem.write(chr + 0x4dc, v);
+            if (cur > goal && v < goal) || (cur < goal && v > goal) {
+                mem.write(chr + 0x4dc, goal);
+            }
+        }
+        let mut eax = (c.call)(mem, r(mem, OPTPOS_GET_ELEMENT), &[chr, 0xd, 0]);
+        if eax != 0 {
+            let e = eax.wrapping_mul(0x160).wrapping_add(mem.read(chr + 0x328));
+            let model: u32 = mem.read(chr + 0x1c4);
+            let mut a =
+                r32(f64::from(mem.read::<i16>(chr + 0x4dc)) / mem.read::<f64>(r(mem, 0x00b9_22b0)));
+            if mem.read::<u8>(model.wrapping_add(0x43)) != 0 {
+                a = -a;
+            }
+            let b = r32(f64::from(a) * mem.read::<f64>(r(mem, 0x00b5_82f0))
+                / mem.read::<f64>(r(mem, 0x00b4_8378)));
+            let th = f64::from(r32((c.fcall)(mem, r(mem, ANGLE_WRAP), &[b.to_bits()])));
+            let v = ld(mem, model.wrapping_add(0x44));
+            mem.write(e.wrapping_add(0xe4), v);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let v = ld(mem, model.wrapping_add(0x48));
+            mem.write(e.wrapping_add(0xe8), v);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let z = ld(mem, model.wrapping_add(0x4c));
+            mem.write(e.wrapping_add(0xec), z);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let kind = i32::from(mem.read::<i8>(model.wrapping_add(0x42)));
+            match kind {
+                0 | 1 => {
+                    let at = e.wrapping_add(if kind == 0 { 0xe4 } else { 0xe8 });
+                    mem.write(at, r32(fl(mem, at) + th));
+                }
+                2 => mem.write(e.wrapping_add(0xec), r32(f64::from(z) + th)),
+                _ => {}
+            }
+            eax = if (0..=2).contains(&kind) {
+                0
+            } else {
+                (kind - 2).cast_unsigned()
+            };
+        }
+        if mem.read::<u32>(chr + 0x6fc) != 0 {
+            let open = u32::from(mem.read::<i16>(chr + 0x4dc) > mem.read::<i16>(r(mem, MOUTH_TH)));
+            let anim: u32 = mem.read(chr + 0x700);
+            eax = (c.call)(mem, r(mem, TEX_ANIM_POS_SET), &[anim, 1, open]);
+        }
+        eax
+    }
 }
 
 #[cfg(test)]

@@ -1720,4 +1720,12 @@ ported! {
     Ch_ElemCalcQuaternion @ 0x0083_3960 => extern "C" fn ch_elem_calc_quaternion(e: u32) {
         p::ch_elem_calc_quaternion(&mut mem(), e, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
     }
+    /// `Ch_Mouth(chr)`.
+    Ch_Mouth @ 0x0083_44f0 => extern "C" fn ch_mouth(chr: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_mouth(&mut mem(), chr, &mut c)
+    }
 }
