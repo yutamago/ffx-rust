@@ -6,7 +6,7 @@
 load 1 cdsp0000
 lockstep on
 wait 30
-shot C:\Users\USER\AppData\Local\Temp\ffx-snap\field-walk-1.bmp
+shot $OUT\field-walk-1.bmp
 trace 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x00ccb170:8
 press up 40 10
 press left 20 10
@@ -15,4 +15,4 @@ press right 30 10
 press circle 4 30
 press circle 4 30
 wait 120
-shot C:\Users\USER\AppData\Local\Temp\ffx-snap\field-walk-2.bmp
+shot $OUT\field-walk-2.bmp

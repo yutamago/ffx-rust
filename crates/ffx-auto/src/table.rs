@@ -3,6 +3,182 @@
 
 use crate::{Bin, Conv, Kind, Row, Step, Un, Val};
 
+/// `SetFields_00401310` (several stores: set field (constants, arguments, addresses)): `u32[a1] = a2; u32[(a1 + 0x4)] = a0; return a1`.
+pub static R_00401310: Row = Row {
+    address: 0x0040_1310,
+    conv: Conv::Thiscall,
+    args: &[Kind::Value, Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Arg(2),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            value: Val::Arg(0),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `ReturnConst2_0042d3c0` (return constant): `return 0x2`.
+pub static R_0042D3C0: Row = Row {
+    address: 0x0042_d3c0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2)),
+};
+/// `ReturnFieldU32PointerChain_0042e060` (return field u32 (pointer chain)): `t0 = u32[(a0 + 0x10)]; t1 = u32[(a0 + 0x14)]; return t0`.
+pub static R_0042E060: Row = Row {
+    address: 0x0042_e060,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetGlobals_0042e1d0` (several stores: set global (constants, arguments, addresses)): `u32[&0x00c8b248] = a0; u32[&0x00c8b24c] = a1; u32[&0x00c8b244] = a2; u32[&0x00c8b240] = a3; return a3`.
+pub static R_0042E1D0: Row = Row {
+    address: 0x0042_e1d0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value, Kind::Value, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b248),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b24c),
+            value: Val::Arg(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b244),
+            value: Val::Arg(2),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b240),
+            value: Val::Arg(3),
+        },
+    ],
+    result: Some(Val::Arg(3)),
+};
+/// `SeveralStoresCopyIntoGlobal_0042e200` (several stores: copy into global): `t0 = u32[&0x00b0c578]; u32[&0x00c8b248] = &0x00949d80; u32[&0x00c8b24c] = &0x00949d3e; u32[&0x00c8b244] = t0; u32[&0x00c8b240] = &0x009495f2; return t0`.
+pub static R_0042E200: Row = Row {
+    address: 0x0042_e200,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x00b0_c578),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b248),
+            value: Val::Image(0x0094_9d80),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b24c),
+            value: Val::Image(0x0094_9d3e),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b244),
+            value: Val::Tmp(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c8_b240),
+            value: Val::Image(0x0094_95f2),
+        },
+    ],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField20_0059e560` (return field u32): `t0 = u32[(a0 + 0x20)]; return t0`.
+pub static R_0059E560: Row = Row {
+    address: 0x0059_e560,
+    conv: Conv::Stdcall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField1c_0059e570` (return field u32): `t0 = u32[(a0 + 0x1c)]; return t0`.
+pub static R_0059E570: Row = Row {
+    address: 0x0059_e570,
+    conv: Conv::Stdcall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetFields_0059e580` (several stores: set field (constants, arguments, addresses)): `u32[a1] = 0x0; u32[a2] = 0x0; return a2`.
+pub static R_0059E580: Row = Row {
+    address: 0x0059_e580,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(2),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(2)),
+};
+/// `SetFields_0059e5a0` (several stores: set field (constants, arguments, addresses)): `u32[a1] = 0x0; u32[a2] = 0x0; return a2`.
+pub static R_0059E5A0: Row = Row {
+    address: 0x0059_e5a0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(2),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(2)),
+};
 /// `cgraphicSetNowUIType` (store argument to deref): `t0 = u32[&0x00ccc81c]; u32[(t0 + 0x2be0)] = a0; return t0`.
 pub static R_00638D90: Row = Row {
     address: 0x0063_8d90,
@@ -22,6 +198,211 @@ pub static R_00638D90: Row = Row {
         },
     ],
     result: Some(Val::Tmp(0)),
+};
+/// `FieldAddra4_0063fc30` (return argument + offset): `return (a0 + 0xa4)`.
+pub static R_0063FC30: Row = Row {
+    address: 0x0063_fc30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xa4))),
+};
+/// `FieldAddr98_0063fc40` (return argument + offset): `return (a0 + 0x98)`.
+pub static R_0063FC40: Row = Row {
+    address: 0x0063_fc40,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x98))),
+};
+/// `GetFieldPtr94_0063fc50` (return address of a field's target): `t0 = u32[(a0 + 0x94)]; return ((a1 * 0x6c) + t0)`.
+pub static R_0063FC50: Row = Row {
+    address: 0x0063_fc50,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x94)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x6c)),
+        &Val::Tmp(0),
+    )),
+};
+/// `GetField90_0063fc70` (return field u32): `t0 = u32[(a0 + 0x90)]; return t0`.
+pub static R_0063FC70: Row = Row {
+    address: 0x0063_fc70,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x90)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Identity_0063fc80` (pass-through): `return a0`.
+pub static R_0063FC80: Row = Row {
+    address: 0x0063_fc80,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Arg(0)),
+};
+/// `GetField14_0063fc90` (return field u32): `t0 = u32[(a0 + 0x14)]; return t0`.
+pub static R_0063FC90: Row = Row {
+    address: 0x0063_fc90,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField1c_0063fca0` (return field u32): `t0 = u32[(a0 + 0x1c)]; return t0`.
+pub static R_0063FCA0: Row = Row {
+    address: 0x0063_fca0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField8_0063fcb0` (return field u32): `t0 = u32[(a0 + 0x8)]; return t0`.
+pub static R_0063FCB0: Row = Row {
+    address: 0x0063_fcb0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField10_0063fcc0` (return field u32): `t0 = u32[(a0 + 0x10)]; return t0`.
+pub static R_0063FCC0: Row = Row {
+    address: 0x0063_fcc0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField18_0063fcd0` (return field u32): `t0 = u32[(a0 + 0x18)]; return t0`.
+pub static R_0063FCD0: Row = Row {
+    address: 0x0063_fcd0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldc_0063fce0` (return field u32): `t0 = u32[(a0 + 0xc)]; return t0`.
+pub static R_0063FCE0: Row = Row {
+    address: 0x0063_fce0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField4_0063fcf0` (return field u32): `t0 = u32[(a0 + 0x4)]; return t0`.
+pub static R_0063FCF0: Row = Row {
+    address: 0x0063_fcf0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetField8_0063fd00` (store argument to field): `u32[(a0 + 0x8)] = a1; return a0`.
+pub static R_0063FD00: Row = Row {
+    address: 0x0063_fd00,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetField4_0063fd10` (store argument to field): `u32[(a0 + 0x4)] = a1; return a0`.
+pub static R_0063FD10: Row = Row {
+    address: 0x0063_fd10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetField24_0063fd20` (store argument to field): `u32[(a0 + 0x24)] = a1; return a0`.
+pub static R_0063FD20: Row = Row {
+    address: 0x0063_fd20,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x24)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetField90_0063fd30` (store argument to field): `u32[(a0 + 0x90)] = a1; return a0`.
+pub static R_0063FD30: Row = Row {
+    address: 0x0063_fd30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x90)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetField80_0063fd50` (store argument to field): `u32[(a0 + 0x80)] = a1; return a0`.
+pub static R_0063FD50: Row = Row {
+    address: 0x0063_fd50,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x80)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(0)),
 };
 /// `graphicDynGeoFillBufferIsValid` (compare): `t0 = u32[&0x00cdedf0]; t1 = u32[t0]; return (t1 != 0x0)`.
 pub static R_0063FD70: Row = Row {
@@ -345,6 +726,38 @@ pub static R_006437C0: Row = Row {
     ],
     result: Some(Val::Tmp(0)),
 };
+/// `SetGlobal00cec1a0_006437e0` (store argument to global): `u32[&0x00cec1a0] = a0; return a0`.
+pub static R_006437E0: Row = Row {
+    address: 0x0064_37e0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x00ce_c1a0),
+        value: Val::Arg(0),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `StoreComputedToDeref_00643b10` (store computed to deref): `t0 = u32[&0x00ccb9d8]; u8[(t0 + 0xfc88)] = (a0 != 0x0); return t0`.
+pub static R_00643B10: Row = Row {
+    address: 0x0064_3b10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x00cc_b9d8),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0xfc88)),
+            value: Val::Bin(Bin::Ne, &Val::Arg(0), &Val::Const(0x0)),
+        },
+    ],
+    result: Some(Val::Tmp(0)),
+};
 /// `PhyreScene_VFXSyncPath` (several stores: computed, into deref/field): `t0 = u32[(a0 + 0xf954)]; t1 = u32[(a0 + 0xf8cc)]; u32[((a0 + (t0 * 0x4)) + 0xf8d4)] = t1; t2 = u32[(a0 + 0xf954)]; t3 = u32[(a0 + 0xf8d0)]; u32[((a0 + (t2 * 0x4)) + 0xf914)] = t3; t4 = u32[(a0 + 0xf954)]; u32[(a0 + 0xf954)] = (t4 + 0x1); return t3`.
 pub static R_00654CC0: Row = Row {
     address: 0x0065_4cc0,
@@ -554,6 +967,72 @@ pub static R_0066CF90: Row = Row {
     ],
     result: Some(Val::Arg(1)),
 };
+/// `SetFieldConst0_0067ac70` (store constant to field): `u8[a0] = 0x1; return 0x0`.
+pub static R_0067AC70: Row = Row {
+    address: 0x0067_ac70,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Arg(0),
+        value: Val::Const(0x1),
+    }],
+    result: Some(Val::Const(0x0)),
+};
+/// `MenuManager_SeveralStoresCopyIntoTable_0067e4a0` (several stores: copy into table): `u32[((a1 * 0x4) + &0x00ccc7d4)] = a2; t0 = u32[(a0 + 0x5b90)]; u32[((a1 * 0x4) + &0x00ccc804)] = t0; u32[((a1 * 0x4) + &0x00ccc7ec)] = 0x1; return t0`.
+pub static R_0067E4A0: Row = Row {
+    address: 0x0067_e4a0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Index, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x4)),
+                &Val::Image(0x00cc_c7d4),
+            ),
+            value: Val::Arg(2),
+        },
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5b90)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x4)),
+                &Val::Image(0x00cc_c804),
+            ),
+            value: Val::Tmp(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x4)),
+                &Val::Image(0x00cc_c7ec),
+            ),
+            value: Val::Const(0x1),
+        },
+    ],
+    result: Some(Val::Tmp(0)),
+};
+/// `graphicSetField5b8c_0067e4d0` (store argument to field): `u32[(a0 + 0x5b8c)] = a1; return a1`.
+pub static R_0067E4D0: Row = Row {
+    address: 0x0067_e4d0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5b8c)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(1)),
+};
 /// `MenuManager_SetMenuDrawFontShadow` (store argument to field): `u32[(a0 + 0x5b90)] = a1; return a1`.
 pub static R_0067E4E0: Row = Row {
     address: 0x0067_e4e0,
@@ -564,6 +1043,78 @@ pub static R_0067E4E0: Row = Row {
         addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5b90)),
         value: Val::Arg(1),
     }],
+    result: Some(Val::Arg(1)),
+};
+/// `CopyFields_0068d5b0` (several stores: copy into field): `t0 = u32[(a0 + 0xc)]; t1 = u32[a0]; u32[(a1 + 0x4)] = 0x0; u32[a1] = t1; u32[(a1 + 0x8)] = t0; return a1`.
+pub static R_0068D5B0: Row = Row {
+    address: 0x0068_d5b0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Arg(0),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Tmp(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x8)),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `CopyFields_0068d5d0` (several stores: copy into field): `t0 = u32[(a0 + 0xc)]; t1 = u32[a0]; u32[(a1 + 0x4)] = 0x0; u32[a1] = t1; u32[(a1 + 0x8)] = t0; return a1`.
+pub static R_0068D5D0: Row = Row {
+    address: 0x0068_d5d0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Arg(0),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Tmp(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x8)),
+            value: Val::Tmp(0),
+        },
+    ],
     result: Some(Val::Arg(1)),
 };
 /// `AsyncControllerTaskManager_sGetInstance` (return global u32): `t0 = u32[&0x00ccc860]; return t0`.
@@ -578,6 +1129,30 @@ pub static R_0068DC10: Row = Row {
         kind: Kind::Value,
     }],
     result: Some(Val::Tmp(0)),
+};
+/// `SetFieldConst4_0068e330` (store constant to field): `u8[(a0 + 0x4)] = 0x0`.
+pub static R_0068E330: Row = Row {
+    address: 0x0068_e330,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+        value: Val::Const(0x0),
+    }],
+    result: None,
+};
+/// `SetFieldConst4_0068e340` (store constant to field): `u8[(a0 + 0x4)] = 0x1`.
+pub static R_0068E340: Row = Row {
+    address: 0x0068_e340,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+        value: Val::Const(0x1),
+    }],
+    result: None,
 };
 /// `FFEscMenu_setPopUpCallBack` (several stores: set field (constants, arguments, addresses)): `u32[(a0 + 0x10c)] = a1; u32[(a0 + 0x110)] = a2; return a2`.
 pub static R_0068FF10: Row = Row {
@@ -684,6 +1259,80 @@ pub static R_0069E030: Row = Row {
         Step::Store {
             size: 1,
             addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `SetFields_0069e0c0` (several stores: set field (constants, arguments, addresses)): `u32[a0] = &0x00b47e14; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x0; return a0`.
+pub static R_0069E0C0: Row = Row {
+    address: 0x0069_e0c0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Image(0x00b4_7e14),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x24)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x28)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
             value: Val::Const(0x0),
         },
     ],
@@ -880,6 +1529,75 @@ pub static R_0069F880: Row = Row {
     ],
     result: Some(Val::Tmp(1)),
 };
+/// `FieldAddrc_006a0440` (return argument + offset): `return (a0 + 0xc)`.
+pub static R_006A0440: Row = Row {
+    address: 0x006a_0440,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc))),
+};
+/// `FieldAddrc_006a0450` (return argument + offset): `return (a0 + 0xc)`.
+pub static R_006A0450: Row = Row {
+    address: 0x006a_0450,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc))),
+};
+/// `FieldAddr10_006a06c0` (return argument + offset): `return (a0 + 0x10)`.
+pub static R_006A06C0: Row = Row {
+    address: 0x006a_06c0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10))),
+};
+/// `PhyreScene_LoadCompute_006a29a0` (load and compute): `t0 = u32[(a0 + 0xc)]; t1 = u32[(a0 + 0x8)]; return ((t0 - t1) >>s 0x2)`.
+pub static R_006A29A0: Row = Row {
+    address: 0x006a_29a0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Sar,
+        &Val::Bin(Bin::Sub, &Val::Tmp(0), &Val::Tmp(1)),
+        &Val::Const(0x2),
+    )),
+};
+/// `SetDeref_006a3b40` (store argument to deref): `t0 = u32[(a0 + 0x10)]; u32[(t0 + 0xc)] = a0; return 0x0`.
+pub static R_006A3B40: Row = Row {
+    address: 0x006a_3b40,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0xc)),
+            value: Val::Arg(0),
+        },
+    ],
+    result: Some(Val::Const(0x0)),
+};
 /// `TextureAnimationManager_GetInstance` (return global u32): `t0 = u32[&0x00cccaa8]; return t0`.
 pub static R_006B02E0: Row = Row {
     address: 0x006b_02e0,
@@ -892,6 +1610,35 @@ pub static R_006B02E0: Row = Row {
         kind: Kind::Value,
     }],
     result: Some(Val::Tmp(0)),
+};
+/// `Identity_006b5000` (pass-through): `return a0`.
+pub static R_006B5000: Row = Row {
+    address: 0x006b_5000,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Arg(0)),
+};
+/// `ReturnGlobalSx8_006bc960` (return global sx8): `t0 = u8[&0x00cccab8]; return sx8(t0)`.
+pub static R_006BC960: Row = Row {
+    address: 0x006b_c960,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 1,
+        addr: Val::Image(0x00cc_cab8),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Un(Un::Sx8, &Val::Tmp(0))),
+};
+/// `PhyreScene_ReturnConst0_006bd290` (return constant): `return 0x0`.
+pub static R_006BD290: Row = Row {
+    address: 0x006b_d290,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
 };
 /// `VfxShaderManager_sGetInstance` (return global u32): `t0 = u32[&0x00cdeb80]; return t0`.
 pub static R_006C14C0: Row = Row {
@@ -906,6 +1653,109 @@ pub static R_006C14C0: Row = Row {
     }],
     result: Some(Val::Tmp(0)),
 };
+/// `ReturnConst180_006c26d0` (return constant): `return 0x180`.
+pub static R_006C26D0: Row = Row {
+    address: 0x006c_26d0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x180)),
+};
+/// `ReturnConst51_006c2700` (return constant): `return 0x51`.
+pub static R_006C2700: Row = Row {
+    address: 0x006c_2700,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x51)),
+};
+/// `Compute_006c4000` (arithmetic on arguments): `return (a0 + a1)`.
+pub static R_006C4000: Row = Row {
+    address: 0x006c_4000,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Arg(1))),
+};
+/// `SetFields_006c47a0` (several stores: set field (constants, arguments, addresses)): `u8[(a0 + 0x58)] = 0x0; u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x48)] = 0x0; u32[(a0 + 0x4c)] = 0x0; u32[(a0 + 0x50)] = 0x0; u32[(a0 + 0x54)] = 0x0; return 0x0`.
+pub static R_006C47A0: Row = Row {
+    address: 0x006c_47a0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x58)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x48)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4c)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x50)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x54)),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Const(0x0)),
+};
 /// `SpecularMapParamsManager_GetInstance` (return global u32): `t0 = u32[&0x00cdec1c]; return t0`.
 pub static R_006C57E0: Row = Row {
     address: 0x006c_57e0,
@@ -918,6 +1768,22 @@ pub static R_006C57E0: Row = Row {
         kind: Kind::Value,
     }],
     result: Some(Val::Tmp(0)),
+};
+/// `Compute_006cc8b0` (arithmetic on arguments): `return (a0 == 0x1)`.
+pub static R_006CC8B0: Row = Row {
+    address: 0x006c_c8b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Eq, &Val::Arg(0), &Val::Const(0x1))),
+};
+/// `Compute_006cc8c0` (arithmetic on arguments): `return (a0 != 0x2083)`.
+pub static R_006CC8C0: Row = Row {
+    address: 0x006c_c8c0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Ne, &Val::Arg(0), &Val::Const(0x2083))),
 };
 /// `ShadowManager_getInstance` (return global u32): `t0 = u32[&0x00cdec28]; return t0`.
 pub static R_006D2390: Row = Row {
@@ -932,6 +1798,62 @@ pub static R_006D2390: Row = Row {
     }],
     result: Some(Val::Tmp(0)),
 };
+/// `SetFieldConst4_006d4e00` (store constant to field): `u8[(a0 + 0x4)] = 0x1`.
+pub static R_006D4E00: Row = Row {
+    address: 0x006d_4e00,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+        value: Val::Const(0x1),
+    }],
+    result: None,
+};
+/// `SetFieldConst5_006d4e10` (store constant to field): `u8[(a0 + 0x5)] = 0x1`.
+pub static R_006D4E10: Row = Row {
+    address: 0x006d_4e10,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5)),
+        value: Val::Const(0x1),
+    }],
+    result: None,
+};
+/// `SetFieldConst6_006d5180` (store constant to field): `u8[(a0 + 0x6)] = 0x1`.
+pub static R_006D5180: Row = Row {
+    address: 0x006d_5180,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x6)),
+        value: Val::Const(0x1),
+    }],
+    result: None,
+};
+/// `graphicSetFieldConst6_006d59f0` (store constant to field): `u8[(a0 + 0x6)] = 0x0`.
+pub static R_006D59F0: Row = Row {
+    address: 0x006d_59f0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x6)),
+        value: Val::Const(0x0),
+    }],
+    result: None,
+};
+/// `Identity_006d7b20` (pass-through): `return a0`.
+pub static R_006D7B20: Row = Row {
+    address: 0x006d_7b20,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Arg(0)),
+};
 /// `PhyFMVPlayerManager_getCurrentFrame` (return field u32): `t0 = u32[(a0 + 0x6d8)]; return t0`.
 pub static R_006D91B0: Row = Row {
     address: 0x006d_91b0,
@@ -944,6 +1866,62 @@ pub static R_006D91B0: Row = Row {
         kind: Kind::Value,
     }],
     result: Some(Val::Tmp(0)),
+};
+/// `CopyFields_006df000` (several stores: copy into field): `u32[a0] = a0; u32[(a0 + 0x4)] = a0; u32[(a0 + 0x8)] = a0; t0 = u32[a1]; u32[(a0 + 0xc)] = t0; return a0`.
+pub static R_006DF000: Row = Row {
+    address: 0x006d_f000,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Arg(0),
+        },
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Arg(1),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `GetGlobal00ce5194_006e55d0` (return global u32): `t0 = u32[&0x00ce5194]; return t0`.
+pub static R_006E55D0: Row = Row {
+    address: 0x006e_55d0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x00ce_5194),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `AddrOfGlobal00c35030_006e6650` (return address of global): `return &0x00c35030`.
+pub static R_006E6650: Row = Row {
+    address: 0x006e_6650,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Image(0x00c3_5030)),
 };
 /// `RemapButtonIcon_getPadIconPath` (return address of global): `return &0x00c35070`.
 pub static R_006E6660: Row = Row {
@@ -966,6 +1944,26 @@ pub static R_006E7710: Row = Row {
     }],
     result: Some(Val::Tmp(0)),
 };
+/// `SetField0_006f2f70` (store argument to field): `t0 = u32[a0]; u32[a0] = a1; return t0`.
+pub static R_006F2F70: Row = Row {
+    address: 0x006f_2f70,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Arg(0),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Arg(1),
+        },
+    ],
+    result: Some(Val::Tmp(0)),
+};
 /// `SpdCtrl_IsSpeedingUp` (compare): `t0 = u32[&0x00ce82b4]; return (t0 != 0x0)`.
 pub static R_006F7330: Row = Row {
     address: 0x006f_7330,
@@ -979,6 +1977,110 @@ pub static R_006F7330: Row = Row {
     }],
     result: Some(Val::Bin(Bin::Ne, &Val::Tmp(0), &Val::Const(0x0))),
 };
+/// `SetFields_006f7700` (several stores: set field (constants, arguments, addresses)): `u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x3c)] = &0x00b4bff8; u32[(a0 + 0x40)] = &0x00b4c028; u32[(a0 + 0x1c)] = &0x00b4bf98; u32[(a0 + 0x20)] = &0x00b4bfc8; u32[(a0 + 0x24)] = &0x00b4c058; u32[(a0 + 0x28)] = &0x00b4c088; u32[(a0 + 0x2c)] = &0x00b4c0b8; u32[(a0 + 0x30)] = &0x00b4c0e8; u32[(a0 + 0x34)] = &0x00b4c118; u32[(a0 + 0x38)] = 0x2010000; u32[(a0 + 0x3c)] = 0x1030302; u16[(a0 + 0x40)] = 0x504; return a0`.
+pub static R_006F7700: Row = Row {
+    address: 0x006f_7700,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x3c)),
+            value: Val::Image(0x00b4_bff8),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x40)),
+            value: Val::Image(0x00b4_c028),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Image(0x00b4_bf98),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Image(0x00b4_bfc8),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x24)),
+            value: Val::Image(0x00b4_c058),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x28)),
+            value: Val::Image(0x00b4_c088),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Image(0x00b4_c0b8),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            value: Val::Image(0x00b4_c0e8),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x34)),
+            value: Val::Image(0x00b4_c118),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            value: Val::Const(0x201_0000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x3c)),
+            value: Val::Const(0x103_0302),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x40)),
+            value: Val::Const(0x504),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
 /// `IconPanel_get` (return global u32): `t0 = u32[&0x00ce82e4]; return t0`.
 pub static R_006F78B0: Row = Row {
     address: 0x006f_78b0,
@@ -991,6 +2093,80 @@ pub static R_006F78B0: Row = Row {
         kind: Kind::Value,
     }],
     result: Some(Val::Tmp(0)),
+};
+/// `LoadCompute_006f7bd0` (load and compute): `t0 = u32[(a0 + 0x34)]; t1 = u32[(a0 + 0x30)]; return ((t0 + t1) << 0x2)`.
+pub static R_006F7BD0: Row = Row {
+    address: 0x006f_7bd0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x34)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Shl,
+        &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Tmp(1)),
+        &Val::Const(0x2),
+    )),
+};
+/// `LoadCompute_006f7c00` (load and compute): `t0 = u32[(a0 + 0x34)]; t1 = u32[(a0 + 0x30)]; return ((t0 + t1) << 0x2)`.
+pub static R_006F7C00: Row = Row {
+    address: 0x006f_7c00,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x34)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Shl,
+        &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Tmp(1)),
+        &Val::Const(0x2),
+    )),
+};
+/// `ReturnConst0_006f9940` (return constant): `return 0x0`.
+pub static R_006F9940: Row = Row {
+    address: 0x006f_9940,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `ReturnConstffffffff_006f9980` (return constant): `return 0xffffffff`.
+pub static R_006F9980: Row = Row {
+    address: 0x006f_9980,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0xffff_ffff)),
+};
+/// `ReturnConst1c_006f99c0` (return constant): `return 0x1c`.
+pub static R_006F99C0: Row = Row {
+    address: 0x006f_99c0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x1c)),
 };
 /// `ShadowDynamicMeshInstance_populatePreprocessData` (several stores: computed, into field): `t0 = u32[(a0 + 0x4)]; u32[(a1 + 0x10)] = (t0 + 0x1c); u32[(a1 + 0x14)] = (t0 + 0x7c); u32[(a1 + 0x18)] = (t0 + 0x17c); u32[(a1 + 0x1c)] = (t0 + 0xfc); u32[(a1 + 0x20)] = (t0 + 0x1bc); u32[(a1 + 0x24)] = 0x8; u32[(a1 + 0x28)] = 0xc; return 0x0`.
 pub static R_006F9A30: Row = Row {
@@ -1041,6 +2217,1690 @@ pub static R_006F9A30: Row = Row {
         },
     ],
     result: Some(Val::Const(0x0)),
+};
+/// `Compare_006f9b70` (compare): `t0 = u32[&0x00ce83c4]; return (t0 == 0x3)`.
+pub static R_006F9B70: Row = Row {
+    address: 0x006f_9b70,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x00ce_83c4),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(Bin::Eq, &Val::Tmp(0), &Val::Const(0x3))),
+};
+/// `GetDerefU32_006fa200` (return deref u32 (pointer chain)): `t0 = u32[(a0 + 0x8)]; t1 = u32[(t0 + 0x8)]; return t1`.
+pub static R_006FA200: Row = Row {
+    address: 0x006f_a200,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x8)),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `FfxFmod_musicMuteSet` (return constant): `return 0x0`.
+pub static R_00706A60: Row = Row {
+    address: 0x0070_6a60,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_musicPitchDirect` (return constant): `return 0x0`.
+pub static R_00706AA0: Row = Row {
+    address: 0x0070_6aa0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_musicPitchTranslate` (return constant): `return 0x0`.
+pub static R_00706AB0: Row = Row {
+    address: 0x0070_6ab0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_musicPlayFast` (return constant): `return 0x0`.
+pub static R_00706AC0: Row = Row {
+    address: 0x0070_6ac0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_musicTempoDirect` (return constant): `return 0x0`.
+pub static R_00706C00: Row = Row {
+    address: 0x0070_6c00,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_musicTempoTranslate` (return constant): `return 0x0`.
+pub static R_00706C10: Row = Row {
+    address: 0x0070_6c10,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_voicePanDirect` (return constant): `return 0x0`.
+pub static R_007074C0: Row = Row {
+    address: 0x0070_74c0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_voicePanTranslate` (return constant): `return 0x0`.
+pub static R_007074D0: Row = Row {
+    address: 0x0070_74d0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Const(0x0)),
+};
+/// `FfxFmod_SetGlobal00c3a480_00708610` (store constant to global): `u32[&0x00c3a480] = 0x0`.
+pub static R_00708610: Row = Row {
+    address: 0x0070_8610,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x00c3_a480),
+        value: Val::Const(0x0),
+    }],
+    result: None,
+};
+/// `SetFields_0070e290` (several stores: set field (constants, arguments, addresses)): `u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; return a0`.
+pub static R_0070E290: Row = Row {
+    address: 0x0070_e290,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `SetFields_0070e2b0` (several stores: set field (constants, arguments, addresses)): `u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0`.
+pub static R_0070E2B0: Row = Row {
+    address: 0x0070_e2b0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: None,
+};
+/// `SetFieldConst0_0076e9b0` (store constant to field): `u32[a1] = 0x0; return a1`.
+pub static R_0076E9B0: Row = Row {
+    address: 0x0076_e9b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Arg(1),
+        value: Val::Const(0x0),
+    }],
+    result: Some(Val::Arg(1)),
+};
+/// `GetDerefU8_0076f350` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xa8)]; return t1`.
+pub static R_0076F350: Row = Row {
+    address: 0x0076_f350,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xa8),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_0076f390` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xa9)]; return t1`.
+pub static R_0076F390: Row = Row {
+    address: 0x0076_f390,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xa9),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00770990` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xad)]; return t1`.
+pub static R_00770990: Row = Row {
+    address: 0x0077_0990,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xad),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007709d0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xb1)]; return t1`.
+pub static R_007709D0: Row = Row {
+    address: 0x0077_09d0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xb1),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU32_00773820` (return deref u32 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u32[(((a0 * 0x1d8) + t0) + 0x14)]; return t1`.
+pub static R_00773820: Row = Row {
+    address: 0x0077_3820,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x14),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773860` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x20)]; return t1`.
+pub static R_00773860: Row = Row {
+    address: 0x0077_3860,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x20),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007738e0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x22)]; return t1`.
+pub static R_007738E0: Row = Row {
+    address: 0x0077_38e0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x22),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773920` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2b)]; return t1`.
+pub static R_00773920: Row = Row {
+    address: 0x0077_3920,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2b),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773970` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2c)]; return t1`.
+pub static R_00773970: Row = Row {
+    address: 0x0077_3970,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2c),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007739f0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2d)]; return t1`.
+pub static R_007739F0: Row = Row {
+    address: 0x0077_39f0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2d),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773a60` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2e)]; return t1`.
+pub static R_00773A60: Row = Row {
+    address: 0x0077_3a60,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2e),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773ad0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2f)]; return t1`.
+pub static R_00773AD0: Row = Row {
+    address: 0x0077_3ad0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2f),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773b20` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x30)]; return t1`.
+pub static R_00773B20: Row = Row {
+    address: 0x0077_3b20,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x30),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773b60` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x31)]; return t1`.
+pub static R_00773B60: Row = Row {
+    address: 0x0077_3b60,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x31),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773bc0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x32)]; return t1`.
+pub static R_00773BC0: Row = Row {
+    address: 0x0077_3bc0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x32),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773c00` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x33)]; return t1`.
+pub static R_00773C00: Row = Row {
+    address: 0x0077_3c00,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x33),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773c40` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x34)]; return t1`.
+pub static R_00773C40: Row = Row {
+    address: 0x0077_3c40,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x34),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773cb0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x35)]; return t1`.
+pub static R_00773CB0: Row = Row {
+    address: 0x0077_3cb0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x35),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773cf0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x36)]; return t1`.
+pub static R_00773CF0: Row = Row {
+    address: 0x0077_3cf0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x36),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773d30` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x37)]; return t1`.
+pub static R_00773D30: Row = Row {
+    address: 0x0077_3d30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x37),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773d70` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x38)]; return t1`.
+pub static R_00773D70: Row = Row {
+    address: 0x0077_3d70,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x38),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773db0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x39)]; return t1`.
+pub static R_00773DB0: Row = Row {
+    address: 0x0077_3db0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x39),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773df0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3a)]; return t1`.
+pub static R_00773DF0: Row = Row {
+    address: 0x0077_3df0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x3a),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773e30` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3b)]; return t1`.
+pub static R_00773E30: Row = Row {
+    address: 0x0077_3e30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x3b),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773e70` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3c)]; return t1`.
+pub static R_00773E70: Row = Row {
+    address: 0x0077_3e70,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x3c),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773eb0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3d)]; return t1`.
+pub static R_00773EB0: Row = Row {
+    address: 0x0077_3eb0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x3d),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773ef0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3e)]; return t1`.
+pub static R_00773EF0: Row = Row {
+    address: 0x0077_3ef0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x3e),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773f30` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3f)]; return t1`.
+pub static R_00773F30: Row = Row {
+    address: 0x0077_3f30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x3f),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773f70` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x40)]; return t1`.
+pub static R_00773F70: Row = Row {
+    address: 0x0077_3f70,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x40),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773fb0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x41)]; return t1`.
+pub static R_00773FB0: Row = Row {
+    address: 0x0077_3fb0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x41),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00773ff0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x42)]; return t1`.
+pub static R_00773FF0: Row = Row {
+    address: 0x0077_3ff0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x42),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00774030` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x43)]; return t1`.
+pub static R_00774030: Row = Row {
+    address: 0x0077_4030,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x43),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00774070` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x44)]; return t1`.
+pub static R_00774070: Row = Row {
+    address: 0x0077_4070,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x44),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007740b0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x45)]; return t1`.
+pub static R_007740B0: Row = Row {
+    address: 0x0077_40b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x45),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007740f0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x46)]; return t1`.
+pub static R_007740F0: Row = Row {
+    address: 0x0077_40f0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x46),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00774130` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x47)]; return t1`.
+pub static R_00774130: Row = Row {
+    address: 0x0077_4130,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x47),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU16_00774170` (return deref u16 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x4e)]; return t1`.
+pub static R_00774170: Row = Row {
+    address: 0x0077_4170,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x4e),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU16_007741b0` (return deref u16 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x80)]; return t1`.
+pub static R_007741B0: Row = Row {
+    address: 0x0077_41b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x80),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU16_007741f0` (return deref u16 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x82)]; return t1`.
+pub static R_007741F0: Row = Row {
+    address: 0x0077_41f0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x82),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU16_00774230` (return deref u16 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x84)]; return t1`.
+pub static R_00774230: Row = Row {
+    address: 0x0077_4230,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x84),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00774270` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x88)]; return t1`.
+pub static R_00774270: Row = Row {
+    address: 0x0077_4270,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x88),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007742b0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x89)]; return t1`.
+pub static R_007742B0: Row = Row {
+    address: 0x0077_42b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x89),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_007742f0` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x8a)]; return t1`.
+pub static R_007742F0: Row = Row {
+    address: 0x0077_42f0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x8a),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `GetDerefU8_00774330` (return deref u8 (pointer chain)): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x8b)]; return t1`.
+pub static R_00774330: Row = Row {
+    address: 0x0077_4330,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0112_a034),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x1d8)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x8b),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `SetTableEntry_00779590` (store argument to table): `u8[(((a0 + (a0 * 0x2)) * 0x4) + &0x0112a530)] = (a1 & 0xff); return ((a0 & 0xffffff00) | (a1 & 0xff))`.
+pub static R_00779590: Row = Row {
+    address: 0x0077_9590,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index, Kind::Value],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(
+            Bin::Add,
+            &Val::Bin(
+                Bin::Mul,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Arg(0),
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x2)),
+                ),
+                &Val::Const(0x4),
+            ),
+            &Val::Image(0x0112_a530),
+        ),
+        value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xff)),
+    }],
+    result: Some(Val::Bin(
+        Bin::Or,
+        &Val::Bin(Bin::And, &Val::Arg(0), &Val::Const(0xffff_ff00)),
+        &Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xff)),
+    )),
+};
+/// `dvd_ReturnConst2_0077a4f0` (return constant): `return 0x2`.
+pub static R_0077A4F0: Row = Row {
+    address: 0x0077_a4f0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2)),
+};
+/// `dvd_ReturnConst118_0077a500` (return constant): `return 0x118`.
+pub static R_0077A500: Row = Row {
+    address: 0x0077_a500,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x118)),
+};
+/// `dvd_ReturnConst20000_0077a510` (return constant): `return 0x20000`.
+pub static R_0077A510: Row = Row {
+    address: 0x0077_a510,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2_0000)),
+};
+/// `dvd_ReturnConst158_0077a520` (return constant): `return 0x158`.
+pub static R_0077A520: Row = Row {
+    address: 0x0077_a520,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x158)),
+};
+/// `dvd_ReturnConst82_0077a530` (return constant): `return 0x82`.
+pub static R_0077A530: Row = Row {
+    address: 0x0077_a530,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x82)),
+};
+/// `dvd_ReturnConst117_0077a540` (return constant): `return 0x117`.
+pub static R_0077A540: Row = Row {
+    address: 0x0077_a540,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x117)),
+};
+/// `dvd_ReturnConst30_0077a550` (return constant): `return 0x30`.
+pub static R_0077A550: Row = Row {
+    address: 0x0077_a550,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x30)),
+};
+/// `dvd_ReturnConstf_0077a560` (return constant): `return 0xf`.
+pub static R_0077A560: Row = Row {
+    address: 0x0077_a560,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0xf)),
+};
+/// `dvd_ReturnConst10_0077a570` (return constant): `return 0x10`.
+pub static R_0077A570: Row = Row {
+    address: 0x0077_a570,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x10)),
+};
+/// `dvd_ReturnConst2_0077a580` (return constant): `return 0x2`.
+pub static R_0077A580: Row = Row {
+    address: 0x0077_a580,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2)),
+};
+/// `dvd_ReturnConst118_0077a590` (return constant): `return 0x118`.
+pub static R_0077A590: Row = Row {
+    address: 0x0077_a590,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x118)),
+};
+/// `dvd_ReturnConst20000_0077a5a0` (return constant): `return 0x20000`.
+pub static R_0077A5A0: Row = Row {
+    address: 0x0077_a5a0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2_0000)),
+};
+/// `dvd_ReturnConst158_0077a5b0` (return constant): `return 0x158`.
+pub static R_0077A5B0: Row = Row {
+    address: 0x0077_a5b0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x158)),
+};
+/// `dvd_ReturnConst82_0077a5c0` (return constant): `return 0x82`.
+pub static R_0077A5C0: Row = Row {
+    address: 0x0077_a5c0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x82)),
+};
+/// `dvd_ReturnConst117_0077a5d0` (return constant): `return 0x117`.
+pub static R_0077A5D0: Row = Row {
+    address: 0x0077_a5d0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x117)),
+};
+/// `dvd_ReturnConst30_0077a5e0` (return constant): `return 0x30`.
+pub static R_0077A5E0: Row = Row {
+    address: 0x0077_a5e0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x30)),
+};
+/// `dvd_ReturnConstf_0077a5f0` (return constant): `return 0xf`.
+pub static R_0077A5F0: Row = Row {
+    address: 0x0077_a5f0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0xf)),
+};
+/// `dvd_ReturnConst118_0077a860` (return constant): `return 0x118`.
+pub static R_0077A860: Row = Row {
+    address: 0x0077_a860,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x118)),
+};
+/// `dvd_ReturnConst20000_0077a870` (return constant): `return 0x20000`.
+pub static R_0077A870: Row = Row {
+    address: 0x0077_a870,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2_0000)),
+};
+/// `dvd_ReturnConst158_0077a880` (return constant): `return 0x158`.
+pub static R_0077A880: Row = Row {
+    address: 0x0077_a880,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x158)),
+};
+/// `dvd_ReturnConst82_0077a890` (return constant): `return 0x82`.
+pub static R_0077A890: Row = Row {
+    address: 0x0077_a890,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x82)),
+};
+/// `dvd_ReturnConst117_0077a8a0` (return constant): `return 0x117`.
+pub static R_0077A8A0: Row = Row {
+    address: 0x0077_a8a0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x117)),
+};
+/// `dvd_ReturnConst30_0077a8b0` (return constant): `return 0x30`.
+pub static R_0077A8B0: Row = Row {
+    address: 0x0077_a8b0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x30)),
+};
+/// `dvd_ReturnConstf_0077a8c0` (return constant): `return 0xf`.
+pub static R_0077A8C0: Row = Row {
+    address: 0x0077_a8c0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0xf)),
+};
+/// `dvd_ReturnConst10_0077a8d0` (return constant): `return 0x10`.
+pub static R_0077A8D0: Row = Row {
+    address: 0x0077_a8d0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x10)),
 };
 /// `tex_anim_timer` (store argument to table): `u8[(((a0 + (a0 * 0x2)) << 0x4) + &0x0231000e)] = (a1 & 0xff); return ((a0 & 0xffffff00) | (a1 & 0xff))`.
 pub static R_0077FE30: Row = Row {
@@ -1118,6 +3978,40 @@ pub static R_00784FE0: Row = Row {
     args: &[],
     steps: &[],
     result: Some(Val::Const(0x14)),
+};
+/// `BitTestOfGlobal_007851b0` (bit test of global): `t0 = u32[&0x0113079c]; return ((t0 >>s 0x5) & 0x1)`.
+pub static R_007851B0: Row = Row {
+    address: 0x0078_51b0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0113_079c),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::And,
+        &Val::Bin(Bin::Sar, &Val::Tmp(0), &Val::Const(0x5)),
+        &Val::Const(0x1),
+    )),
+};
+/// `BitTestOfGlobal_00785230` (bit test of global): `t0 = u32[&0x0113079c]; return ((t0 >>s 0x4) & 0x1)`.
+pub static R_00785230: Row = Row {
+    address: 0x0078_5230,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0113_079c),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::And,
+        &Val::Bin(Bin::Sar, &Val::Tmp(0), &Val::Const(0x4)),
+        &Val::Const(0x1),
+    )),
 };
 /// `MsGetSaveMenuPanel` (return address of global): `return &0x011307b8`.
 pub static R_007852A0: Row = Row {
@@ -1645,6 +4539,25 @@ pub static R_00788DD0: Row = Row {
     }],
     result: Some(Val::Un(Un::Sx8, &Val::Tmp(0))),
 };
+/// `MsSetGlobals_00790840` (several stores: set global (constants, arguments, addresses)): `u32[&0x011334bc] = 0x0; u32[&0x011334c0] = 0x0`.
+pub static R_00790840: Row = Row {
+    address: 0x0079_0840,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0113_34bc),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0113_34c0),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: None,
+};
 /// `MsBtlChrInitMem` (several stores: set global (constants, arguments, addresses)): `u32[&0x011334d4] = 0x0; u32[&0x01134468] = 0x0; u32[&0x0113446c] = 0x0`.
 pub static R_00793630: Row = Row {
     address: 0x0079_3630,
@@ -1668,6 +4581,249 @@ pub static R_00793630: Row = Row {
         },
     ],
     result: None,
+};
+/// `MsSetFields_0079a170` (several stores: set field (constants, arguments, addresses)): `u8[(a0 + 0x776)] = 0xff; u8[(a0 + 0xa4e)] = 0xff; return a0`.
+pub static R_0079A170: Row = Row {
+    address: 0x0079_a170,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x776)),
+            value: Val::Const(0xff),
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xa4e)),
+            value: Val::Const(0xff),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `MsSeveralStoresCopyIntoTable_0079b170` (several stores: copy into table): `u8[((a0 * 0x4) + &0x0112aa00)] = (a1 & 0xff); t0 = u16[(a2 + (a1 * 0x4))]; u16[((a0 * 0x4) + &0x0112aa02)] = t0; return ((a2 & 0xffff0000) | t0)`.
+pub static R_0079B170: Row = Row {
+    address: 0x0079_b170,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index, Kind::Index, Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x4)),
+                &Val::Image(0x0112_aa00),
+            ),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xff)),
+        },
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Arg(2),
+                &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x4)),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x4)),
+                &Val::Image(0x0112_aa02),
+            ),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Or,
+        &Val::Bin(Bin::And, &Val::Arg(2), &Val::Const(0xffff_0000)),
+        &Val::Tmp(0),
+    )),
+};
+/// `MsSetGlobals_0079cdd0` (several stores: set global (constants, arguments, addresses)): `u32[&0x0112c910] = 0x0; u32[&0x0112c944] = 0x0`.
+pub static R_0079CDD0: Row = Row {
+    address: 0x0079_cdd0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0112_c910),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0112_c944),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: None,
+};
+/// `GetFieldPtr0_007a8700` (return address of a field's target): `t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1)`.
+pub static R_007A8700: Row = Row {
+    address: 0x007a_8700,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Arg(0),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Bin(
+            Bin::Mul,
+            &Val::Bin(Bin::Eq, &Val::Tmp(0), &Val::Const(0x0)),
+            &Val::Const(0x4),
+        ),
+        &Val::Const(0x1),
+    )),
+};
+/// `MsGetGlobal0112c8d8_007a8970` (return global u32): `t0 = u32[&0x0112c8d8]; return t0`.
+pub static R_007A8970: Row = Row {
+    address: 0x007a_8970,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0112_c8d8),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetGlobal01139e48_007c6da0` (return global u32): `t0 = u32[&0x01139e48]; return t0`.
+pub static R_007C6DA0: Row = Row {
+    address: 0x007c_6da0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0113_9e48),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Ms_SetTableEntry_007c8930` (store argument to table): `u32[((a0 * 0x4) + &0x01139f14)] = a1; return a0`.
+pub static R_007C8930: Row = Row {
+    address: 0x007c_8930,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(
+            Bin::Add,
+            &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x4)),
+            &Val::Image(0x0113_9f14),
+        ),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `Ms_AddrOfGlobal0113ed28_007d2410` (return address of global): `return &0x0113ed28`.
+pub static R_007D2410: Row = Row {
+    address: 0x007d_2410,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Image(0x0113_ed28)),
+};
+/// `Ms_AddrOfGlobal0113ed18_007d2420` (return address of global): `return &0x0113ed18`.
+pub static R_007D2420: Row = Row {
+    address: 0x007d_2420,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Image(0x0113_ed18)),
+};
+/// `SetGlobal0113f864_007d9af0` (store argument to global): `u32[&0x0113f864] = a0; return a0`.
+pub static R_007D9AF0: Row = Row {
+    address: 0x007d_9af0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0113_f864),
+        value: Val::Arg(0),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `CopyFields_007e5f30` (several stores: copy into field): `t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; u16[a0] = (a1 & 0xffff); u16[(a0 + 0x2)] = (a2 & 0xffff); u16[(a0 + 0x4)] = (a3 & 0xffff); u16[(a0 + 0x6)] = 0xffff; return 0xffff`.
+pub static R_007E5F30: Row = Row {
+    address: 0x007e_5f30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value, Kind::Value, Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x00c8_f508),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Tmp(0),
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Image(0x00c8_f50c),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Tmp(1),
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Image(0x00c8_f510),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Tmp(2),
+        },
+        Step::Load {
+            tmp: 3,
+            size: 4,
+            addr: Val::Image(0x00c8_f514),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Tmp(3),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Arg(0),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2)),
+            value: Val::Bin(Bin::And, &Val::Arg(2), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Bin(Bin::And, &Val::Arg(3), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x6)),
+            value: Val::Const(0xffff),
+        },
+    ],
+    result: Some(Val::Const(0xffff)),
 };
 /// `op_spr_check` (load and compute): `t0 = u8[&0x02332ea1]; t1 = u32[((sx8(t0) * 0x4) + &0x0119fe14)]; return (((&0x0119ff90 - (a0 << 0x2)) >=s t1) + 0xffffffff)`.
 pub static R_007E6A30: Row = Row {
@@ -1705,6 +4861,330 @@ pub static R_007E6A30: Row = Row {
         ),
         &Val::Const(0xffff_ffff),
     )),
+};
+/// `CopyFields_007ecb20` (several stores: copy into field): `t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x4)] = t3; u32[(a0 + 0x8)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0`.
+pub static R_007ECB20: Row = Row {
+    address: 0x007e_cb20,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x8)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 3,
+            size: 4,
+            addr: Val::Arg(1),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 4,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x8)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 5,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x4)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 6,
+            size: 4,
+            addr: Val::Arg(2),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 7,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Tmp(3),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Tmp(5),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Tmp(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Tmp(6),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `FieldAddr10_00806e10` (return argument + offset): `return (a0 + 0x10)`.
+pub static R_00806E10: Row = Row {
+    address: 0x0080_6e10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10))),
+};
+/// `FieldAddr4_00806e30` (return argument + offset): `return (a0 + 0x4)`.
+pub static R_00806E30: Row = Row {
+    address: 0x0080_6e30,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4))),
+};
+/// `FieldAddr4_00806e40` (return argument + offset): `return (a0 + 0x4)`.
+pub static R_00806E40: Row = Row {
+    address: 0x0080_6e40,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4))),
+};
+/// `SetFieldConst210_008106a0` (store constant to field): `u8[(a0 + 0x210)] = 0xff; return 0x0`.
+pub static R_008106A0: Row = Row {
+    address: 0x0081_06a0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x210)),
+        value: Val::Const(0xff),
+    }],
+    result: Some(Val::Const(0x0)),
+};
+/// `CopyField21b_008106c0` (store copy to field): `t0 = u8[(a0 + 0x21b)]; u8[(a0 + 0x210)] = t0; return (a2 + 0x2)`.
+pub static R_008106C0: Row = Row {
+    address: 0x0081_06c0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value, Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x21b)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x210)),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x2))),
+};
+/// `GetFieldPtr_00810710` (return address of a field's target): `t0 = u16[(a2 + 0x2)]; return (sx16(t0) + a2)`.
+pub static R_00810710: Row = Row {
+    address: 0x0081_0710,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 2,
+        addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x2)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Un(Un::Sx16, &Val::Tmp(0)),
+        &Val::Arg(2),
+    )),
+};
+/// `CopyField21a_00810b70` (store copy to field): `t0 = u16[(a0 + 0x21a)]; t1 = u16[(a2 + 0x2)]; t2 = u16[((((sx16(t0) >>s 0xc) & 0x7) * 0x2) + &0x00c4930c)]; u16[(sx16(t2) + a3)] = t1; return (a2 + 0x4)`.
+pub static R_00810B70: Row = Row {
+    address: 0x0081_0b70,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x21a)),
+            kind: Kind::Index,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x2)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 2,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::And,
+                        &Val::Bin(Bin::Sar, &Val::Un(Un::Sx16, &Val::Tmp(0)), &Val::Const(0xc)),
+                        &Val::Const(0x7),
+                    ),
+                    &Val::Const(0x2),
+                ),
+                &Val::Image(0x00c4_930c),
+            ),
+            kind: Kind::Index,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Un(Un::Sx16, &Val::Tmp(2)), &Val::Arg(3)),
+            value: Val::Tmp(1),
+        },
+    ],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x4))),
+};
+/// `CopyField_00810cd0` (store copy to field): `t0 = u8[(a2 + 0x2)]; u8[(a3 + 0x4f)] = t0; return (a2 + 0x4)`.
+pub static R_00810CD0: Row = Row {
+    address: 0x0081_0cd0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x2)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(3), &Val::Const(0x4f)),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x4))),
+};
+/// `GetFieldPtr2_008168b0` (return address of a field's target): `t0 = u16[(a1 + 0x2)]; return (sx16(t0) + a1)`.
+pub static R_008168B0: Row = Row {
+    address: 0x0081_68b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 2,
+        addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x2)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Un(Un::Sx16, &Val::Tmp(0)),
+        &Val::Arg(1),
+    )),
+};
+/// `StoreCopyToDeref_00817250` (store copy to deref): `t0 = u32[(a0 + 0x220)]; t1 = u16[(a1 + 0x2)]; u16[(t0 + 0x1a)] = t1; return (a1 + 0x4)`.
+pub static R_00817250: Row = Row {
+    address: 0x0081_7250,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x220)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x2)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x1a)),
+            value: Val::Tmp(1),
+        },
+    ],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4))),
+};
+/// `FieldAddr2_00817270` (return argument + offset): `return (a1 + 0x2)`.
+pub static R_00817270: Row = Row {
+    address: 0x0081_7270,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x2))),
+};
+/// `SndGetGlobal012f4e78_0081d2e0` (return global u32): `t0 = u32[&0x012f4e78]; return t0`.
+pub static R_0081D2E0: Row = Row {
+    address: 0x0081_d2e0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x012f_4e78),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Sg_ReturnConst1_008202d0` (return constant): `return 0x1`.
+pub static R_008202D0: Row = Row {
+    address: 0x0082_02d0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x1)),
+};
+/// `ReturnTableU32_00820580` (return table u32): `t0 = u32[((a0 * 0x4) + &0x012fbbf4)]; return t0`.
+pub static R_00820580: Row = Row {
+    address: 0x0082_0580,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(
+            Bin::Add,
+            &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x4)),
+            &Val::Image(0x012f_bbf4),
+        ),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetGlobal012fbc2c_00820590` (return global u32): `t0 = u32[&0x012fbc2c]; return t0`.
+pub static R_00820590: Row = Row {
+    address: 0x0082_0590,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x012f_bc2c),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `HandleReturnConst2_00822480` (return constant): `return 0x2`.
+pub static R_00822480: Row = Row {
+    address: 0x0082_2480,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2)),
 };
 /// `Ch_GetPosSg` (store constant to global): `u8[&0x012ffad8] = 0x1`.
 pub static R_0082ACC0: Row = Row {
@@ -1769,6 +5249,306 @@ pub static R_0083AFD0: Row = Row {
     }],
     result: Some(Val::Arg(0)),
 };
+/// `SetGlobal01301bc4_0083f700` (store argument to global): `u32[&0x01301bc4] = a0; return a0`.
+pub static R_0083F700: Row = Row {
+    address: 0x0083_f700,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0130_1bc4),
+        value: Val::Arg(0),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetGlobals_008431d0` (several stores: set global (constants, arguments, addresses)): `u32[&0x01303348] = a0; u32[&0x01303344] = 0x0; u32[&0x0130334c] = 0x0; u32[&0x01303350] = 0x0; return &0x023016e0`.
+pub static R_008431D0: Row = Row {
+    address: 0x0084_31d0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0130_3348),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0130_3344),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0130_334c),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0130_3350),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Image(0x0230_16e0)),
+};
+/// `StoreComputedToGlobal_00843590` (store computed to global): `t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1)`.
+pub static R_00843590: Row = Row {
+    address: 0x0084_3590,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x00c4_df4c),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x00c4_df4c),
+            value: Val::Bin(
+                Bin::And,
+                &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0xffff_ffff)),
+                &Val::Const(0x1),
+            ),
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::And,
+        &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0xffff_ffff)),
+        &Val::Const(0x1),
+    )),
+};
+/// `sg_CopyField0_00845ce0` (store copy to field): `t0 = u32[a1]; u32[a0] = t0; return a0`.
+pub static R_00845CE0: Row = Row {
+    address: 0x0084_5ce0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Arg(1),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `sg_CopyFields_00845d00` (several stores: copy into field): `t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x8)] = t3; u32[(a0 + 0x4)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0`.
+pub static R_00845D00: Row = Row {
+    address: 0x0084_5d00,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x8)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 3,
+            size: 4,
+            addr: Val::Arg(1),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 4,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x8)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 5,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0x4)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 6,
+            size: 4,
+            addr: Val::Arg(2),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 7,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(2), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Tmp(3),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Tmp(5),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Tmp(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Tmp(6),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `sg_CopyField0_00845d60` (store copy to field): `t0 = u32[a0]; u32[a1] = t0; return a1`.
+pub static R_00845D60: Row = Row {
+    address: 0x0084_5d60,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Arg(0),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Tmp(0),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `GetGlobal01303730_00848f10` (return global u32): `t0 = u32[&0x01303730]; return t0`.
+pub static R_00848F10: Row = Row {
+    address: 0x0084_8f10,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0130_3730),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Light_SeveralStoresSetTableConstantsArgumentsAddresses_0084eb10` (several stores: set table (constants, arguments, addresses)): `u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c20)] = a1; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c24)] = a2; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c28)] = a3; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c30)] = a4; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c34)] = a5; return a5`.
+pub static R_0084EB10: Row = Row {
+    address: 0x0084_eb10,
+    conv: Conv::Cdecl,
+    args: &[
+        Kind::Index,
+        Kind::Value,
+        Kind::Value,
+        Kind::Value,
+        Kind::Value,
+        Kind::Value,
+    ],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Sub,
+                        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x8)),
+                        &Val::Arg(0),
+                    ),
+                    &Val::Const(0x4),
+                ),
+                &Val::Image(0x0130_3c20),
+            ),
+            value: Val::Arg(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Sub,
+                        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x8)),
+                        &Val::Arg(0),
+                    ),
+                    &Val::Const(0x4),
+                ),
+                &Val::Image(0x0130_3c24),
+            ),
+            value: Val::Arg(2),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Sub,
+                        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x8)),
+                        &Val::Arg(0),
+                    ),
+                    &Val::Const(0x4),
+                ),
+                &Val::Image(0x0130_3c28),
+            ),
+            value: Val::Arg(3),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Sub,
+                        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x8)),
+                        &Val::Arg(0),
+                    ),
+                    &Val::Const(0x4),
+                ),
+                &Val::Image(0x0130_3c30),
+            ),
+            value: Val::Arg(4),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Sub,
+                        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x8)),
+                        &Val::Arg(0),
+                    ),
+                    &Val::Const(0x4),
+                ),
+                &Val::Image(0x0130_3c34),
+            ),
+            value: Val::Arg(5),
+        },
+    ],
+    result: Some(Val::Arg(5)),
+};
 /// `sg_SetY` (store argument to global): `u32[&0x0132412c] = a0; return a0`.
 pub static R_00850840: Row = Row {
     address: 0x0085_0840,
@@ -1780,6 +5560,195 @@ pub static R_00850840: Row = Row {
         value: Val::Arg(0),
     }],
     result: Some(Val::Arg(0)),
+};
+/// `GetFieldU832_00856980` (return field u8): `t0 = u8[(a0 + 0x32)]; return t0`.
+pub static R_00856980: Row = Row {
+    address: 0x0085_6980,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x32)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetField40_008571c0` (return field u32): `t0 = u32[(a0 + 0x40)]; return t0`.
+pub static R_008571C0: Row = Row {
+    address: 0x0085_71c0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x40)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetFieldBits38_008580a0` (store bit set to field): `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x1000); return 0x1`.
+pub static R_008580A0: Row = Row {
+    address: 0x0085_80a0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            value: Val::Bin(Bin::Or, &Val::Tmp(0), &Val::Const(0x1000)),
+        },
+    ],
+    result: Some(Val::Const(0x1)),
+};
+/// `SetFieldConst44_008594a0` (store constant to field): `u32[(a0 + 0x44)] = 0x0; return 0x1`.
+pub static R_008594A0: Row = Row {
+    address: 0x0085_94a0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x44)),
+        value: Val::Const(0x0),
+    }],
+    result: Some(Val::Const(0x1)),
+};
+/// `GetField0_008595f0` (return field u32): `t0 = u32[a1]; return t0`.
+pub static R_008595F0: Row = Row {
+    address: 0x0085_95f0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Arg(1),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldaf0_0085c4b0` (return field u32): `t0 = u32[(a0 + 0xaf0)]; return t0`.
+pub static R_0085C4B0: Row = Row {
+    address: 0x0085_c4b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xaf0)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetFieldBits38_0085ece0` (store bit set to field): `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x200); return 0x1`.
+pub static R_0085ECE0: Row = Row {
+    address: 0x0085_ece0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            value: Val::Bin(Bin::Or, &Val::Tmp(0), &Val::Const(0x200)),
+        },
+    ],
+    result: Some(Val::Const(0x1)),
+};
+/// `SetFieldBits38_0085ed40` (store bit set to field): `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x400); return 0x1`.
+pub static R_0085ED40: Row = Row {
+    address: 0x0085_ed40,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            value: Val::Bin(Bin::Or, &Val::Tmp(0), &Val::Const(0x400)),
+        },
+    ],
+    result: Some(Val::Const(0x1)),
+};
+/// `SetFields_0085eea0` (several stores: set field (constants, arguments, addresses)): `u32[a1] = 0x0; u32[(a1 + 0x4)] = 0xa; return a1`.
+pub static R_0085EEA0: Row = Row {
+    address: 0x0085_eea0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            value: Val::Const(0xa),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `GetFieldU8aa_0085f2d0` (return field u8): `t0 = u8[(a0 + 0xaa)]; return t0`.
+pub static R_0085F2D0: Row = Row {
+    address: 0x0085_f2d0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xaa)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldU16a8_0085f360` (return field u16): `t0 = u16[(a0 + 0xa8)]; return t0`.
+pub static R_0085F360: Row = Row {
+    address: 0x0085_f360,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 2,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xa8)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetFieldBits38_0085fb10` (store bit set to field): `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x800); return 0x1`.
+pub static R_0085FB10: Row = Row {
+    address: 0x0085_fb10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            value: Val::Bin(Bin::Or, &Val::Tmp(0), &Val::Const(0x800)),
+        },
+    ],
+    result: Some(Val::Const(0x1)),
 };
 /// `AtelFreeSepBuffer` (store constant to table): `u32[((a0 * 0x238) + &0x01325da4)] = 0x0; return (a0 * 0x238)`.
 pub static R_0086A1C0: Row = Row {
@@ -1796,6 +5765,19 @@ pub static R_0086A1C0: Row = Row {
         value: Val::Const(0x0),
     }],
     result: Some(Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x238))),
+};
+/// `AtelGetFieldU1616_0086a9e0` (return field u16): `t0 = u16[(a0 + 0x16)]; return t0`.
+pub static R_0086A9E0: Row = Row {
+    address: 0x0086_a9e0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 2,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x16)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
 };
 /// `AtelGetBindMaskStatus` (return global u32): `t0 = u32[&0x01326b94]; return t0`.
 pub static R_0086ADE0: Row = Row {
@@ -1823,6 +5805,92 @@ pub static R_0086ADF0: Row = Row {
     }],
     result: Some(Val::Tmp(0)),
 };
+/// `AtelGetFieldU161c_0086b020` (return field u16): `t0 = u16[(a0 + 0x1c)]; return t0`.
+pub static R_0086B020: Row = Row {
+    address: 0x0086_b020,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 2,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Get_g_AtelForceBattleMapId_0086b6c0` (return global u32): `t0 = u32[&0x00c5273c]; return t0`.
+pub static R_0086B6C0: Row = Row {
+    address: 0x0086_b6c0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x00c5_273c),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `AtelGetFieldU1614_0086bcb0` (return field u16): `t0 = u16[(a0 + 0x14)]; return t0`.
+pub static R_0086BCB0: Row = Row {
+    address: 0x0086_bcb0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 2,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Get_g_AtelLoveParamDisable_0086bd40` (return global u32): `t0 = u32[&0x01326b90]; return t0`.
+pub static R_0086BD40: Row = Row {
+    address: 0x0086_bd40,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0132_6b90),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Native_GetFieldPtr32_0086c0a0` (return address of a field's target): `t0 = u8[(a0 + 0x32)]; return (((t0 * 0x4c) + 0x5b8) + a0)`.
+pub static R_0086C0A0: Row = Row {
+    address: 0x0086_c0a0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 1,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x32)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Bin(
+            Bin::Add,
+            &Val::Bin(Bin::Mul, &Val::Tmp(0), &Val::Const(0x4c)),
+            &Val::Const(0x5b8),
+        ),
+        &Val::Arg(0),
+    )),
+};
+/// `Get_g_AtelShopRatio_0086c480` (return global u32): `t0 = u32[&0x01326b6c]; return t0`.
+pub static R_0086C480: Row = Row {
+    address: 0x0086_c480,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0132_6b6c),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
 /// `AtelGetVersion` (return address of global): `return &0x00b5b9fc`.
 pub static R_0086C890: Row = Row {
     address: 0x0086_c890,
@@ -1830,6 +5898,368 @@ pub static R_0086C890: Row = Row {
     args: &[],
     steps: &[],
     result: Some(Val::Image(0x00b5_b9fc)),
+};
+/// `Compute_0086ca10` (arithmetic on arguments): `return (((a0 & 0xff) | 0x40) >> 0x6)`.
+pub static R_0086CA10: Row = Row {
+    address: 0x0086_ca10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(
+        Bin::Shr,
+        &Val::Bin(
+            Bin::Or,
+            &Val::Bin(Bin::And, &Val::Arg(0), &Val::Const(0xff)),
+            &Val::Const(0x40),
+        ),
+        &Val::Const(0x6),
+    )),
+};
+/// `SeveralStoresCopyIntoGlobalTable_0086d000` (several stores: copy into global/table): `t0 = u32[&0x01326b28]; u32[&0x01326b28] = t0; u32[(((a0 * 0x238) + &0x01325ba0) + 0x64)] = 0xffffffff; u32[(((a0 * 0x238) + &0x01325ba0) + 0x74)] = 0xffffffff; u32[(((a0 * 0x238) + &0x01325ba0) + 0x84)] = 0xffffffff; u32[(((a0 * 0x238) + &0x01325ba0) + 0x94)] = 0xffffffff; return ((a0 * 0x238) + &0x01325ba0)`.
+pub static R_0086D000: Row = Row {
+    address: 0x0086_d000,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0132_6b28),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0132_6b28),
+            value: Val::Tmp(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x238)),
+                    &Val::Image(0x0132_5ba0),
+                ),
+                &Val::Const(0x64),
+            ),
+            value: Val::Const(0xffff_ffff),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x238)),
+                    &Val::Image(0x0132_5ba0),
+                ),
+                &Val::Const(0x74),
+            ),
+            value: Val::Const(0xffff_ffff),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x238)),
+                    &Val::Image(0x0132_5ba0),
+                ),
+                &Val::Const(0x84),
+            ),
+            value: Val::Const(0xffff_ffff),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x238)),
+                    &Val::Image(0x0132_5ba0),
+                ),
+                &Val::Const(0x94),
+            ),
+            value: Val::Const(0xffff_ffff),
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x238)),
+        &Val::Image(0x0132_5ba0),
+    )),
+};
+/// `SetGlobals_0086e970` (several stores: set global (constants, arguments, addresses)): `u32[&0x01327070] = a0; u32[&0x01327074] = a1; return a1`.
+pub static R_0086E970: Row = Row {
+    address: 0x0086_e970,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0132_7070),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0132_7074),
+            value: Val::Arg(1),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `Native_SetFields_0086f080` (several stores: set field (constants, arguments, addresses)): `u16[(a0 + 0x5bc)] = (a1 & 0xffff); u16[(a0 + 0x608)] = (a1 & 0xffff); u16[(a0 + 0x654)] = (a1 & 0xffff); u16[(a0 + 0x6a0)] = (a1 & 0xffff); u16[(a0 + 0x6ec)] = (a1 & 0xffff); u16[(a0 + 0x738)] = (a1 & 0xffff); u16[(a0 + 0x784)] = (a1 & 0xffff); u16[(a0 + 0x7d0)] = (a1 & 0xffff); u16[(a0 + 0x81c)] = (a1 & 0xffff); return a0`.
+pub static R_0086F080: Row = Row {
+    address: 0x0086_f080,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5bc)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x608)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x654)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x6a0)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x6ec)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x738)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x784)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x7d0)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x81c)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `SetFields_0086f120` (several stores: set field (constants, arguments, addresses)): `u16[(a0 + 0x868)] = (a1 & 0xffff); u16[(a0 + 0x8ac)] = (a1 & 0xffff); u16[(a0 + 0x8f0)] = (a1 & 0xffff); u16[(a0 + 0x934)] = (a1 & 0xffff); u16[(a0 + 0x978)] = (a1 & 0xffff); u16[(a0 + 0x9bc)] = (a1 & 0xffff); u16[(a0 + 0xa00)] = (a1 & 0xffff); u16[(a0 + 0xa44)] = (a1 & 0xffff); u16[(a0 + 0xa88)] = (a1 & 0xffff); return a0`.
+pub static R_0086F120: Row = Row {
+    address: 0x0086_f120,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x868)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8ac)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8f0)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x934)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x978)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x9bc)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xa00)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xa44)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xa88)),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `SetField_00870520` (store argument to field): `u16[(((a1 * 0x4c) + a0) + 0x5bc)] = (a2 & 0xffff); return a0`.
+pub static R_00870520: Row = Row {
+    address: 0x0087_0520,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Index, Kind::Value],
+    steps: &[Step::Store {
+        size: 2,
+        addr: Val::Bin(
+            Bin::Add,
+            &Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x4c)),
+                &Val::Arg(0),
+            ),
+            &Val::Const(0x5bc),
+        ),
+        value: Val::Bin(Bin::And, &Val::Arg(2), &Val::Const(0xffff)),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetDeref_00870fc0` (store argument to deref): `t0 = u8[(a0 + 0x32)]; u32[(((t0 * 0x4c) + a0) + 0x5cc)] = a1; return a1`.
+pub static R_00870FC0: Row = Row {
+    address: 0x0087_0fc0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x32)),
+            kind: Kind::Index,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Tmp(0), &Val::Const(0x4c)),
+                    &Val::Arg(0),
+                ),
+                &Val::Const(0x5cc),
+            ),
+            value: Val::Arg(1),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `SetField_00871170` (store argument to field): `u16[((a0 + (((a1 << 0x4) + a1) * 0x4)) + 0x868)] = (a2 & 0xffff); return a0`.
+pub static R_00871170: Row = Row {
+    address: 0x0087_1170,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Index, Kind::Value],
+    steps: &[Step::Store {
+        size: 2,
+        addr: Val::Bin(
+            Bin::Add,
+            &Val::Bin(
+                Bin::Add,
+                &Val::Arg(0),
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Add,
+                        &Val::Bin(Bin::Shl, &Val::Arg(1), &Val::Const(0x4)),
+                        &Val::Arg(1),
+                    ),
+                    &Val::Const(0x4),
+                ),
+            ),
+            &Val::Const(0x868),
+        ),
+        value: Val::Bin(Bin::And, &Val::Arg(2), &Val::Const(0xffff)),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `GetFieldPtr4_00872630` (return address of a field's target): `t0 = u32[(a0 + 0x4)]; t1 = u32[(t0 + 0x30)]; return ((t1 + t0) + a1)`.
+pub static R_00872630: Row = Row {
+    address: 0x0087_2630,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Bin(Bin::Add, &Val::Tmp(1), &Val::Tmp(0)),
+        &Val::Arg(1),
+    )),
+};
+/// `SetGlobal01327f4c_008749e0` (store argument to global): `u32[&0x01327f4c] = a0; return a0`.
+pub static R_008749E0: Row = Row {
+    address: 0x0087_49e0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0132_7f4c),
+        value: Val::Arg(0),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `GetFieldPtrb8_008756b0` (return address of a field's target): `t0 = u32[(a0 + 0xb8)]; return (t0 + a1)`.
+pub static R_008756B0: Row = Row {
+    address: 0x0087_56b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xb8)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Arg(1))),
+};
+/// `AtelReturnTableU32_00879750` (return table u32): `t0 = u32[((a0 * 0x4) + &0x01328598)]; return t0`.
+pub static R_00879750: Row = Row {
+    address: 0x0087_9750,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(
+            Bin::Add,
+            &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x4)),
+            &Val::Image(0x0132_8598),
+        ),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
 };
 /// `AtelGetSourceDataAdrs` (return table u32): `t0 = u32[(((a1 + (a0 * 0x8)) * 0x4) + &0x01328698)]; return t0`.
 pub static R_00879820: Row = Row {
@@ -2216,6 +6646,68 @@ pub static R_00886C40: Row = Row {
     ],
     result: Some(Val::Tmp(3)),
 };
+/// `SetGlobal013301f0_00887e80` (store argument to global): `t0 = u32[&0x013301f0]; u32[&0x013301f0] = a0; t1 = u32[&0x013301f0]; return t1`.
+pub static R_00887E80: Row = Row {
+    address: 0x0088_7e80,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0133_01f0),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0133_01f0),
+            value: Val::Arg(0),
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Image(0x0133_01f0),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `TkSet_g_TkSoundSyncVFlag_00887ea0` (store constant to global): `u32[&0x013301e4] = 0x1`.
+pub static R_00887EA0: Row = Row {
+    address: 0x0088_7ea0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0133_01e4),
+        value: Val::Const(0x1),
+    }],
+    result: None,
+};
+/// `TkSetGlobal013301e8_00887eb0` (store constant to global): `u32[&0x013301e8] = 0x1`.
+pub static R_00887EB0: Row = Row {
+    address: 0x0088_7eb0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0133_01e8),
+        value: Val::Const(0x1),
+    }],
+    result: None,
+};
+/// `TkSet_g_TkSoundSyncVFlag3_00887ec0` (store constant to global): `u32[&0x013301ec] = 0x1`.
+pub static R_00887EC0: Row = Row {
+    address: 0x0088_7ec0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0133_01ec),
+        value: Val::Const(0x1),
+    }],
+    result: None,
+};
 /// `TkMcSetExecPort` (store argument to global): `u32[&0x01330230] = a0; return a0`.
 pub static R_00888430: Row = Row {
     address: 0x0088_8430,
@@ -2227,6 +6719,14 @@ pub static R_00888430: Row = Row {
         value: Val::Arg(0),
     }],
     result: Some(Val::Arg(0)),
+};
+/// `Compute_008889e0` (arithmetic on arguments): `return (a1 & 0xff)`.
+pub static R_008889E0: Row = Row {
+    address: 0x0088_89e0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xff))),
 };
 /// `TOBtlInitSimpleHelpMes` (several stores: set table (constants, arguments, addresses)): `u32[((a0 << 0x4) + &0x0133f510)] = 0x0; u32[((a0 << 0x4) + &0x0133f514)] = 0x7; u32[((a0 << 0x4) + &0x0133f518)] = 0x0; u32[((a0 << 0x4) + &0x0133f51c)] = 0x0; return (a0 << 0x4)`.
 pub static R_0089DB60: Row = Row {
@@ -2273,6 +6773,39 @@ pub static R_0089DB60: Row = Row {
     ],
     result: Some(Val::Bin(Bin::Shl, &Val::Arg(0), &Val::Const(0x4))),
 };
+/// `GetGlobal01841c0c_008a98e0` (return global u32): `t0 = u32[&0x01841c0c]; return t0`.
+pub static R_008A98E0: Row = Row {
+    address: 0x008a_98e0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0184_1c0c),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `AddrOfGlobal0159e468_008b3630` (return address of global): `return &0x0159e468`.
+pub static R_008B3630: Row = Row {
+    address: 0x008b_3630,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Image(0x0159_e468)),
+};
+/// `SetFieldConst28_008b3d10` (store constant to field): `u32[(a0 + 0x28)] = 0x0; return a0`.
+pub static R_008B3D10: Row = Row {
+    address: 0x008b_3d10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x28)),
+        value: Val::Const(0x0),
+    }],
+    result: Some(Val::Arg(0)),
+};
 /// `TOMenuClearMenuType` (store computed to global): `t0 = u32[&0x0186a214]; u32[&0x0186a214] = ((t0 ^ a0) & 0xffff0000); return ((t0 ^ a0) & 0xffff0000)`.
 pub static R_008BE3F0: Row = Row {
     address: 0x008b_e3f0,
@@ -2300,6 +6833,184 @@ pub static R_008BE3F0: Row = Row {
         &Val::Bin(Bin::Xor, &Val::Tmp(0), &Val::Arg(0)),
         &Val::Const(0xffff_0000),
     )),
+};
+/// `ReturnConst200000_008bec80` (return constant): `return 0x200000`.
+pub static R_008BEC80: Row = Row {
+    address: 0x008b_ec80,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x20_0000)),
+};
+/// `SeveralStoresSetFieldGlobalConstantsArgumentsAddresses_008bf070` (several stores: set field/global (constants, arguments, addresses)): `u32[&0x0186a234] = (a1 & 0xffff); u32[&0x0186a230] = (a1 & 0xfff); u32[(a0 + 0x1c)] = 0x0; return a0`.
+pub static R_008BF070: Row = Row {
+    address: 0x008b_f070,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0186_a234),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0186_a230),
+            value: Val::Bin(Bin::And, &Val::Arg(1), &Val::Const(0xfff)),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `GetDerefU32_008cbaa0` (return deref u32 (pointer chain)): `t0 = u32[&0x0186a44c]; t1 = u32[(t0 + (a0 * 0x4))]; return t1`.
+pub static R_008CBAA0: Row = Row {
+    address: 0x008c_baa0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x0186_a44c),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Tmp(0),
+                &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x4)),
+            ),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `SetGlobals_008d7590` (several stores: set global (constants, arguments, addresses)): `u32[&0x0186ab1c] = a1; u32[&0x0186aba0] = 0xffffffff; return a1`.
+pub static R_008D7590: Row = Row {
+    address: 0x008d_7590,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0186_ab1c),
+            value: Val::Arg(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x0186_aba0),
+            value: Val::Const(0xffff_ffff),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `Set_g_TkMenuWShopList_008d9ad0` (store argument to global): `u32[&0x0186ac20] = a1; return a1`.
+pub static R_008D9AD0: Row = Row {
+    address: 0x008d_9ad0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x0186_ac20),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(1)),
+};
+/// `SetFieldConst1c_008db790` (store constant to field): `u32[(a0 + 0x1c)] = 0x0; return a0`.
+pub static R_008DB790: Row = Row {
+    address: 0x008d_b790,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+        value: Val::Const(0x0),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `SetFields_008dea00` (several stores: set field (constants, arguments, addresses)): `u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0`.
+pub static R_008DEA00: Row = Row {
+    address: 0x008d_ea00,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Const(0x4),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x124)),
+            value: Val::Image(0x008d_ea00),
+        },
+    ],
+    result: Some(Val::Const(0x0)),
+};
+/// `StoreComputed_008df4c0` (several stores: computed, into field): `t0 = u8[(a0 + 0x5b)]; u8[(a0 + 0x5b)] = ((t0 + 0xf0) & 0xff); u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0`.
+pub static R_008DF4C0: Row = Row {
+    address: 0x008d_f4c0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5b)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x5b)),
+            value: Val::Bin(
+                Bin::And,
+                &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0xf0)),
+                &Val::Const(0xff),
+            ),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Const(0x4),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x124)),
+            value: Val::Image(0x008d_ea00),
+        },
+    ],
+    result: Some(Val::Const(0x0)),
+};
+/// `GetGlobal01871558_008e2250` (return global u32): `t0 = u32[&0x01871558]; return t0`.
+pub static R_008E2250: Row = Row {
+    address: 0x008e_2250,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0187_1558),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `SetFieldConst1c_008e2ad0` (store constant to field): `u32[(a0 + 0x1c)] = 0x0; return a0`.
+pub static R_008E2AD0: Row = Row {
+    address: 0x008e_2ad0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+        value: Val::Const(0x0),
+    }],
+    result: Some(Val::Arg(0)),
 };
 /// `TOSetPolyG4A_XY4` (several stores: set field (constants, arguments, addresses)): `u16[(a0 + 0x4)] = (a1 & 0xffff); u16[a0] = (a1 & 0xffff); u16[(a0 + 0x6)] = (a3 & 0xffff); u16[(a0 + 0x2)] = (a3 & 0xffff); u16[(a0 + 0xa)] = (a2 & 0xffff); u16[(a0 + 0x8)] = (a2 & 0xffff); u16[(a0 + 0xe)] = (a4 & 0xffff); u16[(a0 + 0xc)] = (a4 & 0xffff); return a4`.
 pub static R_00904860: Row = Row {
@@ -2356,6 +7067,114 @@ pub static R_00904860: Row = Row {
     ],
     result: Some(Val::Arg(4)),
 };
+/// `SeveralStoresSetTableConstantsArgumentsAddresses_00906680` (several stores: set table (constants, arguments, addresses)): `u32[((a4 << 0x5) + &0x025d1710)] = a0; u32[((a4 << 0x5) + &0x025d1714)] = a1; u32[((a4 << 0x5) + &0x025d1718)] = a2; u32[((a4 << 0x5) + &0x025d171c)] = a3; return a3`.
+pub static R_00906680: Row = Row {
+    address: 0x0090_6680,
+    conv: Conv::Cdecl,
+    args: &[
+        Kind::Value,
+        Kind::Value,
+        Kind::Value,
+        Kind::Value,
+        Kind::Index,
+    ],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Shl, &Val::Arg(4), &Val::Const(0x5)),
+                &Val::Image(0x025d_1710),
+            ),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Shl, &Val::Arg(4), &Val::Const(0x5)),
+                &Val::Image(0x025d_1714),
+            ),
+            value: Val::Arg(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Shl, &Val::Arg(4), &Val::Const(0x5)),
+                &Val::Image(0x025d_1718),
+            ),
+            value: Val::Arg(2),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Shl, &Val::Arg(4), &Val::Const(0x5)),
+                &Val::Image(0x025d_171c),
+            ),
+            value: Val::Arg(3),
+        },
+    ],
+    result: Some(Val::Arg(3)),
+};
+/// `GetGlobal011307a0_00906b10` (return global u32): `t0 = u32[&0x011307a0]; return t0`.
+pub static R_00906B10: Row = Row {
+    address: 0x0090_6b10,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0113_07a0),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetGlobal018ded30_00908f40` (return global u32): `t0 = u32[&0x018ded30]; return t0`.
+pub static R_00908F40: Row = Row {
+    address: 0x0090_8f40,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x018d_ed30),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `pppStoreComputed_0091af10` (several stores: computed, into field): `t0 = u16[(a0 + 0x10)]; u32[a1] = sx16(t0); t1 = u16[(a0 + 0x12)]; u32[a2] = sx16(t1); return a2`.
+pub static R_0091AF10: Row = Row {
+    address: 0x0091_af10,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Un(Un::Sx16, &Val::Tmp(0)),
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x12)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(2),
+            value: Val::Un(Un::Sx16, &Val::Tmp(1)),
+        },
+    ],
+    result: Some(Val::Arg(2)),
+};
 /// `Native_8006_Poll` (return constant): `return 0x1`.
 pub static R_0091B040: Row = Row {
     address: 0x0091_b040,
@@ -2363,6 +7182,53 @@ pub static R_0091B040: Row = Row {
     args: &[],
     steps: &[],
     result: Some(Val::Const(0x1)),
+};
+/// `Native_Compare_0091c8a0` (compare): `t0 = u32[&0x012fbc40]; return (t0 == 0x140)`.
+pub static R_0091C8A0: Row = Row {
+    address: 0x0091_c8a0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x012f_bc40),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Bin(Bin::Eq, &Val::Tmp(0), &Val::Const(0x140))),
+};
+/// `SetGlobals_0092d880` (several stores: set global (constants, arguments, addresses)): `u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2`.
+pub static R_0092D880: Row = Row {
+    address: 0x0092_d880,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x025d_5c38),
+            value: Val::Arg(0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x025d_5c3c),
+            value: Val::Arg(1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x025d_5c40),
+            value: Val::Arg(2),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x025d_5c44),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Image(0x025d_5c48),
+            value: Val::Const(0x1),
+        },
+    ],
+    result: Some(Val::Arg(2)),
 };
 /// `rcefObjCreate` (store constant to field): `u32[(a0 + 0xbc)] = 0x1; return a0`.
 pub static R_0092FE90: Row = Row {
@@ -2376,10 +7242,1271 @@ pub static R_0092FE90: Row = Row {
     }],
     result: Some(Val::Arg(0)),
 };
+/// `Gui_AddrOfGlobal025d5fa0_00941820` (return address of global): `return &0x025d5fa0`.
+pub static R_00941820: Row = Row {
+    address: 0x0094_1820,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Image(0x025d_5fa0)),
+};
+/// `Get_g_CommittedBytes_009437f0` (return global u32): `t0 = u32[&0x0193cd48]; return t0`.
+pub static R_009437F0: Row = Row {
+    address: 0x0094_37f0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0193_cd48),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `Get_g_ReservedBytes_00943800` (return global u32): `t0 = u32[&0x0193cd44]; return t0`.
+pub static R_00943800: Row = Row {
+    address: 0x0094_3800,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0193_cd44),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `StoreComputed_009439d0` (several stores: computed, into field): `u32[(a0 + 0x4)] = ((a1 + 0xfff) & 0xfffff000); u32[a0] = 0x0; return a0`.
+pub static R_009439D0: Row = Row {
+    address: 0x0094_39d0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Bin(
+                Bin::And,
+                &Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xfff)),
+                &Val::Const(0xffff_f000),
+            ),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `SetFields_00945750` (several stores: set field (constants, arguments, addresses)): `u32[a0] = 0x1000; u32[(a0 + 0x4)] = 0x2000000; u32[(a0 + 0x8)] = 0x40; u32[(a0 + 0xc)] = 0x8000; u32[(a0 + 0x10)] = 0x2000000; u32[(a0 + 0x14)] = 0x200; u32[(a0 + 0x18)] = 0x2000000; u32[(a0 + 0x1c)] = 0x200; u32[(a0 + 0x20)] = 0x2800; u32[(a0 + 0x24)] = 0x8000000; u32[(a0 + 0x28)] = 0x2800; u32[(a0 + 0x2c)] = 0x100000; return a0`.
+pub static R_00945750: Row = Row {
+    address: 0x0094_5750,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x1000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x200_0000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x40),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x8000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Const(0x200_0000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Const(0x200),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Const(0x200_0000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Const(0x200),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Const(0x2800),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x24)),
+            value: Val::Const(0x800_0000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x28)),
+            value: Val::Const(0x2800),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Const(0x10_0000),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `CopyFields_009db490` (several stores: copy into field): `t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; t4 = u32[&0x00c8f508]; u32[(a0 + 0x10)] = t4; t5 = u32[&0x00c8f50c]; u32[(a0 + 0x14)] = t5; t6 = u32[&0x00c8f510]; u32[(a0 + 0x18)] = t6; t7 = u32[&0x00c8f514]; u32[(a0 + 0x1c)] = t7; t8 = u32[&0x00c8f508]; u32[(a0 + 0x20)] = t8; t9 = u32[&0x00c8f50c]; u32[(a0 + 0x24)] = t9; t10 = u32[&0x00c8f510]; u32[(a0 + 0x28)] = t10; t11 = u32[&0x00c8f514]; u32[(a0 + 0x2c)] = t11; t12 = u32[&0x00c8f508]; u32[(a0 + 0x30)] = t12; t13 = u32[&0x00c8f50c]; u32[(a0 + 0x34)] = t13; t14 = u32[&0x00c8f510]; u32[(a0 + 0x38)] = t14; t15 = u32[&0x00c8f514]; u32[(a0 + 0x3c)] = t15; return t15`.
+pub static R_009DB490: Row = Row {
+    address: 0x009d_b490,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x00c8_f508),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Tmp(0),
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Image(0x00c8_f50c),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Tmp(1),
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Image(0x00c8_f510),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Tmp(2),
+        },
+        Step::Load {
+            tmp: 3,
+            size: 4,
+            addr: Val::Image(0x00c8_f514),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Tmp(3),
+        },
+        Step::Load {
+            tmp: 4,
+            size: 4,
+            addr: Val::Image(0x00c8_f508),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Tmp(4),
+        },
+        Step::Load {
+            tmp: 5,
+            size: 4,
+            addr: Val::Image(0x00c8_f50c),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Tmp(5),
+        },
+        Step::Load {
+            tmp: 6,
+            size: 4,
+            addr: Val::Image(0x00c8_f510),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Tmp(6),
+        },
+        Step::Load {
+            tmp: 7,
+            size: 4,
+            addr: Val::Image(0x00c8_f514),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Tmp(7),
+        },
+        Step::Load {
+            tmp: 8,
+            size: 4,
+            addr: Val::Image(0x00c8_f508),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Tmp(8),
+        },
+        Step::Load {
+            tmp: 9,
+            size: 4,
+            addr: Val::Image(0x00c8_f50c),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x24)),
+            value: Val::Tmp(9),
+        },
+        Step::Load {
+            tmp: 10,
+            size: 4,
+            addr: Val::Image(0x00c8_f510),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x28)),
+            value: Val::Tmp(10),
+        },
+        Step::Load {
+            tmp: 11,
+            size: 4,
+            addr: Val::Image(0x00c8_f514),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Tmp(11),
+        },
+        Step::Load {
+            tmp: 12,
+            size: 4,
+            addr: Val::Image(0x00c8_f508),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            value: Val::Tmp(12),
+        },
+        Step::Load {
+            tmp: 13,
+            size: 4,
+            addr: Val::Image(0x00c8_f50c),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x34)),
+            value: Val::Tmp(13),
+        },
+        Step::Load {
+            tmp: 14,
+            size: 4,
+            addr: Val::Image(0x00c8_f510),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x38)),
+            value: Val::Tmp(14),
+        },
+        Step::Load {
+            tmp: 15,
+            size: 4,
+            addr: Val::Image(0x00c8_f514),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x3c)),
+            value: Val::Tmp(15),
+        },
+    ],
+    result: Some(Val::Tmp(15)),
+};
+/// `GetGlobal01984c68_00a25a30` (return global u32): `t0 = u32[&0x01984c68]; return t0`.
+pub static R_00A25A30: Row = Row {
+    address: 0x00a2_5a30,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x0198_4c68),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `IggyMenuManager_SetFields_00a25db0` (several stores: set field (constants, arguments, addresses)): `u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x1; return a0`.
+pub static R_00A25DB0: Row = Row {
+    address: 0x00a2_5db0,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x24)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x28)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x2c)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            value: Val::Const(0x1),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `GetDerefU32_00a28d10` (return deref u32 (pointer chain)): `t0 = u32[(a0 + 0x6c)]; t1 = u32[t0]; return t1`.
+pub static R_00A28D10: Row = Row {
+    address: 0x00a2_8d10,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x6c)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Tmp(0),
+            kind: Kind::Value,
+        },
+    ],
+    result: Some(Val::Tmp(1)),
+};
+/// `SetField68_00a28f30` (store argument to field): `u32[(a0 + 0x68)] = a1; return a1`.
+pub static R_00A28F30: Row = Row {
+    address: 0x00a2_8f30,
+    conv: Conv::Thiscall,
+    args: &[Kind::Pointer, Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x68)),
+        value: Val::Arg(1),
+    }],
+    result: Some(Val::Arg(1)),
+};
+/// `StoreComputed_00a38480` (several stores: computed, into field): `t0 = u32[(a0 + 0xc)]; u32[a1] = t0; t1 = u32[(a0 + 0x10)]; u32[(a1 + 0x4)] = t1; t2 = u32[(a0 + 0x30)]; u32[(a1 + 0x8)] = (t2 & 0xfffffff); return (t2 & 0xfffffff)`.
+pub static R_00A38480: Row = Row {
+    address: 0x00a3_8480,
+    conv: Conv::Stdcall,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Tmp(0),
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x4)),
+            value: Val::Tmp(1),
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0x8)),
+            value: Val::Bin(Bin::And, &Val::Tmp(2), &Val::Const(0xfff_ffff)),
+        },
+    ],
+    result: Some(Val::Bin(Bin::And, &Val::Tmp(2), &Val::Const(0xfff_ffff))),
+};
+/// `SetFieldComputed30_00a384b0` (store computed to field): `t0 = u32[(a0 + 0x30)]; u32[a1] = (t0 & 0xfffffff); return a1`.
+pub static R_00A384B0: Row = Row {
+    address: 0x00a3_84b0,
+    conv: Conv::Stdcall,
+    args: &[Kind::Pointer, Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(1),
+            value: Val::Bin(Bin::And, &Val::Tmp(0), &Val::Const(0xfff_ffff)),
+        },
+    ],
+    result: Some(Val::Arg(1)),
+};
+/// `SetFields_00a39900` (several stores: set field (constants, arguments, addresses)): `u32[a0] = 0x8; u32[(a0 + 0x4)] = 0x1ffe; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x1; u32[(a0 + 0x14)] = 0x1; u32[(a0 + 0x8)] = 0x2000; u32[(a0 + 0x18)] = 0x0; return a0`.
+pub static R_00A39900: Row = Row {
+    address: 0x00a3_9900,
+    conv: Conv::Stdcall,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Store {
+            size: 4,
+            addr: Val::Arg(0),
+            value: Val::Const(0x8),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x4)),
+            value: Val::Const(0x1ffe),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0xc)),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x10)),
+            value: Val::Const(0x1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x14)),
+            value: Val::Const(0x1),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x8)),
+            value: Val::Const(0x2000),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            value: Val::Const(0x0),
+        },
+    ],
+    result: Some(Val::Arg(0)),
+};
+/// `StoreComputed_00a39b00` (several stores: computed, into deref/field): `t0 = u32[(a0 + 0x20)]; t1 = u32[(a0 + 0x1c)]; t2 = u32[(a0 + 0x18)]; u32[(t0 + 0x1c)] = t1; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = (t2 + 0x10); t5 = u32[(t2 + 0x30)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = (t7 & 0xfffffff); return t6`.
+pub static R_00A39B00: Row = Row {
+    address: 0x00a3_9b00,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            kind: Kind::Value,
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x1c)),
+            value: Val::Tmp(1),
+        },
+        Step::Load {
+            tmp: 3,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 4,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(3), &Val::Const(0x20)),
+            value: Val::Tmp(4),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Bin(Bin::Add, &Val::Tmp(2), &Val::Const(0x10)),
+        },
+        Step::Load {
+            tmp: 5,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(2), &Val::Const(0x30)),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Tmp(5),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(5), &Val::Const(0x1c)),
+            value: Val::Arg(0),
+        },
+        Step::Load {
+            tmp: 6,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(6), &Val::Const(0x20)),
+            value: Val::Arg(0),
+        },
+        Step::Load {
+            tmp: 7,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            value: Val::Bin(Bin::And, &Val::Tmp(7), &Val::Const(0xfff_ffff)),
+        },
+    ],
+    result: Some(Val::Tmp(6)),
+};
+/// `StoreComputed_00a3a010` (several stores: computed, into deref/field): `t0 = u32[(a0 + 0x18)]; t1 = u32[(a0 + 0x20)]; t2 = u32[(a0 + 0x1c)]; u32[(t1 + 0x1c)] = t2; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = ((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)); t5 = u32[(((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)) + 0x20)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = ((t7 & 0xfffffff) | (a1 << 0x1c)); return ((t7 & 0xfffffff) | (a1 << 0x1c))`.
+pub static R_00A3A010: Row = Row {
+    address: 0x00a3_a010,
+    conv: Conv::Cdecl,
+    args: &[Kind::Pointer, Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x18)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 2,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(1), &Val::Const(0x1c)),
+            value: Val::Tmp(2),
+        },
+        Step::Load {
+            tmp: 3,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 4,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(3), &Val::Const(0x20)),
+            value: Val::Tmp(4),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            value: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x10)),
+                &Val::Bin(
+                    Bin::Mul,
+                    &Val::Bin(
+                        Bin::Sub,
+                        &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x8)),
+                        &Val::Arg(1),
+                    ),
+                    &Val::Const(0x8),
+                ),
+            ),
+        },
+        Step::Load {
+            tmp: 5,
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x10)),
+                    &Val::Bin(
+                        Bin::Mul,
+                        &Val::Bin(
+                            Bin::Sub,
+                            &Val::Bin(Bin::Mul, &Val::Arg(1), &Val::Const(0x8)),
+                            &Val::Arg(1),
+                        ),
+                        &Val::Const(0x8),
+                    ),
+                ),
+                &Val::Const(0x20),
+            ),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x20)),
+            value: Val::Tmp(5),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(5), &Val::Const(0x1c)),
+            value: Val::Arg(0),
+        },
+        Step::Load {
+            tmp: 6,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x1c)),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(6), &Val::Const(0x20)),
+            value: Val::Arg(0),
+        },
+        Step::Load {
+            tmp: 7,
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Arg(0), &Val::Const(0x30)),
+            value: Val::Bin(
+                Bin::Or,
+                &Val::Bin(Bin::And, &Val::Tmp(7), &Val::Const(0xfff_ffff)),
+                &Val::Bin(Bin::Shl, &Val::Arg(1), &Val::Const(0x1c)),
+            ),
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Or,
+        &Val::Bin(Bin::And, &Val::Tmp(7), &Val::Const(0xfff_ffff)),
+        &Val::Bin(Bin::Shl, &Val::Arg(1), &Val::Const(0x1c)),
+    )),
+};
+/// `SetGlobal01a85f38_00a44660` (store argument to global): `u32[&0x01a85f38] = a0; return a0`.
+pub static R_00A44660: Row = Row {
+    address: 0x00a4_4660,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value],
+    steps: &[Step::Store {
+        size: 4,
+        addr: Val::Image(0x01a8_5f38),
+        value: Val::Arg(0),
+    }],
+    result: Some(Val::Arg(0)),
+};
+/// `Compute_00a446b0` (arithmetic on arguments): `return (a0 + a1)`.
+pub static R_00A446B0: Row = Row {
+    address: 0x00a4_46b0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Value],
+    steps: &[],
+    result: Some(Val::Bin(Bin::Add, &Val::Arg(0), &Val::Arg(1))),
+};
+/// `ReturnConst2_00a54750` (return constant): `return 0x2`.
+pub static R_00A54750: Row = Row {
+    address: 0x00a5_4750,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[],
+    result: Some(Val::Const(0x2)),
+};
+/// `GetGlobal01a85f70_00a547e0` (return global u32): `t0 = u32[&0x01a85f70]; return t0`.
+pub static R_00A547E0: Row = Row {
+    address: 0x00a5_47e0,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Image(0x01a8_5f70),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `CopyDeref_00a59680` (several stores: copy into deref): `t0 = u32[&0x01a86108]; t1 = u16[((a0 * 0x340) + t0)]; u16[(((a0 * 0x340) + t0) + 0x8)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0x2)]; u16[(((a0 * 0x340) + t0) + 0xa)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0x4)]; u16[(((a0 * 0x340) + t0) + 0xc)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0x6)]; u16[(((a0 * 0x340) + t0) + 0xe)] = t4; t5 = u16[(((a0 * 0x340) + t0) + 0x10)]; u16[(((a0 * 0x340) + t0) + 0x14)] = t5; t6 = u16[(((a0 * 0x340) + t0) + 0x12)]; u16[(((a0 * 0x340) + t0) + 0x16)] = t6; return t6`.
+pub static R_00A59680: Row = Row {
+    address: 0x00a5_9680,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x01a8_6108),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                &Val::Tmp(0),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x8),
+            ),
+            value: Val::Tmp(1),
+        },
+        Step::Load {
+            tmp: 2,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xa),
+            ),
+            value: Val::Tmp(2),
+        },
+        Step::Load {
+            tmp: 3,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x4),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xc),
+            ),
+            value: Val::Tmp(3),
+        },
+        Step::Load {
+            tmp: 4,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x6),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xe),
+            ),
+            value: Val::Tmp(4),
+        },
+        Step::Load {
+            tmp: 5,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x10),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x14),
+            ),
+            value: Val::Tmp(5),
+        },
+        Step::Load {
+            tmp: 6,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x12),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x16),
+            ),
+            value: Val::Tmp(6),
+        },
+    ],
+    result: Some(Val::Tmp(6)),
+};
+/// `CopyDeref_00a596d0` (several stores: copy into deref): `t0 = u32[&0x01a86108]; t1 = u16[(((a0 * 0x340) + t0) + 0x8)]; u16[(((a0 * 0x340) + t0) + 0x2a)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0xa)]; u16[(((a0 * 0x340) + t0) + 0x2c)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0xc)]; u16[(((a0 * 0x340) + t0) + 0x2e)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0xe)]; u16[(((a0 * 0x340) + t0) + 0x30)] = t4; u8[(((a0 * 0x340) + t0) + 0x32)] = 0x0; u32[(((a0 * 0x340) + t0) + 0x34)] = &0x00a5a170; return t4`.
+pub static R_00A596D0: Row = Row {
+    address: 0x00a5_96d0,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x01a8_6108),
+            kind: Kind::Pointer,
+        },
+        Step::Load {
+            tmp: 1,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x8),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2a),
+            ),
+            value: Val::Tmp(1),
+        },
+        Step::Load {
+            tmp: 2,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xa),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2c),
+            ),
+            value: Val::Tmp(2),
+        },
+        Step::Load {
+            tmp: 3,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xc),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x2e),
+            ),
+            value: Val::Tmp(3),
+        },
+        Step::Load {
+            tmp: 4,
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0xe),
+            ),
+            kind: Kind::Value,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x30),
+            ),
+            value: Val::Tmp(4),
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x32),
+            ),
+            value: Val::Const(0x0),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x34),
+            ),
+            value: Val::Image(0x00a5_a170),
+        },
+    ],
+    result: Some(Val::Tmp(4)),
+};
+/// `SeveralStoresSetDerefConstantsArgumentsAddresses_00a59860` (several stores: set deref (constants, arguments, addresses)): `t0 = u32[&0x01a86108]; u16[(((a0 * 0x340) + t0) + 0x23)] = 0x301; u8[(((a0 * 0x340) + t0) + 0x25)] = 0x1; u16[(t0 + 0x2700)] = (a0 & 0xffff); u32[(t0 + 0x2704)] = a1; return ((a0 * 0x340) + t0)`.
+pub static R_00A59860: Row = Row {
+    address: 0x00a5_9860,
+    conv: Conv::Cdecl,
+    args: &[Kind::Index, Kind::Value],
+    steps: &[
+        Step::Load {
+            tmp: 0,
+            size: 4,
+            addr: Val::Image(0x01a8_6108),
+            kind: Kind::Pointer,
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x23),
+            ),
+            value: Val::Const(0x301),
+        },
+        Step::Store {
+            size: 1,
+            addr: Val::Bin(
+                Bin::Add,
+                &Val::Bin(
+                    Bin::Add,
+                    &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+                    &Val::Tmp(0),
+                ),
+                &Val::Const(0x25),
+            ),
+            value: Val::Const(0x1),
+        },
+        Step::Store {
+            size: 2,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x2700)),
+            value: Val::Bin(Bin::And, &Val::Arg(0), &Val::Const(0xffff)),
+        },
+        Step::Store {
+            size: 4,
+            addr: Val::Bin(Bin::Add, &Val::Tmp(0), &Val::Const(0x2704)),
+            value: Val::Arg(1),
+        },
+    ],
+    result: Some(Val::Bin(
+        Bin::Add,
+        &Val::Bin(Bin::Mul, &Val::Arg(0), &Val::Const(0x340)),
+        &Val::Tmp(0),
+    )),
+};
+/// `GetFieldc_00a79120` (return field u32): `t0 = u32[(a1 + 0xc)]; return t0`.
+pub static R_00A79120: Row = Row {
+    address: 0x00a7_9120,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldc_00a79210` (return field u32): `t0 = u32[(a1 + 0xc)]; return t0`.
+pub static R_00A79210: Row = Row {
+    address: 0x00a7_9210,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldc_00a79300` (return field u32): `t0 = u32[(a1 + 0xc)]; return t0`.
+pub static R_00A79300: Row = Row {
+    address: 0x00a7_9300,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldc_00a79410` (return field u32): `t0 = u32[(a1 + 0xc)]; return t0`.
+pub static R_00A79410: Row = Row {
+    address: 0x00a7_9410,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
+/// `GetFieldc_00a79540` (return field u32): `t0 = u32[(a1 + 0xc)]; return t0`.
+pub static R_00A79540: Row = Row {
+    address: 0x00a7_9540,
+    conv: Conv::Cdecl,
+    args: &[Kind::Value, Kind::Pointer],
+    steps: &[Step::Load {
+        tmp: 0,
+        size: 4,
+        addr: Val::Bin(Bin::Add, &Val::Arg(1), &Val::Const(0xc)),
+        kind: Kind::Value,
+    }],
+    result: Some(Val::Tmp(0)),
+};
 
 /// Every row, by address.
-pub static ROWS: [&Row; 103] = [
+pub static ROWS: [&Row; 373] = [
+    &R_00401310,
+    &R_0042D3C0,
+    &R_0042E060,
+    &R_0042E1D0,
+    &R_0042E200,
+    &R_0059E560,
+    &R_0059E570,
+    &R_0059E580,
+    &R_0059E5A0,
     &R_00638D90,
+    &R_0063FC30,
+    &R_0063FC40,
+    &R_0063FC50,
+    &R_0063FC70,
+    &R_0063FC80,
+    &R_0063FC90,
+    &R_0063FCA0,
+    &R_0063FCB0,
+    &R_0063FCC0,
+    &R_0063FCD0,
+    &R_0063FCE0,
+    &R_0063FCF0,
+    &R_0063FD00,
+    &R_0063FD10,
+    &R_0063FD20,
+    &R_0063FD30,
+    &R_0063FD50,
     &R_0063FD70,
     &R_00640DB0,
     &R_00641320,
@@ -2397,6 +8524,8 @@ pub static ROWS: [&Row; 103] = [
     &R_00643610,
     &R_00643720,
     &R_006437C0,
+    &R_006437E0,
+    &R_00643B10,
     &R_00654CC0,
     &R_0065DE70,
     &R_0065DE90,
@@ -2405,31 +8534,154 @@ pub static ROWS: [&Row; 103] = [
     &R_0065E5E0,
     &R_006601D0,
     &R_0066CF90,
+    &R_0067AC70,
+    &R_0067E4A0,
+    &R_0067E4D0,
     &R_0067E4E0,
+    &R_0068D5B0,
+    &R_0068D5D0,
     &R_0068DC10,
+    &R_0068E330,
+    &R_0068E340,
     &R_0068FF10,
     &R_00692BE0,
     &R_006984A0,
     &R_006984B0,
     &R_0069E030,
+    &R_0069E0C0,
     &R_0069E2B0,
     &R_0069E320,
     &R_0069F6C0,
     &R_0069F880,
+    &R_006A0440,
+    &R_006A0450,
+    &R_006A06C0,
+    &R_006A29A0,
+    &R_006A3B40,
     &R_006B02E0,
+    &R_006B5000,
+    &R_006BC960,
+    &R_006BD290,
     &R_006C14C0,
+    &R_006C26D0,
+    &R_006C2700,
+    &R_006C4000,
+    &R_006C47A0,
     &R_006C57E0,
+    &R_006CC8B0,
+    &R_006CC8C0,
     &R_006D2390,
+    &R_006D4E00,
+    &R_006D4E10,
+    &R_006D5180,
+    &R_006D59F0,
+    &R_006D7B20,
     &R_006D91B0,
+    &R_006DF000,
+    &R_006E55D0,
+    &R_006E6650,
     &R_006E6660,
     &R_006E7710,
+    &R_006F2F70,
     &R_006F7330,
+    &R_006F7700,
     &R_006F78B0,
+    &R_006F7BD0,
+    &R_006F7C00,
+    &R_006F9940,
+    &R_006F9980,
+    &R_006F99C0,
     &R_006F9A30,
+    &R_006F9B70,
+    &R_006FA200,
+    &R_00706A60,
+    &R_00706AA0,
+    &R_00706AB0,
+    &R_00706AC0,
+    &R_00706C00,
+    &R_00706C10,
+    &R_007074C0,
+    &R_007074D0,
+    &R_00708610,
+    &R_0070E290,
+    &R_0070E2B0,
+    &R_0076E9B0,
+    &R_0076F350,
+    &R_0076F390,
+    &R_00770990,
+    &R_007709D0,
+    &R_00773820,
+    &R_00773860,
+    &R_007738E0,
+    &R_00773920,
+    &R_00773970,
+    &R_007739F0,
+    &R_00773A60,
+    &R_00773AD0,
+    &R_00773B20,
+    &R_00773B60,
+    &R_00773BC0,
+    &R_00773C00,
+    &R_00773C40,
+    &R_00773CB0,
+    &R_00773CF0,
+    &R_00773D30,
+    &R_00773D70,
+    &R_00773DB0,
+    &R_00773DF0,
+    &R_00773E30,
+    &R_00773E70,
+    &R_00773EB0,
+    &R_00773EF0,
+    &R_00773F30,
+    &R_00773F70,
+    &R_00773FB0,
+    &R_00773FF0,
+    &R_00774030,
+    &R_00774070,
+    &R_007740B0,
+    &R_007740F0,
+    &R_00774130,
+    &R_00774170,
+    &R_007741B0,
+    &R_007741F0,
+    &R_00774230,
+    &R_00774270,
+    &R_007742B0,
+    &R_007742F0,
+    &R_00774330,
+    &R_00779590,
+    &R_0077A4F0,
+    &R_0077A500,
+    &R_0077A510,
+    &R_0077A520,
+    &R_0077A530,
+    &R_0077A540,
+    &R_0077A550,
+    &R_0077A560,
+    &R_0077A570,
+    &R_0077A580,
+    &R_0077A590,
+    &R_0077A5A0,
+    &R_0077A5B0,
+    &R_0077A5C0,
+    &R_0077A5D0,
+    &R_0077A5E0,
+    &R_0077A5F0,
+    &R_0077A860,
+    &R_0077A870,
+    &R_0077A880,
+    &R_0077A890,
+    &R_0077A8A0,
+    &R_0077A8B0,
+    &R_0077A8C0,
+    &R_0077A8D0,
     &R_0077FE30,
     &R_00782D40,
     &R_00784F20,
     &R_00784FE0,
+    &R_007851B0,
+    &R_00785230,
     &R_007852A0,
     &R_007852B0,
     &R_00785360,
@@ -2447,18 +8699,86 @@ pub static ROWS: [&Row; 103] = [
     &R_00787A60,
     &R_00787BE0,
     &R_00788DD0,
+    &R_00790840,
     &R_00793630,
+    &R_0079A170,
+    &R_0079B170,
+    &R_0079CDD0,
+    &R_007A8700,
+    &R_007A8970,
+    &R_007C6DA0,
+    &R_007C8930,
+    &R_007D2410,
+    &R_007D2420,
+    &R_007D9AF0,
+    &R_007E5F30,
     &R_007E6A30,
+    &R_007ECB20,
+    &R_00806E10,
+    &R_00806E30,
+    &R_00806E40,
+    &R_008106A0,
+    &R_008106C0,
+    &R_00810710,
+    &R_00810B70,
+    &R_00810CD0,
+    &R_008168B0,
+    &R_00817250,
+    &R_00817270,
+    &R_0081D2E0,
+    &R_008202D0,
+    &R_00820580,
+    &R_00820590,
+    &R_00822480,
     &R_0082ACC0,
     &R_0082D870,
     &R_0082EC60,
     &R_0082EC70,
     &R_0083AFD0,
+    &R_0083F700,
+    &R_008431D0,
+    &R_00843590,
+    &R_00845CE0,
+    &R_00845D00,
+    &R_00845D60,
+    &R_00848F10,
+    &R_0084EB10,
     &R_00850840,
+    &R_00856980,
+    &R_008571C0,
+    &R_008580A0,
+    &R_008594A0,
+    &R_008595F0,
+    &R_0085C4B0,
+    &R_0085ECE0,
+    &R_0085ED40,
+    &R_0085EEA0,
+    &R_0085F2D0,
+    &R_0085F360,
+    &R_0085FB10,
     &R_0086A1C0,
+    &R_0086A9E0,
     &R_0086ADE0,
     &R_0086ADF0,
+    &R_0086B020,
+    &R_0086B6C0,
+    &R_0086BCB0,
+    &R_0086BD40,
+    &R_0086C0A0,
+    &R_0086C480,
     &R_0086C890,
+    &R_0086CA10,
+    &R_0086D000,
+    &R_0086E970,
+    &R_0086F080,
+    &R_0086F120,
+    &R_00870520,
+    &R_00870FC0,
+    &R_00871170,
+    &R_00872630,
+    &R_008749E0,
+    &R_008756B0,
+    &R_00879750,
     &R_00879820,
     &R_00879840,
     &R_00879860,
@@ -2476,10 +8796,61 @@ pub static ROWS: [&Row; 103] = [
     &R_00886BE0,
     &R_00886C10,
     &R_00886C40,
+    &R_00887E80,
+    &R_00887EA0,
+    &R_00887EB0,
+    &R_00887EC0,
     &R_00888430,
+    &R_008889E0,
     &R_0089DB60,
+    &R_008A98E0,
+    &R_008B3630,
+    &R_008B3D10,
     &R_008BE3F0,
+    &R_008BEC80,
+    &R_008BF070,
+    &R_008CBAA0,
+    &R_008D7590,
+    &R_008D9AD0,
+    &R_008DB790,
+    &R_008DEA00,
+    &R_008DF4C0,
+    &R_008E2250,
+    &R_008E2AD0,
     &R_00904860,
+    &R_00906680,
+    &R_00906B10,
+    &R_00908F40,
+    &R_0091AF10,
     &R_0091B040,
+    &R_0091C8A0,
+    &R_0092D880,
     &R_0092FE90,
+    &R_00941820,
+    &R_009437F0,
+    &R_00943800,
+    &R_009439D0,
+    &R_00945750,
+    &R_009DB490,
+    &R_00A25A30,
+    &R_00A25DB0,
+    &R_00A28D10,
+    &R_00A28F30,
+    &R_00A38480,
+    &R_00A384B0,
+    &R_00A39900,
+    &R_00A39B00,
+    &R_00A3A010,
+    &R_00A44660,
+    &R_00A446B0,
+    &R_00A54750,
+    &R_00A547E0,
+    &R_00A59680,
+    &R_00A596D0,
+    &R_00A59860,
+    &R_00A79120,
+    &R_00A79210,
+    &R_00A79300,
+    &R_00A79410,
+    &R_00A79540,
 ];
