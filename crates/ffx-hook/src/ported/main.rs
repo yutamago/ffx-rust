@@ -1311,6 +1311,18 @@ ported! {
     drawDreamEffect @ 0x0082_23a0 => extern "C" fn draw_dream_effect() -> u32 {
         control::bridge::draw_dream_effect(&mut mem())
     }
+    /// `Ch_EffectPacketStoreStrip(v)`.
+    Ch_EffectPacketStoreStrip @ 0x0084_4370 => extern "C" fn ch_effect_packet_store_strip(v: u32) -> u32 {
+        control::bridge::effect_store_strip(&mut mem(), v)
+    }
+    /// `SG_SampleChannels(obj)`.
+    SG_SampleChannels @ 0x0083_93c0 => extern "C" fn sg_sample_channels(obj: u32) {
+        seq::bridge::sample_channels(&mut mem(), obj);
+    }
+    /// `SG_BlendToTarget(obj, n)`.
+    SG_BlendToTarget @ 0x0083_95b0 => extern "C" fn sg_blend_to_target(obj: u32, n: i32) {
+        seq::bridge::blend_to_target(&mut mem(), obj, n);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

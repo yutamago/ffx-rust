@@ -2450,6 +2450,7 @@ fn control_synthetic() {
     round4_main_cases(&mut a, &mut b, &mut rng, 300, false);
     sync_cases(&mut a, &mut b, &mut rng, 300);
     round5_main_cases(&mut a, &mut b, &mut rng, 300);
+    round6_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2465,6 +2466,7 @@ fn control_snapshot() {
     round4_main_cases(&mut a, &mut b, &mut rng, 300, true);
     sync_cases(&mut a, &mut b, &mut rng, 300);
     round5_main_cases(&mut a, &mut b, &mut rng, 300);
+    round6_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3114,5 +3116,117 @@ fn round5_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
         twin("drawDreamEffect", a, b, 0x0082_23a0, &[], |m| {
             c::draw_dream_effect(&mut H(m))
         });
+    }
+}
+
+// Main round 6: the effect strip, channel sampling, pose blending.
+
+/// A channel list of 1-4 channels with random streams; returns the first.
+fn channel_list(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let n = rng.below(4) + 1;
+    let mut next = 0;
+    for _ in 0..n {
+        let ch = block(a, b, rng, 0x30);
+        let stream = block(a, b, rng, 0x100);
+        put(a, b, ch, next);
+        put(a, b, ch + 5, u8::try_from(rng.below(2)).unwrap());
+        put(a, b, ch + 8, stream);
+        put(a, b, ch + 0xc, stream + rng.below(8));
+        put(a, b, ch + 6, u16::try_from(rng.below(4)).unwrap());
+        put(a, b, ch + 0x1c, modest(rng));
+        put(a, b, ch + 0x20, modest(rng));
+        next = ch;
+    }
+    next
+}
+
+fn round6_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::seq::bridge as sq;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 36, c::CH_EFFECT_PACKET_STORE_POLY, 3, 0x5000);
+    for _ in 0..rounds {
+        // the effect strip: vertices in a buffer with room behind them for
+        // the back references
+        put(a, b, log, 0u32);
+        let buf = alloc(a, b, 2 * 96);
+        for k in 0..96 {
+            put(
+                a,
+                b,
+                buf + 2 * k,
+                u16::try_from(rng.next() & 0x7fff).unwrap(),
+            );
+        }
+        let v = buf + 2 * (40 + 4 * rng.below(10));
+        for k in 0..2 {
+            if rng.below(3) == 0 {
+                let back = 0x8000 | rng.below(24);
+                put(a, b, v + 2 * k, u16::try_from(back).unwrap());
+            }
+        }
+        set(a, b, c::STRIP_COUNT, u16::try_from(rng.below(7)).unwrap());
+        let arg = if rng.below(8) == 0 { 0 } else { v };
+        twin(
+            "Ch_EffectPacketStoreStrip",
+            a,
+            b,
+            0x0084_4370,
+            &[arg],
+            |m| c::effect_store_strip(&mut H(m), arg),
+        );
+
+        // channel sampling, within the streams' bytes (at most ~60 frames)
+        let obj = block(a, b, rng, 0x800);
+        let list = channel_list(a, b, rng);
+        put(a, b, obj + 0x74c, list);
+        put(a, b, obj + 0x740, rng.below(0x3c00));
+        put(a, b, obj + 0x71c, rng.below(0x3c00));
+        put(a, b, obj + 0x720, rng.below(0x3c00));
+        put(a, b, obj + 0x724, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, obj + 0x7dc, rng.below(60));
+        if rng.below(4) == 0 {
+            let t: u32 = Mem::read(a, obj + 0x740);
+            put(a, b, obj + 0x740, t & !0xff);
+        }
+        twin("SG_SampleChannels", a, b, 0x0083_93c0, &[obj], |m| {
+            sq::sample_channels(m, obj);
+        });
+
+        // pose blending: a channel motion or a model's bones
+        let obj = block(a, b, rng, 0x800);
+        let list = channel_list(a, b, rng);
+        put(a, b, obj + 0x74c, list);
+        let nb = rng.below(4);
+        let model = block(a, b, rng, 0x10);
+        put(a, b, model + 0xa, u16::try_from(nb).unwrap());
+        put(a, b, obj + 0x1c0, model);
+        let bones = alloc(a, b, 0x18c * nb as usize + 0x20);
+        for k in 0..(0x18c * nb + 0x20) / 4 {
+            put(a, b, bones + 4 * k, modest(rng));
+        }
+        put(a, b, obj + 0x748, bones);
+        // some values already at their targets (no step, even over 0 frames)
+        for k in 0..nb {
+            for o in [0x80u32, 0xac, 0xd8, 0x104, 0x130, 0x15c] {
+                if rng.below(3) == 0 {
+                    let at = bones + 0x20 + 0x18c * k + o;
+                    let t: u32 = Mem::read(a, at);
+                    put(a, b, at + 4, t);
+                }
+            }
+        }
+        put(a, b, obj + 0x196, u8::try_from(rng.below(2)).unwrap());
+        let n = rng.below(10).cast_signed() - 2;
+        twin(
+            "SG_BlendToTarget",
+            a,
+            b,
+            0x0083_95b0,
+            &[obj, n.cast_unsigned()],
+            |m| {
+                sq::blend_to_target(m, obj, n);
+            },
+        );
     }
 }

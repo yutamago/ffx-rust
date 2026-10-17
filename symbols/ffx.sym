@@ -7176,6 +7176,7 @@
 0x008392d0 function Ch_MotionLoopFrame       # ours: frame +0x740 past the end +0x71c: back by the loop length +0x720 while loops (+0x724) remain; 1 when it stops or restarts (SG_SeqFrame, SG_UpdateMotion)
 0x008393c0 function SG_SampleChannels         # steps the key streams to the frame, interpolates (angles wrap at 1 turn)
 0x008394d0 function SG_StepChannels           # key stream decoder: 7-bit delta, 14-bit delta (0xc0), repeat (0x80 | n)
+0x008395b0 function SG_BlendToTarget          # (obj, n): one of n steps from the current pose to the target: channel motions (+0x196 bit 0) step +0x20 toward +0x1c per channel (Chr_FracStep for angles), else every bone's 3 rotations (Chr_FracStep) and 6 values linearly, nine changed bytes set; n 1 sets +0x194 bit 16; name ours; ported (ffx_sg::seq)
 0x00839860 function Ch_MotionGetFrame         # fh v3:bsim1.00 0x008398e0
 0x00839870 function Ch_MotionGetHalf          # fh v3:cg2 0x8398f0
 0x00839880 function Ch_MotionGetLoop         # Switch name (0x71004116f0): i16 +0x724 (loops left), next to Ch_MotionSetLoop's +0x726
@@ -7447,6 +7448,7 @@
 0x00843360 function Sg_MFIFOSync              # fh v3:exact 0x00843360
 0x00843590 function StoreComputedToGlobal_00843590 # auto-port shape (store computed to global, cdecl): t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1); callers: ; name ours
 0x008435a0 function Sg_MatrixFromDir          # (m, dir, rows): d = |dir|, s = |(0,0,1) x d|, u = |s x d| (FFXVu0Normalize, Sg_VecCross), m = identity, then s, u, d into the rows in nibbles 2, 1, 0 of rows (0x12 from Ch_DrawMain and 0x008440f0); name ours; ported (ffx_sg::vec)
+0x00844370 function Ch_EffectPacketStoreStrip # (v): next vertex (u16 x, y, u, v) of an effect triangle strip into the ring 0x01303354 (slot count % 3); x/y with bit 15 refer back ((x & 0x7fff) * 4 / 3 words before); from the third vertex each makes a triangle with the two before (winding alternating) for Ch_EffectPacketStorePoly; null resets the count; name ours; ported (ffx_sg::control)
 0x00844a80 function Sg_IdDrawMain             # fh v3:exact 0x00844a80
 0x00844bb0 function Sg_IdExistShade           # () -> i8 0x013034b8; Fahrenheit Switch BSim 1.00 0x7100428040
 0x00844bc0 function Sg_IdFixupAndSet_00844bc0    # structure: (id map): sets the character ID-shade flag (map version +4 > 0x1202, telling graphicCharacterLightingSetMapIdFlagChanged on a change), turns the map's offsets into pointers (get_ptr32_func/set_ptr32) and installs it (Sg_IdSetPtr); callers Sg_MapInit, yiMapReadMaster, yiMapSetup, rcbgIDLoad; name ours
@@ -14755,6 +14757,8 @@
 0x01301ff8 label    g_CacheEntries            # the model cache's 100 entries (0x28 bytes) Cache_Init points g_CacheSlots at
 0x01302f98 label    g_CacheSlots              # the model cache's 100 entry pointers, least recently used first (Cache_*; layout in docs/formats/render.md)
 0x013032b8 label    g_CacheState              # a word Cache_Init clears
+0x0130336c label    g_ChrStripCur             # the effect strip's newest ring slot (Ch_EffectPacketStoreStrip)
+0x01303370 label    g_ChrStripCount           # u16: vertices so far in the effect strip (Ch_EffectPacketStoreStrip; 0 starts one)
 0x013033ac label g_ChrEffectColor           # f32 x 3, Ch_EffectSetColor
 0x013033b8 label g_ChrEffectAlpha           # i32, Ch_EffectSetAlpha
 0x013033d0 label g_ChrEffectPacket          # the packet Ch_PacketRefEffect references (0x008439f0 returns its address)
