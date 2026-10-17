@@ -10695,7 +10695,7 @@ fn round19_records(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         // flagged records rarely, and small value-pair counts
         for r in 0..16 * 13 {
             let rec = records + 0x138 * r;
-            put(a, b, rec + 1, (rng.next() % 16 == 0) as u8);
+            put(a, b, rec + 1, u8::from(rng.next().is_multiple_of(16)));
             put(
                 a,
                 b,
