@@ -184,6 +184,16 @@ pub mod bridge {
     /// record (`u16`, `u16`, `u32`, `u32`, four bytes) appended; the new
     /// count, or -1 with 63 already.
     pub fn set_damage_value(mem: &mut impl Mem, a: [u32; 8]) -> i32 {
+        add_damage_record(mem, a, true)
+    }
+
+    /// `0x0089baa0(a, b, d, e, f, g, h)`: [`set_damage_value`] without the
+    /// word at `+4` (left as it was).
+    pub fn set_damage_value_short(mem: &mut impl Mem, a: [u32; 7]) -> i32 {
+        add_damage_record(mem, [a[0], a[1], 0, a[2], a[3], a[4], a[5], a[6]], false)
+    }
+
+    fn add_damage_record(mem: &mut impl Mem, a: [u32; 8], word4: bool) -> i32 {
         let n = DAMAGE_COUNT.get(mem);
         if n >= 0x3f {
             return -1;
@@ -197,7 +207,9 @@ pub mod bridge {
             mem.write(r, a[0] as u16);
             mem.write(r.wrapping_add(2), a[1] as u16);
         }
-        mem.write(r.wrapping_add(4), a[2]);
+        if word4 {
+            mem.write(r.wrapping_add(4), a[2]);
+        }
         mem.write(r.wrapping_add(8), a[3]);
         for (k, w) in (0u32..).zip(&a[4..]) {
             mem.write(r.wrapping_add(0xc + k), w.to_le_bytes()[0]);
