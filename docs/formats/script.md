@@ -529,12 +529,27 @@ model natives (5), the rest of the camera and screen natives (6), the
 movie player (11) and group 12's system natives. Natives that build an
 out local with `push ecx` (`0x70be`'s `MsGetChrDir` writes nothing
 without a model) read the caller's `ECX` there; the ports zero it, and
-the oracle test calls the originals with `ECX` = 0. Left for a later
-round: `0x1005` (`_CIatan2`, the x87 `fpatan`), `0x5037`, `0x6077` (it
-calls `0x007bd500` with no arguments of its own) and `0xc025`. The
+the oracle test calls the originals with `ECX` = 0. Round 13 ported
+the last four: `0x1005` calls the game's own `_CIatan2` through its
+import thunk (`0x009498bc`, `NativeHost::call_intrinsic2`, `y` in `ST1`
+and `x` in `ST0`), so it is bit-exact with the CRT; `0x6077` reads the
+camera's `+0xc90` (`0x007bd500`, called with no arguments); `0x5037`
+and `0xc025`. `0xc03b` and `0xc03c` turned out to be the debug cheats
+`MsDebugFullItem`/`MsDebugFullCommand` and are marked instead. The
 debug ones (`0x70b1`, `0xb002`, `0xc00b`, `0xc00c`, `0xc018`, `0xc022`,
 `0xc028`, `0xc02a`, `0xc03b`, `0xc03c`, `0xc056`, `0xc057`, `0xc05b`)
-are marked in the table.
+are marked in the table. `0x5065` never completes in the oracle: its
+`Ch_RomReadEventMGRP` asks the file system for the group's size first
+(`*0x02310c54`, for every input), which hashes the name through
+`ADVAPI32!CryptCreateHash`, an import the emulator does not stub.
+
+`ffx_script::vm::bridge::helpers` (round 13) has VM helpers that are
+not natives: `Script_StopTurn` (`0x00863fe0`, the turn-block twin of
+`Script_StopMove`), the script block's header tables (`0x0086ac60`,
+`0x0086ac30`, `0x0086ac90`: `+0x2c`, then `+0xc`, offsets relative to
+the block), `AtelGetSnd3dWork`, `AtelSoundTableGet_00876860`, the
+message-window status of the current bank (`0x0086be60`, `0x0086c8b0`),
+`0x0086c530`, `0x0086f780`, `0x008712a0` and `AtelAllClearBindMask`.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
@@ -1560,10 +1575,10 @@ the tests reach.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Now: the natives, most used first. Done: every native the shipped
-   scripts call (rounds 1-12; the group-0 table at `0x00c50050` has 180
-   more entries no shipped script calls) but `0x1005`, `0x5037`,
-   `0x6077`, `0xc025` and the debug ones. Next: those four.
+2. Done: every native the shipped scripts call (rounds 1-13; the
+   group-0 table at `0x00c50050` has 180 more entries no shipped script
+   calls) but the debug ones, which are marked. Now: the VM's other
+   helpers, by blocker count (`tools/worklist.py --module script`).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 
