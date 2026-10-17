@@ -2874,6 +2874,7 @@
 0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90
 0x006e96c0 function InitIggyHelper               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Loc_Texture_Saveload_Attention_Before_Game'; Switch 0x710029c7b0 InitIggyHelper (symbols from Fahrenheit's server export)
 0x006e97b0 function SetIggyPosition720p       # fh switch:bsim1.00 0x710029ca80
+0x006e9920 function std_Tree_lower_bound_string_006e9920 # thiscall(tree, key string) -> node: MSVC std::map<std::string, ...> lower bound: walks from the root (head +4) while the node's isnil byte +0xd is 0, comparing the key with the node's string (+0x10, SSO when capacity +0x24 <= 15) by memcmp of the shorter length then the lengths, left +0 / right +8; std:: copy (the field agent's finding); own name
 0x006ea450 function mspace_malloc_stats          # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'max system bytes = %10lu\\n'; Switch 0x710023b3b0 mspace_malloc_stats (symbols from Fahrenheit's server export)
 0x006ebbc0 function VirtualAlloc_ReserveCommit_TopDown_RW # fh call.cs cdecl _VirtualAlloc_ReserveCommit_TopDown_RW
 0x006ebee0 function mspace_free               # fh v3:exact 0x006ec020

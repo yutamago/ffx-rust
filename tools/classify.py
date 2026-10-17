@@ -427,6 +427,9 @@ def main():
             continue
         cls[a], why[a] = "logic", "default (no rule: ported to be safe)"
 
+    # exception unwinding funclets (the CRT part of the image)
+    unwind = {a for a in starts if module.get(a) == "crt" and a >= 0x00aa0000}
+
     def game_callees(a):
         return {c for c in callees[a] if c != a and c in cls and not PRINT.search(names.get(c, ""))}
 
@@ -448,13 +451,25 @@ def main():
             cs = [c for c in callers[a] if c != a and c in reach]
             if not cs:
                 continue
-            kinds = {cls.get(c) or ("debug" if debug_outside(c) else "library") for c in cs}
+            pc_part = a < PC_END and not names.get(a)
+            if pc_part and all(c in unwind for c in cs):
+                cls[a], why[a] = "platform", "only exception unwinding reaches it (a release or destructor)"
+                changed = True
+                continue
+            # in the PC port's part of the image, library code (std:: copies
+            # placed in crt, PhyreEngine) calling a function makes it platform
+            kinds = {cls.get(c) or ("debug" if debug_outside(c) else
+                                    "platform" if pc_part and c < PC_END else "library") for c in cs}
+            # the PC part's own helpers (allocator internals, container
+            # copies, renderer set-up) pass any number of hops when they call
+            # no game logic above PC_END
+            pc_tree = pc_part and not any(c >= PC_END and cls.get(c) == "logic" for c in game_callees(a))
             for k in ("debug", "glue", "platform"):
                 # glue and platform pass one hop, to unnamed functions whose
                 # callers a rule decided (a main loop that the PC update
                 # function calls stays logic); debug-only trees go all the way
-                if kinds == {k} and (k == "debug" or (module[a] in GLUE_SIDE and not names.get(a)
-                                                      and all(c in decided for c in cs))):
+                if kinds == {k} and (k == "debug" or pc_tree or (module[a] in GLUE_SIDE and not names.get(a)
+                                                                 and all(c in decided for c in cs))):
                     cls[a] = k
                     why[a] = f"only called from {k} code ({names.get(next(iter(cs)), hex(next(iter(cs))))}" + \
                              (f" and {len(cs) - 1} more)" if len(cs) > 1 else ")")
@@ -467,7 +482,6 @@ def main():
     # (at least one such call); static initialisers (atexit registration);
     # and destructors only exception unwinding reaches. Game code above
     # PC_END keeps its default.
-    unwind = {a for a in starts if module.get(a) == "crt" and a >= 0x00aa0000}
 
     def container_ok(c, depth):
         """c is an allocator/container/platform call; a code block Ghidra
@@ -593,6 +607,14 @@ def main():
                 changed = True
                 why[a] = ("ran in the coverage sessions, called by logic: " +
                           ", ".join(sorted(names.get(c, hex(c)) for c in lc)[:3]))
+
+    for a in args.explain:
+        if a in cls:
+            cs = sorted(c for c in callers[a] if c != a)
+            print(f"0x{a:08x}: {cls[a]} ({why[a]}); module {module.get(a)}; callers " +
+                  ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}{'' if c in decided else '?'}" for c in cs[:8]) +
+                  "; calls " + ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}"
+                                         for c in sorted(direct.get(a, ())) if c != a)[:300], file=sys.stderr)
 
     stats = defaultdict(Counter)
     for a in game:

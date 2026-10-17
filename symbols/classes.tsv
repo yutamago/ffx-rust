@@ -1,6 +1,6 @@
 # address	category	evidence (tools/classify.py; categories in docs/rewrite-plan.md)
 0x00401000	logic	default (no rule: ported to be safe)
-0x00401010	logic	default (no rule: ported to be safe)
+0x00401010	platform	only exception unwinding reaches it (a release or destructor)
 0x00401020	logic	default (no rule: ported to be safe)
 0x00401090	dead	unreachable from the entry point and every pointer table
 0x004010b0	dead	unreachable from the entry point and every pointer table
@@ -9,7 +9,7 @@
 0x00401120	dead	unreachable from the entry point and every pointer table
 0x00401140	dead	unreachable from the entry point and every pointer table
 0x00401150	dead	unreachable from the entry point and every pointer table
-0x004011d0	logic	default (no rule: ported to be safe)
+0x004011d0	platform	only exception unwinding reaches it (a release or destructor)
 0x004011f0	dead	unreachable from the entry point and every pointer table
 0x00401250	dead	unreachable from the entry point and every pointer table
 0x00401260	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
@@ -28,32 +28,32 @@
 0x00401540	logic	default (no rule: ported to be safe)
 0x004015c0	logic	default (no rule: ported to be safe)
 0x00401600	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x00401660	logic	default (no rule: ported to be safe)
+0x00401660	platform	only exception unwinding reaches it (a release or destructor)
 0x00401680	dead	unreachable from the entry point and every pointer table
-0x00401690	logic	default (no rule: ported to be safe)
-0x004016e0	logic	default (no rule: ported to be safe)
-0x00401840	logic	default (no rule: ported to be safe)
+0x00401690	platform	only called from platform code (0x401930)
+0x004016e0	platform	only called from platform code (0x4022f0)
+0x00401840	platform	only exception unwinding reaches it (a release or destructor)
 0x00401880	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): Settings_Construct
 0x00401920	glue	only called from glue code (Game_Main)
-0x00401930	logic	default (no rule: ported to be safe)
+0x00401930	platform	only called from platform code (0x401e00)
 0x00401c80	dead	unreachable from the entry point and every pointer table
 0x00401cb0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): Settings_Load
 0x00401d80	platform	imports _wfopen
 0x00401e00	platform	only called from platform code (Settings_Load)
-0x004022b0	logic	default (no rule: ported to be safe)
+0x004022b0	platform	only exception unwinding reaches it (a release or destructor)
 0x004022f0	platform	only called from platform code (0x401d80)
-0x004029c0	logic	default (no rule: ported to be safe)
+0x004029c0	platform	only exception unwinding reaches it (a release or destructor)
 0x00402a00	logic	default (no rule: ported to be safe)
 0x00402a20	glue	only called from glue code (0x6ff290)
 0x00402b00	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): Settings_CopyDefaultTables
 0x00402b50	logic	default (no rule: ported to be safe)
-0x0042d370	logic	default (no rule: ported to be safe)
+0x0042d370	platform	only called from platform code (0x42c300)
 0x0042d3c0	logic	default (no rule: ported to be safe)
 0x0042d3d0	logic	default (no rule: ported to be safe)
 0x0042d410	dead	unreachable from the entry point and every pointer table
-0x0042d470	logic	default (no rule: ported to be safe)
+0x0042d470	platform	only called from platform code (0x42c740 and 1 more)
 0x0042def0	dead	unreachable from the entry point and every pointer table
-0x0042df70	logic	default (no rule: ported to be safe)
+0x0042df70	platform	only called from platform code (0x428a00 and 2 more)
 0x0042e060	logic	default (no rule: ported to be safe)
 0x0042e080	dead	unreachable from the entry point and every pointer table
 0x0042e0c0	logic	default (no rule: ported to be safe)
@@ -93,7 +93,7 @@
 0x0042f150	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_scalar_deleting_dtor
 0x0042f1a0	dead	unreachable from the entry point and every pointer table
 0x0042f1d0	dead	unreachable from the entry point and every pointer table
-0x0042f220	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreMalloc_0042fb80)
+0x0042f220	platform	only called from platform code (0x50c7e0)
 0x0042f260	glue	calls PhyreEngine Phyre_PTimerWin32_GetTime
 0x0042f340	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0042f4b0	dead	unreachable from the entry point and every pointer table
@@ -125,7 +125,7 @@
 0x004409e0	glue	calls PhyreEngine Phyre_PWorld_addInstanceList, Phyre_PWorld_removeInstanceList
 0x0044ccd0	logic	default (no rule: ported to be safe)
 0x0044cd00	dead	unreachable from the entry point and every pointer table
-0x00573b70	logic	default (no rule: ported to be safe)
+0x00573b70	platform	only called from platform code (Phyre_PScripting_RegisterVectorMatrixTypes)
 0x00573c50	dead	unreachable from the entry point and every pointer table
 0x00573c80	dead	unreachable from the entry point and every pointer table
 0x00573cd0	dead	unreachable from the entry point and every pointer table
@@ -134,7 +134,7 @@
 0x0057a190	dead	unreachable from the entry point and every pointer table
 0x0057a1b0	dead	unreachable from the entry point and every pointer table
 0x0057a1e0	dead	unreachable from the entry point and every pointer table
-0x0057a200	logic	default (no rule: ported to be safe)
+0x0057a200	platform	only called from platform code (Cluster_ApplyPointerFixups)
 0x0057a280	platform	platform name (PC port: input, saves, loaders, app lifecycle): Fixup_FindMember
 0x0059e520	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): TrophyManager_Install
 0x0059e530	platform	static initialiser (registers its destructor with atexit)
@@ -237,10 +237,10 @@
 0x0060d2f0	dead	unreachable from the entry point and every pointer table
 0x0060d350	dead	unreachable from the entry point and every pointer table
 0x0060d370	dead	unreachable from the entry point and every pointer table
-0x0060d460	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
+0x0060d460	platform	only exception unwinding reaches it (a release or destructor)
 0x0060d4c0	dead	unreachable from the entry point and every pointer table
-0x0060d550	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
-0x0060d5d0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
+0x0060d550	platform	only exception unwinding reaches it (a release or destructor)
+0x0060d5d0	platform	only exception unwinding reaches it (a release or destructor)
 0x0060d6b0	dead	unreachable from the entry point and every pointer table
 0x0060d6d0	dead	unreachable from the entry point and every pointer table
 0x0060d6f0	dead	unreachable from the entry point and every pointer table
@@ -295,7 +295,7 @@
 0x0060e9d0	dead	unreachable from the entry point and every pointer table
 0x0060ea20	dead	unreachable from the entry point and every pointer table
 0x0060ea30	dead	unreachable from the entry point and every pointer table
-0x0061a690	logic	default (no rule: ported to be safe)
+0x0061a690	platform	only called from platform code (0x5d6cc0)
 0x0061a730	logic	default (no rule: ported to be safe)
 0x0061a740	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
 0x0061a770	logic	default (no rule: ported to be safe)
@@ -315,13 +315,13 @@
 0x0061acc0	platform	platform name (PC port: input, saves, loaders, app lifecycle): VbfStream_Open
 0x0061acf0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): VFile_reset
 0x0061ad70	dead	unreachable from the entry point and every pointer table
-0x0061add0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_new, operator_new_006304c0)
+0x0061add0	platform	only called from platform code (0x61af20)
 0x0061af20	platform	only called from platform code (0x61c2c0)
 0x0061af40	platform	imports CloseHandle
 0x0061af80	dead	unreachable from the entry point and every pointer table
 0x0061afa0	dead	unreachable from the entry point and every pointer table
-0x0061b030	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_delete_00630540)
-0x0061b0b0	logic	default (no rule: ported to be safe)
+0x0061b030	platform	only called from platform code (0x61b0b0)
+0x0061b0b0	platform	only exception unwinding reaches it (a release or destructor)
 0x0061b0d0	dead	unreachable from the entry point and every pointer table
 0x0061b100	dead	unreachable from the entry point and every pointer table
 0x0061b160	dead	unreachable from the entry point and every pointer table
@@ -330,7 +330,7 @@
 0x0061b270	logic	default (no rule: ported to be safe)
 0x0061b2e0	dead	unreachable from the entry point and every pointer table
 0x0061b310	dead	unreachable from the entry point and every pointer table
-0x0061b330	logic	default (no rule: ported to be safe)
+0x0061b330	platform	only called from platform code (0x625130)
 0x0061b380	dead	unreachable from the entry point and every pointer table
 0x0061b3c0	logic	default (no rule: ported to be safe)
 0x0061b430	dead	unreachable from the entry point and every pointer table
@@ -373,7 +373,7 @@
 0x0061d3f0	dead	unreachable from the entry point and every pointer table
 0x0061d430	dead	unreachable from the entry point and every pointer table
 0x0061d460	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): BigFileHandle_BigFileHandle
-0x0061d5c0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
+0x0061d5c0	platform	only called from platform code (BigFileHandle_dtor_BigFileHandle and 1 more)
 0x0061d670	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): BigFileHandle_dtor_BigFileHandle
 0x0061d6e0	logic	default (no rule: ported to be safe)
 0x0061d730	dead	unreachable from the entry point and every pointer table
@@ -429,10 +429,10 @@
 0x0061e740	dead	unreachable from the entry point and every pointer table
 0x0061e750	dead	unreachable from the entry point and every pointer table
 0x0061e770	dead	unreachable from the entry point and every pointer table
-0x00623da0	logic	default (no rule: ported to be safe)
+0x00623da0	platform	only called from platform code (0x62adc0)
 0x00623e20	dead	unreachable from the entry point and every pointer table
 0x00623fa0	platform	platform name (PC port: input, saves, loaders, app lifecycle): Input_AddKeyboard
-0x00624020	logic	default (no rule: ported to be safe)
+0x00624020	platform	only called from platform code (0x623330)
 0x006240e0	platform	platform name (PC port: input, saves, loaders, app lifecycle): Input_AddPadDevice
 0x00624320	dead	unreachable from the entry point and every pointer table
 0x00624350	platform	platform name (PC port: input, saves, loaders, app lifecycle): Input_InitDirectInput
@@ -440,10 +440,10 @@
 0x00624490	dead	unreachable from the entry point and every pointer table
 0x006244a0	dead	unreachable from the entry point and every pointer table
 0x006244f0	platform	imports CoCreateInstance, CoInitialize
-0x00624810	logic	default (no rule: ported to be safe)
-0x00624850	logic	default (no rule: ported to be safe)
-0x00624890	logic	default (no rule: ported to be safe)
-0x00624910	logic	default (no rule: ported to be safe)
+0x00624810	platform	only called from platform code (Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands)
+0x00624850	platform	only called from platform code (Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands)
+0x00624890	platform	only called from platform code (Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands)
+0x00624910	platform	only called from platform code (Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands)
 0x006249c0	dead	unreachable from the entry point and every pointer table
 0x00629ab0	glue	calls PhyreEngine Phyre_PFramework_PApplication_onExit, Phyre_PFramework_PApplication_onInit
 0x00629b90	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_PushInto_00629b90
@@ -573,7 +573,7 @@
 0x00630a10	dead	unreachable from the entry point and every pointer table
 0x00630a30	dead	unreachable from the entry point and every pointer table
 0x00630a60	platform	platform name (PC port: input, saves, loaders, app lifecycle): AllocTracker_Release
-0x00630b10	logic	default (no rule: ported to be safe)
+0x00630b10	platform	only called from platform code (0x6dc870)
 0x00630b30	dead	unreachable from the entry point and every pointer table
 0x00630c30	platform	platform name (PC port: input, saves, loaders, app lifecycle): inputClear
 0x00630c40	platform	platform name (PC port: input, saves, loaders, app lifecycle): inputClearAllInputInfo
@@ -596,9 +596,9 @@
 0x00630e80	logic	default (no rule: ported to be safe)
 0x00630ec0	dead	unreachable from the entry point and every pointer table
 0x00630ee0	dead	unreachable from the entry point and every pointer table
-0x00630f40	logic	default (no rule: ported to be safe)
+0x00630f40	platform	only exception unwinding reaches it (a release or destructor)
 0x00631010	dead	unreachable from the entry point and every pointer table
-0x00631060	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
+0x00631060	platform	only exception unwinding reaches it (a release or destructor)
 0x00631080	dead	unreachable from the entry point and every pointer table
 0x006310f0	dead	unreachable from the entry point and every pointer table
 0x00631110	platform	only called from platform code (Input_BuildPadMap)
@@ -619,7 +619,7 @@
 0x00631380	platform	platform name (PC port: input, saves, loaders, app lifecycle): Virtuos_InputManager_isReleaseButton
 0x006313a0	platform	platform name (PC port: input, saves, loaders, app lifecycle): Virtuos_InputManager_isRepButton
 0x00631400	dead	unreachable from the entry point and every pointer table
-0x00631450	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk, user_malloc)
+0x00631450	platform	only called from platform code (Input_BuildPadMap and 1 more)
 0x006314f0	dead	unreachable from the entry point and every pointer table
 0x00631510	dead	unreachable from the entry point and every pointer table
 0x00631530	dead	unreachable from the entry point and every pointer table
@@ -646,14 +646,14 @@
 0x00633310	dead	unreachable from the entry point and every pointer table
 0x00633320	dead	unreachable from the entry point and every pointer table
 0x00633330	dead	unreachable from the entry point and every pointer table
-0x006333a0	logic	default (no rule: ported to be safe)
+0x006333a0	platform	only exception unwinding reaches it (a release or destructor)
 0x00633400	dead	unreachable from the entry point and every pointer table
 0x00633430	dead	unreachable from the entry point and every pointer table
 0x00633460	dead	unreachable from the entry point and every pointer table
 0x00633490	dead	unreachable from the entry point and every pointer table
 0x006334c0	dead	unreachable from the entry point and every pointer table
 0x006334f0	dead	unreachable from the entry point and every pointer table
-0x006335a0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x006335a0	platform	only called from platform code (0x64a932)
 0x006335d0	dead	unreachable from the entry point and every pointer table
 0x00633600	dead	unreachable from the entry point and every pointer table
 0x00633630	dead	unreachable from the entry point and every pointer table
@@ -663,7 +663,7 @@
 0x00633790	dead	unreachable from the entry point and every pointer table
 0x006337e0	glue	only called from glue code (0x6c5ec0 and 3 more)
 0x00633830	dead	unreachable from the entry point and every pointer table
-0x00633880	logic	default (no rule: ported to be safe)
+0x00633880	glue	only called from glue code (0x658ae0 and 1 more)
 0x006338e0	dead	unreachable from the entry point and every pointer table
 0x006338f0	dead	unreachable from the entry point and every pointer table
 0x00633900	dead	unreachable from the entry point and every pointer table
@@ -673,7 +673,7 @@
 0x00633940	dead	unreachable from the entry point and every pointer table
 0x00633950	dead	unreachable from the entry point and every pointer table
 0x00633960	dead	unreachable from the entry point and every pointer table
-0x006339a0	logic	default (no rule: ported to be safe)
+0x006339a0	platform	only exception unwinding reaches it (a release or destructor)
 0x00633a80	dead	unreachable from the entry point and every pointer table
 0x00633aa0	dead	unreachable from the entry point and every pointer table
 0x00633b00	dead	unreachable from the entry point and every pointer table
@@ -697,30 +697,30 @@
 0x00633d30	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_Reset_00633d30
 0x00633d60	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_Reset_00633d60
 0x00633d90	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_Reset_00633d90
-0x00633dc0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x00633e20	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x00633e80	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x00633ef0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
-0x00633f70	logic	default (no rule: ported to be safe)
+0x00633dc0	platform	only exception unwinding reaches it (a release or destructor)
+0x00633e20	platform	only exception unwinding reaches it (a release or destructor)
+0x00633e80	platform	only exception unwinding reaches it (a release or destructor)
+0x00633ef0	platform	only exception unwinding reaches it (a release or destructor)
+0x00633f70	platform	only exception unwinding reaches it (a release or destructor)
 0x00633fe0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
 0x00634080	dead	unreachable from the entry point and every pointer table
 0x00634100	dead	unreachable from the entry point and every pointer table
 0x00634190	dead	unreachable from the entry point and every pointer table
-0x00634200	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
+0x00634200	platform	only exception unwinding reaches it (a release or destructor)
 0x00634220	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x006342a0	dead	unreachable from the entry point and every pointer table
 0x006342d0	dead	unreachable from the entry point and every pointer table
-0x00634340	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x00634360	platform	destructor only exception unwinding reaches
-0x00634370	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x006343b0	logic	default (no rule: ported to be safe)
-0x006343e0	logic	default (no rule: ported to be safe)
+0x00634340	platform	only exception unwinding reaches it (a release or destructor)
+0x00634360	platform	only exception unwinding reaches it (a release or destructor)
+0x00634370	platform	only exception unwinding reaches it (a release or destructor)
+0x006343b0	platform	only exception unwinding reaches it (a release or destructor)
+0x006343e0	platform	only exception unwinding reaches it (a release or destructor)
 0x00634410	dead	unreachable from the entry point and every pointer table
 0x00634440	dead	unreachable from the entry point and every pointer table
 0x00634470	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): StdVector_Tidy_00634470
 0x006344a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): StdVector_Tidy_006344a0
 0x006344d0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): StdVector_Tidy_006344d0
-0x00634500	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, user_free_thunk)
+0x00634500	platform	only exception unwinding reaches it (a release or destructor)
 0x00634610	platform	platform name (PC port: input, saves, loaders, app lifecycle): AssetListReader_dtor_AssetListReader
 0x00634700	dead	unreachable from the entry point and every pointer table
 0x00634790	glue	only called from glue code (graphicFinalize)
@@ -774,7 +774,7 @@
 0x00637b30	glue	calls PhyreEngine Phyre_PhyreFree
 0x00637c10	logic	default (no rule: ported to be safe)
 0x00637c80	dead	unreachable from the entry point and every pointer table
-0x00637d40	logic	default (no rule: ported to be safe)
+0x00637d40	platform	only called from platform code (0x642b10)
 0x00637d90	dead	unreachable from the entry point and every pointer table
 0x00637db0	dead	unreachable from the entry point and every pointer table
 0x00637e30	glue	calls PhyreEngine Phyre_PhyreFree
@@ -846,7 +846,7 @@
 0x00638e00	logic	debug-sounding name, but used by logic: KeThBP_MkGifPk
 0x00638e30	logic	default (no rule: ported to be safe)
 0x00638e70	logic	default (no rule: ported to be safe)
-0x00638e90	logic	default (no rule: ported to be safe)
+0x00638e90	platform	only called from platform code (0x636430)
 0x00638f30	logic	scene state the renderer needs (original look first): graphic2DHideLayer
 0x00638f60	logic	scene state the renderer needs (original look first): graphic2DShowLayer
 0x00638f90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapCreate
@@ -1329,8 +1329,8 @@
 0x00647cb0	dead	unreachable from the entry point and every pointer table
 0x00647cf0	dead	unreachable from the entry point and every pointer table
 0x00647d10	dead	unreachable from the entry point and every pointer table
-0x00647d40	logic	default (no rule: ported to be safe)
-0x00647d50	logic	default (no rule: ported to be safe)
+0x00647d40	platform	only called from platform code (0x6efcd0 and 1 more)
+0x00647d50	platform	only called from platform code (0x6efcd0 and 1 more)
 0x00647d70	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataCheckCrc
 0x00647dd0	dead	unreachable from the entry point and every pointer table
 0x00647df0	dead	unreachable from the entry point and every pointer table
@@ -1408,22 +1408,22 @@
 0x00649460	dead	unreachable from the entry point and every pointer table
 0x00649480	dead	unreachable from the entry point and every pointer table
 0x006494a0	dead	unreachable from the entry point and every pointer table
-0x006494d0	logic	default (no rule: ported to be safe)
-0x00649540	logic	default (no rule: ported to be safe)
+0x006494d0	platform	only called from platform code (0x649b30)
+0x00649540	platform	only called from platform code (0x64bde0)
 0x0064da90	dead	unreachable from the entry point and every pointer table
 0x0064dae0	glue	calls PhyreEngine Phyre_PRedBlackTree_successor
 0x0064db40	dead	unreachable from the entry point and every pointer table
 0x0064dba0	dead	unreachable from the entry point and every pointer table
 0x0064dbf0	dead	unreachable from the entry point and every pointer table
 0x0064dc00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_PhyreScene
-0x0064e9a0	platform	destructor only exception unwinding reaches
-0x0064e9e0	logic	default (no rule: ported to be safe)
-0x0064ea00	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x0064ea30	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x0064e9a0	platform	only exception unwinding reaches it (a release or destructor)
+0x0064e9e0	platform	only exception unwinding reaches it (a release or destructor)
+0x0064ea00	platform	only exception unwinding reaches it (a release or destructor)
+0x0064ea30	platform	only exception unwinding reaches it (a release or destructor)
 0x0064ea60	dead	unreachable from the entry point and every pointer table
 0x0064ea90	dead	unreachable from the entry point and every pointer table
-0x0064ead0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Array_Reserve_00667f00)
-0x0064eb20	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Array_Reserve_00668080)
+0x0064ead0	glue	only called from glue code (0x65fca0)
+0x0064eb20	glue	only called from glue code (PhyreScene_fieldMapInitialize)
 0x0064eb70	dead	unreachable from the entry point and every pointer table
 0x0064eb90	dead	unreachable from the entry point and every pointer table
 0x0064ebb0	dead	unreachable from the entry point and every pointer table
@@ -1470,7 +1470,7 @@
 0x0064f0b0	dead	unreachable from the entry point and every pointer table
 0x0064f100	dead	unreachable from the entry point and every pointer table
 0x0064f150	dead	unreachable from the entry point and every pointer table
-0x0064f1a0	logic	default (no rule: ported to be safe)
+0x0064f1a0	glue	only called from glue code (0x6542b0)
 0x0064f1f0	dead	unreachable from the entry point and every pointer table
 0x0064f240	dead	unreachable from the entry point and every pointer table
 0x0064f280	dead	unreachable from the entry point and every pointer table
@@ -1486,11 +1486,11 @@
 0x0064f4d0	dead	unreachable from the entry point and every pointer table
 0x0064f510	dead	unreachable from the entry point and every pointer table
 0x0064f530	dead	unreachable from the entry point and every pointer table
-0x0064f550	logic	default (no rule: ported to be safe)
+0x0064f550	platform	only called from platform code (0x6f35b0)
 0x0064f580	dead	unreachable from the entry point and every pointer table
 0x0064f5a0	dead	unreachable from the entry point and every pointer table
 0x0064f5c0	dead	unreachable from the entry point and every pointer table
-0x0064f5e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (std_string_append_ptr)
+0x0064f5e0	glue	only called from glue code (PhyreScene_unloadVFXTexture)
 0x0064f620	dead	unreachable from the entry point and every pointer table
 0x0064f650	dead	unreachable from the entry point and every pointer table
 0x0064f680	dead	unreachable from the entry point and every pointer table
@@ -1538,8 +1538,8 @@
 0x00651be0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_preRender
 0x00651de0	glue	calls PhyreEngine Phyre_CharacterLighting_GetInstance
 0x006521d0	dead	unreachable from the entry point and every pointer table
-0x00652250	logic	default (no rule: ported to be safe)
-0x006522b0	logic	default (no rule: ported to be safe)
+0x00652250	platform	only called from platform code (0x6522b0)
+0x006522b0	platform	only called from platform code (0x6420d0)
 0x006522e0	dead	unreachable from the entry point and every pointer table
 0x00652310	logic	default (no rule: ported to be safe)
 0x006523e0	logic	scene state the renderer needs (original look first): PhyreScene_isFading
@@ -1579,17 +1579,17 @@
 0x00654cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_VFXSyncPath
 0x00654cf0	dead	unreachable from the entry point and every pointer table
 0x00654d20	dead	unreachable from the entry point and every pointer table
-0x00654d40	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
-0x00654db0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
-0x00654e20	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x00654d40	platform	only called from platform code (0x64d570)
+0x00654db0	platform	only called from platform code (0x64d620)
+0x00654e20	platform	only called from platform code (0x64d730)
 0x00654ea0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
 0x00654ed0	glue	only called from glue code (PhyreScene_PhyreScene)
-0x00654f00	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
-0x00654f40	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
-0x00654f80	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x00654f00	platform	only called from platform code (0x64cec0 and 2 more)
+0x00654f40	platform	only called from platform code (0x649a60 and 2 more)
+0x00654f80	platform	only called from platform code (0x649b30)
 0x00654fc0	dead	unreachable from the entry point and every pointer table
 0x006550f0	dead	unreachable from the entry point and every pointer table
-0x00655120	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x00655120	platform	only called from platform code (0x64a5dd)
 0x00656070	dead	unreachable from the entry point and every pointer table
 0x006560c0	glue	only called from glue code (PhyreScene_loadMagicFileVFXTexture and 2 more)
 0x00656110	dead	unreachable from the entry point and every pointer table
@@ -1651,7 +1651,7 @@
 0x006579c0	dead	unreachable from the entry point and every pointer table
 0x006579d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_beginRenderOpeningScreen
 0x00657a50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_bootInit
-0x006582a0	logic	default (no rule: ported to be safe)
+0x006582a0	platform	only called from platform code (0x639d10)
 0x006582e0	logic	default (no rule: ported to be safe)
 0x00658350	logic	default (no rule: ported to be safe)
 0x00658570	logic	default (no rule: ported to be safe)
@@ -1677,7 +1677,7 @@
 0x00659090	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_releaseVFXMeshes
 0x006590a0	dead	unreachable from the entry point and every pointer table
 0x006590d0	logic	default (no rule: ported to be safe)
-0x00659140	logic	default (no rule: ported to be safe)
+0x00659140	glue	only called from glue code (0x654650)
 0x006591a0	dead	unreachable from the entry point and every pointer table
 0x006591c0	dead	unreachable from the entry point and every pointer table
 0x006591e0	dead	unreachable from the entry point and every pointer table
@@ -1721,7 +1721,7 @@
 0x0065b750	glue	only called from glue code (graphicInitScene)
 0x0065b770	dead	unreachable from the entry point and every pointer table
 0x0065b7c0	dead	unreachable from the entry point and every pointer table
-0x0065b820	logic	default (no rule: ported to be safe)
+0x0065b820	platform	only called from platform code (0x6401c0)
 0x0065b8a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_fieldMapInitialize
 0x0065cbf0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_fieldMapLoad
 0x0065ce90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_fieldMapLoadAsync
@@ -1735,7 +1735,7 @@
 0x0065d6d0	dead	unreachable from the entry point and every pointer table
 0x0065d780	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_forceUnloadMenuTexture
 0x0065d860	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getChaPos
-0x0065da80	logic	default (no rule: ported to be safe)
+0x0065da80	platform	only called from platform code (0x6b68c0)
 0x0065de70	logic	scene state the renderer needs (original look first): PhyreScene_getCurrentLevelName
 0x0065de90	logic	scene state the renderer needs (original look first): PhyreScene_getCurrentLevelNameHash
 0x0065dea0	logic	scene state the renderer needs (original look first): PhyreScene_getCurrentMagicPath
@@ -1755,19 +1755,19 @@
 0x0065e650	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetField0dd8
 0x0065e660	logic	scene state the renderer needs (original look first): PhyreScene_getViewProjectionMatrix
 0x0065e9e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getYIQParam
-0x0065eaf0	logic	default (no rule: ported to be safe)
+0x0065eaf0	glue	only called from glue code (0x6519f0 and 1 more)
 0x0065eb60	glue	only called from glue code (0x651de0)
-0x0065ebd0	logic	default (no rule: ported to be safe)
+0x0065ebd0	platform	only called from platform code (0x64cda0)
 0x0065ec40	logic	default (no rule: ported to be safe)
 0x0065ecb0	logic	default (no rule: ported to be safe)
-0x0065ed20	logic	default (no rule: ported to be safe)
-0x0065ed80	logic	default (no rule: ported to be safe)
-0x0065ede0	logic	default (no rule: ported to be safe)
-0x0065ee40	logic	default (no rule: ported to be safe)
+0x0065ed20	glue	only called from glue code (0x65ee40 and 2 more)
+0x0065ed80	glue	only called from glue code (0x651de0 and 1 more)
+0x0065ede0	glue	only called from glue code (0x65ee40 and 1 more)
+0x0065ee40	glue	only called from glue code (0x64f1a0 and 3 more)
 0x0065efa0	glue	only called from glue code (PhyreScene_render)
 0x0065efd0	glue	only called from glue code (PhyreScene_loadMagicVFXTexture)
 0x0065f050	logic	scene state the renderer needs (original look first): PhyreScene_hide2DLayer
-0x0065f0e0	logic	default (no rule: ported to be safe)
+0x0065f0e0	platform	only called from platform code (0x638f50)
 0x0065f1f0	glue	only called from glue code (PhyreScene_render)
 0x0065f240	dead	unreachable from the entry point and every pointer table
 0x0065f290	glue	only called from glue code (PhyreScene_bootInit)
@@ -1798,7 +1798,7 @@
 0x006604d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isVFXTextureLoaded
 0x00661c80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isVFXTextureLoaded_00661c80
 0x00663a30	logic	default (no rule: ported to be safe)
-0x00663cc0	logic	default (no rule: ported to be safe)
+0x00663cc0	glue	only called from glue code (PhyreScene_RenderABmap and 1 more)
 0x00663d30	dead	unreachable from the entry point and every pointer table
 0x00663d40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_loadAbConeShader
 0x00663e20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_loadAbWaveShader
@@ -1853,7 +1853,7 @@
 0x00666e40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_processVFXDrawEvent
 0x006673b0	glue	calls PhyreEngine Phyre_PRendering_PRendererBase_renderMeshInstance
 0x006675d0	dead	unreachable from the entry point and every pointer table
-0x00667620	logic	default (no rule: ported to be safe)
+0x00667620	glue	only called from glue code (0x65ae40)
 0x00667690	dead	unreachable from the entry point and every pointer table
 0x00667700	dead	unreachable from the entry point and every pointer table
 0x00667770	logic	default (no rule: ported to be safe)
@@ -1933,7 +1933,7 @@
 0x0066c500	dead	unreachable from the entry point and every pointer table
 0x0066c540	dead	unreachable from the entry point and every pointer table
 0x0066c580	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_resize
-0x0066c670	logic	default (no rule: ported to be safe)
+0x0066c670	platform	only called from platform code (0x642ce0)
 0x0066c690	glue	calls PhyreEngine Phyre_PhyreFree
 0x0066c700	glue	calls PhyreEngine Phyre_PhyreFree
 0x0066c770	glue	only called from glue code (PhyreScene_render)
@@ -2009,7 +2009,7 @@
 0x0066f010	logic	default (no rule: ported to be safe)
 0x0066f140	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setupPostProcessParams
 0x0066f2f0	logic	scene state the renderer needs (original look first): PhyreScene_show2DLayer
-0x0066f380	logic	default (no rule: ported to be safe)
+0x0066f380	platform	only called from platform code (0x638f80)
 0x0066f480	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_showAutoSavingPrompt
 0x0066f4d0	dead	unreachable from the entry point and every pointer table
 0x0066f500	dead	unreachable from the entry point and every pointer table
@@ -2080,8 +2080,8 @@
 0x00678db0	logic	default (no rule: ported to be safe)
 0x00678de0	logic	default (no rule: ported to be safe)
 0x00678e50	logic	default (no rule: ported to be safe)
-0x00678e60	logic	default (no rule: ported to be safe)
-0x006790c0	logic	default (no rule: ported to be safe)
+0x00678e60	glue	only called from glue code (0x6d12f0)
+0x006790c0	glue	only called from glue code (0x6d1530)
 0x00679330	dead	unreachable from the entry point and every pointer table
 0x00679370	dead	unreachable from the entry point and every pointer table
 0x006793e0	logic	default (no rule: ported to be safe)
@@ -2200,7 +2200,7 @@
 0x0067ab90	dead	unreachable from the entry point and every pointer table
 0x0067abb0	dead	unreachable from the entry point and every pointer table
 0x0067abe0	dead	unreachable from the entry point and every pointer table
-0x0067ac10	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x0067ac10	platform	only called from platform code (0x647fe0)
 0x0067ac40	platform	only called from platform code (FFXApplication_exitApplication)
 0x0067ac60	platform	only called from platform code (TrophyGetError)
 0x0067ac70	logic	default (no rule: ported to be safe)
@@ -2210,41 +2210,41 @@
 0x0067acd0	dead	unreachable from the entry point and every pointer table
 0x0067ace0	dead	unreachable from the entry point and every pointer table
 0x0067acf0	dead	unreachable from the entry point and every pointer table
-0x0067ad30	logic	default (no rule: ported to be safe)
-0x0067b180	logic	default (no rule: ported to be safe)
+0x0067ad30	platform	only called from platform code (0x67b6c0)
+0x0067b180	platform	only called from platform code (0x67b740)
 0x0067b1d0	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_Reset_0067b1d0
 0x0067b200	platform	platform name (PC port: input, saves, loaders, app lifecycle): PArray_Reset_0067b200
-0x0067b230	logic	default (no rule: ported to be safe)
+0x0067b230	glue	only called from glue code (0x67b820)
 0x0067b480	dead	unreachable from the entry point and every pointer table
 0x0067b490	dead	unreachable from the entry point and every pointer table
 0x0067b4a0	dead	unreachable from the entry point and every pointer table
 0x0067b4d0	dead	unreachable from the entry point and every pointer table
 0x0067b510	dead	unreachable from the entry point and every pointer table
 0x0067b530	glue	only called from glue code (MenuManager_GetMenuVertexInfo and 1 more)
-0x0067b680	logic	default (no rule: ported to be safe)
-0x0067b6c0	logic	default (no rule: ported to be safe)
-0x0067b740	logic	default (no rule: ported to be safe)
-0x0067b770	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (crt_memset_thunk, operator_new_006304c0)
+0x0067b680	glue	only called from glue code (0x67b230)
+0x0067b6c0	platform	only called from platform code (0x636430)
+0x0067b740	platform	only called from platform code (0x636430)
+0x0067b770	platform	only called from platform code (0x67ad30)
 0x0067b7d0	logic	default (no rule: ported to be safe)
 0x0067b800	dead	unreachable from the entry point and every pointer table
 0x0067b820	glue	only called from glue code (graphicFinalize)
-0x0067b850	logic	default (no rule: ported to be safe)
+0x0067b850	glue	only called from glue code (0x67b230)
 0x0067b920	dead	unreachable from the entry point and every pointer table
 0x0067b930	dead	unreachable from the entry point and every pointer table
 0x0067b970	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_GetMenuCount
 0x0067b990	glue	only called from glue code (0x650340 and 1 more)
 0x0067b9d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_GetMenuMeshInstace
 0x0067ba50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_GetMenuVertexInfo
-0x0067c030	logic	default (no rule: ported to be safe)
-0x0067c170	logic	default (no rule: ported to be safe)
-0x0067c210	logic	default (no rule: ported to be safe)
-0x0067c2d0	logic	default (no rule: ported to be safe)
+0x0067c030	platform	only called from platform code (0x67ad30)
+0x0067c170	glue	only called from glue code (MenuManager_GetMenuVertexInfo)
+0x0067c210	glue	only called from glue code (MenuManager_GetMenuVertexInfo)
+0x0067c2d0	platform	only called from platform code (0x67ad30)
 0x0067c410	dead	unreachable from the entry point and every pointer table
-0x0067c440	logic	default (no rule: ported to be safe)
+0x0067c440	platform	only called from platform code (0x636430)
 0x0067c620	logic	default (no rule: ported to be safe)
 0x0067c6f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuTextureManager_LoadBGWaterTexture
 0x0067c720	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuTextureManager_LoadCloudSaveUITexture
-0x0067c7a0	logic	default (no rule: ported to be safe)
+0x0067c7a0	platform	only called from platform code (0x67c440)
 0x0067c8c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuTextureManager_LoadDreamMapTexture
 0x0067c8f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuTextureManager_LoadEternalCalmCopyRightTexture
 0x0067c920	logic	default (no rule: ported to be safe)
@@ -2349,7 +2349,7 @@
 0x00687060	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): user_realloc
 0x00687070	logic	default (no rule: ported to be safe)
 0x00687090	dead	unreachable from the entry point and every pointer table
-0x006870b0	logic	default (no rule: ported to be safe)
+0x006870b0	platform	only called from platform code (0x630870)
 0x00687130	dead	unreachable from the entry point and every pointer table
 0x00687190	logic	default (no rule: ported to be safe)
 0x00687210	platform	imports FreeLibrary
@@ -2382,8 +2382,8 @@
 0x00689720	dead	unreachable from the entry point and every pointer table
 0x00689750	dead	unreachable from the entry point and every pointer table
 0x00689790	dead	unreachable from the entry point and every pointer table
-0x006897d0	logic	default (no rule: ported to be safe)
-0x00689830	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (ResetArrays_00689620, operator_delete)
+0x006897d0	platform	only called from platform code (0x630f40)
+0x00689830	platform	only exception unwinding reaches it (a release or destructor)
 0x00689860	dead	unreachable from the entry point and every pointer table
 0x00689880	dead	unreachable from the entry point and every pointer table
 0x006898c0	logic	default (no rule: ported to be safe)
@@ -2403,7 +2403,7 @@
 0x0068a330	dead	unreachable from the entry point and every pointer table
 0x0068a3a0	logic	default (no rule: ported to be safe)
 0x0068a420	logic	default (no rule: ported to be safe)
-0x0068a660	logic	default (no rule: ported to be safe)
+0x0068a660	platform	only called from platform code (0x630f40)
 0x0068a7d0	dead	unreachable from the entry point and every pointer table
 0x0068a850	dead	unreachable from the entry point and every pointer table
 0x0068a8a0	dead	unreachable from the entry point and every pointer table
@@ -2428,7 +2428,7 @@
 0x0068b9a0	dead	unreachable from the entry point and every pointer table
 0x0068b9e0	dead	unreachable from the entry point and every pointer table
 0x0068ba00	dead	unreachable from the entry point and every pointer table
-0x0068ba20	logic	default (no rule: ported to be safe)
+0x0068ba20	platform	only called from platform code (0x630f40)
 0x0068baa0	dead	unreachable from the entry point and every pointer table
 0x0068bae0	glue	calls PhyreEngine Phyre_PhyreFree, Phyre_PhyreMalloc_0042fb80
 0x0068bba0	glue	calls PhyreEngine Phyre_PhyreFree
@@ -2475,7 +2475,7 @@
 0x0068c830	platform	platform name (PC port: input, saves, loaders, app lifecycle): AsyncControllerTaskManager_AsyncControllerTaskManager
 0x0068c9b0	dead	unreachable from the entry point and every pointer table
 0x0068c9d0	dead	unreachable from the entry point and every pointer table
-0x0068ca50	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x0068ca50	platform	only exception unwinding reaches it (a release or destructor)
 0x0068ca70	dead	unreachable from the entry point and every pointer table
 0x0068ca90	dead	unreachable from the entry point and every pointer table
 0x0068cbb0	dead	unreachable from the entry point and every pointer table
@@ -2489,8 +2489,8 @@
 0x0068cf10	dead	unreachable from the entry point and every pointer table
 0x0068cf20	dead	unreachable from the entry point and every pointer table
 0x0068cf40	dead	unreachable from the entry point and every pointer table
-0x0068cf60	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_new)
-0x0068d0e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_new)
+0x0068cf60	platform	only called from platform code (0x68d9f0)
+0x0068d0e0	platform	only called from platform code (0x68da80)
 0x0068d270	dead	unreachable from the entry point and every pointer table
 0x0068d2a0	dead	unreachable from the entry point and every pointer table
 0x0068d2d0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
@@ -2531,7 +2531,7 @@
 0x0068ddd0	logic	default (no rule: ported to be safe)
 0x0068de50	glue	only called from glue code (FFEscMenu_initializeMainSettingPage and 1 more)
 0x0068def0	logic	default (no rule: ported to be safe)
-0x0068dfa0	logic	default (no rule: ported to be safe)
+0x0068dfa0	glue	only called from glue code (0x6ff1e0 and 2 more)
 0x0068dfb0	dead	unreachable from the entry point and every pointer table
 0x0068dfd0	logic	default (no rule: ported to be safe)
 0x0068e180	logic	default (no rule: ported to be safe)
@@ -2618,7 +2618,7 @@
 0x00691660	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): AsyncLoadManager_loadCluster
 0x006916f0	dead	unreachable from the entry point and every pointer table
 0x00691730	dead	unreachable from the entry point and every pointer table
-0x00691770	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk, user_malloc)
+0x00691770	platform	only called from platform code (AsyncLoadManager_createChildrenRequestList and 1 more)
 0x006917f0	platform	only called from platform code (0x690e60 and 2 more)
 0x006918b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): AsyncLoadManager_registAsyncLoadTask
 0x006919c0	dead	unreachable from the entry point and every pointer table
@@ -2633,7 +2633,7 @@
 0x00691b70	dead	unreachable from the entry point and every pointer table
 0x00691ba0	dead	unreachable from the entry point and every pointer table
 0x00691bd0	dead	unreachable from the entry point and every pointer table
-0x00691d40	logic	default (no rule: ported to be safe)
+0x00691d40	glue	only called from glue code (0x693d20)
 0x00691d70	dead	unreachable from the entry point and every pointer table
 0x00691d80	dead	unreachable from the entry point and every pointer table
 0x00691d90	dead	unreachable from the entry point and every pointer table
@@ -2647,12 +2647,12 @@
 0x00691f70	dead	unreachable from the entry point and every pointer table
 0x00691fe0	dead	unreachable from the entry point and every pointer table
 0x00692010	dead	unreachable from the entry point and every pointer table
-0x00692020	logic	default (no rule: ported to be safe)
-0x00692410	logic	default (no rule: ported to be safe)
+0x00692020	glue	only called from glue code (0x692a90)
+0x00692410	glue	only called from glue code (0x692b10)
 0x006924e0	glue	calls PhyreEngine Phyre_PRedBlackTree_clear
 0x00692540	glue	calls PhyreEngine Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear
 0x006925c0	dead	unreachable from the entry point and every pointer table
-0x00692680	logic	default (no rule: ported to be safe)
+0x00692680	platform	only exception unwinding reaches it (a release or destructor)
 0x006926e0	dead	unreachable from the entry point and every pointer table
 0x00692740	dead	unreachable from the entry point and every pointer table
 0x006927a0	dead	unreachable from the entry point and every pointer table
@@ -2689,9 +2689,9 @@
 0x00693c20	dead	unreachable from the entry point and every pointer table
 0x00693c30	dead	unreachable from the entry point and every pointer table
 0x00693c50	glue	calls PhyreEngine Phyre_PFreeList_allocateNewBlock, Phyre_PFreeList_deallocate, Phyre_PRedBlackTree_postInsertFinalize
-0x00693d20	logic	default (no rule: ported to be safe)
+0x00693d20	glue	only called from glue code (0x693be0)
 0x00693d70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_onAllShaderBinFilesLoaded
-0x00694c20	logic	default (no rule: ported to be safe)
+0x00694c20	glue	only called from glue code (0x693d20)
 0x00694c60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_prepareGlowMap
 0x00694ef0	dead	unreachable from the entry point and every pointer table
 0x00694f00	dead	unreachable from the entry point and every pointer table
@@ -2700,7 +2700,7 @@
 0x00695440	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_renderBright
 0x006956d0	debug	debug name: PostProcessManager_renderDebug4By3Frame
 0x00695730	dead	unreachable from the entry point and every pointer table
-0x00695740	logic	default (no rule: ported to be safe)
+0x00695740	glue	only called from glue code (0x6535b0)
 0x00695790	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_renderFocusFrame
 0x006959d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_renderFullScreenTexture
 0x00695ba0	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_setClearColor
@@ -2712,7 +2712,7 @@
 0x00697f10	dead	unreachable from the entry point and every pointer table
 0x00697f20	glue	only called from glue code (PhyreScene_resize)
 0x00698060	glue	only called from glue code (PhyreScene_resize)
-0x006980a0	logic	default (no rule: ported to be safe)
+0x006980a0	platform	only called from platform code (0x66c670)
 0x00698110	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_resolveDepth
 0x00698370	dead	unreachable from the entry point and every pointer table
 0x006983e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PostProcessManager_SetByte123b1
@@ -2767,7 +2767,7 @@
 0x0069a130	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
 0x0069a1a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClusterManager_GetInstance
 0x0069a1b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): StdMap_NewHead_0069a1b0
-0x0069a1e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x0069a1e0	glue	only called from glue code (0x699300)
 0x0069a600	dead	unreachable from the entry point and every pointer table
 0x0069a630	dead	unreachable from the entry point and every pointer table
 0x0069a670	dead	unreachable from the entry point and every pointer table
@@ -2775,12 +2775,12 @@
 0x0069a940	dead	unreachable from the entry point and every pointer table
 0x0069a950	dead	unreachable from the entry point and every pointer table
 0x0069a970	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x0069a9c0	logic	default (no rule: ported to be safe)
-0x0069aba0	logic	default (no rule: ported to be safe)
+0x0069a9c0	glue	only called from glue code (graphicFinalize)
+0x0069aba0	glue	only called from glue code (ClusterManager_loadPCluster)
 0x0069ac10	dead	unreachable from the entry point and every pointer table
 0x0069ade0	dead	unreachable from the entry point and every pointer table
 0x0069ae00	dead	unreachable from the entry point and every pointer table
-0x0069ae20	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x0069ae20	glue	only called from glue code (ClusterManager_forceReleasePCluster and 3 more)
 0x0069ae80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ChrResourceCacheManager_enableChrDelayRelease
 0x0069af30	dead	unreachable from the entry point and every pointer table
 0x0069af40	dead	unreachable from the entry point and every pointer table
@@ -2822,8 +2822,8 @@
 0x0069c1a0	dead	unreachable from the entry point and every pointer table
 0x0069c1c0	dead	unreachable from the entry point and every pointer table
 0x0069c1e0	dead	unreachable from the entry point and every pointer table
-0x0069c200	logic	default (no rule: ported to be safe)
-0x0069c270	logic	default (no rule: ported to be safe)
+0x0069c200	platform	only called from platform code (0x69c5c0)
+0x0069c270	glue	only called from glue code (0x69da20)
 0x0069c2e0	dead	unreachable from the entry point and every pointer table
 0x0069c300	dead	unreachable from the entry point and every pointer table
 0x0069c320	dead	unreachable from the entry point and every pointer table
@@ -2841,7 +2841,7 @@
 0x0069c4f0	dead	unreachable from the entry point and every pointer table
 0x0069c520	dead	unreachable from the entry point and every pointer table
 0x0069c550	dead	unreachable from the entry point and every pointer table
-0x0069c580	logic	default (no rule: ported to be safe)
+0x0069c580	glue	only called from glue code (0x69d990)
 0x0069d920	dead	unreachable from the entry point and every pointer table
 0x0069d960	dead	unreachable from the entry point and every pointer table
 0x0069d990	glue	only called from glue code (ClassVFXRenderDataTable_ClearByType)
@@ -2879,22 +2879,22 @@
 0x0069e320	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuDynamicGeometry_MenuDynamicGeometry
 0x0069e380	dead	unreachable from the entry point and every pointer table
 0x0069e3e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VFXDynamicGeometry_VFXDynamicGeometry
-0x0069e4a0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
-0x0069e4d0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
-0x0069e500	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
+0x0069e4a0	platform	only exception unwinding reaches it (a release or destructor)
+0x0069e4d0	platform	only exception unwinding reaches it (a release or destructor)
+0x0069e500	platform	only exception unwinding reaches it (a release or destructor)
 0x0069e560	dead	unreachable from the entry point and every pointer table
 0x0069e5e0	dead	unreachable from the entry point and every pointer table
 0x0069e680	dead	unreachable from the entry point and every pointer table
 0x0069e6b0	dead	unreachable from the entry point and every pointer table
 0x0069e740	dead	unreachable from the entry point and every pointer table
-0x0069e770	logic	default (no rule: ported to be safe)
+0x0069e770	platform	only exception unwinding reaches it (a release or destructor)
 0x0069e7a0	dead	unreachable from the entry point and every pointer table
-0x0069e7d0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x0069e7d0	platform	only exception unwinding reaches it (a release or destructor)
 0x0069e800	dead	unreachable from the entry point and every pointer table
 0x0069e830	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_delete_00630540)
 0x0069e8a0	dead	unreachable from the entry point and every pointer table
 0x0069e8d0	dead	unreachable from the entry point and every pointer table
-0x0069e900	logic	default (no rule: ported to be safe)
+0x0069e900	glue	only called from glue code (0x69f5c0)
 0x0069ea20	dead	unreachable from the entry point and every pointer table
 0x0069ea40	dead	unreachable from the entry point and every pointer table
 0x0069ea60	dead	unreachable from the entry point and every pointer table
@@ -2911,11 +2911,11 @@
 0x0069ec70	dead	unreachable from the entry point and every pointer table
 0x0069ec80	dead	unreachable from the entry point and every pointer table
 0x0069ec90	dead	unreachable from the entry point and every pointer table
-0x0069eca0	logic	default (no rule: ported to be safe)
-0x0069ed00	logic	default (no rule: ported to be safe)
+0x0069eca0	platform	only called from platform code (0x69cd40)
+0x0069ed00	platform	only called from platform code (0x69caf0 and 1 more)
 0x0069ed60	dead	unreachable from the entry point and every pointer table
 0x0069ed80	dead	unreachable from the entry point and every pointer table
-0x0069eda0	logic	default (no rule: ported to be safe)
+0x0069eda0	platform	only called from platform code (0x69caf0)
 0x0069edd0	logic	default (no rule: ported to be safe)
 0x0069ee30	dead	unreachable from the entry point and every pointer table
 0x0069ee50	dead	unreachable from the entry point and every pointer table
@@ -2930,7 +2930,7 @@
 0x0069f110	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_ClearByType
 0x0069f2b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_ClearVFXDrawData
 0x0069f380	dead	unreachable from the entry point and every pointer table
-0x0069f3a0	logic	default (no rule: ported to be safe)
+0x0069f3a0	platform	only called from platform code (0x636430)
 0x0069f440	glue	only called from glue code (graphicInitialize)
 0x0069f4c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_CreateInstance
 0x0069f540	glue	only called from glue code (graphicFinalize)
@@ -2946,24 +2946,24 @@
 0x0069f880	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassChrShaderRender_GetVertexInfo
 0x0069f890	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_Insert
 0x0069f900	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_InsertToDeletePool
-0x0069f9d0	logic	default (no rule: ported to be safe)
+0x0069f9d0	platform	only called from platform code (0x69f3a0 and 1 more)
 0x0069fb70	dead	unreachable from the entry point and every pointer table
 0x0069fbc0	dead	unreachable from the entry point and every pointer table
 0x0069fc10	glue	only called from glue code (graphicVFXDestroy)
 0x0069fc70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances
 0x0069fcb0	logic	default (no rule: ported to be safe)
 0x0069fd70	dead	unreachable from the entry point and every pointer table
-0x0069fdc0	logic	default (no rule: ported to be safe)
+0x0069fdc0	platform	only called from platform code (0x69fe40)
 0x0069fe50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_UpdateDeletePool
-0x006a0070	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_delete_00630540)
+0x006a0070	glue	only called from glue code (FfxFmod_initEventSystem and 1 more)
 0x006a0100	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassChrShaderRender_VertexInstanceSetup
-0x006a0360	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x006a0360	glue	only called from glue code (0x69f440)
 0x006a0390	glue	only called from glue code (ClassVFXRenderDataTable_ClassVFXRenderDataTable and 1 more)
-0x006a03c0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x006a03c0	platform	only called from platform code (0x69c5c0)
 0x006a0400	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
 0x006a0440	logic	default (no rule: ported to be safe)
 0x006a0450	logic	default (no rule: ported to be safe)
-0x006a0480	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x006a0480	platform	only called from platform code (0x69cfbd)
 0x006a04c0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x006a04e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x006a0540	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
@@ -2986,18 +2986,18 @@
 0x006a06f0	glue	only called from glue code (ClassLoadedCharacterTable_getPrototypeByFilename)
 0x006a07d0	dead	unreachable from the entry point and every pointer table
 0x006a0810	dead	unreachable from the entry point and every pointer table
-0x006a0830	logic	default (no rule: ported to be safe)
+0x006a0830	glue	only called from glue code (0x6a1720)
 0x006a0890	logic	default (no rule: ported to be safe)
 0x006a08f0	dead	unreachable from the entry point and every pointer table
-0x006a0900	logic	default (no rule: ported to be safe)
+0x006a0900	glue	only called from glue code (0x6a1720)
 0x006a0920	logic	default (no rule: ported to be safe)
 0x006a0940	logic	default (no rule: ported to be safe)
 0x006a0980	dead	unreachable from the entry point and every pointer table
 0x006a09a0	dead	unreachable from the entry point and every pointer table
-0x006a09b0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_new)
-0x006a0a30	logic	default (no rule: ported to be safe)
+0x006a09b0	platform	only called from platform code (0x6a0a30)
+0x006a0a30	platform	only called from platform code (0x6a2b20)
 0x006a0aa0	dead	unreachable from the entry point and every pointer table
-0x006a0af0	logic	default (no rule: ported to be safe)
+0x006a0af0	glue	only called from glue code (0x6a1720)
 0x006a0b50	logic	default (no rule: ported to be safe)
 0x006a0bb0	dead	unreachable from the entry point and every pointer table
 0x006a0bd0	dead	unreachable from the entry point and every pointer table
@@ -3024,7 +3024,7 @@
 0x006a1040	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_clear
 0x006a11d0	logic	default (no rule: ported to be safe)
 0x006a1200	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassCharacter_clearInstanceList
-0x006a1230	logic	default (no rule: ported to be safe)
+0x006a1230	glue	only called from glue code (0x67b680)
 0x006a1300	dead	unreachable from the entry point and every pointer table
 0x006a1320	glue	only called from glue code (0x63c540)
 0x006a13f0	dead	unreachable from the entry point and every pointer table
@@ -3038,15 +3038,15 @@
 0x006a14f0	dead	unreachable from the entry point and every pointer table
 0x006a1510	dead	unreachable from the entry point and every pointer table
 0x006a1530	dead	unreachable from the entry point and every pointer table
-0x006a1550	logic	default (no rule: ported to be safe)
-0x006a1570	logic	default (no rule: ported to be safe)
+0x006a1550	glue	only called from glue code (0x67b680)
+0x006a1570	glue	only called from glue code (0x685840)
 0x006a1590	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassCharacterInstance_destroyClothInstances
 0x006a15e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassCharacterInstance_destroyMeshes
 0x006a1630	dead	unreachable from the entry point and every pointer table
 0x006a1640	dead	unreachable from the entry point and every pointer table
 0x006a1650	dead	unreachable from the entry point and every pointer table
-0x006a1660	logic	default (no rule: ported to be safe)
-0x006a1720	logic	default (no rule: ported to be safe)
+0x006a1660	glue	only called from glue code (0x69f580)
+0x006a1720	glue	only called from glue code (0x6a1660 and 1 more)
 0x006a19d0	logic	default (no rule: ported to be safe)
 0x006a1a70	logic	default (no rule: ported to be safe)
 0x006a1cd0	dead	unreachable from the entry point and every pointer table
@@ -3056,11 +3056,11 @@
 0x006a1ef0	dead	unreachable from the entry point and every pointer table
 0x006a1f60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_MapFind
 0x006a2010	glue	only called from glue code (ClassDynamicGeometry_setupMaterial)
-0x006a2070	logic	default (no rule: ported to be safe)
+0x006a2070	platform	only called from platform code (0x576190)
 0x006a2110	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassLoadedCharacterTable_getPrototypeByFilename
 0x006a2220	logic	default (no rule: ported to be safe)
-0x006a2260	logic	default (no rule: ported to be safe)
-0x006a22d0	logic	default (no rule: ported to be safe)
+0x006a2260	glue	only called from glue code (0x6a2390)
+0x006a22d0	glue	only called from glue code (0x6a2390)
 0x006a2370	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_hide
 0x006a2390	glue	only called from glue code (PhyreScene_doOnCharacterAllAssetsLoaded and 1 more)
 0x006a25e0	glue	calls PhyreEngine Phyre_PhyreFree
@@ -3070,7 +3070,7 @@
 0x006a2830	glue	calls PhyreEngine Phyre_PFreeList_allocateNewBlock, Phyre_PFreeList_deallocate, Phyre_PRedBlackTree_postInsertFinalize
 0x006a28b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassLoadedCharacterTable_insertPrototype
 0x006a29a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_LoadCompute_006a29a0
-0x006a29c0	logic	default (no rule: ported to be safe)
+0x006a29c0	glue	only called from glue code (0x6a2260 and 1 more)
 0x006a29f0	dead	unreachable from the entry point and every pointer table
 0x006a2a10	dead	unreachable from the entry point and every pointer table
 0x006a2b10	dead	unreachable from the entry point and every pointer table
@@ -3123,7 +3123,7 @@
 0x006ae240	platform	imports InterlockedCompareExchange, ReleaseMutex, WaitForSingleObject
 0x006ae340	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData
 0x006ae450	platform	imports ReleaseMutex, WaitForSingleObject
-0x006ae530	logic	default (no rule: ported to be safe)
+0x006ae530	platform	only called from platform code (0x63dab0)
 0x006ae5b0	logic	default (no rule: ported to be safe)
 0x006ae650	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006ae6d0	dead	unreachable from the entry point and every pointer table
@@ -3146,7 +3146,7 @@
 0x006af1c0	dead	unreachable from the entry point and every pointer table
 0x006af270	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
 0x006af340	dead	unreachable from the entry point and every pointer table
-0x006af370	logic	default (no rule: ported to be safe)
+0x006af370	glue	only called from glue code (0x6b00a0)
 0x006af420	glue	only called from glue code (TextureAnimationManager_registerCharacterInstance)
 0x006af4e0	glue	calls PhyreEngine Phyre_PhyreFree
 0x006af510	glue	calls PhyreEngine Phyre_PhyreFree
@@ -3175,7 +3175,7 @@
 0x006afce0	dead	unreachable from the entry point and every pointer table
 0x006afd30	dead	unreachable from the entry point and every pointer table
 0x006afd60	glue	calls PhyreEngine Phyre_PhyreFree
-0x006afe00	logic	default (no rule: ported to be safe)
+0x006afe00	platform	only called from platform code (0x595800)
 0x006afe30	logic	default (no rule: ported to be safe)
 0x006afe60	dead	unreachable from the entry point and every pointer table
 0x006afea0	dead	unreachable from the entry point and every pointer table
@@ -3264,7 +3264,7 @@
 0x006b3e80	dead	unreachable from the entry point and every pointer table
 0x006b3ec0	dead	unreachable from the entry point and every pointer table
 0x006b3f00	dead	unreachable from the entry point and every pointer table
-0x006b3f40	logic	default (no rule: ported to be safe)
+0x006b3f40	glue	only called from glue code (0x6b00a0)
 0x006b3fd0	dead	unreachable from the entry point and every pointer table
 0x006b3fe0	glue	calls PhyreEngine Phyre_PhyreFree
 0x006b4200	dead	unreachable from the entry point and every pointer table
@@ -3316,7 +3316,7 @@
 0x006b9970	debug	debug name: CharacterSwitchTweakUtil_initialize
 0x006b9aa0	debug	debug name: CharacterTextureAnimationTweakUtil_initialize
 0x006b9cd0	debug	debug name: GameParamConfigTweakUitl_initialize
-0x006b9e20	logic	default (no rule: ported to be safe)
+0x006b9e20	glue	only called from glue code (PhyreScene_bootInit)
 0x006ba110	debug	only called from debug code (BasicDebugTweakUtil_setEnabled)
 0x006ba1a0	debug	debug name: BasicDebugTweakUtil_render
 0x006ba240	debug	debug name: BtlChrParamConfigTweakUitl_render
@@ -3380,21 +3380,21 @@
 0x006bca30	dead	unreachable from the entry point and every pointer table
 0x006bca40	dead	unreachable from the entry point and every pointer table
 0x006bca50	dead	unreachable from the entry point and every pointer table
-0x006bca90	logic	default (no rule: ported to be safe)
+0x006bca90	glue	only called from glue code (0x6bcc40)
 0x006bcb50	dead	unreachable from the entry point and every pointer table
 0x006bcbd0	logic	default (no rule: ported to be safe)
 0x006bcc40	glue	only called from glue code (graphicInitialize)
 0x006bcc70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicPauseGameDestroy
 0x006bcc90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCheckPauseGame
 0x006bcca0	dead	unreachable from the entry point and every pointer table
-0x006bccb0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, security_check_cookie)
+0x006bccb0	glue	only called from glue code (0x6bd1e0)
 0x006bcd70	dead	unreachable from the entry point and every pointer table
 0x006bcdc0	dead	unreachable from the entry point and every pointer table
 0x006bce00	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006bcff0	dead	unreachable from the entry point and every pointer table
 0x006bd150	dead	unreachable from the entry point and every pointer table
-0x006bd160	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (std_string_ctor_move)
-0x006bd1e0	logic	default (no rule: ported to be safe)
+0x006bd160	glue	only called from glue code (0x6bccb0)
+0x006bd1e0	glue	only called from glue code (0x6bca90)
 0x006bd290	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_ReturnConst0_006bd290
 0x006bd2a0	dead	unreachable from the entry point and every pointer table
 0x006bd2b0	dead	unreachable from the entry point and every pointer table
@@ -3433,8 +3433,8 @@
 0x006be8d0	dead	unreachable from the entry point and every pointer table
 0x006be900	dead	unreachable from the entry point and every pointer table
 0x006be930	dead	unreachable from the entry point and every pointer table
-0x006be960	logic	default (no rule: ported to be safe)
-0x006be9e0	logic	default (no rule: ported to be safe)
+0x006be960	glue	only called from glue code (0x6c0810)
+0x006be9e0	glue	only called from glue code (0x6bee80)
 0x006beb10	dead	unreachable from the entry point and every pointer table
 0x006beca0	dead	unreachable from the entry point and every pointer table
 0x006bed10	dead	unreachable from the entry point and every pointer table
@@ -3448,26 +3448,26 @@
 0x006bf110	dead	unreachable from the entry point and every pointer table
 0x006bf130	dead	unreachable from the entry point and every pointer table
 0x006bf150	dead	unreachable from the entry point and every pointer table
-0x006bf170	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreMalloc_0042fb80)
+0x006bf170	glue	only called from glue code (0x6bee80)
 0x006bf1e0	dead	unreachable from the entry point and every pointer table
 0x006bf240	dead	unreachable from the entry point and every pointer table
 0x006bf2a0	glue	only called from glue code (VfxShaderManager_setupSpecialShaderParameters)
 0x006bf300	dead	unreachable from the entry point and every pointer table
 0x006bf360	dead	unreachable from the entry point and every pointer table
 0x006bf430	dead	unreachable from the entry point and every pointer table
-0x006bf4a0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_PFreeList)
-0x006bf590	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x006bf5f0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x006bf650	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x006bf6b0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
-0x006bf730	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PRedBlackTree_clear)
-0x006bf7a0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PRedBlackTree_clear)
+0x006bf4a0	glue	only called from glue code (0x6c1420)
+0x006bf590	platform	only exception unwinding reaches it (a release or destructor)
+0x006bf5f0	platform	only exception unwinding reaches it (a release or destructor)
+0x006bf650	platform	only exception unwinding reaches it (a release or destructor)
+0x006bf6b0	platform	only exception unwinding reaches it (a release or destructor)
+0x006bf730	platform	only exception unwinding reaches it (a release or destructor)
+0x006bf7a0	platform	only exception unwinding reaches it (a release or destructor)
 0x006bf810	dead	unreachable from the entry point and every pointer table
 0x006bf890	dead	unreachable from the entry point and every pointer table
 0x006bf900	dead	unreachable from the entry point and every pointer table
 0x006bf9c0	dead	unreachable from the entry point and every pointer table
 0x006bfa30	dead	unreachable from the entry point and every pointer table
-0x006bfaa0	logic	default (no rule: ported to be safe)
+0x006bfaa0	glue	only called from glue code (0x6c14a0)
 0x006bfc10	dead	unreachable from the entry point and every pointer table
 0x006bfc30	dead	unreachable from the entry point and every pointer table
 0x006bfc50	dead	unreachable from the entry point and every pointer table
@@ -3481,7 +3481,7 @@
 0x006bfe50	dead	unreachable from the entry point and every pointer table
 0x006bfe90	dead	unreachable from the entry point and every pointer table
 0x006c04c0	dead	unreachable from the entry point and every pointer table
-0x006c04e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_reset, Phyre_PRedBlackTree_remove, Phyre_PhyreFree)
+0x006c04e0	platform	only called from platform code (0x6bf730)
 0x006c0520	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_reset, Phyre_PRedBlackTree_remove, Phyre_PhyreFree)
 0x006c0560	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VfxShaderManager_combineTextureNameInCurrentLevel
 0x006c0630	dead	unreachable from the entry point and every pointer table
@@ -3489,7 +3489,7 @@
 0x006c0670	dead	unreachable from the entry point and every pointer table
 0x006c06e0	logic	default (no rule: ported to be safe)
 0x006c07e0	dead	unreachable from the entry point and every pointer table
-0x006c0810	logic	default (no rule: ported to be safe)
+0x006c0810	glue	only called from glue code (VfxShaderManager_loadShader and 1 more)
 0x006c0890	dead	unreachable from the entry point and every pointer table
 0x006c0980	dead	unreachable from the entry point and every pointer table
 0x006c0a70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VfxShaderManager_loadShader
@@ -3505,12 +3505,12 @@
 0x006c1520	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VfxShaderManager_setupSpecialShaderParameters
 0x006c19b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VfxShaderManager_unloadSpecialShaderTable
 0x006c1c50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VfxShaderManager_unloadSpecialShaderTable_magic
-0x006c1f20	logic	default (no rule: ported to be safe)
+0x006c1f20	glue	only called from glue code (graphicFinalize and 1 more)
 0x006c1fa0	dead	unreachable from the entry point and every pointer table
 0x006c1fb0	dead	unreachable from the entry point and every pointer table
 0x006c1fc0	dead	unreachable from the entry point and every pointer table
 0x006c1ff0	dead	unreachable from the entry point and every pointer table
-0x006c2010	logic	default (no rule: ported to be safe)
+0x006c2010	glue	only called from glue code (0x6c2190)
 0x006c20c0	dead	unreachable from the entry point and every pointer table
 0x006c2120	dead	unreachable from the entry point and every pointer table
 0x006c2190	glue	only called from glue code (graphicInitialize)
@@ -3521,11 +3521,11 @@
 0x006c2410	glue	calls PhyreEngine Phyre_PCluster_dtor_PCluster
 0x006c24b0	glue	only called from glue code (Distortion_createRenderTarget)
 0x006c2520	glue	calls PhyreEngine Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial
-0x006c26b0	logic	default (no rule: ported to be safe)
-0x006c26c0	logic	default (no rule: ported to be safe)
+0x006c26b0	platform	only called from platform code (0x675120)
+0x006c26c0	platform	only called from platform code (0x675120)
 0x006c26d0	logic	default (no rule: ported to be safe)
-0x006c26e0	logic	default (no rule: ported to be safe)
-0x006c26f0	logic	default (no rule: ported to be safe)
+0x006c26e0	platform	only called from platform code (0x675120)
+0x006c26f0	platform	only called from platform code (0x675120)
 0x006c2700	logic	default (no rule: ported to be safe)
 0x006c2710	glue	calls PhyreEngine Phyre_PCluster_operator_new
 0x006c28b0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
@@ -3554,7 +3554,7 @@
 0x006c35d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_doOnShaderClusterLoaded
 0x006c38b0	glue	only called from glue code (PhyreScene_bootInit)
 0x006c3940	logic	default (no rule: ported to be safe)
-0x006c3950	logic	default (no rule: ported to be safe)
+0x006c3950	glue	only called from glue code (0x6c38b0)
 0x006c3970	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
 0x006c3c40	glue	only called from glue code (PhyreScene_resize)
 0x006c3ca0	dead	unreachable from the entry point and every pointer table
@@ -3564,8 +3564,8 @@
 0x006c3fd0	glue	only called from glue code (graphicUpdateRadialLineLogic)
 0x006c4000	logic	default (no rule: ported to be safe)
 0x006c4010	dead	unreachable from the entry point and every pointer table
-0x006c4020	logic	default (no rule: ported to be safe)
-0x006c40c0	logic	default (no rule: ported to be safe)
+0x006c4020	glue	only called from glue code (0x6c4820)
+0x006c40c0	glue	only called from glue code (0x6c4a30)
 0x006c40e0	glue	calls PhyreEngine Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial
 0x006c4290	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
 0x006c44d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_SetField84
@@ -3609,7 +3609,7 @@
 0x006c5600	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MotionBlur_setMotionBlurWeight
 0x006c5650	dead	unreachable from the entry point and every pointer table
 0x006c5660	dead	unreachable from the entry point and every pointer table
-0x006c5670	logic	default (no rule: ported to be safe)
+0x006c5670	glue	only called from glue code (0x6c5790)
 0x006c56d0	dead	unreachable from the entry point and every pointer table
 0x006c56f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_AddSpecularEvent
 0x006c5760	dead	unreachable from the entry point and every pointer table
@@ -3618,7 +3618,7 @@
 0x006c57e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_GetInstance
 0x006c57f0	dead	unreachable from the entry point and every pointer table
 0x006c5820	dead	unreachable from the entry point and every pointer table
-0x006c5850	logic	default (no rule: ported to be safe)
+0x006c5850	glue	only called from glue code (PhyreScene_render and 2 more)
 0x006c59a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_needDrawSpecularPass
 0x006c59c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_renderCorrespondSpecular
 0x006c5b60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SpecularMapParamsManager_renderSpecularPass
@@ -3640,11 +3640,11 @@
 0x006c7230	dead	unreachable from the entry point and every pointer table
 0x006c7240	dead	unreachable from the entry point and every pointer table
 0x006c7250	logic	default (no rule: ported to be safe)
-0x006c7320	logic	default (no rule: ported to be safe)
+0x006c7320	glue	only called from glue code (0x6c77a0)
 0x006c73f0	dead	unreachable from the entry point and every pointer table
-0x006c7410	logic	default (no rule: ported to be safe)
-0x006c74d0	logic	default (no rule: ported to be safe)
-0x006c7560	logic	default (no rule: ported to be safe)
+0x006c7410	glue	only called from glue code (0x6c77a0)
+0x006c74d0	glue	only called from glue code (0x6c7560)
+0x006c7560	glue	only called from glue code (0x6c7900)
 0x006c7600	dead	unreachable from the entry point and every pointer table
 0x006c7610	dead	unreachable from the entry point and every pointer table
 0x006c7640	dead	unreachable from the entry point and every pointer table
@@ -3652,11 +3652,11 @@
 0x006c76a0	dead	unreachable from the entry point and every pointer table
 0x006c76e0	dead	unreachable from the entry point and every pointer table
 0x006c7720	dead	unreachable from the entry point and every pointer table
-0x006c7730	logic	default (no rule: ported to be safe)
-0x006c77a0	logic	default (no rule: ported to be safe)
-0x006c7890	logic	default (no rule: ported to be safe)
+0x006c7730	glue	only called from glue code (0x6c7410)
+0x006c77a0	glue	only called from glue code (0x6c8480)
+0x006c7890	glue	only called from glue code (0x6c77a0)
 0x006c78f0	dead	unreachable from the entry point and every pointer table
-0x006c7900	logic	default (no rule: ported to be safe)
+0x006c7900	glue	only called from glue code (0x6c77a0)
 0x006c7b60	dead	unreachable from the entry point and every pointer table
 0x006c7b90	dead	unreachable from the entry point and every pointer table
 0x006c7bc0	dead	unreachable from the entry point and every pointer table
@@ -3679,12 +3679,12 @@
 0x006c8000	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
 0x006c8040	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_AlreadyinShadowMap
 0x006c8090	glue	calls PhyreEngine Phyre_PhyreFree, Phyre_PhyreMalloc_0042fb80
-0x006c8480	logic	default (no rule: ported to be safe)
+0x006c8480	glue	only called from glue code (0x6d00d0)
 0x006c88a0	glue	only called from glue code (0x6c9e50)
 0x006c8f20	dead	unreachable from the entry point and every pointer table
 0x006c8f50	glue	only called from glue code (0x6c9e50)
-0x006c9270	logic	default (no rule: ported to be safe)
-0x006c94e0	logic	default (no rule: ported to be safe)
+0x006c9270	glue	only called from glue code (0x6ce6f0)
+0x006c94e0	glue	only called from glue code (0x6c8480)
 0x006c9500	glue	only called from glue code (graphicInitialize)
 0x006c9580	glue	calls PhyreEngine Phyre_PCluster_allocateInstanceList, Phyre_PCluster_create
 0x006c9780	glue	only called from glue code (0x6c9e50)
@@ -3695,11 +3695,11 @@
 0x006cbf20	dead	unreachable from the entry point and every pointer table
 0x006cc8b0	logic	default (no rule: ported to be safe)
 0x006cc8c0	logic	default (no rule: ported to be safe)
-0x006cc8e0	logic	default (no rule: ported to be safe)
-0x006cc900	logic	default (no rule: ported to be safe)
-0x006cc920	logic	default (no rule: ported to be safe)
-0x006cc950	logic	default (no rule: ported to be safe)
-0x006cc980	logic	default (no rule: ported to be safe)
+0x006cc8e0	glue	only called from glue code (0x6ccd10)
+0x006cc900	glue	only called from glue code (0x6ccd10)
+0x006cc920	glue	only called from glue code (0x6ccd10)
+0x006cc950	glue	only called from glue code (0x6ccd10)
+0x006cc980	glue	only called from glue code (0x6d12f0 and 1 more)
 0x006cca00	dead	unreachable from the entry point and every pointer table
 0x006ccad0	logic	default (no rule: ported to be safe)
 0x006cccc0	dead	unreachable from the entry point and every pointer table
@@ -3714,8 +3714,8 @@
 0x006ce5d0	dead	unreachable from the entry point and every pointer table
 0x006ce630	dead	unreachable from the entry point and every pointer table
 0x006ce690	dead	unreachable from the entry point and every pointer table
-0x006ce6f0	logic	default (no rule: ported to be safe)
-0x006ce860	logic	default (no rule: ported to be safe)
+0x006ce6f0	glue	only called from glue code (0x653600)
+0x006ce860	glue	only called from glue code (0x653600)
 0x006ce980	dead	unreachable from the entry point and every pointer table
 0x006ce9d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_RemoveFromShadowMap
 0x006cea80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_SetFloats401c
@@ -3723,24 +3723,24 @@
 0x006ceaf0	dead	unreachable from the entry point and every pointer table
 0x006ceb00	dead	unreachable from the entry point and every pointer table
 0x006ceb10	logic	default (no rule: ported to be safe)
-0x006cebd0	logic	default (no rule: ported to be safe)
-0x006d00d0	logic	default (no rule: ported to be safe)
+0x006cebd0	glue	only called from glue code (0x6ce860)
+0x006d00d0	glue	only called from glue code (0x6ce860)
 0x006d12f0	glue	only called from glue code (0x6c9e50)
 0x006d1530	glue	only called from glue code (0x6c9e50)
 0x006d1780	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_clearCascades
 0x006d17a0	dead	unreachable from the entry point and every pointer table
 0x006d17d0	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
-0x006d1800	logic	default (no rule: ported to be safe)
+0x006d1800	glue	only called from glue code (0x6c88a0)
 0x006d18b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_createshadowbuffer
 0x006d1ac0	dead	unreachable from the entry point and every pointer table
 0x006d1b40	glue	calls PhyreEngine Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial
 0x006d22e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_getCascade
 0x006d2310	dead	unreachable from the entry point and every pointer table
-0x006d2380	logic	default (no rule: ported to be safe)
+0x006d2380	glue	only called from glue code (0x653600 and 2 more)
 0x006d2390	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_getInstance
 0x006d23a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_GetCascadeMatrix
 0x006d23d0	glue	only called from glue code (ShadowManager_updateShadowMap)
-0x006d2510	logic	default (no rule: ported to be safe)
+0x006d2510	platform	only called from platform code (0x69f9d0)
 0x006d2520	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_getTextureSampler
 0x006d2530	glue	only called from glue code (ShadowManager_updateShadowMap)
 0x006d26d0	glue	calls PhyreEngine Phyre_PhyreFree
@@ -3748,7 +3748,7 @@
 0x006d27e0	logic	default (no rule: ported to be safe)
 0x006d2a70	logic	default (no rule: ported to be safe)
 0x006d2ae0	dead	unreachable from the entry point and every pointer table
-0x006d2b50	logic	default (no rule: ported to be safe)
+0x006d2b50	glue	only called from glue code (0x6c88a0)
 0x006d2c10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_loadShadowShaderBinFiles
 0x006d2d30	dead	unreachable from the entry point and every pointer table
 0x006d2d70	dead	unreachable from the entry point and every pointer table
@@ -3766,26 +3766,26 @@
 0x006d3650	glue	only called from glue code (BrokenScreenEffect_render)
 0x006d3e00	glue	calls PhyreEngine Phyre_PCluster_deleteObject
 0x006d3e90	dead	unreachable from the entry point and every pointer table
-0x006d3f30	logic	default (no rule: ported to be safe)
-0x006d3f40	logic	default (no rule: ported to be safe)
-0x006d3f50	logic	default (no rule: ported to be safe)
-0x006d3f80	logic	default (no rule: ported to be safe)
-0x006d3f90	logic	default (no rule: ported to be safe)
-0x006d3fa0	logic	default (no rule: ported to be safe)
-0x006d3fb0	logic	default (no rule: ported to be safe)
-0x006d4150	logic	default (no rule: ported to be safe)
-0x006d41b0	logic	default (no rule: ported to be safe)
+0x006d3f30	platform	only called from platform code (0x6770f0)
+0x006d3f40	platform	only called from platform code (0x6770f0)
+0x006d3f50	platform	only called from platform code (0x6770f0)
+0x006d3f80	platform	only called from platform code (0x6770f0)
+0x006d3f90	platform	only called from platform code (0x6770f0)
+0x006d3fa0	platform	only called from platform code (0x6770f0)
+0x006d3fb0	glue	only called from glue code (0x6d55b0)
+0x006d4150	glue	only called from glue code (0x6d4780)
+0x006d41b0	glue	only called from glue code (0x6d4780)
 0x006d44c0	glue	only called from glue code (BrokenScreenEffect_render)
-0x006d4540	logic	default (no rule: ported to be safe)
-0x006d4620	logic	default (no rule: ported to be safe)
-0x006d46a0	logic	default (no rule: ported to be safe)
-0x006d4710	logic	default (no rule: ported to be safe)
-0x006d4780	logic	default (no rule: ported to be safe)
+0x006d4540	glue	only called from glue code (0x6d55b0 and 1 more)
+0x006d4620	glue	only called from glue code (0x6d55b0 and 1 more)
+0x006d46a0	glue	only called from glue code (0x6d44c0)
+0x006d4710	glue	only called from glue code (0x6d44c0)
+0x006d4780	glue	only called from glue code (0x6d3fb0)
 0x006d49f0	glue	only called from glue code (graphicBrokenScreenUpdatePolygonData)
 0x006d4a90	glue	only called from glue code (graphicBrokenScreenUpdatePolygonWMatrix)
 0x006d4b80	dead	unreachable from the entry point and every pointer table
 0x006d4b90	dead	unreachable from the entry point and every pointer table
-0x006d4ba0	logic	default (no rule: ported to be safe)
+0x006d4ba0	glue	only called from glue code (0x6d4d30)
 0x006d4cc0	dead	unreachable from the entry point and every pointer table
 0x006d4cf0	dead	unreachable from the entry point and every pointer table
 0x006d4d20	dead	unreachable from the entry point and every pointer table
@@ -3849,10 +3849,10 @@
 0x006d68f0	dead	unreachable from the entry point and every pointer table
 0x006d6970	glue	glue name (FMOD or the movie player): PhyFMVPlayerManager_PhyFMVPlayerManager
 0x006d6bd0	dead	unreachable from the entry point and every pointer table
-0x006d6c30	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x006d6c70	logic	default (no rule: ported to be safe)
+0x006d6c30	platform	only exception unwinding reaches it (a release or destructor)
+0x006d6c70	platform	only exception unwinding reaches it (a release or destructor)
 0x006d6ca0	dead	unreachable from the entry point and every pointer table
-0x006d6cd0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
+0x006d6cd0	platform	only exception unwinding reaches it (a release or destructor)
 0x006d6d00	glue	calls PhyreEngine Phyre_PCluster_dtor_PCluster
 0x006d6ea0	dead	unreachable from the entry point and every pointer table
 0x006d6ec0	dead	unreachable from the entry point and every pointer table
@@ -3864,7 +3864,7 @@
 0x006d6ff0	logic	default (no rule: ported to be safe)
 0x006d7040	dead	unreachable from the entry point and every pointer table
 0x006d7050	dead	unreachable from the entry point and every pointer table
-0x006d7060	logic	default (no rule: ported to be safe)
+0x006d7060	platform	only called from platform code (0x6d5ff0)
 0x006d70c0	dead	unreachable from the entry point and every pointer table
 0x006d7100	dead	unreachable from the entry point and every pointer table
 0x006d7130	glue	glue name (FMOD or the movie player): PhyFMVPlayerManager_CreateInstance
@@ -3878,9 +3878,9 @@
 0x006d7680	glue	glue name (FMOD or the movie player): PhyFMVPlayerManager_UpdateTexture
 0x006d78c0	glue	only called from glue code (PhyFMVPlayerManager_PhyFMVPlayerManager)
 0x006d78f0	glue	only called from glue code (PhyFMVPlayerManager_UpdateTexture and 1 more)
-0x006d7930	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x006d7930	platform	only called from platform code (0x6d5ca0)
 0x006d7970	dead	unreachable from the entry point and every pointer table
-0x006d7980	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x006d7980	platform	only called from platform code (0x6d60c8)
 0x006d79c0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x006d7a20	dead	unreachable from the entry point and every pointer table
 0x006d7a40	dead	unreachable from the entry point and every pointer table
@@ -3969,8 +3969,8 @@
 0x006dad30	dead	unreachable from the entry point and every pointer table
 0x006dae00	glue	glue name (FMOD or the movie player): PhyFMVPlayerManager_updateVideoCallback
 0x006daec0	dead	unreachable from the entry point and every pointer table
-0x006daee0	logic	default (no rule: ported to be safe)
-0x006daf30	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x006daee0	platform	only called from platform code (0x6dafc0)
+0x006daf30	platform	only called from platform code (0x6db040)
 0x006daf90	dead	unreachable from the entry point and every pointer table
 0x006dafc0	platform	only called from platform code (Game_InitFileSystem)
 0x006db040	platform	only called from platform code (fiosFinalize)
@@ -3980,16 +3980,16 @@
 0x006db1f0	logic	default (no rule: ported to be safe)
 0x006db2f0	logic	default (no rule: ported to be safe)
 0x006db4f0	dead	unreachable from the entry point and every pointer table
-0x006db560	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (eh_vector_constructor_iterator, operator_new)
-0x006db670	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (eh_vector_constructor_iterator)
+0x006db560	glue	only called from glue code (0x6db670)
+0x006db670	glue	only called from glue code (graphicInitialize)
 0x006db6e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (eh_vector_destructor_iterator)
-0x006db730	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (eh_vector_destructor_iterator)
+0x006db730	glue	only called from glue code (graphicFinalize)
 0x006db7a0	dead	unreachable from the entry point and every pointer table
 0x006db800	logic	default (no rule: ported to be safe)
 0x006db870	logic	default (no rule: ported to be safe)
 0x006db8a0	logic	default (no rule: ported to be safe)
 0x006db900	dead	unreachable from the entry point and every pointer table
-0x006dba20	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x006dba20	glue	only called from glue code (graphicInitialize)
 0x006dbb50	dead	unreachable from the entry point and every pointer table
 0x006dbc30	dead	unreachable from the entry point and every pointer table
 0x006dbd10	platform	imports ReleaseSemaphore, WaitForSingleObject
@@ -3997,7 +3997,7 @@
 0x006dbe80	platform	imports ReleaseSemaphore, WaitForSingleObject
 0x006dbf30	logic	default (no rule: ported to be safe)
 0x006dbf50	platform	platform name (PC port: input, saves, loaders, app lifecycle): JobSchedule_JobScheduler_waitForComplete
-0x006dd3b0	logic	default (no rule: ported to be safe)
+0x006dd3b0	platform	only called from platform code (0x6dcc90)
 0x006dd480	dead	unreachable from the entry point and every pointer table
 0x006dd4b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x006dd570	dead	unreachable from the entry point and every pointer table
@@ -4096,7 +4096,7 @@
 0x006e54c0	dead	unreachable from the entry point and every pointer table
 0x006e55b0	dead	unreachable from the entry point and every pointer table
 0x006e55d0	logic	default (no rule: ported to be safe)
-0x006e55e0	logic	default (no rule: ported to be safe)
+0x006e55e0	platform	only called from platform code (0x636430)
 0x006e55f0	dead	unreachable from the entry point and every pointer table
 0x006e5610	dead	unreachable from the entry point and every pointer table
 0x006e56a0	glue	only called from glue code (graphicInitialize)
@@ -4130,12 +4130,12 @@
 0x006e7780	dead	unreachable from the entry point and every pointer table
 0x006e77b0	dead	unreachable from the entry point and every pointer table
 0x006e77c0	dead	unreachable from the entry point and every pointer table
-0x006e77d0	logic	default (no rule: ported to be safe)
+0x006e77d0	platform	only called from platform code (0x636430)
 0x006e78a0	glue	only called from glue code (PhyFMVPlayerManager_handleInput)
 0x006e78c0	glue	only called from glue code (PhyFMVPlayerManager_handleInput)
-0x006e78e0	logic	default (no rule: ported to be safe)
+0x006e78e0	platform	only called from platform code (0x636430)
 0x006e7940	glue	calls PhyreEngine Phyre_PCluster_allocateInstanceList, Phyre_PCluster_create
-0x006e7d30	logic	default (no rule: ported to be safe)
+0x006e7d30	platform	only called from platform code (0x6e77d0)
 0x006e7f00	glue	calls PhyreEngine Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene
 0x006e8020	glue	only called from glue code (PhyFMVPlayerManager_initialize)
 0x006e9250	logic	default (no rule: ported to be safe)
@@ -4144,53 +4144,23 @@
 0x006e9570	logic	default (no rule: ported to be safe)
 0x006e9590	logic	default (no rule: ported to be safe)
 0x006e96c0	logic	default (no rule: ported to be safe)
-0x006e9700	logic	default (no rule: ported to be safe)
-0x006e97b0	dead	unreachable from the entry point and every pointer table
-0x006e9830	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x006e9870	glue	calls Iggy _IggyPlayerCallbackResultPath@4, _IggyValueSetStringUTF8RS@20
-0x006e9900	dead	unreachable from the entry point and every pointer table
-0x006e9910	dead	unreachable from the entry point and every pointer table
-0x006e9920	logic	default (no rule: ported to be safe)
-0x006e9a00	dead	unreachable from the entry point and every pointer table
-0x006e9a70	dead	unreachable from the entry point and every pointer table
-0x006e9ad0	dead	unreachable from the entry point and every pointer table
-0x006e9ae0	logic	default (no rule: ported to be safe)
-0x006e9d60	dead	unreachable from the entry point and every pointer table
-0x006e9dd0	dead	unreachable from the entry point and every pointer table
-0x006e9e00	dead	unreachable from the entry point and every pointer table
-0x006ea030	dead	unreachable from the entry point and every pointer table
-0x006ea050	logic	default (no rule: ported to be safe)
-0x006ea140	logic	default (no rule: ported to be safe)
-0x006ea180	logic	default (no rule: ported to be safe)
-0x006ea280	dead	unreachable from the entry point and every pointer table
-0x006ea450	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): mspace_malloc_stats
-0x006ea5f0	logic	default (no rule: ported to be safe)
-0x006ea800	dead	unreachable from the entry point and every pointer table
-0x006ea814	dead	unreachable from the entry point and every pointer table
-0x006eaa30	logic	default (no rule: ported to be safe)
-0x006eaad0	dead	unreachable from the entry point and every pointer table
-0x006eab10	logic	default (no rule: ported to be safe)
-0x006eae70	logic	default (no rule: ported to be safe)
-0x006eb1a0	logic	default (no rule: ported to be safe)
-0x006eb1d0	logic	default (no rule: ported to be safe)
-0x006eb3e0	logic	default (no rule: ported to be safe)
-0x006eb540	logic	default (no rule: ported to be safe)
-0x006eb950	logic	default (no rule: ported to be safe)
+0x006e9700	platform	only called from platform code (0x6e9870 and 1 more)
+0x006eb950	platform	only called from platform code (0x6ec5c0)
 0x006ebb40	dead	unreachable from the entry point and every pointer table
 0x006ebba0	dead	unreachable from the entry point and every pointer table
 0x006ebbc0	dead	unreachable from the entry point and every pointer table
 0x006ebbe0	dead	unreachable from the entry point and every pointer table
 0x006ebc00	dead	unreachable from the entry point and every pointer table
 0x006ebc80	dead	unreachable from the entry point and every pointer table
-0x006ebd30	logic	default (no rule: ported to be safe)
-0x006ebda0	logic	default (no rule: ported to be safe)
+0x006ebd30	glue	only called from glue code (graphicInitialize)
+0x006ebda0	glue	only called from glue code (graphicClothMemPrintStats)
 0x006ebe40	dead	unreachable from the entry point and every pointer table
 0x006ebed0	dead	unreachable from the entry point and every pointer table
 0x006ebee0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): mspace_free
 0x006ec540	dead	unreachable from the entry point and every pointer table
 0x006ec570	dead	unreachable from the entry point and every pointer table
 0x006ec590	dead	unreachable from the entry point and every pointer table
-0x006ec5c0	logic	default (no rule: ported to be safe)
+0x006ec5c0	platform	only called from platform code (0x6ea5f0)
 0x006ec8b0	dead	unreachable from the entry point and every pointer table
 0x006ec8c0	dead	unreachable from the entry point and every pointer table
 0x006ec8d0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): mspace_memalign
@@ -4256,34 +4226,34 @@
 0x006ef320	logic	default (no rule: ported to be safe)
 0x006ef630	logic	default (no rule: ported to be safe)
 0x006ef6f0	logic	default (no rule: ported to be safe)
-0x006efbd0	logic	default (no rule: ported to be safe)
+0x006efbd0	platform	only called from platform code (0x6f0950)
 0x006efc50	logic	default (no rule: ported to be safe)
-0x006efcd0	logic	default (no rule: ported to be safe)
+0x006efcd0	platform	only called from platform code (0x6f0950)
 0x006efd10	platform	imports _wfopen
-0x006efde0	logic	default (no rule: ported to be safe)
+0x006efde0	platform	only called from platform code (0x6f0950)
 0x006efe20	logic	default (no rule: ported to be safe)
-0x006efeb0	logic	default (no rule: ported to be safe)
-0x006eff00	logic	default (no rule: ported to be safe)
-0x006eff70	logic	default (no rule: ported to be safe)
+0x006efeb0	platform	only called from platform code (0x6f1d10)
+0x006eff00	platform	only called from platform code (0x6f0950)
+0x006eff70	platform	only called from platform code (0x6f0950)
 0x006effa0	logic	default (no rule: ported to be safe)
-0x006f0020	logic	default (no rule: ported to be safe)
-0x006f0050	logic	default (no rule: ported to be safe)
+0x006f0020	platform	only called from platform code (0x6f0950)
+0x006f0050	platform	only called from platform code (0x6f0950)
 0x006f0070	platform	imports _wfopen
 0x006f0140	logic	default (no rule: ported to be safe)
 0x006f01d0	platform	only called from platform code (SaveDataManager_doLoad)
-0x006f0220	logic	default (no rule: ported to be safe)
+0x006f0220	platform	only called from platform code (0x6f0950)
 0x006f0290	logic	default (no rule: ported to be safe)
 0x006f0330	platform	platform name (PC port: input, saves, loaders, app lifecycle): SetUpDefaultSaveFolder
 0x006f04c0	logic	default (no rule: ported to be safe)
 0x006f0510	logic	debug-sounding name, but used by logic: 0x6f1c40
 0x006f05b0	logic	default (no rule: ported to be safe)
-0x006f0630	logic	default (no rule: ported to be safe)
+0x006f0630	platform	only called from platform code (0x6f0950)
 0x006f0670	platform	imports GetTickCount
 0x006f06e0	logic	default (no rule: ported to be safe)
 0x006f07a0	platform	only called from platform code (SaveDataManager_doSave)
-0x006f0800	logic	default (no rule: ported to be safe)
+0x006f0800	platform	only called from platform code (0x6f0950)
 0x006f0860	platform	imports _wfopen
-0x006f0950	logic	default (no rule: ported to be safe)
+0x006f0950	platform	only called from platform code (0x6f2740)
 0x006f0a70	platform	imports CloseHandle, CreateFileW, GetFileTime
 0x006f0c60	platform	imports _wfopen
 0x006f0fb0	logic	default (no rule: ported to be safe)
@@ -4298,7 +4268,7 @@
 0x006f1370	dead	unreachable from the entry point and every pointer table
 0x006f13c0	dead	unreachable from the entry point and every pointer table
 0x006f1420	dead	unreachable from the entry point and every pointer table
-0x006f1430	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_new)
+0x006f1430	platform	only called from platform code (0x647fe0)
 0x006f1510	logic	default (no rule: ported to be safe)
 0x006f1550	logic	default (no rule: ported to be safe)
 0x006f1580	logic	default (no rule: ported to be safe)
@@ -4322,7 +4292,7 @@
 0x006f1aa0	platform	only called from platform code (SaveDataSaveLoadSucceed)
 0x006f1b00	dead	unreachable from the entry point and every pointer table
 0x006f1bc0	dead	unreachable from the entry point and every pointer table
-0x006f1c10	logic	default (no rule: ported to be safe)
+0x006f1c10	platform	only called from platform code (0x647fe0)
 0x006f1c40	logic	default (no rule: ported to be safe)
 0x006f1ce0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_doLoad
 0x006f1d10	platform	only called from platform code (SaveDataToLoadAllAlBhed)
@@ -4371,7 +4341,7 @@
 0x006f2a80	dead	unreachable from the entry point and every pointer table
 0x006f2ab0	dead	unreachable from the entry point and every pointer table
 0x006f2ae0	logic	default (no rule: ported to be safe)
-0x006f2b10	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
+0x006f2b10	platform	only called from platform code (AsyncLoadManager_createThread)
 0x006f2b60	dead	unreachable from the entry point and every pointer table
 0x006f2ba0	logic	default (no rule: ported to be safe)
 0x006f2bb0	logic	default (no rule: ported to be safe)
@@ -4399,7 +4369,7 @@
 0x006f2f60	dead	unreachable from the entry point and every pointer table
 0x006f2f70	logic	default (no rule: ported to be safe)
 0x006f3000	logic	default (no rule: ported to be safe)
-0x006f3050	logic	default (no rule: ported to be safe)
+0x006f3050	platform	only called from platform code (AsyncLoadManager_createThread and 1 more)
 0x006f3070	dead	unreachable from the entry point and every pointer table
 0x006f3100	dead	unreachable from the entry point and every pointer table
 0x006f3130	logic	default (no rule: ported to be safe)
@@ -4407,11 +4377,11 @@
 0x006f3c10	dead	unreachable from the entry point and every pointer table
 0x006f3c20	dead	unreachable from the entry point and every pointer table
 0x006f3c40	dead	unreachable from the entry point and every pointer table
-0x006f3c60	logic	default (no rule: ported to be safe)
+0x006f3c60	platform	only called from platform code (0x6f40e0)
 0x006f3e80	dead	unreachable from the entry point and every pointer table
 0x006f3eb0	dead	unreachable from the entry point and every pointer table
-0x006f3ee0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, operator_new)
-0x006f3f60	logic	default (no rule: ported to be safe)
+0x006f3ee0	platform	only called from platform code (0x6f3f60)
+0x006f3f60	platform	only called from platform code (0x6f4890)
 0x006f3fe0	dead	unreachable from the entry point and every pointer table
 0x006f4010	dead	unreachable from the entry point and every pointer table
 0x006f4030	platform	platform name (PC port: input, saves, loaders, app lifecycle): AssetListReader_clear
@@ -4442,7 +4412,7 @@
 0x006f5380	dead	unreachable from the entry point and every pointer table
 0x006f5390	dead	unreachable from the entry point and every pointer table
 0x006f5420	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): WaterDistortionEffectDelegations_captureFrame
-0x006f5450	logic	default (no rule: ported to be safe)
+0x006f5450	platform	only called from platform code (0x65b820)
 0x006f5470	glue	only called from glue code (PhyreScene_initScene)
 0x006f54f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): WaterDistortionEffectDelegations_processWaterDistortion
 0x006f5750	dead	unreachable from the entry point and every pointer table
@@ -4480,7 +4450,7 @@
 0x006f6860	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextUtil_scrollToVisible
 0x006f68f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextUtil_setEnabled
 0x006f6900	logic	default (no rule: ported to be safe)
-0x006f6910	logic	default (no rule: ported to be safe)
+0x006f6910	glue	only called from glue code (0x6ddc80 and 1 more)
 0x006f6930	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextUtil_setTitleText
 0x006f6950	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextUtil_terminate
 0x006f69f0	glue	only called from glue code (PhyreScene_animate)
@@ -4505,7 +4475,7 @@
 0x006f7770	dead	unreachable from the entry point and every pointer table
 0x006f77a0	dead	unreachable from the entry point and every pointer table
 0x006f77f0	glue	only called from glue code (PhyreScene_initScene)
-0x006f7820	logic	default (no rule: ported to be safe)
+0x006f7820	platform	only called from platform code (0x65b820)
 0x006f7880	logic	default (no rule: ported to be safe)
 0x006f78b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_get
 0x006f78c0	dead	unreachable from the entry point and every pointer table
@@ -4519,19 +4489,19 @@
 0x006f7a00	glue	calls PhyreEngine Phyre_PCluster_create
 0x006f7a30	glue	only called from glue code (0x6c32d0)
 0x006f7b20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): RadialLine_destroyRadialLine
-0x006f7bb0	logic	default (no rule: ported to be safe)
-0x006f7bc0	logic	default (no rule: ported to be safe)
+0x006f7bb0	platform	only called from platform code (0x675a90)
+0x006f7bc0	platform	only called from platform code (0x675a90)
 0x006f7bd0	logic	default (no rule: ported to be safe)
-0x006f7be0	logic	default (no rule: ported to be safe)
-0x006f7bf0	logic	default (no rule: ported to be safe)
+0x006f7be0	platform	only called from platform code (0x675a90)
+0x006f7bf0	platform	only called from platform code (0x675a90)
 0x006f7c00	logic	default (no rule: ported to be safe)
 0x006f7c10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): RadialLine_initialize
-0x006f7e60	logic	default (no rule: ported to be safe)
+0x006f7e60	platform	only called from platform code (0x6f8c50)
 0x006f80e0	dead	unreachable from the entry point and every pointer table
-0x006f8110	logic	default (no rule: ported to be safe)
-0x006f81c0	logic	default (no rule: ported to be safe)
-0x006f83b0	logic	default (no rule: ported to be safe)
-0x006f85a0	logic	default (no rule: ported to be safe)
+0x006f8110	platform	only called from platform code (0x6f8c50)
+0x006f81c0	platform	only called from platform code (0x6f8c50)
+0x006f83b0	platform	only called from platform code (0x6f8c50)
+0x006f85a0	platform	only called from platform code (0x6f8c50)
 0x006f8850	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
 0x006f9790	dead	unreachable from the entry point and every pointer table
 0x006f97d0	dead	unreachable from the entry point and every pointer table
@@ -4552,7 +4522,7 @@
 0x006f9af0	logic	default (no rule: ported to be safe)
 0x006f9b60	platform	only called from platform code (Game_InitFileSystem)
 0x006f9b70	logic	default (no rule: ported to be safe)
-0x006f9b80	logic	default (no rule: ported to be safe)
+0x006f9b80	platform	only called from platform code (0x6793b0)
 0x006f9ba0	logic	default (no rule: ported to be safe)
 0x006f9bc0	logic	default (no rule: ported to be safe)
 0x006f9cc0	logic	default (no rule: ported to be safe)
@@ -4655,7 +4625,7 @@
 0x006fedf0	platform	static initialiser (registers its destructor with atexit)
 0x006ff020	logic	default (no rule: ported to be safe)
 0x006ff030	dead	unreachable from the entry point and every pointer table
-0x006ff060	logic	default (no rule: ported to be safe)
+0x006ff060	glue	only called from glue code (0x6ff1e0)
 0x006ff1b0	logic	default (no rule: ported to be safe)
 0x006ff1e0	glue	only called from glue code (FFEscMenu_registerCallbacks)
 0x006ff250	dead	unreachable from the entry point and every pointer table
@@ -4673,10 +4643,10 @@
 0x006ffa20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): FFEscMenu_registerAudioPreviewCallbacks
 0x006ffa80	dead	unreachable from the entry point and every pointer table
 0x006ffaa0	glue	only called from glue code (FFEscMenu_initializeKeyboardSettingPage)
-0x006ffbb0	logic	default (no rule: ported to be safe)
+0x006ffbb0	glue	only called from glue code (0x7013e0 and 1 more)
 0x006ffbd0	dead	unreachable from the entry point and every pointer table
 0x006ffbf0	dead	unreachable from the entry point and every pointer table
-0x006ffc30	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
+0x006ffc30	glue	only called from glue code (0x701680)
 0x006ffc50	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006ffc80	glue	only called from glue code (FFEscMenu_initializeKeyboardSettingPage)
 0x00700da0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): FFEscMenu_initializeKeyboardSettingPage
@@ -4720,7 +4690,7 @@
 0x007030e0	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
 0x00703230	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): RadialBlur_initialize
 0x00703480	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
-0x007035f0	logic	default (no rule: ported to be safe)
+0x007035f0	glue	only called from glue code (0x6c3c40)
 0x00703610	glue	only called from glue code (0x7030e0 and 1 more)
 0x007036f0	glue	only called from glue code (RadialBlur_initialize)
 0x00703750	logic	default (no rule: ported to be safe)
@@ -4978,7 +4948,7 @@
 0x007085e0	glue	only called from glue code (FfxFmod_initEventSystem)
 0x00708610	glue	glue name (FMOD or the movie player): FfxFmod_SetGlobal00c3a480_00708610
 0x00708630	glue	glue name (FMOD or the movie player): FmodMusic_FmodMusic
-0x007086b0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
+0x007086b0	platform	only called from platform code (0x706590)
 0x00708720	glue	glue name (FMOD or the movie player): FmodMusic_clear
 0x00708810	glue	glue name (FMOD or the movie player): FmodMusic_clearAll
 0x00708900	glue	glue name (FMOD or the movie player): FmodMusic_crossPlay
@@ -5009,8 +4979,8 @@
 0x00709f20	glue	glue name (FMOD or the movie player): FmodMusic_volumeReset
 0x00709ff0	glue	glue name (FMOD or the movie player): FmodMusic_volumeTranslate
 0x0070a140	logic	default (no rule: ported to be safe)
-0x0070a1a0	logic	default (no rule: ported to be safe)
-0x0070a330	logic	default (no rule: ported to be safe)
+0x0070a1a0	platform	only called from platform code (0x706490)
+0x0070a330	platform	only called from platform code (0x706590)
 0x0070a470	dead	unreachable from the entry point and every pointer table
 0x0070a4a0	glue	only called from glue code (FmodVoice_updateState)
 0x0070a590	glue	glue name (FMOD or the movie player): FmodVoice_clear
@@ -5057,8 +5027,8 @@
 0x0070bfc0	glue	calls PhyreEngine Phyre_PFreeList_PFreeList
 0x0070c110	dead	unreachable from the entry point and every pointer table
 0x0070c170	dead	unreachable from the entry point and every pointer table
-0x0070c1d0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
-0x0070c1e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
+0x0070c1d0	platform	only exception unwinding reaches it (a release or destructor)
+0x0070c1e0	platform	only exception unwinding reaches it (a release or destructor)
 0x0070c1f0	glue	calls PhyreEngine Phyre_PRedBlackTree_clear
 0x0070c250	glue	calls PhyreEngine Phyre_PRedBlackTree_clear
 0x0070c2b0	glue	calls PhyreEngine Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear
@@ -5091,7 +5061,7 @@
 0x0070d0c0	glue	glue name (FMOD or the movie player): FmodSfx_pause
 0x0070d190	glue	glue name (FMOD or the movie player): FmodSfx_playBattleStreaming
 0x0070d360	dead	unreachable from the entry point and every pointer table
-0x0070d3a0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk, user_malloc)
+0x0070d3a0	glue	only called from glue code (0x70c5c0)
 0x0070d440	dead	unreachable from the entry point and every pointer table
 0x0070d460	dead	unreachable from the entry point and every pointer table
 0x0070d490	dead	unreachable from the entry point and every pointer table
@@ -5121,7 +5091,7 @@
 0x0070e6c0	dead	unreachable from the entry point and every pointer table
 0x0070e6f0	dead	unreachable from the entry point and every pointer table
 0x0070e710	glue	only called from glue code (FmodSfx_createSfxEvent and 1 more)
-0x0070e830	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
+0x0070e830	platform	only exception unwinding reaches it (a release or destructor)
 0x0070e850	glue	only called from glue code (FmodSfx_update and 3 more)
 0x0070e910	dead	unreachable from the entry point and every pointer table
 0x0070e920	dead	unreachable from the entry point and every pointer table
@@ -5138,15 +5108,15 @@
 0x0070ec40	glue	glue name (FMOD or the movie player): SfxEvent_isPlaying
 0x0070ed30	glue	only called from glue code (FmodSfx_isPlaying and 2 more)
 0x0070ed60	dead	unreachable from the entry point and every pointer table
-0x0070edb0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk, user_malloc)
+0x0070edb0	glue	only called from glue code (0x70e710)
 0x0070ee50	dead	unreachable from the entry point and every pointer table
 0x0070ee70	dead	unreachable from the entry point and every pointer table
 0x0070ee90	glue	only called from glue code (FmodSfx_setEntireVolume)
-0x0070eeb0	logic	default (no rule: ported to be safe)
+0x0070eeb0	glue	only called from glue code (SfxEvent_setPan and 2 more)
 0x0070ef80	glue	glue name (FMOD or the movie player): SfxEvent_setPan
 0x0070f000	glue	glue name (FMOD or the movie player): SfxEvent_setPan2
 0x0070f100	glue	only called from glue code (FmodSfx_pause)
-0x0070f140	logic	default (no rule: ported to be safe)
+0x0070f140	glue	only called from glue code (0x70ee90 and 3 more)
 0x0070f1a0	glue	glue name (FMOD or the movie player): SfxEvent_setVolume
 0x0070f210	glue	glue name (FMOD or the movie player): SfxEvent_setVolume2
 0x0070f310	glue	glue name (FMOD or the movie player): SfxEvent_start
@@ -5162,7 +5132,7 @@
 0x0070fa80	glue	only called from glue code (FmodSfx_createSfxEvent and 2 more)
 0x0070fb20	glue	only called from glue code (FmodSfx_unloadProjectBySeq and 2 more)
 0x0070fbb0	dead	unreachable from the entry point and every pointer table
-0x0070fbf0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk, user_malloc)
+0x0070fbf0	glue	only called from glue code (0x70fa80 and 1 more)
 0x0070fc90	dead	unreachable from the entry point and every pointer table
 0x0070fcb0	dead	unreachable from the entry point and every pointer table
 0x0070fcd0	glue	only called from glue code (FmodSfx_shutdown and 1 more)
@@ -5175,40 +5145,40 @@
 0x0070fe40	dead	unreachable from the entry point and every pointer table
 0x0070feb0	dead	unreachable from the entry point and every pointer table
 0x0070ff20	dead	unreachable from the entry point and every pointer table
-0x0070ff50	logic	default (no rule: ported to be safe)
-0x00710010	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
-0x00710070	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
+0x0070ff50	glue	only called from glue code (0x70f760)
+0x00710010	platform	only exception unwinding reaches it (a release or destructor)
+0x00710070	platform	only exception unwinding reaches it (a release or destructor)
 0x007100f0	dead	unreachable from the entry point and every pointer table
 0x00710180	glue	only called from glue code (SfxBank_dtor_SfxBank)
 0x00710220	dead	unreachable from the entry point and every pointer table
 0x00710250	dead	unreachable from the entry point and every pointer table
 0x00710270	dead	unreachable from the entry point and every pointer table
-0x00710290	logic	default (no rule: ported to be safe)
+0x00710290	glue	only called from glue code (0x70fa80)
 0x007102f0	dead	unreachable from the entry point and every pointer table
-0x00710370	logic	default (no rule: ported to be safe)
+0x00710370	glue	only called from glue code (0x70ff50)
 0x00710470	dead	unreachable from the entry point and every pointer table
 0x00710480	dead	unreachable from the entry point and every pointer table
 0x00710490	dead	unreachable from the entry point and every pointer table
-0x007104c0	logic	default (no rule: ported to be safe)
+0x007104c0	glue	only called from glue code (0x710ae0)
 0x00710510	dead	unreachable from the entry point and every pointer table
-0x00710540	logic	default (no rule: ported to be safe)
+0x00710540	glue	only called from glue code (0x710ba0)
 0x007105c0	dead	unreachable from the entry point and every pointer table
 0x007105e0	dead	unreachable from the entry point and every pointer table
 0x00710630	dead	unreachable from the entry point and every pointer table
 0x007106a0	dead	unreachable from the entry point and every pointer table
 0x00710710	dead	unreachable from the entry point and every pointer table
 0x00710750	dead	unreachable from the entry point and every pointer table
-0x00710780	logic	default (no rule: ported to be safe)
-0x00710840	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PRedBlackTree_clear)
+0x00710780	glue	only called from glue code (0x70f760)
+0x00710840	platform	only exception unwinding reaches it (a release or destructor)
 0x007108b0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PFreeList_dtor_PFreeList, Phyre_PFreeList_reset, Phyre_PRedBlackTree_clear)
 0x00710960	glue	only called from glue code (SfxBank_dtor_SfxBank)
-0x007109e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Array_Reserve_00667e00)
+0x007109e0	glue	only called from glue code (0x710ba0)
 0x00710a30	dead	unreachable from the entry point and every pointer table
 0x00710a80	dead	unreachable from the entry point and every pointer table
 0x00710ac0	dead	unreachable from the entry point and every pointer table
-0x00710ae0	logic	default (no rule: ported to be safe)
-0x00710ba0	logic	default (no rule: ported to be safe)
-0x00710c50	logic	default (no rule: ported to be safe)
+0x00710ae0	glue	only called from glue code (0x70fa80)
+0x00710ba0	glue	only called from glue code (0x710c50)
+0x00710c50	glue	only called from glue code (0x710780)
 0x00710e30	logic	default (no rule: ported to be safe)
 0x00710e60	dead	unreachable from the entry point and every pointer table
 0x00710e70	logic	default (no rule: ported to be safe)
