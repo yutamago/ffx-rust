@@ -1237,8 +1237,9 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   - the angle is `atan(b / a)` when `a >= b` (or unordered), else
     `π/2 - atan(a / b)` stored as `f32`;
   - then `q π/2` is added (`π/2` the `f64` of an `f32`).
-- Left for the debug list: `0x007606f0` (cross lines through
-  `0x00760ce0` around a point at `0x00d4b4e8`).
+- Not ported: `0x007606f0` draws six lines (`0x00760ce0`) as a cross
+  around the point at `0x00d4b4e8`. That is drawing, and it looks like a
+  debug marker; not confirmed.
 
 ## Floats
 

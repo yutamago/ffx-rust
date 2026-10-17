@@ -365,7 +365,8 @@ pub mod bridge {
         let [x0, y0, x1, y1] = args;
         let dx = load(store(sub(load(x1), load(x0))));
         let dy = load(store(sub(load(y1), load(y0))));
-        let neg = |v: f64| !(v >= 0.0);
+        // C0 of `fcom` with 0.0: below, or unordered
+        let neg = |v: f64| v.partial_cmp(&0.0).is_none_or(std::cmp::Ordering::is_lt);
         let (q, a, b) = match (neg(dx), neg(dy)) {
             (false, false) => (0.0, dx, dy),
             (false, true) => (3.0, -dy, dx),
