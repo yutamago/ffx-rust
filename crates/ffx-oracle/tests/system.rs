@@ -10854,3 +10854,113 @@ fn round19_relayout_matches_the_original_on_the_snapshot() {
     };
     round19_relayout(&mut a, &mut b, &mut Xorshift(0x4019_0012));
 }
+
+/// Round 19's menu cursor block check over a stand-in condition table.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    // conditions: arg & 1, arg & 2
+    let c0 = stand_in8(
+        a,
+        b,
+        0x40,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    let c1 = stand_in8(
+        a,
+        b,
+        0x50,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x02, 0xc3],
+    );
+    let table = alloc(a, b, 8);
+    put(a, b, table, [c0, c1]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    let pages = alloc(a, b, 8 * 8);
+    let records = alloc(a, b, 8 * 8 * 0x138);
+    let base = records - 0x40;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..400u32 {
+        let bytes: Vec<u8> = (0..8 * 8 * 0x138).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        let npages = rng.next() % 8 + 1;
+        let mut counts = [0u16; 8];
+        for p in 0..8u32 {
+            let n = (rng.next() % 8) as u16;
+            counts[p as usize] = n;
+            put(a, b, pages + 8 * p, 0x40 + p * 8 * 0x138);
+            put(a, b, pages + 8 * p + 4, n);
+        }
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a01c),
+            if k % 17 == 0 { 0 } else { pages },
+        );
+        set(a, b, Global::<u32>::new(0x0112_a03c), base);
+        set(a, b, Global::<u32>::new(0x0112_a080), npages);
+        let cur = records + 0x138 * (rng.next() % 64);
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a084),
+            if k % 19 == 0 { 0 } else { cur },
+        );
+        put(a, b, cur + 2, (rng.next() % 4) as u8);
+        for d in 0..8u32 {
+            let link = cur + 0x30 + 0xc * d;
+            // the condition index, its argument and the expected flag
+            let cond = if rng.next().is_multiple_of(5) {
+                0xffff
+            } else {
+                (rng.next() % 2) as u16
+            };
+            put(a, b, link, [cond, rng.next() as u16]);
+            put(a, b, link + 4, (rng.next() % 2) as u8);
+            // the target: a first-page record, a later page's record, or
+            // junk
+            let p = rng.next() % 8;
+            let r = rng.next() % 8;
+            let target = match rng.next() % 3 {
+                0 => 0x40 + r * 0x138,
+                1 => 0x40 + p * 8 * 0x138 + r * 0x138,
+                _ => rng.next(),
+            };
+            put(a, b, link + 8, target);
+        }
+        let bits = [
+            0x1000u16, 0x4000, 0x2000, 0x8000, 0x80, 0x10, 0x40, 0x20, 0, 0x30,
+        ];
+        for at in [0x0112_a08cu32, 0x0112_a090, 0x0112_a094] {
+            put(
+                a,
+                b,
+                g(a, at),
+                bits[(rng.next() % 10) as usize] | bits[(rng.next() % 10) as usize],
+            );
+        }
+        eax(a, 0x0077_5530, &[]);
+        t::menu_cursor_blocked(b, |m, f, arg| m.call(f, Conv::Cdecl, &[arg]).unwrap().eax);
+        same_memory("menu cursor", a, b);
+    }
+}
+
+#[test]
+fn round19_cursor_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_cursor(&mut a, &mut b, &mut Xorshift(0x4019_0021));
+}
+
+#[test]
+fn round19_cursor_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_cursor(&mut a, &mut b, &mut Xorshift(0x4019_0022));
+}

@@ -5128,11 +5128,13 @@ pub mod bridge {
     /// relative) and a condition (`+0`, index into the function table
     /// `*0x00c416d0`, argument `+2`, expected `+4`). Each record at the
     /// target's address is checked: no condition (negative) or a condition
-    /// whose result disagrees with the expected flag blocks. As compiled,
-    /// the pages after the first are offset by the previous page's record
-    /// count instead of `*0x0112a03c`. The condition calls go through
-    /// `cond(function, argument)`.
-    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    /// whose result disagrees with the expected flag blocks. The
+    /// condition calls go through `cond(function, argument)`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::many_single_char_names
+    )]
     pub fn menu_cursor_blocked<M: Mem>(mem: &mut M, mut cond: impl FnMut(&mut M, u32, u32) -> u32) {
         let g = |mem: &M, a: u32| mem.rebase(a);
         let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
@@ -5182,14 +5184,12 @@ pub mod bridge {
             return;
         }
         let page_count = word(mem, 0x0112_a080);
-        let mut base = base0;
         let mut page = 0i32;
         while page < page_count.cast_signed() {
             let pages = word(mem, 0x0112_a01c);
             let entry = pages.wrapping_add((page * 8).cast_unsigned());
             let n = i32::from(mem.read::<i16>(entry.wrapping_add(4)));
-            let mut rec = mem.read::<u32>(entry).wrapping_add(base);
-            let mut seen = 0u32;
+            let mut rec = mem.read::<u32>(entry).wrapping_add(word(mem, 0x0112_a03c));
             for _ in 0..n.max(0) {
                 if rec == target {
                     let cur = word(mem, 0x0112_a084);
@@ -5210,10 +5210,8 @@ pub mod bridge {
                         return;
                     }
                 }
-                seen += 1;
                 rec = rec.wrapping_add(0x138);
             }
-            base = seen;
             page += 1;
         }
     }
