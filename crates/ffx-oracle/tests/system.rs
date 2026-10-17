@@ -9712,7 +9712,7 @@ fn round16_menu_pad_status_matches_the_original_on_the_snapshot() {
 }
 
 /// Round 16's kernel menu accessors over stand-in save getters.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
 fn round16_kernel_accessors(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let rec = alloc(a, b, 0x80);
