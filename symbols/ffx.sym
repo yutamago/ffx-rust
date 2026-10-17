@@ -3833,6 +3833,7 @@
 0x0074b670 function Vec3SubScalars_0074b670      # structure: (dst, src, x, y, z): dst.xyz = src.xyz - (x, y, z), then restoreVf00Register; the subtracting twin of Vec3AddScalars_00735100, next to pppVu0AddY/AddZ; name ours
 0x0074b6a0 function pppNeiDrawShapePointLightDraw # ppp program table record "pppNeiDrawShapePointLight" draw; not a function start in the Ghidra dump
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
+0x0074bc50 function Vec4AddScalars_0074bc50    # ours: (dst, src, x, y, z, w): dst = src + (x, y, z, w), each f32 sum through the x87
 0x0074bde0 function pppVu0MaddW_copy_0074bde0    # the same code as pppVu0MaddW (0x0072c650; call targets equal), a copy the compiler kept; own name
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
@@ -4054,6 +4055,7 @@
 0x0075e4b0 function op_word_copy              # (dst, src) *dst = *src (one word); 1 caller
 0x0075e670 function pppVu0MaddaY_copy_0075e670   # the same code as pppVu0MaddaY (0x0072c590; call targets equal), a copy the compiler kept; own name
 0x0075e6d0 function pppVu0MaddaZ_copy_0075e6d0   # the same code as pppVu0MaddaZ (0x0072c5f0; call targets equal), a copy the compiler kept; own name
+0x0075e870 function Vec2SubScalarsFlags_0075e870 # ours: (dst, src, x, y): dst.xy = src.xy - (x, y); setZSFlag when either is 0, setSSFlag when either is negative, then restoreVf00Register; callers 0x0075f120, 0x0075f420
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
 0x0075ee70 function KeVu0GetDist                 # layout+callees: sorts between KeVu0CopyVecXYZ and KeVu0RndI, and its named callees match the Switch 0x7100307e30 KeVu0GetDist's (similarity 1.00: FFXVu0SubVector); symbols from Fahrenheit's server export
@@ -5781,6 +5783,7 @@
 0x007e3070 function op_float_scale            # (dst, v, s) *dst = *v * s (f32)
 0x007e30a0 function op_or16_64                # (dst, src, u16 v) 64-bit dst = *src | v
 0x007e30c0 function op_color_shift_store_word # (src, base) dword base + g_pppColorConShift = *src; the shift cleared
+0x007e3100 function op_ivec4_to_fvec4_007e3100 # ours: (dst, src): the four i32 of src (copied first) as f32 into dst (fild/fstp)
 0x007e31c0 function op_vec_w_sub              # (dst, v, s) dst.w = v.w - s
 0x007e31e0 function op_pow2                   # (n) -> 2^n (1 for n <= 0)
 0x007e3360 function op_fabs                   # (x) -> |x| (-x when x < 0, through the FPU)
@@ -6075,6 +6078,7 @@
 0x00800bb0 function opus_clip_off_all_in_battle # fh v3:bsim1.00 0x00800ad0
 0x00800be0 function opus_clip_on_all_in_battle # fh v3:bsim1.00 0x00800b00
 0x00800c10 function opus_cscale_get              # layout+callees: sorts between opus_clip_on_all_in_battle and opus_draw_off, and its named callees match the Switch 0x71003f55b0 opus_cscale_get's (similarity 1.00: Ch_GetFixHeight, Ch_GetThickness, MsGetChrHeight, MsGetChrWidth); symbols from Fahrenheit's server export
+0x00800cd0 function opus_chr_width_00800cd0    # ours: (chr, battle) -> float in ST0: MsGetChrWidth(chr) when battle, else Ch_GetThickness(g_EtChrHandles[chr]), divided by 6.0 (0x00b3eb88); 4 callers in the opus code
 0x00800d10 function opus_draw_off             # fh v3:exact 0x00800c30
 0x00800d60 function opu_id_list_add           # (unit, short id) -> index: adds id to the i16 list at unit+0x1c (u16 length +0x34, the last place kept) unless found before the first negative entry (opu_et_ovl)
 0x00800da0 function opu_eff_part_index        # (unit) -> the g_EtEff record (+0x14)'s part: +0x1a & 7 when below its count (+8), else the index of +0x18 in its byte list (+0x10), else count & ~0xff
@@ -6168,6 +6172,7 @@
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
+0x00808b70 function Vec4Max_00808b70           # ours: (dst, src, x, y, z, w): each component the larger of src's and the argument's (fcom: the argument when unordered); 65 functions above it
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
 0x00808cf0 function opu_ffxlight                 # callees: its named callees match the Switch 0x7100403180 opu_ffxlight's (similarity 1.00: FFXVu0AddVector, FFXVu0CopyVector, FFXVu0Normalize, FFXVu0ScaleVector, FFXVu0SubVector); symbols from Fahrenheit's server export
@@ -14380,10 +14385,12 @@
 0x011a0960 label    g_OpFuncOtOrder              # op function ordering table: i8 slot lists (-1 free), 32 from a list base (op_func_ot_set/free)
 0x011a09e0 label    g_OpFuncOt                   # its 16-byte slots {func, a, b, u16 c} at (list + slot) * 16
 0x011a11e0 label    g_OpMdcTransferCues          # 8 x 16-byte mdc transfer cues keyed by their first word (op_mdc_mem_transfer_cue_free[_all])
+0x012a12fc label    g_OpusBattleList             # when nonzero, opus_prog_off works on its unit list (+0x300) instead of its argument's
 0x012a1370 label    g_OpPads                     # 0x20 per pad: now, last, pressed, auto-repeat, repeat timer (op_pad_set: 12 frames, then every frame)
 0x012a22c0 label    g_EtChr                      # 240 x 0x20 effect character records: +0 handle, +4 chr number, +0xc u16 bind flags, +0xe draw flag index, +0x17 bit 0 stone (op_et_*, op_get_chr*)
 0x012a40c0 label    g_OpusBattle                 # the battle's opus object: +0x1c draw list, +0x20 parts, +0x3a genko counter (opus_get_osu_by_draw default, op_et_battle_genko_counter_get)
 0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
+0x012a4104 label    g_OpusNoTable                # 32-byte entries, a unit pointer at +4 (this address): opus_no_get / opus_parent_get take the number for 0xfe00..0xfeff from its +0x1a & 0x7ff0, indexed by the unit's u16 +0x14
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
@@ -14847,7 +14854,10 @@
 0x023114c4 label g_CameraMatrixOn          # u32 bit 0 (MsSetCameraMatrix)
 0x023114f4 label g_BtlPosFocus             # i32, -1 after MsBtlPosInit
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
+0x02321580 label    g_OpDebugChrFlags            # byte: bit 1 with g_OpDebugMode makes opus_get_chr_status_index use g_OpDebugChrResident instead of Ch_EffectGetResidentPtr
+0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
+0x02322794 label    g_OpNumShow                  # byte: op_num_xy_set shows its numbers (opd_num_xy_set) when set, again in debug mode
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
 0x023c35c0 label    g_OpOef2SoundCueArgs      # the arguments of g_OpOef2SoundCueRing
@@ -14855,6 +14865,7 @@
 0x023c3642 label    g_OpOef2SoundCueCount     # u16 queued cues (<= 32); op_oef2_sound_cue_check returns it, op_oef2_sound_wait waits for 0
 0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
 0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
+0x023c37a0 label    g_OpOef2Seps                 # 32 x (sound sep handle, user mask) slots: op_oef2_sep_free_all clears a mask, stopping (SndSepStop, SndSepClear) a slot left with no user
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
 0x023c44c0 label    g_ChrF117Hides            # 4 x (hide, renderer instance), Ch_ModelSetHide's queue (count g_ChrF117HideCount)
