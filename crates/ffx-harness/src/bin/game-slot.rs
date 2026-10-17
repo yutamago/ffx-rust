@@ -1,11 +1,11 @@
 //! The game slot from the shell ([`ffx_harness::slot`]).
 //!
-//!   game-slot status             who has the game, who waits
-//!   game-slot run -- <command>   queues, runs the command in the slot
+//!   game-slot status             which slots are in use, who waits
+//!   game-slot run -- <command>   queues, runs the command in a slot
 //!
-//! `run` sets `FFX_GAME_SLOT_HELD=1` for the command, so the games it
-//! launches (one or several, as the replays do) use this slot instead of
-//! queueing again.
+//! `run` sets `FFX_GAME_SLOT_HELD=1` and `FFX_GAME_SLOT=<n>` for the
+//! command, so the games it launches (one or several, one after the other)
+//! use slot `n` (its instance, port and folders) instead of queueing again.
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -20,7 +20,7 @@ fn main() -> std::process::ExitCode {
                 eprintln!("game-slot run -- <command> [args]");
                 return std::process::ExitCode::from(2);
             };
-            let _slot = match ffx_harness::slot::Slot::acquire() {
+            let slot = match ffx_harness::slot::Slot::acquire() {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("game slot: {e}");
@@ -30,6 +30,7 @@ fn main() -> std::process::ExitCode {
             match std::process::Command::new(&program)
                 .args(rest)
                 .env("FFX_GAME_SLOT_HELD", "1")
+                .env("FFX_GAME_SLOT", slot.number().to_string())
                 .status()
             {
                 Ok(s) => {

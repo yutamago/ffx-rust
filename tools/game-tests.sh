@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs the in-game tests (crates/ffx-harness/tests/game.rs) that the changed
-# files concern. Each test starts FFX.exe in the background (no focus taken).
+# files concern. Each test starts FFX.exe in the background (no focus taken),
+# in a game slot of its own: up to FFX_GAME_SLOTS tests run side by side.
 #
 # Usage: tools/game-tests.sh [--all] [--list] [BASE]
 #   BASE    compare with this commit (default: the merge base with origin/main);
@@ -8,7 +9,6 @@
 #   --all   run every game test
 #   --list  only print which tests would run, and why
 set -euo pipefail
-source "$(dirname "$0")/in-game-slot.sh"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 
@@ -73,6 +73,10 @@ fi
 
 : "${FFX_GAME_DIR:=$HOME/steam-games/FFX-X2-HD}"
 export FFX_GAME_DIR
-# Test names are filters; --exact keeps one from matching another.
+# Test names are filters; --exact keeps one from matching another. Each
+# test takes a slot when it launches; inside `game-slot run` (one slot held)
+# they run one after the other.
+threads="${FFX_GAME_SLOTS:-3}"
+[[ "${FFX_GAME_SLOT_HELD:-}" == 1 ]] && threads=1
 # shellcheck disable=SC2086
-exec cargo test --release -p ffx-harness --test game -- --ignored --test-threads 1 --exact $selected
+exec cargo test --release -p ffx-harness --test game -- --ignored --test-threads "$threads" --exact $selected
