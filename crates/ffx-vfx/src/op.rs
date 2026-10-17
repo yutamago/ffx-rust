@@ -2426,4 +2426,368 @@ pub mod bridge {
     fn stub_ptr(p: u32) -> u32 {
         ffx_system::stub::ptr32(p)
     }
+
+    /// `op_ffxlight_to_omdlight(colours, dirs)` (`0x00a690c0`): the scene
+    /// lights in the model renderer's layout: `dirs` rows 0..2 =
+    /// `Sg_LightGetDir(0..2)` negated (all four words) with `w` 1.0, row 3
+    /// the emulated r0; `colours` rows 0..2 = `Sg_LightGetColor(0..2)`, row
+    /// 3 r0, and the ambient colour (`Sg_LightGetColor(3)`) into a local
+    /// below `frame` (`frame - 0x14`). Callees through `call`. Returns 0.
+    pub fn op_ffxlight_to_omdlight<M: Mem>(
+        mem: &mut M,
+        colours: u32,
+        dirs: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let dir = g(mem, 0x0083_61c0);
+        for k in 0..3u32 {
+            call(mem, dir, &[k, dirs.wrapping_add(0x10 * k)]);
+        }
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(dirs.wrapping_add(0x30), r0);
+        for i in 0..12u32 {
+            let at = dirs.wrapping_add(4 * i);
+            let x: u32 = mem.read(at);
+            mem.write(at, x87::load(x) ^ 0x8000_0000);
+        }
+        for at in [0x2cu32, 0x1c, 0xc] {
+            mem.write(dirs.wrapping_add(at), 1.0f32);
+        }
+        let colour = g(mem, 0x0083_60f0);
+        for k in 0..3u32 {
+            call(mem, colour, &[k, colours.wrapping_add(0x10 * k)]);
+        }
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(colours.wrapping_add(0x30), r0);
+        call(mem, colour, &[3, frame.wrapping_sub(0x14)]);
+        0
+    }
+
+    /// `op_md_vn_index_sub(tri, table)` (`0x00a69fe0`): for each of the
+    /// triangle's three vertices (`u16 tri[0..3]`), its 64-byte list in
+    /// `table` (an `u16` count, then `i16` entries) gets the vertex's
+    /// normal index (`u16 tri[0xa + k]`) appended unless present. Returns
+    /// what the original leaves in `eax`: the last list's new count, or
+    /// the index when it was there.
+    pub fn op_md_vn_index_sub(mem: &mut impl Mem, tri: u32, table: u32) -> u32 {
+        let mut eax = 0;
+        for k in 0..3u32 {
+            let list = u32::from(mem.read::<u16>(tri.wrapping_add(2 * k)))
+                .wrapping_shl(6)
+                .wrapping_add(table);
+            let n: u16 = mem.read(list);
+            let key: u16 = mem.read(tri.wrapping_add(0x14 + 2 * k));
+            let count = i32::from(n.cast_signed());
+            let mut at = list.wrapping_add(2);
+            let mut found = false;
+            let mut i = 0;
+            while i < count {
+                if i32::from(mem.read::<i16>(at)) == i32::from(key) {
+                    found = true;
+                    break;
+                }
+                i += 1;
+                at = at.wrapping_add(2);
+            }
+            if found {
+                eax = u32::from(key);
+            } else {
+                mem.write(at, key);
+                let c = u32::from(n) + 1;
+                #[allow(clippy::cast_possible_truncation)] // the u16 count
+                mem.write(list, c as u16);
+                eax = c;
+            }
+        }
+        eax
+    }
+
+    /// The last op script error (`0x0113e238`): its code plus 1.
+    pub const LAST_ERROR: Global<u32> = Global::new(0x0113_e238);
+
+    /// `op_error_007e1450(code, arg)` (`0x007e1450`): reports an op script
+    /// error through `dbgPrintf` (through `call`): the file name and line
+    /// (`0x0113fc58`, `0x0113fc5c`) when set, then code 1..=11's message
+    /// (from `0x00b57e24`.., each with `arg` except code 3); keeps `code +
+    /// 1` in `LAST_ERROR` and returns it.
+    pub fn op_error<M: Mem>(
+        mem: &mut M,
+        code: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const MSGS: [u32; 11] = [
+            0x00b5_7e24,
+            0x00b5_7e44,
+            0x00b5_7e68,
+            0x00b5_7e90,
+            0x00b5_7eb0,
+            0x00b5_7ed0,
+            0x00b5_7efc,
+            0x00b5_7f20,
+            0x00b5_7f3c,
+            0x00b5_7f64,
+            0x00b5_7f88,
+        ];
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let dbg = g(mem, 0x0062_f500);
+        for (at, fmt) in [(0x0113_fc58u32, 0x00b5_7e14u32), (0x0113_fc5c, 0x00b5_7e1c)] {
+            let v: u32 = mem.read(g(mem, at));
+            if v != 0 {
+                let f = g(mem, fmt);
+                call(mem, dbg, &[f, v]);
+            }
+        }
+        if let Some(&m) = MSGS.get(code.wrapping_sub(1) as usize) {
+            let f = g(mem, m);
+            if code == 3 {
+                call(mem, dbg, &[f]);
+            } else {
+                call(mem, dbg, &[f, arg]);
+            }
+        }
+        let r = code.wrapping_add(1);
+        LAST_ERROR.set(mem, r);
+        r
+    }
+
+    /// `op_spline(t, y, x, d, n)` (`0x007e9e20`): the cubic spline through
+    /// (`x[i]`, `y[i]`) with slopes `d` (`op_spline_table`'s) at `t`:
+    /// `y[0]` for one point, the line for two; else the interval `i` by
+    /// binary search (`x[mid] < t` moves right), `h = x[i+1] - x[i]` and
+    /// `a = t - x[i]` as `f32`, `y[i]` when `h` is 0, else
+    /// `((s - (2 d[i] + d[i+1]) h + ((d[i+1] - d[i]) a / h + 3 d[i]) a) a +
+    /// y[i]` with `s = (y[i+1] - y[i]) / h`, in 53 bits, as `f32`. Returns
+    /// it in `ST0`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn op_spline(mem: &impl Mem, t: f32, y: u32, x: u32, d: u32, n: u32) -> f32 {
+        use x87::{ADD, MUL, Reg, SUB};
+        let div: x87::Op = |p, q| p / q;
+        let f = |base: u32, i: i32| {
+            mem.read::<f32>(base.wrapping_add(i.cast_unsigned().wrapping_mul(4)))
+        };
+        let n = n.cast_signed();
+        if n == 1 {
+            return x87::load_f32(f(y, 0));
+        }
+        if n == 2 {
+            let dy = Reg::load_f32(f(y, 1)).mem(SUB, f(y, 0)).store();
+            return Reg::load_f32(dy).mem(MUL, t).mem(ADD, f(y, 0)).store();
+        }
+        let (mut lo, mut hi) = (0i32, n - 1);
+        if hi > 0 {
+            while lo < hi {
+                let mid = hi.wrapping_add(lo) / 2;
+                if f(x, mid) < x87::load_f32(t) {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            if lo > 0 {
+                lo -= 1;
+            }
+        }
+        let i = lo;
+        let h = Reg::load_f32(f(x, i + 1)).mem(SUB, f(x, i)).store();
+        let a = Reg::load_f32(t).mem(SUB, f(x, i)).store();
+        if h == 0.0 {
+            return x87::load_f32(f(y, i));
+        }
+        let hr = Reg::load_f32(h);
+        let s = Reg::load_f32(f(y, i + 1)).mem(SUB, f(y, i)).reg(div, hr);
+        let dd2 = Reg::load_f32(f(d, i));
+        let two = dd2.reg(ADD, dd2).mem(ADD, f(d, i + 1)).reg(MUL, hr);
+        let b = s.reg(SUB, two);
+        let dd = Reg::load_f32(f(d, i + 1)).mem(SUB, f(d, i));
+        let ar = Reg::load_f32(a);
+        let c = dd.reg(MUL, ar).reg(div, hr);
+        let three = Reg::load_f32(f(d, i)).constant(MUL, 3.0);
+        let c3 = c.reg(ADD, three);
+        let r = b.reg(ADD, c3.reg(MUL, ar)).reg(MUL, ar).mem(ADD, f(y, i));
+        r.store()
+    }
+
+    /// `op_spline_table(d, x, y, n)` (`0x007e9f20`): the slopes of the
+    /// natural cubic spline through (`x[i]`, `y[i]`) into `d` (`d[0]` and
+    /// `d[n-1]` 0), by the tridiagonal sweep the original runs on a
+    /// scratch buffer (`op_spr_alloc` of `(n + 3) & 0xfc` pairs of floats:
+    /// the steps `h` and the slopes `w`, each `f32`, a zero step giving a
+    /// zero slope), forward then back.
+    pub fn op_spline_table(mem: &mut impl Mem, d: u32, x: u32, y: u32, n: u32) {
+        use x87::{MUL, Reg, SUB};
+        let div: x87::Op = |p, q| p / q;
+        let m = n.wrapping_add(3) & 0xfc;
+        let bytes = m.wrapping_mul(8);
+        let h = op_spr_alloc(mem, bytes);
+        let w = h.wrapping_add(m.wrapping_mul(4));
+        let at = |base: u32, i: i32| base.wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let n = n.cast_signed();
+        mem.write(d, 0.0f32);
+        mem.write(at(d, n - 1), 0.0f32);
+        for i in 0..(n - 1).max(0) {
+            let dv = Reg::load_f32(rf(mem, at(x, i + 1)))
+                .mem(SUB, rf(mem, at(x, i)))
+                .store();
+            mem.write(at(h, i), dv);
+            let r = if dv == 0.0 {
+                0.0
+            } else {
+                Reg::load_f32(rf(mem, at(y, i + 1)))
+                    .mem(SUB, rf(mem, at(y, i)))
+                    .reg(div, Reg::load_f32(dv))
+                    .store()
+            };
+            mem.write(at(w, i + 1), r);
+        }
+        let d1 = Reg::load_f32(rf(mem, at(w, 2)))
+            .mem(SUB, rf(mem, at(w, 1)))
+            .reg(SUB, Reg::load_f32(rf(mem, h)).mem(MUL, rf(mem, d)))
+            .store();
+        mem.write(at(d, 1), d1);
+        let c: f64 = mem.read(Global::<u32>::new(0x00b9_2270).ptr(mem).addr);
+        let w1 = Reg::load_f32(rf(mem, at(x, 2)))
+            .mem(SUB, rf(mem, x))
+            .constant(MUL, c)
+            .store();
+        mem.write(at(w, 1), w1);
+        let k = n - 2;
+        if k > 1 {
+            for j in 0..k - 1 {
+                let wj = rf(mem, at(w, j + 1));
+                let r = if wj == 0.0 {
+                    0.0
+                } else {
+                    Reg::load_f32(rf(mem, at(h, j + 1))).mem(div, wj).store()
+                };
+                let xx = Reg::load_f32(rf(mem, at(w, j + 3))).mem(SUB, rf(mem, at(w, j + 2)));
+                let dj = Reg::load_f32(rf(mem, at(d, j + 1))).mem(MUL, r);
+                mem.write(at(d, j + 2), xx.reg(SUB, dj).store());
+                let yy = Reg::load_f32(rf(mem, at(x, j + 3)))
+                    .mem(SUB, rf(mem, at(x, j + 1)))
+                    .constant(MUL, c);
+                let rh = Reg::load_f32(r).mem(MUL, rf(mem, at(h, j + 1)));
+                mem.write(at(w, j + 2), yy.reg(SUB, rh).store());
+            }
+        }
+        let last = Reg::load_f32(rf(mem, at(d, k)))
+            .reg(
+                SUB,
+                Reg::load_f32(rf(mem, at(h, k))).mem(MUL, rf(mem, at(d, n - 1))),
+            )
+            .store();
+        mem.write(at(d, k), last);
+        let mut i = k;
+        while i > 0 {
+            let hi = rf(mem, at(h, i));
+            let wi = rf(mem, at(w, i));
+            let v = if hi == 0.0 || wi == 0.0 {
+                0.0
+            } else {
+                Reg::load_f32(rf(mem, at(d, i)))
+                    .reg(SUB, Reg::load_f32(rf(mem, at(d, i + 1))).mem(MUL, hi))
+                    .mem(div, wi)
+                    .store()
+            };
+            mem.write(at(d, i), v);
+            i -= 1;
+        }
+        op_spr_free(mem);
+    }
+
+    /// `opd_num_init(x)` (`0x00a5dda0`): the debug number display's setup:
+    /// `sceDmaGetChan(2)` into `0x022881d0`, the base column `x / 256` and
+    /// four columns 0x10, 0x14, 0x18, 0x1c past it (`u16` at `0x00c87870`,
+    /// `..880`, `..890`, `..8a0`, `..8b0`), `0x00a5e4a0()`, and its GS
+    /// packet header at `0x02286140` (through `call`). Returns 0x1a0.
+    pub fn opd_num_init<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let chan = g(mem, 0x0062_f6e0);
+        let c = call(mem, chan, &[2]);
+        mem.write(g(mem, 0x0228_81d0), c);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half
+        let col = (x.cast_signed() / 256) as u16;
+        for (at, k) in [
+            (0x00c8_7880u32, 0x10u16),
+            (0x00c8_7890, 0x14),
+            (0x00c8_78a0, 0x18),
+        ] {
+            mem.write(g(mem, at), col.wrapping_add(k));
+        }
+        mem.write(g(mem, 0x00c8_7870), col);
+        mem.write(g(mem, 0x00c8_78b0), col.wrapping_add(0x1c));
+        let f = g(mem, 0x00a5_e4a0);
+        call(mem, f, &[]);
+        let hdr = g(mem, 0x0228_6140);
+        mem.write(hdr, g(mem, 0x0228_6170));
+        mem.write(hdr + 8, 0x0001_0001u32);
+        mem.write(hdr + 0x10, 0x0008_0000u32);
+        mem.write(hdr + 4, u32::MAX);
+        mem.write(hdr + 0x14, 0x0200_0001u32);
+        mem.write(hdr + 0x1b, 0xb0u16);
+        mem.write(hdr + 0x18, 0x1a0u16);
+        mem.write(hdr + 0x1a, 0x80u8);
+        0x1a0
+    }
+
+    /// `op_spline_xyz(out, t, pts, x, n)` (`0x007ea120`): the spline of
+    /// each coordinate of the 16-byte points `pts` at `t`: the coordinate
+    /// copied into a scratch block (the `op_spr` stack, `(n + 3) & 0xfc`
+    /// words), then `op_spline(t, scratch, x, x + 4 n k + 4 n, n)` (the
+    /// slopes of coordinate `k` follow the knots `x`) into `out[k]`.
+    pub fn op_spline_xyz(mem: &mut impl Mem, out: u32, t: f32, pts: u32, x: u32, n: u32) {
+        let buf = op_spr_alloc(mem, (n.wrapping_add(3) & 0xfc).wrapping_mul(4));
+        let t = x87::load_f32(t);
+        for k in 0..3u32 {
+            for i in 0..n.cast_signed().max(0).cast_unsigned() {
+                let v: u32 = mem.read(pts.wrapping_add(16 * i + 4 * k));
+                mem.write(buf.wrapping_add(4 * i), x87::load(v));
+            }
+            let d = x.wrapping_add(n.wrapping_mul(4).wrapping_mul(k + 1));
+            let r = op_spline(mem, t, buf, x, d, n);
+            mem.write(out.wrapping_add(4 * k), r);
+        }
+        op_spr_free(mem);
+    }
+
+    /// `op_func_ot(list)` (`0x007eb430`): runs the functions of OT list
+    /// `list` in order (`FUNC_OT_ORDER`, up to 32, until a free place):
+    /// each slot's function with its two words (through `call`); a slot
+    /// with a frame count (`u16 +0xc`) counts down and is freed at 0
+    /// (`op_func_ot_free`), the next one moving into its place.
+    pub fn op_func_ot<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mut i = 0i32;
+        while i < 32 {
+            let idx = FUNC_OT_ORDER
+                .ptr(mem)
+                .at(list.wrapping_add(i.cast_unsigned()))
+                .get(mem);
+            if idx < 0 {
+                break;
+            }
+            let slot = i32::from(idx).cast_unsigned();
+            let e = FUNC_OT.ptr(mem).at(slot.wrapping_add(list)).addr;
+            let [f, a, b, _] = mem.read::<[u32; 4]>(e);
+            call(mem, f, &[a, b]);
+            let c: u16 = mem.read(e + 0xc);
+            if c != 0 {
+                mem.write(e + 0xc, c - 1);
+                if c == 1 {
+                    op_func_ot_free(mem, slot, list);
+                    i -= 1;
+                }
+            }
+            i += 1;
+        }
+    }
 }
