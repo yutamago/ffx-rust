@@ -562,3 +562,149 @@ eight copies offset by ±2 over the edge ratio. These are ported; only
 `TODrawScaleButtonIconRGBA` (`0x008f8ee0`) picks the icon for a text
 character, as `TOGetScaleButtonIconWidth` does. `4`..`7` sit 2.0 higher,
 and `@`..`O` stack four direction parts by their low bits.
+
+## Message glyph writers (`TOMakePktFont1612*`)
+
+The 16 × 12 message font uses the same pen layout as the battle texts
+(`+0x1a` the kind, `+0x1b` the alpha). `TOMakePktFont1612` (`0x008fc7c0`)
+draws one glyph by the kind:
+
+- kind 1: the edge (`TOMakePktFont1612Edge`, `0x008fc870`), then the face;
+- kind 3: the italic edge and face (`TOMakePktFontLItalicEdge`/`Font`);
+- otherwise the shadow (`TOMakePktFont1612Shadow`, `0x008fcca0`) with UI
+  draw type 1 and shadow type 0, then the face
+  (`TOMakePktFont1612Font`, `0x008fcad0`) with shadow type 1.
+
+The pen then moves on by the advance spacing `0x00c5d784` (1.0) for kinds
+1 and 3, or `0x00b5ee10` (0.78) otherwise; the same value scales the
+glyph. Each pass computes the quad from the pen and the `TOGetFontInfo`
+cell. Its top is `pen.y + scale × slant`; its size is
+`width × scale` by `scale × (height + slant)`, stretched by `K_x`/`K_y`
+(`0x00c5d778`/`0x00c5d77c`) for the face and shadow but not the edge. The
+shadow is moved by `0x018716e0`/`0x018716e4` and drawn with offsets
+`0x00b92268` (2.0) at layer parity + its argument (4 skips the scissor).
+The face draws at parity + 2 (parity + 6 without scissor in mode 5). The
+edge draws ten copies at offsets (±2, ±2), (0, ±2), (±2, 0) and (±1, 0)
+over `graphicFontGetEdgeRatio`. The italic passes (`TOMakePktFontLItalicEdge`/`Font`, `0x008fce90`/
+`0x008fd0a0`) use scale `0x00c5d784` and the edge geometry for both,
+depth 2001, no scissor and layer 0. The italic edge's offsets follow the
+same pattern, read from the image floats -2 (`0x00b41da4`), 2
+(`0x00b92268`) and -1 (`0x00b92340`). `0x00906270`/`0x00906290` are the face and
+shadow passes with argument 0. Only `graphicFontDraw` emits packets.
+
+`TODrawCrossMenuIconAbilityName` (`0x008f4f10`) and
+`TODrawCrossMenuIconCommandName` (`0x008f5000`) draw one cross-menu row.
+The entry (`MsGetRomAbility`/`MsGetComData`) gives the name offset (word
+`+0`) and the icon (byte `+0x68`/`+0x14`). The icon is drawn by
+`DrawCrossMenuIconXYWHRGBA` at the row plus `X2(0x00b49980)` (command:
+`0x00b5a480`) and `Y2(0x00b5f2e8)`, sized `X2(0x00b59830)` ×
+`Y2(0x00b5f304)`. The name is drawn by `ToMakeBtlEasyFont` at the row plus
+(`0x00b5f374`, `0x00b92318`) (command: `0x00b5ef30`, `0x00b92314`), scale
+0.78.
+
+`DrawCrossMenuIconXYWHRGBA` (`0x008e6af0`) draws icon `n` from sheet
+0x3dc0: 17 icons to a row, each 15 × 18 texels (UVs over the sheet size).
+The colour is passed as bytes, the depth is 500, the quad is clipped by
+`BeginScissor_XYUV` and drawn by `graphicDrawUIElement(rec, texture, 1, 0,
+0)`.
+
+`TOMkpCrossExtMesFontLClutTypeRGBA` (`0x00901700`) writes a cross-menu
+text in the battle font with the pen at `0x025d09a0`. A new line moves y
+by 13.6 at scale 0.64, otherwise by `scale × 16`. Its control codes (7
+spacing, `0xa` mode nibbles, `0xb` button icons at scale 0.63 lifted by
+`AdjustButtonIconY`) work as in `ToMakeBtlEasyFont`. Macros go to
+`TOAddPktChangeMacro_help` (`0x008e9ca0`), which writes the replacement
+text's glyphs and nests for macro codes 0x12..=0x22. `AdjustButtonIconY`
+(`0x008e5280`) is -1.5 when the language thunk `0x008ac2f0` is non-zero,
+otherwise -0.5.
+
+`TODrawMenuBG` (`0x008f5c10`) draws the menu background as shape -2
+(`TOMkpShapeXYWHUV`) over `(0, 0, [0x00b41d9c], [0x00b41d98])` with UVs up
+to `([0x00b4a1ac], [0x00b55178])`. `TOMkpCrossExtMesFontLClut`
+(`0x009016b0`) is `TOMkpCrossExtMesFontLClutTypeRGBA` with type 0 and grey
+`0x80` colour.
+
+## UI shapes and menu plates
+
+`TOMkpShapeXYWHUV` (`0x00903bb0`) and `TOMkpShapeXYWHUVC2` (`0x00903ee0`)
+build the quad of a UI shape. The corners are `x, y` and `x + w, y + h`;
+`BeginScissor_XYUV` clips them together with the UVs. The UVs are then
+scaled for the shape's sheet:
+
+- Shapes -1, -3 and -6 divide by the image size of 0x3e80, 0x3e83 or
+  0x3e86.
+- Shape -2 uses 1/2048 and 1/1024; shape -4 (C2 only) uses 1/256.
+- Shapes 0..=0x289 pick sheet 0x3e00, 0x3f00 or 0x3dc0 by range.
+
+For any other shape the original passes a stale stack word as the
+texture; the port passes 0. The quad goes to `graphicDrawUIElement`
+with grey corners, or with the C2 colours.
+
+`TODrawMenuPlateXYWHType` (`0x008f5f70`, module `plate`) draws the menu
+plates of types 1-14 from four kinds of pieces, all sized through the HD UI
+remap:
+
+- **Bands.** A band is three `TODrawCrossBoxXYWHC2` boxes over the
+  plate's columns: a left cap `rx(cap)` wide, the middle, and a right cap.
+  The caps fade to their edge colours.
+  - The banded types are 1 and 2 (caps 300 and 140), 4/5 (160), 7/14 and
+    11 (140), and 13 (200).
+  - They draw a drop shadow under the plate (6 or 4 high), the tinted
+    body, a white highlight one line down and a dark line at the bottom.
+  - Types 7 and 11 add a title strip after the body; type 4 adds an icon
+    at the top right.
+- **The sheet image.** This is shape -4 with UVs `1920 × w / 512` and
+  `1080 × h / 416`. Types 1 and 2 cut it into the three columns; types 9
+  and 10 stretch it over the plate.
+- **The nine-slice frame.** Eight atlas pieces with 7-unit corners, used
+  by types 9, 10 and 12.
+- **The `0x008f9c20` and `0x008f4df0` panels.** Types 3, 6 and 8 use the
+  first. Types 9 and 10 use the second; type 10 picks its colours by
+  `graphicGetAbmap`, and draws nothing when the box is narrower than
+  `rx(14)`.
+
+The port keeps the original's rounding: sums are formed in `f64` (the x87
+at 53 bits) and stored as `f32` where the original stores a dword.
+`tools/x87-lift.py` produced the exact first draft that the readable
+version was checked against.
+
+`TOMkpShapeXY` (`0x00903a10`) and `TOMkpShapeXYWHC2` (`0x00903b70`) only
+pass their arguments (and grey colours) to `TOAdpEasyShapeXYWHC2`. They
+compute no corners, colours or UVs, so they remain packet glue.
+
+### Turned shapes and the battle network window
+
+`TOMkpRotateShapeXYWHUVC2` (`0x00902ef0`) turns a shape quad by an angle
+about its centre. The corners `centre + R(∓w/2, ∓h/2)` use
+`_CIcos`/`_CIsin` of the angle and are passed through the remaps. The four
+vertices go to `graphicDrawUIElement(rec, texture, 1, 4, 0)` without
+clipping. Shape -1 divides the UVs by image 0x3e80's size; the other
+shapes pick their sheet as `TOMkpShapeXYWHUV` does.
+
+`TODrawBtlNetWindowXYWHType` (`0x008f41b0`) is a nine-slice frame of
+shape 0x194 cells. The corners are `X2(8)` × `Y2(8)`, and the edges span
+the box less `X2(16)`/`Y2(16)`. The u edges are the image floats at
+`0x00b66bf0`, `…bf4`, `…bfc`, `…c00`. The v edges come from one of two
+strips:
+
+- plain: `0x00b41cb8`, `0x00b66c1c`, `…c20`, `…c24`;
+- pulsing: `0x00b66c30`, `0x00b66914`, `0x00b5ee18`, `0x00b66c38`.
+
+Kinds 0/2 draw the border from the plain strip. Kinds 1/3 draw it from
+the pulsing strip in grey, with alpha `trunc(cos(time × 0x00b2c5c8) × 32 +
+96)`. Kinds 0, 1 and 4 fill the centre.
+
+## UI boxes
+
+- `TODrawCrossBoxXYWHC2` (`0x008f4b20`) draws an untextured gradient box
+  with float corners `x, y` and `x + w, y + h`. `BeginScissor_XY` clips
+  it, and the colours run from `c0` at the top left to `c1`.
+- `TODrawBoxXYWHC2` (`0x008f3db0`) and `TOMakePktBoxXYWHRGBA`
+  (`0x008fb150`) are the integer forms. Their corners are wrapping integer
+  sums converted with `fild`. `TODrawBoxXYWHC2` is skipped while the
+  ability map is up.
+- `0x008f8bb0` draws one cell of sheet 0x2ecc. The cells are 170 × 14
+  pixels, nine rows per column, and the box is not clipped.
+
+All of these draw through `graphicDrawUIElement`. The record words the
+originals leave unset (UVs of untextured boxes) are zero in the port.

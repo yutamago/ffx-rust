@@ -567,6 +567,26 @@ callbacks, the flag words, scales of 1.0, the cleared slots and
 type-1 worker), `0x00877520` (a number as digits over the divisor table
 `0x00c52b18`) and `0x0086db80`, and shims for `0x007a3ac0` and the four
 group-8 natives the dump now has starts for.
+Round 16 took the scheduler's callback queues (`g_AtelCallbackQue`
+`0x01327f50`: per queue fifteen 16-byte entries, callback, word and a
+7-character name; `AtelRegistCallbackQue2` fills the first free one and
+clears the next entry's callback, `AtelExecCallbackQue` calls the first
+with its word's address and moves the rest up when it returns non-zero),
+`Native_PlayMotionCommon` (`0x00a7aae0`, now called in Rust by the motion
+natives, with its per-map `+0x870` fixes), `Script_LineActorSide`,
+`AtelGetMyBufferSize`, `AtelClearMesWinWork` (whose `0x01a00200` has no
+relocation, so it stays the same when the image moves), `0x00877660`
+(hex parsing), `0x0086f460` (one bind-mask bit) and `0x0086ab80`.
+Round 17 ported the ctrl work's default start callback (`0x008683e0`,
+`+0x50`): every worker runs (`Script_Run(worker, ctrl +8, 1)`) until its
+`+0x34` bit 4 says its init is done, then every worker's signals are
+decoded and the ctrl work's bit 3 is set. With it the per-frame script
+path calls no original script code: what `Script_Run`, the signals and
+the scheduler still call is `Mutex_Lock`/`Mutex_Unlock` (`0x006f2ed0`,
+`0x006f2f50`, thin wrappers over `WaitForSingleObject`/`ReleaseMutex`),
+the script debugger's hook `0x0067a9b0` (a forward to the debugger object
+`*0x00ce9014`) and the ctrl works' own callbacks (`+0x28`, `+0x58`,
+`+0x5c`, `+0x60`), which belong to their callers' modules.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)

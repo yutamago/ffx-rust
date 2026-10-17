@@ -5,7 +5,8 @@ use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
 use ffx_vfx::{
-    et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave,
+    draw, et, fp, heap, lns, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small, tree,
+    vec, wave,
 };
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
@@ -295,6 +296,30 @@ ported! {
     /// `pppSRandDownHCV(obj, key, ctrl)`.
     pppSRandDownHCV @ 0x0073_3d10 => extern "C" fn ppp_srand_down_hcv(obj: u32, key: u32, ctrl: u32) {
         srand_program(obj, key, ctrl, Spread::Down, Kind::ShortVec);
+    }
+    /// `pppSRandFV_Draw(two)`: one spread draw, in ST0.
+    pppSRandFV_Draw @ 0x0073_26e0 => extern "C" fn ppp_srand_fv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Plain, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandUpFV_Draw(two)`: one spread draw, in ST0.
+    pppSRandUpFV_Draw @ 0x0073_2970 => extern "C" fn ppp_srand_up_fv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Up, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandDownFV_Draw(two)`: one spread draw, in ST0.
+    pppSRandDownFV_Draw @ 0x0073_2c00 => extern "C" fn ppp_srand_down_fv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Down, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandCV_Draw(two)`: one spread draw, in ST0.
+    pppSRandCV_Draw @ 0x0073_2f30 => extern "C" fn ppp_srand_cv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Plain, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
     }
     // ---- ppp programs ----
     /// `pppKeDrctCon(obj, ctrl)`.
@@ -1599,6 +1624,312 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
         wave::bridge::opus_0154_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, proj, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a), &mut |_, x| crt_tan(x))
     }
+    /// `pppDrawShapeFieldCon(obj, prog)`.
+    pppDrawShapeFieldCon @ 0x0074_2b50 => extern "C" fn ppp_draw_shape_field_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldRevCon(obj, prog)`.
+    pppDrawShapeFieldRevCon @ 0x0074_3f00 => extern "C" fn ppp_draw_shape_field_rev_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_REV_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldSpdCon(obj, prog)`.
+    pppDrawShapeFieldSpdCon @ 0x0074_50a0 => extern "C" fn ppp_draw_shape_field_spd_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_SPD_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldGlobalCon(obj, prog)`.
+    pppDrawShapeFieldGlobalCon @ 0x0074_6200 => extern "C" fn ppp_draw_shape_field_global_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_GLOBAL_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraCon(obj, prog)`.
+    pppDrawShapeCameraCon @ 0x0074_7410 => extern "C" fn ppp_draw_shape_camera_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::CAMERA_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDisPosCon(obj, prog)`.
+    pppDrawShapeCameraDisPosCon @ 0x0074_8660 => extern "C" fn ppp_draw_shape_camera_dis_pos_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::CAMERA_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldDes(obj, prog)`.
+    pppDrawShapeFieldDes @ 0x0074_2bd0 => extern "C" fn ppp_draw_shape_field_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldRevDes(obj, prog)`.
+    pppDrawShapeFieldRevDes @ 0x0074_3f80 => extern "C" fn ppp_draw_shape_field_rev_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_REV_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldSpdDes(obj, prog)`.
+    pppDrawShapeFieldSpdDes @ 0x0074_5130 => extern "C" fn ppp_draw_shape_field_spd_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_SPD_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldGlobalDes(obj, prog)`.
+    pppDrawShapeFieldGlobalDes @ 0x0074_6280 => extern "C" fn ppp_draw_shape_field_global_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_GLOBAL_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDes(obj, prog)`.
+    pppDrawShapeCameraDes @ 0x0074_7490 => extern "C" fn ppp_draw_shape_camera_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::CAMERA_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDisPosDes(obj, prog)`.
+    pppDrawShapeCameraDisPosDes @ 0x0074_86e0 => extern "C" fn ppp_draw_shape_camera_dis_pos_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::CAMERA_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawRainDes(obj, prog)`.
+    pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppDrawMdlDraw @ 0x0073_7770 => extern "C" fn ppp_draw_mdl_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_draw_mdl_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlSemiDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlSemiDraw @ 0x0073_7b20 => extern "C" fn ppp_draw_mdl_semi_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_draw_mdl_semi_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlTsDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlTsDraw @ 0x0073_7f40 => extern "C" fn ppp_draw_mdl_ts_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_draw_mdl_ts_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdl2Draw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdl2Draw @ 0x0073_8530 => extern "C" fn ppp_draw_mdl_2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_draw_mdl_2_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlSemi2Draw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlSemi2Draw @ 0x0073_8a40 => extern "C" fn ppp_draw_mdl_semi2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_draw_mdl_semi2_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlTs2Draw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlTs2Draw @ 0x0073_8ec0 => extern "C" fn ppp_draw_mdl_ts2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_draw_mdl_ts2_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdl3Draw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdl3Draw @ 0x0073_94c0 => extern "C" fn ppp_draw_mdl_3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x120]);
+        let mut locals = Locals([0; 0x120]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x120;
+        mdl::bridge::ppp_draw_mdl_3_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlSemi3Draw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlSemi3Draw @ 0x0073_9d30 => extern "C" fn ppp_draw_mdl_semi3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x120]);
+        let mut locals = Locals([0; 0x120]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x120;
+        mdl::bridge::ppp_draw_mdl_semi3_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlTs3Draw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlTs3Draw @ 0x0073_a370 => extern "C" fn ppp_draw_mdl_ts3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xe0]);
+        let mut locals = Locals([0; 0xe0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        mdl::bridge::ppp_draw_mdl_ts3_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlLoopDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlLoopDraw @ 0x0073_e2b0 => extern "C" fn ppp_draw_mdl_loop_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xe0]);
+        let mut locals = Locals([0; 0xe0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        mdl::bridge::ppp_draw_mdl_loop_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlLoopZDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlLoopZDraw @ 0x0073_ea40 => extern "C" fn ppp_draw_mdl_loop_z_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xe0]);
+        let mut locals = Locals([0; 0xe0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        mdl::bridge::ppp_draw_mdl_loop_z_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlLoopDisPosDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMdlLoopDisPosDraw @ 0x0073_f230 => extern "C" fn ppp_draw_mdl_loop_dis_pos_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x1a0]);
+        let mut locals = Locals([0; 0x1a0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x1a0;
+        mdl::bridge::ppp_draw_mdl_loop_dis_pos_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsArndDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsArndDraw @ 0x0075_9ff0 => extern "C" fn ppp_ke_lns_arnd_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_draw(&mut mem(), lns::bridge::Lns::Arnd, obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsArndTDraw(obj, key, prog)`.
+    pppKeLnsArndTDraw @ 0x0075_a190 => extern "C" fn ppp_ke_lns_arnd_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        lns::bridge::ppp_ke_lns_t_draw(&mut mem(), lns::bridge::Lns::Arnd, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsArndTOtDraw(area)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsArndTOtDraw @ 0x0075_a250 => extern "C" fn ppp_ke_lns_arnd_t_ot_draw(area: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_t_ot_draw(&mut mem(), lns::bridge::Lns::Arnd, area, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsCrnDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsCrnDraw @ 0x0075_a760 => extern "C" fn ppp_ke_lns_crn_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_draw(&mut mem(), lns::bridge::Lns::Crn, obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsCrnTDraw(obj, key, prog)`.
+    pppKeLnsCrnTDraw @ 0x0075_a900 => extern "C" fn ppp_ke_lns_crn_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        lns::bridge::ppp_ke_lns_t_draw(&mut mem(), lns::bridge::Lns::Crn, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsCrnTOtDraw(area)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsCrnTOtDraw @ 0x0075_a9e0 => extern "C" fn ppp_ke_lns_crn_t_ot_draw(area: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_t_ot_draw(&mut mem(), lns::bridge::Lns::Crn, area, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsFlsDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsFlsDraw @ 0x0075_ab50 => extern "C" fn ppp_ke_lns_fls_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_draw(&mut mem(), lns::bridge::Lns::Fls, obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsFlsTDraw(obj, key, prog)`.
+    pppKeLnsFlsTDraw @ 0x0075_ad00 => extern "C" fn ppp_ke_lns_fls_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        lns::bridge::ppp_ke_lns_t_draw(&mut mem(), lns::bridge::Lns::Fls, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsFlsTOtDraw(area)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsFlsTOtDraw @ 0x0075_ade0 => extern "C" fn ppp_ke_lns_fls_t_ot_draw(area: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_t_ot_draw(&mut mem(), lns::bridge::Lns::Fls, area, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsLpDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsLpDraw @ 0x0075_af80 => extern "C" fn ppp_ke_lns_lp_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_lp_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdDraw(obj, key, prog)`.
+    pppKeMdlTfdDraw @ 0x0074_9810 => extern "C" fn ppp_ke_mdl_tfd_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::One, false, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfd2Draw(obj, key, prog)`.
+    pppKeMdlTfd2Draw @ 0x0074_9b40 => extern "C" fn ppp_ke_mdl_tfd2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Two, false, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfd3Draw(obj, key, prog)`.
+    pppKeMdlTfd3Draw @ 0x0074_9e90 => extern "C" fn ppp_ke_mdl_tfd3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Three, false, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdUvDraw(obj, key, prog)`.
+    pppKeMdlTfdUvDraw @ 0x0074_9950 => extern "C" fn ppp_ke_mdl_tfd_uv_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::One, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdUv2Draw(obj, key, prog)`.
+    pppKeMdlTfdUv2Draw @ 0x0074_9c90 => extern "C" fn ppp_ke_mdl_tfd_uv2_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Two, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMdlTfdUv3Draw(obj, key, prog)`.
+    pppKeMdlTfdUv3Draw @ 0x0074_9ff0 => extern "C" fn ppp_ke_mdl_tfd_uv3_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Three, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpSetDrawMatrix(mode)`.
+    pppFpSetDrawMatrix @ 0x0072_a260 => extern "C" fn ppp_fp_set_draw_matrix(mode: u32) -> u32 {
+        fp::bridge::ppp_fp_set_draw_matrix(&mut mem(), mode)
+    }
+    /// `pppDrawMatrixWoodSta()`: its three vectors in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMatrixWoodSta @ 0x0073_4d90 => extern "C" fn ppp_draw_matrix_wood_sta() -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x40]);
+        let mut locals = Locals([0; 0x40]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        mat::bridge::ppp_draw_matrix_wood_sta(&mut mem(), frame)
+    }
+    /// `pppKeTkFadeDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppKeTkFadeDraw @ 0x0072_ee50 => extern "C" fn ppp_ke_tk_fade_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xc0]);
+        let mut locals = Locals([0; 0xc0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        draw::bridge::ppp_ke_tk_fade_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    // pppKeLnsLpTOtDraw (0x0075b230) is ported (draw::bridge::
+    // ppp_ke_lns_lp_t_ot_draw, oracle parity) but deliberately not hooked:
+    // on PC its result comes from stale memory (docs/formats/vfx.md,
+    // "To observe").
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

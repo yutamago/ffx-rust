@@ -128,7 +128,11 @@ thread_local! {
 impl NativeHost for ffx_bridge::RawMem {
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
         type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> f64;
-        assert!(args.len() <= 6, "at most six arguments");
+        // no panic: the natives run inside the game; a longer list fails
+        if args.len() > 6 {
+            ffx_bridge::too_many_arguments("NativeHost::call_float", addr, args.len());
+            return f64::NAN;
+        }
         let mut a = [0u32; 6];
         a[..args.len()].copy_from_slice(args);
         // SAFETY: the address is a cdecl native of the game returning in

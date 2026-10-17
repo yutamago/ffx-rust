@@ -8143,4 +8143,1275 @@ pub mod bridge {
         mem.write(pos.wrapping_add(4), x as f32);
         pos
     }
+
+    /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)` (`0x00903bb0`)
+    /// and, with `colours`, `TOMkpShapeXYWHUVC2(…, c0, c1)` (`0x00903ee0`):
+    /// the quad of a UI shape: corners `x, y` and `x + w, y + h`, clipped
+    /// with its UVs by `BeginScissor_XYUV`, then the UVs scaled for the
+    /// shape's sheet and the quad handed to `graphicDrawUIElement(rec,
+    /// texture, 1, 0, 0)`.
+    ///
+    /// Shapes -1, -3 and -6 divide the UVs by the size of image 0x3e80,
+    /// 0x3e83 or 0x3e86 (`TOGetImageWH`); -2 scales u by 1/2048 and v by
+    /// 1/1024 (image 0x3e82); -4 (C2 only) both by 1/256 (0x3e84); 0..=0xc6
+    /// and 0xc8..=0x18e use sheet 0x3e00, 0x190..=0x256 sheet 0x3f00, and
+    /// 0x258..=0x289 scale u by 1/1024 and v by 1/512 (sheet 0x3dc0)
+    /// (`TOGetShapTextureName`). Other shapes leave the texture unset in
+    /// the original (a stale stack word); the port passes 0. Colours are
+    /// grey 0x80, or the bytes of `c0`/`c1` for the two corners. `scratch`
+    /// (0xd0 bytes) stands in for the original's stack: corners at `+0`,
+    /// UVs at `+0x10`, image size at `+0x20`, the record at `+0x30`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::many_single_char_names
+    )]
+    pub fn to_mkp_shape_xywhuv<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        colours: Option<[u32; 2]>,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [shape, x, y, w, h, u0, v0, u1, v1] = args;
+        let f = |bits: u32| f64::from(f32::from_bits(bits));
+        let rd = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        for k in 0..0x34 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let uv = scratch.wrapping_add(0x10);
+        let size = scratch.wrapping_add(0x20);
+        let rec = scratch.wrapping_add(0x30);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        for (k, v) in [u0, v0, u1, v1].into_iter().enumerate() {
+            mem.write(uv.wrapping_add(4 * k as u32), v);
+        }
+        let kept = call(
+            mem,
+            0x008e_5a20,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+                uv,
+                uv.wrapping_add(4),
+                uv.wrapping_add(8),
+                uv.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        let scale_uv = |mem: &mut M, ku: f64, kv: f64| {
+            for (k, s) in [(0u32, ku), (8, ku), (4, kv), (0xc, kv)] {
+                let v = rd(mem, uv.wrapping_add(k));
+                mem.write(uv.wrapping_add(k), (v * s) as f32);
+            }
+        };
+        let divide_uv = |mem: &mut M| {
+            let (wi, hi) = (rd(mem, size), rd(mem, size.wrapping_add(4)));
+            for (k, s) in [(0u32, wi), (8, wi), (4, hi), (0xc, hi)] {
+                let v = rd(mem, uv.wrapping_add(k));
+                mem.write(uv.wrapping_add(k), (v / s) as f32);
+            }
+        };
+        let image = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let mut texture = 0u32;
+        let sheet = match shape.cast_signed() {
+            -1 | -3 | -6 => {
+                let id = match shape.cast_signed() {
+                    -1 => 0x3e80,
+                    -3 => 0x3e83,
+                    _ => 0x3e86,
+                };
+                call(mem, 0x008a_c400, &[id, size, size.wrapping_add(4)]);
+                divide_uv(mem);
+                Some(id)
+            }
+            -2 => {
+                let (ku, kv) = (image(mem, 0x00b5_8590), image(mem, 0x00b5_8b50));
+                scale_uv(mem, ku, kv);
+                Some(0x3e82)
+            }
+            -4 if colours.is_some() => {
+                let k = image(mem, 0x00b5_0198);
+                scale_uv(mem, k, k);
+                Some(0x3e84)
+            }
+            _ => None,
+        };
+        if let Some(id) = sheet {
+            texture = call(mem, 0x008a_c8c0, &[id]);
+        } else {
+            if shape <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3e00]);
+            }
+            if shape.wrapping_sub(0xc8) <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3e00]);
+            }
+            if shape.wrapping_sub(0x190) <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3f00]);
+            }
+            if shape.wrapping_sub(0x258) <= 0x31 {
+                let (ku, kv) = (image(mem, 0x00b5_8b50), image(mem, 0x00b4_1cc0));
+                scale_uv(mem, ku, kv);
+                texture = call(mem, 0x008a_c8c0, &[0x3dc0]);
+            }
+        }
+        let [c0, c1] = colours.unwrap_or([0x8080_8080, 0x8080_8080]);
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for (k, off) in [(0u32, 8u32), (4, 0xc), (8, 0x28), (0xc, 0x2c)] {
+            let v: u32 = mem.read(uv.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for k in 0..4u32 {
+            mem.write(rec.wrapping_add(0x10 + 4 * k), (c0 >> (8 * k)) & 0xff);
+            mem.write(rec.wrapping_add(0x30 + 4 * k), (c1 >> (8 * k)) & 0xff);
+        }
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
+
+    /// The colour words of a UI record: the bytes of `c` (r, g, b, a) as
+    /// four words at `at`.
+    fn colour_words<M: Mem>(mem: &mut M, at: u32, c: u32) {
+        for k in 0..4u32 {
+            mem.write(at.wrapping_add(4 * k), (c >> (8 * k)) & 0xff);
+        }
+    }
+
+    /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f4b20`): an
+    /// untextured gradient box from colour `c0` (top left) to `c1` (bottom
+    /// right): corners `x, y` and `x + w, y + h` (f32 bits), clipped by
+    /// `BeginScissor_XY`, drawn with `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    /// `scratch` (0xa0 bytes) holds the corners (`+0`) and the record
+    /// (`+0x10`); the UV words the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_draw_cross_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        let kept = call(
+            mem,
+            0x008e_58e0,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        colour_words(mem, rec.wrapping_add(0x10), c0);
+        colour_words(mem, rec.wrapping_add(0x30), c1);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `0x008f8bb0(cell, x, y, w, h)`: draws cell `cell` of sheet 0x2ecc
+    /// (columns of 170 by rows of 14 pixels, nine rows per column) over
+    /// `x, y, w, h` (f32 bits) in grey, unclipped. `scratch` (0xa0 bytes)
+    /// holds the sheet size (`+0`) and the record (`+0x10`).
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn draw_sheet_cell<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [index, x, y, w, h] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let texture = call(mem, 0x008a_c8c0, &[0x2ecc]);
+        call(mem, 0x008a_c400, &[0x2ecc, size, size.wrapping_add(4)]);
+        let (sw, sh) = (
+            f64::from(mem.read::<f32>(size)),
+            f64::from(mem.read::<f32>(size.wrapping_add(4))),
+        );
+        let i = index.cast_signed();
+        let (column, row) = ((i / 9).wrapping_mul(0xaa), (i % 9).wrapping_mul(0xe));
+        let u = |p: i32| (f64::from(p as f32) / sw) as f32;
+        let v = |p: i32| (f64::from(p as f32) / sh) as f32;
+        mem.write(rec, x);
+        mem.write(rec.wrapping_add(4), y);
+        mem.write(rec.wrapping_add(8), u(column));
+        mem.write(rec.wrapping_add(0xc), v(row));
+        colour_words(mem, rec.wrapping_add(0x10), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x20), (f(x) + f(w)) as f32);
+        mem.write(rec.wrapping_add(0x24), (f(y) + f(h)) as f32);
+        mem.write(rec.wrapping_add(0x28), u(column.wrapping_add(0xaa)));
+        mem.write(rec.wrapping_add(0x2c), v(row.wrapping_add(0xe)));
+        colour_words(mem, rec.wrapping_add(0x30), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
+
+    /// The integer box record of [`to_draw_box_xywh_c2`] and
+    /// [`to_make_pkt_box_xywh_rgba`]: corners `x, y` and `x + w, y + h`
+    /// (wrapping integer sums, then `fild`), the two corner colours, and
+    /// `+0x88`, `+0x90`, `+0x94` cleared; drawn untextured with
+    /// `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    #[allow(clippy::cast_precision_loss)]
+    fn int_box<M: Mem>(
+        mem: &mut M,
+        rect: [u32; 4],
+        colours: [[u32; 4]; 2],
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h] = rect.map(u32::cast_signed);
+        for k in 0..0x26 {
+            mem.write(rec.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(rec, x as f32);
+        mem.write(rec.wrapping_add(4), y as f32);
+        mem.write(rec.wrapping_add(0x20), x.wrapping_add(w) as f32);
+        mem.write(rec.wrapping_add(0x24), y.wrapping_add(h) as f32);
+        for (corner, c) in [0x10u32, 0x30].into_iter().zip(colours) {
+            for (k, v) in c.into_iter().enumerate() {
+                #[allow(clippy::cast_possible_truncation)] // four words
+                mem.write(rec.wrapping_add(corner + 4 * k as u32), v);
+            }
+        }
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f3db0`): an integer
+    /// gradient box (see [`int_box`]) from colour `c0` to `c1`, skipped
+    /// while the ability map is up (`graphicGetAbmap() == 1`). `rec` is
+    /// 0x98 bytes of scratch.
+    pub fn to_draw_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        if call(mem, 0x0064_1060, &[]) == 1 {
+            return;
+        }
+        let bytes = |c: u32| [c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, c >> 24];
+        int_box(mem, [x, y, w, h], [bytes(c0), bytes(c1)], rec, &mut call);
+    }
+
+    /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)` (`0x008fb150`): an
+    /// integer box (see [`int_box`]) in one colour.
+    #[allow(clippy::many_single_char_names)]
+    pub fn to_make_pkt_box_xywh_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, r, g, b, a] = args;
+        int_box(mem, [x, y, w, h], [[r, g, b, a]; 2], rec, &mut call);
+    }
+
+    /// `TODrawMenuBG()` (`0x008f5c10`): the menu background, shape -2
+    /// (`TOMkpShapeXYWHUV`) over the box `0, 0` + (`0x00b41d9c`,
+    /// `0x00b41d98`) (512 × 416) with UVs `0, 0`..(`0x00b4a1ac`,
+    /// `0x00b55178`) (1920, 1024), constants read from the image.
+    pub fn to_draw_menu_bg<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let k = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let zero = 0.0f32.to_bits();
+        let (w, h) = (k(mem, 0x00b4_1d9c), k(mem, 0x00b4_1d98));
+        let (u1, v1) = (k(mem, 0x00b4_a1ac), k(mem, 0x00b5_5178));
+        call(
+            mem,
+            0x0090_3bb0,
+            &[0xffff_fffe, zero, zero, w, h, zero, zero, u1, v1],
+        );
+    }
+
+    /// `TOMkpCrossExtMesFontLClut(text, window, x, y, flags, scale, extra)`
+    /// (`0x009016b0`): `TOMkpCrossExtMesFontLClutTypeRGBA` with type 0
+    /// and grey (0x80) colour.
+    pub fn to_mkp_cross_ext_mes_font_l_clut<M: Mem>(
+        mem: &mut M,
+        args: [u32; 7],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [text, window, x, y, flags, scale, extra] = args;
+        call(
+            mem,
+            0x0090_1700,
+            &[
+                text, window, x, y, flags, 0, 0x80, 0x80, 0x80, 0x80, scale, extra,
+            ],
+        );
+    }
+
+    /// The pass of a 16 × 12 message glyph a `TOMakePktFont1612*` writer
+    /// draws.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum Font1612Pass {
+        /// `TOMakePktFont1612Edge(pen, glyph)` (`0x008fc870`): the outline,
+        /// the quad drawn ten times around the glyph.
+        Edge,
+        /// `TOMakePktFont1612Shadow(pen, glyph, layer)` (`0x008fcca0`): the
+        /// drop shadow; layer 4 draws without the scissor test.
+        Shadow(u32),
+        /// `TOMakePktFont1612Font(pen, glyph, mode)` (`0x008fcad0`): the
+        /// face; mode 5 draws at a higher layer without the scissor test.
+        Face(u32),
+        /// `TOMakePktFontLItalicEdge(pen, glyph)` (`0x008fce90`): the
+        /// outline of an italic glyph (pen kind 3), unclipped.
+        ItalicEdge,
+        /// `TOMakePktFontLItalicFont(pen, glyph)` (`0x008fd0a0`): the face
+        /// of an italic glyph, unclipped.
+        ItalicFace,
+    }
+
+    impl Font1612Pass {
+        /// Whether this pass draws the outline (ten offset copies).
+        fn is_edge(self) -> bool {
+            matches!(self, Self::Edge | Self::ItalicEdge)
+        }
+
+        /// Whether this pass is an italic one: fixed scale, depth 2001, no
+        /// scissor, layer 0.
+        fn is_italic(self) -> bool {
+            matches!(self, Self::ItalicEdge | Self::ItalicFace)
+        }
+    }
+
+    /// Where the edge pass draws its ten copies, in pixels before the
+    /// `graphicFontGetEdgeRatio` division. The italic edge uses the same
+    /// pattern from image floats: -2 at `0x00b41da4`, 2 at `0x00b92268`
+    /// and -1 at `0x00b92340` (see [`font_1612_edge_offsets`]).
+    const FONT_1612_EDGE_OFFSETS: [(i8, i8); 10] = [
+        (-2, -2),
+        (0, -2),
+        (2, -2),
+        (-1, 0),
+        (-2, 0),
+        (1, 0),
+        (2, 0),
+        (-2, 2),
+        (0, 2),
+        (2, 2),
+    ];
+
+    /// The edge offsets of `pass` as the x87 holds them: the integers of
+    /// [`FONT_1612_EDGE_OFFSETS`], or for the italic edge the same pattern
+    /// with its -2, 2 and -1 read from the image.
+    fn font_1612_edge_offsets<M: Mem>(mem: &M, pass: Font1612Pass) -> [(f64, f64); 10] {
+        if !pass.is_italic() {
+            return FONT_1612_EDGE_OFFSETS.map(|(dx, dy)| (f64::from(dx), f64::from(dy)));
+        }
+        let image = |a: u32| f64::from(mem.read::<f32>(mem.rebase(a)));
+        let (a, b, c) = (image(0x00b4_1da4), image(0x00b9_2268), image(0x00b9_2340));
+        [
+            (a, a),
+            (0.0, a),
+            (b, a),
+            (c, 0.0),
+            (a, 0.0),
+            (1.0, 0.0),
+            (b, 0.0),
+            (a, b),
+            (0.0, b),
+            (b, b),
+        ]
+    }
+
+    /// The glyph scale of a 16 × 12 text pen: `0x00c5d784` (1.0) for the
+    /// edged kinds 1 and 3 (pen byte `+0x1a`) and for the italic passes,
+    /// `0x00b5ee10` (0.78) otherwise.
+    fn font_1612_scale<M: Mem>(mem: &M, pen: u32, pass: Font1612Pass) -> f32 {
+        let kind = mem.read::<u8>(pen.wrapping_add(0x1a));
+        let at = if kind == 1 || kind == 3 || pass.is_italic() {
+            0x00c5_d784
+        } else {
+            0x00b5_ee10
+        };
+        mem.read(mem.rebase(at))
+    }
+
+    /// The sprite record of one 16 × 12 glyph pass (layout, no drawing):
+    /// the quad from the pen (`+4` x, `+8` y, colour bytes at `+0`) and
+    /// the glyph's `TOGetFontInfo` cell (u0, v0, u1, v1 at `+8..+0x14`,
+    /// slant `+0x18`, width `+0x1c`, height `+0x20`), all scaled by
+    /// [`font_1612_scale`], the UVs over the texture size `w`, `h`.
+    ///
+    /// The face and shadow stretch the width by `K_x` (`0x00c5d778`) and
+    /// the height by `K_y` (`0x00c5d77c`); the shadow then moves the quad
+    /// by `0x018716e0`/`0x018716e4`. The edges and the italic face use the
+    /// plain cell size. Both colours are the pen's, the depth is 2000
+    /// (2001 for the italic passes).
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    fn font_1612_record<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        pass: Font1612Pass,
+        (w, h): (f64, f64),
+        rec: u32,
+    ) {
+        let f = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(a)) };
+        let cell = |mem: &M, off: u32| f(mem, glyph.wrapping_add(off));
+        let scale = f64::from(font_1612_scale(mem, pen, pass));
+        let (px, py) = (f(mem, pen.wrapping_add(4)), f(mem, pen.wrapping_add(8)));
+        let (slant, width, height) = (cell(mem, 0x18), cell(mem, 0x1c), cell(mem, 0x20));
+        let top = scale * slant + py;
+        let (x1, y1) = if pass.is_edge() || pass.is_italic() {
+            (width * scale + px, scale * (height + slant) + py)
+        } else {
+            let kx = f(mem, mem.rebase(0x00c5_d778));
+            let ky = f(mem, mem.rebase(0x00c5_d77c));
+            (width * scale * kx + px, scale * (height + slant) * ky + py)
+        };
+        let (x0, y0, x1, y1) = if let Font1612Pass::Shadow(_) = pass {
+            let ox = f(mem, mem.rebase(0x0187_16e0));
+            let oy = f(mem, mem.rebase(0x0187_16e4));
+            (px + ox, top + oy, x1 + ox, y1 + oy)
+        } else {
+            (px, top, x1, y1)
+        };
+        let corners = [
+            (0x00, x0),
+            (0x04, y0),
+            (0x08, cell(mem, 0x08) / w),
+            (0x0c, cell(mem, 0x0c) / h),
+            (0x20, x1),
+            (0x24, y1),
+            (0x28, cell(mem, 0x10) / w),
+            (0x2c, cell(mem, 0x14) / h),
+        ];
+        for (off, v) in corners {
+            mem.write(rec.wrapping_add(off), v as f32);
+        }
+        let colour: [u8; 4] = mem.read(pen);
+        for (k, c) in (0u32..).zip(colour) {
+            mem.write(rec.wrapping_add(0x10 + 4 * k), u32::from(c));
+            mem.write(rec.wrapping_add(0x30 + 4 * k), u32::from(c));
+        }
+        mem.write(
+            rec.wrapping_add(0x80),
+            if pass.is_italic() { 2001u32 } else { 2000 },
+        );
+        mem.write(rec.wrapping_add(0x88), 0u32);
+    }
+
+    /// One pass of `TOMakePktFont1612Edge`/`Shadow`/`Font` (see
+    /// [`Font1612Pass`]): the glyph's texture (`TOGetTextureName`, variant 1
+    /// for edge and shadow), its record ([`font_1612_record`]) and the
+    /// `graphicFontDraw` calls when `BeginScissor_XYUV` keeps the quad.
+    ///
+    /// The shadow draws offset by `0x00b92268` (2.0) in both axes at layer
+    /// parity + `layer` (glyph word `+4`), the face at parity + 2 (+ 6 in
+    /// mode 5), the edge ten times at layer 0 offset by
+    /// [`FONT_1612_EDGE_OFFSETS`] over `graphicFontGetEdgeRatio` (through
+    /// `fcall`). `scratch` holds 0xb0 bytes: the texture size at `+0`, the
+    /// record at `+0x10`, the texture word pair at `+0xa0`; record words
+    /// the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    pub fn to_make_pkt_font_1612_pass<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        pass: Font1612Pass,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        const TEXTURE_NAME: u32 = 0x008a_cf50;
+        const IMAGE_WH: u32 = 0x008a_c400;
+        const SCISSOR: u32 = 0x008e_5a20;
+        const FONT_DRAW: u32 = 0x0064_0660;
+        const EDGE_RATIO: u32 = 0x0064_0d70;
+        for k in 0..0x2c {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let extra = scratch.wrapping_add(0xa0);
+        let page = mem.read::<u16>(glyph);
+        let parity = mem.read::<u16>(glyph.wrapping_add(4));
+        let alpha = mem.read::<u8>(pen.wrapping_add(0x1b));
+        let variant = u32::from(!matches!(
+            pass,
+            Font1612Pass::Face(_) | Font1612Pass::ItalicFace
+        ));
+        let texture = call(
+            mem,
+            TEXTURE_NAME,
+            &[
+                u32::from(page),
+                u32::from(alpha),
+                u32::from(parity),
+                variant,
+                extra,
+            ],
+        );
+        let ratio = if pass.is_edge() {
+            f64::from(fcall(mem, EDGE_RATIO, &[]) as f32)
+        } else {
+            1.0
+        };
+        let signed_page = i32::from(page.cast_signed()).cast_unsigned();
+        call(mem, IMAGE_WH, &[signed_page, size, size.wrapping_add(4)]);
+        let w = f64::from(mem.read::<f32>(size));
+        let h = f64::from(mem.read::<f32>(size.wrapping_add(4)));
+        font_1612_record(mem, pen, glyph, pass, (w, h), rec);
+        let field = |off: u32| rec.wrapping_add(off);
+        let scissor = [
+            field(0),
+            field(4),
+            field(0x20),
+            field(0x24),
+            field(8),
+            field(0xc),
+            field(0x28),
+            field(0x2c),
+        ];
+        let unclipped =
+            pass.is_italic() || matches!(pass, Font1612Pass::Shadow(4) | Font1612Pass::Face(5));
+        if !unclipped && call(mem, SCISSOR, &scissor) == 0 {
+            return;
+        }
+        let layer = i32::from(parity.cast_signed());
+        match pass {
+            Font1612Pass::Edge | Font1612Pass::ItalicEdge => {
+                for (dx, dy) in font_1612_edge_offsets(mem, pass) {
+                    let dx = (dx / ratio) as f32;
+                    let dy = (dy / ratio) as f32;
+                    call(
+                        mem,
+                        FONT_DRAW,
+                        &[rec, texture, dx.to_bits(), dy.to_bits(), 0],
+                    );
+                }
+            }
+            Font1612Pass::Shadow(extra_layer) => {
+                let offset: u32 = mem.read(mem.rebase(0x00b9_2268));
+                let layer = layer.cast_unsigned().wrapping_add(extra_layer);
+                call(mem, FONT_DRAW, &[rec, texture, offset, offset, layer]);
+            }
+            Font1612Pass::Face(mode) => {
+                let layer = layer + if mode == 5 { 6 } else { 2 };
+                call(mem, FONT_DRAW, &[rec, texture, 0, 0, layer.cast_unsigned()]);
+            }
+            Font1612Pass::ItalicFace => {
+                call(mem, FONT_DRAW, &[rec, texture, 0, 0, 0]);
+            }
+        }
+    }
+
+    /// `TOMakePktFont1612(pen, glyph)` (`0x008fc7c0`): one 16 × 12 glyph
+    /// by the pen's kind (byte `+0x1a`): kind 1 the edge then the face,
+    /// kind 3 the italic edge and face (`TOMakePktFontLItalicEdge`/`Font`,
+    /// `0x008fce90`/`0x008fd0a0`), both advancing by `0x00c5d784`;
+    /// otherwise the shadow (UI draw type 1, shadow type 0) then the face
+    /// (shadow type 1), draw type 0 again, advancing by `0x00b5ee10`
+    /// (`TOAddFontWidthSpace`).
+    pub fn to_make_pkt_font_1612<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const EDGE: u32 = 0x008f_c870;
+        const FACE: u32 = 0x008f_cad0;
+        const SHADOW: u32 = 0x008f_cca0;
+        const SET_DRAW_TYPE: u32 = 0x0064_3af0;
+        const SET_SHADOW_TYPE: u32 = 0x0064_0dd0;
+        const ADD_WIDTH_SPACE: u32 = 0x008e_8ed0;
+        let space = match mem.read::<u8>(pen.wrapping_add(0x1a)) {
+            1 => {
+                call(mem, EDGE, &[pen, glyph]);
+                call(mem, FACE, &[pen, glyph, 0]);
+                0x00c5_d784
+            }
+            3 => {
+                call(mem, 0x008f_ce90, &[pen, glyph]);
+                call(mem, 0x008f_d0a0, &[pen, glyph]);
+                0x00c5_d784
+            }
+            _ => {
+                call(mem, SET_DRAW_TYPE, &[1]);
+                call(mem, SET_SHADOW_TYPE, &[0]);
+                call(mem, SHADOW, &[pen, glyph, 0]);
+                call(mem, SET_SHADOW_TYPE, &[1]);
+                call(mem, FACE, &[pen, glyph, 0]);
+                call(mem, SET_DRAW_TYPE, &[0]);
+                0x00b5_ee10
+            }
+        };
+        let space: u32 = mem.read(mem.rebase(space));
+        call(mem, ADD_WIDTH_SPACE, &[pen, glyph, space]);
+    }
+
+    /// `TOMakePktFont1612Font_00906270(pen, glyph)` and
+    /// `TOMakePktFont1612Shadow_00906290(pen, glyph)`: the face or shadow
+    /// pass at its default (0).
+    pub fn to_make_pkt_font_1612_default<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        shadow: bool,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let pass = if shadow { 0x008f_cca0 } else { 0x008f_cad0 };
+        call(mem, pass, &[pen, glyph, 0]);
+    }
+
+    /// What a cross-menu icon name row names, with the constants that
+    /// differ between `TODrawCrossMenuIconAbilityName` (`0x008f4f10`) and
+    /// `TODrawCrossMenuIconCommandName` (`0x008f5000`).
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum CrossMenuIconName {
+        /// An ability: `MsGetRomAbility`, icon byte `+0x68`, icon x
+        /// `0x00b49980`, text at (`0x00b5f374`, `0x00b92318`).
+        Ability,
+        /// A command: `MsGetComData`, icon byte `+0x14`, icon x
+        /// `0x00b5a480`, text at (`0x00b5ef30`, `0x00b92314`).
+        Command,
+    }
+
+    /// `TODrawCrossMenuIconAbilityName(id, x, y, alpha)` and
+    /// `TODrawCrossMenuIconCommandName(id, x, y, alpha)`: one row of a
+    /// cross menu, the entry's icon and its name.
+    ///
+    /// The entry record (from `MsGetRomAbility`/`MsGetComData`, which
+    /// also store the text base at `scratch`) gives the name (base +
+    /// word `+0`) and the icon id. The icon goes to
+    /// `DrawCrossMenuIconXYWHRGBA` at (x + `X2(icon x)`, y +
+    /// `Y2(0x00b5f2e8)`) sized `X2(0x00b59830)` × `Y2(0x00b5f304)` in grey
+    /// (0x80); the name to `ToMakeBtlEasyFont` at (x + `X2(text x)`, y +
+    /// `Y2(text y)`) with `alpha`, scale `0x00b5ee10` (0.78) and 1.0. The
+    /// remaps (`graphicUiRemapX2`/`Y2`, `remap(y_axis, v)`) are taken in
+    /// the original's order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_draw_cross_menu_icon_name<M: Mem>(
+        mem: &mut M,
+        kind: CrossMenuIconName,
+        id: u32,
+        (x, y): (u32, u32),
+        alpha: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        const DRAW_ICON: u32 = 0x008e_6af0;
+        const BTL_EASY_FONT: u32 = 0x0090_5ab0;
+        let (lookup, icon_at, icon_x, text_x, text_y) = match kind {
+            CrossMenuIconName::Ability => {
+                (0x0079_0970, 0x68, 0x00b4_9980, 0x00b5_f374, 0x00b9_2318)
+            }
+            CrossMenuIconName::Command => {
+                (0x0079_a4b0, 0x14, 0x00b5_a480, 0x00b5_ef30, 0x00b9_2314)
+            }
+        };
+        let constant = |mem: &M, a: u32| -> f32 { mem.read(mem.rebase(a)) };
+        let entry = call(mem, lookup, &[id, scratch]);
+        let name = u32::from(mem.read::<u16>(entry)).wrapping_add(mem.read(scratch));
+        let icon = u32::from(mem.read::<u8>(entry.wrapping_add(icon_at)));
+        let (x, y) = (f64::from(f32::from_bits(x)), f64::from(f32::from_bits(y)));
+        // `fadd` onto the remapped value, then `fstp dword`
+        #[allow(clippy::cast_possible_truncation)]
+        let shift = |base: f64, r: f32| (f64::from(r) + base) as f32;
+        let value = constant(mem, 0x00b5_f304);
+        let h = remap(mem, true, value);
+        let value = constant(mem, 0x00b5_9830);
+        let w = remap(mem, false, value);
+        let value = constant(mem, 0x00b5_f2e8);
+        let icon_y = shift(y, remap(mem, true, value));
+        let value = constant(mem, icon_x);
+        let icon_x = shift(x, remap(mem, false, value));
+        let args = [
+            icon_x.to_bits(),
+            icon_y.to_bits(),
+            w.to_bits(),
+            h.to_bits(),
+            icon,
+            0x80,
+            0x80,
+            0x80,
+            0x80,
+        ];
+        call(mem, DRAW_ICON, &args);
+        let scale: u32 = mem.read(mem.rebase(0x00b5_ee10));
+        let value = constant(mem, text_y);
+        let name_y = shift(y, remap(mem, true, value));
+        let value = constant(mem, text_x);
+        let name_x = shift(x, remap(mem, false, value));
+        let args = [
+            name,
+            name_x.to_bits(),
+            name_y.to_bits(),
+            alpha,
+            scale,
+            1.0f32.to_bits(),
+        ];
+        call(mem, BTL_EASY_FONT, &args);
+    }
+
+    /// `TOMkpRotateShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0,
+    /// c1, angle)` (`0x00902ef0`): a UI shape quad turned by `angle`
+    /// (radians) about its centre, drawn as four vertices by
+    /// `graphicDrawUIElement(rec, texture, 1, 4, 0)` without clipping.
+    ///
+    /// Shape -1 divides the UVs by the size of image 0x3e80
+    /// (`TOGetImageWH`) and uses its texture; shapes 0..=0xc6 and
+    /// 0xc8..=0x18e use sheet 0x3e00, 0x190..=0x256 sheet 0x3f00 and
+    /// 0x258..=0x289 sheet 0x3dc0 (`TOGetShapTextureName`). Other shapes
+    /// leave the texture unset in the original (a stale stack word); the
+    /// port passes 0.
+    ///
+    /// With the half size `hw`, `hh` (by the f64 `0x00b92220`, 0.5), the
+    /// centre `c` and `cos`, `sin` of the angle (`CIcos`/`CIsin`,
+    /// `0x0088b3e0`/`0x0088c3a0`, through `fcall`), the corners are
+    /// `c + R(∓hw, ∓hh)` in the order (-hw, -hh), (hw, -hh), (hw, hh),
+    /// (-hw, hh), each through `graphicUiRemapX2`/`Y2` (`remap`). The
+    /// vertices carry the UVs (u0, v1), (u1, v1), (u1, v0), (u0, v0) and
+    /// the colours `c0`, `c1`, `c1`, `c0`. `scratch` (0xa0 bytes) holds the
+    /// image size at `+0` and the record at `+8`.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    pub fn to_mkp_rotate_shape_xywhuv_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 12],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        const IMAGE_WH: u32 = 0x008a_c400;
+        const SHAPE_TEXTURE: u32 = 0x008a_c8c0;
+        const DRAW_UI: u32 = 0x0063_eee0;
+        const CI_COS: u32 = 0x0088_b3e0;
+        const CI_SIN: u32 = 0x0088_c3a0;
+        let [shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle] = args;
+        let float = |bits: u32| f64::from(f32::from_bits(bits));
+        let half: f64 = mem.read(mem.rebase(0x00b9_2220));
+        let half_w = (float(w) * half) as f32;
+        let half_h = (float(h) * half) as f32;
+        let centre_x = f64::from((float(w) * half + float(x)) as f32);
+        let centre_y = f64::from((float(h) * half + float(y)) as f32);
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let rec = scratch.wrapping_add(8);
+        let mut uv = [u0, v0, u1, v1].map(f32::from_bits);
+        let texture = if shape == u32::MAX {
+            call(mem, IMAGE_WH, &[0x3e80, scratch, scratch.wrapping_add(4)]);
+            let image_w = f64::from(mem.read::<f32>(scratch));
+            let image_h = f64::from(mem.read::<f32>(scratch.wrapping_add(4)));
+            for (k, v) in uv.iter_mut().enumerate() {
+                let size = if k % 2 == 0 { image_w } else { image_h };
+                *v = (f64::from(*v) / size) as f32;
+            }
+            call(mem, SHAPE_TEXTURE, &[0x3e80])
+        } else {
+            let mut texture = 0;
+            for (first, last, sheet) in [
+                (0, 0xc6, 0x3e00),
+                (200, 0x18e, 0x3e00),
+                (400, 0x256, 0x3f00),
+                (600, 0x289, 0x3dc0),
+            ] {
+                if (first..=last).contains(&shape) {
+                    texture = call(mem, SHAPE_TEXTURE, &[sheet]);
+                }
+            }
+            texture
+        };
+        let [u0, v0, u1, v1] = uv;
+        let cos = f64::from(fcall(mem, CI_COS, &[angle]) as f32);
+        let sin = f64::from(fcall(mem, CI_SIN, &[angle]) as f32);
+        let (hw, hh) = (f64::from(half_w), f64::from(half_h));
+        // the original's products and sums, each kept at double precision
+        let left_x = -hw * cos + centre_x;
+        let left_y = sin * -hw + centre_y;
+        let right_x = cos * hw + centre_x;
+        let right_y = sin * hw + centre_y;
+        let (sin_hh, cos_hh) = (sin * hh, cos * hh);
+        let (sin_neg_hh, cos_neg_hh) = (-hh * sin, -hh * cos);
+        let corners = [
+            (left_x - sin_hh, left_y + cos_hh, u0, v1, c0),
+            (right_x - sin_hh, right_y + cos_hh, u1, v1, c1),
+            (right_x - sin_neg_hh, cos_neg_hh + right_y, u1, v0, c1),
+            (left_x - sin_neg_hh, cos_neg_hh + left_y, u0, v0, c0),
+        ];
+        for (k, (vx, vy, u, v, colour)) in (0u32..).zip(corners) {
+            let vertex = rec.wrapping_add(0x20 * k);
+            let vx = remap(mem, false, vx as f32);
+            let vy = remap(mem, true, vy as f32);
+            for (off, value) in [(0, vx), (4, vy), (8, u), (0xc, v)] {
+                mem.write(vertex.wrapping_add(off), value);
+            }
+            for (byte, value) in (0u32..).zip(colour.to_le_bytes()) {
+                mem.write(vertex.wrapping_add(0x10 + 4 * byte), u32::from(value));
+            }
+        }
+        call(mem, DRAW_UI, &[rec, texture, 1, 4, 0]);
+    }
+
+    /// The u edges of the battle network window's nine slices (left
+    /// column, middle, right column), image floats.
+    const NET_WINDOW_U: [u32; 4] = [0x00b6_6bf0, 0x00b6_6bf4, 0x00b6_6bfc, 0x00b6_6c00];
+    /// The v edges of its rows (top, middle, bottom) for the plain kinds.
+    const NET_WINDOW_V: [u32; 4] = [0x00b4_1cb8, 0x00b6_6c1c, 0x00b6_6c20, 0x00b6_6c24];
+    /// The v edges of its rows for the pulsing kinds (a second strip).
+    const NET_WINDOW_V_PULSE: [u32; 4] = [0x00b6_6c30, 0x00b6_6914, 0x00b5_ee18, 0x00b6_6c38];
+
+    /// `TODrawBtlNetWindowXYWHType(x, y, w, h, kind)` (`0x008f41b0`): the
+    /// battle network window, a nine-slice frame of shape 0x194 cells
+    /// (`TOMkpShapeXYWHUV`) over the box `x, y, w, h`.
+    ///
+    /// The corners are `X2(8)` × `Y2(8)` (`graphicUiRemapX2`/`Y2` of
+    /// `0x00b92314`, through `remap`); the edges between them span the box
+    /// less `X2(16)`/`Y2(16)` (`0x00b9231c`). Right and bottom cells start
+    /// at `x + w` and `y + h` (kept at double precision) less the corner
+    /// size; every sum is rounded to f32 as the argument.
+    ///
+    /// Kinds 0 and 2 draw the eight border cells from the plain strip
+    /// ([`NET_WINDOW_V`]); kinds 1 and 3 from the pulsing strip
+    /// ([`NET_WINDOW_V_PULSE`]) with `TOMkpShapeXYWHUVC2` in grey (0x80)
+    /// whose alpha is `trunc(cos(t × 0x00b2c5c8) × 32 + 96)` for the time
+    /// `t` (`graphicGetTime`, through `fcall`; `cos` is the C runtime's
+    /// `_CIcos` on the unrounded product). Kinds 0, 1 and 4 fill the centre
+    /// from the plain strip. Cells go column by column (left, middle top
+    /// and bottom, right), the centre last.
+    #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)] // fstp dword; fistp
+    pub fn to_draw_btl_net_window_xywh_type<M: Mem>(
+        mem: &mut M,
+        (x, y, w, h): (f32, f32, f32, f32),
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+        mut cos: impl FnMut(&mut M, f64) -> f64,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        const SHAPE: u32 = 0x0090_3bb0;
+        const SHAPE_C2: u32 = 0x0090_3ee0;
+        const GET_TIME: u32 = 0x0064_1410;
+        const CELL: u32 = 0x194;
+        let image = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(mem.rebase(a))) };
+        let time = fcall(mem, GET_TIME, &[]);
+        let wave = f64::from(cos(mem, time * mem.read::<f64>(mem.rebase(0x00b2_c5c8))) as f32);
+        let depth: f64 = mem.read(mem.rebase(0x00b4_12f8));
+        let middle: f64 = mem.read(mem.rebase(0x00b5_ee40));
+        let alpha = ((wave * depth + middle) as i64).cast_unsigned() as u32; // fistp qword (chop), low word
+        let colour = (alpha << 24).wrapping_add(0x0080_8080);
+        let corner = image(mem, 0x00b9_2314) as f32;
+        let inset = image(mem, 0x00b9_231c) as f32;
+        let corner_w = remap(mem, false, corner);
+        let corner_h = remap(mem, true, corner);
+        let inset_w = remap(mem, false, inset);
+        let inset_h = remap(mem, true, inset);
+        let right = f64::from(x) + f64::from(w);
+        let bottom = f64::from(y) + f64::from(h);
+        // a column or row: its start and size, for slice 0, 1 or 2
+        let span =
+            |slice: usize, start: f32, size: f32, far: f64, corner: f32, inset: f32| match slice {
+                0 => (start, corner),
+                1 => (
+                    (f64::from(corner) + f64::from(start)) as f32,
+                    (f64::from(size) - f64::from(inset)) as f32,
+                ),
+                _ => ((far - f64::from(corner)) as f32, corner),
+            };
+        let pulse = kind == 1 || kind == 3;
+        let border = kind <= 3;
+        let centre = kind == 0 || kind == 1 || kind == 4;
+        for (col, row) in [
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (1, 0),
+            (1, 2),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (1, 1),
+        ] {
+            let is_centre = (col, row) == (1, 1);
+            if !(if is_centre { centre } else { border }) {
+                continue;
+            }
+            let (cx, cw) = span(col, x, w, right, corner_w, inset_w);
+            let (cy, ch) = span(row, y, h, bottom, corner_h, inset_h);
+            let rows = if pulse && !is_centre {
+                &NET_WINDOW_V_PULSE
+            } else {
+                &NET_WINDOW_V
+            };
+            let uv = [
+                NET_WINDOW_U[col],
+                rows[row],
+                NET_WINDOW_U[col + 1],
+                rows[row + 1],
+            ]
+            .map(|a| mem.read::<u32>(mem.rebase(a)));
+            let quad = [CELL, cx.to_bits(), cy.to_bits(), cw.to_bits(), ch.to_bits()];
+            if pulse && !is_centre {
+                let mut args = [0u32; 11];
+                args[..5].copy_from_slice(&quad);
+                args[5..9].copy_from_slice(&uv);
+                args[9..].copy_from_slice(&[colour, colour]);
+                call(mem, SHAPE_C2, &args);
+            } else {
+                let mut args = [0u32; 9];
+                args[..5].copy_from_slice(&quad);
+                args[5..].copy_from_slice(&uv);
+                call(mem, SHAPE, &args);
+            }
+        }
+    }
+
+    /// `AdjustButtonIconY(scale, r, g, b, a)` (`0x008e5280`): how far a
+    /// button icon sits above the text line, `0x00b4838c` (-1.5) when the
+    /// `TOGetFFXLang` thunk (`0x008ac2f0`) reports a non-zero language,
+    /// `0x00b92338` (-0.5) otherwise; its arguments are unused.
+    pub fn adjust_button_icon_y<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> f32 {
+        let at = if call(mem, 0x008a_c2f0, &[]) != 0 {
+            0x00b4_838c
+        } else {
+            0x00b9_2338
+        };
+        mem.read(mem.rebase(at))
+    }
+
+    /// The glyph record buffer the help-text writers fill with
+    /// `TOGetFontInfo` (0x40 bytes, cleared on entry).
+    const HELP_GLYPH: u32 = 0x0184_1d50;
+
+    /// `TOAddPktChangeMacro_help(key, code, pen, scale, extra, shadow)`
+    /// (`0x008e9ca0`): the packets of a macro's replacement text
+    /// (`TOGetChangeMacroAddress(key, code)`) at the text cursor `pen`.
+    ///
+    /// Each glyph gets its record in [`HELP_GLYPH`] and is drawn by
+    /// `TOMakeBtlEasyFontEdge` (or `TOMakePktBtlEasyFontShadow` when
+    /// `shadow` is set) and `TOMakePktBtlEasyFont`, then the pen moves on
+    /// (`TOAddFontWidthSpace`), all at `scale`. Code 7 with a byte
+    /// 0xe0..=0xef moves the pen right by that byte less 0xe0; macro codes
+    /// 0x12..=0x22 nest (this function again, same key). Returns the packet
+    /// cursor `0x018716cc`.
+    pub fn to_add_pkt_change_macro_help<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const CHANGE_MACRO_ADDRESS: u32 = 0x008b_6660;
+        const SKIP_CODE: u32 = 0x008d_fd80;
+        const FONT_INFO: u32 = 0x008b_7240;
+        const EDGE: u32 = 0x008f_ae40;
+        const SHADOW: u32 = 0x008f_bae0;
+        const FACE: u32 = 0x008f_b940;
+        const ADD_WIDTH_SPACE: u32 = 0x008e_8ed0;
+        const ITSELF: u32 = 0x008e_9ca0;
+        let [key, code, pen, scale, extra, shadow] = args;
+        let glyph = mem.rebase(HELP_GLYPH);
+        for k in 0..0x10 {
+            mem.write(glyph.wrapping_add(4 * k), 0u32);
+        }
+        let mut p = call(mem, CHANGE_MACRO_ADDRESS, &[key, code]);
+        while p != 0 && mem.read::<u8>(p) != 0 {
+            match mem.read::<u8>(p) {
+                7 => {
+                    let step = mem.read::<u8>(p.wrapping_add(1));
+                    if (0xe0..0xf0).contains(&step) {
+                        let x = f64::from(f32::from(step - 0xe0))
+                            + f64::from(mem.read::<f32>(pen.wrapping_add(4)));
+                        #[allow(clippy::cast_possible_truncation)] // fstp dword
+                        mem.write(pen.wrapping_add(4), x as f32);
+                    }
+                    p = call(mem, SKIP_CODE, &[p]);
+                }
+                0x12..=0x22 => {
+                    call(mem, ITSELF, &[key, p, pen, scale, extra, shadow]);
+                    p = call(mem, SKIP_CODE, &[p]);
+                }
+                _ => {
+                    p = call(mem, FONT_INFO, &[p, glyph]);
+                    call(
+                        mem,
+                        if shadow == 0 { EDGE } else { SHADOW },
+                        &[pen, glyph, scale],
+                    );
+                    call(mem, FACE, &[pen, glyph, scale]);
+                    call(mem, ADD_WIDTH_SPACE, &[pen, glyph, scale]);
+                }
+            }
+        }
+        mem.read(mem.rebase(0x0187_16cc))
+    }
+
+    /// The battle-font text cursor the cross-menu writers lay out with
+    /// (see [`to_make_btl_easy_font`]).
+    const CROSS_PEN: u32 = 0x025d_09a0;
+
+    /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r,
+    /// g, b, a, scale, extra)` (`0x00901700`): a cross-menu text in the
+    /// battle font at `x, y`, with the pen ([`CROSS_PEN`]) reset to colour
+    /// `r, g, b, a`, kind byte `kind` (`+0x1a`) and mode byte `mode`
+    /// (`+0x1b`).
+    ///
+    /// By `TOGetGroup` of each code:
+    /// - 1 (new line): x back to the start; y down by `0x00b66c98` (13.6)
+    ///   when `scale` equals `0x00b5edec` (0.64), else by `scale × 16`.
+    /// - 2 (control): 7 with a byte 0xe1..=0xef moves the pen right by
+    ///   that byte less 0xe0. `0xa n` sets the mode's low nibble to
+    ///   `(n & 0xf) - 1` (when non-zero) and its high nibble to
+    ///   `(n & 0xf0) - 0x40` (from 0x40). `0xb n` draws button icon `n`
+    ///   (`setButtonData(n, -1)`, `TODrawScaleButtonIconRGBA` at scale
+    ///   `0x00b66864` (0.63), at y, or at `y + 3.0 + AdjustButtonIconY`
+    ///   unless `scale` is 0.64) and moves the pen by the icon width plus
+    ///   `TOGetFontSpaceInPiexl(0)`. Other than 7 they end with
+    ///   `resetButtonData`.
+    /// - 3 (macro): `TOAddPktChangeMacro_help(key, …, scale, extra, 0)`
+    ///   unless `key` is -1.
+    /// - 4 (glyph): its record ([`HELP_GLYPH`]), the edge (unless
+    ///   `0x018716bc` is set), the face and the advance at `scale`.
+    #[allow(
+        clippy::cast_possible_truncation, // fstp dword
+        clippy::too_many_lines,
+        clippy::many_single_char_names, // the colour and the position
+        clippy::float_cmp // the original's exact `fucomp`
+    )]
+    pub fn to_mkp_cross_ext_mes_font_l_clut_type_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 12],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        const GET_GROUP: u32 = 0x008d_f610;
+        const SKIP_CODE: u32 = 0x008d_fd80;
+        const FONT_INFO: u32 = 0x008b_7240;
+        const EDGE: u32 = 0x008f_ae40;
+        const FACE: u32 = 0x008f_b940;
+        const ADD_WIDTH_SPACE: u32 = 0x008e_8ed0;
+        const MACRO_HELP: u32 = 0x008e_9ca0;
+        const SET_BUTTON: u32 = 0x008b_1350;
+        const RESET_BUTTON: u32 = 0x008b_1330;
+        const ADJUST_ICON_Y: u32 = 0x008e_5280;
+        const DRAW_ICON: u32 = 0x008f_8ee0;
+        const ICON_WIDTH: u32 = 0x008f_a800;
+        const SPACE_PIXELS: u32 = 0x008f_a570;
+        let [key, text, x, y, mode, kind, r, g, b, a, scale, extra] = args;
+        let glyph = mem.rebase(HELP_GLYPH);
+        let pen = mem.rebase(CROSS_PEN);
+        for k in 0..0x10 {
+            mem.write(glyph.wrapping_add(4 * k), 0u32);
+        }
+        for k in 0..7 {
+            mem.write(pen.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(pen, [r, g, b, a].map(|c| c.to_le_bytes()[0]));
+        mem.write(pen.wrapping_add(4), f32::from_bits(x));
+        mem.write(pen.wrapping_add(8), f32::from_bits(y));
+        mem.write(
+            pen.wrapping_add(0x1a),
+            [kind.to_le_bytes()[0], mode.to_le_bytes()[0]],
+        );
+        let image = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let pen_x = |mem: &M| f64::from(mem.read::<f32>(pen.wrapping_add(4)));
+        let pen_y = |mem: &M| f64::from(mem.read::<f32>(pen.wrapping_add(8)));
+        let scale_f = f32::from_bits(scale);
+        let small = f32::from_bits(image(mem, 0x00b5_edec));
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            match call(mem, GET_GROUP, &[u32::from(mem.read::<u8>(p))]) {
+                1 => {
+                    mem.write(pen.wrapping_add(4), f32::from_bits(x));
+                    let y = if small == scale_f {
+                        pen_y(mem) + mem.read::<f64>(mem.rebase(0x00b6_6c98))
+                    } else {
+                        f64::from(scale_f) * mem.read::<f64>(mem.rebase(0x00b3_13a0)) + pen_y(mem)
+                    };
+                    mem.write(pen.wrapping_add(8), y as f32);
+                }
+                2 => {
+                    let code = mem.read::<u8>(p);
+                    let arg = mem.read::<u8>(p.wrapping_add(1));
+                    if code == 7 {
+                        if arg > 0xe0 && arg < 0xf0 {
+                            let x = f64::from(f32::from(arg - 0xe0)) + pen_x(mem);
+                            mem.write(pen.wrapping_add(4), x as f32);
+                        }
+                    } else {
+                        if code == 0xa {
+                            let at = pen.wrapping_add(0x1b);
+                            let mut m = mem.read::<u8>(at);
+                            if arg & 0xf != 0 {
+                                m = (m & 0xf0) | ((arg & 0xf) - 1);
+                                mem.write(at, m);
+                            }
+                            if arg & 0xf0 >= 0x40 {
+                                m = (m & 0xf) | ((arg & 0xf0) - 0x40);
+                                mem.write(at, m);
+                            }
+                        }
+                        if code == 0xb {
+                            let icon = u32::from(arg);
+                            call(mem, SET_BUTTON, &[icon, u32::MAX]);
+                            let icon_scale = image(mem, 0x00b6_6864);
+                            let small = mem.read::<f64>(mem.rebase(0x00b6_6c68));
+                            let icon_y = if small == f64::from(scale_f) {
+                                mem.read::<f32>(pen.wrapping_add(8))
+                            } else {
+                                let lift = fcall(
+                                    mem,
+                                    ADJUST_ICON_Y,
+                                    &[icon_scale, 0x80, 0x80, 0x80, 0x80],
+                                );
+                                let three = mem.read::<f64>(mem.rebase(0x00b2_c5c8));
+                                ((pen_y(mem) + three) + lift) as f32
+                            };
+                            let pen_x_bits = mem.read::<u32>(pen.wrapping_add(4));
+                            let args = [
+                                icon,
+                                pen_x_bits,
+                                icon_y.to_bits(),
+                                icon_scale,
+                                0x80,
+                                0x80,
+                                0x80,
+                                0x80,
+                            ];
+                            call(mem, DRAW_ICON, &args);
+                            let width = fcall(mem, ICON_WIDTH, &[icon, icon_scale]);
+                            let space = fcall(mem, SPACE_PIXELS, &[0]);
+                            mem.write(pen.wrapping_add(4), ((space + width) + pen_x(mem)) as f32);
+                        }
+                        call(mem, RESET_BUTTON, &[]);
+                    }
+                }
+                3 if key != u32::MAX => {
+                    call(mem, MACRO_HELP, &[key, p, pen, scale, extra, 0]);
+                }
+                4 => {
+                    call(mem, FONT_INFO, &[p, glyph]);
+                    if image(mem, 0x0187_16bc) == 0 {
+                        call(mem, EDGE, &[pen, glyph, scale]);
+                    }
+                    call(mem, FACE, &[pen, glyph, scale]);
+                    call(mem, ADD_WIDTH_SPACE, &[pen, glyph, scale]);
+                }
+                _ => {}
+            }
+            p = call(mem, SKIP_CODE, &[p]);
+        }
+    }
+
+    /// The UV rectangle of cross-menu icon `icon` (layout): the icons sit
+    /// 17 to a row on sheet 0x3dc0, each 15 × 18 texels, over the sheet
+    /// size `w`, `h`.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    fn cross_menu_icon_uv(icon: u8, (w, h): (f64, f64)) -> [f32; 4] {
+        let (col, row) = (u16::from(icon % 17), u16::from(icon / 17));
+        let texel = |v: u16, size: f64| (f64::from(v) / size) as f32;
+        [
+            texel(col * 15, w),
+            texel(row * 18, h),
+            texel(col * 15 + 15, w),
+            texel(row * 18 + 18, h),
+        ]
+    }
+
+    /// `DrawCrossMenuIconXYWHRGBA(x, y, w, h, icon, r, g, b, a)`
+    /// (`0x008e6af0`): one cross-menu icon (see [`cross_menu_icon_uv`]) in
+    /// the box `x, y, w, h` with the colour bytes `r, g, b, a` on both
+    /// corners and depth 500, handed to `graphicDrawUIElement(rec, texture,
+    /// 1, 0, 0)` when `BeginScissor_XYUV` keeps it. `scratch` holds 0xa0
+    /// bytes: the sheet size at `+0`, the record at `+0x10`; record words
+    /// the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    pub fn draw_cross_menu_icon_xywh_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const SHEET: u32 = 0x3dc0;
+        const SHAPE_TEXTURE: u32 = 0x008a_c8c0;
+        const IMAGE_WH: u32 = 0x008a_c400;
+        const SCISSOR: u32 = 0x008e_5a20;
+        const DRAW_UI: u32 = 0x0063_eee0;
+        let [x, y, w, h, icon, colour @ ..] = args;
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let rec = scratch.wrapping_add(0x10);
+        let texture = call(mem, SHAPE_TEXTURE, &[SHEET]);
+        call(mem, IMAGE_WH, &[SHEET, scratch, scratch.wrapping_add(4)]);
+        let sheet_w = f64::from(mem.read::<f32>(scratch));
+        let sheet_h = f64::from(mem.read::<f32>(scratch.wrapping_add(4)));
+        let [u0, v0, u1, v1] = cross_menu_icon_uv(icon.to_le_bytes()[0], (sheet_w, sheet_h));
+        let float = |bits: u32| f64::from(f32::from_bits(bits));
+        let x1 = (float(x) + float(w)) as f32;
+        let y1 = (float(y) + float(h)) as f32;
+        let fields = [
+            (0x00, f32::from_bits(x)),
+            (0x04, f32::from_bits(y)),
+            (0x08, u0),
+            (0x0c, v0),
+            (0x20, x1),
+            (0x24, y1),
+            (0x28, u1),
+            (0x2c, v1),
+        ];
+        for (off, v) in fields {
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for (k, c) in (0u32..).zip(colour) {
+            let byte = u32::from(c.to_le_bytes()[0]);
+            mem.write(rec.wrapping_add(0x10 + 4 * k), byte);
+            mem.write(rec.wrapping_add(0x30 + 4 * k), byte);
+        }
+        mem.write(rec.wrapping_add(0x80), 500u32);
+        let field = |off: u32| rec.wrapping_add(off);
+        let scissor = [
+            field(0),
+            field(4),
+            field(0x20),
+            field(0x24),
+            field(8),
+            field(0xc),
+            field(0x28),
+            field(0x2c),
+        ];
+        if call(mem, SCISSOR, &scissor) != 0 {
+            call(mem, DRAW_UI, &[rec, texture, 1, 0, 0]);
+        }
+    }
 }

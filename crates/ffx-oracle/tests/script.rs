@@ -3677,3 +3677,191 @@ fn round15_vm_helpers_match_the_original() {
     no_diff(&mut a, &mut b, "AtelSetUpCallFunc");
     poke(&mut a, &mut b, tables, saved);
 }
+
+/// Round 16's VM helpers against the original: results and memory.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per helper
+fn round16_vm_helpers_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0016);
+    for c in in_use(&b) {
+        make_current(&mut a, &mut b, c);
+        for w in actors(&mut a, &mut b) {
+            for key in [u32::MAX, 0, 1, 2, 5] {
+                assert_eq!(
+                    orig(&mut a, 0x0086_32b0, &[w, key]),
+                    hp::script_line_actor_side(&b, w, key),
+                    "Script_LineActorSide {w:#x} {key}"
+                );
+            }
+        }
+        // Native_PlayMotionCommon on each model, as model 0x66 too (its
+        // 0x013008e0 flag), in every mode, from the worker's stack
+        for w in actors(&mut a, &mut b) {
+            let m = v::atel_get_char_handle(&b, w);
+            if m == 0 {
+                continue;
+            }
+            let id = Mem::read::<u16>(&b, m);
+            let s = w + worker::STACK;
+            for (mode, model) in [(0, id), (1, 0x66), (2, id), (3, 0x66)] {
+                poke(&mut a, &mut b, m, model);
+                poke(&mut a, &mut b, s, 0i32);
+                for x in [0x0002_1092, 0, 1, 0, u32::MAX] {
+                    push_both(&mut a, &mut b, s, stack::INT, x);
+                }
+                clear_stacks(&mut a, &mut b);
+                let ra = orig(&mut a, 0x00a7_aae0, &[w, s, mode, 0]);
+                let rb = ffx_script::vm::bridge::native_chr::native_play_motion_common(
+                    &mut Run(&mut b),
+                    w,
+                    s,
+                    mode,
+                    0,
+                );
+                assert_eq!(ra, rb, "Native_PlayMotionCommon {w:#x} {mode}");
+                no_diff(
+                    &mut a,
+                    &mut b,
+                    &format!("Native_PlayMotionCommon {w:#x} {mode}"),
+                );
+            }
+            poke(&mut a, &mut b, m, id);
+        }
+        let blk = Mem::read::<u32>(&b, c + 0x48);
+        if blk != 0 {
+            assert_eq!(
+                orig(&mut a, 0x0086_c0c0, &[blk]),
+                hp::atel_get_my_buffer_size(&b, blk),
+                "AtelGetMyBufferSize {c:#x}"
+            );
+            for i in 0..4 {
+                let ra = orig_float(&mut a, 0x0086_ab80, &[blk, i]);
+                let rb = hp::atel_get_bin_hdr_float(&b, blk, i);
+                assert!(
+                    same_float(ra, ffx_bridge::x87::store(rb)),
+                    "0x0086ab80 {c:#x} {i}"
+                );
+            }
+        }
+    }
+    let s = a.alloc(0x40).unwrap();
+    assert_eq!(b.alloc(0x40).unwrap(), s);
+    let digits = b"0123456789abcdefABCDEFxg$ ";
+    for _ in 0..300 {
+        let mut text: Vec<u8> = match rng.below(3) {
+            0 => b"0x".to_vec(),
+            1 => b"$".to_vec(),
+            _ => Vec::new(),
+        };
+        for _ in 0..rng.below(12) {
+            text.push(digits[usize::try_from(rng.below(26)).unwrap()]);
+        }
+        text.push(0);
+        for o in [&mut a, &mut b] {
+            Mem::write_bytes(o, s, &text);
+        }
+        assert_eq!(
+            orig(&mut a, 0x0087_7660, &[s]),
+            hp::atel_parse_hex(&b, s),
+            "0x00877660 {text:?}"
+        );
+    }
+    for _ in 0..40 {
+        let n = if rng.below(4) == 0 {
+            rng.below(0x200)
+        } else {
+            rng.below(0x240) - 0x20
+        };
+        let ra = orig(&mut a, 0x0086_f460, &[n]);
+        let rb = hp::atel_set_bind_mask(&mut b, n);
+        if n.cast_signed() < 0x200 {
+            assert_eq!(ra, rb, "0x0086f460 {n}");
+        }
+        no_diff(&mut a, &mut b, &format!("0x0086f460 {n}"));
+    }
+    let win = a.rebase(0x0132_6d70);
+    for k in (0..16 * 0x2c).step_by(4) {
+        poke(&mut a, &mut b, win + k, rng.next());
+    }
+    assert_eq!(
+        orig(&mut a, 0x0086_3b10, &[]),
+        hp::atel_clear_mes_win_work(&mut b),
+        "AtelClearMesWinWork"
+    );
+    no_diff(&mut a, &mut b, "AtelClearMesWinWork");
+    // the callback queues: register named callbacks, then run them; a
+    // callback that returns non-zero (AtelGetSnd3dWork) is done, one
+    // that returns 0 (0x008719c0 on an empty string) stays
+    let done = a.rebase(0x0087_73f0);
+    let wait = a.rebase(0x0087_19c0);
+    let que = a.rebase(0x0132_7f50);
+    for q in 0..2 {
+        let zero = [0u8; 0x100];
+        for o in [&mut a, &mut b] {
+            Mem::write_bytes(o, que + q * 0x100, &zero);
+        }
+        for k in 0..17 {
+            let name: Vec<u8> = (0..rng.below(10))
+                .map(|_| b'a' + u8::try_from(rng.below(26)).unwrap())
+                .chain([0])
+                .collect();
+            for o in [&mut a, &mut b] {
+                Mem::write_bytes(o, s, &name);
+            }
+            let f = if k % 3 == 2 { wait } else { done };
+            let ra = orig(&mut a, 0x0087_51b0, &[q, f, s]);
+            assert_eq!(
+                ra,
+                hp::atel_regist_callback_que2(&mut b, q, f, s),
+                "AtelRegistCallbackQue2 {q} {k}"
+            );
+            no_diff(&mut a, &mut b, &format!("AtelRegistCallbackQue2 {q} {k}"));
+        }
+        for k in 0..20 {
+            let ra = orig(&mut a, 0x0087_50b0, &[q]);
+            let rb = hp::atel_exec_callback_que(&mut Run(&mut b), q);
+            assert_eq!(ra, rb, "AtelExecCallbackQue {q} {k}");
+            no_diff(&mut a, &mut b, &format!("AtelExecCallbackQue {q} {k}"));
+            if k % 4 == 3 {
+                // let a waiting callback finish: its word non-zero
+                poke(&mut a, &mut b, que + q * 0x100 + 4, 0x41_u32);
+            }
+        }
+    }
+}
+
+/// The ctrl work's default start callback (`0x008683e0`) on every ctrl
+/// work in use: each worker runs until its init is done (Rust's
+/// `Script_Run` against the original), then the signals are decoded.
+#[test]
+fn ctrl_start_matches_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    for c in ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        clear_stacks(&mut a, &mut b);
+        let ra = match a.call(a.rebase(0x0086_83e0), Conv::Cdecl, &[c]) {
+            Ok(r) => r.eax,
+            Err(e) => {
+                eprintln!("ctrl {c:#x}: the original stops: {e}");
+                continue;
+            }
+        };
+        let rb = hp::atel_ctrl_start(&mut Run(&mut b), c);
+        assert_eq!(ra, rb, "0x008683e0 {c:#x}");
+        native_no_diff(&mut a, &mut b, &format!("0x008683e0 {c:#x}"));
+    }
+}

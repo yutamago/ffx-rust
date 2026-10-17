@@ -378,6 +378,19 @@ pub mod bridge {
         apply(mem, obj, key, spread, kind, w_at, 0, false);
     }
 
+    /// `pppSRandFV_Draw(two)` (`0x007326e0`, and `pppSRandCV_Draw`
+    /// `0x00732f30`), `pppSRandUpFV_Draw` (`0x00732970`, [`Spread::Up`]) and
+    /// `pppSRandDownFV_Draw` (`0x00732c00`, [`Spread::Down`]): one spread
+    /// value of the seeded rand programs, returned in `ST0`.
+    pub fn ppp_srand_draw<M: Mem>(
+        mem: &mut M,
+        spread: Spread,
+        two: bool,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) -> f32 {
+        spread_draw(mem, spread, two, srand)
+    }
+
     /// One spread value: a draw (negated for `Down`), or with `two` the
     /// two draws combined.
     fn spread_draw<M: Mem>(

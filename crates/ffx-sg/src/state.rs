@@ -1811,6 +1811,101 @@ pub mod bridge {
         u32::from(level)
     }
 
+    /// `Sg_ChrPushApart(a, b, reach, dist)` (`0x0083ecd0`): two characters
+    /// closer than `reach` (`dist` apart) are pushed apart in x and z by
+    /// the overlap `reach - dist`, along the normalised direction from `b`
+    /// to `a`. The shares come from the characters' weights (`+0x500`): `a`
+    /// moves `wa / (wa + wb)` of the overlap and `b` the rest. A negative
+    /// weight does not move (the other takes all); both non-negative use
+    /// them as they are (both 0 meaning 1 each); both negative weigh the
+    /// characters by their distances from their anchors
+    /// (`Sg_VectorGetLengthXZ(+0x1c, +0xc)`, scaled by the larger; equal
+    /// distances end it, returning 0), and then `a` takes the
+    /// remainder rather than the share. A share below 0 ends it (0). Each
+    /// moved character's step (`+0x4c`, `+0x54`) gets the push, and `+0x194`
+    /// bit 5 when the step is not zero. Returns bit 5 of either
+    /// character's `+0x194`.
+    #[allow(clippy::float_cmp)]
+    pub fn chr_push_apart(mem: &mut impl Mem, a: u32, b: u32, reach: f32, dist: f32) -> u32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        use ffx_bridge::x87;
+        let ld = |x: f32| x87::load(x.to_bits());
+        let st = |x: f64| f32::from_bits(x87::store(x));
+        let ra: f32 = mem.read(a.wrapping_add(0x500));
+        let rb: f32 = mem.read(b.wrapping_add(0x500));
+        let (mut wa, mut wb) = (1.0f32, 1.0f32);
+        let mut both_negative = false;
+        if ld(rb) < 0.0 {
+            wa = 0.0;
+            if ld(ra) < 0.0 {
+                both_negative = true;
+                let la = crate::vec::bridge::vector_get_length_xz(
+                    mem,
+                    a.wrapping_add(0x1c),
+                    a.wrapping_add(0xc),
+                );
+                let lb = crate::vec::bridge::vector_get_length_xz(
+                    mem,
+                    b.wrapping_add(0x1c),
+                    b.wrapping_add(0xc),
+                );
+                if ld(lb) == ld(la) {
+                    return 0;
+                }
+                let mx = if ld(lb) > ld(la) { lb } else { la };
+                wa = st(x87::div(ld(la), ld(mx)));
+                wb = st(x87::div(ld(lb), ld(mx)));
+            }
+        } else if ld(ra) < 0.0 {
+            wb = 0.0;
+        } else {
+            wa = x87::round_trip(ra);
+            wb = x87::round_trip(rb);
+            if wa == 0.0 && wb == 0.0 {
+                wa = 1.0;
+                wb = 1.0;
+            }
+        }
+        let d = st(x87::sub(ld(reach), ld(dist)));
+        let pa: [f32; 3] = mem.read(a.wrapping_add(0xc));
+        let pb: [f32; 3] = mem.read(b.wrapping_add(0xc));
+        let dx = st(x87::sub(ld(pa[0]), ld(pb[0])));
+        let dz = st(x87::sub(ld(pa[2]), ld(pb[2])));
+        let (dx, dz) = {
+            let mut s = Scratch::new(mem);
+            s.write(SCRATCH, [dx, 0.0, dz]);
+            ffx_ps2::vu0::bridge::normalize(&mut s, SCRATCH, SCRATCH);
+            let v: [f32; 3] = s.read(SCRATCH);
+            (v[0], v[2])
+        };
+        let t = st(x87::div(x87::mul(ld(wa), ld(d)), x87::add(ld(wa), ld(wb))));
+        if ld(t) < 0.0 {
+            return 0;
+        }
+        let u = st(x87::sub(ld(d), ld(t)));
+        let (sa, sb) = if both_negative { (t, u) } else { (u, t) };
+        let push = |mem: &mut _, c: u32, s: f32, sign: f64| {
+            if ld(s) == 0.0 {
+                return;
+            }
+            let x = Mem::read::<f32>(mem, c.wrapping_add(0x4c));
+            let x = st(x87::add(ld(x), sign * x87::mul(ld(dx), ld(s))));
+            Mem::write(mem, c.wrapping_add(0x4c), x);
+            let z = Mem::read::<f32>(mem, c.wrapping_add(0x54));
+            let z = st(x87::add(ld(z), sign * x87::mul(ld(dz), ld(s))));
+            Mem::write(mem, c.wrapping_add(0x54), z);
+            if x != 0.0 || z != 0.0 {
+                let f: u32 = Mem::read(mem, c.wrapping_add(0x194));
+                Mem::write(mem, c.wrapping_add(0x194), f | 0x20);
+            }
+        };
+        push(mem, a, sa, 1.0);
+        push(mem, b, sb, -1.0);
+        let fa: u32 = mem.read(a.wrapping_add(0x194));
+        let fb: u32 = mem.read(b.wrapping_add(0x194));
+        ((fb | fa) >> 5) & 1
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);

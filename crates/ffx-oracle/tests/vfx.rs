@@ -10,7 +10,8 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave, x87,
+    draw, et, fp, heap, lns, mat, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small,
+    tree, vec, wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -5568,6 +5569,42 @@ fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -
     log
 }
 
+/// [`deref_recorder_with`] with 32-word entries (31 logged words), for
+/// requests too large for the 16-word form.
+fn wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let log = p.alloc(4 + 0x100 * 128);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x07]); // shl ecx, 7
+    let mut pos = 0u32;
+    for (k, &n) in (0u8..).zip(words) {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        if n == 0 {
+            c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+            c.extend((log + 4 + 4 * pos).to_le_bytes());
+            pos += 1;
+        } else {
+            for j in 0..n {
+                c.extend([0x8b, 0x50, 4 * j]); // mov edx, [eax + 4j]
+                c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend((log + 4 + 4 * pos).to_le_bytes());
+                pos += 1;
+            }
+        }
+    }
+    assert!(pos <= 31);
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [count] or [ret]
+    c.extend(ret.unwrap_or(log).to_le_bytes());
+    c.push(0xc3);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
 #[test]
 #[allow(clippy::too_many_lines)]
 fn opp_draw_part_matches_the_original() {
@@ -8741,7 +8778,7 @@ fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
 fn wave_omd_make_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x007f_94e0);
-        x87_crt_stand_ins(&mut p);
+        // MSVCR110's own _CIatan2 (op_deg_get)
         let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
         let omd = p.alloc(0x8000);
         let (view, light) = (p.alloc(0x100), p.alloc(0x60));
@@ -8837,16 +8874,894 @@ fn wave_omd_make_matches_the_original() {
     }
 }
 
-/// An `fptan` stand-in for the CRT's `_CItan` (its import slot
-/// `0x00b0c3a0` pointed at `0x00b0bfd0`) and a thunk, `fld qword [esp +
-/// 4]; jmp [slot]`, for the bridge's side; returns the thunk.
-fn tan_stand_in(p: &mut Pair) -> u32 {
-    let at = p.sym(0x00b0_bfd0);
-    let code = [0xd9u8, 0xf2, 0xdd, 0xd8, 0xc3]; // fptan; fstp st0; ret
-    p.a.write(at, &code).unwrap();
-    p.b.write(at, &code).unwrap();
+#[test]
+#[allow(clippy::too_many_lines)]
+fn shape_con_des_match_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_2b50);
+        // graphicVFXDestroy and pppMemFree recorded; the level hash from a
+        // cell
+        let cells = p.alloc(0x10);
+        deref_recorder(&mut p, 0x0064_5280, &[0, 0]);
+        deref_recorder(&mut p, 0x0071_6a90, &[0, 0, 0]);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
+        let (obj, prog, table, shape, sptr) = (
+            p.alloc(0x200),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(0x40),
+            p.alloc(4),
+        );
+        let env = p.alloc(0x40);
+        let slot = p.sym(d::ENV_SLOT);
+        let cur = p.sym(d::CURRENT_PROGRAM);
+        let cons = [
+            (0x0074_2b50u32, d::FIELD_CON),
+            (0x0074_3f00, d::FIELD_REV_CON),
+            (0x0074_50a0, d::FIELD_SPD_CON),
+            (0x0074_6200, d::FIELD_GLOBAL_CON),
+            (0x0074_7410, d::CAMERA_CON),
+            (0x0074_8660, d::CAMERA_CON),
+        ];
+        let dess = [
+            (0x0074_2bd0u32, d::FIELD_DES),
+            (0x0074_3f80, d::FIELD_REV_DES),
+            (0x0074_5130, d::FIELD_SPD_DES),
+            (0x0074_6280, d::FIELD_GLOBAL_DES),
+            (0x0074_7490, d::CAMERA_DES),
+            (0x0074_86e0, d::CAMERA_DES),
+            (0x0075_6270, d::RAIN_DES),
+        ];
+        for _ in 0..500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            p.set(prog + 0xc, table);
+            p.set(table, 4 * rng.below(0x10));
+            p.set(table + 4, 4 * rng.below(0x10));
+            p.set(obj + 8, sptr);
+            p.set(sptr, shape);
+            p.set(slot, env);
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            p.set(cells, rng.pick(&[0x76fu32, 0x1139, 0, 0x100]));
+            for (at, l) in cons {
+                p.check("pppDrawShape*Con", at, &[obj, prog], |o| {
+                    Some(d::shape_con(o, obj, prog, l, &mut call_original))
+                });
+            }
+            // the freed pointers: null or not
+            for off in [0xa4u32, 0xe0, 0xe4, 0xec, 0xf0, 0xf4] {
+                let t: u32 = p.get(table);
+                let x = if rng.chance(3) { 0 } else { rng.next() };
+                p.set(obj + t + off, x);
+                let t1: u32 = p.get(table + 4);
+                let y = if rng.chance(3) { 0 } else { rng.next() };
+                p.set(obj + t1 + off, y);
+            }
+            for (at, l) in dess {
+                p.check("ppp*Des", at, &[obj, prog], |o| {
+                    Some(d::ppp_des(o, obj, prog, l, &mut call_original))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn srand_draws_match_the_original() {
+    use rand::bridge::{self as r, Spread};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_26e0);
+        let log = record_srand(&mut p);
+        let (rg, seeded, r0) = (p.sym(r::R.sym), p.sym(r::SEEDED.sym), p.sym(0x00c8_f508));
+        for _ in 0..2000 {
+            let x = (rng.next() & 0x007f_ffff) | 0x3f80_0000;
+            p.set(rg, x);
+            p.set(
+                seeded,
+                u32::from(rng.chance(4)).wrapping_sub(1) & rng.next(),
+            );
+            p.fill(r0, 0x10, &mut rng);
+            // r0 - 1 never a signalling NaN (the oracle keeps those)
+            let t0 = if rng.chance(50) {
+                u32::MAX
+            } else {
+                rng.float()
+            };
+            p.set(r0, t0.wrapping_add(1));
+            let two = u32::from(rng.chance(2)) | (rng.next() & 0xffff_ff00);
+            p.set(log, 0u32);
+            for (at, spread) in [
+                (0x0073_26e0u32, Spread::Plain),
+                (0x0073_2f30, Spread::Plain),
+                (0x0073_2970, Spread::Up),
+                (0x0073_2c00, Spread::Down),
+            ] {
+                check_st0(
+                    &mut p,
+                    &format!("pppSRand*_Draw {at:#x}"),
+                    at,
+                    &[two],
+                    |o| r::ppp_srand_draw(o, spread, two & 0xff != 0, &mut srand_log(log)).into(),
+                );
+            }
+        }
+    }
+}
+
+/// Points the scratch stack's top mark at `buf`.
+fn spr_at(p: &mut Pair, rng: &mut Xorshift, buf: u32) {
+    use op::bridge as o;
+    let top = i8::try_from(rng.below(4)).unwrap();
+    p.put(o::SPR_TOP, top);
+    let at = p.sym(o::SPR_STACK.sym) + 4 * u32::from(top.cast_unsigned());
+    p.set(at, buf);
+}
+
+#[test]
+fn tk_fade_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_ee50);
+        let (obj, key, prog, table) = (p.alloc(0x100), p.alloc(0x20), p.alloc(0x10), p.alloc(4));
+        let (env, env2, recs, buf) = (p.alloc(4), p.alloc(0x40), p.alloc(0x100), p.alloc(0x500));
+        let (slot, stop) = (p.sym(d::ENV_SLOT), p.sym(0x0230_fd34));
+        for _ in 0..1500 {
+            p.fill(obj, 0x100, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(recs, 0x100, &mut rng);
+            p.fill(buf, 0x500, &mut rng);
+            spr_at(&mut p, &mut rng, buf);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            let w = obj + 0xa0 + off;
+            // the position: mostly in the CLUT's range, sometimes far off
+            for (k, (lo, hi)) in (0u32..).zip([(-300.0, 300.0), (-20.0, 20.0), (-2.0, 2.0)]) {
+                let x = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, lo, hi)
+                };
+                p.set(w + 4 * k, x);
+            }
+            for k in 2..5u32 {
+                let x = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -10.0, 10.0)
+                };
+                p.set(key + 4 * k, x);
+            }
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            p.set(key + 4, if rng.chance(10) { 0xffff } else { rng.below(8) });
+            p.set(stop, u32::from(rng.chance(20)));
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            check_deep_n(
+                &mut p,
+                "pppKeTkFadeDraw",
+                0x0072_ee50,
+                &[obj, key, prog],
+                |o, frame| {
+                    Some(d::ppp_ke_tk_fade_draw(
+                        o,
+                        obj,
+                        key,
+                        prog,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn lns_lp_t_ot_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_b230);
+        let (obj, buf) = (p.alloc(0x100), p.alloc(0x8000));
+        let (view, parity, dc) = (p.sym(0x0230_fffe), p.sym(0x023c_bbf0), p.sym(0x012f_b900));
+        for _ in 0..1500 {
+            p.fill(obj, 0x100, &mut rng);
+            p.fill(buf, 0x8000, &mut rng);
+            spr_at(&mut p, &mut rng, buf);
+            let v: u16 = p.get(obj + 0xcc);
+            let v2 = if rng.chance(90) { v } else { v ^ 1 };
+            p.set(view, v2);
+            let vis = if rng.chance(10) {
+                0
+            } else {
+                ranged(&mut rng, 0.0, 1.0)
+            };
+            p.set(obj + 0x7c, vis);
+            let x = rng.float();
+            p.set(obj + 0xac, x);
+            let (a, m) = (rng.below(0x100), rng.below(4));
+            p.set(obj + 0x8c, u8::try_from(a).unwrap());
+            p.set(obj + 0x8d, u8::try_from(m).unwrap());
+            let frame_no = if rng.chance(70) {
+                a % (m + 1) + (m + 1) * rng.below(0x100)
+            } else {
+                rng.next()
+            };
+            let par = rng.next();
+            p.set(parity, par);
+            // the draw buffer's scissor and offset, both halves
+            let mut gss = [0u32; 2];
+            for (k, half) in [0x60u32, 0x190].into_iter().enumerate() {
+                let gs = dc + half;
+                let (ox, oy) = (rng.below(0x8000), rng.below(0x8000));
+                let (sx0, sy0) = (rng.below(0x700), rng.below(0x700));
+                let (sx1, sy1) = (sx0 + rng.below(0x80), sy0 + rng.below(0x80));
+                p.set(gs + 0x18, ox);
+                p.set(gs + 0x1c, oy);
+                p.set(gs + 0x24, sx0 | sx1 << 16);
+                p.set(gs + 0x28, sy0 | sy1 << 16);
+                let r = rng.next();
+                p.set(gs + 2, r);
+                let r = rng.next();
+                p.set(gs + 0xc, r);
+                gss[k] = (ox + 16 * sx0) | (oy + 16 * sy0) << 16;
+            }
+            p.set(obj + 0xd0, u8::try_from(rng.below(0x40)).unwrap());
+            p.set(obj + 0xd1, u8::try_from(rng.below(0x40)).unwrap());
+            // FFXVu0FTOI4Vector is a stub: the point is the original's
+            // stale stack below its 16-aligned frame, seeded on both sides
+            let n = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * n - 4 - 0x200 - 4 * n - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let g = gss[(par & 1) as usize];
+            let dx = rng.below(0x1000);
+            let dy = rng.below(0x1000);
+            p.set(at - 0x14, (g & 0xffff) + dx - 0x200);
+            p.set(at - 0x10, (g >> 16) + dy - 0x200);
+            // sometimes exactly the first texel's z (the compare is strict)
+            let t: u32 = p.get(buf + 0x60);
+            let z = if rng.chance(30) {
+                (t & 0x00ff_ffff) << 4
+            } else {
+                rng.below(0x1000_0000)
+            };
+            p.set(at - 0xc, z);
+            check_deep_n(
+                &mut p,
+                "pppKeLnsLpTOtDraw",
+                0x0075_b230,
+                &[obj, 0, frame_no],
+                |o, frame| {
+                    assert_eq!((frame - 8) & !0xf, at);
+                    d::ppp_ke_lns_lp_t_ot_draw(o, obj, frame_no, at, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+/// One `pppDrawMdl*` draw (`sym`) against `rust(oracle, obj, key, prog,
+/// frame)`: every renderer entry point recorded (the request by its 18
+/// words), the level hash, `graphicGetPtrLogCount`, the render-data
+/// lookup, the alpha helpers, the magic file's handle and id and the
+/// language from cells, `FFXVu0MulMatrix` recorded; the port runs with the original's frame pointer,
+/// so pointers to stack locals agree. The request at `frame - req_off`
+/// gets the same stale values in its untouched words (`+8..+0xc`, `+0x30`)
+/// on both sides.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn mdl_case(
+    name: &str,
+    sym: u32,
+    req_off: u32,
+    rust: impl Fn(&mut Oracle, u32, u32, u32, u32) -> u32,
+) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        let cells = p.alloc(0x20);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
+        deref_recorder_with(&mut p, 0x0064_53d0, &[0, 0], Some(cells + 4));
+        deref_recorder_with(&mut p, 0x0071_2c30, &[0], Some(cells + 8));
+        deref_recorder_with(&mut p, 0x0071_2d00, &[0], Some(cells + 0xc));
+        deref_recorder_with(&mut p, 0x0064_1370, &[], Some(cells + 0x10));
+        deref_recorder_with(&mut p, 0x009d_a390, &[], Some(cells + 0x14));
+        deref_recorder_with(&mut p, 0x009d_a3b0, &[], Some(cells + 0x18));
+        deref_recorder_with(&mut p, 0x008a_c2f0, &[], Some(cells + 0x1c));
+        deref_recorder(&mut p, 0x0064_0060, &[0, 0]);
+        // FFXVu0MulMatrix(dst, a, b) recorded with a's 16 words: the
+        // matrices built on the stack only reach the request as pointers
+        wide_recorder(&mut p, 0x006e_d5c0, &[0, 16, 0], None);
+        wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 18], None);
+        wide_recorder(&mut p, 0x0071_0fd0, &[0, 0, 0, 18, 0], None);
+        wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 18, 0], None);
+        deref_recorder(&mut p, 0x0064_5600, &[0, 0]);
+        deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
+        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (env, env2, recs, models, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x80),
+            p.alloc(0x80),
+        );
+        let slot = p.sym(draw::bridge::ENV_SLOT);
+        // the view, view-copy, screen, ppp screen and world matrices
+        let matrices = [
+            0x0230_ff20u32,
+            0x0230_fe20,
+            0x0231_1480,
+            0x0230_fe60,
+            0x0230_ffa0,
+        ]
+        .map(|a| p.sym(a));
+        let (pass, map, fp, yiq) = (
+            p.sym(0x0113_335c),
+            p.sym(0x012f_bc40),
+            p.sym(0x00c3_a500),
+            p.sym(0x00c3_a504),
+        );
+        let (cur, cpart, shift, stop) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd34),
+        );
+        let r0 = p.sym(0x00c8_f508);
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(recs, 0x400, &mut rng);
+            if rng.chance(50) {
+                for m in matrices {
+                    for o in (0..0x40).step_by(4) {
+                        let x = ranged(&mut rng, -2.0, 2.0);
+                        p.set(m + o, x);
+                    }
+                }
+            }
+            // models: small words (flags in the low bits, part offsets),
+            // then the fields the magic-file fixes look for
+            for o in (0..0x24).step_by(4) {
+                let v = (4 * rng.below(0x10)) | rng.below(4);
+                p.set(models + o, v);
+            }
+            for o in (0x24..0x80).step_by(4) {
+                let r = rng.next();
+                let v = rng.pick(&[0x36c0u32, 0x3700, 0x37e0, 0x4000 | 0x37e0, r]);
+                p.set(models + o, v);
+            }
+            for o in (0x10..0x90).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(prog + 0xc, table);
+            for k in 0..3 {
+                let off = 4 * rng.below(0x10);
+                p.set(table + 4 * k, off);
+            }
+            // the Ts work area: floats, the key's frame and its floats
+            let w = obj + 0xa0 + p.get::<u32>(table + 8);
+            for o in (0..0x1c).step_by(4) {
+                let x = if rng.chance(20) {
+                    ranged(&mut rng, -70000.0, 70000.0)
+                } else {
+                    ranged(&mut rng, -300.0, 300.0)
+                };
+                p.set(w + o, x);
+            }
+            // the Loop draws' ptr32 at +0: null sets the work area up
+            if rng.chance(30) {
+                p.set(w, 0u32);
+            }
+            for o in (8..0x20).step_by(4) {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            if rng.chance(50) {
+                let frame = p.get::<u32>(obj + 0xc);
+                p.set(key, frame);
+            }
+            // the flag bytes of the key: small values hit every branch
+            for o in [8u32, 0xa, 0x20, 0x22] {
+                if rng.chance(70) {
+                    p.set(key + o, u8::try_from(rng.below(8)).unwrap());
+                }
+            }
+            if rng.chance(30) {
+                p.set(key + 0x20, 0xffu8);
+            }
+            for o in [9u32, 0xb, 0xc, 0xd, 0xe, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26] {
+                if rng.chance(50) {
+                    p.set(key + o, 0u8);
+                }
+            }
+            p.set(pass, rng.below(3));
+            let m = rng.next();
+            let maps = [
+                0x17cu32, 0x3e, 0xc6, 0xc2, 0xff, 0x102, 0x103, 0xf4, 0x110, 0x139, 0x7a, m,
+            ];
+            p.set(map, rng.pick(&maps));
+            let f = rng.pick(&[
+                0x2cu32, 0x2d, 0x2e, 0x2f, 0x3f, 0x40, 0xe, 3, 4, 5, 0x12, 0x41,
+            ]);
+            p.set(fp, f);
+            p.set(yiq, rng.pick(&[0x19u32, 5, 0, u32::MAX]));
+            p.set(cells + 0x14, rng.pick(&[0u32, u32::MAX]));
+            let r = rng.next();
+            let magics = [
+                0x296u32, 0x241, 0x29e, 0x29f, 0x2c9, 0x17a, 0x110, 0x111, 0x231, 0x1f9, r,
+            ];
+            p.set(cells + 0x18, rng.pick(&magics));
+            p.set(cells + 0x1c, rng.pick(&[0xbu32, 1]));
+            p.set(stop, u32::from(rng.chance(20)));
+            let s = if rng.chance(20) { 4 * rng.below(4) } else { 0 };
+            p.set(shift, s);
+            p.set(cpart, part);
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            let model = if rng.chance(5) {
+                0xffff
+            } else if rng.chance(30) {
+                rng.pick(&[0x1au32, 0x1c, 0x1e, 0x1f])
+            } else {
+                rng.below(8)
+            };
+            p.set(key + 4, model);
+            // get_ptr32 of the model record's +0x1c: a pointer into models
+            for k in 0..0x20u32 {
+                let o = 4 * rng.below(8);
+                p.set(recs + 32 * k + 0x1c, models + o);
+            }
+            p.set(obj + 0x90, models + rng.below(0x20));
+            p.set(obj + 0x94, models + rng.below(0x20));
+            let (h1, h2) = (rng.next(), rng.next());
+            let h = rng.pick(&[0xec1u32, 0x169c, h1, h2]);
+            p.set(cells, h);
+            p.set(cells + 4, u32::from(rng.chance(50)));
+            // the alpha helpers: often no bits, so added ones show
+            for c in [cells + 8, cells + 0xc] {
+                let x = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(c, x);
+            }
+            let n = if rng.chance(50) { 0 } else { rng.next() };
+            p.set(cells + 0x10, n);
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            let words = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let (s1, s2) = (rng.next(), rng.next());
+            p.set(at - req_off + 8, s1);
+            p.set(at - req_off + 0x30, s2);
+            check_deep_n(&mut p, name, sym, &[obj, key, prog], |o, frame| {
+                assert_eq!((frame - 8) & !0xf, at);
+                Some(rust(o, obj, key, prog, at))
+            });
+        }
+    }
+}
+
+#[test]
+fn mdl_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlDraw",
+        0x0073_7770,
+        0x80,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_semi_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlSemiDraw",
+        0x0073_7b20,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_semi_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_2_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdl2Draw",
+        0x0073_8530,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_semi2_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlSemi2Draw",
+        0x0073_8a40,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_semi2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_ts_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlTsDraw",
+        0x0073_7f40,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_ts_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_3_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdl3Draw",
+        0x0073_94c0,
+        0x120,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_3_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_semi3_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlSemi3Draw",
+        0x0073_9d30,
+        0x120,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_semi3_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_ts3_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlTs3Draw",
+        0x0073_a370,
+        0xe0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_ts3_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_loop_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlLoopDraw",
+        0x0073_e2b0,
+        0xe0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_loop_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_loop_z_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlLoopZDraw",
+        0x0073_ea40,
+        0xe0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_loop_z_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_loop_dis_pos_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlLoopDisPosDraw",
+        0x0073_f230,
+        0x1a0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_loop_dis_pos_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn mdl_ts2_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case(
+        "pppDrawMdlTs2Draw",
+        0x0073_8ec0,
+        0xa0,
+        |o, obj, key, prog, frame| {
+            d::ppp_draw_mdl_ts2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+/// The `pppKeLns*` draws (`docs/formats/vfx.md`): the updates and the
+/// `KeLns*` drawers recorded (descriptors by their 7 words), the vector
+/// helpers real; the ports run with the original's frame pointer.
+#[allow(clippy::too_many_lines)]
+fn lns_case(name: &str, sym: u32, args: usize, rust: impl Fn(&mut Oracle, [u32; 3], u32) -> u32) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        for u in [0x0075_a2d0u32, 0x0075_aab0, 0x0075_ae90] {
+            deref_recorder(&mut p, u, &[0, 0, 0]);
+        }
+        for d in [0x0076_9340u32, 0x0076_9d70, 0x0076_a1f0] {
+            wide_recorder(&mut p, d, &[7, 0], None);
+        }
+        deref_recorder(&mut p, 0x0076_a690, &[4]);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x200),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(4),
+            p.alloc(0x80),
+        );
+        let cpart = p.sym(0x0230_ffe4);
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            p.set(cpart, part);
+            for o in [4u32, 8, 0xc] {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            // the object's matrix and position, the work area's floats
+            for o in (0x10..0x50).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
+            let w = obj + 0xa0 + off;
+            for o in (0x2c..0x40).step_by(4) {
+                let x = match rng.below(4) {
+                    0 => ranged(&mut rng, -70000.0, 70000.0),
+                    1 => 3.0e9f32.to_bits(),
+                    _ => ranged(&mut rng, -300.0, 300.0),
+                };
+                p.set(w + o, x);
+            }
+            for o in [0x9cu32, 0xa8] {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(w + o, x);
+            }
+            if rng.chance(50) {
+                p.set(w + 0x8f, 0u8);
+            }
+            let n = u8::try_from(args).unwrap();
+            let frame = p.b.stack_range().end
+                - 0x100
+                - 4 * u32::from(n)
+                - 4
+                - 0x200
+                - 4 * u32::from(n)
+                - 4
+                - 4;
+            let at = (frame - 8) & !0xf;
+            let three = [obj, key, prog];
+            let call_args = if args == 1 { vec![w] } else { three.to_vec() };
+            check_deep_n(&mut p, name, sym, &call_args, |o, frame| {
+                assert_eq!((frame - 8) & !0xf, at);
+                Some(rust(o, if args == 1 { [w, 0, 0] } else { three }, at))
+            });
+        }
+    }
+}
+
+#[test]
+fn lns_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndDraw", 0x0075_9ff0u32),
+        (Lns::Crn, "pppKeLnsCrnDraw", 0x0075_a760),
+        (Lns::Fls, "pppKeLnsFlsDraw", 0x0075_ab50),
+    ] {
+        lns_case(name, sym, 3, |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_draw(o, kind, obj, key, prog, frame, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_t_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndTDraw", 0x0075_a190u32),
+        (Lns::Crn, "pppKeLnsCrnTDraw", 0x0075_a900),
+        (Lns::Fls, "pppKeLnsFlsTDraw", 0x0075_ad00),
+    ] {
+        lns_case(name, sym, 3, |o, [obj, key, prog], _| {
+            l::ppp_ke_lns_t_draw(o, kind, obj, key, prog, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_t_ot_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndTOtDraw", 0x0075_a250u32),
+        (Lns::Crn, "pppKeLnsCrnTOtDraw", 0x0075_a9e0),
+        (Lns::Fls, "pppKeLnsFlsTOtDraw", 0x0075_ade0),
+    ] {
+        lns_case(name, sym, 1, |o, [area, _, _], frame| {
+            l::ppp_ke_lns_t_ot_draw(o, kind, area, frame, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_lp_draw_matches_the_original() {
+    use lns::bridge as l;
+    lns_case(
+        "pppKeLnsLpDraw",
+        0x0075_af80,
+        3,
+        |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_lp_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+/// The `pppKeMdlTfd*` draws: `KeMdl_MkTkClut` and `KeMdl_Draw` recorded
+/// (all their words), the work area's triples and the key's floats in
+/// range.
+fn tfd_case(name: &str, sym: u32, rust: impl Fn(&mut Oracle, u32, u32, u32) -> u32) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        deref_recorder(&mut p, 0x0076_7530, &[0, 0, 0, 0]);
+        deref_recorder(&mut p, 0x0076_6ff0, &[0; 10]);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x80),
+        );
+        let (cpart, stop) = (p.sym(0x0230_ffe4), p.sym(0x0230_fd34));
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(prog + 0xc, table);
+            for k in 0..4 {
+                let off = 4 * rng.below(0x10);
+                p.set(table + 4 * k, off);
+            }
+            p.set(cpart, part);
+            p.set(stop, u32::from(rng.chance(20)));
+            let w = obj + 0xa0 + p.get::<u32>(table + 8);
+            for o in (0..0x28).step_by(4) {
+                let x = ranged(&mut rng, -300.0, 300.0);
+                p.set(w + o, x);
+            }
+            for o in (8..0x38).step_by(4) {
+                if o != 0x1c {
+                    let x = ranged(&mut rng, -50.0, 50.0);
+                    p.set(key + o, x);
+                }
+            }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            if rng.chance(10) {
+                p.set(key + 4, 0xffffu32);
+            }
+            for o in (0x1d..0x22).chain(0x38..0x3d) {
+                if rng.chance(60) {
+                    p.set(key + o, 0u8);
+                }
+            }
+            check_conv(&mut p, name, sym, Conv::Cdecl, &[obj, key, prog], |o| {
+                Some(rust(o, obj, key, prog))
+            });
+        }
+    }
+}
+
+#[test]
+fn ke_mdl_tfd_draws_match_the_original() {
+    use mdl::bridge::{self as d, Tfd};
+    for (kind, uv, name, sym) in [
+        (Tfd::One, false, "pppKeMdlTfdDraw", 0x0074_9810u32),
+        (Tfd::Two, false, "pppKeMdlTfd2Draw", 0x0074_9b40),
+        (Tfd::Three, false, "pppKeMdlTfd3Draw", 0x0074_9e90),
+        (Tfd::One, true, "pppKeMdlTfdUvDraw", 0x0074_9950),
+        (Tfd::Two, true, "pppKeMdlTfdUv2Draw", 0x0074_9c90),
+        (Tfd::Three, true, "pppKeMdlTfdUv3Draw", 0x0074_9ff0),
+    ] {
+        tfd_case(name, sym, |o, obj, key, prog| {
+            d::ppp_ke_mdl_tfd_draw(o, kind, uv, obj, key, prog, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn fp_set_draw_matrix_and_wood_sta_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_a260);
+        // view, camera, world, the field wood matrix, the view copy
+        let matrices = [
+            0x0230_ff20u32,
+            0x0230_ff60,
+            0x0230_ffa0,
+            0x0230_fea0,
+            0x0230_fe20,
+        ]
+        .map(|a| p.sym(a));
+        for _ in 0..1000 {
+            for m in matrices {
+                for o in (0..0x40).step_by(4) {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(m + o, x);
+                }
+            }
+            let r = rng.next();
+            let mode = rng.pick(&[0u32, 1, 2, 3, 0x101, 0x102, r]);
+            check_conv(
+                &mut p,
+                "pppFpSetDrawMatrix",
+                0x0072_a260,
+                Conv::Cdecl,
+                &[mode],
+                |o| Some(fp::bridge::ppp_fp_set_draw_matrix(o, mode)),
+            );
+            // a plain frame: ebp is check_deep_n's frame
+            check_deep_n(
+                &mut p,
+                "pppDrawMatrixWoodSta",
+                0x0073_4d90,
+                &[],
+                |o, frame| Some(mat::bridge::ppp_draw_matrix_wood_sta(o, frame)),
+            );
+        }
+    }
+}
+
+/// A thunk, `fld qword [esp + 4]; jmp [slot]`, through `_CItan`'s import
+/// slot (`0x00b0c3a0`, MSVCR110's own `_CItan` in the oracle's runtime), for
+/// the bridges' `tan` callback; returns the thunk.
+fn tan_thunk(p: &mut Pair) -> u32 {
     let slot = p.sym(0x00b0_c3a0);
-    p.set(slot, at);
     let t = p.sym(0x00b0_bba0);
     let mut c = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x25]; // fld qword [esp+4]; jmp [slot]
     c.extend(slot.to_le_bytes());
@@ -8860,8 +9775,8 @@ fn tan_stand_in(p: &mut Pair) -> u32 {
 fn wave_0154_omd_make_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x007f_67c0);
-        x87_crt_stand_ins(&mut p);
-        let tan = tan_stand_in(&mut p);
+        // MSVCR110's own _CIatan2 (op_deg_get) and _CItan
+        let tan = tan_thunk(&mut p);
         let fov = p.alloc(4);
         float_stub(&mut p, 0x0063_9570, fov);
         let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
