@@ -2872,4 +2872,36 @@ ported! {
     MsSetStealGillEffect @ 0x0079_ed20 => extern "C" fn ms_set_steal_gill_effect(i: u32, got: u32) {
         afterdmg::ms_set_steal_gill_effect(&mut mem(), &mut call_ptr, i, got);
     }
+    /// `MsGetChrCenterPos(i, vec)`.
+    MsGetChrCenterPos @ 0x0079_4c20 => extern "C" fn ms_get_chr_center_pos(i: u32, vec: u32) -> i32 {
+        target::ms_get_chr_center_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `MsGetChrTopPos(i, vec)`.
+    MsGetChrTopPos @ 0x0079_5980 => extern "C" fn ms_get_chr_top_pos(i: u32, vec: u32) -> i32 {
+        target::ms_get_chr_top_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `0x007a0bb0(kind, i, vec)` (`MsSEP3DPos`).
+    MsSEP3DPos @ 0x007a_0bb0 => extern "C" fn ms_sep_3d_pos(kind: u32, i: u32, vec: u32) {
+        afterdmg::ms_sep_3d_pos(&mut mem(), &crt_trig, kind, i, vec);
+    }
+    /// `MsSEP3Dregist(kind, i, se, once, pos)`: the pan and the sound through the game.
+    MsSEP3Dregist @ 0x007a_0a30 => extern "C" fn ms_sep_3d_regist(kind: u32, i: u32, se: u32, once: u32, pos: u32) -> u32 {
+        afterdmg::ms_sep_3d_regist(&mut mem(), &crt_trig, &mut call_ptr, kind, i, se, once, pos)
+    }
+    /// `MsRegSEplay(i, se)`.
+    MsRegSEplay @ 0x007a_0100 => extern "C" fn ms_reg_se_play(i: u32, se: u32) -> u32 {
+        afterdmg::ms_reg_se_play(&mut mem(), &crt_trig, &mut call_ptr, i, se)
+    }
+    /// `MsRegSEplay2(i, se)`.
+    MsRegSEplay2 @ 0x007a_0140 => extern "C" fn ms_reg_se_play2(i: u32, se: u32) -> u32 {
+        afterdmg::ms_reg_se_play2(&mut mem(), &crt_trig, &mut call_ptr, i, se)
+    }
+    /// `MsStoneProcess(i, actor)`.
+    MsStoneProcess @ 0x0078_e150 => extern "C" fn ms_stone_process(i: u32, actor: u32) -> u32 {
+        afterdmg::ms_stone_process(&mut mem(), &crt_trig, &mut call_ptr, i, actor)
+    }
+    /// `MsStatusDefenseEffect(i, j, bits)`.
+    MsStatusDefenseEffect @ 0x0079_ee20 => extern "C" fn ms_status_defense_effect(i: u32, j: u32, bits: u32) -> u32 {
+        afterdmg::ms_status_defense_effect(&mut mem(), &mut call_ptr, i, j, bits)
+    }
 }

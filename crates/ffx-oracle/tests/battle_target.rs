@@ -292,6 +292,17 @@ const HARNESS: t::Regs = t::Regs {
 /// unwritten: the original's stack garbage reaches the `w` words of
 /// `VF_B`'s neighbour, `VF0` and `VF2` through `MsVectorRect2Polar`, so
 /// those are copied too.
+/// [`battle_common::same`] but for the emulated a0 (`0x00c8f548`),
+/// copied from `a`: `op_3d_vol_pan_get` (a sound's pan, `MsSEP3Dregist`)
+/// leaves the address of its caller's volume there, a stack local in the
+/// original and the sound node's `+4` in the port (as `tests/vfx.rs`).
+fn same(what: &str, a: &mut Oracle, b: &mut Oracle) {
+    let a0 = ffx_battle::vector::bridge::VF_M.ptr(a).addr - 0x288;
+    let w = a.read(a0, 4).unwrap();
+    b.write(a0, &w).unwrap();
+    battle_common::same(what, a, b);
+}
+
 fn local_words(a: &mut Oracle, b: &mut Oracle) {
     let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
     let vb = ffx_battle::vector::bridge::VF_B.ptr(a).addr;
@@ -497,6 +508,13 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
 }
 
 /// The game's code under a [`t::Dm`] (script, vfx and chara callees).
+/// [`game_call`] on an oracle itself.
+fn game_call_o(m: &mut Oracle, f: u32, args: &[u32]) -> u32 {
+    m.call(f, Conv::Cdecl, args)
+        .unwrap_or_else(|e| panic!("{f:#x} {args:x?}: {e}"))
+        .eax
+}
+
 fn game_call(m: &mut t::Dm<'_>, f: u32, args: &[u32]) -> u32 {
     oracle(m)
         .call(f, Conv::Cdecl, args)
@@ -1608,7 +1626,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
 }
 
 /// The battle loop's per-frame callees of sound, the CD library and the
-/// voice status (`ffx_battle::process`) and the deaths' sound (unported),
+/// voice status (`ffx_battle::process`), the sound effects (`SndSepPlay`),
 /// trophy (main), neck and character ID (chara), the battle effects'
 /// release (vfx, the heap), stubbed in `MsDebugEnvSave` (debug
 /// only); the last is the CD library's `+8`.
@@ -1620,7 +1638,7 @@ const PROCESS_CALLEES: [(u32, u8); 13] = {
         (p::TK_SND_REPORT_STATUS, 0),
         (p::SND_IS_READ_STATUS, 0),
         (p::SND_IS_READ_SHOUT_VOICE_STATUS, 0),
-        (ffx_battle::death::bridge::MS_REG_SE_PLAY, 2),
+        (ffx_battle::after_damage::bridge::SND_SEP_PLAY, 3),
         (ffx_battle::death::bridge::TROPHY_CHECK_DEFEAT_MONSTER, 1),
         (ffx_battle::atel::bridge::CH_NECK_SET_ENABLE, 2),
         (ffx_battle::death::bridge::CH_GET_CHAR_ID, 1),
@@ -2312,7 +2330,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     });
     same("MsSetChrWeak", a, b);
     // the damage numbers: a pool of 0x80 records, some taken
-    let pool = rec + 0x600;
+    let pool = rec + 0x800;
     let mut recs = vec![0u8; 0x80 * 0x14];
     let full = rng.below(6) == 0;
     for r in recs.chunks_mut(0x14) {
@@ -2889,6 +2907,114 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             0
         });
         same(what, a, b);
+    }
+    // sounds where the actors are, stone, warded statuses
+    {
+        use ffx_battle::after_damage::bridge as ad;
+        let nodes = b.rebase(ad::SEP_3D_NODES);
+        let mut area = vec![0u8; 0x200];
+        for k in 0..16 {
+            area[0x20 * k] = flag(rng, 2);
+            area[0x20 * k + 8..0x20 * k + 12]
+                .copy_from_slice(&(0x8000_0000 | rng.below(4)).to_le_bytes());
+        }
+        // a list of some of them (at times the last linked to itself)
+        let n = rng.below(5);
+        let list = ffx_battle::minor::bridge::SEP_3D.ptr(b).addr;
+        let mut head = 0u32;
+        for k in 0..n {
+            let at = nodes + 0x20 * k;
+            if k == 0 {
+                head = at;
+            } else {
+                let o = (0x20 * (k - 1) + 0xc) as usize;
+                area[o..o + 4].copy_from_slice(&at.to_le_bytes());
+            }
+        }
+        if n > 0 && rng.below(4) == 0 {
+            let o = (0x20 * (n - 1) + 0xc) as usize;
+            area[o..o + 4].copy_from_slice(&(nodes + 0x20 * (n - 1)).to_le_bytes());
+        }
+        poke(a, b, nodes, &area);
+        poke(a, b, list, &head.to_le_bytes());
+        set(a, b, ad::SEP_3D_OFF, flag(rng, 8));
+        set(
+            a,
+            b,
+            ad::LAST_SE,
+            [0, 0x8000_0059, 0x8000_0001][rng.below(3) as usize],
+        );
+        let i = [rng.below(ACTORS), 0xff][rng.below(4).min(1) as usize];
+        let se = [0, 0x59, 1, 0x8000_0002 | rng.below(2)][rng.below(4) as usize];
+        let kind = [0, 1, 2, 3, 4, 0x103, 5][rng.below(7) as usize];
+        let posv = out + 0x60;
+        poke(a, b, posv, &floats(rng, 4));
+        let pos = [0, posv][rng.below(2) as usize];
+        let once = rng.below(2);
+        let placed_i = i == 0xff
+            || (writes(a, b, 0x0079_56e0, i, out + 0x40)
+                && writes(a, b, 0x0079_48e0, i, out + 0x40));
+        if placed_i {
+            match rng.below(5) {
+                0 => {
+                    let args = [kind, i, se, once, pos];
+                    twin("MsSEP3Dregist", a, b, 0x007a_0a30, &args, ALL, |m| {
+                        let mut c = game_call_o;
+                        ad::ms_sep_3d_regist(m, &stand_in, &mut c, kind, i, se, once, pos)
+                    });
+                }
+                1 => twin("MsRegSEplay", a, b, 0x007a_0100, &[i, se], ALL, |m| {
+                    let mut c = game_call_o;
+                    ad::ms_reg_se_play(m, &stand_in, &mut c, i, se)
+                }),
+                2 => twin("MsRegSEplay2", a, b, 0x007a_0140, &[i, se], ALL, |m| {
+                    let mut c = game_call_o;
+                    ad::ms_reg_se_play2(m, &stand_in, &mut c, i, se)
+                }),
+                3 if i != 0xff => {
+                    let v = out + 0x80;
+                    let top = rng.below(2) == 0;
+                    let sym = if top { 0x0079_5980 } else { 0x0079_4c20 };
+                    twin("MsGetChrTopPos/CenterPos", a, b, sym, &[i, v], ALL, |m| {
+                        if top {
+                            t::ms_get_chr_top_pos(m, &stand_in, i, v).cast_unsigned()
+                        } else {
+                            t::ms_get_chr_center_pos(m, &stand_in, i, v).cast_unsigned()
+                        }
+                    });
+                }
+                _ => {
+                    let ii = i % ACTORS;
+                    let p = w.actor(ii);
+                    poke(
+                        a,
+                        b,
+                        p + 0x606,
+                        &[[0, 4, rng.byte()][rng.below(3) as usize]],
+                    );
+                    twin("MsStoneProcess", a, b, 0x0078_e150, &[ii, p], ALL, |m| {
+                        let mut c = game_call_o;
+                        ad::ms_stone_process(m, &stand_in, &mut c, ii, p)
+                    });
+                }
+            }
+            same("sounds", a, b);
+        }
+        let bits = rng.next() & 0xfff8 | [0, 0x8000][rng.below(2) as usize];
+        let j = rng.below(ACTORS);
+        twin(
+            "MsStatusDefenseEffect",
+            a,
+            b,
+            0x0079_ee20,
+            &[0, j, bits],
+            ALL,
+            |m| {
+                let mut c = game_call_o;
+                ad::ms_status_defense_effect(m, &mut c, 0, j, bits)
+            },
+        );
+        same("MsStatusDefenseEffect", a, b);
     }
     // Regen and the status counts before a turn (the motions of those it
     // heals read their positions)
@@ -3534,7 +3660,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let prec = scratch(a, b, (EXCHANGE_REC * 13) as usize);
     process_stubs(a, b, prec, erec);
     // the input stubs' records, then a damage number pool
-    let irec = scratch(a, b, 0x600 + 0x80 * 0x14);
+    let irec = scratch(a, b, 0x800 + 0x80 * 0x14);
     for o in [&mut *a, &mut *b] {
         for (k, (f, n)) in (0u32..).zip(INPUT_CALLEES) {
             logging_stub(o, f, INPUT_STUBS + 0x40 * k, irec + EXCHANGE_REC * k, n, 0);

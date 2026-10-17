@@ -4989,7 +4989,7 @@
 0x0078ded0 function MsSetFirstCTB             # fh v3:cg10 0x78df90
 0x0078e0a0 function MsSetPartyRelifeTime      # fh v3:exact 0x0078e160
 0x0078e0f0 function DmgCalc_Delay             # fh v3:exact 0x0078e1b0 +DmgCalc_Delay
-0x0078e150 function MsStoneProcess            # fh v3:exact+call.cs 0x0078e210 cdecl
+0x0078e150 function MsStoneProcess            # fh v3:exact+call.cs 0x0078e210 cdecl; ours: petrified: sound 0x59, weight -1, Provoke off, +0x616 bit 8 without HP, 1; else eternal revival, weight, automatic statuses, 0; ported (battle round 13)
 0x0078e1e0 function MsSubCTB                  # fh v3:exact+call.cs 0x0078e2a0 cdecl; ours: +0x65c += n (0..0xff), number kind 2 with flags bit 2; ported (battle round 13)
 0x0078e230 function MsSubHP                   # fh call.cs cdecl; ours: (i, actor, n, other, x, flags, style): HP -= n (MsCheckRange 0..max; DebugCanTakeDamage), number with flags bit 0; battles 0x159/0, 0x20/1, 0x209/0 special; ported (battle round 12)
 0x0078e3b0 function MsSubMP                   # fh v3:exact+call.cs 0x0078e400 cdecl; ours: MP -= n (0..+0x598, DebugCanTakeDamage), number kind 1 with flags bit 1; ported (battle round 13)
@@ -5122,7 +5122,7 @@
 0x00794a70 function MsGetChrCamWidth          # fh v3:cg2 0x794a80
 0x00794ab0 function MsGetChrCameraPos         # fh v3:exact 0x00794ac0
 0x00794b70 function MsGetChrCenter            # ours: MsCalcChrDir's party/monster centres: mean MsGetChrBtlPos of +0xdc8 actors (MsAddPoint, MsDivVector)
-0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30
+0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30; ours: msGetChrPos, y - height/2 unless +0x505 or underwater; ported (battle round 13)
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
 0x00794e00 function MsGetChrDist              # fh v3:cg8 0x794e10
@@ -5157,7 +5157,7 @@
 0x007958c0 function MsGetChrTargetDir         # (i, dir) -> f32: MsNearRag(dir, actor +0x53c if +0x510 else +0x49c); MsGetChrInfoOne kind 7; ported. layout: alphabetical run between MsGetChrStatZombie and MsGetChrTargetPos (1 unnamed in the gap); Switch 0x7100349b00 MsGetChrTargetDir is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00795920 function MsGetChrTargetPos         # fh v3:cg3 0x795930
 0x00795970 function MsGetChrTop               # fh v3:bsim1.00 0x00795980
-0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990
+0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990; ours: msGetChrPos, y - height (half with +0x505 or underwater); ported (battle round 13)
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
 0x00795aa0 function MsGetMon                  # fh v3:exact+call.cs 0x00795ab0 cdecl
 0x00795ac0 function MsGetTransChrPos             # (actor, vec): MsGetChrBtlPos when the actor rides on nothing (+0x43f == -1), else Ch_OptposGet of the carrier's model at point +0x441; Switch MsGetTransChrPos (0x7100349660) calls exactly Ch_OptposGet and MsGetChrBtlPos and sorts between MsGetMon and MsGetWeapon, as here; the battle porter's msGetChrPosNoChr
@@ -5361,7 +5361,7 @@
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl; ours: MsSetChrEffectNext(i, 0, 9 or 10); ported (battle round 13)
 0x0079ed20 function MsSetStealGillEffect      # fh call.cs cdecl; ours: MsSetChrEffectNext(i, 0, 0x4c or 0x4d); ported (battle round 13)
 0x0079ed40 function MsSetWeaponEffectAttribute # fh v3:exact 0x0079ed60
-0x0079ee20 function MsStatusDefenseEffect     # fh v3:exact+call.cs 0x0079ee40 cdecl
+0x0079ee20 function MsStatusDefenseEffect     # fh v3:exact+call.cs 0x0079ee40 cdecl; ours: (i, j, bits): one MsSetChrEffectNext per warded status bit; count; ported (battle round 13)
 0x0079ef40 function MsStatusEffect            # fh v3:exact 0x0079ef60
 0x0079eff0 function MsStatusEffectCheck       # fh call.cs cdecl
 0x0079f110 function MsStatusEffectClear       # fh v3:exact 0x0079f130
@@ -5386,8 +5386,8 @@
 0x007a0090 function MsMusicVolume             # fh v3:exact 0x007a00b0
 0x007a00b0 function MsNowMusicStop            # fh v3:exact 0x007a00d0
 0x007a00d0 function MsRegSEfade               # fh v3:exact 0x007a00f0
-0x007a0100 function MsRegSEplay               # fh v3:exact+call.cs 0x007a0120 cdecl
-0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl
+0x007a0100 function MsRegSEplay               # fh v3:exact+call.cs 0x007a0120 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, 0) unless it is g_BtlLastSe (0x0112c8e4); ported (battle round 13)
+0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, once); ported (battle round 13)
 0x007a0170 function MsRegSEplay3                 # layout: alphabetical run between MsRegSEplay2 and MsRegistSEdata (1 unnamed in the gap); Switch 0x71003784b0 MsRegSEplay3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a01b0 function MsRegistSEdata            # fh v3:exact 0x007a01d0
 0x007a0370 function MsSEPbattleClear          # fh v3:exact 0x007a0390
@@ -5405,7 +5405,8 @@
 0x007a08e0 function MsSEP3DfadeOutAll         # fh v3:exact 0x007a0900
 0x007a0910 function MsSEP3Dinit               # fh v3:exact 0x007a0930
 0x007a0930 function MsSEP3Dprocess            # fh v3:exact 0x007a0950
-0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50
+0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50; ours: (kind, i, se, once, pos): node in g_Sep3dList (existing se, else first free of 16 at 0x011361b0), position by kind (0: pos via the EE register 0x00c8f588), op_3d_vol_pan_get, SndSepPlay; ported (battle round 13)
+0x007a0bb0 function MsSEP3DPos                # ours: (kind, i, vec): kind & ~0x100: 1 MsGetChrPos, 2 MsGetChrTopPos, 3 MsGetChrCenterPos, 4 MsGetChrBottomPos; ported (battle round 13)
 0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
 0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance
@@ -14619,6 +14620,7 @@
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8d8 label g_BtlParsedCommand        # u32: the command MsParseCommand parses (also 0x0112c8dc)
 0x0112c8dc label g_BtlParsedCommand2       # u32: copy of g_BtlParsedCommand (MsParseCommand)
+0x0112c8e4 label g_BtlLastSe              # u32: the sound MsRegSEplay played last (bit 31 set)
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c8f0 label g_BtlVoiceWait           # u32 (MsSetVoiceWait), cleared at each turn start
@@ -14663,6 +14665,7 @@
 0x0112c9fe label g_BtlCameraHides          # u8, set by MsSetChrVisibleCamera; MsReturnCameraVisible shows all again and clears it (the shows set it again)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
+0x0112ca02 label g_BtlSep3dOff            # u8: set, MsSEP3Dregist plays nothing
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
 0x0112ca04 label g_BtlCommandMusicDown     # u8: the parsed command's flag bit 30 (+0x1c): MsMusicVolume(0x65, 0x1e) (MsParseCommand)
 0x0112ca05 label g_BtlCommandFlag29        # u8: the parsed command's flag bit 29 (+0x1c) (MsParseCommand)
