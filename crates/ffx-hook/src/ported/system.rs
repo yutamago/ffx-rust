@@ -34,9 +34,9 @@ fn call_sym<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
 }
 
 /// Calls the original cdecl function at `sym` (an `ffx.sym` address) that
-/// returns its result in ST0, read back at double precision; up to four
+/// returns its result in ST0, read back at double precision; up to six
 /// arguments (f32 arguments as their bits).
-#[allow(clippy::many_single_char_names)] // a..d: the words
+#[allow(clippy::many_single_char_names)] // a..g: the words
 fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
     let f = crate::rebase(sym);
     // SAFETY: a cdecl function of `args.len()` word arguments returning in
@@ -54,6 +54,14 @@ fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
                 usize,
                 unsafe extern "C" fn(u32, u32, u32, u32) -> f64,
             >(f)(a, b, c, d),
+            [a, b, c, d, e] => std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32, u32, u32) -> f64,
+            >(f)(a, b, c, d, e),
+            [a, b, c, d, e, g] => std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> f64,
+            >(f)(a, b, c, d, e, g),
             _ => {
                 crate::log::log(&format!("system: no float call of {} words", args.len()));
                 f64::NAN
@@ -6224,6 +6232,27 @@ ported! {
     /// `TOAddPktChangeMacro_help(key, code, pen, scale, extra, shadow)`.
     TOAddPktChangeMacro_help @ 0x008e_9ca0 => extern "C" fn to_add_pkt_change_macro_help(key: u32, code: u32, pen: u32, scale: u32, extra: u32, shadow: u32) -> u32 {
         tolib::bridge::to_add_pkt_change_macro_help(&mut mem(), [key, code, pen, scale, extra, shadow], call_sym)
+    }
+    /// `TOAddPktChangeMacro(key, code, pen)`.
+    TOAddPktChangeMacro @ 0x008e_9b80 => extern "C" fn to_add_pkt_change_macro(key: u32, code: u32, pen: u32) -> u32 {
+        tolib::bridge::to_add_pkt_change_macro(&mut mem(), [key, code, pen], call_sym)
+    }
+    /// `TOAddPktBaseMesFontLAbmap(cursor, key, text, x, y, mode, kind, r, g, b, a, shadow)`.
+    TOAddPktBaseMesFontLAbmap @ 0x008e_8fb0 => extern "C" fn to_add_pkt_base_mes_font_l_abmap(
+        cursor: u32, key: u32, text: u32, x: u32, y: u32, mode: u32, kind: u32, r: u32, g: u32, b: u32, a: u32, shadow: u32
+    ) -> u32 {
+        tolib::bridge::to_add_pkt_base_mes_font_l_abmap(
+            &mut mem(),
+            [cursor, key, text, x, y, mode, kind, r, g, b, a, shadow],
+            call_sym,
+            fcall,
+        )
+    }
+    /// `TOGetChangeMacroAdvance_008b6bb0(key, code, kind, scale, extra)`.
+    TOGetChangeMacroAdvance_008b6bb0 @ 0x008b_6bb0 => extern "C" fn to_get_change_macro_advance(
+        key: u32, code: u32, kind: u32, scale: u32, extra: u32
+    ) -> f32 {
+        tolib::bridge::to_get_change_macro_advance(&mut mem(), [key, code, kind, scale, extra], call_sym, fcall)
     }
     /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r, g, b, a, scale, extra)`.
     TOMkpCrossExtMesFontLClutTypeRGBA @ 0x0090_1700 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut_type_rgba(

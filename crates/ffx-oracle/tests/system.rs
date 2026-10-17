@@ -14629,10 +14629,211 @@ fn round26_cross_text_matches_the_original_on_the_snapshot() {
     round26_cross_text(&mut a, &mut b, &mut Xorshift(0x4026_0012));
 }
 
-/// Round 26's cross-menu icon over a logging texture-name stand-in,
-/// `TOGetImageWH` and the scissor from cells, and a `graphicDrawUIElement`
-/// stand-in logging the record.
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+/// Round 27's 16×12-font text writers: `TOAddPktBaseMesFontLAbmap`, its
+/// macro helper `TOAddPktChangeMacro` and the macro width
+/// `TOGetChangeMacroAdvance_008b6bb0`, over logging stand-ins for the glyph
+/// drawers and the width helpers (as round 26) and the original
+/// `TOGetGroup` and button-data functions.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
+fn round27_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x28);
+    let inner_text = alloc(a, b, 0x20);
+    let text = alloc(a, b, 0x80);
+    let macro_text = alloc(a, b, 0x40);
+    let keyed = |cursor: u32, key: u32, n: u8| {
+        let mut v = marker(cursor, key);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        v
+    };
+    for (k, (sym, n)) in (0u32..).zip([
+        (0x008f_cca0u32, 3u8),
+        (0x008f_cad0, 3),
+        (0x008e_8ed0, 3),
+        (0x008f_c870, 2),
+        (0x0090_6270, 2),
+        (0x008f_8ee0, 8),
+    ]) {
+        let s = stand_in8(a, b, 0x40 + 0x80 * k, &keyed(cursor, 0x7100 + k, n));
+        redirect(a, b, sym, s);
+    }
+    // TOGetFontInfo(p, rec): logs both, returns p + 1
+    let mut v = keyed(cursor, 0x7200, 2);
+    v.truncate(v.len() - 1);
+    v.extend_from_slice(&[0x40, 0xc3]); // inc eax; ret
+    let s = stand_in8(a, b, 0x340, &v);
+    redirect(a, b, 0x008b_7240, s);
+    // TOSkipCode(p): p + 2 below 0x30, else p + 1
+    let skip = [
+        0x8b, 0x44, 0x24, 0x04, 0x80, 0x38, 0x30, 0x72, 0x02, 0x40, 0xc3, 0x83, 0xc0, 0x02, 0xc3,
+    ];
+    let s = stand_in8(a, b, 0x3c0, &skip);
+    redirect(a, b, 0x008d_fd80, s);
+    // TOGetChangeMacroAddress(key, code): logs both, returns cells[0]
+    // and moves cells[8] (the nested macro's text) there
+    let mut v = keyed(cursor, 0x7300, 2);
+    v.truncate(v.len() - 5); // drop "mov eax, [esp+4]; ret"
+    v.push(0xa1);
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x0d]); // mov ecx, [cells + 0x20]
+    v.extend_from_slice(&(cells + 0x20).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x0d]); // mov [cells], ecx
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x400, &v);
+    redirect(a, b, 0x008b_6660, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x480, &v);
+    redirect(a, b, 0x008a_c2f0, s);
+    let s = stand_in8(a, b, 0x4a0, &st0_cell(cells + 8));
+    redirect(a, b, 0x008f_a800, s);
+    // the advance and the space: log their arguments, return a cell in ST0
+    for (off, sym, n, cell, key) in [
+        (0x4c0u32, 0x008f_a740u32, 3u8, cells + 0x10, 0x7400u32),
+        (0x540, 0x008f_a570, 1, cells + 0x18, 0x7500),
+    ] {
+        let mut v = keyed(cursor, key, n);
+        v.truncate(v.len() - 1);
+        v.extend_from_slice(&st0_cell(cell));
+        let s = stand_in8(a, b, off, &v);
+        redirect(a, b, sym, s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let pen = alloc(a, b, 0x20);
+    let codes: [u8; 14] = [
+        0x30, 0x41, 0x5a, 3, 7, 7, 0xa, 0xa, 0xb, 0xb, 0x12, 0x22, 0x23, 1,
+    ];
+    for k in 0..900u32 {
+        put(a, b, cursor, log);
+        let mut bytes = [0u8; 0x40];
+        let n = (rng.next() % 30) as usize;
+        let mut i = 0;
+        while i + 2 < n {
+            let c = codes[(rng.next() as usize) % codes.len()];
+            bytes[i] = c;
+            if c < 0x30 {
+                bytes[i + 1] = [0xe0u8, 0xe1, 0xe7, 0xef, 0xf0, 0x45, 0x07, 0x01, 0x3f]
+                    [(rng.next() % 9) as usize];
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+        put(a, b, text, bytes);
+        let mut mbytes = [0u8; 0x20];
+        for (j, m) in mbytes
+            .iter_mut()
+            .take((rng.next() % 12) as usize)
+            .enumerate()
+        {
+            *m = match j % 3 {
+                1 => [7u8, 0x31, 0x12][(rng.next() % 3) as usize],
+                2 => [0xe0u8, 0xe1, 0xef, 0xf0, 0x32][(rng.next() % 5) as usize],
+                _ => 0x30 + (rng.next() % 40) as u8,
+            };
+        }
+        put(a, b, macro_text, mbytes);
+        let inner: [u8; 8] = std::array::from_fn(|j| match j {
+            7 => 0,
+            _ => [0x30u8, 0x45, 7, 0xe3][(rng.next() % 4) as usize],
+        });
+        put(a, b, inner_text, inner);
+        put(a, b, cells + 0x20, inner_text);
+        let macro_at = if rng.next().is_multiple_of(6) {
+            0
+        } else {
+            macro_text
+        };
+        put(a, b, cells, macro_at);
+        put(a, b, cells + 4, rng.next() % 2);
+        put(a, b, cells + 8, f64::from(rng.next() % 4000) / 7.0);
+        put(a, b, cells + 0x10, f64::from(rng.next() % 4000) / 9.0);
+        put(a, b, cells + 0x18, f64::from(rng.next() % 400) / 11.0);
+        put(a, b, g(a, 0x00c5_d784), (rng.next() % 300) as f32 / 256.0);
+        let small = |rng: &mut Xorshift| ((rng.next() % 6000) as f32 / 7.0 - 100.0).to_bits();
+        match k % 3 {
+            0 => {
+                put(a, b, pen, rng.next());
+                put(a, b, pen + 4, [small(rng), small(rng)]);
+                put(a, b, pen + 0x1a, (rng.next() % 3) as u8);
+                let args = [rng.next() % 4, rng.next(), pen];
+                let ra = eax(a, 0x008e_9b80, &args);
+                let rb = t::to_add_pkt_change_macro(b, args, call);
+                assert_eq!(ra, rb, "change macro {k}");
+            }
+            1 => {
+                let key = if rng.next().is_multiple_of(4) {
+                    u32::MAX
+                } else {
+                    rng.next() % 4
+                };
+                let int = |rng: &mut Xorshift| (rng.next() % 4000).wrapping_sub(500);
+                let args = [
+                    rng.next(),
+                    key,
+                    text,
+                    int(rng),
+                    int(rng),
+                    rng.next(),
+                    [0, 1, 2, rng.next()][(rng.next() % 4) as usize],
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    [0, 1, 5, u32::MAX, rng.next()][(rng.next() % 5) as usize],
+                ];
+                let ra = eax(a, 0x008e_8fb0, &args);
+                let rb = t::to_add_pkt_base_mes_font_l_abmap(b, args, call, fcall);
+                assert_eq!(ra, rb, "abmap {k}");
+            }
+            _ => {
+                let args = [
+                    rng.next() % 4,
+                    rng.next(),
+                    rng.next() % 4,
+                    small(rng),
+                    small(rng),
+                ];
+                let ra = fcall(a, 0x008b_6bb0, &args);
+                let rb = t::to_get_change_macro_advance(b, args, call, fcall);
+                assert_eq!(ra.to_bits(), f64::from(rb).to_bits(), "advance {k}");
+            }
+        }
+        same_memory(&format!("text {k}"), a, b);
+    }
+}
+
+#[test]
+fn round27_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round27_text(&mut a, &mut b, &mut Xorshift(0x4027_0021));
+}
+
+#[test]
+fn round27_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round27_text(&mut a, &mut b, &mut Xorshift(0x4027_0022));
+}
+
 /// `TODrawKick` and `TOCtrlPkt` over logging stand-ins for the PS2 layer's
 /// `FlushCache`, `sceDmaSend` and `sceGsSyncPath`.
 fn round27_kick(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
@@ -14694,7 +14895,10 @@ fn round27_kick_matches_the_original_on_the_snapshot() {
     round27_kick(&mut a, &mut b, &mut Xorshift(0x4027_0012));
 }
 
-#[allow(clippy::cast_precision_loss)] // small exact test values
+/// Round 26's cross-menu icon over a logging texture-name stand-in,
+/// `TOGetImageWH` and the scissor from cells, and a `graphicDrawUIElement`
+/// stand-in logging the record.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 fn round26_cross_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let log = alloc(a, b, 0x1000);

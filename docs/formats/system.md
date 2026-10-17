@@ -725,3 +725,35 @@ and the limit, all set by `TOSetPktBuffAdrs`; the write cursor is
 - `TOCtrlPkt` (`0x008f3a30`) jumps to `TODrawKick` while `g_TOAddPkt` is
   set and the cursor has reached the limit (unsigned). It leaves `eax` as
   the caller had it when packets are not added, and no caller reads it.
+
+## 16×12-font texts with the cross-menu pen
+
+`TOAddPktBaseMesFontLAbmap` (`0x008e8fb0`) lays a text out with the same
+pen as `TOMkpCrossExtMesFontLClutTypeRGBA` (`0x025d09a0`: colour bytes,
+x, y, then the kind byte at `+0x1a` and the mode byte at `+0x1b`). It
+starts the packet cursor at its first argument and returns the cursor.
+The position is given as integers and stored as floats.
+
+- A new line puts x back and adds `0x00b313a0` (16.0) to y.
+- Code 7, the `0xa` mode nibbles and the `0xb` button icons work as in
+  the cross-menu form. The icons are drawn at scale `0x00b5edf0` (0.65)
+  at `y + 3.0 + AdjustButtonIconY`, and the pen then moves by the icon
+  width plus 1.
+- Glyphs are skipped when the kind is 1. Otherwise they go through
+  `TOMakePktFont1612Shadow` and `TOMakePktFont1612Font`, with passes 4
+  and 5 when the last argument is positive and 0 and 0 when it is not.
+  The advance uses scale `0x00b5ee10` (0.78).
+- Macros go to `TOAddPktChangeMacro` (`0x008e9b80`, the Switch name).
+  That is `TOAddPktChangeMacro_help` for this font: a kind-1 pen draws the
+  edge and `TOMakePktFont1612Font_00906270` and advances at `0x00c5d784`.
+  Other pens use the shadow and face with pass 0 and advance at 0.78.
+
+The original first calls `graphicFontGetScreenWH` (`0x00640db0`). That
+stores 1920 and 1080 into locals nobody reads, so the port leaves it out.
+
+`TOGetChangeMacroAdvance_008b6bb0(key, code, kind, scale, extra)` adds up
+the width of a macro's text. Nested macros add their own width, code 7
+with 0xe1..=0xef adds its byte less 0xe0, and any other code adds its
+glyph's `TOGetFontAdvance_008fa740(kind, glyph, scale)`. The total is an
+`f32`, rounded after each step. The result is the total less
+`TOGetFontSpaceInPiexl(kind)`, or 0 when there is no macro.

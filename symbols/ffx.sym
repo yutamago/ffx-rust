@@ -9576,6 +9576,7 @@
 0x008b6a30 function TOGetChangeMacroWidth     # fh v3:exact 0x008b69e0
 0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0; (table, index): codes >= 0x26 or 4 count one, group-3 codes add their macro's count (recursive)
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
+0x008b6bb0 function TOGetChangeMacroAdvance_008b6bb0 # cdecl(key, code, kind, scale, extra) -> float in ST0: width of the macro's replacement text, nested macros (group 3) recursive, 7 0xe1..0xef its byte - 0xe0, glyphs TOGetFontAdvance_008fa740, less TOGetFontSpaceInPiexl(kind); 0 without a macro; name ours
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
 0x008b7130 function TOGetMessageSize_008b7130 # (text, &w, &h) -> 0: TOGetMessageWH(0, text, .., 0, 0), w through ftol, h the i16 height; name ours
@@ -10214,6 +10215,7 @@
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
+0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
