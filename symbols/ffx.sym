@@ -6422,7 +6422,7 @@
 0x007fda60 function opu_et_oef2_free          # (oef2) the op_et_oef2_free body again
 0x007fda80 function opu_init                     # structure: calls opus_osu_init_group, opus_osu_init, set_ptr32 and opus_get_eff_status_index, the callees of the Switch's opu_init (0x71003ec230, also called from opu_et_init); only caller opu_et_init as on the Switch
 0x007fdc80 function opu_debug_reload          # g_MagicImports slot 717 (130 overlays), after opu_main_host: with the debug flag 0x02322790, per bit of 0x02321580 frees/reloads the debug oef2 objects (0x023215c0..0x023215dc) through op_et_encount_effect_free, 0x007e5c10, op_oef2_set2, 0x007e3b70; hidden from the dump
-0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50
+0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50; (list, id), eax unread: the first g_EtEff record with id k: opu_eff_free_by_id(id), then every unit of index lists +0x10/+0x14/+0x18 with u16 +0x14 == k through opus_prog_off, opus_draw_off, yonExtMapDeleteId (as opu_unit_free_by_oef2)
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
 0x007fe0f0 function opus_change_chr_status_en    # layout: alphabetical run between opu_unit_free_by_oef2 and opus_change_chrhd_battle_to_ffx (1 unnamed in the gap); Switch 0x71003ef890 opus_change_chr_status_en is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
@@ -6536,7 +6536,7 @@
 0x008059c0 function opus_mdc_break_make_VitaSafe # layout+callees: sorts between opus_mdc_break_draw and opus_mdc_free, and its named callees match the Switch 0x71003e7100 opus_mdc_break_make_VitaSafe's (similarity 1.00: Ch_GetBigImageSize, FFXVu0ApplyMatrix, FFXVu0CopyMatrix, debug_exit_trace, op_irandom_p); symbols from Fahrenheit's server export
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
 0x00806230 function opus_motion_set              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003e4eb0 opus_motion_set, 6 votes, round 1
-0x008062c0 function opus_rt_m_chara              # layout+callees: sorts between opus_motion_set and yonExtMapDeleteId, and its named callees match the Switch 0x71003e52e0 opus_rt_m_chara's (similarity 1.00: Ch_GetDataScale, Ch_GetScaleX, Ch_GetScaleY, Ch_GetScaleZ, MsGetChrScale); symbols from Fahrenheit's server export
+0x008062c0 function opus_rt_m_chara              # layout+callees: sorts between opus_motion_set and yonExtMapDeleteId, and its named callees match the Switch 0x71003e52e0 opus_rt_m_chara's (similarity 1.00: Ch_GetDataScale, Ch_GetScaleX, Ch_GetScaleY, Ch_GetScaleZ, MsGetChrScale); symbols from Fahrenheit's server export; (m, chr, k, angles, trans, battle), eax unread: scale from MsGetChrScale (battle and chr < 0x20) or Ch_GetScaleX/Y/Z(g_EtChrHandles[chr]) into a 16-byte local at [ebp - 0x20] (aligned frame), times Ch_GetDataScale * k * 0.001f * (1/256) (op_xyz_scale), op_unit_m_scale2, then op_rt_m / op_rot_m / op_trans_m by which of angles, trans are set
 0x00806450 function opusIdentity_00806450     # (v) -> v (an MSVC container accessor)
 0x00806460 function opusIdentity_00806460     # (v) -> v (an MSVC container accessor)
 0x00806470 function opusIdentity_00806470     # (v) -> v (an MSVC container accessor)

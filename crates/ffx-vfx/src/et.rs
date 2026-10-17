@@ -968,6 +968,43 @@ pub mod bridge {
                 mem.write(at, 0u32);
             }
         }
+        units_off(mem, list, call, |mem, unit| {
+            mem.read::<u8>(unit + 0x1e) == group
+        });
+    }
+
+    /// `opu_unit_free_by_id(list, id)` (`0x007fde30`): the first `g_EtEff`
+    /// record whose id (`+0`) is `id` (nothing when none) is freed
+    /// (`opu_eff_free_by_id(id)`), and every unit of the list's index lists
+    /// `+0x10`, `+0x14`, `+0x18` whose record index (`u16 +0x14`) is that
+    /// record's is shut down as in [`opu_unit_free_by_oef2`]. Callees
+    /// through `call`; no caller reads `eax`.
+    pub fn opu_unit_free_by_id<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let Some(k) = (0..EFFS).find(|&i| mem.read::<u32>(EFF.ptr(mem).at(i).addr) == id) else {
+            return;
+        };
+        let free = Global::<u32>::new(0x007f_e920).ptr(mem).addr;
+        call(mem, free, &[id]);
+        units_off(mem, list, call, |mem, unit| {
+            u32::from(mem.read::<u16>(unit + 0x14)) == k
+        });
+    }
+
+    /// The units of a list's index lists `+0x10`, `+0x14`, `+0x18` that
+    /// `pick` (given the unit, `+0x20 + 0x100 * no`) shut down:
+    /// `opus_prog_off`, `opus_draw_off`, `yonExtMapDeleteId`; the list
+    /// entry is read again in place, as `opus_prog_off` moves the rest down.
+    fn units_off<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        pick: impl Fn(&M, u32) -> bool,
+    ) {
         let calls =
             [0x0080_14c0u32, 0x0080_0d10, 0x0080_7830].map(|f| Global::<u32>::new(f).ptr(mem).addr);
         for at in [0x10u32, 0x14, 0x18] {
@@ -979,8 +1016,7 @@ pub mod bridge {
                 }
                 let no = i32::from(u.cast_signed()).cast_unsigned();
                 let base: u32 = mem.read(list.wrapping_add(0x20));
-                if mem.read::<u8>(no.wrapping_shl(8).wrapping_add(base).wrapping_add(0x1e)) == group
-                {
+                if pick(mem, no.wrapping_shl(8).wrapping_add(base)) {
                     call(mem, calls[0], &[list, u32::from(u)]);
                     call(mem, calls[1], &[list, u32::from(u)]);
                     call(mem, calls[2], &[no]);

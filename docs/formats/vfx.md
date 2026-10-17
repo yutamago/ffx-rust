@@ -388,3 +388,32 @@ that offset through the matrix (`op_apply_m_w1`). Without the bit the
 function also copies the emulated EE register `g_Ee_Gpr` (`0x00c8f508`, 16
 bytes) to `out + 0x40`. The port keeps the local in a per-call stack buffer
 in the shim.
+
+## Character scale matrices (`opus_rt_m_chara`)
+
+`opus_rt_m_chara(m, chr, k, angles, trans, battle)` (`0x008062c0`) builds
+the matrix an opus effect uses to follow a character at its size. The
+scale is the battle character's (`MsGetChrScale(chr, local)`) when `battle`
+is set and `chr` (signed) is below 0x20, else `Ch_GetScaleX/Y/Z` of
+`g_EtChrHandles[chr]`. It is multiplied by `Ch_GetDataScale * k * 0.001f *
+(1/256)`, computed at 53 bits and stored as an `f32` (`op_xyz_scale`), and
+becomes `m`'s diagonal (`op_unit_m_scale2`). Then `m` is turned by
+`angles` and moved by `trans` (`op_rt_m`; `op_rot_m` or `op_trans_m` when
+only one is given). Callers pass `k` = 256.0 from the overlays, or the
+effect's own scale (`+0x3c`). The scale vector is a 16-byte local of the
+original's 16-byte-aligned frame (`[ebp - 0x20]`); the shim keeps it in a
+stack buffer.
+
+## Freeing units by effect (`opu_unit_free_by_id`, `opu_unit_free_by_oef2`)
+
+An opus list keeps three index lists of its units (`+0x10`, `+0x14`,
+`+0x18`: `u16` unit numbers ending in a negative one). Both functions shut
+units down the same way: `opus_prog_off`, `opus_draw_off` and
+`yonExtMapDeleteId` for each match, then the same list entry is read again,
+because `opus_prog_off` moves the rest of the list down.
+`opu_unit_free_by_id(list, id)` (`0x007fde30`) looks up the first
+`g_EtEff` record (`0x012a4100`, 512 records of 0x20 bytes) whose id (`+0`)
+is `id`, frees it (`opu_eff_free_by_id`) and shuts down the units whose
+record index (`u16 +0x14` of the 0x100-byte unit) is that record's.
+`opu_unit_free_by_oef2(list, oef)` (`0x007fdf70`) works by oef2 slot
+group instead (`u8 +0x1e`). Both are in `et.rs`.

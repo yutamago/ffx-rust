@@ -98,6 +98,76 @@ pub mod bridge {
         gpr[3]
     }
 
+    /// `MsGetChrScale(chr, out)`, called through `call`.
+    const MS_GET_CHR_SCALE: u32 = 0x0079_5720;
+    /// `Ch_GetScaleX/Y/Z(h)` and `Ch_GetDataScale(h)`, called through
+    /// `fcall` (they return in `ST0`).
+    const CH_GET_SCALE: [u32; 3] = [0x0082_ad30, 0x0082_ad40, 0x0082_ad50];
+    const CH_GET_DATA_SCALE: u32 = 0x0082_ab60;
+
+    /// `opus_rt_m_chara(m, chr, k, angles, trans, battle)` (`0x008062c0`):
+    /// `m` becomes a character's scale matrix, then turned and moved.
+    /// The scale (`frame - 0x20`, the original's 16-byte local) is the
+    /// battle character's (`MsGetChrScale(chr, local)`) when `battle` is set
+    /// and `chr < 0x20` (signed), else `Ch_GetScaleX/Y/Z` of its handle
+    /// (`g_EtChrHandles[chr]`); it is scaled by `Ch_GetDataScale * k *
+    /// 0.001f * (1/256)` (53 bits, stored as an `f32`, `op_xyz_scale`) and
+    /// set as `m`'s diagonal (`op_unit_m_scale2`). Then `angles` and
+    /// `trans` (either may be 0) through `op_rt_m`, `op_rot_m` or
+    /// `op_trans_m`. No caller reads `eax`.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)] // the original's six, the local and two calls
+    pub fn opus_rt_m_chara<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        chr: u32,
+        k: f32,
+        angles: u32,
+        trans: u32,
+        battle: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use crate::op::bridge as op;
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let v = frame.wrapping_sub(0x20);
+        #[allow(clippy::cast_possible_wrap)] // cmp eax, 0x20; jge
+        if battle == 0 || chr as i32 >= 0x20 {
+            for (i, f) in CH_GET_SCALE.into_iter().enumerate() {
+                let f = Global::<u32>::new(f).ptr(mem).addr;
+                // fstp m32
+                let x = ffx_bridge::x87::store(fcall(mem, f, &[h]));
+                #[allow(clippy::cast_possible_truncation)] // 0..3
+                mem.write(v.wrapping_add(4 * i as u32), x);
+            }
+        } else {
+            let f = Global::<u32>::new(MS_GET_CHR_SCALE).ptr(mem).addr;
+            call(mem, f, &[chr, v]);
+        }
+        let f = Global::<u32>::new(CH_GET_DATA_SCALE).ptr(mem).addr;
+        // an fld m32 in the callee: exact
+        let ds = f32::from_bits(ffx_bridge::x87::store(fcall(mem, f, &[h])));
+        let milli: f64 = mem.read(Global::<u32>::new(0x00b4_7c68).ptr(mem).addr);
+        let byte: f64 = mem.read(Global::<u32>::new(0x00b5_0198).ptr(mem).addr);
+        let s = Reg::load_f32(ds)
+            .mem(MUL, k)
+            .constant(MUL, milli)
+            .constant(MUL, byte)
+            .store();
+        // fstp [ebp - 0x24]; fld; fstp [esp]
+        let s = crate::x87::load_f32(s);
+        op::op_xyz_scale(mem, v, v, s.to_bits());
+        op::op_unit_m_scale2(mem, m, v);
+        match (angles, trans) {
+            (0, 0) => {}
+            (0, t) => {
+                op::op_trans_m(mem, m, m, t);
+            }
+            (a, 0) => op::op_rot_m(mem, m, m, a),
+            (a, t) => op::op_rt_m_zyx(mem, m, m, a, t),
+        }
+    }
+
     /// `opus_get_weapon_index(obj)` (`0x00801000`): its slot, or -1.
     pub fn opus_get_weapon_index(mem: &impl Mem, obj: u32) -> i32 {
         (0..4)

@@ -1300,6 +1300,10 @@ ported! {
     op_random_per @ 0x007e_33e0 => extern "C" fn op_random_per(n: u32, b: u32, c: u32, d: u32) -> u32 {
         rand::bridge::op_random_per(&mut mem(), [n, b, c, d])
     }
+    /// `opu_unit_free_by_id(list, id)`.
+    opu_unit_free_by_id @ 0x007f_de30 => extern "C" fn opu_unit_free_by_id(list: u32, id: u32) {
+        et::bridge::opu_unit_free_by_id(&mut mem(), list, id, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opu_unit_free_by_oef2(list, oef)`.
     opu_unit_free_by_oef2 @ 0x007f_df70 => extern "C" fn opu_unit_free_by_oef2(list: u32, oef: u32) {
         et::bridge::opu_unit_free_by_oef2(&mut mem(), list, oef, &mut |_, f, a| call_ptr(f, a));
@@ -2249,6 +2253,16 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32;
         opus::bridge::opus_get_bone_matrix(&mut mem(), out, chr, bone, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_rt_m_chara(m, chr, k, angles, trans, battle)`.
+    opus_rt_m_chara @ 0x0080_62c0 => extern "C" fn opus_rt_m_chara(m: u32, chr: u32, k: u32, angles: u32, trans: u32, battle: u32) {
+        // the original's 16-byte scale local, at [ebp - 0x20]
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x10]);
+        let mut locals = Locals([0; 0x10]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = (locals.0.as_mut_ptr() as u32).wrapping_add(0x20);
+        opus::bridge::opus_rt_m_chara(&mut mem(), m, chr, f32::from_bits(k), angles, trans, battle, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
     }
     /// `opus_get_weapon_index(obj)`.
     opus_get_weapon_index @ 0x0080_1000 => extern "C" fn opus_get_weapon_index(obj: u32) -> i32 {
