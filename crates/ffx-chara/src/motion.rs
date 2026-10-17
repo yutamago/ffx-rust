@@ -1189,10 +1189,10 @@ pub mod bridge {
         call(mem, mem.rebase(0x0082_a7f0), &[i])
     }
 
-    /// `Ch_SaveMotionByte(chr)` (`0x008303a0`): points both globals at the
+    /// `Ch_IsShadowHidden(chr)` (`0x008303a0`): points both globals at the
     /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is
     /// neither 2 nor 3 gets that byte, else 0.
-    pub fn ch_save_motion_byte<M: Mem>(
+    pub fn ch_is_shadow_hidden<M: Mem>(
         mem: &mut M,
         chr: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
@@ -1334,6 +1334,90 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `SG_AddMotionGroup(data, kind, b, a)` (`0x00836c90`),
+    /// `Cache_CheckYet(kind, key)` (`0x0083ffe0`), `Ch_MgrpRead(a, b)`
+    /// (`0x0082a4c0`), `Ch_ReadSync(0)` (`0x0082a5e0`), `Cache_Exist(kind,
+    /// key)` (`0x008406f0`), `Cache_Use(kind, key)` (`0x00840dd0`),
+    /// `Cache_Entry_NotYet(kind, key, x)` (`0x008405f0`),
+    /// `ChN_SystemMgrpLoaded()` (`0x00837710`).
+    pub const ADD_MOTION_GROUP: u32 = 0x0083_6c90;
+    pub const MGRP_READ_FN: u32 = 0x0082_a4c0;
+    pub const READ_SYNC: u32 = 0x0082_a5e0;
+    pub const CACHE_EXIST_FN: u32 = 0x0084_06f0;
+    pub const SYSTEM_MGRP_LOADED: u32 = 0x0083_7710;
+
+    /// `ChN_ReadSystemMGRP(a, b)` (`0x00836870`): an already loaded group
+    /// (`SG_FindMotionGroup(0, b, a)`) is returned. Otherwise, by its cache
+    /// state (`Cache_CheckYet(2, b << 16 | a)`): unregistered (2) it is read
+    /// (`Ch_MgrpRead(a, b)`, a non-zero result returned) and waited for;
+    /// still loading (1) it is waited for (`Ch_ReadSync(0)`); then its cached
+    /// data (`Cache_Exist`, `Cache_Use`) is added (`SG_AddMotionGroup(data,
+    /// 0, b, a)`, the result).
+    pub fn chn_read_system_mgrp<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let found = call(mem, mem.rebase(FIND_MOTION_GROUP), &[0, b, a]);
+        if found != 0 {
+            return found;
+        }
+        let key = (b << 16) | a;
+        let state = call(mem, mem.rebase(CACHE_CHECK_YET), &[2, key]);
+        let wait = if state == 2 {
+            let r = call(mem, mem.rebase(MGRP_READ_FN), &[a, b]);
+            if r != 0 {
+                return r;
+            }
+            true
+        } else {
+            state == 1
+        };
+        if wait {
+            call(mem, mem.rebase(READ_SYNC), &[0]);
+        }
+        let data = call(mem, mem.rebase(CACHE_EXIST_FN), &[2, key]);
+        call(mem, mem.rebase(CACHE_USE), &[2, key]);
+        call(mem, mem.rebase(ADD_MOTION_GROUP), &[data, 0, b, a])
+    }
+
+    /// `ChN_AddEventMgrp(data, x)` (`0x00837630`): a loaded event group
+    /// (`data` not 0) is added (`SG_AddMotionGroup(data, 1, x, 0)`); the
+    /// result, or 0.
+    pub fn chn_add_event_mgrp<M: Mem>(
+        mem: &mut M,
+        data: u32,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if data == 0 {
+            return 0;
+        }
+        call(mem, mem.rebase(ADD_MOTION_GROUP), &[data, 1, x, 0])
+    }
+
+    /// `ChN_AddSystemMgrp(data)` (`0x00837750`): unless the system group is
+    /// loaded (`ChN_SystemMgrpLoaded`, its 1 returned), it is added
+    /// (`SG_AddMotionGroup(data, 2, 0, 0)`) and its cache entry made
+    /// (`Cache_Entry_NotYet(2, 0x903e7, 0)`, the result).
+    pub fn chn_add_system_mgrp<M: Mem>(
+        mem: &mut M,
+        data: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let loaded = call(mem, mem.rebase(SYSTEM_MGRP_LOADED), &[]);
+        if loaded != 0 {
+            return loaded;
+        }
+        call(mem, mem.rebase(ADD_MOTION_GROUP), &[data, 2, 0, 0]);
+        call(
+            mem,
+            mem.rebase(crate::sys::bridge::CACHE_ENTRY_NOT_YET),
+            &[2, 0x0009_03e7, 0],
+        )
     }
 }
 

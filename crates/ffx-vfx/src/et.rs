@@ -919,4 +919,27 @@ pub mod bridge {
             }
         }
     }
+
+    /// `0x007fead0(chr)`: a character's effect slot: with any of the top
+    /// four bits, the low byte; else the first of the 240 [`CHR`] records
+    /// whose draw flag index (`u16 +0xe`) is the low byte, or failing that
+    /// the first with a handle (`+0`), or -1.
+    pub fn op_et_chr_slot(mem: &impl Mem, chr: u32) -> u32 {
+        if chr & 0xf000_0000 != 0 {
+            return chr & 0xff;
+        }
+        let base = CHR.ptr(mem).addr;
+        let want = u16::try_from(chr & 0xff).unwrap_or(0);
+        for i in 0..CHRS {
+            if mem.read::<u16>(base + 0x20 * i + 0xe) == want {
+                return i;
+            }
+        }
+        for i in 0..CHRS {
+            if mem.read::<u32>(base + 0x20 * i) != 0 {
+                return i;
+            }
+        }
+        u32::MAX
+    }
 }

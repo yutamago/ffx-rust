@@ -4,7 +4,9 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
+use ffx_vfx::{
+    et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave,
+};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -59,6 +61,31 @@ fn crt_trig(cos: bool, x: f32) -> f32 {
             "fld dword ptr [{x}]",
             "call {f}",
             "fstp dword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
+/// MSVCR110's `_CItan` through the game's import slot (`0x00b0c3a0`): the
+/// operand loaded as `fld qword`, the result stored as `fstp qword`
+/// through `edi`.
+fn crt_tan(x: f64) -> f64 {
+    let slot = crate::rebase(0x00b0_c3a0) as *const usize;
+    let mut out = 0f64;
+    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi (which the callee keeps), leaving the
+    // x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
             x = in(reg) &raw const x,
             f = in(reg) f,
             in("edi") &raw mut out,
@@ -1525,6 +1552,52 @@ ported! {
     /// `op_oef2_tex_clut_init_007e5680()`.
     op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
         op::bridge::op_oef2_tex_clut_init(&mut mem())
+    }
+    /// `pppVu0MaddW_copy_0074bde0(dst, v, _, _, _, s)`: `pppVu0MaddW`'s
+    /// code again; returns `dst`.
+    pppVu0MaddW_copy_0074bde0 @ 0x0074_bde0 => extern "C" fn ppp_vu0_madd_w_copy(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madd(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `op_ivec4_shr7_00749050(out, v)`.
+    op_ivec4_shr7_00749050 @ 0x0074_9050 => extern "C" fn ivec4_shr7_to_fvec4(out: u32, v: u32) -> u32 {
+        vec::bridge::ivec4_shr7_to_fvec4(&mut mem(), out, v)
+    }
+    /// `op_et_chr_slot_007fead0(chr)`.
+    op_et_chr_slot_007fead0 @ 0x007f_ead0 => extern "C" fn op_et_chr_slot(chr: u32) -> u32 {
+        et::bridge::op_et_chr_slot(&mem(), chr)
+    }
+    /// `opus_list_add_00801780(set, id, list)`.
+    opus_list_add_00801780 @ 0x0080_1780 => extern "C" fn opus_list_add(set: u32, id: u32, list: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 argument
+        opus::bridge::opus_list_add(&mut mem(), set, id as u16, list)
+    }
+    /// `opu_main_host(battle, list)`.
+    opu_main_host @ 0x0080_cc00 => extern "C" fn opu_main_host(battle: u32, list: u32) -> u32 {
+        opus::bridge::opu_main_host(&mut mem(), battle, list, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_wave_omd_make(obj, wave, uv, omd, view, light)`: its stack
+    /// locals in a buffer on this shim's stack (the frame pointer at its
+    /// end).
+    opus_wave_omd_make @ 0x007f_94e0 => extern "C" fn opus_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, light: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x90]);
+        let mut locals = Locals([0; 0x90]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        wave::bridge::opus_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, light, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_0154_wave_omd_make(obj, wave, uv, omd, view, proj)`: its
+    /// stack locals in a buffer on this shim's stack (the frame pointer at
+    /// its end).
+    opus_0154_wave_omd_make @ 0x007f_67c0 => extern "C" fn opus_0154_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, proj: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xf0]);
+        let mut locals = Locals([0; 0xf0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        wave::bridge::opus_0154_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, proj, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a), &mut |_, x| crt_tan(x))
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

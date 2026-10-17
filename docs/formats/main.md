@@ -400,3 +400,60 @@ behind them stays with those modules, which the bridges call.
   loop operand is 1); 2 wait for `+0x728` 0; 3 wait a count (`+0x72a`); 4
   jump; 6 wait until `+0x737` reaches the operand. A wait returns 1 with
   the script unmoved, a step 0, an unknown code -1 (printed).
+
+## The frame's pad (round 9)
+
+`Sg_ControlMain()` (`0x0082d070`) reads pad 0 each frame. The held buttons
+come from `TkGetControlerHist(0, 0, 0)` (16 bits, `0x023c44ac`) and the
+four stick axes from `TkGetControlerAnalogHist(0, 0, axis, 0)` (axis 0..3
+into `0x023c44a7` down to `0x023c44a4`). Pressed buttons (`0x023c44a8`)
+are the ones newly held since last frame (`0x023c44b0`). Then the free
+camera runs (`Sg_ControlCamera`). A debug build without the L/R button
+mode steps the frames per step (`0x00c496d4`): 8+4 with 4 pressed raises
+it, 4+8 with 8 pressed lowers it, and below 0 it returns to 0 and sets
+`0x013007b3`. Button 4 alone requests `0x023c44b4`; button 1 is copied to
+`0x013007b1`.
+
+## Bones from the model (round 9)
+
+`SG_InitBones(chr)` (`0x008277f0`) builds a character's skeleton from its
+model (`+0x1c0`). It allocates named blocks: the bones' elements
+(`0x160` each, "%s:Elem", `+0x328`), their channels (`0x18c`, "%s:Fcv",
+`+0x748`), the model entries (`0x38`, "%s:Mdl", `+0x1bc`) and any
+collisions (`0x60`, "%s:Collision", `+0x32c`; only `0x38` each cleared).
+The model's bone table (`+0x1c`, 20 bytes each) gives the bind pose:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0` | `u16` | parent bone; the bone itself means the root element `chr+0x1c8` |
+| `+2..+6` | `i16` x 3 | rotation in hundredths of a degree (`Angle_Wrap(v / 100 * pi / 180)`) |
+| `+8..+0xc` | `i16` x 3 | translation x 1000 |
+| `+0xe..+0x12` | `i16` x 3 | scale x 4096 (divided, rounding to 0) |
+
+When option points 7 and 8 share an ancestor, that ancestor and its own
+ancestors lose their damping byte (`+0x144`), as does every bone whose
+parent has none. Each model entry gets `Chr_ModelEntry`, a weight of 1.0 at
+`+0x14`, and `+0x194` bit 21 when its `+0x18` is set. Then
+`Ch_ModelCreatePacket` builds the packet.
+
+## The envelope (round 9, `crates/ffx-sg/src/envelope.rs`)
+
+The skinning code transforms a bone's vertex lists by its matrix
+(`cdc_Mul3x4`) into the model's vertex buffer (16 bytes per vertex), in
+thousandths with w 1.0. Three lists follow each other: rigid vertices,
+first weighted vertices (they set), further weighted vertices (they add).
+
+- `sg_calcenvelopeW_asm_opt(lists, out, m)` (`0x006ee270`), float form. Each
+  list is a `u32` count, then entries: rigid `f32 x, y, z, u32 index`
+  (16 bytes); weighted `f32 x, y, z, weight, u32 index` (20 bytes). The
+  added w is `w + 0.0`.
+- `sg_calcenvelope_asm_opt(lists, out, m)` (`0x006eee40`), packed form.
+  The rigid list is a `u16` count and 2 bytes, then 8-byte entries (`i16 x,
+  y, z` / 1000, `u16 index`). Weighted vertices come in groups: a `u16`
+  count (`0xffff` ends the list), a `u16` base, then 8-byte entries (`i16
+  x, y, z`, `u8` weight / 255, `u8` index + base x 256). The further
+  weighted groups start 2 bytes after the first list's terminator, and
+  they set w to 1.0.
+
+Products are stored as `f32` at each step (vertex x weight, then x
+1000).

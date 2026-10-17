@@ -538,11 +538,11 @@ and `0xc025`. `0xc03b` and `0xc03c` turned out to be the debug cheats
 `MsDebugFullItem`/`MsDebugFullCommand` and are marked instead. The
 debug ones (`0x70b1`, `0xb002`, `0xc00b`, `0xc00c`, `0xc018`, `0xc022`,
 `0xc028`, `0xc02a`, `0xc03b`, `0xc03c`, `0xc056`, `0xc057`, `0xc05b`)
-are marked in the table. `0x5065` stops in most oracle calls (all on
-the field snapshot): its `Ch_RomReadEventMGRP` asks the file system for
-the group's size first (`*0x02310c54`, whatever the input), which
-hashes the name through `ADVAPI32!CryptCreateHash`, an import the
-emulator does not stub; on the battle snapshot some calls get past it.
+are marked in the table. `0x5065`'s `Ch_RomReadEventMGRP` asks the file
+system for the group's size first (`*0x02310c54`), which hashes the path
+with `ADVAPI32`'s `CALG_MD5` and opens the archive; the oracle now has
+the `Crypt*` imports (a real MD5) and a `CreateFileW` that finds no file,
+so the native completes on both snapshots.
 
 `ffx_script::vm::bridge::helpers` (round 13) has VM helpers that are
 not natives: `Script_StopTurn` (`0x00863fe0`, the turn-block twin of
@@ -551,6 +551,22 @@ not natives: `Script_StopTurn` (`0x00863fe0`, the turn-block twin of
 the block), `AtelGetSnd3dWork`, `AtelSoundTableGet_00876860`, the
 message-window status of the current bank (`0x0086be60`, `0x0086c8b0`),
 `0x0086c530`, `0x0086f780`, `0x008712a0` and `AtelAllClearBindMask`.
+Round 14 added 46 more: the effect, love-parameter and guide-map flags,
+the script block's expansion getters (`+0x2c`: `+8` the special flags,
+`+0x10` a name, `+0x18` a table, `+0x24`, `+0x28` the bind list, `+0x3c`
+the sound event; the empty string `0x00b8fbeb` stands for none), the
+sprite records (`0x01327148`, 0x1c bytes, 128), `AtelClearSnd3dWork`, two
+string helpers and the level and turn-block float setters. Seven of
+those (`0x00871500`..`0x008715a0`, `0x0086f300`) end with `fst`, not
+`fstp`, so they return the value in `ST0`.
+Round 15 added `AtelRequireCtrlWork` (`0x0086ee10`, the ctrl work's
+setup for a script block: id, block, its worker/variable counts, the
+callbacks, the flag words, scales of 1.0, the cleared slots and
+`g_AtelBasicWorkCache` = 0), `AtelSetUpCallFunc`, `AtelGetSaveDic`,
+`AtelGetSaveDicName`, `AtelUcOff` (the player's control taken from every
+type-1 worker), `0x00877520` (a number as digits over the divisor table
+`0x00c52b18`) and `0x0086db80`, and shims for `0x007a3ac0` and the four
+group-8 natives the dump now has starts for.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)

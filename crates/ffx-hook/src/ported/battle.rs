@@ -3,9 +3,11 @@
 
 use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
+use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::death::bridge as death;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
+use ffx_battle::input::bridge as input;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::process::bridge as process;
 use ffx_battle::status::bridge as status;
@@ -2627,5 +2629,215 @@ ported! {
     MsBattleLabelExe @ 0x0078_1c90 => extern "C" fn ms_battle_label_exe(scene: u32, a: u32, b: u32) -> i32 {
         let mut m = mem();
         process::ms_battle_label_exe(&mut target::Dm::new(&mut m), scene, a, b)
+    }
+    /// `MsOrderKey(i)` (`0x0078f000`).
+    MsOrderKey @ 0x0078_f000 => extern "C" fn ms_order_key(i: u32) -> u32 {
+        process::ms_order_key(&mem(), i)
+    }
+    /// `MsOrderCalc(&n)`.
+    MsOrderCalc @ 0x0078_d3e0 => extern "C" fn ms_order_calc(n: u32) -> u32 {
+        process::ms_order_calc(&mut mem(), n)
+    }
+    /// `MsLimitTypeTurnCheck(i, actor)`.
+    MsLimitTypeTurnCheck @ 0x007b_13c0 => extern "C" fn ms_limit_type_turn_check(i: u32, actor: u32) -> u32 {
+        process::ms_limit_type_turn_check(&mut mem(), i, actor)
+    }
+    /// `MsBattleProcess_Order_00790fb0()`: `MagicFile_GetMagicId` through the game.
+    MsBattleProcess_Order_00790fb0 @ 0x0079_0fb0 => extern "C" fn ms_battle_process_order() -> i32 {
+        process::ms_battle_process_order(&mut mem(), &mut call_ptr)
+    }
+    /// `MsBattleEncountExe(map, group, step)` (`step` an `f32`): `Sg_FadeInW` through the game.
+    MsBattleEncountExe @ 0x0078_0d10 => extern "C" fn ms_battle_encount_exe(map: i32, group: i32, step: u32) -> i32 {
+        process::ms_battle_encount_exe(&mut mem(), &mut call_ptr, map, group, step)
+    }
+    /// `MsBattleError(msg)`: `dbgPrintf` through the game, then it hangs.
+    MsBattleError @ 0x0079_f210 => extern "C" fn ms_battle_error(msg: u32) {
+        input::ms_battle_error(&mut mem(), &mut call_ptr, msg)
+    }
+    /// `MsSetChrWeak(i, level)`.
+    MsSetChrWeak @ 0x0078_d7f0 => extern "C" fn ms_set_chr_weak(i: u32, level: u32) -> u32 {
+        input::ms_set_chr_weak(&mut mem(), i, level)
+    }
+    /// `0x0079fc00(n, &digits)` (`MsNumberDigits`).
+    MsNumberDigits @ 0x0079_fc00 => extern "C" fn ms_number_digits(n: i32, digits: u32) -> i32 {
+        input::ms_number_digits(&mut mem(), n, digits)
+    }
+    /// `0x0079fc60(...)` (`MsNumberPut`): the byte and halfword arguments
+    /// take their dwords' low parts.
+    MsNumberPut @ 0x0079_fc60 => extern "C" fn ms_number_put(i: u32, k: u32, ch: u32, x: u32, y: u32, w: u32, h: u32, life: u32, colour: u32, style: u32) -> u32 {
+        let b = |v: u32| v.to_le_bytes()[0];
+        let s = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        input::ms_number_put(&mut mem(), b(i), b(k), b(ch), s(x), s(y), b(w), b(h), b(life), b(colour), b(style))
+    }
+    /// `MsNumberRegist(i, kind, value, other, x, flags, style)`.
+    MsNumberRegist @ 0x0079_fa00 => extern "C" fn ms_number_regist(i: u32, kind: u32, value: i32, other: i32, x: u32, flags: u32, style: u32) -> i32 {
+        input::ms_number_regist(&mut mem(), i, kind, value, other, x, flags, style)
+    }
+    /// `MsSubHP(i, actor, n, other, x, flags, style)`.
+    MsSubHP @ 0x0078_e230 => extern "C" fn ms_sub_hp(i: u32, actor: u32, n: i32, other: i32, x: u32, flags: u32, style: u32) {
+        input::ms_sub_hp(&mut mem(), i, actor, n, other, x, flags, style);
+    }
+    /// `MsCheatPlayerPowerup(i)`.
+    MsCheatPlayerPowerup @ 0x0078_4720 => extern "C" fn ms_cheat_player_powerup(i: u32) {
+        let mut m = mem();
+        script!(s);
+        input::ms_cheat_player_powerup(&mut target::Dm::new(&mut m), &host(), &mut s, i);
+    }
+    /// `0x007af840(i, actor)` (`MsStatusEndMotion`).
+    MsStatusEndMotion @ 0x007a_f840 => extern "C" fn ms_status_end_motion(i: u32, actor: u32) {
+        script!(s);
+        input::ms_status_end_motion(&mut mem(), &mut s, i, actor);
+    }
+    /// `MsCheckStatusBeforeAction(i, actor)`.
+    MsCheckStatusBeforeAction @ 0x007a_f4f0 => extern "C" fn ms_check_status_before_action(i: u32, actor: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_check_status_before_action(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor)
+    }
+    /// `0x00792120(i, actor)` (`MsCheckAutoInput`).
+    MsCheckAutoInput @ 0x0079_2120 => extern "C" fn ms_check_auto_input(i: u32, actor: u32) -> i32 {
+        input::ms_check_auto_input(&mut mem(), i, actor)
+    }
+    /// `MsSetDeathSentence(i, actor, cmd, flag)`.
+    MsSetDeathSentence @ 0x0079_9cd0 => extern "C" fn ms_set_death_sentence(i: u32, actor: u32, cmd: u32, flag: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_set_death_sentence(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag)
+    }
+    /// `MsSetBerserkCommand(i, actor, cmd, flag, side)`.
+    MsSetBerserkCommand @ 0x0079_9ac0 => extern "C" fn ms_set_berserk_command(i: u32, actor: u32, cmd: u32, flag: u32, side: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_set_berserk_command(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag, side)
+    }
+    /// `MsSetProvokingCommand(i, actor, cmd, flag)`.
+    MsSetProvokingCommand @ 0x0079_9d50 => extern "C" fn ms_set_provoking_command(i: u32, actor: u32, cmd: u32, flag: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_set_provoking_command(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag)
+    }
+    /// `MsBattleProcess_InputCue_00792a90()`: the menu through the game.
+    MsBattleProcess_InputCue_00792a90 @ 0x0079_2a90 => extern "C" fn ms_battle_process_input_cue() {
+        let mut m = mem();
+        script!(s);
+        input::ms_battle_process_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `MsLimitTypeDeathCheck(i, actor, j, victim)`.
+    MsLimitTypeDeathCheck @ 0x007b_0f80 => extern "C" fn ms_limit_type_death_check(i: u32, actor: u32, j: u32, victim: u32) -> u32 {
+        death::ms_limit_type_death_check(&mut mem(), i, actor, j, victim)
+    }
+    /// `0x007b2740(i, target, after, id, prio)` (`MsAutoInsertAbility`).
+    MsAutoInsertAbility @ 0x007b_2740 => extern "C" fn ms_auto_insert_ability(i: u32, target: u32, after: u32, id: u32, prio: u32) {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_insert_ability(&mut target::Dm::new(&mut m), &host(), &mut s, i & 0xff, target & 0xff, after, id, prio);
+    }
+    /// `MsAutoInsertCommand_007b26d0(i, target, after, item, prio)`.
+    MsAutoInsertCommand_007b26d0 @ 0x007b_26d0 => extern "C" fn ms_auto_insert_command(i: u32, target: u32, after: u32, item: u32, prio: u32) {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_insert_command(&mut target::Dm::new(&mut m), &host(), &mut s, i & 0xff, target & 0xff, after, item & 0xffff, prio);
+    }
+    /// `MsAutoRelifeProcess_007b2910(i, actor, killer, status)`.
+    MsAutoRelifeProcess_007b2910 @ 0x007b_2910 => extern "C" fn ms_auto_relife_process(i: u32, actor: u32, killer: u32, status: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_relife_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, killer, status)
+    }
+    /// `MsAutoPhenixProcess(i, actor, killer)`.
+    MsAutoPhenixProcess @ 0x007b_27b0 => extern "C" fn ms_auto_phenix_process(i: u32, actor: u32, killer: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_auto_phenix_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, killer)
+    }
+    /// `MsDamageCheckDeath(i, j, no_reward, flags)`: `MsGetItem`, the sign
+    /// window and `forceAutoBattleOff` through the game.
+    MsDamageCheckDeath @ 0x0078_c740 => extern "C" fn ms_damage_check_death(i: u32, j: u32, no_reward: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        death::ms_damage_check_death(&mut target::Dm::new(&mut m), &host(), &mut s, i, j, no_reward, flags)
+    }
+    /// `MsSetChrVisible(i, v)`.
+    MsSetChrVisible @ 0x0079_6660 => extern "C" fn ms_set_chr_visible(i: u32, v: u32) -> u32 {
+        visible::ms_set_chr_visible(&mut mem(), &mut call_ptr, i, v)
+    }
+    /// `MsSetChrVisibleAppear(i, v)`.
+    MsSetChrVisibleAppear @ 0x0079_66a0 => extern "C" fn ms_set_chr_visible_appear(i: u32, v: u32) -> u32 {
+        visible::ms_set_chr_visible_appear(&mut mem(), &mut call_ptr, i, v)
+    }
+    /// `MsScreenFocusResetAll()`: `Sg_EnFocus` through the game.
+    MsScreenFocusResetAll @ 0x007b_bda0 => extern "C" fn ms_screen_focus_reset_all() {
+        chrdmg::ms_screen_focus_reset_all(&mut mem(), &mut call_ptr);
+    }
+    /// `0x00792ee0()` (`MsCheckPartyDying`).
+    MsCheckPartyDying @ 0x0079_2ee0 => extern "C" fn ms_check_party_dying() -> i32 {
+        chrdmg::ms_check_party_dying(&mem())
+    }
+    /// `0x00791780(i, actor)` (`MsCheckRestMotion`).
+    MsCheckRestMotion @ 0x0079_1780 => extern "C" fn ms_check_rest_motion(i: u32, actor: u32) -> u32 {
+        chrdmg::ms_check_rest_motion(&mem(), i, actor)
+    }
+    /// `MsEffectCameraEnd(keep)`.
+    MsEffectCameraEnd @ 0x0078_7760 => extern "C" fn ms_effect_camera_end(keep: u32) {
+        script!(s);
+        chrdmg::ms_effect_camera_end(&mut mem(), &mut s, keep);
+    }
+    /// `0x0078ee80(a, b, i)` (`MsCheckHitPending`).
+    MsCheckHitPending @ 0x0078_ee80 => extern "C" fn ms_check_hit_pending(a: u32, b: u32, i: u32) -> u32 {
+        chrdmg::ms_check_hit_pending(&mem(), a, b, i)
+    }
+    /// `MsPoisonProcess(i, actor)`.
+    MsPoisonProcess @ 0x007a_fab0 => extern "C" fn ms_poison_process(i: u32, actor: u32) {
+        let mut m = mem();
+        script!(s);
+        chrdmg::ms_poison_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor);
+    }
+    /// `0x00791690(actor)` (`MsCheckCommandEnd`).
+    MsCheckCommandEnd @ 0x0079_1690 => extern "C" fn ms_check_command_end(actor: u32) -> u32 {
+        chrdmg::ms_check_command_end(&mut mem(), actor)
+    }
+    /// `MsSetEscapeFlag(i, actor, away)`.
+    MsSetEscapeFlag @ 0x0078_de40 => extern "C" fn ms_set_escape_flag(i: u32, actor: u32, away: u32) {
+        chrdmg::ms_set_escape_flag(&mut mem(), &mut call_ptr, i, actor, away);
+    }
+    /// `MsSetEscapeFlagAll(away)`.
+    MsSetEscapeFlagAll @ 0x0078_de80 => extern "C" fn ms_set_escape_flag_all(away: u32) {
+        chrdmg::ms_set_escape_flag_all(&mut mem(), &mut call_ptr, away);
+    }
+    /// `MsMagicEffectEnd(i)`: the prayer effect through the game.
+    MsMagicEffectEnd @ 0x0079_e830 => extern "C" fn ms_magic_effect_end(i: u32) -> i32 {
+        chrdmg::ms_magic_effect_end(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsSetChrDirF(i, dir)` (`dir` an `f32`).
+    MsSetChrDirF @ 0x0079_5e20 => extern "C" fn ms_set_chr_dir_f(i: u32, dir: u32) -> i32 {
+        chrdmg::ms_set_chr_dir_f(&mut mem(), i, dir)
+    }
+    /// `MsSetChrPosReset(i, pos)`.
+    MsSetChrPosReset @ 0x0079_6220 => extern "C" fn ms_set_chr_pos_reset(i: u32, pos: u32) -> i32 {
+        chrdmg::ms_set_chr_pos_reset(&mut mem(), i, pos)
+    }
+    /// `MsStoneMove(i)`.
+    MsStoneMove @ 0x007a_2750 => extern "C" fn ms_stone_move(i: u32) {
+        script!(s);
+        chrdmg::ms_stone_move(&mut mem(), &mut s, i);
+    }
+    /// `MsEffectEndMotion(i, kind)`.
+    MsEffectEndMotion @ 0x0078_7950 => extern "C" fn ms_effect_end_motion(i: u32, kind: u32) {
+        script!(s);
+        chrdmg::ms_effect_end_motion(&mut mem(), &mut s, i, kind);
+    }
+    /// `MsCommandReturnChrStatusAll(all)`.
+    MsCommandReturnChrStatusAll @ 0x0079_3e00 => extern "C" fn ms_command_return_chr_status_all(all: u32) {
+        let mut m = mem();
+        script!(s);
+        chrdmg::ms_command_return_chr_status_all(&mut target::Dm::new(&mut m), &host(), &mut s, all);
+    }
+    /// `MsRelife(i, actor, full)`.
+    MsRelife @ 0x0078_d530 => extern "C" fn ms_relife(i: u32, actor: u32, full: u32) {
+        chrdmg::ms_relife(&mut mem(), &mut call_ptr, i, actor, full);
+    }
+    /// `MsBlowProcess(i, actor)`.
+    MsBlowProcess @ 0x0078_91b0 => extern "C" fn ms_blow_process(i: u32, actor: u32) -> u32 {
+        chrdmg::ms_blow_process(&mut mem(), &mut call_ptr, i, actor)
     }
 }

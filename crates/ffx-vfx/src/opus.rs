@@ -12,6 +12,7 @@ pub mod bridge {
     use ffx_bridge::{Global, Mem, Ptr};
 
     use crate::et::bridge::{EFF, OPUS_BATTLE};
+    use crate::x87::{MUL, Reg};
 
     /// `g_OpusWeapons`: the four weapon objects.
     pub const WEAPONS: Global<u32> = Global::new(0x0119_fea0);
@@ -488,5 +489,369 @@ pub mod bridge {
             mem.write(dst.wrapping_add(o), last);
         }
         u32::from(last)
+    }
+
+    /// `0x00801780(set, id, list)`: `id` into the first free (negative)
+    /// `i16` of `set`'s list `[set +0x10 + 4 list]`, among `u16 +0x34` - 1
+    /// entries (the index an `i16`), and `u16 +0x38` up by one: 0; -1 when
+    /// none is free.
+    pub fn opus_list_add(mem: &mut impl Mem, set: u32, id: u16, list: u32) -> u32 {
+        let n = u32::from(mem.read::<u16>(set.wrapping_add(0x34)).wrapping_sub(1));
+        let t: u32 = mem.read(set.wrapping_add(0x10).wrapping_add(list.wrapping_mul(4)));
+        let mut i = 0i16;
+        while i32::from(i) < n.cast_signed() {
+            let at = t.wrapping_add(i32::from(i).cast_unsigned().wrapping_mul(2));
+            if mem.read::<i16>(at) < 0 {
+                mem.write(at, id);
+                let c: u16 = mem.read(set.wrapping_add(0x38));
+                mem.write(set.wrapping_add(0x38), c.wrapping_add(1));
+                return 0;
+            }
+            i = i.wrapping_add(1);
+        }
+        u32::MAX
+    }
+
+    fn g(mem: &impl Mem, a: u32) -> u32 {
+        Global::<u32>::new(a).ptr(mem).addr
+    }
+
+    fn f(mem: &impl Mem, a: u32) -> f32 {
+        mem.read(a)
+    }
+
+    /// `opu_main_host`'s 64-byte copy through the emulated EE registers
+    /// `v0`..`a1` (`0x00c8f528`.., [`crate::md::bridge::SPR_BOUNCE`]):
+    /// words 1..15 (and word 0 with `w0`) into the registers, then all of
+    /// them to `dst`, word 0 straight from `src`.
+    fn ee_copy64(mem: &mut impl Mem, src: u32, dst: u32, w0: bool) {
+        let regs = crate::md::bridge::SPR_BOUNCE.ptr(mem).addr;
+        let first: u32 = mem.read(src);
+        if w0 {
+            mem.write(regs, first);
+        }
+        for i in 1..16u32 {
+            let x: u32 = mem.read(src.wrapping_add(4 * i));
+            mem.write(regs + 4 * i, x);
+        }
+        mem.write(dst, first);
+        for i in 1..16u32 {
+            let x: u32 = mem.read(regs + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), x);
+        }
+    }
+
+    /// The emulated VU registers `opu_main_host` integrates a unit's
+    /// motion in (`0x00c8f8d0`..`0x00c8f93c`).
+    const VF: u32 = 0x00c8_f8d0;
+
+    /// `opu_main_host`'s motion step of unit record `u` (and its draw
+    /// callback): position/velocity/acceleration in the emulated VU
+    /// registers, unless `+0xb2` bit 1 (or the host's `+0x212` is set):
+    /// velocity += acceleration, position += velocity; then, unless
+    /// `+0xb2` bit 2, `+0x90`.. = the second position row / 16 and the
+    /// callback `0x00c492c8[+0xba]` (1..11) with `(host, ptr)`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    fn motion<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        u: u32,
+        ptr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let vf = g(mem, VF);
+        let regs = crate::md::bridge::SPR_BOUNCE.ptr(mem).addr;
+        let r = |o: u32| vf + (o - VF);
+        let at = |o: u32| u.wrapping_add(o);
+        let flags = mem.read::<u8>(at(0xb2));
+        mem.write(regs, 0x3d80_0000u32);
+        for i in 0..8u32 {
+            let x: u32 = mem.read(at(0x30 + 4 * i));
+            mem.write(r(0x00c8_f8d0) + 4 * i, x);
+        }
+        for (d, s) in [(0x00c8_f934u32, 4u32), (0x00c8_f938, 8)] {
+            let x: u32 = mem.read(regs + s);
+            mem.write(r(d), x);
+        }
+        let x: u32 = mem.read(regs + 0xc);
+        mem.write(r(0x00c8_f930), 0x3d80_0000u32);
+        mem.write(r(0x00c8_f93c), x);
+        if flags & 2 == 0 {
+            let k = i32::from(mem.read::<i16>(host.wrapping_add(0x212)));
+            mem.write(regs, k);
+            for i in 0..4u32 {
+                let x: u32 = mem.read(at(0x50 + 4 * i));
+                mem.write(r(0x00c8_f8f0) + 4 * i, x);
+            }
+            if k == 0 {
+                for i in 0..12u32 {
+                    let x: u32 = mem.read(at(0x60 + 4 * i));
+                    mem.write(r(0x00c8_f900) + 4 * i, x);
+                }
+                // velocity (+0x50, 8 floats) += acceleration (+0x70)
+                for i in 0..8u32 {
+                    let v = r(0x00c8_f8f0) + 4 * i;
+                    let a = r(0x00c8_f910) + 4 * i;
+                    let x = crate::x87::add(f(mem, v), f(mem, a));
+                    mem.write(v, x);
+                }
+                for i in 0..8u32 {
+                    let x: u32 = mem.read(r(0x00c8_f8f0) + 4 * i);
+                    mem.write(at(0x50 + 4 * i), x);
+                }
+                // position (+0x30, 8 floats) += velocity
+                for i in 0..8u32 {
+                    let p = r(0x00c8_f8d0) + 4 * i;
+                    let v = r(0x00c8_f8f0) + 4 * i;
+                    let x = crate::x87::add(f(mem, p), f(mem, v));
+                    mem.write(p, x);
+                }
+                for i in 0..8u32 {
+                    let x: u32 = mem.read(r(0x00c8_f8d0) + 4 * i);
+                    mem.write(at(0x30 + 4 * i), x);
+                }
+            }
+        }
+        if mem.read::<u8>(at(0xb2)) & 4 != 0 {
+            return;
+        }
+        let k = Reg::load_f32(f(mem, r(0x00c8_f930)));
+        let p = r(0x00c8_f8e0);
+        let x0 = Reg::load_f32(f(mem, p)).reg(MUL, k).store();
+        mem.write(p, x0);
+        let x1 = Reg::load_f32(f(mem, p + 4)).reg(MUL, k).store();
+        mem.write(p + 4, x1);
+        let x2 = k.mem(MUL, f(mem, p + 8)).store();
+        mem.write(p + 8, x2);
+        let x3 = k.mem(MUL, f(mem, p + 12)).store();
+        mem.write(p + 12, x3);
+        for i in 0..4u32 {
+            let x: u32 = mem.read(p + 4 * i);
+            mem.write(at(0x90 + 4 * i), x);
+        }
+        let cb = mem.read::<u8>(at(0xba));
+        if cb != 0 && cb < 0xc {
+            let table = g(mem, 0x00c4_92c8);
+            let fp: u32 = mem.read(table + 4 * u32::from(cb));
+            call(mem, fp, &[host, ptr]);
+        }
+    }
+
+    /// `opu_main_host(battle, list)` (`0x0080cc00`): runs the opus units
+    /// of battle `battle` (`g_OpusBattle[battle]`, `g_VfxPass` = 1 for
+    /// battle 1). The host record comes from the SPR stack
+    /// (`op_spr_alloc(0x400)`, [`super::bridge`]'s `g_OpusBattleList`
+    /// while it runs): the listener (`0x0113fcd0`, 64 bytes) at `+0x280`,
+    /// the block at `0x0113fd10` at `+0x2c0`, the battle's first 0x100
+    /// bytes at `+0x300` (copied back at the end), `g_Ee_Gpr`'s `r0` at
+    /// `+0x210` with `+0x21c` = `list`, the unit order `+0x224` =
+    /// `[+0x310 + 4 list]` (`i16`s ending at -1), `+0x21e` = 1 when
+    /// `MsBattleChrStart`.
+    ///
+    /// The order is walked twice, the second time (`+0x21d` = 0xff) only
+    /// for slots marked to run once more. Each unit (0x100 bytes from
+    /// `+0x320`) has four program slots (`+0` pointers, `+0x10` wait
+    /// bytes, `+0x1f` mark bits): a slot runs its commands (`i16`, low
+    /// byte the handler in `0x00c48ec8`, or with 0x100 the battle's
+    /// overlay table `[[battle +0x50] +0x7c]`) until a handler sets the
+    /// host's `+0x210`, which then adds `+0x210 - 1` to the wait. After the
+    /// first pass's slots comes the unit's [`motion`] step (straight away
+    /// with `+0x21f`).
+    ///
+    /// Callees through `call`. Returns the last copied word (`eax` after
+    /// `op_spr_free`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_main_host<M: Mem>(
+        mem: &mut M,
+        battle: u32,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let battle = battle & 0xffff;
+        let pass = g(mem, 0x0113_335c);
+        if battle == 1 {
+            mem.write(pass, 1u32);
+        }
+        let alloc = g(mem, 0x007e_6a00);
+        let host = call(mem, alloc, &[0x400]);
+        let ob = OPUS_BATTLE.ptr(mem).addr;
+        let b: u32 = mem.read(ob + 4 * battle);
+        let src1 = g(mem, 0x0113_fcd0);
+        ee_copy64(mem, src1, host.wrapping_add(0x280), false);
+        let hl = g(mem, 0x012a_12fc);
+        let src2 = g(mem, 0x0113_fd10);
+        ee_copy64(mem, src2, host.wrapping_add(0x2c0), true);
+        for k in 0..4u32 {
+            ee_copy64(
+                mem,
+                b.wrapping_add(0x40 * k),
+                host.wrapping_add(0x300 + 0x40 * k),
+                true,
+            );
+        }
+        mem.write(hl, host);
+        let h = |o: u32| host.wrapping_add(o);
+        let r0 = crate::ppp::bridge::R0.ptr(mem).addr;
+        for i in 0..4u32 {
+            let x: u32 = mem.read(r0 + 4 * i);
+            mem.write(h(0x210 + 4 * i), x);
+        }
+        #[allow(clippy::cast_possible_truncation)] // the byte argument
+        let lb = list as u8;
+        mem.write(h(0x21c), lb);
+        let order: u32 = mem.read(h(0x310 + 4 * u32::from(lb)));
+        mem.write(h(0x224), order);
+        let start = g(mem, 0x0078_0cb0);
+        if call(mem, start, &[]) != 0 {
+            mem.write(h(0x21e), 1u8);
+        }
+        let get = g(mem, 0x00a4_4650);
+        let set = g(mem, 0x00a4_4700);
+        let handlers = g(mem, 0x00c4_8ec8);
+        let cur = g(mem, 0x012f_4118);
+        let mut ptr = b;
+        loop {
+            let order: u32 = mem.read(h(0x224));
+            let idx = i32::from(mem.read::<i16>(h(0x218)));
+            let mut v: u16 = mem.read(order.wrapping_add(idx.cast_unsigned().wrapping_mul(2)));
+            while v == 0xffff {
+                if mem.read::<u8>(h(0x21d)) != 0 {
+                    return finish(mem, host, b, pass, call);
+                }
+                mem.write(h(0x218), 0u16);
+                mem.write(h(0x21d), 0xffu8);
+                v = mem.read(order);
+            }
+            let units: u32 = mem.read(h(0x320));
+            let u = (i32::from(v.cast_signed()).cast_unsigned() << 8).wrapping_add(units);
+            mem.write(h(0x214), v);
+            mem.write(h(0x220), u);
+            mem.write(h(0x216), 0u16);
+            let mut run_motion = false;
+            loop {
+                if mem.read::<u8>(h(0x21f)) != 0 && mem.read::<u8>(h(0x21d)) == 0 {
+                    run_motion = true;
+                    break;
+                }
+                let s = i32::from(mem.read::<i16>(h(0x216)));
+                let su = s.cast_unsigned();
+                let slot_at = u.wrapping_add(su.wrapping_mul(4));
+                let sp: u32 = mem.read(slot_at);
+                ptr = call(mem, get, &[sp]);
+                'slot: {
+                    if ptr == 0 {
+                        break 'slot;
+                    }
+                    let bit = 1u8.wrapping_shl(su & 0x1f);
+                    let bit32 = 1u32.wrapping_shl(su & 0x1f);
+                    let marks: u8 = mem.read(u.wrapping_add(0x1f));
+                    if mem.read::<u8>(h(0x21d)) == 0 {
+                        if u32::from(marks) & bit32 != 0 {
+                            break 'slot;
+                        }
+                    } else {
+                        if u32::from(marks) & bit32 == 0 {
+                            break 'slot;
+                        }
+                        mem.write(u.wrapping_add(0x1f), !bit & marks & 0xf);
+                    }
+                    let s = i32::from(mem.read::<i16>(h(0x216))).cast_unsigned();
+                    let wait_at = u.wrapping_add(0x10).wrapping_add(s);
+                    let w: u8 = mem.read(wait_at);
+                    if w != 0 {
+                        mem.write(wait_at, w.wrapping_sub(1));
+                        break 'slot;
+                    }
+                    loop {
+                        let c = if ptr == 0 {
+                            0u32
+                        } else {
+                            i32::from(mem.read::<i16>(ptr)).cast_unsigned()
+                        };
+                        mem.write(cur, ptr);
+                        #[allow(clippy::cast_possible_truncation)] // the u16 store
+                        mem.write(h(0x21a), c as u16);
+                        let fp = if c & 0x100 != 0 {
+                            let e: u32 = mem.read(b.wrapping_add(0x50));
+                            let t: u32 = mem.read(e.wrapping_add(0x7c));
+                            if t == 0 {
+                                let fmt = g(mem, 0x00b5_8aa0);
+                                let dbg = g(mem, 0x0062_f500);
+                                let cx =
+                                    i32::from(u16::try_from(c & 0xffff).unwrap_or(0).cast_signed())
+                                        .cast_unsigned();
+                                call(mem, dbg, &[fmt, cx]);
+                                break;
+                            }
+                            mem.read::<u32>(t.wrapping_add(4 * (c & 0xff)))
+                        } else {
+                            let fp: u32 = mem.read(handlers + 4 * (c & 0xff));
+                            if fp == 0 {
+                                break;
+                            }
+                            fp
+                        };
+                        ptr = call(mem, fp, &[host, ptr]);
+                        if mem.read::<u8>(h(0x210)) != 0 {
+                            break;
+                        }
+                    }
+                    let d: u8 = mem.read(h(0x210));
+                    let s = i32::from(mem.read::<i16>(h(0x216))).cast_unsigned();
+                    let wait_at = u.wrapping_add(0x10).wrapping_add(s);
+                    let w: u8 = mem.read(wait_at);
+                    mem.write(wait_at, w.wrapping_add(d.wrapping_sub(1)));
+                    mem.write(h(0x210), 0u8);
+                    if ptr != 0 && mem.read::<u8>(h(0x21d)) != 0 {
+                        let s = mem.read::<u8>(h(0x216));
+                        let m: u8 = mem.read(u.wrapping_add(0x1f));
+                        mem.write(
+                            u.wrapping_add(0x1f),
+                            m | 1u8.wrapping_shl(u32::from(s & 0x1f)),
+                        );
+                    }
+                    let saved = call(mem, set, &[ptr]);
+                    let s = i32::from(mem.read::<i16>(h(0x216))).cast_unsigned();
+                    mem.write(u.wrapping_add(s.wrapping_mul(4)), saved);
+                }
+                let s: u16 = mem.read(h(0x216));
+                mem.write(h(0x216), s.wrapping_add(1));
+                if s.wrapping_add(1).cast_signed() >= 4 {
+                    break;
+                }
+            }
+            if run_motion || mem.read::<u8>(h(0x21d)) == 0 {
+                motion(mem, host, u, ptr, call);
+            }
+            let i: u16 = mem.read(h(0x218));
+            mem.write(h(0x218), i.wrapping_add(1));
+        }
+    }
+
+    /// `opu_main_host`'s end: the battle's 0x100 bytes back, the list and
+    /// the SPR block released, `g_VfxPass` 0.
+    fn finish<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        b: u32,
+        pass: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for k in 0..4u32 {
+            ee_copy64(
+                mem,
+                host.wrapping_add(0x300 + 0x40 * k),
+                b.wrapping_add(0x40 * k),
+                true,
+            );
+        }
+        let regs = crate::md::bridge::SPR_BOUNCE.ptr(mem).addr;
+        let last: u32 = mem.read(regs + 0x3c);
+        let hl = g(mem, 0x012a_12fc);
+        mem.write(hl, 0u32);
+        let free = g(mem, 0x007e_6a60);
+        call(mem, free, &[0x400]);
+        mem.write(pass, 0u32);
+        last
     }
 }
