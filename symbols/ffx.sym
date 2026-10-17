@@ -10169,6 +10169,7 @@
 0x008e4a10 function MenuSubCmd_SetValue       # (v) u16 +0x38 of 0x023cc128; own name
 0x008e4a30 function MenuSubCmd_SetValue2      # (v) u16 +0x38 of 0x023cc124; own name
 0x008e4a90 function MenuSubCmd_CursorAtTop    # (window) i16 +0x46 < 1; own name
+0x008e4ab0 function MenuSubCmd_CenterOpen     # (): MenuSubCmd_CenterX(g_TkMenuSubCmdWindow) when one is open, else 0; name ours
 0x008e4ad0 function MenuSubCmd_CenterX        # (window) +0x4a = (512 - i16 +0x4e) / 2; own name
 0x008e5200 function Menu_AddName              # (s): s (256 bytes) joins the 10-name list 0x01875710 (count 0x018716a0) unless present (returns 0) or full; else returns s; name ours
 0x008e5280 function AdjustButtonIconY         # fh v3:exact 0x008e5280

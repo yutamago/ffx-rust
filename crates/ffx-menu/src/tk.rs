@@ -5256,6 +5256,153 @@ pub mod bridge {
         s
     }
 
+    /// `TkSyncV()` (`0x00887f00`): the three sound sync-V flags set
+    /// (`0x00887ea0`, `0x00887eb0`, `0x00887ec0`), then
+    /// `TkSndClearKickFlag`. Returns 0.
+    pub fn tk_sync_v<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for f in [0x0088_7ea0, 0x0088_7eb0, 0x0088_7ec0, 0x0088_7ab0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        0
+    }
+
+    /// `TkMn2DrawInitPacket()` (`0x008c0be0`): `g_TkMn2DrawY` (and its
+    /// copy `0x0186a244`) = `TOMenuGetPacketBuffAdrs()`, moved on by half of
+    /// `TOMenuGetPacketBuffSize()` (rounded towards zero to 64 bytes) when
+    /// the copy already holds that address; the four font shades 0x80.
+    /// Returns the half size (left in `eax`).
+    pub fn tk_mn2_draw_init_packet<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008b_edf0);
+        let mut at = call(mem, f, &[]);
+        let f = mem.rebase(0x008b_ee00);
+        let size = call(mem, f, &[]).cast_signed();
+        let half = (size / 2 / 64 * 64).cast_unsigned();
+        let copy = mem.rebase(0x0186_a244);
+        if mem.read::<u32>(copy) == at {
+            at = at.wrapping_add(half);
+        }
+        MN2_DRAW_Y.set(mem, at);
+        mem.write(copy, at);
+        let shade = MN2_FONT_SHADE.ptr(mem).addr;
+        for k in 0..4 {
+            mem.write(shade.wrapping_add(8 * k), 0x80u32);
+        }
+        half
+    }
+
+    /// `TkFree(p)` (`0x0088d520`): `user_free_thunk(p)`, then
+    /// `Sg_MemCheck` on pools 0 and 1 (with the source file `0x00b5e968`
+    /// and lines 480, 481). Returns the last check's result.
+    pub fn tk_free<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0068_7010);
+        call(mem, f, &[p]);
+        let file = mem.rebase(0x00b5_e968);
+        let f = mem.rebase(0x0083_b7b0);
+        call(mem, f, &[0, file, 0x1e0]);
+        call(mem, f, &[1, file, 0x1e1])
+    }
+
+    /// `TkSndUpdateMain()` (`0x00887bd0`): with `TkGetSoundSyncVFlag()` set,
+    /// `SndSqsIopFrame()`, the voice/shout/stream busy words and the status
+    /// words `0x0132ff20`/`0x0132ff24` cleared, `SndStatusUpdate()`, and
+    /// `TkClearSoundSyncVFlag()` (its result returned); otherwise 0.
+    pub fn tk_snd_update_main<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7dd0);
+        if call(mem, f, &[]) == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x0088_7310);
+        call(mem, f, &[]);
+        for a in [
+            0x0132_ff24,
+            0x0132_ff14,
+            0x0132_ff18,
+            0x0132_ff10,
+            0x0132_ff20,
+        ] {
+            let a = mem.rebase(a);
+            mem.write(a, 0u32);
+        }
+        let f = mem.rebase(0x0088_7700);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x0088_7d30);
+        call(mem, f, &[])
+    }
+
+    /// `TkMsImportantSet(n)` (`0x0088e790`): `MsImportantSet(n)`; the
+    /// important items `0xa004..=0xa01d` also tail-call
+    /// `TOSetCollectBit(n - 0xa004)`. Otherwise returns `n - 0xa004` (left
+    /// in `eax`).
+    pub fn tk_ms_important_set<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0079_0930);
+        call(mem, f, &[n]);
+        let bit = n.wrapping_sub(0xa004);
+        if bit > 0x19 {
+            return bit;
+        }
+        let f = mem.rebase(0x0090_6b30);
+        call(mem, f, &[bit])
+    }
+
+    /// `TkRefreshSoundMode()` (`0x008724f0`): the save's config byte
+    /// (`*MsGetSaveMenu()`) picks `SndSetSoundMode` 0 (bit 7), 1 (bit 0) or
+    /// 2, and its bit 4 `TkSetControlerActuatorMode(0, 0, bit)`, whose
+    /// result is returned.
+    pub fn tk_refresh_sound_mode<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let get = mem.rebase(0x0078_5290);
+        let at = call(mem, get, &[]);
+        let b: u8 = mem.read(at);
+        let mode = if b & 0x80 != 0 {
+            0
+        } else if b & 1 != 0 {
+            1
+        } else {
+            2
+        };
+        let f = mem.rebase(0x0088_7180);
+        call(mem, f, &[mode]);
+        let at = call(mem, get, &[]);
+        let b: u8 = mem.read(at);
+        let f = mem.rebase(0x0088_94d0);
+        call(mem, f, &[0, 0, u32::from((b >> 4) & 1)])
+    }
+
+    /// `MenuSubCmd_CenterOpen()` (`0x008e4ab0`, own name):
+    /// `MenuSubCmd_CenterX(g_TkMenuSubCmdWindow)` when a sub-command window
+    /// is open (its result returned), else 0.
+    pub fn menu_sub_cmd_center_open<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = MENU_SUB_CMD_WINDOW.get(mem);
+        if w == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x008e_4ad0);
+        call(mem, f, &[w])
+    }
+
     /// The bytes of a NUL-terminated string (without the NUL).
     pub fn c_bytes(mem: &impl Mem, mut p: u32) -> Vec<u8> {
         let mut out = vec![];

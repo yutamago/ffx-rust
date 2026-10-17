@@ -6000,3 +6000,98 @@ fn menu_leaves2_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_wrappers_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_3a3a) else {
+        return;
+    };
+    record_frees(&mut t);
+    install_x87(&mut t);
+    // achievementUnlockAchievement (Steam), SndSqsIopFrame and
+    // SndStatusUpdate (the sound driver, absent in the image): xor eax,
+    // eax; ret in both
+    for o in [&mut t.a, &mut t.b] {
+        for f in [0x0082_2380, 0x0088_7310, 0x0088_7700] {
+            let at = o.rebase(f);
+            o.write(at, &[0x31, 0xc0, 0xc3]).unwrap();
+        }
+    }
+    let w = u64::from;
+    for round in 0..48u32 {
+        t.twin("TkSyncV", 0x0088_7f00, &[], U32, |o| {
+            w(tk::tk_sync_v(o, &mut callback))
+        });
+        let copy = if round % 2 == 0 { 0 } else { t.rng.next() };
+        t.put(t.sym(0x0186_a244), copy);
+        t.twin("TkMn2DrawInitPacket", 0x008c_0be0, &[], U32, |o| {
+            w(tk::tk_mn2_draw_init_packet(o, &mut callback))
+        });
+        let p = t.rng.next();
+        t.twin("TkFree", 0x0088_d520, &[p], U32, |o| {
+            w(tk::tk_free(o, p, &mut callback))
+        });
+        for a in [
+            0x0132_ff10u32,
+            0x0132_ff14,
+            0x0132_ff18,
+            0x0132_ff20,
+            0x0132_ff24,
+        ] {
+            let v = t.rng.next();
+            t.put(t.sym(a), v);
+        }
+        t.twin("TkSndUpdateMain", 0x0088_7bd0, &[], U32, |o| {
+            w(tk::tk_snd_update_main(o, &mut callback))
+        });
+        let n = match round % 3 {
+            0 => 0xa000 + t.rng.below(0x24),
+            1 => t.rng.below(0x100),
+            _ => t.rng.next(),
+        };
+        t.twin("TkMsImportantSet", 0x0088_e790, &[n], U32, |o| {
+            w(tk::tk_ms_important_set(o, n, &mut callback))
+        });
+        let b = t.rng.next();
+        t.put(t.sym(0x0113_079c), b);
+        t.twin("TkRefreshSoundMode", 0x0087_24f0, &[], U32, |o| {
+            w(tk::tk_refresh_sound_mode(o, &mut callback))
+        });
+        let win = if round % 3 == 0 {
+            0
+        } else {
+            t.alloc_random(0x60)
+        };
+        t.put(t.sym(tk::MENU_SUB_CMD_WINDOW.sym), win);
+        t.twin("MenuSubCmd_CenterOpen", 0x008e_4ab0, &[], U32, |o| {
+            w(tk::menu_sub_cmd_center_open(o, &mut callback))
+        });
+        // Math_Atan2XZ: axes, NaN and general points
+        let pick = |t: &mut Twins| -> f32 {
+            match t.rng.below(6) {
+                0 => 0.0,
+                1 => -0.0,
+                2 => f32::NAN,
+                _ => f32::from(i8::try_from(t.rng.below(64)).unwrap_or(0) - 32) / 4.0,
+            }
+        };
+        let v: [f32; 4] = std::array::from_fn(|_| pick(&mut t));
+        let mut v = v;
+        if round % 4 == 1 {
+            v[2] = v[0];
+        }
+        if round % 4 == 2 {
+            v[3] = v[1];
+        }
+        t.drain_x87();
+        let r =
+            t.a.call(t.a.rebase(0x0088_b430), Conv::Cdecl, &v.map(f32::to_bits))
+                .unwrap();
+        let want = ffx_menu::math::atan2_xz(v[0], v[1], v[2], v[3], |a, b| {
+            x87_call(&mut t.b, 0x00b0_c3b0, a, Some(b))
+        });
+        same_float(&format!("Math_Atan2XZ {v:?}"), r.st0, want);
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -3113,4 +3113,36 @@ ported! {
         let v = |p: u32| -> [f32; 3] { [0u32, 4, 8].map(|o| ffx_bridge::x87::round_trip(ffx_bridge::Mem::read(&m, p.wrapping_add(o)))) };
         ffx_menu::math::cross_height_gap(v(p1), v(p2), v(p3), v(p4))
     }
+    /// `TkSyncV()`: 0.
+    TkSyncV @ 0x0088_7f00 => extern "C" fn tk_sync_v() -> u32 {
+        tk::tk_sync_v(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawInitPacket()`: the half packet size.
+    TkMn2DrawInitPacket @ 0x008c_0be0 => extern "C" fn tk_mn2_draw_init_packet() -> u32 {
+        tk::tk_mn2_draw_init_packet(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkFree(p)`: the last memory check's result.
+    TkFree @ 0x0088_d520 => extern "C" fn tk_free(p: u32) -> u32 {
+        tk::tk_free(&mut mem(), p, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSndUpdateMain()`.
+    TkSndUpdateMain @ 0x0088_7bd0 => extern "C" fn tk_snd_update_main() -> u32 {
+        tk::tk_snd_update_main(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMsImportantSet(n)`.
+    TkMsImportantSet @ 0x0088_e790 => extern "C" fn tk_ms_important_set(n: u32) -> u32 {
+        tk::tk_ms_important_set(&mut mem(), n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkRefreshSoundMode()`.
+    TkRefreshSoundMode @ 0x0087_24f0 => extern "C" fn tk_refresh_sound_mode() -> u32 {
+        tk::tk_refresh_sound_mode(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_CenterOpen()`.
+    MenuSubCmd_CenterOpen @ 0x008e_4ab0 => extern "C" fn menu_sub_cmd_center_open() -> u32 {
+        tk::menu_sub_cmd_center_open(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Math_Atan2XZ(x0, z0, x1, z1)`: in `st0`.
+    Math_Atan2XZ @ 0x0088_b430 => extern "C" fn math_atan2_xz(x0: f32, z0: f32, x1: f32, z1: f32) -> f32 {
+        ffx_menu::math::atan2_xz(x0, z0, x1, z1, |a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
+    }
 }

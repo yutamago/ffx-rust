@@ -221,6 +221,43 @@ pub fn cross_height_gap(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) 
     r((f(y1) - f(y2)).abs())
 }
 
+/// `Math_Atan2XZ(x0, z0, x1, z1)` (`0x0088b430`): the angle of
+/// `(x1 - x0, z1 - z0)` (each difference a float): on the axes
+/// ±π/2 (`dx` zero, minus for a negative or NaN `dz`) and π or -0
+/// (`dz` zero, π for a negative or NaN `dx`), otherwise
+/// `_CIatan2(dz, dx)` stored as a float.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)] // fstp dword
+pub fn atan2_xz(
+    x0: f32,
+    z0: f32,
+    x1: f32,
+    z1: f32,
+    intrinsic: impl FnOnce(f64, f64) -> f64,
+) -> f32 {
+    let r = |v: f32| f64::from(ffx_bridge::x87::round_trip(v));
+    let dx = (r(x1) - r(x0)) as f32;
+    let dz = (r(z1) - r(z0)) as f32;
+    #[allow(clippy::float_cmp)] // fucompp against 0
+    if dx.abs() == 0.0 {
+        return if dz >= 0.0 {
+            FRAC_PI_2_F32
+        } else {
+            -FRAC_PI_2_F32
+        };
+    }
+    #[allow(clippy::float_cmp)]
+    if dz.abs() == 0.0 {
+        return if dx >= 0.0 { -0.0 } else { PI_F32 };
+    }
+    intrinsic(f64::from(dz), f64::from(dx)) as f32
+}
+
+/// The float constants `Math_Atan2XZ` loads: π/2 (`0x00b43d38`) and π
+/// (`0x00b922d0`).
+const FRAC_PI_2_F32: f32 = f32::from_bits(0x3fc9_0fdb);
+const PI_F32: f32 = f32::from_bits(0x4049_0fdb);
+
 #[cfg(test)]
 mod tests {
     use super::*;
