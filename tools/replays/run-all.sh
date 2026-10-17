@@ -70,7 +70,9 @@ each rust
 echo "replays took $((SECONDS - start)) s ($runs)"
 bad=0
 for r in "${replays[@]}"; do
-    cmp=(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$lin/$r-orig2.trace")
+    # the pad word's range (press timing): field-walk 3, menu-browse 0
+    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; *) ign=() ;; esac
+    cmp=(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$lin/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
