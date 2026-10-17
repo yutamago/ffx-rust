@@ -3757,6 +3757,11 @@ ported! {
         yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
     }
 
+    /// `yiPolyBufExecVif(buf, codes, words)`.
+    yiPolyBufExecVif @ 0x0091_13a0 => extern "C" fn shim_yi_poly_buf_exec_vif(buf: u32, codes: u32, words: u32) -> u32 {
+        yi::bridge::yi_poly_buf_exec_vif(&mut mem(), buf, codes, words)
+    }
+
     /// `Sg_MemSetFree(block)`.
     Sg_MemSetFree @ 0x0083_bdb0 => extern "C" fn shim_sg_mem_set_free(block: u32) -> u32 {
         yi::bridge::sg_mem_set_free(&mut mem(), block)

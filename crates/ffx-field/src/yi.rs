@@ -4927,6 +4927,14 @@ pub mod bridge {
     /// Returns the source words read.
     pub fn yi_poly_buf_unpack<M: Mem>(mem: &mut M, buf: u32, src: u32, code: u32) -> u32 {
         let w = mem.read::<u32>(code);
+        unpack(mem, buf, src, w, |mem| {
+            u32::from(mem.read::<u8>(code.wrapping_add(2)))
+        })
+    }
+
+    /// [`yi_poly_buf_unpack`] on the code word `w`, its row count from
+    /// `num` (reread for each row).
+    fn unpack<M: Mem>(mem: &mut M, buf: u32, src: u32, w: u32, num: impl Fn(&M) -> u32) -> u32 {
         let op = (w >> 24) & 0x7f;
         let (vl, vn) = (op & 3, (op >> 2) & 3);
         let mut row = w & 0x3ff;
@@ -4938,7 +4946,7 @@ pub mod bridge {
         // the source word and the bits left in it (16- and 8-bit elements)
         let (mut word, mut left) = (0u32, 0u32);
         let mut i = 0;
-        while i < u32::from(mem.read::<u8>(code.wrapping_add(2))) {
+        while i < num(mem) {
             let mut take = |mem: &M| -> u32 {
                 match vl {
                     0 => {
@@ -4987,5 +4995,104 @@ pub mod bridge {
             i += 1;
         }
         (p.wrapping_sub(src).cast_signed() >> 2).cast_unsigned()
+    }
+
+    /// `yiPolyBufExecVif(buf, codes, words)` (`0x009113a0`, name ours;
+    /// from the yi renderer's packet senders): runs VIF codes from `codes`
+    /// on the poly buffer until `words` words are used or a microprogram
+    /// call. The command is bits 24..30 (any with bits 5..6 both set is
+    /// `UNPACK`, [`yi_poly_buf_unpack`]); the registers sit after the 0x4000
+    /// bytes of VU memory:
+    /// - 1 `STCYCL`: `WL` (bits 8..15) to the byte `+0x4084`, `CL` to
+    ///   `+0x4085`;
+    /// - 2 `OFFSET`: `+0x4078` the offset (bits 0..9), the double-buffer
+    ///   bit (7 of `+0x4000`) cleared, `TOPS` (`+0x4070`) = `BASE`
+    ///   (`+0x4074`);
+    /// - 3 `BASE`: `BASE` and `TOPS` (bits 0..9), the bit cleared;
+    /// - 4 `ITOP`: written to `+0x4070` too (bits 0..9);
+    /// - 5 `STMOD` (`+0x407c`, bits 0..1), 7 `MARK` (`+0x4080`, 16 bits);
+    /// - `0x20` `STMASK` (the next word to `+0x4068`), `0x30` `STROW` and
+    ///   `0x31` `STCOL` (four words to `+0x4048` / `+0x4058`);
+    /// - `0x4a` `MPG` skips two words per bits 16..23, `0x50`/`0x51`
+    ///   `DIRECT` four words per bits 0..15;
+    /// - `0x14`/`0x15`/`0x17` (`MSCAL`, `MSCALF`, `MSCNT`): `+0x406c` =
+    ///   `TOPS`, then the double buffer flips (set: `TOPS = BASE`, cleared;
+    ///   clear: `TOPS = BASE + OFFSET`, set) and the run ends.
+    ///
+    /// Anything else is a one-word no-op. Returns the words used.
+    pub fn yi_poly_buf_exec_vif<M: Mem>(mem: &mut M, buf: u32, codes: u32, words: u32) -> u32 {
+        let r = |o: u32| buf.wrapping_add(o);
+        let used = |p: u32| (p.wrapping_sub(codes).cast_signed() >> 2).cast_unsigned();
+        let mut p = codes;
+        if words == 0 {
+            return 0;
+        }
+        loop {
+            let w = mem.read::<u32>(p);
+            p = p.wrapping_add(4);
+            let mut cmd = (w >> 24) & 0x7f;
+            if cmd & 0x60 == 0x60 {
+                cmd = 0x60;
+            }
+            let dbf_off = |mem: &mut M| {
+                let v = mem.read::<u32>(r(0x4000));
+                mem.write(r(0x4000), v & !0x80);
+            };
+            match cmd {
+                1 => {
+                    #[allow(clippy::cast_possible_truncation)] // the two low bytes
+                    mem.write(r(0x4084), [(w >> 8) as u8, w as u8]);
+                }
+                2 => {
+                    let base = mem.read::<u32>(r(0x4074));
+                    dbf_off(mem);
+                    mem.write(r(0x4078), w & 0x3ff);
+                    mem.write(r(0x4070), base);
+                }
+                3 => {
+                    dbf_off(mem);
+                    mem.write(r(0x4074), w & 0x3ff);
+                    mem.write(r(0x4070), w & 0x3ff);
+                }
+                4 => mem.write(r(0x4070), w & 0x3ff),
+                5 => mem.write(r(0x407c), w & 3),
+                7 => mem.write(r(0x4080), w & 0xffff),
+                0x14 | 0x15 | 0x17 => {
+                    let stat = mem.read::<u32>(r(0x4000));
+                    let tops = mem.read::<u32>(r(0x4070));
+                    mem.write(r(0x406c), tops);
+                    let base = mem.read::<u32>(r(0x4074));
+                    if stat & 0x80 != 0 {
+                        mem.write(r(0x4070), base);
+                        mem.write(r(0x4000), stat & !0x80);
+                    } else {
+                        let off = mem.read::<u32>(r(0x4078));
+                        mem.write(r(0x4070), off.wrapping_add(base));
+                        mem.write(r(0x4000), stat | 0x80);
+                    }
+                    return used(p);
+                }
+                0x20 => {
+                    let v = mem.read::<u32>(p);
+                    mem.write(r(0x4068), v);
+                    p = p.wrapping_add(4);
+                }
+                0x30 | 0x31 => {
+                    let v = mem.read::<[u32; 4]>(p);
+                    mem.write(r(if cmd == 0x30 { 0x4048 } else { 0x4058 }), v);
+                    p = p.wrapping_add(0x10);
+                }
+                0x4a => p = p.wrapping_add(((w >> 16) & 0xff) * 8),
+                0x50 | 0x51 => p = p.wrapping_add((w & 0xffff) * 0x10),
+                0x60 => {
+                    let n = unpack(mem, buf, p, w, |_| (w >> 16) & 0xff);
+                    p = p.wrapping_add(n.wrapping_mul(4));
+                }
+                _ => {}
+            }
+            if used(p) >= words {
+                return used(p);
+            }
+        }
     }
 }

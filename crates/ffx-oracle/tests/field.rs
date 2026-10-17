@@ -12221,6 +12221,95 @@ fn round34_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
     }
 }
 
+/// A random VIF code stream of about `n` words: every command the poly
+/// buffer knows (and some it ignores), small skips; data words keep a zero
+/// command byte, so a stream read past an `UNPACK`'s data decodes as `NOP`s.
+fn vif_stream(rng: &mut Xorshift, n: usize, end: bool) -> Vec<u32> {
+    const CMDS: [u32; 17] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 0x10, 0x20, 0x30, 0x31, 0x4a, 0x50, 0x51, 0x60, 0x6f,
+    ];
+    let data = |rng: &mut Xorshift| rng.next() & 0x00ff_ffff;
+    let mut v = vec![];
+    while v.len() < n {
+        let cmd = CMDS[rng.below(17) as usize];
+        let imm = match cmd {
+            0x4a => rng.below(4) << 16,
+            0x50 | 0x51 => rng.below(4),
+            0x60..=0x7f => (rng.below(16) << 16) | (rng.next() & 0x83ff),
+            _ => rng.next() & 0x00ff_ffff,
+        };
+        let cmd = if cmd >= 0x60 {
+            cmd | rng.below(0x20)
+        } else {
+            cmd
+        };
+        v.push((rng.below(2) << 31) | (cmd << 24) | imm);
+        let extra = match cmd {
+            0x20 => 1,
+            0x30 | 0x31 => 4,
+            0x4a => ((imm >> 16) & 0xff) * 2,
+            0x50 | 0x51 => imm * 4,
+            0x60..=0x7f => ((imm >> 16) & 0xff) * 4,
+            _ => 0,
+        };
+        for _ in 0..extra {
+            v.push(data(rng));
+        }
+    }
+    if end {
+        v.push([0x14u32, 0x15, 0x17][rng.below(3) as usize] << 24);
+    }
+    v
+}
+
+/// Round 35 on `t`: `yiPolyBufExecVif` over random streams, stopping by
+/// count or at a microprogram call, from either double-buffer state.
+fn round35_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (buf, codes) = (t.alloc(0x1_0000), t.alloc(0x4000));
+    for k in 0..rounds {
+        let n = 1 + rng.below(0x200) as usize;
+        let v = vif_stream(rng, n, k % 3 == 0);
+        let mut bytes = vec![0u8; 0x4000];
+        for (i, w) in v.iter().enumerate() {
+            bytes[4 * i..4 * i + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        t.write(codes, &bytes);
+        t.fill(buf + 0x4000, 0x88, rng);
+        t.put(buf + 0x4070, rng.below(0x400));
+        t.put(buf + 0x4074, rng.below(0x400));
+        t.put(buf + 0x4078, rng.below(0x400));
+        let len = u32::try_from(v.len()).unwrap();
+        let words = match rng.below(4) {
+            0 => 0,
+            1 => 1 + rng.below(len),
+            _ => len,
+        };
+        t.same(
+            "yiPolyBufExecVif",
+            |o| o.eax(0x0091_13a0, &[buf, codes, words]),
+            |m| yi::bridge::yi_poly_buf_exec_vif(m, buf, codes, words),
+        );
+    }
+}
+
+/// Round 35: the poly buffer's VIF interpreter (`yiPolyBufExecVif`).
+#[test]
+fn round35_poly_buf_exec_vif_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0023_0001);
+    round35_cases(&mut t, &mut rng, 300);
+}
+
+/// Round 35 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round35_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0023_0002);
+    round35_cases(&mut t, &mut rng, 60);
+}
+
 /// Round 34: the poly buffer's VIF `UNPACK` (`yiPolyBufUnpack`), synthetic.
 #[test]
 fn round34_poly_buf_unpack_matches_the_original() {

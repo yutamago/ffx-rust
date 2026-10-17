@@ -10637,6 +10637,7 @@
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
 0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
+0x009113a0 function yiPolyBufExecVif         # (buf, codes, words) -> words used: runs VIF codes on the poly buffer (STCYCL +0x4084, OFFSET +0x4078, BASE +0x4074, TOPS +0x4070, STMOD +0x407c, MARK +0x4080, STMASK +0x4068, STROW +0x4048, STCOL +0x4058, MPG/DIRECT skipped, UNPACK -> yiPolyBufUnpack) until words or an MSCAL/MSCALF/MSCNT (+0x406c = TOPS, double buffer flips); 8 callers in the yi renderer; name ours; ported (field round 35)
 0x00911620 function yiPolyBufUnpack          # (buf, src, code) -> source words read: a VIF UNPACK (code bits 24..25 size 32/16/8/V4-5, 26..27 count - 1, 0..9 row + TOPS +0x4070 when bit 15, byte +2 rows) into the poly buffer's VU memory; from 0x009113a0 (the poly buffer's VIF interpreter); name ours; ported (field round 34)
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours

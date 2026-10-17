@@ -1483,6 +1483,33 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The poly buffer's VIF interpreter (round 35)
+
+`yiPolyBufExecVif(buf, codes, words)` (`0x009113a0`, name ours; eight
+calls in the yi renderer) runs VIF codes on the poly buffer until `words`
+words are used (unsigned compare after each code) and returns the words
+used; 0 words does nothing. The command is bits 24..30; any with bits 5
+and 6 both set is an `UNPACK` (`yiPolyBufUnpack`, with the code word
+copied to the interpreter's stack, so its row count is the code's byte
+`+2`). The registers follow the VU memory:
+
+| Command | Effect |
+|---|---|
+| 1 `STCYCL` | byte `+0x4084` = bits 8..15 (`WL`), `+0x4085` = bits 0..7 (`CL`) |
+| 2 `OFFSET` | `+0x4078` = bits 0..9; bit 7 of `+0x4000` (double buffer) cleared; `TOPS` (`+0x4070`) = `BASE` (`+0x4074`) |
+| 3 `BASE` | `BASE` = `TOPS` = bits 0..9; the bit cleared |
+| 4 `ITOP` | `+0x4070` = bits 0..9 (the same word as `TOPS`) |
+| 5 `STMOD` | `+0x407c` = bits 0..1 |
+| 7 `MARK` | `+0x4080` = bits 0..15 |
+| `0x14`, `0x15`, `0x17` | `+0x406c` = `TOPS`; with the bit set `TOPS = BASE` and it clears, else `TOPS = BASE + OFFSET` and it sets; the run ends |
+| `0x20` `STMASK` | the next word to `+0x4068` |
+| `0x30` `STROW`, `0x31` `STCOL` | the next four words to `+0x4048` / `+0x4058` |
+| `0x4a` `MPG` | skips two words per unit of bits 16..23 |
+| `0x50`, `0x51` `DIRECT` | skips four words per unit of bits 0..15 |
+
+Every other command (`0x16` too) is a
+one-word no-op.
+
 ## The poly buffer's VIF unpack (round 34)
 
 The yi poly buffer (`yiPolyBufClear`, `0x00911970`) is 0x4000 bytes of
