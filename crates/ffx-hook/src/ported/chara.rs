@@ -17,6 +17,16 @@ use ffx_chara::texture::bridge as tx;
 
 use super::{mem, ported};
 
+/// Scratch memory for ports whose originals use a stack buffer that only
+/// lives during the call (the game calls them from one thread).
+static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 0x280];
+
+/// [`SCRATCH`]'s address.
+fn scratch() -> u32 {
+    u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
+}
+
 ported! {
     // ---- finding characters
 
@@ -1069,7 +1079,7 @@ ported! {
     }
     /// `Ch_FunctionHistoryClear()`.
     Ch_FunctionHistoryClear @ 0x0083_3760 => extern "C" fn ch_function_history_clear() {
-        sy::HISTORY_9E8.set(&mut mem(), 0);
+        sy::CALC_NORM_CURSOR.set(&mut mem(), 0);
     }
 
     // ---- more accessors
@@ -1538,5 +1548,44 @@ ported! {
     /// `Ch_AnimCopyNear(chr)`: the result in `al`.
     Ch_AnimCopyNear @ 0x0083_9200 => extern "C" fn ch_anim_copy_near(chr: u32) -> u8 {
         mo::bridge::ch_anim_copy_near(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+
+    // ---- round 9
+
+    /// `Ch_ModelPurgePacket(chr, all)`: the bytes freed.
+    Ch_ModelPurgePacket @ 0x0082_7700 => extern "C" fn ch_model_purge_packet(chr: u32, all: i32) -> u32 {
+        c::ch_model_purge_packet(&mut mem(), chr, all, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MgrpRead(id, n)`: 0, or -1.
+    Ch_MgrpRead @ 0x0082_a4c0 => extern "C" fn ch_mgrp_read(id: u32, n: u32) -> u32 {
+        sy::ch_mgrp_read(&mut mem(), id, n, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ModelSetHide(chr, i, hide)`: the old hide byte.
+    Ch_ModelSetHide @ 0x0082_aea0 => extern "C" fn ch_model_set_hide(chr: u32, i: u32, hide: u32) -> u32 {
+        c::ch_model_set_hide(&mut mem(), chr, i, hide, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_TextureLoadAnim(chr)`.
+    Ch_TextureLoadAnim @ 0x0083_1110 => extern "C" fn ch_texture_load_anim(chr: u32) {
+        ta::ch_texture_load_anim(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_TextureLoadImage(chr, x)`.
+    Ch_TextureLoadImage @ 0x0083_1300 => extern "C" fn ch_texture_load_image(chr: u32, x: u32) {
+        ta::ch_texture_load_image(&mut mem(), chr, x, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_RomReadChrCB(request)`.
+    Ch_RomReadChrCB @ 0x0082_a6c0 => extern "C" fn ch_rom_read_chr_cb(req: u32) -> u32 {
+        mo::bridge::ch_rom_read_chr_cb(&mut mem(), req, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RegMotionEntryCache(p)`.
+    Ch_RegMotionEntryCache @ 0x0083_76b0 => extern "C" fn ch_reg_motion_entry_cache(p: u32) -> u32 {
+        mo::bridge::ch_reg_motion_entry_cache(&mut mem(), p, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetSysMotion(chr, slot, motion)`.
+    Ch_SetSysMotion @ 0x0083_7d00 => extern "C" fn ch_set_sys_motion(chr: u32, slot: u32, motion: u32) -> u32 {
+        mo::bridge::ch_set_sys_motion(&mut mem(), chr, slot, motion, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClutDispose(chr)`.
+    Ch_ClutDispose @ 0x0083_c810 => extern "C" fn ch_clut_dispose(chr: u32) -> u32 {
+        tx::ch_clut_dispose(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
     }
 }

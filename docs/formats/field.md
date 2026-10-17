@@ -856,6 +856,12 @@ Prints and dumps:
   entry.
 - `0x00760bf0`: the VFX "drawField is not implemented" warning loop
   (listed in round 12).
+- `0x007606f0` and `0x00760f30`: a pixel probe. A cross is drawn at
+  the point `0x00d4b4e8`/`0x00d4b4ec` (skipped at x 0x7fff) from
+  `pppPartDraw` and `pppPartLoop`. The second, while `0x00d4b4d4` is
+  set, reads the 16x16 GS block there back (`sceGsExecStoreImage`) and
+  sends its colour as a packet. No code writes the point (`.bss`, set by
+  a host tool), so it is a debug aid (round 28).
 
 Debug camera:
 - `FreeCamera_handleInput` (`0x00680030`), `FreeCamera_setFreePause`
@@ -1207,6 +1213,59 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   truncated value.
 - Not ported: `0x00a461b0` and `0x0092f290` write draw packets and VFX
   render data (replaced by ffx-render).
+
+## The Phyre map load, the sphere grid's warp and a 2D angle (round 27)
+
+- `loadPhyreFieldMap` (`0x00908000`): with a pending map (`0x01934ed0`)
+  and its name (`0x01934ee8`, a string), it switches both map kinds off
+  and prints `"RAM Inuse : %d u:%d"` (0, 0) to `stdout` through
+  `__iob_func`/`fprintf`. Then, for each section `yiMapGetSection` finds
+  (0: 2D, 1: 3D), it switches that kind on, counts it (`0x01934ec4`),
+  loads it (`graphicFieldMapLoad(name, kind)`) and sets the map kind
+  (`0x01934ec0`). The 2D section also sets render status bit 14 and
+  `0x0191389c`. The request is then cleared, followed by
+  `graphicFieldMapInitialize` and `graphicVFXLoadLevelData` (its `eax`
+  is returned). Without a request it only clears `g_BtlMapRead`.
+- `AbmapStartWarp` (`0x00a48a80`, name ours, from `abmap_set_chr_pos`):
+  - plays the warp sound;
+  - writes the character's node position as floats (`+0x11308`/
+    `+0x1130c`, again at `+0x1163c`/`+0x11640`), the target (`+0x11634`)
+    and the character (`+0x11638`);
+  - creates the grid's ppp heap and starts part 2 there
+    (`AbmapStartPart`, scale 0.5);
+  - hooks the warp's draw (`0x00a4c430`, at `+0x115ac`) and
+    `AbmapState_Warping` (`+0x115a8`), saving the previous hooks unless a
+    save slot is taken.
+- `rcAngle2D` (`0x007e6d80`, name ours) returns in `ST0` the direction of
+  `(x1 - x0, y1 - y0)` in `0..2π`:
+  - the quadrant `q` (a NaN counts as negative) turns the vector into
+    non-negative `(a, b)`;
+  - the angle is `atan(b / a)` when `a >= b` (or unordered), else
+    `π/2 - atan(a / b)` stored as `f32`;
+  - then `q π/2` is added (`π/2` the `f64` of an `f32`).
+- `0x007606f0` (six lines as a cross around the point at `0x00d4b4e8`)
+  is a debug pixel probe, listed under "Debug (mod-tool candidates)"
+  since round 28.
+
+## The warp's entry, the blur and the nail's points (round 28)
+
+- `abmap_set_chr_pos` (`0x00a458f0`, Fahrenheit's name): `AbmapStartWarp`
+  and `+0x115c7` = 1; returns the grid.
+- `rcefBlurUpdate` (`0x00924bf0`, name ours, from `rcefMainProcRunAfter`):
+  while on (`+0x228`) with a mode (`+0x218`), calls `Sg_Blur` with the
+  blur `+0x21c`. Mode 2 fades it: `(frames - done) * blur / frames`,
+  integer, with the frames `+0x220` and the count `+0x224`. After the
+  frames it calls `Sg_Blur(0)` and switches off.
+- `rcfxNailUpdate` (`0x00929190`, name ours, `rcfxNailInit`'s update
+  callback): for each of the `+0x1c` points, copies the source point
+  (`ctx +0x24`, picked by the index array `+0x20`) into the base array
+  (`+0x24`). That goes through the matrix `+0x38` into `+0x28`, or is
+  copied there without a matrix, then copied on to `+0x2c`. Finally the
+  `f64` at `ctx` goes to `+0x30` through the x87 stack (on hardware a
+  signalling NaN turns quiet; the oracle's emulator does not, so the test
+  leaves them out).
+- The debug pixel probe `0x007606f0`/`0x00760f30` moved to "Debug
+  (mod-tool candidates)".
 
 ## Floats
 

@@ -204,6 +204,58 @@ pub mod bridge {
         mem.write(d + 8, 0u32);
     }
 
+    /// `pppFpSetStickChr(id, chr, bone)` (`0x0072a530`): when
+    /// `Ch_CheckHandle(chr)` (through `call`) is not -1, the first entry
+    /// with that ID sticks to the character: display flag 1, `+4` = `chr`,
+    /// `+8` = `bone`. Returns what the original leaves in `eax`: -1, the
+    /// check's result without a table, the last ID compared, or `bone`.
+    pub fn ppp_fp_set_stick_chr<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        chr: u32,
+        bone: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(0x0082_61b0).ptr(mem).addr;
+        let r = call(mem, f, &[chr]);
+        if r == u32::MAX {
+            return r;
+        }
+        let Some((n, ids)) = table(mem) else { return r };
+        let mut last = r;
+        for i in 0..n {
+            last = u32::from(self::id(mem, ids, i));
+            if last == id {
+                let d = disp(mem, i);
+                or_flags(mem, d, 1, !0);
+                mem.write(d + 4, chr);
+                mem.write(d + 8, bone);
+                return bone;
+            }
+        }
+        last
+    }
+
+    /// `pppFpSetStickPos(id, pos)` (`0x0072a630`): the first entry with
+    /// that ID gets an identity matrix at display `+0xc`
+    /// (`FFXVu0UnitMatrix`, through `call`) and the point `pos.xyz` at
+    /// `+0x3c`.
+    pub fn ppp_fp_set_stick_pos<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        pos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let Some(i) = first(mem, id) else { return };
+        let d = disp(mem, i);
+        let f = Global::<u32>::new(0x006e_d9a0).ptr(mem).addr;
+        call(mem, f, &[d + 0xc]);
+        for k in 0..3 {
+            let x: u32 = mem.read(pos.wrapping_add(4 * k));
+            mem.write(d + 0x3c + 4 * k, crate::x87::load(x));
+        }
+    }
+
     /// `pppFpResetStick(id)` (`0x0072a120`): no sticking.
     pub fn ppp_fp_reset_stick(mem: &mut impl Mem, id: u32) {
         stick(mem, id, 0, !0xf, 0);
