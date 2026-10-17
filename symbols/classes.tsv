@@ -9872,7 +9872,7 @@
 0x0082ba70	logic	default (no rule: ported to be safe)
 0x0082baf0	glue	reviewed: writes GS packets (chara round 11)
 0x0082bb90	glue	reviewed: builds a GS sprite packet (main round 5)
-0x0082bc50	logic	default (no rule: ported to be safe)
+0x0082bc50	glue	reviewed: Sg_AccSetFrameMap: builds a GS packet (main round 11)
 0x0082bcb0	logic	default (no rule: ported to be safe)
 0x0082bcc0	debug	only called from debug code (0x854270 and 1 more)
 0x0082bcd0	logic	default (no rule: ported to be safe)
@@ -9888,9 +9888,9 @@
 0x0082c0c0	logic	default (no rule: ported to be safe)
 0x0082c790	dead	unreachable from the entry point and every pointer table
 0x0082c7a0	dead	unreachable from the entry point and every pointer table
-0x0082c7b0	logic	default (no rule: ported to be safe)
-0x0082c8d0	logic	default (no rule: ported to be safe)
-0x0082caa0	logic	default (no rule: ported to be safe)
+0x0082c7b0	glue	reviewed: Sg_DrawSetEnvironment: builds a GS packet (main round 11)
+0x0082c8d0	glue	reviewed: Sg_DrawSetEnvironmentInit: builds a GS packet (main round 11)
+0x0082caa0	glue	reviewed: Sg_DrawSetEnvironmentInitMovie: builds a GS packet (main round 11)
 0x0082cb60	logic	default (no rule: ported to be safe)
 0x0082cb80	logic	default (no rule: ported to be safe)
 0x0082cba0	logic	default (no rule: ported to be safe)
@@ -10294,7 +10294,7 @@
 0x0083bd20	dead	unreachable from the entry point and every pointer table
 0x0083bd80	dead	unreachable from the entry point and every pointer table
 0x0083bda0	dead	unreachable from the entry point and every pointer table
-0x0083bdb0	logic	default (no rule: ported to be safe)
+0x0083bdb0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetFree
 0x0083bdf0	dead	unreachable from the entry point and every pointer table
 0x0083bff0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemGet
 0x0083c050	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemGetSize
@@ -10537,9 +10537,9 @@
 0x00843200	logic	default (no rule: ported to be safe)
 0x00843210	logic	default (no rule: ported to be safe)
 0x00843220	logic	default (no rule: ported to be safe)
-0x00843260	logic	default (no rule: ported to be safe)
+0x00843260	glue	reviewed: Sg_MFIFOEnd: sends a DMA end tag (main round 11)
 0x008432b0	dead	unreachable from the entry point and every pointer table
-0x008432d0	logic	default (no rule: ported to be safe)
+0x008432d0	glue	reviewed: Sg_MFIFOSpadSync: busy-waits on the GS register sink (main round 11)
 0x008432e0	glue	reviewed: waits on the GS register flag, then sets a register (main round 5)
 0x00843360	glue	reviewed: Sg_MFIFOSync: PS2 DMA (main round 8)
 0x00843560	debug	reviewed: debug code (main round 8)
@@ -13073,10 +13073,10 @@
 0x0089ade0	logic	default (no rule: ported to be safe)
 0x0089ae20	logic	default (no rule: ported to be safe)
 0x0089afc0	logic	default (no rule: ported to be safe)
-0x0089b140	logic	default (no rule: ported to be safe)
-0x0089b1d0	logic	default (no rule: ported to be safe)
-0x0089b230	logic	default (no rule: ported to be safe)
-0x0089b290	logic	default (no rule: ported to be safe)
+0x0089b140	glue	GS packet API (TODrawAMES): appends to or kicks a packet; replaced by ffx-render
+0x0089b1d0	glue	GS packet API (TODrawAMES_CENTERMES): appends to or kicks a packet; replaced by ffx-render
+0x0089b230	glue	GS packet API (TODrawAMES_EVJIMAKU): appends to or kicks a packet; replaced by ffx-render
+0x0089b290	glue	GS packet API (TODrawAMES_EVJIMAKU_ALBHED): appends to or kicks a packet; replaced by ffx-render
 0x0089b2f0	dead	unreachable from the entry point and every pointer table
 0x0089b360	glue	GS packet API (TODrawBtlWindow): appends to or kicks a packet; replaced by ffx-render
 0x0089b530	dead	unreachable from the entry point and every pointer table
@@ -13549,7 +13549,7 @@
 0x008bbb10	logic	default (no rule: ported to be safe)
 0x008bbca0	logic	default (no rule: ported to be safe)
 0x008bbed0	logic	default (no rule: ported to be safe)
-0x008bc100	logic	default (no rule: ported to be safe)
+0x008bc100	glue	GS/DMA packet writer (TODrawMenuPlateXYWHType, TODrawScissorXYWH, TOMkpCrossExtMesFontLClut; writes no game state): replaced by ffx-render
 0x008bc340	logic	default (no rule: ported to be safe)
 0x008bd020	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x008bd280	logic	default (no rule: ported to be safe)

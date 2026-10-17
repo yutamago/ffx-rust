@@ -597,3 +597,49 @@ velocity when free), the rods run, map 0x107 lifts two points of character
 pushed out of the spheres (kind 0), capsules (2) and planes (1) by the
 radius times `Ch_UseLargeCollisionRad`, and out of the floor by 1.2 its
 depth; written to its vertex with `w = 1`, its velocity the damped change.
+
+## Round 11: the main loop's callees
+
+`ExportValidateInterface(id)` (`0x008202e0`) answers 1 for the interface
+ids 0x40400003 and 0x40800001..0x40800003, else 0.
+
+Glue (GS packets and the PS2 DMA FIFO, left to the original):
+`Sg_MFIFOSpadSync` (`0x008432d0`, a wait on the GS register sink's bit 8),
+`Sg_MFIFOEnd` (`0x00843260`, an end tag sent to the FIFO),
+`Sg_AccSetFrameMap` (`0x0082bc50`), `Sg_DrawSetEnvironment` (`0x0082c7b0`),
+`Sg_DrawSetEnvironmentInit` (`0x0082c8d0`) and
+`Sg_DrawSetEnvironmentInitMovie` (`0x0082caa0`), which build GS register
+packets.
+
+`Sg_DrawFilter()` (`0x0082c0c0`) runs the five screen fades at
+`0x01300708` (0x10 each: mode, r, g, b, then `i16` frames left, total or
+level, target, step; `0x01300704` a bit per running slot) and the focus
+(`0x01300768` requested, `0x0130076c` drawn, depths at `0x01300758/c`
+through `graphicSetFocusZ`). Each slot with frames left calls
+`graphicAddScreenFadeTask(r/256, g/256, b/256, a, flags)`:
+
+| mode | alpha | |
+|---|---|---|
+| 0 | the level, moved by its step towards the target | quad `0x0082baf0` when the screen is 0x200 wide and no request is current; dream share |
+| 2 | `1 - (127 - n' 127 / total) / 127`, black | then `Sg_AccSetAlpha(0, 0)` |
+| 3 | `1 - (n' 127 / total) / 127`, black | held at the last frame |
+| 4 | `(n 255 / total) / 127` | dream share `/ 255` |
+| 5 | `(255 - n' 255 / total) / 127` | held; dream share |
+| 6 | `(n 127 / total) / 127` | |
+| 7, 8 | `level / 127` | 7 zeroes the level with the dream effect on; 8 passes flag 0x10 |
+
+`n'` is the frame count after the decrement; integer divisions truncate.
+A total of 0 is a division fault in the original; the port takes 0.
+
+`sg_calcenvelope_normW`'s translated R5900/VU0 code calls small leaves
+(names ours): `sg_Daddiu` (`0x00845cc0`, 64-bit add of a sign-extended
+immediate), `sg_SetFloat` (`0x00845cf0`, a float through the x87),
+`sg_Sll` (`0x00845d70`, shift by `n & 31`), and three scalar products on
+the VU0 accumulator at `0x00c8f790`: `sg_VmulScalar` (`0x00845e80`,
+`dst = v s`), `sg_VmaddScalar` (`0x00845e40`, `dst = ACC + v s`) and
+`sg_VmaddaScalar` (`0x00845df0`, `ACC += v s`); x and y multiply x87
+registers, z takes `v.z` as a memory operand, and the accumulator's y and
+z lanes are memory operands. `Ch_EffectPacketCreateMain` sets the two
+`u16`s at `0x0130366c` (`g_ChrPacketState`) and `0x01303684` through
+`Sg_SetChrPacketState` (`0x00845c30`) and `Sg_SetChrPacketWord`
+(`0x00845c40`).

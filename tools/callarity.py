@@ -36,6 +36,9 @@ ARM_HELPERS = {
     "st0_cdecl": ("crates/ffx-hook/src/ported/chara.rs", "st0_cdecl"),
     "ci_call": ("crates/ffx-hook/src/ported/chara.rs", "ci_call"),
     "map_float_stack": ("crates/ffx-hook/src/ported/map.rs", "call_float"),
+    # ffx-system's `fcall` callbacks; the 0x00901700 port passed
+    # AdjustButtonIconY five words when it took four (NaN: no button icon)
+    "system_fcall": ("crates/ffx-hook/src/ported/system.rs", "fcall"),
 }
 TWO_OPERAND = {"_CIatan2", "_CIfmod", "_CIpow"}
 # The crt_trig helpers' slots (one-operand intrinsics), checked by name.
@@ -314,6 +317,9 @@ def check(repo, exe_path, sizes):
             elif name == "st0_cdecl" or (name == "fcall" and "ffx-chara" in f.parts):
                 if count not in arm_sets["st0_cdecl"]:
                     problems.append(f"{where}: {name} passes {count} words; st0_cdecl takes {sorted(arm_sets['st0_cdecl'])}")
+            elif name == "fcall" and "ffx-system" in f.parts:
+                if count not in arm_sets["system_fcall"]:
+                    problems.append(f"{where}: fcall passes {count} words; system.rs fcall takes {sorted(arm_sets['system_fcall'])}")
             elif name == "call_n":
                 cap = 12
             elif name == "call_float" and "ffx-script" in f.parts:
