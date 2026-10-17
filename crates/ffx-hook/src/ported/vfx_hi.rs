@@ -68,4 +68,22 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x20;
         hi_md::bridge::op_ffxambient_to_omdambient(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_md_list_bounds_00a6a0c0(list, m, min, max)`: its locals in a
+    /// buffer on this shim's stack.
+    op_md_list_bounds_00a6a0c0 @ 0x00a6_a0c0 => extern "C" fn op_md_list_bounds(list: u32, m: u32, min: u32, max: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x60]);
+        let mut locals = Locals([0; 0x60]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        hi_md::bridge::op_md_list_bounds(&mut mem(), list, m, min, max, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0582_dot_set_00a73740(b, rec)`.
+    opus_0582_dot_set_00a73740 @ 0x00a7_3740 => extern "C" fn opus_0582_dot_set(b: u32, rec: u32) -> u32 {
+        hi_opus::bridge::opus_0582_dot_set(&mut mem(), b, rec)
+    }
+    /// `opus_0437_dot_draw(b)`.
+    opus_0437_dot_draw @ 0x00a6_e2e0 => extern "C" fn opus_0437_dot_draw(b: u32) -> u32 {
+        hi_opus::bridge::opus_0437_dot_draw(&mut mem(), b, &mut |_, f, a| call_ptr(f, a))
+    }
 }

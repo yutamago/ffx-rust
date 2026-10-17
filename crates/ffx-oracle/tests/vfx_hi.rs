@@ -209,8 +209,15 @@ fn deref_recorder(p: &mut Pair, sym: u32, words: &[u8]) -> u32 {
 /// [`deref_recorder`] that returns the dword at `ret` (when given)
 /// instead of the count.
 fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    prefixed_recorder(p, sym, &[], words, ret)
+}
+
+/// [`deref_recorder_with`] run after `prefix` (code that keeps the
+/// stack as it found it).
+fn prefixed_recorder(p: &mut Pair, sym: u32, prefix: &[u8], words: &[u8], ret: Option<u32>) -> u32 {
     let log = p.alloc(4 + 0x100 * 64);
-    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    let mut c = prefix.to_vec();
+    c.extend([0x8b, 0x0d]); // mov ecx, [count]
     c.extend(log.to_le_bytes());
     c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
     c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
@@ -721,6 +728,184 @@ fn md_vn_index_matches_the_original() {
             p.check("op_md_vn_index", 0x00a6_9f10, &[packet, out, table], |o| {
                 Some(hi_md::bridge::op_md_vn_index(o, packet, out, table))
             });
+        }
+    }
+}
+
+#[test]
+fn md_list_bounds_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_a0c0);
+        let (list, m, min, max) = (p.alloc(0x100), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (packets, mats) = (p.alloc(0x200 * 6), p.alloc(0x40 * 6));
+        for round in 0..1500 {
+            p.fill(list, 0x100, &mut rng);
+            let n = rng.below(6);
+            p.set(list + 4, u16::try_from(n).unwrap());
+            for k in 0..6 {
+                let (pk, mk) = (packets + 0x200 * k, mats + 0x40 * k);
+                p.set(list + 0x10 + 0x10 * k, pk);
+                p.set(list + 0x14 + 0x10 * k, mk);
+                let verts = rng.below(6);
+                p.set(pk + 0x12, u16::try_from(verts).unwrap());
+                let off = 0x20 + 0x10 * rng.below(4);
+                p.set(pk + 8, off);
+                for i in 0..0x18 {
+                    // vertices mostly finite, now and then a NaN or infinity
+                    let x = if rng.chance(5) {
+                        rng.float()
+                    } else {
+                        finite(&mut rng)
+                    };
+                    p.set(pk + off + 4 * i, x);
+                }
+                for i in 0..16 {
+                    let x = finite(&mut rng);
+                    p.set(mk + 4 * i, x);
+                }
+            }
+            if round % 5 == 0 {
+                // a negative vertex count draws nothing
+                p.set(packets + 0x12, -3i16);
+            }
+            for i in 0..16 {
+                let x = finite(&mut rng);
+                p.set(m + 4 * i, x);
+            }
+            if round % 3 == 0 {
+                // a zero matrix: every point +-0, so the box's `<` meets
+                // equal zeros of either sign
+                for i in 0..16 {
+                    p.set(m + 4 * i, rng.pick(&[0u32, 0x8000_0000]));
+                }
+            }
+            p.fill(min, 0x10, &mut rng);
+            p.fill(max, 0x10, &mut rng);
+            check_deep_n(
+                &mut p,
+                "op_md_list_bounds",
+                0x00a6_a0c0,
+                &[list, m, min, max],
+                |o, frame| {
+                    Some(hi_md::bridge::op_md_list_bounds(
+                        o,
+                        list,
+                        m,
+                        min,
+                        max,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn opus_0582_dot_set_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_3740);
+        let (b, rec) = (p.alloc(0x10 + 0x20 * 16), p.alloc(0x100));
+        for round in 0..3000 {
+            p.fill(b, 0x10 + 0x20 * 16, &mut rng);
+            p.fill(rec, 0x100, &mut rng);
+            p.set(b, rng.below(16) + 1);
+            for at in [0x30u32, 0x34, 0x38, 0x3c, 0x40, 0x48, 0x4c, 0x94] {
+                let x: u32 = match round % 4 {
+                    // the game's range: angles, steps and lives in the hundreds
+                    0 => (f32::from(i16::try_from(rng.below(0x2000)).unwrap()) - 4096.0).to_bits(),
+                    1 => finite(&mut rng),
+                    // beyond i32, where ftol2's and SSE2's truncations differ
+                    2 => rng
+                        .pick(&[3.0e9f32, -3.3e9, 1.2e12, -7.0e15, 2.2e19])
+                        .to_bits(),
+                    _ => rng.float(),
+                };
+                p.set(rec + at, x);
+            }
+            p.check("opus_0582_dot_set", 0x00a7_3740, &[b, rec], |o| {
+                Some(hi_opus::bridge::opus_0582_dot_set(o, b, rec))
+            });
+        }
+    }
+}
+
+/// `mov ecx, [esp + 4]; sub ecx, 1000; shl ecx, 2`: the first argument's
+/// cell index for instance ids 1000..
+const INSTANCE_CELL: [u8; 13] = [
+    0x8b, 0x4c, 0x24, 0x04, 0x81, 0xe9, 0xe8, 0x03, 0, 0, 0xc1, 0xe1, 0x02,
+];
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opus_0437_dot_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_e2e0);
+        // cells[i]: graphicVFXGetRenderDataByInstance(1000 + i, _); made[i]
+        // what createVFXRenderDataBufferLine puts there
+        let (cells, made, rets) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x10));
+        let (spr_ret, seg_ret, valid_ret, req_ret) = (rets, rets + 4, rets + 8, rets + 12);
+        let mut c = INSTANCE_CELL.to_vec();
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + cells]
+        c.extend(cells.to_le_bytes());
+        c.push(0xc3);
+        jump_to(&mut p, 0x0064_53d0, &c);
+        let mut c = INSTANCE_CELL.to_vec();
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + made]
+        c.extend(made.to_le_bytes());
+        c.extend([0x89, 0x81]); // mov [ecx + cells], eax
+        c.extend(cells.to_le_bytes());
+        let create = prefixed_recorder(&mut p, 0x0071_4b60, &c, &[0, 0, 0, 0], None);
+        let mut logs = vec![create];
+        for (sym, words, ret) in [
+            (0x007e_6a00u32, &[0u8][..], Some(spr_ret)),
+            (0x0062_f880, &[0, 0], None),
+            (0x0062_f710, &[0, 0], None),
+            (0x0064_5780, &[0, 0], None),
+            (0x0063_fdb0, &[0, 0, 0, 0], Some(seg_ret)),
+            (0x0064_5710, &[0, 0, 0], None),
+            (0x0064_5600, &[0, 0], None),
+            (0x0063_fd70, &[], Some(valid_ret)),
+            (0x0072_8660, &[0], Some(req_ret)),
+            (0x007e_6a60, &[0], None),
+        ] {
+            logs.push(deref_recorder_with(&mut p, sym, words, ret));
+        }
+        let (spr, req) = (p.alloc(0x1100), p.alloc(0x40));
+        let rds = [p.alloc(0x100), p.alloc(0x100), p.alloc(0x100)];
+        let geos = [p.alloc(0x10), p.alloc(0x10), p.alloc(0x10)];
+        let b = p.alloc(0x40);
+        let channel = p.sym(0x0233_28e0);
+        for _ in 0..1500 {
+            p.fill(spr, 0x1100, &mut rng);
+            p.fill(req, 0x40, &mut rng);
+            p.fill(b, 0x40, &mut rng);
+            p.fill(channel, 4, &mut rng);
+            p.set(spr_ret, spr);
+            p.set(req_ret, req);
+            for i in 0..3u32 {
+                let k = i as usize;
+                p.fill(rds[k], 0x100, &mut rng);
+                p.fill(geos[k], 0x10, &mut rng);
+                p.set(rds[k] + 0x94, geos[k]);
+                let pick = |rng: &mut Xorshift| if rng.chance(15) { 0 } else { rds[k] };
+                let (c, m) = (pick(&mut rng), pick(&mut rng));
+                p.set(cells + 4 * i, c);
+                p.set(made + 4 * i, m);
+            }
+            p.set(seg_ret, u32::from(!rng.chance(8)));
+            p.set(valid_ret, u32::from(!rng.chance(20)));
+            p.check("opus_0437_dot_draw", 0x00a6_e2e0, &[b], |o| {
+                Some(hi_opus::bridge::opus_0437_dot_draw(
+                    o,
+                    b,
+                    &mut call_original,
+                ))
+            });
+        }
+        for log in logs {
+            assert!(p.get::<u32>(log) > 0, "{}: a stand-in never ran", p.name);
         }
     }
 }

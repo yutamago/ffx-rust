@@ -360,4 +360,79 @@ pub mod bridge {
         mem.write(frame.wrapping_sub(0x18), bytes);
         u32::from_le_bytes(bytes)
     }
+
+    /// `op_md_list_bounds_00a6a0c0(list, m, min, max)` (`0x00a6a0c0`): the
+    /// box round a model list's vertices under `m`: `min`, `max` start at
+    /// `+-16777216.0` (xyz); for each packet (`ptr32 list +0x10 + 0x10 k`,
+    /// its matrix the `ptr32` after it) the matrix's translation is scaled
+    /// by 1000 (`f32`), `op_mul_m(local, m, matrix)`, scaled back by 1000
+    /// (so it keeps both roundings), then each of the `i16 +0x12` vertices
+    /// (16 bytes from `packet + [packet +8]`) is copied to a local,
+    /// `FFXVu0ApplyMatrix(v, local, v)`, and widens the box (`<`, a NaN
+    /// never). Callees through `call`; the locals lie below `frame` (the
+    /// matrix at `frame - 0x54`, the vertex at `frame - 0x14`). Returns
+    /// `eax` as left: `list` for no packets, else 0.
+    pub fn op_md_list_bounds<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        m: u32,
+        min: u32,
+        max: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        for k in [8u32, 4, 0] {
+            mem.write(min.wrapping_add(k), 16_777_216.0f32);
+        }
+        for k in [8u32, 4, 0] {
+            mem.write(max.wrapping_add(k), -16_777_216.0f32);
+        }
+        let count = i32::from(mem.read::<u16>(list.wrapping_add(4)));
+        if count <= 0 {
+            return list;
+        }
+        let (local, v) = (frame.wrapping_sub(0x54), frame.wrapping_sub(0x14));
+        let mut at = list.wrapping_add(0x10);
+        for _ in 0..count {
+            let packet = ptr32(mem.read(at));
+            let off: u32 = mem.read(packet.wrapping_add(8));
+            let mut vert = packet.wrapping_add(off);
+            let n = i32::from(mem.read::<i16>(packet.wrapping_add(0x12)));
+            for o in [0x30u32, 0x34, 0x38] {
+                let t = ptr32(mem.read(at.wrapping_add(4))).wrapping_add(o);
+                let x = x87::store(x87::mul(x87::load(mem.read(t)), 1000.0));
+                mem.write(t, x);
+            }
+            let tm = ptr32(mem.read(at.wrapping_add(4)));
+            go(mem, 0x007e_83b0, &[local, m, tm], call);
+            for o in [0x30u32, 0x34, 0x38] {
+                let t = ptr32(mem.read(at.wrapping_add(4))).wrapping_add(o);
+                let x = x87::store(x87::div(x87::load(mem.read(t)), 1000.0));
+                mem.write(t, x);
+            }
+            for _ in 0..n.max(0) {
+                let w: [u32; 4] = mem.read(vert);
+                mem.write(v, w);
+                go(mem, 0x006e_d2e0, &[v, local, v], call);
+                for k in 0..3u32 {
+                    let p: f32 = mem.read(v.wrapping_add(4 * k));
+                    let lo: f32 = mem.read(min.wrapping_add(4 * k));
+                    if p < lo {
+                        mem.write(min.wrapping_add(4 * k), p);
+                    }
+                }
+                for k in 0..3u32 {
+                    let p: f32 = mem.read(v.wrapping_add(4 * k));
+                    let hi: f32 = mem.read(max.wrapping_add(4 * k));
+                    if hi < p {
+                        mem.write(max.wrapping_add(4 * k), p);
+                    }
+                }
+                vert = vert.wrapping_add(0x10);
+            }
+            at = at.wrapping_add(0x10);
+        }
+        0
+    }
 }

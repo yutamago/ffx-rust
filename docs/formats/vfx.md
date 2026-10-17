@@ -315,6 +315,15 @@ A packet's tags start at `+0x20`: type byte `+1`, `i16` count `+2`.
   (0x1c bytes, tags as above); `out` gets `u16 +0x14`, then from `+0x10`
   each list's count and entries. Returns the end rounded up to 16.
 
+- `op_md_list_bounds_00a6a0c0(list, m, min, max)` (`0x00a6a0c0`; from
+  `0x00a6e1b0` and `opus_0582_break_make`): the box round every vertex
+  (16 bytes from `packet + [packet + 8]`, `i16 +0x12` of them) under
+  `op_mul_m(m, packet matrix)`, through `FFXVu0ApplyMatrix`; `min`/`max`
+  start at `+-16777216.0` and widen on `<` (never on a NaN). Each
+  packet's matrix (the `ptr32` after the packet's) has its translation
+  multiplied by 1000 for the product and divided by 1000 after, as `f32`
+  both times, so it keeps both roundings.
+
 ### oef2 entry links
 
 `op_oef2_entry_link_00a6a320(e, i)` (`0x00a6a320`, from `opu_part_init`
@@ -354,3 +363,24 @@ The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
   entry's first half `op_xyz_scale(e, pos, 1.0)`, its second the colour
   (through the EE's `v0`, `0x00c8f528`), `u16 +0x1c` cleared. An empty
   buffer divides by zero in the original.
+- `opus_0437_dot_draw(b)` (`0x00a6e2e0`, kind 0x2000) still builds the
+  PS2 packet in a `0x1100`-byte `op_spr_alloc` scratch and sends its DMA
+  block (`+0x1000`, the `TEST`/`ALPHA` writes `0x48`, `0x42`) through
+  `sceGsSyncPath`/`sceDmaSend`; two quadwords at `+0` are copied to
+  `+0x800` through `v0`. Then three line instances `(1000 + i, 0x1b5)`
+  (`createVFXRenderDataBufferLine(id, 3000, 2)` when missing, then
+  `+0xb8` = 1 and `graphicVFXSetup`) each get a segment buffer, a unit
+  matrix, `graphicVFXSetVisible` and `graphicVFXPath3Update`; any missing
+  piece stops the draw. With all three and a valid fill buffer, the fill
+  request (`JobSchedule_pppPart_getFillBufferRequest(b[0])`) gets kind 4,
+  the three segments, `b + 0x10` and `b[0]`.
+
+### `opus_0582` dots
+
+`opus_0582_dot_set_00a73740(b, rec)` (`0x00a73740`,
+`opp_0582_cmd_a70910` kind 0x2000) fills the next entry (`b[1] % b[0]`)
+of the dot buffer `opus_0582_dot_draw` reads, from the part `rec`: radii
+`+0x40`, `+0x48` / 256, height `+0x94`, scale `+0x3c` / 16, angle
+`ftol(+0x30)`, step `ftol(ftol(+0x34) / 256)` (the integer back through
+an `f32`), spread `ftol(+0x38)` (0 when negative), life `ftol(+0x4c) +
+16`, colour `+0xc8`, fade-in 8. It returns the colour.
