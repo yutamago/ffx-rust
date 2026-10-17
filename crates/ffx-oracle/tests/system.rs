@@ -11210,12 +11210,14 @@ fn round19_to(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         0x008a_f5c0,
         0x008a_da30,
         0x008b_81d0,
+        0x0090_6e60,
+        0x008b_8bb0,
     ]
     .into_iter()
     .enumerate()
     {
         let off = 0xa0 + 0x40 * i as u32;
-        let code = if i == 0 {
+        let code = if i == 0 || i >= 6 {
             logger2(cursor)
         } else {
             logger(cursor, 0x1900_5000 + i as u32)
@@ -11284,6 +11286,12 @@ fn round19_to(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             eax(a, 0x0089_ad90, &[]),
             t::to_clear_btl_window(b, call),
             "clear {k}"
+        );
+        let (w, x, y) = (rng.next(), rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x008b_0000, &[w, x, y]),
+            t::to_set_window_kind_and_type(b, w, x, y, call),
+            "window kind {k}"
         );
         if k % 10 == 0 {
             put(a, b, g(a, 0x0184_1e0c), rng.next());

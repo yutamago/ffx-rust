@@ -5762,6 +5762,10 @@ ported! {
     TOTextWidthGlyphs_0089e410 @ 0x0089_e410 => extern "C" fn to_text_width_glyphs(text: u32) -> u32 {
         tolib::bridge::text_width_glyphs(&mut mem(), text, call_sym)
     }
+    /// `TOSetWindowKindAndType_008b0000(window, kind, type)`.
+    TOSetWindowKindAndType_008b0000 @ 0x008b_0000 => extern "C" fn to_set_window_kind_and_type(window: u32, kind: u32, message_type: u32) -> u32 {
+        tolib::bridge::to_set_window_kind_and_type(&mut mem(), window, kind, message_type, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

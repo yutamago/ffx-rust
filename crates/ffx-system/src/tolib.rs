@@ -5230,8 +5230,9 @@ pub mod bridge {
     /// `+0xf0` within the page, unless one already played), resets the
     /// records on a page change, copies the target's value pairs, clears
     /// the pad words and reports 1. Without a move, an entry of kind 1
-    /// (`+0xfb`, pad 0x40) or 2 (pad 0x20) is chosen when its condition
-    /// (`+0x100`, `+0x102`, expected `+0xfc`) passes: the request kind
+    /// (`+0xfb`, pad 0x40) or 2 (pad 0x20) is chosen when it has no
+    /// condition (`+0x100` negative) or the condition's result (argument
+    /// `+0x102`) differs from the flag `+0xfc`; links pass the same way: the request kind
     /// (`+0xfa`) and value (the value table entry `+0xfe`, unless -1) are
     /// posted with its sound (`+0xf2` / `+0xf4`), and `0x0112a05c` is
     /// cleared (kind 1) or set (kind 2) on screen 0xb; a failed kind-1
@@ -5689,5 +5690,18 @@ pub mod bridge {
             }
             p = call(mem, 0x008d_fd80, &[p]);
         }
+    }
+
+    /// `0x008b0000(window, kind, type)`: `TOSetWindowKind(window, kind)`
+    /// then `TOSetMessageType(window, type)`, returning the latter's eax.
+    pub fn to_set_window_kind_and_type<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        kind: u32,
+        message_type: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0090_6e60, &[window, kind]);
+        call(mem, 0x008b_8bb0, &[window, message_type])
     }
 }

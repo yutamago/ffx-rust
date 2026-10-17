@@ -65,6 +65,11 @@ Four bytes per glyph: x, y, flags, width. A text byte from `0x30` is glyph
 `+8`/`+0xc` x, y; `+0x10` x + width; `+0x14` y + 8.0; `+0x1c` width; `+0x20`
 8.0; `+0x26` the flags and `+4` their bit 3.
 
+Two text widths use it. `0x0089e410` adds, per glyph, its width plus 1,
+and 5 more when the flags byte is nonzero; the sum goes through x87 and
+`ftol`. `0x0089dfa0` counts a fixed 12 per glyph, less 2 for the whole
+text. Both step through the text with `TOSkipCode`.
+
 ## Battle command-window stack (`g_BtlActionStack`, `0x0133c900`)
 
 0xf0 bytes per level, the current level `g_BtlActionDepth` (`0x023cc092`,
@@ -73,6 +78,12 @@ Four bytes per glyph: x, y, flags, width. A text byte from `0x30` is glyph
 (`+0x51` = 2), steps its cursor (`+0x5b`) back when at or past `+0x5a`, and
 restores the command list (`0x0133d0d0` from `0x0133d210`, 0x140 bytes)
 when that level's `+0x52` is 1.
+
+`TOBtlSetTarget(level, a, b)` (`0x0089a860`) marks the level as targeting
+(`+2` = 1) and runs `TOCheckBtlCommandTarget(a, b)`. It then counts the
+request at `+0xa6`, keeps the target word `0x0133d1fc` at `+0x42` and
+`0x0133d178` at `+0xd8`, and calls `TOBtlSetTargetCallback` with the
+level.
 
 ## GS `TEST_2` packets
 
@@ -426,6 +437,14 @@ current page and record are in `0x0112a088` and `0x0112a084`.
   screen 0xb's pages 13 and 14: it moves some records and unlinks others.
 - `0x00775820` gives the texture size of a menu picture for screens 5 and
   0xb.
+- `0x00774a50` tests a record's own condition: the function at
+  `+0x20` (none when negative) is called with `+0x22`. Mode `+0x2b` 0
+  wants a zero result, 1 a nonzero one, and any other mode fails.
+- `0x00774860` expands one 8-byte text code into a record's text. Kind 1
+  copies a string from a condition-table function. Kind 0 writes a number
+  as six digits, with `:` for leading zeros. The number comes from a
+  function or the value table. When the code has a flag byte, the number
+  goes to `0x0112a06c`/`0x0112a070` instead of the text.
 - `0x00776110` is one step of the list's cursor. A pending request
   (`0x0112a038` = 1) is handed to `TOMenuHelpSetExtMode` and
   `TOMenuTermHelp`, and the state becomes 2. Otherwise the pressed
