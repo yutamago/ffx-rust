@@ -1511,4 +1511,32 @@ ported! {
     Ch_TextureSetAnim @ 0x0083_d040 => extern "C" fn ch_texture_set_anim(chr: u32, a: u32, b: u32) -> u32 {
         ta::ch_texture_set_anim(&mut mem(), chr, a, b, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_Allocate_InitAll(n)`.
+    Ch_Allocate_InitAll @ 0x0082_5670 => extern "C" fn ch_allocate_init_all(n: i32) -> u32 {
+        h::ch_allocate_init_all(&mut mem(), n, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_BlkNew(header, key, x)`: the block.
+    Ch_BlkNew @ 0x0082_5860 => extern "C" fn ch_blk_new(header: u32, key: u32, x: u32) -> u32 {
+        h::ch_blk_new(&mut mem(), header, key, x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RomDataReadInit()`.
+    Ch_RomDataReadInit @ 0x0082_a5f0 => extern "C" fn ch_rom_data_read_init() -> u32 {
+        sy::ch_rom_data_read_init(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DrawClothClear(chr)`.
+    Ch_DrawClothClear @ 0x0083_0b90 => extern "C" fn ch_draw_cloth_clear(chr: u32) -> u32 {
+        mo::bridge::ch_draw_cloth_clear(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SysDrawSetSituation(v)`.
+    Ch_SysDrawSetSituation @ 0x0083_0cd0 => extern "C" fn ch_sys_draw_set_situation(v: u32) -> u32 {
+        sy::ch_sys_draw_set_situation(&mut mem(), v, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DrawReserveCalcNorm()`.
+    Ch_DrawReserveCalcNorm @ 0x0083_36a0 => extern "C" fn ch_draw_reserve_calc_norm() -> u32 {
+        h::ch_draw_reserve_calc_norm(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_AnimCopyNear(chr)`: the result in `al`.
+    Ch_AnimCopyNear @ 0x0083_9200 => extern "C" fn ch_anim_copy_near(chr: u32) -> u8 {
+        mo::bridge::ch_anim_copy_near(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

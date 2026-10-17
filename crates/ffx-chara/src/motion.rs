@@ -683,6 +683,82 @@ pub mod bridge {
         }
         r
     }
+
+    /// `SetField0_006f2f70(p, v)` (`0x006f2f70`): `*p = v`, the old value.
+    pub const SET_FIELD0: u32 = 0x006f_2f70;
+
+    /// `Ch_DrawClothClear(chr)` (`0x00830b90`, ours; `Ch_DrawMain`'s):
+    /// when the cloth vertex buffer of the character's id is cached, the
+    /// character has a cloth (`+0x834`), flag bit 21 (`+0x194`) and the
+    /// renderer is attached ([`crate::sys::bridge::DRAW_DETACHED`] 0): for
+    /// each of the cloth's meshes (count `+0x14`, lists at `+0x30`) and
+    /// the buffer's (at `+4`), each entry `e` of the mesh list (count
+    /// `+0`) whose buffer entry is set and whose `+0x4c` is set gets
+    /// `SetField0_006f2f70(e + 0x48, 0)`. Returns what the original leaves
+    /// in EAX.
+    pub fn ch_draw_cloth_clear<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = u32::from(mem.read::<u16>(chr));
+        let cloth: u32 = mem.read(chr + 0x834);
+        let buf = call(mem, mem.rebase(CACHE_EXIST_CLOTH), &[1, id]);
+        if cloth == 0
+            || buf == 0
+            || mem.read::<u32>(chr + 0x194) & 0x20_0000 == 0
+            || crate::sys::bridge::DRAW_DETACHED.get(mem) != 0
+            || mem.read::<u32>(cloth + 0x14) == 0
+        {
+            return buf;
+        }
+        let mut i = 0u32;
+        while i < mem.read::<u32>(cloth + 0x14) {
+            let list: u32 = mem.read(cloth + 0x30 + 4 * i);
+            let other: u32 = mem.read(buf + 4 + 4 * i);
+            if list != 0 && other != 0 {
+                let mut j = 0u32;
+                while j < mem.read::<u32>(list) {
+                    let e: u32 = mem.read(list + 4 + 4 * j);
+                    if e != 0
+                        && mem.read::<u32>(other + 4 + 4 * j) != 0
+                        && mem.read::<u32>(e + 0x4c) != 0
+                    {
+                        call(mem, mem.rebase(SET_FIELD0), &[e + 0x48, 0]);
+                    }
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+        buf.wrapping_add(4).wrapping_add(4 * i)
+    }
+
+    /// `AtelGetCurCtrlWork()` (`0x0086aff0`, the script module's).
+    pub const CUR_CTRL_WORK: u32 = 0x0086_aff0;
+    /// `g_BtlStatus`: not 0 in battle.
+    pub const BATTLE_STATUS: ffx_bridge::Global<u8> = ffx_bridge::Global::new(0x0112_a8e0);
+
+    /// `Ch_AnimCopyNear(chr)` (`0x00839200`, ours; `SG_ApplyBones`'s): 1
+    /// outside battle, when the current script control work's bit 1 is
+    /// clear and the positions `+0x684` and `+0x694` (x, y, z) are less
+    /// than 2.0 apart on each axis (NaN: not); else 0. In AL.
+    pub fn ch_anim_copy_near<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u8 {
+        let w = call(mem, mem.rebase(CUR_CTRL_WORK), &[]);
+        if BATTLE_STATUS.get(mem) != 0 || mem.read::<u8>(w) & 2 != 0 {
+            return 0;
+        }
+        let near = (0..3).all(|k| {
+            let a = Reg::load(mem.read(chr + 0x684 + 4 * k)).get();
+            let b = Reg::load(mem.read(chr + 0x694 + 4 * k)).get();
+            (a - b).abs() < 2.0
+        });
+        u8::from(near)
+    }
 }
 
 #[cfg(test)]
