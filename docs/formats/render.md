@@ -465,6 +465,12 @@ of `Phyre_CharacterLighting_calcShadeCoeffWithConfidence`'s `ST0`
 result: 1.0 on maps `0x226d`, `0x1739`, the caller's value on `0x1c45`,
 `0xf62`, `0xc04`), and `PhyreScene_setObjectTranslation` (`0x0066e3e0`).
 
+Dead by `symbols/classes.tsv` (no reference anywhere in the image), so
+not hooked; their behaviour above is still checked by the oracle test:
+`graphicCharacterInstanceRemoveFromPipeline`, `graphicPushTip`,
+`graphicConvertScreenCoords`, `graphicCharacterLightingSetPointLightColor`/
+`Position`/`Range`, `setFarPlane`.
+
 ## Debug code
 
 Not ported; listed for mod tools:

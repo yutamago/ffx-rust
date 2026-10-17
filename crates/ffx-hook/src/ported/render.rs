@@ -830,10 +830,6 @@ ported! {
     graphicDttPageFlag @ 0x0063_fc10 => extern "C" fn graphic_dtt_page_flag(v: u32) -> u32 {
         st::scene_call(&mut mem(), st::SCENE_SET_BYTE_01, &[v])
     }
-    /// `graphicCharacterInstanceRemoveFromPipeline(chr)`.
-    graphicCharacterInstanceRemoveFromPipeline @ 0x0063_b5b0 => extern "C" fn graphic_character_remove_from_pipeline(chr: u32) -> u32 {
-        st::scene_call(&mut mem(), st::SCENE_REMOVE_CHR_FROM_PIPELINE, &[chr])
-    }
     /// `graphicIsAllSceneAssetsLoaded()`.
     graphicIsAllSceneAssetsLoaded @ 0x0064_1ba0 => extern "C" fn graphic_is_all_scene_assets_loaded() -> u32 {
         st::is_all_scene_assets_loaded(&mut mem())
@@ -850,17 +846,9 @@ ported! {
     graphicFontSetUiShadowType @ 0x0064_0dd0 => extern "C" fn graphic_font_set_ui_shadow_type(kind: u32) {
         st::font_set_ui_shadow_type(&mut mem(), kind);
     }
-    /// `graphicPushTip(id)`.
-    graphicPushTip @ 0x0064_2910 => extern "C" fn graphic_push_tip(id: u32) -> u32 {
-        st::push_tip(&mut mem(), st::TIP_PUSH, id)
-    }
     /// `graphicPushTipByLocId(id)`.
     graphicPushTipByLocId @ 0x0064_2930 => extern "C" fn graphic_push_tip_by_loc_id(id: u32) -> u32 {
         st::push_tip(&mut mem(), st::TIP_PUSH_BY_LOC_ID, id)
-    }
-    /// `graphicConvertScreenCoords(x, y, *fx, *fy)`.
-    graphicConvertScreenCoords @ 0x0063_de10 => extern "C" fn graphic_convert_screen_coords(x: u32, y: u32, fx: u32, fy: u32) -> u32 {
-        st::convert_screen_coords(&mut mem(), x, y, fx, fy)
     }
     /// `graphicGuidemapSetup(lo, hi)`.
     graphicGuidemapSetup @ 0x0064_1490 => extern "C" fn graphic_guidemap_setup(lo: u32, hi: u32) -> u32 {
@@ -879,18 +867,6 @@ ported! {
     /// `graphicCharacterLightingSetMapIdFlagChanged(a, b)`.
     graphicCharacterLightingSetMapIdFlagChanged @ 0x0063_cd20 => extern "C" fn graphic_lighting_set_map_id_flag_changed(a: u32, b: u32) -> u32 {
         st::lighting_set_map_id_flag_changed(&mut mem(), a, b)
-    }
-    /// `graphicCharacterLightingSetPointLightColor(light, r, g, b)`.
-    graphicCharacterLightingSetPointLightColor @ 0x0063_cd40 => extern "C" fn graphic_lighting_set_point_light_color(light: u32, r: f32, g: f32, b: f32) -> u32 {
-        st::lighting_set_point_light3(&mut mem(), st::LIGHTING_SET_POINT_LIGHT_COLOR, light, [r, g, b])
-    }
-    /// `graphicCharacterLightingSetPointLightPosition(light, x, y, z)`.
-    graphicCharacterLightingSetPointLightPosition @ 0x0063_cd70 => extern "C" fn graphic_lighting_set_point_light_position(light: u32, x: f32, y: f32, z: f32) -> u32 {
-        st::lighting_set_point_light3(&mut mem(), st::LIGHTING_SET_POINT_LIGHT_POSITION, light, [x, y, z])
-    }
-    /// `graphicCharacterLightingSetPointLightRange(light, near, far)`.
-    graphicCharacterLightingSetPointLightRange @ 0x0063_cda0 => extern "C" fn graphic_lighting_set_point_light_range(light: u32, near: f32, far: f32) -> u32 {
-        st::lighting_set_point_light_range(&mut mem(), light, [near, far])
     }
     /// `graphicCharacterLightingSetShadeColor(list, r, g, b)`.
     graphicCharacterLightingSetShadeColor @ 0x0063_d050 => extern "C" fn graphic_lighting_set_shade_color(list: u32, r: f32, g: f32, b: f32) {
@@ -945,10 +921,6 @@ ported! {
     /// `PhyreScene_setCurrentLevelName(this, name)`.
     PhyreScene_setCurrentLevelName @ 0x0066_cf80 => extern "thiscall" fn scene_set_current_level_name(this: u32, name: u32) -> u32 {
         st::scene_set_current_level_name(&mut mem(), this, name)
-    }
-    /// `setFarPlane(far)`.
-    setFarPlane @ 0x0064_5e90 => extern "C" fn set_far_plane(far: u32) -> u32 {
-        st::set_far_plane(&mut mem(), far)
     }
     /// `PhyreScene_setMeshInstanceWorldMatrix(mesh, m)`.
     PhyreScene_setMeshInstanceWorldMatrix @ 0x0066_d810 => extern "stdcall" fn scene_set_mesh_instance_world_matrix(mesh: u32, m: u32) -> u32 {
