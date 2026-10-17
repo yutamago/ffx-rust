@@ -91,6 +91,84 @@ In Rust so far:
   - `.webm` movies: an open VP8/VP9 decoder with Vorbis/Opus audio.
   - Steam: optional (achievements) behind a feature flag.
 
+## What gets ported
+
+Not every game function needs an exact port. `tools/classify.py` sorts the
+17,986 functions of the game modules into five categories and writes
+`symbols/classes.tsv` (address, category, one line of evidence);
+`tools/progress.py` counts what is left in its "to port" columns (logic
+not replaced yet).
+
+| category | what | what happens to it |
+|---|---|---|
+| logic | decides game state or the original look: battle, field, events, the script VM and natives, characters, menu logic, effect simulation, the PS2 Snd layer | ported exactly, with oracle parity |
+| glue | only drives a replaced library: PhyreEngine/D3D11 (render), Iggy (pc-ui), FMOD (FfxFmod, FmodMusic/Sfx/Voice, iMusic/iSfx), the movie player | replaced in M4 at the library boundary, not ported |
+| platform | file layer (fios, CD/DVD emulation, VBF), allocators (Sg_Mem, user heap), threads and locks, settings, saves on disk, Steam, window/input setup, std:: copies | replaced by the host and Rust `std` |
+| debug | debug consoles, debug drawing, host0: readers, Deci2, tweak overlays | not ported now; kept as mod-tool candidates (below) |
+| dead | nothing reaches it (no call, jump or pointer anywhere in the image), or PS2-only (memory card, IOP) | not ported |
+
+Numbers (2026-10-17; functions and size):
+
+| module | logic | glue | platform | debug | dead |
+|---|---|---|---|---|---|
+| vfx | 1532 (498K) | 181 (58K) | 3 (1K) | 19 (4K) | 677 (74K) |
+| system | 1398 (278K) | 101 (73K) | 354 (51K) | 25 (3K) | 1284 (118K) |
+| render | 372 (54K) | 782 (225K) | 29 (3K) | 12 (2K) | 785 (49K) |
+| map | 1000 (204K) | 2 (0K) | 1 (0K) | 212 (59K) | 455 (61K) |
+| battle | 1149 (214K) | 0 | 0 | 142 (96K) | 146 (14K) |
+| menu | 747 (176K) | 0 | 1 (0K) | 186 (25K) | 258 (24K) |
+| script | 1993 (163K) | 0 | 3 (0K) | 18 (9K) | 305 (38K) |
+| pc-ui | 459 (83K) | 204 (58K) | 49 (5K) | 62 (26K) | 434 (33K) |
+| main | 556 (101K) | 5 (2K) | 83 (6K) | 131 (25K) | 98 (14K) |
+| chara | 446 (67K) | 9 (3K) | 0 | 48 (3K) | 107 (10K) |
+| sound | 139 (10K) | 305 (29K) | 37 (1K) | 1 (0K) | 123 (8K) |
+| movie | 52 (6K) | 66 (8K) | 29 (5K) | 25 (7K) | 224 (19K) |
+| ps2-emu | 52 (5K) | 0 | 2 (2K) | 5 (3K) | 63 (4K) |
+| **GAME** | **9895 (1860K)** | **1655 (457K)** | **591 (74K)** | **886 (261K)** | **4959 (467K)** |
+
+So about 60% of the game code by size is logic and needs an exact port.
+Of the 5,063 functions ported so far, 3,480 are logic; 674 are dead, 378
+glue, 334 debug and 197 platform.
+
+How the evidence works, in order (first rule that fires): reachability
+from the PE entry point and from every function address found in the
+image's data (vtables, native and overlay tables, exception tables) or as
+an immediate in code, plus Ghidra's calls and objdump's direct
+call/jmp/jcc edges (Ghidra leaves out tail jumps); then name rules (the
+PC-only rules stop at 0x00760000, where the PS2 game code starts and
+porters reuse words like Menu*, Save*); then Iggy/PhyreEngine calls and
+Win32 imports; then propagation (a function only debug code calls is
+debug; glue and platform pass one hop to unnamed callees). Anything left is
+logic: skipping something necessary breaks parity, porting something
+unnecessary only costs time. A debug-sounding name that logic calls (an
+"is debug" flag the battle code reads, an rc math helper) is logic.
+
+Not done yet: **runtime coverage**. Dead is a static verdict (no reference
+of any kind; a sample of 40 checked against the disassembly and raw
+dwords had none from live code). Confirming it at runtime needs a run of
+the game with one-shot breakpoints (an `int3` on each candidate's first
+byte, a vectored exception handler that records the hit and restores the
+byte) in `ffx-hook`, during the three replays and a longer session; the
+functions that fire move out of dead.
+
+### Debug code worth keeping (mod-tool candidates)
+
+| family | functions | what it is | could become |
+|---|---|---|---|
+| `Ms_Gui_*` (battle) | 11 + ~120 helpers | in-battle debug consoles: config, chr 1/2, info, camera, map data, shake, reference position | a battle inspector overlay: actor stats, ATB/CTB, camera and shake tuning, live |
+| `MsDebug*` | 13 | full gil/items/weapons, add item/weapon, debug info read, out camera, env save | a cheat/test panel for modders (give items, set HP) |
+| `rcui*`, `rcbgGuide*` (debug-only parts) | 51 + ~160 | the rc map tool's windows: camera, layers, alpha, anime, FP memory, guide map converter | a map viewer/editor: layers, camera paths, guide map export |
+| `Gu_*`, `Gui_*`, `gui_*` | 140 | the PS2 debug GUI toolkit: windows, buttons, selectors, mouse, printf | the widget layer for the other tools, or replaced by our own overlay UI |
+| `Sg_Db*` | 14 | debug primitives: boxes, circles, 2D vertices | collision and trigger visualisation in the field |
+| `Sg_Capture*` | 7 | capture mode with filters, selection, GUI hide, capture to file | a photo mode |
+| `TkPutDebugFont*`, `TkDebug*`, `TkGetDebugControler*` | 24 | debug text on screen, pad history | an on-screen log and input display |
+| `AtelDebug*`, `AtelPs2DebugString*`, `AtelSetUpSourceDebug`, `AtelLoadDebugData` | 6 | the event script's debug draw and source debug data | an event script debugger (step, breakpoints, worker state) |
+| `Ch_DrawGet/Set*`, `Ch_GuiGet*`, `Ch_PacketSetSpec*` | 16 | character draw parameters: specular, shadow colour/direction, parameter edit | a character look editor |
+| `*TweakUtil*`, `DebugMenuManager` | 23 | the PC port's tweak overlays: post process, lighting, animation, battle params | renderer and lighting tuning panels |
+| `yiGui_setfogparam*` | 2 | fog parameter window | fog editing in the map editor |
+| `debugLoadForViewer`, `debugSavedataLoadAll`, `SaveDataPreDebugSave` | 3 | save viewer and debug saves | a save-file viewer/editor |
+| `sceDeci2*`, `TkInitDeci2` | 3 | the PS2 host debugger link | nothing (PS2 only) |
+
 ## Strategy
 
 ### Rules for every rewritten function
