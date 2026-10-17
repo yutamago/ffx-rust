@@ -6010,6 +6010,20 @@ ported! {
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::to_first_init_message_normal(&mut mem(), window, text, pos, at, call_sym)
     }
+    /// `ToMakeBtlEasyDigitRightAbmap(value, x, y, alpha, scale, extra)`.
+    ToMakeBtlEasyDigitRightAbmap @ 0x0090_5660 => extern "C" fn to_make_btl_easy_digit_right_abmap(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
+        let mut scratch = [0u32; 9];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_btl_easy_digit_right_abmap(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
+    }
+    /// `TOSetMessageWindowTexts_008b89d0(window, text, other)`.
+    TOSetMessageWindowTexts_008b89d0 @ 0x008b_89d0 => extern "C" fn to_set_message_window_texts(window: u32, text: u32, other: u32) {
+        let mut scratch = [0u32; 0x107];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::set_message_window_texts(&mut mem(), window, text, other, at, call_sym, |m, f, w| call_ptr(m, f, &[w]));
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

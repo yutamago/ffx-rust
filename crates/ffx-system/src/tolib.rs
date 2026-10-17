@@ -7477,6 +7477,19 @@ pub mod bridge {
         mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
         call(mem, 0x008b_9140, &[value, text, digits]);
+        btl_easy_digit_glyphs(mem, text, [x, y, alpha, scale], &mut call);
+    }
+
+    /// The glyph loop of the `ToMakeBtlEasyDigit*` writers: the cursor
+    /// at pen `x, y`, then for each glyph of `text` its record, shadow and
+    /// face packets and the pen advance.
+    fn btl_easy_digit_glyphs<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        pen: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, alpha, scale] = pen;
         let cursor = btl_easy_cursor(mem, 0x8080_8080, x, y, alpha);
         let record = mem.rebase(0x0184_1d50);
         let mut p = text;
@@ -7487,6 +7500,88 @@ pub mod bridge {
             call(mem, 0x008e_8ed0, &[cursor, record, scale]);
             p = call(mem, 0x008d_fd80, &[p]);
         }
+    }
+
+    /// `ToMakeBtlEasyDigitRightAbmap(value, x, y, alpha, scale, extra)`
+    /// (`0x00905660`): `value` right-aligned on `x` (its
+    /// `ToGetBtlEasyDigitWidth` taken off), written with as many digits as
+    /// it has. `scratch` (0x24 bytes: the width, then the text) stands in
+    /// for the original's stack.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_make_btl_easy_digit_right_abmap<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        let text = scratch.wrapping_add(4);
+        call(mem, 0x0090_5190, &[n, value, scratch, scale, extra]);
+        call(mem, 0x008b_9140, &[value, text, n]);
+        let w: f32 = mem.read(scratch);
+        let left = (f64::from(f32::from_bits(x)) - f64::from(w)) as f32;
+        btl_easy_digit_glyphs(mem, text, [left.to_bits(), y, alpha, scale], &mut call);
+    }
+
+    /// `0x008b89d0(window, text, other)`: gives message window `window`
+    /// (`0x018676f0`) its texts: `+0x5c`/`+0x60` `text`, `+0x74`/`+0x78`
+    /// `text` too with the language swap on, English and `0x025d16bc` set,
+    /// else `other`; `+0x90`/`+0x94` the swapped pair (with the swap and
+    /// English) or the first; `+0x20` 0 and `+0x22` whether bit test
+    /// `0x007851b0` or `0x00c59558` is 1. Then the no-op `0x006ef310`
+    /// (with `scratch`) and the window's own function at `+0xf4`
+    /// (through `cond`, with the window).
+    pub fn set_message_window_texts<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        other: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut cond: impl FnMut(&mut M, u32, u32) -> u32,
+    ) {
+        let info = |mem: &M| -> u32 {
+            mem.read(mem.rebase(0x0186_76f0).wrapping_add(window.wrapping_mul(4)))
+        };
+        let swapped = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            call(mem, 0x008a_c390, &[]) == 1 && call(mem, 0x0078_51d0, &[]) == 1
+        };
+        let second = if swapped(mem, &mut call) && mem.read::<u32>(mem.rebase(0x025d_16bc)) == 1 {
+            text
+        } else {
+            other
+        };
+        for (off, v) in [
+            (0x5cu32, text),
+            (0x60, text),
+            (0x74, second),
+            (0x78, second),
+        ] {
+            let w = info(mem);
+            mem.write(w.wrapping_add(off), v);
+        }
+        let (first, last) = if swapped(mem, &mut call) {
+            (0x74, 0x78)
+        } else {
+            (0x5c, 0x60)
+        };
+        let w = info(mem);
+        let v: u32 = mem.read(w.wrapping_add(first));
+        mem.write(w.wrapping_add(0x90), v);
+        let w = info(mem);
+        let v: u32 = mem.read(w.wrapping_add(last));
+        mem.write(w.wrapping_add(0x94), v);
+        let w = info(mem);
+        mem.write(w.wrapping_add(0x20), 0u16);
+        let flag =
+            call(mem, 0x0078_51b0, &[]) == 1 || mem.read::<u32>(mem.rebase(0x00c5_9558)) == 1;
+        let w = info(mem);
+        mem.write(w.wrapping_add(0x22), u16::from(flag));
+        call(mem, 0x006e_f310, &[scratch]);
+        let w = info(mem);
+        let f: u32 = mem.read(w.wrapping_add(0xf4));
+        cond(mem, f, w);
     }
 
     /// `ToMakeBtlEasyDigit2(value, x, y, alpha, scale, extra)`

@@ -9547,6 +9547,7 @@
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b89a0 function TOSetMessageText_008b89a0 # cdecl(i, text): window +0x94 = text, +0x98 = TOSkipCodesAbove2(text); name ours
+0x008b89d0 function TOSetMessageWindowTexts_008b89d0 # (window, text, other): window +0x5c/+0x60 text, +0x74/+0x78 text (lang swap, English, 0x025d16bc) or other, +0x90/+0x94 the shown pair, +0x20 0, +0x22 bit test 0x007851b0 or 0x00c59558; then the window function +0xf4; name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
 0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
 0x008b8bb0 function TOSetMessageType             # layout+callees: sorts between TOSetMessageFunc and TOSetRectDirect, and its named callees match the Switch 0x71004ee390 TOSetMessageType's (similarity 1.00: MsGetSaveMenu, TOInitMessageCallBack); symbols from Fahrenheit's server export; cdecl(i, type): msg +8 = type & 0xf, +0x10 = type & 0x4000, +0x1a = 0x2000 ? (0x8000 ? 3 : 1) : 0, +0xc = 0x1000 (or 1 without save-menu bit 0x100), +0x12 = 0x400; kind 3: +0x1a = 0x8000 ? 3 : 1; TOInitMessageCallBack; returns 0

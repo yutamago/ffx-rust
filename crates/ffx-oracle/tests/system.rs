@@ -12970,7 +12970,7 @@ fn round22_layout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     a.write(table, &widths).unwrap();
     b.write(table, &widths).unwrap();
     let text = alloc(a, b, 0x100);
-    let scratch = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 0x24);
     let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
     let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
         let at = m.rebase(sym);
@@ -13024,6 +13024,21 @@ fn round22_layout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let digits = rng.next() % 9;
         // the icon mode is set by the callers; seed it
         put(a, b, g(a, 0x025d_09ba), (rng.next() % 4) as u8);
+        if k % 9 == 8 {
+            eax(a, 0x0090_5660, &[value, x, y, alpha, scale, extra]);
+            t::to_make_btl_easy_digit_right_abmap(
+                b,
+                [value, x, y, alpha, scale, extra],
+                scratch,
+                call,
+            );
+            let v: [u32; 8] = Mem::read(b, scratch);
+            Mem::write(a, scratch, v);
+            let v: u32 = Mem::read(b, scratch + 0x20);
+            Mem::write(a, scratch + 0x20, v);
+            same_memory("battle digit right", a, b);
+            continue;
+        }
         match k % 8 {
             0 => {
                 eax(a, 0x0090_5ab0, &[text, x, y, alpha, scale]);
@@ -13382,6 +13397,68 @@ fn round22_message_matches_the_original_on_the_snapshot() {
         return;
     };
     round22_message(&mut a, &mut b, &mut Xorshift(0x4022_0042));
+}
+
+/// Round 22's message window texts over cells for the language swap,
+/// English and bit test, with a logging window function.
+fn round22_window_texts(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0xc);
+    for (i, sym) in [0x008a_c390u32, 0x0078_51d0, 0x0078_51b0]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + 4 * i as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x40 + 0x10 * i as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    let func = stand_in8(a, b, 0x80, &logger(cursor, 0x2202_0001));
+    let windows = alloc(a, b, 4 * 0x100);
+    for w in 0..4u32 {
+        put(a, b, g(a, 0x0186_76f0) + 4 * w, windows + 0x100 * w);
+    }
+    let scratch = alloc(a, b, 0x420);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        for c in 0..3u32 {
+            put(a, b, cells + 4 * c, rng.next() % 3);
+        }
+        put(a, b, g(a, 0x025d_16bc), rng.next() % 2);
+        put(a, b, g(a, 0x00c5_9558), rng.next() % 2);
+        let window = rng.next() % 4;
+        let bytes: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+        a.write(windows + 0x100 * window, &bytes).unwrap();
+        b.write(windows + 0x100 * window, &bytes).unwrap();
+        put(a, b, windows + 0x100 * window + 0xf4, func);
+        let (text, other) = (rng.next(), rng.next());
+        eax(a, 0x008b_89d0, &[window, text, other]);
+        t::set_message_window_texts(b, window, text, other, scratch, call, |m, f, w| {
+            m.call(f, Conv::Cdecl, &[w]).unwrap().eax
+        });
+        same_memory(&format!("window texts {k}"), a, b);
+    }
+}
+
+#[test]
+fn round22_window_texts_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round22_window_texts(&mut a, &mut b, &mut Xorshift(0x4022_0051));
+}
+
+#[test]
+fn round22_window_texts_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round22_window_texts(&mut a, &mut b, &mut Xorshift(0x4022_0052));
 }
 
 #[test]
