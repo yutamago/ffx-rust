@@ -3462,4 +3462,28 @@ ported! {
     MenuMain_RemoveAllMenus @ 0x008a_add0 => extern "C" fn menu_main_remove_all_menus() -> u32 {
         tk::menu_main_remove_all_menus(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkChPatchM339(chr)`.
+    TkChPatchM339 @ 0x0082_ba00 => extern "C" fn tk_ch_patch_m339(chr: u32) -> u32 {
+        tk::tk_ch_patch_m339(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_StickToByte(axis)`: the byte in `al`, all of `eax` as the original.
+    Pad_StickToByte @ 0x0088_9aa0 => extern "C" fn pad_stick_to_byte(axis: u32) -> u32 {
+        tk::pad_stick_to_byte(&mut mem(), axis)
+    }
+    /// `TkMenuStartScene(scene, group)`.
+    TkMenuStartScene @ 0x00a7_c880 => extern "C" fn tk_menu_start_scene(scene: u32, group: u32) -> u32 {
+        tk::tk_menu_start_scene(&mut mem(), scene, group, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSave_McWrite(fd, buf, size)`.
+    MenuSave_McWrite @ 0x0088_8570 => extern "C" fn menu_save_mc_write(fd: u32, buf: u32, size: u32) -> u32 {
+        tk::menu_save_mc_write(&mut mem(), [fd, buf, size], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `HelpMem_Free(size)`.
+    HelpMem_Free @ 0x0077_4aa0 => extern "C" fn help_mem_free(size: i32) -> u32 {
+        tk::help_mem_free(&mut mem(), size, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `InitSysModuleEncoding()`.
+    InitSysModuleEncoding @ 0x0064_6910 => extern "C" fn init_sys_module_encoding() -> u32 {
+        tk::init_sys_module_encoding(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
 }

@@ -4529,8 +4529,9 @@
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
 0x00774860 function MenuTextCode_00774860 # (&out, &code, arg): expands one 8-byte menu text code: kind (w0>>8)&0xff 1 copies the string from table fn w0>>16 ((w1&0xffff)+arg); kind 0 a number (table fn / value table *0x0112a0a4 / 0) as 6 digits with ':' for leading zeros, or with flag (w1>>16)&0xff to 0x0112a06c/0x0112a070; name ours
 0x00774a50 function MenuRecordCondition_00774a50 # (record): 1 when the record's condition holds: i16 +0x20 index into *0x00c416d0 (negative: 0), called with i16 +0x22; mode +0x2b 0 wants a zero result, 1 nonzero, else 0; name ours
+0x00774aa0 function HelpMem_Free              # (size): g_HelpMemUsed -= size rounded up to 64 (signed); below 0 yiAssert(0, 0x00b5313c, 0x00b533f4); returns -rounded; pairs with HelpMem_Get; caller 0x00770430; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0; cdecl(out, n): help picture path by TOGetFFXLang (0 help, 1 us, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch; others format an uninitialised buffer) through fiosUnifyFilename, then sprintf(out, path, n)
-0x00774c00 function TOMenuAllocHelpMem_00774c00  # (reset, bytes) -> a block from the help work area (TOMenuGetHelpWorkAdrs + 0x0112a09c, which reset clears), "help get mem %x (0x%x / 0x%x)", "help memory over flow" against TOMenuGetHelpWorkSize; own name
+0x00774c00 function HelpMem_Get               # (reset, size): "help get mem": g_HelpMemUsed (cleared when reset is 0) + base, then += size rounded to 64; asserts against the 0x200000 limit; name ours
 0x00774ff0 function GsPkt_TexturedSprite_00774ff0 # (pkt, tbp, ..., w, h): builds a GIF packet in pkt: TEX0 with TW/TH = log2 of the width/height (1..10), ALPHA, TEST, a sprite with UV and XYZ2 (0x0060ab4000 tag); callers 0x007766e0, 0x00776740; the system agent's finding (a DMA/GIF packet); own name
 0x00775530 function MenuCursorBlocked_00775530 # (): byte 0x0112a039 = 1 when the move from record *0x0112a084 is blocked: pad word by rec +2 (0x0112a090/08c/094), last direction bit wins (kept in 0x0112a08c), 12-byte link at +0x30 (cond index into *0x00c416d0, arg, expected flag, target +8): negative cond or a result disagreeing with the flag blocks; name ours
 0x00775810 function SetGlobal_0112a018 # cdecl(v): *0x0112a018 = v, returns v; name ours
@@ -8989,6 +8990,7 @@
 0x00888430 function TkMcSetExecPort              # layout: alphabetical run between TkMcSetDebugLock and TkMcSetFileInfo (1 unnamed in the gap); Switch 0x710048a530 TkMcSetExecPort is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00888440 function TkMcSetFileInfo           # fh switch:bsim1.00 0x710048a020
 0x00888480 function TkMcSetLoadFilePos        # (slot, pos) 0x0133023c[slot] = pos; Switch name, pairs with TkMcGetLoadFilePos
+0x00888570 function MenuSave_McWrite          # (fd, buf, size): 0 when TkGetTGS(), else jmp sceMcWrite; callers 0x008b15d0 (save menu); name ours
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
 0x00888650 function TkGetSyncVCallbackPtr     # (i) -> g_TkSyncVCallbackPtrs[i], i clamped to 0..2 (TkSetSyncVCallbackPtr's getter)
 0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none)
@@ -9031,6 +9033,7 @@
 0x008894d0 function TkSetControlerActuatorMode # fh v3:bsim1.00 0x00889440
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
+0x00889aa0 function Pad_StickToByte           # (f32 axis): al = 0x80 - ftol(axis * -127.0) (double 0x00b5dee8), eax's upper 24 bits from the ftol; caller 0x00889570 (stick bytes +0x84..0x87); name ours
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
 0x00889b00 function Math_StoreMax             # (dst, src, v) *dst = v < *src ? *src : v (x87); own name
 0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
@@ -14613,6 +14616,7 @@
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
 0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0
+0x0112a09c label    g_HelpMemUsed             # i32 help screen memory in use (HelpMem_Get adds, HelpMem_Free subtracts)
 0x0112a4fc label    g_Hdd_State               # 2 words zeroed by hdd_state_clear
 0x0112a508 label    g_Hdd_Mounted             # i8: hdd_mount/hdd_unmount set it, hdd_mount_flg_get returns it
 0x0112a509 label    g_Hdd_Status              # i8: get_hdd_status when no error

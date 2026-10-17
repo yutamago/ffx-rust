@@ -7517,6 +7517,107 @@ pub mod bridge {
         }
         last
     }
+
+    /// `TkChPatchM339(chr)` (`0x0082ba00`): `Ch_ModelSetHide(chr, 1, 0)`
+    /// for a character; returns its result, or 0 (the null `chr`).
+    pub fn tk_ch_patch_m339<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if chr == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x0082_aea0);
+        call(mem, f, &[chr, 1, 0])
+    }
+
+    /// `Pad_StickToByte(axis)` (`0x00889aa0`, own name): a stick axis
+    /// (`f32`, -1..1) as the PS2 pad's byte, `0x80 - ftol(axis * -127.0)`
+    /// (the product in x87 double precision, `_ftol2_sse`), in `al`; the
+    /// rest of `eax` keeps the truncation's upper 24 bits.
+    pub fn pad_stick_to_byte<M: Mem>(mem: &mut M, axis: u32) -> u32 {
+        use ffx_bridge::x87;
+        let t = x87::ftol(mem, x87::mul(x87::load(axis), -127.0));
+        (t & 0xffff_ff00) | (0x80u32.wrapping_sub(t) & 0xff)
+    }
+
+    /// `TkMenuStartScene(scene, group)` (`0x00a7c880`): group `group` of the
+    /// scene switched on (`MenuScene_ResetGroup(scene, group, 1)`); the
+    /// entry it returns, when any, gets bits 30 and 31 of `+4`. Returns
+    /// the entry.
+    pub fn tk_menu_start_scene<M: Mem>(
+        mem: &mut M,
+        scene: u32,
+        group: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x00a7_ba70);
+        let e = call(mem, f, &[scene, group, 1]);
+        if e != 0 {
+            let at = e.wrapping_add(4);
+            let v: u32 = mem.read(at);
+            mem.write(at, v | 0xc000_0000);
+        }
+        e
+    }
+
+    /// `MenuSave_McWrite(fd, buf, size)` (`0x00888570`, own name): 0 while
+    /// `TkGetTGS()` is set, else a jump to `sceMcWrite(fd, buf, size)`; the
+    /// save menu writes its data with it (`0x008b15d0`).
+    pub fn menu_save_mc_write<M: Mem>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_d6d0);
+        if call(mem, f, &[]) != 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x0062_fa10);
+        call(mem, f, &args)
+    }
+
+    /// The help screen's memory in use (`i32`, `0x0112a09c`; `HelpMem_Get`
+    /// at `0x00774c00` adds).
+    pub const HELP_MEM_USED: Global<u32> = Global::new(0x0112_a09c);
+
+    /// `HelpMem_Free(size)` (`0x00774aa0`, own name): `size` rounded up to
+    /// 64 (signed) taken off [`HELP_MEM_USED`]; below 0 is
+    /// `yiAssert(0, 0x00b5313c, 0x00b533f4)`. Returns `-rounded`, or the
+    /// assertion's result.
+    pub fn help_mem_free<M: Mem>(
+        mem: &mut M,
+        size: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let up = size.wrapping_add(0x3f);
+        let neg = (up.wrapping_add((up >> 31) & 0x3f) >> 6)
+            .wrapping_neg()
+            .wrapping_shl(6)
+            .cast_unsigned();
+        let used = HELP_MEM_USED.get(mem).wrapping_add(neg);
+        HELP_MEM_USED.set(mem, used);
+        if used.cast_signed() >= 0 {
+            return neg;
+        }
+        let f = mem.rebase(0x0090_ae50);
+        let (file, msg) = (mem.rebase(0x00b5_313c), mem.rebase(0x00b5_33f4));
+        call(mem, f, &[0, file, msg])
+    }
+
+    /// `InitSysModuleEncoding()` (`0x00646910`): the character tables of
+    /// the game's language, `MallocAndReadGamecode(TOGetFFXLang())`, whose
+    /// result it returns.
+    pub fn init_sys_module_encoding<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let f = mem.rebase(0x0064_6920);
+        call(mem, f, &[lang])
+    }
 }
 
 #[cfg(test)]

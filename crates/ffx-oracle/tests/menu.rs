@@ -7607,3 +7607,86 @@ fn menu_round19_batch3_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round19_batch4_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0004) else {
+        return;
+    };
+    let w = u64::from;
+    let listed = [
+        0.0f32,
+        -0.0,
+        1.0,
+        -1.0,
+        0.5,
+        -0.5,
+        0.999,
+        -0.999,
+        2.0,
+        -2.0,
+        1e9,
+        -1e9,
+        1e30,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        -f32::NAN,
+        1.0 / 127.0,
+        -1.0 / 254.0,
+    ];
+    for round in 0..64u32 {
+        // TkChPatchM339 over a recording Ch_ModelSetHide
+        let hide = t.rng.next();
+        record_n(&mut t, 0x0082_aea0, 3, hide);
+        let chr = if round % 3 == 0 { 0 } else { t.rng.next() };
+        t.twin("TkChPatchM339", 0x0082_ba00, &[chr], U32, |o| {
+            w(tk::tk_ch_patch_m339(o, chr, &mut callback))
+        });
+        // Pad_StickToByte: listed axes, then random ones (no signalling NaN)
+        let axis = if (round as usize) < listed.len() {
+            listed[round as usize]
+        } else {
+            t.rng.float(-1.5, 1.5)
+        };
+        let bits = axis.to_bits();
+        t.twin("Pad_StickToByte", 0x0088_9aa0, &[bits], U32, |o| {
+            w(tk::pad_stick_to_byte(o, bits))
+        });
+        // TkMenuStartScene over a recording MenuScene_ResetGroup
+        let e = if round % 4 == 0 { 0 } else { t.alloc_random(8) };
+        record_n(&mut t, 0x00a7_ba70, 3, e);
+        let (scene, group) = (t.rng.next(), t.rng.int());
+        t.twin("TkMenuStartScene", 0x00a7_c880, &[scene, group], U32, |o| {
+            w(tk::tk_menu_start_scene(o, scene, group, &mut callback))
+        });
+        // MenuSave_McWrite: TkGetTGS fixed, the original sceMcWrite stub
+        let tgs = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0088_d6d0, tgs);
+        let args = [t.rng.next(), t.rng.next(), t.rng.int()];
+        t.twin("MenuSave_McWrite", 0x0088_8570, &args, U32, |o| {
+            w(tk::menu_save_mc_write(o, args, &mut callback))
+        });
+        // HelpMem_Free over a recording yiAssert
+        let assert = t.rng.next();
+        record_n(&mut t, 0x0090_ae50, 3, assert);
+        let used = t
+            .rng
+            .pick_or_any(&[0, 0x40, 0x3f, 0x1000, 0x8000_0000, 0x7fff_ffc0]);
+        t.put(t.sym(tk::HELP_MEM_USED.sym), used);
+        let size = t.rng.int();
+        t.twin("HelpMem_Free", 0x0077_4aa0, &[size], U32, |o| {
+            w(tk::help_mem_free(o, i(size), &mut callback))
+        });
+        // InitSysModuleEncoding: the language fixed, the loader recorded
+        let lang = t.rng.pick(&[0u32, 1, 5]);
+        return_const(&mut t, 0x0064_10e0, lang);
+        let loaded = t.rng.next();
+        record_n(&mut t, 0x0064_6920, 1, loaded);
+        t.twin("InitSysModuleEncoding", 0x0064_6910, &[], U32, |o| {
+            w(tk::init_sys_module_encoding(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
