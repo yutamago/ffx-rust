@@ -132,6 +132,11 @@ fn floats(rng: &mut Xorshift) -> u32 {
 
 /// The calls on whatever state the oracles hold; `actor` is an actor (or
 /// actor-sized scratch).
+/// `Sg_FadeInW` (sg), stubbed: its calls compared.
+fn sg_call(m: &mut Oracle, f: u32, args: &[u32]) -> u32 {
+    m.call(f, Conv::Cdecl, args).unwrap().eax
+}
+
 fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u32) {
     twin("MsSetDirThetaMode", a, b, 0x0079_6940, &[actor], ALL, |m| {
         g::ms_set_dir_theta_mode(m, actor)
@@ -242,6 +247,51 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u
             .cast_unsigned()
         },
     );
+    // a step of the random encounters
+    {
+        use ffx_battle::process::bridge as p;
+        let flag = |rng: &mut Xorshift, n: u32| u32::from(rng.below(n) == 0);
+        set(a, b, p::FORCED_ON, flag(rng, 8));
+        set(a, b, p::FORCED_ON2, flag(rng, 2));
+        set(a, b, p::FORCED_SLOT, rng.byte());
+        set(
+            a,
+            b,
+            p::ENCOUNT_MODE,
+            [0, 1, 2, 2, 3][rng.below(5) as usize],
+        );
+        set(a, b, g::ENCOUNT_ON, u8::from(rng.below(4) != 0));
+        set(a, b, p::BATTLE_ENABLE, u32::from(rng.below(6) != 0));
+        set(a, b, p::ENCOUNT_FADE, u8::try_from(flag(rng, 3)).unwrap());
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::EXE,
+            [0, 0, 0, 2][rng.below(4) as usize],
+        );
+        let st = |rng: &mut Xorshift| {
+            (f32::from(u16::try_from(rng.below(400)).unwrap()) / 7.0).to_bits()
+        };
+        set(a, b, g::ENCOUNT_STEPS, [st(rng), st(rng)]);
+        set(a, b, g::ENCOUNT_RATES, [floats(rng), floats(rng)]);
+        // (finite and modest: a huge step loops for ages in the original too, 10.0
+        // a check; a NaN counts)
+        let step = [0, 0x8000_0000, st(rng), st(rng), 0x7fc0_0000][rng.below(5) as usize];
+        let gr = rng.range(-1, 6);
+        twin(
+            "MsBattleEncountExe",
+            a,
+            b,
+            0x0078_0d10,
+            &[map, gr.cast_unsigned(), step],
+            ALL,
+            |m| {
+                p::ms_battle_encount_exe(m, &mut sg_call, map.cast_signed(), gr, step)
+                    .cast_unsigned()
+            },
+        );
+        same("MsBattleEncountExe", a, b);
+    }
     let all = rng.below(2);
     twin("ResetEncountExe", a, b, 0x0078_0ff0, &[all], 0, |m| {
         g::reset_encount_exe(m, all);
@@ -439,6 +489,18 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let area = scratch(a, b, 0x1000);
     let actor = scratch(a, b, 0xf90);
+    // Sg_FadeInW (sg) as a stub in MsDebugEnvSave (debug only)
+    let rec = scratch(a, b, 0x48);
+    for o in [&mut *a, &mut *b] {
+        logging_stub(
+            o,
+            ffx_battle::process::bridge::SG_FADE_IN_W,
+            0x007c_d800,
+            rec,
+            1,
+            0,
+        );
+    }
     let fields = scratch(a, b, 14 * 40);
     let blocks = scratch(a, b, 0x2000);
     let motions = scratch(a, b, 0x800);

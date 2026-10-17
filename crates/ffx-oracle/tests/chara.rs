@@ -8301,3 +8301,155 @@ fn round12h_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round13_matches_the_original() {
+    for mut t in twins() {
+        round13_on(&mut t);
+    }
+}
+
+/// `Ch_GetCharID`: its digit slot is the caller's ECX (bytes the name does
+/// not reach, and the 4th, undefined); the original runs with a non-digit
+/// ECX, the only case with a defined result.
+fn round13_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0013_0013);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let index = fk.fake(t, 0x0082_a640, 1, 1);
+    let (lookup, name) = fk.fake_code(t, 2, 1);
+    let slot = t.a.rebase(0x0231_0c98);
+    t.put_u32(slot, lookup);
+    // the original entered with a non-digit ECX: mov ecx, 'AAAA'; jmp
+    let target = t.a.rebase(0x0082_a080);
+    let at = t.a.alloc_code(&[0; 16]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 16]).unwrap(), at);
+    let mut c = vec![0xb9, 0x41, 0x41, 0x41, 0x41, 0xe9];
+    c.extend(target.wrapping_sub(at + 10).to_le_bytes());
+    t.put(at, &c);
+    for round in 0..32u32 {
+        fk.reset(t);
+        t.put_u32(index, rng.next() % 64);
+        let s = t.alloc(32);
+        let len = usize::try_from(rng.next() % 12).unwrap();
+        let text: Vec<u8> = (0..len)
+            .map(|_| {
+                let r = usize::try_from(rng.next() % 14).unwrap();
+                b"0123456789c_.-"[r]
+            })
+            .chain([0])
+            .collect();
+        t.put(s, &text);
+        t.put_u32(name, if round % 8 == 7 { 0 } else { s });
+        let scratch = t.alloc(4);
+        let id = rng.next();
+        let ra = t.a.call(at, Conv::Cdecl, &[id]).unwrap();
+        let rb = sy::ch_get_char_id(&mut t.b, id, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_GetCharID {round} {text:?}", t.name);
+        let sc = Oracle::read(&mut t.b, scratch, 4).unwrap();
+        t.a.write(scratch, &sc).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_GetCharID {round} memory",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round13b_matches_the_original() {
+    for mut t in twins() {
+        round13b_on(&mut t);
+    }
+}
+
+fn round13b_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0013_b13b);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let find = fk.fake(t, 0x0083_6f10, 1, 3);
+    let yet = fk.fake(t, 0x0083_ffe0, 2, 2);
+    let read = fk.fake(t, 0x0082_a4c0, 3, 2);
+    let sync = fk.fake(t, 0x0082_a5e0, 4, 1);
+    let exist = fk.fake(t, 0x0084_06f0, 5, 2);
+    let used = fk.fake(t, 0x0084_0dd0, 6, 2);
+    let add = fk.fake(t, 0x0083_6c90, 7, 4);
+    let loaded = fk.fake(t, 0x0083_7710, 8, 0);
+    let not_yet = fk.fake(t, 0x0084_05f0, 9, 3);
+    let dispose = fk.fake(t, 0x0082_58d0, 10, 1);
+    let blks = t.a.rebase(0x023c_8d00);
+    for round in 0..32u32 {
+        fk.reset(t);
+        for r in [sync, exist, used, add, not_yet, dispose] {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(
+            find,
+            if rng.next().is_multiple_of(3) {
+                rng.next()
+            } else {
+                0
+            },
+        );
+        t.put_u32(yet, rng.next() % 4);
+        t.put_u32(read, u32::from(rng.next().is_multiple_of(3)));
+        t.put_u32(loaded, u32::from(rng.next().is_multiple_of(2)));
+        let (a, b) = (rng.next() % 0x10000, rng.next() % 0x100);
+        t.check(
+            &format!("ChN_ReadSystemMGRP {round}"),
+            0x0083_6870,
+            &[a, b],
+            |m| {
+                Res::Int(mo::chn_read_system_mgrp(m, a, b, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let data = if rng.next().is_multiple_of(4) {
+            0
+        } else {
+            rng.next()
+        };
+        t.check(
+            &format!("ChN_AddEventMgrp {round}"),
+            0x0083_7630,
+            &[data, b],
+            |m| {
+                Res::Int(mo::chn_add_event_mgrp(m, data, b, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.check(
+            &format!("ChN_AddSystemMgrp {round}"),
+            0x0083_7750,
+            &[data],
+            |m| {
+                Res::Int(mo::chn_add_system_mgrp(m, data, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        for k in 0..40 {
+            t.put_u32(
+                blks + 0x12c * k,
+                if rng.next().is_multiple_of(2) {
+                    u32::MAX
+                } else {
+                    k
+                },
+            );
+        }
+        t.check(
+            &format!("Ch_BlkDisposeAll {round}"),
+            0x0082_59c0,
+            &[],
+            |m| {
+                c::ch_blk_dispose_all(m, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            },
+        );
+    }
+}

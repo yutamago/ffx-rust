@@ -165,6 +165,23 @@ pub mod bridge {
         has
     }
 
+    /// `MsSetChrVisible(i, v)` (`0x00796660`): request 2 of
+    /// [`ms_set_chr_visible_req`] (EAX its result).
+    pub fn ms_set_chr_visible<M: Mem>(mem: &mut M, call: Call<'_, M>, i: u32, v: u32) -> u32 {
+        ms_set_chr_visible_req(mem, call, i, 2, v)
+    }
+
+    /// `MsSetChrVisibleAppear(i, v)` (`0x007966a0`): request 1 of
+    /// [`ms_set_chr_visible_req`] (EAX its result).
+    pub fn ms_set_chr_visible_appear<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        i: u32,
+        v: u32,
+    ) -> u32 {
+        ms_set_chr_visible_req(mem, call, i, 1, v)
+    }
+
     /// `MsSetChrVisibleCamera(i, v)` (`0x007967a0`): [`CAMERA_HIDES`] set
     /// and the camera's request (3) of actor `i` set to `v`.
     pub fn ms_set_chr_visible_camera<M: Mem>(
