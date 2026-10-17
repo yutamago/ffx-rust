@@ -240,9 +240,10 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, cue: u32
     same("MsCalcCommand", a, b);
 }
 
-/// `0x00780b40` (`MsBattleAllFree`, never called here): where the CD
-/// library stubs go in both oracles (the heap is not executable).
-const CD_STUBS: u32 = 0x0078_0b40;
+/// `0x007ceb30 + 0x340` (unreachable debug code, as
+/// `battle_common::STUBS`): where the CD library stubs go in both oracles
+/// (the heap is not executable).
+const CD_STUBS: u32 = 0x007c_ee70;
 
 /// The CD library's slots 4, 5 and 0 (the read queue) as stubs in one
 /// oracle, recording their arguments (and the read block's `+0xc`) at
