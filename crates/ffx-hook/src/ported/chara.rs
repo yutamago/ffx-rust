@@ -1639,4 +1639,8 @@ ported! {
     chr_texanim_set @ 0x0077_c950 => extern "C" fn chr_texanim_set(def: u32, handle: u32) -> u32 {
         ta::chr_texanim_set(&mut mem(), def, handle, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)`.
+    Ch_SetMotionSeq @ 0x0083_9b80 => extern "C" fn ch_set_motion_seq(chr: u32, clip: u32, loops: u32, start: i32, end: i32) -> u32 {
+        mo::bridge::ch_set_motion_seq(&mut mem(), chr, clip, loops, start, end, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

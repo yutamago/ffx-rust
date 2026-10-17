@@ -6554,3 +6554,80 @@ fn round10f_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round10g_matches_the_original() {
+    for mut t in twins() {
+        round10g_on(&mut t);
+    }
+}
+
+fn round10g_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0010_a10a);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let fcurve = fk.fake(t, 0x0083_9980, 1, 2);
+    let map = t.a.rebase(0x0133_0844);
+    for round in 0..32u32 {
+        fk.reset(t);
+        t.put_u32(fcurve, rng.next());
+        t.put_u32(
+            map,
+            if rng.next().is_multiple_of(2) {
+                0x7a
+            } else {
+                0x10
+            },
+        );
+        let chr = t.alloc(0x800);
+        for k in 0..0x200 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        let name = t.alloc(8);
+        t.put(
+            name,
+            if rng.next().is_multiple_of(2) {
+                b"c001\0"
+            } else {
+                b"c00\0\0"
+            },
+        );
+        t.put_u32(chr + 4, name);
+        if rng.next().is_multiple_of(2) {
+            t.put(chr + 0x726, &[0xff, 0xff]);
+        }
+        if rng.next().is_multiple_of(3) {
+            t.put(chr + 0x73a, &[0, 0]);
+        }
+        let clip = t.alloc(4);
+        t.put_u32(clip, rng.next());
+        let loops = rng.next();
+        let start = if rng.next().is_multiple_of(2) {
+            0x3000
+        } else {
+            (rng.next() % 0x4000).cast_signed()
+        };
+        let end = match rng.next() % 3 {
+            0 => -0x100,
+            1 => -(rng.next() % 9).cast_signed(),
+            _ => (rng.next() % 0x8000).cast_signed(),
+        };
+        t.check(
+            &format!("Ch_SetMotionSeq {round}"),
+            0x0083_9b80,
+            &[chr, clip, loops, start.cast_unsigned(), end.cast_unsigned()],
+            |m| {
+                Res::Int(mo::ch_set_motion_seq(
+                    m,
+                    chr,
+                    clip,
+                    loops,
+                    start,
+                    end,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+    }
+}

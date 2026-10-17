@@ -985,6 +985,65 @@ pub mod bridge {
         mem.write(chr + 0x7dc, 1u32);
         eax
     }
+
+    /// `Ch_MotionSetupFcurve(chr, clip)` ([`ch_motion_setup_fcurve`]).
+    pub const SETUP_FCURVE: u32 = 0x0083_9980;
+    /// `g_ChrStrC001` (`"c001"`) and `g_GraphicMapId`.
+    pub const STR_C001: u32 = 0x00b4_86bc;
+    pub const GRAPHIC_MAP_ID: ffx_bridge::Global<i32> = ffx_bridge::Global::new(0x0133_0844);
+
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)` (`0x00839b80`):
+    /// plays `clip` from `start` to `end` (negative: the clip's length,
+    /// `i16` `+0` × 256; Tidus, `"c001"`, on map 0x7a playing 0x3000 to
+    /// -0x100 stops at 0x2800): `+0x7e0` = 0x1e00, the clip's channels set
+    /// up (`Ch_MotionSetupFcurve`), `+0x718` start, `+0x720` length,
+    /// `+0x71c` end − 1, `+0x724` the pending loop count `+0x726` (or
+    /// `loops` when none, -1), which is cleared; `+0x754` = 0x100, `+0x740`
+    /// = start, `+0x752` = `+0x73a` (at least 1), flag bit 16 of `+0x194`
+    /// cleared, `+0x728` = 1. Returns `+0x73a` (what EAX holds).
+    pub fn ch_set_motion_seq<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        clip: u32,
+        loops: u32,
+        start: i32,
+        end: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let name: u32 = mem.read(chr + 4);
+        let tidus = crate::handle::bridge::c_string(mem, name)
+            == crate::handle::bridge::c_string(mem, mem.rebase(STR_C001));
+        let mut end = end;
+        if tidus && GRAPHIC_MAP_ID.get(mem) == 0x7a && start == 0x3000 && end == -0x100 {
+            end = 0x2800;
+        }
+        mem.write(chr + 0x7e0, 0x1e00u32);
+        call(mem, mem.rebase(SETUP_FCURVE), &[chr, clip]);
+        mem.write(chr + 0x718, start);
+        if end < 0 {
+            end = i32::from(mem.read::<i16>(clip)) << 8;
+        }
+        mem.write(chr + 0x720, end.wrapping_sub(start));
+        mem.write(chr + 0x71c, end.wrapping_sub(1));
+        let pending: u16 = mem.read(chr + 0x726);
+        #[allow(clippy::cast_possible_truncation)] // the low half, as stored
+        let n = if pending == 0xffff {
+            loops as u16
+        } else {
+            pending
+        };
+        mem.write(chr + 0x724, n);
+        mem.write(chr + 0x726, 0xffffu16);
+        mem.write(chr + 0x754, 0x100u16);
+        let s: u32 = mem.read(chr + 0x718);
+        mem.write(chr + 0x740, s);
+        let k: u16 = mem.read(chr + 0x73a);
+        mem.write(chr + 0x752, if k == 0 { 1 } else { k });
+        let f: u32 = mem.read(chr + 0x194);
+        mem.write(chr + 0x194, f & 0xfffe_ffff);
+        mem.write(chr + 0x728, 1u16);
+        u32::from(k)
+    }
 }
 
 #[cfg(test)]
