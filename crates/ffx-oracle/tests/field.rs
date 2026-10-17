@@ -13025,3 +13025,48 @@ fn round47_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x002f_0002);
     round47_cases(&mut t, &mut rng, 40);
 }
+
+// ---- round 48 ----
+
+/// Round 48 on `t`: `Sg_IsSceneLoading` over every answer of its six
+/// queries (stand-ins logging the order of the calls).
+fn round48_cases(t: &mut Twin) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rvs) = (t.alloc(4 + 0x20 * 16), t.alloc(4 * 6));
+    let list: Vec<(Option<u32>, Vec<u8>)> = (0..6u32)
+        .map(|k| {
+            (
+                Some(yi::bridge::SCENE_QUERIES[k as usize]),
+                log_stub(log, rvs + 4 * k, k + 1, 0),
+            )
+        })
+        .collect();
+    t.cave(&list);
+    for bits in 0..64u32 {
+        t.put(log, 0u32);
+        for k in 0..6 {
+            t.put(rvs + 4 * k, (bits >> k) & 1);
+        }
+        t.same(
+            "Sg_IsSceneLoading",
+            |o| o.eax(0x0081_fcd0, &[]),
+            |m| yi::bridge::sg_is_scene_loading(m, call),
+        );
+    }
+}
+
+/// Round 48: `Sg_IsSceneLoading`.
+#[test]
+fn round48_scene_loading_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    round48_cases(&mut t);
+}
+
+/// Round 48 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round48_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    round48_cases(&mut t);
+}

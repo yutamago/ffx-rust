@@ -1483,6 +1483,20 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The scene loading check (round 48)
+
+`Sg_IsSceneLoading()` (`0x0081fcd0`, name ours; from `Sg_MainLoop`)
+returns 1 in three cases, else 0:
+- the field map is loading (`graphicIsFieldMapLoading`) and no battle map
+  is shown (`graphicIsAnyBattleMap`);
+- characters are loading or being instantiated for a map in the list
+  (`graphicIsCharacterLoadingOrInstanciating`, `graphicIsMapInList`), again
+  outside a battle map;
+- the scene's assets are not all loaded (`graphicIsAllSceneAssetsLoaded`)
+  while the screen fade colour is locked (`graphicIsScreenFadeColorLocked`).
+
+The queries are made in that order and only as far as each answer needs.
+
 ## Three small helpers (round 47)
 
 All names ours.

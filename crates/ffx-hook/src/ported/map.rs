@@ -3787,6 +3787,11 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `Sg_IsSceneLoading()`.
+    Sg_IsSceneLoading @ 0x0081_fcd0 => extern "C" fn shim_sg_is_scene_loading() -> u32 {
+        yi::bridge::sg_is_scene_loading(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `rcVu0IntToFloat(a, b)`.
     rcVu0IntToFloat @ 0x0092_7ba0 => extern "C" fn shim_rc_vu0_int_to_float(a: u32, b: u32) -> u32 {
         vu0::bridge::rc_vu0_int_to_float(&mut mem(), a, b, &mut |_, f, a| call_cdecl(f, a))

@@ -6714,6 +6714,7 @@
 0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here; ported (field round 39): command (0x33, 0), 0x012f4efc = 3, 0x012f4edc = 0
 0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here; ported (field round 39): command (0x3e, v & 0x7f)
 0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here; ported (field round 39): command (0x3f, frames, v & 0x7f); returns frames
+0x0081fcd0 function Sg_IsSceneLoading        # () -> 1 while the field map loads outside a battle map (graphicIsFieldMapLoading, graphicIsAnyBattleMap), characters load for a listed map outside a battle map (graphicIsCharacterLoadingOrInstanciating, graphicIsMapInList), or the scene assets are not all in with the fade colour locked (graphicIsAllSceneAssetsLoaded, graphicIsScreenFadeColorLocked); from Sg_MainLoop; name ours; ported (field round 48)
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
 0x008202d0 function Sg_ReturnConst1_008202d0     # auto-port shape (return constant, cdecl): return 0x1; callers: Sg_MainLoop; name ours
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
