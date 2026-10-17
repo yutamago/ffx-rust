@@ -1095,6 +1095,96 @@ pub mod bridge {
             mem.write(mem.rebase(CIRCLE_SIN) + 4 * i, s);
         }
     }
+
+    /// `graphicUpdateShadowMap` (`0x00644a00`, 12 words) and `Ch_DrawQuad`
+    /// (`0x00831d10`).
+    pub const UPDATE_SHADOW_MAP: u32 = 0x0064_4a00;
+    pub const DRAW_QUAD: u32 = 0x0083_1d10;
+    /// Bytes of scratch `ch_draw_shadow_quad` needs: the original's frame
+    /// (offset `0xa4 - n` stands for `[ebp - n]`).
+    pub const SHADOW_QUAD_SCRATCH: u32 = 0xa4;
+
+    /// `Ch_DrawShadowQuad(chr, -, p3)` (`0x0082e3e0`): the shadow's quad.
+    /// Its matrix turns by the facing (`-+0x158` about y) and moves to the
+    /// position `+0x7c`..`+0x84`. `graphicUpdateShadowMap(out, +0x830,
+    /// +0x838, &(+0x694), +0x16c, &(+0x69c), &w, &h, len, +0x36c, +0x4,
+    /// id)` (`len` the length of `+0x1e0`..`+0x1e8` scaled by
+    /// `[0x00b0dba0]`, `_CIsqrt` through `ci`) gives its size and texture
+    /// coordinates. `Ch_DrawQuad(m, p3, +0x4e4 × [0x00b59878] (a fixed
+    /// [0x00b59880] for ids 7 and 0x6b), +0x354, w, h, +0x17c, uv)` draws
+    /// it. Returns `p3`.
+    pub fn ch_draw_shadow_quad<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        p3: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let at = |n: u32| scratch + 0xa4 - n;
+        let (m, n) = (at(0x44), at(0x84));
+        (c.call)(mem, r(mem, UNIT_MATRIX), &[m]);
+        let yaw = (-ld(mem, chr + 0x158)).to_bits();
+        (c.call)(mem, r(mem, ROT_MATRIX_Y), &[m, m, yaw]);
+        (c.call)(mem, r(mem, UNIT_MATRIX), &[n]);
+        for (to, from) in [(4u32, 0x7cu32), (0x14, 0x80), (0x24, 0x84)] {
+            let v = ld(mem, chr + from);
+            mem.write(n + to, v);
+        }
+        (c.call)(mem, r(mem, MUL_MATRIX), &[m, n, m]);
+        for (to, from) in [(0x14u32, 0x694u32), (0x10, 0x16c), (0xc, 0x69c)] {
+            let v = ld(mem, chr + from);
+            mem.write(at(to), v);
+        }
+        let id = u32::from(mem.read::<u16>(chr));
+        let mut half = r32(fl(mem, chr + 0x4e4) * mem.read::<f64>(r(mem, 0x00b5_9878)));
+        if id == 7 || id == 0x6b {
+            half = ld(mem, r(mem, 0x00b5_9880));
+        }
+        mem.write(at(0x8c), half);
+        let k = mem.read::<f64>(r(mem, 0x00b0_dba0));
+        let (a, b, cc) = (
+            fl(mem, chr + 0x1e4) * k,
+            fl(mem, chr + 0x1e0) * k,
+            fl(mem, chr + 0x1e8) * k,
+        );
+        let len = (c.ci)(mem, r(mem, CI_SQRT), &[(b * b + a * a) + cc * cc]);
+        mem.write(at(0x88), len);
+        let args = [
+            at(0xa4),
+            mem.read(chr + 0x830),
+            mem.read(chr + 0x838),
+            at(0x14),
+            ld(mem, at(0x10)).to_bits(),
+            at(0xc),
+            at(0x90),
+            at(0x94),
+            len.to_bits(),
+            ld(mem, chr + 0x36c).to_bits(),
+            mem.read(chr + 4),
+            id,
+        ];
+        let uv = (c.call)(mem, r(mem, UPDATE_SHADOW_MAP), &args);
+        let quad = [
+            m,
+            p3,
+            ld(mem, at(0x8c)).to_bits(),
+            ld(mem, chr + 0x354).to_bits(),
+            ld(mem, at(0x90)).to_bits(),
+            ld(mem, at(0x94)).to_bits(),
+            ld(mem, chr + 0x17c).to_bits(),
+            mem.read(uv),
+            mem.read(uv.wrapping_add(4)),
+            mem.read(uv.wrapping_add(8)),
+            mem.read(uv.wrapping_add(0xc)),
+        ];
+        (c.call)(mem, r(mem, DRAW_QUAD), &quad);
+        p3
+    }
 }
 
 #[cfg(test)]

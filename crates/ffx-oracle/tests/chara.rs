@@ -7449,3 +7449,118 @@ fn round11h_on(t: &mut Twin) {
         );
     }
 }
+
+impl Fakes {
+    /// A stand-in at new code running `prefix`, then logging `id` and the
+    /// arguments at `idxs` (0-based) and returning the word at its result.
+    fn fake_code_idxs(&self, t: &mut Twin, prefix: &[u8], id: u32, idxs: &[u8]) -> (u32, u32) {
+        let ret = t.alloc(4);
+        let mut c = prefix.to_vec();
+        c.extend([0x8b, 0x0d]);
+        c.extend(self.log.to_le_bytes());
+        c.extend([0xc7, 0x01]);
+        c.extend(id.to_le_bytes());
+        for (j, &k) in (0u8..).zip(idxs) {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * j]);
+        }
+        c.extend([0x83, 0x05]);
+        c.extend(self.log.to_le_bytes());
+        c.push(4 * (u8::try_from(idxs.len()).unwrap() + 1));
+        c.push(0xa1);
+        c.extend(ret.to_le_bytes());
+        c.push(0xc3);
+        (twin_code(t, &c), ret)
+    }
+}
+
+#[test]
+fn round11i_matches_the_original() {
+    for mut t in twins() {
+        round11i_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
+fn round11i_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_1111);
+    let fk = Fakes::new(t);
+    let pop = t.b.rebase(FPU_POP);
+    // graphicUpdateShadowMap: writes w and h through its 7th and 8th words
+    let (wa, ha) = (t.alloc(4), t.alloc(4));
+    let mut pre = vec![0x8b, 0x44, 0x24, 0x1c, 0x8b, 0x0d];
+    pre.extend(wa.to_le_bytes());
+    pre.extend([0x89, 0x08, 0x8b, 0x44, 0x24, 0x20, 0x8b, 0x0d]);
+    pre.extend(ha.to_le_bytes());
+    pre.extend([0x89, 0x08]);
+    let (map_code, uv) = fk.fake_code_idxs(t, &pre, 1, &[1, 2, 4, 8, 9, 10, 11]);
+    // Ch_DrawQuad: its matrix (the caller's stack) copied out, then logged
+    let mats = t.alloc(0x40);
+    let mut pre = vec![0x8b, 0x44, 0x24, 0x04];
+    for k in 0..16u8 {
+        pre.extend([0x8b, 0x48, 4 * k, 0x89, 0x0d]);
+        pre.extend((mats + 4 * u32::from(k)).to_le_bytes());
+    }
+    let (quad_code, _) = fk.fake_code_idxs(t, &pre, 2, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    for (sym, code) in [(0x0064_4a00u32, map_code), (0x0083_1d10, quad_code)] {
+        let at = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.put(at, &jmp);
+    }
+    let ci1 = twin_code(t, &CI1_STUB);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..24u32 {
+        fk.reset(t);
+        let uvs = t.alloc(16);
+        for k in 0..4 {
+            let v = f(&mut rng, 0, 1);
+            t.put_u32(uvs + 4 * k, v);
+        }
+        t.put_u32(uv, uvs);
+        t.put_u32(wa, f(&mut rng, 0, 4));
+        t.put_u32(ha, f(&mut rng, 0, 4));
+        let chr = t.alloc(0x900);
+        for k in 0..0x240 {
+            let v = f(&mut rng, -4, 4);
+            t.put_u32(chr + 4 * k, v);
+        }
+        let id: u16 = [7, 0x6b, 0x10, 0x1001][usize::try_from(rng.next() % 4).unwrap()];
+        t.put(chr, &id.to_le_bytes());
+        let p3 = rng.next();
+        let scratch = t.alloc(p::SHADOW_QUAD_SCRATCH as usize);
+        let at = t.a.rebase(0x0082_e3e0);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr, rng.next(), p3]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |m: &mut Oracle, f: u32, a: &[f64]| {
+                let b = a[0].to_bits();
+                #[allow(clippy::cast_possible_truncation)]
+                let w = [b as u32, (b >> 32) as u32, f];
+                f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+            };
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_draw_shadow_quad(&mut t.b, chr, p3, scratch, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_DrawShadowQuad {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::SHADOW_QUAD_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_DrawShadowQuad {round} memory",
+            t.name
+        );
+    }
+}

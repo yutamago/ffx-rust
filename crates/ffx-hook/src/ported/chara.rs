@@ -1791,4 +1791,12 @@ ported! {
     Ch_InitCircleTable @ 0x0082_e5a0 => extern "C" fn ch_init_circle_table() {
         p::ch_init_circle_table(&mut mem(), &mut |_, f, a| ci_call(f, a));
     }
+    /// `Ch_DrawShadowQuad(chr, -, p3)`.
+    Ch_DrawShadowQuad @ 0x0082_e3e0 => extern "C" fn ch_draw_shadow_quad(chr: u32, _p2: u32, p3: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
+    }
 }
