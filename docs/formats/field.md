@@ -1267,6 +1267,34 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - The debug pixel probe `0x007606f0`/`0x00760f30` moved to "Debug
   (mod-tool candidates)".
 
+## The sphere grid's achievements and special item kinds (round 29)
+
+- `AbmapCheckAchievements` (`0x00a47210`, name ours, from `0x00a48910` and
+  `AbmapTryChangePlayer`):
+  - marks the locked entries of menu pads 3, 2, 4 and 5;
+  - reads the grid's node list (file 0x11, 0x12 or 0x13 for the save's
+    grid kind, bits 14..15 of `MsGetSaveMenu`) through the CD library
+    table `GetCD` returns: `+0x10(0x25)`, `+0(file, buffer, 0, 0)`,
+    `+8(0)`, into a 0x484-byte local;
+  - unlocks achievement 0x17 once for each character bit 0..6 for which
+    every listed node (byte list, 0xff skipped) has that bit in the
+    save's ability map (`MsGetSaveAbilityMap`, byte `1 + 2 i`), and 0x1d
+    when every listed node is 0x7f. An empty list unlocks both.
+  - The list's count is at `+2` and the list at `+8` when the file
+    starts with 0x31. Otherwise the original takes the list from `+2`
+    and the ability map's address as its count.
+- `AbmapSpecialEffect` (`0x00a5d120`, name ours) is 1 when an item of a
+  special kind applies to a node (`AbmapItemNodeEffect`). It checks:
+  - kinds 1..4: the node row's type `+0x16` is 0x12, 0x11, 0 or 0x10;
+  - 5..7 and 0x10..0x16: type 1;
+  - 8..0xb: the character lacks the node's panel bit, the type is 0xf,
+    0xe, 0xc or 0xd, and another character has the bit;
+  - 0xc..0xf: the character is not on the node and, in turn, has the
+    panel bit, another character has it, another joined character stands
+    on the node, or the row is not hidden;
+  - 0x17: type 2..0xb; 0x18: the same plus no panel bit and another
+    character's.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

@@ -11458,3 +11458,130 @@ fn round28_set_chr_pos_blur_and_nail_match_the_original() {
         );
     }
 }
+
+/// A file reader's stand-in: its first argument to `idlog`, then 0x480
+/// bytes from `src` to its second argument.
+fn read_file_stub(src: u32, idlog: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x44, 0x24, 0x0c, 0xa3];
+    c.extend_from_slice(&idlog.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x7c, 0x24, 0x10, 0xbe]);
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 0x80, 0x04, 0x00, 0x00, 0xf3, 0xa4, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Round 29: the sphere grid's achievement check and its special item
+/// kinds.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round29_achievements_and_special_kinds_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001d_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let v: Vec<u32> = (0..7).map(|_| t.alloc(4)).collect();
+    let [menuv, savev, idlog, panelv, otherv, nodev, joinedv] = v[..] else {
+        unreachable!()
+    };
+    let (file, cdtab, cdptr) = (t.alloc(0x480), t.alloc(0x20), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(abmap::MARK_LOCKED_ENTRIES), log_stub(log, rv, 340, 1)),
+        (Some(abmap::MS_GET_SAVE_MENU), log_stub(log, menuv, 341, 0)),
+        (Some(abmap::GET_CD), log_stub(log, cdptr, 342, 0)),
+        (
+            Some(abmap::MS_GET_SAVE_ABILITY_MAP),
+            log_stub(log, savev, 343, 0),
+        ),
+        (Some(abmap::ACHIEVEMENT_UNLOCK), log_stub(log, rv, 344, 1)),
+        (Some(abmap::ABMAP_TEST_PANEL), log_stub(log, panelv, 345, 2)),
+        (
+            Some(abmap::ABMAP_OTHER_HAS_PANEL),
+            log_stub(log, otherv, 346, 2),
+        ),
+        (Some(abmap::ABMAP_CHR_NODE), log_stub(log, nodev, 347, 1)),
+        (
+            Some(abmap::MS_GET_SAVE_PLY_JOINED),
+            log_stub(log, joinedv, 348, 1),
+        ),
+        (None, log_stub(log, rv, 349, 1)),
+        (None, read_file_stub(file, idlog)),
+        (None, log_stub(log, rv, 350, 1)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let n = stubs.len();
+    // the CD table: +0 the reader, +8 the closer, +0x10 the opener
+    t.put(cdtab + 0x10, stubs[n - 3]);
+    t.put(cdtab, stubs[n - 2]);
+    t.put(cdtab + 8, stubs[n - 1]);
+    // GetCD returns the table (the stub returns the word at cdptr)
+    t.put(cdptr, cdtab);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (menu, save, row) = (t.alloc(4), t.alloc(0x900), t.alloc(0x20));
+    t.put(menuv, menu);
+    t.put(savev, save);
+    for k in 0..300u32 {
+        env.reset(&mut t, &mut rng);
+        // the achievements
+        t.put(menu, rng.next());
+        t.fill(file, 0x480, &mut rng);
+        // (without the 0x31 header the original counts to the ability
+        // map's address, reading far past both buffers: left out)
+        let n = rng.range(-2, 0x200);
+        t.put(file, 0x0031u16);
+        t.put(file + 2, i16::try_from(n).unwrap());
+        for j in 0..0x470 {
+            if rng.below(3) == 0 {
+                t.put(file + 8 + j, 0xffu8);
+            }
+        }
+        let fill = match k % 3 {
+            0 => 0x7fu8,
+            1 => 0xff,
+            _ => 0,
+        };
+        for j in 0..0x480u32 {
+            let b = if rng.below(40) == 0 {
+                u8::try_from(rng.below(0x100)).unwrap()
+            } else {
+                fill
+            };
+            t.put(save + j, b);
+        }
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "AbmapCheckAchievements",
+            |o| o.void(0x00a4_7210, &[]),
+            |m| abmap::bridge::abmap_check_achievements(m, work, call),
+        );
+        // the special kinds
+        for _ in 0..20 {
+            env.reset(&mut t, &mut rng);
+            let kind = rng.below(0x1a);
+            let (node, chr) = (rng.below(8), rng.below(7));
+            t.fill(row, 0x20, &mut rng);
+            let ty = if rng.below(2) == 0 {
+                [0u8, 1, 0xc, 0xd, 0xe, 0xf, 0x10, 0x11, 0x12][rng.below(9) as usize]
+            } else {
+                u8::try_from(rng.below(0x14)).unwrap()
+            };
+            t.put(row + 0x16, ty);
+            t.put(panelv, rng.below(2));
+            t.put(otherv, rng.below(2));
+            t.put(
+                nodev,
+                if rng.below(2) == 0 {
+                    node
+                } else {
+                    rng.below(8)
+                },
+            );
+            t.put(joinedv, rng.below(2));
+            t.same(
+                "AbmapSpecialEffect",
+                |o| o.eax(0x00a5_d120, &[kind, node, row, chr]),
+                |m| abmap::bridge::abmap_special_effect(m, [kind, node, row, chr], call),
+            );
+        }
+    }
+}
