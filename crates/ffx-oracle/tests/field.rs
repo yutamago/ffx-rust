@@ -11535,7 +11535,7 @@ fn round29_achievements_and_special_kinds_match_the_original() {
                 t.put(file + 8 + j, 0xffu8);
             }
         }
-        let fill = match k % 3 {
+        let byte = match k % 3 {
             0 => 0x7fu8,
             1 => 0xff,
             _ => 0,
@@ -11544,7 +11544,7 @@ fn round29_achievements_and_special_kinds_match_the_original() {
             let b = if rng.below(40) == 0 {
                 u8::try_from(rng.below(0x100)).unwrap()
             } else {
-                fill
+                byte
             };
             t.put(save + j, b);
         }
