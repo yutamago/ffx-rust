@@ -14539,7 +14539,7 @@ fn round26_cross_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     | u64::from(rng.next() & 0xf_ffff),
             ),
         );
-        put(a, b, cells + 0x10, (rng.next() % 40) as f64 / 3.0);
+        put(a, b, cells + 0x10, f64::from(rng.next() % 40) / 3.0);
         put(a, b, g(a, 0x0187_16bc), rng.next() % 3);
         let scale = [0.64f32, 0.6, 1.0, 0.73][(rng.next() % 4) as usize].to_bits();
         let x = if rng.next().is_multiple_of(5) {
