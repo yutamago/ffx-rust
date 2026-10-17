@@ -5704,4 +5704,586 @@ pub mod bridge {
         call(mem, 0x0090_6e60, &[window, kind]);
         call(mem, 0x008b_8bb0, &[window, message_type])
     }
+
+    /// `getScaleButtonIconWidth(id, scale)` (`0x009062b0`): the width of a
+    /// button icon for the HD UI.
+    ///
+    /// Button ids 0x258..=0x263 and 0x264..=0x267 give
+    /// `remap(ftol(0.5 + scale × 54.0))` and `remap(ftol(0.5 + scale ×
+    /// 64.0))`; 0x268 and 0x269 give `remap(ftol(scale × 64.5 + 0.5))` and
+    /// `remap(ftol(scale × 147.4 + 0.5))` (constants at `0x00b5f1f8`,
+    /// `0x00b41308`, `0x00b66cb0`, `0x00b66cd0`, `0x00b92220`; the rounded
+    /// value goes through an f32 before `remap`, `graphicUiRemapX2`), any
+    /// other id 0. The character `0x025d16e4` then overrides it: digits and
+    /// space 9.0, `:`/`;` 13.6, `@`..`O` 20.0 when the low nibble is a
+    /// multiple of 3 and 9.0 otherwise (`@` itself 33.5). Constants are read
+    /// from the image.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn scale_button_icon_width<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        scale: f32,
+        mut remap: impl FnMut(&mut M, f32) -> f32,
+    ) -> f32 {
+        let d = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let f = |mem: &M, a: u32| -> f32 { mem.read(mem.rebase(a)) };
+        let half = d(mem, 0x00b9_2220);
+        let s = f64::from(scale);
+        let factor = match id {
+            0x258..=0x263 => Some(d(mem, 0x00b5_f1f8)),
+            0x264..=0x267 => Some(d(mem, 0x00b4_1308)),
+            0x268 => Some(d(mem, 0x00b6_6cb0)),
+            0x269 => Some(d(mem, 0x00b6_6cd0)),
+            _ => None,
+        };
+        let mut r = 0.0f32;
+        if let Some(k) = factor {
+            let i = ffx_bridge::x87::ftol(mem, s * k + half).cast_signed();
+            r = remap(mem, i as f32);
+        }
+        let c: u32 = mem.read(mem.rebase(0x025d_16e4));
+        if c.wrapping_sub(0x30) <= 9 || c == 0x20 {
+            return f(mem, 0x00b5_5140);
+        }
+        if c.wrapping_sub(0x3a) <= 1 {
+            return f(mem, 0x00b6_6d78);
+        }
+        if c.wrapping_sub(0x40) <= 0xf {
+            r = if (c & 0xf).is_multiple_of(3) {
+                f(mem, 0x00b4_ae10)
+            } else {
+                f(mem, 0x00b5_5140)
+            };
+            if c == 0x40 {
+                r = f(mem, 0x00b6_6d7c);
+            }
+        }
+        r
+    }
+
+    /// `TOGetScaleButtonIconWidth(c, scale)` (`0x008fa800`): keeps the
+    /// character in `0x025d16e4` and picks the icon id for
+    /// [`scale_button_icon_width`] (passed in as `icon(id, scale)`): `' '`,
+    /// `'!'`, `'"'` and odd `@`..`O` 0x259, even `@`..`O` 0x258, the digits
+    /// `c + 0x230` except `1`/`2` with the confirm button swapped
+    /// (`TOGetSystemConfirmButtonAssign() == 1`: 0x262/0x261), `` ` `` 0x270;
+    /// anything else 0.0.
+    pub fn to_get_scale_button_icon_width<M: Mem>(
+        mem: &mut M,
+        c: u32,
+        scale: f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut icon: impl FnMut(&mut M, u32, f32) -> f32,
+    ) -> f32 {
+        mem.write(mem.rebase(0x025d_16e4), c);
+        let id = match c {
+            0x20..=0x22 => 0x259,
+            0x40..=0x4f => {
+                if c & 1 != 0 {
+                    0x259
+                } else {
+                    0x258
+                }
+            }
+            0x30..=0x39 => {
+                if call(mem, 0x008a_cf30, &[]) == 1 && (0x31..=0x32).contains(&c) {
+                    if c == 0x31 { 0x262 } else { 0x261 }
+                } else {
+                    c + 0x230
+                }
+            }
+            0x60 => 0x270,
+            _ => return 0.0,
+        };
+        icon(mem, id, scale)
+    }
+
+    /// `TOGetSaveChrName(i)` (`0x008ac850`): characters from 0x14 on come
+    /// from `MsGetRamChrName(i)`; the others from `MsGetSaveChrName(i)`,
+    /// after `MsGetSaveConfigEnglish()` when the language
+    /// (`TOGetFFXLang`, through `0x008ac2f0`) is 0. Returns the name call's
+    /// eax.
+    pub fn to_get_save_chr_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if i.cast_signed() >= 0x14 {
+            return call(mem, 0x0079_af10, &[i]);
+        }
+        if call(mem, 0x008a_c2f0, &[]) == 0 {
+            call(mem, 0x0078_51d0, &[]);
+        }
+        call(mem, 0x0078_4fb0, &[i])
+    }
+
+    /// `TOGetChangeMacroWordCount(table, index)` (`0x008b6b00`): the number
+    /// of words in the text `TOGetChangeMacroAddress(table, index)` (0 without one):
+    /// each code below 0x26 other than 4 counts one, and a group-3 code
+    /// (`TOGetGroup`) adds the count of its own macro
+    /// (`TOGetChangeMacroWordCount(table, code address)`, through `count`); codes are
+    /// stepped with `TOSkipCode`.
+    pub fn to_get_change_macro_word_count<M: Mem>(
+        mem: &mut M,
+        table: u32,
+        index: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        count: &mut impl FnMut(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut p = call(mem, 0x008b_6660, &[table, index]);
+        if p == 0 {
+            return 0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return n;
+            }
+            if call(mem, 0x008d_f610, &[u32::from(c)]) == 3 {
+                n = n.wrapping_add(count(mem, table, p));
+            }
+            let c: u8 = mem.read(p);
+            if c >= 0x26 || c == 4 {
+                n = n.wrapping_add(1);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `TOGetSaveWindow(a, kind, &count)` (`0x0089b5a0`): the text of
+    /// `MsGetSaveWindow(a, kind, &n)` with its length in `*count`. Trailing
+    /// 0xff halfwords are dropped, except for kinds 6, 17 and 20; kinds 7
+    /// and 15 report at least 1.
+    pub fn to_get_save_window<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        kind: u32,
+        count: u32,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(local, 0u32);
+        let p = call(mem, 0x0078_5410, &[a, kind, local]);
+        let mut n: i32 = mem.read(local);
+        let case = kind.wrapping_sub(6);
+        let raw = matches!(case, 0 | 11 | 14);
+        if raw {
+            mem.write(count, n);
+            return p;
+        }
+        while n > 0
+            && mem.read::<u16>(
+                p.wrapping_add(n.cast_unsigned().wrapping_mul(2))
+                    .wrapping_sub(2),
+            ) == 0xff
+        {
+            n -= 1;
+        }
+        mem.write(count, n);
+        if matches!(case, 1 | 9) && n <= 0 {
+            mem.write(count, 1u32);
+        }
+        p
+    }
+
+    /// `TOValueToMesFontL(value, out, width)` (`0x008b9140`): `value` as
+    /// decimal (`%d`, or right-aligned `%<width>d` for a positive width)
+    /// in the large message font: digits copied, spaces written as `^`
+    /// (language 0 without `MsGetSaveConfigEnglish`), `:` (languages 9 and
+    /// 10) or 0xfe, other characters dropped, then a terminator. The
+    /// language (`TOGetFFXLang` through `0x008ac2f0`) is asked for every
+    /// space as the original does.
+    pub fn to_value_to_mes_font_l<M: Mem>(
+        mem: &mut M,
+        value: u32,
+        out: u32,
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let v = value.cast_signed();
+        let w = width.cast_signed();
+        let text = if w > 0 {
+            format!("{v:>w$}", w = w.cast_unsigned() as usize)
+        } else {
+            format!("{v}")
+        };
+        let mut p = out;
+        for c in text.bytes() {
+            let b = match c {
+                b'0'..=b'9' => c,
+                b' ' => {
+                    let lang = call(mem, 0x008a_c2f0, &[]);
+                    if lang == 0 && call(mem, 0x0078_51d0, &[]) == 0 {
+                        0x5e
+                    } else if call(mem, 0x008a_c2f0, &[]) == 0xa || call(mem, 0x008a_c2f0, &[]) == 9
+                    {
+                        0x3a
+                    } else {
+                        0xfe
+                    }
+                }
+                _ => continue,
+            };
+            mem.write(p, b);
+            p = p.wrapping_add(1);
+        }
+        mem.write(p, 0u8);
+    }
+
+    /// `TOCheckBtlCommandUse(chr, command)` (`0x0089aca0`): 0 for command
+    /// 0xfe, -2 for 0xff, -1 when `MsGetCommandUse` says 1, -2 when
+    /// `MsCheckUseCommand(chr, data, 0x0133f106)` fails. Item-like
+    /// commands (`+0x16 & 0xf8` 8 or 0x10) return their window kind
+    /// `+0x17`, or -4/-3 when `TOGetSaveWindow` gives an empty list;
+    /// others 0xfe when `+0x1a` bit 0 is set, else 0xfe plus whether
+    /// `0x0133c94c` is not 0x100. `scratch` holds the two out-words.
+    pub fn to_check_btl_command_use<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        match command {
+            0xfe => return 0,
+            0xff => return 0xffff_fffe,
+            _ => {}
+        }
+        let data = call(mem, 0x0079_a4b0, &[command, scratch]);
+        if call(mem, 0x0079_a5b0, &[chr, command]) == 1 {
+            return 0xffff_ffff;
+        }
+        let user: u16 = mem.read(mem.rebase(0x0133_f106));
+        if call(mem, 0x0078_c690, &[chr, data, u32::from(user)]) == 0xffff_ffff {
+            return 0xffff_fffe;
+        }
+        let kind = u32::from(mem.read::<u8>(data.wrapping_add(0x16))) & 0xf8;
+        if kind == 8 || kind == 0x10 {
+            let window = u32::from(mem.read::<u8>(data.wrapping_add(0x17)));
+            let count = scratch.wrapping_add(4);
+            mem.write(count, command);
+            call(mem, 0x0089_b5a0, &[chr, window, count]);
+            if mem.read::<u32>(count) == 0 {
+                return u32::from(kind != 8).wrapping_sub(4);
+            }
+            return u32::from(mem.read::<u8>(data.wrapping_add(0x17)));
+        }
+        if mem.read::<u8>(data.wrapping_add(0x1a)) & 1 != 0 {
+            return 0xfe;
+        }
+        0xfe + u32::from(mem.read::<u32>(mem.rebase(0x0133_c94c)) != 0x100)
+    }
+
+    /// `TOBtlOpenSimpleHelpMes(i, message)` (`0x0089dba0`): opens help
+    /// line `i` (16-byte entries at `0x0133f510`: `+0` 1, `+4` 7, `+8` the
+    /// message, `+0xc`/`+0xe` sizes), measures it with
+    /// `TOGetMessageWH(7, message, &w, +0xe, 1, 0)` and stores `ftol(w)` at
+    /// `+0xc`. `w` lives in `scratch`, starting as `i`. Returns 1.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_btl_open_simple_help_mes<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        message: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let entry = mem.rebase(0x0133_f510).wrapping_add(i << 4);
+        mem.write(entry.wrapping_add(0xe), 0u16);
+        mem.write(entry.wrapping_add(0xc), 0u16);
+        mem.write(entry, 1u32);
+        mem.write(entry.wrapping_add(4), 7u32);
+        mem.write(entry.wrapping_add(8), message);
+        mem.write(scratch, i);
+        call(
+            mem,
+            0x008b_9650,
+            &[7, message, scratch, entry.wrapping_add(0xe), 1, 0],
+        );
+        let w: f32 = mem.read(scratch);
+        let v = ffx_bridge::x87::ftol(mem, f64::from(w));
+        mem.write(entry.wrapping_add(0xc), v as u16);
+        1
+    }
+
+    /// The pad character of [`to_int_to_mes`]: `]` for language 0 without
+    /// `MsGetSaveConfigEnglish`, `:` for languages 9 and 10, else 0xfe.
+    fn int_pad<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) -> u8 {
+        if call(mem, 0x008a_c2f0, &[]) == 0 && call(mem, 0x0078_51d0, &[]) == 0 {
+            0x5d
+        } else if call(mem, 0x008a_c2f0, &[]) == 0xa || call(mem, 0x008a_c2f0, &[]) == 9 {
+            0x3a
+        } else {
+            0xfe
+        }
+    }
+
+    /// `TOIntToMes(value, out, digits, mode)` (`0x008b8290`): a
+    /// non-negative number (negatives become 0) as `digits` characters.
+    /// Mode 0 keeps the low digits (`value % 10^digits`, powers at
+    /// `0x00c5a044`) and pads on the left with [`int_pad`] characters;
+    /// mode 1 clamps to `10^digits - 1` and pads with `0`. Other modes
+    /// write an empty text. Returns the number shown.
+    ///
+    /// Both modes copy `digits` bytes of the 16-byte `sprintf` buffer, so
+    /// after a short number they copy past its terminator: the original
+    /// copies stale stack bytes there (behind the terminator, so no text
+    /// changes); the port copies what its buffer holds, zeros apart from
+    /// an earlier longer number.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
+    pub fn to_int_to_mes<M: Mem>(
+        mem: &mut M,
+        value: u32,
+        out: u32,
+        digits: u32,
+        mode: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut v = value.cast_signed().max(0);
+        let d = digits.cast_signed();
+        let power = |mem: &M| -> i32 {
+            mem.read(mem.rebase(0x00c5_a044).wrapping_add(digits.wrapping_mul(4)))
+        };
+        let mut buf = [0u8; 16];
+        let print = |buf: &mut [u8; 16], v: i32| -> i32 {
+            let s = v.to_string();
+            let n = s.len().min(15);
+            buf[..n].copy_from_slice(&s.as_bytes()[..n]);
+            buf[n] = 0;
+            n as i32
+        };
+        let mut p = out;
+        let copy = |mem: &mut M, p: &mut u32, buf: &[u8; 16], from: i32, n: i32| {
+            for k in 0..n {
+                let b = buf.get((from + k) as usize).copied().unwrap_or(0);
+                mem.write(*p, b);
+                *p = p.wrapping_add(1);
+            }
+        };
+        match mode {
+            0 => {
+                let mut len = print(&mut buf, v);
+                if len > d {
+                    let m = power(mem);
+                    v = if m == 0 { 0 } else { v.wrapping_rem(m) };
+                    len = print(&mut buf, v);
+                }
+                if len < d {
+                    for _ in 0..d - len {
+                        let c = int_pad(mem, &mut call);
+                        mem.write(p, c);
+                        p = p.wrapping_add(1);
+                    }
+                    len = d;
+                }
+                let from = len.wrapping_sub(d);
+                if from < len {
+                    copy(mem, &mut p, &buf, from, len - from);
+                }
+            }
+            1 => {
+                let max = power(mem).wrapping_sub(1);
+                if v > max {
+                    v = max;
+                } else {
+                    v = v.max(0);
+                }
+                let mut len = print(&mut buf, v);
+                if len < d {
+                    for _ in 0..d - len {
+                        mem.write(p, b'0');
+                        p = p.wrapping_add(1);
+                    }
+                    len = d;
+                }
+                if len > 0 {
+                    copy(mem, &mut p, &buf, 0, len);
+                }
+            }
+            _ => {}
+        }
+        mem.write(p, 0u8);
+        v.cast_unsigned()
+    }
+
+    /// The kana of [`to_conv_albhed_word`]: an optional `4` lead and page
+    /// byte for the converted id's 0xd0-row `q`, then
+    /// `(q + 1) × 0x30 + low` (the low byte of `low`). Returns the cursor.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn albhed_kana<M: Mem>(mem: &mut M, mut out: u32, q: i32, low: i32) -> u32 {
+        let mut put = |mem: &mut M, b: u8| {
+            mem.write(out, b);
+            out = out.wrapping_add(1);
+        };
+        if q > 4 {
+            put(mem, 4);
+            if q != 5 {
+                put(mem, (q + 0x26) as u8);
+            }
+        } else if (q - 1).cast_unsigned() <= 3 {
+            put(mem, (q + 0x2b) as u8);
+        }
+        let b = ((q as u8).wrapping_add(1))
+            .wrapping_mul(0x30)
+            .wrapping_add(low as u8);
+        put(mem, b);
+        mem.write(out, 0u8);
+        out
+    }
+
+    /// `TOConvAlbhedWord(in, out)` (`0x00906780`): one character of an Al
+    /// Bhed text in its translation, written to `out` with a terminator.
+    ///
+    /// The known letters are the collected bits of `0x011307a0` (none when
+    /// `0x018763e0` is -1, all 26 when it is 1). Returns 1 when the
+    /// character was translated, 2 when its letter is known and it stays
+    /// (or always 2 with all letters), 0 otherwise.
+    ///
+    /// Language 0 without English: codes 0xaf.. stay (0); 0x5f..=0xae
+    /// use the 4-byte table at `0x0187626c` (`+2` the letter, `+1` the
+    /// translation); others copy a lead byte below 0x30 and the code.
+    /// Languages 9 and 10 (two-byte kana, an optional `4` lead adding
+    /// 0x410): the kana id from `0x5e` on (up to 0x6b4 / 0x521 more) has
+    /// letter `(id - 0x5e) % 26`; unknown ones shift by a fixed amount
+    /// (Japanese 0x359/-0x340, Korean 0x255/-0x1a0 then `TOShiftListedId`)
+    /// and are re-encoded. Other languages translate 0x50..=0x69 and
+    /// 0x70..=0x89 through the table at `0x018762a8`.
+    #[allow(clippy::too_many_lines)]
+    pub fn to_conv_albhed_word<M: Mem>(
+        mem: &mut M,
+        input: u32,
+        out: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let switch: i32 = mem.read(mem.rebase(0x0187_63e0));
+        let collected: u32 = mem.read(mem.rebase(0x0113_07a0));
+        let mask = match switch {
+            -1 => 0,
+            1 => 0x03ff_ffff,
+            _ => collected,
+        };
+        let all = |mask: u32| if mask == 0x03ff_ffff { 2 } else { 0 };
+        let tail = |mem: &mut M, out: u32, b: u8| {
+            mem.write(out, b);
+            mem.write(out.wrapping_add(1), 0u8);
+        };
+        let lang = call(mem, 0x008a_c2f0, &[]);
+        if lang == 0 && call(mem, 0x0078_51d0, &[]) == 0 {
+            let c: u8 = mem.read(input);
+            if c >= 0xaf {
+                tail(mem, out, c);
+                return 0;
+            }
+            if c >= 0x5f {
+                let entry = mem.rebase(0x0187_626c).wrapping_add(u32::from(c) * 4);
+                let bit = u32::from(mem.read::<u8>(entry.wrapping_add(2))) & 0x1f;
+                if mask & (1 << bit) != 0 {
+                    tail(mem, out, c);
+                    return 2;
+                }
+                let t: u8 = mem.read(entry.wrapping_add(1));
+                tail(mem, out, t);
+                return 1;
+            }
+            let (mut p, mut o) = (input, out);
+            if c < 0x30 {
+                mem.write(o, c);
+                o = o.wrapping_add(1);
+                p = p.wrapping_add(1);
+            }
+            let c: u8 = mem.read(p);
+            tail(mem, o, c);
+            return all(mask);
+        }
+        let lang = call(mem, 0x008a_c2f0, &[]);
+        if lang != 0xa && call(mem, 0x008a_c2f0, &[]) != 9 {
+            let c: u8 = mem.read(input);
+            if (0x50..=0x69).contains(&c) || (0x70..=0x89).contains(&c) {
+                let entry = mem.rebase(0x0187_62a8).wrapping_add(u32::from(c) * 4);
+                let bit = u32::from(mem.read::<u8>(entry.wrapping_add(2))) & 0x1f;
+                if mask & (1 << bit) != 0 {
+                    tail(mem, out, c);
+                    return 2;
+                }
+                let t: u8 = mem.read(entry.wrapping_add(1));
+                tail(mem, out, t);
+                return 1;
+            }
+            tail(mem, out, c);
+            return all(mask);
+        }
+        // two-byte kana
+        let mut p = input;
+        let mut base = 0i32;
+        let c: u8 = mem.read(p);
+        if c < 0x2c && c != 4 {
+            mem.write(out, c);
+            let next: u8 = mem.read(p.wrapping_add(1));
+            mem.write(out.wrapping_add(1), next);
+            mem.write(out.wrapping_add(2), 0u8);
+            return all(mask);
+        }
+        if c == 4 {
+            base = 0x410;
+            p = p.wrapping_add(1);
+        }
+        let c: u8 = mem.read(p);
+        let id = if (0x2c..0x30).contains(&c) {
+            let next: u8 = mem.read(p.wrapping_add(1));
+            i32::from(c) * 0xd0 - 0x2320 + i32::from(next) + base
+        } else {
+            i32::from(c) - 0x30 + base
+        };
+        let japanese = call(mem, 0x008a_c2f0, &[]) == 0xa;
+        let range = if japanese { 0x6b4 } else { 0x521 };
+        let mut o = out;
+        if (id - 0x5e).cast_unsigned() <= range {
+            let letter = (id - 0x5e) % 0x1a;
+            if mask & (1 << (letter & 0x1f)) != 0 {
+                if id >= 0x410 {
+                    mem.write(o, 4u8);
+                    o = o.wrapping_add(1);
+                }
+                let c: u8 = mem.read(p);
+                if c < 0x30 {
+                    mem.write(o, c);
+                    o = o.wrapping_add(1);
+                    p = p.wrapping_add(1);
+                }
+                let c: u8 = mem.read(p);
+                tail(mem, o, c);
+                return 2;
+            }
+            if japanese {
+                let id = if id > 0x3b8 { id - 0x340 } else { id + 0x359 };
+                albhed_kana(mem, o, id / 0xd0, id);
+            } else {
+                let id = if id > 0x2b4 { id - 0x1a0 } else { id + 0x255 };
+                let s = call(mem, 0x0090_66f0, &[id.cast_unsigned()]).cast_signed();
+                albhed_kana(mem, o, s / 0xd0, s);
+            }
+            return 1;
+        }
+        if id >= 0x410 {
+            mem.write(o, 4u8);
+            o = o.wrapping_add(1);
+        }
+        let c: u8 = mem.read(p);
+        if c < 0x30 {
+            mem.write(o, c);
+            o = o.wrapping_add(1);
+            p = p.wrapping_add(1);
+        }
+        let c: u8 = mem.read(p);
+        tail(mem, o, c);
+        all(mask)
+    }
 }

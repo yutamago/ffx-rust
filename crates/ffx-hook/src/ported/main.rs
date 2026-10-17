@@ -3,7 +3,7 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, control, gs, light, quat, seq, state, vec};
+use ffx_sg::{camera, chpacket, control, envelope, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -1322,6 +1322,50 @@ ported! {
     /// `SG_BlendToTarget(obj, n)`.
     SG_BlendToTarget @ 0x0083_95b0 => extern "C" fn sg_blend_to_target(obj: u32, n: i32) {
         seq::bridge::blend_to_target(&mut mem(), obj, n);
+    }
+    /// `Sg_IdSlideEdge(from, to)`.
+    Sg_IdSlideEdge @ 0x0083_e180 => extern "C" fn sg_id_slide_edge(from: u32, to: u32) {
+        state::bridge::id_slide_edge(&mut mem(), from, to);
+    }
+    /// `Sg_ControlCamera()`.
+    Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
+        state::bridge::control_camera(&mut mem())
+    }
+    /// `SG_ApplyRawClip(obj, clip, t, t2)`.
+    SG_ApplyRawClip @ 0x0083_8750 => extern "C" fn sg_apply_raw_clip(obj: u32, clip: u32, t: u32, t2: u32) {
+        seq::bridge::apply_raw_clip(&mut mem(), obj, clip, t, t2);
+    }
+    /// `SG_AddMotionGroup(group, a, b, key)`.
+    SG_AddMotionGroup @ 0x0083_6c90 => extern "C" fn sg_add_motion_group(group: u32, a: u32, b: u32, key: u32) {
+        seq::bridge::add_motion_group(&mut mem(), group, a, b, key);
+    }
+    /// `Sg_IdGetHeight(p, i)`: the height in ST0.
+    Sg_IdGetHeight @ 0x0083_e040 => extern "C" fn sg_id_get_height(p: u32, i: u32) -> f32 {
+        state::bridge::id_get_height(&mut mem(), p, i)
+    }
+    /// `SG_ApplyBones(chr)`.
+    SG_ApplyBones @ 0x0083_8f70 => extern "C" fn sg_apply_bones(chr: u32) {
+        seq::bridge::apply_bones(&mut mem(), chr);
+    }
+    /// `SG_SeqStep(chr)`.
+    SG_SeqStep @ 0x0083_7900 => extern "C" fn sg_seq_step(chr: u32) -> u32 {
+        seq::bridge::seq_step(&mut mem(), chr)
+    }
+    /// `Sg_ControlMain()`.
+    Sg_ControlMain @ 0x0082_d070 => extern "C" fn sg_control_main() -> u32 {
+        state::bridge::control_main(&mut mem())
+    }
+    /// `SG_InitBones(chr)`.
+    SG_InitBones @ 0x0082_77f0 => extern "C" fn sg_init_bones(chr: u32) {
+        seq::bridge::init_bones(&mut mem(), chr);
+    }
+    /// `sg_calcenvelopeW_asm_opt(lists, out, m)`.
+    sg_calcenvelopeW_asm_opt @ 0x006e_e270 => extern "C" fn sg_calcenvelope_w_asm_opt(lists: u32, out: u32, m: u32) {
+        envelope::bridge::calc_envelope_w_opt(&mut mem(), lists, out, m);
+    }
+    /// `sg_calcenvelope_asm_opt(lists, out, m)`.
+    sg_calcenvelope_asm_opt @ 0x006e_ee40 => extern "C" fn sg_calcenvelope_asm_opt(lists: u32, out: u32, m: u32) {
+        envelope::bridge::calc_envelope_opt(&mut mem(), lists, out, m);
     }
 }
 

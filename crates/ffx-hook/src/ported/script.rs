@@ -16,6 +16,193 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `AtelClearEffectFlag_00863860`.
+    AtelClearEffectFlag_00863860 @ 0x0086_3860 => extern "C" fn h_863860(n: u32) -> u32 {
+        hp::atel_clear_effect_flag(&mut mem(), n)
+    }
+    /// `Atel_SetEffectFlag2`.
+    Atel_SetEffectFlag2 @ 0x0087_02f0 => extern "C" fn h_8702f0(n: u32) -> u32 {
+        hp::atel_set_effect_flag2(&mut mem(), n)
+    }
+    /// `Atel_ClearEffectFlag2`.
+    Atel_ClearEffectFlag2 @ 0x0086_3af0 => extern "C" fn h_863af0(n: u32) -> u32 {
+        hp::atel_clear_effect_flag2(&mut mem(), n)
+    }
+    /// `AtelSetLoveParamDisable`.
+    AtelSetLoveParamDisable @ 0x0087_0250 => extern "C" fn h_870250(i: u32, on: u32) -> u32 {
+        hp::atel_set_love_param_disable(&mut mem(), i, on)
+    }
+    /// `AtelSetGuideMapDrawBlizFlag`.
+    AtelSetGuideMapDrawBlizFlag @ 0x0087_0160 => extern "C" fn h_870160(on: u32) -> u32 {
+        hp::atel_set_guide_map_draw_bliz_flag(&mut mem(), on)
+    }
+    /// `AtelSetGuideMapDrawFlag`.
+    AtelSetGuideMapDrawFlag @ 0x0087_0190 => extern "C" fn h_870190(on: u32) -> u32 {
+        hp::atel_set_guide_map_draw_flag(&mut mem(), on)
+    }
+    /// `AtelSetGuideMapForceDrawFlag`.
+    AtelSetGuideMapForceDrawFlag @ 0x0087_01c0 => extern "C" fn h_8701c0(on: u32) -> u32 {
+        hp::atel_set_guide_map_force_draw_flag(&mut mem(), on)
+    }
+    /// `Atel_SetCtrlFlag1325db0`.
+    Atel_SetCtrlFlag1325db0 @ 0x0086_f3d0 => extern "C" fn h_86f3d0(on: u32) -> u32 {
+        hp::atel_set_ctrl_flag_1325db0(&mut mem(), on)
+    }
+    /// `Atel_GetBattleMapId`.
+    Atel_GetBattleMapId @ 0x0086_2d50 => extern "C" fn h_862d50(map: u32) -> u32 {
+        hp::atel_get_battle_map_id(&mem(), map)
+    }
+    /// `Atel_SetWorkerFlag36_8`.
+    Atel_SetWorkerFlag36_8 @ 0x0087_0fe0 => extern "C" fn h_870fe0(w: u32, on: u32) -> u32 {
+        hp::atel_set_worker_flag36_8(&mut mem(), w, on)
+    }
+    /// `AtelGetBinHdrExpandSpFlags`.
+    AtelGetBinHdrExpandSpFlags @ 0x0086_adc0 => extern "C" fn h_86adc0(b: u32) -> u32 {
+        hp::atel_get_bin_hdr_expand_sp_flags(&mem(), b)
+    }
+    /// `Atel_GetBinHdrExpand24`.
+    Atel_GetBinHdrExpand24 @ 0x0086_acc0 => extern "C" fn h_86acc0(b: u32) -> u32 {
+        hp::atel_get_bin_hdr_expand_24(&mem(), b)
+    }
+    /// `Atel_GetBinHdrExpandName`.
+    Atel_GetBinHdrExpandName @ 0x0086_aa70 => extern "C" fn h_86aa70(b: u32) -> u32 {
+        hp::atel_get_bin_hdr_expand_name(&mem(), b)
+    }
+    /// `AtelGetBindpList`.
+    AtelGetBindpList @ 0x0086_ae20 => extern "C" fn h_86ae20() -> u32 {
+        hp::atel_get_bindp_list(&mem())
+    }
+    /// `Atel_GetBinHdrTable18A`.
+    Atel_GetBinHdrTable18A @ 0x0086_aaf0 => extern "C" fn h_86aaf0(b: u32, i: u32) -> u32 {
+        hp::atel_get_bin_hdr_table18_a(&mem(), b, i)
+    }
+    /// `Atel_GetBinHdrTable18B`.
+    Atel_GetBinHdrTable18B @ 0x0086_aac0 => extern "C" fn h_86aac0(b: u32, i: u32) -> u32 {
+        hp::atel_get_bin_hdr_table18_b(&mem(), b, i)
+    }
+    /// `AtelGetBinHdrExpandSoundEvent`.
+    AtelGetBinHdrExpandSoundEvent @ 0x0086_ad20 => extern "C" fn h_86ad20(b: u32) -> u32 {
+        hp::atel_get_bin_hdr_expand_sound_event(&mem(), b)
+    }
+    /// `Atel_GetBlockString`.
+    Atel_GetBlockString @ 0x0088_58c0 => extern "C" fn h_8858c0(c: u32, i: u32) -> u32 {
+        hp::atel_get_block_string(&mem(), c, i)
+    }
+    /// `Atel_GetSprite`.
+    Atel_GetSprite @ 0x0087_47b0 => extern "C" fn h_8747b0(i: u32) -> u32 {
+        hp::atel_get_sprite(&mem(), i)
+    }
+    /// `Atel_ClearSprite`.
+    Atel_ClearSprite @ 0x0087_47f0 => extern "C" fn h_8747f0(i: u32) -> u32 {
+        hp::atel_clear_sprite(&mut mem(), i)
+    }
+    /// `Atel_SetSpriteFlag`.
+    Atel_SetSpriteFlag @ 0x0087_4970 => extern "C" fn h_874970(i: u32, on: u32) -> u32 {
+        hp::atel_set_sprite_flag(&mut mem(), i, on)
+    }
+    /// `Atel_SetSprite13`.
+    Atel_SetSprite13 @ 0x0087_49b0 => extern "C" fn h_8749b0(i: u32, v: u32) -> u32 {
+        hp::atel_set_sprite_13(&mut mem(), i, v)
+    }
+    /// `Atel_SetSpritePos`.
+    Atel_SetSpritePos @ 0x0087_4b30 => extern "C" fn h_874b30(i: u32, x: u32, y: u32) -> u32 {
+        hp::atel_set_sprite_pos(&mut mem(), i, x, y)
+    }
+    /// `AtelClearSnd3dWork`.
+    AtelClearSnd3dWork @ 0x0087_72f0 => extern "C" fn h_8772f0(i: u32) -> u32 {
+        hp::atel_clear_snd3d_work(&mut mem(), i)
+    }
+    /// `Atel_ClearRecords1327f50`.
+    Atel_ClearRecords1327f50 @ 0x0087_4fb0 => extern "C" fn h_874fb0() -> u32 {
+        hp::atel_clear_records_1327f50(&mut mem())
+    }
+    /// `Atel_Strlen`.
+    Atel_Strlen @ 0x0087_19c0 => extern "C" fn h_8719c0(s: u32) -> u32 {
+        hp::atel_strlen(&mem(), s)
+    }
+    /// `Atel_StrTrimLeading`.
+    Atel_StrTrimLeading @ 0x0087_7610 => extern "C" fn h_877610(s: u32, n: u32, ch: u32) -> u32 {
+        hp::atel_str_trim_leading(&mut mem(), s, n, ch)
+    }
+    /// `Atel_SetLevelF74`.
+    Atel_SetLevelF74 @ 0x0087_0d10 => extern "C" fn h_870d10(w: u32, i: u32, v: u32) -> u32 {
+        hp::atel_set_level_f74(&mut mem(), w, i, v)
+    }
+    /// `Atel_SetCurLevel5ec`.
+    Atel_SetCurLevel5ec @ 0x0086_f040 => extern "C" fn h_86f040(w: u32, v: u32) -> u32 {
+        hp::atel_set_cur_level_f32(&mut mem(), w, 0x5ec, v)
+    }
+    /// `Atel_SetCurLevel5c8`.
+    Atel_SetCurLevel5c8 @ 0x0087_15c0 => extern "C" fn h_8715c0(w: u32, v: u32) -> u32 {
+        hp::atel_set_cur_level_f32(&mut mem(), w, 0x5c8, v)
+    }
+    /// `Atel_SetCurLevel5c4`.
+    Atel_SetCurLevel5c4 @ 0x0087_1610 => extern "C" fn h_871610(w: u32, v: u32) -> u32 {
+        hp::atel_set_cur_level_f32(&mut mem(), w, 0x5c4, v)
+    }
+    /// `Atel_SetCurLevel5c0`.
+    Atel_SetCurLevel5c0 @ 0x0087_1630 => extern "C" fn h_871630(w: u32, v: u32) -> u32 {
+        hp::atel_set_cur_level_f32(&mut mem(), w, 0x5c0, v)
+    }
+    /// `Atel_SetLevel5f8`.
+    Atel_SetLevel5f8 @ 0x0087_1500 => extern "C" fn h_871500(w: u32, i: u32, v: u32) -> f64 {
+        hp::atel_set_level_f32(&mut mem(), w, i, 0x5f8, v)
+    }
+    /// `Atel_SetLevel5f4`.
+    Atel_SetLevel5f4 @ 0x0087_1520 => extern "C" fn h_871520(w: u32, i: u32, v: u32) -> f64 {
+        hp::atel_set_level_f32(&mut mem(), w, i, 0x5f4, v)
+    }
+    /// `Atel_SetTurn880`.
+    Atel_SetTurn880 @ 0x0087_1540 => extern "C" fn h_871540(w: u32, i: u32, v: u32) -> f64 {
+        hp::atel_set_turn_f32(&mut mem(), w, i, 0x880, v)
+    }
+    /// `Atel_SetTurn87c`.
+    Atel_SetTurn87c @ 0x0087_1560 => extern "C" fn h_871560(w: u32, i: u32, v: u32) -> f64 {
+        hp::atel_set_turn_f32(&mut mem(), w, i, 0x87c, v)
+    }
+    /// `Atel_SetTurn874`.
+    Atel_SetTurn874 @ 0x0087_1580 => extern "C" fn h_871580(w: u32, i: u32, v: u32) -> f64 {
+        hp::atel_set_turn_f32(&mut mem(), w, i, 0x874, v)
+    }
+    /// `Atel_SetTurn878`.
+    Atel_SetTurn878 @ 0x0087_15a0 => extern "C" fn h_8715a0(w: u32, i: u32, v: u32) -> f64 {
+        hp::atel_set_turn_f32(&mut mem(), w, i, 0x878, v)
+    }
+    /// `Atel_SetAllLevels5f0`.
+    Atel_SetAllLevels5f0 @ 0x0086_f0d0 => extern "C" fn h_86f0d0(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x5f0, 0x4c, v)
+    }
+    /// `Atel_SetAllLevels5f8`.
+    Atel_SetAllLevels5f8 @ 0x0086_f170 => extern "C" fn h_86f170(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x5f8, 0x4c, v)
+    }
+    /// `Atel_SetAllLevels5f4`.
+    Atel_SetAllLevels5f4 @ 0x0086_f1c0 => extern "C" fn h_86f1c0(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x5f4, 0x4c, v)
+    }
+    /// `Atel_SetAllLevels5c8`.
+    Atel_SetAllLevels5c8 @ 0x0086_f350 => extern "C" fn h_86f350(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x5c8, 0x4c, v)
+    }
+    /// `Atel_SetAllTurns880`.
+    Atel_SetAllTurns880 @ 0x0086_f210 => extern "C" fn h_86f210(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x880, 0x44, v)
+    }
+    /// `Atel_SetAllTurns87c`.
+    Atel_SetAllTurns87c @ 0x0086_f260 => extern "C" fn h_86f260(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x87c, 0x44, v)
+    }
+    /// `Atel_SetAllTurns874`.
+    Atel_SetAllTurns874 @ 0x0086_f2b0 => extern "C" fn h_86f2b0(w: u32, v: u32) -> u32 {
+        hp::atel_set_all_f32(&mut mem(), w, 0x874, 0x44, v)
+    }
+    /// `Atel_SetAllTurns878`.
+    Atel_SetAllTurns878 @ 0x0086_f300 => extern "C" fn h_86f300(w: u32, v: u32) -> f64 {
+        {
+            hp::atel_set_all_f32(&mut mem(), w, 0x878, 0x44, v);
+            ffx_bridge::x87::load(v)
+        }
+    }
     /// `Script_StopTurn`.
     Script_StopTurn @ 0x0086_3fe0 => extern "C" fn h_863fe0(w: u32, l: u32) -> u32 {
         hp::script_stop_turn(&mut mem(), w, l)

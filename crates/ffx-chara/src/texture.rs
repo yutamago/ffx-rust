@@ -400,6 +400,55 @@ pub mod bridge {
             &[chr, 1],
         )
     }
+
+    /// `Sg_MemGetSize(p)` (`0x0083c050`), `memset` through its thunk
+    /// (`0x0094964c`), `Ch_TextureReMapping(chr)` (`0x0083cdd0`),
+    /// `chr_texanim_set(def, handle)` (`0x0077c950`), and the block name
+    /// `"Texture"` (`0x00b5a3f4`).
+    pub const MEM_GET_SIZE: u32 = 0x0083_c050;
+    pub const MEMSET_THUNK: u32 = 0x0094_964c;
+    pub const TEXTURE_REMAPPING_FN: u32 = 0x0083_cdd0;
+    pub const TEXANIM_SET: u32 = 0x0077_c950;
+    pub const TEXTURE_NAME: u32 = 0x00b5_a3f4;
+
+    /// `Ch_TextureSetup(chr)` (`0x0083d0a0`): texture data of version
+    /// 0x1029 on (the model block's `+0x14`, `u16` `+0x10`) gets a cleared
+    /// block named `"Texture"` for its lists (`+0x6dc`; 0x20 bytes per
+    /// `u16` `+4`, 0x40 per `+8` and per `+0xc`), laid out by
+    /// `Ch_TextureReMapping`; a character with a texture animation
+    /// (`+0x6fc`) registers it (`+0x700` = `chr_texanim_set(data, chr)`).
+    /// Returns what EAX holds: 0 without data, the data for an older
+    /// version, else the last call's result.
+    pub fn ch_texture_setup<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data: u32 = mem.read(mem.read::<u32>(chr + 0x1c4).wrapping_add(0x14));
+        if data == 0 || mem.read::<u16>(data.wrapping_add(0x10)) < 0x1029 {
+            return data;
+        }
+        let n = |o: u32| u32::from(mem.read::<u16>(data.wrapping_add(o)));
+        let size = (n(0xc) << 6) + (n(8) << 6) + (n(4) << 5);
+        let p = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[size]);
+        let len = call(mem, mem.rebase(MEM_GET_SIZE), &[p]);
+        call(mem, mem.rebase(MEMSET_THUNK), &[p, 0, len]);
+        let name = mem.rebase(TEXTURE_NAME);
+        call(
+            mem,
+            mem.rebase(crate::handle::bridge::MEM_SET_STR),
+            &[p, name, u32::MAX],
+        );
+        mem.write(chr + 0x6dc, p);
+        let r = call(mem, mem.rebase(TEXTURE_REMAPPING_FN), &[chr]);
+        if mem.read::<u32>(chr + 0x6fc) == 0 {
+            return r;
+        }
+        let data: u32 = mem.read(mem.read::<u32>(chr + 0x1c4).wrapping_add(0x14));
+        let h = call(mem, mem.rebase(TEXANIM_SET), &[data, chr]);
+        mem.write(chr + 0x700, h);
+        h
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ pub mod assert;
 pub mod camera;
 pub mod chpacket;
 pub mod control;
+pub mod envelope;
 pub mod gs;
 pub mod light;
 pub mod quat;

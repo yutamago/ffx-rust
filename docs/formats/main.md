@@ -348,3 +348,112 @@ behind them stays with those modules, which the bridges call.
   each channel's `+0x20` toward `+0x1c`. Otherwise every bone steps its 3
   rotations (`Chr_FracStep`) and 6 values (`cur += (target - cur) / n`,
   skipped when already equal). `n` 1 sets `+0x194` bit 16.
+
+## Edge slide, free camera, raw clips (round 7)
+
+- `Sg_IdSlideEdge(from, to)` (`0x0083e180`): when a move from `from` to
+  `to` crosses an id edge (endpoints `0x01301aec`, `0x01301af0`, found by
+  `0x0083d960`), the move slides along it. The move is turned into the
+  edge's frame (a rotation about y; `FFXVu0ApplyMatrix`) and loses its
+  across component. While the result back in the world
+  (`FFXVu0InversMatrix`) is still past the edge (`w.z n.x - w.x n.z > 0`),
+  it steps one unit back along z. `to` = `from + w` in x and z.
+- `Sg_ControlCamera()` (`0x0083f4b0`): the free camera. The right stick
+  (bytes `0x023c44a6/a7`, dead zone `0x51..0xaf`) turns yaw `0x00c4def0`
+  and pitch `0x00c4def4` by `(stick - 0x80)` degrees / 12, each wrapped
+  once into `-pi..pi`. With the L/R button mode, the held buttons
+  (`0x023c44ac`) 2/8 move the height `0x00c4dee4` by 0.2 and 1/4 the
+  distance `0x01301bb8` by 0.4. Pressing `0x400` (`0x023c44a8`) cycles
+  six distances (50, 100, 180, 250, 1000, 30). A debug build captures on
+  `0x100`.
+- `SG_ApplyRawClip(obj, clip, t, t2)` (`0x00838750`): uncompressed clips.
+  The header gives the `i16` stride (frames per channel) and the bone
+  count; the data starts at `+0x10`, nine channels per bone, frames
+  contiguous. Frame `t >> 8` is blended toward `t2 >> 8` by `t & 0xff`
+  into each bone's raw `i16` pose (`+0x146..`), through the bone map
+  `+0x758` when present. `+0x7ec` then copies some bones' raw values to
+  their neighbours: 1 copies bone 24's to 25 and 26, 2 copies bone 42's
+  to 43, 3 copies bone 42's to 43 and 44. Last, every bone's floats are
+  set: rotations through `SG_RawToRad`, translations times the scale
+  `+0x38` of `+0x1c4`, scales / 4096.
+
+## Motion groups, id heights, bones per character, the motion script (round 8)
+
+- `SG_AddMotionGroup(group, a, b, key)` (`0x00836c90`): a loaded group takes
+  the first free motion-group entry (50; full asserts "nb mgrp err"), is
+  relocated (`SG_RelocateGroup`) and adds each of its sequences
+  (`SG_AddSequence`).
+- `Sg_IdGetHeight(p, i)` (`0x0083e040`, result in ST0): the ground height
+  under `p` on id triangle `i`. With the triangle's normal `n` and first
+  vertex `v`, it is `(n.v - (n.x p.x + n.z p.z)) / n.y`; 0 without id
+  data.
+- `SG_ApplyBones(chr)` (`0x00838f70`): every bone takes its channels at the
+  character's scale / 1000. A character with `+0x871` set blends (damped).
+  One with `+0x870` set and `+0x820` bit 2 clear blends when near the camera
+  (`Ch_AnimCopyNear`): damped when `Ch_AnimCopy2` says so, else by the
+  bone's own byte. Some maps apply directly anyway: `0x170`, `0x11d`;
+  `0x50` for kind 4, `0x137` for kind `0x5045`, `100` for kinds other
+  than 0, and `0x3c` while the scenario is below `0x9a`.
+- `SG_SeqStep(chr)` (`0x00837900`): one opcode of the motion script
+  (`+0x714`). 0 end (returns 2), 5 hold (3); 1 play a clip (`Ch_SetMotionSeq`
+  with the clip's start and end marks, the end one frame later unless a
+  loop operand is 1); 2 wait for `+0x728` 0; 3 wait a count (`+0x72a`); 4
+  jump; 6 wait until `+0x737` reaches the operand. A wait returns 1 with
+  the script unmoved, a step 0, an unknown code -1 (printed).
+
+## The frame's pad (round 9)
+
+`Sg_ControlMain()` (`0x0082d070`) reads pad 0 each frame. The held buttons
+come from `TkGetControlerHist(0, 0, 0)` (16 bits, `0x023c44ac`) and the
+four stick axes from `TkGetControlerAnalogHist(0, 0, axis, 0)` (axis 0..3
+into `0x023c44a7` down to `0x023c44a4`). Pressed buttons (`0x023c44a8`)
+are the ones newly held since last frame (`0x023c44b0`). Then the free
+camera runs (`Sg_ControlCamera`). A debug build without the L/R button
+mode steps the frames per step (`0x00c496d4`): 8+4 with 4 pressed raises
+it, 4+8 with 8 pressed lowers it, and below 0 it returns to 0 and sets
+`0x013007b3`. Button 4 alone requests `0x023c44b4`; button 1 is copied to
+`0x013007b1`.
+
+## Bones from the model (round 9)
+
+`SG_InitBones(chr)` (`0x008277f0`) builds a character's skeleton from its
+model (`+0x1c0`). It allocates named blocks: the bones' elements
+(`0x160` each, "%s:Elem", `+0x328`), their channels (`0x18c`, "%s:Fcv",
+`+0x748`), the model entries (`0x38`, "%s:Mdl", `+0x1bc`) and any
+collisions (`0x60`, "%s:Collision", `+0x32c`; only `0x38` each cleared).
+The model's bone table (`+0x1c`, 20 bytes each) gives the bind pose:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `+0` | `u16` | parent bone; the bone itself means the root element `chr+0x1c8` |
+| `+2..+6` | `i16` x 3 | rotation in hundredths of a degree (`Angle_Wrap(v / 100 * pi / 180)`) |
+| `+8..+0xc` | `i16` x 3 | translation x 1000 |
+| `+0xe..+0x12` | `i16` x 3 | scale x 4096 (divided, rounding to 0) |
+
+When option points 7 and 8 share an ancestor, that ancestor and its own
+ancestors lose their damping byte (`+0x144`), as does every bone whose
+parent has none. Each model entry gets `Chr_ModelEntry`, a weight of 1.0 at
+`+0x14`, and `+0x194` bit 21 when its `+0x18` is set. Then
+`Ch_ModelCreatePacket` builds the packet.
+
+## The envelope (round 9, `crates/ffx-sg/src/envelope.rs`)
+
+The skinning code transforms a bone's vertex lists by its matrix
+(`cdc_Mul3x4`) into the model's vertex buffer (16 bytes per vertex), in
+thousandths with w 1.0. Three lists follow each other: rigid vertices,
+first weighted vertices (they set), further weighted vertices (they add).
+
+- `sg_calcenvelopeW_asm_opt(lists, out, m)` (`0x006ee270`), float form. Each
+  list is a `u32` count, then entries: rigid `f32 x, y, z, u32 index`
+  (16 bytes); weighted `f32 x, y, z, weight, u32 index` (20 bytes). The
+  added w is `w + 0.0`.
+- `sg_calcenvelope_asm_opt(lists, out, m)` (`0x006eee40`), packed form.
+  The rigid list is a `u16` count and 2 bytes, then 8-byte entries (`i16 x,
+  y, z` / 1000, `u16 index`). Weighted vertices come in groups: a `u16`
+  count (`0xffff` ends the list), a `u16` base, then 8-byte entries (`i16
+  x, y, z`, `u8` weight / 255, `u8` index + base x 256). The further
+  weighted groups start 2 bytes after the first list's terminator, and
+  they set w to 1.0.
+
+Products are stored as `f32` at each step (vertex x weight, then x
+1000).

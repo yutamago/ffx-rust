@@ -1044,6 +1044,297 @@ pub mod bridge {
         mem.write(chr + 0x728, 1u16);
         u32::from(k)
     }
+
+    /// `Ch_SetSysMotion(chr, slot, motion)` (`0x00837d00`),
+    /// `Sg_AngleApproach(cur, target, step)` (`0x00835f80`, `ST0` out),
+    /// `Angle_Wrap_00836720` (`ST0` out) and the water height
+    /// (`f32`, `Sg_GetSuimen`).
+    pub const SET_SYS_MOTION: u32 = 0x0083_7d00;
+    pub const ANGLE_APPROACH: u32 = 0x0083_5f80;
+    pub const ANGLE_WRAP: u32 = 0x0083_6720;
+    pub const SUIMEN: u32 = 0x0130_09d8;
+
+    /// The automatic motion step (`0x00835d30`, called for characters the
+    /// script released, `Native_ChrReleaseMotion`): with flag bit 10 of
+    /// `+0x194` the facing `+0x158` turns toward `+0x168` (step by speed
+    /// `+0x154` against `+0x170`: faster, standing or walking); unless a
+    /// motion is pending (`+0x736`), standing (`+0x154` 0) plays `+0x79c`,
+    /// else `+0x7a8` above the water (y `+0x10` not above its height + 1)
+    /// or `+0x7a4` below, as a sequence (low half from 0x1000) or system
+    /// motion 2, and the run blend `+0x504` grows by 0.15 while below 1.
+    /// The original's EAX is not a result.
+    pub fn ch_auto_motion<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        if mem.read::<u32>(chr + 0x194) & 0x400 != 0 {
+            let speed = fl(mem, chr + 0x154);
+            let step = if fl(mem, chr + 0x170) < speed {
+                0x00b5_99a8
+            } else if speed == 0.0 {
+                0x00b5_99a4
+            } else {
+                0x00b5_982c
+            };
+            let step = bits(mem, r(mem, step));
+            let to = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x168)]));
+            let cur = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x158)]));
+            let v = (fcall)(
+                mem,
+                r(mem, ANGLE_APPROACH),
+                &[cur.to_bits(), to.to_bits(), step],
+            );
+            mem.write(chr + 0x158, r32(v));
+        }
+        if mem.read::<u8>(chr + 0x736) != 0 {
+            return;
+        }
+        let play = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, m: u32| {
+            if m & 0xffff >= 0x1000 {
+                call(mem, r(mem, SET_SEQUENCE), &[chr, m]);
+            } else {
+                call(mem, r(mem, SET_SYS_MOTION), &[chr, 2, m]);
+            }
+            mem.write(chr + 0x736, 0u8);
+        };
+        if fl(mem, chr + 0x154) == 0.0 {
+            let m: u32 = mem.read(chr + 0x79c);
+            play(mem, call, m);
+            return;
+        }
+        let top = fl(mem, r(mem, SUIMEN)) + mem.read::<f64>(r(mem, 0x00b9_2248));
+        let m: u32 = mem.read(
+            chr + if top > fl(mem, chr + 0x10) {
+                0x7a4
+            } else {
+                0x7a8
+            },
+        );
+        play(mem, call, m);
+        if 1.0 > fl(mem, chr + 0x504) {
+            let v = r32(fl(mem, chr + 0x504) + mem.read::<f64>(r(mem, 0x00b5_99b0)));
+            mem.write(chr + 0x504, v);
+        }
+    }
+
+    /// `MsGetSaveEventAddress`'s thunk (`0x0088c830`), `Ch_ResetMotion`
+    /// (`0x0082b080`), `Ch_SeqGetFastMotion` (`0x00837860`),
+    /// `Ch_SetMotionSeq` (`0x00839b80`), `SG_DisposeMotionGroup` (`0x00836e20`),
+    /// `SG_FindMotionGroup` (`0x00836f10`), `MsBattleCheck` (`0x00780c90`).
+    pub const SAVE_EVENT_ADDRESS: u32 = 0x0088_c830;
+    pub const RESET_MOTION: u32 = 0x0082_b080;
+    pub const SEQ_GET_FAST_MOTION: u32 = 0x0083_7860;
+    pub const SET_MOTION_SEQ: u32 = 0x0083_9b80;
+    pub const DISPOSE_MOTION_GROUP: u32 = 0x0083_6e20;
+    pub const FIND_MOTION_GROUP: u32 = 0x0083_6f10;
+    pub const BATTLE_CHECK: u32 = 0x0078_0c90;
+    /// The sequence `Ch_MotionSetLow2` leaves at `+0x714` and the two
+    /// globals `0x008303a0` points at the save data's `+0xd2`.
+    pub const LOW_SEQUENCE: u32 = 0x00c4_9789;
+    pub const SAVE_D2_A: u32 = 0x022f_d6c0;
+    pub const SAVE_D2_B: u32 = 0x023c_4450;
+    /// The byte `SetByte_012fb8fd` sets.
+    pub const BYTE_012FB8FD: u32 = 0x012f_b8fd;
+
+    /// `Ch_MotionSetLow2(chr, motion, -, loops, start, end)` (`0x008373e0`):
+    /// after `MsGetSaveEventAddress()` and `Ch_ResetMotion`, plays the
+    /// sequence of `motion` (`Ch_SetSequence`; non-zero: -1) by its fast
+    /// motion (`Ch_SeqGetFastMotion`, none: -1) as raw frames
+    /// (`Ch_SetMotionSeq(chr, [+0xc], loops, start << 8, end << 8)`);
+    /// `+0x736` = 1, `+0x714` = the fixed sequence, `+0x738` = 1. Returns 0.
+    pub fn ch_motion_set_low2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        chr_play_motion(mem, PlayFrames::Low2, args, call)
+    }
+
+    /// `ChN_DisposeSystemMGRP(a, b)` (`0x00836830`):
+    /// `SG_DisposeMotionGroup(0, b, a)`'s result.
+    pub fn chn_dispose_system_mgrp<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[0, b, a])
+    }
+
+    /// `ChN_SystemMgrpLoaded()` (`0x00837710`): whether the system motion
+    /// group (`SG_FindMotionGroup(2, 0, 0)`) is loaded, 1 or 0.
+    pub fn chn_system_mgrp_loaded<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, mem.rebase(FIND_MOTION_GROUP), &[2, 0, 0]) != 0)
+    }
+
+    /// `Ch_ReadEventMgrp(x)` (`0x00837670`): `Ch_RomReadEventMGRPsync` of
+    /// `AtelEventGetMotionIndex(0x0086c1c0(x))` (a tail call); its result.
+    pub fn ch_read_event_mgrp<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = call(mem, mem.rebase(0x0086_c1c0), &[x]);
+        let i = call(mem, mem.rebase(0x0086_5890), &[v]);
+        call(mem, mem.rebase(0x0082_a7f0), &[i])
+    }
+
+    /// `Ch_IsShadowHidden(chr)` (`0x008303a0`): points both globals at the
+    /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is
+    /// neither 2 nor 3 gets that byte, else 0.
+    pub fn ch_is_shadow_hidden<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let p = call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]).wrapping_add(0xd2);
+        mem.write(mem.rebase(SAVE_D2_A), p);
+        mem.write(mem.rebase(SAVE_D2_B), p);
+        if call(mem, mem.rebase(BATTLE_CHECK), &[]) == 0 {
+            return 0;
+        }
+        if matches!(mem.read::<u8>(chr + 0x186), 2 | 3) {
+            return 0;
+        }
+        u32::from(mem.read::<u8>(p))
+    }
+
+    /// `SetByte_012fb8fd(v)` (`0x00821b20`): the byte at [`BYTE_012FB8FD`].
+    pub fn set_byte_012fb8fd<M: Mem>(mem: &mut M, v: u8) {
+        mem.write(mem.rebase(BYTE_012FB8FD), v);
+    }
+
+    /// How a `Chr_PlayMotion*` variant takes its frames.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub enum PlayFrames {
+        /// `Ch_MotionSetLow2`: raw, after `MsGetSaveEventAddress()`.
+        Low2,
+        /// `Chr_PlayMotionInclEnd`: the end frame + 1 unless `loops` is 1
+        /// or the end is not positive.
+        InclEnd,
+        /// `Chr_PlayMotionMarks`: indices into the fast motion's `i16`
+        /// mark table (`+8`), the end as for `InclEnd`.
+        Marks,
+    }
+
+    /// `Chr_PlayMotionInclEnd` (`0x008374c0`) and `Chr_PlayMotionMarks`
+    /// (`0x00837350`), `(chr, motion, -, loops, start, end)`: as
+    /// [`ch_motion_set_low2`] with their frames ([`PlayFrames`]).
+    pub fn chr_play_motion<M: Mem>(
+        mem: &mut M,
+        how: PlayFrames,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [chr, motion, _, loops, start, end] = args;
+        if how == PlayFrames::Low2 {
+            call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]);
+        }
+        call(mem, mem.rebase(RESET_MOTION), &[chr]);
+        if call(mem, mem.rebase(SET_SEQUENCE), &[chr, motion]) != 0 {
+            return u32::MAX;
+        }
+        let fast = call(mem, mem.rebase(SEQ_GET_FAST_MOTION), &[chr]);
+        if fast == 0 {
+            return u32::MAX;
+        }
+        let (mut s, mut e) = (start.cast_signed(), end.cast_signed());
+        if how == PlayFrames::Marks {
+            let marks: u32 = mem.read(fast.wrapping_add(8));
+            s = i32::from(mem.read::<i16>(marks.wrapping_add(start.wrapping_mul(2))));
+            e = i32::from(mem.read::<i16>(marks.wrapping_add(end.wrapping_mul(2))));
+        }
+        if how != PlayFrames::Low2 && loops != 1 && e > 0 {
+            e += 1;
+        }
+        let clip: u32 = mem.read(fast.wrapping_add(0xc));
+        let (s, e) = ((s << 8).cast_unsigned(), (e << 8).cast_unsigned());
+        call(mem, mem.rebase(SET_MOTION_SEQ), &[chr, clip, loops, s, e]);
+        mem.write(chr + 0x736, 1u8);
+        mem.write(chr + 0x714, mem.rebase(LOW_SEQUENCE));
+        mem.write(chr + 0x738, 1u8);
+        0
+    }
+
+    /// The loaded motion groups (`Ch_DisposeAllMGRP`): 50 entries of 12
+    /// bytes, used when `+0` is not 0; `i16` kind `+4` (2 the system's),
+    /// `i16` `+6`, key `+8`.
+    pub const MGRP_TABLE: u32 = 0x0130_11e0;
+
+    /// `Ch_DisposeMGRP(x)` (`0x00836ad0`): `SG_DisposeMotionGroup(1, x, 0)`.
+    pub fn ch_dispose_mgrp<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[1, x, 0])
+    }
+
+    /// `Ch_DisposeAllMGRP()` (`0x00836a80`): disposes the first used group
+    /// that is not the system's (`SG_DisposeMotionGroup(kind, +6, key)`)
+    /// and starts over, until none is left. Returns what EAX holds (the
+    /// table's end).
+    pub fn ch_dispose_all_mgrp<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = mem.rebase(MGRP_TABLE);
+        'again: loop {
+            for k in 0..50u32 {
+                let e = table + 12 * k;
+                if mem.read::<u32>(e) != 0 && mem.read::<i16>(e + 4) != 2 {
+                    let a = i32::from(mem.read::<i16>(e + 4)).cast_unsigned();
+                    let b = i32::from(mem.read::<i16>(e + 6)).cast_unsigned();
+                    let key: u32 = mem.read(e + 8);
+                    call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[a, b, key]);
+                    continue 'again;
+                }
+            }
+            return table + 50 * 12 + 4;
+        }
+    }
+
+    /// `Sg_MemMoveWork(&ptr, &moved)` (`0x0083c350`), `Ch_MgrpMove(new, old)`
+    /// (`0x008370c0`).
+    pub const MEM_MOVE_WORK: u32 = 0x0083_c350;
+    pub const MGRP_MOVE: u32 = 0x0083_70c0;
+
+    /// `Ch_MemMoveEventMgrp(scratch)` (`0x00837050`): the first used
+    /// event motion group ([`MGRP_TABLE`] kind 1) whose block
+    /// `Sg_MemMoveWork` moves (the pointer copied to `scratch`, the
+    /// original's stack) is relocated (`Ch_MgrpMove(new, old)`): 1; none,
+    /// 0.
+    pub fn ch_mem_move_event_mgrp<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = mem.rebase(MGRP_TABLE);
+        for k in 0..50u32 {
+            let e = table + 12 * k;
+            let p: u32 = mem.read(e);
+            if p != 0 && mem.read::<i16>(e + 4) == 1 {
+                mem.write(scratch, p);
+                if call(mem, mem.rebase(MEM_MOVE_WORK), &[scratch, 0]) != 0 {
+                    let old: u32 = mem.read(e);
+                    let new: u32 = mem.read(scratch);
+                    call(mem, mem.rebase(MGRP_MOVE), &[new, old]);
+                    return 1;
+                }
+            }
+        }
+        0
+    }
 }
 
 #[cfg(test)]

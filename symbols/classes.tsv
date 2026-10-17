@@ -9112,7 +9112,7 @@
 0x007ff2b0	logic	default (no rule: ported to be safe)
 0x007ff2d0	logic	default (no rule: ported to be safe)
 0x007ff360	logic	default (no rule: ported to be safe)
-0x007ff670	logic	default (no rule: ported to be safe)
+0x007ff670	debug	reviewed: op_loop_end_ffx: jumps to the debug routine 0x00a5bd90 under g_OpDebugMode (effects round 17)
 0x007ff680	logic	default (no rule: ported to be safe)
 0x007ff770	logic	default (no rule: ported to be safe)
 0x007ff780	logic	default (no rule: ported to be safe)
@@ -9619,7 +9619,7 @@
 0x00820860	logic	default (no rule: ported to be safe)
 0x00820ae0	logic	default (no rule: ported to be safe)
 0x00821750	logic	default (no rule: ported to be safe)
-0x008217d0	logic	default (no rule: ported to be safe)
+0x008217d0	glue	reviewed: builds the GS display and draw environments (main round 8)
 0x00821a20	logic	default (no rule: ported to be safe)
 0x00821a30	dead	unreachable from the entry point and every pointer table
 0x00821a40	logic	default (no rule: ported to be safe)
@@ -9746,7 +9746,7 @@
 0x008295e0	dead	unreachable from the entry point and every pointer table
 0x00829800	logic	default (no rule: ported to be safe)
 0x00829870	logic	default (no rule: ported to be safe)
-0x00829c00	logic	default (no rule: ported to be safe)
+0x00829c00	glue	reviewed: forwards its arguments to the renderer at 0x6440e0, writes no globals (main round 8)
 0x00829c60	logic	default (no rule: ported to be safe)
 0x00829c90	logic	default (no rule: ported to be safe)
 0x00829d80	debug	only called from debug code (CharacterAnimationTweakUtil_updateAnimation and 2 more)
@@ -9756,8 +9756,8 @@
 0x0082a040	logic	default (no rule: ported to be safe)
 0x0082a080	logic	default (no rule: ported to be safe)
 0x0082a100	logic	default (no rule: ported to be safe)
-0x0082a140	logic	default (no rule: ported to be safe)
-0x0082a1c0	logic	default (no rule: ported to be safe)
+0x0082a140	platform	reviewed: Ch_LoadClothFileTask: the async cloth file task (chara round 12)
+0x0082a1c0	platform	reviewed: Ch_LoadHdRenderData: builds the path, loads the render data, starts an async task (chara round 12)
 0x0082a380	dead	unreachable from the entry point and every pointer table
 0x0082a4c0	logic	default (no rule: ported to be safe)
 0x0082a5e0	logic	default (no rule: ported to be safe)
@@ -9870,7 +9870,7 @@
 0x0082ba20	dead	unreachable from the entry point and every pointer table
 0x0082ba30	logic	default (no rule: ported to be safe)
 0x0082ba70	logic	default (no rule: ported to be safe)
-0x0082baf0	logic	default (no rule: ported to be safe)
+0x0082baf0	glue	reviewed: writes GS packets (chara round 11)
 0x0082bb90	glue	reviewed: builds a GS sprite packet (main round 5)
 0x0082bc50	logic	default (no rule: ported to be safe)
 0x0082bcb0	logic	default (no rule: ported to be safe)
@@ -9881,8 +9881,8 @@
 0x0082bdf0	logic	default (no rule: ported to be safe)
 0x0082be00	logic	default (no rule: ported to be safe)
 0x0082be10	logic	default (no rule: ported to be safe)
-0x0082be20	logic	default (no rule: ported to be safe)
-0x0082be80	logic	default (no rule: ported to be safe)
+0x0082be20	glue	reviewed: Sg_AccSetFrameChr: GS packet writer (main round 8)
+0x0082be80	glue	reviewed: Sg_AccDrawBG: GS packet writer (main round 8)
 0x0082bee0	logic	default (no rule: ported to be safe)
 0x0082bf60	dead	unreachable from the entry point and every pointer table
 0x0082c0c0	logic	default (no rule: ported to be safe)
@@ -9910,7 +9910,7 @@
 0x0082cdc0	logic	default (no rule: ported to be safe)
 0x0082ce20	logic	default (no rule: ported to be safe)
 0x0082ce80	logic	default (no rule: ported to be safe)
-0x0082ce90	logic	default (no rule: ported to be safe)
+0x0082ce90	glue	reviewed: sg_AccSetCurrent: GS packet capturing the frame (main round 8)
 0x0082cf80	logic	default (no rule: ported to be safe)
 0x0082d030	dead	unreachable from the entry point and every pointer table
 0x0082d070	logic	default (no rule: ported to be safe)
@@ -10270,7 +10270,7 @@
 0x0083b100	debug	only called from debug code (0x854c60)
 0x0083b110	logic	default (no rule: ported to be safe)
 0x0083b140	dead	unreachable from the entry point and every pointer table
-0x0083b1d0	logic	default (no rule: ported to be safe)
+0x0083b1d0	platform	reviewed: Sg_PcRead: file read (main round 8)
 0x0083b310	logic	default (no rule: ported to be safe)
 0x0083b380	logic	default (no rule: ported to be safe)
 0x0083b420	logic	default (no rule: ported to be safe)
@@ -10301,7 +10301,7 @@
 0x0083c070	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemGetStr
 0x0083c0b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemGetSum
 0x0083c0f0	debug	only called from debug code (0x855020)
-0x0083c200	logic	default (no rule: ported to be safe)
+0x0083c200	platform	reviewed: Sg_Mem heap setup (main round 8)
 0x0083c260	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemInit
 0x0083c320	dead	unreachable from the entry point and every pointer table
 0x0083c350	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemMoveWork
@@ -10390,7 +10390,7 @@
 0x0083f010	platform	thin wrapper: only forwards to platform code (Sg_MemRealloc)
 0x0083f030	debug	only called from debug code (0x84bae0)
 0x0083f050	platform	thin wrapper: only forwards to platform code (0x83f100)
-0x0083f090	logic	default (no rule: ported to be safe)
+0x0083f090	platform	reviewed: Sg_FreeA (main round 8)
 0x0083f0a0	platform	thin wrapper: only forwards to platform code (user_aligned_malloc)
 0x0083f0c0	dead	unreachable from the entry point and every pointer table
 0x0083f0f0	dead	unreachable from the entry point and every pointer table
@@ -10541,8 +10541,8 @@
 0x008432b0	dead	unreachable from the entry point and every pointer table
 0x008432d0	logic	default (no rule: ported to be safe)
 0x008432e0	glue	reviewed: waits on the GS register flag, then sets a register (main round 5)
-0x00843360	logic	default (no rule: ported to be safe)
-0x00843560	logic	default (no rule: ported to be safe)
+0x00843360	glue	reviewed: Sg_MFIFOSync: PS2 DMA (main round 8)
+0x00843560	debug	reviewed: debug code (main round 8)
 0x00843590	debug	only called from debug code (0x84cf60)
 0x008435a0	logic	default (no rule: ported to be safe)
 0x00843680	dead	unreachable from the entry point and every pointer table
@@ -10824,7 +10824,7 @@
 0x00851910	debug	only called from debug code (Gu_VSync)
 0x00851920	debug	only called from debug code (Gu_VSyncMain)
 0x00851ae0	debug	only called from debug code (Gu_MouseSetWindow and 2 more)
-0x00851b20	logic	default (no rule: ported to be safe)
+0x00851b20	debug	reviewed: debug code (main round 8)
 0x00851c70	debug	only calls debug code (Gu_WindowAddButton, Gu_WindowAddStatic, Gu_WindowControlSetTextf)
 0x00851d10	dead	unreachable from the entry point and every pointer table
 0x00851d20	dead	unreachable from the entry point and every pointer table
@@ -16233,7 +16233,7 @@
 0x00943cf0	dead	unreachable from the entry point and every pointer table
 0x00943d30	dead	unreachable from the entry point and every pointer table
 0x00943e10	dead	unreachable from the entry point and every pointer table
-0x00943e30	logic	default (no rule: ported to be safe)
+0x00943e30	platform	reviewed: CRT small-block free (main round 8)
 0x00943f20	dead	unreachable from the entry point and every pointer table
 0x00943f40	dead	unreachable from the entry point and every pointer table
 0x00943fb0	dead	unreachable from the entry point and every pointer table
@@ -16793,13 +16793,22 @@
 0x00a29300	dead	unreachable from the entry point and every pointer table
 0x00a29310	dead	unreachable from the entry point and every pointer table
 0x00a29320	logic	default (no rule: ported to be safe)
+0x00a37410	logic	default (no rule: ported to be safe)
+0x00a374e0	glue	calls Iggy IggyGDrawSendWarning
+0x00a37910	dead	unreachable from the entry point and every pointer table
+0x00a37950	dead	unreachable from the entry point and every pointer table
+0x00a37960	glue	calls Iggy _IggyGDrawFree@4
+0x00a37ac0	logic	default (no rule: ported to be safe)
+0x00a37b20	dead	unreachable from the entry point and every pointer table
+0x00a37b50	dead	unreachable from the entry point and every pointer table
+0x00a37c20	glue	calls Iggy IggyGDrawSendWarning, _IggyGDrawFree@4, _IggyGDrawMallocAnnotated@12
 0x00a380b0	logic	default (no rule: ported to be safe)
 0x00a38100	dead	unreachable from the entry point and every pointer table
 0x00a38120	dead	unreachable from the entry point and every pointer table
 0x00a38180	glue	calls Iggy _IggyGDrawFree@4
 0x00a38300	logic	default (no rule: ported to be safe)
 0x00a38380	dead	unreachable from the entry point and every pointer table
-0x00a383a0	logic	default (no rule: ported to be safe)
+0x00a383a0	glue	only called from glue code (0xa37c20)
 0x00a38450	dead	unreachable from the entry point and every pointer table
 0x00a38480	logic	default (no rule: ported to be safe)
 0x00a384b0	logic	default (no rule: ported to be safe)
@@ -16854,7 +16863,7 @@
 0x00a3b380	glue	calls Iggy IggyGDrawSendWarning, _IggyDiscardVertexBufferCallback@8
 0x00a3b480	logic	default (no rule: ported to be safe)
 0x00a3b500	glue	calls Iggy IggyGDrawSendWarning, _IggyDiscardVertexBufferCallback@8
-0x00a3b590	logic	default (no rule: ported to be safe)
+0x00a3b590	platform	reviewed: Direct3D device vtable calls only (effects round 16)
 0x00a3b610	glue	calls Iggy IggyGDrawSendWarning
 0x00a3b840	glue	calls Iggy IggyGDrawSendWarning
 0x00a3ba10	logic	default (no rule: ported to be safe)
@@ -16868,7 +16877,7 @@
 0x00a3c0f0	logic	default (no rule: ported to be safe)
 0x00a3c170	glue	calls Iggy IggyGDrawSendWarning
 0x00a3c1b0	glue	only called from glue code (0xa38c40)
-0x00a3c280	logic	default (no rule: ported to be safe)
+0x00a3c280	platform	reviewed: sets Direct3D device state through its vtable (effects round 16)
 0x00a3c310	dead	unreachable from the entry point and every pointer table
 0x00a3c330	dead	unreachable from the entry point and every pointer table
 0x00a3c350	logic	default (no rule: ported to be safe)
@@ -16881,6 +16890,23 @@
 0x00a3cd10	dead	unreachable from the entry point and every pointer table
 0x00a3cd30	logic	default (no rule: ported to be safe)
 0x00a3cdb0	dead	unreachable from the entry point and every pointer table
+0x00a3ce00	logic	default (no rule: ported to be safe)
+0x00a3cec0	glue	calls Iggy IggyGDrawSendWarning
+0x00a3cf40	glue	calls Iggy IggyGDrawSendWarning
+0x00a3cfc0	glue	only called from glue code (0xa37960)
+0x00a3d020	glue	calls Iggy IggyGDrawSendWarning
+0x00a3d1f0	dead	unreachable from the entry point and every pointer table
+0x00a3d240	glue	only called from glue code (0xa25eb0)
+0x00a3d280	glue	only called from glue code (0xa38180 and 1 more)
+0x00a3d2d0	dead	unreachable from the entry point and every pointer table
+0x00a3d300	dead	unreachable from the entry point and every pointer table
+0x00a3d310	logic	default (no rule: ported to be safe)
+0x00a3d3c0	logic	default (no rule: ported to be safe)
+0x00a3d3d0	logic	default (no rule: ported to be safe)
+0x00a3d410	logic	default (no rule: ported to be safe)
+0x00a3d4f0	dead	unreachable from the entry point and every pointer table
+0x00a3d510	dead	unreachable from the entry point and every pointer table
+0x00a3d540	dead	unreachable from the entry point and every pointer table
 0x00a42250	dead	unreachable from the entry point and every pointer table
 0x00a42270	dead	unreachable from the entry point and every pointer table
 0x00a42360	logic	default (no rule: ported to be safe)

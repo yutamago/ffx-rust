@@ -529,6 +529,959 @@ pub mod bridge {
         }
         on
     }
+
+    /// A C runtime intrinsic `Ch_Neck` calls through its import thunk:
+    /// `_CIatan2` (`0x009498bc`, operands ST1 then ST0), `_CIsin`
+    /// (`0x009498c8`), `_CIcos` (`0x009498c2`), `_CIsqrt` (`0x009497b8`).
+    pub const CI_ATAN2: u32 = 0x0094_98bc;
+    pub const CI_SIN: u32 = 0x0094_98c8;
+    pub const CI_COS: u32 = 0x0094_98c2;
+    pub const CI_SQRT: u32 = 0x0094_97b8;
+    /// The functions `Ch_Neck` calls: `Ch_OptposGetElement`,
+    /// `Ch_ElemSetQuatMatrix`, `Ch_CheckHandle`, `Ch_OptposGet`,
+    /// `Ch_OptposGetExist`, `Sg_CameraGetPos`, `FFXVu0UnitMatrix`,
+    /// `FFXVu0RotMatrixZ`, `FFXVu0RotMatrixY`, `FFXVu0Normalize`,
+    /// `Angle_Wrap_00836720` and `Sg_RadToDeg` (`f32` in, `ST0` out),
+    /// `Sg_VectorToMatrix2`, `FFXVu0MulMatrix`, `Sg_MatrixToQuaternion`,
+    /// `Sg_QuaternionSlerp`, `Sg_QuaternionToMatrix`.
+    pub const OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
+    pub const ELEM_SET_QUAT_MATRIX: u32 = 0x0083_3df0;
+    pub const CHECK_HANDLE: u32 = 0x0082_61b0;
+    pub const OPTPOS_GET: u32 = 0x0083_54f0;
+    pub const OPTPOS_GET_EXIST: u32 = 0x0083_5680;
+    pub const CAMERA_GET_POS: u32 = 0x0083_f260;
+    pub const UNIT_MATRIX: u32 = 0x006e_d9a0;
+    pub const ROT_MATRIX_Z: u32 = 0x006e_d800;
+    pub const ROT_MATRIX_Y: u32 = 0x006e_d7c0;
+    pub const NORMALIZE: u32 = 0x006e_d6f0;
+    pub const ANGLE_WRAP: u32 = 0x0083_6720;
+    pub const RAD_TO_DEG: u32 = 0x0083_66f0;
+    pub const VECTOR_TO_MATRIX2: u32 = 0x0084_5560;
+    pub const MUL_MATRIX: u32 = 0x006e_d5c0;
+    pub const MATRIX_TO_QUATERNION: u32 = 0x0084_5170;
+    pub const QUATERNION_SLERP: u32 = 0x0084_5310;
+    pub const QUATERNION_TO_MATRIX: u32 = 0x0084_5450;
+    /// Bytes of scratch `ch_neck` needs: the original's stack frame below
+    /// its saved cookie (offset `0x9c - n` stands for `[ebp - n]`).
+    pub const NECK_SCRATCH: u32 = 0x9c;
+
+    /// How `ch_neck` reaches other code: `call` a cdecl function for EAX,
+    /// `fcall` a cdecl function for its `ST0` result, `ci` an intrinsic
+    /// (thunk, operands loaded in order, so the last is `ST0`) for its
+    /// result as the caller stores it (`fstp dword`).
+    pub struct NeckCalls<'a, M> {
+        pub call: &'a mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        pub fcall: &'a mut dyn FnMut(&mut M, u32, &[u32]) -> f64,
+        pub ci: &'a mut dyn FnMut(&mut M, u32, &[f64]) -> f32,
+    }
+
+    /// `Ch_Neck(chr)` (`0x008348d0`): turns the head (option point 9's
+    /// element) toward a target. The weight `+0x418` eases toward `+0x414`
+    /// by `1 / +0x420` (above 0.99 it becomes 1, at most 0.01 it becomes
+    /// 0; 0 releases the element with no matrix). The target by mode
+    /// (`i8` `+0x40d`): 1 the camera, 2 character `+0x4c0`'s point 9 (a
+    /// bad handle releases the element), 3 the position at `+0x4c0`, 4 a
+    /// fixed turn (angles `+0x4c4` about z then `+0x4c0` about y) straight
+    /// into the matrix `+0x46c`; others leave the target unset (the
+    /// original's stack). The yaw toward it, relative to the shoulders
+    /// (points 0x13, 0x14) and the facing `+0x158`, in degrees, clamps to
+    /// the window `+0x424` .. `+0x428` (flag `+0x4d0` remembering the
+    /// side, which shifts the lower edge by ±15), and `+0x41c` follows it
+    /// (by a third, or a quarter past 90 degrees). The head's matrix is
+    /// built from that yaw and the pitch, mirrored for models with byte
+    /// `+0x40` of `+0x1c4` = 1, times `+0x42c`, blended (`+0x4bc`, less a
+    /// quarter each frame) with the quaternion at `+0x4ac`, and set with
+    /// the weight. Every float as the x87 at 53 bits. Returns
+    /// `Ch_ElemSetQuatMatrix`'s result (0 without the element).
+    #[allow(clippy::too_many_lines, clippy::similar_names)]
+    pub fn ch_neck<M: Mem>(mem: &mut M, chr: u32, scratch: u32, c: &mut NeckCalls<'_, M>) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let cf = |mem: &M, a: u32| f64::from(mem.read::<f32>(mem.rebase(a)));
+        let cd = |mem: &M, a: u32| mem.read::<f64>(mem.rebase(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        let at = |off: u32| scratch + 0x9c - off;
+        let (t, p, q, v, m, vec) = (at(0x74), at(0x64), at(0x9c), at(0x54), at(0x44), at(0x84));
+        let elem = (c.call)(mem, r(mem, OPTPOS_GET_ELEMENT), &[chr, 9, 0]);
+        if elem == 0 {
+            return 0;
+        }
+        let set = r(mem, ELEM_SET_QUAT_MATRIX);
+        let w = r32(
+            (fl(mem, chr + 0x414) - fl(mem, chr + 0x418)) / fl(mem, chr + 0x420)
+                + fl(mem, chr + 0x418),
+        );
+        mem.write(chr + 0x418, w);
+        if f64::from(w) > cd(mem, 0x00b3_eb70) {
+            mem.write(chr + 0x418, 1f32);
+        }
+        // `fcomp`: 0.01 not below the weight, ordered
+        if cf(mem, 0x00b1_f2b0) >= fl(mem, chr + 0x418) {
+            mem.write(chr + 0x418, 0f32);
+        }
+        if fl(mem, chr + 0x418) == 0.0 {
+            return (c.call)(mem, set, &[chr, elem, 0, 0]);
+        }
+        let mat = chr + 0x46c;
+        let mode = mem.read::<i8>(chr + 0x40d);
+        if mode == 4 {
+            (c.call)(mem, r(mem, UNIT_MATRIX), &[m]);
+            let z = bits(mem, chr + 0x4c4);
+            (c.call)(mem, r(mem, ROT_MATRIX_Z), &[m, m, z]);
+            let y = bits(mem, chr + 0x4c0);
+            (c.call)(mem, r(mem, ROT_MATRIX_Y), &[mat, m, y]);
+        } else {
+            match mode {
+                1 => {
+                    (c.call)(mem, r(mem, CAMERA_GET_POS), &[t]);
+                }
+                2 => {
+                    let h: u32 = mem.read(chr + 0x4c0);
+                    if (c.call)(mem, r(mem, CHECK_HANDLE), &[h]) != 0 {
+                        return (c.call)(mem, set, &[chr, elem, 0, 0]);
+                    }
+                    let h: u32 = mem.read(chr + 0x4c0);
+                    (c.call)(mem, r(mem, OPTPOS_GET), &[h, 9, t]);
+                }
+                3 => {
+                    for k in 0..4 {
+                        let x: u32 = mem.read(chr + 0x4c0 + 4 * k);
+                        mem.write(t + 4 * k, x);
+                    }
+                }
+                _ => {}
+            }
+            // the shoulders' yaw
+            let mut a = 0f32;
+            let exist = r(mem, OPTPOS_GET_EXIST);
+            if (c.call)(mem, exist, &[chr, 0x13]) != 0 && (c.call)(mem, exist, &[chr, 0x14]) != 0 {
+                let get = r(mem, OPTPOS_GET);
+                (c.call)(mem, get, &[chr, 0x13, p]);
+                (c.call)(mem, get, &[chr, 0x14, q]);
+                mem.write(p, r32(fl(mem, p) - fl(mem, q)));
+                mem.write(p + 8, r32(fl(mem, p + 8) - fl(mem, q + 8)));
+                let quarter = bits(mem, r(mem, 0x00b5_99c0));
+                let d = (c.fcall)(mem, r(mem, ANGLE_WRAP), &[quarter]);
+                let y = (c.ci)(mem, r(mem, CI_ATAN2), &[fl(mem, p + 8), fl(mem, p)]);
+                let s = r32(f64::from(y) + d - fl(mem, chr + 0x158));
+                let s = r32((c.fcall)(mem, r(mem, ANGLE_WRAP), &[s.to_bits()]));
+                a = r32((c.fcall)(mem, r(mem, RAD_TO_DEG), &[s.to_bits()]));
+            }
+            // the target's yaw
+            (c.call)(mem, r(mem, OPTPOS_GET), &[chr, 9, v]);
+            for k in 0..3 {
+                mem.write(v + 4 * k, r32(fl(mem, v + 4 * k) - fl(mem, t + 4 * k)));
+            }
+            (c.call)(mem, r(mem, NORMALIZE), &[v, v]);
+            let b = (c.ci)(mem, r(mem, CI_ATAN2), &[fl(mem, v + 8), fl(mem, v)]);
+            let quarter = bits(mem, r(mem, 0x00b5_99c0));
+            let wq = (c.fcall)(mem, r(mem, ANGLE_WRAP), &[quarter]);
+            let s = r32(f64::from(b) - wq - fl(mem, chr + 0x158));
+            let s = r32((c.fcall)(mem, r(mem, ANGLE_WRAP), &[s.to_bits()]));
+            let mut deg = r32((c.fcall)(mem, r(mem, RAD_TO_DEG), &[s.to_bits()]));
+            // the window
+            let off = if mem.read::<u32>(chr + 0x4d0) == 0 {
+                cf(mem, 0x00b5_99e8)
+            } else {
+                cf(mem, 0x00b5_99f8)
+            };
+            let a64 = f64::from(a);
+            let lo = (off - cd(mem, 0x00b5_8cd0)) + a64;
+            let d64 = f64::from(deg);
+            let hi = fl(mem, chr + 0x424) + a64;
+            if d64 > lo && hi > d64 {
+                mem.write(chr + 0x4d0, 1u32);
+                deg = r32(hi);
+            } else {
+                let to_upper = if d64 <= lo {
+                    true
+                } else {
+                    // above lo, or unordered
+                    let h2 = fl(mem, chr + 0x428) + a64;
+                    h2 < d64
+                };
+                if to_upper {
+                    mem.write(chr + 0x4d0, 0u32);
+                    deg = r32(a64 + fl(mem, chr + 0x428));
+                }
+            }
+            if cf(mem, 0x00b4_8394) > f64::from(deg) {
+                deg = r32(f64::from(deg) + cd(mem, 0x00b4_8380));
+            }
+            let diff = f64::from(deg) - fl(mem, chr + 0x41c);
+            let mag = if 0.0 > diff { -diff } else { diff };
+            let step = if mag > cd(mem, 0x00b5_8cd0) {
+                diff * cd(mem, 0x00b3_4f90)
+            } else {
+                diff / cd(mem, 0x00b4_1d00)
+            };
+            mem.write(chr + 0x41c, r32(step + fl(mem, chr + 0x41c)));
+            let rad = r32(fl(mem, chr + 0x41c) * cd(mem, 0x00b5_82f0) / cd(mem, 0x00b4_8378));
+            let th = r32((c.fcall)(mem, r(mem, ANGLE_WRAP), &[rad.to_bits()]));
+            let s = (c.ci)(mem, r(mem, CI_SIN), &[f64::from(th)]);
+            mem.write(vec, s);
+            let co = (c.ci)(mem, r(mem, CI_COS), &[f64::from(th)]);
+            mem.write(vec + 8, co);
+            let (x, y, z) = (fl(mem, v), fl(mem, v + 4), fl(mem, v + 8));
+            let h = (c.ci)(mem, r(mem, CI_SQRT), &[x * x + z * z]);
+            let pitch = (c.ci)(mem, r(mem, CI_ATAN2), &[y, f64::from(h)]);
+            let sp = (c.ci)(mem, r(mem, CI_SIN), &[f64::from(pitch)]);
+            mem.write(vec + 4, sp);
+            let model: u32 = mem.read(chr + 0x1c4);
+            if mem.read::<i8>(model.wrapping_add(0x40)) == 1 {
+                mem.write(vec + 8, -crate::x87::load(mem.read::<f32>(vec + 8)));
+                mem.write(vec + 4, -crate::x87::load(mem.read::<f32>(vec + 4)));
+            }
+            (c.call)(mem, r(mem, VECTOR_TO_MATRIX2), &[mat, vec]);
+        }
+        (c.call)(mem, r(mem, MUL_MATRIX), &[mat, chr + 0x42c, mat]);
+        if fl(mem, chr + 0x4bc) != 0.0 {
+            let qt = p;
+            (c.call)(mem, r(mem, MATRIX_TO_QUATERNION), &[mat, qt]);
+            let k = bits(mem, chr + 0x4bc);
+            (c.call)(mem, r(mem, QUATERNION_SLERP), &[qt, chr + 0x4ac, k, qt]);
+            (c.call)(mem, r(mem, QUATERNION_TO_MATRIX), &[qt, mat]);
+            mem.write(
+                chr + 0x4bc,
+                r32(fl(mem, chr + 0x4bc) - cd(mem, 0x00b3_4f90)),
+            );
+        }
+        let wb = bits(mem, chr + 0x418);
+        (c.call)(mem, set, &[chr, elem, mat, wb])
+    }
+
+    /// `Ch_NeckSetLimit(chr, lo, hi)` (`0x00834fd0`), `FFXVu0RotMatrixX`
+    /// (`0x006ed780`), `FFXVu0CopyMatrix` (`0x006ed360`).
+    pub const NECK_SET_LIMIT: u32 = 0x0083_4fd0;
+    pub const ROT_MATRIX_X: u32 = 0x006e_d780;
+    pub const COPY_MATRIX: u32 = 0x006e_d360;
+    /// Bytes of scratch `ch_neck_init` needs (its matrix).
+    pub const NECK_INIT_SCRATCH: u32 = 0x40;
+
+    /// `Ch_NeckInit(chr)` (`0x00834e60`): neck limits 20 and 160
+    /// (`Ch_NeckSetLimit`); with a head (option point 9's element, 0x160
+    /// bytes each at `+0x328`), its rest turn (x, y, z angles at the
+    /// element's `+0xe4`..`+0xec`) times its bone matrix (`+0x88` of the
+    /// element's `+0` pointer) becomes `+0x42c`, copied to `+0x46c` and as
+    /// a quaternion to `+0x4ac`; `+0x41c` = the wrapped quarter turn. The
+    /// original returns nothing usable (EAX is `Angle_Wrap`'s status word).
+    pub fn ch_neck_init<M: Mem>(mem: &mut M, chr: u32, scratch: u32, c: &mut NeckCalls<'_, M>) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        let (lo, hi) = (
+            bits(mem, r(mem, 0x00b4_ae10)),
+            bits(mem, r(mem, 0x00b5_4c78)),
+        );
+        (c.call)(mem, r(mem, NECK_SET_LIMIT), &[chr, lo, hi]);
+        let elem = (c.call)(mem, r(mem, OPTPOS_GET_ELEMENT), &[chr, 9, 0]);
+        if elem == 0 {
+            return;
+        }
+        let e = elem.wrapping_mul(0x160).wrapping_add(mem.read(chr + 0x328));
+        let m = scratch;
+        (c.call)(mem, r(mem, UNIT_MATRIX), &[m]);
+        for (f, off) in [
+            (ROT_MATRIX_X, 0xe4u32),
+            (ROT_MATRIX_Y, 0xe8),
+            (ROT_MATRIX_Z, 0xec),
+        ] {
+            let a = bits(mem, e.wrapping_add(off));
+            (c.call)(mem, r(mem, f), &[m, m, a]);
+        }
+        let bone = mem.read::<u32>(e).wrapping_add(0x88);
+        (c.call)(mem, r(mem, MUL_MATRIX), &[chr + 0x42c, bone, m]);
+        (c.call)(mem, r(mem, COPY_MATRIX), &[chr + 0x46c, chr + 0x42c]);
+        (c.call)(
+            mem,
+            r(mem, MATRIX_TO_QUATERNION),
+            &[chr + 0x46c, chr + 0x4ac],
+        );
+        let quarter = bits(mem, r(mem, 0x00b5_99c0));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let w = (c.fcall)(mem, r(mem, ANGLE_WRAP), &[quarter]) as f32;
+        mem.write(chr + 0x41c, w);
+    }
+
+    /// Bytes of scratch `ch_elem_calc_quaternion` needs (two quaternions,
+    /// the original's `[ebp-0x24]` and `[ebp-0x14]`).
+    pub const ELEM_QUAT_SCRATCH: u32 = 0x20;
+
+    /// `Ch_ElemCalcQuaternion(e)` (`0x00833960`): an element whose blend
+    /// (`f32` `+0xe0`) is not 0 takes the matrix at `[+0xcc]` into `+0x88`:
+    /// copied at 1, else slerped (quaternions of both by the blend); its
+    /// position `+0xb8`..`+0xc0` is kept (floats through x87). The original
+    /// returns nothing usable (EAX holds its frame cookie at 0).
+    pub fn ch_elem_calc_quaternion<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let w = f64::from(mem.read::<f32>(e + 0xe0));
+        if w == 0.0 {
+            return;
+        }
+        let keep = [0u32, 4, 8].map(|k| crate::x87::load(mem.read(e + 0xb8 + k)));
+        let mat = e + 0x88;
+        #[allow(clippy::float_cmp)] // the original's fucompp with 1
+        if w == 1.0 {
+            let src: u32 = mem.read(e + 0xcc);
+            call(mem, mem.rebase(COPY_MATRIX), &[mat, src]);
+        } else {
+            let (a, b) = (scratch, scratch + 0x10);
+            let to_q = mem.rebase(MATRIX_TO_QUATERNION);
+            call(mem, to_q, &[mat, a]);
+            let src: u32 = mem.read(e + 0xcc);
+            call(mem, to_q, &[src, b]);
+            let k = crate::x87::load(mem.read::<f32>(e + 0xe0)).to_bits();
+            call(mem, mem.rebase(QUATERNION_SLERP), &[a, b, k, b]);
+            call(mem, mem.rebase(QUATERNION_TO_MATRIX), &[b, mat]);
+        }
+        for (k, v) in (0u32..).zip(keep) {
+            mem.write(e + 0xb8 + 4 * k, v);
+        }
+    }
+
+    /// The mouth mode (`i8`: 1 a scripted shape, 2 shut, 3 talking, others
+    /// follow the character's talk byte `+0x4d4`) and the shape index
+    /// (`i8`) `Ch_Mouth` reads, the shapes (`u8`), the open threshold
+    /// (`i16`, `g_ChrMouthTh`).
+    pub const MOUTH_MODE: u32 = 0x0130_08d9;
+    pub const MOUTH_SHAPE: u32 = 0x0130_08da;
+    pub const MOUTH_SHAPES: u32 = 0x00c4_971c;
+    pub const MOUTH_TH: u32 = 0x00c4_9718;
+    /// `TexAnim_PosSet(anim, which, pos)` (`0x0077e9a0`).
+    pub const TEX_ANIM_POS_SET: u32 = 0x0077_e9a0;
+
+    /// `Ch_Mouth(chr)` (`0x008344f0`): the mouth opening `+0x4dc` (tenths
+    /// of a degree) moves toward a goal `+0x4de` by a step `+0x4e3`
+    /// (1-20) while a counter `+0x4e1` (1-4) runs; a new goal (talking:
+    /// `rand` % 100 − 30, at least 0; else 0) comes when the counter runs
+    /// out, or at once when not talking and not shut. Mode 1 takes the goal
+    /// from the shape table. The opening turns the jaw element (option
+    /// point 13) about the model's axis (byte `+0x42` of `+0x1c4`; its
+    /// rest angles `+0x44`..`+0x4c`, negated with byte `+0x43`), and with
+    /// a mouth texture (`+0x6fc`) shows its open frame past the threshold
+    /// (`TexAnim_PosSet(+0x700, 1, open)`). Returns what EAX holds.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_mouth<M: Mem>(mem: &mut M, chr: u32, c: &mut NeckCalls<'_, M>) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let rand_at: u32 = mem.read(r(mem, crate::texanim::bridge::RAND_SLOT));
+        let mode = mem.read::<i8>(r(mem, MOUTH_MODE));
+        let talking = mode == 1 || (mode != 2 && (mode == 3 || mem.read::<u8>(chr + 0x4d4) != 0));
+        let new_goal = |mem: &mut M, c: &mut NeckCalls<'_, M>, zero: bool| {
+            if zero {
+                mem.write(chr + 0x4de, 0u16);
+            }
+            let x = (c.call)(mem, rand_at, &[]).cast_signed() >> 5;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            mem.write(chr + 0x4e1, ((x & 3) + 1) as u8);
+            let x = (c.call)(mem, rand_at, &[]).cast_signed() >> 5;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            mem.write(chr + 0x4e3, ((x & 0xff) % 20 + 1) as u8);
+        };
+        if talking {
+            if mem.read::<u8>(chr + 0x4e1) == 0 {
+                let x = (c.call)(mem, rand_at, &[]).cast_signed() >> 5;
+                #[allow(clippy::cast_possible_truncation)]
+                let mut g = x as i16;
+                mem.write(chr + 0x4de, g);
+                if g < 0 {
+                    g = g.wrapping_neg();
+                    mem.write(chr + 0x4de, g);
+                }
+                let g = (mem.read::<i16>(chr + 0x4de) % 100).wrapping_sub(30);
+                mem.write(chr + 0x4de, g);
+                new_goal(mem, c, g < 0);
+            }
+        } else {
+            let goal: u16 = mem.read(chr + 0x4de);
+            if mem.read::<u16>(chr + 0x4dc) == goal && goal == 0 {
+                return 0;
+            }
+            new_goal(mem, c, true);
+        }
+        if mem.read::<i8>(r(mem, MOUTH_MODE)) == 1 {
+            let k = i32::from(mem.read::<i8>(r(mem, MOUTH_SHAPE))).cast_unsigned();
+            let v = mem.read::<u8>(r(mem, MOUTH_SHAPES).wrapping_add(k));
+            mem.write(chr + 0x4de, u16::from(v));
+        }
+        let cur = mem.read::<i16>(chr + 0x4dc);
+        let goal = mem.read::<i16>(chr + 0x4de);
+        let n = mem.read::<u8>(chr + 0x4e1).wrapping_sub(1);
+        mem.write(chr + 0x4e1, n);
+        if cur != goal {
+            let step = i16::from(mem.read::<u8>(chr + 0x4e3));
+            let v = if cur > goal {
+                cur.wrapping_sub(step)
+            } else {
+                step.wrapping_add(cur)
+            };
+            mem.write(chr + 0x4dc, v);
+            if (cur > goal && v < goal) || (cur < goal && v > goal) {
+                mem.write(chr + 0x4dc, goal);
+            }
+        }
+        let mut eax = (c.call)(mem, r(mem, OPTPOS_GET_ELEMENT), &[chr, 0xd, 0]);
+        if eax != 0 {
+            let e = eax.wrapping_mul(0x160).wrapping_add(mem.read(chr + 0x328));
+            let model: u32 = mem.read(chr + 0x1c4);
+            let mut a =
+                r32(f64::from(mem.read::<i16>(chr + 0x4dc)) / mem.read::<f64>(r(mem, 0x00b9_22b0)));
+            if mem.read::<u8>(model.wrapping_add(0x43)) != 0 {
+                a = -a;
+            }
+            let b = r32(f64::from(a) * mem.read::<f64>(r(mem, 0x00b5_82f0))
+                / mem.read::<f64>(r(mem, 0x00b4_8378)));
+            let th = f64::from(r32((c.fcall)(mem, r(mem, ANGLE_WRAP), &[b.to_bits()])));
+            let v = ld(mem, model.wrapping_add(0x44));
+            mem.write(e.wrapping_add(0xe4), v);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let v = ld(mem, model.wrapping_add(0x48));
+            mem.write(e.wrapping_add(0xe8), v);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let z = ld(mem, model.wrapping_add(0x4c));
+            mem.write(e.wrapping_add(0xec), z);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let kind = i32::from(mem.read::<i8>(model.wrapping_add(0x42)));
+            match kind {
+                0 | 1 => {
+                    let at = e.wrapping_add(if kind == 0 { 0xe4 } else { 0xe8 });
+                    mem.write(at, r32(fl(mem, at) + th));
+                }
+                2 => mem.write(e.wrapping_add(0xec), r32(f64::from(z) + th)),
+                _ => {}
+            }
+            eax = if (0..=2).contains(&kind) {
+                0
+            } else {
+                (kind - 2).cast_unsigned()
+            };
+        }
+        if mem.read::<u32>(chr + 0x6fc) != 0 {
+            let open = u32::from(mem.read::<i16>(chr + 0x4dc) > mem.read::<i16>(r(mem, MOUTH_TH)));
+            let anim: u32 = mem.read(chr + 0x700);
+            eax = (c.call)(mem, r(mem, TEX_ANIM_POS_SET), &[anim, 1, open]);
+        }
+        eax
+    }
+
+    /// `graphicShaderGetVertexInfo()` (`0x00643db0`) and
+    /// `FFXVu0RotTransPers(out, m, v, n)` (`0x006ed840`).
+    pub const GET_VERTEX_INFO: u32 = 0x0064_3db0;
+    pub const ROT_TRANS_PERS: u32 = 0x006e_d840;
+    /// Bytes of scratch `ch_draw_quad` needs: the original's frame
+    /// (offset `0x88 - n` stands for `[ebp - n]`).
+    pub const QUAD_SCRATCH: u32 = 0x88;
+
+    /// `Ch_DrawQuad(m, p2, p3, p4, w, h, y, u0, v0, u1, v1)` (`0x00831d10`):
+    /// appends a quad to the character shader's vertex lists (`+0x94` of
+    /// `graphicShaderGetVertexInfo()`: vertex count `+4`, index count `+8`,
+    /// positions (12 bytes) `+0xc`, normals (16) `+0x14`, texture
+    /// coordinates (8) `+0x18`, `u16` indices `+0x1c`). Its corners (±h/2,
+    /// `y`, ±w/2) go through `m` (`FFXVu0RotTransPers`), the coordinates
+    /// are (u0, v0), (u0, v1), (u1, v1), (u1, v0), the normals (0, 0, 0,
+    /// 1), the two triangles n, n+2, n+1 and n, n+3, n+2. Every float
+    /// through x87. Returns `p2` (what EAX holds); `p3`, `p4` are unused.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ch_draw_quad<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        p2: u32,
+        size: [u32; 2],
+        y: u32,
+        uv: [u32; 4],
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let ld = |b: u32| crate::x87::load(f32::from_bits(b));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let half = |mem: &M, b: u32| {
+            (f64::from(f32::from_bits(b)) * mem.read::<f64>(mem.rebase(0x00b9_2220))) as f32
+        };
+        let at = |n: u32| scratch + 0x88 - n;
+        let (a, b) = (half(mem, size[0]), half(mem, size[1]));
+        let y = ld(y);
+        let corners = [
+            [-b, y, -a, 1.0],
+            [b, y, -a, 1.0],
+            [b, y, a, 1.0],
+            [-b, y, a, 1.0],
+        ];
+        for (k, c) in (0u32..).zip(corners) {
+            for (i, v) in (0u32..).zip(c) {
+                mem.write(at(0x64) + 0x10 * k + 4 * i, v);
+            }
+        }
+        let [u0, v0, u1, v1] = uv.map(ld);
+        for (k, (u, v)) in (0u32..).zip([(u0, v0), (u0, v1), (u1, v1), (u1, v0)]) {
+            mem.write(at(0x24) + 4 * k, u);
+            mem.write(at(0x14) + 4 * k, v);
+        }
+        let info = call(mem, mem.rebase(GET_VERTEX_INFO), &[]);
+        let vi: u32 = mem.read(info.wrapping_add(0x94));
+        let n: u32 = mem.read(vi.wrapping_add(4));
+        let rtp = mem.rebase(ROT_TRANS_PERS);
+        for k in 0..4u32 {
+            let out = at(0x74);
+            call(mem, rtp, &[out, m, at(0x64) + 0x10 * k, 1]);
+            let j = n.wrapping_add(k);
+            for i in 0..3 {
+                let v = crate::x87::load(mem.read::<f32>(out + 4 * i));
+                let base: u32 = mem.read(vi.wrapping_add(0xc));
+                mem.write(base.wrapping_add(j.wrapping_mul(12)).wrapping_add(4 * i), v);
+            }
+            for (i, src) in [at(0x24), at(0x14)].into_iter().enumerate() {
+                let v = crate::x87::load(mem.read::<f32>(src + 4 * k));
+                let base: u32 = mem.read(vi.wrapping_add(0x18));
+                #[allow(clippy::cast_possible_truncation)] // 0 or 1
+                mem.write(
+                    base.wrapping_add(j.wrapping_mul(8))
+                        .wrapping_add(4 * i as u32),
+                    v,
+                );
+            }
+            for (i, v) in (0u32..).zip([0f32, 0.0, 0.0, 1.0]) {
+                let base: u32 = mem.read(vi.wrapping_add(0x14));
+                mem.write(base.wrapping_add(j.wrapping_mul(16)).wrapping_add(4 * i), v);
+            }
+        }
+        let n: u32 = mem.read(vi.wrapping_add(4));
+        let i: u32 = mem.read(vi.wrapping_add(8));
+        for (k, d) in (0u32..).zip([0u32, 2, 1, 0, 3, 2]) {
+            let base: u32 = mem.read(vi.wrapping_add(0x1c));
+            #[allow(clippy::cast_possible_truncation)] // the low half, as stored
+            mem.write(
+                base.wrapping_add(i.wrapping_add(k).wrapping_mul(2)),
+                n.wrapping_add(d) as u16,
+            );
+        }
+        let i: u32 = mem.read(vi.wrapping_add(8));
+        mem.write(vi.wrapping_add(8), i.wrapping_add(6));
+        let n: u32 = mem.read(vi.wrapping_add(4));
+        mem.write(vi.wrapping_add(4), n.wrapping_add(4));
+        p2
+    }
+
+    /// The 13-step circle tables `Ch_InitCircleTable` fills: cosines at
+    /// `0x013007ec`, sines at `0x01300860`.
+    pub const CIRCLE_COS: u32 = 0x0130_07ec;
+    pub const CIRCLE_SIN: u32 = 0x0130_0860;
+
+    /// `Ch_InitCircleTable()` (`0x0082e5a0`): for i in 0..13, the angle
+    /// `i × [0x00b59638] / [0x00b4b468]` (as `f32`) gives `_CIcos` and
+    /// `_CIsin` (`ci`, results as stored) into the tables.
+    pub fn ch_init_circle_table<M: Mem>(
+        mem: &mut M,
+        ci: &mut impl FnMut(&mut M, u32, &[f64]) -> f32,
+    ) {
+        let (mul, div) = (
+            mem.read::<f64>(mem.rebase(0x00b5_9638)),
+            mem.read::<f64>(mem.rebase(0x00b4_b468)),
+        );
+        for i in 0..13u32 {
+            let a = f64::from(i) * mul / div;
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            let a = f64::from(a as f32);
+            let c = ci(mem, mem.rebase(CI_COS), &[a]);
+            mem.write(mem.rebase(CIRCLE_COS) + 4 * i, c);
+            let s = ci(mem, mem.rebase(CI_SIN), &[a]);
+            mem.write(mem.rebase(CIRCLE_SIN) + 4 * i, s);
+        }
+    }
+
+    /// `graphicUpdateShadowMap` (`0x00644a00`, 12 words) and `Ch_DrawQuad`
+    /// (`0x00831d10`).
+    pub const UPDATE_SHADOW_MAP: u32 = 0x0064_4a00;
+    pub const DRAW_QUAD: u32 = 0x0083_1d10;
+    /// Bytes of scratch `ch_draw_shadow_quad` needs: the original's frame
+    /// (offset `0xa4 - n` stands for `[ebp - n]`).
+    pub const SHADOW_QUAD_SCRATCH: u32 = 0xa4;
+
+    /// `Ch_DrawShadowQuad(chr, -, p3)` (`0x0082e3e0`): the shadow's quad.
+    /// Its matrix turns by the facing (`-+0x158` about y) and moves to the
+    /// position `+0x7c`..`+0x84`. `graphicUpdateShadowMap(out, +0x830,
+    /// +0x838, &(+0x694), +0x16c, &(+0x69c), &w, &h, len, +0x36c, +0x4,
+    /// id)` (`len` the length of `+0x1e0`..`+0x1e8` scaled by
+    /// `[0x00b0dba0]`, `_CIsqrt` through `ci`) gives its size and texture
+    /// coordinates. `Ch_DrawQuad(m, p3, +0x4e4 × [0x00b59878] (a fixed
+    /// [0x00b59880] for ids 7 and 0x6b), +0x354, w, h, +0x17c, uv)` draws
+    /// it. Returns `p3`.
+    pub fn ch_draw_shadow_quad<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        p3: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let at = |n: u32| scratch + 0xa4 - n;
+        let (m, n) = (at(0x44), at(0x84));
+        (c.call)(mem, r(mem, UNIT_MATRIX), &[m]);
+        let yaw = (-ld(mem, chr + 0x158)).to_bits();
+        (c.call)(mem, r(mem, ROT_MATRIX_Y), &[m, m, yaw]);
+        (c.call)(mem, r(mem, UNIT_MATRIX), &[n]);
+        for (to, from) in [(4u32, 0x7cu32), (0x14, 0x80), (0x24, 0x84)] {
+            let v = ld(mem, chr + from);
+            mem.write(n + to, v);
+        }
+        (c.call)(mem, r(mem, MUL_MATRIX), &[m, n, m]);
+        for (to, from) in [(0x14u32, 0x694u32), (0x10, 0x16c), (0xc, 0x69c)] {
+            let v = ld(mem, chr + from);
+            mem.write(at(to), v);
+        }
+        let id = u32::from(mem.read::<u16>(chr));
+        let mut half = r32(fl(mem, chr + 0x4e4) * mem.read::<f64>(r(mem, 0x00b5_9878)));
+        if id == 7 || id == 0x6b {
+            half = ld(mem, r(mem, 0x00b5_9880));
+        }
+        mem.write(at(0x8c), half);
+        let k = mem.read::<f64>(r(mem, 0x00b0_dba0));
+        let (a, b, cc) = (
+            fl(mem, chr + 0x1e4) * k,
+            fl(mem, chr + 0x1e0) * k,
+            fl(mem, chr + 0x1e8) * k,
+        );
+        let len = (c.ci)(mem, r(mem, CI_SQRT), &[(b * b + a * a) + cc * cc]);
+        mem.write(at(0x88), len);
+        let args = [
+            at(0xa4),
+            mem.read(chr + 0x830),
+            mem.read(chr + 0x838),
+            at(0x14),
+            ld(mem, at(0x10)).to_bits(),
+            at(0xc),
+            at(0x90),
+            at(0x94),
+            len.to_bits(),
+            ld(mem, chr + 0x36c).to_bits(),
+            mem.read(chr + 4),
+            id,
+        ];
+        let uv = (c.call)(mem, r(mem, UPDATE_SHADOW_MAP), &args);
+        let quad = [
+            m,
+            p3,
+            ld(mem, at(0x8c)).to_bits(),
+            ld(mem, chr + 0x354).to_bits(),
+            ld(mem, at(0x90)).to_bits(),
+            ld(mem, at(0x94)).to_bits(),
+            ld(mem, chr + 0x17c).to_bits(),
+            mem.read(uv),
+            mem.read(uv.wrapping_add(4)),
+            mem.read(uv.wrapping_add(8)),
+            mem.read(uv.wrapping_add(0xc)),
+        ];
+        (c.call)(mem, r(mem, DRAW_QUAD), &quad);
+        p3
+    }
+
+    /// The callees `Ch_CalcElement` adds: `FFXVu0ApplyMatrix(out, m, v)`
+    /// (`0x006ed2e0`), `sceVu0InversMatrix4x4(out, m)` (`0x006ed460`),
+    /// `Ch_CheckRadian(a)` (`0x00836790`, `ST0` out), the skeleton upload
+    /// `graphicCharacterInstanceSetSkeletonMatrices(id, inst, matrices)`
+    /// (`0x0063be60`) and `...RestoreDefault(inst, bone)` (`0x0063bfc0`).
+    pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+    pub const INVERSE_MATRIX: u32 = 0x006e_d460;
+    pub const CHECK_RADIAN: u32 = 0x0083_6790;
+    pub const SET_SKELETON_MATRICES: u32 = 0x0063_be60;
+    pub const RESTORE_SKELETON_MATRIX: u32 = 0x0063_bfc0;
+    /// `Ch_ElemCalcQuaternion(e)` ([`ch_elem_calc_quaternion`]).
+    pub const ELEM_CALC_QUATERNION: u32 = 0x0083_3960;
+    /// Skips the element matrices' upload when set (`u32`), and the flag
+    /// that restores bones 0x6b, 0x6c of character 0x66 (`u32`).
+    pub const NO_SKELETON_UPLOAD: u32 = 0x012f_b7d8;
+    pub const RESTORE_66: u32 = 0x0130_08e0;
+    /// Bytes of scratch `ch_calc_element` needs: the original's frame
+    /// (offset `0xc11c - n` stands for `[ebp - n]`), whose 512 skeleton
+    /// matrices (`[ebp - 0xc104]`) hold only the elements' entries.
+    pub const CALC_ELEMENT_SCRATCH: u32 = 0xc11c;
+
+    /// `Ch_CalcElement(chr)` (`0x00832760`): the character's matrices
+    /// `+0x1d0` (world), `+0x210` (world with the model's scale), `+0x250`
+    /// (unit), then every element's (0x160 bytes at `+0x328`, count `u16`
+    /// `+0xa` of `+0x1c0`) and their upload. The world matrix is:
+    /// attached to element `+0x1a0` of character `+0x19c` (its matrix
+    /// scaled by `+0x1b4` / the parent's scale, moved by the offset
+    /// `+0x1a4`..`+0x1ac`, times the parent's `+0x1d0`); a given matrix
+    /// `+0x10c`; or the character's own (scale `+0x5c`..`+0x64` × model
+    /// scale / `+0x38` × 0.01, a pitch `+0x15c` approaching `+0x160` by
+    /// `+0x164`, the facing `-+0x158 - pi/2` through `Ch_CheckRadian`,
+    /// position `+0xc`..`+0x14` plus `+0x6c`..`+0x74`). An element with a
+    /// given matrix (`+0xc8`, then cleared) takes it, its translation /1000;
+    /// otherwise its scale `+0x104`.., turn `+0xe4`.. and position `+0xf4`..
+    /// times its bone's `+0x88`, blended by `Ch_ElemCalcQuaternion` when it
+    /// has a target (`+0xcc`). Unless uploads are off ([`NO_SKELETON_UPLOAD`]),
+    /// each element's skin matrix (relative to its bone's inverse) goes to
+    /// entry `+4` of the buffer, uploaded to both instances (`+0x830`,
+    /// `+0x838`) when the model has meshes (`u16` `+8` of `+0x1c0`).
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_calc_element<M: Mem>(mem: &mut M, chr: u32, scratch: u32, c: &mut NeckCalls<'_, M>) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let at = |n: u32| scratch + 0xc11c - n;
+        let (s4, t, u, v) = (at(0x4004), at(0x4044), at(0x4084), at(0xc114));
+        let (inv, res, buf) = (at(0x4104), at(0x40c4), at(0xc104));
+        let world = chr + 0x1d0;
+        let unit = r(mem, UNIT_MATRIX);
+        let mul = r(mem, MUL_MATRIX);
+        let copy = r(mem, COPY_MATRIX);
+        let k1000 = mem.read::<f64>(r(mem, 0x00b0_dba0));
+        (c.call)(mem, unit, &[chr + 0x250]);
+        (c.call)(mem, unit, &[world]);
+        (c.call)(mem, unit, &[chr + 0x210]);
+        let parent: u32 = mem.read(chr + 0x19c);
+        if parent != 0 {
+            (c.call)(mem, unit, &[s4]);
+            let ei: u32 = mem.read(chr + 0x1a0);
+            let pm: u32 = mem.read(parent.wrapping_add(0x1c4));
+            let s = r32(1.0 / fl(mem, pm.wrapping_add(0x30)));
+            let s = r32(f64::from(s) * fl(mem, chr + 0x1b4));
+            for off in [0x28u32, 0x14, 0] {
+                mem.write(s4 + off, s);
+            }
+            let em = mem
+                .read::<u32>(parent.wrapping_add(0x328))
+                .wrapping_add(ei.wrapping_mul(0x160))
+                .wrapping_add(0x88);
+            (c.call)(mem, mul, &[t, em, s4]);
+            for k in 0..4 {
+                let w: u32 = mem.read(chr + 0x1a4 + 4 * k);
+                mem.write(v + 4 * k, w);
+            }
+            for k in 0..3 {
+                let pm: u32 = mem.read(mem.read::<u32>(chr + 0x19c).wrapping_add(0x1c4));
+                let x = r32(fl(mem, pm.wrapping_add(0x30)) * fl(mem, v + 4 * k));
+                mem.write(v + 4 * k, x);
+            }
+            for k in 0..3 {
+                let x = r32(fl(mem, t + 0x30 + 4 * k) * k1000);
+                mem.write(t + 0x30 + 4 * k, x);
+            }
+            (c.call)(mem, r(mem, APPLY_MATRIX), &[v, t, v]);
+            for k in 0..3 {
+                let x = ld(mem, v + 4 * k);
+                mem.write(t + 0x30 + 4 * k, x);
+            }
+            let p: u32 = mem.read(chr + 0x19c);
+            (c.call)(mem, mul, &[world, p.wrapping_add(0x1d0), t]);
+        } else if mem.read::<u32>(chr + 0x10c) != 0 {
+            let m: u32 = mem.read(chr + 0x10c);
+            (c.call)(mem, copy, &[world, m]);
+        } else {
+            (c.call)(mem, unit, &[s4]);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let d = r32(
+                fl(mem, model.wrapping_add(0x30)) / fl(mem, model.wrapping_add(0x38))
+                    * mem.read::<f64>(r(mem, 0x00b1_f2b8)),
+            );
+            for (to, from) in [(0u32, 0x5cu32), (0x14, 0x60), (0x28, 0x64)] {
+                let x = r32(fl(mem, chr + from) * f64::from(d));
+                mem.write(s4 + to, x);
+            }
+            if fl(mem, chr + 0x160) != 0.0 {
+                let args = [0x15cu32, 0x160, 0x164].map(|o| ld(mem, chr + o).to_bits());
+                let a = r32((c.fcall)(mem, r(mem, 0x0083_5f80), &args));
+                mem.write(chr + 0x15c, a);
+                (c.call)(mem, r(mem, ROT_MATRIX_X), &[s4, s4, a.to_bits()]);
+            }
+            let yaw = r32(-fl(mem, chr + 0x158) - mem.read::<f64>(r(mem, 0x00b5_82e8)));
+            let yaw = r32((c.fcall)(mem, r(mem, CHECK_RADIAN), &[yaw.to_bits()]));
+            (c.call)(mem, r(mem, ROT_MATRIX_Y), &[s4, s4, yaw.to_bits()]);
+            for k in 0..3 {
+                let x = r32(fl(mem, chr + 0x6c + 4 * k) + fl(mem, chr + 0xc + 4 * k));
+                mem.write(s4 + 0x30 + 4 * k, x);
+            }
+            (c.call)(mem, copy, &[world, s4]);
+        }
+        (c.call)(mem, unit, &[u]);
+        let model: u32 = mem.read(chr + 0x1c4);
+        let sc = f64::from(ld(mem, model.wrapping_add(0x3c)));
+        for (to, from) in [(0u32, 0x5cu32), (0x14, 0x60), (0x28, 0x64)] {
+            let x = r32(sc / (fl(mem, chr + from) * fl(mem, chr + 0x110)));
+            mem.write(u + to, x);
+        }
+        (c.call)(mem, mul, &[chr + 0x210, world, u]);
+        let skip = |mem: &M| mem.read::<u32>(mem.rebase(NO_SKELETON_UPLOAD)) != 0;
+        let mut e: u32 = mem.read(chr + 0x328);
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u16>(mem.read::<u32>(chr + 0x1c0).wrapping_add(0xa))) {
+            let bone = |mem: &M| mem.read::<u32>(e).wrapping_add(0x88);
+            let em = e.wrapping_add(0x88);
+            let given: u32 = mem.read(e.wrapping_add(0xc8));
+            let store = if given != 0 {
+                (c.call)(mem, copy, &[em, given]);
+                if skip(mem) {
+                    false
+                } else {
+                    for o in [0xb8u32, 0xbc, 0xc0] {
+                        let x = r32(fl(mem, e.wrapping_add(o)) / k1000);
+                        mem.write(e.wrapping_add(o), x);
+                    }
+                    let b = bone(mem);
+                    (c.call)(mem, r(mem, INVERSE_MATRIX), &[inv, b]);
+                    (c.call)(mem, mul, &[res, inv, em]);
+                    true
+                }
+            } else {
+                (c.call)(mem, unit, &[s4]);
+                for (to, from) in [(0u32, 0x104u32), (0x14, 0x108), (0x28, 0x10c)] {
+                    let x = ld(mem, e.wrapping_add(from));
+                    mem.write(s4 + to, x);
+                }
+                for (f, o) in [
+                    (ROT_MATRIX_X, 0xe4u32),
+                    (ROT_MATRIX_Y, 0xe8),
+                    (ROT_MATRIX_Z, 0xec),
+                ] {
+                    let a = ld(mem, e.wrapping_add(o)).to_bits();
+                    (c.call)(mem, r(mem, f), &[s4, s4, a]);
+                }
+                for k in 0..3 {
+                    let x = ld(mem, e.wrapping_add(0xf4 + 4 * k));
+                    mem.write(s4 + 0x30 + 4 * k, x);
+                }
+                let b = bone(mem);
+                (c.call)(mem, mul, &[em, b, s4]);
+                if mem.read::<u32>(e.wrapping_add(0xcc)) != 0 {
+                    (c.call)(mem, r(mem, ELEM_CALC_QUATERNION), &[e]);
+                    if skip(mem) {
+                        false
+                    } else {
+                        let b = bone(mem);
+                        (c.call)(mem, r(mem, INVERSE_MATRIX), &[inv, b]);
+                        (c.call)(mem, mul, &[res, inv, em]);
+                        true
+                    }
+                } else if skip(mem) {
+                    false
+                } else {
+                    (c.call)(mem, copy, &[res, s4]);
+                    true
+                }
+            };
+            if store {
+                let slot = buf.wrapping_add(mem.read::<u32>(e.wrapping_add(4)) << 6);
+                for w in 0..16 {
+                    let x: u32 = mem.read(res + 4 * w);
+                    mem.write(slot.wrapping_add(4 * w), x);
+                }
+                if given != 0 {
+                    mem.write(e.wrapping_add(0xc8), 0u32);
+                }
+            }
+            k += 1;
+            e = e.wrapping_add(0x160);
+        }
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        if mem.read::<u16>(hdr.wrapping_add(8)) != 0 && !skip(mem) {
+            let id = u32::from(mem.read::<u16>(chr));
+            for off in [0x830u32, 0x838] {
+                let inst: u32 = mem.read(chr + off);
+                (c.call)(mem, r(mem, SET_SKELETON_MATRICES), &[id, inst, buf]);
+            }
+            if mem.read::<u32>(r(mem, RESTORE_66)) != 0 && mem.read::<u16>(chr) == 0x66 {
+                for bone in [0x6bu32, 0x6c] {
+                    let inst: u32 = mem.read(chr + 0x830);
+                    (c.call)(mem, r(mem, RESTORE_SKELETON_MATRIX), &[inst, bone]);
+                }
+            }
+        }
+    }
+
+    /// The callees `Ch_CullByDistance` makes: `graphicLevelGetNameHash()`
+    /// (`0x00641da0`), `MsCameraGetPosNow(k, out)` (`0x007bd470`),
+    /// `graphicCharacterInstanceIsVisible(inst)` (`0x0063b230`),
+    /// `graphicIsSplitScreenEnabled()` (`0x00641cc0`), `getInterValefor()`
+    /// (`0x00787340`).
+    pub const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+    pub const CAMERA_GET_POS_NOW: u32 = 0x007b_d470;
+    pub const INSTANCE_IS_VISIBLE: u32 = 0x0063_b230;
+    pub const SPLIT_SCREEN: u32 = 0x0064_1cc0;
+    pub const INTER_VALEFOR: u32 = 0x0078_7340;
+    /// Bytes of scratch `ch_cull_by_distance` needs: the original's frame
+    /// (offset `0x28 - n` stands for `[ebp - n]`).
+    pub const CULL_SCRATCH: u32 = 0x28;
+
+    /// `Ch_CullByDistance(chr)` (`0x0082e220`): the distance from the
+    /// camera (`MsCameraGetPosNow(1)`) to the character's centre `+0x694`
+    /// goes to `+0x178` (`_CIsqrt` through `ci`); hide bits 3 and 5 of
+    /// `+0x180` and flag bit 28 of `+0x194` are cleared first. With flag bit
+    /// 11 of `+0x194` and no other hide bit, an instance (`+0x830`) the
+    /// renderer does not show sets bit 3, and beyond the draw distance
+    /// `+0x174` (half of it on level 0x24f9 while Valefor's flag bit 2 is
+    /// set and the next read is not negative; the full distance only
+    /// without split screen) sets bit 5. Returns 1 when hidden, else 0.
+    pub fn ch_cull_by_distance<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let (p, cam) = (scratch, scratch + 0x14);
+        let hash = (c.call)(mem, r(mem, LEVEL_NAME_HASH), &[]);
+        let h: u8 = mem.read(chr + 0x180);
+        mem.write(chr + 0x180, h & 0xd7);
+        let f: u32 = mem.read(chr + 0x194);
+        mem.write(chr + 0x194, f & 0xefff_ffff);
+        for k in 0..4 {
+            let w: u32 = mem.read(chr + 0x694 + 4 * k);
+            mem.write(p + 4 * k, w);
+        }
+        (c.call)(mem, r(mem, CAMERA_GET_POS_NOW), &[1, cam]);
+        for k in 0..3 {
+            let d = r32(fl(mem, p + 4 * k) - fl(mem, cam + 4 * k));
+            mem.write(p + 4 * k, d);
+        }
+        let (x, y, z) = (fl(mem, p), fl(mem, p + 4), fl(mem, p + 8));
+        let dist = (c.ci)(mem, r(mem, CI_SQRT), &[(y * y + x * x) + z * z]);
+        mem.write(scratch + 0x10, dist);
+        mem.write(chr + 0x178, dist);
+        if mem.read::<u8>(chr + 0x180) != 0 {
+            return 1;
+        }
+        if mem.read::<u32>(chr + 0x194) & 0x800 == 0 {
+            return 0;
+        }
+        let hide = |mem: &mut M, bit: u8| {
+            let h: u8 = mem.read(chr + 0x180);
+            mem.write(chr + 0x180, h | bit);
+            1
+        };
+        let inst: u32 = mem.read(chr + 0x830);
+        if (c.call)(mem, r(mem, INSTANCE_IS_VISIBLE), &[inst]) == 0 {
+            return hide(mem, 8);
+        }
+        let d = f64::from(dist);
+        if (c.call)(mem, r(mem, SPLIT_SCREEN), &[]) == 0 && d > fl(mem, chr + 0x174) {
+            return hide(mem, 0x20);
+        }
+        if hash == 0x24f9
+            && (c.call)(mem, r(mem, INTER_VALEFOR), &[]) & 4 != 0
+            && (c.call)(mem, r(mem, INTER_VALEFOR), &[]) & 0x80 == 0
+            && d > fl(mem, chr + 0x174) * mem.read::<f64>(r(mem, 0x00b9_2220))
+        {
+            return hide(mem, 0x20);
+        }
+        0
+    }
 }
 
 #[cfg(test)]

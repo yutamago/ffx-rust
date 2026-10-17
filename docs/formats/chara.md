@@ -340,6 +340,52 @@ frame (×256; a negative end means the clip's length). One case is
 special: Tidus (`"c001"`) on map 0x7a, playing 0x3000 to -0x100, stops
 at 0x2800.
 
+## Element matrices
+
+`Ch_CalcElement` (`0x00832760`) builds the character's world matrix
+`+0x1d0` from one of three sources: a parent's element (`+0x19c`,
+`+0x1a0`), a given matrix (`+0x10c`), or its own scale, pitch, facing and
+position. The scaled copy goes to `+0x210`. It then builds each
+element's matrix (`+0x88` of the 0x160-byte elements at `+0x328`). The
+skin matrices (the element relative to its bone's inverse) go into a
+512-entry stack buffer at each element's index `+4`, and
+`graphicCharacterInstanceSetSkeletonMatrices` (`0x0063be60`) uploads that
+buffer to both instances. The upload reads only the entries its meshes'
+remap tables name. On the snapshots' characters those are all computed
+entries; the other entries are undefined in the original, and the oracle
+check `ch_calc_element_reads_only_computed_matrices` confirms this with a
+poisoned stack.
+
+`Ch_MemMove` (`0x00826fa0`) is one function; the dump splits it at the
+early return. It moves each active character's heap blocks
+(`Sg_MemMoveWork`) and stops after the first character that moved
+anything.
+
+## Head, mouth and automatic motion
+
+`Ch_Neck` (`0x008348d0`) turns the head (option point 9's element)
+toward a target. The target depends on the mode byte `+0x40d`: 1 the
+camera, 2 another character's point 9 (handle `+0x4c0`), 3 a position at
+`+0x4c0`, 4 fixed angles straight into the matrix `+0x46c`. The weight
+`+0x418` eases toward `+0x414` by `1 / +0x420`. The yaw is measured in
+degrees against the shoulders (points 0x13, 0x14) and the facing
+`+0x158`. It is clamped to a window from `+0x424` and `+0x428`; flag
+`+0x4d0` remembers the side and shifts the lower edge by ±15. `+0x41c`
+follows the clamped yaw: by a third, or by a quarter past 90 degrees.
+`Ch_NeckInit` (`0x00834e60`) sets the limits (20, 160) and the rest
+matrix `+0x42c`.
+
+`Ch_Mouth` (`0x008344f0`) moves the opening `+0x4dc` toward a goal
+`+0x4de` (in tenths of a degree), by a step `+0x4e3`, while a counter
+`+0x4e1` runs. The global mode byte `0x013008d9` selects the behaviour: 1
+a scripted shape, 2 shut, 3 talking, and other values follow the
+character's own byte `+0x4d4`. While talking, the goal is a random value
+from 0 to 69.
+
+`Ch_AutoMotion` (`0x00835d30`) runs the stand/walk/run motions once the
+script releases a character. Standing plays `+0x79c`; moving plays
+`+0x7a8` above the water height + 1 and `+0x7a4` below it.
+
 ## Texture layout
 
 `Ch_TextureReMapping` (`0x0083cdd0`) lays the texture data out in the
