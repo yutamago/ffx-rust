@@ -7435,8 +7435,8 @@ fn menu_round19_batch1_matches_the_original() {
             w(tk::tk_mn2_draw_common_plate_l(o, plate, &mut callback))
         });
         if round % 8 == 0 {
-            t.twin("MenuShop_OpenWindow3", 0x008d_a9c0, &[], U32, |o| {
-                w(tk::menu_shop_open_window3(o, &mut callback))
+            t.twin("MenuWShop_OpenWindow3", 0x008d_a9c0, &[], U32, |o| {
+                w(tk::menu_wshop_open_window3(o, &mut callback))
             });
             t.twin("MenuStatus_OpenMainWindow", 0x008d_3100, &[], U32, |o| {
                 w(tk::menu_status_open_main_window(o, &mut callback))
@@ -7686,6 +7686,82 @@ fn menu_round19_batch4_matches_the_original() {
         record_n(&mut t, 0x0064_6920, 1, loaded);
         t.twin("InitSysModuleEncoding", 0x0064_6910, &[], U32, |o| {
             w(tk::init_sys_module_encoding(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round19_batch5_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0005) else {
+        return;
+    };
+    let w = u64::from;
+    // TkGetControlerWork as `base + (port << 8) + slot`
+    let works = t.alloc_random(0x800);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x08][..], // mov eax, [esp + 4]; shl eax, 8
+        &[0x03, 0x44, 0x24, 0x08, 0x05], &works.to_le_bytes(), // add eax, [esp + 8]; add eax, works
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0088_8ec0);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..48u32 {
+        // TkInitSyncV over the original setters
+        for g in [
+            0x0133_0220,
+            0x0133_0200,
+            0x0133_0210,
+            0x0133_01f0,
+            0x0133_01e0,
+        ] {
+            t.scramble(g, 4);
+        }
+        t.twin("TkInitSyncV", 0x0088_7e30, &[], U32, |o| {
+            w(tk::tk_init_sync_v(o, &mut callback))
+        });
+        // MenuTuto_RestoreNames from a random copy (a zero every 16 bytes)
+        let mut copy = t.rng.bytes(0x68c0);
+        for k in (0..copy.len()).step_by(16) {
+            copy[k + (round as usize % 16)] = 0;
+        }
+        let copy = t.alloc(&copy);
+        t.put(t.sym(tk::TUTO_SAVE_COPY.sym), copy);
+        t.twin("MenuTuto_RestoreNames", 0x008d_b7e0, &[], U32, |o| {
+            w(tk::menu_tuto_restore_names(o, &mut callback))
+        });
+        // MenuWShop_OpenSelWindow over the original allocator
+        if round % 8 == 0 {
+            t.scramble(0x0186_ac24, 2);
+            t.twin("MenuWShop_OpenSelWindow", 0x008d_a8f0, &[], U32, |o| {
+                w(tk::menu_wshop_open_sel_window(o, &mut callback))
+            });
+        }
+        // Pad_CheckPressMode over fixed pad stubs
+        let info = t.rng.pick(&[0u32, 1, 2]);
+        return_const(&mut t, 0x0062_fb70, info);
+        let enter = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0062_fb10, enter);
+        let status = t.alloc_random(4);
+        let kind = t.rng.pick(&[0x09u8, 0x79, 0x07, 0x40]);
+        t.put(status + 1, kind);
+        let args = [t.rng.below(4), t.rng.below(4), t.rng.next(), status];
+        t.twin("Pad_CheckPressMode", 0x0088_9510, &args, U32, |o| {
+            w(tk::pad_check_press_mode(o, args, &mut callback))
+        });
+        // MenuMain_SaveFrameBuffer: a stand-in DC table, the blocks recorded
+        let dc = t.alloc_random(0x60);
+        record_n(&mut t, 0x0082_0530, 1, dc);
+        let stored = t.rng.next();
+        record_n(&mut t, 0x008a_acf0, 3, stored);
+        t.scramble(0x0184_08f4, 4);
+        t.twin("MenuMain_SaveFrameBuffer", 0x008a_ac80, &[], U32, |o| {
+            w(tk::menu_main_save_frame_buffer(o, &mut callback))
         });
     }
     eprintln!("{} calls", t.calls);

@@ -3402,9 +3402,9 @@ ported! {
     TkMn2DrawCommonPlateL @ 0x008b_f9b0 => extern "C" fn tk_mn2_draw_common_plate_l(plate: u32) -> u32 {
         tk::tk_mn2_draw_common_plate_l(&mut mem(), plate, &mut |_, f, a| call_ptr(f, a))
     }
-    /// `MenuShop_OpenWindow3()`: the window.
-    MenuShop_OpenWindow3 @ 0x008d_a9c0 => extern "C" fn menu_shop_open_window3() -> u32 {
-        tk::menu_shop_open_window3(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    /// `MenuWShop_OpenWindow3()`: the window.
+    MenuWShop_OpenWindow3 @ 0x008d_a9c0 => extern "C" fn menu_wshop_open_window3() -> u32 {
+        tk::menu_wshop_open_window3(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
     /// `MenuStatus_OpenMainWindow()`: the window.
     MenuStatus_OpenMainWindow @ 0x008d_3100 => extern "C" fn menu_status_open_main_window() -> u32 {
@@ -3485,5 +3485,25 @@ ported! {
     /// `InitSysModuleEncoding()`.
     InitSysModuleEncoding @ 0x0064_6910 => extern "C" fn init_sys_module_encoding() -> u32 {
         tk::init_sys_module_encoding(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitSyncV()`.
+    TkInitSyncV @ 0x0088_7e30 => extern "C" fn tk_init_sync_v() -> u32 {
+        tk::tk_init_sync_v(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuTuto_RestoreNames()`.
+    MenuTuto_RestoreNames @ 0x008d_b7e0 => extern "C" fn menu_tuto_restore_names() -> u32 {
+        tk::menu_tuto_restore_names(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSelWindow()`: the window.
+    MenuWShop_OpenSelWindow @ 0x008d_a8f0 => extern "C" fn menu_wshop_open_sel_window() -> u32 {
+        tk::menu_wshop_open_sel_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_CheckPressMode(port, slot, ret, status)`.
+    Pad_CheckPressMode @ 0x0088_9510 => extern "C" fn pad_check_press_mode(port: u32, slot: u32, ret: u32, status: u32) -> u32 {
+        tk::pad_check_press_mode(&mut mem(), [port, slot, ret, status], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_SaveFrameBuffer()`.
+    MenuMain_SaveFrameBuffer @ 0x008a_ac80 => extern "C" fn menu_main_save_frame_buffer() -> u32 {
+        tk::menu_main_save_frame_buffer(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
 }

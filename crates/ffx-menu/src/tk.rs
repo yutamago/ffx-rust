@@ -7261,12 +7261,12 @@ pub mod bridge {
         w
     }
 
-    /// `MenuShop_OpenWindow3()` (`0x008da9c0`, own name): a window with
+    /// `MenuWShop_OpenWindow3()` (`0x008da9c0`, own name): a window with
     /// callbacks `+0xc` `0x008d9e10`, `+0x10` `0x008da6b0`, `+0x14`
     /// `0x008dab10`, layer 2 (`+0x3e`), `+0x36` = 3, kept in
     /// [`WSHOP_WINDOW3`] (what `TkMenuWShopCloseWindow3` closes) and
     /// registered; returned. The shop's opener `0x008da7a0` calls it.
-    pub fn menu_shop_open_window3<M: Mem>(
+    pub fn menu_wshop_open_window3<M: Mem>(
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
@@ -7617,6 +7617,174 @@ pub mod bridge {
         let lang = call(mem, f, &[]);
         let f = mem.rebase(0x0064_6920);
         call(mem, f, &[lang])
+    }
+
+    /// `TkInitSyncV()` (`0x00887e30`): the v-sync counters
+    /// (`0x01330220`, `g_TkSyncVCounter`, `g_TkTotalSyncVCounter`,
+    /// `0x013301f0`, the disable count `0x013301e0`) cleared,
+    /// `TkSetSyncVCallback(0, 0x00887f70)`, then the three sync flag
+    /// setters `0x00887ea0`, `0x00887eb0` and `0x00887ec0` (a tail jump:
+    /// its result).
+    pub fn tk_init_sync_v<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for g in [
+            0x0133_0220u32,
+            0x0133_0200,
+            0x0133_0210,
+            0x0133_01f0,
+            0x0133_01e0,
+        ] {
+            let at = mem.rebase(g);
+            mem.write(at, 0u32);
+        }
+        let f = mem.rebase(0x0088_7ed0);
+        let cb = mem.rebase(0x0088_7f70);
+        call(mem, f, &[0, cb]);
+        let mut last = 0;
+        for g in [0x0088_7ea0u32, 0x0088_7eb0, 0x0088_7ec0] {
+            let f = mem.rebase(g);
+            last = call(mem, f, &[]);
+        }
+        last
+    }
+
+    /// The save copy the tutorial plays on (`0x01871524`, a pointer:
+    /// `TkMenuCtrlTuto` copies `g_SaveData` to `0x0186ac60` and points it
+    /// there).
+    pub const TUTO_SAVE_COPY: Global<u32> = Global::new(0x0187_1524);
+
+    /// `MenuTuto_RestoreNames()` (`0x008db7e0`, own name): the 18 character
+    /// names (`MsGetSaveChrName(i)`, `i` 0..=17) copied back byte by byte,
+    /// terminator included, from the same offsets in [`TUTO_SAVE_COPY`],
+    /// then the save's byte `+0xd1` from the copy into
+    /// `MsGetSaveEventAddress()`. Returns that byte in `al`, the rest of
+    /// `eax` from the last name's address.
+    pub fn menu_tuto_restore_names<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_c830);
+        let save = call(mem, f, &[]);
+        let copy0 = TUTO_SAVE_COPY.get(mem);
+        let name = mem.rebase(0x0078_4fb0);
+        let base = mem.rebase(0x0112_ca90);
+        let mut dst = 0;
+        for i in 0..=0x11u32 {
+            dst = call(mem, name, &[i]);
+            let mut src = TUTO_SAVE_COPY.get(mem).wrapping_sub(base).wrapping_add(dst);
+            let delta = dst.wrapping_sub(src);
+            loop {
+                let b: u8 = mem.read(src);
+                mem.write(src.wrapping_add(delta), b);
+                src = src.wrapping_add(1);
+                if b == 0 {
+                    break;
+                }
+            }
+        }
+        let b: u8 = mem.read(copy0.wrapping_add(0xd1));
+        mem.write(save.wrapping_add(0xd1), b);
+        (dst & 0xffff_ff00) | u32::from(b)
+    }
+
+    /// `MenuWShop_OpenSelWindow()` (`0x008da8f0`, own name): a window kept
+    /// in `TUTO_WINDOWS[0]` (`0x0186ac34`) with callbacks `+0xc`
+    /// `0x008d9da0`, `+0x10` `0x008da050`, `+0x14` `0x008daaf0`; `+0x48`
+    /// and `+0x32` 0, `+0x30` the list's count (`u16` `0x0186ac24`), layer
+    /// 3 (`+0x3e`), `+0x34` `0x30000`, `+0x42` 1, `+0x3a` 10, `+0x45` -1;
+    /// registered and returned. `TkMenuCtrlWShop` opens it.
+    pub fn menu_wshop_open_sel_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        mem.write(w.wrapping_add(0x48), 0u16);
+        mem.write(w.wrapping_add(0x32), 0u16);
+        let count: u16 = mem.read(mem.rebase(0x0186_ac24));
+        mem.write(w.wrapping_add(0x30), count);
+        for (o, f) in [
+            (0xcu32, 0x008d_9da0u32),
+            (0x10, 0x008d_a050),
+            (0x14, 0x008d_aaf0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        mem.write(w.wrapping_add(0x34), 0x3_0000u32);
+        mem.write(w.wrapping_add(0x42), 1u8);
+        mem.write(w.wrapping_add(0x3a), 10u16);
+        mem.write(w.wrapping_add(0x45), 0xffu8);
+        TUTO_WINDOWS[0].set(mem, w);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
+    /// `Pad_CheckPressMode(port, slot, ret, status)` (`0x00889510`, own
+    /// name): with `scePadInfoPressMode(port, slot)` = 1, 7 when the pad's
+    /// type (`status[1] & 0xf`) is not 9 and `scePadEnterPressMode(port,
+    /// slot)` (`0x0062fb10`) is non-zero, else `ret`; otherwise the
+    /// controller work's (`TkGetControlerWork(port, slot)`) `+0x82` cleared
+    /// and `ret`. On PC both pad calls return 0.
+    pub fn pad_check_press_mode<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [port, slot, ret, status] = args;
+        let f = mem.rebase(0x0088_8ec0);
+        let work = call(mem, f, &[port, slot]);
+        let f = mem.rebase(0x0062_fb70);
+        if call(mem, f, &[port, slot]) != 1 {
+            mem.write(work.wrapping_add(0x82), 0u8);
+            return ret;
+        }
+        let kind: u8 = mem.read(status.wrapping_add(1));
+        if kind & 0xf == 9 {
+            return ret;
+        }
+        let f = mem.rebase(0x0062_fb10);
+        if call(mem, f, &[port, slot]) == 0 {
+            return ret;
+        }
+        7
+    }
+
+    /// The menu's frame buffer save (`0x01410870`, 13 blocks of `0xc000`
+    /// bytes).
+    pub const FRAME_SAVE: u32 = 0x0141_0870;
+
+    /// `MenuMain_SaveFrameBuffer()` (`0x008aac80`, own name): the shown
+    /// buffer's index (`0x018408f4`, which `Sg_GetDBuffDC` fills) kept to
+    /// its low bit, the frame base `(word +0x10 of entry index (40 bytes
+    /// each) & 0x1ff) << 11`, then `MenuMain_StoreFrameBlock(buf, gs,
+    /// 0xc000)` for 13 blocks from [`FRAME_SAVE`] and the base (`0xc000`
+    /// and `0x4000` apart). The menu's opening (`0x008a9ca0`) calls it after
+    /// [`menu_main_save_vram`]. Returns the last block's result.
+    pub fn menu_main_save_frame_buffer<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let index = mem.rebase(0x0184_08f4);
+        let f = mem.rebase(0x0082_0530);
+        let dc = call(mem, f, &[index]);
+        let i = mem.read::<u32>(index) & 1;
+        mem.write(index, i);
+        let word: u32 = mem.read(dc.wrapping_add(i * 40 + 0x10));
+        let mut gs = (word & 0x1ff) << 11;
+        let mut buf = mem.rebase(FRAME_SAVE);
+        let f = mem.rebase(0x008a_acf0);
+        let mut last = 0;
+        for _ in 0..13 {
+            last = call(mem, f, &[buf, gs, 0xc000]);
+            buf = buf.wrapping_add(0xc000);
+            gs = gs.wrapping_add(0x4000);
+        }
+        last
     }
 }
 

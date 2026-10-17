@@ -1524,6 +1524,7 @@
 0x0062fa10 function sceMcWrite                   # layout: alphabetical run between sceMcSync and sceMount (1 unnamed in the gap); Switch 0x71001c27a0 sceMcWrite is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062fa20 function sceMount                  # fh v3:bsim1.00 0x0062fbd0
 0x0062fa30 function sceOpen                   # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; was Ps2File_Open
+0x0062fb10 function scePadEnterPressMode      # PS2 SDK stub (xor eax, eax; ret) between sceOpen and scePadG...; called by Pad_CheckPressMode after scePadInfoPressMode, as libpad's sequence
 0x0062fb30 function scePadGetState            # fh v3:bsim1.00 0x0062fce0
 0x0062fb40 function scePadInfoAct             # fh v3:bsim1.00 0x0062fcf0
 0x0062fb50 function scePadInfoComb            # fh v3:bsim1.00 0x0062fd00
@@ -9032,6 +9033,7 @@
 0x008894b0 function Pad_SetActuatorFE         # (pad, port, v) work byte +0xfe; own name
 0x008894d0 function TkSetControlerActuatorMode # fh v3:bsim1.00 0x00889440
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
+0x00889510 function Pad_CheckPressMode        # (port, slot, ret, status): scePadInfoPressMode == 1: 7 when status[1] & 0xf != 9 and scePadEnterPressMode != 0, else ret; otherwise TkGetControlerWork(port, slot) +0x82 = 0, ret; caller 0x00889050; name ours
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
 0x00889aa0 function Pad_StickToByte           # (f32 axis): al = 0x80 - ftol(axis * -127.0) (double 0x00b5dee8), eax's upper 24 bits from the ftol; caller 0x00889570 (stick bytes +0x84..0x87); name ours
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
@@ -9434,6 +9436,8 @@
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
 0x008aab90 function MenuMain_SaveVram         # (): MenuMain_StoreVramBlock over the same 13 blocks as MenuMain_RestoreVram; menu open in 0x008a9ca0; name ours
 0x008aac10 function MenuMain_StoreVramBlock   # (buf, vram, bytes): sceGsSetDefStoreImage(0x01841c70, ...), FlushCache, sceGsExecStoreImage; glue; name ours
+0x008aac80 function MenuMain_SaveFrameBuffer  # (): Sg_GetDBuffDC(&0x018408f4), index &= 1, base = (dc[index] word +0x10 & 0x1ff) << 11; MenuMain_StoreFrameBlock(0x01410870 + i*0xc000, base + i*0x4000, 0xc000) for 13 blocks; menu open 0x008a9ca0; name ours
+0x008aacf0 function MenuMain_StoreFrameBlock  # (buf, gs, bytes): sceGsSetDefStoreImage(0x01841c70, gs/64, 8, 1, 0, 0, 512, bytes/3/512) (24-bit), FlushCache, sceGsExecStoreImage; glue; name ours
 0x008aad60 function TkMenuMainSetIgnoreJoinFlag # fh v3:cg3 0x8aad10
 0x008aad70 function TkMenuMainSleepMenu       # fh v3:exact 0x008aad20
 0x008aadd0 function MenuMain_RemoveAllMenus   # (): TkMenuMainRemoveMenu(slot) for slots 0..0x19, last result; the menu close 0x008a9ca0; name ours
@@ -10047,7 +10051,8 @@
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008d9e20 function TkMenuCtrlSelFileWindow      # callees: its named callees match the Switch 0x71004db0b0 TkMenuCtrlSelFileWindow's (similarity 0.67: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
-0x008da9c0 function MenuShop_OpenWindow3      # (): TkMenuMainAllocWindow into 0x0186ac30 (TkMenuWShopCloseWindow3's): +0xc 0x008d9e10, +0x10 0x008da6b0, +0x14 0x008dab10, +0x3e = 2, +0x36 = 3; registered, returned; caller 0x008da7a0; name ours
+0x008da8f0 function MenuWShop_OpenSelWindow   # (): TkMenuMainAllocWindow into 0x0186ac34: +0xc 0x008d9da0, +0x10 0x008da050, +0x14 0x008daaf0, +0x48/+0x32 = 0, +0x30 = u16 0x0186ac24, +0x3e 3, +0x34 0x30000, +0x42 1, +0x3a 10, +0x45 -1; registered, returned; caller TkMenuCtrlWShop; name ours
+0x008da9c0 function MenuWShop_OpenWindow3     # (): TkMenuMainAllocWindow into 0x0186ac30 (TkMenuWShopCloseWindow3's): +0xc 0x008d9e10, +0x10 0x008da6b0, +0x14 0x008dab10, +0x3e = 2, +0x36 = 3; registered, returned; caller 0x008da7a0; name ours
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
@@ -10058,6 +10063,7 @@
 0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0
 0x008db790 function SetFieldConst1c_008db790     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
+0x008db7e0 function MenuTuto_RestoreNames     # (): 18 names (MsGetSaveChrName 0..17) copied back from the same offsets in *0x01871524 (the tutorial's save copy), and save +0xd1 into MsGetSaveEventAddress(); caller TkMenuCtrlTuto; name ours
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
 0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
@@ -15242,6 +15248,7 @@
 0x01840887 label    g_TkMenuSummonStep        # u8: 1 (TkMenuSetNextSummon) or 0xff (TkMenuSetPrevSummon)
 0x01840888 label    g_TkMenuSlots             # 25 menu window pointers (TkMenuMainRegistMenu, TkMenuMainActiveMenu, TkMenuMainSleepMenu)
 0x018408ec label    g_TkMenuMainActiveMask    # bit per main menu (TkMenuMainGetMenuActiveMask; TkMenuMainActiveMenu sets, TkMenuMainSleepMenu clears)
+0x018408f4 label    g_TkMenuDBuffIndex        # the shown buffer index Sg_GetDBuffDC writes (MenuMain_SaveFrameBuffer keeps its low bit)
 0x018408f8 label    g_TkMn2MenuMode           # TkMn2GetMenuMode; TkMenuMainActiveMenu tests its high half for 0x80
 0x01840900 label    g_TkMenuWindows           # 32 window records, 0x98 bytes (TkMenuMainAllocWindow)
 0x01841c00 label    g_TkMenuHelpMessage       # 3 x i32: current help message, the previous one, a timer (TkMenuSetHelpMessage resets it on a change)
@@ -15312,6 +15319,7 @@
 0x0186abac label    g_TkMenuWShopTable        # MenuWShop_GetRecord
 0x0186ac20 label    g_TkMenuWShopList         # u32 id, slot count (+4), ?, table (+0xc) (MenuWShop_CountSlots)
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)
+0x01871524 label    g_TkMenuTutoSaveCopy      # pointer to the tutorial's g_SaveData copy (0x0186ac60, TkMenuCtrlTuto); MenuTuto_RestoreNames
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
 0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
