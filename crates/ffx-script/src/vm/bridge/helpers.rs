@@ -132,7 +132,11 @@ pub fn atel_bin_table_count(m: &impl Mem, b: u32) -> u32 {
 /// table.
 pub fn atel_bin_table_entry_a(m: &impl Mem, b: u32, i: u32) -> u32 {
     bin_table(m, b).map_or(0, |t| {
-        m.read(t.wrapping_add(i.wrapping_mul(8)).wrapping_add(4).wrapping_add(b))
+        m.read(
+            t.wrapping_add(i.wrapping_mul(8))
+                .wrapping_add(4)
+                .wrapping_add(b),
+        )
     })
 }
 
@@ -140,7 +144,11 @@ pub fn atel_bin_table_entry_a(m: &impl Mem, b: u32, i: u32) -> u32 {
 /// table.
 pub fn atel_bin_table_entry_b(m: &impl Mem, b: u32, i: u32) -> u32 {
     bin_table(m, b).map_or(0, |t| {
-        m.read(t.wrapping_add(i.wrapping_mul(8)).wrapping_add(8).wrapping_add(b))
+        m.read(
+            t.wrapping_add(i.wrapping_mul(8))
+                .wrapping_add(8)
+                .wrapping_add(b),
+        )
     })
 }
 
