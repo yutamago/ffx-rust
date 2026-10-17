@@ -1351,7 +1351,7 @@ fn effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
 
 /// A command parsed (`MsParseCommand`): a cue entry of a random actor,
 /// list and command, every actor placed (the moves and directions).
-fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, title: u32) {
     use ffx_battle::atel::bridge::Script;
     let h = host();
     let mut call = game_call;
@@ -1375,10 +1375,27 @@ fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     let id = [ids[rng.below(16) as usize], 0x3000 + rng.below(0x140)][rng.below(3).min(1) as usize];
     let list = cue + 8 + sub * 0x10;
     poke(a, b, list, &u16::try_from(id).unwrap().to_le_bytes());
+    // its kind: mostly one with a motion (the fake records' are random)
+    let (rec, _) = ffx_kernel::bridge::rom_strings(b, ffx_kernel::bridge::COMMAND, id);
+    if rec != 0 && rng.below(3) != 0 {
+        poke(
+            a,
+            b,
+            rec + 0x15,
+            &[u8::try_from(1 + rng.below(0x1e)).unwrap()],
+        );
+    }
+    // the title window opens or not
+    poke(a, b, title + 4, &u32::from(rng.below(2) == 0).to_le_bytes());
     // the second word: an actor to swap in or an aeon
     let other = [rng.below(ACTORS), 8 + rng.below(10)][rng.below(2) as usize];
     poke(a, b, list + 2, &u16::try_from(other).unwrap().to_le_bytes());
     let actor = w.actor(i);
+    // the effect motions kept (an actor that can act, +0x15, +0xdce) or
+    // cleared
+    for o in [0x15, 0xdce] {
+        poke(a, b, actor + o, &[u8::from(rng.below(2) == 0)]);
+    }
     for o in [0xdfb, 0xdea] {
         poke(
             a,
@@ -1428,32 +1445,45 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
         return;
     }
     let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
-    set(a, b, p::PARTY_LEAVES, flag(rng, 10));
+    // the defense, payment and readiness states able to finish
+    for j in 0..ACTORS {
+        let q = w.actor(j);
+        poke(
+            a,
+            b,
+            q + 0x6d4,
+            &[[0xff, 0xff, 0xff, u8::try_from(rng.below(ACTORS)).unwrap()][rng.below(4) as usize]],
+        );
+        for o in [0x508, 0x432, 0x40a, 0x40b] {
+            poke(a, b, q + o, &[flag(rng, 2)]);
+        }
+    }
+    set(a, b, p::PARTY_LEAVES, flag(rng, 25));
     set(
         a,
         b,
         ffx_battle::minor::bridge::NUMBERS_KIND12,
-        flag(rng, 10),
+        flag(rng, 25),
     );
     set(
         a,
         b,
         st::STONE_EFFECT,
-        [i8::try_from(flag(rng, 10)).unwrap(), 0],
+        [i8::try_from(flag(rng, 25)).unwrap(), 0],
     );
-    set(a, b, p::COMMAND_HOLD, flag(rng, 10));
-    set(a, b, st::MESSAGE_CUE_COUNT, flag(rng, 10));
+    set(a, b, p::COMMAND_HOLD, flag(rng, 25));
+    set(a, b, st::MESSAGE_CUE_COUNT, flag(rng, 25));
     set(
         a,
         b,
         p::COMMAND_WAIT,
-        [-1, -1, -1, 0][rng.below(4) as usize],
+        [-1, -1, -1, -1, -1, -1, -1, 0][rng.below(8) as usize],
     );
     set(a, b, p::COMMAND_CAMERA, flag(rng, 3));
     set(a, b, p::COMMAND_SINGLE, u32::from(flag(rng, 3)));
     set(a, b, ffx_battle::stat::bridge::GUARD_TOOK, flag(rng, 3));
     // (the system message's own window calls stay out: status 0)
-    for (k, r) in [(3, u32::from(flag(rng, 10))), (4, 0)] {
+    for (k, r) in [(3, u32::from(flag(rng, 25))), (4, 0)] {
         poke(a, b, srec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
     }
     set(
@@ -1465,7 +1495,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     let cue = st::COMMAND_CUE.ptr(b).addr;
     let i = rng.below(ACTORS);
     let k = rng.below(2);
-    let state = [0, 1, 2, 3, 4, 5, 6, 7][rng.below(8) as usize];
+    let state = [0, 0, 0, 1, 2, 3, 4, 5, 6, 7][rng.below(10) as usize];
     poke(
         a,
         b,
@@ -1474,7 +1504,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
             u8::try_from(i).unwrap(),
             u8::try_from(rng.below(2)).unwrap(),
             u8::try_from(k).unwrap(),
-            [0, 1, 2][rng.below(3) as usize],
+            [0, 1, 2, 1][rng.below(4) as usize],
             state,
             rng.byte(),
             [0, 1, 4][rng.below(3) as usize],
@@ -1502,7 +1532,12 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     }
     let actor = w.actor(i);
     for o in [0x433, 0x50e, 0x608, 0x6e0, 0x717, 0x508, 0x436, 0xdf4] {
-        poke(a, b, actor + o, &[flag(rng, 4)]);
+        poke(a, b, actor + o, &[flag(rng, 12)]);
+    }
+    // MP enough at times (MsCalcMagic)
+    if rng.below(2) == 0 {
+        poke(a, b, actor + 0x5d4, &0x7fffu32.to_le_bytes());
+        poke(a, b, actor + 0x6de, &[0]);
     }
     poke(a, b, actor + 0xdfb, &[0]);
     twin("MsCommandCueProcess", a, b, 0x0079_2210, &[], ALL, |m| {
@@ -1950,8 +1985,12 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         actions(a, b, rng, &w, out);
         exchange(a, b, rng, &w, out, xrec);
         effects(a, b, rng, &w, erec, files);
-        parse(a, b, rng, &w, out);
-        command_cue(a, b, rng, &w, out, srec);
+        for _ in 0..3 {
+            parse(a, b, rng, &w, out, srec + 2 * EXCHANGE_REC);
+        }
+        for _ in 0..3 {
+            command_cue(a, b, rng, &w, out, srec);
+        }
     }
 }
 
