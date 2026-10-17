@@ -843,6 +843,103 @@ pub mod bridge {
         mem.write(screens + 0xc0, 1u8);
         crate::minor::bridge::ms_atel_camera_init(mem);
     }
+
+    /// `MsCameraMoveCalc(near, value, start, mv)` (`0x007bda80`): one step
+    /// of the eased move `mv` (eight `i16`: `[0]` the curve, `[2]` the
+    /// speed frames, `[3]`, `[4]`, `[5]` the accelerating, cruising and
+    /// braking frames, `[6]` the length, `[7]` the frame) from `start`
+    /// (`f32` bits) to the value at `value` (with `near`, first brought
+    /// within pi of `start`, `MsNearRag`): curve 1 linear, 3 a cosine ease
+    /// (`_CIcos` on a double, `cos`), 2 accelerate-cruise-brake (the
+    /// cruising branch also stores its partial sum in `value` first);
+    /// others leave `value`. The frame then counts up; past the length the
+    /// length becomes 0. 0 (nothing done) for a length of 0, else 1. x87:
+    /// doubles in between, `f32` where the original stores.
+    #[allow(clippy::many_single_char_names, clippy::similar_names)]
+    pub fn ms_camera_move_calc(
+        mem: &mut impl Mem,
+        cos: &dyn Fn(f64) -> f64,
+        near: u32,
+        value: u32,
+        start: u32,
+        mv: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        fn h(mem: &impl Mem, mv: u32, k: u32) -> i32 {
+            i32::from(mem.read::<i16>(mv.wrapping_add(2 * k)))
+        }
+        let total = h(mem, mv, 6);
+        if total == 0 {
+            return 0;
+        }
+        let mut v = store(load(mem.read::<u32>(value)));
+        if near != 0 {
+            v = crate::vector::bridge::ms_near_rag(mem, store(load(start)), v).to_bits();
+        }
+        let s = load(start);
+        let half = crate::target::bridge::HALF.get(mem);
+        let frame = h(mem, mv, 7);
+        let fi = f64::from;
+        let r = match h(mem, mv, 0) {
+            1 => Some(add(s, div(mul(sub(load(v), s), fi(frame)), fi(total)))),
+            3 => {
+                let pi = crate::vector::bridge::PI.get(mem);
+                let c = store(cos(div(mul(fi(frame), pi), fi(total))));
+                Some(add(s, mul(mul(sub(1.0, load(c)), sub(load(v), s)), half)))
+            }
+            2 => {
+                let (a2, a3, a4, a5) = (h(mem, mv, 2), h(mem, mv, 3), h(mem, mv, 4), h(mem, mv, 5));
+                let u = if a2 == 0 {
+                    0
+                } else {
+                    store(div(sub(load(v), s), fi(a2)))
+                };
+                let sum = (a3 - a5 / 2)
+                    .wrapping_mul(a5)
+                    .wrapping_add((a3 / 2 + a4).wrapping_mul(a3));
+                let d = store(fi(sum));
+                let acc = if load(d) == 0.0 {
+                    0
+                } else {
+                    let x = sub(sub(load(v), s), mul(fi(total), load(u)));
+                    store(div(x, load(d)))
+                };
+                let a3f = fi(a3);
+                let p = mul(load(acc), a3f);
+                let e = store(add(mul(a3f, add(mul(p, half), load(u))), s));
+                let w = store(add(p, load(u)));
+                if frame < a3 {
+                    let f = fi(frame);
+                    Some(add(s, mul(f, add(load(u), mul(mul(load(acc), f), half)))))
+                } else if frame <= a4.wrapping_add(a3) {
+                    let g = store(fi(frame.wrapping_sub(a3)));
+                    Some(add(mul(load(g), load(w)), load(e)))
+                } else if frame < a4.wrapping_add(a3).wrapping_add(a5) {
+                    let hh = store(fi(frame.wrapping_sub(a4).wrapping_sub(a3)));
+                    let k = store(mul(
+                        load(hh),
+                        sub(load(w), mul(mul(load(acc), load(hh)), half)),
+                    ));
+                    mem.write(value, k);
+                    let t = store(add(load(k), mul(load(w), fi(a4))));
+                    Some(add(load(t), load(e)))
+                } else {
+                    Some(load(v))
+                }
+            }
+            _ => None,
+        };
+        if let Some(r) = r {
+            mem.write(value, store(r));
+        }
+        let at = mv.wrapping_add(0xe);
+        let next = mem.read::<i16>(at).wrapping_add(1);
+        mem.write(at, next);
+        if next > mem.read::<i16>(mv.wrapping_add(0xc)) {
+            mem.write(mv.wrapping_add(0xc), 0u16);
+        }
+        1
+    }
 }
 
 #[cfg(test)]

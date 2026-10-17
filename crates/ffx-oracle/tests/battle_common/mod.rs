@@ -167,9 +167,11 @@ pub fn readable(o: &mut Oracle, addr: u32, len: usize) -> bool {
 
 pub const ALL: u32 = u32::MAX;
 
-/// `0x00780b40` (`MsBattleAllFree`, never called here): where the
-/// recording stubs go in both oracles (the heap is not executable).
-pub const STUBS: u32 = 0x0078_0b40;
+/// `0x007ceb30 + 0x340` (the tail of `MsCheckMemory` and the debug
+/// menu's `0x007ceeb0`, `MsExecuteCommand`, `0x007cef80`: unreachable;
+/// `0x007ceb30 + 0..0x340` holds `battle_target`'s `START_STUBS2`): where
+/// the recording stubs go in both oracles (the heap is not executable).
+pub const STUBS: u32 = 0x007c_ee70;
 
 /// `AtelDecodeSignal` and `AtelDecodeCommand` as stubs in one oracle,
 /// each counting its calls and recording its two arguments at `rec`

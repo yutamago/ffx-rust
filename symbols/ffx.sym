@@ -5779,8 +5779,9 @@
 0x007ab360 function MsSetMotion               # fh v3:exact 0x007ab380
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520
 0x007ab520 function MsSetMotionReturn         # fh v3:cg3 0x7ab540
-0x007ab540 function MsGetMoveTargetDist          # callees: its named callees match the Switch 0x7100360f30 MsGetMoveTargetDist's (similarity 0.83: MsGetChr, MsGetChrPos, MsGetMoveTargetPos, MsSubPoint, MsVectorLen); symbols from Fahrenheit's server export
+0x007ab540 function MsGetMoveTargetDist          # callees: its named callees match the Switch 0x7100360f30 MsGetMoveTargetDist's (similarity 0.83: MsGetChr, MsGetChrPos, MsGetMoveTargetPos, MsSubPoint, MsVectorLen); symbols from Fahrenheit's server export; cdecl(i, kind, with, speed, n, accel, brake, a, b, c, gravity): a move's set-up (+0x452 0, +0x415 kind&0x3f, n frames +0x45a split n*accel/128 +0x454, n*brake/128 +0x458, rest +0x456, start speed +0x45c, +0x488/+0x48c/+0x498, start pos +0x390, gravity +0x4a8/+0x419, distance +0x4a4); ported (ffx_battle::predict, battle round 16)
 0x007ab6c0 function MsTerminateMotion         # fh v3:exact 0x007ab6e0
+0x007ab700 function MsCheckNeckMotion         # cdecl(actor) -> 0 when motion +0x3f0 is 0x20-0x24 or 0x48-0x4c, else -1; MsMoveChr sets the neck target only on -1 (was FUN_007ab700); ported (ffx_battle::predict, battle round 16)
 0x007ab730 function MsMotionSpeedReset        # fh switch:bsim1.00 0x71003619f0
 0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
@@ -6095,7 +6096,7 @@
 0x007bd5d0 function MsCameraInit              # fh v3:exact 0x007bd550
 0x007bd7d0 function MsCameraLevel                # layout: alphabetical run between MsCameraInit and MsCameraMoveAcc (1 unnamed in the gap); Switch 0x710039a9b0 MsCameraLevel is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007bd860 function MsCameraMoveAcc           # (handle, side, mode, accel, hold, decel, curve): type-2 interpolation on x/y/z (and roll/scrdpt for side 1); was Cam_StartMoveEased
-0x007bda80 function MsCameraMoveCalc          # fh v3:exact 0x007bda00
+0x007bda80 function MsCameraMoveCalc          # fh v3:exact 0x007bda00; cdecl(near, &value, start, i16 mv[8]) -> 0/1: one eased step from start to *value (mv[0] 1 linear, 2 accel/cruise/brake by mv[3..5], 3 _CIcos ease; mv[7] frame of mv[6]); ported (ffx_battle::camera, battle round 16)
 0x007bdd20 function Cam_IsMoving                 # (handle, side) -> bits: 1 interpolating, 2 busy, 4 mode 0xe
 0x007bdde0 function MsCameraMoveDivide           # layout+callees: sorts between MsCameraMoveCalc and MsCameraMoveFrame, and its named callees match the Switch 0x710039d1c0 MsCameraMoveDivide's (similarity 1.00: MsCameraIDcheck); symbols from Fahrenheit's server export
 0x007bde50 function MsCameraMoveFrame         # (handle, side, mode, frames, type): starts per-axis interpolation counters; was Cam_StartMove

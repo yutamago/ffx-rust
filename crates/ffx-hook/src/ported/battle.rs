@@ -13,6 +13,7 @@ use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::input::bridge as input;
 use ffx_battle::parse::bridge as parse;
+use ffx_battle::predict::bridge as predict;
 use ffx_battle::process::bridge as process;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::status::bridge as status;
@@ -150,11 +151,81 @@ fn crt_trig(t: pos::Trig, x: u32) -> u32 {
     }
 }
 
+/// MSVCR110's `_CIcos` through the game's import slot (`0x00b0c3b4`,
+/// behind the thunk `0x009498c2`) on a double, as `MsCameraMoveCalc`
+/// calls it: loaded with `fld qword`, the result stored with `fstp qword`.
+fn crt_cos(x: f64) -> f64 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f64;
+        // SAFETY: the slot holds the address of the CRT's intrinsic, which
+        // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the
+        // x87 and SSE registers clobbered); edi, which holds the result's
+        // address, is kept by the callee.
+        unsafe {
+            let f = (crate::rebase(0x00b0_c3b4) as *const usize).read();
+            std::arch::asm!(
+                "fld qword ptr [{x}]",
+                "call {f}",
+                "fstp qword ptr [edi]",
+                x = in(reg) &raw const x,
+                f = in(reg) f,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = x;
+        f64::NAN
+    }
+}
+
+/// `TkMtCalcSpline` or `TkMtCalcSplineTangent` (`f`) into `out`, which
+/// may be a [`target::Dm`] frame local: through four words on this stack,
+/// holding `out`'s words first (the spline writes nothing for some point
+/// counts, leaving the caller's).
+#[allow(clippy::many_single_char_names)] // the spline's arguments
+fn spline_via_stack(m: &mut target::Dm<'_>, f: u32, out: u32, points: u32, n: u32, t: u32) {
+    use ffx_bridge::Mem;
+    let mut v = super::StackFrame::<4>::new();
+    let at = v.at();
+    let w: [u32; 4] = m.read(out);
+    m.write(at, w);
+    call4(f, at, points, n, t);
+    let w: [u32; 4] = m.read(at);
+    m.write(out, w);
+}
+
 /// What `ffx_battle::target` calls in other modules: the CRT through
 /// [`crt_trig`], script's ported functions, the originals of the rest.
 fn host() -> target::Host<'static> {
-    fn spline(_: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
-        call4(0x0088_a4a0, out, points, n, t);
+    fn spline(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_a4a0, out, points, n, t);
+    }
+    fn tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_b3b0, out, points, n, t);
+    }
+    fn ball(_: &mut target::Dm<'_>, i: u32) {
+        call1(0x007b_78c0, i);
+    }
+    fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
+        ffx_chara::chr::bridge::ch_neck_set_enable(
+            m,
+            chr,
+            on,
+            ffx_sg::quat::bridge::matrix_to_quaternion,
+        );
+    }
+    fn neck_target(m: &mut target::Dm<'_>, chr: u32, to: u32) {
+        ffx_chara::chr::bridge::ch_neck_set_target(
+            m,
+            chr,
+            to,
+            ffx_sg::quat::bridge::matrix_to_quaternion,
+        );
     }
     fn total(m: &mut target::Dm<'_>) -> u32 {
         ffx_script::vm::bridge::atel_get_total_actor_number2(m)
@@ -180,6 +251,11 @@ fn host() -> target::Host<'static> {
     target::Host {
         trig: &crt_trig,
         spline: &spline,
+        spline_tangent: &tangent,
+        cos: &crt_cos,
+        ball_spline: &ball,
+        neck_enable: &neck_enable,
+        neck_target: &neck_target,
         atel_total: &total,
         atel_top: &top,
         atel_is_bind: &is_bind,
@@ -3231,5 +3307,19 @@ ported! {
     /// `MsAtelResetMoveCameraID(kind)`.
     MsAtelResetMoveCameraID @ 0x007b_a860 => extern "C" fn ms_atel_reset_move_camera_id(kind: u32) -> u32 {
         camera::ms_atel_reset_move_camera_id(&mut mem(), &mut call_ptr, kind)
+    }
+    /// `MsCheckNeckMotion(actor)`.
+    MsCheckNeckMotion @ 0x007a_b700 => extern "C" fn ms_check_neck_motion(actor: u32) -> u32 {
+        predict::ms_check_neck_motion(&mem(), actor)
+    }
+    /// `MsGetMoveTargetDist(i, kind, with, speed, n, accel, brake, a, b, c,
+    /// gravity)`; the caller's `ebx` is not known here.
+    MsGetMoveTargetDist @ 0x007a_b540 => extern "C" fn ms_get_move_target_dist(i: u32, kind: u32, with: u32, speed: u32, n: u32, accel: u32, brake: u32, a: u32, b: u32, c: u32, gravity: u32) {
+        let mut m = mem();
+        predict::ms_get_move_target_dist(&mut target::Dm::new(&mut m), &host(), i, kind, with, speed, n, accel, brake, [a, b, c], gravity, None);
+    }
+    /// `MsCameraMoveCalc(near, value, start, mv)`: the CRT's `_CIcos`.
+    MsCameraMoveCalc @ 0x007b_da80 => extern "C" fn ms_camera_move_calc(near: u32, value: u32, start: u32, mv: u32) -> u32 {
+        camera::ms_camera_move_calc(&mut mem(), &crt_cos, near, value, start, mv)
     }
 }
