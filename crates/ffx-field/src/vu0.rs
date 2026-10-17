@@ -500,6 +500,65 @@ pub mod bridge {
         let d = x87::copy(mem.read(out));
         rcef_angle_wrap(mem, d, fcall)
     }
+
+    /// The middle step of the `rcVu0*` copies: which `Vec*Scalars` it is.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Vu0Op {
+        /// `Vec3AddScalars_00735100`: `xyz` plus `c`'s `xyz`.
+        Add3,
+        /// `Vec3SubScalars_0074b670`: `xyz` less, then `vf00` restored.
+        Sub3,
+        /// `Vec4AddScalars_0074bc50`: all four plus.
+        Add4,
+        /// `Vec4SubScalars_0074be90`: all four less, then `vf00` restored.
+        Sub4,
+    }
+
+    /// The `rcVu0*(a, b, c)` copies (one template, names ours; see
+    /// [`Vu0Op`] for the step each calls):
+    /// - `b` goes to the VU0 register at `0x00c8f980` and `c` to
+    ///   `0x00c8f970` (`VFX_Copy16From`); both keep the copies.
+    /// - The step works on the first register with `c`'s four words as its
+    ///   scalar arguments, which the original pushes by overwriting the
+    ///   stack words of the copies' arguments: `f32` sums or differences,
+    ///   the subtractions then restoring `vf00`.
+    /// - The register goes to `a` (`VFX_Copy16To`, so the 3-component ops
+    ///   leave `a.w = b.w`). Returns the last word copied.
+    pub fn rc_vu0_op(mem: &mut impl Mem, op: Vu0Op, a: u32, b: u32, c: u32) -> u32 {
+        let r = mem.rebase(super::VU0_COPY_REG);
+        let k = mem.rebase(super::VU0_SCALE);
+        let v = mem.read::<[u32; 4]>(b);
+        mem.write(r, v);
+        let v = mem.read::<[u32; 4]>(c);
+        mem.write(k, v);
+        let k = mem.read::<[f32; 4]>(k);
+        let n = if matches!(op, Vu0Op::Add3 | Vu0Op::Sub3) {
+            3
+        } else {
+            4
+        };
+        for i in 0..n {
+            let x = Reg::load(mem.read::<f32>(r + 4 * i));
+            let x = match op {
+                Vu0Op::Add3 | Vu0Op::Add4 => x.add_m32(k[i as usize]),
+                Vu0Op::Sub3 | Vu0Op::Sub4 => x.sub_m32(k[i as usize]),
+            };
+            mem.write(r + 4 * i, x.store());
+        }
+        if matches!(op, Vu0Op::Sub3 | Vu0Op::Sub4) {
+            ffx_ps2::ee::bridge::restore_vf00(mem);
+        }
+        let v = mem.read::<[u32; 4]>(r);
+        mem.write(a, v);
+        v[3]
+    }
+
+    /// `rcVu0Sub(a, b, c)` (`0x0091f740`, from `rcbgPSimAddNail` and
+    /// `rcbgPSimCreate`) and `rcVu0Sub_0092d720`: [`rc_vu0_op`] with
+    /// [`Vu0Op::Sub3`].
+    pub fn rc_vu0_sub(mem: &mut impl Mem, a: u32, b: u32, c: u32) -> u32 {
+        rc_vu0_op(mem, Vu0Op::Sub3, a, b, c)
+    }
 }
 
 #[cfg(test)]

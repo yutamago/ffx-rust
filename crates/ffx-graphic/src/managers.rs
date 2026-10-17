@@ -77,7 +77,7 @@ pub mod bridge {
     pub const MSG_FULL: u32 = 0x00b4_a658;
 
     /// Calls the CRT function an import slot holds (cdecl).
-    fn call_import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+    pub(crate) fn call_import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
         let at = h.rebase(slot);
         let f: u32 = h.read(at);
         h.call(f, Conv::Cdecl, args)
