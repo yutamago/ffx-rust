@@ -7,9 +7,104 @@
 #[allow(clippy::many_single_char_names)] // vertices, weights, indices
 pub mod bridge {
     use ffx_bridge::x87;
-    use ffx_bridge::{Global, Mem};
+    use ffx_bridge::{Global, Host, Mem};
 
     use crate::scratch::{SCRATCH, Scratch};
+
+    /// The VU0 accumulator `sg_calcenvelope_normW`'s translated code uses
+    /// (`ACC.xyz`, three `f32`).
+    pub const VU0_ACC: u32 = 0x00c8_f790;
+    /// `g_ChrPacketState` (`u16`).
+    pub const CHR_PACKET_STATE: Global<u16> = Global::new(0x0130_366c);
+    /// The `u16` beside it that `Ch_EffectPacketCreateMain` sets.
+    pub const CHR_PACKET_WORD: Global<u16> = Global::new(0x0130_3684);
+
+    /// `Sg_SetChrPacketState(v)` (`0x00845c30`): `g_ChrPacketState = v`.
+    pub fn set_chr_packet_state(mem: &mut impl Mem, v: u16) {
+        CHR_PACKET_STATE.set(mem, v);
+    }
+
+    /// `Sg_SetChrPacketWord(v)` (`0x00845c40`): the `u16` at `0x01303684`.
+    pub fn set_chr_packet_word(mem: &mut impl Mem, v: u16) {
+        CHR_PACKET_WORD.set(mem, v);
+    }
+
+    /// `sg_Daddiu(dst, src, imm)` (`0x00845cc0`): the 64-bit `src` plus the
+    /// sign-extended `imm` (MIPS `daddiu`); returns the low word.
+    pub fn daddiu(mem: &mut impl Mem, dst: u32, src: u32, imm: u32) -> u32 {
+        let x: u64 = mem.read(src);
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        let r = x.wrapping_add(i64::from(imm as i32) as u64);
+        mem.write(dst, r);
+        #[allow(clippy::cast_possible_truncation)]
+        let low = r as u32;
+        low
+    }
+
+    /// `sg_SetFloat(dst, x)` (`0x00845cf0`): `x` through the x87 (a
+    /// signalling NaN comes out quiet); returns `dst`.
+    pub fn set_float(mem: &mut impl Mem, dst: u32, x: f32) -> u32 {
+        mem.write(dst, x87::round_trip(x));
+        dst
+    }
+
+    /// `sg_Sll(dst, src, n)` (`0x00845d70`): `src << (n & 31)` (MIPS
+    /// `sll`); returns `dst`.
+    pub fn sll(mem: &mut impl Mem, dst: u32, src: u32, n: u32) -> u32 {
+        let x: u32 = mem.read(src);
+        mem.write(dst, x << (n & 31));
+        dst
+    }
+
+    /// `v * s` component by component as the three helpers compute it:
+    /// `x` and `y` multiply registers, `z` is `s * [v.z]`; each plus
+    /// `add[i]` (a memory operand) when given.
+    fn scaled(mem: &impl Mem, v: u32, s: f32, add: Option<[f32; 3]>) -> [f32; 3] {
+        use x87::Reg;
+        let c = |k: u32| mem.read::<f32>(v + 4 * k);
+        let s = Reg::load(s);
+        let p = [Reg::load(c(0)) * s, Reg::load(c(1)) * s, s.mul_m32(c(2))];
+        match add {
+            None => p.map(Reg::store),
+            Some(a) => [
+                (p[0] + Reg::load(a[0])).store(),
+                p[1].add_m32(a[1]).store(),
+                p[2].add_m32(a[2]).store(),
+            ],
+        }
+    }
+
+    /// `sg_VmulScalar(dst, v, s)` (`0x00845e80`): `dst = v s`; returns
+    /// `dst`.
+    pub fn vmul_scalar(mem: &mut impl Mem, dst: u32, v: u32, s: f32) -> u32 {
+        let r = scaled(mem, v, s, None);
+        for (k, x) in (0u32..).zip(r) {
+            mem.write(dst + 4 * k, x);
+        }
+        dst
+    }
+
+    /// `sg_VmaddScalar(dst, v, -, -, s)` (`0x00845e40`): `dst = ACC + v s`
+    /// (VU0 `vmadd`); returns `dst`.
+    pub fn vmadd_scalar(mem: &mut impl Mem, dst: u32, v: u32, s: f32) -> u32 {
+        let acc = mem.rebase(VU0_ACC);
+        // each component reads its accumulator lane after the previous
+        // store, as the original
+        for k in 0..3u32 {
+            let a: [f32; 3] = mem.read(acc);
+            let r = scaled(mem, v, s, Some(a));
+            mem.write(dst + 4 * k, r[k as usize]);
+        }
+        dst
+    }
+
+    /// `sg_VmaddaScalar(-, v, -, s)` (`0x00845df0`): `ACC += v s` (VU0
+    /// `vmadda`); returns `v`.
+    pub fn vmadda_scalar(mem: &mut impl Mem, v: u32, s: f32) -> u32 {
+        let acc = mem.rebase(VU0_ACC);
+        vmadd_scalar(mem, acc, v, s);
+        v
+    }
 
     /// 1000 (`f64`).
     pub const THOUSAND: Global<f64> = Global::new(0x00b0_dba0);
@@ -142,5 +237,154 @@ pub mod bridge {
             }
         }
         p
+    }
+
+    /// `user_malloc`, called as the game's.
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    /// 0.0001 (`f64`, a weight's unit).
+    pub const WEIGHT_UNIT: Global<f64> = Global::new(0x00b3_eb50);
+    /// Where [`calc_envelope_w`] builds its list (unmapped addresses above
+    /// the bridges' scratch, as the original's 32 KB stack frame).
+    const LIST_FRAME: u32 = 0xfff0_0000;
+
+    /// `sg_calcenvelopeW_asm(lists, out, mask, m)` (`0x006ed9e0`): the
+    /// source form. Rigid vertices (`u16` count, 2 bytes, 8-byte entries:
+    /// `i16` x, y, z in thousandths, `u16` index), then two weighted lists
+    /// (`u16` count, 10-byte entries: x, y, z, index, `u16` weight in
+    /// 1/10000), keeping only vertices whose `mask[index]` is set (all
+    /// without a mask). The kept vertices go into a
+    /// [`calc_envelope_w_opt`] list (floats: `v / 1000`, `w * 0.0001`, each
+    /// stored as `f32`), which runs on them as it is built; with a mask the
+    /// list is returned as a new block (`user_malloc`, then copied), else
+    /// 0.
+    pub fn calc_envelope_w(h: &mut impl Host, lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        let k = THOUSAND.get(h);
+        let unit = WEIGHT_UNIT.get(h);
+        let coord = |c: i16| x87::store(x87::div(f64::from(c), k));
+        let kept =
+            |h: &_, i: u16| mask == 0 || Mem::read::<u8>(h, mask.wrapping_add(u32::from(i))) != 0;
+        let mut list: Vec<u8> = vec![];
+        let put = |list: &mut Vec<u8>, w: u32| list.extend(w.to_le_bytes());
+        // rigid
+        let n = u32::from(h.read::<u16>(lists));
+        let mut p = lists.wrapping_add(4);
+        let count_at = list.len();
+        put(&mut list, 0);
+        let mut kept_n = 0u32;
+        for _ in 0..n {
+            let v: [i16; 3] = h.read(p);
+            let i: u16 = h.read(p.wrapping_add(6));
+            p = p.wrapping_add(8);
+            if kept(h, i) {
+                kept_n += 1;
+                for c in v {
+                    put(&mut list, coord(c));
+                }
+                put(&mut list, u32::from(i));
+            }
+        }
+        list[count_at..count_at + 4].copy_from_slice(&kept_n.to_le_bytes());
+        // weighted, twice
+        for _ in 0..2 {
+            let n = u32::from(h.read::<u16>(p));
+            p = p.wrapping_add(2);
+            let count_at = list.len();
+            put(&mut list, 0);
+            let mut kept_n = 0u32;
+            for _ in 0..n {
+                let v: [i16; 3] = h.read(p);
+                let i: u16 = h.read(p.wrapping_add(6));
+                let w: u16 = h.read(p.wrapping_add(8));
+                p = p.wrapping_add(10);
+                if kept(h, i) {
+                    kept_n += 1;
+                    for c in v {
+                        put(&mut list, coord(c));
+                    }
+                    put(&mut list, x87::store(x87::mul(f64::from(w), unit)));
+                    put(&mut list, u32::from(i));
+                }
+            }
+            list[count_at..count_at + 4].copy_from_slice(&kept_n.to_le_bytes());
+        }
+        let len = u32::try_from(list.len()).unwrap_or(u32::MAX);
+        {
+            let mut f = ffx_bridge::frame::Frame::new(h, LIST_FRAME, list.len());
+            f.write_bytes(LIST_FRAME, &list);
+            calc_envelope_w_opt(&mut f, LIST_FRAME, out, m);
+        }
+        if mask == 0 {
+            return 0;
+        }
+        let at = h.rebase(USER_MALLOC);
+        let dst = h.call(at, &[len]);
+        h.write_bytes(dst, &list);
+        dst
+    }
+
+    /// `sg_calcenvelope_asm(lists, out, mask, m)` (`0x006ee570`): the packed
+    /// lists of [`calc_envelope_opt`] keeping only vertices whose
+    /// `mask[index]` is set (all without a mask): rigid entries and group
+    /// entries are copied as they are, each group header with its count
+    /// replaced by the kept count, the terminators with the 2 bytes after
+    /// them; [`calc_envelope_opt`] runs on the kept vertices. With a mask the
+    /// new list is returned as a new block (`user_malloc`, then copied),
+    /// else 0. The 2 bytes after the rigid count are the original's
+    /// uninitialised stack; they are 0 here.
+    pub fn calc_envelope(h: &mut impl Host, lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        let kept = |h: &_, i: u32| mask == 0 || Mem::read::<u8>(h, mask.wrapping_add(i)) != 0;
+        let mut list: Vec<u8> = vec![0; 4];
+        let n = h.read::<u16>(lists);
+        let mut p = lists.wrapping_add(4);
+        let mut kept_n = 0u16;
+        for _ in 0..n {
+            let e: [u8; 8] = h.read(p);
+            let i = u32::from(h.read::<u16>(p.wrapping_add(6)));
+            p = p.wrapping_add(8);
+            if kept(h, i) {
+                kept_n = kept_n.wrapping_add(1);
+                list.extend(e);
+            }
+        }
+        list[0..2].copy_from_slice(&kept_n.to_le_bytes());
+        for _ in 0..2 {
+            loop {
+                let head: [u8; 4] = h.read(p);
+                let n = u16::from_le_bytes([head[0], head[1]]);
+                if n == 0xffff {
+                    // the terminator and the 2 bytes after it
+                    list.extend(head);
+                    p = p.wrapping_add(4);
+                    break;
+                }
+                let base = u32::from(u16::from_le_bytes([head[2], head[3]])) << 8;
+                let at = list.len();
+                list.extend(head);
+                p = p.wrapping_add(4);
+                let mut kept_n = 0u16;
+                for _ in 0..n {
+                    let e: [u8; 8] = h.read(p);
+                    p = p.wrapping_add(8);
+                    if kept(h, u32::from(e[7]) + base) {
+                        kept_n = kept_n.wrapping_add(1);
+                        list.extend(e);
+                    }
+                }
+                list[at..at + 2].copy_from_slice(&kept_n.to_le_bytes());
+            }
+        }
+        let len = u32::try_from(list.len()).unwrap_or(u32::MAX);
+        {
+            let mut f = ffx_bridge::frame::Frame::new(h, LIST_FRAME, list.len());
+            f.write_bytes(LIST_FRAME, &list);
+            calc_envelope_opt(&mut f, LIST_FRAME, out, m);
+        }
+        if mask == 0 {
+            return 0;
+        }
+        let at = h.rebase(USER_MALLOC);
+        let dst = h.call(at, &[len]);
+        h.write_bytes(dst, &list);
+        dst
     }
 }

@@ -457,3 +457,189 @@ first weighted vertices (they set), further weighted vertices (they add).
 
 Products are stored as `f32` at each step (vertex x weight, then x
 1000).
+- `sg_calcenvelopeW_asm(lists, out, mask, m)` (`0x006ed9e0`), source form
+  of the float lists. The rigid list is a `u16` count and 2 bytes, then
+  8-byte entries (`i16 x, y, z` in thousandths, `u16 index`). Each of the
+  two weighted lists is a `u16` count, then 10-byte entries (x, y, z,
+  index, `u16` weight in 1/10000). It keeps only vertices whose
+  `mask[index]` is set (all with no mask). It converts them to the
+  `_opt` float form, which runs as the list is built. With a mask, the
+  new list is returned in a fresh block; else it returns 0.
+- `sg_calcenvelope_asm(lists, out, mask, m)` (`0x006ee570`): the packed
+  lists filtered the same way. Entries are copied as they are, each group
+  count is replaced by the kept count, and terminators keep the 2 bytes
+  after them. The 2 bytes after the rigid count come from the original's
+  uninitialised stack. With a mask, the new list is returned in a fresh
+  block.
+- Neither port passes a stack buffer to game code. They build the list in
+  Rust and write it straight into the allocated block, where the originals
+  `memcpy` from a 32 KB stack frame.
+
+## Pushing two characters apart (round 10)
+
+`Sg_ChrPushApart(a, b, reach, dist)` (`0x0083ecd0`, called from
+`0x0083d3b0`) separates two characters that are `dist` apart when they
+should be `reach` apart. The overlap `d = reach - dist` is shared along the
+x-z direction from `b` to `a` (`FFXVu0Normalize` of `a+0xc - b+0xc` with y
+cleared). The shares come from the push weights at `+0x500` (set by
+`Native_ChrSetPushWeight`, 0x5009):
+
+| `a+0x500` | `b+0x500` | `wa`, `wb` |
+|---|---|---|
+| ≥ 0 | ≥ 0 | the weights (both 0: 1, 1) |
+| < 0 | ≥ 0 | 1, 0 |
+| ≥ 0 | < 0 | 0, 1 |
+| < 0 | < 0 | `Sg_VectorGetLengthXZ(+0x1c, +0xc)` of each, over the larger; equal lengths return 0 |
+
+`t = wa·d / (wa + wb)` (f32) and `u = d - t`; `t < 0` returns 0. In the
+both-negative case `a` moves by `t` and `b` by `u`; otherwise `a` moves by
+`u` and `b` by `t`. A move of `s ≠ 0` adds `n·s` to `a`'s step (`+0x4c`,
+`+0x54`) or subtracts it from `b`'s, and sets `+0x194` bit 5 when the new
+step is not zero. The result is bit 5 of `a+0x194 | b+0x194`. Comparisons
+are the original's x87 ones: a NaN weight counts as non-negative.
+
+## Cloth anchors (round 10)
+
+`Sg_ClothPlaceAnchors(chr)` (`0x0082dbc0`, from `0x0082e390` after the cloth
+step `0x00822de0` unless `0x012fb7d8` is set) moves each cloth's anchor
+vertices onto the model. It needs the cloth (`chr+0x834`), the cloth vertex
+buffer (`Cache_Exist_ClothVertexBuff(1, chr[0])`) and `chr+0x194` bit 21,
+and first copies the sign-extended byte `chr+0x180` to `cloth+8`.
+
+| where | what |
+|---|---|
+| `cloth+0x14` | the number of lists |
+| `cloth+0x30[i]` | list: `u32` count, then entry pointers `e` |
+| `vb+4[i]` | the paired list: a word, then pointers `v` |
+| `e+0x40`, `e+0x42` | model group `g`, sub-mesh `k % 100` |
+| `e+0x44` | vertex count; `e+0x48` set to 1 when done; `e+0x4c` output (16 bytes a vertex) |
+| `v+8` | 8 bytes a vertex: flags (bit 0: lift), `u16` triangle (`0xffff` none), `f32` lift |
+| `v+0xc` | three `f32` weights a vertex |
+| `[chr+0x1bc] + 0x38 g` | `+0` header (`u16` sub-mesh count at `+0x18`), `+8` vertices (16 bytes), `+0x2c` sub-mesh table |
+| sub-mesh `+0x44` | triangles: three `i16` corner indices |
+
+A vertex is `w0 c0 + w1 c1 + w2 c2` (each component `(w0 c0 + c1 w1) + c2 w2`,
+stored `f32`). When `Ch_UseAnchorVertex(chr, g, k)` is non-zero or the
+vertex's bit 0 is set, it moves along `n = (c1 - c0) × (c2 - c0)` by
+`lift / |n| · 1.1` (3.0 for character 1, group 0, sub-mesh 2), through
+`Sg_VecSub`, `Sg_VecCross`, `Sg_VecDot`, `_CIsqrt`, `Sg_VecScale` and
+`Sg_VecAdd`. On level hash `0xc58` (`graphicLevelGetNameHash`) a character
+whose matrix rows `+0x1d0`, `+0x1e0` or `+0x1f0` has a squared length below
+2.5e-7 gets all its anchors zeroed instead.
+
+## The cloth step (round 10, `crates/ffx-sg/src/cloth.rs`)
+
+`Sg_ClothStep(chr)` (`0x00822de0`, from `0x0082e390` before
+`Sg_ClothPlaceAnchors`) runs when `chr+0x194` has bits 21 and 22.
+
+Set-up:
+
+- `scale` = `[chr+0x1c4]+0x3c`; `s2 = scale²`.
+- The wind: strength, heading, elevation from `chr+0x80c/0x804/0x808` when
+  `chr+0x198` bit 1, else the globals `0x012fbc44/48/4c`; the strength
+  times `scale`, the direction from `Sg_CreateVectorFromHV`. On maps 0x15d
+  and 0x84 (but for characters 1 and 0x4001) with `getScenerioFlag() < 2`
+  a strength above 399 skips the step; on map 0xc0 the strength is 2000.
+  `MagicFile_GetMagicId() == 0x1b4` with character 0x1120/0x1154 in
+  motion 0x3008101a/b skips it too.
+- The character's motion: `dist = |chr+0x684 - chr+0x694|`, `dy = (chr+0x10
+  - chr+0x20) s2`, weights `ka = chr+0x814`, `kb = chr+0x818`. The reach is
+  17 in battle (`MsBattleCheck`; `dist` and `dy` 0, character 3 in motion
+  0x310b0/1 gets `ka = kb = 0`, and `chr+0x81c` caps the follow), else 0.3
+  or 3.4 (0.15 or 1.7 with `chr+0x820` bit 1) as `dist` is at most 0.1 or
+  above. `chr+0x820` loses bits 1 and 2 (bit 2 also when bit 3 is set).
+- Repeats: `iters` = `chr+0x812` (doubled for characters 6, 7 on maps 0x15d,
+  0x84) when `chr+0x810` is set, `dist` is out of reach or `chr+0x820` bit 2
+  was set; the step runs `iters + 1` times. Without doubling, the first run
+  is *lifted*: points rise by `100000 scale`.
+- With `chr+0x820` bit 3, a floor: `chr+0x18 = 1`, the normal `chr+0x7c`
+  through the transposed `chr+0x210`, the point `chr+0x1d0`'s translation.
+
+Per model group (`[chr+0x1bc] + 0x38 g`, `u16 [chr+0x1c0]+6` of them) with
+strands (`hdr = [grp]`, `u16 hdr+0x18`):
+
+| group | |
+|---|---|
+| `+0` | header: `u16` root bone, `+0x18` strand count, `+0x1c` strands (0x24 each) |
+| `+8` | the model vertices (16 bytes) |
+| `+0xc` | the cloth points: per strand `3 tc` points (positions, velocities, previous positions) |
+| `+0x1c` | where the group was (vec3) |
+| `+0x30` | marks (a byte per vertex), set for the strands' vertices until `+0x34` is 1 |
+
+`M` = `chr+0x1d0` x root bone (`FFXVu0MulMatrix`, the bones' translations at
+`+0xb8` scaled by 1000 around every product). The follow `F = (grp+0x1c -
+M.t)`: zero with `chr+0x194` bit 23; beyond the reach it is zero, the group
+not free, the run lifted and `iters` reset from `chr+0x812`; else `F.x, F.z`
+times `s2 (|F|/1.7)² kb` (the square capped by `chr+0x81c`) and `F.y =
+(F.y s2 + dy) ka` with `chr+0x820` bit 0, else 0. The group remembers
+`M.t`. Then each collision record (`[chr+0x1c0]+0x30`, 0x40 each: radius,
+reach, `u16` kind, `i16` bone, axis scale, local axis `+0x10`, local point
+`+0x20`) places its point at `[chr+0x32c]` (0x60 each, axis at `+0x10` for
+kinds 1 and 2) in the group's space, scaled by `s2`.
+
+Per strand:
+
+| strand | |
+|---|---|
+| `+0` | `i16` fixed points (copied from the model vertices) |
+| `+4` | lift (times `scale`, added to the push's y) |
+| `+8` | `u16` vertex indices |
+| `+0xc` | rod runs: `i16` kind (1-6, 0 ends), `i16` n, 8 bytes, n rods of 12 |
+| `+0x12`, `+0x14` | `i8` collision count, `i16` record indices |
+| `+0x13`, `+0x20` | `i8` anchor count, anchors (0x20: point, `i16` bone at `+0x10`) |
+| `+0x18` | damping (velocity scale) when the group is free |
+| `+0x1c`, `+0x1e` | `i16` points, `i16` free ends (no collisions) |
+
+The push = wind `x (rand() % 1000) strength + F`, its y lifted, into the
+group's space (`Sg_MatrixApplyVec3`). Moving points get the push (plus their
+velocity when free), the rods run, map 0x107 lifts two points of character
+2's group 2 strand 2 (scenario 0x532-0x53c), then each moving point is
+pushed out of the spheres (kind 0), capsules (2) and planes (1) by the
+radius times `Ch_UseLargeCollisionRad`, and out of the floor by 1.2 its
+depth; written to its vertex with `w = 1`, its velocity the damped change.
+
+## Round 11: the main loop's callees
+
+`ExportValidateInterface(id)` (`0x008202e0`) answers 1 for the interface
+ids 0x40400003 and 0x40800001..0x40800003, else 0.
+
+Glue (GS packets and the PS2 DMA FIFO, left to the original):
+`Sg_MFIFOSpadSync` (`0x008432d0`, a wait on the GS register sink's bit 8),
+`Sg_MFIFOEnd` (`0x00843260`, an end tag sent to the FIFO),
+`Sg_AccSetFrameMap` (`0x0082bc50`), `Sg_DrawSetEnvironment` (`0x0082c7b0`),
+`Sg_DrawSetEnvironmentInit` (`0x0082c8d0`) and
+`Sg_DrawSetEnvironmentInitMovie` (`0x0082caa0`), which build GS register
+packets.
+
+`Sg_DrawFilter()` (`0x0082c0c0`) runs the five screen fades at
+`0x01300708` (0x10 each: mode, r, g, b, then `i16` frames left, total or
+level, target, step; `0x01300704` a bit per running slot) and the focus
+(`0x01300768` requested, `0x0130076c` drawn, depths at `0x01300758/c`
+through `graphicSetFocusZ`). Each slot with frames left calls
+`graphicAddScreenFadeTask(r/256, g/256, b/256, a, flags)`:
+
+| mode | alpha | |
+|---|---|---|
+| 0 | the level, moved by its step towards the target | quad `0x0082baf0` when the screen is 0x200 wide and no request is current; dream share |
+| 2 | `1 - (127 - n' 127 / total) / 127`, black | then `Sg_AccSetAlpha(0, 0)` |
+| 3 | `1 - (n' 127 / total) / 127`, black | held at the last frame |
+| 4 | `(n 255 / total) / 127` | dream share `/ 255` |
+| 5 | `(255 - n' 255 / total) / 127` | held; dream share |
+| 6 | `(n 127 / total) / 127` | |
+| 7, 8 | `level / 127` | 7 zeroes the level with the dream effect on; 8 passes flag 0x10 |
+
+`n'` is the frame count after the decrement; integer divisions truncate.
+A total of 0 is a division fault in the original; the port takes 0.
+
+`sg_calcenvelope_normW`'s translated R5900/VU0 code calls small leaves
+(names ours): `sg_Daddiu` (`0x00845cc0`, 64-bit add of a sign-extended
+immediate), `sg_SetFloat` (`0x00845cf0`, a float through the x87),
+`sg_Sll` (`0x00845d70`, shift by `n & 31`), and three scalar products on
+the VU0 accumulator at `0x00c8f790`: `sg_VmulScalar` (`0x00845e80`,
+`dst = v s`), `sg_VmaddScalar` (`0x00845e40`, `dst = ACC + v s`) and
+`sg_VmaddaScalar` (`0x00845df0`, `ACC += v s`); x and y multiply x87
+registers, z takes `v.z` as a memory operand, and the accumulator's y and
+z lanes are memory operands. `Ch_EffectPacketCreateMain` sets the two
+`u16`s at `0x0130366c` (`g_ChrPacketState`) and `0x01303684` through
+`Sg_SetChrPacketState` (`0x00845c30`) and `Sg_SetChrPacketWord`
+(`0x00845c40`).

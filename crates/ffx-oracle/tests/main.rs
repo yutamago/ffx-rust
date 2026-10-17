@@ -2457,6 +2457,14 @@ fn control_synthetic() {
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
     envelope_cases(&mut a, &mut b, &mut rng, 300);
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    push_apart_cases(&mut a, &mut b, &mut rng, 600);
+    cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
+    cloth_step_cases(&mut a, &mut b, &mut rng, 300);
+    round11_main_cases(&mut a, &mut b, &mut rng, 300);
+    draw_filter_cases(&mut a, &mut b, &mut rng, 600);
+    vu_helper_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 #[test]
@@ -2479,6 +2487,14 @@ fn control_snapshot() {
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
     envelope_cases(&mut a, &mut b, &mut rng, 300);
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    push_apart_cases(&mut a, &mut b, &mut rng, 600);
+    cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
+    cloth_step_cases(&mut a, &mut b, &mut rng, 300);
+    round11_main_cases(&mut a, &mut b, &mut rng, 300);
+    draw_filter_cases(&mut a, &mut b, &mut rng, 600);
+    vu_helper_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3873,5 +3889,794 @@ fn packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rou
                 e::calc_envelope_opt(o, lists, out, m);
             },
         );
+    }
+}
+
+/// Source-form vertex lists (`sg_calcenvelopeW_asm`): rigid 8-byte
+/// entries after a `u16` count and 2 bytes, then two weighted lists of
+/// 10-byte entries after a `u16` count; indices below 16.
+fn source_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let mut bytes: Vec<u8> = vec![];
+    let w16 = |v: &mut Vec<u8>, x: u32| v.extend(u16::try_from(x & 0xffff).unwrap().to_le_bytes());
+    let n = rng.below(5);
+    w16(&mut bytes, n);
+    w16(&mut bytes, rng.next());
+    for _ in 0..n {
+        for _ in 0..3 {
+            w16(&mut bytes, rng.next());
+        }
+        w16(&mut bytes, rng.below(16));
+    }
+    for _ in 0..2 {
+        let n = rng.below(5);
+        w16(&mut bytes, n);
+        for _ in 0..n {
+            for _ in 0..3 {
+                w16(&mut bytes, rng.next());
+            }
+            w16(&mut bytes, rng.below(16));
+            w16(&mut bytes, rng.next());
+        }
+    }
+    let lists = alloc(a, b, bytes.len() + 4);
+    a.write(lists, &bytes).unwrap();
+    b.write(lists, &bytes).unwrap();
+    lists
+}
+
+fn source_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let (cursor, list) = (a.rebase(ALLOC_CURSOR), a.rebase(ALLOC_LIST));
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 16);
+        for k in 0..64 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = source_lists(a, b, rng);
+        let mask = if rng.below(3) == 0 {
+            0
+        } else {
+            let mk = alloc(a, b, 16);
+            for k in 0..16 {
+                put(a, b, mk + k, u8::from(rng.below(3) != 0));
+            }
+            mk
+        };
+        let dst = block(a, b, rng, 0x200);
+        put(a, b, list, dst);
+        put(a, b, cursor, list);
+        twin(
+            "sg_calcenvelopeW_asm",
+            a,
+            b,
+            0x006e_d9e0,
+            &[lists, out, mask, m],
+            |o| e::calc_envelope_w(&mut H(o), lists, out, mask, m),
+        );
+    }
+}
+
+fn source_packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let (cursor, list) = (a.rebase(ALLOC_CURSOR), a.rebase(ALLOC_LIST));
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 0x110);
+        for k in 0..4 * 0x110 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = packed_lists(a, b, rng);
+        let mask = if rng.below(3) == 0 {
+            0
+        } else {
+            let mk = alloc(a, b, 0x110);
+            for k in 0..0x110 {
+                put(a, b, mk + k, u8::from(rng.below(3) != 0));
+            }
+            mk
+        };
+        let dst = block(a, b, rng, 0x200);
+        put(a, b, list, dst);
+        put(a, b, cursor, list);
+        twin(
+            "sg_calcenvelope_asm",
+            a,
+            b,
+            0x006e_e570,
+            &[lists, out, mask, m],
+            |o| e::calc_envelope(&mut H(o), lists, out, mask, m),
+        );
+    }
+}
+
+// Main round 10: two characters pushed apart.
+fn push_apart_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let weight = |rng: &mut Xorshift| match rng.below(5) {
+        0 => (-1.0f32).to_bits(),
+        1 => 0,
+        2 => 0.5f32.to_bits(),
+        3 => modest(rng),
+        _ => bounded(rng),
+    };
+    for _ in 0..rounds {
+        let ca = alloc(a, b, 0x600);
+        let cb = alloc(a, b, 0x600);
+        for c in [ca, cb] {
+            put(a, b, c + 0x500, weight(rng));
+            for k in [0xc, 0x10, 0x14, 0x1c, 0x20, 0x24] {
+                put(a, b, c + k, bounded(rng));
+            }
+            for k in [0x4c, 0x54] {
+                let v = if rng.below(3) == 0 { 0 } else { bounded(rng) };
+                put(a, b, c + k, v);
+            }
+            put(
+                a,
+                b,
+                c + 0x194,
+                rng.next() & !0x20 | (rng.below(4) / 3) << 5,
+            );
+        }
+        if rng.below(6) == 0 {
+            // equal anchor distances
+            for k in [0xc, 0x10, 0x14, 0x1c, 0x20, 0x24] {
+                let v: u32 = Mem::read(a, ca + k);
+                put(a, b, cb + k, v);
+            }
+        }
+        if rng.below(10) == 0 {
+            for k in [0xc, 0x14] {
+                let v: u32 = Mem::read(a, ca + k);
+                put(a, b, cb + k, v);
+            }
+        }
+        let reach = bounded(rng);
+        let dist = match rng.below(4) {
+            0 => reach,
+            _ => bounded(rng),
+        };
+        twin(
+            "Sg_ChrPushApart",
+            a,
+            b,
+            0x0083_ecd0,
+            &[ca, cb, reach, dist],
+            |m| st::chr_push_apart(m, ca, cb, f32::from_bits(reach), f32::from_bits(dist)),
+        );
+    }
+}
+
+// Main round 10: the cloth anchors.
+fn cloth_anchor_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::vec::bridge as v;
+    let log = a.rebase(REC_LOG);
+    let rets = a.rebase(REC_RETS);
+    recorder(a, b, 52, 0x0084_0850, 2, 0);
+    recorder(a, b, 53, 0x0064_1da0, 0, 0);
+    // the anchor answers by group, in unused answer slots 60..64
+    let anchors = rets + 4 * 60;
+    table_stub(a, b, 54, 0x0083_16d0, 1, REC_RETS + 4 * 60);
+    let words = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, n: usize| {
+        let p = alloc(a, b, 4 * n.max(1));
+        for k in 0..n {
+            put(a, b, p + 4 * u32::try_from(k).unwrap(), bounded(rng));
+        }
+        p
+    };
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for g in 0..4 {
+            put(a, b, anchors + 4 * g, u32::from(rng.below(3) == 0));
+        }
+        let hash = if rng.below(3) == 0 {
+            0xc58
+        } else {
+            rng.next() & 0xfff
+        };
+        put(a, b, rets + 4 * 53, hash);
+        // the model: three groups
+        let model = alloc(a, b, 3 * 0x38);
+        for g in 0..3 {
+            let grp = model + 0x38 * g;
+            let head = alloc(a, b, 0x20);
+            let subs = [0u16, 3, 100, 200][rng.below(4) as usize];
+            put(a, b, head + 0x18, subs);
+            put(a, b, grp, head);
+            let vs = words(a, b, rng, 8 * 4);
+            put(a, b, grp + 8, vs);
+            let tbl = if rng.below(6) == 0 {
+                0
+            } else {
+                let t = alloc(a, b, 400);
+                for r in 0..100 {
+                    if rng.below(4) != 0 {
+                        let sub = alloc(a, b, 0x48);
+                        let faces = alloc(a, b, 6 * 8);
+                        for q in 0..24 {
+                            put(a, b, faces + 2 * q, u16::try_from(rng.below(8)).unwrap());
+                        }
+                        put(a, b, sub + 0x44, faces);
+                        put(a, b, t + 4 * r, sub);
+                    }
+                }
+                t
+            };
+            put(a, b, grp + 0x2c, tbl);
+        }
+        let chr = alloc(a, b, 0x900);
+        put(a, b, chr, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, chr + 0x180, u8::try_from(rng.next() & 0xff).unwrap());
+        let flags = if rng.below(6) == 0 {
+            rng.next() & !0x20_0000
+        } else {
+            rng.next() | 0x20_0000
+        };
+        put(a, b, chr + 0x194, flags);
+        put(a, b, chr + 0x1bc, model);
+        for r in [0x1d0u32, 0x1e0, 0x1f0] {
+            for k in 0..3 {
+                let x = match rng.below(5) {
+                    0 => 0,
+                    1 => 1e-4f32.to_bits(),
+                    2 => 4e-4f32.to_bits(),
+                    _ => bounded(rng),
+                };
+                put(a, b, chr + r + 4 * k, x);
+            }
+        }
+        let lists = rng.below(4);
+        let cloth = if rng.below(8) == 0 {
+            0
+        } else {
+            alloc(a, b, 0x40)
+        };
+        let vb = alloc(a, b, 4 + 4 * 4);
+        put(a, b, rets + 4 * 52, if rng.below(8) == 0 { 0 } else { vb });
+        if cloth != 0 {
+            put(a, b, cloth + 0x14, lists);
+            for i in 0..lists {
+                let m = rng.below(4);
+                let l = if rng.below(8) == 0 {
+                    0
+                } else {
+                    alloc(a, b, 4 + 4 * 4)
+                };
+                let vl = if rng.below(8) == 0 {
+                    0
+                } else {
+                    alloc(a, b, 4 + 4 * 4)
+                };
+                put(a, b, cloth + 0x30 + 4 * i, l);
+                put(a, b, vb + 4 + 4 * i, vl);
+                if l == 0 || vl == 0 {
+                    continue;
+                }
+                put(a, b, l, m);
+                for j in 0..m {
+                    let n = rng.below(5);
+                    let e = if rng.below(10) == 0 {
+                        0
+                    } else {
+                        alloc(a, b, 0x50)
+                    };
+                    let ve = if rng.below(10) == 0 {
+                        0
+                    } else {
+                        alloc(a, b, 0x10)
+                    };
+                    put(a, b, l + 4 + 4 * j, e);
+                    put(a, b, vl + 4 + 4 * j, ve);
+                    if e != 0 {
+                        put(a, b, e + 0x40, u16::try_from(rng.below(3)).unwrap());
+                        let k = [2u16, 102, 5, 0][rng.below(4) as usize]
+                            + if rng.below(3) == 0 {
+                                u16::try_from(rng.below(300)).unwrap()
+                            } else {
+                                0
+                            };
+                        put(a, b, e + 0x42, k);
+                        put(a, b, e + 0x44, n);
+                        put(a, b, e + 0x48, rng.next());
+                        let out = if rng.below(8) == 0 {
+                            0
+                        } else {
+                            words(a, b, rng, 4 * 4)
+                        };
+                        put(a, b, e + 0x4c, out);
+                    }
+                    if ve != 0 {
+                        let tri = alloc(a, b, 8 * 4);
+                        for q in 0..4 {
+                            put(a, b, tri + 8 * q, u8::try_from(rng.next() & 0xff).unwrap());
+                            let idx = if rng.below(6) == 0 {
+                                0xffff
+                            } else {
+                                u16::try_from(rng.below(8)).unwrap()
+                            };
+                            put(a, b, tri + 8 * q + 2, idx);
+                            put(a, b, tri + 8 * q + 4, bounded(rng));
+                        }
+                        put(a, b, ve + 8, tri);
+                        let ws = words(a, b, rng, 3 * 4);
+                        put(a, b, ve + 0xc, ws);
+                    }
+                }
+            }
+        }
+        put(a, b, chr + 0x834, cloth);
+        twin("Sg_ClothPlaceAnchors", a, b, 0x0082_dbc0, &[chr], |m| {
+            v::cloth_place_anchors(&mut H(m), chr);
+        });
+    }
+}
+
+/// `rand()`'s stand-in at its import slot: 16 answers in turn from
+/// `REC_RETS + 4 * 65`, the turn at `REC_RETS + 4 * 64`.
+fn rand_stub(a: &mut Oracle, b: &mut Oracle) {
+    for o in [a, b] {
+        let code = o.rebase(REC_CODE) + 0x60 * 57;
+        let cur = o.rebase(REC_RETS) + 4 * 64;
+        let table = o.rebase(REC_RETS) + 4 * 65;
+        let mut c = vec![0xa1];
+        c.extend(cur.to_le_bytes()); // mov eax, [cur]
+        c.extend([0xff, 0x05]);
+        c.extend(cur.to_le_bytes()); // inc dword [cur]
+        c.extend([0x83, 0xe0, 0x0f]); // and eax, 15
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(table.to_le_bytes()); // mov eax, [eax*4 + table]
+        c.push(0xc3);
+        o.write(code, &c).unwrap();
+        let slot = o.rebase(0x00b0_c420);
+        o.write(slot, &code.to_le_bytes()).unwrap();
+    }
+}
+
+/// A matrix near a rotation plus translation: the identity with small
+/// changes, a translation within ±2 (the cloth stays at a scale where its
+/// collisions happen).
+fn near_rigid(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, m: u32) {
+    for k in 0..16u32 {
+        let x = match k {
+            0 | 5 | 10 | 15 => 1.0,
+            3 | 7 | 11 => 0.0,
+            12..=14 => f32::from_bits(bounded(rng)) / 4.0,
+            _ => f32::from_bits(bounded(rng)) / 32.0,
+        };
+        put(a, b, m + 4 * k, x);
+    }
+}
+
+// Main round 10: the cloth step.
+#[allow(clippy::too_many_lines)]
+fn cloth_step_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::cloth::bridge as cl;
+    let rets = a.rebase(REC_RETS);
+    patch_trig(a);
+    patch_trig(b);
+    rand_stub(a, b);
+    recorder(a, b, 55, cl::MS_BATTLE_CHECK, 0, 0);
+    recorder(a, b, 56, cl::MAGIC_FILE_GET_MAGIC_ID, 0, 0);
+    // getScenerioFlag is slot 22's recorder
+    let f = |x: f32| x.to_bits();
+    let floats = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, n: u32| {
+        let p = alloc(a, b, 4 * n as usize);
+        for k in 0..n {
+            put(a, b, p + 4 * k, bounded(rng));
+        }
+        p
+    };
+    for _ in 0..rounds {
+        put(a, b, rets + 4 * 64, rng.below(16));
+        for q in 0..16 {
+            put(a, b, rets + 4 * (65 + q), rng.next() & 0x7fff);
+        }
+        let battle = rng.below(2) == 0;
+        put(a, b, rets + 4 * 55, u32::from(battle));
+        // map 0x107's lift: character 2, group 2, strand 2
+        let lift107 = rng.below(4) == 0;
+        let magic = if rng.below(3) == 0 { 0x1b4 } else { 7 };
+        put(a, b, rets + 4 * 56, magic);
+        let sf = if lift107 {
+            [0x532, 0x53c][rng.below(2) as usize]
+        } else {
+            [0u32, 1, 0x531, 0x532, 0x53c, 0x53d][rng.below(6) as usize]
+        };
+        put(a, b, rets + 4 * 22, sf);
+        let map = if lift107 {
+            0x107
+        } else {
+            [0x15d, 0x84, 0xc0, 0x107, 0x3b, 0x17d][rng.below(6) as usize]
+        };
+        set(a, b, cl::MAP, map);
+        let strength = if rng.below(8) == 0 {
+            f32::from(u16::try_from(rng.below(600)).unwrap())
+        } else {
+            f32::from_bits(bounded(rng)) / 4096.0
+        };
+        let wind = [f(strength), bounded(rng), bounded(rng)];
+        set(a, b, cl::WIND, wind.map(f32::from_bits));
+
+        // the model: records, bones, collision points
+        let nrec = rng.below(4);
+        let nbones = 4u32;
+        let bones = alloc(a, b, 0x160 * nbones as usize);
+        for i in 0..nbones * 0x160 / 4 {
+            put(a, b, bones + 4 * i, bounded(rng));
+        }
+        for i in 0..nbones {
+            let m = bones + 0x160 * i + 0x88;
+            near_rigid(a, b, rng, m);
+            // bone translations are in thousandths (scaled by 1000 around
+            // the products)
+            for k in 12..15 {
+                let x: f32 = Mem::read(&*a, m + 4 * k);
+                put(a, b, m + 4 * k, x / 1000.0);
+            }
+        }
+        let records = alloc(a, b, 0x40 * 4);
+        for r in 0..nrec {
+            let rec = records + 0x40 * r;
+            put(a, b, rec, bounded(rng));
+            let reach = if rng.below(2) == 0 {
+                [f(40.0), f(1.0e6), f(1.0e12)][rng.below(3) as usize]
+            } else {
+                bounded(rng)
+            };
+            put(a, b, rec + 4, reach);
+            put(a, b, rec + 8, u16::try_from(rng.below(4)).unwrap());
+            put(a, b, rec + 0xa, i16::try_from(rng.below(nbones)).unwrap());
+            put(a, b, rec + 0xc, bounded(rng));
+            for k in 4..12 {
+                put(a, b, rec + 4 * k, bounded(rng));
+            }
+        }
+        let pts = floats(a, b, rng, 0x18 * 4);
+        let ngroups = if lift107 { 3 } else { rng.below(4) };
+        let model = alloc(a, b, 0x40);
+        put(a, b, model + 6, u16::try_from(ngroups).unwrap());
+        put(a, b, model + 0x2c, u16::try_from(nrec).unwrap());
+        put(a, b, model + 0x30, records);
+
+        // the groups, their strands
+        let groups = alloc(a, b, 0x38 * 4);
+        for g in 0..ngroups {
+            let grp = groups + 0x38 * g;
+            let hdr = alloc(a, b, 0x20);
+            put(a, b, hdr, u16::try_from(rng.below(nbones)).unwrap());
+            let ns = if lift107 {
+                3
+            } else if rng.below(6) == 0 {
+                0
+            } else {
+                1 + rng.below(3)
+            };
+            put(a, b, hdr + 0x18, u16::try_from(ns).unwrap());
+            let strands = alloc(a, b, 0x24 * 3);
+            put(a, b, hdr + 0x1c, strands);
+            put(a, b, grp, hdr);
+            let verts = floats(a, b, rng, 16 * 4);
+            put(a, b, grp + 8, verts);
+            for k in [0x1c, 0x20, 0x24] {
+                let x = if rng.below(3) == 0 { 0 } else { bounded(rng) };
+                put(a, b, grp + k, x);
+            }
+            let marks = alloc(a, b, 16);
+            put(a, b, grp + 0x30, marks);
+            put(a, b, grp + 0x34, u32::from(rng.below(2) == 0));
+            let mut vsize = 0;
+            for k in 0..ns {
+                let s = strands + 0x24 * k;
+                let total = 1 + rng.below(5);
+                let fixed = rng.below(total + 1).min(2);
+                let ends = rng.below(total - fixed + 1);
+                let nanch = rng.below(3);
+                let ncol = if nrec == 0 { 0 } else { 1 + rng.below(2) };
+                put(a, b, s, i16::try_from(fixed).unwrap());
+                put(a, b, s + 4, bounded(rng));
+                let idx = alloc(a, b, 2 * 8);
+                for q in 0..8 {
+                    put(a, b, idx + 2 * q, u16::try_from(rng.below(16)).unwrap());
+                }
+                put(a, b, s + 8, idx);
+                // rods: up to three runs, then 0
+                let tc = total + nanch;
+                let rods = alloc(a, b, 3 * (12 + 3 * 12) + 2);
+                let mut r = rods;
+                for _ in 0..rng.below(4) {
+                    let kind = 1 + rng.below(7);
+                    let n = rng.below(4);
+                    put(a, b, r, i16::try_from(kind).unwrap());
+                    put(a, b, r + 2, i16::try_from(n).unwrap());
+                    for j in 0..n {
+                        let rod = r + 12 + 12 * j;
+                        put(a, b, rod, i16::try_from(rng.below(tc)).unwrap());
+                        put(a, b, rod + 2, i16::try_from(rng.below(tc)).unwrap());
+                        put(a, b, rod + 4, bounded(rng));
+                        let lim = if rng.below(2) == 0 {
+                            f(4.0)
+                        } else {
+                            bounded(rng)
+                        };
+                        put(a, b, rod + 8, lim);
+                    }
+                    r += 12 + 12 * n;
+                }
+                put(a, b, r, 0u16);
+                put(a, b, s + 0xc, rods);
+                put(a, b, s + 0x12, i8::try_from(ncol).unwrap());
+                put(a, b, s + 0x13, i8::try_from(nanch).unwrap());
+                let cols = alloc(a, b, 8);
+                for c in 0..3 {
+                    let ci = if nrec == 0 { 0 } else { rng.below(nrec) };
+                    put(a, b, cols + 2 * c, i16::try_from(ci).unwrap());
+                }
+                put(a, b, s + 0x14, cols);
+                put(a, b, s + 0x18, bounded(rng));
+                put(a, b, s + 0x1c, i16::try_from(total).unwrap());
+                put(a, b, s + 0x1e, i16::try_from(ends).unwrap());
+                let anch = alloc(a, b, 0x20 * 3);
+                for j in 0..3 {
+                    for q in 0..4 {
+                        put(a, b, anch + 0x20 * j + 4 * q, bounded(rng));
+                    }
+                    put(
+                        a,
+                        b,
+                        anch + 0x20 * j + 0x10,
+                        i16::try_from(rng.below(nbones)).unwrap(),
+                    );
+                }
+                put(a, b, s + 0x20, anch);
+                vsize += 3 * tc;
+            }
+            let vp = floats(a, b, rng, 4 * vsize.max(1));
+            put(a, b, grp + 0xc, vp);
+        }
+
+        // the character
+        let chr = alloc(a, b, 0x900);
+        let id = if lift107 {
+            2
+        } else if battle && rng.below(2) == 0 {
+            3
+        } else {
+            [1u16, 2, 3, 6, 7, 0x1120, 0x4001, 0x66][rng.below(8) as usize]
+        };
+        put(a, b, chr, id);
+        for k in [0x10, 0x20, 0x7c, 0x80, 0x84] {
+            put(a, b, chr + k, bounded(rng));
+        }
+        let fl = if rng.below(8) == 0 {
+            rng.next()
+        } else {
+            rng.next() | 0x60_0000
+        };
+        put(a, b, chr + 0x194, fl);
+        put(a, b, chr + 0x198, u8::try_from(rng.next() & 0xff).unwrap());
+        put(a, b, chr + 0x1bc, groups);
+        put(a, b, chr + 0x1c0, model);
+        let sc = alloc(a, b, 0x40);
+        put(
+            a,
+            b,
+            sc + 0x3c,
+            if rng.below(2) == 0 {
+                f(1.0)
+            } else {
+                bounded(rng)
+            },
+        );
+        put(a, b, chr + 0x1c4, sc);
+        near_rigid(a, b, rng, chr + 0x1d0);
+        near_rigid(a, b, rng, chr + 0x210);
+        put(a, b, chr + 0x328, bones);
+        put(a, b, chr + 0x32c, pts);
+        for k in 0..8 {
+            let x = if rng.below(3) == 0 {
+                0
+            } else {
+                modest(rng) & 0xbfff_ffff
+            };
+            put(a, b, chr + 0x684 + 4 * k, x);
+        }
+        let motion = [0x3008_101a_u32, 0x310b0, 7][rng.below(3) as usize];
+        put(a, b, chr + 0x72c, motion);
+        for k in [0x804, 0x808, 0x80c, 0x814, 0x818] {
+            put(a, b, chr + k, bounded(rng));
+        }
+        put(
+            a,
+            b,
+            chr + 0x81c,
+            if rng.below(2) == 0 { 0 } else { bounded(rng) },
+        );
+        put(a, b, chr + 0x810, u16::try_from(rng.below(6) / 5).unwrap());
+        put(a, b, chr + 0x812, i16::try_from(rng.below(3)).unwrap());
+        put(
+            a,
+            b,
+            chr + 0x820,
+            rng.next() & if rng.below(4) == 0 { 0xf } else { 0xb },
+        );
+        twin("Sg_ClothStep", a, b, 0x0082_2de0, &[chr], |m| {
+            cl::cloth_step(&mut H(m), chr, &mut stand_in);
+        });
+    }
+}
+
+// Main round 11.
+fn round11_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    for n in 0..rounds {
+        let ids = [
+            0x4040_0003,
+            0x4080_0001,
+            0x4080_0002,
+            0x4080_0003,
+            0x4080_0004,
+            0x4040_0002,
+        ];
+        let id = if n % 3 == 0 {
+            rng.next()
+        } else {
+            ids[rng.below(6) as usize]
+        };
+        twin("ExportValidateInterface", a, b, 0x0082_02e0, &[id], |_| {
+            c::export_validate_interface(id)
+        });
+    }
+}
+
+// Main round 11: the fades and the focus.
+fn draw_filter_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    let log = a.rebase(REC_LOG);
+    for (k, sym, n) in [
+        (82, c::GRAPHIC_HAS_RUN_DRAW_FILTER, 0),
+        (83, c::GRAPHIC_RESET_HAS_RUN_DRAW_FOCUS, 0),
+        (84, c::GRAPHIC_HAS_RUN_DRAW_FOCUS, 0),
+        (85, c::GRAPHIC_SET_FOCUS_Z, 2),
+        (86, c::GRAPHIC_ADD_SCREEN_FADE_TASK, 5),
+        (87, c::SG_DRAW_FOCUS, 1),
+        (88, c::SG_DRAW_LEVEL, 1),
+    ] {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let slots = a.rebase(c::FADE_SLOTS);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        set(
+            a,
+            b,
+            c::FADE_ACTIVE,
+            if rng.below(6) == 0 {
+                0
+            } else {
+                rng.next() & 0x1f
+            },
+        );
+        set(a, b, c::FOCUS_ON, rng.below(2));
+        set(a, b, c::FOCUS_DRAW, rng.below(2));
+        for z in c::FOCUS_Z {
+            set(a, b, z, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        set(a, b, c::ACC_CURRENT_REQUEST, u32::from(rng.below(3) == 0));
+        set(
+            a,
+            b,
+            c::SCREEN_W,
+            if rng.below(2) == 0 { 0x200 } else { 0x280 },
+        );
+        set(a, b, c::DREAM_ON, rng.below(2));
+        set(
+            a,
+            b,
+            c::DREAM_FADE_MODE,
+            if rng.below(2) == 0 { u32::MAX } else { 2 },
+        );
+        set(
+            a,
+            b,
+            c::DREAM_FADE_TOTAL,
+            i32::try_from(rng.below(40)).unwrap() - 4,
+        );
+        set(a, b, c::DREAM_FADE_OUT, rng.below(2));
+        let small = |rng: &mut Xorshift, lo: i32, hi: u32| {
+            i16::try_from(i32::try_from(rng.below(hi)).unwrap() + lo).unwrap()
+        };
+        for i in 0..5 {
+            let s = slots + 0x10 * i;
+            put(a, b, s, u8::try_from(rng.below(10)).unwrap());
+            for o in 1..4 {
+                put(a, b, s + o, u8::try_from(rng.next() & 0xff).unwrap());
+            }
+            let n = if rng.below(5) == 0 {
+                0
+            } else {
+                small(rng, -3, 24)
+            };
+            put(a, b, s + 4, n);
+            let total = small(rng, 1, 40) * if rng.below(6) == 0 { -1 } else { 1 };
+            put(a, b, s + 6, total);
+            put(a, b, s + 8, small(rng, -40, 120));
+            put(a, b, s + 0xa, small(rng, 0, 30));
+        }
+        twin("Sg_DrawFilter", a, b, 0x0082_c0c0, &[], |m| {
+            c::draw_filter(&mut H(m));
+        });
+    }
+}
+
+// Main round 11: sg_calcenvelope_normW's translated VU0 and MIPS helpers.
+fn vu_helper_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let acc = a.rebase(e::VU0_ACC);
+    let val = |rng: &mut Xorshift| match rng.below(4) {
+        0 => rng.float(),
+        1 => modest(rng),
+        _ => bounded(rng),
+    };
+    for n in 0..rounds {
+        let v = rng.next();
+        #[allow(clippy::cast_possible_truncation)]
+        let h = v as u16;
+        twin("Sg_SetChrPacketState", a, b, 0x0084_5c30, &[v], |m| {
+            e::set_chr_packet_state(m, h);
+        });
+        twin("Sg_SetChrPacketWord", a, b, 0x0084_5c40, &[v], |m| {
+            e::set_chr_packet_word(m, h);
+        });
+        let src = alloc(a, b, 16);
+        put(a, b, src, rng.next());
+        put(a, b, src + 4, rng.next());
+        let dst = if n % 4 == 0 { src } else { alloc(a, b, 16) };
+        let imm = rng.next();
+        twin("sg_Daddiu", a, b, 0x0084_5cc0, &[dst, src, imm], |m| {
+            e::daddiu(m, dst, src, imm)
+        });
+        let sh = rng.next();
+        twin("sg_Sll", a, b, 0x0084_5d70, &[dst, src, sh], |m| {
+            e::sll(m, dst, src, sh)
+        });
+        let f = val(rng);
+        twin("sg_SetFloat", a, b, 0x0084_5cf0, &[dst, f], |m| {
+            e::set_float(m, dst, f32::from_bits(f))
+        });
+        let v3 = alloc(a, b, 16);
+        for k in 0..4 {
+            put(a, b, v3 + 4 * k, val(rng));
+            put(a, b, acc + 4 * k, val(rng));
+        }
+        let out = match n % 3 {
+            0 => v3,
+            1 => acc,
+            _ => alloc(a, b, 16),
+        };
+        let s = val(rng);
+        twin("sg_VmulScalar", a, b, 0x0084_5e80, &[out, v3, s], |m| {
+            e::vmul_scalar(m, out, v3, f32::from_bits(s))
+        });
+        let s = val(rng);
+        twin(
+            "sg_VmaddScalar",
+            a,
+            b,
+            0x0084_5e40,
+            &[out, v3, 0, 0, s],
+            |m| e::vmadd_scalar(m, out, v3, f32::from_bits(s)),
+        );
+        let v = if n % 5 == 0 { acc } else { v3 };
+        let s = val(rng);
+        twin("sg_VmaddaScalar", a, b, 0x0084_5df0, &[0, v, 0, s], |m| {
+            e::vmadda_scalar(m, v, f32::from_bits(s))
+        });
     }
 }

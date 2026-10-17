@@ -16,6 +16,10 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `Atel_CtrlStart(ctrl)`: the default start callback.
+    Atel_CtrlStart @ 0x0086_83e0 => extern "C" fn h_8683e0(c: u32) -> u32 {
+        hp::atel_ctrl_start(&mut mem(), c)
+    }
     /// `AtelClearMesWinWork`.
     AtelClearMesWinWork @ 0x0086_3b10 => extern "C" fn h_863b10() -> u32 {
         hp::atel_clear_mes_win_work(&mut mem())

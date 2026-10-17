@@ -577,6 +577,16 @@ natives, with its per-map `+0x870` fixes), `Script_LineActorSide`,
 `AtelGetMyBufferSize`, `AtelClearMesWinWork` (whose `0x01a00200` has no
 relocation, so it stays the same when the image moves), `0x00877660`
 (hex parsing), `0x0086f460` (one bind-mask bit) and `0x0086ab80`.
+Round 17 ported the ctrl work's default start callback (`0x008683e0`,
+`+0x50`): every worker runs (`Script_Run(worker, ctrl +8, 1)`) until its
+`+0x34` bit 4 says its init is done, then every worker's signals are
+decoded and the ctrl work's bit 3 is set. With it the per-frame script
+path calls no original script code: what `Script_Run`, the signals and
+the scheduler still call is `Mutex_Lock`/`Mutex_Unlock` (`0x006f2ed0`,
+`0x006f2f50`, thin wrappers over `WaitForSingleObject`/`ReleaseMutex`),
+the script debugger's hook `0x0067a9b0` (a forward to the debugger object
+`*0x00ce9014`) and the ctrl works' own callbacks (`+0x28`, `+0x58`,
+`+0x5c`, `+0x60`), which belong to their callers' modules.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)

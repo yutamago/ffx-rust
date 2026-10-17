@@ -17,18 +17,21 @@ use ffx_chara::texture::bridge as tx;
 
 use super::{mem, ported};
 
-/// Scratch memory for ports whose originals use a stack buffer that only
-/// lives during the call (the game calls them from one thread).
-static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 0x280];
+thread_local! {
+    /// Scratch memory for ports whose originals use a stack buffer that only
+    /// lives during the call. One per thread: the game runs
+    /// `Ch_CalcMiddle_Batch` (`0x00833530`: `Ch_Neck`, `Ch_CalcElement`,
+    /// `Ch_ElemCalcQuaternion`, ...) as job-scheduler jobs on several worker
+    /// threads at once (`Ch_CalcMiddle` queues one per ~200 elements through
+    /// `0x00a44b90`, so battles run several), and a shared buffer would be
+    /// overwritten mid-call.
+    static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
+        const { [const { core::sync::atomic::AtomicU32::new(0) }; 0x280] };
+}
 
-/// `Ch_CalcElement`'s frame (0xc11c bytes, its 512 skeleton matrices).
-static CALC_SCRATCH: [core::sync::atomic::AtomicU32; 0x3047] =
-    [const { core::sync::atomic::AtomicU32::new(0) }; 0x3047];
-
-/// [`SCRATCH`]'s address.
+/// This thread's [`SCRATCH`] address (stable for the thread's life).
 fn scratch() -> u32 {
-    u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
+    SCRATCH.with(|s| u32::try_from(s.as_ptr() as usize).unwrap_or(0))
 }
 
 /// A C runtime intrinsic through the game's import thunk `f`: the operands
@@ -1813,14 +1816,22 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
     }
-    /// `Ch_CalcElement(chr)`.
+    /// `Ch_CalcElement(chr)`. Its frame (0xc11c bytes, the 512 skeleton
+    /// matrices the upload reads) lives on this stack, as the original's
+    /// does: the game calls it from several job-scheduler worker threads at
+    /// once (see [`SCRATCH`]), and a shared static frame let one thread's
+    /// matrices overwrite another's before their upload (every battle model
+    /// garbled, 2026-10-17).
     Ch_CalcElement @ 0x0083_2760 => extern "C" fn ch_calc_element(chr: u32) {
-        let at = u32::try_from(CALC_SCRATCH.as_ptr() as usize).unwrap_or(0);
+        #[allow(clippy::large_stack_arrays)] // the original's frame is this size
+        let mut frame = [0u32; p::CALC_ELEMENT_SCRATCH as usize / 4 + 1];
+        let at = u32::try_from(frame.as_mut_ptr() as usize).unwrap_or(0);
         let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
         let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_calc_element(&mut mem(), chr, at, &mut c);
+        std::hint::black_box(&mut frame);
     }
     /// `Ch_MemMove()`: the whole function (the dump splits it at the early
     /// return).
