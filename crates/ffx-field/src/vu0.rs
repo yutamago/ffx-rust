@@ -559,6 +559,29 @@ pub mod bridge {
     pub fn rc_vu0_sub(mem: &mut impl Mem, a: u32, b: u32, c: u32) -> u32 {
         rc_vu0_op(mem, Vu0Op::Sub3, a, b, c)
     }
+
+    /// `op_ivec4_to_fvec4_007e3100(dst, src)` (`0x007e3100`).
+    pub const OP_IVEC4_TO_FVEC4: u32 = 0x007e_3100;
+
+    /// `rcVu0IntToFloat(a, b)` (`0x00927ba0`, name ours; from `0x009283f0`):
+    /// `b` to the VU0 register at `0x00c8f980`, converted there to floats
+    /// (`op_ivec4_to_fvec4(reg, reg)`), then copied to `a`. Returns the
+    /// last word copied.
+    pub fn rc_vu0_int_to_float<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut C,
+    ) -> u32 {
+        let r = mem.rebase(super::VU0_COPY_REG);
+        let v = mem.read::<[u32; 4]>(b);
+        mem.write(r, v);
+        let f = mem.rebase(OP_IVEC4_TO_FVEC4);
+        call(mem, f, &[r, r]);
+        let v = mem.read::<[u32; 4]>(r);
+        mem.write(a, v);
+        v[3]
+    }
 }
 
 #[cfg(test)]

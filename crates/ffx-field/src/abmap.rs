@@ -2123,4 +2123,28 @@ pub mod bridge {
         crate::ke::PACKET_POS.set(mem, r);
         r
     }
+
+    /// `ToMakeBtlEasyDigitRightAbmap(..)` (`0x00905660`).
+    pub const TO_MAKE_DIGIT_RIGHT_ABMAP: u32 = 0x0090_5660;
+    /// Its last two arguments (`f32`, `.rdata`).
+    pub const DIGIT_RIGHT_CONSTS: [u32; 2] = [0x00b3_4254, 0x00b9_2194];
+
+    /// `AbmapDigitRight(a, x, y, d)` (`0x00a59630`, name ours; from
+    /// `0x00a4f630`): `ToMakeBtlEasyDigitRightAbmap(a, f32(x), f32(y), d,
+    /// [0x00b34254], [0x00b92194])` with the integer position as floats
+    /// (`fild`, stored as `f32`) and the two constants copied through the
+    /// x87; returns its `eax`.
+    pub fn abmap_digit_right<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, x, y, d]: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{round_trip, store};
+        let fx = store(f64::from(x.cast_signed()));
+        let fy = store(f64::from(y.cast_signed()));
+        let [c1, c2] =
+            DIGIT_RIGHT_CONSTS.map(|k| round_trip(mem.read::<f32>(mem.rebase(k))).to_bits());
+        let f = mem.rebase(TO_MAKE_DIGIT_RIGHT_ABMAP);
+        call(mem, f, &[a, fx, fy, d, c1, c2])
+    }
 }

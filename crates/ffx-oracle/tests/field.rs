@@ -12947,3 +12947,81 @@ fn round46_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x002e_0002);
     round46_cases(&mut t, &mut rng, 40);
 }
+
+// ---- round 47 ----
+
+/// Round 47 on `t`: `rcVu0IntToFloat` (the conversion run as the
+/// original), `SqsOefSetPacketAddrRange` and `AbmapDigitRight` (their
+/// callees logged; the entry getter gives 0 now and then).
+fn round47_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    use ffx_field::abmap;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, rv0) = (t.alloc(4 + 0x20 * 300), t.alloc(4), t.alloc(4));
+    t.cave(&[
+        (Some(nkz::bridge::OP_OEF2_A_GET), log_stub(log, rv0, 1, 3)),
+        (
+            Some(nkz::bridge::OP_MD_PACKET_SET_ADDR),
+            log_stub(log, rv, 2, 3),
+        ),
+        (
+            Some(abmap::bridge::TO_MAKE_DIGIT_RIGHT_ABMAP),
+            log_stub(log, rv, 3, 6),
+        ),
+    ]);
+    let (a, b) = (t.alloc(0x10), t.alloc(0x10));
+    for _ in 0..rounds {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(b, 0x10, rng);
+        t.fill(a, 0x10, rng);
+        t.same(
+            "rcVu0IntToFloat",
+            |o| o.eax(0x0092_7ba0, &[a, b]),
+            |m| vu0::bridge::rc_vu0_int_to_float(m, a, b, call),
+        );
+        t.put(rv0, if rng.below(4) == 0 { 0 } else { rng.next() });
+        let lo = rng.range(-5, 20);
+        let hi = lo + rng.range(-3, 30);
+        let args = [
+            rng.next(),
+            lo.cast_unsigned(),
+            hi.cast_unsigned(),
+            rng.next(),
+        ];
+        t.same(
+            "SqsOefSetPacketAddrRange",
+            |o| o.void(0x0081_ca20, &args),
+            |m| nkz::bridge::sqs_oef_set_packet_addr_range(m, args, call),
+        );
+        t.put(log, 0u32);
+        let d = [
+            rng.next(),
+            rng.next(),
+            rng.range(-100_000, 100_000).cast_unsigned(),
+            rng.next(),
+        ];
+        t.same(
+            "AbmapDigitRight",
+            |o| o.eax(0x00a5_9630, &d),
+            |m| abmap::bridge::abmap_digit_right(m, d, call),
+        );
+    }
+}
+
+/// Round 47: three small helpers.
+#[test]
+fn round47_small_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x002f_0001);
+    round47_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 47 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round47_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x002f_0002);
+    round47_cases(&mut t, &mut rng, 40);
+}

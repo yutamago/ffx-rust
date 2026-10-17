@@ -1483,6 +1483,23 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## Three small helpers (round 47)
+
+All names ours.
+- `rcVu0IntToFloat(a, b)` (`0x00927ba0`, from `0x009283f0`): `b` goes to
+  the VU0 register `0x00c8f980`, is converted there by
+  `op_ivec4_to_fvec4(reg, reg)`, and is copied to `a`. It returns the last
+  word copied.
+- `SqsOefSetPacketAddrRange(oef, lo, hi, v)` (`0x0081ca20`, called by
+  `opu_md_etc` though placed among the `Sqs*`): for `n` from `lo` to `hi`
+  (signed, inclusive) it calls `op_md_packet_set_addr(e, v, v >> 31)` on
+  each non-null `e = op_oef2_a_get(oef, 4, n)`. The caller ignores `eax`,
+  which the loop leaves undefined when it does not run.
+- `AbmapDigitRight(a, x, y, d)` (`0x00a59630`, from `0x00a4f630`) calls
+  `ToMakeBtlEasyDigitRightAbmap(a, f32(x), f32(y), d, [0x00b34254],
+  [0x00b92194])`, the integers converted by `fild` and stored as `f32`, and
+  returns its `eax`.
+
 ## The sphere grid's help line (round 46)
 
 `AbmapHelpLineDraw(a, b, c)` (`0x00a594c0`, name ours; called five times

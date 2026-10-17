@@ -3787,6 +3787,22 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcVu0IntToFloat(a, b)`.
+    rcVu0IntToFloat @ 0x0092_7ba0 => extern "C" fn shim_rc_vu0_int_to_float(a: u32, b: u32) -> u32 {
+        vu0::bridge::rc_vu0_int_to_float(&mut mem(), a, b, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsOefSetPacketAddrRange(oef, lo, hi, v)`: void, its caller ignores
+    /// `eax`.
+    SqsOefSetPacketAddrRange @ 0x0081_ca20 => extern "C" fn shim_sqs_oef_set_packet_addr_range(oef: u32, lo: u32, hi: u32, v: u32) {
+        nkz::bridge::sqs_oef_set_packet_addr_range(&mut mem(), [oef, lo, hi, v], &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapDigitRight(a, x, y, d)`.
+    AbmapDigitRight @ 0x00a5_9630 => extern "C" fn shim_abmap_digit_right(a: u32, x: u32, y: u32, d: u32) -> u32 {
+        abmap::bridge::abmap_digit_right(&mut mem(), [a, x, y, d], &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `AbmapHelpLineDraw(a, b, c)`.
     AbmapHelpLineDraw @ 0x00a5_94c0 => extern "C" fn shim_abmap_help_line_draw(a: u32, b: u32, c: u32) -> u32 {
         abmap::bridge::abmap_help_line_draw(&mut mem(), [a, b, c], &mut |_, f, a| call_cdecl(f, a))
