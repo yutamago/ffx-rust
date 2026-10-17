@@ -2253,6 +2253,12 @@ impl ffx_bridge::Host for H<'_> {
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
     }
+
+    fn callee_scratch(&mut self) -> Option<u32> {
+        // the bottom of the emulated stack: no call reaches that deep, and
+        // the diff leaves the stacks out, as it does the originals' frames
+        Some(self.0.stack_range().start + 0x100)
+    }
 }
 
 /// Free image bytes for the recorders: the `.reloc` section, which the
@@ -2263,6 +2269,8 @@ const REC_CODE: u32 = 0x0270_0000;
 const REC_LOG: u32 = 0x0270_f000;
 /// One answer per recorder.
 const REC_RETS: u32 = 0x0270_fc00;
+/// `Yn_PreBgLayerDispGet`'s answers by layer id (16 bytes).
+const LAYER_DISP: u32 = 0x0270_fe00;
 
 /// A cdecl recording stub over the original at `sym` (slot `k` of the
 /// code area): logs `sym` and `n` arguments, returns `ret`.
@@ -2440,6 +2448,11 @@ fn control_synthetic() {
     init_cases(&mut a, &mut b, &mut rng, 200);
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
     round4_main_cases(&mut a, &mut b, &mut rng, 300, false);
+    sync_cases(&mut a, &mut b, &mut rng, 300);
+    round5_main_cases(&mut a, &mut b, &mut rng, 300);
+    round6_main_cases(&mut a, &mut b, &mut rng, 300);
+    round7_main_cases(&mut a, &mut b, &mut rng, 300);
+    round8_main_cases(&mut a, &mut b, &mut rng, 300, false);
 }
 
 #[test]
@@ -2453,6 +2466,11 @@ fn control_snapshot() {
     init_cases(&mut a, &mut b, &mut rng, 200);
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
     round4_main_cases(&mut a, &mut b, &mut rng, 300, true);
+    sync_cases(&mut a, &mut b, &mut rng, 300);
+    round5_main_cases(&mut a, &mut b, &mut rng, 300);
+    round6_main_cases(&mut a, &mut b, &mut rng, 300);
+    round7_main_cases(&mut a, &mut b, &mut rng, 300);
+    round8_main_cases(&mut a, &mut b, &mut rng, 300, true);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -2772,12 +2790,15 @@ fn round4_main_cases(
     let log = a.rebase(REC_LOG);
     let f = f32::from_bits;
     recorder(a, b, 25, sq::YI_ASSERT, 3, 0x4000);
-    // Yn_PreBgLayerDispGet: the byte its argument points to
+    // Yn_PreBgLayerDispGet: layer `id`'s byte in the display table
     for o in [&mut *a, &mut *b] {
         let code = o.rebase(REC_CODE) + 0x60 * 26;
-        // mov eax, [esp+4]; movzx eax, byte [eax]; ret
-        o.write(code, &[0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0xc3])
-            .unwrap();
+        let table = o.rebase(LAYER_DISP);
+        // mov eax, [esp+4]; movzx eax, byte [eax + table]; ret
+        let mut s = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x80];
+        s.extend(table.to_le_bytes());
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
         let at = o.rebase(c::YN_PRE_BG_LAYER_DISP_GET);
         let mut j = vec![0xe9];
         j.extend(code.wrapping_sub(at + 5).to_le_bytes());
@@ -2886,13 +2907,15 @@ fn round4_main_cases(
             st::id_match_chr(m, chr, i)
         });
 
-        // the dream effect: a layer is a pointer to its display byte here
+        // the dream effect over layer ids 0..15
         put(a, b, log, 0u32);
         let disp = [0u8, 1, 2, 3, 4, 8, 0x80, 0x81];
-        let la = alloc(a, b, 4);
-        let lb = alloc(a, b, 4);
-        put(a, b, la, disp[rng.below(8) as usize]);
-        put(a, b, lb, disp[rng.below(8) as usize]);
+        let disp_at = a.rebase(LAYER_DISP);
+        for k in 0..16 {
+            put(a, b, disp_at + k, disp[rng.below(8) as usize]);
+        }
+        let la = rng.below(16);
+        let lb = rng.below(16);
         set(a, b, c::DREAM_ON, rng.below(2));
         set(a, b, c::DREAM_PHASE, [0, 1, 5, 7][rng.below(4) as usize]);
         if rng.below(2) == 0 {
@@ -2944,4 +2967,599 @@ fn round4_main_cases(
             v::cloth_rods(m, kind, rods, n, points)
         });
     }
+}
+
+// Main round 5: the cut scene's sync (a callee writing through a pointer
+// to the original's local: the host's callee scratch).
+
+fn sync_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    // iSyncGetData(&time, &rate, &frame): writes the three from data
+    // slots 33..35, returns slot 32
+    for o in [&mut *a, &mut *b] {
+        let rets = o.rebase(REC_RETS);
+        let code = o.rebase(REC_CODE) + 0x60 * 32;
+        let mut s = vec![];
+        for (arg, slot) in [(4u8, 34u32), (8, 35), (0xc, 33)] {
+            s.extend([0x8b, 0x4c, 0x24, arg]); // mov ecx, [esp+arg]
+            s.push(0x8b);
+            s.push(0x15);
+            s.extend((rets + 4 * slot).to_le_bytes()); // mov edx, [slot]
+            s.extend([0x89, 0x11]); // mov [ecx], edx
+        }
+        s.push(0xa1);
+        s.extend((rets + 4 * 32).to_le_bytes()); // mov eax, [slot 32]
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
+        let at = o.rebase(c::ISYNC_GET_DATA);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+    let rets = a.rebase(REC_RETS);
+    for _ in 0..rounds {
+        let answer = if rng.below(3) == 0 { 999 } else { rng.below(4) };
+        put(a, b, rets + 4 * 32, answer);
+        put(a, b, rets + 4 * 33, rng.next());
+        put(a, b, rets + 4 * 34, modest(rng));
+        put(a, b, rets + 4 * 35, modest(rng));
+        let base = a.rebase(0x012f_b814);
+        for k in 0..0x28 {
+            put(a, b, base + 4 * k, rng.next());
+        }
+        // the index within the table (the game's), sometimes past it
+        let i = if rng.below(6) == 0 {
+            rng.below(0x26)
+        } else {
+            rng.below(30)
+        };
+        set(a, b, c::SYNC_INDEX, i);
+        let at = a.rebase(0x00c4_94d4);
+        put(a, b, at, rng.below(2));
+        twin("Sg_SyncCutScene", a, b, 0x0082_1d60, &[], |m| {
+            c::sync_cut_scene(&mut H(m))
+        });
+    }
+}
+
+/// Id normals, the bone dispatcher, the dream effect by map.
+fn round5_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let f = f32::from_bits;
+    for _ in 0..rounds {
+        // id triangles over 8 vertices
+        let verts = block(a, b, rng, 8 * 8);
+        let table = alloc(a, b, 16 * 4);
+        for k in 0..12 {
+            put(
+                a,
+                b,
+                table + 16 * (k / 3) + 2 * (k % 3),
+                u16::try_from(rng.below(8)).unwrap(),
+            );
+        }
+        set(
+            a,
+            b,
+            st::ID_TABLE,
+            if rng.below(8) == 0 { 0 } else { table },
+        );
+        set(a, b, st::ID_VERTICES, verts);
+        let i = if rng.below(8) == 0 {
+            u32::MAX
+        } else {
+            rng.below(4)
+        };
+        let out = block(a, b, rng, 16);
+        twin("Sg_IdGetNormal", a, b, 0x0083_e130, &[out, i], |m| {
+            st::id_get_normal(m, out, i)
+        });
+
+        // the bone dispatcher
+        let chan = alloc(a, b, 9 * 0x2c);
+        for k in 0..9 {
+            let x = modest(rng);
+            let x = if k < 3 && (x >> 23 & 0xff) > 0x90 {
+                0x3f80_0000
+            } else {
+                x
+            };
+            put(a, b, chan + 0x2c * k + 0x20, x);
+            put(
+                a,
+                b,
+                chan + 0x2c * k + 0x28,
+                u8::try_from(rng.below(2)).unwrap(),
+            );
+        }
+        let bone = alloc(a, b, 0x148);
+        for k in 0..0x50 {
+            put(a, b, bone + 4 * k, modest(rng));
+        }
+        put(a, b, bone + 0x144, u8::try_from(rng.below(2)).unwrap());
+        let scale = modest(rng);
+        let first = rng.next();
+        twin(
+            "SG_ApplyBoneSel",
+            a,
+            b,
+            0x0083_8240,
+            &[first, chan, bone, scale],
+            |m| {
+                sq::apply_bone_sel(m, chan, bone, f(scale));
+            },
+        );
+
+        // the dream effect by map
+        put(a, b, log, 0u32);
+        let disp = [0u8, 1, 2, 3, 4, 8, 0x80, 0x81];
+        let disp_at = a.rebase(LAYER_DISP);
+        for k in 0..16 {
+            put(a, b, disp_at + k, disp[rng.below(8) as usize]);
+        }
+        let maps = [
+            0x86,
+            0xa5,
+            0xbf,
+            0xf9,
+            0xfc,
+            0x129,
+            0x187,
+            0x85,
+            0xfa,
+            0x200,
+            0x10,
+            u32::MAX,
+        ];
+        set(a, b, c::GRAPHIC_MAP_ID, maps[rng.below(12) as usize]);
+        set(a, b, c::DREAM_ON, rng.below(2));
+        set(a, b, c::DREAM_PHASE, [0, 1, 5][rng.below(3) as usize]);
+        twin("drawDreamEffect", a, b, 0x0082_23a0, &[], |m| {
+            c::draw_dream_effect(&mut H(m))
+        });
+    }
+}
+
+// Main round 6: the effect strip, channel sampling, pose blending.
+
+/// A channel list of 1-4 channels with random streams; returns the first.
+fn channel_list(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let n = rng.below(4) + 1;
+    let mut next = 0;
+    for _ in 0..n {
+        let ch = block(a, b, rng, 0x30);
+        let stream = block(a, b, rng, 0x100);
+        put(a, b, ch, next);
+        put(a, b, ch + 5, u8::try_from(rng.below(2)).unwrap());
+        put(a, b, ch + 8, stream);
+        put(a, b, ch + 0xc, stream + rng.below(8));
+        put(a, b, ch + 6, u16::try_from(rng.below(4)).unwrap());
+        put(a, b, ch + 0x1c, modest(rng));
+        put(a, b, ch + 0x20, modest(rng));
+        next = ch;
+    }
+    next
+}
+
+fn round6_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::seq::bridge as sq;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 36, c::CH_EFFECT_PACKET_STORE_POLY, 3, 0x5000);
+    for _ in 0..rounds {
+        // the effect strip: vertices in a buffer with room behind them for
+        // the back references
+        put(a, b, log, 0u32);
+        let buf = alloc(a, b, 2 * 96);
+        for k in 0..96 {
+            put(
+                a,
+                b,
+                buf + 2 * k,
+                u16::try_from(rng.next() & 0x7fff).unwrap(),
+            );
+        }
+        let v = buf + 2 * (40 + 4 * rng.below(10));
+        for k in 0..2 {
+            if rng.below(3) == 0 {
+                let back = 0x8000 | rng.below(24);
+                put(a, b, v + 2 * k, u16::try_from(back).unwrap());
+            }
+        }
+        set(a, b, c::STRIP_COUNT, u16::try_from(rng.below(7)).unwrap());
+        let arg = if rng.below(8) == 0 { 0 } else { v };
+        twin(
+            "Ch_EffectPacketStoreStrip",
+            a,
+            b,
+            0x0084_4370,
+            &[arg],
+            |m| c::effect_store_strip(&mut H(m), arg),
+        );
+
+        // channel sampling, within the streams' bytes (at most ~60 frames)
+        let obj = block(a, b, rng, 0x800);
+        let list = channel_list(a, b, rng);
+        put(a, b, obj + 0x74c, list);
+        put(a, b, obj + 0x740, rng.below(0x3c00));
+        put(a, b, obj + 0x71c, rng.below(0x3c00));
+        put(a, b, obj + 0x720, rng.below(0x3c00));
+        put(a, b, obj + 0x724, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, obj + 0x7dc, rng.below(60));
+        if rng.below(4) == 0 {
+            let t: u32 = Mem::read(a, obj + 0x740);
+            put(a, b, obj + 0x740, t & !0xff);
+        }
+        twin("SG_SampleChannels", a, b, 0x0083_93c0, &[obj], |m| {
+            sq::sample_channels(m, obj);
+        });
+
+        // pose blending: a channel motion or a model's bones
+        let obj = block(a, b, rng, 0x800);
+        let list = channel_list(a, b, rng);
+        put(a, b, obj + 0x74c, list);
+        let nb = rng.below(4);
+        let model = block(a, b, rng, 0x10);
+        put(a, b, model + 0xa, u16::try_from(nb).unwrap());
+        put(a, b, obj + 0x1c0, model);
+        let bones = alloc(a, b, 0x18c * nb as usize + 0x20);
+        for k in 0..(0x18c * nb + 0x20) / 4 {
+            put(a, b, bones + 4 * k, modest(rng));
+        }
+        put(a, b, obj + 0x748, bones);
+        // some values already at their targets (no step, even over 0 frames)
+        for k in 0..nb {
+            for o in [0x80u32, 0xac, 0xd8, 0x104, 0x130, 0x15c] {
+                if rng.below(3) == 0 {
+                    let at = bones + 0x20 + 0x18c * k + o;
+                    let t: u32 = Mem::read(a, at);
+                    put(a, b, at + 4, t);
+                }
+            }
+        }
+        put(a, b, obj + 0x196, u8::try_from(rng.below(2)).unwrap());
+        let n = rng.below(10).cast_signed() - 2;
+        twin(
+            "SG_BlendToTarget",
+            a,
+            b,
+            0x0083_95b0,
+            &[obj, n.cast_unsigned()],
+            |m| {
+                sq::blend_to_target(m, obj, n);
+            },
+        );
+    }
+}
+
+// Main round 7: the edge slide, the free camera, raw clips.
+
+/// A float in -8..8 (no specials: the edge slide steps by one unit until it
+/// is back, which never ends far out).
+fn bounded(rng: &mut Xorshift) -> u32 {
+    let v = f64::from(rng.below(0x10000)) / 4096.0 - 8.0;
+    ffx_bridge::x87::store(v)
+}
+
+fn round7_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    for _ in 0..rounds {
+        // the edge slide
+        let va = alloc(a, b, 8);
+        let vb = alloc(a, b, 8);
+        for (v, k) in [(va, 0u32), (va, 4), (vb, 0), (vb, 4)] {
+            let c = if rng.below(6) == 0 { 0 } else { rng.below(64) };
+            put(a, b, v + k, u16::try_from(c).unwrap());
+        }
+        set(a, b, st::ID_EDGE_A, va);
+        set(a, b, st::ID_EDGE_B, vb);
+        let from = alloc(a, b, 16);
+        let to = alloc(a, b, 16);
+        for k in 0..4 {
+            put(a, b, from + 4 * k, bounded(rng));
+            put(a, b, to + 4 * k, bounded(rng));
+        }
+        twin("Sg_IdSlideEdge", a, b, 0x0083_e180, &[from, to], |m| {
+            st::id_slide_edge(m, from, to);
+        });
+
+        // the free camera
+        let stick = |rng: &mut Xorshift| u8::try_from(rng.next() & 0xff).unwrap();
+        let (sx, sy) = (stick(rng), stick(rng));
+        set(a, b, st::PAD_RSTICK_X, sx);
+        set(a, b, st::PAD_RSTICK_Y, sy);
+        set(a, b, st::PAD_HELD, rng.next() & 0x10f);
+        set(a, b, st::PAD_PRESSED, rng.next() & 0x400);
+        for g in [st::FREE_CAM_YAW, st::FREE_CAM_PITCH] {
+            let x = if rng.below(3) == 0 {
+                modest(rng)
+            } else {
+                bounded(rng) & 0xbfff_ffff
+            };
+            set(a, b, g, f32::from_bits(x));
+        }
+        set(a, b, st::FREE_CAM_HEIGHT, f32::from_bits(modest(rng)));
+        set(a, b, st::FREE_CAM_DIST, f32::from_bits(modest(rng)));
+        set(a, b, st::FREE_CAM_PRESET, rng.next());
+        set(a, b, st::IS_DEBUG, u8::try_from(rng.below(2)).unwrap());
+        set(
+            a,
+            b,
+            st::LR_BUTTON_MODE,
+            u8::try_from(rng.below(2)).unwrap(),
+        );
+        set(
+            a,
+            b,
+            st::CAPTURE_SELECT,
+            u8::try_from(rng.below(2)).unwrap(),
+        );
+        if rng.below(6) == 0 {
+            // exactly pi (the f32 pi in the f64 constant): no wrap
+            let pi = f32::from_bits(ffx_bridge::x87::store(st::PI_F64.get(a)));
+            set(a, b, st::FREE_CAM_YAW, pi);
+            set(a, b, st::PAD_RSTICK_X, 0x80);
+        }
+        twin("Sg_ControlCamera", a, b, 0x0083_f4b0, &[], |m| {
+            st::control_camera(m)
+        });
+
+        // raw clips
+        let obj = block(a, b, rng, 0x800);
+        let nb = rng.below(5);
+        let model = block(a, b, rng, 0x10);
+        put(a, b, model + 0xa, u16::try_from(nb).unwrap());
+        put(a, b, obj + 0x1c0, model);
+        let bones = block(a, b, rng, 0x4000);
+        put(a, b, obj + 0x328, bones);
+        let scale = block(a, b, rng, 0x40);
+        put(a, b, scale + 0x38, modest(rng));
+        put(a, b, obj + 0x1c4, scale);
+        put(a, b, obj + 0x7ec, u8::try_from(rng.below(5)).unwrap());
+        let map = if rng.below(2) == 0 {
+            0
+        } else {
+            let m = alloc(a, b, 0x20);
+            for k in 0..8 {
+                let v = if rng.below(4) == 0 {
+                    0xffff
+                } else {
+                    rng.below(0x2d)
+                };
+                put(a, b, m + 8 + 2 * k, u16::try_from(v).unwrap());
+            }
+            m
+        };
+        put(a, b, obj + 0x758, map);
+        let stride = rng.below(5) + 2;
+        let in_clip = rng.below(6);
+        let len = 0x10 + 2 * stride * 9 * in_clip;
+        let clip = block(a, b, rng, len as usize + 4);
+        put(a, b, clip, u16::try_from(stride).unwrap());
+        put(a, b, clip + 2, u16::try_from(in_clip).unwrap());
+        let frame = rng.below(stride);
+        let t = (frame << 8)
+            | if rng.below(3) == 0 {
+                0
+            } else {
+                rng.below(0x100)
+            };
+        let t2 = rng.below(stride) << 8 | rng.below(0x100);
+        let arg = if rng.below(10) == 0 { 0 } else { clip };
+        twin(
+            "SG_ApplyRawClip",
+            a,
+            b,
+            0x0083_8750,
+            &[obj, arg, t, t2],
+            |m| {
+                sq::apply_raw_clip(m, obj, arg, t, t2);
+            },
+        );
+    }
+}
+
+// Main round 8: motion groups, id heights, bones per character, the motion
+// script.
+
+fn round8_main_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    let f = f32::from_bits;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 37, sq::CH_ANIM_COPY_NEAR, 1, 0);
+    recorder(a, b, 38, sq::CH_ANIM_COPY2, 1, 0);
+    recorder(a, b, 39, sq::CH_SET_MOTION_SEQ, 5, 0x6000);
+    recorder(a, b, 40, sq::DBG_PRINTF, 2, 0x6001);
+    let rets = a.rebase(REC_RETS);
+    for _ in 0..rounds {
+        // motion groups: sequences without tables (relocation moves only
+        // the table pointers), the group table sometimes full
+        put(a, b, log, 0u32);
+        if !from_game {
+            let groups = a.rebase(sq::MOTION_GROUPS.sym);
+            let full = rng.below(6) == 0;
+            for k in 0..50 {
+                let used = full || rng.below(4) == 0;
+                put(a, b, groups + 12 * k, if used { rng.next() | 1 } else { 0 });
+            }
+            let seqs = a.rebase(sq::SEQUENCES.sym);
+            for k in 0..100 {
+                put(
+                    a,
+                    b,
+                    seqs + 20 * k,
+                    if rng.below(3) == 0 { rng.next() | 1 } else { 0 },
+                );
+            }
+        }
+        let group = block(a, b, rng, 0x20);
+        let n = rng.below(4);
+        let records = block(a, b, rng, 20 * n as usize + 4);
+        for k in 0..n {
+            put(a, b, records + 20 * k + 8, 0u32);
+        }
+        // built at `group - d`: the table offset relative to that
+        let d = if rng.below(2) == 0 {
+            0
+        } else {
+            4 * rng.below(0x100)
+        };
+        put(a, b, group + 4, n);
+        put(a, b, group + 0xc, records.wrapping_sub(d));
+        put(a, b, group, group.wrapping_sub(d));
+        let arg = if rng.below(10) == 0 { 0 } else { group };
+        let (ga, gb, key) = (rng.next(), rng.next(), rng.next());
+        twin(
+            "SG_AddMotionGroup",
+            a,
+            b,
+            0x0083_6c90,
+            &[arg, ga, gb, key],
+            |m| {
+                sq::add_motion_group(&mut H(m), arg, ga, gb, key);
+            },
+        );
+
+        // id heights
+        let verts = block(a, b, rng, 8 * 8);
+        for k in 0..24 {
+            put(a, b, verts + 2 * k, u16::try_from(rng.below(64)).unwrap());
+        }
+        let table = alloc(a, b, 16 * 4);
+        for k in 0..12 {
+            put(
+                a,
+                b,
+                table + 16 * (k / 3) + 2 * (k % 3),
+                u16::try_from(rng.below(8)).unwrap(),
+            );
+        }
+        set(
+            a,
+            b,
+            st::ID_TABLE,
+            if rng.below(8) == 0 { 0 } else { table },
+        );
+        set(a, b, st::ID_VERTICES, verts);
+        let p = alloc(a, b, 16);
+        for k in 0..3 {
+            put(a, b, p + 4 * k, modest(rng));
+        }
+        let i = if rng.below(8) == 0 {
+            u32::MAX
+        } else {
+            rng.below(4)
+        };
+        twin("Sg_IdGetHeight", a, b, 0x0083_e040, &[p, i], |m| {
+            st::id_get_height(m, p, i)
+        });
+
+        // bones per character
+        let chr = block(a, b, rng, 0x900);
+        let nb = rng.below(4);
+        let model = block(a, b, rng, 0x10);
+        put(a, b, model + 0xa, u16::try_from(nb).unwrap());
+        put(a, b, chr + 0x1c0, model);
+        let def = block(a, b, rng, 0x40);
+        put(a, b, def + 0x38, modest(rng));
+        put(a, b, chr + 0x1c4, def);
+        let chan = alloc(a, b, 0x18c * nb as usize + 4);
+        for k in 0..(0x18c * nb) / 4 {
+            put(a, b, chan + 4 * k, bounded(rng));
+        }
+        for k in 0..9 * nb {
+            put(
+                a,
+                b,
+                chan + 0x2c * k + 0x28,
+                u8::try_from(rng.below(2)).unwrap(),
+            );
+        }
+        put(a, b, chr + 0x748, chan);
+        let bones = block(a, b, rng, 0x400);
+        for k in 0..0x100 {
+            put(a, b, bones + 4 * k, modest(rng));
+        }
+        put(a, b, chr + 0x328, bones);
+        let map = if rng.below(2) == 0 {
+            0
+        } else {
+            let m = alloc(a, b, 0x20);
+            put(a, b, m + 2, u16::try_from(rng.below(5)).unwrap());
+            for k in 0..8 {
+                let v = if rng.below(4) == 0 {
+                    0xffff
+                } else {
+                    rng.below(2)
+                };
+                put(a, b, m + 8 + 2 * k, u16::try_from(v).unwrap());
+            }
+            m
+        };
+        put(a, b, chr + 0x758, map);
+        // mostly the copy path (where the map and kind decide)
+        put(a, b, chr + 0x871, u8::from(rng.below(6) == 0));
+        put(a, b, chr + 0x870, u8::from(rng.below(6) != 0));
+        put(a, b, chr + 0x820, if rng.below(4) == 0 { 4u8 } else { 0 });
+        let kinds = [0u16, 4, 0x5045, 1, 7];
+        put(a, b, chr, kinds[rng.below(5) as usize]);
+        let maps = [0x170, 0x11d, 0x50, 0x137, 0x64, 0x3c, 0x10, 0x200];
+        set(a, b, sq::GRAPHIC_MAP_ID, maps[rng.below(8) as usize]);
+        // the scenario around 0x9a, where map 0x3c changes
+        put(a, b, rets + 4 * 22, 0x99 + rng.below(2));
+        put(
+            a,
+            b,
+            rets + 4 * 37,
+            u32::from(rng.below(4) != 0) * (rng.next() | 1),
+        );
+        put(a, b, rets + 4 * 38, rng.below(2) * (rng.next() | 1));
+        put(a, b, log, 0u32);
+        twin("SG_ApplyBones", a, b, 0x0083_8f70, &[chr], |m| {
+            sq::apply_bones(&mut H(m), chr);
+        });
+
+        // the motion script
+        put(a, b, log, 0u32);
+        let chr = block(a, b, rng, 0x800);
+        let script = alloc(a, b, 16);
+        let ops = [0u8, 1, 2, 3, 4, 5, 6, 7, 0xff];
+        put(a, b, script, ops[rng.below(9) as usize]);
+        // u16 operands at 1, 3, 5, 7: small (indices into 4 entries)
+        for k in 1..10 {
+            let v = if k % 2 == 1 { rng.below(4) } else { 0 };
+            put(a, b, script + k, u8::try_from(v).unwrap());
+        }
+        put(a, b, chr + 0x714, script);
+        let clips = block(a, b, rng, 0x20);
+        let entries = block(a, b, rng, 16 * 4);
+        let marks = block(a, b, rng, 2 * 4);
+        for k in 0..4 {
+            put(a, b, entries + 16 * k + 8, marks);
+        }
+        put(a, b, clips + 0x10, entries);
+        put(a, b, chr + 0x710, clips);
+        let jumps = block(a, b, rng, 0x10);
+        let offs = block(a, b, rng, 2 * 4);
+        put(a, b, jumps + 8, offs);
+        put(a, b, chr + 0x70c, jumps);
+        put(a, b, chr + 0x728, u16::try_from(rng.below(2)).unwrap());
+        put(a, b, chr + 0x72a, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, chr + 0x737, u8::try_from(rng.below(5)).unwrap());
+        twin("SG_SeqStep", a, b, 0x0083_7900, &[chr], |m| {
+            sq::seq_step(&mut H(m), chr)
+        });
+    }
+    let _ = f;
 }

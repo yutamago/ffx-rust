@@ -5656,6 +5656,169 @@ ported! {
     KernelSetEventBit_00773880 @ 0x0077_3880 => extern "C" fn kernel_set_event_bit(n: u32, on: u32) -> u32 {
         tolib::bridge::kernel_set_event_bit(&mut mem(), n, on, call_sym)
     }
+    /// `MagicFile_Stop()`.
+    MagicFile_Stop @ 0x009d_a880 => extern "C" fn magic_file_stop() -> u32 {
+        menu::bridge::magic_file_stop(&mut mem(), call_sym, |m, fmt, arg| {
+            menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, arg);
+        })
+    }
+    /// `MagicFile_SetAsyncLoad()`.
+    MagicFile_SetAsyncLoad @ 0x009d_afe0 => extern "C" fn magic_file_set_async_load() -> u32 {
+        menu::bridge::magic_file_async_load(&mut mem(), call_sym)
+    }
+    /// `MagicFile_ResetPreloaded()`.
+    MagicFile_ResetPreloaded @ 0x009d_adc0 => extern "C" fn magic_file_reset_preloaded() -> u32 {
+        menu::bridge::magic_file_reset_preloaded(&mut mem())
+    }
+    /// `CheckPreviousLevel_00872a00()`.
+    CheckPreviousLevel_00872a00 @ 0x0087_2a00 => extern "C" fn check_previous_level() -> u32 {
+        tolib::bridge::previous_level_check(&mut mem(), call_sym)
+    }
+    /// `TOSetMessageChoice(i, n, x, y, total)`.
+    TOSetMessageChoice @ 0x008b_8880 => extern "C" fn to_set_message_choice(i: u32, n: u32, x: u32, y: u32, total: u32) {
+        tolib::bridge::set_message_choice(&mut mem(), i, n, x, y, total);
+    }
+    /// `TOSnapWindowRect(win)`.
+    TOSnapWindowRect @ 0x0090_6e90 => extern "C" fn to_snap_window_rect(win: u32) {
+        tolib::bridge::snap_window_rect(&mut mem(), win);
+    }
+    /// `TOInitLanguage()`.
+    TOInitLanguage @ 0x008a_d900 => extern "C" fn to_init_language() {
+        tolib::bridge::init_language(&mut mem(), call_sym);
+    }
+    /// `TOTimedMacroMessage(arg)`.
+    TOTimedMacroMessage @ 0x008b_9220 => extern "C" fn to_timed_macro_message(arg: u32) {
+        tolib::bridge::timed_macro_message(&mut mem(), arg, call_sym);
+    }
+    /// `IsLangSpecialRecord_00774680(rec)`.
+    IsLangSpecialRecord_00774680 @ 0x0077_4680 => extern "C" fn is_lang_special_record(rec: u32) -> u32 {
+        tolib::bridge::is_lang_special_record(&mut mem(), rec, |m| instance::bridge::ffx_lang(m, &mut phyre_printf))
+    }
+    /// `TOInitFont1208()`.
+    TOInitFont1208 @ 0x0082_1aa0 => extern "C" fn to_init_font_1208() {
+        tolib::bridge::init_font_1208(&mut mem());
+    }
+    /// `EventFontTextureArrayReset()`.
+    EventFontTextureArrayReset @ 0x008a_b550 => extern "C" fn event_font_texture_array_reset() {
+        tolib::bridge::event_font_texture_array_reset(&mut mem());
+    }
+    /// `TOInitGilInput(max)`.
+    TOInitGilInput @ 0x008a_2030 => extern "C" fn to_init_gil_input(max: u32) -> u32 {
+        tolib::bridge::init_gil_input(&mut mem(), max, call_sym)
+    }
+    /// `FindRecordAt_00775ce0()`.
+    FindRecordAt_00775ce0 @ 0x0077_5ce0 => extern "C" fn find_record_at() {
+        tolib::bridge::find_record_at(&mut mem(), call_sym);
+    }
+    /// `FindRecordFlagged_00775de0()`.
+    FindRecordFlagged_00775de0 @ 0x0077_5de0 => extern "C" fn find_record_flagged() {
+        tolib::bridge::find_record_flagged(&mut mem(), call_sym);
+    }
+    /// `PatchMenuRecords_007767d0()`.
+    PatchMenuRecords_007767d0 @ 0x0077_67d0 => extern "C" fn patch_menu_records() {
+        tolib::bridge::patch_menu_records(&mut mem(), call_sym);
+    }
+    /// `MenuPictureSize_00775820(_, image, kind, &w, &h)`.
+    MenuPictureSize_00775820 @ 0x0077_5820 => extern "C" fn menu_picture_size(_a: u32, image: u32, kind: u32, w: u32, h: u32) {
+        tolib::bridge::menu_picture_size(&mut mem(), image, kind, w, h);
+    }
+    /// `RelayoutMenuRecords_00775a20(_, _, recs, last)`.
+    RelayoutMenuRecords_00775a20 @ 0x0077_5a20 => extern "C" fn relayout_menu_records(_a: u32, _b: u32, recs: u32, last: u32) {
+        tolib::bridge::relayout_menu_records(&mut mem(), recs, last, |m| instance::bridge::ffx_lang(m, &mut phyre_printf));
+    }
+    /// `MenuCursorBlocked_00775530()`.
+    MenuCursorBlocked_00775530 @ 0x0077_5530 => extern "C" fn menu_cursor_blocked() {
+        tolib::bridge::menu_cursor_blocked(&mut mem(), |m, f, arg| call_ptr(m, f, &[arg]));
+    }
+    /// `MenuCursorStep_00776110(&result)`.
+    MenuCursorStep_00776110 @ 0x0077_6110 => extern "C" fn menu_cursor_step(result: u32) {
+        tolib::bridge::menu_cursor_step(&mut mem(), result, call_sym, |m, f, arg| call_ptr(m, f, &[arg]));
+    }
+    /// `MenuRecordCondition_00774a50(record)`.
+    MenuRecordCondition_00774a50 @ 0x0077_4a50 => extern "C" fn menu_record_condition(record: u32) -> u32 {
+        tolib::bridge::menu_record_condition(&mut mem(), record, |m, f, arg| call_ptr(m, f, &[arg]))
+    }
+    /// `TOTextWidth12_0089dfa0(text)`.
+    TOTextWidth12_0089dfa0 @ 0x0089_dfa0 => extern "C" fn to_text_width_12(text: u32) -> u32 {
+        tolib::bridge::text_width_12(&mut mem(), text, call_sym)
+    }
+    /// `TOBtlSetTarget(slot, a, b)`.
+    TOBtlSetTarget @ 0x0089_a860 => extern "C" fn to_btl_set_target(slot: u32, a: u32, b: u32) -> u32 {
+        tolib::bridge::to_btl_set_target(&mut mem(), slot, a, b, call_sym)
+    }
+    /// `TOClearBtlWindow()`.
+    TOClearBtlWindow @ 0x0089_ad90 => extern "C" fn to_clear_btl_window() -> u32 {
+        tolib::bridge::to_clear_btl_window(&mut mem(), call_sym)
+    }
+    /// `TOReset1()`.
+    TOReset1 @ 0x008a_de50 => extern "C" fn to_reset1() -> u32 {
+        tolib::bridge::to_reset1(&mut mem(), call_sym)
+    }
+    /// `MenuTextCode_00774860(&out, &code, arg)`.
+    MenuTextCode_00774860 @ 0x0077_4860 => extern "C" fn menu_text_code(out: u32, code: u32, arg: u32) {
+        tolib::bridge::menu_text_code(&mut mem(), out, code, arg, |m, f, a| call_ptr(m, f, &[a]));
+    }
+    /// `TOTextWidthGlyphs_0089e410(text)`.
+    TOTextWidthGlyphs_0089e410 @ 0x0089_e410 => extern "C" fn to_text_width_glyphs(text: u32) -> u32 {
+        tolib::bridge::text_width_glyphs(&mut mem(), text, call_sym)
+    }
+    /// `TOSetWindowKindAndType_008b0000(window, kind, type)`.
+    TOSetWindowKindAndType_008b0000 @ 0x008b_0000 => extern "C" fn to_set_window_kind_and_type(window: u32, kind: u32, message_type: u32) -> u32 {
+        tolib::bridge::to_set_window_kind_and_type(&mut mem(), window, kind, message_type, call_sym)
+    }
+    /// `getScaleButtonIconWidth(id, scale)`.
+    getScaleButtonIconWidth @ 0x0090_62b0 => extern "C" fn get_scale_button_icon_width(id: u32, scale: f32) -> f32 {
+        tolib::bridge::scale_button_icon_width(&mut mem(), id, scale, |_, v| ffx_graphic::ui::remap_x2(v))
+    }
+    /// `TOGetScaleButtonIconWidth(c, scale)`.
+    TOGetScaleButtonIconWidth @ 0x008f_a800 => extern "C" fn to_get_scale_button_icon_width(c: u32, scale: f32) -> f32 {
+        tolib::bridge::to_get_scale_button_icon_width(&mut mem(), c, scale, call_sym, |m, id, s| {
+            tolib::bridge::scale_button_icon_width(m, id, s, |_, v| ffx_graphic::ui::remap_x2(v))
+        })
+    }
+    /// `TOGetSaveChrName(i)`.
+    TOGetSaveChrName @ 0x008a_c850 => extern "C" fn to_get_save_chr_name(i: u32) -> u32 {
+        tolib::bridge::to_get_save_chr_name(&mut mem(), i, call_sym)
+    }
+    /// `TOGetChangeMacroWordCount(table, index)`.
+    TOGetChangeMacroWordCount @ 0x008b_6b00 => extern "C" fn to_get_change_macro_word_count(table: u32, index: u32) -> u32 {
+        tolib::bridge::to_get_change_macro_word_count(&mut mem(), table, index, &mut call_sym, &mut |m, t, i| {
+            call_sym(m, 0x008b_6b00, &[t, i])
+        })
+    }
+    /// `TOGetSaveWindow(a, kind, &count)`.
+    TOGetSaveWindow @ 0x0089_b5a0 => extern "C" fn to_get_save_window(a: u32, kind: u32, count: u32) -> u32 {
+        let mut n = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let local = (&raw mut n) as usize as u32;
+        tolib::bridge::to_get_save_window(&mut mem(), a, kind, count, local, call_sym)
+    }
+    /// `TOValueToMesFontL(value, out, width)`.
+    TOValueToMesFontL @ 0x008b_9140 => extern "C" fn to_value_to_mes_font_l(value: u32, out: u32, width: u32) {
+        tolib::bridge::to_value_to_mes_font_l(&mut mem(), value, out, width, call_sym);
+    }
+    /// `TOCheckBtlCommandUse(chr, command)`.
+    TOCheckBtlCommandUse @ 0x0089_aca0 => extern "C" fn to_check_btl_command_use(chr: u32, command: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_check_btl_command_use(&mut mem(), chr, command, at, call_sym)
+    }
+    /// `TOBtlOpenSimpleHelpMes(i, message)`.
+    TOBtlOpenSimpleHelpMes @ 0x0089_dba0 => extern "C" fn to_btl_open_simple_help_mes(i: u32, message: u32) -> u32 {
+        let mut scratch = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut scratch) as usize as u32;
+        tolib::bridge::to_btl_open_simple_help_mes(&mut mem(), i, message, at, call_sym)
+    }
+    /// `TOIntToMes(value, out, digits, mode)`.
+    TOIntToMes @ 0x008b_8290 => extern "C" fn to_int_to_mes(value: u32, out: u32, digits: u32, mode: u32) -> u32 {
+        tolib::bridge::to_int_to_mes(&mut mem(), value, out, digits, mode, call_sym)
+    }
+    /// `TOConvAlbhedWord(in, out)`.
+    TOConvAlbhedWord @ 0x0090_6780 => extern "C" fn to_conv_albhed_word(input: u32, out: u32) -> u32 {
+        tolib::bridge::to_conv_albhed_word(&mut mem(), input, out, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

@@ -365,4 +365,524 @@ pub mod bridge {
         }
         ffx_chara::motion::bridge::ch_seq_link(h);
     }
+
+    /// `SG_ApplyBoneSel(a, chan, bone, scale)` (`0x00838240`):
+    /// [`apply_bone`], damped when the bone's byte `+0x144` is set (`scale`
+    /// passed on through `fld`/`fstp`).
+    pub fn apply_bone_sel(mem: &mut impl Mem, chan: u32, bone: u32, scale: f32) {
+        let damped = mem.read::<u8>(bone.wrapping_add(0x144)) != 0;
+        apply_bone(mem, chan, bone, ffx_bridge::x87::round_trip(scale), damped);
+    }
+
+    /// `SG_SampleChannels(obj)` (`0x008393c0`): the key streams stepped to
+    /// the motion time and their values interpolated. The time `+0x740`
+    /// (8.8 frames, kept in `+0x744`) rounded up past the frame
+    /// (`(t + 0x1ff) >> 8`) is clamped to the end (`(+0x71c + 1) >> 8`)
+    /// for a motion that stops (`u16` `+0x724` 1), else wrapped back by the
+    /// loop length (`+0x720 >> 8`). Going back rewinds the channels
+    /// (`SG_RewindChannels`); then they step to that frame
+    /// (`SG_StepChannels`, the frame count `+0x7dc`). Each channel of the
+    /// list `+0x74c` then gets at `+0x1c` its key (`Fixed12_ToFloat` of
+    /// `+0x16`) or, between frames (`t & 0xff`), the blend with the key
+    /// before (`+0x18`): `AngleTurn_Lerp` for an angle (byte `+5`), else
+    /// `prev + Fixed8_ToFloat(t & 0xff) * (key - prev)`.
+    pub fn sample_channels(mem: &mut impl Mem, obj: u32) {
+        use ffx_bridge::x87;
+        use ffx_chara::fixed::{fixed8_to_float, fixed12_to_float};
+        let at = |o: u32| obj.wrapping_add(o);
+        let t: u32 = mem.read(at(0x740));
+        let end = mem.read::<i32>(at(0x71c)).wrapping_add(1) >> 8;
+        mem.write(at(0x744), t);
+        let mut want = (t.wrapping_add(0x1ff)).cast_signed() >> 8;
+        if want > end {
+            if mem.read::<u16>(at(0x724)) == 1 {
+                want = end;
+            } else {
+                want = want.wrapping_sub(mem.read::<i32>(at(0x720)) >> 8);
+            }
+        }
+        let mut d = want.wrapping_sub(mem.read::<i32>(at(0x7dc)));
+        if d < 0 {
+            rewind_channels(mem, obj);
+            d = want.wrapping_sub(1);
+        }
+        if want > mem.read::<i32>(at(0x7dc)) {
+            step_channels(mem, obj, d);
+            let n: i32 = mem.read(at(0x7dc));
+            mem.write(at(0x7dc), n.wrapping_add(d));
+        }
+        let f = t & 0xff;
+        let mut ch: u32 = mem.read(at(0x74c));
+        while ch != 0 {
+            let key: u16 = mem.read(ch.wrapping_add(0x16));
+            let v = if f == 0 {
+                fixed12_to_float(u32::from(key))
+            } else {
+                let prev: u16 = mem.read(ch.wrapping_add(0x18));
+                if mem.read::<u8>(ch.wrapping_add(5)) != 0 {
+                    let s = |x: u16| i32::from(x.cast_signed()).cast_unsigned();
+                    ffx_chara::motion::angle_turn_lerp(s(prev), s(key), f)
+                } else {
+                    let a = x87::load(fixed12_to_float(u32::from(prev)).to_bits());
+                    let b = x87::load(fixed12_to_float(u32::from(key)).to_bits());
+                    let diff = x87::sub(b, a);
+                    let w = x87::load(fixed8_to_float(f).to_bits());
+                    f32::from_bits(x87::store(x87::add(x87::mul(w, diff), a)))
+                }
+            };
+            mem.write(ch.wrapping_add(0x1c), v);
+            ch = mem.read(ch);
+        }
+    }
+
+    /// One linear step toward the target over `n` frames: `cur +=
+    /// (target - cur) / n` unless the difference (stored as `f32`) is 0;
+    /// a NaN difference steps.
+    fn step_toward(mem: &mut impl Mem, target: u32, cur: u32, n: i32) {
+        use ffx_bridge::x87;
+        let t = x87::load(mem.read(target));
+        let c = x87::load(mem.read(cur));
+        let d = x87::load(x87::store(x87::sub(t, c)));
+        if d == 0.0 {
+            return;
+        }
+        let nf = x87::load(x87::store(f64::from(n)));
+        let r = x87::add(x87::div(d, nf), c);
+        mem.write(cur, f32::from_bits(x87::store(r)));
+    }
+
+    /// `SG_BlendToTarget(obj, n)` (`0x008395b0`): one of `n` steps from the
+    /// current pose to the target. A channel motion (`+0x196` bit 0) steps
+    /// each channel of `+0x74c` (`+0x20` toward `+0x1c`: `Chr_FracStep` for
+    /// an angle, byte `+5`, else linearly) and marks it changed (`+0x28`).
+    /// Otherwise each of the model's bones (`u16` `+0xa` of `+0x1c0`;
+    /// `0x18c` bytes each at `+0x748`) steps its three rotations
+    /// (`Chr_FracStep`) and six other values linearly, marking its nine
+    /// channels changed; with `n` 1, `+0x194` gets bit 16.
+    pub fn blend_to_target(mem: &mut impl Mem, obj: u32, n: i32) {
+        use ffx_bridge::x87::round_trip as rt;
+        use ffx_chara::motion::bridge::chr_frac_step;
+        let frac = |mem: &mut _, cur: u32, target: u32| {
+            let (c, t) = (rt(Mem::read(mem, cur)), rt(Mem::read(mem, target)));
+            let r = chr_frac_step(mem, c, t, n);
+            Mem::write(mem, cur, r);
+        };
+        if mem.read::<u8>(obj.wrapping_add(0x196)) & 1 != 0 {
+            let mut ch: u32 = mem.read(obj.wrapping_add(0x74c));
+            while ch != 0 {
+                if mem.read::<u8>(ch.wrapping_add(5)) == 0 {
+                    step_toward(mem, ch.wrapping_add(0x1c), ch.wrapping_add(0x20), n);
+                } else {
+                    frac(mem, ch.wrapping_add(0x20), ch.wrapping_add(0x1c));
+                }
+                mem.write(ch.wrapping_add(0x28), 1u8);
+                ch = mem.read(ch);
+            }
+            return;
+        }
+        let count = |mem: &_| {
+            let model: u32 = Mem::read(mem, obj.wrapping_add(0x1c0));
+            i32::from(Mem::read::<u16>(mem, model.wrapping_add(0xa)))
+        };
+        let mut b = mem.read::<u32>(obj.wrapping_add(0x748)).wrapping_add(0x20);
+        let mut i = 0;
+        while i < count(mem) {
+            for o in [0u32, 0x2c, 0x58] {
+                frac(mem, b.wrapping_add(o), b.wrapping_add(o).wrapping_sub(4));
+            }
+            for o in [0x80u32, 0xac, 0xd8, 0x104, 0x130, 0x15c] {
+                step_toward(mem, b.wrapping_add(o), b.wrapping_add(o + 4), n);
+            }
+            for o in [0x168u32, 0x13c, 0x110, 0xe4, 0xb8, 0x8c, 0x60, 0x34, 0x8] {
+                mem.write(b.wrapping_add(o), 1u8);
+            }
+            i += 1;
+            b = b.wrapping_add(0x18c);
+        }
+        if n == 1 {
+            let f: u32 = mem.read(obj.wrapping_add(0x194));
+            mem.write(obj.wrapping_add(0x194), f | 0x1_0000);
+        }
+    }
+
+    /// The nine `i16` channel slots of a bone's raw pose (`0x160`-byte
+    /// bones at `obj+0x328`).
+    const RAW_SLOTS: [u32; 9] = [
+        0x146, 0x148, 0x14a, 0x14e, 0x150, 0x152, 0x156, 0x158, 0x15a,
+    ];
+    /// 1/4096 (`f64`).
+    pub const RAW_SCALE_UNIT: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_0190);
+
+    /// Copies `n` words from `bones + from` to `bones + to`.
+    fn copy_words(mem: &mut impl Mem, bones: u32, from: u32, to: u32, n: u32) {
+        for k in 0..n {
+            let w: u32 = mem.read(bones.wrapping_add(from + 4 * k));
+            mem.write(bones.wrapping_add(to + 4 * k), w);
+        }
+    }
+
+    /// `SG_ApplyRawClip(obj, clip, t, t2)` (`0x00838750`): an uncompressed
+    /// clip (`i16` frames per channel at `stride = clip[0]`, `clip[1]`
+    /// bones, the data at `+0x10`, nine channels per bone) sampled at
+    /// frame `t >> 8` and blended toward frame `t2 >> 8` by `t & 0xff`
+    /// (`Angle12_Lerp` for the three rotations, `(b - a) * f >> 8` the
+    /// rest) into the raw pose of each bone (through the bone map
+    /// `+0x758` when there is one, `0xffff` skipping). Then, by `+0x7ec`, a
+    /// few bones' raw values are copied to their neighbours (1: bones 24 to
+    /// 25 and 26; 2: 42 to 43; 3: 42 to 43 and 44), and every bone's
+    /// float pose follows: rotations `SG_RawToRad`, translations times the
+    /// character's scale (`+0x38` of `+0x1c4`), scales / 4096.
+    pub fn apply_raw_clip(mem: &mut impl Mem, obj: u32, clip: u32, t: u32, t2: u32) {
+        if clip == 0 {
+            return;
+        }
+        let stride = i32::from(mem.read::<i16>(clip)).cast_unsigned();
+        let bones_in_clip = i32::from(mem.read::<i16>(clip.wrapping_add(2)));
+        let data = clip.wrapping_add(0x10);
+        let mut cur = data.wrapping_add(((t.cast_signed() >> 8) * 2).cast_unsigned());
+        let next = data.wrapping_add(((t2.cast_signed() >> 8) * 2).cast_unsigned());
+        let delta = next.wrapping_sub(cur);
+        let model: u32 = mem.read(obj.wrapping_add(0x1c0));
+        let count = i32::from(mem.read::<u16>(model.wrapping_add(0xa)));
+        let n = bones_in_clip.min(count);
+        let f = t & 0xff;
+        let mut off = 0u32;
+        let mut map_at = 8u32;
+        for _ in 0..n.max(0) {
+            let map: u32 = mem.read(obj.wrapping_add(0x758));
+            let bone = if map == 0 {
+                Some(mem.read::<u32>(obj.wrapping_add(0x328)).wrapping_add(off))
+            } else {
+                let idx = u32::from(mem.read::<u16>(map.wrapping_add(map_at)));
+                (idx != 0xffff)
+                    .then(|| (idx * 0x160).wrapping_add(mem.read::<u32>(obj.wrapping_add(0x328))))
+            };
+            if let Some(bone) = bone {
+                let mut p = cur;
+                for (k, slot) in (0u32..).zip(RAW_SLOTS) {
+                    let a = i32::from(mem.read::<i16>(p));
+                    let v = if f == 0 {
+                        a.cast_unsigned()
+                    } else {
+                        let b = i32::from(mem.read::<i16>(p.wrapping_add(delta)));
+                        if k < 3 {
+                            ffx_chara::fixed::angle12_lerp(a, b, f.cast_signed()).cast_unsigned()
+                        } else {
+                            ((b - a).wrapping_mul(f.cast_signed()) >> 8)
+                                .wrapping_add(a)
+                                .cast_unsigned()
+                        }
+                    };
+                    mem.write(bone.wrapping_add(slot), crate::lo16(v));
+                    p = p.wrapping_add(stride.wrapping_mul(2));
+                }
+            }
+            cur = cur.wrapping_add(stride.wrapping_mul(18));
+            off = off.wrapping_add(0x160);
+            map_at += 2;
+        }
+        let bones = |mem: &_| Mem::read::<u32>(mem, obj.wrapping_add(0x328));
+        match mem.read::<u8>(obj.wrapping_add(0x7ec)) {
+            1 => {
+                let b = bones(mem);
+                copy_words(mem, b, 0x2246, 0x23a6, 6);
+                let to = bones(mem).wrapping_add(0x23c0).wrapping_sub(b);
+                copy_words(mem, b, 0x2246, to.wrapping_add(0x146), 6);
+            }
+            2 => {
+                let b = bones(mem);
+                copy_words(mem, b, 0x3b06, 0x3c66, 6);
+            }
+            3 => {
+                let b = bones(mem);
+                copy_words(mem, b, 0x3b06, 0x3c66, 6);
+                let to = bones(mem).wrapping_add(0x3c80).wrapping_sub(b);
+                copy_words(mem, b, 0x3b06, to.wrapping_add(0x146), 6);
+            }
+            _ => {}
+        }
+        raw_pose_to_float(mem, obj);
+    }
+
+    /// `SG_ApplyRawClip`'s last part: every bone's raw pose as floats.
+    fn raw_pose_to_float(mem: &mut impl Mem, obj: u32) {
+        use ffx_bridge::x87;
+        let bones = |mem: &_| Mem::read::<u32>(mem, obj.wrapping_add(0x328));
+        let scale_at: u32 = mem.read(obj.wrapping_add(0x1c4));
+        let scale = x87::round_trip(mem.read(scale_at.wrapping_add(0x38)));
+        let unit = RAW_SCALE_UNIT.get(mem);
+        let mut e = 0u32;
+        let mut i = 0i32;
+        let model_count = |mem: &_| {
+            let m: u32 = Mem::read(mem, obj.wrapping_add(0x1c0));
+            i32::from(Mem::read::<u16>(mem, m.wrapping_add(0xa)))
+        };
+        while i < model_count(mem) {
+            let raw = |mem: &_, slot: u32| {
+                let v = i32::from(Mem::read::<i16>(
+                    mem,
+                    bones(mem).wrapping_add(e).wrapping_add(slot),
+                ));
+                x87::load(x87::store(f64::from(v)))
+            };
+            for (k, slot) in (0u32..).zip([0x146u32, 0x148, 0x14a]) {
+                let x = f32::from_bits(x87::store(raw(mem, slot)));
+                let r = crate::vec::bridge::raw_to_rad(mem, x);
+                let at = bones(mem).wrapping_add(e).wrapping_add(0xe4 + 4 * k);
+                mem.write(at, r);
+            }
+            let sc = x87::load(scale.to_bits());
+            for (slot, out) in [(0x14eu32, 0xf4u32), (0x150, 0xf8), (0x152, 0xfc)] {
+                let v = f32::from_bits(x87::store(x87::mul(raw(mem, slot), sc)));
+                let at = bones(mem).wrapping_add(e).wrapping_add(out);
+                mem.write(at, v);
+            }
+            for (slot, out) in [(0x156u32, 0x104u32), (0x158, 0x108), (0x15a, 0x10c)] {
+                let v = f32::from_bits(x87::store(x87::mul(raw(mem, slot), unit)));
+                let at = bones(mem).wrapping_add(e).wrapping_add(out);
+                mem.write(at, v);
+            }
+            i += 1;
+            e = e.wrapping_add(0x160);
+        }
+    }
+
+    /// `SG_AddMotionGroup(group, a, b, key)` (`0x00836c90`): a loaded
+    /// group takes the first free motion-group entry (`group`, the `i16`
+    /// numbers, `key`); a full table (50) asserts (`yiAssert(0, "SG:Add
+    /// MGRP", "nb mgrp err")`). The group is relocated
+    /// ([`relocate_group`]) and each of its sequences added
+    /// ([`add_sequence`] with the group). A null group does nothing.
+    pub fn add_motion_group(h: &mut impl ffx_bridge::Host, group: u32, a: u32, b: u32, key: u32) {
+        if group == 0 {
+            return;
+        }
+        let base = MOTION_GROUPS.ptr(h).addr;
+        let free = (0..50u32)
+            .map(|k| base.wrapping_add(12 * k))
+            .find(|&e| h.read::<u32>(e) == 0);
+        if let Some(e) = free {
+            h.write(e.wrapping_add(4), crate::lo16(a));
+            h.write(e.wrapping_add(6), crate::lo16(b));
+            h.write(e, group);
+            h.write(e.wrapping_add(8), key);
+        } else {
+            let at = h.rebase(YI_ASSERT);
+            let file = h.rebase(0x00b5_9a3c);
+            let text = h.rebase(0x00b5_9a30);
+            h.call(at, &[0, file, text]);
+        }
+        relocate_group(h, group);
+        let mut k = 0i32;
+        while k < h.read::<i32>(group.wrapping_add(4)) {
+            let seqs: u32 = h.read(group.wrapping_add(0xc));
+            add_sequence(h, seqs.wrapping_add(20 * k.cast_unsigned()), group);
+            k += 1;
+        }
+    }
+
+    /// `Ch_AnimCopyNear`, `Ch_AnimCopy2` (results in `al`), called as the
+    /// game's.
+    pub const CH_ANIM_COPY_NEAR: u32 = 0x0083_9200;
+    pub const CH_ANIM_COPY2: u32 = 0x0083_9140;
+    /// `getScenerioFlag()` (`g_SaveScenario` as `u16`), called as the
+    /// game's.
+    pub const GET_SCENERIO_FLAG: u32 = 0x0078_7360;
+    /// `g_GraphicMapId`.
+    pub const GRAPHIC_MAP_ID: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0133_0844);
+    /// 0.001 (`f64`).
+    pub const MILLI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b4_7c68);
+
+    /// `SG_ApplyBones(chr)` (`0x00838f70`): every bone of the model takes
+    /// its channels ([`apply_bone`]; through the bone map `+0x758`, whose
+    /// `u16` `+2` bounds the count and `0xffff` skips) at the character's
+    /// scale (`+0x38` of `+0x1c4`) / 1000. How: damped when `+0x871` is
+    /// set; for a character with `+0x870` set and `+0x820` bit 2 clear,
+    /// near the camera (`Ch_AnimCopyNear`) damped when `Ch_AnimCopy2` says
+    /// so and by the bone's own byte otherwise (`SG_ApplyBoneSel`), except
+    /// on a few maps (`0x170`, `0x11d`; `0x50` for kind 4, `0x137` for kind
+    /// `0x5045`, `100` for kinds other than 0, `0x3c` before scenario
+    /// `0x9a`), which apply directly.
+    pub fn apply_bones(h: &mut impl ffx_bridge::Host, chr: u32) {
+        use ffx_bridge::x87;
+        let at = |o: u32| chr.wrapping_add(o);
+        let mut chan: u32 = h.read(at(0x748));
+        let def: u32 = h.read(at(0x1c4));
+        let base = x87::load(h.read(def.wrapping_add(0x38)));
+        let flag = h.rebase(GET_SCENERIO_FLAG);
+        h.call(flag, &[]);
+        let scale = f32::from_bits(x87::store(x87::mul(base, MILLI.get(h))));
+        let map: u32 = h.read(at(0x758));
+        let map_count = if map == 0 {
+            0
+        } else {
+            i32::from(h.read::<u16>(map.wrapping_add(2)))
+        };
+        let mode = if h.read::<u8>(at(0x871)) != 0 {
+            1
+        } else if h.read::<u8>(at(0x870)) == 0 || h.read::<u8>(at(0x820)) & 4 != 0 {
+            0
+        } else {
+            let near = h.rebase(CH_ANIM_COPY_NEAR);
+            let mode = if crate::lo8(h.call(near, &[chr])) == 0 {
+                0
+            } else {
+                let copy2 = h.rebase(CH_ANIM_COPY2);
+                if crate::lo8(h.call(copy2, &[chr])) == 0 {
+                    2
+                } else {
+                    1
+                }
+            };
+            let kind: u16 = h.read(chr);
+            let direct = match GRAPHIC_MAP_ID.get(h) {
+                0x170 | 0x11d => true,
+                0x50 => kind == 4,
+                0x137 => kind == 0x5045,
+                0x64 => kind != 0,
+                0x3c => crate::lo16(h.call(flag, &[])) < 0x9a,
+                _ => false,
+            };
+            if direct { 0 } else { mode }
+        };
+        let count = |h: &_| {
+            let model: u32 = Mem::read(h, chr.wrapping_add(0x1c0));
+            i32::from(Mem::read::<u16>(h, model.wrapping_add(0xa)))
+        };
+        let mut k = 0i32;
+        while k < count(h) {
+            let map: u32 = h.read(at(0x758));
+            let bones: u32 = h.read(at(0x328));
+            let bone = if map == 0 {
+                Some(bones.wrapping_add(0x160 * k.cast_unsigned()))
+            } else {
+                if k >= map_count {
+                    return;
+                }
+                let idx = u32::from(h.read::<u16>(map.wrapping_add(8 + 2 * k.cast_unsigned())));
+                (idx != 0xffff).then(|| (idx * 0x160).wrapping_add(bones))
+            };
+            if let Some(bone) = bone {
+                match mode {
+                    1 => apply_bone(h, chan, bone, scale, true),
+                    2 => apply_bone_sel(h, chan, bone, scale),
+                    _ => apply_bone(h, chan, bone, scale, false),
+                }
+            }
+            k += 1;
+            chan = chan.wrapping_add(0x18c);
+        }
+    }
+
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)` and `dbgPrintf`,
+    /// called as the game's.
+    pub const CH_SET_MOTION_SEQ: u32 = 0x0083_9b80;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// "unknown motion sequence code %x\n".
+    pub const UNKNOWN_CODE_TEXT: u32 = 0x00b5_9aa4;
+
+    /// `SG_SeqStep(chr)` (`0x00837900`): one opcode of the character's
+    /// motion script (`+0x714`; `u16` operands read as
+    /// `ReadU16Unaligned`, sign-extended bytes). 0 ends it (2), 5 holds it
+    /// (3); 1 plays a clip (`Ch_SetMotionSeq`: the clip `[+0x710]+0x10` table
+    /// entry's `+0xc`, loops, start and end marks from its `+8` table, the
+    /// end one frame further unless either loop operand is 1); 2 waits for
+    /// `+0x728` to be 0; 3 waits a count (`+0x72a`); 4 jumps (`+0x70c`'s
+    /// `+8` table, from its `+0xc`); 6 waits until `+0x737` reaches the
+    /// operand. Waiting returns 1 with the script unmoved, a done step 0;
+    /// an unknown code is printed (`dbgPrintf`) and returns -1.
+    pub fn seq_step(h: &mut impl ffx_bridge::Host, chr: u32) -> u32 {
+        use crate::state::bridge::read_u16_unaligned as ru;
+        let at = |o: u32| chr.wrapping_add(o);
+        let p: u32 = h.read(at(0x714));
+        let op = i32::from(h.read::<i8>(p));
+        let i16v = |v: i32| i32::from(crate::lo16(v.cast_unsigned()).cast_signed());
+        match op {
+            0 | 5 => {
+                h.write(at(0x714), p);
+                if op == 0 { 2 } else { 3 }
+            }
+            1 => {
+                let clip_i = i16v(ru(h, p.wrapping_add(1)));
+                let table: u32 = h.read(h.read::<u32>(at(0x710)).wrapping_add(0x10));
+                let entry = table.wrapping_add((clip_i << 4).cast_unsigned());
+                let marks: u32 = h.read(entry.wrapping_add(8));
+                let mark = |h: &_, i: i32| {
+                    i32::from(Mem::read::<i16>(
+                        h,
+                        marks.wrapping_add((2 * i).cast_unsigned()),
+                    ))
+                };
+                let start = mark(h, i16v(ru(h, p.wrapping_add(5))));
+                let mut end = mark(h, i16v(ru(h, p.wrapping_add(7))));
+                let loops = i16v(ru(h, p.wrapping_add(3)));
+                let last = crate::lo16(ru(h, p.wrapping_add(7)).cast_unsigned());
+                if last != 1 && loops != 1 {
+                    end += 1;
+                }
+                let clip: u32 = h.read(entry.wrapping_add(0xc));
+                let f = h.rebase(CH_SET_MOTION_SEQ);
+                h.call(
+                    f,
+                    &[
+                        chr,
+                        clip,
+                        loops.cast_unsigned(),
+                        (start << 8).cast_unsigned(),
+                        (end << 8).cast_unsigned(),
+                    ],
+                );
+                h.write(at(0x714), p.wrapping_add(9));
+                h.write(at(0x73e), 0u8);
+                0
+            }
+            2 => {
+                if h.read::<u16>(at(0x728)) == 0 {
+                    h.write(at(0x714), p.wrapping_add(1));
+                    0
+                } else {
+                    h.write(at(0x714), p);
+                    1
+                }
+            }
+            3 => {
+                if h.read::<u16>(at(0x72a)) == 0 {
+                    let v = crate::lo16(ru(h, p.wrapping_add(1)).cast_unsigned());
+                    h.write(at(0x72a), v);
+                }
+                let n = h.read::<u16>(at(0x72a)).wrapping_sub(1);
+                h.write(at(0x72a), n);
+                let done = n == 0;
+                h.write(at(0x714), if done { p.wrapping_add(3) } else { p });
+                u32::from(!done)
+            }
+            4 => {
+                let jumps: u32 = h.read(at(0x70c));
+                let i = i16v(ru(h, p.wrapping_add(1)));
+                let offs: u32 = h.read(jumps.wrapping_add(8));
+                let d = i32::from(h.read::<i16>(offs.wrapping_add((2 * i).cast_unsigned())));
+                let base: u32 = h.read(jumps.wrapping_add(0xc));
+                h.write(at(0x714), d.cast_unsigned().wrapping_add(base));
+                0
+            }
+            6 => {
+                let v = crate::lo16(ru(h, p.wrapping_add(1)).cast_unsigned()).cast_signed();
+                let cur = i16::from(h.read::<i8>(at(0x737)));
+                if cur < v {
+                    h.write(at(0x714), p);
+                    1
+                } else {
+                    h.write(at(0x714), p.wrapping_add(3));
+                    0
+                }
+            }
+            _ => {
+                let f = h.rebase(DBG_PRINTF);
+                let text = h.rebase(UNKNOWN_CODE_TEXT);
+                h.call(f, &[text, op.cast_unsigned()]);
+                h.write(at(0x714), p);
+                u32::MAX
+            }
+        }
+    }
 }

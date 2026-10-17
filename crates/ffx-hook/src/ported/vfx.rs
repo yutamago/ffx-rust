@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
+use ffx_vfx::{et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -37,6 +37,31 @@ fn crt_atan2(y: f64, x: f64) -> f64 {
             // edi: the callee keeps it (eax, ecx and edx it may not)
             in("edi") &raw mut out,
             f = in(reg) f,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
+/// MSVCR110's `_CIcos` (`cos`) or `_CIsin` through the game's import slot
+/// (`0x00b0c3b4`, `0x00b0c3b8`): the angle loaded as `fld dword`, the
+/// result stored as `fstp dword` through `edi`.
+fn crt_trig(cos: bool, x: f32) -> f32 {
+    let slot = crate::rebase(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }) as *const usize;
+    let mut out = 0f32;
+    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi (which the callee keeps), leaving the
+    // x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld dword ptr [{x}]",
+            "call {f}",
+            "fstp dword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
             clobber_abi("C"),
         );
     }
@@ -1399,6 +1424,107 @@ ported! {
     /// `op_func_ot(list)`.
     op_func_ot @ 0x007e_b430 => extern "C" fn op_func_ot(list: u32) {
         op::bridge::op_func_ot(&mut mem(), list, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op1_md_draw_eiabm_sphe(obj, part, n, e)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    op1_md_draw_eiabm_sphe @ 0x00a6_8140 => extern "C" fn op1_md_draw_eiabm_sphe(obj: u32, part: u32, n: u32, e: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xb0]);
+        let mut locals = Locals([0; 0xb0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xb0;
+        md::bridge::op1_md_draw_eiabm_sphe(&mut mem(), obj, part, n, e, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_rot_point_007ea9d0(x0, y0, ang, x1, y1, ox, oy)`.
+    op_rot_point_007ea9d0 @ 0x007e_a9d0 => extern "C" fn op_rot_point(x0: f32, y0: f32, ang: f32, x1: f32, y1: f32, ox: u32, oy: u32) -> u32 {
+        vec::bridge::op_rot_point(&mut mem(), x0, y0, ang, [x1, y1], [ox, oy], &mut |_, c, x| crt_trig(c, x))
+    }
+    /// `op_token_007e1f80(src, out, pos, max, eol)`.
+    op_token_007e1f80 @ 0x007e_1f80 => extern "C" fn op_token(src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        op::bridge::op_token(&mut mem(), src, out, pos, max, eol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op1_md_draw_eiabm(obj, part, slot)`: its stack locals in a buffer
+    /// on this shim's stack (the frame pointer at its end).
+    op1_md_draw_eiabm @ 0x00a6_57c0 => extern "C" fn op1_md_draw_eiabm(obj: u32, part: u32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x450]);
+        let mut locals = Locals([0; 0x450]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x450;
+        md::bridge::op1_md_draw_eiabm(&mut mem(), obj, part, slot, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_spr_init_x64(obj, init, work)`.
+    op_md_spr_init_x64 @ 0x00a6_9940 => extern "C" fn op_md_spr_init_x64(obj: u32, init: u32, work: u32) -> u32 {
+        md::bridge::op_md_spr_init_x64(&mut mem(), obj, init, work)
+    }
+    /// `0x0069ebd0(it)`: `opusTree_Next`'s code again (`ecx` the iterator).
+    TreeNext_0069ebd0 @ 0x0069_ebd0 => extern "thiscall" fn tree_next_0069ebd0(it: u32) -> u32 {
+        tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `op_node_requeue_00a39f00(n)`.
+    op_node_requeue_00a39f00 @ 0x00a3_9f00 => extern "C" fn op_node_requeue(n: u32) -> u32 {
+        small::bridge::op_node_requeue(&mut mem(), n)
+    }
+    /// `opus_osu_init(out)`.
+    opus_osu_init @ 0x0080_1200 => extern "C" fn opus_osu_init(out: u32) -> u32 {
+        opus::bridge::opus_osu_init(&mut mem(), out)
+    }
+    /// `opus_osu_copy_00800eb0(set, dst, src)`.
+    opus_osu_copy_00800eb0 @ 0x0080_0eb0 => extern "C" fn opus_osu_copy(set: u32, dst: u32, src: u32) -> u32 {
+        opus::bridge::opus_osu_copy(&mut mem(), set, dst, src)
+    }
+    /// `op_rgb_to_hsv_00807e90(out, src, n)`.
+    op_rgb_to_hsv_00807e90 @ 0x0080_7e90 => extern "C" fn op_rgb_to_hsv(out: u32, src: u32, n: u32) -> u32 {
+        small::bridge::op_rgb_to_hsv(&mut mem(), out, src, n)
+    }
+    /// `op_node_pool_init_00a39bc0(set, n, v)`.
+    op_node_pool_init_00a39bc0 @ 0x00a3_9bc0 => extern "C" fn op_node_pool_init(set: u32, n: u32, v: u32) -> u32 {
+        small::bridge::op_node_pool_init(&mut mem(), set, n, v)
+    }
+    /// `op_slot_bytes_reset_008888e0(obj)`.
+    op_slot_bytes_reset_008888e0 @ 0x0088_88e0 => extern "C" fn op_slot_bytes_reset(obj: u32) -> u32 {
+        small::bridge::op_slot_bytes_reset(&mut mem(), obj)
+    }
+    /// `Fp_IdState_0072a760(id)`.
+    Fp_IdState_0072a760 @ 0x0072_a760 => extern "C" fn fp_id_state(id: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the i16 argument
+        fp::bridge::fp_id_state(&mem(), id as u16)
+    }
+    /// `op_md_packet_size_00a698c0(packet)`.
+    op_md_packet_size_00a698c0 @ 0x00a6_98c0 => extern "C" fn op_md_packet_size(packet: u32) -> u32 {
+        op::bridge::op_md_packet_size(&mem(), packet)
+    }
+    /// `op_read_line_007e1cc0(src, out, max)`.
+    op_read_line_007e1cc0 @ 0x007e_1cc0 => extern "C" fn op_read_line(src: u32, out: u32, max: u32) -> u32 {
+        op::bridge::op_read_line(&mut mem(), src, out, max)
+    }
+    /// `op_line_length_007e2660(src, lines)`.
+    op_line_length_007e2660 @ 0x007e_2660 => extern "C" fn op_line_length(src: u32, lines: u32) -> u32 {
+        op::bridge::op_line_length(&mut mem(), src, lines)
+    }
+    /// `op_counter_add_00888890(n)`.
+    op_counter_add_00888890 @ 0x0088_8890 => extern "C" fn op_counter_add(n: u32) -> u32 {
+        small::bridge::op_counter_add(&mut mem(), n)
+    }
+    /// `getAlphaForShpIgnoreAnFormatBaseOnSh(shp)`.
+    getAlphaForShpIgnoreAnFormatBaseOnSh @ 0x0071_6550 => extern "C" fn shp_alpha(shp: u32) -> u32 {
+        small::bridge::shp_alpha(&mem(), shp)
+    }
+    /// `op_node_slot_00a3ba10(node)`.
+    op_node_slot_00a3ba10 @ 0x00a3_ba10 => extern "C" fn op_node_slot(node: u32) -> u32 {
+        small::bridge::op_node_slot(&mem(), node)
+    }
+    /// `op_mip_bytes_00a3c0f0(w, h, levels)`.
+    op_mip_bytes_00a3c0f0 @ 0x00a3_c0f0 => extern "C" fn op_mip_bytes(w: u32, h: u32, levels: u32) -> u32 {
+        small::bridge::op_mip_bytes(w, h, levels)
+    }
+    /// `op_md_white_vectors_00a6cf70(obj, _, work)`.
+    op_md_white_vectors_00a6cf70 @ 0x00a6_cf70 => extern "C" fn op_md_white_vectors(obj: u32, _unused: u32, work: u32) -> u32 {
+        md::bridge::op_md_white_vectors(&mut mem(), obj, work)
+    }
+    /// `op_oef2_tex_clut_init_007e5680()`.
+    op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
+        op::bridge::op_oef2_tex_clut_init(&mut mem())
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

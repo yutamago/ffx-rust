@@ -1500,6 +1500,249 @@ pub mod bridge {
         }
     }
 
+    /// The current id data's vertices (`Sg_IdSetPtr`'s, 8 bytes each).
+    pub const ID_VERTICES: Global<u32> = Global::new(0x0130_1a8c);
+
+    /// `Sg_IdGetNormal(out, i)` (`0x0083e130`): the normal of id triangle
+    /// `i` (three `i16` vertex numbers at the entry's start) into `out`
+    /// (`Sg_CalcTriangleNormal`); -1 without id data or for `i` -1, else
+    /// 0.
+    pub fn id_get_normal(mem: &mut impl Mem, out: u32, i: u32) -> u32 {
+        let table = ID_TABLE.get(mem);
+        if table == 0 || i == u32::MAX {
+            return u32::MAX;
+        }
+        let e = table.wrapping_add(i << 4);
+        let verts = ID_VERTICES.get(mem);
+        let [v0, v1, v2] = [0u32, 2, 4].map(|k| {
+            let n = i32::from(mem.read::<i16>(e.wrapping_add(k)));
+            verts.wrapping_add((n << 3).cast_unsigned())
+        });
+        crate::vec::bridge::calc_triangle_normal(mem, v0, v1, v2, out);
+        0
+    }
+
+    /// The id edge a move last crossed (found by `0x0083d960`):
+    /// its two `i16` vertices.
+    pub const ID_EDGE_B: Global<u32> = Global::new(0x0130_1aec);
+    pub const ID_EDGE_A: Global<u32> = Global::new(0x0130_1af0);
+
+    /// `Sg_IdSlideEdge(from, to)` (`0x0083e180`): a move from `from` to
+    /// `to` (`f32` x, z) that crossed the edge [`ID_EDGE_B`] to
+    /// [`ID_EDGE_A`] slides along it. The move, in the edge's frame (`M`,
+    /// the rotation about y taking x to the edge's unit direction;
+    /// `FFXVu0ApplyMatrix`), loses its across component. While the result
+    /// back in the world (`FFXVu0InversMatrix`) is still on the far side
+    /// (`w.z * n.x - w.x * n.z` above 0), it steps one unit further back
+    /// along z. `to` becomes `from + w` in x and z (y as it was).
+    pub fn id_slide_edge(mem: &mut impl Mem, from: u32, to: u32) {
+        use crate::scratch::{SCRATCH, Scratch};
+        use ffx_bridge::x87;
+        use ffx_ps2::vu0::bridge as vu0;
+        let ld = |b: u32| x87::load(b);
+        let st = |x: f64| f32::from_bits(x87::store(x));
+        let a = ID_EDGE_A.get(mem);
+        let b = ID_EDGE_B.get(mem);
+        let comp = |m: &_, p: u32, k: u32| i32::from(Mem::read::<i16>(m, p.wrapping_add(k)));
+        let ex = st(f64::from(comp(mem, a, 0) - comp(mem, b, 0)));
+        let ez = st(f64::from(comp(mem, a, 4) - comp(mem, b, 4)));
+        let f = |m: &_, p: u32, k: u32| ld(Mem::read::<u32>(m, p.wrapping_add(4 * k)));
+        let vx = st(x87::sub(f(mem, to, 0), f(mem, from, 0)));
+        let vz = st(x87::sub(f(mem, to, 2), f(mem, from, 2)));
+        let mut s = Scratch::new(mem);
+        let (e, v, n, m, u, inv, w) = (
+            SCRATCH,
+            SCRATCH + 0x10,
+            SCRATCH + 0x20,
+            SCRATCH + 0x40,
+            SCRATCH + 0x80,
+            SCRATCH + 0xc0,
+            SCRATCH + 0x100,
+        );
+        s.write(e, [ex, 0.0, ez, 0.0]);
+        s.write(v, [vx, 0.0, vz, 0.0]);
+        vu0::normalize(&mut s, n, e);
+        vu0::matrix_identity(&mut s, m);
+        let [nx, _, nz]: [f32; 3] = s.read(n);
+        let (nx, nz) = (x87::round_trip(nx), x87::round_trip(nz));
+        s.write(m, [nx, 0.0, -nz]);
+        s.write(m + 0x10, [0f32, 1.0, 0.0]);
+        s.write(m + 0x20, [nz, 0.0, nx]);
+        vu0::apply_matrix(&mut s, u, m, v);
+        ffx_system::math::bridge::orthonormal_inverse3x4(&mut s, inv, m);
+        s.write(u + 8, 0f32);
+        loop {
+            vu0::apply_matrix(&mut s, w, inv, u);
+            let [wx, _, wz]: [u32; 3] = s.read(w);
+            let (nxb, nzb) = (ld(nx.to_bits()), ld(nz.to_bits()));
+            let side = x87::sub(x87::mul(ld(wz), nxb), x87::mul(ld(wx), nzb));
+            // a NaN ends it too
+            if side.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+                let x = st(x87::add(ld(wx), ld(s.read(from))));
+                s.write(to, x);
+                let z = st(x87::add(ld(wz), ld(s.read(from.wrapping_add(8)))));
+                s.write(to.wrapping_add(8), z);
+                return;
+            }
+            let uz = ld(s.read(u + 8));
+            s.write(u + 8, st(x87::sub(uz, 1.0)));
+        }
+    }
+
+    /// The free camera `Sg_ControlCamera` steers: yaw and pitch
+    /// (radians), height and distance (`f32`), the distance preset counter.
+    pub const FREE_CAM_YAW: Global<f32> = Global::new(0x00c4_def0);
+    pub const FREE_CAM_PITCH: Global<f32> = Global::new(0x00c4_def4);
+    pub const FREE_CAM_HEIGHT: Global<f32> = Global::new(0x00c4_dee4);
+    pub const FREE_CAM_DIST: Global<f32> = Global::new(0x0130_1bb8);
+    pub const FREE_CAM_PRESET: Global<u32> = Global::new(0x0130_1bb0);
+    /// The pad as `Sg_ControlCamera` reads it: the right stick's x and y
+    /// bytes, the buttons pressed this frame and held.
+    pub const PAD_RSTICK_X: Global<u8> = Global::new(0x023c_44a6);
+    pub const PAD_RSTICK_Y: Global<u8> = Global::new(0x023c_44a7);
+    pub const PAD_PRESSED: Global<u32> = Global::new(0x023c_44a8);
+    pub const PAD_HELD: Global<u32> = Global::new(0x023c_44ac);
+    /// `Sg_ControlCamera`'s constants: degrees to radians (`f64`), 12, pi,
+    /// 2 pi, -pi, the steps 0.2 and 0.4 (`f64`), and the six distances
+    /// (`f32`: 50, 100, 180, 250, 1000, 30).
+    pub const DEG_TO_RAD: Global<f64> = Global::new(0x00b5_a478);
+    pub const TWELVE: Global<f64> = Global::new(0x00b4_b468);
+    pub const PI_F64: Global<f64> = Global::new(0x00b5_82f0);
+    pub const TWO_PI_F64: Global<f64> = Global::new(0x00b5_9638);
+    pub const MINUS_PI_F64: Global<f64> = Global::new(0x00b5_9648);
+    pub const STEP_HEIGHT: Global<f64> = Global::new(0x00b3_eb60);
+    pub const STEP_DIST: Global<f64> = Global::new(0x00b4_8318);
+    pub const DIST_PRESETS: [u32; 6] = [
+        0x00b1_f2c8,
+        0x00b3_04f8,
+        0x00b5_a480,
+        0x00b5_a484,
+        0x00b1_f2cc,
+        0x00b4_1d80,
+    ];
+
+    /// `Sg_ControlCamera()` (`0x0083f4b0`): the free camera from the pad.
+    /// The right stick (outside the dead zone `0x51..0xaf`) turns yaw and
+    /// pitch by `(stick - 0x80)` degrees / 12, each wrapped once into `-pi..
+    /// pi`. A debug build captures on button `0x100` when a capture is
+    /// selected. With the L/R button mode, buttons 2 and 8 raise and lower
+    /// the height by 0.2, 1 and 4 the distance by 0.4. Button `0x400`
+    /// pressed steps through six distances. Returns the switch's `eax`:
+    /// the preset counter's low byte / 6 after a preset, else the held
+    /// buttons with the L/R mode, else 0.
+    pub fn control_camera(mem: &mut impl Mem) -> u32 {
+        use ffx_bridge::x87;
+        let ld = |v: f32| x87::load(v.to_bits());
+        let st = |x: f64| f32::from_bits(x87::store(x));
+        let stick = |b: u8| {
+            let v = u32::from(b);
+            if v.wrapping_sub(0x51) <= 0x5e {
+                0x80
+            } else {
+                v
+            }
+        };
+        let sx = stick(PAD_RSTICK_X.get(mem));
+        let sy = stick(PAD_RSTICK_Y.get(mem));
+        let (k, twelve) = (DEG_TO_RAD.get(mem), TWELVE.get(mem));
+        let turn = |s: u32| {
+            let a = ld(st(f64::from(s.cast_signed() - 0x80)));
+            x87::div(x87::mul(a, k), twelve)
+        };
+        let yaw = st(x87::sub(ld(FREE_CAM_YAW.get(mem)), turn(sx)));
+        FREE_CAM_YAW.set(mem, yaw);
+        let pitch = st(x87::sub(ld(FREE_CAM_PITCH.get(mem)), turn(sy)));
+        FREE_CAM_PITCH.set(mem, pitch);
+        let (pi, two, mpi) = (PI_F64.get(mem), TWO_PI_F64.get(mem), MINUS_PI_F64.get(mem));
+        for g in [FREE_CAM_YAW, FREE_CAM_PITCH] {
+            let a = ld(g.get(mem));
+            if a > pi {
+                g.set(mem, st(x87::sub(a, two)));
+            }
+            let a = ld(g.get(mem));
+            if a < mpi {
+                g.set(mem, st(x87::add(a, two)));
+            }
+        }
+        if IS_DEBUG.get(mem) != 0 && PAD_HELD.get(mem) & 0x100 != 0 && capture_get_select(mem) != 0
+        {
+            capture_enable(mem);
+        }
+        let mut r = 0;
+        if get_lr_button_mode(mem) != 0 {
+            let b = PAD_HELD.get(mem);
+            let step = STEP_HEIGHT.get(mem);
+            if b & 2 != 0 {
+                FREE_CAM_HEIGHT.set(mem, st(x87::add(ld(FREE_CAM_HEIGHT.get(mem)), step)));
+            }
+            if b & 8 != 0 {
+                FREE_CAM_HEIGHT.set(mem, st(x87::sub(ld(FREE_CAM_HEIGHT.get(mem)), step)));
+            }
+            let step = STEP_DIST.get(mem);
+            if b & 1 != 0 {
+                FREE_CAM_DIST.set(mem, st(x87::add(ld(FREE_CAM_DIST.get(mem)), step)));
+            }
+            if b & 4 != 0 {
+                FREE_CAM_DIST.set(mem, st(x87::sub(ld(FREE_CAM_DIST.get(mem)), step)));
+            }
+            r = b;
+        }
+        if PAD_PRESSED.get(mem) & 0x400 != 0 {
+            let n = FREE_CAM_PRESET.get(mem).wrapping_add(1);
+            FREE_CAM_PRESET.set(mem, n);
+            let low = n & 0xff;
+            let at = DIST_PRESETS[(low % 6) as usize];
+            let d = x87::round_trip(Global::<f32>::new(at).get(mem));
+            FREE_CAM_DIST.set(mem, d);
+            r = low / 6;
+        }
+        r
+    }
+
+    /// [`id_get_height`]'s local for the normal (unmapped, below
+    /// [`crate::scratch::SCRATCH`]).
+    const HEIGHT_FRAME: u32 = 0xffff_e000;
+
+    /// `Sg_IdGetHeight(p, i)` (`0x0083e040`): the height of id triangle
+    /// `i`'s plane under the point `p` (`f32` x, z): with the triangle's
+    /// normal `n` ([`id_get_normal`]) and first vertex `v`, `d = (n.y v.y +
+    /// n.x v.x) + n.z v.z` and `t = n.x p.x + n.z p.z` (each stored as
+    /// `f32`), the height `(d - t) / n.y`. 0 without id data or for `i`
+    /// -1. Returned in ST0.
+    pub fn id_get_height(mem: &mut impl Mem, p: u32, i: u32) -> f32 {
+        use ffx_bridge::x87;
+        let table = ID_TABLE.get(mem);
+        if table == 0 || i == u32::MAX {
+            return 0.0;
+        }
+        // the normal's local: below the scratch range, which the normal's
+        // own locals (Sg_CalcTriangleNormal) take
+        let n: [u32; 3] = {
+            let mut f = ffx_bridge::frame::Frame::new(mem, HEIGHT_FRAME, 16);
+            id_get_normal(&mut f, HEIGHT_FRAME, i);
+            f.read(HEIGHT_FRAME)
+        };
+        let [nx, ny, nz] = n.map(x87::load);
+        let e = table.wrapping_add(i << 4);
+        let verts = ID_VERTICES.get(mem);
+        let first = i32::from(mem.read::<i16>(e));
+        let vp = verts.wrapping_add((first << 3).cast_unsigned());
+        let v = [0u32, 2, 4].map(|k| {
+            let c = i32::from(mem.read::<i16>(vp.wrapping_add(k)));
+            x87::load(x87::store(f64::from(c)))
+        });
+        let ld = |b: u32| x87::load(b);
+        let d = x87::add(
+            x87::add(x87::mul(ny, v[1]), x87::mul(nx, v[0])),
+            x87::mul(nz, v[2]),
+        );
+        let d = ld(x87::store(d));
+        let px = ld(mem.read(p));
+        let pz = ld(mem.read(p.wrapping_add(8)));
+        let t = ld(x87::store(x87::add(x87::mul(nx, px), x87::mul(nz, pz))));
+        f32::from_bits(x87::store(x87::div(x87::sub(d, t), ny)))
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);

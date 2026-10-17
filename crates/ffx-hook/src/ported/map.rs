@@ -3621,6 +3621,15 @@ ported! {
         ke::bridge::ke_born_pt_cmlp(&mut mem(), [pc, pd, prog, out], w, &mut |_, f, a| call_cdecl(f, a));
     }
 
+    /// `KeLnsLp_Update(lp)`.
+    KeLnsLp_Update @ 0x0076_a690 => extern "C" fn shim_ke_lns_lp_update(lp: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xc0]);
+        let mut work = Locals([0; 0xc0]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ke::bridge::ke_lns_lp_update(&mut mem(), lp, w, &mut |_, f, a| call_cdecl(f, a), |_, f, a| call_float(f, a));
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

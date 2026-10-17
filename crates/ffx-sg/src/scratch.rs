@@ -49,9 +49,14 @@ impl<M: Mem> Mem for Scratch<'_, M> {
     }
 }
 
-/// Calls go to the game: no scratch address reaches a callee.
+/// Calls go to the game: no [`SCRATCH`] address reaches a callee (the
+/// host's own scratch does).
 impl<M: ffx_bridge::Host> ffx_bridge::Host for Scratch<'_, M> {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
         self.mem.call(addr, args)
+    }
+
+    fn callee_scratch(&mut self) -> Option<u32> {
+        self.mem.callee_scratch()
     }
 }
