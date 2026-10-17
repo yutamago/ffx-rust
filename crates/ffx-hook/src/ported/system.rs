@@ -6,7 +6,7 @@ use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
     accessor, btl, cd, config, container, daps, dtor, files, fixup, heap, instance, math, menu,
-    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -6023,6 +6023,57 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::set_message_window_texts(&mut mem(), window, text, other, at, call_sym, |m, f, w| call_ptr(m, f, &[w]));
+    }
+    /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)`.
+    TOMkpShapeXYWHUV @ 0x0090_3bb0 => extern "C" fn to_mkp_shape_xywhuv(shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32) {
+        let mut scratch = [0u32; 0x34];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], None, at, call_sym);
+    }
+    /// `TOMkpShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0, c1)`.
+    TOMkpShapeXYWHUVC2 @ 0x0090_3ee0 => extern "C" fn to_mkp_shape_xywhuv_c2(shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32, c0: u32, c1: u32) {
+        let mut scratch = [0u32; 0x34];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], Some([c0, c1]), at, call_sym);
+    }
+    /// `TODrawMenuPlateXYWHType(x, y, w, h, kind)`.
+    TODrawMenuPlateXYWHType @ 0x008f_5f70 => extern "C" fn to_draw_menu_plate_xywh_type(x: u32, y: u32, w: u32, h: u32, kind: u32) {
+        plate::bridge::to_draw_menu_plate_xywh_type(
+            &mut mem(),
+            [x, y, w, h, kind],
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
+        );
+    }
+    /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)`.
+    TODrawCrossBoxXYWHC2 @ 0x008f_4b20 => extern "C" fn to_draw_cross_box_xywh_c2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_draw_cross_box_xywh_c2(&mut mem(), [x, y, w, h, c0, c1], at, call_sym);
+    }
+    /// `TODrawSheetCell_008f8bb0(cell, x, y, w, h)`.
+    TODrawSheetCell_008f8bb0 @ 0x008f_8bb0 => extern "C" fn to_draw_sheet_cell(cell: u32, x: u32, y: u32, w: u32, h: u32) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::draw_sheet_cell(&mut mem(), [cell, x, y, w, h], at, call_sym);
+    }
+    /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)`.
+    TODrawBoxXYWHC2 @ 0x008f_3db0 => extern "C" fn to_draw_box_xywh_c2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) {
+        let mut rec = [0u32; 0x26];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = rec.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_draw_box_xywh_c2(&mut mem(), [x, y, w, h, c0, c1], at, call_sym);
+    }
+    /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)`.
+    TOMakePktBoxXYWHRGBA @ 0x008f_b150 => extern "C" fn to_make_pkt_box_xywh_rgba(x: u32, y: u32, w: u32, h: u32, r: u32, g: u32, b: u32, a: u32) {
+        let mut rec = [0u32; 0x26];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = rec.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_box_xywh_rgba(&mut mem(), [x, y, w, h, r, g, b, a], at, call_sym);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

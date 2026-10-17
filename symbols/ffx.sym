@@ -10268,10 +10268,10 @@
 0x008f3a50 function TODrawAlphaBG             # fh v3:exact 0x008f3a50
 0x008f3c70 function TODrawBoxXY2C2               # layout: alphabetical run between TODrawAlphaBG and TODrawBoxXYWHC2 (2 unnamed in the gap); Switch 0x7100504880 TODrawBoxXY2C2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008f3d20 function TODrawBoxXY2RGBA             # layout: alphabetical run between TODrawAlphaBG and TODrawBoxXYWHC2 (2 unnamed in the gap); Switch 0x7100504050 TODrawBoxXY2RGBA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008f3db0 function TODrawBoxXYWHC2           # fh v3:exact 0x008f3db0
+0x008f3db0 function TODrawBoxXYWHC2           # fh v3:exact 0x008f3db0; integer gradient box (fild corners x,y..x+w,y+h, c0/c1), skipped while graphicGetAbmap() == 1
 0x008f3eb0 function TODrawBoxXYWHC2FW         # fh v3:exact 0x008f3eb0
 0x008f41b0 function TODrawBtlNetWindowXYWHType # fh v3:exact 0x008f41b0
-0x008f4b20 function TODrawCrossBoxXYWHC2      # fh call.cs cdecl
+0x008f4b20 function TODrawCrossBoxXYWHC2      # fh call.cs cdecl; untextured gradient box c0 (top left) to c1, corners x,y..x+w,y+h clipped by BeginScissor_XY, graphicDrawUIElement(rec, 0, 1, 0, 0)
 0x008f4c40 function TODrawCrossBoxXYWHC2FW    # fh v3:exact 0x008f4c40
 0x008f4f10 function TODrawCrossMenuIconAbilityName # fh v3:cg3 0x8f4f10
 0x008f5000 function TODrawCrossMenuIconCommandName # fh v3:cg3 0x8f5000
@@ -10287,6 +10287,7 @@
 0x008f8910 function TODrawMenuStdPlateNonC    # fh v3:cg2 0x8f8910
 0x008f8940 function TODrawMenuStdPlateNonSC   # fh v3:cg2 0x8f8940
 0x008f8970 function TODrawMenuStdPlateType    # fh v3:exact 0x008f8970
+0x008f8bb0 function TODrawSheetCell_008f8bb0 # (cell, x, y, w, h): cell of sheet 0x2ecc (170 x 14 px, nine rows per column) over x,y..x+w,y+h in grey via graphicDrawUIElement, unclipped; name ours
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
@@ -10327,7 +10328,7 @@
 0x008fade0 function TOGsZBUF                     # structure: g_TO packet pointer (0x018716cc) = TOAdpZBUF(pointer, args...), the global-packet form of TOAdpZBUF; run of 24 such wrappers in TOAdp* order between TOGetWidthMacro_help and TOSetAddPkt; TOGs prefix as the Switch's TOGsALPHA/TOGsRGBA/TOGsXY (TO pkt file 0x7100503100); name ours
 0x008fae10 function TOSetAddPkt               # fh v3:cg2 0x8fae10
 0x008fae40 function TOMakeBtlEasyFontEdge     # fh v3:exact 0x008fae40
-0x008fb150 function TOMakePktBoxXYWHRGBA      # fh v3:exact 0x008fb150
+0x008fb150 function TOMakePktBoxXYWHRGBA      # fh v3:exact 0x008fb150; integer box in one RGBA colour, graphicDrawUIElement(rec, 0, 1, 0, 0)
 0x008fb840 function TOMakePktBtlDamageNumRGBA # fh v3:exact 0x008fb840
 0x008fb940 function TOMakePktBtlEasyFont      # fh v3:exact 0x008fb940
 0x008fbae0 function TOMakePktBtlEasyFontShadow # fh v3:exact 0x008fbae0
@@ -10393,8 +10394,8 @@
 0x00903a50 function TOMkpShapeXYC2               # layout: the three unnamed functions between TOMkpShapeXY and TOMkpShapeXYWHUV take the Switch names sorting there, in order (TOMkpShapeXYC2, TOMkpShapeXYDirect, TOMkpShapeXYWHC2); this one passes no width/height (0, 0) to TOAdpEasyShapeXYWHC2, then TOCtrlPkt
 0x00903a80 function TOMkpShapeXYDirect           # layout: second of the three (see TOMkpShapeXYC2)
 0x00903b70 function TOMkpShapeXYWHC2             # layout: third of the three (see TOMkpShapeXYC2)
-0x00903bb0 function TOMkpShapeXYWHUV          # fh v3:exact+call.cs 0x00903bb0 cdecl
-0x00903ee0 function TOMkpShapeXYWHUVC2        # fh v3:exact+call.cs 0x00903ee0 cdecl
+0x00903bb0 function TOMkpShapeXYWHUV          # fh v3:exact+call.cs 0x00903bb0 cdecl; quad x,y..x+w,y+h clipped by BeginScissor_XYUV, UVs scaled for the shape's sheet (-1/-3/-6 image size, -2, 0..0x289 ranges), graphicDrawUIElement(rec, texture, 1, 0, 0)
+0x00903ee0 function TOMkpShapeXYWHUVC2        # fh v3:exact+call.cs 0x00903ee0 cdecl; TOMkpShapeXYWHUV with corner colours c0/c1 and shape -4 (1/256 UVs, sheet 0x3e84)
 0x009042e0 function TOMkpValueFontMClutRight     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008bb278 TOMkpValueFontMClutRight, 2 votes, round 2
 0x00904600 function TOOpenPktbuff             # fh v3:bsim1.00 0x00904600
 0x00904650 function TOInitAddPkt              # fh v3:bsim1.00 0x00904650

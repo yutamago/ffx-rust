@@ -562,3 +562,66 @@ eight copies offset by ±2 over the edge ratio. These are ported; only
 `TODrawScaleButtonIconRGBA` (`0x008f8ee0`) picks the icon for a text
 character, as `TOGetScaleButtonIconWidth` does. `4`..`7` sit 2.0 higher,
 and `@`..`O` stack four direction parts by their low bits.
+
+## UI shapes and menu plates
+
+`TOMkpShapeXYWHUV` (`0x00903bb0`) and `TOMkpShapeXYWHUVC2` (`0x00903ee0`)
+build the quad of a UI shape. The corners are `x, y` and `x + w, y + h`;
+`BeginScissor_XYUV` clips them together with the UVs. The UVs are then
+scaled for the shape's sheet:
+
+- Shapes -1, -3 and -6 divide by the image size of 0x3e80, 0x3e83 or
+  0x3e86.
+- Shape -2 uses 1/2048 and 1/1024; shape -4 (C2 only) uses 1/256.
+- Shapes 0..=0x289 pick sheet 0x3e00, 0x3f00 or 0x3dc0 by range.
+
+For any other shape the original passes a stale stack word as the
+texture; the port passes 0. The quad goes to `graphicDrawUIElement`
+with grey corners, or with the C2 colours.
+
+`TODrawMenuPlateXYWHType` (`0x008f5f70`, module `plate`) draws the menu
+plates of types 1-14 from four kinds of pieces, all sized through the HD UI
+remap:
+
+- **Bands.** A band is three `TODrawCrossBoxXYWHC2` boxes over the
+  plate's columns: a left cap `rx(cap)` wide, the middle, and a right cap.
+  The caps fade to their edge colours.
+  - The banded types are 1 and 2 (caps 300 and 140), 4/5 (160), 7/14 and
+    11 (140), and 13 (200).
+  - They draw a drop shadow under the plate (6 or 4 high), the tinted
+    body, a white highlight one line down and a dark line at the bottom.
+  - Types 7 and 11 add a title strip after the body; type 4 adds an icon
+    at the top right.
+- **The sheet image.** This is shape -4 with UVs `1920 × w / 512` and
+  `1080 × h / 416`. Types 1 and 2 cut it into the three columns; types 9
+  and 10 stretch it over the plate.
+- **The nine-slice frame.** Eight atlas pieces with 7-unit corners, used
+  by types 9, 10 and 12.
+- **The `0x008f9c20` and `0x008f4df0` panels.** Types 3, 6 and 8 use the
+  first. Types 9 and 10 use the second; type 10 picks its colours by
+  `graphicGetAbmap`, and draws nothing when the box is narrower than
+  `rx(14)`.
+
+The port keeps the original's rounding: sums are formed in `f64` (the x87
+at 53 bits) and stored as `f32` where the original stores a dword.
+`tools/x87-lift.py` produced the exact first draft that the readable
+version was checked against.
+
+`TOMkpShapeXY` (`0x00903a10`) and `TOMkpShapeXYWHC2` (`0x00903b70`) only
+pass their arguments (and grey colours) to `TOAdpEasyShapeXYWHC2`. They
+compute no corners, colours or UVs, so they remain packet glue.
+
+## UI boxes
+
+- `TODrawCrossBoxXYWHC2` (`0x008f4b20`) draws an untextured gradient box
+  with float corners `x, y` and `x + w, y + h`. `BeginScissor_XY` clips
+  it, and the colours run from `c0` at the top left to `c1`.
+- `TODrawBoxXYWHC2` (`0x008f3db0`) and `TOMakePktBoxXYWHRGBA`
+  (`0x008fb150`) are the integer forms. Their corners are wrapping integer
+  sums converted with `fild`. `TODrawBoxXYWHC2` is skipped while the
+  ability map is up.
+- `0x008f8bb0` draws one cell of sheet 0x2ecc. The cells are 170 × 14
+  pixels, nine rows per column, and the box is not clipped.
+
+All of these draw through `graphicDrawUIElement`. The record words the
+originals leave unset (UVs of untextured boxes) are zero in the port.
