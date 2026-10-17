@@ -8699,3 +8699,90 @@ fn round14_target_groups_match_the_original_on_the_snapshot() {
     };
     round14_target_groups(&mut a, &mut b, &mut Xorshift(0x4014_0042));
 }
+
+/// Round 15's target lists over a stand-in command record.
+#[allow(clippy::cast_possible_truncation)]
+fn round15_target_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let rec = alloc(a, b, 0x40);
+    let tmp = alloc(a, b, 0x10);
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&rec.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xdc0, &v);
+    redirect(a, b, 0x0079_a4b0, s);
+    let fill = |a: &mut Oracle, b: &mut Oracle, from: u32, bytes: &[u8]| {
+        let at = a.rebase(from);
+        a.write(at, bytes).unwrap();
+        b.write(at, bytes).unwrap();
+    };
+    for k in 0..600 {
+        let bytes: Vec<u8> = (0..0x140).map(|_| rng.next() as u8).collect();
+        fill(a, b, 0x0133_d0d0, &bytes);
+        // sparse group masks, so the selectable mask leaves some
+        for g in 0..28u32 {
+            let m = match rng.next() % 3 {
+                0 => 0,
+                1 => 1 << g,
+                _ => rng.next() & rng.next(),
+            };
+            put(a, b, a.rebase(0x0133_d0e4) + 4 * g, m);
+        }
+        for off in [0x154u32, 0x168, 0x16c, 0x170] {
+            let m = if k % 2 == 0 {
+                u32::MAX
+            } else {
+                rng.next() | rng.next() | rng.next()
+            };
+            put(a, b, a.rebase(0x0133_d000) + off, m);
+        }
+        put(
+            a,
+            b,
+            a.rebase(0x0133_d0e0),
+            if k % 10 == 0 {
+                rng.next() % 8
+            } else {
+                rng.next() % 4
+            },
+        );
+        put(a, b, a.rebase(0x0133_d0d0), (rng.next() % 0x20) as u16);
+        put(a, b, a.rebase(0x0133_d0d2), rng.next() as u16);
+        let big = k % 25 == 0;
+        for (count, ids) in [(0x0133_f0d8u32, 0x0133_f0dcu32), (0x0133_f0ec, 0x0133_f0f0)] {
+            let n = if big { rng.next() % 30 } else { rng.next() % 8 };
+            put(
+                a,
+                b,
+                a.rebase(count),
+                if k % 17 == 0 { n.wrapping_neg() } else { n },
+            );
+            for i in 0..8u32 {
+                put(a, b, a.rebase(ids) + 2 * i, (rng.next() % 28) as u16);
+            }
+        }
+        let windows: Vec<u8> = (0..0x400).map(|_| rng.next() as u8).collect();
+        fill(a, b, 0x0133_c950, &windows);
+        put(a, b, a.rebase(0x023c_c092), (rng.next() % 4) as u8);
+        put(a, b, rec + 0x1a, rng.next() as u16);
+        eax(a, 0x0089_8640, &[]);
+        t::btl_make_target_target_bit(b, tmp, |m, id, p| eax(m, 0x0079_a4b0, &[id, p]));
+        same_memory("target lists", a, b);
+    }
+}
+
+#[test]
+fn round15_target_lists_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round15_target_lists(&mut a, &mut b, &mut Xorshift(0x4015_0001));
+}
+
+#[test]
+fn round15_target_lists_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round15_target_lists(&mut a, &mut b, &mut Xorshift(0x4015_0002));
+}

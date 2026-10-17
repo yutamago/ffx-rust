@@ -2979,4 +2979,195 @@ pub mod bridge {
             }
         }
     }
+
+    /// `TOBtlMakeTargetTargetBit()` (`0x00898640`): the target lists
+    /// rebuilt from the group masks (`0x0133d0e4`, 28 words) and the
+    /// selectable mask (`0x0133d174` = the AND of `0x0133d154`,
+    /// `0x0133d168`, `0x0133d16c`, `0x0133d170`): party targets into
+    /// `0x0133d180` (count `0x0133d17c`), monster targets into
+    /// `0x0133d1d4` (count `0x0133d1d0`), by the group mode `0x0133d0e0`:
+    /// 0 the groups listed at `0x0133f0dc`/`0x0133f0f0` (counts
+    /// `0x0133f0d8`/`0x0133f0ec`), 1 groups 0..8 and 20..28, 2 masks 0 and
+    /// 20, 3 the cursor character (`0x0133d0d0`) alone. The command's flags
+    /// (`+0x1a` of its `MsGetComData` record, passed in with a scratch word)
+    /// pick the list: bit 1 the monsters', else the party's, where mode 0
+    /// starts at the cursor character's entry. Then the list (`0x0133d1f8`,
+    /// `0x0133d200`), its count (`0x0133d1f6`), the start (`0x0133d1fc`), bit
+    /// 5 (`0x0133d1fe`), the selected mask (`0x0133d178`) and its highest
+    /// character (`0x0133d1f4`, 0xff in modes 1 and 2), and those into the
+    /// command window `0x023cc092` (0xf0 bytes each from `0x0133c992`).
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // 16-bit counters
+    pub fn btl_make_target_target_bit<M: Mem>(
+        mem: &mut M,
+        tmp: u32,
+        get_com: impl FnOnce(&mut M, u32, u32) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let party = at(mem, 0x0133_d180);
+        let monsters = at(mem, 0x0133_d1d4);
+        for k in 0..20u32 {
+            mem.write(party.wrapping_add(4 * k), 0u32);
+        }
+        for k in 0..8u32 {
+            mem.write(monsters.wrapping_add(4 * k), 0u32);
+        }
+        let id = u32::from(TARGET_COMMAND.get(mem));
+        let rec = get_com(mem, id, tmp);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let mask = word(mem, 0x0133_d16c)
+            & word(mem, 0x0133_d168)
+            & word(mem, 0x0133_d170)
+            & word(mem, 0x0133_d154);
+        let mode = word(mem, 0x0133_d0e0);
+        let (mask_at, n1_at, n2_at) = (
+            at(mem, 0x0133_d174),
+            at(mem, 0x0133_d17c),
+            at(mem, 0x0133_d1d0),
+        );
+        mem.write(mask_at, mask);
+        mem.write(n1_at, 0u16);
+        mem.write(n2_at, 0u16);
+        let groups = at(mem, 0x0133_d0e4);
+        // one target added to a list: the count re-read and stored as
+        // the original does
+        let add = |mem: &mut M, list: u32, n_at: u32, n: &mut u16, v: u32| {
+            let i = u32::from(*n).cast_signed() as i16;
+            mem.write(list.wrapping_add((i32::from(i) * 4).cast_unsigned()), v);
+            let c: u16 = mem.read(n_at);
+            *n = c.wrapping_add(1);
+            mem.write(n_at, *n);
+        };
+        let (mut n1, mut n2) = (0u16, 0u16);
+        match mode {
+            0 => {
+                // the other count is re-read after a list that had entries
+                // to scan (a long list can run into it)
+                let count = word(mem, 0x0133_f0d8).cast_signed();
+                if count > 0 {
+                    let ids = at(mem, 0x0133_f0dc);
+                    for k in 0..count.cast_unsigned() {
+                        let g = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+                        let m: u32 = mem.read(mask_at);
+                        let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                        if v != 0 {
+                            add(mem, party, n1_at, &mut n1, v);
+                        }
+                    }
+                    n2 = mem.read(n2_at);
+                }
+                let count = word(mem, 0x0133_f0ec).cast_signed();
+                if count > 0 {
+                    let ids = at(mem, 0x0133_f0f0);
+                    for k in 0..count.cast_unsigned() {
+                        let g = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+                        let m: u32 = mem.read(mask_at);
+                        let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                        if v != 0 {
+                            add(mem, monsters, n2_at, &mut n2, v);
+                        }
+                    }
+                    n1 = mem.read(n1_at);
+                }
+            }
+            1 => {
+                for g in 0..8u32 {
+                    let m: u32 = mem.read(mask_at);
+                    let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                    if v != 0 {
+                        add(mem, party, n1_at, &mut n1, v);
+                    }
+                }
+                n2 = mem.read(n2_at);
+                for g in 20..28u32 {
+                    let m: u32 = mem.read(mask_at);
+                    let v = mem.read::<u32>(groups.wrapping_add(4 * g)) & m;
+                    if v != 0 {
+                        add(mem, monsters, n2_at, &mut n2, v);
+                    }
+                }
+                n1 = mem.read(n1_at);
+            }
+            2 => {
+                let v = mem.read::<u32>(groups) & mask;
+                if v != 0 {
+                    n1 = 1;
+                    mem.write(party, v);
+                    mem.write(n1_at, 1u16);
+                }
+                let v = mem.read::<u32>(groups.wrapping_add(0x50)) & mask;
+                if v != 0 {
+                    n2 = 1;
+                    mem.write(n2_at, 1u16);
+                    mem.write(monsters, v);
+                }
+            }
+            3 => {
+                let c: u16 = mem.read(at(mem, 0x0133_d0d0));
+                let bit = 1u32 << (c & 31);
+                if c < 0x14 {
+                    n1 = 1;
+                    mem.write(n1_at, 1u16);
+                    mem.write(party, bit);
+                } else if c < 0x1c {
+                    n2 = 1;
+                    mem.write(n2_at, 1u16);
+                    mem.write(monsters, bit);
+                }
+            }
+            _ => {}
+        }
+        let (start_at, count_at, which_at, list_at, bit5_at) = (
+            at(mem, 0x0133_d1fc),
+            at(mem, 0x0133_d1f6),
+            at(mem, 0x0133_d200),
+            at(mem, 0x0133_d1f8),
+            at(mem, 0x0133_d1fe),
+        );
+        mem.write(start_at, 0u16);
+        let flags: u8 = mem.read(rec.wrapping_add(0x1a));
+        let mut start = 0u16;
+        let (list, which) = if flags & 2 != 0 {
+            mem.write(count_at, n2);
+            mem.write(which_at, 1u16);
+            mem.write(list_at, monsters);
+            (monsters, 1u16)
+        } else {
+            mem.write(which_at, 0u16);
+            mem.write(list_at, party);
+            mem.write(count_at, n1);
+            if mode == 0 {
+                let n = i32::from(n1.cast_signed());
+                let c: u8 = mem.read(at(mem, 0x0133_d0d0));
+                let bit = 1u32 << (c & 31);
+                for k in 0..n.max(0).cast_unsigned() {
+                    if mem.read::<u32>(party.wrapping_add(4 * k)) == bit {
+                        start = k as u16;
+                        mem.write(start_at, start);
+                        break;
+                    }
+                }
+            }
+            (party, 0)
+        };
+        mem.write(bit5_at, u16::from(flags & 0x20 != 0));
+        let sel: u32 =
+            mem.read(list.wrapping_add((i32::from(start.cast_signed()) * 4).cast_unsigned()));
+        mem.write(at(mem, 0x0133_d178), sel);
+        let top_at = at(mem, 0x0133_d1f4);
+        if mode == 0 || mode == 3 {
+            for c in 0..0x1cu16 {
+                if sel & (1 << c) != 0 {
+                    mem.write(top_at, c);
+                }
+            }
+        } else {
+            mem.write(top_at, 0xffu16);
+        }
+        let depth = i32::from(mem.read::<i8>(at(mem, 0x023c_c092)));
+        let w = at(mem, 0x0133_c992).wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+        mem.write(w.wrapping_add(0x96), sel);
+        mem.write(w.wrapping_add(0x92), which);
+        mem.write(w.wrapping_add(0x94), mode as u16);
+        mem.write(w, start);
+    }
 }
