@@ -10654,3 +10654,120 @@ fn round18_resets_match_the_original_on_the_snapshot() {
     };
     round18_resets(&mut a, &mut b, &mut Xorshift(0x4018_0012));
 }
+
+/// Round 19's menu record helpers over logging stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_records(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x40, &logger(cursor, 0x1900_0100));
+    redirect(a, b, 0x0077_6910, s);
+    let mut v = vec![0x83, 0x05];
+    v.extend_from_slice(&counter.to_le_bytes());
+    v.extend_from_slice(&[0x01, 0xc3]);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x0077_4740, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let pages = alloc(a, b, 16 * 8);
+    let records = alloc(a, b, 16 * 13 * 0x138);
+    let pairs = alloc(a, b, 0x40 * 8);
+    let values = alloc(a, b, 0x40 * 4);
+    let sizes = alloc(a, b, 4);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..150u32 {
+        put(a, b, cursor, log);
+        let bytes: Vec<u8> = (0..16 * 13 * 0x138).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        let base = records - 0x100;
+        let npages = rng.next() % 16 + u32::from(k % 9 != 0);
+        for p in 0..16u32 {
+            let n = (rng.next() % 13) as u16;
+            put(a, b, pages + 8 * p, 0x100 + p * 13 * 0x138);
+            put(a, b, pages + 8 * p + 4, if p == 0 { 12 } else { n });
+        }
+        // flagged records rarely, and small value-pair counts
+        for r in 0..16 * 13 {
+            let rec = records + 0x138 * r;
+            put(a, b, rec + 1, (rng.next() % 16 == 0) as u8);
+            put(
+                a,
+                b,
+                rec + 0x1c,
+                [(rng.next() % 4) as u16, (rng.next() % 0x30) as u16],
+            );
+        }
+        for i in 0..0x40u32 {
+            put(a, b, pairs + 8 * i, [rng.next() % 0x40, rng.next()]);
+        }
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a01c),
+            if k % 13 == 0 { 0 } else { pages },
+        );
+        set(a, b, Global::<u32>::new(0x0112_a03c), base);
+        set(a, b, Global::<u32>::new(0x0112_a080), npages);
+        set(a, b, Global::<u32>::new(0x0112_a028), pairs);
+        set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+        // the target of the positional search: some record's start
+        let tp = rng.next() % 16;
+        let tr = rng.next() % 13;
+        let target = 0x100 + tp * 13 * 0x138 + tr * 0x138;
+        put(
+            a,
+            b,
+            g(a, 0x0112_a0a0),
+            if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                target
+            },
+        );
+        eax(a, 0x0077_5ce0, &[]);
+        t::find_record_at(b, call);
+        same_memory("record at", a, b);
+        eax(a, 0x0077_5de0, &[]);
+        t::find_record_flagged(b, call);
+        same_memory("flagged record", a, b);
+        let screen = [5u32, 0xb, 8][(rng.next() % 3) as usize];
+        put(a, b, g(a, 0x00c4_16c0), screen);
+        eax(a, 0x0077_67d0, &[]);
+        t::patch_menu_records(b, call);
+        same_memory("patched records", a, b);
+    }
+    // every image and kind on both screens (and one other)
+    for screen in [5u32, 0xb, 8] {
+        put(a, b, g(a, 0x00c4_16c0), screen);
+        for image in 0..0x22u32 {
+            for kind in 0..0x12u32 {
+                put(a, b, sizes, 0xa5a5_a5a5u32);
+                eax(a, 0x0077_5820, &[0, image, kind, sizes, sizes + 2]);
+                t::menu_picture_size(b, image, kind, sizes, sizes + 2);
+                same_memory("picture sizes", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn round19_records_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_records(&mut a, &mut b, &mut Xorshift(0x4019_0001));
+}
+
+#[test]
+fn round19_records_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_records(&mut a, &mut b, &mut Xorshift(0x4019_0002));
+}

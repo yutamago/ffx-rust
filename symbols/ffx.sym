@@ -4529,7 +4529,11 @@
 0x00774c00 function TOMenuAllocHelpMem_00774c00  # (reset, bytes) -> a block from the help work area (TOMenuGetHelpWorkAdrs + 0x0112a09c, which reset clears), "help get mem %x (0x%x / 0x%x)", "help memory over flow" against TOMenuGetHelpWorkSize; own name
 0x00774ff0 function GsPkt_TexturedSprite_00774ff0 # (pkt, tbp, ..., w, h): builds a GIF packet in pkt: TEX0 with TW/TH = log2 of the width/height (1..10), ALPHA, TEST, a sprite with UV and XYZ2 (0x0060ab4000 tag); callers 0x007766e0, 0x00776740; the system agent's finding (a DMA/GIF packet); own name
 0x00775810 function SetGlobal_0112a018 # cdecl(v): *0x0112a018 = v, returns v; name ours
+0x00775820 function MenuPictureSize_00775820  # cdecl(_, image, kind, &w, &h): screens 5/0xb (0x00c416c0): per known (image, kind) u16 sizes 0x200^2, 0x1e0^2, 0x100^2, 0x100x0x80, 0x80x0x100, 0x80^2 or 0x80x0x40; name ours
+0x00775ce0 function FindRecordAt_00775ce0     # (): 0x0112a0a0/098/084/088 cleared; pages of *0x0112a01c (offset + *0x0112a03c, i16 count; 0x0112a080 pages), ResetRecords_00774740 each, find the 0x138-byte record at old 0x0112a0a0 + *0x0112a03c: current page/record, relative page, value pairs (*0x0112a028 + 8 * +0x1e, +0x1c of them) into *0x0112a0a4; name ours
+0x00775de0 function FindRecordFlagged_00775de0 # (): as FindRecordAt_00775ce0 for the first record with +1 bit 0; name ours
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
+0x007767d0 function PatchMenuRecords_007767d0 # (): screen 5 page 0: records 3/4 +6 = 0x53/0x83, 5 unlinked, 7 +1 = 0 and unlinked, 8 +1 |= 1 +6 = 0x56, 9 +6 = 0x86; screen 0xb pages 13/14: unlink and +6 edits; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
 0x00777000 function CdOpenCheck_sub              # callees: its named callees match the Switch 0x71003227a0 CdOpenCheck_sub's (similarity 0.80: TkSyncV, movie_wait, read_err_disp_set, sceCdDiskReady); symbols from Fahrenheit's server export

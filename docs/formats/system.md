@@ -410,3 +410,22 @@ The 0x6f1820 group (`0x006f1820..0x006f1890`) is not ported. It is
 thiscall delegate glue: each stub loads a bound object (`+0xc`) and
 function (`+0x10`) from `this` and calls or jumps through them. It is
 classed logic only by default.
+
+## Menu record helpers (`0x00775820..0x007767d0`)
+
+The help and menu screens keep their entries in pages of 0x138-byte
+records. The page table is at `*0x0112a01c`: 8 bytes per page, an offset
+from `*0x0112a03c` and an i16 record count, with `0x0112a080` pages. The
+current page and record are in `0x0112a088` and `0x0112a084`.
+
+- `0x00775ce0` and `0x00775de0` search the pages for a record: by its
+  address in the first case, by bit 0 of `+1` in the second. They make the
+  record current and copy its value pairs (`+0x1c` pairs from
+  `*0x0112a028 + 8 × +0x1e`) into the value table `*0x0112a0a4`.
+- `0x007767d0` applies fixed edits to screen 5's first page and to
+  screen 0xb's pages 13 and 14: it moves some records and unlinks others.
+- `0x00775820` gives the texture size of a menu picture for screens 5 and
+  0xb.
+
+`0x00775330` builds a GS packet (GIF tags, `TEX0`/`TEX1`), so it is
+skipped.
