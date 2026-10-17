@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
+use ffx_vfx::{et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -1399,6 +1399,16 @@ ported! {
     /// `op_func_ot(list)`.
     op_func_ot @ 0x007e_b430 => extern "C" fn op_func_ot(list: u32) {
         op::bridge::op_func_ot(&mut mem(), list, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op1_md_draw_eiabm_sphe(obj, part, n, e)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    op1_md_draw_eiabm_sphe @ 0x00a6_8140 => extern "C" fn op1_md_draw_eiabm_sphe(obj: u32, part: u32, n: u32, e: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xb0]);
+        let mut locals = Locals([0; 0xb0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xb0;
+        md::bridge::op1_md_draw_eiabm_sphe(&mut mem(), obj, part, n, e, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, x87,
+    et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -7926,6 +7926,117 @@ fn round12b_helpers_match_the_original() {
                 op::bridge::op_func_ot(o, list, &mut call_original);
                 None
             });
+        }
+    }
+}
+
+/// The vertex streams a render-data record points at (positions `+0xc`,
+/// texture coordinates `+0x10`, colours `+0x14`, indices `+0x1c`), as
+/// bytes, from oracle `o`.
+fn render_streams(o: &Oracle, rd: u32, len: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    for at in [0xcu32, 0x10, 0x14, 0x1c] {
+        let base: u32 = Mem::read(o, rd + at);
+        for i in 0..len {
+            out.push(Mem::read::<u8>(o, base + i));
+        }
+    }
+    for at in [4u32, 8] {
+        out.extend(Mem::read::<u32>(o, rd + at).to_le_bytes());
+    }
+    out
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn eiabm_sphe_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_8140);
+        // graphicFontGetScreenWH(&w, &h) from cells; the render data
+        // lookup returns `tex`
+        let cells = p.alloc(0x10);
+        let mut c = Vec::new();
+        for k in 0..2u8 {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+            c.extend([0x8b, 0x0d]); // mov ecx, [cell]
+            c.extend((cells + 4 * u32::from(k)).to_le_bytes());
+            c.extend([0x89, 0x08]); // mov [eax], ecx
+        }
+        c.push(0xc3);
+        let at = p.sym(0x0064_0db0);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let tex = p.alloc(0x100);
+        p.set(cells + 8, tex);
+        deref_recorder_with(&mut p, 0x0063_8fd0, &[0, 0], Some(cells + 8));
+        let rd = p.alloc(0x40);
+        p.set(tex + 0x94, rd);
+        let len = 0x2000u32;
+        let streams = [
+            p.alloc(len as usize),
+            p.alloc(len as usize),
+            p.alloc(len as usize),
+            p.alloc(len as usize),
+        ];
+        for (s, at) in streams.into_iter().zip([0xcu32, 0x10, 0x14, 0x1c]) {
+            p.set(rd + at, s);
+        }
+        let skip = p.sym(0x012f_b7d0);
+        let (obj, part, cam, pd) = (p.alloc(0x200), p.alloc(0x80), p.alloc(0x40), p.alloc(0x40));
+        for round in 0..3000 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            for s in streams {
+                p.fill(s, len, &mut rng);
+            }
+            p.set(obj + 4, 0x20 + 4 * rng.below(8));
+            p.set(obj + 8, 0x100u32);
+            let off: u32 = p.get(obj + 4);
+            for (k, field) in [0x1eu32, 0x20].into_iter().enumerate() {
+                let _ = k;
+                p.set(obj + off + field, u16::try_from(rng.below(16)).unwrap());
+            }
+            p.set(part + 0x20, cam);
+            p.set(part + 0x44, pd);
+            for at in [0x2cu32, 0x30, 0x34, 0x3c] {
+                let x = if rng.chance(10) { 0 } else { finite(&mut rng) };
+                p.set(cam + at, x);
+            }
+            let dpt = rng.float();
+            p.set(pd + 0x38, dpt);
+            p.set(part + 0x1b, rng.pick(&[0u8, 0x80, 0xff, 1]));
+            let (w9, h9) = (rng.next(), rng.next());
+            p.set(cells, rng.pick(&[1280u32, 1920, 640, 0, w9]));
+            p.set(cells + 4, rng.pick(&[720u32, 1080, 448, 0, h9]));
+            p.set(skip, u32::from(round % 17 == 0));
+            p.set(rd + 4, rng.below(100));
+            p.set(rd + 8, rng.below(100));
+            let n = rng.below(30);
+            let e = rng.pick(&[0u32, 1, 6, u32::MAX, (-3i32).cast_unsigned()]);
+            check_deep_n(
+                &mut p,
+                "op1_md_draw_eiabm_sphe",
+                0x00a6_8140,
+                &[obj, part, n, e],
+                |o, frame| {
+                    Some(md::bridge::op1_md_draw_eiabm_sphe(
+                        o,
+                        obj,
+                        part,
+                        n,
+                        e,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // the streams, compared on their own as well
+            assert_eq!(
+                render_streams(&p.a, rd, len),
+                render_streams(&p.b, rd, len),
+                "{}: streams",
+                p.name
+            );
         }
     }
 }
