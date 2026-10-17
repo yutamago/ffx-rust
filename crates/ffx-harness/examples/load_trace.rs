@@ -1,7 +1,7 @@
 //! Loads a save through the title menu (`load_trace [entry]`), or with
 //! `loadsave` (`load_trace direct [save] [early]`, frame by frame in
 //! lockstep: once the title scene is set up as `screens::load_save_direct`
-//! waits, or with `early` as soon as the title event opens, which the
+//! waits (the second visit, after `memochek`), or with `early` as soon as the title event opens, which the
 //! pending boot jump undoes), and prints every change of the
 //! save/load state globals, with the frame it was seen on, until the save's
 //! map script opens and a while after: which steps each path takes
@@ -95,7 +95,16 @@ fn direct(save: &str, early: bool) -> Result<()> {
     })?;
     game.wait_for_open("test20.ebp", 1, 3000)?;
     if !early {
-        game.wait_for_open("titl00/bin/mapout.vpa", 1, 3000)?;
+        game.wait_for_open("memochek.ebp", 1, 3000)?;
+        game.events()?;
+        let log = game.opened();
+        let m = log
+            .iter()
+            .rposition(|e| e.contains("memochek.ebp"))
+            .unwrap_or(0);
+        if !log[m..].iter().any(|e| e.contains("test20.ebp")) {
+            game.wait_for_open("test20.ebp", 1, 3000)?;
+        }
         game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
         game.wait(30)?;
     }

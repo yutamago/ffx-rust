@@ -139,20 +139,38 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 /// Windows path to a save file, which is only read. Returns the event
 /// script the save starts in.
 ///
-/// The title event's script (`test20.ebp`) opens while the boot's jump to
-/// the title (map `0x17`) is still pending (`g_TkEventJumpRequest`,
-/// `0x0133084c`); a load sent then is undone: the scene step enters the
-/// title map (`titl00`) and the title script's set-up starts a new game's
-/// state. So this waits for `titl00`'s map to open, the request to clear
-/// and 30 frames for the script's set-up (about 70 frames from boot).
+/// The boot runs the title event (`test20.ebp`, map `0x17`, on `titl00`)
+/// twice: its first set-up jumps to `memochek` (map `0x15c`, on `titl02`:
+/// the logos), which comes back to the title proper, where the menus run.
+/// A load sent during the first visit is undone or overtaken (the pending
+/// boot jump, `g_TkEventJumpRequest` `0x0133084c`, enters the title map,
+/// and the title script's set-up starts a new game's state and jumps to
+/// `memochek`); one sent from `memochek` crashed the game. So this waits
+/// for `memochek`, the title event's second opening, the jump request to
+/// clear and 30 frames for the script's set-up (about 100 frames from
+/// boot in fast mode).
 ///
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
-    const TITLE_MAP: &str = "titl00/bin/mapout.vpa";
     game.events()?;
-    if !game.opened().iter().any(|e| e.contains(TITLE_MAP)) {
-        game.wait_for_open(TITLE_MAP, 2, 3000)?;
+    let seen = |game: &Game| {
+        let log = game.opened();
+        log.iter()
+            .rposition(|e| e.contains("memochek.ebp"))
+            .map(|m| log[m..].iter().any(|e| e.contains("test20.ebp")))
+    };
+    match seen(game) {
+        Some(true) => {}
+        Some(false) => {
+            game.wait_for_open("test20.ebp", 2, 3000)?;
+        }
+        None => {
+            game.wait_for_open("memochek.ebp", 2, 3000)?;
+            if seen(game) != Some(true) {
+                game.wait_for_open("test20.ebp", 2, 3000)?;
+            }
+        }
     }
     game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
     game.wait(30)?;

@@ -33,9 +33,9 @@ fn main() -> Result<()> {
     let opened = match mode {
         "menu" => screens::load_save(&mut game, save.parse().expect("entry"))?,
         "direct" => {
-            game.wait_for_open("titl00/bin/mapout.vpa", 2, 3000)?;
+            game.wait_for_open("memochek.ebp", 2, 3000)?;
             println!(
-                "title map open after {:.1} s, frame {}",
+                "memochek open after {:.1} s, frame {}",
                 start.elapsed().as_secs_f64(),
                 game.frame()?
             );
