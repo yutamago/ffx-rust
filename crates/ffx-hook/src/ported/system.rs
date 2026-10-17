@@ -4446,6 +4446,104 @@ ported! {
         });
         std::hint::black_box(&mut tmp);
     }
+    /// `TOBtlMakeTargetTargetBit()`.
+    TOBtlMakeTargetTargetBit @ 0x0089_8640 => extern "C" fn to_btl_make_target_target_bit() {
+        let mut tmp = [0u32; 3];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = tmp.as_mut_ptr() as u32;
+        tolib::bridge::btl_make_target_target_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data);
+        std::hint::black_box(&mut tmp);
+    }
+    /// `TOBtlStartLimitTimer(t)`.
+    TOBtlStartLimitTimer @ 0x0089_a2a0 => extern "C" fn to_btl_start_limit_timer(t: f32) {
+        tolib::bridge::btl_start_limit_timer(&mut mem(), t);
+    }
+    /// `TOBtlSetLimitTimerPos(x, y)`.
+    TOBtlSetLimitTimerPos @ 0x0089_a2d0 => extern "C" fn to_btl_set_limit_timer_pos(x: u32, y: u32) {
+        tolib::bridge::btl_set_limit_timer_pos(&mut mem(), x, y);
+    }
+    /// `TOBtlSetDefaultCursorPos()`.
+    TOBtlSetDefaultCursorPos @ 0x0089_9ac0 => extern "C" fn to_btl_set_default_cursor_pos() {
+        tolib::bridge::btl_set_default_cursor_pos(&mut mem());
+    }
+    /// `TOReset2()`.
+    TOReset2 @ 0x008a_dee0 => extern "C" fn to_reset2() -> u32 {
+        tolib::bridge::reset2(&mut mem(), call_sym)
+    }
+    /// `TOStdGetItemName(item)`.
+    TOStdGetItemName @ 0x008b_8db0 => extern "C" fn to_std_get_item_name(item: u32) -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = tolib::bridge::std_get_item_name(&mut mem(), item, at, call_sym);
+        std::hint::black_box(&mut tmp);
+        r
+    }
+    /// `TOStdGetWeaponName(id)`.
+    TOStdGetWeaponName @ 0x008b_8dd0 => extern "C" fn to_std_get_weapon_name(id: u32) -> u32 {
+        tolib::bridge::std_get_weapon_name(&mut mem(), id, call_sym)
+    }
+    /// `TOBtlEndSetFlagMark(i, k)`.
+    TOBtlEndSetFlagMark @ 0x008b_e020 => extern "C" fn to_btl_end_set_flag_mark(i: u32, k: u32) {
+        tolib::bridge::btl_end_set_flag_f(&mut mem(), i, k, call_sym);
+    }
+    /// `TOMenuTermHelp()`.
+    TOMenuTermHelp @ 0x008b_f0b0 => extern "C" fn to_menu_term_help() {
+        tolib::bridge::menu_term_help(&mut mem(), call_sym);
+    }
+    /// `TOMenuTermAbilityMap2()`.
+    TOMenuTermAbilityMap2 @ 0x008e_27e0 => extern "C" fn to_menu_term_ability_map2() {
+        tolib::bridge::menu_term_ability_map2(&mut mem(), call_sym);
+    }
+    /// `TOSetWindowKind(i, kind)`.
+    TOSetWindowKind @ 0x0090_6e60 => extern "C" fn to_set_window_kind(i: u32, kind: u32) {
+        tolib::bridge::set_window_kind(&mut mem(), i, kind, call_sym);
+    }
+    /// `MagicFile_Cleanup()`.
+    MagicFile_Cleanup @ 0x009d_a2d0 => extern "C" fn magic_file_cleanup() {
+        menu::bridge::magic_file_cleanup(&mut mem(), call_sym);
+    }
+    /// `MagicFile_NeedRestoreCamera()`.
+    MagicFile_NeedRestoreCamera @ 0x009d_a700 => extern "C" fn magic_file_need_restore_camera() -> u32 {
+        menu::bridge::magic_file_need_restore_camera(&mut mem(), call_sym)
+    }
+    /// `MagicFile_RestoreScreenSetup()`.
+    MagicFile_RestoreScreenSetup @ 0x009d_a780 => extern "C" fn magic_file_restore_screen_setup() -> u32 {
+        menu::bridge::magic_file_restore_screen_setup(&mut mem(), call_sym)
+    }
+    /// `MagicFile_isPrxPreloaded(id)`.
+    MagicFile_isPrxPreloaded @ 0x009d_ae60 => extern "C" fn magic_file_is_prx_preloaded(id: u32) -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = menu::bridge::magic_file_is_prx_preloaded(&mut mem(), id, at, call_sym);
+        std::hint::black_box(&mut tmp);
+        r
+    }
+    /// `TOCheckMapMessage(id)`.
+    TOCheckMapMessage @ 0x008a_f6a0 => extern "C" fn to_check_map_message(id: u32) -> u32 {
+        tolib::bridge::check_map_message(&mut mem(), id, call_sym)
+    }
+    /// `TOCountMapVisits()`.
+    TOCountMapVisits @ 0x008b_5680 => extern "C" fn to_count_map_visits() {
+        tolib::bridge::count_map_visits(&mut mem(), call_sym);
+    }
+    /// `TOSetCollectBit(n)`.
+    TOSetCollectBit @ 0x0090_6b30 => extern "C" fn to_set_collect_bit(n: u32) {
+        tolib::bridge::collect_bit(&mut mem(), n, call_sym);
+    }
+    /// `TOClearBlock_008b3610()`.
+    TOClearBlock_008b3610 @ 0x008b_3610 => extern "C" fn to_clear_block_008b3610() {
+        tolib::bridge::clear_block_159e468(&mut mem(), call_sym);
+    }
+    /// `TOGetFontWidthForLang(text, kind, out, _)`.
+    TOGetFontWidthForLang @ 0x008b_7c00 => extern "C" fn to_get_font_width_for_lang(text: u32, kind: u32, out: u32) -> u32 {
+        tolib::bridge::font_width_for_lang(
+            &mut mem(),
+            |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+            |m, table| tolib::bridge::font_width(m, text, kind, out, table, &mut GameMenu),
+        )
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
