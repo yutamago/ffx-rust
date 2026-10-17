@@ -3133,6 +3133,34 @@ ported! {
     TkMn2DrawKickPacketBody @ 0x008c_0c50 => extern "C" fn tk_mn2_draw_kick_packet_body(clear: u32) -> u32 {
         tk::tk_mn2_draw_kick_packet_body(&mut mem(), clear, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2DrawKickSyncPacket()`.
+    TkMn2DrawKickSyncPacket @ 0x008c_0cc0 => extern "C" fn tk_mn2_draw_kick_sync_packet() -> u32 {
+        tk::tk_mn2_draw_kick_sync_packet(&mut mem(), 1, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawKickSyncPacket2()`.
+    TkMn2DrawKickSyncPacket2 @ 0x008c_0cd0 => extern "C" fn tk_mn2_draw_kick_sync_packet2() -> u32 {
+        tk::tk_mn2_draw_kick_sync_packet(&mut mem(), 0, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMn2_EmitPacket(a, b, kind)`: the new cursor.
+    MenuMn2_EmitPacket @ 0x008c_11b0 => extern "C" fn menu_mn2_emit_packet(a: u32, b: u32, kind: u32) -> u32 {
+        tk::menu_mn2_emit_packet(&mut mem(), [a, b, kind], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `TkSndIsRead()`: 1 or 0.
+    TkSndIsRead @ 0x0088_6600 => extern "C" fn tk_snd_is_read() -> u32 {
+        tk::tk_snd_is_read(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSetSyncVCallback(id, f)`.
+    TkSetSyncVCallback @ 0x0088_7ed0 => extern "C" fn tk_set_sync_v_callback(id: u32, f: u32) -> u32 {
+        tk::tk_set_sync_v_callback(&mut mem(), id, f, &mut |_, g, a| call_ptr(g, a))
+    }
+    /// `TkSyncVEI()`.
+    TkSyncVEI @ 0x0088_7f40 => extern "C" fn tk_sync_v_ei() -> u32 {
+        tk::tk_sync_v_ei(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_SellPrice(id)`.
+    MenuShop_SellPrice @ 0x008d_b400 => extern "C" fn menu_shop_sell_price(id: u32) -> u32 {
+        tk::menu_shop_sell_price(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkFree(p)`: the last memory check's result.
     TkFree @ 0x0088_d520 => extern "C" fn tk_free(p: u32) -> u32 {
         tk::tk_free(&mut mem(), p, &mut |_, f, a| call_ptr(f, a))

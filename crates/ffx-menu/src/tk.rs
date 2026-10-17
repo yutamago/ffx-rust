@@ -5471,6 +5471,23 @@ pub mod bridge {
         w
     }
 
+    /// `MenuShop_SellPrice(id)` (`0x008db400`, own name): the item's record
+    /// (`TkMn2GetExcelData(id & 0xfff, [0x0186ac28])`) first word through
+    /// `AbmapQuarterOrOne(g_TkMenuWShopList, price)` (a quarter, or 1).
+    pub fn menu_shop_sell_price<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(mem.rebase(0x0186_ac28));
+        let excel = mem.rebase(0x008c_1af0);
+        let rec = call(mem, excel, &[id & 0xfff, table]);
+        let price: u32 = mem.read(rec);
+        let list: u32 = mem.read(mem.rebase(0x0186_ac20));
+        let quarter = mem.rebase(0x00a5_cee0);
+        call(mem, quarter, &[list, price])
+    }
+
     /// `MenuStatus_OpenWindow(a, index, b, c)` (`0x008d3140`, own name): a
     /// window from `TkMenuMainAllocWindow()` kept in [`STATUS_WINDOWS`]
     /// `[index]`, with the status window's callbacks (`+8` `0x008d2670`,
@@ -6679,6 +6696,37 @@ pub mod bridge {
         tk_mn2_draw_init_packet(mem, call)
     }
 
+    /// `TkMn2DrawKickSyncPacket()` (`0x008c0cc0`) and
+    /// `TkMn2DrawKickSyncPacket2()` (`0x008c0cd0`): [`tk_mn2_draw_kick_packet_body`]
+    /// (with the scissor cleared for the first), then `TkVU1SyncPath()`,
+    /// whose result is returned (a tail jump).
+    pub fn tk_mn2_draw_kick_sync_packet<M: Mem>(
+        mem: &mut M,
+        clear: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        tk_mn2_draw_kick_packet_body(mem, clear, call);
+        let f = mem.rebase(0x0088_ec60);
+        call(mem, f, &[])
+    }
+
+    /// `MenuMn2_EmitPacket(a, b, kind)` (`0x008c11b0`, own name): the menu
+    /// draw cursor (`g_TkMn2DrawY`) stepped by 16, then the packet builder
+    /// `0x008f1b50(cursor, a, b, kind)` writes there and its end becomes
+    /// the cursor (returned).
+    pub fn menu_mn2_emit_packet<M: Mem>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let y = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        MN2_DRAW_Y.set(mem, y);
+        let f = mem.rebase(0x008f_1b50);
+        let end = call(mem, f, &[y, args[0], args[1], args[2]]);
+        MN2_DRAW_Y.set(mem, end);
+        end
+    }
+
     /// `TkFree(p)` (`0x0088d520`): `user_free_thunk(p)`, then
     /// `Sg_MemCheck` on pools 0 and 1 (with the source file `0x00b5e968`
     /// and lines 480, 481). Returns the last check's result.
@@ -6710,6 +6758,55 @@ pub mod bridge {
         mem.write(yaw, y.to_bits());
         mem.write(pitch, p.to_bits());
         yaw
+    }
+
+    /// `TkSndIsRead()` (`0x00886600`): whether any of the sound status
+    /// words (`0x0132ff20`, `0x0132ff1c`, `0x0132ff10`, `0x0132ff24`) is
+    /// set, read before [`tk_snd_update_main`] runs (and clears most of
+    /// them).
+    pub fn tk_snd_is_read<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut any = 0u32;
+        for a in [0x0132_ff20, 0x0132_ff1c, 0x0132_ff10, 0x0132_ff24] {
+            any |= mem.read::<u32>(mem.rebase(a));
+        }
+        tk_snd_update_main(mem, call);
+        u32::from(any != 0)
+    }
+
+    /// `TkSetSyncVCallback(id, f)` (`0x00887ed0`): with the sync callbacks
+    /// held off (`0x013301f0` = 0 through `0x00887e80`),
+    /// `TkGetSyncVCallbackHandle(id)` and `TkSetSyncVCallbackPtr(id, f)`;
+    /// then on again (its result returned).
+    pub fn tk_set_sync_v_callback<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        f: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let enable = mem.rebase(0x0088_7e80);
+        call(mem, enable, &[0]);
+        let handle = mem.rebase(0x0088_8620);
+        call(mem, handle, &[id]);
+        let set = mem.rebase(0x0088_8790);
+        call(mem, set, &[id, f]);
+        call(mem, enable, &[1])
+    }
+
+    /// `TkSyncVEI()` (`0x00887f40`): the pending count `0x013301e0` down by
+    /// one while positive (else set to 0), then the sync callbacks on
+    /// (`0x00887e80(1)`, its result returned).
+    pub fn tk_sync_v_ei<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = mem.rebase(0x0133_01e0);
+        let n: i32 = mem.read(at);
+        mem.write(at, if n > 0 { n - 1 } else { 0 });
+        let enable = mem.rebase(0x0088_7e80);
+        call(mem, enable, &[1])
     }
 
     /// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)` (`0x0088b780`, own

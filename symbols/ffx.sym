@@ -9747,6 +9747,7 @@
 0x008c10b0 function TkMn2DrawMesLR               # layout: alphabetical run between TkMn2DrawMesL and TkMn2DrawMesM (1 unnamed in the gap); Switch 0x71004c64b0 TkMn2DrawMesLR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c1100 function TkMn2DrawMesM             # fh switch:bsim1.00 0x71004c5fb0
 0x008c1150 function TkMn2DrawMesMR            # fh switch:bsim1.00 0x71004c6040
+0x008c11b0 function MenuMn2_EmitPacket        # (a, b, kind): g_TkMn2DrawY += 16, then g_TkMn2DrawY = 0x008f1b50(g_TkMn2DrawY, a, b, kind) (the packet's end; returned); caller 0x008c7c30; name ours
 0x008c1280 function TkMn2DrawRect                # layout+callees: sorts between TkMn2DrawMesMR and TkMn2DrawScissorClear, and its named callees match the Switch 0x71004c5340 TkMn2DrawRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x008c1370 function TkMn2DrawScissorClear     # fh switch:bsim1.00 0x71004c5480
 0x008c1390 function TkMn2DrawScissorRect      # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMn2DrawScissorClear
@@ -10003,6 +10004,7 @@
 0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
 0x008db080 function TkMn2GetIShopPos             # str-match switch: only user of 38 string(s) held once by both builds, e.g. 'r_ashmojiplt1'; Switch 0x71004c90d0 TkMn2GetIShopPos (symbols from Fahrenheit's server export)
 0x008db3b0 function MenuShop_Price            # (id): TkMn2GetExcelData(id & 0xfff, [0x0186ac28]) first word * shop ratio (0x01326b6c) / 100, at least 1; name ours
+0x008db400 function MenuShop_SellPrice        # (id): AbmapQuarterOrOne(g_TkMenuWShopList, first word of TkMn2GetExcelData(id & 0xfff, [0x0186ac28])); name ours
 0x008db440 function MenuWShop_CountSlots      # 0x0186ac24 = ids before the first 0/0xff among 16 of the shop record; own name
 0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0
 0x008db790 function SetFieldConst1c_008db790     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours
