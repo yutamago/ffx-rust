@@ -2459,6 +2459,7 @@ fn control_synthetic() {
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    push_apart_cases(&mut a, &mut b, &mut rng, 600);
 }
 
 #[test]
@@ -2483,6 +2484,7 @@ fn control_snapshot() {
     packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
+    push_apart_cases(&mut a, &mut b, &mut rng, 600);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3980,6 +3982,64 @@ fn source_packed_envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshi
             0x006e_e570,
             &[lists, out, mask, m],
             |o| e::calc_envelope(&mut H(o), lists, out, mask, m),
+        );
+    }
+}
+
+// Main round 10: two characters pushed apart.
+fn push_apart_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let weight = |rng: &mut Xorshift| match rng.below(5) {
+        0 => (-1.0f32).to_bits(),
+        1 => 0,
+        2 => 0.5f32.to_bits(),
+        3 => modest(rng),
+        _ => bounded(rng),
+    };
+    for _ in 0..rounds {
+        let ca = alloc(a, b, 0x600);
+        let cb = alloc(a, b, 0x600);
+        for c in [ca, cb] {
+            put(a, b, c + 0x500, weight(rng));
+            for k in [0xc, 0x10, 0x14, 0x1c, 0x20, 0x24] {
+                put(a, b, c + k, bounded(rng));
+            }
+            for k in [0x4c, 0x54] {
+                let v = if rng.below(3) == 0 { 0 } else { bounded(rng) };
+                put(a, b, c + k, v);
+            }
+            put(
+                a,
+                b,
+                c + 0x194,
+                rng.next() & !0x20 | (rng.below(4) / 3) << 5,
+            );
+        }
+        if rng.below(6) == 0 {
+            // equal anchor distances
+            for k in [0xc, 0x10, 0x14, 0x1c, 0x20, 0x24] {
+                let v: u32 = Mem::read(a, ca + k);
+                put(a, b, cb + k, v);
+            }
+        }
+        if rng.below(10) == 0 {
+            for k in [0xc, 0x14] {
+                let v: u32 = Mem::read(a, ca + k);
+                put(a, b, cb + k, v);
+            }
+        }
+        let reach = bounded(rng);
+        let dist = match rng.below(4) {
+            0 => reach,
+            _ => bounded(rng),
+        };
+        twin(
+            "Sg_ChrPushApart",
+            a,
+            b,
+            0x0083_ecd0,
+            &[ca, cb, reach, dist],
+            |m| st::chr_push_apart(m, ca, cb, f32::from_bits(reach), f32::from_bits(dist)),
         );
     }
 }

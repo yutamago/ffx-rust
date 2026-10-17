@@ -474,3 +474,26 @@ Products are stored as `f32` at each step (vertex x weight, then x
 - Neither port passes a stack buffer to game code. They build the list in
   Rust and write it straight into the allocated block, where the originals
   `memcpy` from a 32 KB stack frame.
+
+## Pushing two characters apart (round 10)
+
+`Sg_ChrPushApart(a, b, reach, dist)` (`0x0083ecd0`, called from
+`0x0083d3b0`) separates two characters that are `dist` apart when they
+should be `reach` apart. The overlap `d = reach - dist` is shared along the
+x-z direction from `b` to `a` (`FFXVu0Normalize` of `a+0xc - b+0xc` with y
+cleared). The shares come from the push weights at `+0x500` (set by
+`Native_ChrSetPushWeight`, 0x5009):
+
+| `a+0x500` | `b+0x500` | `wa`, `wb` |
+|---|---|---|
+| ≥ 0 | ≥ 0 | the weights (both 0: 1, 1) |
+| < 0 | ≥ 0 | 1, 0 |
+| ≥ 0 | < 0 | 0, 1 |
+| < 0 | < 0 | `Sg_VectorGetLengthXZ(+0x1c, +0xc)` of each, over the larger; equal lengths return 0 |
+
+`t = wa·d / (wa + wb)` (f32) and `u = d - t`; `t < 0` returns 0. In the
+both-negative case `a` moves by `t` and `b` by `u`; otherwise `a` moves by
+`u` and `b` by `t`. A move of `s ≠ 0` adds `n·s` to `a`'s step (`+0x4c`,
+`+0x54`) or subtracts it from `b`'s, and sets `+0x194` bit 5 when the new
+step is not zero. The result is bit 5 of `a+0x194 | b+0x194`. Comparisons
+are the original's x87 ones: a NaN weight counts as non-negative.

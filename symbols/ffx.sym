@@ -7349,6 +7349,7 @@
 0x0083e9d0 function Sg_IdSetEffectTableIndex  # fh v3:bsim1.00 0x0083e9d0
 0x0083e9e0 function Sg_IdSetMapTable          # (i, v): g_ChrIdMapTable[i] = v
 0x0083ea00 function Sg_IdSetPtr               # fh v3:exact 0x0083ea00
+0x0083ecd0 function Sg_ChrPushApart           # (a, b, reach, dist): pushes two chrs apart by reach - dist in x-z, shared by their +0x500 weights (both <0: by Sg_VectorGetLengthXZ from their anchors); +0x4c/+0x54 step, +0x194 bit 5; caller 0x0083d3b0
 0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010
 0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00
 0x0083f050 function SgStrdupD                    # layout: alphabetical run between SgReallocD and Sg_FreeA (1 unnamed in the gap); Switch 0x7100431a40 SgStrdupD is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

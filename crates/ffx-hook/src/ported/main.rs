@@ -1327,6 +1327,10 @@ ported! {
     Sg_IdSlideEdge @ 0x0083_e180 => extern "C" fn sg_id_slide_edge(from: u32, to: u32) {
         state::bridge::id_slide_edge(&mut mem(), from, to);
     }
+    /// `Sg_ChrPushApart(a, b, reach, dist)`.
+    Sg_ChrPushApart @ 0x0083_ecd0 => extern "C" fn sg_chr_push_apart(a: u32, b: u32, reach: f32, dist: f32) -> u32 {
+        state::bridge::chr_push_apart(&mut mem(), a, b, reach, dist)
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())
