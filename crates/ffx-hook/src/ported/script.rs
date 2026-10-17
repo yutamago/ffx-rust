@@ -16,6 +16,42 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `AtelClearMesWinWork`.
+    AtelClearMesWinWork @ 0x0086_3b10 => extern "C" fn h_863b10() -> u32 {
+        hp::atel_clear_mes_win_work(&mut mem())
+    }
+    /// `Native_PlayMotionCommon(worker, stack, mode, other)`.
+    Native_PlayMotionCommon @ 0x00a7_aae0 => extern "C" fn h_a7aae0(w: u32, s: u32, m: u32, o: u32) -> u32 {
+        native_chr::native_play_motion_common(&mut mem(), w, s, m, o)
+    }
+    /// `Script_LineActorSide`.
+    Script_LineActorSide @ 0x0086_32b0 => extern "C" fn h_8632b0(w: u32, k: u32) -> u32 {
+        hp::script_line_actor_side(&mem(), w, k)
+    }
+    /// `Atel_ParseHex`.
+    Atel_ParseHex @ 0x0087_7660 => extern "C" fn h_877660(s: u32) -> u32 {
+        hp::atel_parse_hex(&mem(), s)
+    }
+    /// `Atel_SetBindMask`.
+    Atel_SetBindMask @ 0x0086_f460 => extern "C" fn h_86f460(n: u32) -> u32 {
+        hp::atel_set_bind_mask(&mut mem(), n)
+    }
+    /// `Atel_GetBinHdrFloat`.
+    Atel_GetBinHdrFloat @ 0x0086_ab80 => extern "C" fn h_86ab80(b: u32, i: u32) -> f64 {
+        hp::atel_get_bin_hdr_float(&mem(), b, i)
+    }
+    /// `AtelGetMyBufferSize`.
+    AtelGetMyBufferSize @ 0x0086_c0c0 => extern "C" fn h_86c0c0(b: u32) -> u32 {
+        hp::atel_get_my_buffer_size(&mem(), b)
+    }
+    /// `AtelRegistCallbackQue2`.
+    AtelRegistCallbackQue2 @ 0x0087_51b0 => extern "C" fn h_8751b0(q: u32, f: u32, n: u32) -> u32 {
+        hp::atel_regist_callback_que2(&mut mem(), q, f, n)
+    }
+    /// `AtelExecCallbackQue`.
+    AtelExecCallbackQue @ 0x0087_50b0 => extern "C" fn h_8750b0(q: u32) -> u32 {
+        hp::atel_exec_callback_que(&mut mem(), q)
+    }
     /// `AtelRequireCtrlWork`.
     AtelRequireCtrlWork @ 0x0086_ee10 => extern "C" fn h_86ee10(i: u32, blk: u32, a: u32, b: u32) -> u32 {
         hp::atel_require_ctrl_work(&mut mem(), i, blk, a, b)

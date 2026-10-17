@@ -347,7 +347,7 @@ natives! {
     /// `0x5044` (`0x00a7a810`): `Native_PlayMotionCommon(worker, stack, 1,
     /// 1)` (`0x00a7aae0`).
     native_5044(h, w, a, s) => {
-        call(h, 0x00a7_aae0, &[w, s, 1, 1]);
+        native_play_motion_common(h, w, s, 1, 1);
         0
     };
     /// `0x1000` (`0x008779c0`): `(slot, a, b, v)`: the current ctrl work's
@@ -1102,22 +1102,22 @@ natives! {
     };
     /// `0x5046` (`0x00a7a880`): `Native_PlayMotionCommon(worker, stack, 1, 1)`.
     native_5046(h, w, a, s) => {
-        call(h, 0x00a7_aae0, &[w, s, 1, 1]);
+        native_play_motion_common(h, w, s, 1, 1);
         0
     };
     /// `0x5089` (`0x00a7a700`): `Native_PlayMotionCommon(worker, stack, 2, 0)`.
     native_5089(h, w, a, s) => {
-        call(h, 0x00a7_aae0, &[w, s, 2, 0]);
+        native_play_motion_common(h, w, s, 2, 0);
         0
     };
     /// `0x508b` (`0x00a7a760`): the same as `0x5089`.
     native_508b(h, w, a, s) => {
-        call(h, 0x00a7_aae0, &[w, s, 2, 0]);
+        native_play_motion_common(h, w, s, 2, 0);
         0
     };
     /// `0x5019` (`0x00a79220`): `Native_PlayMotionCommon(worker, stack, 0, 0)`.
     native_5019(h, w, a, s) => {
-        call(h, 0x00a7_aae0, &[w, s, 0, 0]);
+        native_play_motion_common(h, w, s, 0, 0);
         0
     };
     /// `0x500c` (`0x00a78d30`): `(v)` popped and dropped (the original only
@@ -1306,7 +1306,9 @@ natives! {
         let m = call(h, 0x0086_c1f0, &[]);
         call(h, 0x0086_5dc0, &[m]);
         let m = call(h, 0x0086_c1f0, &[0]);
-        call(h, 0x0086_1160, &[1, v, m])
+        // the 4th word is the 0 pushed for the last TkGetNowEventJumpMapNo, which
+        // the original leaves on the stack: the battle end type
+        call(h, 0x0086_1160, &[1, v, m, 0])
     };
     /// `0xc024` (`0x00878c60`, poll), `0xb00a` (`0x0076ec10`, int) and the
     /// like: 1.
@@ -1648,6 +1650,102 @@ pub fn native_c025<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
         h.write(q.wrapping_add(k), b);
     }
     1
+}
+
+// ---- round 16 ----
+
+/// `Native_PlayMotionCommon(worker, stack, mode, other)` (`0x00a7aae0`):
+/// pops `(motion, _, loops, start, end)` (and a worker when `other`, whose
+/// model then plays); per-map fixes set the model's `+0x870` (map `0xcd`
+/// at scenario `0x825`, `0x16c` at `0x498`, `0x11` at 200); model `0x66`
+/// sets `0x013008e0` = (motion == `0x21092`); then mode 0
+/// `Chr_PlayMotionMarks` (`0x00837350`), 1 `Ch_MotionSetLow2`
+/// (`0x008373e0`), 2 `Chr_PlayMotionInclEnd` (`0x008374c0`) with `(model,
+/// motion, _, loops, start, end)`. Returns 0.
+pub fn native_play_motion_common<H: NativeHost>(
+    h: &mut H,
+    w: u32,
+    s: u32,
+    mode: u32,
+    other: u32,
+) -> u32 {
+    let end = pop(h, s);
+    let start = pop(h, s);
+    let loops = pop(h, s);
+    let x = pop(h, s);
+    let motion = pop(h, s);
+    let c = if other == 0 {
+        chr(h, w)
+    } else {
+        let i = pop(h, s);
+        chr_of(h, i)
+    };
+    if c == 0 {
+        return 0;
+    }
+    let map = h.read::<u32>(h.rebase(0x0133_0844));
+    let id = h.read::<u16>(c);
+    let flag = |h: &mut H, on: u8| h.write(c + 0x870, on);
+    let scenario = |h: &mut H| call(h, 0x0078_7360, &[]) & 0xffff;
+    let (m, st, en) = (motion, start, end);
+    if map == 0xcd && scenario(h) == 0x825 {
+        if id == 0x79 && m == 0x0079_1002 {
+            if st == 0x76c && en == 0x8f2 {
+                flag(h, 0);
+            }
+            if st == 0x8f2 && en == u32::MAX {
+                flag(h, 1);
+            }
+        }
+        if id == 0x400b && m == 0x400b_1007 {
+            if st == 0x76c && en == 0x8cd {
+                flag(h, 0);
+            }
+            if st == 0x8cf && en == 0x8d7 {
+                flag(h, 1);
+            }
+        }
+    } else if map == 0x16c && scenario(h) == 0x498 {
+        if id == 7 {
+            if m == 0x0007_1068 && st == 0x2c && en == 0x42 {
+                flag(h, 0);
+            }
+            if m == 0x0007_1069 && st == 0x44 && en == 0x62 {
+                flag(h, 1);
+            }
+        }
+        if id == 0x506a && m == 0x506a_1000 && st == 0x2c && en == u32::MAX {
+            flag(h, 0);
+        }
+    } else if map == 0x11 && scenario(h) == 200 {
+        if id == 5 {
+            if m == 0x0005_1076 && st == 0 && en == u32::MAX {
+                flag(h, 0);
+            }
+            if m == 0x0005_1077 && st == 0 && en == u32::MAX {
+                flag(h, 1);
+            }
+        }
+        if id == 0x4001 {
+            if m == 0x4001_1001 && st == 0 && en == u32::MAX {
+                flag(h, 0);
+            }
+            if m == 0x4001_1002 && st == 0 && en == u32::MAX {
+                flag(h, 1);
+            }
+        }
+    }
+    if id == 0x66 {
+        h.write(h.rebase(0x0130_08e0), u32::from(m == 0x0002_1092));
+    }
+    let f = match mode {
+        0 => 0x0083_7350,
+        1 => 0x0083_73e0,
+        2 => 0x0083_74c0,
+        _ => return 0,
+    };
+    call(h, f, &[c, m, x, loops, start, end]);
+    0
 }
 
 /// The Rust version of a group 1, 4, 5, 6, 11 or 12 handler, if there is
