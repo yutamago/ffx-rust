@@ -111,24 +111,24 @@ Numbers (2026-10-17, with runtime coverage; functions and size):
 
 | module | logic | glue | platform | debug | dead |
 |---|---|---|---|---|---|
-| vfx | 1528 (494K) | 189 (62K) | 3 (1K) | 19 (4K) | 673 (74K) |
-| system | 1381 (271K) | 145 (82K) | 366 (51K) | 25 (3K) | 1247 (116K) |
-| render | 492 (67K) | 663 (212K) | 29 (3K) | 14 (2K) | 782 (49K) |
-| map | 973 (194K) | 30 (10K) | 1 (0K) | 219 (60K) | 451 (60K) |
+| vfx | 1490 (491K) | 189 (62K) | 41 (4K) | 19 (4K) | 673 (74K) |
+| system | 1302 (266K) | 145 (82K) | 445 (56K) | 25 (3K) | 1247 (116K) |
+| render | 469 (63K) | 662 (212K) | 53 (7K) | 14 (2K) | 782 (49K) |
+| map | 972 (194K) | 30 (10K) | 2 (0K) | 219 (60K) | 451 (60K) |
 | battle | 1151 (214K) | 1 (1K) | 0 | 141 (96K) | 143 (14K) |
 | menu | 777 (183K) | 3 (0K) | 1 (0K) | 172 (22K) | 237 (20K) |
-| script | 2052 (183K) | 0 | 3 (0K) | 24 (9K) | 241 (18K) |
-| pc-ui | 471 (85K) | 206 (58K) | 52 (6K) | 62 (26K) | 417 (31K) |
-| main | 561 (103K) | 6 (2K) | 83 (6K) | 127 (25K) | 96 (13K) |
-| chara | 445 (66K) | 20 (4K) | 0 | 39 (3K) | 106 (10K) |
-| sound | 144 (10K) | 305 (29K) | 37 (1K) | 1 (0K) | 118 (8K) |
-| movie | 56 (6K) | 68 (9K) | 28 (5K) | 25 (7K) | 215 (18K) |
-| ps2-emu | 55 (8K) | 0 | 2 (2K) | 0 | 65 (4K) |
-| **GAME** | **10086 (1886K)** | **1636 (469K)** | **605 (74K)** | **868 (257K)** | **4791 (433K)** |
+| script | 2042 (182K) | 0 | 13 (1K) | 24 (9K) | 241 (18K) |
+| pc-ui | 461 (83K) | 205 (58K) | 63 (8K) | 62 (26K) | 417 (31K) |
+| main | 560 (103K) | 6 (2K) | 84 (6K) | 127 (25K) | 96 (13K) |
+| chara | 443 (66K) | 20 (4K) | 2 (0K) | 39 (3K) | 106 (10K) |
+| sound | 134 (10K) | 305 (29K) | 47 (2K) | 1 (0K) | 118 (8K) |
+| movie | 49 (6K) | 68 (9K) | 35 (5K) | 25 (7K) | 215 (18K) |
+| ps2-emu | 54 (8K) | 0 | 3 (2K) | 0 | 65 (4K) |
+| **GAME** | **9904 (1870K)** | **1634 (469K)** | **789 (90K)** | **868 (257K)** | **4791 (433K)** |
 
 So about 60% of the game code by size is logic and needs an exact port.
-Of the 5,199 functions ported so far, 3,632 are logic; 657 are dead, 381
-glue, 327 debug and 202 platform.
+Of the 5,199 functions ported so far, 3,614 are logic; 657 are dead, 381
+glue, 327 debug and 220 platform.
 
 How the evidence works, in order (first rule that fires): reachability
 from the PE entry point and from every function address found in the
@@ -143,7 +143,12 @@ needs as input is logic even under a glue prefix: camera view and
 projection, fog/ambient/background colours, screen fades, mesh and
 skeleton matrices, character lighting, 2D-layer and mesh visibility, the
 minimap and area-map camera); then Iggy/PhyreEngine calls and
-Win32 imports; then pure GS/DMA packet writers are glue (the packet API,
+Win32 imports; then, in the PC port's part of the image (below
+0x00760000), copies of std:: and PhyreEngine container code are platform:
+functions whose every call goes to allocators, trees, free lists, vectors,
+std:: copies or platform code, static initialisers (atexit), destructors
+only exception unwinding reaches, and the unnamed stubs between the PS2 SDK
+stand-ins; then pure GS/DMA packet writers are glue (the packet API,
 `TOAdp*`, `rcPacketData*`, the `sceDma*`/`sceGs*` kicks, and functions that
 only call it, read-only getters and VU0 scratch, and write no global any
 logic reads); then propagation (a function only debug code calls is
