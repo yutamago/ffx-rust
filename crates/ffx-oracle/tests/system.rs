@@ -14163,7 +14163,8 @@ fn round25_icon_names_match_the_original_on_the_snapshot() {
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::many_single_char_names
+    clippy::many_single_char_names,
+    clippy::too_many_lines
 )]
 fn round25_rotate_shape(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
