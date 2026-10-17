@@ -3212,6 +3212,10 @@ ported! {
         et::bridge::opu_eff_part_index(&mem(), unit)
     }
 
+    /// `hashU(s)`.
+    hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {
+        small::bridge::hash_u_at(&mem(), s)
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {

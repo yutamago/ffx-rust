@@ -10225,3 +10225,27 @@ fn z_crct_shp_draw_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn hash_u_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_6570);
+        let s = p.alloc(0x200);
+        for round in 0..3000u32 {
+            let n = if round < 4 { round } else { rng.below(0x1ff) };
+            for i in 0..n {
+                // printable names, and any non-zero byte
+                let c = if rng.chance(70) {
+                    0x20 + rng.below(0x5f)
+                } else {
+                    1 + rng.below(0xff)
+                };
+                p.set(s + i, u8::try_from(c).unwrap());
+            }
+            p.set(s + n, 0u8);
+            p.check("hashU", 0x0071_6570, &[s], |m| {
+                Some(small::bridge::hash_u_at(m, s))
+            });
+        }
+    }
+}

@@ -2,6 +2,23 @@
 //! masks, float steps, the MSVC container accessors the opus trees use,
 //! and similar leaves.
 
+/// `hashU`'s hash of a string's bytes `c` (each sign-extended):
+/// `h = (h * a + c) % 10007`, the multiplier `a` stepping from 31415 by
+/// `a = a * 27183 % 10006` (32-bit, C remainders); made non-negative at
+/// the end.
+#[must_use]
+pub fn hash_u(bytes: impl IntoIterator<Item = u8>) -> u32 {
+    let (mut h, mut a) = (0i32, 0x7ab7i32);
+    for c in bytes {
+        h = h
+            .wrapping_mul(a)
+            .wrapping_add(i32::from(c.cast_signed()))
+            .wrapping_rem(10007);
+        a = a.wrapping_mul(0x6af5).wrapping_rem(10006);
+    }
+    (if h < 0 { h + 10007 } else { h }).cast_unsigned()
+}
+
 /// The helpers over game memory.
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -10,6 +27,15 @@ pub mod bridge {
 
     fn rf(mem: &impl Mem, at: u32) -> f32 {
         mem.read(at)
+    }
+
+    /// `hashU(s)` (`0x00716570`): [`super::hash_u`] of the NUL-terminated
+    /// string at `s`.
+    pub fn hash_u_at(mem: &impl Mem, s: u32) -> u32 {
+        let bytes = (0..)
+            .map(|i| mem.read::<u8>(s.wrapping_add(i)))
+            .take_while(|&c| c != 0);
+        super::hash_u(bytes)
     }
 
     /// `op_char_table_set(table, chars, v)` (`0x007e13e0`): `table[c] = v`
