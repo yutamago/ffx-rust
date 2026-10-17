@@ -63,6 +63,22 @@ REVIEWED = {
     0x0082bb90: ("glue", "builds a GS sprite packet (main round 5)"),
     0x008432e0: ("glue", "waits on the GS register flag, then sets a register (main round 5)"),
     0x00a5e7b0: ("glue", "GS packet setup (effects round 14)"),
+    0x0082baf0: ("glue", "writes GS packets (chara round 11)"),
+    0x00a3b590: ("platform", "Direct3D device vtable calls only (effects round 16)"),
+    0x00a3c280: ("platform", "sets Direct3D device state through its vtable (effects round 16)"),
+    0x008217d0: ("glue", "builds the GS display and draw environments (main round 8)"),
+    0x0082ce90: ("glue", "sg_AccSetCurrent: GS packet capturing the frame (main round 8)"),
+    0x0082be20: ("glue", "Sg_AccSetFrameChr: GS packet writer (main round 8)"),
+    0x0082be80: ("glue", "Sg_AccDrawBG: GS packet writer (main round 8)"),
+    0x00843360: ("glue", "Sg_MFIFOSync: PS2 DMA (main round 8)"),
+    0x00829c00: ("glue", "forwards its arguments to the renderer at 0x6440e0, writes no globals (main round 8)"),
+    0x00943e30: ("platform", "CRT small-block free (main round 8)"),
+    0x0083f090: ("platform", "Sg_FreeA (main round 8)"),
+    0x0083b1d0: ("platform", "Sg_PcRead: file read (main round 8)"),
+    0x0083c200: ("platform", "Sg_Mem heap setup (main round 8)"),
+    0x007ff670: ("debug", "op_loop_end_ffx: jumps to the debug routine 0x00a5bd90 under g_OpDebugMode (effects round 17)"),
+    0x00851b20: ("debug", "debug code (main round 8)"),
+    0x00843560: ("debug", "debug code (main round 8)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
