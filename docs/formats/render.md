@@ -779,3 +779,123 @@ is at least 4 and offset + size is within the size word
 The originals copy `size` bytes from a 16-byte (`AlphaThreshold`: 4-byte)
 local; a larger parameter would copy their stack frame. The ports write
 zeros past the value.
+
+Round 15:
+
+- `graphicCharacterInstanceSetMeshSegmentAlpha(list, _, id, a)`
+  (`0x0063bc50`): `graphicCharacterInstanceSetMeshSegmentColor(list, id, 1,
+  1, 1, a, 1)`; `graphicChangeLayerAlpha(layer, alpha)` (`0x00639d20`):
+  `PhyreScene_SetLayerMaterialAlpha` on `g_PhyreScene`.
+- `graphicCharacterInstanceGetBoundingBox(chr, max, min)` (`0x0063a2b0`):
+  `min` starts at `16777216` (the `f32` at `0x00b41da0`) and `max` at
+  `-16777216` (`0x00b41db4`) on each axis; then for each mesh instance of
+  `Ch_GetChrRenderInstance(chr)` (its `+0x1c` bounds: the corner at
+  `+0..+8`, the extent at `+0x10..+0x18`) and axis, `corner + extent`
+  (stored as a float) replaces `max` when greater and the corner replaces
+  `min` when smaller (ordered compares: NaNs never replace, and equal
+  values, `0` and `-0` included, keep the old bits).
+- `SplitScreenSetCamera(m)` (`0x00638aa0`): `sceVu0InversMatrix4x4` of a
+  copy of the 4x4 `m`; elements 0, 1, 6, 10, 12, 13 change sign (the code
+  also negates 4, 5, 8 and 9 twice); `PMatrix4_toWorldMatrix3x4` of the
+  identity and then of that matrix into one 3x4, copied to `g_PhyreScene
+  +0x10d94..+0x10dc0`. Its one caller (`0x007bc980`) calls it next to
+  `SplitScreenStart`.
+
+Round 16:
+
+- `graphicAbmapResetSegments()` (`0x006390c0`): with `g_GraphicAbmap`
+  (`0x00ccc838`) set it jumps to the manager's code at `0x006853d0`
+  (nothing else reaches it). By the state `+4` (signed): 1 resets the
+  render data at `+0xb0`, `+0xb4`, `+0xbc`, `+0xb8`, `+0xc4`, `+0xc0` (in
+  that order), 0 or less those at `+0x98`, `+0x9c`, `+0xa4`, `+0xac`,
+  `+0xa0`, `+0xa8`, 2 or more none. Resetting a render data zeroes `+4`
+  and `+8` of each of its segments (`+0x94`, `0x6c` bytes, `+0x90` of them,
+  a signed count read again each step).
+- `graphicCharacterLightingSetLightMatrix(list, dirs, colours)`
+  (`0x0063cb80`): two 4x4 matrices with one light per column: `dirs`
+  (x, y, z, w per 16-byte row) normalised when `x*x` (stored), `+ y*y`
+  (stored), `+ z*z` (stored) is above the `f64` `0.0001` at `0x00b3eb50`
+  (`_CIsqrt` stored, `1 / it` stored, each component times it stored), `w`
+  as it is; `colours` copied. Then
+  `Phyre_CharacterLighting_setLightMatrix(inst, dirs, colours)` on the
+  lighting singleton for each instance of `list`.
+
+Round 17:
+
+- `graphicCharacterInstanceSetBTUFadeCenter(chr, axis, center)`
+  (`0x0063b5d0`): over the character's segments (`Ch_GetChrRenderInstance`),
+  `GradualFade_BasicAlpha` is looked up first whatever `axis`; for `axis` 0
+  `GradualFade_YCenter`, for 1 `GradualFade_ZCenter` (others: nothing
+  more). With both found, the centre gets `center` and then the basic
+  alpha 0 (each written only where it fits its buffer).
+- `graphicCharacterLightingSetShadeCoeff_debug(list)` (`0x0063cec0`): on
+  levels `0x226d`, `0x1739` and `0x869` (`PhyreScene_getCurrentLevelNameHash`)
+  each instance gets `Phyre_CharacterLighting_setShadeCoeff(inst, 1.0)`,
+  elsewhere `Phyre_CharacterLighting_resetShadeCoeff(inst)` (`0x006aafa0`:
+  the default from `0x006a8c40`); then the tweak utility's
+  `setShadeCoeff_dbgHook(inst, 0.0, 0)`.
+
+Round 18:
+
+- `SpecularMapParamsManager_SetParams(this, id, a, f0, f1, f2, b, g0, g1,
+  g2, g3)` (`0x006c7090`, `thiscall`, `ret 0x28`; `0x006439b0` calls it on
+  the manager): nothing while `g_GraphicSkipFrame` is set. An `id` not in
+  the four slots `+0..+0xc` takes the first empty one (its flag at
+  `+0x5a0 + 4i` set to 1) and gets `SpecularMapParamsManager_AddSpecularEvent(id)`
+  (also when no slot is free). Then
+  `SpecularMapParamsManager_UpdateParams_006c6c30` (`0x006c6c30`, ten
+  words, `ret 0x28`, `ecx` unused) with the same words, the seven floats
+  copied through the x87. `ffx_graphic::host::Host::call` passes up to
+  twelve words to a `thiscall` for it.
+
+Round 19:
+
+- `BoundingBox_IsVisible_00663a30(box, m)` and
+  `BoundingBox_IsInside_006d27e0(box, m)` (`thiscall`, `ret 4`; the same
+  code but for one instruction): a box (corner `+0..+8`, extent
+  `+0x10..+0x18`) in clip space by the 4x4 `m`. The corner goes through
+  `PMatrix4_TransformPoint_004c9cb0` (`t`); the extent gives `a = ext.x *
+  row 0`, `b = ext.y * row 1`, `c = ext.z * row 2` (each product stored as
+  a float); the eight corners are `t`, `t+a`, `t+b`, `t+c`, `(t+a)+b`,
+  `(t+a)+c`, `(t+b)+c`, `((t+a)+b)+c`, every sum stored as a float, so a
+  corner on a clip plane can fall either side by rounding. Their
+  `ClipOutcode`s are ANDed (visible: 1 unless every corner is outside one
+  plane) or ORed (inside: 1 only when every corner is inside); `eax` is
+  1 when the result is 0, else 0.
+- `graphicSetSpecularMapParamsEx(...)` (`0x006439b0`):
+  `SpecularMapParamsManager_SetParams` on `SpecularMapParamsManager_GetInstance()`
+  with its ten words (the floats copied through the x87).
+
+Round 20:
+
+- `PhyreScene_GetScreenAdjustedView_00651650(scene, out)` (`0x00651650`,
+  `thiscall`, `ret 4`, returns `out`): `out` = the camera's 4x4 at
+  `*(scene +0xdc) +0x34` times `[1 0 0 0; 0 4/3 0 0; 0 0 1 0; 0 d 0 1]`
+  (row vectors), with `4/3` the `f32` at `0x00b43d34` and `d = 0.33333337
+  - 2 * (scene +0xf9c0 + scene +0xf9bc)` (the `f64` at `0x00b43d40`; the
+  sum and its double kept at 53 bits, `d` stored as a float). The
+  adjustment matrix is first written into `out`; each camera row times it
+  (`PMatrix4_RowTimes_004c9c20`, bottom row first) goes to a temporary,
+  then the four rows are copied over `out`. `PhyreScene_getViewProjectionMatrix`
+  inlines the same adjustment.
+
+Round 21:
+
+- `graphicCharacterLightingSetLightColor(kind, r, g, b)` (`0x0063cb00`):
+  `Phyre_CharacterLighting_setLightColor_006aa940(kind, r, g, b)` on the
+  lighting (the floats through the x87), then
+  `Phyre_CharacterLightingTweakUtil_syncIntensity_006aa260` on the tweak
+  utility, and for kind 3 (the ambient) a tail call of
+  `balanceLumWithGlow`. Returns the last callee's `eax`, which
+  `Sg_LightSetColor` (`0x00836310`) passes on.
+- `graphicCharacterShaderSetParameterVector_0063d940(chr, name, x*, y*,
+  z*, w*)` (`0x0063d940`, returns 0):
+  `Phyre_CharacterShaderManager_setShaderParameterVector_006dfa30(inst,
+  name, x*, y*, z*, w*)` for each instance of `Ch_GetChrRenderInstance(chr)`
+  (count `& 0x7fffffff` and array `+4`, read again each pass).
+- `BoundingBox_IsInsideTransformed_006d2a70(box, m)` (`0x006d2a70`,
+  `thiscall`, `ret 4`): the box object's `+0xc` is an optional 3x4
+  transform; with one, `BoundingBox_IsInside_006d27e0` runs on `m` times
+  its 4x4 (`PMatrix4_FromMatrix3x4_00451080` into a local, then
+  `PMatrix4_Multiply_004ca360(out, m, local)`, whose returned `out` is
+  passed), without one on a local copy of `m`. Its answer is returned.

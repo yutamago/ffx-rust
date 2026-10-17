@@ -1312,6 +1312,85 @@ ported! {
     PhyreScene_SetLayerMaterialAlpha @ 0x0065_82e0 => extern "thiscall" fn scene_set_layer_material_alpha(this: u32, layer: u32, alpha: u32) {
         mt::scene_set_layer_material_alpha(&mut mem(), this, layer, alpha);
     }
+
+    // ---- round 15 ----
+    /// `graphicCharacterInstanceSetMeshSegmentAlpha(list, _, id, a)`.
+    graphicCharacterInstanceSetMeshSegmentAlpha @ 0x0063_bc50 => extern "C" fn set_mesh_segment_alpha(list: u32, _unused: u32, id: u32, a: u32) {
+        mt::set_mesh_segment_alpha(&mut mem(), list, id, f32::from_bits(a));
+    }
+    /// `graphicChangeLayerAlpha(layer, alpha)`.
+    graphicChangeLayerAlpha @ 0x0063_9d20 => extern "C" fn graphic_change_layer_alpha(layer: u32, alpha: u32) {
+        mt::change_layer_alpha(&mut mem(), layer, alpha);
+    }
+    /// `graphicCharacterInstanceGetBoundingBox(chr, max, min)`.
+    graphicCharacterInstanceGetBoundingBox @ 0x0063_a2b0 => extern "C" fn character_bounding_box(chr: u32, max: u32, min: u32) {
+        ut::character_bounding_box(&mut mem(), chr, max, min);
+    }
+    /// `SplitScreenSetCamera(m)`.
+    SplitScreenSetCamera @ 0x0063_8aa0 => extern "C" fn split_screen_set_camera(m: u32) {
+        ut::split_screen_set_camera(&mut mem(), m);
+    }
+
+    // ---- round 16 ----
+    /// `graphicAbmapResetSegments()`.
+    graphicAbmapResetSegments @ 0x0063_90c0 => extern "C" fn abmap_reset_segments() {
+        ut::abmap_reset_segments(&mut mem());
+    }
+    /// `graphicCharacterLightingSetLightMatrix(list, dirs, colours)`.
+    graphicCharacterLightingSetLightMatrix @ 0x0063_cb80 => extern "C" fn set_light_matrix(list: u32, dirs: u32, colours: u32) {
+        ut::set_light_matrix(&mut mem(), list, dirs, colours);
+    }
+
+    // ---- round 17 ----
+    /// `graphicCharacterInstanceSetBTUFadeCenter(chr, axis, center)`.
+    graphicCharacterInstanceSetBTUFadeCenter @ 0x0063_b5d0 => extern "C" fn set_btu_fade_center(chr: u32, axis: u32, center: u32) {
+        mt::set_btu_fade_center(&mut mem(), chr, axis, f32::from_bits(center));
+    }
+    /// `graphicCharacterLightingSetShadeCoeff_debug(list)`.
+    graphicCharacterLightingSetShadeCoeff_debug @ 0x0063_cec0 => extern "C" fn set_shade_coeff_debug(list: u32) {
+        ut::set_shade_coeff_debug(&mut mem(), list);
+    }
+
+    // ---- round 18 ----
+    /// `SpecularMapParamsManager_SetParams(this, id, a, f0, f1, f2, b, g0,
+    /// g1, g2, g3)` (the floats by their bits).
+    SpecularMapParamsManager_SetParams @ 0x006c_7090 => extern "thiscall" fn specular_set_params(this: u32, id: u32, a: u32, f0: u32, f1: u32, f2: u32, b: u32, g0: u32, g1: u32, g2: u32, g3: u32) {
+        ut::specular_set_params(&mut mem(), this, [id, a, f0, f1, f2, b, g0, g1, g2, g3]);
+    }
+
+    // ---- round 19 ----
+    /// `BoundingBox_IsVisible_00663a30(this, m)`.
+    BoundingBox_IsVisible_00663a30 @ 0x0066_3a30 => extern "thiscall" fn box_is_visible(this: u32, m: u32) -> u32 {
+        ut::box_clip_test(&mut mem(), this, m, ut::BoxTest::Visible)
+    }
+    /// `BoundingBox_IsInside_006d27e0(this, m)`.
+    BoundingBox_IsInside_006d27e0 @ 0x006d_27e0 => extern "thiscall" fn box_is_inside(this: u32, m: u32) -> u32 {
+        ut::box_clip_test(&mut mem(), this, m, ut::BoxTest::Inside)
+    }
+    /// `graphicSetSpecularMapParamsEx(id, a, f0, f1, f2, b, g0, g1, g2, g3)`.
+    graphicSetSpecularMapParamsEx @ 0x0064_39b0 => extern "C" fn graphic_set_specular_params_ex(id: u32, a: u32, f0: u32, f1: u32, f2: u32, b: u32, g0: u32, g1: u32, g2: u32, g3: u32) {
+        ut::graphic_set_specular_params_ex(&mut mem(), [id, a, f0, f1, f2, b, g0, g1, g2, g3]);
+    }
+
+    // ---- round 20 ----
+    /// `PhyreScene_GetScreenAdjustedView_00651650(this, out)`.
+    PhyreScene_GetScreenAdjustedView_00651650 @ 0x0065_1650 => extern "thiscall" fn scene_screen_adjusted_view(this: u32, out: u32) -> u32 {
+        ut::scene_screen_adjusted_view(&mut mem(), this, out)
+    }
+
+    // ---- round 21 ----
+    /// `graphicCharacterLightingSetLightColor(kind, r, g, b)`.
+    graphicCharacterLightingSetLightColor @ 0x0063_cb00 => extern "C" fn set_light_colour(kind: u32, r: u32, g: u32, b: u32) -> u32 {
+        ut::set_light_colour(&mut mem(), kind, [r, g, b])
+    }
+    /// `graphicCharacterShaderSetParameterVector_0063d940(chr, name, x, y, z, w)`.
+    graphicCharacterShaderSetParameterVector_0063d940 @ 0x0063_d940 => extern "C" fn chr_shader_set_parameter_vector(chr: u32, name: u32, x: u32, y: u32, z: u32, w: u32) -> u32 {
+        ut::chr_shader_set_parameter_vector(&mut mem(), chr, [name, x, y, z, w])
+    }
+    /// `BoundingBox_IsInsideTransformed_006d2a70(this, m)`.
+    BoundingBox_IsInsideTransformed_006d2a70 @ 0x006d_2a70 => extern "thiscall" fn box_inside_transformed(this: u32, m: u32) -> u32 {
+        ut::box_inside_transformed(&mut mem(), this, m)
+    }
 }
 
 /// A singleton's pointer.

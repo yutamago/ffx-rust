@@ -229,4 +229,69 @@ pub mod bridge {
         let buf: u32 = h.read(mat + 4);
         h.call_sym(SHADER_PARAM_SET_VALUE, Conv::Thiscall(buf), &[param, v]);
     }
+
+    /// `graphicCharacterInstanceSetMeshSegmentAlpha(list, _, id, a)`
+    /// (`0x0063bc50`): `SetMeshSegmentColor(list, id, 1, 1, 1, a, 1)`.
+    pub fn set_mesh_segment_alpha(h: &mut impl Host, list: u32, id: u32, a: f32) {
+        set_mesh_segment_colour(h, list, id, [1.0, 1.0, 1.0, a], 1);
+    }
+
+    /// `graphicChangeLayerAlpha(layer, alpha)` (`0x00639d20`):
+    /// [`scene_set_layer_material_alpha`] on `g_PhyreScene`.
+    pub fn change_layer_alpha(h: &mut impl Host, layer: u32, alpha: u32) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        scene_set_layer_material_alpha(h, scene, layer, alpha);
+    }
+
+    /// `Ch_GetChrRenderInstance` and the names
+    /// `graphicCharacterInstanceSetBTUFadeCenter` looks up.
+    pub const CH_GET_CHR_RENDER_INSTANCE: u32 = 0x0082_6b70;
+    pub const NAME_FADE_BASIC_ALPHA: u32 = 0x00b4_1990;
+    pub const NAME_FADE_Y_CENTER: u32 = 0x00b4_19a8;
+    pub const NAME_FADE_Z_CENTER: u32 = 0x00b4_19bc;
+
+    /// `graphicCharacterInstanceSetBTUFadeCenter(chr, axis, center)`
+    /// (`0x0063b5d0`): for every segment of the character's instances,
+    /// when its shader has `GradualFade_BasicAlpha` (looked up first,
+    /// whatever `axis`) and, for `axis` 0, `GradualFade_YCenter` or, for 1,
+    /// `GradualFade_ZCenter`: the centre gets `center` (through the x87),
+    /// then the basic alpha 0. Other axes write nothing.
+    pub fn set_btu_fade_center(h: &mut impl Host, chr: u32, axis: u32, center: f32) {
+        let list = h.call_sym(CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, &[chr]);
+        if list == 0 {
+            return;
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let mesh: u32 = h.read(instance(h, list, i));
+            let n = h.read::<u32>(mesh) & 0x7fff_ffff;
+            for k in 0..n {
+                let segs: u32 = h.read(mesh + 4);
+                let index: u32 = h.read(segs.wrapping_add(0x6c * k));
+                let inst = instance(h, list, i);
+                let mat = material(h, inst, index);
+                let shader: u32 = h.read(mat);
+                let buf: u32 = h.read(mat + 4);
+                let name = h.rebase(NAME_FADE_BASIC_ALPHA);
+                let alpha = h.call_sym(FIND_PARAMETER, Conv::Thiscall(shader), &[name]);
+                let centre_name = match axis {
+                    0 => NAME_FADE_Y_CENTER,
+                    1 => NAME_FADE_Z_CENTER,
+                    _ => continue,
+                };
+                let name = h.rebase(centre_name);
+                let centre = h.call_sym(FIND_PARAMETER, Conv::Thiscall(shader), &[name]);
+                if centre == 0 || alpha == 0 {
+                    continue;
+                }
+                if let Some((at, size)) = slot(h, buf, centre) {
+                    copy(h, at, &x87::round_trip(center).to_le_bytes(), size);
+                }
+                if let Some((at, size)) = slot(h, buf, alpha) {
+                    copy(h, at, &[0; 4], size);
+                }
+            }
+            i += 1;
+        }
+    }
 }

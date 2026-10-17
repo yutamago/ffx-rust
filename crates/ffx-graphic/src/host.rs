@@ -27,7 +27,8 @@ pub enum Conv {
 /// ([`ffx_bridge::RawMem`]); in `ffx-oracle`, the emulator.
 pub trait Host: Mem {
     /// Calls the function at `addr` (an address in this process, already
-    /// rebased) with up to eight 32-bit stack arguments; returns `eax`.
+    /// rebased) with up to eight 32-bit stack arguments (twelve for a
+    /// `thiscall`); returns `eax`.
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32;
 
     /// Calls a function at `addr` that returns a float in `ST0`, as
@@ -141,12 +142,14 @@ impl Host for ffx_bridge::RawMem {
     #[allow(clippy::many_single_char_names)] // the arguments
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32 {
         type C8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
-        // the bridges pass at most eight (no panics in what the game calls)
-        let mut a = [0u32; 8];
-        for (w, &v) in a.iter_mut().zip(args) {
+        // the bridges pass at most eight, twelve to a thiscall (no panics
+        // in what the game calls)
+        let mut a12 = [0u32; 12];
+        for (w, &v) in a12.iter_mut().zip(args) {
             *w = v;
         }
-        let [p, q, r, s, t, u, v, w] = a;
+        let [p, q, r, s, t, u, v, w, ..] = a12;
+        let a = [p, q, r, s, t, u, v, w];
         let f = addr as usize;
         // SAFETY: `addr` is a function of this process with this
         // convention and these arguments (the bridges call what the
@@ -155,7 +158,7 @@ impl Host for ffx_bridge::RawMem {
         unsafe {
             match (conv, args.len()) {
                 (Conv::Cdecl, _) => std::mem::transmute::<usize, C8>(f)(p, q, r, s, t, u, v, w),
-                (Conv::Thiscall(this), n) => thiscall(f, this, n, a),
+                (Conv::Thiscall(this), n) => thiscall(f, this, n, a12),
                 (Conv::Stdcall, n) => stdcall(f, n, a),
                 (Conv::Fastcall, n) => fastcall(f, n, a),
             }
@@ -163,15 +166,16 @@ impl Host for ffx_bridge::RawMem {
     }
 }
 
-/// A `thiscall` with `n` stack arguments.
+/// A `thiscall` with `n` stack arguments (at most 12).
 ///
 /// # Safety
 /// `f` takes `this` and exactly `n` 32-bit arguments.
 #[cfg(target_arch = "x86")]
-#[allow(clippy::many_single_char_names)] // the arguments
-unsafe fn thiscall(f: usize, this: u32, n: usize, a: [u32; 8]) -> u32 {
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // the arguments
+unsafe fn thiscall(f: usize, this: u32, n: usize, a: [u32; 12]) -> u32 {
     use std::mem::transmute as t;
-    let [p, q, r, s, u, v, w, x] = a;
+    type U = u32;
+    let [p, q, r, s, u, v, w, x, y, z, b, c] = a;
     // SAFETY: as the caller promises.
     unsafe {
         match n {
@@ -194,10 +198,23 @@ unsafe fn thiscall(f: usize, this: u32, n: usize, a: [u32; 8]) -> u32 {
                 usize,
                 unsafe extern "thiscall" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32,
             >(f)(this, p, q, r, s, u, v, w),
-            _ => t::<
-                usize,
-                unsafe extern "thiscall" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32,
-            >(f)(this, p, q, r, s, u, v, w, x),
+            8 => t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U) -> U>(f)(
+                this, p, q, r, s, u, v, w, x,
+            ),
+            9 => t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U) -> U>(f)(
+                this, p, q, r, s, u, v, w, x, y,
+            ),
+            10 => t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U) -> U>(f)(
+                this, p, q, r, s, u, v, w, x, y, z,
+            ),
+            11 => t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U) -> U>(
+                f,
+            )(this, p, q, r, s, u, v, w, x, y, z, b),
+            _ => {
+                t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U, U) -> U>(
+                    f,
+                )(this, p, q, r, s, u, v, w, x, y, z, b, c)
+            }
         }
     }
 }

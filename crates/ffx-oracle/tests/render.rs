@@ -5878,3 +5878,864 @@ fn snapshot_round14_matches_the_original() {
         round14_case(&mut t, &mut rng, round % 4, &what);
     }
 }
+
+// ---- round 15 ----
+
+#[allow(clippy::too_many_lines)] // one arm per function
+fn round15_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::material::bridge as mt;
+    use ffx_graphic::util::bridge as ut;
+    match case {
+        0 => {
+            let (list, ids) = build_material_list(t, rng, 0x30);
+            let size = [16, 12, 4][rng.below(3) as usize];
+            let param = build_param(t, rng, 0x30, size, false);
+            t.stub_sym(
+                mt::FIND_PARAMETER,
+                Conv::Thiscall(0),
+                1,
+                if rng.chance(6) { 0 } else { param },
+            );
+            t.stub_sym(mt::FORCE_TRANSPARENT, Conv::Cdecl, 2, rng.next());
+            let id = if !ids.is_empty() && rng.chance(2) {
+                ids[rng.below(ids.len() as u32) as usize]
+            } else {
+                rng.below(5)
+            };
+            let a = match rng.below(4) {
+                0 => 0.0f32,
+                1 => 1.0,
+                2 => 0.5,
+                _ => rng.float(),
+            };
+            let x = rng.next();
+            t.check(
+                what,
+                0x0063_bc50,
+                Conv::Cdecl,
+                &[list, x, id, a.to_bits()],
+                |g| {
+                    mt::set_mesh_segment_alpha(g, list, id, a);
+                    Out::None
+                },
+            );
+        }
+        1 => {
+            let scene = t.alloc(&rng.bytes(0x1130));
+            t.w8(scene + 0x93c, u8::from(!rng.chance(5)));
+            t.w32(scene + 0x1128, if rng.chance(5) { 0 } else { rng.next() });
+            t.global(scene::bridge::SCENE.sym, scene);
+            let buf = t.alloc(&rng.bytes(0x34));
+            t.w32(buf, 0x30);
+            let mat = t.zeros(8);
+            t.w32(mat + 4, buf);
+            t.stub_sym(mt::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+            t.stub_sym(mt::TEX_ANIM_MATERIAL_BY_LAYER, Conv::Thiscall(0), 1, mat);
+            let param = build_param(t, rng, 0x30, 16, true);
+            t.stub_sym(mt::FIND_PARAMETER, Conv::Thiscall(0), 1, param);
+            let (layer, alpha) = (rng.next(), rng.below(0x200));
+            t.check(what, 0x0063_9d20, Conv::Cdecl, &[layer, alpha], |g| {
+                mt::change_layer_alpha(g, layer, alpha);
+                Out::None
+            });
+        }
+        2 => {
+            let n = rng.below(5);
+            let mut arr = Vec::new();
+            let small = |rng: &mut Rng| -> f32 {
+                match rng.below(6) {
+                    0 | 1 => rng.float(),
+                    // signed zeros: equal, but not the same bits
+                    2 => [0.0, -0.0][rng.below(2) as usize],
+                    _ => rng.below(9) as f32 - 4.0,
+                }
+            };
+            for _ in 0..n {
+                let b: Vec<u8> = (0..8).flat_map(|_| small(rng).to_le_bytes()).collect();
+                let b = t.alloc(&b);
+                let inst = t.alloc(&rng.bytes(0x20));
+                t.w32(inst + 0x1c, b);
+                arr.extend(inst.to_le_bytes());
+            }
+            arr.extend([0; 4]);
+            let arr = t.alloc(&arr);
+            let list = t.zeros(8);
+            t.w32(list, n | (rng.next() & 0x8000_0000));
+            t.w32(list + 4, arr);
+            t.stub_sym(
+                ut::CH_GET_CHR_RENDER_INSTANCE,
+                Conv::Cdecl,
+                1,
+                if rng.chance(8) { 0 } else { list },
+            );
+            let out = t.alloc(&rng.bytes(0x20));
+            let chr = rng.next();
+            t.check(
+                what,
+                0x0063_a2b0,
+                Conv::Cdecl,
+                &[chr, out, out + 0x10],
+                |g| {
+                    ut::character_bounding_box(g, chr, out, out + 0x10);
+                    Out::None
+                },
+            );
+        }
+        _ => {
+            // the inverse and the 3x4 conversion run, original on both sides
+            if t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 || rng.chance(2) {
+                let scene = t.alloc(&rng.bytes(0x10dd0));
+                t.global(scene::bridge::SCENE.sym, scene);
+            }
+            let vals: Vec<u8> = (0..16)
+                .flat_map(|_| {
+                    let f = match rng.below(4) {
+                        0 => rng.float(),
+                        1 => 0.0,
+                        _ => (rng.below(200) as f32 - 100.0) / 7.0,
+                    };
+                    f.to_le_bytes()
+                })
+                .collect();
+            let m = t.alloc(&vals);
+            t.check(what, 0x0063_8aa0, Conv::Cdecl, &[m], |g| {
+                ut::split_screen_set_camera(g, m);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn round15_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1515_0015);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round15_case(&mut t, &mut rng, round % 4, &what);
+    }
+}
+
+#[test]
+fn snapshot_round15_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5015_0015);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round15_case(&mut t, &mut rng, round % 4, &what);
+    }
+}
+
+// ---- round 16 ----
+
+/// A recording stub over `Phyre_CharacterLighting_setLightMatrix`
+/// (`thiscall(this, inst, a, b)`, `ret 0xc`): logs the tag, `this`, `inst`
+/// and the 16 words at each of `a` and `b` (5 entries; the pointers differ:
+/// the original passes its stack, the bridge its scratch).
+fn stub_light_matrix(t: &mut Twins, at: u32, tag: u32) {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // [eax+8] = inst
+    c.extend([0x56, 0x57]); // push esi; push edi
+    c.extend([0x8d, 0x78, 0x20]); // lea edi, [eax+0x20]
+    c.extend([0x8b, 0x74, 0x24, 0x10]); // mov esi, [esp+0x10] (a)
+    c.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 16; rep movsd
+    c.extend([0x8b, 0x74, 0x24, 0x14]); // mov esi, [esp+0x14] (b)
+    c.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 16; rep movsd
+    c.extend([0x5f, 0x5e]); // pop edi; pop esi
+    c.extend([0x83, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.push(5); // add dword [log], 5
+    c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+fn round16_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    if case == 0 {
+        let abmap = t.alloc(&rng.bytes(0xd0));
+        t.w32(
+            abmap + 4,
+            [0, 1, 2, 3, 0xffff_ffff, rng.next()][rng.below(6) as usize],
+        );
+        for k in 0..12u32 {
+            let n = if rng.chance(8) {
+                rng.next() | 0x8000_0000
+            } else {
+                rng.below(4)
+            };
+            let segs = t.alloc(&rng.bytes(0x6c * 4));
+            let rd = t.alloc(&rng.bytes(0x98));
+            t.w32(rd + 0x90, n);
+            t.w32(rd + 0x94, segs);
+            t.w32(abmap + 0x98 + 4 * k, rd);
+        }
+        let abmap = if rng.chance(8) { 0 } else { abmap };
+        t.global(ut::ABMAP.sym, abmap);
+        t.check(what, 0x0063_90c0, Conv::Cdecl, &[], |g| {
+            ut::abmap_reset_segments(g);
+            Out::None
+        });
+    } else {
+        let at = t.rebase(ut::LIGHTING_SET_LIGHT_MATRIX);
+        stub_light_matrix(t, at, 0x4c4d);
+        t.stub_sym(ut::LIGHTING_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+        let n = rng.below(4);
+        let arr: Vec<u8> = (0..=n).flat_map(|_| rng.next().to_le_bytes()).collect();
+        let arr = t.alloc(&arr);
+        let list = t.zeros(8);
+        t.w32(list, n | (rng.next() & 0x8000_0000));
+        t.w32(list + 4, arr);
+        let list = if rng.chance(10) { 0 } else { list };
+        let dir = |rng: &mut Rng| -> f32 {
+            match rng.below(5) {
+                0 => rng.float(),
+                1 => 0.0,
+                2 => (rng.below(3) as f32) * 0.003,
+                _ => (rng.below(200) as f32 - 100.0) / 13.0,
+            }
+        };
+        let dirs: Vec<u8> = (0..16).flat_map(|_| dir(rng).to_le_bytes()).collect();
+        let dirs = t.alloc(&dirs);
+        let colours = t.alloc(&float_bytes(rng, 16));
+        t.check(
+            what,
+            0x0063_cb80,
+            Conv::Cdecl,
+            &[list, dirs, colours],
+            |g| {
+                ut::set_light_matrix(g, list, dirs, colours);
+                Out::None
+            },
+        );
+    }
+}
+
+#[test]
+fn round16_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1616_0016);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round16_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
+
+#[test]
+fn snapshot_round16_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own sphere-grid object, when there is one
+    let abmap = t.r32(t.rebase(ut::ABMAP.sym));
+    if abmap != 0 {
+        t.check("snapshot abmap", 0x0063_90c0, Conv::Cdecl, &[], |g| {
+            ut::abmap_reset_segments(g);
+            Out::None
+        });
+    }
+    let mut rng = Rng(0x5016_0016);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round16_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
+
+// ---- round 17 ----
+
+/// Writes a `ShaderParams_FindByName` (`thiscall(shader, name)`, `ret 4`)
+/// over the original that answers by the name's address: `params` pairs
+/// a name (image address) with the parameter it finds; others find 0.
+fn stub_find_param(t: &mut Twins, params: &[(u32, u32)]) {
+    use ffx_graphic::material::bridge as mt;
+    let at = t.rebase(mt::FIND_PARAMETER);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    for &(name, param) in params {
+        c.push(0x3d);
+        c.extend(t.rebase(name).to_le_bytes()); // cmp eax, name
+        c.extend([0x75, 0x08]); // jne next
+        c.push(0xb8);
+        c.extend(param.to_le_bytes()); // mov eax, param
+        c.extend([0xc2, 0x04, 0x00]); // ret 4
+    }
+    c.extend([0x31, 0xc0, 0xc2, 0x04, 0x00]); // xor eax, eax; ret 4
+    t.write(at, &c);
+}
+
+fn round17_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::material::bridge as mt;
+    use ffx_graphic::util::bridge as ut;
+    if case == 0 {
+        let (list, _) = build_material_list(t, rng, 0x30);
+        t.stub_sym(
+            mt::CH_GET_CHR_RENDER_INSTANCE,
+            Conv::Cdecl,
+            1,
+            if rng.chance(8) { 0 } else { list },
+        );
+        let mut params = Vec::new();
+        for name in [
+            mt::NAME_FADE_BASIC_ALPHA,
+            mt::NAME_FADE_Y_CENTER,
+            mt::NAME_FADE_Z_CENTER,
+        ] {
+            if !rng.chance(5) {
+                let fits = !rng.chance(5);
+                let p = build_param(t, rng, 0x30, 4, fits);
+                params.push((name, p));
+            }
+        }
+        stub_find_param(t, &params);
+        let axis = [0, 1, 2, rng.next()][rng.below(4) as usize];
+        let center = rng.float();
+        let chr = rng.next();
+        t.check(
+            what,
+            0x0063_b5d0,
+            Conv::Cdecl,
+            &[chr, axis, center.to_bits()],
+            |g| {
+                mt::set_btu_fade_center(g, chr, axis, center);
+                Out::None
+            },
+        );
+    } else {
+        if t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 {
+            let scene = t.zeros(0x10);
+            t.global(scene::bridge::SCENE.sym, scene);
+        }
+        let hash = if rng.chance(2) {
+            ut::FLAT_SHADE_LEVELS[rng.below(3) as usize]
+        } else {
+            rng.below(0x3000)
+        };
+        t.stub_sym(ut::SCENE_GET_LEVEL_HASH, Conv::Thiscall(0), 0, hash);
+        t.stub_sym(ut::LIGHTING_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+        t.stub_sym(
+            ut::LIGHTING_SET_SHADE_COEFF,
+            Conv::Thiscall(0),
+            2,
+            rng.next(),
+        );
+        t.stub_sym(
+            ut::LIGHTING_RESET_SHADE_COEFF,
+            Conv::Thiscall(0),
+            1,
+            rng.next(),
+        );
+        t.stub_sym(ut::LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+        t.stub_sym(
+            ut::LIGHTING_TWEAK_SET_SHADE_COEFF,
+            Conv::Thiscall(0),
+            3,
+            rng.next(),
+        );
+        let n = rng.below(4);
+        let arr: Vec<u8> = (0..=n).flat_map(|_| rng.next().to_le_bytes()).collect();
+        let arr = t.alloc(&arr);
+        let list = t.zeros(8);
+        t.w32(list, n | (rng.next() & 0x8000_0000));
+        t.w32(list + 4, arr);
+        let list = if rng.chance(10) { 0 } else { list };
+        t.check(what, 0x0063_cec0, Conv::Cdecl, &[list], |g| {
+            ut::set_shade_coeff_debug(g, list);
+            Out::None
+        });
+    }
+}
+
+#[test]
+fn round17_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1717_0017);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round17_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
+
+#[test]
+fn snapshot_round17_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5017_0017);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round17_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
+
+// ---- round 18 ----
+
+/// A recording stub over the `thiscall` at `sym` taking ten words
+/// (`ret 0x28`): logs the tag, `ecx` and the ten words over two entries.
+fn stub_thiscall10(t: &mut Twins, sym: u32, ret: u32) {
+    let at = t.rebase(sym);
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    for i in 0..10u8 {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+    }
+    c.extend([0x83, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.push(2); // add dword [log], 2
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x28, 0x00]); // ret 0x28
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+fn round18_case(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::state::bridge::SKIP_FRAME;
+    use ffx_graphic::util::bridge as ut;
+    t.global(SKIP_FRAME.sym, u32::from(rng.chance(8)));
+    t.stub_sym(ut::SPECULAR_ADD_EVENT, Conv::Thiscall(0), 1, rng.next());
+    stub_thiscall10(t, ut::SPECULAR_UPDATE_PARAMS, rng.next());
+    let mgr = t.alloc(&rng.bytes(0x5b0));
+    let ids = [0, 7, 9, 0x1234, rng.next()];
+    for i in 0..4 {
+        let v = if rng.chance(3) {
+            0
+        } else {
+            ids[rng.below(5) as usize]
+        };
+        t.w32(mgr + 4 * i, v);
+    }
+    let mut p = [0u32; 10];
+    p[0] = ids[rng.below(5) as usize];
+    p[1] = rng.next();
+    p[5] = rng.next();
+    for k in [2, 3, 4, 6, 7, 8, 9] {
+        p[k] = rng.float().to_bits();
+    }
+    t.check(what, 0x006c_7090, Conv::Thiscall(mgr), &p, |g| {
+        ut::specular_set_params(g, mgr, p);
+        Out::None
+    });
+}
+
+#[test]
+fn round18_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1818_0018);
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round18_case(&mut t, &mut rng, &what);
+    }
+}
+
+#[test]
+fn snapshot_round18_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5018_0018);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round18_case(&mut t, &mut rng, &what);
+    }
+}
+
+// ---- round 19 ----
+
+/// One round-19 case; the box tests' result.
+#[allow(clippy::many_single_char_names)] // box, matrix, value
+fn round19_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) -> Option<u32> {
+    use ffx_graphic::state::bridge::SKIP_FRAME;
+    use ffx_graphic::util::bridge as ut;
+    if case < 2 {
+        // the transform and the original ClipOutcode run on side a
+        let f = |rng: &mut Rng| -> f32 {
+            match rng.below(8) {
+                0 => rng.float(),
+                1 => 0.0,
+                2 => 1.0,
+                _ => (rng.below(61) as f32 - 30.0) / 10.0,
+            }
+        };
+        let bx: Vec<u8> = (0..8).flat_map(|_| f(rng).to_le_bytes()).collect();
+        let bx = t.alloc(&bx);
+        let m: Vec<u8> = (0..16)
+            .flat_map(|k| {
+                let v = if k == 15 && rng.chance(2) {
+                    1.0
+                } else {
+                    f(rng)
+                };
+                v.to_le_bytes()
+            })
+            .collect();
+        let m = t.alloc(&m);
+        let (sym, test) = if case == 0 {
+            (0x0066_3a30, ut::BoxTest::Visible)
+        } else {
+            (0x006d_27e0, ut::BoxTest::Inside)
+        };
+        let mut r = None;
+        t.check(what, sym, Conv::Thiscall(bx), &[m], |g| {
+            let v = ut::box_clip_test(g, bx, m, test);
+            r = Some(v);
+            Out::U32(v)
+        });
+        r
+    } else {
+        t.global(SKIP_FRAME.sym, u32::from(rng.chance(8)));
+        let mgr = t.alloc(&rng.bytes(0x5b0));
+        t.stub_sym(ut::SPECULAR_GET_INSTANCE, Conv::Cdecl, 0, mgr);
+        t.stub_sym(ut::SPECULAR_ADD_EVENT, Conv::Thiscall(0), 1, rng.next());
+        stub_thiscall10(t, ut::SPECULAR_UPDATE_PARAMS, rng.next());
+        let mut p = [0u32; 10];
+        p[0] = [0, 3, rng.next()][rng.below(3) as usize];
+        p[1] = rng.next();
+        p[5] = rng.next();
+        for k in [2, 3, 4, 6, 7, 8, 9] {
+            p[k] = rng.float().to_bits();
+        }
+        t.check(what, 0x0064_39b0, Conv::Cdecl, &p, |g| {
+            ut::graphic_set_specular_params_ex(g, p);
+            Out::None
+        });
+        None
+    }
+}
+
+#[test]
+fn round19_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1919_0019);
+    // each test must see both answers
+    let mut seen = [[0u32; 2]; 2];
+    for round in 0..6000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        if let Some(v) = round19_case(&mut t, &mut rng, round % 3, &what) {
+            seen[(round % 3) as usize][v as usize] += 1;
+        }
+    }
+    assert!(seen.iter().flatten().all(|&n| n > 50), "{seen:?}");
+}
+
+#[test]
+fn snapshot_round19_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5019_0019);
+    for round in 0..600 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round19_case(&mut t, &mut rng, round % 3, &what);
+    }
+}
+
+/// Boxes on the clip boundary, where storing each sum as a float decides
+/// the answer: x = ((cx + ex) + ey) + ez against w = 1 (rows 0-2 of the
+/// matrix add their extent to x only).
+#[test]
+fn round19_box_rounding_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let e24 = 2f32.powi(-24);
+    let e23 = 2f32.powi(-23);
+    let e26 = 2f32.powi(-26);
+    let cases = [
+        (1.0, [e24, e24, e24]),
+        (1.0, [e24, e24, 0.0]),
+        (1.0, [2f32.powi(-25), 0.0, 0.0]),
+        (1.0 + e23, [-e23 + e26, 0.0, 0.0]),
+        (1.0 + e23, [-e23 + e26, e26, e26]),
+        (-1.0, [-e24, -e24, -e24]),
+        (1.0, [-e24, e24, e24]),
+    ];
+    let mut m = [0f32; 16];
+    for k in [0, 4, 8, 5, 10, 15] {
+        m[k] = 1.0;
+    }
+    let m: Vec<u8> = m.iter().flat_map(|f| f.to_le_bytes()).collect();
+    for (i, (cx, ext)) in cases.into_iter().enumerate() {
+        for (sym, test) in [
+            (0x0066_3a30, ut::BoxTest::Visible),
+            (0x006d_27e0, ut::BoxTest::Inside),
+        ] {
+            t.reset();
+            let mat = t.alloc(&m);
+            let bx: Vec<u8> = [cx, 0.0, 0.0, 0.0, ext[0], ext[1], ext[2], 0.0]
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect();
+            let bx = t.alloc(&bx);
+            let what = format!("case {i} {test:?}");
+            t.check(&what, sym, Conv::Thiscall(bx), &[mat], |g| {
+                Out::U32(ut::box_clip_test(g, bx, mat, test))
+            });
+        }
+    }
+}
+
+// ---- round 20 ----
+
+fn round20_case(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    // PMatrix4_RowTimes runs, original on both sides
+    let scene = t.alloc(&rng.bytes(0xfa00));
+    let f = |rng: &mut Rng| -> f32 {
+        if rng.chance(3) {
+            rng.float()
+        } else {
+            (rng.below(41) as f32 - 20.0) / 16.0
+        }
+    };
+    for off in [0xf9bc, 0xf9c0] {
+        let v = f(rng);
+        t.write(scene + off, &v.to_le_bytes());
+    }
+    let cam: Vec<u8> = (0..0x20).flat_map(|_| f(rng).to_le_bytes()).collect();
+    let cam = t.alloc(&cam);
+    t.w32(scene + 0xdc, cam);
+    let out = t.alloc(&rng.bytes(0x40));
+    t.check(what, 0x0065_1650, Conv::Thiscall(scene), &[out], |g| {
+        Out::U32(ut::scene_screen_adjusted_view(g, scene, out))
+    });
+}
+
+#[test]
+fn round20_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2020_0020);
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round20_case(&mut t, &mut rng, &what);
+    }
+}
+
+#[test]
+fn snapshot_round20_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own scene and camera
+    let scene = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    if scene != 0 && t.r32(scene + 0xdc) != 0 {
+        let out = t.zeros(0x40);
+        t.check(
+            "snapshot scene",
+            0x0065_1650,
+            Conv::Thiscall(scene),
+            &[out],
+            |g| Out::U32(ut::scene_screen_adjusted_view(g, scene, out)),
+        );
+    }
+    let mut rng = Rng(0x5020_0020);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round20_case(&mut t, &mut rng, &what);
+    }
+}
+
+// ---- round 21 ----
+
+/// One round-21 case; for the box test, its answer (bit 1: with a
+/// transform).
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // box, matrix, value; three cases
+fn round21_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) -> Option<u32> {
+    use ffx_graphic::util::bridge as ut;
+    match case {
+        0 => {
+            let lighting = rng.next();
+            let tweak = rng.next();
+            t.stub_sym(ut::LIGHTING_GET_INSTANCE, Conv::Cdecl, 0, lighting);
+            t.stub_sym(ut::LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, 0, tweak);
+            t.stub_sym(
+                ut::LIGHTING_SET_LIGHT_COLOR,
+                Conv::Thiscall(0),
+                4,
+                rng.next(),
+            );
+            t.stub_sym(
+                ut::LIGHTING_TWEAK_SYNC_INTENSITY,
+                Conv::Thiscall(0),
+                0,
+                rng.next(),
+            );
+            t.stub_sym(
+                ut::LIGHTING_BALANCE_LUM_WITH_GLOW,
+                Conv::Thiscall(0),
+                0,
+                rng.next(),
+            );
+            let kind = [0, 1, 2, 3, 3, rng.next()][rng.below(6) as usize];
+            let c = [rng.float(), rng.float(), rng.float()].map(f32::to_bits);
+            t.check(
+                what,
+                0x0063_cb00,
+                Conv::Cdecl,
+                &[kind, c[0], c[1], c[2]],
+                |g| Out::U32(ut::set_light_colour(g, kind, c)),
+            );
+            None
+        }
+        1 => {
+            let list = if rng.chance(6) {
+                0
+            } else {
+                let n = rng.below(6);
+                let arr: Vec<u8> = (0..n).flat_map(|_| rng.next().to_le_bytes()).collect();
+                let arr = t.alloc(&arr);
+                let list = t.zeros(8);
+                t.w32(list, n | (rng.below(2) << 31));
+                t.w32(list + 4, arr);
+                list
+            };
+            t.stub_sym(ut::CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, 1, list);
+            t.stub_sym(ut::SHADER_SET_PARAMETER_VECTOR, Conv::Cdecl, 6, rng.next());
+            let p: [u32; 6] = std::array::from_fn(|_| rng.next());
+            t.check(what, 0x0063_d940, Conv::Cdecl, &p, |g| {
+                Out::U32(ut::chr_shader_set_parameter_vector(
+                    g,
+                    p[0],
+                    [p[1], p[2], p[3], p[4], p[5]],
+                ))
+            });
+            None
+        }
+        _ => {
+            // the matrix helpers, the transform and ClipOutcode run original
+            let f = |rng: &mut Rng| -> f32 {
+                match rng.below(10) {
+                    0 => rng.float(),
+                    1 => 0.0,
+                    2 => 1.0,
+                    _ => (rng.below(61) as f32 - 30.0) / 10.0,
+                }
+            };
+            let bx: Vec<u8> = (0..8).flat_map(|_| f(rng).to_le_bytes()).collect();
+            let bx = t.alloc(&bx);
+            let xf = if rng.chance(3) {
+                0
+            } else {
+                let xf: Vec<u8> = (0..12).flat_map(|_| f(rng).to_le_bytes()).collect();
+                t.alloc(&xf)
+            };
+            let this = t.alloc(&rng.bytes(0x20));
+            for k in 0..3 {
+                let v = t.r32(bx + 4 * k);
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0xc, xf);
+            for k in 0..3 {
+                let v = t.r32(bx + 0x10 + 4 * k);
+                t.w32(this + 0x10 + 4 * k, v);
+            }
+            let m: Vec<u8> = (0..16)
+                .flat_map(|k| {
+                    let v = if k == 15 && rng.chance(2) {
+                        1.0
+                    } else {
+                        f(rng)
+                    };
+                    v.to_le_bytes()
+                })
+                .collect();
+            let m = t.alloc(&m);
+            let mut r = None;
+            t.check(what, 0x006d_2a70, Conv::Thiscall(this), &[m], |g| {
+                let v = ut::box_inside_transformed(g, this, m);
+                r = Some(v);
+                Out::U32(v)
+            });
+            r.map(|v| v | u32::from(xf != 0) << 1)
+        }
+    }
+}
+
+#[test]
+fn round21_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2121_0021);
+    // the box test must see both answers with and without a transform
+    let mut seen = [0u32; 4];
+    for round in 0..4500 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        if let Some(v) = round21_case(&mut t, &mut rng, round % 3, &what) {
+            seen[v as usize] += 1;
+        }
+    }
+    assert!(seen.iter().all(|&n| n > 30), "box answers {seen:?}");
+}
+
+#[test]
+fn snapshot_round21_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5121_0021);
+    for round in 0..450 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round21_case(&mut t, &mut rng, round % 3, &what);
+    }
+}

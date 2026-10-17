@@ -1437,4 +1437,528 @@ pub mod bridge {
         crate::state::bridge::scene_set_colour_pair(h, scene, c, flag);
         flag
     }
+
+    // ---- round 15 ----
+
+    /// `Ch_GetChrRenderInstance` and the bounds' starting values (the
+    /// `f32`s `16777216` and `-16777216`).
+    pub const CH_GET_CHR_RENDER_INSTANCE: u32 = 0x0082_6b70;
+    pub const BOUNDS_START_MIN: u32 = 0x00b4_1da0;
+    pub const BOUNDS_START_MAX: u32 = 0x00b4_1db4;
+
+    /// `graphicCharacterInstanceGetBoundingBox(chr, max, min)`
+    /// (`0x0063a2b0`): over the character's mesh instances (`+0x1c` their
+    /// bounds: the corner `+0..+8`, the extent `+0x10..+0x18`), the largest
+    /// `corner + extent` (stored as a float) and the smallest corner per
+    /// axis, from `-16777216` and `16777216`; ordered compares (a NaN never
+    /// wins). Nothing without a render instance.
+    pub fn character_bounding_box(h: &mut impl Host, chr: u32, max: u32, min: u32) {
+        let list = h.call_sym(CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, &[chr]);
+        if list == 0 {
+            return;
+        }
+        let lo = rt(h.read(h.rebase(BOUNDS_START_MIN)));
+        for k in [8, 4, 0] {
+            h.write(min + k, lo);
+        }
+        let hi = rt(h.read(h.rebase(BOUNDS_START_MAX)));
+        for k in [8, 4, 0] {
+            h.write(max + k, hi);
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            for c in 0..3u32 {
+                let arr: u32 = h.read(list + 4);
+                let inst: u32 = h.read(arr.wrapping_add(4 * i));
+                let b: u32 = h.read(inst + 0x1c);
+                // the sum of the copies (each a float store), stored
+                let s = x87::store(x87::add(
+                    x87::load(rt(h.read(b + 4 * c))),
+                    x87::load(rt(h.read(b + 0x10 + 4 * c))),
+                ));
+                if x87::load(s) > x87::load(h.read(max + 4 * c)) {
+                    let s = x87::store(x87::add(
+                        x87::load(rt(h.read(b + 4 * c))),
+                        x87::load(rt(h.read(b + 0x10 + 4 * c))),
+                    ));
+                    h.write(max + 4 * c, s);
+                }
+                let arr: u32 = h.read(list + 4);
+                let inst: u32 = h.read(arr.wrapping_add(4 * i));
+                let b: u32 = h.read(inst + 0x1c);
+                let corner = rt(h.read(b + 4 * c));
+                if x87::load(corner) < x87::load(h.read(min + 4 * c)) {
+                    let corner = rt(h.read(b + 4 * c));
+                    h.write(min + 4 * c, corner);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// `sceVu0InversMatrix4x4(dst, m)` and `PMatrix4_toWorldMatrix3x4(dst,
+    /// m)` (`thiscall`).
+    pub const VU0_INVERSE_MATRIX: u32 = 0x006e_d460;
+    pub const TO_WORLD_MATRIX_3X4: u32 = 0x0045_1190;
+
+    /// `SplitScreenSetCamera(m)` (`0x00638aa0`): the inverse of the 4x4
+    /// `m` (`sceVu0InversMatrix4x4` on a copy) with the signs of elements
+    /// 0, 1, 6, 10, 12 and 13 flipped (4, 5, 8 and 9 are flipped twice), as
+    /// a 3x4 world matrix (`PMatrix4_toWorldMatrix3x4`, first of the
+    /// identity, then of it) into the scene's `+0x10d94..+0x10dc0`. The
+    /// original's locals live in [`Host::scratch`].
+    pub fn split_screen_set_camera(h: &mut impl Host, m: u32) {
+        let s = h.scratch();
+        let (inv, ident, out) = (s, s + 0x40, s + 0x80);
+        for k in 0..16 {
+            let v = rt(h.read(m + 4 * k));
+            h.write(inv + 4 * k, v);
+        }
+        h.call_sym(VU0_INVERSE_MATRIX, Conv::Cdecl, &[inv, inv]);
+        // fld; fchs; fstp, in the original's order
+        for k in [0u32, 1, 4, 5, 8, 9, 12, 13, 4, 5, 6, 8, 9, 10] {
+            let v = rt(h.read(inv + 4 * k)) ^ 0x8000_0000;
+            h.write(inv + 4 * k, v);
+        }
+        for k in 0..16 {
+            let one = if k % 5 == 0 { 1f32.to_bits() } else { 0 };
+            h.write(ident + 4 * k, one);
+        }
+        h.call_sym(TO_WORLD_MATRIX_3X4, Conv::Thiscall(out), &[ident]);
+        h.call_sym(TO_WORLD_MATRIX_3X4, Conv::Thiscall(out), &[inv]);
+        let scene = crate::scene::bridge::SCENE.get(h);
+        for k in 0..12 {
+            let v = rt(h.read(out + 4 * k));
+            h.write(scene + 0x10d94 + 4 * k, v);
+        }
+    }
+
+    // ---- round 16 ----
+
+    /// `g_GraphicAbmap` (the sphere grid's render object).
+    pub const ABMAP: Global<u32> = Global::new(0x00cc_c838);
+
+    /// `graphicAbmapResetSegments()` (`0x006390c0`, which jumps to the
+    /// manager's body at `0x006853d0`): by the state `+4` (signed): 1
+    /// resets the render data at `+0xb0`, `+0xb4`, `+0xbc`, `+0xb8`,
+    /// `+0xc4`, `+0xc0`, 0 or below those at `+0x98`, `+0x9c`, `+0xa4`,
+    /// `+0xac`, `+0xa0`, `+0xa8`, 2 and above none: each segment (`0x6c`
+    /// bytes from `+0x94`, `+0x90` of them, signed) gets `+4` and `+8`
+    /// zeroed.
+    #[allow(clippy::cast_possible_wrap)] // signed counts
+    pub fn abmap_reset_segments(m: &mut impl Mem) {
+        let abmap = ABMAP.get(m);
+        if abmap == 0 {
+            return;
+        }
+        let state = m.read::<u32>(abmap + 4) as i32;
+        let offsets: [u32; 6] = match state {
+            2.. => return,
+            1 => [0xb0, 0xb4, 0xbc, 0xb8, 0xc4, 0xc0],
+            _ => [0x98, 0x9c, 0xa4, 0xac, 0xa0, 0xa8],
+        };
+        for off in offsets {
+            let mut i = 0u32;
+            loop {
+                let rd: u32 = m.read(abmap + off);
+                if (i as i32) >= m.read::<u32>(rd + 0x90) as i32 {
+                    break;
+                }
+                let seg = |m: &mut _| -> u32 {
+                    let rd: u32 = Mem::read(m, abmap + off);
+                    let segs: u32 = Mem::read(m, rd + 0x94);
+                    segs.wrapping_add(0x6c * i)
+                };
+                let at = seg(m);
+                m.write(at + 4, 0u32);
+                let at = seg(m);
+                m.write(at + 8, 0u32);
+                i += 1;
+            }
+        }
+    }
+
+    /// `Phyre_CharacterLighting_GetInstance`, `..._setLightMatrix`, the
+    /// `_CIsqrt` import thunk and the `0.0001` (`f64`) below which a
+    /// direction is left unnormalised.
+    pub const LIGHTING_GET_INSTANCE: u32 = 0x006a_6e30;
+    pub const LIGHTING_SET_LIGHT_MATRIX: u32 = 0x006a_abf0;
+    pub const CI_SQRT: u32 = 0x0094_97b8;
+    pub const LIGHT_MIN_LENGTH2: u32 = 0x00b3_eb50;
+
+    /// `graphicCharacterLightingSetLightMatrix(list, dirs, colours)`
+    /// (`0x0063cb80`): four lights (`dirs`: x, y, z, w; `colours`: four
+    /// words each, 16-byte rows) as two 4x4 matrices with one light per
+    /// column: the directions normalised when their squared length (each
+    /// partial sum stored as a float) is above `0.0001` (`1 / sqrt`, both
+    /// stored), `w` kept; the colours as they are. Then
+    /// `setLightMatrix(inst, dirs, colours)` on the lighting for every
+    /// instance of `list`. The matrices live in [`Host::scratch`].
+    pub fn set_light_matrix(h: &mut impl Host, list: u32, dirs: u32, colours: u32) {
+        if list == 0 {
+            return;
+        }
+        let a = h.scratch();
+        let b = a + 0x40;
+        let min = f64::from_bits(h.read(h.rebase(LIGHT_MIN_LENGTH2)));
+        let sqrt = h.rebase(CI_SQRT);
+        for k in 0..4u32 {
+            for j in 0..4u32 {
+                let c = rt(h.read(colours + 0x10 * k + 4 * j));
+                h.write(b + 0x10 * j + 4 * k, c);
+            }
+            let d = dirs + 0x10 * k;
+            let mut v = [rt(h.read(d)), rt(h.read(d + 4)), rt(h.read(d + 8))];
+            let [x, y, z] = v.map(x87::load);
+            let xx = x87::store(x87::mul(x, x));
+            let s = x87::store(x87::add(x87::load(xx), x87::mul(y, y)));
+            let len2 = x87::store(x87::add(x87::load(s), x87::mul(z, z)));
+            if x87::load(len2) > min {
+                let r = h.call_intrinsic(sqrt, x87::load(len2));
+                let inv = x87::load(x87::store(x87::div(1.0, x87::load(r.to_bits()))));
+                v = [
+                    x87::store(x87::mul(x, inv)),
+                    x87::store(x87::mul(y, inv)),
+                    x87::store(x87::mul(inv, z)),
+                ];
+            }
+            let w = rt(h.read(d + 0xc));
+            for (j, val) in (0u32..).zip([v[0], v[1], v[2], w]) {
+                h.write(a + 0x10 * j + 4 * k, val);
+            }
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+            h.call_sym(
+                LIGHTING_SET_LIGHT_MATRIX,
+                Conv::Thiscall(lighting),
+                &[inst, a, b],
+            );
+            i += 1;
+        }
+    }
+
+    // ---- round 17 ----
+
+    /// `PhyreScene_getCurrentLevelNameHash`, the lighting's
+    /// `setShadeCoeff` and `resetShadeCoeff`, the tweak utility's getter
+    /// and `setShadeCoeff_dbgHook`.
+    pub const SCENE_GET_LEVEL_HASH: u32 = 0x0065_de90;
+    pub const LIGHTING_SET_SHADE_COEFF: u32 = 0x006a_aef0;
+    pub const LIGHTING_RESET_SHADE_COEFF: u32 = 0x006a_afa0;
+    pub const LIGHTING_TWEAK_GET_INSTANCE: u32 = 0x006a_6e40;
+    pub const LIGHTING_TWEAK_SET_SHADE_COEFF: u32 = 0x006a_afc0;
+    /// The levels whose characters get a shade coefficient of 1.
+    pub const FLAT_SHADE_LEVELS: [u32; 3] = [0x226d, 0x1739, 0x869];
+
+    /// `graphicCharacterLightingSetShadeCoeff_debug(list)` (`0x0063cec0`):
+    /// each instance's shade coefficient: 1 on three levels
+    /// ([`FLAT_SHADE_LEVELS`], by the current level hash), else the
+    /// default (`resetShadeCoeff`); then the tweak utility's debug hook
+    /// `(inst, 0.0, 0)`.
+    pub fn set_shade_coeff_debug(h: &mut impl Host, list: u32) {
+        use crate::scene::bridge::SCENE;
+        if list == 0 {
+            return;
+        }
+        let scene = SCENE.get(h);
+        let hash = h.call_sym(SCENE_GET_LEVEL_HASH, Conv::Thiscall(scene), &[]);
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+            if FLAT_SHADE_LEVELS.contains(&hash) {
+                h.call_sym(
+                    LIGHTING_SET_SHADE_COEFF,
+                    Conv::Thiscall(lighting),
+                    &[inst, 1f32.to_bits()],
+                );
+            } else {
+                h.call_sym(
+                    LIGHTING_RESET_SHADE_COEFF,
+                    Conv::Thiscall(lighting),
+                    &[inst],
+                );
+            }
+            let tweak = h.call_sym(LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, &[]);
+            h.call_sym(
+                LIGHTING_TWEAK_SET_SHADE_COEFF,
+                Conv::Thiscall(tweak),
+                &[inst, 0, 0],
+            );
+            i += 1;
+        }
+    }
+
+    // ---- round 18 ----
+
+    /// `SpecularMapParamsManager_AddSpecularEvent` and
+    /// `SpecularMapParamsManager_UpdateParams_006c6c30` (`thiscall`, ten
+    /// words, `this` unused).
+    pub const SPECULAR_ADD_EVENT: u32 = 0x006c_56f0;
+    pub const SPECULAR_UPDATE_PARAMS: u32 = 0x006c_6c30;
+
+    /// `SpecularMapParamsManager_SetParams(this, id, a, f0, f1, f2, b, g0,
+    /// g1, g2, g3)` (`0x006c7090`): unless the frame is skipped, an `id`
+    /// not among the four slots (`+0`) takes the first empty one (its flag
+    /// `+0x5a0` set) and gets a specular event (`AddSpecularEvent(id)`,
+    /// even when no slot was free); then `UpdateParams` with the same
+    /// words, the seven floats through the x87.
+    pub fn specular_set_params(h: &mut impl Host, this: u32, p: [u32; 10]) {
+        use crate::state::bridge::SKIP_FRAME;
+        if SKIP_FRAME.get(h) != 0 {
+            return;
+        }
+        let id = p[0];
+        if !(0..4u32).any(|i| h.read::<u32>(this + 4 * i) == id) {
+            if let Some(i) = (0..4u32).find(|&i| h.read::<u32>(this + 4 * i) == 0) {
+                h.write(this + 4 * i, id);
+                h.write(this + 0x5a0 + 4 * i, 1u32);
+            }
+            h.call_sym(SPECULAR_ADD_EVENT, Conv::Thiscall(this), &[id]);
+        }
+        let mut args = p;
+        for k in [2, 3, 4, 6, 7, 8, 9] {
+            args[k] = rt(args[k]);
+        }
+        h.call_sym(SPECULAR_UPDATE_PARAMS, Conv::Thiscall(this), &args);
+    }
+
+    // ---- round 19 ----
+
+    /// `PMatrix4_TransformPoint_004c9cb0(m, out, p)` (`thiscall`): `out`
+    /// = the point `p` (x, y, z, 1) times the 4x4 `m`.
+    pub const TRANSFORM_POINT: u32 = 0x004c_9cb0;
+
+    /// How a box's eight clip outcodes combine.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum BoxTest {
+        /// `BoundingBox_IsVisible_00663a30`: AND (no plane has every
+        /// corner outside).
+        Visible,
+        /// `BoundingBox_IsInside_006d27e0`: OR (every corner inside).
+        Inside,
+    }
+
+    /// `BoundingBox_IsVisible_00663a30(box, m)` and
+    /// `BoundingBox_IsInside_006d27e0(box, m)` (`thiscall`, `ret 4`): the
+    /// box (corner `+0..+8`, extent `+0x10..+0x18`) in clip space by the
+    /// 4x4 `m`: the corner through `PMatrix4_TransformPoint` (`t`), the
+    /// extent's axes as `ext.x * row 0` (`a`), `ext.y * row 1` (`b`),
+    /// `ext.z * row 2` (`c`), and the eight corners `t`, `t+a`, `t+b`,
+    /// `t+c`, `(t+a)+b`, `(t+a)+c`, `(t+b)+c`, `((t+a)+b)+c`, every product
+    /// and sum stored as a float. Their `ClipOutcode`s combined by `test`;
+    /// 1 when that is 0. The original's locals live in [`Host::scratch`].
+    pub fn box_clip_test(h: &mut impl Host, bx: u32, m: u32, test: BoxTest) -> u32 {
+        let st = |x: f64| x87::load(x87::store(x));
+        let ext: [f64; 3] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            let k = k as u32;
+            x87::load(rt(h.read(bx + 0x10 + 4 * k)))
+        });
+        let mut rows = [[0f64; 4]; 3];
+        for (r, out) in (0u32..).zip(rows.iter_mut()) {
+            for (k, v) in (0u32..).zip(out.iter_mut()) {
+                *v = st(x87::mul(
+                    ext[r as usize],
+                    x87::load(h.read(m + 0x10 * r + 4 * k)),
+                ));
+            }
+        }
+        let [a, b, c] = rows;
+        let s = h.scratch();
+        let (centre, tp) = (s, s + 0x10);
+        for k in 0..3 {
+            let v = rt(h.read(bx + 4 * k));
+            h.write(centre + 4 * k, v);
+        }
+        h.call_sym(TRANSFORM_POINT, Conv::Thiscall(m), &[tp, centre]);
+        let t: [f64; 4] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let k = k as u32;
+            x87::load(h.read(tp + 4 * k))
+        });
+        let add = |p: [f64; 4], q: [f64; 4]| -> [f64; 4] {
+            std::array::from_fn(|k| st(x87::add(p[k], q[k])))
+        };
+        let ta = add(t, a);
+        let tb = add(t, b);
+        let tab = add(ta, b);
+        // in the original's order of outcodes
+        let corners = [
+            add(tab, c),
+            add(tb, c),
+            add(ta, c),
+            add(t, c),
+            tab,
+            tb,
+            ta,
+            t,
+        ];
+        let at = s + 0x20;
+        let mut acc = match test {
+            BoxTest::Visible => u32::MAX,
+            BoxTest::Inside => 0,
+        };
+        for p in corners {
+            for (k, v) in (0u32..).zip(p) {
+                h.write(at + 4 * k, x87::store(v));
+            }
+            let code = clip_outcode(h, at);
+            acc = match test {
+                BoxTest::Visible => acc & code,
+                BoxTest::Inside => acc | code,
+            };
+        }
+        u32::from(acc == 0)
+    }
+
+    /// `SpecularMapParamsManager_GetInstance`.
+    pub const SPECULAR_GET_INSTANCE: u32 = 0x006c_57e0;
+
+    /// `graphicSetSpecularMapParamsEx(id, a, f0, f1, f2, b, g0, g1, g2,
+    /// g3)` (`0x006439b0`): [`specular_set_params`] on the manager.
+    pub fn graphic_set_specular_params_ex(h: &mut impl Host, p: [u32; 10]) {
+        let mgr = h.call_sym(SPECULAR_GET_INSTANCE, Conv::Cdecl, &[]);
+        specular_set_params(h, mgr, p);
+    }
+
+    // ---- round 20 ----
+
+    /// `PMatrix4_RowTimes_004c9c20(m, out, v)` (`thiscall`): `out` = the
+    /// row vector `v` (4 floats) times the 4x4 `m`.
+    pub const ROW_TIMES: u32 = 0x004c_9c20;
+    /// The `4/3` (`f32`) and the `0.33333337` (`f64`) of the screen
+    /// adjustment.
+    pub const SCREEN_ADJUST_ASPECT: u32 = 0x00b4_3d34;
+    pub const SCREEN_ADJUST_THIRD: u32 = 0x00b4_3d40;
+
+    /// `PhyreScene_GetScreenAdjustedView_00651650(scene, out)`
+    /// (`0x00651650`, `thiscall`, `ret 4`): `out` = the camera's 4x4 at
+    /// `*(scene +0xdc) +0x34` times `[1 0 0 0; 0 4/3 0 0; 0 0 1 0; 0 d 0
+    /// 1]`, `d = 0.33333337 - 2 * (scene +0xf9c0 + +0xf9bc)` (stored as a
+    /// float). The adjustment is built in `out` itself, each row product
+    /// (`PMatrix4_RowTimes`, bottom row first) goes to a temporary in
+    /// [`Host::scratch`], then all four are copied over it. Returns `out`.
+    pub fn scene_screen_adjusted_view(h: &mut impl Host, scene: u32, out: u32) -> u32 {
+        let k = rt(h.read(h.rebase(SCREEN_ADJUST_ASPECT)));
+        let third = f64::from_bits(h.read(h.rebase(SCREEN_ADJUST_THIRD)));
+        let a = x87::load(h.read(scene + 0xf9c0));
+        let s = x87::add(a, x87::load(h.read(scene + 0xf9bc)));
+        let d = x87::store(x87::sub(third, x87::add(s, s)));
+        let one = 1f32.to_bits();
+        let p = [one, 0, 0, 0, 0, k, 0, 0, 0, 0, one, 0, 0, d, 0, one];
+        for (i, v) in (0u32..).zip(p) {
+            h.write(out + 4 * i, v);
+        }
+        let view = h.read::<u32>(scene + 0xdc).wrapping_add(0x34);
+        let tmp = h.scratch();
+        for r in (0..4u32).rev() {
+            h.call_sym(
+                ROW_TIMES,
+                Conv::Thiscall(out),
+                &[tmp + 0x10 * r, view + 0x10 * r],
+            );
+        }
+        for i in 0..16 {
+            let v = rt(h.read(tmp + 4 * i));
+            h.write(out + 4 * i, v);
+        }
+        out
+    }
+
+    // ---- round 21 ----
+
+    /// `Phyre_CharacterLighting_setLightColor_006aa940(lighting, kind, r,
+    /// g, b)` (`ret 0x10`), `Phyre_CharacterLightingTweakUtil_syncIntensity_006aa260(tweak)`
+    /// and `Phyre_CharacterLighting_balanceLumWithGlow(lighting)`.
+    pub const LIGHTING_SET_LIGHT_COLOR: u32 = 0x006a_a940;
+    pub const LIGHTING_TWEAK_SYNC_INTENSITY: u32 = 0x006a_a260;
+    pub const LIGHTING_BALANCE_LUM_WITH_GLOW: u32 = 0x006a_7550;
+
+    /// `graphicCharacterLightingSetLightColor(kind, r, g, b)`
+    /// (`0x0063cb00`): `setLightColor(kind, r, g, b)` (the floats through
+    /// the x87) on the lighting, `syncIntensity` on the tweak utility,
+    /// and for `kind` 3 (the ambient) `balanceLumWithGlow` (a tail call).
+    /// Returns the last callee's `eax` (`Sg_LightSetColor` returns it).
+    pub fn set_light_colour(h: &mut impl Host, kind: u32, c: [u32; 3]) -> u32 {
+        let [r, g, b] = c.map(rt);
+        let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(
+            LIGHTING_SET_LIGHT_COLOR,
+            Conv::Thiscall(lighting),
+            &[kind, r, g, b],
+        );
+        let tweak = h.call_sym(LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, &[]);
+        let ret = h.call_sym(LIGHTING_TWEAK_SYNC_INTENSITY, Conv::Thiscall(tweak), &[]);
+        if kind != 3 {
+            return ret;
+        }
+        let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(
+            LIGHTING_BALANCE_LUM_WITH_GLOW,
+            Conv::Thiscall(lighting),
+            &[],
+        )
+    }
+
+    /// `Phyre_CharacterShaderManager_setShaderParameterVector_006dfa30(inst,
+    /// name, x, y, z, w)` (cdecl; the four by pointer).
+    pub const SHADER_SET_PARAMETER_VECTOR: u32 = 0x006d_fa30;
+
+    /// `graphicCharacterShaderSetParameterVector_0063d940(chr, name, x, y,
+    /// z, w)` (`0x0063d940`): `setShaderParameterVector(inst, name, x, y,
+    /// z, w)` for each instance of `Ch_GetChrRenderInstance(chr)` (count
+    /// `& 0x7fffffff`, array `+4`, both read again each time). Returns 0.
+    pub fn chr_shader_set_parameter_vector(h: &mut impl Host, chr: u32, p: [u32; 5]) -> u32 {
+        let list = h.call_sym(CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, &[chr]);
+        if list == 0 {
+            return 0;
+        }
+        let mut i = 0u32;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let [a, b, c, d, e] = p;
+            h.call_sym(
+                SHADER_SET_PARAMETER_VECTOR,
+                Conv::Cdecl,
+                &[inst, a, b, c, d, e],
+            );
+            i += 1;
+        }
+        0
+    }
+
+    /// `PMatrix4_FromMatrix3x4_00451080(out, m)` (`thiscall`, `ret 4`)
+    /// and `PMatrix4_Multiply_004ca360(out, a, b)` (cdecl, returns `out`).
+    pub const MATRIX4_FROM_3X4: u32 = 0x0045_1080;
+    pub const MATRIX4_MULTIPLY: u32 = 0x004c_a360;
+
+    /// `BoundingBox_IsInsideTransformed_006d2a70(this, m)` (`0x006d2a70`,
+    /// `thiscall`, `ret 4`): with a transform at `+0xc` (a 3x4), the box
+    /// test of `BoundingBox_IsInside_006d27e0` by `m` times it (made a 4x4
+    /// by `PMatrix4_FromMatrix3x4`, the product by `PMatrix4_Multiply`
+    /// into a temporary); without one, by a copy of `m`. The temporaries
+    /// lie in [`Host::scratch`] past the box test's own.
+    pub fn box_inside_transformed(h: &mut impl Host, this: u32, m: u32) -> u32 {
+        let s = h.scratch();
+        let (local, prod) = (s + 0x40, s + 0x80);
+        let xf: u32 = h.read(this + 0xc);
+        let mat = if xf == 0 {
+            for i in 0..16 {
+                let v: u32 = h.read(m + 4 * i);
+                h.write(local + 4 * i, v);
+            }
+            local
+        } else {
+            h.call_sym(MATRIX4_FROM_3X4, Conv::Thiscall(local), &[xf]);
+            h.call_sym(MATRIX4_MULTIPLY, Conv::Cdecl, &[prod, m, local])
+        };
+        box_clip_test(h, this, mat, BoxTest::Inside)
+    }
 }
