@@ -1439,6 +1439,10 @@ ported! {
     op_rot_point_007ea9d0 @ 0x007e_a9d0 => extern "C" fn op_rot_point(x0: f32, y0: f32, ang: f32, x1: f32, y1: f32, ox: u32, oy: u32) -> u32 {
         vec::bridge::op_rot_point(&mut mem(), x0, y0, ang, [x1, y1], [ox, oy], &mut |_, c, x| crt_trig(c, x))
     }
+    /// `op_token_007e1f80(src, out, pos, max, eol)`.
+    op_token_007e1f80 @ 0x007e_1f80 => extern "C" fn op_token(src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        op::bridge::op_token(&mut mem(), src, out, pos, max, eol, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

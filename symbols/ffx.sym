@@ -5780,6 +5780,7 @@
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
 0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
+0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
@@ -14379,6 +14380,9 @@
 0x0113e238 label    g_OpLastError                # op_error_007e1450's code + 1
 0x0113e23c label g_BtlPosState             # 0x34 bytes (three 1.0 scales at +0x10) and 6 words after it (+0x3c points back here), reset by MsBtlPosInit
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
+0x0113fb58 label    g_OpCharClass                # 256 bytes: the op script tokenizer's class per byte (1 word, 2 two-byte, 3/4 quotes, 5 space, 6/8 single, 7 comment/end)
+0x0113fc60 label    g_OpInComment                # nonzero inside an op script block comment (op_token_007e1f80)
+0x0113fc64 label    g_OpCommentDepth             # op script block-comment nesting depth (op_token_007e1f80)
 0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
 0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it

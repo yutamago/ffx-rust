@@ -8124,3 +8124,56 @@ fn st0_f32(r: &ffx_oracle::Ret) -> f32 {
         v
     }
 }
+
+#[test]
+fn op_tokens_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_1f80);
+        deref_recorder(&mut p, 0x007e_1450, &[0, 0]);
+        let class = p.sym(op::bridge::CHAR_CLASS.sym);
+        let (src, out, pos) = (p.alloc(0x80), p.alloc(0x40), p.alloc(4));
+        let chars = [
+            b'a', b'b', b'1', b' ', b'"', b'\'', b';', b'/', b'*', b'(', 0x82, 0xa0, b'\t', 0,
+        ];
+        for round in 0..5000 {
+            if round % 50 == 0 {
+                for c in 0..256u32 {
+                    let k = match u8::try_from(c).unwrap() {
+                        b'a' | b'b' | b'1' => 1,
+                        0x82 | 0xa0 => rng.pick(&[1u8, 2]),
+                        b'"' => 3,
+                        b'\'' => 4,
+                        b' ' | b'\t' => 5,
+                        b'(' => rng.pick(&[6u8, 8]),
+                        b';' | b'/' | b'*' => 7,
+                        0 => 0,
+                        _ => u8::try_from(rng.below(10)).unwrap(),
+                    };
+                    p.set(class + c, k);
+                }
+            }
+            for i in 0..0x7f {
+                let c = if rng.chance(3) { 0 } else { rng.pick(&chars) };
+                p.set(src + i, c);
+            }
+            p.set(src + 0x7f, 0u8);
+            p.fill(out, 0x40, &mut rng);
+            p.set(pos, rng.below(0x40));
+            p.put(op::bridge::COMMENT_DEPTH, rng.pick(&[0u32, 0, 1, 2]));
+            p.put(op::bridge::IN_COMMENT, u32::from(rng.chance(20)));
+            let max = rng.pick(&[0u32, 1, 2, 5, 0x20]);
+            let eol = 0x40 + rng.below(0x30);
+            p.check("op_token", 0x007e_1f80, &[src, out, pos, max, eol], |o| {
+                Some(op::bridge::op_token(
+                    o,
+                    src,
+                    out,
+                    pos,
+                    max,
+                    eol,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
