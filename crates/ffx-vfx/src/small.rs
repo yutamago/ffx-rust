@@ -262,4 +262,208 @@ pub mod bridge {
         let eq = mem.read::<u32>(this) == mem.read::<u32>(other);
         u32::from(eq != ne)
     }
+
+    /// `0x00a39f00(n)`: a node whose state (top nibble of `+0x30`) is 2
+    /// leaves its list (`+0x1c` previous, `+0x20` next) and goes in at
+    /// the front of its owner's list (the head `[n +0x18] +0x48`), in
+    /// state 1. Returns the state word as left in `eax`: the new word, or the
+    /// top nibble alone when nothing moved.
+    pub fn op_node_requeue(mem: &mut impl Mem, n: u32) -> u32 {
+        let at = |o: u32| n.wrapping_add(o);
+        let f: u32 = mem.read(at(0x30));
+        if f & 0xf000_0000 != 0x2000_0000 {
+            return f & 0xf000_0000;
+        }
+        let next: u32 = mem.read(at(0x20));
+        let prev: u32 = mem.read(at(0x1c));
+        let owner: u32 = mem.read(at(0x18));
+        mem.write(next.wrapping_add(0x1c), prev);
+        let prev: u32 = mem.read(at(0x1c));
+        let next: u32 = mem.read(at(0x20));
+        mem.write(prev.wrapping_add(0x20), next);
+        let head = owner.wrapping_add(0x48);
+        mem.write(at(0x1c), head);
+        let first: u32 = mem.read(head.wrapping_add(0x20));
+        mem.write(at(0x20), first);
+        mem.write(first.wrapping_add(0x1c), n);
+        let h: u32 = mem.read(at(0x1c));
+        mem.write(h.wrapping_add(0x20), n);
+        let f: u32 = mem.read(at(0x30));
+        let v = (f & 0x0fff_ffff) | 0x1000_0000;
+        mem.write(at(0x30), v);
+        v
+    }
+
+    /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
+    /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
+    /// dword gives `h` = `s` = 0 (the first two only); else with `max`,
+    /// `min` of `r g b`, `d` = `max - min`: `s` = `256 d / max`, `h` =
+    /// `128 (g - b) / d` when `r` is `max`, `128 (b - r) / d + 0x100` when
+    /// `g` is, else `128 (r - g) / d + 0x200` (0 and 0 when `d` is 0), `v`
+    /// = `max`. Returns the end of `out`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn op_rgb_to_hsv(mem: &mut impl Mem, out: u32, src: u32, n: u32) -> u32 {
+        let mut out = out;
+        let mut src = src;
+        let mut left = n.cast_signed();
+        while left > 0 {
+            if mem.read::<u32>(src) == 0 {
+                mem.write(out, 0u32);
+            } else {
+                let c = |o: u32| i32::from(mem.read::<u8>(src.wrapping_add(o)));
+                let (r, g, b) = (c(0), c(1), c(2));
+                let max = r.max(g).max(b);
+                let min = r.min(g).min(b);
+                let d = max - min;
+                let (h, s) = if d == 0 {
+                    (0, 0)
+                } else {
+                    let s = if max == 0 { 0 } else { (d << 8) / max };
+                    let h = if r == max {
+                        ((g - b) << 7) / d
+                    } else if g == max {
+                        ((b - r) << 7) / d + 0x100
+                    } else {
+                        ((r - g) << 7) / d + 0x200
+                    };
+                    (h, s)
+                };
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // u16 stores
+                {
+                    mem.write(out, h as u16);
+                    mem.write(out.wrapping_add(4), max as u16);
+                    mem.write(out.wrapping_add(2), s as u16);
+                }
+                let a = u16::from(mem.read::<u8>(src.wrapping_add(3)));
+                mem.write(out.wrapping_add(6), a);
+            }
+            left -= 1;
+            src = src.wrapping_add(4);
+            out = out.wrapping_add(8);
+        }
+        out
+    }
+
+    /// `0x00a39bc0(set, n, v)`: a set of seven lists and `n` nodes (the
+    /// lists `op_node_requeue` moves between): `+0xc` low three bits
+    /// cleared, `+0`, `+4` = `v`, `+8` = `n`; list heads at `+0x10 +
+    /// 0x38 k` (`k` 0..7: `+0x14`, `+0x18`, `+0x28`, `+0x2c` 0, previous
+    /// and next itself, `+0x30` = `0x70000000`); nodes at `+0x1a8 + 0x38
+    /// i`, owner `set`, chained from the first list's head and back, `+0x30`
+    /// 0; `+0x198`..`+0x1a4` 0. Returns `set`.
+    pub fn op_node_pool_init(mem: &mut impl Mem, set: u32, n: u32, v: u32) -> u32 {
+        let at = |o: u32| set.wrapping_add(o);
+        let f: u32 = mem.read(at(0xc));
+        mem.write(at(0xc), f & !7);
+        mem.write(at(4), v);
+        mem.write(at(0), v);
+        mem.write(at(8), n);
+        for k in 0..7u32 {
+            let h = 0x10 + 0x38 * k;
+            for o in [0x14u32, 0x18, 0x28, 0x2c] {
+                mem.write(at(h + o), 0u32);
+            }
+            mem.write(at(h + 0x1c), at(h));
+            mem.write(at(h + 0x20), at(h));
+            mem.write(at(h + 0x30), 0x7000_0000u32);
+        }
+        let head = at(0x10);
+        let count = n.cast_signed();
+        let mut i = 0i32;
+        while i < count {
+            let iu = i.cast_unsigned();
+            let node = at(0x1a8u32.wrapping_add(iu.wrapping_mul(0x38)));
+            mem.write(node.wrapping_add(0x18), set);
+            let prev = if i == 0 {
+                head
+            } else {
+                node.wrapping_sub(0x38)
+            };
+            mem.write(node.wrapping_add(0x20), prev);
+            let next = if i == count.wrapping_sub(1) {
+                head
+            } else {
+                node.wrapping_add(0x38)
+            };
+            mem.write(node.wrapping_add(0x1c), next);
+            mem.write(node.wrapping_add(0x30), 0u32);
+            i += 1;
+        }
+        mem.write(at(0x2c), at(0x1a8));
+        let last = n.wrapping_mul(7).wrapping_add(0x2e).wrapping_mul(8);
+        mem.write(at(0x30), at(last));
+        for o in [0x198u32, 0x19c, 0x1a0, 0x1a4] {
+            mem.write(at(o), 0u32);
+        }
+        set
+    }
+
+    /// `0x008888e0(obj)`: `u16 +0xfe` = 0, `u16 +0xf6` = `0x808`, bytes
+    /// `+0xf0`..`+0xf5` 0xff and `+0xf8`..`+0xfd` 0. Returns `obj + 0xfe`
+    /// (left in `eax`).
+    pub fn op_slot_bytes_reset(mem: &mut impl Mem, obj: u32) -> u32 {
+        let at = |o: u32| obj.wrapping_add(o);
+        mem.write(at(0xfe), 0u16);
+        mem.write(at(0xf6), 0x808u16);
+        for i in 0..6u32 {
+            mem.write(at(0xf0 + i), 0xffu8);
+            mem.write(at(0xf8 + i), 0u8);
+        }
+        at(0xfe)
+    }
+
+    /// `0x00888890(n)`: `n` added to the dword at `0x01330278` when
+    /// positive. Returns `n` (left in `eax`).
+    pub fn op_counter_add(mem: &mut impl Mem, n: u32) -> u32 {
+        if n.cast_signed() > 0 {
+            let g = Global::<u32>::new(0x0133_0278);
+            let v = g.get(mem);
+            g.set(mem, v.wrapping_add(n));
+        }
+        n
+    }
+
+    /// `getAlphaForShpIgnoreAnFormatBaseOnSh(shp)` (`0x00716550`): the
+    /// byte `+0x1c` when the byte `+0xf` is 3, else the byte at `shp +
+    /// shp[1] + 4`.
+    pub fn shp_alpha(mem: &impl Mem, shp: u32) -> u32 {
+        let at = if mem.read::<u8>(shp.wrapping_add(0xf)) == 3 {
+            shp.wrapping_add(0x1c)
+        } else {
+            let off: u32 = mem.read(shp.wrapping_add(4));
+            off.wrapping_add(shp).wrapping_add(4)
+        };
+        u32::from(mem.read::<u8>(at))
+    }
+
+    /// `0x00a3ba10(node)`: the 16-byte slot of a node of the render object
+    /// `[0x01a858b4]` (0x38-byte nodes from `+0x438`, slots from
+    /// `+0x630`): `base + 16 ((node - base - 0x438) / 0x38 + 99)`, the
+    /// division truncated.
+    pub fn op_node_slot(mem: &impl Mem, node: u32) -> u32 {
+        let g = Global::<u32>::new(0x01a8_58b4);
+        let d = node
+            .wrapping_sub(g.get(mem))
+            .wrapping_sub(0x438)
+            .cast_signed();
+        let q = d / 0x38 + 0x63;
+        q.cast_unsigned().wrapping_shl(4).wrapping_add(g.get(mem))
+    }
+
+    /// `0x00a3c0f0(w, h, levels)`: the bytes of a mip chain of 16-bit
+    /// texels: `2 w h` summed over `levels`, `w` and `h` halved (arithmetic
+    /// shift) each level, at least 1.
+    #[must_use]
+    pub fn op_mip_bytes(w: u32, h: u32, levels: u32) -> u32 {
+        let (mut w, mut h) = (w.cast_signed(), h.cast_signed());
+        let mut sum = 0i32;
+        let mut n = levels.cast_signed();
+        while n > 0 {
+            sum = sum.wrapping_add(w.wrapping_mul(h).wrapping_mul(2));
+            w = (w >> 1) + i32::from(w >> 1 == 0);
+            h = (h >> 1) + i32::from(h >> 1 == 0);
+            n -= 1;
+        }
+        sum.cast_unsigned()
+    }
 }

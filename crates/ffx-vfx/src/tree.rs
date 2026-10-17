@@ -73,7 +73,8 @@ pub mod bridge {
         mem.read::<u8>(n.wrapping_add(0xd)) != 0
     }
 
-    /// `opusTree_Next(it)` (`0x00806a50`, and `0x00806aa0`; `this` the
+    /// `opusTree_Next(it)` (`0x00806a50`, and `0x00806aa0` and
+    /// `0x0069ebd0`, the same code; `this` the
     /// iterator): the in-order successor of `*it` (nothing at the header);
     /// returns `it`.
     pub fn opus_tree_next(mem: &mut impl Mem, it: u32) -> u32 {

@@ -819,6 +819,188 @@ pub mod bridge {
         }
     }
 
+    /// `0x00a698c0(packet)`: the size of the packet's vertex block after
+    /// its tags: walking the tags from `+0x20` (as in
+    /// [`op_md_packet_set_addr`]), 0 at a type nibble (`+1` & 0xf0) of 0x10
+    /// or 0x20; at 0xf0 (the end), `(6 (i16 +0x12 + i16 +0x14) + 0x1f +
+    /// end - packet) & 0x7ffffff0`, `end` the end tag.
+    pub fn op_md_packet_size(mem: &impl Mem, packet: u32) -> u32 {
+        let sizes = MD_TAG_SIZES.ptr(mem).addr;
+        let mut t = packet.wrapping_add(0x20);
+        loop {
+            let b: u8 = mem.read(t.wrapping_add(1));
+            match b & 0xf0 {
+                0x10 | 0x20 => return 0,
+                0xf0 => {
+                    let a = i32::from(mem.read::<i16>(packet.wrapping_add(0x12)));
+                    let c = i32::from(mem.read::<i16>(packet.wrapping_add(0x14)));
+                    let n = c.wrapping_add(a).wrapping_mul(6).cast_unsigned();
+                    return n.wrapping_sub(packet).wrapping_add(0x1f).wrapping_add(t) & 0x7fff_fff0;
+                }
+                _ => {}
+            }
+            let n = i32::from(mem.read::<i16>(t.wrapping_add(2)));
+            let size: u32 = mem.read(sizes + 4 * u32::from(b & 7));
+            t = t
+                .wrapping_add(n.cast_unsigned().wrapping_mul(size))
+                .wrapping_add(0x10);
+        }
+    }
+
+    /// `0x007e1cc0(src, out, max)`: the next line of the op script reader
+    /// `src` (bytes `[src]`, position `+0xc`, end `+0x10`) into `out`, at
+    /// most `max - 1` bytes and a NUL: it stops at 0, 0xff, CR or LF (a
+    /// byte of 0x80 or more takes the next byte with it, which only 0 and
+    /// 0xff stop) or at the end (the position one further), then steps the
+    /// position back one when it is positive. Returns the bytes stored.
+    pub fn op_read_line(mem: &mut impl Mem, src: u32, out: u32, max: u32) -> u32 {
+        let lim = max.cast_signed().wrapping_sub(1);
+        let mut out = out;
+        let mut n = 0i32;
+        let pos_at = src.wrapping_add(0xc);
+        let mut pos: i32;
+        'read: loop {
+            pos = mem.read(pos_at);
+            if pos >= mem.read::<i32>(src.wrapping_add(0x10)) {
+                break 'read;
+            }
+            let base: u32 = mem.read(src);
+            let c: u8 = mem.read(base.wrapping_add(pos.cast_unsigned()));
+            pos = pos.wrapping_add(1);
+            mem.write(pos_at, pos);
+            if c == 0xff || c == 0 {
+                return finish(mem, pos_at, pos, out, n);
+            }
+            if c < 0x80 {
+                if c == 0xd || c == 0xa {
+                    return finish(mem, pos_at, pos, out, n);
+                }
+            } else {
+                if n < lim {
+                    mem.write(out, c);
+                    out = out.wrapping_add(1);
+                    n += 1;
+                }
+                pos = mem.read(pos_at);
+                if pos >= mem.read::<i32>(src.wrapping_add(0x10)) {
+                    break 'read;
+                }
+                let base: u32 = mem.read(src);
+                let c2: u8 = mem.read(base.wrapping_add(pos.cast_unsigned()));
+                pos = pos.wrapping_add(1);
+                mem.write(pos_at, pos);
+                if c2 == 0xff || c2 == 0 {
+                    return finish(mem, pos_at, pos, out, n);
+                }
+                if n < lim {
+                    mem.write(out, c2);
+                    out = out.wrapping_add(1);
+                    n += 1;
+                }
+                continue;
+            }
+            if n < lim {
+                mem.write(out, c);
+                out = out.wrapping_add(1);
+                n += 1;
+            }
+        }
+        let p: i32 = mem.read(pos_at);
+        mem.write(pos_at, p.wrapping_add(1));
+        let pos: i32 = mem.read(pos_at);
+        finish(mem, pos_at, pos, out, n)
+    }
+
+    /// The op script reader's line counter (`0x0113fc80`).
+    pub const LINE_COUNT: Global<u32> = Global::new(0x0113_fc80);
+
+    /// `0x007e1cc0`'s sibling `0x007e2660(src, lines)`: the length of the
+    /// reader's next line (bytes before an LF; a byte of 0x80 or more
+    /// counts with the next), the position past the LF. Without an LF (0,
+    /// 0xff or the end, which is read once and passed by one) the result is
+    /// -1 and the position steps back one when positive. Either way
+    /// `*lines` (when not null) and [`LINE_COUNT`] go up by one.
+    pub fn op_line_length(mem: &mut impl Mem, src: u32, lines: u32) -> u32 {
+        let pos_at = src.wrapping_add(0xc);
+        let end: i32 = mem.read(src.wrapping_add(0x10));
+        let mut n = 0u32;
+        let ok = 'read: loop {
+            let mut pos: i32 = mem.read(pos_at);
+            if pos >= end {
+                mem.write(pos_at, pos.wrapping_add(1));
+                break 'read false;
+            }
+            let base: u32 = mem.read(src);
+            pos = pos.wrapping_add(1);
+            let c: u8 = mem.read(base.wrapping_add(pos.cast_unsigned()).wrapping_sub(1));
+            mem.write(pos_at, pos);
+            match c {
+                0 | 0xff => break 'read false,
+                0xa => break 'read true,
+                0x01..0x80 => n = n.wrapping_add(1),
+                _ => {
+                    n = n.wrapping_add(1);
+                    if pos >= end {
+                        mem.write(pos_at, pos.wrapping_add(1));
+                        break 'read false;
+                    }
+                    let c: u8 = mem.read(base.wrapping_add(pos.cast_unsigned()));
+                    mem.write(pos_at, pos.wrapping_add(1));
+                    if c == 0 || c == 0xff {
+                        break 'read false;
+                    }
+                    n = n.wrapping_add(1);
+                }
+            }
+        };
+        if !ok {
+            n = u32::MAX;
+            let pos: i32 = mem.read(pos_at);
+            if pos > 0 {
+                mem.write(pos_at, pos - 1);
+            }
+        }
+        if lines != 0 {
+            let l: u32 = mem.read(lines);
+            mem.write(lines, l.wrapping_add(1));
+        }
+        let c = LINE_COUNT.get(mem);
+        LINE_COUNT.set(mem, c.wrapping_add(1));
+        n
+    }
+
+    /// `0x007e5680()`: the CLUT tables cleared: [`OEF2_CLUT_OVL`] (64
+    /// words), `0x011a01a0`.., `0x011a02a0`.. and [`OEF2_CLUT_CUES`] (64
+    /// words each), the cue head and count (one dword at `0x011a04a0`) and
+    /// [`OEF2_CLUT_OVL_COUNT`]. Returns 0 (left in `eax`).
+    pub fn op_oef2_tex_clut_init(mem: &mut impl Mem) -> u32 {
+        let ovl = OEF2_CLUT_OVL.ptr(mem).addr;
+        for i in 0..0x40u32 {
+            mem.write(ovl + 4 * i, 0u32);
+        }
+        let a = Global::<u32>::new(0x011a_01a0).ptr(mem).addr;
+        let b = Global::<u32>::new(0x011a_02a0).ptr(mem).addr;
+        let c = OEF2_CLUT_CUES.ptr(mem).addr;
+        for i in 0..0x40u32 {
+            mem.write(a + 4 * i, 0u32);
+            mem.write(b + 4 * i, 0u32);
+            mem.write(c + 4 * i, 0u32);
+        }
+        let head = OEF2_CLUT_CUE_HEAD.ptr(mem).addr;
+        mem.write(head, 0u32);
+        OEF2_CLUT_OVL_COUNT.set(mem, 0);
+        0
+    }
+
+    /// `op_read_line`'s end: the position back one when positive, the NUL.
+    fn finish(mem: &mut impl Mem, pos_at: u32, pos: i32, out: u32, n: i32) -> u32 {
+        if pos > 0 {
+            mem.write(pos_at, pos - 1);
+        }
+        mem.write(out, 0u8);
+        n.cast_unsigned()
+    }
+
     /// A sound function (the sound module's), called through `call`.
     fn snd<M: Mem>(
         mem: &mut M,

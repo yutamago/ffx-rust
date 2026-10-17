@@ -6631,3 +6631,936 @@ fn round10g_on(t: &mut Twin) {
         );
     }
 }
+
+/// Calls a one-operand intrinsic (third word) on `fld qword [esp + 4]`,
+/// stores the result as `f32` and returns its bits in EAX.
+const CI1_STUB: [u8; 17] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xd9, 0x5c, 0x24, 0x04, 0x8b, 0x44, 0x24, 0x04,
+    0xc3,
+];
+/// The two-operand form: `[esp + 4]` to ST1, `[esp + 0xc]` to ST0, the
+/// intrinsic in the fifth word.
+const CI2_STUB: [u8; 21] = [
+    0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xd9, 0x5c, 0x24, 0x04,
+    0x8b, 0x44, 0x24, 0x04, 0xc3,
+];
+
+/// Code at the same new address in both oracles.
+fn twin_code(t: &mut Twin, code: &[u8]) -> u32 {
+    let at = t.a.alloc_code(code).unwrap();
+    assert_eq!(t.b.alloc_code(code).unwrap(), at);
+    at
+}
+
+/// Replaces the function at `sym` with a jump to `code` in both.
+fn fake_with(t: &mut Twin, sym: u32, code: &[u8]) {
+    let to = twin_code(t, code);
+    let at = t.a.rebase(sym);
+    let mut jmp = vec![0xe9];
+    jmp.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+}
+
+/// A stand-in copying the 16 bytes at `src` (plus `id & 0x1f` × 16 when
+/// `id_arg` names the word holding an id) to the pointer in word `out`.
+fn copy_stub(src: u32, id_arg: Option<u8>, out: u8) -> Vec<u8> {
+    let mut c = vec![];
+    if let Some(k) = id_arg {
+        c.extend([
+            0x8b,
+            0x44,
+            0x24,
+            4 * k,
+            0x83,
+            0xe0,
+            0x1f,
+            0xc1,
+            0xe0,
+            0x04,
+            0x05,
+        ]);
+    } else {
+        c.push(0xb8);
+    }
+    c.extend(src.to_le_bytes());
+    c.extend([0x8b, 0x54, 0x24, 4 * out]);
+    for k in [0u8, 4, 8, 0xc] {
+        c.extend([0x8b, 0x48, k, 0x89, 0x4a, k]);
+    }
+    c.push(0xc3);
+    c
+}
+
+#[test]
+fn round11_matches_the_original() {
+    for mut t in twins() {
+        round11_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+#[allow(clippy::cast_precision_loss)]
+fn round11_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_0011);
+    let fk = Fakes::new(t);
+    let elem = fk.fake(t, 0x0083_5660, 1, 3);
+    let set = fk.fake(t, 0x0083_3df0, 2, 4);
+    let check = fk.fake(t, 0x0082_61b0, 3, 1);
+    let exist = fk.fake(t, 0x0083_5680, 4, 2);
+    let pts = t.alloc(0x20 * 16);
+    let cam = t.alloc(16);
+    let opt = copy_stub(pts, Some(2), 3);
+    fake_with(t, 0x0083_54f0, &opt);
+    let camera = copy_stub(cam, None, 1);
+    fake_with(t, 0x0083_f260, &camera);
+    let ci1 = twin_code(t, &CI1_STUB);
+    let ci2 = twin_code(t, &CI2_STUB);
+    let pop = t.b.rebase(FPU_POP);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..64u32 {
+        fk.reset(t);
+        t.put_u32(
+            elem,
+            if round % 16 == 15 {
+                0
+            } else {
+                0x100 + rng.next() % 8
+            },
+        );
+        t.put_u32(set, rng.next());
+        t.put_u32(check, u32::from(rng.next().is_multiple_of(4)));
+        t.put_u32(exist, u32::from(!rng.next().is_multiple_of(4)));
+        for k in 0..0x20 * 4 {
+            let v = f(&mut rng, -10, 10);
+            t.put_u32(pts + 4 * k, v);
+        }
+        for k in 0..4 {
+            let v = f(&mut rng, -20, 20);
+            t.put_u32(cam + 4 * k, v);
+        }
+        let chr = t.alloc(0x900);
+        for k in 0..0x240 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(chr + 4 * k, v);
+        }
+        let model = t.alloc(0x80);
+        t.put(model + 0x40, &[u8::from(rng.next().is_multiple_of(2))]);
+        t.put_u32(chr + 0x1c4, model);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(chr + 0x40d, &[1 + (rng.next() % 4) as u8]);
+        t.put_u32(
+            chr + 0x414,
+            (if rng.next().is_multiple_of(4) {
+                0f32
+            } else {
+                1f32
+            })
+            .to_bits(),
+        );
+        let w = (rng.next() % 17) as f32 / 16.0;
+        t.put_u32(chr + 0x418, w.to_bits());
+        t.put_u32(
+            chr + 0x420,
+            [1f32, 2.0, 4.0, 8.0][(rng.next() % 4) as usize].to_bits(),
+        );
+        t.put_u32(chr + 0x158, f(&mut rng, -3, 3));
+        t.put_u32(chr + 0x424, f(&mut rng, 0, 120));
+        t.put_u32(chr + 0x428, f(&mut rng, -120, 0));
+        t.put_u32(chr + 0x41c, f(&mut rng, -180, 180));
+        t.put_u32(chr + 0x4d0, rng.next() % 2);
+        if rng.next().is_multiple_of(2) {
+            t.put_u32(chr + 0x4c0, f(&mut rng, -3, 3));
+            t.put_u32(chr + 0x4c4, f(&mut rng, -3, 3));
+        }
+        t.put_u32(
+            chr + 0x4bc,
+            [0f32, 0.25, 0.5, 1.0][(rng.next() % 4) as usize].to_bits(),
+        );
+        // a unit quaternion at +0x4ac
+        for k in 0..4 {
+            t.put_u32(chr + 0x4ac + 4 * k, 0.5f32.to_bits());
+        }
+        let scratch = t.alloc(p::NECK_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_48d0);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |m: &mut Oracle, f: u32, a: &[f64]| {
+                let words: Vec<u32> = a
+                    .iter()
+                    .flat_map(|x| {
+                        let b = x.to_bits();
+                        #[allow(clippy::cast_possible_truncation)]
+                        [b as u32, (b >> 32) as u32]
+                    })
+                    .chain([f])
+                    .collect();
+                let stub = if a.len() == 1 { ci1 } else { ci2 };
+                f32::from_bits(m.call(stub, Conv::Cdecl, &words).unwrap().eax)
+            };
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_neck(&mut t.b, chr, scratch, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_Neck {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::NECK_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_Neck {round} memory",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round11b_matches_the_original() {
+    for mut t in twins() {
+        round11b_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+#[allow(clippy::many_single_char_names)]
+fn round11b_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_b11b);
+    let fk = Fakes::new(t);
+    let elem = fk.fake(t, 0x0083_5660, 1, 3);
+    let limit = fk.fake(t, 0x0083_4fd0, 2, 3);
+    let pop = t.b.rebase(FPU_POP);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..32u32 {
+        fk.reset(t);
+        t.put_u32(elem, if round % 8 == 7 { 0 } else { rng.next() % 4 });
+        t.put_u32(limit, rng.next());
+        let chr = t.alloc(0x500);
+        for k in 0..0x140 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(chr + 4 * k, v);
+        }
+        let elems = t.alloc(0x160 * 4);
+        for k in 0..0x160 {
+            let v = f(&mut rng, -3, 3);
+            t.put_u32(elems + 4 * k, v);
+        }
+        let bones = t.alloc(0xc8);
+        for k in 0..0x32 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(bones + 4 * k, v);
+        }
+        for k in 0..4 {
+            t.put_u32(elems + 0x160 * k, bones);
+        }
+        t.put_u32(chr + 0x328, elems);
+        let scratch = t.alloc(p::NECK_INIT_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_4e60);
+        t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |_: &mut Oracle, _: u32, _: &[f64]| f32::NAN;
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_neck_init(&mut t.b, chr, scratch, &mut c);
+        }
+        let s = Oracle::read(&mut t.b, scratch, p::NECK_INIT_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_NeckInit {round}",
+            t.name
+        );
+        // Ch_ElemCalcQuaternion
+        let e = t.alloc(0x100);
+        for k in 0..0x40 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(e + 4 * k, v);
+        }
+        let other = t.alloc(0x40);
+        for k in 0..0x10 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(other + 4 * k, v);
+        }
+        t.put_u32(e + 0xcc, other);
+        let w = [0f32, 1.0, 0.5, 0.25][usize::try_from(rng.next() % 4).unwrap()];
+        t.put_u32(e + 0xe0, w.to_bits());
+        let scratch = t.alloc(p::ELEM_QUAT_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_3960);
+        t.a.call(at, Conv::Cdecl, &[e]).unwrap();
+        let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+        p::ch_elem_calc_quaternion(&mut t.b, e, scratch, &mut |m, f, a| call(m, f, a));
+        let s = Oracle::read(&mut t.b, scratch, p::ELEM_QUAT_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_ElemCalcQuaternion {round}",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round11c_matches_the_original() {
+    for mut t in twins() {
+        round11c_on(&mut t);
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round11c_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_c11c);
+    let fk = Fakes::new(t);
+    let elem = fk.fake(t, 0x0083_5660, 1, 3);
+    let pos_set = fk.fake(t, 0x0077_e9a0, 2, 3);
+    let pop = t.b.rebase(FPU_POP);
+    let (mode, shape, th) = (
+        t.a.rebase(0x0130_08d9),
+        t.a.rebase(0x0130_08da),
+        t.a.rebase(0x00c4_9718),
+    );
+    for round in 0..96u32 {
+        fk.reset(t);
+        t.put_u32(elem, if round % 8 == 7 { 0 } else { rng.next() % 4 });
+        t.put_u32(pos_set, rng.next());
+        t.put(mode, &[(rng.next() % 5) as u8]);
+        t.put(shape, &[(rng.next() % 8) as u8]);
+        t.put(th, &((rng.next() % 200) as i16).to_le_bytes());
+        let chr = t.alloc(0x800);
+        for k in 0..0x200 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        t.put(chr + 0x4d4, &[u8::from(rng.next().is_multiple_of(2))]);
+        let open = (rng.next() % 90) as i16 - 10;
+        t.put(chr + 0x4dc, &open.to_le_bytes());
+        let goal = if rng.next().is_multiple_of(4) {
+            0
+        } else {
+            (rng.next() % 90) as i16 - 10
+        };
+        t.put(chr + 0x4de, &goal.to_le_bytes());
+        if rng.next().is_multiple_of(4) {
+            t.put(chr + 0x4dc, &goal.to_le_bytes());
+        }
+        t.put(chr + 0x4e1, &[(rng.next() % 3) as u8]);
+        t.put(chr + 0x4e3, &[1 + (rng.next() % 20) as u8]);
+        t.put_u32(chr + 0x6fc, rng.next() % 2);
+        let model = t.alloc(0x80);
+        for k in 0..3 {
+            t.put_u32(
+                model + 0x44 + 4 * k,
+                (((rng.next() % 64) as f32) / 16.0 - 2.0).to_bits(),
+            );
+        }
+        t.put(
+            model + 0x42,
+            &[
+                (rng.next() % 4) as u8,
+                u8::from(rng.next().is_multiple_of(2)),
+            ],
+        );
+        t.put_u32(chr + 0x1c4, model);
+        let elems = t.alloc(0x160 * 4);
+        t.put_u32(chr + 0x328, elems);
+        let at = t.a.rebase(0x0083_44f0);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |_: &mut Oracle, _: u32, _: &[f64]| f32::NAN;
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_mouth(&mut t.b, chr, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_Mouth {round}", t.name);
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_Mouth {round} memory",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round11d_matches_the_original() {
+    for mut t in twins() {
+        round11d_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round11d_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_d11d);
+    let fk = Fakes::new(t);
+    let seq = fk.fake(t, 0x0083_7ac0, 1, 2);
+    let sys = fk.fake(t, 0x0083_7d00, 2, 3);
+    let pop = t.b.rebase(FPU_POP);
+    let water = t.a.rebase(0x0130_09d8);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..64u32 {
+        fk.reset(t);
+        t.put_u32(seq, rng.next());
+        t.put_u32(sys, rng.next());
+        t.put_u32(water, f(&mut rng, -4, 4));
+        let chr = t.alloc(0x800);
+        for k in 0..0x200 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        t.put_u32(chr + 0x194, rng.next());
+        let speed = [0f32, 0.5, 1.0, 2.0][(rng.next() % 4) as usize];
+        t.put_u32(chr + 0x154, speed.to_bits());
+        t.put_u32(chr + 0x170, f(&mut rng, 0, 2));
+        t.put_u32(chr + 0x158, f(&mut rng, -7, 7));
+        t.put_u32(chr + 0x168, f(&mut rng, -7, 7));
+        t.put_u32(chr + 0x10, f(&mut rng, -6, 6));
+        t.put_u32(chr + 0x504, f(&mut rng, 0, 2));
+        t.put(chr + 0x736, &[u8::from(rng.next().is_multiple_of(4))]);
+        for off in [0x79cu32, 0x7a4, 0x7a8] {
+            let m = (rng.next() & 0xffff_0000) | (rng.next() % 0x2000);
+            t.put_u32(chr + off, m);
+        }
+        let at = t.a.rebase(0x0083_5d30);
+        t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        mo::ch_auto_motion(
+            &mut t.b,
+            chr,
+            &mut |m: &mut Oracle, f, a: &[u32]| m.call_cdecl(f, a).unwrap(),
+            &mut |m: &mut Oracle, f, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            },
+        );
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_AutoMotion {round}",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round11e_matches_the_original() {
+    for mut t in twins() {
+        round11e_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
+fn round11e_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_e11e);
+    let fk = Fakes::new(t);
+    let info = fk.fake(t, 0x0064_3db0, 1, 0);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..32u32 {
+        fk.reset(t);
+        let shader = t.alloc(0x100);
+        let vi = t.alloc(0x20);
+        t.put_u32(shader + 0x94, vi);
+        t.put_u32(info, shader);
+        let n = rng.next() % 8;
+        t.put_u32(vi + 4, n);
+        t.put_u32(vi + 8, rng.next() % 12);
+        for (off, size) in [(0xcu32, 12u32), (0x14, 16), (0x18, 8), (0x1c, 2)] {
+            let buf = t.alloc(usize::try_from(size * 32).unwrap());
+            t.put_u32(vi + off, buf);
+        }
+        let m = t.alloc(0x40);
+        for k in 0..16 {
+            let v = f(&mut rng, -2, 2);
+            t.put_u32(m + 4 * k, v);
+        }
+        let args: Vec<u32> = [m, rng.next(), rng.next(), rng.next()]
+            .into_iter()
+            .chain((0..7).map(|_| f(&mut rng, -4, 4)))
+            .collect();
+        let scratch = t.alloc(p::QUAD_SCRATCH as usize);
+        let at = t.a.rebase(0x0083_1d10);
+        let ra = t.a.call(at, Conv::Cdecl, &args).unwrap();
+        let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+        let rb = p::ch_draw_quad(
+            &mut t.b,
+            args[0],
+            args[1],
+            [args[4], args[5]],
+            args[6],
+            [args[7], args[8], args[9], args[10]],
+            scratch,
+            &mut |m, f, a| call(m, f, a),
+        );
+        assert_eq!(ra.eax, rb, "{}: Ch_DrawQuad {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::QUAD_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_DrawQuad {round} memory",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn round11f_matches_the_original() {
+    for mut t in twins() {
+        round11f_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn round11f_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_f11f);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let save = fk.fake(t, 0x0088_c830, 1, 0);
+    let reset = fk.fake(t, 0x0082_b080, 2, 1);
+    let seq = fk.fake(t, 0x0083_7ac0, 3, 2);
+    let fast = fk.fake(t, 0x0083_7860, 4, 1);
+    let play = fk.fake(t, 0x0083_9b80, 5, 5);
+    let dispose = fk.fake(t, 0x0083_6e20, 6, 3);
+    let find = fk.fake(t, 0x0083_6f10, 7, 3);
+    let battle = fk.fake(t, 0x0078_0c90, 8, 0);
+    let c1 = fk.fake(t, 0x0086_c1c0, 9, 1);
+    let c2 = fk.fake(t, 0x0086_5890, 10, 1);
+    let c3 = fk.fake(t, 0x0082_a7f0, 11, 1);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for r in [reset, play, dispose, c1, c2, c3] {
+            t.put_u32(r, rng.next());
+        }
+        let data = t.alloc(0x100);
+        t.put(data + 0xd2, &[rng.next().to_le_bytes()[0]]);
+        t.put_u32(save, data);
+        t.put_u32(seq, u32::from(rng.next().is_multiple_of(4)));
+        let clip = t.alloc(0x10);
+        t.put_u32(clip + 0xc, rng.next());
+        t.put_u32(
+            fast,
+            if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                clip
+            },
+        );
+        t.put_u32(
+            find,
+            if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        t.put_u32(battle, u32::from(!rng.next().is_multiple_of(3)));
+        let chr = t.alloc(0x800);
+        t.put(chr + 0x186, &[(rng.next() % 5).to_le_bytes()[0]]);
+        let args = [
+            chr,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next() % 0x100,
+            rng.next() % 0x100,
+        ];
+        t.check(
+            &format!("Ch_MotionSetLow2 {round}"),
+            0x0083_73e0,
+            &args,
+            |m| {
+                Res::Int(mo::ch_motion_set_low2(m, args, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let (a, b) = (rng.next(), rng.next());
+        t.check(
+            &format!("ChN_DisposeSystemMGRP {round}"),
+            0x0083_6830,
+            &[a, b],
+            |m| {
+                Res::Int(mo::chn_dispose_system_mgrp(m, a, b, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.check(
+            &format!("ChN_SystemMgrpLoaded {round}"),
+            0x0083_7710,
+            &[],
+            |m| Res::Int(mo::chn_system_mgrp_loaded(m, &mut |m, f, a| call(m, f, a))),
+        );
+        t.check(
+            &format!("Ch_ReadEventMgrp {round}"),
+            0x0083_7670,
+            &[a],
+            |m| Res::Int(mo::ch_read_event_mgrp(m, a, &mut |m, f, a| call(m, f, a))),
+        );
+        t.check(
+            &format!("Ch_SaveMotionByte {round}"),
+            0x0083_03a0,
+            &[chr],
+            |m| {
+                Res::Int(mo::ch_save_motion_byte(m, chr, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        let v = a.to_le_bytes()[0];
+        t.check(
+            &format!("SetByte_012fb8fd {round}"),
+            0x0082_1b20,
+            &[u32::from(v)],
+            |m| {
+                mo::set_byte_012fb8fd(m, v);
+                Res::Void
+            },
+        );
+    }
+}
+
+#[test]
+fn round11g_matches_the_original() {
+    for mut t in twins() {
+        round11g_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn round11g_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_a11a);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let reset = fk.fake(t, 0x0082_b080, 2, 1);
+    let seq = fk.fake(t, 0x0083_7ac0, 3, 2);
+    let fast = fk.fake(t, 0x0083_7860, 4, 1);
+    let play = fk.fake(t, 0x0083_9b80, 5, 5);
+    // SG_DisposeMotionGroup: clears the entry Ch_DisposeAllMGRP picks, then logs
+    let table = t.a.rebase(0x0130_11e0);
+    let (logger, _) = fk.fake_code(t, 6, 3);
+    let mut stub = vec![0xb8];
+    stub.extend((table + 4).to_le_bytes());
+    stub.extend([
+        0x83, 0x78, 0xfc, 0x00, 0x74, 0x06, 0x66, 0x83, 0x38, 0x02, 0x75, 0x0b,
+    ]);
+    stub.extend([0x83, 0xc0, 0x0c, 0x3d]);
+    stub.extend((table + 50 * 12 + 4).to_le_bytes());
+    stub.extend([0x7c, 0xea, 0xc3, 0xc7, 0x40, 0xfc, 0, 0, 0, 0, 0xe9]);
+    let at = t.a.alloc_code(&[0; 64]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 64]).unwrap(), at);
+    let jmp_from = at + u32::try_from(stub.len()).unwrap() + 4;
+    stub.extend(logger.wrapping_sub(jmp_from).to_le_bytes());
+    t.put(at, &stub);
+    let dispose = t.a.rebase(0x0083_6e20);
+    let mut jmp = vec![0xe9];
+    jmp.extend(at.wrapping_sub(dispose + 5).to_le_bytes());
+    t.put(dispose, &jmp);
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(reset, rng.next());
+        t.put_u32(play, rng.next());
+        t.put_u32(seq, u32::from(rng.next().is_multiple_of(4)));
+        let clip = t.alloc(0x10);
+        let marks = t.alloc(0x20);
+        for k in 0..16 {
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(
+                marks + 2 * k,
+                &((rng.next() % 200) as i16 - 20).to_le_bytes(),
+            );
+        }
+        t.put_u32(clip + 8, marks);
+        t.put_u32(clip + 0xc, rng.next());
+        t.put_u32(
+            fast,
+            if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                clip
+            },
+        );
+        let chr = t.alloc(0x800);
+        let loops = rng.next() % 3;
+        let ends = [rng.next() % 16, rng.next() % 16];
+        let raw = [
+            rng.next() % 0x100,
+            (rng.next() % 0x100).wrapping_sub(0x20)
+                & if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    u32::MAX
+                },
+        ];
+        let args = [chr, rng.next(), rng.next(), loops, raw[0], raw[1]];
+        t.check(
+            &format!("Chr_PlayMotionInclEnd {round}"),
+            0x0083_74c0,
+            &args,
+            |m| {
+                Res::Int(mo::chr_play_motion(
+                    m,
+                    mo::PlayFrames::InclEnd,
+                    args,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        let args = [chr, rng.next(), rng.next(), loops, ends[0], ends[1]];
+        t.check(
+            &format!("Chr_PlayMotionMarks {round}"),
+            0x0083_7350,
+            &args,
+            |m| {
+                Res::Int(mo::chr_play_motion(
+                    m,
+                    mo::PlayFrames::Marks,
+                    args,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        let x = rng.next();
+        t.check(&format!("Ch_DisposeMGRP {round}"), 0x0083_6ad0, &[x], |m| {
+            Res::Int(mo::ch_dispose_mgrp(m, x, &mut |m, f, a| call(m, f, a)))
+        });
+        for k in 0..50 {
+            let e = table + 12 * k;
+            t.put_u32(
+                e,
+                if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(e + 4, &((rng.next() % 4) as i16).to_le_bytes());
+            t.put(e + 6, &(rng.next().to_le_bytes()[..2]));
+            t.put_u32(e + 8, rng.next());
+        }
+        t.check(
+            &format!("Ch_DisposeAllMGRP {round}"),
+            0x0083_6a80,
+            &[],
+            |m| Res::Int(mo::ch_dispose_all_mgrp(m, &mut |m, f, a| call(m, f, a))),
+        );
+    }
+}
+
+#[test]
+fn round11h_matches_the_original() {
+    for mut t in twins() {
+        round11h_on(&mut t);
+    }
+}
+
+fn round11h_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0011_b0b0);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    // its first argument is the caller's stack: logged without arguments
+    let moved = fk.fake(t, 0x0083_c350, 1, 0);
+    let mgrp_move = fk.fake(t, 0x0083_70c0, 2, 2);
+    let table = t.a.rebase(0x0130_11e0);
+    let ci1 = twin_code(t, &CI1_STUB);
+    // Ch_InitCircleTable, through the CRT's own intrinsics
+    t.check("Ch_InitCircleTable", 0x0082_e5a0, &[], |m| {
+        p::ch_init_circle_table(m, &mut |m: &mut Oracle, f, a: &[f64]| {
+            let b = a[0].to_bits();
+            #[allow(clippy::cast_possible_truncation)]
+            let w = [b as u32, (b >> 32) as u32, f];
+            f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+        });
+        Res::Void
+    });
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(moved, u32::from(rng.next().is_multiple_of(3)));
+        t.put_u32(mgrp_move, rng.next());
+        for k in 0..50 {
+            let e = table + 12 * k;
+            t.put_u32(
+                e,
+                if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(e + 4, &((rng.next() % 3) as i16).to_le_bytes());
+        }
+        let scratch = t.alloc(4);
+        let at = t.a.rebase(0x0083_7050);
+        let ra = t.a.call(at, Conv::Cdecl, &[]).unwrap();
+        let rb = mo::ch_mem_move_event_mgrp(&mut t.b, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_MemMoveEventMgrp {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, 4).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_MemMoveEventMgrp {round} memory",
+            t.name
+        );
+    }
+}
+
+impl Fakes {
+    /// A stand-in at new code running `prefix`, then logging `id` and the
+    /// arguments at `idxs` (0-based) and returning the word at its result.
+    fn fake_code_idxs(&self, t: &mut Twin, prefix: &[u8], id: u32, idxs: &[u8]) -> (u32, u32) {
+        let ret = t.alloc(4);
+        let mut c = prefix.to_vec();
+        c.extend([0x8b, 0x0d]);
+        c.extend(self.log.to_le_bytes());
+        c.extend([0xc7, 0x01]);
+        c.extend(id.to_le_bytes());
+        for (j, &k) in (0u8..).zip(idxs) {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * j]);
+        }
+        c.extend([0x83, 0x05]);
+        c.extend(self.log.to_le_bytes());
+        c.push(4 * (u8::try_from(idxs.len()).unwrap() + 1));
+        c.push(0xa1);
+        c.extend(ret.to_le_bytes());
+        c.push(0xc3);
+        (twin_code(t, &c), ret)
+    }
+}
+
+#[test]
+fn round11i_matches_the_original() {
+    for mut t in twins() {
+        round11i_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
+fn round11i_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0011_1111);
+    let fk = Fakes::new(t);
+    let pop = t.b.rebase(FPU_POP);
+    // graphicUpdateShadowMap: writes w and h through its 7th and 8th words
+    let (wa, ha) = (t.alloc(4), t.alloc(4));
+    let mut pre = vec![0x8b, 0x44, 0x24, 0x1c, 0x8b, 0x0d];
+    pre.extend(wa.to_le_bytes());
+    pre.extend([0x89, 0x08, 0x8b, 0x44, 0x24, 0x20, 0x8b, 0x0d]);
+    pre.extend(ha.to_le_bytes());
+    pre.extend([0x89, 0x08]);
+    let (map_code, uv) = fk.fake_code_idxs(t, &pre, 1, &[1, 2, 4, 8, 9, 10, 11]);
+    // Ch_DrawQuad: its matrix (the caller's stack) copied out, then logged
+    let mats = t.alloc(0x40);
+    let mut pre = vec![0x8b, 0x44, 0x24, 0x04];
+    for k in 0..16u8 {
+        pre.extend([0x8b, 0x48, 4 * k, 0x89, 0x0d]);
+        pre.extend((mats + 4 * u32::from(k)).to_le_bytes());
+    }
+    let (quad_code, _) = fk.fake_code_idxs(t, &pre, 2, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    for (sym, code) in [(0x0064_4a00u32, map_code), (0x0083_1d10, quad_code)] {
+        let at = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.put(at, &jmp);
+    }
+    let ci1 = twin_code(t, &CI1_STUB);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..24u32 {
+        fk.reset(t);
+        let uvs = t.alloc(16);
+        for k in 0..4 {
+            let v = f(&mut rng, 0, 1);
+            t.put_u32(uvs + 4 * k, v);
+        }
+        t.put_u32(uv, uvs);
+        t.put_u32(wa, f(&mut rng, 0, 4));
+        t.put_u32(ha, f(&mut rng, 0, 4));
+        let chr = t.alloc(0x900);
+        for k in 0..0x240 {
+            let v = f(&mut rng, -4, 4);
+            t.put_u32(chr + 4 * k, v);
+        }
+        let id: u16 = [7, 0x6b, 0x10, 0x1001][usize::try_from(rng.next() % 4).unwrap()];
+        t.put(chr, &id.to_le_bytes());
+        let p3 = rng.next();
+        let scratch = t.alloc(p::SHADOW_QUAD_SCRATCH as usize);
+        let at = t.a.rebase(0x0082_e3e0);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr, rng.next(), p3]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            };
+            let mut ci = |m: &mut Oracle, f: u32, a: &[f64]| {
+                let b = a[0].to_bits();
+                #[allow(clippy::cast_possible_truncation)]
+                let w = [b as u32, (b >> 32) as u32, f];
+                f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+            };
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_draw_shadow_quad(&mut t.b, chr, p3, scratch, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_DrawShadowQuad {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::SHADOW_QUAD_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_DrawShadowQuad {round} memory",
+            t.name
+        );
+    }
+}
