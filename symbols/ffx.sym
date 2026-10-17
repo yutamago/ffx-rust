@@ -6643,6 +6643,7 @@
 0x00821aa0 function TOInitFont1208            # fh switch:bsim1.00 0x71004b0f20; (): 0x38 bytes at 0x012fbbbc and g_GsRegisterSink cleared
 0x00821ae0 function Sg_SetKeepFps             # fh v3:exact+call.cs 0x00821c00 cdecl
 0x00821b00 function Sg_SetMapAlphaFast        # fh v3:bsim1.00 0x00821c20
+0x00821b20 function SetByte_012fb8fd          # cdecl(v): byte 0x012fb8fd = v (as SetByte_012fb8fb/fc); name ours
 0x00821c60 function Sg_SetMuteSound           # fh v3:exact 0x00821d80
 0x00821cb0 function Sg_SetPause               # fh v3:bsim1.00 0x00821dd0
 0x00821cc0 function Sg_SetPauseAllSounds      # fh v3:exact 0x00821de0
@@ -6937,6 +6938,8 @@
 0x0082dab0 function Sg_SetCameraFollow        # (on): bit 1 of g_CameraFollow 0x00c496d5 (bit 0 is 0x0082d030's); with both set Sg_ControlMain turns the camera after the player's heading; script native at 0x00a77950 and the map defaults (Light_Set run, 0x00839xxx) call it with 1; returns the old byte without bit 1 in al; name ours; ported (ffx_sg::state)
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
+0x0082e3e0 function Ch_DrawShadowQuad         # (chr, -, p3): the shadow quad: matrix by -facing +0x158 and position +0x7c, graphicUpdateShadowMap (size, uv) then Ch_DrawQuad; returns p3; called for shadow mode 2 with Ch_IsNotExceptionId; name ours
+0x0082e5a0 function Ch_InitCircleTable        # (): for i in 0..13 the angle i * [0x00b59638] / [0x00b4b468] gives _CIcos into 0x013007ec[i] and _CIsin into 0x01300860[i]; called at init after Ch_GuiSetCalcNormAll(0); name ours
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70
 0x0082eb60 function Ch_DrawEnEffect           # fh v3:bsim1.00 0x0082ebe0
 0x0082eb80 function Ch_DrawGetDisableSpec     # movsx g_ChrDrawDisableSpec (Ch_DrawSetDisableSpec's); Switch name, in name order after Ch_DrawEnEffect
@@ -6965,6 +6968,7 @@
 0x00830320 function Ch_EnableGetTexture       # fh v3:bsim1.00 0x008303a0
 0x00830330 function Ch_EnableSetTexture          # layout+callees: sorts between Ch_EnableGetTexture and Ch_EngineSetFast, and its named callees match the Switch 0x7100419400 Ch_EnableSetTexture's (similarity 1.00: Gui_ButtonSetTexture); symbols from Fahrenheit's server export
 0x00830370 function Ch_EngineSetFast          # fh v3:bsim1.00 0x008303f0
+0x008303a0 function Ch_SaveMotionByte         # (chr): 0x022fd6c0 = 0x023c4450 = MsGetSaveEventAddress() + 0xd2; in battle (MsBattleCheck) and chr +0x186 not 2/3 returns that byte, else 0; name ours
 0x008303f0 function Ch_GetNbElem              # fh v3:exact 0x00830470
 0x00830410 function Ch_GetNbModel             # fh v3:exact 0x00830490
 0x00830440 function Ch_GetShadowDirH          # chr +0x6d8 (Ch_SetShadowDirH's); Switch name, in name order after Ch_GetNbModel
@@ -7023,6 +7027,7 @@
 0x00831ca0 function Sg_PLightSetPos           # (i, mask, x, y, z): position (+0) components whose bit 1/2/4 is set; Sg_PLightGetPos reads them
 0x00831ce0 function Sg_PLightSetRadius        # (i, r): f32 +0x20 (Sg_PLightGetRadius's)
 0x00831d00 function Ch_SetShadeByLight        # (v): g_ChrShadeByLight = v; WMainProc's key handler
+0x00831d10 function Ch_DrawQuad               # (m, p2, p3, p4, w, h, y, u0, v0, u1, v1): appends a quad (corners ±h/2, y, ±w/2 through FFXVu0RotTransPers) to graphicShaderGetVertexInfo's vertex, normal, uv and index lists; returns p2; name ours
 0x00831f00 function ch_TextureLoad            # (tex, n) each texture with a base (u16 +0x38 != -1): +0x3a = it, Sg_GsloadSetBase; the DMA calls are no-ops here. fh: v3:cg6 0x831f80
 0x00832050 function Ch_TextureSetBase        # ours: (tex, n, base, i) texture i (or all n with i = -1) gets base: u16 +0x38/+0x3a, Sg_GsloadSetBase; returns base + u16 +0x36 (base -1 stays)
 0x008320e0 function Ch_SysSet6e0             # ours: g_Chr6e0 = v (no reader found)
@@ -7109,6 +7114,7 @@
 0x00835b70 function Ch_SysGetScreenMatrixPtr  # fh v3:bsim1.00 0x00835bf0
 0x00835b90 function FFXVu0ClipScreen          # () -> &g_Vu0ClipScreen; fh switch:bsim1.00 0x71001c22e0
 0x00835ba0 function Ch_SysGetCameraMatrixPtr  # fh v3:bsim1.00 0x00835c20
+0x00835d30 function Ch_AutoMotion             # (chr): the automatic stand/walk/run motion step: facing +0x158 toward +0x168 by Sg_AngleApproach, then +0x79c/+0x7a4/+0x7a8 by speed +0x154 and the water height (Sg_GetSuimen's 0x013009d8) through Ch_SetSequence or Ch_SetSysMotion(chr, 2, m); name ours
 0x00835e90 function Ch_SysSetScreenMatrix     # (m): 64 bytes from m to g_ChrScreenMatrix (Ch_SysGetScreenMatrixPtr's); Switch name
 0x00835eb0 function Ch_SysSetCameraMatrix     # (m): 64 bytes from m to g_ChrCameraMatrix (Ch_SysGetCameraMatrixPtr's); Switch name
 0x00835ed0 function Ch_TextureAnimGetHandle   # fh v3:exact 0x00835f50
@@ -7166,7 +7172,9 @@
 0x00837570 function Ch_MotionSet737          # ours: (chr, v) byte +0x737 = v, returns 0
 0x00837590 function Ch_MoveMgrp              # Switch name (0x7100423e80): (chr, delta) the motion group pointers (+0x70c/710/714/7e8/7f4, node list at +0x74c) after it moved
 0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2
+0x00837670 function Ch_ReadEventMgrp          # (x): tail call Ch_RomReadEventMGRPsync(AtelEventGetMotionIndex(0x0086c1c0(x))); name ours
 0x008376b0 function Ch_RegMotionEntryCache    # fh switch:bsim1.00 0x71004214d0
+0x00837710 function ChN_SystemMgrpLoaded      # (): SG_FindMotionGroup(2, 0, 0) != 0; name ours
 0x00837730 function Ch_RegMotionGetExistMem   # fh switch:bsim1.00 0x7100421550
 0x00837780 function Ch_RegMotionToTop            # layout+callees: sorts between Ch_RegMotionGetExistMem and Ch_RelElemMapping, and its named callees match the Switch 0x71004214b0 Ch_RegMotionToTop's (similarity 1.00: Cache_ToTop); symbols from Fahrenheit's server export
 0x00837790 function Ch_RegMotionUse              # layout+callees: sorts between Ch_RegMotionGetExistMem and Ch_RelElemMapping, and its named callees match the Switch 0x71004214c0 Ch_RegMotionUse's (similarity 1.00: Cache_Use); symbols from Fahrenheit's server export
