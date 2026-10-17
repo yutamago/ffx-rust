@@ -464,6 +464,23 @@ pub mod bridge {
         if i == 0 { 0 } else { entry(i) }
     }
 
+    /// `pppFtoiRgba_0074c280(dst, src)` and its six copies: the four
+    /// floats at `src` truncated toward zero (`fistp` with the rounding
+    /// set to chop; out of range or NaN gives the integer indefinite) and
+    /// their low bytes stored at `dst`. Returns the last byte, zero-extended,
+    /// as left in `eax`.
+    pub fn ppp_ftoi_rgba(mem: &mut impl Mem, dst: u32, src: u32) -> u32 {
+        let mut last = 0;
+        for i in 0..4 {
+            let x: f32 = mem.read(src.wrapping_add(4 * i));
+            #[allow(clippy::cast_possible_truncation)] // the low byte
+            let b = ffx_bridge::x87::cvttsd2si(f64::from(x)) as u8;
+            mem.write(dst.wrapping_add(i), b);
+            last = u32::from(b);
+        }
+        last
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,

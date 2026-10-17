@@ -3240,6 +3240,34 @@ ported! {
     hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {
         small::bridge::hash_u_at(&mem(), s)
     }
+    /// `pppFtoiRgba_0074c280(dst, src)`.
+    pppFtoiRgba_0074c280 @ 0x0074_c280 => extern "C" fn ppp_ftoi_rgba_0074c280(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_0074d280(dst, src)`.
+    pppFtoiRgba_0074d280 @ 0x0074_d280 => extern "C" fn ppp_ftoi_rgba_0074d280(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_0074e280(dst, src)`.
+    pppFtoiRgba_0074e280 @ 0x0074_e280 => extern "C" fn ppp_ftoi_rgba_0074e280(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_0074f2c0(dst, src)`.
+    pppFtoiRgba_0074f2c0 @ 0x0074_f2c0 => extern "C" fn ppp_ftoi_rgba_0074f2c0(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_00750130(dst, src)`.
+    pppFtoiRgba_00750130 @ 0x0075_0130 => extern "C" fn ppp_ftoi_rgba_00750130(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_00751930(dst, src)`.
+    pppFtoiRgba_00751930 @ 0x0075_1930 => extern "C" fn ppp_ftoi_rgba_00751930(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
+    /// `pppFtoiRgba_007535a0(dst, src)`.
+    pppFtoiRgba_007535a0 @ 0x0075_35a0 => extern "C" fn ppp_ftoi_rgba_007535a0(dst: u32, src: u32) -> u32 {
+        small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {

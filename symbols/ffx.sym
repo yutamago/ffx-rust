@@ -3841,28 +3841,35 @@
 0x0074bc50 function Vec4AddScalars_0074bc50    # ours: (dst, src, x, y, z, w): dst = src + (x, y, z, w), each f32 sum through the x87
 0x0074bde0 function pppVu0MaddW_copy_0074bde0    # the same code as pppVu0MaddW (0x0072c650; call targets equal), a copy the compiler kept; own name; ported with mat::bridge::ppp_vu0_madd, caller 0x007ed0c0
 0x0074be90 function Vec4SubScalars_0074be90    # ours: (dst, src, x, y, z, w): dst = src - (x, y, z, w), then restoreVf00Register
+0x0074c280 function pppFtoiRgba_0074c280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailDraw)
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
 0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
+0x0074d280 function pppFtoiRgba_0074d280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailXDraw)
 0x0074d490 function pppKeShpTailX             # ppp program table record "pppKeShpTailX" step: the same code as pppKeShpTail
 0x0074d540 function pppKeShpTailXCon          # ppp program table record "pppKeShpTailX" (0x00c3b228) +0x1c set-up; "pppKeShpTailX" (0x00c3c8d0) +0x1c set-up
 0x0074d570 function pppKeShpTailXDraw         # ppp program table record "pppKeShpTailX" draw; not a function start in the Ghidra dump
+0x0074e280 function pppFtoiRgba_0074e280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2Draw)
 0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
 0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump
+0x0074f2c0 function pppFtoiRgba_0074f2c0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2XDraw)
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
 0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
 0x00750020 function pppVec4Copy               # (dst, src) four floats through the FPU (fld/fstp)
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
+0x00750130 function pppFtoiRgba_00750130       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3Draw)
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
 0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
 0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
 0x00750620 function pppKeShpTail3Draw         # ppp program table record "pppKeShpTail3" draw; not a function start in the Ghidra dump
+0x00751930 function pppFtoiRgba_00751930       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3XDraw)
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
 0x00751eb0 function pppKeShpTail3XCon         # ppp program table record "pppKeShpTail3X" +0x1c set-up: the same code as pppKeShpTail3Con
 0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
 0x00751fc0 function pppKeShpTail3XDraw        # ppp program table record "pppKeShpTail3X" draw; not a function start in the Ghidra dump
+0x007535a0 function pppFtoiRgba_007535a0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailPhtDraw)
 0x00753f10 function pppKeShpTailPht           # ppp program table record "pppKeShpTailPht" step: as pppKeShpTail3X (velocity, then position) with 27 slots, index +0x1f4, f32 motion at +0x1e0/+0x1e4/+0x1e8, key's halves at +0x30 and floats at +0x1c
 0x00754180 function pppKeShpTailPhtCon        # ppp program table record "pppKeShpTailPht" +0x1c set-up: as pppKeShpTail3Con, index +0x294, CRT rand() at +0x292, float motion +0x280.. cleared
 0x00754260 function pppKeShpTailPhtCon2       # ppp program table record "pppKeShpTailPht" +0x20 set-up: clears the ring index, seed and motion (no rand)

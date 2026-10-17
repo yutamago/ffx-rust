@@ -10422,3 +10422,51 @@ fn opus_0437_fade_step_matches_the_original() {
         }
     }
 }
+
+/// `pppFtoiRgba_0074c280` and its copies (the same code at each address).
+const FTOI_RGBA: [(&str, u32); 7] = [
+    ("pppFtoiRgba_0074c280", 0x0074_c280),
+    ("pppFtoiRgba_0074d280", 0x0074_d280),
+    ("pppFtoiRgba_0074e280", 0x0074_e280),
+    ("pppFtoiRgba_0074f2c0", 0x0074_f2c0),
+    ("pppFtoiRgba_00750130", 0x0075_0130),
+    ("pppFtoiRgba_00751930", 0x0075_1930),
+    ("pppFtoiRgba_007535a0", 0x0075_35a0),
+];
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn ftoi_rgba_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_c280);
+        let (dst, src) = (p.alloc(0x10), p.alloc(0x10));
+        for round in 0..3000u32 {
+            p.fill(dst, 0x10, &mut rng);
+            for i in 0..4 {
+                let x = match rng.below(4) {
+                    0 => f32::from_bits(finite(&mut rng)),
+                    1 => rng.below(0x200) as f32 - 0x100 as f32 + 0.5,
+                    2 => rng.pick(&[
+                        -0.999f32,
+                        0.999,
+                        255.9,
+                        256.0,
+                        -1.0,
+                        2.147_483_6e9,
+                        2.147_483_7e9,
+                        -2.147_483_6e9,
+                        -2.147_483_7e9,
+                        f32::INFINITY,
+                        f32::NAN,
+                    ]),
+                    _ => rng.below(0x400) as f32 / 3.0,
+                };
+                p.set(src + 4 * i, x);
+            }
+            let (name, at) = FTOI_RGBA[(round % 7) as usize];
+            p.check(name, at, &[dst, src], |m| {
+                Some(small::bridge::ppp_ftoi_rgba(m, dst, src))
+            });
+        }
+    }
+}
