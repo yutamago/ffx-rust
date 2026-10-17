@@ -6833,6 +6833,7 @@ fn round11b_matches_the_original() {
 }
 
 #[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+#[allow(clippy::many_single_char_names)]
 fn round11b_on(t: &mut Twin) {
     let mut rng = Xorshift(0x0011_b11b);
     let fk = Fakes::new(t);
