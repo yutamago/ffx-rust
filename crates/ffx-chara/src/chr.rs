@@ -1641,6 +1641,21 @@ pub mod bridge {
         }
         call(mem, mem.rebase(DRAW_SHADOW_QUAD), &[chr, chr + 0x114, 0]);
     }
+
+    /// `Ch_BlkDisposeAll()` (`0x008259c0`): `Ch_BlkDispose` on every used
+    /// model block (id not -1).
+    pub fn ch_blk_dispose_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let base = crate::handle::bridge::CHR_BLK.ptr(mem).addr;
+        for k in 0..40u32 {
+            let b = base + 0x12c * k;
+            if mem.read::<u32>(b) != u32::MAX {
+                call(mem, mem.rebase(0x0082_58d0), &[b]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -667,6 +667,47 @@ pub mod bridge {
         let v = ffx_bridge::x87::ftol(mem, x);
         EFFECT_ALPHA.set(mem, v);
     }
+
+    /// `Chr_TableIndex(id)` (`0x0082a640`) and the `atoi` import slot.
+    pub const TABLE_INDEX: u32 = 0x0082_a640;
+    pub const ATOI_SLOT: u32 = 0x00b0_c40c;
+    /// Bytes of scratch `ch_get_char_id` needs (its 4-byte digit buffer).
+    pub const CHAR_ID_SCRATCH: u32 = 4;
+
+    /// `Ch_GetCharID(id)` (`0x0082a080`): the file name of `id`'s table
+    /// entry (`g_CdLib_98(Chr_TableIndex(id))`; none: -1) gives its number,
+    /// `atoi` of the 7th to 5th characters from the end. The original keeps
+    /// those three in a 4-byte stack slot holding the caller's ECX, so its
+    /// 4th byte (and any of the three a short name does not reach) is
+    /// undefined; here they are NUL, which matches the original whenever
+    /// that byte is not a digit.
+    pub fn ch_get_char_id<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k = call(mem, mem.rebase(TABLE_INDEX), &[id]);
+        let f = CD_LIB_98.get(mem);
+        let s = call(mem, f, &[k]);
+        if s == 0 {
+            return u32::MAX;
+        }
+        let mut n = 0u32;
+        while mem.read::<u8>(s.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        mem.write(scratch, 0u32);
+        for (j, back) in [7u32, 6, 5].into_iter().enumerate() {
+            if n >= back {
+                let b: u8 = mem.read(s.wrapping_add(n - back));
+                #[allow(clippy::cast_possible_truncation)] // 0..3
+                mem.write(scratch + j as u32, b);
+            }
+        }
+        let atoi: u32 = mem.read(mem.rebase(ATOI_SLOT));
+        call(mem, atoi, &[scratch])
+    }
 }
 
 #[cfg(test)]

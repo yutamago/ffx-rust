@@ -361,6 +361,18 @@ early return. It moves each active character's heap blocks
 (`Sg_MemMoveWork`) and stops after the first character that moved
 anything.
 
+## Character numbers
+
+`Ch_GetCharID` (`0x0082a080`) reads a character's number from its table
+entry's file name (`g_CdLib_98(Chr_TableIndex(id))`). It takes the 7th to
+5th characters from the end and passes them to `atoi`. The original
+keeps them in a 4-byte stack slot made by `push ecx`, so the slot's 4th
+byte is whatever the caller left in ECX. So is any byte that a name
+shorter than 7 characters does not reach. That input is undefined. The
+port treats those bytes as NUL, which gives the original's result
+whenever the byte is not a digit; the oracle test enters the original
+with ECX = `"AAAA"`.
+
 ## Head, mouth and automatic motion
 
 `Ch_Neck` (`0x008348d0`) turns the head (option point 9's element)
