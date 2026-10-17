@@ -280,9 +280,11 @@ Replays write their screenshots to `$OUT`, the trace's folder (the
 scripts say `shot $OUT\field-walk-1.bmp`). `run-all.sh` gives each call
 its own folder, `%TEMP%\ffx-snap\runs\<id>\<tag>\` (traces, screenshots,
 each replay's output with the hook's faults), and keeps the recorded
-originals where the comparisons read them: `%TEMP%\ffx-snap\<replay>-orig.trace`,
-`-orig2.trace` and `~/ffx-work/replay-shots/orig`, `orig2`
-(`FFX_REPLAY_SHOTS`).
+originals where the comparisons read them, outside Temp (which Windows may
+clean): `~/ffx-work/replay-shots/traces/<replay>-orig.trace`, `-orig2.trace`
+and `~/ffx-work/replay-shots/orig`, `orig2` (`FFX_REPLAY_SHOTS`). It keeps
+only the newest `KEEP_RUNS` (20) run folders, so `%TEMP%\ffx-snap` can be
+deleted at any time.
 
 Test games play their sound at 5% master volume (`FFX_TEST_VOLUME`,
 0-100), set in each slot's own `GameSetting.ini`, never the user's.

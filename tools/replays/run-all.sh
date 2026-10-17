@@ -10,8 +10,9 @@
 # Each call writes into its own folder, %TEMP%\ffx-snap\runs\<id>\<tag>\
 # (traces, screenshots, the replay's output), kept for inspection; the
 # recorded originals stay where the comparisons find them:
-# %TEMP%\ffx-snap\<replay>-orig.trace, -orig2.trace and
-# ~/ffx-work/replay-shots/orig, orig2 (FFX_REPLAY_SHOTS).
+# ~/ffx-work/replay-shots/traces/<replay>-orig.trace, -orig2.trace and
+# ~/ffx-work/replay-shots/orig, orig2 (FFX_REPLAY_SHOTS). Only the newest
+# KEEP_RUNS run folders are kept; %TEMP%\ffx-snap is otherwise disposable.
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
 set -u
@@ -25,6 +26,14 @@ lin="$(wslpath "$win")"
 shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots}"  # outlives a WSL restart (/tmp does not)
 id="$(date +%Y%m%d-%H%M%S)-$$"
 runs="$lin/runs/$id"
+traces="$shots/traces"
+mkdir -p "$traces"
+# older recordings lived in %TEMP%\ffx-snap: take them over once
+for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
+    [ -f "$f" ] && [ ! -f "$traces/$(basename "$f")" ] && cp "$f" "$traces/"
+done
+# keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
+ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
 replays=(field-walk battle-attack menu-browse)
 
 # Build once, not three times side by side.
@@ -59,7 +68,7 @@ if [ "${1:-}" = --record ]; then
         rm -rf "${shots:?}/$tag"
         mkdir -p "$shots/$tag"
         for r in "${replays[@]}"; do
-            cp "$runs/$tag/$r-$tag.trace" "$lin/$r-$tag.trace"
+            cp "$runs/$tag/$r-$tag.trace" "$traces/$r-$tag.trace"
             cp "$runs/$tag/$r"-*.bmp "$shots/$tag/" 2>/dev/null
         done
     done
@@ -72,7 +81,7 @@ bad=0
 for r in "${replays[@]}"; do
     # the pad word's range (press timing): field-walk 3, menu-browse 0
     case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; *) ign=() ;; esac
-    cmp=(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$lin/$r-orig2.trace" "${ign[@]}")
+    cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
