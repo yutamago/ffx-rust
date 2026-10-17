@@ -3388,15 +3388,6 @@ pub mod bridge {
         }
     }
 
-    /// `TOBtlSearchRevNearTarget()` (`0x008990f0`): as compiled it only
-    /// reads. It fetches the targets' battle positions (`MsGetChrBtlPos`,
-    /// into its own stack) and distances (`MsGetChrDist`), finds the nearest
-    /// one and the angle-weighted nearest on the other side (`_CIsqrt`,
-    /// `_CIacos`), and then drops every result: nothing outside its frame is
-    /// written. The getters only write the caller's vector, so there is
-    /// nothing to do.
-    pub fn btl_search_rev_near_target(_mem: &mut impl Mem) {}
-
     /// `TOReset2()` (`0x008adee0`): the sequence slots cleared
     /// (`0x008adf20`), `TkMenuInitSeq()`, the three scene data blocks set
     /// (`TkMenuSetSceneDataAdrs(0, 0x0185f610)`, `(1, 0x0185fe10)`, `(2,

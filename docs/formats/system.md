@@ -319,8 +319,9 @@ runs into the next count, as in the original.
 `TOBtlMemoryCursorPos` saved, but only if the window key still matches.
 The scroll is looked up through the found list index used as a window
 number. That is how it is compiled, and the port keeps it.
-`TOBtlSearchRevNearTarget` (`0x008990f0`) computes the nearest target and
-throws the result away; it writes nothing.
+`TOBtlSearchRevNearTarget` (`0x008990f0`) writes nothing, but returns
+the index of the target it picks in eax. The decompilation misses that
+return; `TOBtlGetTargetPad` reads it. It is not ported yet.
 
 ## Achievement counters
 

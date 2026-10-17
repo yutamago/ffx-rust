@@ -4466,10 +4466,6 @@ ported! {
     TOBtlSetDefaultCursorPos @ 0x0089_9ac0 => extern "C" fn to_btl_set_default_cursor_pos() {
         tolib::bridge::btl_set_default_cursor_pos(&mut mem());
     }
-    /// `TOBtlSearchRevNearTarget()`: results discarded as compiled.
-    TOBtlSearchRevNearTarget @ 0x0089_90f0 => extern "C" fn to_btl_search_rev_near_target() {
-        tolib::bridge::btl_search_rev_near_target(&mut mem());
-    }
     /// `TOReset2()`.
     TOReset2 @ 0x008a_dee0 => extern "C" fn to_reset2() -> u32 {
         tolib::bridge::reset2(&mut mem(), call_sym)

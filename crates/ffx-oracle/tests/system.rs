@@ -8911,55 +8911,6 @@ fn round15_default_cursor_matches_the_original_on_the_snapshot() {
     round15_default_cursor(&mut a, &mut b, &mut Xorshift(0x4015_0022));
 }
 
-/// Round 15: `TOBtlSearchRevNearTarget` writes nothing outside its frame.
-#[allow(clippy::cast_possible_truncation)]
-fn round15_search_rev_near_target(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
-    use tolib::bridge as t;
-    // MsGetChrBtlPos: vec = (chr, chr², chr², 1.0), returns 0
-    let pos = [
-        0x8b, 0x4c, 0x24, 0x08, 0xdb, 0x44, 0x24, 0x04, 0xd9, 0x11, 0xd8, 0xc8, 0xd9, 0x51, 0x04,
-        0xd9, 0x59, 0x08, 0xc7, 0x41, 0x0c, 0x00, 0x00, 0x80, 0x3f, 0x31, 0xc0, 0xc3,
-    ];
-    let s = stand_in8(a, b, 0xe00, &pos);
-    redirect(a, b, 0x0079_48e0, s);
-    // MsGetChrDist: chr & 1
-    let s = stand_in8(
-        a,
-        b,
-        0xe30,
-        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
-    );
-    redirect(a, b, 0x0079_4e00, s);
-    for _ in 0..40 {
-        let bytes: Vec<u8> = (0..0x90).map(|_| rng.next() as u8).collect();
-        let at = a.rebase(0x0133_d170);
-        a.write(at, &bytes).unwrap();
-        b.write(at, &bytes).unwrap();
-        put(a, b, a.rebase(0x0133_d17c), (rng.next() % 6) as u16);
-        put(a, b, a.rebase(0x0133_d1d0), (rng.next() % 6) as u16);
-        put(a, b, a.rebase(0x0133_d1f4), (rng.next() % 28) as u16);
-        eax(a, 0x0089_90f0, &[]);
-        t::btl_search_rev_near_target(b);
-        same_memory("nearest target search", a, b);
-    }
-}
-
-#[test]
-fn round15_search_rev_near_target_matches_the_original_synthetic() {
-    let Some((mut a, mut b)) = synthetic() else {
-        return;
-    };
-    round15_search_rev_near_target(&mut a, &mut b, &mut Xorshift(0x4015_0031));
-}
-
-#[test]
-fn round15_search_rev_near_target_matches_the_original_on_the_snapshot() {
-    let Some((mut a, mut b)) = snapshot() else {
-        return;
-    };
-    round15_search_rev_near_target(&mut a, &mut b, &mut Xorshift(0x4015_0032));
-}
-
 /// Round 15's small forwarding functions over logging stand-ins.
 #[allow(
     clippy::cast_possible_truncation,
