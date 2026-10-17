@@ -5988,6 +5988,10 @@ ported! {
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, true, at, call_sym, fcall);
     }
+    /// `TODrawScaleButtonIconRGBA(c, x, y, scale, r, g, b, a)`.
+    TODrawScaleButtonIconRGBA @ 0x008f_8ee0 => extern "C" fn to_draw_scale_button_icon_rgba(c: u32, x: u32, y: u32, scale: u32, r: u32, g: u32, b: u32, a: u32) {
+        tolib::bridge::to_draw_scale_button_icon_rgba(&mut mem(), [c, x, y, scale, r, g, b, a], call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

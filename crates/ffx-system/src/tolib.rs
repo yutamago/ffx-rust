@@ -7870,4 +7870,86 @@ pub mod bridge {
             );
         }
     }
+
+    /// `TODrawScaleButtonIconRGBA(c, x, y, scale, r, g, b, a)`
+    /// (`0x008f8ee0`): draws the button icon for the text character `c`
+    /// at `x, y` (f32 bits) through `DrawScaleButtonIconRGBA(id, x, y,
+    /// scale, rgba, rgba)`, choosing the icon as
+    /// [`to_get_scale_button_icon_width`] does: `4`..`7` sit 2.0 higher;
+    /// `' '`..`'"'` draw the 10×10 sheet cell (96, 224)..(139, 267) of
+    /// icon 0x258 (`TOMkpShapeXYWHUVC2`); `@`..`O` stack the four
+    /// direction parts 0x258/0x259, 0x25a/0x25b, 0x25c/0x25d and
+    /// 0x25e/0x25f by the low four bits; digits use `c + 0x230` (`1`/`2`
+    /// as 0x262/0x261 with the confirm button swapped); `` ` `` 0x270.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_draw_scale_button_icon_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [mut c, x, mut y, scale, r, g, b, a] = args;
+        let rgba = (a & 0xff) << 24 | (b & 0xff) << 16 | (g & 0xff) << 8 | (r & 0xff);
+        if c.wrapping_sub(0x34) <= 3 {
+            let two: f64 = mem.read(mem.rebase(0x00b9_2270));
+            y = ((f64::from(f32::from_bits(y)) - two) as f32).to_bits();
+        }
+        let image = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        if (0x20..=0x22).contains(&c) {
+            let ten = image(mem, 0x00b9_2318);
+            let shape = [
+                0x258,
+                x,
+                y,
+                ten,
+                ten,
+                image(mem, 0x00b4_3db8),
+                image(mem, 0x00b6_6da0),
+                image(mem, 0x00b6_6d8c),
+                image(mem, 0x00b5_4cfc),
+                rgba,
+                rgba,
+            ];
+            call(mem, 0x0090_3ee0, &shape);
+        }
+        let icon = [0, x, y, scale, rgba, rgba];
+        let with = |id: u32| {
+            let mut v = icon;
+            v[0] = id;
+            v
+        };
+        if c.wrapping_sub(0x40) <= 0xf {
+            c &= 0xf;
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 1 != 0 { 0x259 } else { 0x258 }),
+            );
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 2 != 0 { 0x25b } else { 0x25a }),
+            );
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 4 != 0 { 0x25d } else { 0x25c }),
+            );
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 8 != 0 { 0x25f } else { 0x25e }),
+            );
+        }
+        if c.wrapping_sub(0x30) <= 9 {
+            if call(mem, 0x008a_cf30, &[]) == 1 && (0x31..=0x32).contains(&c) {
+                let id = if c == 0x31 { 0x262 } else { 0x261 };
+                call(mem, 0x008e_7a90, &with(id));
+                return;
+            }
+            call(mem, 0x008e_7a90, &with(c + 0x230));
+        }
+        if c == 0x60 {
+            call(mem, 0x008e_7a90, &with(0x270));
+        }
+    }
 }
