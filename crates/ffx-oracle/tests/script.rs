@@ -3581,3 +3581,82 @@ fn more_vm_helpers_match_the_original() {
         "0x007a3ac0"
     );
 }
+
+/// Round 15's VM helpers against the original: results and memory.
+#[test]
+fn round15_vm_helpers_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0015);
+    for c in in_use(&b) {
+        make_current(&mut a, &mut b, c);
+        for w in actors(&mut a, &mut b) {
+            let turns = (0..9).all(|l| {
+                let p = Mem::read::<u32>(&b, w + 0x174 + l * 0x4c);
+                (w..w + 0x1000).contains(&p)
+            });
+            let h = Mem::read::<u32>(&b, w + worker::HEADER);
+            if turns && Mem::read::<u8>(&b, h) != 4 {
+                for mask in [7, 1, 2, 4, 0] {
+                    let ra = orig(&mut a, 0x0086_db80, &[w, mask]);
+                    assert_eq!(
+                        ra,
+                        hp::atel_copy_turn_angles(&mut b, w, mask),
+                        "0x0086db80 {w:#x}"
+                    );
+                }
+                no_diff(&mut a, &mut b, &format!("0x0086db80 {w:#x}"));
+            }
+        }
+        let ra = orig(&mut a, 0x0087_19e0, &[]);
+        assert_eq!(ra, hp::atel_uc_off(&mut Run(&mut b)), "AtelUcOff {c:#x}");
+        no_diff(&mut a, &mut b, &format!("AtelUcOff {c:#x}"));
+    }
+    assert_eq!(
+        orig(&mut a, 0x0086_c410, &[]),
+        hp::atel_get_save_dic(&mut Run(&mut b)),
+        "AtelGetSaveDic"
+    );
+    // dictionaries 0 and 1 (higher ones are unset in the snapshots)
+    for d in 0..2 {
+        for i in [0, 1, 5, 40, u32::MAX] {
+            let ra = orig(&mut a, 0x0086_c430, &[i, d]);
+            assert_eq!(
+                ra,
+                hp::atel_get_save_dic_name(&mut Run(&mut b), i, d),
+                "AtelGetSaveDicName {i} {d}"
+            );
+        }
+    }
+    no_diff(&mut a, &mut b, "AtelGetSaveDicName");
+    let dst = a.alloc(0x20).unwrap();
+    assert_eq!(b.alloc(0x20).unwrap(), dst);
+    for _ in 0..200 {
+        let v = if rng.below(2) == 0 {
+            rng.below(100_000)
+        } else {
+            rng.next()
+        };
+        let ra = orig(&mut a, 0x0087_7520, &[v, dst, 0x30]);
+        assert_eq!(
+            ra,
+            hp::atel_put_digits(&mut b, v, dst, 0x30),
+            "0x00877520 {v}"
+        );
+        no_diff(&mut a, &mut b, &format!("0x00877520 {v}"));
+    }
+    let tables = a.rebase(0x0132_8558);
+    let saved: [u32; 16] = Mem::read(&b, tables);
+    for g in 0..16 {
+        let t = if rng.below(2) == 0 { 0 } else { rng.next() };
+        assert_eq!(
+            orig(&mut a, 0x0087_7880, &[g, t]),
+            hp::atel_set_up_call_func(&mut b, g, t),
+            "AtelSetUpCallFunc"
+        );
+    }
+    no_diff(&mut a, &mut b, "AtelSetUpCallFunc");
+    poke(&mut a, &mut b, tables, saved);
+}
