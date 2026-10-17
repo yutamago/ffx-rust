@@ -9702,7 +9702,7 @@
 0x008ae000 function TOSeqHasScene_008ae000 # cdecl(i, name): 1 when one of scene i's 8 slots (0x01865f28 + i*0x100) is named name; name ours
 0x008ae070 function TOSeqCheckTermScene       # fh v3:exact 0x008ae020
 0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0
-0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0
+0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0; cdecl(i, a, b) -> eax: each of the 8 g_TOSeqSlots of scene i in state 2 or 3 runs TOMenuExecLayerHandle(i, a, slot +0x1c, b); eax is the last slot's call result or its state; ported (system round 30)
 0x008ae340 function TOSeqDrawLayer            # fh switch:bsim1.00 0x71004fcea0
 0x008ae360 function TOSeqGetColor             # fh v3:exact 0x008ae310
 0x008ae3a0 function TOSeqGetColorRGBA            # layout: alphabetical run between TOSeqGetColor and TOSeqGetNum (1 unnamed in the gap); Switch 0x71004f7670 TOSeqGetColorRGBA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

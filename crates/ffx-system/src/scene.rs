@@ -98,6 +98,33 @@ pub mod bridge {
             .wrapping_add(j * 0x20)
     }
 
+    /// `TOMenuExecLayerHandle(i, a, handle, b)` (`0x00a7b220`).
+    const EXEC_LAYER_HANDLE: u32 = 0x00a7_b220;
+
+    /// `TOSeqDraw(i, a, b)` (`0x008ae2f0`): each slot of scene `i` in state
+    /// 2 or 3, in slot order, runs `TOMenuExecLayerHandle(i, a, handle, b)`
+    /// on its handle (`+0x1c`). Returns what the original leaves in `eax`:
+    /// the last slot's call result, or its state when it is not drawn.
+    pub fn draw<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        a: u32,
+        b: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut eax = 0;
+        for j in 0..8 {
+            let s = slot(mem, i, j);
+            let state: u16 = mem.read(s);
+            eax = u32::from(state);
+            if state == 2 || state == 3 {
+                let handle: u32 = mem.read(s.wrapping_add(0x1c));
+                eax = call(mem, EXEC_LAYER_HANDLE, &[i.cast_unsigned(), a, handle, b]);
+            }
+        }
+        eax
+    }
+
     /// Whether the C strings at `a` and `b` are equal.
     fn str_eq(mem: &impl Mem, left: u32, right: u32) -> bool {
         let mut k = 0u32;

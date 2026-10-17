@@ -1108,6 +1108,10 @@ ported! {
         btl::bridge::set_target_callback(&mut mem(), w);
     }
 
+    /// `TOSeqDraw(i, a, b)`.
+    TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
+        scene::bridge::draw(&mut mem(), i, a, b, call_sym)
+    }
     /// `TOSeqGetNum(i, name, &n)`.
     TOSeqGetNum @ 0x008a_e410 => extern "C" fn to_seq_get_num(i: i32, name: u32, out: u32) {
         scene::bridge::get_num(&mut mem(), i, name, out, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);

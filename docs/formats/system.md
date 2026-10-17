@@ -1082,3 +1082,12 @@ after the ripples the bits of 150.0 (low byte 0). A label sets the low
 byte to 1 when `TOCheckBtlCommandUse` was negative, else 0, and passes
 the whole word as its alpha. With one column, nothing sets it before
 the first label: the counts then get stack garbage.
+
+## Drawing a scene's sequences (round 30)
+
+`TOSeqDraw(i, a, b)` (`0x008ae2f0`, cdecl) walks the eight slots of
+scene `i` in `g_TOSeqSlots` (`0x01865f20`, 0x100 per scene, 0x20 per
+slot). Each slot in state 2 or 3 runs `TOMenuExecLayerHandle(i, a,
+handle, b)` (`0x00a7b220`) on its handle (`+0x1c`), in slot order. The
+original leaves in `eax` the last slot's call result, or that slot's
+state when it is not drawn; the port returns the same.

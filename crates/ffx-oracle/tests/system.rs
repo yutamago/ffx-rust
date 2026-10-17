@@ -16677,3 +16677,58 @@ fn round30_command_window_matches_the_original_on_the_snapshot() {
     };
     round30_command_window(&mut a, &mut b, &mut Xorshift(0x4030_0012));
 }
+
+/// `TOSeqDraw` over a stand-in for `TOMenuExecLayerHandle`.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn round30_seq_draw(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    // TOMenuExecLayerHandle(i, a, handle, b): logs, returns the handle ^ key
+    let mut tail = vec![0x8b, 0x44, 0x24, 0x0c, 0x35];
+    tail.extend_from_slice(&0x5a5a_0000u32.to_le_bytes());
+    let s = stand_in8(a, b, 0x880, &copy_logger(cursor, 0x00a7_b220, 4, &tail));
+    redirect(a, b, 0x00a7_b220, s);
+    let slots = a.rebase(0x0186_5f20);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        let i = rng.next() % 3;
+        for j in 0..8 {
+            let at = slots + 0x100 * i + 0x20 * j;
+            put(
+                a,
+                b,
+                at,
+                [0u16, 1, 2, 3, 4, 2, 3, 0x102][(rng.next() % 8) as usize],
+            );
+            put(a, b, at + 0x1c, rng.next());
+        }
+        let (x, y) = (rng.next(), rng.next());
+        let r = eax(a, 0x008a_e2f0, &[i, x, y]);
+        assert_eq!(
+            r,
+            scene::bridge::draw(b, i as i32, x, y, eax),
+            "seq draw {k}"
+        );
+        same_memory(&format!("seq draw {k}"), a, b);
+    }
+}
+
+#[test]
+fn round30_seq_draw_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round30_seq_draw(&mut a, &mut b, &mut Xorshift(0x4030_0021));
+}
+
+#[test]
+fn round30_seq_draw_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round30_seq_draw(&mut a, &mut b, &mut Xorshift(0x4030_0022));
+}
