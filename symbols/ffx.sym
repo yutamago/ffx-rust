@@ -6395,6 +6395,7 @@
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
 0x008202d0 function Sg_ReturnConst1_008202d0     # auto-port shape (return constant, cdecl): return 0x1; callers: Sg_MainLoop; name ours
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
+0x00820310 function Sg_InitArgs               # (argc, argv): Sg_SetLRButtonMode(0), bytes 0x012fb8fa = 0xff, 0x012fb8f9 = 0x012fb8f8 = 0; with g_FFXIsDebug and argc > 1, Sg_SetUserName(argv[1]); callers 0x00820680, 0x00822490 (start-up); name ours; ported (ffx_sg::control)
 0x00820380 function Sg_EffectRoutineEnable    # fh v3:bsim1.00+call.cs 0x00820490 cdecl
 0x008203a0 function Sg_EnableCalcCam          # fh v3:bsim1.00 0x008204b0
 0x008203c0 function Sg_EnableDrawChr          # (on): i8 0x012fb8ff = on & 1, returns the old value; the one Sg_Enable* of the Switch set left (Calc/Draw Map, Chr, Gui, Menu), Sg_MainLoop reads it
@@ -6664,6 +6665,7 @@
 0x0082bc50 function Sg_AccSetFrameMap         # fh switch:cg3 0x710042ba10
 0x0082bcb0 function Sg_AccSetDrawMap          # (v): byte 0x01300776, read by Sg_AccSetFrameMap; Switch name order Sg_AccEnableBG, Sg_AccSetDrawMap, Sg_AccSetDrawChr
 0x0082bcc0 function Sg_AccGetAlpha            # () -> i16 0x0130070e, the value Sg_AccSetAlpha sets
+0x0082bcd0 function Sg_AccInitAll             # (): Sg_AccSetAlpha(0, 0), Sg_AccSetDrawMap(0), Sg_AccRequestCurrent(0), Sg_AccEnableBG(0), Sg_AccSetDrawChr(0), Sg_AccSetClear(0, 0, 0, 0); caller Sg_EventjumpInit; named after Sg_IdInitAll/Sg_PlayerInitAll; name ours; ported (ffx_sg::control)
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
 0x0082bdc0 function Sg_AccSetClear            # (r, g, b, a): bytes 0x01300771..74; Switch name (36 bytes there), among the Sg_Acc* setters
 0x0082bdf0 function Sg_AccRequestCurrent      # (unread arg): 0x00639150 (PostProcess cross-fade capture on), then g_AccCurrentRequest = 1; consumed by sg_AccSetCurrent (0x0082ce90), which captures the current frame; native 0x4019 (0x00a78180) and Sg_AccInit-like 0x0082bcd0; between Sg_AccSetClear and Sg_AccSetDrawChr; ported (ffx_sg::control)
@@ -6709,6 +6711,7 @@
 0x0082d860 function Sg_GetPlayer              # fh v3:bsim1.00 0x0082d8e0
 0x0082d870 function Sg_GetPlayerControlEnable    # layout: alphabetical run between Sg_GetPlayer and Sg_GetPlayerPos (1 unnamed in the gap); Switch 0x7100427b20 Sg_GetPlayerControlEnable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
+0x0082d8d0 function Sg_PlayerInitDefault      # (): Sg_PlayerInitAll, then Sg_PlayerSetSpeed(1, 16), (2, 38), (0x12, 20) from .rdata; caller Sg_EventjumpInit; name ours; ported (ffx_sg::state)
 0x0082d910 function Sg_PlayerInitAll          # fh v3:bsim1.00 0x0082d990
 0x0082d990 function Sg_PlayerSetDirFix        # (on, degrees): byte 0x013007c4, f32 0x013007c8 = Angle_Wrap(deg * pi / 180), read by Sg_ControlPlayer; Switch name by position (Player functions) and arguments
 0x0082d9d0 function Sg_PlayerSetDiving           # layout: the two unnamed functions after Sg_PlayerSetDirFix take the Switch player file's names sorting there: Sg_PlayerSetDiving (12 bytes; ours 13, stores byte 0x013007c5) and Sg_PlayerSetSpeed (72; ours 70)
@@ -6907,6 +6910,7 @@
 0x00836250 function Sg_LightSetChr            # (chr): light matrices from the character's own directions/colours (+0x384.., +0x3c4.., chosen by the i8 at +0x188) or the global ones; Switch name
 0x00836310 function Sg_LightSetColor          # fh v3:exact 0x00836390
 0x00836430 function Sg_LightSetDir            # fh v3:exact 0x008364b0
+0x008364f0 function Sg_LightSetDirXYZ         # (i, x, y, z): Sg_LightSetDir(i, &(x, y, z, 0)); script native at 0x00a77f70; between Sg_LightSetDir and Light_Set; name ours; ported (ffx_sg::control)
 0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430)
 0x00836640 function Sg_SetSuimen              # fh switch:bsim1.00 0x71004143a0
 0x00836660 function Sg_SetWaterLimit          # (h): f32 0x013009dc; Fahrenheit Switch BSim 1.00 0x71004143d0
@@ -7245,6 +7249,7 @@
 0x008432d0 function Sg_MFIFOSpadSync          # fh v3:exact 0x008432d0
 0x00843360 function Sg_MFIFOSync              # fh v3:exact 0x00843360
 0x00843590 function StoreComputedToGlobal_00843590 # auto-port shape (store computed to global, cdecl): t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1); callers: ; name ours
+0x008435a0 function Sg_MatrixFromDir          # (m, dir, rows): d = |dir|, s = |(0,0,1) x d|, u = |s x d| (FFXVu0Normalize, Sg_VecCross), m = identity, then s, u, d into the rows in nibbles 2, 1, 0 of rows (0x12 from Ch_DrawMain and 0x008440f0); name ours; ported (ffx_sg::vec)
 0x00844a80 function Sg_IdDrawMain             # fh v3:exact 0x00844a80
 0x00844bb0 function Sg_IdExistShade           # () -> i8 0x013034b8; Fahrenheit Switch BSim 1.00 0x7100428040
 0x00844bc0 function Sg_IdFixupAndSet_00844bc0    # structure: (id map): sets the character ID-shade flag (map version +4 > 0x1202, telling graphicCharacterLightingSetMapIdFlagChanged on a change), turns the map's offsets into pointers (get_ptr32_func/set_ptr32) and installs it (Sg_IdSetPtr); callers Sg_MapInit, yiMapReadMaster, yiMapSetup, rcbgIDLoad; name ours
@@ -7279,6 +7284,7 @@
 0x00845ce0 function sg_CopyField0_00845ce0       # auto-port shape (store copy to field, cdecl): t0 = u32[a1]; u32[a0] = t0; return a0; callers: sg_calcenvelope_normW; name ours
 0x00845d00 function sg_CopyFields_00845d00       # auto-port shape (several stores: copy into field, cdecl): t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x8)] = t3; u32[(a0 + 0x4)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0; callers: sg_calcenvelope_normW; name ours
 0x00845d60 function sg_CopyField0_00845d60       # auto-port shape (store copy to field, cdecl): t0 = u32[a0]; u32[a1] = t0; return a1; callers: sg_calcenvelope_normW; name ours
+0x00845d90 function Sg_IntVecToFloat          # (out, v): three i32 to f32; returns v[3] in eax; caller sg_calcenvelope_normW; name ours; ported (ffx_sg::vec)
 0x00845eb0 function sg_calcenvelope_norm      # fh v3:bsim1.00 0x00845eb0
 0x00845ec0 function sg_calcenvelope_normW     # fh v3:exact 0x00845ec0
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
@@ -14471,6 +14477,7 @@
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
 0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone
 0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
+0x012fb7e4 label    g_FramSync                # set by setFramSync (0x00822720): 1 in a battle with a magic file loaded
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
 0x012fb8b8 label g_BtlEffectPreloaded      # u32: magic file 0x15e taken preloaded (MsEffectRead)

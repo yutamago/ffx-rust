@@ -7,7 +7,7 @@
 /// The originals, over game memory.
 #[allow(clippy::many_single_char_names)] // pointers and words
 pub mod bridge {
-    use ffx_bridge::{Global, Host, x87};
+    use ffx_bridge::{Global, Host, Mem, x87};
 
     /// The accumulation/blur request flags (`0x01300704`: bit 0 the
     /// cross-fade, bit 1 the blur).
@@ -291,5 +291,73 @@ pub mod bridge {
         let ch = GS_DMA_CHANNEL.get(h);
         let at = h.rebase(DMA_SEND);
         h.call(at, &[ch, p])
+    }
+
+    /// `Sg_AccInitAll()` (`0x0082bcd0`): no cross-fade
+    /// (`Sg_AccSetAlpha(0, 0)`), map drawing off, the current frame
+    /// requested ([`acc_request_current`]), background and characters
+    /// off, the clear colour 0.
+    pub fn acc_init_all(h: &mut impl Host) {
+        use crate::state::bridge as st;
+        acc_set_alpha(h, 0, 0);
+        st::acc_set_draw_map(h, 0);
+        acc_request_current(h);
+        st::acc_enable_bg(h, 0);
+        st::acc_set_draw_chr(h, 0);
+        st::acc_set_clear(h, 0, 0, 0, 0);
+    }
+
+    /// `Sg_LightSetDirXYZ(i, x, y, z)` (`0x008364f0`): [`light_set_dir`]
+    /// with `(x, y, z, 0)` from the stack (each through `fld`/`fstp`).
+    pub fn light_set_dir_xyz(h: &mut impl Host, i: u32, x: f32, y: f32, z: f32) -> u32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        let mut s = Scratch::new(h);
+        let v = [x, y, z].map(x87::round_trip);
+        s.write(SCRATCH, [v[0], v[1], v[2], 0.0]);
+        light_set_dir(&mut s, i, SCRATCH)
+    }
+
+    /// `g_FFXIsDebug`.
+    pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+
+    /// `Sg_InitArgs(argc, argv)` (`0x00820310`): the L/R button mode 0,
+    /// `0x012fb8fa` 0xff and `0x012fb8f9`, `0x012fb8f8` 0; in a debug
+    /// build with an argument, the user name from `argv[1]`
+    /// (`Sg_SetUserName`).
+    pub fn init_args(h: &mut impl Host, count: u32, args: u32) {
+        use crate::state::bridge as st;
+        st::set_lr_button_mode(h, 0);
+        Global::<u8>::new(0x012f_b8fa).set(h, 0xff);
+        Global::<u8>::new(0x012f_b8f9).set(h, 0);
+        Global::<u8>::new(0x012f_b8f8).set(h, 0);
+        if IS_DEBUG.get(h) != 0 && count.cast_signed() > 1 {
+            let name: u32 = h.read(args.wrapping_add(4));
+            st::set_user_name(h, name);
+        }
+    }
+
+    pub const GET_SCENERIO_FLAG: u32 = 0x0078_7360;
+    pub const MS_BATTLE_CHECK: u32 = 0x0078_0c90;
+    pub const MAGIC_FILE_GET_MAGIC_ID: u32 = 0x009d_a3b0;
+    /// `0x012fb7e4`: set by `setFramSync`.
+    pub const FRAM_SYNC: Global<u32> = Global::new(0x012f_b7e4);
+
+    /// `setFramSync()` (`0x00822720`): `getScenerioFlag()` (unused), then
+    /// [`FRAM_SYNC`] 1 in a battle (`MsBattleCheck`) with a magic file
+    /// loaded (`MagicFile_GetMagicId() != -1`), else 0. Returns the last
+    /// call's `eax`.
+    pub fn set_fram_sync(h: &mut impl Host) -> u32 {
+        let at = h.rebase(GET_SCENERIO_FLAG);
+        h.call(at, &[]);
+        let at = h.rebase(MS_BATTLE_CHECK);
+        let r = h.call(at, &[]);
+        if r == 0 {
+            FRAM_SYNC.set(h, 0);
+            return r;
+        }
+        let at = h.rebase(MAGIC_FILE_GET_MAGIC_ID);
+        let id = h.call(at, &[]);
+        FRAM_SYNC.set(h, u32::from(id != u32::MAX));
+        id
     }
 }
