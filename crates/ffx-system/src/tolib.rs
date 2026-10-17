@@ -2019,7 +2019,6 @@ pub mod bridge {
         p.wrapping_add(1)
     }
 
-
     /// `0x008fa4f0(id)`: the window layout of `id` from the image tables:
     /// ids `0..=0xc6` and `0xc8..=0x18e` from the first, `0x190..=0x256`
     /// from the second, `0x258..=0x289` from the third (a tail call); each
@@ -2042,13 +2041,11 @@ pub mod bridge {
         r
     }
 
-
     /// `0x008a8e20()`: `MsGetSaveEventAddress() + 0x3d48`, the save's gil
     /// (`g_SaveGil`, `0x011307d8`).
     pub fn save_gil_address(mem: &impl Mem) -> u32 {
         mem.rebase(0x0112_ca90).wrapping_add(0x3d48)
     }
-
 
     /// The calls [`texture_name`] makes outside this module.
     pub trait TextureName<M> {
@@ -2115,10 +2112,15 @@ pub mod bridge {
         let high = high & 0xffff != 0;
         let byte = nibbles & 0xff;
         let nib = if high { byte >> 4 } else { byte & 0xf };
-        let (nib, second) = if nib >= 8 { (nib - 8, true) } else { (nib, false) };
+        let (nib, second) = if nib >= 8 {
+            (nib - 8, true)
+        } else {
+            (nib, false)
+        };
         let k = nib * 2;
-        let index = i32::from(index as u16 as i16);
-        let id = i32::from(id as u16 as i16);
+        let half = |v: u32| i32::from(u16::try_from(v & 0xffff).unwrap_or(0).cast_signed());
+        let index = half(index);
+        let id = half(id);
         let at = |mem: &M, table: u32, i: i32| -> u32 {
             let t = mem.rebase(table);
             mem.read(t.wrapping_add(i.cast_unsigned().wrapping_mul(4)))
@@ -2128,20 +2130,21 @@ pub mod bridge {
             if flagged { f } else { p }
         };
         let flagged = second || high;
-        let by_lang = |mem: &mut M, calls: &mut dyn FnMut(&mut M) -> u32, tables: [(u32, u32); 3]| {
-            let lang = calls(mem);
-            let idx = index + k.cast_signed();
-            let name = match lang {
-                0 => at(mem, if high { tables[0].1 } else { tables[0].0 }, index),
-                9 => at(mem, if high { tables[1].1 } else { tables[1].0 }, index),
-                10 => at(mem, if high { tables[2].1 } else { tables[2].0 }, index),
-                _ => mem.read(k.wrapping_add(index.cast_unsigned().wrapping_mul(4))),
+        let by_lang =
+            |mem: &mut M, calls: &mut dyn FnMut(&mut M) -> u32, tables: [(u32, u32); 3]| {
+                let lang = calls(mem);
+                let idx = index + k.cast_signed();
+                let name = match lang {
+                    0 => at(mem, if high { tables[0].1 } else { tables[0].0 }, index),
+                    9 => at(mem, if high { tables[1].1 } else { tables[1].0 }, index),
+                    10 => at(mem, if high { tables[2].1 } else { tables[2].0 }, index),
+                    _ => mem.read(k.wrapping_add(index.cast_unsigned().wrapping_mul(4))),
+                };
+                (name, idx, high)
             };
-            (name, idx, high)
-        };
         let (name, idx, flag) = match id {
             0x3c00 => {
-                let table = if calls.tk_lang(mem) == 0 { 0 } else { 1 };
+                let table = usize::from(calls.tk_lang(mem) != 0);
                 let idx = index + k.cast_signed();
                 (at(mem, pair(table, flagged), idx), idx, flagged)
             }
@@ -2181,16 +2184,24 @@ pub mod bridge {
                 let idx = index + k.cast_signed();
                 (at(mem, pair(table, flagged), idx), idx, flagged)
             }
-            0x3d01 => by_lang(mem, &mut |m| calls.ffx_lang(m), [
-                (0x00c5_9878, 0x00c5_9938),
-                (0x00c5_98f8, 0x00c5_99c0),
-                (0x00c5_98b8, 0x00c5_9980),
-            ]),
-            0x3d60 => by_lang(mem, &mut |m| calls.ffx_lang(m), [
-                (0x00c5_9a00, 0x00c5_9b00),
-                (0x00c5_9ac0, 0x00c5_9b80),
-                (0x00c5_9a40, 0x00c5_9b40),
-            ]),
+            0x3d01 => by_lang(
+                mem,
+                &mut |m| calls.ffx_lang(m),
+                [
+                    (0x00c5_9878, 0x00c5_9938),
+                    (0x00c5_98f8, 0x00c5_99c0),
+                    (0x00c5_98b8, 0x00c5_9980),
+                ],
+            ),
+            0x3d60 => by_lang(
+                mem,
+                &mut |m| calls.ffx_lang(m),
+                [
+                    (0x00c5_9a00, 0x00c5_9b00),
+                    (0x00c5_9ac0, 0x00c5_9b80),
+                    (0x00c5_9a40, 0x00c5_9b40),
+                ],
+            ),
             0x3d80 => {
                 let idx = byte.cast_signed();
                 (at(mem, pair(5, high), idx), idx, high)
@@ -2208,7 +2219,6 @@ pub mod bridge {
         name
     }
 
-
     /// `g_TOMessageWindowSlots` (`0x01865b3c`): 8 message-window objects.
     pub const MESSAGE_SLOTS: Global<[u32; 8]> = Global::new(0x0186_5b3c);
     /// The message-window frame paddings (`0x00c59ed8`): per style, i16
@@ -2220,13 +2230,24 @@ pub mod bridge {
     /// Message window `i`'s frame padding (left, top, right, bottom), by
     /// the style (`+4` of its object's `+0x10`).
     fn frame_padding(mem: &impl Mem, i: i32) -> [i32; 4] {
-        let slot = MESSAGE_SLOTS.ptr(mem).addr.wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let slot = MESSAGE_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
         let obj: u32 = mem.read(slot);
         let style: u32 = mem.read(obj.wrapping_add(0x10));
         let s = i32::from(mem.read::<i16>(style.wrapping_add(4)));
-        let at = mem.rebase(FRAME_PADDING).wrapping_add(s.cast_unsigned().wrapping_mul(8));
+        let at = mem
+            .rebase(FRAME_PADDING)
+            .wrapping_add(s.cast_unsigned().wrapping_mul(8));
         let p: [i16; 4] = mem.read(at);
         p.map(i32::from)
+    }
+
+    /// An x87 value through `fstp dword`, back on the x87.
+    #[allow(clippy::cast_possible_truncation)] // the original rounds to f32
+    fn dword(v: f64) -> f64 {
+        f64::from(v as f32)
     }
 
     /// An `int` through `fild` and `fstp dword`, back on the x87.
@@ -2265,8 +2286,8 @@ pub mod bridge {
         let mut fx = f32_of(x);
         let mut fy = f32_of(y);
         if CURRENT_MAP.get(mem) == 0x17 && x == 400 && y == 0x110 {
-            fx = f64::from(x87::sub(fx, 45.0) as f32);
-            fy = f64::from(x87::add(fy, 5.0) as f32);
+            fx = dword(x87::sub(fx, 45.0));
+            fy = dword(x87::add(fy, 5.0));
         }
         let ftol = |mem: &M, v: f64| x87::ftol(mem, v).cast_signed();
         if mode == 1 {
@@ -2293,21 +2314,24 @@ pub mod bridge {
             let top = f32_of(y.wrapping_add(t));
             let low: f64 = 31.199_995_040_893_555;
             let high = f64::from(f32::from_bits(0x43c0_6667));
-            if !(low <= top || top.is_nan()) {
-                y = ftol(mem, x87::sub(low, f32_of(t)));
-            } else {
+            if low <= top || top.is_nan() {
                 let b = f32_of(bottom.wrapping_sub(t));
                 if b > high {
-                    y = ftol(mem, x87::add(x87::sub(384.800_018_310_546_9, f32_of(h)), f32_of(t)));
+                    y = ftol(
+                        mem,
+                        x87::add(x87::sub(384.800_018_310_546_9, f32_of(h)), f32_of(t)),
+                    );
                 }
+            } else {
+                y = ftol(mem, x87::sub(low, f32_of(t)));
             }
             let lf = f32_of(l);
             if crate::window::bridge::window_type(mem, i) == 1 {
                 let shf = f32_of(sh);
                 let swf = f32_of(sw);
-                let scale = f64::from(x87::div(shf, 416.0) as f32);
+                let scale = dword(x87::div(shf, 416.0));
                 let q = x87::div(1.230_769_276_618_957_5, x87::div(swf, shf));
-                let off = f64::from(x87::mul(x87::mul(swf, x87::sub(1.0, q)), 0.5) as f32);
+                let off = dword(x87::mul(x87::mul(swf, x87::sub(1.0, q)), 0.5));
                 let lim = x87::mul(x87::mul(swf, 0.149_999_976_158_142_1), 0.5);
                 let v = x87::sub(x87::add(x87::mul(scale, f32_of(left)), off), 1.0);
                 if v < lim {
@@ -2324,10 +2348,17 @@ pub mod bridge {
             } else if f32_of(left) < f64::from(f32::from_bits(0x4219_9998)) {
                 x = ftol(mem, x87::sub(38.399_993_896_484_375, lf));
             } else if 473.600_006_103_515_6 < f32_of(right) {
-                x = ftol(mem, x87::add(x87::sub(473.600_006_103_515_6, f32_of(w)), lf));
+                x = ftol(
+                    mem,
+                    x87::add(x87::sub(473.600_006_103_515_6, f32_of(w)), lf),
+                );
             }
         }
-        let shown_w = if CURRENT_MAP.get(mem) == 0x15b && w == 0x1d8 && h == 0xf6 { 0x1ba } else { w };
+        let shown_w = if CURRENT_MAP.get(mem) == 0x15b && w == 0x1d8 && h == 0xf6 {
+            0x1ba
+        } else {
+            w
+        };
         set_window_rect(mem, i, [x, y, shown_w, h]);
         if crate::menu::bridge::message_window_mode(mem) == 1 {
             crate::window::bridge::set_message_area(mem, i, [x, y, w, h]);

@@ -7725,7 +7725,11 @@ fn round13(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     // window layouts by id, across every range and past the last
     for id in (0..0x2a0u32).chain([0x2ff, 0x1000, u32::MAX]) {
-        assert_eq!(eax(a, 0x008f_a4f0, &[id]), t::window_layout_of(b, id), "{id:#x}");
+        assert_eq!(
+            eax(a, 0x008f_a4f0, &[id]),
+            t::window_layout_of(b, id),
+            "{id:#x}"
+        );
         same_memory("window layouts", a, b);
     }
     assert_eq!(eax(a, 0x008a_8e20, &[]), t::save_gil_address(b));
@@ -7734,8 +7738,17 @@ fn round13(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let load = stand_in8(a, b, 0xa80, &recorder(cell, 0x5a5a_0013));
     redirect(a, b, 0x0064_20b0, load);
     for _ in 0..16 {
-        let handle = if rng.next() & 1 == 0 { u32::MAX } else { rng.next() };
-        set(a, b, mb::MAGIC_FILE, [rng.next(), rng.next(), rng.next(), handle]);
+        let handle = if rng.next() & 1 == 0 {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), rng.next(), handle],
+        );
         set(a, b, mb::MAGIC_TEXTURE_LOADED, rng.next() & 1);
         put(a, b, cell, 0u32);
         let got = mb::is_load_texture(b, |m, id| {
@@ -7774,9 +7787,15 @@ fn round13_help_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let out = alloc(a, b, 0x200);
     let prefix = alloc(a, b, 0x110);
     let prefix_cell = ffx_system::files::bridge::STREAM_PREFIX;
-    let mut long = vec![b'x'; 0x90];
-    long.extend_from_slice(b"%%/");
-    let prefixes: [Option<&[u8]>; 5] = [None, Some(b""), Some(b"data/"), Some(&long), Some(&[b'y'; 0xd0])];
+    let mut percent = vec![b'x'; 0x90];
+    percent.extend_from_slice(b"%%/");
+    let prefixes: [Option<&[u8]>; 5] = [
+        None,
+        Some(b""),
+        Some(b"data/"),
+        Some(&percent),
+        Some(&[b'y'; 0xd0]),
+    ];
     for pre in prefixes {
         match pre {
             Some(text) => {
@@ -7791,7 +7810,16 @@ fn round13_help_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         }
         for l in [0u32, 1, 2, 3, 4, 5, 9, 10] {
             put(a, b, cell, l);
-            for n in [0i32, 1, 7, 42, -3, i32::MAX, i32::MIN, rng.next().cast_signed()] {
+            for n in [
+                0i32,
+                1,
+                7,
+                42,
+                -3,
+                i32::MAX,
+                i32::MIN,
+                rng.next().cast_signed(),
+            ] {
                 put(a, b, out, [0xa5u8; 0x200]);
                 eax(a, 0x0077_4ae0, &[out, n.cast_unsigned()]);
                 ffx_system::files::bridge::help_texture_name(b, out, n, l);
@@ -7819,6 +7847,7 @@ fn round13_help_names_match_the_original_on_the_snapshot() {
 
 /// Round 13's texture names over stand-ins for the languages, the battle
 /// status and `dbgPrintf`.
+#[allow(clippy::items_after_statements)]
 fn round13_texture_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cells = alloc(a, b, 0x10);
@@ -7853,8 +7882,22 @@ fn round13_texture_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     }
     let size = alloc(a, b, 8);
     let ids = [
-        0x3c00u32, 0x3d00, 0x3d01, 0x3d10, 0x3d20, 0x3d30, 0x3d40, 0x3d60, 0x3d80, 0x3bff,
-        0x3d02, 0x3d31, 0x3d81, 0x3e00, 0x13d00, 0xffff_3d10,
+        0x3c00u32,
+        0x3d00,
+        0x3d01,
+        0x3d10,
+        0x3d20,
+        0x3d30,
+        0x3d40,
+        0x3d60,
+        0x3d80,
+        0x3bff,
+        0x3d02,
+        0x3d31,
+        0x3d81,
+        0x3e00,
+        0x13d00,
+        0xffff_3d10,
     ];
     let prefixes = [0x025d_08a0u32, 0x025d_06a0];
     for id in ids {
@@ -7874,10 +7917,22 @@ fn round13_texture_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             // 16-entry tables (or the byte below 16 for 0x3d80)
             let high = rng.next() & 1;
             let lang_table = matches!(id, 0x3d01 | 0x3d60);
-            let nibbles = if id == 0x3d80 { rng.next() % 16 } else { rng.next() & 0xff };
-            let nib = if high == 0 { nibbles & 0xf } else { nibbles >> 4 };
+            let nibbles = if id == 0x3d80 {
+                rng.next() % 16
+            } else {
+                rng.next() & 0xff
+            };
+            let nib = if high == 0 {
+                nibbles & 0xf
+            } else {
+                nibbles >> 4
+            };
             let k = (nib & 7) * 2;
-            let index = if lang_table { rng.next() % 16 } else { rng.next() % (16 - k) };
+            let index = if lang_table {
+                rng.next() % 16
+            } else {
+                rng.next() % (16 - k)
+            };
             let high = high | (rng.next() & 0xffff_0000);
             put(a, b, size, [0xa5a5_a5a5u32; 2]);
             put(a, b, cells + 12, 0u32);
@@ -7907,11 +7962,19 @@ fn round13_texture_names_match_the_original_on_the_snapshot() {
 }
 
 /// Round 13's magic file start-up, over logging stand-ins.
+#[allow(clippy::items_after_statements)]
 fn round13_magic_file(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use ffx_system::menu::bridge as mb;
     let log = alloc(a, b, 0x80);
     let cursor = alloc(a, b, 4);
-    let stub = |a: &mut Oracle, b: &mut Oracle, k: u32| stand_in8(a, b, 0xb00 + 0x30 * k, &logger(cursor, 0x1300_0000 + (k << 8)));
+    let stub = |a: &mut Oracle, b: &mut Oracle, k: u32| {
+        stand_in8(
+            a,
+            b,
+            0xb00 + 0x30 * k,
+            &logger(cursor, 0x1300_0000 + (k << 8)),
+        )
+    };
     let printf = stub(a, b, 0);
     let init = stub(a, b, 1);
     for (k, sym) in [(2u32, 0x0064_3260u32), (3, 0x0064_2f10)] {
@@ -7950,11 +8013,26 @@ fn round13_magic_file(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         }
     }
     let mut calls = Calls(printf, init);
-    let ids = [0x2c7u32, 0x296, 0x29e, 0xa8, 0x1b2, 0x262, 0, 1, 0x2c6, 0x2c8];
+    let ids = [
+        0x2c7u32, 0x296, 0x29e, 0xa8, 0x1b2, 0x262, 0, 1, 0x2c6, 0x2c8,
+    ];
     for _ in 0..40 {
-        let id = if rng.next() % 3 == 0 { rng.next() } else { ids[(rng.next() % 10) as usize] };
-        let handle = if rng.next() & 1 == 0 { u32::MAX } else { rng.next() };
-        set(a, b, mb::MAGIC_FILE, [rng.next(), rng.next(), rng.next(), handle]);
+        let id = if rng.next().is_multiple_of(3) {
+            rng.next()
+        } else {
+            ids[(rng.next() % 10) as usize]
+        };
+        let handle = if rng.next() & 1 == 0 {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), rng.next(), handle],
+        );
         put(a, b, cursor, log);
         put(a, b, log, [0u32; 0x1f]);
         eax(a, 0x009d_a7a0, &[id]);
@@ -7962,10 +8040,18 @@ fn round13_magic_file(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         same_memory("magic id", a, b);
         if rng.next() & 1 == 0 {
             let start = ids[(rng.next() % 10) as usize];
-            set(a, b, mb::MAGIC_FILE, [start, rng.next(), rng.next(), handle]);
+            set(
+                a,
+                b,
+                mb::MAGIC_FILE,
+                [start, rng.next(), rng.next(), handle],
+            );
         }
         put(a, b, cursor, log);
-        assert_eq!(eax(a, 0x009d_a7f0, &[]), mb::magic_file_start(b, &mut calls));
+        assert_eq!(
+            eax(a, 0x009d_a7f0, &[]),
+            mb::magic_file_start(b, &mut calls)
+        );
         same_memory("magic start", a, b);
     }
 }
@@ -7987,6 +8073,7 @@ fn round13_magic_file_matches_the_original_on_the_snapshot() {
 }
 
 /// Round 13's message-window placement over a stand-in screen size.
+#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
 fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use ffx_system::{menu::bridge as mb, window::bridge as wb};
     use tolib::bridge as t;
@@ -8006,12 +8093,25 @@ fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let mut slots = [0u32; 8];
     for k in 0..8u32 {
         put(a, b, wb::WINDOWS.ptr(a).addr + 4 * k, windows + 0x80 * k);
-        put(a, b, wb::MSG_WINDOWS.ptr(a).addr + 4 * k, messages + 0x80 * k);
+        put(
+            a,
+            b,
+            wb::MSG_WINDOWS.ptr(a).addr + 4 * k,
+            messages + 0x80 * k,
+        );
         put(a, b, objects + 0x20 * k + 0x10, styles + 0x10 * k);
         slots[k as usize] = objects + 0x20 * k;
     }
     set(a, b, t::MESSAGE_SLOTS, slots);
-    let screens = [(640, 480), (1280, 720), (1920, 1080), (2560, 1080), (1024, 768), (3840, 2160), (720, 1280)];
+    let screens = [
+        (640, 480),
+        (1280, 720),
+        (1920, 1080),
+        (2560, 1080),
+        (1024, 768),
+        (3840, 2160),
+        (720, 1280),
+    ];
     let maps = [0x17u32, 0x15b, 0, 0x40];
     for _ in 0..3000 {
         let i = (rng.next() % 8) as i32;
@@ -8019,12 +8119,37 @@ fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         put(a, b, cells, [sw, sh]);
         set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
         set(a, b, t::CURRENT_MAP, maps[(rng.next() % 4) as usize]);
-        put(a, b, styles + 0x10 * i.cast_unsigned() + 4, (rng.next() % 8) as u16);
-        put(a, b, windows + 0x80 * i.cast_unsigned() + 4, (rng.next() % 3) as u16);
+        put(
+            a,
+            b,
+            styles + 0x10 * i.cast_unsigned() + 4,
+            (rng.next() % 8) as u16,
+        );
+        put(
+            a,
+            b,
+            windows + 0x80 * i.cast_unsigned() + 4,
+            (rng.next() % 3) as u16,
+        );
         let rect = match rng.next() % 8 {
-            0 => [400, 0x110, (rng.next() % 500) as i32, (rng.next() % 300) as i32],
-            1 => [(rng.next() % 600) as i32 - 50, (rng.next() % 450) as i32 - 50, 0x1d8, 0xf6],
-            2 => [rng.next().cast_signed(), rng.next().cast_signed(), rng.next().cast_signed(), rng.next().cast_signed()],
+            0 => [
+                400,
+                0x110,
+                (rng.next() % 500) as i32,
+                (rng.next() % 300) as i32,
+            ],
+            1 => [
+                (rng.next() % 600) as i32 - 50,
+                (rng.next() % 450) as i32 - 50,
+                0x1d8,
+                0xf6,
+            ],
+            2 => [
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+            ],
             _ => [
                 (rng.next() % 600) as i32 - 50,
                 (rng.next() % 450) as i32 - 50,
@@ -8032,7 +8157,13 @@ fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                 (rng.next() % 300) as i32,
             ],
         };
-        let args = [i.cast_unsigned(), rect[0].cast_unsigned(), rect[1].cast_unsigned(), rect[2].cast_unsigned(), rect[3].cast_unsigned()];
+        let args = [
+            i.cast_unsigned(),
+            rect[0].cast_unsigned(),
+            rect[1].cast_unsigned(),
+            rect[2].cast_unsigned(),
+            rect[3].cast_unsigned(),
+        ];
         eax(a, 0x008a_fbb0, &args);
         t::place_message_window(b, i, rect, |m| {
             let v: [i32; 2] = Mem::read(m, cells);

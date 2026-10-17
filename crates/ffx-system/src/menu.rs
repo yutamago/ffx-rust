@@ -239,7 +239,6 @@ pub mod bridge {
         set_ctrl(mem, saved)
     }
 
-
     /// The magic file's texture-loaded flag (`0x01940ab0`).
     pub const MAGIC_TEXTURE_LOADED: Global<u32> = Global::new(0x0194_0ab0);
     /// The magic file (`0x00c64ca0`): its magic id first, its handle at +0xc (-1 for none).
@@ -260,7 +259,6 @@ pub mod bridge {
         1
     }
 
-
     /// The calls of [`magic_file_start`] and [`magic_file_set_magic_id`].
     pub trait MagicFileCalls<M> {
         /// `printf(fmt, arg)` (the CRT's; debug output).
@@ -279,7 +277,11 @@ pub mod bridge {
     /// `MagicFile_SetMagicId(id)` (`0x009da7a0`): 0x2c7 becomes 0x296; the
     /// id stored (`g_MagicFile_MagicId`) and printed when no magic file is
     /// open (handle -1), else only a different message printed.
-    pub fn magic_file_set_magic_id<M: Mem>(mem: &mut M, id: u32, calls: &mut impl MagicFileCalls<M>) {
+    pub fn magic_file_set_magic_id<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        calls: &mut impl MagicFileCalls<M>,
+    ) {
         let id = if id == 0x2c7 { 0x296 } else { id };
         if MAGIC_FILE.get(mem)[3] == u32::MAX {
             let at = MAGIC_FILE.ptr(mem).addr;
