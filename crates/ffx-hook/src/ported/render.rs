@@ -1185,7 +1185,7 @@ ported! {
 
     // ---- round 11 ----
     /// `graphicGetCurrentFrame()`.
-    graphicGetCurrentFrame @ 0x008e_1c50 => extern "C" fn graphic_get_current_frame() -> u32 {
+    graphicGetCurrentFrame_008e1c50 @ 0x008e_1c50 => extern "C" fn graphic_get_current_frame() -> u32 {
         ut::get_current_frame(&mut mem())
     }
     /// `graphicTextureAnimationSetFrame(i, frame)`.
