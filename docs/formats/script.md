@@ -1291,9 +1291,11 @@ the tests reach.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Now: the natives, most used first. Done: about 390 handlers (see
-   the table). Next: the rest of group 7 (`0x702c`, `0x70b0`, `0x7028`,
-   `0x707d`, `0x700d`, ...) and the remaining group-0 natives.
+2. Now: the natives, most used first. Done: every group-0 native the
+   shipped scripts call (435, round 11; the other 180 entries of the
+   group-0 table at `0x00c50050` have no call in any shipped script) and
+   the rest in the table. Next: the rest of group 7 (`0x7035`, `0x7014`,
+   `0x706e`, `0x708e`, `0x7107`, ...).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 
