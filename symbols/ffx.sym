@@ -10545,8 +10545,10 @@
 0x009254f0 function rcefMainSetEnv               # (main): *(0x00c3a4cc) = main +0x10 (the ppp memory environment of rcefMainInit); g_MagicImports
 0x00925510 function rcefMainSetEnv_00925510      # the same code; g_MagicImports
 0x00925530 function rcefWorkSwap              # (w): the quadwords at +0x1c4/+0x1d4 swapped, +0x1e8 = 0, +0x1f0 = 1; rcefWorkCall_00925530
+0x00925590 function rcefObjAnimeStart         # (env, obj, id): rcefAnimeStart(obj +0x330, op_oef2_a_get(env +8, 4, id), obj +0x1f0, obj +0x170); g_MagicImports; name ours
 0x009255d0 function rcefWorkSetFromVf00       # (w, b, v): +0x1c0 = 1, vf00 to +0x1c4, b to +0x1d4, v at +0x1e4, +0x1e8/+0x1f4 = 0, +0x1f0 = 1
 0x00925630 function rcefWorkSet               # (w, a, b, v): +0x1c0 = 1, a/b to +0x1c4/+0x1d4, v at +0x1e4, +0x1e8 = 0, +0x1f0 = 1
+0x00925690 function rcefObjSetupDraw          # (env, obj, id): rcefSetupDraw(obj +0x3c0, op_oef2_a_get(env +8, 4, id), obj +0x1f0, obj +0x170); g_MagicImports; name ours
 0x009256d0 function rcefMainSetPar            # fh v3:exact 0x009256d0
 0x00925710 function rcefSetStream             # (s) -> s: 0x025d5c14 = s, with s 0x025d5be0 = 3; entry of the table at 0x00c65500; ?meaning
 0x00925730 function rcbgIDLoad                # fh switch:cg2 0x71005537a0
@@ -10766,7 +10768,7 @@
 0x0092eba0 function rcefPostRequest           # (a, f, b, c, d) -> d: g_RcefRequest = a, f (float), b, 0, c, d; g_RcefRequestPending = 1; g_MagicImports (0x00c65494); nothing in the PC build reads the request; name ours
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
 0x0092ec20 function rcefVecToAngle            # (v) -> float: acos(-v.z) (_CIacos), 2pi minus it when v.x > 0
-0x0092ec60 function rcefStreamCue_0092ec60    # fh switch:bsim1.00 0x71005582b0
+0x0092ec60 function rcefSetVibrate            # (id, arg): TkSetVibrateStream(7, arg, op_oef2_a_get(g_RcefOef2, 5, id)); replaces Fahrenheit's Switch BSim guess rcefStreamCue (bsim1.00 0x71005582b0); name ours
 0x0092ec90 function rcefTaskDestruct            # (task): calls task +0xb4 if set (rcefTaskKill)
 0x0092ecb0 function rcefTaskCallSeq           # fh v3:exact 0x0092ecb0
 0x0092ed10 function rcefTaskInit              # fh v3:exact 0x0092ed10
@@ -11532,6 +11534,16 @@
 0x00a5bec0 function AbmapVu0LoadMatrix2       # (m): 64 bytes into the emulated vf05..vf08 (0x00c8f7e0)
 0x00a5c130 function createVFXRenderDataBuffer_DrawScrollModel # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'diffuse'; Switch 0x7100863940 createVFXRenderDataBuffer_DrawScrollModel (symbols from Fahrenheit's server export)
 0x00a5c370 function updateVFXRenderData_DrawModelScroll # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100863610 updateVFXRenderData_DrawModelScroll, 4 votes, round 1
+0x00a5c660 function NkzAeonGainStr            # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 3 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c6d0 function NkzAeonGainEva            # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 9 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c740 function NkzAeonGainDef            # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 4 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c7b0 function NkzAeonGainHp             # (pc, v): trunc(sqrt(v) * 0.25 + 16.0), at least 1; row 1 (HP, max 99999) of the aeon stat table 0x00c5a604; name ours
+0x00a5c7f0 function NkzAeonGainAcc            # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 10 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c860 function NkzAeonGainLuck           # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 8 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c8d0 function NkzAeonGainMp             # (pc, v): trunc((sqrt(v) + sqrt(v)) / 3.0 + 10.0), at least 1; row 2 (MP, max 9999) of the aeon stat table; name ours
+0x00a5c910 function NkzAeonGainMag            # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 5 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c980 function NkzAeonGainMDef           # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 6 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
+0x00a5c9f0 function NkzAeonGainAgi            # (pc, v): an aeon (PC 8..17) gains v / 2 (toward zero, at least 1); else dbgPrintf "NKZ:Illigal PC Number" and 100; row 7 of the aeon stat table 0x00c5a604 (TkMenuCtrlSummon); name ours
 0x00a5ca60 function NkzGetAuronLimitButtonData # fh v3:exact 0x00a5ca60
 0x00a5ca70 function NkzGetAuronLimitTime      # fh v3:bsim1.00 0x00a5ca70
 0x00a5ca80 function NkzGetLuluLimitMidareCount   # layout: alphabetical run between NkzGetAuronLimitTime and NkzGetLuluLimitTime (1 unnamed in the gap); Switch 0x71003c81e0 NkzGetLuluLimitMidareCount is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -13885,6 +13897,7 @@
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
 0x00c5a03c label g_TOControlPadLatch # u8 TOGetControlPadStatus sets for state-2 message windows and clears otherwise; name ours
 0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
+0x00c5a604 label    g_NkzAeonStats               # 0x1c bytes a stat (row 0 none, then HP, MP, str, def, mag, mdef, agi, luck, eva, acc): +0 gain function, +0x18 maximum (99999, 9999, 255); TkMenuCtrlSummon
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
 0x00c5d780 label    g_TOAddPkt                # TOInitAddPkt sets 1, TOSetAddPkt 0

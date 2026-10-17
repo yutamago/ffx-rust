@@ -3420,6 +3420,81 @@ ported! {
         model::bridge::rcbg_trx_pair_set_no(&mut mem(), p, n, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `NkzAeonGainStr(pc, v)`.
+    NkzAeonGainStr @ 0x00a5_c660 => extern "C" fn shim_nkz_aeon_gain_str(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainDef(pc, v)`.
+    NkzAeonGainDef @ 0x00a5_c740 => extern "C" fn shim_nkz_aeon_gain_def(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainMag(pc, v)`.
+    NkzAeonGainMag @ 0x00a5_c910 => extern "C" fn shim_nkz_aeon_gain_mag(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainMDef(pc, v)`.
+    NkzAeonGainMDef @ 0x00a5_c980 => extern "C" fn shim_nkz_aeon_gain_mdef(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainAgi(pc, v)`.
+    NkzAeonGainAgi @ 0x00a5_c9f0 => extern "C" fn shim_nkz_aeon_gain_agi(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainLuck(pc, v)`.
+    NkzAeonGainLuck @ 0x00a5_c860 => extern "C" fn shim_nkz_aeon_gain_luck(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainEva(pc, v)`.
+    NkzAeonGainEva @ 0x00a5_c6d0 => extern "C" fn shim_nkz_aeon_gain_eva(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainAcc(pc, v)`.
+    NkzAeonGainAcc @ 0x00a5_c7f0 => extern "C" fn shim_nkz_aeon_gain_acc(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainHp(pc, v)`.
+    NkzAeonGainHp @ 0x00a5_c7b0 => extern "C" fn shim_nkz_aeon_gain_hp(_pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_hp(&mem(), v)
+    }
+
+    /// `NkzAeonGainMp(pc, v)`.
+    NkzAeonGainMp @ 0x00a5_c8d0 => extern "C" fn shim_nkz_aeon_gain_mp(_pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_mp(&mem(), v)
+    }
+
+    /// `rcefSetVibrate(id, arg)`.
+    rcefSetVibrate @ 0x0092_ec60 => extern "C" fn shim_rcef_set_vibrate(id: u32, arg: u32) -> u32 {
+        task::bridge::rcef_set_vibrate(&mut mem(), id, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefStreamCue(id, arg)`.
+    rcefStreamCue @ 0x0092_ebf0 => extern "C" fn shim_rcef_stream_cue(id: u32, arg: u32) -> u32 {
+        task::bridge::rcef_stream_cue(&mut mem(), id, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefPlayStream(id)`.
+    rcefPlayStream @ 0x0092_e6b0 => extern "C" fn shim_rcef_play_stream(id: u32) -> u32 {
+        task::bridge::rcef_play_stream(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjAnimeStart(env, obj, id)`.
+    rcefObjAnimeStart @ 0x0092_5590 => extern "C" fn shim_rcef_obj_anime_start(env: u32, o: u32, id: u32) -> u32 {
+        task::bridge::rcef_obj_anime_start(&mut mem(), [env, o, id], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjSetupDraw(env, obj, id)`.
+    rcefObjSetupDraw @ 0x0092_5690 => extern "C" fn shim_rcef_obj_setup_draw(env: u32, o: u32, id: u32) -> u32 {
+        task::bridge::rcef_obj_setup_draw(&mut mem(), [env, o, id], &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
