@@ -58,6 +58,65 @@ node `+6`), kind sizes `i16` at `+0xf834` (0x30 each), zoom level byte at
   `[c, d]` overlap: `c > a` needs `b >= c`, `c < a` needs `d >= a`, equal
   or unordered starts give 1. Its caller `0x00a49270` passes two boxes' y
   ranges.
+- `AbmapResetVectors()` (`0x00a57120`): the eight vec4 at
+  `g_Abmap + 0x11520..0x115a0` from the emulated `r0` (zero, `g_Ee_Gpr`),
+  then `w` = 1.0 in the first four; `eax` = `g_Abmap`.
+- `AbmapReadPad(no_stick, pad)` (`0x00a57520`): the sphere grid's pad
+  state, `eax` = 0:
+
+  | Offset | Size | |
+  |---|---|---|
+  | 0x00 | 2 | held now (`TOMenuGetControlPad2`; with `no_stick` 0 the stick, `TOMenuGetControlPadAnalogHist(0, 0, 3, -1)` + 0x80 as a signed byte, adds 0x1000 below -0x40, 0x4000 above 0x40) |
+  | 0x02 | 2 | pressed this frame (`~held & now`) |
+  | 0x04 | 2 | held last frame |
+  | 0x06 | 2 | repeat: pressed, or held 6 frames or more |
+  | 0x08 | 2 | first: pressed, or every third repeat frame |
+  | 0x0a | 16 | frames held per button, up to 6 |
+  | 0x1a | 16 | repeat cycle per button, 0..2 |
+
+## Pointer zones
+
+Mouse and touch input on the PC screens (`GuiTouch_*`, names ours). The
+update at `0x0068a3a0` resets the buttons, then for each pointer event
+of the input device calls `GuiTouch_hover` (moves: kinds 0, 4, 5) and
+`GuiTouch_handleEvent`. Counts mask off their top bit.
+
+| Offset | Size | |
+|---|---|---|
+| 0x150 | 4 | hover regions |
+| 0x154 | 4 | → regions, 0x150 bytes each |
+| 0x158 | 4 | button groups |
+| 0x15c | 4 | → groups, 0x1c8 bytes each |
+
+A region: active byte `+1`, the hit rectangle index `+4` (-1 none), 32
+rectangles of 10 bytes from `+0xe` (`i16` left, top, right, bottom). A
+group: active byte `+1`, 8 buttons of 0x38 bytes from `+8`:
+
+| Offset | Size | |
+|---|---|---|
+| 0x00 | 16 | left, top, right, bottom (`f32`) |
+| 0x10 | 1 | this frame's event: 1 hover, 2 press, 3, 4 release |
+| 0x14 | 1 | pointer id that pressed it |
+| 0x15 | 1 | copy of `+0x10` |
+| 0x16 | 1 | phase: 1 held, 2 released outside, 3 moved while held inside, 4 off |
+| 0x17 | 1 | released this frame |
+| 0x18 | 4 | press time (`graphicGetTime`) |
+| 0x1c | 8 | release minus press position |
+| 0x24 | 8 | press position |
+| 0x2c | 8 | release position |
+
+Event: `+8` x, `+0xc` y (`f32`), `+0x18` kind, `+0x1c` pointer id.
+Tests are strict (`<`) on all four edges; any NaN misses.
+
+- `GuiTouch_resetButtons` (`0x0068ab30`): clears `+0x10`, `+0x15`,
+  `+0x17`; phase 3 or 4 becomes 0; phase 0 zeroes the time.
+- `GuiTouch_hover(x, y)` (`0x0068b6d0`): `+4` of each active region.
+- `GuiTouch_handleEvent(event)` (`0x0068b470`): first each button under
+  the pointer: kinds 0/4/5 set `+0x10`/`+0x15` to 1; kind 1 records the
+  pointer, phase 1, press position, sets 2 and the time; kind 2 sets 3.
+  Then each button whose pointer id matches: kinds 0/4/5 set phase 3 if
+  inside and held, else 4; kind 3 (release) moves phase 1 to 2 when
+  outside, sets 4, `+0x17`, the end position and the drag.
 
 ## Left original
 

@@ -37,9 +37,136 @@ pub fn ranges_overlap(a: f32, b: f32, c: f32, d: f32) -> bool {
     }
 }
 
+/// The sphere grid's pad state (`0x00a57520`'s second argument): buttons
+/// held now, newly pressed, held last frame, repeat and first-repeat
+/// masks, and two counters per button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Pad {
+    /// `+0`.
+    pub now: u16,
+    /// `+2`: pressed this frame.
+    pub pressed: u16,
+    /// `+4`: held last frame.
+    pub held: u16,
+    /// `+6`: pressed or repeating this frame.
+    pub repeat: u16,
+    /// `+8`: pressed, or the first repeat of a cycle.
+    pub first: u16,
+    /// `+0xa`: frames held, up to 6.
+    pub hold: [u8; 16],
+    /// `+0x1a`: repeat cycle, 0..3.
+    pub cycle: [u8; 16],
+}
+
+/// Folds this frame's buttons into the pad: `analog` (the left stick's
+/// horizontal byte, `0x80` centred) adds 0x1000 left of `0x40` and 0x4000
+/// right of `0xc0` when given; a button held 6 frames repeats every
+/// frame, flagging `first` every third.
+pub fn read_pad(pad: &mut Pad, buttons: u16, analog: Option<u8>) {
+    pad.now = buttons;
+    if let Some(a) = analog {
+        #[allow(clippy::cast_possible_wrap)] // a signed byte
+        let a = a.wrapping_add(0x80) as i8;
+        if a < -0x40 {
+            pad.now |= 0x1000;
+        } else if a > 0x40 {
+            pad.now |= 0x4000;
+        }
+    }
+    pad.pressed = !pad.held & pad.now;
+    pad.held = pad.now;
+    pad.repeat = 0;
+    pad.first = 0;
+    for i in 0..16 {
+        let m = 1u16 << i;
+        if pad.pressed & m != 0 {
+            pad.repeat |= m;
+            pad.first |= m;
+        } else if pad.now & m != 0 {
+            pad.hold[i] = pad.hold[i].wrapping_add(1);
+            if pad.hold[i] >= 6 {
+                pad.hold[i] = 6;
+                pad.repeat |= m;
+                if pad.cycle[i] == 0 {
+                    pad.first |= m;
+                }
+                pad.cycle[i] = pad.cycle[i].wrapping_add(1);
+                if pad.cycle[i] >= 3 {
+                    pad.cycle[i] = 0;
+                }
+            }
+        } else {
+            pad.hold[i] = 0;
+            pad.cycle[i] = 0;
+        }
+    }
+}
+
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
+    use ffx_graphic::host::{Conv, Host};
+
+    use super::Pad;
+
+    /// `g_Ee_Gpr`: the emulated R5900 registers; `r0` (always zero) first.
+    pub const EE_GPR: Global<[u32; 4]> = Global::new(0x00c8_f508);
+    /// `TOMenuGetControlPad2()`: the buttons held.
+    pub const TO_MENU_GET_CONTROL_PAD2: u32 = 0x008b_e440;
+    /// `TOMenuGetControlPadAnalogHist(pad, frame, axis, -1)`.
+    pub const TO_MENU_GET_CONTROL_PAD_ANALOG_HIST: u32 = 0x008b_e450;
+
+    /// `AbmapResetVectors()` (`0x00a57120`): the eight vectors at
+    /// `g_Abmap + 0x11520..0x115a0` from `r0` (zero), the `w` of the first
+    /// four then 1.0; returns `g_Abmap` (left in `eax`).
+    pub fn reset_vectors(mem: &mut impl Mem) -> u32 {
+        for off in [
+            0x11560u32, 0x11570, 0x11580, 0x11590, 0x11520, 0x11530, 0x11540, 0x11550,
+        ] {
+            let g = ABMAP.get(mem);
+            let r0 = EE_GPR.get(mem);
+            mem.write(g.wrapping_add(off), r0);
+        }
+        for off in [0x1155cu32, 0x1154c, 0x1153c, 0x1152c] {
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(off), 1.0f32);
+        }
+        ABMAP.get(mem)
+    }
+
+    /// `AbmapReadPad(no_stick, pad)` (`0x00a57520`): [`super::read_pad`]
+    /// with `TOMenuGetControlPad2`, and the stick
+    /// (`TOMenuGetControlPadAnalogHist(0, 0, 3, -1)`) when `no_stick` is
+    /// 0; returns 0 (left in `eax`).
+    pub fn read_pad(mem: &mut impl Host, no_stick: u32, pad: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit result
+        let buttons = mem.call_sym(TO_MENU_GET_CONTROL_PAD2, Conv::Cdecl, &[]) as u16;
+        let analog = (no_stick == 0).then(|| {
+            #[allow(clippy::cast_possible_truncation)] // a byte result
+            let a = mem.call_sym(
+                TO_MENU_GET_CONTROL_PAD_ANALOG_HIST,
+                Conv::Cdecl,
+                &[0, 0, 3, u32::MAX],
+            ) as u8;
+            a
+        });
+        let at = |o: u32| pad.wrapping_add(o);
+        let [now, pressed, held, repeat, first] = mem.read(at(0));
+        let mut p = Pad {
+            now,
+            pressed,
+            held,
+            repeat,
+            first,
+            hold: mem.read(at(0xa)),
+            cycle: mem.read(at(0x1a)),
+        };
+        super::read_pad(&mut p, buttons, analog);
+        mem.write(at(0), [p.now, p.pressed, p.held, p.repeat, p.first]);
+        mem.write(at(0xa), p.hold);
+        mem.write(at(0x1a), p.cycle);
+        0
+    }
 
     /// `g_Abmap`: the sphere grid data.
     pub const ABMAP: Global<u32> = Global::new(0x0230_5834);

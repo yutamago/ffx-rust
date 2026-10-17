@@ -1,12 +1,25 @@
 //! `ffx-pcui`: Iggy data values, the Iggy menus' handler slots and the
-//! sphere grid screen's helpers.
+//! sphere grid screen's helpers, the pointer zones.
 
 use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::touch::bridge as touch;
 
 use super::{mem, ported};
 
 ported! {
+    /// `GuiTouch_resetButtons(this)`.
+    GuiTouch_resetButtons @ 0x0068_ab30 => extern "thiscall" fn gui_touch_reset_buttons(this: u32) {
+        touch::reset_buttons(&mut mem(), this);
+    }
+    /// `GuiTouch_handleEvent(this, event)`.
+    GuiTouch_handleEvent @ 0x0068_b470 => extern "thiscall" fn gui_touch_handle_event(this: u32, event: u32) {
+        touch::handle_event(&mut mem(), this, event);
+    }
+    /// `GuiTouch_hover(this, x, y)`, floats taken as bits.
+    GuiTouch_hover @ 0x0068_b6d0 => extern "thiscall" fn gui_touch_hover(this: u32, x: u32, y: u32) {
+        touch::hover(&mut mem(), this, f32::from_bits(x), f32::from_bits(y));
+    }
     /// `iggyDataValueSet(v, int)`.
     iggyDataValueSet @ 0x00a2_8d30 => extern "C" fn iggy_data_value_set(v: u32, value: i32) {
         iggy::set_int(&mut mem(), v, value);
@@ -42,5 +55,13 @@ ported! {
     /// `AbmapRangesOverlap(a, b, c, d)`, floats taken as bits.
     AbmapRangesOverlap @ 0x00a5_7000 => extern "C" fn abmap_ranges_overlap(a: u32, b: u32, c: u32, d: u32) -> u32 {
         abmap::ranges_overlap(f32::from_bits(a), f32::from_bits(b), f32::from_bits(c), f32::from_bits(d))
+    }
+    /// `AbmapResetVectors()`.
+    AbmapResetVectors @ 0x00a5_7120 => extern "C" fn abmap_reset_vectors() -> u32 {
+        abmap::reset_vectors(&mut mem())
+    }
+    /// `AbmapReadPad(no_stick, pad)`.
+    AbmapReadPad @ 0x00a5_7520 => extern "C" fn abmap_read_pad(no_stick: u32, pad: u32) -> u32 {
+        abmap::read_pad(&mut mem(), no_stick, pad)
     }
 }

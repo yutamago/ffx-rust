@@ -8,12 +8,16 @@
 //! Float arguments include signed zeros, denormals, infinities and quiet
 //! NaNs, never signalling ones (the emulator keeps them through `fld m32`).
 
+#![allow(clippy::many_single_char_names)] // pointers, rectangles
+
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
+use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::touch::bridge as touch;
 
 const IGGY_SET_INT: u32 = 0x00a2_8d30;
 const IGGY_SET_UTF8: u32 = 0x00a2_8d70;
@@ -24,6 +28,60 @@ const IGGY_MENU_SET_ENABLE: u32 = 0x00a2_8ef0;
 const ABMAP_ZOOM_SCALE: u32 = 0x00a5_6820;
 const ABMAP_NODE_RADIUS: u32 = 0x00a5_6f30;
 const ABMAP_RANGES_OVERLAP: u32 = 0x00a5_7000;
+const ABMAP_RESET_VECTORS: u32 = 0x00a5_7120;
+const ABMAP_READ_PAD: u32 = 0x00a5_7520;
+const GUI_TOUCH_RESET_BUTTONS: u32 = 0x0068_ab30;
+const GUI_TOUCH_HANDLE_EVENT: u32 = 0x0068_b470;
+const GUI_TOUCH_HOVER: u32 = 0x0068_b6d0;
+
+/// An oracle as the bridges' host: original callees run in the emulator.
+struct Run<'a>(&'a mut Oracle);
+
+impl Mem for Run<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.0.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        Mem::write_bytes(self.0, addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        self.0.image_base()
+    }
+}
+
+fn conv(c: host::Conv) -> Conv {
+    match c {
+        host::Conv::Cdecl => Conv::Cdecl,
+        host::Conv::Stdcall => Conv::Stdcall,
+        host::Conv::Thiscall(t) => Conv::Thiscall(t),
+        host::Conv::Fastcall => Conv::Fastcall,
+    }
+}
+
+impl Host for Run<'_> {
+    fn call(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u32 {
+        self.0
+            .call(addr, conv(c), args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .eax
+    }
+
+    fn call_st0(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f32 {
+        let r = self
+            .0
+            .call(addr, conv(c), args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        let v = r
+            .st0
+            .unwrap_or_else(|| panic!("callee {addr:#x}: no float in ST0"));
+        // the stand-ins return f32 values (no NaNs): exact
+        f32::from_bits(ffx_bridge::x87::store(v))
+    }
+
+    fn scratch(&mut self) -> u32 {
+        self.0.stack_range().start + 0x100
+    }
+}
 
 struct Xorshift(u32);
 
@@ -422,6 +480,228 @@ fn abmap_ranges_overlap_matches_the_original() {
                     }
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn abmap_reset_vectors_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0003);
+        for n in 0..8 {
+            made_up_abmap(&mut t, &mut rng, 0x11600);
+            let gpr = t.a.rebase(abmap::EE_GPR.sym);
+            let r0 = if n == 0 { vec![0; 16] } else { rng.bytes(16) };
+            t.put(gpr, &r0);
+            t.check(
+                "reset vectors",
+                ABMAP_RESET_VECTORS,
+                Conv::Cdecl,
+                &[],
+                |b| Res::Int(abmap::reset_vectors(b)),
+            );
+        }
+    }
+}
+
+#[test]
+fn abmap_read_pad_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0004);
+        let pad = t.alloc(0x30);
+        let stub1 = t.a.rebase(abmap::TO_MENU_GET_CONTROL_PAD2);
+        let stub2 = t.a.rebase(abmap::TO_MENU_GET_CONTROL_PAD_ANALOG_HIST);
+        let mut state = rng.bytes(0x30);
+        for n in 0..3000u32 {
+            // runs of frames on one pad, now and then a scrambled one
+            if n % 97 == 0 {
+                state = rng.bytes(0x30);
+                if n % 2 == 0 {
+                    for c in &mut state[0xa..0x2a] {
+                        *c %= 8;
+                    }
+                }
+            }
+            let buttons = match rng.below(4) {
+                0 => rng.next(),
+                1 => 0,
+                _ => 1 << rng.below(16) | (rng.next() & 0xffff_0000),
+            };
+            let analog = match rng.below(3) {
+                0 => rng.next(),
+                _ => {
+                    (rng.next() & !0xff)
+                        | [0x3f, 0x40, 0x41, 0xbf, 0xc0, 0xc1, 0x80, 0][n as usize % 8]
+                }
+            };
+            for o in [&mut t.a, &mut t.b] {
+                o.stub_return(stub1, buttons).unwrap();
+            }
+            // the stick: `analog` xor the sum of the four arguments
+            let mut code = vec![0x8b, 0x44, 0x24, 0x10];
+            code.extend([0x03, 0x44, 0x24, 0x0c, 0x03, 0x44, 0x24, 0x08]);
+            code.extend([0x03, 0x44, 0x24, 0x04, 0x35]);
+            code.extend((analog ^ 2).to_le_bytes());
+            code.push(0xc3);
+            t.put(stub2, &code);
+            t.put(pad, &state);
+            let no_stick = [0, 1, 0x100, 0][n as usize % 4];
+            t.check(
+                &format!("pad {n} {buttons:#x} {analog:#x} {no_stick}"),
+                ABMAP_READ_PAD,
+                Conv::Cdecl,
+                &[no_stick, pad],
+                |b| Res::Int(abmap::read_pad(&mut Run(b), no_stick, pad)),
+            );
+            state = Oracle::read(&mut t.b, pad, 0x30).unwrap();
+        }
+    }
+}
+
+/// A pointer-zone object with `regions` hover regions and `groups` button
+/// groups of random content, coordinates small enough to hit.
+fn made_up_touch(t: &mut Twin, rng: &mut Xorshift, regions: u32, groups: u32) -> u32 {
+    let this = t.alloc(0x170);
+    t.put(this, &rng.bytes(0x170));
+    let r = t.alloc(0x150 * regions as usize + 4);
+    let mut bytes = rng.bytes(0x150 * regions as usize + 4);
+    for i in 0..regions as usize {
+        let e = &mut bytes[i * 0x150..(i + 1) * 0x150];
+        e[1] = if rng.below(4) == 0 { 0 } else { e[1] | 1 };
+        for k in 0..32 {
+            for f in 0..4 {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                let v = (rng.below(30) as i16 - 5).cast_unsigned();
+                let at = 0xe + 10 * k + 2 * f;
+                e[at..at + 2].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+    }
+    t.put(r, &bytes);
+    let g = t.alloc(0x1c8 * groups as usize + 4);
+    let mut bytes = rng.bytes(0x1c8 * groups as usize + 4);
+    for i in 0..groups as usize {
+        let e = &mut bytes[i * 0x1c8..(i + 1) * 0x1c8];
+        e[1] = if rng.below(4) == 0 { 0 } else { e[1] | 1 };
+        for j in 0..8 {
+            let b = &mut e[8 + 0x38 * j..8 + 0x38 * (j + 1)];
+            for f in 0..4 {
+                #[allow(clippy::cast_precision_loss)]
+                let v = rng.below(30) as f32 - 5.0;
+                b[4 * f..4 * f + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                b[0x14] = rng.below(3) as u8;
+                b[0x16] = rng.below(6) as u8;
+            }
+            for f in [0x18, 0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30] {
+                #[allow(clippy::cast_precision_loss)]
+                let v = rng.below(1000) as f32 / 7.0;
+                b[f..f + 4].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+    }
+    t.put(g, &bytes);
+    let top = |rng: &mut Xorshift| if rng.below(2) == 0 { 0x8000_0000 } else { 0 };
+    let rc = regions | top(rng);
+    let gc = groups | top(rng);
+    t.put(this + 0x150, &rc.to_le_bytes());
+    t.put(this + 0x154, &r.to_le_bytes());
+    t.put(this + 0x158, &gc.to_le_bytes());
+    t.put(this + 0x15c, &g.to_le_bytes());
+    this
+}
+
+/// A pointer coordinate: on the grid the zones use, between, or odd.
+fn coord(rng: &mut Xorshift) -> u32 {
+    match rng.below(8) {
+        0 => FLOATS[rng.below(12) as usize],
+        #[allow(clippy::cast_precision_loss)]
+        1..=3 => (rng.below(36) as f32 - 6.0).to_bits(),
+        #[allow(clippy::cast_precision_loss)]
+        _ => (rng.below(360) as f32 / 10.0 - 6.0).to_bits(),
+    }
+}
+
+#[test]
+fn gui_touch_reset_buttons_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x7007_0001);
+        for n in 0..40 {
+            let this = made_up_touch(&mut t, &mut rng, 0, n % 5);
+            t.check(
+                &format!("reset {n}"),
+                GUI_TOUCH_RESET_BUTTONS,
+                Conv::Thiscall(this),
+                &[],
+                |b| {
+                    touch::reset_buttons(b, this);
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn gui_touch_hover_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x7007_0002);
+        for n in 0..300 {
+            let this = made_up_touch(&mut t, &mut rng, n % 4, 0);
+            let (x, y) = (coord(&mut rng), coord(&mut rng));
+            t.check(
+                &format!("hover {n} {x:#x} {y:#x}"),
+                GUI_TOUCH_HOVER,
+                Conv::Thiscall(this),
+                &[x, y],
+                |b| {
+                    touch::hover(b, this, f32::from_bits(x), f32::from_bits(y));
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn gui_touch_handle_event_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x7007_0003);
+        // graphicGetTime as `fld dword [clock]; ret` in both
+        let clock = t.alloc(4);
+        let get_time = t.a.rebase(touch::GRAPHIC_GET_TIME);
+        let mut code = vec![0xd9, 0x05];
+        code.extend_from_slice(&clock.to_le_bytes());
+        code.push(0xc3);
+        t.put(get_time, &code);
+        let event = t.alloc(0x20);
+        for n in 0..1500 {
+            let this = made_up_touch(&mut t, &mut rng, 0, n % 4);
+            #[allow(clippy::cast_precision_loss)]
+            let now = rng.below(100_000) as f32 / 3.0;
+            t.put(clock, &now.to_le_bytes());
+            let mut ev = rng.bytes(0x20);
+            let kind = if n % 8 == 0 { rng.next() } else { rng.below(7) };
+            ev[0x18..0x1c].copy_from_slice(&kind.to_le_bytes());
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                ev[0x1c] = rng.below(3) as u8;
+            }
+            ev[8..0xc].copy_from_slice(&coord(&mut rng).to_le_bytes());
+            ev[0xc..0x10].copy_from_slice(&coord(&mut rng).to_le_bytes());
+            t.put(event, &ev);
+            t.check(
+                &format!("event {n} kind {kind:#x}"),
+                GUI_TOUCH_HANDLE_EVENT,
+                Conv::Thiscall(this),
+                &[event],
+                |b| {
+                    touch::handle_event(&mut Run(b), this, event);
+                    Res::Void
+                },
+            );
         }
     }
 }
