@@ -411,14 +411,14 @@ pub mod bridge {
     /// the budget left this frame (`500 - ReturnTableU32_00820580(0)`)
     /// pays for `budget / 40` normal recalculations
     /// (`Ch_ReserveCalcNorm2`), handed round-robin from the cursor
-    /// [`crate::sys::bridge::HISTORY_9E8`] to active characters with flag
+    /// [`crate::sys::bridge::CALC_NORM_CURSOR`] to active characters with flag
     /// bits 1–2 (`+0x194`) and bit 6 (`+0x198`). A full turn with nothing
     /// to do clears the cursor. Returns what the original leaves in EAX.
     pub fn ch_draw_reserve_calc_norm<M: Mem>(
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let cursor = crate::sys::bridge::HISTORY_9E8;
+        let cursor = crate::sys::bridge::CALC_NORM_CURSOR;
         let used = call(mem, mem.rebase(FRAME_WORK), &[0]);
         let budget = 500i32.wrapping_sub(used.cast_signed());
         if budget < 39 {

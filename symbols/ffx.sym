@@ -6756,8 +6756,8 @@
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
 0x00833390 function Ch_CalcMiddle                # (): the per-character middle calculation, waiting on the job scheduler (JobScheduleWait_*); the Switch Ch_CalcMiddle (calls JobSchedule_Ch_CalcMiddle_Batch and its wait) sorts between Ch_CalcMain and Ch_CalcMiddle_Batch, as here
 0x00833530 function Ch_CalcMiddle_Batch          # layout+callees: sorts between Ch_CalcMain and Ch_FunctionHistory, and its named callees match the Switch 0x7100417b60 Ch_CalcMiddle_Batch's (similarity 0.62: Ch_CalcElement, Ch_IdShadeCalc, Ch_Neck, Ch_OptposCalc, Sg_GetPause); symbols from Fahrenheit's server export
-0x008336a0 function Ch_DrawReserveCalcNorm    # ours: frame budget (500 - ReturnTableU32_00820580(0)) / 40 Ch_ReserveCalcNorm2 calls, round-robin from the cursor 0x013009e8 over active characters with +0x194 & 6 and +0x198 & 0x40; only caller Ch_DrawMain
-0x00833760 function Ch_FunctionHistoryClear  # ours: g_ChrFunctionHistory9e8 = 0 (next to the chr.c function-history logger 0x00833770)
+0x008336a0 function Ch_DrawReserveCalcNorm    # ours: frame budget (500 - ReturnTableU32_00820580(0)) / 40 Ch_ReserveCalcNorm2 calls, round-robin from the cursor g_ChrCalcNormCursor over active characters with +0x194 & 6 and +0x198 & 0x40; only caller Ch_DrawMain
+0x00833760 function Ch_FunctionHistoryClear  # ours: g_ChrCalcNormCursor = 0 (next to the chr.c function-history logger 0x00833770)
 0x00833770 function Ch_FunctionHistory        # ours: for each active character whose header has no models (+6 == 0) sprintfs "%s:%s:%d\n" (name chr+4, file, line) into the debug line 0x023c4000; cdecl (file, line); next to Ch_FunctionHistoryClear
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
 0x00833800 function Ch_ClothResetAll         # Switch name (0x71004161d0): Ch_ClothReset on every active character
@@ -13944,12 +13944,13 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
-0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to the reader's g_ChrReadTableFn for each kind
+0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
 0x00c4967f label    g_ChrKindTableStride      # i8: Chr_TableIndex's index step per table entry
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
+0x00c49784 label    g_ChrSysMotionSets        # i8 per slot: the system motion set of a definition's table (+0x6c, 8-byte entries from +0x10) Ch_SetSysMotion 0x00837d00 uses
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
 0x00c52704 label    g_AtelConstants              # u32 table opcode 75 pushes (Script_Run)
@@ -14386,6 +14387,8 @@
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
+0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
+0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
 0x012f4e00 label    g_SqsSifDma               # two SIF DMA records of 16 bytes (source, destination, size, attribute): SqsSifDmaStart
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
 0x012f4e94 label    g_SqsShoutSkipped         # set when a shout sound was skipped (SqsShoutStreamingPlayState)
@@ -14410,6 +14413,7 @@
 0x012fbda8 label g_ChrFunctionHistory        # 127 entries of 16 bytes (to 0x012fc598); Ch_FunctionHistoryInit clears byte 0 of each
 0x012fc6a0 label g_ChrClothLoads             # 50 cloth file loads of 0x110 bytes (to 0x012ffbc0): +0 state (1 = loading), +4 key (Ch_IsLoadingClothFile)
 0x012ffab8 label    g_ChrKindTables           # 8 pointers, one per kind (id >> 12): i16 count, then i16 ids (Chr_TableIndex)
+0x012ffad4 label    g_ChrF117HideCount        # i32: pending hides of model "f117"'s segment 0 queued by Ch_ModelSetHide 0x0082aea0 (4 at most, then starts over)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
@@ -14419,6 +14423,7 @@
 0x013007e4 label g_Chr7e4                   # u32, Ch_SysSet7e4
 0x013007e8 label g_ChrEnableTexture          # i8, Ch_EnableGetTexture
 0x013007e9 label g_ChrDrawIcon              # u8, Ch_SetDrawIcon; g_ChrDrawIcon2 at 0x013007ea (Ch_SetDrawIcon2)
+0x013007eb label    g_ChrTexAnimOn            # i8: Ch_TextureLoadAnim 0x00831110 sends texture animation packets only when set
 0x013008bd label g_ChrShadowMode             # u8, Ch_DrawSetShadowMode
 0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
 0x013008c2 label    g_ChrDrawSituation        # u8, Ch_SysDrawSetSituation
@@ -14429,7 +14434,7 @@
 0x01300978 label    g_Vu0ClipScreen           # what FFXVu0ClipScreen returns; also read by the chara screen code (0x008360b0, 0x00836240, 0x00836250, 0x00836430); after g_ChrScreenMatrix
 0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
-0x013009e8 label g_ChrFunctionHistory9e8    # u32, cleared by Ch_FunctionHistoryClear
+0x013009e8 label g_ChrCalcNormCursor        # u32: Ch_DrawReserveCalcNorm 0x008336a0's round-robin cursor into g_ChrArray (0: start over); cleared by Ch_FunctionHistoryClear
 0x013009f4 label    g_ChrCreateChrname        # char buffer ch_create_chrname 0x00838060 prints "%s:%c%03d" into
 0x01300a00 label    g_ChCreateName            # char buffer ch_create_name 0x00838100 formats "%c%03d" (class letter c/m/n/s/w/f/k or '-', number) into
 0x01300a08 label g_ChrSequences             # 100 x 0x14 bytes: data, u16 key +4, u16 taken +6, next same key +8, next key +0xc, motion group +0x10 (SG_AddSequence, Ch_SeqLink, Ch_MgrpMove)
@@ -14812,12 +14817,14 @@
 0x0230fff0 label    g_pppOtList               # the draw list of the pppKeLns...T programs: their TCon pppOtFunc_Reg(0x0230fff0, node, draw, area), TDes pppOtFunc_Lev(0x0230fff0, node); +4 tail, +0xc u16 count
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
-0x02310c48 label    g_ChrReadSyncFn           # function pointer: Ch_ReadSync 0x0082a5e0 tail-jumps through it
-0x02310c50 label    g_ChrReadTableFn          # function pointer: Chr_TableIndex 0x0082a640 calls it (kind's g_ChrKindTableArg) when it finds the id
+0x02310c48 label    g_CdLib_08                # g_CdLib + 8 (wait, docs/formats/system.md): Ch_ReadSync 0x0082a5e0 tail-jumps through it
+0x02310c50 label    g_CdLib_10                # g_CdLib + 0x10: Chr_TableIndex 0x0082a640 calls it (kind's g_ChrKindTableArg) when it finds the id; Ch_RomDataReadInit calls it (0x14)
+0x02310c54 label    g_CdLib_14                # g_CdLib + 0x14: Ch_RomDataReadInit 0x0082a5f0 calls it (kind) for the kind table's size
 0x02310c58 label g_CdChannelKeepNames # when set, cd_channel_clear 0x0076d530 keeps the channel names; name ours
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
-0x02310cc0 label    g_ChrReadEventFn          # function pointer: Ch_RomReadEventMGRPsync 0x0082a7f0 calls it (12, p)
+0x02310c98 label    g_CdLib_98                # g_CdLib + 0x98: Ch_MgrpRead 0x0082a4c0 calls it (file, buffer) before queueing the read
+0x02310cc0 label    g_CdLib_80                # g_CdLib + 0x80: Ch_RomReadEventMGRPsync 0x0082a7f0 calls it (12, p)
 0x02310cd8 label g_BtlItemMem2                # u32; with the one before it (same function, ffx_battle::misc)
 0x02310dde label g_BtlSpoilsEquipment      # 8 x 22-byte equipment slots of the 0xb000 IDs (MsGetSaveWeapon)
 0x02310ea0 label g_BtlCountsBattle         # 18 bytes: characters MsBtlGetTerm counts a battle for (MsSaveAddInfoData kind 0)
@@ -14850,11 +14857,13 @@
 0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
+0x023c44c0 label    g_ChrF117Hides            # 4 x (hide, renderer instance), Ch_ModelSetHide's queue (count g_ChrF117HideCount)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
+0x023cbbf8 label    g_ChrTexAnimDmaChannel    # the DMA channel Ch_TextureLoadAnim 0x00831110 sends its packet on (sceDmaSend)
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
 0x023cbec4 label    g_SndStreamTable          # voice stream position table: u16 groups, u16 offsets; group: u16 count, u16 offsets; entry list: u16 count, u16 sectors (0xffff gaps) (SndStreamDVDPos)
