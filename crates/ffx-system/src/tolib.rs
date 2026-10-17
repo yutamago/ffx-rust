@@ -2506,4 +2506,41 @@ pub mod bridge {
         }
         place_message_window(mem, i, [x, y, width, height], screen_wh);
     }
+
+
+    /// `0x008afa90(i, anchor, x, y, w, h)`: message window `i` placed with
+    /// an explicit size: the anchor moves the position (1 bottom, 2 right,
+    /// 3 bottom right, 4 centre), `w` is clamped to 0..=0x200, `h` to
+    /// 4..=0x19c, `x` into the 512 columns and `y` to 4..=`0x19c - h`; then
+    /// [`place_message_window`].
+    #[allow(clippy::many_single_char_names)]
+    pub fn set_message_window_rect<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        anchor: u32,
+        rect: [i32; 4],
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) {
+        let [mut x, mut y, w, h] = rect;
+        match anchor.wrapping_sub(1) {
+            0 => y = y.wrapping_sub(h),
+            1 => x = x.wrapping_sub(w),
+            2 => {
+                x = x.wrapping_sub(w);
+                y = y.wrapping_sub(h);
+            }
+            3 => {
+                x = x.wrapping_sub(w / 2);
+                y = y.wrapping_sub(h / 2);
+            }
+            _ => {}
+        }
+        let w = if w > 0x200 { 0x200 } else { w.max(0) };
+        let h = h.clamp(4, 0x19c);
+        let lim = 0x200 - w;
+        let x = if x > lim { lim } else { x.max(0) };
+        let lim = 0x19c - h;
+        let y = if y > lim { lim } else { y.max(4) };
+        place_message_window(mem, i, [x, y, w, h], screen_wh);
+    }
 }

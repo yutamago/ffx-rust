@@ -8188,3 +8188,108 @@ fn round13_message_windows_match_the_original_on_the_snapshot() {
     };
     round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0042));
 }
+
+/// Round 14's message-window positions over a stand-in screen size.
+#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 8);
+    // mov eax, [esp+4]; mov ecx, [w]; mov [eax], ecx; mov eax, [esp+8]; mov ecx, [h]; mov [eax], ecx; ret
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    code.extend_from_slice(&cells.to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    code.extend_from_slice(&(cells + 4).to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let wh = stand_in8(a, b, 0xc00, &code);
+    redirect(a, b, 0x0064_0db0, wh);
+    let windows = alloc(a, b, 8 * 0x80);
+    let messages = alloc(a, b, 8 * 0x80);
+    let objects = alloc(a, b, 8 * 0x20);
+    let styles = alloc(a, b, 8 * 0x10);
+    let records = alloc(a, b, 8 * 0x60);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        put(a, b, wb::WINDOWS.ptr(a).addr + 4 * k, windows + 0x80 * k);
+        put(
+            a,
+            b,
+            wb::MSG_WINDOWS.ptr(a).addr + 4 * k,
+            messages + 0x80 * k,
+        );
+        put(a, b, objects + 0x20 * k + 0x10, styles + 0x10 * k);
+        put(a, b, objects + 0x20 * k + 0x14, records + 0x60 * k);
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    set(a, b, t::MESSAGE_SLOTS, slots);
+    let screens = [(640, 480), (1920, 1080), (2560, 1080), (1024, 768)];
+    let maps = [0x5eu32, 0x12e, 0x17, 0x15b, 0];
+    for _ in 0..3000 {
+        let i = (rng.next() % 8) as i32;
+        let (sw, sh) = screens[(rng.next() % 4) as usize];
+        put(a, b, cells, [sw, sh]);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        set(a, b, t::CURRENT_MAP, maps[(rng.next() % 5) as usize]);
+        set(a, b, t::TUTO_CHOSEN, rng.next() & 1);
+        set(a, b, t::MESSAGE_UNCLAMPED, rng.next() & 1);
+        let magic = if rng.next() & 1 == 0 { 0x281 } else { rng.next() % 0x300 };
+        let file = mb::MAGIC_FILE.get(a);
+        set(a, b, mb::MAGIC_FILE, [magic, file[1], file[2], file[3]]);
+        let k = i.cast_unsigned();
+        put(a, b, styles + 0x10 * k + 4, (rng.next() % 8) as u16);
+        put(a, b, windows + 0x80 * k + 4, (rng.next() % 3) as u16);
+        let (tw, th) = if rng.next() % 4 == 0 {
+            (rng.next() as u16, rng.next() as u16)
+        } else {
+            ((rng.next() % 0x300) as u16, (rng.next() % 0x80) as u16)
+        };
+        put(a, b, records + 0x60 * k + 0x40, [tw, th]);
+        let anchor = if rng.next() % 8 == 0 { rng.next() } else { rng.next() % 6 };
+        let (x, y) = if rng.next() % 6 == 0 {
+            (rng.next().cast_signed(), rng.next().cast_signed())
+        } else {
+            ((rng.next() % 700) as i32 - 100, (rng.next() % 600) as i32 - 100)
+        };
+        eax(a, 0x008a_f850, &[k, anchor, x.cast_unsigned(), y.cast_unsigned()]);
+        t::set_message_window_position(b, i, anchor, x, y, |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message positions", a, b);
+        let (w, h) = if rng.next() % 6 == 0 {
+            (rng.next().cast_signed(), rng.next().cast_signed())
+        } else {
+            ((rng.next() % 0x260) as i32 - 0x20, (rng.next() % 0x1c0) as i32 - 0x10)
+        };
+        let args = [
+            k,
+            anchor,
+            x.cast_unsigned(),
+            y.cast_unsigned(),
+            w.cast_unsigned(),
+            h.cast_unsigned(),
+        ];
+        eax(a, 0x008a_fa90, &args);
+        t::set_message_window_rect(b, i, anchor, [x, y, w, h], |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message rects", a, b);
+    }
+}
+
+#[test]
+fn round14_message_positions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_message_positions(&mut a, &mut b, &mut Xorshift(0x4014_0001));
+}
+
+#[test]
+fn round14_message_positions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_message_positions(&mut a, &mut b, &mut Xorshift(0x4014_0002));
+}
