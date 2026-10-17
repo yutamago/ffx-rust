@@ -104,7 +104,7 @@ NAME_RULES = [
      "platform name (files, CD/DVD emulation, allocators, threads, std::)", None),
     ("platform", r"^(Input|input|Virtuos|virtuos|Async|JobSchedule(?!_ppp)|SaveData|Save[A-Z]|getPlatform|"
                  r"Game_InitFileSystem|FFXApplication|ResetToLauncher|Fixup|AssetListReader|MagicFile|Lang|"
-                 r"Cloud|getIsConsoleMode|PArray|Alloc|Malloc)",
+                 r"Cloud|getIsConsoleMode|PArray|Alloc|Malloc|SetUpDefault|VbfStream|Vbf)",
      "platform name (PC port: input, saves, loaders, app lifecycle)", PC_END),
 ]
 NAME_RULES = [(c, re.compile(p), e, hi) for c, p, e, hi in NAME_RULES]
@@ -117,12 +117,23 @@ PACKET_API = re.compile(r"^(sceDma|sceGs|rcPacketData|TOAdp|TOGs[A-Z]|TOCtrlPkt|
                         r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$)")
 # named read-only helpers a packet writer may call (no global writes either)
 GETTER = re.compile(r"(Get|[Ii]s[A-Z0-9]|get_ptr32|Calc|ScaleMatrix|PersMatrix|Copy16|CopyQword|ToFixed|Mul[0-9A-Z]|Apply)")
+# the PC build's PS2 SDK stand-ins (sce*, FlushCache, threads, semaphores)
+PS2_STUB = re.compile(r"^(sce[A-Z]|FlushCache$|i?(Sleep|Wakeup)Thread$|i?(Signal|Wait|Create|Delete|Poll)Sema$|"
+                      r"FFXVpu0Reset|SetDebugHandler)")
+# what copies of std:: and PhyreEngine container code call: allocators,
+# trees, free lists, vectors, static-object registration
+CONTAINER_API = re.compile(r"^(Phyre_(PRedBlackTree|PFreeList|PhyreFree|PhyreMalloc|PString|PArray|PSharray)|"
+                           r"operator_(new|delete)|user_(malloc|free|aligned)|UserHeap|eh_vector_|atexit|onexit|"
+                           r"std_|Std|PArray|Array_Reserve)")
+# calls such code may make that are no evidence of it by themselves
+CONTAINER_OK = re.compile(r"^(memcpy|memmove|memset|crt_mem|_Xlength|_Xout|_Xbad|security_check_cookie|"
+                          r"CriticalSection|strlen)")
 # VU0 emulation: scratch registers, not game state
 VU_SCRATCH = re.compile(r"^(FFXVu0|AsmEmu|restoreVf00|set[SZ]SFlag|cdc_|rcVectorToFixed|rcCopyQword)")
 
 GLUE_IMPORTS = re.compile(r"^_?Iggy|IggyGDraw")
 PLATFORM_IMPORTS = re.compile(
-    r"^(Steam|CreateFile|ReadFile|WriteFile|SetFilePointer|SetEndOfFile|GetFile|CreateDirectory|_wfopen|"
+    r"^(Steam|CreateFile|ReadFile|WriteFile|CloseHandle|SetFilePointer|SetEndOfFile|GetFile|CreateDirectory|_wfopen|"
     r"CreateThread|_beginthreadex|ResumeThread|SuspendThread|TerminateThread|ExitThread|SetThreadPriority|"
     r"(Enter|Leave|Delete|Initialize)CriticalSection|CreateMutex|ReleaseMutex|CreateSemaphore|"
     r"ReleaseSemaphore|CreateEvent|SetEvent|ResetEvent|WaitForSingleObject|Sleep|Virtual(Alloc|Free|Query)|"
@@ -373,6 +384,13 @@ def main():
             cls[a], why[a] = r[0], f"{r[1]}: {n}"
             decided.add(a)
             continue
+        i = bisect.bisect_left(named, a)
+        if not n and 0 < i < len(named) and PS2_STUB.search(names[named[i - 1]]) \
+                and PS2_STUB.search(names[named[i]]):
+            cls[a], why[a] = "platform", (f"unnamed, in the PS2 SDK stub file between {names[named[i - 1]]} "
+                                          f"and {names[named[i]]}")
+            decided.add(a)
+            continue
         br = bracket_debug(a)
         if br:
             cls[a], why[a] = "debug", f"unnamed, between the debug methods {br[0]} and {br[1]}"
@@ -434,6 +452,55 @@ def main():
                              (f" and {len(cs) - 1} more)" if len(cs) > 1 else ")")
                     changed = True
                     break
+
+    # copies of std:: and PhyreEngine container code in the PC port's part
+    # of the image are platform: unnamed (or no rule) functions whose every
+    # call goes to allocators, trees, vectors, std:: copies or platform code
+    # (at least one such call); static initialisers (atexit registration);
+    # and destructors only exception unwinding reaches. Game code above
+    # PC_END keeps its default.
+    unwind = {a for a in starts if module.get(a) == "crt" and a >= 0x00aa0000}
+
+    def container_ok(c, depth):
+        """c is an allocator/container/platform call; a code block Ghidra
+        has no function for (an import thunk, a tail jump) counts by what
+        it calls in turn."""
+        n = names.get(c, "")
+        if CONTAINER_API.search(n) or CONTAINER_OK.search(n) or cls.get(c) == "platform" \
+                or (c not in cls and module.get(c) == "crt"):
+            return True
+        if c in size or depth == 0:
+            return False
+        return all(container_ok(x, depth - 1) for x in direct.get(c, ()) if x != c)
+    changed = True
+    while changed:
+        changed = False
+        for a in sorted(game):
+            if cls[a] != "logic" or a in decided or a >= PC_END or a not in reach:
+                continue
+            ce = {c for c in direct.get(a, ()) if c != a}
+            cnames = [names.get(c, "") for c in ce]
+            imp = imports[a]
+            if not ce and not imp:
+                continue
+            if a in args.explain:
+                print(f"0x{a:08x}: container test, calls " + ", ".join(f"{n or hex(c)}:{cls.get(c)}:{module.get(c)}" for c, n in zip(ce, cnames)) + f"; imports {sorted(imp)}", file=sys.stderr)
+            fine = all(container_ok(c, 3) for c in ce)
+            fine = fine and all(PLATFORM_IMPORTS.search(i) or CONTAINER_API.search(i) or CONTAINER_OK.search(i)
+                                or i in ("free", "malloc") for i in imp)
+            cs = [c for c in callers[a] if c != a]
+            if "atexit" in imp or any(n == "atexit" for n in cnames):
+                cls[a], why[a] = "platform", "static initialiser (registers its destructor with atexit)"
+            elif fine and any(CONTAINER_API.search(n) for n in cnames):
+                cls[a], why[a] = "platform", ("std::/PhyreEngine container code: only allocator, tree, "
+                                              "vector or platform calls (" +
+                                              ", ".join(sorted({n for n in cnames if n})[:3]) + ")")
+            elif fine and cs and all(c in unwind for c in cs):
+                cls[a], why[a] = "platform", "destructor only exception unwinding reaches"
+            else:
+                continue
+            decided.add(a)
+            changed = True
 
     # pure GS/DMA packet writers are glue (ffx-render replaces them): they
     # kick a packet or append to one through the packet API, or only packet
