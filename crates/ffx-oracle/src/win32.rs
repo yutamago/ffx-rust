@@ -83,6 +83,18 @@ pub(crate) enum Win32 {
     /// `WaitForSingleObject(Ex)`: takes one from a semaphore.
     WaitForSingleObject,
     CloseHandle,
+    /// `ADVAPI32!CryptAcquireContext(&prov, container, provider, type,
+    /// flags)`: a new handle.
+    CryptAcquireContext,
+    /// `CryptCreateHash(prov, alg, key, flags, &hash)`: a new MD5 hash.
+    CryptCreateHash,
+    /// `CryptHashData(hash, data, len, flags)`.
+    CryptHashData,
+    /// `CryptGetHashParam(hash, param, data, &len, flags)`: `HP_HASHVAL`
+    /// (2) or `HP_HASHSIZE` (4).
+    CryptGetHashParam,
+    /// `CryptDestroyHash(hash)`.
+    CryptDestroyHash,
 }
 
 /// The handles handed out, the last error and the semaphores' counts.
@@ -91,6 +103,8 @@ pub(crate) struct Objects {
     handles: u32,
     last_error: u32,
     semaphores: std::collections::HashMap<u32, i32>,
+    /// The bytes each open `CryptCreateHash` handle has been given.
+    hashes: std::collections::HashMap<u32, Vec<u8>>,
 }
 
 /// First handle value (small, aligned like the kernel's).
@@ -112,6 +126,9 @@ fn set_error(uc: &mut Unicorn<State>, e: u32) {
 #[allow(clippy::enum_glob_use, clippy::match_same_arms)]
 pub(crate) fn lookup(dll: &str, name: &str) -> Option<(Win32, u8)> {
     use Win32::*;
+    if dll.eq_ignore_ascii_case("ADVAPI32.dll") {
+        return advapi32(name);
+    }
     if !dll.eq_ignore_ascii_case("KERNEL32.dll") {
         return None;
     }
@@ -204,6 +221,24 @@ pub(crate) fn lookup(dll: &str, name: &str) -> Option<(Win32, u8)> {
         "TerminateProcess" => (Abort("TerminateProcess"), 2),
         "ExitProcess" => (Abort("ExitProcess"), 1),
         "DebugBreak" => (Abort("DebugBreak"), 0),
+        _ => return None,
+    })
+}
+
+/// The `ADVAPI32` stubs: the file system's path hashes (`FileSys_Exists`,
+/// `CALG_MD5`).
+fn advapi32(name: &str) -> Option<(Win32, u8)> {
+    use Win32::{
+        CryptAcquireContext, CryptCreateHash, CryptDestroyHash, CryptGetHashParam, CryptHashData,
+        One,
+    };
+    Some(match name {
+        "CryptAcquireContextA" | "CryptAcquireContextW" => (CryptAcquireContext, 5),
+        "CryptCreateHash" => (CryptCreateHash, 5),
+        "CryptHashData" => (CryptHashData, 4),
+        "CryptGetHashParam" => (CryptGetHashParam, 5),
+        "CryptDestroyHash" => (CryptDestroyHash, 1),
+        "CryptReleaseContext" => (One, 2),
         _ => return None,
     })
 }
@@ -723,6 +758,58 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Win32) -> Result<u32> {
             write(uc, a[0], &[0; 8])?;
             0
         }
+        Win32::CryptAcquireContext => {
+            let h = fresh(uc);
+            write(uc, a[0], &h.to_le_bytes())?;
+            1
+        }
+        Win32::CryptCreateHash => {
+            // the game asks for CALG_MD5 (0x8003) only
+            let h = fresh(uc);
+            uc.get_data_mut().win32.hashes.insert(h, Vec::new());
+            write(uc, a[4], &h.to_le_bytes())?;
+            1
+        }
+        Win32::CryptHashData => {
+            let data = read(uc, a[1], a[2] as usize)?;
+            match uc.get_data_mut().win32.hashes.get_mut(&a[0]) {
+                Some(v) => {
+                    v.extend_from_slice(&data);
+                    1
+                }
+                None => 0,
+            }
+        }
+        Win32::CryptGetHashParam => {
+            let Some(data) = uc.get_data().win32.hashes.get(&a[0]).cloned() else {
+                return Ok(0);
+            };
+            let len =
+                read(uc, a[3], 4).map_or(0, |b| u32::from_le_bytes(b.try_into().expect("4 bytes")));
+            match a[1] {
+                // HP_HASHVAL
+                2 => {
+                    if a[2] != 0 {
+                        if len < 16 {
+                            return Ok(0);
+                        }
+                        write(uc, a[2], &md5(&data))?;
+                    }
+                    write(uc, a[3], &16u32.to_le_bytes())?;
+                    1
+                }
+                // HP_HASHSIZE
+                4 => {
+                    write(uc, a[2], &16u32.to_le_bytes())?;
+                    write(uc, a[3], &4u32.to_le_bytes())?;
+                    1
+                }
+                _ => 0,
+            }
+        }
+        Win32::CryptDestroyHash => {
+            u32::from(uc.get_data_mut().win32.hashes.remove(&a[0]).is_some())
+        }
     })
 }
 
@@ -746,5 +833,80 @@ mod tests {
         assert_eq!(ctype1(u16::from(b' ')), 0x48);
         assert_eq!(ctype1(u16::from(b'!')), 0x10);
         assert_eq!(ctype1(0xe9), 0x102);
+    }
+}
+
+/// MD5 (RFC 1321) of `data`, as `CryptGetHashParam(HP_HASHVAL)` returns
+/// it for `CALG_MD5`.
+#[allow(clippy::many_single_char_names)] // the RFC's a, b, c, d, f, g
+fn md5(data: &[u8]) -> [u8; 16] {
+    // the per-round shifts and the sine-derived constants of RFC 1321
+    const S: [u32; 64] = [
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,
+        9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10,
+        15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    ];
+    let k: Vec<u32> = (0..64)
+        .map(|i| {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // < 2^32
+            let v = (f64::from(i + 1).sin().abs() * 4_294_967_296.0) as u32;
+            v
+        })
+        .collect();
+    let mut msg = data.to_vec();
+    let bits = (data.len() as u64).wrapping_mul(8);
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bits.to_le_bytes());
+    let mut h: [u32; 4] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
+    let (blocks, _) = msg.as_chunks::<64>();
+    for chunk in blocks {
+        let (words, _) = chunk.as_chunks::<4>();
+        let m: Vec<u32> = words.iter().map(|w| u32::from_le_bytes(*w)).collect();
+        let [mut a, mut b, mut c, mut d] = h;
+        for i in 0..64 {
+            let (f, g) = match i / 16 {
+                0 => ((b & c) | (!b & d), i),
+                1 => ((d & b) | (!d & c), (5 * i + 1) % 16),
+                2 => (b ^ c ^ d, (3 * i + 5) % 16),
+                _ => (c ^ (b | !d), (7 * i) % 16),
+            };
+            let t = d;
+            d = c;
+            c = b;
+            b = b.wrapping_add(
+                a.wrapping_add(f)
+                    .wrapping_add(k[i])
+                    .wrapping_add(m[g])
+                    .rotate_left(S[i]),
+            );
+            a = t;
+        }
+        h = [
+            h[0].wrapping_add(a),
+            h[1].wrapping_add(b),
+            h[2].wrapping_add(c),
+            h[3].wrapping_add(d),
+        ];
+    }
+    let mut out = [0u8; 16];
+    let (outs, _) = out.as_chunks_mut::<4>();
+    for (o, w) in outs.iter_mut().zip(h) {
+        *o = w.to_le_bytes();
+    }
+    out
+}
+
+#[cfg(test)]
+mod md5_tests {
+    #[test]
+    fn md5_matches_rfc_1321() {
+        let h = |d: &[u8]| u128::from_be_bytes(super::md5(d));
+        assert_eq!(h(b""), 0xd41d_8cd9_8f00_b204_e980_0998_ecf8_427e);
+        assert_eq!(h(b"abc"), 0x9001_5098_3cd2_4fb0_d696_3f7d_28e1_7f72);
+        let long = b"1234567890".repeat(8);
+        assert_eq!(h(&long), 0x57ed_f4a2_2be3_c955_ac49_da2e_2107_b67a);
     }
 }
