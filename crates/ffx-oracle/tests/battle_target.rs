@@ -1654,10 +1654,10 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
     let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
     for (k, r) in [
         (1, rng.next()),
-        (2, [0, 1, 2][rng.below(3) as usize]),
-        (3, u32::from(flag(rng, 3))),
-        (4, u32::from(flag(rng, 3))),
-        (9, u32::from(flag(rng, 3))),
+        (2, [0, 0, 0, 1, 2][rng.below(5) as usize]),
+        (3, u32::from(flag(rng, 6))),
+        (4, u32::from(flag(rng, 6))),
+        (9, u32::from(flag(rng, 6))),
     ] {
         poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
     }
@@ -1665,7 +1665,7 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         a,
         b,
         srec + 3 * EXCHANGE_REC + 4,
-        &u32::from(flag(rng, 3)).to_le_bytes(),
+        &u32::from(flag(rng, 6)).to_le_bytes(),
     );
     twin("MsNowMusicStop", a, b, 0x007a_00b0, &[], ALL, |m| {
         dm(m, |m| p::ms_now_music_stop(m, &mut call))
@@ -1684,7 +1684,7 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         a,
         b,
         ffx_battle::action::bridge::TURN_END_ACTOR,
-        [0xff, 0x80, 3][rng.below(3) as usize],
+        [0xff, 0x80, 3, 0][rng.below(4) as usize],
     );
     set(
         a,
@@ -1722,6 +1722,15 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
     );
     set(a, b, p::RESET_WAIT, u32::from(flag(rng, 6)));
     set(a, b, p::RESET_WAIT2, flag(rng, 6));
+    // mostly idle: no read queued, no sound transfer, no actor in a motion
+    // phase (+0xdfb)
+    if rng.below(4) != 0 {
+        set(a, b, ffx_battle::state::bridge::READ_CUE_LEVEL, 0);
+        set(a, b, ffx_battle::state::bridge::SEP_TRANS, 0);
+        for j in 0..ACTORS {
+            poke(a, b, w.actor(j) + 0xdfb, &[0]);
+        }
+    }
     twin("MsCheckSoftResetOk", a, b, 0x0079_2e80, &[], ALL, |m| {
         dm(m, |m| {
             p::ms_check_soft_reset_ok(m, &mut call).cast_unsigned()
