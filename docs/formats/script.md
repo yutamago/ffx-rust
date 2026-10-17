@@ -513,7 +513,9 @@ loads) and the reward windows (`0x015b`, `0x0216`, `0x01a7`) to the
 choice-text builders (`0x0237`, `0x0140`, `0x01f3`) and the many small
 forwarders and jumps. 55 of them are too small for the hook's jump or
 missing from the dump (`ret`, `mov eax, 1; ret`, bare `jmp`s); they have
-a Rust handler but no shim. Starts that are a bare `ret`
+a Rust handler but no shim. Seven more (`0x00856980`, `0x008571c0`,
+`0x008580a0`, `0x008594a0`, `0x008595f0`, `0x0085c4b0`, `0x0085ece0`)
+keep the auto-port's shim and name on main. Starts that are a bare `ret`
 (`Native_MusicWaitLoaded`, `Native_00dc`) leave `EAX` as it was, which
 the dispatch ignores.
 
@@ -668,7 +670,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x00b2` | `Native_00b2` | on int | int: 0x0083add0(on != 0) | - | int `0x008586b0` (native_move) |
 | `0x00b3` | `Native_00b3` | v int: the first word of 0x0083adf0's set (0x0083b110) | int: v | - | int `0x00858810` (native_move) |
 | `0x00b4` | `Native_00b4` | v int: the second word of 0x0083adf0's set (0x0083b110) | int: v | - | int `0x00858a20` (native_move) |
-| `0x00ba` | `Native_00ba` | - | 1: the worker's +0x44 = 0 | - | int `0x008594a0` (native_move) |
+| `0x00ba` | `SetFieldConst44_008594a0` | - | 1: the worker's +0x44 = 0 | - | int `0x008594a0` (native_move) |
 | `0x00bb` | `Native_SetMapFadeFrames` | frames int: fade length for the next map jump | int: frames | - | int `0x008596b0` (native) |
 | `0x00bc` | `Native_SetMapFadeType` | type int: fade kind for the next map jump (0, 1) | int: type | - | int `0x00859590` (native) |
 | `0x00bd` | `Native_00bd` | n int (at least 1): 0x00871730(worker id, n - 1) | int: n | - | int `0x00859840` (native_move) |
@@ -688,7 +690,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x00cc` | `Native_00cc` | chr int | int: 1 when 0x00785380(chr) is 1 | - | int `0x0085b9f0` (native_move) |
 | `0x00ce` | `Native_00ce` | v int: worker +0xb16 | int: v | - | int `0x0085c2b0` (native_move) |
 | `0x00cf` | `Native_00cf` | v int: worker +0xaf0 | int: v | - | int `0x0085c400` (native_move) |
-| `0x00d0` | `Native_00d0` | - | int: worker +0xaf0 | - | int `0x0085c4b0` (native_move) |
+| `0x00d0` | `GetFieldaf0_0085c4b0` | - | int: worker +0xaf0 | - | int `0x0085c4b0` (native_move) |
 | `0x00d1` | `CT_01D1_ret` | - | 0: 0x00863e10 on the worker's nine levels | - | int `0x0085c5b0` (native_move) |
 | `0x00d2` | `Native_00d2` | - | 0: 0x00863fe0 on the worker's nine levels | - | int `0x0085c6f0` (native_move) |
 | `0x00d5` | `Native_VoiceStandby_End` | voice int | the standby frames; int slot 0 (Voice_Prepare unless a voice is on standby) | until the standby countdown runs out, or no movie runs (and g_VoiceHold allows) | start `0x0085cd00`, poll `0x0085cec0`, int `0x0085d360` (native_msg) |
@@ -710,9 +712,9 @@ API is generated from this table. `-`: none. A result starting with
 | `0x00e7` | `Native_PartySwapIn` | party b int, a int (-1 = 0xff) | int: a | - | int `0x0085bdf0` (native_move) |
 | `0x00e8` | `Native_00e8` | c var, b var, a var: the three party slots (-1 for empty) | 1 | - | int `0x00856270` (native_move) |
 | `0x00e9` | `Native_00e9` | on int: the ctrl work's +1 bit 4 | int: on != 0 | - | int `0x00856660` (native_move) |
-| `0x00eb` | `Native_00eb` | - | int: the worker's level (+0x32) | - | int `0x00856980` (native_move) |
+| `0x00eb` | `GetFieldU832_00856980` | - | int: the worker's level (+0x32) | - | int `0x00856980` (native_move) |
 | `0x00ec` | `Native_00ec` | chr int | int: its party slot 0..2, -1 when absent | - | int `0x00856bc0` (native_move) |
-| `0x00ed` | `Native_00ed` | - | int: the worker's bound character (+0x40) | - | int `0x008571c0` (native_move) |
+| `0x00ed` | `GetField40_008571c0` | - | int: the worker's bound character (+0x40) | - | int `0x008571c0` (native_move) |
 | `0x00ee` | `Native_00ee` | worker int | int: its +0x34 bit 5 | - | int `0x008572b0` (native_move) |
 | `0x00ef` | `Native_00ef` | on int: +0x36 bit 11 | int: on != 0 | - | int `0x00857470` (native_move) |
 | `0x00f2` | `Native_00f2` | v int | int: 0x00870190(v) | - | int `0x00857850` (native_move) |
@@ -891,7 +893,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x01e5` | `Native_01e5` | c int, b int, a int | int: 0x0090a400(c, b, a) | - | int `0x00859000` (native_move) |
 | `0x01e6` | `Native_01e6` | on int, a f, b f: yiSetFieldPair | int: on | - | int `0x008591d0` (native_map) |
 | `0x01e7` | `Native_01e7` | track int, v int: 0x008869e0, 0x008868f0(track, v), current music = track | 1 | - | int `0x00859320` (native_move) |
-| `0x01e9` | `Native_01e9` | window int, wait int | int: the window (0x008640f0(window) at the start) | while wait is set, until the window's state (+0x14) is 0 or 4 | start `0x008590f0`, poll `0x008592c0`, int `0x008595f0` (native_move) |
+| `0x01e9` | `GetField0_008595f0` | window int, wait int | int: the window (0x008640f0(window) at the start) | while wait is set, until the window's state (+0x14) is 0 or 4 | start `0x008590f0`, poll `0x008592c0`, int `0x008595f0` (native_move) |
 | `0x01eb` | `Native_01eb` | v int: 0x00875fb0(1, v, 0x0088d590()) | 1 | - | int `0x00858070` (native_move) |
 | `0x01ee` | `Native_01ee` | - | 1: 0x00876290(1) | - | int `0x00857440` (native_move) |
 | `0x01f0` | `Native_01f0` | v f: 0x00873e50(v) | float: v | - | float `0x00859550` (native_move) |
@@ -930,7 +932,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x0221` | `Native_0221` | i int | int: word i of the table at 0x00c86e28 | - | int `0x0085e110` (native_move) |
 | `0x0225` | `Native_0225` | v int: 0x00870f60(v) | int: v | - | int `0x0085ea10` (native_move) |
 | `0x0226` | `Native_0226` | on int: 0x00729050(on != 0) | int: on != 0 | - | int `0x0085eb80` (native_move) |
-| `0x0229` | `Native_0229` | - | 1: the worker's +0x38 bit 9 | - | int `0x0085ece0` (native_move) |
+| `0x0229` | `SetFieldBits38_0085ece0` | - | 1: the worker's +0x38 bit 9 | - | int `0x0085ece0` (native_move) |
 | `0x022e` | `Native_022e` | d int, c int, b int, a int: 0x00870280(d, c, b, a) | 1 | - | int `0x0085f860` (native_move) |
 | `0x022f` | `Native_022f` | slot int, on int: the slot model's 0x0082b970 and +0xb08 bit 1 | int: on != 0 | - | int `0x00855fb0` (native_move) |
 | `0x0231` | `Native_0231` | worker int: its +0x38 bit 11 | 1 | - | int `0x0085fca0` (native_move) |
@@ -952,7 +954,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x0245` | `Native_0245` | - | 1: 0x007fb680() | - | int `0x00857690` (native_move) |
 | `0x024a` | `Native_024a` | on int: bit 13 of *0x00785290(), then 0x008724a0() | int: on != 0 | - | int `0x00857cb0` (native_move) |
 | `0x024b` | `Native_024b` | slot int, on int: 0x0082b2c0(model, on) for a used slot with a motion | int: on != 0 | - | int `0x00857e30` (native_move) |
-| `0x024c` | `Native_024c` | - | 1: the worker's +0x38 bit 12 | - | int `0x008580a0` (native_move) |
+| `0x024c` | `SetFieldBits38_008580a0` | - | 1: the worker's +0x38 bit 12 | - | int `0x008580a0` (native_move) |
 | `0x024d` | `Native_024d` | on int: the ctrl work's +0x210 bit 6 | int: on != 0 | - | int `0x00856dc0` (native_move) |
 | `0x0251` | `Native_0251` | i int | int: bit i of the flag word for 0x0086af60() | - | int `0x0085e5e0` (native_move) |
 | `0x0253` | `Native_LangGroupNotJpAsia` | - | int: 1 unless the language group (0x00641100) is 0, 3 or 4 | - | int `0x00858210` (native_move) |

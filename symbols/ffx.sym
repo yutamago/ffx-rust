@@ -6806,7 +6806,7 @@
 0x00856910 function Native_0010              # 0x0010: jumps to 0x0086c1d0; ported in native_move (script round 11)
 0x00856920 function CT_0060_ret               # 0x0060: args (on) -> flag; worker+0x34 bit 0x200 (FUN_008712a0), then FUN_0086a0e0 refreshes control; 0x200 = can be the player, cannot be talked to (0x00866980); 0x0042 sets it for party index 0; was Native_SetPartyControllable
 0x00856950 function Native_019e              # 0x019e: 0 pushed and popped back: 0x0086c530(0); ported in native_move (script round 11)
-0x00856980 function Native_00eb              # 0x00eb: the worker's level (+0x32); ported in native_move (script round 11)
+0x00856980 function GetFieldU832_00856980        # auto-port shape (return field u8, cdecl): t0 = u8[(a0 + 0x32)]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x00856990 function Native_00a5              # 0x00a5 (float): (a, b): as 0x00a4 in the x-z plane; ported in native_move (script round 11)
 0x00856a00 function Native_MacroDicText          # 0x013f (dict, entry) -> text pointer; MacroDic_Section(dict) u16 offset table, entry*2 + variant (0x0113079c bit 3); scripts push 26, v173[x]
 0x00856a50 function Native_00b1              # 0x00b1 (float): (v) into the move block's +0x18; ST0 it; ported in native_move (script round 11)
@@ -6818,7 +6818,7 @@
 0x00856e20 function Native_GetWorkerPos          # 0x00a3: args (worker, &x, &y, &z) -> 0; each & is a variable location word resolved by Script_VarAddress; Script_GetWorkerPos 0x0086a2f0 writes the position (midpoint of the two endpoints for worker types 2/5)
 0x00856f20 function Native_0140              # 0x0140: (dst, list, mask, n, _, msg): as 0x0237 with the entries taken from the message table 0x008b70a0(msg, 0x0086bbc0()) (entry 2 * id, +1 when 0x0086bad0()) and no copy after the text; k << 8; ported in native_move (script round 11)
 0x00857180 function Native_SetTalkRange          # 0x0061: args (range: float, truncated); pos block (FUN_0086c2b0) +0x40; talk check 0x00866980: dist <= ctx+0x1f0 + range; usually 13.0
-0x008571c0 function Native_00ed              # 0x00ed: the worker's bound character (+0x40); ported in native_move (script round 11)
+0x008571c0 function GetField40_008571c0          # auto-port shape (return field u32, cdecl): t0 = u32[(a0 + 0x40)]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x008571d0 function Native_01dc              # 0x01dc: 3 pushed and popped back, 0x00876290(3); 3; ported in native_move (script round 11)
 0x00857200 function Native_0242              # 0x0242: jumps to 0x00777e90; ported in native_move (script round 11)
 0x008572b0 function Native_00ee              # 0x00ee: (worker): its +0x34 bit 5; ported in native_move (script round 11)
@@ -6867,7 +6867,7 @@
 0x00858020 function Native_SetArriveRadiusAll    # 0x002d: args (radius) -> radius; move slot +0x38 of all 9 slots (FUN_0086f0d0); move ends when XZ dist to target <= radius (FUN_008634b0/0x0088b730); default 1.0
 0x00858050 function Native_00ac              # 0x00ac: 0x00870ed0(v); v; ported in native_move (script round 11)
 0x00858070 function Native_01eb              # 0x01eb: 0x00875fb0(1, v, 0x0088d590()); 1; ported in native_move (script round 11)
-0x008580a0 function Native_024c              # 0x024c: +0x38 bit 12; 1; ported in native_move (script round 11)
+0x008580a0 function SetFieldBits38_008580a0      # auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x1000); return 0x1; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x008580c0 function Native_MsgSetPos             # 0x0065: args (window, x, y, anchor); window +0x00 = x, +0x02 = y, +0x1c = anchor (FUN_008af850 places by it); x/y patched for maps 0x17/0xab/0xd4 (*0x012fbc40); scripts "0, 256, 224, 4"
 0x008581a0 function Native_0146              # 0x0146: 0x00919e80(v); v; ported in native_move (script round 11)
 0x008581c0 function Native_MapChange             # 0x0011: args (map, entrance); FUN_0086ff40(map, entrance, 1) -> 0x0088ea60 writes them to the game state (0x00785240: +0 map, +2 previous, +0xc entrance); scripts "pushimm 263; pushimm 0" before end
@@ -6929,13 +6929,13 @@
 0x00859400 function Native_025c              # 0x025c: jumps to 0x0086c270; ported in native_move (script round 11)
 0x00859410 function Native_FootstepHookEnable    # 0x0151 (material) -> 1; sets bit n of 0x0132ff2c: footstep sound on ground material n (Snd_KickFoot 0x008866b0) goes to a script request (0x00876950) instead of the SE; ?
 0x00859430 function Native_0021              # 0x0021 (float): (float yaw): wrapped (0x0088bc20) into the move block +0x44 (worker +0x5fc + level*0x4c); ST0 it; ported in native_btl/native_move (script round 10)
-0x008594a0 function Native_00ba              # 0x00ba: +0x44 = 0; 1; ported in native_move (script round 11)
+0x008594a0 function SetFieldConst44_008594a0     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x44)] = 0x0; return 0x1; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x008594c0 function Native_016c              # 0x016c: the current music (when not negative) 0x00886a60, current music -1; 1; ported in native_move (script round 11)
 0x00859550 function Native_01f0              # 0x01f0 (float): 0x00873e50(v); ST0 v; ported in native_move (script round 11)
 0x00859580 function Native_01b5              # 0x01b5: 0x00644280(1), then jumps to 0x00874060; ported in native_move (script round 11)
 0x00859590 function Native_SetMapFadeType        # 0x00bc: args (t) -> t; g_SaveData+0x11 = t; at the map change 0x0086ff40 picks 0x0082cbc0 (t=0) or 0x0082cbe0 (t=1) fade; scripts push it right before map jump 0x010b
 0x008595b0 function Native_016d              # 0x016d: 0x00886a60; ported in native_move (script round 11)
-0x008595f0 function Native_01e9_Result       # 0x01e9: the window; ported in native_move (script round 11)
+0x008595f0 function GetField0_008595f0           # auto-port shape (return field u32, cdecl): t0 = u32[a1]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x00859630 function Native_01b6              # 0x01b6: 0x007ad6e0() != 0; ported in native_move (script round 11)
 0x00859640 function Native_TurnSetYaw            # 0x0028: args (yaw) -> wrapped yaw; turn struct +0x20 = wrap(yaw), +0x2c = wrap(current yaw pos+0x34 - yaw) (FUN_0088bc20)
 0x008596b0 function Native_SetMapFadeFrames      # 0x00bb: args (n) -> n; g_SaveData+0x12 = n; 0x0086ff40 passes it to 0x0088eb50 (frame counters 0x01330850/54) and to the fade; scripts push 0 or 15 before 0x010b
@@ -7080,7 +7080,7 @@
 0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
 0x0085c430 function Native_016f              # 0x016f: (v): record 0x0088c830() +0xb8 = v, +0xba = 0x0086c1c0(); 0x0088e800(record); v; ported in native_btl/native_move (script round 10)
 0x0085c490 function Native_023b              # 0x023b: (v) -> 0x0086b9e0(v); ported in native_move (script round 11)
-0x0085c4b0 function Native_00d0              # 0x00d0: +0xaf0; ported in native_move (script round 11)
+0x0085c4b0 function GetFieldaf0_0085c4b0         # auto-port shape (return field u32, cdecl): t0 = u32[(a0 + 0xaf0)]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
 0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
 0x0085c590 function Native_TurnGetField38     # 0x003f: () -> float, the turn block's +0x38
@@ -7188,7 +7188,7 @@
 0x0085ec60 function Native_0050              # 0x0050: (i): bit i of 0x0086af30()'s low word; ported in native_move (script round 11)
 0x0085ec90 function Native_018b              # 0x018b: 0x00863af0(v); v; ported in native_move (script round 11)
 0x0085ecb0 function Native_0004              # 0x0004: (v): worker +0xa8 = v (u16), +0xaa = 4; 0; ported in native_btl/native_move (script round 10)
-0x0085ece0 function Native_0229              # 0x0229: +0x38 bit 9; 1; ported in native_move (script round 11)
+0x0085ece0 function SetFieldBits38_0085ece0      # auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x200); return 0x1; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x0085ed00 function Native_0135              # 0x0135: jumps to 0x00784e80; ported in native_move (script round 11)
 0x0085ed40 function SetFieldBits38_0085ed40      # auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x400); return 0x1; callers: no direct caller; name ours
 0x0085edd0 function Native_0197              # 0x0197: (v): +0xa8 = v, +0xaa = 5; 0; ported in native_move (script round 11)
