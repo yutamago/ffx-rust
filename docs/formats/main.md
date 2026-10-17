@@ -719,3 +719,14 @@ and the camera `n` at `+0xc1` (`g_DebugCamera` for screen 0).
 `Cam_SetScreenCameraOn(screen, on)` (`0x007bc930`) sets the first for
 screens 0..2 and ignores the others; `Cam_SetScreenCamera(screen, on,
 camera)` (`0x007bc950`) sets both.
+
+## Round 13: the walk mesh's triangle exceptions (`crates/ffx-sg/src/triangle.rs`)
+
+`passThisTriangle(a, b, c, group, tag)` (`0x00829870`, all `u16`) tells
+`InsideTriangle` (`0x00828c10`) whether to test a triangle. It is a fixed
+table of map exceptions keyed by `(a, b, c)`, the triangle's group and
+`tag / 100`: group 0, and a tag equal to `group 100 + c`, always pass;
+`(3, 2, 2)` and `(0x67, 1, 1)` pass only tags of hundred 1; the rows for
+`a` 2, 4, 7, 0x29 and 0x68 list the hundreds each group allows (see the
+module's doc comment), unlisted groups pass and other `a` fail. The
+result is 0 or 1 in all of `eax`.

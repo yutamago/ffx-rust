@@ -1443,6 +1443,11 @@ ported! {
     Cam_SetScreenCamera @ 0x007b_c950 => extern "C" fn cam_set_screen_camera(screen: u32, on: u32, camera: u32) {
         camera::bridge::set_screen_camera(&mut mem(), screen, ffx_sg::lo8(on), ffx_sg::lo8(camera));
     }
+    /// `passThisTriangle(a, b, c, group, tag)`.
+    passThisTriangle @ 0x0082_9870 => extern "C" fn pass_this_triangle(a: u32, b: u32, c: u32, group: u32, tag: u32) -> u32 {
+        use ffx_sg::lo16;
+        ffx_sg::triangle::pass_this_triangle(lo16(a), lo16(b), lo16(c), lo16(group), lo16(tag))
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

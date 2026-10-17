@@ -4995,3 +4995,72 @@ fn screen_camera_snapshot() {
     let mut rng = Xorshift(0x5eed_0e12);
     screen_camera_cases(&mut a, &mut b, &mut rng, 500);
 }
+
+// Main round 13: passThisTriangle's table.
+fn triangle_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    let pick = |rng: &mut Xorshift, set: &[u32]| {
+        if rng.below(5) == 0 {
+            rng.next()
+        } else {
+            set[rng.below(u32::try_from(set.len()).unwrap()) as usize]
+        }
+    };
+    for _ in 0..rounds {
+        // mostly the table's own (a, b, c)
+        const ROWS: [[u32; 3]; 11] = [
+            [2, 2, 0xc],
+            [2, 2, 0xd],
+            [2, 0, 5],
+            [4, 0, 10],
+            [7, 0, 6],
+            [7, 0, 2],
+            [0x29, 0, 6],
+            [0x68, 2, 0xc],
+            [3, 2, 2],
+            [0x67, 1, 1],
+            [0x10002, 2, 0xc],
+        ];
+        let [ka, kb, kc] = if rng.below(8) == 0 {
+            [
+                pick(rng, &[2, 3, 4, 7, 0x29, 0x67, 0x68]),
+                pick(rng, &[0, 1, 2, 3]),
+                pick(rng, &[0, 1, 2, 6, 10, 0xc, 0xd]),
+            ]
+        } else {
+            ROWS[rng.below(11) as usize]
+        };
+        let group = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(22)
+        };
+        let tag = match rng.below(4) {
+            0 => rng.next(),
+            1 => (group & 0xffff) * 100 + (kc & 0xffff),
+            _ => rng.below(23) * 100 + rng.below(100),
+        };
+        let lo = |v: u32| ffx_sg::lo16(v);
+        let args = [ka, kb, kc, group, tag];
+        twin("passThisTriangle", a, b, 0x0082_9870, &args, |_| {
+            ffx_sg::triangle::pass_this_triangle(lo(ka), lo(kb), lo(kc), lo(group), lo(tag))
+        });
+    }
+}
+
+#[test]
+fn triangle_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e21);
+    triangle_cases(&mut a, &mut b, &mut rng, 40000);
+}
+
+#[test]
+fn triangle_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e22);
+    triangle_cases(&mut a, &mut b, &mut rng, 5000);
+}

@@ -17,6 +17,7 @@ pub mod quat;
 pub mod scratch;
 pub mod seq;
 pub mod state;
+pub mod triangle;
 pub mod vec;
 
 /// The low byte of an argument the original reads as a byte (`mov al,
