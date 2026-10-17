@@ -216,6 +216,21 @@ impl<M> tolib::bridge::PlayerList<M> for GameMenu {
     }
 }
 
+impl<M: Mem> tolib::bridge::TextureName<M> for GameMenu {
+    fn battle_status(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0078_16f0, &[])
+    }
+    fn tk_lang(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0088_7c30, &[])
+    }
+    fn ffx_lang(&mut self, mem: &mut M) -> u32 {
+        instance::bridge::ffx_lang(mem, &mut phyre_printf)
+    }
+    fn print(&mut self, mem: &mut M, fmt: u32) {
+        call_sym(mem, 0x0062_f500, &[fmt]);
+    }
+}
+
 impl<M: Mem> tolib::bridge::FontWidth<M> for GameMenu {
     fn screen_wh(&mut self, mem: &mut M) -> (i32, i32) {
         font_screen_wh(mem)
@@ -4284,6 +4299,10 @@ ported! {
     /// `TOGetSaveGilAddress()`.
     TOGetSaveGilAddress @ 0x008a_8e20 => extern "C" fn to_get_save_gil_address() -> u32 {
         tolib::bridge::save_gil_address(&mem())
+    }
+    /// `TOGetTextureName(id, nibbles, index, high, &size)`.
+    TOGetTextureName @ 0x008a_cf50 => extern "C" fn to_get_texture_name(id: u32, nibbles: u32, index: u32, high: u32, size: u32) -> u32 {
+        tolib::bridge::texture_name(&mut mem(), id, nibbles, index, high, size, &mut GameMenu)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

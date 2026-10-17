@@ -7816,3 +7816,92 @@ fn round13_help_names_match_the_original_on_the_snapshot() {
     };
     round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0012));
 }
+
+/// Round 13's texture names over stand-ins for the languages, the battle
+/// status and `dbgPrintf`.
+fn round13_texture_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    let getter = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let ffx = stand_in8(a, b, 0xac0, &getter(cells));
+    redirect(a, b, 0x0064_10e0, ffx);
+    let tk = stand_in8(a, b, 0xad0, &getter(cells + 4));
+    redirect(a, b, 0x0088_7c30, tk);
+    let battle = stand_in8(a, b, 0xae0, &getter(cells + 8));
+    redirect(a, b, 0x0078_16f0, battle);
+    let print = stand_in8(a, b, 0xaf0, &recorder(cells + 12, 0x5a5a_1300));
+    redirect(a, b, 0x0062_f500, print);
+    struct Calls;
+    impl t::TextureName<Oracle> for Calls {
+        fn battle_status(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0078_16f0, &[])
+        }
+        fn tk_lang(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0088_7c30, &[])
+        }
+        fn ffx_lang(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0064_10e0, &[])
+        }
+        fn print(&mut self, m: &mut Oracle, fmt: u32) {
+            eax(m, 0x0062_f500, &[fmt]);
+        }
+    }
+    let size = alloc(a, b, 8);
+    let ids = [
+        0x3c00u32, 0x3d00, 0x3d01, 0x3d10, 0x3d20, 0x3d30, 0x3d40, 0x3d60, 0x3d80, 0x3bff,
+        0x3d02, 0x3d31, 0x3d81, 0x3e00, 0x13d00, 0xffff_3d10,
+    ];
+    let prefixes = [0x025d_08a0u32, 0x025d_06a0];
+    for id in ids {
+        for _ in 0..24 {
+            put(a, b, cells, [0u32, 9, 10][(rng.next() % 3) as usize]);
+            put(a, b, cells + 4, rng.next() & 1);
+            put(a, b, cells + 8, rng.next() & 1);
+            for p in prefixes {
+                let n = rng.next() % 24;
+                let mut text: Vec<u8> = (0..n).map(|_| b'a' + (rng.next() % 26) as u8).collect();
+                text.push(0);
+                let at = a.rebase(p);
+                a.write(at, &text).unwrap();
+                b.write(at, &text).unwrap();
+            }
+            // nibbles whose column k (0..=14) keeps index + k within the
+            // 16-entry tables (or the byte below 16 for 0x3d80)
+            let high = rng.next() & 1;
+            let lang_table = matches!(id, 0x3d01 | 0x3d60);
+            let nibbles = if id == 0x3d80 { rng.next() % 16 } else { rng.next() & 0xff };
+            let nib = if high == 0 { nibbles & 0xf } else { nibbles >> 4 };
+            let k = (nib & 7) * 2;
+            let index = if lang_table { rng.next() % 16 } else { rng.next() % (16 - k) };
+            let high = high | (rng.next() & 0xffff_0000);
+            put(a, b, size, [0xa5a5_a5a5u32; 2]);
+            put(a, b, cells + 12, 0u32);
+            let args = [id, nibbles | (rng.next() & 0xffff_ff00), index, high, size];
+            let want = eax(a, 0x008a_cf50, &args);
+            let got = t::texture_name(b, args[0], args[1], args[2], args[3], args[4], &mut Calls);
+            assert_eq!(want, got, "{args:x?}");
+            same_memory("texture names", a, b);
+        }
+    }
+}
+
+#[test]
+fn round13_texture_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0021));
+}
+
+#[test]
+fn round13_texture_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0022));
+}

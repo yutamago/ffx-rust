@@ -2048,4 +2048,163 @@ pub mod bridge {
     pub fn save_gil_address(mem: &impl Mem) -> u32 {
         mem.rebase(0x0112_ca90).wrapping_add(0x3d48)
     }
+
+
+    /// The calls [`texture_name`] makes outside this module.
+    pub trait TextureName<M> {
+        /// `MsBattleGetStatus()`.
+        fn battle_status(&mut self, mem: &mut M) -> u32;
+        /// `TkGetLang()`.
+        fn tk_lang(&mut self, mem: &mut M) -> u32;
+        /// `TOGetFFXLang()` (through its thunk `0x008ac2f0`).
+        fn ffx_lang(&mut self, mem: &mut M) -> u32;
+        /// `dbgPrintf(fmt)`, for an unknown id.
+        fn print(&mut self, mem: &mut M, fmt: u32);
+    }
+
+    /// Image addresses of [`texture_name`]'s name tables, `(plain, flagged)`.
+    const TEXTURE_TABLES: [(u32, u32); 7] = [
+        (0x00c5_9568, 0x00c5_95a8), // 0x3c00, TkGetLang 0
+        (0x00c5_95e8, 0x00c5_9628), // 0x3c00 other languages, 0x3d40
+        (0x00c5_9668, 0x00c5_96e8), // 0x3d10
+        (0x00c5_96a8, 0x00c5_9728), // 0x3d20
+        (0x00c5_9768, 0x00c5_97a8), // 0x3d30
+        (0x00c5_97f8, 0x00c5_9838), // 0x3d80, by the byte
+        (0x00c5_9bc0, 0x00c5_9c00), // 0x3d00, appended to a prefix
+    ];
+
+    fn c_strlen(mem: &impl Mem, p: u32) -> u32 {
+        let mut n = 0u32;
+        while mem.read::<u8>(p.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    /// `TOGetTextureName(id, nibbles, index, high, &size)` (`0x008acf50`):
+    /// the name of picture `index` of texture family `id`. One nibble of
+    /// `nibbles` (the high one when `high`) picks a column `k` (twice the
+    /// nibble's low three bits; its bit 3 or `high` picks the second,
+    /// "flagged" table set). By `id`:
+    ///
+    /// - `0x3c00`: `TkGetLang()` 0 or not picks the table pair;
+    /// - `0x3d00`: the prefix (`0x025d08a0`, or `0x025d06a0` in battle by
+    ///   `MsBattleGetStatus`) copied to `0x025d07a0` (`0x025d05a0`), the
+    ///   table's name appended, and the result interned (`0x008ab440`);
+    /// - `0x3d10`, `0x3d20`, `0x3d30`, `0x3d40`: one table pair each;
+    /// - `0x3d01`, `0x3d60`: by `TOGetFFXLang()` 0, 9 or 10 a table pair
+    ///   indexed by `index` alone, flagged by `high` only (another language
+    ///   reads the word at `k + 4 * index`, as the original does);
+    /// - `0x3d80`: indexed by the byte `nibbles`, flagged by `high`;
+    /// - anything else: `dbgPrintf("VIRTUOS ASSERTION:Font not found.")`
+    ///   and `k` returned.
+    ///
+    /// The tables are indexed by `index + k` otherwise. `size` gets the two
+    /// words of entry `(index + k) / 2` of `0x00b5f8d0` (flagged) or
+    /// `0x00b5f890` (entry 0 for an unknown id).
+    #[allow(clippy::too_many_lines)]
+    pub fn texture_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        nibbles: u32,
+        index: u32,
+        high: u32,
+        size: u32,
+        calls: &mut impl TextureName<M>,
+    ) -> u32 {
+        let high = high & 0xffff != 0;
+        let byte = nibbles & 0xff;
+        let nib = if high { byte >> 4 } else { byte & 0xf };
+        let (nib, second) = if nib >= 8 { (nib - 8, true) } else { (nib, false) };
+        let k = nib * 2;
+        let index = i32::from(index as u16 as i16);
+        let id = i32::from(id as u16 as i16);
+        let at = |mem: &M, table: u32, i: i32| -> u32 {
+            let t = mem.rebase(table);
+            mem.read(t.wrapping_add(i.cast_unsigned().wrapping_mul(4)))
+        };
+        let pair = |i: usize, flagged: bool| {
+            let (p, f) = TEXTURE_TABLES[i];
+            if flagged { f } else { p }
+        };
+        let flagged = second || high;
+        let by_lang = |mem: &mut M, calls: &mut dyn FnMut(&mut M) -> u32, tables: [(u32, u32); 3]| {
+            let lang = calls(mem);
+            let idx = index + k.cast_signed();
+            let name = match lang {
+                0 => at(mem, if high { tables[0].1 } else { tables[0].0 }, index),
+                9 => at(mem, if high { tables[1].1 } else { tables[1].0 }, index),
+                10 => at(mem, if high { tables[2].1 } else { tables[2].0 }, index),
+                _ => mem.read(k.wrapping_add(index.cast_unsigned().wrapping_mul(4))),
+            };
+            (name, idx, high)
+        };
+        let (name, idx, flag) = match id {
+            0x3c00 => {
+                let table = if calls.tk_lang(mem) == 0 { 0 } else { 1 };
+                let idx = index + k.cast_signed();
+                (at(mem, pair(table, flagged), idx), idx, flagged)
+            }
+            0x3d00 => {
+                let (src, dst) = if calls.battle_status(mem) == 0 {
+                    (0x025d_08a0, 0x025d_07a0)
+                } else {
+                    (0x025d_06a0, 0x025d_05a0)
+                };
+                let (src, dst) = (mem.rebase(src), mem.rebase(dst));
+                let mut n = 0u32;
+                loop {
+                    let c: u8 = mem.read(src.wrapping_add(n));
+                    mem.write(dst.wrapping_add(n), c);
+                    n = n.wrapping_add(1);
+                    if c == 0 {
+                        break;
+                    }
+                }
+                let idx = index + k.cast_signed();
+                let tail = at(mem, pair(6, flagged), idx);
+                let len = c_strlen(mem, tail);
+                let end = dst.wrapping_add(c_strlen(mem, dst));
+                for i in 0..=len {
+                    let c: u8 = mem.read(tail.wrapping_add(i));
+                    mem.write(end.wrapping_add(i), c);
+                }
+                (intern_name(mem, dst), idx, flagged)
+            }
+            0x3d10 | 0x3d20 | 0x3d30 | 0x3d40 => {
+                let table = match id {
+                    0x3d10 => 2,
+                    0x3d20 => 3,
+                    0x3d30 => 4,
+                    _ => 1,
+                };
+                let idx = index + k.cast_signed();
+                (at(mem, pair(table, flagged), idx), idx, flagged)
+            }
+            0x3d01 => by_lang(mem, &mut |m| calls.ffx_lang(m), [
+                (0x00c5_9878, 0x00c5_9938),
+                (0x00c5_98f8, 0x00c5_99c0),
+                (0x00c5_98b8, 0x00c5_9980),
+            ]),
+            0x3d60 => by_lang(mem, &mut |m| calls.ffx_lang(m), [
+                (0x00c5_9a00, 0x00c5_9b00),
+                (0x00c5_9ac0, 0x00c5_9b80),
+                (0x00c5_9a40, 0x00c5_9b40),
+            ]),
+            0x3d80 => {
+                let idx = byte.cast_signed();
+                (at(mem, pair(5, high), idx), idx, high)
+            }
+            _ => {
+                let fmt = mem.rebase(0x00b6_2dd0);
+                calls.print(mem, fmt);
+                (k, -1, false)
+            }
+        };
+        let sizes = mem.rebase(if flag { 0x00b5_f8d0 } else { 0x00b5_f890 });
+        let e = sizes.wrapping_add((idx / 2).cast_unsigned().wrapping_mul(8));
+        let w: [u32; 2] = mem.read(e);
+        mem.write(size, w);
+        name
+    }
 }

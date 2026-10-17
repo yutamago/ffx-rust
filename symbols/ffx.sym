@@ -8051,7 +8051,7 @@
 0x008acf10 function TOGetWord_01841d9c        # () -> [0x01841d9c]; before TOGetSystemConfirmButtonAssign; name ours
 0x008acf20 function GetU32_01841d30 # () -> u32 at 0x01841d30; name ours
 0x008acf30 function TOGetSystemConfirmButtonAssign # fh v3:exact 0x008acee0
-0x008acf50 function TOGetTextureName          # fh v3:exact 0x008acf00
+0x008acf50 function TOGetTextureName          # fh v3:exact 0x008acf00; cdecl(id i16, nibbles u8, index i16, high u16, &size): column k = 2*(nibble&7) (high nibble when high; bit 3 or high flags), tables 0x00c59568..0x00c59c00 by id 0x3c00 (TkGetLang)/0x3d00 (prefix 0x025d08a0 or battle 0x025d06a0 + name, interned)/0x3d01,0x3d60 (TOGetFFXLang 0/9/10)/0x3d10-0x3d40/0x3d80 (by byte); size pair from 0x00b5f8d0/0x00b5f890[(index+k)/2]; unknown id dbgPrintf, returns k
 0x008ad4d0 function TOInit                       # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOInit(): about to read menu base_ftc file!!!!\\n'; Switch 0x71004f38b0 TOInit (symbols from Fahrenheit's server export)
 0x008ad780 function TOInitBattleFontPath      # fh v3:bsim0.92 0x008ad730
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
