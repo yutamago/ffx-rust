@@ -6723,7 +6723,7 @@
 0x007744a0	logic	default (no rule: ported to be safe)
 0x007744d0	logic	default (no rule: ported to be safe)
 0x007744f0	logic	default (no rule: ported to be safe)
-0x00774520	logic	default (no rule: ported to be safe)
+0x00774520	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x00774670	logic	default (no rule: ported to be safe)
 0x00774680	logic	default (no rule: ported to be safe)
 0x00774720	logic	default (no rule: ported to be safe)
@@ -6733,7 +6733,7 @@
 0x00774aa0	logic	default (no rule: ported to be safe)
 0x00774ae0	logic	default (no rule: ported to be safe)
 0x00774c00	logic	default (no rule: ported to be safe)
-0x00774cb0	logic	default (no rule: ported to be safe)
+0x00774cb0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x00774ff0	logic	default (no rule: ported to be safe)
 0x00775330	logic	default (no rule: ported to be safe)
 0x00775530	logic	default (no rule: ported to be safe)
@@ -6743,7 +6743,7 @@
 0x00775a20	logic	default (no rule: ported to be safe)
 0x00775ce0	logic	default (no rule: ported to be safe)
 0x00775de0	logic	default (no rule: ported to be safe)
-0x00775ed0	logic	default (no rule: ported to be safe)
+0x00775ed0	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00776110	logic	default (no rule: ported to be safe)
 0x007766e0	logic	default (no rule: ported to be safe)
 0x00776740	platform	only called from platform code (hdd_kabe_disp)
@@ -13194,11 +13194,11 @@
 0x00892590	logic	default (no rule: ported to be safe)
 0x00892740	logic	default (no rule: ported to be safe)
 0x00892870	logic	default (no rule: ported to be safe)
-0x008928b0	logic	default (no rule: ported to be safe)
-0x00892910	logic	default (no rule: ported to be safe)
+0x008928b0	glue	GS/DMA packet writer (TOMakePktSampleBlueWindowXY2, TOMkpEasyMesFontLCenter, TOMkpShapeXY; writes no game state): replaced by ffx-render
+0x00892910	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x00892cb0	logic	default (no rule: ported to be safe)
 0x00893290	logic	default (no rule: ported to be safe)
-0x008933c0	logic	default (no rule: ported to be safe)
+0x008933c0	glue	GS/DMA packet writer (TOMakePktScissor; writes no game state): replaced by ffx-render
 0x008934d0	logic	default (no rule: ported to be safe)
 0x008934f0	logic	default (no rule: ported to be safe)
 0x00893510	logic	default (no rule: ported to be safe)
@@ -13212,15 +13212,15 @@
 0x00895240	logic	default (no rule: ported to be safe)
 0x00895320	logic	default (no rule: ported to be safe)
 0x00895390	logic	default (no rule: ported to be safe)
-0x00895480	logic	default (no rule: ported to be safe)
+0x00895480	glue	GS/DMA packet writer (TODrawBoxXYWHC2FW, TOMakePktBoxXYWHRGBA; writes no game state): replaced by ffx-render
 0x008955e0	logic	default (no rule: ported to be safe)
-0x00895660	logic	default (no rule: ported to be safe)
-0x00895940	logic	default (no rule: ported to be safe)
+0x00895660	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TODrawCrossBoxXYWHC2FW, TOMkpBtlLimitLuluMidareCounter; writes no game state): replaced by ffx-render
+0x00895940	glue	GS/DMA packet writer (TOMakePktBoxXYWHRGBA, TOMkpShapeXY, TOMkpValueFontMClutRight; writes no game state): replaced by ffx-render
 0x00895ae0	logic	default (no rule: ported to be safe)
-0x008960e0	logic	default (no rule: ported to be safe)
+0x008960e0	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x00896450	logic	default (no rule: ported to be safe)
 0x00897200	logic	default (no rule: ported to be safe)
-0x00897240	logic	default (no rule: ported to be safe)
+0x00897240	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TOMkpBtlLimitSpecialGauge, TOMkpCrossExtMesFontLClut; writes no game state): replaced by ffx-render
 0x008974a0	logic	default (no rule: ported to be safe)
 0x008975a0	logic	default (no rule: ported to be safe)
 0x00897650	logic	default (no rule: ported to be safe)
@@ -13299,7 +13299,7 @@
 0x0089b230	logic	default (no rule: ported to be safe)
 0x0089b290	logic	default (no rule: ported to be safe)
 0x0089b2f0	dead	unreachable from the entry point and every pointer table
-0x0089b360	logic	default (no rule: ported to be safe)
+0x0089b360	glue	GS packet API (TODrawBtlWindow): appends to or kicks a packet; replaced by ffx-render
 0x0089b530	dead	unreachable from the entry point and every pointer table
 0x0089b590	logic	default (no rule: ported to be safe)
 0x0089b5a0	logic	default (no rule: ported to be safe)
@@ -13310,7 +13310,7 @@
 0x0089bc50	dead	unreachable from the entry point and every pointer table
 0x0089bc60	logic	default (no rule: ported to be safe)
 0x0089bc70	dead	unreachable from the entry point and every pointer table
-0x0089bc80	logic	default (no rule: ported to be safe)
+0x0089bc80	glue	GS/DMA packet writer (TODrawBtlNetWindowXYWHType, TOMkpRotateShapeXYWHUVC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x0089bf70	logic	default (no rule: ported to be safe)
 0x0089c7d0	logic	default (no rule: ported to be safe)
 0x0089c870	logic	default (no rule: ported to be safe)
@@ -13319,7 +13319,7 @@
 0x0089d390	logic	default (no rule: ported to be safe)
 0x0089d610	logic	default (no rule: ported to be safe)
 0x0089d980	dead	unreachable from the entry point and every pointer table
-0x0089d9b0	logic	default (no rule: ported to be safe)
+0x0089d9b0	glue	GS/DMA packet writer (TOMkpCrossExtMesFontLClutTypeRGBA, TOMkpShapeXYWHUV, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x0089db60	dead	unreachable from the entry point and every pointer table
 0x0089dba0	logic	default (no rule: ported to be safe)
 0x0089dc10	logic	default (no rule: ported to be safe)
@@ -13357,9 +13357,9 @@
 0x008a0de0	logic	default (no rule: ported to be safe)
 0x008a1090	logic	default (no rule: ported to be safe)
 0x008a10d0	logic	default (no rule: ported to be safe)
-0x008a16d0	logic	default (no rule: ported to be safe)
-0x008a1ce0	logic	default (no rule: ported to be safe)
-0x008a1e50	logic	default (no rule: ported to be safe)
+0x008a16d0	glue	GS packet API (TODrawBtlCtbParts): appends to or kicks a packet; replaced by ffx-render
+0x008a1ce0	glue	GS packet API (TODrawLimitBG): appends to or kicks a packet; replaced by ffx-render
+0x008a1e50	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008a2030	logic	default (no rule: ported to be safe)
 0x008a20e0	dead	unreachable from the entry point and every pointer table
 0x008a2160	logic	default (no rule: ported to be safe)
@@ -13372,15 +13372,15 @@
 0x008a2bc0	logic	default (no rule: ported to be safe)
 0x008a2c10	logic	default (no rule: ported to be safe)
 0x008a2d70	dead	unreachable from the entry point and every pointer table
-0x008a2da0	logic	default (no rule: ported to be safe)
-0x008a32b0	logic	default (no rule: ported to be safe)
-0x008a3680	logic	default (no rule: ported to be safe)
-0x008a49b0	logic	default (no rule: ported to be safe)
-0x008a6870	logic	default (no rule: ported to be safe)
-0x008a6a60	logic	default (no rule: ported to be safe)
-0x008a7520	logic	default (no rule: ported to be safe)
-0x008a75f0	logic	default (no rule: ported to be safe)
-0x008a7dc0	logic	default (no rule: ported to be safe)
+0x008a2da0	glue	GS packet API (TODrawWaitBtlWinChange): appends to or kicks a packet; replaced by ffx-render
+0x008a32b0	glue	GS packet API (TODrawWaitBtlWinInputGil): appends to or kicks a packet; replaced by ffx-render
+0x008a3680	glue	GS packet API (TODrawWaitBtlWinLeft): appends to or kicks a packet; replaced by ffx-render
+0x008a49b0	glue	GS packet API (TODrawWaitBtlWinMain): appends to or kicks a packet; replaced by ffx-render
+0x008a6870	glue	GS packet API (TODrawWaitBtlWinPrepare): appends to or kicks a packet; replaced by ffx-render
+0x008a6a60	glue	GS packet API (TODrawWaitBtlWinRight): appends to or kicks a packet; replaced by ffx-render
+0x008a7520	glue	GS packet API (TODrawWaitBtlWinSub): appends to or kicks a packet; replaced by ffx-render
+0x008a75f0	glue	GS packet API (TODrawWaitBtlWinSummon): appends to or kicks a packet; replaced by ffx-render
+0x008a7dc0	glue	GS packet API (TODrawWaitBtlWinWeapon): appends to or kicks a packet; replaced by ffx-render
 0x008a84d0	logic	default (no rule: ported to be safe)
 0x008a8550	dead	unreachable from the entry point and every pointer table
 0x008a85a0	logic	default (no rule: ported to be safe)
@@ -13528,8 +13528,8 @@
 0x008abb10	dead	unreachable from the entry point and every pointer table
 0x008abd00	logic	debug-sounding name, but used by logic: 0x8ab910, TOControlMessageWindowForMenu, TkBtlEndCtrl
 0x008abd20	logic	debug-sounding name, but used by logic: 0x76e4b0, 0x76f470, MsBattleProcess
-0x008abd30	logic	default (no rule: ported to be safe)
-0x008abe40	logic	default (no rule: ported to be safe)
+0x008abd30	glue	GS packet API (TODrawMessageWindow): appends to or kicks a packet; replaced by ffx-render
+0x008abe40	glue	GS packet API (TODrawMessageWindowForMenu): appends to or kicks a packet; replaced by ffx-render
 0x008abf30	dead	unreachable from the entry point and every pointer table
 0x008ac130	logic	default (no rule: ported to be safe)
 0x008ac2c0	logic	default (no rule: ported to be safe)
@@ -13668,15 +13668,15 @@
 0x008b5810	logic	default (no rule: ported to be safe)
 0x008b5850	logic	default (no rule: ported to be safe)
 0x008b5880	dead	unreachable from the entry point and every pointer table
-0x008b5960	logic	default (no rule: ported to be safe)
+0x008b5960	glue	GS packet API (TODrawChangeMacro2): appends to or kicks a packet; replaced by ffx-render
 0x008b5ab0	dead	unreachable from the entry point and every pointer table
 0x008b5b80	dead	unreachable from the entry point and every pointer table
 0x008b5ba0	dead	unreachable from the entry point and every pointer table
 0x008b5bc0	dead	unreachable from the entry point and every pointer table
 0x008b5c70	dead	unreachable from the entry point and every pointer table
-0x008b5dc0	logic	default (no rule: ported to be safe)
-0x008b5ea0	logic	default (no rule: ported to be safe)
-0x008b5fb0	logic	default (no rule: ported to be safe)
+0x008b5dc0	glue	GS packet API (TODrawMessage): appends to or kicks a packet; replaced by ffx-render
+0x008b5ea0	glue	GS packet API (TODrawMovieChangeMacro2): appends to or kicks a packet; replaced by ffx-render
+0x008b5fb0	glue	GS packet API (TODrawSelectCursor): appends to or kicks a packet; replaced by ffx-render
 0x008b6200	logic	default (no rule: ported to be safe)
 0x008b6210	logic	default (no rule: ported to be safe)
 0x008b62b0	logic	default (no rule: ported to be safe)
@@ -13772,7 +13772,7 @@
 0x008bbed0	logic	default (no rule: ported to be safe)
 0x008bc100	logic	default (no rule: ported to be safe)
 0x008bc340	logic	default (no rule: ported to be safe)
-0x008bd020	logic	default (no rule: ported to be safe)
+0x008bd020	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x008bd280	logic	default (no rule: ported to be safe)
 0x008bd670	logic	default (no rule: ported to be safe)
 0x008bda00	logic	default (no rule: ported to be safe)
@@ -13855,7 +13855,7 @@
 0x008bf720	logic	default (no rule: ported to be safe)
 0x008bf750	logic	default (no rule: ported to be safe)
 0x008bf7e0	logic	default (no rule: ported to be safe)
-0x008bf830	logic	default (no rule: ported to be safe)
+0x008bf830	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008bf8b0	dead	unreachable from the entry point and every pointer table
 0x008bf8f0	dead	unreachable from the entry point and every pointer table
 0x008bf940	dead	unreachable from the entry point and every pointer table
@@ -13864,10 +13864,10 @@
 0x008bf9f0	dead	unreachable from the entry point and every pointer table
 0x008bfa30	dead	unreachable from the entry point and every pointer table
 0x008bfa70	dead	unreachable from the entry point and every pointer table
-0x008c0250	logic	default (no rule: ported to be safe)
-0x008c0580	logic	default (no rule: ported to be safe)
-0x008c0670	logic	default (no rule: ported to be safe)
-0x008c0930	logic	default (no rule: ported to be safe)
+0x008c0250	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008c0580	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
+0x008c0670	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
+0x008c0930	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008c0a10	logic	default (no rule: ported to be safe)
 0x008c0a20	logic	default (no rule: ported to be safe)
 0x008c0be0	logic	default (no rule: ported to be safe)
@@ -13893,10 +13893,10 @@
 0x008c11b0	logic	default (no rule: ported to be safe)
 0x008c11e0	logic	default (no rule: ported to be safe)
 0x008c1260	logic	default (no rule: ported to be safe)
-0x008c1280	logic	default (no rule: ported to be safe)
+0x008c1280	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008c1370	logic	default (no rule: ported to be safe)
 0x008c13a0	dead	unreachable from the entry point and every pointer table
-0x008c13d0	logic	default (no rule: ported to be safe)
+0x008c13d0	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008c1490	logic	default (no rule: ported to be safe)
 0x008c16b0	dead	unreachable from the entry point and every pointer table
 0x008c16e0	dead	unreachable from the entry point and every pointer table
@@ -14096,7 +14096,7 @@
 0x008cb490	logic	default (no rule: ported to be safe)
 0x008cb4c0	logic	default (no rule: ported to be safe)
 0x008cb500	logic	default (no rule: ported to be safe)
-0x008cb530	logic	default (no rule: ported to be safe)
+0x008cb530	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2; writes no game state): replaced by ffx-render
 0x008cba20	logic	default (no rule: ported to be safe)
 0x008cba60	logic	default (no rule: ported to be safe)
 0x008cbaa0	logic	default (no rule: ported to be safe)
@@ -14125,7 +14125,7 @@
 0x008cd890	dead	unreachable from the entry point and every pointer table
 0x008cd990	logic	default (no rule: ported to be safe)
 0x008cda20	logic	default (no rule: ported to be safe)
-0x008cdab0	logic	default (no rule: ported to be safe)
+0x008cdab0	glue	GS/DMA packet writer (TODrawCrossMenuIconCommandName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008cdba0	logic	default (no rule: ported to be safe)
 0x008ce130	logic	default (no rule: ported to be safe)
 0x008ce520	logic	default (no rule: ported to be safe)
@@ -14155,7 +14155,7 @@
 0x008d0100	logic	default (no rule: ported to be safe)
 0x008d0170	logic	default (no rule: ported to be safe)
 0x008d0250	logic	default (no rule: ported to be safe)
-0x008d02e0	logic	default (no rule: ported to be safe)
+0x008d02e0	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008d0430	logic	default (no rule: ported to be safe)
 0x008d0460	logic	default (no rule: ported to be safe)
 0x008d0a20	logic	default (no rule: ported to be safe)
@@ -14198,13 +14198,13 @@
 0x008d33b0	logic	default (no rule: ported to be safe)
 0x008d34a0	logic	default (no rule: ported to be safe)
 0x008d35a0	logic	default (no rule: ported to be safe)
-0x008d3690	logic	default (no rule: ported to be safe)
+0x008d3690	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008d39f0	dead	unreachable from the entry point and every pointer table
 0x008d3ac0	dead	unreachable from the entry point and every pointer table
 0x008d3b90	dead	unreachable from the entry point and every pointer table
 0x008d3c40	dead	unreachable from the entry point and every pointer table
 0x008d3d70	logic	default (no rule: ported to be safe)
-0x008d4170	logic	default (no rule: ported to be safe)
+0x008d4170	glue	GS/DMA packet writer (TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008d4280	logic	default (no rule: ported to be safe)
 0x008d4350	logic	default (no rule: ported to be safe)
 0x008d4540	logic	default (no rule: ported to be safe)
@@ -14231,10 +14231,10 @@
 0x008d5830	logic	default (no rule: ported to be safe)
 0x008d5d50	logic	default (no rule: ported to be safe)
 0x008d5df0	logic	default (no rule: ported to be safe)
-0x008d5e60	logic	default (no rule: ported to be safe)
+0x008d5e60	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008d5f60	logic	default (no rule: ported to be safe)
-0x008d6340	logic	default (no rule: ported to be safe)
-0x008d63f0	logic	default (no rule: ported to be safe)
+0x008d6340	glue	GS/DMA packet writer (TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
+0x008d63f0	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008d6560	logic	default (no rule: ported to be safe)
 0x008d65f0	logic	default (no rule: ported to be safe)
 0x008d6660	logic	default (no rule: ported to be safe)
@@ -14271,7 +14271,7 @@
 0x008d8520	logic	default (no rule: ported to be safe)
 0x008d85d0	logic	default (no rule: ported to be safe)
 0x008d8620	logic	default (no rule: ported to be safe)
-0x008d8aa0	logic	default (no rule: ported to be safe)
+0x008d8aa0	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008d8bb0	logic	default (no rule: ported to be safe)
 0x008d8c30	logic	default (no rule: ported to be safe)
 0x008d8cb0	logic	default (no rule: ported to be safe)
@@ -14328,7 +14328,7 @@
 0x008db7e0	logic	default (no rule: ported to be safe)
 0x008db840	logic	ran in the coverage sessions (no static reference)
 0x008db860	logic	ran in the coverage sessions (no static reference)
-0x008db870	logic	default (no rule: ported to be safe)
+0x008db870	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008db920	dead	unreachable from the entry point and every pointer table
 0x008db9d0	dead	unreachable from the entry point and every pointer table
 0x008dbb90	dead	unreachable from the entry point and every pointer table
@@ -14403,7 +14403,7 @@
 0x008dd220	dead	unreachable from the entry point and every pointer table
 0x008dd2d0	dead	unreachable from the entry point and every pointer table
 0x008dd310	dead	unreachable from the entry point and every pointer table
-0x008dd340	logic	default (no rule: ported to be safe)
+0x008dd340	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008dd440	logic	default (no rule: ported to be safe)
 0x008dd470	dead	unreachable from the entry point and every pointer table
 0x008dd4f0	dead	unreachable from the entry point and every pointer table
@@ -14488,7 +14488,7 @@
 0x008dfe20	logic	default (no rule: ported to be safe)
 0x008dfe50	dead	unreachable from the entry point and every pointer table
 0x008dfe70	dead	unreachable from the entry point and every pointer table
-0x008dfea0	logic	default (no rule: ported to be safe)
+0x008dfea0	glue	GS packet API (TODrawMovieMessageWaitNamesp): appends to or kicks a packet; replaced by ffx-render
 0x008e01b0	dead	unreachable from the entry point and every pointer table
 0x008e0200	dead	unreachable from the entry point and every pointer table
 0x008e0240	dead	unreachable from the entry point and every pointer table
@@ -14580,22 +14580,22 @@
 0x008e5cf0	dead	unreachable from the entry point and every pointer table
 0x008e5d20	dead	unreachable from the entry point and every pointer table
 0x008e5e90	dead	unreachable from the entry point and every pointer table
-0x008e5f60	logic	default (no rule: ported to be safe)
+0x008e5f60	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008e6030	logic	default (no rule: ported to be safe)
-0x008e6070	logic	default (no rule: ported to be safe)
+0x008e6070	glue	GS/DMA packet writer (TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008e6700	logic	default (no rule: ported to be safe)
 0x008e67f0	logic	default (no rule: ported to be safe)
 0x008e6970	logic	default (no rule: ported to be safe)
-0x008e6af0	logic	default (no rule: ported to be safe)
-0x008e6cc0	logic	default (no rule: ported to be safe)
+0x008e6af0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008e6cc0	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2; writes no game state): replaced by ffx-render
 0x008e6e10	logic	default (no rule: ported to be safe)
 0x008e7110	logic	default (no rule: ported to be safe)
 0x008e7180	dead	unreachable from the entry point and every pointer table
-0x008e71d0	logic	default (no rule: ported to be safe)
+0x008e71d0	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008e75c0	logic	default (no rule: ported to be safe)
 0x008e78a0	dead	unreachable from the entry point and every pointer table
 0x008e7a90	logic	default (no rule: ported to be safe)
-0x008e7d30	logic	default (no rule: ported to be safe)
+0x008e7d30	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008e7ed0	dead	unreachable from the entry point and every pointer table
 0x008e7ef0	dead	unreachable from the entry point and every pointer table
 0x008e7f50	dead	unreachable from the entry point and every pointer table
@@ -14637,7 +14637,7 @@
 0x008eb120	dead	unreachable from the entry point and every pointer table
 0x008eb150	dead	unreachable from the entry point and every pointer table
 0x008eb240	logic	default (no rule: ported to be safe)
-0x008eb270	logic	default (no rule: ported to be safe)
+0x008eb270	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008eb480	dead	unreachable from the entry point and every pointer table
 0x008eb4e0	logic	default (no rule: ported to be safe)
 0x008eb590	dead	unreachable from the entry point and every pointer table
@@ -14714,7 +14714,7 @@
 0x008efcd0	dead	unreachable from the entry point and every pointer table
 0x008efd00	dead	unreachable from the entry point and every pointer table
 0x008efd40	dead	unreachable from the entry point and every pointer table
-0x008efd90	logic	default (no rule: ported to be safe)
+0x008efd90	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008f02a0	dead	unreachable from the entry point and every pointer table
 0x008f0540	dead	unreachable from the entry point and every pointer table
 0x008f0590	logic	default (no rule: ported to be safe)
@@ -14745,7 +14745,7 @@
 0x008f27b0	dead	unreachable from the entry point and every pointer table
 0x008f2b40	dead	unreachable from the entry point and every pointer table
 0x008f2b60	dead	unreachable from the entry point and every pointer table
-0x008f2bf0	logic	default (no rule: ported to be safe)
+0x008f2bf0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008f2d40	dead	unreachable from the entry point and every pointer table
 0x008f2e10	dead	unreachable from the entry point and every pointer table
 0x008f2f70	logic	default (no rule: ported to be safe)
@@ -14764,31 +14764,31 @@
 0x008f34c0	logic	default (no rule: ported to be safe)
 0x008f3820	logic	default (no rule: ported to be safe)
 0x008f3830	dead	unreachable from the entry point and every pointer table
-0x008f38c0	logic	default (no rule: ported to be safe)
+0x008f38c0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x008f38f0	dead	unreachable from the entry point and every pointer table
 0x008f3930	glue	GS packet API (TOClosePktbuff): appends to or kicks a packet; replaced by ffx-render
 0x008f3940	dead	unreachable from the entry point and every pointer table
 0x008f3a30	glue	GS packet API (TOCtrlPkt): appends to or kicks a packet; replaced by ffx-render
-0x008f3a50	logic	default (no rule: ported to be safe)
+0x008f3a50	glue	GS packet API (TODrawAlphaBG): appends to or kicks a packet; replaced by ffx-render
 0x008f3c70	dead	unreachable from the entry point and every pointer table
 0x008f3d20	dead	unreachable from the entry point and every pointer table
-0x008f3db0	logic	default (no rule: ported to be safe)
-0x008f3eb0	logic	default (no rule: ported to be safe)
+0x008f3db0	glue	GS packet API (TODrawBoxXYWHC2): appends to or kicks a packet; replaced by ffx-render
+0x008f3eb0	glue	GS packet API (TODrawBoxXYWHC2FW): appends to or kicks a packet; replaced by ffx-render
 0x008f3ff0	dead	unreachable from the entry point and every pointer table
 0x008f4090	dead	unreachable from the entry point and every pointer table
-0x008f41b0	logic	default (no rule: ported to be safe)
-0x008f4b20	logic	default (no rule: ported to be safe)
-0x008f4c40	logic	default (no rule: ported to be safe)
-0x008f4df0	logic	default (no rule: ported to be safe)
-0x008f4f10	logic	default (no rule: ported to be safe)
-0x008f5000	logic	default (no rule: ported to be safe)
-0x008f50f0	logic	default (no rule: ported to be safe)
+0x008f41b0	glue	GS packet API (TODrawBtlNetWindowXYWHType): appends to or kicks a packet; replaced by ffx-render
+0x008f4b20	glue	GS packet API (TODrawCrossBoxXYWHC2): appends to or kicks a packet; replaced by ffx-render
+0x008f4c40	glue	GS packet API (TODrawCrossBoxXYWHC2FW): appends to or kicks a packet; replaced by ffx-render
+0x008f4df0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008f4f10	glue	GS packet API (TODrawCrossMenuIconAbilityName): appends to or kicks a packet; replaced by ffx-render
+0x008f5000	glue	GS packet API (TODrawCrossMenuIconCommandName): appends to or kicks a packet; replaced by ffx-render
+0x008f50f0	glue	GS packet API (TODrawCrossMenuIconImportantName): appends to or kicks a packet; replaced by ffx-render
 0x008f51e0	logic	default (no rule: ported to be safe)
-0x008f59c0	logic	default (no rule: ported to be safe)
+0x008f59c0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008f5b90	dead	unreachable from the entry point and every pointer table
 0x008f5bc0	glue	GS packet API (TODrawKick): appends to or kicks a packet; replaced by ffx-render
-0x008f5c10	logic	default (no rule: ported to be safe)
-0x008f5c60	logic	default (no rule: ported to be safe)
+0x008f5c10	glue	GS packet API (TODrawMenuBG): appends to or kicks a packet; replaced by ffx-render
+0x008f5c60	glue	GS packet API (TODrawMenuBGC2): appends to or kicks a packet; replaced by ffx-render
 0x008f5cc0	dead	unreachable from the entry point and every pointer table
 0x008f5d00	dead	unreachable from the entry point and every pointer table
 0x008f5d30	dead	unreachable from the entry point and every pointer table
@@ -14799,23 +14799,23 @@
 0x008f5e20	dead	unreachable from the entry point and every pointer table
 0x008f5e90	logic	default (no rule: ported to be safe)
 0x008f5f00	dead	unreachable from the entry point and every pointer table
-0x008f5f70	logic	default (no rule: ported to be safe)
+0x008f5f70	glue	GS packet API (TODrawMenuPlateXYWHType): appends to or kicks a packet; replaced by ffx-render
 0x008f8870	logic	default (no rule: ported to be safe)
 0x008f88b0	dead	unreachable from the entry point and every pointer table
 0x008f88e0	dead	unreachable from the entry point and every pointer table
 0x008f8910	dead	unreachable from the entry point and every pointer table
 0x008f8940	dead	unreachable from the entry point and every pointer table
 0x008f8970	dead	unreachable from the entry point and every pointer table
-0x008f8bb0	logic	default (no rule: ported to be safe)
-0x008f8d50	logic	default (no rule: ported to be safe)
-0x008f8ee0	logic	default (no rule: ported to be safe)
-0x008f91f0	logic	default (no rule: ported to be safe)
-0x008f9230	logic	default (no rule: ported to be safe)
-0x008f9280	logic	default (no rule: ported to be safe)
+0x008f8bb0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008f8d50	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008f8ee0	glue	GS packet API (TODrawScaleButtonIconRGBA): appends to or kicks a packet; replaced by ffx-render
+0x008f91f0	glue	GS packet API (TODrawScissor): appends to or kicks a packet; replaced by ffx-render
+0x008f9230	glue	GS packet API (TODrawScissorXYWH): appends to or kicks a packet; replaced by ffx-render
+0x008f9280	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008f9970	dead	unreachable from the entry point and every pointer table
 0x008f9a40	logic	default (no rule: ported to be safe)
 0x008f9b60	logic	default (no rule: ported to be safe)
-0x008f9c20	logic	default (no rule: ported to be safe)
+0x008f9c20	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008fa450	logic	default (no rule: ported to be safe)
 0x008fa470	dead	unreachable from the entry point and every pointer table
 0x008fa4f0	logic	default (no rule: ported to be safe)
@@ -14855,17 +14855,17 @@
 0x008fae10	logic	default (no rule: ported to be safe)
 0x008fae20	glue	GS/DMA packet writer (sceDmaGetChan; writes no game state): replaced by ffx-render
 0x008fae40	logic	default (no rule: ported to be safe)
-0x008fb090	logic	default (no rule: ported to be safe)
-0x008fb150	logic	default (no rule: ported to be safe)
+0x008fb090	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008fb150	glue	GS packet API (TOMakePktBoxXYWHRGBA): appends to or kicks a packet; replaced by ffx-render
 0x008fb210	dead	unreachable from the entry point and every pointer table
 0x008fb3e0	dead	unreachable from the entry point and every pointer table
 0x008fb570	dead	unreachable from the entry point and every pointer table
 0x008fb6f0	dead	unreachable from the entry point and every pointer table
-0x008fb840	logic	default (no rule: ported to be safe)
-0x008fb940	logic	default (no rule: ported to be safe)
-0x008fbae0	logic	default (no rule: ported to be safe)
+0x008fb840	glue	GS packet API (TOMakePktBtlDamageNumRGBA): appends to or kicks a packet; replaced by ffx-render
+0x008fb940	glue	GS packet API (TOMakePktBtlEasyFont): appends to or kicks a packet; replaced by ffx-render
+0x008fbae0	glue	GS packet API (TOMakePktBtlEasyFontShadow): appends to or kicks a packet; replaced by ffx-render
 0x008fbc90	dead	unreachable from the entry point and every pointer table
-0x008fbcc0	logic	default (no rule: ported to be safe)
+0x008fbcc0	glue	GS packet API (TOMakePktBtlIconA): appends to or kicks a packet; replaced by ffx-render
 0x008fbee0	dead	unreachable from the entry point and every pointer table
 0x008fc020	dead	unreachable from the entry point and every pointer table
 0x008fc240	dead	unreachable from the entry point and every pointer table
@@ -14876,16 +14876,16 @@
 0x008fc6a0	dead	unreachable from the entry point and every pointer table
 0x008fc720	dead	unreachable from the entry point and every pointer table
 0x008fc770	logic	default (no rule: ported to be safe)
-0x008fc7c0	logic	default (no rule: ported to be safe)
-0x008fc870	logic	default (no rule: ported to be safe)
-0x008fcad0	logic	default (no rule: ported to be safe)
-0x008fcca0	logic	default (no rule: ported to be safe)
-0x008fce90	logic	default (no rule: ported to be safe)
-0x008fd0a0	logic	default (no rule: ported to be safe)
+0x008fc7c0	glue	GS packet API (TOMakePktFont1612): appends to or kicks a packet; replaced by ffx-render
+0x008fc870	glue	GS packet API (TOMakePktFont1612Edge): appends to or kicks a packet; replaced by ffx-render
+0x008fcad0	glue	GS packet API (TOMakePktFont1612Font): appends to or kicks a packet; replaced by ffx-render
+0x008fcca0	glue	GS packet API (TOMakePktFont1612Shadow): appends to or kicks a packet; replaced by ffx-render
+0x008fce90	glue	GS packet API (TOMakePktFontLItalicEdge): appends to or kicks a packet; replaced by ffx-render
+0x008fd0a0	glue	GS packet API (TOMakePktFontLItalicFont): appends to or kicks a packet; replaced by ffx-render
 0x008fd1f0	dead	unreachable from the entry point and every pointer table
 0x008fd270	dead	unreachable from the entry point and every pointer table
 0x008fd2a0	dead	unreachable from the entry point and every pointer table
-0x008fd390	logic	default (no rule: ported to be safe)
+0x008fd390	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008fd490	dead	unreachable from the entry point and every pointer table
 0x008fd4d0	dead	unreachable from the entry point and every pointer table
 0x008fd520	dead	unreachable from the entry point and every pointer table
@@ -14893,25 +14893,25 @@
 0x008fd7d0	dead	unreachable from the entry point and every pointer table
 0x008fd800	dead	unreachable from the entry point and every pointer table
 0x008fd830	dead	unreachable from the entry point and every pointer table
-0x008fd960	logic	default (no rule: ported to be safe)
-0x008fd9f0	logic	default (no rule: ported to be safe)
-0x008fdc00	logic	default (no rule: ported to be safe)
+0x008fd960	glue	GS packet API (TOMakePktMovieFont1612): appends to or kicks a packet; replaced by ffx-render
+0x008fd9f0	glue	GS packet API (TOMakePktMovieFont1612Edge): appends to or kicks a packet; replaced by ffx-render
+0x008fdc00	glue	GS packet API (TOMakePktMovieFont1612Font): appends to or kicks a packet; replaced by ffx-render
 0x008fdd60	dead	unreachable from the entry point and every pointer table
-0x008fde50	logic	default (no rule: ported to be safe)
-0x008fdee0	logic	default (no rule: ported to be safe)
-0x008fdf20	logic	default (no rule: ported to be safe)
-0x008fe040	logic	default (no rule: ported to be safe)
+0x008fde50	glue	GS packet API (TOMakePktSampleBlueWindowXY2): appends to or kicks a packet; replaced by ffx-render
+0x008fdee0	glue	GS packet API (TOMakePktScissor): appends to or kicks a packet; replaced by ffx-render
+0x008fdf20	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
+0x008fe040	glue	GS packet API (TOMakePktSeqPrimFunc): appends to or kicks a packet; replaced by ffx-render
 0x008fe070	logic	default (no rule: ported to be safe)
-0x008fe080	logic	default (no rule: ported to be safe)
+0x008fe080	glue	GS packet API (TOMakePktSeqPrimMes): appends to or kicks a packet; replaced by ffx-render
 0x008fe0b0	logic	default (no rule: ported to be safe)
-0x008feb00	logic	default (no rule: ported to be safe)
+0x008feb00	glue	GS packet API (TOMakePktShapeCursor): appends to or kicks a packet; replaced by ffx-render
 0x008fefb0	dead	unreachable from the entry point and every pointer table
 0x008feff0	dead	unreachable from the entry point and every pointer table
 0x008ff020	dead	unreachable from the entry point and every pointer table
 0x008ff080	dead	unreachable from the entry point and every pointer table
 0x008ff140	logic	default (no rule: ported to be safe)
 0x008ff170	dead	unreachable from the entry point and every pointer table
-0x008ff260	logic	default (no rule: ported to be safe)
+0x008ff260	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008ff370	logic	default (no rule: ported to be safe)
 0x008ff3e0	logic	default (no rule: ported to be safe)
 0x008ff490	logic	default (no rule: ported to be safe)
@@ -14924,21 +14924,21 @@
 0x00901100	logic	default (no rule: ported to be safe)
 0x00901130	logic	default (no rule: ported to be safe)
 0x00901160	logic	default (no rule: ported to be safe)
-0x00901190	logic	default (no rule: ported to be safe)
-0x00901280	logic	default (no rule: ported to be safe)
-0x00901300	logic	default (no rule: ported to be safe)
-0x00901490	logic	default (no rule: ported to be safe)
+0x00901190	glue	GS packet API (TOMkpActiveChrCursor): appends to or kicks a packet; replaced by ffx-render
+0x00901280	glue	GS packet API (TOMkpBtlLimitLuluMidareCounter): appends to or kicks a packet; replaced by ffx-render
+0x00901300	glue	GS packet API (TOMkpBtlLimitSpecialGauge): appends to or kicks a packet; replaced by ffx-render
+0x00901490	glue	GS/DMA packet writer (TOCtrlPkt, TOMkpShapeXYC2; writes no game state): replaced by ffx-render
 0x009015e0	dead	unreachable from the entry point and every pointer table
-0x00901660	glue	GS/DMA packet writer (TOAdpCrossEasyStrFontSClutRGBA; writes no game state): replaced by ffx-render
-0x009016b0	logic	default (no rule: ported to be safe)
-0x00901700	logic	default (no rule: ported to be safe)
+0x00901660	glue	GS packet API (TOMkpCrossEasyStrFontSClut): appends to or kicks a packet; replaced by ffx-render
+0x009016b0	glue	GS packet API (TOMkpCrossExtMesFontLClut): appends to or kicks a packet; replaced by ffx-render
+0x00901700	glue	GS packet API (TOMkpCrossExtMesFontLClutTypeRGBA): appends to or kicks a packet; replaced by ffx-render
 0x009019f0	logic	default (no rule: ported to be safe)
 0x00901af0	dead	unreachable from the entry point and every pointer table
 0x00901bb0	dead	unreachable from the entry point and every pointer table
 0x00901be0	dead	unreachable from the entry point and every pointer table
 0x00901c10	logic	default (no rule: ported to be safe)
 0x00901c20	dead	unreachable from the entry point and every pointer table
-0x00901c50	logic	default (no rule: ported to be safe)
+0x00901c50	glue	GS packet API (TOMkpEasyMesFontLCenter): appends to or kicks a packet; replaced by ffx-render
 0x00901cb0	logic	default (no rule: ported to be safe)
 0x00901ce0	dead	unreachable from the entry point and every pointer table
 0x00901d10	logic	default (no rule: ported to be safe)
@@ -14949,11 +14949,11 @@
 0x00901e80	dead	unreachable from the entry point and every pointer table
 0x00901ec0	dead	unreachable from the entry point and every pointer table
 0x00901f00	dead	unreachable from the entry point and every pointer table
-0x00901f40	logic	default (no rule: ported to be safe)
+0x00901f40	glue	GS packet API (TOMkpEasyStrFontM): appends to or kicks a packet; replaced by ffx-render
 0x00901f80	logic	default (no rule: ported to be safe)
 0x00901fc0	dead	unreachable from the entry point and every pointer table
 0x00902000	dead	unreachable from the entry point and every pointer table
-0x00902040	glue	GS/DMA packet writer (TOAdpCrossEasyStrFontSClutRGBA; writes no game state): replaced by ffx-render
+0x00902040	glue	GS packet API (TOMkpEasyStrFontS): appends to or kicks a packet; replaced by ffx-render
 0x009020a0	dead	unreachable from the entry point and every pointer table
 0x009020e0	dead	unreachable from the entry point and every pointer table
 0x00902120	dead	unreachable from the entry point and every pointer table
@@ -14983,25 +14983,25 @@
 0x00902600	dead	unreachable from the entry point and every pointer table
 0x00902620	dead	unreachable from the entry point and every pointer table
 0x00902650	dead	unreachable from the entry point and every pointer table
-0x00902700	logic	default (no rule: ported to be safe)
+0x00902700	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
 0x00902810	logic	default (no rule: ported to be safe)
 0x00902840	dead	unreachable from the entry point and every pointer table
 0x00902870	dead	unreachable from the entry point and every pointer table
-0x009029b0	logic	default (no rule: ported to be safe)
-0x00902ef0	logic	default (no rule: ported to be safe)
-0x00903300	logic	default (no rule: ported to be safe)
+0x009029b0	glue	GS packet API (TOMkpPadButtonData): appends to or kicks a packet; replaced by ffx-render
+0x00902ef0	glue	GS packet API (TOMkpRotateShapeXYWHUVC2): appends to or kicks a packet; replaced by ffx-render
+0x00903300	glue	GS packet API (TOMkpSetEnvSubFont): appends to or kicks a packet; replaced by ffx-render
 0x00903320	dead	unreachable from the entry point and every pointer table
-0x009034b0	logic	default (no rule: ported to be safe)
-0x00903a10	logic	default (no rule: ported to be safe)
-0x00903a50	logic	default (no rule: ported to be safe)
+0x009034b0	glue	GS packet API (TOMkpShapePartIndexXYWHC2): appends to or kicks a packet; replaced by ffx-render
+0x00903a10	glue	GS packet API (TOMkpShapeXY): appends to or kicks a packet; replaced by ffx-render
+0x00903a50	glue	GS packet API (TOMkpShapeXYC2): appends to or kicks a packet; replaced by ffx-render
 0x00903a80	dead	unreachable from the entry point and every pointer table
-0x00903b70	logic	default (no rule: ported to be safe)
-0x00903bb0	logic	default (no rule: ported to be safe)
-0x00903ee0	logic	default (no rule: ported to be safe)
+0x00903b70	glue	GS packet API (TOMkpShapeXYWHC2): appends to or kicks a packet; replaced by ffx-render
+0x00903bb0	glue	GS packet API (TOMkpShapeXYWHUV): appends to or kicks a packet; replaced by ffx-render
+0x00903ee0	glue	GS packet API (TOMkpShapeXYWHUVC2): appends to or kicks a packet; replaced by ffx-render
 0x00904250	dead	unreachable from the entry point and every pointer table
 0x00904280	dead	unreachable from the entry point and every pointer table
 0x009042b0	dead	unreachable from the entry point and every pointer table
-0x009042e0	logic	default (no rule: ported to be safe)
+0x009042e0	glue	GS packet API (TOMkpValueFontMClutRight): appends to or kicks a packet; replaced by ffx-render
 0x00904310	dead	unreachable from the entry point and every pointer table
 0x00904340	dead	unreachable from the entry point and every pointer table
 0x00904600	glue	GS packet API (TOOpenPktbuff): appends to or kicks a packet; replaced by ffx-render
@@ -15017,7 +15017,7 @@
 0x009048f0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00904910	dead	unreachable from the entry point and every pointer table
 0x00904a00	dead	unreachable from the entry point and every pointer table
-0x00904a70	logic	default (no rule: ported to be safe)
+0x00904a70	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x00904ba0	logic	default (no rule: ported to be safe)
 0x00905190	logic	default (no rule: ported to be safe)
 0x00905230	logic	default (no rule: ported to be safe)
@@ -15038,10 +15038,10 @@
 0x00905ef0	logic	default (no rule: ported to be safe)
 0x00906050	logic	default (no rule: ported to be safe)
 0x009060f0	logic	default (no rule: ported to be safe)
-0x00906270	logic	default (no rule: ported to be safe)
-0x00906290	logic	default (no rule: ported to be safe)
+0x00906270	glue	GS packet API (TOMakePktFont1612Font_00906270): appends to or kicks a packet; replaced by ffx-render
+0x00906290	glue	GS packet API (TOMakePktFont1612Shadow_00906290): appends to or kicks a packet; replaced by ffx-render
 0x009062b0	logic	default (no rule: ported to be safe)
-0x00906420	logic	default (no rule: ported to be safe)
+0x00906420	glue	GS packet API (graphicDrawUIElementAfterSet): appends to or kicks a packet; replaced by ffx-render
 0x00906680	logic	default (no rule: ported to be safe)
 0x009066b0	logic	default (no rule: ported to be safe)
 0x009066d0	logic	default (no rule: ported to be safe)
@@ -15054,7 +15054,7 @@
 0x00906b30	logic	default (no rule: ported to be safe)
 0x00906ba0	logic	default (no rule: ported to be safe)
 0x00906bd0	logic	default (no rule: ported to be safe)
-0x00906bf0	logic	default (no rule: ported to be safe)
+0x00906bf0	glue	GS packet API (TODrawWindow): appends to or kicks a packet; replaced by ffx-render
 0x00906c20	logic	default (no rule: ported to be safe)
 0x00906c40	logic	default (no rule: ported to be safe)
 0x00906c60	dead	unreachable from the entry point and every pointer table
@@ -15069,12 +15069,12 @@
 0x00906fb0	logic	default (no rule: ported to be safe)
 0x00906fc0	logic	default (no rule: ported to be safe)
 0x00907040	logic	default (no rule: ported to be safe)
-0x00907060	logic	default (no rule: ported to be safe)
+0x00907060	glue	GS/DMA packet writer (TODrawMenuPlateXYWHType, TODrawScissor, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x00907160	logic	default (no rule: ported to be safe)
 0x00907190	logic	default (no rule: ported to be safe)
 0x009071c0	logic	default (no rule: ported to be safe)
 0x009071f0	logic	default (no rule: ported to be safe)
-0x00907210	logic	default (no rule: ported to be safe)
+0x00907210	glue	GS/DMA packet writer (TODrawScissor, TOMakePktScissor; writes no game state): replaced by ffx-render
 0x009072e0	logic	default (no rule: ported to be safe)
 0x00907330	logic	default (no rule: ported to be safe)
 0x00907370	logic	default (no rule: ported to be safe)
@@ -15805,7 +15805,7 @@
 0x00925c50	dead	unreachable from the entry point and every pointer table
 0x00925db0	dead	unreachable from the entry point and every pointer table
 0x00925ea0	logic	default (no rule: ported to be safe)
-0x00925f80	glue	GS/DMA packet writer (rcPacketDataCloseAdr, rcPacketDataDraw, rcPacketDataInit; writes no game state): replaced by ffx-render
+0x00925f80	glue	GS/DMA packet writer (graphicDrawUIElement, rcPacketDataCloseAdr, rcPacketDataDraw; writes no game state): replaced by ffx-render
 0x00926c00	logic	default (no rule: ported to be safe)
 0x00926c80	dead	unreachable from the entry point and every pointer table
 0x00926eb0	dead	unreachable from the entry point and every pointer table
@@ -17202,13 +17202,13 @@
 0x00a45920	logic	default (no rule: ported to be safe)
 0x00a45930	logic	default (no rule: ported to be safe)
 0x00a459e0	logic	default (no rule: ported to be safe)
-0x00a45ab0	logic	default (no rule: ported to be safe)
+0x00a45ab0	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a45e30	logic	default (no rule: ported to be safe)
 0x00a45fd0	logic	default (no rule: ported to be safe)
 0x00a460a0	dead	unreachable from the entry point and every pointer table
 0x00a46120	logic	default (no rule: ported to be safe)
 0x00a461b0	logic	default (no rule: ported to be safe)
-0x00a462f0	logic	default (no rule: ported to be safe)
+0x00a462f0	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a47210	logic	default (no rule: ported to be safe)
 0x00a473d0	debug	only called from debug code (0xa44ea0)
 0x00a47400	logic	default (no rule: ported to be safe)
@@ -17239,18 +17239,18 @@
 0x00a494d0	dead	unreachable from the entry point and every pointer table
 0x00a494f0	dead	unreachable from the entry point and every pointer table
 0x00a49590	logic	default (no rule: ported to be safe)
-0x00a497b0	logic	default (no rule: ported to be safe)
+0x00a497b0	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a49f10	logic	default (no rule: ported to be safe)
 0x00a4ac20	logic	default (no rule: ported to be safe)
-0x00a4b260	logic	default (no rule: ported to be safe)
+0x00a4b260	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00a4b4b0	logic	default (no rule: ported to be safe)
 0x00a4b790	logic	default (no rule: ported to be safe)
-0x00a4c460	logic	default (no rule: ported to be safe)
+0x00a4c460	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x00a4c700	logic	default (no rule: ported to be safe)
 0x00a4c8d0	logic	default (no rule: ported to be safe)
 0x00a4ce20	logic	default (no rule: ported to be safe)
 0x00a4f250	logic	default (no rule: ported to be safe)
-0x00a4f290	logic	default (no rule: ported to be safe)
+0x00a4f290	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a4f630	logic	default (no rule: ported to be safe)
 0x00a4f930	logic	default (no rule: ported to be safe)
 0x00a4f9a0	logic	default (no rule: ported to be safe)
@@ -17264,7 +17264,7 @@
 0x00a50ed0	logic	default (no rule: ported to be safe)
 0x00a51340	logic	default (no rule: ported to be safe)
 0x00a51560	logic	default (no rule: ported to be safe)
-0x00a51720	logic	default (no rule: ported to be safe)
+0x00a51720	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a521a0	logic	default (no rule: ported to be safe)
 0x00a53570	logic	default (no rule: ported to be safe)
 0x00a53de0	logic	default (no rule: ported to be safe)

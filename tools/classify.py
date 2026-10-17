@@ -114,7 +114,15 @@ DEBUG_NAME = NAME_RULES[0][1]
 
 # GS/DMA packet building: kicks and the helpers that append to a packet
 PACKET_API = re.compile(r"^(sceDma|sceGs|rcPacketData|TOAdp|TOGs[A-Z]|TOCtrlPkt|TODrawKick|"
-                        r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$)")
+                        r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$|"
+                        # the menu/battle 2D shape writers append GIF primitives to the packet
+                        r"TOMkp|TODraw|TOMakePkt|"
+                        # the PC port's stand-in for those GIF primitives
+                        r"graphicDrawUI)")
+# read-only helpers of the 2D shape writers: the menu scissor clip (writes
+# only through its pointer arguments) and the shape texture lookup (its
+# cache is a texture name, not game state)
+DRAW_HELPER = re.compile(r"^(BeginScissor_|TOGetShapTextureName$|TOGetImageWH$)")
 # named read-only helpers a packet writer may call (no global writes either)
 GETTER = re.compile(r"(Get|[Ii]s[A-Z0-9]|get_ptr32|Calc|ScaleMatrix|PersMatrix|Copy16|CopyQword|ToFixed|Mul[0-9A-Z]|Apply)")
 # the PC build's PS2 SDK stand-ins (sce*, FlushCache, threads, semaphores)
@@ -511,6 +519,7 @@ def main():
     def other(c):
         n = names.get(c, "")
         return cls.get(c) in ("glue", "platform") or bool(PACKET_API.search(n) or VU_SCRATCH.search(n)
+                                                         or DRAW_HELPER.search(n)
                                                          or (GETTER.search(n) and not writes[c])
                                                          or (size.get(c, 99) <= 16 and not writes[c]
                                                              and not direct.get(c)))
