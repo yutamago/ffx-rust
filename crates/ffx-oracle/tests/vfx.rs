@@ -8041,6 +8041,147 @@ fn eiabm_sphe_matches_the_original() {
     }
 }
 
+/// A value for the lighting inputs: mostly moderate, sometimes any float
+/// (`rng.float()`, which includes the specials).
+fn light_value(rng: &mut Xorshift) -> u32 {
+    match rng.below(4) {
+        0 => rng.float(),
+        1 => finite(rng),
+        _ => {
+            #[allow(clippy::cast_precision_loss)]
+            let x = (rng.below(20001) as f32 - 10000.0) / 64.0;
+            x.to_bits()
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn eiabm_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_57c0);
+        x87_crt_stand_ins(&mut p);
+        // graphicFontGetScreenWH(&w, &h) from cells; the render data
+        // lookup returns `tex`
+        let cells = p.alloc(0x10);
+        let mut c = Vec::new();
+        for k in 0..2u8 {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+            c.extend([0x8b, 0x0d]); // mov ecx, [cell]
+            c.extend((cells + 4 * u32::from(k)).to_le_bytes());
+            c.extend([0x89, 0x08]); // mov [eax], ecx
+        }
+        c.push(0xc3);
+        let at = p.sym(0x0064_0db0);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let tex = p.alloc(0x100);
+        p.set(cells + 8, tex);
+        deref_recorder_with(&mut p, 0x0063_8fd0, &[0, 0], Some(cells + 8));
+        let rd = p.alloc(0x40);
+        p.set(tex + 0x94, rd);
+        let len = 0x2000u32;
+        let streams = [
+            p.alloc(len as usize),
+            p.alloc(len as usize),
+            p.alloc(len as usize),
+            p.alloc(len as usize),
+        ];
+        for (s, at) in streams.into_iter().zip([0xcu32, 0x10, 0x14, 0x1c]) {
+            p.set(rd + at, s);
+        }
+        let skip = p.sym(0x012f_b7d0);
+        let (obj, part, cam, pd) = (p.alloc(0xa00), p.alloc(0x80), p.alloc(0x40), p.alloc(0x40));
+        let (ma, mm, lights) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let sizes = [0x14u32, 0x1c, 0x20, 0x28, 0x18, 0x20, 0x28, 0x30];
+        for round in 0..2500 {
+            p.fill(obj, 0xa00, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            for s in streams {
+                p.fill(s, len, &mut rng);
+            }
+            // the blocks
+            p.set(obj + 4, 0x40u32);
+            p.set(obj + 8, 0x800u32);
+            p.set(obj + 0xc, 0x900u32);
+            let mut hdr = obj + 0x40;
+            let mut total = 0i16;
+            for _ in 0..=rng.below(5) {
+                let kind = rng.pick(&[0u8, 1, 1, 4, 5, 5, 2, 3, 6, 7, 9, 0xff]);
+                let n = rng.below(4);
+                p.set(hdr + 1, kind);
+                p.set(hdr + 2, i16::try_from(n).unwrap());
+                let size = sizes.get(usize::from(kind)).copied().unwrap_or(0);
+                let data = hdr + 0x10;
+                for r in 0..n {
+                    let rec = data + r * size;
+                    for field in (0xcu32..0x20).step_by(2) {
+                        if field + 2 <= size {
+                            p.set(rec + field, u16::try_from(rng.below(16)).unwrap());
+                        }
+                    }
+                }
+                total += i16::try_from(n).unwrap();
+                hdr = data + n * size;
+            }
+            if rng.chance(8) && total > 0 {
+                total -= 1;
+            }
+            p.set(obj + 0x10, total);
+            // the part
+            p.set(part, rng.pick(&[0x40u8, 0x40, 0x41, 0, 0xbf]));
+            p.set(part + 0x20, cam);
+            p.set(part + 0x24, ma);
+            p.set(part + 0x28, lights);
+            p.set(part + 0x2c, mm);
+            p.set(part + 0x44, pd);
+            for i in 0..16u32 {
+                let (a, m) = (light_value(&mut rng), light_value(&mut rng));
+                p.set(ma + 4 * i, a);
+                p.set(mm + 4 * i, m);
+                let l = light_value(&mut rng);
+                p.set(lights + 4 * i, l);
+            }
+            for at in [0x2cu32, 0x30, 0x34, 0x3c] {
+                let x = if rng.chance(10) { 0 } else { finite(&mut rng) };
+                p.set(cam + at, x);
+            }
+            let dpt = rng.float();
+            p.set(pd + 0x38, dpt);
+            let (w9, h9) = (rng.next(), rng.next());
+            p.set(cells, rng.pick(&[1280u32, 1920, 640, 0, w9]));
+            p.set(cells + 4, rng.pick(&[720u32, 1080, 448, 0, h9]));
+            p.set(skip, u32::from(round % 17 == 0));
+            p.set(rd + 4, rng.below(100));
+            p.set(rd + 8, rng.below(100));
+            let slot = rng.pick(&[4u32, 8, 0]);
+            check_deep_n(
+                &mut p,
+                "op1_md_draw_eiabm",
+                0x00a6_57c0,
+                &[obj, part, slot],
+                |o, frame| {
+                    Some(md::bridge::op1_md_draw_eiabm(
+                        o,
+                        obj,
+                        part,
+                        slot,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // the streams, compared on their own as well
+            assert_eq!(
+                render_streams(&p.a, rd, len),
+                render_streams(&p.b, rd, len),
+                "{}: streams",
+                p.name
+            );
+        }
+    }
+}
+
 /// `fcos`/`fsin` stand-ins for the CRT's `_CIcos`/`_CIsin` (their import
 /// slots `0x00b0c3b4`, `0x00b0c3b8` pointed at `0x00b0bfc0`, `0x00b0bfc8`)
 /// and a thunk at [`THUNK`], `fld dword [esp + 4]; jmp [slot]`, for the

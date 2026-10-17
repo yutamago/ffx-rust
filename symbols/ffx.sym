@@ -11935,7 +11935,7 @@
 0x00a65060 function opd_unit_osu                 # str-match switch: only user of 45 string(s) held once by both builds, e.g. '     (%3d)umax'; Switch 0x710086a720 opd_unit_osu (symbols from Fahrenheit's server export)
 0x00a65570 function opd_debug_flags_str_00a65570 # ours: (buf, flags) formats a flag word as letters ("x"/"y"/"z"/"t"/"u" or "." per bit) with the CRT's sprintf (0x00b0c3dc); called only by the op debug display 0x00a64c40/0x00a64ca0/0x00a64d00: debug
 0x00a65750 function op1_md_draw               # fh v3:exact 0x00a65750
-0x00a657c0 function op1_md_draw_eiabm            # layout: the three unnamed functions between op1_md_draw and op1_mdc_ref_nolight take the Switch names that sort there, in order: op1_md_draw_eiabm (9400 bytes; ours 10573, "NoTexture"), op1_md_draw_eiabm_sphe (3168; 2892), op1_mdc_draw (388; 376)
+0x00a657c0 function op1_md_draw_eiabm            # layout: the three unnamed functions between op1_md_draw and op1_mdc_ref_nolight take the Switch names that sort there, in order: op1_md_draw_eiabm (9400 bytes; ours 10573, "NoTexture"), op1_md_draw_eiabm_sphe (3168; 2892), op1_mdc_draw (388; 376); ours: (obj, part, slot) -> 0: the model's triangle/quad blocks (kinds 0/1/4/5 drawn, 2/3/6/7 skipped) into the NoTexture render data, kinds 1/5 lit by part+0x28 lights when part bit 0x40 (ported whole, md::bridge::op1_md_draw_eiabm)
 0x00a68140 function op1_md_draw_eiabm_sphe       # layout: second of the three (see op1_md_draw_eiabm)
 0x00a68c90 function op1_mdc_draw                 # layout: third of the three (see op1_md_draw_eiabm)
 0x00a68e10 function op1_mdc_ref_nolight       # fh v3:exact 0x00a68e10

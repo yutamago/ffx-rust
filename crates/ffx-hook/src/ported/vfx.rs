@@ -1443,6 +1443,16 @@ ported! {
     op_token_007e1f80 @ 0x007e_1f80 => extern "C" fn op_token(src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
         op::bridge::op_token(&mut mem(), src, out, pos, max, eol, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op1_md_draw_eiabm(obj, part, slot)`: its stack locals in a buffer
+    /// on this shim's stack (the frame pointer at its end).
+    op1_md_draw_eiabm @ 0x00a6_57c0 => extern "C" fn op1_md_draw_eiabm(obj: u32, part: u32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x450]);
+        let mut locals = Locals([0; 0x450]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x450;
+        md::bridge::op1_md_draw_eiabm(&mut mem(), obj, part, slot, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
