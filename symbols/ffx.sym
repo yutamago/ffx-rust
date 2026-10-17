@@ -1816,6 +1816,10 @@
 0x00642fe0 function movie_disp2               # fh switch:bsim1.00 0x7100321f70
 0x006430e0 function graphicSetFlipVsnc        # fh v3:bsim1.00 0x00643290
 0x006430f0 function graphicSetFocusZ          # fh v3:exact 0x006432a0
+0x00643150 function graphicSetFogColour       # (r, g, b) floats -> Phyre_FogEffectManager_GetInstance()->0x006e36f0; alphabetical run graphicSetFocusZ..graphicSetForceNoVsync, counterpart of graphicGetFog*; yiSetFogColor's call; name ours
+0x006431a0 function graphicSetFogFar          # (x) -> fog manager 0x006e3a30; same run; yiSetFogParam's far; name ours
+0x006431c0 function graphicSetFogLimit        # (x) -> fog manager 0x006e3aa0; same run; yiSetFogParam's limit; name ours
+0x006431e0 function graphicSetFogNear         # (x) -> fog manager 0x006e3b10; same run; yiSetFogParam's near; name ours
 0x00643200 function graphicSetForceNoVsync    # fh v3:exact 0x006433b0
 0x00643260 function graphicSetGameOverNotify  # fh v3:bsim1.00 0x00643410
 0x00643270 function graphicSetGlobalAmbientColor # fh switch:bsim1.00 0x71001d93d0
@@ -8933,7 +8937,7 @@
 0x00908940 function yiGetDistClutAddr            # layout: alphabetical run between yiGetColorScale and yiGetDrawMask (3 unnamed in the gap); Switch 0x710052d1a0 yiGetDistClutAddr is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00908960 function yiGetDrawMask             # fh v3:bsim1.00 0x00908960
 0x00908970 function yiGetFCount               # fh v3:bsim1.00 0x00908970
-0x00908980 function yiGetFogColor             # fh v3:exact 0x00908980
+0x00908980 function yiGetFogColor             # fh v3:exact 0x00908980; (out) -> eax: four ints, the fog colour bytes (0x018df140, clamped through scale/offset with render status bit 2), then r, g, b = graphicGetGlobalAmbientColor (bit 2) or graphicGetFogColor times 255.0
 0x00908bb0 function yiGetFogParam             # fh v3:exact 0x00908bb0
 0x00908c30 function yiSetColorShift           # fh switch:bsim1.00 0x710052b7b0
 0x00908c50 function yiGetDObjGroup               # (index) -> u16 group of display object index (g_YiDObjs +0x74), -1 when index >= g_YiDObjCount
@@ -8976,6 +8980,8 @@
 0x0090a230 function yiSetFieldVec6               # (a..f): six floats to 0x01931218; script native 0x0091c6b0; ?meaning
 0x0090a270 function yiSetColorScale           # fh v3:bsim1.00 0x0090a270
 0x0090a2b0 function yiSetDrawMask             # fh v3:bsim1.00 0x0090a2b0
+0x0090a2c0 function yiSetFogColor             # (c): low bytes of four ints to 0x018df140 (read by yiGetFogColor); map 0xe0: graphicSetFogColour(r/255, g/255, b/255); between yiSetDrawMask and yiSetIDPage alphabetically; name ours
+0x0090a350 function yiSetFogParam             # (near, far, limit): near/far over scale*units to 0x018df148/14c, limit to 0x018df144 (yiGetFogParam's inverse); map 0xe0: graphicSetFog{Near,Far,Limit}; name ours
 0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
@@ -10273,6 +10279,7 @@
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
+0x00a47400 function AbmapMaskNodeFlags        # (mask): ANDs mask into +0x22 of every node (+0x808, 0x28 bytes, i16 count +2) whose kind +6 is not -1; name ours
 0x00a47440 function AbmapPulseCursor          # (): +0x115a4 = sin(frame +0x11698), +0x115c5 = ((sin + 1) * 8 + 0x70) * +0x115c6 >> 7 (eiAbmCalc)
 0x00a474d0 function AbmapCalcMoveCosts        # fh v3:exact 0x00a474d0 +AbmapCalcMoveCosts
 0x00a47560 function AbmapCalcMoveCost         # fh v3:exact 0x00a47560 +AbmapCalcMoveCost
@@ -10280,11 +10287,15 @@
 0x00a47d50 function AbmapState_ChangingNode   # fh v3:exact+call.cs 0x00a47d50 cdecl
 0x00a47f00 function AbmapState_Warping        # fh v3:exact+call.cs 0x00a47f00
 0x00a48740 function abmap_cheng_panel         # fh v3:exact 0x00a48740
+0x00a48c20 function AbmapPadStartSlideOut     # (pad): unless g_AbmapPad[pad] is hidden (+0x23 0) and idle (+0x34 null), counter +0x29 = 0, step +0x34 = AbmapPadSlideOutStep; name ours
 0x00a48c80 function AbmapInitMovingToTarget   # fh v3:exact 0x00a48c80 +AbmapInitMovingToTarget
 0x00a48d20 function AbmapTransitionToHoming   # fh v3:exact 0x00a48d20 +AbmapTransitionToHoming
 0x00a48d70 function AbmapInitHoming           # fh v3:exact 0x00a48d70 +AbmapInitHoming
+0x00a48f20 function AbmapPadStartSlideIn      # (pad): unless shown (+0x23 set) and idle, counter +0x29 = 0, step +0x34 = AbmapPadSlideInStep; name ours
 0x00a48f50 function AbmapCtrlTilt             # fh v3:cg2 0xa48f50 +AbmapCtrlTilt
 0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom
+0x00a49310 function AbmapItemUsableAt         # (chr, node, item) -> bits: 0 unless held (MsGetSaveItemNum), else the ability bits the item grants chr over its nodes (AbmapForEachNode/AbmapForNodeAndLinked with AbmapItemNodeEffect); name ours
+0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
 0x00a53de0 function eiAbmDataInit             # fh v3:exact 0x00a53de0
@@ -10308,18 +10319,26 @@
 0x00a596d0 function CopyDeref_00a596d0           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[(((a0 * 0x340) + t0) + 0x8)]; u16[(((a0 * 0x340) + t0) + 0x2a)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0xa)]; u16[(((a0 * 0x340) + t0) + 0x2c)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0xc)]; u16[(((a0 * 0x340) + t0) + 0x2e)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0xe)]; u16[(((a0 * 0x340) + t0) + 0x30)] = t4; u8[(((a0 * 0x340) + t0) + 0x32)] = 0x0; u32[(((a0 * 0x340) + t0) + 0x34)] = &0x00a5a170; return t4; callers: no direct caller; name ours
 0x00a59710 function AbmapForEachNode          # (f, arg): f(node, arg) over the +2 nodes (kind -1 skipped) until non-zero
 0x00a59760 function AbmapForNodeAndLinked     # (node, f, arg): f on the node, then on the other end of each link (+0xa808, 0x14 bytes) touching it, until non-zero
+0x00a59800 function AbmapPadSlideOutStep      # (p): +0x29++; from 3 hidden (+0x23 0) and step cleared, else +0xa = +2 + n h/3 + h/6 (h the i16 +6); name ours
 0x00a59860 function SeveralStoresSetDerefConstantsArgumentsAddresses_00a59860 # auto-port shape (several stores: set deref (constants, arguments, addresses), cdecl): t0 = u32[&0x01a86108]; u16[(((a0 * 0x340) + t0) + 0x23)] = 0x301; u8[(((a0 * 0x340) + t0) + 0x25)] = 0x1; u16[(t0 + 0x2700)] = (a0 & 0xffff); u32[(t0 + 0x2704)] = a1; return ((a0 * 0x340) + t0); callers: no direct caller; name ours
 0x00a59990 function AbmapState_MovingToTarget # fh v3:exact+call.cs 0x00a59990
 0x00a59e80 function AbmapState_HomeOnNode     # fh v3:exact 0x00a59e80 +AbmapState_HomeOnNode
+0x00a5a080 function AbmapRectTweenIn          # (r): +0x32++; below 4 the rect +8 moves n/4 from +0 to +0x2a (16.16), else it is +0x2a and step +0x34 cleared; cells +0x14 = (y+15)/16, +0x16 = (h+15)/20; name ours
+0x00a5a170 function AbmapRectTweenOut         # (r): AbmapRectTweenIn's reverse ((3-n)/4); from 4 the rect is +0 with saved cells +0x10/+0x12, step cleared; name ours
+0x00a5a270 function AbmapPadSlideInStep       # (p): AbmapPadSlideOutStep's reverse: shown (+0x23 1), +0xa = +2 + (3-n) h/3 + h/6, from 3 +0xa = +2 and step cleared; name ours
 0x00a5a2e0 function AbmapMarkLockedEntries    # (pad): each menu pad entry's byte 0 = the current character's save lacks the bit its +4 word names (u16s from save +0x3e); name ours
 0x00a5a360 function AbmapMakeLinkMatrix       # (out, a, b, scale): scale matrix (from the zero register), translation a + b (i16 x, y)
 0x00a5a760 function AbmapLinkCells            # (link): both end nodes' cells on the 20-wide map ((x+0xa00)/256 + (y+0x920)/256 * 20) into +8/+0xa; LoadAbmap; name ours
 0x00a5a800 function AbmapCalcLinkPoints       # fh v3:exact 0x00a5a800 +AbmapCalcLinkPoints
 0x00a5a990 function AbmapSetChrMarker         # (chr): marker +0x11088 + 0x50 chr on its node +0x44: x, y, 0, 1; +0x3c half the kind size + 3.0
+0x00a5aca0 function AbmapMarkEmptyMenus       # (): pad menu entries +0x1704 (12 bytes, i16 count +0x16de): entry 0 marked when MsGetSaveSP(current chr) is 0, entry 1 when TOAmapMakeItemList(3)/TOAmapGetItemListMax is empty; name ours
 0x00a5ad30 function AbmapMakeNodeMatrix       # (out, pos, scale): scale matrix (from the zero register), translation the i16 position, 1.0 (7 callers)
 0x00a5adf0 function AbmapSetKindSizes         # (src): op_oef2_a_get(src, 2, id) u16s +0xc/+0xe of the eight kinds (ids 0x00c86008) into g_Abmap +0xf808; name ours
 0x00a5b030 function AbmapResetCursorCamera    # (): +0x115a0 = 256.0, current character's position (+0x11088 + 0x50 * +0x115bc) to +0x11520 (y - 32.0, w twice the distance), its colour (0x00c86010) to +0x11560, then AbmapPulseCursor; name ours
 0x00a5b140 function AbmapCollectNodeLinks     # (): each used node's links (g_Abmap +0xa808) into its five slots +0xc, the rest cleared; LoadAbmap; name ours
+0x00a5b230 function AbmapSetupKindShapes      # () -> 130: the 130 node kinds' shapes at g_Abmap+0xf828 (seven circle points from the sine table); name ours
+0x00a5b400 function AbmapItemApplyAt          # (chr, node, item, mark): AbmapItemUsableAt without the held check, mark byte at ctx+0x10, callback AbmapItemApplyNode; name ours
+0x00a5b490 function AbmapItemApplyNode        # (node, ctx) -> 0: AbmapItemApplyAt's callback: with any AbmapItemNodeEffect the node's +0x22 gains the mark, result cleared; name ours
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
 0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
