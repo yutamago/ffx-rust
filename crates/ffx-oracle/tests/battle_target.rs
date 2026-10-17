@@ -1231,6 +1231,337 @@ fn rect_words(a: &mut Oracle, b: &mut Oracle) {
     b.write(m + 8, &w).unwrap();
 }
 
+/// The effect read's callees of system, vfx, chara and the CD library
+/// (`ffx_battle::parse`), stubbed in `tex_anim_pos_set_old` (8) and
+/// `tex_anim_no_set_old` (4), with their argument counts; the CD
+/// library's `+0x10` is `FUN_00780750` (the third).
+const EFFECT_CALLEES: [(u32, u8); 12] = {
+    use ffx_battle::parse::bridge as p;
+    [
+        (p::MS_BATTLE_ERROR, 1),
+        (p::GET_CD, 0),
+        (0x0078_0750, 1),
+        (p::MAGIC_FILE_SET_MAGIC_ID, 1),
+        (p::MAGIC_FILE_LOAD, 0),
+        (p::MAGIC_FILE_IS_PRX_PRELOADED, 1),
+        (p::MAGIC_FILE_START, 0),
+        (p::MAGIC_FILE_GET_EFFECT_OVERLAY_TABLE, 1),
+        (p::MAGIC_FILE_CLEANUP, 0),
+        (p::IS_LOAD_TEXTURE, 0),
+        (p::GRAPHIC_IS_MAGIC_FILE_ASYNC_LOAD_AVAILABLE, 0),
+        (p::CH_GET_ID, 1),
+    ]
+};
+
+fn effect_stub_at(k: u32) -> u32 {
+    if k < 8 {
+        0x0078_08f0 + 0x40 * k
+    } else {
+        0x0078_07c0 + 0x40 * (k - 8)
+    }
+}
+
+/// The stubs of [`EFFECT_CALLEES`] in both oracles, records from `rec`
+/// ([`EXCHANGE_REC`] each), and the CD library object.
+fn effect_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32) {
+    let cd = scratch(a, b, 0x20);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(EFFECT_CALLEES) {
+            logging_stub(o, f, effect_stub_at(k), rec + EXCHANGE_REC * k, n, 0);
+        }
+        let f = o.rebase(0x0078_0750);
+        o.write(cd + 0x10, &f.to_le_bytes()).unwrap();
+        o.write(rec + EXCHANGE_REC + 4, &cd.to_le_bytes()).unwrap();
+    }
+}
+
+/// The magic effect reads (`ffx_battle::parse`).
+fn effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32, files: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::parse::bridge as p;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::EVENT_EFFECT_STAT,
+        i8::try_from(flag(rng, 8)).unwrap(),
+    );
+    let stone = [i8::try_from(flag(rng, 6)).unwrap(), 0];
+    set(a, b, ffx_battle::state::bridge::STONE_EFFECT, stone);
+    set(a, b, p::NO_MAGIC_FILE, flag(rng, 4));
+    set(a, b, ffx_battle::action::bridge::AEON_PLAIN2, flag(rng, 6));
+    set(a, b, p::EFFECT_PRELOADED, u32::from(flag(rng, 3)));
+    set(a, b, p::EFFECT_READ_CHR, rng.below(ACTORS));
+    // the effect file table, effect 0x15e at times
+    set(a, b, ffx_battle::exec::bridge::EFFECT_FILES, files);
+    let mut t = vec![0u8; 0x802];
+    for k in 0..0x401 {
+        let v = u16::try_from(k * 2 + rng.below(3)).unwrap();
+        t[2 * k as usize..2 * k as usize + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    let id = [rng.below(0x400), 0x84, rng.below(0x40), 0][rng.below(4) as usize];
+    if rng.below(3) == 0 && id < 0x3ff {
+        t[2 * id as usize..2 * id as usize + 4].copy_from_slice(&[0x5e, 1, 0x5f, 1]);
+    }
+    poke(a, b, files, &t);
+    for (k, r) in [
+        (4, [0, 5, u32::MAX][rng.below(3) as usize]),
+        (5, u32::from(flag(rng, 2))),
+        (6, u32::from(flag(rng, 2))),
+        (7, rng.next()),
+        (8, rng.next()),
+        (9, u32::from(flag(rng, 2))),
+        (10, [0, 1, 3][rng.below(3) as usize]),
+        (11, [0x108f, rng.below(0x2000)][rng.below(2) as usize]),
+    ] {
+        poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+    let i = [rng.below(ACTORS), rng.next()][rng.below(4).min(1) as usize];
+    let actor = w.actor(i & 0xff);
+    if (i & 0xff) < ACTORS {
+        poke(a, b, actor + 0xdfb, &[[0, 0, 0, 1][rng.below(4) as usize]]);
+    }
+    twin("MsEffectRead", a, b, 0x0078_7f20, &[i, id], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            p::ms_effect_read(m, &mut s, i, id).cast_unsigned()
+        })
+    });
+    same("MsEffectRead", a, b);
+    twin("MsEffectReadComplete", a, b, 0x0078_8110, &[], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            p::ms_effect_read_complete(m, &mut s)
+        })
+    });
+    same("MsEffectReadComplete", a, b);
+}
+
+/// A command parsed (`MsParseCommand`): a cue entry of a random actor,
+/// list and command, every actor placed (the moves and directions).
+fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, title: u32) {
+    use ffx_battle::atel::bridge::Script;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    set(a, b, ffx_battle::state::bridge::INPUT_CUE_COUNT, 0);
+    set(a, b, ffx_battle::state::bridge::COMMAND_CUE_COUNT, 0);
+    if !placed(a, b, w, out) {
+        return;
+    }
+    let cue = out + 0x80;
+    fill(a, b, rng, cue, 0x48);
+    let i = rng.below(ACTORS);
+    let sub = rng.below(3);
+    poke(a, b, cue, &[u8::try_from(i).unwrap()]);
+    poke(a, b, cue + 2, &[u8::try_from(sub).unwrap()]);
+    let ids = [
+        0x3002, 0x3003, 0x3004, 0x3005, 0x3018, 0x3021, 0x3022, 0x3055, 0x3056, 0x3117, 0x30ff,
+        0x3129, 0x302a, 0x3025, 0x3026, 0x3029,
+    ];
+    let id = [ids[rng.below(16) as usize], 0x3000 + rng.below(0x140)][rng.below(3).min(1) as usize];
+    let list = cue + 8 + sub * 0x10;
+    poke(a, b, list, &u16::try_from(id).unwrap().to_le_bytes());
+    // its kind: mostly one with a motion (the fake records' are random)
+    let (rec, _) = ffx_kernel::bridge::rom_strings(b, ffx_kernel::bridge::COMMAND, id);
+    if rec != 0 && rng.below(3) != 0 {
+        poke(
+            a,
+            b,
+            rec + 0x15,
+            &[u8::try_from(1 + rng.below(0x1e)).unwrap()],
+        );
+    }
+    // the title window opens or not
+    poke(a, b, title + 4, &u32::from(rng.below(2) == 0).to_le_bytes());
+    // the second word: an actor to swap in or an aeon
+    let other = [rng.below(ACTORS), 8 + rng.below(10)][rng.below(2) as usize];
+    poke(a, b, list + 2, &u16::try_from(other).unwrap().to_le_bytes());
+    let actor = w.actor(i);
+    // the effect motions kept (an actor that can act, +0x15, +0xdce) or
+    // cleared
+    for o in [0x15, 0xdce] {
+        poke(a, b, actor + o, &[u8::from(rng.below(2) == 0)]);
+    }
+    for o in [0xdfb, 0xdea] {
+        poke(
+            a,
+            b,
+            actor + o,
+            &[[0, 0, 1, rng.byte()][rng.below(4) as usize]],
+        );
+    }
+    // targets among the actors (g_BtlMotionBusy and the action take them)
+    let targets = [rng.next() & 0x7fff_ffff, 1 << rng.below(ACTORS), 0][rng.below(3) as usize];
+    poke(a, b, actor + 0xdc0, &targets.to_le_bytes());
+    if [0x3117, 0x30ff].contains(&id)
+        && ![other, 0xf, 0x10, 0x11]
+            .into_iter()
+            .all(|k| writes(a, b, 0x0079_48e0, k, out + 0x40))
+    {
+        return;
+    }
+    twin("MsParseCommand", a, b, 0x007a_e370, &[cue], ALL, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            ffx_battle::parse::bridge::ms_parse_command(m, &h, &mut s, cue).cast_unsigned()
+        })
+    });
+    local_words(a, b);
+    rect_words(a, b);
+    same("MsParseCommand", a, b);
+}
+
+/// The command cue's first entry moving on (`MsCommandCueProcess`):
+/// random waits, states and commands, every actor placed.
+fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, srec: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::parse::bridge as p;
+    use ffx_battle::state::bridge as st;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    cues(a, b, rng, w);
+    set(a, b, st::INPUT_CUE_COUNT, 0);
+    if !placed(a, b, w, out) {
+        return;
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    // the defense, payment and readiness states able to finish
+    for j in 0..ACTORS {
+        let q = w.actor(j);
+        poke(
+            a,
+            b,
+            q + 0x6d4,
+            &[[0xff, 0xff, 0xff, u8::try_from(rng.below(ACTORS)).unwrap()][rng.below(4) as usize]],
+        );
+        for o in [0x508, 0x432, 0x40a, 0x40b] {
+            poke(a, b, q + o, &[flag(rng, 2)]);
+        }
+    }
+    set(a, b, p::PARTY_LEAVES, flag(rng, 25));
+    set(
+        a,
+        b,
+        ffx_battle::minor::bridge::NUMBERS_KIND12,
+        flag(rng, 25),
+    );
+    set(
+        a,
+        b,
+        st::STONE_EFFECT,
+        [i8::try_from(flag(rng, 25)).unwrap(), 0],
+    );
+    set(a, b, p::COMMAND_HOLD, flag(rng, 25));
+    set(a, b, st::MESSAGE_CUE_COUNT, flag(rng, 25));
+    set(
+        a,
+        b,
+        p::COMMAND_WAIT,
+        [-1, -1, -1, -1, -1, -1, -1, 0][rng.below(8) as usize],
+    );
+    set(a, b, p::COMMAND_CAMERA, flag(rng, 3));
+    set(a, b, p::COMMAND_SINGLE, u32::from(flag(rng, 3)));
+    set(a, b, ffx_battle::stat::bridge::GUARD_TOOK, flag(rng, 3));
+    // (the system message's own window calls stay out: status 0)
+    for (k, r) in [(3, u32::from(flag(rng, 25))), (4, 0)] {
+        poke(a, b, srec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        st::COMMAND_CUE_COUNT,
+        [1, 2, 0][rng.below(3) as usize],
+    );
+    let cue = st::COMMAND_CUE.ptr(b).addr;
+    let i = rng.below(ACTORS);
+    let k = rng.below(2);
+    let state = [0, 0, 0, 1, 2, 3, 4, 5, 6, 7][rng.below(10) as usize];
+    poke(
+        a,
+        b,
+        cue,
+        &[
+            u8::try_from(i).unwrap(),
+            u8::try_from(rng.below(2)).unwrap(),
+            u8::try_from(k).unwrap(),
+            [0, 1, 2, 1][rng.below(4) as usize],
+            state,
+            rng.byte(),
+            [0, 1, 4][rng.below(3) as usize],
+            [0x30, rng.byte()][rng.below(2) as usize],
+        ],
+    );
+    let ids = [0x3002, 0x3003, 0x3018, 0x3021, 0x3025, 0x302a, 0x3056];
+    for j in 0..2 {
+        let id = [ids[rng.below(7) as usize], 0x3000 + rng.below(0x110)][rng.below(2) as usize];
+        let id = if id == 0x311e { 0x3000 } else { id };
+        poke(
+            a,
+            b,
+            cue + 8 + 0x10 * j,
+            &u16::try_from(id).unwrap().to_le_bytes(),
+        );
+        poke(
+            a,
+            b,
+            cue + 0xa + 0x10 * j,
+            &[u8::try_from(rng.below(ACTORS)).unwrap(), 0],
+        );
+        let t = [1 << rng.below(ACTORS), 0, rng.next() & 0x7fff_ffff][rng.below(3) as usize];
+        poke(a, b, cue + 0x10 * (j + 1), &t.to_le_bytes());
+    }
+    let actor = w.actor(i);
+    for o in [0x433, 0x50e, 0x608, 0x6e0, 0x717, 0x508, 0x436, 0xdf4] {
+        poke(a, b, actor + o, &[flag(rng, 12)]);
+    }
+    // the payment's motion actor (Yojimbo's, +0x6d1)
+    poke(
+        a,
+        b,
+        actor + 0x6d1,
+        &[u8::try_from(rng.below(ACTORS)).unwrap()],
+    );
+    // MP enough at times (MsCalcMagic)
+    if rng.below(2) == 0 {
+        poke(a, b, actor + 0x5d4, &0x7fffu32.to_le_bytes());
+        poke(a, b, actor + 0x6de, &[0]);
+    }
+    poke(a, b, actor + 0xdfb, &[0]);
+    twin("MsCommandCueProcess", a, b, 0x0079_2210, &[], ALL, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            p::ms_command_cue_process(m, &h, &mut s)
+        })
+    });
+    local_words(a, b);
+    rect_words(a, b);
+    same("MsCommandCueProcess", a, b);
+}
+
 /// Whether every able (`+0xdc8`) actor's and every monster's battle
 /// position is written (`MsCalcChrDir`'s centres and turning monsters).
 fn placed(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32) -> bool {
@@ -1619,6 +1950,38 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             );
         }
     }
+    let erec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
+    effect_stubs(a, b, erec);
+    let files = scratch(a, b, 0x802);
+    // the music volume's sound callees (SndGetNowPlayMusic,
+    // SndMusicVolumeTranslate), after the exchange stubs and inside the CD
+    // call's function
+    let srec = scratch(a, b, (EXCHANGE_REC * 5) as usize);
+    for o in [&mut *a, &mut *b] {
+        use ffx_battle::exec::bridge as e;
+        logging_stub(o, e::SND_GET_NOW_PLAY_MUSIC, 0x0078_06f0, srec, 0, 0x2d);
+        logging_stub(
+            o,
+            e::SND_MUSIC_VOLUME_TRANSLATE,
+            0x0078_0760,
+            srec + EXCHANGE_REC,
+            3,
+            7,
+        );
+        // TOBtlOpenSignWindow (system), MsMenuOpenTitleWindow's window
+        logging_stub(o, 0x0089_8c60, 0x0078_08c0, srec + 2 * EXCHANGE_REC, 1, 0);
+        // the command cue's waits: SndGetStreamState (sound) and the
+        // system message's status (MsSystemMessageCheck)
+        logging_stub(
+            o,
+            ffx_battle::parse::bridge::SND_GET_STREAM_STATE,
+            STUBS + 0x100,
+            srec + 3 * EXCHANGE_REC,
+            0,
+            0,
+        );
+        logging_stub(o, 0x008b_7ca0, 0x0078_03a0, srec + 4 * EXCHANGE_REC, 1, 0);
+    }
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -1628,6 +1991,13 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         status(a, b, rng, &w, out);
         actions(a, b, rng, &w, out);
         exchange(a, b, rng, &w, out, xrec);
+        effects(a, b, rng, &w, erec, files);
+        for _ in 0..3 {
+            parse(a, b, rng, &w, out, srec + 2 * EXCHANGE_REC);
+        }
+        for _ in 0..3 {
+            command_cue(a, b, rng, &w, out, srec);
+        }
     }
 }
 

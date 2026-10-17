@@ -216,6 +216,55 @@ impl<M> tolib::bridge::PlayerList<M> for GameMenu {
     }
 }
 
+impl<M: Mem> tolib::bridge::LimitOpenCalls<M> for GameMenu {
+    fn limit_time(&mut self, mem: &mut M, who: tolib::bridge::Limit, arg: u32) -> f32 {
+        let m = &*mem;
+        match who {
+            tolib::bridge::Limit::Auron => {
+                ffx_field::nkz::bridge::nkz_get_auron_limit_time(m, arg.cast_signed())
+            }
+            tolib::bridge::Limit::Lulu => ffx_field::nkz::bridge::nkz_get_lulu_limit_time(m),
+            tolib::bridge::Limit::Tidus => {
+                ffx_field::nkz::bridge::nkz_get_tidus_limit_time(m, arg.cast_signed())
+            }
+        }
+    }
+    fn auron_buttons(&mut self, mem: &mut M, level: u32) -> u32 {
+        call_sym(mem, 0x00a5_ca60, &[level])
+    }
+    fn lulu_table(&mut self, mem: &mut M, group: u32) {
+        call_sym(mem, 0x00a5_cc70, &[group]);
+    }
+    fn tidus_table(&mut self, mem: &mut M, b: bool, level: u32) -> u32 {
+        call_sym(mem, if b { 0x00a5_cb80 } else { 0x00a5_cb30 }, &[level])
+    }
+}
+
+impl<M: Mem> tolib::bridge::LimitWindowCalls<M> for GameMenu {
+    fn seq_num(&mut self, mem: &mut M, i: u32, name: u32, out: u32) {
+        call_sym(mem, 0x008a_e410, &[i, name, out]);
+    }
+    fn seq_point(&mut self, mem: &mut M, i: u32, name: u32, x: u32, y: u32) {
+        call_sym(mem, 0x008a_e450, &[i, name, x, y]);
+    }
+    fn seq_color(&mut self, mem: &mut M, i: u32, name: u32, out: u32) {
+        call_sym(mem, 0x008a_e360, &[i, name, out]);
+    }
+    fn init_pad(&mut self, mem: &mut M) {
+        tolib::bridge::init_pad_data(mem);
+    }
+    fn init_limit_timer(&mut self, mem: &mut M) {
+        call_sym(mem, 0x0089_7f00, &[]);
+    }
+    fn remap(&mut self, _mem: &mut M, y: bool, v: f32) -> f32 {
+        if y {
+            ffx_graphic::ui::remap_y2(v)
+        } else {
+            ffx_graphic::ui::remap_x2(v)
+        }
+    }
+}
+
 impl<M: Mem> menu::bridge::MagicFileCalls<M> for GameMenu {
     fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>) {
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
@@ -4342,6 +4391,60 @@ ported! {
     /// `TOPlaceMessageWindow(i, x, y, w, h)`.
     TOPlaceMessageWindow @ 0x008a_fbb0 => extern "C" fn to_place_message_window(i: i32, x: i32, y: i32, w: i32, h: i32) {
         tolib::bridge::place_message_window(&mut mem(), i, [x, y, w, h], font_screen_wh);
+    }
+    /// `TOSetMessageWindowPosition(i, anchor, x, y)`.
+    TOSetMessageWindowPosition @ 0x008a_f850 => extern "C" fn to_set_message_window_position(i: i32, anchor: u32, x: i32, y: i32) {
+        tolib::bridge::set_message_window_position(&mut mem(), i, anchor, x, y, font_screen_wh);
+    }
+    /// `TOSetMessageWindowRect(i, anchor, x, y, w, h)`.
+    TOSetMessageWindowRect @ 0x008a_fa90 => extern "C" fn to_set_message_window_rect(i: i32, anchor: u32, x: i32, y: i32, w: i32, h: i32) {
+        tolib::bridge::set_message_window_rect(&mut mem(), i, anchor, [x, y, w, h], font_screen_wh);
+    }
+    /// `TOBtlInitAuronLimitWindow()`.
+    TOBtlInitAuronLimitWindow @ 0x0089_7970 => extern "C" fn to_btl_init_auron_limit_window() {
+        tolib::bridge::btl_init_auron_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitLuluLimitWindow()`.
+    TOBtlInitLuluLimitWindow @ 0x0089_7f70 => extern "C" fn to_btl_init_lulu_limit_window() {
+        tolib::bridge::btl_init_lulu_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitTidusLimitWindow()`.
+    TOBtlInitTidusLimitWindow @ 0x0089_8180 => extern "C" fn to_btl_init_tidus_limit_window() {
+        tolib::bridge::btl_init_tidus_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitActiveChrCursor()`.
+    TOBtlInitActiveChrCursor @ 0x0089_7860 => extern "C" fn to_btl_init_active_chr_cursor() {
+        tolib::bridge::btl_init_active_chr_cursor(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlOpenAuronLimitWindow(cmd)`.
+    TOBtlOpenAuronLimitWindow @ 0x0089_8ad0 => extern "C" fn to_btl_open_auron_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_auron_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlOpenLuluLimitWindow(cmd)`.
+    TOBtlOpenLuluLimitWindow @ 0x0089_8bf0 => extern "C" fn to_btl_open_lulu_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_lulu_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlOpenTidusLimitWindow(cmd)`.
+    TOBtlOpenTidusLimitWindow @ 0x0089_8ca0 => extern "C" fn to_btl_open_tidus_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_tidus_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlCtrlLimitTimer()`.
+    TOBtlCtrlLimitTimer @ 0x0089_1ac0 => extern "C" fn to_btl_ctrl_limit_timer() {
+        tolib::bridge::btl_ctrl_limit_timer(&mut mem(), |m| call_sym(m, 0x0079_89a0, &[]));
+    }
+    /// `TOBtlMemoryCursorPos()`.
+    TOBtlMemoryCursorPos @ 0x0089_89d0 => extern "C" fn to_btl_memory_cursor_pos() {
+        tolib::bridge::btl_memory_cursor_pos(&mut mem());
+    }
+    /// `TOBtlMakeTargetGroupBit()`.
+    TOBtlMakeTargetGroupBit @ 0x0089_8490 => extern "C" fn to_btl_make_target_group_bit() {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        tolib::bridge::btl_make_target_group_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data, |m, chr| {
+            call_sym(m, 0x0079_5040, &[chr])
+        });
+        std::hint::black_box(&mut tmp);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

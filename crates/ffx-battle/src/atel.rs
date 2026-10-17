@@ -441,6 +441,22 @@ pub mod bridge {
         k: u32,
         out: u32,
     ) -> i32 {
+        let (r, far) = set_targets_motion(mem, s, chr, cue, k);
+        if out != 0 {
+            mem.write(out, far);
+        }
+        r
+    }
+
+    /// [`ms_set_targets_motion`] returning the count of targets out of
+    /// reach instead of storing it.
+    pub fn set_targets_motion<M: Mem>(
+        mem: &mut M,
+        s: &mut Script<'_, M>,
+        chr: u32,
+        cue: u32,
+        k: u32,
+    ) -> (i32, u32) {
         let e = cue.wrapping_add(k << 4);
         let targets: u32 = mem.read(e.wrapping_add(0x10));
         let (c, _) = crate::command::bridge::get_command(mem, u32::MAX, e.wrapping_add(8), 0xff);
@@ -484,12 +500,9 @@ pub mod bridge {
                 || byte(mem, c, 0x21) & 1 != 0;
             if hits { -i32::from(kept != 0) } else { -1 }
         };
-        if out != 0 {
-            mem.write(out, far);
-        }
         mem.write(e.wrapping_add(0x10), kept);
         crate::actor::bridge::CHR_SET.set(mem, kept);
-        r
+        (r, far)
     }
 
     /// `MsPaymentProcessStart(actor)` (`0x007afa80`): Yojimbo's payment

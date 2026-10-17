@@ -1074,6 +1074,71 @@ pub mod bridge {
         1
     }
 
+    /// `g_Settings`: the game settings object (a pointer).
+    pub const SETTINGS: Global<u32> = Global::new(0x022f_b504);
+    /// `ShadowManager_getInstance`.
+    pub const SHADOW_GET_INSTANCE: u32 = 0x006d_2390;
+    /// `ShadowManager_SetQuality(this, q)`.
+    pub const SHADOW_SET_QUALITY: u32 = 0x006c_eaa0;
+    /// The shadow buffers' resize (`0x006d2df0`, `thiscall(sm)`).
+    pub const SHADOW_RESIZE: u32 = 0x006d_2df0;
+    /// The post-process's texture rebind (`0x00697e10`, `thiscall(pp, v)`).
+    pub const POST_PROCESS_REBIND: u32 = 0x0069_7e10;
+
+    /// `PhyreScene_ApplySettings(this)` (`0x0066f010`): the graphics
+    /// settings (`g_Settings`) to the scene: `+0x24` as a float to the
+    /// post-process (`*(scene +0x10cc) +0x12328`), the shadow quality
+    /// (`+0x30`, then the shadow buffers resized), `+0x44 != 0` to the
+    /// post-process byte `+0x123d3`, `+0x48` to its `+0x1264`, `+0x38` to
+    /// its rebind, and the anti-aliasing mode (`+0x40`): 1 sets the scene's
+    /// `+0x10dd8` to 1, 2-5 set it to 0 and the post-process's `+0x1231c`
+    /// to 1-4, anything else sets it to 2. Returns `eax` (the mode - 1, or
+    /// the post-process).
+    pub fn scene_apply_settings(h: &mut impl Host, scene: u32) -> u32 {
+        let cfg = SETTINGS.get(h);
+        #[allow(clippy::cast_possible_wrap)] // fild: signed
+        let f = x87::store(f64::from(h.read::<u32>(cfg + 0x24) as i32));
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.write(pp + 0x12328, f);
+        let cfg = SETTINGS.get(h);
+        let q: u32 = h.read(cfg + 0x30);
+        let sm = h.call_sym(SHADOW_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(SHADOW_SET_QUALITY, Conv::Thiscall(sm), &[q]);
+        let sm = h.call_sym(SHADOW_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(SHADOW_RESIZE, Conv::Thiscall(sm), &[]);
+        let cfg = SETTINGS.get(h);
+        let on = u8::from(h.read::<u32>(cfg + 0x44) != 0);
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.write(pp + 0x123d3, on);
+        let cfg = SETTINGS.get(h);
+        let v: u32 = h.read(cfg + 0x48);
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.write(pp + 0x1264, v);
+        let cfg = SETTINGS.get(h);
+        let v: u32 = h.read(cfg + 0x38);
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.call_sym(POST_PROCESS_REBIND, Conv::Thiscall(pp), &[v]);
+        let cfg = SETTINGS.get(h);
+        let mode = h.read::<u32>(cfg + 0x40).wrapping_sub(1);
+        match mode {
+            0 => {
+                h.write(scene + 0x10dd8, 1u32);
+                mode
+            }
+            1..=4 => {
+                let pp: u32 = h.read(scene + 0x10cc);
+                h.write(scene + 0x10dd8, 0u32);
+                h.write(pp + 0x1231c, mode);
+                pp
+            }
+            _ => {
+                h.write(scene + 0x10dd8, 2u32);
+                mode
+            }
+        }
+    }
+
+    /// `graphicSetTextureVideoInfo(a, b)`: `PhyreScene_setTextureVideoInfo`
     /// and `g_GraphicTextureVideoInfo = b << 8 | a` (16 bits). Returns the
     /// scene call's `eax`.
     pub fn set_texture_video_info(h: &mut impl Host, a: u32, b: u32) -> u32 {
