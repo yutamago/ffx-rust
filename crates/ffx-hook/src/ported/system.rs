@@ -5770,6 +5770,12 @@ ported! {
     getScaleButtonIconWidth @ 0x0090_62b0 => extern "C" fn get_scale_button_icon_width(id: u32, scale: f32) -> f32 {
         tolib::bridge::scale_button_icon_width(&mut mem(), id, scale, |_, v| ffx_graphic::ui::remap_x2(v))
     }
+    /// `TOGetScaleButtonIconWidth(c, scale)`.
+    TOGetScaleButtonIconWidth @ 0x008f_a800 => extern "C" fn to_get_scale_button_icon_width(c: u32, scale: f32) -> f32 {
+        tolib::bridge::to_get_scale_button_icon_width(&mut mem(), c, scale, call_sym, |m, id, s| {
+            tolib::bridge::scale_button_icon_width(m, id, s, |_, v| ffx_graphic::ui::remap_x2(v))
+        })
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

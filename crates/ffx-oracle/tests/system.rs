@@ -11463,6 +11463,12 @@ fn round19_text_matches_the_original_on_the_snapshot() {
 fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let g = |a: &Oracle, x: u32| a.rebase(x);
+    let assign = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&assign.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_cf30, s);
     let chars = [
         0x20u32, 0x30, 0x35, 0x39, 0x3a, 0x3b, 0x3c, 0x2f, 0x40, 0x41, 0x43, 0x4f, 0x50, 0,
     ];
@@ -11503,6 +11509,38 @@ fn round20_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             "icon width {k}: id {id:#x} scale {scale} char {c:#x}"
         );
         same_memory("icon width", a, b);
+        // the character-to-icon step over the original icon width, with
+        // the confirm button assignment from a cell
+        put(a, b, assign, rng.next() % 3);
+        let c = if rng.next().is_multiple_of(4) {
+            rng.next() % 0x100
+        } else {
+            0x1f + rng.next() % 0x48
+        };
+        let want = a
+            .call(g(a, 0x008f_a800), Conv::Cdecl, &[c, scale.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap();
+        let got = t::to_get_scale_button_icon_width(
+            b,
+            c,
+            scale,
+            |m, sym, args| eax(m, sym, args),
+            |m, id, s| {
+                let at = m.rebase(0x0090_62b0);
+                m.call(at, Conv::Cdecl, &[id, s.to_bits()])
+                    .unwrap()
+                    .st0
+                    .unwrap() as f32
+            },
+        );
+        assert_eq!(
+            (want as f32).to_bits(),
+            got.to_bits(),
+            "icon {k}: char {c:#x}"
+        );
+        same_memory("icon", a, b);
     }
 }
 

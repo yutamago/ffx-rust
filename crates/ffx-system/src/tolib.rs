@@ -5764,4 +5764,41 @@ pub mod bridge {
         }
         r
     }
+
+    /// `TOGetScaleButtonIconWidth(c, scale)` (`0x008fa800`): keeps the
+    /// character in `0x025d16e4` and picks the icon id for
+    /// [`scale_button_icon_width`] (passed in as `icon(id, scale)`): `' '`,
+    /// `'!'`, `'"'` and odd `@`..`O` 0x259, even `@`..`O` 0x258, the digits
+    /// `c + 0x230` except `1`/`2` with the confirm button swapped
+    /// (`TOGetSystemConfirmButtonAssign() == 1`: 0x262/0x261), `` ` `` 0x270;
+    /// anything else 0.0.
+    pub fn to_get_scale_button_icon_width<M: Mem>(
+        mem: &mut M,
+        c: u32,
+        scale: f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut icon: impl FnMut(&mut M, u32, f32) -> f32,
+    ) -> f32 {
+        mem.write(mem.rebase(0x025d_16e4), c);
+        let id = match c {
+            0x20..=0x22 => 0x259,
+            0x40..=0x4f => {
+                if c & 1 != 0 {
+                    0x259
+                } else {
+                    0x258
+                }
+            }
+            0x30..=0x39 => {
+                if call(mem, 0x008a_cf30, &[]) == 1 && (0x31..=0x32).contains(&c) {
+                    if c == 0x31 { 0x262 } else { 0x261 }
+                } else {
+                    c + 0x230
+                }
+            }
+            0x60 => 0x270,
+            _ => return 0.0,
+        };
+        icon(mem, id, scale)
+    }
 }
