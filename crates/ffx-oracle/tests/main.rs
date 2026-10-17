@@ -2460,6 +2460,7 @@ fn control_synthetic() {
     source_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
     push_apart_cases(&mut a, &mut b, &mut rng, 600);
+    cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2485,6 +2486,7 @@ fn control_snapshot() {
     source_envelope_cases(&mut a, &mut b, &mut rng, 300);
     source_packed_envelope_cases(&mut a, &mut b, &mut rng, 300);
     push_apart_cases(&mut a, &mut b, &mut rng, 600);
+    cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -4041,5 +4043,169 @@ fn push_apart_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: 
             &[ca, cb, reach, dist],
             |m| st::chr_push_apart(m, ca, cb, f32::from_bits(reach), f32::from_bits(dist)),
         );
+    }
+}
+
+// Main round 10: the cloth anchors.
+fn cloth_anchor_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::vec::bridge as v;
+    let log = a.rebase(REC_LOG);
+    let rets = a.rebase(REC_RETS);
+    recorder(a, b, 52, 0x0084_0850, 2, 0);
+    recorder(a, b, 53, 0x0064_1da0, 0, 0);
+    // the anchor answers by group, in unused answer slots 60..64
+    let anchors = rets + 4 * 60;
+    table_stub(a, b, 54, 0x0083_16d0, 1, REC_RETS + 4 * 60);
+    let words = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, n: usize| {
+        let p = alloc(a, b, 4 * n.max(1));
+        for k in 0..n {
+            put(a, b, p + 4 * u32::try_from(k).unwrap(), bounded(rng));
+        }
+        p
+    };
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for g in 0..4 {
+            put(a, b, anchors + 4 * g, u32::from(rng.below(3) == 0));
+        }
+        let hash = if rng.below(3) == 0 {
+            0xc58
+        } else {
+            rng.next() & 0xfff
+        };
+        put(a, b, rets + 4 * 53, hash);
+        // the model: three groups
+        let model = alloc(a, b, 3 * 0x38);
+        for g in 0..3 {
+            let grp = model + 0x38 * g;
+            let head = alloc(a, b, 0x20);
+            let subs = [0u16, 3, 100, 200][rng.below(4) as usize];
+            put(a, b, head + 0x18, subs);
+            put(a, b, grp, head);
+            let vs = words(a, b, rng, 8 * 4);
+            put(a, b, grp + 8, vs);
+            let tbl = if rng.below(6) == 0 {
+                0
+            } else {
+                let t = alloc(a, b, 400);
+                for r in 0..100 {
+                    if rng.below(4) != 0 {
+                        let sub = alloc(a, b, 0x48);
+                        let faces = alloc(a, b, 6 * 8);
+                        for q in 0..24 {
+                            put(a, b, faces + 2 * q, u16::try_from(rng.below(8)).unwrap());
+                        }
+                        put(a, b, sub + 0x44, faces);
+                        put(a, b, t + 4 * r, sub);
+                    }
+                }
+                t
+            };
+            put(a, b, grp + 0x2c, tbl);
+        }
+        let chr = alloc(a, b, 0x900);
+        put(a, b, chr, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, chr + 0x180, u8::try_from(rng.next() & 0xff).unwrap());
+        let flags = if rng.below(6) == 0 {
+            rng.next() & !0x20_0000
+        } else {
+            rng.next() | 0x20_0000
+        };
+        put(a, b, chr + 0x194, flags);
+        put(a, b, chr + 0x1bc, model);
+        for r in [0x1d0u32, 0x1e0, 0x1f0] {
+            for k in 0..3 {
+                let x = match rng.below(5) {
+                    0 => 0,
+                    1 => 1e-4f32.to_bits(),
+                    2 => 4e-4f32.to_bits(),
+                    _ => bounded(rng),
+                };
+                put(a, b, chr + r + 4 * k, x);
+            }
+        }
+        let lists = rng.below(4);
+        let cloth = if rng.below(8) == 0 {
+            0
+        } else {
+            alloc(a, b, 0x40)
+        };
+        let vb = alloc(a, b, 4 + 4 * 4);
+        put(a, b, rets + 4 * 52, if rng.below(8) == 0 { 0 } else { vb });
+        if cloth != 0 {
+            put(a, b, cloth + 0x14, lists);
+            for i in 0..lists {
+                let m = rng.below(4);
+                let l = if rng.below(8) == 0 {
+                    0
+                } else {
+                    alloc(a, b, 4 + 4 * 4)
+                };
+                let vl = if rng.below(8) == 0 {
+                    0
+                } else {
+                    alloc(a, b, 4 + 4 * 4)
+                };
+                put(a, b, cloth + 0x30 + 4 * i, l);
+                put(a, b, vb + 4 + 4 * i, vl);
+                if l == 0 || vl == 0 {
+                    continue;
+                }
+                put(a, b, l, m);
+                for j in 0..m {
+                    let n = rng.below(5);
+                    let e = if rng.below(10) == 0 {
+                        0
+                    } else {
+                        alloc(a, b, 0x50)
+                    };
+                    let ve = if rng.below(10) == 0 {
+                        0
+                    } else {
+                        alloc(a, b, 0x10)
+                    };
+                    put(a, b, l + 4 + 4 * j, e);
+                    put(a, b, vl + 4 + 4 * j, ve);
+                    if e != 0 {
+                        put(a, b, e + 0x40, u16::try_from(rng.below(3)).unwrap());
+                        let k = [2u16, 102, 5, 0][rng.below(4) as usize]
+                            + if rng.below(3) == 0 {
+                                u16::try_from(rng.below(300)).unwrap()
+                            } else {
+                                0
+                            };
+                        put(a, b, e + 0x42, k);
+                        put(a, b, e + 0x44, n);
+                        put(a, b, e + 0x48, rng.next());
+                        let out = if rng.below(8) == 0 {
+                            0
+                        } else {
+                            words(a, b, rng, 4 * 4)
+                        };
+                        put(a, b, e + 0x4c, out);
+                    }
+                    if ve != 0 {
+                        let tri = alloc(a, b, 8 * 4);
+                        for q in 0..4 {
+                            put(a, b, tri + 8 * q, u8::try_from(rng.next() & 0xff).unwrap());
+                            let idx = if rng.below(6) == 0 {
+                                0xffff
+                            } else {
+                                u16::try_from(rng.below(8)).unwrap()
+                            };
+                            put(a, b, tri + 8 * q + 2, idx);
+                            put(a, b, tri + 8 * q + 4, bounded(rng));
+                        }
+                        put(a, b, ve + 8, tri);
+                        let ws = words(a, b, rng, 3 * 4);
+                        put(a, b, ve + 0xc, ws);
+                    }
+                }
+            }
+        }
+        put(a, b, chr + 0x834, cloth);
+        twin("Sg_ClothPlaceAnchors", a, b, 0x0082_dbc0, &[chr], |m| {
+            v::cloth_place_anchors(&mut H(m), chr);
+        });
     }
 }

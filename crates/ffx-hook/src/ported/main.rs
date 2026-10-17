@@ -1331,6 +1331,10 @@ ported! {
     Sg_ChrPushApart @ 0x0083_ecd0 => extern "C" fn sg_chr_push_apart(a: u32, b: u32, reach: f32, dist: f32) -> u32 {
         state::bridge::chr_push_apart(&mut mem(), a, b, reach, dist)
     }
+    /// `Sg_ClothPlaceAnchors(chr)`.
+    Sg_ClothPlaceAnchors @ 0x0082_dbc0 => extern "C" fn sg_cloth_place_anchors(chr: u32) {
+        vec::bridge::cloth_place_anchors(&mut mem(), chr);
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())

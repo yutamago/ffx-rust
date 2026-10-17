@@ -497,3 +497,32 @@ both-negative case `a` moves by `t` and `b` by `u`; otherwise `a` moves by
 `+0x54`) or subtracts it from `b`'s, and sets `+0x194` bit 5 when the new
 step is not zero. The result is bit 5 of `a+0x194 | b+0x194`. Comparisons
 are the original's x87 ones: a NaN weight counts as non-negative.
+
+## Cloth anchors (round 10)
+
+`Sg_ClothPlaceAnchors(chr)` (`0x0082dbc0`, from `0x0082e390` after the cloth
+step `0x00822de0` unless `0x012fb7d8` is set) moves each cloth's anchor
+vertices onto the model. It needs the cloth (`chr+0x834`), the cloth vertex
+buffer (`Cache_Exist_ClothVertexBuff(1, chr[0])`) and `chr+0x194` bit 21,
+and first copies the sign-extended byte `chr+0x180` to `cloth+8`.
+
+| where | what |
+|---|---|
+| `cloth+0x14` | the number of lists |
+| `cloth+0x30[i]` | list: `u32` count, then entry pointers `e` |
+| `vb+4[i]` | the paired list: a word, then pointers `v` |
+| `e+0x40`, `e+0x42` | model group `g`, sub-mesh `k % 100` |
+| `e+0x44` | vertex count; `e+0x48` set to 1 when done; `e+0x4c` output (16 bytes a vertex) |
+| `v+8` | 8 bytes a vertex: flags (bit 0: lift), `u16` triangle (`0xffff` none), `f32` lift |
+| `v+0xc` | three `f32` weights a vertex |
+| `[chr+0x1bc] + 0x38 g` | `+0` header (`u16` sub-mesh count at `+0x18`), `+8` vertices (16 bytes), `+0x2c` sub-mesh table |
+| sub-mesh `+0x44` | triangles: three `i16` corner indices |
+
+A vertex is `w0 c0 + w1 c1 + w2 c2` (each component `(w0 c0 + c1 w1) + c2 w2`,
+stored `f32`). When `Ch_UseAnchorVertex(chr, g, k)` is non-zero or the
+vertex's bit 0 is set, it moves along `n = (c1 - c0) × (c2 - c0)` by
+`lift / |n| · 1.1` (3.0 for character 1, group 0, sub-mesh 2), through
+`Sg_VecSub`, `Sg_VecCross`, `Sg_VecDot`, `_CIsqrt`, `Sg_VecScale` and
+`Sg_VecAdd`. On level hash `0xc58` (`graphicLevelGetNameHash`) a character
+whose matrix rows `+0x1d0`, `+0x1e0` or `+0x1f0` has a squared length below
+2.5e-7 gets all its anchors zeroed instead.
