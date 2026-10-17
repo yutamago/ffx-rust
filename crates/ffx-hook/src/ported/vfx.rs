@@ -3225,6 +3225,20 @@ ported! {
         mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
         v
     }
+    /// `pppVu0MaddaY_copy_0075e670(_, v, _, s)`: `pppVu0MaddaY`'s code
+    /// again; returns `v`.
+    pppVu0MaddaY_copy_0075e670 @ 0x0075_e670 => extern "C" fn ppp_vu0_madda_y_copy(a: u32, v: u32, b: u32, s: f32) -> u32 {
+        let _ = (a, b);
+        mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
+        v
+    }
+    /// `pppVu0MaddaZ_copy_0075e6d0(_, v, _, _, s)`: `pppVu0MaddaZ`'s code
+    /// again; returns `v`.
+    pppVu0MaddaZ_copy_0075e6d0 @ 0x0075_e6d0 => extern "C" fn ppp_vu0_madda_z_copy(a: u32, v: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
+        v
+    }
     /// `pppVu0MaddW(dst, v, _, _, _, s)`: returns `dst`.
     pppVu0MaddW @ 0x0072_c650 => extern "C" fn ppp_vu0_madd_w(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32) -> u32 {
         let _ = (a, b, c);

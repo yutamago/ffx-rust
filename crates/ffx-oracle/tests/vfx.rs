@@ -3267,10 +3267,24 @@ fn vu0_macros_and_tables_match_the_original() {
             let k = rng.float();
             let f = f32::from_bits(k);
             let junk = rng.next();
-            p.check("pppVu0MaddaY", 0x0072_c590, &[junk, v, junk, k], |m| {
-                b::ppp_vu0_madda(m, v, f);
-                Some(v)
-            });
+            for (name, at) in [
+                ("pppVu0MaddaY", 0x0072_c590),
+                ("pppVu0MaddaY_copy_0075e670", 0x0075_e670),
+            ] {
+                p.check(name, at, &[junk, v, junk, k], |m| {
+                    b::ppp_vu0_madda(m, v, f);
+                    Some(v)
+                });
+            }
+            p.check(
+                "pppVu0MaddaZ_copy_0075e6d0",
+                0x0075_e6d0,
+                &[junk, v, junk, junk, k],
+                |m| {
+                    b::ppp_vu0_madda(m, v, f);
+                    Some(v)
+                },
+            );
             p.check(
                 "pppVu0MaddaZ",
                 0x0072_c5f0,
