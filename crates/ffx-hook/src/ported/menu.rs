@@ -3538,4 +3538,21 @@ ported! {
         };
         tk::btl_end_selected_weapon(&mut m, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuKaizou_OpenWindow()`.
+    MenuKaizou_OpenWindow @ 0x008d_6d60 => extern "C" fn menu_kaizou_open_window() -> u32 {
+        tk::menu_kaizou_open_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_InParty(chr)`.
+    BtlEnd_InParty @ 0x008b_9ec0 => extern "C" fn btl_end_in_party(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::btl_end_in_party(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_ClampSubWindow1()`: void (its `eax` is unread; with no
+    /// window the original leaves it alone).
+    MenuWShop_ClampSubWindow1 @ 0x008d_8450 => extern "C" fn menu_wshop_clamp_sub_window1() {
+        tk::menu_wshop_clamp_sub_window1(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
 }

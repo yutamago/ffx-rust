@@ -9682,6 +9682,7 @@
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
 0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
+0x008b9ec0 function BtlEnd_InParty            # (chr): 1 when chr is one of MsGetSavePartyMember(&a, &b, &c)'s three slots and not 0xff, else 0 (stack cookie); caller 0x008bde00; name ours
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name
 0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
@@ -10029,6 +10030,7 @@
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
 0x008d5f60 function DrawGearCustomizationMenu # fh call.cs cdecl
+0x008d6d60 function MenuKaizou_OpenWindow     # (): TkMenuMainAllocWindow: +8 0x008d56e0, +0xc UpdateGearCustomizationMenuState, +0x10 0x008d6860, +0x14 0x008d6e30, +0x1c 0x008d57a0, +0x48/+0x32 0, +0x30 u16 0x0186aa3c, +0x3e u16 0x101, +0x42 1, +0x36 u16 3, +0x3a 9; registered, then kept in 0x0186aa30; returns the registration's result; caller 0x008d5540; name ours
 0x008d6e00 function MenuKaizou_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186aa34); own name
 0x008d7590 function SetGlobals_008d7590          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x0186ab1c] = a1; u32[&0x0186aba0] = 0xffffffff; return a1; callers: no direct caller; name ours
 0x008d75d0 function MenuWShop_ItemPresent     # (list, i) item list u16 id != 0; own name
@@ -10041,6 +10043,7 @@
 0x008d8370 function MenuWShop_OpenSubWindow1  # (): TkMenuMainAllocWindow into 0x0186aaf4: +0xc 0x008d79c0, +0x10 0x008d7d20, +0x14 0x008d8500, +0x1c 0x008d75d0, +0x3e 3, +0x30 TkMn2GetNameModeMax(), +0x3a 9, +0x45 -1; registered, MenuWShop_InitCursor(w) returned; caller 0x008d6e40; name ours
 0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
+0x008d8450 function MenuWShop_ClampSubWindow1 # (): window 0x0186aaf4: cursor +0x48 < count +0x30, scroll +0x32 on the cursor's page (+0x3a rows, >= 0), +0x34 = scroll; TkMenuRestartSelFileWindow; +0x28 = 0, +0x45 = 0; caller 0x008d6e40; name ours
 0x008d85d0 function MenuWShop_CanAfford      # (e): 0 while 0x0186ab14 is 0, else MenuShop_WeaponPrice(e) <= MsGetGIL() (signed); called by the weapon shop's buy step; name ours
 0x008d9170 function MenuWShop_GetRecord       # (id) TkMn2GetExcelData(id & 0xfff, 0x0186abac); own name
 0x008d9190 function TkMn2GetWShopPos             # str-match switch: only user of 23 string(s) held once by both builds, e.g. 'rect_wshscrol'; Switch 0x71004e91d0 TkMn2GetWShopPos (symbols from Fahrenheit's server export)

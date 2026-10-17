@@ -7884,3 +7884,69 @@ fn menu_round19_batch7_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round19_batch8_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0008) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    // MsGetSavePartyMember as `*a, *b, *c = table[0..3]`
+    let table = t.alloc(&[0; 12]);
+    let mut code = vec![];
+    for k in 0..3u8 {
+        code.push(0xa1); // mov eax, [table + 4k]
+        code.extend((table + 4 * u32::from(k)).to_le_bytes());
+        code.extend([0x8b, 0x4c, 0x24, 4 + 4 * k]); // mov ecx, [esp + 4 + 4k]
+        code.extend([0x89, 0x01]); // mov [ecx], eax
+    }
+    code.push(0xc3);
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0078_52f0);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..64u32 {
+        if round % 8 == 0 {
+            t.scramble(0x0186_aa3c, 2);
+            t.twin("MenuKaizou_OpenWindow", 0x008d_6d60, &[], U32, |o| {
+                w(tk::menu_kaizou_open_window(o, &mut callback))
+            });
+        }
+        // BtlEnd_InParty
+        let slots: Vec<u32> = (0..3).map(|_| t.rng.pick(&[0u32, 1, 2, 7, 0xff])).collect();
+        for (at, v) in (table..).step_by(4).zip(&slots) {
+            t.put(at, *v);
+        }
+        let chr = t.rng.pick(&[0u32, 1, 2, 7, 0xff, 0x101]);
+        t.twin("BtlEnd_InParty", 0x008b_9ec0, &[chr], U32, |o| {
+            w(tk::btl_end_in_party(o, chr, local, &mut callback))
+        });
+        // MenuWShop_ClampSubWindow1: random cursor, scroll, count and rows
+        let restart = t.rng.next();
+        record_n(&mut t, 0x008b_5530, 1, restart);
+        let win = if round % 7 == 0 {
+            0
+        } else {
+            t.alloc_random(0x60)
+        };
+        if win != 0 {
+            for off in [0x30u32, 0x32, 0x3a, 0x48] {
+                let v = t.rng.pick(&[0u16, 1, 5, 9, 10, 0x7fff, 0x8000, 0xffff]);
+                let v = if t.rng.below(2) == 0 {
+                    v
+                } else {
+                    (t.rng.next() & 0x1f) as u16
+                };
+                t.put(win + off, v);
+            }
+        }
+        t.put(t.sym(tk::WSHOP_WINDOWS[1].sym), win);
+        let mask = if win == 0 { VOID } else { U32 };
+        t.twin("MenuWShop_ClampSubWindow1", 0x008d_8450, &[], mask, |o| {
+            w(tk::menu_wshop_clamp_sub_window1(o, &mut callback).unwrap_or(0))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

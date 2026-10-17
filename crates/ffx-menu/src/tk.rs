@@ -8022,6 +8022,109 @@ pub mod bridge {
         let f = mem.rebase(0x007a_bbd0);
         call(mem, f, &[u32::from(id), local])
     }
+
+    /// `MenuKaizou_OpenWindow()` (`0x008d6d60`, own name): the customize
+    /// menu's window ([`KAIZOU_WINDOW`], kept after registering): callbacks
+    /// `+8` `0x008d56e0`, `+0xc` `UpdateGearCustomizationMenuState`,
+    /// `+0x10` `0x008d6860`, `+0x14` `0x008d6e30`, `+0x1c` `0x008d57a0`;
+    /// `+0x48` (`u16`) and `+0x32` (`u32`) 0, `+0x30` the list's count
+    /// (`u16` `0x0186aa3c`), `+0x3e` `u16` `0x101`, `+0x42` 1, `+0x36`
+    /// `u16` 3, `+0x3a` 9. Returns what `TkMenuMainRegistWindow` returns.
+    pub fn menu_kaizou_open_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        mem.write(w.wrapping_add(0x48), 0u16);
+        mem.write(w.wrapping_add(0x32), 0u32);
+        let count: u16 = mem.read(mem.rebase(0x0186_aa3c));
+        mem.write(w.wrapping_add(0x30), count);
+        for (o, f) in [
+            (8u32, 0x008d_56e0u32),
+            (0xc, 0x008d_5830),
+            (0x10, 0x008d_6860),
+            (0x14, 0x008d_6e30),
+            (0x1c, 0x008d_57a0),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 0x101u16);
+        mem.write(w.wrapping_add(0x42), 1u8);
+        mem.write(w.wrapping_add(0x36), 3u16);
+        mem.write(w.wrapping_add(0x3a), 9u16);
+        let regist = mem.rebase(0x008a_ab00);
+        let r = call(mem, regist, &[w]);
+        KAIZOU_WINDOW.set(mem, w);
+        r
+    }
+
+    /// `BtlEnd_InParty(chr)` (`0x008b9ec0`, own name): 1 when `chr` is one
+    /// of the three party slots `MsGetSavePartyMember(&a, &b, &c)` fills
+    /// and not `0xff`, else 0. `local` is 12 bytes of out slots.
+    pub fn btl_end_in_party<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0078_52f0);
+        call(
+            mem,
+            f,
+            &[local, local.wrapping_add(4), local.wrapping_add(8)],
+        );
+        for i in 0..3u32 {
+            let slot: u32 = mem.read(local.wrapping_add(4 * i));
+            if slot == chr && slot != 0xff {
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// `MenuWShop_ClampSubWindow1()` (`0x008d8450`, own name): with the
+    /// weapon shop's second window ([`WSHOP_WINDOWS`]`[1]`) open, its
+    /// cursor (`i16 +0x48`) kept below the count (`u16 +0x30`), the scroll
+    /// (`i16 +0x32`) brought to the cursor's page (`+0x3a` rows, at least
+    /// 0), copied to `+0x34`; then `TkMenuRestartSelFileWindow(w)`, `+0x28`
+    /// and `+0x45` cleared. Returns the window (re-read), or `None` when
+    /// none is open (the original leaves `eax` alone).
+    pub fn menu_wshop_clamp_sub_window1<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let w = WSHOP_WINDOWS[1].get(mem);
+        if w == 0 {
+            return None;
+        }
+        let count: u16 = mem.read(w.wrapping_add(0x30));
+        if i32::from(mem.read::<i16>(w.wrapping_add(0x48))) >= i32::from(count) {
+            mem.write(w.wrapping_add(0x48), count.wrapping_sub(1));
+        }
+        let cur: u16 = mem.read(w.wrapping_add(0x48));
+        if cur.cast_signed() < mem.read::<i16>(w.wrapping_add(0x32)) {
+            mem.write(w.wrapping_add(0x32), cur);
+        }
+        let rows: u16 = mem.read(w.wrapping_add(0x3a));
+        let top = i32::from(mem.read::<i16>(w.wrapping_add(0x32))) + i32::from(rows);
+        if i32::from(cur.cast_signed()) >= top {
+            let v = cur.wrapping_sub(rows).wrapping_sub(1);
+            mem.write(w.wrapping_add(0x32), v);
+            if v.cast_signed() < 0 {
+                mem.write(w.wrapping_add(0x32), 0u16);
+            }
+        }
+        let scroll: u16 = mem.read(w.wrapping_add(0x32));
+        mem.write(w.wrapping_add(0x34), scroll);
+        let f = mem.rebase(0x008b_5530);
+        call(mem, f, &[w]);
+        let w = WSHOP_WINDOWS[1].get(mem);
+        mem.write(w.wrapping_add(0x28), 0u32);
+        mem.write(w.wrapping_add(0x45), 0u8);
+        Some(w)
+    }
 }
 
 #[cfg(test)]
