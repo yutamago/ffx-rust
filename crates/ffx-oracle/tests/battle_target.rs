@@ -1608,9 +1608,10 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
 
 /// The battle loop's per-frame callees of sound, the CD library and the
 /// voice status (`ffx_battle::process`) and the deaths' sound (unported),
-/// trophy (main), neck and character ID (chara), stubbed in `MsDebugEnvSave` (debug
+/// trophy (main), neck and character ID (chara), the battle effects'
+/// release (vfx, the heap), stubbed in `MsDebugEnvSave` (debug
 /// only); the last is the CD library's `+8`.
-const PROCESS_CALLEES: [(u32, u8); 10] = {
+const PROCESS_CALLEES: [(u32, u8); 12] = {
     use ffx_battle::process::bridge as p;
     [
         (p::SND_MUSIC_STOP, 1),
@@ -1622,6 +1623,8 @@ const PROCESS_CALLEES: [(u32, u8); 10] = {
         (ffx_battle::death::bridge::TROPHY_CHECK_DEFEAT_MONSTER, 1),
         (ffx_battle::atel::bridge::CH_NECK_SET_ENABLE, 2),
         (ffx_battle::death::bridge::CH_GET_CHAR_ID, 1),
+        (p::OP_ET_BATTLE_EFFECT_FREE, 0),
+        (p::USER_FREE, 1),
         (0, 1),
     ]
 };
@@ -1641,14 +1644,22 @@ fn process_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32, erec: u32) {
                 .try_into()
                 .unwrap(),
         );
-        let f = o.rebase(PROCESS_STUBS + 0x40 * 9);
+        let f = o.rebase(PROCESS_STUBS + 0x40 * 11);
         o.write(cd + 8, &f.to_le_bytes()).unwrap();
     }
 }
 
 /// The battle loop's per-frame pieces (`ffx_battle::process`) and the
 /// camera reset.
-fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32, srec: u32) {
+fn process(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    rec: u32,
+    srec: u32,
+    out: u32,
+) {
     use ffx_battle::process::bridge as p;
     let mut call = game_call;
     let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
@@ -1657,7 +1668,7 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         (2, [0, 0, 0, 1, 2][rng.below(5) as usize]),
         (3, u32::from(flag(rng, 6))),
         (4, u32::from(flag(rng, 6))),
-        (9, u32::from(flag(rng, 6))),
+        (11, u32::from(flag(rng, 6))),
     ] {
         poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
     }
@@ -1744,6 +1755,84 @@ fn process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         0
     });
     same("MsDebugCameraSleep", a, b);
+    // actors moving back to their places (the positions MsCheckBtlPos reads)
+    for j in 0..ACTORS {
+        let q = w.actor(j);
+        poke(a, b, q + 0x34, &[flag(rng, 2)]);
+    }
+    let i = rng.below(ACTORS);
+    let row = |a: &mut Oracle, b: &mut Oracle| {
+        let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+        let v = a.read(m + 0x20, 16).unwrap();
+        b.write(m + 0x20, &v).unwrap();
+    };
+    let placed_now = |a: &mut Oracle, b: &mut Oracle, j: u32| {
+        writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40)
+    };
+    if placed_now(a, b, i) {
+        let actor = w.actor(i);
+        let h = host();
+        twin("MsMotionPosCheck", a, b, 0x007a_a100, &[i, actor], 0, |m| {
+            dm(m, |m| p::ms_motion_pos_check(m, &h, i, actor));
+            0
+        });
+        row(a, b);
+        same("MsMotionPosCheck", a, b);
+    }
+    if (0..ACTORS).all(|j| {
+        ffx_battle::flow::bridge::ms_move_check_flag(b, w.actor(j)) == 0 || placed_now(a, b, j)
+    }) {
+        let h = host();
+        twin("MsMotionPosCheckAll", a, b, 0x007a_a140, &[], 0, |m| {
+            dm(m, |m| p::ms_motion_pos_check_all(m, &h));
+            0
+        });
+        row(a, b);
+        same("MsMotionPosCheckAll", a, b);
+    }
+    // overdrive modes to announce
+    for j in 0..ACTORS {
+        poke(a, b, w.actor(j) + 0xdf0, &[flag(rng, 12)]);
+    }
+    twin("MsCountChrActing", a, b, 0x007b_0ca0, &[], ALL, |m| {
+        p::ms_count_chr_acting(m)
+    });
+    set(a, b, p::LIMIT_TYPE_CUE, [1, 1, 0][rng.below(3) as usize]);
+    set(
+        a,
+        b,
+        ffx_battle::flow::bridge::LIMIT_LEARNT,
+        flag(rng, 4) ^ 1,
+    );
+    let id = [0, 0, u16::try_from(0x3000 + rng.below(0x100)).unwrap()][rng.below(3) as usize];
+    set(a, b, ffx_battle::flow::bridge::LIMIT_LEARNT_ID, id);
+    set(a, b, ffx_battle::atel::bridge::CAMERA_STATE, flag(rng, 4));
+    set(a, b, ffx_battle::state::bridge::MESSAGE_CUE_COUNT, 0);
+    let save = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
+    for c in 0..0x12u32 {
+        let r = save + c * 0x94;
+        for n in 0..0x14 {
+            poke(
+                a,
+                b,
+                r + 0x60 + 2 * n,
+                &u16::from(flag(rng, 4) ^ 1).to_le_bytes(),
+            );
+        }
+        poke(a, b, r + 0x88, &(rng.next() & rng.next()).to_le_bytes());
+    }
+    twin("MsLimitTypeProcess", a, b, 0x007b_1180, &[], 0, |m| {
+        dm(m, |m| p::ms_limit_type_process(m, &mut call));
+        0
+    });
+    same("MsLimitTypeProcess", a, b);
+    let buf = [0, rng.next()][rng.below(2) as usize];
+    set(a, b, ffx_battle::misc::bridge::ET_EFFECT_READ, buf);
+    twin("MsEtEffectFree", a, b, 0x0079_e630, &[], 0, |m| {
+        dm(m, |m| p::ms_et_effect_free(m, &mut call));
+        0
+    });
+    same("MsEtEffectFree", a, b);
     if rng.below(8) == 0 {
         twin("MsCameraInit", a, b, 0x007b_d5d0, &[], 0, |m| {
             ffx_battle::camera::bridge::ms_camera_init(m);
@@ -2339,7 +2428,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         );
         logging_stub(o, 0x008b_7ca0, 0x0078_03a0, srec + 4 * EXCHANGE_REC, 1, 0);
     }
-    let prec = scratch(a, b, (EXCHANGE_REC * 10) as usize);
+    let prec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
     process_stubs(a, b, prec, erec);
     for _ in 0..400 {
         file(a, b, rng, &f);
@@ -2357,7 +2446,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         for _ in 0..3 {
             command_cue(a, b, rng, &w, out, srec);
         }
-        process(a, b, rng, &w, prec, srec);
+        process(a, b, rng, &w, prec, srec, out);
         deaths(a, b, rng, &w, out);
     }
 }

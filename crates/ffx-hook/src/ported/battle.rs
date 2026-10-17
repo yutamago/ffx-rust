@@ -2597,4 +2597,35 @@ ported! {
         script!(s);
         death::ms_set_death(&mut target::Dm::new(&mut m), &host(), &mut s, i, flags)
     }
+    /// `MsMotionPosCheck(i, actor)`.
+    MsMotionPosCheck @ 0x007a_a100 => extern "C" fn ms_motion_pos_check(i: u32, actor: u32) {
+        let mut m = mem();
+        process::ms_motion_pos_check(&mut target::Dm::new(&mut m), &host(), i, actor);
+    }
+    /// `MsMotionPosCheckAll()`.
+    MsMotionPosCheckAll @ 0x007a_a140 => extern "C" fn ms_motion_pos_check_all() {
+        let mut m = mem();
+        process::ms_motion_pos_check_all(&mut target::Dm::new(&mut m), &host());
+    }
+    /// `MsCountChrActing()` (`0x007b0ca0`).
+    MsCountChrActing @ 0x007b_0ca0 => extern "C" fn ms_count_chr_acting() -> u32 {
+        process::ms_count_chr_acting(&mem())
+    }
+    /// `MsLimitTypeProcess()`: `MsMessageCueRegist` through the game.
+    MsLimitTypeProcess @ 0x007b_1180 => extern "C" fn ms_limit_type_process() {
+        process::ms_limit_type_process(&mut mem(), &mut call_ptr);
+    }
+    /// `MsEtEffectFree()`: vfx and the heap through the game.
+    MsEtEffectFree @ 0x0079_e630 => extern "C" fn ms_et_effect_free() {
+        process::ms_et_effect_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsFldGetScene(scene, &field, &group, &k)`.
+    MsFldGetScene @ 0x0078_27f0 => extern "C" fn ms_fld_get_scene(scene: u32, field: u32, group: u32, slot: u32) -> u32 {
+        process::ms_fld_get_scene(&mut mem(), scene, field, group, slot)
+    }
+    /// `MsBattleLabelExe(scene, a, b)`.
+    MsBattleLabelExe @ 0x0078_1c90 => extern "C" fn ms_battle_label_exe(scene: u32, a: u32, b: u32) -> i32 {
+        let mut m = mem();
+        process::ms_battle_label_exe(&mut target::Dm::new(&mut m), scene, a, b)
+    }
 }

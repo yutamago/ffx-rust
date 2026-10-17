@@ -5425,6 +5425,7 @@
 0x007b0a30 function MsInsertCommandCue        # fh v3:exact 0x007b0a40
 0x007b0b90 function MsRegistCommandCue        # fh v3:exact 0x007b0ba0
 0x007b0c20 function MsUseItem                 # fh v3:exact 0x007b0c30
+0x007b0ca0 function MsCountChrActing          # ours: actors whose command stage +0xdf0 is not 0 (MsLimitTypeProcess waits for none)
 0x007b0cd0 function MsLimitTidusLearn         # fh v3:exact+call.cs 0x007b0ce0 cdecl
 0x007b0d50 function MsLimitTypeDamageCheck    # fh v3:exact+call.cs 0x007b0d60 cdecl
 0x007b0f80 function MsLimitTypeDeathCheck     # fh call.cs cdecl
@@ -14082,6 +14083,7 @@
 0x0112a9cc label g_BtlFieldTable2             # u32; with the one before it (same function, ffx_battle::misc)
 0x0112a9d0 label g_BtlFieldCount              # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a9d4 label g_BtlEncountType            # u8 (MsGetEncountType 0x00782a10)
+0x0112a9d5 label g_BtlEncountType2         # u8: MsBattleLabelExe's third argument, stored with g_BtlEncountType
 0x0112a9d7 label g_BtlEncountOn            # u8: 0 when a joined character has g_PlySave +0x4e bit 1 (MsSaveEncountCheck)
 0x0112a9d8 label g_BtlEncountSteps         # 2 x f32 encounter counters, 0 after ResetEncountExe (which writes g_BtlEncountType as u16)
 0x0112a9e0 label g_BtlEncountRates         # 2 x f32, 1.0 after ResetEncountExe
@@ -14102,6 +14104,7 @@
 0x0112bea0 label g_BtlReadCue                 # u8; The read cue: entries of 12 bytes from 0x0112bea0, the current one (MsBtlReadStatusComplete marks its +2 done).
 0x0112c020 label g_BtlReadCueIndex            # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
+0x0112c022 label g_BtlLimitTypeCue         # u8: 1 when overdrive modes may be announced (MsLimitTypeProcess)
 0x0112c023 label g_BtlCommandStarted       # u8: set when a command starts (MsCommandCueProcess), cleared when an aeon is called (MsParseCommand)
 0x0112c024 label g_BtlResetWait            # u32: a soft reset waits while set (MsCheckSoftResetOk)
 0x0112c029 label g_SepTransFlag            # u16 cleared by MsSEPtransInit
@@ -14109,6 +14112,8 @@
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
 0x0112c22c label g_EffectCameraBuf         # 8 words cleared by MsEffectCameraBufInit
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
+0x0112c258 label g_BtlGroupIndex           # u8: the encounter's group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
+0x0112c259 label g_BtlSlotIndex            # u8: the formation's slot in its group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
 0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
@@ -14177,6 +14182,7 @@
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
 0x0112ca15 label g_BtlCommand3029Count     # u8: commands with ID 0x3029 among their two (+0x6d0; MsParseCommand)
 0x0112ca16 label g_BtlCommandCamera        # u8: the next command starts with camera 0x1c (MsCommandCueProcess)
+0x0112ca2c label g_BtlLabelLock            # u8: 1 blocks MsBattleLabelExe
 0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
 0x0112ca68 label g_BtlMapRead                 # u32; Reset by FinishReadPhyreBattleMap.
