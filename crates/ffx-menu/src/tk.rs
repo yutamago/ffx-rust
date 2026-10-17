@@ -5807,6 +5807,111 @@ pub mod bridge {
         1
     }
 
+    /// `MenuNameEntry_LoadLayout()` (`0x008c5050`, own name): the name
+    /// entry's layout from the menu sequence: three plates
+    /// (`TkMn2GetCommonPlate` into `0x0186a334`, `0x0186a34c`, `0x0186a364`,
+    /// the first with 0xda/0xdb), three numbers (`TkMn2SeqGetNum`), a colour
+    /// (`TkMn2SeqGetColor`), eight positions (`TkMn2SeqGetPos`) and a
+    /// rectangle (`TkMn2SeqGetRect`), each name a string of the image. The
+    /// last call's result is left in `eax`.
+    pub fn menu_name_entry_load_layout<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let plate = r(mem, 0x008c_1a60);
+        for (to, rect, c1, c2, a, b) in [
+            (
+                0x0186_a334,
+                0x00b6_58d4,
+                0x00b6_58c8,
+                0x00b6_58c8,
+                0xda,
+                0xdb,
+            ),
+            (0x0186_a34c, 0x00b6_58f8, 0x00b6_58ec, 0x00b6_58e0, 0, 0),
+            (0x0186_a364, 0x00b6_5910, 0x00b6_5904, 0x00b6_5904, 0, 0),
+        ] {
+            let args = [r(mem, to), r(mem, rect), r(mem, c1), r(mem, c2), a, b];
+            call(mem, plate, &args);
+        }
+        for (f, name, to) in [
+            (0x008c_2b10, 0x00b6_591c, 0x0186_a304),
+            (0x008c_2b10, 0x00b6_5928, 0x0186_a31c),
+            (0x008c_2b10, 0x00b6_5934, 0x0186_a320),
+            (0x008c_2ad0, 0x00b6_5940, 0x0186_a314),
+        ] {
+            let (f, name, to) = (r(mem, f), r(mem, name), r(mem, to));
+            let v = call(mem, f, &[name]);
+            mem.write(to, v);
+        }
+        let pos = r(mem, 0x008c_2b50);
+        for (name, to) in [
+            (0x00b6_594c, 0x0186_a27c),
+            (0x00b6_5958, 0x0186_a300),
+            (0x00b6_5964, 0x0186_a310),
+            (0x00b6_5970, 0x0186_a318),
+            (0x00b6_597c, 0x0186_a324),
+            (0x00b6_5988, 0x0186_a328),
+            (0x00b6_5994, 0x0186_a32c),
+            (0x00b6_59a0, 0x0186_a330),
+        ] {
+            let args = [r(mem, name), r(mem, to)];
+            call(mem, pos, &args);
+        }
+        let rect = r(mem, 0x008c_2b90);
+        let args = [r(mem, 0x00b6_59a8), r(mem, 0x0186_a308)];
+        call(mem, rect, &args)
+    }
+
+    /// `MenuSummon_DrawFaceSlide(x, y, w, h, t, cur, next)` (`0x008d34a0`,
+    /// own name): aeon `cur`'s face (`TkMenuGetSummonFromIndex`) drawn at
+    /// `(x, y, w, h)` (`TkMn2DrawCrossCharFace`, while
+    /// `TOMenuGetFirstReadEndFlag()`); with a slide `t` (nonzero) aeon
+    /// `next`'s face too, `x` moved by `0x0186a9ec × t / 4096` (signed,
+    /// toward zero; the sum at 53 bits truncated to an integer and back to
+    /// a float) and faded (font shade alpha `(0x1000 - |t|) >> 5` between
+    /// `TkMn2SaveFontShade` and `TkMn2RestoreFontShade`, whose result is
+    /// returned). Without a slide `eax` is the face draw's result, or the
+    /// flag's when not drawn.
+    #[allow(clippy::many_single_char_names)] // the rectangle and the slide
+    pub fn menu_summon_draw_face_slide<M: Mem>(
+        mem: &mut M,
+        [x, y, w, h]: [u32; 4],
+        t: i32,
+        [cur, next]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let summon = mem.rebase(0x008a_9bc0);
+        let cur = call(mem, summon, &[cur]);
+        let next = call(mem, summon, &[next]);
+        let read_end = mem.rebase(0x008a_8e50);
+        let face = mem.rebase(0x008c_0250);
+        let mut drawn = call(mem, read_end, &[]);
+        if drawn != 0 {
+            drawn = call(mem, face, &[cur, x, y, w, h]);
+        }
+        if t == 0 {
+            return drawn;
+        }
+        let step: i32 = mem.read(mem.rebase(0x0186_a9ec));
+        let shift = step.wrapping_mul(t) / 0x1000;
+        let moved = x87::add(x87::load(x), x87::load(x87::store(f64::from(shift))));
+        let moved = x87::ftol(mem, moved).cast_signed();
+        let save = mem.rebase(0x008c_2330);
+        call(mem, save, &[]);
+        let alpha = (0x1000 - t.wrapping_abs()) >> 5;
+        let shade = mem.rebase(0x008c_2c30);
+        call(mem, shade, &[0x80, 0x80, 0x80, alpha.cast_unsigned()]);
+        if call(mem, read_end, &[]) != 0 {
+            let moved = x87::store(f64::from(moved));
+            call(mem, face, &[next, moved, y, w, h]);
+        }
+        let restore = mem.rebase(0x008c_2300);
+        call(mem, restore, &[])
+    }
+
     /// The base value of an equipment entry `e` (shared by
     /// `0x008d9370` and `0x008d9410`): the first words of its abilities'
     /// records (`u16` ids at `+0xe`, `byte +0xb` of them; 0 and 0xff empty)

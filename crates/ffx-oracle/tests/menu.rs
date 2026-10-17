@@ -7031,3 +7031,72 @@ fn menu_summon_grow_info_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_name_entry_load_layout_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_5050) else {
+        return;
+    };
+    // the plate and sequence lookups recorded, each into its own log
+    record_n(&mut t, 0x008c_1a60, 6, 0x11);
+    record_n(&mut t, 0x008c_2b10, 1, 0x22);
+    record_n(&mut t, 0x008c_2ad0, 1, 0x33);
+    record_n(&mut t, 0x008c_2b50, 2, 0x44);
+    record_n(&mut t, 0x008c_2b90, 2, 0x55);
+    for _ in 0..4 {
+        t.scramble(0x0186_a300, 0x80);
+        t.twin("MenuNameEntry_LoadLayout", 0x008c_5050, &[], U32, |o| {
+            u64::from(tk::menu_name_entry_load_layout(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_summon_draw_face_slide_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_34a0) else {
+        return;
+    };
+    // TkMn2DrawCrossCharFace and TkMn2SetFontShade recorded
+    record_n(&mut t, 0x008c_0250, 5, 0x66);
+    record_n(&mut t, 0x008c_2c30, 4, 0x77);
+    let pick = |t: &mut Twins| -> u32 {
+        match t.rng.below(8) {
+            0 => f32::NAN.to_bits(),
+            1 => t.rng.next() & 0xffbf_ffff | 0x0040_0000, // no signalling NaNs
+            _ => (f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 4.0).to_bits(),
+        }
+    };
+    for round in 0..300u32 {
+        // the read-end flag
+        let flag = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x008a_8e50, flag);
+        let step = match t.rng.below(3) {
+            0 => t.rng.next(),
+            _ => t.rng.below(0x200),
+        };
+        t.put(t.sym(0x0186_a9ec), step);
+        t.scramble(0x023c_c458, 0x24);
+        let xywh: [u32; 4] = std::array::from_fn(|_| pick(&mut t));
+        let slide = match round % 4 {
+            0 => 0,
+            1 => t.rng.next(),
+            _ => t.rng.below(0x2000).wrapping_sub(0x1000),
+        };
+        let cur = t.rng.below(12);
+        let next = t.rng.below(12);
+        let args = [xywh[0], xywh[1], xywh[2], xywh[3], slide, cur, next];
+        t.twin("MenuSummon_DrawFaceSlide", 0x008d_34a0, &args, U32, |o| {
+            u64::from(tk::menu_summon_draw_face_slide(
+                o,
+                xywh,
+                slide.cast_signed(),
+                [cur, next],
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

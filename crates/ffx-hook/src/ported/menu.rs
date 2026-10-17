@@ -3257,6 +3257,14 @@ ported! {
     MenuSummon_GrowInfo @ 0x008c_d320 => extern "C" fn menu_summon_grow_info(stat: i32, chr: u32, cost: u32, gain: u32) -> u32 {
         tk::menu_summon_grow_info(&mut mem(), stat, chr, [cost, gain], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuNameEntry_LoadLayout()`: the last lookup's result.
+    MenuNameEntry_LoadLayout @ 0x008c_5050 => extern "C" fn menu_name_entry_load_layout() -> u32 {
+        tk::menu_name_entry_load_layout(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_DrawFaceSlide(x, y, w, h, t, cur, next)`.
+    MenuSummon_DrawFaceSlide @ 0x008d_34a0 => extern "C" fn menu_summon_draw_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_summon_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {
         tk::menu_shop_weapon_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
