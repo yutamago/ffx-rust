@@ -189,6 +189,8 @@
 0x00441620 function Phyre_PCluster_fixupInstances # fh v3:exact 0x004416f0 Phyre::PCluster::fixupInstances
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
 0x00441dc0 function PhyreSceneCursor_SetNode  # structure: thiscall(cursor, node), ret 4: cursor words from the node (+0x34, +0x8, +0x3c count, +0x2c's +0x1c stride and +0x8c), skipping while +4 == +0; the cursor steps' set-up; name ours
+0x00441e10 function PhyreCursor_IsValid_00441e10 # structure: thiscall(cursor) -> al: the cursor check template of PhyreCursor_IsValid_00660240 etc. (list +0x18 null, or its node +0x1c still linked from +0x2c via +0x40 and the list's +0x40 set); name in the existing family's style
+0x00441e40 function PhyreCursor_IsValid_00441e40 # structure: the same code as PhyreCursor_IsValid_00441e10
 0x00441f20 function Phyre_PCluster_resolveAssetReferences # fh v3:exact 0x00441ff0 Phyre::PCluster::resolveAssetReferences
 0x004429e0 function Phyre_PWorld_PWorld       # fh v3:exact 0x00442ab0 Phyre::PWorld::PWorld
 0x00442e30 function Phyre_PWorld_Bind         # fh v3:cg4 0x442f00 Phyre::PWorld::Bind
@@ -2123,6 +2125,8 @@
 0x0066b560 function PostProcessManager_renderHDAO # fh switch:cg4 0x7100210cd0 PostProcessManager::renderHDAO
 0x0066bf40 function PhyreScene_resetYIQ       # fh v3:exact 0x0066c0d0 PhyreScene::resetYIQ
 0x0066c580 function PhyreScene_resize            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001fcca0 PhyreScene::resize, 2 votes, round 3
+0x0066c8a0 function Matrix_RotationX          # structure: cdecl(out, angle): 4x4 rotation about x from _CIsin/_CIcos (import thunks 0x009498c8/0x009498c2), rows [1 0 0 0][0 c s 0][0 -s c 0][0 0 0 1]; returns out; name ours
+0x0066c920 function Matrix_RotationY          # structure: cdecl(out, angle): rows [c 0 -s 0][0 1 0 0][s 0 c 0][0 0 0 1]; name ours
 0x0066ca60 function PhyreScene_setAbmapCamera # fh v3:exact 0x0066cbf0 PhyreScene::setAbmapCamera
 0x0066cbe0 function PhyreScene_setCameraAspectRatio # fh v3:exact 0x0066cd70 PhyreScene::setCameraAspectRatio
 0x0066cda0 function PhyreScene_setCameraFOVy  # fh v3:exact 0x0066cf30 PhyreScene::setCameraFOVy
@@ -2405,6 +2409,7 @@
 0x00698110 function PostProcessManager_resolveDepth # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'DepthBuffer2'; Switch 0x71002168d0 PostProcessManager::resolveDepth (symbols from Fahrenheit's server export)
 0x006983e0 function PostProcessManager_SetByte123b1 # thiscall(this, v), ret 4: byte +0x123b1 = v; name ours
 0x006983f0 function PostProcessManager_SetByte123b0 # thiscall(this, v), ret 4: byte +0x123b0 = v; name ours
+0x00698400 function PostProcessManager_SetFirstEntry # structure: thiscall(pp, list), ret 4: +0x1200 = 0, then a cursor on list +0x1c advanced by 0x00464f30; with a count, +0x1200 = its position + first word; returns 0; name ours
 0x00698480 function PostProcessManager_SetByte123bb # thiscall(this, v), ret 4: byte +0x123bb = v; name ours
 0x00698490 function PostProcessManager_setCrossFadeCaptureEnable # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0918 PostProcessManager::setCrossFadeCaptureEnable, 2 votes, round 3
 0x006984a0 function PostProcessManager_setCrossFadeTime # layout: alphabetical run between PostProcessManager_setCrossFadeCaptureEnable and PostProcessManager_setCrossFadeWeight (1 unnamed in the gap); Switch 0x7100210ad0 PostProcessManager::setCrossFadeTime is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2481,6 +2486,7 @@
 0x006a2370 function ClassDynamicGeometry_hide # fh v3:bsim1.00 0x006a24b0 ClassDynamicGeometry::hide
 0x006a28b0 function ClassLoadedCharacterTable_insertPrototype # fh v3:exact 0x006a29f0 ClassLoadedCharacterTable::insertPrototype
 0x006a29a0 function PhyreScene_LoadCompute_006a29a0 # auto-port shape (load and compute, thiscall): t0 = u32[(a0 + 0xc)]; t1 = u32[(a0 + 0x8)]; return ((t0 - t1) >>s 0x2); callers: PhyreScene_DrawZPrePass; name ours
+0x006a29c0 function PhyreCursor_IsValid_006a29c0 # structure: the same code as PhyreCursor_IsValid_00441e10
 0x006a2b90 function ClassCharacter_removeInstance # fh v3:exact 0x006a2cd0 ClassCharacter::removeInstance
 0x006a2c60 function MenuDynamicGeometry_resetMaterials # fh v3:exact 0x006a2da0 MenuDynamicGeometry::resetMaterials
 0x006a2e60 function MenuDynamicGeometry_setMeshWorldMatrix # fh v3:exact 0x006a2fa0 MenuDynamicGeometry::setMeshWorldMatrix
@@ -2542,6 +2548,7 @@
 0x006b2f50 function TextureAnimationManager_sceenTextureAnimationClear # fh v3:cg2 0x6b30a0 TextureAnimationManager::sceenTextureAnimationClear
 0x006b3060 function TextureAnimationManager_setAnimatedMaterialsChar # fh v3:exact 0x006b31b0 TextureAnimationManager::setAnimatedMaterialsChar
 0x006b3650 function TextureAnimation_SetByte1c # thiscall(this, v), ret 4: byte +0x1c = v; name ours
+0x006b42c0 function TextureAnimationManager_SetFrame # structure: thiscall(mgr, i, frame, absolute), ret 0xc: material i (+8 + +0xc unless absolute) names a texture animation (TextureAnimation_FindByName): +0x1c = 0, +0x18 = frame when below its count; al 1 (0 when not found); name ours
 0x006b4330 function TextureAnimationManager_unregisterChararcterInstance # fh v3:exact 0x006b4480 TextureAnimationManager::unregisterChararcterInstance
 0x006b47e0 function ParamList_SetAllFloat     # structure: thiscall(this, f): each 0x20-byte entry of +0x80 (+0x7c, bit 31 a flag) gets virtual 1(f); name ours
 0x006b4950 function DebugMenuManager_CreateInstance # fh v3:exact 0x006b4aa0 DebugMenuManager::CreateInstance
@@ -2600,6 +2607,7 @@
 0x006c35a0 function BlurEffect_activate       # fh switch:bsim1.00 0x710024d870 BlurEffect::activate
 0x006c35d0 function BlurEffect_doOnShaderClusterLoaded # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'BlurEffect_frontBuffer'; Switch 0x710024d3e0 BlurEffect::doOnShaderClusterLoaded (symbols from Fahrenheit's server export)
 0x006c4000 function Compute_006c4000             # auto-port shape (arithmetic on arguments, cdecl): return (a0 + a1); callers: no direct caller; name ours
+0x006c40c0 function ResetAndConstruct_006c40c0 # structure: thiscall(this): SetFields_006c47a0, then 0x00585230 on this +0x24 (tail call); name ours
 0x006c44d0 function BlurEffect_SetField84 # thiscall(this, v), ret 4: +0x84 = v (BlurEffect_activate zeroes it); name ours
 0x006c4620 function BlurEffectEx_SetPositiveParams # structure: thiscall(this, a, b, c, d), ret 0x10: each float above 0 to +0x5c..+0x68; 0x00643830 calls it on BlurEffectEx_GetInstance; name ours
 0x006c46e0 function BlurEffect_SetFloats74     # thiscall(this, a, b, c, d), ret 0x10: floats +0x74..+0x80; name ours
