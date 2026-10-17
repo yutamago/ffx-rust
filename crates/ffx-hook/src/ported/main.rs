@@ -1295,6 +1295,10 @@ ported! {
     Sg_ClothRodFix @ 0x0082_2cf0 => extern "C" fn sg_cloth_rod_fix(rods: u32, n: u32, points: u32) -> u32 {
         vec::bridge::cloth_rods(&mut mem(), 6, rods, n, points)
     }
+    /// `Sg_SyncCutScene()`.
+    Sg_SyncCutScene @ 0x0082_1d60 => extern "C" fn sg_sync_cut_scene() -> u32 {
+        control::bridge::sync_cut_scene(&mut mem())
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

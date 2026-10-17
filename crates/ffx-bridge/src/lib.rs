@@ -305,6 +305,25 @@ pub trait Host: Mem {
     /// Calls the cdecl function at `addr` (an address in this process,
     /// already rebased) with up to six 32-bit arguments; returns `EAX`.
     fn call(&mut self, addr: u32, args: &[u32]) -> u32;
+
+    /// [`SCRATCH_LEN`] bytes of memory the original callees can reach,
+    /// for what an original kept in its stack frame and passed by address
+    /// to a callee that is still the game's. Private to the calling
+    /// thread; a bridge must not keep it across calls. `None` (the
+    /// default) for a host without one.
+    fn callee_scratch(&mut self) -> Option<u32> {
+        None
+    }
+}
+
+/// The size of [`Host::callee_scratch`].
+pub const SCRATCH_LEN: u32 = 0x200;
+
+#[cfg(target_pointer_width = "32")]
+thread_local! {
+    /// The game thread's scratch ([`Host::callee_scratch`]).
+    static SCRATCH: std::cell::UnsafeCell<[u32; SCRATCH_LEN as usize / 4]> =
+        const { std::cell::UnsafeCell::new([0; SCRATCH_LEN as usize / 4]) };
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -321,6 +340,12 @@ impl Host for RawMem {
             let f: F6 = std::mem::transmute(addr as usize);
             f(a[0], a[1], a[2], a[3], a[4], a[5])
         }
+    }
+
+    fn callee_scratch(&mut self) -> Option<u32> {
+        // the address only: the bridge reads and writes it through `Mem`,
+        // the originals through their pointers, as they would their stack
+        Some(SCRATCH.with(|s| s.get() as usize as u32))
     }
 }
 

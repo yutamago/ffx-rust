@@ -2253,6 +2253,12 @@ impl ffx_bridge::Host for H<'_> {
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
     }
+
+    fn callee_scratch(&mut self) -> Option<u32> {
+        // the bottom of the emulated stack: no call reaches that deep, and
+        // the diff leaves the stacks out, as it does the originals' frames
+        Some(self.0.stack_range().start + 0x100)
+    }
 }
 
 /// Free image bytes for the recorders: the `.reloc` section, which the
@@ -2440,6 +2446,7 @@ fn control_synthetic() {
     init_cases(&mut a, &mut b, &mut rng, 200);
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
     round4_main_cases(&mut a, &mut b, &mut rng, 300, false);
+    sync_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2453,6 +2460,7 @@ fn control_snapshot() {
     init_cases(&mut a, &mut b, &mut rng, 200);
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
     round4_main_cases(&mut a, &mut b, &mut rng, 300, true);
+    sync_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -2942,6 +2950,59 @@ fn round4_main_cases(
         ][kind as usize - 1];
         twin("Sg_ClothRod", a, b, sym, &[rods, n, points], |m| {
             v::cloth_rods(m, kind, rods, n, points)
+        });
+    }
+}
+
+// Main round 5: the cut scene's sync (a callee writing through a pointer
+// to the original's local: the host's callee scratch).
+
+fn sync_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    // iSyncGetData(&time, &rate, &frame): writes the three from data
+    // slots 33..35, returns slot 32
+    for o in [&mut *a, &mut *b] {
+        let rets = o.rebase(REC_RETS);
+        let code = o.rebase(REC_CODE) + 0x60 * 32;
+        let mut s = vec![];
+        for (arg, slot) in [(4u8, 34u32), (8, 35), (0xc, 33)] {
+            s.extend([0x8b, 0x4c, 0x24, arg]); // mov ecx, [esp+arg]
+            s.push(0x8b);
+            s.push(0x15);
+            s.extend((rets + 4 * slot).to_le_bytes()); // mov edx, [slot]
+            s.extend([0x89, 0x11]); // mov [ecx], edx
+        }
+        s.push(0xa1);
+        s.extend((rets + 4 * 32).to_le_bytes()); // mov eax, [slot 32]
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
+        let at = o.rebase(c::ISYNC_GET_DATA);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+    let rets = a.rebase(REC_RETS);
+    for _ in 0..rounds {
+        let answer = if rng.below(3) == 0 { 999 } else { rng.below(4) };
+        put(a, b, rets + 4 * 32, answer);
+        put(a, b, rets + 4 * 33, rng.next());
+        put(a, b, rets + 4 * 34, modest(rng));
+        put(a, b, rets + 4 * 35, modest(rng));
+        let base = a.rebase(0x012f_b814);
+        for k in 0..0x28 {
+            put(a, b, base + 4 * k, rng.next());
+        }
+        // the index within the table (the game's), sometimes past it
+        let i = if rng.below(6) == 0 {
+            rng.below(0x26)
+        } else {
+            rng.below(30)
+        };
+        set(a, b, c::SYNC_INDEX, i);
+        let at = a.rebase(0x00c4_94d4);
+        put(a, b, at, rng.below(2));
+        twin("Sg_SyncCutScene", a, b, 0x0082_1d60, &[], |m| {
+            c::sync_cut_scene(&mut H(m))
         });
     }
 }

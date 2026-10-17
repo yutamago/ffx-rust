@@ -443,4 +443,60 @@ pub mod bridge {
     pub fn recall_scene_effect2(h: &mut impl Host, a: u32, b: u32) -> u32 {
         dream_layers(h, &[a, b])
     }
+
+    /// `iSyncGetData(&time, &rate, &frame)`, the sound sync manager's.
+    pub const ISYNC_GET_DATA: u32 = 0x0067_a930;
+    /// The cut scene's sync state (`0x012fb8a0` on, `0x012fb8a4`,
+    /// `0x012fb8a8`, the time `0x012fb8ac` and rate `0x012fb8b0` as `f32`,
+    /// the frame table `0x012fb828` (30 words) and its index
+    /// `0x012fb814`).
+    pub const SYNC_ON: Global<u32> = Global::new(0x012f_b8a0);
+    pub const SYNC_TIME: Global<f32> = Global::new(0x012f_b8ac);
+    pub const SYNC_RATE: Global<f32> = Global::new(0x012f_b8b0);
+    pub const SYNC_FRAMES: u32 = 0x012f_b828;
+    pub const SYNC_INDEX: Global<u32> = Global::new(0x012f_b814);
+    /// `1000.0` (`f64`).
+    pub const THOUSAND: Global<f64> = Global::new(0x00b0_dba0);
+
+    /// `Sg_SyncCutScene()` (`0x00821d60`): asks the sound sync manager for
+    /// the time, rate and frame (`iSyncGetData`, the frame in a local the
+    /// host's callee scratch holds). An answer of 999 (no sync) clears
+    /// everything: the floats 0, the frame table, `0x00c494d4` 1; returns
+    /// the table (`memset`'s `eax`). Otherwise the sync is on, the frame
+    /// `<< 7` goes into the table at the index, the time and rate become
+    /// milliseconds (`x 1000`); returns the index. A host without a scratch
+    /// does nothing and returns 0.
+    pub fn sync_cut_scene(h: &mut impl Host) -> u32 {
+        let Some(local) = h.callee_scratch() else {
+            return 0;
+        };
+        h.write(local, 0u32);
+        let at = h.rebase(ISYNC_GET_DATA);
+        let (time, rate) = (h.rebase(SYNC_TIME.sym), h.rebase(SYNC_RATE.sym));
+        let r = h.call(at, &[time, rate, local]);
+        let table = h.rebase(SYNC_FRAMES);
+        if r == 999 {
+            for g in [0x012f_b8a4, 0x012f_b8a8, 0x012f_b8ac] {
+                Global::<u32>::new(g).set(h, 0);
+            }
+            SYNC_ON.set(h, 0);
+            Global::<u32>::new(0x012f_b8b0).set(h, 0);
+            Global::<u32>::new(0x00c4_94d4).set(h, 1);
+            Global::<u32>::new(0x012f_b818).set(h, 0);
+            Global::<u32>::new(0x012f_b81c).set(h, 0);
+            SYNC_INDEX.set(h, 0);
+            h.write_bytes(table, &[0; 0x78]);
+            return table;
+        }
+        let k = THOUSAND.get(h);
+        let t = x87::load(SYNC_TIME.get(h).to_bits());
+        let frame: u32 = h.read(local);
+        let i = SYNC_INDEX.get(h);
+        SYNC_ON.set(h, 1);
+        h.write(table.wrapping_add(i.wrapping_mul(4)), frame << 7);
+        SYNC_TIME.set(h, f32::from_bits(x87::store(x87::mul(t, k))));
+        let rt = x87::load(SYNC_RATE.get(h).to_bits());
+        SYNC_RATE.set(h, f32::from_bits(x87::store(x87::mul(k, rt))));
+        i
+    }
 }
