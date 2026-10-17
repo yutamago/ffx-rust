@@ -4,7 +4,9 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
+use ffx_vfx::{
+    et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave,
+};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -1549,6 +1551,17 @@ ported! {
     /// `opu_main_host(battle, list)`.
     opu_main_host @ 0x0080_cc00 => extern "C" fn opu_main_host(battle: u32, list: u32) -> u32 {
         opus::bridge::opu_main_host(&mut mem(), battle, list, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_wave_omd_make(obj, wave, uv, omd, view, light)`: its stack
+    /// locals in a buffer on this shim's stack (the frame pointer at its
+    /// end).
+    opus_wave_omd_make @ 0x007f_94e0 => extern "C" fn opus_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, light: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x90]);
+        let mut locals = Locals([0; 0x90]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        wave::bridge::opus_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, light, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

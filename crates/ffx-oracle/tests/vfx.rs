@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, x87,
+    et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -8725,6 +8725,114 @@ fn opu_main_host_matches_the_original() {
                     &mut |c: &mut Capped<Oracle>, f, a| call_original(c.m, f, a),
                 ))
             });
+        }
+    }
+}
+
+/// A float in `[lo, hi)` with 16 fraction bits, as bits.
+fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let t = rng.below(0x1_0000) as f32 / 65536.0;
+    (lo + (hi - lo) * t).to_bits()
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn wave_omd_make_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_94e0);
+        x87_crt_stand_ins(&mut p);
+        let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
+        let omd = p.alloc(0x8000);
+        let (view, light) = (p.alloc(0x100), p.alloc(0x60));
+        let (col, lpos, lm) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x40));
+        for _ in 0..40 {
+            p.fill(omd, 0x8000, &mut rng);
+            p.fill(obj, 0x40, &mut rng);
+            p.fill(wv, 0x60, &mut rng);
+            p.fill(uv, 8, &mut rng);
+            let x = ranged(&mut rng, 0.5, 20.0);
+            p.set(obj + 0x30, x);
+            let x = ranged(&mut rng, -0.5, 1.0);
+            p.set(obj + 0x34, x);
+            for (o, lo, hi) in [
+                (0x30u32, 0.0f32, 4096.0f32),
+                (0x34, -200.0, 200.0),
+                (0x38, -10.0, 10.0),
+                (0x40, -30.0, 30.0),
+                (0x44, -3.0, 3.0),
+                (0x48, -0.5, 0.5),
+            ] {
+                let x = ranged(&mut rng, lo, hi);
+                p.set(wv + o, x);
+            }
+            // the view matrices: a scaled rotation-ish and a translation
+            for m in [0x20u32, 0x60, 0xa0] {
+                for i in 0..16u32 {
+                    let x = if i % 5 == 0 {
+                        ranged(&mut rng, 0.5, 1.5)
+                    } else if (12..15).contains(&i) {
+                        ranged(&mut rng, -500.0, 500.0)
+                    } else if i == 15 {
+                        1.0f32.to_bits()
+                    } else {
+                        ranged(&mut rng, -0.5, 0.5)
+                    };
+                    p.set(view + m + 4 * i, x);
+                }
+            }
+            p.set(light + 0x24, col);
+            p.set(light + 0x28, lpos);
+            p.set(light + 0x2c, lm);
+            // now and then colours far past a byte (the conversion's
+            // overflow)
+            let hot = rng.chance(4);
+            for i in 0..4u32 {
+                let x = if hot {
+                    ranged(&mut rng, -3e9, 3e9)
+                } else {
+                    ranged(&mut rng, 0.0, 2.0)
+                };
+                p.set(col + 4 * i, x);
+                let x = if i == 3 {
+                    ranged(&mut rng, 0.0, 50_000.0)
+                } else {
+                    ranged(&mut rng, -400.0, 400.0)
+                };
+                p.set(lpos + 4 * i, x);
+            }
+            for i in 0..16u32 {
+                let x = if i % 5 == 0 {
+                    1.0f32.to_bits()
+                } else if (12..15).contains(&i) {
+                    ranged(&mut rng, -100.0, 100.0)
+                } else {
+                    0
+                };
+                p.set(lm + 4 * i, x);
+            }
+            p.set(light + 0x4c, u8::try_from(rng.below(256)).unwrap());
+            p.set(light + 0x4d, u8::try_from(rng.below(256)).unwrap());
+            check_deep_n(
+                &mut p,
+                "opus_wave_omd_make",
+                0x007f_94e0,
+                &[obj, wv, uv, omd, view, light],
+                |o, frame| {
+                    Some(wave::bridge::opus_wave_omd_make(
+                        o,
+                        obj,
+                        wv,
+                        uv,
+                        omd,
+                        view,
+                        light,
+                        frame,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
         }
     }
 }
