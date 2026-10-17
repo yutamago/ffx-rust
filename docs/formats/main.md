@@ -323,3 +323,28 @@ behind them stays with those modules, which the bridges call.
 - `drawDreamEffect` (`0x008223a0`): which maps have the dream effect and on
   which layers: 0 on `0x86`, `0xa5`, `0xbf`, `0xf9`, `0xfc`; 3 and 4 on
   `0x129`; 7 and 8 on `0x187`. Elsewhere a started effect is reset.
+
+## Effect strips, channel sampling, pose blending (round 6)
+
+- `Ch_EffectPacketStoreStrip(v)` (`0x00844370`): effect geometry comes as
+  triangle strips of 8-byte vertices (`u16` x, y, u, v). Each vertex goes
+  into a ring of three (`0x01303354`, slot `count % 3`; count `u16`
+  `0x01303370`, the newest slot's address `0x0130336c`). An x or y with
+  bit 15 set refers back to an earlier vertex: the value `(x & 0x7fff) * 4
+  / 3` words before (y: one word further). From the third vertex on, each
+  new vertex makes a triangle with the two before it for
+  `Ch_EffectPacketStorePoly`. Even counts give `(n-1, n-2, new)`, odd
+  `(n-2, n-1, new)`, so all faces keep one winding. A null vertex starts a
+  new strip.
+- `SG_SampleChannels(obj)` (`0x008393c0`): the motion time `+0x740` (8.8
+  frames) rounded up to a frame, clamped to the end (`+0x71c`) for a motion
+  that stops (`u16` `+0x724` 1), else wrapped by the loop (`+0x720`). The
+  channels rewind when the time goes back, then step to it (frame count
+  `+0x7dc`). Each channel's `+0x1c` becomes its key or, between frames, the
+  blend with the key before: `AngleTurn_Lerp` for angles, linear
+  otherwise.
+- `SG_BlendToTarget(obj, n)` (`0x008395b0`): one of `n` steps from the
+  current pose toward the target. A channel motion (`+0x196` bit 0) steps
+  each channel's `+0x20` toward `+0x1c`. Otherwise every bone steps its 3
+  rotations (`Chr_FracStep`) and 6 values (`cur += (target - cur) / n`,
+  skipped when already equal). `n` 1 sets `+0x194` bit 16.
