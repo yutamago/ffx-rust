@@ -5972,14 +5972,21 @@ ported! {
         let mut scratch = [0u32; 0x2c];
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         let at = scratch.as_mut_ptr() as usize as u32;
-        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, at, call_sym);
+        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, false, at, call_sym, fcall);
     }
     /// `TOMakePktBtlEasyFontShadow(pen, glyph, scale)`.
     TOMakePktBtlEasyFontShadow @ 0x008f_bae0 => extern "C" fn to_make_pkt_btl_easy_font_shadow(pen: u32, glyph: u32, scale: u32) {
         let mut scratch = [0u32; 0x2c];
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         let at = scratch.as_mut_ptr() as usize as u32;
-        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, true, at, call_sym);
+        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, true, false, at, call_sym, fcall);
+    }
+    /// `TOMakeBtlEasyFontEdge(pen, glyph, scale)`.
+    TOMakeBtlEasyFontEdge @ 0x008f_ae40 => extern "C" fn to_make_btl_easy_font_edge(pen: u32, glyph: u32, scale: u32) {
+        let mut scratch = [0u32; 0x2c];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, true, at, call_sym, fcall);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

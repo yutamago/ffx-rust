@@ -7724,17 +7724,29 @@ pub mod bridge {
     /// the texture size (`TOGetImageWH`), the pen colour twice and the depth
     /// 2000. The shadow is the same moved by `0x018716e0`/`0x018716e4`, its
     /// texture variant 1 and draw offsets 2.0; the face draws at layer
-    /// parity + 2. Record words the original leaves unset are zero here.
-    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    /// parity + 2. With `edge` (`TOMakeBtlEasyFontEdge`, `0x008fae40`,
+    /// which wins over `shadow`) the slant and height use `K_x`, the
+    /// texture variant is 1, and the quad is drawn eight times at layer 0,
+    /// offset by ±2 (and 0) in x and y over `graphicFontGetEdgeRatio`
+    /// (through `fcall`). Record words the original leaves unset are zero
+    /// here.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::cast_possible_truncation
+    )]
     pub fn to_make_pkt_btl_easy_font<M: Mem>(
         mem: &mut M,
         pen: u32,
         glyph: u32,
         scale: u32,
         shadow: bool,
+        edge: bool,
         scratch: u32,
         mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
     ) {
+        let shadow = shadow && !edge;
         let g = |mem: &M, a: u32| mem.rebase(a);
         let f = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(a)) };
         for k in 0..0x2c {
@@ -7749,8 +7761,14 @@ pub mod bridge {
         let texture = call(
             mem,
             0x008a_cf50,
-            &[page, alpha, parity, u32::from(shadow), extra],
+            &[page, alpha, parity, u32::from(shadow || edge), extra],
         );
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let ratio = if edge {
+            fcall(mem, 0x0064_0d70, &[]) as f32
+        } else {
+            1.0
+        };
         let page = i32::from(mem.read::<i16>(glyph)).cast_unsigned();
         call(mem, 0x008a_c400, &[page, size, size.wrapping_add(4)]);
         let (w_img, h_img) = (f(mem, size), f(mem, size.wrapping_add(4)));
@@ -7758,7 +7776,11 @@ pub mod bridge {
         let (px, py) = (f(mem, pen.wrapping_add(4)), f(mem, pen.wrapping_add(8)));
         let slant = f(mem, glyph.wrapping_add(0x18));
         let kx = f(mem, g(mem, 0x00c5_d778));
-        let ky = f(mem, g(mem, 0x00c5_d77c));
+        let ky = if edge {
+            kx
+        } else {
+            f(mem, g(mem, 0x00c5_d77c))
+        };
         let (ox, oy) = if shadow {
             (f(mem, g(mem, 0x0187_16e0)), f(mem, g(mem, 0x0187_16e4)))
         } else {
@@ -7815,7 +7837,26 @@ pub mod bridge {
                 rec.wrapping_add(0x2c),
             ],
         );
-        if kept != 0 {
+        if kept != 0 && edge {
+            let ratio = f64::from(ratio);
+            for (dx, dy) in [
+                (-2.0f64, -2.0),
+                (0.0, -2.0),
+                (2.0, -2.0),
+                (-2.0, 0.0),
+                (2.0, 0.0),
+                (-2.0, 2.0),
+                (0.0, 2.0),
+                (2.0, 2.0),
+            ] {
+                let (ox, oy) = ((dx / ratio) as f32, (dy / ratio) as f32);
+                call(
+                    mem,
+                    0x0064_0660,
+                    &[rec, texture, ox.to_bits(), oy.to_bits(), 0],
+                );
+            }
+        } else if kept != 0 {
             let layer = i32::from(mem.read::<i16>(glyph.wrapping_add(4)));
             let (offset, layer) = if shadow {
                 (mem.read::<u32>(g(mem, 0x00b9_2268)), layer)

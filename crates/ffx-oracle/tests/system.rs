@@ -13132,6 +13132,16 @@ fn round22_quads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let pen = alloc(a, b, 0x20);
     let glyph = alloc(a, b, 0x40);
     let scratch = alloc(a, b, 0xb0);
+    // graphicFontGetEdgeRatio: cells[3]
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&(cells + 12).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x140, &v);
+    redirect(a, b, 0x0064_0d70, s);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
     let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
     for k in 0..2000u32 {
         put(a, b, cursor, log);
@@ -13143,6 +13153,12 @@ fn round22_quads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                 [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize].to_bits(),
                 [256.0f32, 512.0][(rng.next() % 2) as usize].to_bits(),
             ],
+        );
+        put(
+            a,
+            b,
+            cells + 12,
+            [1.0f32, 1.5, 0.7, 3.0][(rng.next() % 4) as usize],
         );
         put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(5)));
         put(a, b, pen, rng.next());
@@ -13178,13 +13194,14 @@ fn round22_quads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             [(rng.next() % 5) as f32 - 2.0, (rng.next() % 5) as f32 - 2.0],
         );
         let scale = [1.0f32, 0.75, 1.3, 0.6][(rng.next() % 4) as usize].to_bits();
-        let shadow = rng.next().is_multiple_of(2);
+        let kind = rng.next() % 3;
+        let (shadow, edge) = (kind == 1, kind == 2);
         eax(
             a,
-            if shadow { 0x008f_bae0 } else { 0x008f_b940 },
+            [0x008f_b940, 0x008f_bae0, 0x008f_ae40][kind as usize],
             &[pen, glyph, scale],
         );
-        t::to_make_pkt_btl_easy_font(b, pen, glyph, scale, shadow, scratch, call);
+        t::to_make_pkt_btl_easy_font(b, pen, glyph, scale, shadow, edge, scratch, call, fcall);
         let v: [u32; 0x2c] = Mem::read(b, scratch);
         Mem::write(a, scratch, v);
         same_memory("glyph quad", a, b);
