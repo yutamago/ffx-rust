@@ -1867,4 +1867,24 @@ ported! {
     Ch_BlkAllocate_00825760 @ 0x0082_5760 => extern "C" fn ch_blk_allocate(id: u32, data: u32) -> u32 {
         h::ch_blk_allocate(&mut mem(), id, data, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_GetCharID(id)`.
+    Ch_GetCharID @ 0x0082_a080 => extern "C" fn ch_get_char_id(id: u32) -> u32 {
+        sy::ch_get_char_id(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_ReadSystemMGRP(a, b)`.
+    ChN_ReadSystemMGRP @ 0x0083_6870 => extern "C" fn chn_read_system_mgrp(a: u32, b: u32) -> u32 {
+        mo::bridge::chn_read_system_mgrp(&mut mem(), a, b, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_AddEventMgrp(data, x)`.
+    ChN_AddEventMgrp @ 0x0083_7630 => extern "C" fn chn_add_event_mgrp(data: u32, x: u32) -> u32 {
+        mo::bridge::chn_add_event_mgrp(&mut mem(), data, x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_AddSystemMgrp(data)`.
+    ChN_AddSystemMgrp @ 0x0083_7750 => extern "C" fn chn_add_system_mgrp(data: u32) -> u32 {
+        mo::bridge::chn_add_system_mgrp(&mut mem(), data, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_BlkDisposeAll()`.
+    Ch_BlkDisposeAll @ 0x0082_59c0 => extern "C" fn ch_blk_dispose_all() {
+        c::ch_blk_dispose_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }
