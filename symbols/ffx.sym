@@ -8933,7 +8933,7 @@
 0x00908940 function yiGetDistClutAddr            # layout: alphabetical run between yiGetColorScale and yiGetDrawMask (3 unnamed in the gap); Switch 0x710052d1a0 yiGetDistClutAddr is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00908960 function yiGetDrawMask             # fh v3:bsim1.00 0x00908960
 0x00908970 function yiGetFCount               # fh v3:bsim1.00 0x00908970
-0x00908980 function yiGetFogColor             # fh v3:exact 0x00908980
+0x00908980 function yiGetFogColor             # fh v3:exact 0x00908980; (out) -> eax: four ints, the fog colour bytes (0x018df140, clamped through scale/offset with render status bit 2), then r, g, b = graphicGetGlobalAmbientColor (bit 2) or graphicGetFogColor times 255.0
 0x00908bb0 function yiGetFogParam             # fh v3:exact 0x00908bb0
 0x00908c30 function yiSetColorShift           # fh switch:bsim1.00 0x710052b7b0
 0x00908c50 function yiGetDObjGroup               # (index) -> u16 group of display object index (g_YiDObjs +0x74), -1 when index >= g_YiDObjCount
