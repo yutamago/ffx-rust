@@ -1380,9 +1380,9 @@ locals (0xc0 bytes) are `M`'s copy, a work matrix `W`, `d`, `v0` and
   - world space: `1 - |xy| / +0xa8` (0 beyond, and 0 unless `+0xa8 > 0`);
   - object space: the cone term `1 - (1 - (1 - v0.z) / 2) / 0.3` (0
     beyond);
-  - times the direction term `1 - (1 - dir . v1') / 2 / +0x9c` when
-    `+0x9c >= 0` (`dir` at `+0x90`; `v1'` = (0, 0, 1) through `W`; 1 for
-    `+0x9c` = 0);
+  - times the direction term `1 - (1 - dir . v0) / 2 / +0x9c` when
+    `+0x9c >= 0` (`dir` at `+0x90`; 1 for `+0x9c` = 0; the original also
+    puts (0, 0, 1) through `W` into `v1`, unused);
   - times the distance term `1 - length / (+0xa8 - +0x8e)` (0 beyond);
     the fade is 0 when that range is not positive.
 - Every stored step is an `f32`. A NaN passes the `1 - x` steps (the

@@ -1481,7 +1481,7 @@ pub mod bridge {
     /// - The fade `+0x7c`: world space `1 - |xy| / +0xa8` (0 beyond, 0 for
     ///   `+0xa8 <= 0`); object space `1 - (1 - (1 - v0.z) / 2) / 0.3` (0
     ///   below), times `1 - (1 - (dir . v0)) / 2 / +0x9c` (0 below; `dir`
-    ///   `+0x90` against `v1` through `W`) when `+0x9c >= 0`, times
+    ///   `+0x90`) when `+0x9c >= 0`, times
     ///   `1 - length / (+0xa8 - +0x8e)` (0 beyond; the fade 0 when that
     ///   range is not positive). Every stored step is an `f32`.
     pub fn ke_lns_lp_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
