@@ -9,6 +9,7 @@ pub use ffx_bridge::Host;
 use ffx_bridge::{Global, Mem};
 
 pub mod globals;
+pub mod helpers;
 pub mod native;
 pub mod native_btl;
 pub mod native_cam;

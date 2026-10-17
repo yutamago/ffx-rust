@@ -415,4 +415,38 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `opus_cscale_get(chr, battle)` (`0x00800c10`): the larger of a
+    /// character's height and width (`MsGetChrHeight`/`MsGetChrWidth(chr)`
+    /// in battle, else `Ch_GetFixHeight`/`Ch_GetThickness` of
+    /// `g_EtChrHandles[chr]`; float results through `fcall`, each stored
+    /// as `f32`; the height on a tie or NaN) divided by the `f64` at
+    /// `0x00b587d8`. Returns it in `ST0`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opus_cscale_get<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        battle: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        use crate::x87::Reg;
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let (fa, fb, arg) = if battle == 0 {
+            (0x0082_aba0u32, 0x0082_ad70u32, h)
+        } else {
+            (0x0079_50f0, 0x0079_5a20, chr)
+        };
+        let fa = Global::<u32>::new(fa).ptr(mem).addr;
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let a = fcall(mem, fa, &[arg]) as f32;
+        let fb = Global::<u32>::new(fb).ptr(mem).addr;
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let b = fcall(mem, fb, &[arg]) as f32;
+        let a = crate::x87::load_f32(a);
+        let b = crate::x87::load_f32(b);
+        let m = if b > a { b } else { a };
+        let div: crate::x87::Op = |x, y| x / y;
+        let k: f64 = mem.read(Global::<u32>::new(0x00b5_87d8).ptr(mem).addr);
+        Reg::load_f32(m).constant(div, k).store()
+    }
 }

@@ -7,7 +7,7 @@
 /// The originals, over game memory.
 #[allow(clippy::many_single_char_names)] // pointers and words
 pub mod bridge {
-    use ffx_bridge::{Global, Host, x87};
+    use ffx_bridge::{Global, Host, Mem, x87};
 
     /// The accumulation/blur request flags (`0x01300704`: bit 0 the
     /// cross-fade, bit 1 the blur).
@@ -171,6 +171,32 @@ pub mod bridge {
         h.call(at, &[])
     }
 
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+
+    /// `Sg_PLightAllocate(n)` (`0x00831950`): the old lights disposed
+    /// ([`plight_dispose`]), a table of `n` 44-byte lights allocated
+    /// (`user_malloc`), the count `n`; each light off with `+0xc` and
+    /// `+0x1c` 1.0 (the rest as allocated). Returns the table.
+    pub fn plight_allocate(h: &mut impl Host, n: u32) -> u32 {
+        plight_dispose(h);
+        let at = h.rebase(USER_MALLOC);
+        let t = h.call(at, &[n.wrapping_mul(0x2c)]);
+        PLIGHT_TABLE.set(h, t);
+        PLIGHT_COUNT.set(h, n);
+        let mut t = t;
+        let mut e = 0u32;
+        for _ in 0..n.cast_signed().max(0) {
+            h.write(t.wrapping_add(e).wrapping_add(0x28), 0u8);
+            t = PLIGHT_TABLE.get(h);
+            h.write(t.wrapping_add(e).wrapping_add(0xc), 1.0f32);
+            t = PLIGHT_TABLE.get(h);
+            h.write(t.wrapping_add(e).wrapping_add(0x1c), 1.0f32);
+            t = PLIGHT_TABLE.get(h);
+            e = e.wrapping_add(0x2c);
+        }
+        t
+    }
+
     /// `Sg_AccRequestCurrent()` (`0x0082bdf0`, native `0x4019`; its
     /// argument unread): the post-process cross-fade capture turned on
     /// (`0x00639150`), then the request flag `0x012ffae4` that
@@ -265,5 +291,156 @@ pub mod bridge {
         let ch = GS_DMA_CHANNEL.get(h);
         let at = h.rebase(DMA_SEND);
         h.call(at, &[ch, p])
+    }
+
+    /// `Sg_AccInitAll()` (`0x0082bcd0`): no cross-fade
+    /// (`Sg_AccSetAlpha(0, 0)`), map drawing off, the current frame
+    /// requested ([`acc_request_current`]), background and characters
+    /// off, the clear colour 0.
+    pub fn acc_init_all(h: &mut impl Host) {
+        use crate::state::bridge as st;
+        acc_set_alpha(h, 0, 0);
+        st::acc_set_draw_map(h, 0);
+        acc_request_current(h);
+        st::acc_enable_bg(h, 0);
+        st::acc_set_draw_chr(h, 0);
+        st::acc_set_clear(h, 0, 0, 0, 0);
+    }
+
+    /// `Sg_LightSetDirXYZ(i, x, y, z)` (`0x008364f0`): [`light_set_dir`]
+    /// with `(x, y, z, 0)` from the stack (each through `fld`/`fstp`).
+    pub fn light_set_dir_xyz(h: &mut impl Host, i: u32, x: f32, y: f32, z: f32) -> u32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        let mut s = Scratch::new(h);
+        let v = [x, y, z].map(x87::round_trip);
+        s.write(SCRATCH, [v[0], v[1], v[2], 0.0]);
+        light_set_dir(&mut s, i, SCRATCH)
+    }
+
+    /// `g_FFXIsDebug`.
+    pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+
+    /// `Sg_InitArgs(argc, argv)` (`0x00820310`): the L/R button mode 0,
+    /// `0x012fb8fa` 0xff and `0x012fb8f9`, `0x012fb8f8` 0; in a debug
+    /// build with an argument, the user name from `argv[1]`
+    /// (`Sg_SetUserName`).
+    pub fn init_args(h: &mut impl Host, count: u32, args: u32) {
+        use crate::state::bridge as st;
+        st::set_lr_button_mode(h, 0);
+        Global::<u8>::new(0x012f_b8fa).set(h, 0xff);
+        Global::<u8>::new(0x012f_b8f9).set(h, 0);
+        Global::<u8>::new(0x012f_b8f8).set(h, 0);
+        if IS_DEBUG.get(h) != 0 && count.cast_signed() > 1 {
+            let name: u32 = h.read(args.wrapping_add(4));
+            st::set_user_name(h, name);
+        }
+    }
+
+    pub const GET_SCENERIO_FLAG: u32 = 0x0078_7360;
+    pub const MS_BATTLE_CHECK: u32 = 0x0078_0c90;
+    pub const MAGIC_FILE_GET_MAGIC_ID: u32 = 0x009d_a3b0;
+    /// `0x012fb7e4`: set by `setFramSync`.
+    pub const FRAM_SYNC: Global<u32> = Global::new(0x012f_b7e4);
+
+    /// `setFramSync()` (`0x00822720`): `getScenerioFlag()` (unused), then
+    /// [`FRAM_SYNC`] 1 in a battle (`MsBattleCheck`) with a magic file
+    /// loaded (`MagicFile_GetMagicId() != -1`), else 0. Returns the last
+    /// call's `eax`.
+    pub fn set_fram_sync(h: &mut impl Host) -> u32 {
+        let at = h.rebase(GET_SCENERIO_FLAG);
+        h.call(at, &[]);
+        let at = h.rebase(MS_BATTLE_CHECK);
+        let r = h.call(at, &[]);
+        if r == 0 {
+            FRAM_SYNC.set(h, 0);
+            return r;
+        }
+        let at = h.rebase(MAGIC_FILE_GET_MAGIC_ID);
+        let id = h.call(at, &[]);
+        FRAM_SYNC.set(h, u32::from(id != u32::MAX));
+        id
+    }
+
+    pub const YN_PRE_BG_LAYER_DISP_GET: u32 = 0x0091_a770;
+    pub const GRAPHIC_MENU_LOAD_SPECIAL_TEXTURE: u32 = 0x0064_2300;
+    pub const GRAPHIC_MENU_UNLOAD_SPECIAL_TEXTURE: u32 = 0x0064_2390;
+    pub const GRAPHIC_2D_HIDE_LAYER: u32 = 0x0063_8f30;
+    pub const GRAPHIC_2D_SHOW_LAYER: u32 = 0x0063_8f60;
+    pub const GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY: u32 = 0x0064_4120;
+    pub const GRAPHIC_DRAW_DREAM: u32 = 0x0063_df70;
+    /// The special texture's name (`0x00b20b30`).
+    pub const DREAM_TEXTURE: u32 = 0x00b2_0b30;
+    /// The dream effect's state: on (`0x012fb8f0`) and its phase
+    /// (`0x012fb8f4`, 5 drawing).
+    pub const DREAM_ON: Global<u32> = Global::new(0x012f_b8f0);
+    pub const DREAM_PHASE: Global<u32> = Global::new(0x012f_b8f4);
+
+    /// The dream effect over layers (`recallSceneEffect`'s and
+    /// `recallSceneEffect2`'s common work): for each layer's display byte
+    /// (`Yn_PreBgLayerDispGet`), a shown layer without bits 0-1 starts it
+    /// (once: on, phase 0, special texture 10 loaded), hides those layers
+    /// (`graphic2DHideLayer`, texture animation off) and, in phase 5,
+    /// draws it (`graphicDrawDream`, a tail call). Otherwise a layer with
+    /// bits 0-1 ends a started effect past phase 0: texture unloaded,
+    /// `dreamParamReset`, the shown layers back on. Returns the last
+    /// call's `eax`.
+    fn dream_layers(h: &mut impl Host, layers: &[u32]) -> u32 {
+        let mut r = 0;
+        let mut disp = [0u8; 2];
+        for (d, &l) in disp.iter_mut().zip(layers) {
+            let at = h.rebase(YN_PRE_BG_LAYER_DISP_GET);
+            r = h.call(at, &[l]);
+            *d = crate::lo8(r);
+        }
+        let disp = &disp[..layers.len()];
+        let hide = disp.iter().any(|&d| d != 0 && d.trailing_zeros() >= 2);
+        if hide {
+            if DREAM_ON.get(h) == 0 {
+                DREAM_ON.set(h, 1);
+                DREAM_PHASE.set(h, 0);
+                let at = h.rebase(GRAPHIC_MENU_LOAD_SPECIAL_TEXTURE);
+                let name = h.rebase(DREAM_TEXTURE);
+                r = h.call(at, &[10, name, 0]);
+            }
+            for (&d, &l) in disp.iter().zip(layers) {
+                if layers.len() == 1 || d != 0 {
+                    let at = h.rebase(GRAPHIC_2D_HIDE_LAYER);
+                    h.call(at, &[l]);
+                    let at = h.rebase(GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY);
+                    r = h.call(at, &[l, 0]);
+                }
+            }
+            if DREAM_PHASE.get(h) == 5 {
+                let at = h.rebase(GRAPHIC_DRAW_DREAM);
+                r = h.call(at, &[]);
+            }
+            return r;
+        }
+        if disp.iter().any(|&d| d & 3 != 0) && DREAM_ON.get(h) != 0 && DREAM_PHASE.get(h) != 0 {
+            let at = h.rebase(GRAPHIC_MENU_UNLOAD_SPECIAL_TEXTURE);
+            h.call(at, &[10]);
+            dream_param_reset(h);
+            for (&d, &l) in disp.iter().zip(layers) {
+                if layers.len() == 1 || d != 0 {
+                    let at = h.rebase(GRAPHIC_2D_SHOW_LAYER);
+                    h.call(at, &[l]);
+                    let at = h.rebase(GRAPHIC_TEXANIM_SET_MATERIAL_VISIBILITY);
+                    r = h.call(at, &[l, 1]);
+                }
+            }
+        }
+        r
+    }
+
+    /// `recallSceneEffect(layer)` (`0x00822580`): the dream effect over
+    /// one layer (see [`dream_layers`]).
+    pub fn recall_scene_effect(h: &mut impl Host, layer: u32) -> u32 {
+        dream_layers(h, &[layer])
+    }
+
+    /// `recallSceneEffect2(a, b)` (`0x00822620`): the dream effect over two
+    /// layers; only shown ones are hidden or shown again.
+    pub fn recall_scene_effect2(h: &mut impl Host, a: u32, b: u32) -> u32 {
+        dream_layers(h, &[a, b])
     }
 }
