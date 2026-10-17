@@ -6552,7 +6552,7 @@
 0x0081cbd0 function Sqs_CallRpc                  # structure: (cmd): waits for the sound RPC client 0x012f4e20 to be idle (FFXSifCheckStatRpc), then FFXSifCallRpc(client, cmd, send 0x40, recv 0x400) until accepted; 21 callers, the Sqs* IOP command wrappers 0x0081d010..; name ours; ported (field round 33): returns FFXSifCallRpc's eax
 0x0081cc20 function Sqs_CallRpc2             # (cmd, _, end, arg): Sqs_CallRpc on the second client 0x012f4e48 (send 0x00c4945c, recv 0x00c49464, 0x40 bytes each), end/arg passed on; returns FFXSifCallRpc's; name ours; ported (field round 33)
 0x0081cc70 function Sqs_DecodeAdpcm          # (src, dst) -> dst + 0x6400: PS-ADPCM, 25 x (256 left + 256 right i16 samples) from 9-byte blocks (header: filter << 4 | shift), filters 0x00c49470, history 0x012f4f90; from SqsStraightStreamingDataSend; name ours; ported (field round 33)
-0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
+0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80; ported (field round 39): queues IOP command 0
 0x0081cef0 function SqsBattleStreamingDataSend # fh v3:exact 0x0081d000
 0x0081cf40 function SqsBattleStreamingStart   # fh v3:exact 0x0081d050; (_, a, b): iSfxPlayBattleStreaming(g_SqsBattleStream, b, a), or an fprintf(stderr) error without magic file or stream id; ported (field round 33)
 0x0081cf90 function SqsBattleWaveDataSend     # fh v3:exact 0x0081d0a0; (wave): "WD" (u16 0x4457) -> iSfxLoadData(i16 +2, 0) as a tail call, else returns wave; ported (field round 33)
@@ -6560,14 +6560,14 @@
 0x0081d2c0 function SqsEeSoundCreateTime         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '2001/10/19 (Fri)  14:01:57'; Switch 0x7100409e70 SqsEeSoundCreateTime (symbols from Fahrenheit's server export)
 0x0081d2e0 function SndGetGlobal012f4e78_0081d2e0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x012f4e78]; return t0; callers: SndIopEioErrorStatus; name ours
 0x0081d3c0 function SqsInitMusicInfoHdd       # fh v3:cg3 0x81d4d0; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(7); returns its eax
-0x0081d3f0 function SqsInitWaveInfo              # layout: alphabetical run between SqsInitMusicInfoHdd and SqsInitWaveInfoHdd (1 unnamed in the gap); Switch 0x71004074e0 SqsInitWaveInfo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0081d3f0 function SqsInitWaveInfo              # layout: alphabetical run between SqsInitMusicInfoHdd and SqsInitWaveInfoHdd (1 unnamed in the gap); Switch 0x71004074e0 SqsInitWaveInfo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 39): (src, _, a): nothing once 0x012f4140 is set; else src (when set) by SIF DMA (0x5000 bytes to *0x012f4f88, SqsSifDmaState(1, 1)), a to g_SqsRpcSend, Sqs_CallRpc(4); callers ignore eax (the early return leaves theirs)
 0x0081d470 function SqsInitWaveInfoHdd        # fh v3:cg4 0x81d580; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(6); returns its eax
 0x0081d5f0 function SqsIopCommandSend         # fh v3:exact 0x0081d700; ported (field round 33): sends the command queue 0x012f4a00, empties it, shifts g_SqsReplyHistory; returns 0x012f4150
 0x0081d700 function SqsIopSoundErrorStatus    # fh v3:bsim1.00 0x0081d810
 0x0081d710 function SqsIopSoundSystemStatus   # fh v3:bsim1.00 0x0081d820
 0x0081d720 function SqsMusicClear                # layout: alphabetical run between SqsIopSoundSystemStatus and SqsMusicDataRead (2 unnamed in the gap); Switch 0x71004077a0 SqsMusicClear is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081d7a0 function SqsMusicCrossPlay            # layout: alphabetical run between SqsIopSoundSystemStatus and SqsMusicDataRead (2 unnamed in the gap); Switch 0x7100407d80 SqsMusicCrossPlay is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081d820 function SqsMusicDataRead          # fh v3:exact 0x0081d930
+0x0081d820 function SqsMusicDataRead          # fh v3:exact 0x0081d930; ported (field round 39): SqsReportStandby, command (0x15, a), then SqsIopCommandSend (tail call)
 0x0081d8a0 function SqsMusicDataSend             # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Music Data Head Error !! ( Head = %2.2X %2.2X %2.2X %2.2X )\\'; Switch 0x7100407820 SqsMusicDataSend (symbols from Fahrenheit's server export)
 0x0081d9b0 function SqsMusicKeySignature         # layout: alphabetical run between SqsMusicDataSend and SqsMusicPlay (6 unnamed in the gap); Switch 0x7100407150 SqsMusicKeySignature is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081da30 function SqsMusicMultiPlay            # layout: alphabetical run between SqsMusicDataSend and SqsMusicPlay (6 unnamed in the gap); Switch 0x7100407cf0 SqsMusicMultiPlay is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6599,27 +6599,27 @@
 0x0081e840 function SqsSeVolumeFadeOut        # fh v3:exact 0x0081e950; ported (field round 33)
 0x0081e860 function SqsSeVolumeTranslate      # fh v3:bsim1.00 0x0081e970; ported (field round 33): iSfxSetVolumeTranslate(id, arg4 & 0x7f, arg3)
 0x0081e880 function SqsSetCdvdReadMode           # layout: alphabetical run between SqsSeVolumeTranslate and SqsSetCycleMode (1 unnamed in the gap); Switch 0x7100406e50 SqsSetCdvdReadMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081e900 function SqsSetCycleMode           # fh switch:bsim0.96 0x710040a8e0
+0x0081e900 function SqsSetCycleMode           # fh switch:bsim0.96 0x710040a8e0; ported (field round 39): command (4, a); returns a
 0x0081e980 function SqsSetDigitalRecordingMode   # layout: alphabetical run between SqsSetCycleMode and SqsSetPlayMode (1 unnamed in the gap); Switch 0x7100406ed0 SqsSetDigitalRecordingMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081ea00 function SqsSetPlayMode            # fh v3:exact 0x0081eb10
+0x0081ea00 function SqsSetPlayMode            # fh v3:exact 0x0081eb10; ported (field round 39): mode >= 3 (signed) -> 0, kept in 0x012f4144, command (3, mode)
 0x0081ea90 function SqsSetPlayPause              # layout: alphabetical run between SqsSetPlayMode and SqsSetProjectBase (1 unnamed in the gap); Switch 0x71004071d0 SqsSetPlayPause is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081eab0 function SqsSetProjectBase         # fh v3:exact 0x0081ebc0; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(2); returns *result, 0 for 0
 0x0081eaf0 function SqsSetReverbAttribute        # layout: alphabetical run between SqsSetProjectBase and SqsSetReverbPlaySwitch (2 unnamed in the gap); Switch 0x71004071e0 SqsSetReverbAttribute is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081eb90 function SqsSetReverbDepth            # layout: alphabetical run between SqsSetProjectBase and SqsSetReverbPlaySwitch (2 unnamed in the gap); Switch 0x7100407360 SqsSetReverbDepth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081ec20 function SqsSetReverbPlaySwitch    # fh v3:bsim1.00 0x0081ed30
+0x0081ec20 function SqsSetReverbPlaySwitch    # fh v3:bsim1.00 0x0081ed30; ported (field round 39): command (0xc, a); returns a
 0x0081ed40 function SqsShoutStreamingDataSend # fh v3:exact 0x0081ee50
 0x0081edf0 function SqsShoutStreamingPlayState # fh v3:exact 0x0081ef00
-0x0081ee20 function SqsShoutStreamingStart    # (a, b, volume); called by SndStartShoutStream; alphabetical slot after SqsShoutStreamingPlayState
+0x0081ee20 function SqsShoutStreamingStart    # (a, b, volume); called by SndStartShoutStream; alphabetical slot after SqsShoutStreamingPlayState; ported (field round 39): command (0x37, a, 0x40, 0x7f), 0x012f4f84 = 1, g_SqsShoutSkipped = 1; returns a
 0x0081eeb0 function SqsSifDmaStart            # fh switch:bsim1.00 0x7100406c30
 0x0081eef0 function SqsSifDmaState               # layout+callees: sorts between SqsSifDmaStart and SqsSortCommonWave, and its named callees match the Switch 0x7100406c80 SqsSifDmaState's (similarity 1.00: FlushCache, sceSifDmaStat); symbols from Fahrenheit's server export; (_, wait): sceSifDmaStat(g_SqsSifDmaId) again while wait and not negative, returns it; ported (field round 33)
 0x0081ef40 function SqsSortCommonWave         # (list): a ret on PC; SndSortCommonWave jumps here
-0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960
+0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960; ported (field round 39): command (5, a); returns a
 0x0081f210 function SqsStraightStreamingDataSend # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s %d, %4d, %4d : %8.8X\\n'; Switch 0x7100409620 SqsStraightStreamingDataSend (symbols from Fahrenheit's server export)
 0x0081f550 function SqsStraightStreamingDigitalModeSet # (x); called by SndSetStraightStreamingDigitalMode
-0x0081f6c0 function SqsStraightStreamingStart # SndStartStraightStream's slot (0x00887620) jumps here
-0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here
-0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here
-0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here
+0x0081f6c0 function SqsStraightStreamingStart # SndStartStraightStream's slot (0x00887620) jumps here; ported (field round 39): command (0x38, *0x012f4e70), 0x012f4e90 = 0, 0x012f4edc = 1, 0x012f4ef8 = 0
+0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here; ported (field round 39): command (0x33, 0), 0x012f4efc = 3, 0x012f4edc = 0
+0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here; ported (field round 39): command (0x3e, v & 0x7f)
+0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here; ported (field round 39): command (0x3f, frames, v & 0x7f); returns frames
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
 0x008202d0 function Sg_ReturnConst1_008202d0     # auto-port shape (return constant, cdecl): return 0x1; callers: Sg_MainLoop; name ours
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
@@ -14892,12 +14892,16 @@
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
 0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
+0x012f4140 label    g_SqsWaveInfoDone            # non-zero: SqsInitWaveInfo does nothing
+0x012f4144 label    g_SqsPlayMode                # SqsSetPlayMode's mode (0..2)
+0x012f4148 label    g_SqsDebugFlags              # bit 0: dbgPrintf before sending a full IOP command queue (the command builders)
 0x012f414c label    g_SqsStandbySent             # standby requests sent (SqsReportStandby); SqsReportStandbyStatus returns it less g_SqsIopResult (the answered count, stored by the request's end function 0x0081fcb0)
 0x012f4150 label    g_SqsIopResult               # what SqsIopCommandSend returns
 0x012f4a00 label    g_SqsCmdBuf                  # the IOP command buffer SqsIopCommandSend sends
 0x012f4e00 label    g_SqsSifDma               # two SIF DMA records of 16 bytes (source, destination, size, attribute): SqsSifDmaStart
 0x012f4e20 label    g_SqsRpcClient               # the sound driver's RPC client (Sqs_CallRpc, SqsIopCommandSend)
 0x012f4e48 label    g_SqsRpcClient2              # the second RPC client (Sqs_CallRpc2)
+0x012f4e70 label    g_SqsStraightStream          # the straight stream's id (SqsStraightStreamingStart sends it)
 0x012f4e74 label    g_SqsRpcFlags                # flags; bit 0 cleared by 0x0081fcb0 (SqsReportStandby's RPC end function)
 0x012f4e7c label    g_SqsSeHandle                # last SE handle SqsSePlay/SqsSeForcePlay gave (incremented, 0 skipped)
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
@@ -14907,6 +14911,7 @@
 0x012f4f00 label    g_SqsReply                   # the 0x40-byte reply SqsIopCommandSend receives
 0x012f4f44 label    g_SqsReplyPending            # read by SqsReportStandby/SqsReportStandbyStatus without effect
 0x012f4f48 label    g_SqsReplyHistory            # 4 x 4 words: SqsIopCommandSend shifts each row down and puts reply +0x10, +0x18, +0x30, +0x34 last; bit 0 of 0x012f4f64 (row 1's newest) set by an SE start
+0x012f4f88 label    g_SqsWaveInfoDst             # IOP address SqsInitWaveInfo sends 0x5000 bytes to
 0x012f4f90 label    g_SqsAdpcmState              # PS-ADPCM history: left s1, s2, right s1, s2 (i32; Sqs_DecodeAdpcm)
 0x012fb7cc label g_BtlCheatPowerup         # u32: the player powerup cheat (MsCheatPlayerPowerup on each turn, MsBattleProcess_InputCue)
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then

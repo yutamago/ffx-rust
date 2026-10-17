@@ -12527,3 +12527,129 @@ fn round38_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0026_0002);
     round38_cases(&mut t, &mut rng, 100);
 }
+
+// ---- round 39 ----
+
+/// Round 39 on `t`: the IOP command builders over the queue at
+/// `0x012f4a00..0x012f4e00`, empty to full (a full queue is sent first,
+/// with the `dbgPrintf` on or off), and `SqsInitWaveInfo`.
+#[allow(clippy::too_many_lines)] // one function after another
+fn round39_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x400));
+    let top = t.b.rebase(nkz::SQS_CMD_BUF);
+    let queue = |t: &mut Twin, rng: &mut Xorshift| {
+        env.reset(t, rng);
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_CMD_TOP, top);
+        let n = match rng.below(3) {
+            0 => 0x1f, // the last slot: sent first
+            1 => 0x20, // past it
+            _ => rng.below(0x20),
+        };
+        t.set(nkz::SQS_CMD_NEXT, top + 0x20 * n);
+        t.fill(top, 0x400, rng);
+        t.set(nkz::SQS_DEBUG_FLAGS, rng.next());
+        let h = t.b.rebase(nkz::SQS_REPLY_HISTORY);
+        t.fill(h, 0x40, rng);
+    };
+    for _ in 0..rounds {
+        let a = rng.next();
+        for (name, f, op) in [
+            ("SqsSetCycleMode", 0x0081_e900, 4),
+            ("SqsSetReverbPlaySwitch", 0x0081_ec20, 0xc),
+            ("SqsSetStraightStreamAreaSize", 0x0081_ef50, 5),
+        ] {
+            queue(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[a]),
+                |m| nkz::bridge::sqs_cmd_arg(m, op, a, call),
+            );
+        }
+        queue(t, rng);
+        t.same(
+            "SqsAllVoiceTerminate",
+            |o| o.eax(0x0081_ce70, &[]),
+            |m| nkz::bridge::sqs_all_voice_terminate(m, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsMusicDataRead",
+            |o| o.eax(0x0081_d820, &[a]),
+            |m| nkz::bridge::sqs_music_data_read(m, a, call),
+        );
+        queue(t, rng);
+        let mode = [0, 1, 2, 3, 4, u32::MAX, a][rng.below(7) as usize];
+        t.same(
+            "SqsSetPlayMode",
+            |o| o.eax(0x0081_ea00, &[mode]),
+            |m| nkz::bridge::sqs_set_play_mode(m, mode, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsShoutStreamingStart",
+            |o| o.eax(0x0081_ee20, &[a]),
+            |m| nkz::bridge::sqs_shout_streaming_start(m, a, call),
+        );
+        queue(t, rng);
+        t.set(nkz::SQS_STRAIGHT_STREAM, rng.next());
+        t.same(
+            "SqsStraightStreamingStart",
+            |o| o.eax(0x0081_f6c0, &[]),
+            |m| nkz::bridge::sqs_straight_streaming_start(m, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingStop",
+            |o| o.eax(0x0081_f770, &[]),
+            |m| nkz::bridge::sqs_straight_streaming_stop(m, call),
+        );
+        let v = rng.next();
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingVolumeDirect",
+            |o| o.eax(0x0081_f800, &[v]),
+            |m| nkz::bridge::sqs_straight_streaming_volume_direct(m, v, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingVolumeTranslate",
+            |o| o.eax(0x0081_f880, &[a, v]),
+            |m| nkz::bridge::sqs_straight_streaming_volume_translate(m, a, v, call),
+        );
+        // the wave info: done already, without or with a source
+        queue(t, rng);
+        t.set(nkz::SQS_WAVE_INFO_DONE, u32::from(rng.below(4) == 0));
+        t.set(nkz::SQS_WAVE_INFO_DST, rng.next());
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        let dma = t.b.rebase(nkz::SIF_DMA);
+        t.fill(dma, 0x20, rng);
+        let src = rng.below(2) * rng.next();
+        t.same(
+            "SqsInitWaveInfo",
+            |o| o.void(0x0081_d3f0, &[src, 7, a]),
+            |m| nkz::bridge::sqs_init_wave_info(m, src, a, call),
+        );
+    }
+}
+
+/// Round 39: the Sqs IOP command builders.
+#[test]
+fn round39_sqs_command_builders_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0027_0001);
+    round39_cases(&mut t, &mut rng, 150);
+}
+
+/// Round 39 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round39_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0027_0002);
+    round39_cases(&mut t, &mut rng, 30);
+}
