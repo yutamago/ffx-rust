@@ -3579,6 +3579,15 @@ ported! {
         model::bridge::rcfx_nail_update(&mut mem(), fx, ctx)
     }
 
+    /// `AbmapCheckAchievements()`.
+    AbmapCheckAchievements @ 0x00a4_7210 => extern "C" fn shim_abmap_check_achievements() {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x490]);
+        let mut work = Locals([0; 0x490]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_check_achievements(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

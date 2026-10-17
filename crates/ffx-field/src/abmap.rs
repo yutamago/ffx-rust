@@ -98,6 +98,14 @@ pub const ABMAP_PPP_DATA: u32 = 0x0230_5800;
 pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
 /// `pppStartPart(part, flags, id, a, b)` (`0x007123c0`).
 pub const PPP_START_PART: u32 = 0x0071_23c0;
+/// `AbmapMarkLockedEntries(pad)` (`0x00a5a2e0`).
+pub const MARK_LOCKED_ENTRIES: u32 = 0x00a5_a2e0;
+/// `MsGetSaveMenu()` (`0x00785290`).
+pub const MS_GET_SAVE_MENU: u32 = 0x0078_5290;
+/// `GetCD()` (`0x0076d0d0`): the CD library's function table.
+pub const GET_CD: u32 = 0x0076_d0d0;
+/// `achievementUnlockAchievement(id)` (`0x00822380`).
+pub const ACHIEVEMENT_UNLOCK: u32 = 0x0082_2380;
 /// `pppCreateHeap(env, buffer, size)` (`0x0072c480`).
 pub const PPP_CREATE_HEAP: u32 = 0x0072_c480;
 /// The sphere grid's ppp heap (0x7d000 bytes).
@@ -1880,5 +1888,73 @@ pub mod bridge {
         let g = ABMAP.get(mem);
         mem.write(g.wrapping_add(0x115c7), 1u8);
         g
+    }
+
+    // ---- round 29 ----
+
+    /// `AbmapCheckAchievements(work)` (`0x00a47210`, from `0x00a48910` and
+    /// `AbmapTryChangePlayer`; name ours): marks the menu pads' locked
+    /// entries (`AbmapMarkLockedEntries` 3, 2, 4, 5), reads the grid's node
+    /// list for the save's grid kind (`MsGetSaveMenu` bits 14..15: file
+    /// 0x11, 0x12 or 0x13 through `GetCD`'s reader: `+0x10(0x25)`, `+0
+    /// (id, work, 0, 0)`, `+8(0)`) into `work` (0x484 bytes), and unlocks
+    /// achievement 0x17 once per character bit 0..6 when every listed node
+    /// (bytes, 0xff skipped; the count at `+2` and the list at `+8` when
+    /// the file starts with 0x31, else the list at `+2` and, as the
+    /// original, the ability map's address as the count) has that bit in
+    /// the save's ability map (`MsGetSaveAbilityMap`, byte `1 + 2 i`), and
+    /// achievement 0x1d when every listed node there is 0x7f. An empty
+    /// list unlocks both.
+    pub fn abmap_check_achievements<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::MARK_LOCKED_ENTRIES);
+        for pad in [3, 2, 4, 5] {
+            call(mem, f, &[pad]);
+        }
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let kind = mem.read::<u32>(menu).cast_signed() >> 14 & 3;
+        let file = match kind {
+            0 => 0x11,
+            1 => 0x12,
+            _ => 0x13,
+        };
+        let f = mem.rebase(super::GET_CD);
+        let cd = call(mem, f, &[]);
+        let f = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, f, &[0x25]);
+        let f = mem.read::<u32>(cd);
+        call(mem, f, &[file, work, 0, 0]);
+        let f = mem.read::<u32>(cd.wrapping_add(8));
+        call(mem, f, &[0]);
+        let f = mem.rebase(super::MS_GET_SAVE_ABILITY_MAP);
+        let save = call(mem, f, &[]);
+        let (n, list) = if mem.read::<u16>(work) == 0x31 {
+            (
+                i32::from(mem.read::<u16>(work.wrapping_add(2))),
+                work.wrapping_add(8),
+            )
+        } else {
+            (save.cast_signed(), work.wrapping_add(2))
+        };
+        let unlock = mem.rebase(super::ACHIEVEMENT_UNLOCK);
+        let every = |mem: &M, ok: &dyn Fn(u8) -> bool| {
+            (0..n.max(0).cast_unsigned()).all(|j| {
+                mem.read::<u8>(list.wrapping_add(j)) == 0xff
+                    || ok(mem.read::<u8>(save.wrapping_add(1).wrapping_add(j.wrapping_mul(2))))
+            })
+        };
+        for c in 0..7 {
+            let bit = 1u8 << c;
+            if n <= 0 || every(mem, &|b| b & bit != 0) {
+                call(mem, unlock, &[0x17]);
+            }
+        }
+        if n <= 0 || every(mem, &|b| b == 0x7f) {
+            call(mem, unlock, &[0x1d]);
+        }
     }
 }
