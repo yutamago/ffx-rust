@@ -264,3 +264,32 @@ the two line segments, the alpha falling by `128 / n` per point (not below
 instance gets `m` times `g_pppFillMatrix`, bounds of +-100000 and
 `graphicVFXSetVisible` / `graphicVFXUpdate`. A failed allocation returns
 before `op_spr_free`.
+
+## Texture mip filters
+
+The op layer builds a texture's smaller levels on the CPU (caller
+`0x00a384d0`), per row, for 32-bit RGBA texels (`size` 4) or 8-bit ones
+(`size` 1); other sizes leave the level alone.
+
+| Function | Filter | Rounding |
+| --- | --- | --- |
+| `op_texels_halve_00a385f0` | two neighbours in a row | up: `(a \| b) - ((a ^ b) >> 1 & 0x7f7f7f7f)` per byte |
+| `op_texels_halve_v_00a38560` | two neighbours in a column | as above |
+| `op_texels_box_00a38670` | 2x2 box from two rows | nearest: `(a + b + c + d + 2) >> 2` per byte |
+
+For 32-bit texels the box filter sums bytes 0 and 2 in one masked word
+(`& 0x00ff00ff`) and bytes 1 and 3 in another (`>> 2 & 0x3fc03fc0`), so no
+carry crosses a byte; the result is bit-exact to the per-byte formula.
+
+## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
+
+The tail draws save the emulated VU0 registers they use and restore them
+after drawing: `pppKeShpTail3VfCopy_00751680` copies `0x00c8f7b0..0x00c8f7ef`
+to `dst + 0xc0`; `pppKeShpTail3VfLoad_00751740` (and its byte-identical copy
+`pppKeShpTail3XVfLoad_00751ab0`) loads a saved block back:
+
+| Block words | VU0 registers |
+| --- | --- |
+| `0x00..0x1f` | `0x00c8f830..0x00c8f8af` |
+| `0x20..0x27` | `0x00c8f7f0..0x00c8f80f` |
+| `0x40..0x4b` | `0x00c8f930..0x00c8f95f` |

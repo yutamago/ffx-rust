@@ -1535,6 +1535,10 @@ ported! {
     op_texels_halve_00a385f0 @ 0x00a3_85f0 => extern "C" fn op_texels_halve(dst: u32, src: u32, n: u32, size: u32) -> u32 {
         small::bridge::op_texels_halve(&mut mem(), dst, src, n, size)
     }
+    /// `op_texels_box_00a38670(dst, row_a, row_b, n, size)`.
+    op_texels_box_00a38670 @ 0x00a3_8670 => extern "C" fn op_texels_box(dst: u32, row_a: u32, row_b: u32, n: u32, size: u32) -> u32 {
+        small::bridge::op_texels_box(&mut mem(), dst, row_a, row_b, n, size)
+    }
     /// `op_node_requeue_all_00a39f60(set)`: returns `set + 0x80`.
     op_node_requeue_all_00a39f60 @ 0x00a3_9f60 => extern "C" fn op_node_requeue_all(set: u32) -> u32 {
         small::bridge::op_node_requeue_all(&mut mem(), set)
@@ -3271,6 +3275,14 @@ ported! {
     /// `pppKeShpTail3VfCopy_00751680(dst)`.
     pppKeShpTail3VfCopy_00751680 @ 0x0075_1680 => extern "C" fn ppp_ke_shp_tail3_vf_copy(dst: u32) -> u32 {
         small::bridge::ppp_ke_shp_tail3_vf_copy(&mut mem(), dst)
+    }
+    /// `pppKeShpTail3VfLoad_00751740(src)`.
+    pppKeShpTail3VfLoad_00751740 @ 0x0075_1740 => extern "C" fn ppp_ke_shp_tail3_vf_load(src: u32) -> u32 {
+        small::bridge::ppp_ke_shp_tail3_vf_load(&mut mem(), src)
+    }
+    /// `pppKeShpTail3XVfLoad_00751ab0(src)`: the same code.
+    pppKeShpTail3XVfLoad_00751ab0 @ 0x0075_1ab0 => extern "C" fn ppp_ke_shp_tail3x_vf_load(src: u32) -> u32 {
+        small::bridge::ppp_ke_shp_tail3_vf_load(&mut mem(), src)
     }
     /// `pppDataLastPair_00761250(data, a, b)`.
     pppDataLastPair_00761250 @ 0x0076_1250 => extern "C" fn ppp_data_last_pair(data: u32, a: u32, b: u32) -> u32 {

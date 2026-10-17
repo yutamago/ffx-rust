@@ -10397,6 +10397,33 @@ fn texels_halve_matches_the_original() {
 }
 
 #[test]
+fn texels_box_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_8670);
+        let (dst, a, b) = (p.alloc(0x200), p.alloc(0x400), p.alloc(0x400));
+        for _ in 0..3000 {
+            p.fill(dst, 0x200, &mut rng);
+            p.fill(a, 0x400, &mut rng);
+            p.fill(b, 0x400, &mut rng);
+            // all-ones and all-zero texels drive every carry
+            if rng.chance(20) {
+                for o in (0..0x400).step_by(4) {
+                    p.set(a + o, rng.pick(&[0u32, u32::MAX, 0xff00_ff00, 0x00ff_00ff]));
+                    p.set(b + o, rng.pick(&[0u32, u32::MAX, 0xfefe_fefe, 0x0101_0101]));
+                }
+            }
+            let size = rng.pick(&[4u32, 4, 1, 1, 0, 2, 3, 8]);
+            let big = rng.below(0x80);
+            let n = rng.pick(&[0u32, 1, 2, big]);
+            let (ra, rb) = if rng.chance(50) { (a, b) } else { (b, a) };
+            p.check("0x00a38670", 0x00a3_8670, &[dst, ra, rb, n, size], |m| {
+                Some(small::bridge::op_texels_box(m, dst, ra, rb, n, size))
+            });
+        }
+    }
+}
+
+#[test]
 fn opus_0437_fade_step_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a6_e260);
@@ -10482,6 +10509,23 @@ fn shp_tail3_vf_copy_matches_the_original() {
             p.check("0x00751680", 0x0075_1680, &[dst], |m| {
                 Some(small::bridge::ppp_ke_shp_tail3_vf_copy(m, dst))
             });
+        }
+    }
+}
+
+#[test]
+fn shp_tail3_vf_load_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_1740);
+        let (src, vf) = (p.alloc(0x200), p.sym(0x00c8_f7b0));
+        for _ in 0..500 {
+            p.fill(src, 0x200, &mut rng);
+            p.fill(vf, 0x1c0, &mut rng);
+            for (what, sym) in [("0x00751740", 0x0075_1740), ("0x00751ab0", 0x0075_1ab0)] {
+                p.check(what, sym, &[src], |m| {
+                    Some(small::bridge::ppp_ke_shp_tail3_vf_load(m, src))
+                });
+            }
         }
     }
 }
