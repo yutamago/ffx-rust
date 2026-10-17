@@ -2931,6 +2931,9 @@ fn whole_turn(
         poke(a, b, p + 0xdf3, &[[0, 1, 0x80][rng.below(3) as usize]]);
         poke(a, b, p + 0x716, &[flag(rng, 4)]);
         poke(a, b, p + 0x591, &[[0x11, 0][rng.below(2) as usize]]);
+        // mostly past the turn's start actions (+0xdf7: their random
+        // request blocks rewrite the statuses above)
+        poke(a, b, p + 0xdf7, &[flag(rng, 4) ^ 1]);
     }
     let entries: Vec<u8> = (0..n * 8)
         .map(|k| match k % 8 {
@@ -2975,6 +2978,7 @@ fn whole_turn(
         0
     });
     local_words(a, b);
+    register_rows(a, b);
     same("MsBattleProcess_InputCue", a, b);
 }
 
