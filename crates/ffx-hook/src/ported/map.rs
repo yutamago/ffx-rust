@@ -2991,6 +2991,145 @@ ported! {
     yiBoundsMinMax @ 0x0091_30f0 => extern "C" fn shim_yi_bounds_min_max(obj: u32, min: u32, max: u32) -> u32 {
         yi::bridge::yi_bounds_min_max(&mut mem(), obj, min, max)
     }
+    // ---- round 13 ----
+    /// `rcbgPSimFini(p)`.
+    rcbgPSimFini @ 0x0091_fd80 => extern "C" fn shim_rcbg_psim_fini(p: u32) -> u32 {
+        model::bridge::rcbg_psim_fini(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgPSimDelete(p)`.
+    rcbgPSimDelete @ 0x0091_fd40 => extern "C" fn shim_rcbg_psim_delete(p: u32) -> u32 {
+        model::bridge::rcbg_psim_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiLoadSetTitle()`.
+    rcuiLoadSetTitle @ 0x0093_4fb0 => extern "C" fn shim_rcui_load_set_title() -> u32 {
+        let mut buf = Matrix([0; 0x40]);
+        let b = u32::try_from((&raw mut buf).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_load_set_title(&mut mem(), b, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgSceneWaveDCProc(scene)`.
+    rcbgSceneWaveDCProc @ 0x0092_0580 => extern "C" fn shim_rcbg_scene_wave_dc_proc(s: u32) {
+        scene::bridge::rcbg_scene_wave_dc_proc(&mut mem(), s, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefMainKickPar(main, a, b, chr, bone, p0, p1, p2, flags, force)`.
+    rcefMainKickPar @ 0x0092_53a0 => extern "C" fn shim_rcef_main_kick_par(m: u32, a: u32, b: u32, chr: u32, bone: u32, p0: u32, p1: u32, p2: u32, flags: u32, force: u32) -> u32 {
+        task::bridge::rcef_main_kick_par(&mut mem(), [m, a, b, chr, bone, p0, p1, p2, flags, force], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiKeyFrameWrapAngles(v)`.
+    yiKeyFrameWrapAngles @ 0x0091_5120 => extern "C" fn shim_yi_key_frame_wrap_angles(v: u32) {
+        yi::bridge::yi_key_frame_wrap_angles(&mut mem(), v);
+    }
+    /// `yiImageTakeLastPage(img, page)`.
+    yiImageTakeLastPage @ 0x0091_7e70 => extern "C" fn shim_yi_image_take_last_page(img: u32, page: u32) -> u32 {
+        yi::bridge::yi_image_take_last_page(&mut mem(), img, page)
+    }
+    /// `yiImageRectFree(page, list, img)`.
+    yiImageRectFree @ 0x0091_7490 => extern "C" fn shim_yi_image_rect_free(page: u32, list: u32, img: u32) -> u32 {
+        yi::bridge::yi_image_rect_free(&mem(), page, list, img)
+    }
+    /// `yiVramSetup(pages, mode)`.
+    yiVramSetup @ 0x0091_7f20 => extern "C" fn shim_yi_vram_setup(pages: u32, mode: u32) -> u32 {
+        yi::bridge::yi_vram_setup(&mut mem(), pages, mode)
+    }
+    // ---- round 14 ----
+    /// `rcefGetChrDir(chr)`.
+    rcefGetChrDir @ 0x0092_dfd0 => extern "C" fn shim_rcef_get_chr_dir(chr: u32) -> f32 {
+        let mut out = Scratch([0; 0x20]);
+        let o = u32::try_from((&raw mut out).expose_provenance()).unwrap_or(0);
+        vu0::bridge::rcef_get_chr_dir(&mut mem(), chr, o, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
+    /// `rcuiCollectChrHandlesByGroup()`.
+    rcuiCollectChrHandlesByGroup @ 0x0093_23b0 => extern "C" fn shim_rcui_collect_chr_handles_by_group() {
+        rcui::bridge::rcui_collect_chr_handles_by_group(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcuiVu0AddVector(dst, a, b)`.
+    rcuiVu0AddVector @ 0x0093_7540 => extern "C" fn shim_rcui_vu0_add_vector(dst: u32, a: u32, b: u32) {
+        rcui::bridge::rcui_vu0_add_vector(&mut mem(), dst, a, b);
+    }
+    /// `rcbgLayerAnimStep(a)`.
+    rcbgLayerAnimStep @ 0x0093_0920 => extern "C" fn shim_rcbg_layer_anim_step(a: u32) -> u32 {
+        scene::bridge::rcbg_layer_anim_step(&mut mem(), a)
+    }
+    /// `yiImageRman_serch(rman, page, img)`.
+    yiImageRman_serch @ 0x0091_7b70 => extern "C" fn shim_yi_image_rman_serch(_rman: u32, page: u32, img: u32) -> u32 {
+        yi::bridge::yi_image_rman_serch(&mut mem(), page, img)
+    }
+    /// `yiKeyFrameAdvance(r, a, now)`.
+    yiKeyFrameAdvance @ 0x0091_4180 => extern "C" fn shim_yi_key_frame_advance(r: u32, a: u32, now: u32) -> u32 {
+        yi::bridge::yi_key_frame_advance(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
+    }
+    // ---- round 15 ----
+    /// `yiHermiteVec2(t, p0, p1, p2, p3, out)`.
+    yiHermiteVec2 @ 0x0091_4700 => extern "C" fn shim_yi_hermite_vec2(t: u32, p0: u32, p1: u32, p2: u32, p3: u32, out: u32) {
+        yi::bridge::yi_hermite_vec2(&mut mem(), t, [p0, p1, p2, p3], out);
+    }
+    /// `yiHermiteVec4(t, p0, p1, p2, p3, out)`.
+    yiHermiteVec4 @ 0x0091_47b0 => extern "C" fn shim_yi_hermite_vec4(t: u32, p0: u32, p1: u32, p2: u32, p3: u32, out: u32) {
+        yi::bridge::yi_hermite_vec4(&mut mem(), t, [p0, p1, p2, p3], out);
+    }
+    /// `yiKeyFrameAdvanceLinked(r, track, now)`.
+    yiKeyFrameAdvanceLinked @ 0x0091_4070 => extern "C" fn shim_yi_key_frame_advance_linked(r: u32, a: u32, now: u32) -> u32 {
+        yi::bridge::yi_key_frame_advance_linked(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiRectTriOverlapXZ(tri, m, a, b)`.
+    yiRectTriOverlapXZ @ 0x0091_0070 => extern "C" fn shim_yi_rect_tri_overlap_xz(tri: u32, m: u32, a: u32, b: u32) -> u32 {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_rect_tri_overlap_xz(&mut mem(), tri, m, [a, b], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeLnsArnd_Draw(e, flags)`.
+    KeLnsArnd_Draw @ 0x0076_9340 => extern "C" fn shim_ke_lns_arnd_draw(e: u32, flags: u32) {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_arnd_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `KeLnsCrn_Draw(e, flags)`.
+    KeLnsCrn_Draw @ 0x0076_9d70 => extern "C" fn shim_ke_lns_crn_draw(e: u32, flags: u32) {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_crn_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `KeLnsFls_Draw(e, flags)`.
+    KeLnsFls_Draw @ 0x0076_a1f0 => extern "C" fn shim_ke_lns_fls_draw(e: u32, flags: u32) {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_fls_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    // ---- round 16 ----
+    /// `KeMdl_Draw(e, rec, col, p4, p5, p6, mode, zmat, p9, p10)`.
+    KeMdl_Draw @ 0x0076_6ff0 => extern "C" fn shim_ke_mdl_draw(e: u32, rec: u32, col: u32, p4: u32, p5: u32, p6: u32, mode: u32, zmat: u32, p9: u32, p10: u32) {
+        let mut work = MdlWork([0; 0xe0]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ke::bridge::ke_mdl_draw(&mut mem(), [e, rec, col, p4, p5, p6, mode, zmat, p9, p10], w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcuiVu0SubVector(dst, a, b)`.
+    rcuiVu0SubVector @ 0x0093_76b0 => extern "C" fn shim_rcui_vu0_sub_vector(dst: u32, a: u32, b: u32) {
+        rcui::bridge::rcui_vu0_sub_vector(&mut mem(), dst, a, b);
+    }
+    /// `rcuiClampVector(dst, v, lo, hi)`.
+    rcuiClampVector @ 0x0093_cd20 => extern "C" fn shim_rcui_clamp_vector(dst: u32, v: u32, lo: u32, hi: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_clamp_vector(&mut mem(), dst, v, (lo, hi), w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiInvertRigidMatrix(dst, m)`.
+    rcuiInvertRigidMatrix @ 0x0093_d090 => extern "C" fn shim_rcui_invert_rigid_matrix(dst: u32, m: u32) -> u32 {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_invert_rigid_matrix(&mut mem(), dst, m, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiProjectToInt(out, m, v, raw)`.
+    rcuiProjectToInt @ 0x0093_d710 => extern "C" fn shim_rcui_project_to_int(out: u32, m: u32, v: u32, raw: u32) -> f32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_project_to_int(&mut mem(), out, (m, v), raw, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgAnimeLoadConfig(anime, parse)`.
+    rcbgAnimeLoadConfig @ 0x0093_a650 => extern "C" fn shim_rcbg_anime_load_config(anime: u32, p: u32) -> u32 {
+        model::bridge::rcbg_anime_load_config(&mut mem(), anime, p, &mut |_, f, a| call_cdecl(f, a))
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
@@ -3001,6 +3140,10 @@ struct Image([u8; 0x60]);
 /// The original's stack chunk and parser (`rcbgLoadBin`).
 #[repr(C, align(16))]
 struct Work([u8; 0xa4]);
+
+/// `KeMdl_Draw`'s render description and view matrix.
+#[repr(C, align(16))]
+struct MdlWork([u8; 0xe0]);
 
 /// A small 16-byte aligned stack buffer of the original (a vector pair, a
 /// model description, a CD read's result).

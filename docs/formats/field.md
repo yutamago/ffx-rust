@@ -660,6 +660,147 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `yiImage_dumpall` (`0x00918680`) only prints, through `dbgPrintf` (a
   bare `ret`).
 
+## Float results, waves, particle kicks and image VRAM (round 13)
+
+- The field oracle's `Orig::eax`/`Orig::void` now fail when the original
+  leaves a value in `ST0`: a port returning an integer or nothing would
+  drop it (a void `Ch_CheckRadian` made every model invisible). All
+  earlier field tests pass under it, and no map shim returns non-float
+  for a function its callers read as `(float10)` in the dump.
+- `rcbgSceneWaveDCProc` (`0x00920580`) runs the wave `Yn_SceneSetDC`
+  starts: `+0xac = +0xe8 * sin`, the sine from `g_pppSinTable` at
+  `ftol(+0xec * k / 2pi) >> 4` (`k` the double at `0x00b51558`), faded by
+  `(+0xe4 - +0xf0) / +0xe4` for kind 2; `+0xec += +0xe0`; it stops
+  (`rcbgSceneWaveDCStop`) when the counter reaches `+0xe4`.
+- `rcefMainKickPar` (`0x009253a0`, the Switch name: same callees, called
+  by `rcuiParProcKick`) starts a particle effect on a main: a new object
+  when its task ended, else the current one unless its particles still
+  run (and `force` is 0).
+- `rcbgPSimDelete`/`rcbgPSimFini` (`0x0091fd40`/`0x0091fd80`) take the
+  Switch names from the sorted `rcbgPSim` run of the Steam build.
+- `yiKeyFrameWrapAngles` (`0x00915120`) wraps four angles into `-pi..pi`
+  by `(1 - ftol(x / -2pi)) * 2pi`.
+- Image VRAM: `yiVramSetup` (`0x00917f20`) sets the area block
+  `0x025d1798..d4` for modes 0..2 and the limit `(0x38 - pages) << 14`;
+  `yiImageRectFree` (`0x00917490`) tests a rectangle against the page and
+  the other images (a zero power-of-two size divides by zero in the
+  original); `yiImageTakeLastPage` (`0x00917e70`) places a PSMT8/PSMT4
+  image in the last area as 0x1b/0x2c, a second PSMT4 sharing it as
+  0x24.
+- `rcuiLoadSetTitle` (`0x00934fb0`) titles the load window
+  "Load - <map directory>".
+
+## Character direction, layer animation, key frames and image placement (round 14)
+
+- `rcefGetChrDir` (`0x0092dfd0`, the Switch name) returns a float in
+  `ST0`: `MsGetChrDir` into a local, then `rcefAngleWrap`. Ghidra types
+  it `float10`, and its shim returns `f32`.
+- `rcbgLayerAnimStep` (`0x00930920`): a layer animation adds its speed
+  (`+0x14`) to a sub-frame counter (`+0x18`) and moves whole 0x100 steps
+  into the tick (`+4`); while the tick passes the current record's
+  length (its byte `+1`) the frame (`+6`) steps forward (backward with
+  bit 1), wrapping (mode 0) or holding (0x100, bits 8..11). It returns
+  the record it started from, not the new one.
+- `yiKeyFrameAdvance` (`0x00914180`): a key frame track's start
+  (`+0x14`) follows the clock; frame records are 32 bytes at
+  `r +0x9d5c4[track +8]`, each lasting twice its `+4`; a one-shot track
+  (`+2` set) clears itself at the end and counts down `r +0x9cabc`.
+- `yiImageRman_serch` (`0x00917b70`) looks for a place for an image:
+  right of, below, left of and above each image already in the page,
+  then the page's bottom-left and bottom-right corners, each checked
+  with `yiImageRectFree`.
+- `rcuiCollectChrHandlesByGroup` (`0x009323b0`) lists characters 0x14..0x1b
+  then 0..0xe with their handles; `rcuiVu0AddVector` (`0x00937540`) adds
+  through the VU0 registers at `0x00c8f980`/`0x00c8f970`.
+
+## Hermite curves, linked key frames and the lens shapes' render data (round 15)
+
+- `yiHermiteVec2`/`yiHermiteVec4` (`0x00914700`/`0x009147b0`): cubic
+  Hermite interpolation of two or four floats. The weights
+  `(t-1)^2 (2t+1)`, `t^2 (3-2t)`, `(1-t)^2 t` and `t^2 (t-1)` are each
+  stored as `f32` first. Ghidra's `fVar3 * t * t` is really `t^2 * (t-1)`
+  (`t^2` is computed once and reused), so the products follow the
+  disassembly, not the decompilation.
+- `yiKeyFrameAdvanceLinked` (`0x00914070`): the `yiKeyFrameAdvance` of
+  tracks whose 0x80-byte records chain from `+0x24`; while paused it
+  returns `now`, not the time difference its sibling returns.
+- `yiRectTriOverlapXZ` (`0x00910070`): an x/z rectangle against a
+  triangle (transformed, or twelve unsigned integers as floats), both
+  ways, through `yiTriContainsXZ`. It writes 1.0 into the input
+  vectors' w before transforming them.
+- `0x00920100` is not ported: it ends in `FFXVu0FTOI4Vector`, a bare
+  `ret` on PC, so it returns the z of an uninitialised local divided by
+  0x3000.
+- The lens shapes' render data: `KeLnsArnd_Draw` (`0x00769340`),
+  `KeLnsCrn_Draw` (`0x00769d70`) and `KeLnsFls_Draw` (`0x0076a1f0`) build
+  a matrix from the lens source (`+0x7c` alpha, `+0x8f` own matrix,
+  `+0xa4` intensity, `+0x80` position plus the VFX offset at
+  `0x0230ff50`), compute the colour's alpha (`fistp` under
+  round-toward-zero), step the shape's clock (`KeLnsShp_Update`), stamp
+  the program byte into the shape (`+0xb`) unless an ordering-table pass
+  draws (`0x00cec1a4`), then hand the description (flags `+2`, colour
+  `+4`, matrix pointer `+0x10`) to the PC renderer:
+  `updateVFXRenderDataShp` and `graphicVFXUpdate` when render data
+  exists for the instance key (program byte, instance), else
+  `InitVFXRenderDataShp` with `calculateVFXSP_AlphaFunction` of the
+  frame's mode `| 0x800` (`| 0x40` for flag bit 3). `KeLnsFls_Draw`
+  looks the render data up first and hides it (`graphicVFXSetVisible`)
+  when the flash cannot draw. Bytes 0..2 and 0x14..0x1c of the
+  description are never written: the renderer gets the original's
+  stack there, and the port's zeros.
+- `KeMdl_Draw` (`0x00766ff0`) also feeds the renderer; it is ported in
+  round 16.
+
+### Replaced by ffx-render
+
+Pure GS/DMA packet writing, left to the original until the external
+renderer takes over:
+
+- `0x00760ce0`: a GIF image transfer (`sceGsSyncPath`, `sceDmaSync`,
+  `sceDmaSend` from two alternating buffers).
+- `rcPacketDataDraw` (`0x00927600`): `sceDmaSend` of a packet.
+- `0x0093c730`: a bar of `Gu_SetXyzf2` vertices (the rcui Z value
+  window).
+- `0x00927630`, `0x00927720`, `0x00927810`, `0x009278d0`: `rc` packet
+  builders (rectangles, circles, lines, projected points as fixed-point
+  GIF vertices; their `ftol2_sse` operands are x87 values the
+  decompilation hides).
+
+## The VFX model's render data, rcui helpers (round 16)
+
+- `KeMdl_Draw` (`0x00766ff0`): the colour is the compiler's emulation of
+  R5900 multimedia instructions on the EE register words at `0x00c8f508`
+  (A), `0x00c8f588` (M) and `0x00c8f598` (B). The two words at
+  `col + g_pppColorConShift` and the current part's `+0x70` words are
+  interleaved halfword-wise with A into M and B, and multiplied
+  (`pppEePmulth`). The products are shifted down 19 bits (13 kept),
+  interleaved with A's low halves and packed to bytes (`pppEePpacb`). Every
+  dword and halfword write to those globals is kept in the original's
+  order, and `g_pppColorConShift` is cleared twice. A colour whose top
+  byte is 0 draws nothing.
+- Its description (0x48 bytes) is built from:
+  - flags from the mode argument and the record's shape byte (0x4/0xc
+    path 3, 0x80 additive, 0x8, 0x10, 0x100, 0x200, 0x2000 with the view
+    matrix `g_pppViewMatrix * e +0x10`);
+  - the GIF tag word `0x00c498dc`, the record's alpha byte and the colour;
+  - `e +0x50`/`+0x10`/`+0x90`/`+0x94`, the model data blocks
+    `0x0230fd60`/`0x0230fda0` and the packet position;
+  - the Z mode argument when mode bit 5 is set.
+- It goes to `updateVFXRenderData` with `graphicVFX(Path3)Update`, or to
+  `InitVFX(Path3)RenderData` with the alpha function, Z mode (unless the
+  matrix is set) `| 0x40 | 0x80`. Then `graphicVFXSetClutParameters`
+  takes the three words at `0x010d5600`. Bytes `+0xb` and (without the
+  matrix) `+0x30` are never written.
+- `rcuiProjectToInt` (`0x0093d710`) leaves `1/w` on the x87 stack at
+  return (both paths pop everything else), so its port returns that
+  float.
+- `rcuiInvertRigidMatrix` (`0x0093d090`): the transpose with the
+  translation `-(R^T t)`; `rcuiClampVector` (`0x0093cd20`) keeps NaN.
+- `rcbgAnimeLoadConfig` (`0x0093a650`): `DataCnt`, then that many
+  four-byte frames.
+- `0x0093c730` draws a bar through `Gu_SetXyzf2`/`Gu_SetRgbaq` packets:
+  replaced by ffx-render.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

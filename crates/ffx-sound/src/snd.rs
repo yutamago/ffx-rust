@@ -125,10 +125,10 @@ pub fn stream_pc_name(id: u32, english: bool) -> Vec<(usize, u8)> {
 /// The original functions, over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' arguments
 pub mod bridge {
-    use ffx_bridge::{Global, Host, Mem, x87};
+    use ffx_bridge::{Global, Mem, x87};
 
     use super::{foot, sep_id, sep_kind};
-    use crate::fmod::{FmodHost, bridge as i};
+    use crate::fmod::{Conv, FmodHost as Host, bridge as i};
 
     // ---- state (docs/formats/sound.md, "Snd state")
     /// `g_TkSndVoiceFlags` (0x0132ff10): voice read in progress.
@@ -332,8 +332,7 @@ pub mod bridge {
     const D_WAIT: Global<f64> = Global::new(0x00b5_dd18);
 
     fn call(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
-        let f = h.rebase(sym);
-        h.call(f, args)
+        h.call_sym(sym, Conv::Cdecl, args)
     }
 
     fn w16(h: &impl Mem, a: u32) -> u32 {
@@ -444,7 +443,7 @@ pub mod bridge {
     }
 
     /// `SndCancelMusicClear(id)` (0x00885ea0): `SndExecMusicClearQue(0, id)`.
-    pub fn snd_cancel_music_clear(h: &mut impl FmodHost, id: u32) {
+    pub fn snd_cancel_music_clear(h: &mut impl Host, id: u32) {
         snd_exec_music_clear_que(h, 0, id);
     }
 
@@ -493,7 +492,7 @@ pub mod bridge {
     /// (`SndSepStop`) the music or SE whose count reaches 0. Then the
     /// spent entries are removed (the original's shift, which copies
     /// `count - i` entries past the removed one, kept as it is).
-    pub fn snd_exec_music_clear_que(h: &mut impl FmodHost, mode: u32, id: u32) {
+    pub fn snd_exec_music_clear_que(h: &mut impl Host, mode: u32, id: u32) {
         let base = h.rebase(CLEAR_QUE);
         let mut count = CLEAR_COUNT.get(h);
         let mut i = 0;
@@ -589,7 +588,7 @@ pub mod bridge {
     }
 
     /// `SndGetMusicPlayState(id)` (0x008863c0): `iMusicPlayState`.
-    pub fn snd_get_music_play_state(h: &mut impl FmodHost, id: u32) -> u32 {
+    pub fn snd_get_music_play_state(h: &mut impl Host, id: u32) -> u32 {
         i::i_music_play_state(h, id)
     }
 
@@ -724,7 +723,7 @@ pub mod bridge {
     /// footstep (kind 0xff: the sound event `variation`) when the party
     /// slot's mask bit is set; through the 3D request when the slot is in
     /// the 3D mask and has an actor.
-    pub fn snd_kick_foot(h: &mut impl FmodHost, kind: u32, party: u32, kick: u32, variation: i32) {
+    pub fn snd_kick_foot(h: &mut impl Host, kind: u32, party: u32, kick: u32, variation: i32) {
         let (mask, sep) = if kind == 0xff {
             call(h, ATEL_CLEAR_CAMERA_MATRIX_FLAG, &[]);
             let mask = EVENT_MASK.get(h);
@@ -800,7 +799,7 @@ pub mod bridge {
     }
 
     /// `SndMusicClear(id)` (0x00886800), for ids below 0x100.
-    pub fn snd_music_clear(h: &mut impl FmodHost, id: u32) {
+    pub fn snd_music_clear(h: &mut impl Host, id: u32) {
         if id <= 0xff {
             i::i_music_clear(h, id);
             snd_clear_now_play_music(h, id);
@@ -815,7 +814,7 @@ pub mod bridge {
     /// `SndMusicCrossStart(id, frames)` (0x00886830): crosses to `id`
     /// (volume 0 when it is the one last faded out and nothing plays); an
     /// id of 0x100 or more fades the playing one out.
-    pub fn snd_music_cross_start(h: &mut impl FmodHost, id: u32, frames: u32) {
+    pub fn snd_music_cross_start(h: &mut impl Host, id: u32, frames: u32) {
         let now = snd_get_now_play_music(h);
         if id == now {
             return;
@@ -836,7 +835,7 @@ pub mod bridge {
     }
 
     /// `SndMusicMultiStart(id)` (0x008868b0).
-    pub fn snd_music_multi_start(h: &mut impl FmodHost, id: u32) {
+    pub fn snd_music_multi_start(h: &mut impl Host, id: u32) {
         if id <= 0xff {
             snd_cancel_music_clear(h, id);
             snd_regist_now_play_music(h, id);
@@ -846,7 +845,7 @@ pub mod bridge {
     }
 
     /// `SndMusicPhraseStart(id, phrase)` (0x008868f0).
-    pub fn snd_music_phrase_start(h: &mut impl FmodHost, id: u32, phrase: u32) {
+    pub fn snd_music_phrase_start(h: &mut impl Host, id: u32, phrase: u32) {
         if id <= 0xff {
             snd_cancel_music_clear(h, id);
             snd_regist_now_play_music(h, id);
@@ -856,23 +855,18 @@ pub mod bridge {
     }
 
     /// `SndMusicPitchDirect(pitch, b)` (0x00886930): the pitch's low byte.
-    pub fn snd_music_pitch_direct(h: &mut impl FmodHost, pitch: u32, b: u32) -> u32 {
+    pub fn snd_music_pitch_direct(h: &mut impl Host, pitch: u32, b: u32) -> u32 {
         i::i_music_pitch_direct(h, pitch & 0xff, b)
     }
 
     /// `SndMusicPitchTranslate(id, pitch, frames)` (0x00886940): the pitch's
     /// low byte to `iMusicVolumeTranslate` (as the PC build has it).
-    pub fn snd_music_pitch_translate(
-        h: &mut impl FmodHost,
-        id: u32,
-        pitch: u32,
-        frames: u32,
-    ) -> u32 {
+    pub fn snd_music_pitch_translate(h: &mut impl Host, id: u32, pitch: u32, frames: u32) -> u32 {
         i::i_music_volume_translate(h, id, pitch & 0xff, frames)
     }
 
     /// `SndMusicRead(id)` (0x00886960): waits for the streams, then loads.
-    pub fn snd_music_read(h: &mut impl FmodHost, id: u32) {
+    pub fn snd_music_read(h: &mut impl Host, id: u32) {
         if id <= 0xff {
             snd_cancel_music_clear(h, id);
             wait_streams(h);
@@ -884,14 +878,14 @@ pub mod bridge {
 
     /// `SndMusicStandby(id)` (0x00886a00): `iMusicDataSend`'s result kept
     /// as the battle music size.
-    pub fn snd_music_standby(h: &mut impl FmodHost, id: u32) -> u32 {
+    pub fn snd_music_standby(h: &mut impl Host, id: u32) -> u32 {
         let r = i::i_music_data_send(h, id);
         BATTLE_MUSIC_SIZE.set(h, r);
         r
     }
 
     /// `SndMusicStart(id)` (0x00886a20).
-    pub fn snd_music_start(h: &mut impl FmodHost, id: u32) {
+    pub fn snd_music_start(h: &mut impl Host, id: u32) {
         if id <= 0xff {
             snd_cancel_music_clear(h, id);
             snd_regist_now_play_music(h, id);
@@ -902,7 +896,7 @@ pub mod bridge {
     }
 
     /// `SndMusicStop(id)` (0x00886a60).
-    pub fn snd_music_stop(h: &mut impl FmodHost, id: u32) {
+    pub fn snd_music_stop(h: &mut impl Host, id: u32) {
         if id <= 0xff {
             i::i_music_stop(h, id);
             snd_clear_now_play_music(h, id);
@@ -910,12 +904,12 @@ pub mod bridge {
     }
 
     /// `SndMusicTempoDirect(tempo)` (0x00886a90): the low byte.
-    pub fn snd_music_tempo_direct(h: &mut impl FmodHost, tempo: u32) -> u32 {
+    pub fn snd_music_tempo_direct(h: &mut impl Host, tempo: u32) -> u32 {
         i::i_music_tempo_direct(h, tempo & 0xff)
     }
 
     /// `SndMusicTempoTranslate(a, tempo)` (0x00886aa0): the low byte.
-    pub fn snd_music_tempo_translate(h: &mut impl FmodHost, a: u32, tempo: u32) -> u32 {
+    pub fn snd_music_tempo_translate(h: &mut impl Host, a: u32, tempo: u32) -> u32 {
         i::i_music_tempo_translate(h, a, tempo & 0xff)
     }
 
@@ -924,7 +918,7 @@ pub mod bridge {
     }
 
     /// `SndMusicVolumeDirect(id, volume)` (0x00886ab0): 0 while muted.
-    pub fn snd_music_volume_direct(h: &mut impl FmodHost, id: u32, volume: u32) {
+    pub fn snd_music_volume_direct(h: &mut impl Host, id: u32, volume: u32) {
         let v = unless_muted(h, volume);
         if id <= 0xff {
             i::i_music_volume_direct(h, id, v);
@@ -935,7 +929,7 @@ pub mod bridge {
 
     /// `SndMusicVolumeFadeOut(id, frames)` (0x00886af0): fades out and
     /// remembers `id` as the last faded one.
-    pub fn snd_music_volume_fade_out(h: &mut impl FmodHost, id: u32, frames: u32) {
+    pub fn snd_music_volume_fade_out(h: &mut impl Host, id: u32, frames: u32) {
         if id <= 0xff {
             i::i_music_volume_fade_out(h, id, frames);
             music_volume(h, id, 0);
@@ -946,7 +940,7 @@ pub mod bridge {
     }
 
     /// `SndMusicVolumeTranslate(id, frames, volume)` (0x00886b40).
-    pub fn snd_music_volume_translate(h: &mut impl FmodHost, id: u32, frames: u32, volume: u32) {
+    pub fn snd_music_volume_translate(h: &mut impl Host, id: u32, frames: u32, volume: u32) {
         let v = unless_muted(h, volume);
         if id <= 0xff {
             i::i_music_volume_translate(h, id, frames, v);
@@ -1236,7 +1230,7 @@ pub mod bridge {
 
     /// `SndSetWaveData(list)` (0x00887240): loads each wave of the 16-entry
     /// list (the default list for 0), -1 skipped.
-    pub fn snd_set_wave_data(h: &mut impl FmodHost, list: u32) {
+    pub fn snd_set_wave_data(h: &mut impl Host, list: u32) {
         let list = if list == 0 {
             h.rebase(DEFAULT_WAVES)
         } else {
@@ -1262,7 +1256,7 @@ pub mod bridge {
     }
 
     /// `SndSortCommonWaveWithSet(list)` (0x008872a0).
-    pub fn snd_sort_common_wave_with_set(h: &mut impl FmodHost, list: u32) {
+    pub fn snd_sort_common_wave_with_set(h: &mut impl Host, list: u32) {
         snd_sort_common_wave(h, list);
         snd_set_wave_data(h, list);
     }

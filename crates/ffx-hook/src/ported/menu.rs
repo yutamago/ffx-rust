@@ -22,6 +22,46 @@ fn menu_packet(build: impl FnOnce(&mut super::RawMem, u32) -> u32) -> u32 {
     end
 }
 
+/// An MSVCR110 x87 intrinsic through the game's import slot `slot`:
+/// `a` in `ST0` (with `b` set, `a` in `ST1` and `b` in `ST0`), the result
+/// read back from `ST0` as a double.
+fn crt_x87(slot: u32, a: f64, b: Option<f64>) -> f64 {
+    // SAFETY: the slot holds the address of a CRT intrinsic taking its
+    // operands in ST0/ST1 and returning in ST0 (eax, ecx, edx, x87 and SSE
+    // clobbered). Every input operand is used before the call.
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = (crate::rebase(slot) as *const usize).read();
+        let ops = [a, b.unwrap_or(0.0)];
+        let two = u32::from(b.is_some());
+        let (lo, hi): (u32, u32);
+        std::arch::asm!(
+            "fld qword ptr [{ops}]",
+            "test {two}, {two}",
+            "jz 2f",
+            "fld qword ptr [{ops} + 8]",
+            "2:",
+            "call {f}",
+            "sub esp, 8",
+            "fstp qword ptr [esp]",
+            "pop eax",
+            "pop edx",
+            ops = in(reg) ops.as_ptr(),
+            two = in(reg) two,
+            f = in(reg) f,
+            lateout("eax") lo,
+            lateout("edx") hi,
+            clobber_abi("C"),
+        );
+        f64::from_bits(u64::from(lo) | (u64::from(hi) << 32))
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (slot, a, b);
+        unreachable!("the CRT's intrinsics: this runs in the 32-bit game")
+    }
+}
+
 /// `user_free(p)` (`0x006fb8b0`), through the game's entry (the system
 /// module's port when hooked).
 fn user_free(p: u32) -> u32 {
@@ -2949,5 +2989,62 @@ ported! {
     /// `Vibrate_EntryLevel(rec, e)`.
     Vibrate_EntryLevel @ 0x0087_5c20 => extern "C" fn vibrate_entry_level(rec: u32, e: u32) -> u32 {
         tk::vibrate_entry_level(&mut mem(), rec, e)
+    }
+    /// `CIcos(x)`: `_CIcos`, in `st0`.
+    CIcos @ 0x0088_b3e0 => extern "C" fn ci_cos(x: f32) -> f32 {
+        ffx_menu::math::ci_unary(x, |v| crt_x87(0x00b0_c3b4, v, None))
+    }
+    /// `CIsin(x)`: `_CIsin`, in `st0`.
+    CIsin @ 0x0088_c3a0 => extern "C" fn ci_sin(x: f32) -> f32 {
+        ffx_menu::math::ci_unary(x, |v| crt_x87(0x00b0_c3b8, v, None))
+    }
+    /// `CItan(x)`: `_CItan`, in `st0`.
+    CItan @ 0x0088_c420 => extern "C" fn ci_tan(x: f32) -> f32 {
+        ffx_menu::math::ci_unary(x, |v| crt_x87(0x00b0_c3a0, v, None))
+    }
+    /// `CIatan2(y, x)`: `_CIatan2`, in `st0`.
+    CIatan2 @ 0x0088_9e70 => extern "C" fn ci_atan2(y: f32, x: f32) -> f32 {
+        ffx_menu::math::ci_atan2(y, x, |a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
+    }
+    /// `MenuSave_PathDir(out, n)`: `/S`.
+    MenuSave_PathDir @ 0x008b_3ff0 => extern "C" fn menu_save_path_dir(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 0);
+    }
+    /// `MenuSave_PathData(out, n)`: `/S/S`.
+    MenuSave_PathData @ 0x008b_4060 => extern "C" fn menu_save_path_data(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 1);
+    }
+    /// `MenuSave_PathIcon(out, n)`: `/S/010906nn.ico`.
+    MenuSave_PathIcon @ 0x008b_4110 => extern "C" fn menu_save_path_icon(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 2);
+    }
+    /// `MenuSave_PathIconSys(out, n)`: `/S/icon.sys`.
+    MenuSave_PathIconSys @ 0x008b_4230 => extern "C" fn menu_save_path_icon_sys(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 3);
+    }
+    /// `MenuSave_IconName(out, n)`.
+    MenuSave_IconName @ 0x008b_41e0 => extern "C" fn menu_save_icon_name(out: u32, n: u32) {
+        tk::menu_save_icon_name(&mut mem(), out, n);
+    }
+    /// `Gu_WindowControlSetTextf(window, id, fmt, ...)`: up to 12 argument
+    /// words read; a format beyond the bridge's formatter goes through the
+    /// game's own `vsprintf` (import slot `0x00b0c430`).
+    Gu_WindowControlSetTextf @ 0x0084_a810 => extern "C" fn gu_window_control_set_textf(window: u32, id: u32, fmt: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) {
+        let args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11];
+        let mut m = mem();
+        let done = gu::gu_window_control_set_textf(&mut m, window, id, fmt, &args, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+        if !done {
+            let mut buf = [0u8; 0x400];
+            let at = u32::try_from(buf.as_mut_ptr() as usize).unwrap_or(0);
+            let list = u32::try_from(args.as_ptr() as usize).unwrap_or(0);
+            // SAFETY: an import slot of this build, filled by the loader.
+            let vsprintf = unsafe { (crate::rebase(0x00b0_c430) as *const u32).read() };
+            call_ptr(vsprintf, &[at, fmt, list]);
+            gu::gu_window_control_set_text(&mut m, window, id, at, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+        }
+    }
+    /// `MenuKaizou_InitList(w)`.
+    MenuKaizou_InitList @ 0x008d_55e0 => extern "C" fn menu_kaizou_init_list(w: u32) {
+        tk::menu_kaizou_init_list(&mut mem(), w);
     }
 }

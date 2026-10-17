@@ -246,6 +246,19 @@ pub fn args_slot(t: u32, level: i32) -> u32 {
         .wrapping_add((level as u32).wrapping_mul(header::ARGS_SIZE))
 }
 
+/// `rcefTaskCtrlIsEnd(ctrl)` (`0x009302e0`).
+pub const TASK_CTRL_IS_END: u32 = 0x0093_02e0;
+/// `rcefMainCreateObj(main)` (`0x00925140`).
+pub const MAIN_CREATE_OBJ: u32 = 0x0092_5140;
+/// `rcefObjIsParEnd(obj)` (`0x00930010`).
+pub const OBJ_IS_PAR_END: u32 = 0x0093_0010;
+/// `rcefMainSetPar(main, obj, a, b)` (`0x009256d0`).
+pub const MAIN_SET_PAR: u32 = 0x0092_56d0;
+/// `rcefObjAttachChr(obj, chr, bone)` (`0x0092f970`).
+pub const OBJ_ATTACH_CHR: u32 = 0x0092_f970;
+/// `rcCopyQword_00924f90(dst, src)` (`0x00924f90`).
+pub const COPY_QWORD: u32 = 0x0092_4f90;
+
 /// The tasks and objects where the game keeps them, through
 /// [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -940,6 +953,50 @@ pub mod bridge {
         mem.write(w + 0x1e8, 0u32);
         mem.write(w + 0x1f0, 1u32);
         mem.write(w + 0x1f4, 0u32);
+    }
+
+    // ---- round 13 ----
+
+    /// `rcefMainKickPar(main, a, b, chr, bone, p0, p1, p2, flags, force)`
+    /// (`0x009253a0`): a new object when the main's task has ended
+    /// (`rcefMainCreateObj`), else its object (`+0x24`), unless that one's
+    /// particles still run and `force` is 0 (returns 0 then); then
+    /// `rcefMainSetPar(main, obj, a, b)`, `rcefObjAttachChr(obj, chr,
+    /// bone)`, the three vectors to `+0xd0`, `+0x100`, `+0x130` and
+    /// `flags` into bits 4..12 of `+0xbc`. Returns the new `+0xbc`.
+    #[allow(clippy::many_single_char_names)] // the original's arguments
+    pub fn rcef_main_kick_par<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 10],
+        call: &mut C,
+    ) -> u32 {
+        let [m, a, b, chr, bone, p0, p1, p2, flags, force] = args;
+        let f = mem.rebase(super::TASK_CTRL_IS_END);
+        let obj = if call(mem, f, &[m.wrapping_add(0x1c)]) != 0 {
+            let f = mem.rebase(super::MAIN_CREATE_OBJ);
+            call(mem, f, &[m])
+        } else {
+            let obj = mem.read::<u32>(m.wrapping_add(0x24));
+            if force == 0 {
+                let f = mem.rebase(super::OBJ_IS_PAR_END);
+                if call(mem, f, &[obj]) == 0 {
+                    return 0;
+                }
+            }
+            obj
+        };
+        let f = mem.rebase(super::MAIN_SET_PAR);
+        call(mem, f, &[m, obj, a, b]);
+        let f = mem.rebase(super::OBJ_ATTACH_CHR);
+        call(mem, f, &[obj, chr, bone]);
+        let f = mem.rebase(super::COPY_QWORD);
+        call(mem, f, &[obj.wrapping_add(0xd0), p0]);
+        call(mem, f, &[obj.wrapping_add(0x100), p1]);
+        call(mem, f, &[obj.wrapping_add(0x130), p2]);
+        let at = obj.wrapping_add(0xbc);
+        let v = (mem.read::<u32>(at) & 0xffff_e00f) | flags;
+        mem.write(at, v);
+        v
     }
 }
 
