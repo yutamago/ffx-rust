@@ -2240,18 +2240,29 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         ] {
             poke(a, b, p + o, &[flag(rng, 4)]);
         }
+        // the 13 status counts (1 to 0xfd count down)
+        let counts: Vec<u8> = (0..13)
+            .map(|_| [0, 0, 0, 1, 2, 0xfd, 0xfe, 0xff, rng.byte()][rng.below(9) as usize])
+            .collect();
+        poke(a, b, p + 0x608, &counts);
+        // each moves itself (MsDamageSetMotion's +0x422: the positions
+        // checked are its own)
+        poke(a, b, p + 0x422, &[u8::try_from(i).unwrap()]);
+        // an automatic actor's +0xdf3 (sign-extended)
         poke(
             a,
             b,
-            p + 0x608,
-            &[[0, 0, 0, 1, 2, rng.byte()][rng.below(6) as usize]],
+            p + 0xdf3,
+            &[[0, 1, 0x80, rng.byte()][rng.below(4) as usize]],
         );
         poke(a, b, p + 0xdcc, &[[0, 0, 0, 1, 2][rng.below(5) as usize]]);
         poke(a, b, p + 0xdc8, &[flag(rng, 5) ^ 1]);
         poke(a, b, p + 0x6d2, &[rng.byte()]);
         poke(a, b, p + 0x5c8, &[u8::try_from(rng.below(3)).unwrap()]);
         poke(a, b, p + 0x5c4, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
-        let id: u16 = [0, 0x3001, 0x3000, 0x3022, 0x3057][rng.below(5) as usize];
+        let id =
+            [0, 0x3001, 0x3000, 0x3022, 0x3057, 0x3000 + rng.below(0x80)][rng.below(6) as usize];
+        let id = u16::try_from(id).unwrap();
         poke(a, b, p + 0x6c6, &id.to_le_bytes());
         poke(
             a,
@@ -2722,10 +2733,25 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             same("MsPoisonProcess", a, b);
         }
     }
-    // Regen and the status counts before a turn
+    // Regen and the status counts before a turn (the motions of those it
+    // heals read their positions)
     let i = rng.below(ACTORS);
     let actor = w.actor(i);
-    if placed(a, b, w, out) {
+    let healed_ok = |a: &mut Oracle, b: &mut Oracle| {
+        (0..ACTORS).all(|q| {
+            let p = w.actor(q);
+            let r = b.read(p, 0xdd0).unwrap();
+            let hp = i32::from_le_bytes(r[0x5d0..0x5d4].try_into().unwrap());
+            r[0x612] == 0
+                || r[0xdc8] == 0
+                || hp <= 0
+                || r[0xdcc] != 0
+                || r[0xdce] != 0
+                || (writes(a, b, 0x0079_56e0, q, out + 0x40)
+                    && writes(a, b, 0x0079_48e0, q, out + 0x40))
+        })
+    };
+    if placed(a, b, w, out) && healed_ok(a, b) {
         twin(
             "MsCheckStatusBeforeAction",
             a,
