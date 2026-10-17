@@ -95,9 +95,13 @@ fn direct(save: &str, early: bool) -> Result<()> {
     })?;
     game.wait_for_open("test20.ebp", 1, 3000)?;
     if !early {
+        // what screens::load_save_direct waits for
         game.wait_for_open("memochek.ebp", 1, 3000)?;
-        game.command("waitfor 0x01330844:4 17000000 ffffffff 3000")?;
-        game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
+        while game.read(0x0112_ca90, 4)? != [0x17, 0, 0x5c, 1]
+            || game.read(0x0133_084c, 4)? != [0; 4]
+        {
+            game.command("press start 3 20")?;
+        }
         game.wait(30)?;
     }
     game.command("lockstep on")?;

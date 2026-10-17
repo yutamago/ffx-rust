@@ -141,25 +141,30 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 ///
 /// The boot runs the title event (`test20.ebp`, map `0x17`, on `titl00`)
 /// twice: its first set-up jumps to `memochek` (map `0x15c`, on `titl02`:
-/// the logos), which comes back to the title proper, where the menus run.
-/// A load sent during the first visit is undone or overtaken (the pending
-/// boot jump, `g_TkEventJumpRequest` `0x0133084c`, enters the title map,
-/// and the title script's set-up starts a new game's state and jumps to
-/// `memochek`); one sent from `memochek` crashed the game. So this waits
-/// for `memochek`, the title scene again (scene number `0x01330844`), the jump request to
-/// clear and 30 frames for the script's set-up (about 100 frames from
-/// boot in fast mode).
+/// the logos and the opening), which comes back to the title proper (map
+/// `0x17`, previous map `0x15c`), where the menus run. A load sent during
+/// the first visit is undone or overtaken (the pending boot jump,
+/// `g_TkEventJumpRequest` `0x0133084c`, enters the title map, the title
+/// script's set-up starts a new game's state and jumps to `memochek`); one
+/// sent from `memochek` crashed the game. So, like [`to_title`], this taps
+/// Start until the title proper runs (read from `g_SaveData`, no
+/// screenshots), waits 30 frames for the title script's set-up, and loads
+/// there, where the Load menu would.
 ///
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
-    // The title event is not read again on the second visit, so that one
-    // shows in the scene number TkInitScene keeps (0x01330844).
     if !game.opened().iter().any(|e| e.contains("memochek.ebp")) {
         game.wait_for_open("memochek.ebp", 2, 3000)?;
     }
-    game.command("waitfor 0x01330844:4 17000000 ffffffff 3000")?;
-    game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    // map 0x17, previous map 0x15c, no jump pending
+    while game.read(0x0112_ca90, 4)? != [0x17, 0, 0x5c, 1] || game.read(0x0133_084c, 4)? != [0; 4] {
+        if std::time::Instant::now() > deadline {
+            return Err(Error::Harness("the title scene did not come back".into()));
+        }
+        game.command("press start 3 20")?;
+    }
     game.wait(30)?;
     let mut tries = 0;
     let reply = loop {
