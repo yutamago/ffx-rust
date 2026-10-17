@@ -7316,3 +7316,53 @@ fn menu_round18_small_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round18_batch7_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_56f0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    for round in 0..64u32 {
+        // TkMenuStopScene over a stand-in MenuScene_ResetGroup entry (or none)
+        let e = if round % 4 == 0 { 0 } else { t.alloc_random(8) };
+        record_n(&mut t, 0x00a7_ba70, 3, e);
+        let (scene, group) = (t.rng.next(), t.rng.next());
+        t.twin("TkMenuStopScene", 0x00a7_c8a0, &[scene, group], U32, |o| {
+            w(tk::tk_menu_stop_scene(o, scene, group, &mut callback))
+        });
+        // MenuKaizou_WeaponByte4: the list and a stand-in weapon record
+        let list = t.alloc_random(0x100);
+        t.put(t.sym(0x0186_aa38), list);
+        let mut rec = t.rng.bytes(8);
+        if round % 2 == 0 {
+            rec[2] = 0;
+        }
+        let rec = t.alloc(&rec);
+        record_n(&mut t, 0x007a_bbd0, 1, rec);
+        let win = t.alloc_random(0x60);
+        let k = i16::try_from(t.rng.below(0x60)).unwrap_or(0) - 0x10;
+        t.put(win + 0x48, k);
+        t.twin("MenuKaizou_WeaponByte4", 0x008d_56f0, &[win], U32, |o| {
+            w(tk::menu_kaizou_weapon_byte4(o, win, local, &mut callback))
+        });
+        // MenuMain_BusyMask: the mask, the CD read and the callback queue
+        let mask = if round % 2 == 0 { 0 } else { t.rng.next() };
+        t.put(t.sym(tk::MENU_MAIN_ACTIVE_MASK.sym), mask);
+        let cd = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0088_d1c0, cd);
+        let que = t.rng.pick(&[0u32, 1, 2, 0x101]);
+        return_const(&mut t, 0x0087_5180, que);
+        t.twin("MenuMain_BusyMask", 0x008a_a610, &[], U32, |o| {
+            w(tk::menu_main_busy_mask(o, &mut callback))
+        });
+        if round % 8 == 0 {
+            t.twin("MenuWShop_OpenSubWindow4", 0x008d_83e0, &[], U32, |o| {
+                w(tk::menu_wshop_open_sub_window4(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -3305,6 +3305,26 @@ ported! {
         };
         tk::menu_summon_build_command_list(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuStopScene(scene, group)`: the entry.
+    TkMenuStopScene @ 0x00a7_c8a0 => extern "C" fn tk_menu_stop_scene(scene: u32, group: u32) -> u32 {
+        tk::tk_menu_stop_scene(&mut mem(), scene, group, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_WeaponByte4(w)`.
+    MenuKaizou_WeaponByte4 @ 0x008d_56f0 => extern "C" fn menu_kaizou_weapon_byte4(w: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_kaizou_weapon_byte4(&mut m, w, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_BusyMask()`.
+    MenuMain_BusyMask @ 0x008a_a610 => extern "C" fn menu_main_busy_mask() -> u32 {
+        tk::menu_main_busy_mask(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSubWindow4()`: the window.
+    MenuWShop_OpenSubWindow4 @ 0x008d_83e0 => extern "C" fn menu_wshop_open_sub_window4() -> u32 {
+        tk::menu_wshop_open_sub_window4(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {
         tk::menu_shop_weapon_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))

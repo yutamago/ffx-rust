@@ -5488,6 +5488,94 @@ pub mod bridge {
         call(mem, quarter, &[list, price])
     }
 
+    /// `TkMenuStopScene(scene, group)` (`0x00a7c8a0`): `MenuScene_ResetGroup
+    /// (scene, group, 0)`; the entry it returns (if any) has the top two
+    /// bits of its `+4` word cleared. Returns the entry.
+    pub fn tk_menu_stop_scene<M: Mem>(
+        mem: &mut M,
+        scene: u32,
+        group: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let reset = mem.rebase(0x00a7_ba70);
+        let e = call(mem, reset, &[scene, group, 0]);
+        if e != 0 {
+            let v = mem.read::<u32>(e.wrapping_add(4)) & 0x3fff_ffff;
+            mem.write(e.wrapping_add(4), v);
+        }
+        e
+    }
+
+    /// `MenuKaizou_WeaponByte4(w)` (`0x008d56f0`, own name): the weapon at
+    /// the window's cursor (`i16 +0x48`) in the list at `[0x0186aa38]`
+    /// (`MsGetSaveWeapon`, its out pointer `local`): -1 when its byte `+2`
+    /// is 0, else its byte `+4`.
+    pub fn menu_kaizou_weapon_byte4<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+        let list: u32 = mem.read(mem.rebase(0x0186_aa38));
+        let id: u16 = mem.read(list.wrapping_add(k.wrapping_mul(2)));
+        let get = mem.rebase(0x007a_bbd0);
+        let weapon = call(mem, get, &[u32::from(id), local]);
+        if mem.read::<u8>(weapon.wrapping_add(2)) == 0 {
+            u32::MAX
+        } else {
+            u32::from(mem.read::<u8>(weapon.wrapping_add(4)))
+        }
+    }
+
+    /// `MenuMain_BusyMask()` (`0x008aa610`, own name): the active main menus
+    /// ([`MENU_MAIN_ACTIVE_MASK`]) with bit 31 for a CD read in progress
+    /// (`TkCdReadSync(1)`); with none of those, bit 31 alone when the
+    /// script's callback queue is busy (`AtelIsCallbackQue()` = 1).
+    pub fn menu_main_busy_mask<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut mask = MENU_MAIN_ACTIVE_MASK.get(mem);
+        let sync = mem.rebase(0x0088_d1c0);
+        if call(mem, sync, &[1]) != 0 {
+            mask |= 0x8000_0000;
+        }
+        if mask == 0 {
+            let que = mem.rebase(0x0087_5180);
+            if call(mem, que, &[]) == 1 {
+                return 0x8000_0000;
+            }
+        }
+        mask
+    }
+
+    /// `MenuWShop_OpenSubWindow4()` (`0x008d83e0`, own name): a window from
+    /// `TkMenuMainAllocWindow()` with callbacks `+0xc` `0x008d7a30`, `+0x10`
+    /// `0x008d7f50`, `+0x14` `0x008d8510`, layer 1, kept in `0x0186ab00`
+    /// (what `MenuWShop_CloseSubWindow4` closes) and registered; returned.
+    pub fn menu_wshop_open_sub_window4<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let alloc = mem.rebase(0x008a_a1a0);
+        let w = call(mem, alloc, &[]);
+        for (o, f) in [
+            (0xcu32, 0x008d_7a30u32),
+            (0x10, 0x008d_7f50),
+            (0x14, 0x008d_8510),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(w.wrapping_add(o), handler);
+        }
+        mem.write(w.wrapping_add(0x3e), 1u8);
+        let keep = mem.rebase(0x0186_ab00);
+        mem.write(keep, w);
+        let regist = mem.rebase(0x008a_ab00);
+        call(mem, regist, &[w]);
+        w
+    }
+
     /// `MenuStatus_OpenWindow(a, index, b, c)` (`0x008d3140`, own name): a
     /// window from `TkMenuMainAllocWindow()` kept in [`STATUS_WINDOWS`]
     /// `[index]`, with the status window's callbacks (`+8` `0x008d2670`,

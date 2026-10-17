@@ -9397,6 +9397,7 @@
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aa470 function MenuMain_ResetAllWindows  # the 32 window records (0x98 bytes from 0x01840900) reset; own name
 0x008aa4b0 function MenuMain_ResetWindow      # (window) defaults: callbacks/state 0, ids +0x2c/+0x2e = -1, +0x34 = 0x01000000, +0x3e = 0x0101; own name
+0x008aa610 function MenuMain_BusyMask         # (): g_TkMenuMainActiveMask | bit 31 when TkCdReadSync(1); when that is 0, 0x80000000 if AtelIsCallbackQue() == 1; name ours
 0x008aaab0 function TkMenuMainRegistMenu      # (slot 0..24, window): slot table 0x01840888, clears +0x18/+0x1c, calls +8(window, menu mode); Switch name, alphabetical slot
 0x008aab00 function TkMenuMainRegistWindow    # fh switch:bsim1.00+call.cs 0x71004ba0f0 cdecl
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
@@ -9969,6 +9970,7 @@
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
+0x008d56f0 function MenuKaizou_WeaponByte4    # (w): MsGetSaveWeapon(u16 [0x0186aa38][i16 w+0x48], &local): -1 when its byte +2 is 0, else its byte +4; name ours
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
 0x008d5750 function MenuEquip_IsSelectable    # (id, any): MsGetSaveWeapon(id, &unused) slot: 0 when empty (+2) or flag 2 (+3); 1 with any; 0 for flags 4/8; else MenuList_IsEmptySlot; name ours
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it
@@ -9983,6 +9985,7 @@
 0x008d7630 function MenuWShop_CloseSubWindow3 # close 0x0186aafc; own name
 0x008d7650 function MenuWShop_CloseSubWindow1 # close 0x0186aaf4; own name
 0x008d7670 function MenuWShop_CloseSubWindow4 # close 0x0186ab00; own name
+0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
 0x008d85d0 function MenuWShop_CanAfford      # (e): 0 while 0x0186ab14 is 0, else MenuShop_WeaponPrice(e) <= MsGetGIL() (signed); called by the weapon shop's buy step; name ours
 0x008d9170 function MenuWShop_GetRecord       # (id) TkMn2GetExcelData(id & 0xfff, 0x0186abac); own name
