@@ -292,6 +292,21 @@ const HARNESS: t::Regs = t::Regs {
 /// unwritten: the original's stack garbage reaches the `w` words of
 /// `VF_B`'s neighbour, `VF0` and `VF2` through `MsVectorRect2Polar`, so
 /// those are copied too.
+/// `VF_M`'s third row and the first row's x, copied from `a`:
+/// `MsResetChrPos`'s `MsCheckBtlPos` copies its battle position into the
+/// third row (`MsPointLen`), and on the field snapshot the original's x there was once
+/// 0x6d where the port's was 0 with everything else the same; on the image
+/// the third row's x was 0x6e and the first row's 0x8000006e, the port's
+/// 0. Small integers: likely a caller's register word (the target chain's
+/// short calls, unknown from outside it), not explained yet.
+fn register_rows(a: &mut Oracle, b: &mut Oracle) {
+    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+    let v = a.read(m + 0x20, 16).unwrap();
+    b.write(m + 0x20, &v).unwrap();
+    let v = a.read(m, 4).unwrap();
+    b.write(m, &v).unwrap();
+}
+
 fn local_words(a: &mut Oracle, b: &mut Oracle) {
     let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
     let vb = ffx_battle::vector::bridge::VF_B.ptr(a).addr;
@@ -723,6 +738,11 @@ fn status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         st::ms_reset_chr_pos(m, &stand_in, i, actor)
     });
     same("MsResetChrPos", a, b);
+    // the hit motion may attach its weapon (MsAttachWeapon): on the
+    // snapshot's real character, as above
+    if let Some(c) = live {
+        poke(a, b, actor, &c.to_le_bytes());
+    }
     let kind = rng.below(18);
     let flags = rng.below(8);
     twin(
@@ -766,6 +786,7 @@ fn status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
     );
     local_words(a, b);
     same("MsCheckStatusAfterAction", a, b);
+    poke(a, b, actor, &fake);
 }
 
 /// Random input and command cues, the actors' cue fields in range.
@@ -1456,13 +1477,7 @@ fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     });
     local_words(a, b);
     rect_words(a, b);
-    // MsResetChrPos's MsCheckBtlPos copies its battle position into VF_M's
-    // third row (MsPointLen); on the field snapshot the original's x there
-    // was once 0x6d where the port's was 0 with everything else the same
-    // (not explained yet: copied, so only the row is not compared)
-    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
-    let v = a.read(m + 0x20, 16).unwrap();
-    b.write(m + 0x20, &v).unwrap();
+    register_rows(a, b);
     same("MsParseCommand", a, b);
 }
 
@@ -1603,6 +1618,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     });
     local_words(a, b);
     rect_words(a, b);
+    register_rows(a, b);
     same("MsCommandCueProcess", a, b);
 }
 
@@ -1611,7 +1627,7 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
 /// trophy (main), neck and character ID (chara), the battle effects'
 /// release (vfx, the heap), stubbed in `MsDebugEnvSave` (debug
 /// only); the last is the CD library's `+8`.
-const PROCESS_CALLEES: [(u32, u8); 12] = {
+const PROCESS_CALLEES: [(u32, u8); 13] = {
     use ffx_battle::process::bridge as p;
     [
         (p::SND_MUSIC_STOP, 1),
@@ -1625,6 +1641,7 @@ const PROCESS_CALLEES: [(u32, u8); 12] = {
         (ffx_battle::death::bridge::CH_GET_CHAR_ID, 1),
         (p::OP_ET_BATTLE_EFFECT_FREE, 0),
         (p::USER_FREE, 1),
+        (p::MAGIC_FILE_GET_MAGIC_ID, 0),
         (0, 1),
     ]
 };
@@ -1644,7 +1661,7 @@ fn process_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32, erec: u32) {
                 .try_into()
                 .unwrap(),
         );
-        let f = o.rebase(PROCESS_STUBS + 0x40 * 11);
+        let f = o.rebase(PROCESS_STUBS + 0x40 * 12);
         o.write(cd + 8, &f.to_le_bytes()).unwrap();
     }
 }
@@ -1668,7 +1685,8 @@ fn process(
         (2, [0, 0, 0, 1, 2][rng.below(5) as usize]),
         (3, u32::from(flag(rng, 6))),
         (4, u32::from(flag(rng, 6))),
-        (11, u32::from(flag(rng, 6))),
+        (11, [0x1ad, 0, 5][rng.below(3) as usize]),
+        (12, u32::from(flag(rng, 6))),
     ] {
         poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
     }
@@ -1836,6 +1854,106 @@ fn process(
         0
     });
     same("MsEtEffectFree", a, b);
+    // the turn order
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::INPUT_CUE_COUNT,
+        i8::from(rng.below(4) == 0),
+    );
+    set(a, b, p::ORDER_HOLD, flag(rng, 8));
+    set(a, b, p::IDLE_ROUNDS, i8::try_from(rng.below(4)).unwrap());
+    set(
+        a,
+        b,
+        p::IDLE_ROUNDS_LIMIT,
+        i8::try_from(rng.below(4)).unwrap(),
+    );
+    set(a, b, p::STATUS_SHORT, flag(rng, 3));
+    let cmd = [0x312c, 0x3022, 0x3000, 0x3001][rng.below(4) as usize];
+    set(a, b, ffx_battle::parse::bridge::PARSED_COMMAND, cmd);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::TITLE_WINDOW,
+        [i8::try_from(rng.below(3)).unwrap() - 1, 0],
+    );
+    // a round where nobody's wait is over (the idle rounds)
+    let idle = rng.below(3) == 0;
+    for j in 0..ACTORS {
+        let q = w.actor(j);
+        for o in [0xde6, 0xdcc] {
+            poke(a, b, q + o, &[flag(rng, 6)]);
+        }
+        poke(a, b, q + 0xdc8, &[flag(rng, 4) ^ 1]);
+        poke(a, b, q + 0xdd6, &[flag(rng, 4) ^ 1]);
+        poke(
+            a,
+            b,
+            q + 0x65c,
+            &[if idle {
+                [1, 2, 3, rng.byte() | 1][rng.below(4) as usize]
+            } else {
+                [0, 0, 1, 2, rng.byte()][rng.below(5) as usize]
+            }],
+        );
+        poke(
+            a,
+            b,
+            q + 0x6d2,
+            &[[0xff, 0xfe, rng.byte()][rng.below(3) as usize]],
+        );
+        let s606 = b.read(q + 0x606, 1).unwrap()[0]
+            & !(4 * flag(rng, 1).min(1) * u8::from(rng.below(5) != 0));
+        poke(a, b, q + 0x606, &[s606]);
+        poke(a, b, q + 0x5ac, &[rng.byte()]);
+        for o in [0x608, 0x609, 0x60a, 0x614] {
+            poke(a, b, q + o, &[flag(rng, 5)]);
+        }
+        poke(
+            a,
+            b,
+            q + 0x5bb,
+            &[[0xd, 0xe, 0xf, 0x10, rng.byte()][rng.below(5) as usize]],
+        );
+        // (no AP-linked gauge: its next-AP table is not loaded here;
+        // MsLimitUp has its own test) and an ordinary gauge rate
+        let abil = b.read(q + 0x6be, 1).unwrap()[0] & !8;
+        poke(a, b, q + 0x6be, &[abil]);
+        let rate = (f32::from(i16::try_from(rng.range(1, 3000)).unwrap()) / 100.0).to_bits();
+        poke(a, b, q + 0x70c, &rate.to_le_bytes());
+    }
+    let n = [0, 1, 3, 8, rng.below(0x20)][rng.below(5) as usize];
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::ORDER_COUNT,
+        i32::try_from(n).unwrap(),
+    );
+    let list: Vec<u8> = (0..0x20)
+        .map(|_| u8::try_from(rng.below(ACTORS)).unwrap())
+        .collect();
+    poke(a, b, ffx_battle::state::bridge::ORDERS.ptr(b).addr, &list);
+    twin("MsOrderCalc", a, b, 0x0078_d3e0, &[out + 0x40], ALL, |m| {
+        p::ms_order_calc(m, out + 0x40)
+    });
+    same("MsOrderCalc", a, b);
+    let i = rng.below(9);
+    let actor = w.actor(i);
+    twin(
+        "MsLimitTypeTurnCheck",
+        a,
+        b,
+        0x007b_13c0,
+        &[i, actor],
+        ALL,
+        |m| p::ms_limit_type_turn_check(m, i, actor),
+    );
+    same("MsLimitTypeTurnCheck", a, b);
+    twin("MsBattleProcess_Order", a, b, 0x0079_0fb0, &[], ALL, |m| {
+        dm(m, |m| p::ms_battle_process_order(m, &mut call)).cast_unsigned()
+    });
+    same("MsBattleProcess_Order", a, b);
     if rng.below(8) == 0 {
         twin("MsCameraInit", a, b, 0x007b_d5d0, &[], 0, |m| {
             ffx_battle::camera::bridge::ms_camera_init(m);
@@ -2009,6 +2127,870 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
     let v = a.read(m + 0x20, 16).unwrap();
     b.write(m + 0x20, &v).unwrap();
     same("MsSetDeathAll", a, b);
+}
+
+/// The game's functions an actor's turn start, a death and the damage
+/// step call, stubbed: `TOSetBtlActiveChr` (menu), `MsGetItem` (not
+/// ported), `forceAutoBattleOff` and `TOBtlCloseSignWindow` (system),
+/// `Sg_EnFocus` (graphics), `op_et_prayeff_send_read_through` (vfx); the
+/// first four arguments logged.
+const INPUT_CALLEES: [(u32, u8); 6] = [
+    (ffx_battle::input::bridge::TO_SET_BTL_ACTIVE_CHR, 1),
+    (ffx_battle::death::bridge::MS_GET_ITEM, 4),
+    (ffx_battle::death::bridge::FORCE_AUTO_BATTLE_OFF, 0),
+    (ffx_battle::death::bridge::TO_BTL_CLOSE_SIGN_WINDOW, 0),
+    (ffx_battle::chr_damage::bridge::SG_EN_FOCUS, 1),
+    (
+        ffx_battle::chr_damage::bridge::OP_ET_PRAYEFF_SEND_READ_THROUGH,
+        1,
+    ),
+];
+const INPUT_STUBS: u32 = PROCESS_STUBS + 0x40 * 16;
+
+/// The battle number `MsBattleGetNum` gives: a field record of `id` and a
+/// group byte `g` at `rec`, in battle.
+fn battle_num(a: &mut Oracle, b: &mut Oracle, rec: u32, id: i16, g: u8) {
+    use ffx_battle::state::bridge as st;
+    let mut r = vec![0u8; 16];
+    r[..2].copy_from_slice(&id.to_le_bytes());
+    r[14] = g;
+    poke(a, b, rec, &r);
+    set(a, b, st::STATUS, 1);
+    set(a, b, st::FIELD_RECORDS, rec);
+    set(a, b, st::FIELD_INDEX, 0);
+    set(a, b, st::SCENE_GROUP, rec + 14);
+}
+
+/// A random halfword.
+fn half16(rng: &mut Xorshift) -> u16 {
+    u16::try_from(rng.below(0x1_0000)).unwrap()
+}
+
+thread_local! {
+    /// [`turns`]' own random stream (its state).
+    static TURNS_RNG: std::cell::Cell<u32> = const { std::cell::Cell::new(0x7a46_1212) };
+}
+
+/// [`turns`] with the actors and the globals it sets put back after (its
+/// statuses and HP send the other checks down the originals' stack
+/// garbage).
+fn input(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32, rec: u32) {
+    use ffx_battle::state::bridge as st;
+    let keep: Vec<(u32, usize)> = vec![
+        (w.actor(0), (ACTORS * battle_common::world::ACTOR) as usize),
+        (st::UNDERWATER.ptr(b).addr, 1),
+        (ffx_battle::atel::bridge::CAMERA_STATE.ptr(b).addr, 1),
+        (ffx_battle::parse::bridge::COMMAND_FLAG29.ptr(b).addr, 1),
+        (ffx_battle::parse::bridge::COMMAND_3029_COUNT.ptr(b).addr, 1),
+        (st::STATUS.ptr(b).addr, 1),
+        (st::FIELD_RECORDS.ptr(b).addr, 4),
+        (st::FIELD_INDEX.ptr(b).addr, 2),
+        (st::SCENE_GROUP.ptr(b).addr, 4),
+        (ffx_battle::actor::bridge::MON_TOP.ptr(b).addr, 4),
+        (ffx_battle::menu::bridge::PARTY.ptr(b).addr, 7),
+        (ffx_battle::minor::bridge::DIR_FREE.ptr(b).addr, 1),
+        (ffx_battle::menu::bridge::END_FORCED.ptr(b).addr, 1),
+        (ffx_battle::actor::bridge::CHR_SPARE.ptr(b).addr + 0x436, 1),
+    ];
+    let saved: Vec<Vec<u8>> = keep.iter().map(|&(at, n)| b.read(at, n).unwrap()).collect();
+    // its own random stream: the other checks see the same cases with or
+    // without it
+    let mut own = TURNS_RNG.with(|c| {
+        let mut r = Xorshift(c.get());
+        let next = Xorshift(r.next());
+        c.set(r.0);
+        next
+    });
+    turns(a, b, &mut own, w, out, rec);
+    for (&(at, _), v) in keep.iter().zip(&saved) {
+        poke(a, b, at, v);
+    }
+}
+
+/// An actor's turn start (`ffx_battle::input`): poses, damage numbers,
+/// HP loss, Regen, Doom, Provoke, Berserk, the menu.
+fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::death::bridge as d;
+    use ffx_battle::input::bridge as ip;
+    use ffx_battle::minor::bridge as mn;
+    use ffx_battle::state::bridge as st;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    // the battle (MsBattleGetNum: the scripted fights MsSubHP knows)
+    let (id, g) = [
+        (0x159, 0),
+        (0x20, 1),
+        (0x209, 0),
+        (0x20, 0),
+        (
+            i16::try_from(rng.range(-0x8000, 0x8000)).unwrap(),
+            rng.byte(),
+        ),
+    ][rng.below(5) as usize];
+    battle_num(a, b, rec + 0x5e0, id, g);
+    // the monsters (MsGetMon) are the actors from 0x14
+    set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
+    set(a, b, st::INPUT_CUE_COUNT, 0);
+    set(a, b, st::COMMAND_CUE_COUNT, 0);
+    set(a, b, st::UNDERWATER, i8::try_from(flag(rng, 4)).unwrap());
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        let max = [1, 100, 1000, rng.range(1, 99_999)][rng.below(4) as usize];
+        let hp =
+            [0, max, max / 2, max / 4, max / 10, rng.range(-5, max + 5)][rng.below(6) as usize];
+        poke(a, b, p + 0x594, &max.to_le_bytes());
+        poke(a, b, p + 0x5d0, &hp.to_le_bytes());
+        let mp_max = rng.range(0, 999);
+        poke(a, b, p + 0x598, &mp_max.to_le_bytes());
+        poke(a, b, p + 0x5d4, &rng.range(0, mp_max + 1).to_le_bytes());
+        for o in [
+            0x450, 0x609, 0x60a, 0x612, 0xddb, 0x716, 0xdf7, 0xdf3, 0x5cb,
+        ] {
+            poke(a, b, p + o, &[flag(rng, 4)]);
+        }
+        // the 13 status counts (1 to 0xfd count down)
+        let counts: Vec<u8> = (0..13)
+            .map(|_| [0, 0, 0, 1, 2, 0xfd, 0xfe, 0xff, rng.byte()][rng.below(9) as usize])
+            .collect();
+        poke(a, b, p + 0x608, &counts);
+        // mostly one the cursor may pick (MsGetCursorTarget: +0xdd9, no
+        // event +0xddd, near +0x4ff, there +0xdcd)
+        if rng.below(3) != 0 {
+            for (o, v) in [
+                (0xdd9, 1),
+                (0xddd, flag(rng, 4) ^ 1),
+                (0x4ff, 0),
+                (0xdcd, 0),
+            ] {
+                poke(a, b, p + o, &[v]);
+            }
+            poke(a, b, p + 0xdde, &0xffu16.to_le_bytes());
+        }
+        // the overdrive mode in use (Comrade 7, Slayer 8, Hero 9) and the
+        // Hero's strength +0x6f4
+        poke(
+            a,
+            b,
+            p + 0x5bb,
+            &[[7, 8, 9, rng.byte()][rng.below(4) as usize]],
+        );
+        let own = [rng.range(0, 3000), rng.next().cast_signed()][rng.below(2) as usize];
+        poke(a, b, p + 0x6f4, &own.to_le_bytes());
+        // each moves itself (MsDamageSetMotion's +0x422: the positions
+        // checked are its own)
+        poke(a, b, p + 0x422, &[u8::try_from(i).unwrap()]);
+        // an automatic actor's +0xdf3 (sign-extended)
+        poke(
+            a,
+            b,
+            p + 0xdf3,
+            &[[0, 1, 0x80, rng.byte()][rng.below(4) as usize]],
+        );
+        poke(a, b, p + 0xdcc, &[[0, 0, 0, 1, 2][rng.below(5) as usize]]);
+        poke(a, b, p + 0xdc8, &[flag(rng, 5) ^ 1]);
+        poke(a, b, p + 0x6d2, &[rng.byte()]);
+        poke(a, b, p + 0x5c8, &[u8::try_from(rng.below(3)).unwrap()]);
+        poke(a, b, p + 0x5c4, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+        let id =
+            [0, 0x3001, 0x3000, 0x3022, 0x3057, 0x3000 + rng.below(0x80)][rng.below(6) as usize];
+        let id = u16::try_from(id).unwrap();
+        poke(a, b, p + 0x6c6, &id.to_le_bytes());
+        poke(
+            a,
+            b,
+            p + 0x591,
+            &[[0x11, 0, rng.byte()][rng.below(3) as usize]],
+        );
+        let st6: u16 =
+            [0, 2, 0x100, 0x200, 0x300, 0x400, 0x500, half16(rng)][rng.below(8) as usize];
+        poke(a, b, p + 0x606, &st6.to_le_bytes());
+        let s16: u16 = [0, 0x4000, 0x800, 0x2040, 0x10c0, half16(rng)][rng.below(6) as usize];
+        poke(a, b, p + 0x616, &s16.to_le_bytes());
+        let s2e: u16 = [0, 0xffff, half16(rng)][rng.below(3) as usize];
+        poke(a, b, p + 0x62e, &s2e.to_le_bytes());
+        // no AP-linked gauge (its table is not loaded here)
+        let abil = b.read(p + 0x6be, 1).unwrap()[0] & !8;
+        poke(a, b, p + 0x6be, &[abil]);
+    }
+    // a pose
+    let i = rng.below(ACTORS);
+    let level = [u32::MAX, u32::MAX, u32::MAX, rng.below(4)][rng.below(4) as usize];
+    twin("MsSetChrWeak", a, b, 0x0078_d7f0, &[i, level], ALL, |m| {
+        ip::ms_set_chr_weak(m, i, level)
+    });
+    same("MsSetChrWeak", a, b);
+    // the damage numbers: a pool of 0x80 records, some taken
+    let pool = rec + 0x600;
+    let mut recs = vec![0u8; 0x80 * 0x14];
+    let full = rng.below(6) == 0;
+    for r in recs.chunks_mut(0x14) {
+        if full || rng.below(3) == 0 {
+            r[0] = 1 + rng.byte() % 0x80;
+        }
+    }
+    poke(a, b, pool, &recs);
+    set(a, b, ffx_battle::misc::bridge::NUMBERS, pool);
+    set(a, b, mn::NUMBER_TAIL, out + 0x0c);
+    let n = [
+        rng.range(-20, 20),
+        rng.range(0, 99_999),
+        rng.next().cast_signed(),
+        i32::MIN,
+    ][rng.below(4) as usize];
+    let digits = [0, out + 0x10][rng.below(2) as usize];
+    twin(
+        "MsNumberDigits",
+        a,
+        b,
+        0x0079_fc00,
+        &[n.cast_unsigned(), digits],
+        ALL,
+        |m| ip::ms_number_digits(m, n, digits).cast_unsigned(),
+    );
+    same("MsNumberDigits", a, b);
+    let args: Vec<u32> = (0..10).map(|_| rng.next()).collect();
+    twin("MsNumberPut", a, b, 0x0079_fc60, &args, ALL, |m| {
+        let x = |k: usize| args[k].to_le_bytes()[0];
+        let y = |k: usize| u16::from_le_bytes([args[k].to_le_bytes()[0], args[k].to_le_bytes()[1]]);
+        ip::ms_number_put(
+            m,
+            x(0),
+            x(1),
+            x(2),
+            y(3),
+            y(4),
+            x(5),
+            x(6),
+            x(7),
+            x(8),
+            x(9),
+        )
+    });
+    same("MsNumberPut", a, b);
+    for g in [mn::NUMBERS_KIND1, mn::NUMBERS_KIND12, mn::NUMBERS_SHOWN] {
+        set(a, b, g, 0);
+    }
+    let kind = rng.below(7);
+    let value = [rng.range(-9999, 9999), 0, rng.next().cast_signed()][rng.below(3) as usize];
+    let other = rng.range(-3, 3);
+    let flags = [0, 1, 2, 3][rng.below(4) as usize];
+    let style = [0, 1, 2, 3, 0x81, 0x82][rng.below(6) as usize];
+    let args = [
+        i,
+        kind,
+        value.cast_unsigned(),
+        other.cast_unsigned(),
+        0,
+        flags,
+        style,
+    ];
+    twin("MsNumberRegist", a, b, 0x0079_fa00, &args, ALL, |m| {
+        ip::ms_number_regist(m, i, kind, value, other, 0, flags, style).cast_unsigned()
+    });
+    same("MsNumberRegist", a, b);
+    // HP loss in the scripted battles
+    set(a, b, ip::KEEP_ALIVE, u32::from(flag(rng, 2)));
+    set(a, b, ip::DEBUG_KILL, u32::from(flag(rng, 6)));
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::COMMAND_3029_COUNT,
+        flag(rng, 2),
+    );
+    set(
+        a,
+        b,
+        ffx_battle::damage::bridge::DEBUG_NO_DAMAGE_MONSTER,
+        flag(rng, 6),
+    );
+    set(
+        a,
+        b,
+        ffx_battle::damage::bridge::DEBUG_NO_DAMAGE_PARTY,
+        flag(rng, 6),
+    );
+    let i = [0x14, 0x15, 0x17, rng.below(ACTORS)][rng.below(4) as usize];
+    let actor = w.actor(i);
+    if rng.below(3) == 0 {
+        let max: i32 = [24_000, 48_000][rng.below(2) as usize];
+        poke(a, b, actor + 0x594, &max.to_le_bytes());
+    }
+    poke(a, b, actor + 4, &rng.range(-1, 10).to_le_bytes());
+    let hp = i32::from_le_bytes(b.read(actor + 0x5d0, 4).unwrap().try_into().unwrap());
+    let dmg = [rng.range(-500, 30_000), rng.range(0, 100), hp][rng.below(3) as usize];
+    let args = [
+        i,
+        actor,
+        dmg.cast_unsigned(),
+        rng.next(),
+        0,
+        rng.below(4),
+        1,
+    ];
+    twin("MsSubHP", a, b, 0x0078_e230, &args, 0, |m| {
+        ip::ms_sub_hp(m, i, actor, dmg, args[3].cast_signed(), 0, args[5], 1);
+        0
+    });
+    same("MsSubHP", a, b);
+    // an automatic actor
+    let i = [0xe, rng.below(ACTORS)][rng.below(2) as usize];
+    let actor = w.actor(i);
+    twin(
+        "MsCheckAutoInput",
+        a,
+        b,
+        0x0079_2120,
+        &[i, actor],
+        ALL,
+        |m| ip::ms_check_auto_input(m, i, actor).cast_unsigned(),
+    );
+    same("MsCheckAutoInput", a, b);
+    // the forced commands (a block of 0x48 bytes)
+    let cmd = out + 0x20;
+    for (k, what, sym) in [
+        (0, "MsSetDeathSentence", 0x0079_9cd0),
+        (1, "MsSetBerserkCommand", 0x0079_9ac0),
+        (2, "MsSetProvokingCommand", 0x0079_9d50),
+    ] {
+        fill(a, b, rng, cmd, 0x48);
+        let i = rng.below(ACTORS);
+        let actor = w.actor(i);
+        let c = if rng.below(8) == 0 { 0 } else { cmd };
+        let flag = rng.below(3);
+        let side = rng.below(2);
+        let args = [i, actor, c, flag, side];
+        // the forced command's record: its target kind (+0x1a bits 2-3)
+        // and the cursor's event bits at random (put back after)
+        let id = u32::from_le_bytes(
+            [b.read(actor + 0x6c6, 2).unwrap(), vec![0, 0]]
+                .concat()
+                .try_into()
+                .unwrap(),
+        );
+        let rec = ffx_battle::stat::bridge::ms_get_com_data(b, id, 0);
+        let old = if readable(a, rec + 0x1a, 2) {
+            let v = b.read(rec + 0x1a, 2).unwrap();
+            let f = u16::from_le_bytes([v[0], v[1]]) & !0xc0c
+                | (u16::try_from(rng.below(4)).unwrap() << 2)
+                | 0xc00;
+            poke(a, b, rec + 0x1a, &f.to_le_bytes());
+            Some(v)
+        } else {
+            None
+        };
+        twin(what, a, b, sym, &args, ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                match k {
+                    0 => ip::ms_set_death_sentence(m, &h, &mut s, i, actor, c, flag),
+                    1 => ip::ms_set_berserk_command(m, &h, &mut s, i, actor, c, flag, side)
+                        .cast_unsigned(),
+                    _ => ip::ms_set_provoking_command(m, &h, &mut s, i, actor, c, flag)
+                        .cast_unsigned(),
+                }
+            })
+        });
+        local_words(a, b);
+        same(what, a, b);
+        if let Some(v) = old {
+            poke(a, b, rec + 0x1a, &v);
+        }
+    }
+    // the cheat (its standing motion reads the actor's positions)
+    let i = rng.below(ACTORS);
+    if writes(a, b, 0x0079_56e0, i, out + 0x40) && writes(a, b, 0x0079_48e0, i, out + 0x40) {
+        set(a, b, ip::CHEAT_POWERUP, 1);
+        twin("MsCheatPlayerPowerup", a, b, 0x0078_4720, &[i], 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                ip::ms_cheat_player_powerup(m, &h, &mut s, i);
+            });
+            0
+        });
+        local_words(a, b);
+        same("MsCheatPlayerPowerup", a, b);
+    }
+    // the overdrive modes of a death: kills either way between the party
+    // (0-6) and the monsters, now and then any two
+    for _ in 0..4 {
+        let (i, j) = match rng.below(3) {
+            0 => (rng.below(7), 0x14 + rng.below(8)),
+            1 => (0x14 + rng.below(8), rng.below(7)),
+            _ => (rng.below(ACTORS), rng.below(ACTORS)),
+        };
+        let args = [i, w.actor(i), j, w.actor(j)];
+        twin(
+            "MsLimitTypeDeathCheck",
+            a,
+            b,
+            0x007b_0f80,
+            &args,
+            ALL,
+            |m| d::ms_limit_type_death_check(m, i, args[1], j, args[3]),
+        );
+        same("MsLimitTypeDeathCheck", a, b);
+    }
+    // Auto-Life and Auto-Phoenix (an item in the bag at times)
+    let (i, killer) = (rng.below(ACTORS), rng.below(ACTORS));
+    let actor = w.actor(i);
+    for q in 0..ACTORS {
+        let bits = [0u16, 0x1000, half16(rng)][rng.below(3) as usize];
+        poke(a, b, w.actor(q) + 0x6bc, &bits.to_le_bytes());
+    }
+    let status = [0, 0x200, u32::from(half16(rng))][rng.below(3) as usize];
+    twin(
+        "MsAutoRelifeProcess",
+        a,
+        b,
+        0x007b_2910,
+        &[i, actor, killer, status],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                d::ms_auto_relife_process(m, &h, &mut s, i, actor, killer, status).cast_unsigned()
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsAutoRelifeProcess", a, b);
+    twin(
+        "MsAutoPhenixProcess",
+        a,
+        b,
+        0x007b_27b0,
+        &[i, actor, killer],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                d::ms_auto_phenix_process(m, &h, &mut s, i, actor, killer)
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsAutoPhenixProcess", a, b);
+    // deaths by damage (three; the spoils and auto-battle through the stubs)
+    for _ in 0..3 {
+        set(a, b, d::NO_OVERKILL, flag(rng, 3));
+        let i = rng.below(ACTORS);
+        let j = [
+            rng.below(ACTORS),
+            8 + rng.below(7),
+            0xf + rng.below(3),
+            0x14 + rng.below(8),
+        ][rng.below(4) as usize];
+        let v = w.actor(j);
+        poke(a, b, v + 0x617, &[flag(rng, 4)]);
+        // mostly out of HP (else only a removal kills)
+        let hp = [0, -5, 0, 1, rng.range(-100, 100)][rng.below(5) as usize];
+        poke(a, b, v + 0x5d0, &hp.to_le_bytes());
+        poke(a, b, v + 0xdcc, &[flag(rng, 5)]);
+        poke(a, b, v + 0x10, &[flag(rng, 6) ^ 1]);
+        poke(a, b, v + 0x701, &[[0, 0, 1, 3][rng.below(4) as usize]]);
+        for o in [0xdcd, 0xdce, 0xdd0, 0x6d0, 0x3f5] {
+            poke(a, b, v + o, &[flag(rng, 3)]);
+        }
+        poke(a, b, v + 0xf60, &rng.range(-2, 3).to_le_bytes());
+        let no_reward = u32::from(flag(rng, 3));
+        let flags = rng.below(3);
+        let dying_ok =
+            writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40);
+        if dying_ok && placed(a, b, w, out) {
+            twin(
+                "MsDamageCheckDeath",
+                a,
+                b,
+                0x0078_c740,
+                &[i, j, no_reward, flags],
+                ALL,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        d::ms_damage_check_death(m, &h, &mut s, i, j, no_reward, flags)
+                    })
+                },
+            );
+            local_words(a, b);
+            let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+            let x = a.read(m + 0x20, 16).unwrap();
+            b.write(m + 0x20, &x).unwrap();
+            same("MsDamageCheckDeath", a, b);
+        }
+    }
+    // the damage step's pieces (ffx_battle::chr_damage)
+    {
+        use ffx_battle::chr_damage::bridge as cd;
+        twin("MsScreenFocusResetAll", a, b, 0x007b_bda0, &[], 0, |m| {
+            dm(m, |m| {
+                cd::ms_screen_focus_reset_all(m, &mut call);
+            });
+            0
+        });
+        same("MsScreenFocusResetAll", a, b);
+        let party: Vec<u8> = (0..7)
+            .map(|_| [0xff, u8::try_from(rng.below(ACTORS)).unwrap()][rng.below(2) as usize])
+            .collect();
+        poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+        // a free slot (0xff) names the spare record: its +0x436 does not
+        // count
+        let spare = ffx_battle::actor::bridge::CHR_SPARE.ptr(b).addr;
+        poke(a, b, spare + 0x436, &[flag(rng, 2)]);
+        for q in 0..ACTORS {
+            let p = w.actor(q);
+            for o in [0x436, 0x41c, 0xde7, 0x508, 0x432, 0x41d, 0xe13] {
+                poke(
+                    a,
+                    b,
+                    p + o,
+                    &[flag(rng, 3) ^ u8::from(o == 0x41c || o == 0x41d)],
+                );
+            }
+            let hits: Vec<u8> = (0..4)
+                .map(|_| u8::try_from(rng.below(3)).unwrap())
+                .collect();
+            poke(a, b, p + 0x774, &hits);
+            let hits: Vec<u8> = (0..4)
+                .map(|_| u8::try_from(rng.below(3)).unwrap())
+                .collect();
+            poke(a, b, p + 0xa4c, &hits);
+            // (kind 8 ends actors 0x10 and 0x11 first: on them it recurses
+            // for good, in the original too)
+            let kind = [0, 8, rng.byte()][rng.below(3) as usize];
+            let kind = if (0x10..0x12).contains(&q) && kind == 8 {
+                0
+            } else {
+                kind
+            };
+            poke(a, b, p + 0xdea, &[kind]);
+            let e = [0, rng.next()][rng.below(2) as usize];
+            poke(a, b, p + 0xea0, &e.to_le_bytes());
+        }
+        twin("MsCheckPartyDying", a, b, 0x0079_2ee0, &[], ALL, |m| {
+            cd::ms_check_party_dying(m).cast_unsigned()
+        });
+        let i = rng.below(ACTORS);
+        let end = [i, 0xff, rng.below(ACTORS)][rng.below(3) as usize];
+        set(
+            a,
+            b,
+            ffx_battle::action::bridge::TURN_END_ACTOR,
+            u8::try_from(end).unwrap(),
+        );
+        twin(
+            "MsCheckRestMotion",
+            a,
+            b,
+            0x0079_1780,
+            &[i, w.actor(i)],
+            ALL,
+            |m| cd::ms_check_rest_motion(m, i, w.actor(i)),
+        );
+        let (x, y) = (rng.below(3), rng.below(3));
+        twin(
+            "MsCheckHitPending",
+            a,
+            b,
+            0x0078_ee80,
+            &[x, y, i],
+            ALL,
+            |m| cd::ms_check_hit_pending(m, x, y, i),
+        );
+        let cams: Vec<u8> = (0..8)
+            // (a camera ID's low byte the camera, one of three)
+            .flat_map(|_| {
+                [0, (rng.next() & !0xff) | rng.below(3)][rng.below(2) as usize].to_le_bytes()
+            })
+            .collect();
+        poke(a, b, mn::EFFECT_CAMERA_BUF.ptr(b).addr, &cams);
+        set(
+            a,
+            b,
+            ffx_battle::parse::bridge::COMMAND_STARTED,
+            flag(rng, 2),
+        );
+        let keep = rng.below(2);
+        twin("MsEffectCameraEnd", a, b, 0x0078_7760, &[keep], 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                cd::ms_effect_camera_end(m, &mut s, keep);
+            });
+            0
+        });
+        local_words(a, b);
+        same("MsEffectCameraEnd", a, b);
+        set(a, b, mn::NUMBERS_KIND1, flag(rng, 4));
+        set(a, b, cd::COMMAND_HOLD2, u32::from(flag(rng, 4)));
+        let cmd = [0x3056, 0x3103, 0x4086, 0x3001, rng.below(0x8000)][rng.below(5) as usize];
+        set(a, b, ffx_battle::parse::bridge::PARSED_COMMAND, cmd);
+        let title = [0, 1, 0x2d, 0x2e, -1, rng.byte().cast_signed()][rng.below(6) as usize];
+        set(a, b, st::TITLE_WINDOW, [title, 0]);
+        twin(
+            "MsCheckCommandEnd",
+            a,
+            b,
+            0x0079_1690,
+            &[w.actor(i)],
+            ALL,
+            |m| cd::ms_check_command_end(m, w.actor(i)),
+        );
+        same("MsCheckCommandEnd", a, b);
+        let j = [0x10, 0x11, 0xff, rng.below(ACTORS)][rng.below(4) as usize];
+        twin("MsMagicEffectEnd", a, b, 0x0079_e830, &[j], ALL, |m| {
+            dm(m, |m| {
+                cd::ms_magic_effect_end(m, &mut call, j).cast_unsigned()
+            })
+        });
+        same("MsMagicEffectEnd", a, b);
+        // a command's end: everyone put back, the petrified that ran away
+        // out of place shattering (their positions read)
+        for q in 0..ACTORS {
+            for o in [0xdce, 0xdcf] {
+                poke(a, b, w.actor(q) + o, &[flag(rng, 3)]);
+            }
+        }
+        set(a, b, mn::DIR_FREE, flag(rng, 4));
+        let all = rng.below(2);
+        let out_ok = (0..ACTORS).all(|q| {
+            let f = b.read(w.actor(q) + 0xdce, 2).unwrap();
+            f[0] == 0
+                || f[1] != 0
+                || (writes(a, b, 0x0079_56e0, q, out + 0x40)
+                    && writes(a, b, 0x0079_48e0, q, out + 0x40))
+        });
+        if out_ok && placed(a, b, w, out) {
+            twin(
+                "MsCommandReturnChrStatusAll",
+                a,
+                b,
+                0x0079_3e00,
+                &[all],
+                0,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        cd::ms_command_return_chr_status_all(m, &h, &mut s, all);
+                    });
+                    0
+                },
+            );
+            local_words(a, b);
+            register_rows(a, b);
+            same("MsCommandReturnChrStatusAll", a, b);
+        }
+        // Poison at a turn's end (the hit motion reads the positions)
+        let i = rng.below(ACTORS);
+        let end = [i, 0xff, rng.below(ACTORS)][rng.below(3) as usize];
+        set(
+            a,
+            b,
+            ffx_battle::action::bridge::TURN_END_ACTOR,
+            u8::try_from(end).unwrap(),
+        );
+        poke(a, b, w.actor(i) + 0x5ba, &[rng.byte()]);
+        if writes(a, b, 0x0079_56e0, i, out + 0x40)
+            && writes(a, b, 0x0079_48e0, i, out + 0x40)
+            && placed(a, b, w, out)
+        {
+            twin(
+                "MsPoisonProcess",
+                a,
+                b,
+                0x007a_fab0,
+                &[i, w.actor(i)],
+                0,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        cd::ms_poison_process(m, &h, &mut s, i, w.actor(i));
+                    });
+                    0
+                },
+            );
+            local_words(a, b);
+            register_rows(a, b);
+            same("MsPoisonProcess", a, b);
+        }
+    }
+    // Regen and the status counts before a turn (the motions of those it
+    // heals read their positions)
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    let healed_ok = |a: &mut Oracle, b: &mut Oracle| {
+        (0..ACTORS).all(|q| {
+            let p = w.actor(q);
+            let r = b.read(p, 0xdd0).unwrap();
+            let hp = i32::from_le_bytes(r[0x5d0..0x5d4].try_into().unwrap());
+            r[0x612] == 0
+                || r[0xdc8] == 0
+                || hp <= 0
+                || r[0xdcc] != 0
+                || r[0xdce] != 0
+                || (writes(a, b, 0x0079_56e0, q, out + 0x40)
+                    && writes(a, b, 0x0079_48e0, q, out + 0x40))
+        })
+    };
+    if placed(a, b, w, out) && healed_ok(a, b) {
+        twin(
+            "MsCheckStatusBeforeAction",
+            a,
+            b,
+            0x007a_f4f0,
+            &[i, actor],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    ip::ms_check_status_before_action(m, &h, &mut s, i, actor)
+                })
+            },
+        );
+        local_words(a, b);
+        same("MsCheckStatusBeforeAction", a, b);
+    }
+    // whole turn starts: a few input entries, three rounds
+    for _ in 0..3 {
+        whole_turn(a, b, rng, w, out, &h);
+    }
+}
+
+/// One round of [`turns`]' whole turn starts.
+fn whole_turn(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    out: u32,
+    h: &t::Host<'_>,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::input::bridge as ip;
+    use ffx_battle::minor::bridge as mn;
+    use ffx_battle::state::bridge as st;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    let n = rng.below(4);
+    set(a, b, st::INPUT_CUE_COUNT, i8::try_from(n).unwrap());
+    set(
+        a,
+        b,
+        st::COMMAND_CUE_COUNT,
+        i8::try_from(rng.below(3)).unwrap(),
+    );
+    // mostly a fight still on (MsGetBattleEndStatus 0): three party
+    // members and three monsters in it, the entries theirs
+    let on = rng.below(3) != 0;
+    if on {
+        // everyone at its own place (+0x6d4 set: MsBtlGetPos reads +0x3b0
+        // for a valid group), so the motions find their positions
+        let file = ffx_battle::pos::bridge::POS_FILE.get(b);
+        if readable(a, file, 2) && b.read(file + 1, 1).unwrap()[0].cast_signed() > 0 {
+            for q in 0..ACTORS {
+                poke(a, b, w.actor(q) + 0x4fc, &[0]);
+                poke(a, b, w.actor(q) + 0x6d4, &[0]);
+            }
+        }
+        let mut party = vec![0xffu8; 7];
+        party[..3].copy_from_slice(&[0, 1, 2]);
+        poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+        set(a, b, ffx_battle::menu::bridge::END_FORCED, 0);
+        for q in [0, 1, 2, 0x14, 0x15, 0x16] {
+            let p = w.actor(q);
+            for (o, v) in [(0xdd2, 1), (0xdd3, 1), (0xdc8, 1), (0xdcc, 0), (0xdce, 0)] {
+                poke(a, b, p + o, &[v]);
+            }
+            if b.read(p + 0x5d0, 1).unwrap()[0] == 0 {
+                poke(a, b, p + 0x5d0, &100i32.to_le_bytes());
+            }
+        }
+    }
+    // the turn's actors: the commands they may get
+    for q in [0, 1, 2, 0x14] {
+        let p = w.actor(q);
+        let st6: u16 = [0, 0, 0x100, 0x200, 0x300, 0x400, 0x500][rng.below(7) as usize];
+        poke(a, b, p + 0x606, &st6.to_le_bytes());
+        poke(a, b, p + 0x608, &[[0, 0, 0, 1][rng.below(4) as usize]]);
+        let doom: u16 = [0, 0, 0, 0x4000][rng.below(4) as usize];
+        poke(a, b, p + 0x616, &doom.to_le_bytes());
+        poke(a, b, p + 0x5c8, &[u8::try_from(rng.below(2)).unwrap()]);
+        poke(a, b, p + 0xdf3, &[[0, 1, 0x80][rng.below(3) as usize]]);
+        poke(a, b, p + 0x716, &[flag(rng, 4)]);
+        // the party's members are party members (+0x591 0x11: the cheat
+        // heals them)
+        poke(a, b, p + 0x591, &[if q < 3 { 0x11 } else { 0 }]);
+        // mostly past the turn's start actions (+0xdf7: their random
+        // request blocks rewrite the statuses above)
+        poke(a, b, p + 0xdf7, &[flag(rng, 4) ^ 1]);
+    }
+    let entries: Vec<u8> = (0..n * 8)
+        .map(|k| match k % 8 {
+            0 if on => [0, 1, 2, 0x14][rng.below(4) as usize],
+            0 => u8::try_from(rng.below(ACTORS)).unwrap(),
+            1 => [0, 0, 1, rng.byte()][rng.below(4) as usize],
+            3 => flag(rng, 5),
+            _ => rng.byte(),
+        })
+        .collect();
+    poke(a, b, st::INPUT_CUE.ptr(b).addr, &entries);
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::COMMAND_FLAG29,
+        flag(rng, 8),
+    );
+    set(a, b, mn::NUMBERS_KIND1, flag(rng, 3));
+    set(
+        a,
+        b,
+        ffx_battle::atel::bridge::CAMERA_STATE,
+        [0, 0, 0, 0, 1, 2][rng.below(6) as usize],
+    );
+    set(a, b, ip::AUTO_OFF, flag(rng, 3));
+    set(a, b, ip::CHEAT_POWERUP, u32::from(flag(rng, 3)));
+    // at times Regen without a Zombie (the numbers' wait, not the
+    // commands')
+    if rng.below(3) == 0 {
+        for q in 0..ACTORS {
+            let p = w.actor(q);
+            let v = b.read(p + 0x606, 1).unwrap()[0] & !2;
+            poke(a, b, p + 0x606, &[v]);
+        }
+    }
+    if !placed(a, b, w, out) {
+        return;
+    }
+    // the originals' command block starts out zero, as the port's does
+    let stack = a.stack_range();
+    a.write(stack.end - 0x8000, &vec![0; 0x8000]).unwrap();
+    twin("MsBattleProcess_InputCue", a, b, 0x0079_2a90, &[], 0, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            ip::ms_battle_process_input_cue(m, h, &mut s);
+        });
+        0
+    });
+    local_words(a, b);
+    register_rows(a, b);
+    same("MsBattleProcess_InputCue", a, b);
 }
 
 /// Whether every able (`+0xdc8`) actor's and every monster's battle
@@ -2431,8 +3413,15 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         );
         logging_stub(o, 0x008b_7ca0, 0x0078_03a0, srec + 4 * EXCHANGE_REC, 1, 0);
     }
-    let prec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
+    let prec = scratch(a, b, (EXCHANGE_REC * 13) as usize);
     process_stubs(a, b, prec, erec);
+    // the input stubs' records, then a damage number pool
+    let irec = scratch(a, b, 0x600 + 0x80 * 0x14);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(INPUT_CALLEES) {
+            logging_stub(o, f, INPUT_STUBS + 0x40 * k, irec + EXCHANGE_REC * k, n, 0);
+        }
+    }
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -2451,6 +3440,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         process(a, b, rng, &w, prec, srec, out);
         deaths(a, b, rng, &w, out);
+        input(a, b, &w, out, irec);
     }
 }
 
