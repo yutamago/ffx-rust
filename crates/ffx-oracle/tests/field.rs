@@ -10437,7 +10437,10 @@ fn round21_requests_finis_and_menus_match_the_original() {
     );
     let (usev, spv, maxv) = (t.alloc(4), t.alloc(4), t.alloc(4));
     let list: Vec<(Option<u32>, Vec<u8>)> = vec![
-        (Some(abmap::MS_GET_SAVE_ITEM_NUM), log_stub(log, heldv, 230, 1)),
+        (
+            Some(abmap::MS_GET_SAVE_ITEM_NUM),
+            log_stub(log, heldv, 230, 1),
+        ),
         (
             Some(abmap::MS_GET_ROM_ITEM),
             log_stub_from(log, recv, 231, 0, 1),
