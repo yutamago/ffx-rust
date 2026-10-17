@@ -6,6 +6,7 @@ use ffx_battle::atel::bridge as atel;
 use ffx_battle::death::bridge as death;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
+use ffx_battle::input::bridge as input;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::process::bridge as process;
 use ffx_battle::status::bridge as status;
@@ -2647,5 +2648,77 @@ ported! {
     /// `MsBattleEncountExe(map, group, step)` (`step` an `f32`): `Sg_FadeInW` through the game.
     MsBattleEncountExe @ 0x0078_0d10 => extern "C" fn ms_battle_encount_exe(map: i32, group: i32, step: u32) -> i32 {
         process::ms_battle_encount_exe(&mut mem(), &mut call_ptr, map, group, step)
+    }
+    /// `MsBattleError(msg)`: `dbgPrintf` through the game, then it hangs.
+    MsBattleError @ 0x0079_f210 => extern "C" fn ms_battle_error(msg: u32) {
+        input::ms_battle_error(&mut mem(), &mut call_ptr, msg)
+    }
+    /// `MsSetChrWeak(i, level)`.
+    MsSetChrWeak @ 0x0078_d7f0 => extern "C" fn ms_set_chr_weak(i: u32, level: u32) -> u32 {
+        input::ms_set_chr_weak(&mut mem(), i, level)
+    }
+    /// `0x0079fc00(n, &digits)` (`MsNumberDigits`).
+    MsNumberDigits @ 0x0079_fc00 => extern "C" fn ms_number_digits(n: i32, digits: u32) -> i32 {
+        input::ms_number_digits(&mut mem(), n, digits)
+    }
+    /// `0x0079fc60(...)` (`MsNumberPut`): the byte and halfword arguments
+    /// take their dwords' low parts.
+    MsNumberPut @ 0x0079_fc60 => extern "C" fn ms_number_put(i: u32, k: u32, ch: u32, x: u32, y: u32, w: u32, h: u32, life: u32, colour: u32, style: u32) -> u32 {
+        let b = |v: u32| v.to_le_bytes()[0];
+        let s = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        input::ms_number_put(&mut mem(), b(i), b(k), b(ch), s(x), s(y), b(w), b(h), b(life), b(colour), b(style))
+    }
+    /// `MsNumberRegist(i, kind, value, other, x, flags, style)`.
+    MsNumberRegist @ 0x0079_fa00 => extern "C" fn ms_number_regist(i: u32, kind: u32, value: i32, other: i32, x: u32, flags: u32, style: u32) -> i32 {
+        input::ms_number_regist(&mut mem(), i, kind, value, other, x, flags, style)
+    }
+    /// `MsSubHP(i, actor, n, other, x, flags, style)`.
+    MsSubHP @ 0x0078_e230 => extern "C" fn ms_sub_hp(i: u32, actor: u32, n: i32, other: i32, x: u32, flags: u32, style: u32) {
+        input::ms_sub_hp(&mut mem(), i, actor, n, other, x, flags, style);
+    }
+    /// `MsCheatPlayerPowerup(i)`.
+    MsCheatPlayerPowerup @ 0x0078_4720 => extern "C" fn ms_cheat_player_powerup(i: u32) {
+        let mut m = mem();
+        script!(s);
+        input::ms_cheat_player_powerup(&mut target::Dm::new(&mut m), &host(), &mut s, i);
+    }
+    /// `0x007af840(i, actor)` (`MsStatusEndMotion`).
+    MsStatusEndMotion @ 0x007a_f840 => extern "C" fn ms_status_end_motion(i: u32, actor: u32) {
+        script!(s);
+        input::ms_status_end_motion(&mut mem(), &mut s, i, actor);
+    }
+    /// `MsCheckStatusBeforeAction(i, actor)`: `MsDamageCheckDeath` through the game.
+    MsCheckStatusBeforeAction @ 0x007a_f4f0 => extern "C" fn ms_check_status_before_action(i: u32, actor: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_check_status_before_action(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor)
+    }
+    /// `0x00792120(i, actor)` (`MsCheckAutoInput`).
+    MsCheckAutoInput @ 0x0079_2120 => extern "C" fn ms_check_auto_input(i: u32, actor: u32) -> i32 {
+        input::ms_check_auto_input(&mut mem(), i, actor)
+    }
+    /// `MsSetDeathSentence(i, actor, cmd, flag)`.
+    MsSetDeathSentence @ 0x0079_9cd0 => extern "C" fn ms_set_death_sentence(i: u32, actor: u32, cmd: u32, flag: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_set_death_sentence(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag)
+    }
+    /// `MsSetBerserkCommand(i, actor, cmd, flag, side)`.
+    MsSetBerserkCommand @ 0x0079_9ac0 => extern "C" fn ms_set_berserk_command(i: u32, actor: u32, cmd: u32, flag: u32, side: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_set_berserk_command(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag, side)
+    }
+    /// `MsSetProvokingCommand(i, actor, cmd, flag)`.
+    MsSetProvokingCommand @ 0x0079_9d50 => extern "C" fn ms_set_provoking_command(i: u32, actor: u32, cmd: u32, flag: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        input::ms_set_provoking_command(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, cmd, flag)
+    }
+    /// `MsBattleProcess_InputCue_00792a90()`: the menu and `MsDamageCheckDeath` through the game.
+    MsBattleProcess_InputCue_00792a90 @ 0x0079_2a90 => extern "C" fn ms_battle_process_input_cue() {
+        let mut m = mem();
+        script!(s);
+        input::ms_battle_process_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s);
     }
 }

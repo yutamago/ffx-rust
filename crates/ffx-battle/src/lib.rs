@@ -29,6 +29,7 @@ pub mod exchange;
 pub mod exec;
 pub mod flow;
 mod formation;
+pub mod input;
 pub mod menu;
 pub mod minor;
 pub mod misc;
