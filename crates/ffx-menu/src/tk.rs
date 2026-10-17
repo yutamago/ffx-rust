@@ -5786,6 +5786,259 @@ pub mod bridge {
         call(mem, f, &[gil, b(digits_x), b(top), 0x25, b(scale), b(1.0)])
     }
 
+    /// `SndSepPlaySimple(sfx)` (`0x00886e80`) through `call`.
+    fn list_sound<M: Mem>(
+        mem: &mut M,
+        sfx: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x0088_6e80);
+        call(mem, f, &[sfx]);
+    }
+
+    /// The list window's scroll end (`0x008b46d4`/`0x008b4796`): the cursor
+    /// (`+0x48`) moves with the top row (`+0x32`) to the target top
+    /// (`+0x34`), the timer (`+0x46`) cleared, state 2.
+    fn list_scroll_end(mem: &mut impl Mem, w: u32) {
+        let target: u16 = mem.read(w.wrapping_add(0x34));
+        mem.write(w.wrapping_add(0x46), 0u16);
+        let top: u16 = mem.read(w.wrapping_add(0x32));
+        let cursor: u16 = mem.read(w.wrapping_add(0x48));
+        mem.write(
+            w.wrapping_add(0x48),
+            cursor.wrapping_add(target.wrapping_sub(top)),
+        );
+        mem.write(w.wrapping_add(0x32), target);
+        mem.write(w.wrapping_add(0x28), 2u32);
+    }
+
+    /// State 2 of `TkMenuListWindowCtrl`: the pad. Returns the next state
+    /// to run now, or `None` to return.
+    #[allow(clippy::similar_names)] // pad, rep
+    fn list_input<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        [pad, rep, trg]: [u16; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |o: u32| w.wrapping_add(o);
+        if trg & 0x20 != 0 {
+            list_confirm(mem, w, call);
+            return None;
+        }
+        if trg & 0x40 != 0 {
+            list_sound(mem, 0x8000_0004, call);
+            mem.write(at(0x28), 0x11u32);
+            return None;
+        }
+        let count = i32::from(mem.read::<u16>(at(0x30)));
+        let rows = i32::from(mem.read::<u16>(at(0x3a)));
+        let cursor = mem.read::<i16>(at(0x48));
+        if rep & 0x1000 != 0 && cursor > 0 {
+            list_sound(mem, 0x8000_0001, call);
+            let c = cursor - 1;
+            mem.write(at(0x48), c);
+            return (c < mem.read::<i16>(at(0x32))).then_some(7);
+        }
+        if rep & 0x4000 != 0 && i32::from(cursor) < count - 1 {
+            list_sound(mem, 0x8000_0001, call);
+            let c = cursor.wrapping_add(1);
+            mem.write(at(0x48), c);
+            let top = i32::from(mem.read::<i16>(at(0x32)));
+            return (i32::from(c) >= top + rows).then_some(0xb);
+        }
+        let top = i32::from(mem.read::<i16>(at(0x32)));
+        if rep & 1 != 0 && pad == 1 && cursor > 0 {
+            let t = (top - rows).max(0);
+            if t != top {
+                mem.write(
+                    at(0x34),
+                    t.to_le_bytes()[..2]
+                        .try_into()
+                        .map_or(0, u16::from_le_bytes),
+                );
+                return Some(8);
+            }
+        }
+        if rep & 2 != 0 && pad == 2 && i32::from(cursor) < count - 1 {
+            let last = count - rows;
+            let t = if top + rows < last {
+                top + rows
+            } else {
+                last.max(0)
+            };
+            if t != top {
+                mem.write(
+                    at(0x34),
+                    t.to_le_bytes()[..2]
+                        .try_into()
+                        .map_or(0, u16::from_le_bytes),
+                );
+                return Some(0xc);
+            }
+        }
+        None
+    }
+
+    /// The list's confirm (`0x008b4835`): the check callback `+0x1c(w,
+    /// cursor, picked)`, if any; refused (0) plays 0x80000003 and stays;
+    /// otherwise state 0xf, with 0x80000001 unless this was the last pick
+    /// (`+0x45 == +0x42 - 1`) of a window without the `+0x37` sound flag.
+    fn list_confirm<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| w.wrapping_add(o);
+        let f: u32 = mem.read(at(0x1c));
+        let mut picked = i32::from(mem.read::<i8>(at(0x45)));
+        if f != 0 {
+            let cursor = i32::from(mem.read::<i16>(at(0x48)));
+            if call(mem, f, &[w, cursor.cast_unsigned(), picked.cast_unsigned()]) == 0 {
+                list_sound(mem, 0x8000_0003, call);
+                return;
+            }
+            picked = i32::from(mem.read::<i8>(at(0x45)));
+        }
+        let last = i32::from(mem.read::<u8>(at(0x42))) - 1;
+        if picked != last || mem.read::<u8>(at(0x37)) != 0 {
+            list_sound(mem, 0x8000_0001, call);
+        }
+        mem.write(at(0x28), 0xfu32);
+    }
+
+    /// `TkMenuListWindowCtrl(w)` (`0x008b44b0`): one frame of a list
+    /// window's state machine (`+0x28`), with the pad read once
+    /// (`TOMenuGetControlPad`, `…Rep`, `…Trg`). A state may hand on to the
+    /// next in the same frame without storing it, as the original's loop
+    /// does: 2 the pad (`list_input`); 7/8 start a scroll up a row / a page
+    /// (timer `+0x46` 0x1000) and 11/12 down (0xf000); 9/10 and 13/14 run
+    /// the timer by 0x199/0x111 to the scroll end, 9 and 13 cut short by
+    /// the held direction; 15 stores a pick, 17 takes one back; 0 and 1
+    /// return to 2.
+    #[allow(clippy::too_many_lines)]
+    pub fn tk_menu_list_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| w.wrapping_add(o);
+        let read_pad = |mem: &mut M, f: u32, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f = mem.rebase(f);
+            call(mem, f, &[]).to_le_bytes()[..2]
+                .try_into()
+                .map_or(0, u16::from_le_bytes)
+        };
+        let pad = read_pad(mem, 0x008b_e410, call);
+        let rep = read_pad(mem, 0x008b_e470, call);
+        let mut trg = read_pad(mem, 0x008b_e4b0, call);
+        let mut state: u32 = mem.read(at(0x28));
+        loop {
+            let timer = |mem: &mut M, d: u16| -> i16 {
+                let v = mem.read::<u16>(at(0x46)).wrapping_add(d);
+                mem.write(at(0x46), v);
+                i16::from_le_bytes(v.to_le_bytes())
+            };
+            state = match state {
+                0 => {
+                    mem.write(at(0x28), 2u32);
+                    return;
+                }
+                1 => {
+                    mem.write(at(0x45), 0u8);
+                    mem.write(at(0x28), 2u32);
+                    return;
+                }
+                2 => match list_input(mem, w, [pad, rep, trg], call) {
+                    Some(s) => s,
+                    None => return,
+                },
+                7 | 0xb => {
+                    list_sound(mem, 0x8000_0001, call);
+                    let top = mem.read::<u16>(at(0x32));
+                    let top = if state == 7 {
+                        top.wrapping_sub(1)
+                    } else {
+                        top.wrapping_add(1)
+                    };
+                    mem.write(at(0x32), top);
+                    mem.write(at(0x34), top);
+                    let (t, next) = if state == 7 {
+                        (0x1000u16, 9)
+                    } else {
+                        (0xf000, 0xd)
+                    };
+                    mem.write(at(0x46), t);
+                    trg = 0;
+                    mem.write(at(0x28), next);
+                    next
+                }
+                8 | 0xc => {
+                    list_sound(mem, 0x8000_0001, call);
+                    let (t, next) = if state == 8 {
+                        (0x1000u16, 0xa)
+                    } else {
+                        (0xf000, 0xe)
+                    };
+                    mem.write(at(0x46), t);
+                    trg = 0;
+                    mem.write(at(0x28), next);
+                    next
+                }
+                9 => {
+                    if timer(mem, 0xfe67) > 0 && trg & 0x1000 == 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    trg = 0;
+                    2
+                }
+                0xd => {
+                    if timer(mem, 0x199) < 0 && trg & 0x4000 == 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    trg = 0;
+                    2
+                }
+                0xa => {
+                    if timer(mem, 0xfeef) > 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    2
+                }
+                0xe => {
+                    if timer(mem, 0x111) < 0 {
+                        return;
+                    }
+                    list_scroll_end(mem, w);
+                    2
+                }
+                0xf => {
+                    let n = mem.read::<i8>(at(0x45));
+                    let cursor: u16 = mem.read(at(0x48));
+                    mem.write(at(0x2c).wrapping_add_signed(2 * i32::from(n)), cursor);
+                    let n = n.wrapping_add(1);
+                    mem.write(at(0x45), n);
+                    if i32::from(n) < i32::from(mem.read::<u8>(at(0x42))) {
+                        mem.write(at(0x28), 2u32);
+                        return;
+                    }
+                    mem.write(at(0x28), 0x10u32);
+                    return;
+                }
+                0x11 => {
+                    let n = mem.read::<i8>(at(0x45)).wrapping_sub(1);
+                    mem.write(at(0x45), n);
+                    mem.write(at(0x28), if n >= 0 { 2u32 } else { 0x12 });
+                    return;
+                }
+                _ => return,
+            };
+        }
+    }
+
     /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,
     /// `0x008906d0`): entry `i` (clamped to `0..=last`) of the colour table
     /// at `table` = the four components clamped to 0..=255, packed

@@ -6583,3 +6583,58 @@ fn tk_mn2_draw_gill_plate_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn tk_menu_list_window_ctrl_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_44b0) else {
+        return;
+    };
+    // SndSepPlaySimple recorded; the pad getters answer per case
+    record_n(&mut t, 0x0088_6e80, 1, 0);
+    let checks = [0, t.sym(0x008c_f950), t.sym(0x008b_5530)];
+    for round in 0..2000u32 {
+        let state = match round % 4 {
+            0 => 2,
+            _ => t.rng.below(0x15),
+        };
+        let mut w = t.rng.bytes(0x60);
+        w[0x28..0x2c].copy_from_slice(&state.to_le_bytes());
+        let count = u16::try_from(t.rng.below(40)).unwrap_or(0);
+        let rows = u16::try_from(1 + t.rng.below(8)).unwrap_or(1);
+        let top = i16::try_from(t.rng.below(40)).unwrap_or(0) - 4;
+        let cursor = i16::try_from(t.rng.below(48)).unwrap_or(0) - 4;
+        w[0x30..0x32].copy_from_slice(&count.to_le_bytes());
+        w[0x32..0x34].copy_from_slice(&top.to_le_bytes());
+        w[0x3a..0x3c].copy_from_slice(&rows.to_le_bytes());
+        w[0x48..0x4a].copy_from_slice(&cursor.to_le_bytes());
+        w[0x42] = u8::try_from(t.rng.below(5)).unwrap_or(0);
+        w[0x45] = u8::try_from(t.rng.below(6)).unwrap_or(0).wrapping_sub(1);
+        w[0x37] = u8::try_from(t.rng.below(2)).unwrap_or(0);
+        if round % 3 == 0 {
+            let timer = u16::try_from(t.rng.below(0x400))
+                .unwrap_or(0)
+                .wrapping_sub(0x200);
+            w[0x46..0x48].copy_from_slice(&timer.to_le_bytes());
+        }
+        let check = t.rng.pick(&checks);
+        w[0x1c..0x20].copy_from_slice(&check.to_le_bytes());
+        let w = t.alloc(&w);
+        let bits = [0u32, 1, 2, 0x20, 0x40, 0x1000, 0x4000, 3, 0x1001, 0x4002];
+        let pad = t.rng.pick(&[0u32, 1, 2, 3]);
+        let rep = t.rng.pick(&bits) | (t.rng.next() & 0xffff_0000);
+        let trg = if round % 5 == 0 {
+            t.rng.next()
+        } else {
+            t.rng.pick(&bits)
+        };
+        return_const(&mut t, 0x008b_e410, pad);
+        return_const(&mut t, 0x008b_e470, rep);
+        return_const(&mut t, 0x008b_e4b0, trg);
+        t.twin("TkMenuListWindowCtrl", 0x008b_44b0, &[w], VOID, |o| {
+            tk::tk_menu_list_window_ctrl(o, w, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

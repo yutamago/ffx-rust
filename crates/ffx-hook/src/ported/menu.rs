@@ -3242,4 +3242,8 @@ ported! {
         let xywh = [x, y, w, h].map(f32::from_bits);
         tk::tk_mn2_draw_gill_plate(&mut m, xywh, gil, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuListWindowCtrl(w)`.
+    TkMenuListWindowCtrl_008b44b0 @ 0x008b_44b0 => extern "C" fn tk_menu_list_window_ctrl(w: u32) {
+        tk::tk_menu_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
+    }
 }
