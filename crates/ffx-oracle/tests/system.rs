@@ -7449,8 +7449,8 @@ fn round11(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     scene::bridge::init_param(
         b,
         scratch,
-        |m, i, n| ffx_menu::scene::bridge::tk_menu_get_param_handle(m, i, n),
-        |m, i, o, n| ffx_menu::scene::bridge::tk_menu_get_param_offset(m, i, o, n),
+        ffx_menu::scene::bridge::tk_menu_get_param_handle,
+        ffx_menu::scene::bridge::tk_menu_get_param_offset,
     );
     let v: u32 = Mem::read(b, scratch);
     Mem::write(a, scratch, v);
