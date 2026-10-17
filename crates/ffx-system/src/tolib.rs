@@ -4438,15 +4438,18 @@ pub mod bridge {
 
     /// Kernel accessors `0x007739c0`, `0x00773a30`, `0x00773aa0`: unless a
     /// request is pending (byte `0x0112a038`), post one: kind `kind`
-    /// (`0x0112a058`), value `v` (`0x0112a054`), pending set.
-    pub fn kernel_post_request(mem: &mut impl Mem, v: u32, kind: u32) {
+    /// (`0x0112a058`), value `v` (`0x0112a054`), pending set. Returns `v`
+    /// (eax; with a request pending the original leaves eax as it found it,
+    /// and this returns 0).
+    pub fn kernel_post_request(mem: &mut impl Mem, v: u32, kind: u32) -> u32 {
         let pending = mem.rebase(0x0112_a038);
         if mem.read::<u8>(pending) != 0 {
-            return;
+            return 0;
         }
         mem.write(mem.rebase(0x0112_a058), kind);
         mem.write(mem.rebase(0x0112_a054), v);
         mem.write(pending, 1u8);
+        v
     }
 
     /// Kernel accessor `0x00772dc0(i)`: 0x1f40 for 0xf9, else the word at
@@ -4502,16 +4505,18 @@ pub mod bridge {
         i32::from(mem.read::<i8>(base.wrapping_add(i))).cast_unsigned()
     }
 
-    /// Kernel accessor `0x00773800(i, v)`: event flag byte `i` set to `v`.
+    /// Kernel accessor `0x00773800(i, v)`: event flag byte `i` set to `v`;
+    /// returns the flags' address (eax).
     #[allow(clippy::cast_possible_truncation)] // `mov byte`
     pub fn kernel_set_event_byte<M: Mem>(
         mem: &mut M,
         i: u32,
         v: u32,
         mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) {
+    ) -> u32 {
         let base = call(mem, 0x0078_5250, &[]);
         mem.write(base.wrapping_add(i), v as u8);
+        base
     }
 
     /// Kernel accessor `0x00772900(chr)`: 1 when `MsGetSavePlyJoin(chr)` is
@@ -4538,21 +4543,25 @@ pub mod bridge {
     }
 
     /// Kernel accessor `0x00773880(n, on)`: event flag bit `n` cleared,
-    /// then set when `on`.
+    /// then set when `on`. Returns eax as left: `n / 8` with the byte's
+    /// final value in its low byte.
     pub fn kernel_set_event_bit<M: Mem>(
         mem: &mut M,
         n: u32,
         on: u32,
         mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) {
+    ) -> u32 {
         let base = call(mem, 0x0078_5250, &[]);
-        let at = base.wrapping_add((n.cast_signed() / 8).cast_unsigned());
+        let idx = (n.cast_signed() / 8).cast_unsigned();
+        let at = base.wrapping_add(idx);
         let mask = 1u8 << (n & 7);
         let v: u8 = mem.read(at);
-        let v = v & !mask;
+        let mut v = v & !mask;
         mem.write(at, v);
         if on != 0 {
-            mem.write(at, v | mask);
+            v |= mask;
+            mem.write(at, v);
         }
+        (idx & !0xff) | u32::from(v)
     }
 }

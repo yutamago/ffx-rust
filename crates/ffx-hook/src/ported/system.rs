@@ -5613,16 +5613,16 @@ ported! {
         tolib::bridge::kernel_slot_name(&mut mem(), i, 0x98, 0x0077_67a0, call_sym)
     }
     /// `KernelPostRequest1_007739c0(v)`.
-    KernelPostRequest1_007739c0 @ 0x0077_39c0 => extern "C" fn kernel_post_request_007739c0(v: u32) {
-        tolib::bridge::kernel_post_request(&mut mem(), v, 1);
+    KernelPostRequest1_007739c0 @ 0x0077_39c0 => extern "C" fn kernel_post_request_007739c0(v: u32) -> u32 {
+        tolib::bridge::kernel_post_request(&mut mem(), v, 1)
     }
     /// `KernelPostRequest0_00773a30(v)`.
-    KernelPostRequest0_00773a30 @ 0x0077_3a30 => extern "C" fn kernel_post_request_00773a30(v: u32) {
-        tolib::bridge::kernel_post_request(&mut mem(), v, 0);
+    KernelPostRequest0_00773a30 @ 0x0077_3a30 => extern "C" fn kernel_post_request_00773a30(v: u32) -> u32 {
+        tolib::bridge::kernel_post_request(&mut mem(), v, 0)
     }
     /// `KernelPostRequest3_00773aa0(v)`.
-    KernelPostRequest3_00773aa0 @ 0x0077_3aa0 => extern "C" fn kernel_post_request_00773aa0(v: u32) {
-        tolib::bridge::kernel_post_request(&mut mem(), v, 3);
+    KernelPostRequest3_00773aa0 @ 0x0077_3aa0 => extern "C" fn kernel_post_request_00773aa0(v: u32) -> u32 {
+        tolib::bridge::kernel_post_request(&mut mem(), v, 3)
     }
     /// `KernelSlotWord194_00772dc0(i)`.
     KernelSlotWord194_00772dc0 @ 0x0077_2dc0 => extern "C" fn kernel_slot_word_194(i: u32) -> u32 {
@@ -5641,8 +5641,8 @@ ported! {
         tolib::bridge::kernel_event_byte(&mut mem(), i, call_sym)
     }
     /// `KernelSetEventByte_00773800(i, v)`.
-    KernelSetEventByte_00773800 @ 0x0077_3800 => extern "C" fn kernel_set_event_byte(i: u32, v: u32) {
-        tolib::bridge::kernel_set_event_byte(&mut mem(), i, v, call_sym);
+    KernelSetEventByte_00773800 @ 0x0077_3800 => extern "C" fn kernel_set_event_byte(i: u32, v: u32) -> u32 {
+        tolib::bridge::kernel_set_event_byte(&mut mem(), i, v, call_sym)
     }
     /// `KernelJoined_00772900(chr)`.
     KernelJoined_00772900 @ 0x0077_2900 => extern "C" fn kernel_joined(chr: u32) -> u32 {
@@ -5653,8 +5653,8 @@ ported! {
         tolib::bridge::kernel_event_bit(&mut mem(), n, call_sym)
     }
     /// `KernelSetEventBit_00773880(n, on)`.
-    KernelSetEventBit_00773880 @ 0x0077_3880 => extern "C" fn kernel_set_event_bit(n: u32, on: u32) {
-        tolib::bridge::kernel_set_event_bit(&mut mem(), n, on, call_sym);
+    KernelSetEventBit_00773880 @ 0x0077_3880 => extern "C" fn kernel_set_event_bit(n: u32, on: u32) -> u32 {
+        tolib::bridge::kernel_set_event_bit(&mut mem(), n, on, call_sym)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

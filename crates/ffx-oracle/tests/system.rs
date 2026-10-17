@@ -10249,3 +10249,109 @@ fn round17_kernel_accessors_match_the_original_on_the_snapshot() {
     };
     round17_kernel_accessors(&mut a, &mut b, &mut Xorshift(0x4017_0012));
 }
+
+/// Round 17's event-flag, request and price kernel accessors.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round17_kernel_flags(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let table = alloc(a, b, 0x1d8 * 8);
+    let flags = alloc(a, b, 0x100);
+    let cells = alloc(a, b, 8);
+    let ret = |v: u32| {
+        let mut c = vec![0xb8];
+        c.extend_from_slice(&v.to_le_bytes());
+        c.push(0xc3);
+        c
+    };
+    let s = stand_in8(a, b, 0x40, &ret(flags));
+    redirect(a, b, 0x0078_5250, s);
+    let mut c = vec![0xa1];
+    c.extend_from_slice(&cells.to_le_bytes());
+    c.push(0xc3);
+    let s = stand_in8(a, b, 0x50, &c);
+    redirect(a, b, 0x0078_4e80, s);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+    c.extend_from_slice(&0x1700_0300u32.to_le_bytes());
+    c.push(0xc3);
+    let s = stand_in8(a, b, 0x60, &c);
+    redirect(a, b, 0x0088_6e80, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x70,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0xc3],
+    );
+    redirect(a, b, 0x0078_5380, s);
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for _ in 0..200 {
+        let bytes: Vec<u8> = (0..0x1d8 * 8).map(|_| rng.next() as u8).collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        let bytes: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+        a.write(flags, &bytes).unwrap();
+        b.write(flags, &bytes).unwrap();
+        put(a, b, cells, rng.next() % 100_000);
+        let i = rng.next() % 8;
+        let i2 = if rng.next().is_multiple_of(4) {
+            0xf9
+        } else {
+            i
+        };
+        if i2 != 0xf9 {
+            assert_eq!(eax(a, 0x0077_2dc0, &[i2]), t::kernel_slot_word_194(b, i2));
+        } else {
+            assert_eq!(eax(a, 0x0077_2dc0, &[i2]), 0x1f40);
+            assert_eq!(t::kernel_slot_word_194(b, i2), 0x1f40);
+        }
+        assert_eq!(eax(a, 0x0077_2e40, &[i]), t::kernel_gil_after(b, i, call));
+        let sfx = rng.next();
+        assert_eq!(
+            eax(a, 0x0077_3b10, &[sfx]),
+            t::kernel_play_sfx(b, sfx, call)
+        );
+        let k = rng.next() % 0x100;
+        assert_eq!(eax(a, 0x0077_25b0, &[k]), t::kernel_event_byte(b, k, call));
+        let v = rng.next();
+        assert_eq!(
+            eax(a, 0x0077_3800, &[k, v]),
+            t::kernel_set_event_byte(b, k, v, call)
+        );
+        let chr = rng.next();
+        assert_eq!(eax(a, 0x0077_2900, &[chr]), t::kernel_joined(b, chr, call));
+        let n = rng.next() % 0x800;
+        assert_eq!(eax(a, 0x0077_2620, &[n]), t::kernel_event_bit(b, n, call));
+        let on = rng.next() % 3;
+        assert_eq!(
+            eax(a, 0x0077_3880, &[n, on]),
+            t::kernel_set_event_bit(b, n, on, call)
+        );
+        for (at, kind) in [(0x0077_39c0u32, 1u32), (0x0077_3a30, 0), (0x0077_3aa0, 3)] {
+            let pending = u8::from(rng.next().is_multiple_of(2));
+            put(a, b, a.rebase(0x0112_a038), pending);
+            let v = rng.next();
+            let want = eax(a, at, &[v]);
+            let got = t::kernel_post_request(b, v, kind);
+            if pending == 0 {
+                assert_eq!(want, got);
+            }
+        }
+        same_memory("kernel flags", a, b);
+    }
+}
+
+#[test]
+fn round17_kernel_flags_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round17_kernel_flags(&mut a, &mut b, &mut Xorshift(0x4017_0021));
+}
+
+#[test]
+fn round17_kernel_flags_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round17_kernel_flags(&mut a, &mut b, &mut Xorshift(0x4017_0022));
+}
