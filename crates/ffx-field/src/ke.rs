@@ -102,6 +102,28 @@ pub const VU0_UNIT_MATRIX: u32 = 0x006e_d9a0;
 pub const VU0_COPY_VECTOR: u32 = 0x006e_d370;
 /// `FFXVu0ScaleVector(dst, src, k)` (`0x006ed8f0`).
 pub const VU0_SCALE_VECTOR: u32 = 0x006e_d8f0;
+/// `FFXVu0ApplyMatrix(dst, m, v)` (`0x006ed2e0`).
+pub const VU0_APPLY_MATRIX: u32 = 0x006e_d2e0;
+/// `FFXVu0Normalize(dst, src)` (`0x006ed6f0`).
+pub const VU0_NORMALIZE: u32 = 0x006e_d6f0;
+/// `FFXVu0InnerProduct(a, b)` (`0x0062fce0`, the result in `ST0`).
+pub const VU0_INNER_PRODUCT: u32 = 0x0062_fce0;
+/// `KeVu0VecLen(v)` (`0x0075fda0`, `ST0`).
+pub const KE_VU0_VEC_LEN: u32 = 0x0075_fda0;
+/// `KeVu0VecLenXY(v)` (`0x0075fde0`, `ST0`).
+pub const KE_VU0_VEC_LEN_XY: u32 = 0x0075_fde0;
+/// -1.0 (`f32`, `.rdata`): `KeLnsLp_Update`'s translation negation.
+pub const LNS_NEG_ONE: u32 = 0x00b9_2340;
+/// 0.9230769 (`f64` of an `f32`): its screen y squash (12 / 13).
+pub const LNS_Y_SCALE: u32 = 0x00b5_1bd8;
+/// 512.0 (`f32`): its screen depth.
+pub const LNS_DEPTH: u32 = 0x00b4_1d9c;
+/// 1/512 (`f64`): its depth scale.
+pub const LNS_DEPTH_SCALE: u32 = 0x00b4_1cc0;
+/// 0.5 (`f64`).
+pub const LNS_HALF: u32 = 0x00b9_2220;
+/// 0.3 (`f64` of an `f32`): its view cone.
+pub const LNS_CONE: u32 = 0x00b4_8308;
 /// `FFXVu0SubVector(dst, a, b)` (`0x006ed940`).
 pub const VU0_SUB_VECTOR: u32 = 0x006e_d940;
 /// `KeVu0CopyVecXYZ(dst, src)` (`0x0075ede0`).
@@ -1433,6 +1455,239 @@ pub mod bridge {
         mem.write(o.wrapping_add(4), ptr32(cp));
         mem.write(cp, ptr32(o));
         ptr32(o)
+    }
+
+    // ---- field round 32 ----
+
+    /// `KeLnsLp_Update(lp, work, fcall)` (`0x0076a690`, from
+    /// `pppKeLnsLpDraw`): the lens flare object's (`get_ptr32_func(lp[0])`,
+    /// `o`) screen frame and fade. `work` holds the original's locals (0xc0
+    /// bytes): the matrix `lp[2]` (`M`, `+0`), a work matrix (`W`, `+0x40`,
+    /// its translation `+0x70`), `d` (`+0x80`), `v0` (`+0x90`), `v1`
+    /// (`+0xa0`).
+    /// - Object space (`o +0x8f` set): `v0 = W lp[1]` with `W` = `M` less
+    ///   its translation, `v1` = -`M`'s translation; else world space: `v0`
+    ///   = the flare's point (`o +0x80` + the VFX offset `0x0230ff50`) and
+    ///   `v1` = the offset, each through a unit matrix with that
+    ///   translation and divided by its `w`; `d.y` scaled by 0.9230769 and
+    ///   `d.z` 512.0. `d = v1 - v0`.
+    /// - `o` becomes the unit matrix with `+0x30` = `M lp[1]`; with `d.x` or
+    ///   `d.y` non-zero (or NaN) its rows `+0x40`, `+0x50` the 2D rotation
+    ///   by `d` (`/ f32(|d.xy|)`), `+0x60` (0, 0, 1, 0).
+    /// - `+0x70..` copies `+0x30..`, `+0x78` = depth (`+0x38`, or the
+    ///   flare's z plus the offset) / 512, `+0x70`/`+0x74` that times the
+    ///   normalised `d`; `v1 -= v0`, `+0xa4` its xy length, `v0` its
+    ///   direction.
+    /// - The fade `+0x7c`: world space `1 - |xy| / +0xa8` (0 beyond, 0 for
+    ///   `+0xa8 <= 0`); object space `1 - (1 - (1 - v0.z) / 2) / 0.3` (0
+    ///   below), times `1 - (1 - (dir . v0)) / 2 / +0x9c` (0 below; `dir`
+    ///   `+0x90` against `v1` through `W`) when `+0x9c >= 0`, times
+    ///   `1 - length / (+0xa8 - +0x8e)` (0 beyond; the fade 0 when that
+    ///   range is not positive). Every stored step is an `f32`.
+    pub fn ke_lns_lp_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        lp: u32,
+        work: u32,
+        call: &mut C,
+        mut fcall: impl FnMut(&mut M, u32, FArgs<'_>) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, div, load, mul, round_trip, sqrt, store, sub};
+        let st = |x: f64| load(store(x));
+        let f32at = |mem: &M, at: u32| load(mem.read::<u32>(at));
+        let c64 = |mem: &M, at: u32| mem.read::<f64>(mem.rebase(at));
+        let (m, w, d, v0, v1) = (
+            work,
+            work.wrapping_add(0x40),
+            work.wrapping_add(0x80),
+            work.wrapping_add(0x90),
+            work.wrapping_add(0xa0),
+        );
+        let wt = w.wrapping_add(0x30);
+        let fns = |mem: &M, f: u32| mem.rebase(f);
+        let f = fns(mem, super::GET_PTR32_FUNC);
+        let o = call(mem, f, &[mem.read::<u32>(lp)]);
+        let f = fns(mem, super::VU0_COPY_MATRIX);
+        call(mem, f, &[m, mem.read::<u32>(lp.wrapping_add(8))]);
+        let local = mem.read::<u8>(o.wrapping_add(0x8f)) != 0;
+        let off = mem.rebase(super::VFX_OFFSET);
+        if local {
+            let f = fns(mem, super::VU0_COPY_MATRIX);
+            call(mem, f, &[w, m]);
+            for i in 0..3 {
+                mem.write(wt.wrapping_add(4 * i), 0u32);
+            }
+            let f = fns(mem, super::VU0_APPLY_MATRIX);
+            call(mem, f, &[v0, w, mem.read::<u32>(lp.wrapping_add(4))]);
+            let k = round_trip(mem.read::<f32>(mem.rebase(super::LNS_NEG_ONE))).to_bits();
+            let f = fns(mem, super::VU0_SCALE_VECTOR);
+            call(mem, f, &[v1, m.wrapping_add(0x30), k]);
+            let f = fns(mem, super::VU0_SUB_VECTOR);
+            call(mem, f, &[d, v1, v0]);
+        } else {
+            for i in 0..3 {
+                mem.write(v0.wrapping_add(4 * i), 0u32);
+                mem.write(v1.wrapping_add(4 * i), 0u32);
+            }
+            mem.write(v0.wrapping_add(0xc), 1.0f32.to_bits());
+            mem.write(v1.wrapping_add(0xc), 1.0f32.to_bits());
+            let f = fns(mem, super::VU0_UNIT_MATRIX);
+            call(mem, f, &[w]);
+            for i in 0..3u32 {
+                let v = add(
+                    f32at(mem, o.wrapping_add(0x80 + 4 * i)),
+                    f32at(mem, off.wrapping_add(4 * i)),
+                );
+                mem.write(wt.wrapping_add(4 * i), store(v));
+            }
+            let f = fns(mem, super::VU0_APPLY_MATRIX);
+            call(mem, f, &[v0, w, v0]);
+            let k = store(div(1.0, f32at(mem, v0.wrapping_add(0xc))));
+            let f = fns(mem, super::VU0_SCALE_VECTOR);
+            call(mem, f, &[v0, v0, k]);
+            let f = fns(mem, super::VU0_UNIT_MATRIX);
+            call(mem, f, &[w]);
+            let f = fns(mem, super::VU0_COPY_VECTOR);
+            call(mem, f, &[wt, off]);
+            let f = fns(mem, super::VU0_APPLY_MATRIX);
+            call(mem, f, &[v1, w, v1]);
+            let k = store(div(1.0, f32at(mem, v1.wrapping_add(0xc))));
+            let f = fns(mem, super::VU0_SCALE_VECTOR);
+            call(mem, f, &[v1, v1, k]);
+            let f = fns(mem, super::VU0_SUB_VECTOR);
+            call(mem, f, &[d, v1, v0]);
+            let y = store(mul(
+                f32at(mem, d.wrapping_add(4)),
+                c64(mem, super::LNS_Y_SCALE),
+            ));
+            mem.write(d.wrapping_add(4), y);
+            let z = round_trip(mem.read::<f32>(mem.rebase(super::LNS_DEPTH))).to_bits();
+            mem.write(d.wrapping_add(8), z);
+        }
+        let f = fns(mem, super::VU0_UNIT_MATRIX);
+        call(mem, f, &[o]);
+        let f = fns(mem, super::VU0_APPLY_MATRIX);
+        call(
+            mem,
+            f,
+            &[o.wrapping_add(0x30), m, mem.read::<u32>(lp.wrapping_add(4))],
+        );
+        let (dx, dy) = (f32at(mem, d), f32at(mem, d.wrapping_add(4)));
+        // fucom: equal only when ordered and equal
+        let nonzero = |v: f64| v.is_nan() || v != 0.0;
+        if nonzero(dx) || nonzero(dy) {
+            let r = st(sqrt(add(mul(dx, dx), mul(dy, dy))));
+            let rows = [
+                (0x40, store(div(dx, r))),
+                (0x44, store(div(dy, r))),
+                (0x48, 0),
+                (0x4c, 0),
+                (0x50, store(div(dy, r))),
+                (0x54, store(div(-dx, r))),
+                (0x58, 0),
+                (0x5c, 0),
+                (0x60, 0),
+                (0x64, 0),
+                (0x68, 1.0f32.to_bits()),
+                (0x6c, 0),
+            ];
+            for (at, v) in rows {
+                mem.write(o.wrapping_add(at), v);
+            }
+        }
+        for i in 0..4u32 {
+            let v = round_trip(mem.read::<f32>(o.wrapping_add(0x30 + 4 * i))).to_bits();
+            mem.write(o.wrapping_add(0x70 + 4 * i), v);
+        }
+        let depth = if local {
+            f32at(mem, o.wrapping_add(0x38))
+        } else {
+            add(
+                f32at(mem, o.wrapping_add(0x88)),
+                f32at(mem, off.wrapping_add(8)),
+            )
+        };
+        mem.write(
+            o.wrapping_add(0x78),
+            store(mul(depth, c64(mem, super::LNS_DEPTH_SCALE))),
+        );
+        let f = fns(mem, super::VU0_NORMALIZE);
+        call(mem, f, &[d, d]);
+        let dep = f32at(mem, o.wrapping_add(0x78));
+        let x = store(mul(dep, f32at(mem, d)));
+        mem.write(o.wrapping_add(0x70), x);
+        let dep = f32at(mem, o.wrapping_add(0x78));
+        let y = store(mul(dep, f32at(mem, d.wrapping_add(4))));
+        mem.write(o.wrapping_add(0x74), y);
+        let f = fns(mem, super::VU0_SUB_VECTOR);
+        call(mem, f, &[v1, v1, v0]);
+        let f = fns(mem, super::KE_VU0_VEC_LEN);
+        let len = st(fcall(mem, f, FArgs::Stack(&[v1])));
+        let f = fns(mem, super::KE_VU0_VEC_LEN_XY);
+        let xy = store(fcall(mem, f, FArgs::Stack(&[v1])));
+        mem.write(o.wrapping_add(0xa4), xy);
+        let f = fns(mem, super::VU0_NORMALIZE);
+        call(mem, f, &[v0, v1]);
+        let fade = o.wrapping_add(0x7c);
+        let a8 = f32at(mem, o.wrapping_add(0xa8));
+        if !local {
+            // the C0/C2 test: on unless 0 < a8
+            if !(0.0 < a8) {
+                mem.write(fade, 0u32);
+                return;
+            }
+            let t = st(div(f32at(mem, o.wrapping_add(0xa4)), a8));
+            let v = if 1.0 < t { 0 } else { store(sub(1.0, t)) };
+            mem.write(fade, v);
+            return;
+        }
+        let half = c64(mem, super::LNS_HALF);
+        // the angle term
+        mem.write(v1, 0u32);
+        mem.write(v1.wrapping_add(4), 0u32);
+        mem.write(v1.wrapping_add(8), 1.0f32.to_bits());
+        let f = fns(mem, super::VU0_INNER_PRODUCT);
+        let ip = fcall(mem, f, FArgs::Stack(&[v1, v0]));
+        let h = mul(sub(1.0, ip), half);
+        let q = st(sub(1.0, h));
+        let u = st(div(q, c64(mem, super::LNS_CONE)));
+        let g = if 1.0 < u { 0 } else { store(sub(1.0, u)) };
+        mem.write(fade, g);
+        // the direction term
+        let w9c = f32at(mem, o.wrapping_add(0x9c));
+        if !(w9c < 0.0 || w9c.is_nan()) {
+            let f = fns(mem, super::VU0_COPY_MATRIX);
+            call(mem, f, &[w, m]);
+            for i in 0..3 {
+                mem.write(wt.wrapping_add(4 * i), 0u32);
+            }
+            let f = fns(mem, super::VU0_APPLY_MATRIX);
+            call(mem, f, &[v1, w, v1]);
+            let f = fns(mem, super::VU0_INNER_PRODUCT);
+            let ip2 = fcall(mem, f, FArgs::Stack(&[o.wrapping_add(0x90), v0]));
+            let h2 = st(mul(sub(1.0, ip2), half));
+            // fucompp with 0.0: equal only when ordered and equal
+            let w9c = f32at(mem, o.wrapping_add(0x9c));
+            let vv = if w9c == 0.0 { 0.0 } else { st(div(h2, w9c)) };
+            let g2 = if 1.0 < vv { 0.0 } else { st(sub(1.0, vv)) };
+            mem.write(v1, store(g2));
+            let fv = store(mul(g2, f32at(mem, fade)));
+            mem.write(fade, fv);
+        }
+        // the distance term
+        let n = f64::from(mem.read::<u8>(o.wrapping_add(0x8e)));
+        let r = st(sub(f32at(mem, o.wrapping_add(0xa8)), n));
+        if !(0.0 < r) {
+            mem.write(fade, 0u32);
+            return;
+        }
+        let x = st(div(len, r));
+        let k = if x < 1.0 || x.is_nan() {
+            st(sub(1.0, x))
+        } else {
+            0.0
+        };
+        let fv = store(mul(k, f32at(mem, fade)));
+        mem.write(fade, fv);
     }
 
     // ---- field round 31 ----
