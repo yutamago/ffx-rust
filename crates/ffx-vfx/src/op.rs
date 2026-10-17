@@ -1756,4 +1756,107 @@ pub mod bridge {
             call(mem, f, &[x, y]);
         }
     }
+
+    /// `op_heap_init(heap, size)` (`0x007ff2d0`): the `size` bytes before
+    /// `heap + size` cleared in 16-byte steps from the top (the last step
+    /// may start below `heap` by less than 16 when `size` is not a
+    /// multiple of 16), then the two first block records set up below the
+    /// end (record 1 at `end - 0x10`: block `heap`, end `heap`; record 2
+    /// at `end - 0x20` = the emulated r0, as the rest of record 1). Returns
+    /// the end (the heap's base for `op_malloc`/`op_free`), or 0 for a
+    /// size of 0.
+    pub fn op_heap_init(mem: &mut impl Mem, heap: u32, size: u32) -> u32 {
+        if size == 0 {
+            return 0;
+        }
+        let mut at = size.wrapping_sub(0x10).cast_signed();
+        if at >= 0 {
+            loop {
+                at = at.wrapping_sub(0x10);
+                let a = heap.wrapping_add(at.cast_unsigned()).wrapping_add(0x10);
+                mem.write(a, [0u32; 4]);
+                if at < 0 {
+                    break;
+                }
+            }
+        }
+        let r0: [u32; 4] = mem.read(Global::<u32>::new(0x00c8_f508).ptr(mem).addr);
+        let end = heap.wrapping_add(size);
+        mem.write(end.wrapping_sub(0x10), r0);
+        mem.write(end.wrapping_sub(0x20), [r0[0], r0[1], r0[2]]);
+        mem.write(end.wrapping_sub(0xc), heap);
+        mem.write(end.wrapping_sub(0x10), heap);
+        let r3: u32 = mem.read(Global::<u32>::new(0x00c8_f514).ptr(mem).addr);
+        mem.write(end.wrapping_sub(0x14), r3);
+        end
+    }
+
+    /// `op_malloc(heap, n)` (`0x007ff780`): `n` rounded up to 16 bytes
+    /// (the top nibble dropped) from an op heap (see [`op_free`]): the
+    /// first gap between consecutive blocks (from record 1, following the
+    /// `+0xa` links) at least that large, else after the last block; a
+    /// free record (the first from 2 down whose `u16 +8` is 0) is linked
+    /// in between, the highest record number and the block count updated.
+    /// Returns the block. A block reaching `heap` is fatal: the original
+    /// prints a message to stderr (`__iob_func`, `fprintf`, through
+    /// `call`) and writes to address 0.
+    pub fn op_malloc<M: Mem>(
+        mem: &mut M,
+        heap: u32,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let size = n.wrapping_add(0xf) & 0x0fff_fff0;
+        let rec = |i: i32| heap.wrapping_sub(i.cast_unsigned().wrapping_shl(4));
+        let index = |r: u32| heap.wrapping_sub(r).cast_signed() / 16;
+        let mut prev = heap.wrapping_sub(0x10);
+        let mut next = i32::from(mem.read::<i16>(heap.wrapping_sub(6)));
+        while next != 0 {
+            let r = rec(next);
+            let gap = mem
+                .read::<u32>(r)
+                .wrapping_sub(mem.read::<u32>(prev.wrapping_add(4)))
+                .cast_signed();
+            if gap >= size.cast_signed() {
+                break;
+            }
+            next = i32::from(mem.read::<i16>(r.wrapping_add(0xa)));
+            prev = r;
+        }
+        let at = index(prev);
+        let start: u32 = mem.read(prev.wrapping_add(4));
+        let end = size.wrapping_add(start);
+        if heap <= end {
+            let slot = |mem: &M, a: u32| mem.read::<u32>(Global::<u32>::new(a).ptr(mem).addr);
+            let iob = slot(mem, 0x00b0_c350);
+            let file = call(mem, iob, &[]).wrapping_add(0x40);
+            let fprintf = slot(mem, 0x00b0_c38c);
+            let msg = Global::<u32>::new(0x00b5_8698).ptr(mem).addr;
+            call(mem, fprintf, &[file, msg]);
+            mem.write(0, 0u32);
+        }
+        let mut k = 2i32;
+        let mut r = heap.wrapping_sub(0x20);
+        while mem.read::<u16>(r.wrapping_add(8)) != 0 {
+            r = r.wrapping_sub(0x10);
+            k += 1;
+        }
+        mem.write(r.wrapping_add(4), end);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the i16 record fields
+        {
+            mem.write(r.wrapping_add(8), at as u16);
+            mem.write(r, start);
+            mem.write(r.wrapping_add(0xa), next as u16);
+            mem.write(rec(at).wrapping_add(0xa), k as u16);
+            if next != 0 {
+                mem.write(rec(next).wrapping_add(8), k as u16);
+            }
+            if i32::from(mem.read::<i16>(heap.wrapping_sub(4))) < k {
+                mem.write(heap.wrapping_sub(4), k as u16);
+            }
+        }
+        let c: u16 = mem.read(heap.wrapping_sub(2));
+        mem.write(heap.wrapping_sub(2), c.wrapping_add(1));
+        start
+    }
 }

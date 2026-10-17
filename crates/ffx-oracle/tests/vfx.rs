@@ -7241,3 +7241,58 @@ fn round10e_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+fn op_heaps_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_f780);
+        deref_recorder(&mut p, 0x0062_f500, &[0]);
+        let mem = p.alloc(0x2010);
+        let (src, dst) = (p.alloc(0x10), p.alloc(0x10));
+        for round in 0..60 {
+            p.fill(mem, 0x2010, &mut rng);
+            let size = rng.pick(&[0u32, 0x10, 0x18, 0x1000, 0x2000, 0x1ff8]);
+            let base = mem + 8 * (round % 2);
+            let heap = p.check("op_heap_init", 0x007f_f2d0, &[base, size], |m| {
+                Some(op::bridge::op_heap_init(m, base, size))
+            });
+            if size < 0x1000 {
+                continue;
+            }
+            let mut live: Vec<u32> = Vec::new();
+            for _ in 0..80 {
+                if live.is_empty() || (rng.chance(60) && live.len() < 40) {
+                    let any = rng.below(0x100);
+                    let n = rng.pick(&[0u32, 1, 0x10, 0x11, 0x40, 0x7f, any]);
+                    let b = p.check("op_malloc", 0x007f_f780, &[heap, n], |m| {
+                        Some(op::bridge::op_malloc(m, heap, n, &mut call_original))
+                    });
+                    live.push(b);
+                } else {
+                    let i = rng.below(u32::try_from(live.len()).unwrap()) as usize;
+                    let b = live.swap_remove(i);
+                    p.check("op_free", 0x007f_f1d0, &[heap, b], |m| {
+                        op::bridge::op_free(m, heap, b, &mut call_original);
+                        None
+                    });
+                }
+            }
+        }
+        for _ in 0..500 {
+            let k = [rng.float(), rng.float(), rng.float(), rng.float()];
+            for i in 0..4 {
+                let x = rng.float();
+                p.set(src + 4 * i, x);
+            }
+            p.check(
+                "Vec4AddScalars",
+                0x0074_bc50,
+                &[dst, src, k[0], k[1], k[2], k[3]],
+                |m| {
+                    vec::bridge::vec4_add_scalars(m, dst, src, k.map(f32::from_bits));
+                    None
+                },
+            );
+        }
+    }
+}

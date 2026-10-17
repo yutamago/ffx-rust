@@ -1253,6 +1253,18 @@ ported! {
     op_num_xy_set @ 0x007e_65e0 => extern "C" fn op_num_xy_set(x: u32, y: u32) {
         op::bridge::op_num_xy_set(&mut mem(), x, y, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_heap_init(heap, size)`.
+    op_heap_init @ 0x007f_f2d0 => extern "C" fn op_heap_init(heap: u32, size: u32) -> u32 {
+        op::bridge::op_heap_init(&mut mem(), heap, size)
+    }
+    /// `op_malloc(heap, n)`.
+    op_malloc @ 0x007f_f780 => extern "C" fn op_malloc(heap: u32, n: u32) -> u32 {
+        op::bridge::op_malloc(&mut mem(), heap, n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Vec4AddScalars_0074bc50(dst, src, x, y, z, w)`.
+    Vec4AddScalars_0074bc50 @ 0x0074_bc50 => extern "C" fn vec4_add_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32, w: u32) {
+        vec::bridge::vec4_add_scalars(&mut mem(), dst, src, [x, y, z, w].map(f32::from_bits));
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

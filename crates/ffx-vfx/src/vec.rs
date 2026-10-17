@@ -68,4 +68,13 @@ pub mod bridge {
             mem.write(dst + 4 * i, x as f32);
         }
     }
+
+    /// `Vec4AddScalars_0074bc50(dst, src, x, y, z, w)` (`0x0074bc50`):
+    /// `dst` = `src` + (`x`, `y`, `z`, `w`).
+    pub fn vec4_add_scalars(mem: &mut impl Mem, dst: u32, src: u32, k: [f32; 4]) {
+        for (i, c) in (0u32..).zip(k) {
+            let v = add(mem.read(src + 4 * i), c);
+            mem.write(dst + 4 * i, v);
+        }
+    }
 }
