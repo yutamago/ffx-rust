@@ -1323,6 +1323,18 @@ ported! {
     SG_BlendToTarget @ 0x0083_95b0 => extern "C" fn sg_blend_to_target(obj: u32, n: i32) {
         seq::bridge::blend_to_target(&mut mem(), obj, n);
     }
+    /// `Sg_IdSlideEdge(from, to)`.
+    Sg_IdSlideEdge @ 0x0083_e180 => extern "C" fn sg_id_slide_edge(from: u32, to: u32) {
+        state::bridge::id_slide_edge(&mut mem(), from, to);
+    }
+    /// `Sg_ControlCamera()`.
+    Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
+        state::bridge::control_camera(&mut mem())
+    }
+    /// `SG_ApplyRawClip(obj, clip, t, t2)`.
+    SG_ApplyRawClip @ 0x0083_8750 => extern "C" fn sg_apply_raw_clip(obj: u32, clip: u32, t: u32, t2: u32) {
+        seq::bridge::apply_raw_clip(&mut mem(), obj, clip, t, t2);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

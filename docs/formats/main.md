@@ -348,3 +348,31 @@ behind them stays with those modules, which the bridges call.
   each channel's `+0x20` toward `+0x1c`. Otherwise every bone steps its 3
   rotations (`Chr_FracStep`) and 6 values (`cur += (target - cur) / n`,
   skipped when already equal). `n` 1 sets `+0x194` bit 16.
+
+## Edge slide, free camera, raw clips (round 7)
+
+- `Sg_IdSlideEdge(from, to)` (`0x0083e180`): when a move from `from` to
+  `to` crosses an id edge (endpoints `0x01301aec`, `0x01301af0`, found by
+  `0x0083d960`), the move slides along it. The move is turned into the
+  edge's frame (a rotation about y; `FFXVu0ApplyMatrix`) and loses its
+  across component. While the result back in the world
+  (`FFXVu0InversMatrix`) is still past the edge (`w.z n.x - w.x n.z > 0`),
+  it steps one unit back along z. `to` = `from + w` in x and z.
+- `Sg_ControlCamera()` (`0x0083f4b0`): the free camera. The right stick
+  (bytes `0x023c44a6/a7`, dead zone `0x51..0xaf`) turns yaw `0x00c4def0`
+  and pitch `0x00c4def4` by `(stick - 0x80)` degrees / 12, each wrapped
+  once into `-pi..pi`. With the L/R button mode, the held buttons
+  (`0x023c44ac`) 2/8 move the height `0x00c4dee4` by 0.2 and 1/4 the
+  distance `0x01301bb8` by 0.4. Pressing `0x400` (`0x023c44a8`) cycles
+  six distances (50, 100, 180, 250, 1000, 30). A debug build captures on
+  `0x100`.
+- `SG_ApplyRawClip(obj, clip, t, t2)` (`0x00838750`): uncompressed clips.
+  The header gives the `i16` stride (frames per channel) and the bone
+  count; the data starts at `+0x10`, nine channels per bone, frames
+  contiguous. Frame `t >> 8` is blended toward `t2 >> 8` by `t & 0xff`
+  into each bone's raw `i16` pose (`+0x146..`), through the bone map
+  `+0x758` when present. `+0x7ec` then copies some bones' raw values to
+  their neighbours: 1 copies bone 24's to 25 and 26, 2 copies bone 42's
+  to 43, 3 copies bone 42's to 43 and 44. Last, every bone's floats are
+  set: rotations through `SG_RawToRad`, translations times the scale
+  `+0x38` of `+0x1c4`, scales / 4096.

@@ -2451,6 +2451,7 @@ fn control_synthetic() {
     sync_cases(&mut a, &mut b, &mut rng, 300);
     round5_main_cases(&mut a, &mut b, &mut rng, 300);
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
+    round7_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2467,6 +2468,7 @@ fn control_snapshot() {
     sync_cases(&mut a, &mut b, &mut rng, 300);
     round5_main_cases(&mut a, &mut b, &mut rng, 300);
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
+    round7_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3226,6 +3228,134 @@ fn round6_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
             &[obj, n.cast_unsigned()],
             |m| {
                 sq::blend_to_target(m, obj, n);
+            },
+        );
+    }
+}
+
+// Main round 7: the edge slide, the free camera, raw clips.
+
+/// A float in -8..8 (no specials: the edge slide steps by one unit until it
+/// is back, which never ends far out).
+fn bounded(rng: &mut Xorshift) -> u32 {
+    let v = f64::from(rng.below(0x10000)) / 4096.0 - 8.0;
+    ffx_bridge::x87::store(v)
+}
+
+fn round7_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    for _ in 0..rounds {
+        // the edge slide
+        let va = alloc(a, b, 8);
+        let vb = alloc(a, b, 8);
+        for (v, k) in [(va, 0u32), (va, 4), (vb, 0), (vb, 4)] {
+            let c = if rng.below(6) == 0 { 0 } else { rng.below(64) };
+            put(a, b, v + k, u16::try_from(c).unwrap());
+        }
+        set(a, b, st::ID_EDGE_A, va);
+        set(a, b, st::ID_EDGE_B, vb);
+        let from = alloc(a, b, 16);
+        let to = alloc(a, b, 16);
+        for k in 0..4 {
+            put(a, b, from + 4 * k, bounded(rng));
+            put(a, b, to + 4 * k, bounded(rng));
+        }
+        twin("Sg_IdSlideEdge", a, b, 0x0083_e180, &[from, to], |m| {
+            st::id_slide_edge(m, from, to);
+        });
+
+        // the free camera
+        let stick = |rng: &mut Xorshift| u8::try_from(rng.next() & 0xff).unwrap();
+        let (sx, sy) = (stick(rng), stick(rng));
+        set(a, b, st::PAD_RSTICK_X, sx);
+        set(a, b, st::PAD_RSTICK_Y, sy);
+        set(a, b, st::PAD_HELD, rng.next() & 0x10f);
+        set(a, b, st::PAD_PRESSED, rng.next() & 0x400);
+        for g in [st::FREE_CAM_YAW, st::FREE_CAM_PITCH] {
+            let x = if rng.below(3) == 0 {
+                modest(rng)
+            } else {
+                bounded(rng) & 0xbfff_ffff
+            };
+            set(a, b, g, f32::from_bits(x));
+        }
+        set(a, b, st::FREE_CAM_HEIGHT, f32::from_bits(modest(rng)));
+        set(a, b, st::FREE_CAM_DIST, f32::from_bits(modest(rng)));
+        set(a, b, st::FREE_CAM_PRESET, rng.next());
+        set(a, b, st::IS_DEBUG, u8::try_from(rng.below(2)).unwrap());
+        set(
+            a,
+            b,
+            st::LR_BUTTON_MODE,
+            u8::try_from(rng.below(2)).unwrap(),
+        );
+        set(
+            a,
+            b,
+            st::CAPTURE_SELECT,
+            u8::try_from(rng.below(2)).unwrap(),
+        );
+        if rng.below(6) == 0 {
+            // exactly pi (the f32 pi in the f64 constant): no wrap
+            let pi = f32::from_bits(ffx_bridge::x87::store(st::PI_F64.get(a)));
+            set(a, b, st::FREE_CAM_YAW, pi);
+            set(a, b, st::PAD_RSTICK_X, 0x80);
+        }
+        twin("Sg_ControlCamera", a, b, 0x0083_f4b0, &[], |m| {
+            st::control_camera(m)
+        });
+
+        // raw clips
+        let obj = block(a, b, rng, 0x800);
+        let nb = rng.below(5);
+        let model = block(a, b, rng, 0x10);
+        put(a, b, model + 0xa, u16::try_from(nb).unwrap());
+        put(a, b, obj + 0x1c0, model);
+        let bones = block(a, b, rng, 0x4000);
+        put(a, b, obj + 0x328, bones);
+        let scale = block(a, b, rng, 0x40);
+        put(a, b, scale + 0x38, modest(rng));
+        put(a, b, obj + 0x1c4, scale);
+        put(a, b, obj + 0x7ec, u8::try_from(rng.below(5)).unwrap());
+        let map = if rng.below(2) == 0 {
+            0
+        } else {
+            let m = alloc(a, b, 0x20);
+            for k in 0..8 {
+                let v = if rng.below(4) == 0 {
+                    0xffff
+                } else {
+                    rng.below(0x2d)
+                };
+                put(a, b, m + 8 + 2 * k, u16::try_from(v).unwrap());
+            }
+            m
+        };
+        put(a, b, obj + 0x758, map);
+        let stride = rng.below(5) + 2;
+        let in_clip = rng.below(6);
+        let len = 0x10 + 2 * stride * 9 * in_clip;
+        let clip = block(a, b, rng, len as usize + 4);
+        put(a, b, clip, u16::try_from(stride).unwrap());
+        put(a, b, clip + 2, u16::try_from(in_clip).unwrap());
+        let frame = rng.below(stride);
+        let t = (frame << 8)
+            | if rng.below(3) == 0 {
+                0
+            } else {
+                rng.below(0x100)
+            };
+        let t2 = rng.below(stride) << 8 | rng.below(0x100);
+        let arg = if rng.below(10) == 0 { 0 } else { clip };
+        twin(
+            "SG_ApplyRawClip",
+            a,
+            b,
+            0x0083_8750,
+            &[obj, arg, t, t2],
+            |m| {
+                sq::apply_raw_clip(m, obj, arg, t, t2);
             },
         );
     }

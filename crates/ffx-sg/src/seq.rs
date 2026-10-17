@@ -528,8 +528,8 @@ pub mod bridge {
     /// (`Angle12_Lerp` for the three rotations, `(b - a) * f >> 8` the
     /// rest) into the raw pose of each bone (through the bone map
     /// `+0x758` when there is one, `0xffff` skipping). Then, by `+0x7ec`, a
-    /// few bones' raw values are copied to their neighbours (1: bones 25 to
-    /// 26 and 27; 2: 42 to 43; 3: 42 to 43 and 44), and every bone's
+    /// few bones' raw values are copied to their neighbours (1: bones 24 to
+    /// 25 and 26; 2: 42 to 43; 3: 42 to 43 and 44), and every bone's
     /// float pose follows: rotations `SG_RawToRad`, translations times the
     /// character's scale (`+0x38` of `+0x1c4`), scales / 4096.
     pub fn apply_raw_clip(mem: &mut impl Mem, obj: u32, clip: u32, t: u32, t2: u32) {

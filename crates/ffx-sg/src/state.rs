@@ -1522,7 +1522,7 @@ pub mod bridge {
         0
     }
 
-    /// The id edge a move last crossed (`Sg_IdHitTriangle`'s, `0x0083d960`):
+    /// The id edge a move last crossed (found by `0x0083d960`):
     /// its two `i16` vertices.
     pub const ID_EDGE_B: Global<u32> = Global::new(0x0130_1aec);
     pub const ID_EDGE_A: Global<u32> = Global::new(0x0130_1af0);

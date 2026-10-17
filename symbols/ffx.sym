@@ -7304,6 +7304,7 @@
 0x0083d920 function Ch_IdGetWater             # chr +0x828 bits 13-14; Switch name, in name order before Ch_IdSetDefPid
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
 0x0083e130 function Sg_IdGetNormal            # (out, i) -> -1 without id data (0x01301a84) or for i -1; else Sg_CalcTriangleNormal of entry i's three i16 vertices (8 bytes each at 0x01301a8c) into out, 0; name ours; ported (ffx_sg::state)
+0x0083e180 function Sg_IdSlideEdge            # (from, to): a move that crossed the id edge 0x01301aec-0x01301af0 slides along it: the move in the edge's frame (FFXVu0ApplyMatrix) loses its across component, then steps back one unit along z while the world result (FFXVu0InversMatrix) is still past the edge; to.x/z = from + w; called from the id move loop 0x0083e5f0 after 0x0083d960 finds a crossing; name ours; ported (ffx_sg::state)
 0x0083e3e0 function Sg_VectorGetLengthXZ      # (a, b) -> |b - a| in the x-z plane (_CIsqrt); the id map functions
 0x0083e420 function Sg_CalcTriangleNormal_0083e420 # structure: (v0, v1, v2, out) with s16 vertices: the normalised cross product of the two edges (FFXVu0OuterProduct, FFXVu0Normalize); next to Sg_VectorGetLengthXZ; name ours
 0x0083e4e0 function Sg_IdMatchChr             # (chr, i) -> whether id entry i's kind (low 7 bits of +0xc) applies to chr: 1 all, 2 not the player, 13 bit 2 of +0x198, 14 the player, 0x30..0x3f through g_ChrIdMapTable; caller 0x0083d960; name ours; ported (ffx_sg::state)
@@ -14244,6 +14245,9 @@
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
 0x00c49784 label    g_ChrSysMotionSets        # i8 per slot: the system motion set of a definition's table (+0x6c, 8-byte entries from +0x10) Ch_SetSysMotion 0x00837d00 uses
+0x00c4dee4 label    g_FreeCamHeight           # f32: Sg_ControlCamera's height, +/- 0.2 with L/R button mode buttons 2/8
+0x00c4def0 label    g_FreeCamYaw              # f32 radians: Sg_ControlCamera turns it by (right stick x - 0x80) degrees / 12, wrapped into -pi..pi
+0x00c4def4 label    g_FreeCamPitch            # f32 radians: Sg_ControlCamera turns it by (right stick y - 0x80) degrees / 12, wrapped into -pi..pi
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
 0x00c52704 label    g_AtelConstants              # u32 table opcode 75 pushes (Script_Run)
@@ -14754,6 +14758,8 @@
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01301bb0 label    g_FreeCamPreset           # u32: Sg_ControlCamera's distance preset counter (button 0x400; low byte % 6 picks 50, 100, 180, 250, 1000, 30)
+0x01301bb8 label    g_FreeCamDist             # f32: Sg_ControlCamera's distance, +/- 0.4 with L/R button mode buttons 1/4, or a preset
 0x01301ff8 label    g_CacheEntries            # the model cache's 100 entries (0x28 bytes) Cache_Init points g_CacheSlots at
 0x01302f98 label    g_CacheSlots              # the model cache's 100 entry pointers, least recently used first (Cache_*; layout in docs/formats/render.md)
 0x013032b8 label    g_CacheState              # a word Cache_Init clears
