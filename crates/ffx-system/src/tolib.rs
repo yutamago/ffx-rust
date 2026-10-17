@@ -3885,4 +3885,74 @@ pub mod bridge {
         let b: u32 = mem.read(row.wrapping_add(0x1c));
         mem.write(msg.wrapping_add(0xf8), b);
     }
+
+    /// `TOMenuMakeSaveFileName()` (`0x008b3a40`): the save folder name in
+    /// `0x023cc0a0`: the PS2 product code of the language (`TOGetFFXLang`,
+    /// passed in: 0 `BISLPS-25088`, 1 `BASLUS-20312`, 2 `BESCES-50491`, 3
+    /// `BESCES-50494`, 4 `BESCES-50492`, 5 `BESCES-50493`, 9
+    /// `BKSLPM-67513`, 16 `BISLPS-25088`, 17 `BISLPM-65115`, 18
+    /// `BESCES-50490`; any other leaves the buffer as it is) with
+    /// `FF0906%02d` appended (the slot number is formatted later); the
+    /// word `0x01866240` cleared.
+    pub fn menu_make_save_file_name(mem: &mut impl Mem, lang: u32) {
+        let code = match lang {
+            0 | 16 => Some(0x00c5_b360),
+            1 => Some(0x00c5_b370),
+            2 => Some(0x00c5_b3c0),
+            3 => Some(0x00c5_b3a0),
+            4 => Some(0x00c5_b390),
+            5 => Some(0x00c5_b3b0),
+            9 => Some(0x00c5_b3e0),
+            17 => Some(0x00c5_b3d0),
+            18 => Some(0x00c5_b380),
+            _ => None,
+        };
+        let out = mem.rebase(0x023c_c0a0);
+        if let Some(src) = code {
+            let src = mem.rebase(src);
+            let mut k = 0u32;
+            loop {
+                let c: u8 = mem.read(src.wrapping_add(k));
+                mem.write(out.wrapping_add(k), c);
+                k = k.wrapping_add(1);
+                if c == 0 {
+                    break;
+                }
+            }
+        }
+        let tail = mem.rebase(0x00c5_b3f0);
+        let len = c_strlen(mem, tail);
+        let end = out.wrapping_add(c_strlen(mem, out));
+        for k in 0..=len {
+            let c: u8 = mem.read(tail.wrapping_add(k));
+            mem.write(end.wrapping_add(k), c);
+        }
+        let w = mem.rebase(0x0186_6240);
+        mem.write(w, 0u32);
+    }
+
+    /// `TOFuncMacroCmdValue(cmd)` (`0x008b6210`): the macro command's value
+    /// (`+4`) as decimal (`sprintf("%d")`) in `0x01869ee4`; with the
+    /// command's type `+1` at 2 the digit-group mark 0x46 goes before each
+    /// group of three from the right (the count includes a minus sign).
+    /// Returns the buffer.
+    pub fn func_macro_cmd_value(mem: &mut impl Mem, cmd: u32) -> u32 {
+        let v: i32 = mem.read(cmd.wrapping_add(4));
+        let text = v.to_string().into_bytes();
+        let grouped = mem.read::<u8>(cmd.wrapping_add(1)) == 2;
+        let out = mem.rebase(0x0186_9ee4);
+        let mut at = out;
+        let mut left = text.len();
+        for (i, &c) in text.iter().enumerate() {
+            if left.is_multiple_of(3) && i > 0 && grouped {
+                mem.write(at, 0x46u8);
+                at = at.wrapping_add(1);
+            }
+            mem.write(at, c);
+            at = at.wrapping_add(1);
+            left -= 1;
+        }
+        mem.write(at, 0u8);
+        out
+    }
 }

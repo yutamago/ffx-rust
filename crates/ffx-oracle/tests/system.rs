@@ -9430,3 +9430,58 @@ fn round16_message_setup_matches_the_original_on_the_snapshot() {
     };
     round16_message_setup(&mut a, &mut b, &mut Xorshift(0x4016_0012));
 }
+
+/// Round 16's save folder name and macro number text.
+#[allow(clippy::cast_possible_truncation)]
+fn round16_save_name_and_numbers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    let mut getter = vec![0xa1];
+    getter.extend_from_slice(&cell.to_le_bytes());
+    getter.push(0xc3);
+    let s = stand_in8(a, b, 0xec0, &getter);
+    redirect(a, b, 0x0064_10e0, s);
+    for lang in 0..0x16u32 {
+        let mut pre: Vec<u8> = (0..rng.next() % 12)
+            .map(|_| b'a' + (rng.next() % 26) as u8)
+            .collect();
+        pre.resize(0x40, 0);
+        let at = a.rebase(0x023c_c0a0);
+        a.write(at, &pre).unwrap();
+        b.write(at, &pre).unwrap();
+        put(a, b, cell, lang);
+        put(a, b, a.rebase(0x0186_6240), rng.next());
+        eax(a, 0x008b_3a40, &[]);
+        t::menu_make_save_file_name(b, lang);
+        same_memory("save folder name", a, b);
+    }
+    let cmd = alloc(a, b, 8);
+    for k in 0..300u32 {
+        let v = match k % 4 {
+            0 => rng.next(),
+            1 => rng.next() % 2_000_000,
+            2 => (rng.next() % 2000).wrapping_neg(),
+            _ => [0u32, 999, 1000, 0x8000_0000, 0x7fff_ffff, 100_000][(rng.next() % 6) as usize],
+        };
+        put(a, b, cmd, [u32::from(rng.next() as u8 % 4) << 8, v]);
+        put(a, b, a.rebase(0x0186_9ee4), [0xa5u8; 0x20]);
+        assert_eq!(eax(a, 0x008b_6210, &[cmd]), t::func_macro_cmd_value(b, cmd));
+        same_memory("macro numbers", a, b);
+    }
+}
+
+#[test]
+fn round16_save_name_and_numbers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_save_name_and_numbers(&mut a, &mut b, &mut Xorshift(0x4016_0021));
+}
+
+#[test]
+fn round16_save_name_and_numbers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_save_name_and_numbers(&mut a, &mut b, &mut Xorshift(0x4016_0022));
+}

@@ -4609,6 +4609,16 @@ ported! {
     TOInitMessageCallBack @ 0x008d_f6d0 => extern "C" fn to_init_message_call_back(msg: u32) {
         tolib::bridge::init_message_call_back(&mut mem(), msg);
     }
+    /// `TOMenuMakeSaveFileName()`.
+    TOMenuMakeSaveFileName @ 0x008b_3a40 => extern "C" fn to_menu_make_save_file_name() {
+        let mut m = mem();
+        let lang = instance::bridge::ffx_lang(&m, &mut phyre_printf);
+        tolib::bridge::menu_make_save_file_name(&mut m, lang);
+    }
+    /// `TOFuncMacroCmdValue(cmd)`.
+    TOFuncMacroCmdValue @ 0x008b_6210 => extern "C" fn to_func_macro_cmd_value(cmd: u32) -> u32 {
+        tolib::bridge::func_macro_cmd_value(&mut mem(), cmd)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

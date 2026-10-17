@@ -9142,7 +9142,7 @@
 0x008b3630 function AddrOfGlobal0159e468_008b3630 # auto-port shape (return address of global, cdecl): return &0x0159e468; callers: ; name ours
 0x008b3730 function TOSaveSlotShown_008b3730 # cdecl(_, i): g_TkSaveSlots[i] == 1, or with byte 0x0186628a set <= 2 or 4; name ours
 0x008b3790 function TOCloseHelpWindow_008b3790 # (): window 0x0186625c: +0x41 = 1, pointer cleared; name ours
-0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export)
+0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export); (): 0x023cc0a0 = product code by TOGetFFXLang (0/16 BISLPS-25088, 1 BASLUS-20312, 2 BESCES-50491, 3 -50494, 4 -50492, 5 -50493, 9 BKSLPM-67513, 17 BISLPM-65115, 18 BESCES-50490, others unchanged) + 'FF0906%02d'; 0x01866240 = 0
 0x008b3cf0 function AtelAllClearCallbackQue   # fh switch:bsim1.00 0x710044df20
 0x008b3d10 function SetFieldConst28_008b3d10     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x28)] = 0x0; return a0; callers: no direct caller; name ours
 0x008b3d90 function TkMenuSaveLoadCloseWindow2 # (): close request (+0x41 = 1) for 0x01866258 and forget it; save/load menu (TkMenuCtrlSaveLoad area)
@@ -9180,7 +9180,7 @@
 0x008b5ea0 function TODrawMovieChangeMacro2   # fh v3:exact 0x008b5e50
 0x008b5fb0 function TODrawSelectCursor        # fh v3:cg8 0x8b5f60
 0x008b6200 function TOFFXToSJIS               # fh v3:exact 0x008b61b0
-0x008b6210 function TOFuncMacroCmdValue          # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f24a0 TOFuncMacroCmdValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x008b6210 function TOFuncMacroCmdValue          # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f24a0 TOFuncMacroCmdValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(cmd): sprintf('%d', cmd+4) into 0x01869ee4, with digit-group mark 0x46 before each 3 from the right when cmd+1 == 2; returns the buffer
 0x008b62b0 function TOFuncPadMessageInputValue   # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f3020 TOFuncPadMessageInputValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008b64a0 function TOFuncPadMessageNormal    # fh v3:exact 0x008b6450
 0x008b64e0 function TOFuncPadMessageSelect       # layout: alphabetical run between TOFuncPadMessageNormal and TOGetChangeMacroAddress (2 unnamed in the gap); Switch 0x71004f2f00 TOFuncPadMessageSelect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
