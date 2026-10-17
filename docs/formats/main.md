@@ -220,3 +220,26 @@ behind them stays with those modules, which the bridges call.
 | `Sg_PLightDispose()` `0x00831ba0` | point-light table freed, table and count 0 | the memory move's trigger |
 | `dreamParamReset()` `0x00822410` | `0x012ffaf4`, `0x012fb8f0`, `0x012ffae8`, `0x012ffaec`, `0x012fb8f4` 0; `0x00c496d0` -1 | `graphicMenuUnloadSpecialTexture(10)` |
 | `Sg_LightSetDir(i, dir)` `0x00836430` | light `i` (0-2: `0x00c49724`, `0x00c49734`, `0x013008e8`) gets four words | `FFXVu0NormalLightMatrix(g_Vu0ClipScreen, the three)`, `graphicCharacterLightingSetLightDir(i, x, y, z)` |
+
+## Map id data, motion groups, player settings
+
+- `Sg_IdFixupAndSet(map)` (`0x00844bc0`): a map's id data arrives with
+  offsets taken from the base in its word 0. When `map - base` is not 0,
+  word 0 becomes that difference and `+0x1c`, `+0x18` and `+0xc` of each
+  16-byte entry in `+0x1c`'s table (`i16` count at `+6`) move by it. The id
+  shades (`g_ChrIdShadeOn`) go on for a version (`i16` `+4`) above
+  `0x1202`; a change is told to
+  `graphicCharacterLightingSetMapIdFlagChanged(old, new)`. Then
+  `Sg_IdSetPtr(map)`.
+- `SG_DisposeMotionGroup(a, b, key)` (`0x00836e20`): removes the group's
+  sequences (`+4` of them, 20 bytes each at `+0xc`) and its table entry.
+  A character group (`a` 0) or the system group (`a` 2) goes back to the
+  cache, `Cache_Unuse(2, b << 16 | key)` or `Cache_Unuse(2, 0x903e7)`;
+  any other is freed and the memory move triggered. Active characters
+  whose `+0x7e8` is the group get `Ch_MotionSetNull`.
+- `Sg_PlayerSetDiving(v)` (`0x0082d9d0`): byte `0x013007c5`.
+  `Sg_PlayerSetSpeed(kind, v)` (`0x0082d9e0`): `f32` speeds for kinds 1,
+  2, `0x12`, `0x13` at `0x013007b4..c0`; others ignored.
+- `Sg_SetCameraFollow(on)` (`0x0082dab0`): bit 1 of `0x00c496d5` (bit 0 is
+  `0x0082d030`'s). With both set, `Sg_ControlMain` turns the camera after
+  the player's heading.

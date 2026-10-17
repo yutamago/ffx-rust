@@ -219,9 +219,12 @@ pub mod bridge {
         }
     }
 
-    /// `user_free_thunk` and `Cache_Unuse`, still called as the game's.
+    /// `user_free_thunk` and `Cache_Unuse`, called as the game's (with
+    /// `Ch_MemMoveSetTrigger`).
     pub const USER_FREE: u32 = 0x0068_7010;
     pub const CACHE_UNUSE: u32 = 0x0084_0d70;
+    /// `Ch_MemMoveSetTrigger`.
+    pub const MEM_MOVE_SET_TRIGGER: u32 = 0x0082_7250;
     /// `g_ChrCount`, `g_ChrArray` (`0x880` bytes each).
     pub const CHR_COUNT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x023c_44e0);
     pub const CHR_ARRAY: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x023c_44e4);
@@ -257,7 +260,8 @@ pub mod bridge {
         } else {
             let at = h.rebase(USER_FREE);
             h.call(at, &[group]);
-            ffx_chara::sys::bridge::ch_mem_move_set_trigger(h);
+            let at = h.rebase(MEM_MOVE_SET_TRIGGER);
+            h.call(at, &[]);
         }
         let end = |h: &mut _| {
             let n = CHR_COUNT.get(h);
@@ -266,7 +270,8 @@ pub mod bridge {
         let mut p = CHR_ARRAY.get(h);
         let mut stop = end(h);
         while p != stop {
-            if h.read::<u8>(p.wrapping_add(2)) != 0 && h.read::<u32>(p.wrapping_add(0x7e8)) == group {
+            if h.read::<u8>(p.wrapping_add(2)) != 0 && h.read::<u32>(p.wrapping_add(0x7e8)) == group
+            {
                 ffx_chara::motion::bridge::ch_motion_set_null(h, p);
             }
             p = p.wrapping_add(0x880);

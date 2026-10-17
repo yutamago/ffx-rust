@@ -1418,7 +1418,7 @@ pub mod bridge {
     }
 
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
-    /// gravity to a swimming player.
+    /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
 
     /// `Sg_PlayerSetDiving(v)` (`0x0082d9d0`): [`PLAYER_DIVING`]. Returns
@@ -1463,11 +1463,12 @@ pub mod bridge {
     pub const CAMERA_FOLLOW: Global<u8> = Global::new(0x00c4_96d5);
 
     /// `Sg_SetCameraFollow(on)` (`0x0082dab0`): bit 1 of
-    /// [`CAMERA_FOLLOW`]. Returns the new byte (`al`).
+    /// [`CAMERA_FOLLOW`]. Returns the other bits (`al`: the old byte
+    /// without bit 1).
     pub fn set_camera_follow(mem: &mut impl Mem, on: u32) -> u8 {
-        let v = (CAMERA_FOLLOW.get(mem) & 0xfd) | if on != 0 { 2 } else { 0 };
-        CAMERA_FOLLOW.set(mem, v);
-        v
+        let rest = CAMERA_FOLLOW.get(mem) & 0xfd;
+        CAMERA_FOLLOW.set(mem, rest | if on != 0 { 2 } else { 0 });
+        rest
     }
 
     /// `Sg_IdSetPtr`'s zoom divisor (`f64` 10 in `.rdata`).

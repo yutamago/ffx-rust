@@ -6649,6 +6649,7 @@
 0x0082da60 function Sg_SetExecFrames          # fh v3:exact 0x0082dae0
 0x0082da90 function Sg_SetExecSpecialSpeed    # fh v3:bsim1.00 0x0082db10
 0x0082daa0 function Sg_SetLRButtonMode        # fh v3:bsim1.00 0x0082db20
+0x0082dab0 function Sg_SetCameraFollow        # (on): bit 1 of g_CameraFollow 0x00c496d5 (bit 0 is 0x0082d030's); with both set Sg_ControlMain turns the camera after the player's heading; script native at 0x00a77950 and the map defaults (Light_Set run, 0x00839xxx) call it with 1; returns the old byte without bit 1 in al; name ours; ported (ffx_sg::state)
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70
@@ -13928,6 +13929,7 @@
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to the reader's g_ChrReadTableFn for each kind
 0x00c4967f label    g_ChrKindTableStride      # i8: Chr_TableIndex's index step per table entry
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
+0x00c496d5 label    g_CameraFollow            # u8 bits: 0 set by 0x0082d030, 1 by Sg_SetCameraFollow (0x0082dab0); Sg_ControlMain follows the player's heading when it is 3
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
@@ -14392,6 +14394,8 @@
 0x012ffab8 label    g_ChrKindTables           # 8 pointers, one per kind (id >> 12): i16 count, then i16 ids (Chr_TableIndex)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
+0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
+0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec

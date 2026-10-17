@@ -2430,6 +2430,7 @@ fn control_synthetic() {
     };
     let mut rng = Xorshift(0x5eed_0401);
     control_cases(&mut a, &mut b, &mut rng, 300, false);
+    scene_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2439,4 +2440,145 @@ fn control_snapshot() {
     };
     let mut rng = Xorshift(0x5eed_0402);
     control_cases(&mut a, &mut b, &mut rng, 300, true);
+    scene_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+// Main round 2: map id data, motion groups, the player's settings.
+
+fn scene_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    recorder(a, b, 18, st::LIGHTING_SET_MAP_ID_FLAG_CHANGED, 2, 0x2000);
+    recorder(a, b, 19, sq::CACHE_UNUSE, 2, 0x2001);
+    let log = a.rebase(REC_LOG);
+    let f = f32::from_bits;
+    for _ in 0..rounds {
+        // Sg_IdFixupAndSet: offsets from a base (0: from the map, the
+        // map itself: already pointers, or any)
+        put(a, b, log, 0u32);
+        let n = rng.below(5);
+        let table = block(a, b, rng, 16 * n as usize + 16);
+        let map = block(a, b, rng, 0x40);
+        let base = match rng.below(3) {
+            0 => 0,
+            1 => map,
+            _ => rng.next(),
+        };
+        let delta = map.wrapping_sub(base);
+        put(a, b, map, base);
+        let version = match rng.below(3) {
+            0 => 0x1202,
+            1 => 0x1203,
+            _ => rng.next() & 0xffff,
+        };
+        put(a, b, map + 4, u16::try_from(version).unwrap());
+        let count = if rng.below(8) == 0 { 0xfffe } else { n };
+        put(a, b, map + 6, u16::try_from(count).unwrap());
+        put(a, b, map + 0x1c, table.wrapping_sub(delta));
+        let shade = match rng.below(3) {
+            0 => 0,
+            1 => 1,
+            _ => u8::try_from(rng.next() & 0xff).unwrap(),
+        };
+        set(a, b, st::CHR_ID_SHADE_ON, shade);
+        let arg = if rng.below(8) == 0 { 0 } else { map };
+        twin("Sg_IdFixupAndSet", a, b, 0x0084_4bc0, &[arg], |m| {
+            st::id_fixup_and_set(&mut H(m), arg);
+        });
+
+        // SG_DisposeMotionGroup over one loaded group and a few
+        // characters, some on it
+        put(a, b, log, 0u32);
+        let group = block(a, b, rng, 0x20);
+        let nseq = rng.below(4);
+        let seqs = block(a, b, rng, 20 * nseq as usize + 4);
+        put(a, b, group + 0xc, seqs);
+        put(
+            a,
+            b,
+            group + 4,
+            if rng.below(8) == 0 { u32::MAX } else { nseq },
+        );
+        for k in 0..nseq {
+            if rng.below(2) == 0 {
+                let slot = a.rebase(sq::SEQUENCES.sym) + 20 * rng.below(100);
+                put(a, b, slot, seqs + 20 * k);
+            }
+        }
+        let kind = [0i32, 1, 2, 5][rng.below(4) as usize];
+        let num = rng.int();
+        let key = rng.next();
+        let slot = a.rebase(sq::MOTION_GROUPS.sym) + 12 * rng.below(50);
+        put(a, b, slot, group);
+        put(
+            a,
+            b,
+            slot + 4,
+            u16::try_from(kind.cast_unsigned() & 0xffff).unwrap(),
+        );
+        put(
+            a,
+            b,
+            slot + 6,
+            u16::try_from(num.cast_unsigned() & 0xffff).unwrap(),
+        );
+        put(a, b, slot + 8, key);
+        let nchr = rng.below(4);
+        let chrs = alloc(a, b, 0x880 * nchr as usize + 4);
+        for c in 0..nchr {
+            let p = chrs + 0x880 * c;
+            put(a, b, p + 2, u8::from(rng.below(3) != 0));
+            put(
+                a,
+                b,
+                p + 0x7e8,
+                if rng.below(3) == 0 { rng.next() } else { group },
+            );
+            put(a, b, p + 0x714, rng.next());
+        }
+        set(a, b, sq::CHR_ARRAY, chrs);
+        set(a, b, sq::CHR_COUNT, nchr);
+        let (ka, kb, kk) = if rng.below(6) == 0 {
+            (kind, num, key ^ 1)
+        } else {
+            (kind, num, key)
+        };
+        let (ua, ub) = (ka.cast_unsigned(), kb.cast_unsigned());
+        twin(
+            "SG_DisposeMotionGroup",
+            a,
+            b,
+            0x0083_6e20,
+            &[ua, ub, kk],
+            |m| sq::dispose_motion_group(&mut H(m), ka, kb, kk),
+        );
+
+        // the player's settings
+        let v = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(2)
+        };
+        twin("Sg_PlayerSetDiving", a, b, 0x0082_d9d0, &[v], |m| {
+            st::player_set_diving(m, v)
+        });
+        let kind = match rng.below(4) {
+            0 => rng.next(),
+            1 => rng.below(0x16),
+            _ => [1, 2, 0x12, 0x13][rng.below(4) as usize],
+        };
+        let x = rng.float();
+        twin("Sg_PlayerSetSpeed", a, b, 0x0082_d9e0, &[kind, x], |m| {
+            st::player_set_speed(m, kind, f(x))
+        });
+        set(
+            a,
+            b,
+            st::CAMERA_FOLLOW,
+            u8::try_from(rng.next() & 0xff).unwrap(),
+        );
+        twin("Sg_SetCameraFollow", a, b, 0x0082_dab0, &[v], |m| {
+            st::set_camera_follow(m, v)
+        });
+    }
 }

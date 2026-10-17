@@ -1175,6 +1175,26 @@ ported! {
     Sg_GsEnd @ 0x0084_1770 => extern "C" fn sg_gs_end() -> u32 {
         control::bridge::gs_end(&mut mem())
     }
+    /// `Sg_PlayerSetDiving(v)`.
+    Sg_PlayerSetDiving @ 0x0082_d9d0 => extern "C" fn sg_player_set_diving(v: u32) -> u8 {
+        state::bridge::player_set_diving(&mut mem(), v)
+    }
+    /// `Sg_PlayerSetSpeed(kind, v)`.
+    Sg_PlayerSetSpeed @ 0x0082_d9e0 => extern "C" fn sg_player_set_speed(kind: u32, v: f32) -> u32 {
+        state::bridge::player_set_speed(&mut mem(), kind, v)
+    }
+    /// `Sg_SetCameraFollow(on)`.
+    Sg_SetCameraFollow @ 0x0082_dab0 => extern "C" fn sg_set_camera_follow(on: u32) -> u8 {
+        state::bridge::set_camera_follow(&mut mem(), on)
+    }
+    /// `SG_DisposeMotionGroup(a, b, key)`.
+    SG_DisposeMotionGroup_00836e20 @ 0x0083_6e20 => extern "C" fn sg_dispose_motion_group(a: i32, b: i32, key: u32) -> u32 {
+        seq::bridge::dispose_motion_group(&mut mem(), a, b, key)
+    }
+    /// `Sg_IdFixupAndSet(map)`.
+    Sg_IdFixupAndSet_00844bc0 @ 0x0084_4bc0 => extern "C" fn sg_id_fixup_and_set(map: u32) {
+        state::bridge::id_fixup_and_set(&mut mem(), map);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
