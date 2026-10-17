@@ -7,6 +7,7 @@
 pub mod accessor;
 pub mod btl;
 pub mod cd;
+pub mod cmdwin;
 pub mod config;
 pub mod container;
 pub mod daps;

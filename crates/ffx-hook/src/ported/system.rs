@@ -5,8 +5,9 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    accessor, btl, cd, config, container, daps, dtor, files, fixup, heap, instance, math, menu,
-    msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, heap, instance, math,
+    menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib, vbf,
+    window,
 };
 
 use super::{call0, mem, ported};
@@ -1107,6 +1108,10 @@ ported! {
         btl::bridge::set_target_callback(&mut mem(), w);
     }
 
+    /// `TOSeqDraw(i, a, b)`.
+    TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
+        scene::bridge::draw(&mut mem(), i, a, b, call_sym)
+    }
     /// `TOSeqGetNum(i, name, &n)`.
     TOSeqGetNum @ 0x008a_e410 => extern "C" fn to_seq_get_num(i: i32, name: u32, out: u32) {
         scene::bridge::get_num(&mut mem(), i, name, out, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
@@ -6093,6 +6098,21 @@ ported! {
         );
         std::hint::black_box(&mut frame);
         r
+    }
+    /// `TOBtlDrawCommandWindow(w)`: the battle command window.
+    TOBtlDrawCommandWindow @ 0x0089_f370 => extern "C" fn to_btl_draw_command_window(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let at = frame.at();
+        cmdwin::bridge::to_btl_draw_command_window(
+            &mut mem(),
+            w,
+            at,
+            call_sym,
+            call_ptr,
+            fcall,
+            crt_cos,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+        )
     }
     /// `QuickRecoverMenuDraw(text, x, y, w, alpha, scale, extra, align, scroll, slot)`.
     QuickRecoverMenuDraw @ 0x0090_4ba0 => extern "C" fn quick_recover_menu_draw(
