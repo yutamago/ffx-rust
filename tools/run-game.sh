@@ -20,6 +20,7 @@
 #   --virtual-clock  (with --fast) game time never follows real time: exactly
 #               one frame interval per frame, and reads are synchronous; implies
 #               --fixed-addresses (for replays)
+# FFX_COVERAGE=FILE in the environment: coverage mode (FILE.hits gets the hits)
 #   --fixed-addresses  start through ffx-launch.exe with bottom-up ASLR off, so
 #               heap and VirtualAlloc addresses repeat between runs
 #
@@ -51,6 +52,11 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+# Coverage mode (crates/ffx-hook/src/coverage.rs): FFX_COVERAGE names the
+# candidate list; /p turns the WSL path into a Windows one for the game.
+if [[ -n "${FFX_COVERAGE:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_COVERAGE/p"
+fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 
 if [[ -n "${home:-}" ]]; then

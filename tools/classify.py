@@ -30,8 +30,9 @@ into the TSV):
   Anything left is logic: skipping something necessary breaks parity,
   porting something unnecessary only costs time.
 
-Runtime coverage is not part of this yet (no hook-side coverage exists);
-see docs/rewrite-plan.md.
+Runtime coverage: the addresses in symbols/coverage.txt (tools/coverage.py,
+from ffx-hook's coverage mode) ran in a session; they count as roots, and
+one no static reference reaches is logic (debug when it looks like debug).
 
   tools/classify.py [--out symbols/classes.tsv] [--exe FFX.exe] [--summary]
 """
@@ -49,6 +50,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
 
 REPO = progress.REPO
+COVERAGE = REPO / "symbols/coverage.txt"
 WORK = progress.WORK
 BASE = 0x400000
 CATS = ("logic", "glue", "platform", "debug", "dead")
@@ -89,8 +91,8 @@ NAME_RULES = [
 ]
 NAME_RULES = [(c, re.compile(p), e, hi) for c, p, e, hi in NAME_RULES]
 DEBUG_NAME = NAME_RULES[0][1]
-# sce* stubs the PC build keeps for the PS2 code: platform unless PS2-only
-DEAD_FIRST = re.compile(r"^(sceMc|sceSif|SqsIop|Iop)")
+# the PS2 SDK stubs the PC build keeps (sce*, the Sif/IOP calls) run: they are
+# platform by name, not dead
 
 GLUE_IMPORTS = re.compile(r"^_?Iggy|IggyGDraw")
 PLATFORM_IMPORTS = re.compile(
@@ -104,7 +106,7 @@ PLATFORM_IMPORTS = re.compile(
     r"GetProcAddress|FreeLibrary|Crypt|CoInitialize|CoCreateInstance|ShellExecute|GetModule|"
     r"QueryPerformance|timeGetTime|GetTickCount|SetThreadExecutionState|GetUserName|Interlocked)")
 DEBUG_IMPORTS = re.compile(r"^(AllocConsole|IsDebuggerPresent|DebugBreak|SetConsoleScreenBufferSize|"
-                           r"GetConsoleScreenBufferInfo|_wassert|OutputDebugString)$")
+                           r"GetConsoleScreenBufferInfo|OutputDebugString)$")
 PRINT = re.compile(r"(dbgPrintf|^printf|Printf|^printf2)")
 DEBUG_STRINGS = re.compile(r"host0:|DEBUG|[Dd]ebug|\bdump\b|Deci2|assert", re.I)
 GLUE_SIDE = {"render", "pc-ui", "movie", "sound", "vfx", "system", "main"}
@@ -163,26 +165,54 @@ def scan_pointers(secs, starts):
 BRANCH = re.compile(r"^\s*([0-9a-f]+):\s+(call|jmp|j[a-z]+)\s+0x([0-9a-f]+)\s*$")
 
 
-def branch_edges(exe, starts):
-    """Direct call/jmp/jcc edges from objdump's disassembly: Ghidra's call
-    sites leave out tail jumps into other functions."""
+def branches(exe):
+    """Direct call/jmp/jcc instructions from objdump's disassembly of .text:
+    (source, target, is_call). Ghidra's call sites leave out tail jumps,
+    and calls into code Ghidra never made a function."""
     import subprocess
-    fset = set(starts)
     out = subprocess.run(["objdump", "-d", "-M", "intel", "--no-show-raw-insn", "-j", ".text", exe],
                          capture_output=True, text=True, check=True).stdout
-    edges = defaultdict(set)
+    found = []
     for line in out.splitlines():
         m = BRANCH.match(line)
-        if not m:
-            continue
-        t = int(m[3], 16)
-        if t not in fset:
-            continue
-        src = int(m[1], 16)
-        i = bisect.bisect_right(starts, src) - 1
-        if i >= 0 and starts[i] != t:
-            edges[starts[i]].add(t)
-    return edges
+        if m:
+            found.append((int(m[1], 16), int(m[3], 16), m[2] == "call"))
+    return found
+
+
+def code_graph(exe, secs, starts, ghidra_calls):
+    """Nodes: Ghidra's functions plus the code they miss that something
+    calls, or jumps to from another function (thunks, tail-call targets).
+    Returns (nodes, edges {node: targets}, data roots)."""
+    lo, hi = min(starts), max(starts)
+    br = [x for x in branches(exe) if lo <= x[1] <= hi]
+
+    def ghidra_holder(x):
+        return starts[bisect.bisect_right(starts, x) - 1]
+
+    known = set(starts)
+    extra = {t for src, t, call in br if t not in known and (call or ghidra_holder(t) != ghidra_holder(src))}
+    nodes = sorted(known | extra)
+
+    def holder(x):
+        i = bisect.bisect_right(nodes, x) - 1
+        return nodes[i] if i >= 0 else None
+
+    edges = defaultdict(set)
+    for a, cs in ghidra_calls.items():
+        edges[a] |= cs
+    for src, t, _ in br:
+        h, th = holder(src), holder(t)
+        if h is not None and th is not None and th != h:
+            edges[h].add(t if t in extra or t in known else th)
+    # code Ghidra counted as part of the function before it may fall into it
+    for i, t in enumerate(nodes):
+        if t in extra and i:
+            edges[nodes[i - 1]].add(t)
+    roots, code_edges = scan_pointers(secs, nodes)
+    for h, ts in code_edges.items():
+        edges[h] |= ts
+    return nodes, edges, roots
 
 
 def main():
@@ -223,21 +253,32 @@ def main():
                         strings[int(x, 16)].append(p[2])
 
     entry, secs = read_pe(args.exe)
-    roots, edges = scan_pointers(secs, starts)
+    nodes, edges, roots = code_graph(args.exe, secs, starts, {a: set(c) for a, c in callees.items()})
     roots.add(entry)
-    for extra in (edges, branch_edges(args.exe, starts)):
-        for a, ts in extra.items():
-            for t in ts:
+    for a, ts in edges.items():
+        for t in ts:
+            if t != a:
                 callees[a].add(t)
                 callers[t].add(a)
-    reach = set()
-    todo = deque(r for r in roots if r in size)
-    while todo:
-        a = todo.popleft()
-        if a in reach:
-            continue
-        reach.add(a)
-        todo.extend(c for c in callees[a] if c not in reach)
+    node_set = set(nodes)
+
+    def reach_from(rs):
+        seen = set()
+        todo = deque(r for r in rs if r in node_set)
+        while todo:
+            a = todo.popleft()
+            if a not in seen:
+                seen.add(a)
+                todo.extend(c for c in callees[a] if c not in seen)
+        return seen
+
+    static_reach = reach_from(roots)
+    # functions seen running (tools/coverage.py, ffx-hook's coverage mode)
+    # are roots too: something reached them that the static scan missed
+    ran = set()
+    if COVERAGE.exists():
+        ran = {int(x, 16) for x in COVERAGE.read_text(encoding="utf-8").split()}
+    reach = reach_from(roots | ran)
 
     phyre_lib = {a for a in starts if module.get(a) == "phyre"}
     cls, why, decided = {}, {}, set()
@@ -254,15 +295,18 @@ def main():
         imp = imports[a]
         strs = strings[a]
         debugish = (n and DEBUG_NAME.search(n)) or any(DEBUG_IMPORTS.search(i) for i in imp)
+        if a in ran and a not in static_reach:
+            if debugish or any(DEBUG_STRINGS.search(x) for x in strs):
+                cls[a], why[a] = "debug", "ran in the coverage sessions (no static reference); debug name or strings"
+            else:
+                cls[a], why[a] = "logic", "ran in the coverage sessions (no static reference)"
+            decided.add(a)
+            continue
         if a not in reach:
             if debugish or any(DEBUG_STRINGS.search(s) for s in strs):
                 cls[a], why[a] = "debug", "unreachable from the entry point and every pointer table; debug name or strings"
             else:
                 cls[a], why[a] = "dead", "unreachable from the entry point and every pointer table"
-            decided.add(a)
-            continue
-        if n and DEAD_FIRST.search(n):
-            cls[a], why[a] = "dead", f"PS2-only API ({n}): memory card or IOP"
             decided.add(a)
             continue
         r = name_rule(a, n) if n else None
@@ -330,15 +374,26 @@ def main():
     # a debug-sounding name the game logic depends on (a math helper of the
     # rc tools, an "is debug" flag the battle code reads) is logic when most
     # callers are logic and it calls no debug code itself
-    for a in game:
-        if cls[a] != "debug" or a not in reach or not names.get(a):
-            continue
-        cs = [c for c in callers[a] if c != a and c in cls]
-        lc = [c for c in cs if cls[c] == "logic"]
-        if cs and 2 * len(lc) >= len(cs) and not any(cls[c] == "debug" for c in game_callees(a)):
-            cls[a] = "logic"
-            why[a] = ("debug-sounding name, but used by logic: " +
-                      ", ".join(sorted(names.get(c, hex(c)) for c in lc)[:3]))
+    changed = True
+    while changed:
+        changed = False
+        for a in game:
+            if cls[a] != "debug" or a not in reach or not names.get(a) or PRINT.search(names[a]):
+                continue
+            cs = [c for c in callers[a] if c != a and c in cls]
+            lc = [c for c in cs if cls[c] == "logic"]
+            if cs and 2 * len(lc) >= len(cs) and not any(cls[c] == "debug" for c in game_callees(a)):
+                cls[a] = "logic"
+                changed = True
+                why[a] = ("debug-sounding name, but used by logic: " +
+                          ", ".join(sorted(names.get(c, hex(c)) for c in lc)[:3]))
+            elif a in ran and lc and not any(cls[c] == "debug" and c not in ran for c in game_callees(a)):
+                # seen running, and logic calls it: whatever its name, the
+                # game needs it (an rc matrix helper the movie camera uses)
+                cls[a] = "logic"
+                changed = True
+                why[a] = ("ran in the coverage sessions, called by logic: " +
+                          ", ".join(sorted(names.get(c, hex(c)) for c in lc)[:3]))
 
     stats = defaultdict(Counter)
     for a in game:
@@ -356,7 +411,7 @@ def main():
         tot.update(s)
         print(f"{m:9}" + "".join(f"{s[c]:6} {s[c + '_bytes'] / 1024:6.0f}K" for c in CATS))
     print(f"{'GAME':9}" + "".join(f"{tot[c]:6} {tot[c + '_bytes'] / 1024:6.0f}K" for c in CATS))
-    print(f"reachable {len(reach)} of {len(size)} functions; {len(roots)} pointer roots", file=sys.stderr)
+    print(f"reachable {len(reach & set(size))} of {len(size)} functions ({len(static_reach & set(size))} statically); {len(roots)} roots, {len(nodes) - len(size)} code blocks Ghidra has no function for", file=sys.stderr)
 
 
 if __name__ == "__main__":
