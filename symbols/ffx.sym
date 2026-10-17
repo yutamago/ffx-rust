@@ -11592,6 +11592,7 @@
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
 0x00a459e0 function AbmapFillCommandMenu      # (pad, kind): each MsMenuStatusNum entry of kind (byte 0) appended to menu pad (inlined addMenuPrim: +0x40 command id +2, +0x48 id - 0x3000, count +0x1e max 0x40, page flag +0x28); eiAbmStart: pads 3/2/4/5, kinds 0x40/0x41/0x45/0x44; name ours
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
+0x00a47210 function AbmapCheckAchievements    # (): AbmapMarkLockedEntries 3/2/4/5; node list file 0x11/0x12/0x13 (save menu bits 14..15) through GetCD's reader into a 0x484-byte local; achievement 0x17 per character bit 0..6 all listed nodes activated in MsGetSaveAbilityMap, 0x1d when all are 0x7f; name ours
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
 0x00a47400 function AbmapMaskNodeFlags        # (mask): ANDs mask into +0x22 of every node (+0x808, 0x28 bytes, i16 count +2) whose kind +6 is not -1; name ours
 0x00a47440 function AbmapPulseCursor          # (): +0x115a4 = sin(frame +0x11698), +0x115c5 = ((sin + 1) * 8 + 0x70) * +0x115c6 >> 7 (eiAbmCalc)
@@ -11693,6 +11694,7 @@
 0x00a5cf00 function NkzVersion                # fh v3:bsim1.00 0x00a5cf00
 0x00a5cf10 function AbmapQuarterOrOne_a5cf10  # (_, n) -> n / 4, or 1 when 0 (identical to 0x00a5cee0; called by 0x008d9410)
 0x00a5cf30 function abmap_para_get_special    # fh v3:exact 0x00a5cf30
+0x00a5d120 function AbmapSpecialEffect        # (kind, node, row, chr) -> 0/1: the special item kinds (row type +0x16, abmap_test_panel, abmap_other_has_panel, abmap_chr_node, MsGetSavePlyJoined); AbmapItemNodeEffect's special path; name ours
 0x00a5d3c0 function opd_num                   # fh v3:exact 0x00a5d3c0
 0x00a5d5f0 function opd_num_char_256          # fh v3:exact 0x00a5d5f0
 0x00a5dd90 function opd_num_display           # fh v3:bsim1.00 0x00a5dd90
