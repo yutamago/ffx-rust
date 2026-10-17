@@ -12896,3 +12896,54 @@ fn round41_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0029_0002);
     round41_cases(&mut t, &mut rng, 60);
 }
+
+// ---- round 46 ----
+
+/// Round 46 on `t`: `AbmapHelpLineDraw` over a synthetic grid (its fade
+/// byte opaque or not), `TOAddPktBaseMesFontLAbmap` logged.
+fn round46_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    use ffx_field::abmap;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, grid) = (t.alloc(4 + 0x40 * 4), t.alloc(4), t.alloc(0x1_15c0));
+    let mut stub = log_tail(log, 1, 12, 6, &[]);
+    stub.push(0xa1); // mov eax, [rv]; ret
+    stub.extend_from_slice(&rv.to_le_bytes());
+    stub.push(0xc3);
+    t.cave(&[(Some(abmap::bridge::TO_ADD_PKT_MES_FONT_L_ABMAP), stub)]);
+    t.set(abmap::ABMAP, grid);
+    for _ in 0..rounds {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let alpha = if rng.below(3) == 0 {
+            0x80u8
+        } else {
+            u8::try_from(rng.below(256)).unwrap()
+        };
+        t.put(grid + 0x1_15b9, alpha);
+        t.set(ke::PACKET_POS, rng.next());
+        let a = [rng.next(), rng.next(), rng.next()];
+        t.same(
+            "AbmapHelpLineDraw",
+            |o| o.eax(0x00a5_94c0, &a),
+            |m| abmap::bridge::abmap_help_line_draw(m, a, call),
+        );
+    }
+}
+
+/// Round 46: `AbmapHelpLineDraw`.
+#[test]
+fn round46_abmap_help_line_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x002e_0001);
+    round46_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 46 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round46_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x002e_0002);
+    round46_cases(&mut t, &mut rng, 40);
+}

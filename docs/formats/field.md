@@ -1483,6 +1483,21 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The sphere grid's help line (round 46)
+
+`AbmapHelpLineDraw(a, b, c)` (`0x00a594c0`, name ours; called five times
+by `AbmapHelpMessageStep_00a59350`) adds one text line to the VFX packet
+buffer:
+- It calls `TOAddPktBaseMesFontLAbmap(pos + 0x10, kind, a, b, c, 0, 0,
+  0x80, 0x80, 0x80, alpha, 0)`, `pos` being `g_PppPacketPos`
+  (`0x0230fd2c`), which takes the result. It returns that result.
+- The alpha is the fade byte `+0x115b9` of the grid data (`g_Abmap`):
+  0x80 (opaque) draws with kind 0, anything else with kind 7.
+
+`AbmapFillUseItemMenu` (`0x00a45fd0`) is not ported: it stores a dword at
+a menu entry's `+0x48` whose high half is a stack word it never writes
+(`mov WORD PTR [ebp-4], si`, then `mov eax, [ebp-4]`).
+
 ## 2D lines, circles and triangles (rounds 41-43)
 
 `rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two

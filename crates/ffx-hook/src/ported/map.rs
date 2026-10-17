@@ -3787,6 +3787,11 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `AbmapHelpLineDraw(a, b, c)`.
+    AbmapHelpLineDraw @ 0x00a5_94c0 => extern "C" fn shim_abmap_help_line_draw(a: u32, b: u32, c: u32) -> u32 {
+        abmap::bridge::abmap_help_line_draw(&mut mem(), [a, b, c], &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SndStandbyShoutStream(data)`.
     SndStandbyShoutStream @ 0x0081_e3b0 => extern "C" fn shim_snd_standby_shout_stream(data: u32) -> u32 {
         nkz::bridge::snd_standby_shout_stream(&mut mem(), data, &mut |_, f, a| call_cdecl(f, a))

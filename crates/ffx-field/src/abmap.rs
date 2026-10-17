@@ -2093,4 +2093,34 @@ pub mod bridge {
         }
         g
     }
+
+    // ---- field round 46: the help line ----
+
+    /// `TOAddPktBaseMesFontLAbmap(pkt, kind, ..)` (`0x008e8fb0`).
+    pub const TO_ADD_PKT_MES_FONT_L_ABMAP: u32 = 0x008e_8fb0;
+
+    /// `AbmapHelpLineDraw(a, b, c)` (`0x00a594c0`, name ours; the five
+    /// calls of `AbmapHelpMessageStep_00a59350`): a text line through
+    /// `TOAddPktBaseMesFontLAbmap(pos + 0x10, kind, a, b, c, 0, 0, 0x80,
+    /// 0x80, 0x80, alpha, 0)`, the packet position (`0x0230fd2c`) set to
+    /// its result, which it returns. The fade byte `+0x115b9` of the grid
+    /// data is the alpha; 0x80 (opaque) draws with kind 0, anything else
+    /// with kind 7.
+    pub fn abmap_help_line_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b, c]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let alpha = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x1_15b9)));
+        let kind = if alpha == 0x80 { 0 } else { 7 };
+        let pos = crate::ke::PACKET_POS.get(mem).wrapping_add(0x10);
+        let f = mem.rebase(TO_ADD_PKT_MES_FONT_L_ABMAP);
+        let r = call(
+            mem,
+            f,
+            &[pos, kind, a, b, c, 0, 0, 0x80, 0x80, 0x80, alpha, 0],
+        );
+        crate::ke::PACKET_POS.set(mem, r);
+        r
+    }
 }
