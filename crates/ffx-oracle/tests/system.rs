@@ -7718,3 +7718,46 @@ fn round12_system_functions_match_the_original_on_the_snapshot() {
     };
     round12(&mut a, &mut b, &mut Xorshift(0x4012_0002));
 }
+
+/// Round 13's system functions.
+fn round13(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    use tolib::bridge as t;
+    // window layouts by id, across every range and past the last
+    for id in (0..0x2a0u32).chain([0x2ff, 0x1000, u32::MAX]) {
+        assert_eq!(eax(a, 0x008f_a4f0, &[id]), t::window_layout_of(b, id), "{id:#x}");
+        same_memory("window layouts", a, b);
+    }
+    // the magic texture loaded once, through a stand-in recording the id
+    let cell = alloc(a, b, 4);
+    let load = stand_in8(a, b, 0xa80, &recorder(cell, 0x5a5a_0013));
+    redirect(a, b, 0x0064_20b0, load);
+    for _ in 0..16 {
+        let handle = if rng.next() & 1 == 0 { u32::MAX } else { rng.next() };
+        set(a, b, mb::MAGIC_FILE, [rng.next(), rng.next(), rng.next(), handle]);
+        set(a, b, mb::MAGIC_TEXTURE_LOADED, rng.next() & 1);
+        put(a, b, cell, 0u32);
+        let got = mb::is_load_texture(b, |m, id| {
+            let at = m.rebase(0x0064_20b0);
+            m.call(at, Conv::Cdecl, &[id]).unwrap();
+        });
+        assert_eq!(eax(a, 0x009d_a280, &[]), got);
+        same_memory("magic texture", a, b);
+    }
+}
+
+#[test]
+fn round13_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13(&mut a, &mut b, &mut Xorshift(0x4013_0001));
+}
+
+#[test]
+fn round13_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13(&mut a, &mut b, &mut Xorshift(0x4013_0002));
+}

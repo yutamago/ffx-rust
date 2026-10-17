@@ -2018,4 +2018,27 @@ pub mod bridge {
         }
         p.wrapping_add(1)
     }
+
+
+    /// `0x008fa4f0(id)`: the window layout of `id` from the image tables:
+    /// ids `0..=0xc6` and `0xc8..=0x18e` from the first, `0x190..=0x256`
+    /// from the second, `0x258..=0x289` from the third (a tail call); each
+    /// later range overriding, and otherwise `id` itself.
+    pub fn window_layout_of(mem: &mut impl Mem, id: u32) -> u32 {
+        let [first, second, third] = [LAYOUT_TABLES[0].1, LAYOUT_TABLES[1].1, LAYOUT_TABLES[2].1];
+        let mut r = id;
+        if id <= 0xc6 {
+            r = copy_layout_from(mem, first, id);
+        }
+        if id.wrapping_sub(0xc8) <= 0xc6 {
+            r = copy_layout_from(mem, first, id - 0xc8);
+        }
+        if id.wrapping_sub(0x190) <= 0xc6 {
+            r = copy_layout_from(mem, second, id - 0x190);
+        }
+        if id.wrapping_sub(0x258) <= 0x31 {
+            return copy_layout_from(mem, third, id - 0x258);
+        }
+        r
+    }
 }

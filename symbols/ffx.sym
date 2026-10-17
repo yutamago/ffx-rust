@@ -8712,6 +8712,7 @@
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
 0x008fa450 function TOCopyWindowLayout_008fa450 # cdecl(i): TOCopyWindowLayout(0x00c5c2c8, i); name ours
+0x008fa4f0 function TOGetWindowLayout          # cdecl(id): 0..c6 and c8..18e TOCopyWindowLayout_008fa7d0, 190..256 _008fa450, 258..289 tail _008fa790 (id less the range base), else id; name ours
 0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570; spaces 0x018716b4/b8 computed once: langs 1..8 both trunc(ws*0.7+0.5)/ws, else trunc(ws*0.5+0.5)/ws and the 0.7 one; kind 1/3 the second
 0x008fa6b0 function TOGetFontWidthInPiexl     # fh v3:exact 0x008fa6b0
 0x008fa740 function TOGetFontAdvance_008fa740 # cdecl(kind, font, size) -> float: TOGetFontWidthInPiexl(font+0x1c, size) + TOGetFontSpaceInPiexl(kind); name ours
@@ -9901,7 +9902,7 @@
 0x00955860 function luaopen_table             # fh switch:bsim1.00 0x7100781c48
 0x00956900 function lua_getinfo                  # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'for iterator'; Switch 0x7100773fe4 lua_getinfo (symbols from Fahrenheit's server export)
 0x00957d30 function lua_yieldk                   # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'attempt to yield across metamethod/C-call boundary'; Switch 0x7100775d18 lua_yieldk (symbols from Fahrenheit's server export)
-0x009da280 function IsLoadTexture             # fh v3:exact 0x009da280
+0x009da280 function IsLoadTexture             # fh v3:exact 0x009da280; flag 0x01940ab0 set: 1; handle 0x00c64cac -1: 0; else graphicMagicVFXLoadTexture([0x00c64ca0]), set flag, 1
 0x009da2c0 function GetU32_01940ab4 # () -> u32 at 0x01940ab4; name ours
 0x009da2d0 function MagicFile_Cleanup         # fh v3:bsim1.00 0x009da2d0
 0x009da370 function MagicFile_GetEffectOverlayTable # fh v3:exact 0x009da370

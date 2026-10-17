@@ -4265,6 +4265,16 @@ ported! {
     TOGetFontWidth @ 0x008b_9330 => extern "C" fn to_get_font_width(text: u32, kind: u32, out: u32, table: u32) -> u32 {
         tolib::bridge::font_width(&mut mem(), text, kind, out, table, &mut GameMenu)
     }
+    /// `TOGetWindowLayout(id)`.
+    TOGetWindowLayout @ 0x008f_a4f0 => extern "C" fn to_get_window_layout(id: u32) -> u32 {
+        tolib::bridge::window_layout_of(&mut mem(), id)
+    }
+    /// `IsLoadTexture()`.
+    IsLoadTexture @ 0x009d_a280 => extern "C" fn is_load_texture() -> u32 {
+        menu::bridge::is_load_texture(&mut mem(), |m, id| {
+            call_sym(m, 0x0064_20b0, &[id]);
+        })
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

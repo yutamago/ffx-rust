@@ -238,4 +238,25 @@ pub mod bridge {
         regist(mem, [0xffff, args[1], 0, args[0], args[2]]);
         set_ctrl(mem, saved)
     }
+
+
+    /// The magic file's texture-loaded flag (`0x01940ab0`).
+    pub const MAGIC_TEXTURE_LOADED: Global<u32> = Global::new(0x0194_0ab0);
+    /// The magic file (`0x00c64ca0`): its magic id first, its handle at +0xc (-1 for none).
+    pub const MAGIC_FILE: Global<[u32; 4]> = Global::new(0x00c6_4ca0);
+
+    /// `IsLoadTexture()` (`0x009da280`): with a magic file but its texture
+    /// not loaded yet, `graphicMagicVFXLoadTexture(magic id)` (passed in)
+    /// and the flag set; 1, or 0 without a magic file.
+    pub fn is_load_texture<M: Mem>(mem: &mut M, load: impl FnOnce(&mut M, u32)) -> u32 {
+        if MAGIC_TEXTURE_LOADED.get(mem) == 0 {
+            let f = MAGIC_FILE.get(mem);
+            if f[3] == u32::MAX {
+                return 0;
+            }
+            load(mem, f[0]);
+            MAGIC_TEXTURE_LOADED.set(mem, 1);
+        }
+        1
+    }
 }
