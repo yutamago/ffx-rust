@@ -6609,7 +6609,7 @@
 0x00777440	dead	unreachable from the entry point and every pointer table
 0x007775e0	dead	unreachable from the entry point and every pointer table
 0x00777610	platform	only called from platform code (hdd_OpenFfxPartition_00779000)
-0x00777680	logic	default (no rule: ported to be safe)
+0x00777680	debug	reviewed: TkyiAssert: its report call 0x0088ec80 is a bare ret (system round 27)
 0x007776a0	platform	only called from platform code (hdd_ins_check)
 0x00777940	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_set_pass_names
 0x00777980	platform	only called from platform code (hdd_thread_main)
@@ -6631,7 +6631,7 @@
 0x007789e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_head_reset
 0x00778a10	platform	only called from platform code (hdd_thread_main)
 0x00778d70	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_ins_check
-0x00778f60	logic	default (no rule: ported to be safe)
+0x00778f60	platform	reviewed: sums the HDD-install sizes from hdd_rmode_get (system round 27)
 0x00778fb0	platform	only called from platform code (hdd_OpenFfxPartition_00779000)
 0x00779000	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_OpenFfxPartition_00779000
 0x007791a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_install_check
@@ -6919,7 +6919,7 @@
 0x00784720	logic	default (no rule: ported to be safe)
 0x00784830	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00784860	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x007848b0	logic	debug-sounding name, but used by logic: 0x879070, MsBattleInit, Native_707d
+0x007848b0	logic	debug-sounding name, but used by logic: MsBattleInit, Native_707d, Native_c03a
 0x007849c0	debug	debug name: MsDebugFullGill
 0x007849d0	debug	debug name: MsDebugFullItem
 0x00784ac0	logic	debug-sounding name, but used by logic: MsBattleInit
@@ -7765,7 +7765,7 @@
 0x007a4a90	logic	default (no rule: ported to be safe)
 0x007a4b00	logic	default (no rule: ported to be safe)
 0x007a4b90	logic	default (no rule: ported to be safe)
-0x007a4c30	logic	default (no rule: ported to be safe)
+0x007a4c30	debug	reviewed: native 0x705f: only a dbgPrintf (a bare ret in this build) (script round 18)
 0x007a4c70	logic	default (no rule: ported to be safe)
 0x007a4cd0	logic	default (no rule: ported to be safe)
 0x007a4cf0	logic	default (no rule: ported to be safe)
@@ -12000,7 +12000,7 @@
 0x008724a0	logic	default (no rule: ported to be safe)
 0x008724f0	logic	default (no rule: ported to be safe)
 0x00872530	logic	default (no rule: ported to be safe)
-0x00872550	logic	default (no rule: ported to be safe)
+0x00872550	glue	reviewed: TkSoftWareReset: PostReset plus renderer screen fades (M5 reimplements the soft reset) (menu round 18)
 0x00872580	dead	unreachable from the entry point and every pointer table
 0x00872590	dead	unreachable from the entry point and every pointer table
 0x008725a0	dead	unreachable from the entry point and every pointer table
@@ -12065,7 +12065,7 @@
 0x00873c00	logic	default (no rule: ported to be safe)
 0x00873c30	logic	default (no rule: ported to be safe)
 0x00873c70	logic	debug-sounding name, but used by logic: AtelActorSetUp2, AtelEventLoadMusic, AtelExecCtrlEventInit_008677a0
-0x00873c80	logic	debug-sounding name, but used by logic: 0x8783c0, AtelExecCtrlEventInit_008677a0, Native_c05b
+0x00873c80	logic	debug-sounding name, but used by logic: AtelExecCtrlEventInit_008677a0, Native_c05b, Native_c05c
 0x00873cc0	logic	default (no rule: ported to be safe)
 0x00873cf0	logic	default (no rule: ported to be safe)
 0x00873d00	logic	default (no rule: ported to be safe)
@@ -12226,14 +12226,14 @@
 0x008782f0	logic	default (no rule: ported to be safe)
 0x00878330	debug	reviewed: debug native 0xc05b (script rounds 11-15)
 0x00878390	logic	default (no rule: ported to be safe)
-0x008783c0	logic	default (no rule: ported to be safe)
+0x008783c0	debug	reviewed: native 0xc05c: prints DEBUG:%d/0x%x (script round 18)
 0x00878470	logic	default (no rule: ported to be safe)
 0x008784e0	logic	default (no rule: ported to be safe)
 0x00878510	logic	default (no rule: ported to be safe)
 0x00878530	logic	default (no rule: ported to be safe)
 0x00878550	logic	default (no rule: ported to be safe)
-0x00878570	logic	default (no rule: ported to be safe)
-0x008785b0	logic	default (no rule: ported to be safe)
+0x00878570	debug	reviewed: native 0xc004: works only under TkIsDebug (script round 18)
+0x008785b0	debug	reviewed: native 0xc005: works only under TkIsDebug (script round 18)
 0x00878600	logic	default (no rule: ported to be safe)
 0x00878630	logic	default (no rule: ported to be safe)
 0x00878650	debug	reviewed: debug native 0xc00c (script rounds 11-15)
@@ -12266,7 +12266,7 @@
 0x00878e60	logic	default (no rule: ported to be safe)
 0x00878e80	logic	default (no rule: ported to be safe)
 0x00878ef0	logic	default (no rule: ported to be safe)
-0x00878f20	logic	default (no rule: ported to be safe)
+0x00878f20	debug	reviewed: native 0xc034: works only under TkIsDebug (script round 18)
 0x00878f50	logic	default (no rule: ported to be safe)
 0x00878f70	logic	default (no rule: ported to be safe)
 0x00878fa0	logic	default (no rule: ported to be safe)
@@ -12656,7 +12656,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: 0x8783c0, 0x878470, 0x878570
+0x00887d10	logic	debug-sounding name, but used by logic: 0x8787d0, AtelEventSetUp, Native_00f8
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)
@@ -12925,13 +12925,13 @@
 0x0088fb10	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0088fb30	glue	reviewed: builds a GIF-tag sprite packet (menu round 15)
 0x0088fca0	logic	default (no rule: ported to be safe)
-0x0088fd50	logic	default (no rule: ported to be safe)
-0x0088ff70	logic	default (no rule: ported to be safe)
+0x0088fd50	debug	reviewed: GS packets into TkDebugFontBuffer, only for the Atel debug panels (menu round 18)
+0x0088ff70	debug	reviewed: GS packets into TkDebugFontBuffer, only for the Atel debug panels (menu round 18)
 0x00890150	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00890320	logic	default (no rule: ported to be safe)
 0x008903d0	glue	reviewed: GIF tag with a SCISSOR register: packet emission only (menu round 16)
 0x008904e0	debug	debug name: TkSetDebugFontLocate2
-0x00890500	logic	default (no rule: ported to be safe)
+0x00890500	debug	reviewed: GS packets into TkDebugFontBuffer, only for the Atel debug panels (menu round 18)
 0x008906d0	logic	default (no rule: ported to be safe)
 0x00890780	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x008907e0	dead	unreachable from the entry point and every pointer table
@@ -14541,9 +14541,9 @@
 0x008f3170	dead	unreachable from the entry point and every pointer table
 0x008f3220	dead	unreachable from the entry point and every pointer table
 0x008f3280	glue	GS/DMA packet writer (calls the packet writers 0x8edfc0; writes no game state): replaced by ffx-render
-0x008f3300	logic	default (no rule: ported to be safe)
+0x008f3300	glue	GS packet API (TOMkpBtlDigitRight_008f3300): appends to or kicks a packet; replaced by ffx-render
 0x008f3390	logic	default (no rule: ported to be safe)
-0x008f3420	logic	default (no rule: ported to be safe)
+0x008f3420	glue	GS packet API (TOMkpBtlDigitRight_008f3420): appends to or kicks a packet; replaced by ffx-render
 0x008f34c0	logic	default (no rule: ported to be safe)
 0x008f3820	logic	default (no rule: ported to be safe)
 0x008f3830	dead	unreachable from the entry point and every pointer table
@@ -14569,7 +14569,7 @@
 0x008f51e0	logic	default (no rule: ported to be safe)
 0x008f59c0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008f5b90	dead	unreachable from the entry point and every pointer table
-0x008f5bc0	platform	reviewed: TODrawKick: FlushCache, sceGsSyncPath, sceDmaSend only (system round 25)
+0x008f5bc0	glue	GS packet API (TODrawKick): appends to or kicks a packet; replaced by ffx-render
 0x008f5c10	glue	GS packet API (TODrawMenuBG): appends to or kicks a packet; replaced by ffx-render
 0x008f5c60	glue	GS packet API (TODrawMenuBGC2): appends to or kicks a packet; replaced by ffx-render
 0x008f5cc0	dead	unreachable from the entry point and every pointer table
@@ -15082,7 +15082,7 @@
 0x00911fc0	logic	default (no rule: ported to be safe)
 0x00912270	logic	default (no rule: ported to be safe)
 0x00912590	logic	default (no rule: ported to be safe)
-0x00912690	logic	default (no rule: ported to be safe)
+0x00912690	platform	reviewed: a DMA send: Sg_MFIFOSync, sceGsSyncPath, sceDma*, FlushCache (field round 39)
 0x009126f0	logic	default (no rule: ported to be safe)
 0x00912b70	logic	default (no rule: ported to be safe)
 0x009130f0	logic	default (no rule: ported to be safe)
@@ -16793,6 +16793,8 @@
 0x00a29300	dead	unreachable from the entry point and every pointer table
 0x00a29310	dead	unreachable from the entry point and every pointer table
 0x00a29320	logic	default (no rule: ported to be safe)
+0x00a37010	logic	default (no rule: ported to be safe)
+0x00a37170	logic	default (no rule: ported to be safe)
 0x00a37410	logic	default (no rule: ported to be safe)
 0x00a374e0	glue	calls Iggy IggyGDrawSendWarning
 0x00a37910	dead	unreachable from the entry point and every pointer table
@@ -16806,7 +16808,7 @@
 0x00a38100	dead	unreachable from the entry point and every pointer table
 0x00a38120	dead	unreachable from the entry point and every pointer table
 0x00a38180	glue	calls Iggy _IggyGDrawFree@4
-0x00a38300	logic	default (no rule: ported to be safe)
+0x00a38300	glue	reviewed: sets render state on the render object at [0x01a858b4] after one COM call (effects round 22)
 0x00a38380	dead	unreachable from the entry point and every pointer table
 0x00a383a0	glue	only called from glue code (0xa37c20)
 0x00a38450	dead	unreachable from the entry point and every pointer table
@@ -16886,7 +16888,7 @@
 0x00a3c630	dead	unreachable from the entry point and every pointer table
 0x00a3c670	dead	unreachable from the entry point and every pointer table
 0x00a3c6c0	glue	calls Iggy IggyGDrawSendWarning
-0x00a3ccb0	logic	default (no rule: ported to be safe)
+0x00a3ccb0	platform	reviewed: binds a texture view and sampler on the D3D11 device context (effects round 22)
 0x00a3cd10	dead	unreachable from the entry point and every pointer table
 0x00a3cd30	logic	default (no rule: ported to be safe)
 0x00a3cdb0	dead	unreachable from the entry point and every pointer table
@@ -16987,7 +16989,7 @@
 0x00a44840	logic	debug-sounding name, but used by logic: Sg_MainLoop
 0x00a44890	logic	default (no rule: ported to be safe)
 0x00a44960	logic	default (no rule: ported to be safe)
-0x00a44a30	logic	default (no rule: ported to be safe)
+0x00a44a30	platform	reviewed: resets a CWindowEventHandler (system round 27)
 0x00a44a50	platform	imports ReleaseSemaphore, WaitForSingleObject
 0x00a44b30	platform	thin wrapper: only forwards to platform code (JobSchedule_JobScheduler_waitForComplete)
 0x00a44b40	platform	thin wrapper: only forwards to platform code (0xa44a50)
@@ -17248,7 +17250,7 @@
 0x00a5efc0	dead	unreachable from the entry point and every pointer table
 0x00a5f040	logic	default (no rule: ported to be safe)
 0x00a5f250	dead	unreachable from the entry point and every pointer table
-0x00a5f2d0	logic	default (no rule: ported to be safe)
+0x00a5f2d0	glue	reviewed: PS2 GS/DMA packet header writer (effects round 22)
 0x00a5f340	dead	unreachable from the entry point and every pointer table
 0x00a5f670	dead	unreachable from the entry point and every pointer table
 0x00a5fda0	dead	unreachable from the entry point and every pointer table

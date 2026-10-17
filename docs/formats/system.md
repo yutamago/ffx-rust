@@ -830,3 +830,26 @@ fit the names.
 `ToGetBtlEasyDigitWidth`. It then draws with `ToMakeBtlEasyEdgeDigit` from
 `x - width`, rounded to `f32`. The original stores the width in its own
 `value` argument slot.
+
+## Battle help text
+
+`TOBtlSetDirectHelpMes(text)` (`0x00899ec0`) clears the 0x80-byte help
+buffer `g_BtlHelpText` (`0x0133f538`) and copies `text` into it up to its
+terminator. The copy is not bounded. It then measures the buffer with
+`TOGetMessageWH(0, buffer, &g_BtlHelpTextW, &g_BtlHelpTextH, 0, 0)`
+(`0x0133f534`, `0x0133f530`). A null text does nothing.
+
+`TOBtlSetCommandHelpMes(command)` (`0x00899970`) looks the command up with
+`MsGetComData(command & 0xffff, &strings)`; the help text is at
+`strings + u16 [entry + 8]`. It measures the text where it is, then copies
+and measures it again the same way.
+
+`TOMkpBtlDigitRight_008f3300` and `_008f3420` (`ret, value, x, y, alpha`)
+call `ToMakeBtlEasyDigitRight(value, f32(x) + dx, f32(y) + dy, alpha,
+scale, 0.0)` and return `ret`. Each sum is rounded to `f32`; `dx` is a
+double.
+
+| Function | dx | dy | scale |
+|---|---|---|---|
+| `0x008f3300` | 4.0 | -3.0; -2.0 for languages 1..=8 and from 12 | 0.8 |
+| `0x008f3420` | 0.0 | -5.5 (language 0), -6.0 (9), else -5.0 | 0.77 for language 0, else 0.8 |

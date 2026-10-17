@@ -3267,10 +3267,24 @@ fn vu0_macros_and_tables_match_the_original() {
             let k = rng.float();
             let f = f32::from_bits(k);
             let junk = rng.next();
-            p.check("pppVu0MaddaY", 0x0072_c590, &[junk, v, junk, k], |m| {
-                b::ppp_vu0_madda(m, v, f);
-                Some(v)
-            });
+            for (name, at) in [
+                ("pppVu0MaddaY", 0x0072_c590),
+                ("pppVu0MaddaY_copy_0075e670", 0x0075_e670),
+            ] {
+                p.check(name, at, &[junk, v, junk, k], |m| {
+                    b::ppp_vu0_madda(m, v, f);
+                    Some(v)
+                });
+            }
+            p.check(
+                "pppVu0MaddaZ_copy_0075e6d0",
+                0x0075_e6d0,
+                &[junk, v, junk, junk, k],
+                |m| {
+                    b::ppp_vu0_madda(m, v, f);
+                    Some(v)
+                },
+            );
             p.check(
                 "pppVu0MaddaZ",
                 0x0072_c5f0,
@@ -9987,6 +10001,557 @@ fn op_tokens_match_the_original() {
                     &mut call_original,
                 ))
             });
+        }
+    }
+}
+
+/// Writes `code` at `sym` in both oracles.
+fn stub_code(p: &mut Pair, sym: u32, code: &[u8]) {
+    let at = p.sym(sym);
+    p.a.write(at, code).unwrap();
+    p.b.write(at, code).unwrap();
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation
+)]
+fn dot_draw_matches_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_2b80);
+        // render data per instance: cells[0] for lo 0, cells[1] for 0x1000;
+        // what graphicVFXSetup puts there: pend[0..2], what it returns
+        let cells = p.alloc(0x20);
+        let (pend, setup_ret, seg_ret) = (cells + 8, cells + 0x10, cells + 0x14);
+        // graphicVFXGetRenderDataByInstance(lo, hi): [cells + (lo ? 4 : 0)]
+        let mut c = vec![
+            0x8b, 0x4c, 0x24, 0x04, 0xf7, 0xd9, 0x1b, 0xc9, 0x83, 0xe1, 0x04,
+        ];
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + cells]
+        c.extend(cells.to_le_bytes());
+        c.push(0xc3);
+        stub_code(&mut p, 0x0064_53d0, &c);
+        // graphicVFXSetup(lo, hi): the cell from pend, returns [setup_ret]
+        let mut c = vec![
+            0x8b, 0x4c, 0x24, 0x04, 0xf7, 0xd9, 0x1b, 0xc9, 0x83, 0xe1, 0x04,
+        ];
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + pend]
+        c.extend(pend.to_le_bytes());
+        c.extend([0x89, 0x81]); // mov [ecx + cells], eax
+        c.extend(cells.to_le_bytes());
+        c.push(0xa1); // mov eax, [setup_ret]
+        c.extend(setup_ret.to_le_bytes());
+        c.push(0xc3);
+        stub_code(&mut p, 0x0064_5780, &c);
+        // graphicVFXCreate(lo, hi, alpha): the cell from made[], then the
+        // recorder; graphicVFXCreateDataBuffer: the second name (0x100 on)
+        // into seen[], then the recorder
+        let (made, seen) = (p.alloc(8), p.alloc(12));
+        let mut c = vec![
+            0x8b, 0x4c, 0x24, 0x04, 0xf7, 0xd9, 0x1b, 0xc9, 0x83, 0xe1, 0x04,
+        ];
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + made]
+        c.extend(made.to_le_bytes());
+        c.extend([0x89, 0x81]); // mov [ecx + cells], eax
+        c.extend(cells.to_le_bytes());
+        stub_code(&mut p, 0x0064_4de0, &c);
+        deref_recorder(
+            &mut p,
+            0x0064_4de0 + u32::try_from(c.len()).unwrap(),
+            &[0, 0, 0],
+        );
+        // (only for the two-segment instance: the other one's name has
+        // the original's saved registers 0x100 on)
+        let mut c = vec![0x83, 0x7c, 0x24, 0x0c, 0x02, 0x75, 0x28]; // cmp [esp + 0xc], 2; jne
+        c.extend([0x8b, 0x44, 0x24, 0x18]); // mov eax, [esp + 0x18]
+        for k in 0..3u32 {
+            c.extend([0x8b, 0x88]); // mov ecx, [eax + 0x100 + 4k]
+            c.extend((0x100 + 4 * k).to_le_bytes());
+            c.extend([0x89, 0x0d]); // mov [seen + 4k], ecx
+            c.extend((seen + 4 * k).to_le_bytes());
+        }
+        assert_eq!(c.len(), 7 + 0x28);
+        stub_code(&mut p, 0x0064_5040, &c);
+        deref_recorder(
+            &mut p,
+            0x0064_5040 + u32::try_from(c.len()).unwrap(),
+            &[0, 0, 0, 2, 2, 3, 2],
+        );
+        for (sym, words, ret) in [
+            (0x0064_5280u32, &[0u8, 0][..], None),
+            (0x0063_fdb0, &[0, 0, 0, 0], Some(seg_ret)),
+            (0x0094_964c, &[0, 0, 0], None),
+            (0x0064_5710, &[0, 0, 0], None),
+            (0x0064_58a0, &[0, 0], None),
+            (0x007e_6a00, &[0], Some(cells + 0x18)),
+            (0x007e_6a60, &[0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // the scratch op_spr_alloc returns
+        let spr = p.alloc(0x1200);
+        p.set(cells + 0x18, spr);
+        let (rd1, rd2) = (p.alloc(0x100), p.alloc(0x100));
+        let (geo1, geo2) = (p.alloc(0x100), p.alloc(0x100));
+        let mut bufs = Vec::new();
+        for _ in 0..3 {
+            bufs.push((p.alloc(0x8000), p.alloc(0x8000), p.alloc(0x4000)));
+        }
+        let b = p.alloc(0x10 + 0x20 * 24);
+        let rec = p.alloc(0x100);
+        let m = p.alloc(0x40);
+        for _ in 0..400 {
+            for (at, len) in [(rd1, 0x100), (rd2, 0x100), (geo1, 0x100), (geo2, 0x100)] {
+                p.fill(at, len, &mut rng);
+            }
+            p.fill(spr, 0x1200, &mut rng);
+            p.set(rd1 + 0x94, geo1);
+            p.set(rd2 + 0x94, geo2);
+            for (k, (g, at)) in [(geo1, 0u32), (geo1, 0x6c), (geo2, 0)]
+                .into_iter()
+                .enumerate()
+            {
+                let (pts, col, idx) = bufs[k];
+                p.set(g + at + 0xc, pts);
+                p.set(g + at + 0x14, col);
+                p.set(g + at + 0x1c, idx);
+            }
+            p.fill(rec, 0x100, &mut rng);
+            for k in 0..16 {
+                let x = finite(&mut rng);
+                p.set(m + 4 * k, x);
+            }
+            let n = rng.below(25);
+            p.set(b, n);
+            for i in 0..24 {
+                let e = b + 0x10 + 0x20 * i;
+                p.fill(e, 0x20, &mut rng);
+                for k in 0..4 {
+                    let x = finite(&mut rng);
+                    p.set(e + 4 * k, x);
+                }
+                let spread = match rng.below(4) {
+                    0 => 0i16,
+                    1 => i16::try_from(rng.below(32)).unwrap() - 16,
+                    2 => i16::try_from(rng.below(1100)).unwrap() - 40,
+                    _ => rng.next() as i16,
+                };
+                p.set(e + 0x14, spread);
+                if rng.chance(50) {
+                    p.set(e + 0x1c, 0u8);
+                }
+                if rng.chance(40) {
+                    p.set(e + 0x16, i16::try_from(rng.below(40)).unwrap() - 4);
+                }
+            }
+            let pick = |rng: &mut Xorshift, v: u32| if rng.chance(25) { 0 } else { v };
+            let (c1, c2) = (pick(&mut rng, rd1), pick(&mut rng, rd2));
+            p.set(cells, c1);
+            p.set(cells + 4, c2);
+            let (q1, q2) = (pick(&mut rng, rd1), pick(&mut rng, rd2));
+            p.set(made, pick(&mut rng, rd1));
+            p.set(made + 4, pick(&mut rng, rd2));
+            p.set(pend, q1);
+            p.set(pend + 4, q2);
+            p.set(setup_ret, u32::from(rng.chance(70)));
+            p.set(seg_ret, u32::from(!rng.chance(10)));
+            let hold = rng.pick(&[0u32, 1]);
+            check_deep_n(
+                &mut p,
+                "opus_0582_dot_draw",
+                0x00a7_2b80,
+                &[b, rec, m, hold],
+                |mm, frame| {
+                    s::opus_0582_dot_draw(mm, b, rec, m, hold, frame, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn z_crct_shp_draw_matches_the_original() {
+    use mat::bridge as mt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_54c0);
+        let (obj, key, ctrl, offs, part) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x100),
+        );
+        let part_at = p.sym(0x0230_ffe4);
+        let (view, world) = (p.sym(0x0230_ff20), p.sym(0x0230_ffa0));
+        // the frame check_deep_n gives a three-argument original
+        let frame = p.b.stack_range().end - 0x100 - 12 - 4 - 0x200 - 12 - 4 - 4;
+        for _ in 0..3000 {
+            p.set(ctrl + 0xc, offs);
+            p.set(offs, 4 * rng.below(0x10));
+            p.set(part_at, part);
+            for (at, n) in [
+                (obj, 0x80u32),
+                (key, 0x10),
+                (part, 0x40),
+                (view, 0x10),
+                (world, 0x10),
+            ] {
+                for k in 0..n {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * k, x);
+                }
+            }
+            p.set(key + 0x30, rng.pick(&[0u8, 1, 2, 0, 1, 2, 3, 0xff]));
+            // the stack row 3 an unknown mode leaves (both alike)
+            for k in 0..4 {
+                let x = finite(&mut rng);
+                p.set(frame - 0x14 + 4 * k, x);
+            }
+            check_deep_n(
+                &mut p,
+                "pppKeZCrctShpDraw",
+                0x0073_54c0,
+                &[obj, key, ctrl],
+                |m, frame| {
+                    mt::ppp_ke_z_crct_shp_draw(m, obj, key, ctrl, frame, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn hash_u_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_6570);
+        let s = p.alloc(0x200);
+        for round in 0..3000u32 {
+            let n = if round < 4 { round } else { rng.below(0x1ff) };
+            for i in 0..n {
+                // printable names, and any non-zero byte
+                let c = if rng.chance(70) {
+                    0x20 + rng.below(0x5f)
+                } else {
+                    1 + rng.below(0xff)
+                };
+                p.set(s + i, u8::try_from(c).unwrap());
+            }
+            p.set(s + n, 0u8);
+            p.check("hashU", 0x0071_6570, &[s], |m| {
+                Some(small::bridge::hash_u_at(m, s))
+            });
+        }
+    }
+}
+
+#[test]
+fn node_requeue_all_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_9f60);
+        let (set, nodes, owners) = (p.alloc(0x100), p.alloc(0x40 * 8), p.alloc(0x100));
+        for _ in 0..2000 {
+            p.fill(set, 0x100, &mut rng);
+            p.fill(nodes, 0x200, &mut rng);
+            p.fill(owners, 0x100, &mut rng);
+            // two owners, their lists (head at +0x48) empty or one node
+            for o in [owners, owners + 0x80] {
+                let h = o + 0x48;
+                let (a, b) = if rng.chance(50) {
+                    (h, h)
+                } else {
+                    let d = nodes + 0x40 * 7;
+                    (d, d)
+                };
+                p.set(h + 0x1c, a);
+                p.set(h + 0x20, b);
+            }
+            // list 2: the head at set + 0x80 and k nodes, +0x1c onward
+            let head = set + 0x80;
+            let k = rng.below(7);
+            let nodes_in: Vec<u32> = std::iter::once(head)
+                .chain((0..k).map(|i| nodes + 0x40 * i))
+                .collect();
+            for (i, &n) in nodes_in.iter().enumerate() {
+                let next = nodes_in[(i + 1) % nodes_in.len()];
+                let prev = nodes_in[(i + nodes_in.len() - 1) % nodes_in.len()];
+                p.set(n + 0x1c, next);
+                p.set(n + 0x20, prev);
+                if n != head {
+                    p.set(n + 0x18, rng.pick(&[owners, owners + 0x80]));
+                }
+            }
+            p.check("0x00a39f60", 0x00a3_9f60, &[set], |o| {
+                Some(small::bridge::op_node_requeue_all(o, set))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn view_out_code_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_8dd0);
+        let edges = [
+            0.888_888_9f32,
+            -0.888_888_9,
+            0.888_888_8,
+            -0.888_888_8,
+            0.5,
+            -0.5,
+            0.499_999_97,
+            -0.499_999_97,
+            0.0,
+            -0.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ];
+        for _ in 0..4000 {
+            let pick = |rng: &mut Xorshift| -> f32 {
+                match rng.below(3) {
+                    0 => edges[rng.below(13) as usize],
+                    1 => f32::from_bits(finite(rng)),
+                    _ => (rng.below(4000) as f32 - 2000.0) / 1000.0,
+                }
+            };
+            let (x, y) = (pick(&mut rng), pick(&mut rng));
+            p.check(
+                "pppViewOutCode",
+                0x0072_8dd0,
+                &[x.to_bits(), y.to_bits()],
+                |_| Some(small::ppp_view_out_code(x, y)),
+            );
+        }
+    }
+}
+
+#[test]
+fn et_chr_count_same_no_matches_the_original() {
+    use et::bridge as e;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_eb20);
+        let chr = p.sym(e::CHR.sym);
+        for round in 0..1000 {
+            // the snapshot's own table first
+            if !p.snapshot() || round > 0 {
+                for i in 0..e::CHRS {
+                    let h = if rng.chance(50) {
+                        0
+                    } else {
+                        1 + rng.below(300)
+                    };
+                    p.set(chr + 0x20 * i, h);
+                    p.set(chr + 0x20 * i + 4, rng.below(8));
+                }
+            }
+            let h = if rng.chance(70) {
+                p.get(chr + 0x20 * rng.below(e::CHRS))
+            } else {
+                rng.pick(&[0u32, 0x1234, u32::MAX])
+            };
+            p.check("0x007feb20", 0x007f_eb20, &[h], |m| {
+                Some(e::op_et_chr_count_same_no(m, h))
+            });
+        }
+    }
+}
+
+#[test]
+fn texels_halve_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_85f0);
+        let (dst, src) = (p.alloc(0x200), p.alloc(0x400));
+        for _ in 0..3000 {
+            p.fill(dst, 0x200, &mut rng);
+            p.fill(src, 0x400, &mut rng);
+            let size = rng.pick(&[4u32, 4, 1, 1, 0, 2, 3, 8]);
+            let big = rng.below(0x80);
+            let n = rng.pick(&[0u32, 1, 2, big]);
+            p.check("0x00a385f0", 0x00a3_85f0, &[dst, src, n, size], |m| {
+                Some(small::bridge::op_texels_halve(m, dst, src, n, size))
+            });
+            // a column: steps of 4..0x10 bytes, 1..0x10 texels
+            let (ds, ss) = (4 * (1 + rng.below(4)), 4 * (1 + rng.below(4)));
+            let few = rng.below(0x10);
+            let n = rng.pick(&[0u32, 1, few]);
+            p.fill(dst, 0x200, &mut rng);
+            p.check(
+                "0x00a38560",
+                0x00a3_8560,
+                &[dst, ds, src, ss, n, size],
+                |m| {
+                    Some(small::bridge::op_texels_halve_v(
+                        m, dst, ds, src, ss, n, size,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn opus_0437_fade_step_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_e260);
+        let (b, table) = (p.alloc(0x3c + 0x60 * 12), p.alloc(0x400));
+        for _ in 0..3000 {
+            p.fill(b, 0x3c + 0x60 * 12, &mut rng);
+            p.fill(table, 0x400, &mut rng);
+            p.set(b, u16::try_from(rng.below(13)).unwrap());
+            p.set(b + 0xc, table + 0x200);
+            for i in 0..12 {
+                let e = b + 0x3c + 0x60 * i;
+                let slot = if rng.chance(25) {
+                    -1 - i16::try_from(rng.below(3)).unwrap()
+                } else {
+                    i16::try_from(rng.below(0x200)).unwrap() - 0x100
+                };
+                p.set(e, slot);
+                p.set(e + 2, rng.pick(&[0u8, 0x1e, 0x1f, 0x20, 0xff, 5]));
+            }
+            p.check("0x00a6e260", 0x00a6_e260, &[b], |m| {
+                Some(small::bridge::opus_0437_fade_step(m, b))
+            });
+        }
+    }
+}
+
+/// `pppFtoiRgba_0074c280` and its copies (the same code at each address).
+const FTOI_RGBA: [(&str, u32); 7] = [
+    ("pppFtoiRgba_0074c280", 0x0074_c280),
+    ("pppFtoiRgba_0074d280", 0x0074_d280),
+    ("pppFtoiRgba_0074e280", 0x0074_e280),
+    ("pppFtoiRgba_0074f2c0", 0x0074_f2c0),
+    ("pppFtoiRgba_00750130", 0x0075_0130),
+    ("pppFtoiRgba_00751930", 0x0075_1930),
+    ("pppFtoiRgba_007535a0", 0x0075_35a0),
+];
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn ftoi_rgba_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_c280);
+        let (dst, src) = (p.alloc(0x10), p.alloc(0x10));
+        for round in 0..3000u32 {
+            p.fill(dst, 0x10, &mut rng);
+            for i in 0..4 {
+                let x = match rng.below(4) {
+                    0 => f32::from_bits(finite(&mut rng)),
+                    1 => rng.below(0x200) as f32 - 0x100 as f32 + 0.5,
+                    2 => rng.pick(&[
+                        -0.999f32,
+                        0.999,
+                        255.9,
+                        256.0,
+                        -1.0,
+                        2.147_483_6e9,
+                        2.147_483_7e9,
+                        -2.147_483_6e9,
+                        -2.147_483_7e9,
+                        f32::INFINITY,
+                        f32::NAN,
+                    ]),
+                    _ => rng.below(0x400) as f32 / 3.0,
+                };
+                p.set(src + 4 * i, x);
+            }
+            let (name, at) = FTOI_RGBA[(round % 7) as usize];
+            p.check(name, at, &[dst, src], |m| {
+                Some(small::bridge::ppp_ftoi_rgba(m, dst, src))
+            });
+        }
+    }
+}
+
+#[test]
+fn shp_tail3_vf_copy_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_1680);
+        let (dst, vf) = (p.alloc(0x100), p.sym(0x00c8_f7b0));
+        for _ in 0..500 {
+            p.fill(dst, 0x100, &mut rng);
+            p.fill(vf, 0x40, &mut rng);
+            p.check("0x00751680", 0x0075_1680, &[dst], |m| {
+                Some(small::bridge::ppp_ke_shp_tail3_vf_copy(m, dst))
+            });
+        }
+    }
+}
+
+#[test]
+fn data_last_pair_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_1250);
+        let (data, out) = (p.alloc(0x4000), p.alloc(8));
+        for _ in 0..2000 {
+            p.fill(data, 0x100, &mut rng);
+            p.fill(out, 8, &mut rng);
+            let start = 0x10 + 4 * rng.below(8);
+            p.set(data + 4, start);
+            // records of every kind with few entries, then the end
+            let mut at = data + start;
+            for _ in 0..rng.below(8) {
+                let kind = rng.pick(&[0i8, 1, 2, 3, 4, 5, 6, 7, 8, -2, 0x7f]);
+                let n = i16::try_from(rng.below(5)).unwrap();
+                p.fill(at, 0x10, &mut rng);
+                p.set(at + 1, kind);
+                p.set(at + 2, n);
+                let size = [20u32, 28, 32, 40, 24, 32, 40, 48]
+                    .get(usize::try_from(kind).unwrap_or(99))
+                    .copied()
+                    .unwrap_or(0);
+                at += 0x10 + size * u32::try_from(n).unwrap();
+            }
+            p.set(at + 1, -1i8);
+            p.check("0x00761250", 0x0076_1250, &[data, out, out + 4], |m| {
+                Some(small::bridge::ppp_data_last_pair(m, data, out, out + 4))
+            });
+        }
+    }
+}
+
+#[test]
+fn data_set_tex_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_28c0);
+        let (data, out) = (p.alloc(0x4000), p.alloc(8));
+        let table = p.sym(0x00d4_be38);
+        for _ in 0..2000 {
+            p.fill(data, 0x100, &mut rng);
+            p.fill(out, 8, &mut rng);
+            p.fill(table, 12 * 0x40, &mut rng);
+            let start = 0x10 + 4 * rng.below(8);
+            p.set(data + 4, start);
+            let base = rng.below(0x20);
+            let mut at = data + start;
+            for _ in 0..rng.below(8) {
+                let kind = rng.pick(&[0i8, 1, 2, 3, 4, 5, 6, 7, 8, -2, 0x7f]);
+                let n = i16::try_from(rng.below(5)).unwrap();
+                p.fill(at, 0x10, &mut rng);
+                p.set(at + 1, kind);
+                p.set(at + 2, n);
+                p.set(at + 4, u8::try_from(rng.below(0x20)).unwrap());
+                let size = [20u32, 28, 32, 40, 24, 32, 40, 48]
+                    .get(usize::try_from(kind).unwrap_or(99))
+                    .copied()
+                    .unwrap_or(0);
+                at += 0x10 + size * u32::try_from(n).unwrap();
+            }
+            p.set(at + 1, -1i8);
+            p.check(
+                "0x007628c0",
+                0x0076_28c0,
+                &[data, base, out, out + 4],
+                |m| Some(small::bridge::ppp_data_set_tex(m, data, base, out, out + 4)),
+            );
         }
     }
 }
