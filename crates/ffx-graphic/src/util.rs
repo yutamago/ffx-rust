@@ -1727,4 +1727,103 @@ pub mod bridge {
         }
         h.call_sym(SPECULAR_UPDATE_PARAMS, Conv::Thiscall(this), &args);
     }
+
+    // ---- round 19 ----
+
+    /// `PMatrix4_TransformPoint_004c9cb0(m, out, p)` (`thiscall`): `out`
+    /// = the point `p` (x, y, z, 1) times the 4x4 `m`.
+    pub const TRANSFORM_POINT: u32 = 0x004c_9cb0;
+
+    /// How a box's eight clip outcodes combine.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum BoxTest {
+        /// `BoundingBox_IsVisible_00663a30`: AND (no plane has every
+        /// corner outside).
+        Visible,
+        /// `BoundingBox_IsInside_006d27e0`: OR (every corner inside).
+        Inside,
+    }
+
+    /// `BoundingBox_IsVisible_00663a30(box, m)` and
+    /// `BoundingBox_IsInside_006d27e0(box, m)` (`thiscall`, `ret 4`): the
+    /// box (corner `+0..+8`, extent `+0x10..+0x18`) in clip space by the
+    /// 4x4 `m`: the corner through `PMatrix4_TransformPoint` (`t`), the
+    /// extent's axes as `ext.x * row 0` (`a`), `ext.y * row 1` (`b`),
+    /// `ext.z * row 2` (`c`), and the eight corners `t`, `t+a`, `t+b`,
+    /// `t+c`, `(t+a)+b`, `(t+a)+c`, `(t+b)+c`, `((t+a)+b)+c`, every product
+    /// and sum stored as a float. Their `ClipOutcode`s combined by `test`;
+    /// 1 when that is 0. The original's locals live in [`Host::scratch`].
+    pub fn box_clip_test(h: &mut impl Host, bx: u32, m: u32, test: BoxTest) -> u32 {
+        let st = |x: f64| x87::load(x87::store(x));
+        let ext: [f64; 3] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            let k = k as u32;
+            x87::load(rt(h.read(bx + 0x10 + 4 * k)))
+        });
+        let mut rows = [[0f64; 4]; 3];
+        for (r, out) in (0u32..).zip(rows.iter_mut()) {
+            for (k, v) in (0u32..).zip(out.iter_mut()) {
+                *v = st(x87::mul(
+                    ext[r as usize],
+                    x87::load(h.read(m + 0x10 * r + 4 * k)),
+                ));
+            }
+        }
+        let [a, b, c] = rows;
+        let s = h.scratch();
+        let (centre, tp) = (s, s + 0x10);
+        for k in 0..3 {
+            let v = rt(h.read(bx + 4 * k));
+            h.write(centre + 4 * k, v);
+        }
+        h.call_sym(TRANSFORM_POINT, Conv::Thiscall(m), &[tp, centre]);
+        let t: [f64; 4] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let k = k as u32;
+            x87::load(h.read(tp + 4 * k))
+        });
+        let add = |p: [f64; 4], q: [f64; 4]| -> [f64; 4] {
+            std::array::from_fn(|k| st(x87::add(p[k], q[k])))
+        };
+        let ta = add(t, a);
+        let tb = add(t, b);
+        let tab = add(ta, b);
+        // in the original's order of outcodes
+        let corners = [
+            add(tab, c),
+            add(tb, c),
+            add(ta, c),
+            add(t, c),
+            tab,
+            tb,
+            ta,
+            t,
+        ];
+        let at = s + 0x20;
+        let mut acc = match test {
+            BoxTest::Visible => u32::MAX,
+            BoxTest::Inside => 0,
+        };
+        for p in corners {
+            for (k, v) in (0u32..).zip(p) {
+                h.write(at + 4 * k, x87::store(v));
+            }
+            let code = clip_outcode(h, at);
+            acc = match test {
+                BoxTest::Visible => acc & code,
+                BoxTest::Inside => acc | code,
+            };
+        }
+        u32::from(acc == 0)
+    }
+
+    /// `SpecularMapParamsManager_GetInstance`.
+    pub const SPECULAR_GET_INSTANCE: u32 = 0x006c_57e0;
+
+    /// `graphicSetSpecularMapParamsEx(id, a, f0, f1, f2, b, g0, g1, g2,
+    /// g3)` (`0x006439b0`): [`specular_set_params`] on the manager.
+    pub fn graphic_set_specular_params_ex(h: &mut impl Host, p: [u32; 10]) {
+        let mgr = h.call_sym(SPECULAR_GET_INSTANCE, Conv::Cdecl, &[]);
+        specular_set_params(h, mgr, p);
+    }
 }

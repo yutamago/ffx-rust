@@ -6386,3 +6386,142 @@ fn snapshot_round18_matches_the_original() {
         round18_case(&mut t, &mut rng, &what);
     }
 }
+
+// ---- round 19 ----
+
+/// One round-19 case; the box tests' result.
+#[allow(clippy::many_single_char_names)] // box, matrix, value
+fn round19_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) -> Option<u32> {
+    use ffx_graphic::state::bridge::SKIP_FRAME;
+    use ffx_graphic::util::bridge as ut;
+    if case < 2 {
+        // the transform and the original ClipOutcode run on side a
+        let f = |rng: &mut Rng| -> f32 {
+            match rng.below(8) {
+                0 => rng.float(),
+                1 => 0.0,
+                2 => 1.0,
+                _ => (rng.below(61) as f32 - 30.0) / 10.0,
+            }
+        };
+        let bx: Vec<u8> = (0..8).flat_map(|_| f(rng).to_le_bytes()).collect();
+        let bx = t.alloc(&bx);
+        let m: Vec<u8> = (0..16)
+            .flat_map(|k| {
+                let v = if k == 15 && rng.chance(2) {
+                    1.0
+                } else {
+                    f(rng)
+                };
+                v.to_le_bytes()
+            })
+            .collect();
+        let m = t.alloc(&m);
+        let (sym, test) = if case == 0 {
+            (0x0066_3a30, ut::BoxTest::Visible)
+        } else {
+            (0x006d_27e0, ut::BoxTest::Inside)
+        };
+        let mut r = None;
+        t.check(what, sym, Conv::Thiscall(bx), &[m], |g| {
+            let v = ut::box_clip_test(g, bx, m, test);
+            r = Some(v);
+            Out::U32(v)
+        });
+        r
+    } else {
+        t.global(SKIP_FRAME.sym, u32::from(rng.chance(8)));
+        let mgr = t.alloc(&rng.bytes(0x5b0));
+        t.stub_sym(ut::SPECULAR_GET_INSTANCE, Conv::Cdecl, 0, mgr);
+        t.stub_sym(ut::SPECULAR_ADD_EVENT, Conv::Thiscall(0), 1, rng.next());
+        stub_thiscall10(t, ut::SPECULAR_UPDATE_PARAMS, rng.next());
+        let mut p = [0u32; 10];
+        p[0] = [0, 3, rng.next()][rng.below(3) as usize];
+        p[1] = rng.next();
+        p[5] = rng.next();
+        for k in [2, 3, 4, 6, 7, 8, 9] {
+            p[k] = rng.float().to_bits();
+        }
+        t.check(what, 0x0064_39b0, Conv::Cdecl, &p, |g| {
+            ut::graphic_set_specular_params_ex(g, p);
+            Out::None
+        });
+        None
+    }
+}
+
+#[test]
+fn round19_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1919_0019);
+    // each test must see both answers
+    let mut seen = [[0u32; 2]; 2];
+    for round in 0..6000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        if let Some(v) = round19_case(&mut t, &mut rng, round % 3, &what) {
+            seen[(round % 3) as usize][v as usize] += 1;
+        }
+    }
+    assert!(seen.iter().flatten().all(|&n| n > 50), "{seen:?}");
+}
+
+#[test]
+fn snapshot_round19_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5019_0019);
+    for round in 0..600 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round19_case(&mut t, &mut rng, round % 3, &what);
+    }
+}
+
+/// Boxes on the clip boundary, where storing each sum as a float decides
+/// the answer: x = ((cx + ex) + ey) + ez against w = 1 (rows 0-2 of the
+/// matrix add their extent to x only).
+#[test]
+fn round19_box_rounding_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let e24 = 2f32.powi(-24);
+    let e23 = 2f32.powi(-23);
+    let e26 = 2f32.powi(-26);
+    let cases = [
+        (1.0, [e24, e24, e24]),
+        (1.0, [e24, e24, 0.0]),
+        (1.0, [2f32.powi(-25), 0.0, 0.0]),
+        (1.0 + e23, [-e23 + e26, 0.0, 0.0]),
+        (1.0 + e23, [-e23 + e26, e26, e26]),
+        (-1.0, [-e24, -e24, -e24]),
+        (1.0, [-e24, e24, e24]),
+    ];
+    let mut m = [0f32; 16];
+    for k in [0, 4, 8, 5, 10, 15] {
+        m[k] = 1.0;
+    }
+    let m: Vec<u8> = m.iter().flat_map(|f| f.to_le_bytes()).collect();
+    for (i, (cx, ext)) in cases.into_iter().enumerate() {
+        for (sym, test) in [
+            (0x0066_3a30, ut::BoxTest::Visible),
+            (0x006d_27e0, ut::BoxTest::Inside),
+        ] {
+            t.reset();
+            let mat = t.alloc(&m);
+            let bx: Vec<u8> = [cx, 0.0, 0.0, 0.0, ext[0], ext[1], ext[2], 0.0]
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect();
+            let bx = t.alloc(&bx);
+            let what = format!("case {i} {test:?}");
+            t.check(&what, sym, Conv::Thiscall(bx), &[mat], |g| {
+                Out::U32(ut::box_clip_test(g, bx, mat, test))
+            });
+        }
+    }
+}

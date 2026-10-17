@@ -563,6 +563,7 @@
 0x004c7ce0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PRenderTarget__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PRenderTarget *>::Get" (its own __FUNCTION__ in an error print)
 0x004c7dc0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PRenderTargetBase__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PRenderTargetBase *>::Get" (its own __FUNCTION__ in an error print)
 0x004c82b0 function Phyre_PRendering_PRenderTargetBase_getViewportSize # fh v3:exact 0x004c83d0 Phyre::PRendering::PRenderTargetBase::getViewportSize
+0x004c9cb0 function PMatrix4_TransformPoint_004c9cb0 # thiscall(m, out, p), ret 8: out = (p.x, p.y, p.z, 1) times the 4x4 m (x87, each component summed x, y, z then the translation row); the box clip tests' call; name ours
 0x004caba0 function Phyre_PRendering_PShadowCaster_Bind # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'm_splits'; Switch 0x71000ebcb0 Phyre::PRendering::PShadowCaster::Bind (symbols from Fahrenheit's server export)
 0x004cae20 function Phyre_PRendering_PShadowCaster_CheckLightShadowCasterCompatibility # fh switch:bsim1.00 0x71000ec4e0 Phyre::PRendering::PShadowCaster::CheckLightShadowCasterCompatibility
 0x004cb0f0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PArray_Phyre_PRendering_PShadowCaster_PShadowSplit_4__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PArray<class Phyre::PRendering::PShadowCaster::PShadowSplit,4> &>::Get" (its own __FUNCTION__ in an error print)
@@ -1930,6 +1931,7 @@
 0x00643900 function graphicSetScreenFadeColor # fh v3:exact 0x00643ab0
 0x00643940 function graphicSetScreenFadeLastReason # fh v3:bsim1.00 0x00643af0
 0x00643980 function graphicSetSpecularMapParams  # layout+callees: sorts between graphicSetScreenFadeLastReason and graphicSetTextureVideoInfo, and its named callees match the Switch 0x71001d7ec0 graphicSetSpecularMapParams's (similarity 1.00: SpecularMapParamsManager_GetInstance, SpecularMapParamsManager_setShadeSpecularMapParams); symbols from Fahrenheit's server export
+0x006439b0 function graphicSetSpecularMapParamsEx # cdecl(id, a, 3 floats, b, 4 floats): SpecularMapParamsManager_SetParams on SpecularMapParamsManager_GetInstance; next to graphicSetSpecularMapParams; name ours
 0x00643a20 function graphicTextureAnimationSetFrame # structure: cdecl(i, frame): TextureAnimationManager_SetFrame(i, frame, 0) on TextureAnimationManager_GetInstance; name ours
 0x00643a40 function graphicSetTextureAnimationFrameByName # cdecl(frame, name): TextureAnimationManager_FindMaterialIndex(name), then TextureAnimationManager_SetFrame(i, frame, 1); prints "SceneName.%s, TextureAnimName.%s." to stdout when it fails; alphabetical run between graphicSetSpecularMapParams and graphicSetTextureVideoInfo; name ours
 0x00643aa0 function graphicSetTextureVideoInfo # fh v3:exact 0x00643c50
@@ -2196,6 +2198,7 @@
 0x00660400 function PhyreScene_isOpeningScreenPlaying # () -> al = g_PhyreSceneOpeningPlaying; name Fahrenheit's (Switch BSim)
 0x006604d0 function PhyreScene_isVFXTextureLoaded # fh v3:exact 0x00660650 PhyreScene::isVFXTextureLoaded
 0x00661c80 function PhyreScene_isVFXTextureLoaded_00661c80 # fh v3:bsim0.97 0x00661e10 PhyreScene::isVFXTextureLoaded
+0x00663a30 function BoundingBox_IsVisible_00663a30 # thiscall(box, m), ret 4: eight corners of the box (corner +0, extent +0x10) through m, 1 when the AND of their ClipOutcodes is 0 (no plane with every corner outside); twin of BoundingBox_IsInside_006d27e0; name ours
 0x00663d40 function PhyreScene_loadAbConeShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderCone.cgfx.'; Switch 0x7100200600 PhyreScene::loadAbConeShader (symbols from Fahrenheit's server export)
 0x00663e20 function PhyreScene_loadAbWaveShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderWave.cgfx.'; Switch 0x71002006a0 PhyreScene::loadAbWaveShader (symbols from Fahrenheit's server export)
 0x00663f20 function PhyreScene_loadCharacter  # fh v3:cg17 0x6640b0 PhyreScene::loadCharacter
@@ -2827,6 +2830,7 @@
 0x006d2390 function ShadowManager_getInstance # fh v3:bsim1.00 0x006d24c0 ShadowManager::getInstance
 0x006d23a0 function ShadowManager_GetCascadeMatrix # structure: thiscall(this, out, i), ret 8: copies the 4x4 matrix at this +0x210 + 64 i to out; PhyreScene callers after ShadowManager_getInstance; name ours
 0x006d2520 function ShadowManager_getTextureSampler # thiscall(this) -> this + 0x3fc4; name Fahrenheit's (Switch BSim)
+0x006d27e0 function BoundingBox_IsInside_006d27e0 # thiscall(box, m), ret 4: as BoundingBox_IsVisible_00663a30 with the outcodes ORed (1: every corner inside); name ours
 0x006d2c10 function ShadowManager_loadShadowShaderBinFiles # layout+callees: sorts between ShadowManager_getTextureSampler and ShadowManager_updateShadowMap, and its named callees match the Switch 0x7100277e90 ShadowManager_loadShadowShaderBinFiles's (similarity 0.60: Phyre_PCluster_LoadAssetFile, Phyre_PFramework_PApplication_GetApplication, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d3560 function ShadowEntry_Init          # structure: thiscall(this, owner), ret 4: owner +0, 2 at +4, 1.0 at +0x30..+0x3c, the rest of +0xc..+0x50 and +0xa0/+0xa4 cleared; returns this; name ours (layout only)

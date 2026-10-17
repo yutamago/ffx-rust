@@ -1357,6 +1357,20 @@ ported! {
     SpecularMapParamsManager_SetParams @ 0x006c_7090 => extern "thiscall" fn specular_set_params(this: u32, id: u32, a: u32, f0: u32, f1: u32, f2: u32, b: u32, g0: u32, g1: u32, g2: u32, g3: u32) {
         ut::specular_set_params(&mut mem(), this, [id, a, f0, f1, f2, b, g0, g1, g2, g3]);
     }
+
+    // ---- round 19 ----
+    /// `BoundingBox_IsVisible_00663a30(this, m)`.
+    BoundingBox_IsVisible_00663a30 @ 0x0066_3a30 => extern "thiscall" fn box_is_visible(this: u32, m: u32) -> u32 {
+        ut::box_clip_test(&mut mem(), this, m, ut::BoxTest::Visible)
+    }
+    /// `BoundingBox_IsInside_006d27e0(this, m)`.
+    BoundingBox_IsInside_006d27e0 @ 0x006d_27e0 => extern "thiscall" fn box_is_inside(this: u32, m: u32) -> u32 {
+        ut::box_clip_test(&mut mem(), this, m, ut::BoxTest::Inside)
+    }
+    /// `graphicSetSpecularMapParamsEx(id, a, f0, f1, f2, b, g0, g1, g2, g3)`.
+    graphicSetSpecularMapParamsEx @ 0x0064_39b0 => extern "C" fn graphic_set_specular_params_ex(id: u32, a: u32, f0: u32, f1: u32, f2: u32, b: u32, g0: u32, g1: u32, g2: u32, g3: u32) {
+        ut::graphic_set_specular_params_ex(&mut mem(), [id, a, f0, f1, f2, b, g0, g1, g2, g3]);
+    }
 }
 
 /// A singleton's pointer.

@@ -847,3 +847,21 @@ Round 18:
   words, `ret 0x28`, `ecx` unused) with the same words, the seven floats
   copied through the x87. `ffx_graphic::host::Host::call` passes up to
   twelve words to a `thiscall` for it.
+
+Round 19:
+
+- `BoundingBox_IsVisible_00663a30(box, m)` and
+  `BoundingBox_IsInside_006d27e0(box, m)` (`thiscall`, `ret 4`; the same
+  code but for one instruction): a box (corner `+0..+8`, extent
+  `+0x10..+0x18`) in clip space by the 4x4 `m`. The corner goes through
+  `PMatrix4_TransformPoint_004c9cb0` (`t`); the extent gives `a = ext.x *
+  row 0`, `b = ext.y * row 1`, `c = ext.z * row 2` (each product stored as
+  a float); the eight corners are `t`, `t+a`, `t+b`, `t+c`, `(t+a)+b`,
+  `(t+a)+c`, `(t+b)+c`, `((t+a)+b)+c`, every sum stored as a float, so a
+  corner on a clip plane can fall either side by rounding. Their
+  `ClipOutcode`s are ANDed (visible: 1 unless every corner is outside one
+  plane) or ORed (inside: 1 only when every corner is inside); `eax` is
+  1 when the result is 0, else 0.
+- `graphicSetSpecularMapParamsEx(...)` (`0x006439b0`):
+  `SpecularMapParamsManager_SetParams` on `SpecularMapParamsManager_GetInstance()`
+  with its ten words (the floats copied through the x87).
