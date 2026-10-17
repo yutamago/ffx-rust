@@ -95,6 +95,9 @@ pub(crate) enum Win32 {
     CryptGetHashParam,
     /// `CryptDestroyHash(hash)`.
     CryptDestroyHash,
+    /// `CreateFileW/A`: no files here; `INVALID_HANDLE_VALUE` with
+    /// `ERROR_FILE_NOT_FOUND`.
+    CreateFile,
 }
 
 /// The handles handed out, the last error and the semaphores' counts.
@@ -215,6 +218,7 @@ pub(crate) fn lookup(dll: &str, name: &str) -> Option<(Win32, u8)> {
         "CreateMutexW" | "CreateMutexA" => (NewHandle, 3),
         "CreateSemaphoreW" | "CreateSemaphoreA" => (CreateSemaphore, 4),
         "CloseHandle" => (CloseHandle, 1),
+        "CreateFileW" | "CreateFileA" => (CreateFile, 7),
         "CreateEventW" | "CreateEventA" => (NewHandle, 4),
         "UnhandledExceptionFilter" => (Abort("UnhandledExceptionFilter"), 1),
         "RaiseException" => (Abort("RaiseException"), 4),
@@ -806,6 +810,10 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Win32) -> Result<u32> {
                 }
                 _ => 0,
             }
+        }
+        Win32::CreateFile => {
+            set_error(uc, 2);
+            u32::MAX
         }
         Win32::CryptDestroyHash => {
             u32::from(uc.get_data_mut().win32.hashes.remove(&a[0]).is_some())
