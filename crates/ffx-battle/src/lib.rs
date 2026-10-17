@@ -17,6 +17,7 @@
 pub mod ability;
 pub mod action;
 pub mod actor;
+pub mod after_damage;
 pub mod atel;
 pub mod body;
 pub mod camera;

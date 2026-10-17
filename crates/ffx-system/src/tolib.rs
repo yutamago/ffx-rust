@@ -8143,4 +8143,302 @@ pub mod bridge {
         mem.write(pos.wrapping_add(4), x as f32);
         pos
     }
+
+    /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)` (`0x00903bb0`)
+    /// and, with `colours`, `TOMkpShapeXYWHUVC2(…, c0, c1)` (`0x00903ee0`):
+    /// the quad of a UI shape: corners `x, y` and `x + w, y + h`, clipped
+    /// with its UVs by `BeginScissor_XYUV`, then the UVs scaled for the
+    /// shape's sheet and the quad handed to `graphicDrawUIElement(rec,
+    /// texture, 1, 0, 0)`.
+    ///
+    /// Shapes -1, -3 and -6 divide the UVs by the size of image 0x3e80,
+    /// 0x3e83 or 0x3e86 (`TOGetImageWH`); -2 scales u by 1/2048 and v by
+    /// 1/1024 (image 0x3e82); -4 (C2 only) both by 1/256 (0x3e84); 0..=0xc6
+    /// and 0xc8..=0x18e use sheet 0x3e00, 0x190..=0x256 sheet 0x3f00, and
+    /// 0x258..=0x289 scale u by 1/1024 and v by 1/512 (sheet 0x3dc0)
+    /// (`TOGetShapTextureName`). Other shapes leave the texture unset in
+    /// the original (a stale stack word); the port passes 0. Colours are
+    /// grey 0x80, or the bytes of `c0`/`c1` for the two corners. `scratch`
+    /// (0xd0 bytes) stands in for the original's stack: corners at `+0`,
+    /// UVs at `+0x10`, image size at `+0x20`, the record at `+0x30`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::many_single_char_names
+    )]
+    pub fn to_mkp_shape_xywhuv<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        colours: Option<[u32; 2]>,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [shape, x, y, w, h, u0, v0, u1, v1] = args;
+        let f = |bits: u32| f64::from(f32::from_bits(bits));
+        let rd = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        for k in 0..0x34 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let uv = scratch.wrapping_add(0x10);
+        let size = scratch.wrapping_add(0x20);
+        let rec = scratch.wrapping_add(0x30);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        for (k, v) in [u0, v0, u1, v1].into_iter().enumerate() {
+            mem.write(uv.wrapping_add(4 * k as u32), v);
+        }
+        let kept = call(
+            mem,
+            0x008e_5a20,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+                uv,
+                uv.wrapping_add(4),
+                uv.wrapping_add(8),
+                uv.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        let scale_uv = |mem: &mut M, ku: f64, kv: f64| {
+            for (k, s) in [(0u32, ku), (8, ku), (4, kv), (0xc, kv)] {
+                let v = rd(mem, uv.wrapping_add(k));
+                mem.write(uv.wrapping_add(k), (v * s) as f32);
+            }
+        };
+        let divide_uv = |mem: &mut M| {
+            let (wi, hi) = (rd(mem, size), rd(mem, size.wrapping_add(4)));
+            for (k, s) in [(0u32, wi), (8, wi), (4, hi), (0xc, hi)] {
+                let v = rd(mem, uv.wrapping_add(k));
+                mem.write(uv.wrapping_add(k), (v / s) as f32);
+            }
+        };
+        let image = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let mut texture = 0u32;
+        let sheet = match shape.cast_signed() {
+            -1 | -3 | -6 => {
+                let id = match shape.cast_signed() {
+                    -1 => 0x3e80,
+                    -3 => 0x3e83,
+                    _ => 0x3e86,
+                };
+                call(mem, 0x008a_c400, &[id, size, size.wrapping_add(4)]);
+                divide_uv(mem);
+                Some(id)
+            }
+            -2 => {
+                let (ku, kv) = (image(mem, 0x00b5_8590), image(mem, 0x00b5_8b50));
+                scale_uv(mem, ku, kv);
+                Some(0x3e82)
+            }
+            -4 if colours.is_some() => {
+                let k = image(mem, 0x00b5_0198);
+                scale_uv(mem, k, k);
+                Some(0x3e84)
+            }
+            _ => None,
+        };
+        if let Some(id) = sheet {
+            texture = call(mem, 0x008a_c8c0, &[id]);
+        } else {
+            if shape <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3e00]);
+            }
+            if shape.wrapping_sub(0xc8) <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3e00]);
+            }
+            if shape.wrapping_sub(0x190) <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3f00]);
+            }
+            if shape.wrapping_sub(0x258) <= 0x31 {
+                let (ku, kv) = (image(mem, 0x00b5_8b50), image(mem, 0x00b4_1cc0));
+                scale_uv(mem, ku, kv);
+                texture = call(mem, 0x008a_c8c0, &[0x3dc0]);
+            }
+        }
+        let [c0, c1] = colours.unwrap_or([0x8080_8080, 0x8080_8080]);
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for (k, off) in [(0u32, 8u32), (4, 0xc), (8, 0x28), (0xc, 0x2c)] {
+            let v: u32 = mem.read(uv.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for k in 0..4u32 {
+            mem.write(rec.wrapping_add(0x10 + 4 * k), (c0 >> (8 * k)) & 0xff);
+            mem.write(rec.wrapping_add(0x30 + 4 * k), (c1 >> (8 * k)) & 0xff);
+        }
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
+
+    /// The colour words of a UI record: the bytes of `c` (r, g, b, a) as
+    /// four words at `at`.
+    fn colour_words<M: Mem>(mem: &mut M, at: u32, c: u32) {
+        for k in 0..4u32 {
+            mem.write(at.wrapping_add(4 * k), (c >> (8 * k)) & 0xff);
+        }
+    }
+
+    /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f4b20`): an
+    /// untextured gradient box from colour `c0` (top left) to `c1` (bottom
+    /// right): corners `x, y` and `x + w, y + h` (f32 bits), clipped by
+    /// `BeginScissor_XY`, drawn with `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    /// `scratch` (0xa0 bytes) holds the corners (`+0`) and the record
+    /// (`+0x10`); the UV words the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_draw_cross_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        let kept = call(
+            mem,
+            0x008e_58e0,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        colour_words(mem, rec.wrapping_add(0x10), c0);
+        colour_words(mem, rec.wrapping_add(0x30), c1);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `0x008f8bb0(cell, x, y, w, h)`: draws cell `cell` of sheet 0x2ecc
+    /// (columns of 170 by rows of 14 pixels, nine rows per column) over
+    /// `x, y, w, h` (f32 bits) in grey, unclipped. `scratch` (0xa0 bytes)
+    /// holds the sheet size (`+0`) and the record (`+0x10`).
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn draw_sheet_cell<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [index, x, y, w, h] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let texture = call(mem, 0x008a_c8c0, &[0x2ecc]);
+        call(mem, 0x008a_c400, &[0x2ecc, size, size.wrapping_add(4)]);
+        let (sw, sh) = (
+            f64::from(mem.read::<f32>(size)),
+            f64::from(mem.read::<f32>(size.wrapping_add(4))),
+        );
+        let i = index.cast_signed();
+        let (column, row) = ((i / 9).wrapping_mul(0xaa), (i % 9).wrapping_mul(0xe));
+        let u = |p: i32| (f64::from(p as f32) / sw) as f32;
+        let v = |p: i32| (f64::from(p as f32) / sh) as f32;
+        mem.write(rec, x);
+        mem.write(rec.wrapping_add(4), y);
+        mem.write(rec.wrapping_add(8), u(column));
+        mem.write(rec.wrapping_add(0xc), v(row));
+        colour_words(mem, rec.wrapping_add(0x10), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x20), (f(x) + f(w)) as f32);
+        mem.write(rec.wrapping_add(0x24), (f(y) + f(h)) as f32);
+        mem.write(rec.wrapping_add(0x28), u(column.wrapping_add(0xaa)));
+        mem.write(rec.wrapping_add(0x2c), v(row.wrapping_add(0xe)));
+        colour_words(mem, rec.wrapping_add(0x30), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
+
+    /// The integer box record of [`to_draw_box_xywh_c2`] and
+    /// [`to_make_pkt_box_xywh_rgba`]: corners `x, y` and `x + w, y + h`
+    /// (wrapping integer sums, then `fild`), the two corner colours, and
+    /// `+0x88`, `+0x90`, `+0x94` cleared; drawn untextured with
+    /// `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    #[allow(clippy::cast_precision_loss)]
+    fn int_box<M: Mem>(
+        mem: &mut M,
+        rect: [u32; 4],
+        colours: [[u32; 4]; 2],
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h] = rect.map(u32::cast_signed);
+        for k in 0..0x26 {
+            mem.write(rec.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(rec, x as f32);
+        mem.write(rec.wrapping_add(4), y as f32);
+        mem.write(rec.wrapping_add(0x20), x.wrapping_add(w) as f32);
+        mem.write(rec.wrapping_add(0x24), y.wrapping_add(h) as f32);
+        for (corner, c) in [0x10u32, 0x30].into_iter().zip(colours) {
+            for (k, v) in c.into_iter().enumerate() {
+                #[allow(clippy::cast_possible_truncation)] // four words
+                mem.write(rec.wrapping_add(corner + 4 * k as u32), v);
+            }
+        }
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f3db0`): an integer
+    /// gradient box (see [`int_box`]) from colour `c0` to `c1`, skipped
+    /// while the ability map is up (`graphicGetAbmap() == 1`). `rec` is
+    /// 0x98 bytes of scratch.
+    pub fn to_draw_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        if call(mem, 0x0064_1060, &[]) == 1 {
+            return;
+        }
+        let bytes = |c: u32| [c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, c >> 24];
+        int_box(mem, [x, y, w, h], [bytes(c0), bytes(c1)], rec, &mut call);
+    }
+
+    /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)` (`0x008fb150`): an
+    /// integer box (see [`int_box`]) in one colour.
+    #[allow(clippy::many_single_char_names)]
+    pub fn to_make_pkt_box_xywh_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, r, g, b, a] = args;
+        int_box(mem, [x, y, w, h], [[r, g, b, a]; 2], rec, &mut call);
+    }
 }

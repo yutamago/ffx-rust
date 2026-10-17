@@ -1178,14 +1178,16 @@ pub mod bridge {
     }
 
     /// `Ch_ReadEventMgrp(x)` (`0x00837670`): `Ch_RomReadEventMGRPsync` of
-    /// `AtelEventGetMotionIndex(0x0086c1c0(x))` (a tail call); its result.
+    /// `AtelEventGetMotionIndex(0x0086c1c0(x), x)` (`x` is still pushed;
+    /// the callee reads both) as a tail call; its result.
     pub fn ch_read_event_mgrp<M: Mem>(
         mem: &mut M,
         x: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
         let v = call(mem, mem.rebase(0x0086_c1c0), &[x]);
-        let i = call(mem, mem.rebase(0x0086_5890), &[v]);
+        // the original leaves `x` pushed: AtelEventGetMotionIndex reads both
+        let i = call(mem, mem.rebase(0x0086_5890), &[v, x]);
         call(mem, mem.rebase(0x0082_a7f0), &[i])
     }
 

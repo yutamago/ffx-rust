@@ -2811,7 +2811,11 @@ pub mod bridge {
     #[must_use]
     pub const fn btl_end_ap_step(ap: u32) -> u32 {
         let s = (ap / 0xbd) | 1;
-        if s.is_multiple_of(5) { s + 2 } else { s }
+        if s.is_multiple_of(5) {
+            s.wrapping_add(2)
+        } else {
+            s
+        }
     }
 
     /// `BtlEnd_InitApStep()` (`0x008bdf10`, own name): the AP total from
@@ -3085,13 +3089,13 @@ pub mod bridge {
         ffx_script::vm::bridge::atel_get_basic_work(mem, worker);
         let ctx = mem.read::<u32>(mem.rebase(0x0132_6b28));
         let s = ctx.wrapping_add(slot.clamp(0, 3).cast_unsigned() << 4);
-        let old = mem.read::<i32>(s + 0x64);
-        mem.write(s + 0x64, u32::MAX);
-        mem.write(s + 0x68, 0u32);
-        mem.write(s + 0x73, 0u8);
+        let old = mem.read::<i32>(s.wrapping_add(0x64));
+        mem.write(s.wrapping_add(0x64), u32::MAX);
+        mem.write(s.wrapping_add(0x68), 0u32);
+        mem.write(s.wrapping_add(0x73), 0u8);
         if old >= 0 {
-            let to = mem.read::<u32>(s + 0x6c);
-            let v = mem.read::<u8>(s + 0x72);
+            let to = mem.read::<u32>(s.wrapping_add(0x6c));
+            let v = mem.read::<u8>(s.wrapping_add(0x72));
             mem.write(to, v);
         }
     }
@@ -4975,6 +4979,742 @@ pub mod bridge {
         }
         mem.write(mem.rebase(0x0186_aa3c), k);
         tk_mn2_init_status_bg(mem);
+    }
+
+    /// `MenuSummon_GetStat(base, desc, max)` (`0x008ceca0`): a summon
+    /// stat field of the record at `base`, by its descriptor (`u16` offsets
+    /// `+0xc` for the maximum, `+0xe` for the current value; `+0x10` 4 for
+    /// a `u32`, else a byte).
+    pub fn menu_summon_get_stat(mem: &impl Mem, base: u32, desc: u32, max: u32) -> u32 {
+        let off = u32::from(mem.read::<u16>(desc + if max != 0 { 0xc } else { 0xe }));
+        if mem.read::<u32>(desc + 0x10) == 4 {
+            mem.read(base.wrapping_add(off))
+        } else {
+            u32::from(mem.read::<u8>(base.wrapping_add(off)))
+        }
+    }
+
+    /// `MenuSummon_SetStat(base, desc, max, v)` (`0x008cee70`): the store
+    /// [`menu_summon_get_stat`] reads.
+    pub fn menu_summon_set_stat(mem: &mut impl Mem, base: u32, desc: u32, max: u32, v: u32) {
+        let off = u32::from(mem.read::<u16>(desc + if max != 0 { 0xc } else { 0xe }));
+        if mem.read::<u32>(desc + 0x10) == 4 {
+            mem.write(base.wrapping_add(off), v);
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // the low byte, as stored
+            mem.write(base.wrapping_add(off), v as u8);
+        }
+    }
+
+    /// `Menu_FindByte(bytes, v, from, to)` (`0x008c9bc0`): the first index
+    /// in `from..to` whose byte is `v`, else -1.
+    pub fn menu_find_byte(mem: &impl Mem, bytes: u32, v: u32, from: i32, to: i32) -> i32 {
+        (from..to)
+            .find(|&i| u32::from(mem.read::<u8>(bytes.wrapping_add(i.cast_unsigned()))) == v)
+            .unwrap_or(-1)
+    }
+
+    /// `Menu_FindFlagged(entries, from, to)` (`0x008c9b90`): the first index
+    /// in `from..to` whose 4-byte entry has byte `+2` set, else -1.
+    pub fn menu_find_flagged(mem: &impl Mem, entries: u32, from: i32, to: i32) -> i32 {
+        (from..to)
+            .find(|&i| {
+                mem.read::<u8>(entries.wrapping_add(4u32.wrapping_mul(i.cast_unsigned())) + 2) != 0
+            })
+            .unwrap_or(-1)
+    }
+
+    /// `Menu_FadeStep(obj)` (`0x008e2b30`): `+0x64` += `+0x68`, at least 0
+    /// and at most 0x80. Returns the value before the upper clamp (EAX).
+    pub fn menu_fade_step(mem: &mut impl Mem, obj: u32) -> u32 {
+        let v = mem
+            .read::<i32>(obj + 0x64)
+            .wrapping_add(mem.read(obj + 0x68))
+            .max(0);
+        mem.write(obj + 0x64, v.min(0x80));
+        v.cast_unsigned()
+    }
+
+    /// The menu item key list `Menu_ParseItemKeys` fills (32 entries of 4
+    /// bytes, `g_TkMenuItemKeyUse`).
+    pub const ITEM_KEYS: u32 = 0x0186_a280;
+
+    /// `Menu_ParseItemKeys(s)` (`0x008c5280`): splits a key string into
+    /// the [`ITEM_KEYS`] entries: a byte, then (kind 4) a second byte, and
+    /// for a value in 6..=0x2f one argument byte; the unused entries after
+    /// the last are cleared (their first byte).
+    #[allow(clippy::many_single_char_names)] // string, pointer, entry, bytes
+    pub fn menu_parse_item_keys<M: Mem>(mem: &mut M, s: u32) {
+        let table = mem.rebase(ITEM_KEYS);
+        let mut p = s;
+        let mut i = 0u32;
+        let next = |mem: &M, p: &mut u32| {
+            let b: u8 = mem.read(*p);
+            *p = p.wrapping_add(1);
+            b
+        };
+        let mut b = next(mem, &mut p);
+        while b != 0 {
+            let e = table.wrapping_add(4 * i);
+            mem.write(e, b);
+            if b == 4 {
+                let k = next(mem, &mut p);
+                mem.write(e + 1, k);
+                if k.wrapping_sub(6) <= 0x29 {
+                    let a = next(mem, &mut p);
+                    mem.write(e + 2, a);
+                    mem.write(e + 3, 0u8);
+                } else {
+                    mem.write(e + 2, 0u8);
+                }
+            } else if b.wrapping_sub(6) <= 0x29 {
+                let a = next(mem, &mut p);
+                mem.write(e + 1, a);
+                mem.write(e + 2, 0u8);
+            } else {
+                mem.write(e + 1, 0u8);
+            }
+            b = next(mem, &mut p);
+            i += 1;
+        }
+        while i < 0x20 {
+            mem.write(table.wrapping_add(4 * i), 0u8);
+            i += 1;
+        }
+    }
+
+    /// `g_TkMenuSceneData` (pointers per scene).
+    pub const MENU_SCENE_DATA: u32 = 0x022f_b4dc;
+
+    /// `MenuScene_ResetGroup(scene, off, on)` (`0x00a7ba70`): the group at
+    /// `off` in scene `scene`'s data (none for 0 or no data: 0) gets its
+    /// list offset's top bits cleared; each of its 20-byte entries is shown
+    /// (bit 31 set) or hidden (bits 30, 31 cleared) and reset (`+8` 0,
+    /// `u16` `+0xc` -1, `u16` `+4` 0, `+0xe` 0). Returns the group.
+    #[allow(clippy::many_single_char_names)] // group, value, entry, word, count
+    pub fn menu_scene_reset_group(mem: &mut impl Mem, scene: u32, off: u32, on: u32) -> u32 {
+        if off == 0 {
+            return 0;
+        }
+        let at = mem
+            .rebase(MENU_SCENE_DATA)
+            .wrapping_add(4u32.wrapping_mul(scene));
+        let data: u32 = mem.read(at);
+        if data == 0 {
+            return 0;
+        }
+        let g = data.wrapping_add(off);
+        if g == 0 {
+            return 0;
+        }
+        let v = mem.read::<u32>(g + 4) & 0x3fff_ffff;
+        mem.write(g + 4, v);
+        let list = (mem.read::<u32>(g + 4) & 0x3fff_ffff).wrapping_add(mem.read::<u32>(at));
+        let n: i32 = mem.read(list);
+        let mut e = list.wrapping_add(4);
+        for _ in 0..n.max(0) {
+            let w: u32 = mem.read(e);
+            mem.write(
+                e,
+                if on == 0 {
+                    w & 0x3fff_ffff
+                } else {
+                    w | 0x8000_0000
+                },
+            );
+            mem.write(e + 8, 0u32);
+            mem.write(e + 0xc, 0xffffu16);
+            mem.write(e + 4, 0u16);
+            mem.write(e + 0xe, 0u32);
+            e = e.wrapping_add(0x14);
+        }
+        g
+    }
+
+    /// The party-select cursor (`i8`), the slot count (`i32`) and the slot
+    /// pointers (`0x0186a44c`, each with `+0xc` 1 when selectable).
+    pub const PARTY_CURSOR: u32 = 0x0186_a444;
+    pub const PARTY_COUNT: u32 = 0x0186_a448;
+    pub const PARTY_SLOTS: u32 = 0x0186_a44c;
+
+    /// `MenuParty_CursorPrev()` (`0x008cba60`): the cursor moves back
+    /// (wrapping to the last slot) to the previous selectable slot.
+    pub fn menu_party_cursor_prev(mem: &mut impl Mem) {
+        let (cur, n) = (
+            mem.rebase(PARTY_CURSOR),
+            mem.read::<i32>(mem.rebase(PARTY_COUNT)),
+        );
+        let slots: u32 = mem.read(mem.rebase(PARTY_SLOTS));
+        let mut c: i8 = mem.read(cur);
+        loop {
+            c = c.wrapping_sub(1);
+            mem.write(cur, c);
+            if c < 0 {
+                #[allow(clippy::cast_possible_truncation)] // the low byte
+                {
+                    c = n.wrapping_sub(1) as i8;
+                }
+                mem.write(cur, c);
+            }
+            let s: u32 =
+                mem.read(slots.wrapping_add(4u32.wrapping_mul(i32::from(c).cast_unsigned())));
+            if mem.read::<u32>(s.wrapping_add(0xc)) == 1 {
+                return;
+            }
+        }
+    }
+
+    /// `MenuParty_CursorNext()` (`0x008cba20`): the cursor moves on
+    /// (wrapping to 0) to the next selectable slot.
+    pub fn menu_party_cursor_next(mem: &mut impl Mem) {
+        let (cur, n) = (
+            mem.rebase(PARTY_CURSOR),
+            mem.read::<i32>(mem.rebase(PARTY_COUNT)),
+        );
+        let slots: u32 = mem.read(mem.rebase(PARTY_SLOTS));
+        let mut c: i8 = mem.read(cur);
+        loop {
+            c = c.wrapping_add(1);
+            if i32::from(c) >= n {
+                c = 0;
+            }
+            let s: u32 =
+                mem.read(slots.wrapping_add(4u32.wrapping_mul(i32::from(c).cast_unsigned())));
+            if mem.read::<u32>(s.wrapping_add(0xc)) == 1 {
+                break;
+            }
+        }
+        mem.write(cur, c);
+    }
+
+    /// `Menu_Scale32(a, b)` (`0x008bf100`): `a + a × b / 32`, the division
+    /// truncating toward 0.
+    #[must_use]
+    pub fn menu_scale32(a: i32, b: i32) -> i32 {
+        a.wrapping_mul(b) / 32 + a
+    }
+
+    /// `Menu_EaseCounter(-, counter, a, b)` (`0x008bf7e0`): a non-zero
+    /// counter moves 0x199 toward 0; reaching or passing 0 it becomes 0 and
+    /// `*a` = `*b` (taken before).
+    #[allow(clippy::many_single_char_names)] // the two targets, counter, value
+    pub fn menu_ease_counter(mem: &mut impl Mem, counter: u32, a: u32, b: u32) {
+        let c: i32 = mem.read(counter);
+        let v: u32 = mem.read(b);
+        if c > 0 {
+            let n = c.wrapping_sub(0x199);
+            mem.write(counter, n);
+            if n <= 0 {
+                mem.write(counter, 0u32);
+                mem.write(a, v);
+                mem.write(b, v);
+            }
+        } else if c != 0 {
+            let n = c.wrapping_add(0x199);
+            mem.write(counter, n);
+            if n >= 0 {
+                mem.write(counter, 0u32);
+                mem.write(a, v);
+                mem.write(b, v);
+            }
+        }
+    }
+
+    /// `Menu_CursorEase(summon, counter, a, b, last)` (`0x008bf750`, own
+    /// name): `Menu_EaseCounter` for the party cursor (the summon one with
+    /// `summon` 1): the counter moves 0x199 toward 0 and, reaching it,
+    /// `*a` = `*b` = the current position; then a position other than
+    /// `*last` (read first) restarts it at the step (`TkMenuGetSummonStep`
+    /// / `TkMenuGetPlayerStep`) `<< 12`, with `*a` = the old position and
+    /// `*b` = `*last` = the new one.
+    #[allow(clippy::many_single_char_names, clippy::comparison_chain)]
+    pub fn menu_cursor_ease<M: Mem>(
+        mem: &mut M,
+        summon: bool,
+        [counter, a, b, last]: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(if summon { 0x008a_9890 } else { 0x008a_9870 });
+        let pos = call(mem, f, &[]);
+        let c: i32 = mem.read(counter);
+        let old: u32 = mem.read(last);
+        let done = if c > 0 {
+            let n = c.wrapping_sub(0x199);
+            mem.write(counter, n);
+            n <= 0
+        } else if c < 0 {
+            let n = c.wrapping_add(0x199);
+            mem.write(counter, n);
+            n >= 0
+        } else {
+            false
+        };
+        if done {
+            mem.write(counter, 0u32);
+            mem.write(a, pos);
+            mem.write(b, pos);
+        }
+        if old != pos {
+            let f = mem.rebase(if summon { 0x008a_9bb0 } else { 0x008a_9840 });
+            let step = call(mem, f, &[]);
+            mem.write(counter, step << 12);
+            mem.write(a, old);
+            mem.write(b, pos);
+            mem.write(last, pos);
+        }
+    }
+
+    /// `TkSetEventJump(map, entrance)` (`0x0088ea60`): with `map` the
+    /// pending value `0x00c33480`, only `0x01327108` = 1. Otherwise the
+    /// save's event block (`MsGetSaveEventAddress()`): map 0x17 first
+    /// destroys every effect (`graphicVFXDestroyAll`,
+    /// `fiosDeleteCompletedOps`); a negative map takes the saved map
+    /// (`+0xba`) and entrance (`+0xb8`, then cleared). The previous map
+    /// (`+0`) and entrance (`+0xc`) move to `+2`/`+0xd` (for a negative
+    /// map `+0xc2`/`+0xce` instead), the new ones in; then
+    /// `g_TkEventJumpRequest` = 1.
+    pub fn tk_set_event_jump<M: Mem>(
+        mem: &mut M,
+        map: i32,
+        entrance: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let pending = mem.rebase(0x00c3_3480);
+        if mem.read::<i32>(pending) == map {
+            let at = mem.rebase(0x0132_7108);
+            mem.write(at, 1u32);
+            return;
+        }
+        let f = mem.rebase(0x0078_5240);
+        let s = call(mem, f, &[]);
+        let (m, e) = if map < 0 {
+            let e: u16 = mem.read(s.wrapping_add(0xb8));
+            let m: u16 = mem.read(s.wrapping_add(0xba));
+            mem.write(s.wrapping_add(0xb8), 0u16);
+            (m, e.to_le_bytes()[0])
+        } else {
+            if map == 0x17 {
+                for f in [0x0064_5310, 0x0067_9560] {
+                    let f = mem.rebase(f);
+                    call(mem, f, &[]);
+                }
+            }
+            let [lo, hi, ..] = map.to_le_bytes();
+            (u16::from_le_bytes([lo, hi]), entrance.to_le_bytes()[0])
+        };
+        let (prev_map, prev_entrance) = if map < 0 {
+            (
+                mem.read::<u16>(s.wrapping_add(0xc2)),
+                mem.read::<u8>(s.wrapping_add(0xce)),
+            )
+        } else {
+            (mem.read::<u16>(s), mem.read::<u8>(s.wrapping_add(0xc)))
+        };
+        mem.write(s.wrapping_add(2), prev_map);
+        mem.write(s.wrapping_add(0xd), prev_entrance);
+        mem.write(s, m);
+        mem.write(s.wrapping_add(0xc), e);
+        let at = mem.rebase(0x0133_084c);
+        mem.write(at, 1u32);
+    }
+
+    /// `MenuItem_CursorTable()` (`0x008c4ff0`, own name): one of four
+    /// tables by language (`TOGetFFXLang` through `0x008ac2f0`: Japanese
+    /// or not) and whether the item menu has a target
+    /// (`0x0186a258` >= 0): `0x00c5a19c`/`0x00c5a1cc` (Japanese, with and
+    /// without), `0x00c5a188`/`0x00c5a1e4`.
+    pub fn menu_item_cursor_table<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let target = MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0;
+        mem.rebase(match (lang == 0, target) {
+            (true, true) => 0x00c5_a19c,
+            (true, false) => 0x00c5_a1cc,
+            (false, true) => 0x00c5_a188,
+            (false, false) => 0x00c5_a1e4,
+        })
+    }
+
+    /// `MenuItem_CellTable()` (`0x008c4f80`, own name): with an item-menu
+    /// target `t` (`0x0186a258` >= 0) entry `t` of `0x00c5a0d8` (Japanese,
+    /// `MsGetSaveConfigEnglish` asked but unused) or `0x00c5a120`; without
+    /// one `0x00c5a0d4` (Japanese, not English) or `0x00c5a168`.
+    pub fn menu_item_cell_table<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let target = MENU_ITEM_SELECTED_LIST.get(mem);
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let english = if lang == 0 {
+            let f = mem.rebase(0x0078_51d0);
+            call(mem, f, &[]) != 0
+        } else {
+            true
+        };
+        if target.cast_signed() < 0 {
+            return mem.rebase(if english { 0x00c5_a168 } else { 0x00c5_a0d4 });
+        }
+        let table = mem.rebase(if lang == 0 { 0x00c5_a0d8 } else { 0x00c5_a120 });
+        table.wrapping_add(target.wrapping_mul(4))
+    }
+
+    /// `MenuShop_Price(id)` (`0x008db3b0`, own name): the first word of the
+    /// item's record (`TkMn2GetExcelData(id & 0xfff, [0x0186ac28])`) times
+    /// the shop ratio (`0x01326b6c`) / 100, truncated (32-bit product); at
+    /// least 1.
+    pub fn menu_shop_price<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let table = mem.read::<u32>(mem.rebase(0x0186_ac28));
+        let f = mem.rebase(0x008c_1af0);
+        let rec = call(mem, f, &[id & 0xfff, table]);
+        let v: i32 = mem.read(rec);
+        let f = mem.rebase(0x0086_c480);
+        let ratio = call(mem, f, &[]).cast_signed();
+        let p = ratio.wrapping_mul(v) / 100;
+        if p == 0 { 1 } else { p }
+    }
+
+    /// `TkMenuMainRemoveMenu(slot)` (`0x008aab20`): the slot (clamped to
+    /// `0..=24`) emptied, its window's close callback `+0x14` called, its
+    /// bit cleared from the active mask, then `TOMenuClearControlPadBuff()`,
+    /// `TOSetExeMessageWindowArea(0)` (its result returned) and
+    /// `0x025d16c0` = 0.
+    pub fn tk_menu_main_remove_menu<M: Mem>(
+        mem: &mut M,
+        slot: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slot = slot.clamp(0, 0x18);
+        let at = slot_at(mem, slot);
+        let w: u32 = mem.read(at);
+        mem.write(at, 0u32);
+        if w != 0 {
+            let f = mem.read::<u32>(w.wrapping_add(0x14));
+            if f != 0 {
+                call(mem, f, &[w]);
+            }
+        }
+        let m = MENU_MAIN_ACTIVE_MASK.get(mem) & !(1u32 << slot);
+        MENU_MAIN_ACTIVE_MASK.set(mem, m);
+        let f = mem.rebase(0x008b_e3d0);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x008a_f5c0);
+        let r = call(mem, f, &[0]);
+        let at = mem.rebase(0x025d_16c0);
+        mem.write(at, 0u32);
+        r
+    }
+
+    /// `TkCh_BindToElem(kind, a, chr, b, keep)` (`0x008722b0`): kind 7 with
+    /// a character and `keep` 0 first hides it (`Ch_ModelSetHide(chr, 1,
+    /// 1)`); then `Ch_BindToElem(a, chr, b)`, whose result is returned.
+    pub fn tk_ch_bind_to_elem<M: Mem>(
+        mem: &mut M,
+        [kind, a, chr, b, keep]: [u32; 5],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if kind == 7 && chr != 0 && keep == 0 {
+            let f = mem.rebase(0x0082_aea0);
+            call(mem, f, &[chr, 1, 1]);
+        }
+        let f = mem.rebase(0x0083_2630);
+        call(mem, f, &[a, chr, b])
+    }
+
+    /// `MenuNameEntry_RegistWindow()` (`0x008c4450`, own name): a window
+    /// from `TkMenuMainAllocWindow()` with the name-entry callbacks
+    /// (`+8` `0x008c3540`, `+0xc` `0x008c3cf0`, `+0x10` `0x008c4030`,
+    /// `+0x14` `0x008c44c0`, `+0x1c` `0x008c3550`) and `+0x3e` = 3,
+    /// registered (`TkMenuMainRegistWindow`); returns it.
+    pub fn menu_name_entry_regist_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_a1a0);
+        let w = call(mem, f, &[]);
+        for (o, f) in [
+            (8u32, 0x008c_3540u32),
+            (0xc, 0x008c_3cf0),
+            (0x10, 0x008c_4030),
+            (0x14, 0x008c_44c0),
+            (0x1c, 0x008c_3550),
+        ] {
+            let f = mem.rebase(f);
+            mem.write(w.wrapping_add(o), f);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        let f = mem.rebase(0x008a_ab00);
+        call(mem, f, &[w]);
+        w
+    }
+
+    /// The base value of an equipment entry `e` (shared by
+    /// `0x008d9370` and `0x008d9410`): the first words of its abilities'
+    /// records (`u16` ids at `+0xe`, `byte +0xb` of them; 0 and 0xff empty)
+    /// summed through `TkMn2GetExcelData(id & 0xfff, [0x0186aba4])`, then
+    /// `AbmapScaledLevelValue(sum, slots, empty slots)`.
+    fn weapon_value<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let n = u32::from(mem.read::<u8>(e.wrapping_add(0xb)));
+        let mut empty = n;
+        let mut sum = 0u32;
+        for k in 0..n {
+            let id = u32::from(mem.read::<u16>(e.wrapping_add(0xe + 2 * k)));
+            if id == 0xff || id == 0 {
+                continue;
+            }
+            let table = mem.read::<u32>(mem.rebase(0x0186_aba4));
+            let f = mem.rebase(0x008c_1af0);
+            let rec = call(mem, f, &[id & 0xfff, table]);
+            sum = sum.wrapping_add(mem.read::<u32>(rec));
+            empty -= 1;
+        }
+        let f = mem.rebase(0x00a5_cbe0);
+        call(mem, f, &[sum, n, empty])
+    }
+
+    /// `MenuShop_WeaponPrice(e)` (`0x008d9370`, own name): the entry's
+    /// value (`weapon_value`) times the shop ratio (`0x01326b6c`) / 100,
+    /// truncated (32-bit product); at least 1.
+    pub fn menu_shop_weapon_price<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let v = weapon_value(mem, e, call).cast_signed();
+        let f = mem.rebase(0x0086_c480);
+        let ratio = call(mem, f, &[]).cast_signed();
+        let p = ratio.wrapping_mul(v) / 100;
+        if p == 0 { 1 } else { p }
+    }
+
+    /// `MenuShop_WeaponSellPrice(e)` (`0x008d9410`, own name):
+    /// `AbmapQuarterOrOne([0x0186ab1c], value)` (`weapon_value`), 0 for an
+    /// entry with flag bits `+3 & 0xd`.
+    pub fn menu_shop_weapon_sell_price<M: Mem>(
+        mem: &mut M,
+        entry: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = weapon_value(mem, entry, call);
+        let x = mem.read::<u32>(mem.rebase(0x0186_ab1c));
+        let f = mem.rebase(0x00a5_cf10);
+        let r = call(mem, f, &[x, v]);
+        if mem.read::<u8>(entry.wrapping_add(3)) & 0xd != 0 {
+            0
+        } else {
+            r
+        }
+    }
+
+    /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,
+    /// `0x008906d0`): entry `i` (clamped to `0..=last`) of the colour table
+    /// at `table` = the four components clamped to 0..=255, packed
+    /// `a << 24 | b << 16 | g << 8 | r`. Returns the packed colour.
+    #[allow(clippy::many_single_char_names)]
+    pub fn tk_set_rgba(mem: &mut impl Mem, table: u32, last: i32, i: i32, rgba: [i32; 4]) -> u32 {
+        let i = i.clamp(0, last).cast_unsigned();
+        let [r, g, b, a] = rgba.map(|c| c.clamp(0, 0xff).cast_unsigned());
+        let v = (((a << 8 | b) << 8 | g) << 8) | r;
+        mem.write(mem.rebase(table) + 4 * i, v);
+        v
+    }
+
+    /// The name list `Menu_AddName` keeps (count `i32`, ten 256-byte names).
+    pub const NAME_COUNT: u32 = 0x0187_16a0;
+    pub const NAMES: u32 = 0x0187_5710;
+
+    /// `Menu_AddName(s)` (`0x008e5200`): `s` (256 bytes) joins the
+    /// [`NAMES`] list unless already there (0) or the list is full. Returns
+    /// 0 when found, else `s` (what EAX holds).
+    pub fn menu_add_name(mem: &mut impl Mem, s: u32) -> u32 {
+        let n: i32 = mem.read(mem.rebase(NAME_COUNT));
+        let names = mem.rebase(NAMES);
+        let text = crate::tk::bridge::c_bytes(mem, s);
+        for k in 0..n.max(0).cast_unsigned() {
+            if crate::tk::bridge::c_bytes(mem, names + 0x100 * k) == text {
+                return 0;
+            }
+        }
+        if n < 10 {
+            let at = names + 0x100 * n.cast_unsigned();
+            for w in 0..0x40 {
+                let v: u32 = mem.read(s.wrapping_add(4 * w));
+                mem.write(at + 4 * w, v);
+            }
+            mem.write(mem.rebase(NAME_COUNT), n + 1);
+        }
+        s
+    }
+
+    /// `TkSyncV()` (`0x00887f00`): the three sound sync-V flags set
+    /// (`0x00887ea0`, `0x00887eb0`, `0x00887ec0`), then
+    /// `TkSndClearKickFlag`. Returns 0.
+    pub fn tk_sync_v<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for f in [0x0088_7ea0, 0x0088_7eb0, 0x0088_7ec0, 0x0088_7ab0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        0
+    }
+
+    /// `TkMn2DrawInitPacket()` (`0x008c0be0`): `g_TkMn2DrawY` (and its
+    /// copy `0x0186a244`) = `TOMenuGetPacketBuffAdrs()`, moved on by half of
+    /// `TOMenuGetPacketBuffSize()` (rounded towards zero to 64 bytes) when
+    /// the copy already holds that address; the four font shades 0x80.
+    /// Returns the half size (left in `eax`).
+    pub fn tk_mn2_draw_init_packet<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008b_edf0);
+        let mut at = call(mem, f, &[]);
+        let f = mem.rebase(0x008b_ee00);
+        let size = call(mem, f, &[]).cast_signed();
+        let half = (size / 2 / 64 * 64).cast_unsigned();
+        let copy = mem.rebase(0x0186_a244);
+        if mem.read::<u32>(copy) == at {
+            at = at.wrapping_add(half);
+        }
+        MN2_DRAW_Y.set(mem, at);
+        mem.write(copy, at);
+        let shade = MN2_FONT_SHADE.ptr(mem).addr;
+        for k in 0..4 {
+            mem.write(shade.wrapping_add(8 * k), 0x80u32);
+        }
+        half
+    }
+
+    /// `TkFree(p)` (`0x0088d520`): `user_free_thunk(p)`, then
+    /// `Sg_MemCheck` on pools 0 and 1 (with the source file `0x00b5e968`
+    /// and lines 480, 481). Returns the last check's result.
+    pub fn tk_free<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0068_7010);
+        call(mem, f, &[p]);
+        let file = mem.rebase(0x00b5_e968);
+        let f = mem.rebase(0x0083_b7b0);
+        call(mem, f, &[0, file, 0x1e0]);
+        call(mem, f, &[1, file, 0x1e1])
+    }
+
+    /// `TkSndUpdateMain()` (`0x00887bd0`): with `TkGetSoundSyncVFlag()` set,
+    /// `SndSqsIopFrame()`, the voice/shout/stream busy words and the status
+    /// words `0x0132ff20`/`0x0132ff24` cleared, `SndStatusUpdate()`, and
+    /// `TkClearSoundSyncVFlag()` (its result returned); otherwise 0.
+    pub fn tk_snd_update_main<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7dd0);
+        if call(mem, f, &[]) == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x0088_7310);
+        call(mem, f, &[]);
+        for a in [
+            0x0132_ff24,
+            0x0132_ff14,
+            0x0132_ff18,
+            0x0132_ff10,
+            0x0132_ff20,
+        ] {
+            let a = mem.rebase(a);
+            mem.write(a, 0u32);
+        }
+        let f = mem.rebase(0x0088_7700);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x0088_7d30);
+        call(mem, f, &[])
+    }
+
+    /// `TkMsImportantSet(n)` (`0x0088e790`): `MsImportantSet(n)`; the
+    /// important items `0xa004..=0xa01d` also tail-call
+    /// `TOSetCollectBit(n - 0xa004)`. Otherwise returns `n - 0xa004` (left
+    /// in `eax`).
+    pub fn tk_ms_important_set<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0079_0930);
+        call(mem, f, &[n]);
+        let bit = n.wrapping_sub(0xa004);
+        if bit > 0x19 {
+            return bit;
+        }
+        let f = mem.rebase(0x0090_6b30);
+        call(mem, f, &[bit])
+    }
+
+    /// `TkRefreshSoundMode()` (`0x008724f0`): the save's config byte
+    /// (`*MsGetSaveMenu()`) picks `SndSetSoundMode` 0 (bit 7), 1 (bit 0) or
+    /// 2, and its bit 4 `TkSetControlerActuatorMode(0, 0, bit)`, whose
+    /// result is returned.
+    pub fn tk_refresh_sound_mode<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let get = mem.rebase(0x0078_5290);
+        let at = call(mem, get, &[]);
+        let b: u8 = mem.read(at);
+        let mode = if b & 0x80 != 0 {
+            0
+        } else if b & 1 != 0 {
+            1
+        } else {
+            2
+        };
+        let f = mem.rebase(0x0088_7180);
+        call(mem, f, &[mode]);
+        let at = call(mem, get, &[]);
+        let b: u8 = mem.read(at);
+        let f = mem.rebase(0x0088_94d0);
+        call(mem, f, &[0, 0, u32::from((b >> 4) & 1)])
+    }
+
+    /// `MenuSubCmd_CenterOpen()` (`0x008e4ab0`, own name):
+    /// `MenuSubCmd_CenterX(g_TkMenuSubCmdWindow)` when a sub-command window
+    /// is open (its result returned), else 0.
+    pub fn menu_sub_cmd_center_open<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = MENU_SUB_CMD_WINDOW.get(mem);
+        if w == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x008e_4ad0);
+        call(mem, f, &[w])
+    }
+
+    /// The bytes of a NUL-terminated string (without the NUL).
+    pub fn c_bytes(mem: &impl Mem, mut p: u32) -> Vec<u8> {
+        let mut out = vec![];
+        loop {
+            let b: u8 = mem.read(p);
+            if b == 0 {
+                return out;
+            }
+            out.push(b);
+            p = p.wrapping_add(1);
+        }
     }
 }
 

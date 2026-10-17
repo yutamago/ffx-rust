@@ -21,6 +21,7 @@ pub mod msg;
 pub mod names;
 pub mod pad;
 pub mod pkt;
+pub mod plate;
 pub mod render;
 pub mod save;
 pub mod scene;

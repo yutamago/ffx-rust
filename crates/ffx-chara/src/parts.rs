@@ -1482,6 +1482,161 @@ pub mod bridge {
         }
         0
     }
+
+    /// The id map (`Sg_Id*`): triangles (`0x01301a84`, 16 bytes: `i16`
+    /// vertex indices `+0`, `+2`, `+4`, neighbours across each edge `+6`,
+    /// `+8`, `+0xa`), vertices (`0x01301a8c`, 8 bytes: `i16` x, y, z), the
+    /// walk's depth (`i32`), the edge it last crossed (two vertex pointers)
+    /// and the height slack (`f32`); `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`),
+    /// `Sg_IdGetNormal(out, i)` (`0x0083e130`), `Sg_IdGetHeight(p, i)`
+    /// (`0x0083e040`, `ST0` out).
+    pub const ID_TRIANGLES: u32 = 0x0130_1a84;
+    pub const ID_VERTICES: u32 = 0x0130_1a8c;
+    pub const ID_DEPTH: u32 = 0x0130_1ae8;
+    pub const ID_EDGE_A: u32 = 0x0130_1aec;
+    pub const ID_EDGE_B: u32 = 0x0130_1af0;
+    pub const ID_SLACK: u32 = 0x0130_1af4;
+    pub const ID_MATCH_CHR: u32 = 0x0083_e4e0;
+    pub const ID_GET_NORMAL: u32 = 0x0083_e130;
+    pub const ID_GET_HEIGHT: u32 = 0x0083_e040;
+    /// Bytes of scratch `sg_id_walk` needs (the normal `Sg_IdGetNormal`
+    /// writes, the original's `[ebp-0x14]`).
+    pub const ID_WALK_SCRATCH: u32 = 0x14;
+
+    /// `Sg_IdWalk(chr, p, i)` (`0x0083d960`): from id triangle `i` (-1: 1),
+    /// finds the edge position `p` (x `+0`, z `+8`) lies beyond (the
+    /// edge's line through its integer x, z, products as `f32`; the first
+    /// of edges 0-1, 1-2, 2-0 in order, a later one overriding an earlier
+    /// one only when the character's old position `+0x3c`, `+0x44` is on
+    /// its far side). Inside all three: the triangle's vertices become
+    /// `+0x8c`..`+0xb4` (floats, 0x10 apart), `+0x824` = `i`, 0. Beyond an
+    /// edge, its neighbour is entered (depth +1) unless it is missing, does
+    /// not apply to the character (`Sg_IdMatchChr`), the walk is past 10
+    /// deep, or its floor (`Sg_IdGetHeight`, only for a sloped normal) is
+    /// below the character's `+0x40` less the slack; then the edge is
+    /// recorded and the result is 1. Floats as the x87 at 53 bits.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::similar_names,
+        clippy::many_single_char_names
+    )]
+    pub fn sg_id_walk<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        p: u32,
+        tri: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        if tri == u32::MAX {
+            return 1;
+        }
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let i2f = |v: i32| f64::from(v as f32);
+        let verts: u32 = mem.read(r(mem, ID_VERTICES));
+        let t = mem.read::<u32>(r(mem, ID_TRIANGLES)).wrapping_add(tri << 4);
+        let vert = |mem: &M, k: u32| {
+            verts.wrapping_add(
+                8u32.wrapping_mul(i32::from(mem.read::<i16>(t + 2 * k)).cast_unsigned()),
+            )
+        };
+        let (p0, p1, p2) = (vert(mem, 0), vert(mem, 1), vert(mem, 2));
+        let c16 = |mem: &M, a: u32| i32::from(mem.read::<i16>(a));
+        let (x0, z0) = (c16(mem, p0), c16(mem, p0 + 4));
+        let (x1, z1) = (c16(mem, p1), c16(mem, p1 + 4));
+        let (x2, z2) = (c16(mem, p2), c16(mem, p2 + 4));
+        let (px, pz) = (fl(mem, p), fl(mem, p + 8));
+        // which side of the edge through (xa, za)-(xb, zb) p lies on
+        let side =
+            |dz: i32, dx: i32, c1: i32, c2: i32| i2f(dz) * px + i2f(dx) * pz + i2f(c1) - i2f(c2);
+        // the same for the character's old position, the edge's far end given
+        let old = |mem: &M, x: i32, z: i32| {
+            let (ox, oz) = (fl(mem, chr + 0x3c), fl(mem, chr + 0x44));
+            (oz - pz) * f64::from(x) + (px - ox) * f64::from(z) + ox * pz - oz * px
+        };
+        let (mut a, mut b, mut next, mut edge) = (0u32, 0u32, 0i32, 0u32);
+        let neighbour = |mem: &M, off: u32| i32::from(mem.read::<i16>(t + off));
+        if 0.0
+            < side(
+                z0.wrapping_sub(z1),
+                x1.wrapping_sub(x0),
+                x0.wrapping_mul(z1),
+                x1.wrapping_mul(z0),
+            )
+        {
+            (a, b, next, edge) = (p0, p1, neighbour(mem, 6), 1);
+        }
+        let mut done = false;
+        if side(
+            z1.wrapping_sub(z2),
+            x2.wrapping_sub(x1),
+            z2.wrapping_mul(x1),
+            x2.wrapping_mul(z1),
+        ) > 0.0
+        {
+            if edge != 0 && old(mem, x1, z1) < 0.0 {
+                done = true;
+            } else {
+                (a, b, next, edge) = (p1, p2, neighbour(mem, 8), 2);
+            }
+        }
+        if !done {
+            let s = side(
+                z2.wrapping_sub(z0),
+                x0.wrapping_sub(x2),
+                x2.wrapping_mul(z0),
+                z2.wrapping_mul(x0),
+            );
+            if s > 0.0 {
+                // a NaN takes the edge, as the original's x87 compares do
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                let take = match edge {
+                    1 => !(old(mem, x0, z0) > 0.0) && !(old(mem, x2, z2) < 0.0),
+                    2 => !(old(mem, x2, z2) < 0.0),
+                    _ => true,
+                };
+                if take {
+                    (a, b, next) = (p2, p0, neighbour(mem, 0xa));
+                }
+            } else if edge == 0 {
+                for (k, v) in [p0, p1, p2].into_iter().enumerate() {
+                    for (j, o) in [0u32, 2, 4].into_iter().enumerate() {
+                        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+                        let off = 0x8c + 0x10 * k as u32 + 4 * j as u32;
+                        mem.write(chr + off, f32::from(mem.read::<i16>(v + o)));
+                    }
+                }
+                #[allow(clippy::cast_possible_truncation)] // the low half, as stored
+                mem.write(chr + 0x824, tri as u16);
+                return 0;
+            }
+        }
+        let stop = |mem: &mut M| {
+            mem.write(mem.rebase(ID_EDGE_A), a);
+            mem.write(mem.rebase(ID_EDGE_B), b);
+            1
+        };
+        let nx = next.cast_unsigned();
+        if next != -1 && (c.call)(mem, r(mem, ID_MATCH_CHR), &[chr, nx]) != 0 {
+            return stop(mem);
+        }
+        if mem.read::<i32>(r(mem, ID_DEPTH)) > 10 || next == -1 {
+            return stop(mem);
+        }
+        (c.call)(mem, r(mem, ID_GET_NORMAL), &[scratch, nx]);
+        if fl(mem, scratch + 4) != 0.0 {
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            let h = f64::from((c.fcall)(mem, r(mem, ID_GET_HEIGHT), &[p, nx]) as f32);
+            if h < fl(mem, chr + 0x40) - fl(mem, r(mem, ID_SLACK)) {
+                return stop(mem);
+            }
+        }
+        let d: i32 = mem.read(r(mem, ID_DEPTH));
+        mem.write(r(mem, ID_DEPTH), d.wrapping_add(1));
+        (c.call)(mem, r(mem, 0x0083_d960), &[chr, p, nx])
+    }
 }
 
 #[cfg(test)]

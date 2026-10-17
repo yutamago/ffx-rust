@@ -10,7 +10,8 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave, x87,
+    draw, et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec,
+    wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -5568,6 +5569,42 @@ fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -
     log
 }
 
+/// [`deref_recorder_with`] with 32-word entries (31 logged words), for
+/// requests too large for the 16-word form.
+fn wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let log = p.alloc(4 + 0x100 * 128);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x07]); // shl ecx, 7
+    let mut pos = 0u32;
+    for (k, &n) in (0u8..).zip(words) {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        if n == 0 {
+            c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+            c.extend((log + 4 + 4 * pos).to_le_bytes());
+            pos += 1;
+        } else {
+            for j in 0..n {
+                c.extend([0x8b, 0x50, 4 * j]); // mov edx, [eax + 4j]
+                c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend((log + 4 + 4 * pos).to_le_bytes());
+                pos += 1;
+            }
+        }
+    }
+    assert!(pos <= 31);
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [count] or [ret]
+    c.extend(ret.unwrap_or(log).to_le_bytes());
+    c.push(0xc3);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
 #[test]
 #[allow(clippy::too_many_lines)]
 fn opp_draw_part_matches_the_original() {
@@ -8741,7 +8778,7 @@ fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
 fn wave_omd_make_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x007f_94e0);
-        x87_crt_stand_ins(&mut p);
+        // MSVCR110's own _CIatan2 (op_deg_get)
         let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
         let omd = p.alloc(0x8000);
         let (view, light) = (p.alloc(0x100), p.alloc(0x60));
@@ -8837,16 +8874,380 @@ fn wave_omd_make_matches_the_original() {
     }
 }
 
-/// An `fptan` stand-in for the CRT's `_CItan` (its import slot
-/// `0x00b0c3a0` pointed at `0x00b0bfd0`) and a thunk, `fld qword [esp +
-/// 4]; jmp [slot]`, for the bridge's side; returns the thunk.
-fn tan_stand_in(p: &mut Pair) -> u32 {
-    let at = p.sym(0x00b0_bfd0);
-    let code = [0xd9u8, 0xf2, 0xdd, 0xd8, 0xc3]; // fptan; fstp st0; ret
-    p.a.write(at, &code).unwrap();
-    p.b.write(at, &code).unwrap();
+#[test]
+#[allow(clippy::too_many_lines)]
+fn shape_con_des_match_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_2b50);
+        // graphicVFXDestroy and pppMemFree recorded; the level hash from a
+        // cell
+        let cells = p.alloc(0x10);
+        deref_recorder(&mut p, 0x0064_5280, &[0, 0]);
+        deref_recorder(&mut p, 0x0071_6a90, &[0, 0, 0]);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
+        let (obj, prog, table, shape, sptr) = (
+            p.alloc(0x200),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(0x40),
+            p.alloc(4),
+        );
+        let env = p.alloc(0x40);
+        let slot = p.sym(d::ENV_SLOT);
+        let cur = p.sym(d::CURRENT_PROGRAM);
+        let cons = [
+            (0x0074_2b50u32, d::FIELD_CON),
+            (0x0074_3f00, d::FIELD_REV_CON),
+            (0x0074_50a0, d::FIELD_SPD_CON),
+            (0x0074_6200, d::FIELD_GLOBAL_CON),
+            (0x0074_7410, d::CAMERA_CON),
+            (0x0074_8660, d::CAMERA_CON),
+        ];
+        let dess = [
+            (0x0074_2bd0u32, d::FIELD_DES),
+            (0x0074_3f80, d::FIELD_REV_DES),
+            (0x0074_5130, d::FIELD_SPD_DES),
+            (0x0074_6280, d::FIELD_GLOBAL_DES),
+            (0x0074_7490, d::CAMERA_DES),
+            (0x0074_86e0, d::CAMERA_DES),
+            (0x0075_6270, d::RAIN_DES),
+        ];
+        for _ in 0..500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            p.set(prog + 0xc, table);
+            p.set(table, 4 * rng.below(0x10));
+            p.set(table + 4, 4 * rng.below(0x10));
+            p.set(obj + 8, sptr);
+            p.set(sptr, shape);
+            p.set(slot, env);
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            p.set(cells, rng.pick(&[0x76fu32, 0x1139, 0, 0x100]));
+            for (at, l) in cons {
+                p.check("pppDrawShape*Con", at, &[obj, prog], |o| {
+                    Some(d::shape_con(o, obj, prog, l, &mut call_original))
+                });
+            }
+            // the freed pointers: null or not
+            for off in [0xa4u32, 0xe0, 0xe4, 0xec, 0xf0, 0xf4] {
+                let t: u32 = p.get(table);
+                let x = if rng.chance(3) { 0 } else { rng.next() };
+                p.set(obj + t + off, x);
+                let t1: u32 = p.get(table + 4);
+                let y = if rng.chance(3) { 0 } else { rng.next() };
+                p.set(obj + t1 + off, y);
+            }
+            for (at, l) in dess {
+                p.check("ppp*Des", at, &[obj, prog], |o| {
+                    Some(d::ppp_des(o, obj, prog, l, &mut call_original))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn srand_draws_match_the_original() {
+    use rand::bridge::{self as r, Spread};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_26e0);
+        let log = record_srand(&mut p);
+        let (rg, seeded, r0) = (p.sym(r::R.sym), p.sym(r::SEEDED.sym), p.sym(0x00c8_f508));
+        for _ in 0..2000 {
+            let x = (rng.next() & 0x007f_ffff) | 0x3f80_0000;
+            p.set(rg, x);
+            p.set(
+                seeded,
+                u32::from(rng.chance(4)).wrapping_sub(1) & rng.next(),
+            );
+            p.fill(r0, 0x10, &mut rng);
+            // r0 - 1 never a signalling NaN (the oracle keeps those)
+            let t0 = if rng.chance(50) {
+                u32::MAX
+            } else {
+                rng.float()
+            };
+            p.set(r0, t0.wrapping_add(1));
+            let two = u32::from(rng.chance(2)) | (rng.next() & 0xffff_ff00);
+            p.set(log, 0u32);
+            for (at, spread) in [
+                (0x0073_26e0u32, Spread::Plain),
+                (0x0073_2f30, Spread::Plain),
+                (0x0073_2970, Spread::Up),
+                (0x0073_2c00, Spread::Down),
+            ] {
+                check_st0(
+                    &mut p,
+                    &format!("pppSRand*_Draw {at:#x}"),
+                    at,
+                    &[two],
+                    |o| r::ppp_srand_draw(o, spread, two & 0xff != 0, &mut srand_log(log)).into(),
+                );
+            }
+        }
+    }
+}
+
+/// Points the scratch stack's top mark at `buf`.
+fn spr_at(p: &mut Pair, rng: &mut Xorshift, buf: u32) {
+    use op::bridge as o;
+    let top = i8::try_from(rng.below(4)).unwrap();
+    p.put(o::SPR_TOP, top);
+    let at = p.sym(o::SPR_STACK.sym) + 4 * u32::from(top.cast_unsigned());
+    p.set(at, buf);
+}
+
+#[test]
+fn tk_fade_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_ee50);
+        let (obj, key, prog, table) = (p.alloc(0x100), p.alloc(0x20), p.alloc(0x10), p.alloc(4));
+        let (env, env2, recs, buf) = (p.alloc(4), p.alloc(0x40), p.alloc(0x100), p.alloc(0x500));
+        let (slot, stop) = (p.sym(d::ENV_SLOT), p.sym(0x0230_fd34));
+        for _ in 0..1500 {
+            p.fill(obj, 0x100, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(recs, 0x100, &mut rng);
+            p.fill(buf, 0x500, &mut rng);
+            spr_at(&mut p, &mut rng, buf);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            let w = obj + 0xa0 + off;
+            // the position: mostly in the CLUT's range, sometimes far off
+            for (k, (lo, hi)) in (0u32..).zip([(-300.0, 300.0), (-20.0, 20.0), (-2.0, 2.0)]) {
+                let x = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, lo, hi)
+                };
+                p.set(w + 4 * k, x);
+            }
+            for k in 2..5u32 {
+                let x = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -10.0, 10.0)
+                };
+                p.set(key + 4 * k, x);
+            }
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            p.set(key + 4, if rng.chance(10) { 0xffff } else { rng.below(8) });
+            p.set(stop, u32::from(rng.chance(20)));
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            check_deep_n(
+                &mut p,
+                "pppKeTkFadeDraw",
+                0x0072_ee50,
+                &[obj, key, prog],
+                |o, frame| {
+                    Some(d::ppp_ke_tk_fade_draw(
+                        o,
+                        obj,
+                        key,
+                        prog,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn lns_lp_t_ot_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_b230);
+        let (obj, buf) = (p.alloc(0x100), p.alloc(0x8000));
+        let (view, parity, dc) = (p.sym(0x0230_fffe), p.sym(0x023c_bbf0), p.sym(0x012f_b900));
+        for _ in 0..1500 {
+            p.fill(obj, 0x100, &mut rng);
+            p.fill(buf, 0x8000, &mut rng);
+            spr_at(&mut p, &mut rng, buf);
+            let v: u16 = p.get(obj + 0xcc);
+            let v2 = if rng.chance(90) { v } else { v ^ 1 };
+            p.set(view, v2);
+            let vis = if rng.chance(10) {
+                0
+            } else {
+                ranged(&mut rng, 0.0, 1.0)
+            };
+            p.set(obj + 0x7c, vis);
+            let x = rng.float();
+            p.set(obj + 0xac, x);
+            let (a, m) = (rng.below(0x100), rng.below(4));
+            p.set(obj + 0x8c, u8::try_from(a).unwrap());
+            p.set(obj + 0x8d, u8::try_from(m).unwrap());
+            let frame_no = if rng.chance(70) {
+                a % (m + 1) + (m + 1) * rng.below(0x100)
+            } else {
+                rng.next()
+            };
+            let par = rng.next();
+            p.set(parity, par);
+            // the draw buffer's scissor and offset, both halves
+            let mut gss = [0u32; 2];
+            for (k, half) in [0x60u32, 0x190].into_iter().enumerate() {
+                let gs = dc + half;
+                let (ox, oy) = (rng.below(0x8000), rng.below(0x8000));
+                let (sx0, sy0) = (rng.below(0x700), rng.below(0x700));
+                let (sx1, sy1) = (sx0 + rng.below(0x80), sy0 + rng.below(0x80));
+                p.set(gs + 0x18, ox);
+                p.set(gs + 0x1c, oy);
+                p.set(gs + 0x24, sx0 | sx1 << 16);
+                p.set(gs + 0x28, sy0 | sy1 << 16);
+                let r = rng.next();
+                p.set(gs + 2, r);
+                let r = rng.next();
+                p.set(gs + 0xc, r);
+                gss[k] = (ox + 16 * sx0) | (oy + 16 * sy0) << 16;
+            }
+            p.set(obj + 0xd0, u8::try_from(rng.below(0x40)).unwrap());
+            p.set(obj + 0xd1, u8::try_from(rng.below(0x40)).unwrap());
+            // FFXVu0FTOI4Vector is a stub: the point is the original's
+            // stale stack below its 16-aligned frame, seeded on both sides
+            let n = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * n - 4 - 0x200 - 4 * n - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let g = gss[(par & 1) as usize];
+            let dx = rng.below(0x1000);
+            let dy = rng.below(0x1000);
+            p.set(at - 0x14, (g & 0xffff) + dx - 0x200);
+            p.set(at - 0x10, (g >> 16) + dy - 0x200);
+            // sometimes exactly the first texel's z (the compare is strict)
+            let t: u32 = p.get(buf + 0x60);
+            let z = if rng.chance(30) {
+                (t & 0x00ff_ffff) << 4
+            } else {
+                rng.below(0x1000_0000)
+            };
+            p.set(at - 0xc, z);
+            check_deep_n(
+                &mut p,
+                "pppKeLnsLpTOtDraw",
+                0x0075_b230,
+                &[obj, 0, frame_no],
+                |o, frame| {
+                    assert_eq!((frame - 8) & !0xf, at);
+                    d::ppp_ke_lns_lp_t_ot_draw(o, obj, frame_no, at, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn mdl_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_7770);
+        // the renderer's entry points recorded, the request by its 18
+        // words; the level hash, the render-data lookup and the two
+        // alpha helpers from cells
+        let cells = p.alloc(0x10);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
+        deref_recorder_with(&mut p, 0x0064_53d0, &[0, 0], Some(cells + 4));
+        deref_recorder_with(&mut p, 0x0071_2c30, &[0], Some(cells + 8));
+        deref_recorder_with(&mut p, 0x0071_2d00, &[0], Some(cells + 0xc));
+        wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 18], None);
+        wide_recorder(&mut p, 0x0071_0fd0, &[0, 0, 0, 18, 0], None);
+        wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 18, 0], None);
+        deref_recorder(&mut p, 0x0064_5600, &[0, 0]);
+        deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
+        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10), p.alloc(4));
+        let (env, env2, recs, models, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x80),
+        );
+        let slot = p.sym(d::ENV_SLOT);
+        let (cur, cpart, shift) = (
+            p.sym(d::CURRENT_PROGRAM),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+        );
+        let r0 = p.sym(0x00c8_f508);
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(recs, 0x100, &mut rng);
+            p.fill(models, 0x40, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            let s = if rng.chance(20) { 4 * rng.below(4) } else { 0 };
+            p.set(shift, s);
+            p.set(cpart, part);
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, model);
+            // get_ptr32 of the model record's +0x1c: a pointer into models
+            for k in 0..8u32 {
+                let o = rng.below(0x20);
+                p.set(recs + 32 * k + 0x1c, models + o);
+            }
+            p.set(obj + 0x90, models + rng.below(0x20));
+            p.set(obj + 0x94, models + rng.below(0x20));
+            p.set(cells, if rng.chance(10) { 0xec1u32 } else { rng.next() });
+            p.set(cells + 4, u32::from(rng.chance(50)));
+            let (x, y) = (rng.next(), rng.next());
+            p.set(cells + 8, x);
+            p.set(cells + 0xc, y);
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            // the request's untouched words (+0xb, +0x30): the same stale
+            // stack on both sides
+            let n = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * n - 4 - 0x200 - 4 * n - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let (s1, s2) = (rng.next(), rng.next());
+            for base in [at, frame] {
+                p.set(base - 0x78, s1);
+                p.set(base - 0x50, s2);
+            }
+            check_deep_n(
+                &mut p,
+                "pppDrawMdlDraw",
+                0x0073_7770,
+                &[obj, key, prog],
+                |o, frame| {
+                    Some(d::ppp_draw_mdl_draw(
+                        o,
+                        obj,
+                        key,
+                        prog,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+/// A thunk, `fld qword [esp + 4]; jmp [slot]`, through `_CItan`'s import
+/// slot (`0x00b0c3a0`, MSVCR110's own `_CItan` in the oracle's runtime), for
+/// the bridges' `tan` callback; returns the thunk.
+fn tan_thunk(p: &mut Pair) -> u32 {
     let slot = p.sym(0x00b0_c3a0);
-    p.set(slot, at);
     let t = p.sym(0x00b0_bba0);
     let mut c = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x25]; // fld qword [esp+4]; jmp [slot]
     c.extend(slot.to_le_bytes());
@@ -8860,8 +9261,8 @@ fn tan_stand_in(p: &mut Pair) -> u32 {
 fn wave_0154_omd_make_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x007f_67c0);
-        x87_crt_stand_ins(&mut p);
-        let tan = tan_stand_in(&mut p);
+        // MSVCR110's own _CIatan2 (op_deg_get) and _CItan
+        let tan = tan_thunk(&mut p);
         let fov = p.alloc(4);
         float_stub(&mut p, 0x0063_9570, fov);
         let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
