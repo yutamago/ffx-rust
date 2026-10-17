@@ -10771,3 +10771,86 @@ fn round19_records_match_the_original_on_the_snapshot() {
     };
     round19_records(&mut a, &mut b, &mut Xorshift(0x4019_0002));
 }
+
+/// Round 19's language relayout of menu records.
+#[allow(clippy::cast_possible_truncation)]
+fn round19_relayout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x0064_10e0, s);
+    let recs = alloc(a, b, 24 * 0x138 + 8);
+    let values = alloc(a, b, 16 * 4);
+    set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+    let boxes: [[u16; 4]; 12] = [
+        [0x236, 0xb3, 1, 2],
+        [0x236, 0x8a, 1, 2],
+        [0x236, 0x10, 1, 2],
+        [0x20e, 0xb3, 0xff, 0x37],
+        [0x23e, 0xc5, 3, 4],
+        [0x20e, 0x71, 0xff, 9],
+        [0x23e, 0x7e, 5, 6],
+        [0x27a, 0xae, 5, 6],
+        [0x27a, 0xc6, 5, 6],
+        [0x28c, 0x107, 5, 6],
+        [0x28c, 0x119, 5, 6],
+        [0x111, 0x222, 5, 6],
+    ];
+    for _ in 0..200 {
+        put(a, b, cell, rng.next() % 12);
+        put(
+            a,
+            b,
+            a.rebase(0x00c4_16c0),
+            if rng.next().is_multiple_of(5) {
+                5u32
+            } else {
+                8
+            },
+        );
+        for k in 0..16u32 {
+            put(
+                a,
+                b,
+                values + 4 * k,
+                if rng.next() & 1 == 0 {
+                    0xffff_fe70u32
+                } else {
+                    rng.next()
+                },
+            );
+        }
+        for r in 0..24u32 {
+            let p = recs + 4 + 0x138 * r;
+            put(a, b, p, boxes[(rng.next() % 12) as usize]);
+            put(a, b, p + 0x22, (rng.next() % 16) as u16);
+        }
+        let last = if rng.next().is_multiple_of(9) {
+            u32::MAX
+        } else {
+            rng.next() % 24
+        };
+        eax(a, 0x0077_5a20, &[0, 0, recs, last]);
+        t::relayout_menu_records(b, recs, last, |m| eax(m, 0x0064_10e0, &[]));
+        same_memory("menu relayout", a, b);
+    }
+}
+
+#[test]
+fn round19_relayout_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_relayout(&mut a, &mut b, &mut Xorshift(0x4019_0011));
+}
+
+#[test]
+fn round19_relayout_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_relayout(&mut a, &mut b, &mut Xorshift(0x4019_0012));
+}
