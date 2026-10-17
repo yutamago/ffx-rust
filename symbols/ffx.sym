@@ -9957,6 +9957,7 @@
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
+0x008d5750 function MenuEquip_IsSelectable    # (id, any): MsGetSaveWeapon(id, &unused) slot: 0 when empty (+2) or flag 2 (+3); 1 with any; 0 for flags 4/8; else MenuList_IsEmptySlot; name ours
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl

@@ -2182,8 +2182,9 @@ pub mod bridge {
 
     /// The item menu's cursor cell (`MenuItem_SetCell`).
     pub const MENU_ITEM_CELL: Global<u32> = Global::new(0x0186_a268);
-    /// The item menu's selected list (`MenuItem_SetList`).
-    pub const MENU_ITEM_SELECTED_LIST: Global<u32> = Global::new(0x0186_a258);
+    /// `g_TkMenuItemTarget`: the character the item menu targets, negative
+    /// for none (`MenuItem_SetTarget`; the name-entry window writes it too).
+    pub const MENU_ITEM_TARGET: Global<u32> = Global::new(0x0186_a258);
     /// The Mn2 draw position (`MenuMn2_StepDrawY` adds 16).
     pub const MN2_DRAW_Y: Global<u32> = Global::new(0x0186_a238);
 
@@ -2496,7 +2497,7 @@ pub mod bridge {
     /// or list 3 with a target, is usable when the key-item flag is set;
     /// other lists always.
     pub fn menu_item_is_usable2(mem: &impl Mem, list: i32) -> u32 {
-        if list == 4 || (list == 3 && MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0) {
+        if list == 4 || (list == 3 && MENU_ITEM_TARGET.get(mem).cast_signed() >= 0) {
             u32::from(MENU_ITEM_KEY_USE.get(mem) != 0)
         } else {
             1
@@ -5329,7 +5330,7 @@ pub mod bridge {
     ) -> u32 {
         let f = mem.rebase(0x008a_c2f0);
         let lang = call(mem, f, &[]);
-        let target = MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0;
+        let target = MENU_ITEM_TARGET.get(mem).cast_signed() >= 0;
         mem.rebase(match (lang == 0, target) {
             (true, true) => 0x00c5_a19c,
             (true, false) => 0x00c5_a1cc,
@@ -5346,7 +5347,7 @@ pub mod bridge {
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let target = MENU_ITEM_SELECTED_LIST.get(mem);
+        let target = MENU_ITEM_TARGET.get(mem);
         let f = mem.rebase(0x008a_c2f0);
         let lang = call(mem, f, &[]);
         let english = if lang == 0 {
@@ -5514,6 +5515,68 @@ pub mod bridge {
             0
         } else {
             r
+        }
+    }
+
+    /// `MenuEquip_IsSelectable(id, any)` (`0x008d5750`, own name): the
+    /// equipment slot from `MsGetSaveWeapon(id, &local)` (`local`, its
+    /// name id, unused: `scratch` stands for it) is 0 when empty (`+2`) or
+    /// flagged 2 (`+3`); else 1 with `any`, else 0 for flags 4 or 8, else
+    /// `MenuList_IsEmptySlot(slot)`.
+    pub fn menu_equip_is_selectable<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        any: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x007a_bbd0);
+        let slot = call(mem, f, &[id, scratch]);
+        if mem.read::<u8>(slot.wrapping_add(2)) == 0 {
+            return 0;
+        }
+        let flags: u8 = mem.read(slot.wrapping_add(3));
+        if flags & 2 != 0 {
+            return 0;
+        }
+        if any != 0 {
+            return 1;
+        }
+        if flags & 0xc != 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x008b_f720);
+        call(mem, f, &[slot])
+    }
+
+    /// `TkMenuItemHealAmount(item, player, mp)` (`0x008c69a0`): what the
+    /// item record (`TkMsGetRomItem(item, &local)`, `scratch` standing for
+    /// the unused `local`) restores, by kind (`+0x28`) and power (`+0x2a`):
+    /// 6 power * 50; 7 (the player's byte `+0x31` + power) / 2 * power; 8
+    /// the max HP (or MP with `mp`) * power / 16, truncated; others 0.
+    pub fn tk_menu_item_heal_amount<M: Mem>(
+        mem: &mut M,
+        [item, player, mp]: [u32; 3],
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let f = mem.rebase(0x008a_b280);
+        let rec = call(mem, f, &[item, scratch]);
+        let power = i32::from(mem.read::<u8>(rec.wrapping_add(0x2a)));
+        match mem.read::<u8>(rec.wrapping_add(0x28)) {
+            6 => power * 50,
+            7 => {
+                let f = mem.rebase(0x0078_5330);
+                let p = call(mem, f, &[player]);
+                let b = i32::from(mem.read::<u8>(p.wrapping_add(0x31)));
+                i32::midpoint(b, power) * power // both 0..=255
+            }
+            8 => {
+                let f = mem.rebase(if mp == 0 { 0x008a_9990 } else { 0x008a_99b0 });
+                let max = call(mem, f, &[player]).cast_signed();
+                max.wrapping_mul(power) / 16
+            }
+            _ => 0,
         }
     }
 

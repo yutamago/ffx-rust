@@ -1639,7 +1639,7 @@ ported! {
     }
     /// `MenuItem_SetTarget(chr)`: `chr` (left in `eax`).
     MenuItem_SetTarget @ 0x008c_5440 => extern "C" fn menu_item_set_target(chr: u32) -> u32 {
-        tk::MENU_ITEM_SELECTED_LIST.set(&mut mem(), chr);
+        tk::MENU_ITEM_TARGET.set(&mut mem(), chr);
         chr
     }
     /// `MenuItem_GetRows()`.
@@ -3188,5 +3188,21 @@ ported! {
     /// `MenuShop_WeaponSellPrice(e)`.
     MenuShop_WeaponSellPrice @ 0x008d_9410 => extern "C" fn menu_shop_weapon_sell_price(e: u32) -> u32 {
         tk::menu_shop_weapon_sell_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuEquip_IsSelectable(id, any)`.
+    MenuEquip_IsSelectable @ 0x008d_5750 => extern "C" fn menu_equip_is_selectable(id: u32, any: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_equip_is_selectable(&mut m, id, any, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuItemHealAmount(item, player, mp)`.
+    TkMenuItemHealAmount_008c69a0 @ 0x008c_69a0 => extern "C" fn tk_menu_item_heal_amount(item: u32, player: u32, mp: u32) -> i32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::tk_menu_item_heal_amount(&mut m, [item, player, mp], local, &mut |_, f, a| call_ptr(f, a))
     }
 }

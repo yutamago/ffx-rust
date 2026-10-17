@@ -2793,7 +2793,7 @@ fn tk_round4_matches_the_original() {
             0
         });
         t.twin("MenuItem_SetTarget", 0x008c_5440, &[a], U32, |o| {
-            tk::MENU_ITEM_SELECTED_LIST.set(o, a);
+            tk::MENU_ITEM_TARGET.set(o, a);
             w(a)
         });
         t.twin("MenuSaveLoad_ResetToggles", 0x008b_4eb0, &[], VOID, |o| {
@@ -3461,7 +3461,7 @@ fn tk_round5_matches_the_original() {
             w(tk::vibrate_reset_pad(o, vp2))
         });
         // item and equipment menus
-        t.scramble(tk::MENU_ITEM_SELECTED_LIST.sym, 4);
+        t.scramble(tk::MENU_ITEM_TARGET.sym, 4);
         t.scramble(tk::MENU_ITEM_KEY_USE.sym, 1);
         let list = t.rng.pick(&[0u32, 3, 4, 5, 0xffff_ffff]);
         t.twin("MenuItem_IsUsable2", 0x008c_3550, &[0, list], U32, |o| {
@@ -6227,7 +6227,7 @@ fn menu_selectors_match_the_original() {
         } else {
             t.rng.below(0x12)
         };
-        t.put(t.sym(tk::MENU_ITEM_SELECTED_LIST.sym), target);
+        t.put(t.sym(tk::MENU_ITEM_TARGET.sym), target);
         t.twin("MenuItem_CursorTable", 0x008c_4ff0, &[], U32, |o| {
             w(tk::menu_item_cursor_table(o, &mut callback))
         });
@@ -6326,6 +6326,73 @@ fn menu_weapon_prices_match_the_original() {
         });
         t.twin("MenuShop_WeaponSellPrice", 0x008d_9410, &[e], U32, |o| {
             u64::from(tk::menu_shop_weapon_sell_price(o, e, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_out_pointer_callers_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_5750) else {
+        return;
+    };
+    // the originals' locals: the bottom of the bridge side's emulated
+    // stack, which the diff leaves out as it does the originals' frames
+    let local = t.b.stack_range().start + 0x100;
+    // MsGetSaveWeaponName (the local's value, a text lookup the image
+    // has no tables for): a constant in both
+    return_const(&mut t, 0x007a_bdf0, 0x1234);
+    let w = u64::from;
+    for round in 0..96u32 {
+        // a weapon in the inventory (< 200), the spoils (0xb000 + < 8) or
+        // the 0x7000 slots, its record randomised
+        let id = match round % 3 {
+            0 => t.rng.below(0xd0),
+            1 => 0xb000 + t.rng.below(10),
+            _ => 0x7000 + t.rng.below(10),
+        };
+        let base = match id >> 12 {
+            0xb => 0x0231_0dde,
+            7 => 0x0231_0f9e,
+            _ => 0x0113_0f2c,
+        };
+        let k = (id & 0xfff) as usize;
+        let k = if (id >> 12 == 0 && k < 200) || (id >> 12 != 0 && k < 8) {
+            k
+        } else {
+            0
+        };
+        let mut rec = t.rng.bytes(0x16);
+        rec[2] = u8::try_from(t.rng.below(2)).unwrap_or(0);
+        rec[3] = u8::try_from(t.rng.below(0x10)).unwrap_or(0);
+        t.put_bytes(t.sym(base) + 0x16 * u32::try_from(k).unwrap_or(0), &rec);
+        let any = t.rng.below(2);
+        t.twin(
+            "MenuEquip_IsSelectable",
+            0x008d_5750,
+            &[id, any],
+            U32,
+            |o| {
+                w(tk::menu_equip_is_selectable(
+                    o,
+                    id,
+                    any,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+        // an item record of each kind, through a stand-in TkMsGetRomItem
+        let mut item = t.rng.bytes(0x40);
+        item[0x28] = u8::try_from(5 + t.rng.below(5)).unwrap_or(0);
+        let item = t.alloc(&item);
+        return_const(&mut t, 0x008a_b280, item);
+        let player = t.rng.below(0x12);
+        let mp = t.rng.below(2);
+        let args = [t.rng.next(), player, mp];
+        t.twin("TkMenuItemHealAmount", 0x008c_69a0, &args, U32, |o| {
+            w(tk::tk_menu_item_heal_amount(o, args, local, &mut callback).cast_unsigned())
         });
     }
     eprintln!("{} calls", t.calls);
