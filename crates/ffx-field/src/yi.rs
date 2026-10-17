@@ -29,8 +29,9 @@ pub const TK_RESTART_SYNC_H: u32 = 0x0088_c7f0;
 pub const TK_GET_SYNC_H: u32 = 0x0088_c800;
 /// `0x0088c820(5)`, the third call of `yiResetObj`'s sync steps.
 pub const TK_SYNC_H_WAIT: u32 = 0x0088_c820;
-/// `TkClearAlarm` (`0x00845000`).
-pub const TK_CLEAR_ALARM: u32 = 0x0084_5000;
+/// `Sg_IdFixupAndSetThunk` (`0x00845000`, `jmp Sg_IdFixupAndSet_00844bc0`):
+/// installs a map's ID (shade) map, 0 for none.
+pub const SG_ID_FIXUP_AND_SET: u32 = 0x0084_5000;
 /// `pppFpFree` (`0x007291c0`).
 pub const PPP_FP_FREE: u32 = 0x0072_91c0;
 /// `graphicEnableChrClusterDelayRelease` and `Cache_Clear`: run when a 2D
@@ -3175,7 +3176,7 @@ pub mod bridge {
     }
 
     /// `yiResetObj()` (`0x00909ea0`): the field map torn down for the next
-    /// one: GS path sync, `TkClearAlarm(0)`, `Yn_MapSystemFini` and a new
+    /// one: GS path sync, `Sg_IdFixupAndSet(0)`, `Yn_MapSystemFini` and a new
     /// background system (`Yn_RcbgInit` → `rcbgInit`), the map section
     /// pointer cleared, the `ppp` data (`pppFpFree`) and the map read
     /// buffer (`0x019138a4`, [`yi_free`]) released, [`yi_render_resetobj`]
@@ -3187,11 +3188,11 @@ pub mod bridge {
         let f = c(mem, super::GS_SYNC_PATH);
         call(mem, f, &[0, 0]);
         sync_step(mem, call, false);
-        let f = c(mem, super::TK_CLEAR_ALARM);
+        let f = c(mem, super::SG_ID_FIXUP_AND_SET);
         call(mem, f, &[0]);
         crate::guide::bridge::yn_map_system_fini(mem, call);
         crate::guide::bridge::rcbg_init(mem, call);
-        let f = c(mem, super::TK_CLEAR_ALARM);
+        let f = c(mem, super::SG_ID_FIXUP_AND_SET);
         call(mem, f, &[0]);
         sync_step(mem, call, true);
         sync_step(mem, call, true);
@@ -3279,7 +3280,7 @@ pub mod bridge {
     /// background (`+0x10`: [`crate::guide::bridge::yn_pre_bg_set_data`],
     /// render status bit 14), the render data (`+0x14`:
     /// [`yi_arc_readmem`]), the alarm of section `read +0x14` + 2
-    /// (`TkClearAlarm`), the `ppp` data (`+0x38`: `g_YiMapRead`,
+    /// (`Sg_IdFixupAndSet`), the `ppp` data (`+0x38`: `g_YiMapRead`,
     /// `pppSetFpPdt`), two more background parts (`+0x40`, `+0x3c`: jumps
     /// to `Yn_PreBgSetData`); then render status bits 0 and 4, the draw
     /// mask (-9, -1 with the battle map circle), the default animations
@@ -3314,7 +3315,7 @@ pub mod bridge {
         sync_step(mem, call, true);
         let sec = yi_map_get_section(mem, file, ext.wrapping_add(2));
         if sec != 0 {
-            let f = c(mem, super::TK_CLEAR_ALARM);
+            let f = c(mem, super::SG_ID_FIXUP_AND_SET);
             call(mem, f, &[sec]);
         }
         sync_step(mem, call, true);
@@ -3501,14 +3502,15 @@ pub mod bridge {
         0
     }
 
-    /// The start of `yiMapReadMaster` and `yiMapSetup`: the renderer's
-    /// objects and textures reset (with `sceGsSyncPath` around the first in
-    /// the former), the alarm cleared.
+    /// The start of `yiMapReadMaster` and `yiMapSetup`, and all of
+    /// `yiReset` (without the first sync): the renderer's objects and
+    /// textures reset (with `sceGsSyncPath` around the first in the
+    /// former), no ID map (`Sg_IdFixupAndSet(0)`, whose result it returns).
     fn map_read_reset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         sync_first: bool,
         call: &mut C,
-    ) {
+    ) -> u32 {
         let sync = mem.rebase(super::GS_SYNC_PATH);
         if sync_first {
             call(mem, sync, &[0, 0]);
@@ -3518,8 +3520,8 @@ pub mod bridge {
         let r = super::state::RENDER.ptr(mem).addr;
         yi_render_resettex(mem, r);
         super::MAP_IDS.set(mem, [u32::MAX; 2]);
-        let f = mem.rebase(super::TK_CLEAR_ALARM);
-        call(mem, f, &[0]);
+        let f = mem.rebase(super::SG_ID_FIXUP_AND_SET);
+        call(mem, f, &[0])
     }
 
     /// `yiMapReadMaster(map, file, cd_map, cd_file, alarm)` (`0x009093b0`):
@@ -3532,7 +3534,7 @@ pub mod bridge {
     /// 0)`, [`super::MAP_SECTION`], `Yn_PreBgSetData`, status bit 0x4000), 1
     /// the 3D map (`graphicFieldMapLoad(name, 1)`, `yiArc_readmem`),
     /// `graphicFieldMapInitialize`, `graphicVFXLoadLevelData`, `alarm + 2`
-    /// the alarms (`TkClearAlarm`), 10 the effect data (`pppSetFpPdt`), 12
+    /// the ID map (`Sg_IdFixupAndSet`), 10 the effect data (`pppSetFpPdt`), 12
     /// and 11 more `Yn_PreBgSetData`; the CD ids kept at `0x01934ed4`. Then
     /// status `| 0x11`, the draw mask (-1 with the battle map circle, else
     /// -9) and the default animations. Returns 0. `image` and `work` as
@@ -3622,7 +3624,7 @@ pub mod bridge {
             call(mem, f, &[]);
             let s = yi_map_get_section(mem, buf, alarm.wrapping_add(2));
             if s != 0 {
-                let f = c(mem, super::TK_CLEAR_ALARM);
+                let f = c(mem, super::SG_ID_FIXUP_AND_SET);
                 call(mem, f, &[s]);
             }
             let s = yi_map_get_section(mem, buf, 10);
@@ -5096,11 +5098,11 @@ pub mod bridge {
         }
     }
 
-    // ---- field round 37: the map's alarm pages, yiReset ----
+    // ---- field round 37: the map's ID map pages, yiReset ----
 
-    /// The map file's section `page + 2` (an alarm table) to `TkClearAlarm`;
+    /// The map file's section `page + 2` (an ID map) to `Sg_IdFixupAndSet`;
     /// whether there was one.
-    fn clear_alarm_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+    fn set_id_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         page: u32,
         call: &mut C,
@@ -5113,20 +5115,20 @@ pub mod bridge {
         if s == 0 {
             return false;
         }
-        let f = mem.rebase(super::TK_CLEAR_ALARM);
+        let f = mem.rebase(super::SG_ID_FIXUP_AND_SET);
         call(mem, f, &[s]);
         true
     }
 
     /// `yiSetIDPage(page)` (`0x0090a4a0`): with a map file
-    /// (`g_YiMapData`), its section `page + 2` to `TkClearAlarm` when it
-    /// has one. Returns 0.
+    /// (`g_YiMapData`), its section `page + 2` (an ID map) to
+    /// `Sg_IdFixupAndSet` when it has one. Returns 0.
     pub fn yi_set_id_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         page: u32,
         call: &mut C,
     ) -> u32 {
-        clear_alarm_page(mem, page, call);
+        set_id_page(mem, page, call);
         0
     }
 
@@ -5137,7 +5139,7 @@ pub mod bridge {
         page: u32,
         call: &mut C,
     ) -> u32 {
-        if clear_alarm_page(mem, page, call) {
+        if set_id_page(mem, page, call) {
             crate::guide::bridge::yn_pre_bg_change_stage(mem, page.cast_signed(), call);
         }
         0
@@ -5145,18 +5147,11 @@ pub mod bridge {
 
     /// `yiReset()` (`0x00909e60`): [`yi_reset_obj`], a GS path sync,
     /// [`yi_render_resettex`] of `g_YiRender`, both map ids
-    /// (`0x01934edc`) -1, `TkClearAlarm(0)`, whose result it returns.
+    /// (`0x01934edc`) -1, `Sg_IdFixupAndSet(0)`, whose result it returns.
     pub fn yi_reset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         call: &mut C,
     ) -> u32 {
-        yi_reset_obj(mem, call);
-        let f = mem.rebase(super::GS_SYNC_PATH);
-        call(mem, f, &[0, 0]);
-        let r = super::state::RENDER.ptr(mem).addr;
-        yi_render_resettex(mem, r);
-        super::MAP_IDS.set(mem, [u32::MAX; 2]);
-        let f = mem.rebase(super::TK_CLEAR_ALARM);
-        call(mem, f, &[0])
+        map_read_reset(mem, false, call)
     }
 }

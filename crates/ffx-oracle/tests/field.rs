@@ -6045,7 +6045,7 @@ impl LoadEnv {
             (yi::TK_RESTART_SYNC_H, 1),
             (yi::TK_GET_SYNC_H, 1),
             (yi::TK_SYNC_H_WAIT, 1),
-            (yi::TK_CLEAR_ALARM, 1),
+            (yi::SG_ID_FIXUP_AND_SET, 1),
             (yi::PPP_FP_FREE, 0),
             (yi::GRAPHIC_CLUSTER_DELAY_RELEASE, 0),
             (yi::CACHE_CLEAR, 0),
@@ -7444,7 +7444,7 @@ fn round9_parse_tasks_yi_and_swizzle_match_the_original() {
             |o| o.void(0x0091_a0d0, &[stage.cast_unsigned()]),
             |m| guide::bridge::yn_pre_bg_change_stage(m, stage, call),
         );
-        // round 37: the alarm pages of a map file (none, another tag, or
+        // round 37: the ID map pages of a map file (none, another tag, or
         // MAP1 with some sections)
         let mapf = t.alloc(0x80);
         t.fill(mapf, 0x80, &mut rng);

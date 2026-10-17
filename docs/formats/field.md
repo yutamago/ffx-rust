@@ -1483,17 +1483,19 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
-## The map's alarm pages and yiReset (round 37)
+## The map's ID map pages and yiReset (round 37)
 
 - `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,
-  `0x019138a8`) section `page + 2` to `TkClearAlarm` (`0x00845000`) when
+  `0x019138a8`) section `page + 2`, an ID (shade) map, to
+  `Sg_IdFixupAndSet` (through the thunk `0x00845000`) when
   there is a map file and it has that section (`yiMapGetSection`: `MAP1`
   data, a non-zero offset). `yiSetPreBgPage(page)` (`0x0090a6f0`) does the
   same and then, only when the section was there, calls
   `Yn_PreBgChangeStage(page)`. Both return 0.
 - `yiReset()` (`0x00909e60`) runs `yiResetObj`, `sceGsSyncPath(0, 0)` and
   `yiRender_resettex(&g_YiRender)`. It then sets both map ids
-  (`0x01934edc`, `0x01934ee0`) to -1 and returns `TkClearAlarm(0)`.
+  (`0x01934edc`, `0x01934ee0`) to -1 and returns `Sg_IdFixupAndSet(0)`
+  (no ID map).
 
 ## Sqs standby requests and info paths (round 36)
 
