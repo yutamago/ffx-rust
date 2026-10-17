@@ -8232,7 +8232,11 @@ fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift)
         set(a, b, t::CURRENT_MAP, maps[(rng.next() % 5) as usize]);
         set(a, b, t::TUTO_CHOSEN, rng.next() & 1);
         set(a, b, t::MESSAGE_UNCLAMPED, rng.next() & 1);
-        let magic = if rng.next() & 1 == 0 { 0x281 } else { rng.next() % 0x300 };
+        let magic = if rng.next() & 1 == 0 {
+            0x281
+        } else {
+            rng.next() % 0x300
+        };
         let file = mb::MAGIC_FILE.get(a);
         set(a, b, mb::MAGIC_FILE, [magic, file[1], file[2], file[3]]);
         let k = i.cast_unsigned();
@@ -8244,13 +8248,24 @@ fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift)
             ((rng.next() % 0x300) as u16, (rng.next() % 0x80) as u16)
         };
         put(a, b, records + 0x60 * k + 0x40, [tw, th]);
-        let anchor = if rng.next() % 8 == 0 { rng.next() } else { rng.next() % 6 };
+        let anchor = if rng.next() % 8 == 0 {
+            rng.next()
+        } else {
+            rng.next() % 6
+        };
         let (x, y) = if rng.next() % 6 == 0 {
             (rng.next().cast_signed(), rng.next().cast_signed())
         } else {
-            ((rng.next() % 700) as i32 - 100, (rng.next() % 600) as i32 - 100)
+            (
+                (rng.next() % 700) as i32 - 100,
+                (rng.next() % 600) as i32 - 100,
+            )
         };
-        eax(a, 0x008a_f850, &[k, anchor, x.cast_unsigned(), y.cast_unsigned()]);
+        eax(
+            a,
+            0x008a_f850,
+            &[k, anchor, x.cast_unsigned(), y.cast_unsigned()],
+        );
         t::set_message_window_position(b, i, anchor, x, y, |m| {
             let v: [i32; 2] = Mem::read(m, cells);
             (v[0], v[1])
@@ -8259,7 +8274,10 @@ fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift)
         let (w, h) = if rng.next() % 6 == 0 {
             (rng.next().cast_signed(), rng.next().cast_signed())
         } else {
-            ((rng.next() % 0x260) as i32 - 0x20, (rng.next() % 0x1c0) as i32 - 0x10)
+            (
+                (rng.next() % 0x260) as i32 - 0x20,
+                (rng.next() % 0x1c0) as i32 - 0x10,
+            )
         };
         let args = [
             k,
@@ -8343,14 +8361,22 @@ fn round14_limit_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         }
         fn remap(&mut self, m: &mut Oracle, y: bool, v: f32) -> f32 {
             let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
-            let r = m.call(at, Conv::Cdecl, &[v.to_bits()]).unwrap().st0.unwrap();
+            let r = m
+                .call(at, Conv::Cdecl, &[v.to_bits()])
+                .unwrap()
+                .st0
+                .unwrap();
             #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
             let r = r as f32;
             r
         }
     }
     let fill = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
-        for (from, len) in [(0x0133_d6f0u32, 0x60u32), (0x0133_f778, 0x320), (0x0133_f7d4, 4)] {
+        for (from, len) in [
+            (0x0133_d6f0u32, 0x60u32),
+            (0x0133_f778, 0x320),
+            (0x0133_f7d4, 4),
+        ] {
             let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
             let at = a.rebase(from);
             a.write(at, &bytes).unwrap();
@@ -8391,4 +8417,120 @@ fn round14_limit_windows_match_the_original_on_the_snapshot() {
         return;
     };
     round14_limit_windows(&mut a, &mut b, &mut Xorshift(0x4014_0012));
+}
+
+/// Round 14's battle limit-window openers over stand-in overdrive tables.
+#[allow(clippy::items_after_statements, clippy::cast_possible_truncation)]
+fn round14_limit_openers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    let seq = alloc(a, b, 0x40);
+    // fld dword [cells + 4k]; ret
+    for (k, sym) in [(0u32, 0x00a5_ca70u32), (1, 0x00a5_cb10), (2, 0x00a5_cbd0)] {
+        let mut v = vec![0xd9, 0x05];
+        v.extend_from_slice(&(cells + 4 * k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0xd00 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // mov eax, seq; ret
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&seq.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xd40, &v);
+    redirect(a, b, 0x00a5_ca60, s);
+    // NkzSetLuluLimitTbl: [cells + 12] = group ^ key
+    let s = stand_in8(a, b, 0xd50, &recorder(cells + 12, 0x1400_0404));
+    redirect(a, b, 0x00a5_cc70, s);
+    // tables A/B: eax = arg ^ key
+    for (k, sym) in [(0u32, 0x00a5_cb30u32), (1, 0x00a5_cb80)] {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+        v.extend_from_slice(&(0x1400_0501u32 + 0x0137_0101 * k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0xd70 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    struct Calls;
+    impl t::LimitOpenCalls<Oracle> for Calls {
+        fn limit_time(&mut self, m: &mut Oracle, who: t::Limit, arg: u32) -> f32 {
+            let sym = match who {
+                t::Limit::Auron => 0x00a5_ca70,
+                t::Limit::Lulu => 0x00a5_cb10,
+                t::Limit::Tidus => 0x00a5_cbd0,
+            };
+            let at = m.rebase(sym);
+            let r = m.call(at, Conv::Cdecl, &[arg]).unwrap().st0.unwrap();
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let r = r as f32;
+            r
+        }
+        fn auron_buttons(&mut self, m: &mut Oracle, level: u32) -> u32 {
+            eax(m, 0x00a5_ca60, &[level])
+        }
+        fn lulu_table(&mut self, m: &mut Oracle, group: u32) {
+            eax(m, 0x00a5_cc70, &[group]);
+        }
+        fn tidus_table(&mut self, m: &mut Oracle, tb: bool, level: u32) -> u32 {
+            eax(m, if tb { 0x00a5_cb80 } else { 0x00a5_cb30 }, &[level])
+        }
+    }
+    let cmds = [
+        0x22u32, 0x32, 0x42, 0x52, 0x20, 0x30, 0x40, 0x50, 0x21, 0x62, 0, 0x3078, 0x307a,
+    ];
+    for _ in 0..60 {
+        for (from, len) in [(0x0133_d6f0u32, 0x60u32), (0x0133_f778, 0x30)] {
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let at = a.rebase(from);
+            a.write(at, &bytes).unwrap();
+            b.write(at, &bytes).unwrap();
+        }
+        let times = [
+            rng.next() % 0x4000_0000 + 0x3f00_0000,
+            rng.next() % 0x4000_0000 + 0x3f00_0000,
+            rng.next() % 0x4000_0000 + 0x3f00_0000,
+        ];
+        put(a, b, cells, times);
+        let n = rng.next() % 30;
+        let mut words: Vec<u16> = (0..n).map(|_| (rng.next() % 0xffff) as u16).collect();
+        words.push(0xffff);
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        a.write(seq, &bytes).unwrap();
+        b.write(seq, &bytes).unwrap();
+        let cmd = if rng.next() % 4 == 0 {
+            rng.next()
+        } else {
+            cmds[(rng.next() % 13) as usize]
+        };
+        assert_eq!(
+            eax(a, 0x0089_8ad0, &[cmd]),
+            t::btl_open_auron_limit_window(b, cmd, &mut Calls)
+        );
+        same_memory("Auron's limit window opened", a, b);
+        assert_eq!(
+            eax(a, 0x0089_8bf0, &[cmd]),
+            t::btl_open_lulu_limit_window(b, cmd, &mut Calls)
+        );
+        same_memory("Lulu's limit window opened", a, b);
+        assert_eq!(
+            eax(a, 0x0089_8ca0, &[cmd]),
+            t::btl_open_tidus_limit_window(b, cmd, &mut Calls)
+        );
+        same_memory("Tidus' limit window opened", a, b);
+    }
+}
+
+#[test]
+fn round14_limit_openers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_limit_openers(&mut a, &mut b, &mut Xorshift(0x4014_0021));
+}
+
+#[test]
+fn round14_limit_openers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_limit_openers(&mut a, &mut b, &mut Xorshift(0x4014_0022));
 }

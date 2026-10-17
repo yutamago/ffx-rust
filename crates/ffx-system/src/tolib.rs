@@ -2377,7 +2377,6 @@ pub mod bridge {
         }
     }
 
-
     /// `g_TkMenuTutoChosen` (`0x025d16bc`).
     pub const TUTO_CHOSEN: Global<u32> = Global::new(0x025d_16bc);
     /// Per message window: 1 when [`set_message_window_position`] split a
@@ -2438,17 +2437,16 @@ pub mod bridge {
             .addr
             .wrapping_add(i.cast_unsigned().wrapping_mul(4));
         let s16 = |v: u32| i32::from((v as u16).cast_signed());
-        let (rows_h, w_add) = if TUTO_CHOSEN.get(mem) != 0
-            && i32::from(text_w.cast_signed()) + s16(pad_w) > 0x190
-        {
-            mem.write(wrapped, 1u32);
-            let rows = i32::from(text_w.cast_signed()) / 300 + 1;
-            let h = rows.wrapping_mul(i32::from(text_h)).cast_unsigned() as u16;
-            (u32::from(h), 300u32)
-        } else {
-            mem.write(wrapped, 0u32);
-            (u32::from(text_h), u32::from(text_w))
-        };
+        let (rows_h, w_add) =
+            if TUTO_CHOSEN.get(mem) != 0 && i32::from(text_w.cast_signed()) + s16(pad_w) > 0x190 {
+                mem.write(wrapped, 1u32);
+                let rows = i32::from(text_w.cast_signed()) / 300 + 1;
+                let h = rows.wrapping_mul(i32::from(text_h)).cast_unsigned() as u16;
+                (u32::from(h), 300u32)
+            } else {
+                mem.write(wrapped, 0u32);
+                (u32::from(text_h), u32::from(text_w))
+            };
         let mut h = pad_h.wrapping_add(rows_h);
         let w = pad_w.wrapping_add(w_add);
         let (sw, sh) = (s16(w), s16(h));
@@ -2476,8 +2474,7 @@ pub mod bridge {
         let map = CURRENT_MAP.get(mem);
         let exempt = ((map == 0x5e || map == 0x12e)
             && crate::menu::bridge::MAGIC_FILE.get(mem)[0] == 0x281)
-            || (MESSAGE_UNCLAMPED.get(mem) != 0
-                && crate::window::bridge::window_type(mem, i) == 1);
+            || (MESSAGE_UNCLAMPED.get(mem) != 0 && crate::window::bridge::window_type(mem, i) == 1);
         if !exempt {
             let lim = 0x200 - width;
             x = if x > lim { lim } else { x.max(0) };
@@ -2506,7 +2503,6 @@ pub mod bridge {
         }
         place_message_window(mem, i, [x, y, width, height], screen_wh);
     }
-
 
     /// `0x008afa90(i, anchor, x, y, w, h)`: message window `i` placed with
     /// an explicit size: the anchor moves the position (1 bottom, 2 right,
@@ -2543,7 +2539,6 @@ pub mod bridge {
         let y = if y > lim { lim } else { y.max(4) };
         place_message_window(mem, i, [x, y, w, h], screen_wh);
     }
-
 
     /// The calls the battle limit-window set-ups make outside this module.
     pub trait LimitWindowCalls<M> {
@@ -2624,9 +2619,13 @@ pub mod bridge {
     pub fn btl_init_tidus_limit_window<M: Mem>(mem: &mut M, calls: &mut impl LimitWindowCalls<M>) {
         limit_window_start(mem, calls);
         zero_words(mem, 0x0133_d734, 6);
-        for (k, (c, y)) in [(0x00b5_ef70, false), (0x00b5_ef98, true), (0x00b5_f010, false)]
-            .into_iter()
-            .enumerate()
+        for (k, (c, y)) in [
+            (0x00b5_ef70, false),
+            (0x00b5_ef98, true),
+            (0x00b5_f010, false),
+        ]
+        .into_iter()
+        .enumerate()
         {
             let c = mem.rebase(c);
             let v: f32 = mem.read(c);
@@ -2692,5 +2691,138 @@ pub mod bridge {
         ] {
             limit_color(mem, calls, name, out);
         }
+    }
+
+    /// Whose overdrive window [`LimitOpenCalls::limit_time`] times.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Limit {
+        /// `NkzGetAuronLimitTime(level)`.
+        Auron,
+        /// `NkzGetLuluLimitTime(group)`.
+        Lulu,
+        /// `NkzGetTidusLimitTime(level)`.
+        Tidus,
+    }
+
+    /// The overdrive-table calls of the limit-window openers.
+    pub trait LimitOpenCalls<M> {
+        /// The time limit (`NkzGet*LimitTime(arg)`).
+        fn limit_time(&mut self, mem: &mut M, who: Limit, arg: u32) -> f32;
+        /// `NkzGetAuronLimitButtonData(level)`.
+        fn auron_buttons(&mut self, mem: &mut M, level: u32) -> u32;
+        /// `NkzSetLuluLimitTbl(group)`.
+        fn lulu_table(&mut self, mem: &mut M, group: u32);
+        /// `NkzTidusLimitTableA(level)` or, with `b`, `NkzTidusLimitTableB`.
+        fn tidus_table(&mut self, mem: &mut M, b: bool, level: u32) -> u32;
+    }
+
+    /// The level of an overdrive command `cmd`: `base`, `base + 0x10`,
+    /// `+ 0x20`, `+ 0x30` give 0..=3, anything else 0.
+    fn limit_level(cmd: u32, base: u32) -> u32 {
+        match cmd.wrapping_sub(base) {
+            0x10 => 1,
+            0x20 => 2,
+            0x30 => 3,
+            _ => 0,
+        }
+    }
+
+    /// The limit timer started (`0x0133f77c` 1) with `t` as its three
+    /// times (`0x0133f78c`, `0x0133f790`, `0x0133f794`).
+    fn start_limit_timer(mem: &mut impl Mem, t: f32) {
+        for (a, v) in [
+            (0x0133_f78c, t.to_bits()),
+            (0x0133_f77c, 1),
+            (0x0133_f790, t.to_bits()),
+            (0x0133_f794, t.to_bits()),
+        ] {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        }
+    }
+
+    /// `TOBtlOpenAuronLimitWindow(cmd)` (`0x00898ad0`): the level from the
+    /// command (0x22, 0x32, 0x42, 0x52), the timer started with its time,
+    /// the button sequence (`NkzGetAuronLimitButtonData`) and its length up
+    /// to the 0xffff end in `0x0133d704`/`0x0133d700`, the window open
+    /// (`0x0133d6f4` 1). Returns 1.
+    pub fn btl_open_auron_limit_window<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        calls: &mut impl LimitOpenCalls<M>,
+    ) -> u32 {
+        let level = limit_level(cmd, 0x22);
+        let t = calls.limit_time(mem, Limit::Auron, level);
+        start_limit_timer(mem, t);
+        let seq = calls.auron_buttons(mem, level);
+        let (seq_at, len_at) = (mem.rebase(0x0133_d704), mem.rebase(0x0133_d700));
+        mem.write(seq_at, seq);
+        let mut n = 0u32;
+        mem.write(len_at, n);
+        while mem.read::<u16>(seq.wrapping_add(n.wrapping_mul(2))) != 0xffff {
+            n = n.wrapping_add(1);
+            mem.write(len_at, n);
+        }
+        let open = mem.rebase(0x0133_d6f4);
+        mem.write(open, 1u16);
+        1
+    }
+
+    /// `TOBtlOpenLuluLimitWindow(cmd)` (`0x00898bf0`): the group `cmd -
+    /// 0x3078`, the timer started with its time, `NkzSetLuluLimitTbl`, then
+    /// `0x0133d71e` the byte `0x0133f798`, `0x0133d71c` 3, `0x0133d71f` 1 and
+    /// the window open (`0x0133d708` 1). Returns 1.
+    pub fn btl_open_lulu_limit_window<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        calls: &mut impl LimitOpenCalls<M>,
+    ) -> u32 {
+        let group = cmd.wrapping_sub(0x3078);
+        let t = calls.limit_time(mem, Limit::Lulu, group);
+        start_limit_timer(mem, t);
+        calls.lulu_table(mem, group);
+        let src = mem.rebase(0x0133_f798);
+        let v: u8 = mem.read(src);
+        let w = mem.rebase(0x0133_d708);
+        mem.write(w.wrapping_add(0x16), v);
+        mem.write(w.wrapping_add(0x14), 3u16);
+        mem.write(w.wrapping_add(0x17), 1u8);
+        mem.write(w, 1u16);
+        1
+    }
+
+    /// `TOBtlOpenTidusLimitWindow(cmd)` (`0x00898ca0`): the level from the
+    /// command (0x20, 0x30, 0x40, 0x50), the timer started with its time,
+    /// table B's value at `+0x10` of the window `0x0133d734`, its `+2` copied
+    /// to `+0xe`, table A's width at `+0xc` and the band `+8`..`+0xa`
+    /// centred on `+6` / 2 from `+2`; the window open. Returns 1.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )] // 16-bit stores
+    pub fn btl_open_tidus_limit_window<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        calls: &mut impl LimitOpenCalls<M>,
+    ) -> u32 {
+        let level = limit_level(cmd, 0x20);
+        let t = calls.limit_time(mem, Limit::Tidus, level);
+        start_limit_timer(mem, t);
+        let w = mem.rebase(0x0133_d734);
+        let b = calls.tidus_table(mem, true, level);
+        mem.write(w.wrapping_add(0x10), b as u16);
+        let x: u16 = mem.read(w.wrapping_add(2));
+        mem.write(w.wrapping_add(0xe), x);
+        let a = calls.tidus_table(mem, false, level) as u16;
+        let width: i16 = mem.read(w.wrapping_add(6));
+        let half = i32::from(width) / 2;
+        let ha = i32::from(a.cast_signed()) / 2;
+        mem.write(w.wrapping_add(0xc), a);
+        let x: u16 = mem.read(w.wrapping_add(2));
+        mem.write(w.wrapping_add(8), ((half - ha) as u16).wrapping_add(x));
+        mem.write(w.wrapping_add(0xa), ((ha + half) as u16).wrapping_add(x));
+        mem.write(w, 1u16);
+        1
     }
 }

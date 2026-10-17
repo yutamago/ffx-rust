@@ -8165,11 +8165,11 @@
 0x008985b0 function TOBtlMakeTargetListBit       # layout: alphabetical run between TOBtlMakeTargetGroupBit and TOBtlMakeTargetTargetBit (1 unnamed in the gap); Switch 0x710049ab50 TOBtlMakeTargetListBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00898640 function TOBtlMakeTargetTargetBit  # fh v3:exact 0x008985b0
 0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940
-0x00898ad0 function TOBtlOpenAuronLimitWindow # fh v3:exact 0x00898a40
+0x00898ad0 function TOBtlOpenAuronLimitWindow # fh v3:exact 0x00898a40; cdecl(cmd): level by cmd 0x22/0x32/0x42/0x52 (else 0), timer 0x0133f77c=1 with NkzGetAuronLimitTime in 0x0133f78c/90/94, NkzGetAuronLimitButtonData -> 0x0133d704 and its 0xffff-terminated length -> 0x0133d700, u16 0x0133d6f4=1; returns 1
 0x00898bd0 function TOBtlOpenLibraWindow      # fh v3:exact 0x00898b40
-0x00898bf0 function TOBtlOpenLuluLimitWindow  # fh v3:exact 0x00898b60
+0x00898bf0 function TOBtlOpenLuluLimitWindow  # fh v3:exact 0x00898b60; cdecl(cmd): group cmd-0x3078, timer as Auron's, NkzSetLuluLimitTbl, 0x0133d71e = byte 0x0133f798, u16 0x0133d71c=3, byte 0x0133d71f=1, u16 0x0133d708=1; returns 1
 0x00898c60 function TOBtlOpenSignWindow       # fh v3:exact 0x00898bd0
-0x00898ca0 function TOBtlOpenTidusLimitWindow # fh v3:exact 0x00898c10
+0x00898ca0 function TOBtlOpenTidusLimitWindow # fh v3:exact 0x00898c10; cdecl(cmd): level by cmd 0x20/0x30/0x40/0x50, timer, window 0x0133d734: +0x10 TableB, +0xe = +2, +0xc TableA, +8/+0xa = +2 + (+6)/2 -/+ A/2, +0 = 1; returns 1
 0x00898dc0 function TOBwakkStart              # g_MagicImports slot 656 (10 overlays): 0x0133f520 = 0; TOSeqStartSceneDrawContinue(2, "bwakk"); byte 0x0133c93f = 1; hidden from the dump
 0x00898df0 function TOBtlPadScrollDown        # fh v3:exact 0x00898d60; 0x0133c938 == 0: 0x0133f7a8 = w+0x3c; w+0x3c += TOGetLineFeedHeight(), w+0x88 = 0x00898e40
 0x00898e20 function TOBtlPadScrollUp          # fh v3:exact 0x00898d90; w+0x3c -= TOGetLineFeedHeight(), w+0x88 = 0x00898e40 (ret)
