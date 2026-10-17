@@ -66,6 +66,24 @@ NAME_RULES = [
               r"^Sg_Db|DebugFont|^eidprintf|^printf|Printf$|Dump|^Assert|"
               r"^SgGu|FpMem|host0|^TkPutDebug|DispDebug|^Sg_Id_coltest|^Gui_|^yiGui|^chr_anim_win|^FreeCamera)",
      "debug name", None),
+    # scene state ffx-render needs as input, kept exactly ("original look
+    # first"): camera view and projection, fog/ambient/background colours,
+    # screen fades, mesh and skeleton matrices, character lighting, 2D-layer
+    # and mesh visibility, the minimap and area-map camera. Only code that
+    # passes data to PhyreEngine/D3D11 (render targets, shaders, buffers,
+    # loading, drawing) stays glue.
+    ("logic", r"^(PhyreScene_|graphic|cgraphic|Graphic)"
+              r"(?!.*(Shader|Buffer|RenderTarget|Load(?!ed)|Unload|Create|Destroy|Initiali|Draw(?!Focus|Filter)|"
+              r"Texture(?!VideoInfo)|Pipeline|Cluster|Remap))"
+              r".*(Camera|FOV|AspectRatio|ViewProjection|Fog|Ambient|Background|ScreenFade|Fading|CrossFade|"
+              r"Skeleton|WorldMatrix|Matrices|Lighting|LightDir|ShadeColor|ShadeCoeff|2DLayer|2DHideLayer|"
+              r"2DShowLayer|2DStartLayer|2DSceneNum|Cut2DScene|3DScene|NonUI2DScene|Guidemap|Minimap|MiniMap|"
+              r"SetVisible|MeshVisible|MeshSegment(Alpha|Color|Hide)|[Oo]bject(Set)?(Rotation|Translation)|"
+              r"Project3DPoint|Screen(Get|Set)(Dtt)?Offset|LevelName|NameHash|KeyframeAnim|DttPageFlag|"
+              r"UiShadowType|TextureVideoInfo|Magic(Get|Set)(ToBeDelete)?Path|(Current|ToBeDelete)MagicPath|"
+              r"PushTip|AllSceneAssetsLoaded|HasRunDraw|Focus|BattleMap|Has[23]dMap|NowUIType|MiniMapType|"
+              r"FadeCenter)",
+     "scene state the renderer needs (original look first)", PC_END),
     ("glue", r"^(Fmod|FfxFmod|FMOD|fmod|SfxBank|SfxEvent|iMusic|iSfx|iVoice|movie|Movie|PhyFMV|PVideoPlayback|"
              r"createU16Mesh)", "glue name (FMOD or the movie player)", None),
     ("glue", r"^(PhyreScene|graphic|cgraphic|Graphic|PostProcess|Shadow|Distortion|TextureAnimation|"
@@ -98,7 +116,7 @@ DEBUG_NAME = NAME_RULES[0][1]
 PACKET_API = re.compile(r"^(sceDma|sceGs|rcPacketData|TOAdp|TOGs[A-Z]|TOCtrlPkt|TODrawKick|"
                         r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$)")
 # named read-only helpers a packet writer may call (no global writes either)
-GETTER = re.compile(r"(Get|get_ptr32|Calc|ScaleMatrix|PersMatrix|Copy16|CopyQword|ToFixed|Mul[0-9A-Z]|Apply)")
+GETTER = re.compile(r"(Get|[Ii]s[A-Z0-9]|get_ptr32|Calc|ScaleMatrix|PersMatrix|Copy16|CopyQword|ToFixed|Mul[0-9A-Z]|Apply)")
 # VU0 emulation: scratch registers, not game state
 VU_SCRATCH = re.compile(r"^(FFXVu0|AsmEmu|restoreVf00|set[SZ]SFlag|cdc_|rcVectorToFixed|rcCopyQword)")
 

@@ -853,15 +853,15 @@
 0x00638ce0	dead	unreachable from the entry point and every pointer table
 0x00638d20	logic	default (no rule: ported to be safe)
 0x00638d40	logic	default (no rule: ported to be safe)
-0x00638d90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): cgraphicSetNowUIType
+0x00638d90	logic	scene state the renderer needs (original look first): cgraphicSetNowUIType
 0x00638dd0	logic	default (no rule: ported to be safe)
 0x00638de0	logic	default (no rule: ported to be safe)
 0x00638e00	logic	debug-sounding name, but used by logic: KeThBP_MkGifPk
 0x00638e30	logic	default (no rule: ported to be safe)
 0x00638e70	logic	default (no rule: ported to be safe)
 0x00638e90	logic	default (no rule: ported to be safe)
-0x00638f30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphic2DHideLayer
-0x00638f60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphic2DShowLayer
+0x00638f30	logic	scene state the renderer needs (original look first): graphic2DHideLayer
+0x00638f60	logic	scene state the renderer needs (original look first): graphic2DShowLayer
 0x00638f90	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication, Phyre_PRendering_PRenderThread_GetInstance, Phyre_PRendering_PRenderThread_sync
 0x00638fb0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapDestory
 0x00638fd0	logic	default (no rule: ported to be safe)
@@ -875,9 +875,9 @@
 0x00639140	logic	default (no rule: ported to be safe)
 0x00639150	logic	default (no rule: ported to be safe)
 0x00639170	logic	default (no rule: ported to be safe)
-0x00639240	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAddScreenFadeTask
-0x00639280	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAddScreenFadeTaskAfterRender
-0x006392c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAddScreenFadeTaskBeforeVFX
+0x00639240	logic	scene state the renderer needs (original look first): graphicAddScreenFadeTask
+0x00639280	logic	scene state the renderer needs (original look first): graphicAddScreenFadeTaskAfterRender
+0x006392c0	logic	scene state the renderer needs (original look first): graphicAddScreenFadeTaskBeforeVFX
 0x00639300	platform	only called from platform code (FFXApplication_animate)
 0x00639310	logic	default (no rule: ported to be safe)
 0x00639330	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAtelUnloadTexture
@@ -896,13 +896,13 @@
 0x006394e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenUpdateOpacity
 0x00639500	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenUpdatePolygonData
 0x00639540	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenUpdatePolygonWMatrix
-0x00639570	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCameraGetFOVy
-0x00639590	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCameraGetViewProjectionMatrix
-0x006395c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCameraSetAspectRatio
-0x006395e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCameraSetFOVy
+0x00639570	logic	scene state the renderer needs (original look first): graphicCameraGetFOVy
+0x00639590	logic	scene state the renderer needs (original look first): graphicCameraGetViewProjectionMatrix
+0x006395c0	logic	scene state the renderer needs (original look first): graphicCameraSetAspectRatio
+0x006395e0	logic	scene state the renderer needs (original look first): graphicCameraSetFOVy
 0x00639600	dead	unreachable from the entry point and every pointer table
-0x00639860	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCameraSetWorldMatrix
-0x00639b30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCameraSetWorldMatrixSub
+0x00639860	logic	scene state the renderer needs (original look first): graphicCameraSetWorldMatrix
+0x00639b30	logic	scene state the renderer needs (original look first): graphicCameraSetWorldMatrixSub
 0x00639d10	platform	only called from platform code (FFXApplication_render)
 0x00639d20	logic	default (no rule: ported to be safe)
 0x00639d40	logic	default (no rule: ported to be safe)
@@ -923,37 +923,37 @@
 0x0063b230	logic	default (no rule: ported to be safe)
 0x0063b290	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceOutputAllVertexBuffers
 0x0063b5b0	dead	unreachable from the entry point and every pointer table
-0x0063b5d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetBTUFadeCenter
+0x0063b5d0	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetBTUFadeCenter
 0x0063b740	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetClothVertexBuffers
 0x0063b7d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetDrawSituation
 0x0063b7f0	logic	default (no rule: ported to be safe)
 0x0063b810	logic	default (no rule: ported to be safe)
 0x0063b9e0	logic	default (no rule: ported to be safe)
 0x0063bb30	logic	default (no rule: ported to be safe)
-0x0063bc50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetMeshSegmentAlpha
-0x0063bc80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetMeshSegmentColor
-0x0063bdf0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetMeshSegmentHide
-0x0063be60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetSkeletonMatrices
-0x0063bfc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetSkeletonMatricesRestoreDefault
+0x0063bc50	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetMeshSegmentAlpha
+0x0063bc80	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetMeshSegmentColor
+0x0063bdf0	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetMeshSegmentHide
+0x0063be60	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetSkeletonMatrices
+0x0063bfc0	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetSkeletonMatricesRestoreDefault
 0x0063c0c0	logic	default (no rule: ported to be safe)
-0x0063c390	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetVisible
-0x0063c3e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetWorldMatrix
-0x0063c430	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceSetWorldMatrixByMdlID
-0x0063c500	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceUpdateSkeletonounds
+0x0063c390	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetVisible
+0x0063c3e0	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetWorldMatrix
+0x0063c430	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetWorldMatrixByMdlID
+0x0063c500	logic	scene state the renderer needs (original look first): graphicCharacterInstanceUpdateSkeletonounds
 0x0063c540	glue	calls PhyreEngine Phyre_CharacterLighting_GetInstance, Phyre_CharacterLighting_instantiateUniqueMaterialParameters
 0x0063c9e0	glue	calls PhyreEngine Phyre_CharacterLighting_GetInstance
 0x0063ca50	glue	calls PhyreEngine Phyre_CharacterLighting_GetInstance
 0x0063cb00	glue	calls PhyreEngine Phyre_CharacterLightingTweakUtil_GetInstance, Phyre_CharacterLighting_GetInstance, Phyre_CharacterLighting_balanceLumWithGlow
-0x0063cb50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterLightingSetLightDir
-0x0063cb80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterLightingSetLightMatrix
-0x0063cd20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterLightingSetMapIdFlagChanged
+0x0063cb50	logic	scene state the renderer needs (original look first): graphicCharacterLightingSetLightDir
+0x0063cb80	logic	scene state the renderer needs (original look first): graphicCharacterLightingSetLightMatrix
+0x0063cd20	logic	scene state the renderer needs (original look first): graphicCharacterLightingSetMapIdFlagChanged
 0x0063cd40	dead	unreachable from the entry point and every pointer table
 0x0063cd70	dead	unreachable from the entry point and every pointer table
 0x0063cda0	dead	unreachable from the entry point and every pointer table
-0x0063cdd0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterLightingSetShadeCoeff
+0x0063cdd0	logic	scene state the renderer needs (original look first): graphicCharacterLightingSetShadeCoeff
 0x0063cec0	logic	debug-sounding name, but used by logic: 0x833530, 0x834110
 0x0063cf70	dead	unreachable from the entry point and every pointer table
-0x0063d050	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterLightingSetShadeColor
+0x0063d050	logic	scene state the renderer needs (original look first): graphicCharacterLightingSetShadeColor
 0x0063d0b0	dead	unreachable from the entry point and every pointer table
 0x0063d0e0	dead	unreachable from the entry point and every pointer table
 0x0063d110	dead	unreachable from the entry point and every pointer table
@@ -987,7 +987,7 @@
 0x0063e920	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDrawMainMenuWaterEffect
 0x0063e930	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDrawUIAbmapElement
 0x0063eee0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDrawUIElement
-0x0063fc10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDttPageFlag
+0x0063fc10	logic	scene state the renderer needs (original look first): graphicDttPageFlag
 0x0063fc30	logic	default (no rule: ported to be safe)
 0x0063fc40	logic	default (no rule: ported to be safe)
 0x0063fc50	logic	default (no rule: ported to be safe)
@@ -1017,7 +1017,7 @@
 0x00640090	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicEnableChrClusterDelayRelease
 0x00640100	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicEnableHSV
 0x006401c0	platform	only called from platform code (FFXApplication_exitScene)
-0x006401e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFFXApplicationEnableKeyframeAnim
+0x006401e0	logic	scene state the renderer needs (original look first): graphicFFXApplicationEnableKeyframeAnim
 0x00640200	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFieldMapInitialize
 0x00640210	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFieldMapLoad
 0x006403b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFieldMapShutdown
@@ -1026,7 +1026,7 @@
 0x00640660	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFontDraw
 0x00640d70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFontGetEdgeRatio
 0x00640db0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFontGetScreenWH
-0x00640dd0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFontSetUiShadowType
+0x00640dd0	logic	scene state the renderer needs (original look first): graphicFontSetUiShadowType
 0x00640df0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x00640e20	logic	default (no rule: ported to be safe)
 0x00640e70	logic	default (no rule: ported to be safe)
@@ -1036,66 +1036,66 @@
 0x006410d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetCurrentFrame
 0x006410e0	logic	default (no rule: ported to be safe)
 0x00641100	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
-0x00641130	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetCut2DSceneBias
+0x00641130	logic	scene state the renderer needs (original look first): graphicGetCut2DSceneBias
 0x00641150	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetFileReadSemaId
-0x00641160	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetFogColor
-0x006411b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetFogFar
-0x006411c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetFogLimit
-0x006411d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetFogNear
+0x00641160	logic	scene state the renderer needs (original look first): graphicGetFogColor
+0x006411b0	logic	scene state the renderer needs (original look first): graphicGetFogFar
+0x006411c0	logic	scene state the renderer needs (original look first): graphicGetFogLimit
+0x006411d0	logic	scene state the renderer needs (original look first): graphicGetFogNear
 0x006411e0	logic	default (no rule: ported to be safe)
-0x00641230	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetGlobalAmbientColor
+0x00641230	logic	scene state the renderer needs (original look first): graphicGetGlobalAmbientColor
 0x006412b0	logic	default (no rule: ported to be safe)
 0x006412d0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataGetLoc
 0x006412f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetLocTextWithLength
 0x00641310	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetMagic0146Key
-0x00641320	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetMiniMapType
+0x00641320	logic	scene state the renderer needs (original look first): graphicGetMiniMapType
 0x00641330	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetMonsterEtTextureName
-0x00641350	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetNowUIType
+0x00641350	logic	scene state the renderer needs (original look first): graphicGetNowUIType
 0x00641360	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetOldFileReadCompleteSemaId
 0x00641370	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetPtrLogCount
-0x00641390	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetScreenFadeColor
-0x006413e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetScreenFadeLastReason
+0x00641390	logic	scene state the renderer needs (original look first): graphicGetScreenFadeColor
+0x006413e0	logic	scene state the renderer needs (original look first): graphicGetScreenFadeLastReason
 0x006413f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetScreenRatio
-0x00641400	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetTextureVideoInfo
+0x00641400	logic	scene state the renderer needs (original look first): graphicGetTextureVideoInfo
 0x00641410	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetTime
 0x00641420	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetTimeInMicroseconds
 0x00641460	dead	unreachable from the entry point and every pointer table
-0x00641490	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGuidemapSetup
-0x006414f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGuidemapUpdate
+0x00641490	logic	scene state the renderer needs (original look first): graphicGuidemapSetup
+0x006414f0	logic	scene state the renderer needs (original look first): graphicGuidemapUpdate
 0x00641510	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGuildmapCreate
-0x00641660	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicHasRunDrawFilterInThisFrame
-0x00641670	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicHasRunDrawFocusInThisFrame
+0x00641660	logic	scene state the renderer needs (original look first): graphicHasRunDrawFilterInThisFrame
+0x00641670	logic	scene state the renderer needs (original look first): graphicHasRunDrawFocusInThisFrame
 0x00641680	logic	default (no rule: ported to be safe)
 0x00641690	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicInitFMVPlayer
 0x006416c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicInitScene
 0x006419d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicInitialize
-0x00641b90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIs3DScene
-0x00641ba0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsAllSceneAssetsLoaded
-0x00641bb0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetIsBattleMap
+0x00641b90	logic	scene state the renderer needs (original look first): graphicIs3DScene
+0x00641ba0	logic	scene state the renderer needs (original look first): graphicIsAllSceneAssetsLoaded
+0x00641bb0	logic	scene state the renderer needs (original look first): graphicGetIsBattleMap
 0x00641bc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsCharacterLoadingOrInstanciating
-0x00641bd0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsAnyBattleMap
+0x00641bd0	logic	scene state the renderer needs (original look first): graphicIsAnyBattleMap
 0x00641bf0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsFieldMapLoading
-0x00641c00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsInCut2DScene
+0x00641c00	logic	scene state the renderer needs (original look first): graphicIsInCut2DScene
 0x00641c10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsInLucaTheater
-0x00641c20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsBattleMap
+0x00641c20	logic	scene state the renderer needs (original look first): graphicIsBattleMap
 0x00641c40	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x00641c60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsMagicFileAsyncLoadAvailable
-0x00641c70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsMiniMapInBlitzBall
-0x00641cb0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsScreenFadeColorLocked
+0x00641c70	logic	scene state the renderer needs (original look first): graphicIsMiniMapInBlitzBall
+0x00641cb0	logic	scene state the renderer needs (original look first): graphicIsScreenFadeColorLocked
 0x00641cc0	logic	default (no rule: ported to be safe)
 0x00641ce0	logic	default (no rule: ported to be safe)
 0x00641cf0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsVideoPlaying
 0x00641d00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicLevelAnalysisName
 0x00641d90	logic	default (no rule: ported to be safe)
-0x00641da0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicLevelGetNameHash
+0x00641da0	logic	scene state the renderer needs (original look first): graphicLevelGetNameHash
 0x00641db0	glue	only called from glue code (graphicLevelAnalysisName)
-0x00641e20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicLockScreenFadeColor
+0x00641e20	logic	scene state the renderer needs (original look first): graphicLockScreenFadeColor
 0x00641e40	logic	default (no rule: ported to be safe)
 0x00641e60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagic0708ConvBallChr
-0x00642030	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicGetPath
-0x00642040	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicGetToBeDeletePath
-0x00642050	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicSetPath
-0x00642070	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicSetToBeDeletePath
+0x00642030	logic	scene state the renderer needs (original look first): graphicMagicGetPath
+0x00642040	logic	scene state the renderer needs (original look first): graphicMagicGetToBeDeletePath
+0x00642050	logic	scene state the renderer needs (original look first): graphicMagicSetPath
+0x00642070	logic	scene state the renderer needs (original look first): graphicMagicSetToBeDeletePath
 0x00642090	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicVFXLoadSpecialShaderTable
 0x006420b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicVFXLoadTexture
 0x006420e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMagicVFXUnloadLoadSpecialShaderTable
@@ -1111,25 +1111,25 @@
 0x006423b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMenuUpdate
 0x006423d0	logic	default (no rule: ported to be safe)
 0x006423f0	dead	unreachable from the entry point and every pointer table
-0x00642410	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMinimapCameraSetWorldMatrix
-0x006425d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMinimapFogSetEnable
-0x006425f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicMinimapSetEnable
+0x00642410	logic	scene state the renderer needs (original look first): graphicMinimapCameraSetWorldMatrix
+0x006425d0	logic	scene state the renderer needs (original look first): graphicMinimapFogSetEnable
+0x006425f0	logic	scene state the renderer needs (original look first): graphicMinimapSetEnable
 0x00642610	logic	default (no rule: ported to be safe)
 0x00642690	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicNeedResetMapParam
-0x006426a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicObjectSetRotation
-0x006426c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicObjectSetTranslation
+0x006426a0	logic	scene state the renderer needs (original look first): graphicObjectSetRotation
+0x006426c0	logic	scene state the renderer needs (original look first): graphicObjectSetTranslation
 0x006426e0	logic	default (no rule: ported to be safe)
 0x00642730	dead	unreachable from the entry point and every pointer table
-0x00642750	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicPS2LightingSetupEffect
+0x00642750	logic	scene state the renderer needs (original look first): graphicPS2LightingSetupEffect
 0x006427c0	logic	default (no rule: ported to be safe)
-0x006427e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicPreviousLevelGetNameHash
+0x006427e0	logic	scene state the renderer needs (original look first): graphicPreviousLevelGetNameHash
 0x006427f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicProcessPs2DataLoadingCallback
 0x00642860	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicProcessWindowsMessage
 0x006428b0	dead	unreachable from the entry point and every pointer table
-0x006428d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicProject3DPointOntoScreenAbmap
-0x006428f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicProject3DPointOntoScreenConsider2DScene
+0x006428d0	logic	scene state the renderer needs (original look first): graphicProject3DPointOntoScreenAbmap
+0x006428f0	logic	scene state the renderer needs (original look first): graphicProject3DPointOntoScreenConsider2DScene
 0x00642910	dead	unreachable from the entry point and every pointer table
-0x00642930	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicPushTipByLocId
+0x00642930	logic	scene state the renderer needs (original look first): graphicPushTipByLocId
 0x00642950	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicRegistAsyncTask
 0x00642980	platform	imports ReleaseMutex, WaitForSingleObject
 0x006429f0	logic	default (no rule: ported to be safe)
@@ -1140,24 +1140,24 @@
 0x00642c00	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication, Phyre_PRendering_PRenderThread_GetInstance, Phyre_PRendering_PRenderThread_sync
 0x00642c30	dead	unreachable from the entry point and every pointer table
 0x00642c60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetButtonIconScale
-0x00642c70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetHasRunDrawFocusInThisFrame
+0x00642c70	logic	scene state the renderer needs (original look first): graphicResetHasRunDrawFocusInThisFrame
 0x00642c80	logic	default (no rule: ported to be safe)
 0x00642cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetYIQ
 0x00642cd0	logic	default (no rule: ported to be safe)
 0x00642ce0	platform	only called from platform code (FFXApplication_animate)
-0x00642cf0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicScreenGetDttOffset
-0x00642d10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicScreenGetOffset
-0x00642d40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicScreenSetDttOffset
-0x00642d60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicScreenSetOffset
-0x00642d90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSet2DStartLayer
+0x00642cf0	logic	scene state the renderer needs (original look first): graphicScreenGetDttOffset
+0x00642d10	logic	scene state the renderer needs (original look first): graphicScreenGetOffset
+0x00642d40	logic	scene state the renderer needs (original look first): graphicScreenSetDttOffset
+0x00642d60	logic	scene state the renderer needs (original look first): graphicScreenSetOffset
+0x00642d90	logic	scene state the renderer needs (original look first): graphicSet2DStartLayer
 0x00642da0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetAbmap
 0x00642de0	dead	unreachable from the entry point and every pointer table
 0x00642e00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetAkazaNoLightSpecularPassParam
 0x00642e40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetAkazaSpecularPassParam
-0x00642e90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetBackgroundColour
+0x00642e90	logic	scene state the renderer needs (original look first): graphicSetBackgroundColour
 0x00642ec0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetButtonIconScale
 0x00642ef0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetChadist
-0x00642f10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetChrFogFade
+0x00642f10	logic	scene state the renderer needs (original look first): graphicSetChrFogFade
 0x00642f30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetDistortionBlur
 0x00642f50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetDistortionEnable
 0x00642f80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetDistortionSkipped
@@ -1165,7 +1165,7 @@
 0x00642fb0	logic	default (no rule: ported to be safe)
 0x00642fe0	glue	glue name (FMOD or the movie player): movie_disp2
 0x006430e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetFlipVsnc
-0x006430f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetFocusZ
+0x006430f0	logic	scene state the renderer needs (original look first): graphicSetFocusZ
 0x00643150	glue	calls PhyreEngine Phyre_FogEffectManager_GetInstance
 0x00643180	glue	calls PhyreEngine Phyre_FogEffectManager_GetInstance
 0x006431a0	glue	calls PhyreEngine Phyre_FogEffectManager_GetInstance
@@ -1173,16 +1173,16 @@
 0x006431e0	glue	calls PhyreEngine Phyre_FogEffectManager_GetInstance
 0x00643200	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetForceNoVsync
 0x00643260	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetGameOverNotify
-0x00643270	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetGlobalAmbientColor
+0x00643270	logic	scene state the renderer needs (original look first): graphicSetGlobalAmbientColor
 0x006432a0	dead	unreachable from the entry point and every pointer table
 0x006432c0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006432e0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x00643300	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x00643320	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x00643340	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetHSVParam
-0x00643450	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetHas2dMap
-0x00643470	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetHas3dMap
-0x00643490	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetIsBattleMap
+0x00643450	logic	scene state the renderer needs (original look first): graphicSetHas2dMap
+0x00643470	logic	scene state the renderer needs (original look first): graphicSetHas3dMap
+0x00643490	logic	scene state the renderer needs (original look first): graphicSetIsBattleMap
 0x006434c0	dead	unreachable from the entry point and every pointer table
 0x00643500	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006435e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMagicFileAsyncLoadEnable
@@ -1192,11 +1192,11 @@
 0x006436a0	logic	default (no rule: ported to be safe)
 0x006436e0	logic	default (no rule: ported to be safe)
 0x00643700	logic	default (no rule: ported to be safe)
-0x00643720	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMiniMapType
+0x00643720	logic	scene state the renderer needs (original look first): graphicSetMiniMapType
 0x00643730	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMotionBlurEnable
 0x00643750	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMotionBlurWeight
 0x00643770	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetNoLightSpecularPassParam
-0x006437c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetNowUIType
+0x006437c0	logic	scene state the renderer needs (original look first): graphicSetNowUIType
 0x006437e0	logic	default (no rule: ported to be safe)
 0x006437f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetPauseVideoAtEndFrame
 0x00643810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetFlipVsnc_00643810
@@ -1204,16 +1204,16 @@
 0x00643860	logic	default (no rule: ported to be safe)
 0x00643890	logic	default (no rule: ported to be safe)
 0x006438c0	logic	default (no rule: ported to be safe)
-0x006438e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetScreenFadeAlphaMode
-0x00643900	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetScreenFadeColor
-0x00643940	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetScreenFadeLastReason
+0x006438e0	logic	scene state the renderer needs (original look first): graphicSetScreenFadeAlphaMode
+0x00643900	logic	scene state the renderer needs (original look first): graphicSetScreenFadeColor
+0x00643940	logic	scene state the renderer needs (original look first): graphicSetScreenFadeLastReason
 0x00643960	dead	unreachable from the entry point and every pointer table
 0x00643980	logic	default (no rule: ported to be safe)
 0x006439b0	logic	default (no rule: ported to be safe)
 0x00643a00	logic	default (no rule: ported to be safe)
 0x00643a20	logic	default (no rule: ported to be safe)
 0x00643a40	logic	default (no rule: ported to be safe)
-0x00643aa0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetTextureVideoInfo
+0x00643aa0	logic	scene state the renderer needs (original look first): graphicSetTextureVideoInfo
 0x00643af0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetUiDrawType
 0x00643b10	logic	default (no rule: ported to be safe)
 0x00643b30	logic	default (no rule: ported to be safe)
@@ -1242,9 +1242,9 @@
 0x00644800	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUiRemapY
 0x00644820	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUiRemapY2
 0x00644850	dead	unreachable from the entry point and every pointer table
-0x006448d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUnlockScreenFadeColor
+0x006448d0	logic	scene state the renderer needs (original look first): graphicUnlockScreenFadeColor
 0x006448f0	dead	unreachable from the entry point and every pointer table
-0x00644910	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUpdateCrossFade
+0x00644910	logic	scene state the renderer needs (original look first): graphicUpdateCrossFade
 0x00644940	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUpdateDistortionVertex
 0x00644990	platform	only called from platform code (FFXApplication_animate)
 0x006449d0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
@@ -1260,7 +1260,7 @@
 0x00644c70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXAddCopyBufferEventWithRGB
 0x00644ca0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXAddDrawCharacterEvent
 0x00644cf0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXAddDrawZPrePassEvent
-0x00644d40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXAddScreenFadeEvent
+0x00644d40	logic	scene state the renderer needs (original look first): graphicVFXAddScreenFadeEvent
 0x00644db0	logic	default (no rule: ported to be safe)
 0x00644dd0	logic	default (no rule: ported to be safe)
 0x00644de0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXCreate
@@ -1285,7 +1285,7 @@
 0x00645680	dead	unreachable from the entry point and every pointer table
 0x006456a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXSetMeshInstanceName
 0x006456d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXSetPointLightParameters
-0x00645710	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXSetVisible
+0x00645710	logic	scene state the renderer needs (original look first): graphicVFXSetVisible
 0x00645750	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXSetZCorrectionValue
 0x00645780	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXSetup
 0x00645840	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVFXSyncPath
@@ -1301,7 +1301,7 @@
 0x00645de0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVideoPause
 0x00645df0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicVideoUpdate
 0x00645e40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicisVideoAtEndFrame
-0x00645e60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicsRegisterResetScreenFadeDelegation
+0x00645e60	logic	scene state the renderer needs (original look first): graphicsRegisterResetScreenFadeDelegation
 0x00645e90	dead	unreachable from the entry point and every pointer table
 0x00645eb0	logic	default (no rule: ported to be safe)
 0x00645f00	logic	default (no rule: ported to be safe)
@@ -1541,7 +1541,7 @@
 0x006514f0	dead	unreachable from the entry point and every pointer table
 0x00651520	dead	unreachable from the entry point and every pointer table
 0x00651530	dead	unreachable from the entry point and every pointer table
-0x00651650	glue	only called from glue code (0x64fbb0 and 1 more)
+0x00651650	logic	default (no rule: ported to be safe)
 0x006517d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetSplitScreenStat
 0x00651800	logic	default (no rule: ported to be safe)
 0x006518c0	glue	only called from glue code (PhyreScene_fieldMapInitialize)
@@ -1555,13 +1555,13 @@
 0x006522b0	logic	default (no rule: ported to be safe)
 0x006522e0	dead	unreachable from the entry point and every pointer table
 0x00652310	logic	default (no rule: ported to be safe)
-0x006523e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isFading
+0x006523e0	logic	scene state the renderer needs (original look first): PhyreScene_isFading
 0x00652410	dead	unreachable from the entry point and every pointer table
 0x00652470	logic	default (no rule: ported to be safe)
 0x006525e0	dead	unreachable from the entry point and every pointer table
 0x00652600	logic	default (no rule: ported to be safe)
 0x00652660	dead	unreachable from the entry point and every pointer table
-0x006526a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_Project3DPointOntoScreen
+0x006526a0	logic	scene state the renderer needs (original look first): PhyreScene_Project3DPointOntoScreen
 0x006528d0	logic	default (no rule: ported to be safe)
 0x00652910	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x006529c0	dead	unreachable from the entry point and every pointer table
@@ -1668,7 +1668,7 @@
 0x006582e0	logic	default (no rule: ported to be safe)
 0x00658350	logic	default (no rule: ported to be safe)
 0x00658570	logic	default (no rule: ported to be safe)
-0x006587d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_change2DSceneNum
+0x006587d0	logic	scene state the renderer needs (original look first): PhyreScene_change2DSceneNum
 0x006589e0	glue	only called from glue code (PhyreScene_render)
 0x00658ae0	glue	only called from glue code (PhyreScene_render and 1 more)
 0x00658cc0	dead	unreachable from the entry point and every pointer table
@@ -1749,24 +1749,24 @@
 0x0065d780	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_forceUnloadMenuTexture
 0x0065d860	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x0065da80	logic	default (no rule: ported to be safe)
-0x0065de70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getCurrentLevelName
-0x0065de90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getCurrentLevelNameHash
-0x0065dea0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getCurrentMagicPath
+0x0065de70	logic	scene state the renderer needs (original look first): PhyreScene_getCurrentLevelName
+0x0065de90	logic	scene state the renderer needs (original look first): PhyreScene_getCurrentLevelNameHash
+0x0065dea0	logic	scene state the renderer needs (original look first): PhyreScene_getCurrentMagicPath
 0x0065ded0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetLivePointer00ac
 0x0065e050	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getLinearSampler
 0x0065e080	dead	unreachable from the entry point and every pointer table
 0x0065e200	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getMonsterEtTextureName
 0x0065e2f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetLivePointer1232c
-0x0065e310	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getPreviousLevelNameHash
-0x0065e320	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getMinimapViewportSize
-0x0065e3f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getMinimapViewportX
+0x0065e310	logic	scene state the renderer needs (original look first): PhyreScene_getPreviousLevelNameHash
+0x0065e320	logic	scene state the renderer needs (original look first): PhyreScene_getMinimapViewportSize
+0x0065e3f0	logic	scene state the renderer needs (original look first): PhyreScene_getMinimapViewportX
 0x0065e4a0	glue	only called from glue code (0x650340 and 1 more)
-0x0065e560	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getMinimapViewportY
-0x0065e5e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getToBeDeleteMagicPath
+0x0065e560	logic	scene state the renderer needs (original look first): PhyreScene_getMinimapViewportY
+0x0065e5e0	logic	scene state the renderer needs (original look first): PhyreScene_getToBeDeleteMagicPath
 0x0065e630	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetField0ddc
 0x0065e640	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getVideoTexture
 0x0065e650	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_GetField0dd8
-0x0065e660	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getViewProjectionMatrix
+0x0065e660	logic	scene state the renderer needs (original look first): PhyreScene_getViewProjectionMatrix
 0x0065e9e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_getYIQParam
 0x0065eaf0	logic	default (no rule: ported to be safe)
 0x0065eb60	glue	only called from glue code (0x651de0)
@@ -1779,7 +1779,7 @@
 0x0065ee40	logic	default (no rule: ported to be safe)
 0x0065efa0	glue	only called from glue code (PhyreScene_render)
 0x0065efd0	glue	only called from glue code (PhyreScene_loadMagicVFXTexture)
-0x0065f050	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_hide2DLayer
+0x0065f050	logic	scene state the renderer needs (original look first): PhyreScene_hide2DLayer
 0x0065f0e0	logic	default (no rule: ported to be safe)
 0x0065f1f0	glue	only called from glue code (PhyreScene_render)
 0x0065f240	dead	unreachable from the entry point and every pointer table
@@ -1796,14 +1796,14 @@
 0x0065fee0	dead	unreachable from the entry point and every pointer table
 0x0065ff10	dead	unreachable from the entry point and every pointer table
 0x0065ff30	dead	unreachable from the entry point and every pointer table
-0x006601d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_is3DScene
+0x006601d0	logic	scene state the renderer needs (original look first): PhyreScene_is3DScene
 0x006601e0	glue	only called from glue code (PhyreScene_processVFXDrawEvent and 1 more)
 0x00660240	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_00660240
 0x00660270	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_00660270
 0x006602a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_006602a0
 0x006602d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_006602d0
 0x00660300	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_00660300
-0x00660330	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isAnyBattleMap
+0x00660330	logic	scene state the renderer needs (original look first): PhyreScene_isAnyBattleMap
 0x00660350	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isDrawingNonUI2DScene
 0x006603c0	logic	default (no rule: ported to be safe)
 0x00660400	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isOpeningScreenPlaying
@@ -1965,17 +1965,17 @@
 0x0066ca30	dead	unreachable from the entry point and every pointer table
 0x0066ca40	dead	unreachable from the entry point and every pointer table
 0x0066ca50	dead	unreachable from the entry point and every pointer table
-0x0066ca60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setAbmapCamera
+0x0066ca60	logic	scene state the renderer needs (original look first): PhyreScene_setAbmapCamera
 0x0066cb40	dead	unreachable from the entry point and every pointer table
 0x0066cb50	dead	unreachable from the entry point and every pointer table
 0x0066cb70	dead	unreachable from the entry point and every pointer table
 0x0066cb80	dead	unreachable from the entry point and every pointer table
-0x0066cbe0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setCameraAspectRatio
-0x0066cda0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setCameraFOVy
-0x0066ce70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setCameraWorldMatrix
+0x0066cbe0	logic	scene state the renderer needs (original look first): PhyreScene_setCameraAspectRatio
+0x0066cda0	logic	scene state the renderer needs (original look first): PhyreScene_setCameraFOVy
+0x0066ce70	logic	scene state the renderer needs (original look first): PhyreScene_setCameraWorldMatrix
 0x0066cf70	glue	only called from glue code (graphicSetChadist)
-0x0066cf80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setCurrentLevelName
-0x0066cf90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setCurrentLevelNameHash
+0x0066cf80	logic	scene state the renderer needs (original look first): PhyreScene_setCurrentLevelName
+0x0066cf90	logic	scene state the renderer needs (original look first): PhyreScene_setCurrentLevelNameHash
 0x0066cfb0	glue	calls PhyreEngine Phyre_PString_Assign
 0x0066cfc0	dead	unreachable from the entry point and every pointer table
 0x0066cfd0	dead	unreachable from the entry point and every pointer table
@@ -1993,22 +1993,22 @@
 0x0066d5c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setMaterialVisibilityBySetAlpha
 0x0066d610	glue	calls PhyreEngine Phyre_PRedBlackTree_successor
 0x0066d6f0	dead	unreachable from the entry point and every pointer table
-0x0066d810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setMeshInstanceWorldMatrix
-0x0066d910	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setMeshVisible
-0x0066d940	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setMinimapCameraWorldMatrix
+0x0066d810	logic	scene state the renderer needs (original look first): PhyreScene_setMeshInstanceWorldMatrix
+0x0066d910	logic	scene state the renderer needs (original look first): PhyreScene_setMeshVisible
+0x0066d940	logic	scene state the renderer needs (original look first): PhyreScene_setMinimapCameraWorldMatrix
 0x0066d9c0	dead	unreachable from the entry point and every pointer table
 0x0066da00	dead	unreachable from the entry point and every pointer table
 0x0066da40	dead	unreachable from the entry point and every pointer table
 0x0066da80	dead	unreachable from the entry point and every pointer table
 0x0066dac0	dead	unreachable from the entry point and every pointer table
-0x0066db00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setObjectRotation
-0x0066e3e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setObjectTranslation
+0x0066db00	logic	scene state the renderer needs (original look first): PhyreScene_setObjectRotation
+0x0066e3e0	logic	scene state the renderer needs (original look first): PhyreScene_setObjectTranslation
 0x0066e4f0	logic	default (no rule: ported to be safe)
 0x0066e5e0	logic	default (no rule: ported to be safe)
 0x0066e610	dead	unreachable from the entry point and every pointer table
 0x0066e620	dead	unreachable from the entry point and every pointer table
 0x0066e7b0	logic	default (no rule: ported to be safe)
-0x0066e800	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setTextureVideoInfo
+0x0066e800	logic	scene state the renderer needs (original look first): PhyreScene_setTextureVideoInfo
 0x0066e830	glue	calls PhyreEngine Phyre_PString_Assign
 0x0066e840	dead	unreachable from the entry point and every pointer table
 0x0066e850	glue	only called from glue code (graphicisVideoAtEndFrame)
@@ -2021,7 +2021,7 @@
 0x0066efd0	dead	unreachable from the entry point and every pointer table
 0x0066f010	logic	default (no rule: ported to be safe)
 0x0066f140	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_setupPostProcessParams
-0x0066f2f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_show2DLayer
+0x0066f2f0	logic	scene state the renderer needs (original look first): PhyreScene_show2DLayer
 0x0066f380	logic	default (no rule: ported to be safe)
 0x0066f480	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_showAutoSavingPrompt
 0x0066f4d0	dead	unreachable from the entry point and every pointer table
@@ -2198,7 +2198,7 @@
 0x0067ac40	platform	only called from platform code (FFXApplication_exitApplication)
 0x0067ac60	platform	only called from platform code (TrophyGetError)
 0x0067ac70	logic	default (no rule: ported to be safe)
-0x0067ac80	glue	only called from glue code (graphicInitScene and 1 more)
+0x0067ac80	logic	default (no rule: ported to be safe)
 0x0067ac90	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): TrophyManager_Instance
 0x0067acc0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): TrophyManager_IsInstallCompleted
 0x0067acd0	dead	unreachable from the entry point and every pointer table
