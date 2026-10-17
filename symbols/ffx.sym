@@ -10296,6 +10296,8 @@
 0x008f2f70 function Identity_008f2f70         # cdecl(x) -> x; TOMkpSetEnvSubFont and 0x008ed320.. call it; name ours
 0x008f30b0 function TOAdpValueFontLClutRight     # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050c1a0 TOAdpValueFontLClutRight's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLClutTypeRGBA, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
 0x008f3170 function TOAdpValueFontLClutRightRGBA # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050e9d0 TOAdpValueFontLClutRightRGBA's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLAbmap, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
+0x008f3300 function TOMkpBtlDigitRight_008f3300 # cdecl(ret, value, x, y, alpha) -> ret: ToMakeBtlEasyDigitRight(value, f32(x) + 4.0, f32(y) + dy, alpha, 0.8, 0.0), dy -3.0 or -2.0 for languages 1..8 and >= 12; caller 0x0076f850; name ours
+0x008f3420 function TOMkpBtlDigitRight_008f3420 # cdecl(ret, value, x, y, alpha) -> ret: ToMakeBtlEasyDigitRight(value, f32(x) + 0.0, f32(y) + dy, alpha, scale, 0.0); language 0 dy -5.5 scale 0.77, 9 dy -6.0, else dy -5.0, scale 0.8; caller 0x0076f850; name ours
 0x008f34c0 function TOBtlDrawWeaponAbilityWindow # fh v3:exact 0x008f34c0
 0x008f3820 function TOBtlInitGS               # fh v3:bsim1.00 0x008f3820
 0x008f38c0 function RatioSquared # cdecl(a, b) -> float: ((float)a / (float)b)^2, f32 stores between; name ours
@@ -15177,6 +15179,9 @@
 0x0133d74c label    g_BtlWindowState          # nine words zeroed by TOCloseBtlWindow
 0x0133f510 label    g_BtlSimpleHelpMes        # TOBtlCloseSimpleHelpMes clears it
 0x0133f520 label    g_BtlSignWindow           # TOBtlCloseSignWindow clears it
+0x0133f530 label    g_BtlHelpTextH            # i16 height TOGetMessageWH gives g_BtlHelpText (TOBtlSetDirectHelpMes, TOBtlSetCommandHelpMes); name ours
+0x0133f534 label    g_BtlHelpTextW            # f32 width TOGetMessageWH gives g_BtlHelpText; name ours
+0x0133f538 label    g_BtlHelpText             # 0x80-byte battle help text: cleared, then the text copied (unbounded) by TOBtlSetDirectHelpMes/TOBtlSetCommandHelpMes; name ours
 0x0133f798 label    g_BtlLuluLimitTbl         # 16 bytes: running sums of the ASCII digits TOBtlSetLuluLimitTbl gets
 0x0133f7b4 label    g_BtlCurPos               # 4 cursor positions of 8 bytes (x +0, y +4, z +6, u16) pushed by TOBtlSetCurPos
 0x0133faa0 label g_TODapsUsed # i16 bytes used in g_TODapsBuffer (TODapsString, TODapsSetPos, TODapsInit); name ours

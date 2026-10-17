@@ -6016,6 +6016,26 @@ ported! {
         let at = (&raw mut width) as usize as u32;
         tolib::bridge::to_make_btl_easy_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
     }
+    /// `TOMkpBtlDigitRight_008f3300(ret, value, x, y, alpha)`.
+    TOMkpBtlDigitRight_008f3300 @ 0x008f_3300 => extern "C" fn to_mkp_btl_digit_right_0(ret: u32, value: u32, x: u32, y: u32, alpha: u32) -> u32 {
+        tolib::bridge::to_mkp_btl_digit_right(&mut mem(), 0, [ret, value, x, y, alpha], call_sym)
+    }
+    /// `TOMkpBtlDigitRight_008f3420(ret, value, x, y, alpha)`.
+    TOMkpBtlDigitRight_008f3420 @ 0x008f_3420 => extern "C" fn to_mkp_btl_digit_right_1(ret: u32, value: u32, x: u32, y: u32, alpha: u32) -> u32 {
+        tolib::bridge::to_mkp_btl_digit_right(&mut mem(), 1, [ret, value, x, y, alpha], call_sym)
+    }
+    /// `TOBtlSetDirectHelpMes(text)`. Void: where the original leaves
+    /// `eax` set, no caller reads it (`tools/check-clobber.py`).
+    TOBtlSetDirectHelpMes @ 0x0089_9ec0 => extern "C" fn to_btl_set_direct_help_mes(text: u32) {
+        let _ = tolib::bridge::to_btl_set_direct_help_mes(&mut mem(), text, call_sym);
+    }
+    /// `TOBtlSetCommandHelpMes(command)`.
+    TOBtlSetCommandHelpMes @ 0x0089_9970 => extern "C" fn to_btl_set_command_help_mes(command: u32) -> u32 {
+        let mut scratch = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(scratch) as usize as u32;
+        tolib::bridge::to_btl_set_command_help_mes(&mut mem(), command, at, call_sym)
+    }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32
