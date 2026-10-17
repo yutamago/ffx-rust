@@ -12077,7 +12077,7 @@ fn round21_font(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             4u8, 0x2c, 0x2d, 0x2e, 0x2f, 0x2a, 0x2b, 0x28, 0x29, 0x26, 0x27, 6, 0x47, 0x3a, 0x5c,
             0x5e,
         ];
-        if rng.next() % 4 != 0 {
+        if !rng.next().is_multiple_of(4) {
             bytes[0] = leads[(rng.next() % 16) as usize];
         }
         if rng.next().is_multiple_of(3) {
@@ -12208,7 +12208,7 @@ fn round21_widths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let codes = [
         0x30u8, 0x31, 0x45, 0x47, 0x3a, 0x7a, 7, 0xb, 0x12, 0x13, 0x22, 0x2c, 0x2d, 0x10, 0x5c,
     ];
-    let mut random_text = |rng: &mut Xorshift, n: u32| -> Vec<u8> {
+    let random_text = |rng: &mut Xorshift, n: u32| -> Vec<u8> {
         let mut v = vec![0u8; 0x100];
         let mut k = 0usize;
         while (k as u32) < n {
