@@ -982,6 +982,96 @@ ported! {
     PStringTree_Find @ 0x006b_e750 => extern "thiscall" fn pstring_tree_find(this: u32, key: u32) -> u32 {
         ut::pstring_tree_find(&mem(), this, key)
     }
+
+    // ---- round 7 ----
+    /// `PhyreScene_SetMeshesVisible(this, on)`.
+    PhyreScene_SetMeshesVisible @ 0x0066_e7b0 => extern "thiscall" fn scene_set_meshes_visible(this: u32, on: u32) {
+        st::scene_set_meshes_visible(&mut mem(), this, on);
+    }
+    /// `PhyreScene_SetColourPair(this, r, g, b, r2, g2, b2, second)`.
+    PhyreScene_SetColourPair @ 0x0066_ea70 => extern "thiscall" fn scene_set_colour_pair(this: u32, r: f32, g: f32, b: f32, r2: f32, g2: f32, b2: f32, second: u32) {
+        st::scene_set_colour_pair(&mut mem(), this, [r, g, b, r2, g2, b2], second);
+    }
+    /// `SegmentList_AllReady(this)`.
+    SegmentList_AllReady @ 0x0065_2250 => extern "fastcall" fn segment_list_all_ready(this: u32) -> u32 {
+        st::segments_ready(&mut mem(), this)
+    }
+    /// `ShadowManager_SetQuality(this, q)`.
+    ShadowManager_SetQuality @ 0x006c_eaa0 => extern "thiscall" fn shadow_set_quality(this: u32, q: u32) -> u32 {
+        ut::shadow_set_quality(&mut mem(), this, q)
+    }
+    /// `BlurEffectEx_SetPositiveParams(this, a, b, c, d)`.
+    BlurEffectEx_SetPositiveParams @ 0x006c_4620 => extern "thiscall" fn blur_ex_set_positive_params(this: u32, a: f32, b: f32, c: f32, d: f32) {
+        ut::set_positive_floats(&mut mem(), this, [a, b, c, d]);
+    }
+    /// `RenderParams_Reset(this)`.
+    RenderParams_Reset @ 0x006c_47a0 => extern "thiscall" fn render_params_reset(this: u32) -> u32 {
+        ut::render_params_reset(&mut mem(), this)
+    }
+    /// `FloatHeap_PushHeap(base, hole, top, &value, less)`.
+    FloatHeap_PushHeap @ 0x006c_7730 => extern "C" fn float_push_heap(base: u32, hole: u32, top: u32, value: u32, less: u32) -> u32 {
+        ut::float_push_heap(&mut mem(), base, hole, top, value, less)
+    }
+    /// `FloatSort_Median3(a, b, c, less)`.
+    FloatSort_Median3 @ 0x006c_74d0 => extern "C" fn float_median3(a: u32, b: u32, c: u32, less: u32) -> u32 {
+        ut::float_median3(&mut mem(), a, b, c, less)
+    }
+    /// `TexAnim_StartNew(i, which, pos)`.
+    TexAnim_StartNew @ 0x0077_fc90 => extern "C" fn tex_anim_start_new(i: u32, which: u32, pos: u32) -> u32 {
+        ut::tex_anim_start(&mut mem(), 0, i, which, pos)
+    }
+    /// `TexAnim_StartOld(i, which, pos)`.
+    TexAnim_StartOld @ 0x0078_0750 => extern "C" fn tex_anim_start_old(i: u32, which: u32, pos: u32) -> u32 {
+        ut::tex_anim_start(&mut mem(), 0x400, i, which, pos)
+    }
+    /// `CheatIcons_InitFlashTable(this)`.
+    CheatIcons_InitFlashTable @ 0x006f_7700 => extern "fastcall" fn cheat_icons_init_flash_table(this: u32) -> u32 {
+        ut::init_flash_table(&mut mem(), this)
+    }
+    /// `ShadowEntry_Init(this, owner)`.
+    ShadowEntry_Init @ 0x006d_3560 => extern "thiscall" fn shadow_entry_init(this: u32, owner: u32) -> u32 {
+        ut::shadow_entry_init(&mut mem(), this, owner)
+    }
+    /// `TextureAnimationManager_FindMaterialIndex(this, name)`.
+    TextureAnimationManager_FindMaterialIndex @ 0x006b_20a0 => extern "thiscall" fn tex_anim_material_index(this: u32, name: u32) -> u32 {
+        ut::tex_anim_material_index(&mem(), this, name)
+    }
+    /// `TextureAnimationManager_FindAnimation(this, name)`.
+    TextureAnimationManager_FindAnimation @ 0x006b_1ef0 => extern "thiscall" fn tex_anim_find_animation(this: u32, name: u32) -> u32 {
+        ut::tex_anim_find_animation(&mem(), this, name)
+    }
+    /// `ParamList_SetAllFloat(this, v)`.
+    ParamList_SetAllFloat @ 0x006b_47e0 => extern "thiscall" fn param_list_set_all_float(this: u32, v: f32) {
+        ut::set_all_params(&mut mem(), this, v);
+    }
+    /// `RenderConst_180()`.
+    RenderConst_180 @ 0x006c_26d0 => extern "C" fn render_const_180() -> u32 {
+        ut::RENDER_CONST_180
+    }
+    /// `RenderConst_51()`.
+    RenderConst_51 @ 0x006c_2700 => extern "C" fn render_const_51() -> u32 {
+        ut::RENDER_CONST_51
+    }
+    /// `RenderFlag_Get()`.
+    RenderFlag_Get @ 0x006b_c960 => extern "C" fn render_flag_get() -> u32 {
+        ut::render_flag(&mem())
+    }
+    /// `Buffer_GetSizeBytes(this)`.
+    Buffer_GetSizeBytes @ 0x006f_7bd0 => extern "fastcall" fn buffer_size_bytes(this: u32) -> u32 {
+        ut::buffer_size_bytes(&mem(), this)
+    }
+    /// `Buffer_GetSizeBytes2(this)`: the same code.
+    Buffer_GetSizeBytes2 @ 0x006f_7c00 => extern "fastcall" fn buffer_size_bytes2(this: u32) -> u32 {
+        ut::buffer_size_bytes(&mem(), this)
+    }
+    /// `PhyreFIOS_LoadPrxComplete()`.
+    PhyreFIOS_LoadPrxComplete @ 0x006f_9b70 => extern "C" fn prx_complete() -> u32 {
+        ut::prx_complete(&mem())
+    }
+    /// `PhyreFIOS_LoadPrxIdle()`.
+    PhyreFIOS_LoadPrxIdle @ 0x006f_9b80 => extern "C" fn prx_idle() -> u32 {
+        ut::prx_idle(&mem())
+    }
 }
 
 /// A singleton's pointer.

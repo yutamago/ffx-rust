@@ -838,7 +838,69 @@ pub mod bridge {
         }
     }
 
-    /// `graphicSetTextureVideoInfo(a, b)`: `PhyreScene_setTextureVideoInfo`
+    /// `PhyreScene_SetMeshesVisible(this, on)` (`0x0066e7b0`): every mesh of
+    /// the list at `+0x11d0` (`+0x11c8` of them) with a draw entry gets
+    /// its draw pointer (`+0x1c` of the entry) set to the mesh, or 0.
+    pub fn scene_set_meshes_visible(m: &mut impl Mem, scene: u32, on: u32) {
+        let on = on & 0xff != 0;
+        let mut i = 0;
+        while i < m.read::<u32>(scene + 0x11c8) {
+            let meshes: u32 = m.read(scene + 0x11d0);
+            let mesh: u32 = m.read(meshes + 4 * i);
+            if mesh != 0 {
+                let draw: u32 = m.read(mesh + 0x1c);
+                if draw != 0 {
+                    m.write(draw + 0x1c, if on { mesh } else { 0 });
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// `PhyreScene_SetColourPair(this, r, g, b, r2, g2, b2, second)`
+    /// (`0x0066ea70`): two RGBA colours at `+0xfc8c` (or `+0xfcac` with
+    /// `second`): `(r, g, b, 1)` and `(r2, g2, b2, 0)`.
+    pub fn scene_set_colour_pair(m: &mut impl Mem, scene: u32, c: [f32; 6], second: u32) {
+        let at = scene + if second & 0xff != 0 { 0xfcac } else { 0xfc8c };
+        let w = [
+            float_bits(c[0]),
+            float_bits(c[1]),
+            float_bits(c[2]),
+            1f32.to_bits(),
+            float_bits(c[3]),
+            float_bits(c[4]),
+            float_bits(c[5]),
+            0,
+        ];
+        for (i, v) in (0u32..).zip(w) {
+            m.write(at + 4 * i, v);
+        }
+    }
+
+    /// `SegmentList_AllReady(this)` (`0x00652250`, fastcall): when
+    /// pending (`+0x24`), and every segment of `+0x54` (`+0x58` of them)
+    /// is null or its scene state (`*(scene +0x60)[i]`) is 1, clears the
+    /// pending byte and returns 1; else 0.
+    pub fn segments_ready(m: &mut impl Mem, this: u32) -> u32 {
+        if m.read::<u8>(this + 0x24) == 0 {
+            return 0;
+        }
+        let n: u32 = m.read(this + 0x58);
+        let list: u32 = m.read(this + 0x54);
+        for i in 0..n {
+            let seg: u32 = m.read(list + 4 * i);
+            if seg != 0 {
+                let scene = SCENE.get(m);
+                let states: u32 = m.read(scene + 0x60);
+                if m.read::<u32>(states + 4 * i) != 1 {
+                    return 0;
+                }
+            }
+        }
+        m.write(this + 0x24, 0u8);
+        1
+    }
+
     /// and `g_GraphicTextureVideoInfo = b << 8 | a` (16 bits). Returns the
     /// scene call's `eax`.
     pub fn set_texture_video_info(h: &mut impl Host, a: u32, b: u32) -> u32 {

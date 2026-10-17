@@ -526,6 +526,30 @@ Small functions the render layer's callers rely on
   text: the pointer without its flag bit, `strcmp` order, by pointer when
   either is null).
 
+Round 7:
+
+- Scene: `PhyreScene_SetMeshesVisible(on)` (`0x0066e7b0`) sets the draw
+  pointer of every mesh in `+0x11d0` (`+0x11c8`); `PhyreScene_SetColourPair`
+  (`0x0066ea70`) stores `(r, g, b, 1)` and `(r2, g2, b2, 0)` at `+0xfc8c`,
+  or `+0xfcac` for the second pair; `SegmentList_AllReady` (`0x00652250`)
+  waits for every segment's scene state (`*(scene +0x60)[i]`) to be 1.
+- `ShadowManager_SetQuality(q)` (`0x006ceaa0`): `g_ShadowSize` 4096, 2048
+  or 1024 for quality 1-3; `ShadowEntry_Init` (`0x006d3560`).
+- `BlurEffectEx_SetPositiveParams` (`0x006c4620`): only floats above 0
+  replace `+0x5c..+0x68`; `RenderParams_Reset` (`0x006c47a0`);
+  `ParamList_SetAllFloat` (`0x006b47e0`).
+- Texture animation: `TexAnim_StartNew`/`Old(i, which, pos)` (`0x0077fc90`,
+  `0x00780750`) restart one work animation (at work `+0` or `+0x400`);
+  `TextureAnimationManager_FindMaterialIndex` (`0x006b20a0`, -1 when
+  absent) and `_FindAnimation` (`0x006b1ef0`) look names up by `PString`
+  text.
+- `FloatHeap_PushHeap` (`0x006c7730`) and `FloatSort_Median3`
+  (`0x006c74d0`), the rest of the float sort with a `less` callback;
+  `CheatIcons_InitFlashTable` (`0x006f7700`, the nine cheat-overlay
+  `.swf` paths); `Buffer_GetSizeBytes` (`0x006f7bd0`, `0x006f7c00`);
+  `RenderConst_180`/`51`, `RenderFlag_Get`;
+  `PhyreFIOS_LoadPrxComplete`/`Idle` (`0x006f9b70`, `0x006f9b80`).
+
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
 not atomic, and loader threads share strings, so it stays original.
