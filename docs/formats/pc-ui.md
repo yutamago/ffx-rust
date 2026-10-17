@@ -169,6 +169,26 @@ Tests are strict (`<`) on all four edges; any NaN misses.
   inside and held, else 4; kind 3 (release) moves phase 1 to 2 when
   outside, sets 4, `+0x17`, the end position and the drag.
 
+## Speed-up booster
+
+`SpdCtrl_ScaleElapsedTime` (`0x006f7340`, Fahrenheit's name) scales the
+frame time while the PC booster is on, except where these say no (names
+ours):
+
+- `SpdCtrl_IsMapExcluded(map)` (`0x006f6fa0`): 1 for the maps at
+  `g_SpdCtrlExcludedMaps` (`0x00b4bf74`: 0x3e, 0x163, 0x181), and for map
+  0x118 outside battle (`MsBattleGetStatus` not 1) while
+  `getScenerioFlag` is 0x71c..0x721 (asked only then).
+- `SpdCtrl_IsMagicExcluded()` (`0x006f6ff0`): `al` = 1 when a magic file
+  is loaded (`MagicFile_GetHandle` not -1) and its magic
+  (`MagicFile_GetMagicId`) is 0x15b, 0x186..0x18d, 0x19b..0x19e, 0x1a9,
+  0x1b7..0x1bd, 0x1bf..0x1c2, 0x1eb..0x1ef, 0x1f4, 0x2b9 or 0x2ba (two
+  jump tables; signed range checks), unless `g_BtlWindowOpen` is set and
+  `TOGetBtlWindowControlEnable()` returns 1. The upper bytes of `eax`
+  are what the switch left (-1 with no magic file, the id less the range
+  start when outside both tables, the id for 0x1b7..0x1bd, the control
+  call's result), reproduced by the port.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

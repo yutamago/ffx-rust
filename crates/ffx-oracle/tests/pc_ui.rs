@@ -17,6 +17,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
 
 const IGGY_SET_INT: u32 = 0x00a2_8d30;
@@ -34,6 +35,8 @@ const ABMAP_FLAG_CONNECTED_LINKS: u32 = 0x00a5_8df0;
 const ABMAP_TRY_CHANGE_PLAYER: u32 = 0x00a5_8ec0;
 const ABMAP_INIT_PLY_TAG: u32 = 0x00a5_7f80;
 const ABMAP_POSITION_PLY_TAG: u32 = 0x00a5_8080;
+const SPD_CTRL_IS_MAP_EXCLUDED: u32 = 0x006f_6fa0;
+const SPD_CTRL_IS_MAGIC_EXCLUDED: u32 = 0x006f_6ff0;
 const GUI_TOUCH_RESET_BUTTONS: u32 = 0x0068_ab30;
 const GUI_TOUCH_HANDLE_EVENT: u32 = 0x0068_b470;
 const GUI_TOUCH_HOVER: u32 = 0x0068_b6d0;
@@ -167,6 +170,16 @@ impl Twin {
         let x = self.a.alloc(len).unwrap();
         assert_eq!(self.b.alloc(len).unwrap(), x);
         x
+    }
+
+    /// Puts `code` in the oracles' code space and a `jmp` to it at `at`
+    /// (stubs of neighbouring functions would overlap in place).
+    fn jump(&mut self, at: u32, code: &[u8]) {
+        let to = self.a.alloc_code(code).unwrap();
+        assert_eq!(self.b.alloc_code(code).unwrap(), to);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        self.put(at, &j);
     }
 
     fn alloc_bytes(&mut self, bytes: &[u8]) -> u32 {
@@ -767,7 +780,7 @@ impl Log {
             c.extend([0xd9, 0x05]);
             c.extend(f.to_le_bytes());
             c.push(0xc3);
-            t.put(at, &c);
+            t.jump(at, &c);
             return;
         }
         let (base, mask, stride) = ret;
@@ -778,7 +791,7 @@ impl Log {
         c.push(0x05);
         c.extend(base.to_le_bytes());
         c.push(0xc3);
-        t.put(at, &c);
+        t.jump(at, &c);
     }
 
     fn rewind(&self, t: &mut Twin) {
@@ -1013,6 +1026,92 @@ fn abmap_position_ply_tag_matches_the_original() {
                 Conv::Cdecl,
                 &[chr],
                 |b| Res::Int(abmap::position_ply_tag(&mut Run(b), chr)),
+            );
+        }
+    }
+}
+
+#[test]
+fn spd_ctrl_is_map_excluded_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x5bd0_0001);
+        let log = Log::new(&mut t);
+        let table = t.a.rebase(spdctrl::EXCLUDED_MAPS.sym);
+        let maps: Vec<u32> = (0..3)
+            .map(|k| {
+                u32::from_le_bytes(
+                    Oracle::read(&mut t.a, table + 4 * k, 4)
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                )
+            })
+            .collect();
+        for n in 0..800u32 {
+            log.rewind(&mut t);
+            let status = [1, 0, 2, rng.next()][n as usize % 4];
+            log.stub(&mut t, spdctrl::MS_BATTLE_GET_STATUS, 1, 0, (status, 0, 0));
+            let scenario = match rng.below(3) {
+                0 => 0x71b + rng.below(8),
+                1 => rng.next(),
+                _ => (rng.next() & 0xffff_0000) | (0x71c + rng.below(6)),
+            };
+            log.stub(&mut t, spdctrl::GET_SCENERIO_FLAG, 2, 0, (scenario, 0, 0));
+            let map = match rng.below(4) {
+                0 => 0x118,
+                1 => maps[rng.below(3) as usize],
+                2 => rng.below(0x200),
+                _ => rng.next(),
+            };
+            t.check(
+                &format!("map {map:#x} status {status:#x} scenario {scenario:#x}"),
+                SPD_CTRL_IS_MAP_EXCLUDED,
+                Conv::Cdecl,
+                &[map],
+                |b| Res::Int(spdctrl::is_map_excluded(&mut Run(b), map)),
+            );
+        }
+    }
+}
+
+#[test]
+fn spd_ctrl_is_magic_excluded_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x5bd0_0002);
+        let log = Log::new(&mut t);
+        let window = t.a.rebase(spdctrl::BTL_WINDOW_OPEN.sym);
+        let mut ids: Vec<u32> = (0x140..0x2d0).collect();
+        ids.extend([
+            0,
+            0xffff_ffff,
+            0x8000_0000,
+            0x8000_0170,
+            0xffff_ff70,
+            0x1_015b,
+            0x1_01b7,
+            0x7fff_ffff,
+        ]);
+        for (n, &id) in ids.iter().chain(&ids).enumerate() {
+            log.rewind(&mut t);
+            let handle = if n % 7 == 0 { u32::MAX } else { rng.below(4) };
+            log.stub(&mut t, spdctrl::MAGIC_FILE_GET_HANDLE, 1, 0, (handle, 0, 0));
+            log.stub(&mut t, spdctrl::MAGIC_FILE_GET_MAGIC_ID, 2, 0, (id, 0, 0));
+            let control = [1, 0, 0x101, rng.next()][rng.below(4) as usize];
+            log.stub(
+                &mut t,
+                spdctrl::TO_GET_BTL_WINDOW_CONTROL_ENABLE,
+                3,
+                0,
+                (control, 0, 0),
+            );
+            let open = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
+            t.put(window, &open.to_le_bytes());
+            t.check(
+                &format!("magic {id:#x} handle {handle:#x} open {open:#x} control {control:#x}"),
+                SPD_CTRL_IS_MAGIC_EXCLUDED,
+                Conv::Cdecl,
+                &[],
+                |b| Res::Int(spdctrl::is_magic_excluded(&mut Run(b))),
             );
         }
     }

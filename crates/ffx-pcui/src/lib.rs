@@ -8,8 +8,10 @@
 //! - [`iggy`]: Iggy data values and the menus' handler slots;
 //! - [`abmap`]: the sphere grid screen (`g_Abmap`) helpers the PC port
 //!   placed beside its UI code;
+//! - [`spdctrl`]: where the speed-up booster stays off;
 //! - [`touch`]: the pointer (mouse and touch) zones of the PC screens.
 
 pub mod abmap;
 pub mod iggy;
+pub mod spdctrl;
 pub mod touch;

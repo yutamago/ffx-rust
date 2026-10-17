@@ -3076,6 +3076,8 @@
 0x006f6950 function TextUtil_terminate           # structure: frees the text buffers and releases the clusters (ClusterManager_releasePCluster); Switch TextUtil::terminate
 0x006f6dc0 function LoadCameraData            # fh v3:exact 0x006f6f00
 0x006f6f80 function UnloadCameraData          # fh v3:bsim1.00 0x006f70c0
+0x006f6fa0 function SpdCtrl_IsMapExcluded     # cdecl(map) -> 0/1: map in the 3 words at 0x00b4bf74 (0x3e, 0x163, 0x181), or map 0x118 outside battle (MsBattleGetStatus != 1) with getScenerioFlag 0x71c..0x721; SpdCtrl_ScaleElapsedTime keeps the speed-up booster off on it (g_CurrentMapNo); name ours
+0x006f6ff0 function SpdCtrl_IsMagicExcluded   # cdecl() -> al: the shown magic (MagicFile_GetHandle != -1, MagicFile_GetMagicId in 0x15b, 0x186-0x18d, 0x19b-0x19e, 0x1a9, 0x1b7-0x1bd, 0x1bf-0x1c2, 0x1eb-0x1ef, 0x1f4, 0x2b9, 0x2ba: two jump tables) unless g_BtlWindowOpen and TOGetBtlWindowControlEnable() == 1; SpdCtrl_ScaleElapsedTime keeps the booster off in battle then; name ours
 0x006f72f0 function SpdCtrl_Init              # fh v3:exact 0x006f73e0
 0x006f7330 function SpdCtrl_IsSpeedingUp      # fh v3:bsim1.00 0x006f7420
 0x006f7340 function SpdCtrl_ScaleElapsedTime  # fh v3:cg5 0x6f7430
@@ -13945,6 +13947,7 @@
 0x00b4ba10 label CCallback_StatsAndAchievements_UserAchievementStored_t_0__vftable # fh v4:imported CCallback<StatsAndAchievements,UserAchievementStored_t,0>::vftable
 0x00b4bbcc label crossThreadImpl_vftable      # fh v4:imported crossThreadImpl::vftable
 0x00b4bc04 label FFIggyPauseMenu_vftable      # fh v4:imported FFIggyPauseMenu::vftable
+0x00b4bf74 label    g_SpdCtrlExcludedMaps        # 3 map numbers (0x3e, 0x163, 0x181) where the speed-up booster stays off (SpdCtrl_IsMapExcluded); name ours
 0x00b4c17c label Phyre_PClassDescriptorForType_ShadowDynamicMeshInstance__vftable # fh v4:imported Phyre::PClassDescriptorForType<ShadowDynamicMeshInstance>::vftable
 0x00b4c1c4 label Phyre_PClassDescriptorAbstract_ShadowDynamicMeshInstance__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<ShadowDynamicMeshInstance>::vftable
 0x00b4c20c label Phyre_PClassDescriptorWithoutDefaultConstructor_ShadowDynamicMeshInstance__vftable # fh v4:imported Phyre::PClassDescriptorWithoutDefaultConstructor<ShadowDynamicMeshInstance>::vftable

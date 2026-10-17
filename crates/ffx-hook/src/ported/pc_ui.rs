@@ -3,11 +3,20 @@
 
 use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
 
 use super::{mem, ported};
 
 ported! {
+    /// `SpdCtrl_IsMapExcluded(map)`.
+    SpdCtrl_IsMapExcluded @ 0x006f_6fa0 => extern "C" fn spd_ctrl_is_map_excluded(map: u32) -> u32 {
+        spdctrl::is_map_excluded(&mut mem(), map)
+    }
+    /// `SpdCtrl_IsMagicExcluded()`.
+    SpdCtrl_IsMagicExcluded @ 0x006f_6ff0 => extern "C" fn spd_ctrl_is_magic_excluded() -> u32 {
+        spdctrl::is_magic_excluded(&mut mem())
+    }
     /// `GuiTouch_resetButtons(this)`.
     GuiTouch_resetButtons @ 0x0068_ab30 => extern "thiscall" fn gui_touch_reset_buttons(this: u32) {
         touch::reset_buttons(&mut mem(), this);
