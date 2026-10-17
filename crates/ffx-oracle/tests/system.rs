@@ -11860,6 +11860,34 @@ fn round20_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let v: [u32; 2] = Mem::read(b, scratch);
         Mem::write(a, scratch, v);
         same_memory("round 20 battle helpers", a, b);
+        // the number text: after the first terminator the original copies
+        // stale stack bytes, so those are taken from the port
+        let value = match rng.next() % 4 {
+            0 => rng.next() % 100,
+            1 => rng.next() % 1_000_000,
+            2 => rng.next().wrapping_neg(),
+            _ => rng.next(),
+        };
+        let digits = rng.next() % 10;
+        let mode = [0u32, 1, 0, 1, 2][(rng.next() % 5) as usize];
+        let fill: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+        a.write(out, &fill).unwrap();
+        b.write(out, &fill).unwrap();
+        assert_eq!(
+            eax(a, 0x008b_8290, &[value, out, digits, mode]),
+            t::to_int_to_mes(b, value, out, digits, mode, call),
+            "int text {k}: {value} {digits} {mode}"
+        );
+        let got: [u8; 0x40] = Mem::read(a, out);
+        let ours: [u8; 0x40] = Mem::read(b, out);
+        let end = got.iter().position(|&c| c == 0).unwrap_or(0x3f);
+        assert_eq!(
+            got[..=end],
+            ours[..=end],
+            "int text {k}: {value} {digits} {mode}"
+        );
+        a.write(out + end as u32, &ours[end..]).unwrap();
+        same_memory("int text", a, b);
     }
 }
 

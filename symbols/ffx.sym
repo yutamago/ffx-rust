@@ -9513,7 +9513,7 @@
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
-0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
+0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240; (value, out, digits, mode) -> shown value: negatives 0; mode 0 value % 10^digits left-padded with ']'/':'/0xfe by language, mode 1 clamped to 10^digits-1 and zero-padded; copies `digits` bytes of its sprintf buffer, so stale stack bytes follow the terminator
 0x008b8430 function TOWideWindowX_008b8430 # cdecl(i, x) -> float: type-1 window and 0x01340824/0x0133c948/0x01327100 clear: (w - 512 h/416) / (2 w/512) + x (h/416)/(w/512) from graphicFontGetScreenWH; else x; name ours
 0x008b84f0 function TOMacroSetByte1 # cdecl(win, n, v): byte 1 of macro record n of message window win (the table at 0x01869ab0, as TOMacroSetType sets byte 0); callers 0x008c2c60, 0x00a59350; name ours
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours

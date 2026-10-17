@@ -5811,6 +5811,10 @@ ported! {
         let at = (&raw mut scratch) as usize as u32;
         tolib::bridge::to_btl_open_simple_help_mes(&mut mem(), i, message, at, call_sym)
     }
+    /// `TOIntToMes(value, out, digits, mode)`.
+    TOIntToMes @ 0x008b_8290 => extern "C" fn to_int_to_mes(value: u32, out: u32, digits: u32, mode: u32) -> u32 {
+        tolib::bridge::to_int_to_mes(&mut mem(), value, out, digits, mode, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

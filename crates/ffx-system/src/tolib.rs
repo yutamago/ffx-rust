@@ -6009,4 +6009,108 @@ pub mod bridge {
         mem.write(entry.wrapping_add(0xc), v as u16);
         1
     }
+
+    /// The pad character of [`to_int_to_mes`]: `]` for language 0 without
+    /// `MsGetSaveConfigEnglish`, `:` for languages 9 and 10, else 0xfe.
+    fn int_pad<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) -> u8 {
+        if call(mem, 0x008a_c2f0, &[]) == 0 && call(mem, 0x0078_51d0, &[]) == 0 {
+            0x5d
+        } else if call(mem, 0x008a_c2f0, &[]) == 0xa || call(mem, 0x008a_c2f0, &[]) == 9 {
+            0x3a
+        } else {
+            0xfe
+        }
+    }
+
+    /// `TOIntToMes(value, out, digits, mode)` (`0x008b8290`): a
+    /// non-negative number (negatives become 0) as `digits` characters.
+    /// Mode 0 keeps the low digits (`value % 10^digits`, powers at
+    /// `0x00c5a044`) and pads on the left with [`int_pad`] characters;
+    /// mode 1 clamps to `10^digits - 1` and pads with `0`. Other modes
+    /// write an empty text. Returns the number shown.
+    ///
+    /// Both modes copy `digits` bytes of the 16-byte `sprintf` buffer, so
+    /// after a short number they copy past its terminator: the original
+    /// copies stale stack bytes there (behind the terminator, so no text
+    /// changes); the port copies what its buffer holds, zeros apart from
+    /// an earlier longer number.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
+    pub fn to_int_to_mes<M: Mem>(
+        mem: &mut M,
+        value: u32,
+        out: u32,
+        digits: u32,
+        mode: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut v = value.cast_signed().max(0);
+        let d = digits.cast_signed();
+        let power = |mem: &M| -> i32 {
+            mem.read(mem.rebase(0x00c5_a044).wrapping_add(digits.wrapping_mul(4)))
+        };
+        let mut buf = [0u8; 16];
+        let print = |buf: &mut [u8; 16], v: i32| -> i32 {
+            let s = v.to_string();
+            let n = s.len().min(15);
+            buf[..n].copy_from_slice(&s.as_bytes()[..n]);
+            buf[n] = 0;
+            n as i32
+        };
+        let mut p = out;
+        let copy = |mem: &mut M, p: &mut u32, buf: &[u8; 16], from: i32, n: i32| {
+            for k in 0..n {
+                let b = buf.get((from + k) as usize).copied().unwrap_or(0);
+                mem.write(*p, b);
+                *p = p.wrapping_add(1);
+            }
+        };
+        match mode {
+            0 => {
+                let mut len = print(&mut buf, v);
+                if len > d {
+                    let m = power(mem);
+                    v = if m == 0 { 0 } else { v.wrapping_rem(m) };
+                    len = print(&mut buf, v);
+                }
+                if len < d {
+                    for _ in 0..d - len {
+                        let c = int_pad(mem, &mut call);
+                        mem.write(p, c);
+                        p = p.wrapping_add(1);
+                    }
+                    len = d;
+                }
+                let from = len.wrapping_sub(d);
+                if from < len {
+                    copy(mem, &mut p, &buf, from, len - from);
+                }
+            }
+            1 => {
+                let max = power(mem).wrapping_sub(1);
+                if v > max {
+                    v = max;
+                } else {
+                    v = v.max(0);
+                }
+                let mut len = print(&mut buf, v);
+                if len < d {
+                    for _ in 0..d - len {
+                        mem.write(p, b'0');
+                        p = p.wrapping_add(1);
+                    }
+                    len = d;
+                }
+                if len > 0 {
+                    copy(mem, &mut p, &buf, 0, len);
+                }
+            }
+            _ => {}
+        }
+        mem.write(p, 0u8);
+        v.cast_unsigned()
+    }
 }
