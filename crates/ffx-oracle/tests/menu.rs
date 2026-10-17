@@ -6401,7 +6401,7 @@ fn menu_out_pointer_callers_match_the_original() {
 /// `f` replaced in both oracles by a recorder appending its first `n`
 /// argument words at `*log` (128 KiB of them); returns `ret`. The code
 /// takes `13 + 7n` bytes: `f` must be at least that long.
-fn record_n(t: &mut Twins, f: u32, n: u8, ret: u32) {
+fn record_n(t: &mut Twins, f: u32, n: u8, ret: u32) -> u32 {
     let buf = t.alloc(&vec![0; 0x2_0000]);
     let log = t.alloc(&buf.to_le_bytes());
     let l = log.to_le_bytes();
@@ -6418,6 +6418,7 @@ fn record_n(t: &mut Twins, f: u32, n: u8, ret: u32) {
         let at = o.rebase(f);
         o.write(at, &code).unwrap();
     }
+    buf
 }
 
 /// The UI remaps through the originals, for the bridge side.
@@ -6531,4 +6532,54 @@ fn draw_cross_menu_icons_match_the_original() {
 
 fn w64(v: u32) -> u64 {
     u64::from(v)
+}
+
+#[test]
+fn tk_mn2_draw_gill_plate_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_0a20) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    // TOMkpShapeXYWHUV and ToMakeBtlEasyEdgeDigit2 recorded; the digit
+    // width writes a float through its out pointer; the language a constant
+    record_n(&mut t, 0x0090_3bb0, 9, 0x61);
+    record_n(&mut t, 0x0090_5820, 6, 0x62);
+    let pick = |t: &mut Twins| -> u32 {
+        match t.rng.below(8) {
+            // no signalling NaNs: the emulator keeps them on fld, the CPU
+            // makes them quiet
+            0 | 1 => f32::NAN.to_bits(),
+            _ => (f32::from(i16::try_from(t.rng.below(1000)).unwrap_or(0)) / 4.0).to_bits(),
+        }
+    };
+    for round in 0..64u32 {
+        let width = pick(&mut t);
+        #[rustfmt::skip]
+        let code: Vec<u8> = [
+            &[0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00][..], &width.to_le_bytes(), // *[esp + 8] = width
+            &[0x31, 0xc0, 0xc3],                                            // eax = 0; ret
+        ]
+        .concat();
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(0x0090_5230);
+            o.write(at, &code).unwrap();
+        }
+        let lang = if round % 2 == 0 { 3 } else { t.rng.below(11) };
+        return_const(&mut t, 0x008a_c2f0, lang);
+        let args: [u32; 4] = std::array::from_fn(|_| pick(&mut t));
+        let gil = t.rng.next();
+        let call = [args[0], args[1], args[2], args[3], gil];
+        t.twin("TkMn2DrawGillPlate", 0x008c_0a20, &call, U32, |o| {
+            u64::from(tk::tk_mn2_draw_gill_plate(
+                o,
+                args.map(f32::from_bits),
+                gil,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
 }

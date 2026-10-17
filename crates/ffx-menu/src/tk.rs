@@ -5706,6 +5706,86 @@ pub mod bridge {
         cross_weapon(mem, e, text, [x, y, colour], remap, call);
     }
 
+    /// `TkMn2DrawGillPlate(x, y, w, h, gil)` (`0x008c0a20`): the plate's
+    /// two halves (`TOMkpShapeXYWHUV(0xc8, …)`: the left at `x` with width
+    /// `w - remapX2(207)`, UVs `(0.0176, 0.885, 0.303, 0.919)`; the right at
+    /// `x + w - remapX2(207)` with width `remapX2(207)`, UVs `(0.303, 0.885,
+    /// 0.506, 0.919)`), then the amount right-aligned:
+    /// `ToGetBtlEasyDigitWidth2(gil, &width, 0.68, 1.0)` (`scratch` standing
+    /// for `width`) and `ToMakeBtlEasyEdgeDigit2(gil, x + w - remapX2(95,
+    /// or 110 for language 3) - width, remapY2(-2) + y, 0x25, 0.68, 1.0)`,
+    /// whose result is returned. Sums are doubles, arguments floats; the
+    /// remaps run in the original's order.
+    #[allow(clippy::many_single_char_names, clippy::too_many_lines)]
+    pub fn tk_mn2_draw_gill_plate<M: Mem>(
+        mem: &mut M,
+        [x, y, w, h]: [f32; 4],
+        gil: u32,
+        scratch: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| v as f32;
+        // the arguments pass through fld/fstp (signalling NaNs quieted)
+        let [x, y, w, h] = [x, y, w, h].map(ffx_bridge::x87::round_trip);
+        let k = f32::from_bits;
+        let (cap, v0, v1) = (k(0x434f_0000), k(0x3f62_8000), k(0x3f6b_4000));
+        let rx = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, v: f32| {
+            r(remap(mem, false, v))
+        };
+        let shape = mem.rebase(0x0090_3bb0);
+        // the left part
+        let left_w = r(f64::from(w) - f64::from(rx(mem, remap, cap)));
+        let b = f32::to_bits;
+        call(
+            mem,
+            shape,
+            &[
+                0xc8,
+                b(x),
+                b(y),
+                b(left_w),
+                b(h),
+                b(k(0x3c90_0000)),
+                b(v0),
+                b(k(0x3e9b_8000)),
+                b(v1),
+            ],
+        );
+        // the right part
+        let right = f64::from(x) + f64::from(w);
+        let cap_w = rx(mem, remap, cap);
+        let right_x = r(right - f64::from(rx(mem, remap, cap)));
+        call(
+            mem,
+            shape,
+            &[
+                0xc8,
+                b(right_x),
+                b(y),
+                b(cap_w),
+                b(h),
+                b(k(0x3e9b_8000)),
+                b(v0),
+                b(k(0x3f01_8000)),
+                b(v1),
+            ],
+        );
+        // the amount
+        let scale = k(0x3f2e_147b);
+        let f = mem.rebase(0x0090_5230);
+        call(mem, f, &[gil, scratch, b(scale), b(1.0)]);
+        let width: f32 = mem.read(scratch);
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let top = r(remap(mem, true, -2.0) + f64::from(y));
+        let margin = k(if lang == 3 { 0x42dc_0000 } else { 0x42be_0000 });
+        let digits_x = r(right - f64::from(rx(mem, remap, margin)) - f64::from(width));
+        let f = mem.rebase(0x0090_5820);
+        call(mem, f, &[gil, b(digits_x), b(top), 0x25, b(scale), b(1.0)])
+    }
+
     /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,
     /// `0x008906d0`): entry `i` (clamped to `0..=last`) of the colour table
     /// at `table` = the four components clamped to 0..=255, packed

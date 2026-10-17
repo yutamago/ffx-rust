@@ -3233,4 +3233,13 @@ ported! {
     DrawCrossMenuIconWeaponName2 @ 0x008e_6970 => extern "C" fn draw_cross_menu_icon_weapon_name2(e: u32, x: u32, y: u32, colour: u32) {
         tk::draw_cross_menu_icon_weapon_name2(&mut mem(), e, [x, y, colour], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `TkMn2DrawGillPlate(x, y, w, h, gil)`.
+    TkMn2DrawGillPlate @ 0x008c_0a20 => extern "C" fn tk_mn2_draw_gill_plate(x: u32, y: u32, w: u32, h: u32, gil: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        let xywh = [x, y, w, h].map(f32::from_bits);
+        tk::tk_mn2_draw_gill_plate(&mut m, xywh, gil, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
