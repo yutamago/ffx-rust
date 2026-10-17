@@ -9318,7 +9318,7 @@ fn round16_near_target(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                 ]
             };
             put(a, b, table + 16 * chr, v);
-            put(a, b, dists + chr, (rng.next() % 3 == 0) as u8 ^ 1);
+            put(a, b, dists + chr, u8::from(!rng.next().is_multiple_of(3)));
         }
         let n1 = rng.next() % 4 + u32::from(k % 7 != 0);
         let n2 = rng.next() % 4 + u32::from(k % 5 != 0);
