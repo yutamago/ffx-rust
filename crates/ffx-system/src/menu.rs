@@ -322,4 +322,68 @@ pub mod bridge {
         }
         1
     }
+
+    /// `MagicFile_Cleanup()` (`0x009da2d0`): the magic path queued for
+    /// deletion (`graphicMagicSetToBeDeletePath(graphicMagicGetPath())`) and
+    /// reset (`graphicMagicSetPath(0x00b8fbeb)`); the id kept as the
+    /// previous one (`+8` and `+4`), the handle in `+0x10`, both -1.
+    pub fn magic_file_cleanup<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let path = call(mem, 0x0064_2030, &[]);
+        call(mem, 0x0064_2070, &[path]);
+        let empty = mem.rebase(0x00b8_fbeb);
+        call(mem, 0x0064_2050, &[empty]);
+        let f = MAGIC_FILE.ptr(mem).addr;
+        let id: u32 = mem.read(f);
+        mem.write(f.wrapping_add(8), id);
+        mem.write(f.wrapping_add(4), id);
+        let handle: u32 = mem.read(f.wrapping_add(0xc));
+        mem.write(f, u32::MAX);
+        mem.write(f.wrapping_add(0x10), handle);
+        mem.write(f.wrapping_add(0xc), u32::MAX);
+    }
+
+    /// `MagicFile_NeedRestoreCamera()` (`0x009da700`): 1 when `0x01940abc`
+    /// is set or the previous magic (`0x00c64ca8`) is 0xa5 or 0x133, or 0x152
+    /// in battle scene 0x018b0046 (`MsGetBattleScene`, through `call`).
+    pub fn magic_file_need_restore_camera<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(mem.rebase(0x0194_0abc)) != 0 {
+            return 1;
+        }
+        let prev: u32 = mem.read(MAGIC_FILE.ptr(mem).addr.wrapping_add(8));
+        if prev == 0xa5 || prev == 0x133 {
+            return 1;
+        }
+        if prev == 0x152 && call(mem, 0x0078_2970, &[]) == 0x018b_0046 {
+            return 1;
+        }
+        0
+    }
+
+    /// `MagicFile_RestoreScreenSetup()` (`0x009da780`):
+    /// `graphicCameraSetFOVy(0x022fb600)`.
+    pub fn magic_file_restore_screen_setup<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = mem.rebase(0x022f_b600);
+        call(mem, 0x0063_95e0, &[at])
+    }
+
+    /// `MagicFile_isPrxPreloaded(id)` (`0x009dae60`): 1 when
+    /// `MagicFile_FindPreloaded(id, &entry)` (through `call`, the entry in
+    /// the scratch word `tmp`) succeeds with a non-null entry.
+    pub fn magic_file_is_prx_preloaded<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        tmp: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, 0x009d_ad70, &[id, tmp]) != 0 && mem.read::<u32>(tmp) != 0)
+    }
 }

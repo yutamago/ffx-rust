@@ -793,4 +793,130 @@ pub mod bridge {
             mem.write(at + 4 * i, 0u32);
         }
     }
+
+    /// `0x02321580` bit 1 with debug mode: use the debug character's
+    /// resident data (`0x023215c8`) instead of `Ch_EffectGetResidentPtr`.
+    pub const DEBUG_CHR_FLAGS: Global<u8> = Global::new(0x0232_1580);
+    /// The debug character's resident data pointer.
+    pub const DEBUG_CHR_RESIDENT: Global<u32> = Global::new(0x0232_15c8);
+
+    /// `opus_get_chr_status_index(chr, no, add)` (`0x007fe970`): the
+    /// `g_EtChr` record of character `chr` (-1 for null); when there is
+    /// none and `add` is set, a free record takes it: its resident data
+    /// (`Ch_EffectGetResidentPtr(chr)`, or the debug character's), a
+    /// handle slot (`g_EtChrHandles`: its own, else the first free from
+    /// 0x20 up with resident data, the last free from 0xef down without),
+    /// `+0` = `chr`, `+4` = `no`, `+8` = the resident data, `+0xc` = 0,
+    /// `+0xe` = the slot, both draw-flag bytes of the slot cleared. -1 when
+    /// no record or slot is free.
+    pub fn opus_get_chr_status_index<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        no: u32,
+        add: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        if chr == 0 {
+            return -1;
+        }
+        let rec = |mem: &M, i: u32| CHR.ptr(mem).addr.wrapping_add(0x20 * i);
+        if let Some(i) = (0..CHRS).find(|&i| mem.read::<u32>(rec(mem, i)) == chr) {
+            return i.cast_signed();
+        }
+        if add == 0 {
+            return -1;
+        }
+        let res =
+            if crate::op::bridge::DEBUG_MODE.get(mem) != 0 && DEBUG_CHR_FLAGS.get(mem) & 2 != 0 {
+                DEBUG_CHR_RESIDENT.get(mem)
+            } else {
+                let f = Global::<u32>::new(0x0082_a9b0).ptr(mem).addr;
+                call(mem, f, &[chr])
+            };
+        let Some(free) = (0..CHRS).find(|&i| mem.read::<u32>(rec(mem, i)) == 0) else {
+            return -1;
+        };
+        let handle = |mem: &M, k: u32| CHR_HANDLES.ptr(mem).at(k).get(mem);
+        let slot = (0..0xf0).find(|&k| handle(mem, k) == chr).or_else(|| {
+            if res == 0 {
+                (0x20..0xf0).rev().find(|&k| handle(mem, k) == 0)
+            } else {
+                (0x20..0xf0).find(|&k| handle(mem, k) == 0)
+            }
+        });
+        let Some(k) = slot else { return -1 };
+        CHR_HANDLES.ptr(mem).at(k).set(mem, chr);
+        let r = rec(mem, free);
+        mem.write(r.wrapping_add(4), no);
+        mem.write(r, chr);
+        mem.write(r.wrapping_add(0xc), 0u16);
+        #[allow(clippy::cast_possible_truncation)] // below 0xf0
+        mem.write(r.wrapping_add(0xe), k as u16);
+        mem.write(r.wrapping_add(8), res);
+        DRAW_FLAGS.ptr(mem).at(k).set(mem, 0);
+        DRAW_FLAGS2.ptr(mem).at(k).set(mem, 0);
+        free.cast_signed()
+    }
+
+    /// `opu_unit_free_by_oef2(list, oef)` (`0x007fdf70`): the oef2 slot `k`
+    /// of `oef` in the list (`+0x60`, 16 pointers; nothing when absent or
+    /// `oef` is null) is released: every `g_EtEff` record of group `k`
+    /// (`+0x1c`) freed (`opu_eff_free_by_id(+0)`), every slot holding
+    /// `oef` cleared, and every unit of group `k` (`+0x1e`) in the index
+    /// lists `+0x10`, `+0x14`, `+0x18` shut down (`opus_prog_off`,
+    /// `opus_draw_off`, `yonExtMapDeleteId`; the list entry is read again
+    /// in place, as `opus_prog_off` moves the rest down). Callees through
+    /// `call`.
+    pub fn opu_unit_free_by_oef2<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        oef: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if oef == 0 {
+            return;
+        }
+        let slots = list.wrapping_add(0x60);
+        let Some(k) = (0..16u32).find(|&i| mem.read::<u32>(slots.wrapping_add(4 * i)) == oef)
+        else {
+            return;
+        };
+        #[allow(clippy::cast_possible_truncation)] // below 16
+        let group = k as u8;
+        let free = Global::<u32>::new(0x007f_e920).ptr(mem).addr;
+        for i in 0..EFFS {
+            let e = EFF.ptr(mem).at(i).addr;
+            if mem.read::<u8>(e + 0x1c) == group {
+                let id: u32 = mem.read(e);
+                call(mem, free, &[id]);
+            }
+        }
+        for i in 0..16u32 {
+            let at = slots.wrapping_add(4 * i);
+            if mem.read::<u32>(at) == oef {
+                mem.write(at, 0u32);
+            }
+        }
+        let calls =
+            [0x0080_14c0u32, 0x0080_0d10, 0x0080_7830].map(|f| Global::<u32>::new(f).ptr(mem).addr);
+        for at in [0x10u32, 0x14, 0x18] {
+            let mut e: u32 = mem.read(list.wrapping_add(at));
+            loop {
+                let u: u16 = mem.read(e);
+                if u & 0x8000 != 0 {
+                    break;
+                }
+                let no = i32::from(u.cast_signed()).cast_unsigned();
+                let base: u32 = mem.read(list.wrapping_add(0x20));
+                if mem.read::<u8>(no.wrapping_shl(8).wrapping_add(base).wrapping_add(0x1e)) == group
+                {
+                    call(mem, calls[0], &[list, u32::from(u)]);
+                    call(mem, calls[1], &[list, u32::from(u)]);
+                    call(mem, calls[2], &[no]);
+                    e = e.wrapping_sub(2);
+                }
+                e = e.wrapping_add(2);
+            }
+        }
+    }
 }

@@ -11,7 +11,7 @@ pub const fn clut_entries(bytes: i32) -> i32 {
 
 /// The originals, where the game keeps the textures.
 pub mod bridge {
-    use ffx_bridge::Mem;
+    use ffx_bridge::{Global, Mem};
 
     use super::clut_entries;
     use crate::chr::bridge::{blk, set_flag};
@@ -251,6 +251,82 @@ pub mod bridge {
         } else {
             u32::from(mem.read::<u16>(t + 0xc))
         }
+    }
+
+    /// The callees of `Ch_ClutDispose`.
+    pub const STATUS_STONE: u32 = 0x007f_cc80;
+    pub const GET_LIGHT_VALUE: u32 = 0x0083_cb90;
+    pub const CALC_LIGHT: u32 = 0x0083_c6f0;
+    pub const CLUT_ENABLE: u32 = 0x0083_c940;
+    pub const CLUT_DISPOSE_CHECK: u32 = 0x0083_c910;
+    pub const USER_FREE: u32 = 0x0068_7010;
+    /// `0x00642a10(instance)`: the renderer drops the instance's clut.
+    pub const RENDER_CLUT_RELEASE: u32 = 0x0064_2a10;
+    pub const GET_WEAPON_HANDLE: u32 = 0x0079_5b40;
+    pub const GET_RENDER_INSTANCE: u32 = 0x0082_6b70;
+    pub const SET_HSV_PARAM: u32 = 0x0064_3340;
+    pub const ENABLE_HSV: u32 = 0x0064_0100;
+    /// A colour change on a weapon's instance waiting for its clut's
+    /// disposal (set by `op_chara_hsv`, `0x00807870`).
+    pub const HSV_PENDING: Global<u32> = Global::new(0x012f_4110);
+    pub const HSV_INSTANCE: Global<u32> = Global::new(0x012f_4114);
+
+    /// `Ch_ClutDispose(chr)` (`0x0083c810`): a character's own clut
+    /// (`+0x704`) goes unless it is petrified (`op_get_chr_status_stone`,
+    /// asked twice as the original): the light recalculated
+    /// (`Ch_CalcLight(chr, Ch_GetLightValue(chr))`), cluts off, the block
+    /// freed; the renderer told when `Ch_ClutDisposeCheck()`; and a colour
+    /// change pending on its instance is undone on weapon (6, 0)
+    /// (`graphicSetHSVParam(instance, 0, 0, 0, -1)`, `graphicEnableHSV(
+    /// instance, 0)`) and cleared. Returns what the original leaves in EAX.
+    pub fn ch_clut_dispose<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(chr + 0x704) == 0 {
+            return 0;
+        }
+        call(mem, mem.rebase(STATUS_STONE), &[chr]);
+        let stone = call(mem, mem.rebase(STATUS_STONE), &[chr]);
+        if stone != 0 {
+            return stone;
+        }
+        let light = call(mem, mem.rebase(GET_LIGHT_VALUE), &[chr]);
+        call(mem, mem.rebase(CALC_LIGHT), &[chr, light]);
+        call(mem, mem.rebase(CLUT_ENABLE), &[chr, 0]);
+        let p: u32 = mem.read(chr + 0x704);
+        call(mem, mem.rebase(USER_FREE), &[p]);
+        mem.write(chr + 0x704, 0u32);
+        let mut eax = call(mem, mem.rebase(CLUT_DISPOSE_CHECK), &[]);
+        if eax != 0 {
+            let inst: u32 = mem.read(chr + 0x830);
+            eax = call(mem, mem.rebase(RENDER_CLUT_RELEASE), &[inst]);
+        }
+        if HSV_PENDING.get(mem) == 0 {
+            return eax;
+        }
+        let pending = HSV_INSTANCE.get(mem);
+        if pending == 0 || mem.read::<u32>(chr + 0x830) != pending {
+            return pending;
+        }
+        let w = call(mem, mem.rebase(GET_WEAPON_HANDLE), &[6, 0]);
+        if w != 0 {
+            let minus_one = (-1f32).to_bits();
+            let inst = call(
+                mem,
+                mem.rebase(GET_RENDER_INSTANCE),
+                &[w, 0, 0, 0, minus_one],
+            );
+            call(mem, mem.rebase(SET_HSV_PARAM), &[inst, 0, 0, 0, minus_one]);
+            let inst = call(mem, mem.rebase(GET_RENDER_INSTANCE), &[w, 0]);
+            eax = call(mem, mem.rebase(ENABLE_HSV), &[inst, 0]);
+        } else {
+            eax = 0;
+        }
+        HSV_INSTANCE.set(mem, 0);
+        HSV_PENDING.set(mem, 0);
+        eax
     }
 }
 

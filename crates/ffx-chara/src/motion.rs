@@ -759,6 +759,129 @@ pub mod bridge {
         });
         u8::from(near)
     }
+
+    /// `Ch_SetSequence(chr, seq)` (`0x00837ac0`).
+    pub const SET_SEQUENCE: u32 = 0x0083_7ac0;
+    /// `Ch_TextureSetAnim(chr, a, b)` (`0x0083d040`).
+    pub const TEXTURE_SET_ANIM: u32 = 0x0083_d040;
+    /// `i8` per slot: the system motion set `Ch_SetSysMotion` uses.
+    pub const SYS_MOTION_SETS: ffx_bridge::Global<i8> = ffx_bridge::Global::new(0x00c4_9784);
+
+    /// `Ch_SetSysMotion(chr, slot, motion)` (`0x00837d00`): starts the
+    /// sequence for a system motion of the character's definition
+    /// (`+0x1c4`). With bit 0 of the definition's `+0x70`: the sequence
+    /// table of the slot's set ([`SYS_MOTION_SETS`], 8-byte entries from
+    /// `+0x10` of `+0x6c`) indexed by `motion` (in slot 1, motion 0x10 on a
+    /// character with flag bit 9 of `+0x198` first asks
+    /// `Ch_TextureSetAnim(chr, 4, 1)`). Else the slot's list at `+0x108`
+    /// (count `+8 + 8 * slot`, `u16` pairs (motion, sequence) at `+0xc`),
+    /// the sequence key `definition +0 << 16 | sequence`. A miss in a slot
+    /// other than 0 retries slot 0 (motion 0 in the table form). Returns
+    /// what the original leaves in EAX.
+    pub fn ch_set_sys_motion<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        slot: u32,
+        motion: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let def: u32 = mem.read(chr + 0x1c4);
+        let set_of = |mem: &M, d: u32, s: u32| -> (u32, u32) {
+            let tab: u32 = mem.read(d + 0x6c);
+            let k = i32::from(mem.read::<i8>(SYS_MOTION_SETS.ptr(mem).addr.wrapping_add(s)));
+            (
+                tab,
+                mem.read(tab.wrapping_add((8 * k).cast_unsigned()).wrapping_add(0x10)),
+            )
+        };
+        if mem.read::<u8>(def + 0x70) & 1 != 0 {
+            let (mut slot, mut motion) = (slot, motion);
+            let (mut eax, mut set) = set_of(mem, def, slot);
+            while set != 0 {
+                if mem.read::<u32>(chr + 0x198) & 0x200 != 0 && slot == 1 && motion == 0x10 {
+                    eax = call(mem, mem.rebase(TEXTURE_SET_ANIM), &[chr, 4, slot]);
+                }
+                let seq: u32 = mem.read(set.wrapping_add(4 * motion));
+                if seq != 0 {
+                    return call(mem, mem.rebase(SET_SEQUENCE), &[chr, seq]);
+                }
+                if slot == 0 {
+                    return eax;
+                }
+                let d: u32 = mem.read(chr + 0x1c4);
+                (eax, set) = set_of(mem, d, 0);
+                slot = 0;
+                motion = 0;
+            }
+            return eax;
+        }
+        let list: u32 = mem.read(def + 0x108);
+        if list == 0 {
+            return def;
+        }
+        let mut slot = slot;
+        loop {
+            let e = list.wrapping_add(8 * slot);
+            let count: u32 = mem.read(e + 8);
+            let pairs: u32 = mem.read(e + 0xc);
+            let mut i = 0u32;
+            while i < count {
+                if u32::from(mem.read::<u16>(pairs.wrapping_add(4 * i))) == motion {
+                    let s = u32::from(mem.read::<u16>(pairs.wrapping_add(4 * i + 2)));
+                    let key = s | (mem.read::<u32>(def) << 16);
+                    return call(mem, mem.rebase(SET_SEQUENCE), &[chr, key]);
+                }
+                i += 1;
+            }
+            if slot == 0 {
+                return i;
+            }
+            slot = 0;
+        }
+    }
+
+    /// `Sg_MemSetOwn(p, owner)` (`0x0083c550`), `Cache_Lock` (`0x00840960`).
+    pub const MEM_SET_OWN: u32 = 0x0083_c550;
+    pub const CACHE_LOCK: u32 = 0x0084_0960;
+
+    /// `Ch_RegMotionEntryCache(p)` (`0x008376b0`): the battle idling
+    /// motions at `p` into the cache: named `"[PC Battle Idling]"`, type 3,
+    /// owner 6, entry (2, 0x903e7) used, locked and not yet read. Returns
+    /// `Cache_Entry_NotYet`'s result.
+    pub fn ch_reg_motion_entry_cache<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let h = crate::handle::bridge::MEM_SET_STR;
+        let k = REG_MOTION_KEY;
+        call(mem, mem.rebase(h), &[p, mem.rebase(0x00b5_9a68), u32::MAX]);
+        call(mem, mem.rebase(crate::sys::bridge::MEM_SET_TYPE), &[p, 3]);
+        call(mem, mem.rebase(MEM_SET_OWN), &[p, 6]);
+        call(mem, mem.rebase(crate::sys::bridge::CACHE_ENTRY), &[2, k, p]);
+        call(mem, mem.rebase(CACHE_USE), &[2, k]);
+        call(mem, mem.rebase(CACHE_LOCK), &[2, k]);
+        call(
+            mem,
+            mem.rebase(crate::sys::bridge::CACHE_ENTRY_NOT_YET),
+            &[2, k, 1],
+        )
+    }
+
+    /// `Ch_RomReadChrCB(request)` (`0x0082a6c0`): the read finished:
+    /// `Cache_Entry_NotYet(request +0x14, request +0xc, 0)`.
+    pub fn ch_rom_read_chr_cb<M: Mem>(
+        mem: &mut M,
+        req: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (kind, key) = (mem.read(req + 0x14), mem.read(req + 0xc));
+        call(
+            mem,
+            mem.rebase(crate::sys::bridge::CACHE_ENTRY_NOT_YET),
+            &[kind, key, 0],
+        )
+    }
 }
 
 #[cfg(test)]
