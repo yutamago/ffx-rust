@@ -99,6 +99,53 @@ Only functions whose callers can be satisfied through their signature are
 safe to replace this way. A function that the game expects to touch global
 state must touch the same state in Rust.
 
+## Threads
+
+The game runs part of its frame off the main thread, so a port can run on
+several threads at once, and must be reentrant: no process-wide scratch,
+no Rust state shared between threads without the original's locking.
+
+- **Scratch is per call or per thread.** Use `ported::StackFrame::<W>` (a
+  zeroed frame on the shim's stack, the original's frame) or a
+  `thread_local!` buffer when the result must outlive the call. Never a
+  `static` array or cell handed out by address: `tools/check-ported.py`
+  rejects one. A shared `Ch_CalcElement` frame garbled every battle model
+  (2026-10-17): two job threads overwrote each other's skeleton matrices
+  before their upload. The oracle cannot see this: it is single-threaded.
+- The hosts' `callee_scratch()` / `scratch()` (`ffx-bridge`, `ffx-graphic`,
+  `ffx-script`) are per thread, so a bridge must not hold one across a call
+  that can re-enter another port on the same thread.
+- **Stack.** JobWorker threads commit 128 KB (`0x00703a50`: CreateThread
+  with 0x20000; 1 MB reserved, the image default), so a 48 KB frame such as
+  `Ch_CalcElement`'s fits, as it does for the original. The dedicated
+  threads are smaller: VsyncEmulationThread, AsyncLoadManager,
+  AsyncControllerTaskManager and Read command commit 32 KB, FmodManager
+  64 KB. Keep big frames off what those reach.
+
+What runs where (`python3 -I tools/job-threads.py` lists the hooked ports
+each entry reaches through direct calls; calls through pointers are not
+followed, so the lists are lower bounds):
+
+| Thread | Entry | Started by | Hooked ports reached |
+|---|---|---|---|
+| JobWorker (several, `JobSchedule::JobScheduler`, `0x00cdede4`) | `Ch_CalcMiddle_Batch` `0x00833530` | `Ch_CalcMain`, `Ch_CalcMiddle` through `0x00a44b90`, one job per ~200 elements (battles run several) | 72: chara (`Ch_Neck`, `Ch_CalcElement`, `Ch_ElemCalcQuaternion`, `Ch_Mouth`, `Ch_OptposCalc`, shades), main (`Sg_Quaternion*`, `Sg_AngleApproach`), ps2_emu (`FFXVu0*` matrices), render (`graphicCharacterInstanceSetSkeletonMatrices*`, lighting), system (`cdc_*` matrices) |
+| JobWorker | `Ch_Cloth_PerCharacter` `0x0082e390` | `Ch_DrawMain` through `0x00a44b40` | 93: main (`Sg_ClothStep`, `Sg_ClothRod*`, `Sg_ClothPlaceAnchors`, envelope asm), chara (cloth flags), system (the page allocator: `user_malloc`, `PageManager_*`), vfx (vector copies) |
+| JobWorker | `JobSchedule_pppPart_fillBuffer` `0x0071ed10` | `JobSchedule_pppPart_fillBuffer_Kick` (`updateFFX`) | 20: ps2_emu (`FFXVu0*`), render (`graphicVFXUpdateParameterOnly`, cut-scene 2D), map (`KeDttMdl_UseSingleInstance`) |
+| JobWorker | `eiAbmDraw`'s four jobs (`0x00a53450`, `0x00a534b0`, `0x00a534c0`, `0x00a53510`) | `eiAbmDraw` through `0x00a8ed00`..`0x00a8ed60` | about 50: map (`AbmapMakeNodeMatrix`, `AbmapMakeLinkMatrix`), vfx (`op1_md_draw_eiabm*`), system (allocator, input) |
+| JobWorker | `asyncFFXInitialize` `0x00636410` | the loader through `0x00633670` | most of the game (about 1500): it runs initialisation beside the main thread while loading |
+| VsyncEmulationThread | `VsyncHandler` `0x00887d60` → callback `0x0086ca20` | `TkSetVsyncHandler` → `createVsyncEmuThread` | 3: `MsGetSaveEventAddress`, `FFXApplication_getAppTime`, `FFXGetVideoMode` |
+| AsyncLoadManager | `0x00691360` | `AsyncLoadManager_createThread` | 46 (file reads, allocator) |
+| AsyncControllerTaskManager | `0x0068d740` | its constructor `0x0068c830` | 52 (input, allocator, `FreeCamera_FreeCamera`) |
+| Read command | `0x006bd1e0` | `0x006bca90` | 75 (event loads: `TkSetEventJump`, `Atel*`, `Sg_SetPlayer`, allocator) |
+| FmodManager | `0x006fa1b0` (`0x006fa700`, `0x006fa7e0`) | `FmodManager_createThread` | 46 (allocator) |
+| render thread | `Phyre_PRendering_PRenderThread_threadEntry` `0x00616010` | the renderer (`Phyre_PRendering_PRenderThread`) | none directly (commands run through pointers) |
+
+Phyre's own pools (`Phyre_PThreadPool_startThreads`,
+`Phyre_PThreadPoolWorkStealing_workerThread`, the animation pool
+`ANIThreadPoolJobs`), the Bullet step thread, the `BigFileStream` thread-pool
+work and the video decoder (`_beginthreadex` at `0x0040c2c0`) run engine code
+through pointers; no hooked port is known to be reached from them.
+
 ## Building
 
 ```bash

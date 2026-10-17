@@ -25,6 +25,10 @@ ported! {
     iFmodInitialize @ 0x0067_9fc0 => extern "C" fn i_fmod_initialize() -> u32 {
         f::i_fmod_initialize(&mut game())
     }
+    /// `iSoundUpdate()`.
+    iSoundUpdate @ 0x0067_a600 => extern "C" fn i_sound_update() -> u32 {
+        f::i_sound_update(&mut game())
+    }
     /// `iMuiscSetBgmType(t)`.
     iMuiscSetBgmType @ 0x0067_9fe0 => extern "C" fn i_muisc_set_bgm_type(t: u32) -> u32 {
         f::i_music_set_bgm_type(&mut game(), t)
@@ -424,6 +428,10 @@ ported! {
     /// `SndSepClearAll()`.
     SndSepClearAll @ 0x0088_6db0 => extern "C" fn snd_sep_clear_all() -> u32 {
         s::snd_sep_clear_all(&mut game())
+    }
+    /// `SndSetBgmTypeSave(on)`.
+    SndSetBgmTypeSave @ 0x008c_c150 => extern "C" fn snd_set_bgm_type_save(on: u32) -> u32 {
+        s::snd_set_bgm_type_save(&mut game(), on)
     }
     /// `SndSepLock(on)`.
     SndSepLock @ 0x0088_6dd0 => extern "C" fn snd_sep_lock(on: u32) -> u32 {

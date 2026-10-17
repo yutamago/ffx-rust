@@ -12479,3 +12479,420 @@ fn round36_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0024_0002);
     round36_cases(&mut t, &mut rng, 40);
 }
+
+// ---- round 38 ----
+
+/// The `rcVu0*` copies ported in round 45, with their step.
+const RC_VU0_COPIES: [(u32, vu0::bridge::Vu0Op); 13] = {
+    use vu0::bridge::Vu0Op::{Add3, Add4, Sub3, Sub4};
+    [
+        (0x0091_f650, Add3),
+        (0x0092_4770, Add3),
+        (0x0092_4860, Sub3),
+        (0x0092_4fc0, Add4),
+        (0x0092_50d0, Sub4),
+        (0x0092_85a0, Add3),
+        (0x0092_8df0, Add3),
+        (0x0092_8ee0, Sub3),
+        (0x0092_9300, Sub3),
+        (0x0092_9440, Add3),
+        (0x0092_95e0, Add3),
+        (0x0092_f790, Add3),
+        (0x0092_f880, Add4),
+    ]
+};
+
+/// Round 38 on `t`: the two VU0 subtractions (`rcVu0Sub` and its twin),
+/// `a` apart from or the same as `b` or `c`.
+fn round38_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (a, b, c) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    let vf00 = t.b.rebase(vu0::VU0_VF00);
+    for k in 0..rounds {
+        for v in [a, b, c] {
+            for i in 0..4 {
+                let x = if k % 2 == 0 {
+                    rng.float()
+                } else {
+                    rng.any_float()
+                };
+                t.put(v + 4 * i, x);
+            }
+        }
+        t.fill(vf00, 0x10, rng);
+        let dst = [a, a, b, c][rng.below(4) as usize];
+        for f in [0x0091_f740, 0x0092_d720] {
+            t.same(
+                "rcVu0Sub",
+                |o| o.eax(f, &[dst, b, c]),
+                |m| vu0::bridge::rc_vu0_sub(m, dst, b, c),
+            );
+        }
+        // round 45: the other copies of the template
+        for (f, op) in RC_VU0_COPIES {
+            t.fill(vf00, 0x10, rng); // only the subtractions restore it
+            t.same(
+                "rcVu0 copy",
+                |o| o.eax(f, &[dst, b, c]),
+                |m| vu0::bridge::rc_vu0_op(m, op, dst, b, c),
+            );
+        }
+    }
+}
+
+/// Round 38: `rcVu0Sub` (`0x0091f740`) and `rcVu0Sub_0092d720`.
+#[test]
+fn round38_vu0_sub_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0026_0001);
+    round38_cases(&mut t, &mut rng, 400);
+}
+
+/// Round 38 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round38_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0026_0002);
+    round38_cases(&mut t, &mut rng, 100);
+}
+
+// ---- round 39 ----
+
+/// Round 39 on `t`: the IOP command builders over the queue at
+/// `0x012f4a00..0x012f4e00`, empty to full (a full queue is sent first,
+/// with the `dbgPrintf` on or off), and `SqsInitWaveInfo`.
+#[allow(clippy::too_many_lines)] // one function after another
+fn round39_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x400));
+    let top = t.b.rebase(nkz::SQS_CMD_BUF);
+    let queue = |t: &mut Twin, rng: &mut Xorshift| {
+        env.reset(t, rng);
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_CMD_TOP, top);
+        let n = match rng.below(3) {
+            0 => 0x1f, // the last slot: sent first
+            1 => 0x20, // past it
+            _ => rng.below(0x20),
+        };
+        t.set(nkz::SQS_CMD_NEXT, top + 0x20 * n);
+        t.fill(top, 0x400, rng);
+        t.set(nkz::SQS_DEBUG_FLAGS, rng.next());
+        let h = t.b.rebase(nkz::SQS_REPLY_HISTORY);
+        t.fill(h, 0x40, rng);
+    };
+    for _ in 0..rounds {
+        let a = rng.next();
+        for (name, f, op) in [
+            ("SqsSetCycleMode", 0x0081_e900, 4),
+            ("SqsSetReverbPlaySwitch", 0x0081_ec20, 0xc),
+            ("SqsSetStraightStreamAreaSize", 0x0081_ef50, 5),
+        ] {
+            queue(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[a]),
+                |m| nkz::bridge::sqs_cmd_arg(m, op, a, call),
+            );
+        }
+        queue(t, rng);
+        t.same(
+            "SqsAllVoiceTerminate",
+            |o| o.eax(0x0081_ce70, &[]),
+            |m| nkz::bridge::sqs_all_voice_terminate(m, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsMusicDataRead",
+            |o| o.eax(0x0081_d820, &[a]),
+            |m| nkz::bridge::sqs_music_data_read(m, a, call),
+        );
+        queue(t, rng);
+        let mode = [0, 1, 2, 3, 4, u32::MAX, a][rng.below(7) as usize];
+        t.same(
+            "SqsSetPlayMode",
+            |o| o.eax(0x0081_ea00, &[mode]),
+            |m| nkz::bridge::sqs_set_play_mode(m, mode, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsShoutStreamingStart",
+            |o| o.eax(0x0081_ee20, &[a]),
+            |m| nkz::bridge::sqs_shout_streaming_start(m, a, call),
+        );
+        queue(t, rng);
+        t.set(nkz::SQS_STRAIGHT_STREAM, rng.next());
+        t.same(
+            "SqsStraightStreamingStart",
+            |o| o.eax(0x0081_f6c0, &[]),
+            |m| nkz::bridge::sqs_straight_streaming_start(m, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingStop",
+            |o| o.eax(0x0081_f770, &[]),
+            |m| nkz::bridge::sqs_straight_streaming_stop(m, call),
+        );
+        let v = rng.next();
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingVolumeDirect",
+            |o| o.eax(0x0081_f800, &[v]),
+            |m| nkz::bridge::sqs_straight_streaming_volume_direct(m, v, call),
+        );
+        queue(t, rng);
+        t.same(
+            "SqsStraightStreamingVolumeTranslate",
+            |o| o.eax(0x0081_f880, &[a, v]),
+            |m| nkz::bridge::sqs_straight_streaming_volume_translate(m, a, v, call),
+        );
+        // the wave info: done already, without or with a source
+        queue(t, rng);
+        t.set(nkz::SQS_WAVE_INFO_DONE, u32::from(rng.below(4) == 0));
+        t.set(nkz::SQS_WAVE_INFO_DST, rng.next());
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        let dma = t.b.rebase(nkz::SIF_DMA);
+        t.fill(dma, 0x20, rng);
+        let src = rng.below(2) * rng.next();
+        t.same(
+            "SqsInitWaveInfo",
+            |o| o.void(0x0081_d3f0, &[src, 7, a]),
+            |m| nkz::bridge::sqs_init_wave_info(m, src, a, call),
+        );
+    }
+}
+
+/// Round 39: the Sqs IOP command builders.
+#[test]
+fn round39_sqs_command_builders_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0027_0001);
+    round39_cases(&mut t, &mut rng, 150);
+}
+
+/// Round 39 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round39_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0027_0002);
+    round39_cases(&mut t, &mut rng, 30);
+}
+
+// ---- round 40 ----
+
+/// Round 40 on `t`: `SqsSeSeparateDataSend` over chunk streams: repeated
+/// ids, a bad chunk, a size cut short, sizes out of range, and more than
+/// 256 distinct ids (the overflow message, `fflush` logged).
+fn round40_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x400));
+    let (stubs, _) = t.cave_from(env.cave_end, &[(None, log_stub(env.log, env.rv, 0x31, 1))]);
+    let slot = t.b.rebase(nkz::CRT_FFLUSH);
+    t.put(slot, stubs[0]);
+    let data = t.alloc(0x1_0000);
+    let table = t.b.rebase(nkz::SQS_SEP_WAVES);
+    for k in 0..rounds {
+        env.reset(t, rng);
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_CMD_TOP, rng.next());
+        t.set(nkz::SQS_CMD_NEXT, rng.next());
+        t.set(nkz::SQS_DEBUG_FLAGS, rng.next());
+        t.fill(table, 0x400, rng);
+        let many = k % 10 == 9;
+        let chunks = if many { 300 } else { rng.below(40) };
+        let pool = if many { 0x1_0000 } else { 1 + rng.below(12) };
+        let mut bytes = vec![];
+        for c in 0..chunks {
+            let len = if many { 0x14 } else { 0x14 + 4 * rng.below(8) };
+            let mut ch: Vec<u8> = (0..len)
+                .map(|_| u8::try_from(rng.below(256)).unwrap())
+                .collect();
+            // a bad chunk ends the walk: its magic, tag or length
+            let bad = if many || rng.below(20) != 0 {
+                0
+            } else {
+                1 + rng.below(5)
+            };
+            let magic: u32 = if bad == 1 { 0x6553_6554 } else { 0x6553_6553 };
+            let tag: u32 = if bad == 2 { 0x2020_2071 } else { 0x2020_2070 };
+            let word = match bad {
+                3 => 0,
+                4 => len + 2,
+                5 => 0x8000_0000 | len,
+                _ => len,
+            };
+            ch[..4].copy_from_slice(&magic.to_le_bytes());
+            ch[4..8].copy_from_slice(&tag.to_le_bytes());
+            ch[0xc..0x10].copy_from_slice(&word.to_le_bytes());
+            let id = if many { c } else { rng.below(pool) };
+            ch[0x11..0x13].copy_from_slice(&u16::try_from(id & 0xffff).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&ch);
+        }
+        bytes.resize(bytes.len() + 0x20, 0);
+        t.write(data, &bytes);
+        let total = u32::try_from(bytes.len() - 0x20).unwrap();
+        let size = match rng.below(7) {
+            0 => 0,
+            1 => 0x1_0001 + rng.below(4),
+            6 => 0x1_0000, // the largest size taken
+            2 => rng.below(total + 1).max(1),
+            _ => total.max(1),
+        };
+        t.same(
+            "SqsSeSeparateDataSend",
+            |o| o.eax(0x0081_e600, &[data, size]),
+            |m| nkz::bridge::sqs_se_separate_data_send(m, data, size, call),
+        );
+        // round 44: SndStandbyShoutStream on a header (length in range or not)
+        env.reset(t, rng);
+        let len = match rng.below(5) {
+            0 => 0,
+            1 => 0x1_0000,
+            2 => 0x1_0001,
+            3 => 0x8000_0000 | rng.next(),
+            _ => 1 + rng.below(0x1_0000),
+        };
+        t.put(data + 0xc, len);
+        t.put(data + 8, rng.next());
+        t.same(
+            "SndStandbyShoutStream",
+            |o| o.eax(0x0081_e3b0, &[data]),
+            |m| nkz::bridge::snd_standby_shout_stream(m, data, call),
+        );
+    }
+}
+
+/// Round 40: `SqsSeSeparateDataSend`.
+#[test]
+fn round40_sqs_se_separate_data_send_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0028_0001);
+    round40_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 40 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round40_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0028_0002);
+    round40_cases(&mut t, &mut rng, 40);
+}
+
+// ---- round 41 ----
+
+/// A `rcPrimDraw2D` stand-in: the vertices its second argument points at
+/// (four words each, the count its third) to `log`, its other arguments at
+/// `tail`, then a call count; returns 0x1234.
+fn prim_draw_stub(log: u32, tail: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x10]; mov edi, log;
+    // mov ecx, [esp + 0x14]; shl ecx, 2; rep movsd; pop edi; pop esi
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[
+        0x8b, 0x4c, 0x24, 0x14, 0xc1, 0xe1, 0x02, 0xf3, 0xa5, 0x5f, 0x5e,
+    ]);
+    for (arg, at) in [(4u8, 0u32), (0xc, 4), (0x10, 8)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0xa3]); // mov eax, [esp + arg]; mov [tail + at], eax
+        c.extend_from_slice(&(tail + at).to_le_bytes());
+    }
+    c.extend_from_slice(&[0xff, 0x05]); // inc dword [tail + 0xc]
+    c.extend_from_slice(&(tail + 0xc).to_le_bytes());
+    c.push(0xb8); // mov eax, 0x1234; ret
+    c.extend_from_slice(&0x1234u32.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 41 on `t`: `rcPrimLine`, `rcPrimCircleLine` and `rcPrimTri` with
+/// the UI type
+/// on or off, its vertices
+/// and arguments logged by the `rcPrimDraw2D` stand-in, the UI type
+/// calls by another.
+fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, log2, rv) = (t.alloc(0x420), t.alloc(4 + 0x20 * 4), t.alloc(4));
+    // cgraphicSetNowUIType logged (the image has no UI state behind it)
+    t.cave(&[
+        (
+            Some(rcui::bridge::RC_PRIM_DRAW_2D),
+            prim_draw_stub(log, log + 0x410),
+        ),
+        (
+            Some(rcui::bridge::SET_NOW_UI_TYPE),
+            log_stub(log2, rv, 1, 1),
+        ),
+    ]);
+    for _ in 0..rounds {
+        let a: [u32; 6] = [
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.next(),
+            rng.below(2) * rng.next(),
+        ];
+        t.fill(log, 0x41c, rng);
+        t.put(log2, 0u32);
+        t.put(rv, rng.next());
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "rcPrimLine",
+            |o| o.eax(0x0092_6c00, &a),
+            |m| rcui::bridge::rc_prim_line(m, a, work, call),
+        );
+        // the circle: its centre, radius and the same colour and UI flag
+        let c = [a[0], a[1], rng.any_float(), a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x410, rng); // every vertex is written
+        t.same(
+            "rcPrimCircleLine",
+            |o| o.eax(0x0092_5ea0, &c),
+            |m| rcui::bridge::rc_prim_circle_line(m, c, work, call),
+        );
+        // the triangle: an angle anywhere (specials and huge values too)
+        let angle = match rng.below(3) {
+            0 => rng.float(),
+            1 => float_in(rng, -4000, 4000),
+            _ => {
+                #[allow(clippy::cast_precision_loss)]
+                let v = rng.next() as f32 / 65_536.0 - 32_768.0;
+                v.to_bits()
+            }
+        };
+        let tri = [a[0], a[1], c[2], angle, a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x30, rng);
+        t.same(
+            "rcPrimTri",
+            |o| o.eax(0x0092_70c0, &tri),
+            |m| rcui::bridge::rc_prim_tri(m, tri, work, call),
+        );
+    }
+}
+
+/// Round 41: `rcPrimLine`.
+#[test]
+fn round41_prim_line_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0029_0001);
+    round41_cases(&mut t, &mut rng, 300);
+}
+
+/// Round 41 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round41_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0029_0002);
+    round41_cases(&mut t, &mut rng, 60);
+}

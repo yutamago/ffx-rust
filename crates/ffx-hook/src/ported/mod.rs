@@ -58,6 +58,36 @@ pub fn hooks() -> Vec<Hook> {
     all
 }
 
+/// `W` zeroed words on this stack, for a port whose original keeps locals
+/// in its frame and passes their addresses ([`Self::at`]) to its bridge or
+/// callees. It lives until the end of the statement or block that holds it,
+/// like the original's frame.
+///
+/// Scratch memory for a shim must be per call (this) or per thread
+/// (`thread_local!`), never a process-wide `static`: the game runs ports on
+/// several threads at once (job-scheduler workers, docs/hooking.md,
+/// "Threads"), and a shared buffer gets overwritten mid-call
+/// (`tools/check-ported.py` rejects one).
+pub(crate) struct StackFrame<const W: usize>([u32; W]);
+
+impl<const W: usize> StackFrame<W> {
+    pub(crate) const fn new() -> Self {
+        Self([0; W])
+    }
+
+    /// The frame's address (32-bit process).
+    pub(crate) fn at(&mut self) -> u32 {
+        u32::try_from(self.0.as_mut_ptr() as usize).unwrap_or(0)
+    }
+}
+
+impl<const W: usize> Drop for StackFrame<W> {
+    fn drop(&mut self) {
+        // the bridge and the originals wrote it through its address
+        std::hint::black_box(&mut self.0);
+    }
+}
+
 /// The game's memory, for the bridges.
 fn mem() -> RawMem {
     #[allow(clippy::cast_possible_truncation)] // 32-bit process
