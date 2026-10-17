@@ -4661,6 +4661,10 @@ ported! {
     TOGetPadStatus @ 0x008b_7cd0 => extern "C" fn to_get_pad_status() {
         tolib::bridge::get_pad_status(&mut mem(), &mut GameMenu);
     }
+    /// `TOMenuGetPadStatus()`.
+    TOMenuGetPadStatus @ 0x008b_e500 => extern "C" fn to_menu_get_pad_status() {
+        tolib::bridge::menu_get_pad_status(&mut mem(), |_| st0_result(0x0063_0c60), call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
