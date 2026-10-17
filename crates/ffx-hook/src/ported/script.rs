@@ -2245,6 +2245,22 @@ ported! {
     Native_7052 @ 0x007a_7e10 => extern "C" fn n_7a7e10(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7052(&mut mem(), w, a, s)
     }
+    /// `AtelCall_Math_ATan2_RF(worker, args, stack)`.
+    AtelCall_Math_ATan2_RF @ 0x0087_7b30 => extern "C" fn n_877b30(w: u32, a: u32, s: u32) -> f64 {
+        native_chr::atel_call_math_atan2_rf(&mut mem(), w, a, s)
+    }
+    /// `Native_5037(worker, args, stack)`.
+    Native_5037 @ 0x00a7_a140 => extern "C" fn n_a7a140(w: u32, a: u32, s: u32) -> u32 {
+        native_chr::native_5037(&mut mem(), w, a, s)
+    }
+    /// `Native_6077_ResultF(worker, args, stack)`.
+    Native_6077_ResultF @ 0x007b_9190 => extern "C" fn n_7b9190(w: u32, a: u32, s: u32) -> f64 {
+        native_chr::native_6077(&mut mem(), w, a, s)
+    }
+    /// `Native_c025(worker, args, stack)`.
+    Native_c025 @ 0x0087_8c70 => extern "C" fn n_878c70(w: u32, a: u32, s: u32) -> u32 {
+        native_chr::native_c025(&mut mem(), w, a, s)
+    }
     /// `Native_506d(worker, args, stack)`.
     Native_506d @ 0x00a7_9a80 => extern "C" fn n_a79a80(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_506d(&mut mem(), w, a, s)

@@ -996,6 +996,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x1000` | `Native_1000` | slot int, a int, b int, v int | 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b) | - | int `0x008779c0` (native_chr) |
 | `0x1001` | `AtelCall_Math_Sin_RF` | v f | float: CIsin(v) (0x0088c3a0) | - | float `0x00877a70` (native_chr) |
 | `0x1002` | `AtelCall_Math_Cos_RF` | v f | float: CIcos(v) (0x0088b3e0) | - | float `0x00877aa0` (native_chr) |
+| `0x1005` | `AtelCall_Math_ATan2_RF` | y f, x f | float: atan2(y, x) through the game's _CIatan2 (import thunk 0x009498bc), rounded to f32 | - | float `0x00877b30` (native_chr) |
 | `0x1006` | `AtelCall_Math_Sqrt_RF` | x f | float: sqrt(x) as f32 | - | float `0x00877b70` (native_move) |
 | `0x100a` | `Native_100a` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
 | `0x1013` | `Native_1013` | v f | float: Math_WrapAngle(v) (0x0088bc20) | - | float `0x00877d30` (native_chr) |
@@ -1088,6 +1089,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x5034` | `Native_ChrSetMotionBlend` | frames int: blend into the next motion | 0 | - | int `0x00a79f40` (native) |
 | `0x5035` | `Native_5035` | - | Ch_GetSeqFrame(model) (0x00836af0), 0 without a model | - | int `0x00a79fa0` (native_chr) |
 | `0x5036` | `Native_5036` | - | 0x00a7a980(worker, args, stack, 0) | - | int `0x00a7a120` (native_chr) |
+| `0x5037` | `Native_5037` | worker int, x var, y var, z var | 0: the model's point 0 (Ch_OptposGet 0x008354f0) into the variables (null ones skipped) | - | int `0x00a7a140` (native_chr) |
 | `0x5039` | `Native_ChrSetHitRadiusScale` | scale f | float: Ch_SetThickness(model, scale) (0x0082b880); 0.0 without a model | - | float `0x00a7a340` (native_chr) |
 | `0x503a` | `Native_503a` | z f | float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model | - | float `0x00a7a3d0` (native_chr) |
 | `0x503b` | `Native_503b` | b, a | ChN_DisposeSystemMGRP(b, a) (0x00836830) when the worker has a model | - | int `0x00a7a450` (native_chr) |
@@ -1246,6 +1248,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x6071` | `Native_Cam_6071` | as 0x606b, kind 5 | 0 | - | int `0x007b9580` (native_cam) |
 | `0x6074` | `Native_6074` | - | 0x007bb840(worker, args, stack, 6); 0 | - | int `0x007b9610` (native_chr) |
 | `0x6076` | `Native_Cam_6076` | - | 0 (the battle cameras freed) | - | int `0x007b8fe0` (native_cam) |
+| `0x6077` | `Native_6077` | - | float: the camera's +0xc90 angle (0x007bd500) in degrees (MsNearRag(0, v) * 180 / pi) | - | float `0x007b9190` (native_chr) |
 | `0x6078` | `Native_6078` | - | jumps to 0x007bd510(worker, args, stack) (ST0) | - | float `0x007b91f0` (native_chr) |
 | `0x607b` | `Native_607b` | screen | start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0 | see the poll | start `0x007b8e40`, poll `0x007b8e60` (native_chr) |
 | `0x607d` | `Native_Cam_607d` | v int | int: camera handle (0x007bcdd0(cam, v)) | - | int `0x007b8840` (native_cam) |
@@ -1484,6 +1487,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0xc018` | `Native_c018` | - | debug (mod-tool candidate): in a debug build SqsSetProjectBase(&var); 1 in release | - | int `0x008788a0` (not ported) |
 | `0xc022` | `Native_c022` | - | debug (mod-tool candidate): in a debug build Sg_EnableDrawGui(v); 1 in release | - | int `0x00878b00` (not ported) |
 | `0xc024` | `Native_c024` | _, v | start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1 | see the poll | start `0x00878c10`, poll `0x00878c60`, poll `0x00878c60` (native_chr) |
+| `0xc025` | `Native_c025` | msg int | int: 1 when the message text (Msg_Text) fits and is copied over the player's name (MsGetSaveChrName(0), shorter than MsGetSaveChrNameSize(0)), else 0 | - | int `0x00878c70` (native_chr) |
 | `0xc028` | `Native_c028` | - | debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1 | - | int `0x00878d60` (not ported) |
 | `0xc02a` | `Native_c02a` | - | debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v | - | int `0x00878e10` (not ported) |
 | `0xc02c` | `Native_c02c` | v int | int: the popped value; int: the popped value | - | int `0x00878e60` (native_chr) |

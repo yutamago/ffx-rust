@@ -109,6 +109,14 @@ pub trait NativeHost: Host {
     fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
         self.call(addr, args)
     }
+    /// Calls a two-operand CRT intrinsic (`_CIatan2` through the game's
+    /// import thunk at `addr`, rebased) with `a` in `ST1` and `b` in `ST0`;
+    /// returns its `ST0` as an `fstp m64` stores it. The default (hosts
+    /// that cannot run the CRT) returns NaN.
+    fn call_intrinsic2(&mut self, addr: u32, a: f64, b: f64) -> f64 {
+        let _ = (addr, a, b);
+        f64::NAN
+    }
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -146,6 +154,29 @@ impl NativeHost for ffx_bridge::RawMem {
                 a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11],
             )
         }
+    }
+    #[cfg(target_arch = "x86")]
+    fn call_intrinsic2(&mut self, addr: u32, a: f64, b: f64) -> f64 {
+        let mut out = 0f64;
+        // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
+        // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
+        // ecx, edx, the x87 and SSE registers clobbered). The x87 stack is
+        // empty here (Rust keeps no values in it). Only edi, which the
+        // callee keeps, is read after the call.
+        unsafe {
+            std::arch::asm!(
+                "fld qword ptr [{a}]",
+                "fld qword ptr [{b}]",
+                "call {f}",
+                "fstp qword ptr [edi]",
+                a = in(reg) &raw const a,
+                b = in(reg) &raw const b,
+                f = in(reg) addr,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
     }
     fn scratch(&mut self) -> u32 {
         // the game thread's own buffer: a 32-bit process, so the address
