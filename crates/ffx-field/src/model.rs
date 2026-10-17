@@ -166,6 +166,44 @@ pub const MODEL_UPDATE: u32 = 0x0092_83e0;
 pub const MODEL_DRAW: u32 = 0x0092_8020;
 /// `rcbgSceneDraw(scene)` (`0x00920740`).
 pub const SCENE_DRAW: u32 = 0x0092_0740;
+/// The jump to `rcbgSceneSetChadist` (`0x00920780`).
+pub const SCENE_SET_CHADIST_THUNK: u32 = 0x0092_0780;
+/// `Yn_MapPartCount()` (`0x0091a3d0`).
+pub const YN_MAP_PART_COUNT: u32 = 0x0091_a3d0;
+/// `g_CurrentMapNo`.
+pub const CURRENT_MAP_NO: u32 = 0x012f_bc40;
+/// `graphic2DHideLayer(n)` (`0x00638f30`).
+pub const GRAPHIC_2D_HIDE_LAYER: u32 = 0x0063_8f30;
+/// `graphic2DShowLayer(n)` (`0x00638f60`).
+pub const GRAPHIC_2D_SHOW_LAYER: u32 = 0x0063_8f60;
+/// `graphicTextureAnimationSetMaterialVisiability(n, visible)`.
+pub const TEX_ANIM_SET_VISIBILITY: u32 = 0x0064_4120;
+/// The import table's `strstr` (MSVCR110).
+pub const STRSTR_IMPORT: u32 = 0x00b0_c378;
+/// The path `Yn_PreBgLayerDispOn` searches.
+pub const PRE_BG_PATH: u32 = 0x023c_bc60;
+/// `"te/test20"` (`.rdata`).
+pub const TEST20: u32 = 0x00b6_75c4;
+/// Set by `Yn_PreBgLayerDispOn` when the path contains it.
+pub const TEST20_SEEN: u32 = 0x025d_5ebc;
+/// `rcfxSpringFini` (`0x00928c80`).
+pub const RCFX_SPRING_FINI: u32 = 0x0092_8c80;
+/// `rcfxNailFini` (`0x00929090`).
+pub const RCFX_NAIL_FINI: u32 = 0x0092_9090;
+/// `Yn_SceneGetObject(kind, n)` (`0x00921be0`).
+pub const YN_SCENE_GET_OBJECT: u32 = 0x0092_1be0;
+/// `rcbgFPm173End(obj)` (`0x00922b50`).
+pub const FPM173_END: u32 = 0x0092_2b50;
+/// `rcbgTrxSetNo(trx, n)` (`0x0092d670`).
+pub const TRX_SET_NO: u32 = 0x0092_d670;
+/// `Ch_GetPos(chr, &x, &y, &z)` (`0x0082ac90`).
+pub const CH_GET_POS: u32 = 0x0082_ac90;
+/// `graphicSetChadist(distance)` (`0x00642ef0`, a float argument).
+pub const GRAPHIC_SET_CHADIST: u32 = 0x0064_2ef0;
+/// 98.0 (`f32`, `.rdata`): the character distance without a player.
+pub const CHADIST_DEFAULT: u32 = 0x00b5_eee0;
+/// 0.1 (`f64` of an `f32`, `.rdata`): view z to character distance.
+pub const CHADIST_SCALE: u32 = 0x00b9_21f0;
 /// `rcFree` (`0x009258e0`): a jump to `user_free`; the `rcbg*Fini`
 /// functions free through it.
 pub const RC_FREE: u32 = 0x0092_58e0;
@@ -914,6 +952,211 @@ pub mod bridge {
         let scene = mem.read::<u32>(m.wrapping_add(8));
         let f = mem.rebase(super::SCENE_DRAW);
         Some(call(mem, f, &[scene]))
+    }
+
+    /// `rcbgSceneSetChadist(scene, work)` (`0x00920790`, also through
+    /// the jump at `0x00920780`; name ours): `+0x104` = 1; the character
+    /// distance `+0x100` is the player's position (`Ch_GetPos` into
+    /// `work`, w 1.0) through the camera matrix (`FFXVu0ApplyMatrix`), its
+    /// z times 0.1 (an `f64` of an `f32`), or 98.0 without a player. Clears
+    /// `+0x10` of Yn's map (of address 0 without Yn's state, as the
+    /// original), then `graphicSetChadist(distance)`, whose `eax` is
+    /// returned.
+    pub fn rcbg_scene_set_chadist<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        mem.write(scene.wrapping_add(0x104), 1u32);
+        let f = mem.rebase(crate::camera::SG_GET_PLAYER);
+        let ply = call(mem, f, &[]);
+        let d = if ply == 0 {
+            let c: f32 = mem.read(mem.rebase(super::CHADIST_DEFAULT));
+            x87::round_trip(c).to_bits()
+        } else {
+            let f = mem.rebase(super::CH_GET_POS);
+            call(
+                mem,
+                f,
+                &[ply, work, work.wrapping_add(4), work.wrapping_add(8)],
+            );
+            mem.write(work.wrapping_add(0xc), 1.0f32.to_bits());
+            let f = mem.rebase(crate::yi::VU0_APPLY_MATRIX);
+            let m = mem.rebase(crate::camera::CAMERA_MATRIX);
+            call(mem, f, &[work, m, work]);
+            let z = x87::load(mem.read(work.wrapping_add(8)));
+            let k: f64 = mem.read(mem.rebase(super::CHADIST_SCALE));
+            x87::store(x87::mul(z, k))
+        };
+        mem.write(scene.wrapping_add(0x100), d);
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        let m = if s == 0 { 0 } else { mem.read::<u32>(s) };
+        mem.write(m.wrapping_add(0x10), 0u32);
+        let d: f32 = mem.read(scene.wrapping_add(0x100));
+        let f = mem.rebase(super::GRAPHIC_SET_CHADIST);
+        call(mem, f, &[x87::round_trip(d).to_bits()])
+    }
+
+    /// `Yn_SetChadist()` (`0x0091a250`, through `0x00921a30` and
+    /// `0x00921610`; name ours): `rcbgSceneSetChadist` (by its thunk) of
+    /// the map's scene, as [`yn_draw_scene`].
+    pub fn yn_set_chadist<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> Option<u32> {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        let m = mem.read::<u32>(s);
+        if m == 0 {
+            return None;
+        }
+        let scene = mem.read::<u32>(m.wrapping_add(8));
+        let f = mem.rebase(super::SCENE_SET_CHADIST_THUNK);
+        Some(call(mem, f, &[scene]))
+    }
+
+    /// The scene of Yn's map, or 0 (the parts' owner of the layer
+    /// switches; the original then reads address 8).
+    fn yn_scene_or_0(mem: &impl Mem) -> u32 {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return 0;
+        }
+        let m = mem.read::<u32>(s);
+        if m == 0 {
+            return 0;
+        }
+        mem.read::<u32>(m.wrapping_add(8))
+    }
+
+    /// The pre-BG layer switch shared by `Yn_PreBgLayerDispOff`/`On`: below
+    /// the part count, the part's (`0xc0` bytes from the scene's `+8`)
+    /// bit 0 set (`hide`) or cleared; below the count (0x1c on maps 0x15b
+    /// and 0xd4), the renderer's layer hidden or shown and its texture
+    /// animation material made invisible or visible. Returns the last
+    /// call's `eax`, or the map number the original loads last.
+    fn pre_bg_layer<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        n: u32,
+        count: u32,
+        hide: bool,
+        call: &mut C,
+    ) -> u32 {
+        let ni = n.cast_signed();
+        let mut limit = count.cast_signed();
+        if ni < limit {
+            let scene = yn_scene_or_0(mem);
+            let parts = mem.read::<u32>(scene.wrapping_add(8));
+            let at = parts.wrapping_add(n.wrapping_mul(0xc0));
+            let v = mem.read::<u32>(at);
+            mem.write(at, if hide { v | 1 } else { v & !1 });
+        }
+        let map = mem.read::<u32>(mem.rebase(super::CURRENT_MAP_NO));
+        if map == 0x15b || map == 0xd4 {
+            limit = 0x1c;
+        }
+        if ni >= limit {
+            return map;
+        }
+        let f = mem.rebase(if hide {
+            super::GRAPHIC_2D_HIDE_LAYER
+        } else {
+            super::GRAPHIC_2D_SHOW_LAYER
+        });
+        call(mem, f, &[n]);
+        let f = mem.rebase(super::TEX_ANIM_SET_VISIBILITY);
+        call(mem, f, &[n, u32::from(!hide)])
+    }
+
+    /// `Yn_PreBgLayerDispOff(n)` (`0x0091a7c0`, name ours): hides pre-BG
+    /// layer `n` (`Yn_MapPartCount` parts); see `Yn_PreBgLayerDispOn`.
+    pub fn yn_pre_bg_layer_disp_off<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        n: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::YN_MAP_PART_COUNT);
+        let count = call(mem, f, &[]);
+        pre_bg_layer(mem, n, count, true, call)
+    }
+
+    /// `Yn_PreBgLayerDispOn(n)` (`0x0091a830`): shows pre-BG layer `n`;
+    /// first sets `0x025d5ebc` when the path at `0x023cbc60` contains
+    /// `"te/test20"` (`strstr`, through the import table).
+    pub fn yn_pre_bg_layer_disp_on<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        n: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::YN_MAP_PART_COUNT);
+        let count = call(mem, f, &[]);
+        let f = mem.read::<u32>(mem.rebase(super::STRSTR_IMPORT));
+        let hay = mem.rebase(super::PRE_BG_PATH);
+        let needle = mem.rebase(super::TEST20);
+        if call(mem, f, &[hay, needle]) != 0 {
+            let at = mem.rebase(super::TEST20_SEEN);
+            mem.write(at, 1u32);
+        }
+        pre_bg_layer(mem, n, count, false, call)
+    }
+
+    /// `rcfxSpringDelete(spring)` (`0x00928c60`, name ours):
+    /// `rcfxSpringFini`, then `rcFree`, whose `eax` it returns.
+    pub fn rcfx_spring_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::RCFX_SPRING_FINI);
+        call(mem, f, &[p]);
+        let f = mem.rebase(super::RC_FREE);
+        call(mem, f, &[p])
+    }
+
+    /// `rcfxNailDelete(nail)` (`0x00929070`, name ours): `rcfxNailFini`,
+    /// then `rcFree`, whose `eax` it returns.
+    pub fn rcfx_nail_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::RCFX_NAIL_FINI);
+        call(mem, f, &[p]);
+        let f = mem.rebase(super::RC_FREE);
+        call(mem, f, &[p])
+    }
+
+    /// `Yn_FPm173End()` (`0x00919ab0`, name ours): `rcbgFPm173End` of the
+    /// scene's first object of kind 0x20008 (`Yn_SceneGetObject`), its
+    /// `eax`; 0 without one.
+    pub fn yn_fpm173_end<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::YN_SCENE_GET_OBJECT);
+        let o = call(mem, f, &[0x20008, 0]);
+        if o == 0 {
+            return 0;
+        }
+        let f = mem.rebase(super::FPM173_END);
+        call(mem, f, &[o])
+    }
+
+    /// `rcbgTrxPairSetNo(p, n)` (`0x009221e0`, name ours): `rcbgTrxSetNo`
+    /// of the transfers at `+0x20` and `+0x60`; the second's `eax`.
+    pub fn rcbg_trx_pair_set_no<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        n: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::TRX_SET_NO);
+        call(mem, f, &[p.wrapping_add(0x20), n]);
+        call(mem, f, &[p.wrapping_add(0x60), n])
     }
 
     /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's

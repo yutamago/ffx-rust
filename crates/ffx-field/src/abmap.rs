@@ -88,6 +88,18 @@ pub const ABMAP_FOR_NODE_AND_LINKED: u32 = 0x00a5_9760;
 pub const ITEM_NODE_EFFECT: u32 = 0x00a4_9440;
 /// `AbmapItemUsableAt` (`0x00a49310`).
 pub const ITEM_USABLE_AT: u32 = 0x00a4_9310;
+/// `MsMenuStatusNumSize()` (`0x00790220`).
+pub const MS_MENU_STATUS_NUM_SIZE: u32 = 0x0079_0220;
+/// `MsMenuStatusNum(i, 0)` (`0x00790200`): a menu status entry.
+pub const MS_MENU_STATUS_NUM: u32 = 0x0079_0200;
+/// `MsGetRomPlyCommand(id, tmp)` (`0x00790a90`).
+pub const MS_GET_ROM_PLY_COMMAND: u32 = 0x0079_0a90;
+/// `dbgPrintf` (`0x0062f500`).
+pub const DBG_PRINTF: u32 = 0x0062_f500;
+/// `debug_exit_trace` (`0x0062f510`).
+pub const DEBUG_EXIT_TRACE: u32 = 0x0062_f510;
+/// `"addMenuPrim error!!!  menu->mprimn >= MAXMENUPRIM\n"` (`.rdata`).
+pub const MENU_PRIM_ERROR: u32 = 0x00b7_b558;
 /// The command menu's (pad 7) handler, which opens the item menu.
 pub const COMMAND_MENU_STEP: u32 = 0x00a5_6330;
 /// The item menu's (pad 8) handler, which goes back to the command menu.
@@ -1637,5 +1649,80 @@ pub mod bridge {
         }
         open_menu_pad(mem, 8, super::ITEM_MENU_STEP);
         8
+    }
+
+    // ---- round 22 ----
+
+    /// `addMenuPrim` as inlined in the menu fillers: appends an entry
+    /// (`+0x40` `a`, `+0x44` 0, `+0x48` `b`; 12 bytes from `+0x40`) to
+    /// menu pad `p`, its `i16` count at `+0x1e` (at most 0x40) and the
+    /// "more than a page" flag `+0x28` (count above rows `+0x22` times
+    /// columns `+0x16`). A full pad prints the original's error and calls
+    /// `debug_exit_trace(0)`, whose `eax` is returned.
+    fn add_menu_prim<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        a: u32,
+        b: u32,
+        call: &mut C,
+    ) -> Option<u32> {
+        let n = mem.read::<i16>(p.wrapping_add(0x1e));
+        if n >= 0x40 {
+            let fmt = mem.rebase(super::MENU_PRIM_ERROR);
+            let f = mem.rebase(super::DBG_PRINTF);
+            call(mem, f, &[fmt, 0x40]);
+            let f = mem.rebase(super::DEBUG_EXIT_TRACE);
+            return Some(call(mem, f, &[0]));
+        }
+        let rows = i32::from(mem.read::<u8>(p.wrapping_add(0x22)));
+        let cols = i32::from(mem.read::<i16>(p.wrapping_add(0x16)));
+        let m = n.wrapping_add(1);
+        mem.write(p.wrapping_add(0x1e), m);
+        mem.write(
+            p.wrapping_add(0x28),
+            u8::from(i32::from(m) > rows.wrapping_mul(cols)),
+        );
+        let e = p.wrapping_add(i32::from(n).wrapping_mul(12).cast_unsigned());
+        mem.write(e.wrapping_add(0x40), a);
+        mem.write(e.wrapping_add(0x48), b);
+        mem.write(e.wrapping_add(0x44), 0u8);
+        None
+    }
+
+    /// `AbmapFillCommandMenu(pad, kind, work)` (`0x00a459e0`, from
+    /// `eiAbmStart` with pads 2..=5 and kinds 0x40, 0x41, 0x44, 0x45; name
+    /// ours): every menu status entry (`MsMenuStatusNum(i, 0)` over
+    /// `MsMenuStatusNumSize()`) of `kind` (byte 0) becomes an entry of menu
+    /// pad `pad`: its command id (`+2`, looked up with
+    /// `MsGetRomPlyCommand` into `work`) and the id - 0x3000. Returns what
+    /// the original leaves in `eax`.
+    pub fn abmap_fill_command_menu<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        pad: u32,
+        kind: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::MS_MENU_STATUS_NUM_SIZE);
+        let n = call(mem, f, &[]).cast_signed();
+        let mut last = n.cast_unsigned();
+        let mut i = 0i32;
+        while i < n {
+            let f = mem.rebase(super::MS_MENU_STATUS_NUM);
+            let e = call(mem, f, &[i.cast_unsigned(), 0]);
+            last = e;
+            if u32::from(mem.read::<u8>(e)) == kind {
+                let id = u32::from(mem.read::<u16>(e.wrapping_add(2)));
+                let f = mem.rebase(super::MS_GET_ROM_PLY_COMMAND);
+                call(mem, f, &[id, work]);
+                let base: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+                let p = base.wrapping_add(pad.wrapping_mul(0x340));
+                let id = u32::from(mem.read::<u16>(e.wrapping_add(2)));
+                let b = id.wrapping_sub(0x3000);
+                last = add_menu_prim(mem, p, id, b, call).unwrap_or(b);
+            }
+            i += 1;
+        }
+        last
     }
 }

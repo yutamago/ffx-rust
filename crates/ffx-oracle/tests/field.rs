@@ -10580,3 +10580,375 @@ fn round21_requests_finis_and_menus_match_the_original() {
         );
     }
 }
+
+/// `MsMenuStatusNum(i, _)`'s stand-in: `base + 4 i`.
+fn index4_stub(base: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x02, 0x05];
+    c.extend_from_slice(&base.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// `Ch_GetPos(chr, &x, &y, &z)`'s stand-in: the three words at `src`
+/// through its pointer arguments 1..=3.
+fn pos3_stub(src: u32) -> Vec<u8> {
+    let mut c = vec![];
+    for i in 0..3u8 {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, 8 + 4 * i, 0x8b, 0x0d]);
+        c.extend_from_slice(&(src + 4 * u32::from(i)).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x08]);
+    }
+    c.push(0xc3);
+    c
+}
+
+/// Round 22: disposing of animations, the effect object finaliser, the
+/// command menus, the guide's edge fade and the character distance.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round22_dispose_fini_menus_fade_and_chadist_match_the_original() {
+    use ffx_field::abmap;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0016_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (nv, entries, exitv, plyv, pos) = (
+        t.alloc(4),
+        t.alloc(4 * 64),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0xc),
+    );
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(abmap::MS_MENU_STATUS_NUM_SIZE),
+            log_stub(log, nv, 240, 0),
+        ),
+        (Some(abmap::MS_MENU_STATUS_NUM), index4_stub(entries)),
+        (
+            Some(abmap::MS_GET_ROM_PLY_COMMAND),
+            log_stub_from(log, rv, 241, 0, 1),
+        ),
+        (Some(abmap::DBG_PRINTF), log_stub(log, rv, 242, 2)),
+        (Some(abmap::DEBUG_EXIT_TRACE), log_stub(log, exitv, 243, 1)),
+        (Some(camera::SG_GET_PLAYER), log_stub(log, plyv, 244, 0)),
+        (Some(model::CH_GET_POS), pos3_stub(pos)),
+        (Some(model::GRAPHIC_SET_CHADIST), log_stub(log, rv, 245, 1)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let render = t.b.rebase(0x0187_6e00);
+    let o = t.alloc(0x490);
+    let pads = t.alloc(0x340 * 6);
+    t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
+    let (a, b, p, rect, out) = (
+        t.alloc(8),
+        t.alloc(8),
+        t.alloc(8),
+        t.alloc(0x10),
+        t.alloc(4),
+    );
+    let (scene, sys, map) = (t.alloc(0x110), t.alloc(4), t.alloc(0x20));
+    for k in 0..200u32 {
+        env.reset(&mut t, &mut rng);
+        // the animation slots of the renderer
+        t.fill(render + 0x9cac0, 0x28 * 0x40, &mut rng);
+        for i in 0..0x40 {
+            let e = render + 0x9cac0 + 0x28 * i;
+            t.put(e + 4, u16::try_from(rng.below(4)).unwrap());
+            t.put(e + 6, u16::try_from(rng.below(5)).unwrap());
+        }
+        t.put(render + 0x9cabc, rng.below(70));
+        let obj = rng.below(6);
+        let kind = if rng.below(2) == 0 {
+            rng.below(4)
+        } else {
+            0x8000_0000 | rng.next()
+        };
+        t.same(
+            "yiDisposeAnimDObj",
+            |x| x.eax(0x0090_84b0, &[obj, kind]),
+            |m| yi::bridge::yi_dispose_anim_dobj(m, obj, kind, call),
+        );
+        // the effect object
+        t.set(tb::CURRENT_PROGRAM, rng.next());
+        t.same(
+            "rcefObjFini",
+            |x| x.eax(0x0092_fee0, &[o]),
+            |m| tb::rcef_obj_fini(m, o, call),
+        );
+        // the command menus
+        t.fill(entries, 4 * 64, &mut rng);
+        for i in 0..64 {
+            t.put(
+                entries + 4 * i,
+                0x40u8 + u8::try_from(rng.below(6)).unwrap(),
+            );
+        }
+        t.put(nv, rng.range(-1, 64).cast_unsigned());
+        t.put(exitv, rng.next());
+        let pad = 2 + rng.below(4);
+        t.fill(pads + 0x340 * pad, 0x340, &mut rng);
+        t.put(
+            pads + 0x340 * pad + 0x1e,
+            i16::try_from(rng.range(-4, 0x42)).unwrap(),
+        );
+        let mk = 0x40 + rng.below(6);
+        let work = t.stack_scratch(0);
+        t.same(
+            "AbmapFillCommandMenu",
+            |x| x.eax(0x00a4_59e0, &[pad, mk]),
+            |m| abmap::bridge::abmap_fill_command_menu(m, pad, mk, work, call),
+        );
+        // the guide's edge fade
+        for at in [a, b, p] {
+            for i in 0..2 {
+                t.put(at + 4 * i, float_in(&mut rng, -200, 200));
+            }
+        }
+        if k % 5 == 0 {
+            t.put(b, t.b.read::<u32>(a));
+            t.put(b + 4, t.b.read::<u32>(a + 4));
+        }
+        for i in 0..4 {
+            t.put(rect + 4 * i, float_in(&mut rng, -2000, 2000));
+        }
+        if k % 11 == 0 {
+            t.put(rect, 0x7fc0_0000u32);
+        }
+        t.fill(out, 4, &mut rng);
+        let work = t.stack_scratch(0);
+        t.same(
+            "Yn_GuideEdgeFade",
+            |x| x.eax(0x0091_f530, &[p, a, b, rect, out]),
+            |m| guide::bridge::yn_guide_edge_fade(m, [p, a, b, rect, out], work),
+        );
+        // the character distance
+        t.put(plyv, if rng.below(3) == 0 { 0 } else { rng.next() });
+        for i in 0..3 {
+            t.put(pos + 4 * i, float_in(&mut rng, -5000, 5000));
+        }
+        for i in 0..16 {
+            let m = t.b.rebase(camera::CAMERA_MATRIX) + 4 * i;
+            t.put(m, float_in(&mut rng, -2, 2));
+        }
+        t.set(guide::YN_MAP_SYSTEM, sys);
+        t.put(sys, map);
+        t.fill(scene, 0x110, &mut rng);
+        let work = t.stack_scratch(0);
+        t.same(
+            "rcbgSceneSetChadist",
+            |x| x.eax(0x0092_0790, &[scene]),
+            |m| model::bridge::rcbg_scene_set_chadist(m, scene, work, call),
+        );
+    }
+}
+
+/// Round 23: the effect sequences' waits and forwarders.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round23_waits_and_forwarders_match_the_original() {
+    use task::{bridge as tb, header};
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0017_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let log = env.log;
+    let v: Vec<u32> = (0..7).map(|_| t.alloc(4)).collect();
+    let [cue, mot, hv, ev, ov, rv2, rv3] = v[..] else {
+        unreachable!()
+    };
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(tb::SOUND_CUE_CHECK), log_stub(log, cue, 250, 1)),
+        (Some(tb::MS_EFFECT_CHECK_MOTION), log_stub(log, mot, 251, 1)),
+        (Some(tb::MS_SET_CHR_DIR_TARGET), log_stub(log, rv2, 252, 6)),
+        (Some(tb::MS_GET_WEAPON_HANDLE), log_stub(log, hv, 253, 2)),
+        (Some(tb::CH_SET_HIDE_EFFECT), log_stub(log, rv2, 254, 2)),
+        (Some(tb::OP_OEF2_A_GET), log_stub(log, ev, 255, 3)),
+        (Some(tb::OP_OEF2_SEP_NUMBER_GET), log_stub(log, rv3, 256, 1)),
+        (Some(tb::OP_OEF2_SE_ON), log_stub(log, rv2, 257, 3)),
+        (Some(tb::RCEF_MAIN_CREATE_OBJ), log_stub(log, ov, 258, 1)),
+        (Some(tb::RCEF_TASK_SET_SEQ), log_stub(log, rv3, 259, 2)),
+        (Some(tb::RCEF_CHR_FINI), log_stub(log, rv3, 260, 1)),
+        (Some(task::PPP_MEM_FREE), log_stub(log, rv2, 261, 3)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let task = t.alloc(0xbc);
+    let envw = t.alloc(4);
+    for k in 0..200u32 {
+        env.reset(&mut t, &mut rng);
+        for &w in &v {
+            t.put(w, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        if k % 4 == 0 {
+            t.put(mot, u32::MAX);
+        }
+        t.fill(task, 0xbc, &mut rng);
+        t.put(task + header::LEVEL, rng.range(0, 8));
+        t.same(
+            "rcEffectTaskSoundCueWait",
+            |o| o.void(0x0093_0500, &[task]),
+            |m| tb::rc_effect_task_sound_cue_wait(m, task, call),
+        );
+        t.same(
+            "rcEffectTaskMotionWait",
+            |o| o.void(0x0093_0430, &[task]),
+            |m| tb::rc_effect_task_motion_wait(m, task, call),
+        );
+        let a = [rng.next(), rng.next(), rng.next(), rng.next()];
+        t.same(
+            "rcefSetChrDirTarget",
+            |o| o.eax(0x0092_e750, &a[..3]),
+            |m| tb::rcef_set_chr_dir_target(m, [a[0], a[1], a[2]], call),
+        );
+        t.same(
+            "rcefSetChrDirTarget2",
+            |o| o.eax(0x0092_e960, &a),
+            |m| tb::rcef_set_chr_dir_target2(m, a, call),
+        );
+        let show = rng.below(3);
+        t.same(
+            "rcefWeaponSetHide",
+            |o| o.eax(0x0092_eb70, &[a[0], show]),
+            |m| tb::rcef_weapon_set_hide(m, a[0], show, call),
+        );
+        t.set(tb::RCEF_OEF2, rng.next());
+        t.same(
+            "rcefPlaySE",
+            |o| o.eax(0x0092_e680, &[a[1]]),
+            |m| tb::rcef_play_se(m, a[1], call),
+        );
+        t.same(
+            "rcefMainCreateTask",
+            |o| o.eax(0x0092_5170, &[a[0], a[1]]),
+            |m| tb::rcef_main_create_task(m, a[0], a[1], call),
+        );
+        t.set(tb::PPP_ENV_SLOT, envw);
+        t.put(envw, rng.next());
+        t.same(
+            "rcefChrDelete",
+            |o| o.eax(0x0093_0600, &[a[2]]),
+            |m| tb::rcef_chr_delete(m, a[2], call),
+        );
+    }
+}
+
+/// Round 23, second part: Yn's pre-BG layer switches and character
+/// distance, the rcfx deletes, the `FPm173` end and the transfer pair.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round23_yn_layers_and_rcfx_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0017_0002);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let log = env.log;
+    let v: Vec<u32> = (0..6).map(|_| t.alloc(4)).collect();
+    let [cv, sv, gv, rv2, rv3, _] = v[..] else {
+        unreachable!()
+    };
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(model::SCENE_SET_CHADIST_THUNK),
+            log_stub(log, rv2, 262, 1),
+        ),
+        (Some(model::YN_MAP_PART_COUNT), log_stub(log, cv, 263, 0)),
+        (
+            Some(model::GRAPHIC_2D_HIDE_LAYER),
+            log_stub(log, rv3, 264, 1),
+        ),
+        (
+            Some(model::GRAPHIC_2D_SHOW_LAYER),
+            log_stub(log, rv3, 265, 1),
+        ),
+        (
+            Some(model::TEX_ANIM_SET_VISIBILITY),
+            log_stub(log, rv2, 266, 2),
+        ),
+        (Some(model::RCFX_SPRING_FINI), log_stub(log, rv3, 267, 1)),
+        (Some(model::RCFX_NAIL_FINI), log_stub(log, rv3, 268, 1)),
+        (Some(model::YN_SCENE_GET_OBJECT), log_stub(log, gv, 269, 2)),
+        (Some(model::FPM173_END), log_stub(log, rv2, 270, 1)),
+        (Some(model::TRX_SET_NO), log_stub(log, rv2, 271, 2)),
+        (None, log_stub(log, sv, 272, 2)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let strstr = *stubs.last().unwrap();
+    t.put(t.b.rebase(model::STRSTR_IMPORT), strstr);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (sys, map, scene, parts) = (
+        t.alloc(4),
+        t.alloc(0x20),
+        t.alloc(0x20),
+        t.alloc(0xc0 * 0x30),
+    );
+    for _ in 0..200u32 {
+        env.reset(&mut t, &mut rng);
+        for &w in &v {
+            t.put(w, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        let a = [rng.next(), rng.next(), rng.next(), rng.next()];
+        // Yn
+        let (s, m0) = match rng.below(3) {
+            0 => (0, 0),
+            1 => (sys, 0),
+            _ => (sys, map),
+        };
+        t.set(guide::YN_MAP_SYSTEM, s);
+        t.put(sys, m0);
+        t.put(map + 8, scene);
+        t.same(
+            "Yn_SetChadist",
+            |o| {
+                let e = o.eax(0x0091_a250, &[]);
+                (s != 0 && m0 != 0).then_some(e)
+            },
+            |m| model::bridge::yn_set_chadist(m, call),
+        );
+        // the layer switches need the scene (the original reads address 8
+        // without one)
+        t.set(guide::YN_MAP_SYSTEM, sys);
+        t.put(sys, map);
+        t.put(scene + 8, parts);
+        t.fill(parts, 0xc0 * 0x30, &mut rng);
+        t.put(cv, rng.range(-2, 0x30).cast_unsigned());
+        let mapno = match rng.below(4) {
+            0 => 0x15b,
+            1 => 0xd4,
+            _ => rng.below(0x400),
+        };
+        t.put(t.b.rebase(model::CURRENT_MAP_NO), mapno);
+        let n = rng.below(0x30);
+        t.same(
+            "Yn_PreBgLayerDispOff",
+            |o| o.eax(0x0091_a7c0, &[n]),
+            |m| model::bridge::yn_pre_bg_layer_disp_off(m, n, call),
+        );
+        t.same(
+            "Yn_PreBgLayerDispOn",
+            |o| o.eax(0x0091_a830, &[n]),
+            |m| model::bridge::yn_pre_bg_layer_disp_on(m, n, call),
+        );
+        // rcfx, FPm173, transfers
+        t.same(
+            "rcfxSpringDelete",
+            |o| o.eax(0x0092_8c60, &[a[3]]),
+            |m| model::bridge::rcfx_spring_delete(m, a[3], call),
+        );
+        t.same(
+            "rcfxNailDelete",
+            |o| o.eax(0x0092_9070, &[a[3]]),
+            |m| model::bridge::rcfx_nail_delete(m, a[3], call),
+        );
+        t.same(
+            "Yn_FPm173End",
+            |o| o.eax(0x0091_9ab0, &[]),
+            |m| model::bridge::yn_fpm173_end(m, call),
+        );
+        t.same(
+            "rcbgTrxPairSetNo",
+            |o| o.eax(0x0092_21e0, &[a[0], a[1]]),
+            |m| model::bridge::rcbg_trx_pair_set_no(m, a[0], a[1], call),
+        );
+    }
+}

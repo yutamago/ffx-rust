@@ -100,8 +100,8 @@ NAME_RULES = [
     ("platform", r"^(fios|CD|Cd|dvd|hdd|get_hdd|BigFile|VFile|Vbf_|Path_|File|FileSys|Settings|user_|"
                  r"UserHeap|Sg_Mem|mspace|sa_|Sa_|task_|sce[A-Z]|FFXSif|Sif|rpc_|Trophy|trophy|achievement|"
                  r"Steam|std_|Std|Array_|CriticalSection|VirtualFree|Virtual|MemSystem|AsyncLoad|FlushCache$|"
-                 r"i?(Sleep|Wakeup)Thread$|i?(Signal|Wait|Create|Delete|Poll)Sema$)",
-     "platform name (files, CD/DVD emulation, allocators, threads, std::)", None),
+                 r"i?(Sleep|Wakeup)Thread$|i?(Signal|Wait|Create|Delete|Poll)Sema$|Throw[A-Za-z]*Exception|CxxThrow|str_replace$)",
+     "platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions)", None),
     ("platform", r"^(Input|input|Virtuos|virtuos|Async|JobSchedule(?!_ppp)|SaveData|Save[A-Z]|getPlatform|"
                  r"Game_InitFileSystem|FFXApplication|ResetToLauncher|Fixup|AssetListReader|MagicFile|Lang|"
                  r"Cloud|getIsConsoleMode|PArray|Alloc|Malloc|SetUpDefault|VbfStream|Vbf)",
@@ -114,7 +114,19 @@ DEBUG_NAME = NAME_RULES[0][1]
 
 # GS/DMA packet building: kicks and the helpers that append to a packet
 PACKET_API = re.compile(r"^(sceDma|sceGs|rcPacketData|TOAdp|TOGs[A-Z]|TOCtrlPkt|TODrawKick|"
-                        r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$)")
+                        r"TO(Open|Close)Pktbuff|TOSetPktBuffAdrs|Gu_Set|Gu_Packet|yiPk|Sg_Pk|rcbg(Set|Restore)Reg$|"
+                        # the menu/battle 2D shape writers append GIF primitives to the packet
+                        r"TOMkp|TODraw|TOMakePkt|"
+                        # the PC port's stand-in for those GIF primitives
+                        r"graphicDrawUI|"
+                        # own names of packet builders found by reading
+                        r"GsPkt_)")
+# the appending part of the packet API (no DMA kicks)
+APPEND_API = re.compile(r"^(TOAdp|TOGs[A-Z]|TOMkp|TODraw(?!Kick)|TOMakePkt|graphicDrawUI|GsPkt_|rcPacketData)")
+# read-only helpers of the 2D shape writers: the menu scissor clip (writes
+# only through its pointer arguments) and the shape texture lookup (its
+# cache is a texture name, not game state)
+DRAW_HELPER = re.compile(r"^(BeginScissor_|TOGetShapTextureName$|TOGetImageWH$|TOCopyWindowLayout)")
 # named read-only helpers a packet writer may call (no global writes either)
 GETTER = re.compile(r"(Get|[Ii]s[A-Z0-9]|get_ptr32|Calc|ScaleMatrix|PersMatrix|Copy16|CopyQword|ToFixed|Mul[0-9A-Z]|Apply)")
 # the PC build's PS2 SDK stand-ins (sce*, FlushCache, threads, semaphores)
@@ -264,6 +276,15 @@ def main():
     args = ap.parse_args()
 
     names = progress.symbols()
+    # auto-port shape names (SetFields_*, Compare_*, ...) say what the code
+    # does, not whose it is: the propagation rules treat them as unnamed
+    shape = set()
+    for line in (REPO / "symbols/ffx.sym").read_text(encoding="utf-8").splitlines():
+        if "# auto-port shape" in line:
+            shape.add(int(line.split()[0], 16))
+
+    def meaningful(a):
+        return bool(names.get(a)) and a not in shape
     rows = progress.functions()
     module = progress.placement(rows, names)
     size = {a: s for a, _, s in rows}
@@ -419,6 +440,9 @@ def main():
             continue
         cls[a], why[a] = "logic", "default (no rule: ported to be safe)"
 
+    # exception unwinding funclets (the CRT part of the image)
+    unwind = {a for a in starts if module.get(a) == "crt" and a >= 0x00aa0000}
+
     def game_callees(a):
         return {c for c in callees[a] if c != a and c in cls and not PRINT.search(names.get(c, ""))}
 
@@ -440,13 +464,25 @@ def main():
             cs = [c for c in callers[a] if c != a and c in reach]
             if not cs:
                 continue
-            kinds = {cls.get(c) or ("debug" if debug_outside(c) else "library") for c in cs}
+            pc_part = a < PC_END and not meaningful(a)
+            if pc_part and all(c in unwind for c in cs):
+                cls[a], why[a] = "platform", "only exception unwinding reaches it (a release or destructor)"
+                changed = True
+                continue
+            # in the PC port's part of the image, library code (std:: copies
+            # placed in crt, PhyreEngine) calling a function makes it platform
+            kinds = {cls.get(c) or ("debug" if debug_outside(c) else
+                                    "platform" if pc_part and c < PC_END else "library") for c in cs}
+            # the PC part's own helpers (allocator internals, container
+            # copies, renderer set-up) pass any number of hops when they call
+            # no game logic above PC_END
+            pc_tree = pc_part and not any(c >= PC_END and cls.get(c) == "logic" for c in game_callees(a))
             for k in ("debug", "glue", "platform"):
                 # glue and platform pass one hop, to unnamed functions whose
                 # callers a rule decided (a main loop that the PC update
                 # function calls stays logic); debug-only trees go all the way
-                if kinds == {k} and (k == "debug" or (module[a] in GLUE_SIDE and not names.get(a)
-                                                      and all(c in decided for c in cs))):
+                if kinds == {k} and (k == "debug" or pc_tree or (module[a] in GLUE_SIDE and not meaningful(a)
+                                                                 and all(c in decided for c in cs))):
                     cls[a] = k
                     why[a] = f"only called from {k} code ({names.get(next(iter(cs)), hex(next(iter(cs))))}" + \
                              (f" and {len(cs) - 1} more)" if len(cs) > 1 else ")")
@@ -459,7 +495,6 @@ def main():
     # (at least one such call); static initialisers (atexit registration);
     # and destructors only exception unwinding reaches. Game code above
     # PC_END keeps its default.
-    unwind = {a for a in starts if module.get(a) == "crt" and a >= 0x00aa0000}
 
     def container_ok(c, depth):
         """c is an allocator/container/platform call; a code block Ghidra
@@ -508,11 +543,20 @@ def main():
     # platform, VU0 scratch, read-only getters and other packet writers; and
     # no logic reads a global they write (writers, an init that resets the
     # buffer index, do not matter)
+    pkt_globals = set()
+    for x in game:
+        if PACKET_API.search(names.get(x, "")):
+            pkt_globals |= writes[x]
+
+    def gwrites(x):
+        return writes[x] - pkt_globals
+
     def other(c):
         n = names.get(c, "")
         return cls.get(c) in ("glue", "platform") or bool(PACKET_API.search(n) or VU_SCRATCH.search(n)
-                                                         or (GETTER.search(n) and not writes[c])
-                                                         or (size.get(c, 99) <= 16 and not writes[c]
+                                                         or DRAW_HELPER.search(n)
+                                                         or (GETTER.search(n) and not gwrites(c))
+                                                         or (size.get(c, 99) <= 16 and not gwrites(c)
                                                              and not direct.get(c)))
 
     for a in game:
@@ -521,45 +565,61 @@ def main():
             cls[a] = "glue"
             why[a] = f"GS packet API ({n}): appends to or kicks a packet; replaced by ffx-render"
             decided.add(a)
-    pk = {a for a in game if cls[a] == "logic" and a not in decided and a in reach}
-    for a in args.explain:
-        if a not in pk:
-            print(f"0x{a:08x}: not a candidate ({cls.get(a)}, {why.get(a)})", file=sys.stderr)
-    changed = True
-    while changed:
-        changed = False
-        for a in sorted(pk):
-            # real calls only: immediates in packet code (GIF tags) can look
-            # like function addresses
-            ce = {c for c in direct.get(a, ()) if c in cls and c != a}
-            if not all(c in pk or other(c) for c in ce):
-                if a in args.explain:
-                    print(f"0x{a:08x}: calls " + ", ".join(names.get(c, hex(c)) for c in ce
-                                                       if not (c in pk or other(c))), file=sys.stderr)
-                pk.discard(a)
-                changed = True
-                continue
-            if not all(fn in pk or other(fn) or fn not in reach for g in writes[a] for fn in accessors[g]):
-                if a in args.explain:
-                    print(f"0x{a:08x}: writes globals read by " + ", ".join(sorted(
-                        {names.get(fn, hex(fn)) for g in writes[a] for fn in accessors[g]
-                         if not (fn in pk or other(fn) or fn not in reach)})[:6]), file=sys.stderr)
-                pk.discard(a)
-                changed = True
-                continue
-            kicks = any(PACKET_API.search(names.get(c, "")) for c in ce)
-            cs = [c for c in callers[a] if c != a and c in reach]
-            if not kicks and not (cs and all(c in pk for c in cs)):
-                if a in args.explain:
-                    print(f"0x{a:08x}: no packet API call and callers not all packet writers: "
-                          + ", ".join(names.get(c, hex(c)) for c in cs if c not in pk), file=sys.stderr)
-                pk.discard(a)
-                changed = True
-    for a in pk:
-        api = sorted({names[c] for c in callees[a] if PACKET_API.search(names.get(c, ""))})
-        cls[a] = "glue"
-        why[a] = ("GS/DMA packet writer (" + (", ".join(api[:3]) if api else "only packet writers call it") +
-                  "; writes no game state): replaced by ffx-render")
+    # rounds: a writer found in one round counts as a packet call in the
+    # next (a draw helper that only calls TOAdp* through another writer)
+    confirmed = set()
+    while True:
+        pk = {a for a in game if cls[a] == "logic" and a not in decided and a in reach
+              and (not confirmed or any(c in confirmed for c in direct.get(a, ())))}
+        for a in args.explain:
+            if a not in pk:
+                print(f"0x{a:08x}: not a candidate ({cls.get(a)}, {why.get(a)})", file=sys.stderr)
+        changed = True
+        while changed:
+            changed = False
+            for a in sorted(pk):
+                # real calls only: immediates in packet code (GIF tags) can look
+                # like function addresses
+                ce = {c for c in direct.get(a, ()) if c in cls and c != a}
+                if not all(c in pk or other(c) for c in ce):
+                    if a in args.explain:
+                        print(f"0x{a:08x}: calls " + ", ".join(names.get(c, hex(c)) for c in ce
+                                                           if not (c in pk or other(c))), file=sys.stderr)
+                    pk.discard(a)
+                    changed = True
+                    continue
+                if not all(fn in pk or other(fn) or fn not in reach for g in gwrites(a) for fn in accessors[g]):
+                    if a in args.explain:
+                        print(f"0x{a:08x}: writes globals read by " + ", ".join(sorted(
+                            {names.get(fn, hex(fn)) for g in gwrites(a) for fn in accessors[g]
+                             if not (fn in pk or other(fn) or fn not in reach)})[:6]), file=sys.stderr)
+                    pk.discard(a)
+                    changed = True
+                    continue
+                kicks = any(PACKET_API.search(names.get(c, "")) or c in confirmed for c in ce)
+                cs = [c for c in callers[a] if c != a and c in reach]
+                if not kicks and not (cs and not confirmed and all(c in pk for c in cs)):
+                    if a in args.explain:
+                        print(f"0x{a:08x}: no packet API call and callers not all packet writers: "
+                              + ", ".join(names.get(c, hex(c)) for c in cs if c not in pk), file=sys.stderr)
+                    pk.discard(a)
+                    changed = True
+        for a in pk:
+            api = sorted({names[c] for c in callees[a] if PACKET_API.search(names.get(c, ""))})
+            via = sorted({names.get(c, hex(c)) for c in direct.get(a, ()) if c in confirmed})
+            cls[a] = "glue"
+            why[a] = ("GS/DMA packet writer (" + (", ".join(api[:3]) if api else
+                                                  "calls the packet writers " + ", ".join(via[:3]) if via else
+                                                  "only packet writers call it") +
+                      "; writes no game state): replaced by ffx-render")
+        new = pk - confirmed
+        # only appenders carry over (TOAdp*, TOGs*, the shape writers), not
+        # kicks: an assert that DMAs an error screen does not make its callers
+        # packet code
+        confirmed |= {a for a in pk if any(APPEND_API.search(names.get(c, "")) or c in confirmed
+                                           for c in direct.get(a, ()))}
+        if not new:
+            break
 
     # a debug-sounding name the game logic depends on (a math helper of the
     # rc tools, an "is debug" flag the battle code reads) is logic when most
@@ -584,6 +644,38 @@ def main():
                 changed = True
                 why[a] = ("ran in the coverage sessions, called by logic: " +
                           ", ".join(sorted(names.get(c, hex(c)) for c in lc)[:3]))
+
+    # static initialisers (they register a destructor with atexit), anywhere
+    for a in game:
+        if cls[a] == "logic" and (any(names.get(c) == "atexit" for c in direct.get(a, ())) or "atexit" in imports[a]):
+            cls[a], why[a] = "platform", "static initialiser (registers its destructor with atexit)"
+
+    # thin wrappers in the PC part: a small function that writes no global
+    # and only forwards to glue or platform code (PhyFMVPlayerManager calls,
+    # a renderer delegation, a PString setter) is that boundary, even when
+    # its name sounds like scene state: the state lives on the PC side and
+    # ffx-render takes the call's arguments as its input
+    changed = True
+    while changed:
+        changed = False
+        for a in sorted(game):
+            if cls[a] != "logic" or a not in reach or writes[a] or size.get(a, 99) > 64:
+                continue
+            ce = {c for c in direct.get(a, ()) if c != a and not CONTAINER_OK.search(names.get(c, ""))}
+            ks = {cls.get(c) for c in ce}
+            if ce and (ks <= {"glue", "platform"} if a < PC_END else ks == {"platform"}):
+                cls[a] = "glue" if "glue" in ks else "platform"
+                why[a] = ("thin wrapper: only forwards to " + cls[a] + " code (" +
+                          ", ".join(sorted(names.get(c, hex(c)) for c in ce)[:3]) + ")")
+                changed = True
+
+    for a in args.explain:
+        if a in cls:
+            cs = sorted(c for c in callers[a] if c != a)
+            print(f"0x{a:08x}: {cls[a]} ({why[a]}); module {module.get(a)}; callers " +
+                  ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}{'' if c in decided else '?'}" for c in cs[:8]) +
+                  "; calls " + ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}"
+                                         for c in sorted(direct.get(a, ())) if c != a)[:300], file=sys.stderr)
 
     stats = defaultdict(Counter)
     for a in game:

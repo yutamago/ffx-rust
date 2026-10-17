@@ -2551,15 +2551,15 @@ fn gu_round3_matches_the_original() {
             t.twin("TkMenuGetSceneRecord", 0x00a7_b8f0, &[slot, h], U32, |o| {
                 w(scene::tk_menu_get_scene_record(o, i(slot), h))
             });
-            t.twin("TkMenuGetSceneX", 0x00a7_b9d0, &[slot, h], U32, |o| {
+            t.twin("TkMenuGetSceneOffsetX", 0x00a7_b9d0, &[slot, h], U32, |o| {
                 s(scene::tk_menu_get_scene_field(o, i(slot), h, 8))
             });
-            t.twin("TkMenuGetSceneY", 0x00a7_ba00, &[slot, h], U32, |o| {
+            t.twin("TkMenuGetSceneOffsetY", 0x00a7_ba00, &[slot, h], U32, |o| {
                 s(scene::tk_menu_get_scene_field(o, i(slot), h, 0xa))
             });
             let (x, y) = (t.rng.next(), t.rng.next());
             t.twin(
-                "TkMenuSetScenePos",
+                "TkMenuSetSceneOffset",
                 0x00a7_c810,
                 &[slot, h, x, y],
                 VOID,
@@ -3111,7 +3111,7 @@ fn menu_slots_windows_and_party_match_the_original() {
         t.twin("MenuStatus_CloseWindow", 0x008d_2680, &[k], U32, |o| {
             w(tk::menu_status_close_window(o, k))
         });
-        t.twin("MenuSubCmd_RefreshHelp", 0x008e_49b0, &[], VOID, |o| {
+        t.twin("TkMenuRefreshSubCmdHelp", 0x008e_49b0, &[], VOID, |o| {
             tk::menu_sub_cmd_refresh_help(o);
             0
         });
