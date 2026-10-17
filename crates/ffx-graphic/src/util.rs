@@ -512,4 +512,41 @@ pub mod bridge {
     pub fn prx_idle(m: &impl Mem) -> u32 {
         u32::from(PRX_STATE.get(m) == 3 && PRX_PENDING.get(m) == 0)
     }
+
+    // ---- round 9 ----
+
+    /// The game's import thunks of the CRT's `_CIsin` and `_CIcos`.
+    pub const CI_SIN: u32 = 0x0094_98c8;
+    pub const CI_COS: u32 = 0x0094_98c2;
+
+    /// `sin` and `cos` of the float angle at `angle` as the originals take
+    /// them: `fld m32`, the intrinsic, `fstp m32`, and once more through
+    /// `fld`/`fstp`.
+    fn sin_cos(h: &mut impl Host, angle: u32) -> (u32, u32) {
+        let a = x87::load(angle);
+        let sin = h.rebase(CI_SIN);
+        let s = rt(h.call_intrinsic(sin, a).to_bits());
+        let cos = h.rebase(CI_COS);
+        let c = rt(h.call_intrinsic(cos, a).to_bits());
+        (s, c)
+    }
+
+    /// `Matrix_RotationX(out, angle)` (`0x0066c8a0`) and
+    /// `Matrix_RotationY(out, angle)` (`0x0066c920`): the 4x4 rotation about
+    /// x (rows `[1 0 0 0] [0 c s 0] [0 -s c 0] [0 0 0 1]`) or y (`[c 0 -s 0]
+    /// [0 1 0 0] [s 0 c 0] [0 0 0 1]`). Returns `out`.
+    pub fn rotation(h: &mut impl Host, out: u32, angle: u32, y_axis: bool) -> u32 {
+        let (s, c) = sin_cos(h, angle);
+        let ns = s ^ 0x8000_0000;
+        let (one, z) = (1f32.to_bits(), 0u32);
+        let m = if y_axis {
+            [c, z, ns, z, z, one, z, z, s, z, c, z, z, z, z, one]
+        } else {
+            [one, z, z, z, z, c, s, z, z, ns, c, z, z, z, z, one]
+        };
+        for (i, v) in (0u32..).zip(m) {
+            h.write(out + 4 * i, v);
+        }
+        out
+    }
 }
