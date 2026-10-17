@@ -526,3 +526,74 @@ vertex's bit 0 is set, it moves along `n = (c1 - c0) × (c2 - c0)` by
 `Sg_VecAdd`. On level hash `0xc58` (`graphicLevelGetNameHash`) a character
 whose matrix rows `+0x1d0`, `+0x1e0` or `+0x1f0` has a squared length below
 2.5e-7 gets all its anchors zeroed instead.
+
+## The cloth step (round 10, `crates/ffx-sg/src/cloth.rs`)
+
+`Sg_ClothStep(chr)` (`0x00822de0`, from `0x0082e390` before
+`Sg_ClothPlaceAnchors`) runs when `chr+0x194` has bits 21 and 22.
+
+Set-up:
+
+- `scale` = `[chr+0x1c4]+0x3c`; `s2 = scale²`.
+- The wind: strength, heading, elevation from `chr+0x80c/0x804/0x808` when
+  `chr+0x198` bit 1, else the globals `0x012fbc44/48/4c`; the strength
+  times `scale`, the direction from `Sg_CreateVectorFromHV`. On maps 0x15d
+  and 0x84 (but for characters 1 and 0x4001) with `getScenerioFlag() < 2`
+  a strength above 399 skips the step; on map 0xc0 the strength is 2000.
+  `MagicFile_GetMagicId() == 0x1b4` with character 0x1120/0x1154 in
+  motion 0x3008101a/b skips it too.
+- The character's motion: `dist = |chr+0x684 - chr+0x694|`, `dy = (chr+0x10
+  - chr+0x20) s2`, weights `ka = chr+0x814`, `kb = chr+0x818`. The reach is
+  17 in battle (`MsBattleCheck`; `dist` and `dy` 0, character 3 in motion
+  0x310b0/1 gets `ka = kb = 0`, and `chr+0x81c` caps the follow), else 0.3
+  or 3.4 (0.15 or 1.7 with `chr+0x820` bit 1) as `dist` is at most 0.1 or
+  above. `chr+0x820` loses bits 1 and 2 (bit 2 also when bit 3 is set).
+- Repeats: `iters` = `chr+0x812` (doubled for characters 6, 7 on maps 0x15d,
+  0x84) when `chr+0x810` is set, `dist` is out of reach or `chr+0x820` bit 2
+  was set; the step runs `iters + 1` times. Without doubling, the first run
+  is *lifted*: points rise by `100000 scale`.
+- With `chr+0x820` bit 3, a floor: `chr+0x18 = 1`, the normal `chr+0x7c`
+  through the transposed `chr+0x210`, the point `chr+0x1d0`'s translation.
+
+Per model group (`[chr+0x1bc] + 0x38 g`, `u16 [chr+0x1c0]+6` of them) with
+strands (`hdr = [grp]`, `u16 hdr+0x18`):
+
+| group | |
+|---|---|
+| `+0` | header: `u16` root bone, `+0x18` strand count, `+0x1c` strands (0x24 each) |
+| `+8` | the model vertices (16 bytes) |
+| `+0xc` | the cloth points: per strand `3 tc` points (positions, velocities, previous positions) |
+| `+0x1c` | where the group was (vec3) |
+| `+0x30` | marks (a byte per vertex), set for the strands' vertices until `+0x34` is 1 |
+
+`M` = `chr+0x1d0` x root bone (`FFXVu0MulMatrix`, the bones' translations at
+`+0xb8` scaled by 1000 around every product). The follow `F = (grp+0x1c -
+M.t)`: zero with `chr+0x194` bit 23; beyond the reach it is zero, the group
+not free, the run lifted and `iters` reset from `chr+0x812`; else `F.x, F.z`
+times `s2 (|F|/1.7)² kb` (the square capped by `chr+0x81c`) and `F.y =
+(F.y s2 + dy) ka` with `chr+0x820` bit 0, else 0. The group remembers
+`M.t`. Then each collision record (`[chr+0x1c0]+0x30`, 0x40 each: radius,
+reach, `u16` kind, `i16` bone, axis scale, local axis `+0x10`, local point
+`+0x20`) places its point at `[chr+0x32c]` (0x60 each, axis at `+0x10` for
+kinds 1 and 2) in the group's space, scaled by `s2`.
+
+Per strand:
+
+| strand | |
+|---|---|
+| `+0` | `i16` fixed points (copied from the model vertices) |
+| `+4` | lift (times `scale`, added to the push's y) |
+| `+8` | `u16` vertex indices |
+| `+0xc` | rod runs: `i16` kind (1-6, 0 ends), `i16` n, 8 bytes, n rods of 12 |
+| `+0x12`, `+0x14` | `i8` collision count, `i16` record indices |
+| `+0x13`, `+0x20` | `i8` anchor count, anchors (0x20: point, `i16` bone at `+0x10`) |
+| `+0x18` | damping (velocity scale) when the group is free |
+| `+0x1c`, `+0x1e` | `i16` points, `i16` free ends (no collisions) |
+
+The push = wind `x (rand() % 1000) strength + F`, its y lifted, into the
+group's space (`Sg_MatrixApplyVec3`). Moving points get the push (plus their
+velocity when free), the rods run, map 0x107 lifts two points of character
+2's group 2 strand 2 (scenario 0x532-0x53c), then each moving point is
+pushed out of the spheres (kind 0), capsules (2) and planes (1) by the
+radius times `Ch_UseLargeCollisionRad`, and out of the floor by 1.2 its
+depth; written to its vertex with `w = 1`, its velocity the damped change.
