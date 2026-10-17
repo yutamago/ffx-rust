@@ -10,7 +10,8 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave, x87,
+    draw, et, fp, heap, mat, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec,
+    wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -8833,6 +8834,122 @@ fn wave_omd_make_matches_the_original() {
                     ))
                 },
             );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn shape_con_des_match_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_2b50);
+        // graphicVFXDestroy and pppMemFree recorded; the level hash from a
+        // cell
+        let cells = p.alloc(0x10);
+        deref_recorder(&mut p, 0x0064_5280, &[0, 0]);
+        deref_recorder(&mut p, 0x0071_6a90, &[0, 0, 0]);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(cells));
+        let (obj, prog, table, shape, sptr) = (
+            p.alloc(0x200),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(0x40),
+            p.alloc(4),
+        );
+        let env = p.alloc(0x40);
+        let slot = p.sym(d::ENV_SLOT);
+        let cur = p.sym(d::CURRENT_PROGRAM);
+        let cons = [
+            (0x0074_2b50u32, d::FIELD_CON),
+            (0x0074_3f00, d::FIELD_REV_CON),
+            (0x0074_50a0, d::FIELD_SPD_CON),
+            (0x0074_6200, d::FIELD_GLOBAL_CON),
+            (0x0074_7410, d::CAMERA_CON),
+            (0x0074_8660, d::CAMERA_CON),
+        ];
+        let dess = [
+            (0x0074_2bd0u32, d::FIELD_DES),
+            (0x0074_3f80, d::FIELD_REV_DES),
+            (0x0074_5130, d::FIELD_SPD_DES),
+            (0x0074_6280, d::FIELD_GLOBAL_DES),
+            (0x0074_7490, d::CAMERA_DES),
+            (0x0074_86e0, d::CAMERA_DES),
+            (0x0075_6270, d::RAIN_DES),
+        ];
+        for _ in 0..500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            p.set(prog + 0xc, table);
+            p.set(table, 4 * rng.below(0x10));
+            p.set(table + 4, 4 * rng.below(0x10));
+            p.set(obj + 8, sptr);
+            p.set(sptr, shape);
+            p.set(slot, env);
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            p.set(cells, rng.pick(&[0x76fu32, 0x1139, 0, 0x100]));
+            for (at, l) in cons {
+                p.check("pppDrawShape*Con", at, &[obj, prog], |o| {
+                    Some(d::shape_con(o, obj, prog, l, &mut call_original))
+                });
+            }
+            // the freed pointers: null or not
+            for off in [0xa4u32, 0xe0, 0xe4, 0xec, 0xf0, 0xf4] {
+                let t: u32 = p.get(table);
+                let x = if rng.chance(3) { 0 } else { rng.next() };
+                p.set(obj + t + off, x);
+                let t1: u32 = p.get(table + 4);
+                let y = if rng.chance(3) { 0 } else { rng.next() };
+                p.set(obj + t1 + off, y);
+            }
+            for (at, l) in dess {
+                p.check("ppp*Des", at, &[obj, prog], |o| {
+                    Some(d::ppp_des(o, obj, prog, l, &mut call_original))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn srand_draws_match_the_original() {
+    use rand::bridge::{self as r, Spread};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_26e0);
+        let log = record_srand(&mut p);
+        let (rg, seeded, r0) = (p.sym(r::R.sym), p.sym(r::SEEDED.sym), p.sym(0x00c8_f508));
+        for _ in 0..2000 {
+            let x = (rng.next() & 0x007f_ffff) | 0x3f80_0000;
+            p.set(rg, x);
+            p.set(
+                seeded,
+                u32::from(rng.chance(4)).wrapping_sub(1) & rng.next(),
+            );
+            p.fill(r0, 0x10, &mut rng);
+            // r0 - 1 never a signalling NaN (the oracle keeps those)
+            let t0 = if rng.chance(50) {
+                u32::MAX
+            } else {
+                rng.float()
+            };
+            p.set(r0, t0.wrapping_add(1));
+            let two = u32::from(rng.chance(2)) | (rng.next() & 0xffff_ff00);
+            p.set(log, 0u32);
+            for (at, spread) in [
+                (0x0073_26e0u32, Spread::Plain),
+                (0x0073_2f30, Spread::Plain),
+                (0x0073_2970, Spread::Up),
+                (0x0073_2c00, Spread::Down),
+            ] {
+                check_st0(
+                    &mut p,
+                    &format!("pppSRand*_Draw {at:#x}"),
+                    at,
+                    &[two],
+                    |o| r::ppp_srand_draw(o, spread, two & 0xff != 0, &mut srand_log(log)).into(),
+                );
+            }
         }
     }
 }
