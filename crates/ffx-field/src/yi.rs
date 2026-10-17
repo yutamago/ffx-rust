@@ -213,6 +213,9 @@ pub const SG_GET_PAUSE: u32 = 0x0082_05e0;
 pub const HERMITE_THREE: u32 = 0x00b2_c5c8;
 /// `FFXVu0ApplyMatrix(dst, m, src)` (`0x006ed2e0`).
 pub const VU0_APPLY_MATRIX: u32 = 0x006e_d2e0;
+/// 1e-5 and -1e-5 (`f32`s, `.rdata`): `yiSegIntersect2`'s parallel test.
+pub const SEG_EPSILON: [u32; 2] = [0x00b1_f2ac, 0x00b6_76cc];
+
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
@@ -4412,5 +4415,49 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    // ---- round 17 ----
+
+    /// `yiSegIntersect2(a, b, c, d, out)` (`0x0091cd00`): where the 2D
+    /// segments `a..b` and `c..d` cross. `D = (b-a).y (d-c).x - (b-a).x
+    /// (d-c).y`; parallel within the `.rdata` epsilon (`|D| <= 1e-5`) is 0.
+    /// `t` (along `c..d`) and `u` (along `a..b`) must lie in `0..=1`; then
+    /// `out = a (1-u) + b u` (x, y) and 1. Each difference and quotient is
+    /// stored as `f32` where the original stores it (`D`'s first product
+    /// as `f64`).
+    pub fn yi_seg_intersect2<M2: Mem>(mem: &mut M2, p: [u32; 4], out: u32) -> u32 {
+        let [a, b, c, d] = p;
+        let ld = |mem: &M2, at: u32| x87::load(mem.read(at));
+        let st = |x: f64| x87::load(x87::store(x));
+        let dx = st(ld(mem, b) - ld(mem, a));
+        let dy = st(ld(mem, b.wrapping_add(4)) - ld(mem, a.wrapping_add(4)));
+        let ex = st(ld(mem, d) - ld(mem, c));
+        let ey = st(ld(mem, d.wrapping_add(4)) - ld(mem, c.wrapping_add(4)));
+        let pp = ex * dy;
+        let q = ey * dx;
+        let dd = st(pp - q);
+        let eps = ld(mem, mem.rebase(super::SEG_EPSILON[0]));
+        let neg = ld(mem, mem.rebase(super::SEG_EPSILON[1]));
+        if dd <= eps && dd >= neg || dd.is_nan() {
+            return 0;
+        }
+        let r = dx * (ld(mem, c.wrapping_add(4)) - ld(mem, a.wrapping_add(4)));
+        let s = dy * (ld(mem, c) - ld(mem, a));
+        let t = st((r - s) / dd);
+        if t < 0.0 || t.is_nan() || 1.0 < t {
+            return 0;
+        }
+        let uu = ex * (ld(mem, a.wrapping_add(4)) - ld(mem, c.wrapping_add(4)));
+        let n = uu - (ld(mem, a) - ld(mem, c)) * ey;
+        let u = st(n / st(q - pp));
+        if u < 0.0 || u.is_nan() || 1.0 < u {
+            return 0;
+        }
+        let x = ld(mem, b) * u + ld(mem, a) * (1.0 - u);
+        mem.write(out, x87::store(x));
+        let y = ld(mem, b.wrapping_add(4)) * u + (1.0 - u) * ld(mem, a.wrapping_add(4));
+        mem.write(out.wrapping_add(4), x87::store(y));
+        1
     }
 }

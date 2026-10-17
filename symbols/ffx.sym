@@ -8885,6 +8885,7 @@
 0x0091cc00 function Yn_NearestOnLine2D        # (out, a, b, p, clamp): a + t (b - a), t = -((a - p) . d) / |d|^2 (0 if |d|^2 <= 0), clamped to 0..1 when clamp
 0x0091ccc0 function rcbgGuideBattleBegin      # fh v3:exact 0x0091ccc0
 0x0091cce0 function rcbgGuideBattleEnd        # fh v3:exact 0x0091cce0
+0x0091cd00 function yiSegIntersect2           # (a, b, c, d, out) -> 1 with out the crossing of the 2D segments a..b and c..d (both parameters in 0..1, |D| > 1e-5), else 0; name ours
 0x0091ce50 function rcbgGuideSetWalkFog       # (guide): on maps 0x246, 0x248, 0x24e, 0x24f (0x0086c1f0) the fog of war +0x70 = MsGetSaveWalkMap + 0x200 * index, the mesh object's flag bit 1 cleared (rcbgGuideSetModelSub)
 0x0091cef0 function rcbgGuideDelete           # (guide): rcbgGuideFini, then rcFree; rcbgFini (g_YnMapSystem +4)
 0x0091d280 function Guide_FadeStep               # (show): steps the minimap's fade g_GuideFade toward shown (128) or hidden (0)
@@ -9417,6 +9418,7 @@
 0x0093d3d0 function rcuiNormalize             # (out, v): v / |v| (xyz)
 0x0093d440 function rcuiCrossProduct          # (out, a, b): a x b, w 0.0
 0x0093d710 function rcuiProjectToInt          # (out, m, v, raw) -> float 1/w (left in ST0): rcuiApplyMatrix, x y z over w, the four ftol'd (times the double 0x00b313a0 unless raw); name ours
+0x0093d7d0 function rcuiScaleVec4             # (dst, v, s): four floats times s, returns dst; name ours
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
 0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900
 0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960

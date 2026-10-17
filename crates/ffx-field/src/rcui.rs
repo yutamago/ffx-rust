@@ -766,4 +766,33 @@ pub mod bridge {
         let inv = inv as f32;
         inv
     }
+
+    // ---- round 17 ----
+
+    /// `FFXSamp0TransMatrix(dst, m, t)` (`0x0093d830`): `dst = m` (16
+    /// floats through the x87 stack, row by row) with the translation
+    /// (`+0x30`..`+0x38`) moved by `t`'s x, y, z. Returns `t`.
+    pub fn ffx_samp0_trans_matrix(mem: &mut impl Mem, dst: u32, m: u32, t: u32) -> u32 {
+        for i in 0..16u32 {
+            let v = x87::copy(mem.read(m.wrapping_add(4 * i)));
+            mem.write(dst.wrapping_add(4 * i), v);
+        }
+        for i in 0..3u32 {
+            let a = x87::load(mem.read(m.wrapping_add(0x30 + 4 * i)));
+            let b = x87::load(mem.read(t.wrapping_add(4 * i)));
+            mem.write(dst.wrapping_add(0x30 + 4 * i), x87::store(a + b));
+        }
+        t
+    }
+
+    /// `rcuiScaleVec4(dst, v, s)` (`0x0093d7d0`): the four floats times
+    /// `s`. Returns `dst`.
+    pub fn rcui_scale_vec4(mem: &mut impl Mem, dst: u32, v: u32, s: u32) -> u32 {
+        let s = x87::load(s);
+        for i in 0..4u32 {
+            let x = x87::load(mem.read(v.wrapping_add(4 * i)));
+            mem.write(dst.wrapping_add(4 * i), x87::store(x * s));
+        }
+        dst
+    }
 }
