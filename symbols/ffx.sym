@@ -9009,6 +9009,7 @@
 0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
 0x00889b80 function TkDegtoRad                # fh v3:exact 0x00889af0
 0x00889e70 function CIatan2                   # (y, x) _CIatan2 (y in ST1, x in ST0) stored to a float; own name beside CIcos/CIsin/CItan
+0x00889e90 function Math_CrossHeightGap       # (p1, p2, p3, p4) -> ST0: |y1 - y2| where segments p1-p2 and p3-p4 cross in x-z, -1 when parallel; each step a float; after FUN_00889bb0 (the crossing test); name ours
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320
@@ -9130,7 +9131,10 @@
 0x0088fab0 function TkSetDebugFontBuffer      # (p) debug font current pointer = p (only logs past the end +0xc); Switch name, alphabetical slot TkPutDebugFontStringP..TkSetDebugFontLocate
 0x0088faf0 function TkSetDebugFontLocate      # fh switch:bsim1.00 0x7100492180
 0x0088fb10 function TkDebugFont_SetWord4      # (p) g_TkDebugFontBuffer word +4 = set_ptr32(p); own name
+0x0088fca0 function TkSetRgba_0133c8f4        # (i, r, g, b, a): 0x0133c8f4[clamp(i, 0, 3)] = the components clamped to 0..255 packed a<<24|b<<16|g<<8|r; returns it; name ours
+0x00890320 function TkSetRgba_0133c8e4        # (i, r, g, b, a): as TkSetRgba_0133c8f4 into 0x0133c8e4[0..3]; name ours
 0x008904e0 function TkSetDebugFontLocate2     # (x, y): 0x0133c8dc/e0 = x << 4, y << 4 (TkSetDebugFontLocate's pair at 0x0133c8d4)
+0x008906d0 function TkSetRgba_0133c904        # (i, r, g, b, a): as TkSetRgba_0133c8f4 into 0x0133c904[0..2]; name ours
 0x00890780 function TkDebugFont_SwapBuffer    # () g_TkDebugFontBuffer flipped between 0x0133c8c4/0x0133c8c8; write pointers +0/+4 = start +8; 0x0133c8d0..d8 = 0; own name
 0x008907e0 function TkEucToSjis               # (src, out) one EUC char to Shift-JIS for the debug font: 0 -> 0, ASCII -> 1, two-byte -> 2; own name
 0x00890860 function Dma_PutTagEx              # (p, qwc, pce, id, irq, addr) tag QWC (1 for 0), byte 3 ((irq<<3|id)<<2|pce)<<2, addr; zero quadword after for qwc 0; returns the end; own name
@@ -10166,6 +10170,7 @@
 0x008e4a30 function MenuSubCmd_SetValue2      # (v) u16 +0x38 of 0x023cc124; own name
 0x008e4a90 function MenuSubCmd_CursorAtTop    # (window) i16 +0x46 < 1; own name
 0x008e4ad0 function MenuSubCmd_CenterX        # (window) +0x4a = (512 - i16 +0x4e) / 2; own name
+0x008e5200 function Menu_AddName              # (s): s (256 bytes) joins the 10-name list 0x01875710 (count 0x018716a0) unless present (returns 0) or full; else returns s; name ours
 0x008e5280 function AdjustButtonIconY         # fh v3:exact 0x008e5280
 0x008e58e0 function BeginScissor_XY           # (&x0, &y0, &x1, &y1) -> 1: wholly outside g_TkMenuScissorBox (edge counts) -> all four -100000.0; then edges inside the box moved onto it
 0x008e5a20 function BeginScissor_XYUV         # (&x0, &y0, &x1, &y1, &u0, &v0, &u1, &v1) -> 0 when outside g_TkMenuScissorBox, else 1 with the rectangle and its texture coordinates clipped; x87 at 53 bits, ratios rounded to float; fh v3:exact 0x008e5a20

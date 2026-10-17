@@ -3091,4 +3091,26 @@ ported! {
     Menu_EaseCounter @ 0x008b_f7e0 => extern "C" fn menu_ease_counter(_x: u32, counter: u32, a: u32, b: u32) {
         tk::menu_ease_counter(&mut mem(), counter, a, b);
     }
+    /// `TkSetRgba_0133c8f4(i, r, g, b, a)`.
+    TkSetRgba_0133c8f4 @ 0x0088_fca0 => extern "C" fn tk_set_rgba_c8f4(i: i32, r: i32, g: i32, b: i32, a: i32) -> u32 {
+        tk::tk_set_rgba(&mut mem(), 0x0133_c8f4, 3, i, [r, g, b, a])
+    }
+    /// `TkSetRgba_0133c8e4(i, r, g, b, a)`.
+    TkSetRgba_0133c8e4 @ 0x0089_0320 => extern "C" fn tk_set_rgba_c8e4(i: i32, r: i32, g: i32, b: i32, a: i32) -> u32 {
+        tk::tk_set_rgba(&mut mem(), 0x0133_c8e4, 3, i, [r, g, b, a])
+    }
+    /// `TkSetRgba_0133c904(i, r, g, b, a)`.
+    TkSetRgba_0133c904 @ 0x0089_06d0 => extern "C" fn tk_set_rgba_c904(i: i32, r: i32, g: i32, b: i32, a: i32) -> u32 {
+        tk::tk_set_rgba(&mut mem(), 0x0133_c904, 2, i, [r, g, b, a])
+    }
+    /// `Menu_AddName(s)`.
+    Menu_AddName @ 0x008e_5200 => extern "C" fn menu_add_name(s: u32) -> u32 {
+        tk::menu_add_name(&mut mem(), s)
+    }
+    /// `Math_CrossHeightGap(p1, p2, p3, p4)`: in `st0`.
+    Math_CrossHeightGap @ 0x0088_9e90 => extern "C" fn math_cross_height_gap(p1: u32, p2: u32, p3: u32, p4: u32) -> f32 {
+        let m = mem();
+        let v = |p: u32| -> [f32; 3] { [0u32, 4, 8].map(|o| ffx_bridge::x87::round_trip(ffx_bridge::Mem::read(&m, p.wrapping_add(o)))) };
+        ffx_menu::math::cross_height_gap(v(p1), v(p2), v(p3), v(p4))
+    }
 }

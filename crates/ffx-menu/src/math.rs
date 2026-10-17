@@ -189,6 +189,38 @@ pub mod bridge {
     }
 }
 
+/// `Math_CrossHeightGap(p1, p2, p3, p4)` (`0x00889e90`): where segments
+/// `p1`-`p2` and `p3`-`p4` cross in the x-z plane (at `s` along the
+/// second, `u` along the first), the gap between their heights, `|y1 -
+/// y2|`; -1 (`[0x00b92340]`) for parallel segments. Every step rounded to
+/// a float (the original is unoptimised x87 code at 53 bits).
+#[must_use]
+#[allow(clippy::many_single_char_names, clippy::similar_names)]
+pub fn cross_height_gap(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f32 {
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    let r = |x: f64| x as f32;
+    let f = f64::from;
+    let a = r(f(p2[0]) - f(p1[0]));
+    let b = r(f(p2[2]) - f(p1[2]));
+    let c = r(f(p4[0]) - f(p3[0]));
+    let d = r(f(p4[2]) - f(p3[2]));
+    let e = r(f(p3[0]) - f(p1[0]));
+    let g = r(f(p3[2]) - f(p1[2]));
+    let det = r(f(a) * f(d) - f(c) * f(b));
+    if det == 0.0 {
+        return -1.0;
+    }
+    let s = r((f(e) * f(b) - f(a) * f(g)) / f(det));
+    let u = if a == 0.0 {
+        r((f(d) * f(s) + f(g)) / f(b))
+    } else {
+        r((f(c) * f(s) + f(e)) / f(a))
+    };
+    let y1 = r((f(p4[1]) - f(p3[1])) * f(s) + f(p3[1]));
+    let y2 = r((f(p2[1]) - f(p1[1])) * f(u) + f(p1[1]));
+    r((f(y1) - f(y2)).abs())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

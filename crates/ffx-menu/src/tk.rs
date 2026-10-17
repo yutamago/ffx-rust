@@ -5215,6 +5215,59 @@ pub mod bridge {
             }
         }
     }
+
+    /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,
+    /// `0x008906d0`): entry `i` (clamped to `0..=last`) of the colour table
+    /// at `table` = the four components clamped to 0..=255, packed
+    /// `a << 24 | b << 16 | g << 8 | r`. Returns the packed colour.
+    #[allow(clippy::many_single_char_names)]
+    pub fn tk_set_rgba(mem: &mut impl Mem, table: u32, last: i32, i: i32, rgba: [i32; 4]) -> u32 {
+        let i = i.clamp(0, last).cast_unsigned();
+        let [r, g, b, a] = rgba.map(|c| c.clamp(0, 0xff).cast_unsigned());
+        let v = (((a << 8 | b) << 8 | g) << 8) | r;
+        mem.write(mem.rebase(table) + 4 * i, v);
+        v
+    }
+
+    /// The name list `Menu_AddName` keeps (count `i32`, ten 256-byte names).
+    pub const NAME_COUNT: u32 = 0x0187_16a0;
+    pub const NAMES: u32 = 0x0187_5710;
+
+    /// `Menu_AddName(s)` (`0x008e5200`): `s` (256 bytes) joins the
+    /// [`NAMES`] list unless already there (0) or the list is full. Returns
+    /// 0 when found, else `s` (what EAX holds).
+    pub fn menu_add_name(mem: &mut impl Mem, s: u32) -> u32 {
+        let n: i32 = mem.read(mem.rebase(NAME_COUNT));
+        let names = mem.rebase(NAMES);
+        let text = crate::tk::bridge::c_bytes(mem, s);
+        for k in 0..n.max(0).cast_unsigned() {
+            if crate::tk::bridge::c_bytes(mem, names + 0x100 * k) == text {
+                return 0;
+            }
+        }
+        if n < 10 {
+            let at = names + 0x100 * n.cast_unsigned();
+            for w in 0..0x40 {
+                let v: u32 = mem.read(s.wrapping_add(4 * w));
+                mem.write(at + 4 * w, v);
+            }
+            mem.write(mem.rebase(NAME_COUNT), n + 1);
+        }
+        s
+    }
+
+    /// The bytes of a NUL-terminated string (without the NUL).
+    pub fn c_bytes(mem: &impl Mem, mut p: u32) -> Vec<u8> {
+        let mut out = vec![];
+        loop {
+            let b: u8 = mem.read(p);
+            if b == 0 {
+                return out;
+            }
+            out.push(b);
+            p = p.wrapping_add(1);
+        }
+    }
 }
 
 #[cfg(test)]

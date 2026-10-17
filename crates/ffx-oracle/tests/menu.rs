@@ -5924,3 +5924,79 @@ fn menu_leaves_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Menu leaves, round 15 part 2: the colour tables, the name list and the
+/// segment height gap.
+#[test]
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
+fn menu_leaves2_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_b15b) else {
+        return;
+    };
+    for round in 0..64u32 {
+        for (sym, table, last) in [
+            (0x0088_fca0u32, 0x0133_c8f4u32, 3i32),
+            (0x0089_0320, 0x0133_c8e4, 3),
+            (0x0089_06d0, 0x0133_c904, 2),
+        ] {
+            let i = (t.rng.next() % 8) as i32 - 2;
+            let c: [i32; 4] = std::array::from_fn(|_| (t.rng.next() % 0x180) as i32 - 0x40);
+            let args = [i as u32, c[0] as u32, c[1] as u32, c[2] as u32, c[3] as u32];
+            t.twin("TkSetRgba", sym, &args, U32, |m| {
+                u64::from(tk::tk_set_rgba(m, table, last, i, c))
+            });
+        }
+        // the name list
+        let n = t.rng.next() % 12;
+        t.put(t.sym(0x0187_16a0), n);
+        let names = t.sym(0x0187_5710);
+        for k in 0..n.min(10) {
+            let mut s = vec![b'a' + (t.rng.next() % 3) as u8, b'b'];
+            s.resize(0x100, 0);
+            t.put_bytes(names + 0x100 * k, &s);
+        }
+        let mut s = vec![b'a' + (t.rng.next() % 4) as u8, b'b'];
+        s.resize(0x100, round as u8);
+        s[2] = 0;
+        let at = t.alloc(&s);
+        t.twin("Menu_AddName", 0x008e_5200, &[at], U32, |m| {
+            u64::from(tk::menu_add_name(m, at))
+        });
+        // segment height gap
+        let pts: [[f32; 3]; 4] = std::array::from_fn(|_| {
+            std::array::from_fn(|_| {
+                f32::from(i8::try_from(t.rng.next() % 64).unwrap_or(0) - 32) / 4.0
+            })
+        });
+        let mut pts = pts;
+        if round % 7 == 3 {
+            pts[3] = [
+                pts[2][0] + pts[1][0] - pts[0][0],
+                1.0,
+                pts[2][2] + pts[1][2] - pts[0][2],
+            ];
+        }
+        if round % 5 == 2 {
+            pts[1][0] = pts[0][0];
+        }
+        let addrs: Vec<u32> = pts
+            .iter()
+            .map(|p| t.alloc(&p.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()))
+            .collect();
+        t.drain_x87();
+        let r =
+            t.a.call(t.a.rebase(0x0088_9e90), Conv::Cdecl, &addrs)
+                .unwrap();
+        same_float(
+            &format!("Math_CrossHeightGap {pts:?}"),
+            r.st0,
+            ffx_menu::math::cross_height_gap(pts[0], pts[1], pts[2], pts[3]),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
