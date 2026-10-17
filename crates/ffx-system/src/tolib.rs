@@ -1263,4 +1263,342 @@ pub mod bridge {
             _ => k,
         }
     }
+
+    /// The texture-name pointers `TOGetShapTextureName` picks from
+    /// (`0x00c59d58..0x00c59eb8`, the per-language groups from
+    /// `0x00c59e4c`).
+    pub const SHAP_NAMES: u32 = 0x00c5_9d58;
+    /// The cached name for image `0x2f00` (`0x025d16c8`) and the name of
+    /// image `0x2f04` (`0x025d16cc`).
+    pub const SHAP_CACHE: Global<[u32; 2]> = Global::new(0x025d_16c8);
+
+    /// The four per-language names (`0x3e00`, `0x3f00`, `0x3dc0`, `0x2ecc`)
+    /// of language `lang`, as image addresses of their pointers.
+    fn shap_group(lang: u32) -> [u32; 4] {
+        let g = |a: u32| [a, a + 4, a + 8, a + 0xc];
+        match lang {
+            // ebx comes from `0x00c5997c` for Japanese, as compiled
+            0 => [0x00c5_997c, 0x00c5_9d58, 0x00c5_9d5c, 0x00c5_9d60],
+            2 => g(0x00c5_9e5c),
+            3 => g(0x00c5_9e6c),
+            4 => g(0x00c5_9e7c),
+            5 => g(0x00c5_9e8c),
+            9 => g(0x00c5_9e9c),
+            10 => g(0x00c5_9eac),
+            _ => g(0x00c5_9e4c),
+        }
+    }
+
+    /// `TOGetShapTextureName(id)` (`0x008ac8c0`): the texture name of
+    /// shape image `id`, a pointer read from the name table:
+    /// - `0x2ecc`, `0x3dc0`, `0x3e00`, `0x3f00`: by language (`lang`,
+    ///   `TOGetFFXLang`, asked first);
+    /// - `0x2f00`: cached in [`SHAP_CACHE`]; when 0, picked by language
+    ///   (asked again) and stored, except languages 6..=8 and above 10,
+    ///   which return the 0;
+    /// - `0x2f04`: [`SHAP_CACHE`]'s second word;
+    /// - `0x2eac`, `0x2ed0`, `0x2ed4`, `0x3e80`..`0x3e84`, `0x3e86`: fixed
+    ///   entries;
+    /// - `0x132f00`, `0x132f04`, `0x132f08`, `0x132f0c`: one of eight
+    ///   16-byte groups by language;
+    /// - anything else: `id` itself.
+    pub fn shap_texture_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        mut lang: impl FnMut(&mut M) -> u32,
+    ) -> u32 {
+        let l = lang(mem);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let grp = shap_group(l);
+        let quad = [
+            word(mem, grp[0]),
+            word(mem, grp[1]),
+            word(mem, grp[2]),
+            word(mem, grp[3]),
+        ];
+        let fixed = match id {
+            0x2eac => Some(0x00c5_9d6c),
+            0x2ed0 => Some(0x00c5_9d64),
+            0x2ed4 => Some(0x00c5_9d68),
+            0x3e80 => Some(0x00c5_9d70),
+            0x3e81 => Some(0x00c5_9d74),
+            0x3e82 => Some(0x00c5_9d78),
+            0x3e83 => Some(0x00c5_9d7c),
+            0x3e84 => Some(0x00c5_9d80),
+            0x3e86 => Some(0x00c5_9d84),
+            _ => None,
+        };
+        if let Some(a) = fixed {
+            return word(mem, a);
+        }
+        match id {
+            0x2ecc => quad[3],
+            0x3dc0 => quad[2],
+            0x3e00 => quad[0],
+            0x3f00 => quad[1],
+            0x2f04 => SHAP_CACHE.get(mem)[1],
+            0x2f00 => {
+                let c = SHAP_CACHE.get(mem);
+                if c[0] != 0 {
+                    return c[0];
+                }
+                let a = match lang(mem) {
+                    0 => 0x00c5_9dac,
+                    1 => 0x00c5_9dc8,
+                    2 => 0x00c5_9db8,
+                    3 => 0x00c5_9dc4,
+                    4 => 0x00c5_9db4,
+                    5 => 0x00c5_9dbc,
+                    9 => 0x00c5_9dc0,
+                    10 => 0x00c5_9db0,
+                    _ => return c[0],
+                };
+                let v = word(mem, a);
+                SHAP_CACHE.set(mem, [v, c[1]]);
+                v
+            }
+            0x0013_2f00 | 0x0013_2f04 | 0x0013_2f08 | 0x0013_2f0c => {
+                let k = match l {
+                    1..=5 => l,
+                    9 => 6,
+                    10 => 7,
+                    _ => 0,
+                };
+                word(mem, 0x00c5_9dcc + 0x10 * k + (id - 0x0013_2f00))
+            }
+            _ => id,
+        }
+    }
+
+    /// The window-layout tables of `0x008fa7d0`, `0x008fa450` and
+    /// `0x008fa790`.
+    pub const LAYOUT_TABLES: [(u32, u32); 3] = [
+        (0x008f_a7d0, 0x00c5_b460),
+        (0x008f_a450, 0x00c5_c2c8),
+        (0x008f_a790, 0x00c5_d578),
+    ];
+
+    /// One of [`LAYOUT_TABLES`]' functions: [`copy_window_layout`] from its
+    /// table.
+    pub fn copy_layout_from(mem: &mut impl Mem, table: u32, i: u32) -> u32 {
+        let t = mem.rebase(table);
+        copy_window_layout(mem, t, i)
+    }
+
+    /// `0x008fa740(kind, font, size)`: a character's advance: the width
+    /// [`font_width_in_pixel`]`(font.scale (+0x1c), size)` plus the space
+    /// [`font_space_in_pixel`]`(kind)` (passed in together as `width`,
+    /// `space`), rounded to `f32`. Returned in `st(0)`.
+    pub fn font_advance<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        font: u32,
+        size: f32,
+        width: impl FnOnce(&mut M, f32, f32) -> f32,
+        space: impl FnOnce(&mut M, u32) -> f32,
+    ) -> f32 {
+        use ffx_bridge::x87::{add, load, store};
+        let scale: f32 = mem.read(font.wrapping_add(0x1c));
+        let w = width(mem, scale, size);
+        let s = space(mem, kind);
+        f32::from_bits(store(add(load(s.to_bits()), load(w.to_bits()))))
+    }
+
+    /// `TOAddFontWidthSpace(glyph, font, size)` (`0x008e8ed0`): the glyph's
+    /// x (`+4`, f32) snapped to the pixel grid (`trunc(x * ws + 0.5) / ws`,
+    /// the scales computed first while the width scale is 0), then advanced
+    /// by [`font_advance`] of the glyph's kind (byte `+0x1a`).
+    #[allow(clippy::many_single_char_names)] // scales, position, pixel count
+    pub fn add_font_width_space<M: Mem>(
+        mem: &mut M,
+        glyph: u32,
+        font: u32,
+        size: f32,
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+        width: impl FnOnce(&mut M, f32, f32) -> f32,
+        space: impl FnOnce(&mut M, u32) -> f32,
+    ) {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store};
+        let mut s = FONT_SCALES.get(mem);
+        if s[0] == 0.0 {
+            let (w, h) = screen_wh(mem);
+            #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+            let (w, h) = (w as f32, h as f32);
+            s[0] = f32::from_bits(store(mul(f64::from(w), 1.0 / 512.0)));
+            s[1] = f32::from_bits(store(div(f64::from(h), 416.0)));
+            FONT_SCALES.set(mem, s);
+        }
+        let ws = load(s[0].to_bits());
+        let at = glyph.wrapping_add(4);
+        let x: f32 = mem.read(at);
+        let px = load(store(mul(ws, load(x.to_bits()))));
+        let n = ftol(mem, add(px, 0.5)).cast_signed();
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let n = n as f32;
+        let snapped = f32::from_bits(store(div(f64::from(n), ws)));
+        mem.write(at, snapped);
+        let scale: f32 = mem.read(font.wrapping_add(0x1c));
+        let w = width(mem, scale, size);
+        let kind = u32::from(mem.read::<u8>(glyph.wrapping_add(0x1a)));
+        let sp = space(mem, kind);
+        let x: f32 = mem.read(at);
+        let r = add(
+            add(load(sp.to_bits()), load(w.to_bits())),
+            load(x.to_bits()),
+        );
+        mem.write(at, f32::from_bits(store(r)));
+    }
+
+    /// `0x008b8d10(i, out, x, y, w, h)`: a rectangle of window `i` as four
+    /// floats: `x` moved for the wide screen ([`wide_window_x`], passed in
+    /// as `wide`), `y`, that plus `w`, `y + h`. Returns `y + h`.
+    #[allow(clippy::cast_precision_loss, clippy::many_single_char_names)] // fild; the rectangle
+    pub fn wide_window_rect<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        out: u32,
+        r: [i32; 4],
+        wide: impl FnOnce(&mut M, i32, f32) -> f32,
+    ) -> i32 {
+        use ffx_bridge::x87::{add, load, store};
+        let [x, y, w, h] = r;
+        let left = wide(mem, i, x as f32);
+        mem.write(out, left);
+        mem.write(out.wrapping_add(4), y as f32);
+        let right = store(add(load(left.to_bits()), f64::from(w as f32)));
+        mem.write(out.wrapping_add(8), right);
+        let bottom = y.wrapping_add(h);
+        mem.write(out.wrapping_add(0xc), bottom as f32);
+        bottom
+    }
+
+    /// Whether the C strings at `a` and `b` are equal.
+    #[allow(clippy::many_single_char_names)] // the two strings and their bytes
+    fn c_str_eq(mem: &impl Mem, a: u32, b: u32) -> bool {
+        let mut k = 0u32;
+        loop {
+            let (x, y): (u8, u8) = (mem.read(a.wrapping_add(k)), mem.read(b.wrapping_add(k)));
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            k += 1;
+        }
+    }
+
+    /// The interned texture names (`0x025cc5a0`, 64 slots of 0x100 bytes)
+    /// and their count (`0x01841d90`).
+    pub const NAME_SLOTS: Global<[u8; 0x100]> = Global::new(0x025c_c5a0);
+    /// The count.
+    pub const NAME_COUNT: Global<i32> = Global::new(0x0184_1d90);
+
+    /// `0x008ab440(name)`: the slot holding the C string `name`: an
+    /// existing equal one, else the next slot (cleared, then the string
+    /// copied with its terminator; the original only prints, through the
+    /// empty `dbgPrintf`, when 64 slots are already used, and writes past
+    /// them). Returns the slot.
+    pub fn intern_name(mem: &mut impl Mem, name: u32) -> u32 {
+        let base = NAME_SLOTS.ptr(mem).addr;
+        let n = NAME_COUNT.get(mem);
+        let mut k = 0;
+        while k < n {
+            let slot = base.wrapping_add(k.cast_unsigned() << 8);
+            if c_str_eq(mem, slot, name) {
+                return slot;
+            }
+            k += 1;
+        }
+        let slot = base.wrapping_add(n.cast_unsigned() << 8);
+        mem.write(slot, [0u8; 0x100]);
+        let mut i = 0u32;
+        loop {
+            let c: u8 = mem.read(name.wrapping_add(i));
+            mem.write(slot.wrapping_add(i), c);
+            if c == 0 {
+                break;
+            }
+            i += 1;
+        }
+        NAME_COUNT.set(mem, n.wrapping_add(1));
+        slot
+    }
+
+    /// The menu calls of [`summon_list_init`].
+    pub trait SummonList<M> {
+        /// `MsMenuStatusNum(id, strings)`.
+        fn status_num(&mut self, mem: &mut M, id: u32, strings: u32) -> u32;
+        /// `TkMenuGetCommandMax(list, kind, a, b)`.
+        fn command_max(&mut self, mem: &mut M, list: u32, kind: u32, a: u32, b: u32) -> i32;
+        /// `TkMenuGetCommandOffset(list, kind, a, b)`.
+        fn command_offset(&mut self, mem: &mut M, list: u32, kind: u32, a: u32, b: u32) -> i32;
+        /// `MsGetSavePlyJoin(chr)`.
+        fn joined(&mut self, mem: &mut M, chr: u32) -> u32;
+    }
+
+    /// The summon menu's state (`0x01841c38`): `+0` the shown aeons
+    /// (`g_TkMenuSummons`), `+0xc` every aeon (`g_TkMenuSummonTotals`),
+    /// `+0x18` the shown count, `+0x1c` a word, `+0x20` the total count,
+    /// `+0x24` the enabled mask.
+    pub const SUMMON_MENU: u32 = 0x0184_1c38;
+
+    /// `0x008a9090()`: the summon list built from the menu's command list 5
+    /// (`MsMenuStatusNum(0, 0)`, its count and offset): every aeon id into
+    /// the totals; the joined ones (`MsGetSavePlyJoin`) also into the shown
+    /// list and the enabled mask. Command 0x64 stands for the three magus
+    /// sisters (0xf, 0x10, 0x11), added together when 0xf has joined.
+    #[allow(clippy::many_single_char_names)] // the menu state, list and cursor
+    pub fn summon_list_init<M: Mem>(mem: &mut M, k: &mut impl SummonList<M>) {
+        let g = mem.rebase(SUMMON_MENU);
+        let d = k.status_num(mem, 0, 0);
+        mem.write(g.wrapping_add(0x24), 0u32);
+        mem.write(g, [u32::MAX; 2]);
+        mem.write(g.wrapping_add(8), 0xffffu16);
+        mem.write(g.wrapping_add(0x18), 0u32);
+        let n = k.command_max(mem, d, 5, 1, 0);
+        let off = k.command_offset(mem, d, 5, 1, 0);
+        mem.write(g.wrapping_add(0x20), n);
+        if n <= 0 {
+            mem.write(g.wrapping_add(0x1c), 0u32);
+            return;
+        }
+        let mut p = d
+            .wrapping_add(off.cast_unsigned().wrapping_mul(4))
+            .wrapping_add(2);
+        let totals = g.wrapping_add(0xc);
+        let mut i = 0i32;
+        let byte_at = |i: i32| totals.wrapping_add(i.cast_unsigned());
+        while i < n {
+            let id = u32::from(mem.read::<u16>(p));
+            if id == 0x64 {
+                if k.joined(mem, 0xf) != 0 {
+                    let c = mem.read::<u32>(g.wrapping_add(0x18)).wrapping_add(3);
+                    let m: u32 = mem.read(g.wrapping_add(0x24));
+                    mem.write(g.wrapping_add(0x24), m | 0x38000);
+                    mem.write(g.wrapping_add(c).wrapping_sub(3), 0x100fu16);
+                    mem.write(g.wrapping_add(c).wrapping_sub(1), 0x11u8);
+                    mem.write(g.wrapping_add(0x18), c);
+                }
+                mem.write(byte_at(i), 0x100fu16);
+                i += 2;
+                p = p.wrapping_add(8);
+                mem.write(byte_at(i), 0x11u8);
+            } else {
+                #[allow(clippy::cast_possible_truncation)] // `mov byte, bl`
+                let b = id as u8;
+                if k.joined(mem, id) != 0 {
+                    let c = mem.read::<u32>(g.wrapping_add(0x18)).wrapping_add(1);
+                    mem.write(g.wrapping_add(c).wrapping_sub(1), b);
+                    mem.write(g.wrapping_add(0x18), c);
+                    let m: u32 = mem.read(g.wrapping_add(0x24));
+                    mem.write(g.wrapping_add(0x24), m | 1u32.wrapping_shl(id));
+                }
+                mem.write(byte_at(i), b);
+            }
+            i += 1;
+            p = p.wrapping_add(4);
+        }
+        mem.write(g.wrapping_add(0x1c), 0u32);
+    }
 }

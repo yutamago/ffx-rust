@@ -292,4 +292,236 @@ pub mod bridge {
         }
         i.cast_unsigned().wrapping_shl(8)
     }
+
+    /// What a `TOSeqInitParam` entry reads (the `TOSeqGet*` getter).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Param {
+        /// `TOSeqGetColor(i, name, &rgba)`.
+        Color,
+        /// `TOSeqGetColorRGBA(i, name, &r, &g, &b, &a)`.
+        Rgba,
+        /// `TOSeqGetRect(i, name, &x, &y, &w, &h)`.
+        Rect,
+        /// `TOSeqGetNum(i, name, &n)`.
+        Num,
+        /// `TOSeqGetPoint(i, name, &x, &y)`.
+        Point,
+    }
+
+    /// An output the original writes into its own stack frame (a rect's
+    /// height nobody keeps); [`init_param`] gets a scratch word for it.
+    pub const LOCAL: u32 = 0;
+
+    /// `TOSeqInitParam`'s 92 reads in order: (getter, scene, parameter
+    /// name, output globals), taken from the call sequence at
+    /// `0x008ae6f0`.
+    pub const INIT_PARAMS: [(Param, i32, u32, &[u32]); 92] = [
+        (Param::Color, 1, 0x00b6_27e0, &[0x025d_16b4]),
+        (Param::Color, 1, 0x00b6_27f0, &[0x025d_16b0]),
+        (Param::Color, 1, 0x00b6_2800, &[0x025d_16a4]),
+        (Param::Color, 1, 0x00b6_2808, &[0x025d_16a8]),
+        (Param::Color, 1, 0x00b5_ed34, &[0x025d_16ac]),
+        (Param::Color, 1, 0x00b6_2810, &[0x025d_16a0]),
+        (Param::Color, 1, 0x00b6_281c, &[0x025d_169c]),
+        (Param::Color, 1, 0x00b6_2828, &[0x025d_1698]),
+        (Param::Color, 1, 0x00b6_2838, &[0x025d_1694]),
+        (Param::Color, 1, 0x00b6_2848, &[0x025d_1690]),
+        (Param::Color, 1, 0x00b6_2854, &[0x025d_168c]),
+        (Param::Color, 1, 0x00b6_2860, &[0x025d_1688]),
+        (Param::Color, 1, 0x00b6_286c, &[0x025d_1684]),
+        (
+            Param::Rgba,
+            1,
+            0x00b6_2878,
+            &[0x025d_1683, 0x025d_1681, 0x025d_1682, 0x025d_1680],
+        ),
+        (
+            Param::Rgba,
+            1,
+            0x00b6_2884,
+            &[0x025d_167f, 0x025d_167d, 0x025d_167e, 0x025d_167c],
+        ),
+        (
+            Param::Rgba,
+            1,
+            0x00b6_2890,
+            &[0x025d_167b, 0x025d_1679, 0x025d_167a, 0x025d_1678],
+        ),
+        (
+            Param::Rect,
+            1,
+            0x00b6_289c,
+            &[0x025d_1676, 0x025d_1674, 0x025d_1672, LOCAL],
+        ),
+        (Param::Num, 1, 0x00b6_28ac, &[0x025d_1670]),
+        (Param::Color, 1, 0x00b6_28bc, &[0x025d_166c]),
+        (Param::Color, 1, 0x00b6_28cc, &[0x025d_1668]),
+        (Param::Point, 1, 0x00b6_28dc, &[0x025d_1664, 0x025d_1662]),
+        (Param::Point, 1, 0x00b6_28e8, &[0x025d_1660, 0x025d_165e]),
+        (Param::Point, 1, 0x00b6_28f4, &[0x025d_165c, 0x025d_165a]),
+        (Param::Point, 1, 0x00b6_2900, &[0x025d_1658, 0x025d_1656]),
+        (Param::Point, 1, 0x00b6_290c, &[0x025d_1654, 0x025d_1652]),
+        (Param::Point, 1, 0x00b6_2918, &[0x025d_1650, 0x025d_164e]),
+        (Param::Point, 1, 0x00b6_2928, &[0x025d_164c, 0x025d_164a]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_2934,
+            &[0x025d_1648, 0x025d_1646, 0x025d_1644, 0x025d_1642],
+        ),
+        (Param::Color, 1, 0x00b6_2940, &[0x025d_163c]),
+        (Param::Color, 1, 0x00b6_294c, &[0x025d_1638]),
+        (Param::Num, 1, 0x00b6_2958, &[0x025d_1640]),
+        (Param::Point, 1, 0x00b6_2968, &[0x025d_1634, 0x025d_1632]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_2974,
+            &[0x025d_1630, 0x025d_162e, 0x025d_162c, LOCAL],
+        ),
+        (Param::Color, 1, 0x00b6_2984, &[0x025d_1628]),
+        (Param::Color, 1, 0x00b6_2994, &[0x025d_1624]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_29a4,
+            &[0x025d_161c, 0x025d_161a, 0x025d_1618, LOCAL],
+        ),
+        (Param::Color, 1, 0x00b6_29b4, &[0x025d_1614]),
+        (Param::Color, 1, 0x00b6_29c4, &[0x025d_1610]),
+        (Param::Point, 1, 0x00b6_29d4, &[0x025d_160c, 0x025d_160a]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_29e0,
+            &[0x025d_1608, 0x025d_1606, 0x025d_1604, LOCAL],
+        ),
+        (Param::Color, 1, 0x00b6_29f4, &[0x025d_1600]),
+        (Param::Color, 1, 0x00b6_2a08, &[0x025d_15fc]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_2a1c,
+            &[0x025d_15f8, 0x025d_15f6, 0x025d_15f4, LOCAL],
+        ),
+        (Param::Color, 1, 0x00b6_2a2c, &[0x025d_15f0]),
+        (Param::Color, 1, 0x00b6_2a3c, &[0x025d_15ec]),
+        (Param::Point, 1, 0x00b6_2a4c, &[0x025d_15ea, 0x025d_15e8]),
+        (Param::Point, 1, 0x00b6_2a5c, &[0x025d_15e6, 0x025d_15e4]),
+        (Param::Color, 1, 0x00b6_2a6c, &[0x025d_15e0]),
+        (Param::Color, 1, 0x00b6_2a6c, &[0x025d_15dc]),
+        (Param::Color, 1, 0x00b6_2a78, &[0x025d_15d8]),
+        (Param::Color, 1, 0x00b6_2a88, &[0x025d_15d4]),
+        (Param::Color, 1, 0x00b6_2a98, &[0x025d_15d0]),
+        (Param::Color, 1, 0x00b6_2a98, &[0x025d_15cc]),
+        (Param::Color, 1, 0x00b6_2aa4, &[0x025d_15c8]),
+        (Param::Color, 1, 0x00b6_2ab0, &[0x025d_15c4]),
+        (Param::Color, 1, 0x00b6_2abc, &[0x025d_15b8]),
+        (Param::Color, 1, 0x00b6_2ac8, &[0x025d_15b4]),
+        (Param::Point, 1, 0x00b6_2ad4, &[0x025d_15b0, 0x025d_15ae]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_2ae0,
+            &[0x025d_0da2, 0x025d_0da0, 0x025d_0b1a, 0x025d_0b18],
+        ),
+        (Param::Color, 1, 0x00b6_2af0, &[0x025d_0b14]),
+        (Param::Color, 1, 0x00b6_2b00, &[0x025d_0b10]),
+        (
+            Param::Rect,
+            1,
+            0x00b6_2b10,
+            &[0x025d_0b0e, 0x025d_0b0c, 0x025d_0b0a, 0x025d_0b08],
+        ),
+        (Param::Color, 1, 0x00b6_2b1c, &[0x025d_0b04]),
+        (Param::Color, 1, 0x00b6_2b28, &[0x025d_0b00]),
+        (Param::Point, 1, 0x00b6_2b34, &[0x025d_0afe, 0x025d_0afc]),
+        (Param::Point, 2, 0x00b6_2b40, &[0x025d_0afa, 0x025d_0af8]),
+        (Param::Color, 2, 0x00b6_2b48, &[0x025d_0af4]),
+        (Param::Color, 2, 0x00b6_2b50, &[0x025d_0af0]),
+        (Param::Point, 2, 0x00b6_2b58, &[0x025d_0aee, 0x025d_0aec]),
+        (Param::Num, 2, 0x00b6_2b60, &[0x025d_0aea]),
+        (Param::Num, 2, 0x00b6_2b68, &[0x025d_0ae8]),
+        (Param::Color, 2, 0x00b6_2b70, &[0x025d_0ae4]),
+        (Param::Color, 2, 0x00b6_2b78, &[0x025d_0ae0]),
+        (Param::Color, 2, 0x00b6_2b80, &[0x025d_0adc]),
+        (Param::Color, 2, 0x00b6_2b88, &[0x025d_0ad8]),
+        (Param::Point, 2, 0x00b6_2b90, &[0x025d_0ad6, 0x025d_0ad4]),
+        (
+            Param::Rect,
+            2,
+            0x00b6_2b98,
+            &[0x025d_0ad2, 0x025d_0ad0, 0x025d_0ace, 0x025d_0acc],
+        ),
+        (
+            Param::Rgba,
+            2,
+            0x00b6_2ba0,
+            &[0x025d_0acb, 0x025d_0aca, 0x025d_0ac9, 0x025d_0ac8],
+        ),
+        (Param::Point, 2, 0x00b6_2ba8, &[0x025d_0ac6, 0x025d_0ac4]),
+        (Param::Point, 2, 0x00b6_2bb0, &[0x025d_0ac2, 0x025d_0ac0]),
+        (Param::Point, 2, 0x00b6_2bb8, &[0x025d_0abe, 0x025d_0abc]),
+        (Param::Point, 2, 0x00b6_2bc0, &[0x025d_0aba, 0x025d_0ab8]),
+        (
+            Param::Rect,
+            2,
+            0x00b6_2bc8,
+            &[0x025d_0ab6, 0x025d_0ab4, 0x025d_0ab2, 0x025d_0ab0],
+        ),
+        (Param::Color, 2, 0x00b6_2bd0, &[0x025d_0aac]),
+        (
+            Param::Rect,
+            2,
+            0x00b6_2bd8,
+            &[0x025d_0aa8, 0x025d_0aa6, 0x025d_0aa4, 0x025d_0aa2],
+        ),
+        (
+            Param::Rect,
+            2,
+            0x00b6_2be0,
+            &[0x025d_0aa0, 0x025d_0a9e, 0x025d_0a9c, 0x025d_0a9a],
+        ),
+        (Param::Num, 2, 0x00b6_2be8, &[0x025d_0a98]),
+        (Param::Point, 2, 0x00b6_2bf0, &[0x025d_0a96, 0x025d_0a94]),
+        (Param::Point, 2, 0x00b6_2bf8, &[0x025d_0a92, 0x025d_0a90]),
+        (Param::Point, 2, 0x00b6_2c00, &[0x025d_0a8e, 0x025d_0a8c]),
+        (Param::Point, 2, 0x00b6_2c08, &[0x025d_0a8a, 0x025d_0a88]),
+        (Param::Num, 2, 0x00b6_2c10, &[0x025d_0a80]),
+    ];
+
+    /// `TOSeqInitParam()` (`0x008ae6f0`): the menu's layout parameters
+    /// read from scenes 1 and 2 into their globals ([`INIT_PARAMS`]), with
+    /// `TkMenuGetParamHandle`/`TkMenuGetParamOffset` passed in; `scratch`
+    /// takes the outputs the original discards ([`LOCAL`]).
+    pub fn init_param<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        handle: impl Fn(&M, i32, u32) -> u32,
+        offset: impl Fn(&M, i32, i32, i32) -> u32,
+    ) {
+        for &(p, i, name, outs) in &INIT_PARAMS {
+            let name = mem.rebase(name);
+            let o: Vec<u32> = outs
+                .iter()
+                .map(|&a| if a == LOCAL { scratch } else { mem.rebase(a) })
+                .collect();
+            match p {
+                Param::Color => get_color(mem, i, name, o[0], &handle, &offset),
+                Param::Num => get_num(mem, i, name, o[0], &handle, &offset),
+                Param::Point => get_point(mem, i, name, [o[0], o[1]], &handle, &offset),
+                Param::Rect => get_rect(mem, i, name, [o[0], o[1], o[2], o[3]], &handle, &offset),
+                Param::Rgba => {
+                    get_color_rgba(
+                        mem,
+                        i,
+                        name,
+                        [o[0], o[1], o[2], o[3]],
+                        |m, i, n| handle(m, i, n),
+                        |m, i, h, n| offset(m, i, h.cast_signed(), n.cast_signed()),
+                    );
+                }
+            }
+        }
+    }
 }

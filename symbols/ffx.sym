@@ -7695,6 +7695,7 @@
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a8e70 function TOMenuMainWindowOpen_008a8e70 # (): TkMenuMainAllocWindow, set up (handlers 0x008a91d0/0x008a9350, layer 6), kept at 0x018408fc, 0x01841c00..+0x14 = 0, TkMenuMainRegistWindow; name ours
 0x008a8f00 function TOBit16_008a8f00 # cdecl(bits, i): bit i of a u16 array (signed division); name ours
+0x008a9090 function TOSummonListInit_008a9090 # (): g_TkMenuSummons/Totals/ListMax/EnableMask from command list 5 of MsMenuStatusNum(0, 0); joined aeons (MsGetSavePlyJoin) shown; 0x64 = aeons 0xf/0x10/0x11; name ours
 0x008a9230 function TOMenuCloseMainWindows_008a9230 # cdecl(owner): each of the 16 main windows at 0x01840900 (0x98 bytes) with owner byte +0x3f: +0xc(w); free flag +0x41: unless +0x14(w) == 0, +0x18(w) or TkMenuMainFreeWindow(w); name ours
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
 0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
@@ -7773,6 +7774,7 @@
 0x008ab2c0 function TkMsImportantGet          # fh v3:cg3 0x8ab270
 0x008ab340 function Pause_Update                 # per frame: enters the pause (Pause_Enter) when g_PauseOn is set and not entered; Start (pad 0x800) at fade 0x40 hides the screen and sets the step +4; at 0x80 it ends (flags cleared, sound resumed)
 0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4
+0x008ab440 function TOInternName_008ab440 # cdecl(name): the 0x100-byte slot of 0x025cc5a0 holding name (count 0x01841d90), else the next one, cleared and strcpy'd; no bound past 64 (dbgPrintf only); name ours
 0x008ab550 function EventFontTextureArrayReset # fh v3:exact 0x008ab500
 0x008ab570 function SetGlobal_00c59f38 # cdecl(v): *0x00c59f38 = v, returns v; name ours
 0x008ab580 function SetTOPadGetCtrl           # fh v3:bsim1.00 0x008ab530
@@ -7803,7 +7805,7 @@
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl
-0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl
+0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl; id -> name pointer from 0x00c59d58..0x00c59eb8 by id and TOGetFFXLang; 0x2f00 cached at 0x025d16c8; unknown ids return id
 0x008acf10 function TOGetWord_01841d9c        # () -> [0x01841d9c]; before TOGetSystemConfirmButtonAssign; name ours
 0x008acf20 function GetU32_01841d30 # () -> u32 at 0x01841d30; name ours
 0x008acf30 function TOGetSystemConfirmButtonAssign # fh v3:exact 0x008acee0
@@ -7831,7 +7833,7 @@
 0x008ae4b0 function TOSeqGetRect              # fh v3:exact 0x008ae460
 0x008ae530 function TOSeqGetSceneState_008ae530 # cdecl(i, name): i16 state of scene i's slot named name, 0 when none; callers 0x008974a0, 0x008fdf20; name ours
 0x008ae5a0 function TOSeqInitAllScene         # fh v3:exact 0x008ae550
-0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0
+0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0; 92 TOSeqGetColor/RGBA/Rect/Num/Point reads from scenes 1 and 2 into the menu layout globals 0x025d0a80..0x025d16b4
 0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70; every running slot of scene i stopped (state 4, name cleared) unless kept (+2 == 1); returns i << 8
 0x008af060 function TOSeqSetScenePosByName # cdecl(i, name, x, y): every slot of scene i named name: TkMenuSetScenePos(i, slot +0x1c, x, y); name ours
 0x008af0d0 function TOSeqStartScene           # fh v3:exact 0x008af080
@@ -7937,6 +7939,7 @@
 0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
 0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
+0x008b8d10 function TOWideWindowRect_008b8d10 # cdecl(i, out, x, y, w, h) -> y + h: out = TOWideWindowX(i, x), y, that + w, y + h as floats; name ours
 0x008b8d70 function TOGetComName_008b8d70 # cdecl(id): MsGetComData(id, &strings) record's u16 +0 + strings; name ours
 0x008b8d90 function TOGetAbilityName_008b8d90 # cdecl(id): MsGetRomAbility(id, &strings) record's u16 +0 + strings; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
@@ -8371,7 +8374,7 @@
 0x008e8940 function OpenFontScissor           # (x0, y0, x1, y1 floats): g_TkMenuScissorOn = 1, XYUV mode 1, the box; fh v3:bsim1.00 0x008e8940
 0x008e8980 function OpenScissor               # fh v3:bsim1.00 0x008e8980
 0x008e89c0 function SetInvokedFromSelectCursor # fh v3:bsim1.00 0x008e89c0
-0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0
+0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0; glyph+4 snapped to pixels (trunc(x*ws+0.5)/ws), then + font width + space of kind byte +0x1a
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
@@ -8447,9 +8450,13 @@
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
+0x008fa450 function TOCopyWindowLayout_008fa450 # cdecl(i): TOCopyWindowLayout(0x00c5c2c8, i); name ours
 0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570; spaces 0x018716b4/b8 computed once: langs 1..8 both trunc(ws*0.7+0.5)/ws, else trunc(ws*0.5+0.5)/ws and the 0.7 one; kind 1/3 the second
 0x008fa6b0 function TOGetFontWidthInPiexl     # fh v3:exact 0x008fa6b0
+0x008fa740 function TOGetFontAdvance_008fa740 # cdecl(kind, font, size) -> float: TOGetFontWidthInPiexl(font+0x1c, size) + TOGetFontSpaceInPiexl(kind); name ours
+0x008fa790 function TOCopyWindowLayout_008fa790 # cdecl(i): TOCopyWindowLayout(0x00c5d578, i); name ours
 0x008fa7b0 function TOGetGsRegWord            # () -> edx:eax 0x2005d40621313e00 (a GS register word); name ours, between TOGetFontWidthInPiexl and TOGetScaleButtonIconWidth
+0x008fa7d0 function TOCopyWindowLayout_008fa7d0 # cdecl(i): TOCopyWindowLayout(0x00c5b460, i); name ours
 0x008fa800 function TOGetScaleButtonIconWidth # fh v3:exact 0x008fa800
 0x008fa900 function TOGetScreenWH             # fh switch:bsim1.00 0x7100502fb0
 0x008fa920 function TOGetWidthMacro_help      # fh v3:exact 0x008fa920
