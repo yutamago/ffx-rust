@@ -612,6 +612,80 @@ never returns for an infinity, in the game as in the port. Debug natives
 found on the way (`0x705f`, `0xc004`, `0xc005`, `0xc034`, `0xc05c`) are
 marked in the table and not ported.
 
+Round 19 began with the setup functions other modules wait on, in
+`helpers`: the map jumps `AtelSetEventJump` (`0x0086fec0`) and
+`AtelSetEventJump2` (`0x0086ff40`; with the ctrl work's bit 7, or
+`FFXIsDebug`: the player's control taken, `TkSetEventJump`, the hook at
+`0x01327070`, `MsBattleExeClear`, bit 7 cleared and `+0x210` bit 1 set, the
+3D-sound ratio from the float at `0x00b5be88`, then a fade of 30 frames for
+a jump to map `0x109` and none for the others, or with the third argument the save
+record's frames `+0x12` and kind `+0x11`, 0 `Sg_FadeOut`, 1
+`Sg_FadeOutW`), `AtelUcOn` (`0x00871ab0`, the player's control given to
+every bound type-1 worker whose control bit is set: `+0x36` bit 3 when the
+ctrl work's bit 5 is set, else `+0x34` bit 9; the one with the ctrl work's
+`+0xa` id and a model becomes the player), `Script_StopMove`
+(`0x00863e10`, the move blocks' counterpart of `Script_StopTurn`: own
+blocks at `+0x5b8 + i*0x4c`, and the turn stopped first when the shared
+block has `+2` bit 14), `AtelDecodeCommand`, `AtelSetSaveDicIndex` (the
+save record's `+0xe` from the event block's `+0x1e`, or its table at
+`+0x28` when bit 15 is set), `AtelSetUpCtrlWork` (bit 0, `g_AtelError`
+cleared for a ctrl work without `+0x1c`, and the default callbacks),
+`Event_GetEntrance` and `Event_GetEntranceAt` (`0x0086c020`; both take the
+worker, whose `+4` is its script block: entrances at block `+4`, their end
+at `+8`, 0x20 bytes each, the first past the end, `0x01325b50` without
+any), `AtelGetEventActorPos` (`0x0086b1e0`), `AtelGetHelpEventFlag`,
+`AtelCheckCaptMonster` (the monster list at `0x00c86708`, 8 bytes each:
+mode 0 matches `+2`, 1 `+4`, 2 counts all), `AtelRequestTrigger_008764f0`
+(a request for an enabled trigger at the level and entry the sound and
+vibration tables give), `AtelBindEff2OffSome`, `AtelMapLoad`,
+`AtelSkipReqLevel2`, `AtelGetBattleIdAdrs`, `AtelSetMoveHokanMode`,
+`AtelGetEventCharHandleFromID`, `AtelGetCharHandleFromBindPC` and
+`AtelGetSummonNameforFinalBattleSelector` (from id 15 on it asks
+`TkMn2GetCommandName(0x30ff)`, whatever the id). `AtelPCOpen`
+(`0x00879cf0`) and `AtelPCOpen2` open `host0:` files, the PS2 development
+host: platform code, left to the original.
+
+The natives no shipped script calls continue in
+`ffx_script::vm::bridge::native_mods`, last in the dispatch chain. Group
+1's maths: `0x100b` (`v << 15`), `0x100c` (`x * 32768.0`, the double at
+`0x00b51588`, rounded to `f32` before `_ftol2_sse` truncates it: without
+SSE2 the x87 path keeps the low word of a 64-bit truncation, where that
+rounding shows for integers past 24 bits), the angle conversions
+`0x100d`-`0x1010` and the sine/cosine tables `0x1008`/`0x1009`, `CItan`
+(`0x1003`), `atan` (`0x1004`) through the game's own `_CIatan` on the
+popped `ST0` (`NativeHost::call_intrinsic1`, the one-operand form of
+`call_intrinsic2`), `1 / sqrt(v)` (`0x1007`, both steps rounded to `f32`),
+and the vector natives `0x1011`-`0x1018` over `Math_Atan2XZ`,
+`Math_YawPitchTo`, `Math_AngleStep`, `Math_InRadius`, `TkMtCalcSpline` and
+`0x0088a3a0`, whose variable arguments go through `AtelGetRealVarAdrs`.
+
+Group 4's map and light natives (`0x4010`-`0x403d`) forward to the `Sg_`
+point lights (`Sg_PLight*`: enable, radius, light, attenuation, position
+with its component mask, colour), `Sg_LightSetDirXYZ`, the camera follow
+bit, the wind and the id tables; the getters that take popped words as
+out pointers (`0x4027`, `0x4029`, `0x4037`) hand them on unchanged, so a
+mod passes real addresses. `0x4000`, `0x4041` and `0x4042` are empty
+handlers (`xor eax, eax; ret`) and, with `0x4031` and `0x4035`, run in
+Rust only through the dispatch. `0x4038` (`Sg_MemDump`, a memory report)
+and `0x401e` (`Sg_Test`, map-test setup and a scratch allocation) are
+debug natives, listed in the table and not ported.
+
+Group 5's character natives (each also reachable as its group-4 copy,
+`0x4049`-`0x40d3` to `0x5002`-`0x508c`) take the worker's model
+(`AtelGetCharHandle`) or worker i's, and do nothing (0) without one:
+`Ch_SetSequence`, `Ch_ElemGetDirect`, `Ch_ModelGetHide`, `Ch_SetSysMotion`,
+`Ch_TextureSetImageBase`, the point-light mask and the id getters
+(`Ch_IdGetMap` `+0x828 & 0x7f`, `Ch_IdGetSound` bits 15-16). `0x5027` asks
+`Ch_ElemGetPos` for an element's position with the vector `(x, y, z,
+1.0)` in `NativeHost::scratch` and writes the result's three words into
+three variables; `0x5038` copies the model's `+0x6b4`..`+0x6bc` into three.
+The load pairs keep the selection in the args word: `0x5062` (`id`, `n`,
+`keep` into `+0`, `+4`, `+8`) polls `ChN_ReadSystemMGRPsync` and `0x5064`
+(`id`, `keep`) `Ch_DataReadSync`; with `keep` one call is enough and its
+result is the int slot (`+0xc`), without it `0x5062` returns 5 and
+`0x5064` 1 once the read returns 0. `0x5041`, `0x5043`, `0x5045`, `0x508a`
+and `0x508c` are `Native_PlayMotionCommon` with fixed mode pairs.
+
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
 returns 0, so leaving them out changes nothing: the round-11 ports drop
@@ -1098,15 +1172,34 @@ API is generated from this table. `-`: none. A result starting with
 | `0x1000` | `Native_1000` | slot int, a int, b int, v int | 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b) | - | int `0x008779c0` (native_chr) |
 | `0x1001` | `AtelCall_Math_Sin_RF` | v f | float: CIsin(v) (0x0088c3a0) | - | float `0x00877a70` (native_chr) |
 | `0x1002` | `AtelCall_Math_Cos_RF` | v f | float: CIcos(v) (0x0088b3e0) | - | float `0x00877aa0` (native_chr) |
+| `0x1003` | `AtelCall_Math_Tan_RF` | v f | float: CItan(v) (0x0088c420) | - | float `0x00877ad0` (native_mods) |
+| `0x1004` | `AtelCall_Math_ATan_RF` | v f | float: atan(v) through the game's _CIatan (import thunk 0x00949d5c), rounded to f32 | - | float `0x00877b00` (native_mods) |
 | `0x1005` | `AtelCall_Math_ATan2_RF` | y f, x f | float: atan2(y, x) through the game's _CIatan2 (import thunk 0x009498bc), rounded to f32 | - | float `0x00877b30` (native_chr) |
 | `0x1006` | `AtelCall_Math_Sqrt_RF` | x f | float: sqrt(x) as f32 | - | float `0x00877b70` (native_move) |
+| `0x1007` | `AtelCall_Math_InvSqrt_RF` | v f | float: 1 / sqrt(v), the root and the quotient rounded to f32 | - | float `0x00877ba0` (native_mods) |
+| `0x1008` | `Native_1008` | angle int | int: Math_SinTable2(angle) (0x0088c380) | - | int `0x00877bd0` (native_mods) |
+| `0x1009` | `Native_1009` | angle int | int: Math_CosTable(angle) (0x0088c120) | - | int `0x00877bf0` (native_mods) |
 | `0x100a` | `Native_100a` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
+| `0x100b` | `Native_100b` | v int | int: v << 15 | - | int `0x008778d0` (native_mods) |
+| `0x100c` | `AtelCall_Math_Ftoul_RI` | x f | int: x times the double at 0x00b51588, rounded to f32, truncated (_ftol2_sse) | - | int `0x008778f0` (native_mods) |
+| `0x100d` | `Native_100d` | angle f | int: Math_AngleTo15Bits(angle) (0x0088c040) | - | int `0x00877920` (native_mods) |
+| `0x100e` | `Native_100e` | angle f | int: Math_AngleTo12Bits(angle) (0x0088bfe0) | - | int `0x00877950` (native_mods) |
+| `0x100f` | `Native_100f` | a int | float: Math_AngleFrom15Bits(a) (0x0088c0e0) | - | float `0x00877980` (native_mods) |
+| `0x1010` | `Native_1010` | a int | float: Math_AngleFrom12Bits(a) (0x0088c0a0) | - | float `0x008779a0` (native_mods) |
+| `0x1011` | `Native_1011` | x0 f, z0 f, x1 f, z1 f | float: Math_Atan2XZ(x0, z0, x1, z1) (0x0088b430) | - | float `0x00877c10` (native_mods) |
+| `0x1012` | `Native_1012` | yaw var, pitch var, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | float: the yaw; Math_YawPitchTo (0x0088b4d0) writes the yaw and pitch from the first point to the second into the variables | - | float `0x00877c80` (native_mods) |
 | `0x1013` | `Native_1013` | v f | float: Math_WrapAngle(v) (0x0088bc20) | - | float `0x00877d30` (native_chr) |
+| `0x1014` | `Native_1014` | cur f, target f, step f | float: Math_AngleStep(cur, target, step) (0x0088b570) | - | float `0x00877d60` (native_mods) |
 | `0x1015` | `Native_1015` | - | six floats: 0x0088b780(f6, ..., f1)'s EAX | - | int `0x00877dc0` (native_chr) |
+| `0x1016` | `Native_1016` | r f, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | int: Math_InRadius(r, x0 - x1, y0 - y1, z0 - z1) (0x0088b730), the differences rounded to f32 | - | int `0x00877e50` (native_mods) |
+| `0x1017` | `Native_1017` | out var, points var, n int, t f | 0.0: TkMtCalcSpline(out, points, n, t) (0x0088a4a0) on the variables | - | float `0x00877ef0` (native_mods) |
+| `0x1018` | `Native_1018` | out var, a f, b f, c f | 0.0: 0x0088a3a0(out, a, b, c) on the variable | - | float `0x00877f60` (native_mods) |
 | `0x1019` | `AtelCall_Math_Abs_RF` | - | |v| rounded to f32 | - | float `0x00877fd0` (native_chr) |
 | `0x101a` | `Native_101a` | x1 f, z1 f, x2 f, z2 f | float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps | - | float `0x00877ff0` (native_chr) |
 | `0x101b` | `Native_101b` | x1 f, y1 f, z1 f, x2 f, y2 f, z2 f | float: the 3D distance, as 0x101a | - | float `0x00878060` (native_chr) |
 | `0x101c` | `Native_101c` | - | 0x00878140(worker, args, stack)'s record +4 = 0; 0 | - | int `0x008780f0` (native_chr) |
+| `0x101d` | `Native_101d` | as 0x00878140 | 0: 0x00878140(worker, args, stack)'s record +4 = 1 (0x101c sets 0) | - | int `0x00878110` (native_mods) |
+| `0x4000` | `Native_Empty_00a77d20` | - | 0 (an empty handler) | - | int `0x00a77d20` (native_mods) |
 | `0x4001` | `Native_4001` | v f | 0: Sg_SetSuimen(v) (0x00836640) | - | int `0x00a77b90` (native_chr) |
 | `0x4003` | `Atel_Sg_Flash` | d int, c int, b int, a int | 0: Sg_Flash(d, c, b, a) (0x0082cca0) | - | int `0x00a77d30` (native_chr) |
 | `0x4004` | `Native_FadeIn` | frames int | 0 (fade in) | - | int `0x00a77d80` (native_move) |
@@ -1121,50 +1214,110 @@ API is generated from this table. `-`: none. A result starting with
 | `0x400d` | `Native_FadeWait` | - | - (start: a bare ret) | until 0x0082cc10() is 0 | start `0x00a77ee0`, poll `0x00a77ef0` (native_chr) |
 | `0x400e` | `Native_400e` | v | Sg_EnableCalcMap(v) (0x00820440) | - | int `0x00a77f00` (native_chr) |
 | `0x400f` | `Native_400f` | v | Sg_EnableDrawMap(v) (0x00820400) | - | int `0x00a77f20` (native_chr) |
+| `0x4010` | `Native_4010` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
+| `0x4011` | `Native_4011` | i int, x f, y f, z f | 0: Sg_LightSetDirXYZ(i, x, y, z) (0x008364f0) | - | int `0x00a77f70` (native_mods) |
+| `0x4012` | `Native_4012` | i int, x f, y f, z f | 0: 0x00836400(i, x, y, z) | - | int `0x00a77fd0` (native_mods) |
 | `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, pitch int (deg), yaw int (deg) | 0 | - | int `0x00a78030` (native_move) |
 | `0x4014` | `Native_4014` | v int | int: Sg_EnFocus(v) (0x0082cb60) | - | int `0x00a780a0` (native_chr) |
 | `0x4015` | `Native_4015` | b int, a int | 0: Sg_SetFocus(b, a) (0x0082ce20) | - | int `0x00a780c0` (native_chr) |
 | `0x4016` | `Native_4016` | i int, v f | 0: 0x0082d9e0(i, v) | - | int `0x00a780f0` (native_chr) |
 | `0x4017` | `Native_4017` | b int, a int | 0: Sg_IdSetMapTable(b, a) (0x0083e9e0) | - | int `0x00a78130` (native_chr) |
+| `0x4018` | `Native_4018` | i int | int: Sg_IdGetMapTable(i) (0x0083e960) | - | int `0x00a78160` (native_mods) |
 | `0x4019` | `Native_4019` | v int | 0: 0x0082bdf0(v) | - | int `0x00a78180` (native_chr) |
 | `0x401a` | `Native_401a` | b int, a int | 0: Sg_AccSetAlpha(b, a) (0x0082bd10) | - | int `0x00a781a0` (native_chr) |
 | `0x401b` | `Native_401b` | v | Sg_AccSetDrawMap(v) (0x0082bcb0) | - | int `0x00a781d0` (native_chr) |
 | `0x401c` | `Native_401c` | v | Sg_AccEnableBG(v) (0x0082be10) | - | int `0x00a781f0` (native_chr) |
 | `0x401d` | `Native_MenuOpen` | menu int | the start's result; poll 1 when done; int slot the menu result (0x00821740) | one frame (g_MenuWaitFrames) | start `0x00a78210`, poll `0x00a78270`, int `0x00a782a0` (native_move) |
+| `0x401e` | `Native_401e` | v int | debug (mod-tool candidate): Sg_Test(v) (0x008467b0: map-test setup, a sync print, a 64 KiB scratch allocation and its release); its result | - | int `0x00a782c0` (not ported) |
 | `0x401f` | `Native_401f` | - | 0x00840e40() | - | int `0x00a782e0` (native_chr) |
 | `0x4020` | `Native_4020` | - | 0: 0x00840e50() | - | int `0x00a782f0` (native_chr) |
+| `0x4021` | `Native_4021` | v int | int: Sg_CacheDisposeChr(v) (0x00840e60) | - | int `0x00a78300` (native_mods) |
 | `0x4022` | `Native_4022` | v | Sg_SetKeepFps(v) (0x00821ae0) | - | int `0x00a78320` (native_chr) |
 | `0x4023` | `Native_4023` | v | Sg_PLightAllocate(v) (0x00831950) | - | int `0x00a78340` (native_chr) |
 | `0x4024` | `Native_4024` | - | 0x00831a30() | - | int `0x00a78360` (native_chr) |
 | `0x4025` | `Native_4025` | n, a f, b f, c f, d f, e, f, g, i | Sg_PLightDefine(n, a, b, c, d, e, f, g, i) (0x008319b0; the original's dbgPrintf is left out) | - | int `0x00a78370` (native_chr) |
+| `0x4026` | `Native_4026` | i int, mask int, x f, y f, z f | 0: Sg_PLightSetPos(i, mask, x, y, z) (0x00831ca0) | - | int `0x00a78450` (native_mods) |
+| `0x4027` | `Native_4027` | i int, x int, y int, z int | 0: Sg_PLightGetPos(i, x, y, z) (0x00831b30) with the popped words as they are | - | int `0x00a784c0` (native_mods) |
+| `0x4028` | `Native_4028` | i int, r int, g int, b int | 0: Sg_PLightSetColor(i, r, g, b) (0x00831c10) | - | int `0x00a78510` (native_mods) |
+| `0x4029` | `Native_4029` | i int, r int, g int, b int | 0: Sg_PLightGetColor(i, r, g, b) (0x00831a60) with the popped words as they are | - | int `0x00a78560` (native_mods) |
 | `0x402a` | `Native_402a` | b, a | Sg_PLightSetEnable(b, a) (0x00831c60) | - | int `0x00a785b0` (native_chr) |
+| `0x402b` | `Native_402b` | i int | int: Sg_PLightGetEnable(i) (0x00831ad0) | - | int `0x00a77880` (native_mods) |
+| `0x402c` | `Native_402c` | i int, r f | 0: Sg_PLightSetRadius(i, r) (0x00831ce0) | - | int `0x00a778a0` (native_mods) |
+| `0x402d` | `Native_402d` | i int | float: Sg_PLightGetRadius(i) (0x00831b80) | - | float `0x00a778e0` (native_mods) |
+| `0x402e` | `Native_402e` | i int, light int | 0: Sg_PLightSetLight(i, light) (0x00831c80) | - | int `0x00a77900` (native_mods) |
+| `0x402f` | `Native_402f` | i int | int: Sg_PLightGetLight(i) (0x00831b00) | - | int `0x00a77930` (native_mods) |
+| `0x4030` | `Native_4030` | on int | 0: Sg_SetCameraFollow(on) (0x0082dab0) | - | int `0x00a77950` (native_mods) |
+| `0x4031` | `Native_4031` | - | int: Sg_GetCameraFollow_0082d850() (a jump; bit 1 of g_CameraFollow 0x00c496d5) | - | int `0x00a77970` (native_mods) |
+| `0x4032` | `Native_4032` | i int, a f | 0: Sg_PLightSetAttenuation(i, a) (0x00831bf0) | - | int `0x00a77980` (native_mods) |
+| `0x4033` | `Native_4033` | i int | float: Sg_PLightGetAttenuation(i) (0x00831a40) | - | float `0x00a779c0` (native_mods) |
 | `0x4034` | `Native_4034` | v | Sg_SetMapAlphaFast(v) (0x00821b00); 0.0 | - | float `0x00a779e0` (native_chr) |
+| `0x4035` | `Native_4035` | - | 0.0 (Sg_GetMapAlphaFast() (0x008205d0) called, its value dropped) | - | float `0x00a77a00` (native_mods) |
 | `0x4036` | `Native_4036` | x f, y f, z f | Sg_GlobalSetWind(x, y, z) (0x00824e30) | - | int `0x00a77a10` (native_chr) |
+| `0x4037` | `Native_4037` | x int, y int, z int | 0: Sg_GlobalGetWind(x, y, z) (0x00824dd0) with the popped words as they are | - | int `0x00a77a70` (native_mods) |
+| `0x4038` | `Native_4038` | - | debug (mod-tool candidate): Sg_MemDump() (0x0083bb50: prints the memory pools and Cache_Dump), with no argument (it takes the stack's leftover); 0 | - | int `0x00a77ab0` (not ported) |
 | `0x4039` | `Native_4039` | d, c, b, a | Sg_AccSetClear(d, c, b, a) (0x0082bdc0); 0.0 | - | float `0x00a77ac0` (native_chr) |
 | `0x403a` | `Native_403a` | v | Sg_AccSetDrawChr(v) (0x0082be00) | - | int `0x00a77b10` (native_chr) |
 | `0x403b` | `Native_FootSetMaterial` | index int, material int | 0: Sg_IdSetEffectTable(index, material) (0x0083e9b0) | - | int `0x00a77b30` (native_chr) |
 | `0x403c` | `Native_403c` | v f | Sg_SetWaterLimit(v) (0x00836660) | - | int `0x00a77b60` (native_chr) |
+| `0x403d` | `Native_403d` | v int | 0: Sg_MemSetFast(v) (0x0083c520) | - | int `0x00a77bc0` (native_mods) |
 | `0x403e` | `Native_403e` | i, v f | Sg_PlayerSetDirFix(i, v) (0x0082d990) | - | int `0x00a77be0` (native_chr) |
 | `0x403f` | `Native_403f` | - | 0x0082d930() | - | int `0x00a77c20` (native_chr) |
 | `0x4040` | `Native_SetControlAngle` | degrees f | 0: 0x0082d950(degrees) | - | int `0x00a77c30` (native_chr) |
+| `0x4041` | `Native_Empty_00a77c60` | - | 0 (an empty handler) | - | int `0x00a77c60` (native_mods) |
+| `0x4042` | `Native_Empty_00a77c70` | - | 0 (an empty handler) | - | int `0x00a77c70` (native_mods) |
 | `0x4043` | `Native_4043` | b, a | Ch_DrawSetShadowDir(b, a) (0x00830120) | - | int `0x00a77c80` (native_chr) |
 | `0x4044` | `Native_4044` | - | three popped and dropped; 0 | - | int `0x00a77cb0` (native_chr) |
 | `0x4045` | `Native_4045` | v | 0x0082d9d0(v) | - | int `0x00a77ce0` (native_chr) |
 | `0x4046` | `Native_4046` | v | Ch_DrawSetShadowSemi(v) (0x00821b20) | - | int `0x00a77d00` (native_chr) |
+| `0x4049` | `Native_5002` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model | - | int `0x00a787a0` (native_mods) |
+| `0x404b` | `Native_501f_copy_00a788d0` | - | int: 1 when the model's +0x736 is set, else 0 (also without a model) | - | int `0x00a788d0` (native_mods) |
+| `0x4051` | `Native_500a` | height f | 0: Ch_SetHitHeight(model, height) (0x0082b320) for a model | - | int `0x00a78c20` (native_mods) |
+| `0x4058` | `Native_5011` | v int | 0: ChN_DisposeSystemMGRP(the model's u16 +0, v) (0x00836830) for a model | - | int `0x00a78e50` (native_mods) |
+| `0x4064` | `Native_501d` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model (as 0x5002) | - | int `0x00a79310` (native_mods) |
+| `0x406a` | `Native_5023` | v int | 0 (the model asked for and v popped, both unused) | - | int `0x00a795b0` (native_mods) |
+| `0x406b` | `Native_5024` | v int | 0 (as 0x5023) | - | int `0x00a79620` (native_mods) |
+| `0x406e` | `Native_5027` | i int, element int, x f, y f, z f, ox var, oy var, oz var | 0: Ch_ElemGetPos(worker i's model, element, &(x, y, z, 1.0), &out) (0x00833d10) and out's three words into the variables (null ones skipped; nothing without a model) | - | int `0x00a79860` (native_mods) |
+| `0x4072` | `Native_502b` | - | 0 (the model asked for, unused) | - | int `0x00a79b70` (native_mods) |
+| `0x4075` | `Native_502e` | - | int: Ch_IdGetMap(model) (0x0083d840), 0 without a model | - | int `0x00a79d10` (native_mods) |
+| `0x4076` | `Native_502f` | i int | int: Ch_IdGetMap(worker i's model), 0 without a model | - | int `0x00a79d60` (native_mods) |
+| `0x4077` | `Native_5030` | - | int: Ch_IdGetSound(model) (0x0083d900), 0 without a model | - | int `0x00a79db0` (native_mods) |
+| `0x4078` | `Native_5031` | i int | int: Ch_IdGetSound(worker i's model), 0 without a model | - | int `0x00a79e00` (native_mods) |
+| `0x407f` | `Native_5038` | i int, x var, y var, z var | 0: worker i's model's +0x6b4, +0x6b8, +0x6bc into the variables (null ones skipped) | - | int `0x00a7a250` (native_mods) |
+| `0x4088` | `Native_5019_copy_00a7a740` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 0) | - | int `0x00a7a740` (native_mods) |
+| `0x408a` | `Native_5043` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 1) | - | int `0x00a7a7c0` (native_mods) |
+| `0x408c` | `Native_5045` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 1) (as 0x5043) | - | int `0x00a7a830` (native_mods) |
+| `0x409a` | `Native_5053` | i int, id int | int: Ch_ElemGetDirect(worker i's model, id) (0x00833bf0), 0 without a model | - | int `0x00a78900` (native_mods) |
+| `0x409c` | `Native_5055` | v int | int: Ch_ModelGetHide(model, v) (0x0082add0), 0 without a model | - | int `0x00a78a10` (native_mods) |
+| `0x40a0` | `Native_5059` | slot int, motion int | 0: Ch_SetSysMotion(model, slot, motion) (0x00837d00) for a model | - | int `0x00a78bd0` (native_mods) |
+| `0x40a2` | `Native_505b` | b int, a int | int: Ch_TextureSetImageBase(model, b, a) (0x00831390), 0 without a model | - | int `0x00a78ce0` (native_mods) |
+| `0x40a9` | `Native_5062` | id int, n int, keep int | the id; the poll 5 when done; int slot the args word +0xc (with keep, ChN_ReadSystemMGRPsync's result) | with keep set one call of ChN_ReadSystemMGRPsync(id, n) (0x00836a50), else until it returns 0 | start `0x00a79030`, poll `0x00a79070`, int `0x00a79120` (native_mods) |
+| `0x40ab` | `Native_5064` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
+| `0x40b2` | `Native_506b` | - | int: Ch_PLightGetEnable(model) (0x00830ad0), 0 without a model | - | int `0x00a796c0` (native_mods) |
+| `0x40b3` | `Native_506c` | bits int, mask int | 0: Ch_PLightSetEnableMask(model, bits, mask) (0x00830b00) for a model | - | int `0x00a797b0` (native_mods) |
+| `0x40b7` | `Native_5070` | - | int: Ch_GetHideCalc(model) (0x0082abe0), 0 without a model | - | int `0x00a79c30` (native_mods) |
+| `0x40bb` | `Native_5074` | - | int: Ch_GetOverlapHit(model) (0x0082ac70), 0 without a model | - | int `0x00a79d90` (native_mods) |
+| `0x40be` | `Native_5077` | - | int: Ch_MouthGetAutoTalk(model) (0x00834740), 0 without a model | - | int `0x00a79e80` (native_mods) |
+| `0x40c6` | `Native_507f` | i int, v f | 0: 0x0082ae30(model, i, v) for a model | - | int `0x00a7a380` (native_mods) |
+| `0x40d1` | `Native_508a` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) | - | int `0x00a7a720` (native_mods) |
+| `0x40d3` | `Native_508c` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) (as 0x508a) | - | int `0x00a7a7a0` (native_mods) |
 | `0x5000` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) |
 | `0x5001` | `Native_ChrLoadMotionGroup` | n int | int: 0, Chr_LoadMotionGroup(n) (0x008375f0) | - (the poll returns 5) | start `0x00a799b0`, poll `0x00a79a10`, int `0x00a79a20` (native_chr) |
+| `0x5002` | `Native_5002` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model | - | int `0x00a787a0` (native_mods) |
 | `0x5003` | `Native_ChrWaitMotion_5003` | - | 5 when done | until the character's motion has ended (+0x736) | start `0x00a787d0`, poll `0x00a788a0` (native) |
+| `0x5004` | `Native_501f_copy_00a788d0` | - | int: 1 when the model's +0x736 is set, else 0 (also without a model) | - | int `0x00a788d0` (native_mods) |
 | `0x5005` | `Native_ChrReleaseMotion` | - | 0 (automatic motions take over) | - | int `0x00a78940` (native) |
 | `0x5006` | `Native_5006` | scale f | 0: Ch_SetScaleAll(model, scale) (0x0082b590) | - | int `0x00a78a40` (native_chr) |
 | `0x5007` | `Native_5007` | n, x f, y f, z f | Ch_SetScale(model, n, x, y, z) (0x0082b560) | - | int `0x00a789a0` (native_chr) |
 | `0x5008` | `Native_ChrHide` | hide int (0, 1) | 0 | - | int `0x00a78ac0` (native) |
 | `0x5009` | `Native_ChrSetPushWeight` | weight f (push weight) | float: previous weight | - | float `0x00a78b30` (native) |
+| `0x500a` | `Native_500a` | height f | 0: Ch_SetHitHeight(model, height) (0x0082b320) for a model | - | int `0x00a78c20` (native_mods) |
 | `0x500b` | `Native_500b` | v f | 0: Ch_SetJimen(model, v) (0x0082b360) | - | int `0x00a78b90` (native_chr) |
 | `0x500c` | `Native_500c` | v | popped and dropped (the original only prints a warning for a model); 0 | - | int `0x00a78d30` (native_chr) |
 | `0x500d` | `Native_500d` | v int | 0: Ch_SetHideEvent(model, v) (0x0082b2c0) | - | int `0x00a78df0` (native_chr) |
 | `0x500e` | `Native_ChrSetGroundFollow` | on int: stick to the ground | 0 | - | int `0x00a78cb0` (native) |
 | `0x500f` | `Native_ChrSetBodyHit` | on int: collide with characters | 0 | - | int `0x00a78da0` (native) |
 | `0x5010` | `Native_ChrLoadSystemMgrp` | chr id int, n int | start: the args words; int: 0, ChN_ReadSystemMGRP(id, n) (0x00836870) | - (the poll returns 5) | start `0x00a79820`, poll `0x00a79970`, int `0x00a79980` (native_chr) |
+| `0x5011` | `Native_5011` | v int | 0: ChN_DisposeSystemMGRP(the model's u16 +0, v) (0x00836830) for a model | - | int `0x00a78e50` (native_mods) |
 | `0x5013` | `Native_5013` | mode int | 0: Ch_SetFieldMode, Ch_SetMotionType(model, mode) (0x0082b1e0, 0x0082b3a0) | - | int `0x00a78ec0` (native_chr) |
 | `0x5014` | `Native_5014` | v f, n | Ch_SetShade(model, v, n) (0x0082b5b0) | - | int `0x00a78f30` (native_chr) |
 | `0x5015` | `Native_5015` | r f, g f, b f, n int | 0: Ch_SetShadeCol(model, r, g, b, n) (0x0082b5d0) | - | int `0x00a78fb0` (native_chr) |
@@ -1174,24 +1327,34 @@ API is generated from this table. `-`: none. A result starting with
 | `0x5019` | `Native_5019` | - | Native_PlayMotionCommon(worker, stack, 0, 0) | - | int `0x00a79220` (native_chr) |
 | `0x501a` | `Native_ChrPlayMotion` | motion args as Native_PlayMotionCommon (stack) | 0 | - | int `0x00a79270` (native_move) |
 | `0x501b` | `Native_ChrSetMotion_501b` | motion int | 0 | - | int `0x00a792d0` (native) |
+| `0x501d` | `Native_501d` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model (as 0x5002) | - | int `0x00a79310` (native_mods) |
 | `0x501e` | `Native_ChrWaitMotion_501e` | - | 5 when done | until the scripted motion has ended | start `0x00a79370`, poll `0x00a793c0` (native) |
 | `0x501f` | `Native_501f` | - | 1 while the worker's model has +0x736 set | - | int `0x00a79450` (native_chr) |
 | `0x5020` | `Native_ChrReleaseMotion2` | - | 0 (as 0x5005) | - | int `0x00a794b0` (native) |
 | `0x5021` | `Native_ChrSetMotionSpeed` | speed int (8.8, 256 = 1x) | 0 | - | int `0x00a79510` (native) |
 | `0x5022` | `Native_ChrSetMotionSeqLevel` | level int | 0 | - | int `0x00a79550` (native_move) |
+| `0x5023` | `Native_5023` | v int | 0 (the model asked for and v popped, both unused) | - | int `0x00a795b0` (native_mods) |
+| `0x5024` | `Native_5024` | v int | 0 (as 0x5023) | - | int `0x00a79620` (native_mods) |
 | `0x5025` | `Native_ChrSetAutoMotion` | slot int, motion int (-1 default) | 0 | - | int `0x00a79670` (native) |
 | `0x5026` | `Native_5026` | worker, point, &x, &y, &z | Ch_ElemGetPos(model, point, 0, &v) (0x00833d10) into the three variables (null ones skipped); 0 | - | int `0x00a796e0` (native_chr) |
+| `0x5027` | `Native_5027` | i int, element int, x f, y f, z f, ox var, oy var, oz var | 0: Ch_ElemGetPos(worker i's model, element, &(x, y, z, 1.0), &out) (0x00833d10) and out's three words into the variables (null ones skipped; nothing without a model) | - | int `0x00a79860` (native_mods) |
 | `0x5028` | `Native_5028` | v f | Ch_MoveSetChgRun(model, v) (0x0082b040), 0.0 without a model | - | float `0x00a799d0` (native_chr) |
 | `0x5029` | `Native_ChrSetShadowMode` | mode int | int: Ch_SetShadowMode's result | - | int `0x00a79a40` (native) |
 | `0x502a` | `Native_ChrSetDistanceCull` | on int | int: previous | - | int `0x00a79af0` (native) |
+| `0x502b` | `Native_502b` | - | 0 (the model asked for, unused) | - | int `0x00a79b70` (native_mods) |
 | `0x502c` | `Native_502c` | worker, point | as Native_ChrAttach with Ch_BindToElemDirect (0x00832680) | - | int `0x00a79bc0` (native_chr) |
 | `0x502d` | `Native_ChrAttach` | worker int (-1 detaches), point int | 0: Ch_BindToElem(model, that worker's model, point) (0x00832630) | - | int `0x00a79c50` (native_chr) |
+| `0x502e` | `Native_502e` | - | int: Ch_IdGetMap(model) (0x0083d840), 0 without a model | - | int `0x00a79d10` (native_mods) |
+| `0x502f` | `Native_502f` | i int | int: Ch_IdGetMap(worker i's model), 0 without a model | - | int `0x00a79d60` (native_mods) |
+| `0x5030` | `Native_5030` | - | int: Ch_IdGetSound(model) (0x0083d900), 0 without a model | - | int `0x00a79db0` (native_mods) |
+| `0x5031` | `Native_5031` | i int | int: Ch_IdGetSound(worker i's model), 0 without a model | - | int `0x00a79e00` (native_mods) |
 | `0x5032` | `Native_ChrPlayDefaultMotion` | - | 0 (default motion) | - | int `0x00a79e60` (native_move) |
 | `0x5033` | `Native_ChrFadeAlpha` | alpha f, frames int (0 at once) | 0 | - | int `0x00a79ea0` (native) |
 | `0x5034` | `Native_ChrSetMotionBlend` | frames int: blend into the next motion | 0 | - | int `0x00a79f40` (native) |
 | `0x5035` | `Native_5035` | - | Ch_GetSeqFrame(model) (0x00836af0), 0 without a model | - | int `0x00a79fa0` (native_chr) |
 | `0x5036` | `Native_5036` | - | 0x00a7a980(worker, args, stack, 0) | - | int `0x00a7a120` (native_chr) |
 | `0x5037` | `Native_5037` | worker int, x var, y var, z var | 0: the model's point 0 (Ch_OptposGet 0x008354f0) into the variables (null ones skipped) | - | int `0x00a7a140` (native_chr) |
+| `0x5038` | `Native_5038` | i int, x var, y var, z var | 0: worker i's model's +0x6b4, +0x6b8, +0x6bc into the variables (null ones skipped) | - | int `0x00a7a250` (native_mods) |
 | `0x5039` | `Native_ChrSetHitRadiusScale` | scale f | float: Ch_SetThickness(model, scale) (0x0082b880); 0.0 without a model | - | float `0x00a7a340` (native_chr) |
 | `0x503a` | `Native_503a` | z f | float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model | - | float `0x00a7a3d0` (native_chr) |
 | `0x503b` | `Native_503b` | b, a | ChN_DisposeSystemMGRP(b, a) (0x00836830) when the worker has a model | - | int `0x00a7a450` (native_chr) |
@@ -1200,8 +1363,11 @@ API is generated from this table. `-`: none. A result starting with
 | `0x503e` | `Native_503e` | b int, a int | 0: ChN_DataDispose(b, a) (0x00824f00) | - | int `0x00a7a570` (native_chr) |
 | `0x503f` | `Native_503f` | v | Ch_SetSequence(model, v) (0x00837ac0) | - | int `0x00a7a5a0` (native_chr) |
 | `0x5040` | `Native_ChrSetMotion2` | motion int | 0 | - | int `0x00a7a610` (native_move) |
+| `0x5041` | `Native_5019_copy_00a7a740` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 0) | - | int `0x00a7a740` (native_mods) |
 | `0x5042` | `Native_ChrPlayMotion2` | as 0x501a | 0 | - | int `0x00a7a780` (native_move) |
+| `0x5043` | `Native_5043` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 1) | - | int `0x00a7a7c0` (native_mods) |
 | `0x5044` | `Native_5044` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 1, 1) (0x00a7aae0) | - | int `0x00a7a810` (native_chr) |
+| `0x5045` | `Native_5045` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 1) (as 0x5043) | - | int `0x00a7a830` (native_mods) |
 | `0x5046` | `Native_5046` | - | Native_PlayMotionCommon(worker, stack, 1, 1) | - | int `0x00a7a880` (native_chr) |
 | `0x5047` | `Native_5047` | worker int, v int | 0: Ch_SetSequence(that worker's model, v) (0x00837ac0) | - | int `0x00a7a900` (native_chr) |
 | `0x5048` | `Native_5048` | - | as 0x5047 | - | int `0x00a7a940` (native_chr) |
@@ -1215,32 +1381,43 @@ API is generated from this table. `-`: none. A result starting with
 | `0x5050` | `Native_5050` | worker int, v int | 0: Ch_MotionSet737(that worker's model, v) (0x00837570) | - | int `0x00a78710` (native_chr) |
 | `0x5051` | `Native_ChrGetMotionFrame` | - | int: motion frame (8.8) | - | int `0x00a78750` (native) |
 | `0x5052` | `Native_5052` | worker, point, x f, y f, z f | Ch_BindToElemDirectOfs(model, that worker's model, point, x, y, z) (0x008326e0); worker -1 detaches with the offset | - | int `0x00a787e0` (native_chr) |
+| `0x5053` | `Native_5053` | i int, id int | int: Ch_ElemGetDirect(worker i's model, id) (0x00833bf0), 0 without a model | - | int `0x00a78900` (native_mods) |
 | `0x5054` | `Native_5054` | part int, on int | int: Ch_ModelSetHide(model, part, on) (0x0082aea0); 0 without a model | - | int `0x00a78960` (native_chr) |
+| `0x5055` | `Native_5055` | v int | int: Ch_ModelGetHide(model, v) (0x0082add0), 0 without a model | - | int `0x00a78a10` (native_mods) |
 | `0x5056` | `Native_5056` | v int | int: Ch_SetCalcNorm(model, v) (0x00835750); 0 without a model | - | int `0x00a78a80` (native_chr) |
 | `0x5057` | `Native_ChrSetBoneUpdate` | worker int, on int | int: previous | - | int `0x00a78af0` (native) |
 | `0x5058` | `Native_5058` | v int | 0: Ch_AllSetCalcNorm(v) (0x008325b0) | - | int `0x00a78b70` (native_chr) |
+| `0x5059` | `Native_5059` | slot int, motion int | 0: Ch_SetSysMotion(model, slot, motion) (0x00837d00) for a model | - | int `0x00a78bd0` (native_mods) |
 | `0x505a` | `Native_505a` | b, a | Ch_TextureSetClutBase(model, b, a) (0x008313c0), 0 without a model | - | int `0x00a78c60` (native_chr) |
+| `0x505b` | `Native_505b` | b int, a int | int: Ch_TextureSetImageBase(model, b, a) (0x00831390), 0 without a model | - | int `0x00a78ce0` (native_mods) |
 | `0x505c` | `Native_ChrSetNextMotionBlend` | frames int (-1 = 0, 0 = 1) | 0 | - | int `0x00a78d70` (native) |
 | `0x505d` | `Native_ChrGetMotion` | - | int: motion id | - | int `0x00a78dd0` (native) |
 | `0x505e` | `Native_505e` | - | Ch_GetSp(model) (0x0082ad60), 0.0 without a model | - | float `0x00a78e20` (native_chr) |
 | `0x505f` | `Native_505f` | v int | 0: Ch_MotionSetLoop(model, v) (0x00839960) | - | int `0x00a78e90` (native_chr) |
 | `0x5060` | `Native_5060` | v | Ch_IdEnableShade(model, v) (0x008340f0) | - | int `0x00a78f00` (native_chr) |
 | `0x5061` | `Native_5061` | b int, a int | 0: Ch_MgrpRead(b, a) (0x00836a40) | - | int `0x00a78f80` (native_chr) |
+| `0x5062` | `Native_5062` | id int, n int, keep int | the id; the poll 5 when done; int slot the args word +0xc (with keep, ChN_ReadSystemMGRPsync's result) | with keep set one call of ChN_ReadSystemMGRPsync(id, n) (0x00836a50), else until it returns 0 | start `0x00a79030`, poll `0x00a79070`, int `0x00a79120` (native_mods) |
 | `0x5063` | `Native_5063` | id int, n int | int: args +0xc, ChN_ReadSystemMGRPsync(id, n)'s result (0x00836a50) | as 0x504f | start `0x00a79160`, poll `0x00a791a0`, int `0x00a79210` (native_chr) |
+| `0x5064` | `Native_5064` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
 | `0x5065` | `Native_5065` | v int | 0: 0x00837650(v) (the dbgPrintf left out) | - | int `0x00a79420` (native_chr) |
 | `0x5066` | `Native_5066` | n | start: args +0 = n, +0xc = 0; EAX n; poll: 1 once 0x00837670(n) is 0 (the dbgPrintf left out), else 0; int: args +0xc | see the poll | start `0x00a79480`, poll `0x00a794d0`, int `0x00a79540` (native_chr) |
 | `0x5067` | `Native_5067` | v | Ch_DrawSetCull(model, v) (0x008300b0) | - | int `0x00a79580` (native_chr) |
 | `0x5068` | `Native_WaitCdIdle` | - | 1 when done | until the CD reads are idle | poll `0x00a795d0` (native) |
 | `0x5069` | `Native_5069` | v | Ch_SetKeepFps(model, v) (0x00839b50), 0 without a model | - | int `0x00a795e0` (native_chr) |
 | `0x506a` | `Native_506a` | v | Ch_PLightSetEnable(model, v) (0x00830ae0) | - | int `0x00a79640` (native_chr) |
+| `0x506b` | `Native_506b` | - | int: Ch_PLightGetEnable(model) (0x00830ad0), 0 without a model | - | int `0x00a796c0` (native_mods) |
+| `0x506c` | `Native_506c` | bits int, mask int | 0: Ch_PLightSetEnableMask(model, bits, mask) (0x00830b00) for a model | - | int `0x00a797b0` (native_mods) |
 | `0x506d` | `Native_506d` | a f, b f | Ch_SetRotX(model, wrap(b degrees), a) (0x008357f0) | - | int `0x00a79a80` (native_chr) |
 | `0x506e` | `Native_506e` | v f | Ch_BindSetScale(model, v) (0x00832610) | - | int `0x00a79b30` (native_chr) |
 | `0x506f` | `Native_506f` | v int (popped only for a model) | 0: Ch_SetHideCalc(model, v) (0x0082b280) | - | int `0x00a79b90` (native_chr) |
+| `0x5070` | `Native_5070` | - | int: Ch_GetHideCalc(model) (0x0082abe0), 0 without a model | - | int `0x00a79c30` (native_mods) |
 | `0x5071` | `Native_5071` | v | Ch_TextureLoadImage(model, v) (0x00831300) | - | int `0x00a79cc0` (native_chr) |
 | `0x5072` | `Native_5072` | - | Ch_IdGetPNum(model) (0x0082adc0), 0 without a model | - | int `0x00a79cf0` (native_chr) |
 | `0x5073` | `Native_5073` | v | Ch_SetOverlapHit(model, v) (0x0082b420), popped only for a model | - | int `0x00a79d30` (native_chr) |
+| `0x5074` | `Native_5074` | - | int: Ch_GetOverlapHit(model) (0x0082ac70), 0 without a model | - | int `0x00a79d90` (native_mods) |
 | `0x5075` | `Native_ChrGetMotionFrameOf` | worker int | int: its motion frame | - | int `0x00a79dd0` (native) |
 | `0x5076` | `Native_5076` | on int (popped only for a model) | 0: Ch_MouthSetAutoTalk(model, on) (0x00834770) | - | int `0x00a79e30` (native_chr) |
+| `0x5077` | `Native_5077` | - | int: Ch_MouthGetAutoTalk(model) (0x00834740), 0 without a model | - | int `0x00a79e80` (native_mods) |
 | `0x5078` | `Native_5078` | b int, a int | 0: Ch_TextureSetAnim(model, b, a) (0x0083d040) | - | int `0x00a79ef0` (native_chr) |
 | `0x5079` | `Native_5079` | on int | 0: Ch_NeckSetEnable(model, on) (0x00834f60) | - | int `0x00a79f70` (native_chr) |
 | `0x507a` | `Native_507a` | worker int | 0: Ch_NeckSetTarget(model, that worker's model) (0x00835050) | - | int `0x00a79fc0` (native_chr) |
@@ -1248,6 +1425,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x507c` | `Native_507c` | - | Ch_NeckSetTargetCamera(model) (0x00835080) | - | int `0x00a7a070` (native_chr) |
 | `0x507d` | `Native_507d` | b f, a f | degrees: Ch_NeckSetRot(model, wrap(b), wrap(a)) (0x00834ff0) | - | int `0x00a7a090` (native_chr) |
 | `0x507e` | `CT_507E_ret` | worker int, on int: mouth flapping | 0 | - | int `0x00a7a210` (native) |
+| `0x507f` | `Native_507f` | i int, v f | 0: 0x0082ae30(model, i, v) for a model | - | int `0x00a7a380` (native_mods) |
 | `0x5080` | `Native_5080` | v f | Ch_SetHiju(model, v) (0x0082b340) | - | int `0x00a7a410` (native_chr) |
 | `0x5081` | `Native_5081` | v | Ch_SetChocobo(model, v) (0x0082b130), popped only for a model | - | int `0x00a7a4a0` (native_chr) |
 | `0x5082` | `Native_5082` | v | Ch_ClothSetEnable(model, v) (0x0082a930), popped only for a model | - | int `0x00a7a4f0` (native_chr) |
@@ -1258,7 +1436,9 @@ API is generated from this table. `-`: none. A result starting with
 | `0x5087` | `Native_ChrRefreshAllBones` | - | 0 | - | int `0x00a7a6a0` (native) |
 | `0x5088` | `Native_5088` | v f, n | Ch_SetShadeID(model, v, n) (0x0082b720) | - | int `0x00a7a6b0` (native_chr) |
 | `0x5089` | `Native_5089` | - | Native_PlayMotionCommon(worker, stack, 2, 0) | - | int `0x00a7a700` (native_chr) |
+| `0x508a` | `Native_508a` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) | - | int `0x00a7a720` (native_mods) |
 | `0x508b` | `Native_508b` | - | the same as 0x5089 | - | int `0x00a7a760` (native_chr) |
+| `0x508c` | `Native_508c` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) (as 0x508a) | - | int `0x00a7a7a0` (native_mods) |
 | `0x508d` | `Native_508d` | v | Ch_TextureSetAnimTimer(model, v) (0x0083d070) | - | int `0x00a7a7e0` (native_chr) |
 | `0x508e` | `Native_508e` | v | Ch_ClothEnableGrav(model, v) (0x008245f0) | - | int `0x00a7a850` (native_chr) |
 | `0x508f` | `Native_508f` | v int (popped only for a model) | 0: the model's +0x870 byte = v | - | int `0x00a7a8a0` (native_chr) |
