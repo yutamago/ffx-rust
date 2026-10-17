@@ -9990,3 +9990,171 @@ fn op_tokens_match_the_original() {
         }
     }
 }
+
+/// Writes `code` at `sym` in both oracles.
+fn stub_code(p: &mut Pair, sym: u32, code: &[u8]) {
+    let at = p.sym(sym);
+    p.a.write(at, code).unwrap();
+    p.b.write(at, code).unwrap();
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation
+)]
+fn dot_draw_matches_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_2b80);
+        // render data per instance: cells[0] for lo 0, cells[1] for 0x1000;
+        // what graphicVFXSetup puts there: pend[0..2], what it returns
+        let cells = p.alloc(0x20);
+        let (pend, setup_ret, seg_ret) = (cells + 8, cells + 0x10, cells + 0x14);
+        // graphicVFXGetRenderDataByInstance(lo, hi): [cells + (lo ? 4 : 0)]
+        let mut c = vec![
+            0x8b, 0x4c, 0x24, 0x04, 0xf7, 0xd9, 0x1b, 0xc9, 0x83, 0xe1, 0x04,
+        ];
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + cells]
+        c.extend(cells.to_le_bytes());
+        c.push(0xc3);
+        stub_code(&mut p, 0x0064_53d0, &c);
+        // graphicVFXSetup(lo, hi): the cell from pend, returns [setup_ret]
+        let mut c = vec![
+            0x8b, 0x4c, 0x24, 0x04, 0xf7, 0xd9, 0x1b, 0xc9, 0x83, 0xe1, 0x04,
+        ];
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + pend]
+        c.extend(pend.to_le_bytes());
+        c.extend([0x89, 0x81]); // mov [ecx + cells], eax
+        c.extend(cells.to_le_bytes());
+        c.push(0xa1); // mov eax, [setup_ret]
+        c.extend(setup_ret.to_le_bytes());
+        c.push(0xc3);
+        stub_code(&mut p, 0x0064_5780, &c);
+        // graphicVFXCreate(lo, hi, alpha): the cell from made[], then the
+        // recorder; graphicVFXCreateDataBuffer: the second name (0x100 on)
+        // into seen[], then the recorder
+        let (made, seen) = (p.alloc(8), p.alloc(12));
+        let mut c = vec![
+            0x8b, 0x4c, 0x24, 0x04, 0xf7, 0xd9, 0x1b, 0xc9, 0x83, 0xe1, 0x04,
+        ];
+        c.extend([0x8b, 0x81]); // mov eax, [ecx + made]
+        c.extend(made.to_le_bytes());
+        c.extend([0x89, 0x81]); // mov [ecx + cells], eax
+        c.extend(cells.to_le_bytes());
+        stub_code(&mut p, 0x0064_4de0, &c);
+        deref_recorder(
+            &mut p,
+            0x0064_4de0 + u32::try_from(c.len()).unwrap(),
+            &[0, 0, 0],
+        );
+        // (only for the two-segment instance: the other one's name has
+        // the original's saved registers 0x100 on)
+        let mut c = vec![0x83, 0x7c, 0x24, 0x0c, 0x02, 0x75, 0x28]; // cmp [esp + 0xc], 2; jne
+        c.extend([0x8b, 0x44, 0x24, 0x18]); // mov eax, [esp + 0x18]
+        for k in 0..3u32 {
+            c.extend([0x8b, 0x88]); // mov ecx, [eax + 0x100 + 4k]
+            c.extend((0x100 + 4 * k).to_le_bytes());
+            c.extend([0x89, 0x0d]); // mov [seen + 4k], ecx
+            c.extend((seen + 4 * k).to_le_bytes());
+        }
+        assert_eq!(c.len(), 7 + 0x28);
+        stub_code(&mut p, 0x0064_5040, &c);
+        deref_recorder(
+            &mut p,
+            0x0064_5040 + u32::try_from(c.len()).unwrap(),
+            &[0, 0, 0, 2, 2, 3, 2],
+        );
+        for (sym, words, ret) in [
+            (0x0064_5280u32, &[0u8, 0][..], None),
+            (0x0063_fdb0, &[0, 0, 0, 0], Some(seg_ret)),
+            (0x0094_964c, &[0, 0, 0], None),
+            (0x0064_5710, &[0, 0, 0], None),
+            (0x0064_58a0, &[0, 0], None),
+            (0x007e_6a00, &[0], Some(cells + 0x18)),
+            (0x007e_6a60, &[0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // the scratch op_spr_alloc returns
+        let spr = p.alloc(0x1200);
+        p.set(cells + 0x18, spr);
+        let (rd1, rd2) = (p.alloc(0x100), p.alloc(0x100));
+        let (geo1, geo2) = (p.alloc(0x100), p.alloc(0x100));
+        let mut bufs = Vec::new();
+        for _ in 0..3 {
+            bufs.push((p.alloc(0x8000), p.alloc(0x8000), p.alloc(0x4000)));
+        }
+        let b = p.alloc(0x10 + 0x20 * 24);
+        let rec = p.alloc(0x100);
+        let m = p.alloc(0x40);
+        for _ in 0..400 {
+            for (at, len) in [(rd1, 0x100), (rd2, 0x100), (geo1, 0x100), (geo2, 0x100)] {
+                p.fill(at, len, &mut rng);
+            }
+            p.fill(spr, 0x1200, &mut rng);
+            p.set(rd1 + 0x94, geo1);
+            p.set(rd2 + 0x94, geo2);
+            for (k, (g, at)) in [(geo1, 0u32), (geo1, 0x6c), (geo2, 0)]
+                .into_iter()
+                .enumerate()
+            {
+                let (pts, col, idx) = bufs[k];
+                p.set(g + at + 0xc, pts);
+                p.set(g + at + 0x14, col);
+                p.set(g + at + 0x1c, idx);
+            }
+            p.fill(rec, 0x100, &mut rng);
+            for k in 0..16 {
+                let x = finite(&mut rng);
+                p.set(m + 4 * k, x);
+            }
+            let n = rng.below(25);
+            p.set(b, n);
+            for i in 0..24 {
+                let e = b + 0x10 + 0x20 * i;
+                p.fill(e, 0x20, &mut rng);
+                for k in 0..4 {
+                    let x = finite(&mut rng);
+                    p.set(e + 4 * k, x);
+                }
+                let spread = match rng.below(4) {
+                    0 => 0i16,
+                    1 => i16::try_from(rng.below(32)).unwrap() - 16,
+                    2 => i16::try_from(rng.below(1100)).unwrap() - 40,
+                    _ => rng.next() as i16,
+                };
+                p.set(e + 0x14, spread);
+                if rng.chance(50) {
+                    p.set(e + 0x1c, 0u8);
+                }
+                if rng.chance(40) {
+                    p.set(e + 0x16, i16::try_from(rng.below(40)).unwrap() - 4);
+                }
+            }
+            let pick = |rng: &mut Xorshift, v: u32| if rng.chance(25) { 0 } else { v };
+            let (c1, c2) = (pick(&mut rng, rd1), pick(&mut rng, rd2));
+            p.set(cells, c1);
+            p.set(cells + 4, c2);
+            let (q1, q2) = (pick(&mut rng, rd1), pick(&mut rng, rd2));
+            p.set(made, pick(&mut rng, rd1));
+            p.set(made + 4, pick(&mut rng, rd2));
+            p.set(pend, q1);
+            p.set(pend + 4, q2);
+            p.set(setup_ret, u32::from(rng.chance(70)));
+            p.set(seg_ret, u32::from(!rng.chance(10)));
+            let hold = rng.pick(&[0u32, 1]);
+            check_deep_n(
+                &mut p,
+                "opus_0582_dot_draw",
+                0x00a7_2b80,
+                &[b, rec, m, hold],
+                |mm, frame| {
+                    s::opus_0582_dot_draw(mm, b, rec, m, hold, frame, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}

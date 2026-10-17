@@ -1216,6 +1216,16 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
         slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_0582_dot_draw(b, rec, m, hold)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    opus_0582_dot_draw @ 0x00a7_2b80 => extern "C" fn opus_0582_dot_draw(b: u32, rec: u32, m: u32, hold: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x3a0]);
+        let mut locals = Locals([0; 0x3a0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x3a0;
+        slots::bridge::opus_0582_dot_draw(&mut mem(), b, rec, m, hold, frame, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opus_no_get(list, unit, no)`.
     opus_no_get @ 0x0080_1060 => extern "C" fn opus_no_get(list: u32, unit: u32, no: u32) -> u32 {
         opus::bridge::opus_no_get(&mem(), list, unit, no)

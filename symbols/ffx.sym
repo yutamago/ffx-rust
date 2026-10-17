@@ -13821,6 +13821,7 @@
 0x00b41280 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PFramework_PApplicationViewport_unsigned_int__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PFramework::PApplicationViewport,unsigned_int>::vftable
 0x00b41298 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PFramework_PInputMapper_unsigned_int__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PFramework::PInputMapper,unsigned_int>::vftable
 0x00b41358 label BacktraceOutputWin32_vftable # fh v4:imported BacktraceOutputWin32::vftable
+0x00b41b50 label    g_StrNoTexture            # "NoTexture": the name opus_0582_dot_draw gives the data buffers it creates (graphicVFXCreateDataBuffer)
 0x00b41d9c label    g_AlphaScaleExtended      # .rdata f32 512.0: useExtendedAlpha(1) copies it to g_AlphaScale
 0x00b43e04 label Phyre_PClassDescriptorForType_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorForType<ClassDynamicMesh>::vftable
 0x00b43e4c label Phyre_PClassDescriptorAbstract_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<ClassDynamicMesh>::vftable
