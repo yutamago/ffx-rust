@@ -8338,7 +8338,7 @@
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
 0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100; (mode, v, map, end type): 0xc024 pushes 3; its 4th word is the 0 left from TkGetNowEventJumpMapNo(0), the end type (save +0xd0, != 6, == 1 game over), so the bridge passes 0
-0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours
+0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours; ported in helpers (script round 19)
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
 0x00862800 function AtelBindFp                # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (pppFpSetStickChr) or other object kinds (pppFpSetStickMap/pppFpSetStickMapDObj); the Switch AtelBindFp calls exactly those three and sorts between AtelBindElemOff and AtelBindFpOff, as here; callers Native_FpBind, Native_0196; was Fp_BindToWorker
@@ -8361,12 +8361,12 @@
 0x00863ae0 function AtelClearLoveParamDisable # fh v3:cg2 0x863a80
 0x00863af0 function Atel_ClearEffectFlag2      # (n): bit n of 0x01326b74 cleared -> the mask; name ours; ported in helpers (script round 14)
 0x00863b10 function AtelClearMesWinWork       # fh v3:exact 0x00863ab0; ported in helpers (script round 16)
-0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000
+0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000; ported in helpers (script round 19)
 0x00863f90 function AtelClearNotAuronPatchFlag # fh v3:bsim1.00 0x00863f30
 0x00863fe0 function Script_StopTurn              # (worker, level): the same for the turn block (ctx+0x864+i*0x44, pointer at level block +0x48); ported in helpers (script round 13)
 0x008640f0 function Msg_CloseWindow              # (window): clamps 0..7; if state +0x14 is not 0 or 3, sets 3 and calls 0x008ab8f0
 0x00864150 function Msg_CancelChoice          # (worker, slot 0..3) AtelGetBasicWork(worker); g_ScriptContext slot: pending answer +0x64 = -1 (writing default +0x72 to target +0x6c first), +0x68, +0x73 cleared; own name
-0x008641c0 function AtelDecodeCommand         # fh v3:bsim1.00 0x00864160
+0x008641c0 function AtelDecodeCommand         # fh v3:bsim1.00 0x00864160; Script_Run(AtelGetBasicWork(i), mode, 1); ported in helpers (script round 19)
 0x008641e0 function Script_Run                # (worker, mode, callbacks) -> 1 when the speed accumulator (+0x98 += +0x94 * g_GameSpeed) reached 1: the bytecode interpreter under g_ScriptRunMutex; runs the level of worker +0x32 until a native, end or wait stops it with an empty stack (docs/formats/script.md 'The interpreter'); mode 1 = the debugger's step; callbacks = ctrl work +0x58/+0x5c around it; opcode byte table 0x0086536c, jump table 0x00865250
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x008653f0 function AtelDecodeSignal          # fh v3:exact 0x00865390
@@ -8414,7 +8414,7 @@
 0x0086a7b0 function AtelGetActorType          # (index) -> type byte of the worker header, or 7 if the index is out of range; was Script_GetWorkerType
 0x0086a7e0 function AtelGetAlbhedRikku        # fh v3:bsim1.00+call.cs 0x0086a770 cdecl
 0x0086a830 function AtelGetBasicWork          # worker index -> worker object (0xb58/0x558/0x5b8 sizes); was Script_GetWorker
-0x0086a970 function AtelGetBattleIdAdrs       # fh v3:bsim1.00 0x0086a900
+0x0086a970 function AtelGetBattleIdAdrs       # fh v3:bsim1.00 0x0086a900; ported in helpers (script round 19)
 0x0086a990 function AtelGetBattleIdAdrs2      # fh switch:cg2 0x71008af3c8
 0x0086a9a0 function AtelGetBattleSceneGroup   # g_SaveData +0x10 (u8), what AtelSetBattleSceneGroup writes; read by 0x008848a0
 0x0086a9b0 function AtelGetBattleStatus       # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): bit 0 of ctrl work 0 +0x210 (0x01325db0)
@@ -8440,7 +8440,7 @@
 0x0086ae50 function AtelGetCameraWorkAdrs     # (worker) -> worker + 0x3c (camera handle cache of group 6 natives); was Script_WorkerCamSlot
 0x0086ae60 function AtelGetCameraWorkAdrsFromID  # layout: alphabetical run between AtelGetCameraWorkAdrs and AtelGetCharHandle (1 unnamed in the gap); Switch 0x7100461bc0 AtelGetCameraWorkAdrsFromID is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086ae80 function AtelGetCharHandle         # (worker) -> field character object (worker + 0x9c); used by every chr native of group 5; was Script_WorkerChr
-0x0086ae90 function AtelGetCharHandleFromBindPC # fh v3:bsim1.00 0x0086ae20
+0x0086ae90 function AtelGetCharHandleFromBindPC # fh v3:bsim1.00 0x0086ae20; ported in helpers (script round 19)
 0x0086aee0 function AtelGetCharHandleFromBindPC2 # fh v3:bsim1.00 0x0086ae70
 0x0086af30 function AtelGetControlerT         # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): AX = g_AtelPadHeld (upper EAX is the caller's); ffx_script::vm::bridge::globals
 0x0086af50 function AtelGetControlerRept      # AX = g_AtelPadRepeat; read by the natives at 0x0085e3c0/0x0085eda0
@@ -8458,10 +8458,11 @@
 0x0086b150 function AtelGetElemId             # fh v3:exact 0x0086b0e0
 0x0086b170 function Msg_Text1                 # (i): entry i's text (+0) in the script context's second table (+0x38, .ebp section 5); offset 0 falls back to the .ebp's section 1 (0x023cbd60); = Msg_Get(i, 0, 1)
 0x0086b1b0 function AtelGetEventActorLinkWork # fh v3:exact 0x0086b140
+0x0086b1e0 function AtelGetEventActorPos      # layout: alphabetical run between AtelGetEventActorLinkWork (0x0086b1b0) and AtelGetEventBindIdFromID (0x0086b370); (i, &x, &y, &z) the position of the event ctrl work's worker i (0x01326b2c's for an index outside it); name ours; ported in helpers (script round 19)
 0x0086b300 function AtelGetEventActorTotal    # fh v3:exact 0x0086b290
 0x0086b320 function AtelGetEventActorType        # layout: alphabetical run between AtelGetEventActorTotal and AtelGetEventBindIdFromID (1 unnamed in the gap); Switch 0x7100472470 AtelGetEventActorType is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086b370 function AtelGetEventBindIdFromID  # fh v3:exact 0x0086b300
-0x0086b3a0 function AtelGetEventCharHandleFromID # fh v3:exact 0x0086b330
+0x0086b3a0 function AtelGetEventCharHandleFromID # fh v3:exact 0x0086b330; ported in helpers (script round 19)
 0x0086b3d0 function AtelGetEventCharIDFromID  # fh v3:exact 0x0086b360
 0x0086b400 function AtelGetEventElemCharIDFromID # fh v3:exact 0x0086b390
 0x0086b480 function AtelGetEventElemHandleFromID # fh v3:bsim1.00 0x0086b3d0
@@ -8475,7 +8476,7 @@
 0x0086b910 function AtelGetGuideMapActorNumber   # layout: alphabetical run between AtelGetGuideMapActorInfo and AtelGetGuideMapAngEx (2 unnamed in the gap); Switch 0x7100472d00 AtelGetGuideMapActorNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086b940 function AtelGetGuideMapAng           # layout: alphabetical run between AtelGetGuideMapActorInfo and AtelGetGuideMapAngEx (2 unnamed in the gap); Switch 0x7100472c40 AtelGetGuideMapAng is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086b9a0 function AtelGetGuideMapAngEx      # fh v3:exact 0x0086b930
-0x0086b9e0 function AtelGetHelpEventFlag      # fh v3:exact 0x0086b970
+0x0086b9e0 function AtelGetHelpEventFlag      # fh v3:exact 0x0086b970; ported in helpers (script round 19)
 0x0086ba40 function AtelGetHideStatusFromID   # fh v3:bsim1.00 0x0086b9d0
 0x0086ba60 function Msg_TableTextAlt          # (table, i): entry i's alternate text (+4) in table; offset 0 falls back to entry i's text in the .ebp's section 1; no callers
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
@@ -8498,7 +8499,8 @@
 0x0086bf10 function Msg_Flags                  # (i): entry i's flags (+2); high byte = choice count; kept at message window +0x16 (0x008607a0)
 0x0086bf30 function Msg_Text                   # (i): entry i's text (+0) in the event's message table; offset 0 falls back to the .ebp's section 1
 0x0086bf70 function Msg_Get                    # (i, alternate, table): like Msg_Text/Msg_TextAlt; table 1 = script context +0x38 (.ebp section 5)
-0x0086bfe0 function Event_GetEntrance            # (ctx) -> 0x20-byte entrance record (current entrance index * 0x20 into the event table at ctx+4); 0x01325b50 when there is none
+0x0086bfe0 function Event_GetEntrance            # (worker) -> 0x20-byte entrance record (current entrance index * 0x20 into the script block at worker+4); 0x01325b50 when there is none; ported in helpers (script round 19)
+0x0086c020 function Event_GetEntranceAt       # (worker, i) Event_GetEntrance with an explicit entrance index (TkGetNowEventJumpIndex for a negative one); name ours; ported in helpers (script round 19)
 0x0086c0a0 function Native_GetFieldPtr32_0086c0a0 # auto-port shape (return address of a field's target, cdecl): t0 = u8[(a0 + 0x32)]; return (((t0 * 0x4c) + 0x5b8) + a0); callers: Native_MoveStart; name ours
 0x0086c0c0 function AtelGetMyBufferSize       # fh v3:exact 0x0086c050; ported in helpers (script round 16)
 0x0086c160 function AtelGetMyWorkSize         # fh v3:exact 0x0086c0f0
@@ -8550,7 +8552,7 @@
 0x0086dc10 function AtelLinkSigWorkNext       # (at, node): links a signal node after node/list head at (ffx_script::vm::bridge::signal)
 0x0086dc30 function AtelLinkSigWorkPrev       # (at, node): links a signal node before node at
 0x0086dc50 function AtelLinkSigWorkButtom     # fh v3:exact 0x0086dbe0
-0x0086dca0 function AtelMapLoad               # fh v3:bsim1.00 0x0086dc30
+0x0086dca0 function AtelMapLoad               # fh v3:bsim1.00 0x0086dc30; ported in helpers (script round 19)
 0x0086dcd0 function AtelMapLoadBtl               # layout+callees: sorts between AtelMapLoad and AtelMapLoadNoCache, and its named callees match the Switch 0x71004609f0 AtelMapLoadBtl's (similarity 1.00: TkSetEventJumpMapNo, yiBattleMapRead); symbols from Fahrenheit's server export
 0x0086dd30 function AtelMapLoadNoCache        # fh v3:bsim1.00 0x0086dcc0
 0x0086ddb0 function AtelPopMember             # fh call.cs cdecl
@@ -8612,8 +8614,8 @@
 0x0086fde0 function AtelSetEventElemHandleFromID # fh v3:cg6 0x86fd70
 0x0086fe20 function AtelSetEventElemPosFromID # fh v3:bsim1.00 0x0086fdb0
 0x0086fe60 function AtelSetEventElemStatus    # fh v3:exact 0x0086fdf0
-0x0086fec0 function AtelSetEventJump             # layout+callees: sorts between AtelSetEventElemStatus and AtelSetEventJump2, and its named callees match the Switch 0x71004618e0 AtelSetEventJump's (similarity 0.62: AtelSetSnd3dVolumeDiffRatio, AtelUcOff, MsBattleExeClear, TkSetEventJump, TkSetFadeOut); symbols from Fahrenheit's server export
-0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap
+0x0086fec0 function AtelSetEventJump             # layout+callees: sorts between AtelSetEventElemStatus and AtelSetEventJump2, and its named callees match the Switch 0x71004618e0 AtelSetEventJump's (similarity 0.62: AtelSetSnd3dVolumeDiffRatio, AtelUcOff, MsBattleExeClear, TkSetEventJump, TkSetFadeOut); symbols from Fahrenheit's server export; ported in helpers (script round 19)
+0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap; ported in helpers (script round 19)
 0x008700c0 function AtelSetMapFadeType        # g_SaveData +0x11 (u8); Native_SetMapFadeType
 0x008700d0 function AtelSetMapFadeFrames      # g_SaveData +0x12 (u8); Native_SetMapFadeFrames
 0x00870130 function AtelSetForceBattleMapId   # fh v3:bsim1.00 0x008700d0
@@ -8627,7 +8629,7 @@
 0x00870280 function AtelSetMCFPInWater        # fh v3:bsim1.00 0x00870220
 0x008702e0 function AtelSetMenuExecStatus     # fh v3:bsim1.00 0x00870280
 0x008702f0 function Atel_SetEffectFlag2        # (n): bit n of 0x01326b74 set -> the bit; name ours; ported in helpers (script round 14)
-0x008703b0 function AtelSetMoveHokanMode      # fh switch:bsim1.00 0x71004729f0
+0x008703b0 function AtelSetMoveHokanMode      # fh switch:bsim1.00 0x71004729f0; ported in helpers (script round 19)
 0x00870520 function SetField_00870520            # auto-port shape (store argument to field, cdecl): u16[(((a1 * 0x4c) + a0) + 0x5bc)] = (a2 & 0xffff); return a0; callers: ; name ours
 0x00870870 function AtelSetMyWorkAdrs         # fh v3:exact 0x00870810
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
@@ -8636,12 +8638,12 @@
 0x00870b20 function AtelSetPos3d              # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228; was Worker_SetPos
 0x00870d10 function Atel_SetLevelF74           # (worker, i, v f): +(i + 0x14) * 0x4c = v; name ours; ported in helpers (script round 14)
 0x00870d30 function Script_Op79               # (worker, var, index, value): opcode 79, the worker's vibration curve (+0x44) in an 8 x u16 variable
-0x00870ef0 function AtelSetSaveDicIndex       # fh v3:exact 0x00870e90
+0x00870ef0 function AtelSetSaveDicIndex       # fh v3:exact 0x00870e90; ported in helpers (script round 19)
 0x00870f60 function AtelSetShopRatio          # fh v3:bsim1.00 0x00870f00
 0x00870fc0 function SetDeref_00870fc0            # auto-port shape (store argument to deref, cdecl): t0 = u8[(a0 + 0x32)]; u32[(((t0 * 0x4c) + a0) + 0x5cc)] = a1; return a1; callers: ; name ours
 0x00870fe0 function Atel_SetWorkerFlag36_8     # (worker, on): +0x36 bit 3 set/cleared -> the bit; name ours; ported in helpers (script round 14)
 0x00871170 function SetField_00871170            # auto-port shape (store argument to field, cdecl): u16[((a0 + (((a1 << 0x4) + a1) * 0x4)) + 0x868)] = (a2 & 0xffff); return a0; callers: ; name ours
-0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130
+0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130; ported in helpers (script round 19)
 0x00871210 function Msg_ClampChoices             # (window, mode): with mode bit 2, clamps the choice cursors +0x1e/+0x1f/+0x22/+0x23 to the counts in Msg_Flags (window +0x16); drops bit 2 (no choices) / bit 0x40; returns the flags
 0x008712a0 function Atel_SetWorkerFlag200      # (worker, on): +0x34 bit 0x200 set/cleared -> the bit; name ours; ported in helpers (script round 13)
 0x008712e0 function AtelSetValueFloat         # (worker, var, index, float, clamp): integer types get the value through _ftol2_sse, saturated to the type with clamp; f32 stored; nothing past type 6; Switch name: AtelSetValueFloat/AtelSetValueInteger follow AtelSetUseFlag alphabetically, before AtelSetVel* (0x00871500 writes a level's velocity)
@@ -8658,14 +8660,14 @@
 0x00871610 function Atel_SetCurLevel5c4        # (worker, v f): the current level's +0x5c4; name ours; ported in helpers (script round 14)
 0x00871630 function Atel_SetCurLevel5c0        # (worker, v f): the current level's +0x5c0; name ours; ported in helpers (script round 14)
 0x00871650 function AtelSignalReply           # (worker, node): the reply a REQSW sender waits for once its request starts
-0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0
+0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0; ported in helpers (script round 19)
 0x00871750 function AtelSndTransSepSPKDataGroup # fh switch:bsim1.00 0x71004728a0
 0x00871890 function AtelStopSoundAll          # fh v3:exact 0x00871830
 0x00871950 function AtelStrcat                # fh v3:exact 0x008718f0
 0x00871980 function AtelStrcpy                # fh v3:exact 0x00871920
 0x008719c0 function Atel_Strlen                # (s) -> strlen; name ours; ported in helpers (script round 14)
 0x008719e0 function AtelUcOff                 # see Native_ControlDisable; was Event_DisableControl; ported in helpers (script round 15)
-0x00871ab0 function AtelUcOn                  # see Native_ControlEnable; was Event_EnableControl
+0x00871ab0 function AtelUcOn                  # see Native_ControlEnable; was Event_EnableControl; ported in helpers (script round 19)
 0x00871bc0 function AtelUpdateBattleStatus    # fh v3:exact 0x00871b60
 0x00871d70 function AtelExec_Internal_871d10  # fh call.cs stdcall
 0x00871e50 function AtelUpdateWaterStatus     # fh v3:exact 0x00871df0
@@ -8698,7 +8700,7 @@
 0x008729c0 function Flag_01326b28_008729c0 # (): byte 0 of *0x01326b28 |= 0x80, +0x210 |= 2, returns the object; caller 0x006bce00; name ours
 0x008729e0 function Check_01326b28_008729e0 # (): 1 when 0x01325b88 is set and byte 3 of *0x01326b28 & 3 == 2; caller 0x006662f0; name ours
 0x00872a00 function CheckPreviousLevel_00872a00 # (): 1 if graphicPreviousLevelGetNameHash() == 0x1d58 or (byte +3 of g_ScriptContext) & 3 == 1; name ours
-0x00872aa0 function AtelCheckCaptMonster         # layout and code: the Switch name sorting between AtelCheck and AtelCheckMenuOtakaraFlag that fits (AtelCheckCaptMonster, 288 bytes; ours 175): checks monster capture counts through NkzGetMonsterListNum and MsGetMonsterCapture; callers the script natives 0x0085d780, 0x0085d8c0, 0x0085db90
+0x00872aa0 function AtelCheckCaptMonster         # layout and code: the Switch name sorting between AtelCheck and AtelCheckMenuOtakaraFlag that fits (AtelCheckCaptMonster, 288 bytes; ours 175): checks monster capture counts through NkzGetMonsterListNum and MsGetMonsterCapture; callers the script natives 0x0085d780, 0x0085d8c0, 0x0085db90; ported in helpers (script round 19)
 0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
@@ -8723,7 +8725,7 @@
 0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00)
 0x00873b30 function AtelGetSaveDC             # g_SaveData +0xdc; read by 0x008807b0
 0x00873b40 function AtelGetRandomEncountStatus# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe4
-0x00873b50 function AtelGetSummonNameforFinalBattleSelector # layout+callees: sorts between AtelGetMusicNumber and AtelGetVoicePan, and its named callees match the Switch 0x710044ff00 AtelGetSummonNameforFinalBattleSelector's (similarity 1.00: MsGetSaveChrName, TkMn2GetCommandName); symbols from Fahrenheit's server export
+0x00873b50 function AtelGetSummonNameforFinalBattleSelector # layout+callees: sorts between AtelGetMusicNumber and AtelGetVoicePan, and its named callees match the Switch 0x710044ff00 AtelGetSummonNameforFinalBattleSelector's (similarity 1.00: MsGetSaveChrName, TkMn2GetCommandName); symbols from Fahrenheit's server export; ported in helpers (script round 19)
 0x00873b80 function AtelGetVoicePan           # g_AtelVoicePan (u8)
 0x00873b90 function AtelGetVagStreamVolume    # g_AtelVagStreamVolume (u8)
 0x00873c70 function AtelPs2DebugString        # fh v3:bsim1.00+call.cs 0x00873c10
@@ -8787,6 +8789,7 @@
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
+0x008764f0 function AtelRequestTrigger_008764f0 # (from, to, kind) with ctrl work 0 current: AtelRegistSignalWithoutSameLevel(from, to, 0, AtelSoundTableGet_00876860(type, kind), TkGetVibrateCurve(type, kind, worker +0x44)) when the worker's +0xab has trigger bit kind; callers the trigger checks (from 0xffff); name ours; ported in helpers (script round 19)
 0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours; ported in helpers (script round 13)
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours

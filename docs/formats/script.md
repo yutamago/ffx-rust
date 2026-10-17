@@ -612,6 +612,39 @@ never returns for an infinity, in the game as in the port. Debug natives
 found on the way (`0x705f`, `0xc004`, `0xc005`, `0xc034`, `0xc05c`) are
 marked in the table and not ported.
 
+Round 19 began with the setup functions other modules wait on, in
+`helpers`: the map jumps `AtelSetEventJump` (`0x0086fec0`) and
+`AtelSetEventJump2` (`0x0086ff40`; with the ctrl work's bit 7, or
+`FFXIsDebug`: the player's control taken, `TkSetEventJump`, the hook at
+`0x01327070`, `MsBattleExeClear`, bit 7 cleared and `+0x210` bit 1 set, the
+3D-sound ratio from the float at `0x00b5be88`, then a fade of 30 frames for
+a jump to map `0x109` and none for the others, or with the third argument the save
+record's frames `+0x12` and kind `+0x11`, 0 `Sg_FadeOut`, 1
+`Sg_FadeOutW`), `AtelUcOn` (`0x00871ab0`, the player's control given to
+every bound type-1 worker whose control bit is set: `+0x36` bit 3 when the
+ctrl work's bit 5 is set, else `+0x34` bit 9; the one with the ctrl work's
+`+0xa` id and a model becomes the player), `Script_StopMove`
+(`0x00863e10`, the move blocks' counterpart of `Script_StopTurn`: own
+blocks at `+0x5b8 + i*0x4c`, and the turn stopped first when the shared
+block has `+2` bit 14), `AtelDecodeCommand`, `AtelSetSaveDicIndex` (the
+save record's `+0xe` from the event block's `+0x1e`, or its table at
+`+0x28` when bit 15 is set), `AtelSetUpCtrlWork` (bit 0, `g_AtelError`
+cleared for a ctrl work without `+0x1c`, and the default callbacks),
+`Event_GetEntrance` and `Event_GetEntranceAt` (`0x0086c020`; both take the
+worker, whose `+4` is its script block: entrances at block `+4`, their end
+at `+8`, 0x20 bytes each, the first past the end, `0x01325b50` without
+any), `AtelGetEventActorPos` (`0x0086b1e0`), `AtelGetHelpEventFlag`,
+`AtelCheckCaptMonster` (the monster list at `0x00c86708`, 8 bytes each:
+mode 0 matches `+2`, 1 `+4`, 2 counts all), `AtelRequestTrigger_008764f0`
+(a request for an enabled trigger at the level and entry the sound and
+vibration tables give), `AtelBindEff2OffSome`, `AtelMapLoad`,
+`AtelSkipReqLevel2`, `AtelGetBattleIdAdrs`, `AtelSetMoveHokanMode`,
+`AtelGetEventCharHandleFromID`, `AtelGetCharHandleFromBindPC` and
+`AtelGetSummonNameforFinalBattleSelector` (from id 15 on it asks
+`TkMn2GetCommandName(0x30ff)`, whatever the id). `AtelPCOpen`
+(`0x00879cf0`) and `AtelPCOpen2` open `host0:` files, the PS2 development
+host: platform code, left to the original.
+
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
 returns 0, so leaving them out changes nothing: the round-11 ports drop

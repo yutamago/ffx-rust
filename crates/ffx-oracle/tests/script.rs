@@ -4080,3 +4080,484 @@ fn round18_natives_match_the_original() {
     );
     assert!(compared > 0, "nothing ran");
 }
+
+/// One round-19 case: the original at `sym` with `args`, then the bridge
+/// `f` on the other side; `EAX` compared when `eax` is set, every byte
+/// written always. An original that stops (reading through a null table
+/// the snapshot leaves unset) skips the case and starts the pair again.
+#[allow(clippy::too_many_arguments)] // the pair, its source and the case
+fn r19_case(
+    pages: &std::sync::Arc<Pages>,
+    exe: &std::path::Path,
+    c: u32,
+    pair: &mut (Oracle, Oracle),
+    sym: u32,
+    args: &[u32],
+    eax: bool,
+    what: &str,
+    f: impl FnOnce(&mut Run) -> u32,
+) -> bool {
+    let (a, b) = (&mut pair.0, &mut pair.1);
+    clear_stacks(a, b);
+    let ra = match a.call(a.rebase(sym), Conv::Cdecl, args) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{what}: the original stops: {e}");
+            *pair = fresh_run_pair(pages, exe, c);
+            return false;
+        }
+    };
+    assert!(ra.st0_raw.is_none(), "{what}: the original returns ST0");
+    let rb = f(&mut Run(b));
+    if eax {
+        assert_eq!(ra.eax, rb, "{what}: EAX");
+    }
+    native_no_diff(a, b, what);
+    true
+}
+
+/// Round 19's setup functions (map jumps, player control, move blocks,
+/// entrances, the event's workers, ctrl work defaults, triggers) against
+/// the original on every ctrl work in use, with prepared flags where the
+/// snapshot's leave a path cold.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per function
+fn round19_setup_matches_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let (mut compared, mut stops) = (0, 0);
+    let mut tally = |ok: bool| {
+        if ok {
+            compared += 1;
+        } else {
+            stops += 1;
+        }
+    };
+    for c in ctrls {
+        let mut p = fresh_run_pair(&pages, &exe, c);
+        let n = u32::from(Mem::read::<u16>(&p.1, c + 0xc)).min(12);
+        let out = p.0.alloc(0x10).unwrap();
+        assert_eq!(p.1.alloc(0x10).unwrap(), out);
+        for i in 0..n {
+            let w = v::atel_get_basic_work(&mut p.1, i.cast_signed());
+            orig(&mut p.0, ATEL_GET_BASIC_WORK, &[i]);
+            let what = |f: &str| format!("{f} worker {i} of {c:#x}");
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_a970,
+                &[i],
+                true,
+                &what("0x0086a970"),
+                |r| hp::atel_get_battle_id_adrs(r, i),
+            ));
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_b3a0,
+                &[i],
+                true,
+                &what("0x0086b3a0"),
+                |r| hp::atel_get_event_char_handle_from_id(r, i),
+            ));
+            for (x, y, z) in [(out, out + 4, out + 8), (0, out, 0), (out + 8, 0, out)] {
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0086_b1e0,
+                    &[i, x, y, z],
+                    true,
+                    &what("0x0086b1e0"),
+                    |r| hp::atel_get_event_actor_pos(r, i, x, y, z),
+                ));
+            }
+            for mode in [0, 1] {
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0087_03b0,
+                    &[w, mode],
+                    true,
+                    &what(&format!("0x008703b0 {mode}")),
+                    |r| hp::atel_set_move_hokan_mode(r, w, mode),
+                ));
+            }
+            // the move blocks, where every level's points into the worker
+            let blocks = (0..9).all(|l| {
+                let q = Mem::read::<u32>(&p.1, w + 0x170 + l * 0x4c);
+                (w..w + 0x1000).contains(&q)
+            });
+            if blocks {
+                for l in [u32::MAX, 0, 1, 3, 8, 12] {
+                    // with and without the block turning
+                    for turn in [false, true] {
+                        let lv = if l == u32::MAX {
+                            u32::from(Mem::read::<u8>(&p.1, w + 0x32))
+                        } else {
+                            l
+                        };
+                        let lv = lv.min(8);
+                        let blk = Mem::read::<u32>(&p.1, w + 0x170 + lv * 0x4c);
+                        if turn {
+                            let f = Mem::read::<u16>(&p.1, blk + 2);
+                            poke(&mut p.0, &mut p.1, blk + 2, f | 0x4000);
+                        }
+                        // every level sharing the block (on the second
+                        // pass), distinct values in it, others in the
+                        // blocks the levels get
+                        if turn {
+                            for j in 0..9 {
+                                poke(&mut p.0, &mut p.1, w + 0x170 + j * 0x4c, blk);
+                            }
+                        }
+                        for (k, off) in [0x28, 0x2c, 0x30, 0x38, 0x44, 0x48, 8, 0xc]
+                            .into_iter()
+                            .enumerate()
+                        {
+                            #[allow(clippy::cast_precision_loss)] // small
+                            let x = (k as f32 + 1.5) * 3.25;
+                            poke(&mut p.0, &mut p.1, blk + off, x.to_bits());
+                            for j in 0..9 {
+                                let own = w + 0x5b8 + j * 0x4c;
+                                if own != blk {
+                                    poke(&mut p.0, &mut p.1, own + off, (-x).to_bits());
+                                }
+                            }
+                        }
+                        tally(r19_case(
+                            &pages,
+                            &exe,
+                            c,
+                            &mut p,
+                            0x0086_3e10,
+                            &[w, l],
+                            true,
+                            &what(&format!("0x00863e10 level {l} turn {turn}")),
+                            |r| hp::script_stop_move(r, w, l),
+                        ));
+                    }
+                }
+            }
+            // every bound-effect bit set, so each kind clears its own
+            let f = Mem::read::<u16>(&p.1, w + 0x38);
+            poke(&mut p.0, &mut p.1, w + 0x38, f | 0xe0);
+            for k in [1, 0, 2, 3] {
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0086_2680,
+                    &[w, k],
+                    true,
+                    &what(&format!("0x00862680 {k}")),
+                    |r| hp::atel_bind_eff2_off_some(r, w, k),
+                ));
+            }
+            for e in [u32::MAX, 0, 1, 3, 100] {
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0086_c020,
+                    &[w, e],
+                    true,
+                    &what(&format!("0x0086c020 {e}")),
+                    |r| hp::event_get_entrance_at(r, w, e),
+                ));
+            }
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_bfe0,
+                &[w],
+                true,
+                &what("Event_GetEntrance"),
+                |r| hp::event_get_entrance(r, w),
+            ));
+            // a trigger worker with every trigger enabled, then none
+            for bits in [0xffu8, 0] {
+                poke(&mut p.0, &mut p.1, w + 0xab, bits);
+                for k in [0, 1, 2, 5] {
+                    tally(r19_case(
+                        &pages,
+                        &exe,
+                        c,
+                        &mut p,
+                        0x0087_64f0,
+                        &[0xffff, i, k],
+                        true,
+                        &what(&format!("0x008764f0 {bits:#x} {k}")),
+                        |r| hp::atel_request_trigger(r, 0xffff, i, k),
+                    ));
+                }
+            }
+            for l in [u32::MAX, 0, 2] {
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0087_1730,
+                    &[i, l],
+                    false,
+                    &what(&format!("0x00871730 {l}")),
+                    |r| {
+                        hp::atel_skip_req_level2(r, i, l);
+                        0
+                    },
+                ));
+            }
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_41c0,
+                &[i, 0],
+                true,
+                &what("0x008641c0"),
+                |r| hp::atel_decode_command(r, i, 0),
+            ));
+        }
+        let what = |f: &str| format!("{f} on {c:#x}");
+        // player control: as it is, then with a control bit on every
+        // type-1 worker, then gated by the ctrl work's flags
+        tally(r19_case(
+            &pages,
+            &exe,
+            c,
+            &mut p,
+            0x0087_1ab0,
+            &[],
+            false,
+            &what("AtelUcOn"),
+            |r| {
+                hp::atel_uc_on(r);
+                0
+            },
+        ));
+        for i in 0..n {
+            let w = v::atel_get_basic_work(&mut p.1, i.cast_signed());
+            orig(&mut p.0, ATEL_GET_BASIC_WORK, &[i]);
+            for (off, bit) in [(0x34, 0x200u16), (0x36, 8)] {
+                let f = Mem::read::<u16>(&p.1, w + off);
+                poke(&mut p.0, &mut p.1, w + off, f | bit);
+            }
+        }
+        for (off, v) in [(0, 0u8), (0, 0x20), (1, 4), (3, 0x80)] {
+            let f = Mem::read::<u8>(&p.1, c + off);
+            let v = if v == 0 { f } else { f | v };
+            poke(&mut p.0, &mut p.1, c + off, v);
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0087_1ab0,
+                &[],
+                false,
+                &what(&format!("AtelUcOn +{off} {v:#x}")),
+                |r| {
+                    hp::atel_uc_on(r);
+                    0
+                },
+            ));
+            poke(&mut p.0, &mut p.1, c + off, f);
+        }
+        // the last two flag bytes told apart (an index past the end reads
+        // the last)
+        let fl = orig(&mut p.1, 0x0078_5250, &[]);
+        orig(&mut p.0, 0x0078_5250, &[]);
+        poke(&mut p.0, &mut p.1, fl + 0x7e, 0u8);
+        poke(&mut p.0, &mut p.1, fl + 0x7f, 0xffu8);
+        for i in [0u32, 1, 7, 8, 9, 100, 1023, 1024, 5000, u32::MAX - 2] {
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_b9e0,
+                &[i],
+                true,
+                &what(&format!("0x0086b9e0 {i}")),
+                |r| hp::atel_get_help_event_flag(r, i),
+            ));
+        }
+        for i in [0u32, 1, 7, 14, 15, 20] {
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0087_3b50,
+                &[i],
+                true,
+                &what(&format!("0x00873b50 {i}")),
+                |r| hp::atel_get_summon_name_for_final_battle_selector(r, i),
+            ));
+        }
+        for chr in [0u32, 1, 2, 5, 8, 0xff] {
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_ae90,
+                &[chr],
+                true,
+                &what(&format!("0x0086ae90 {chr}")),
+                |r| hp::atel_get_char_handle_from_bind_pc(r, chr),
+            ));
+        }
+        let list = p.1.rebase(0x00c8_6708);
+        let ids: Vec<u32> = (0..4)
+            .map(|k| u32::from(Mem::read::<u16>(&p.1, list + 8 * k + 2 + 2 * (k & 1))))
+            .collect();
+        for mode in [0, 1, 2, 3] {
+            for &id in &ids {
+                for min in [0, 1, 3, u32::MAX] {
+                    tally(r19_case(
+                        &pages,
+                        &exe,
+                        c,
+                        &mut p,
+                        0x0087_2aa0,
+                        &[mode, id, min],
+                        true,
+                        &what(&format!("0x00872aa0 {mode} {id} {min}")),
+                        |r| hp::atel_check_capt_monster(r, mode, id, min),
+                    ));
+                }
+            }
+        }
+        // the dictionary index: as it is, then a table (bit 15)
+        let blk = Mem::read::<u32>(&p.1, p.1.rebase(0x0132_5be8));
+        for table in [false, true] {
+            if table && blk != 0 {
+                poke(&mut p.0, &mut p.1, blk + 0x1e, 0x8003_u16);
+                let t = Mem::read::<u32>(&p.1, blk + 0x28).wrapping_add(blk);
+                for k in 0..5u16 {
+                    poke(&mut p.0, &mut p.1, t + 2 * u32::from(k), 0x100 + k);
+                }
+            }
+            for i in [0u32, 1, 2, 3, 9, u32::MAX] {
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0087_0ef0,
+                    &[i],
+                    true,
+                    &what(&format!("0x00870ef0 {table} {i}")),
+                    |r| hp::atel_set_save_dic_index(r, i),
+                ));
+            }
+        }
+        // ctrl work defaults: in use as they are, then with callbacks
+        // cleared
+        for i in 0..3u32 {
+            let cw = v::atel_get_ctrl_work(&p.1, i);
+            for clear in [false, true] {
+                if clear {
+                    for off in [0x1c, 0x20, 0x2c, 0x4c, 0x58, 0x5c, 0x60] {
+                        if off != 0x1c || i == 1 {
+                            poke(&mut p.0, &mut p.1, cw + off, 0u32);
+                        }
+                    }
+                }
+                tally(r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0087_1190,
+                    &[i],
+                    true,
+                    &what(&format!("0x00871190 {i} {clear}")),
+                    |r| hp::atel_set_up_ctrl_work(r, i),
+                ));
+            }
+        }
+        for map in [0u32, u32::MAX, 1] {
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_dca0,
+                &[map],
+                true,
+                &what(&format!("AtelMapLoad {map}")),
+                |r| hp::atel_map_load(r, map),
+            ));
+        }
+        // the map jumps: without the jump bit, then with it and each fade
+        let e = orig(&mut p.1, 0x0088_c830, &[]);
+        orig(&mut p.0, 0x0088_c830, &[]);
+        for (bit, own, kind, map) in [
+            (false, 0, 0u8, 0x109u16),
+            (true, 0, 0, 0x109),
+            (true, 0, 0, 0x10),
+            (true, 1, 0, 0x10),
+            (true, 1, 1, 0x10),
+            (true, 1, 2, 0x10),
+        ] {
+            let f = Mem::read::<u8>(&p.1, c);
+            poke(&mut p.0, &mut p.1, c, if bit { f | 0x80 } else { f & 0x7f });
+            poke(&mut p.0, &mut p.1, e + 0x11, kind);
+            poke(&mut p.0, &mut p.1, e + 0x12, 7u8);
+            poke(&mut p.0, &mut p.1, e + 2, map);
+            let ctx = p.1.rebase(v::CONTEXT.sym);
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_ff40,
+                &[u32::from(map), 1, own],
+                true,
+                &what(&format!("AtelSetEventJump2 {bit} {own} {kind}")),
+                |r| hp::atel_set_event_jump2(r, u32::from(map), 1, own),
+            ));
+            poke(&mut p.0, &mut p.1, ctx, c);
+            let f = Mem::read::<u8>(&p.1, c);
+            poke(&mut p.0, &mut p.1, c, if bit { f | 0x80 } else { f & 0x7f });
+            tally(r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_fec0,
+                &[u32::from(map), 1],
+                true,
+                &what(&format!("AtelSetEventJump {bit} {map:#x}")),
+                |r| hp::atel_set_event_jump(r, u32::from(map), 1),
+            ));
+            poke(&mut p.0, &mut p.1, ctx, c);
+        }
+    }
+    eprintln!("{compared} round-19 setup cases compared ({stops} stopped in the original)");
+    assert!(compared > 0, "nothing ran");
+}

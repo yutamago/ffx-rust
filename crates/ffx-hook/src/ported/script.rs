@@ -18,6 +18,90 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `AtelDecodeCommand(i, mode)`.
+    AtelDecodeCommand @ 0x0086_41c0 => extern "C" fn h_8641c0(i: u32, mode: u32) -> u32 {
+        hp::atel_decode_command(&mut mem(), i, mode)
+    }
+    /// `AtelSetSaveDicIndex(i)`.
+    AtelSetSaveDicIndex @ 0x0087_0ef0 => extern "C" fn h_870ef0(i: u32) -> u32 {
+        hp::atel_set_save_dic_index(&mut mem(), i)
+    }
+    /// `AtelSetEventJump(map, entrance)`.
+    AtelSetEventJump @ 0x0086_fec0 => extern "C" fn h_86fec0(map: u32, e: u32) -> u32 {
+        hp::atel_set_event_jump(&mut mem(), map, e)
+    }
+    /// `AtelSetEventJump2(map, entrance, own)`.
+    AtelSetEventJump2 @ 0x0086_ff40 => extern "C" fn h_86ff40(map: u32, e: u32, own: u32) -> u32 {
+        hp::atel_set_event_jump2(&mut mem(), map, e, own)
+    }
+    /// `AtelUcOn()`.
+    AtelUcOn @ 0x0087_1ab0 => extern "C" fn h_871ab0() {
+        hp::atel_uc_on(&mut mem());
+    }
+    /// `Script_StopMove(worker, level)`.
+    Script_StopMove @ 0x0086_3e10 => extern "C" fn h_863e10(w: u32, l: u32) -> u32 {
+        hp::script_stop_move(&mut mem(), w, l)
+    }
+    /// `AtelGetBattleIdAdrs(i)`.
+    AtelGetBattleIdAdrs @ 0x0086_a970 => extern "C" fn h_86a970(i: u32) -> u32 {
+        hp::atel_get_battle_id_adrs(&mut mem(), i)
+    }
+    /// `AtelSetMoveHokanMode(worker, mode)`.
+    AtelSetMoveHokanMode @ 0x0087_03b0 => extern "C" fn h_8703b0(w: u32, mode: u32) -> u32 {
+        hp::atel_set_move_hokan_mode(&mut mem(), w, mode)
+    }
+    /// `AtelGetEventCharHandleFromID(i)`.
+    AtelGetEventCharHandleFromID @ 0x0086_b3a0 => extern "C" fn h_86b3a0(i: u32) -> u32 {
+        hp::atel_get_event_char_handle_from_id(&mut mem(), i)
+    }
+    /// `AtelGetEventActorPos(i, x, y, z)`.
+    AtelGetEventActorPos @ 0x0086_b1e0 => extern "C" fn h_86b1e0(i: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::atel_get_event_actor_pos(&mut mem(), i, x, y, z)
+    }
+    /// `Event_GetEntrance(worker)`.
+    Event_GetEntrance @ 0x0086_bfe0 => extern "C" fn h_86bfe0(w: u32) -> u32 {
+        hp::event_get_entrance(&mut mem(), w)
+    }
+    /// `Event_GetEntranceAt(worker, i)`.
+    Event_GetEntranceAt @ 0x0086_c020 => extern "C" fn h_86c020(w: u32, i: u32) -> u32 {
+        hp::event_get_entrance_at(&mut mem(), w, i)
+    }
+    /// `AtelGetHelpEventFlag(i)`.
+    AtelGetHelpEventFlag @ 0x0086_b9e0 => extern "C" fn h_86b9e0(i: u32) -> u32 {
+        hp::atel_get_help_event_flag(&mut mem(), i)
+    }
+    /// `AtelSetUpCtrlWork(i)`.
+    AtelSetUpCtrlWork @ 0x0087_1190 => extern "C" fn h_871190(i: u32) -> u32 {
+        hp::atel_set_up_ctrl_work(&mut mem(), i)
+    }
+    /// `AtelSkipReqLevel2(i, level)`.
+    AtelSkipReqLevel2 @ 0x0087_1730 => extern "C" fn h_871730(i: u32, l: u32) {
+        hp::atel_skip_req_level2(&mut mem(), i, l);
+    }
+    /// `AtelGetSummonNameforFinalBattleSelector(i)`.
+    AtelGetSummonNameforFinalBattleSelector @ 0x0087_3b50 => extern "C" fn h_873b50(i: u32) -> u32 {
+        hp::atel_get_summon_name_for_final_battle_selector(&mut mem(), i)
+    }
+    /// `AtelMapLoad(map)`.
+    AtelMapLoad @ 0x0086_dca0 => extern "C" fn h_86dca0(map: u32) -> u32 {
+        hp::atel_map_load(&mut mem(), map)
+    }
+    /// `AtelGetCharHandleFromBindPC(chr)`.
+    AtelGetCharHandleFromBindPC @ 0x0086_ae90 => extern "C" fn h_86ae90(chr: u32) -> u32 {
+        hp::atel_get_char_handle_from_bind_pc(&mut mem(), chr)
+    }
+    /// `AtelBindEff2OffSome_00862680(worker, which)`.
+    AtelBindEff2OffSome_00862680 @ 0x0086_2680 => extern "C" fn h_862680(w: u32, k: u32) -> u32 {
+        hp::atel_bind_eff2_off_some(&mut mem(), w, k)
+    }
+    /// `AtelCheckCaptMonster(mode, id, min)`.
+    AtelCheckCaptMonster @ 0x0087_2aa0 => extern "C" fn h_872aa0(mode: u32, id: u32, min: u32) -> u32 {
+        hp::atel_check_capt_monster(&mut mem(), mode, id, min)
+    }
+    /// `AtelRequestTrigger_008764f0(from, to, kind)`.
+    AtelRequestTrigger_008764f0 @ 0x0087_64f0 => extern "C" fn h_8764f0(from: u32, to: u32, k: u32) -> u32 {
+        hp::atel_request_trigger(&mut mem(), from, to, k)
+    }
     /// `Atel_CtrlStart(ctrl)`: the default start callback.
     Atel_CtrlStart @ 0x0086_83e0 => extern "C" fn h_8683e0(c: u32) -> u32 {
         hp::atel_ctrl_start(&mut mem(), c)
