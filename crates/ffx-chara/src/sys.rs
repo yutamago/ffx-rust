@@ -197,6 +197,89 @@ pub mod bridge {
         }
     }
 
+    /// `g_FFXIsDebug`: debug build features on.
+    pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+    /// `Gui_ButtonSetTexture` (`0x0084c9d0`, the PC UI's).
+    pub const GUI_BUTTON_SET_TEXTURE: u32 = 0x0084_c9d0;
+
+    /// `Ch_EnableSetTexture(v)` (`0x00830330`): the texture switch
+    /// ([`ENABLE_TEXTURE`]) = bit 0 of `v`; when `v` differs from the old
+    /// value in a debug build, `Gui_ButtonSetTexture()`. Returns the old
+    /// value (sign-extended).
+    pub fn ch_enable_set_texture<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let old = i32::from(ENABLE_TEXTURE.get(mem));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // bit 0
+        ENABLE_TEXTURE.set(mem, (v & 1) as i8);
+        if v.cast_signed() != old && IS_DEBUG.get(mem) != 0 {
+            call(mem, mem.rebase(GUI_BUTTON_SET_TEXTURE), &[]);
+        }
+        old
+    }
+
+    /// `g_CdLib` (`0x02310c40`): the reader's function table; entries 0
+    /// (read), 4 (table) and 5 (table size) are used here.
+    pub const CD_LIB_READ: Global<u32> = Global::new(0x0231_0c40);
+    pub const CD_LIB_SIZE: Global<u32> = Global::new(0x0231_0c54);
+
+    /// `Ch_RomDataReadInit()` (`0x0082a5f0`): the kind tables:
+    /// `TABLE_FN(0x14)`, then for kinds 0..7 a buffer of the table's size
+    /// (`CD_LIB_SIZE(kind)`, `user_malloc`) named `"tenuki.gomen."`
+    /// (`Sg_MemSetStr(p, name, kind)`), stored in [`KIND_TABLES`] and read
+    /// into (`CD_LIB_READ(kind, p, 0, 0)`). Returns the last read's result.
+    pub fn ch_rom_data_read_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = TABLE_FN.get(mem);
+        call(mem, f, &[0x14]);
+        let mut r = 0;
+        for kind in 0..7u32 {
+            let f = CD_LIB_SIZE.get(mem);
+            let size = call(mem, f, &[kind]);
+            let p = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[size]);
+            let slot = KIND_TABLES.ptr(mem).addr + 4 * kind;
+            mem.write(slot, p);
+            let name = mem.rebase(0x00b5_9650);
+            call(
+                mem,
+                mem.rebase(crate::handle::bridge::MEM_SET_STR),
+                &[p, name, kind],
+            );
+            let p: u32 = mem.read(slot);
+            let f = CD_LIB_READ.get(mem);
+            r = call(mem, f, &[kind, p, 0, 0]);
+        }
+        r
+    }
+
+    /// `u8` (`Ch_SysDrawSetSituation`).
+    pub const DRAW_SITUATION: Global<u8> = Global::new(0x0130_08c2);
+    /// Non-zero while the renderer is not to be told (`0x012fb7d8`).
+    pub const DRAW_DETACHED: Global<u32> = Global::new(0x012f_b7d8);
+    /// `graphicCharacterInsertDrawSituation(v)` (`0x00639ff0`).
+    pub const INSERT_DRAW_SITUATION: u32 = 0x0063_9ff0;
+
+    /// `Ch_SysDrawSetSituation(v)` (`0x00830cd0`): byte
+    /// [`DRAW_SITUATION`] = `v`, passed on to the renderer
+    /// (`graphicCharacterInsertDrawSituation(v)`, its result) unless
+    /// [`DRAW_DETACHED`]; else returns `v`.
+    pub fn ch_sys_draw_set_situation<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        DRAW_SITUATION.set(mem, v as u8);
+        if DRAW_DETACHED.get(mem) != 0 {
+            return v;
+        }
+        call(mem, mem.rebase(INSERT_DRAW_SITUATION), &[v])
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))
