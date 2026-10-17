@@ -91,6 +91,40 @@ node `+6`), kind sizes `i16` at `+0xf834` (0x30 each), zoom level byte at
   at both ends, count `i16` at `+4`) touching it. `eax`: the node pointer
   past the last, 0 with no nodes.
 
+### Name tags
+
+Seven party members' name tags on the grid, 0x50 bytes each at
+`g_Abmap + 0x11088 + 0x50 * chr`:
+
+| Offset | Size | |
+|---|---|---|
+| 0x00 | 16 | position (the node's `i16` x, y as `f32`), 0, 1 |
+| 0x10 | 16 | anchor, 0, 1 |
+| 0x20 | 12 | three words from the caller |
+| 0x2c | 4 | name (`TOGetSaveChrName`) |
+| 0x30 | 2 | name width: `ftol(max(TOGetTextWidth(name, 1), [0x00b41d84]))`, a NaN or equal width kept |
+| 0x32 | 2 | 16 |
+| 0x3c | 4 | radius (`AbmapNodeRadius` of the node) |
+| 0x40 | 4 | scale |
+| 0x44 | 2 | node |
+| 0x46 | 8 | box offsets (`i16`): horizontal, vertical, text, height |
+| 0x4e | 1 | corner: bits 0-1 which, bit 2 the wide box |
+
+- `AbmapInitPlyTag(chr, node, scale, a, b, c)` (`0x00a57f80`, name ours):
+  fills the table's fields; the name and width only for `chr <= 6`
+  (signed). Returns the tag.
+- `AbmapPositionPlyTag(chr)` (`0x00a58080`): `AbmapSetupPlyTag(tag)`
+  (which leaves box words at `0x02305804..0x02305834`), then the anchor:
+  `x + cos(a) * r`, `y - sin(a) * r` (x87, stored `f32`) with
+  `a = corner * 0x4000 + 0x2000` in `u16` turns (`g_pppSinTable`, cosine
+  at `a + 0x4000`), the corner read before the call; the box offsets from
+  the corner read after it: the words at `0x02305814`/`0x02305818` (bit
+  2) or `0x0230581c`/`0x02305820` give vertical/horizontal, the vertical
+  negated for corners 0 and 1, the horizontal for 1 and 2; the text
+  offset is `[0x02305810]` for corners 0 and 3, else
+  `-([0x02305830] + [0x0230580c])`; the height `[0x02305808]` for corners
+  0 and 1, else `[0x02305804]`. Returns the tag.
+
 ## Pointer zones
 
 Mouse and touch input on the PC screens (`GuiTouch_*`, names ours). The

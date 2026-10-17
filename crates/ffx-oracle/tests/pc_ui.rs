@@ -32,6 +32,8 @@ const ABMAP_RESET_VECTORS: u32 = 0x00a5_7120;
 const ABMAP_READ_PAD: u32 = 0x00a5_7520;
 const ABMAP_FLAG_CONNECTED_LINKS: u32 = 0x00a5_8df0;
 const ABMAP_TRY_CHANGE_PLAYER: u32 = 0x00a5_8ec0;
+const ABMAP_INIT_PLY_TAG: u32 = 0x00a5_7f80;
+const ABMAP_POSITION_PLY_TAG: u32 = 0x00a5_8080;
 const GUI_TOUCH_RESET_BUTTONS: u32 = 0x0068_ab30;
 const GUI_TOUCH_HANDLE_EVENT: u32 = 0x0068_b470;
 const GUI_TOUCH_HOVER: u32 = 0x0068_b6d0;
@@ -712,13 +714,18 @@ fn gui_touch_handle_event_matches_the_original() {
 /// 16-byte entries (stub id, the first three arguments).
 struct Log {
     cursor: u32,
+    /// Stubs made while set return this `f32` in `ST0` instead.
+    float: Option<u32>,
 }
 
 impl Log {
     fn new(t: &mut Twin) -> Self {
         let cursor = t.alloc(0x1004);
         t.put(cursor, &(cursor + 4).to_le_bytes());
-        Self { cursor }
+        Self {
+            cursor,
+            float: None,
+        }
     }
 
     /// Replaces the original at `sym` in both with a cdecl stub that logs
@@ -755,6 +762,14 @@ impl Log {
         }
         c.extend([0x83, 0xc1, 0x10, 0x89, 0x0d]);
         c.extend(self.cursor.to_le_bytes());
+        if let Some(f) = self.float {
+            // fld dword [f]; ret
+            c.extend([0xd9, 0x05]);
+            c.extend(f.to_le_bytes());
+            c.push(0xc3);
+            t.put(at, &c);
+            return;
+        }
         let (base, mask, stride) = ret;
         c.extend([0x8b, 0x44, 0x24, 0x04, 0x25]);
         c.extend(mask.to_le_bytes());
@@ -893,6 +908,111 @@ fn abmap_try_change_player_matches_the_original() {
                 Conv::Cdecl,
                 &[],
                 |b| Res::Int(abmap::try_change_player(&mut Run(b))),
+            );
+        }
+    }
+}
+
+/// A float for tag geometry: small, signed, odd, or special.
+fn tag_float(rng: &mut Xorshift) -> f32 {
+    match rng.below(6) {
+        0 => f32::from_bits(FLOATS[rng.below(12) as usize]),
+        #[allow(clippy::cast_precision_loss)]
+        1 => rng.below(70_000) as f32,
+        #[allow(clippy::cast_precision_loss)]
+        _ => (rng.below(4000) as f32 - 2000.0) / 7.0,
+    }
+}
+
+#[test]
+fn abmap_init_ply_tag_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0007);
+        let mut log = Log::new(&mut t);
+        let names = t.alloc(0x1000);
+        log.stub(
+            &mut t,
+            abmap::TO_GET_SAVE_CHR_NAME,
+            1,
+            1,
+            (names, 0xff, 0x10),
+        );
+        let width = t.alloc(4);
+        log.float = Some(width);
+        log.stub(&mut t, abmap::TO_GET_TEXT_WIDTH, 2, 2, (0, 0, 0));
+        log.float = None;
+        let min: f32 = t.b.read(t.b.rebase(abmap::TAG_MIN_WIDTH));
+        for n in 0..600u32 {
+            log.rewind(&mut t);
+            let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+            let w = match n % 4 {
+                0 => min,
+                1 => f32::from_bits(min.to_bits() + 1),
+                _ => tag_float(&mut rng),
+            };
+            t.put(width, &w.to_le_bytes());
+            #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+            let chr = (rng.below(12) as i32 - 3) as u32;
+            let node = rng.below(0x5f0);
+            #[allow(clippy::cast_possible_truncation)]
+            let kind = rng.below(0x20) as u16;
+            t.put(g + 0x80e + node * 0x28, &kind.to_le_bytes());
+            let args = [
+                chr,
+                node,
+                tag_float(&mut rng).to_bits(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check(
+                &format!("init tag {n} chr {chr} width {w}"),
+                ABMAP_INIT_PLY_TAG,
+                Conv::Cdecl,
+                &args,
+                |b| Res::Int(abmap::init_ply_tag(&mut Run(b), args)),
+            );
+        }
+    }
+}
+
+#[test]
+fn abmap_position_ply_tag_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0008);
+        let log = Log::new(&mut t);
+        // the image never ran the start-up code that fills the sines
+        let sines = t.a.rebase(abmap::SIN_TABLE);
+        let quarter: f32 = t.b.read(sines + 4 * 0x400);
+        if quarter == 0.0 {
+            let v: Vec<u8> = (0..0x1000)
+                .flat_map(|_| tag_float(&mut rng).to_le_bytes())
+                .collect();
+            t.put(sines, &v);
+        }
+        let tag_box = t.a.rebase(abmap::TAG_BOX);
+        for n in 0..600u32 {
+            log.rewind(&mut t);
+            let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+            t.put(tag_box, &rng.bytes(0x30));
+            #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+            let chr = (rng.below(12) as i32 - 3) as u32;
+            let tag = g.wrapping_add(0x11088).wrapping_add(chr.wrapping_mul(0x50));
+            let mut fields = Vec::new();
+            for _ in 0..2 {
+                fields.extend(tag_float(&mut rng).to_le_bytes());
+            }
+            t.put(tag, &fields);
+            t.put(tag + 0x3c, &tag_float(&mut rng).to_le_bytes());
+            // the setup sometimes moves the corner the anchor already used
+            let poke = (n % 3 == 0).then(|| (tag + 0x4c, rng.next()));
+            log.stub_poke(&mut t, abmap::ABMAP_SETUP_PLY_TAG, 1, 1, (0, 0, 0), poke);
+            t.check(
+                &format!("position tag {n} chr {chr}"),
+                ABMAP_POSITION_PLY_TAG,
+                Conv::Cdecl,
+                &[chr],
+                |b| Res::Int(abmap::position_ply_tag(&mut Run(b), chr)),
             );
         }
     }

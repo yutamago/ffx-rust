@@ -72,4 +72,12 @@ ported! {
     AbmapTryChangePlayer @ 0x00a5_8ec0 => extern "C" fn abmap_try_change_player() -> u32 {
         abmap::try_change_player(&mut mem())
     }
+    /// `AbmapInitPlyTag(chr, node, scale, a, b, c)`.
+    AbmapInitPlyTag @ 0x00a5_7f80 => extern "C" fn abmap_init_ply_tag(chr: u32, node: u32, scale: u32, a: u32, b: u32, c: u32) -> u32 {
+        abmap::init_ply_tag(&mut mem(), [chr, node, scale, a, b, c])
+    }
+    /// `AbmapPositionPlyTag(chr)`.
+    AbmapPositionPlyTag @ 0x00a5_8080 => extern "C" fn abmap_position_ply_tag(chr: u32) -> u32 {
+        abmap::position_ply_tag(&mut mem(), chr)
+    }
 }
