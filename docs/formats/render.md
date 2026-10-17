@@ -800,3 +800,22 @@ Round 15:
   identity and then of that matrix into one 3x4, copied to `g_PhyreScene
   +0x10d94..+0x10dc0`. Its one caller (`0x007bc980`) calls it next to
   `SplitScreenStart`.
+
+Round 16:
+
+- `graphicAbmapResetSegments()` (`0x006390c0`): with `g_GraphicAbmap`
+  (`0x00ccc838`) set it jumps to the manager's code at `0x006853d0`
+  (nothing else reaches it). By the state `+4` (signed): 1 resets the
+  render data at `+0xb0`, `+0xb4`, `+0xbc`, `+0xb8`, `+0xc4`, `+0xc0` (in
+  that order), 0 or less those at `+0x98`, `+0x9c`, `+0xa4`, `+0xac`,
+  `+0xa0`, `+0xa8`, 2 or more none. Resetting a render data zeroes `+4`
+  and `+8` of each of its segments (`+0x94`, `0x6c` bytes, `+0x90` of them,
+  a signed count read again each step).
+- `graphicCharacterLightingSetLightMatrix(list, dirs, colours)`
+  (`0x0063cb80`): two 4x4 matrices with one light per column: `dirs`
+  (x, y, z, w per 16-byte row) normalised when `x*x` (stored), `+ y*y`
+  (stored), `+ z*z` (stored) is above the `f64` `0.0001` at `0x00b3eb50`
+  (`_CIsqrt` stored, `1 / it` stored, each component times it stored), `w`
+  as it is; `colours` copied. Then
+  `Phyre_CharacterLighting_setLightMatrix(inst, dirs, colours)` on the
+  lighting singleton for each instance of `list`.

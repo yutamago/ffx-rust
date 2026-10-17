@@ -1655,6 +1655,7 @@
 0x00638f90 function graphicAbmapCreate           # layout+callees: sorts between graphic2DShowLayer and graphicAbmapDestory, and its named callees match the Switch 0x71001d4c50 graphicAbmapCreate's (similarity 0.75: Phyre_PFramework_PApplication_GetApplication, Phyre_PRendering_PRenderThread_GetInstance, Phyre_PRendering_PRenderThread_sync); symbols from Fahrenheit's server export
 0x00638fb0 function graphicAbmapDestory       # fh v3:exact 0x00639160
 0x00638fd0 function graphicAbmapGetVertexInfo    # structure: (a, b) -> AbmapManager_GetVertexInfo(a, b); the graphic* wrapper the area-map effects call (0x007f49e0, 0x00a4ac20, 0x00a657c0, ...); between graphic2DShowLayer and graphicAbmapDestory; name ours after the callee
+0x006390c0 function graphicAbmapResetSegments # cdecl(): with g_GraphicAbmap set, jumps to its body at 0x006853d0 (no other reference): by state +4 (1, or <= 0) the six render data +0xb0.. or +0x98.. get each segment's +4 and +8 zeroed; alphabetical run between graphicAbmapGetVertexInfo and graphicAbmapUpdate; name ours
 0x006390f0 function graphicAbmapUpdate        # fh v3:exact 0x006392a0
 0x00639110 function graphicActivateBlurEffectEx  # layout: alphabetical run between graphicAbmapUpdate and graphicActivateLoadingScreen (1 unnamed in the gap); Switch 0x71001d7cc0 graphicActivateBlurEffectEx is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639130 function graphicActivateLoadingScreen # fh v3:bsim1.00 0x006392e0

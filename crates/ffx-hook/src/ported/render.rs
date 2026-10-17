@@ -1330,6 +1330,16 @@ ported! {
     SplitScreenSetCamera @ 0x0063_8aa0 => extern "C" fn split_screen_set_camera(m: u32) {
         ut::split_screen_set_camera(&mut mem(), m);
     }
+
+    // ---- round 16 ----
+    /// `graphicAbmapResetSegments()`.
+    graphicAbmapResetSegments @ 0x0063_90c0 => extern "C" fn abmap_reset_segments() {
+        ut::abmap_reset_segments(&mut mem());
+    }
+    /// `graphicCharacterLightingSetLightMatrix(list, dirs, colours)`.
+    graphicCharacterLightingSetLightMatrix @ 0x0063_cb80 => extern "C" fn set_light_matrix(list: u32, dirs: u32, colours: u32) {
+        ut::set_light_matrix(&mut mem(), list, dirs, colours);
+    }
 }
 
 /// A singleton's pointer.

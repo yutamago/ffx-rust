@@ -1532,4 +1532,112 @@ pub mod bridge {
             h.write(scene + 0x10d94 + 4 * k, v);
         }
     }
+
+    // ---- round 16 ----
+
+    /// `g_GraphicAbmap` (the sphere grid's render object).
+    pub const ABMAP: Global<u32> = Global::new(0x00cc_c838);
+
+    /// `graphicAbmapResetSegments()` (`0x006390c0`, which jumps to the
+    /// manager's body at `0x006853d0`): by the state `+4` (signed): 1
+    /// resets the render data at `+0xb0`, `+0xb4`, `+0xbc`, `+0xb8`,
+    /// `+0xc4`, `+0xc0`, 0 or below those at `+0x98`, `+0x9c`, `+0xa4`,
+    /// `+0xac`, `+0xa0`, `+0xa8`, 2 and above none: each segment (`0x6c`
+    /// bytes from `+0x94`, `+0x90` of them, signed) gets `+4` and `+8`
+    /// zeroed.
+    #[allow(clippy::cast_possible_wrap)] // signed counts
+    pub fn abmap_reset_segments(m: &mut impl Mem) {
+        let abmap = ABMAP.get(m);
+        if abmap == 0 {
+            return;
+        }
+        let state = m.read::<u32>(abmap + 4) as i32;
+        let offsets: [u32; 6] = match state {
+            2.. => return,
+            1 => [0xb0, 0xb4, 0xbc, 0xb8, 0xc4, 0xc0],
+            _ => [0x98, 0x9c, 0xa4, 0xac, 0xa0, 0xa8],
+        };
+        for off in offsets {
+            let mut i = 0u32;
+            loop {
+                let rd: u32 = m.read(abmap + off);
+                if (i as i32) >= m.read::<u32>(rd + 0x90) as i32 {
+                    break;
+                }
+                let seg = |m: &mut _| -> u32 {
+                    let rd: u32 = Mem::read(m, abmap + off);
+                    let segs: u32 = Mem::read(m, rd + 0x94);
+                    segs.wrapping_add(0x6c * i)
+                };
+                let at = seg(m);
+                m.write(at + 4, 0u32);
+                let at = seg(m);
+                m.write(at + 8, 0u32);
+                i += 1;
+            }
+        }
+    }
+
+    /// `Phyre_CharacterLighting_GetInstance`, `..._setLightMatrix`, the
+    /// `_CIsqrt` import thunk and the `0.0001` (`f64`) below which a
+    /// direction is left unnormalised.
+    pub const LIGHTING_GET_INSTANCE: u32 = 0x006a_6e30;
+    pub const LIGHTING_SET_LIGHT_MATRIX: u32 = 0x006a_abf0;
+    pub const CI_SQRT: u32 = 0x0094_97b8;
+    pub const LIGHT_MIN_LENGTH2: u32 = 0x00b3_eb50;
+
+    /// `graphicCharacterLightingSetLightMatrix(list, dirs, colours)`
+    /// (`0x0063cb80`): four lights (`dirs`: x, y, z, w; `colours`: four
+    /// words each, 16-byte rows) as two 4x4 matrices with one light per
+    /// column: the directions normalised when their squared length (each
+    /// partial sum stored as a float) is above `0.0001` (`1 / sqrt`, both
+    /// stored), `w` kept; the colours as they are. Then
+    /// `setLightMatrix(inst, dirs, colours)` on the lighting for every
+    /// instance of `list`. The matrices live in [`Host::scratch`].
+    pub fn set_light_matrix(h: &mut impl Host, list: u32, dirs: u32, colours: u32) {
+        if list == 0 {
+            return;
+        }
+        let a = h.scratch();
+        let b = a + 0x40;
+        let min = f64::from_bits(h.read(h.rebase(LIGHT_MIN_LENGTH2)));
+        let sqrt = h.rebase(CI_SQRT);
+        for k in 0..4u32 {
+            for j in 0..4u32 {
+                let c = rt(h.read(colours + 0x10 * k + 4 * j));
+                h.write(b + 0x10 * j + 4 * k, c);
+            }
+            let d = dirs + 0x10 * k;
+            let mut v = [rt(h.read(d)), rt(h.read(d + 4)), rt(h.read(d + 8))];
+            let [x, y, z] = v.map(x87::load);
+            let xx = x87::store(x87::mul(x, x));
+            let s = x87::store(x87::add(x87::load(xx), x87::mul(y, y)));
+            let len2 = x87::store(x87::add(x87::load(s), x87::mul(z, z)));
+            if x87::load(len2) > min {
+                let r = h.call_intrinsic(sqrt, x87::load(len2));
+                let inv = x87::load(x87::store(x87::div(1.0, x87::load(r.to_bits()))));
+                v = [
+                    x87::store(x87::mul(x, inv)),
+                    x87::store(x87::mul(y, inv)),
+                    x87::store(x87::mul(inv, z)),
+                ];
+            }
+            let w = rt(h.read(d + 0xc));
+            for (j, val) in (0u32..).zip([v[0], v[1], v[2], w]) {
+                h.write(a + 0x10 * j + 4 * k, val);
+            }
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+            h.call_sym(
+                LIGHTING_SET_LIGHT_MATRIX,
+                Conv::Thiscall(lighting),
+                &[inst, a, b],
+            );
+            i += 1;
+        }
+    }
 }

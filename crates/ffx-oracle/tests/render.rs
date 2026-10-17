@@ -6032,3 +6032,137 @@ fn snapshot_round15_matches_the_original() {
         round15_case(&mut t, &mut rng, round % 4, &what);
     }
 }
+
+// ---- round 16 ----
+
+/// A recording stub over `Phyre_CharacterLighting_setLightMatrix`
+/// (`thiscall(this, inst, a, b)`, `ret 0xc`): logs the tag, `this`, `inst`
+/// and the 16 words at each of `a` and `b` (5 entries; the pointers differ:
+/// the original passes its stack, the bridge its scratch).
+fn stub_light_matrix(t: &mut Twins, at: u32, tag: u32) {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // [eax+8] = inst
+    c.extend([0x56, 0x57]); // push esi; push edi
+    c.extend([0x8d, 0x78, 0x20]); // lea edi, [eax+0x20]
+    c.extend([0x8b, 0x74, 0x24, 0x10]); // mov esi, [esp+0x10] (a)
+    c.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 16; rep movsd
+    c.extend([0x8b, 0x74, 0x24, 0x14]); // mov esi, [esp+0x14] (b)
+    c.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 16; rep movsd
+    c.extend([0x5f, 0x5e]); // pop edi; pop esi
+    c.extend([0x83, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.push(5); // add dword [log], 5
+    c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+fn round16_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    if case == 0 {
+        let abmap = t.alloc(&rng.bytes(0xd0));
+        t.w32(
+            abmap + 4,
+            [0, 1, 2, 3, 0xffff_ffff, rng.next()][rng.below(6) as usize],
+        );
+        for k in 0..12u32 {
+            let n = if rng.chance(8) {
+                rng.next() | 0x8000_0000
+            } else {
+                rng.below(4)
+            };
+            let segs = t.alloc(&rng.bytes(0x6c * 4));
+            let rd = t.alloc(&rng.bytes(0x98));
+            t.w32(rd + 0x90, n);
+            t.w32(rd + 0x94, segs);
+            t.w32(abmap + 0x98 + 4 * k, rd);
+        }
+        let abmap = if rng.chance(8) { 0 } else { abmap };
+        t.global(ut::ABMAP.sym, abmap);
+        t.check(what, 0x0063_90c0, Conv::Cdecl, &[], |g| {
+            ut::abmap_reset_segments(g);
+            Out::None
+        });
+    } else {
+        let at = t.rebase(ut::LIGHTING_SET_LIGHT_MATRIX);
+        stub_light_matrix(t, at, 0x4c4d);
+        t.stub_sym(ut::LIGHTING_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+        let n = rng.below(4);
+        let arr: Vec<u8> = (0..=n).flat_map(|_| rng.next().to_le_bytes()).collect();
+        let arr = t.alloc(&arr);
+        let list = t.zeros(8);
+        t.w32(list, n | (rng.next() & 0x8000_0000));
+        t.w32(list + 4, arr);
+        let list = if rng.chance(10) { 0 } else { list };
+        let dir = |rng: &mut Rng| -> f32 {
+            match rng.below(5) {
+                0 => rng.float(),
+                1 => 0.0,
+                2 => (rng.below(3) as f32) * 0.003,
+                _ => (rng.below(200) as f32 - 100.0) / 13.0,
+            }
+        };
+        let dirs: Vec<u8> = (0..16).flat_map(|_| dir(rng).to_le_bytes()).collect();
+        let dirs = t.alloc(&dirs);
+        let colours = t.alloc(&float_bytes(rng, 16));
+        t.check(
+            what,
+            0x0063_cb80,
+            Conv::Cdecl,
+            &[list, dirs, colours],
+            |g| {
+                ut::set_light_matrix(g, list, dirs, colours);
+                Out::None
+            },
+        );
+    }
+}
+
+#[test]
+fn round16_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1616_0016);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round16_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
+
+#[test]
+fn snapshot_round16_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own sphere-grid object, when there is one
+    let abmap = t.r32(t.rebase(ut::ABMAP.sym));
+    if abmap != 0 {
+        t.check("snapshot abmap", 0x0063_90c0, Conv::Cdecl, &[], |g| {
+            ut::abmap_reset_segments(g);
+            Out::None
+        });
+    }
+    let mut rng = Rng(0x5016_0016);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round16_case(&mut t, &mut rng, round % 2, &what);
+    }
+}
