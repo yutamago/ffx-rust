@@ -11784,7 +11784,7 @@ fn round32_ke_lens_flare_update_matches_the_original() {
     t.put(lp + 4, vec);
     t.put(lp + 8, mat);
     let fl = |rng: &mut Xorshift, lo: i32, hi: i32, k: u32| -> u32 {
-        if k % 2 == 0 {
+        if k.is_multiple_of(2) {
             float_in(rng, lo, hi)
         } else {
             #[allow(clippy::cast_precision_loss)]
