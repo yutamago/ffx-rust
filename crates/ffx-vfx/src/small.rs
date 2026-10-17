@@ -481,6 +481,16 @@ pub mod bridge {
         last
     }
 
+    /// `pppKeShpTail3VfCopy_00751680(dst)` (`0x00751680`): the four
+    /// emulated VU0 registers at `0x00c8f7b0..0x00c8f7ef` copied to `dst +
+    /// 0xc0` (`pppKeShpTail3Draw` keeps a matrix there). Returns the last
+    /// word, as left in `eax`.
+    pub fn ppp_ke_shp_tail3_vf_copy(mem: &mut impl Mem, dst: u32) -> u32 {
+        let vf: [u32; 16] = mem.read(Global::<u32>::new(0x00c8_f7b0).ptr(mem).addr);
+        mem.write(dst.wrapping_add(0xc0), vf);
+        vf[15]
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,

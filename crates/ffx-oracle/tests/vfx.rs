@@ -10470,3 +10470,18 @@ fn ftoi_rgba_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn shp_tail3_vf_copy_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_1680);
+        let (dst, vf) = (p.alloc(0x100), p.sym(0x00c8_f7b0));
+        for _ in 0..500 {
+            p.fill(dst, 0x100, &mut rng);
+            p.fill(vf, 0x40, &mut rng);
+            p.check("0x00751680", 0x0075_1680, &[dst], |m| {
+                Some(small::bridge::ppp_ke_shp_tail3_vf_copy(m, dst))
+            });
+        }
+    }
+}

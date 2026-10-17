@@ -3864,6 +3864,7 @@
 0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
 0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
 0x00750620 function pppKeShpTail3Draw         # ppp program table record "pppKeShpTail3" draw; not a function start in the Ghidra dump
+0x00751680 function pppKeShpTail3VfCopy_00751680 # ours: (dst) -> last word: the emulated VU0 registers 0x00c8f7b0..0x00c8f7ef (16 words) to dst + 0xc0; caller pppKeShpTail3Draw
 0x00751930 function pppFtoiRgba_00751930       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3XDraw)
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
 0x00751eb0 function pppKeShpTail3XCon         # ppp program table record "pppKeShpTail3X" +0x1c set-up: the same code as pppKeShpTail3Con

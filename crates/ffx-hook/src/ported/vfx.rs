@@ -3268,6 +3268,10 @@ ported! {
     pppFtoiRgba_007535a0 @ 0x0075_35a0 => extern "C" fn ppp_ftoi_rgba_007535a0(dst: u32, src: u32) -> u32 {
         small::bridge::ppp_ftoi_rgba(&mut mem(), dst, src)
     }
+    /// `pppKeShpTail3VfCopy_00751680(dst)`.
+    pppKeShpTail3VfCopy_00751680 @ 0x0075_1680 => extern "C" fn ppp_ke_shp_tail3_vf_copy(dst: u32) -> u32 {
+        small::bridge::ppp_ke_shp_tail3_vf_copy(&mut mem(), dst)
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {
