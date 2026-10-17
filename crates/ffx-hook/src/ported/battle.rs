@@ -8,11 +8,13 @@ use ffx_battle::battle_end::bridge as bend;
 use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
+use ffx_battle::effect::bridge as effect;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::input::bridge as input;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::process::bridge as process;
+use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::status::bridge as status;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
@@ -3100,5 +3102,114 @@ ported! {
     /// frame.
     MsSEP3Dprocess @ 0x007a_0930 => extern "C" fn ms_sep_3d_process() -> u32 {
         bend::ms_sep_3d_process(&mut mem(), &crt_trig, &mut call_ptr, &mut sep_vol_pan)
+    }
+    /// `ms_motion_trans(actor, kind)`.
+    ms_motion_trans @ 0x007a_8c80 => extern "C" fn ms_motion_trans(actor: u32, kind: u32) -> u32 {
+        effect::ms_motion_trans(&mut mem(), &mut call_ptr, actor, kind)
+    }
+    /// `0x00787650(i, actor)`.
+    MsEffectMotionDone_00787650 @ 0x0078_7650 => extern "C" fn ms_effect_motion_done(_i: u32, actor: u32) -> u32 {
+        effect::ms_effect_motion_done(&mut mem(), &mut call_ptr, actor)
+    }
+    /// `0x00787d70(i, actor)`.
+    MsEffectBackToIdle_00787d70 @ 0x0078_7d70 => extern "C" fn ms_effect_back_to_idle(i: u32, actor: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        effect::ms_effect_back_to_idle(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor)
+    }
+    /// `0x00788ef0(actor)`.
+    MsEffectCamRegist_00788ef0 @ 0x0078_8ef0 => extern "C" fn ms_effect_cam_regist(actor: u32) -> u32 {
+        script!(s);
+        effect::ms_effect_cam_regist(&mut mem(), &mut s, actor)
+    }
+    /// `0x00788f30(i, actor)`.
+    MsEffectCameraEnd2_00788f30 @ 0x0078_8f30 => extern "C" fn ms_effect_camera_end2(i: u32, actor: u32) -> u32 {
+        script!(s);
+        effect::ms_effect_camera_end2(&mut mem(), &mut s, i, actor)
+    }
+    /// `0x00788f90(actor, x, motion, flag)`.
+    MsEffectEnd_00788f90 @ 0x0078_8f90 => extern "C" fn ms_effect_end(actor: u32, x: u32, motion: u32, flag: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        effect::ms_effect_end(&mut target::Dm::new(&mut m), &host(), &mut s, actor, x, motion, flag)
+    }
+    /// `0x00789030(i, actor)`.
+    MsEffectReflect_00789030 @ 0x0078_9030 => extern "C" fn ms_effect_reflect(i: u32, actor: u32) {
+        let mut m = mem();
+        script!(s);
+        effect::ms_effect_reflect(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor);
+    }
+    /// `MsStatusEffectReflect(i)`.
+    MsStatusEffectReflect @ 0x0079_f160 => extern "C" fn ms_status_effect_reflect(i: u32) -> u32 {
+        effect::ms_status_effect_reflect(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsEffectReady(id, x)`.
+    MsEffectReady @ 0x0078_8200 => extern "C" fn ms_effect_ready(id: u32, x: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        effect::ms_effect_ready(&mut target::Dm::new(&mut m), &host(), &mut s, id, x)
+    }
+    /// `MsEffectLimitStart(i)`.
+    MsEffectLimitStart @ 0x007a_fd30 => extern "C" fn ms_effect_limit_start(i: u32) -> u32 {
+        script!(s);
+        effect::ms_effect_limit_start(&mut mem(), &mut s, i)
+    }
+    /// `MsEffectLimitCheck(i, actor)`.
+    MsEffectLimitCheck @ 0x007a_fc90 => extern "C" fn ms_effect_limit_check(i: u32, actor: u32) -> u32 {
+        script!(s);
+        effect::ms_effect_limit_check(&mut mem(), &mut s, i, actor)
+    }
+    /// `MsAtelActorWorkInit(kind, i, n)`.
+    MsAtelActorWorkInit @ 0x0079_7490 => extern "C" fn ms_atel_actor_work_init(kind: u32, i: u32, n: u32) -> u32 {
+        effect::ms_atel_actor_work_init(&mut mem(), &mut call_ptr, kind, i, n)
+    }
+    /// `MsAtelSetUp(kind)`.
+    MsAtelSetUp @ 0x0079_8390 => extern "C" fn ms_atel_set_up(kind: u32) -> u32 {
+        effect::ms_atel_set_up(&mut mem(), &mut call_ptr, kind)
+    }
+    /// `MsAtelCamRegist(file)`.
+    MsAtelCamRegist @ 0x0079_7550 => extern "C" fn ms_atel_cam_regist(file: u32) -> u32 {
+        script!(s);
+        effect::ms_atel_cam_regist(&mut mem(), &mut s, file)
+    }
+    /// `MsEffectStart()`.
+    MsEffectStart @ 0x0078_8480 => extern "C" fn ms_effect_start() {
+        let mut m = mem();
+        script!(s);
+        effect::ms_effect_start(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `0x007987f0(i)`.
+    MsGetAbilityMap_007987f0 @ 0x0079_87f0 => extern "C" fn ms_get_ability_map(i: u32) -> u32 {
+        sparam::ms_get_ability_map(&mem(), i)
+    }
+    /// `MsGetChrAbilityMap(i, out)`.
+    MsGetChrAbilityMap @ 0x0078_5b60 => extern "C" fn ms_get_chr_ability_map(i: u32, out: u32) -> u32 {
+        sparam::ms_get_chr_ability_map(&mut mem(), i, out)
+    }
+    /// `MsSetSaveParam(i)`.
+    MsSetSaveParam @ 0x0078_60f0 => extern "C" fn ms_set_save_param(i: u32) -> u32 {
+        sparam::ms_set_save_param(&mut mem(), i)
+    }
+    /// `MsSetSaveParamAll()`.
+    MsSetSaveParamAll @ 0x0078_6900 => extern "C" fn ms_set_save_param_all() -> u32 {
+        sparam::ms_set_save_param_all(&mut mem())
+    }
+    /// `MsSetSaveData()`.
+    MsSetSaveData @ 0x0078_5fc0 => extern "C" fn ms_set_save_data() -> u32 {
+        sparam::ms_set_save_data(&mut mem())
+    }
+    /// `MsEquipSaveWeapon(i, k, id)`.
+    MsEquipSaveWeapon @ 0x007a_b970 => extern "C" fn ms_equip_save_weapon(i: u32, k: u32, id: u32) {
+        sparam::ms_equip_save_weapon(&mut mem(), i, k, id);
+    }
+    /// `0x007ad570(i, k, frames)`.
+    MsWeaponFadeIn_007ad570 @ 0x007a_d570 => extern "C" fn ms_weapon_fade_in(i: u32, k: u32, frames: u32) {
+        sparam::ms_weapon_fade_in(&mut mem(), &mut call_ptr, i, k, frames);
+    }
+    /// `MsWeaponRead(i, k, id)`.
+    MsWeaponRead @ 0x007a_d820 => extern "C" fn ms_weapon_read(i: u32, k: u32, id: u32) {
+        let mut m = mem();
+        script!(s);
+        sparam::ms_weapon_read(&mut target::Dm::new(&mut m), &mut s, i, k, id);
     }
 }

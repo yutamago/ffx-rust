@@ -287,6 +287,83 @@ with no summoner (0xff) that is the spare record's. The oracle tests
 require every actor to be placed before such calls; after one, if an
 actor lost its place, they copy those two rows from the original.
 
+## A command's effect: `MsEffectStart`
+
+`MsEffectStart` (`0x00788480`, `ffx_battle::effect`) runs once a frame
+from `MsBattleProcess` and moves each actor's effect state `+0xdfb` on:
+
+| State | Waits for | Then |
+|---|---|---|
+| 1 | by `+0xdea`: 1 (the party swapped, `MsExchangeParty`) and 8 (an overdrive's party, `MsSetLimitParty`) no actor's motion (`MsCheckChrMotionAll(1)`); 2, 3 set `0x0112ca14`; then the actor still (`+0x508`, `+0x436`, `+0x435`) | the turn's end asked, voice 9, the command title closed, 2; the start motion `+0xe00` (0xff: 3 at once), the weak pose with `+0x413`, a weapon special's motion 8 once (`+0xdfc`), the script camera `+0xe04`/`+0xe08` when there is an effect (`+0xf8c`) |
+| 3 | `+0xdfd` clear, no target moving (`MsCheckStartEffect`), no reset wait (`0x0112c9d6`), no sound read or stream, no system message, the debug hold (`0x0112a91c`) off, no script camera request running (`g_BtlCameraState` with `0x0112a8e5` 1) | `MsEffectLimitCheck`: 0xc for an overdrive command (`+0x58` 0x20, 0x25, 0x30, 0x40; its window opened for Tidus, Auron and Lulu), else 0xb, handled the same frame; the camera script (`0x00788ef0`: the magic file's `g_BtlEffectReadStat`, else the effect's `+0x1c`, `MsAtelCamRegist`) |
+| 5 | | the reflect step (`0x00789030`) |
+| 7, 8, 15 | the actor still and its motion `+0x3f0` none of its attack motions (`ms_motion_trans` 12, 13, 2-5) | back to idle (`0x00787d70`): 0 (7 also `+0x405`), 9 for 8 |
+| 9 | `+0xf65` frames, not moving | `MsWeaponRead(i, +0xf64, +0xf66)` |
+| 10 | `+0xdfd` clear | the end (`0x00788f90`, motion `+0xe01`), 6 |
+| 11 | | no effect: the end (motion `+0xe01` with `+0x413`, else 0x33), 6. An effect: 4, the debug camera sleep kept aside, the effect's function (`+0xf8c`'s first word) called with `MsGetEffID(+0xe1c, 2, i)` |
+| 12 | the overdrive's window (`+0xd24`) | the screen darkened a step a frame (`0x0112ca07` up to 6, `Sg_FilterSub(0, 0, 0, (16 - n) * 8)`), then 13 |
+| 13 | | lightened back, then `Sg_FilterReset` and 11 |
+| 14 | | 0, the last magic read (`MsEffectRead`) |
+
+An effect reports back through `MsEffectReady(id, x)` (`0x00788200`):
+an actor's (`id >> 8` 2) in state 4 ends (`0x00788f90`) and goes to 5.
+The reflect step lands the hit on the cue entry's targets once (cue `+5`
+0 → 1: head target reset, overdrive status check, the reflect effect
+`MsStatusEffectReflect` and sound 0x3b) and waits until none of them
+shows its reflect effect (`+0xea4`, 1 → 2), then ends (`+0xe0d`).
+`0x00788f30` rewrites its own two argument slots before its tail call to
+`MsEffectCameraCall(-1, 1)`; no caller reads them back.
+
+`ms_motion_trans` returns 0 (and sets `+0x3f3`) for an actor whose model
+is listed at `0x01133398` (a count, then models) while the magic file's
+ID is 0x1b2 or 0x262; it asks the ID a second time when the first is not
+0x1b2.
+
+`MsMagicEffectEnd` in state 11 recurses without end for actors 0x10 or
+0x11 of kind 8 (above); the tests leave that out.
+
+## Saved parameters: `MsSetSaveParam`
+
+`MsSetSaveParam(i)` (`0x007860f0`, `ffx_battle::save_param`) rebuilds
+character `i`'s record in `g_PlySave` (`0x0113205c`, 0x94 bytes each):
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `0x04`, `0x08` | `i32` | Base HP and MP (the sphere grid adds 50 per HP node, 5 per MP node: `g_BtlAbilityMap` `+0`, `+4`) |
+| `0x0c`-`0x13` | `u8[8]` | Base stats (the grid's `+8`-`+0xf` added) |
+| `0x1c`, `0x20` | `i32` | Current HP and MP, clamped to the maximums |
+| `0x24`, `0x28` | `i32` | Maximum HP (9999, 99999 with `+0x4c` bit 9) and MP (999, 9999 with bit 10) |
+| `0x2c` | `u8` | Bit 0 joined (`MsGetSavePlyJoin`) |
+| `0x2d`, `0x2e` | `u8` | Weapon and armour (equipment slots; 0xff none) |
+| `0x2f`-`0x36` | `u8[8]` | Stats (strength, defence, magic, magic defence, agility, luck, evasion, accuracy), 1-255; evasion (`0x35`) from 0 |
+| `0x3e`-`0x49` | `u16[6]` | Commands learnt (the grid's `+0x10`-`+0x1b` ORed in) |
+| `0x4a`-`0x4f` | `u16[3]` | Auto-ability bits of the equipment (the abilities' `+0x62`-`+0x66`); `0x4e` bit 1 no encounters (clears `g_BtlEncountOn` when joined) |
+
+Each of the two pieces' four abilities (equipment `+0xe`) adds its
+percentage `+0x55` to the values its bits `+0x56` name (HP, MP, the
+stats, then four damage rates written to `0x02311240 + 4i`), and the values
+grow by that percentage. An aeon (8 and up) has no grid: its HP, MP and
+stats come from Yuna's (character 1) through its `ply_rom` record
+(`+0x18`-`+0x29`: per stat a divisor of the sum `t` of Yuna's stats, HP/100
+and MP/10, and a multiplier of her stat, /10), Luck (`0x34`) is Yuna's, and
+once 30 battles are fought (`0x011307a4`) the floors of
+`g_KernelSummonGrow` (`0x0112a948`, record `i + (5n − 9) · 2` for
+`n` = battles / 30 up to 20) raise HP, MP and the stats but Luck; its own
+record's `+4`-`+0x13` are added on top. A zero divisor faults the original
+(a monster's record has them, so it is never called for one); the port
+divides to 0 there. Kimahri (5) learns `0x3078`-`0x308a` for each of
+`0x3041`-`0x3053` he has.
+
+`MsSetSaveData` (`0x00785fc0`) writes the 18 characters back at a battle's
+end: weapons from the actor's `+0x592`, `+0x593`, HP and MP (1 HP for the
+KO'd; with a stand-in count `+0x6d8` that runs out, full, the rest kept at
+`+0x3d`), overdrive `+0x5bb`-`+0x5bd` to `+0x38`-`+0x3a`, then the aeons'
+parameters. `MsEquipSaveWeapon` (`0x007ab970`) writes the piece's owner
+(`+6`) through `MsGetSaveWeapon` unchecked: an ID the equipment lacks
+writes to address 6 in the original. `MsWeaponRead` (`0x007ad820`, effect
+state 9) swaps a weapon mid-battle: the same model fades in over 8 frames,
+another is disposed of and its reads queued (`+0xdfd` set meanwhile).
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

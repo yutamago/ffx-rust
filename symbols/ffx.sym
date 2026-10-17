@@ -4897,6 +4897,7 @@
 0x007873a0 function resetDefaultPlayerNameStatus # layout+callees: sorts between isNeedShowJapanLogo and setDefaultPlayerName, and its named callees match the Switch 0x7100376920 resetDefaultPlayerNameStatus's (similarity 1.00: TOGetFFXLang, setDefaultPlayerName); symbols from Fahrenheit's server export
 0x007873d0 function setBtlchrParam               # layout+callees: sorts between isNeedShowJapanLogo and setDefaultPlayerName, and its named callees match the Switch 0x7100376190 setBtlchrParam's (similarity 1.00: MsGetChr, MsGetChrTop); symbols from Fahrenheit's server export
 0x00787470 function setDefaultPlayerName      # fh v3:exact 0x00787530
+0x00787650 function MsEffectMotionDone_00787650 # structure: (i, actor) 1 once the actor is still (+0x508, +0x436) and its motion +0x3f0 is none of ms_motion_trans 12, 13, 2-5; caller MsEffectStart states 7, 8, 15; name ours; ported (battle round 15)
 0x007876e0 function MsEffectCameraBufInit     # fh v3:bsim1.00 0x007877a0
 0x00787740 function MsEffectCameraCall        # fh v3:exact 0x00787800
 0x00787760 function MsEffectCameraEnd         # fh v3:exact 0x00787820; ours: (keep): the 8 effect cameras freed; unless keep, in battle, a started command camera gives way to camera 0x1c; ported (battle round 12)
@@ -4916,6 +4917,7 @@
 0x00787c10 function MsEffectGetTargetFlag     # fh switch:bsim1.00 0x7100351960
 0x00787c30 function MsEffectMagicMotion          # layout: alphabetical run between MsEffectGetTargetFlag and MsEffectMotionLevel (1 unnamed in the gap); Switch 0x7100350b20 MsEffectMagicMotion is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787ca0 function MsEffectMotionLevel       # fh v3:exact 0x00787d60
+0x00787d70 function MsEffectBackToIdle_00787d70 # structure: (i, actor) MsActionRequest(i, 0xff, 7, 0, 2), MsPopBtlPos, the title window, motion +0xe00, MsAtelRequestMagicCamera(+0xf5c, +0xe04, +0xe08); caller MsEffectStart; name ours; ported (battle round 15)
 0x00787e00 function MsEffectProcess           # fh v3:exact+call.cs 0x00787ec0 cdecl
 0x00787f20 function MsEffectRead              # fh v3:exact 0x00787fe0
 0x00788110 function MsEffectReadComplete      # fh switch:bsim1.00 0x710034f5e0
@@ -4946,6 +4948,10 @@
 0x00788e30 function MsResetAfterImage         # fh v3:exact 0x00788ef0
 0x00788e60 function MsResetBindEffect         # fh v3:exact 0x00788f20
 0x00788e90 function MsSetChrMoveFlagAll       # fh v3:exact 0x00788f50
+0x00788ef0 function MsEffectCamRegist_00788ef0 # structure: (actor) MsAtelCamRegist(g_BtlEffectReadStat) or the effect +0xf8c's +0x1c (tail calls); caller MsEffectStart state 3; name ours; ported (battle round 15)
+0x00788f30 function MsEffectCameraEnd2_00788f30 # structure: (i, actor) with +0xf8c MsAtelRequestMagicCamera(+0xf5c, +0xe06, +0xe0a) into +0xdfe, then tail-calls MsEffectCameraCall(-1, 1) (its own argument slots rewritten); callers 0x00788f90, 0x00789030; name ours; ported (battle round 15)
+0x00788f90 function MsEffectEnd_00788f90      # structure: (actor, x, motion, flag) MsPopBtlPos, +0x405 = flag, MsSetMotion(+0xe01 or 0x33), 0x00789030, +0x414, 0x00788f30 with +0xe14, MsRegSEfade(+0xf76, 0x14); callers MsEffectStart, MsEffectReady; name ours; ported (battle round 15)
+0x00789030 function MsEffectReflect_00789030  # structure: (i, actor) once (+0xe0d): the cue hit's targets (MsGetChrCommand +0x14 + 0x10 * +2) get msResetHeadTarget, MsLimitTypeStatusCheck, MsStatusEffectReflect, MsRegSEplay2(0x3b) (cue +5 0 -> 1), then wait for their +0xea4 (1 -> 2); callers MsEffectStart state 5, 0x00788f90; name ours; ported (battle round 15)
 0x00789160 function MsAliveProcess            # fh v3:exact+call.cs 0x00789220 cdecl; ours: (i, actor): KO bit still set: HP 0, 1; else MsRelife full and voice 10, 0; ported (battle round 13)
 0x007891b0 function MsBlowProcess             # fh v3:exact+call.cs 0x00789270 cdecl; ours: (i, actor): +0x617 bit 0: MsSetEscapeFlag(i, actor, 1), 1; else MsRelife(i, actor, 1), 0; ported (battle round 12)
 0x007891e0 function DmgCalc_StatBoostAbility  # fh v3:exact 0x007892a0 +DmgCalc_StatBoostAbility
@@ -5268,6 +5274,7 @@
 0x007986a0 function MsGetVoiceEventFlag       # fh v3:exact 0x007986b0
 0x007986c0 function MsAtelBlur                # (): Sg_Blur(0), then under script control 2 MsAtelCameraPriority(2, 1, 0x3e, 0), (2, 0, 0..2, 0); MsAtelRequestExe flag 4; name ours
 0x00798760 function MsAtelCameraPriority      # (kind, i, n, bonus): the handler's work camera (AtelGetBasicWork, AtelGetCameraWorkAdrs) gets MsCameraPriority bonus; name ours
+0x007987f0 function MsGetAbilityMap_007987f0  # structure: (i) g_BtlAbilityMap + 0x1c * i, null from 8 (unsigned); callers MsGetChrAbilityMap and 3 menu functions; name ours; ported (battle round 15)
 0x00798820 function MsInitChrAbilityMap       # fh v3:bsim1.00 0x00798830
 0x00798890 function MsRandMize                # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators; was Rng_Seed
 0x007988f0 function brnd                      # cdecl(index): one of the 68 generators at 0x01135ee0 (multiplier table 0x00c42208, xor 0x00c42318); was Rng_Next
@@ -5775,6 +5782,7 @@
 0x007ad3f0 function MsBtlReadCueRegist        # fh v3:exact 0x007ad400
 0x007ad470 function MsBtlReadCueRegistWeapon  # fh v3:exact 0x007ad480
 0x007ad550 function MsBtlReadStatusComplete   # fh switch:bsim1.00 0x710036fad0
+0x007ad570 function MsWeaponFadeIn_007ad570   # structure: (i, k, frames) MsGetWeapon(i, k)'s model: Ch_SetTransparent(chr, 0.0, 0) then (chr, 1.0, frames); caller MsWeaponRead (8 frames); name ours; ported (battle round 15)
 0x007ad5e0 function MsChangeWeaponInvisible   # fh v3:exact+call.cs 0x007ad5f0 cdecl
 0x007ad640 function MsChangeWeaponWakka          # layout+callees: sorts between MsChangeWeaponInvisible and MsWeaponDispose, and its named callees match the Switch 0x710037e150 MsChangeWeaponWakka's (similarity 1.00: MsFieldItemGetMes); symbols from Fahrenheit's server export
 0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760; ours: (i, k, flags, weapon) the weapon record's model/motion group/data by flags, handed to the special weapon actor; ported (battle round 13)
@@ -14887,6 +14895,7 @@
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
 0x0112a8e3 label g_BtlEndKind              # i8 MsBattleProcess_Status_007917d0 copies g_BtlEndForced at state 0x1d; name ours
 0x0112a8e4 label g_BtlCameraState          # u8, 2: no script camera requests unless an actor asks (MsAtelRequestCamera)
+0x0112a8e5 label g_BtlCameraOnce           # u8: 1 while a script camera request runs (set by 0x007981e0); MsEffectStart's state 3 waits on it with g_BtlCameraState
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
 0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
@@ -14919,6 +14928,7 @@
 0x0112a915 label g_BtlMenuLook             # u8 set: MsMenuCheckLook always reports a looker
 0x0112a916 label g_BtlLimitFrozen          # u8 set: MsLimitUp fills no overdrive gauge
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
+0x0112a91c label g_BtlDebugEffectHold      # u8: the debug env menu's toggle (0x007c6e20, 0x007ce450); MsEffectStart's state 3 waits while set
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a922 label g_BtlMenuSkipAll          # u8 set: MsMenuGetChrSkipCommand gives 0xff
 0x0112a926 label g_BtlNoHeadTarget         # u8 set: MsSetHeadTarget does nothing
@@ -14929,6 +14939,7 @@
 0x0112a938 label    g_KernelPlyRom
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
+0x0112a948 label g_KernelSummonGrow        # battle resource 0xe (MsBattleInit 0x00781700): the aeons' stat floors by battles fought, an MsGetExcelData table (u16 HP, MP, then bytes) read by MsSetSaveParam at i + (5n - 9) * 2, n = battles / 30 up to 20
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
 0x0112a950 label g_BtlEffectFiles          # pointer to u16 first file numbers per effect, the next one's ending it (MsEffectFileNumber)
 0x0112a954 label g_BtlMotBin               # pointer to the motion binary: u16 count, u16 offsets (MsSetMotBinAddress sets actor +0x4f8 from entry i)
@@ -15057,6 +15068,7 @@
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
 0x0112ca04 label g_BtlCommandMusicDown     # u8: the parsed command's flag bit 30 (+0x1c): MsMusicVolume(0x65, 0x1e) (MsParseCommand)
 0x0112ca05 label g_BtlCommandFlag29        # u8: the parsed command's flag bit 29 (+0x1c) (MsParseCommand)
+0x0112ca07 label g_BtlLimitFade            # i8: the overdrive start's darkening, 0-6 (MsEffectLimitCheck clears it; MsEffectStart states 12, 13: Sg_FilterSub(0, 0, 0, (16 - n) * 8))
 0x0112ca08 label g_BtlEffectWait           # 2 x u8: the actor an effect waits on and its motion (0xff any) (MsEffectCheckMotion, MsCheckStartEffect)
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
@@ -15120,6 +15132,7 @@
 0x0113338c label g_BtlDebugKill            # u32 debug switch: MsSubHP takes 99999 more HP (actors with +4 in 1..7 spared)
 0x01133390 label g_BtlDamage9999             # u32, set by MsCalcDamage when a hit of 9999+ comes from a user whose +0x50 string is empty
 0x01133394 label g_BtlDamage99999            # u32, the same for 99999+ (MsCalcDamage)
+0x01133398 label g_BtlMotionStopChrs       # i32 count, then models from 0x0113339c: ms_motion_trans returns 0 (and sets +0x3f3) for an actor whose model is listed while MagicFile_GetMagicId is 0x1b2 or 0x262
 0x011333c0 label g_BtlOrderCount             # i32 queued action orders (MsOrderInit 0x0078d4b0, MsOrderRegist)
 0x011333c4 label g_BtlOrders                 # 31 x u8 actor indices (MsOrderRegist 0x0078d4c0)
 0x011333f0 label g_BtlMenuText             # 17 x 12 bytes cleared by MsMenuInitText
@@ -15134,6 +15147,8 @@
 0x01134470 label g_AtelManagers            # script managers, 0x54 bytes: i32 count, 8 scripts at +0x14, 8 words at +0x34 (MsAtelRegist)
 0x01134518 label g_AtelCam2                # 5 words cleared by MsAtelCamInit
 0x0113456c label g_BtlAtelCount              # i32 queued effect requests (MsAtelRequestInit 0x00797ff0, MsAtelRequestAdd)
+0x01134570 label g_AtelWorks               # the script managers' works (AtelBattleSetUp's fourth argument, MsAtelSetUp)
+0x01135570 label g_AtelCamBuffer           # 0x800 bytes: manager 2's (the camera script's) actor and own buffers, each rounded to 16 (MsAtelSetUp; MsBattleError past 0x800)
 0x01135d70 label g_BtlAtelRequests           # 16 x 4 u16 effect requests (MsAtelRequestAdd 0x00797b70)
 0x01135df0 label g_AtelCamOn               # u8; with 2 words after and 5 at 0x01134518, cleared by MsAtelCamInit
 0x01135e00 label g_BtlAbilityMap           # 8 x 0x1c bytes cleared by MsInitChrAbilityMap

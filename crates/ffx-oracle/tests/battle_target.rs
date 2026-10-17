@@ -4668,6 +4668,726 @@ fn battle_frame(
     same("MsSEP3Dprocess", a, b);
 }
 
+/// `MsEffectStart`'s callees of other modules (`ffx_battle::effect`):
+/// logging stubs in `0x007ce450` (unreachable code), installed around
+/// [`effect_start`] and removed after (`user_malloc` and the filters are
+/// other tests' originals).
+const START_CALLEES: [(u32, u8); 14] = {
+    use ffx_battle::effect::bridge as e;
+    [
+        (e::TO_BTL_INIT_TIDUS_LIMIT_WINDOW, 0),
+        (e::TO_BTL_OPEN_TIDUS_LIMIT_WINDOW, 1),
+        (e::TO_BTL_INIT_AURON_LIMIT_WINDOW, 0),
+        (e::TO_BTL_OPEN_AURON_LIMIT_WINDOW, 1),
+        (e::TO_BTL_INIT_LULU_LIMIT_WINDOW, 0),
+        (e::TO_BTL_OPEN_LULU_LIMIT_WINDOW, 1),
+        (e::SG_FILTER_SUB, 4),
+        (e::SG_FILTER_RESET, 0),
+        (e::SG_EFFECT_ROUTINE_ENABLE, 1),
+        (e::ATEL_INIT_INTERNAL_ACTOR_WORK, 1),
+        (e::ATEL_GET_ACTOR_BUFFER_SIZE, 1),
+        (e::ATEL_GET_MY_BUFFER_SIZE, 1),
+        (e::USER_MALLOC, 1),
+        (ffx_battle::save_param::bridge::CH_SET_TRANSPARENT, 3),
+    ]
+};
+const START_STUBS: u32 = 0x007c_e450;
+/// `AtelBattleSetUp`'s recording stub (eight arguments, two slots) and an
+/// effect's function, in `0x007ceb30` (unreachable code).
+const START_STUBS2: u32 = 0x007c_eb30;
+
+/// Installs `MsEffectStart`'s stubs (records from `rec`, [`EXCHANGE_REC`]
+/// each; `AtelBattleSetUp`'s at `rec + 14 *`, the effect function's at
+/// `rec + 15 *`), returning the entry bytes they replaced.
+fn start_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32) -> Vec<(u32, Vec<u8>)> {
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let fs = START_CALLEES
+            .iter()
+            .map(|&(f, _)| f)
+            .chain([ffx_battle::effect::bridge::ATEL_BATTLE_SET_UP]);
+        for f in fs {
+            let at = o.rebase(f);
+            saved.push((f, o.read(at, 5).unwrap()));
+        }
+        for (k, (f, n)) in (0u32..).zip(START_CALLEES) {
+            logging_stub(o, f, START_STUBS + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        recording_stub(
+            o,
+            ffx_battle::effect::bridge::ATEL_BATTLE_SET_UP,
+            START_STUBS2,
+            rec + EXCHANGE_REC * 14,
+            8,
+            0x5e7,
+        );
+        logging_stub(o, 0, START_STUBS2 + 0x80, rec + EXCHANGE_REC * 15, 1, 0);
+    }
+    saved.truncate(saved.len() / 2);
+    saved
+}
+
+fn unstub(a: &mut Oracle, b: &mut Oracle, saved: &[(u32, Vec<u8>)]) {
+    for o in [&mut *a, &mut *b] {
+        for (f, bytes) in saved {
+            let at = o.rebase(*f);
+            o.write(at, bytes).unwrap();
+        }
+    }
+}
+
+/// A command's effect from start to end (`ffx_battle::effect`): the motion
+/// lookups, the camera script, the reflect step, the overdrive start and
+/// the whole per-frame `MsEffectStart`, on actors in every state. Its own
+/// random stream (`rng`), so the other tests' stay as they were.
+#[allow(clippy::too_many_arguments)]
+fn effect_start(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    out: u32,
+    rec: u32,
+    recs: [u32; 3],
+    cam: u32,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::effect::bridge as e;
+    let [prec, srec, erec] = recs;
+    let saved = start_stubs(a, b, rec);
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    macro_rules! pick {
+        ($rng:expr, $v:expr $(,)?) => {{
+            let v: &[u32] = $v;
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let stub_ret = |a: &mut Oracle, b: &mut Oracle, r: u32, k: u32, v: u32| {
+        poke(a, b, r + EXCHANGE_REC * k + 4, &v.to_le_bytes());
+    };
+    // the magic ID (MagicFile_GetMagicId: the process stubs' 11th) and the
+    // models whose motion it stops
+    stub_ret(a, b, prec, 11, pick!(rng, &[0x1b2, 0x262, 0, 0x1b3]));
+    let n = [0i32, 0, 1, 2, 3, -1][rng.below(6) as usize];
+    let stop = e::MOTION_STOP_CHRS.ptr(b).addr;
+    let mut list = n.to_le_bytes().to_vec();
+    for _ in 0..3 {
+        let chr = u32::from_le_bytes(
+            b.read(w.actor(rng.below(ACTORS)), 4)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        list.extend(pick!(rng, &[chr, chr, rng.next()]).to_le_bytes());
+    }
+    poke(a, b, stop, &list);
+    // motions: weapon kinds 0-6, the motion one of the kinds' at times
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        let wk = [rng.below(7), rng.below(7)];
+        poke(
+            a,
+            b,
+            p + 0x408,
+            &[u8::try_from(wk[0]).unwrap(), u8::try_from(wk[1]).unwrap()],
+        );
+        let m = pick!(rng, &[0x5a, 0xb2, 0x5b, 0x58, 0x29, rng.below(0x100), 0xc9]);
+        poke(a, b, p + 0x3f0, &[u8::try_from(m).unwrap(), rng.byte()]);
+        for o in [
+            0x508, 0x436, 0x435, 0x432, 0x429, 0x413, 0xdfd, 0xe0d, 0xe14, 0xdfc,
+        ] {
+            poke(a, b, p + o, &[flag(rng, 3)]);
+        }
+        poke(
+            a,
+            b,
+            p + 0xea4,
+            &pick!(rng, &[0, 0, rng.next()]).to_le_bytes(),
+        );
+        // the effect's sound: one of the 3D list's at times (sep_3d_list)
+        let se = pick!(rng, &[0, 1, 2, 3, rng.below(0x10000)]);
+        poke(a, b, p + 0xf76, &u16::try_from(se).unwrap().to_le_bytes());
+    }
+    for _ in 0..4 {
+        let i = rng.below(ACTORS);
+        let kind = pick!(rng, &[1, 2, 3, 4, 5, 6, 0xc, 0xd, 0x82, 0, 7, 0x100]);
+        let p = w.actor(i);
+        twin("ms_motion_trans", a, b, 0x007a_8c80, &[p, kind], ALL, |m| {
+            e::ms_motion_trans(m, &mut game_call_o, p, kind)
+        });
+        same("ms_motion_trans", a, b);
+        twin("MsEffectMotionDone", a, b, 0x0078_7650, &[i, p], ALL, |m| {
+            e::ms_effect_motion_done(m, &mut game_call_o, p)
+        });
+        same("MsEffectMotionDone", a, b);
+        twin("MsStatusEffectReflect", a, b, 0x0079_f160, &[i], ALL, |m| {
+            e::ms_status_effect_reflect(m, &mut game_call_o, i)
+        });
+        same("MsStatusEffectReflect", a, b);
+    }
+    // a camera script file (script and data offsets), manager 2 with room
+    // or full, small buffers (past 0x800 MsBattleError, a stub here)
+    poke(a, b, cam + 4, &[0x10, 0, 0, 0, 0x20, 0, 0, 0]);
+    let managers = ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr;
+    for kind in 0..3 {
+        let m = managers + 0x54 * kind;
+        let count = pick!(rng, &[0, 1, 3, 7, 8]);
+        poke(a, b, m, &count.to_le_bytes());
+        let sizes = [rng.below(0x100), pick!(rng, &[0, 0x1f0, 0x7f0])];
+        poke(a, b, m + 8, &sizes[0].to_le_bytes());
+        poke(a, b, m + 0x10, &sizes[1].to_le_bytes());
+        fill(a, b, rng, m + 0x14, 0x20);
+    }
+    stub_ret(a, b, rec, 10, pick!(rng, &[0x10, 0x33, 0, 0xffff_ffe1]));
+    stub_ret(a, b, rec, 11, pick!(rng, &[0x10, 0x41, 0]));
+    stub_ret(a, b, rec, 12, rng.next());
+    let kind = pick!(rng, &[0, 1, 2, 2, 3]);
+    twin("MsAtelSetUp", a, b, 0x0079_8390, &[kind], ALL, |m| {
+        e::ms_atel_set_up(m, &mut game_call_o, kind)
+    });
+    same("MsAtelSetUp", a, b);
+    let n = rng.below(4);
+    twin(
+        "MsAtelActorWorkInit",
+        a,
+        b,
+        0x0079_7490,
+        &[2, 0, n],
+        ALL,
+        |m| e::ms_atel_actor_work_init(m, &mut game_call_o, 2, 0, n),
+    );
+    same("MsAtelActorWorkInit", a, b);
+    let m2 = managers + 0x54 * 2;
+    poke(a, b, m2 + 8, &rng.below(0x100).to_le_bytes());
+    poke(a, b, m2 + 0x10, &rng.below(0x100).to_le_bytes());
+    let file = pick!(rng, &[cam, cam, 0]);
+    twin("MsAtelCamRegist", a, b, 0x0079_7550, &[file], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            e::ms_atel_cam_regist(m, &mut s, file)
+        })
+    });
+    same("MsAtelCamRegist", a, b);
+    // the effects: none, or one with or without a camera script; the
+    // effect's function a stub
+    let eff = out + 0xe0;
+    let f = b.rebase(START_STUBS2 + 0x80);
+    poke(a, b, eff, &f.to_le_bytes());
+    poke(a, b, eff + 0x1c, &pick!(rng, &[cam, 0]).to_le_bytes());
+    let effects = [0, eff, eff];
+    // commands an overdrive at times (+0x58), the kernel's or the fakes
+    let reset = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        let m2 = managers + 0x54 * 2;
+        poke(a, b, m2, &pick!(rng, &[0, 2]).to_le_bytes());
+        poke(a, b, m2 + 8, &rng.below(0x100).to_le_bytes());
+        poke(a, b, m2 + 0x10, &rng.below(0x100).to_le_bytes());
+    };
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        let id = 0x3000 + rng.below(0x40);
+        poke(a, b, p + 0xf5c, &u16::try_from(id).unwrap().to_le_bytes());
+        let (c, _) = ffx_battle::command::bridge::get_command(b, u32::MAX, 0, id);
+        if c != 0 && readable(a, c + 0x58, 1) {
+            let v = pick!(rng, &[0x20, 0x25, 0x30, 0x40, 0, rng.below(0x100)]);
+            poke(a, b, c + 0x58, &[u8::try_from(v).unwrap()]);
+        }
+        poke(a, b, p + 0xf8c, &pick!(rng, &effects).to_le_bytes());
+        // a cue entry: its own (0xff) mostly, the hit's targets
+        let de5 = if rng.below(4) == 0 {
+            rng.below(8)
+        } else {
+            0xff
+        };
+        poke(a, b, p + 0xde5, &[u8::try_from(de5).unwrap()]);
+        let cue = ffx_battle::actor::bridge::ms_get_chr_command(b, i);
+        let hit = rng.below(3);
+        poke(a, b, cue + 2, &[u8::try_from(hit).unwrap()]);
+        poke(
+            a,
+            b,
+            cue + 5,
+            &[u8::try_from(pick!(rng, &[0, 0, 1, 1, 2])).unwrap()],
+        );
+        let targets = pick!(
+            rng,
+            &[0, 1 << rng.below(ACTORS), rng.next() & 0x7fff_ffff, 7],
+        );
+        poke(a, b, cue + 0x14 + hit * 0x10, &targets.to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::EFFECT_READ_STAT,
+        pick!(rng, &[0, 0, cam]),
+    );
+    for _ in 0..2 {
+        reset(a, b, rng);
+        let i = rng.below(ACTORS);
+        let p = w.actor(i);
+        twin("MsEffectCamRegist", a, b, 0x0078_8ef0, &[p], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_cam_regist(m, &mut s, p)
+            })
+        });
+        same("MsEffectCamRegist", a, b);
+        twin("MsEffectCameraEnd2", a, b, 0x0078_8f30, &[i, p], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_camera_end2(m, &mut s, i, p)
+            })
+        });
+        same("MsEffectCameraEnd2", a, b);
+        let i = pick!(rng, &[0, 2, 5, rng.below(ACTORS), 0x100 | rng.below(6)]);
+        let p = w.actor(i & 0xff);
+        twin("MsEffectLimitCheck", a, b, 0x007a_fc90, &[i, p], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_limit_check(m, &mut s, i, p)
+            })
+        });
+        same("MsEffectLimitCheck", a, b);
+        twin("MsEffectLimitStart", a, b, 0x007a_fd30, &[i], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_limit_start(m, &mut s, i)
+            })
+        });
+        same("MsEffectLimitStart", a, b);
+    }
+    if !placed(a, b, w, out) {
+        unstub(a, b, &saved);
+        return;
+    }
+    let all: Vec<u32> = (0..ACTORS).collect();
+    for _ in 0..2 {
+        sep_3d_list(a, b, rng);
+        let i = rng.below(ACTORS);
+        let p = w.actor(i);
+        let was = threats(b, w, &all);
+        twin("MsEffectReflect", a, b, 0x0078_9030, &[i, p], 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_reflect(m, &h, &mut s, i, p);
+            });
+            0
+        });
+        threatened(a, b, w, &all, &was);
+        local_words(a, b);
+        same("MsEffectReflect", a, b);
+        sep_3d_list(a, b, rng);
+        let (x, motion, fl) = (rng.below(3), pick!(rng, &[1, 1, 0, 2]), rng.byte());
+        let args = [p, x, motion, u32::from(fl)];
+        let was = threats(b, w, &all);
+        twin("MsEffectEnd", a, b, 0x0078_8f90, &args, ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_end(m, &h, &mut s, p, x, motion, u32::from(fl)).cast_unsigned()
+            })
+        });
+        threatened(a, b, w, &all, &was);
+        local_words(a, b);
+        unplaced_rows(a, b, out);
+        same("MsEffectEnd", a, b);
+        sep_3d_list(a, b, rng);
+        let i = rng.below(ACTORS);
+        poke(
+            a,
+            b,
+            w.actor(i) + 0xdfb,
+            &[pick!(rng, &[4, 4, 3]).to_le_bytes()[0]],
+        );
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::EVENT_EFFECT_STAT,
+            [4i8, 3, 0][rng.below(3) as usize],
+        );
+        let id = pick!(
+            rng,
+            &[
+                0x200 | i,
+                0x200 | i,
+                0x8000,
+                0x8000 | rng.below(0x100),
+                rng.next(),
+            ],
+        );
+        let x = rng.below(3);
+        let was = threats(b, w, &all);
+        twin("MsEffectReady", a, b, 0x0078_8200, &[id, x], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_ready(m, &h, &mut s, id, x)
+            })
+        });
+        threatened(a, b, w, &all, &was);
+        local_words(a, b);
+        unplaced_rows(a, b, out);
+        same("MsEffectReady", a, b);
+        sep_3d_list(a, b, rng);
+        let i = rng.below(ACTORS);
+        let p = w.actor(i);
+        let was = threats(b, w, &all);
+        twin("MsEffectBackToIdle", a, b, 0x0078_7d70, &[i, p], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                e::ms_effect_back_to_idle(m, &h, &mut s, i, p).cast_unsigned()
+            })
+        });
+        threatened(a, b, w, &all, &was);
+        local_words(a, b);
+        unplaced_rows(a, b, out);
+        same("MsEffectBackToIdle", a, b);
+    }
+    // the whole step: every actor in a state, the waits all clear half
+    // the time
+    for i in 0..ACTORS {
+        let st = pick!(
+            rng,
+            &[
+                0, 1, 1, 2, 3, 3, 3, 4, 5, 6, 7, 8, 9, 9, 10, 11, 11, 12, 13, 14, 15, 16, 0xff,
+            ],
+        );
+        // (a weapon swap, 9, for characters and aeons only: a monster's
+        // MsSetSaveParam divides by its ply_rom record's zeros)
+        let st = if st == 9 && i >= 0x12 { 10 } else { st };
+        let p = w.actor(i);
+        poke(a, b, p + 0xdfb, &[u8::try_from(st).unwrap()]);
+        // (not 8 for 0x10 and 0x11: MsMagicEffectEnd would recurse without
+        // end, battle.md)
+        let kind = pick!(rng, &[0, 1, 2, 3, 4, 8, 8]);
+        let kind = if (0x10..0x12).contains(&i) && kind == 8 {
+            1
+        } else {
+            kind
+        };
+        poke(a, b, p + 0xdea, &[u8::try_from(kind).unwrap()]);
+        poke(
+            a,
+            b,
+            p + 0xf65,
+            &[u8::try_from(pick!(rng, &[0, 0, 1, 3])).unwrap()],
+        );
+        poke(
+            a,
+            b,
+            p + 0xe00,
+            &[u8::try_from(pick!(rng, &[0xff, 0x10, 0x30])).unwrap()],
+        );
+        poke(
+            a,
+            b,
+            p + 0xe01,
+            &[u8::try_from(pick!(rng, &[0xff, 0x11])).unwrap()],
+        );
+        if rng.below(3) != 0 {
+            for o in [0x508, 0x436, 0x435, 0xdfd] {
+                poke(a, b, p + o, &[0]);
+            }
+        }
+        poke(
+            a,
+            b,
+            p + 0xdc0,
+            &pick!(rng, &[1 << i, rng.next() & 0x7fff_ffff]).to_le_bytes(),
+        );
+    }
+    let busy = rng.below(2) == 0;
+    let wait = |rng: &mut Xorshift, n: u32| u8::from(busy && rng.below(n) == 0);
+    set(a, b, ffx_battle::process::bridge::RESET_WAIT2, wait(rng, 4));
+    set(a, b, e::DEBUG_EFFECT_HOLD, wait(rng, 4));
+    set(a, b, ffx_battle::atel::bridge::CAMERA_STATE, flag(rng, 2));
+    set(a, b, e::CAMERA_ONCE, [0u8, 1, 2][rng.below(3) as usize]);
+    set(
+        a,
+        b,
+        ffx_battle::damage_end::bridge::DEBUG_CAMERA_SLEEP,
+        [rng.byte() & 1, rng.byte()],
+    );
+    set(
+        a,
+        b,
+        e::LIMIT_FADE,
+        [0i8, 3, 6, 7, -1][rng.below(5) as usize],
+    );
+    stub_ret(a, b, prec, 3, u32::from(wait(rng, 4)));
+    stub_ret(a, b, srec, 3, u32::from(wait(rng, 4)));
+    stub_ret(a, b, srec, 4, u32::from(wait(rng, 4)));
+    // the limit window up (+0xd24) or not
+    for i in 0..ACTORS {
+        poke(a, b, w.actor(i) + 0xd24, &[flag(rng, 2), 0]);
+    }
+    // an effect read (state 14) on a magic in the effect table
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::LAST_MAGIC,
+        rng.below(0x400),
+    );
+    let _ = erec;
+    reset(a, b, rng);
+    sep_3d_list(a, b, rng);
+    let was = threats(b, w, &all);
+    twin("MsEffectStart", a, b, 0x0078_8480, &[], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            e::ms_effect_start(m, &h, &mut s);
+        });
+        0
+    });
+    threatened(a, b, w, &all, &was);
+    local_words(a, b);
+    unplaced_rows(a, b, out);
+    same("MsEffectStart", a, b);
+    unstub(a, b, &saved);
+}
+
+/// Kernel tables the saved parameters read (`ply_rom`, the auto-abilities,
+/// the aeons' floors): the snapshot's, else fakes with no zero divisor.
+fn save_tables(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use battle_common::world::fake_records;
+    let rom = ffx_battle::menu::bridge::PLY_ROM;
+    if !readable(a, rom.get(b), 0x20) {
+        let t = fake_records(a, b, rng, 0x14, 0x30);
+        for k in 0..0x14 {
+            for o in (0x1c..0x2a).step_by(2) {
+                poke(a, b, t + 0x20 + 0x30 * k + o, &[1 + rng.byte() % 9]);
+            }
+        }
+        set(a, b, rom, t);
+    }
+    let ab = ffx_kernel::bridge::A_ABILITY;
+    if !readable(a, ab.get(b), 0x20) {
+        let t = fake_records(a, b, rng, 0x40, 0x68);
+        set(a, b, ab, t);
+    }
+    let grow = ffx_battle::save_param::bridge::SUMMON_GROW;
+    if !readable(a, grow.get(b), 0x20) {
+        let t = fake_records(a, b, rng, 0x80, 0xc);
+        set(a, b, grow, t);
+    }
+}
+
+/// The save areas the saved parameters change (the characters, the sphere
+/// grid totals, the equipment, the battle count, the damage rates), kept
+/// to be put back after.
+fn save_areas(b: &mut Oracle) -> Vec<(u32, usize)> {
+    use ffx_battle::save::bridge as sv;
+    vec![
+        (sv::PLY_SAVE.ptr(b).addr, 0x94 * 0x12),
+        (ffx_battle::minor::bridge::ABILITY_MAP.ptr(b).addr, 0x1c * 8),
+        (
+            sv::EQUIPMENT.ptr(b).addr,
+            (ffx_battle::save::EQUIPMENT_SLOTS * ffx_battle::save::EQUIPMENT_SIZE) as usize,
+        ),
+        (sv::BATTLE_COUNT.ptr(b).addr, 4),
+        (
+            ffx_battle::minor::bridge::DAMAGE_RATES.ptr(b).addr,
+            4 * 0x12,
+        ),
+        (sv::OUT_PARTY.ptr(b).addr, 0x11),
+    ]
+}
+
+/// The characters' saved parameters (`ffx_battle::save_param`): sphere
+/// grid, aeon and weapon stats, the save written back at a battle's end,
+/// a weapon swapped. The save is randomized for it and put back after.
+fn save_params(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    out: u32,
+    rec: u32,
+    xrec: u32,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::save_param::bridge as sp;
+    let saved = start_stubs(a, b, rec);
+    let areas = save_areas(b);
+    let keep: Vec<Vec<u8>> = areas
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! pick {
+        ($rng:expr, $v:expr $(,)?) => {{
+            let v: &[u32] = $v;
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    save_tables(a, b, rng);
+    // the characters: weapons the equipment has (or none), small or
+    // limit-breaking values, joined or not
+    let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
+    for i in 0..0x12 {
+        let p = ply + 0x94 * i;
+        fill(a, b, rng, p, 0x94);
+        for o in [4, 8, 0x1c, 0x20] {
+            let v = pick!(rng, &[rng.below(3000), rng.below(100), rng.next(), 0]);
+            poke(a, b, p + o, &v.to_le_bytes());
+        }
+        for o in [0x2d, 0x2e] {
+            let v = pick!(rng, &[rng.below(200), rng.below(8), 0xff]);
+            poke(a, b, p + o, &[u8::try_from(v).unwrap()]);
+        }
+        poke(a, b, p + 0x2c, &[rng.byte() & 0x11]);
+    }
+    let map = ffx_battle::minor::bridge::ABILITY_MAP.ptr(b).addr;
+    for k in 0..8 {
+        let mut v = vec![0u8; 0x1c];
+        for x in &mut v {
+            *x = rng.byte();
+        }
+        v[0..4].copy_from_slice(&rng.below(200).to_le_bytes());
+        v[4..8].copy_from_slice(&rng.below(200).to_le_bytes());
+        poke(a, b, map + 0x1c * k, &v);
+    }
+    let count = pick!(rng, &[0, 29, 30, 300, 599, 900, rng.next()]);
+    set(a, b, ffx_battle::save::bridge::BATTLE_COUNT, count);
+    set(a, b, ffx_battle::minor::bridge::ENCOUNT_ON, rng.byte());
+    // the aeons' records: no zero divisor
+    let rom = ffx_battle::menu::bridge::PLY_ROM.get(b);
+    for i in 8..0x12 {
+        let (r, _) = ffx_kernel::bridge::excel_data(b, i, rom);
+        for o in (0x1c..0x2a).step_by(2) {
+            if b.read(r + o, 1).unwrap()[0] == 0 {
+                poke(a, b, r + o, &[1]);
+            }
+        }
+    }
+    for _ in 0..3 {
+        let i = pick!(rng, &[rng.below(8), rng.below(0x12), 8, 9, u32::MAX]);
+        twin("MsGetAbilityMap", a, b, 0x0079_87f0, &[i], ALL, |m| {
+            sp::ms_get_ability_map(m, i)
+        });
+        let i = rng.below(0x12);
+        twin(
+            "MsGetChrAbilityMap",
+            a,
+            b,
+            0x0078_5b60,
+            &[i, out],
+            ALL,
+            |m| sp::ms_get_chr_ability_map(m, i, out),
+        );
+        same("MsGetChrAbilityMap", a, b);
+        let i = pick!(rng, &[5, rng.below(8), 8 + rng.below(10), rng.below(0x12)]);
+        twin("MsSetSaveParam", a, b, 0x0078_60f0, &[i], ALL, |m| {
+            sp::ms_set_save_param(m, i)
+        });
+        same("MsSetSaveParam", a, b);
+        let (i, k) = (
+            rng.below(0x12) | (u32::from(rng.byte()) & 0x80) << 8,
+            rng.below(2),
+        );
+        let id = pick!(rng, &[rng.below(200), 0xff, 0x5000 | rng.below(200)]);
+        twin(
+            "MsEquipSaveWeapon",
+            a,
+            b,
+            0x007a_b970,
+            &[i, k, id],
+            0,
+            |m| {
+                sp::ms_equip_save_weapon(m, i, k, id);
+                0
+            },
+        );
+        same("MsEquipSaveWeapon", a, b);
+    }
+    twin("MsSetSaveParamAll", a, b, 0x0078_6900, &[], ALL, |m| {
+        sp::ms_set_save_param_all(m)
+    });
+    same("MsSetSaveParamAll", a, b);
+    // the actors' weapons as the save's (MsEquipSaveWeapon reads the save's)
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        for k in 0..2 {
+            let v = pick!(rng, &[rng.below(200), 0xff]);
+            poke(a, b, p + 0x592 + k, &[u8::try_from(v).unwrap()]);
+        }
+        let hp = pick!(rng, &[0, rng.below(5000), u32::MAX]);
+        poke(a, b, p + 0x5d0, &hp.to_le_bytes());
+        poke(
+            a,
+            b,
+            p + 0x6d8,
+            &[u8::try_from(pick!(rng, &[0, 0, 1, 2])).unwrap()],
+        );
+    }
+    twin("MsSetSaveData", a, b, 0x0078_5fc0, &[], ALL, |m| {
+        sp::ms_set_save_data(m)
+    });
+    same("MsSetSaveData", a, b);
+    // a weapon swapped: the same model or another (characters and aeons:
+    // a monster's MsSetSaveParam divides by its ply_rom record's zeros)
+    let i = rng.below(0x12);
+    let k = rng.below(2);
+    let p = w.actor(i);
+    poke(
+        a,
+        b,
+        p + 0xdfb,
+        &[u8::try_from(pick!(rng, &[9, 9, 8])).unwrap()],
+    );
+    let id = if rng.below(2) == 0 {
+        u32::from(b.read(p + 0x592 + k, 1).unwrap()[0])
+    } else {
+        pick!(rng, &[rng.below(200), 0xff])
+    };
+    for o in [0x48, 0x4c] {
+        poke(a, b, p + o, &pick!(rng, &[0, rng.next()]).to_le_bytes());
+    }
+    read_queue(a, b, rng, xrec);
+    twin("MsWeaponRead", a, b, 0x007a_d820, &[i, k, id], 0, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            sp::ms_weapon_read(m, &mut s, i, k, id);
+        });
+        0
+    });
+    same("MsWeaponRead", a, b);
+    let frames = rng.below(20);
+    twin(
+        "MsWeaponFadeIn",
+        a,
+        b,
+        0x007a_d570,
+        &[i, k, frames],
+        0,
+        |m| {
+            sp::ms_weapon_fade_in(m, &mut game_call_o, i, k, frames);
+            0
+        },
+    );
+    same("MsWeaponFadeIn", a, b);
+    for (&(at, _), v) in areas.iter().zip(&keep) {
+        poke(a, b, at, v);
+    }
+    unstub(a, b, &saved);
+}
+
 /// Party members and aeons coming and going (`ffx_battle::exchange`).
 fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
     use ffx_battle::atel::bridge::Script;
@@ -5171,6 +5891,10 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             );
         }
     }
+    // MsEffectStart's stubs' records and a camera script file
+    let effrec = scratch(a, b, (EXCHANGE_REC * 16) as usize);
+    let cam = scratch(a, b, 0x40);
+    let mut r15 = Xorshift(0x15e5_0001 ^ u32::from(synthetic));
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -5193,6 +5917,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         damage_end(a, b, rng, &w, out);
         battle_end(a, b, rng, &w, out, [nrec, erec, prec, srec], files);
         battle_frame(a, b, rng, &w, out, grec);
+        effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
+        save_params(a, b, &mut r15, &w, out, effrec, xrec);
     }
 }
 
