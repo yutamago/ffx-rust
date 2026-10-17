@@ -1268,16 +1268,16 @@ ported! {
     TkMenuGetSceneRecord @ 0x00a7_b8f0 => extern "C" fn tk_menu_get_scene_record(i: i32, handle: u32) -> u32 {
         scene::tk_menu_get_scene_record(&mem(), i, handle)
     }
-    /// `TkMenuGetSceneX(i, handle)`.
-    TkMenuGetSceneX @ 0x00a7_b9d0 => extern "C" fn tk_menu_get_scene_x(i: i32, handle: u32) -> i32 {
+    /// `TkMenuGetSceneOffsetX(i, handle)`.
+    TkMenuGetSceneOffsetX @ 0x00a7_b9d0 => extern "C" fn tk_menu_get_scene_x(i: i32, handle: u32) -> i32 {
         scene::tk_menu_get_scene_field(&mem(), i, handle, 8)
     }
-    /// `TkMenuGetSceneY(i, handle)`.
-    TkMenuGetSceneY @ 0x00a7_ba00 => extern "C" fn tk_menu_get_scene_y(i: i32, handle: u32) -> i32 {
+    /// `TkMenuGetSceneOffsetY(i, handle)`.
+    TkMenuGetSceneOffsetY @ 0x00a7_ba00 => extern "C" fn tk_menu_get_scene_y(i: i32, handle: u32) -> i32 {
         scene::tk_menu_get_scene_field(&mem(), i, handle, 0xa)
     }
-    /// `TkMenuSetScenePos(i, handle, x, y)`.
-    TkMenuSetScenePos @ 0x00a7_c810 => extern "C" fn tk_menu_set_scene_pos(i: i32, handle: u32, x: u32, y: u32) {
+    /// `TkMenuSetSceneOffset(i, handle, x, y)`.
+    TkMenuSetSceneOffset @ 0x00a7_c810 => extern "C" fn tk_menu_set_scene_pos(i: i32, handle: u32, x: u32, y: u32) {
         #[allow(clippy::cast_possible_truncation)]
         scene::tk_menu_set_scene_pos(&mut mem(), i, handle, x as u16, y as u16);
     }
@@ -1599,8 +1599,8 @@ ported! {
     MenuSummon_RestartWindow @ 0x008c_d1f0 => extern "C" fn menu_summon_restart_window() {
         tk::menu_summon_restart_window(&mut mem());
     }
-    /// `MenuSubCmd_RefreshHelp()`.
-    MenuSubCmd_RefreshHelp @ 0x008e_49b0 => extern "C" fn menu_sub_cmd_refresh_help() {
+    /// `TkMenuRefreshSubCmdHelp()`.
+    TkMenuRefreshSubCmdHelp @ 0x008e_49b0 => extern "C" fn menu_sub_cmd_refresh_help() {
         tk::menu_sub_cmd_refresh_help(&mut mem());
     }
     /// `MenuSubCmd_SetValue(v)`.

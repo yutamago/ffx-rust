@@ -69,7 +69,7 @@ pub mod bridge {
         if b == 0 { 0 } else { b.wrapping_add(handle) }
     }
 
-    /// `TkMenuGetSceneX(i, handle)` (`0x00a7b9d0`) and `TkMenuGetSceneY`
+    /// `TkMenuGetSceneOffsetX(i, handle)` (`0x00a7b9d0`) and `TkMenuGetSceneOffsetY`
     /// (`0x00a7ba00`): the record's `i16` at `+8` or `+0xa`, 0 without one.
     pub fn tk_menu_get_scene_field(mem: &impl Mem, i: i32, handle: u32, field: u32) -> i32 {
         match tk_menu_get_scene_record(mem, i, handle) {
@@ -78,7 +78,7 @@ pub mod bridge {
         }
     }
 
-    /// `TkMenuSetScenePos(i, handle, x, y)` (`0x00a7c810`): the record's
+    /// `TkMenuSetSceneOffset(i, handle, x, y)` (`0x00a7c810`): the record's
     /// `+8` and `+0xa`.
     pub fn tk_menu_set_scene_pos(mem: &mut impl Mem, i: i32, handle: u32, x: u16, y: u16) {
         let r = tk_menu_get_scene_record(mem, i, handle);

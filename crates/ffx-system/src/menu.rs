@@ -96,8 +96,8 @@ pub mod bridge {
         mem.write(out, 0u8);
     }
 
-    /// `TOMenuGetGetImportantName(id)` (`0x008ddee0`, `field` 0) and
-    /// `TOMenuGetGetImportantHelp(id)` (`0x008ddea0`, `field` 8): the key
+    /// `TkMenuGetImportantName(id)` (`0x008ddee0`, `field` 0) and
+    /// `TkMenuGetImportantHelp(id)` (`0x008ddea0`, `field` 8): the key
     /// item's name or help text, given `MsGetSaveConfigHiragana()` and
     /// `MsImportantPtr(id)` as (record, strings): the strings plus the
     /// record's `u16` offset (the second one, `+4`, with hiragana on).
