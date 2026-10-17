@@ -448,6 +448,201 @@ pub mod bridge {
     pub fn ms_camera_set_scr_dpt(mem: &mut impl Mem, id: u32, depth: u32) {
         set_param(mem, id, depth, 0xcc0, 0xca0, 0xd94, 0xc9c, 0xcd8);
     }
+    /// `0x007bcab0(side, target, channel, mode)` (the camera move's
+    /// position step and its spline, `spline_get_near_point_init`; not a
+    /// battle port).
+    pub const CAMERA_MOVE_STEP: u32 = 0x007b_cab0;
+
+    /// The request in camera `cam`'s current slot (0 while the slot is
+    /// held, `+4` or `+5`).
+    fn current_request(mem: &impl Mem, cam: u32) -> u32 {
+        let cam = cam & 0xff;
+        let n = ms_camera_get_num(mem, cam);
+        let slot = SLOTS_AT.ptr(mem).addr + cam * CAMERA_SIZE + 8 * n;
+        let b: [u8; 6] = mem.read(slot);
+        if b[4] == 0 && b[5] == 0 {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        } else {
+            0
+        }
+    }
+
+    /// `MsSetCheckChange(id, side, step, mode)` (`0x007c0790`): channel
+    /// `id >> 8 & 0xff` of camera `id & 0xff`. Mode 1: with no roll move
+    /// running (`u16` `+0xd84`) the roll target (`+0xc94`) becomes the
+    /// roll now (`+0xc90`) and the channel's (`+0xcd4`); mode 2 the same
+    /// for the screen depth (`+0xd94`, `+0xca0` → `+0xc9c`, `+0xcd8`): -1,
+    /// else 0. Other modes: side `side`'s position step
+    /// ([`CAMERA_MOVE_STEP`]), then when the side is not moving (`+0x33`)
+    /// and no axis move runs while `+0x31` is 1, each axis without a move
+    /// (`+0x5bc`, `+0x5cc`, `+0x5dc`) takes its target (`+0x80`-`+0x88`
+    /// to `+0x50`-`+0x58` and the channel's `+0x140`-`+0x148`): -1, else 0.
+    /// Floats are copied through the x87 as the original does.
+    pub fn ms_set_check_change<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        step: u32,
+        mode: u32,
+    ) -> u32 {
+        let cam = camera_base(mem, id);
+        let sub = (id.cast_signed() >> 8).cast_unsigned() & 0xff;
+        let s = cam
+            .wrapping_add(side.wrapping_mul(0x61c))
+            .wrapping_add(0x30);
+        let copy = |mem: &mut M, from: u32, to: [u32; 2]| {
+            let v = x87_copy(mem.read(from));
+            mem.write(to[0], v);
+            mem.write(to[1], v);
+        };
+        match mode {
+            1 | 2 => {
+                let (lock, target, now, chan) = if mode == 1 {
+                    (0xd84, 0xc94, 0xc90, 0xcd4)
+                } else {
+                    (0xd94, 0xca0, 0xc9c, 0xcd8)
+                };
+                if mem.read::<u16>(cam + lock) != 0 {
+                    return 0;
+                }
+                copy(mem, cam + target, [cam + now, cam + sub * 0x30 + chan]);
+                u32::MAX
+            }
+            _ => {
+                let byte = |mem: &M, o: u32| mem.read::<u8>(s.wrapping_add(o));
+                let moving = |mem: &M, o: u32| mem.read::<u16>(s.wrapping_add(o)) != 0;
+                let mut set = byte(mem, 3) == 0;
+                for o in [0x58c, 0x59c, 0x5ac] {
+                    if moving(mem, o) {
+                        set &= byte(mem, 1) != 1;
+                    }
+                }
+                let chan = s.wrapping_add(sub * 0x130).wrapping_add(0xc0);
+                let other = cam
+                    .wrapping_sub(side.wrapping_mul(0x61c))
+                    .wrapping_add(0x64c);
+                let f = CAMERA_MOVE_STEP
+                    .wrapping_sub(ffx_bridge::IMAGE_BASE)
+                    .wrapping_add(mem.image_base());
+                call(mem, f, &[s, other, chan, step]);
+                if !set {
+                    return 0;
+                }
+                for (k, o) in (0u32..).zip([0x58c, 0x59c, 0x5ac]) {
+                    if !moving(mem, o) {
+                        let k = 4 * k;
+                        copy(
+                            mem,
+                            s.wrapping_add(0x50 + k),
+                            [s.wrapping_add(0x20 + k), chan.wrapping_add(0x80 + k)],
+                        );
+                    }
+                }
+                u32::MAX
+            }
+        }
+    }
+
+    /// `MsCameraSetRect(id, side, p)` (`0x007bf940`): for a live request
+    /// ([`ms_camera_id_check`]) side `side & 1` of its channel gets the
+    /// position `p` (four words, through `g_Ee_GprMove`) as its target
+    /// (`+0xf0`; `+0xc7`, `+0xc0` cleared, `+0xc2` set); when the request
+    /// is the camera's current one, its position now too (`+0x50`, the
+    /// speed `+0x6c` 0.0) and [`ms_set_check_change`] mode 0. EAX as the
+    /// original leaves it.
+    pub fn ms_camera_set_rect<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        p: u32,
+    ) -> u32 {
+        if ms_camera_id_check(mem, id) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let sub = (id.cast_signed() >> 8).cast_unsigned() & 0xff;
+        let s = camera_base(mem, id) + side * 0x61c + 0x30;
+        let chan = s + sub * 0x130;
+        mem.write(chan + 0xc7, 0u8);
+        mem.write(chan + 0xc0, 0u8);
+        mem.write(chan + 0xc2, 1u8);
+        let v: [u32; 4] = mem.read(p);
+        EE_MOVE.set(mem, v);
+        mem.write(chan + 0xf0, v);
+        let cur = current_request(mem, id);
+        if cur != id {
+            return cur;
+        }
+        mem.write(s + 0x6c, 0u32);
+        let v: [u32; 4] = mem.read(p);
+        EE_MOVE.set(mem, v);
+        mem.write(s + 0x50, v);
+        ms_set_check_change(mem, call, id, side, 0, 0)
+    }
+
+    /// `MsCameraResetMove(id, flags)` (`0x007bed60`): for the camera's
+    /// current request `id`, side `flags & 1` stops moving (its three
+    /// axis moves `+0x5bc`-`+0x5dc`; side 1 also the roll and depth moves
+    /// `+0xd84`, `+0xd94`) and, unless `flags` bit 3, goes to its target
+    /// now ([`ms_camera_set_rect`] with `+0x80`; side 1 the depth and roll
+    /// targets again). 0.
+    pub fn ms_camera_reset_move<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        flags: u32,
+    ) -> u32 {
+        if current_request(mem, id) != id {
+            return 0;
+        }
+        let cam = camera_base(mem, id);
+        let side = flags & 1;
+        if side == 1 {
+            mem.write(cam + 0xd84, 0u16);
+            mem.write(cam + 0xd94, 0u16);
+        }
+        let s = cam + side * 0x61c;
+        for o in [0x5bc, 0x5cc, 0x5dc] {
+            mem.write(s + o, 0u16);
+        }
+        if flags & 8 == 0 {
+            ms_camera_set_rect(mem, call, id, side, s + 0x80);
+            if side == 1 {
+                let depth = x87_copy(mem.read(cam + 0xca0));
+                ms_camera_set_scr_dpt(mem, id, depth);
+                let roll = x87_copy(mem.read(cam + 0xc94));
+                ms_camera_set_roll(mem, id, roll);
+            }
+        }
+        0
+    }
+
+    /// `MsAtelResetMoveCameraID(kind)` (`0x007ba860`): the three script
+    /// cameras of `kind` (0-3, [`crate::minor::bridge::ATEL_CAMERA`]: 1 the
+    /// first three, 0 the next, then 2 and 3) reset both sides
+    /// ([`ms_camera_reset_move`] 0 then 1). EAX: 0, `kind` above 3.
+    pub fn ms_atel_reset_move_camera_id<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        kind: u32,
+    ) -> u32 {
+        let group = match kind {
+            0 => 1,
+            1 => 0,
+            2 | 3 => kind,
+            _ => return kind,
+        };
+        let at = crate::minor::bridge::ATEL_CAMERA.ptr(mem).addr + 12 * group;
+        for k in 0..3 {
+            for side in 0..2 {
+                let id: u32 = mem.read(at + 4 * k);
+                ms_camera_reset_move(mem, call, id, side);
+            }
+        }
+        0
+    }
     /// The camera matrices' source (`MsSetCameraMatrix`): on, the roll,
     /// and two vectors (the look-at and the eye).
     pub const MATRIX_ON: Global<u32> = Global::new(0x0231_14c4);

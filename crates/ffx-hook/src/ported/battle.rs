@@ -3212,4 +3212,24 @@ ported! {
         script!(s);
         sparam::ms_weapon_read(&mut target::Dm::new(&mut m), &mut s, i, k, id);
     }
+    /// `MsMessageCueProcess()`.
+    MsMessageCueProcess @ 0x0079_cdf0 => extern "C" fn ms_message_cue_process() -> u32 {
+        bend::ms_message_cue_process(&mut mem(), &crt_trig, &mut call_ptr)
+    }
+    /// `MsSetCheckChange(id, side, step, mode)`.
+    MsSetCheckChange @ 0x007c_0790 => extern "C" fn ms_set_check_change(id: u32, side: u32, step: u32, mode: u32) -> u32 {
+        camera::ms_set_check_change(&mut mem(), &mut call_ptr, id, side, step, mode)
+    }
+    /// `MsCameraSetRect(id, side, p)`.
+    MsCameraSetRect @ 0x007b_f940 => extern "C" fn ms_camera_set_rect(id: u32, side: u32, p: u32) -> u32 {
+        camera::ms_camera_set_rect(&mut mem(), &mut call_ptr, id, side, p)
+    }
+    /// `MsCameraResetMove(id, flags)`.
+    MsCameraResetMove @ 0x007b_ed60 => extern "C" fn ms_camera_reset_move(id: u32, flags: u32) -> u32 {
+        camera::ms_camera_reset_move(&mut mem(), &mut call_ptr, id, flags)
+    }
+    /// `MsAtelResetMoveCameraID(kind)`.
+    MsAtelResetMoveCameraID @ 0x007b_a860 => extern "C" fn ms_atel_reset_move_camera_id(kind: u32) -> u32 {
+        camera::ms_atel_reset_move_camera_id(&mut mem(), &mut call_ptr, kind)
+    }
 }

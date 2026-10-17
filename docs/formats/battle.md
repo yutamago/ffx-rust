@@ -364,6 +364,38 @@ writes to address 6 in the original. `MsWeaponRead` (`0x007ad820`, effect
 state 9) swaps a weapon mid-battle: the same model fades in over 8 frames,
 another is disposed of and its reads queued (`+0xdfd` set meanwhile).
 
+## Battle messages and the script cameras' reset
+
+`MsMessageCueProcess` (`0x0079cdf0`, `ffx_battle::battle_end`) shows the
+queued battle messages (`g_BtlMessageCue`, a ring of 4 entries of 12
+bytes from `g_BtlMessageCueStart`) one at a time. An entry's kind `+0`
+picks the window (`TOBtlDraw*MessageWindow`, system: 1 a name and message,
+2 and 3 the first strikes, 4 an item, 5 a capture, 6 a command learnt and
+7 an overdrive type, both with sound 0x39, 8 gil; anything else -1); the
+window's result goes to `g_BtlMessageWindow` (`0x0112c910`) and `+2`, `+1`
+to `g_BtlMessageTime` (`0x0112c946`: frames left, counted down each call,
+and the frame count below which a button may close it). A window stays
+while its frames last unless pad bit 5 (`g_BtlPad`, `0x0112c904`) is newly
+pressed (not in `g_BtlPadOld`, `0x0112c908`) after the delay; then the help
+closes (`TOBtlCloseSimpleHelpMes`) and the next message opens in the same
+call. A negative result skips the message at once. A window function that
+returns 0 makes the original open the same message again without end.
+`0x0112c904` and `0x0112c908` are the pad words `MsBattleProcess` stores
+each frame (they were named for the battle end before).
+
+`MsAtelResetMoveCameraID(kind)` (`0x007ba860`, `ffx_battle::camera`) resets
+the three script cameras of a kind (`0x01136f88`: kind 1 the first three
+words, 0 the next three, then 2 and 3) on both sides through
+`MsCameraResetMove` (`0x007bed60`): for the camera's current request it
+stops the three axis moves (side 1 also the roll and depth moves) and,
+unless flag 8, puts the side at its target (`MsCameraSetRect`,
+`0x007bf940`, then the depth and roll again). `MsCameraSetRect` writes the
+channel's target and, for the current request, the position now and
+`MsSetCheckChange` (`0x007c0790`) mode 0, which runs the move step
+`0x007bcab0` (not a battle port: polar position, spline) and copies the
+targets of axes without a move. Floats are copied through the x87 there
+(a signalling NaN comes out quiet).
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

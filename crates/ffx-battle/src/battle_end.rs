@@ -102,11 +102,14 @@ pub mod bridge {
     pub const END_HOLD: Global<u8> = Global::new(0x0112_ca01);
     /// Set (script `0x7118`): an aeon is not sent back at the end.
     pub const NO_SUMMON_RETURN: Global<u8> = Global::new(0x0112_ca11);
-    /// -1 when a game over plays its event effect; tested with
-    /// [`END_FLAGS`].
-    pub const END_EFFECT_WAIT: Global<u32> = Global::new(0x0112_c908);
-    /// Its low byte's high nibble lets the event effect end the battle.
-    pub const END_FLAGS: Global<u8> = Global::new(0x0112_c904);
+    /// The battle's pad buttons the frame before ([`PAD`], copied by
+    /// `MsBattleProcess`); -1 when a game over plays its event effect, so
+    /// that only a new press ends it.
+    pub const PAD_OLD: Global<u32> = Global::new(0x0112_c908);
+    /// The battle's pad buttons this frame (`MsBattleProcess`); the low
+    /// byte's high nibble ends a game over's event effect, bit 5 closes a
+    /// battle message.
+    pub const PAD: Global<u8> = Global::new(0x0112_c904);
 
     /// `MsEffectForceFree(id)` (`0x00787ab0`): event effect 0x29f ends
     /// through the effect overlay table's `+0x20`
@@ -424,6 +427,112 @@ pub mod bridge {
         if p != 0 {
             game(mem, call, SG_FREE_A, &[p, 5]);
             crate::misc::bridge::BTL_READ3.set(mem, 0);
+        }
+    }
+
+    /// `TOBtlDrawStdChrNameMessageWindow(actor, message)` (system).
+    pub const TO_BTL_DRAW_STD_CHR_NAME_MESSAGE_WINDOW: u32 = 0x0089_7200;
+    /// `TOBtlDrawFirstStrikePlayerMessageWindow()` (system).
+    pub const TO_BTL_DRAW_FIRST_STRIKE_PLAYER_MESSAGE_WINDOW: u32 = 0x0089_34f0;
+    /// `TOBtlDrawFirstStrikeEnemyMessageWindow()` (system).
+    pub const TO_BTL_DRAW_FIRST_STRIKE_ENEMY_MESSAGE_WINDOW: u32 = 0x0089_34d0;
+    /// `TOBtlDrawGetItemMessageWindow(item, count)` (system).
+    pub const TO_BTL_DRAW_GET_ITEM_MESSAGE_WINDOW: u32 = 0x0089_3510;
+    /// `TOBtlDrawCaptureMonsterMessageWindow(a, b)` (system).
+    pub const TO_BTL_DRAW_CAPTURE_MONSTER_MESSAGE_WINDOW: u32 = 0x0089_2870;
+    /// `TOBtlDrawLearningMessageWindow(a, b)` (system).
+    pub const TO_BTL_DRAW_LEARNING_MESSAGE_WINDOW: u32 = 0x0089_5320;
+    /// `TOBtlDrawGetLimitTypeMessageWindow(a, b)` (system).
+    pub const TO_BTL_DRAW_GET_LIMIT_TYPE_MESSAGE_WINDOW: u32 = 0x0089_35f0;
+    /// `TOBtlDrawGetMoneyMessageWindow(gil)` (system).
+    pub const TO_BTL_DRAW_GET_MONEY_MESSAGE_WINDOW: u32 = 0x0089_3660;
+    /// `TOBtlCloseSimpleHelpMes()` (system).
+    pub const TO_BTL_CLOSE_SIMPLE_HELP_MES: u32 = 0x0089_0ef0;
+
+    /// The message window on screen (0 none; negative: closed at once).
+    pub const MESSAGE_WINDOW: Global<i32> = Global::new(0x0112_c910);
+    /// The shown message's frames left, then the frames before a button
+    /// may close it (two `u8`).
+    pub const MESSAGE_TIME: Global<[u8; 2]> = Global::new(0x0112_c946);
+
+    /// `MsMessageCueProcess()` (`0x0079cdf0`): the battle messages queued
+    /// ([`crate::state::bridge::MESSAGE_CUE`], a ring of 4): the shown
+    /// one's frames count down ([`MESSAGE_TIME`]); with none shown the
+    /// next opens (by kind 1-8 its `TOBtlDraw*MessageWindow`; 6 and 7 with
+    /// sound 0x39), its frames and button delay from `+2` and `+1`; a
+    /// shown one stays while its frames last, unless a button (pad bit 5,
+    /// newly pressed) comes after the delay; then the help closes and the
+    /// next goes on, in the same call. The messages left.
+    #[allow(clippy::many_single_char_names)] // entry, its words, the call
+    pub fn ms_message_cue_process<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+    ) -> u32 {
+        use crate::state::bridge::{MESSAGE_CUE, MESSAGE_CUE_COUNT, MESSAGE_CUE_START};
+        let [mut left, mut delay] = MESSAGE_TIME.get(mem);
+        if left != 0 {
+            left -= 1;
+            MESSAGE_TIME.set(mem, [left, delay]);
+        }
+        if MESSAGE_CUE_COUNT.get(mem) == 0 {
+            return 0;
+        }
+        let mut win = MESSAGE_WINDOW.get(mem);
+        loop {
+            if win == 0 {
+                let k = u32::from(MESSAGE_CUE_START.get(mem) & 3);
+                let e = MESSAGE_CUE.ptr(mem).addr.wrapping_add(12 * k);
+                let (x, y): (u32, u32) = (mem.read(e.wrapping_add(4)), mem.read(e.wrapping_add(8)));
+                let kind = byte(mem, e, 0);
+                let draw = match kind {
+                    1 => Some((TO_BTL_DRAW_STD_CHR_NAME_MESSAGE_WINDOW, 2)),
+                    2 => Some((TO_BTL_DRAW_FIRST_STRIKE_PLAYER_MESSAGE_WINDOW, 0)),
+                    3 => Some((TO_BTL_DRAW_FIRST_STRIKE_ENEMY_MESSAGE_WINDOW, 0)),
+                    4 => Some((TO_BTL_DRAW_GET_ITEM_MESSAGE_WINDOW, 2)),
+                    5 => Some((TO_BTL_DRAW_CAPTURE_MONSTER_MESSAGE_WINDOW, 2)),
+                    6 => Some((TO_BTL_DRAW_LEARNING_MESSAGE_WINDOW, 2)),
+                    7 => Some((TO_BTL_DRAW_GET_LIMIT_TYPE_MESSAGE_WINDOW, 2)),
+                    8 => Some((TO_BTL_DRAW_GET_MONEY_MESSAGE_WINDOW, 1)),
+                    _ => None,
+                };
+                win = match draw {
+                    Some((f, n)) => {
+                        if kind == 6 || kind == 7 {
+                            crate::after_damage::bridge::ms_reg_se_play(
+                                mem, trig, &mut *call, 0xff, 0x39,
+                            );
+                        }
+                        game(mem, &mut *call, f, &[x, y][..n]).cast_signed()
+                    }
+                    None => -1,
+                };
+                MESSAGE_WINDOW.set(mem, win);
+                left = byte(mem, e, 2);
+                delay = byte(mem, e, 1);
+                MESSAGE_TIME.set(mem, [left, delay]);
+            } else {
+                if win > 0 {
+                    let pressed = PAD.get(mem) & 0x20 != 0
+                        && PAD_OLD.get(mem) & 0x20 == 0
+                        && left.cast_signed() < delay.cast_signed();
+                    if !pressed && left != 0 {
+                        return u32::from(MESSAGE_CUE_COUNT.get(mem));
+                    }
+                    game(mem, &mut *call, TO_BTL_CLOSE_SIMPLE_HELP_MES, &[]);
+                }
+                let start = MESSAGE_CUE_START.get(mem);
+                win = 0;
+                left = 0;
+                delay = 0;
+                MESSAGE_WINDOW.set(mem, 0);
+                MESSAGE_TIME.set(mem, [0, 0]);
+                MESSAGE_CUE_COUNT.set(mem, MESSAGE_CUE_COUNT.get(mem).wrapping_sub(1));
+                MESSAGE_CUE_START.set(mem, start.wrapping_add(1) & 3);
+            }
+            if MESSAGE_CUE_COUNT.get(mem) == 0 {
+                return 0;
+            }
         }
     }
 
@@ -812,7 +921,7 @@ pub mod bridge {
         ms_limit_type_win_check(mem);
         if END_GAME_OVER.get(mem) != 0 && crate::action::bridge::AEON_PLAIN2.get(mem) == 0 {
             END_EVENT_EFFECT.set(mem, 1);
-            END_EFFECT_WAIT.set(mem, u32::MAX);
+            PAD_OLD.set(mem, u32::MAX);
         }
         end_effect(mem, s);
     }
@@ -881,7 +990,7 @@ pub mod bridge {
                     if END_FADE_OUT.get(mem) != 0 {
                         return;
                     }
-                    if END_EFFECT_WAIT.get(mem) != 0 || END_FLAGS.get(mem) & 0xf0 == 0 {
+                    if PAD_OLD.get(mem) != 0 || PAD.get(mem) & 0xf0 == 0 {
                         Next::Fade
                     } else {
                         END_EVENT_EFFECT.set(mem, -1);

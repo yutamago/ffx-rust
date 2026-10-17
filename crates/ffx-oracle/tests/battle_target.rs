@@ -4448,13 +4448,13 @@ fn battle_end_status(
     set(
         a,
         b,
-        be::END_EFFECT_WAIT,
+        be::PAD_OLD,
         [0, 0, u32::MAX, rng.next()][rng.below(4) as usize],
     );
     set(
         a,
         b,
-        be::END_FLAGS,
+        be::PAD,
         [0, 0xf0, 0x10, rng.byte()][rng.below(4) as usize],
     );
     set(a, b, ffx_battle::action::bridge::AEON_PLAIN2, flag(rng, 4));
@@ -4666,6 +4666,23 @@ fn battle_frame(
     });
     local_words(a, b);
     same("MsSEP3Dprocess", a, b);
+}
+
+/// [`sep_3d_list`] with its nodes marked in use (`+0`), as the game's
+/// are: `MsSEP3Dregist` takes a free node from the pool, and one still
+/// linked would close the list into a loop (`MsSEP3DFind` then spins).
+fn sep_3d_list_used(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    sep_3d_list(a, b, rng);
+    let mut node = u32::from_le_bytes(
+        b.read(ffx_battle::minor::bridge::SEP_3D.ptr(b).addr, 4)
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    while node != 0 {
+        poke(a, b, node, &[1]);
+        node = u32::from_le_bytes(b.read(node + 0xc, 4).unwrap().try_into().unwrap());
+    }
 }
 
 /// `MsEffectStart`'s callees of other modules (`ffx_battle::effect`):
@@ -4974,7 +4991,7 @@ fn effect_start(
     }
     let all: Vec<u32> = (0..ACTORS).collect();
     for _ in 0..2 {
-        sep_3d_list(a, b, rng);
+        sep_3d_list_used(a, b, rng);
         let i = rng.below(ACTORS);
         let p = w.actor(i);
         let was = threats(b, w, &all);
@@ -4988,7 +5005,7 @@ fn effect_start(
         threatened(a, b, w, &all, &was);
         local_words(a, b);
         same("MsEffectReflect", a, b);
-        sep_3d_list(a, b, rng);
+        sep_3d_list_used(a, b, rng);
         let (x, motion, fl) = (rng.below(3), pick!(rng, &[1, 1, 0, 2]), rng.byte());
         let args = [p, x, motion, u32::from(fl)];
         let was = threats(b, w, &all);
@@ -5002,7 +5019,7 @@ fn effect_start(
         local_words(a, b);
         unplaced_rows(a, b, out);
         same("MsEffectEnd", a, b);
-        sep_3d_list(a, b, rng);
+        sep_3d_list_used(a, b, rng);
         let i = rng.below(ACTORS);
         poke(
             a,
@@ -5038,7 +5055,7 @@ fn effect_start(
         local_words(a, b);
         unplaced_rows(a, b, out);
         same("MsEffectReady", a, b);
-        sep_3d_list(a, b, rng);
+        sep_3d_list_used(a, b, rng);
         let i = rng.below(ACTORS);
         let p = w.actor(i);
         let was = threats(b, w, &all);
@@ -5140,7 +5157,7 @@ fn effect_start(
     );
     let _ = erec;
     reset(a, b, rng);
-    sep_3d_list(a, b, rng);
+    sep_3d_list_used(a, b, rng);
     let was = threats(b, w, &all);
     twin("MsEffectStart", a, b, 0x0078_8480, &[], 0, |m| {
         dm(m, |m| {
@@ -5385,6 +5402,226 @@ fn save_params(
     for (&(at, _), v) in areas.iter().zip(&keep) {
         poke(a, b, at, v);
     }
+    unstub(a, b, &saved);
+}
+
+/// `MsMessageCueProcess`'s windows (system) and the camera move's step
+/// (`0x007bcab0`, not ported here): logging stubs from the fourth slot of
+/// [`START_STUBS2`], installed around [`messages_and_cameras`].
+const FRAME2_CALLEES: [(u32, u8); 10] = {
+    use ffx_battle::battle_end::bridge as be;
+    [
+        (be::TO_BTL_DRAW_STD_CHR_NAME_MESSAGE_WINDOW, 2),
+        (be::TO_BTL_DRAW_FIRST_STRIKE_PLAYER_MESSAGE_WINDOW, 0),
+        (be::TO_BTL_DRAW_FIRST_STRIKE_ENEMY_MESSAGE_WINDOW, 0),
+        (be::TO_BTL_DRAW_GET_ITEM_MESSAGE_WINDOW, 2),
+        (be::TO_BTL_DRAW_CAPTURE_MONSTER_MESSAGE_WINDOW, 2),
+        (be::TO_BTL_DRAW_LEARNING_MESSAGE_WINDOW, 2),
+        (be::TO_BTL_DRAW_GET_LIMIT_TYPE_MESSAGE_WINDOW, 2),
+        (be::TO_BTL_DRAW_GET_MONEY_MESSAGE_WINDOW, 1),
+        (be::TO_BTL_CLOSE_SIMPLE_HELP_MES, 0),
+        (ffx_battle::camera::bridge::CAMERA_MOVE_STEP, 4),
+    ]
+};
+
+/// The battle messages shown one after the other
+/// (`MsMessageCueProcess`) and the script cameras' move reset
+/// (`MsAtelResetMoveCameraID` down to `MsSetCheckChange`), on random
+/// queues and cameras. Its own random stream.
+fn messages_and_cameras(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
+    use ffx_battle::battle_end::bridge as be;
+    use ffx_battle::camera::bridge as cam;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(FRAME2_CALLEES) {
+            if saved.len() < FRAME2_CALLEES.len() {
+                let at = o.rebase(f);
+                saved.push((f, o.read(at, 5).unwrap()));
+            }
+            logging_stub(
+                o,
+                f,
+                START_STUBS2 + 0xc0 + 0x40 * k,
+                rec + EXCHANGE_REC * k,
+                n,
+                0,
+            );
+        }
+    }
+    // the windows: an ID or closed at once (-1), never 0 (the original
+    // opens the same message again for ever)
+    for k in 0..8 {
+        let r = [1u32, 7, u32::MAX, 0x40][rng.below(4) as usize];
+        poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+    let cue = ffx_battle::state::bridge::MESSAGE_CUE.ptr(b).addr;
+    let mut q = vec![0u8; 48];
+    for e in q.chunks_mut(12) {
+        for x in e.iter_mut() {
+            *x = rng.byte();
+        }
+        e[0] = [1, 2, 3, 4, 5, 6, 7, 8, 0, 9][rng.below(10) as usize];
+        e[1] = [0, 3, 10][rng.below(3) as usize];
+        e[2] = [0, 0, 1, 3, 5, 10, 30][rng.below(7) as usize];
+    }
+    poke(a, b, cue, &q);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::MESSAGE_CUE_COUNT,
+        [0u8, 1, 2, 4, 3][rng.below(5) as usize],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::MESSAGE_CUE_START,
+        rng.byte(),
+    );
+    set(
+        a,
+        b,
+        be::MESSAGE_WINDOW,
+        [0i32, 0, 3, -1][rng.below(4) as usize],
+    );
+    set(
+        a,
+        b,
+        be::MESSAGE_TIME,
+        [
+            [0u8, 0],
+            [1, 5],
+            [4, 2],
+            [3, 2],
+            [2, 1],
+            [rng.byte(), rng.byte()],
+        ][rng.below(6) as usize],
+    );
+    set(
+        a,
+        b,
+        be::PAD,
+        [0u8, 0x20, 0x20, rng.byte()][rng.below(4) as usize],
+    );
+    set(
+        a,
+        b,
+        be::PAD_OLD,
+        [0u32, 0x20, rng.next()][rng.below(3) as usize],
+    );
+    sep_3d_list_used(a, b, rng);
+    twin("MsMessageCueProcess", a, b, 0x0079_cdf0, &[], ALL, |m| {
+        be::ms_message_cue_process(m, &stand_in, &mut game_call_o)
+    });
+    same("MsMessageCueProcess", a, b);
+    // three cameras of random floats; slots whose requests are the
+    // script cameras' at times
+    let cams = cam::CAMERAS.ptr(b).addr;
+    let words: Vec<u8> = (0..3 * cam::CAMERA_SIZE / 4)
+        .flat_map(|_| float(rng).to_le_bytes())
+        .collect();
+    poke(a, b, cams, &words);
+    let mut ids = Vec::new();
+    for c in 0..3 {
+        let base = cams + c * cam::CAMERA_SIZE;
+        for o in [0x31, 0x33, 0x31 + 0x61c, 0x33 + 0x61c] {
+            poke(a, b, base + o, &[u8::try_from(rng.below(3)).unwrap()]);
+        }
+        for o in [
+            0xd84,
+            0xd94,
+            0x5bc,
+            0x5cc,
+            0x5dc,
+            0x5bc + 0x61c,
+            0x5cc + 0x61c,
+            0x5dc + 0x61c,
+        ] {
+            let v = u16::from(rng.below(3) == 0);
+            poke(a, b, base + o, &v.to_le_bytes());
+        }
+        for n in 0..4 {
+            let id = c | rng.below(6) << 8 | rng.below(3) << 16;
+            ids.push(id);
+            let mut s = id.to_le_bytes().to_vec();
+            s.extend([
+                u8::from(rng.below(5) == 0),
+                u8::from(rng.below(5) == 0),
+                rng.byte() & 3,
+            ]);
+            poke(
+                a,
+                b,
+                cam::SLOTS_AT.ptr(b).addr + c * cam::CAMERA_SIZE + 8 * n,
+                &s,
+            );
+        }
+    }
+    let pick = |rng: &mut Xorshift| {
+        if rng.below(4) == 0 {
+            rng.next() & 0x03_0502
+        } else {
+            ids[rng.below(u32::try_from(ids.len()).unwrap()) as usize]
+        }
+    };
+    let atel: Vec<u8> = (0..12).flat_map(|_| pick(rng).to_le_bytes()).collect();
+    poke(
+        a,
+        b,
+        ffx_battle::minor::bridge::ATEL_CAMERA.ptr(b).addr,
+        &atel,
+    );
+    let id = pick(rng);
+    let (side, step, mode) = (
+        rng.below(2),
+        rng.below(3),
+        [0, 1, 2, 3][rng.below(4) as usize],
+    );
+    twin(
+        "MsSetCheckChange",
+        a,
+        b,
+        0x007c_0790,
+        &[id, side, step, mode],
+        ALL,
+        |m| cam::ms_set_check_change(m, &mut game_call_o, id, side, step, mode),
+    );
+    same("MsSetCheckChange", a, b);
+    let id = pick(rng);
+    let side = rng.below(4);
+    let p = cams + rng.below(3) * cam::CAMERA_SIZE + 0x80;
+    twin(
+        "MsCameraSetRect",
+        a,
+        b,
+        0x007b_f940,
+        &[id, side, p],
+        ALL,
+        |m| cam::ms_camera_set_rect(m, &mut game_call_o, id, side, p),
+    );
+    same("MsCameraSetRect", a, b);
+    let id = pick(rng);
+    let flags = [0, 1, 8, 9, rng.below(0x10)][rng.below(5) as usize];
+    twin(
+        "MsCameraResetMove",
+        a,
+        b,
+        0x007b_ed60,
+        &[id, flags],
+        ALL,
+        |m| cam::ms_camera_reset_move(m, &mut game_call_o, id, flags),
+    );
+    same("MsCameraResetMove", a, b);
+    let kind = [0, 1, 2, 3, 4, rng.next()][rng.below(6) as usize];
+    twin(
+        "MsAtelResetMoveCameraID",
+        a,
+        b,
+        0x007b_a860,
+        &[kind],
+        ALL,
+        |m| cam::ms_atel_reset_move_camera_id(m, &mut game_call_o, kind),
+    );
+    same("MsAtelResetMoveCameraID", a, b);
     unstub(a, b, &saved);
 }
 
@@ -5894,6 +6131,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     // MsEffectStart's stubs' records and a camera script file
     let effrec = scratch(a, b, (EXCHANGE_REC * 16) as usize);
     let cam = scratch(a, b, 0x40);
+    let mrec = scratch(a, b, (EXCHANGE_REC * 10) as usize);
     let mut r15 = Xorshift(0x15e5_0001 ^ u32::from(synthetic));
     for _ in 0..400 {
         file(a, b, rng, &f);
@@ -5919,6 +6157,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         battle_frame(a, b, rng, &w, out, grec);
         effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
         save_params(a, b, &mut r15, &w, out, effrec, xrec);
+        messages_and_cameras(a, b, &mut r15, mrec);
     }
 }
 

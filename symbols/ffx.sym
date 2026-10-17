@@ -15010,12 +15010,14 @@
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c8f0 label g_BtlVoiceWait           # u32 (MsSetVoiceWait), cleared at each turn start
 0x0112c8f8 label g_BtlCommandHold2          # u32: not 0, MsCheckCommandEnd waits
-0x0112c904 label g_BtlEndFlags             # byte; (b & 0xf0) with 0x0112c908 0 lets the game-over event effect end the battle (state 0x1e); name ours
-0x0112c908 label g_BtlEndEffectWait        # u32 -1 when a game over plays its event effect (state 0x1d); name ours
+0x0112c904 label g_BtlPad                  # u32 the battle's pad buttons this frame (MsBattleProcess 0x00790c10 stores them, & 0xffff); state 0x1e's game-over effect ends on the low byte's high nibble, MsMessageCueProcess closes a message on bit 5 newly pressed; was g_BtlEndFlags
+0x0112c908 label g_BtlPadOld               # u32 g_BtlPad of the frame before (MsBattleProcess copies it); MsBattleProcess_Status state 0x1d sets -1 so a game over's effect waits for a new press; was g_BtlEndEffectWait
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
+0x0112c910 label g_BtlMessageWindow        # i32 the battle message window shown (a TOBtlDraw*MessageWindow result; 0 none, negative closed at once); MsMessageCueProcess
 0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
 0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
+0x0112c946 label g_BtlMessageTime          # u8 frames the shown battle message stays, then u8 the frames after which a button may close it (cue entry +2, +1); MsMessageCueProcess
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c94a label g_BtlLimitLearntId        # u16 the overdrive just learnt
 0x0112c94c label g_BtlEndMusic             # u16 0x8c game over, 0x8a victory fanfare (MsMusicReadStart's caller, MsMusicSync); name ours
