@@ -10621,7 +10621,10 @@ fn round22_dispose_fini_menus_fade_and_chadist_match_the_original() {
         t.alloc(0xc),
     );
     let list: Vec<(Option<u32>, Vec<u8>)> = vec![
-        (Some(abmap::MS_MENU_STATUS_NUM_SIZE), log_stub(log, nv, 240, 0)),
+        (
+            Some(abmap::MS_MENU_STATUS_NUM_SIZE),
+            log_stub(log, nv, 240, 0),
+        ),
         (Some(abmap::MS_MENU_STATUS_NUM), index4_stub(entries)),
         (
             Some(abmap::MS_GET_ROM_PLY_COMMAND),
@@ -10639,7 +10642,13 @@ fn round22_dispose_fini_menus_fade_and_chadist_match_the_original() {
     let o = t.alloc(0x490);
     let pads = t.alloc(0x340 * 6);
     t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
-    let (a, b, p, rect, out) = (t.alloc(8), t.alloc(8), t.alloc(8), t.alloc(0x10), t.alloc(4));
+    let (a, b, p, rect, out) = (
+        t.alloc(8),
+        t.alloc(8),
+        t.alloc(8),
+        t.alloc(0x10),
+        t.alloc(4),
+    );
     let (scene, sys, map) = (t.alloc(0x110), t.alloc(4), t.alloc(0x20));
     for k in 0..200u32 {
         env.reset(&mut t, &mut rng);
@@ -10672,13 +10681,19 @@ fn round22_dispose_fini_menus_fade_and_chadist_match_the_original() {
         // the command menus
         t.fill(entries, 4 * 64, &mut rng);
         for i in 0..64 {
-            t.put(entries + 4 * i, 0x40u8 + u8::try_from(rng.below(6)).unwrap());
+            t.put(
+                entries + 4 * i,
+                0x40u8 + u8::try_from(rng.below(6)).unwrap(),
+            );
         }
         t.put(nv, rng.range(-1, 64).cast_unsigned());
         t.put(exitv, rng.next());
         let pad = 2 + rng.below(4);
         t.fill(pads + 0x340 * pad, 0x340, &mut rng);
-        t.put(pads + 0x340 * pad + 0x1e, i16::try_from(rng.range(-4, 0x42)).unwrap());
+        t.put(
+            pads + 0x340 * pad + 0x1e,
+            i16::try_from(rng.range(-4, 0x42)).unwrap(),
+        );
         let mk = 0x40 + rng.below(6);
         let work = t.stack_scratch(0);
         t.same(
