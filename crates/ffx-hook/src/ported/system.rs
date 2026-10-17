@@ -4466,6 +4466,10 @@ ported! {
     TOBtlSetDefaultCursorPos @ 0x0089_9ac0 => extern "C" fn to_btl_set_default_cursor_pos() {
         tolib::bridge::btl_set_default_cursor_pos(&mut mem());
     }
+    /// `TOBtlSearchRevNearTarget()`: results discarded as compiled.
+    TOBtlSearchRevNearTarget @ 0x0089_90f0 => extern "C" fn to_btl_search_rev_near_target() {
+        tolib::bridge::btl_search_rev_near_target(&mut mem());
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
