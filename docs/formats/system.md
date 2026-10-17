@@ -966,3 +966,14 @@ the quotient as 0.
 `target` alone when `0x0186a391` is 1, else every aeon and then every
 party member its record's `+0x22` bits 0x80 and 0x40 select. Each gets
 `TkMenuItemHealAmount_008c69a0(item, who, 0)` through `TkMenuAddHPCapped`.
+
+`DrawWaterWaveShapeC2(x, y, w, h, u, v, uw, vh, su, sv, c0, c1)`
+(`0x008e7d30`) draws a quad of the water-wave sheet (shape 0x3e81) whose
+texture drifts with `graphicGetTime()`. Each coordinate is
+`frac((time × speed + start) / sheet size)`, with the time read again for
+`v`; every step is rounded to `f32` and the fraction subtracts
+`_ftol2_sse`'s integer. `u1 = u + uw / width` and `v1 = v + vh / height`.
+The colours `c0` (top-left vertex) and `c1` go in byte by byte. The
+`graphicDrawUIElement(record, texture, 1, 0, 0)` record has `+0x90` and
+`+0x94` zeroed; its other unused words are stack leftovers in the
+original.

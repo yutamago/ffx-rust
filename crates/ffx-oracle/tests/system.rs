@@ -16121,3 +16121,107 @@ fn round28_item_heal_matches_the_original_on_the_snapshot() {
     };
     round28_item_heal(&mut a, &mut b, &mut Xorshift(0x4028_0052));
 }
+
+/// `DrawWaterWaveShapeC2` over stand-ins for the clock, the sheet's
+/// texture and size, and a draw call that logs the record's set words.
+#[allow(clippy::cast_precision_loss)] // small test floats
+fn round28_wave(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x200);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, 0xa0);
+    // graphicGetTime: fld qword [cells]; add dword [cells], 0x1000
+    let mut v = vec![0xdd, 0x05];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x81, 0x05]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&0x0000_1000u32.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0, &v);
+    redirect(a, b, 0x0064_1410, s);
+    // TOGetShapTextureName(id): logs, returns id ^ key
+    let s = stand_in8(a, b, 0x80, &logger(cursor, 0x2890_0000));
+    redirect(a, b, 0x008a_c8c0, s);
+    // TOGetImageWH(id, &w, &h): w, h from cells + 8, + 0xc
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x08, 0x89, 0x01, 0xa1]);
+    v.extend_from_slice(&(cells + 0xc).to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x01, 0xc3]);
+    let s = stand_in8(a, b, 0x100, &v);
+    redirect(a, b, 0x008a_c400, s);
+    // graphicDrawUIElement(rec, texture, 1, 0, 0): the record's 0x40 bytes
+    // and +0x90/+0x94, then the other arguments
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    for (k, off) in (0..0x10u8).map(|k| 4 * k).chain([0x90, 0x94]).enumerate() {
+        // mov eax, [edx+off]; mov [ecx+4k], eax
+        v.extend_from_slice(&[0x8b, 0x82]);
+        v.extend_from_slice(&u32::from(off).to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x81]);
+        v.extend_from_slice(&(4 * u32::try_from(k).unwrap()).to_le_bytes());
+    }
+    for (k, off) in [8u8, 0xc, 0x10, 0x14].into_iter().enumerate() {
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, off, 0x89, 0x81]);
+        v.extend_from_slice(&(0x48 + 4 * u32::try_from(k).unwrap()).to_le_bytes());
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x58, 0xb8]);
+    v.extend_from_slice(&0x2891_0000u32.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x180, &v);
+    redirect(a, b, 0x0063_eee0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let float = |rng: &mut Xorshift, range: u32| (rng.next() % range) as f32 / 16.0 - 100.0;
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        let time = f64::from(rng.next() % 100_000) / 60.0;
+        put(a, b, cells, time);
+        let size =
+            |rng: &mut Xorshift| [256.0f32, 300.0, 7.5, 3.0, 1.0, 0.0][(rng.next() % 6) as usize];
+        put(a, b, cells + 8, [size(rng), size(rng)]);
+        let mut args = [0u32; 12];
+        for v in &mut args[..10] {
+            *v = match rng.next() % 4 {
+                0 => (float(rng, 8000) * 3e6).to_bits(),
+                _ => (float(rng, 8000) / 3.0).to_bits(),
+            };
+        }
+        // the record's words the original leaves are its stack's
+        let junk: [u32; 0x28] = std::array::from_fn(|_| rng.next());
+        put(a, b, scratch, junk);
+        args[10] = rng.next();
+        args[11] = rng.next();
+        assert_eq!(
+            eax(a, 0x008e_7d30, &args),
+            t::draw_water_wave_shape_c2(b, args, scratch, call, fcall),
+            "wave {k}"
+        );
+        let v: [u32; 0x28] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("wave {k}"), a, b);
+    }
+}
+
+#[test]
+fn round28_wave_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round28_wave(&mut a, &mut b, &mut Xorshift(0x4028_0061));
+}
+
+#[test]
+fn round28_wave_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round28_wave(&mut a, &mut b, &mut Xorshift(0x4028_0062));
+}

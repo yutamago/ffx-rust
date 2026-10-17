@@ -10235,7 +10235,7 @@
 0x008e7110 function DrawCrossMenuSummonPlateNoHPMPClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100525170 DrawCrossMenuSummonPlateNoHPMPClut's (similarity 0.60: TOGetSaveChrName, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008e75c0 function DrawMesFontLClutTypeRGBA_ForHelp # callees: its named callees match the Switch 0x710050fcc0 DrawMesFontLClutTypeRGBA_ForHelp's (similarity 0.82: TOAddFontWidthSpace, TOAddPktChangeMacro_help, TODrawScaleButtonIconRGBA, TOGetFontInfo, TOGetGroup); symbols from Fahrenheit's server export
 0x008e7a90 function DrawScaleButtonIconRGBA   # fh v3:exact 0x008e7a90
-0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl
+0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl; (x, y, w, h, u, v, uw, vh, su, sv, c0, c1) -> eax of graphicDrawUIElement: shape 0x3e81 quad, u/v = frac((graphicGetTime()*speed + start) / sheet size) as f32, u1/v1 add uw/w, vh/h; colours c0/c1 bytes; record +0x90/+0x94 zeroed; ported (system round 28)
 0x008e7ed0 function GetLocationText           # fh switch:bsim1.00 0x710050f050
 0x008e7ef0 function GetLocationWH                # layout+callees: sorts between GetLocationText and OpenFontScissor, and its named callees match the Switch 0x710050f080 GetLocationWH's (similarity 0.67: AtelGetSaveDicName, MsGetSaveConfigEnglish); symbols from Fahrenheit's server export
 0x008e8940 function OpenFontScissor           # (x0, y0, x1, y1 floats): g_TkMenuScissorOn = 1, XYUV mode 1, the box; fh v3:bsim1.00 0x008e8940

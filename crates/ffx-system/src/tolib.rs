@@ -11001,4 +11001,73 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `DrawWaterWaveShapeC2(x, y, w, h, u, v, uw, vh, su, sv, c0, c1)`
+    /// (`0x008e7d30`): a quad of the water-wave sheet (shape 0x3e81,
+    /// `TOGetShapTextureName`, size from `TOGetImageWH`) whose texture
+    /// scrolls with time: `u = frac((graphicGetTime() × su + u) / sheet
+    /// width)` and `v` the same with `sv`, `v` and the height (the time
+    /// read twice, through `fcall`), then `u1 = u + uw / width`, `v1 = v +
+    /// vh / height`. Each step is rounded to `f32` where the original
+    /// stores; the fraction subtracts `_ftol2_sse`'s integer as an `f32`.
+    /// The record (`x, y, u, v`, the bytes of `c0`; `x + w, y + h, u1, v1`,
+    /// the bytes of `c1`; `+0x90`, `+0x94` 0) goes to
+    /// `graphicDrawUIElement(record, texture, 1, 0, 0)`.
+    ///
+    /// `scratch` (0xa0 bytes) stands for the original's frame: the sheet
+    /// size at `+0`, the record at `+8`; the record's other words are
+    /// left as they are (stack garbage in the original). Returns what the
+    /// draw call leaves in `eax`.
+    #[allow(clippy::many_single_char_names)] // x, y, w, h, u, v: the quad
+    pub fn draw_water_wave_shape_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 12],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, round_trip, store, sub};
+        const SHAPE: u32 = 0x3e81;
+        let [x, y, w, h, u, v, uw, vh, su, sv, c0, c1] = args;
+        let rec = scratch.wrapping_add(8);
+        let field = |off: u32| rec.wrapping_add(off);
+        mem.write(field(0x90), 0u32);
+        mem.write(field(0x94), 0u32);
+        let texture = call(mem, 0x008a_c8c0, &[SHAPE]);
+        call(mem, 0x008a_c400, &[SHAPE, scratch, scratch.wrapping_add(4)]);
+        let sheet_w: u32 = mem.read(scratch);
+        let sheet_h: u32 = mem.read(scratch.wrapping_add(4));
+        mem.write(field(0), round_trip(f32::from_bits(x)));
+        mem.write(field(4), round_trip(f32::from_bits(y)));
+        mem.write(field(0x20), store(add(load(x), load(w))));
+        mem.write(field(0x24), store(add(load(y), load(h))));
+        // the scrolled coordinate's fraction of the sheet
+        let mut scroll = |mem: &mut M, start: u32, speed: u32, size: u32| -> u32 {
+            let t = fcall(mem, 0x0064_1410, &[]);
+            let s = store(add(mul(t, load(speed)), load(start)));
+            let s = load(store(div(load(s), load(size))));
+            let whole = ftol(mem, s).cast_signed();
+            #[allow(clippy::cast_precision_loss)] // fild then fstp dword
+            let whole = f64::from(whole as f32);
+            store(sub(s, whole))
+        };
+        let fu = scroll(mem, u, su, sheet_w);
+        let fv = scroll(mem, v, sv, sheet_h);
+        mem.write(field(8), fu);
+        mem.write(field(0xc), fv);
+        mem.write(
+            field(0x28),
+            store(add(load(fu), div(load(uw), load(sheet_w)))),
+        );
+        mem.write(
+            field(0x2c),
+            store(add(load(fv), div(load(vh), load(sheet_h)))),
+        );
+        for (base, c) in [(0x10u32, c0), (0x30, c1)] {
+            for (k, b) in (0u32..).zip(c.to_le_bytes()) {
+                mem.write(field(base + 4 * k), u32::from(b));
+            }
+        }
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0])
+    }
 }

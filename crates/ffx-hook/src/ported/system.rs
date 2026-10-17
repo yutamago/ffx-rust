@@ -6078,6 +6078,19 @@ ported! {
         std::hint::black_box(&mut strings);
         r
     }
+    /// `DrawWaterWaveShapeC2(x, y, w, h, u, v, uw, vh, su, sv, c0, c1)`.
+    DrawWaterWaveShapeC2 @ 0x008e_7d30 => extern "C" fn draw_water_wave_shape_c2(
+        x: u32, y: u32, w: u32, h: u32, u: u32, v: u32, uw: u32, vh: u32, su: u32, sv: u32, c0: u32, c1: u32
+    ) -> u32 {
+        let mut frame = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = frame.as_mut_ptr() as u32;
+        let r = tolib::bridge::draw_water_wave_shape_c2(
+            &mut mem(), [x, y, w, h, u, v, uw, vh, su, sv, c0, c1], at, call_sym, fcall,
+        );
+        std::hint::black_box(&mut frame);
+        r
+    }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32
