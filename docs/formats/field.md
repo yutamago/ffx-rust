@@ -922,6 +922,123 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - `KeThCp_AddBp` (`0x007644d0`): a beam block taken off its pool's free
   list, set up (`KeThBP_Init`) and pushed onto the lens's list.
 
+## Sphere grid items, node shapes and fog (round 19)
+
+- `AbmapItemUsableAt` (`0x00a49310`): 0 unless the item is held
+  (`MsGetSaveItemNum`); else the ability bits it grants a character. The
+  item's record (`MsGetRomItem`, byte `+0x5d`) picks an item excel row
+  (`0x01a860e4`); a row whose byte `+0xc` is `' '` covers every node
+  (`AbmapForEachNode`), else the node and the nodes linked to it
+  (`AbmapForNodeAndLinked`). The context on the stack is the row, the
+  character, `1 << chr`, the result and (apply only) a mark byte.
+- `AbmapItemNodeEffect` (`0x00a49440`), its callback: the node's excel
+  row (`0x01a860e0`, by its id `+6`). A special item kind (row `+0xd`)
+  asks `0x00a5d120(kind, node index, row, chr)`; else the item's ability
+  bits (`+0xa`) present in the node row, unless the node is activated for
+  the character (`+0x21`) or hidden (bit 15 of the row's `+0x10`).
+- `AbmapItemApplyAt` (`0x00a5b400`) and its callback
+  `AbmapItemApplyNode` (`0x00a5b490`): the same walk without the held
+  check; a node with an effect gets the mark ORed into `+0x22`.
+- `AbmapSetupKindShapes` (`0x00a5b230`): the 130 node kinds (0x30 bytes
+  from the grid's `+0xf828`): two shape records picked by the row's
+  `+0x16` (`0x01a85f98`, `0x01a85fe8`), a size from the first one's box
+  over 16, a size class shape (`0x0230578c`/`90`/`94`: under 24, under
+  32, else), scale `size * 7.8125e-5` and for visible kinds seven circle
+  points of radius `size / 2 + 3`. Every shape table entry is read.
+- Fog: the colour is four bytes at `0x018df140`, the limit, near and far
+  `f32`s at `0x018df144`/`48`/`4c`, the distances in units of `scale
+  factor * 0x00b501a0 * 0x00b412f8` (both `f64`).
+  `yiSetFogColor` (`0x0090a2c0`) and `yiSetFogParam` (`0x0090a350`) store
+  them; `yiGetFogParam` (`0x00908bb0`) reads them back (far first). On map
+  0xe0 only, the PC renderer's fog is used: the setters also call
+  `graphicSetFogColour` (`r, g, b / 255`), `graphicSetFogNear`/`Far`
+  (times `0x00b47c68`), `graphicSetFogLimit` (`(1 - limit / 255) *
+  0x00b48318`) and `0x00643180(1.0)`; the getter returns
+  `graphicGetFogNear`/`Far` and `graphicGetFogLimit * 255`.
+- `yiSetBackColor` (`0x0090a040`): four bytes at `0x018df178`; unless the
+  current magic (`MagicFile_GetMagicId`) is 0x2c2 also
+  `graphicSetBackgroundColour(r, g, b / 255, a * 0x00b170b8)`.
+- `yiDisableHamonEff` (`0x00908450`): clears render status bit 24 and the
+  distortion word `0x018ded28`, `graphicSetDistortionEnable(0)`.
+- Not ported this round: `yiGetFogColor` (`0x00908980`, the clamped
+  colour scale and offset, kept on the x87 stack in a different order
+  from `yiGetBackColor`'s; next).
+
+## Fog colour and the sphere grid's pads (round 20)
+
+- `yiGetFogColor` (`0x00908980`): with render status bit 2 the fog colour
+  bytes go through the colour scale and offset, clamped to 0..=255.0 and
+  converted (`_ftol2_sse`), as in `yiGetBackColor`; else the raw bytes.
+  Either way the first three are then replaced by the PC renderer's
+  colour times 255.0, read from `graphicGetGlobalAmbientColor` (bit 2) or
+  `graphicGetFogColor`; each product stays on the x87 stack. The x87
+  stack juggling of the clamps does not change the values (all are
+  `f32`-exact). Returns the last conversion.
+- `AbmapPadStartSlideOut`/`In` (`0x00a48c20`/`0x00a48f20`) install the
+  pad steps `AbmapPadSlideOutStep`/`InStep` (`0x00a59800`/`0x00a5a270`) at
+  `+0x34`: three frames moving `+0xa` from `+2` by `n h / 3 + h / 6` (`h`
+  at `+6`) and setting the shown flag `+0x23`.
+- `AbmapRectTweenIn`/`Out` (`0x00a5a080`/`0x00a5a170`): a rectangle at
+  `+8` tweened between `+0` and `+0x2a` over four frames (counter `+0x32`,
+  16.16 steps of a quarter), its cells `(y + 15) / 16` and `(h + 15) / 20`
+  at `+0x14`.
+- `AbmapMaskNodeFlags` (`0x00a47400`): a mask ANDed into every node's
+  `+0x22`.
+- `AbmapMarkEmptyMenus` (`0x00a5aca0`): marks the first menu entry when
+  the character has no sphere points and the second when the item list is
+  empty. It calls `TOAmapGetItemListMax` through the jump at
+  `0x008c6700`.
+- Not ported: `0x0092eba0` (stores five arguments in `0x025d5c18..2c`
+  and sets `0x025d5c34`, which `0x009304e0` waits on; no name yet).
+  `0x0083bdb0` is a `Sg_Mem` pool helper (system). The `Sqs*` functions
+  stay with the sound agent.
+
+## Effect requests, finalisers and the sphere grid's menus (round 21)
+
+- `rcefPostRequest` (`0x0092eba0`, name ours; an exported effect import,
+  `g_MagicImports` at `0x00c65494`): stores `a, f, b, 0, c, d` at
+  `0x025d5c18` (`f` a float copied through the x87 stack, so a signalling
+  NaN turns quiet) and sets `0x025d5c34`. Returns `d`. Nothing in the PC
+  build reads the request or clears the flag;
+  `rcEffectTaskRequestWait` (`0x009304e0`) is the sequence that waits for
+  the flag to be 0.
+- `rcefAnimeFini` (`0x0092f4a0`): `graphicVFXDestroy` of the handle
+  `id << 32`. `rcefModelFini` (`0x0092f710`): the handle
+  `(id << 32) + g_pppCurrentProgram` (sign-extended), destroyed when
+  `graphicVFXGetRenderDataByInstance` finds it. Both return the last
+  call's `eax`.
+- `yiAnimDetachAll` (`0x009149a0`, name ours): `yiAnimDetach` without the
+  kind test; `yiDisposeAnimDObj` uses it for a negative kind.
+- `Yn_DrawScene` (`0x0091a240`, name ours) jumps through `0x00921a10` and
+  `0x009215e0` to `rcbgSceneDraw(map +8)` when Yn's state and its map
+  exist; otherwise `eax` is left as it was (the state pointer when only
+  the map is missing). Its one caller ignores `eax`, so the shim is void.
+- `AbmapItemEffectAtNode` (`0x00a493b0`, name ours, from
+  `AbmapTryUseItem`): `AbmapItemUsableAt` for a single node index, same
+  context layout (`+0x10` stays uninitialised).
+- `AbmapEnterCommandMenu` (`0x00a59950`) and `AbmapEnterItemMenu`
+  (`0x00a598a0`), names ours, hand over between the two menu pads. Each
+  pad is `0x340` bytes, so `+0x16e3` is pad 7's `+0x23` and `+0x1a23` is
+  pad 8's. Entering shows the pad (`+0x23` 1, `+0x24` 3, `+0x25` 1),
+  stores the pad number at `+0x2700` and the handler at `+0x2704`
+  (`0x00a56330` for the command menu, `0x00a560d0` for the item menu).
+  The command menu runs `AbmapMarkEmptyMenus` first and sets bit 3 of
+  `+0x24`. The item menu marks the items `AbmapItemUsableAt` rejects at
+  the current character's node.
+- Not ported:
+  - `0x00916130` (`yiRender`'s 72 CLUTs of 256 entries, from
+    `0x00908400`) rebuilds byte 1 of each entry from an uninitialised
+    local (`[ebp-0x14]`), so its result depends on stale stack contents.
+  - `0x00911620` is VIF unpack emulation (render, replaced by
+    ffx-render).
+  - `0x006e9920`, `0x006e9ae0`, `0x006ea140`, `0x006eab10` and
+    `0x006eb1a0` are `std::map` and dlmalloc copies, and `0x0064e9e0` is
+    a reference-count release: platform code that classes.tsv still has
+    as logic.
+  - `0x0067c170`/`0x0067c210`/`0x0067c2d0` are `MenuManager` vertex and
+    material set-up for PhyreEngine (glue).
+  - The `0x0081xxxx` functions are the sound sequencer's (sound agent).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

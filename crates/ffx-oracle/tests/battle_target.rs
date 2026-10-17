@@ -1142,6 +1142,393 @@ fn near(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32)
     same("MsCheckChrNear", a, b);
 }
 
+/// Where the exchange chain's other-module callees go as logging stubs
+/// (`chr_texanim_set_old`, unused in battle), and their records.
+const EXCHANGE_STUBS: u32 = 0x0078_03f0;
+const EXCHANGE_REC: u32 = 0xd0;
+
+/// The exchange chain's callees of chara, vfx, sound and unported battle
+/// code (`ffx_battle::exchange`) with their argument counts.
+const EXCHANGE_CALLEES: [(u32, u8); 12] = {
+    use ffx_battle::exchange::bridge as x;
+    [
+        (x::CH_DATA_READ, 1),
+        (x::CH_DATA_READ_SYNC, 1),
+        (x::CHN_READ_SYSTEM_MGRP, 2),
+        (x::CH_MGRP_READ, 2),
+        (x::CHN_READ_SYSTEM_MGRP_SYNC, 2),
+        (x::MS_BTL_READ_PLAYER_MODEL_PROCESS, 1),
+        (x::MS_BTL_READ_PLAYER_PROCESS, 2),
+        (x::MS_BTL_READ_MONSTER_PROCESS, 2),
+        (x::MS_CD_READ_WEAPON, 3),
+        (x::MS_BTL_WEAPON_REGIST, 3),
+        (x::OP_ET_WEAPON_FREE, 1),
+        (ffx_battle::exec::bridge::SND_SEP_CLEAR, 1),
+    ]
+};
+
+/// Copies the VU registers from `a` (a path through the originals' stack
+/// garbage) and `len` bytes at `at`.
+fn copy_garbage(a: &mut Oracle, b: &mut Oracle, at: u32, len: usize) {
+    let vu = ffx_battle::vector::bridge::VU_Q.ptr(a).addr & !0xf;
+    let end = ffx_battle::vector::bridge::VF_OUT.ptr(a).addr + 0x10;
+    let v = a.read(vu, (end - vu) as usize).unwrap();
+    b.write(vu, &v).unwrap();
+    let v = a.read(at, len).unwrap();
+    b.write(at, &v).unwrap();
+}
+
+/// A random read queue the manager can finish (no kind 1 to start, no
+/// kind above 3, no state above 2: those spin in the original).
+fn read_queue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
+    use ffx_battle::misc::bridge as mi;
+    let mut q = vec![0u8; 32 * 12];
+    for e in q.chunks_mut(12) {
+        for x in e.iter_mut() {
+            *x = rng.byte();
+        }
+        let kind = [0, 2, 3, 1][rng.below(4) as usize];
+        e[0] = kind;
+        e[1] = u8::try_from(rng.below(ACTORS)).unwrap();
+        e[2] = u8::try_from(if kind == 1 {
+            1 + rng.below(2)
+        } else {
+            rng.below(3)
+        })
+        .unwrap();
+        e[3] = u8::try_from(rng.below(12)).unwrap();
+        e[4] = u8::try_from(rng.below(ACTORS)).unwrap();
+        if rng.below(4) == 0 {
+            e[6..8].copy_from_slice(&[0, 0]);
+        }
+    }
+    poke(a, b, mi::READ_CUE.ptr(b).addr, &q);
+    set(
+        a,
+        b,
+        mi::READ_CUE_INDEX,
+        u8::try_from(rng.below(32)).unwrap(),
+    );
+    let n = [rng.below(4), rng.below(0x21), 0x20, 0][rng.below(4) as usize];
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::READ_CUE_LEVEL,
+        u8::try_from(n).unwrap(),
+    );
+    // the loads finished or not, the weapon read done or not
+    for k in [1, 4, 8] {
+        let r = u32::from(rng.below(3) == 0);
+        poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+}
+
+/// `MsCalcChrDir`'s `MsVectorRect2Polar` leaves the address of its
+/// local in `VF_M.z` (`+8`): copied from `a`.
+fn rect_words(a: &mut Oracle, b: &mut Oracle) {
+    let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+    let w = a.read(m + 8, 4).unwrap();
+    b.write(m + 8, &w).unwrap();
+}
+
+/// Whether every able (`+0xdc8`) actor's and every monster's battle
+/// position is written (`MsCalcChrDir`'s centres and turning monsters).
+fn placed(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32) -> bool {
+    (0..ACTORS).all(|k| {
+        (k < 0x14 && b.read(w.actor(k) + 0xdc8, 1).unwrap()[0] == 0)
+            || writes(a, b, 0x0079_48e0, k, out + 0x40)
+    })
+}
+
+/// Party members and aeons coming and going (`ffx_battle::exchange`).
+fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::exchange::bridge as x;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    cues(a, b, rng, w);
+    for k in 0..ACTORS {
+        let p = w.actor(k);
+        poke(a, b, p + 0x43f, &[0xff]);
+        poke(a, b, p + 0x13, &[0xff]);
+        poke(a, b, p + 0xf7c, &[0; 4]);
+        let t = |rng: &mut Xorshift| {
+            if rng.below(2) == 0 {
+                0xff
+            } else {
+                u8::try_from(rng.below(ACTORS)).unwrap()
+            }
+        };
+        let (t5, t6) = (t(rng), t(rng));
+        poke(a, b, p + 0x5c5, &[t5, t6]);
+        let flags = u16::from_le_bytes(b.read(p + 0x606, 2).unwrap().try_into().unwrap());
+        let threat = if rng.below(3) == 0 { 0x800 } else { 0 };
+        poke(a, b, p + 0x606, &(flags & !0x800 | threat).to_le_bytes());
+        for o in [0x10, 0x35, 0xdcd, 0xdcc, 0x512, 0xdc8, 0xdca, 0x11] {
+            poke(a, b, p + o, &[u8::from(rng.below(3) != 0)]);
+        }
+        poke(a, b, p + 0x511, &[u8::try_from(rng.below(3)).unwrap()]);
+        // free to play a motion (MsCheckSetMotion, MsThreatEndMotion)
+        if rng.below(3) == 0 {
+            for o in [0x508, 0x608, 0x432, 0xdcc] {
+                poke(a, b, p + o, &[0]);
+            }
+            let f = b.read(p + 0x606, 1).unwrap()[0] & !4;
+            poke(a, b, p + 0x606, &[f]);
+            let f = b.read(p + 0x617, 1).unwrap()[0] & !1;
+            poke(a, b, p + 0x617, &[f]);
+        }
+        let e = if rng.below(3) == 0 { 0 } else { rng.next() };
+        poke(a, b, p + 0x4c, &e.to_le_bytes());
+        for o in [0x592, 0x593] {
+            let id =
+                [0xff, rng.byte(), u8::try_from(rng.below(0x20)).unwrap()][rng.below(3) as usize];
+            poke(a, b, p + o, &[id]);
+        }
+    }
+    read_queue(a, b, rng, rec);
+    // the leaves
+    let id = [0xff, rng.below(0x100), rng.below(0x20)][rng.below(3) as usize];
+    twin("MsGetSaveWeaponModel", a, b, 0x007a_bdc0, &[id], ALL, |m| {
+        x::ms_get_save_weapon_model(m, id)
+    });
+    let list = x::BOUND_WEAPONS.ptr(b).addr;
+    let id = if rng.below(2) == 0 {
+        let k = rng.below(4);
+        u32::from(u16::from_le_bytes(
+            b.read(list + 2 * k, 2).unwrap().try_into().unwrap(),
+        ))
+    } else {
+        rng.below(0x10000)
+    };
+    twin("MsCheckBoundWeapon", a, b, 0x007a_d130, &[id], ALL, |m| {
+        x::ms_check_bound_weapon(m, id)
+    });
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    twin("MsEffectWeaponFree", a, b, 0x0078_8b30, &[i], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            x::ms_effect_weapon_free(m, &mut s, i);
+            0
+        })
+    });
+    same("MsEffectWeaponFree", a, b);
+    twin(
+        "MsThreatEndMotion",
+        a,
+        b,
+        0x0078_f6a0,
+        &[i, actor],
+        0,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                x::ms_threat_end_motion(m, &mut s, i, actor);
+                0
+            })
+        },
+    );
+    same("MsThreatEndMotion", a, b);
+    // the threat, its first yaw from the original's garbage
+    let threat = b.read(actor + 0x607, 1).unwrap()[0] & 8 != 0;
+    let t = u32::from(b.read(actor + 0x5c5, 1).unwrap()[0]);
+    let ok = writes(a, b, 0x0079_48e0, i, out + 0x40)
+        && (t == 0xff || writes(a, b, 0x0079_48e0, t, out + 0x40));
+    if !threat || ok {
+        twin(
+            "MsThreatProcess",
+            a,
+            b,
+            0x0078_e460,
+            &[i, actor],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    x::ms_threat_process(m, &h, &mut s, i, actor)
+                })
+            },
+        );
+        if threat {
+            copy_garbage(a, b, actor + 0x51c, 4);
+        }
+        same("MsThreatProcess", a, b);
+    }
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    twin("MsThreatOff", a, b, 0x0078_e410, &[i, actor], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            x::ms_threat_off(m, &h, &mut s, i, actor);
+            0
+        })
+    });
+    same("MsThreatOff", a, b);
+    // the read queue
+    twin("MsBtlReadCueManage", a, b, 0x007a_d190, &[], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            x::ms_btl_read_cue_manage(m, &mut s);
+            0
+        })
+    });
+    same("MsBtlReadCueManage", a, b);
+    read_queue(a, b, rng, rec);
+    // (a kind 1 entry spins in the original until something else starts
+    // it: no caller queues one)
+    let args = [
+        [0, 2, 3][rng.below(3) as usize],
+        rng.below(ACTORS),
+        rng.below(ACTORS),
+        rng.below(0x10000),
+        rng.below(12),
+    ];
+    twin("MsBtlReadCueRegist", a, b, 0x007a_d3f0, &args, 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            x::ms_btl_read_cue_regist(m, &mut s, args[0], args[1], args[2], args[3], args[4]);
+            0
+        })
+    });
+    same("MsBtlReadCueRegist", a, b);
+    read_queue(a, b, rng, rec);
+    let which = rng.below(4);
+    twin(
+        "MsBtlReadCueRegistWeapon",
+        a,
+        b,
+        0x007a_d470,
+        &[i, which],
+        0,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                x::ms_btl_read_cue_regist_weapon(m, &mut s, i, which);
+                0
+            })
+        },
+    );
+    same("MsBtlReadCueRegistWeapon", a, b);
+    // the directions (positions the originals write only)
+    if placed(a, b, w, out) {
+        set(a, b, x::CENTER_SCALE, float(rng));
+        let i = rng.below(ACTORS);
+        if writes(a, b, 0x0079_48e0, i, out + 0x40) {
+            ftwin("MsCalcChrDir", a, b, 0x0079_3ba0, &[i, w.actor(i)], |m| {
+                dm(m, |m| x::ms_calc_chr_dir(m, &h, i, Some(HARNESS)))
+            });
+            local_words(a, b);
+            rect_words(a, b);
+            same("MsCalcChrDir", a, b);
+        }
+        // a monster that turns
+        let m = w.actor(0x14 + rng.below(8));
+        poke(a, b, m + 0x10, &[1]);
+        for o in [0xdcd, 0xdcc, 0x512] {
+            poke(a, b, m + o, &[0]);
+        }
+        poke(a, b, m + 0xdc8 + 2 * rng.below(2), &[1]);
+        let free = [0, 1, 0xff][rng.below(3) as usize];
+        set(a, b, ffx_battle::minor::bridge::DIR_FREE, free);
+        twin("MsChangeMonsterDir", a, b, 0x0079_3cf0, &[], 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                x::ms_change_monster_dir(m, &h, &mut s);
+                0
+            })
+        });
+        local_words(a, b);
+        rect_words(a, b);
+        same("MsChangeMonsterDir", a, b);
+    }
+    // the exchanges (no threats: MsThreatOff's own release only)
+    read_queue(a, b, rng, rec);
+    cues(a, b, rng, w);
+    let party: Vec<u8> = (0..7)
+        .map(|_| [0xff, u8::try_from(rng.below(0x12)).unwrap()][rng.below(2) as usize])
+        .collect();
+    poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+    let reserve: Vec<u8> = (0..0x11)
+        .map(|_| [0xff, u8::try_from(rng.below(0x12)).unwrap()][rng.below(2) as usize])
+        .collect();
+    poke(
+        a,
+        b,
+        ffx_battle::flow::bridge::PARTY_EXTRA.ptr(b).addr,
+        &reserve,
+    );
+    let who =
+        |rng: &mut Xorshift| [0xff, rng.below(0x12), rng.below(ACTORS)][rng.below(3) as usize];
+    let (o, n) = (who(rng), who(rng));
+    let mode = rng.range(-1, 2);
+    let after = rng.below(ACTORS + 2);
+    twin(
+        "MsExchangeChr",
+        a,
+        b,
+        0x007a_dae0,
+        &[o, n, mode.cast_unsigned(), after],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                x::ms_exchange_chr(m, &h, &mut s, o, n, mode, after)
+            })
+        },
+    );
+    local_words(a, b);
+    same("MsExchangeChr", a, b);
+    read_queue(a, b, rng, rec);
+    // no input or command entries: deleting the random ones writes through
+    // their random bytes (into the positions MsCalcChrDir needs)
+    set(a, b, ffx_battle::state::bridge::INPUT_CUE_COUNT, 0);
+    set(a, b, ffx_battle::state::bridge::COMMAND_CUE_COUNT, 0);
+    // (the monsters turn towards the party: every able actor placed, the
+    // aeons coming too)
+    let inn = rng.below(8);
+    let summon = 8 + rng.below(10);
+    if !placed(a, b, w, out)
+        || ![
+            summon, 0xf, 0x10, 0x11, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+        ]
+        .into_iter()
+        .all(|k| writes(a, b, 0x0079_48e0, k, out + 0x40))
+    {
+        return;
+    }
+    set(a, b, x::CENTER_SCALE, float(rng));
+    twin(
+        "MsExchangeSummon",
+        a,
+        b,
+        0x007a_df90,
+        &[inn, summon],
+        0,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                x::ms_exchange_summon(m, &h, &mut s, inn, summon);
+                0
+            })
+        },
+    );
+    local_words(a, b);
+    rect_words(a, b);
+    same("MsExchangeSummon", a, b);
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     patch(a);
     patch(b);
@@ -1219,6 +1606,19 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             .collect()
     };
     LIVE_CHRS.with(|c| *c.borrow_mut() = live);
+    let xrec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(EXCHANGE_CALLEES) {
+            logging_stub(
+                o,
+                f,
+                EXCHANGE_STUBS + 0x40 * k,
+                xrec + EXCHANGE_REC * k,
+                n,
+                0,
+            );
+        }
+    }
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -1227,6 +1627,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         near(a, b, rng, &w, out);
         status(a, b, rng, &w, out);
         actions(a, b, rng, &w, out);
+        exchange(a, b, rng, &w, out, xrec);
     }
 }
 

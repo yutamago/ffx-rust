@@ -26,7 +26,8 @@ pub fn cursor_at(shot: &Image, y: usize) -> f32 {
     shot.mean(476, y - 12, 50, 24).iter().sum()
 }
 
-/// Polls every `step` frames, at most `tries` times, until `screen` shows.
+/// Polls every `step` frames until `screen` shows: at least `tries` times
+/// and [`crate::MIN_WAIT`] of real time.
 ///
 /// # Errors
 /// Fails when it does not.
@@ -36,14 +37,17 @@ pub fn wait_for(
     step: u32,
     tries: u32,
 ) -> Result<Image> {
-    for _ in 0..tries {
+    let mut deadline = crate::Deadline::new(game, step * tries)?;
+    loop {
         let shot = game.screenshot()?;
         if screen(&shot) {
             return Ok(shot);
         }
+        if deadline.passed(game, "a screen")? {
+            return Err(Error::Harness("the screen did not appear".into()));
+        }
         game.wait(step)?;
     }
-    Err(Error::Harness("the screen did not appear".into()))
 }
 
 /// From boot to the title menu: waits for the opening (the title event
@@ -132,6 +136,63 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
     game.wait_for_open(".ebp", 30, 1200)
 }
 
+/// From boot into the game from a save file, without the title menu: once
+/// the title scene is set up, the `loadsave` harness command runs what the
+/// Load menu runs once a save is picked (`docs/formats/save.md`). `save` is
+/// a slot (the file `ffx_<slot>` of the sandbox saves, `Options::home`) or a
+/// Windows path to a save file, which is only read. Returns the event
+/// script the save starts in.
+///
+/// The boot runs the title event (`test20.ebp`, map `0x17`, on `titl00`)
+/// twice: its first set-up jumps to `memochek` (map `0x15c`, on `titl02`:
+/// the logos and the opening), which comes back to the title proper (map
+/// `0x17`, previous map `0x15c`), where the menus run. A load sent during
+/// the first visit is undone or overtaken (the pending boot jump,
+/// `g_TkEventJumpRequest` `0x0133084c`, enters the title map, the title
+/// script's set-up starts a new game's state and jumps to `memochek`); one
+/// sent from `memochek` crashed the game. So, like [`to_title`], this taps
+/// Start until the title proper runs (read from `g_SaveData`, no
+/// screenshots), waits 30 frames for the title script's set-up, and loads
+/// there, where the Load menu would.
+///
+/// # Errors
+/// Fails when the save does not load or its event does not open.
+pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
+    if !game.opened().iter().any(|e| e.contains("memochek.ebp")) {
+        game.wait_for_open("memochek.ebp", 2, 3000)?;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    // map 0x17, previous map 0x15c, no jump pending
+    while game.read(0x0112_ca90, 4)? != [0x17, 0, 0x5c, 1] || game.read(0x0133_084c, 4)? != [0; 4] {
+        if std::time::Instant::now() > deadline {
+            return Err(Error::Harness("the title scene did not come back".into()));
+        }
+        game.command("press start 3 20")?;
+    }
+    game.wait(30)?;
+    // The title's own files (test20.ebp again) must not count as the save's.
+    game.events()?;
+    let mut tries = 0;
+    let reply = loop {
+        match game.command(&format!("loadsave {save}")) {
+            Ok(r) => break r,
+            // The save data manager is made a little after the first event.
+            Err(Error::Harness(e)) if e.contains("no save data manager") && tries < 100 => {
+                tries += 1;
+                game.wait(5)?;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    let opened = game.wait_for_open(".ebp", 5, 1200)?;
+    if opened.contains("test20.ebp") {
+        return Err(Error::Harness(format!(
+            "loadsave {save} ({reply}): the title event opened again"
+        )));
+    }
+    Ok(opened)
+}
+
 /// Starts a battle from the field, the way a random encounter does
 /// (`MsBattleEncountExe`, `0x00780d10`): the battle field (an index into the field
 /// table at `*0x0112a9c8`, 14 bytes an entry with the map name at +6), the
@@ -140,19 +201,64 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 /// flag `0x0112a8e2` is raised. `MsBattleProcess` (`0x00790c10`) then loads
 /// the battle on the next frame. Waits until the formation's file opens.
 ///
+/// A request made while the field is still loading is dropped: the flag
+/// goes back to 0 and no battle starts. `MsBattleExeClear` (`0x00781530`)
+/// clears it unless `g_BtlExeKeep`; `AtelEventSetUp` (`0x00872ef0`) calls
+/// it, and `AtelUpdateBattleStatus` (`0x00871bc0`) every frame while the
+/// event's control work has bit 2 at `+0x210`. `load` returns when the
+/// event script opens, and the field's models, sounds and textures load
+/// after it on the asset loader's thread, in real time; with games side by
+/// side that takes more frames than the replays wait, and every request
+/// came too early (all three games, 610 frames: no battle). So while no
+/// battle file has opened, the flag is down and no battle is under way
+/// (phase `0x0112a8e0` still 0), the request is made again, every 30
+/// frames.
+///
 /// # Errors
 /// Fails when the battle does not load.
 pub fn start_battle(game: &mut Game, field: u16, group: u8, formation: u8) -> Result<String> {
+    const NEEDLE: &str = "battle/btl/";
     game.events()?;
-    game.command(&format!(
-        "write 0x112c256 {:02x}{:02x}",
-        field & 0xff,
-        field >> 8
-    ))?;
-    game.command(&format!("write 0x112c258 {group:02x}{formation:02x}"))?;
-    game.command("call 0x780ff0 1")?;
-    game.command("write 0x112a8e2 01")?;
-    game.wait_for_open("battle/btl/", 10, 600)
+    let request = |game: &mut Game| -> Result<()> {
+        game.command(&format!(
+            "write 0x112c256 {:02x}{:02x}",
+            field & 0xff,
+            field >> 8
+        ))?;
+        game.command(&format!("write 0x112c258 {group:02x}{formation:02x}"))?;
+        game.command("call 0x780ff0 1")?;
+        game.command("write 0x112a8e2 01").map(drop)
+    };
+    request(game)?;
+    let mut deadline = crate::Deadline::new(game, 600)?;
+    let (mut again, mut polls) = (0u32, 0u32);
+    loop {
+        if let Some(e) = game.events()?.into_iter().find(|e| e.contains(NEEDLE)) {
+            if again > 0 {
+                eprintln!("start_battle: the request was made {} times", again + 1);
+            }
+            return Ok(e);
+        }
+        if deadline.passed(game, "the battle's file")? {
+            let state = game.read(0x0112_a8e0, 4)?;
+            return Err(Error::Harness(format!(
+                "no file with {NEEDLE:?} opened (request made {} times, 0x0112a8e0: {state:02x?}, frame {})",
+                again + 1,
+                game.frame()?
+            )));
+        }
+        game.wait(10)?;
+        polls += 1;
+        if polls % 3 == 0 && game.read(0x0112_a8e2, 1)? == [0] && game.read(0x0112_a8e0, 1)? == [0]
+        {
+            // Look once more: the battle may have opened its file meanwhile.
+            if let Some(e) = game.events()?.into_iter().find(|e| e.contains(NEEDLE)) {
+                return Ok(e);
+            }
+            request(game)?;
+            again += 1;
+        }
+    }
 }
 
 /// The battle actor `index` (`MsGetChr`, `0x00794020`): actors below

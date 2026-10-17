@@ -134,3 +134,30 @@ in the original, the same read in the Rust). The game's own commands hit
 at most a few times, so this needs many guards or reflects stacking on one
 actor. `ffx_battle` keeps the behaviour; the tests limit hits to 0-4 and
 three targets per command.
+
+## The model read queue
+
+Characters that join a battle mid-way (party members swapped in, aeons
+called: `MsExchangeChr`, `0x007adae0`) get their files read through a
+queue of 32 entries of 12 bytes at `0x0112bea0`, the first entry's index
+at `0x0112c020` and the count at `0x0112c021` (`MsBtlReadCueRegist`,
+`0x007ad3f0`, appends unless full; `MsBtlReadCueManage`, `0x007ad190`,
+works through it):
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `0x00` | `u8` | Kind: 0 the character's data (`Ch_DataRead`), 2 its motion group (`ChN_ReadSystemMGRP`, the group `+0x20` of the actor), 3 its weapon (`MsCDreadWeapon`) |
+| `0x01` | `u8` | Actor (`i`, or `i + 0x1f·(k+1)` for weapon `k`) |
+| `0x02` | `u8` | State: 0 to start, 1 reading, 2 read |
+| `0x03` | `u8` | What follows the read: 1 `MsBtlReadPlayerModelProcess`; 2, 6, 8, 10 `MsBtlReadPlayerProcess`; 3, 7 `MsBtlReadMonsterProcess`; 4, 5 the owner's weapon `k` = 0, 1 registered (`MsBtlWeaponRegist`) |
+| `0x04` | `u8` | Owner actor |
+| `0x06` | `u16` | File ID |
+| `0x08` | `u32` | Cleared, unused here |
+
+An exchange queues the actor's weapon (kind 3, then 0), its data (kind 0)
+and motion group (kind 2, then 0xa out of battle, 8 for an aeon, 0 for an
+immediate join, 6 for one walking in) and its weapon models
+(`MsBtlReadCueRegistWeapon`, `0x007ad470`: kind 0, plus kind 2 for the
+models listed at `0x00c43984`, `MsCheckBoundWeapon`, `0x007ad130`). The
+manager stops at the first read still running; kind 1 entries and kinds
+above 3 are never queued (to start, the manager would spin on them).
