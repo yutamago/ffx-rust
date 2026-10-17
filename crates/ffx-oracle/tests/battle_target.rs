@@ -738,6 +738,11 @@ fn status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         st::ms_reset_chr_pos(m, &stand_in, i, actor)
     });
     same("MsResetChrPos", a, b);
+    // the hit motion may attach its weapon (MsAttachWeapon): on the
+    // snapshot's real character, as above
+    if let Some(c) = live {
+        poke(a, b, actor, &c.to_le_bytes());
+    }
     let kind = rng.below(18);
     let flags = rng.below(8);
     twin(
@@ -781,6 +786,7 @@ fn status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
     );
     local_words(a, b);
     same("MsCheckStatusAfterAction", a, b);
+    poke(a, b, actor, &fake);
 }
 
 /// Random input and command cues, the actors' cue fields in range.
@@ -2160,10 +2166,15 @@ fn half16(rng: &mut Xorshift) -> u16 {
     u16::try_from(rng.below(0x1_0000)).unwrap()
 }
 
+thread_local! {
+    /// [`turns`]' own random stream (its state).
+    static TURNS_RNG: std::cell::Cell<u32> = const { std::cell::Cell::new(0x7a46_1212) };
+}
+
 /// [`turns`] with the actors and the globals it sets put back after (its
 /// statuses and HP send the other checks down the originals' stack
 /// garbage).
-fn input(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
+fn input(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32, rec: u32) {
     use ffx_battle::state::bridge as st;
     let keep: Vec<(u32, usize)> = vec![
         (w.actor(0), (ACTORS * battle_common::world::ACTOR) as usize),
@@ -2181,7 +2192,15 @@ fn input(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         (ffx_battle::menu::bridge::END_FORCED.ptr(b).addr, 1),
     ];
     let saved: Vec<Vec<u8>> = keep.iter().map(|&(at, n)| b.read(at, n).unwrap()).collect();
-    turns(a, b, rng, w, out, rec);
+    // its own random stream: the other checks see the same cases with or
+    // without it
+    let mut own = TURNS_RNG.with(|c| {
+        let mut r = Xorshift(c.get());
+        let next = Xorshift(r.next());
+        c.set(r.0);
+        next
+    });
+    turns(a, b, &mut own, w, out, rec);
     for (&(at, _), v) in keep.iter().zip(&saved) {
         poke(a, b, at, v);
     }
@@ -2259,6 +2278,16 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             }
             poke(a, b, p + 0xdde, &0xffu16.to_le_bytes());
         }
+        // the overdrive mode in use (Comrade 7, Slayer 8, Hero 9) and the
+        // Hero's strength +0x6f4
+        poke(
+            a,
+            b,
+            p + 0x5bb,
+            &[[7, 8, 9, rng.byte()][rng.below(4) as usize]],
+        );
+        let own = [rng.range(0, 3000), rng.next().cast_signed()][rng.below(2) as usize];
+        poke(a, b, p + 0x6f4, &own.to_le_bytes());
         // each moves itself (MsDamageSetMotion's +0x422: the positions
         // checked are its own)
         poke(a, b, p + 0x422, &[u8::try_from(i).unwrap()]);
@@ -2527,9 +2556,18 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     // deaths by damage (the spoils and auto-battle through the stubs)
     set(a, b, d::NO_OVERKILL, flag(rng, 3));
     let i = rng.below(ACTORS);
-    let j = [rng.below(ACTORS), 8 + rng.below(7), 0xf + rng.below(3)][rng.below(3) as usize];
+    let j = [
+        rng.below(ACTORS),
+        8 + rng.below(7),
+        0xf + rng.below(3),
+        0x14 + rng.below(8),
+    ][rng.below(4) as usize];
     let v = w.actor(j);
     poke(a, b, v + 0x617, &[flag(rng, 4)]);
+    // mostly out of HP (else only a removal kills)
+    let hp = [0, -5, 0, 1, rng.range(-100, 100)][rng.below(5) as usize];
+    poke(a, b, v + 0x5d0, &hp.to_le_bytes());
+    poke(a, b, v + 0xdcc, &[flag(rng, 5)]);
     poke(a, b, v + 0x10, &[flag(rng, 6) ^ 1]);
     poke(a, b, v + 0x701, &[[0, 0, 1, 3][rng.below(4) as usize]]);
     for o in [0xdcd, 0xdce, 0xdd0, 0x6d0, 0x3f5] {
@@ -2636,7 +2674,10 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             |m| cd::ms_check_hit_pending(m, x, y, i),
         );
         let cams: Vec<u8> = (0..8)
-            .flat_map(|_| [0, rng.next()][rng.below(2) as usize].to_le_bytes())
+            // (a camera ID's low byte the camera, one of three)
+            .flat_map(|_| {
+                [0, (rng.next() & !0xff) | rng.below(3)][rng.below(2) as usize].to_le_bytes()
+            })
             .collect();
         poke(a, b, mn::EFFECT_CAMERA_BUF.ptr(b).addr, &cams);
         set(
@@ -2800,7 +2841,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         // everyone at its own place (+0x6d4 set: MsBtlGetPos reads +0x3b0
         // for a valid group), so the motions find their positions
         let file = ffx_battle::pos::bridge::POS_FILE.get(b);
-        if readable(a, file, 2) && b.read(file + 1, 1).unwrap()[0] as i8 > 0 {
+        if readable(a, file, 2) && b.read(file + 1, 1).unwrap()[0].cast_signed() > 0 {
             for q in 0..ACTORS {
                 poke(a, b, w.actor(q) + 0x4fc, &[0]);
                 poke(a, b, w.actor(q) + 0x6d4, &[0]);
@@ -3309,7 +3350,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         process(a, b, rng, &w, prec, srec, out);
         deaths(a, b, rng, &w, out);
-        input(a, b, rng, &w, out, irec);
+        input(a, b, &w, out, irec);
     }
 }
 
