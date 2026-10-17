@@ -48,8 +48,6 @@ TRIG_SLOTS = {
 # whatever the caller's stack holds there, which a bridge cannot reproduce.
 # Reported to the coordinator (chara round 14) for the owning module.
 INHERITED = {
-    0x007AC9C0: "Battle_QueueCommand reads 5 words; its original callers (natives) push 3",
-    0x00861160: "AtelBattleEndCallback reads 4 words; its original caller pushes 3",
 }
 
 
@@ -304,7 +302,12 @@ def check(repo, exe_path, sizes):
             cap = None
             method = "." in full.replace("(c.", "")
             has_conv = any(p.startswith("Conv::") for p in parts)
-            if method and name in ("call", "call_sym", "call_st0", "call_sym_st0"):
+            # `(self.call)(..)`: a closure field, whose helper the call site
+            # doesn't name; only the callee side is checked
+            closure = full.endswith(")") and "(c." not in full
+            if closure:
+                pass
+            elif method and name in ("call", "call_sym", "call_st0", "call_sym_st0"):
                 cap = 8 if has_conv else 6
             elif name in ("call_cdecl", "call_ptr", "call"):
                 cap = 8 if f.name == "loadsave.rs" else 12
