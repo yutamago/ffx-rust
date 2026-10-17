@@ -567,6 +567,16 @@ callbacks, the flag words, scales of 1.0, the cleared slots and
 type-1 worker), `0x00877520` (a number as digits over the divisor table
 `0x00c52b18`) and `0x0086db80`, and shims for `0x007a3ac0` and the four
 group-8 natives the dump now has starts for.
+Round 16 took the scheduler's callback queues (`g_AtelCallbackQue`
+`0x01327f50`: per queue fifteen 16-byte entries, callback, word and a
+7-character name; `AtelRegistCallbackQue2` fills the first free one and
+clears the next entry's callback, `AtelExecCallbackQue` calls the first
+with its word's address and moves the rest up when it returns non-zero),
+`Native_PlayMotionCommon` (`0x00a7aae0`, now called in Rust by the motion
+natives, with its per-map `+0x870` fixes), `Script_LineActorSide`,
+`AtelGetMyBufferSize`, `AtelClearMesWinWork` (whose `0x01a00200` has no
+relocation, so it stays the same when the image moves), `0x00877660`
+(hex parsing), `0x0086f460` (one bind-mask bit) and `0x0086ab80`.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)

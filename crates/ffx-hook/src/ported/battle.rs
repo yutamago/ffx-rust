@@ -2,6 +2,7 @@
 //! battle globals and helpers, damage.
 
 use ffx_battle::action::bridge as action;
+use ffx_battle::after_damage::bridge as afterdmg;
 use ffx_battle::atel::bridge as atel;
 use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::death::bridge as death;
@@ -2839,5 +2840,36 @@ ported! {
     /// `MsBlowProcess(i, actor)`.
     MsBlowProcess @ 0x0078_91b0 => extern "C" fn ms_blow_process(i: u32, actor: u32) -> u32 {
         chrdmg::ms_blow_process(&mut mem(), &mut call_ptr, i, actor)
+    }
+    /// `MsSubMP(i, actor, n, other, x, flags, style)`.
+    MsSubMP @ 0x0078_e3b0 => extern "C" fn ms_sub_mp(i: u32, actor: u32, n: i32, other: i32, x: u32, flags: u32, style: u32) {
+        afterdmg::ms_sub_mp(&mut mem(), i, actor, n, other, x, flags, style);
+    }
+    /// `MsSubCTB(i, actor, n, x, flags, style)`.
+    MsSubCTB @ 0x0078_e1e0 => extern "C" fn ms_sub_ctb(i: u32, actor: u32, n: i32, x: u32, flags: u32, style: u32) {
+        afterdmg::ms_sub_ctb(&mut mem(), i, actor, n, x, flags, style);
+    }
+    /// `MsAliveProcess(i, actor)`.
+    MsAliveProcess @ 0x0078_9160 => extern "C" fn ms_alive_process(i: u32, actor: u32) -> u32 {
+        script!(s);
+        afterdmg::ms_alive_process(&mut mem(), &mut s, i, actor)
+    }
+    /// `MsAutoRelifeProcess(i, actor, by, helper)`.
+    MsAutoRelifeProcess @ 0x0078_d8d0 => extern "C" fn ms_auto_relife_command(i: u32, actor: u32, by: u32, helper: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_auto_relife_command(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, by, helper)
+    }
+    /// `MsSetChrEffectNext_0079ebe0(i, a, b)`: `op_et_eff` through the game.
+    MsSetChrEffectNext_0079ebe0 @ 0x0079_ebe0 => extern "C" fn ms_set_chr_effect_next(i: u32, a: u32, b: u32) -> u32 {
+        afterdmg::ms_set_chr_effect_next(&mut mem(), &mut call_ptr, i, a, b)
+    }
+    /// `MsSetStealEffect(i, got)`.
+    MsSetStealEffect @ 0x0079_ed00 => extern "C" fn ms_set_steal_effect(i: u32, got: u32) {
+        afterdmg::ms_set_steal_effect(&mut mem(), &mut call_ptr, i, got);
+    }
+    /// `MsSetStealGillEffect(i, got)`.
+    MsSetStealGillEffect @ 0x0079_ed20 => extern "C" fn ms_set_steal_gill_effect(i: u32, got: u32) {
+        afterdmg::ms_set_steal_gill_effect(&mut mem(), &mut call_ptr, i, got);
     }
 }

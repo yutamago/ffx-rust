@@ -122,6 +122,11 @@ for a_path in sorted(a_dir.glob("*.bmp")):
             box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]
     where = f" in x {box[0]}..{box[2]}, y {box[1]}..{box[3]}" if stable_diff else ""
     print(f"{a_path.name}: {stable_diff} pixels differ from the original{where} ({noisy} differ between the original runs)")
+    if noisy > w * h // 2:
+        # the battle scene's water shimmers everywhere, so nearly every pixel
+        # is noise and this comparison sees nothing (a broken skeleton passed
+        # it on 2026-10-17): look at the screenshot instead
+        print(f"  BLIND: the original runs differ in {100 * noisy // (w * h)}% of the picture; check {r_dir / a_path.name} by eye")
     # only thin streaks (every differing column within STREAK_WIDTH of
     # another, at most STREAK_WIDTH wide in total per cluster) are noise
     clusters, cur = [], []

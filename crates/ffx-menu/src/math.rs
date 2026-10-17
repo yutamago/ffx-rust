@@ -189,6 +189,101 @@ pub mod bridge {
     }
 }
 
+/// `Math_CrossHeightGap(p1, p2, p3, p4)` (`0x00889e90`): where segments
+/// `p1`-`p2` and `p3`-`p4` cross in the x-z plane (at `s` along the
+/// second, `u` along the first), the gap between their heights, `|y1 -
+/// y2|`; -1 (`[0x00b92340]`) for parallel segments. Every step rounded to
+/// a float (the original is unoptimised x87 code at 53 bits).
+#[must_use]
+#[allow(clippy::many_single_char_names, clippy::similar_names)]
+pub fn cross_height_gap(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f32 {
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    let r = |x: f64| x as f32;
+    let f = f64::from;
+    let a = r(f(p2[0]) - f(p1[0]));
+    let b = r(f(p2[2]) - f(p1[2]));
+    let c = r(f(p4[0]) - f(p3[0]));
+    let d = r(f(p4[2]) - f(p3[2]));
+    let e = r(f(p3[0]) - f(p1[0]));
+    let g = r(f(p3[2]) - f(p1[2]));
+    let det = r(f(a) * f(d) - f(c) * f(b));
+    if det == 0.0 {
+        return -1.0;
+    }
+    let s = r((f(e) * f(b) - f(a) * f(g)) / f(det));
+    let u = if a == 0.0 {
+        r((f(d) * f(s) + f(g)) / f(b))
+    } else {
+        r((f(c) * f(s) + f(e)) / f(a))
+    };
+    let y1 = r((f(p4[1]) - f(p3[1])) * f(s) + f(p3[1]));
+    let y2 = r((f(p2[1]) - f(p1[1])) * f(u) + f(p1[1]));
+    r((f(y1) - f(y2)).abs())
+}
+
+/// `Math_Atan2XZ(x0, z0, x1, z1)` (`0x0088b430`): the angle of
+/// `(x1 - x0, z1 - z0)` (each difference a float): on the axes
+/// ±π/2 (`dx` zero, minus for a negative or NaN `dz`) and π or -0
+/// (`dz` zero, π for a negative or NaN `dx`), otherwise
+/// `_CIatan2(dz, dx)` stored as a float.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)] // fstp dword
+pub fn atan2_xz(
+    x0: f32,
+    z0: f32,
+    x1: f32,
+    z1: f32,
+    intrinsic: impl FnOnce(f64, f64) -> f64,
+) -> f32 {
+    let r = |v: f32| f64::from(ffx_bridge::x87::round_trip(v));
+    let dx = (r(x1) - r(x0)) as f32;
+    let dz = (r(z1) - r(z0)) as f32;
+    #[allow(clippy::float_cmp)] // fucompp against 0
+    if dx.abs() == 0.0 {
+        return if dz >= 0.0 {
+            FRAC_PI_2_F32
+        } else {
+            -FRAC_PI_2_F32
+        };
+    }
+    #[allow(clippy::float_cmp)]
+    if dz.abs() == 0.0 {
+        return if dx >= 0.0 { -0.0 } else { PI_F32 };
+    }
+    intrinsic(f64::from(dz), f64::from(dx)) as f32
+}
+
+/// The float constants `Math_Atan2XZ` loads: π/2 (`0x00b43d38`) and π
+/// (`0x00b922d0`).
+const FRAC_PI_2_F32: f32 = f32::from_bits(0x3fc9_0fdb);
+const PI_F32: f32 = f32::from_bits(0x4049_0fdb);
+
+/// `Math_AngleStep(cur, target, step)` (`0x0088b570`, own name): `cur`
+/// turned toward `target` by at most `step` along the short way
+/// (`Math_WrapAngle(target - cur)`, limited by `Math_MinAbs`), the result
+/// wrapped; when the limit is not `step` (the gap is smaller, or a NaN)
+/// the target itself. Every step a float.
+#[must_use]
+pub fn angle_step(cur: f32, target: f32, step: f32) -> f32 {
+    let r = |v: f32| f64::from(ffx_bridge::x87::round_trip(v));
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    let d = wrap_angle((r(target) - r(cur)) as f32);
+    let m = min_abs(d, step);
+    #[allow(clippy::float_cmp)] // fucompp
+    let next = if m != step {
+        target
+    } else if d < 0.0 {
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (r(cur) - f64::from(m)) as f32;
+        v
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (r(cur) + f64::from(m)) as f32;
+        v
+    };
+    wrap_angle(ffx_bridge::x87::round_trip(next))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

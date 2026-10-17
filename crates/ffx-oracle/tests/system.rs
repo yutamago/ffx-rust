@@ -10989,6 +10989,47 @@ fn logger_args(cursor: u32, n: u8) -> Vec<u8> {
     v
 }
 
+/// A stand-in for `graphicDrawUIElement`/`graphicFontDraw(rec, …)` that
+/// logs the record's first 16 words, its `+0x88` word and the four
+/// arguments after the record.
+fn record_logger(cursor: u32) -> Vec<u8> {
+    let mut v = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[
+        0xb9, 0x10, 0x00, 0x00, 0x00, 0xf3, 0xa5, 0x8b, 0x46, 0x48, 0xab, 0x8b, 0x44, 0x24, 0x10,
+        0xab, 0x8b, 0x44, 0x24, 0x14, 0xab, 0x8b, 0x44, 0x24, 0x18, 0xab, 0x8b, 0x44, 0x24, 0x1c,
+        0xab, 0x89, 0x3d,
+    ]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    v
+}
+
+/// A stand-in for `graphicDrawUIElement(rec, …)` that logs the record
+/// words at `offsets` and the four arguments after the record.
+fn record_words_logger(cursor: u32, offsets: &[u8]) -> Vec<u8> {
+    // push esi; mov esi, [esp+8]; mov ecx, [cursor]
+    let mut v = vec![0x56, 0x8b, 0x74, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    let mut at = 0u8;
+    for &o in offsets {
+        // mov eax, [esi+o]; mov [ecx+at], eax
+        v.extend_from_slice(&[0x8b, 0x86]);
+        v.extend_from_slice(&u32::from(o).to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x41, at]);
+        at += 4;
+    }
+    for k in 0..4u8 {
+        // mov eax, [esp+0xc+4k]; mov [ecx+at], eax
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x0c + 4 * k, 0x89, 0x41, at]);
+        at += 4;
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[at, 0x5e, 0xc3]);
+    v
+}
+
 /// `0x00776110` over logging stand-ins for the sound, print, help and
 /// reset calls and two condition functions.
 #[allow(
@@ -13470,6 +13511,307 @@ fn round22_window_texts_match_the_original_on_the_snapshot() {
         return;
     };
     round22_window_texts(&mut a, &mut b, &mut Xorshift(0x4022_0052));
+}
+
+/// Round 23's UI shape quads with the image size and scissor from cells,
+/// a logging texture-name stand-in and a record-logging draw.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round23_shapes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008e_5a20, s);
+    let s = stand_in8(a, b, 0xa0, &logger(cursor, 0x2301_0001));
+    redirect(a, b, 0x008a_c8c0, s);
+    let s = stand_in8(a, b, 0xe0, &record_logger(cursor));
+    redirect(a, b, 0x0063_eee0, s);
+    let scratch = alloc(a, b, 0xd0);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let shapes = [
+        0xffff_ffffu32,
+        0xffff_fffe,
+        0xffff_fffd,
+        0xffff_fffc,
+        0xffff_fffa,
+        0xffff_fff9,
+        0,
+        0xc6,
+        0xc8,
+        0x18e,
+        0x190,
+        0x256,
+        0x258,
+        0x289,
+    ];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize],
+                [128.0f32, 512.0][(rng.next() % 2) as usize],
+            ],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(6)));
+        let shape = shapes[(rng.next() % shapes.len() as u32) as usize];
+        let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
+        let args = [
+            shape,
+            fl(rng, 6000, 10.0),
+            fl(rng, 4000, 10.0),
+            fl(rng, 3000, 10.0),
+            fl(rng, 2000, 10.0),
+            fl(rng, 1024, 1.0),
+            fl(rng, 1024, 1.0),
+            fl(rng, 1024, 1.0),
+            fl(rng, 1024, 1.0),
+        ];
+        let c2 = k % 2 == 1;
+        let colours = [rng.next(), rng.next()];
+        let mut words = args.to_vec();
+        if c2 {
+            words.extend_from_slice(&colours);
+        }
+        eax(a, if c2 { 0x0090_3ee0 } else { 0x0090_3bb0 }, &words);
+        t::to_mkp_shape_xywhuv(b, args, c2.then_some(colours), scratch, call);
+        let v: [u32; 0x34] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        // the texture of unknown shapes is a stale stack word in the
+        // original: compare the logs only where both are known
+        let unknown = matches!(shape, 0xffff_fffa | 0xffff_fff9) || (shape == 0xffff_fffc && !c2);
+        if unknown {
+            let ours: [u32; 0x200] = Mem::read(b, log);
+            Mem::write(a, log, ours);
+        }
+        same_memory(&format!("shape quad {k}: {shape:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round23_shapes_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round23_shapes(&mut a, &mut b, &mut Xorshift(0x4023_0011));
+}
+
+#[test]
+fn round23_shapes_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round23_shapes(&mut a, &mut b, &mut Xorshift(0x4023_0012));
+}
+
+/// Round 23's menu plates over the original remaps, with logging
+/// stand-ins for the shape, frame and panel calls.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round23_plates(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::plate::bridge as p;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let abmap = alloc(a, b, 4);
+    for (i, (sym, n)) in [
+        (0x0090_3ee0u32, 11u8),
+        (0x0090_3bb0, 9),
+        (0x008f_4b20, 6),
+        (0x008f_9c20, 5),
+        (0x008f_4df0, 6),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stand_in8(a, b, 0x40 + 0x80 * i as u32, &logger_args(cursor, n));
+        redirect(a, b, sym, s);
+    }
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&abmap.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x300, &v);
+    redirect(a, b, 0x0064_1060, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(a, b, abmap, rng.next() % 2);
+        let kind = k % 16;
+        let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
+        let args = [
+            fl(rng, 6000, 10.0),
+            fl(rng, 4000, 10.0),
+            fl(rng, 6000, 7.0),
+            fl(rng, 3000, 7.0),
+            kind,
+        ];
+        eax(a, 0x008f_5f70, &args);
+        p::to_draw_menu_plate_xywh_type(b, args, remap, call);
+        same_memory(&format!("menu plate {k} kind {kind}"), a, b);
+    }
+}
+
+#[test]
+fn round23_plates_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round23_plates(&mut a, &mut b, &mut Xorshift(0x4023_0021));
+}
+
+#[test]
+fn round23_plates_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round23_plates(&mut a, &mut b, &mut Xorshift(0x4023_0022));
+}
+
+/// Round 24's gradient box and sheet cell over cells for the scissor and
+/// image size and a logging draw.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
+fn round24_boxes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008e_58e0, s);
+    let s = stand_in8(a, b, 0xa0, &logger(cursor, 0x2401_0001));
+    redirect(a, b, 0x008a_c8c0, s);
+    let box_words: Vec<u8> = vec![
+        0, 4, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x30, 0x34, 0x38, 0x3c, 0x88,
+    ];
+    let cell_words: Vec<u8> = (0..16u8).map(|k| 4 * k).chain([0x88]).collect();
+    let box_logger = stand_in8(a, b, 0xe0, &record_words_logger(cursor, &box_words));
+    let cell_logger = stand_in8(a, b, 0x1a0, &record_words_logger(cursor, &cell_words));
+    let int_words: Vec<u8> = vec![
+        0, 4, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x30, 0x34, 0x38, 0x3c, 0x88, 0x90, 0x94,
+    ];
+    let int_logger = stand_in8(a, b, 0x280, &record_words_logger(cursor, &int_words));
+    let abmap = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&abmap.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x360, &v);
+    redirect(a, b, 0x0064_1060, s);
+    let scratch = alloc(a, b, 0xa0);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize],
+                [128.0f32, 256.0][(rng.next() % 2) as usize],
+            ],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(5)));
+        let rect = [
+            fl(rng, 6000, 7.0),
+            fl(rng, 4000, 7.0),
+            fl(rng, 6000, 3.0),
+            fl(rng, 4000, 3.0),
+        ];
+        if k % 4 == 3 {
+            // the integer boxes
+            redirect(a, b, 0x0063_eee0, int_logger);
+            let rect = [
+                rng.next() % 640,
+                rng.next() % 448,
+                rng.next() % 640,
+                (rng.next() % 448).wrapping_sub(20),
+            ];
+            put(a, b, abmap, rng.next() % 3);
+            if k % 8 == 3 {
+                let args = [rect[0], rect[1], rect[2], rect[3], rng.next(), rng.next()];
+                eax(a, 0x008f_3db0, &args);
+                t::to_draw_box_xywh_c2(b, args, scratch, call);
+            } else {
+                let args = [
+                    rect[0],
+                    rect[1],
+                    rect[2],
+                    rect[3],
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                ];
+                eax(a, 0x008f_b150, &args);
+                t::to_make_pkt_box_xywh_rgba(b, args, scratch, call);
+            }
+        } else if k % 2 == 0 {
+            redirect(a, b, 0x0063_eee0, box_logger);
+            let args = [rect[0], rect[1], rect[2], rect[3], rng.next(), rng.next()];
+            eax(a, 0x008f_4b20, &args);
+            t::to_draw_cross_box_xywh_c2(b, args, scratch, call);
+        } else {
+            redirect(a, b, 0x0063_eee0, cell_logger);
+            let index = if rng.next().is_multiple_of(8) {
+                rng.next()
+            } else {
+                rng.next() % 60
+            };
+            let args = [index, rect[0], rect[1], rect[2], rect[3]];
+            eax(a, 0x008f_8bb0, &args);
+            t::draw_sheet_cell(b, args, scratch, call);
+        }
+        let v: [u32; 0x28] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("box {k}"), a, b);
+    }
+}
+
+#[test]
+fn round24_boxes_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round24_boxes(&mut a, &mut b, &mut Xorshift(0x4024_0011));
+}
+
+#[test]
+fn round24_boxes_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round24_boxes(&mut a, &mut b, &mut Xorshift(0x4024_0012));
 }
 
 #[test]

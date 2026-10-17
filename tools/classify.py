@@ -103,6 +103,20 @@ REVIEWED = {
     0x00903a10: ("glue", "TOMkpShapeXY: packet emission (system round 22)"),
     0x00903b70: ("glue", "TOMkpShapeXYWHC2: packet emission (system round 22)"),
     0x006ef310: ("debug", "a single ret (no-op stub) (system round 22)"),
+    0x00645f00: ("glue", "setNearPlane: sets the PhyreScene camera near plane (menu round 15)"),
+    0x0088fb30: ("glue", "builds a GIF-tag sprite packet (menu round 15)"),
+    0x0088d1c0: ("platform", "TkCdReadSync: dispatches through the GetCD() object (menu round 15)"),
+    0x0088d190: ("platform", "TkCdReadNB: dispatches through the GetCD() object (menu round 15)"),
+    0x0088d390: ("platform", "TkCdSize: dispatches through the GetCD() object (menu round 15)"),
+    0x006f2ed0: ("platform", "Mutex_Lock: wraps the WaitForSingleObject import (script round 17)"),
+    0x006f2f50: ("platform", "Mutex_Unlock: wraps the ReleaseMutex import (script round 17)"),
+    0x0067a9b0: ("debug", "the REQ debug hook: forwards to the script debugger object at *0x00ce9014 (script round 17)"),
+    0x00901660: ("glue", "TOMkpCrossEasyStrFontSClut: only calls the packet writer TOAdpCrossEasyStrFontSClutRGBA (system round 25)"),
+    0x008bea20: ("glue", "TOMenuDrawKickTmp: TOClosePktbuff and TODrawKick only (system round 25)"),
+    0x008f5bc0: ("platform", "TODrawKick: FlushCache, sceGsSyncPath, sceDmaSend only (system round 25)"),
+    0x008903d0: ("glue", "GIF tag with a SCISSOR register: packet emission only (menu round 16)"),
+    0x0088c860: ("platform", "TKMallocAndReadEventFTC: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)"),
+    0x0088cac0: ("platform", "TKMallocAndReadEventMessage: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

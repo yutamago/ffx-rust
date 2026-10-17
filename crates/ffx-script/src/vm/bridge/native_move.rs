@@ -496,7 +496,7 @@ pub fn native_actor_play_motion<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32
 /// `Native_ChrPlayMotion2` (`0x00a7a780`, `0x5042`):
 /// `Native_PlayMotionCommon(worker, stack, 1, 0)`; 0.
 pub fn native_chr_play_motion<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
-    call(h, 0x00a7_aae0, &[w, s, 1, 0]);
+    super::native_chr::native_play_motion_common(h, w, s, 1, 0);
     0
 }
 
