@@ -2455,6 +2455,7 @@ fn control_synthetic() {
     round8_main_cases(&mut a, &mut b, &mut rng, 300, false);
     round9_main_cases(&mut a, &mut b, &mut rng, 300);
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
+    envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2475,6 +2476,7 @@ fn control_snapshot() {
     round8_main_cases(&mut a, &mut b, &mut rng, 300, true);
     round9_main_cases(&mut a, &mut b, &mut rng, 300);
     init_bones_cases(&mut a, &mut b, &mut rng, 300);
+    envelope_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3751,5 +3753,57 @@ fn init_bones_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: 
         twin("SG_InitBones", a, b, 0x0082_77f0, &[chr], |m| {
             sq::init_bones(&mut H(m), chr);
         });
+    }
+}
+
+/// Vertex lists for the envelope: rigid entries (16 bytes), then two
+/// weighted lists (20 bytes); indices below 16.
+fn envelope_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let counts = [rng.below(4), rng.below(4), rng.below(4)];
+    let len = 12 + 16 * counts[0] + 20 * (counts[1] + counts[2]);
+    let lists = alloc(a, b, len as usize + 4);
+    let mut p = lists;
+    for (l, &n) in counts.iter().enumerate() {
+        put(a, b, p, n);
+        p += 4;
+        for _ in 0..n {
+            for k in 0..3 {
+                put(a, b, p + 4 * k, modest(rng));
+            }
+            if l == 0 {
+                put(a, b, p + 0xc, rng.below(16));
+                p += 0x10;
+            } else {
+                put(a, b, p + 0xc, modest(rng));
+                put(a, b, p + 0x10, rng.below(16));
+                p += 0x14;
+            }
+        }
+    }
+    lists
+}
+
+fn envelope_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    for _ in 0..rounds {
+        let m = alloc(a, b, 64);
+        for k in 0..16 {
+            put(a, b, m + 4 * k, modest(rng));
+        }
+        let out = alloc(a, b, 16 * 16);
+        for k in 0..64 {
+            put(a, b, out + 4 * k, modest(rng));
+        }
+        let lists = envelope_lists(a, b, rng);
+        twin(
+            "sg_calcenvelopeW_asm_opt",
+            a,
+            b,
+            0x006e_e270,
+            &[lists, out, m],
+            |o| {
+                e::calc_envelope_w_opt(o, lists, out, m);
+            },
+        );
     }
 }
