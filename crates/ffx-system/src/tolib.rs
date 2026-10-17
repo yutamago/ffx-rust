@@ -3497,4 +3497,124 @@ pub mod bridge {
     ) -> u32 {
         call(mem, 0x007a_bdf0, &[id])
     }
+
+
+    /// `0x008af6a0(id)`: the flag `0x00c59558` set to 1 when `id` is listed
+    /// for the current map in the table at `0x00b5f730` (0x20-byte entries:
+    /// map, then ids up to -1; a map of 0 ends it, and the first entry's map
+    /// is compiled in as 0xa2), else to 0. Skipped while the flag is
+    /// negative, or while the save menu word (`MsGetSaveMenu`) has 0x200 set
+    /// and `0x007851b0` returns 1. Returns 0.
+    pub fn check_map_message<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let menu = call(mem, 0x0078_5290, &[]);
+        if mem.read::<u32>(menu) & 0x200 != 0 && call(mem, 0x0078_51b0, &[]) == 1 {
+            return 0;
+        }
+        let flag = mem.rebase(0x00c5_9558);
+        if mem.read::<u32>(flag).cast_signed() < 0 {
+            return 0;
+        }
+        let map = CURRENT_MAP.get(mem);
+        let table = mem.rebase(0x00b5_f730);
+        let mut k = 0u32;
+        let mut entry_map = 0xa2u32;
+        loop {
+            let entry = table.wrapping_add(k.wrapping_mul(0x20));
+            if map == entry_map {
+                let mut at = entry.wrapping_add(4);
+                loop {
+                    let v: u32 = mem.read(at);
+                    if v == u32::MAX {
+                        break;
+                    }
+                    if v == id {
+                        mem.write(flag, 1u32);
+                        return 0;
+                    }
+                    at = at.wrapping_add(4);
+                }
+            }
+            k = k.wrapping_add(1);
+            entry_map = mem.read(table.wrapping_add(k.wrapping_mul(0x20)));
+            if entry_map == 0 {
+                mem.write(flag, 0u32);
+                return 0;
+            }
+        }
+    }
+
+    /// `0x008b5680()`: with the latch `0x00c5a03c` at 1: the counter
+    /// `0x018663e0` counted; on map `0x00c3347c` (`g_GraphicMapId` equal)
+    /// the second counter `0x018663e4` (unless -1, finished) counted, and at
+    /// 0x3a achievement 0x21 unlocked (`achievementUnlockAchievement`,
+    /// through `call`) and the counter finished; the latch 0xff.
+    pub fn count_map_visits<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let latch = mem.rebase(0x00c5_a03c);
+        if mem.read::<u8>(latch) != 1 {
+            return;
+        }
+        let map: u32 = mem.read(mem.rebase(0x0133_0844));
+        let total = mem.rebase(0x0186_63e0);
+        let t: u32 = mem.read(total);
+        mem.write(total, t.wrapping_add(1));
+        if map == mem.read::<u32>(mem.rebase(0x00c3_347c)) {
+            let counter = mem.rebase(0x0186_63e4);
+            let mut v: u32 = mem.read(counter);
+            if v != u32::MAX {
+                v = v.wrapping_add(1);
+                mem.write(counter, v);
+            }
+            if v == 0x3a {
+                call(mem, 0x0082_2380, &[0x21]);
+                mem.write(counter, u32::MAX);
+            }
+        }
+        mem.write(latch, 0xffu8);
+    }
+
+    /// `0x00906b30(n)`: the 26 collected bits of `0x011307a0` (save data):
+    /// -1 clears them; 0..=0x19 sets bit `n` and unlocks achievement 1, and
+    /// achievement 0x1c once all 26 are set; 0xff sets all and unlocks
+    /// 0x1c (`achievementUnlockAchievement`, through `call`).
+    pub fn collect_bit<M: Mem>(mem: &mut M, n: u32, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let bits = mem.rebase(0x0113_07a0);
+        if n == u32::MAX {
+            mem.write(bits, 0u32);
+        } else if n <= 0x19 {
+            let v: u32 = mem.read(bits);
+            mem.write(bits, v | (1 << n));
+            call(mem, 0x0082_2380, &[1]);
+            if mem.read::<u32>(bits) == 0x03ff_ffff {
+                call(mem, 0x0082_2380, &[0x1c]);
+            }
+        } else if n == 0xff {
+            mem.write(bits, 0x03ff_ffffu32);
+            call(mem, 0x0082_2380, &[0x1c]);
+        }
+    }
+
+    /// `0x008b3610()`: the 0x400 bytes at `0x008b3630()` (through `call`)
+    /// cleared.
+    pub fn clear_block_159e468<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let at = call(mem, 0x008b_3630, &[]);
+        mem.write_bytes(at, &[0u8; 0x400]);
+    }
+
+    /// `0x008b7c00(text, kind, out, _)`: `TOGetFontWidth(text, kind, out,
+    /// table)` with table 0 for languages 0, 9 and 10 (Japanese, Korean,
+    /// Chinese) and 4 otherwise (`TOGetFFXLang` asked up to three times).
+    pub fn font_width_for_lang<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        kind: u32,
+        out: u32,
+        k: &mut impl FontWidth<M>,
+    ) -> u32 {
+        let table = if k.lang(mem) == 0 || k.lang(mem) == 9 || k.lang(mem) == 0xa { 0 } else { 4 };
+        font_width(mem, text, kind, out, table, k)
+    }
 }

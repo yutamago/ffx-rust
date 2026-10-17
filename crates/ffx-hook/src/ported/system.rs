@@ -4524,6 +4524,26 @@ ported! {
         std::hint::black_box(&mut tmp);
         r
     }
+    /// `TOCheckMapMessage(id)`.
+    TOCheckMapMessage @ 0x008a_f6a0 => extern "C" fn to_check_map_message(id: u32) -> u32 {
+        tolib::bridge::check_map_message(&mut mem(), id, call_sym)
+    }
+    /// `TOCountMapVisits()`.
+    TOCountMapVisits @ 0x008b_5680 => extern "C" fn to_count_map_visits() {
+        tolib::bridge::count_map_visits(&mut mem(), call_sym);
+    }
+    /// `TOSetCollectBit(n)`.
+    TOSetCollectBit @ 0x0090_6b30 => extern "C" fn to_set_collect_bit(n: u32) {
+        tolib::bridge::collect_bit(&mut mem(), n, call_sym);
+    }
+    /// `TOClearBlock_008b3610()`.
+    TOClearBlock_008b3610 @ 0x008b_3610 => extern "C" fn to_clear_block_008b3610() {
+        tolib::bridge::clear_block_159e468(&mut mem(), call_sym);
+    }
+    /// `TOGetFontWidthForLang(text, kind, out, _)`.
+    TOGetFontWidthForLang @ 0x008b_7c00 => extern "C" fn to_get_font_width_for_lang(text: u32, kind: u32, out: u32) -> u32 {
+        tolib::bridge::font_width_for_lang(&mut mem(), text, kind, out, &mut GameMenu)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
