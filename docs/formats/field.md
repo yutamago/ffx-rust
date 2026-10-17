@@ -996,8 +996,8 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   `0x008c6700`.
 - Not ported: `0x0092eba0` (stores five arguments in `0x025d5c18..2c`
   and sets `0x025d5c34`, which `0x009304e0` waits on; no name yet).
-  `0x0083bdb0` is a `Sg_Mem` pool helper (system). The `Sqs*` functions
-  stay with the sound agent.
+  `0x0083bdb0` is a `Sg_Mem` pool helper and the `Sqs*` functions are
+  the sound driver's; both are placed in `map` and ported in round 33.
 
 ## Effect requests, finalisers and the sphere grid's menus (round 21)
 
@@ -1387,6 +1387,189 @@ locals (0xc0 bytes) are `M`'s copy, a work matrix `W`, `d`, `v0` and
     the fade is 0 when that range is not positive.
 - Every stored step is an `f32`. A NaN passes the `1 - x` steps (the
   `C0`/`C2` tests), not the zero.
+
+## The Sqs IOP calls, SE wrappers and ADPCM decoder; Sg_MemSetFree (round 33)
+
+The `Sqs*` layer sits between `Snd*` (`crates/ffx-sound`) and the PC's
+stand-ins for the PS2 IOP: `FFXSifCheckStatRpc` and `FFXSifCallRpc`
+(`0x00a44760`/`0x00a44750`) return 0, `sceSifDmaStat` (`0x00a44770`)
+returns -1, `FlushCache` (`0x0062f4c0`) is a bare `ret`. The ports call
+them (and the FMOD glue `iSfx*`, `0x0067a2f0..`) as the originals do, and
+return the `eax` the callee leaves (most are tail calls or end right after
+the call).
+
+- RPC: `Sqs_CallRpc(cmd)` (`0x0081cbd0`) waits until the sound client
+  (`0x012f4e20`) is idle, then calls it (`mode` 0, 0x40 bytes from
+  `*0x00c49458`, 0x400 bytes back into `*0x00c49460`, both pointers
+  reread on each try) until the result is not negative.
+  `Sqs_CallRpc2(cmd, _, end, arg)` (`0x0081cc20`, name ours) is the same
+  on the second client (`0x012f4e48`, `*0x00c4945c`/`*0x00c49464`, 0x40
+  bytes each way) and passes `end` and `arg` on.
+- `SqsIopCommandSend()` (`0x0081d5f0`): the command queue is
+  `0x00c49468` (top) .. `0x00c4946c` (next), 32-byte commands; it sends
+  `next - top` rounded down to 32 from `0x012f4a00` with a 0x40-byte reply
+  at `0x012f4f00`, then sets `next = top`. Four reply histories of four
+  words at `0x012f4f48` shift down one word each and get the reply's
+  `+0x10`, `+0x18`, `+0x30` and `+0x34` last. Returns `*0x012f4150`.
+- `SqsSifDmaState(_, wait)` (`0x0081eef0`): `sceSifDmaStat(*0x012f4ed0)`,
+  repeated while `wait` and the result is not negative (a delay loop on
+  registers between tries); returns the last result.
+- SE starts: `SqsSePlay` (`0x0081e4e0`, `iSfxStart`) and `SqsSeForcePlay`
+  (`0x0081e410`, `iSfxForceStart`), both `(kind, id, pan, volume)`:
+  the SE handle `0x012f4e7c` is incremented (0 becomes 1), the glue
+  called with `(id & 0x7fffffff, volume & 0x7f, pan & 0x7f)`, bit 0 of
+  `0x012f4f64` (the second reply history's newest word) set; returns the
+  handle, read after the call.
+- The others clear bit 31 of the id and mask the level with `0x7f`:
+
+  | Function | Address | Glue call |
+  |---|---|---|
+  | `SqsSeStop(_, id)` | `0x0081e7c0` | `iSfxStop(id)` |
+  | `SqsSePanDirect(_, id, p)` | `0x0081e460` | `iSfxSetPan(id, p)` |
+  | `SqsSeVolumeDirect(_, id, v)` | `0x0081e820` | `iSfxSetVolume(id, v)` |
+  | `SqsSePanTranslate(_, id, n, p)` | `0x0081e480` | `iSfxSetPanTranslate(id, p, n)` |
+  | `SqsSeVolumeTranslate(_, id, n, v)` | `0x0081e860` | `iSfxSetVolumeTranslate(id, v, n)` |
+  | `SqsSeVolumeFadeOut(_, id, n)` | `0x0081e840` | `iSfxSetVolumeTranslate(id, 0, n)` |
+  | `SqsSeBlockPlaying(id)` | `0x0081e3e0` | `iSfxIsPlaying(id)` |
+  | `SqsSeSeparatePlaying(id)` | `0x0081e7a0` | `iSfxIsPlaying(id)` |
+
+  (`n` is passed unmasked.)
+- `SqsSeSeparateClear(id)` (`0x0081e5d0`): -1 writes -1 to the send
+  buffer's first word and calls `iSfxStopAllNonBlockingSound(buffer)`;
+  any other id goes to `iSfxStopNonBlockingSound(id)` as given.
+  `SqsSeSeparateMaskClear(m0..m7)` (`0x0081e750`) writes the eight words
+  and a -1 after them to the send buffer, calls
+  `iSfxStopAllNonBlockingSound(buffer)` and `iSfxUnloadAllData()`.
+- `SqsBattleWaveDataSend(wave)` (`0x0081cf90`): a `"WD"` file (`u16`
+  0x4457) goes to `iSfxLoadData(i16 +2, 0)`; anything else returns
+  `wave` itself (`eax` still holds it).
+- `SqsBattleStreamingStart(_, a, b)` (`0x0081cf40`): without a magic file
+  (`g_MagicFile_MagicId` -1) or a stream id (`0x00c49498` -1) it prints
+  its error to stderr (`fprintf(__iob_func() + 0x40, msg)`, through the
+  import slots); else `iSfxPlayBattleStreaming(id, b, a)`.
+- `SqsCmdSetC4C6(ctx, cmd)` (`0x0081c260`, name ours, a handler of the
+  IOP command table like `SqsCmdSetC2`): the command's second `u16` to
+  `+0xc4` of the record at `ctx +0x220` when bit 12 of `u16 ctx +0x21a` is
+  set, else to `+0xc6`; returns `cmd + 4`.
+- `Sqs_DecodeAdpcm(src, dst)` (`0x0081cc70`, name ours; from
+  `SqsStraightStreamingDataSend`) decodes PS-ADPCM, stereo in 512-byte
+  halves: 25 rounds of 256 left samples, then 256 right ones (`i16`, 0x6400
+  bytes in all), each half from 16 blocks of 9 bytes (7200 bytes in all).
+  It returns `dst + 0x6400`.
+  - A block's header byte gives the filter (high nibble, indexing the
+    `i32` pairs at `0x00c49470` unchecked, so 5..15 read what follows) and
+    the shift (low nibble).
+  - Each of its 8 data bytes gives two samples, low nibble first:
+    `d = i16(nibble << 12) >> shift`,
+    `s = ((c0 * s1 + c1 * s2) >> 6) + d` (wrapping `i32`, arithmetic
+    shift), then `s2 = s1`, `s1 = s`; the sample is `s`'s low 16 bits.
+  - The history (`s1`, `s2`) is kept per channel at `0x012f4f90` (left)
+    and `0x012f4f98` (right) across calls.
+- `Sg_MemSetFree(block)` (`0x0083bdb0`, name ours; from
+  `Sg_MemCreateFree`, `Sg_MemMoveWork` and `0x0083b720`) marks a block
+  free:
+  - In the block's header, `+8` becomes 0 and `+0xc` keeps only its heap
+    bits (27..28).
+  - That heap's record (`0x01301968`, 0x18 bytes each) gets byte `+0` set
+    to 1, and `+0x14`, the lowest freed block, lowered to the block
+    (unsigned compare).
+  - It returns three times the heap index, the `eax` its indexing leaves.
+- Not ported:
+  - `SqsSePitchDirect` (`0x0081e4a0`) and `SqsSePitchTranslate`
+    (`0x0081e4c0`) only print "function is not implemented yet" to stderr
+    (debug).
+  - `0x00916130` sets byte 1 of each of 0x48 x 0x100 words from `+0x70`
+    (stride 0x460 per row) to an uninitialised stack local
+    (`[ebp-0x14]`), so its result depends on what an earlier call left on
+    the stack.
+
+## The map's alarm pages and yiReset (round 37)
+
+- `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,
+  `0x019138a8`) section `page + 2` to `TkClearAlarm` (`0x00845000`) when
+  there is a map file and it has that section (`yiMapGetSection`: `MAP1`
+  data, a non-zero offset). `yiSetPreBgPage(page)` (`0x0090a6f0`) does the
+  same and then, only when the section was there, calls
+  `Yn_PreBgChangeStage(page)`. Both return 0.
+- `yiReset()` (`0x00909e60`) runs `yiResetObj`, `sceGsSyncPath(0, 0)` and
+  `yiRender_resettex(&g_YiRender)`. It then sets both map ids
+  (`0x01934edc`, `0x01934ee0`) to -1 and returns `TkClearAlarm(0)`.
+
+## Sqs standby requests and info paths (round 36)
+
+- Standby requests count up in `0x012f414c`; `0x012f4150` (what
+  `SqsIopCommandSend` returns) holds the count answered.
+  - `SqsReportStandby()` (`0x0081e260`, name ours) first sends the queued
+    IOP commands when requests are unanswered and the queue is not empty
+    (`next > top`, unsigned).
+  - It then counts one more request, writes `(1, count)` to the second
+    client's send buffer and calls `Sqs_CallRpc2(0, _, 0x0081fcb0, 0)`, returning its result.
+- The request's end function (`0x0081fcb0`; not a function in the
+  Ghidra dump, so not ported) copies the first word of the second client's
+  receive buffer to `0x012f4150` and clears bit 0 of `0x012f4e74`.
+  Nothing calls it on PC, where `FFXSifCallRpc` is a stub.
+- `SqsReportStandbyStatus(flush)` (`0x0081e2d0`) sends the queue the same
+  way when `flush` is set. It returns the requests unanswered (sent less
+  answered, wrapping).
+- `SqsDataSendingCompleted(wait)` (`0x0081cfd0`): 1 when
+  `SqsSifDmaState(1, wait)` is not negative, else 0.
+- Three functions copy a path (its NUL included) to the send buffer and
+  call `Sqs_CallRpc` with a command, returning its result:
+  - `SqsInitMusicInfoHdd(path)` (`0x0081d3c0`): command 7.
+  - `SqsInitWaveInfoHdd(path)` (`0x0081d470`): command 6.
+  - `SqsSetProjectBase(path)` (`0x0081eab0`): command 2, and it returns the
+    word a non-zero result points at (0 on PC).
+
+## The poly buffer's VIF interpreter (round 35)
+
+`yiPolyBufExecVif(buf, codes, words)` (`0x009113a0`, name ours; eight
+calls in the yi renderer) runs VIF codes on the poly buffer until `words`
+words are used (unsigned compare after each code) and returns the words
+used; 0 words does nothing. The command is bits 24..30; any with bits 5
+and 6 both set is an `UNPACK` (`yiPolyBufUnpack`, with the code word
+copied to the interpreter's stack, so its row count is the code's byte
+`+2`). The registers follow the VU memory:
+
+| Command | Effect |
+|---|---|
+| 1 `STCYCL` | byte `+0x4084` = bits 8..15 (`WL`), `+0x4085` = bits 0..7 (`CL`) |
+| 2 `OFFSET` | `+0x4078` = bits 0..9; bit 7 of `+0x4000` (double buffer) cleared; `TOPS` (`+0x4070`) = `BASE` (`+0x4074`) |
+| 3 `BASE` | `BASE` = `TOPS` = bits 0..9; the bit cleared |
+| 4 `ITOP` | `+0x4070` = bits 0..9 (the same word as `TOPS`) |
+| 5 `STMOD` | `+0x407c` = bits 0..1 |
+| 7 `MARK` | `+0x4080` = bits 0..15 |
+| `0x14`, `0x15`, `0x17` | `+0x406c` = `TOPS`; with the bit set `TOPS = BASE` and it clears, else `TOPS = BASE + OFFSET` and it sets; the run ends |
+| `0x20` `STMASK` | the next word to `+0x4068` |
+| `0x30` `STROW`, `0x31` `STCOL` | the next four words to `+0x4048` / `+0x4058` |
+| `0x4a` `MPG` | skips two words per unit of bits 16..23 |
+| `0x50`, `0x51` `DIRECT` | skips four words per unit of bits 0..15 |
+
+Every other command (`0x16` too) is a
+one-word no-op.
+
+## The poly buffer's VIF unpack (round 34)
+
+The yi poly buffer (`yiPolyBufClear`, `0x00911970`) is 0x4000 bytes of
+emulated VU memory followed by VIF registers at `+0x4000..+0x4084`
+(`+0x4070` `TOPS`). Its VIF code interpreter (`0x009113a0`) hands
+`UNPACK` codes to `yiPolyBufUnpack(buf, src, code)` (`0x00911620`, name
+ours), which returns the number of source words it read:
+
+- The destination row is `code & 0x3ff`, plus `TOPS` when bit 15 is set;
+  each row is 16 bytes. The row count is the byte at `code + 2`, reread
+  for each row.
+- Bits 24..25 give the element size and bits 26..27 the elements per row
+  less one:
+  - 32 bits: words copied.
+  - 16 and 8 bits: taken unsigned (bit 14, `USN`, is ignored) from the low
+    end of each source word up; a partly used word carries over to the
+    next row.
+  - 3 (`V4-5`, the count ignored): one 16-bit element per row, giving
+    `(v & 0x1f) << 3`, `(v >> 2) & 0xf8`, `(v >> 7) & 0xf8` and
+    `(v >> 8) & 0x80`.
+- With one element (`S-32`, `S-16`, `S-8`) the value fills all four
+  words of the row. Otherwise only the first `count` words are written.
+- The address is not wrapped to the buffer.
 
 ## Floats
 
