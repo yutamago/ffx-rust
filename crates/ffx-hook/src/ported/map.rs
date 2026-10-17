@@ -3649,6 +3649,113 @@ ported! {
     yiDisableHamonEff @ 0x0090_8450 => extern "C" fn shim_yi_disable_hamon_eff() -> u32 {
         yi::bridge::yi_disable_hamon_eff(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
     }
+
+    // ---- field round 33: the Sqs IOP calls and SE wrappers ----
+
+    /// `Sqs_CallRpc(cmd)`.
+    Sqs_CallRpc @ 0x0081_cbd0 => extern "C" fn shim_sqs_call_rpc(cmd: u32) -> u32 {
+        nkz::bridge::sqs_call_rpc(&mut mem(), cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Sqs_CallRpc2(cmd, _, end, arg)`.
+    Sqs_CallRpc2 @ 0x0081_cc20 => extern "C" fn shim_sqs_call_rpc2(cmd: u32, _b: u32, end: u32, arg: u32) -> u32 {
+        nkz::bridge::sqs_call_rpc2(&mut mem(), cmd, end, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsIopCommandSend()`.
+    SqsIopCommandSend @ 0x0081_d5f0 => extern "C" fn shim_sqs_iop_command_send() -> u32 {
+        nkz::bridge::sqs_iop_command_send(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSifDmaState(_, wait)`.
+    SqsSifDmaState @ 0x0081_eef0 => extern "C" fn shim_sqs_sif_dma_state(_a: u32, wait: u32) -> u32 {
+        nkz::bridge::sqs_sif_dma_state(&mut mem(), wait, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSePlay(_, id, pan, volume)`.
+    SqsSePlay @ 0x0081_e4e0 => extern "C" fn shim_sqs_se_play(_k: u32, id: u32, pan: u32, volume: u32) -> u32 {
+        nkz::bridge::sqs_se_play(&mut mem(), nkz::I_SFX_START, [id, pan, volume], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeForcePlay(_, id, pan, volume)`.
+    SqsSeForcePlay @ 0x0081_e410 => extern "C" fn shim_sqs_se_force_play(_k: u32, id: u32, pan: u32, volume: u32) -> u32 {
+        nkz::bridge::sqs_se_play(&mut mem(), nkz::I_SFX_FORCE_START, [id, pan, volume], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeStop(_, id)`.
+    SqsSeStop @ 0x0081_e7c0 => extern "C" fn shim_sqs_se_stop(_k: u32, id: u32) -> u32 {
+        nkz::bridge::sqs_se_stop(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSePanDirect(_, id, pan)`.
+    SqsSePanDirect @ 0x0081_e460 => extern "C" fn shim_sqs_se_pan_direct(_k: u32, id: u32, pan: u32) -> u32 {
+        nkz::bridge::sqs_se_direct(&mut mem(), nkz::I_SFX_SET_PAN, id, pan, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeVolumeDirect(_, id, volume)`.
+    SqsSeVolumeDirect @ 0x0081_e820 => extern "C" fn shim_sqs_se_volume_direct(_k: u32, id: u32, v: u32) -> u32 {
+        nkz::bridge::sqs_se_direct(&mut mem(), nkz::I_SFX_SET_VOLUME, id, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSePanTranslate(_, id, frames, pan)`.
+    SqsSePanTranslate @ 0x0081_e480 => extern "C" fn shim_sqs_se_pan_translate(_k: u32, id: u32, frames: u32, pan: u32) -> u32 {
+        nkz::bridge::sqs_se_translate(&mut mem(), nkz::I_SFX_SET_PAN_TRANSLATE, [id, frames, pan], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeVolumeTranslate(_, id, frames, volume)`.
+    SqsSeVolumeTranslate @ 0x0081_e860 => extern "C" fn shim_sqs_se_volume_translate(_k: u32, id: u32, frames: u32, v: u32) -> u32 {
+        nkz::bridge::sqs_se_translate(&mut mem(), nkz::I_SFX_SET_VOLUME_TRANSLATE, [id, frames, v], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeVolumeFadeOut(_, id, frames)`.
+    SqsSeVolumeFadeOut @ 0x0081_e840 => extern "C" fn shim_sqs_se_volume_fade_out(_k: u32, id: u32, frames: u32) -> u32 {
+        nkz::bridge::sqs_se_volume_fade_out(&mut mem(), id, frames, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeBlockPlaying(id)`.
+    SqsSeBlockPlaying @ 0x0081_e3e0 => extern "C" fn shim_sqs_se_block_playing(id: u32) -> u32 {
+        nkz::bridge::sqs_se_playing(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparatePlaying(id)`.
+    SqsSeSeparatePlaying @ 0x0081_e7a0 => extern "C" fn shim_sqs_se_separate_playing(id: u32) -> u32 {
+        nkz::bridge::sqs_se_playing(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparateClear(id)`.
+    SqsSeSeparateClear @ 0x0081_e5d0 => extern "C" fn shim_sqs_se_separate_clear(id: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_clear(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparateMaskClear(m0..m7)`.
+    SqsSeSeparateMaskClear @ 0x0081_e750 => extern "C" fn shim_sqs_se_separate_mask_clear(m0: u32, m1: u32, m2: u32, m3: u32, m4: u32, m5: u32, m6: u32, m7: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_mask_clear(&mut mem(), [m0, m1, m2, m3, m4, m5, m6, m7], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsBattleWaveDataSend(wave)`.
+    SqsBattleWaveDataSend @ 0x0081_cf90 => extern "C" fn shim_sqs_battle_wave_data_send(wave: u32) -> u32 {
+        nkz::bridge::sqs_battle_wave_data_send(&mut mem(), wave, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsBattleStreamingStart(_, a, b)`.
+    SqsBattleStreamingStart @ 0x0081_cf40 => extern "C" fn shim_sqs_battle_streaming_start(_k: u32, a: u32, b: u32) -> u32 {
+        nkz::bridge::sqs_battle_streaming_start(&mut mem(), a, b, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsCmdSetC4C6(ctx, cmd)`.
+    SqsCmdSetC4C6 @ 0x0081_c260 => extern "C" fn shim_sqs_cmd_set_c4_c6(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_set_c4_c6(&mut mem(), ctx, cmd)
+    }
+
+    /// `Sqs_DecodeAdpcm(src, dst)`.
+    Sqs_DecodeAdpcm @ 0x0081_cc70 => extern "C" fn shim_sqs_decode_adpcm(src: u32, dst: u32) -> u32 {
+        nkz::bridge::sqs_decode_adpcm(&mut mem(), src, dst)
+    }
+
+    /// `Sg_MemSetFree(block)`.
+    Sg_MemSetFree @ 0x0083_bdb0 => extern "C" fn shim_sg_mem_set_free(block: u32) -> u32 {
+        yi::bridge::sg_mem_set_free(&mut mem(), block)
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

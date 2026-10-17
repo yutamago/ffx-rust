@@ -162,6 +162,10 @@ pub const CRT_IOB_FUNC: u32 = 0x00b0_c350;
 pub const CRT_FPRINTF: u32 = 0x00b0_c38c;
 /// `Sg_MemSetErrorIgnore`'s flag (`0x01301958`).
 pub const MEM_ERROR_IGNORE: Global<u32> = Global::new(0x0130_1958);
+/// The `Sg_Mem` heaps, 0x18 bytes each, indexed by bits 27..28 of a
+/// block's `+0xc`: `+0` a byte set when a block was freed, `+0x14` the
+/// lowest freed block (`Sg_MemSetFree`).
+pub const MEM_HEAPS: u32 = 0x0130_1968;
 /// The fixed GS packet `yiRender_initpacket` writes at `+0x27624`.
 pub const RENDER_PACKET: [u32; 32] = [
     0,
@@ -4887,5 +4891,24 @@ pub mod bridge {
         let f = mem.rebase(super::fog::SET_DISTORTION);
         call(mem, f, &[0]);
         0
+    }
+
+    /// `Sg_MemSetFree(block)` (`0x0083bdb0`, name ours; from
+    /// `Sg_MemCreateFree`, `Sg_MemMoveWork` and `0x0083b720`): marks the
+    /// block (its header) free: `+8` 0, `+0xc` down to its heap bits
+    /// (27..28); that heap (`0x01301968`) gets its freed byte set and its
+    /// lowest freed block (`+0x14`, unsigned) lowered to the block.
+    /// Returns three times the heap index (the original's `eax`).
+    pub fn sg_mem_set_free(mem: &mut impl Mem, block: u32) -> u32 {
+        let w = mem.read::<u32>(block.wrapping_add(0xc));
+        let heap = (w >> 27) & 3;
+        mem.write(block.wrapping_add(8), 0u32);
+        mem.write(block.wrapping_add(0xc), w & 0x1800_0000);
+        let h = mem.rebase(super::MEM_HEAPS) + 0x18 * heap;
+        mem.write(h, 1u8);
+        if block < mem.read::<u32>(h + 0x14) {
+            mem.write(h + 0x14, block);
+        }
+        heap * 3
     }
 }
