@@ -9,6 +9,7 @@
 //! - [`prog`]: the program table's set-ups and steps;
 //! - [`mat`]: the matrix programs and their draws;
 //! - [`mdl`]: the model draws (`pppDrawMdl*`);
+//! - [`lns`]: the lens-flare draws (`pppKeLns*`);
 //! - [`heap`]: the particle heaps;
 //! - [`part`]: parts, their data and objects;
 //! - [`fp`]: the field's particle effects;
@@ -23,6 +24,7 @@ pub mod draw;
 pub mod et;
 pub mod fp;
 pub mod heap;
+pub mod lns;
 pub mod mat;
 pub mod md;
 pub mod mdl;

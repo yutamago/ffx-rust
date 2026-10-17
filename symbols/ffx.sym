@@ -3939,11 +3939,11 @@
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
 0x00759fb0 function pppKeLnsLpSftCon          # ppp program table record "pppKeLnsLpSft" (0x00c3ac60) +0x1c set-up; "pppKeLnsLpSft" (0x00c3ac60) +0x20 second set-up; "pppKeLnsLpSft" (0x00c3c308) +0x1c set-up and 1 more
 0x00759fd0 function pppKeLnsArndCon           # ppp program table record "pppKeLnsArnd" (0x00c3aa30) +0x1c set-up; "pppKeLnsArnd" (0x00c3c0d8) +0x1c set-up
-0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump
+0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Arnd): pppKeLnsArndUpdate, then a 6-word descriptor at ebp-0x30 (set_ptr32 obj, area, key colour x part +0x70 >> 12, g_pppScreenMatrix, key +0xc size, part +0x60 position) for KeLnsArnd_Draw(desc, 0) (oracle parity)
 0x0075a0f0 function pppKeLnsArndTCon          # ppp program table record "pppKeLnsArndT" +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
-0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
-0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control
+0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280; ours: = lns::bridge::ppp_ke_lns_t_draw (Arnd): update; on the key frame size into area +0x34; colour into +0x38; FFXVu0CopyVector(area +0x14, part +0x60) (oracle parity)
+0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control; ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Arnd): descriptor from the area (+0x34 size, +0x38 colour, +0x14 position) for KeLnsArnd_Draw(desc, 4) (oracle parity)
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
 0x0075a370 function pppKeLnsClmCon            # fh v3:exact 0x0075a460
 0x0075a3a0 function pppKeLnsClmDraw           # ppp program table record "pppKeLnsClm" draw; not a function start in the Ghidra dump
@@ -3953,22 +3953,22 @@
 0x0075a610 function pppKeLnsClmTOtDraw        # the g_pppOtList draw pppKeLnsClmTCon registers (node area+0x40)
 0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
-0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump
+0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Crn): as pppKeLnsArndDraw with the key halves +0x10/+0x12 in the descriptor, KeLnsCrn_Draw (oracle parity)
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
-0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
-0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c)
+0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0; ours: = lns::bridge::ppp_ke_lns_t_draw (Crn): size +0x2c, key halves as floats +0x34/+0x38, colour +0x30, position +0xc (oracle parity)
+0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c); ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Crn): +0x34/+0x38 truncated to halves (fistp, chop) in the descriptor, KeLnsCrn_Draw(desc, 4) (oracle parity)
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
 0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
-0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump
+0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Fls): the Crn layout with pppKeLnsFlsUpdate and KeLnsFls_Draw (oracle parity)
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
-0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
-0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20)
+0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0; ours: = lns::bridge::ppp_ke_lns_t_draw (Fls): size +0x30, key +0x10 as a float at +0x38, +0x12 at +0x3c, colour +0x34, position +0x10 (oracle parity)
+0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20); ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Fls): +0x38 truncated, +0x3c, KeLnsFls_Draw(desc, 4) (oracle parity)
 0x0075ae90 function pppKeLnsFlsUpdate         # fh v3:bsim1.00 0x0075af80
 0x0075af30 function pppKeLnsLpCon             # fh v3:exact 0x0075b020
 0x0075af60 function pppKeLnsLpCon2            # ppp program table record "pppKeLnsLp" (0x00c3aa08) +0x20 second set-up; "pppKeLnsLp" (0x00c3c0b0) +0x20 second set-up
-0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070
+0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070; ours: = lns::bridge::ppp_ke_lns_lp_draw: key frame adds +8/+4 to area +0xa8/+0x9c, bytes +0xc/+0xd to +0x8e/+0x8f; with +0x8f, +0x90 = obj matrix x (0,0,1,1); +0x80 = obj +0x40; KeLnsLp_Update(set_ptr32 area, obj +0x40, g_pppViewMatrix, g_pppScreenMatrix) (oracle parity)
 0x0075b090 function pppKeLnsLpTCon            # ppp program table record "pppKeLnsLpT" +0x1c set-up
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor

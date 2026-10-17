@@ -148,3 +148,44 @@ The `3` draws and `LoopZ` patch requests for particular content:
   `pppFpLoop`): `0x17c`, `0x3e`, `0xc6`, `0xc2`/`0xff` in `3`; `0xc6`,
   `0x102`, `0x103`/`0xf4`, `0x110`, `0x139`, `0x7a` in `Ts3` (clears `0x10`,
   alpha `0x800`) and `LoopZ` (clears `0x10` only).
+
+## Lens-flare draws (`pppKeLns*`)
+
+Ported in `crates/ffx-vfx/src/lns.rs`. `Arnd`, `Crn` and `Fls` each come
+in three draws around one work area `a = obj + 0xa0 + [[prog + 0xc]]`:
+
+- `Draw` (`0x00759ff0`, `0x0075a760`, `0x0075ab50`) runs the kind's update
+  and draws at once from the key;
+- `TDraw` (`0x0075a190`, `0x0075a900`, `0x0075ad00`) runs the update and
+  stores the key's values in the work area;
+- `TOtDraw` (`0x0075a250`, `0x0075a9e0`, `0x0075ade0`), the `g_pppOtList`
+  draw the `TCon` registers, draws from the work area.
+
+Both drawing paths hand `KeLns*_Draw(desc, flags)` (flags 0 from `Draw`,
+4 from `TOtDraw`) a descriptor on the stack:
+
+| Word | Contents |
+| --- | --- |
+| 0 | `set_ptr32` of the object (`Draw`) or work area (`TOtDraw`) |
+| 1 | `set_ptr32` of the work area |
+| 2 | colour bytes: the key's `+8..+0xb` times the part's `+0x70` halves, `>> 12` |
+| 3 | `set_ptr32(g_pppScreenMatrix)` |
+| 4 | size (`f32`) |
+| 5 | `Arnd`: `set_ptr32` of the position; `Crn`/`Fls`: two halves |
+| 6 | `Crn`/`Fls`: `set_ptr32` of the position |
+
+The position is the part's `+0x60` (`Draw`) or the work area's copy of it
+(`TDraw` copies it with `FFXVu0CopyVector`).
+
+| Kind | size | colour | position | halves (work area) |
+| --- | --- | --- | --- | --- |
+| `Arnd` | `+0x34` | `+0x38` | `+0x14` | |
+| `Crn` | `+0x2c` | `+0x30` | `+0xc` | floats `+0x34`, `+0x38`, truncated (`fistp`, chop) |
+| `Fls` | `+0x30` | `+0x34` | `+0x10` | float `+0x38` truncated, `u16 +0x3c` |
+
+`pppKeLnsLpDraw` (`0x0075af80`) steps its own work area (the key's `+8`
+and `+4` added to `+0xa8`, `+0x9c` on its frame, bytes `+0xc`, `+0xd` to
+`+0x8e`, `+0x8f`), puts the object's matrix applied to `(0, 0, 1, 1)` in
+`+0x90` while `+0x8f` is set, copies the object's position `+0x40` to
+`+0x80` and calls `KeLnsLp_Update` with `[set_ptr32(area), obj + 0x40,
+g_pppViewMatrix, g_pppScreenMatrix]`.

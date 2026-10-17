@@ -10,8 +10,8 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    draw, et, fp, heap, mat, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small, tree,
-    vec, wave, x87,
+    draw, et, fp, heap, lns, mat, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small,
+    tree, vec, wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -9503,6 +9503,140 @@ fn mdl_ts2_draw_matches_the_original() {
         0xa0,
         |o, obj, key, prog, frame| {
             d::ppp_draw_mdl_ts2_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+/// The `pppKeLns*` draws (`docs/formats/vfx.md`): the updates and the
+/// `KeLns*` drawers recorded (descriptors by their 7 words), the vector
+/// helpers real; the ports run with the original's frame pointer.
+#[allow(clippy::too_many_lines)]
+fn lns_case(name: &str, sym: u32, args: usize, rust: impl Fn(&mut Oracle, [u32; 3], u32) -> u32) {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(sym);
+        for u in [0x0075_a2d0u32, 0x0075_aab0, 0x0075_ae90] {
+            deref_recorder(&mut p, u, &[0, 0, 0]);
+        }
+        for d in [0x0076_9340u32, 0x0076_9d70, 0x0076_a1f0] {
+            wide_recorder(&mut p, d, &[7, 0], None);
+        }
+        deref_recorder(&mut p, 0x0076_a690, &[4]);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x200),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(4),
+            p.alloc(0x80),
+        );
+        let cpart = p.sym(0x0230_ffe4);
+        for _ in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x10);
+            p.set(table, off);
+            p.set(cpart, part);
+            for o in [4u32, 8, 0xc] {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            // the object's matrix and position, the work area's floats
+            for o in (0x10..0x50).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
+            let w = obj + 0xa0 + off;
+            for o in (0x2c..0x40).step_by(4) {
+                let x = match rng.below(4) {
+                    0 => ranged(&mut rng, -70000.0, 70000.0),
+                    1 => 3.0e9f32.to_bits(),
+                    _ => ranged(&mut rng, -300.0, 300.0),
+                };
+                p.set(w + o, x);
+            }
+            for o in [0x9cu32, 0xa8] {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(w + o, x);
+            }
+            if rng.chance(50) {
+                p.set(w + 0x8f, 0u8);
+            }
+            let n = u8::try_from(args).unwrap();
+            let frame = p.b.stack_range().end
+                - 0x100
+                - 4 * u32::from(n)
+                - 4
+                - 0x200
+                - 4 * u32::from(n)
+                - 4
+                - 4;
+            let at = (frame - 8) & !0xf;
+            let three = [obj, key, prog];
+            let call_args = if args == 1 { vec![w] } else { three.to_vec() };
+            check_deep_n(&mut p, name, sym, &call_args, |o, frame| {
+                assert_eq!((frame - 8) & !0xf, at);
+                Some(rust(o, if args == 1 { [w, 0, 0] } else { three }, at))
+            });
+        }
+    }
+}
+
+#[test]
+fn lns_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndDraw", 0x0075_9ff0u32),
+        (Lns::Crn, "pppKeLnsCrnDraw", 0x0075_a760),
+        (Lns::Fls, "pppKeLnsFlsDraw", 0x0075_ab50),
+    ] {
+        lns_case(name, sym, 3, |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_draw(o, kind, obj, key, prog, frame, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_t_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndTDraw", 0x0075_a190u32),
+        (Lns::Crn, "pppKeLnsCrnTDraw", 0x0075_a900),
+        (Lns::Fls, "pppKeLnsFlsTDraw", 0x0075_ad00),
+    ] {
+        lns_case(name, sym, 3, |o, [obj, key, prog], _| {
+            l::ppp_ke_lns_t_draw(o, kind, obj, key, prog, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_t_ot_draws_match_the_original() {
+    use lns::bridge::{self as l, Lns};
+    for (kind, name, sym) in [
+        (Lns::Arnd, "pppKeLnsArndTOtDraw", 0x0075_a250u32),
+        (Lns::Crn, "pppKeLnsCrnTOtDraw", 0x0075_a9e0),
+        (Lns::Fls, "pppKeLnsFlsTOtDraw", 0x0075_ade0),
+    ] {
+        lns_case(name, sym, 1, |o, [area, _, _], frame| {
+            l::ppp_ke_lns_t_ot_draw(o, kind, area, frame, &mut call_original)
+        });
+    }
+}
+
+#[test]
+fn lns_lp_draw_matches_the_original() {
+    use lns::bridge as l;
+    lns_case(
+        "pppKeLnsLpDraw",
+        0x0075_af80,
+        3,
+        |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_lp_draw(o, obj, key, prog, frame, &mut call_original)
         },
     );
 }
