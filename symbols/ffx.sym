@@ -1660,6 +1660,7 @@
 0x00639280 function graphicAddScreenFadeTaskAfterRender # fh switch:bsim1.00 0x71001d7be0
 0x006392c0 function graphicAddScreenFadeTaskBeforeVFX # fh switch:bsim1.00 0x71001d7bd0
 0x00639330 function graphicAtelUnloadTexture  # fh v3:bsim1.00 0x006394e0
+0x006393c0 function BrokenScreenEffect_BufferSize # structure: cdecl(n): after BrokenScreenEffect_GetInstance, ((8n-1)>>4 + 5 + (24n-49)>>4 + 2*((12n-1)>>4) + (16n-1)>>4) << 5, unsigned; name ours
 0x00639470 function graphicBrokenScreenInitializeBlockDataWithGivenBuffer # fh switch:cg2 0x71008b1978
 0x00639490 function graphicBrokenScreenReset     # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d99f0 graphicBrokenScreenReset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006394a0 function graphicBrokenScreenStartKeepFrame # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d9a40 graphicBrokenScreenStartKeepFrame is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -1918,6 +1919,7 @@
 0x00643900 function graphicSetScreenFadeColor # fh v3:exact 0x00643ab0
 0x00643940 function graphicSetScreenFadeLastReason # fh v3:bsim1.00 0x00643af0
 0x00643980 function graphicSetSpecularMapParams  # layout+callees: sorts between graphicSetScreenFadeLastReason and graphicSetTextureVideoInfo, and its named callees match the Switch 0x71001d7ec0 graphicSetSpecularMapParams's (similarity 1.00: SpecularMapParamsManager_GetInstance, SpecularMapParamsManager_setShadeSpecularMapParams); symbols from Fahrenheit's server export
+0x00643a20 function graphicTextureAnimationSetFrame # structure: cdecl(i, frame): TextureAnimationManager_SetFrame(i, frame, 0) on TextureAnimationManager_GetInstance; name ours
 0x00643aa0 function graphicSetTextureVideoInfo # fh v3:exact 0x00643c50
 0x00643af0 function graphicSetUiDrawType      # fh v3:cg13 0x643ca0
 0x00643b10 function StoreComputedToDeref_00643b10 # auto-port shape (store computed to deref, cdecl): t0 = u32[&0x00ccb9d8]; u8[(t0 + 0xfc88)] = (a0 != 0x0); return t0; callers: no direct caller; name ours
@@ -2108,6 +2110,7 @@
 0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2
 0x00656940 function PhyreScene_addVFXDrawEvent # fh v3:exact 0x00656af0 PhyreScene::addVFXDrawEvent
 0x00656b90 function PhyreScene_PushPair3890   # structure: thiscall(scene, a, b), ret 8: appends a and b at the count +0x38a0 to the arrays +0x3894 and +0x389c; both grow by 0x400 (0x0066c700, 0x0066c690) when the first (+0x3890 capacity) is full; name ours
+0x00656c10 function PhyreScene_AddDrawEntry   # structure: thiscall(scene, e, kind), ret 8: up to 0xc00 each: kind set -> e +0xc to +0x38cc (count +0xf8cc); else e to +0x68cc (count +0xf8d0) and 0x006721b0's result sets +0x10d2c; name ours
 0x00657140 function PhyreScene_animate        # fh v3:bsim0.95 0x006572f0 PhyreScene::animate
 0x006575a0 function std_string_append_substr     # structure: thiscall(this, const string &s, pos, n): MSVC basic_string<char>::append(s, pos, n) ("invalid string position", "string too long"); name ours
 0x006576d0 function std_string_append_ptr        # structure: thiscall(this, const char *p, n): MSVC basic_string<char>::append(p, n): appends a substring of itself through 0x006575a0, "string too long" checks, grows through 0x00404740; name ours
@@ -2251,6 +2254,7 @@
 0x0066db00 function PhyreScene_setObjectRotation # fh v3:exact 0x0066dc90 PhyreScene::setObjectRotation
 0x0066e3e0 function PhyreScene_setObjectTranslation # fh v3:exact 0x0066e570 PhyreScene::setObjectTranslation
 0x0066e4f0 function Render_SurfaceFormat_0066e4f0 # (surface, desc) -> 5 for a format byte (+2) outside B, C, D, 0x12, 0xd9..0xdc, else builds a 4-word format record (B by default) and passes it to 0x004d57d0; callers the PostProcessManager render-target functions; the TrophyManager_Install it calls is the folded xor eax,eax stub (so not a trophy install); own name
+0x0066e5e0 function PhyreScene_SetNumberText  # structure: thiscall(scene, n), ret 4: with +0xfc00 set, +0xfc64 = n and sprintf(+0xfc68, "%d", n); name ours
 0x0066e7b0 function PhyreScene_SetMeshesVisible # structure: thiscall(scene, on): every mesh of +0x11d0 (+0x11c8) with a draw entry (+0x1c) gets the entry's +0x1c = mesh or 0; 0x00643df0 wraps it with on = (arg != 0); name ours
 0x0066e800 function PhyreScene_setTextureVideoInfo # fh v3:exact 0x0066e990 PhyreScene::setTextureVideoInfo
 0x0066e850 function PhyreScene_setWaveStrength   # layout+callees: sorts between PhyreScene_setTextureVideoInfo and PhyreScene_setupColorCorrection, and its named callees match the Switch 0x7100208d10 PhyreScene_setWaveStrength's (similarity 0.88: WaterWaveController_setBuoyancyFix, WaterWaveController_setCircleWaveStrength, WaterWaveController_setDraughtOffset, WaterWaveController_setFoamStrength, WaterWaveController_setMultiTexBlendFactor); symbols from Fahrenheit's server export
@@ -2690,6 +2694,7 @@
 0x006b29c0 function TextureAnimationManager_registerCharacterInstance # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'register(%s, %u)\\n'; Switch 0x710028dfb0 TextureAnimationManager::registerCharacterInstance (symbols from Fahrenheit's server export)
 0x006b2f50 function TextureAnimationManager_sceenTextureAnimationClear # fh v3:cg2 0x6b30a0 TextureAnimationManager::sceenTextureAnimationClear
 0x006b3060 function TextureAnimationManager_setAnimatedMaterialsChar # fh v3:exact 0x006b31b0 TextureAnimationManager::setAnimatedMaterialsChar
+0x006b3600 function TextureAnimationManager_SetPaused # structure: thiscall(mgr, i, paused), ret 8: the animation material i + +8 + +0xc names (TextureAnimation_FindByName) gets byte +0x1c; name ours
 0x006b3650 function TextureAnimation_SetByte1c # thiscall(this, v), ret 4: byte +0x1c = v; name ours
 0x006b42c0 function TextureAnimationManager_SetFrame # structure: thiscall(mgr, i, frame, absolute), ret 0xc: material i (+8 + +0xc unless absolute) names a texture animation (TextureAnimation_FindByName): +0x1c = 0, +0x18 = frame when below its count; al 1 (0 when not found); name ours
 0x006b4330 function TextureAnimationManager_unregisterChararcterInstance # fh v3:exact 0x006b4480 TextureAnimationManager::unregisterChararcterInstance
@@ -2793,6 +2798,7 @@
 0x006ce9d0 function ShadowManager_RemoveFromShadowMap # fh v3:exact 0x006ceb00 ShadowManager::RemoveFromShadowMap
 0x006cea80 function ShadowManager_SetFloats401c # thiscall(this, a, b), ret 8: floats +0x401c = a, +0x4018 = b; name ours
 0x006ceaa0 function ShadowManager_SetQuality  # structure: thiscall(sm, q): +0x4060 = q, +0x4064 = 1, g_ShadowSize 0x1000/0x800/0x400 for q 1/2/3; 0x0066f010 calls it after ShadowManager_getInstance; name ours
+0x006ceb10 function ShadowManager_ResetSolution # structure: thiscall(sm, keep), ret 4: shadow state reset (+0x403c from 0x00c34400, flags, +0x4048 = Compute_006cc8b0); without keep +0x4034 = -10 and +0x400c set; then 0x00657920 and PhyreScene_ForceSetShadowSolution(keep ? 0 : 2) on the scene (tail call); name ours
 0x006d1780 function ShadowManager_clearCascades # thiscall(this): 64 words from +0xfe8 to 0; name ours
 0x006d18b0 function ShadowManager_createshadowbuffer # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ShadowManager_TempShadowMaptarget'; Switch 0x7100278090 ShadowManager::createshadowbuffer (symbols from Fahrenheit's server export)
 0x006d22e0 function ShadowManager_getCascade # thiscall(this, i), ret 4: word i from +0x60; name ours
@@ -4417,6 +4423,7 @@
 0x0077e8e0 function syncStrCheckPC_HDD        # fh switch:bsim1.00 0x7100323e60
 0x0077e920 function tex_anim_dlg              # fh switch:cg2 0x71008b62a8
 0x0077e940 function tex_anim_no_set           # fh v3:exact 0x0077ea30
+0x0077e9a0 function TexAnim_PosSet            # structure: cdecl(i, which, v): by g_ChrTexAnim[i] +0xd: 0 (old) tex_anim_pos_set_old, 1 (new) TexAnim_ResetPos (tail calls); name ours
 0x0077e9f0 function TexAnim_GetWork           # cdecl(i): g_ChrTexAnim[i] +4 (the work buffer); name ours
 0x0077ea10 function texanim_malloc_memory_set    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Sa:Movie Malloc Move %x\\n'; Switch 0x7100326d60 texanim_malloc_memory_set (symbols from Fahrenheit's server export)
 0x0077eaa0 function TexAnim_SyncPath2         # cdecl(a): the same writes as TexAnim_SyncPath (a, 0, 0x105); name ours
@@ -9703,6 +9710,7 @@
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
 0x008e19f0 function TOMenuDrawTimer              # callees: its named callees match the Switch 0x71004d6a90 TOMenuDrawTimer's (similarity 1.00: TOGetFFXLang, TOGetFontSpaceInPiexl, ToGetBtlEasyDigitWidth2, ToGetBtlEasyFontWidth, ToMakeBtlEasyEdgeDigit2); symbols from Fahrenheit's server export
+0x008e1c50 function graphicGetCurrentFrame    # fh switch:bsim1.00 0x71001d9db0: TkMenuGetPlayerFromIndex2_008a9b00(TkMenuGetCurrentPlayerPos())
 0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
 0x008e2250 function GetGlobal01871558_008e2250   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01871558]; return t0; callers: no direct caller; name ours
 0x008e2260 function MenuMain_OptionY          # (i) i16 0x0187156e + 8i; own name

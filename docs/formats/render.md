@@ -643,6 +643,33 @@ Not ported in round 10: `0x00667770` (`std::vector<std::string>`
 `push_back`: platform), `0x006d5a00` (frees three `PCluster`s and resets
 `BrokenScreenEffect`: glue).
 
+Round 11:
+
+- `ShadowManager_ResetSolution(keep)` (`0x006ceb10`): resets the shadow
+  state (`+0x403c` from the float at `0x00c34400`, the compare callback
+  `+0x4048` = `Compute_006cc8b0`, flags), without `keep` also `+0x4034` = -10;
+  then `PhyreScene_ForceSetShadowSolution(keep ? 0 : 2)`.
+- `PhyreScene_AddDrawEntry(e, kind)` (`0x00656c10`, two lists of up to 0xc00),
+  `PhyreScene_SetNumberText(n)` (`0x0066e5e0`, `sprintf "%d"` into
+  `+0xfc68` when `+0xfc00` is set), `BrokenScreenEffect_BufferSize(n)`
+  (`0x006393c0`).
+- Texture animation: `TexAnim_PosSet(i, which, v)` (`0x0077e9a0`, by the
+  entry's format: 0 old `tex_anim_pos_set_old`, 1 new `TexAnim_ResetPos`),
+  `TextureAnimationManager_SetPaused` (`0x006b3600`),
+  `graphicTextureAnimationSetFrame` (`0x00643a20`).
+- `graphicGetCurrentFrame` (`0x008e1c50`): the menu's current player.
+
+Not ported in round 11, with the class that fits: the fog setters
+`graphicSetFogColour`/`Far`/`Limit`/`Near` (`0x00643150`..`0x006431e0`) and
+the `BrokenScreenEffect` setters `0x00639360`/`0x00639370`/`0x00639390`
+(forwarders that only call glue: glue); `0x006377a0`, `0x00637730`,
+`0x00441bf0` (cursor steps on the `PhyreCursor_IsValid_copy_00637f80`
+check, now classed glue: the cursor family is PhyreEngine's own list
+iteration, so the cursor steps and checks ported in rounds 8-10 may count
+as glue too); `0x00651800` (`MultiByteToWideChar` conversion: platform);
+`0x006582e0` (`MaterialColour` shader parameter: glue); `0x006436e0`
+(forwards to `MorphManager`, unclassed); `0x00642c80` (fog-manager state).
+
 Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
 reference count with `lock xadd`; game memory access through `Mem` is
 not atomic, and loader threads share strings, so it stays original.

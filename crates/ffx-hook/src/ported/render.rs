@@ -1182,6 +1182,40 @@ ported! {
     PhyreScene_ApplySettings @ 0x0066_f010 => extern "thiscall" fn scene_apply_settings(this: u32) -> u32 {
         st::scene_apply_settings(&mut mem(), this)
     }
+
+    // ---- round 11 ----
+    /// `graphicGetCurrentFrame()`.
+    graphicGetCurrentFrame @ 0x008e_1c50 => extern "C" fn graphic_get_current_frame() -> u32 {
+        ut::get_current_frame(&mut mem())
+    }
+    /// `graphicTextureAnimationSetFrame(i, frame)`.
+    graphicTextureAnimationSetFrame @ 0x0064_3a20 => extern "C" fn graphic_tex_anim_set_frame(i: u32, frame: u32) -> u32 {
+        ut::graphic_tex_anim_set_frame(&mut mem(), i, frame)
+    }
+    /// `TexAnim_PosSet(i, which, v)`.
+    TexAnim_PosSet @ 0x0077_e9a0 => extern "C" fn tex_anim_pos_set(i: u32, which: u32, v: u32) -> u32 {
+        ut::tex_anim_pos_set(&mut mem(), i, which, v)
+    }
+    /// `PhyreScene_SetNumberText(this, n)`.
+    PhyreScene_SetNumberText @ 0x0066_e5e0 => extern "thiscall" fn scene_set_number_text(this: u32, n: u32) {
+        ut::scene_set_number_text(&mut mem(), this, n);
+    }
+    /// `TextureAnimationManager_SetPaused(this, i, paused)`.
+    TextureAnimationManager_SetPaused @ 0x006b_3600 => extern "thiscall" fn tex_anim_set_paused(this: u32, i: u32, paused: u32) {
+        ut::tex_anim_set_paused(&mut mem(), this, i, paused);
+    }
+    /// `BrokenScreenEffect_BufferSize(n)`.
+    BrokenScreenEffect_BufferSize @ 0x0063_93c0 => extern "C" fn broken_screen_buffer_size(n: u32) -> u32 {
+        ut::broken_screen_buffer_size(&mut mem(), n)
+    }
+    /// `PhyreScene_AddDrawEntry(this, e, kind)`.
+    PhyreScene_AddDrawEntry @ 0x0065_6c10 => extern "thiscall" fn scene_add_draw_entry(this: u32, e: u32, kind: u32) {
+        ut::scene_add_draw_entry(&mut mem(), this, e, kind);
+    }
+    /// `ShadowManager_ResetSolution(this, keep)`.
+    ShadowManager_ResetSolution @ 0x006c_eb10 => extern "thiscall" fn shadow_reset_solution(this: u32, keep: u32) -> u32 {
+        ut::shadow_reset_solution(&mut mem(), this, keep)
+    }
 }
 
 /// A singleton's pointer.
