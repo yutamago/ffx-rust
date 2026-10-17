@@ -50,4 +50,23 @@ On PC the projected point is never computed (`FFXVu0FTOI4Vector`,
 and the depth comes from stale scratch memory. The port reads its own
 zeroed locals instead, which gives an empty box and a visibility of 0. A
 renderer that wants flare occlusion has to supply the point and the depth
-at this seam.
+at this seam. Until then the port stays out of the hook table.
+
+### To observe
+
+`pppKeLnsLpTOtDraw` belongs to the `pppKeLnsLpT` program (record at
+`0x00c3bae8`): `pppKeLnsLpTCon` (`0x0075b090`) registers it on
+`g_pppOtList` (`0x0230fff0`), and `pppKeLnsLpTDraw` (`0x0075b160`) draws
+the flare with the visibility it leaves in `+0x7c`. Which spell or field
+effect uses the program is not yet known; a breakpoint on `0x0075b230`
+(x64dbg or Frida) during effects with lens flares finds one. Then check
+in the original:
+
+- whether the flare is visible at all, and whether it flickers or fades;
+- the values at `+0x7c` and `+0xac` of the object each frame (the
+  visibility and the last fraction), and whether they stay 0;
+- the projected point it reads (`ebp - 0x14 .. - 0xc`) and whether that
+  stale data repeats from frame to frame.
+
+If the flare shows in the original, the hook needs those values from
+somewhere other than zeroed locals before it can go in.

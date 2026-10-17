@@ -3973,7 +3973,7 @@
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
 0x0075b160 function pppKeLnsLpTDraw           # ppp program table record "pppKeLnsLpT" draw
-0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0); ours: = draw::bridge::ppp_ke_lns_lp_t_ot_draw: lens-flare occlusion: counts depth texels below the point in the clamped box, visibility +0x7c *= count/(hx*hy), +0xac = that (oracle parity; FFXVu0FTOI4Vector and sceGsExecStoreImage are stubs on PC)
+0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0); ours: = draw::bridge::ppp_ke_lns_lp_t_ot_draw: lens-flare occlusion: counts depth texels below the point in the clamped box, visibility +0x7c *= count/(hx*hy), +0xac = that (oracle parity; FFXVu0FTOI4Vector and sceGsExecStoreImage are stubs on PC); not hooked: its in-game result comes from stale memory
 0x0075b680 function magic_nop_0075b680        # g_MagicImports slot 422 (4 overlays): a lone ret; hidden from the dump
 0x0075b690 function pppKeAcmCic               # ppp program table record "pppKeAcmCic" step
 0x0075b6b0 function pppKeAccSpdSv             # ppp program table record "pppKeAccSpdSv" step; not a function start in the Ghidra dump
