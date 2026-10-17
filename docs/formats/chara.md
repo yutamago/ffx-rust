@@ -373,6 +373,32 @@ port treats those bytes as NUL, which gives the original's result
 whenever the byte is not a digit; the oracle test enters the original
 with ECX = `"AAAA"`.
 
+## The id map walk
+
+`Sg_IdWalk` (`0x0083d960`) finds the id-map triangle under a position. A
+triangle is 16 bytes in the table at `0x01301a84`: three `i16` vertex
+indices, then the neighbours across edges 0-1, 1-2 and 2-0. Vertices are
+8 bytes in the table at `0x01301a8c`: `i16` x, y, z. Each edge test
+evaluates the edge's line at the position. The coefficients are the
+edge's integer coordinates and their integer products, each rounded to
+`f32`.
+
+The first edge the position lies beyond wins. A later edge overrides an
+earlier one only when the character's previous position (`+0x3c`,
+`+0x44`) is also beyond it. Inside all three edges, the triangle's
+vertices go to `+0x8c`..`+0xb4` and its index to `+0x824`. Beyond an
+edge, the walk moves to the neighbour (depth `0x01301ae8`, at most 10)
+unless one of these stops it:
+
+- there is no neighbour;
+- `Sg_IdMatchChr` rejects the neighbour for this character;
+- the neighbour's floor is too low: `Sg_IdGetHeight` is below the
+  character's `+0x40` less the slack `0x01301af4`. The floor is checked
+  only for a sloped normal.
+
+When the walk stops, it records the crossed edge (`0x01301aec`,
+`0x01301af0`).
+
 ## Head, mouth and automatic motion
 
 `Ch_Neck` (`0x008348d0`) turns the head (option point 9's element)
