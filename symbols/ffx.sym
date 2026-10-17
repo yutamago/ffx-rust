@@ -1541,6 +1541,7 @@
 0x0062fc20 function sceRemove                 # fh v3:cg8 0x62fdd0
 0x0062fc70 function FFXVpu0Reset              # fh v3:cg2 0x62fe20
 0x0062fca0 function FFXVu0CopyVectorXYZ       # fh v3:bsim1.00 0x0062fe50
+0x0062fcd0 function FFXVu0FTOI4Vector         # (dst, src) a bare ret in FFX.exe (the VU0 float-to-12.4 conversion left out): pppKeLnsLpTOtDraw (0x0075b230) reads its dst uninitialised; ours
 0x0062fce0 function FFXVu0InnerProduct        # fh v3:bsim1.00 0x0062fe90
 0x0062fd10 function FFXVu0InterVector         # fh v3:exact 0x0062fec0
 0x0062fd70 function FFXVu0InterVectorXYZ      # fh v3:exact 0x0062ff20
@@ -3602,7 +3603,7 @@
 0x0072edb0 function pppVtMimeCon2             # ppp program table record "pppVtMime" (0x00c3b278) +0x20 second set-up; "pppVtMime" (0x00c3c920) +0x20 second set-up
 0x0072ede0 function pppVtMimeDes              # fh v3:exact 0x0072eec0
 0x0072ee20 function pppKeTkFadeCon            # ppp program table record "pppKeTkFade" (0x00c3d758) +0x1c set-up; "pppKeTkFade" (0x00c3d758) +0x20 second set-up
-0x0072ee50 function pppKeTkFadeDraw           # ppp program table record "pppKeTkFade" draw; not a function start in the Ghidra dump
+0x0072ee50 function pppKeTkFadeDraw           # ppp program table record "pppKeTkFade" draw; not a function start in the Ghidra dump; ours: = draw::bridge::ppp_ke_tk_fade_draw: steps the [pos, speed, accel] fade, builds a 256-entry CSM1 CLUT ramp (+0x18 to +0x14, split at ftol(pos)) in SPR and uploads it (sceGsExecLoadImage, a stub on PC) (oracle parity)
 0x0072f3c0 function VFX_Copy16To_0072f3c0     # the same code as VFX_Copy16To (callers: op_shape_draw, sg_calcenvelope_normW)
 0x0072f420 function pppVu0RNext              # vrnext as the PC port emulates it: *out = g_Vu0_R stepped (when g_Vu0_RSeeded, which it does not set) else 1.0; the rand programs' draws (pppRandFloat ...) call it after srand
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
@@ -3632,13 +3633,13 @@
 0x00732130 function pppRandUpHCV              # fh v3:exact 0x00732200
 0x00732390 function pppRandDownHCV            # fh v3:exact 0x00732460
 0x007325f0 function pppSRandFV                # fh v3:exact 0x007326c0
-0x007326e0 function pppSRandFV_Draw           # pppSRandFV's draw: the rand programs' srand + vrnext draw, twice when the key's flag (+0x20) is set; 2 d1 or d2 + d1
+0x007326e0 function pppSRandFV_Draw           # pppSRandFV's draw: the rand programs' srand + vrnext draw, twice when the key's flag (+0x20) is set; 2 d1 or d2 + d1; ours: = rand::bridge::ppp_srand_draw(Spread::Plain), the byte argument picking the two-draw form, result in ST0 (oracle parity)
 0x007328b0 function pppSRandUpFV              # ppp program table record "pppSRandUpFV" step: as pppSRandFV, d1 or (d2 + d1) / 2, target[i] += k[i] w[i]
-0x00732970 function pppSRandUpFV_Draw         # pppSRandUpFV's draw
+0x00732970 function pppSRandUpFV_Draw         # pppSRandUpFV's draw; ours: = rand::bridge::ppp_srand_draw(Spread::Up), the byte argument picking the two-draw form, result in ST0 (oracle parity)
 0x00732b40 function pppSRandDownFV            # ppp program table record "pppSRandDownFV" step: as pppSRandUpFV with -d1 or (-d1 - d2) / 2
-0x00732c00 function pppSRandDownFV_Draw       # pppSRandDownFV's draw
+0x00732c00 function pppSRandDownFV_Draw       # pppSRandDownFV's draw; ours: = rand::bridge::ppp_srand_draw(Spread::Down), the byte argument picking the two-draw form, result in ST0 (oracle parity)
 0x00732dd0 function pppSRandCV                # ppp program table record "pppSRandCV" step: four draws whenever the key applies (flag +0xc), i8 factors at +8, byte targets += ftol(w k - k)
-0x00732f30 function pppSRandCV_Draw           # pppSRandCV's draw
+0x00732f30 function pppSRandCV_Draw           # pppSRandCV's draw; ours: = rand::bridge::ppp_srand_draw(Spread::Plain), the byte argument picking the two-draw form, result in ST0 (oracle parity)
 0x007330e0 function pppSRandUpCV              # ppp program table record "pppSRandUpCV" step: as pppSRandCV, ftol(k w)
 0x007333e0 function pppSRandDownCV            # ppp program table record "pppSRandDownCV" step
 0x007336e0 function pppSRandHCV               # fh v3:exact 0x007337b0
@@ -3728,7 +3729,7 @@
 0x007376a0 function pppEePpach                # (dst, rs, rt) R5900 PPACH: low halves of rt's four words, then rs's
 0x00737700 function pppEePsrlw                # (dst, src, sa) R5900 PSRLW the PC way: (i32 >> sa&31) & (0x7fffffff >> (sa-1 & 31)), so sa 0 gives 0
 0x00737750 function pppColorShiftStore        # (src, base) dword at base + g_pppColorConShift = *src; the shift cleared
-0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump
+0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = draw::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData) (oracle parity)
 0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
 0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
 0x007384f0 function pppDrawMdlTsCon           # ppp program table record "pppDrawMdlTs" (0x00c3a8a0) +0x1c set-up; "pppDrawMdlTs" (0x00c3a8a0) +0x20 second set-up; "pppDrawMdlTs" (0x00c3bf48) +0x1c set-up and 1 more
@@ -3792,23 +3793,23 @@
 0x00741570 function pppDrawShapeRevCon        # ppp program table record "pppDrawShapeRev" (0x00c3b7a0) +0x1c set-up; "pppDrawShapeRev" (0x00c3b7a0) +0x20 second set-up; "pppDrawShapeRev" (0x00c3ce48) +0x1c set-up and 1 more
 0x007415a0 function pppDrawShapeRevDraw       # ppp program table record "pppDrawShapeRev" draw; not a function start in the Ghidra dump
 0x007419e0 function pppShapeRandFlip          # (def, out) u16 out = 1; for bits 0/1 of def+0xf, op_random(1.0) > 0 sets that bit of out's high byte (pppDrawShapeRevDraw)
-0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up
-0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor
+0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up; ours: unit matrix, null/zero words from +0x40, frame count (draw::bridge::shape_con FIELD_CON)
+0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor; ours: graphicVFXDestroy unless one of 9 level hashes, frees +0xe0/+0xe4/+0xf0 (draw::bridge::ppp_des FIELD_DES)
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
-0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up
-0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor
+0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_REV_CON)
+0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_REV_DES)
 0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
-0x007450a0 function pppDrawShapeFieldSpdCon   # ppp program table record "pppDrawShapeFieldSpd" +0x1c set-up
-0x00745130 function pppDrawShapeFieldSpdDes   # ppp program table record "pppDrawShapeFieldSpd" +0x24 destructor
+0x007450a0 function pppDrawShapeFieldSpdCon   # ppp program table record "pppDrawShapeFieldSpd" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_SPD_CON)
+0x00745130 function pppDrawShapeFieldSpdDes   # ppp program table record "pppDrawShapeFieldSpd" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_SPD_DES)
 0x00745210 function pppDrawShapeFieldSpdDraw  # ppp program table record "pppDrawShapeFieldSpd" draw
-0x00746200 function pppDrawShapeFieldGlobalCon # ppp program table record "pppDrawShapeFieldGlobal" +0x1c set-up
-0x00746280 function pppDrawShapeFieldGlobalDes # ppp program table record "pppDrawShapeFieldGlobal" +0x24 destructor
+0x00746200 function pppDrawShapeFieldGlobalCon # ppp program table record "pppDrawShapeFieldGlobal" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_GLOBAL_CON)
+0x00746280 function pppDrawShapeFieldGlobalDes # ppp program table record "pppDrawShapeFieldGlobal" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_GLOBAL_DES)
 0x00746320 function pppDrawShapeFieldGlobalDraw # ppp program table record "pppDrawShapeFieldGlobal" draw
-0x00747410 function pppDrawShapeCameraCon     # ppp program table record "pppDrawShapeCamera" +0x1c set-up
-0x00747490 function pppDrawShapeCameraDes     # ppp program table record "pppDrawShapeCamera" +0x24 destructor
+0x00747410 function pppDrawShapeCameraCon     # ppp program table record "pppDrawShapeCamera" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
+0x00747490 function pppDrawShapeCameraDes     # ppp program table record "pppDrawShapeCamera" +0x24 destructor; ours: destroys the instance before and after the frees (draw::bridge::ppp_des CAMERA_DES)
 0x00747540 function pppDrawShapeCameraDraw    # ppp program table record "pppDrawShapeCamera" draw
-0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up
-0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor
+0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
+0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor; ours: (draw::bridge::ppp_des CAMERA_DES)
 0x00748790 function pppDrawShapeCameraDisPosDraw # ppp program table record "pppDrawShapeCameraDisPos" draw
 0x00748b00 function pppKeMdlBmpDraw_Body_00748b00 # (obj): the sprite part of pppKeMdlBmpDraw (op_spr_alloc/op_spr_free, the debug dump "PA= %d, %d, %d" ... "------"); those strings are the Switch pppKeMdlBmpDraw's, which inlines it; caller pppKeMdlBmpDraw; own name
 0x00749050 function op_ivec4_shr7_00749050      # ours: (out, v) -> last: four i16 >> 7 (arithmetic) as f32 into out; caller 0x007490d0
@@ -3872,7 +3873,7 @@
 0x00755010 function pppKeShpDttCon            # ppp program table record "pppKeShpDtt" (0x00c3ac10) +0x1c set-up; "pppKeShpDtt" (0x00c3ac10) +0x20 second set-up; "pppKeShpDtt" (0x00c3c2b8) +0x1c set-up and 1 more
 0x00755040 function pppKeShpDttDraw           # ppp program table record "pppKeShpDtt" draw; not a function start in the Ghidra dump
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
-0x00756270 function pppDrawRainDes            # ppp program table record "pppDrawRain" +0x24 destructor
+0x00756270 function pppDrawRainDes            # ppp program table record "pppDrawRain" +0x24 destructor; ours: frees work +0xa4 of slot 1 (draw::bridge::ppp_des RAIN_DES)
 0x007562c0 function pppDrawRainDraw           # ppp program table record "pppDrawRain" draw
 0x00756600 function rcuiScaleVector_copy_00756600 # the same code as rcuiScaleVector (0x00930f30; call targets equal), a copy the compiler kept; own name
 0x007566a0 function pppDrawSpriteCon          # ppp program table record "pppDrawSprite" (0x00c3df00) +0x1c set-up
@@ -3972,7 +3973,7 @@
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
 0x0075b160 function pppKeLnsLpTDraw           # ppp program table record "pppKeLnsLpT" draw
-0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0)
+0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0); ours: = draw::bridge::ppp_ke_lns_lp_t_ot_draw: lens-flare occlusion: counts depth texels below the point in the clamped box, visibility +0x7c *= count/(hx*hy), +0xac = that (oracle parity; FFXVu0FTOI4Vector and sceGsExecStoreImage are stubs on PC); not hooked: its in-game result comes from stale memory
 0x0075b680 function magic_nop_0075b680        # g_MagicImports slot 422 (4 overlays): a lone ret; hidden from the dump
 0x0075b690 function pppKeAcmCic               # ppp program table record "pppKeAcmCic" step
 0x0075b6b0 function pppKeAccSpdSv             # ppp program table record "pppKeAccSpdSv" step; not a function start in the Ghidra dump
@@ -14348,6 +14349,8 @@
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
 0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
+0x00c3e6a0 label    g_pppClutCsmStep          # 32 signed bytes: the CLUT entry step (in u32 entries) after entry i & 0x1f in CSM1 order (1, 9, -15, ...); pppKeTkFadeDraw (0x0072ee50) copies it to its buffer +0x400; ours
+0x00c3e6c0 label    g_pppClutCsmPos           # 32 bytes: entry i & 0x1f's position within its 32-entry block in CSM1 order (0..7, 0x10..0x17, 8..0xf, 0x18..0x1f); pppKeTkFadeDraw (0x0072ee50) starts its tail fill there; ours
 0x00c3e6e0 label    g_pppKeMatSNWords         # two words pppKeMatSN copies to area 0 +0x70/+0x74
 0x00c41758 label    g_HddPassNames            # "ffxpassf" (+0) and "ffxpassr" (+0xc), written by hdd_set_pass_names
 0x00c42130 label g_ChrTexAnimSwizzle        # two 64-byte index tables (0x00c42130, 0x00c42170) for chr_texanim_clut_swizzle
@@ -15300,6 +15303,7 @@
 0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x0230fff0 label    g_pppOtList               # the draw list of the pppKeLns...T programs: their TCon pppOtFunc_Reg(0x0230fff0, node, draw, area), TDes pppOtFunc_Lev(0x0230fff0, node); +4 tail, +0xc u16 count
+0x0230fffe label    g_pppLensView             # u16: the view the pppKeLns...T draws run in; pppKeLnsLpTOtDraw (0x0075b230) zeroes +0x7c when an object's u16 +0xcc differs; ours
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c48 label    g_CdLib_08                # g_CdLib + 8 (wait, docs/formats/system.md): Ch_ReadSync 0x0082a5e0 tail-jumps through it
