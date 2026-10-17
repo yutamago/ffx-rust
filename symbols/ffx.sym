@@ -6396,6 +6396,12 @@
 0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0
 0x00822810 function trophyUnlockTrophy           # layout+callees: sorts between trophyCheckDefeatMonster and updateFFX, and its named callees match the Switch 0x710042de60 trophyUnlockTrophy's (similarity 1.00: SaveDataIsSaveEnabled, SaveDataUnlockTrophy); symbols from Fahrenheit's server export
 0x00822840 function updateFFX                 # fh v3:exact 0x008228d0
+0x00822890 function Sg_ClothRodMaxPin         # cloth rod constraint kind 1 of the cloth step 0x00822de0: (rods, n, points) 12-byte rods {i16 a, i16 b, f32 len, f32 lim}; when |b - a|^2 > lim, b = a + d * len / |d|; name ours; ported (ffx_sg::vec::cloth_rods)
+0x00822960 function Sg_ClothRodMax            # kind 2: as Sg_ClothRodMaxPin, both points move by d * (|d| - len) / |d| / 2; name ours; ported
+0x00822a50 function Sg_ClothRodMinPin         # kind 3: as Sg_ClothRodMaxPin when |b - a|^2 < lim; name ours; ported
+0x00822b20 function Sg_ClothRodMin            # kind 4: as Sg_ClothRodMax when |b - a|^2 < lim; name ours; ported
+0x00822c10 function Sg_ClothRodFixPin         # kind 5: rods {i16 a, i16 b, f32 len}: b = a + d * len / |d|, or b = a (Sg_VecCopy4) when |d|^2 <= 1e-5; name ours; ported
+0x00822cf0 function Sg_ClothRodFix            # kind 6: both points to length len, or b = a when |d| <= 1e-5; name ours; ported
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
 0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
 0x00824620 function Ch_ClothMeshMappingOffset # fh v3:exact 0x008246b0
@@ -6912,6 +6918,7 @@
 0x00838170 function Ch_SeqLink               # ours: links the sequence table 0x01300a08 (100 x 0x14): chains by key (+4) through +8, chain heads through +0xc from 0x013011d8
 0x00838220 function ReadU16Unaligned          # p[1] << 8 | p[0]
 0x00838280 function SG_ApplyBone              # channel floats -> bone: rotation * 2 pi, translation * scale * 4096
+0x00838470 function SG_ApplyBoneDamped        # as SG_ApplyBone, but the rotations and translations only set the targets (+0x114..), the current values (+0xe4..) then move toward them (Chr_LerpAngleDamped(t, c, 0.7, 0, 10), Chr_LerpDamped(t, c, 1, 0, 1)); next to SG_ApplyBone; name ours; ported (ffx_sg::seq::apply_bone)
 0x00838750 function SG_ApplyRawClip           # uncompressed clips: per bone 9 channels x frames i16
 0x00838c60 function SG_RawToRad               # (x) -> Angle_Wrap_0083a010(x * pi / 2048); SG_ApplyRawClip
 0x00838c90 function SG_UpdateMotion           # per-frame motion update of an actor
@@ -7051,6 +7058,7 @@
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
 0x0083e3e0 function Sg_VectorGetLengthXZ      # (a, b) -> |b - a| in the x-z plane (_CIsqrt); the id map functions
 0x0083e420 function Sg_CalcTriangleNormal_0083e420 # structure: (v0, v1, v2, out) with s16 vertices: the normalised cross product of the two edges (FFXVu0OuterProduct, FFXVu0Normalize); next to Sg_VectorGetLengthXZ; name ours
+0x0083e4e0 function Sg_IdMatchChr             # (chr, i) -> whether id entry i's kind (low 7 bits of +0xc) applies to chr: 1 all, 2 not the player, 13 bit 2 of +0x198, 14 the player, 0x30..0x3f through g_ChrIdMapTable; caller 0x0083d960; name ours; ported (ffx_sg::state)
 0x0083e5c0 function Sg_Debug                  # fh switch:bsim0.93 0x7100429320
 0x0083e8d0 function Sg_IdEventInitAll         # (): clears the id events 0x01301a98..ae4 and both effect table sets, Sg_IdSetEffectTableIndex(0); Switch name
 0x0083e960 function Sg_IdGetMapTable          # (i) -> g_ChrIdMapTable[i]
@@ -14422,6 +14430,8 @@
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
 0x012fb8b8 label g_BtlEffectPreloaded      # u32: magic file 0x15e taken preloaded (MsEffectRead)
 0x012fb8c0 label g_SaveLoadedPending # HandleSaveDataScreen: 1 after a successful load, then TkMenuJumpToLoadedScene in screen state 4
+0x012fb8f0 label    g_DreamOn                 # u32: the dream effect started (recallSceneEffect sets it and loads special texture 10); cleared by dreamParamReset
+0x012fb8f4 label    g_DreamPhase              # u32: the dream effect's phase; 5 draws it (graphicDrawDream from recallSceneEffect)
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY

@@ -349,7 +349,9 @@ pub mod bridge {
     /// Either way the table is linked again (`Ch_SeqLink`, a tail call).
     pub fn add_sequence(h: &mut impl ffx_bridge::Host, seq: u32, v: u32) {
         let base = SEQUENCES.ptr(h).addr;
-        let free = (0..100u32).map(|k| base.wrapping_add(20 * k)).find(|&e| h.read::<u32>(e) == 0);
+        let free = (0..100u32)
+            .map(|k| base.wrapping_add(20 * k))
+            .find(|&e| h.read::<u32>(e) == 0);
         if let Some(e) = free {
             let n: u16 = h.read(seq.wrapping_add(4));
             h.write(e.wrapping_add(4), n);
