@@ -50,6 +50,11 @@ data, the register number as 64 bits) and advances the count:
 sign-extended `int` arguments, so a negative field sets every bit above it.
 `Sg_GsEnd2` fills the first three quadwords with the DMA and VIF headers
 sized by the count (`n - 1 | 0x10000000`, ..., `n - 3 | 0x8000`).
+`Sg_GsEnd` (`0x00841770`) closes the packet for DMA instead: the tag's low
+15 bits become `n - start - 1`, an end quadword (`0x8001`, `0x10000000`,
+`0xf`, 0) goes at `n`, the first quadword becomes `n + 1 | 0x70000000`
+(the rest of it zero), then `FlushCache(0)`, `sceDmaSync(ch, 0, 0)` and
+`sceDmaSend(ch, packet)` on the channel in `0x023cbbf4`.
 
 The debug lines (`Sg_DbLine`, `Sg_DbLineStrip`, `Sg_DbVertex`) append to
 the buffer `0x013032d0` points to only while `g_FFXIsDebug` is set: a word
@@ -198,3 +203,20 @@ ShadowSemi, ShadowColor, ShadowTexture, FSpecular, Specular, SpecSize,
 SpecCoefficient, SpecColor) matched by argument counts and sources; the
 texture and shadow-texture bytes are both cleared when no texture list is
 loaded.
+
+## Requests passed on (`crates/ffx-sg/src/control.rs`)
+
+The main loop's requests to the renderer and the sound system; the work
+behind them stays with those modules, which the bridges call.
+
+| Function | State | Then calls |
+|---|---|---|
+| `Sg_Blur(weight)` `0x0082bee0` | `0x01300704` bit 1, byte `0x01300718` = 1; on (`u16` `0x0130071c`) and weight (`u16` `+2`), both cleared as one word for 0 | `graphicSetMotionBlurEnable(on)`, then `graphicSetMotionBlurWeight(i16 weight / 128)` |
+| `Sg_AccSetAlpha(alpha, frames)` `0x0082bd10` | bit 0, pending `0x01300708` = 0, frames `0x0130070c`; over frames the target `0x01300710` and step `0x01300712` = `\|current - alpha\| / frames` (signed, at least 1); at once the alpha `0x0130070e` (and on map `0x102` the step 0); a non-zero alpha with no frames counts one | `graphicUpdateCrossFade(&alpha, &frames)` |
+| `Sg_AccRequestCurrent()` `0x0082bdf0` | `g_AccCurrentRequest` `0x012ffae4` = 1, read by `sg_AccSetCurrent` | `0x00639150` (cross-fade capture on) first |
+| `Sg_SetPauseAllSounds(on)` `0x00821cc0` | `0x012fb8ec`: 0 normal → 2 paused and back, unless `isInTkMenuPause()` | voices and effects paused or resumed |
+| `Sg_SetMuteSound(on)` `0x00821c60` | the same word: 0 → 1 muted and back | one-shot effects stopped, effects paused, `iSoundSetMute(on, 2)` |
+| `Sg_SetMapAlphaFast(on)` `0x00821b00` | byte `0x012fbbb6` | `graphicSetMapAlphaFast(on)` |
+| `Sg_PLightDispose()` `0x00831ba0` | point-light table freed, table and count 0 | the memory move's trigger |
+| `dreamParamReset()` `0x00822410` | `0x012ffaf4`, `0x012fb8f0`, `0x012ffae8`, `0x012ffaec`, `0x012fb8f4` 0; `0x00c496d0` -1 | `graphicMenuUnloadSpecialTexture(10)` |
+| `Sg_LightSetDir(i, dir)` `0x00836430` | light `i` (0-2: `0x00c49724`, `0x00c49734`, `0x013008e8`) gets four words | `FFXVu0NormalLightMatrix(g_Vu0ClipScreen, the three)`, `graphicCharacterLightingSetLightDir(i, x, y, z)` |
