@@ -7905,3 +7905,83 @@ fn round13_texture_names_match_the_original_on_the_snapshot() {
     };
     round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0022));
 }
+
+/// Round 13's magic file start-up, over logging stand-ins.
+fn round13_magic_file(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    let log = alloc(a, b, 0x80);
+    let cursor = alloc(a, b, 4);
+    let stub = |a: &mut Oracle, b: &mut Oracle, k: u32| stand_in8(a, b, 0xb00 + 0x30 * k, &logger(cursor, 0x1300_0000 + (k << 8)));
+    let printf = stub(a, b, 0);
+    let init = stub(a, b, 1);
+    for (k, sym) in [(2u32, 0x0064_3260u32), (3, 0x0064_2f10)] {
+        let s = stub(a, b, k);
+        redirect(a, b, sym, s);
+    }
+    // resetZanmatoSepList takes no argument: count its calls
+    let mut count = vec![0x83, 0x05];
+    count.extend_from_slice(&(log + 0x7c).to_le_bytes());
+    count.extend_from_slice(&[0x01, 0xc3]);
+    let s = stand_in8(a, b, 0xb00 + 0x30 * 4, &count);
+    redirect(a, b, 0x007a_8f20, s);
+    for (slot, to) in [(0x00b0_c380u32, printf), (0x022f_b6a0, init)] {
+        let at = a.rebase(slot);
+        a.write(at, &to.to_le_bytes()).unwrap();
+        b.write(at, &to.to_le_bytes()).unwrap();
+    }
+    struct Calls(u32, u32);
+    impl mb::MagicFileCalls<Oracle> for Calls {
+        fn printf(&mut self, m: &mut Oracle, fmt: u32, arg: Option<u32>) {
+            let mut args = vec![fmt];
+            args.extend(arg);
+            m.call(self.0, Conv::Cdecl, &args).unwrap();
+        }
+        fn game_over_notify(&mut self, m: &mut Oracle, on: u32) {
+            eax(m, 0x0064_3260, &[on]);
+        }
+        fn init_magic(&mut self, m: &mut Oracle, imports: u32) {
+            m.call(self.1, Conv::Cdecl, &[imports]).unwrap();
+        }
+        fn fog_fade(&mut self, m: &mut Oracle, on: u32) {
+            eax(m, 0x0064_2f10, &[on]);
+        }
+        fn reset_zanmato(&mut self, m: &mut Oracle) {
+            eax(m, 0x007a_8f20, &[]);
+        }
+    }
+    let mut calls = Calls(printf, init);
+    let ids = [0x2c7u32, 0x296, 0x29e, 0xa8, 0x1b2, 0x262, 0, 1, 0x2c6, 0x2c8];
+    for _ in 0..40 {
+        let id = if rng.next() % 3 == 0 { rng.next() } else { ids[(rng.next() % 10) as usize] };
+        let handle = if rng.next() & 1 == 0 { u32::MAX } else { rng.next() };
+        set(a, b, mb::MAGIC_FILE, [rng.next(), rng.next(), rng.next(), handle]);
+        put(a, b, cursor, log);
+        put(a, b, log, [0u32; 0x1f]);
+        eax(a, 0x009d_a7a0, &[id]);
+        mb::magic_file_set_magic_id(b, id, &mut calls);
+        same_memory("magic id", a, b);
+        if rng.next() & 1 == 0 {
+            let start = ids[(rng.next() % 10) as usize];
+            set(a, b, mb::MAGIC_FILE, [start, rng.next(), rng.next(), handle]);
+        }
+        put(a, b, cursor, log);
+        assert_eq!(eax(a, 0x009d_a7f0, &[]), mb::magic_file_start(b, &mut calls));
+        same_memory("magic start", a, b);
+    }
+}
+
+#[test]
+fn round13_magic_file_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0031));
+}
+
+#[test]
+fn round13_magic_file_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0032));
+}

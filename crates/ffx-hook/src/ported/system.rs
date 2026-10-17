@@ -216,6 +216,33 @@ impl<M> tolib::bridge::PlayerList<M> for GameMenu {
     }
 }
 
+impl<M: Mem> menu::bridge::MagicFileCalls<M> for GameMenu {
+    fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>) {
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let slot = crate::rebase(0x00b0_c380) as u32;
+        let f: u32 = mem.read(slot);
+        match arg {
+            Some(a) => call_ptr(mem, f, &[fmt, a]),
+            None => call_ptr(mem, f, &[fmt]),
+        };
+    }
+    fn game_over_notify(&mut self, mem: &mut M, on: u32) {
+        call_sym(mem, 0x0064_3260, &[on]);
+    }
+    fn init_magic(&mut self, mem: &mut M, imports: u32) {
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let slot = crate::rebase(0x022f_b6a0) as u32;
+        let f: u32 = mem.read(slot);
+        call_ptr(mem, f, &[imports]);
+    }
+    fn fog_fade(&mut self, mem: &mut M, on: u32) {
+        call_sym(mem, 0x0064_2f10, &[on]);
+    }
+    fn reset_zanmato(&mut self, mem: &mut M) {
+        call_sym(mem, 0x007a_8f20, &[]);
+    }
+}
+
 impl<M: Mem> tolib::bridge::TextureName<M> for GameMenu {
     fn battle_status(&mut self, mem: &mut M) -> u32 {
         call_sym(mem, 0x0078_16f0, &[])
@@ -4303,6 +4330,14 @@ ported! {
     /// `TOGetTextureName(id, nibbles, index, high, &size)`.
     TOGetTextureName @ 0x008a_cf50 => extern "C" fn to_get_texture_name(id: u32, nibbles: u32, index: u32, high: u32, size: u32) -> u32 {
         tolib::bridge::texture_name(&mut mem(), id, nibbles, index, high, size, &mut GameMenu)
+    }
+    /// `MagicFile_SetMagicId(id)`.
+    MagicFile_SetMagicId @ 0x009d_a7a0 => extern "C" fn magic_file_set_magic_id(id: u32) {
+        menu::bridge::magic_file_set_magic_id(&mut mem(), id, &mut GameMenu);
+    }
+    /// `MagicFile_Start()`.
+    MagicFile_Start @ 0x009d_a7f0 => extern "C" fn magic_file_start() -> u32 {
+        menu::bridge::magic_file_start(&mut mem(), &mut GameMenu)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

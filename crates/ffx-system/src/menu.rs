@@ -259,4 +259,65 @@ pub mod bridge {
         }
         1
     }
+
+
+    /// The calls of [`magic_file_start`] and [`magic_file_set_magic_id`].
+    pub trait MagicFileCalls<M> {
+        /// `printf(fmt, arg)` (the CRT's; debug output).
+        fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>);
+        /// `graphicSetGameOverNotify(on)`.
+        fn game_over_notify(&mut self, mem: &mut M, on: u32);
+        /// The loaded magic module's entry (`*0x022fb6a0`) with the import
+        /// table (`g_MagicImports`, `0x00c64ce8`).
+        fn init_magic(&mut self, mem: &mut M, imports: u32);
+        /// `graphicSetChrFogFade(on)`.
+        fn fog_fade(&mut self, mem: &mut M, on: u32);
+        /// `resetZanmatoSepList()`.
+        fn reset_zanmato(&mut self, mem: &mut M);
+    }
+
+    /// `MagicFile_SetMagicId(id)` (`0x009da7a0`): 0x2c7 becomes 0x296; the
+    /// id stored (`g_MagicFile_MagicId`) and printed when no magic file is
+    /// open (handle -1), else only a different message printed.
+    pub fn magic_file_set_magic_id<M: Mem>(mem: &mut M, id: u32, calls: &mut impl MagicFileCalls<M>) {
+        let id = if id == 0x2c7 { 0x296 } else { id };
+        if MAGIC_FILE.get(mem)[3] == u32::MAX {
+            let at = MAGIC_FILE.ptr(mem).addr;
+            mem.write(at, id);
+            let fmt = mem.rebase(0x00b7_06bc);
+            calls.printf(mem, fmt, Some(id));
+        } else {
+            let fmt = mem.rebase(0x00b7_06e0);
+            calls.printf(mem, fmt, Some(id));
+        }
+    }
+
+    /// `MagicFile_Start()` (`0x009da7f0`): 0 (after a message) without an
+    /// open magic file; else `graphicSetGameOverNotify(id == 0x29e)`, the
+    /// module's entry called with the import table, the id printed,
+    /// `graphicSetChrFogFade(1)` for 0xa8 and `resetZanmatoSepList()` for
+    /// 0x1b2 and 0x262 (Zanmato); 1.
+    pub fn magic_file_start<M: Mem>(mem: &mut M, calls: &mut impl MagicFileCalls<M>) -> u32 {
+        if MAGIC_FILE.get(mem)[3] == u32::MAX {
+            let fmt = mem.rebase(0x00b7_0614);
+            calls.printf(mem, fmt, None);
+            return 0;
+        }
+        let id = MAGIC_FILE.get(mem)[0];
+        calls.game_over_notify(mem, u32::from(id == 0x29e));
+        let imports = mem.rebase(0x00c6_4ce8);
+        calls.init_magic(mem, imports);
+        let id = MAGIC_FILE.get(mem)[0];
+        let fmt = mem.rebase(0x00b7_0648);
+        calls.printf(mem, fmt, Some(id));
+        let id = MAGIC_FILE.get(mem)[0];
+        if id == 0xa8 {
+            calls.fog_fade(mem, 1);
+        }
+        let id = MAGIC_FILE.get(mem)[0];
+        if id == 0x1b2 || id == 0x262 {
+            calls.reset_zanmato(mem);
+        }
+        1
+    }
 }
