@@ -1377,6 +1377,20 @@ ported! {
     PhyreScene_GetScreenAdjustedView_00651650 @ 0x0065_1650 => extern "thiscall" fn scene_screen_adjusted_view(this: u32, out: u32) -> u32 {
         ut::scene_screen_adjusted_view(&mut mem(), this, out)
     }
+
+    // ---- round 21 ----
+    /// `graphicCharacterLightingSetLightColor(kind, r, g, b)`.
+    graphicCharacterLightingSetLightColor @ 0x0063_cb00 => extern "C" fn set_light_colour(kind: u32, r: u32, g: u32, b: u32) -> u32 {
+        ut::set_light_colour(&mut mem(), kind, [r, g, b])
+    }
+    /// `graphicCharacterShaderSetParameterVector_0063d940(chr, name, x, y, z, w)`.
+    graphicCharacterShaderSetParameterVector_0063d940 @ 0x0063_d940 => extern "C" fn chr_shader_set_parameter_vector(chr: u32, name: u32, x: u32, y: u32, z: u32, w: u32) -> u32 {
+        ut::chr_shader_set_parameter_vector(&mut mem(), chr, [name, x, y, z, w])
+    }
+    /// `BoundingBox_IsInsideTransformed_006d2a70(this, m)`.
+    BoundingBox_IsInsideTransformed_006d2a70 @ 0x006d_2a70 => extern "thiscall" fn box_inside_transformed(this: u32, m: u32) -> u32 {
+        ut::box_inside_transformed(&mut mem(), this, m)
+    }
 }
 
 /// A singleton's pointer.

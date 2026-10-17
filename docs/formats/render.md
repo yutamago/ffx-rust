@@ -878,3 +878,24 @@ Round 20:
   (`PMatrix4_RowTimes_004c9c20`, bottom row first) goes to a temporary,
   then the four rows are copied over `out`. `PhyreScene_getViewProjectionMatrix`
   inlines the same adjustment.
+
+Round 21:
+
+- `graphicCharacterLightingSetLightColor(kind, r, g, b)` (`0x0063cb00`):
+  `Phyre_CharacterLighting_setLightColor_006aa940(kind, r, g, b)` on the
+  lighting (the floats through the x87), then
+  `Phyre_CharacterLightingTweakUtil_syncIntensity_006aa260` on the tweak
+  utility, and for kind 3 (the ambient) a tail call of
+  `balanceLumWithGlow`. Returns the last callee's `eax`, which
+  `Sg_LightSetColor` (`0x00836310`) passes on.
+- `graphicCharacterShaderSetParameterVector_0063d940(chr, name, x*, y*,
+  z*, w*)` (`0x0063d940`, returns 0):
+  `Phyre_CharacterShaderManager_setShaderParameterVector_006dfa30(inst,
+  name, x*, y*, z*, w*)` for each instance of `Ch_GetChrRenderInstance(chr)`
+  (count `& 0x7fffffff` and array `+4`, read again each pass).
+- `BoundingBox_IsInsideTransformed_006d2a70(box, m)` (`0x006d2a70`,
+  `thiscall`, `ret 4`): the box object's `+0xc` is an optional 3x4
+  transform; with one, `BoundingBox_IsInside_006d27e0` runs on `m` times
+  its 4x4 (`PMatrix4_FromMatrix3x4_00451080` into a local, then
+  `PMatrix4_Multiply_004ca360(out, m, local)`, whose returned `out` is
+  passed), without one on a local copy of `m`. Its answer is returned.

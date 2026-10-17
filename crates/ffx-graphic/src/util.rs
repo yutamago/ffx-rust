@@ -1870,4 +1870,95 @@ pub mod bridge {
         }
         out
     }
+
+    // ---- round 21 ----
+
+    /// `Phyre_CharacterLighting_setLightColor_006aa940(lighting, kind, r,
+    /// g, b)` (`ret 0x10`), `Phyre_CharacterLightingTweakUtil_syncIntensity_006aa260(tweak)`
+    /// and `Phyre_CharacterLighting_balanceLumWithGlow(lighting)`.
+    pub const LIGHTING_SET_LIGHT_COLOR: u32 = 0x006a_a940;
+    pub const LIGHTING_TWEAK_SYNC_INTENSITY: u32 = 0x006a_a260;
+    pub const LIGHTING_BALANCE_LUM_WITH_GLOW: u32 = 0x006a_7550;
+
+    /// `graphicCharacterLightingSetLightColor(kind, r, g, b)`
+    /// (`0x0063cb00`): `setLightColor(kind, r, g, b)` (the floats through
+    /// the x87) on the lighting, `syncIntensity` on the tweak utility,
+    /// and for `kind` 3 (the ambient) `balanceLumWithGlow` (a tail call).
+    /// Returns the last callee's `eax` (`Sg_LightSetColor` returns it).
+    pub fn set_light_colour(h: &mut impl Host, kind: u32, c: [u32; 3]) -> u32 {
+        let [r, g, b] = c.map(rt);
+        let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(
+            LIGHTING_SET_LIGHT_COLOR,
+            Conv::Thiscall(lighting),
+            &[kind, r, g, b],
+        );
+        let tweak = h.call_sym(LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, &[]);
+        let ret = h.call_sym(LIGHTING_TWEAK_SYNC_INTENSITY, Conv::Thiscall(tweak), &[]);
+        if kind != 3 {
+            return ret;
+        }
+        let lighting = h.call_sym(LIGHTING_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(
+            LIGHTING_BALANCE_LUM_WITH_GLOW,
+            Conv::Thiscall(lighting),
+            &[],
+        )
+    }
+
+    /// `Phyre_CharacterShaderManager_setShaderParameterVector_006dfa30(inst,
+    /// name, x, y, z, w)` (cdecl; the four by pointer).
+    pub const SHADER_SET_PARAMETER_VECTOR: u32 = 0x006d_fa30;
+
+    /// `graphicCharacterShaderSetParameterVector_0063d940(chr, name, x, y,
+    /// z, w)` (`0x0063d940`): `setShaderParameterVector(inst, name, x, y,
+    /// z, w)` for each instance of `Ch_GetChrRenderInstance(chr)` (count
+    /// `& 0x7fffffff`, array `+4`, both read again each time). Returns 0.
+    pub fn chr_shader_set_parameter_vector(h: &mut impl Host, chr: u32, p: [u32; 5]) -> u32 {
+        let list = h.call_sym(CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, &[chr]);
+        if list == 0 {
+            return 0;
+        }
+        let mut i = 0u32;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let [a, b, c, d, e] = p;
+            h.call_sym(
+                SHADER_SET_PARAMETER_VECTOR,
+                Conv::Cdecl,
+                &[inst, a, b, c, d, e],
+            );
+            i += 1;
+        }
+        0
+    }
+
+    /// `PMatrix4_FromMatrix3x4_00451080(out, m)` (`thiscall`, `ret 4`)
+    /// and `PMatrix4_Multiply_004ca360(out, a, b)` (cdecl, returns `out`).
+    pub const MATRIX4_FROM_3X4: u32 = 0x0045_1080;
+    pub const MATRIX4_MULTIPLY: u32 = 0x004c_a360;
+
+    /// `BoundingBox_IsInsideTransformed_006d2a70(this, m)` (`0x006d2a70`,
+    /// `thiscall`, `ret 4`): with a transform at `+0xc` (a 3x4), the box
+    /// test of `BoundingBox_IsInside_006d27e0` by `m` times it (made a 4x4
+    /// by `PMatrix4_FromMatrix3x4`, the product by `PMatrix4_Multiply`
+    /// into a temporary); without one, by a copy of `m`. The temporaries
+    /// lie in [`Host::scratch`] past the box test's own.
+    pub fn box_inside_transformed(h: &mut impl Host, this: u32, m: u32) -> u32 {
+        let s = h.scratch();
+        let (local, prod) = (s + 0x40, s + 0x80);
+        let xf: u32 = h.read(this + 0xc);
+        let mat = if xf == 0 {
+            for i in 0..16 {
+                let v: u32 = h.read(m + 4 * i);
+                h.write(local + 4 * i, v);
+            }
+            local
+        } else {
+            h.call_sym(MATRIX4_FROM_3X4, Conv::Thiscall(local), &[xf]);
+            h.call_sym(MATRIX4_MULTIPLY, Conv::Cdecl, &[prod, m, local])
+        };
+        box_clip_test(h, this, mat, BoxTest::Inside)
+    }
 }

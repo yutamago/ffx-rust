@@ -6591,3 +6591,151 @@ fn snapshot_round20_matches_the_original() {
         round20_case(&mut t, &mut rng, &what);
     }
 }
+
+// ---- round 21 ----
+
+/// One round-21 case; for the box test, its answer (bit 1: with a
+/// transform).
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // box, matrix, value; three cases
+fn round21_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) -> Option<u32> {
+    use ffx_graphic::util::bridge as ut;
+    match case {
+        0 => {
+            let lighting = rng.next();
+            let tweak = rng.next();
+            t.stub_sym(ut::LIGHTING_GET_INSTANCE, Conv::Cdecl, 0, lighting);
+            t.stub_sym(ut::LIGHTING_TWEAK_GET_INSTANCE, Conv::Cdecl, 0, tweak);
+            t.stub_sym(
+                ut::LIGHTING_SET_LIGHT_COLOR,
+                Conv::Thiscall(0),
+                4,
+                rng.next(),
+            );
+            t.stub_sym(
+                ut::LIGHTING_TWEAK_SYNC_INTENSITY,
+                Conv::Thiscall(0),
+                0,
+                rng.next(),
+            );
+            t.stub_sym(
+                ut::LIGHTING_BALANCE_LUM_WITH_GLOW,
+                Conv::Thiscall(0),
+                0,
+                rng.next(),
+            );
+            let kind = [0, 1, 2, 3, 3, rng.next()][rng.below(6) as usize];
+            let c = [rng.float(), rng.float(), rng.float()].map(f32::to_bits);
+            t.check(
+                what,
+                0x0063_cb00,
+                Conv::Cdecl,
+                &[kind, c[0], c[1], c[2]],
+                |g| Out::U32(ut::set_light_colour(g, kind, c)),
+            );
+            None
+        }
+        1 => {
+            let list = if rng.chance(6) {
+                0
+            } else {
+                let n = rng.below(6);
+                let arr: Vec<u8> = (0..n).flat_map(|_| rng.next().to_le_bytes()).collect();
+                let arr = t.alloc(&arr);
+                let list = t.zeros(8);
+                t.w32(list, n | (rng.below(2) << 31));
+                t.w32(list + 4, arr);
+                list
+            };
+            t.stub_sym(ut::CH_GET_CHR_RENDER_INSTANCE, Conv::Cdecl, 1, list);
+            t.stub_sym(ut::SHADER_SET_PARAMETER_VECTOR, Conv::Cdecl, 6, rng.next());
+            let p: [u32; 6] = std::array::from_fn(|_| rng.next());
+            t.check(what, 0x0063_d940, Conv::Cdecl, &p, |g| {
+                Out::U32(ut::chr_shader_set_parameter_vector(
+                    g,
+                    p[0],
+                    [p[1], p[2], p[3], p[4], p[5]],
+                ))
+            });
+            None
+        }
+        _ => {
+            // the matrix helpers, the transform and ClipOutcode run original
+            let f = |rng: &mut Rng| -> f32 {
+                match rng.below(10) {
+                    0 => rng.float(),
+                    1 => 0.0,
+                    2 => 1.0,
+                    _ => (rng.below(61) as f32 - 30.0) / 10.0,
+                }
+            };
+            let bx: Vec<u8> = (0..8).flat_map(|_| f(rng).to_le_bytes()).collect();
+            let bx = t.alloc(&bx);
+            let xf = if rng.chance(3) {
+                0
+            } else {
+                let xf: Vec<u8> = (0..12).flat_map(|_| f(rng).to_le_bytes()).collect();
+                t.alloc(&xf)
+            };
+            let this = t.alloc(&rng.bytes(0x20));
+            for k in 0..3 {
+                let v = t.r32(bx + 4 * k);
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0xc, xf);
+            for k in 0..3 {
+                let v = t.r32(bx + 0x10 + 4 * k);
+                t.w32(this + 0x10 + 4 * k, v);
+            }
+            let m: Vec<u8> = (0..16)
+                .flat_map(|k| {
+                    let v = if k == 15 && rng.chance(2) {
+                        1.0
+                    } else {
+                        f(rng)
+                    };
+                    v.to_le_bytes()
+                })
+                .collect();
+            let m = t.alloc(&m);
+            let mut r = None;
+            t.check(what, 0x006d_2a70, Conv::Thiscall(this), &[m], |g| {
+                let v = ut::box_inside_transformed(g, this, m);
+                r = Some(v);
+                Out::U32(v)
+            });
+            r.map(|v| v | u32::from(xf != 0) << 1)
+        }
+    }
+}
+
+#[test]
+fn round21_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2121_0021);
+    // the box test must see both answers with and without a transform
+    let mut seen = [0u32; 4];
+    for round in 0..4500 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        if let Some(v) = round21_case(&mut t, &mut rng, round % 3, &what) {
+            seen[v as usize] += 1;
+        }
+    }
+    assert!(seen.iter().all(|&n| n > 30), "box answers {seen:?}");
+}
+
+#[test]
+fn snapshot_round21_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5121_0021);
+    for round in 0..450 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round21_case(&mut t, &mut rng, round % 3, &what);
+    }
+}
