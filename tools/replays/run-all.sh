@@ -12,7 +12,7 @@ export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
 win='C:\Users\USER\AppData\Local\Temp\ffx-snap'
 lin=/mnt/c/Users/USER/AppData/Local/Temp/ffx-snap
 log="$FFX_GAME_DIR/ffx-hook.log"
-shots=/tmp/ffx-replay-shots
+shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots}"  # outlives a WSL restart (/tmp does not)
 run() { # replay, tag, [original]
     local n
     n=$(wc -l < "$log")

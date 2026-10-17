@@ -72,6 +72,69 @@ pub const PMCOM_ENV: u32 = 0x010d_4cfc;
 pub const PMCOM_HEAP: u32 = 0x00fd_24f0;
 /// The pmcom free pointer, set to `+8` past itself (`pppInitPmcomEnv`).
 pub const PMCOM_FREE: u32 = 0x00d5_24a0;
+/// `g_pppOtDrawing` (`0x00cec1a4`): set while an ordering-table pass draws.
+pub const PPP_OT_DRAWING: u32 = 0x00ce_c1a4;
+/// `g_pppCurrentProgram`'s low byte (`0x0230fd20`).
+pub const PPP_CURRENT_PROGRAM: u32 = 0x0230_fd20;
+/// The VFX offset the lens positions add (`0x0230ff50`, three floats).
+pub const VFX_OFFSET: u32 = 0x0230_ff50;
+/// `graphicVFXGetRenderDataByInstance(lo, hi)` (`0x006453d0`).
+pub const GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE: u32 = 0x0064_53d0;
+/// `graphicVFXUpdate(lo, hi)` (`0x006458a0`).
+pub const GRAPHIC_VFX_UPDATE: u32 = 0x0064_58a0;
+/// `graphicVFXSetVisible(lo, hi, on)` (`0x00645710`).
+pub const GRAPHIC_VFX_SET_VISIBLE: u32 = 0x0064_5710;
+/// `updateVFXRenderDataShp(lo, hi, data, desc, frame)` (`0x0071b8a0`).
+pub const UPDATE_VFX_RENDER_DATA_SHP: u32 = 0x0071_b8a0;
+/// `InitVFXRenderDataShp(lo, hi, data, desc, frame, flags)` (`0x00711460`).
+pub const INIT_VFX_RENDER_DATA_SHP: u32 = 0x0071_1460;
+/// `calculateVFXSP_AlphaFunction(mode)` (`0x00712c30`).
+pub const CALCULATE_VFX_SP_ALPHA_FUNCTION: u32 = 0x0071_2c30;
+/// `FFXVu0CopyMatrix(dst, src)` (`0x006ed360`).
+pub const VU0_COPY_MATRIX: u32 = 0x006e_d360;
+/// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`).
+pub const VU0_UNIT_MATRIX: u32 = 0x006e_d9a0;
+/// `FFXVu0CopyVector(dst, src)` (`0x006ed370`).
+pub const VU0_COPY_VECTOR: u32 = 0x006e_d370;
+/// `FFXVu0ScaleVector(dst, src, k)` (`0x006ed8f0`).
+pub const VU0_SCALE_VECTOR: u32 = 0x006e_d8f0;
+/// The emulated EE registers (`0x00c8f500`..): `+8` the register
+/// `KeMdl_Draw` interleaves with, `+0x88` and `+0x98` its operands.
+pub const EE_REGS: u32 = 0x00c8_f500;
+/// `g_pppColorConShift` (`0x00c8b500`): a byte offset added once to the
+/// colour address, cleared after use.
+pub const PPP_COLOR_CON_SHIFT: u32 = 0x00c8_b500;
+/// `g_pppCurrentPart` (`0x0230ffe4`).
+pub const PPP_CURRENT_PART: u32 = 0x0230_ffe4;
+/// `pppEePmulth(dst, a, b)` (`0x007374e0`).
+pub const PPP_EE_PMULTH: u32 = 0x0073_74e0;
+/// `pppEePpacb(dst, a, b)` (`0x007375d0`).
+pub const PPP_EE_PPACB: u32 = 0x0073_75d0;
+/// `g_pppViewMatrix` (`0x0230ff20`).
+pub const PPP_VIEW_MATRIX: u32 = 0x0230_ff20;
+/// `FFXVu0MulMatrix(dst, a, b)` (`0x006ed5c0`).
+pub const VU0_MUL_MATRIX: u32 = 0x006e_d5c0;
+/// The GIF tag word `KeMdl_Draw` copies (`0x00c498dc`).
+pub const REF_GIF_TAG: u32 = 0x00c4_98dc;
+/// The VFX packet position (`0x0230fd2c`).
+pub const PACKET_POS_ADDR: u32 = 0x0230_fd2c;
+/// The two VFX model data blocks `KeMdl_Draw`'s description points at
+/// (`0x0230fd60`, `0x0230fda0`).
+pub const MDL_FP_DATA: u32 = 0x0230_fd60;
+/// See [`MDL_FP_DATA`].
+pub const MDL_FQ_DATA: u32 = 0x0230_fda0;
+/// `updateVFXRenderData(lo, hi, rec, desc)` (`0x00718610`).
+pub const UPDATE_VFX_RENDER_DATA: u32 = 0x0071_8610;
+/// `InitVFXRenderData(lo, hi, rec, desc, flags)` (`0x00711180`).
+pub const INIT_VFX_RENDER_DATA: u32 = 0x0071_1180;
+/// `InitVFXPath3RenderData(lo, hi, rec, desc, flags)` (`0x00710fd0`).
+pub const INIT_VFX_PATH3_RENDER_DATA: u32 = 0x0071_0fd0;
+/// `graphicVFXPath3Update(lo, hi)` (`0x00645600`).
+pub const GRAPHIC_VFX_PATH3_UPDATE: u32 = 0x0064_5600;
+/// `graphicVFXSetClutParameters(lo, hi, a, b, c)` (`0x00645630`).
+pub const GRAPHIC_VFX_SET_CLUT_PARAMETERS: u32 = 0x0064_5630;
+/// `calculateVFXSP_ZMat(mode)` (`0x00712d00`).
+pub const CALCULATE_VFX_SP_ZMAT: u32 = 0x0071_2d00;
 
 /// The `Ke` objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -745,6 +808,554 @@ pub mod bridge {
         let tag = o.wrapping_add(0x40 + n * 0x30);
         mem.write(tag, [0u32, 0x1100_0000, 0x1400_0000, 0x1100_0000]);
         n * 6
+    }
+
+    // ---- round 15: the lens shapes' render data ----
+
+    /// The work layout of the lens `*_Draw` functions (the original's
+    /// frame from `ebp - 0x90`): the shape pair `KeLnsShp_Update` takes
+    /// (`+0`, `+4`), the render description the renderer gets (`+0x10`:
+    /// flags `+0x12`, colour `+0x14` with its alpha byte `+0x17`, the
+    /// matrix pointer `+0x20`) and the matrix (`+0x48`).
+    pub mod lns_work {
+        /// Bytes.
+        pub const SIZE: u32 = 0x88;
+        /// The render description.
+        pub const DESC: u32 = 0x10;
+        /// The matrix.
+        pub const MATRIX: u32 = 0x48;
+    }
+
+    /// The lens object's renderer instance key: the shape's program byte
+    /// (`+0xb`, sign-extended) as the low word, the instance (`e[0]`) plus
+    /// its sign as the high word.
+    fn lns_instance(mem: &impl Mem, e: u32) -> (u32, u32) {
+        let shape = ptr32(mem.read::<u32>(e.wrapping_add(4)));
+        let prog = i32::from(mem.read::<i8>(shape.wrapping_add(0xb)));
+        let inst = ptr32(mem.read::<u32>(e));
+        (
+            prog.cast_unsigned(),
+            inst.wrapping_add((prog >> 31).cast_unsigned()),
+        )
+    }
+
+    /// Stamps the current VFX program into the shape (`+0xb`) unless an
+    /// ordering-table pass is drawing.
+    fn lns_stamp_program(mem: &mut impl Mem, e: u32) {
+        if mem.read::<u32>(mem.rebase(super::PPP_OT_DRAWING)) == 0 {
+            let shape = ptr32(mem.read::<u32>(e.wrapping_add(4)));
+            let p = mem.read::<u8>(mem.rebase(super::PPP_CURRENT_PROGRAM));
+            mem.write(shape.wrapping_add(0xb), p);
+        }
+    }
+
+    /// The shared middle: the colour (`e[2]`) with `alpha` as its top
+    /// byte, the shape pair (`shape[1]`, `shape + 8`) and its clock
+    /// (`KeLnsShp_Update`), the description's matrix pointer, flags and
+    /// cleared words.
+    fn lns_describe(mem: &mut impl Mem, e: u32, flags: u16, alpha: u8, w: u32) {
+        mem.write(w.wrapping_add(0x17), alpha);
+        let shape = ptr32(mem.read::<u32>(e.wrapping_add(4)));
+        let data = mem.read::<u32>(shape.wrapping_add(4));
+        mem.write(w, data);
+        mem.write(w.wrapping_add(4), ptr32(shape.wrapping_add(8)));
+        ke_lns_shp_update(mem, w);
+        mem.write(w.wrapping_add(0x20), w.wrapping_add(lns_work::MATRIX));
+        mem.write(w.wrapping_add(0x12), flags);
+        mem.write(w.wrapping_add(0x2c), 0u32);
+        mem.write(w.wrapping_add(0x18), 0u32);
+        mem.write(w.wrapping_add(0x1c), 0u32);
+    }
+
+    /// The shared end: with render data for the instance, its update
+    /// (`updateVFXRenderDataShp(lo, hi, data, desc, frame)`,
+    /// `graphicVFXUpdate`); without, `InitVFXRenderDataShp` with the
+    /// frame's alpha function (`calculateVFXSP_AlphaFunction`) | 0x800,
+    /// | 0x40 for flag bit 3.
+    fn lns_submit<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        (lo, hi): (u32, u32),
+        rd: u32,
+        w: u32,
+        call: &mut C,
+    ) {
+        let desc = w.wrapping_add(lns_work::DESC);
+        let frame = |mem: &M| {
+            u32::from(mem.read::<u8>(ptr32(mem.read::<u32>(w.wrapping_add(4))).wrapping_add(2)))
+        };
+        if rd != 0 {
+            let b2 = frame(mem);
+            let data = ptr32(mem.read::<u32>(w));
+            let f = mem.rebase(super::UPDATE_VFX_RENDER_DATA_SHP);
+            call(mem, f, &[lo, hi, data, desc, b2]);
+            let f = mem.rebase(super::GRAPHIC_VFX_UPDATE);
+            call(mem, f, &[lo, hi]);
+            return;
+        }
+        let data = ptr32(mem.read::<u32>(w));
+        let b2 = frame(mem);
+        let first = ptr32(mem.read::<u32>(data));
+        let rec = first.wrapping_add(b2 * 8);
+        let off = i32::from(mem.read::<i16>(rec.wrapping_add(0x10)));
+        let e = first.wrapping_add(off.cast_unsigned());
+        let mode = mem.read::<u8>(
+            mem.read::<u32>(e.wrapping_add(4))
+                .wrapping_add(e)
+                .wrapping_add(4),
+        );
+        let f = mem.rebase(super::CALCULATE_VFX_SP_ALPHA_FUNCTION);
+        let mut af = call(mem, f, &[u32::from(mode)]) | 0x800;
+        if mem.read::<u8>(w.wrapping_add(0x12)) & 8 != 0 {
+            af |= 0x40;
+        }
+        let b2 = frame(mem);
+        let data = ptr32(mem.read::<u32>(w));
+        let f = mem.rebase(super::INIT_VFX_RENDER_DATA_SHP);
+        call(mem, f, &[lo, hi, data, desc, b2, af]);
+    }
+
+    /// The shape's data when it can draw: not the default shapes, with
+    /// a second word, and its source (`shape[0]`).
+    fn lns_source(mem: &impl Mem, e: u32) -> Option<u32> {
+        let shape = ptr32(mem.read::<u32>(e.wrapping_add(4)));
+        let src = ptr32(mem.read::<u32>(shape));
+        if src == mem.rebase(super::LNS_DEFAULT)
+            || is_ptr32_null(mem.read::<u32>(shape.wrapping_add(4))) != 0
+        {
+            return None;
+        }
+        Some(src)
+    }
+
+    /// The matrix of a lens source `s`: `s` itself (`+0x8f` set,
+    /// `FFXVu0CopyMatrix`), else the unit matrix moved to `s +0x80` plus
+    /// the VFX offset ([`super::VFX_OFFSET`]).
+    fn lns_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        m: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u8>(s.wrapping_add(0x8f)) != 0 {
+            let f = mem.rebase(super::VU0_COPY_MATRIX);
+            call(mem, f, &[m, s]);
+        } else {
+            let f = mem.rebase(super::VU0_UNIT_MATRIX);
+            call(mem, f, &[m]);
+            lns_translate(mem, s, m);
+        }
+    }
+
+    /// Row 3 of `m` = `s +0x80` plus the VFX offset.
+    fn lns_translate(mem: &mut impl Mem, s: u32, m: u32) {
+        let off = mem.rebase(super::VFX_OFFSET);
+        for i in 0..3u32 {
+            let a = x87::load(mem.read(s.wrapping_add(0x80 + 4 * i)));
+            let b = x87::load(mem.read(off.wrapping_add(4 * i)));
+            mem.write(m.wrapping_add(0x30 + 4 * i), x87::store(a + b));
+        }
+    }
+
+    /// `FFXVu0ScaleVector(row, row, k)` for the first `n` rows of `m`, `k`
+    /// from the scale vector at `e[off / 4]`.
+    fn lns_scale_rows<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        off: u32,
+        m: u32,
+        n: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::VU0_SCALE_VECTOR);
+        for i in 0..n {
+            let sv = ptr32(mem.read::<u32>(e.wrapping_add(off)));
+            let k = x87::copy(mem.read(sv.wrapping_add(4 * i)));
+            let row = m.wrapping_add(0x10 * i);
+            call(mem, f, &[row, row, k]);
+        }
+    }
+
+    /// The colour's alpha byte times `x` (an `f64`), truncated (the x87
+    /// `fistp` under round-toward-zero: out of range gives 0).
+    fn lns_alpha(mem: &mut impl Mem, e: u32, w: u32, x: impl FnOnce(f64) -> f64) -> u8 {
+        let c = mem.read::<u32>(e.wrapping_add(8));
+        mem.write(w.wrapping_add(0x14), c);
+        let v = ffx_bridge::x87::cvttsd2si(x(f64::from(c >> 24)));
+        v.to_le_bytes()[0]
+    }
+
+    /// `KeLnsArnd_Draw(e, flags, work)` (`0x00769340`): a lens "around"
+    /// shape's render data. The source's matrix ([`lns_matrix`]) with
+    /// x of rows 0 and 1 times `e +0x10`, the three rows scaled by `e
+    /// +0x14`'s vector, alpha `colour >> 24 * s +0x7c`; nothing for a
+    /// source alpha of 0.
+    pub fn ke_lns_arnd_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        flags: u16,
+        w: u32,
+        call: &mut C,
+    ) {
+        let Some(s) = lns_source(mem, e) else { return };
+        let a = x87::load(mem.read(s.wrapping_add(0x7c)));
+        if a == 0.0 {
+            return;
+        }
+        let m = w.wrapping_add(lns_work::MATRIX);
+        lns_matrix(mem, s, m, call);
+        for o in [0u32, 0x14] {
+            let k = x87::load(mem.read(e.wrapping_add(0x10)));
+            let v = x87::load(mem.read(m.wrapping_add(o)));
+            mem.write(m.wrapping_add(o), x87::store(k * v));
+        }
+        lns_scale_rows(mem, e, 0x14, m, 3, call);
+        let f7c = x87::load(mem.read(s.wrapping_add(0x7c)));
+        let alpha = lns_alpha(mem, e, w, |c| c * f7c);
+        lns_describe(mem, e, flags, alpha, w);
+        if is_ptr32_null(mem.read::<u32>(e)) != 0 {
+            return;
+        }
+        lns_stamp_program(mem, e);
+        let key = lns_instance(mem, e);
+        let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+        let rd = call(mem, f, &[key.0, key.1]);
+        lns_submit(mem, key, rd, w, call);
+    }
+
+    /// `KeLnsCrn_Draw(e, flags, work)` (`0x00769d70`): a lens "corona".
+    /// Rows from the source's vectors (`+0x40`, `+0x50`, `+0x60`, the
+    /// position `+0x30`), rows 0 and 1 scaled by `-k` and `k` for `k = e
+    /// +0x10 * s +0xa4 / e +0x14` (`u16`), the position moved as in
+    /// [`lns_matrix`] unless `+0x8f`, the rows scaled by `e +0x18`'s
+    /// vector, alpha `colour >> 24 * s +0x7c * min(s +0xa4 / e +0x16,
+    /// 1)`.
+    pub fn ke_lns_crn_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        flags: u16,
+        w: u32,
+        call: &mut C,
+    ) {
+        let Some(s) = lns_source(mem, e) else { return };
+        if x87::load(mem.read(s.wrapping_add(0x7c))) == 0.0 {
+            return;
+        }
+        let m = w.wrapping_add(lns_work::MATRIX);
+        let f = mem.rebase(super::VU0_COPY_VECTOR);
+        for (row, src) in [(0u32, 0x40u32), (0x10, 0x50), (0x20, 0x60), (0x30, 0x30)] {
+            call(mem, f, &[m.wrapping_add(row), s.wrapping_add(src)]);
+        }
+        let n = f64::from(mem.read::<u16>(e.wrapping_add(0x14)));
+        let k =
+            x87::load(mem.read(e.wrapping_add(0x10))) * x87::load(mem.read(s.wrapping_add(0xa4)));
+        let k = x87::store(k / n);
+        let f = mem.rebase(super::VU0_SCALE_VECTOR);
+        call(mem, f, &[m, m, x87::store(-x87::load(k))]);
+        call(mem, f, &[m.wrapping_add(0x10), m.wrapping_add(0x10), k]);
+        if mem.read::<u8>(s.wrapping_add(0x8f)) == 0 {
+            lns_translate(mem, s, m);
+        }
+        lns_scale_rows(mem, e, 0x18, m, 3, call);
+        let n = f64::from(mem.read::<u16>(e.wrapping_add(0x16)));
+        let r = x87::store(x87::load(mem.read(s.wrapping_add(0xa4))) / n);
+        let r = if x87::load(r) > 1.0 {
+            1.0
+        } else {
+            x87::load(r)
+        };
+        let f7c = x87::load(mem.read(s.wrapping_add(0x7c)));
+        let alpha = lns_alpha(mem, e, w, |c| c * f7c * r);
+        lns_describe(mem, e, flags, alpha, w);
+        if is_ptr32_null(mem.read::<u32>(e)) != 0 {
+            return;
+        }
+        lns_stamp_program(mem, e);
+        let key = lns_instance(mem, e);
+        let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+        let rd = call(mem, f, &[key.0, key.1]);
+        lns_submit(mem, key, rd, w, call);
+    }
+
+    /// `KeLnsFls_Draw(e, flags, work)` (`0x0076a1f0`): a lens flash. The
+    /// program stamp and the render data lookup come first; a shape that
+    /// cannot draw, or a source alpha of 0, hides existing render data
+    /// (`graphicVFXSetVisible(.., 0)`). Else `f = s +0xa4 / e +0x14`
+    /// (`u16`), `g = 1 - f` (0 past 1); row 0's x is `e +0x10`, times `g`
+    /// (mode `e +0x16` 1) or `f + 1` (2), row 1's y likewise by `e +0x17`;
+    /// rows 0 and 1 scaled by `e +0x18`'s vector; alpha `colour >> 24 *
+    /// s +0x7c * g`.
+    pub fn ke_lns_fls_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        flags: u16,
+        w: u32,
+        call: &mut C,
+    ) {
+        lns_stamp_program(mem, e);
+        let key = lns_instance(mem, e);
+        let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+        let rd = call(mem, f, &[key.0, key.1]);
+        let hide = |mem: &mut M, call: &mut C| {
+            if is_ptr32_null(mem.read::<u32>(e)) == 0 && rd != 0 {
+                let f = mem.rebase(super::GRAPHIC_VFX_SET_VISIBLE);
+                call(mem, f, &[key.0, key.1, 0]);
+            }
+        };
+        let Some(s) = lns_source(mem, e) else {
+            hide(mem, call);
+            return;
+        };
+        if x87::load(mem.read(s.wrapping_add(0x7c))) == 0.0 {
+            hide(mem, call);
+            return;
+        }
+        let n = f64::from(mem.read::<u16>(e.wrapping_add(0x14)));
+        let fv = x87::store(x87::load(mem.read(s.wrapping_add(0xa4))) / n);
+        let f = x87::load(fv);
+        let g = x87::load(x87::store(if f > 1.0 { 0.0 } else { 1.0 - f }));
+        let m = w.wrapping_add(lns_work::MATRIX);
+        lns_matrix(mem, s, m, call);
+        for (o, mode_at) in [(0u32, 0x16u32), (0x14, 0x17)] {
+            let x = x87::copy(mem.read(e.wrapping_add(0x10)));
+            mem.write(m.wrapping_add(o), x);
+            let k = match mem.read::<u8>(e.wrapping_add(mode_at)) {
+                1 => g,
+                2 => f + 1.0,
+                _ => continue,
+            };
+            let v = x87::load(mem.read(m.wrapping_add(o)));
+            mem.write(m.wrapping_add(o), x87::store(v * k));
+        }
+        lns_scale_rows(mem, e, 0x18, m, 2, call);
+        let f7c = x87::load(mem.read(s.wrapping_add(0x7c)));
+        let alpha = lns_alpha(mem, e, w, |c| c * f7c * g);
+        lns_describe(mem, e, flags, alpha, w);
+        if is_ptr32_null(mem.read::<u32>(e)) != 0 {
+            return;
+        }
+        lns_submit(mem, key, rd, w, call);
+    }
+
+    // ---- round 16: KeMdl_Draw ----
+
+    /// The work layout of `KeMdl_Draw` (the original's frame from `ebp -
+    /// 0xe0`): the render description the renderer gets (`+0`, 0x48
+    /// bytes) and the view matrix (`+0x98`).
+    pub mod mdl_work {
+        /// Bytes.
+        pub const SIZE: u32 = 0xd8;
+        /// The view matrix.
+        pub const MATRIX: u32 = 0x98;
+    }
+
+    /// The emulated EE registers' words at `0x00c8f500 + off`.
+    fn ee(mem: &impl Mem, off: u32) -> u32 {
+        mem.rebase(super::EE_REGS + off)
+    }
+
+    /// `KeMdl_Draw(e, rec, col, p4, p5, p6, mode, zmat, _, p10, work)`
+    /// (`0x00766ff0`): a VFX model's render data. The colour: the two
+    /// words at `col + g_pppColorConShift` and the current part's `+0x70`
+    /// words are interleaved halfword-wise with the EE register at
+    /// `0x00c8f508` into registers `0x00c8f588` and `0x00c8f598`,
+    /// multiplied (`pppEePmulth`), shifted down by 19 bits (13 kept),
+    /// interleaved again and packed to bytes (`pppEePpacb`); a colour whose
+    /// top byte is 0 draws nothing. Else the description: flags from
+    /// `mode` and the record's shape flags (`rec`'s `+0x1c` byte 0), the
+    /// view matrix (`g_pppViewMatrix * e +0x10`, mode bit 4), the colour,
+    /// the record's alpha byte (`+0x16`), `p4`..`p6`, `e`'s `+0x50`,
+    /// `+0x10`, `+0x90`/`+0x94`, the packet position, `zmat` with mode
+    /// bit 5; then `updateVFXRenderData` and the (path 3) update with
+    /// render data, else `InitVFX(Path3)RenderData` with the alpha
+    /// function, Z mode (unless bit 4) | 0x40 (flag 8) | 0x80; and the
+    /// CLUT parameters (`0x010d5600`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // the original's steps
+    pub fn ke_mdl_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 10],
+        w: u32,
+        call: &mut C,
+    ) {
+        let [e, rec_index, col, p4, p5, p6, mode, zmat, _, p10] = args;
+        let shift = mem.rebase(super::PPP_COLOR_CON_SHIFT);
+        let at = mem.read::<u32>(shift).wrapping_add(col);
+        let d = mem.read::<u32>(at);
+        mem.write(ee(mem, 0x88), d);
+        let c = mem.read::<u32>(at.wrapping_add(4));
+        let part = mem.read::<u32>(mem.rebase(super::PPP_CURRENT_PART));
+        mem.write(ee(mem, 0x8c), c);
+        mem.write(shift, 0u32);
+        let p70 = mem.read::<u32>(part.wrapping_add(0x70));
+        mem.write(ee(mem, 0x98), p70);
+        let p74 = mem.read::<u32>(part.wrapping_add(0x74));
+        let lo = |v: u32| (v & 0xffff) as u16;
+        let hi = |v: u32| (v >> 16) as u16;
+        let a0 = mem.read::<u32>(ee(mem, 0x08));
+        mem.write(ee(mem, 0x8a), lo(a0));
+        mem.write(ee(mem, 0x8e), hi(a0));
+        let a1 = mem.read::<u32>(ee(mem, 0x0c));
+        mem.write(ee(mem, 0x92), lo(a1));
+        mem.write(ee(mem, 0x96), hi(a1));
+        mem.write(ee(mem, 0x8c), hi(d));
+        mem.write(ee(mem, 0x94), hi(c));
+        mem.write(ee(mem, 0x88), lo(d));
+        let a0 = mem.read::<u32>(ee(mem, 0x08));
+        mem.write(ee(mem, 0x90), lo(c));
+        let a1 = mem.read::<u32>(ee(mem, 0x0c));
+        mem.write(ee(mem, 0x9c), p74);
+        mem.write(ee(mem, 0x9e), hi(a0));
+        mem.write(ee(mem, 0xa6), hi(a1));
+        mem.write(ee(mem, 0x9c), hi(p70));
+        mem.write(shift, 0u32);
+        mem.write(ee(mem, 0x9a), lo(a0));
+        mem.write(ee(mem, 0xa2), lo(a1));
+        mem.write(ee(mem, 0x98), lo(p70));
+        mem.write(ee(mem, 0xa0), lo(p74));
+        mem.write(ee(mem, 0xa4), hi(p74));
+        let (m, b, a) = (ee(mem, 0x88), ee(mem, 0x98), ee(mem, 0x08));
+        let f = mem.rebase(super::PPP_EE_PMULTH);
+        call(mem, f, &[m, m, b]);
+        let top =
+            |mem: &M, off: u32| (mem.read::<i32>(ee(mem, off)) >> 19).cast_unsigned() & 0x1fff;
+        let s0 = top(mem, 0x88);
+        let s1 = top(mem, 0x8c);
+        let s3 = top(mem, 0x94);
+        let s2 = top(mem, 0x90);
+        mem.write(ee(mem, 0x94), s3);
+        mem.write(ee(mem, 0x8c), s1);
+        mem.write(ee(mem, 0x8e), lo(s3));
+        let a0 = mem.read::<u32>(ee(mem, 0x08));
+        mem.write(ee(mem, 0x90), s2);
+        mem.write(ee(mem, 0x90), lo(a0));
+        let a1 = mem.read::<u32>(ee(mem, 0x0c));
+        mem.write(ee(mem, 0x92), lo(a1));
+        let a2 = mem.read::<u32>(ee(mem, 0x10));
+        mem.write(ee(mem, 0x94), lo(a2));
+        let a3 = mem.read::<u32>(ee(mem, 0x14));
+        mem.write(ee(mem, 0x88), s0);
+        mem.write(ee(mem, 0x88), lo(s0));
+        mem.write(ee(mem, 0x8a), lo(s1));
+        mem.write(ee(mem, 0x8c), lo(s2));
+        mem.write(ee(mem, 0x96), lo(a3));
+        let f = mem.rebase(super::PPP_EE_PPACB);
+        call(mem, f, &[m, a, m]);
+        let sh = mem.read::<u32>(shift);
+        let colour = mem.read::<u32>(ee(mem, 0x88));
+        mem.write(w.wrapping_add(0x18).wrapping_add(sh), colour);
+        let alpha = mem.read::<u8>(w.wrapping_add(0x1b));
+        mem.write(shift, 0u32);
+        if alpha == 0 {
+            return;
+        }
+        // the description
+        let env = mem.read::<u32>(mem.read::<u32>(mem.rebase(super::VFX_DATA)));
+        let rec = rec_index
+            .wrapping_shl(5)
+            .wrapping_add(mem.read::<u32>(env.wrapping_add(0x20)));
+        let pb = ptr32(mem.read::<u32>(rec.wrapping_add(0x1c)));
+        let shape = mem.read::<u8>(pb);
+        let mut fl = 0u32;
+        if mode & 2 != 0 {
+            fl = 4;
+            if shape & 1 == 0 {
+                fl = 0xc;
+            }
+        } else {
+            if mode & 1 != 0 {
+                fl = 0x80;
+            }
+            if shape & 1 == 0 {
+                fl |= 8;
+            }
+        }
+        if mem.read::<u8>(pb) & 2 == 0 {
+            fl |= 0x10;
+        }
+        if mode & 4 != 0 {
+            fl |= 0x200;
+        }
+        if mode & 8 != 0 {
+            fl |= 0x100;
+        }
+        mem.write(w, fl);
+        if mode & 0x10 != 0 {
+            fl |= 0x2000;
+            mem.write(w, fl);
+            let mtx = w.wrapping_add(mdl_work::MATRIX);
+            mem.write(w.wrapping_add(0x30), mtx);
+            let view = mem.rebase(super::PPP_VIEW_MATRIX);
+            let f = mem.rebase(super::VU0_MUL_MATRIX);
+            call(mem, f, &[mtx, view, e.wrapping_add(0x10)]);
+        }
+        let z = if mode & 0x20 != 0 { zmat } else { 0 };
+        mem.write(w.wrapping_add(0x44), z);
+        let ab = mem.read::<u16>(pb.wrapping_add(0x16));
+        mem.write(w.wrapping_add(8), ab);
+        mem.write(w.wrapping_add(0x1c), p10);
+        let r90 = ptr32(mem.read::<u32>(e.wrapping_add(0x90)));
+        mem.write(w.wrapping_add(0x38), r90);
+        let r94 = ptr32(mem.read::<u32>(e.wrapping_add(0x94)));
+        mem.write(w.wrapping_add(0x3c), r94);
+        let tag = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        mem.write(w.wrapping_add(4), tag);
+        mem.write(w.wrapping_add(0xc), 0u16);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        mem.write(w.wrapping_add(0xe), p4 as u16);
+        mem.write(w.wrapping_add(0x10), p5 << 16);
+        mem.write(w.wrapping_add(0x14), p6 << 16);
+        mem.write(w.wrapping_add(0x20), e.wrapping_add(0x50));
+        mem.write(w.wrapping_add(0x2c), e.wrapping_add(0x10));
+        let prog = mem.read::<i32>(mem.rebase(super::PPP_CURRENT_PROGRAM));
+        let key = [
+            prog.cast_unsigned(),
+            e.wrapping_add((prog >> 31).cast_unsigned()),
+        ];
+        let pos = mem.read::<u32>(mem.rebase(super::PACKET_POS_ADDR));
+        mem.write(w.wrapping_add(0x40), 0u32);
+        mem.write(w.wrapping_add(0xa), 0u8);
+        let (fp, fq) = (
+            mem.rebase(super::MDL_FP_DATA),
+            mem.rebase(super::MDL_FQ_DATA),
+        );
+        mem.write(w.wrapping_add(0x24), fp);
+        mem.write(w.wrapping_add(0x28), fq);
+        mem.write(w.wrapping_add(0x34), pos);
+        let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+        let rd = call(mem, f, &key);
+        let path3 = |mem: &M| mem.read::<u8>(w) & 4 != 0;
+        if rd != 0 {
+            let f = mem.rebase(super::UPDATE_VFX_RENDER_DATA);
+            call(mem, f, &[key[0], key[1], rec, w]);
+            let f = mem.rebase(if path3(mem) {
+                super::GRAPHIC_VFX_PATH3_UPDATE
+            } else {
+                super::GRAPHIC_VFX_UPDATE
+            });
+            call(mem, f, &key);
+        } else {
+            let ab = u32::from(mem.read::<u8>(w.wrapping_add(8)));
+            let f = mem.rebase(super::CALCULATE_VFX_SP_ALPHA_FUNCTION);
+            let mut fa = call(mem, f, &[ab]);
+            if mem.read::<u32>(w) & 0x2000 == 0 {
+                let z = mem.read::<u32>(w.wrapping_add(0x44));
+                let f = mem.rebase(super::CALCULATE_VFX_SP_ZMAT);
+                fa |= call(mem, f, &[z]);
+            }
+            let b = mem.read::<u8>(w);
+            if b & 8 != 0 {
+                fa |= 0x40;
+            }
+            fa |= 0x80;
+            let f = mem.rebase(if b & 4 != 0 {
+                super::INIT_VFX_PATH3_RENDER_DATA
+            } else {
+                super::INIT_VFX_RENDER_DATA
+            });
+            call(mem, f, &[key[0], key[1], rec, w, fa]);
+        }
+        let [c0, c1, c2] = crate::vu0::TK_CLUT.get(mem);
+        let f = mem.rebase(super::GRAPHIC_VFX_SET_CLUT_PARAMETERS);
+        call(mem, f, &[key[0], key[1], c0, c1, x87::copy(c2)]);
     }
 }
 

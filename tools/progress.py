@@ -13,6 +13,9 @@ Counts:
   named     the function has a name in symbols/ffx.sym
   replaced  a Rust function runs instead of it (hook without a trampoline)
   wrapped   a Rust function runs in front of it and calls the original
+  to port   logic functions (symbols/classes.tsv, tools/classify.py) not
+            replaced yet: what is left to port exactly; glue, platform,
+            debug and dead code is replaced or dropped instead
 
 Usage: tools/progress.py [--json] [--unknown]
   --unknown  list the named functions no module rule matches
@@ -90,6 +93,18 @@ def hooks():
     return out
 
 
+def classes():
+    """address -> category from symbols/classes.tsv (empty when missing)."""
+    path = REPO / "symbols/classes.tsv"
+    out = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line and not line.startswith("#"):
+                a, c = line.split("\t")[:2]
+                out[int(a, 16)] = c
+    return out
+
+
 def ported():
     """name by address of every `ported!` entry."""
     out = {}
@@ -149,6 +164,7 @@ def main():
                 print(f"0x{a:08x} {n}")
         return
     module = placement(rows, names)
+    category = classes()
 
     stats = defaultdict(lambda: defaultdict(int))
     for a, _, size in rows:
@@ -164,6 +180,12 @@ def main():
         if state:
             s[state] += 1
             s[state + "_bytes"] += size
+        if category.get(a) == "logic":
+            s["logic"] += 1
+            s["logic_bytes"] += size
+            if state != "replaced":
+                s["to_port"] += 1
+                s["to_port_bytes"] += size
 
     def total(kind):
         t = defaultdict(int)
@@ -182,16 +204,18 @@ def main():
         return f"{100 * a / b:5.1f}%" if b else "    -"
 
     print(f"{'module':10} {'kind':8} {'funcs':>6} {'KB':>6} {'named':>7} {'by size':>7} "
-          f"{'replaced':>8} {'by size':>7} {'wrapped':>7}")
+          f"{'replaced':>8} {'by size':>7} {'wrapped':>7} {'logic KB':>8} {'to port':>7} {'KB':>5}")
     order = sorted(stats, key=lambda m: (KIND[m] != "game", -stats[m]["bytes"]))
     for m in order + ["GAME", "LIBRARY"]:
         s = game if m == "GAME" else lib if m == "LIBRARY" else stats[m]
         kind = "" if m in ("GAME", "LIBRARY") else KIND[m]
         if m == "GAME":
-            print("-" * 76)
+            print("-" * 98)
         print(f"{m:10} {kind:8} {s['functions']:6} {s['bytes'] / 1024:6.0f} "
               f"{pct(s['named'], s['functions'])} {pct(s['named_bytes'], s['bytes'])} "
-              f"{s['replaced']:8} {pct(s['replaced_bytes'], s['bytes'])} {s['wrapped']:7}")
+              f"{s['replaced']:8} {pct(s['replaced_bytes'], s['bytes'])} {s['wrapped']:7}"
+              + (f" {s['logic_bytes'] / 1024:8.0f} {s['to_port']:7} {s['to_port_bytes'] / 1024:5.0f}"
+                 if kind != "library" else ""))
 
 
 if __name__ == "__main__":
