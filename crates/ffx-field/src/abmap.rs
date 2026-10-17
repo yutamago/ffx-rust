@@ -1865,4 +1865,20 @@ pub mod bridge {
         }
         eax
     }
+
+    // ---- round 28 ----
+
+    /// `abmap_set_chr_pos(chr, target)` (`0x00a458f0`): [`abmap_start_warp`]
+    /// and `+0x115c7` = 1. Returns the grid (left in `eax`).
+    pub fn abmap_set_chr_pos<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        chr: u32,
+        target: u32,
+        call: &mut C,
+    ) -> u32 {
+        abmap_start_warp(mem, chr, target, call);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c7), 1u8);
+        g
+    }
 }

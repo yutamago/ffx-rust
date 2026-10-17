@@ -856,6 +856,12 @@ Prints and dumps:
   entry.
 - `0x00760bf0`: the VFX "drawField is not implemented" warning loop
   (listed in round 12).
+- `0x007606f0` and `0x00760f30`: a pixel probe. A cross is drawn at
+  the point `0x00d4b4e8`/`0x00d4b4ec` (skipped at x 0x7fff) from
+  `pppPartDraw` and `pppPartLoop`. The second, while `0x00d4b4d4` is
+  set, reads the 16x16 GS block there back (`sceGsExecStoreImage`) and
+  sends its colour as a packet. No code writes the point (`.bss`, set by
+  a host tool), so it is a debug aid (round 28).
 
 Debug camera:
 - `FreeCamera_handleInput` (`0x00680030`), `FreeCamera_setFreePause`
@@ -1237,9 +1243,29 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   - the angle is `atan(b / a)` when `a >= b` (or unordered), else
     `π/2 - atan(a / b)` stored as `f32`;
   - then `q π/2` is added (`π/2` the `f64` of an `f32`).
-- Not ported: `0x007606f0` draws six lines (`0x00760ce0`) as a cross
-  around the point at `0x00d4b4e8`. That is drawing, and it looks like a
-  debug marker; not confirmed.
+- `0x007606f0` (six lines as a cross around the point at `0x00d4b4e8`)
+  is a debug pixel probe, listed under "Debug (mod-tool candidates)"
+  since round 28.
+
+## The warp's entry, the blur and the nail's points (round 28)
+
+- `abmap_set_chr_pos` (`0x00a458f0`, Fahrenheit's name): `AbmapStartWarp`
+  and `+0x115c7` = 1; returns the grid.
+- `rcefBlurUpdate` (`0x00924bf0`, name ours, from `rcefMainProcRunAfter`):
+  while on (`+0x228`) with a mode (`+0x218`), calls `Sg_Blur` with the
+  blur `+0x21c`. Mode 2 fades it: `(frames - done) * blur / frames`,
+  integer, with the frames `+0x220` and the count `+0x224`. After the
+  frames it calls `Sg_Blur(0)` and switches off.
+- `rcfxNailUpdate` (`0x00929190`, name ours, `rcfxNailInit`'s update
+  callback): for each of the `+0x1c` points, copies the source point
+  (`ctx +0x24`, picked by the index array `+0x20`) into the base array
+  (`+0x24`). That goes through the matrix `+0x38` into `+0x28`, or is
+  copied there without a matrix, then copied on to `+0x2c`. Finally the
+  `f64` at `ctx` goes to `+0x30` through the x87 stack (on hardware a
+  signalling NaN turns quiet; the oracle's emulator does not, so the test
+  leaves them out).
+- The debug pixel probe `0x007606f0`/`0x00760f30` moved to "Debug
+  (mod-tool candidates)".
 
 ## Floats
 
