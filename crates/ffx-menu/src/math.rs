@@ -298,6 +298,46 @@ pub fn facing_within(
     min_abs(wrap_angle(d), tol) < tol
 }
 
+/// `Math_PolarToVector(out, r, yaw, pitch)` (`0x0088a3a0`, own name): the
+/// point at distance `r` in direction `(yaw, pitch)` as `(x, y, z, 1)`:
+/// the pitch [`wrap_angle`]d and, beyond ±π/2 (the float's value as a
+/// double), turned back (`π - pitch` or `pitch + π`) with the yaw turned
+/// by π; the yaw wrapped; `y = sin(pitch) r`, `h = cos(pitch) r`, `x =
+/// cos(yaw) h`, `z = sin(yaw) h`, each a float. `sin_cos(cos, v)` is the C
+/// runtime's `_CIcos` or `_CIsin` (through `CIcos`/`CIsin`), called for
+/// `sin(pitch)`, `cos(pitch)`, `cos(yaw)`, `sin(yaw)` in that order. Like
+/// [`wrap_angle`], it never ends for an infinite angle.
+#[must_use]
+pub fn polar_to_vector(
+    r: f32,
+    yaw: f32,
+    pitch: f32,
+    mut sin_cos: impl FnMut(bool, f64) -> f64,
+) -> [f32; 4] {
+    use ffx_bridge::x87::{add, load, mul, store, sub};
+    let ld = |v: f32| load(v.to_bits());
+    let st = |v: f64| f32::from_bits(store(v));
+    let half_pi = f64::from(FRAC_PI_2_F32);
+    let pi = f64::from(PI_F32);
+    let mut yaw = yaw;
+    let mut pitch = wrap_angle(pitch);
+    if ld(pitch) > half_pi {
+        yaw = st(add(ld(yaw), pi));
+        pitch = st(sub(pi, ld(pitch)));
+    }
+    if ld(pitch) < -half_pi {
+        yaw = st(add(ld(yaw), pi));
+        pitch = st(add(ld(pitch), pi));
+    }
+    let yaw = wrap_angle(yaw);
+    let mut ci = |cos: bool, v: f32| ld(st(sin_cos(cos, ld(v))));
+    let up = st(mul(ci(false, pitch), ld(r)));
+    let flat = st(mul(ci(true, pitch), ld(r)));
+    let across = st(mul(ci(true, yaw), ld(flat)));
+    let along = st(mul(ci(false, yaw), ld(flat)));
+    [across, up, along, 1.0]
+}
+
 /// The float constants `Math_Atan2XZ` loads: π/2 (`0x00b43d38`) and π
 /// (`0x00b922d0`).
 const FRAC_PI_2_F32: f32 = f32::from_bits(0x3fc9_0fdb);

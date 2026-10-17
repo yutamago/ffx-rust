@@ -9015,6 +9015,7 @@
 0x00889b80 function TkDegtoRad                # fh v3:exact 0x00889af0
 0x00889e70 function CIatan2                   # (y, x) _CIatan2 (y in ST1, x in ST0) stored to a float; own name beside CIcos/CIsin/CItan
 0x00889e90 function Math_CrossHeightGap       # (p1, p2, p3, p4) -> ST0: |y1 - y2| where segments p1-p2 and p3-p4 cross in x-z, -1 when parallel; each step a float; after FUN_00889bb0 (the crossing test); name ours
+0x0088a3a0 function Math_PolarToVector       # (out, r, yaw, pitch): pitch Math_WrapAngle'd, beyond +-pi/2 turned back (pi - p or p + pi) with yaw + pi; yaw wrapped; out = (cos(yaw) h, sin(p) r, sin(yaw) h, 1) with h = cos(p) r (CIsin/CIcos, each a float); name ours
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320

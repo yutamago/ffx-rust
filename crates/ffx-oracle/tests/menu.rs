@@ -6182,6 +6182,29 @@ fn menu_wrappers_match_the_original() {
                 &mut |o, a, b| x87_call(o, 0x00b0_c3b0, a, Some(b)),
             ))
         });
+        // Math_PolarToVector: finite angles (Math_WrapAngle never ends for
+        // an infinity), around ±π/2 and beyond a turn; NaN
+        let angle = |t: &mut Twins| -> f32 {
+            match t.rng.below(8) {
+                0 => f32::NAN,
+                1 => t.rng.pick(&[
+                    std::f32::consts::FRAC_PI_2,
+                    -std::f32::consts::FRAC_PI_2,
+                    std::f32::consts::PI,
+                ]),
+                _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 100.0,
+            }
+        };
+        let (yaw, pitch) = (angle(&mut t), angle(&mut t));
+        let r = pick(&mut t);
+        let out = t.alloc_random(16);
+        let args = [out, r.to_bits(), yaw.to_bits(), pitch.to_bits()];
+        t.twin("Math_PolarToVector", 0x0088_a3a0, &args, VOID, |o| {
+            tk::math_polar_to_vector(o, out, [r, yaw, pitch], &mut |o, cos, v| {
+                x87_call(o, if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }, v, None)
+            });
+            0
+        });
         // Math_YawPitchTo from and to points sharing axes or not
         let mut p: [f32; 6] = std::array::from_fn(|_| pick(&mut t));
         match round % 4 {

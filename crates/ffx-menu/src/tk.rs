@@ -6562,6 +6562,21 @@ pub mod bridge {
         ))
     }
 
+    /// `Math_PolarToVector(out, r, yaw, pitch)` (`0x0088a3a0`, own name):
+    /// [`crate::math::polar_to_vector`] into `out[1]`, `out[3]`, `out[0]`,
+    /// `out[2]` in that order (`sin_cos` the C runtime's `_CIcos`/`_CIsin`).
+    pub fn math_polar_to_vector<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        [r, yaw, pitch]: [f32; 3],
+        sin_cos: &mut impl FnMut(&mut M, bool, f64) -> f64,
+    ) {
+        let v = crate::math::polar_to_vector(r, yaw, pitch, |c, x| sin_cos(mem, c, x));
+        for k in [1u32, 3, 0, 2] {
+            mem.write(out.wrapping_add(4 * k), v[k as usize].to_bits());
+        }
+    }
+
     /// `TkSndUpdate()` (`0x00887b60`): `SndExecMusicClearQue(1, 0)` (every
     /// queued music/SE entry counted down), then [`tk_snd_update_main`],
     /// whose result it returns (a tail jump).

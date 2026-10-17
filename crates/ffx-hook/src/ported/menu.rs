@@ -3149,6 +3149,10 @@ ported! {
     Math_FacingWithin @ 0x0088_b780 => extern "C" fn math_facing_within(heading: f32, tol: f32, x0: f32, z0: f32, x1: f32, z1: f32) -> u32 {
         tk::math_facing_within(&mut mem(), heading, tol, [x0, z0], [x1, z1], &mut |_, a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
     }
+    /// `Math_PolarToVector(out, r, yaw, pitch)`.
+    Math_PolarToVector @ 0x0088_a3a0 => extern "C" fn math_polar_to_vector(out: u32, r: f32, yaw: f32, pitch: f32) {
+        tk::math_polar_to_vector(&mut mem(), out, [r, yaw, pitch], &mut |_, cos, v| crt_x87(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }, v, None));
+    }
     /// `TkSndUpdate()`.
     TkSndUpdate @ 0x0088_7b60 => extern "C" fn tk_snd_update() -> u32 {
         tk::tk_snd_update(&mut mem(), &mut |_, f, a| call_ptr(f, a))
