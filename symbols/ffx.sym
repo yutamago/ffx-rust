@@ -9084,7 +9084,7 @@
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
 0x008ada30 function TOInitMessageSlot_008ada30 # cdecl(i): g_TOMessageWindowSlots[i] zeroed, parts = window i, message i, entry i; window memset 0x7c, TOInitMessage(i), tags +2/+4 = i, slot +4 = -1, message handler 0x008b64a0; name ours
 0x008adbd0 function TOInitPadData             # fh v3:bsim1.00 0x008adb80; memset(0x025d09c0, 0, 0xc0), 0x025d09de = 0x80808080
-0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
+0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0; (): for the 8 message-window objects, u16 +0/+8 of +0x10, u16 +0/+0x2c of +0x14, bytes +0/+1 of +0x18 cleared
 0x008ade10 function TOOpenWindowAndMessage # cdecl(i): *(u16*)g_TOMessageWindowSlots[i] = 1; 0x00906c80(i); 0x008b8560(i); name ours
 0x008ade50 function TOReset1                  # fh v3:exact 0x008ade00
 0x008adee0 function TOReset2                  # fh v3:exact 0x008ade90; (): 0x008adf20, TkMenuInitSeq, TkMenuSetSceneDataAdrs(0, 0x0185f610)/(1, 0x0185fe10)/(2, 0x01841e10), tail TOSeqInitParam
@@ -9219,7 +9219,7 @@
 0x008b8560 function TOOpenMessage_008b8560 # cdecl(i): message window i: +0 = 1, +0x2c = 0, its +0x100(window), +0x114 = +0x104, then a tail call of +0xf8(window); caller 0x008ade10; name ours
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008b8680 function TOResetMessageVars_008b8680 # cdecl(i): g_MsgVars[i*32..]: type byte copied to +1, then type 0xff; name ours
-0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690
+0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690; cdecl(bank): 0x018676f0[8] = 0x018663f0/0x01866d70 + 0x130k, 0x01868a90[8] = 0x01867710/0x018680d0 + 0x138k, 0x01869ab0[256] = 0x01868ab0/0x018692b0 + 8k
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b89a0 function TOSetMessageText_008b89a0 # cdecl(i, text): window +0x94 = text, +0x98 = TOSkipCodesAbove2(text); name ours
@@ -9709,7 +9709,7 @@
 0x008df520 function TOFirstInitMessageNormal     # layout+callees: sorts between TODrawMessageWaitNamesp and TOGetGroup, and its named callees match the Switch 0x7100500760 TOFirstInitMessageNormal's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
 0x008df690 function TOSkipCountedCodes_008df690 # cdecl(p, n): TOSkipCode until n codes <= 2 or >= 0x26 passed; name ours
-0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export
+0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export; cdecl(msg): row kind +8 of 0x00c5b1b0 (0x24 bytes): words 0-4 -> +0x100..+0x110, word 5 -> +0x12c (mode 1: 0x008dfea0), words 6/7 -> +0xf4/+0xf8
 0x008df7b0 function TORightingMessage            # layout+callees: sorts between TOInitMessageCallBack and TOScanDrawInfo, and its named callees match the Switch 0x7100501880 TORightingMessage's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0

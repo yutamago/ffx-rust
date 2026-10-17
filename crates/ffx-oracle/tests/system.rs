@@ -9371,3 +9371,62 @@ fn round16_near_target_matches_the_original_on_the_snapshot() {
     };
     round16_near_target(&mut a, &mut b, &mut Xorshift(0x4016_0002));
 }
+
+/// Round 16's message-window set-ups.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round16_message_setup(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    use tolib::bridge as t;
+    let objects = alloc(a, b, 8 * 0x20);
+    let records = alloc(a, b, 8 * 3 * 0x40);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        for (j, off) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+            put(
+                a,
+                b,
+                objects + 0x20 * k + off,
+                records + 0xc0 * k + 0x40 * j as u32,
+            );
+        }
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    let msg = alloc(a, b, 0x140);
+    for _ in 0..8 {
+        set(a, b, t::MESSAGE_SLOTS, slots);
+        let bytes: Vec<u8> = (0..8 * 3 * 0x40).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        eax(a, 0x008a_dbf0, &[]);
+        t::init_scene_message_window(b);
+        same_memory("scene message windows", a, b);
+        let bank = [0u32, 1, 2, u32::MAX][(rng.next() % 4) as usize];
+        eax(a, 0x008b_86e0, &[bank]);
+        t::set_exe_message_area(b, bank);
+        same_memory("message areas", a, b);
+        let bytes: Vec<u8> = (0..0x140).map(|_| rng.next() as u8).collect();
+        a.write(msg, &bytes).unwrap();
+        b.write(msg, &bytes).unwrap();
+        put(a, b, msg + 8, rng.next() % 6);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        eax(a, 0x008d_f6d0, &[msg]);
+        t::init_message_call_back(b, msg);
+        same_memory("message callbacks", a, b);
+    }
+}
+
+#[test]
+fn round16_message_setup_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_message_setup(&mut a, &mut b, &mut Xorshift(0x4016_0011));
+}
+
+#[test]
+fn round16_message_setup_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_message_setup(&mut a, &mut b, &mut Xorshift(0x4016_0012));
+}

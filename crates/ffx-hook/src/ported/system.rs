@@ -4597,6 +4597,18 @@ ported! {
         std::hint::black_box(&mut v);
         r
     }
+    /// `TOInitSceneMessageWindow()`.
+    TOInitSceneMessageWindow @ 0x008a_dbf0 => extern "C" fn to_init_scene_message_window() {
+        tolib::bridge::init_scene_message_window(&mut mem());
+    }
+    /// `TOSetExeMessageArea(bank)`.
+    TOSetExeMessageArea @ 0x008b_86e0 => extern "C" fn to_set_exe_message_area(bank: u32) {
+        tolib::bridge::set_exe_message_area(&mut mem(), bank);
+    }
+    /// `TOInitMessageCallBack(msg)`.
+    TOInitMessageCallBack @ 0x008d_f6d0 => extern "C" fn to_init_message_call_back(msg: u32) {
+        tolib::bridge::init_message_call_back(&mut mem(), msg);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

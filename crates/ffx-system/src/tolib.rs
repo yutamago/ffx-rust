@@ -3789,4 +3789,100 @@ pub mod bridge {
         }
         best
     }
+
+    /// `TOInitSceneMessageWindow()` (`0x008adbf0`): for each of the 8
+    /// message-window objects (re-read before every store): u16 `+0` and
+    /// `+8` of its `+0x10` record, u16 `+0` and `+0x2c` of its `+0x14`
+    /// record and bytes `+0`, `+1` of its `+0x18` record cleared, in the
+    /// original's order.
+    pub fn init_scene_message_window(mem: &mut impl Mem) {
+        let slots = MESSAGE_SLOTS.ptr(mem).addr;
+        for i in 0..8u32 {
+            let slot = slots.wrapping_add(4 * i);
+            for (rec, off, wide) in [
+                (0x10u32, 0u32, true),
+                (0x14, 0, true),
+                (0x18, 0, false),
+                (0x10, 8, true),
+                (0x14, 0x2c, true),
+                (0x18, 1, false),
+            ] {
+                let obj: u32 = mem.read(slot);
+                let r: u32 = mem.read(obj.wrapping_add(rec));
+                if wide {
+                    mem.write(r.wrapping_add(off), 0u16);
+                } else {
+                    mem.write(r.wrapping_add(off), 0u8);
+                }
+            }
+        }
+    }
+
+    /// `TOSetExeMessageArea(bank)` (`0x008b86e0`): the message windows'
+    /// eight pointers (`0x018676f0`) to the first (`bank` 0, `0x018663f0`)
+    /// or second (`0x01866d70`) bank of 0x130-byte windows, their eight
+    /// line records (`0x01868a90`; 0x138 bytes from `0x01867710` or
+    /// `0x018680d0`), and the 256 macro-command pointers of [`MSG_VARS`]
+    /// (`0x01869ab0`) to consecutive 8-byte records from `0x01868ab0` or
+    /// `0x018692b0`.
+    pub fn set_exe_message_area(mem: &mut impl Mem, bank: u32) {
+        let (win, line, var) = if bank == 0 {
+            (0x0186_63f0, 0x0186_7710, 0x0186_8ab0)
+        } else {
+            (0x0186_6d70, 0x0186_80d0, 0x0186_92b0)
+        };
+        let (win, line, var) = (mem.rebase(win), mem.rebase(line), mem.rebase(var));
+        let (wins, lines, vars) = (
+            mem.rebase(0x0186_76f0),
+            mem.rebase(0x0186_8a90),
+            mem.rebase(0x0186_9ab0),
+        );
+        for k in 0..8u32 {
+            mem.write(wins.wrapping_add(4 * k), win.wrapping_add(0x130 * k));
+            mem.write(lines.wrapping_add(4 * k), line.wrapping_add(0x138 * k));
+        }
+        for k in 0..256u32 {
+            mem.write(vars.wrapping_add(4 * k), var.wrapping_add(8 * k));
+        }
+    }
+
+    /// `TOInitMessageCallBack(msg)` (`0x008df6d0`): message window `msg`'s
+    /// handlers from its kind's row (`+8`, 0x24-byte rows at `0x00c5b1b0`):
+    /// words 0..5 into `+0x100..=+0x110`, word 5 into `+0x12c` (in message
+    /// mode 1 `0x008dfea0` instead), words 6 and 7 into `+0xf4`, `+0xf8`.
+    pub fn init_message_call_back(mem: &mut impl Mem, msg: u32) {
+        let table = mem.rebase(0x00c5_b1b0);
+        for (k, off) in [
+            (0u32, 0x100u32),
+            (1, 0x104),
+            (2, 0x108),
+            (3, 0x10c),
+            (4, 0x110),
+        ] {
+            let kind: u32 = mem.read(msg.wrapping_add(8));
+            let v: u32 = mem.read(
+                table
+                    .wrapping_add(kind.wrapping_mul(0x24))
+                    .wrapping_add(4 * k),
+            );
+            mem.write(msg.wrapping_add(off), v);
+        }
+        let v = if crate::menu::bridge::message_window_mode(mem) == 1 {
+            mem.rebase(0x008d_fea0)
+        } else {
+            let kind: u32 = mem.read(msg.wrapping_add(8));
+            mem.read(
+                table
+                    .wrapping_add(kind.wrapping_mul(0x24))
+                    .wrapping_add(0x14),
+            )
+        };
+        mem.write(msg.wrapping_add(0x12c), v);
+        let kind: u32 = mem.read(msg.wrapping_add(8));
+        let row = table.wrapping_add(kind.wrapping_mul(0x24));
+        let a: u32 = mem.read(row.wrapping_add(0x18));
+        mem.write(msg.wrapping_add(0xf4), a);
+        let b: u32 = mem.read(row.wrapping_add(0x1c));
+        mem.write(msg.wrapping_add(0xf8), b);
+    }
 }
