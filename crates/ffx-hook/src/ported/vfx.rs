@@ -1265,6 +1265,50 @@ ported! {
     Vec4AddScalars_0074bc50 @ 0x0074_bc50 => extern "C" fn vec4_add_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32, w: u32) {
         vec::bridge::vec4_add_scalars(&mut mem(), dst, src, [x, y, z, w].map(f32::from_bits));
     }
+    /// `op_trans_m(dst, src, v)`.
+    op_trans_m @ 0x007e_a550 => extern "C" fn op_trans_m(dst: u32, src: u32, v: u32) -> u32 {
+        op::bridge::op_trans_m(&mut mem(), dst, src, v)
+    }
+    /// `op_rtp_w1(dst, m, v)`.
+    op_rtp_w1 @ 0x007e_9b50 => extern "C" fn op_rtp_w1(dst: u32, m: u32, v: u32) -> u32 {
+        op::bridge::op_rtp_w1(&mut mem(), dst, m, v)
+    }
+    /// `op_vector_m(dst, t, v)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    op_vector_m @ 0x007e_a760 => extern "C" fn op_vector_m(dst: u32, t: u32, v: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x60]);
+        let mut locals = Locals([0; 0x60]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        op::bridge::op_vector_m(&mut mem(), dst, t, v, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_matrix_light4_vector(dst, m, colours)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    op_matrix_light4_vector @ 0x00a6_cd80 => extern "C" fn op_matrix_light4_vector(dst: u32, m: u32, colours: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x90]);
+        let mut locals = Locals([0; 0x90]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        op::bridge::op_matrix_light4_vector(&mut mem(), dst, m, colours, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, flag)`.
+    op_oef2_tex_clut_ovl_add_007e56d0 @ 0x007e_56d0 => extern "C" fn op_oef2_tex_clut_ovl_add(rec: u32, mask: u32, flag: u32) -> i32 {
+        op::bridge::op_oef2_tex_clut_ovl_add(&mut mem(), rec, mask, flag)
+    }
+    /// `pppKeLnsArndUpdate(obj, key, ctrl)`.
+    pppKeLnsArndUpdate @ 0x0075_a2d0 => extern "C" fn ppp_ke_lns_arnd_update(obj: u32, key: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_arnd_update(&mut mem(), obj, key, ctrl)
+    }
+    /// `pppKeLnsFlsUpdate(obj, key, ctrl)`: the same code.
+    pppKeLnsFlsUpdate @ 0x0075_ae90 => extern "C" fn ppp_ke_lns_fls_update(obj: u32, key: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_arnd_update(&mut mem(), obj, key, ctrl)
+    }
+    /// `pppKeLnsCrnUpdate(obj, key, ctrl)`.
+    pppKeLnsCrnUpdate @ 0x0075_aab0 => extern "C" fn ppp_ke_lns_crn_update(obj: u32, key: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_crn_update(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

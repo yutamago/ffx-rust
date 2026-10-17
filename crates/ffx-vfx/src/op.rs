@@ -1859,4 +1859,343 @@ pub mod bridge {
         mem.write(heap.wrapping_sub(2), c.wrapping_add(1));
         start
     }
+
+    /// `op_trans_m(dst, src, v)` (`0x007ea550`): `dst` = `src` with
+    /// `v.xyz` added to its translation (row 3; `w` kept), through the
+    /// emulated VU0 registers (`v` at `0x00c8f980`, row 3 at `0x00c8f970`,
+    /// rows 0..2 at `0x00c8f578`; arguments in `a0`..`a2`). Returns the
+    /// translation's `w` (left in `eax`).
+    pub fn op_trans_m(mem: &mut impl Mem, dst: u32, src: u32, v: u32) -> u32 {
+        for (n, a) in [dst, src, v, 0].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_ps2::ee::bridge::set_func_param(mem, n as u32, a);
+        }
+        let (vr, tr, rows) = (
+            Global::<u32>::new(0x00c8_f980).ptr(mem).addr,
+            Global::<u32>::new(0x00c8_f970).ptr(mem).addr,
+            Global::<u32>::new(0x00c8_f578).ptr(mem).addr,
+        );
+        let vv: [u32; 4] = mem.read(v);
+        mem.write(vr, vv);
+        let t: [u32; 4] = mem.read(src.wrapping_add(0x30));
+        mem.write(tr, t);
+        let r: [u32; 12] = mem.read(src);
+        mem.write(rows, r);
+        for i in 0..3 {
+            let s = x87::add(rf(mem, tr + 4 * i), rf(mem, vr + 4 * i));
+            mem.write(tr + 4 * i, s);
+        }
+        let r: [u32; 12] = mem.read(rows);
+        mem.write(dst, r);
+        let t: [u32; 4] = mem.read(tr);
+        mem.write(dst.wrapping_add(0x30), t);
+        t[3]
+    }
+
+    /// `op_rtp_w1(dst, m, v)` (`0x007e9b50`): the point `m` times (`v.xyz`,
+    /// `vf00.w`) as in `op_apply_m_w1` (into `0x00c8f930`), divided by its
+    /// `w` (`q` = `vf00.w / w`, kept at `0x00c8f788`; `w` itself kept),
+    /// then each component times 16 truncated (`_ftol2_sse`) into
+    /// `0x00c8f940` and `dst` (four `i32`). Returns the last (left in
+    /// `eax`).
+    pub fn op_rtp_w1(mem: &mut impl Mem, dst: u32, m: u32, v: u32) -> u32 {
+        use x87::{ADD, MUL, Reg};
+        let div: x87::Op = |a, b| a / b;
+        for (n, a) in [dst, m, v, 0].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_ps2::ee::bridge::set_func_param(mem, n as u32, a);
+        }
+        let (vr, mr, out, acc) = (
+            Global::<u32>::new(MW1_V).ptr(mem).addr,
+            Global::<u32>::new(MW1_M).ptr(mem).addr,
+            Global::<u32>::new(MW1_OUT).ptr(mem).addr,
+            Global::<u32>::new(MW1_ACC).ptr(mem).addr,
+        );
+        let vv: [u32; 4] = mem.read(v);
+        mem.write(vr, vv);
+        let mm: [u32; 16] = mem.read(m);
+        mem.write(mr, mm);
+        let x = rf(mem, vr);
+        for i in 0..4 {
+            let r = Reg::load_f32(x).mem(MUL, rf(mem, mr + 4 * i)).store();
+            mem.write(acc + 4 * i, r);
+        }
+        for (k, c) in [(1u32, rf(mem, vr + 4)), (2, rf(mem, vr + 8))] {
+            for i in 0..4 {
+                let r = Reg::load_f32(c)
+                    .mem(MUL, rf(mem, mr + 0x10 * k + 4 * i))
+                    .mem(ADD, rf(mem, acc + 4 * i))
+                    .store();
+                mem.write(acc + 4 * i, r);
+            }
+        }
+        let w = rf(mem, Global::<u32>::new(VF00_W).ptr(mem).addr);
+        for i in 0..4 {
+            let r = Reg::load_f32(rf(mem, mr + 0x30 + 4 * i))
+                .mem(MUL, w)
+                .mem(ADD, rf(mem, acc + 4 * i))
+                .store();
+            mem.write(out + 4 * i, r);
+        }
+        let qa = Global::<u32>::new(0x00c8_f788).ptr(mem).addr;
+        let q = Reg::load_f32(w).mem(div, rf(mem, out + 0xc)).store();
+        mem.write(qa, q);
+        for i in 0..3 {
+            let r = Reg::load_f32(rf(mem, out + 4 * i)).mem(MUL, q).store();
+            mem.write(out + 4 * i, r);
+        }
+        let o: [f32; 4] = mem.read(out);
+        let k = f64_const(mem, 0x00b3_13a0);
+        for (i, c) in (0u32..).zip(o) {
+            let n = ffx_bridge::x87::ftol(mem, Reg::load_f32(c).constant(MUL, k).value());
+            mem.write(vr + 4 * i, n);
+        }
+        let r: [u32; 4] = mem.read(vr);
+        mem.write(dst, r);
+        r[3]
+    }
+
+    fn f64_const(mem: &impl Mem, sym: u32) -> f64 {
+        mem.read(Global::<u32>::new(sym).ptr(mem).addr)
+    }
+
+    /// `op_vector_m(dst, t, v)` (`0x007ea760`): a frame looking along `v`
+    /// moved to `t`: after a `dbgPrintf(0x00b582b0, 0x9ee)`, `side` = `v`
+    /// cross an up vector (`0x00c48bf0`, or `0x00c48c00` when `v.x | v.z`
+    /// and the emulated `a0`/`a1` bits are all zero, as the original's
+    /// `r0` compare decides; those registers are written as it does); rows
+    /// 0 and 2 of a unit matrix the normalized `side` and `v`, row 1 their
+    /// cross product, the rows' `w` 0; `FFXSamp0TransMatrix(dst, m, t)`.
+    /// All callees (`FFXVu0OuterProduct`, `FFXVu0UnitMatrix`,
+    /// `FFXVu0Normalize`) through `call`; the locals lie below `frame`
+    /// (down to `frame - 0x54`). Returns the last call's result.
+    pub fn op_vector_m<M: Mem>(
+        mem: &mut M,
+        dst: u32,
+        t: u32,
+        v: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let dbg = g(mem, 0x0062_f500);
+        let msg = g(mem, 0x00b5_82b0);
+        call(mem, dbg, &[msg, 0x9ee]);
+        let (r2, r3, r6, r7) = (
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_f52c),
+            g(mem, 0x00c8_f538),
+            g(mem, 0x00c8_f53c),
+        );
+        let vx: u32 = mem.read(v);
+        let hi = mem.read::<u32>(r3) | mem.read::<u32>(r7);
+        mem.write(r2, vx);
+        let vz: u32 = mem.read(v.wrapping_add(8));
+        mem.write(r6, vz);
+        let lo = vx | vz;
+        mem.write(r2, lo);
+        mem.write(r3, hi);
+        let r0: u32 = mem.read(g(mem, 0x00c8_f508));
+        let r0h: u32 = mem.read(g(mem, 0x00c8_f50c));
+        let flag = if lo == r0 && hi == r0h {
+            r0
+        } else {
+            r0.wrapping_add(1)
+        };
+        let up = g(mem, if flag == 0 { 0x00c4_8c00 } else { 0x00c4_8bf0 });
+        let (side, m) = (frame.wrapping_sub(0x14), frame.wrapping_sub(0x54));
+        let outer = g(mem, 0x006e_d720);
+        let unit = g(mem, 0x006e_d9a0);
+        let norm = g(mem, 0x006e_d6f0);
+        call(mem, outer, &[side, up, v]);
+        call(mem, unit, &[m]);
+        call(mem, norm, &[m, side]);
+        call(mem, norm, &[m.wrapping_add(0x20), v]);
+        call(mem, outer, &[m.wrapping_add(0x10), m.wrapping_add(0x20), m]);
+        for at in [0x0cu32, 0x1c, 0x2c] {
+            mem.write(m.wrapping_add(at), 0.0f32);
+        }
+        let trans = g(mem, 0x0093_d830);
+        call(mem, trans, &[dst, m, t])
+    }
+
+    /// `op_matrix_light4_vector(dst, m, colours)` (`0x00a6cd80`): the light
+    /// matrix of four directional lights: `L` = `m` with every row's
+    /// `xyz` negated, each row (w 0) normalized and scaled by `m`'s row
+    /// `w` (`FFXVu0Normalize`, `FFXVu0ScaleVector`, w 0 again), then
+    /// `0x006ed990(L, L)`; `C` = `colours` with rows 0..2 (w 0) normalized
+    /// and row 3 zero; `dst` rows 0..2 = `L` times `C`'s rows
+    /// (`FFXVu0ApplyMatrix`), row 3 = `L`'s row 3 (`FFXVu0CopyVector`). All
+    /// callees through `call`; the locals lie below `frame` (down to
+    /// `frame - 0x84`). Returns the last call's result.
+    pub fn op_matrix_light4_vector<M: Mem>(
+        mem: &mut M,
+        dst: u32,
+        m: u32,
+        colours: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let (l, c) = (frame.wrapping_sub(0x44), frame.wrapping_sub(0x84));
+        let copy = g(mem, 0x006e_d360);
+        call(mem, copy, &[l, m]);
+        for r in 0..4u32 {
+            for k in 0..3u32 {
+                let at = l.wrapping_add(0x10 * r + 4 * k);
+                let x: u32 = mem.read(at);
+                mem.write(at, x87::load(x) ^ 0x8000_0000);
+            }
+        }
+        let (norm, scale) = (g(mem, 0x006e_d6f0), g(mem, 0x006e_d8f0));
+        for r in 0..4u32 {
+            let row = l.wrapping_add(0x10 * r);
+            mem.write(row.wrapping_add(0xc), 0.0f32);
+            call(mem, norm, &[row, row]);
+            let k: u32 = mem.read(m.wrapping_add(0xc + 0x10 * r));
+            call(mem, scale, &[row, row, x87::load(k)]);
+            mem.write(row.wrapping_add(0xc), 0.0f32);
+        }
+        let f990 = g(mem, 0x006e_d990);
+        call(mem, f990, &[l, l]);
+        call(mem, copy, &[c, colours]);
+        for r in 0..3u32 {
+            let row = c.wrapping_add(0x10 * r);
+            mem.write(row.wrapping_add(0xc), 0.0f32);
+            call(mem, norm, &[row, row]);
+            mem.write(row.wrapping_add(0xc), 0.0f32);
+        }
+        for at in [0x3cu32, 0x38, 0x34, 0x30] {
+            mem.write(c.wrapping_add(at), 0.0f32);
+        }
+        let apply = g(mem, 0x006e_d2e0);
+        for r in 0..3u32 {
+            call(
+                mem,
+                apply,
+                &[dst.wrapping_add(0x10 * r), l, c.wrapping_add(0x10 * r)],
+            );
+        }
+        let cv = g(mem, 0x006e_d370);
+        call(mem, cv, &[dst.wrapping_add(0x30), l.wrapping_add(0x30)])
+    }
+
+    /// `g_OpOef2ClutOvlFlags` (`0x011a05c0`): a byte per overlay CLUT,
+    /// nonzero for a plain 16-colour CLUT.
+    pub const OEF2_CLUT_OVL_FLAGS: Global<u8> = Global::new(0x011a_05c0);
+    /// `g_OpOef2ClutOvlRecs` (`0x011a0600`): the texture record of each
+    /// overlay CLUT.
+    pub const OEF2_CLUT_OVL_RECS: Global<u32> = Global::new(0x011a_0600);
+    /// The bytes per pixel row factor of each pixel format (`0x00c44bb8`).
+    const PSM_BITS: u32 = 0x00c4_4bb8;
+
+    /// A CLUT's area: (base, x, y, width - 1, height - 1, stride) for a
+    /// texture record (`flag` 0: `+0` base & 0x3fff, bytes `+8`, `+9`,
+    /// `+0xa` times 16, `u16 +0xc`, `+0xe`, format `+0x18`) or a plain
+    /// CLUT (`u16 +0` base, 16 x 16 at 0, 0, format `+8`), and its last
+    /// block.
+    fn clut_area(mem: &impl Mem, rec: u32, flag: u8) -> ([i32; 6], i32) {
+        let b = |o: u32| i32::from(mem.read::<u8>(rec.wrapping_add(o)));
+        let w = |o: u32| i32::from(mem.read::<u16>(rec.wrapping_add(o)));
+        let (a, psm) = if flag == 0 {
+            let base = (mem.read::<u32>(rec) & 0x3fff).cast_signed();
+            (
+                [
+                    base,
+                    b(8) << 4,
+                    b(9) << 4,
+                    w(0xc) - 1,
+                    w(0xe) - 1,
+                    b(0xa) << 4,
+                ],
+                b(0x18),
+            )
+        } else {
+            ([w(0), 0, 0, 15, 15, 16], b(8))
+        };
+        let k = i32::from(
+            mem.read::<u8>(
+                Global::<u8>::new(PSM_BITS)
+                    .ptr(mem)
+                    .addr
+                    .wrapping_add(psm.cast_unsigned()),
+            ),
+        );
+        let blocks = k.wrapping_mul(a[4]).wrapping_mul(a[5]) / 16 / 256;
+        (a, blocks - 1 + a[0])
+    }
+
+    /// `op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, flag)` (`0x007e56d0`):
+    /// drops every overlay CLUT that shares a bit with `mask` and whose
+    /// area overlaps the new one's (the same base and stride with
+    /// overlapping rectangles, or a block range that overlaps with a
+    /// different base); packs the rest down; then, unless `rec` is still
+    /// there (-1) or all 64 are taken (-1), appends (`mask`, `flag`,
+    /// `rec`), sets the count to one past it and returns its index.
+    pub fn op_oef2_tex_clut_ovl_add(mem: &mut impl Mem, rec: u32, mask: u32, flag: u32) -> i32 {
+        let (new, last) = clut_area(mem, rec, u8::from(flag != 0));
+        let masks = OEF2_CLUT_OVL.ptr(mem);
+        let flags = OEF2_CLUT_OVL_FLAGS.ptr(mem);
+        let recs = OEF2_CLUT_OVL_RECS.ptr(mem);
+        for i in 0..64 {
+            if masks.at(i).get(mem) & mask == 0 {
+                continue;
+            }
+            let (old, old_last) = clut_area(mem, recs.at(i).get(mem), flags.at(i).get(mem));
+            let near = if new[0] > old[0] {
+                new[0] <= old_last
+            } else {
+                last >= old[0]
+            };
+            if !near {
+                continue;
+            }
+            let overlap = if new[0] != old[0] || new[5] != old[5] {
+                true
+            } else {
+                let xs = if new[1] > old[1] {
+                    new[1] <= old[3] + old[1]
+                } else {
+                    new[3] + new[1] >= old[1]
+                };
+                xs && if new[2] > old[2] {
+                    new[2] <= old[4] + old[2]
+                } else {
+                    new[4] + new[2] >= old[2]
+                }
+            };
+            if overlap {
+                masks.at(i).set(mem, 0);
+            }
+        }
+        let (mut k, mut dup) = (0u32, false);
+        for i in 0..64 {
+            let mi = masks.at(i).get(mem);
+            if mi == 0 {
+                continue;
+            }
+            masks.at(k).set(mem, mi);
+            let f = flags.at(i).get(mem);
+            flags.at(k).set(mem, f);
+            let r = recs.at(i).get(mem);
+            recs.at(k).set(mem, r);
+            dup |= r == rec;
+            k += 1;
+        }
+        for j in k..64 {
+            masks.at(j).set(mem, 0);
+            flags.at(j).set(mem, 0);
+            recs.at(j).set(mem, 0);
+        }
+        if dup || k >= 64 {
+            return -1;
+        }
+        masks.at(k).set(mem, mask);
+        #[allow(clippy::cast_possible_truncation)] // the flag byte
+        flags.at(k).set(mem, flag as u8);
+        recs.at(k).set(mem, rec);
+        #[allow(clippy::cast_possible_truncation)] // below 64
+        OEF2_CLUT_OVL_COUNT.set(mem, (k + 1) as u16);
+        k.cast_signed()
+    }
 }

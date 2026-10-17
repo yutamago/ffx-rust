@@ -7296,3 +7296,199 @@ fn op_heaps_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round11_matrices_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_a550);
+        let (m, v, t, dst, c) = (
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x40),
+            p.alloc(0x40),
+        );
+        let regs = p.sym(0x00c8_f508);
+        for round in 0..2000 {
+            for at in [m, c] {
+                for i in 0..16 {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * i, x);
+                }
+            }
+            for i in 0..4 {
+                let x = finite(&mut rng);
+                p.set(v + 4 * i, x);
+                let y = finite(&mut rng);
+                p.set(t + 4 * i, y);
+            }
+            if round % 4 == 0 {
+                p.set(v, 0u32);
+                p.set(v + 8, rng.pick(&[0u32, 0x8000_0000]));
+            }
+            if round % 3 == 0 {
+                p.set(m + 0xc, 1.0f32);
+                p.set(m + 0x1c, 0.0f32);
+                p.set(m + 0x2c, 0.0f32);
+                p.set(m + 0x3c, rng.pick(&[1.0f32, 2.0, 0.5, -1.0]));
+            }
+            // the emulated r0 and a0/a1 words op_vector_m compares
+            for k in [0u32, 1, 8, 9, 12, 13] {
+                let w = if rng.chance(70) { 0 } else { rng.next() };
+                p.set(regs + 4 * k, w);
+            }
+            let d = rng.pick(&[dst, m]);
+            p.check("op_trans_m", 0x007e_a550, &[d, m, v], |o| {
+                Some(op::bridge::op_trans_m(o, d, m, v))
+            });
+            p.check("op_rtp_w1", 0x007e_9b50, &[dst, m, v], |o| {
+                Some(op::bridge::op_rtp_w1(o, dst, m, v))
+            });
+            check_deep3(
+                &mut p,
+                "op_vector_m",
+                0x007e_a760,
+                [dst, t, v],
+                |o, frame| op::bridge::op_vector_m(o, dst, t, v, frame, &mut call_original),
+            );
+            check_deep3(
+                &mut p,
+                "op_matrix_light4_vector",
+                0x00a6_cd80,
+                [dst, m, c],
+                |o, frame| {
+                    op::bridge::op_matrix_light4_vector(o, dst, m, c, frame, &mut call_original)
+                },
+            );
+        }
+    }
+}
+
+/// [`check_deep`] for three arguments.
+fn check_deep3(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    args: [u32; 3],
+    rust: impl FnOnce(&mut Oracle, u32) -> u32,
+) {
+    let at = p.sym(THUNK);
+    let mut c = vec![0x81, 0xec, 0, 2, 0, 0]; // sub esp, 0x200
+    for _ in 0..3 {
+        c.extend([0xff, 0xb4, 0x24, 0x0c, 0x02, 0, 0]); // push [esp + 0x20c]
+    }
+    c.push(0xe8); // call sym
+    let call_end = at + u32::try_from(c.len()).unwrap() + 4;
+    c.extend(p.sym(sym).wrapping_sub(call_end).to_le_bytes());
+    c.extend([0x81, 0xc4, 0x0c, 0x02, 0, 0]); // add esp, 0x20c
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    let frame = p.b.stack_range().end - 0x100 - 12 - 4 - 0x200 - 12 - 4 - 4;
+    let r =
+        p.a.call(at, Conv::Cdecl, &args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    assert!(
+        r.st0.is_none(),
+        "{}: {what}: the original returns {:?} in ST0",
+        p.name,
+        r.st0
+    );
+    let mine = rust(&mut p.b, frame);
+    assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+    p.same(what);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round11_lns_and_cluts_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_a2d0);
+        deref_recorder(&mut p, 0x0076_a1a0, &[0, 0]);
+        let (obj, key, ctrl, data) = (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10), p.alloc(0x10));
+        let (env, table, shapes) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x100));
+        let slot = p.alloc(4);
+        p.put(heap::bridge::ENV_SLOT, slot);
+        p.set(slot, env);
+        p.set(env + 0x24, table);
+        for i in 0..16 {
+            p.set(table + 4 * i, shapes + 0x10 * i);
+        }
+        for _ in 0..2000 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(shapes, 0x100, &mut rng);
+            p.set(ctrl + 0xc, data);
+            p.set(data, 4 * rng.below(8));
+            p.set(data + 4, 4 * rng.below(8));
+            let f: u32 = p.get(obj + 0xc);
+            p.set(key, if rng.chance(80) { f } else { f ^ 1 });
+            let (s1, s2) = (rng.below(16), rng.below(16));
+            let n = rng.pick(&[0xffffu32, s1, s2]);
+            p.set(key + 4, n);
+            if rng.chance(30) {
+                let w = obj + 0xa0 + p.get::<u32>(data);
+                p.set(w + 4, table + 4 * (n & 0xf));
+            }
+            for i in 0..16 {
+                p.set(shapes + 0x10 * i, shapes + 0x10 * rng.below(16));
+            }
+            for (name, at) in [
+                ("pppKeLnsArndUpdate", 0x0075_a2d0u32),
+                ("pppKeLnsFlsUpdate", 0x0075_ae90),
+            ] {
+                p.check(name, at, &[obj, key, ctrl], |o| {
+                    Some(prog::bridge::ppp_ke_lns_arnd_update(o, obj, key, ctrl))
+                });
+            }
+            p.check("pppKeLnsCrnUpdate", 0x0075_aab0, &[obj, key, ctrl], |o| {
+                Some(prog::bridge::ppp_ke_lns_crn_update(
+                    o,
+                    obj,
+                    key,
+                    ctrl,
+                    &mut call_original,
+                ))
+            });
+        }
+        // op_oef2_tex_clut_ovl_add over a crowded table
+        let masks = p.sym(op::bridge::OEF2_CLUT_OVL.sym);
+        let flags = p.sym(op::bridge::OEF2_CLUT_OVL_FLAGS.sym);
+        let recs_at = p.sym(op::bridge::OEF2_CLUT_OVL_RECS.sym);
+        let recs = p.alloc(0x20 * 16);
+        for _ in 0..2000 {
+            for i in 0..16u32 {
+                let r = recs + 0x20 * i;
+                p.set(r, rng.below(4) | rng.next() & 0xffff_c000);
+                for (o, v) in [
+                    (8u32, rng.below(3)),
+                    (9, rng.below(3)),
+                    (0xa, rng.below(3) + 1),
+                    (0x18, rng.below(4)),
+                ] {
+                    p.set(r + o, u8::try_from(v).unwrap());
+                }
+                // sizes that put rectangle edges on each other's
+                for o in [0xcu32, 0xe] {
+                    let n = rng.pick(&[1u16, 16, 17, 32, 33, 48]);
+                    p.set(r + o, n);
+                }
+            }
+            for i in 0..64u32 {
+                let full = rng.chance(if i < 60 { 60 } else { 98 });
+                p.set(masks + 4 * i, if full { 1u32 << rng.below(4) } else { 0 });
+                p.set(flags + i, u8::from(rng.chance(30)));
+                p.set(recs_at + 4 * i, recs + 0x20 * rng.below(16));
+            }
+            let rec = recs + 0x20 * rng.below(16);
+            let mask = 1u32 << rng.below(4);
+            let flag = rng.pick(&[0u32, 1, 0x100]);
+            p.check(
+                "op_oef2_tex_clut_ovl_add",
+                0x007e_56d0,
+                &[rec, mask, flag],
+                |o| Some(op::bridge::op_oef2_tex_clut_ovl_add(o, rec, mask, flag).cast_unsigned()),
+            );
+        }
+    }
+}

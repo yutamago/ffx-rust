@@ -962,6 +962,75 @@ pub mod bridge {
         }
     }
 
+    /// The common part of `pppKeLnsArndUpdate`, `pppKeLnsFlsUpdate` and
+    /// `pppKeLnsCrnUpdate(obj, key, ctrl)`: at the key's frame (`key[0]` =
+    /// `obj +0xc`), area 0 (`obj + 0xa0 + ctrl.data[0]`) points at area 1
+    /// (`+ data[1]`) and, for the key's shape `key[1]` (0xffff: none), at
+    /// entry `key[1]` of the environment's shape table (`[g_pppEnvSlot]
+    /// +0x24`) unless it already does. Returns the area and the shape
+    /// entry to set, or the `eax` the original leaves when it stops.
+    #[allow(clippy::many_single_char_names)]
+    fn lns_update(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) -> Result<(u32, u32), u32> {
+        let d: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let base = obj.wrapping_add(0xa0);
+        let w = base.wrapping_add(mem.read(d));
+        let k: u32 = mem.read(key);
+        if k != mem.read::<u32>(obj.wrapping_add(0xc)) {
+            return Err(k);
+        }
+        let a1 = base.wrapping_add(mem.read(d.wrapping_add(4)));
+        mem.write(w, stub::ptr32(a1));
+        let n: u32 = mem.read(key.wrapping_add(4));
+        if n == 0xffff {
+            mem.write(w.wrapping_add(4), stub::ptr32(0));
+            return Err(0);
+        }
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let table: u32 = mem.read(env.wrapping_add(0x24));
+        let e = table.wrapping_add(n.wrapping_mul(4));
+        let cur = stub::ptr32(mem.read(w.wrapping_add(4)));
+        if e == cur {
+            return Err(cur);
+        }
+        Ok((w, e))
+    }
+
+    /// `pppKeLnsArndUpdate(obj, key, ctrl)` (`0x0075a2d0`) and
+    /// `pppKeLnsFlsUpdate` (`0x0075ae90`, the same code): see
+    /// `lns_update`; the new shape entry goes to area 0's `+4`, its
+    /// shape's `u16 +0x12` to `+8`, and `+0xa` is cleared. Returns the
+    /// `eax` the original leaves (the shape's high half over that word).
+    pub fn ppp_ke_lns_arnd_update(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) -> u32 {
+        let (w, e) = match lns_update(mem, obj, key, ctrl) {
+            Ok(v) => v,
+            Err(eax) => return eax,
+        };
+        mem.write(w.wrapping_add(4), stub::ptr32(e));
+        let shape = stub::ptr32(mem.read(stub::ptr32(e)));
+        let k: u16 = mem.read(shape.wrapping_add(0x12));
+        mem.write(w.wrapping_add(8), k);
+        mem.write(w.wrapping_add(0xa), 0u8);
+        (shape & 0xffff_0000) | u32::from(k)
+    }
+
+    /// `pppKeLnsCrnUpdate(obj, key, ctrl)` (`0x0075aab0`): see
+    /// `lns_update`; the new shape entry goes through `KeLnsCrn_SetShp(area,
+    /// entry)` (`0x0076a1a0`, through `call`), whose result it returns.
+    pub fn ppp_ke_lns_crn_update<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (w, e) = match lns_update(mem, obj, key, ctrl) {
+            Ok(v) => v,
+            Err(eax) => return eax,
+        };
+        let f = Global::<u32>::new(0x0076_a1a0).ptr(mem).addr;
+        call(mem, f, &[w, e])
+    }
+
     /// `pppKeLnsLpCon(obj, ctrl)` (`0x0075af30`): `KeLnsLp_Init` on area 0
     /// (from `+0xa0`), then `+0x9c` and `+0xa8` of it 0.0.
     pub fn ppp_ke_lns_lp_con(mem: &mut impl Mem, obj: u32, ctrl: u32) {

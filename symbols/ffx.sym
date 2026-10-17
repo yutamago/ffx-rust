@@ -5817,6 +5817,7 @@
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
 0x007e5660 function op_vec_zero               # (dst) four zero words
+0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
 0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
 0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
 0x007e5d40 function op_random_per_call_007e5d40  # structure: () -> op_random_per(); called by two opp draw functions (0x00a6e540, 0x00a744e0); name ours
@@ -13934,7 +13935,10 @@
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
 0x00c44a50 function MsPreProcess                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23include'; Switch 0x71003beea0 MsPreProcess (symbols from Fahrenheit's server export)
+0x00c44bb8 label    g_OpPsmBlockFactor           # byte per pixel format: the factor op_oef2_tex_clut_ovl_add multiplies height by stride with (then / 16 / 256) to get a CLUT area's last block
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
+0x00c48bf0 label    g_OpUpVector                 # f32 x4: the up vector op_vector_m crosses the view direction with
+0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to the reader's g_ChrReadTableFn for each kind
@@ -14369,6 +14373,8 @@
 0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
 0x011a04b0 label    g_OpOef2ClutOvlCount         # u16 one past the last overlay CLUT kept (op_oef2_tex_clut_ovl_clear)
 0x011a04c0 label    g_OpOef2ClutOvl              # 64 overlay CLUT masks, 0 free (op_oef2_tex_clut_ovl_clear, op_oef2_tex_clut_ovl_trans)
+0x011a05c0 label    g_OpOef2ClutOvlFlags         # 64 bytes, one per overlay CLUT: nonzero for a plain 16x16 CLUT record (u16 base, format at +8)
+0x011a0600 label    g_OpOef2ClutOvlRecs          # 64 texture-record pointers, one per overlay CLUT (op_oef2_tex_clut_ovl_add)
 0x011a0960 label    g_OpFuncOtOrder              # op function ordering table: i8 slot lists (-1 free), 32 from a list base (op_func_ot_set/free)
 0x011a09e0 label    g_OpFuncOt                   # its 16-byte slots {func, a, b, u16 c} at (list + slot) * 16
 0x011a11e0 label    g_OpMdcTransferCues          # 8 x 16-byte mdc transfer cues keyed by their first word (op_mdc_mem_transfer_cue_free[_all])
