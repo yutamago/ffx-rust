@@ -1404,13 +1404,24 @@ fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             &[[0, 0, 1, rng.byte()][rng.below(4) as usize]],
         );
     }
-    // targets among the actors (g_BtlMotionBusy and the action take them)
-    let targets = [rng.next() & 0x7fff_ffff, 1 << rng.below(ACTORS), 0][rng.below(3) as usize];
+    // targets among the placed actors (MsSetTargetDir turns towards them;
+    // g_BtlMotionBusy and the action take them): monsters, the actor itself
+    let targets = [
+        (rng.next() & 0xff) << 0x14,
+        1 << (0x14 + rng.below(8)),
+        1 << i,
+        0,
+    ][rng.below(4) as usize];
     poke(a, b, actor + 0xdc0, &targets.to_le_bytes());
-    if [0x3117, 0x30ff].contains(&id)
-        && ![other, 0xf, 0x10, 0x11]
-            .into_iter()
-            .all(|k| writes(a, b, 0x0079_48e0, k, out + 0x40))
+    let needed: &[u32] = if [0x3117, 0x30ff].contains(&id) {
+        &[other, 0xf, 0x10, 0x11]
+    } else {
+        &[]
+    };
+    if !writes(a, b, 0x0079_48e0, i, out + 0x40)
+        || !needed
+            .iter()
+            .all(|&k| writes(a, b, 0x0079_48e0, k, out + 0x40))
     {
         return;
     }
@@ -1452,7 +1463,18 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
             a,
             b,
             q + 0x6d4,
-            &[[0xff, 0xff, 0xff, u8::try_from(rng.below(ACTORS)).unwrap()][rng.below(4) as usize]],
+            &[
+                [0xff, 0xff, 0xff, u8::try_from(0x14 + rng.below(8)).unwrap()]
+                    [rng.below(4) as usize],
+            ],
+        );
+        // a guard's attacker and the one it guards are monsters (placed:
+        // MsDefenseStartProcess reads both battle positions)
+        poke(
+            a,
+            b,
+            q + 0x6d3,
+            &[u8::try_from(0x14 + rng.below(8)).unwrap()],
         );
         for o in [0x508, 0x432, 0x40a, 0x40b] {
             poke(a, b, q + o, &[flag(rng, 2)]);
@@ -1534,13 +1556,9 @@ fn command_cue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, ou
     for o in [0x433, 0x50e, 0x608, 0x6e0, 0x717, 0x508, 0x436, 0xdf4] {
         poke(a, b, actor + o, &[flag(rng, 12)]);
     }
-    // the payment's motion actor (Yojimbo's, +0x6d1)
-    poke(
-        a,
-        b,
-        actor + 0x6d1,
-        &[u8::try_from(rng.below(ACTORS)).unwrap()],
-    );
+    // the payment's motion actor (Yojimbo's, +0x6d1): any byte (MsSetMotion
+    // on a bad index matches the original's)
+    poke(a, b, actor + 0x6d1, &[rng.byte()]);
     // MP enough at times (MsCalcMagic)
     if rng.below(2) == 0 {
         poke(a, b, actor + 0x5d4, &0x7fffu32.to_le_bytes());
