@@ -9432,7 +9432,7 @@ fn round16_message_setup_matches_the_original_on_the_snapshot() {
 }
 
 /// Round 16's save folder name and macro number text.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 fn round16_save_name_and_numbers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cell = alloc(a, b, 4);
@@ -9487,7 +9487,11 @@ fn round16_save_name_and_numbers_match_the_original_on_the_snapshot() {
 }
 
 /// Round 16's pad repeat over stand-in controller history and time.
-#[allow(clippy::cast_possible_truncation, clippy::items_after_statements)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::items_after_statements,
+    clippy::many_single_char_names
+)]
 fn round16_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cells = alloc(a, b, 0x10);
@@ -9575,7 +9579,7 @@ fn round16_pad_status_matches_the_original_on_the_snapshot() {
 }
 
 /// Round 16's menu pad repeat over stand-in controllers and time.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 fn round16_menu_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cells = alloc(a, b, 0x40);
