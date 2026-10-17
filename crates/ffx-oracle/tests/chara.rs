@@ -6478,3 +6478,79 @@ fn round10e_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round10f_matches_the_original() {
+    for mut t in twins() {
+        round10f_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10f_on(t: &mut Twin) {
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x0010_f10f);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 1, 0x1000);
+    let mut rets = vec![];
+    for (sym, id) in [
+        (0x0077_fc90, 2),
+        (0x0077_fda0, 3),
+        (0x0078_0750, 4),
+        (0x0078_08f0, 5),
+    ] {
+        rets.push(fk.fake(t, sym, id, 3));
+    }
+    rets.push(fk.fake(t, 0x0076_efa0, 6, 3));
+    let table = t.a.rebase(0x0231_0000);
+    for round in 0..32u32 {
+        fk.reset(t);
+        for &r in &rets {
+            t.put_u32(r, rng.next());
+        }
+        let blocks = t.alloc(0x1000 * 2);
+        t.put_u32(heap, blocks);
+        let free = if round % 8 == 7 { 64 } else { rng.next() % 64 };
+        for i in 0..64 {
+            t.put_u32(table + 0x30 * i, if i < free { 0x0100_0000 + i } else { 0 });
+        }
+        let src = t.alloc(0x2300);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(
+            src,
+            &[
+                (rng.next() % 4) as u8,
+                rng.next() as u8,
+                (rng.next() % 3) as u8,
+            ],
+        );
+        t.put_u32(src + 8, 0x40);
+        for k in 0..32 {
+            #[allow(clippy::cast_possible_truncation)]
+            let m = [0xffu8, 0, 1, 2, 3, 4, 5, 0xfe][rng.next() as usize % 8];
+            t.put(src + 0xc + k, &[m]);
+        }
+        let def = t.alloc(0x40);
+        let n = rng.next() % 5;
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(def + 0xc, &(n as u16).to_le_bytes());
+        let ents = t.alloc(0x10 * 5);
+        for k in 0..n * 4 {
+            t.put_u32(ents + 4 * k, rng.next());
+        }
+        t.put_u32(def + 0x1c, ents);
+        t.put_u32(def + 0x20, src);
+        let handle = rng.next();
+        t.check(
+            &format!("chr_texanim_set {round}"),
+            0x0077_c950,
+            &[def, handle],
+            |m| {
+                Res::Int(ta::chr_texanim_set(m, def, handle, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+}

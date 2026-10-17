@@ -699,7 +699,7 @@ pub mod bridge {
     /// byte) is stored, then each of `def`'s `u16` `+0xc` entries (0x10
     /// bytes at `+0x1c`) gives a dword (`+0xc`) and two halves (`+8`,
     /// `+0xa`).
-    fn chr_texanim_set<M: Mem>(
+    fn chr_texanim_set_form<M: Mem>(
         mem: &mut M,
         f: &SetForm,
         id: u32,
@@ -811,7 +811,7 @@ pub mod bridge {
             reset: RESET_POS,
             old: false,
         };
-        chr_texanim_set(mem, &FORM, id, handle, def, call)
+        chr_texanim_set_form(mem, &FORM, id, handle, def, call)
     }
 
     /// `chr_texanim_set_old(id, handle, def)` (`0x007803f0`): the old form
@@ -838,7 +838,7 @@ pub mod bridge {
             reset: POS_SET_OLD,
             old: true,
         };
-        chr_texanim_set(mem, &FORM, id, handle, def, call)
+        chr_texanim_set_form(mem, &FORM, id, handle, def, call)
     }
 
     /// The import slots `chr_texanim_main_sub_old` calls through: `rand`,
@@ -1062,5 +1062,51 @@ pub mod bridge {
             k += 1;
         }
         buf
+    }
+
+    /// `chr_texanim_set(def, handle)` (`0x0077c950`): the first free entry
+    /// of [`TEX_ANIMS`] (none: `movie_err("i!=CHR_TEX_ANIM_MAX", ...,
+    /// 0xb28)`, -1) takes `def`'s source (`+0x20`) and its kind (byte `+0`
+    /// to `+0xc`) and form (byte `+2` to `+0xd`). Kind 1 marks
+    /// [`TEX_ANIM_844`] with 1 and the entry; kind 2 sets up the old (form
+    /// 0) or new (form 1) work block. Returns the entry.
+    pub fn chr_texanim_set<M: Mem>(
+        mem: &mut M,
+        def: u32,
+        handle: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = TEX_ANIMS.ptr(mem).addr;
+        let Some(i) = (0..0x40u32).find(|&i| mem.read::<u32>(table + 0x30 * i) == 0) else {
+            let err = mem.rebase(MOVIE_ERR);
+            let (msg, file) = (mem.rebase(0x00b5_44b8), mem.rebase(0x00b5_40a8));
+            call(mem, err, &[msg, file, 0xb28]);
+            return u32::MAX;
+        };
+        let e = table + 0x30 * i;
+        let src: u32 = mem.read(def.wrapping_add(0x20));
+        mem.write(e, src);
+        let src: u32 = mem.read(def.wrapping_add(0x20));
+        let form: u8 = mem.read(src.wrapping_add(2));
+        mem.write(e + 0xd, form);
+        let kind: u8 = mem.read(src);
+        mem.write(e + 0xc, kind);
+        match kind {
+            1 => {
+                #[allow(clippy::cast_possible_truncation)] // below 0x40
+                TEX_ANIM_844.set(mem, [1, i as u8]);
+            }
+            2 => match mem.read::<u8>(e + 0xd) {
+                0 => {
+                    chr_texanim_set_old(mem, i, handle, def, call);
+                }
+                1 => {
+                    chr_texanim_set_new(mem, i, handle, def, call);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        i
     }
 }

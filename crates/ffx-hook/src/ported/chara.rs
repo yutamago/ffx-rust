@@ -1635,4 +1635,8 @@ ported! {
     chr_texanim_main_sub_old @ 0x0077_ff00 => extern "C" fn chr_texanim_main_sub_old(id: u32) -> u32 {
         ta::chr_texanim_main_sub_old(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `chr_texanim_set(def, handle)`.
+    chr_texanim_set @ 0x0077_c950 => extern "C" fn chr_texanim_set(def: u32, handle: u32) -> u32 {
+        ta::chr_texanim_set(&mut mem(), def, handle, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
