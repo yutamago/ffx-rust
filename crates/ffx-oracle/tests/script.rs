@@ -3012,13 +3012,14 @@ fn move_and_message_cases_match_the_original() {
 
 /// Start handlers that are a bare `ret`: `Native_ChrWaitMotion_501e`,
 /// `Native_MusicWaitLoaded`, `Native_00dc`, `Native_FadeWait` and
-/// `0xb009`'s start.
-const BARE_RET: [u32; 5] = [
+/// the starts of `0xb009` and `0xb00b`.
+const BARE_RET: [u32; 6] = [
     0x00a7_9370,
     0x0085_9d70,
     0x0085_ee00,
     0x00a7_7ee0,
     0x0076_eb30,
+    0x0076_ec20,
 ];
 
 /// Every Rust native against the original on each actor of each ctrl work
