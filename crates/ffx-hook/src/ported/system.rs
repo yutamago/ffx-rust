@@ -4454,6 +4454,14 @@ ported! {
         tolib::bridge::btl_make_target_target_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data);
         std::hint::black_box(&mut tmp);
     }
+    /// `TOBtlStartLimitTimer(t)`.
+    TOBtlStartLimitTimer @ 0x0089_a2a0 => extern "C" fn to_btl_start_limit_timer(t: f32) {
+        tolib::bridge::btl_start_limit_timer(&mut mem(), t);
+    }
+    /// `TOBtlSetLimitTimerPos(x, y)`.
+    TOBtlSetLimitTimerPos @ 0x0089_a2d0 => extern "C" fn to_btl_set_limit_timer_pos(x: u32, y: u32) {
+        tolib::bridge::btl_set_limit_timer_pos(&mut mem(), x, y);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

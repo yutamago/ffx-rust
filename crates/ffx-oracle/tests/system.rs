@@ -8701,7 +8701,7 @@ fn round14_target_groups_match_the_original_on_the_snapshot() {
 }
 
 /// Round 15's target lists over a stand-in command record.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 fn round15_target_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let rec = alloc(a, b, 0x40);
@@ -8785,4 +8785,36 @@ fn round15_target_lists_match_the_original_on_the_snapshot() {
         return;
     };
     round15_target_lists(&mut a, &mut b, &mut Xorshift(0x4015_0002));
+}
+
+/// Round 15's small limit-timer setters.
+fn round15_limit_timer_setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    for _ in 0..40 {
+        let f = rng.float();
+        let f = if ffx_bridge::x87::is_snan(f.to_bits()) { 2.5 } else { f };
+        eax(a, 0x0089_a2a0, &[f.to_bits()]);
+        t::btl_start_limit_timer(b, f);
+        same_memory("limit timer start", a, b);
+        let (x, y) = (rng.next(), rng.next());
+        eax(a, 0x0089_a2d0, &[x, y]);
+        t::btl_set_limit_timer_pos(b, x, y);
+        same_memory("limit timer position", a, b);
+    }
+}
+
+#[test]
+fn round15_limit_timer_setters_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round15_limit_timer_setters(&mut a, &mut b, &mut Xorshift(0x4015_0011));
+}
+
+#[test]
+fn round15_limit_timer_setters_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round15_limit_timer_setters(&mut a, &mut b, &mut Xorshift(0x4015_0012));
 }

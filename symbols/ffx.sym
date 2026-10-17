@@ -8822,6 +8822,8 @@
 0x00899f20 function TOBtlSetInfoWinMes           # layout: alphabetical run between TOBtlSetDefaultCursorPos and TOBtlSetInfoWinParam (2 unnamed in the gap); Switch 0x710049f350 TOBtlSetInfoWinMes is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00899fd0 function TOBtlSetInfoWinParam      # fh v3:exact 0x00899f40
 0x0089a160 function TOBtlSetLibraWindowParam  # fh v3:exact 0x0089a0d0
+0x0089a2a0 function TOBtlStartLimitTimer      # cdecl(float t): 0x0133f77c = 1, 0x0133f78c/90/94 = t; no direct callers (overlay import); name ours
+0x0089a2d0 function TOBtlSetLimitTimerPos     # cdecl(x, y): u16 0x0133f780 = x, 0x0133f782 = y (the timer's draw position, 0x008955e0); name ours
 0x0089a2f0 function TOBtlSetLuluLimitTbl      # fh v3:exact 0x0089a260
 0x0089a330 function TOBtlSetNextAction        # fh v3:exact 0x0089a2a0
 0x0089a630 function TOBtlSetPrevAction        # fh v3:exact 0x0089a5a0

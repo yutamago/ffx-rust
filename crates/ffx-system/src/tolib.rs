@@ -3170,4 +3170,29 @@ pub mod bridge {
         mem.write(w.wrapping_add(0x94), mode as u16);
         mem.write(w, start);
     }
+
+
+    /// `0x0089a2a0(t)`: the limit timer started (`0x0133f77c` 1) with `t`
+    /// as its limit, time left and shown time (as [`start_limit_timer`]
+    /// in another order: the flag first).
+    pub fn btl_start_limit_timer(mem: &mut impl Mem, t: f32) {
+        for (a, v) in [
+            (0x0133_f77c, 1),
+            (0x0133_f78c, t.to_bits()),
+            (0x0133_f790, t.to_bits()),
+            (0x0133_f794, t.to_bits()),
+        ] {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        }
+    }
+
+    /// `0x0089a2d0(x, y)`: the limit timer's position (u16 `0x0133f780`,
+    /// `0x0133f782`).
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    pub fn btl_set_limit_timer_pos(mem: &mut impl Mem, x: u32, y: u32) {
+        let at = mem.rebase(0x0133_f780);
+        mem.write(at, x as u16);
+        mem.write(at.wrapping_add(2), y as u16);
+    }
 }
