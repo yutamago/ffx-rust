@@ -3757,6 +3757,16 @@ ported! {
         yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
     }
 
+    /// `rcVu0Sub(a, b, c)`.
+    rcVu0Sub @ 0x0091_f740 => extern "C" fn shim_rc_vu0_sub(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_sub(&mut mem(), a, b, c)
+    }
+
+    /// `rcVu0Sub_0092d720(a, b, c)`: the same code.
+    rcVu0Sub_0092d720 @ 0x0092_d720 => extern "C" fn shim_rc_vu0_sub_0092d720(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_sub(&mut mem(), a, b, c)
+    }
+
     /// `yiSetIDPage(page)`.
     yiSetIDPage @ 0x0090_a4a0 => extern "C" fn shim_yi_set_id_page(page: u32) -> u32 {
         yi::bridge::yi_set_id_page(&mut mem(), page, &mut |_, f, a| call_cdecl(f, a))

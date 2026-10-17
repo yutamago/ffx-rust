@@ -1483,6 +1483,20 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## A VU0 subtraction (round 38)
+
+`rcVu0Sub(a, b, c)` (`0x0091f740`, name ours; from `rcbgPSimAddNail`
+and `rcbgPSimCreate`) and the identical `rcVu0Sub_0092d720` (from
+`0x0092dad0`, `0x0092e020`) compute `a.xyz = b.xyz - c.xyz` through the
+emulated VU0 registers:
+- `b` is copied to `0x00c8f980` and `c` to `0x00c8f970`; both keep the
+  copies afterwards.
+- `Vec3SubScalars` subtracts each component as an `f32` (the original
+  pushes `c`'s four words as its scalar arguments by overwriting the
+  stack words of the two copies' arguments) and restores `vf00`.
+- The register goes to `a`, so `a.w` is `b.w`. The function returns that
+  last word.
+
 ## The map's ID map pages and yiReset (round 37)
 
 - `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,

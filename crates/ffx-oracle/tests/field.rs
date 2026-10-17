@@ -12479,3 +12479,51 @@ fn round36_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0024_0002);
     round36_cases(&mut t, &mut rng, 40);
 }
+
+// ---- round 38 ----
+
+/// Round 38 on `t`: the two VU0 subtractions (`rcVu0Sub` and its twin),
+/// `a` apart from or the same as `b` or `c`.
+fn round38_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let (a, b, c) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    let vf00 = t.b.rebase(vu0::VU0_VF00);
+    for k in 0..rounds {
+        for v in [a, b, c] {
+            for i in 0..4 {
+                let x = if k % 2 == 0 {
+                    rng.float()
+                } else {
+                    rng.any_float()
+                };
+                t.put(v + 4 * i, x);
+            }
+        }
+        t.fill(vf00, 0x10, rng);
+        let dst = [a, a, b, c][rng.below(4) as usize];
+        for f in [0x0091_f740, 0x0092_d720] {
+            t.same(
+                "rcVu0Sub",
+                |o| o.eax(f, &[dst, b, c]),
+                |m| vu0::bridge::rc_vu0_sub(m, dst, b, c),
+            );
+        }
+    }
+}
+
+/// Round 38: `rcVu0Sub` (`0x0091f740`) and `rcVu0Sub_0092d720`.
+#[test]
+fn round38_vu0_sub_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0026_0001);
+    round38_cases(&mut t, &mut rng, 400);
+}
+
+/// Round 38 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round38_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0026_0002);
+    round38_cases(&mut t, &mut rng, 100);
+}

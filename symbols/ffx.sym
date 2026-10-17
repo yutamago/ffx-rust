@@ -10884,6 +10884,7 @@
 0x0091f640 function Guide_SetEnabled             # (on): g_GuideEnabled; from BasicDebugTweakUtil_handleInput
 0x0091f6b0 function rcbgScaleVector_0091f6b0  # the same code as rcbgScaleVector 0x009200a0
 0x0091f710 function rcCopyQword_0091f710      # (dst, src): as rcCopyQword_0091cb40
+0x0091f740 function rcVu0Sub                 # (a, b, c) -> a.w: b to the VU0 register 0x00c8f980, c to 0x00c8f970 (VFX_Copy16From), Vec3SubScalars(reg, reg, c.xyzw) (f32 each, restores vf00), the register to a (VFX_Copy16To; a.w = b.w); callers rcbgPSimAddNail, rcbgPSimCreate; name ours; ported (field round 38)
 0x0091f7a0 function rcbgPSimAddDamp           # fh switch:bsim1.00 0x7100546310
 0x0091f7c0 function rcbgPSimAddGravity           # str-match switch: only user of 2 string(s) held once by both builds, e.g. '---- rcbgPSimAddGravity self:%p g:%f,%f,%f'; Switch 0x7100546350 rcbgPSimAddGravity (symbols from Fahrenheit's server export)
 0x0091f850 function rcbgPSimAddNail              # layout: alphabetical run between rcbgPSimAddGravity and rcbgPSimAddWind (1 unnamed in the gap); Switch 0x71005460f0 rcbgPSimAddNail is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -11222,6 +11223,7 @@
 0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
 0x0092d690 function rcbgScaleVector_0092d690  # the same code as rcbgScaleVector 0x009200a0
 0x0092d6f0 function rcCopyQword_0092d6f0      # (dst, src): as rcCopyQword_0091cb40 (6 callers)
+0x0092d720 function rcVu0Sub_0092d720        # the same code as rcVu0Sub; callers 0x0092dad0, 0x0092e020; name ours; ported (field round 38)
 0x0092d780 function rcbgScaleVector_0092d780  # the same code as rcbgScaleVector 0x009200a0
 0x0092d7e0 function rcefVecToField            # (v): scaled by the float at 0x00b67e24 (rcbgScaleVector_0092d690), then y - 1024
 0x0092d810 function rcefAngleWrap             # (a) -> float: into 0..2pi (double 0x00b39378): negative 2pi - fmod(-a, 2pi), past 2pi fmod(a, 2pi) (_CIfmod ST1, ST0)
