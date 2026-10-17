@@ -3495,6 +3495,45 @@ ported! {
         task::bridge::rcef_obj_setup_draw(&mut mem(), [env, o, id], &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcuiScaleVector_copy_00756600(dst, v, s, a, b, c)`.
+    rcuiScaleVector_copy_00756600 @ 0x0075_6600 => extern "C" fn shim_rcui_scale_vector_copy(dst: u32, v: u32, s: u32, a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rcui_scale_vector(&mut mem(), dst, v, s, [a, b, c])
+    }
+
+    /// `rcVec4fToFixed_copy_007e6cc0(out, v)`.
+    rcVec4fToFixed_copy_007e6cc0 @ 0x007e_6cc0 => extern "C" fn shim_rc_vec4f_to_fixed_copy(out: u32, v: u32) -> u32 {
+        model::bridge::rc_vec4f_to_fixed(&mut mem(), out, v)
+    }
+
+    /// `yiSetMIMeParamDObj(obj, p)`.
+    yiSetMIMeParamDObj @ 0x0090_a4d0 => extern "C" fn shim_yi_set_mime_param_dobj(obj: u32, p: u32) -> u32 {
+        yi::bridge::yi_set_mime_param_dobj(&mut mem(), obj, p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiGetColorOffsetInt(out)`.
+    yiGetColorOffsetInt @ 0x0090_8660 => extern "C" fn shim_yi_get_color_offset_int(out: u32) -> u32 {
+        yi::bridge::yi_get_color_offset_int(&mut mem(), out)
+    }
+
+    /// `rcefLerp(a, b, t, mode)` (a float in `ST0`).
+    rcefLerp @ 0x0092_e580 => extern "C" fn shim_rcef_lerp(a: u32, b: u32, t: u32, mode: u32) -> f32 {
+        task::bridge::rcef_lerp(&mem(), [a, b, t, mode])
+    }
+
+    /// `rcefColorSet(r, g, b, a, v)`.
+    rcefColorSet @ 0x0092_e9c0 => extern "C" fn shim_rcef_color_set(r: u32, g: u32, b: u32, a: u32, v: u32) {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        task::bridge::rcef_color_set(&mut mem(), [r, g, b, a, v], w);
+    }
+
+    /// `rcefColorFade(r0, g0, b0, a0, r1, g1, b1, a1, v)`.
+    rcefColorFade @ 0x0092_ea40 => extern "C" fn shim_rcef_color_fade(r0: u32, g0: u32, b0: u32, a0: u32, r1: u32, g1: u32, b1: u32, a1: u32, v: u32) {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        task::bridge::rcef_color_fade(&mut mem(), [r0, g0, b0, a0, r1, g1, b1, a1, v], w);
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

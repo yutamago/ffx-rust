@@ -213,6 +213,13 @@ pub const SG_GET_PAUSE: u32 = 0x0082_05e0;
 pub const HERMITE_THREE: u32 = 0x00b2_c5c8;
 /// `FFXVu0ApplyMatrix(dst, m, src)` (`0x006ed2e0`).
 pub const VU0_APPLY_MATRIX: u32 = 0x006e_d2e0;
+/// The display objects' morph values (`f32`, `0xb4` bytes apart;
+/// `yiSetMIMeParamDObj`).
+pub const MIME_PARAM: u32 = 0x018d_f624;
+/// `graphicSetMeshVertexColorMorphValue(obj, v)` (`0x00643700`).
+pub const SET_MORPH_VALUE: u32 = 0x0064_3700;
+/// 128.0 (`f64`, `.rdata`): `yiGetColorOffsetInt`'s bias.
+pub const COLOR_OFFSET_BIAS: u32 = 0x00b4_c170;
 /// 1e-5 and -1e-5 (`f32`s, `.rdata`): `yiSegIntersect2`'s parallel test.
 pub const SEG_EPSILON: [u32; 2] = [0x00b1_f2ac, 0x00b6_76cc];
 
@@ -2873,6 +2880,46 @@ pub mod bridge {
         } else {
             yi_anim_detach(mem, scene, obj, kind, call)
         }
+    }
+
+    /// `yiSetMIMeParamDObj(obj, p)` (`0x0090a4d0`): for a display object
+    /// below the count, the float at `p` (through the x87 stack) into the
+    /// object's `+0x18df624` slot (`0xb4` bytes each) and to
+    /// `graphicSetMeshVertexColorMorphValue(obj, v)`. Returns 0.
+    pub fn yi_set_mime_param_dobj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        if obj >= DOBJ_COUNT.get(mem) {
+            return 0;
+        }
+        let v = ffx_bridge::x87::round_trip(mem.read::<f32>(p)).to_bits();
+        let at = mem
+            .rebase(super::MIME_PARAM)
+            .wrapping_add(obj.wrapping_mul(0xb4));
+        mem.write(at, v);
+        let f = mem.rebase(super::SET_MORPH_VALUE);
+        call(mem, f, &[obj, v]);
+        0
+    }
+
+    /// `yiGetColorOffsetInt(out)` (`0x00908660`, an effect import; name
+    /// ours): the four colour offsets plus 128.0, truncated
+    /// (`_ftol2_sse`) into four ints. Returns the last.
+    pub fn yi_get_color_offset_int(mem: &mut impl Mem, out: u32) -> u32 {
+        let c: f64 = mem.read(mem.rebase(super::COLOR_OFFSET_BIAS));
+        let off = COLOR_OFFSET.get(mem);
+        let mut last = 0;
+        for i in 0..4u32 {
+            last = ffx_bridge::x87::ftol(
+                mem,
+                ffx_bridge::x87::add(ffx_bridge::x87::load(off[i as usize]), c),
+            );
+            mem.write(out.wrapping_add(4 * i), last);
+        }
+        last
     }
 
     /// `yiKeyFrame_attachDObj(scene, obj, anim, arg)` (`0x009144a0`): puts
