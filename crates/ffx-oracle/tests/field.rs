@@ -11711,7 +11711,7 @@ fn round31_ke_ball_line_and_born_points_match_the_original() {
         t.alloc(0x40),
         t.alloc(0x10),
     );
-    let objs = t.alloc(0x100 * 14);
+    let pool = t.alloc(0x100 * 14);
     t.put(t.b.rebase(ke::PPP_CURRENT_PART), part);
     for k in 0..400u32 {
         env.reset(&mut t, &mut rng);
@@ -11736,8 +11736,8 @@ fn round31_ke_ball_line_and_born_points_match_the_original() {
             |m| ke::bridge::ke_vu0_itrs_ball_line(m, q),
         );
         // the gap filler
-        t.fill(objs, 0x100 * 14, &mut rng);
-        t.put(objv, if rng.below(8) == 0 { 0 } else { objs });
+        t.fill(pool, 0x100 * 14, &mut rng);
+        t.put(objv, if rng.below(8) == 0 { 0 } else { pool });
         t.put(part + 0x3c, if rng.below(10) == 0 { 0u32 } else { 0x40 });
         t.put(pd + 4, u8::try_from(rng.below(12)).unwrap());
         t.put(pd + 8, if k % 10 == 0 { 0u32 } else { rng.below(4) });
