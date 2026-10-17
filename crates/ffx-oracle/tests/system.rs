@@ -10989,6 +10989,22 @@ fn logger_args(cursor: u32, n: u8) -> Vec<u8> {
     v
 }
 
+/// A stand-in for `graphicDrawUIElement`/`graphicFontDraw(rec, …)` that
+/// logs the record's first 16 words, its `+0x88` word and the four
+/// arguments after the record.
+fn record_logger(cursor: u32) -> Vec<u8> {
+    let mut v = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[
+        0xb9, 0x10, 0x00, 0x00, 0x00, 0xf3, 0xa5, 0x8b, 0x46, 0x48, 0xab, 0x8b, 0x44, 0x24, 0x10,
+        0xab, 0x8b, 0x44, 0x24, 0x14, 0xab, 0x8b, 0x44, 0x24, 0x18, 0xab, 0x8b, 0x44, 0x24, 0x1c,
+        0xab, 0x89, 0x3d,
+    ]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    v
+}
+
 /// `0x00776110` over logging stand-ins for the sound, print, help and
 /// reset calls and two condition functions.
 #[allow(
@@ -13470,6 +13486,110 @@ fn round22_window_texts_match_the_original_on_the_snapshot() {
         return;
     };
     round22_window_texts(&mut a, &mut b, &mut Xorshift(0x4022_0052));
+}
+
+/// Round 23's UI shape quads with the image size and scissor from cells,
+/// a logging texture-name stand-in and a record-logging draw.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round23_shapes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008e_5a20, s);
+    let s = stand_in8(a, b, 0xa0, &logger(cursor, 0x2301_0001));
+    redirect(a, b, 0x008a_c8c0, s);
+    let s = stand_in8(a, b, 0xe0, &record_logger(cursor));
+    redirect(a, b, 0x0063_eee0, s);
+    let scratch = alloc(a, b, 0xd0);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let shapes = [
+        0xffff_ffffu32,
+        0xffff_fffe,
+        0xffff_fffd,
+        0xffff_fffc,
+        0xffff_fffa,
+        0xffff_fff9,
+        0,
+        0xc6,
+        0xc8,
+        0x18e,
+        0x190,
+        0x256,
+        0x258,
+        0x289,
+    ];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize],
+                [128.0f32, 512.0][(rng.next() % 2) as usize],
+            ],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(6)));
+        let shape = shapes[(rng.next() % shapes.len() as u32) as usize];
+        let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
+        let args = [
+            shape,
+            fl(rng, 6000, 10.0),
+            fl(rng, 4000, 10.0),
+            fl(rng, 3000, 10.0),
+            fl(rng, 2000, 10.0),
+            fl(rng, 1024, 1.0),
+            fl(rng, 1024, 1.0),
+            fl(rng, 1024, 1.0),
+            fl(rng, 1024, 1.0),
+        ];
+        let c2 = k % 2 == 1;
+        let colours = [rng.next(), rng.next()];
+        let mut words = args.to_vec();
+        if c2 {
+            words.extend_from_slice(&colours);
+        }
+        eax(a, if c2 { 0x0090_3ee0 } else { 0x0090_3bb0 }, &words);
+        t::to_mkp_shape_xywhuv(b, args, c2.then_some(colours), scratch, call);
+        let v: [u32; 0x34] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        // the texture of unknown shapes is a stale stack word in the
+        // original: compare the logs only where both are known
+        let unknown = matches!(shape, 0xffff_fffa | 0xffff_fff9) || (shape == 0xffff_fffc && !c2);
+        if unknown {
+            let ours: [u32; 0x200] = Mem::read(b, log);
+            Mem::write(a, log, ours);
+        }
+        same_memory(&format!("shape quad {k}: {shape:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round23_shapes_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round23_shapes(&mut a, &mut b, &mut Xorshift(0x4023_0011));
+}
+
+#[test]
+fn round23_shapes_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round23_shapes(&mut a, &mut b, &mut Xorshift(0x4023_0012));
 }
 
 #[test]

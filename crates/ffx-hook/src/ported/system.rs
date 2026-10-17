@@ -6024,6 +6024,20 @@ ported! {
         let at = scratch.as_mut_ptr() as usize as u32;
         tolib::bridge::set_message_window_texts(&mut mem(), window, text, other, at, call_sym, |m, f, w| call_ptr(m, f, &[w]));
     }
+    /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)`.
+    TOMkpShapeXYWHUV @ 0x0090_3bb0 => extern "C" fn to_mkp_shape_xywhuv(shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32) {
+        let mut scratch = [0u32; 0x34];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], None, at, call_sym);
+    }
+    /// `TOMkpShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0, c1)`.
+    TOMkpShapeXYWHUVC2 @ 0x0090_3ee0 => extern "C" fn to_mkp_shape_xywhuv_c2(shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32, c0: u32, c1: u32) {
+        let mut scratch = [0u32; 0x34];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], Some([c0, c1]), at, call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
