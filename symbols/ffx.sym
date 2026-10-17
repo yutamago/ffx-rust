@@ -9272,7 +9272,7 @@
 0x008be450 function TOMenuGetControlPadAnalogHist # fh v3:exact 0x008be420; dummy controller flag 1: TOMenuGetDummyAnalogControler(k), else jmp TkGetControlerAnalogHist
 0x008be470 function TOMenuGetControlPadRep    # fh v3:bsim1.00 0x008be440
 0x008be4b0 function TOMenuGetControlPadTrg    # fh v3:bsim1.00 0x008be480
-0x008be500 function TOMenuGetPadStatus           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004b1c90 TOMenuGetPadStatus, 2 votes, round 2
+0x008be500 function TOMenuGetPadStatus           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004b1c90 TOMenuGetPadStatus, 2 votes, round 2; (): menu pad words 0x025d09d2.. (+6..+0xa both pads: Tk*Hist(0,0,0) | (0,0,-1)); dummy controller on (flushed first): from TkMenuGetDummyControler/T/R and TOMenuGetDummyAnalogControler, done; else stick-made d-pad set 0x025d09e2 repeats: fresh press, > 0.4667 s, restart 0.3 count 9
 0x008be800 function TOMenuInit                # fh v3:exact 0x008be7d0
 0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
 0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl

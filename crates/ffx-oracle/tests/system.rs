@@ -9573,3 +9573,132 @@ fn round16_pad_status_matches_the_original_on_the_snapshot() {
     };
     round16_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0032));
 }
+
+/// Round 16's menu pad repeat over stand-in controllers and time.
+#[allow(clippy::cast_possible_truncation)]
+fn round16_menu_pad_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x40);
+    let getter = |off: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + off).to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let mut v = vec![0xd9, 0x05];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xf00, &v);
+    redirect(a, b, 0x0063_0c60, s);
+    // no-argument getters: the dummy flag, flush, dummy pads
+    for (k, sym) in [
+        0x008c_a510u32,
+        0x008c_a490,
+        0x008c_a500,
+        0x008c_a530,
+        0x008c_a520,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        let s = stand_in8(a, b, 0xf40 + 0x10 * k, &getter(4 + 4 * k));
+        redirect(a, b, sym, s);
+    }
+    // the history getters: [cells + 0x20 + 4k] ^ (third argument)
+    for (k, sym) in [0x0088_8d70u32, 0x0088_8e80, 0x0088_8e50]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x33, 0x05];
+        v.extend_from_slice(&(cells + 0x20 + 4 * k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0xfa0 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // sticks: byte [cells + 0x30 + (axis & 3)] for both analog getters
+    let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03, 0x0f, 0xb6, 0x80];
+    v.extend_from_slice(&(cells + 0x30).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xfe0, &v);
+    redirect(a, b, 0x0088_8c20, s);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0x0f, 0xb6, 0x80];
+    v.extend_from_slice(&(cells + 0x34).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x1000, &v);
+    redirect(a, b, 0x008c_a320, s);
+    let base = a.rebase(0x025d_09c0);
+    let bytes: Vec<u8> = (0..0xc0).map(|_| rng.next() as u8).collect();
+    a.write(base, &bytes).unwrap();
+    b.write(base, &bytes).unwrap();
+    for k in 0..16u32 {
+        put(a, b, a.rebase(0x025d_0a00) + 4 * k, 0f32);
+        put(a, b, a.rebase(0x025d_0a40) + 4 * k, 0f32);
+    }
+    let mut time = 0f32;
+    let mut held = 0u32;
+    for _ in 0..600u32 {
+        time += [0.016f32, 0.033, 0.1, 0.25][(rng.next() % 4) as usize];
+        if rng.next().is_multiple_of(4) {
+            held ^= 1 << (rng.next() % 16);
+        }
+        let flag = u32::from(rng.next().is_multiple_of(8));
+        put(
+            a,
+            b,
+            cells,
+            [time.to_bits(), flag, 0, rng.next(), rng.next(), rng.next()],
+        );
+        put(
+            a,
+            b,
+            cells + 0x20,
+            [held, rng.next() & 0xff, rng.next() & 0xff],
+        );
+        let sticks = [rng.next() as u8, 0x7f, 0x10, 0xf0];
+        put(
+            a,
+            b,
+            cells + 0x30,
+            [
+                0u8,
+                0,
+                sticks[(rng.next() % 4) as usize],
+                sticks[(rng.next() % 4) as usize],
+            ],
+        );
+        put(
+            a,
+            b,
+            cells + 0x34,
+            [0u8, 0, rng.next() as u8, rng.next() as u8],
+        );
+        eax(a, 0x008b_e500, &[]);
+        t::menu_get_pad_status(
+            b,
+            |m| {
+                let at = m.rebase(0x0063_0c60);
+                m.call(at, Conv::Cdecl, &[]).unwrap().st0.unwrap()
+            },
+            |m, sym, args| eax(m, sym, args),
+        );
+        same_memory("menu pad status", a, b);
+    }
+}
+
+#[test]
+fn round16_menu_pad_status_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round16_menu_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0041));
+}
+
+#[test]
+fn round16_menu_pad_status_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round16_menu_pad_status(&mut a, &mut b, &mut Xorshift(0x4016_0042));
+}
