@@ -678,4 +678,86 @@ pub mod bridge {
             k += 1;
         }
     }
+
+    /// `Ch_AnimCopyNear`, `Ch_AnimCopy2` (results in `al`), called as the
+    /// game's.
+    pub const CH_ANIM_COPY_NEAR: u32 = 0x0083_9200;
+    pub const CH_ANIM_COPY2: u32 = 0x0083_9140;
+    /// `getScenerioFlag()`'s value (`u16`; the call has no other effect).
+    pub const SCENARIO_FLAG: ffx_bridge::Global<u16> = ffx_bridge::Global::new(0x0112_d67c);
+    /// `g_GraphicMapId`.
+    pub const GRAPHIC_MAP_ID: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0133_0844);
+    /// 0.001 (`f64`).
+    pub const MILLI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b4_7c68);
+
+    /// `SG_ApplyBones(chr)` (`0x00838f70`): every bone of the model takes
+    /// its channels ([`apply_bone`]; through the bone map `+0x758`, whose
+    /// `u16` `+2` bounds the count and `0xffff` skips) at the character's
+    /// scale (`+0x38` of `+0x1c4`) / 1000. How: damped when `+0x871` is
+    /// set; for a character with `+0x870` set and `+0x820` bit 2 clear,
+    /// near the camera (`Ch_AnimCopyNear`) damped when `Ch_AnimCopy2` says
+    /// so and by the bone's own byte otherwise (`SG_ApplyBoneSel`), except
+    /// on a few maps (`0x170`, `0x11d`; `0x50` for kind 4, `0x137` for kind
+    /// `0x5045`, `100` for kinds other than 0, `0x3c` before scenario
+    /// `0x9a`), which apply directly.
+    pub fn apply_bones(h: &mut impl ffx_bridge::Host, chr: u32) {
+        use ffx_bridge::x87;
+        let at = |o: u32| chr.wrapping_add(o);
+        let mut chan: u32 = h.read(at(0x748));
+        let def: u32 = h.read(at(0x1c4));
+        let base = x87::load(h.read(def.wrapping_add(0x38)));
+        let scale = f32::from_bits(x87::store(x87::mul(base, MILLI.get(h))));
+        let map: u32 = h.read(at(0x758));
+        let map_count = if map == 0 { 0 } else { i32::from(h.read::<u16>(map.wrapping_add(2))) };
+        let mode = if h.read::<u8>(at(0x871)) != 0 {
+            1
+        } else if h.read::<u8>(at(0x870)) == 0 || h.read::<u8>(at(0x820)) & 4 != 0 {
+            0
+        } else {
+            let near = h.rebase(CH_ANIM_COPY_NEAR);
+            let mode = if crate::lo8(h.call(near, &[chr])) == 0 {
+                0
+            } else {
+                let copy2 = h.rebase(CH_ANIM_COPY2);
+                if crate::lo8(h.call(copy2, &[chr])) == 0 { 2 } else { 1 }
+            };
+            let kind: u16 = h.read(chr);
+            let direct = match GRAPHIC_MAP_ID.get(h) {
+                0x170 | 0x11d => true,
+                0x50 => kind == 4,
+                0x137 => kind == 0x5045,
+                0x64 => kind != 0,
+                0x3c => SCENARIO_FLAG.get(h) < 0x9a,
+                _ => false,
+            };
+            if direct { 0 } else { mode }
+        };
+        let count = |h: &_| {
+            let model: u32 = Mem::read(h, chr.wrapping_add(0x1c0));
+            i32::from(Mem::read::<u16>(h, model.wrapping_add(0xa)))
+        };
+        let mut k = 0i32;
+        while k < count(h) {
+            let map: u32 = h.read(at(0x758));
+            let bones: u32 = h.read(at(0x328));
+            let bone = if map == 0 {
+                Some(bones.wrapping_add(0x160 * k.cast_unsigned()))
+            } else {
+                if k >= map_count {
+                    return;
+                }
+                let idx = u32::from(h.read::<u16>(map.wrapping_add(8 + 2 * k.cast_unsigned())));
+                (idx != 0xffff).then(|| (idx * 0x160).wrapping_add(bones))
+            };
+            if let Some(bone) = bone {
+                match mode {
+                    1 => apply_bone(h, chan, bone, scale, true),
+                    2 => apply_bone_sel(h, chan, bone, scale),
+                    _ => apply_bone(h, chan, bone, scale, false),
+                }
+            }
+            k += 1;
+            chan = chan.wrapping_add(0x18c);
+        }
+    }
 }
