@@ -982,6 +982,240 @@ ported! {
     PStringTree_Find @ 0x006b_e750 => extern "thiscall" fn pstring_tree_find(this: u32, key: u32) -> u32 {
         ut::pstring_tree_find(&mem(), this, key)
     }
+
+    // ---- round 7 ----
+    /// `PhyreScene_SetMeshesVisible(this, on)`.
+    PhyreScene_SetMeshesVisible @ 0x0066_e7b0 => extern "thiscall" fn scene_set_meshes_visible(this: u32, on: u32) {
+        st::scene_set_meshes_visible(&mut mem(), this, on);
+    }
+    /// `PhyreScene_SetColourPair(this, r, g, b, r2, g2, b2, second)`.
+    PhyreScene_SetColourPair @ 0x0066_ea70 => extern "thiscall" fn scene_set_colour_pair(this: u32, r: f32, g: f32, b: f32, r2: f32, g2: f32, b2: f32, second: u32) {
+        st::scene_set_colour_pair(&mut mem(), this, [r, g, b, r2, g2, b2], second);
+    }
+    /// `SegmentList_AllReady(this)`.
+    SegmentList_AllReady @ 0x0065_2250 => extern "fastcall" fn segment_list_all_ready(this: u32) -> u32 {
+        st::segments_ready(&mut mem(), this)
+    }
+    /// `ShadowManager_SetQuality(this, q)`.
+    ShadowManager_SetQuality @ 0x006c_eaa0 => extern "thiscall" fn shadow_set_quality(this: u32, q: u32) -> u32 {
+        ut::shadow_set_quality(&mut mem(), this, q)
+    }
+    /// `BlurEffectEx_SetPositiveParams(this, a, b, c, d)`.
+    BlurEffectEx_SetPositiveParams @ 0x006c_4620 => extern "thiscall" fn blur_ex_set_positive_params(this: u32, a: f32, b: f32, c: f32, d: f32) {
+        ut::set_positive_floats(&mut mem(), this, [a, b, c, d]);
+    }
+    /// `FloatHeap_PushHeap(base, hole, top, &value, less)`.
+    FloatHeap_PushHeap @ 0x006c_7730 => extern "C" fn float_push_heap(base: u32, hole: u32, top: u32, value: u32, less: u32) -> u32 {
+        ut::float_push_heap(&mut mem(), base, hole, top, value, less)
+    }
+    /// `FloatSort_Median3(a, b, c, less)`.
+    FloatSort_Median3 @ 0x006c_74d0 => extern "C" fn float_median3(a: u32, b: u32, c: u32, less: u32) -> u32 {
+        ut::float_median3(&mut mem(), a, b, c, less)
+    }
+    /// `TexAnim_StartNew(i, which, pos)`.
+    TexAnim_StartNew @ 0x0077_fc90 => extern "C" fn tex_anim_start_new(i: u32, which: u32, pos: u32) -> u32 {
+        ut::tex_anim_start(&mut mem(), 0, i, which, pos)
+    }
+    /// `TexAnim_StartOld(i, which, pos)`.
+    TexAnim_StartOld @ 0x0078_0750 => extern "C" fn tex_anim_start_old(i: u32, which: u32, pos: u32) -> u32 {
+        ut::tex_anim_start(&mut mem(), 0x400, i, which, pos)
+    }
+    /// `ShadowEntry_Init(this, owner)`.
+    ShadowEntry_Init @ 0x006d_3560 => extern "thiscall" fn shadow_entry_init(this: u32, owner: u32) -> u32 {
+        ut::shadow_entry_init(&mut mem(), this, owner)
+    }
+    /// `TextureAnimationManager_FindMaterialIndex(this, name)`.
+    TextureAnimationManager_FindMaterialIndex @ 0x006b_20a0 => extern "thiscall" fn tex_anim_material_index(this: u32, name: u32) -> u32 {
+        ut::tex_anim_material_index(&mem(), this, name)
+    }
+    /// `TextureAnimationManager_FindAnimation(this, name)`.
+    TextureAnimationManager_FindAnimation @ 0x006b_1ef0 => extern "thiscall" fn tex_anim_find_animation(this: u32, name: u32) -> u32 {
+        ut::tex_anim_find_animation(&mem(), this, name)
+    }
+    /// `ParamList_SetAllFloat(this, v)`.
+    ParamList_SetAllFloat @ 0x006b_47e0 => extern "thiscall" fn param_list_set_all_float(this: u32, v: f32) {
+        ut::set_all_params(&mut mem(), this, v);
+    }
+    /// `PhyreFIOS_LoadPrxIdle()`.
+    PhyreFIOS_LoadPrxIdle @ 0x006f_9b80 => extern "C" fn prx_idle() -> u32 {
+        ut::prx_idle(&mem())
+    }
+
+    // ---- round 8 ----
+    /// `graphicCameraSetWorldMatrixSub(view, on)`.
+    graphicCameraSetWorldMatrixSub @ 0x0063_9b30 => extern "C" fn graphic_camera_set_world_matrix_sub(view: u32, on: u32) {
+        st::camera_set_world_matrix_sub(&mut mem(), view, on);
+    }
+    /// `graphicMinimapCameraSetWorldMatrix(view)`.
+    graphicMinimapCameraSetWorldMatrix @ 0x0064_2410 => extern "C" fn graphic_minimap_camera_set_world_matrix(view: u32) {
+        st::minimap_camera_set_world_matrix(&mut mem(), view);
+    }
+    /// `graphicCameraSetFOVy(&v)`.
+    graphicCameraSetFOVy @ 0x0063_95e0 => extern "C" fn graphic_camera_set_fovy(v: u32) -> u32 {
+        st::camera_set_from_ptr(&mut mem(), st::SCENE_SET_CAMERA_FOVY, v)
+    }
+    /// `graphicCameraSetAspectRatio(&v)`.
+    graphicCameraSetAspectRatio @ 0x0063_95c0 => extern "C" fn graphic_camera_set_aspect_ratio(v: u32) -> u32 {
+        st::camera_set_from_ptr(&mut mem(), st::SCENE_SET_CAMERA_ASPECT_RATIO, v)
+    }
+    /// `graphicObjectSetTranslation(id, pos)`.
+    graphicObjectSetTranslation @ 0x0064_26c0 => extern "C" fn graphic_object_set_translation(id: u32, pos: u32) -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_SET_OBJECT_TRANSLATION, &[id, pos])
+    }
+    /// `graphic2DHideLayer(id)`.
+    graphic2DHideLayer @ 0x0063_8f30 => extern "C" fn graphic_2d_hide_layer(id: u32) {
+        st::scene_call(&mut mem(), st::SCENE_HIDE_2D_LAYER, &[id]);
+    }
+    /// `graphic2DShowLayer(id)`.
+    graphic2DShowLayer @ 0x0063_8f60 => extern "C" fn graphic_2d_show_layer(id: u32) {
+        st::scene_call(&mut mem(), st::SCENE_SHOW_2D_LAYER, &[id]);
+    }
+    /// `graphicVFXUpdateType4(lo, hi)`: `graphicVFXUpdateWithType(lo, hi, 4)`.
+    graphicVFXUpdateType4 @ 0x0064_4db0 => extern "C" fn graphic_vfx_update_type4(lo: u32, hi: u32) {
+        vfx::bridge::update_with_type(&mut mem(), lo, hi, 4);
+    }
+    /// `graphicCharacterInstanceSetWorldMatrix(list, m)`.
+    graphicCharacterInstanceSetWorldMatrix @ 0x0063_c3e0 => extern "C" fn graphic_character_set_world_matrix(list: u32, m: u32) {
+        st::character_set_world_matrix(&mut mem(), list, m);
+    }
+    /// `graphicCharacterInstanceSetWorldMatrixByMdlID(list, m, id)`.
+    graphicCharacterInstanceSetWorldMatrixByMdlID @ 0x0063_c430 => extern "C" fn graphic_character_set_world_matrix_by_mdl_id(list: u32, m: u32, id: u32) {
+        st::character_set_world_matrix_by_mdl_id(&mut mem(), list, m, id);
+    }
+    /// `PhyreSceneCursor_Seek1(this)`.
+    PhyreSceneCursor_Seek1 @ 0x0065_eaf0 => extern "fastcall" fn scene_cursor_seek1(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Seek2(this)`.
+    PhyreSceneCursor_Seek2 @ 0x0065_ebd0 => extern "fastcall" fn scene_cursor_seek2(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Seek3(this)`.
+    PhyreSceneCursor_Seek3 @ 0x0065_ec40 => extern "fastcall" fn scene_cursor_seek3(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Seek4(this)`.
+    PhyreSceneCursor_Seek4 @ 0x0065_ecb0 => extern "fastcall" fn scene_cursor_seek4(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, true)
+    }
+    /// `PhyreSceneCursor_Next1(this)`.
+    PhyreSceneCursor_Next1 @ 0x0065_ed20 => extern "fastcall" fn scene_cursor_next1(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next2(this)`.
+    PhyreSceneCursor_Next2 @ 0x0065_ed80 => extern "fastcall" fn scene_cursor_next2(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next3(this)`.
+    PhyreSceneCursor_Next3 @ 0x0065_ede0 => extern "fastcall" fn scene_cursor_next3(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next4(this)`.
+    PhyreSceneCursor_Next4 @ 0x0065_ee40 => extern "fastcall" fn scene_cursor_next4(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+
+    // ---- round 9 ----
+    /// `Matrix_RotationX(out, angle)`.
+    Matrix_RotationX @ 0x0066_c8a0 => extern "C" fn matrix_rotation_x(out: u32, angle: u32) -> u32 {
+        ut::rotation(&mut mem(), out, angle, false)
+    }
+    /// `Matrix_RotationY(out, angle)`.
+    Matrix_RotationY @ 0x0066_c920 => extern "C" fn matrix_rotation_y(out: u32, angle: u32) -> u32 {
+        ut::rotation(&mut mem(), out, angle, true)
+    }
+    /// `PhyreSceneCursor_SetNode(cursor, node)`.
+    PhyreSceneCursor_SetNode @ 0x0044_1dc0 => extern "thiscall" fn scene_cursor_set_node(this: u32, node: u32) -> u32 {
+        ut::cursor_set_node(&mut mem(), this, node)
+    }
+    /// `PhyreCursor_IsValid_00441e10(this)`.
+    PhyreCursor_IsValid_00441e10 @ 0x0044_1e10 => extern "thiscall" fn cursor_valid_441e10(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_00441e40(this)`.
+    PhyreCursor_IsValid_00441e40 @ 0x0044_1e40 => extern "thiscall" fn cursor_valid_441e40(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_006a29c0(this)`.
+    PhyreCursor_IsValid_006a29c0 @ 0x006a_29c0 => extern "thiscall" fn cursor_valid_6a29c0(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `ResetAndConstruct_006c40c0(this)`.
+    ResetAndConstruct_006c40c0 @ 0x006c_40c0 => extern "thiscall" fn reset_and_construct(this: u32) -> u32 {
+        ut::reset_and_construct(&mut mem(), this)
+    }
+    /// `PostProcessManager_SetFirstEntry(this, list)`.
+    PostProcessManager_SetFirstEntry @ 0x0069_8400 => extern "thiscall" fn post_process_set_first_entry(this: u32, list: u32) -> u32 {
+        ut::post_process_set_first_entry(&mut mem(), this, list)
+    }
+    /// `TextureAnimationManager_SetFrame(this, i, frame, absolute)`.
+    TextureAnimationManager_SetFrame @ 0x006b_42c0 => extern "thiscall" fn tex_anim_set_frame(this: u32, i: u32, frame: u32, absolute: u32) -> u32 {
+        ut::tex_anim_set_frame(&mut mem(), this, i, frame, absolute)
+    }
+
+    // ---- round 10 ----
+    /// `PhyreSceneCursor_Next5(this)` (checks with `PhyreCursor_IsValid_00441e10`).
+    PhyreSceneCursor_Next5 @ 0x0044_1c60 => extern "fastcall" fn scene_cursor_next5(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `PhyreSceneCursor_Next6(this)` (checks with `PhyreCursor_IsValid_00441e40`).
+    PhyreSceneCursor_Next6 @ 0x0044_1cc0 => extern "fastcall" fn scene_cursor_next6(this: u32) -> u32 {
+        st::cursor_step(&mut mem(), this, false)
+    }
+    /// `FloatHeap_MakeHeap(first, last, less)`.
+    FloatHeap_MakeHeap @ 0x006c_7410 => extern "C" fn float_make_heap(first: u32, last: u32, less: u32) -> u32 {
+        ut::float_make_heap(&mut mem(), first, last, less)
+    }
+    /// `FloatSort_Insertion(first, last, less)`.
+    FloatSort_Insertion @ 0x006c_7320 => extern "C" fn float_insertion_sort(first: u32, last: u32, less: u32) {
+        ut::float_insertion_sort(&mut mem(), first, last, less);
+    }
+    /// `PhyreScene_PushPair3890(this, a, b)`.
+    PhyreScene_PushPair3890 @ 0x0065_6b90 => extern "thiscall" fn scene_push_pair(this: u32, a: u32, b: u32) -> u32 {
+        ut::scene_push_pair(&mut mem(), this, a, b)
+    }
+    /// `GetASpareGradMeshInstance(this, &extra)`.
+    GetASpareGradMeshInstance @ 0x006c_c980 => extern "thiscall" fn get_spare_grad_mesh(this: u32, out: u32) -> u32 {
+        ut::get_spare_grad_mesh(&mut mem(), this, out)
+    }
+    /// `PhyreScene_ApplySettings(this)`.
+    PhyreScene_ApplySettings @ 0x0066_f010 => extern "thiscall" fn scene_apply_settings(this: u32) -> u32 {
+        st::scene_apply_settings(&mut mem(), this)
+    }
+
+    // ---- round 11 ----
+    /// `graphicGetCurrentFrame()`.
+    graphicGetCurrentFrame @ 0x008e_1c50 => extern "C" fn graphic_get_current_frame() -> u32 {
+        ut::get_current_frame(&mut mem())
+    }
+    /// `graphicTextureAnimationSetFrame(i, frame)`.
+    graphicTextureAnimationSetFrame @ 0x0064_3a20 => extern "C" fn graphic_tex_anim_set_frame(i: u32, frame: u32) -> u32 {
+        ut::graphic_tex_anim_set_frame(&mut mem(), i, frame)
+    }
+    /// `TexAnim_PosSet(i, which, v)`.
+    TexAnim_PosSet @ 0x0077_e9a0 => extern "C" fn tex_anim_pos_set(i: u32, which: u32, v: u32) -> u32 {
+        ut::tex_anim_pos_set(&mut mem(), i, which, v)
+    }
+    /// `PhyreScene_SetNumberText(this, n)`.
+    PhyreScene_SetNumberText @ 0x0066_e5e0 => extern "thiscall" fn scene_set_number_text(this: u32, n: u32) {
+        ut::scene_set_number_text(&mut mem(), this, n);
+    }
+    /// `TextureAnimationManager_SetPaused(this, i, paused)`.
+    TextureAnimationManager_SetPaused @ 0x006b_3600 => extern "thiscall" fn tex_anim_set_paused(this: u32, i: u32, paused: u32) {
+        ut::tex_anim_set_paused(&mut mem(), this, i, paused);
+    }
+    /// `BrokenScreenEffect_BufferSize(n)`.
+    BrokenScreenEffect_BufferSize @ 0x0063_93c0 => extern "C" fn broken_screen_buffer_size(n: u32) -> u32 {
+        ut::broken_screen_buffer_size(&mut mem(), n)
+    }
+    /// `PhyreScene_AddDrawEntry(this, e, kind)`.
+    PhyreScene_AddDrawEntry @ 0x0065_6c10 => extern "thiscall" fn scene_add_draw_entry(this: u32, e: u32, kind: u32) {
+        ut::scene_add_draw_entry(&mut mem(), this, e, kind);
+    }
+    /// `ShadowManager_ResetSolution(this, keep)`.
+    ShadowManager_ResetSolution @ 0x006c_eb10 => extern "thiscall" fn shadow_reset_solution(this: u32, keep: u32) -> u32 {
+        ut::shadow_reset_solution(&mut mem(), this, keep)
+    }
 }
 
 /// A singleton's pointer.

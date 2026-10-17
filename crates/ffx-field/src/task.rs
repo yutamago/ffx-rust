@@ -286,6 +286,52 @@ pub mod bridge {
     pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
     /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
     pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// The pre-computed sine table (`g_pppSinTable`, 4096 `f32`s).
+    pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+    /// 32768.0 (`f64`, `.rdata`).
+    pub const LERP_HALF_TURN: u32 = 0x00b5_1588;
+    /// 16384.0 (`f64`).
+    pub const LERP_QUARTER_TURN: u32 = 0x00b5_1668;
+    /// 1.0 (`f64`).
+    pub const LERP_ONE: u32 = 0x00b9_2248;
+    /// 0.5 (`f64`).
+    pub const LERP_HALF: u32 = 0x00b9_2220;
+    /// The effect's colour work (`rcefColorSet`/`rcefColorFade`).
+    pub const COLOR_WORK: u32 = 0x025d_5a20;
+    /// `TkSetVibrateStream(a, b, entry)` (`0x00875fb0`).
+    pub const TK_SET_VIBRATE_STREAM: u32 = 0x0087_5fb0;
+    /// `op_oef2_stream_cue(entry, arg, mask)` (`0x00800390`).
+    pub const OP_OEF2_STREAM_CUE: u32 = 0x0080_0390;
+    /// `rcefAnimeStart(anime, data, out0, out1)` (`0x0092f470`).
+    pub const RCEF_ANIME_START: u32 = 0x0092_f470;
+    /// `rcefSetupDraw(draw, tex, a, b)` (`0x0092f6b0`).
+    pub const RCEF_SETUP_DRAW: u32 = 0x0092_f6b0;
+    /// `op_oef2_sound_cue_check(mask)` (`0x008000f0`).
+    pub const SOUND_CUE_CHECK: u32 = 0x0080_00f0;
+    /// `MsEffectCheckMotion(x)` (`0x00787840`).
+    pub const MS_EFFECT_CHECK_MOTION: u32 = 0x0078_7840;
+    /// `MsSetChrDirTarget` (`0x00795eb0`, six words).
+    pub const MS_SET_CHR_DIR_TARGET: u32 = 0x0079_5eb0;
+    /// `MsGetWeaponHandle(chr, n)` (`0x00795b40`).
+    pub const MS_GET_WEAPON_HANDLE: u32 = 0x0079_5b40;
+    /// `Ch_SetHideEffect(handle, hide)` (`0x0082b2a0`).
+    pub const CH_SET_HIDE_EFFECT: u32 = 0x0082_b2a0;
+    /// The effect's oef2 data (`rcefPlaySE`'s source of sound entries).
+    pub const RCEF_OEF2: Global<u32> = Global::new(0x025d_5a28);
+    /// `op_oef2_a_get(data, kind, id)` (`0x007e3810`).
+    pub const OP_OEF2_A_GET: u32 = 0x007e_3810;
+    /// `op_oef2_sep_number_get(entry)` (`0x007fff80`).
+    pub const OP_OEF2_SEP_NUMBER_GET: u32 = 0x007f_ff80;
+    /// `op_oef2_se_on(entry, a, b)` (`0x007ffe10`).
+    pub const OP_OEF2_SE_ON: u32 = 0x007f_fe10;
+    /// `rcefMainCreateObj(kind)` (`0x00925140`).
+    pub const RCEF_MAIN_CREATE_OBJ: u32 = 0x0092_5140;
+    /// `rcefTaskSetSeq(task, seq)` (`0x0092ee20`).
+    pub const RCEF_TASK_SET_SEQ: u32 = 0x0092_ee20;
+    /// `rcefChrFini(obj)` (`0x00930710`).
+    pub const RCEF_CHR_FINI: u32 = 0x0093_0710;
+    /// `g_pppEnvSlot`: where `pppInitEnv` keeps the current environment.
+    pub const PPP_ENV_SLOT: Global<u32> = Global::new(0x00c3_a4cc);
     /// `graphicVFXDestroy(lo, hi)` (cdecl, a 64-bit instance handle).
     pub const VFX_DESTROY: u32 = 0x0064_5280;
     /// `graphicVFXGetRenderDataByInstance(lo, hi)` (cdecl).
@@ -654,6 +700,308 @@ pub mod bridge {
         }
         let f = mem.rebase(VFX_DESTROY);
         call(mem, f, &[p, hi])
+    }
+
+    // ---- round 22 ----
+
+    /// `rcefObjFini(obj)` (`0x0092fee0`, an object's finaliser
+    /// [`obj::FINI`]): the particle part's finaliser (`0x0092efc0`, empty),
+    /// [`rcef_anime_fini`] with the animation's address (`+0x330`) as the
+    /// id, [`rcef_model_fini`] with the model's (`+0x3c0`), then the empty
+    /// destructor. Returns `rcefModelFini`'s `eax`.
+    pub fn rcef_obj_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcef_anime_fini(mem, o.wrapping_add(obj::ANIME), call);
+        rcef_model_fini(mem, o.wrapping_add(obj::MODEL), call)
+    }
+
+    // ---- round 23 ----
+
+    /// `rcEffectTaskSoundCueWait(task)` (`0x00930500`, name ours): a
+    /// sequence that returns once `op_oef2_sound_cue_check(0x800)` is 0.
+    pub fn rc_effect_task_sound_cue_wait<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(SOUND_CUE_CHECK);
+        if call(mem, f, &[0x800]) == 0 {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcEffectTaskMotionWait(task)` (`0x00930430`): returns once
+    /// `MsEffectCheckMotion` of the current level's first argument is -1.
+    pub fn rc_effect_task_motion_wait<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        let a: u32 = mem.read(args_slot(t, level(mem, t)));
+        let f = mem.rebase(MS_EFFECT_CHECK_MOTION);
+        if call(mem, f, &[a]) == u32::MAX {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcefSetChrDirTarget(chr, a, b)` (`0x0092e750`, name ours):
+    /// `MsSetChrDirTarget(chr, 1, 0, 0, a, b)`, its `eax`.
+    pub fn rcef_set_chr_dir_target<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let [chr, a, b] = args;
+        let f = mem.rebase(MS_SET_CHR_DIR_TARGET);
+        call(mem, f, &[chr, 1, 0, 0, a, b])
+    }
+
+    /// `rcefSetChrDirTarget2(chr, a, b, c)` (`0x0092e960`, name ours):
+    /// `MsSetChrDirTarget(chr, 2, 0, a, b, c)`, its `eax`.
+    pub fn rcef_set_chr_dir_target2<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        let [chr, a, b, c] = args;
+        let f = mem.rebase(MS_SET_CHR_DIR_TARGET);
+        call(mem, f, &[chr, 2, 0, a, b, c])
+    }
+
+    /// `rcefWeaponSetHide(chr, show)` (`0x0092eb70`, name ours): with a
+    /// weapon handle (`MsGetWeaponHandle(chr, 0)`),
+    /// `Ch_SetHideEffect(handle, show == 0)` and its `eax`; else 0.
+    pub fn rcef_weapon_set_hide<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        chr: u32,
+        show: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(MS_GET_WEAPON_HANDLE);
+        let h = call(mem, f, &[chr, 0]);
+        if h == 0 {
+            return 0;
+        }
+        let f = mem.rebase(CH_SET_HIDE_EFFECT);
+        call(mem, f, &[h, u32::from(show == 0)])
+    }
+
+    /// `rcefPlaySE(id)` (`0x0092e680`): the sound entry `id` of the effect
+    /// data at [`RCEF_OEF2`] (`op_oef2_a_get(data, 6, id)`),
+    /// `op_oef2_sep_number_get` of it (unused), then
+    /// `op_oef2_se_on(entry, 0x40, 0x100)` and its `eax`.
+    pub fn rcef_play_se<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let data = RCEF_OEF2.get(mem);
+        let f = mem.rebase(OP_OEF2_A_GET);
+        let e = call(mem, f, &[data, 6, id]);
+        let f = mem.rebase(OP_OEF2_SEP_NUMBER_GET);
+        call(mem, f, &[e]);
+        let f = mem.rebase(OP_OEF2_SE_ON);
+        call(mem, f, &[e, 0x40, 0x100])
+    }
+
+    /// `rcefMainCreateTask(kind, seq)` (`0x00925170`): `rcefMainCreateObj
+    /// (kind)` with the sequence set (`rcefTaskSetSeq`). Returns the
+    /// object.
+    pub fn rcef_main_create_task<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        kind: u32,
+        seq: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(RCEF_MAIN_CREATE_OBJ);
+        let o = call(mem, f, &[kind]);
+        let f = mem.rebase(RCEF_TASK_SET_SEQ);
+        call(mem, f, &[o, seq]);
+        o
+    }
+
+    /// `rcefChrDelete(obj)` (`0x00930600`, name ours): `rcefChrFini`, then
+    /// the object freed into the current ppp environment
+    /// (`pppMemFree(env, env + 0x10, obj)`, `env` read through
+    /// `g_pppEnvSlot`). Returns the free's `eax`.
+    pub fn rcef_chr_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(RCEF_CHR_FINI);
+        call(mem, f, &[o]);
+        let slot = PPP_ENV_SLOT.get(mem);
+        let env = mem.read::<u32>(slot);
+        let f = mem.rebase(super::PPP_MEM_FREE);
+        call(mem, f, &[env, env.wrapping_add(0x10), o])
+    }
+
+    // ---- round 24 ----
+
+    /// The effect data's entry `id` of `kind` (`op_oef2_a_get`).
+    fn oef2_entry<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        kind: u32,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(OP_OEF2_A_GET);
+        call(mem, f, &[data, kind, id])
+    }
+
+    /// `rcefSetVibrate(id, arg)` (`0x0092ec60`; the Fahrenheit Switch `BSim`
+    /// guess was `rcefStreamCue`): `TkSetVibrateStream(7, arg, entry)` of
+    /// the effect data's kind 5 entry `id`, its `eax`.
+    pub fn rcef_set_vibrate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        arg: u32,
+        call: &mut C,
+    ) -> u32 {
+        let data = RCEF_OEF2.get(mem);
+        let e = oef2_entry(mem, data, 5, id, call);
+        let f = mem.rebase(TK_SET_VIBRATE_STREAM);
+        call(mem, f, &[7, arg, e])
+    }
+
+    /// `rcefStreamCue(id, arg)` (`0x0092ebf0`): `op_oef2_stream_cue(entry,
+    /// arg, 0x800)` of the kind 6 entry `id`, its `eax`.
+    pub fn rcef_stream_cue<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        arg: u32,
+        call: &mut C,
+    ) -> u32 {
+        let data = RCEF_OEF2.get(mem);
+        let e = oef2_entry(mem, data, 6, id, call);
+        let f = mem.rebase(OP_OEF2_STREAM_CUE);
+        call(mem, f, &[e, arg, 0x800])
+    }
+
+    /// `rcefPlayStream(id)` (`0x0092e6b0`): unless a stream cue is busy
+    /// (`op_oef2_sound_cue_check(0x800)`, whose `eax` is then returned),
+    /// [`rcef_play_se`]'s `op_oef2_se_on` of the kind 6 entry `id`.
+    pub fn rcef_play_stream<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(SOUND_CUE_CHECK);
+        let busy = call(mem, f, &[0x800]);
+        if busy != 0 {
+            return busy;
+        }
+        let data = RCEF_OEF2.get(mem);
+        let e = oef2_entry(mem, data, 6, id, call);
+        let f = mem.rebase(OP_OEF2_SE_ON);
+        call(mem, f, &[e, 0x40, 0x100])
+    }
+
+    /// `rcefObjAnimeStart(env, obj, id)` (`0x00925590`, an effect import;
+    /// name ours): `rcefAnimeStart(obj + 0x330, entry, obj + 0x1f0, obj +
+    /// 0x170)` with the kind 4 entry `id` of `env`'s data (`+8`).
+    pub fn rcef_obj_anime_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        obj_start(mem, args, obj::ANIME, RCEF_ANIME_START, call)
+    }
+
+    /// `rcefObjSetupDraw(env, obj, id)` (`0x00925690`, an effect import;
+    /// name ours): `rcefSetupDraw(obj + 0x3c0, entry, obj + 0x1f0, obj +
+    /// 0x170)` with the kind 4 entry `id`.
+    pub fn rcef_obj_setup_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        obj_start(mem, args, obj::MODEL, RCEF_SETUP_DRAW, call)
+    }
+
+    fn obj_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        part: u32,
+        f: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [env, o, id] = args;
+        let data = mem.read::<u32>(env.wrapping_add(8));
+        let e = oef2_entry(mem, data, 4, id, call);
+        let f = mem.rebase(f);
+        let a = [
+            o.wrapping_add(part),
+            e,
+            o.wrapping_add(0x1f0),
+            o.wrapping_add(0x170),
+        ];
+        call(mem, f, &a)
+    }
+
+    // ---- round 25 ----
+
+    /// `rcefLerp(a, b, t, mode)` (`0x0092e580`, an effect import; name
+    /// ours): `a + w (b - a)` with `w` = `t` (mode 0 and others),
+    /// `sin(t)` (mode 2, the sine table at `0x00c44bf0` indexed by
+    /// `trunc(t * 16384) >> 4 & 0xfff`) or `(sin(t * 32768 - 16384) + 1) /
+    /// 2` (mode 1, a cosine ease, `w` stored as `f32`). `b - a` and the
+    /// result are `f32`; returned in `ST0`.
+    pub fn rcef_lerp(mem: &impl Mem, args: [u32; 4]) -> f32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let [a, b, t, mode] = args;
+        let st = |x: f64| load(store(x));
+        let (a, t) = (load(a), load(t));
+        let d = st(sub(load(b), a));
+        let c = |at: u32| mem.read::<f64>(mem.rebase(at));
+        let sine = |x: f64| {
+            let i = ftol(mem, x).cast_signed() >> 4 & 0xfff;
+            let at = mem.rebase(SIN_TABLE) + 4 * i.cast_unsigned();
+            load(mem.read::<u32>(at))
+        };
+        let r = match mode {
+            1 => {
+                let x = sub(mul(t, c(LERP_HALF_TURN)), c(LERP_QUARTER_TURN));
+                let w = st(mul(add(sine(x), c(LERP_ONE)), c(LERP_HALF)));
+                add(a, mul(w, d))
+            }
+            2 => add(a, mul(sine(mul(t, c(LERP_QUARTER_TURN))), d)),
+            _ => add(a, mul(d, t)),
+        };
+        f32::from_bits(store(r))
+    }
+
+    /// The colour bytes as floats into `work` (`fild`, exact).
+    fn colour_floats(mem: &mut impl Mem, bytes: &[u32], work: u32) {
+        for (i, &b) in (0u32..).zip(bytes) {
+            #[allow(clippy::cast_possible_truncation)] // a byte argument
+            let v = f32::from(b as u8);
+            mem.write(work.wrapping_add(4 * i), v.to_bits());
+        }
+    }
+
+    /// `rcefColorSet(r, g, b, a, v, work)` (`0x0092e9c0`, an effect import;
+    /// name ours): the four colour bytes as floats (into `work`, the
+    /// original's locals) given to [`rcef_work_set_from_vf00`] on the
+    /// effect's colour work at [`COLOR_WORK`].
+    pub fn rcef_color_set(mem: &mut impl Mem, args: [u32; 5], work: u32) {
+        colour_floats(mem, &args[..4], work);
+        let w = mem.rebase(COLOR_WORK);
+        rcef_work_set_from_vf00(mem, w, work, args[4]);
+    }
+
+    /// `rcefColorFade(r0, g0, b0, a0, r1, g1, b1, a1, v, work)`
+    /// (`0x0092ea40`, an effect import; name ours): both colours as floats
+    /// (`work`, 32 bytes) given to [`rcef_work_set`] on [`COLOR_WORK`].
+    pub fn rcef_color_fade(mem: &mut impl Mem, args: [u32; 9], work: u32) {
+        colour_floats(mem, &args[..8], work);
+        let w = mem.rebase(COLOR_WORK);
+        rcef_work_set(mem, w, work, work.wrapping_add(0x10), args[8]);
     }
 
     // ---- round 4: running tasks, objects, particle parts ----

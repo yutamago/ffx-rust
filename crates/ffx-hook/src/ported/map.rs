@@ -3314,6 +3314,226 @@ ported! {
         abmap::bridge::abmap_enter_item_menu(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `yiDisposeAnimDObj(obj, kind)`.
+    yiDisposeAnimDObj @ 0x0090_84b0 => extern "C" fn shim_yi_dispose_anim_dobj(obj: u32, kind: u32) -> u32 {
+        yi::bridge::yi_dispose_anim_dobj(&mut mem(), obj, kind, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjFini(obj)`.
+    rcefObjFini @ 0x0092_fee0 => extern "C" fn shim_rcef_obj_fini(o: u32) -> u32 {
+        task::bridge::rcef_obj_fini(&mut mem(), o, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapFillCommandMenu(pad, kind)`.
+    AbmapFillCommandMenu @ 0x00a4_59e0 => extern "C" fn shim_abmap_fill_command_menu(pad: u32, kind: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_fill_command_menu(&mut mem(), pad, kind, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_GuideEdgeFade(p, a, b, rect, out)`.
+    Yn_GuideEdgeFade @ 0x0091_f530 => extern "C" fn shim_yn_guide_edge_fade(p: u32, a: u32, b: u32, rect: u32, out: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        guide::bridge::yn_guide_edge_fade(&mut mem(), [p, a, b, rect, out], w)
+    }
+
+    /// `rcbgSceneSetChadist(scene)`.
+    rcbgSceneSetChadist @ 0x0092_0790 => extern "C" fn shim_rcbg_scene_set_chadist(scene: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_scene_set_chadist(&mut mem(), scene, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcEffectTaskSoundCueWait(task)`.
+    rcEffectTaskSoundCueWait @ 0x0093_0500 => extern "C" fn shim_rc_effect_task_sound_cue_wait(t: u32) {
+        task::bridge::rc_effect_task_sound_cue_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcEffectTaskMotionWait(task)`.
+    rcEffectTaskMotionWait @ 0x0093_0430 => extern "C" fn shim_rc_effect_task_motion_wait(t: u32) {
+        task::bridge::rc_effect_task_motion_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcefSetChrDirTarget(chr, a, b)`.
+    rcefSetChrDirTarget @ 0x0092_e750 => extern "C" fn shim_rcef_set_chr_dir_target(chr: u32, a: u32, b: u32) -> u32 {
+        task::bridge::rcef_set_chr_dir_target(&mut mem(), [chr, a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefSetChrDirTarget2(chr, a, b, c)`.
+    rcefSetChrDirTarget2 @ 0x0092_e960 => extern "C" fn shim_rcef_set_chr_dir_target2(chr: u32, a: u32, b: u32, c: u32) -> u32 {
+        task::bridge::rcef_set_chr_dir_target2(&mut mem(), [chr, a, b, c], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefWeaponSetHide(chr, show)`.
+    rcefWeaponSetHide @ 0x0092_eb70 => extern "C" fn shim_rcef_weapon_set_hide(chr: u32, show: u32) -> u32 {
+        task::bridge::rcef_weapon_set_hide(&mut mem(), chr, show, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefPlaySE(id)`.
+    rcefPlaySE @ 0x0092_e680 => extern "C" fn shim_rcef_play_se(id: u32) -> u32 {
+        task::bridge::rcef_play_se(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefMainCreateTask(kind, seq)`.
+    rcefMainCreateTask @ 0x0092_5170 => extern "C" fn shim_rcef_main_create_task(kind: u32, seq: u32) -> u32 {
+        task::bridge::rcef_main_create_task(&mut mem(), kind, seq, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefChrDelete(obj)`.
+    rcefChrDelete @ 0x0093_0600 => extern "C" fn shim_rcef_chr_delete(o: u32) -> u32 {
+        task::bridge::rcef_chr_delete(&mut mem(), o, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_SetChadist()`.
+    Yn_SetChadist @ 0x0091_a250 => extern "C" fn shim_yn_set_chadist() {
+        model::bridge::yn_set_chadist(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `Yn_PreBgLayerDispOff(n)`.
+    Yn_PreBgLayerDispOff @ 0x0091_a7c0 => extern "C" fn shim_yn_pre_bg_layer_disp_off(n: u32) -> u32 {
+        model::bridge::yn_pre_bg_layer_disp_off(&mut mem(), n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_PreBgLayerDispOn(n)`.
+    Yn_PreBgLayerDispOn @ 0x0091_a830 => extern "C" fn shim_yn_pre_bg_layer_disp_on(n: u32) -> u32 {
+        model::bridge::yn_pre_bg_layer_disp_on(&mut mem(), n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxSpringDelete(spring)`.
+    rcfxSpringDelete @ 0x0092_8c60 => extern "C" fn shim_rcfx_spring_delete(p: u32) -> u32 {
+        model::bridge::rcfx_spring_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxNailDelete(nail)`.
+    rcfxNailDelete @ 0x0092_9070 => extern "C" fn shim_rcfx_nail_delete(p: u32) -> u32 {
+        model::bridge::rcfx_nail_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_FPm173End()`.
+    Yn_FPm173End @ 0x0091_9ab0 => extern "C" fn shim_yn_fpm173_end() -> u32 {
+        model::bridge::yn_fpm173_end(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgTrxPairSetNo(p, n)`.
+    rcbgTrxPairSetNo @ 0x0092_21e0 => extern "C" fn shim_rcbg_trx_pair_set_no(p: u32, n: u32) -> u32 {
+        model::bridge::rcbg_trx_pair_set_no(&mut mem(), p, n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainStr(pc, v)`.
+    NkzAeonGainStr @ 0x00a5_c660 => extern "C" fn shim_nkz_aeon_gain_str(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainDef(pc, v)`.
+    NkzAeonGainDef @ 0x00a5_c740 => extern "C" fn shim_nkz_aeon_gain_def(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainMag(pc, v)`.
+    NkzAeonGainMag @ 0x00a5_c910 => extern "C" fn shim_nkz_aeon_gain_mag(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainMDef(pc, v)`.
+    NkzAeonGainMDef @ 0x00a5_c980 => extern "C" fn shim_nkz_aeon_gain_mdef(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainAgi(pc, v)`.
+    NkzAeonGainAgi @ 0x00a5_c9f0 => extern "C" fn shim_nkz_aeon_gain_agi(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainLuck(pc, v)`.
+    NkzAeonGainLuck @ 0x00a5_c860 => extern "C" fn shim_nkz_aeon_gain_luck(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainEva(pc, v)`.
+    NkzAeonGainEva @ 0x00a5_c6d0 => extern "C" fn shim_nkz_aeon_gain_eva(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainAcc(pc, v)`.
+    NkzAeonGainAcc @ 0x00a5_c7f0 => extern "C" fn shim_nkz_aeon_gain_acc(pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_half(&mut mem(), pc, v, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `NkzAeonGainHp(pc, v)`.
+    NkzAeonGainHp @ 0x00a5_c7b0 => extern "C" fn shim_nkz_aeon_gain_hp(_pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_hp(&mem(), v)
+    }
+
+    /// `NkzAeonGainMp(pc, v)`.
+    NkzAeonGainMp @ 0x00a5_c8d0 => extern "C" fn shim_nkz_aeon_gain_mp(_pc: u32, v: i32) -> u32 {
+        nkz::bridge::nkz_aeon_gain_mp(&mem(), v)
+    }
+
+    /// `rcefSetVibrate(id, arg)`.
+    rcefSetVibrate @ 0x0092_ec60 => extern "C" fn shim_rcef_set_vibrate(id: u32, arg: u32) -> u32 {
+        task::bridge::rcef_set_vibrate(&mut mem(), id, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefStreamCue(id, arg)`.
+    rcefStreamCue @ 0x0092_ebf0 => extern "C" fn shim_rcef_stream_cue(id: u32, arg: u32) -> u32 {
+        task::bridge::rcef_stream_cue(&mut mem(), id, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefPlayStream(id)`.
+    rcefPlayStream @ 0x0092_e6b0 => extern "C" fn shim_rcef_play_stream(id: u32) -> u32 {
+        task::bridge::rcef_play_stream(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjAnimeStart(env, obj, id)`.
+    rcefObjAnimeStart @ 0x0092_5590 => extern "C" fn shim_rcef_obj_anime_start(env: u32, o: u32, id: u32) -> u32 {
+        task::bridge::rcef_obj_anime_start(&mut mem(), [env, o, id], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjSetupDraw(env, obj, id)`.
+    rcefObjSetupDraw @ 0x0092_5690 => extern "C" fn shim_rcef_obj_setup_draw(env: u32, o: u32, id: u32) -> u32 {
+        task::bridge::rcef_obj_setup_draw(&mut mem(), [env, o, id], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcuiScaleVector_copy_00756600(dst, v, s, a, b, c)`.
+    rcuiScaleVector_copy_00756600 @ 0x0075_6600 => extern "C" fn shim_rcui_scale_vector_copy(dst: u32, v: u32, s: u32, a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rcui_scale_vector(&mut mem(), dst, v, s, [a, b, c])
+    }
+
+    /// `rcVec4fToFixed_copy_007e6cc0(out, v)`.
+    rcVec4fToFixed_copy_007e6cc0 @ 0x007e_6cc0 => extern "C" fn shim_rc_vec4f_to_fixed_copy(out: u32, v: u32) -> u32 {
+        model::bridge::rc_vec4f_to_fixed(&mut mem(), out, v)
+    }
+
+    /// `yiSetMIMeParamDObj(obj, p)`.
+    yiSetMIMeParamDObj @ 0x0090_a4d0 => extern "C" fn shim_yi_set_mime_param_dobj(obj: u32, p: u32) -> u32 {
+        yi::bridge::yi_set_mime_param_dobj(&mut mem(), obj, p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiGetColorOffsetInt(out)`.
+    yiGetColorOffsetInt @ 0x0090_8660 => extern "C" fn shim_yi_get_color_offset_int(out: u32) -> u32 {
+        yi::bridge::yi_get_color_offset_int(&mut mem(), out)
+    }
+
+    /// `rcefLerp(a, b, t, mode)` (a float in `ST0`).
+    rcefLerp @ 0x0092_e580 => extern "C" fn shim_rcef_lerp(a: u32, b: u32, t: u32, mode: u32) -> f32 {
+        task::bridge::rcef_lerp(&mem(), [a, b, t, mode])
+    }
+
+    /// `rcefColorSet(r, g, b, a, v)`.
+    rcefColorSet @ 0x0092_e9c0 => extern "C" fn shim_rcef_color_set(r: u32, g: u32, b: u32, a: u32, v: u32) {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        task::bridge::rcef_color_set(&mut mem(), [r, g, b, a, v], w);
+    }
+
+    /// `rcefColorFade(r0, g0, b0, a0, r1, g1, b1, a1, v)`.
+    rcefColorFade @ 0x0092_ea40 => extern "C" fn shim_rcef_color_fade(r0: u32, g0: u32, b0: u32, a0: u32, r1: u32, g1: u32, b1: u32, a1: u32, v: u32) {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        task::bridge::rcef_color_fade(&mut mem(), [r0, g0, b0, a0, r1, g1, b1, a1, v], w);
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

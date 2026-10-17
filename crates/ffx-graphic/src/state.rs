@@ -79,6 +79,16 @@ pub mod bridge {
     pub const POST_PROCESS_SET_FOCUS_DEPTH: u32 = 0x0069_8550;
     pub const MENU_SET_FONT_SHADOW: u32 = 0x0067_e4e0;
     pub const SCENE_SET_TEXTURE_VIDEO_INFO: u32 = 0x0066_e800;
+    pub const SCENE_SET_CAMERA_WORLD_MATRIX: u32 = 0x0066_ce70;
+    pub const SCENE_SET_MINIMAP_CAMERA_WORLD_MATRIX: u32 = 0x0066_d940;
+    pub const SCENE_SET_MESH_INSTANCE_WORLD_MATRIX: u32 = 0x0066_d810;
+    pub const SCENE_SET_CAMERA_FOVY: u32 = 0x0066_cda0;
+    pub const SCENE_SET_CAMERA_ASPECT_RATIO: u32 = 0x0066_cbe0;
+    pub const SCENE_SET_OBJECT_TRANSLATION: u32 = 0x0066_e3e0;
+    pub const SCENE_SHOW_2D_LAYER: u32 = 0x0066_f2f0;
+    pub const SCENE_HIDE_2D_LAYER: u32 = 0x0065_f050;
+    /// The list cursor's set-up on a node (`thiscall(cursor, node)`).
+    pub const CURSOR_SET_NODE: u32 = 0x0044_1dc0;
     pub const SCENE_CURRENT_LEVEL_NAME_HASH: u32 = 0x0065_de90;
     pub const LIGHTING_CALC_SHADE_COEFF: u32 = 0x006a_77a0;
     pub const LIGHTING_SET_SHADE_COEFF: u32 = 0x006a_aef0;
@@ -502,35 +512,198 @@ pub mod bridge {
         }
         let w = words::<16>(h, view);
         let zero_row = (0..4).any(|r| w[4 * r] | w[4 * r + 1] | w[4 * r + 2] | w[4 * r + 3] == 0);
-        let m: [u32; 16] = if zero_row {
+        let out = if zero_row {
             let mut id = [0u32; 16];
             for i in [0, 5, 10, 15] {
                 id[i] = 1f32.to_bits();
             }
-            id
+            to_world_3x4(id)
         } else {
-            let s = h.scratch();
-            for (i, v) in (0u32..).zip(w) {
-                h.write(s + 4 * i, float_bits(f32::from_bits(v)));
-            }
-            h.call_sym(INVERSE_MATRIX, Conv::Cdecl, &[s, s]);
-            let mut m = words::<16>(h, s);
-            // fld/fchs/fstp, in the original's order
-            for i in [0, 1, 4, 5, 8, 9, 12, 13, 4, 5, 6, 8, 9, 10] {
-                m[i] = float_bits(f32::from_bits(m[i])) ^ 0x8000_0000;
-            }
-            m
+            view_to_world(h, w)
         };
-        let out = [
-            m[4], m[5], m[6], m[0], m[8], m[9], m[10], m[1], m[12], m[13], m[14], m[2],
-        ];
         let scene = SCENE.get(h);
         for (i, v) in (0u32..).zip(out) {
             h.write(scene + 0xfa04 + 4 * i, float_bits(f32::from_bits(v)));
         }
     }
 
-    /// `PhyreScene_setCameraWorldMatrix(this, m, alt)`: the 3x4 matrix to
+    /// `PMatrix4_toWorldMatrix3x4` of a 4x4: rows 1-3, row 0's first three
+    /// as the last column.
+    fn to_world_3x4(m: [u32; 16]) -> [u32; 12] {
+        [
+            m[4], m[5], m[6], m[0], m[8], m[9], m[10], m[1], m[12], m[13], m[14], m[2],
+        ]
+    }
+
+    /// The game's 4x4 view (words `w`) as the camera's 3x4 world matrix:
+    /// inverted (`sceVu0InversMatrix4x4` in the scratch), x and y of rows
+    /// 0 and 3 and z of rows 1 and 2 negated (the original's 14
+    /// `fld`/`fchs`/`fstp`), converted.
+    fn view_to_world(h: &mut impl Host, w: [u32; 16]) -> [u32; 12] {
+        let s = h.scratch();
+        for (i, v) in (0u32..).zip(w) {
+            h.write(s + 4 * i, float_bits(f32::from_bits(v)));
+        }
+        h.call_sym(INVERSE_MATRIX, Conv::Cdecl, &[s, s]);
+        let mut m = words::<16>(h, s);
+        for i in [0, 1, 4, 5, 8, 9, 12, 13, 4, 5, 6, 8, 9, 10] {
+            m[i] = float_bits(f32::from_bits(m[i])) ^ 0x8000_0000;
+        }
+        to_world_3x4(m)
+    }
+
+    /// Writes a 3x4 into the scratch after the inverse's 64 bytes, for a
+    /// callee that copies it. Returns its address.
+    fn scratch_rows(h: &mut impl Host, rows: [u32; 12]) -> u32 {
+        let at = h.scratch() + 0x40;
+        for (i, v) in (0u32..).zip(rows) {
+            h.write(at + 4 * i, v);
+        }
+        at
+    }
+
+    /// `graphicCameraSetWorldMatrixSub(view, on)` (`0x00639b30`): with `on`,
+    /// the view (as `graphicCameraSetWorldMatrix`, without the zero-row and
+    /// skipped-frame checks) to the scene's alternative camera matrix
+    /// (`PhyreScene_setCameraWorldMatrix(m, 1)`); else back to the main
+    /// one (byte `+0xfaa1` 0).
+    pub fn camera_set_world_matrix_sub(h: &mut impl Host, view: u32, on: u32) {
+        if on == 0 {
+            let scene = SCENE.get(h);
+            h.write(scene + 0xfaa1, 0u8);
+            return;
+        }
+        let w = words::<16>(h, view);
+        let rows = view_to_world(h, w);
+        let at = scratch_rows(h, rows);
+        let scene = SCENE.get(h);
+        h.call_sym(
+            SCENE_SET_CAMERA_WORLD_MATRIX,
+            Conv::Thiscall(scene),
+            &[at, 1],
+        );
+    }
+
+    /// `graphicMinimapCameraSetWorldMatrix(view)` (`0x00642410`): the view,
+    /// as `graphicCameraSetWorldMatrix`, to the minimap camera
+    /// (`PhyreScene_setMinimapCameraWorldMatrix`).
+    pub fn minimap_camera_set_world_matrix(h: &mut impl Host, view: u32) {
+        let w = words::<16>(h, view);
+        let rows = view_to_world(h, w);
+        let at = scratch_rows(h, rows);
+        let scene = SCENE.get(h);
+        h.call_sym(
+            SCENE_SET_MINIMAP_CAMERA_WORLD_MATRIX,
+            Conv::Thiscall(scene),
+            &[at],
+        );
+    }
+
+    /// `graphicCameraSetFOVy(&v)` (`0x006395e0`) and
+    /// `graphicCameraSetAspectRatio(&v)` (`0x006395c0`): the float at `v`
+    /// to the scene's setter. Returns its `eax`.
+    pub fn camera_set_from_ptr(h: &mut impl Host, method: u32, v: u32) -> u32 {
+        let f = float_bits(f32::from_bits(h.read(v)));
+        scene_call(h, method, &[f])
+    }
+
+    /// `graphicCharacterInstanceSetWorldMatrix(list, m)` (`0x0063c3e0`):
+    /// `PhyreScene_setMeshInstanceWorldMatrix(mesh, m)` for each mesh of
+    /// the list.
+    pub fn character_set_world_matrix(h: &mut impl Host, list: u32, mat: u32) {
+        if list == 0 {
+            return;
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let items: u32 = h.read(list + 4);
+            let mesh: u32 = h.read(items + 4 * i);
+            h.call_sym(
+                SCENE_SET_MESH_INSTANCE_WORLD_MATRIX,
+                Conv::Stdcall,
+                &[mesh, mat],
+            );
+            i += 1;
+        }
+    }
+
+    /// `graphicCharacterInstanceSetWorldMatrixByMdlID(list, m, id)`
+    /// (`0x0063c430`): every mesh one of whose segments (`0x6c` bytes,
+    /// the id at `+0x18`) has model id `id` gets the world matrix (once per
+    /// matching segment); with none, mesh number `id` when there is one.
+    pub fn character_set_world_matrix_by_mdl_id(h: &mut impl Host, list: u32, mat: u32, id: u32) {
+        if list == 0 {
+            return;
+        }
+        let mut found = false;
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let items: u32 = h.read(list + 4);
+            let mesh: u32 = h.read(items + 4 * i);
+            let holder: u32 = h.read(mesh);
+            let n = h.read::<u32>(holder) & 0x7fff_ffff;
+            for k in 0..n {
+                let table: u32 = h.read(holder + 4);
+                if h.read::<u32>(table.wrapping_add(0x6c * k + 0x18)) == id {
+                    let items: u32 = h.read(list + 4);
+                    let mesh: u32 = h.read(items + 4 * i);
+                    found = true;
+                    h.call_sym(
+                        SCENE_SET_MESH_INSTANCE_WORLD_MATRIX,
+                        Conv::Stdcall,
+                        &[mesh, mat],
+                    );
+                }
+            }
+            i += 1;
+        }
+        if found {
+            return;
+        }
+        if id < h.read::<u32>(list) & 0x7fff_ffff {
+            let items: u32 = h.read(list + 4);
+            let mesh: u32 = h.read(items + 4 * id);
+            h.call_sym(
+                SCENE_SET_MESH_INSTANCE_WORLD_MATRIX,
+                Conv::Stdcall,
+                &[mesh, mat],
+            );
+        }
+    }
+
+    /// The scene's list cursors' steps (`0x0065eaf0`, `0x0065ebd0`,
+    /// `0x0065ec40`, `0x0065ecb0`: seek, checking first; `0x0065ed20`,
+    /// `0x0065ed80`, `0x0065ede0`, `0x0065ee40`: advance, stepping first;
+    /// fastcall): while the cursor is not valid (`PhyreCursor_IsValid_*`),
+    /// its node (`+0x18`) moves to the next (`*node`, 0 at the end node
+    /// `+0x14`); then the cursor is set up on the node (`0x00441dc0`), or
+    /// its first five words cleared without one. Returns the set-up's
+    /// `eax`, or 0.
+    pub fn cursor_step(h: &mut impl Host, this: u32, seek: bool) -> u32 {
+        use crate::managers::bridge::cursor_valid;
+        if !(seek && cursor_valid(h, this) != 0) {
+            loop {
+                let node: u32 = h.read(this + 0x18);
+                if node != 0 {
+                    let next: u32 = h.read(node);
+                    let end: u32 = h.read(this + 0x14);
+                    h.write(this + 0x18, if next == end { 0 } else { next });
+                }
+                if cursor_valid(h, this) != 0 {
+                    break;
+                }
+            }
+        }
+        let node: u32 = h.read(this + 0x18);
+        if node == 0 {
+            for k in 0..5 {
+                h.write(this + 4 * k, 0u32);
+            }
+            return 0;
+        }
+        h.call_sym(CURSOR_SET_NODE, Conv::Thiscall(this), &[node])
+    }
+
     /// the camera's (`+0xfa04`) or, `alt` set, the alternative one
     /// (`+0xfa3c`); the byte `+0xfaa1` says which. Returns `m`.
     pub fn scene_set_camera_world_matrix(m: &mut impl Mem, scene: u32, mat: u32, alt: u32) -> u32 {
@@ -835,6 +1008,133 @@ pub mod bridge {
                 &[chr, c, mode],
             );
             i += 1;
+        }
+    }
+
+    /// `PhyreScene_SetMeshesVisible(this, on)` (`0x0066e7b0`): every mesh of
+    /// the list at `+0x11d0` (`+0x11c8` of them) with a draw entry gets
+    /// its draw pointer (`+0x1c` of the entry) set to the mesh, or 0.
+    pub fn scene_set_meshes_visible(m: &mut impl Mem, scene: u32, on: u32) {
+        let on = on & 0xff != 0;
+        let mut i = 0;
+        while i < m.read::<u32>(scene + 0x11c8) {
+            let meshes: u32 = m.read(scene + 0x11d0);
+            let mesh: u32 = m.read(meshes + 4 * i);
+            if mesh != 0 {
+                let draw: u32 = m.read(mesh + 0x1c);
+                if draw != 0 {
+                    m.write(draw + 0x1c, if on { mesh } else { 0 });
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// `PhyreScene_SetColourPair(this, r, g, b, r2, g2, b2, second)`
+    /// (`0x0066ea70`): two RGBA colours at `+0xfc8c` (or `+0xfcac` with
+    /// `second`): `(r, g, b, 1)` and `(r2, g2, b2, 0)`.
+    pub fn scene_set_colour_pair(m: &mut impl Mem, scene: u32, c: [f32; 6], second: u32) {
+        let at = scene + if second & 0xff != 0 { 0xfcac } else { 0xfc8c };
+        let w = [
+            float_bits(c[0]),
+            float_bits(c[1]),
+            float_bits(c[2]),
+            1f32.to_bits(),
+            float_bits(c[3]),
+            float_bits(c[4]),
+            float_bits(c[5]),
+            0,
+        ];
+        for (i, v) in (0u32..).zip(w) {
+            m.write(at + 4 * i, v);
+        }
+    }
+
+    /// `SegmentList_AllReady(this)` (`0x00652250`, fastcall): when
+    /// pending (`+0x24`), and every segment of `+0x54` (`+0x58` of them)
+    /// is null or its scene state (`*(scene +0x60)[i]`) is 1, clears the
+    /// pending byte and returns 1; else 0.
+    pub fn segments_ready(m: &mut impl Mem, this: u32) -> u32 {
+        if m.read::<u8>(this + 0x24) == 0 {
+            return 0;
+        }
+        let n: u32 = m.read(this + 0x58);
+        let list: u32 = m.read(this + 0x54);
+        for i in 0..n {
+            let seg: u32 = m.read(list + 4 * i);
+            if seg != 0 {
+                let scene = SCENE.get(m);
+                let states: u32 = m.read(scene + 0x60);
+                if m.read::<u32>(states + 4 * i) != 1 {
+                    return 0;
+                }
+            }
+        }
+        m.write(this + 0x24, 0u8);
+        1
+    }
+
+    /// `g_Settings`: the game settings object (a pointer).
+    pub const SETTINGS: Global<u32> = Global::new(0x022f_b504);
+    /// `ShadowManager_getInstance`.
+    pub const SHADOW_GET_INSTANCE: u32 = 0x006d_2390;
+    /// `ShadowManager_SetQuality(this, q)`.
+    pub const SHADOW_SET_QUALITY: u32 = 0x006c_eaa0;
+    /// The shadow buffers' resize (`0x006d2df0`, `thiscall(sm)`).
+    pub const SHADOW_RESIZE: u32 = 0x006d_2df0;
+    /// The post-process's texture rebind (`0x00697e10`, `thiscall(pp, v)`).
+    pub const POST_PROCESS_REBIND: u32 = 0x0069_7e10;
+
+    /// `PhyreScene_ApplySettings(this)` (`0x0066f010`): the graphics
+    /// settings (`g_Settings`) to the scene: `+0x24` as a float to the
+    /// post-process (`*(scene +0x10cc) +0x12328`), the shadow quality
+    /// (`+0x30`, then the shadow buffers resized), `+0x44 != 0` to the
+    /// post-process byte `+0x123d3`, `+0x48` to its `+0x1264`, `+0x38` to
+    /// its rebind, and the anti-aliasing mode (`+0x40`): 1 sets the scene's
+    /// `+0x10dd8` to 1, 2-5 set it to 0 and the post-process's `+0x1231c`
+    /// to 1-4, anything else sets it to 2. Returns `eax` (the mode - 1, or
+    /// the post-process).
+    pub fn scene_apply_settings(h: &mut impl Host, scene: u32) -> u32 {
+        let cfg = SETTINGS.get(h);
+        #[allow(clippy::cast_possible_wrap)] // fild: signed
+        let f = x87::store(f64::from(h.read::<u32>(cfg + 0x24) as i32));
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.write(pp + 0x12328, f);
+        let cfg = SETTINGS.get(h);
+        let q: u32 = h.read(cfg + 0x30);
+        let sm = h.call_sym(SHADOW_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(SHADOW_SET_QUALITY, Conv::Thiscall(sm), &[q]);
+        let sm = h.call_sym(SHADOW_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(SHADOW_RESIZE, Conv::Thiscall(sm), &[]);
+        let cfg = SETTINGS.get(h);
+        let on = u8::from(h.read::<u32>(cfg + 0x44) != 0);
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.write(pp + 0x123d3, on);
+        let cfg = SETTINGS.get(h);
+        let v: u32 = h.read(cfg + 0x48);
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.write(pp + 0x1264, v);
+        let cfg = SETTINGS.get(h);
+        let v: u32 = h.read(cfg + 0x38);
+        let pp: u32 = h.read(scene + 0x10cc);
+        h.call_sym(POST_PROCESS_REBIND, Conv::Thiscall(pp), &[v]);
+        let cfg = SETTINGS.get(h);
+        let mode = h.read::<u32>(cfg + 0x40).wrapping_sub(1);
+        match mode {
+            0 => {
+                h.write(scene + 0x10dd8, 1u32);
+                mode
+            }
+            1..=4 => {
+                let pp: u32 = h.read(scene + 0x10cc);
+                h.write(scene + 0x10dd8, 0u32);
+                h.write(pp + 0x1231c, mode);
+                pp
+            }
+            _ => {
+                h.write(scene + 0x10dd8, 2u32);
+                mode
+            }
         }
     }
 

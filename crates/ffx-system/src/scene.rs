@@ -233,7 +233,7 @@ pub mod bridge {
     }
 
     /// `0x008af060(i, name, x, y)`: every slot of scene `i` named `name`
-    /// (all eight checked) moved with `TkMenuSetScenePos(i, handle, x, y)`
+    /// (all eight checked) moved with `TkMenuSetSceneOffset(i, handle, x, y)`
     /// (the menu's, passed in) on its handle (`+0x1c`).
     pub fn set_scene_pos_by_name<M: Mem>(
         mem: &mut M,

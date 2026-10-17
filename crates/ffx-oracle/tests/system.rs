@@ -7718,3 +7718,984 @@ fn round12_system_functions_match_the_original_on_the_snapshot() {
     };
     round12(&mut a, &mut b, &mut Xorshift(0x4012_0002));
 }
+
+/// Round 13's system functions.
+fn round13(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    use tolib::bridge as t;
+    // window layouts by id, across every range and past the last
+    for id in (0..0x2a0u32).chain([0x2ff, 0x1000, u32::MAX]) {
+        assert_eq!(
+            eax(a, 0x008f_a4f0, &[id]),
+            t::window_layout_of(b, id),
+            "{id:#x}"
+        );
+        same_memory("window layouts", a, b);
+    }
+    assert_eq!(eax(a, 0x008a_8e20, &[]), t::save_gil_address(b));
+    // the magic texture loaded once, through a stand-in recording the id
+    let cell = alloc(a, b, 4);
+    let load = stand_in8(a, b, 0xa80, &recorder(cell, 0x5a5a_0013));
+    redirect(a, b, 0x0064_20b0, load);
+    for _ in 0..16 {
+        let handle = if rng.next() & 1 == 0 {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), rng.next(), handle],
+        );
+        set(a, b, mb::MAGIC_TEXTURE_LOADED, rng.next() & 1);
+        put(a, b, cell, 0u32);
+        let got = mb::is_load_texture(b, |m, id| {
+            let at = m.rebase(0x0064_20b0);
+            m.call(at, Conv::Cdecl, &[id]).unwrap();
+        });
+        assert_eq!(eax(a, 0x009d_a280, &[]), got);
+        same_memory("magic texture", a, b);
+    }
+}
+
+#[test]
+fn round13_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13(&mut a, &mut b, &mut Xorshift(0x4013_0001));
+}
+
+#[test]
+fn round13_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13(&mut a, &mut b, &mut Xorshift(0x4013_0002));
+}
+
+/// Round 13's language-dependent help picture names.
+fn round13_help_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let cell = alloc(a, b, 4);
+    let mut getter = vec![0xa1];
+    getter.extend_from_slice(&cell.to_le_bytes());
+    getter.push(0xc3);
+    let lang = stand_in8(a, b, 0xaa0, &getter);
+    redirect(a, b, 0x0064_10e0, lang);
+    let out = alloc(a, b, 0x200);
+    let prefix = alloc(a, b, 0x110);
+    let prefix_cell = ffx_system::files::bridge::STREAM_PREFIX;
+    let mut percent = vec![b'x'; 0x90];
+    percent.extend_from_slice(b"%%/");
+    let prefixes: [Option<&[u8]>; 5] = [
+        None,
+        Some(b""),
+        Some(b"data/"),
+        Some(&percent),
+        Some(&[b'y'; 0xd0]),
+    ];
+    for pre in prefixes {
+        match pre {
+            Some(text) => {
+                let mut v = text.to_vec();
+                v.push(0);
+                a.write(prefix, &v).unwrap();
+                b.write(prefix, &v).unwrap();
+                set(a, b, prefix_cell, prefix);
+            }
+            None if prefix_cell.get(a) == 0 => continue,
+            None => {}
+        }
+        for l in [0u32, 1, 2, 3, 4, 5, 9, 10] {
+            put(a, b, cell, l);
+            for n in [
+                0i32,
+                1,
+                7,
+                42,
+                -3,
+                i32::MAX,
+                i32::MIN,
+                rng.next().cast_signed(),
+            ] {
+                put(a, b, out, [0xa5u8; 0x200]);
+                eax(a, 0x0077_4ae0, &[out, n.cast_unsigned()]);
+                ffx_system::files::bridge::help_texture_name(b, out, n, l);
+                same_memory("help names", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn round13_help_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0011));
+}
+
+#[test]
+fn round13_help_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0012));
+}
+
+/// Round 13's texture names over stand-ins for the languages, the battle
+/// status and `dbgPrintf`.
+#[allow(clippy::items_after_statements)]
+fn round13_texture_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    let getter = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let ffx = stand_in8(a, b, 0xac0, &getter(cells));
+    redirect(a, b, 0x0064_10e0, ffx);
+    let tk = stand_in8(a, b, 0xad0, &getter(cells + 4));
+    redirect(a, b, 0x0088_7c30, tk);
+    let battle = stand_in8(a, b, 0xae0, &getter(cells + 8));
+    redirect(a, b, 0x0078_16f0, battle);
+    let print = stand_in8(a, b, 0xaf0, &recorder(cells + 12, 0x5a5a_1300));
+    redirect(a, b, 0x0062_f500, print);
+    struct Calls;
+    impl t::TextureName<Oracle> for Calls {
+        fn battle_status(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0078_16f0, &[])
+        }
+        fn tk_lang(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0088_7c30, &[])
+        }
+        fn ffx_lang(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0064_10e0, &[])
+        }
+        fn print(&mut self, m: &mut Oracle, fmt: u32) {
+            eax(m, 0x0062_f500, &[fmt]);
+        }
+    }
+    let size = alloc(a, b, 8);
+    let ids = [
+        0x3c00u32,
+        0x3d00,
+        0x3d01,
+        0x3d10,
+        0x3d20,
+        0x3d30,
+        0x3d40,
+        0x3d60,
+        0x3d80,
+        0x3bff,
+        0x3d02,
+        0x3d31,
+        0x3d81,
+        0x3e00,
+        0x13d00,
+        0xffff_3d10,
+    ];
+    let prefixes = [0x025d_08a0u32, 0x025d_06a0];
+    for id in ids {
+        for _ in 0..24 {
+            put(a, b, cells, [0u32, 9, 10][(rng.next() % 3) as usize]);
+            put(a, b, cells + 4, rng.next() & 1);
+            put(a, b, cells + 8, rng.next() & 1);
+            for p in prefixes {
+                let n = rng.next() % 24;
+                let mut text: Vec<u8> = (0..n).map(|_| b'a' + (rng.next() % 26) as u8).collect();
+                text.push(0);
+                let at = a.rebase(p);
+                a.write(at, &text).unwrap();
+                b.write(at, &text).unwrap();
+            }
+            // nibbles whose column k (0..=14) keeps index + k within the
+            // 16-entry tables (or the byte below 16 for 0x3d80)
+            let high = rng.next() & 1;
+            let lang_table = matches!(id, 0x3d01 | 0x3d60);
+            let nibbles = if id == 0x3d80 {
+                rng.next() % 16
+            } else {
+                rng.next() & 0xff
+            };
+            let nib = if high == 0 {
+                nibbles & 0xf
+            } else {
+                nibbles >> 4
+            };
+            let k = (nib & 7) * 2;
+            let index = if lang_table {
+                rng.next() % 16
+            } else {
+                rng.next() % (16 - k)
+            };
+            let high = high | (rng.next() & 0xffff_0000);
+            put(a, b, size, [0xa5a5_a5a5u32; 2]);
+            put(a, b, cells + 12, 0u32);
+            let args = [id, nibbles | (rng.next() & 0xffff_ff00), index, high, size];
+            let want = eax(a, 0x008a_cf50, &args);
+            let got = t::texture_name(b, args[0], args[1], args[2], args[3], args[4], &mut Calls);
+            assert_eq!(want, got, "{args:x?}");
+            same_memory("texture names", a, b);
+        }
+    }
+}
+
+#[test]
+fn round13_texture_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0021));
+}
+
+#[test]
+fn round13_texture_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0022));
+}
+
+/// Round 13's magic file start-up, over logging stand-ins.
+#[allow(clippy::items_after_statements)]
+fn round13_magic_file(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    let log = alloc(a, b, 0x80);
+    let cursor = alloc(a, b, 4);
+    let stub = |a: &mut Oracle, b: &mut Oracle, k: u32| {
+        stand_in8(
+            a,
+            b,
+            0xb00 + 0x30 * k,
+            &logger(cursor, 0x1300_0000 + (k << 8)),
+        )
+    };
+    let printf = stub(a, b, 0);
+    let init = stub(a, b, 1);
+    for (k, sym) in [(2u32, 0x0064_3260u32), (3, 0x0064_2f10)] {
+        let s = stub(a, b, k);
+        redirect(a, b, sym, s);
+    }
+    // resetZanmatoSepList takes no argument: count its calls
+    let mut count = vec![0x83, 0x05];
+    count.extend_from_slice(&(log + 0x7c).to_le_bytes());
+    count.extend_from_slice(&[0x01, 0xc3]);
+    let s = stand_in8(a, b, 0xb00 + 0x30 * 4, &count);
+    redirect(a, b, 0x007a_8f20, s);
+    for (slot, to) in [(0x00b0_c380u32, printf), (0x022f_b6a0, init)] {
+        let at = a.rebase(slot);
+        a.write(at, &to.to_le_bytes()).unwrap();
+        b.write(at, &to.to_le_bytes()).unwrap();
+    }
+    struct Calls(u32, u32);
+    impl mb::MagicFileCalls<Oracle> for Calls {
+        fn printf(&mut self, m: &mut Oracle, fmt: u32, arg: Option<u32>) {
+            let mut args = vec![fmt];
+            args.extend(arg);
+            m.call(self.0, Conv::Cdecl, &args).unwrap();
+        }
+        fn game_over_notify(&mut self, m: &mut Oracle, on: u32) {
+            eax(m, 0x0064_3260, &[on]);
+        }
+        fn init_magic(&mut self, m: &mut Oracle, imports: u32) {
+            m.call(self.1, Conv::Cdecl, &[imports]).unwrap();
+        }
+        fn fog_fade(&mut self, m: &mut Oracle, on: u32) {
+            eax(m, 0x0064_2f10, &[on]);
+        }
+        fn reset_zanmato(&mut self, m: &mut Oracle) {
+            eax(m, 0x007a_8f20, &[]);
+        }
+    }
+    let mut calls = Calls(printf, init);
+    let ids = [
+        0x2c7u32, 0x296, 0x29e, 0xa8, 0x1b2, 0x262, 0, 1, 0x2c6, 0x2c8,
+    ];
+    for _ in 0..40 {
+        let id = if rng.next().is_multiple_of(3) {
+            rng.next()
+        } else {
+            ids[(rng.next() % 10) as usize]
+        };
+        let handle = if rng.next() & 1 == 0 {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), rng.next(), handle],
+        );
+        put(a, b, cursor, log);
+        put(a, b, log, [0u32; 0x1f]);
+        eax(a, 0x009d_a7a0, &[id]);
+        mb::magic_file_set_magic_id(b, id, &mut calls);
+        same_memory("magic id", a, b);
+        if rng.next() & 1 == 0 {
+            let start = ids[(rng.next() % 10) as usize];
+            set(
+                a,
+                b,
+                mb::MAGIC_FILE,
+                [start, rng.next(), rng.next(), handle],
+            );
+        }
+        put(a, b, cursor, log);
+        assert_eq!(
+            eax(a, 0x009d_a7f0, &[]),
+            mb::magic_file_start(b, &mut calls)
+        );
+        same_memory("magic start", a, b);
+    }
+}
+
+#[test]
+fn round13_magic_file_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0031));
+}
+
+#[test]
+fn round13_magic_file_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0032));
+}
+
+/// Round 13's message-window placement over a stand-in screen size.
+#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 8);
+    // mov eax, [esp+4]; mov ecx, [w]; mov [eax], ecx; mov eax, [esp+8]; mov ecx, [h]; mov [eax], ecx; ret
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    code.extend_from_slice(&cells.to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    code.extend_from_slice(&(cells + 4).to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let wh = stand_in8(a, b, 0xc00, &code);
+    redirect(a, b, 0x0064_0db0, wh);
+    let windows = alloc(a, b, 8 * 0x80);
+    let messages = alloc(a, b, 8 * 0x80);
+    let objects = alloc(a, b, 8 * 0x20);
+    let styles = alloc(a, b, 8 * 0x10);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        put(a, b, wb::WINDOWS.ptr(a).addr + 4 * k, windows + 0x80 * k);
+        put(
+            a,
+            b,
+            wb::MSG_WINDOWS.ptr(a).addr + 4 * k,
+            messages + 0x80 * k,
+        );
+        put(a, b, objects + 0x20 * k + 0x10, styles + 0x10 * k);
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    set(a, b, t::MESSAGE_SLOTS, slots);
+    let screens = [
+        (640, 480),
+        (1280, 720),
+        (1920, 1080),
+        (2560, 1080),
+        (1024, 768),
+        (3840, 2160),
+        (720, 1280),
+    ];
+    let maps = [0x17u32, 0x15b, 0, 0x40];
+    for _ in 0..3000 {
+        let i = (rng.next() % 8) as i32;
+        let (sw, sh) = screens[(rng.next() % 7) as usize];
+        put(a, b, cells, [sw, sh]);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        set(a, b, t::CURRENT_MAP, maps[(rng.next() % 4) as usize]);
+        put(
+            a,
+            b,
+            styles + 0x10 * i.cast_unsigned() + 4,
+            (rng.next() % 8) as u16,
+        );
+        put(
+            a,
+            b,
+            windows + 0x80 * i.cast_unsigned() + 4,
+            (rng.next() % 3) as u16,
+        );
+        let rect = match rng.next() % 8 {
+            0 => [
+                400,
+                0x110,
+                (rng.next() % 500) as i32,
+                (rng.next() % 300) as i32,
+            ],
+            1 => [
+                (rng.next() % 600) as i32 - 50,
+                (rng.next() % 450) as i32 - 50,
+                0x1d8,
+                0xf6,
+            ],
+            2 => [
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+            ],
+            _ => [
+                (rng.next() % 600) as i32 - 50,
+                (rng.next() % 450) as i32 - 50,
+                (rng.next() % 520) as i32,
+                (rng.next() % 300) as i32,
+            ],
+        };
+        let args = [
+            i.cast_unsigned(),
+            rect[0].cast_unsigned(),
+            rect[1].cast_unsigned(),
+            rect[2].cast_unsigned(),
+            rect[3].cast_unsigned(),
+        ];
+        eax(a, 0x008a_fbb0, &args);
+        t::place_message_window(b, i, rect, |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message windows", a, b);
+    }
+}
+
+#[test]
+fn round13_message_windows_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0041));
+}
+
+#[test]
+fn round13_message_windows_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0042));
+}
+
+/// Round 14's message-window positions over a stand-in screen size.
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
+fn round14_message_positions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 8);
+    // mov eax, [esp+4]; mov ecx, [w]; mov [eax], ecx; mov eax, [esp+8]; mov ecx, [h]; mov [eax], ecx; ret
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    code.extend_from_slice(&cells.to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    code.extend_from_slice(&(cells + 4).to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let wh = stand_in8(a, b, 0xc00, &code);
+    redirect(a, b, 0x0064_0db0, wh);
+    let windows = alloc(a, b, 8 * 0x80);
+    let messages = alloc(a, b, 8 * 0x80);
+    let objects = alloc(a, b, 8 * 0x20);
+    let styles = alloc(a, b, 8 * 0x10);
+    let records = alloc(a, b, 8 * 0x60);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        put(a, b, wb::WINDOWS.ptr(a).addr + 4 * k, windows + 0x80 * k);
+        put(
+            a,
+            b,
+            wb::MSG_WINDOWS.ptr(a).addr + 4 * k,
+            messages + 0x80 * k,
+        );
+        put(a, b, objects + 0x20 * k + 0x10, styles + 0x10 * k);
+        put(a, b, objects + 0x20 * k + 0x14, records + 0x60 * k);
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    set(a, b, t::MESSAGE_SLOTS, slots);
+    let screens = [(640, 480), (1920, 1080), (2560, 1080), (1024, 768)];
+    let maps = [0x5eu32, 0x12e, 0x17, 0x15b, 0];
+    for _ in 0..3000 {
+        let i = (rng.next() % 8) as i32;
+        let (sw, sh) = screens[(rng.next() % 4) as usize];
+        put(a, b, cells, [sw, sh]);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        set(a, b, t::CURRENT_MAP, maps[(rng.next() % 5) as usize]);
+        set(a, b, t::TUTO_CHOSEN, rng.next() & 1);
+        set(a, b, t::MESSAGE_UNCLAMPED, rng.next() & 1);
+        let magic = if rng.next() & 1 == 0 {
+            0x281
+        } else {
+            rng.next() % 0x300
+        };
+        let file = mb::MAGIC_FILE.get(a);
+        set(a, b, mb::MAGIC_FILE, [magic, file[1], file[2], file[3]]);
+        let k = i.cast_unsigned();
+        put(a, b, styles + 0x10 * k + 4, (rng.next() % 8) as u16);
+        put(a, b, windows + 0x80 * k + 4, (rng.next() % 3) as u16);
+        let (tw, th) = if rng.next().is_multiple_of(4) {
+            (rng.next() as u16, rng.next() as u16)
+        } else {
+            ((rng.next() % 0x300) as u16, (rng.next() % 0x80) as u16)
+        };
+        put(a, b, records + 0x60 * k + 0x40, [tw, th]);
+        let anchor = if rng.next().is_multiple_of(8) {
+            rng.next()
+        } else {
+            rng.next() % 6
+        };
+        let (x, y) = if rng.next().is_multiple_of(6) {
+            (rng.next().cast_signed(), rng.next().cast_signed())
+        } else {
+            (
+                (rng.next() % 700) as i32 - 100,
+                (rng.next() % 600) as i32 - 100,
+            )
+        };
+        eax(
+            a,
+            0x008a_f850,
+            &[k, anchor, x.cast_unsigned(), y.cast_unsigned()],
+        );
+        t::set_message_window_position(b, i, anchor, x, y, |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message positions", a, b);
+        let (w, h) = if rng.next().is_multiple_of(6) {
+            (rng.next().cast_signed(), rng.next().cast_signed())
+        } else {
+            (
+                (rng.next() % 0x260) as i32 - 0x20,
+                (rng.next() % 0x1c0) as i32 - 0x10,
+            )
+        };
+        let args = [
+            k,
+            anchor,
+            x.cast_unsigned(),
+            y.cast_unsigned(),
+            w.cast_unsigned(),
+            h.cast_unsigned(),
+        ];
+        eax(a, 0x008a_fa90, &args);
+        t::set_message_window_rect(b, i, anchor, [x, y, w, h], |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message rects", a, b);
+    }
+}
+
+#[test]
+fn round14_message_positions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_message_positions(&mut a, &mut b, &mut Xorshift(0x4014_0001));
+}
+
+#[test]
+fn round14_message_positions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_message_positions(&mut a, &mut b, &mut Xorshift(0x4014_0002));
+}
+
+/// Round 14's battle limit-window set-ups over stand-in scene getters.
+#[allow(clippy::items_after_statements, clippy::cast_possible_truncation)]
+fn round14_limit_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    // [out] = name ^ key
+    let store = |key: u32| {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x0c, 0x35];
+        v.extend_from_slice(&key.to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x01, 0xc3]);
+        v
+    };
+    // *x = (name ^ key) & 0xffff, *y = (name ^ key) >> 16 (halves)
+    let mut point = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x0c, 0x35];
+    point.extend_from_slice(&0x1400_0303u32.to_le_bytes());
+    point.extend_from_slice(&[
+        0x66, 0x89, 0x01, 0x8b, 0x4c, 0x24, 0x10, 0xc1, 0xe8, 0x10, 0x66, 0x89, 0x01, 0xc3,
+    ]);
+    let num = stand_in8(a, b, 0xc40, &store(0x1400_0101));
+    let color = stand_in8(a, b, 0xc60, &store(0x1400_0202));
+    let pt = stand_in8(a, b, 0xc80, &point);
+    redirect(a, b, 0x008a_e410, num);
+    redirect(a, b, 0x008a_e360, color);
+    redirect(a, b, 0x008a_e450, pt);
+    // the limit timer's sound calls are not set up: count its calls instead
+    let timer_count = alloc(a, b, 4);
+    let mut count = vec![0x83, 0x05];
+    count.extend_from_slice(&timer_count.to_le_bytes());
+    count.extend_from_slice(&[0x01, 0xc3]);
+    let timer = stand_in8(a, b, 0xcb0, &count);
+    redirect(a, b, 0x0089_7f00, timer);
+    struct Calls;
+    impl t::LimitWindowCalls<Oracle> for Calls {
+        fn seq_num(&mut self, m: &mut Oracle, i: u32, name: u32, out: u32) {
+            eax(m, 0x008a_e410, &[i, name, out]);
+        }
+        fn seq_point(&mut self, m: &mut Oracle, i: u32, name: u32, x: u32, y: u32) {
+            eax(m, 0x008a_e450, &[i, name, x, y]);
+        }
+        fn seq_color(&mut self, m: &mut Oracle, i: u32, name: u32, out: u32) {
+            eax(m, 0x008a_e360, &[i, name, out]);
+        }
+        fn init_pad(&mut self, m: &mut Oracle) {
+            eax(m, 0x008a_dbd0, &[]);
+        }
+        fn init_limit_timer(&mut self, m: &mut Oracle) {
+            eax(m, 0x0089_7f00, &[]);
+        }
+        fn remap(&mut self, m: &mut Oracle, y: bool, v: f32) -> f32 {
+            let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+            let r = m
+                .call(at, Conv::Cdecl, &[v.to_bits()])
+                .unwrap()
+                .st0
+                .unwrap();
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let r = r as f32;
+            r
+        }
+    }
+    let fill = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        for (from, len) in [
+            (0x0133_d6f0u32, 0x60u32),
+            (0x0133_f778, 0x320),
+            (0x0133_f7d4, 4),
+        ] {
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let at = a.rebase(from);
+            a.write(at, &bytes).unwrap();
+            b.write(at, &bytes).unwrap();
+        }
+    };
+    for _ in 0..4 {
+        fill(a, b, rng);
+        eax(a, 0x0089_7970, &[]);
+        t::btl_init_auron_limit_window(b, &mut Calls);
+        same_memory("Auron's limit window", a, b);
+        fill(a, b, rng);
+        eax(a, 0x0089_7f70, &[]);
+        t::btl_init_lulu_limit_window(b, &mut Calls);
+        same_memory("Lulu's limit window", a, b);
+        fill(a, b, rng);
+        eax(a, 0x0089_8180, &[]);
+        t::btl_init_tidus_limit_window(b, &mut Calls);
+        same_memory("Tidus' limit window", a, b);
+        fill(a, b, rng);
+        eax(a, 0x0089_7860, &[]);
+        t::btl_init_active_chr_cursor(b, &mut Calls);
+        same_memory("battle window parameters", a, b);
+    }
+}
+
+#[test]
+fn round14_limit_windows_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_limit_windows(&mut a, &mut b, &mut Xorshift(0x4014_0011));
+}
+
+#[test]
+fn round14_limit_windows_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_limit_windows(&mut a, &mut b, &mut Xorshift(0x4014_0012));
+}
+
+/// Round 14's battle limit-window openers over stand-in overdrive tables.
+#[allow(
+    clippy::items_after_statements,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round14_limit_openers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    let seq = alloc(a, b, 0x40);
+    // fld dword [cells + 4k]; ret
+    for (k, sym) in [(0u32, 0x00a5_ca70u32), (1, 0x00a5_cb10), (2, 0x00a5_cbd0)] {
+        let mut v = vec![0xd9, 0x05];
+        v.extend_from_slice(&(cells + 4 * k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0xd00 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    // mov eax, seq; ret
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&seq.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xd40, &v);
+    redirect(a, b, 0x00a5_ca60, s);
+    // NkzSetLuluLimitTbl: [cells + 12] = group ^ key
+    let s = stand_in8(a, b, 0xd50, &recorder(cells + 12, 0x1400_0404));
+    redirect(a, b, 0x00a5_cc70, s);
+    // tables A/B: eax = arg ^ key
+    for (k, sym) in [(0u32, 0x00a5_cb30u32), (1, 0x00a5_cb80)] {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+        v.extend_from_slice(&(0x1400_0501u32 + 0x0137_0101 * k).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0xd70 + 0x10 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    struct Calls;
+    impl t::LimitOpenCalls<Oracle> for Calls {
+        fn limit_time(&mut self, m: &mut Oracle, who: t::Limit, arg: u32) -> f32 {
+            let sym = match who {
+                t::Limit::Auron => 0x00a5_ca70,
+                t::Limit::Lulu => 0x00a5_cb10,
+                t::Limit::Tidus => 0x00a5_cbd0,
+            };
+            let at = m.rebase(sym);
+            let r = m.call(at, Conv::Cdecl, &[arg]).unwrap().st0.unwrap();
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let r = r as f32;
+            r
+        }
+        fn auron_buttons(&mut self, m: &mut Oracle, level: u32) -> u32 {
+            eax(m, 0x00a5_ca60, &[level])
+        }
+        fn lulu_table(&mut self, m: &mut Oracle, group: u32) {
+            eax(m, 0x00a5_cc70, &[group]);
+        }
+        fn tidus_table(&mut self, m: &mut Oracle, tb: bool, level: u32) -> u32 {
+            eax(m, if tb { 0x00a5_cb80 } else { 0x00a5_cb30 }, &[level])
+        }
+    }
+    let cmds = [
+        0x22u32, 0x32, 0x42, 0x52, 0x20, 0x30, 0x40, 0x50, 0x21, 0x62, 0, 0x3078, 0x307a,
+    ];
+    for _ in 0..60 {
+        for (from, len) in [(0x0133_d6f0u32, 0x60u32), (0x0133_f778, 0x30)] {
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let at = a.rebase(from);
+            a.write(at, &bytes).unwrap();
+            b.write(at, &bytes).unwrap();
+        }
+        let times = [
+            rng.next() % 0x4000_0000 + 0x3f00_0000,
+            rng.next() % 0x4000_0000 + 0x3f00_0000,
+            rng.next() % 0x4000_0000 + 0x3f00_0000,
+        ];
+        put(a, b, cells, times);
+        let n = rng.next() % 30;
+        let mut words: Vec<u16> = (0..n).map(|_| (rng.next() % 0xffff) as u16).collect();
+        words.push(0xffff);
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        a.write(seq, &bytes).unwrap();
+        b.write(seq, &bytes).unwrap();
+        let cmd = if rng.next().is_multiple_of(4) {
+            rng.next()
+        } else {
+            cmds[(rng.next() % 13) as usize]
+        };
+        assert_eq!(
+            eax(a, 0x0089_8ad0, &[cmd]),
+            t::btl_open_auron_limit_window(b, cmd, &mut Calls)
+        );
+        same_memory("Auron's limit window opened", a, b);
+        assert_eq!(
+            eax(a, 0x0089_8bf0, &[cmd]),
+            t::btl_open_lulu_limit_window(b, cmd, &mut Calls)
+        );
+        same_memory("Lulu's limit window opened", a, b);
+        assert_eq!(
+            eax(a, 0x0089_8ca0, &[cmd]),
+            t::btl_open_tidus_limit_window(b, cmd, &mut Calls)
+        );
+        same_memory("Tidus' limit window opened", a, b);
+    }
+}
+
+#[test]
+fn round14_limit_openers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_limit_openers(&mut a, &mut b, &mut Xorshift(0x4014_0021));
+}
+
+#[test]
+fn round14_limit_openers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_limit_openers(&mut a, &mut b, &mut Xorshift(0x4014_0022));
+}
+
+/// Round 14's limit timer and command-cursor memory.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
+fn round14_timer_and_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    // rnd stand-in: eax = [cell]
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xda0, &v);
+    redirect(a, b, 0x0079_89a0, s);
+    let w = |a: &mut Oracle, b: &mut Oracle, at: u32, v: u32| {
+        let at = a.rebase(at);
+        put(a, b, at, v);
+    };
+    for k in 0..400 {
+        w(
+            a,
+            b,
+            0x0133_f77c,
+            if k % 5 == 0 { rng.next() % 4 } else { 2 },
+        );
+        let frames = (rng.next() % 2000) as f32 + if k % 3 == 0 { 0.5 } else { 0.0 };
+        w(a, b, 0x0133_f788, frames.to_bits());
+        let limit = match k % 7 {
+            0 => f32::NAN.to_bits(),
+            1 => rng.next(),
+            _ => ((rng.next() % 6000) as f32 / 100.0).to_bits(),
+        };
+        let limit = if f32::from_bits(limit).is_nan() && limit & 0x0040_0000 == 0 {
+            f32::NAN.to_bits()
+        } else {
+            limit
+        };
+        w(a, b, 0x0133_f78c, limit);
+        w(a, b, 0x0133_f794, rng.next());
+        w(a, b, 0x0186_5f00, rng.next() & 1);
+        put(a, b, cell, rng.next());
+        eax(a, 0x0089_1ac0, &[]);
+        t::btl_ctrl_limit_timer(b, |m| eax(m, 0x0079_89a0, &[]));
+        same_memory("limit timer", a, b);
+    }
+    for k in 0..200 {
+        for (from, len) in [
+            (0x0133_c940u32, 0x800u32),
+            (0x0133_d770, 0x18),
+            (0x0133_d788, 0x168 * 8),
+        ] {
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let at = a.rebase(from);
+            a.write(at, &bytes).unwrap();
+            b.write(at, &bytes).unwrap();
+        }
+        // depths up to 4 levels
+        for i in 0..8u32 {
+            let at = a.rebase(0x0133_c95a) + 0xf0 * i;
+            put(a, b, at, (rng.next() % 6) as u8 - 1);
+        }
+        let cmds = [0xffffu16, 0xfffe, 0x3002, 0x3001, 0];
+        w(
+            a,
+            b,
+            0x0133_ca4c,
+            u32::from(cmds[(rng.next() % 5) as usize]) | (rng.next() & 0xffff_0000),
+        );
+        let at = a.rebase(0x023c_c088);
+        put(a, b, at, (rng.next() % 8) as u16);
+        let at = a.rebase(0x023c_c092);
+        put(
+            a,
+            b,
+            at,
+            if k % 9 == 0 {
+                0xffu8
+            } else {
+                (rng.next() % 4) as u8
+            },
+        );
+        eax(a, 0x0089_89d0, &[]);
+        t::btl_memory_cursor_pos(b);
+        same_memory("cursor memory", a, b);
+    }
+}
+
+#[test]
+fn round14_timer_and_cursor_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_timer_and_cursor(&mut a, &mut b, &mut Xorshift(0x4014_0031));
+}
+
+#[test]
+fn round14_timer_and_cursor_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_timer_and_cursor(&mut a, &mut b, &mut Xorshift(0x4014_0032));
+}
+
+/// Round 14's target group masks over stand-in battle queries.
+#[allow(clippy::cast_possible_truncation)]
+fn round14_target_groups(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let rec = alloc(a, b, 0x40);
+    let tmp = alloc(a, b, 4);
+    // MsGetComData: eax = rec
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&rec.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0xdc0, &v);
+    redirect(a, b, 0x0079_a4b0, s);
+    // MsGetChrGroup: (chr ^ key) & 7
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x35];
+    v.extend_from_slice(&0x1400_0605u32.to_le_bytes());
+    v.extend_from_slice(&[0x83, 0xe0, 0x07, 0xc3]);
+    let s = stand_in8(a, b, 0xde0, &v);
+    redirect(a, b, 0x0079_5040, s);
+    for _ in 0..200 {
+        let bytes: Vec<u8> = (0..0x90).map(|_| rng.next() as u8).collect();
+        let at = a.rebase(0x0133_d0d0);
+        a.write(at, &bytes).unwrap();
+        b.write(at, &bytes).unwrap();
+        put(a, b, at, (rng.next() % 28) as u16);
+        put(a, b, rec + 0x1a, rng.next() as u16);
+        eax(a, 0x0089_8490, &[]);
+        t::btl_make_target_group_bit(
+            b,
+            tmp,
+            |m, id, p| eax(m, 0x0079_a4b0, &[id, p]),
+            |m, chr| eax(m, 0x0079_5040, &[chr]),
+        );
+        same_memory("target groups", a, b);
+    }
+}
+
+#[test]
+fn round14_target_groups_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_target_groups(&mut a, &mut b, &mut Xorshift(0x4014_0041));
+}
+
+#[test]
+fn round14_target_groups_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_target_groups(&mut a, &mut b, &mut Xorshift(0x4014_0042));
+}

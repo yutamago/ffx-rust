@@ -89,6 +89,12 @@ pub const GUIDE_VFX: Global<u32> = Global::new(0x0230_fd20);
 pub const VFX_GET_RENDER_DATA: u32 = 0x0064_53d0;
 /// `graphicVFXDestroy` (cdecl, a 64-bit handle).
 pub const VFX_DESTROY: u32 = 0x0064_5280;
+/// 0.5 (`f64`, `.rdata`; `g_Vu0FixedRound`): `Yn_GuideEdgeFade`'s half.
+pub const EDGE_HALF: u32 = 0x00b9_2220;
+/// 0.15 (`f64` of an `f32`, `.rdata`): where `Yn_GuideEdgeFade` starts.
+pub const EDGE_INNER: u32 = 0x00b5_9870;
+/// 0.2 (`f64` of an `f32`, `.rdata`): where it reaches 1.
+pub const EDGE_OUTER: u32 = 0x00b3_eb60;
 /// 1024.0 (`f32`, `.rdata`): the camera distance `rcbgPreFini` resets.
 pub const CAMERA_DISTANCE: u32 = 0x00b5_5178;
 /// `MsSetCameraMatrix` (cdecl, six words).
@@ -967,6 +973,50 @@ pub mod bridge {
         let y = dy * t + ld(&*mem, a.wrapping_add(4));
         mem.write(out.wrapping_add(4), x87::store(y));
         out
+    }
+
+    /// `Yn_GuideEdgeFade(p, a, b, rect, out, work)` (`0x0091f530`, from
+    /// `0x0091cf10`; name ours): with `h` half the rectangle's width
+    /// (`|x0 - x1| * 0.5`) and `p`'s distance `r` from the segment
+    /// `a`→`b` ([`yn_nearest_on_line_2d`] into `work`, clamped): beyond
+    /// `0.2 h` writes 1.0 and returns 1; else writes `(r - 0.15 h) /
+    /// (0.2 h - 0.15 h)` clamped to 0.0..=1.0 (a NaN kept) and returns 0.
+    /// Every intermediate the original stores is an `f32`; the
+    /// denominator stays at the x87's precision.
+    pub fn yn_guide_edge_fade<M: Mem>(mem: &mut M, args: [u32; 5], work: u32) -> u32 {
+        use ffx_bridge::x87::{div, load, mul, sqrt, sub};
+        let [p, a, b, rect, out] = args;
+        let st = |x: f64| load(x87::store(x));
+        let rd = |mem: &M, at: u32| load(mem.read::<u32>(at));
+        let c = |mem: &M, at: u32| mem.read::<f64>(mem.rebase(at));
+        let w = st(sub(rd(&*mem, rect), rd(&*mem, rect.wrapping_add(8))).abs());
+        let h = st(mul(w, c(&*mem, super::EDGE_HALF)));
+        let lo = st(mul(c(&*mem, super::EDGE_INNER), h));
+        let hi = st(mul(h, c(&*mem, super::EDGE_OUTER)));
+        yn_nearest_on_line_2d(mem, work, a, b, p, 1);
+        let dx = st(sub(rd(&*mem, p), rd(&*mem, work)));
+        let dy = st(sub(
+            rd(&*mem, p.wrapping_add(4)),
+            rd(&*mem, work.wrapping_add(4)),
+        ));
+        let d2 = st(ffx_bridge::x87::add(mul(dx, dx), mul(dy, dy)));
+        let h2 = st(mul(hi, hi));
+        if h2 < d2 {
+            mem.write(out, 1.0f32.to_bits());
+            return 1;
+        }
+        let r = st(sqrt(d2));
+        let t = st(sub(r, lo));
+        let v = st(div(t, sub(hi, lo)));
+        let res = if v < 0.0 {
+            0.0f32.to_bits()
+        } else if 1.0 < v {
+            1.0f32.to_bits()
+        } else {
+            x87::store(v)
+        };
+        mem.write(out, res);
+        0
     }
 
     /// `rcbgGuideFini(guide)` (`0x0091d3d0`): its VFX instance (handle:

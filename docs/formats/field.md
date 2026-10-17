@@ -1039,6 +1039,144 @@ From here on, functions are picked by `symbols/classes.tsv` (category
     material set-up for PhyreEngine (glue).
   - The `0x0081xxxx` functions are the sound sequencer's (sound agent).
 
+## Disposing, finalising, command menus and the guide's fade (round 22)
+
+- `yiDisposeAnimDObj` (`0x009084b0`): on `g_YiRender`, `yiAnimDetachAll`
+  for a negative kind, else `yiAnimDetach`.
+- `rcefObjFini` (`0x0092fee0`, an effect object's finaliser): the
+  particle part's finaliser and the destructor are empty (`0x0092efc0`,
+  `0x0092ed00`); between them `rcefAnimeFini(obj + 0x330)` (the
+  animation's address used as the id) and `rcefModelFini(obj + 0x3c0)`,
+  whose `eax` it returns.
+- `AbmapFillCommandMenu` (`0x00a459e0`, name ours): `eiAbmStart` fills
+  menu pads 3, 2, 4 and 5 with the menu status entries
+  (`MsMenuStatusNum`) of kinds 0x40, 0x41, 0x45 and 0x44. Each entry
+  goes through the inlined `addMenuPrim`: 12-byte entries from `+0x40`
+  (`+0x40` command id, `+0x44` 0, `+0x48` id - 0x3000), the `i16`
+  count at `+0x1e` (at most 0x40; a full pad prints the error and calls
+  `debug_exit_trace(0)`), and `+0x28` set when the count is above rows
+  `+0x22` times columns `+0x16`.
+- `Yn_GuideEdgeFade` (`0x0091f530`, name ours, from `0x0091cf10`): `h` is
+  half the rectangle's width and `r` the point's distance from the
+  clamped segment (`Yn_NearestOnLine2D`). Beyond `0.2 h` it writes 1.0
+  and returns 1. Otherwise it writes `(r - 0.15 h) / (0.2 h - 0.15 h)`
+  clamped to 0..1 (a NaN passes through) and returns 0. Every
+  intermediate is stored as `f32` except the denominator. The original
+  reads the point a second time through `edx`, which
+  `Yn_NearestOnLine2D` leaves alone; the port reads the argument again.
+- `rcbgSceneSetChadist` (`0x00920790`, name ours; the thunk at
+  `0x00920780` jumps to it): the character distance is the player's
+  camera-space z (`Ch_GetPos`, w 1.0, through `g_CameraMatrix`) times
+  0.1, or 98.0 without a player. It is stored at `+0x100`, `+0x104` is
+  set, `+0x10` of Yn's map is cleared, and the distance goes to
+  `graphicSetChadist`.
+- Not ported:
+  - `AbmapFillUseItemMenu` (`0x00a45fd0`) builds `+0x48` from a 32-bit
+    local of which only the low half (the item) is written, so the high
+    half is stale stack.
+  - `0x00a45e30` and `0x00a4c460` build UI draw elements and packets
+    (replaced by ffx-render).
+  - `0x009161d0` is a CRT `_splitpath` copy (platform).
+  - The `rcPrim*` functions are packet writers (replaced by ffx-render).
+
+## Effect sequence helpers and Yn's layer switches (round 23)
+
+- Waits: `rcEffectTaskSoundCueWait` (`0x00930500`, name ours) returns once
+  `op_oef2_sound_cue_check(0x800)` is 0. `rcEffectTaskMotionWait`
+  (`0x00930430`) returns once `MsEffectCheckMotion` of the current
+  level's first argument is -1.
+- Forwarders, all returning the last call's `eax` (names ours unless
+  Fahrenheit's):
+  - `rcefSetChrDirTarget` (`0x0092e750`) and `rcefSetChrDirTarget2`
+    (`0x0092e960`) call `MsSetChrDirTarget` with modes 1 and 2.
+  - `rcefWeaponSetHide` (`0x0092eb70`) calls `Ch_SetHideEffect(weapon,
+    show == 0)` when `MsGetWeaponHandle(chr, 0)` returns a handle.
+  - `rcefPlaySE` (`0x0092e680`) plays sound entry `id` of the effect's
+    oef2 data (`0x025d5a28`) with `op_oef2_se_on(entry, 0x40, 0x100)`.
+  - `rcefMainCreateTask` (`0x00925170`) creates an object and sets its
+    sequence; it returns the object.
+  - `rcefChrDelete` (`0x00930600`) calls `rcefChrFini`, then frees the
+    object into the current ppp environment (`*g_pppEnvSlot`, its pool
+    at `+0x10`).
+  - `rcfxSpringDelete`/`rcfxNailDelete` (`0x00928c60`/`0x00929070`)
+    call the fini, then `rcFree`.
+  - `Yn_FPm173End` (`0x00919ab0`) calls `rcbgFPm173End` on the scene's
+    first object of kind 0x20008.
+  - `rcbgTrxPairSetNo` (`0x009221e0`) sets the number of two transfers
+    at `+0x20` and `+0x60`.
+- `Yn_SetChadist` (`0x0091a250`, name ours) is `Yn_DrawScene`'s sibling
+  through `0x00921a30`/`0x00921610` to `rcbgSceneSetChadist`.
+- `Yn_PreBgLayerDispOn`/`Off` (`0x0091a830`/`0x0091a7c0`): below
+  `Yn_MapPartCount`, bit 0 of the part (`0xc0` bytes from the scene's
+  `+8`) is cleared (on) or set (off). Below the same count, or 0x1c on
+  maps 0x15b and 0xd4, `graphic2DShowLayer`/`HideLayer(n)` runs and
+  `graphicTextureAnimationSetMaterialVisiability(n, on)`. Without a scene
+  the original reads address 8. `On` first sets `0x025d5ebc` when the
+  path at `0x023cbc60` contains `"te/test20"` (`strstr` through the
+  import table). When the layer is past the limit, `eax` is the map
+  number.
+
+## The aeons' stat gains and the effect's stream forwarders (round 24)
+
+- The aeon stat table (`0x00c5a604`, read by `TkMenuCtrlSummon`) has
+  `0x1c`-byte rows. Row 0 is empty, then HP, MP, strength, defence,
+  magic, magic defence, agility, luck, evasion and accuracy. Each row
+  starts with its gain function and ends with the maximum (99999, 9999,
+  then 255). The gain functions (names ours) take `(pc, v)`:
+  - HP (`0x00a5c7b0`): `trunc(sqrt(v) * 0.25 + 16.0)`, at least 1.
+  - MP (`0x00a5c8d0`): `trunc((sqrt(v) + sqrt(v)) / 3.0 + 10.0)`, at
+    least 1.
+  - The other eight (`0x00a5c660`, `0x00a5c740`, `0x00a5c910`,
+    `0x00a5c980`, `0x00a5c9f0`, `0x00a5c860`, `0x00a5c6d0`,
+    `0x00a5c7f0`) have identical bodies: for PCs 8..=17 (the aeons)
+    `v / 2` rounded toward zero, at least 1; any other PC prints
+    `"NKZ:Illigal PC Number %d"` and gives 100. HP and MP don't check the
+    PC.
+  - Both roots use `_CIsqrt` and `_ftol2_sse` at 53-bit precision.
+- Effect forwarders, each returning the last call's `eax`:
+  - `rcefSetVibrate` (`0x0092ec60`, name ours; Fahrenheit's Switch BSim
+    guess was `rcefStreamCue`) calls `TkSetVibrateStream(7, arg,
+    entry)` with entry `id` of kind 5 of the effect data.
+  - `rcefStreamCue` (`0x0092ebf0`) calls `op_oef2_stream_cue(entry, arg,
+    0x800)` with entry `id` of kind 6.
+  - `rcefPlayStream` (`0x0092e6b0`) returns `op_oef2_sound_cue_check
+    (0x800)` when it is non-zero, else plays the entry like
+    `rcefPlaySE`.
+  - `rcefObjAnimeStart`/`rcefObjSetupDraw` (`0x00925590`/`0x00925690`,
+    effect imports, names ours) start the object's animation (`+0x330`)
+    or set up its draw record (`+0x3c0`) from the kind 4 entry of the
+    environment's data (`env +8`), with outputs at `+0x1f0` and `+0x170`.
+- Left for the debug list: `rcefMemDebugInit`/`rcefMemDebugDisp`
+  (`0x009374f0`/`0x00937440`).
+
+## Copies, the morph value, interpolation and colour work (round 25)
+
+- `rcuiScaleVector_copy_00756600` and `rcVec4fToFixed_copy_007e6cc0` are
+  copies of `rcuiScaleVector` and `rcVec4fToFixed` that the compiler
+  kept; their shims use the same bridges.
+- `yiSetMIMeParamDObj` (`0x0090a4d0`): for a display object below
+  `g_YiDObjCount`, copies the float at `p` through the x87 stack into
+  the object's morph value (`0x018df624`, `0xb4` bytes apart) and passes
+  it to `graphicSetMeshVertexColorMorphValue`. Returns 0.
+- `yiGetColorOffsetInt` (`0x00908660`, an effect import, name ours): the
+  colour offsets plus 128.0, truncated into four ints.
+- `rcefLerp` (`0x0092e580`, an effect import, name ours) returns
+  `a + w (b - a)` in `ST0`:
+  - mode 2: `w` is the sine table's entry
+    `trunc(t * 16384) >> 4 & 0xfff`.
+  - mode 1: a cosine ease, `(sin(t * 32768 - 16384) + 1) / 2`, stored
+    as `f32`.
+  - any other mode: `w` is `t`.
+  - `b - a` and the result are stored as `f32`.
+- `rcefColorSet`/`rcefColorFade` (`0x0092e9c0`/`0x0092ea40`, effect
+  imports, names ours) convert colour bytes to floats and start the
+  effect's colour work at `0x025d5a20` with `rcefWorkSetFromVf00` (from
+  the current colour) or `rcefWorkSet` (from colour 0 to colour 1).
+- Not ported:
+  - `0x00a48e40` and `0x0090dd00` have no caller or pointer in the image.
+  - `0x0092e4f0` loops on `rand()` through the import table.
+  - `0x00a45930` sets the ppp matrices and runs a sphere grid ppp part (vfx).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

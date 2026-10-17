@@ -216,6 +216,97 @@ impl<M> tolib::bridge::PlayerList<M> for GameMenu {
     }
 }
 
+impl<M: Mem> tolib::bridge::LimitOpenCalls<M> for GameMenu {
+    fn limit_time(&mut self, mem: &mut M, who: tolib::bridge::Limit, arg: u32) -> f32 {
+        let m = &*mem;
+        match who {
+            tolib::bridge::Limit::Auron => {
+                ffx_field::nkz::bridge::nkz_get_auron_limit_time(m, arg.cast_signed())
+            }
+            tolib::bridge::Limit::Lulu => ffx_field::nkz::bridge::nkz_get_lulu_limit_time(m),
+            tolib::bridge::Limit::Tidus => {
+                ffx_field::nkz::bridge::nkz_get_tidus_limit_time(m, arg.cast_signed())
+            }
+        }
+    }
+    fn auron_buttons(&mut self, mem: &mut M, level: u32) -> u32 {
+        call_sym(mem, 0x00a5_ca60, &[level])
+    }
+    fn lulu_table(&mut self, mem: &mut M, group: u32) {
+        call_sym(mem, 0x00a5_cc70, &[group]);
+    }
+    fn tidus_table(&mut self, mem: &mut M, b: bool, level: u32) -> u32 {
+        call_sym(mem, if b { 0x00a5_cb80 } else { 0x00a5_cb30 }, &[level])
+    }
+}
+
+impl<M: Mem> tolib::bridge::LimitWindowCalls<M> for GameMenu {
+    fn seq_num(&mut self, mem: &mut M, i: u32, name: u32, out: u32) {
+        call_sym(mem, 0x008a_e410, &[i, name, out]);
+    }
+    fn seq_point(&mut self, mem: &mut M, i: u32, name: u32, x: u32, y: u32) {
+        call_sym(mem, 0x008a_e450, &[i, name, x, y]);
+    }
+    fn seq_color(&mut self, mem: &mut M, i: u32, name: u32, out: u32) {
+        call_sym(mem, 0x008a_e360, &[i, name, out]);
+    }
+    fn init_pad(&mut self, mem: &mut M) {
+        tolib::bridge::init_pad_data(mem);
+    }
+    fn init_limit_timer(&mut self, mem: &mut M) {
+        call_sym(mem, 0x0089_7f00, &[]);
+    }
+    fn remap(&mut self, _mem: &mut M, y: bool, v: f32) -> f32 {
+        if y {
+            ffx_graphic::ui::remap_y2(v)
+        } else {
+            ffx_graphic::ui::remap_x2(v)
+        }
+    }
+}
+
+impl<M: Mem> menu::bridge::MagicFileCalls<M> for GameMenu {
+    fn printf(&mut self, mem: &mut M, fmt: u32, arg: Option<u32>) {
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let slot = crate::rebase(0x00b0_c380) as u32;
+        let f: u32 = mem.read(slot);
+        match arg {
+            Some(a) => call_ptr(mem, f, &[fmt, a]),
+            None => call_ptr(mem, f, &[fmt]),
+        };
+    }
+    fn game_over_notify(&mut self, mem: &mut M, on: u32) {
+        call_sym(mem, 0x0064_3260, &[on]);
+    }
+    fn init_magic(&mut self, mem: &mut M, imports: u32) {
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let slot = crate::rebase(0x022f_b6a0) as u32;
+        let f: u32 = mem.read(slot);
+        call_ptr(mem, f, &[imports]);
+    }
+    fn fog_fade(&mut self, mem: &mut M, on: u32) {
+        call_sym(mem, 0x0064_2f10, &[on]);
+    }
+    fn reset_zanmato(&mut self, mem: &mut M) {
+        call_sym(mem, 0x007a_8f20, &[]);
+    }
+}
+
+impl<M: Mem> tolib::bridge::TextureName<M> for GameMenu {
+    fn battle_status(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0078_16f0, &[])
+    }
+    fn tk_lang(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0088_7c30, &[])
+    }
+    fn ffx_lang(&mut self, mem: &mut M) -> u32 {
+        instance::bridge::ffx_lang(mem, &mut phyre_printf)
+    }
+    fn print(&mut self, mem: &mut M, fmt: u32) {
+        call_sym(mem, 0x0062_f500, &[fmt]);
+    }
+}
+
 impl<M: Mem> tolib::bridge::FontWidth<M> for GameMenu {
     fn screen_wh(&mut self, mem: &mut M) -> (i32, i32) {
         font_screen_wh(mem)
@@ -930,12 +1021,12 @@ ported! {
     TOFFXToSJIS @ 0x008b_6200 => extern "C" fn to_ffx_to_sjis(_text: u32, out: u32) {
         menu::bridge::ffx_to_sjis(&mut mem(), out);
     }
-    /// `TOMenuGetGetImportantName(id)`.
-    TOMenuGetGetImportantName @ 0x008d_dee0 => extern "C" fn to_menu_get_get_important_name(id: u32) -> u32 {
+    /// `TkMenuGetImportantName(id)`.
+    TkMenuGetImportantName @ 0x008d_dee0 => extern "C" fn to_menu_get_get_important_name(id: u32) -> u32 {
         important_text(id, 0)
     }
-    /// `TOMenuGetGetImportantHelp(id)`.
-    TOMenuGetGetImportantHelp @ 0x008d_dea0 => extern "C" fn to_menu_get_get_important_help(id: u32) -> u32 {
+    /// `TkMenuGetImportantHelp(id)`.
+    TkMenuGetImportantHelp @ 0x008d_dea0 => extern "C" fn to_menu_get_get_important_help(id: u32) -> u32 {
         important_text(id, 8)
     }
 
@@ -1750,7 +1841,7 @@ ported! {
         accessor::bridge::address(&mem(), 0x0077_7230)
     }
     /// `() -> &0x023cc480`.
-    ReturnAddress_008bec70 @ 0x008b_ec70 => extern "C" fn returnaddress_008bec70() -> u32 {
+    TOMenuGetHelpWorkAdrs @ 0x008b_ec70 => extern "C" fn returnaddress_008bec70() -> u32 {
         accessor::bridge::address(&mem(), 0x008b_ec70)
     }
     /// `() -> *0x01325ac4`.
@@ -3976,19 +4067,19 @@ ported! {
         table_name(id, 0, false, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::A_ABILITY, id, t))
     }
     /// `MsGetRomPlyCommand` name (kana-aware).
-    TOGetPlyCommandName_008bebb0 @ 0x008b_ebb0 => extern "C" fn to_get_ply_command_name(id: u32) -> u32 {
+    TOMenuGetGetCommandName @ 0x008b_ebb0 => extern "C" fn to_get_ply_command_name(id: u32) -> u32 {
         table_name(id, 0, true, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::COMMAND, id, t))
     }
     /// `MsGetRomPlyCommand` help text (kana-aware).
-    TOGetPlyCommandHelp_008beb70 @ 0x008b_eb70 => extern "C" fn to_get_ply_command_help(id: u32) -> u32 {
+    TOMenuGetGetCommandHelp @ 0x008b_eb70 => extern "C" fn to_get_ply_command_help(id: u32) -> u32 {
         table_name(id, 8, true, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::COMMAND, id, t))
     }
     /// `MsImportantPtr` name (kana-aware).
-    TOGetImportantName_008bec30 @ 0x008b_ec30 => extern "C" fn to_get_important_name(id: u32) -> u32 {
+    TOMenuGetGetImportantName @ 0x008b_ec30 => extern "C" fn to_get_important_name(id: u32) -> u32 {
         table_name(id, 0, true, ffx_battle::save::bridge::ms_important_ptr)
     }
     /// `MsImportantPtr` help text (kana-aware).
-    TOGetImportantHelp_008bebf0 @ 0x008b_ebf0 => extern "C" fn to_get_important_help(id: u32) -> u32 {
+    TOMenuGetGetImportantHelp @ 0x008b_ebf0 => extern "C" fn to_get_important_help(id: u32) -> u32 {
         table_name(id, 8, true, ffx_battle::save::bridge::ms_important_ptr)
     }
     /// `0x008b3730(_, i)`.
@@ -4264,6 +4355,96 @@ ported! {
     /// `TOGetFontWidth(text, kind, &width, table)`.
     TOGetFontWidth @ 0x008b_9330 => extern "C" fn to_get_font_width(text: u32, kind: u32, out: u32, table: u32) -> u32 {
         tolib::bridge::font_width(&mut mem(), text, kind, out, table, &mut GameMenu)
+    }
+    /// `TOGetWindowLayout(id)`.
+    TOGetWindowLayout @ 0x008f_a4f0 => extern "C" fn to_get_window_layout(id: u32) -> u32 {
+        tolib::bridge::window_layout_of(&mut mem(), id)
+    }
+    /// `IsLoadTexture()`.
+    IsLoadTexture @ 0x009d_a280 => extern "C" fn is_load_texture() -> u32 {
+        menu::bridge::is_load_texture(&mut mem(), |m, id| {
+            call_sym(m, 0x0064_20b0, &[id]);
+        })
+    }
+    /// `getSa_MenuTextureName(out, n)`.
+    getSa_MenuTextureName @ 0x0077_4ae0 => extern "C" fn get_sa_menu_texture_name(out: u32, n: i32) {
+        let mut m = mem();
+        let lang = instance::bridge::ffx_lang(&m, &mut phyre_printf);
+        files::bridge::help_texture_name(&mut m, out, n, lang);
+    }
+    /// `TOGetSaveGilAddress()`.
+    TOGetSaveGilAddress @ 0x008a_8e20 => extern "C" fn to_get_save_gil_address() -> u32 {
+        tolib::bridge::save_gil_address(&mem())
+    }
+    /// `TOGetTextureName(id, nibbles, index, high, &size)`.
+    TOGetTextureName @ 0x008a_cf50 => extern "C" fn to_get_texture_name(id: u32, nibbles: u32, index: u32, high: u32, size: u32) -> u32 {
+        tolib::bridge::texture_name(&mut mem(), id, nibbles, index, high, size, &mut GameMenu)
+    }
+    /// `MagicFile_SetMagicId(id)`.
+    MagicFile_SetMagicId @ 0x009d_a7a0 => extern "C" fn magic_file_set_magic_id(id: u32) {
+        menu::bridge::magic_file_set_magic_id(&mut mem(), id, &mut GameMenu);
+    }
+    /// `MagicFile_Start()`.
+    MagicFile_Start @ 0x009d_a7f0 => extern "C" fn magic_file_start() -> u32 {
+        menu::bridge::magic_file_start(&mut mem(), &mut GameMenu)
+    }
+    /// `TOPlaceMessageWindow(i, x, y, w, h)`.
+    TOPlaceMessageWindow @ 0x008a_fbb0 => extern "C" fn to_place_message_window(i: i32, x: i32, y: i32, w: i32, h: i32) {
+        tolib::bridge::place_message_window(&mut mem(), i, [x, y, w, h], font_screen_wh);
+    }
+    /// `TOSetMessageWindowPosition(i, anchor, x, y)`.
+    TOSetMessageWindowPosition @ 0x008a_f850 => extern "C" fn to_set_message_window_position(i: i32, anchor: u32, x: i32, y: i32) {
+        tolib::bridge::set_message_window_position(&mut mem(), i, anchor, x, y, font_screen_wh);
+    }
+    /// `TOSetMessageWindowRect(i, anchor, x, y, w, h)`.
+    TOSetMessageWindowRect @ 0x008a_fa90 => extern "C" fn to_set_message_window_rect(i: i32, anchor: u32, x: i32, y: i32, w: i32, h: i32) {
+        tolib::bridge::set_message_window_rect(&mut mem(), i, anchor, [x, y, w, h], font_screen_wh);
+    }
+    /// `TOBtlInitAuronLimitWindow()`.
+    TOBtlInitAuronLimitWindow @ 0x0089_7970 => extern "C" fn to_btl_init_auron_limit_window() {
+        tolib::bridge::btl_init_auron_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitLuluLimitWindow()`.
+    TOBtlInitLuluLimitWindow @ 0x0089_7f70 => extern "C" fn to_btl_init_lulu_limit_window() {
+        tolib::bridge::btl_init_lulu_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitTidusLimitWindow()`.
+    TOBtlInitTidusLimitWindow @ 0x0089_8180 => extern "C" fn to_btl_init_tidus_limit_window() {
+        tolib::bridge::btl_init_tidus_limit_window(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlInitActiveChrCursor()`.
+    TOBtlInitActiveChrCursor @ 0x0089_7860 => extern "C" fn to_btl_init_active_chr_cursor() {
+        tolib::bridge::btl_init_active_chr_cursor(&mut mem(), &mut GameMenu);
+    }
+    /// `TOBtlOpenAuronLimitWindow(cmd)`.
+    TOBtlOpenAuronLimitWindow @ 0x0089_8ad0 => extern "C" fn to_btl_open_auron_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_auron_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlOpenLuluLimitWindow(cmd)`.
+    TOBtlOpenLuluLimitWindow @ 0x0089_8bf0 => extern "C" fn to_btl_open_lulu_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_lulu_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlOpenTidusLimitWindow(cmd)`.
+    TOBtlOpenTidusLimitWindow @ 0x0089_8ca0 => extern "C" fn to_btl_open_tidus_limit_window(cmd: u32) -> u32 {
+        tolib::bridge::btl_open_tidus_limit_window(&mut mem(), cmd, &mut GameMenu)
+    }
+    /// `TOBtlCtrlLimitTimer()`.
+    TOBtlCtrlLimitTimer @ 0x0089_1ac0 => extern "C" fn to_btl_ctrl_limit_timer() {
+        tolib::bridge::btl_ctrl_limit_timer(&mut mem(), |m| call_sym(m, 0x0079_89a0, &[]));
+    }
+    /// `TOBtlMemoryCursorPos()`.
+    TOBtlMemoryCursorPos @ 0x0089_89d0 => extern "C" fn to_btl_memory_cursor_pos() {
+        tolib::bridge::btl_memory_cursor_pos(&mut mem());
+    }
+    /// `TOBtlMakeTargetGroupBit()`.
+    TOBtlMakeTargetGroupBit @ 0x0089_8490 => extern "C" fn to_btl_make_target_group_bit() {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        tolib::bridge::btl_make_target_group_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data, |m, chr| {
+            call_sym(m, 0x0079_5040, &[chr])
+        });
+        std::hint::black_box(&mut tmp);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

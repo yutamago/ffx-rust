@@ -264,6 +264,85 @@ pub mod bridge {
         hay.windows(needle.len()).position(|w| w == needle)
     }
 
+    /// [`unify_filename`]'s PC path for `path` (no size limit).
+    fn unified(mem: &impl Mem, path: &[u8]) -> Vec<u8> {
+        let mut buf = match find(path, b".cgfx.phyre") {
+            Some(at) => {
+                let mut v = path[..at].to_vec();
+                v.extend_from_slice(b".fx.phyre");
+                v
+            }
+            None => path.to_vec(),
+        };
+        let prefix_at = stream_prefix(mem);
+        let prefix = c_str(mem, prefix_at);
+        let has_prefix = find(&buf, &prefix).is_some();
+        let pre = if has_prefix { Vec::new() } else { prefix };
+        match find(&buf, b"GCM") {
+            Some(at) => {
+                let mut v = pre;
+                v.extend_from_slice(&buf[..at]);
+                v.extend_from_slice(b"D3D11");
+                v.extend_from_slice(&buf[at + 3..]);
+                v
+            }
+            None => {
+                let mut v = pre;
+                v.append(&mut buf);
+                v
+            }
+        }
+    }
+
+    /// `getSa_MenuTextureName(out, n)` (`0x00774ae0`): the help picture
+    /// path for the language (`TOGetFFXLang`, passed in): `help`,
+    /// `help_us`, `help_fr`, `help_es`, `help_de`, `help_it` for 0..=5,
+    /// `help_kr` and `help_ch` for 9 and 10, through [`unify_filename`]
+    /// into a 0x100-byte buffer, then `sprintf(out, that, n)` (its `%d`).
+    /// For the other languages the original formats an uninitialised stack
+    /// buffer; here `out` becomes empty.
+    pub fn help_texture_name(mem: &mut impl Mem, out: u32, n: i32, lang: u32) {
+        let src = match lang {
+            0 => 0x00b5_3144,
+            1 => 0x00b5_3288,
+            2 => 0x00b5_31c8,
+            3 => 0x00b5_3248,
+            4 => 0x00b5_3188,
+            5 => 0x00b5_3208,
+            9 => 0x00b5_32c8,
+            10 => 0x00b5_3308,
+            _ => {
+                mem.write(out, 0u8);
+                return;
+            }
+        };
+        let src = mem.rebase(src);
+        let path = c_str(mem, src);
+        let fmt = unified(mem, &path);
+        // sprintf_s(buf, 0x100, ...) leaves an empty format when it overflows
+        let fmt = if fmt.len() >= 0x100 { Vec::new() } else { fmt };
+        let mut text = Vec::with_capacity(fmt.len() + 12);
+        let mut k = 0;
+        while k < fmt.len() {
+            match (fmt[k], fmt.get(k + 1)) {
+                (b'%', Some(b'd')) => {
+                    text.extend_from_slice(n.to_string().as_bytes());
+                    k += 2;
+                }
+                (b'%', Some(b'%')) => {
+                    text.push(b'%');
+                    k += 2;
+                }
+                (c, _) => {
+                    text.push(c);
+                    k += 1;
+                }
+            }
+        }
+        text.push(0);
+        mem.write_bytes(out, &text);
+    }
+
     /// `fiosUnifyFilename(src, out, size)` (`0x00679820`): `out` cleared
     /// (`size` bytes), an overflow message printed (`Phyre_PhyrePrintf(1,
     /// fmt, src)`, passed in) when `src` is longer than `size`; then the
@@ -284,32 +363,7 @@ pub mod bridge {
             let fmt = mem.rebase(0x00b4_4dbc);
             print(mem, 1, fmt, src);
         }
-        let mut buf = match find(&path, b".cgfx.phyre") {
-            Some(at) => {
-                let mut v = path[..at].to_vec();
-                v.extend_from_slice(b".fx.phyre");
-                v
-            }
-            None => path.clone(),
-        };
-        let prefix_at = stream_prefix(mem);
-        let prefix = c_str(mem, prefix_at);
-        let has_prefix = find(&buf, &prefix).is_some();
-        let pre = if has_prefix { Vec::new() } else { prefix };
-        let text = match find(&buf, b"GCM") {
-            Some(at) => {
-                let mut v = pre;
-                v.extend_from_slice(&buf[..at]);
-                v.extend_from_slice(b"D3D11");
-                v.extend_from_slice(&buf[at + 3..]);
-                v
-            }
-            None => {
-                let mut v = pre;
-                v.append(&mut buf);
-                v
-            }
-        };
+        let text = unified(mem, &path);
         if text.len() >= size as usize {
             // MSVCR110's `sprintf_s` on a short buffer: it writes `size - 1`
             // bytes and a NUL, then clears the first byte and calls the
