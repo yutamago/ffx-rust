@@ -88,7 +88,12 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Battles start from the field without walking into one:
   `screens::start_battle(field, group, formation)` writes the request a
   random encounter makes (`MsBattleEncountExe`, `0x00780d10`) and raises its flag;
-  `MsBattleProcess` (`0x00790c10`) loads it on the next frame. The field table
+  `MsBattleProcess` (`0x00790c10`) loads it on the next frame. While the
+  field is still loading, `MsBattleExeClear` (`0x00781530`, called by the
+  event set-up and `AtelUpdateBattleStatus`) drops the request; with games
+  side by side the field loads slower in frames than the replays wait, so
+  `start_battle` raises the flag again every 30 frames while it is down
+  and no battle has begun. The field table
   (`*0x0112a9c8`, count `0x0112a9d0`, 14-byte entries: map number, group
   offset, first formation, name) lists all 96 battle fields; entry 3 is
   `cdsp00`. Actors are `*0x011334d4 + index × 0xf90`; a monster's max HP is

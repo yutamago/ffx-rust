@@ -31,6 +31,11 @@ RADIUS = 12
 # a glow pixel by chance (seen: 8 to 15 levels); a missing or moved element
 # differs by far more
 TOLERANCE = 24
+# a screenshot fails only with more than this many differing pixels in one
+# 2-pixel-wide column band: the menu cursor's glow leaves thin vertical
+# streaks (2 px wide, up to ~20 tall) that two original runs can share by
+# chance; anything real (a missing or moved element) is wider than 2 px
+STREAK_WIDTH = 2
 # regions left out per screenshot (x0, y0, x1, y1, top-left origin): the
 # main menu's play time blinks its colon once a second of wall time, so two
 # original runs can both show it while the port's run catches it off
@@ -87,6 +92,7 @@ for a_path in sorted(a_dir.glob("*.bmp")):
             for yy in range(max(0, y - RADIUS), min(h, y + RADIUS + 1)):
                 noise[yy * w + max(0, x - RADIUS):yy * w + min(w, x + RADIUS + 1)] = b"\1" * (min(w, x + RADIUS + 1) - max(0, x - RADIUS))
     stable_diff = 0
+    columns = set()
     box = [w, h, -1, -1]
     for i in range(0, w * h * 4, 4):
         if not noise[i // 4] and max(abs(a[i + c] - r[i + c]) for c in range(3)) > TOLERANCE:
@@ -94,9 +100,23 @@ for a_path in sorted(a_dir.glob("*.bmp")):
             if any(x0 <= mx < x1 and y0 <= my < y1 for x0, y0, x1, y1 in MASKS.get(a_path.name, ())):
                 continue
             stable_diff += 1
+            columns.add((i // 4) % w)
             x, y = (i // 4) % w, h - 1 - (i // 4) // w
             box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]
     where = f" in x {box[0]}..{box[2]}, y {box[1]}..{box[3]}" if stable_diff else ""
     print(f"{a_path.name}: {stable_diff} pixels differ from the original{where} ({noisy} differ between the original runs)")
-    bad += stable_diff > 0
+    # only thin streaks (every differing column within STREAK_WIDTH of
+    # another, at most STREAK_WIDTH wide in total per cluster) are noise
+    clusters, cur = [], []
+    for x in sorted(columns):
+        if cur and x - cur[-1] > 1:
+            clusters.append(cur)
+            cur = []
+        cur.append(x)
+    if cur:
+        clusters.append(cur)
+    streaks_only = stable_diff and all(len(c) <= STREAK_WIDTH for c in clusters) and stable_diff <= 60
+    if streaks_only:
+        print("  (thin cursor-glow streaks only: passes)")
+    bad += stable_diff > 0 and not streaks_only
 sys.exit(1 if bad else 0)

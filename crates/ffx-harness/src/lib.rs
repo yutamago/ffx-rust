@@ -704,19 +704,29 @@ impl Game {
     }
 
     /// Waits until the game opens a file whose path contains `needle`,
-    /// checking every `step` frames for at most `limit` frames. Returns the
-    /// event.
+    /// checking every `step` frames for at least `limit` frames and
+    /// [`MIN_WAIT`] of real time. Returns the event.
     ///
     /// # Errors
     /// Fails on timeout.
     pub fn wait_for_open(&mut self, needle: &str, step: u32, limit: u32) -> Result<String> {
-        let start = self.frame()?;
+        let mut deadline = Deadline::new(self, limit)?;
+        let seen = self.log.len();
         loop {
             if let Some(e) = self.events()?.into_iter().find(|e| e.contains(needle)) {
                 return Ok(e);
             }
-            if self.frame()? - start > limit {
-                return Err(Error::Harness(format!("no file with {needle:?} opened")));
+            if deadline.passed(self, &format!("a file with {needle:?}"))? {
+                let last: Vec<&str> = self.log[seen..]
+                    .iter()
+                    .rev()
+                    .take(5)
+                    .map(String::as_str)
+                    .collect();
+                return Err(Error::Harness(format!(
+                    "no file with {needle:?} opened ({} events meanwhile, the last: {last:?})",
+                    self.log.len() - seen
+                )));
             }
             self.wait(step)?;
         }
@@ -759,6 +769,59 @@ impl Game {
         let mut rest = String::new();
         let _ = self.stream.read_line(&mut rest);
         Ok(())
+    }
+}
+
+/// The least real time a wait for the game gives up after, whatever its
+/// frame limit. Frames run back to back in fast mode, but the asset loader
+/// works on its own thread in real time: loads take more frames when
+/// several games share the machine (`docs/harness.md`, "Parallel games").
+pub const MIN_WAIT: Duration = Duration::from_secs(60);
+
+/// A wait's end: `frames` frames from now and [`MIN_WAIT`], whichever is
+/// later. Says on stderr when the real-time floor is what keeps it going.
+pub struct Deadline {
+    start_frame: u32,
+    frames: u32,
+    start: Instant,
+    said: bool,
+}
+
+impl Deadline {
+    /// Starts counting now.
+    ///
+    /// # Errors
+    /// See [`Game::command`].
+    pub fn new(game: &mut Game, frames: u32) -> Result<Self> {
+        Ok(Self {
+            start_frame: game.frame()?,
+            frames,
+            start: Instant::now(),
+            said: false,
+        })
+    }
+
+    /// Whether the wait for `what` is over.
+    ///
+    /// # Errors
+    /// See [`Game::command`].
+    pub fn passed(&mut self, game: &mut Game, what: &str) -> Result<bool> {
+        let frames = game.frame()?.saturating_sub(self.start_frame);
+        if frames <= self.frames {
+            return Ok(false);
+        }
+        let elapsed = self.start.elapsed();
+        if elapsed < MIN_WAIT {
+            if !self.said {
+                eprintln!(
+                    "harness: still waiting for {what} after {frames} frames ({:.1} s)",
+                    elapsed.as_secs_f64()
+                );
+                self.said = true;
+            }
+            return Ok(false);
+        }
+        Ok(true)
     }
 }
 
