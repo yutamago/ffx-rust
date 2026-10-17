@@ -239,4 +239,18 @@ pub mod bridge {
         mem.write(v.wrapping_add(0xc2), x);
         cmd.wrapping_add(4)
     }
+
+    /// `NkzTidusLimitTableA(i)` (`0x00a5cb30`) and `NkzTidusLimitTableB`
+    /// (`0x00a5cb80`): entry `i` of a four-entry local table (24, 20, 20,
+    /// 18 and 11, 12, 13, 14); indices past it read the original's stack,
+    /// this gives 0.
+    #[must_use]
+    pub fn nkz_tidus_limit_table(table: u32, i: u32) -> u32 {
+        let t: [u32; 4] = if table == 0 {
+            [0x18, 0x14, 0x14, 0x12]
+        } else {
+            [0xb, 0xc, 0xd, 0xe]
+        };
+        t.get(i as usize).copied().unwrap_or(0)
+    }
 }

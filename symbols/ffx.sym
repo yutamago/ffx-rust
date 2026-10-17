@@ -9941,11 +9941,15 @@
 0x00a59760 function AbmapForNodeAndLinked     # (node, f, arg): f on the node, then on the other end of each link (+0xa808, 0x14 bytes) touching it, until non-zero
 0x00a59990 function AbmapState_MovingToTarget # fh v3:exact+call.cs 0x00a59990
 0x00a59e80 function AbmapState_HomeOnNode     # fh v3:exact 0x00a59e80 +AbmapState_HomeOnNode
+0x00a5a2e0 function AbmapMarkLockedEntries    # (pad): each menu pad entry's byte 0 = the current character's save lacks the bit its +4 word names (u16s from save +0x3e); name ours
 0x00a5a360 function AbmapMakeLinkMatrix       # (out, a, b, scale): scale matrix (from the zero register), translation a + b (i16 x, y)
+0x00a5a760 function AbmapLinkCells            # (link): both end nodes' cells on the 20-wide map ((x+0xa00)/256 + (y+0x920)/256 * 20) into +8/+0xa; LoadAbmap; name ours
 0x00a5a800 function AbmapCalcLinkPoints       # fh v3:exact 0x00a5a800 +AbmapCalcLinkPoints
 0x00a5a990 function AbmapSetChrMarker         # (chr): marker +0x11088 + 0x50 chr on its node +0x44: x, y, 0, 1; +0x3c half the kind size + 3.0
 0x00a5ad30 function AbmapMakeNodeMatrix       # (out, pos, scale): scale matrix (from the zero register), translation the i16 position, 1.0 (7 callers)
+0x00a5adf0 function AbmapSetKindSizes         # (src): op_oef2_a_get(src, 2, id) u16s +0xc/+0xe of the eight kinds (ids 0x00c86008) into g_Abmap +0xf808; name ours
 0x00a5b030 function AbmapResetCursorCamera    # (): +0x115a0 = 256.0, current character's position (+0x11088 + 0x50 * +0x115bc) to +0x11520 (y - 32.0, w twice the distance), its colour (0x00c86010) to +0x11560, then AbmapPulseCursor; name ours
+0x00a5b140 function AbmapCollectNodeLinks     # (): each used node's links (g_Abmap +0xa808) into its five slots +0xc, the rest cleared; LoadAbmap; name ours
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
 0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
@@ -9961,6 +9965,8 @@
 0x00a5ca80 function NkzGetLuluLimitMidareCount   # layout: alphabetical run between NkzGetAuronLimitTime and NkzGetLuluLimitTime (1 unnamed in the gap); Switch 0x71003c81e0 NkzGetLuluLimitMidareCount is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00a5cb10 function NkzGetLuluLimitTime       # fh v3:bsim1.00 0x00a5cb10
 0x00a5cb20 function NkzGetMonsterListNum      # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
+0x00a5cb30 function NkzTidusLimitTableA       # (i) -> 24, 20, 20, 18 [i] (a local table); TOBtlOpenTidusLimitWindow; name ours
+0x00a5cb80 function NkzTidusLimitTableB       # (i) -> 11, 12, 13, 14 [i]; TOBtlOpenTidusLimitWindow; name ours
 0x00a5cbd0 function NkzGetTidusLimitTime      # fh v3:bsim1.00 0x00a5cbd0
 0x00a5cbe0 function AbmapScaledLevelValue     # (level, i, j): 100000 for j 4, else ftol(T[i] * (level + 50) * T[j]), T = 1, 1, 1.5, 3, 5; name ours
 0x00a5cc70 function NkzSetLuluLimitTbl        # fh v3:exact 0x00a5cc70
