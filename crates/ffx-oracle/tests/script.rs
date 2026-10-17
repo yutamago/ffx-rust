@@ -1540,7 +1540,7 @@ const ZEROED: [(u32, &[u8]); 3] = [
     (0x0086_ea8a, &[0x31, 0xf6, 0x90]),
 ];
 
-const UNINIT: [Uninit; 7] = [
+const UNINIT: [Uninit; 8] = [
     // 0x007bb6a0 (Native_CamSetPos and its "ref" twin) hands Cam_SetPos a
     // vector of three popped floats whose w ([ebp-8]) it never writes;
     // Cam_SetPos copies it into the camera and the VU0 registers. Site: the
@@ -1615,6 +1615,19 @@ const UNINIT: [Uninit; 7] = [
         stub: &[
             0x58, 0xc7, 0x45, 0xfc, 0, 0, 0, 0, 0xc7, 0x45, 0xf8, 0, 0, 0, 0, 0x83, 0xec, 0x08,
             0x57, 0xff, 0x75, 0x08, 0xff, 0xe0,
+        ],
+        fixup: None,
+    },
+    // 0x007a87f0 (the turn steps behind Native_702c) reads the direction
+    // MsGetChrDir leaves at [ebp-8] and the angle at [ebp-4], unwritten
+    // for some actors. Site: sub esp, 8; lea eax, [ebp-8]. Stub: pop ecx;
+    // mov dword [ebp-4], 0; mov dword [ebp-8], 0; those two; jmp ecx
+    Uninit {
+        site: 0x007a_87f3,
+        site_len: 6,
+        stub: &[
+            0x59, 0xc7, 0x45, 0xfc, 0, 0, 0, 0, 0xc7, 0x45, 0xf8, 0, 0, 0, 0, 0x83, 0xec, 0x08,
+            0x8d, 0x45, 0xf8, 0xff, 0xe1,
         ],
         fixup: None,
     },
@@ -2813,6 +2826,30 @@ fn move_and_message_cases_match_the_original() {
                 &format!("wait poll {poll:#x} state {st}"),
             );
             native_case(a, b, w, end, &[], &format!("wait end {end:#x} state {st}"));
+        }
+    }
+    // the battle flag bytes: set every selector with an odd and an even
+    // value, read each back
+    for k in (0u32..=27).filter(|k| ![0, 10, 11, 21, 22].contains(k)) {
+        for v in [0x35u32, 0x82] {
+            native_case(
+                a,
+                b,
+                w,
+                0x007a_81f0,
+                &[int(k), int(v)],
+                &format!("707d k {k} v {v:#x}"),
+            );
+            for r in 0u32..=27 {
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x007a_27e0,
+                    &[int(r)],
+                    &format!("707e k {r} after {k}"),
+                );
+            }
         }
     }
     // the 0x0267 choice poll on each state
