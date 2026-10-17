@@ -8,6 +8,7 @@ use ffx_graphic::{cache, managers, scene, ui, vfx};
 
 use ffx_graphic::state::bridge as st;
 use ffx_graphic::texanim::bridge as ta;
+use ffx_graphic::util::bridge as ut;
 use managers::bridge as mg;
 use scene::bridge as sc;
 
@@ -933,6 +934,53 @@ ported! {
     /// `graphicUpdateCrossFade(weight, time)`.
     graphicUpdateCrossFade @ 0x0064_4910 => extern "C" fn graphic_update_cross_fade(weight: u32, time: u32) -> u32 {
         st::update_cross_fade(&mut mem(), weight, time)
+    }
+    /// `PhyreScene_setObjectTranslation(this, id, pos)`.
+    PhyreScene_setObjectTranslation @ 0x0066_e3e0 => extern "thiscall" fn scene_set_object_translation(this: u32, id: u32, pos: u32) -> u32 {
+        st::scene_set_object_translation(&mut mem(), this, id, pos)
+    }
+    /// `ObjectTree_Find(this, &key)`: the scene's object tree (the same
+    /// code as `DynGeoTree_Find`).
+    ObjectTree_Find @ 0x0064_b9f0 => extern "thiscall" fn object_tree_find(this: u32, key: u32) -> u32 {
+        mg::tree_find(&mem(), this, key)
+    }
+    /// `graphicCharacterLightingSetShadeCoeff(list, coeff)`.
+    graphicCharacterLightingSetShadeCoeff @ 0x0063_cdd0 => extern "C" fn graphic_lighting_set_shade_coeff(list: u32, coeff: f32) {
+        st::lighting_set_shade_coeff(&mut mem(), list, coeff);
+    }
+
+    // ---- small helpers (round 6) ----
+    /// `ClipOutcode(v)`.
+    ClipOutcode @ 0x0065_2470 => extern "C" fn clip_outcode(v: u32) -> u32 {
+        ut::clip_outcode(&mem(), v)
+    }
+    /// `graphicIsMapInList()`.
+    graphicIsMapInList @ 0x0064_2610 => extern "C" fn graphic_is_map_in_list() -> u32 {
+        ut::is_map_in_list(&mem())
+    }
+    /// `Vec3_UninitializedCopy(first, last, dest)`.
+    Vec3_UninitializedCopy @ 0x006b_4f80 => extern "C" fn vec3_uninitialized_copy(first: u32, last: u32, dest: u32) -> u32 {
+        ut::vec3_uninitialized_copy(&mut mem(), first, last, dest)
+    }
+    /// `ShadowManager_GetCascadeMatrix(this, out, i)`.
+    ShadowManager_GetCascadeMatrix @ 0x006d_23a0 => extern "thiscall" fn shadow_get_cascade_matrix(this: u32, out: u32, i: u32) -> u32 {
+        ut::shadow_get_cascade_matrix(&mut mem(), this, out, i)
+    }
+    /// `FloatHeap_AdjustHeap(base, hole, len, &value, less)`.
+    FloatHeap_AdjustHeap @ 0x006c_7250 => extern "C" fn float_adjust_heap(base: u32, hole: u32, len: u32, value: u32, less: u32) -> u32 {
+        ut::float_adjust_heap(&mut mem(), base, hole, len, value, less)
+    }
+    /// `MapIterator_Decrement(it)`.
+    MapIterator_Decrement @ 0x0064_f360 => extern "fastcall" fn map_iterator_decrement(it: u32) -> u32 {
+        ut::map_iterator_decrement(&mut mem(), it)
+    }
+    /// `UIntTree_Find(this, &key)` (the same code as `DynGeoTree_Find`).
+    UIntTree_Find @ 0x006b_e700 => extern "thiscall" fn uint_tree_find(this: u32, key: u32) -> u32 {
+        mg::tree_find(&mem(), this, key)
+    }
+    /// `PStringTree_Find(this, &key)`.
+    PStringTree_Find @ 0x006b_e750 => extern "thiscall" fn pstring_tree_find(this: u32, key: u32) -> u32 {
+        ut::pstring_tree_find(&mem(), this, key)
     }
 }
 

@@ -7,7 +7,10 @@ against the originals by `crates/ffx-oracle/tests/render.rs`.
 
 PhyreEngine and the C++ objects built on it (meshes, dynamic geometry,
 clusters) are library code: the ports call their methods through
-`ffx_graphic::host::Host`, never reimplement them.
+`ffx_graphic::host::Host`, never reimplement them. `Host::call_st0`
+reads a callee's float result from `ST0` (as the caller's `fstp m32`
+stores it), through float-returning function signatures, no inline
+assembly.
 
 ## Effect render data
 
@@ -388,6 +391,21 @@ copies one bone's default back (the first mesh having it, from table
 entry 1). `graphicCharacterInstanceSetVisible(list, v)` (`0x0063c390`)
 sets `list +0x14` and each mesh's visibility.
 
+Object translation: `PhyreScene_setObjectTranslation(id, pos)`
+(`0x0066e3e0`), with the object tree up (`+0x10d4`), finds `id` in the
+tree at scene `+0x1198` (`ObjectTree_Find`, `0x0064b9f0`; the node's
+`+0x10` a list: `+0` count, `+8` meshes) and gives each mesh's 3x4 world
+matrix (`*(mesh +4)`) the translation row `(-x, -y, z)` (words 8-10,
+the others rewritten as they were); each mesh's draw entry (`*(mesh
++0x1c) +0xc`) then points at it. Returns 0.
+
+Shade coefficient: `graphicCharacterLightingSetShadeCoeff(list, c)`
+(`0x0063cdd0`) takes `Phyre_CharacterLighting_calcShadeCoeffWithConfidence(list,
+c, 0)` (an `ST0` result), forced to 1.0 on maps `0x226d` and `0x1739` and
+back to `c` on `0x1c45`, `0xf62` and `0xc04` (the current level hash), sets
+it on each character and reports it to the tweak utility's debug hook
+with mode 1 when `|result - c| > 0.1`, else 2.
+
 2D layers: scene `+0x1140` an array of `+0x1138` entries of 8 bytes (`+0`
 shown, `+1` group (signed byte), `+2` id (signed `i16`), `+4` the mesh),
 `+0x11d8` the current group, `+0x1128` non-zero when there are layers.
@@ -459,12 +477,6 @@ switch setters (`SetByte123b*`, `setAllSwitches`, `isEffectAllowed`,
 `setCrossFadeCaptureEnable`), `ShadowManager` map bookkeeping,
 `SpecularMapParamsManager_needDrawSpecularPass`, `Distortion_updateVertex`.
 
-Not ported yet, game state, waiting on a float-returning host call:
-`graphicCharacterLightingSetShadeCoeff` (`0x0063cdd0`; per-map overrides
-of `Phyre_CharacterLighting_calcShadeCoeffWithConfidence`'s `ST0`
-result: 1.0 on maps `0x226d`, `0x1739`, the caller's value on `0x1c45`,
-`0xf62`, `0xc04`), and `PhyreScene_setObjectTranslation` (`0x0066e3e0`).
-
 Dead by `symbols/classes.tsv` (no reference anywhere in the image), so
 not hooked; their behaviour above is still checked by the oracle test:
 `graphicCharacterInstanceRemoveFromPipeline`, `graphicPushTip`,
@@ -490,3 +502,30 @@ Not ported; listed for mod tools:
 - The tweak-util hooks the shipping code still calls
   (`Phyre_CharacterLightingTweakUtil_setShadeCoeff_dbgHook`,
   `PostProcessTweakUtil`): live tuning of lighting and post-processing.
+
+## Helpers
+
+Small functions the render layer's callers rely on
+(`crates/ffx-graphic/src/util.rs`):
+
+- `ClipOutcode(v)` (`0x00652470`): for `(x, y, z, w)`, bits 0-2 set when
+  `x - w`, `y - w`, `z - w` (each stored as a float) are above 0, bits
+  3-5 when `w + x`, `w + y`, `w + z` are below 0; a NaN sets nothing.
+- `graphicIsMapInList()` (`0x00642610`): 1 for the map ids `0x118`,
+  `0x52`, `0x51`, `0xde`, `0x13c`, `0x17d`, `0x5d`, `0x12`, `0x15d`,
+  `0xf8`, `0x99`, `0xb3`, `0x50`, `0x137`, `0x16b`, `0x84` (in
+  `0x01330844`).
+- `ShadowManager_GetCascadeMatrix(out, i)` (`0x006d23a0`): the 4x4 at
+  `+0x210 + 64 i`.
+- Containers: `Vec3_UninitializedCopy` (`0x006b4f80`; a null destination
+  skips only the first element), `FloatHeap_AdjustHeap` (`0x006c7250`,
+  `std::_Adjust_heap` with a `less` callback; floats move through
+  `fld`/`fstp`), `MapIterator_Decrement` (`0x0064f360`), the search-tree
+  finds `ObjectTree_Find`, `UIntTree_Find` (`0x006be700`, the same code as
+  `DynGeoTree_Find`) and `PStringTree_Find` (`0x006be750`, by `PString`
+  text: the pointer without its flag bit, `strcmp` order, by pointer when
+  either is null).
+
+Not ported: `0x0064e9e0`, a `PString` buffer release, decrements its
+reference count with `lock xadd`; game memory access through `Mem` is
+not atomic, and loader threads share strings, so it stays original.

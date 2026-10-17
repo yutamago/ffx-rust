@@ -99,6 +99,27 @@ impl Host for G<'_> {
         };
         self.0.call(addr, conv, args).unwrap().eax
     }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        let r = self.0.call(addr, conv, args).unwrap();
+        let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
+            panic!("call_st0 {addr:#x}: no float in ST0");
+        };
+        // as `fstp m32`: a NaN keeps its sign and top fraction bits
+        let bits = if v.is_nan() {
+            let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
+            let sign = u32::from(raw[9] >> 7) << 31;
+            sign | 0x7fc0_0000 | ((mant >> 40) as u32 & 0x007f_ffff)
+        } else {
+            ffx_bridge::x87::store(v)
+        };
+        f32::from_bits(bits)
+    }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
         // the diff leaves the stacks out, as the originals' frames are
@@ -3795,5 +3816,361 @@ fn snapshot_scene_state_matches_the_original() {
             st::scene_set_2d_layer_shown(g, scene, id, show);
             Out::None
         });
+    }
+}
+
+// ---- round 6 ----
+
+/// Puts a stub over the original at `sym` that leaves the float at a
+/// fresh cell in `ST0` and then records the call like [`Twins::stub`]
+/// (`thiscall`, `n` arguments). Returns the cell.
+fn stub_st0(t: &mut Twins, sym: u32, n: u32, value: f32) -> u32 {
+    let cell = t.alloc(&value.to_le_bytes());
+    let rec = t.stub(None, sym, true, n, n, 0);
+    let at = t.rebase(sym);
+    let mut c = vec![0xd9, 0x05];
+    c.extend(cell.to_le_bytes()); // fld dword [cell]
+    c.push(0xe9);
+    c.extend(rec.wrapping_sub(at + 11).to_le_bytes()); // jmp rec
+    t.write(at, &c);
+    cell
+}
+
+/// A search tree (head `+0xc` root; nodes `+0`/`+4` children, `+0xc`
+/// key, `+0x10` value) holding `keys` with values from `value`, linked by
+/// insertion. Returns the head.
+fn build_key_tree(t: &mut Twins, keys: &[u32], mut value: impl FnMut(&mut Twins) -> u32) -> u32 {
+    let head = t.zeros(0x20);
+    t.w32(head + 0xc, head);
+    for &k in keys {
+        let n = t.zeros(0x20);
+        t.w32(n, head);
+        t.w32(n + 4, head);
+        t.w32(n + 0xc, k);
+        let v = value(t);
+        t.w32(n + 0x10, v);
+        let mut at = head + 0xc;
+        loop {
+            let cur = t.r32(at);
+            if cur == head {
+                t.w32(at, n);
+                break;
+            }
+            let ck = t.r32(cur + 0xc);
+            if k == ck {
+                break;
+            }
+            at = cur + if k < ck { 0 } else { 4 };
+        }
+    }
+    head
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round6_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x6006_0006);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 3 {
+            0 => {
+                let scene = build_scene(&mut t, &mut rng);
+                let l = t.zeros(0x20);
+                t.global(st::CHARACTER_LIGHTING.sym, l);
+                let tweak = t.zeros(0x20);
+                t.global(st::LIGHTING_TWEAK.sym, tweak);
+                let _ = scene;
+                let coeff = rng.float();
+                let c = match rng.below(4) {
+                    0 => coeff + (rng.below(30) as f32 - 15.0) / 100.0,
+                    1 => coeff,
+                    _ => rng.float(),
+                };
+                stub_st0(&mut t, st::LIGHTING_CALC_SHADE_COEFF, 3, c);
+                let hash = [0x226d, 0x1739, 0x1c45, 0xf62, 0xc04, 0x123, rng.next()]
+                    [rng.below(7) as usize];
+                t.stub_sym(
+                    st::SCENE_CURRENT_LEVEL_NAME_HASH,
+                    Conv::Thiscall(0),
+                    0,
+                    hash,
+                );
+                t.stub_sym(
+                    st::LIGHTING_SET_SHADE_COEFF,
+                    Conv::Thiscall(0),
+                    2,
+                    rng.next(),
+                );
+                t.stub_sym(
+                    st::LIGHTING_TWEAK_SET_SHADE_COEFF,
+                    Conv::Thiscall(0),
+                    3,
+                    rng.next(),
+                );
+                let list = if rng.chance(6) {
+                    0
+                } else {
+                    let n = rng.below(4);
+                    let items: Vec<u8> = (0..n).flat_map(|_| rng.next().to_le_bytes()).collect();
+                    let items = t.alloc(&items);
+                    let list = t.zeros(0x20);
+                    t.w32(list, n | (rng.next() & 0x8000_0000));
+                    t.w32(list + 4, items);
+                    list
+                };
+                t.check(
+                    &what,
+                    0x0063_cdd0,
+                    Conv::Cdecl,
+                    &[list, coeff.to_bits()],
+                    |g| {
+                        st::lighting_set_shade_coeff(g, list, coeff);
+                        Out::None
+                    },
+                );
+            }
+            _ => {
+                let scene = build_scene(&mut t, &mut rng);
+                t.w32(scene + 0x10d4, u32::from(!rng.chance(6)));
+                let keys: Vec<u32> = (0..rng.below(8)).map(|_| rng.below(20)).collect();
+                let head = build_key_tree(&mut t, &keys, |t| {
+                    let n = rng.below(4);
+                    let mut meshes = Vec::new();
+                    for _ in 0..n {
+                        let mesh = t.alloc(&rng.bytes(0x20));
+                        let world = t.alloc(&float_bytes(&mut rng, 12));
+                        t.w32(mesh + 4, world);
+                        let draw = t.alloc(&rng.bytes(0x20));
+                        t.w32(mesh + 0x1c, draw);
+                        meshes.extend(mesh.to_le_bytes());
+                    }
+                    let meshes = t.alloc(&meshes);
+                    let list = t.zeros(0x10);
+                    t.w32(list, n);
+                    t.w32(list + 8, meshes);
+                    list
+                });
+                // the scene's tree is embedded: copy the head in
+                let h: Vec<u8> = (0..0x10).map(|i| t.r8(head + i)).collect();
+                let tree = scene + 0x1198;
+                t.write(tree, &h);
+                // nodes point back at the old head; relink them
+                let mut stack = vec![t.r32(tree + 0xc)];
+                if stack[0] == head {
+                    t.w32(tree + 0xc, tree);
+                    stack.clear();
+                }
+                while let Some(n) = stack.pop() {
+                    for off in [0, 4] {
+                        let c = t.r32(n + off);
+                        if c == head {
+                            t.w32(n + off, tree);
+                        } else {
+                            stack.push(c);
+                        }
+                    }
+                }
+                let id = if rng.chance(5) {
+                    rng.next()
+                } else {
+                    rng.below(20)
+                };
+                if round % 3 == 1 {
+                    let pos = t.alloc(&float_bytes(&mut rng, 3));
+                    t.check(&what, 0x0066_e3e0, Conv::Thiscall(scene), &[id, pos], |g| {
+                        Out::U32(st::scene_set_object_translation(g, scene, id, pos))
+                    });
+                } else {
+                    let key = t.alloc(&id.to_le_bytes());
+                    t.check(&what, 0x0064_b9f0, Conv::Thiscall(tree), &[key], |g| {
+                        Out::U32(managers::bridge::tree_find(g, tree, key))
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// A `std::map` of `n` nodes (MSVC layout: `+0` left, `+4` parent, `+8`
+/// right, `+0xd` the head flag), balanced; returns the head and the nodes
+/// in order.
+fn build_std_map(t: &mut Twins, n: usize) -> (u32, Vec<u32>) {
+    fn link(t: &mut Twins, nodes: &[u32], head: u32, parent: u32) -> u32 {
+        if nodes.is_empty() {
+            return head;
+        }
+        let mid = nodes.len() / 2;
+        let node = nodes[mid];
+        t.w32(node + 4, parent);
+        let l = link(t, &nodes[..mid], head, node);
+        let r = link(t, &nodes[mid + 1..], head, node);
+        t.w32(node, l);
+        t.w32(node + 8, r);
+        node
+    }
+    let head = t.zeros(0x20);
+    t.w8(head + 0xd, 1);
+    let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+    let root = link(t, &nodes, head, head);
+    t.w32(head + 4, root);
+    t.w32(head, nodes.first().copied().unwrap_or(head));
+    t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+    (head, nodes)
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one case per function
+fn round6_helpers_match_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x6006_0007);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 7 {
+            0 => {
+                let mut v: Vec<f32> = (0..4).map(|_| rng.float()).collect();
+                if rng.chance(2) {
+                    for i in 0..3 {
+                        v[i] = v[3] * [1.0, -1.0, 0.5, 2.0, -2.0][rng.below(5) as usize];
+                    }
+                }
+                let p = t.alloc(&v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>());
+                t.check(&what, 0x0065_2470, Conv::Cdecl, &[p], |g| {
+                    Out::U32(ut::clip_outcode(g, p))
+                });
+            }
+            1 => {
+                let id = if rng.chance(2) {
+                    ut::LISTED_MAPS[rng.below(16) as usize]
+                } else {
+                    rng.below(0x200)
+                };
+                t.global(ut::MAP_ID.sym, id);
+                t.check(&what, 0x0064_2610, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::is_map_in_list(g))
+                });
+            }
+            2 => {
+                let n = rng.below(6);
+                let src = t.alloc(&rng.bytes(12 * n as usize + 4));
+                // a null dest only skips the first element (the next is at 0xc)
+                let dest = if n <= 1 && rng.chance(2) {
+                    0
+                } else {
+                    t.zeros(12 * n as usize + 4)
+                };
+                t.check(
+                    &what,
+                    0x006b_4f80,
+                    Conv::Cdecl,
+                    &[src, src + 12 * n, dest],
+                    |g| Out::U32(ut::vec3_uninitialized_copy(g, src, src + 12 * n, dest)),
+                );
+                let obj = t.alloc(&rng.bytes(0x210 + 64 * 4));
+                let out = t.zeros(64);
+                let i = rng.below(4);
+                t.check(&what, 0x006d_23a0, Conv::Thiscall(obj), &[out, i], |g| {
+                    Out::U32(ut::shadow_get_cascade_matrix(g, obj, out, i))
+                });
+            }
+            3 => {
+                // a float `less` (cdecl): al = a < b, in the cave (code runs there)
+                let less = t.cave_next;
+                let code = [
+                    0xd9, 0x44, 0x24, 0x04, 0xd8, 0x5c, 0x24, 0x08, 0xdf, 0xe0, 0xf6, 0xc4, 0x01,
+                    0x0f, 0x95, 0xc0, 0xc3,
+                ];
+                t.write(less, &code);
+                t.cave_next += code.len() as u32;
+                let n = 1 + rng.below(12);
+                let base = t.alloc(&float_bytes(&mut rng, n as usize));
+                let len = 1 + rng.below(n);
+                let hole = rng.below(len);
+                let value = t.alloc(&float_bytes(&mut rng, 1));
+                t.check(
+                    &what,
+                    0x006c_7250,
+                    Conv::Cdecl,
+                    &[base, hole, len, value, less],
+                    |g| Out::U32(ut::float_adjust_heap(g, base, hole, len, value, less)),
+                );
+            }
+            4 => {
+                let (head, nodes) = build_std_map(&mut t, rng.below(9) as usize);
+                let node = if nodes.is_empty() || rng.chance(5) {
+                    head
+                } else {
+                    nodes[rng.below(nodes.len() as u32) as usize]
+                };
+                let it = t.alloc(&node.to_le_bytes());
+                t.check(&what, 0x0064_f360, Conv::Fastcall, &[it], |g| {
+                    Out::U32(ut::map_iterator_decrement(g, it))
+                });
+            }
+            5 => {
+                let keys: Vec<u32> = (0..rng.below(8)).map(|_| rng.below(20)).collect();
+                let head = build_key_tree(&mut t, &keys, |_| 0);
+                let key = t.alloc(&rng.below(22).to_le_bytes());
+                t.check(&what, 0x006b_e700, Conv::Thiscall(head), &[key], |g| {
+                    Out::U32(managers::bridge::tree_find(g, head, key))
+                });
+            }
+            _ => {
+                let words = ["", "a", "ab", "abc", "b", "ba", "bsil", "bsil0000", "z"];
+                let text = |t: &mut Twins, rng: &mut Rng| -> u32 {
+                    if rng.chance(8) {
+                        return rng.below(2);
+                    }
+                    let w = words[rng.below(words.len() as u32) as usize];
+                    let mut b = w.as_bytes().to_vec();
+                    b.push(0);
+                    t.alloc(&b) | rng.below(2)
+                };
+                // a tree of distinct texts, inserted by the same order
+                let head = t.zeros(0x20);
+                t.w32(head + 0xc, head);
+                let mut placed: Vec<String> = Vec::new();
+                for _ in 0..rng.below(8) {
+                    let w = words[rng.below(words.len() as u32) as usize].to_string();
+                    if placed.contains(&w) {
+                        continue;
+                    }
+                    let mut b = w.as_bytes().to_vec();
+                    b.push(0);
+                    let p = t.alloc(&b) | rng.below(2);
+                    let n = t.zeros(0x20);
+                    t.w32(n, head);
+                    t.w32(n + 4, head);
+                    t.w32(n + 0xc, p);
+                    let mut at = head + 0xc;
+                    loop {
+                        let cur = t.r32(at);
+                        if cur == head {
+                            t.w32(at, n);
+                            break;
+                        }
+                        let cw = &placed[(t.r32(cur + 0x10)) as usize];
+                        at = cur + if w.as_str() < cw.as_str() { 0 } else { 4 };
+                    }
+                    t.w32(n + 0x10, placed.len() as u32);
+                    placed.push(w);
+                }
+                let k = text(&mut t, &mut rng);
+                let key = t.alloc(&k.to_le_bytes());
+                t.check(&what, 0x006b_e750, Conv::Thiscall(head), &[key], |g| {
+                    Out::U32(ut::pstring_tree_find(g, head, key))
+                });
+            }
+        }
     }
 }

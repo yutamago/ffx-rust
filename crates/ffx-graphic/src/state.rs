@@ -24,6 +24,8 @@ pub mod bridge {
     pub const CHARACTER_LIGHTING: Global<u32> = Global::new(0x00cc_ca84);
     /// `g_FogEffectManager` (`Phyre_FogEffectManager_GetInstance`).
     pub const FOG_EFFECT: Global<u32> = Global::new(0x00ce_5170);
+    /// `g_CharacterLightingTweakUtil` (`Phyre_CharacterLightingTweakUtil_GetInstance`).
+    pub const LIGHTING_TWEAK: Global<u32> = Global::new(0x00cc_ca88);
     /// `g_AsyncLoadManager` (`AsyncLoadManager_sGetInstance`).
     pub const ASYNC_LOAD: Global<u32> = Global::new(0x00cc_c88c);
     /// `g_GraphicUi`: the menu manager (`graphicFontSetUiShadowType` tests it).
@@ -77,6 +79,10 @@ pub mod bridge {
     pub const POST_PROCESS_SET_FOCUS_DEPTH: u32 = 0x0069_8550;
     pub const MENU_SET_FONT_SHADOW: u32 = 0x0067_e4e0;
     pub const SCENE_SET_TEXTURE_VIDEO_INFO: u32 = 0x0066_e800;
+    pub const SCENE_CURRENT_LEVEL_NAME_HASH: u32 = 0x0065_de90;
+    pub const LIGHTING_CALC_SHADE_COEFF: u32 = 0x006a_77a0;
+    pub const LIGHTING_SET_SHADE_COEFF: u32 = 0x006a_aef0;
+    pub const LIGHTING_TWEAK_SET_SHADE_COEFF: u32 = 0x006a_afc0;
     pub const POST_PROCESS_SET_CROSS_FADE_WEIGHT: u32 = 0x0069_84b0;
     pub const POST_PROCESS_SET_CROSS_FADE_TIME: u32 = 0x0069_84a0;
     pub const TIP_PUSH: u32 = 0x006e_8810;
@@ -735,6 +741,101 @@ pub mod bridge {
         let world: u32 = h.read(mesh + 4);
         h.write(draw + 0xc, world);
         world
+    }
+
+    /// `PhyreScene_setObjectTranslation(this, id, pos)`: with the object
+    /// tree up (`+0x10d4`), the object `id`'s meshes (the tree at
+    /// `+0x1198` maps it to a list: `+0` count, `+8` the meshes) get the
+    /// translation row of their 3x4 world matrix (`*(mesh +4)`, words
+    /// 8-10) set to `(-x, -y, z)`, the rest rewritten as it was; each
+    /// mesh's draw entry then points at it. Returns 0.
+    pub fn scene_set_object_translation(m: &mut impl Mem, scene: u32, id: u32, pos: u32) -> u32 {
+        use crate::managers::bridge::tree_find_key;
+        if m.read::<u32>(scene + 0x10d4) == 0 {
+            return 0;
+        }
+        let tree = scene + 0x1198;
+        let node = tree_find_key(m, tree, id);
+        if node == 0 || node.wrapping_add(0x10) == 0 {
+            return 0;
+        }
+        let node = tree_find_key(m, tree, id);
+        let value = if node == 0 { 0 } else { node + 0x10 };
+        let list: u32 = m.read(value);
+        let mut i = 0;
+        while i < m.read::<u32>(list) {
+            let meshes: u32 = m.read(list + 8);
+            let mesh: u32 = m.read(meshes + 4 * i);
+            let world: u32 = m.read(mesh + 4);
+            let old = words::<12>(m, world);
+            i += 1;
+            let [x, y, z] = words::<3>(m, pos).map(|w| float_bits(f32::from_bits(w)));
+            let t = [x ^ 0x8000_0000, y ^ 0x8000_0000, z];
+            for (k, v) in (0u32..).zip(old) {
+                let v = match k {
+                    8..=10 => t[k as usize - 8],
+                    _ => float_bits(f32::from_bits(v)),
+                };
+                m.write(world + 4 * k, v);
+            }
+            let meshes: u32 = m.read(list + 8);
+            let mesh: u32 = m.read(meshes + 4 * (i - 1));
+            let draw: u32 = m.read(mesh + 0x1c);
+            let world: u32 = m.read(mesh + 4);
+            m.write(draw + 0xc, world);
+        }
+        0
+    }
+
+    /// `graphicCharacterLightingSetShadeCoeff(list, coeff)`: the shade
+    /// coefficient `Phyre_CharacterLighting_calcShadeCoeffWithConfidence`
+    /// derives from `coeff` (1.0 on maps `0x226d` and `0x1739`, `coeff`
+    /// itself on `0x1c45`, `0xf62` and `0xc04`) to each character of the
+    /// list, and to the tweak utility's hook with mode 1 when it is more
+    /// than 0.1 from `coeff`, else 2.
+    pub fn lighting_set_shade_coeff(h: &mut impl Host, list: u32, coeff: f32) {
+        if list == 0 {
+            return;
+        }
+        let arg = float_bits(coeff);
+        let l = CHARACTER_LIGHTING.get(h);
+        let mut c = h.call_sym_st0(
+            LIGHTING_CALC_SHADE_COEFF,
+            Conv::Thiscall(l),
+            &[list, arg, 0],
+        );
+        let scene = SCENE.get(h);
+        let hash = h.call_sym(SCENE_CURRENT_LEVEL_NAME_HASH, Conv::Thiscall(scene), &[]);
+        if hash == 0x226d || hash == 0x1739 {
+            c = 1.0;
+        }
+        if hash == 0x1c45 || hash == 0xf62 || hash == 0xc04 {
+            c = f32::from_bits(arg);
+        }
+        let count = h.read::<u32>(list) & 0x7fff_ffff;
+        if count == 0 {
+            return;
+        }
+        let c = c.to_bits();
+        // |c - coeff|, as stored
+        let d = x87::store(x87::sub(x87::load(c), x87::load(arg))) & 0x7fff_ffff;
+        let d = x87::load(d);
+        // fcomp 0.1; test ah, 0x41: 1 only when greater (not unordered)
+        let mode = if d > f64::from(0.1f32) { 1 } else { 2 };
+        let mut i = 0;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let items: u32 = h.read(list + 4);
+            let chr: u32 = h.read(items + 4 * i);
+            let l = CHARACTER_LIGHTING.get(h);
+            h.call_sym(LIGHTING_SET_SHADE_COEFF, Conv::Thiscall(l), &[chr, c]);
+            let tweak = LIGHTING_TWEAK.get(h);
+            h.call_sym(
+                LIGHTING_TWEAK_SET_SHADE_COEFF,
+                Conv::Thiscall(tweak),
+                &[chr, c, mode],
+            );
+            i += 1;
+        }
     }
 
     /// `graphicSetTextureVideoInfo(a, b)`: `PhyreScene_setTextureVideoInfo`
