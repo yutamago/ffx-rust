@@ -842,7 +842,7 @@ pub mod bridge {
         call(mem, f, &[data, kind, id])
     }
 
-    /// `rcefSetVibrate(id, arg)` (`0x0092ec60`; Fahrenheit's Switch BSim
+    /// `rcefSetVibrate(id, arg)` (`0x0092ec60`; the Fahrenheit Switch `BSim`
     /// guess was `rcefStreamCue`): `TkSetVibrateStream(7, arg, entry)` of
     /// the effect data's kind 5 entry `id`, its `eax`.
     pub fn rcef_set_vibrate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
