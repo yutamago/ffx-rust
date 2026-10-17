@@ -164,6 +164,8 @@ pub const MODEL_DELETE: u32 = 0x0092_8000;
 pub const MODEL_UPDATE: u32 = 0x0092_83e0;
 /// See [`MODEL_DELETE`].
 pub const MODEL_DRAW: u32 = 0x0092_8020;
+/// `rcbgSceneDraw(scene)` (`0x00920740`).
+pub const SCENE_DRAW: u32 = 0x0092_0740;
 /// `rcFree` (`0x009258e0`): a jump to `user_free`; the `rcbg*Fini`
 /// functions free through it.
 pub const RC_FREE: u32 = 0x0092_58e0;
@@ -890,6 +892,28 @@ pub mod bridge {
             return None;
         }
         Some(mem.read::<u32>(m.wrapping_add(8))).filter(|&c| c != 0)
+    }
+
+    /// `Yn_DrawScene()` (`0x0091a240`, through `0x00921a10` and
+    /// `0x009215e0`; name ours): `rcbgSceneDraw` of the map's scene (`+8`,
+    /// which may be 0) when Yn's field state and its map exist. Returns its
+    /// `eax`, or `None` where the original leaves `eax` as it was (no
+    /// state) or holding the state (no map).
+    pub fn yn_draw_scene<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> Option<u32> {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        let m = mem.read::<u32>(s);
+        if m == 0 {
+            return None;
+        }
+        let scene = mem.read::<u32>(m.wrapping_add(8));
+        let f = mem.rebase(super::SCENE_DRAW);
+        Some(call(mem, f, &[scene]))
     }
 
     /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's

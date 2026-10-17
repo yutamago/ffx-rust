@@ -3267,6 +3267,53 @@ ported! {
         yi::bridge::yi_get_fog_color(&mut mem(), out, t, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcefPostRequest(a, f, b, c, d)`.
+    rcefPostRequest @ 0x0092_eba0 => extern "C" fn shim_rcef_post_request(a: u32, f: u32, b: u32, c: u32, d: u32) -> u32 {
+        task::bridge::rcef_post_request(&mut mem(), [a, f, b, c, d])
+    }
+
+    /// `rcEffectTaskRequestWait(task)`.
+    rcEffectTaskRequestWait @ 0x0093_04e0 => extern "C" fn shim_rc_effect_task_request_wait(t: u32) {
+        task::bridge::rc_effect_task_request_wait(&mut mem(), t);
+    }
+
+    /// `rcefAnimeFini(id)`.
+    rcefAnimeFini @ 0x0092_f4a0 => extern "C" fn shim_rcef_anime_fini(id: u32) -> u32 {
+        task::bridge::rcef_anime_fini(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefModelFini(id)`.
+    rcefModelFini @ 0x0092_f710 => extern "C" fn shim_rcef_model_fini(id: u32) -> u32 {
+        task::bridge::rcef_model_fini(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiAnimDetachAll(scene, obj)`.
+    yiAnimDetachAll @ 0x0091_49a0 => extern "C" fn shim_yi_anim_detach_all(scene: u32, obj: u32) -> u32 {
+        yi::bridge::yi_anim_detach_all(&mut mem(), scene, obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_DrawScene()`.
+    Yn_DrawScene @ 0x0091_a240 => extern "C" fn shim_yn_draw_scene() {
+        model::bridge::yn_draw_scene(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapItemEffectAtNode(chr, node, item)`.
+    AbmapItemEffectAtNode @ 0x00a4_93b0 => extern "C" fn shim_abmap_item_effect_at_node(chr: u32, node: u32, item: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_effect_at_node(&mut mem(), [chr, node, item], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapEnterCommandMenu()`.
+    AbmapEnterCommandMenu @ 0x00a5_9950 => extern "C" fn shim_abmap_enter_command_menu() -> u32 {
+        abmap::bridge::abmap_enter_command_menu(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapEnterItemMenu()`.
+    AbmapEnterItemMenu @ 0x00a5_98a0 => extern "C" fn shim_abmap_enter_item_menu() -> u32 {
+        abmap::bridge::abmap_enter_item_menu(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

@@ -60,6 +60,7 @@
 //! | `key <dik[,dik…]> <frames> [gap]` | holds keys, releases, waits `gap` frames |
 //! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the game thread |
 //! | `shot <windows path>` | saves the back buffer as a 32-bit BMP |
+//! | `loadsave <slot\|windows path>` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]) |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
@@ -604,6 +605,8 @@ enum Job {
     Shot(String),
     Snapshot(String),
     FpuControl,
+    /// Start the game from a save (`loadsave`, [`crate::loadsave`]).
+    LoadSave(String),
     /// Until the bytes at the range equal the value (under the mask), or
     /// the frame limit passes: `(range, value, mask, limit frame)`.
     WaitFor(TraceRange, Vec<u8>, Vec<u8>, u32),
@@ -939,7 +942,11 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
             while let Some(job) = jobs.pop_front() {
                 let ready = match job.0 {
                     Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
-                    Job::Call(..) | Job::Shot(_) | Job::Snapshot(_) | Job::FpuControl => true,
+                    Job::Call(..)
+                    | Job::Shot(_)
+                    | Job::Snapshot(_)
+                    | Job::FpuControl
+                    | Job::LoadSave(_) => true,
                     Job::WaitFor(ref r, ref value, ref mask, limit) => {
                         frame >= limit || range_matches(r, value, mask)
                     }
@@ -992,6 +999,11 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
             }
             Job::FpuControl => {
                 let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
+            }
+            Job::LoadSave(spec) => {
+                let r = crate::loadsave::load(&spec);
+                log(&format!("loadsave {spec} at frame {frame}: {r:?}"));
+                let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
             }
             Job::Shot(path) => {
                 // SAFETY: the swap chain is live inside its own Present.
@@ -1054,7 +1066,7 @@ fn skip_opening_screen() {
 }
 
 /// A cdecl call with up to eight `u32` arguments.
-unsafe fn call(address: usize, args: &[u32]) -> u32 {
+pub(crate) unsafe fn call(address: usize, args: &[u32]) -> u32 {
     type F0 = unsafe extern "C" fn() -> u32;
     type F8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
     let a = |i: usize| args.get(i).copied().unwrap_or(0);
@@ -1538,6 +1550,7 @@ fn command(line: &str) -> Result<String, String> {
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
+        "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
         "threads" => list_threads(),
         "calllog" => {
             // calllog off: flush and close

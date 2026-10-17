@@ -1929,10 +1929,12 @@
 0x00647c90 function GetU32_01325ac4 # () -> u32 at 0x01325ac4; name ours
 0x00647cb0 function ReturnConst_00647cb0 # () -> 0x6900; name ours
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
+0x00647e40 function SaveDataManager_MarkAlbhedLoaded # (): manager +0 = 1 (SetWord0_006f1db0); HandleSaveDataScreen calls it when SaveDataIsAlbhedLoaded is -1 after a load (docs/formats/save.md); name ours
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
 0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
 0x00647f30 function SaveDataGetLoc_00647f30   # fh v3:bsim1.00 0x006480e0
 0x00647f70 function SaveDataGetScreenState    # fh v3:cg4 0x648120
+0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours
 0x00648020 function SaveDataIsAlbhedLoaded    # fh v3:bsim1.00 0x006481d0
 0x00648040 function SaveDataIsBusy            # fh v3:bsim1.00 0x006481f0
 0x00648060 function SaveDataIsDeletingFinished # fh v3:cg2 0x648210
@@ -1945,6 +1947,7 @@
 0x006480f0 function SaveDataIsSavingFinished  # fh v3:cg3 0x6482a0
 0x00648100 function SaveDataIsScreenClosed    # fh v3:exact 0x006482b0
 0x00648150 function SaveDataLocRemoveNumTag   # fh v3:exact 0x00648300
+0x00648480 function SaveData_Update # (): every frame from Sg_MainLoop: trophies, player position to 0x00ccb9a8, SaveDataMachine_Update (thunk); name ours
 0x006484d0 function SaveDataPreDebugSave      # fh v3:bsim1.00 0x00648680
 0x006484f0 function SaveDataPushSlot             # layout: alphabetical run between SaveDataPreDebugSave and SaveDataResetToIdle (1 unnamed in the gap); Switch 0x7100225300 SaveDataPushSlot is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648530 function SaveDataResetToIdle       # fh v3:cg2 0x6486e0
@@ -2777,8 +2780,15 @@
 0x006eee40 function sg_calcenvelope_asm_opt   # fh v3:exact 0x006eef80
 0x006ef2d0 function crossAssertIsValidFloat   # fh v3:exact 0x006ef410
 0x006ef6f0 function fix_mappic                # fh call.cs cdecl
+0x006efbd0 function SaveDataMachine_CheckFile # load state 0xf: after the 30-frame timer 0x00ce72e4, SaveDataCheckCrc; bad: buffer zeroed, message 0x208, state 0x10; good: 0x11 (docs/formats/save.md); name ours
+0x006f0020 function SaveDataMachine_LoadDone # load state 0x11: closes the Flash screen, SaveDataSaveLoadSucceed(3), SaveDataSetDialogState(0), state 0xa, busy 0x00ce7310 = 0; name ours
+0x006f0070 function SaveDataMachine_ReadFile # load state 0xe (list entry): _wfopen/fread "%s%s%03d" (g_SaveFolder, "ffx_", g_SortedSaveTable slot) into 0x00ce7308, 0x00ce7304 bytes; timer 30, state 0xf; name ours
+0x006f01d0 function SaveDataMachine_StartLoad # (size, buffer): 0x00ce7304/0x00ce7308 = them, busy 0x00ce7310 = 1, state 0xb, SetUpDefaultSaveFolder, opens the Flash list; from SaveDataManager_doLoad; name ours
+0x006f0220 function SaveDataMachine_BuildList # load state 0xb: SaveDataMachine_ScanFiles, SortSaveTable_006f0fb0, fills the Flash list (message 0x1fd; 0x20b with no file); state 0xc; name ours
 0x006f0330 function SetUpDefaultSaveFolder    # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\; was Save_InitFolder
 0x006f0510 function SaveDataManager_debugSave_Internal_6f0650 # fh call.cs cdecl
+0x006f0950 function SaveDataMachine_Update # (): the PC save/load state machine on g_SaveMachineState 0x00ce72e8 (jump of 20 states: 1-6 save, 0xb-0x11 load, 0x15-0x1b Al Bhed); called from SaveData_Update; name ours
+0x006f0a70 function SaveDataMachine_ScanFiles # (): ffx_000..ffx_199 in g_SaveFolder: CreateFileW + GetFileTime per file into g_SortedSaveTable (slot, yymmdd, seconds), present flags 0x00ce7c78, counts 0x00ce72f4/0x00ce72f8; name ours
 0x006f0fb0 function SortSaveTable_006f0fb0 # (): entries 1..199 of g_SortedSaveTable (3 words) selection-sorted by words 1, 2 descending (signed); callers 0x006eff00/0x006f0220/0x006f0800 (save-data area); name ours
 0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
 0x006f1580 function ReturnConst_006f1580 # () -> 0x98; name ours
@@ -7704,6 +7714,7 @@
 0x0088d240 function TkCdReadWithMalloc2          # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x71004900a0 TkCdReadWithMalloc2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0088d2c0 function TkCdReadWithMallocWithMessage # fh v3:exact 0x0088d230
 0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160
+0x0088d3d0 function TkUpdateEventJump # (): every frame in Sg_MainLoop's loop: with g_TkEventJumpRequest set and the fade out done, graphicActivateLoadingScreen and TkInitScene(g_SaveData map); name ours
 0x0088d4e0 function TkDrawDebug               # fh v3:cg2 0x88d450
 0x0088d4f0 function TkDrawNoTrans             # fh v3:bsim1.00 0x0088d460
 0x0088d520 function TkFree                    # fh v3:exact 0x0088d490
@@ -8156,9 +8167,11 @@
 0x008b4ec0 function TkMenuJumpToLoadedScene   # fh v3:cg14 0x8b4e70
 0x008b4fb0 function MenuSave_OpenWindow2      # (arg) window 0x01866258: +0x10 0x008b4920, mode 4, +0x58 arg; registered; own name
 0x008b50b0 function TkMenuPreSave             # fh v3:exact 0x008b5060
+0x008b54a0 function TkMenuCopyLoadedSave # (dst, buffer): memcpy(dst, buffer + 0x40, 0x68c0), setDefaultPlayerName; TkMenuJumpToLoadedScene passes g_SaveData and 0x01597f70 (docs/formats/save.md); name ours
 0x008b54c0 function MenuSaveLoad_MarkSlots    # (free, need) 99 slot states at 0x01866290: marks (3) while free < need, used flag 0x01866278; own name
 0x008b5530 function TkMenuRestartSelFileWindow # fh switch:bsim1.00 0x71004db0a0
 0x008b55c0 function TkMenuSaveLoadActive      # fh v3:bsim1.00 0x008b5570
+0x008b55e0 function TkDebugLoadViewerSave # (n): debugLoadForViewer(n, 0x01597f70, 0x6900), copies the block to g_SaveData and jumps (0x0086fec0) to block +0xba/+0xb8 (n 0x97: map 0xf6); the developers' direct load; name ours
 0x008b56d0 function TOSelectMacroDic_008b56d0 # (): 0x01869eb8 = macro dictionary of TOGetFFXLang (us/fr/es/de/it/kr/ch); jp and others keep it; name ours
 0x008b5760 function TOJoinsNeighbours_008b5760 # cdecl(p): language-specific test of p[-2], p[-1], p[1], p[2] (jp ',' pairs; kr/ch 0x5a..0x8d); name ours
 0x008b57c0 function TOBtlSetMacroCommandType  # fh v3:exact+call.cs 0x008b5770 cdecl
@@ -9080,6 +9093,7 @@
 0x009148a0 function yiLerpVec2                   # (t, a, b, out): out = a + (b - a) * t, two floats
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)
+0x009149a0 function yiAnimDetachAll           # (scene, obj) -> 0: yiAnimDetach without the kind check (every active slot of obj at +0x9cac0 cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off); yiDisposeAnimDObj with a negative kind; name ours
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x00915120 function yiKeyFrameWrapAngles      # (v): four floats past pi less (1 - ftol(x / -2pi)) * 2pi, below -pi plus it (doubles 0x00b67118..38); yiKeyFrame_main; name ours
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
@@ -9145,6 +9159,7 @@
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
 0x0091a0f0 function Yn_MapPartMoveTo             # (part, x, y, frames): move from the position (+0x64 = +0x4c, +0x6c = +0x50) to x, y (+0x68, +0x70) over frames (+0x7c), counter +0x80 = 0; native 0x8055 (0x0091c2d0)
 0x0091a150 function Yn_MapPartScaleTo            # (part, sx, sy, frames): scale from +0x44/+0x48 (into +0x54/+0x5c) to sx, sy (+0x58/+0x60; 0.0 keeps it) over frames (+0x74), counter +0x78; native 0x804f (0x0091c150, one value for both)
+0x0091a240 function Yn_DrawScene              # (): through 0x00921a10/0x009215e0, rcbgSceneDraw(map +8) when g_YnMapSystem and its map exist; name ours
 0x0091a260 function Yn_SceneSet104               # (v): scene +0x104 (g_YnMapSystem map +8); script native 0x0091af80
 0x0091a2a0 function Yn_MapPartAnimeGetCount      # (part) -> the animation's frame count (+0x98), 0 past the count; native 0x801c slot 0 (0x0091b3e0)
 0x0091a2e0 function Yn_MapPartGetAlpha           # (part) -> the colour's alpha byte (+0x43); native 0x8031 (0x0091b720)
@@ -9640,6 +9655,7 @@
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
 0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
+0x0092eba0 function rcefPostRequest           # (a, f, b, c, d) -> d: g_RcefRequest = a, f (float), b, 0, c, d; g_RcefRequestPending = 1; g_MagicImports (0x00c65494); nothing in the PC build reads the request; name ours
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
 0x0092ec20 function rcefVecToAngle            # (v) -> float: acos(-v.z) (_CIacos), 2pi minus it when v.x > 0
 0x0092ec60 function rcefStreamCue_0092ec60    # fh switch:bsim1.00 0x71005582b0
@@ -9697,6 +9713,7 @@
 0x00930490 function rcEffectTaskParWait       # fh v3:bsim1.00 0x00930490
 0x009304b0 function rcEffectTaskPrayWait      # fh v3:exact 0x009304b0
 0x009304d0 function rcefTaskRetSeqCont_thunk  # g_MagicImports slot 430 (39 overlays), between rcEffectTaskPrayWait and rcEffectTaskTaskWait: jmp rcefTaskRetSeqCont; hidden from the dump
+0x009304e0 function rcEffectTaskRequestWait   # sequence (task): rcefTaskRetSeqCont once g_RcefRequestPending is 0 (never cleared on PC); next to rcEffectTaskFlagWait; name ours
 0x00930520 function rcEffectTaskTaskWait      # fh v3:exact 0x00930520
 0x00930550 function rcefChrNew                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100555d40 rcefChrNew, 3 votes, round 2
 0x00930710 function rcefChrFini               # fh switch:bsim1.00 0x7100555f00
@@ -10319,6 +10336,7 @@
 0x00a48f50 function AbmapCtrlTilt             # fh v3:cg2 0xa48f50 +AbmapCtrlTilt
 0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom
 0x00a49310 function AbmapItemUsableAt         # (chr, node, item) -> bits: 0 unless held (MsGetSaveItemNum), else the ability bits the item grants chr over its nodes (AbmapForEachNode/AbmapForNodeAndLinked with AbmapItemNodeEffect); name ours
+0x00a493b0 function AbmapItemEffectAtNode     # (chr, node, item) -> bits: AbmapItemUsableAt for one node index: 0 unless held, else AbmapItemNodeEffect(g_Abmap +0x808 + 0x28 node, ctx); from AbmapTryUseItem; name ours
 0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
@@ -10345,6 +10363,8 @@
 0x00a59760 function AbmapForNodeAndLinked     # (node, f, arg): f on the node, then on the other end of each link (+0xa808, 0x14 bytes) touching it, until non-zero
 0x00a59800 function AbmapPadSlideOutStep      # (p): +0x29++; from 3 hidden (+0x23 0) and step cleared, else +0xa = +2 + n h/3 + h/6 (h the i16 +6); name ours
 0x00a59860 function SeveralStoresSetDerefConstantsArgumentsAddresses_00a59860 # auto-port shape (several stores: set deref (constants, arguments, addresses), cdecl): t0 = u32[&0x01a86108]; u16[(((a0 * 0x340) + t0) + 0x23)] = 0x301; u8[(((a0 * 0x340) + t0) + 0x25)] = 0x1; u16[(t0 + 0x2700)] = (a0 & 0xffff); u32[(t0 + 0x2704)] = a1; return ((a0 * 0x340) + t0); callers: no direct caller; name ours
+0x00a598a0 function AbmapEnterItemMenu        # () -> 8: item menu entries (+0x1a44, 12 bytes, i16 count +0x1a1e) marked where AbmapItemUsableAt(chr, its node, item +4) is 0; pad 8 shown, menu +0x2700 = 8, handler 0x00a560d0; called from 0x00a56330; name ours
+0x00a59950 function AbmapEnterCommandMenu     # () -> pads: AbmapMarkEmptyMenus, pad 7 shown (+0x23 1, +0x24 3|8, +0x25 1), menu +0x2700 = 7, handler 0x00a56330; called from 0x00a560d0; name ours
 0x00a59990 function AbmapState_MovingToTarget # fh v3:exact+call.cs 0x00a59990
 0x00a59e80 function AbmapState_HomeOnNode     # fh v3:exact 0x00a59e80 +AbmapState_HomeOnNode
 0x00a5a080 function AbmapRectTweenIn          # (r): +0x32++; below 4 the rect +8 moves n/4 from +0 to +0x2a (16.16), else it is +0x2a and step +0x34 cleared; cells +0x14 = (y+15)/16, +0x16 = (h+15)/20; name ours
@@ -12543,6 +12563,7 @@
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
 0x00c34408 label    g_ShadowSize              # ShadowManager_GetShadowSize
+0x00c3577c label g_SaveFilePrefix # pointer to L"ffx_" (the save file names "%s%s%03d", SaveDataMachine_ReadFile)
 0x00c3a368 label    g_FmodCommandHandlers     # label: the 70 FMOD command handlers (cdecl(FfxFmod, args*)) by command, FmodCmd_*; read by the FMOD thread's queue loop
 0x00c3a488 label    g_VfxColorScale           # four floats updateVFXRenderData multiplies the part's colour by (FFXVu0MulVector)
 0x00c3a494 label    g_AlphaScaleInv           # f32 0.0078125 / g_AlphaScale, set by updateVFXRenderData
@@ -12669,6 +12690,15 @@
 0x00ce5170 label    g_FogEffectManager        # Phyre_FogEffectManager_GetInstance; graphicSetChrFogFade
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce6ea4 label    g_TipSystem               # TipSystem_Get; graphicPushTip, graphicPushTipByLocId
+0x00ce6ee0 label g_SaveFolder # UTF-16 save folder, set by SetUpDefaultSaveFolder (Documents\Square Enix\...\FINAL FANTASY X\)
+0x00ce72e0 label g_SaveFolderSet # 1 once SetUpDefaultSaveFolder filled g_SaveFolder
+0x00ce72e4 label g_SaveMachineTimer # frames before SaveDataMachine_CheckFile checks (30 after a read)
+0x00ce72e8 label g_SaveMachineState # SaveDataMachine_Update's state (0xb..0x11 load, 0xa idle after a load)
+0x00ce72ec label g_SaveListTop # first visible entry of the save list; SaveDataMachine_ReadFile reads entry top + g_SaveListCursor
+0x00ce72f0 label g_SaveListCursor # cursor in the save list
+0x00ce7304 label g_SaveMachineSize # bytes to read or write (0x6900), SaveDataMachine_StartLoad
+0x00ce7308 label g_SaveMachineBuffer # buffer to read into or write from (0x01597f70), SaveDataMachine_StartLoad
+0x00ce7310 label g_SaveMachineBusy # 1 from SaveDataMachine_StartLoad until the load is done
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce83c0 label    g_PrxPending              # PhyreFIOS_LoadPrxIdle tests it 0
@@ -12993,6 +13023,7 @@
 0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
+0x012fb8c0 label g_SaveLoadedPending # HandleSaveDataScreen: 1 after a successful load, then TkMenuJumpToLoadedScene in screen state 4
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
@@ -13183,6 +13214,7 @@
 0x01330832 label    g_TkTGS                   # u8 (TkGetTGS)
 0x01330833 label    g_FFXAsiaMode             # u8: FFXGetAsiaMode / FFXSetAsiaMode
 0x01330844 label    g_GraphicMapId            # the map id graphicIsMapInList tests
+0x0133084c label g_TkEventJumpRequest # 1: TkUpdateEventJump enters g_SaveData's map (TkSetEventJump, TkInitSceneFromSave); TkInitScene clears it
 0x01330850 label    g_TkFadeOut               # 2 words, both set by TkSetFadeOut
 0x0133085c label    g_TkStartMapEvent         # u32 id, index (TkSetStartMapIndex)
 0x01330864 label    g_TkLocalStartMapEvent    # u32 id, index (TkSetLocalStartMapIndex)
@@ -13222,6 +13254,7 @@
 0x01596f70 label    g_TkMenuImportantList     # u16 key item ids by their list slot (TkMenuItemImportantRefresh)
 0x01597370 label    g_TkMenuItemCounts        # 0x200 x u16 cleared; item counts by the id's low byte (TkMenuItemRefresh)
 0x01597770 label    g_TkMenuItemList          # 0x200 x {u16 id, u8 count, u8 usable} (TkMenuItemRefresh)
+0x01597f70 label g_SaveFileBuffer # 0x6900-byte save file buffer (SaveData_Init, manager +0x350): 0x40 header then the g_SaveData block
 0x01597f74 label    g_SaveData_LoadResult     # u8, 1 = the load succeeded (SaveDataIsLoadingSuccessful); SaveDataToLoad, TkMenuPreSave write it
 0x0159ec70 label    g_TkMenuSaveFiles         # 99 x 0x40-byte save file records (TkMenuGetSaveFileInfo)
 0x01640870 label    g_AbilitymapWork          # the ability map's work area (TOMenuGetAbilitymapWorkAdrs)
@@ -13466,4 +13499,6 @@
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
+0x025d5c18 label    g_RcefRequest                # rcefPostRequest's words: a, f, b, 0, c, d (+0..+0x14); no reader in the PC build
+0x025d5c34 label    g_RcefRequestPending         # set by rcefPostRequest, awaited (0) by rcEffectTaskRequestWait; never cleared on PC
 0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)
