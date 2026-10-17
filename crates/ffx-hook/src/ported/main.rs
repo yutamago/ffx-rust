@@ -3,7 +3,9 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, cloth, control, envelope, gs, light, quat, seq, state, vec};
+use ffx_sg::{
+    camera, chpacket, cloth, control, envelope, gs, light, player, quat, seq, state, vec,
+};
 
 use super::{mem, ported};
 
@@ -1429,6 +1431,10 @@ ported! {
     sg_calcenvelope_asm @ 0x006e_e570 => extern "C" fn sg_calcenvelope_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
         envelope::bridge::calc_envelope(&mut mem(), lists, out, mask, m)
     }
+    /// `Sg_ControlPlayer()`.
+    Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
+        player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
@@ -1477,5 +1483,78 @@ fn crt(c: Crt, x: f64) -> f32 {
     {
         let _ = (thunk, x);
         unreachable!("the CRT's trigonometry runs in the 32-bit game")
+    }
+}
+
+/// MSVCR110's `_CIcos`, `_CIsin` or `_CIatan` through the game's import
+/// thunks (`0x009498c2`, `0x009498c8`, `0x00949d5c`), as the battle
+/// vector code calls them: the argument (`f32` bits) loaded with `fld
+/// dword`, the result stored with `fstp dword`.
+fn crt_vector_trig(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
+    use ffx_battle::pos::bridge::Trig;
+    let thunk = match t {
+        Trig::Cos => 0x0094_98c2,
+        Trig::Sin => 0x0094_98c8,
+        Trig::Atan => 0x0094_9d5c,
+    };
+    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
+    // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE
+    // registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = crate::rebase(thunk);
+        let bits: u32;
+        std::arch::asm!(
+            "fld dword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        bits
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (thunk, x);
+        0
+    }
+}
+
+/// MSVCR110's `_CIatan2` (`ST1` = y, `ST0` = x, the result in `ST0`)
+/// through the game's import thunk (`0x009498bc`): both loaded with `fld
+/// dword`, the result stored with `fstp dword`, as `Sg_ControlPlayer`
+/// does; `f32` bits in and out.
+fn crt_atan2(y: u32, x: u32) -> u32 {
+    let f = crate::rebase(0x0094_98bc);
+    #[cfg(target_arch = "x86")]
+    {
+        let pair = [y, x];
+        let mut out = 0u32;
+        // SAFETY: the thunk jumps to the CRT's `_CIatan2`, which takes its
+        // two operands on the x87 stack and leaves the result there; the
+        // asm loads them, calls it and stores the result through edi
+        // (which the callee keeps), leaving the x87 stack empty.
+        unsafe {
+            std::arch::asm!(
+                "fld dword ptr [{p}]",
+                "fld dword ptr [{p} + 4]",
+                "call {f}",
+                "fstp dword ptr [edi]",
+                p = in(reg) &raw const pair,
+                in("edi") &raw mut out,
+                f = in(reg) f,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, y, x);
+        0
     }
 }

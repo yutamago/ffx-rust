@@ -14922,8 +14922,18 @@
 0x01300704 label    g_FadeActive              # u32: a bit per screen fade slot still running (Sg_DrawFilter clears a slot's bit when its frames reach 0)
 0x01300708 label    g_FadeSlots               # 5 x 0x10: mode, r, g, b, i16 frames, total/level, target, step (Sg_DrawFilter, 0x0082c0c0)
 0x01300768 label    g_FocusOn                 # u32: the focus (depth of field) requested; 0x0130076c drawn, 0x01300758/c the depths (Sg_DrawFilter)
+0x01300780 label    g_PlayerDirOffset         # f32 offset from the stick angle in the player's direction: 0x0082d950 sets Angle_Wrap(deg)+g_PlayerStickDir, Sg_ControlPlayer (0x0082d180) clears it when it takes the camera yaw; name ours
+0x01300788 label    g_Player                  # the player character (Sg_SetPlayer 0x0082dad0, which also clears g_PlayerLevels); Sg_ControlPlayer steers it; name ours
+0x0130078c label    g_PlayerLevels            # i32[4] 0..256: up, down, right, left (d-pad 0x1000/0x4000/0x2000/0x8000, or the left stick's side ramped by 32 a frame); Sg_ControlPlayer's speed is |(right-left, up-down)|, its angle atan2 of the same; name ours
+0x0130079c label    g_PlayerCameraYaw         # f32 camera yaw (Sg_CameraGetYaw) Sg_ControlPlayer turns the stick angle by: every frame, or with g_CameraFollow 3 when the angle turned 0.349 since g_PlayerStickDirTaken; name ours
+0x013007a0 label    g_PlayerStickDir          # f32 atan2(right-left, up-down) of g_PlayerLevels (Sg_ControlPlayer), kept while the stick rests in its dead zone; name ours
+0x013007a4 label    g_PlayerStickDirTaken     # f32 g_PlayerStickDir when Sg_ControlPlayer last took the camera yaw (follow mode 3); -1000 standing still; name ours
+0x013007a8 label    g_PlayerStickX            # i32 left stick x after the dead zone (88 < x < 168 -> 128), Sg_ControlPlayer; name ours
+0x013007ac label    g_PlayerStickY            # i32 left stick y after the dead zone (0x59..0xa7 -> 0x80), Sg_ControlPlayer; name ours
 0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
+0x013007c4 label    g_PlayerDirFixOn          # u8 Sg_PlayerSetDirFix's flag: Sg_ControlPlayer turns the stick angle by g_PlayerDirFix instead of the camera yaw; name ours
 0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
+0x013007c8 label    g_PlayerDirFix            # f32 Sg_PlayerSetDirFix's direction (Angle_Wrap of degrees in radians); name ours
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
@@ -15377,6 +15387,9 @@
 0x023c37a0 label    g_OpOef2Seps                 # 32 x (sound sep handle, user mask) slots: op_oef2_sep_free_all clears a mask, stopping (SndSepStop, SndSepClear) a slot left with no user
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
+0x023c44a4 label    g_PadLStickY              # u8 left stick y, 0x80 at rest (Sg_ControlMain: TkGetControlerAnalogHist axis 3); up below 0x80 (it ramps the up level, d-pad 0x1000); name ours
+0x023c44a5 label    g_PadLStickX              # u8 left stick x (Sg_ControlMain: axis 2); right above 0x80 (the right level, d-pad 0x2000); name ours
+0x023c44ac label    g_PadHeld                 # u32 held pad buttons (Sg_ControlMain: TkGetControlerHist); 0x023c44b0 last frame's, 0x023c44a8 the newly pressed; name ours
 0x023c44c0 label    g_ChrF117Hides            # 4 x (hide, renderer instance), Ch_ModelSetHide's queue (count g_ChrF117HideCount)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)

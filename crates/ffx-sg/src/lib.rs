@@ -12,6 +12,7 @@ pub mod control;
 pub mod envelope;
 pub mod gs;
 pub mod light;
+pub mod player;
 pub mod quat;
 pub mod scratch;
 pub mod seq;

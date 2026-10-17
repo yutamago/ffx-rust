@@ -4680,3 +4680,167 @@ fn vu_helper_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u
         });
     }
 }
+
+// Main round 13: the player's control from the pad.
+
+/// `_CIatan` and `_CIatan2` (imports the oracle lacks) replaced at their
+/// thunks by exact stand-ins: `-x` (`fchs`) and `y - x` (`fsubp st(1),
+/// st`); the bridge gets the same through its callbacks.
+fn patch_atan(o: &mut Oracle) {
+    for (thunk, code) in [
+        (0x0094_9d5c, &[0xd9, 0xe0, 0xc3][..]),
+        (0x0094_98bc, &[0xde, 0xe9, 0xc3][..]),
+    ] {
+        let at = o.rebase(thunk);
+        o.write(at, code).unwrap();
+    }
+}
+
+fn atan_stand_in(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
+    use ffx_bridge::x87::{load, store};
+    match t {
+        ffx_battle::pos::bridge::Trig::Atan => store(-load(x)),
+        _ => panic!("no cosine or sine here"),
+    }
+}
+
+fn atan2_stand_in(y: u32, x: u32) -> u32 {
+    use ffx_bridge::x87::{load, store, sub};
+    store(sub(load(y), load(x)))
+}
+
+/// A stick byte: at rest, at a dead zone's edges, or any.
+fn stick(rng: &mut Xorshift) -> u8 {
+    const EDGES: [u8; 10] = [0x80, 0x58, 0x59, 0xa7, 0xa8, 88, 89, 167, 168, 0];
+    match rng.below(4) {
+        0 => EDGES[rng.below(10) as usize],
+        1 => 0x80,
+        _ => rng.next().to_le_bytes()[0],
+    }
+}
+
+fn control_player_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::player::bridge as p;
+    patch_atan(a);
+    patch_atan(b);
+    let log = a.rebase(REC_LOG);
+    let rets = a.rebase(REC_RETS);
+    recorder(a, b, 89, p::SG_GET_PLAYER_CONTROL_ENABLE, 0, 0);
+    recorder(a, b, 90, p::GRAPHIC_LEVEL_GET_NAME_HASH, 0, 0);
+    let game_camera = ffx_battle::camera::bridge::CAMERA.get(a);
+    let level = |rng: &mut Xorshift| -> i32 {
+        match rng.below(8) {
+            0 => rng.next().cast_signed(),
+            1 => 0,
+            2 => 0x100,
+            // the speed's floor and top exactly (48, 256 from one axis)
+            3 => [0x30, 0x50, 0x130][rng.below(3) as usize],
+            _ => rng.below(0x180).cast_signed() - 0x40,
+        }
+    };
+    let angle = |rng: &mut Xorshift| {
+        if rng.below(6) == 0 {
+            rng.float()
+        } else {
+            bounded(rng)
+        }
+    };
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, rets + 4 * 89, u32::from(rng.below(6) != 0));
+        let hash = [0x19c, 0x220, 0x19c, 7][rng.below(4) as usize];
+        put(
+            a,
+            b,
+            rets + 4 * 90,
+            if rng.below(3) == 0 { hash } else { 0 },
+        );
+        set(a, b, p::PAD_LSTICK_Y, stick(rng));
+        set(a, b, p::PAD_LSTICK_X, stick(rng));
+        let mut held = rng.next();
+        if rng.below(3) != 0 {
+            held &= !0xf000;
+        }
+        set(a, b, p::PAD_HELD, held);
+        let chr = if rng.below(10) == 0 {
+            0
+        } else {
+            let chr = block(a, b, rng, 0x880);
+            put(a, b, chr + ffx_chara::layout::GRAV, modest(rng));
+            if rng.below(2) == 0 {
+                put(a, b, chr + ffx_chara::layout::MOTION_TYPE, 2u8);
+            }
+            chr
+        };
+        set(a, b, p::PLAYER, chr);
+        for l in p::LEVELS {
+            set(a, b, l, level(rng));
+        }
+        for g in [
+            p::CAMERA_YAW,
+            p::STICK_DIR,
+            p::STICK_DIR_TAKEN,
+            p::DIR_OFFSET,
+            p::DIR_FIX,
+        ] {
+            let v = angle(rng);
+            put(a, b, g.ptr(a).addr, v);
+        }
+        for k in 0..4 {
+            let at = a.rebase(p::SPEED) + 4 * k;
+            put(a, b, at, modest(rng));
+        }
+        if rng.below(6) == 0 {
+            // a turn of exactly the bound since the yaw was taken
+            let turn = p::TURN.get(a);
+            set(a, b, p::STICK_DIR, turn);
+            set(a, b, p::STICK_DIR_TAKEN, 0.0);
+        }
+        set(a, b, p::DIVING, u8::from(rng.below(2) == 0));
+        set(a, b, p::DIR_FIX_ON, u8::from(rng.below(3) == 0));
+        let follow = if rng.below(3) == 0 { rng.below(8) } else { 3 };
+        set(a, b, p::CAMERA_FOLLOW, u8::try_from(follow).unwrap());
+        let cam = if from_game && game_camera != 0 && n % 2 == 0 {
+            game_camera
+        } else {
+            let cam = alloc(a, b, 0x700);
+            for k in 0..4 {
+                put(a, b, cam + 0x50 + 4 * k, bounded(rng));
+                put(a, b, cam + 0x66c + 4 * k, bounded(rng));
+            }
+            if rng.below(8) == 0 {
+                let w: [u32; 4] = Mem::read(a, cam + 0x50);
+                put(a, b, cam + 0x66c, w);
+            }
+            cam
+        };
+        set(a, b, ffx_battle::camera::bridge::CAMERA, cam);
+        twin("Sg_ControlPlayer", a, b, 0x0082_d180, &[], |m| {
+            p::control_player(&mut H(m), &atan_stand_in, &atan2_stand_in);
+        });
+    }
+}
+
+#[test]
+fn control_player_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0d18);
+    control_player_cases(&mut a, &mut b, &mut rng, 3000, false);
+}
+
+#[test]
+fn control_player_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0d19);
+    control_player_cases(&mut a, &mut b, &mut rng, 3000, true);
+}

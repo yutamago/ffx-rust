@@ -643,3 +643,41 @@ z lanes are memory operands. `Ch_EffectPacketCreateMain` sets the two
 `u16`s at `0x0130366c` (`g_ChrPacketState`) and `0x01303684` through
 `Sg_SetChrPacketState` (`0x00845c30`) and `Sg_SetChrPacketWord`
 (`0x00845c40`).
+
+## Round 13: the player's control (`crates/ffx-sg/src/player.rs`)
+
+`Sg_ControlPlayer()` (`0x0082d180`) steers the player (`0x01300788`,
+`Sg_SetPlayer`) from the frame's pad. Axis 3 (`0x023c44a4`) is the left
+stick's y and axis 2 (`0x023c44a5`) its x: 0x59..0xa7 on y and 88 < x <
+168 (an `f32` compare) count as 0x80; the results go to `0x013007ac` and
+`0x013007a8`. Without a player nothing else happens; with its control
+off (`Sg_GetPlayerControlEnable`) the speed is 0.
+
+Four levels at `0x0130078c` (`i32`, up, down, right, left) ramp by 32 a
+frame. The d-pad (any of 0xf000: 0x1000 up, 0x4000 down, 0x2000 right,
+0x8000 left) raises its levels to 256 and lowers the others to 0.
+Otherwise the stick, doubled about its rest (`2y - 256`, `2(128 - x)`, as
+`f32`) and zeroed in -96 < v < 96, raises its side's level, capped at the
+stick's magnitude (through `ftol`), and lowers the opposite one to 0.
+
+The speed is `sqrt((right-left)^2 + (up-down)^2)` (`f32`), 256 above 256
+and 0 below 48; the angle `atan2(right - left, up - down)` (`_CIatan2`,
+stored as `f32` in `0x013007a0`) is kept only when both axes rest in the
+dead zone and a falling level of each hit 0 this frame. In motion type 2
+with button 0x40 while diving (`0x013007c5`) a gravity below 2 gets 0.2
+more (`Ch_AddGrav`).
+
+The camera's yaw (`Sg_CameraGetYaw`, `0x0083f2d0`, a jump to
+`MsCameraGetYaw`: `MsVectorRect2Polar` from `g_Camera + 0x66c` to
+`+ 0x50`) goes to `0x0130079c` every frame, except with `g_CameraFollow`
+3: there it is taken when the angle moved more than `Angle_Wrap(0.349)`
+from `0x013007a4` (which then takes the angle, and the offset `0x01300780`
+0), and on the levels whose name hash (`graphicLevelGetNameHash`) is
+0x19c or 0x220 every frame; standing still there sets `0x013007a4` to
+-1000. Standing still the speed is 0. Moving, the character gets
+`Ch_SetSp(speed * s / 256)` with `s` the type 2 speed (`0x013007bc`) or
+the walk and run speeds (`0x013007b4`, `0x013007b8`; run without button
+0x40) and `Ch_SetDir(-((angle - offset) - yaw))`, the fixed direction
+(`Sg_PlayerSetDirFix`, `0x013007c8`) replacing the yaw when its flag
+(`0x013007c4`) is set. Every intermediate is an `f32` store of a 53-bit
+x87 result.

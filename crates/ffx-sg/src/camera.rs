@@ -95,6 +95,31 @@ pub mod bridge {
         at
     }
 
+    /// `Sg_CameraGetYaw()` (`0x0083f2d0`, a `jmp` to the battle module's
+    /// `MsCameraGetYaw`, `0x007bcf20`): the active camera's (`g_Camera`)
+    /// yaw, `MsVectorRect2Polar(cam + 0x50, cam + 0x66c, &yaw, 0, 0)` from
+    /// the eye to the look-at point, as `ST0` holds it (`fld dword`). The
+    /// yaw goes through a stack local ([`crate::scratch`]); `trig` is the
+    /// CRT's `_CIatan`.
+    pub fn camera_get_yaw(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(ffx_battle::pos::bridge::Trig, u32) -> u32,
+    ) -> f32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        let cam = battle::CAMERA.get(mem);
+        let mut s = Scratch::new(mem);
+        ffx_battle::vector::bridge::ms_vector_rect2_polar(
+            &mut s,
+            trig,
+            cam.wrapping_add(0x50),
+            cam.wrapping_add(0x66c),
+            SCRATCH,
+            0,
+            0,
+        );
+        s.read(SCRATCH)
+    }
+
     /// `Sg_CameraGetRef(&v)` (`0x0083f2a0`); [`CAMERA_REF`]'s address.
     pub fn camera_get_ref(mem: &mut impl Mem, v: u32) -> u32 {
         let at = CAMERA_REF.ptr(mem).addr;
