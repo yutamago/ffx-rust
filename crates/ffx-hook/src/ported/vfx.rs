@@ -1457,6 +1457,75 @@ ported! {
     op_md_spr_init_x64 @ 0x00a6_9940 => extern "C" fn op_md_spr_init_x64(obj: u32, init: u32, work: u32) -> u32 {
         md::bridge::op_md_spr_init_x64(&mut mem(), obj, init, work)
     }
+    /// `0x0069ebd0(it)`: `opusTree_Next`'s code again (`ecx` the iterator).
+    TreeNext_0069ebd0 @ 0x0069_ebd0 => extern "thiscall" fn tree_next_0069ebd0(it: u32) -> u32 {
+        tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `op_node_requeue_00a39f00(n)`.
+    op_node_requeue_00a39f00 @ 0x00a3_9f00 => extern "C" fn op_node_requeue(n: u32) -> u32 {
+        small::bridge::op_node_requeue(&mut mem(), n)
+    }
+    /// `opus_osu_init(out)`.
+    opus_osu_init @ 0x0080_1200 => extern "C" fn opus_osu_init(out: u32) -> u32 {
+        opus::bridge::opus_osu_init(&mut mem(), out)
+    }
+    /// `opus_osu_copy_00800eb0(set, dst, src)`.
+    opus_osu_copy_00800eb0 @ 0x0080_0eb0 => extern "C" fn opus_osu_copy(set: u32, dst: u32, src: u32) -> u32 {
+        opus::bridge::opus_osu_copy(&mut mem(), set, dst, src)
+    }
+    /// `op_rgb_to_hsv_00807e90(out, src, n)`.
+    op_rgb_to_hsv_00807e90 @ 0x0080_7e90 => extern "C" fn op_rgb_to_hsv(out: u32, src: u32, n: u32) -> u32 {
+        small::bridge::op_rgb_to_hsv(&mut mem(), out, src, n)
+    }
+    /// `op_node_pool_init_00a39bc0(set, n, v)`.
+    op_node_pool_init_00a39bc0 @ 0x00a3_9bc0 => extern "C" fn op_node_pool_init(set: u32, n: u32, v: u32) -> u32 {
+        small::bridge::op_node_pool_init(&mut mem(), set, n, v)
+    }
+    /// `op_slot_bytes_reset_008888e0(obj)`.
+    op_slot_bytes_reset_008888e0 @ 0x0088_88e0 => extern "C" fn op_slot_bytes_reset(obj: u32) -> u32 {
+        small::bridge::op_slot_bytes_reset(&mut mem(), obj)
+    }
+    /// `Fp_IdState_0072a760(id)`.
+    Fp_IdState_0072a760 @ 0x0072_a760 => extern "C" fn fp_id_state(id: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the i16 argument
+        fp::bridge::fp_id_state(&mem(), id as u16)
+    }
+    /// `op_md_packet_size_00a698c0(packet)`.
+    op_md_packet_size_00a698c0 @ 0x00a6_98c0 => extern "C" fn op_md_packet_size(packet: u32) -> u32 {
+        op::bridge::op_md_packet_size(&mem(), packet)
+    }
+    /// `op_read_line_007e1cc0(src, out, max)`.
+    op_read_line_007e1cc0 @ 0x007e_1cc0 => extern "C" fn op_read_line(src: u32, out: u32, max: u32) -> u32 {
+        op::bridge::op_read_line(&mut mem(), src, out, max)
+    }
+    /// `op_line_length_007e2660(src, lines)`.
+    op_line_length_007e2660 @ 0x007e_2660 => extern "C" fn op_line_length(src: u32, lines: u32) -> u32 {
+        op::bridge::op_line_length(&mut mem(), src, lines)
+    }
+    /// `op_counter_add_00888890(n)`.
+    op_counter_add_00888890 @ 0x0088_8890 => extern "C" fn op_counter_add(n: u32) -> u32 {
+        small::bridge::op_counter_add(&mut mem(), n)
+    }
+    /// `getAlphaForShpIgnoreAnFormatBaseOnSh(shp)`.
+    getAlphaForShpIgnoreAnFormatBaseOnSh @ 0x0071_6550 => extern "C" fn shp_alpha(shp: u32) -> u32 {
+        small::bridge::shp_alpha(&mem(), shp)
+    }
+    /// `op_node_slot_00a3ba10(node)`.
+    op_node_slot_00a3ba10 @ 0x00a3_ba10 => extern "C" fn op_node_slot(node: u32) -> u32 {
+        small::bridge::op_node_slot(&mem(), node)
+    }
+    /// `op_mip_bytes_00a3c0f0(w, h, levels)`.
+    op_mip_bytes_00a3c0f0 @ 0x00a3_c0f0 => extern "C" fn op_mip_bytes(w: u32, h: u32, levels: u32) -> u32 {
+        small::bridge::op_mip_bytes(w, h, levels)
+    }
+    /// `op_md_white_vectors_00a6cf70(obj, _, work)`.
+    op_md_white_vectors_00a6cf70 @ 0x00a6_cf70 => extern "C" fn op_md_white_vectors(obj: u32, _unused: u32, work: u32) -> u32 {
+        md::bridge::op_md_white_vectors(&mut mem(), obj, work)
+    }
+    /// `op_oef2_tex_clut_init_007e5680()`.
+    op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
+        op::bridge::op_oef2_tex_clut_init(&mut mem())
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

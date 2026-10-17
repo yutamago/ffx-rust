@@ -449,4 +449,44 @@ pub mod bridge {
         let k: f64 = mem.read(Global::<u32>::new(0x00b5_87d8).ptr(mem).addr);
         Reg::load_f32(m).constant(div, k).store()
     }
+
+    /// `opus_osu_init(out)` (`0x00801200`): the 0x100 bytes at `out`
+    /// filled with `g_Ee_Gpr`'s `r0` (16 bytes at a time, read anew each
+    /// time), then `+0xc8` = `0x80808080`. Returns `r0`'s last word (left
+    /// in `eax`).
+    pub fn opus_osu_init(mem: &mut impl Mem, out: u32) -> u32 {
+        let r0 = crate::ppp::bridge::R0.ptr(mem).addr;
+        let mut last = 0;
+        for i in 0..0x40u32 {
+            last = mem.read::<u32>(r0 + 4 * (i % 4));
+            mem.write(out.wrapping_add(4 * i), last);
+        }
+        mem.write(out.wrapping_add(0xc8), 0x8080_8080u32);
+        last
+    }
+
+    /// `opus_osu_copy_00800eb0(set, dst, src)`: `src`'s words `+0x30`..
+    /// `+0x4c` and `+0x90`..`+0x9c`, `u16 +0x14` and bytes `+0x18`,
+    /// `+0x1e`, `+0xba`, `+0xb3` into `dst`, and `dst.u16[+0x1c]` =
+    /// `(src - set[+0x20]) >> 8` (`src`'s index among `set`'s 0x100-byte
+    /// records). Returns the byte `+0xb3` (left in `eax`).
+    pub fn opus_osu_copy(mem: &mut impl Mem, set: u32, dst: u32, src: u32) -> u32 {
+        for o in (0x30u32..0x50).step_by(4).chain((0x90u32..0xa0).step_by(4)) {
+            let x: u32 = mem.read(src.wrapping_add(o));
+            mem.write(dst.wrapping_add(o), x);
+        }
+        let base: u32 = mem.read(set.wrapping_add(0x20));
+        #[allow(clippy::cast_possible_truncation)] // the u16 store
+        mem.write(dst.wrapping_add(0x1c), (src.wrapping_sub(base) >> 8) as u16);
+        let b: u8 = mem.read(src.wrapping_add(0x1e));
+        mem.write(dst.wrapping_add(0x1e), b);
+        let h: u16 = mem.read(src.wrapping_add(0x14));
+        mem.write(dst.wrapping_add(0x14), h);
+        let mut last = 0;
+        for o in [0x18u32, 0xba, 0xb3] {
+            last = mem.read::<u8>(src.wrapping_add(o));
+            mem.write(dst.wrapping_add(o), last);
+        }
+        u32::from(last)
+    }
 }

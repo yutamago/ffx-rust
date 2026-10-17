@@ -340,6 +340,31 @@ frame (×256; a negative end means the clip's length). One case is
 special: Tidus (`"c001"`) on map 0x7a, playing 0x3000 to -0x100, stops
 at 0x2800.
 
+## Head, mouth and automatic motion
+
+`Ch_Neck` (`0x008348d0`) turns the head (option point 9's element)
+toward a target. The target depends on the mode byte `+0x40d`: 1 the
+camera, 2 another character's point 9 (handle `+0x4c0`), 3 a position at
+`+0x4c0`, 4 fixed angles straight into the matrix `+0x46c`. The weight
+`+0x418` eases toward `+0x414` by `1 / +0x420`. The yaw is measured in
+degrees against the shoulders (points 0x13, 0x14) and the facing
+`+0x158`. It is clamped to a window from `+0x424` and `+0x428`; flag
+`+0x4d0` remembers the side and shifts the lower edge by ±15. `+0x41c`
+follows the clamped yaw: by a third, or by a quarter past 90 degrees.
+`Ch_NeckInit` (`0x00834e60`) sets the limits (20, 160) and the rest
+matrix `+0x42c`.
+
+`Ch_Mouth` (`0x008344f0`) moves the opening `+0x4dc` toward a goal
+`+0x4de` (in tenths of a degree), by a step `+0x4e3`, while a counter
+`+0x4e1` runs. The global mode byte `0x013008d9` selects the behaviour: 1
+a scripted shape, 2 shut, 3 talking, and other values follow the
+character's own byte `+0x4d4`. While talking, the goal is a random value
+from 0 to 69.
+
+`Ch_AutoMotion` (`0x00835d30`) runs the stand/walk/run motions once the
+script releases a character. Standing plays `+0x79c`; moving plays
+`+0x7a8` above the water height + 1 and `+0x7a4` below it.
+
 ## Texture layout
 
 `Ch_TextureReMapping` (`0x0083cdd0`) lays the texture data out in the
