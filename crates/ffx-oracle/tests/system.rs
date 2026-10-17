@@ -11005,6 +11005,31 @@ fn record_logger(cursor: u32) -> Vec<u8> {
     v
 }
 
+/// A stand-in for `graphicDrawUIElement(rec, …)` that logs the record
+/// words at `offsets` and the four arguments after the record.
+fn record_words_logger(cursor: u32, offsets: &[u8]) -> Vec<u8> {
+    // push esi; mov esi, [esp+8]; mov ecx, [cursor]
+    let mut v = vec![0x56, 0x8b, 0x74, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    let mut at = 0u8;
+    for &o in offsets {
+        // mov eax, [esi+o]; mov [ecx+at], eax
+        v.extend_from_slice(&[0x8b, 0x86]);
+        v.extend_from_slice(&u32::from(o).to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x41, at]);
+        at += 4;
+    }
+    for k in 0..4u8 {
+        // mov eax, [esp+0xc+4k]; mov [ecx+at], eax
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x0c + 4 * k, 0x89, 0x41, at]);
+        at += 4;
+    }
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[at, 0x5e, 0xc3]);
+    v
+}
+
 /// `0x00776110` over logging stand-ins for the sound, print, help and
 /// reset calls and two condition functions.
 #[allow(
@@ -13658,6 +13683,93 @@ fn round23_plates_match_the_original_on_the_snapshot() {
         return;
     };
     round23_plates(&mut a, &mut b, &mut Xorshift(0x4023_0022));
+}
+
+/// Round 24's gradient box and sheet cell over cells for the scissor and
+/// image size and a logging draw.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round24_boxes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x008e_58e0, s);
+    let s = stand_in8(a, b, 0xa0, &logger(cursor, 0x2401_0001));
+    redirect(a, b, 0x008a_c8c0, s);
+    let box_words: Vec<u8> = vec![
+        0, 4, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x30, 0x34, 0x38, 0x3c, 0x88,
+    ];
+    let cell_words: Vec<u8> = (0..16u8).map(|k| 4 * k).chain([0x88]).collect();
+    let box_logger = stand_in8(a, b, 0xe0, &record_words_logger(cursor, &box_words));
+    let cell_logger = stand_in8(a, b, 0x1a0, &record_words_logger(cursor, &cell_words));
+    let scratch = alloc(a, b, 0xa0);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fl = |rng: &mut Xorshift, m: u32, d: f32| ((rng.next() % m) as f32 / d).to_bits();
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize],
+                [128.0f32, 256.0][(rng.next() % 2) as usize],
+            ],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(5)));
+        let rect = [
+            fl(rng, 6000, 7.0),
+            fl(rng, 4000, 7.0),
+            fl(rng, 6000, 3.0),
+            fl(rng, 4000, 3.0),
+        ];
+        if k % 2 == 0 {
+            redirect(a, b, 0x0063_eee0, box_logger);
+            let args = [rect[0], rect[1], rect[2], rect[3], rng.next(), rng.next()];
+            eax(a, 0x008f_4b20, &args);
+            t::to_draw_cross_box_xywh_c2(b, args, scratch, call);
+        } else {
+            redirect(a, b, 0x0063_eee0, cell_logger);
+            let index = if rng.next().is_multiple_of(8) {
+                rng.next()
+            } else {
+                rng.next() % 60
+            };
+            let args = [index, rect[0], rect[1], rect[2], rect[3]];
+            eax(a, 0x008f_8bb0, &args);
+            t::draw_sheet_cell(b, args, scratch, call);
+        }
+        let v: [u32; 0x28] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("box {k}"), a, b);
+    }
+}
+
+#[test]
+fn round24_boxes_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round24_boxes(&mut a, &mut b, &mut Xorshift(0x4024_0011));
+}
+
+#[test]
+fn round24_boxes_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round24_boxes(&mut a, &mut b, &mut Xorshift(0x4024_0012));
 }
 
 #[test]

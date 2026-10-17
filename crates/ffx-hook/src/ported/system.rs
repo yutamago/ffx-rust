@@ -6047,6 +6047,20 @@ ported! {
             call_sym,
         );
     }
+    /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)`.
+    TODrawCrossBoxXYWHC2 @ 0x008f_4b20 => extern "C" fn to_draw_cross_box_xywh_c2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_draw_cross_box_xywh_c2(&mut mem(), [x, y, w, h, c0, c1], at, call_sym);
+    }
+    /// `TODrawSheetCell_008f8bb0(cell, x, y, w, h)`.
+    TODrawSheetCell_008f8bb0 @ 0x008f_8bb0 => extern "C" fn to_draw_sheet_cell(cell: u32, x: u32, y: u32, w: u32, h: u32) {
+        let mut scratch = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::draw_sheet_cell(&mut mem(), [cell, x, y, w, h], at, call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

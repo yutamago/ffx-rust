@@ -10245,7 +10245,7 @@
 0x008f3db0 function TODrawBoxXYWHC2           # fh v3:exact 0x008f3db0
 0x008f3eb0 function TODrawBoxXYWHC2FW         # fh v3:exact 0x008f3eb0
 0x008f41b0 function TODrawBtlNetWindowXYWHType # fh v3:exact 0x008f41b0
-0x008f4b20 function TODrawCrossBoxXYWHC2      # fh call.cs cdecl
+0x008f4b20 function TODrawCrossBoxXYWHC2      # fh call.cs cdecl; untextured gradient box c0 (top left) to c1, corners x,y..x+w,y+h clipped by BeginScissor_XY, graphicDrawUIElement(rec, 0, 1, 0, 0)
 0x008f4c40 function TODrawCrossBoxXYWHC2FW    # fh v3:exact 0x008f4c40
 0x008f4f10 function TODrawCrossMenuIconAbilityName # fh v3:cg3 0x8f4f10
 0x008f5000 function TODrawCrossMenuIconCommandName # fh v3:cg3 0x8f5000
@@ -10261,6 +10261,7 @@
 0x008f8910 function TODrawMenuStdPlateNonC    # fh v3:cg2 0x8f8910
 0x008f8940 function TODrawMenuStdPlateNonSC   # fh v3:cg2 0x8f8940
 0x008f8970 function TODrawMenuStdPlateType    # fh v3:exact 0x008f8970
+0x008f8bb0 function TODrawSheetCell_008f8bb0 # (cell, x, y, w, h): cell of sheet 0x2ecc (170 x 14 px, nine rows per column) over x,y..x+w,y+h in grey via graphicDrawUIElement, unclipped; name ours
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl

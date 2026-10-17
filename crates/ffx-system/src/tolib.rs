@@ -8279,4 +8279,105 @@ pub mod bridge {
         mem.write(rec.wrapping_add(0x88), 0u32);
         call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
     }
+
+    /// The colour words of a UI record: the bytes of `c` (r, g, b, a) as
+    /// four words at `at`.
+    fn colour_words<M: Mem>(mem: &mut M, at: u32, c: u32) {
+        for k in 0..4u32 {
+            mem.write(at.wrapping_add(4 * k), (c >> (8 * k)) & 0xff);
+        }
+    }
+
+    /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f4b20`): an
+    /// untextured gradient box from colour `c0` (top left) to `c1` (bottom
+    /// right): corners `x, y` and `x + w, y + h` (f32 bits), clipped by
+    /// `BeginScissor_XY`, drawn with `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    /// `scratch` (0xa0 bytes) holds the corners (`+0`) and the record
+    /// (`+0x10`); the UV words the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_draw_cross_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        let kept = call(
+            mem,
+            0x008e_58e0,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        colour_words(mem, rec.wrapping_add(0x10), c0);
+        colour_words(mem, rec.wrapping_add(0x30), c1);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `0x008f8bb0(cell, x, y, w, h)`: draws cell `cell` of sheet 0x2ecc
+    /// (columns of 170 by rows of 14 pixels, nine rows per column) over
+    /// `x, y, w, h` (f32 bits) in grey, unclipped. `scratch` (0xa0 bytes)
+    /// holds the sheet size (`+0`) and the record (`+0x10`).
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn draw_sheet_cell<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [index, x, y, w, h] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let texture = call(mem, 0x008a_c8c0, &[0x2ecc]);
+        call(mem, 0x008a_c400, &[0x2ecc, size, size.wrapping_add(4)]);
+        let (sw, sh) = (
+            f64::from(mem.read::<f32>(size)),
+            f64::from(mem.read::<f32>(size.wrapping_add(4))),
+        );
+        let i = index.cast_signed();
+        let (column, row) = ((i / 9).wrapping_mul(0xaa), (i % 9).wrapping_mul(0xe));
+        let u = |p: i32| (f64::from(p as f32) / sw) as f32;
+        let v = |p: i32| (f64::from(p as f32) / sh) as f32;
+        mem.write(rec, x);
+        mem.write(rec.wrapping_add(4), y);
+        mem.write(rec.wrapping_add(8), u(column));
+        mem.write(rec.wrapping_add(0xc), v(row));
+        colour_words(mem, rec.wrapping_add(0x10), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x20), (f(x) + f(w)) as f32);
+        mem.write(rec.wrapping_add(0x24), (f(y) + f(h)) as f32);
+        mem.write(rec.wrapping_add(0x28), u(column.wrapping_add(0xaa)));
+        mem.write(rec.wrapping_add(0x2c), v(row.wrapping_add(0xe)));
+        colour_words(mem, rec.wrapping_add(0x30), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
 }
