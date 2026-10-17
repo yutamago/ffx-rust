@@ -167,36 +167,97 @@ animated cursor that the two original runs happen to agree on, so
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
 
-## One game at a time
+## Parallel games
 
 `Game_Main` (`0x0062ee50`) takes the named mutex
 `9B8F7468-6DE0-4C5A-9209-89D363F8FCC9`; when it already exists the game
-shows "Same program is already running." and ends. `tools/run-game.sh`
-therefore refuses to start while any `FFX.exe` is listed. `quit` ends the
-process with `TerminateProcess`: running the game's own shutdown from the
-harness thread once deadlocked, and that process, stuck while exiting,
-kept the mutex (and the harness port) until it finally went away.
+shows "Same program is already running." and ends. With the harness on, the
+hook replaces the `CreateMutexW` import and gives that one mutex a name per
+port (`…-harness-<port>`), so harness games run side by side; without the
+harness the game is unchanged. `quit` ends the process with
+`TerminateProcess`: running the game's own shutdown from the harness thread
+once deadlocked, and that process, stuck while exiting, kept its mutex (and
+its harness port) until it finally went away.
 
-So every test and agent queues for the game: the game slot
-(`crates/ffx-harness/src/slot.rs`), shared by all worktrees in
-`~/ffx-work/game-slot`. `Game::launch` takes a ticket, waits until it is
-first (saying so on stderr), holds an OS file lock while the game runs and
-frees it when the `Game` is dropped; a process that dies frees its ticket
-and lock with it. Scripts that start several games (`tools/replays/run-all.sh`,
-`tools/game-tests.sh`) take the slot once for all of them
-(`tools/in-game-slot.sh`). From the shell:
+Each game runs in a slot of a pool (`crates/ffx-harness/src/slot.rs`),
+shared by all worktrees in `~/ffx-work/game-slot`: `FFX_GAME_SLOTS` slots
+(default 3, see the measurements below). Slot `n` selects
+
+| | |
+|---|---|
+| game folder | `~/ffx-work/instances/<n>` (`FFX_INSTANCES_DIR`) |
+| harness port | `27100 + n` (`FFX_HARNESS_PORT` is the base) |
+| Documents folder | `~/ffx-work/harness/<n>/home` (`Options::home`, `Home::Instance`) |
+| output folder | `~/ffx-work/harness/<n>` (`FFX_HARNESS_DIR`; `Game::out_dir`, screenshots) |
+| lock | `~/ffx-work/game-slot/lock-<n>` |
+
+An instance folder (`tools/instance.sh <n>`, called by `tools/run-game.sh
+--instance <n>`) is the game folder made of hard links (`cp -al`: same
+filesystem, no space; about 3,200 files, 0.2 s). Windows loads `FFX.exe`,
+its DLLs and the archives from such a tree over the WSL share like from the
+game folder. The links are rebuilt only when the game folder's listing
+(names, sizes, times, inodes) changes; `mods/` is linked afresh at every
+launch, with each `Options::mods` folder (`--mod DIR`) added as
+`mods/<name>`. Files a launch installs or something writes in place are
+never links: the instance's own `DINPUT8.dll` (the caller's build, replaced
+at each launch), `ffx-hook.log` (`Game::log_path`, `Game::new_log` for this
+launch's lines), `ffx-launch.exe`, the renderer's files (`ffx-render.toml`
+copied at each launch). Tests that change mods pass them in `Options::mods`
+instead of writing into the game folder, so games side by side never see
+each other's.
+
+`Options::home` (default `Home::Instance`) is made afresh at each launch:
+a copy of the user's settings and saves (`copy_user_data`), then
+`Options::saves`, `(name, file)` pairs put into its `FINAL FANTASY X`
+folder (`ffx_001` is load-screen entry 1), so a test can start from a
+given save with `copy_user_data: false`. A home inside the user's real
+Documents folder is refused.
+
+`Game::launch` takes a ticket, waits until a slot is free (saying so on
+stderr), holds that slot's lock while the game runs and frees it when the
+`Game` is dropped; a process that dies frees its ticket and lock with it.
+The oldest `N` waiters may take any free slot. Every slot holder also holds
+`~/ffx-work/game-slot/lock` shared, and whoever wants the whole game (a
+checkout from before the pool, `tools/run-game.sh` without `--instance`)
+takes it exclusively: they wait for each other. `FFX_GAME_SLOTS=1` gives
+back one game at a time.
+
+`tools/run-game.sh --instance N` refuses to start when a game runs from the
+same folder, or when someone else holds that slot. Without the harness it
+refuses while any game outside the instances runs (or one with no path:
+stuck while exiting), since both would want the real mutex.
+
+From the shell:
 
 ```bash
 cargo build --release -p ffx-harness --bin game-slot
-target/release/game-slot status              # holder and queue
-target/release/game-slot run -- <command>    # waits, runs it in the slot
+target/release/game-slot status              # slots in use, queue
+target/release/game-slot run -- <command>    # waits, runs it in a slot
 ```
 
-`tools/run-game.sh` refuses to start a game while someone else holds the
-slot. A test stopped mid-run leaves its game running; the next
-`Game::launch` in the slot ends it with the harness's `quit` (only games
-that answer on the harness port: a game the user plays is never touched). A detached game (`Game::detach`) outlives its slot. Run long game
-tests as background commands: they wait for their turn and finish later.
+`game-slot run` sets `FFX_GAME_SLOT_HELD=1` and `FFX_GAME_SLOT=<n>`; the
+games the command launches then use slot `n`, one after the other (scripts
+that want that source `tools/in-game-slot.sh`). `tools/replays/run-all.sh`
+and `tools/game-tests.sh` no longer take one slot for everything: each
+replay or test takes its own, so they run side by side (`run-all.sh` with
+`FFX_REPLAY_SERIAL=1`, `game-tests.sh` inside `game-slot run`: one after
+the other).
+
+A test stopped mid-run leaves its game running; the next `Game::launch` in
+that slot ends it with the harness's `quit` (only games that answer on the
+slot's port: a game the user plays is never touched). A detached game
+(`Game::detach`) outlives its slot. Run long game tests as background
+commands: they wait for their turn and finish later.
+
+Replays write their screenshots to `$OUT`, the trace's folder (the
+scripts say `shot $OUT\field-walk-1.bmp`). `run-all.sh` gives each call
+its own folder, `%TEMP%\ffx-snap\runs\<id>\<tag>\` (traces, screenshots,
+each replay's output with the hook's faults), and keeps the recorded
+originals where the comparisons read them: `%TEMP%\ffx-snap\<replay>-orig.trace`,
+`-orig2.trace` and `~/ffx-work/replay-shots/orig`, `orig2`
+(`FFX_REPLAY_SHOTS`).
+
+MEASUREMENTS
 
 ## Tests
 
@@ -205,7 +266,8 @@ and wraps the commands; a launched game is ended when the `Game` is
 dropped, so a failing test does not leave it running. The game tests are
 ignored by default because they open a window on the Windows desktop.
 Starting and loading cost more than the checks, so each test shares one
-launch between several checks, and `tools/game-tests.sh` runs only the
+launch between several checks; the tests run side by side, each in its own
+slot, and `tools/game-tests.sh` runs only the
 tests the changed files concern (since the merge base with `origin/main`,
 plus uncommitted and untracked files):
 
@@ -228,4 +290,4 @@ the workspace select all four; other changes (docs, the CLI, symbols)
 none.
 
 Screens are recognised by mean colours of fixed rectangles; a failing
-check saves its screenshot to `<temp>/ffx-harness/`.
+check saves its screenshot to `~/ffx-work/harness/`.

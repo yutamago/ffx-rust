@@ -785,4 +785,25 @@ mod tests {
     fn crc_matches_the_png_reference() {
         assert_eq!(crc32(b"IEND"), 0xae42_6082);
     }
+
+    /// Chosen saves land in the sandbox's save folder, settings get the
+    /// test display; bad names are refused.
+    #[test]
+    fn prepare_home_puts_the_chosen_saves() {
+        let dir = std::env::temp_dir().join(format!("ffx-home-test-{}", std::process::id()));
+        let source = dir.join("save.bin");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&source, b"save").unwrap();
+        let home = dir.join("home");
+        prepare_home(&home, false, &[("ffx_007".into(), source.clone())]).unwrap();
+        let game = home.join(GAME_DOCUMENTS);
+        assert_eq!(
+            std::fs::read(game.join(SAVE_FOLDER).join("ffx_007")).unwrap(),
+            b"save"
+        );
+        let settings = std::fs::read_to_string(game.join("GameSetting.ini")).unwrap();
+        assert!(settings.contains("ScreenMode=SM_WINDOW"), "{settings}");
+        assert!(prepare_home(&home, false, &[("../x".into(), source)]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

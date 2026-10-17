@@ -291,19 +291,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let take = || Slot::try_take(&dir, 2, "test", Duration::ZERO).unwrap();
+        // A child process spawned meanwhile by another test holds copies of
+        // our lock files' descriptors until it execs: wait that out.
+        let take_freed = || {
+            (0..100)
+                .find_map(|_| {
+                    take().or_else(|| {
+                        std::thread::sleep(Duration::from_millis(10));
+                        None
+                    })
+                })
+                .unwrap()
+        };
         let a = take().unwrap();
         let b = take().unwrap();
         assert_eq!((a.number(), b.number()), (0, 1));
         assert!(take().is_none());
         drop(a);
-        let c = take().unwrap();
+        let c = take_freed();
         assert_eq!(c.number(), 0);
         drop((b, c));
         let whole = open_lock(&dir.join("lock")).unwrap();
         whole.lock().unwrap();
         assert!(take().is_none());
         drop(whole);
-        assert!(take().is_some());
+        drop(take_freed());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
