@@ -6920,4 +6920,250 @@ pub mod bridge {
             _ => 0,
         }
     }
+
+    /// `TOGetChangeMacroWidth(window, code, mode)` (`0x008b6a30`): the width
+    /// of the macro text `TOGetChangeMacroAddress(window, code)` (0.0
+    /// without one): nested macros (group 3, through `fcall` to itself),
+    /// `7 n` spaces of `n - 0xe0` (0xe1..=0xef), other glyphs
+    /// `TOGetFontWidthInterMode(glyph, mode, &w)`. `w` lives in `scratch`
+    /// and keeps its last value between glyphs, starting at 0.0.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_get_change_macro_width<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        code: u32,
+        mode: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        let mut acc = 0.0f32;
+        mem.write(scratch, 0.0f32);
+        let mut p = call(mem, 0x008b_6660, &[window, code]);
+        if p == 0 {
+            return 0.0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return acc;
+            }
+            if call(mem, 0x008d_f610, &[u32::from(c)]) == 3 {
+                let v = fcall(mem, 0x008b_6a30, &[window, p, mode]);
+                acc = (v + f64::from(acc)) as f32;
+                p = call(mem, 0x008d_fd80, &[p]);
+                continue;
+            }
+            let n: u8 = mem.read(p.wrapping_add(1));
+            if c == 7 && (0xe1..=0xef).contains(&n) {
+                acc = (f64::from(f32::from(n - 0xe0)) + f64::from(acc)) as f32;
+                p = call(mem, 0x008d_fd80, &[p]);
+                continue;
+            }
+            p = call(mem, 0x008b_7be0, &[p, mode, scratch]);
+            let w: f32 = mem.read(scratch);
+            acc = (f64::from(w) + f64::from(acc)) as f32;
+        }
+    }
+
+    /// `TOGetMessageWH(window, text, &w, &h, mode, flags)` (`0x008b9650`):
+    /// the width (f32, the widest line) and height (`u16`, the deepest line
+    /// plus 2) of a message text, returning the text after the code that
+    /// ended it.
+    ///
+    /// Lines are 0x10 high. Codes 1 and 2 end a line (and the text when
+    /// `flags & 0xf` is at least 1), 3 adds a line (ending the text at mode
+    /// 3), 0 ends it. Glyphs (group 4) add `TOGetFontWidthInterMode` widths,
+    /// translated first in an Al Bhed window (`+0x10` 0x4000,
+    /// `TOConvAlbhedWord`); code 5 skips a byte. Controls: `7 n` sets the
+    /// line start (`n × 4 - 0x100` for 0x40..0xc0), adds `n - 0xe0` spaces
+    /// (0xe1..=0xef), and `7 0x38` marks the window (`+0xe`) unless `+0x24`;
+    /// `0xe 0x40`/`0xe 0x41` open and close a 5.0 wrap indent (also taken on
+    /// a line break; mode 3 starts with it open); `0xb n` adds a button icon
+    /// (`TOGetScaleButtonIconWidth`, scale 0.73 and 1.5 more at modes 1 and
+    /// 3, else 0.65 and 1.0 more); `0x10 n` counts the window's counter
+    /// (`0x50..0x60`, measured through `fcall` to itself) and marks `+0x1e`
+    /// unless `flags & 0x100` or `n` is 0xff. Macros (group 3) add
+    /// `TOGetChangeMacroWidth`. `0x018663e8` counts the codes and
+    /// `0x018663ec` flags a type-1 window (0..=7, `TOGetWindowType`) while
+    /// no battle window or event message is up. `scratch` (0x40 bytes)
+    /// stands in for the original's stack.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn to_get_message_wh<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        out_w: u32,
+        out_h: u32,
+        mode: u32,
+        flags: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let tmp = scratch;
+        let albhed = scratch.wrapping_add(4);
+        let sub_w = scratch.wrapping_add(0x10);
+        let sub_h = scratch.wrapping_add(0x14);
+        let digits = scratch.wrapping_add(0x20);
+        let indent: f64 = mem.read(g(mem, 0x00b4_1d20));
+        let mut max_w = 0.0f32;
+        let mut cur_w = 0.0f32;
+        mem.write(tmp, 0.0f32);
+        let mut max_h = 0i32;
+        let mut going = true;
+        if window <= 7 {
+            let typed = call(mem, 0x0090_6c40, &[window]) == 1
+                && mem.read::<u32>(g(mem, 0x0134_0824)) == 0
+                && mem.read::<u32>(g(mem, 0x0133_c948)) == 0;
+            let flag = typed && mem.read::<u32>(g(mem, 0x0132_7100)) == 0;
+            mem.write(g(mem, 0x0186_63ec), u32::from(flag));
+        }
+        let line_end = flags & 0xf;
+        let high = flags & 0xff00;
+        let mut wrap = (mode ^ 3).cast_signed() < 1;
+        let mut line = 0x10i32;
+        mem.write(g(mem, 0x0186_63e8), 0u32);
+        let window_info =
+            |mem: &M| -> u32 { mem.read(g(mem, 0x0186_76f0).wrapping_add(window.wrapping_mul(4))) };
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            let mut add: Option<f64> = None;
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    if wrap && cur_w > 0.0 {
+                        cur_w = (f64::from(cur_w) + indent) as f32;
+                    }
+                    if max_w < cur_w {
+                        max_w = cur_w;
+                    }
+                    cur_w = 0.0;
+                    match c {
+                        0 => {
+                            if line > max_h {
+                                max_h = line;
+                            }
+                            going = false;
+                        }
+                        1 | 2 => {
+                            if line > max_h {
+                                max_h = line;
+                            }
+                            line = 0x10;
+                            if line_end >= 1 {
+                                going = false;
+                            }
+                        }
+                        3 => {
+                            line += 0x10;
+                            if line_end == 3 && line > max_h {
+                                max_h = line;
+                                going = false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                2 => {
+                    let n: u8 = mem.read(p.wrapping_add(1));
+                    if c == 7 {
+                        if window.cast_signed() >= 0 && n == 0x38 {
+                            let w = window_info(mem);
+                            if mem.read::<u16>(w.wrapping_add(0x24)) == 0 {
+                                mem.write(w.wrapping_add(0xe), 1u16);
+                            }
+                        }
+                        if (0x40..0xc0).contains(&n) {
+                            cur_w = (i32::from(n) * 4 - 0x100) as f32;
+                        }
+                        if (0xe1..=0xef).contains(&n) {
+                            add = Some(f64::from(f32::from(n - 0xe0)));
+                        }
+                    } else {
+                        if c == 0xe {
+                            if n == 0x40 && !wrap {
+                                wrap = true;
+                            }
+                            if n == 0x41 && wrap && cur_w > 0.0 {
+                                wrap = false;
+                                cur_w = (f64::from(cur_w) + indent) as f32;
+                            }
+                        }
+                        if c == 0xb {
+                            let (scale, extra) = if mode == 1 || mode == 3 {
+                                (
+                                    mem.read::<u32>(g(mem, 0x00b6_55e4)),
+                                    mem.read::<f64>(g(mem, 0x00b4_1d00)),
+                                )
+                            } else {
+                                (mem.read::<u32>(g(mem, 0x00b5_edf0)), 1.0)
+                            };
+                            let icon = fcall(mem, 0x008f_a800, &[u32::from(n), scale]);
+                            cur_w = ((icon + extra) + f64::from(cur_w)) as f32;
+                        }
+                        if c == 0x10 && window.cast_signed() >= 0 {
+                            if (0x50..0x60).contains(&n) {
+                                let counter: u32 = mem.read(
+                                    mem.read::<u32>(
+                                        g(mem, 0x0186_8a90).wrapping_add(window.wrapping_mul(4)),
+                                    )
+                                    .wrapping_add(0xc),
+                                );
+                                call(mem, 0x008b_8290, &[counter, digits, u32::from(n) - 0x4f, 1]);
+                                call(mem, 0x008b_9650, &[window, digits, sub_w, sub_h, mode, 0]);
+                                let w: f32 = mem.read(sub_w);
+                                cur_w = (f64::from(w) + f64::from(cur_w)) as f32;
+                                let info = window_info(mem);
+                                mem.write(info.wrapping_add(0x1e), 1u16);
+                            }
+                            if high & 0x100 == 0 && mem.read::<u8>(p.wrapping_add(1)) != 0xff {
+                                let info = window_info(mem);
+                                mem.write(info.wrapping_add(0x1e), 1u16);
+                            }
+                        }
+                    }
+                }
+                3 => add = Some(fcall(mem, 0x008b_6a30, &[window, p, mode])),
+                4 => {
+                    if c == 5 {
+                        p = p.wrapping_add(1);
+                    } else {
+                        let glyph = if window.cast_signed() >= 0
+                            && mem.read::<u16>(window_info(mem).wrapping_add(0x10)) == 0x4000
+                        {
+                            call(mem, 0x0090_6780, &[p, albhed]);
+                            albhed
+                        } else {
+                            p
+                        };
+                        call(mem, 0x008b_7be0, &[glyph, mode, tmp]);
+                        add = Some(f64::from(mem.read::<f32>(tmp)));
+                    }
+                }
+                _ => {}
+            }
+            if let Some(v) = add {
+                cur_w = (v + f64::from(cur_w)) as f32;
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+            let count: u32 = mem.read(g(mem, 0x0186_63e8));
+            mem.write(g(mem, 0x0186_63e8), count.wrapping_add(1));
+            if !going {
+                break;
+            }
+        }
+        mem.write(out_w, max_w);
+        mem.write(out_h, (max_h + 2) as u16);
+        mem.write(g(mem, 0x0186_63ec), 0u32);
+        p
+    }
 }

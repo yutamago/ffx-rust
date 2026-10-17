@@ -12454,6 +12454,202 @@ fn round21_macro_matches_the_original_on_the_snapshot() {
     round21_macro(&mut a, &mut b, &mut Xorshift(0x4021_0032));
 }
 
+/// Round 21's macro width and message size over stand-ins for the glyph
+/// widths, Al Bhed, icons, window type and macro lookup.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round21_message(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let text = alloc(a, b, 0x100);
+    let macro_text = alloc(a, b, 0x100);
+    let cells = alloc(a, b, 0x10);
+    // TOGetChangeMacroAddress: macro_text for codes inside the text
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x2d];
+    v.extend_from_slice(&text.to_le_bytes());
+    v.extend_from_slice(&[0x3d, 0x00, 0x01, 0x00, 0x00, 0x73, 0x06, 0xb8]);
+    v.extend_from_slice(&macro_text.to_le_bytes());
+    v.push(0xc3);
+    v.extend_from_slice(&[0x31, 0xc0, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008b_6660, s);
+    // TOGetFontWidthInterMode: *w = the byte, the next byte
+    let s = stand_in8(
+        a,
+        b,
+        0x80,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x51, 0xdb, 0x04, 0x24, 0x59, 0x8b, 0x4c,
+            0x24, 0x0c, 0xd9, 0x19, 0x40, 0xc3,
+        ],
+    );
+    redirect(a, b, 0x008b_7be0, s);
+    // TOConvAlbhedWord: the byte plus one plus the type-1 flag 0x018663ec,
+    // so the flag's value while measuring shows
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x8a, 0x00, 0xfe, 0xc0, 0x02, 0x05,
+    ];
+    v.extend_from_slice(&g(a, 0x0186_63ec).to_le_bytes());
+    v.extend_from_slice(&[0x88, 0x01, 0xc6, 0x41, 0x01, 0x00, 0xc3]);
+    let s = stand_in8(a, b, 0xc0, &v);
+    redirect(a, b, 0x0090_6780, s);
+    let s = stand_in8(a, b, 0x100, &[0xdb, 0x44, 0x24, 0x04, 0xc3]);
+    redirect(a, b, 0x008f_a800, s);
+    for (i, sym) in [0x0090_6c40u32, 0x008a_c2f0, 0x0078_51d0]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + 4 * i as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x120 + 0x10 * i as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    let windows = alloc(a, b, 8 * 0x30);
+    let counters = alloc(a, b, 8 * 0x10);
+    for w in 0..8u32 {
+        put(a, b, g(a, 0x0186_76f0) + 4 * w, windows + 0x30 * w);
+        put(a, b, g(a, 0x0186_8a90) + 4 * w, counters + 0x10 * w);
+    }
+    let out = alloc(a, b, 8);
+    let scratch = alloc(a, b, 0x40);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let random_text = |rng: &mut Xorshift, n: u32, end: u8| -> Vec<u8> {
+        let mut v = Vec::new();
+        for _ in 0..n {
+            match rng.next() % 12 {
+                0 => v.push((1 + rng.next() % 3) as u8),
+                1 => v.push(5),
+                2 => v.extend_from_slice(&[
+                    7,
+                    [0x38u8, 0x40, 0x80, 0xbf, 0xe0, 0xe1, 0xef, 0xf0][(rng.next() % 8) as usize],
+                ]),
+                3 => v.extend_from_slice(&[0xe, [0x40u8, 0x41][(rng.next() % 2) as usize]]),
+                4 => v.extend_from_slice(&[0xb, (0x30 + rng.next() % 0x40) as u8]),
+                5 => v.extend_from_slice(&[
+                    0x10,
+                    [0x50u8, 0x5f, 0x60, 0xff, 0x30][(rng.next() % 5) as usize],
+                ]),
+                6 => v.extend_from_slice(&[
+                    0x12 + (rng.next() % 0x10) as u8,
+                    (0x30 + rng.next() % 0x20) as u8,
+                ]),
+                _ => v.push((0x30 + rng.next() % 0xc0) as u8),
+            }
+        }
+        v.push(end);
+        v.resize(0x100, 0);
+        v
+    };
+    for k in 0..1500u32 {
+        let n = rng.next() % 0x14;
+        let bytes = random_text(rng, n, 0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        // the macro text: no line codes (they stop only messages), no
+        // nested macros deeper than the stand-in gives
+        let n = rng.next() % 8;
+        let mut bytes = random_text(rng, n, 0);
+        for c in bytes.iter_mut().take_while(|c| **c != 0) {
+            if (1..=3).contains(c) {
+                *c = 0x31;
+            }
+        }
+        a.write(macro_text, &bytes).unwrap();
+        b.write(macro_text, &bytes).unwrap();
+        for w in 0..8u32 {
+            let info = windows + 0x30 * w;
+            put(a, b, info + 0xe, rng.next() as u16);
+            put(
+                a,
+                b,
+                info + 0x10,
+                if rng.next().is_multiple_of(3) {
+                    0x4000u16
+                } else {
+                    rng.next() as u16
+                },
+            );
+            put(a, b, info + 0x1e, rng.next() as u16);
+            put(a, b, info + 0x24, (rng.next() % 2) as u16);
+            put(a, b, counters + 0x10 * w + 0xc, rng.next() % 100_000);
+        }
+        put(a, b, cells, rng.next() % 3);
+        put(a, b, cells + 4, [0u32, 3, 9][(rng.next() % 3) as usize]);
+        put(a, b, cells + 8, rng.next() % 2);
+        for at in [0x0134_0824u32, 0x0133_c948, 0x0132_7100] {
+            put(a, b, g(a, at), u32::from(rng.next().is_multiple_of(4)));
+        }
+        put(a, b, g(a, 0x0186_63ec), rng.next());
+        let window = [0u32, 3, 7, 8, 0xffff_ffff][(rng.next() % 5) as usize];
+        let window = if window == 8 || window == 0xffff_ffff {
+            window
+        } else {
+            window % 8
+        };
+        let mode = if rng.next().is_multiple_of(8) {
+            0x8000_0001
+        } else {
+            rng.next() % 5
+        };
+        let flags = (rng.next() % 4) | [0u32, 0x100, 0x200][(rng.next() % 3) as usize];
+        // the macro width on its own
+        let code = text + rng.next() % 0x10;
+        let safe_window = window % 8;
+        let want = fcall(a, 0x008b_6a30, &[safe_window, code, mode]);
+        let got = t::to_get_change_macro_width(b, safe_window, code, mode, scratch, call, fcall);
+        assert_eq!((want as f32).to_bits(), got.to_bits(), "macro width {k}");
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("macro width", a, b);
+        // -1 skips every window-dependent code; 8 would read past the tables
+        let window = if window == 8 { safe_window } else { window };
+        put(a, b, out, [rng.next(), rng.next()]);
+        assert_eq!(
+            eax(a, 0x008b_9650, &[window, text, out, out + 4, mode, flags]),
+            t::to_get_message_wh(
+                b,
+                window,
+                text,
+                out,
+                out + 4,
+                mode,
+                flags,
+                scratch,
+                call,
+                fcall
+            ),
+            "message {k}"
+        );
+        let v: [u32; 16] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("message size", a, b);
+    }
+}
+
+#[test]
+fn round21_message_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round21_message(&mut a, &mut b, &mut Xorshift(0x4021_0041));
+}
+
+#[test]
+fn round21_message_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round21_message(&mut a, &mut b, &mut Xorshift(0x4021_0042));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

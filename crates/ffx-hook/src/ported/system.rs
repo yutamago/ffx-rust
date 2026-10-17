@@ -5894,6 +5894,20 @@ ported! {
         let at = SCRATCH.as_ptr() as usize as u32;
         tolib::bridge::to_get_change_macro_address(&mut mem(), window, code, at, call_sym)
     }
+    /// `TOGetChangeMacroWidth(window, code, mode)`.
+    TOGetChangeMacroWidth @ 0x008b_6a30 => extern "C" fn to_get_change_macro_width(window: u32, code: u32, mode: u32) -> f32 {
+        let mut w = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut w) as usize as u32;
+        tolib::bridge::to_get_change_macro_width(&mut mem(), window, code, mode, at, call_sym, fcall)
+    }
+    /// `TOGetMessageWH(window, text, &w, &h, mode, flags)`.
+    TOGetMessageWH @ 0x008b_9650 => extern "C" fn to_get_message_wh(window: u32, text: u32, out_w: u32, out_h: u32, mode: u32, flags: u32) -> u32 {
+        let mut scratch = [0u32; 16];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_get_message_wh(&mut mem(), window, text, out_w, out_h, mode, flags, at, call_sym, fcall)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
