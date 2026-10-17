@@ -5,6 +5,7 @@ use ffx_battle::action::bridge as action;
 use ffx_battle::after_damage::bridge as afterdmg;
 use ffx_battle::atel::bridge as atel;
 use ffx_battle::chr_damage::bridge as chrdmg;
+use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
@@ -2871,5 +2872,147 @@ ported! {
     /// `MsSetStealGillEffect(i, got)`.
     MsSetStealGillEffect @ 0x0079_ed20 => extern "C" fn ms_set_steal_gill_effect(i: u32, got: u32) {
         afterdmg::ms_set_steal_gill_effect(&mut mem(), &mut call_ptr, i, got);
+    }
+    /// `MsGetChrCenterPos(i, vec)`.
+    MsGetChrCenterPos @ 0x0079_4c20 => extern "C" fn ms_get_chr_center_pos(i: u32, vec: u32) -> i32 {
+        target::ms_get_chr_center_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `MsGetChrTopPos(i, vec)`.
+    MsGetChrTopPos @ 0x0079_5980 => extern "C" fn ms_get_chr_top_pos(i: u32, vec: u32) -> i32 {
+        target::ms_get_chr_top_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `0x007a0bb0(kind, i, vec)` (`MsSEP3DPos`).
+    MsSEP3DPos @ 0x007a_0bb0 => extern "C" fn ms_sep_3d_pos(kind: u32, i: u32, vec: u32) {
+        afterdmg::ms_sep_3d_pos(&mut mem(), &crt_trig, kind, i, vec);
+    }
+    /// `MsSEP3Dregist(kind, i, se, once, pos)`: the pan and the sound through the game.
+    MsSEP3Dregist @ 0x007a_0a30 => extern "C" fn ms_sep_3d_regist(kind: u32, i: u32, se: u32, once: u32, pos: u32) -> u32 {
+        afterdmg::ms_sep_3d_regist(&mut mem(), &crt_trig, &mut call_ptr, kind, i, se, once, pos)
+    }
+    /// `MsRegSEplay(i, se)`.
+    MsRegSEplay @ 0x007a_0100 => extern "C" fn ms_reg_se_play(i: u32, se: u32) -> u32 {
+        afterdmg::ms_reg_se_play(&mut mem(), &crt_trig, &mut call_ptr, i, se)
+    }
+    /// `MsRegSEplay2(i, se)`.
+    MsRegSEplay2 @ 0x007a_0140 => extern "C" fn ms_reg_se_play2(i: u32, se: u32) -> u32 {
+        afterdmg::ms_reg_se_play2(&mut mem(), &crt_trig, &mut call_ptr, i, se)
+    }
+    /// `MsStoneProcess(i, actor)`.
+    MsStoneProcess @ 0x0078_e150 => extern "C" fn ms_stone_process(i: u32, actor: u32) -> u32 {
+        afterdmg::ms_stone_process(&mut mem(), &crt_trig, &mut call_ptr, i, actor)
+    }
+    /// `MsStatusDefenseEffect(i, j, bits)`.
+    MsStatusDefenseEffect @ 0x0079_ee20 => extern "C" fn ms_status_defense_effect(i: u32, j: u32, bits: u32) -> u32 {
+        afterdmg::ms_status_defense_effect(&mut mem(), &mut call_ptr, i, j, bits)
+    }
+    /// `MsLimitTypeDamageCheck(i, by, j, actor, hp, raw, crit)`.
+    MsLimitTypeDamageCheck @ 0x007b_0d50 => extern "C" fn ms_limit_type_damage_check(i: u32, by: u32, j: u32, actor: u32, hp: i32, raw: i32, crit: u32) -> u32 {
+        afterdmg::ms_limit_type_damage_check(&mut mem(), i, by, j, actor, hp, raw, crit)
+    }
+    /// `MsLimitTypeStatusCheck(i, by, j, actor, n, bits)`.
+    MsLimitTypeStatusCheck @ 0x007b_12c0 => extern "C" fn ms_limit_type_status_check(i: u32, by: u32, j: u32, actor: u32, n: i32, bits: u32) -> u32 {
+        afterdmg::ms_limit_type_status_check(&mut mem(), i, by, j, actor, n, bits)
+    }
+    /// `MsAutoCureProcess(i, actor, by, poison, zombie, dark, silence)`.
+    MsAutoCureProcess @ 0x007b_2510 => extern "C" fn ms_auto_cure_process(i: u32, actor: u32, by: u32, poison: u32, zombie: u32, dark: u32, silence: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_auto_cure_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, by, poison, zombie, dark, silence)
+    }
+    /// `MsAutoPotionProcess(i, actor, by)`.
+    MsAutoPotionProcess @ 0x007b_2850 => extern "C" fn ms_auto_potion_process(i: u32, actor: u32, by: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_auto_potion_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, by)
+    }
+    /// `AfterDamageProcess(i, k, j, out, flags)`: the sign window, the
+    /// effects, sounds and the achievement through the game.
+    AfterDamageProcess @ 0x0078_f060 => extern "C" fn after_damage_process(i: u32, k: u32, j: u32, out: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::after_damage_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, k, j, out, flags)
+    }
+    /// `MsSetDamage(i, sel, flags)`: its warded-status local in the
+    /// port's frame.
+    MsSetDamage @ 0x0078_d980 => extern "C" fn ms_set_damage(i: u32, sel: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        afterdmg::ms_set_damage(&mut target::Dm::new(&mut m), &host(), &mut s, i, sel, flags)
+    }
+    /// `0x007a0b90(se)` (`MsSEP3DFind`).
+    MsSEP3DFind @ 0x007a_0b90 => extern "C" fn ms_sep_3d_find(se: u32) -> u32 {
+        dmgend::ms_sep_3d_find(&mem(), se)
+    }
+    /// `MsSEP3DfadeOut(se, frames)`.
+    MsSEP3DfadeOut @ 0x007a_08a0 => extern "C" fn ms_sep_3d_fade_out(se: u32, frames: u32) -> u32 {
+        dmgend::ms_sep_3d_fade_out(&mut mem(), se, frames)
+    }
+    /// `MsRegSEfade(i, se, frames)`.
+    MsRegSEfade @ 0x007a_00d0 => extern "C" fn ms_reg_se_fade(i: u32, se: u32, frames: u32) -> i32 {
+        dmgend::ms_reg_se_fade(&mut mem(), i, se, frames)
+    }
+    /// `MsAtelRequestCancel(kind, i, n)`: the script calls through the
+    /// game, the handler's base in the port's frame.
+    MsAtelRequestCancel @ 0x0079_7cd0 => extern "C" fn ms_atel_request_cancel(kind: u32, i: u32, n: i32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_atel_request_cancel(&mut target::Dm::new(&mut m), &mut s, kind, i, n)
+    }
+    /// `MsEffectFree(i)`: script, vfx, sound, the CRT's free and the
+    /// effect's own function through the game.
+    MsEffectFree @ 0x0078_7af0 => extern "C" fn ms_effect_free(i: u32) {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_effect_free(&mut target::Dm::new(&mut m), &mut s, i);
+    }
+    /// `MsSetChrPosAfterSummon(i)`: its position vector in the port's
+    /// frame.
+    MsSetChrPosAfterSummon @ 0x007a_c6a0 => extern "C" fn ms_set_chr_pos_after_summon(i: u32) {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_set_chr_pos_after_summon(&mut target::Dm::new(&mut m), &host(), &mut s, i);
+    }
+    /// `MsDebugFullCommand_00796dc0(i, actor, flags)` (`MsChrDispose`):
+    /// chara's disposal and `Sg_FreeA` through the game.
+    MsDebugFullCommand_00796dc0 @ 0x0079_6dc0 => extern "C" fn ms_chr_dispose(i: u32, actor: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_chr_dispose(&mut target::Dm::new(&mut m), &mut s, i, actor, flags)
+    }
+    /// `MsWeaponDispose(i, k, flags, weapon)`.
+    MsWeaponDispose @ 0x007a_d750 => extern "C" fn ms_weapon_dispose(i: u32, k: u32, flags: u32, weapon: u32) {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_weapon_dispose(&mut target::Dm::new(&mut m), &mut s, i, k, flags, weapon);
+    }
+    /// `MsBtlChrFree(i, flags)`.
+    MsBtlChrFree @ 0x0079_3410 => extern "C" fn ms_btl_chr_free(i: u32, flags: u32) {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_btl_chr_free(&mut target::Dm::new(&mut m), &mut s, i, flags);
+    }
+    /// `0x007ae0a0(i)` (`MsFreePlayer`).
+    MsFreePlayer @ 0x007a_e0a0 => extern "C" fn ms_free_player(i: u32) {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_free_player(&mut target::Dm::new(&mut m), &host(), &mut s, i);
+    }
+    /// `MsExchangePlayer()`.
+    MsExchangePlayer @ 0x007a_df10 => extern "C" fn ms_exchange_player() {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_exchange_player(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `MsReturnSummon(revive)`.
+    MsReturnSummon @ 0x007a_ef20 => extern "C" fn ms_return_summon(revive: u32) {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_return_summon(&mut target::Dm::new(&mut m), &host(), &mut s, revive);
+    }
+    /// `MsBattleProcess_ChrDamage_007911e0()`.
+    MsBattleProcess_ChrDamage_007911e0 @ 0x0079_11e0 => extern "C" fn ms_battle_process_chr_damage() {
+        let mut m = mem();
+        script!(s);
+        dmgend::ms_battle_process_chr_damage(&mut target::Dm::new(&mut m), &host(), &mut s);
     }
 }

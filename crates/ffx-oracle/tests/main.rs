@@ -2462,6 +2462,9 @@ fn control_synthetic() {
     push_apart_cases(&mut a, &mut b, &mut rng, 600);
     cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
+    round11_main_cases(&mut a, &mut b, &mut rng, 300);
+    draw_filter_cases(&mut a, &mut b, &mut rng, 600);
+    vu_helper_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 #[test]
@@ -2489,6 +2492,9 @@ fn control_snapshot() {
     push_apart_cases(&mut a, &mut b, &mut rng, 600);
     cloth_anchor_cases(&mut a, &mut b, &mut rng, 300);
     cloth_step_cases(&mut a, &mut b, &mut rng, 300);
+    round11_main_cases(&mut a, &mut b, &mut rng, 300);
+    draw_filter_cases(&mut a, &mut b, &mut rng, 600);
+    vu_helper_cases(&mut a, &mut b, &mut rng, 200);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -4502,6 +4508,175 @@ fn cloth_step_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: 
         );
         twin("Sg_ClothStep", a, b, 0x0082_2de0, &[chr], |m| {
             cl::cloth_step(&mut H(m), chr, &mut stand_in);
+        });
+    }
+}
+
+// Main round 11.
+fn round11_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    for n in 0..rounds {
+        let ids = [
+            0x4040_0003,
+            0x4080_0001,
+            0x4080_0002,
+            0x4080_0003,
+            0x4080_0004,
+            0x4040_0002,
+        ];
+        let id = if n % 3 == 0 {
+            rng.next()
+        } else {
+            ids[rng.below(6) as usize]
+        };
+        twin("ExportValidateInterface", a, b, 0x0082_02e0, &[id], |_| {
+            c::export_validate_interface(id)
+        });
+    }
+}
+
+// Main round 11: the fades and the focus.
+fn draw_filter_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    let log = a.rebase(REC_LOG);
+    for (k, sym, n) in [
+        (82, c::GRAPHIC_HAS_RUN_DRAW_FILTER, 0),
+        (83, c::GRAPHIC_RESET_HAS_RUN_DRAW_FOCUS, 0),
+        (84, c::GRAPHIC_HAS_RUN_DRAW_FOCUS, 0),
+        (85, c::GRAPHIC_SET_FOCUS_Z, 2),
+        (86, c::GRAPHIC_ADD_SCREEN_FADE_TASK, 5),
+        (87, c::SG_DRAW_FOCUS, 1),
+        (88, c::SG_DRAW_LEVEL, 1),
+    ] {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let slots = a.rebase(c::FADE_SLOTS);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        set(
+            a,
+            b,
+            c::FADE_ACTIVE,
+            if rng.below(6) == 0 {
+                0
+            } else {
+                rng.next() & 0x1f
+            },
+        );
+        set(a, b, c::FOCUS_ON, rng.below(2));
+        set(a, b, c::FOCUS_DRAW, rng.below(2));
+        for z in c::FOCUS_Z {
+            set(a, b, z, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        set(a, b, c::ACC_CURRENT_REQUEST, u32::from(rng.below(3) == 0));
+        set(
+            a,
+            b,
+            c::SCREEN_W,
+            if rng.below(2) == 0 { 0x200 } else { 0x280 },
+        );
+        set(a, b, c::DREAM_ON, rng.below(2));
+        set(
+            a,
+            b,
+            c::DREAM_FADE_MODE,
+            if rng.below(2) == 0 { u32::MAX } else { 2 },
+        );
+        set(
+            a,
+            b,
+            c::DREAM_FADE_TOTAL,
+            i32::try_from(rng.below(40)).unwrap() - 4,
+        );
+        set(a, b, c::DREAM_FADE_OUT, rng.below(2));
+        let small = |rng: &mut Xorshift, lo: i32, hi: u32| {
+            i16::try_from(i32::try_from(rng.below(hi)).unwrap() + lo).unwrap()
+        };
+        for i in 0..5 {
+            let s = slots + 0x10 * i;
+            put(a, b, s, u8::try_from(rng.below(10)).unwrap());
+            for o in 1..4 {
+                put(a, b, s + o, u8::try_from(rng.next() & 0xff).unwrap());
+            }
+            let n = if rng.below(5) == 0 {
+                0
+            } else {
+                small(rng, -3, 24)
+            };
+            put(a, b, s + 4, n);
+            let total = small(rng, 1, 40) * if rng.below(6) == 0 { -1 } else { 1 };
+            put(a, b, s + 6, total);
+            put(a, b, s + 8, small(rng, -40, 120));
+            put(a, b, s + 0xa, small(rng, 0, 30));
+        }
+        twin("Sg_DrawFilter", a, b, 0x0082_c0c0, &[], |m| {
+            c::draw_filter(&mut H(m));
+        });
+    }
+}
+
+// Main round 11: sg_calcenvelope_normW's translated VU0 and MIPS helpers.
+fn vu_helper_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::envelope::bridge as e;
+    let acc = a.rebase(e::VU0_ACC);
+    let val = |rng: &mut Xorshift| match rng.below(4) {
+        0 => rng.float(),
+        1 => modest(rng),
+        _ => bounded(rng),
+    };
+    for n in 0..rounds {
+        let v = rng.next();
+        #[allow(clippy::cast_possible_truncation)]
+        let h = v as u16;
+        twin("Sg_SetChrPacketState", a, b, 0x0084_5c30, &[v], |m| {
+            e::set_chr_packet_state(m, h);
+        });
+        twin("Sg_SetChrPacketWord", a, b, 0x0084_5c40, &[v], |m| {
+            e::set_chr_packet_word(m, h);
+        });
+        let src = alloc(a, b, 16);
+        put(a, b, src, rng.next());
+        put(a, b, src + 4, rng.next());
+        let dst = if n % 4 == 0 { src } else { alloc(a, b, 16) };
+        let imm = rng.next();
+        twin("sg_Daddiu", a, b, 0x0084_5cc0, &[dst, src, imm], |m| {
+            e::daddiu(m, dst, src, imm)
+        });
+        let sh = rng.next();
+        twin("sg_Sll", a, b, 0x0084_5d70, &[dst, src, sh], |m| {
+            e::sll(m, dst, src, sh)
+        });
+        let f = val(rng);
+        twin("sg_SetFloat", a, b, 0x0084_5cf0, &[dst, f], |m| {
+            e::set_float(m, dst, f32::from_bits(f))
+        });
+        let v3 = alloc(a, b, 16);
+        for k in 0..4 {
+            put(a, b, v3 + 4 * k, val(rng));
+            put(a, b, acc + 4 * k, val(rng));
+        }
+        let out = match n % 3 {
+            0 => v3,
+            1 => acc,
+            _ => alloc(a, b, 16),
+        };
+        let s = val(rng);
+        twin("sg_VmulScalar", a, b, 0x0084_5e80, &[out, v3, s], |m| {
+            e::vmul_scalar(m, out, v3, f32::from_bits(s))
+        });
+        let s = val(rng);
+        twin(
+            "sg_VmaddScalar",
+            a,
+            b,
+            0x0084_5e40,
+            &[out, v3, 0, 0, s],
+            |m| e::vmadd_scalar(m, out, v3, f32::from_bits(s)),
+        );
+        let v = if n % 5 == 0 { acc } else { v3 };
+        let s = val(rng);
+        twin("sg_VmaddaScalar", a, b, 0x0084_5df0, &[0, v, 0, s], |m| {
+            e::vmadda_scalar(m, v, f32::from_bits(s))
         });
     }
 }

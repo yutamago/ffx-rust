@@ -1339,6 +1339,48 @@ ported! {
     Sg_ClothStep @ 0x0082_2de0 => extern "C" fn sg_cloth_step(chr: u32) {
         cloth::bridge::cloth_step(&mut mem(), chr, &mut crt);
     }
+    /// `ExportValidateInterface(id)`.
+    ExportValidateInterface @ 0x0082_02e0 => extern "C" fn export_validate_interface(id: u32) -> u32 {
+        control::bridge::export_validate_interface(id)
+    }
+    /// `Sg_DrawFilter()`.
+    Sg_DrawFilter @ 0x0082_c0c0 => extern "C" fn sg_draw_filter() {
+        control::bridge::draw_filter(&mut mem());
+    }
+    /// `Sg_SetChrPacketState(v)`.
+    Sg_SetChrPacketState @ 0x0084_5c30 => extern "C" fn sg_set_chr_packet_state(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        envelope::bridge::set_chr_packet_state(&mut mem(), v as u16);
+    }
+    /// `Sg_SetChrPacketWord(v)`.
+    Sg_SetChrPacketWord @ 0x0084_5c40 => extern "C" fn sg_set_chr_packet_word(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        envelope::bridge::set_chr_packet_word(&mut mem(), v as u16);
+    }
+    /// `sg_Daddiu(dst, src, imm)`.
+    sg_Daddiu @ 0x0084_5cc0 => extern "C" fn sg_daddiu(dst: u32, src: u32, imm: u32) -> u32 {
+        envelope::bridge::daddiu(&mut mem(), dst, src, imm)
+    }
+    /// `sg_SetFloat(dst, x)`.
+    sg_SetFloat @ 0x0084_5cf0 => extern "C" fn sg_set_float(dst: u32, x: f32) -> u32 {
+        envelope::bridge::set_float(&mut mem(), dst, x)
+    }
+    /// `sg_Sll(dst, src, n)`.
+    sg_Sll @ 0x0084_5d70 => extern "C" fn sg_sll(dst: u32, src: u32, n: u32) -> u32 {
+        envelope::bridge::sll(&mut mem(), dst, src, n)
+    }
+    /// `sg_VmaddaScalar(-, v, -, s)`.
+    sg_VmaddaScalar @ 0x0084_5df0 => extern "C" fn sg_vmadda_scalar(_a: u32, v: u32, _c: u32, s: f32) -> u32 {
+        envelope::bridge::vmadda_scalar(&mut mem(), v, s)
+    }
+    /// `sg_VmaddScalar(dst, v, -, -, s)`.
+    sg_VmaddScalar @ 0x0084_5e40 => extern "C" fn sg_vmadd_scalar(dst: u32, v: u32, _c: u32, _d: u32, s: f32) -> u32 {
+        envelope::bridge::vmadd_scalar(&mut mem(), dst, v, s)
+    }
+    /// `sg_VmulScalar(dst, v, s)`.
+    sg_VmulScalar @ 0x0084_5e80 => extern "C" fn sg_vmul_scalar(dst: u32, v: u32, s: f32) -> u32 {
+        envelope::bridge::vmul_scalar(&mut mem(), dst, v, s)
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())
