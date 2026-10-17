@@ -4425,6 +4425,7 @@
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
+0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
 0x0078f8f0 function MsGetRomBtlText           # fh v3:bsim1.00+call.cs 0x0078f940 cdecl
@@ -4524,6 +4525,7 @@
 0x00794a30 function MsGetChrCamHeight         # fh v3:cg2 0x794a40
 0x00794a70 function MsGetChrCamWidth          # fh v3:cg2 0x794a80
 0x00794ab0 function MsGetChrCameraPos         # fh v3:exact 0x00794ac0
+0x00794b70 function MsGetChrCenter            # ours: MsCalcChrDir's party/monster centres: mean MsGetChrBtlPos of +0xdc8 actors (MsAddPoint, MsDivVector)
 0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
@@ -4966,6 +4968,7 @@
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
 0x007aceb0 function MsActionRequest           # fh call.cs cdecl
 0x007ad0c0 function MsActionTarget            # fh v3:exact 0x007ad0d0
+0x007ad130 function MsCheckBoundWeapon        # ours: weapon model ID in the zero-ended u16 list g_BtlBoundWeapons (MsBtlReadCueRegistWeapon queues its motion group too)
 0x007ad180 function MsBtlReadCueLevel         # fh v3:bsim1.00 0x007ad190
 0x007ad190 function MsBtlReadCueManage        # fh v3:exact 0x007ad1a0
 0x007ad3f0 function MsBtlReadCueRegist        # fh v3:exact 0x007ad400
@@ -7821,7 +7824,7 @@
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
 0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
-0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40
+0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40; battle info window 0x0133f5bc..0x0133f6a2 laid out from graphicUiRemapX2/Y2 of x 700, 1400 and y 101, 109, 160
 0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
 0x00897f00 function TOBtlInitLimitTimer          # structure: (): zeroes the limit timer state 0x0133f77c..0x0133f794, its position from TOSeqGetPoint(2, "dum201"), stops sound effect 0x8000004e if playing; callers are the Tidus/Auron/Lulu limit window init and control functions; Switch TOBtlInitLimitTimer (104 bytes) is the one unused name sorting between TOBtlInitInfoWinMes and TOBtlInitLuluLimitWindow here (with TOBtlInitLibraWindow, which is our TOBtlLibraGetRects 0x00897dc0)
 0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0
@@ -7938,6 +7941,7 @@
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a8e70 function TOMenuMainWindowOpen_008a8e70 # (): TkMenuMainAllocWindow, set up (handlers 0x008a91d0/0x008a9350, layer 6), kept at 0x018408fc, 0x01841c00..+0x14 = 0, TkMenuMainRegistWindow; name ours
 0x008a8f00 function TOBit16_008a8f00 # cdecl(bits, i): bit i of a u16 array (signed division); name ours
+0x008a8f40 function TOPlayerListInit_008a8f40 # cdecl(flags): g_TkMenuPlayers from MsGetSaveInParty, MsGetSaveOutParty, then joined others (MsGetSavePlyJoined); 0xff and 7 skipped, nobody for flags>>16 == 1; masks 0x01841c2c/30/34; name ours
 0x008a9090 function TOSummonListInit_008a9090 # (): g_TkMenuSummons/Totals/ListMax/EnableMask from command list 5 of MsMenuStatusNum(0, 0); joined aeons (MsGetSavePlyJoin) shown; 0x64 = aeons 0xf/0x10/0x11; name ours
 0x008a9230 function TOMenuCloseMainWindows_008a9230 # cdecl(owner): each of the 16 main windows at 0x01840900 (0x98 bytes) with owner byte +0x3f: +0xc(w); free flag +0x41: unless +0x14(w) == 0, +0x18(w) or TkMenuMainFreeWindow(w); name ours
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
@@ -8036,7 +8040,7 @@
 0x008abd30 function TODrawMessageWindow       # fh v3:exact+call.cs 0x008abce0 stdcall
 0x008abe40 function TODrawMessageWindowForMenu # fh v3:exact 0x008abdf0
 0x008abf30 function TODrawMovieMessage        # fh switch:cg3 0x71004fc2d0
-0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0
+0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0; (file): version u16 +4 >= 0xc8, slot u16 +8: 0x01841da0[slot] = image (+0x20/+0x24), size (+0x28/+0x2a); slots 0/4 copy the image to 0x0184b610/0x0185b610; slots 0..5 copy the CLUT (+0x30/+0x10); 0, or 1
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
 0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0; TOGetFFXLang -> "us" 1, "fr" 2, "es" 3, "de" 4, "it" 5, "kr" 9, "ch" 10, "uk" 18, else "jp"
@@ -8094,7 +8098,7 @@
 0x008af850 function TOSetMessageWindowPosition   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004f9960 TOSetMessageWindowPosition, 2 votes, round 2
 0x008afb90 function TOSetMessageWindowValue   # (i, v): u16 +4 of window i's object = v; name ours
 0x008b0020 function TOMessageSlotMode1_008b0020 # cdecl(i, a, b, c): message slot i: +0x14 part +0x1c = 1, +0x18 part bytes 1/2/3/7/6 = 0, a, b, 0, c, handler +0xfc = 0x008b64e0; name ours
-0x008b00a0 function TOSortMessageWindowPriority # fh v3:exact 0x008b0050
+0x008b00a0 function TOSortMessageWindowPriority # fh v3:exact 0x008b0050; (out): in-use message-window slots by priority (+4, i16) with the compiled exchange sort; out = 8 u16 slot ids, 0xffff after; returns the count
 0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0
 0x008b0440 function TOSwapInternationalEnvExecMenu # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOSwapInternationalEnvExecMenu ---- Start\\n'; Switch 0x71004fb120 TOSwapInternationalEnvExecMenu (symbols from Fahrenheit's server export)
 0x008b0500 function TOSwapInternationalEnvExecNonBlock # fh v3:exact 0x008b04b0
@@ -8190,7 +8194,7 @@
 0x008b8d90 function TOGetAbilityName_008b8d90 # cdecl(id): MsGetRomAbility(id, &strings) record's u16 +0 + strings; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
 0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
-0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth
+0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth; (text, kind, &w, table) -> next: glyph width (tables via 0x01841da4, kr/ch code-4 pages) -> TOGetFontWidthInPiexl + space (x aspect when 0x018663ec); 0x47 runs; 6 and < 0x30 are 2 bytes
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
 0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
@@ -12542,6 +12546,7 @@
 0x00c438a8 label g_AeonCommands            # 16 bytes per aeon (actor 8 on): u16 command / u8 value pairs at +0, +4, +8, +0xc (MsGetAeonCommand)
 0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
 0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs
+0x00c43984 label g_BtlBoundWeapons         # u16 weapon model IDs ending at 0, read by MsCheckBoundWeapon
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
@@ -12754,6 +12759,7 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112bde4 label g_BtlCenterScale          # f32: MsCalcChrDir moves one side's centre by it towards the other
 0x0112bde8 label g_BtlGround               # f32 ground height: MsSetChrHeight puts mode-0 actors at ground - height/2 + actor +0x538
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
 0x0112be38 label g_BtlMimic                # 0x48 bytes cleared by MsInitMimic
