@@ -6058,7 +6058,7 @@
 0x0076d440	logic	default (no rule: ported to be safe)
 0x0076d510	logic	default (no rule: ported to be safe)
 0x0076d530	logic	default (no rule: ported to be safe)
-0x0076d5a0	logic	default (no rule: ported to be safe)
+0x0076d5a0	platform	reviewed: CD stream read (sceCdRead) (system round 30)
 0x0076d600	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_install_find
 0x0076d660	logic	default (no rule: ported to be safe)
 0x0076d6b0	logic	default (no rule: ported to be safe)
@@ -13606,7 +13606,7 @@
 0x008bee50	logic	default (no rule: ported to be safe)
 0x008bee70	glue	reviewed: TOMenuGetStatusMes: glue (system round 21)
 0x008bee90	logic	default (no rule: ported to be safe)
-0x008beeb0	logic	default (no rule: ported to be safe)
+0x008beeb0	glue	reviewed: TOMenuGetSummonMes: MsMenuGetText(0xc, id, hiragana), like TOMenuGetNameMes (system round 30)
 0x008bef10	logic	default (no rule: ported to be safe)
 0x008bef30	glue	GS/DMA packet writer (TOOpenPktbuff, TOSetPktBuffAdrs; writes no game state): replaced by ffx-render
 0x008bef50	logic	default (no rule: ported to be safe)
@@ -16900,7 +16900,7 @@
 0x00a42880	logic	default (no rule: ported to be safe)
 0x00a428a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_PC
 0x00a429d0	logic	default (no rule: ported to be safe)
-0x00a42a00	logic	default (no rule: ported to be safe)
+0x00a42a00	platform	reviewed: pc_ReadWholeFile: sceOpen/sceRead into user_malloc (system round 30)
 0x00a42ab0	glue	GS/DMA packet writer (sceGsSetDefDrawEnv2; writes no game state): replaced by ffx-render
 0x00a42b70	logic	default (no rule: ported to be safe)
 0x00a42ba0	logic	default (no rule: ported to be safe)
