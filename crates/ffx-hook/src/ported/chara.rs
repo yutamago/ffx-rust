@@ -23,6 +23,7 @@ static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
     [const { core::sync::atomic::AtomicU32::new(0) }; 0x280];
 
 /// `Ch_CalcElement`'s frame (0xc11c bytes, its 512 skeleton matrices).
+#[allow(dead_code)] // Ch_CalcElement is not hooked (see its entry below)
 static CALC_SCRATCH: [core::sync::atomic::AtomicU32; 0x3047] =
     [const { core::sync::atomic::AtomicU32::new(0) }; 0x3047];
 
@@ -1813,15 +1814,10 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
     }
-    /// `Ch_CalcElement(chr)`.
-    Ch_CalcElement @ 0x0083_2760 => extern "C" fn ch_calc_element(chr: u32) {
-        let at = u32::try_from(CALC_SCRATCH.as_ptr() as usize).unwrap_or(0);
-        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
-        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
-        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
-        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
-        p::ch_calc_element(&mut mem(), chr, at, &mut c);
-    }
+    // Ch_CalcElement (0x00832760) is ported (parts::ch_calc_element, oracle
+    // parity on the image and both snapshots) but not hooked: in the game it
+    // garbles the battle models' skeletons (battle-attack replay, 2026-10-17),
+    // which the oracle does not reproduce. Hook it again once that is found.
     /// `Ch_MemMove()`: the whole function (the dump splits it at the early
     /// return).
     Ch_MemMove @ 0x0082_6fa0 => extern "C" fn ch_mem_move() -> u32 {

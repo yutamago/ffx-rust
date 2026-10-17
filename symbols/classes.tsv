@@ -2157,7 +2157,7 @@
 0x0067a950	glue	thin wrapper: only forwards to glue code (SyncManager_syncInit)
 0x0067a960	logic	default (no rule: ported to be safe)
 0x0067a990	dead	unreachable from the entry point and every pointer table
-0x0067a9b0	logic	default (no rule: ported to be safe)
+0x0067a9b0	debug	reviewed: the REQ debug hook: forwards to the script debugger object at *0x00ce9014 (script round 17)
 0x0067a9d0	logic	default (no rule: ported to be safe)
 0x0067a9f0	logic	default (no rule: ported to be safe)
 0x0067aa50	logic	default (no rule: ported to be safe)
@@ -4213,9 +4213,9 @@
 0x006f2de0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
 0x006f2e10	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
 0x006f2e90	dead	unreachable from the entry point and every pointer table
-0x006f2ed0	logic	default (no rule: ported to be safe)
+0x006f2ed0	platform	reviewed: Mutex_Lock: wraps the WaitForSingleObject import (script round 17)
 0x006f2f00	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
-0x006f2f50	logic	default (no rule: ported to be safe)
+0x006f2f50	platform	reviewed: Mutex_Unlock: wraps the ReleaseMutex import (script round 17)
 0x006f2f60	dead	unreachable from the entry point and every pointer table
 0x006f2f70	logic	default (no rule: ported to be safe)
 0x006f3000	logic	default (no rule: ported to be safe)
@@ -12828,8 +12828,8 @@
 0x0088c810	logic	default (no rule: ported to be safe)
 0x0088c820	logic	default (no rule: ported to be safe)
 0x0088c850	debug	only called from debug code (AtelDebugPage_System_0087fca0)
-0x0088c860	logic	default (no rule: ported to be safe)
-0x0088cac0	logic	default (no rule: ported to be safe)
+0x0088c860	platform	reviewed: TKMallocAndReadEventFTC: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)
+0x0088cac0	platform	reviewed: TKMallocAndReadEventMessage: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)
 0x0088ccf0	logic	default (no rule: ported to be safe)
 0x0088ce80	logic	default (no rule: ported to be safe)
 0x0088d120	logic	default (no rule: ported to be safe)
@@ -12929,7 +12929,7 @@
 0x0088ff70	logic	default (no rule: ported to be safe)
 0x00890150	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00890320	logic	default (no rule: ported to be safe)
-0x008903d0	logic	default (no rule: ported to be safe)
+0x008903d0	glue	reviewed: GIF tag with a SCISSOR register: packet emission only (menu round 16)
 0x008904e0	debug	debug name: TkSetDebugFontLocate2
 0x00890500	logic	default (no rule: ported to be safe)
 0x008906d0	logic	default (no rule: ported to be safe)
@@ -13593,7 +13593,7 @@
 0x008be960	dead	unreachable from the entry point and every pointer table
 0x008be9b0	dead	unreachable from the entry point and every pointer table
 0x008bea00	dead	unreachable from the entry point and every pointer table
-0x008bea20	glue	GS/DMA packet writer (TOClosePktbuff, TODrawKick; writes no game state): replaced by ffx-render
+0x008bea20	glue	reviewed: TOMenuDrawKickTmp: TOClosePktbuff and TODrawKick only (system round 25)
 0x008bea30	logic	default (no rule: ported to be safe)
 0x008bea50	dead	unreachable from the entry point and every pointer table
 0x008bea70	dead	unreachable from the entry point and every pointer table
@@ -14569,7 +14569,7 @@
 0x008f51e0	logic	default (no rule: ported to be safe)
 0x008f59c0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008f5b90	dead	unreachable from the entry point and every pointer table
-0x008f5bc0	glue	GS packet API (TODrawKick): appends to or kicks a packet; replaced by ffx-render
+0x008f5bc0	platform	reviewed: TODrawKick: FlushCache, sceGsSyncPath, sceDmaSend only (system round 25)
 0x008f5c10	glue	GS packet API (TODrawMenuBG): appends to or kicks a packet; replaced by ffx-render
 0x008f5c60	glue	GS packet API (TODrawMenuBGC2): appends to or kicks a packet; replaced by ffx-render
 0x008f5cc0	dead	unreachable from the entry point and every pointer table
@@ -14712,7 +14712,7 @@
 0x00901300	glue	GS packet API (TOMkpBtlLimitSpecialGauge): appends to or kicks a packet; replaced by ffx-render
 0x00901490	glue	GS/DMA packet writer (TOCtrlPkt, TOMkpShapeXYC2; writes no game state): replaced by ffx-render
 0x009015e0	dead	unreachable from the entry point and every pointer table
-0x00901660	glue	GS packet API (TOMkpCrossEasyStrFontSClut): appends to or kicks a packet; replaced by ffx-render
+0x00901660	glue	reviewed: TOMkpCrossEasyStrFontSClut: only calls the packet writer TOAdpCrossEasyStrFontSClutRGBA (system round 25)
 0x009016b0	glue	GS packet API (TOMkpCrossExtMesFontLClut): appends to or kicks a packet; replaced by ffx-render
 0x00901700	glue	GS packet API (TOMkpCrossExtMesFontLClutTypeRGBA): appends to or kicks a packet; replaced by ffx-render
 0x009019f0	logic	default (no rule: ported to be safe)

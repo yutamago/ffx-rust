@@ -5,16 +5,16 @@
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
-    fn g(mem: &impl Mem, a: u32) -> u32 {
+    pub(crate) fn g(mem: &impl Mem, a: u32) -> u32 {
         Global::<u32>::new(a).ptr(mem).addr
     }
 
-    const GET_PTR32: u32 = 0x00a4_4650;
+    pub(crate) const GET_PTR32: u32 = 0x00a4_4650;
     const SET_PTR32: u32 = 0x00a4_4700;
     const UNIT_MATRIX: u32 = 0x006e_d9a0;
     const VFX_DESTROY: u32 = 0x0064_5280;
     const MEM_FREE: u32 = 0x0071_6a90;
-    const NAME_HASH: u32 = 0x0064_1da0;
+    pub(crate) const NAME_HASH: u32 = 0x0064_1da0;
     /// `g_pppEnvSlot`: where the current ppp environment pointer is kept.
     pub const ENV_SLOT: u32 = 0x00c3_a4cc;
     /// `g_pppCurrentProgram`.
@@ -22,7 +22,7 @@ pub mod bridge {
 
     /// The 64-bit renderer instance of object `obj` in the current program:
     /// `(program, obj + sign(program))`.
-    fn instance(mem: &impl Mem, obj: u32) -> [u32; 2] {
+    pub(crate) fn instance(mem: &impl Mem, obj: u32) -> [u32; 2] {
         let prog: u32 = mem.read(g(mem, CURRENT_PROGRAM));
         [
             prog,
@@ -284,11 +284,11 @@ pub mod bridge {
     /// The CLUT's 32-entry position table (entry `i` within its block).
     const CLUT_POS: u32 = 0x00c3_e6c0;
     /// `g_pppStop`.
-    const STOP: u32 = 0x0230_fd34;
+    pub(crate) const STOP: u32 = 0x0230_fd34;
     /// The current lens-flare view (`u16`).
     const LENS_VIEW: u32 = 0x0230_fffe;
 
-    fn f(mem: &impl Mem, at: u32) -> f64 {
+    pub(crate) fn f(mem: &impl Mem, at: u32) -> f64 {
         ffx_bridge::x87::load(mem.read(at))
     }
 
@@ -566,166 +566,5 @@ pub mod bridge {
         let vis = store(div(f64::from(count), load(area.to_bits())));
         mem.write(at(0x7c), store(mul(load(vis), f(mem, at(0x7c)))));
         mem.write(at(0xac), vis);
-    }
-
-    const PEXTLH: u32 = 0x0073_7450;
-    const PMULTH: u32 = 0x0073_74e0;
-    const PPACB: u32 = 0x0073_75d0;
-    const GET_RENDER_DATA: u32 = 0x0064_53d0;
-    const UPDATE_RENDER_DATA: u32 = 0x0071_8610;
-    const PATH3_UPDATE: u32 = 0x0064_5600;
-    const VFX_UPDATE: u32 = 0x0064_58a0;
-    const ALPHA_FUNCTION: u32 = 0x0071_2c30;
-    const Z_MAT: u32 = 0x0071_2d00;
-    const INIT_PATH3_RENDER_DATA: u32 = 0x0071_0fd0;
-    const INIT_RENDER_DATA: u32 = 0x0071_1180;
-    /// `g_pppColorConShift`: added once to a colour read, then cleared.
-    const COLOR_SHIFT: u32 = 0x00c8_b500;
-    /// `g_pppCurrentPart`.
-    const CURRENT_PART: u32 = 0x0230_ffe4;
-    /// `g_PppPacketPos`.
-    const PACKET_POS: u32 = 0x0230_fd2c;
-    /// The emulated EE's `r0` (`g_Ee_Gpr`) and the two work registers.
-    const EE_R0: u32 = 0x00c8_f508;
-    const EE_A: u32 = 0x00c8_f588;
-    const EE_B: u32 = 0x00c8_f598;
-
-    /// `pppDrawMdlDraw(obj, key, prog)` (`0x00737770`): unless the key's
-    /// model (`+4`) is `0xffff` or the level is `0xec1`, the object's
-    /// colour (the work area's `+0xa0` halves, read through
-    /// `g_pppColorConShift`) times the part's `+0x70` halves, `>> 19 &
-    /// 0x1fff` per channel, packed to bytes (`pextlh`, `pmulth`, `ppacb` on
-    /// the emulated EE); with a non-zero alpha, a render request on the
-    /// stack (`frame - 0x80`: flags from the model record's word 0, its
-    /// `+0x16` blend, the colour, the part's `+0x78`, the object's matrix
-    /// `+0x10` and `+0x50` and textures `+0x90`/`+0x94`) updates the
-    /// instance's render data, or creates it (path 3 for flag 4). The
-    /// request's `+0xb` byte and `+0x30` word are left as they were.
-    /// Returns what the original leaves in eax.
-    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
-    pub fn ppp_draw_mdl_draw<M: Mem>(
-        mem: &mut M,
-        obj: u32,
-        key: u32,
-        prog: u32,
-        frame: u32,
-        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) -> u32 {
-        let model: u32 = mem.read(key.wrapping_add(4));
-        if model == 0xffff {
-            return key;
-        }
-        let h = call(mem, g(mem, NAME_HASH), &[]);
-        if h == 0xec1 {
-            return h;
-        }
-        let (r0, a, b, shift) = (
-            g(mem, EE_R0),
-            g(mem, EE_A),
-            g(mem, EE_B),
-            g(mem, COLOR_SHIFT),
-        );
-        let area = mem
-            .read::<u32>(mem.read::<u32>(prog.wrapping_add(0xc)))
-            .wrapping_add(obj)
-            .wrapping_add(mem.read::<u32>(shift));
-        let lo: u32 = mem.read(area.wrapping_add(0xa0));
-        mem.write(a, lo);
-        let hi: u32 = mem.read(area.wrapping_add(0xa4));
-        let part: u32 = mem.read(g(mem, CURRENT_PART));
-        mem.write(shift, 0u32);
-        mem.write(a.wrapping_add(4), hi);
-        let v: u32 = mem.read(part.wrapping_add(0x70));
-        mem.write(b, v);
-        let v: u32 = mem.read(part.wrapping_add(0x74));
-        mem.write(b.wrapping_add(4), v);
-        mem.write(shift, 0u32);
-        call(mem, g(mem, PEXTLH), &[a, r0, a]);
-        call(mem, g(mem, PEXTLH), &[b, r0, b]);
-        call(mem, g(mem, PMULTH), &[a, a, b]);
-        // the products >> 19 & 0x1fff as halves, r0's low halves above
-        let word =
-            |mem: &M, at: u32| (mem.read::<u32>(at).cast_signed() >> 19).cast_unsigned() & 0x1fff;
-        let ch = [
-            word(mem, a),
-            word(mem, a + 4),
-            word(mem, a + 8),
-            word(mem, a + 0xc),
-        ];
-        let r = [0u32, 4, 8, 0xc].map(|o| mem.read::<u32>(r0 + o) & 0xffff);
-        mem.write(a, ch[0] | ch[1] << 16);
-        mem.write(a + 4, ch[2] | ch[3] << 16);
-        mem.write(a + 8, r[0] | r[1] << 16);
-        mem.write(a + 0xc, r[2] | r[3] << 16);
-        call(mem, g(mem, PPACB), &[a, r0, a]);
-        let colour: u32 = mem.read(a);
-        let sh: u32 = mem.read(shift);
-        mem.write(frame.wrapping_sub(0x68).wrapping_add(sh), colour);
-        mem.write(shift, 0u32);
-        if mem.read::<u8>(frame.wrapping_sub(0x65)) == 0 {
-            return colour;
-        }
-        // the request
-        let req = frame.wrapping_sub(0x80);
-        let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
-        let rec = mem
-            .read::<u32>(env.wrapping_add(0x20))
-            .wrapping_add(model << 5);
-        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(rec.wrapping_add(0x1c))]);
-        let m0: u8 = mem.read(mp);
-        let mut flags = if m0 & 1 != 0 { 0x80u32 } else { 0xc };
-        if m0 & 2 == 0 {
-            flags |= 0x10;
-        }
-        mem.write(req, flags);
-        let blend: u16 = mem.read(mp.wrapping_add(0x16));
-        mem.write(req.wrapping_add(8), blend);
-        mem.write(req.wrapping_add(0xa), 0u8);
-        let part: u32 = mem.read(g(mem, CURRENT_PART));
-        let v: u32 = mem.read(part.wrapping_add(0x78));
-        mem.write(req.wrapping_add(0x1c), v);
-        let t0 = call(mem, g(mem, GET_PTR32), &[mem.read(obj.wrapping_add(0x90))]);
-        mem.write(req.wrapping_add(0x38), t0);
-        let t1 = call(mem, g(mem, GET_PTR32), &[mem.read(obj.wrapping_add(0x94))]);
-        mem.write(req.wrapping_add(0x3c), t1);
-        let v: u32 = mem.read(g(mem, 0x00c4_98dc));
-        mem.write(req.wrapping_add(4), v);
-        mem.write(req.wrapping_add(0x20), obj.wrapping_add(0x50));
-        mem.write(req.wrapping_add(0x2c), obj.wrapping_add(0x10));
-        for o in [0xcu32, 0x10, 0x14, 0x40, 0x44] {
-            mem.write(req.wrapping_add(o), 0u32);
-        }
-        mem.write(req.wrapping_add(0x24), g(mem, 0x0230_fd60));
-        mem.write(req.wrapping_add(0x28), g(mem, 0x0230_fda0));
-        let v: u32 = mem.read(g(mem, PACKET_POS));
-        mem.write(req.wrapping_add(0x34), v);
-        let id = instance(mem, obj);
-        if call(mem, g(mem, GET_RENDER_DATA), &id) != 0 {
-            let id = instance(mem, obj);
-            call(mem, g(mem, UPDATE_RENDER_DATA), &[id[0], id[1], rec, req]);
-            let id = instance(mem, obj);
-            let f = if mem.read::<u8>(req) & 4 != 0 {
-                PATH3_UPDATE
-            } else {
-                VFX_UPDATE
-            };
-            return call(mem, g(mem, f), &id);
-        }
-        let blend = u32::from(mem.read::<u8>(req.wrapping_add(8)));
-        let mut alpha = call(mem, g(mem, ALPHA_FUNCTION), &[blend]);
-        if mem.read::<u32>(req) & 0x2000 == 0 {
-            alpha |= call(mem, g(mem, Z_MAT), &[mem.read(req.wrapping_add(0x44))]);
-        }
-        let fl: u8 = mem.read(req);
-        if fl & 8 != 0 {
-            alpha |= 0x40;
-        }
-        let id = instance(mem, obj);
-        let f = if fl & 4 != 0 {
-            INIT_PATH3_RENDER_DATA
-        } else {
-            INIT_RENDER_DATA
-        };
-        call(mem, g(mem, f), &[id[0], id[1], rec, req, alpha])
     }
 }

@@ -3550,7 +3550,7 @@
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080
 0x0072a120 function pppFpResetStick           # fh v3:exact 0x0072a210
 0x0072a180 function pppFpSaveStat             # fh v3:exact 0x0072a270
-0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350
+0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350; ours: = fp::bridge::ppp_fp_set_draw_matrix: g_pppViewMatrix by mode byte (1: world rotation, position = camera x world position; 2: world x g_pppFpWoodMatrix; else world x camera), copied to g_pppViewMatrixCopy (returned) (oracle parity)
 0x0072a2e0 function pppFpSetRotMatrix         # fh v3:exact 0x0072a3d0
 0x0072a530 function pppFpSetStickChr          # fh v3:exact 0x0072a620
 0x0072a590 function pppFpSetStickMap          # fh v3:bsim1.00 0x0072a680
@@ -3663,7 +3663,7 @@
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
 0x00734c50 function pppDrawMatrixNoRot        # fh v3:exact 0x00734d20
 0x00734cf0 function pppDrawMatrixWood         # fh v3:exact 0x00734dc0
-0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60
+0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60; ours: = mat::bridge::ppp_draw_matrix_wood_sta: billboard rows from g_pppViewMatrix row 1 (normalised), (y, -x, 0, 0), their outer product, the view translation, built in g_pppWoodMatrixWork and copied to g_pppWoodMatrix (oracle parity)
 0x00734eb0 function pppKeDMatDraw             # fh v3:exact 0x00734f80
 0x00734ef0 function pppKeDMatFrDraw           # fh v3:exact 0x00734fc0
 0x00734f80 function pppKeDMatPhtDraw          # ppp program table record "pppKeDMatPht" draw: area 1 = cdc_Mul4x4(g_pppViewMatrix, area 0), then pppDrawMatrixFront's scaling without the mode byte
@@ -3729,17 +3729,17 @@
 0x007376a0 function pppEePpach                # (dst, rs, rt) R5900 PPACH: low halves of rt's four words, then rs's
 0x00737700 function pppEePsrlw                # (dst, src, sa) R5900 PSRLW the PC way: (i32 >> sa&31) & (0x7fffffff >> (sa-1 & 31)), so sa 0 gives 0
 0x00737750 function pppColorShiftStore        # (src, base) dword at base + g_pppColorConShift = *src; the shift cleared
-0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = draw::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData) (oracle parity)
-0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
-0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
+0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData); level 0xec1 skips (oracle parity)
+0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi_draw: pppDrawMdlDraw with the halfword interleave inlined, flags 0x80/0x90, the key's +8 blend, Z matrix of obj+0x50 always, never path 3 (oracle parity)
+0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts_draw: work area [[prog+0xc]+8]: two pos/speed/accel triples stepped (key +8..+0x1c on its frame); request +0x10/+0x14 = ftol(pos x 65536); level 0x169c draws at alpha 0 (oracle parity)
 0x007384f0 function pppDrawMdlTsCon           # ppp program table record "pppDrawMdlTs" (0x00c3a8a0) +0x1c set-up; "pppDrawMdlTs" (0x00c3a8a0) +0x20 second set-up; "pppDrawMdlTs" (0x00c3bf48) +0x1c set-up and 1 more
-0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump
-0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump
-0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump
+0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_2_draw: graphicGetPtrLogCount n added to the colour bytes and (n != 0) the model's own texture (get_ptr32(rec+0x1c) + its +8); flags from key +8 (== 4 gives 8) (oracle parity)
+0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi2_draw: Semi with flags from key +0xa and the 0x2000 Z test; an alpha byte part+0x76 x area+0xa6 >> 19 written first, then overwritten by the colour (oracle parity)
+0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts2_draw: Ts without the level check, flags from key +0x20, +0x44 = obj+0x50 (oracle parity)
 0x00739480 function pppDrawMdlTs2Con          # ppp program table record "pppDrawMdlTs2" (0x00c3b020) +0x1c set-up; "pppDrawMdlTs2" (0x00c3b020) +0x20 second set-up; "pppDrawMdlTs2" (0x00c3c6c8) +0x1c set-up and 1 more
-0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump
-0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump
-0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump
+0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_3_draw: request at frame-0x120: key +8 flags (blend byte 0x44 for additive), +9/+0xb/+0xa/+0xc: 0x200, 0x100, view matrix (0x2000), Z work area; magic-file fixes 0x296/0x241/0x29e/0x29f/0x2c9 (screen space, /1.8 in language 0xb), alpha fixes 0x17a/0x110/0x111/0x231 and maps 0x17c/0x3e/0xc6/0xc2/0xff (oracle parity)
+0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi3_draw: 3-style request from key +0xa..+0xe, the key's +8 blend, screen fix; update then graphicDynamicGeometryUpdateTexture; blend 0 gives alpha 2 (oracle parity)
+0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts3_draw: Ts step + 3-style request from key +0x20..+0x24 (Z work area at offset 3); magic 0x1f9 blend byte 0x48; field-effect fixes on maps 0xc6/0x102/0x103/0xf4/0x110/0x139/0x7a clear 0x10 and add alpha 0x800 (oracle parity)
 0x0073aac0 function pppDrawMdlTs3Con          # ppp program table record "pppDrawMdlTs3" (0x00c3b138) +0x1c set-up; "pppDrawMdlTs3" (0x00c3b138) +0x20 second set-up; "pppDrawMdlTs3" (0x00c3c7e0) +0x1c set-up and 1 more
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
@@ -3766,17 +3766,17 @@
 0x0073e240 function pppDrawMdlLoopCon         # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x1c set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x1c set-up
 0x0073e270 function pppDrawMdlLoopCon2        # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x20 second set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x20 second set-up
 0x0073e2a0 function pppDrawMdlLoopDes         # ppp program table record "pppDrawMdlLoop" +0x24 destructor; not a function start in the Ghidra dump
-0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump
+0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_draw: work area [[prog+0xc]+8]: ptr32 to the key at +0 (set up while null), two channels pos +4/+0x10 wrapped by _CIfmod(.., 32768); key +0x20 blend (0xff: the model's), +0x22..+0x25 flags, +0x1c 0 (oracle parity)
 0x0073e990 function pppShapeIterInit          # (shape, it) it = (set_ptr32(shape), shape+8, 0, 0, shape+0x14, 0, 0)
 0x0073e9d0 function pppDrawMdlLoopZCon        # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x1c set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x1c set-up
 0x0073ea00 function pppDrawMdlLoopZCon2       # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x20 second set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x20 second set-up
 0x0073ea30 function pppDrawMdlLoopZDes        # ppp program table record "pppDrawMdlLoopZ" +0x24 destructor; not a function start in the Ghidra dump
-0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump
+0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_z_draw: Loop with a Z work area (key +0x26, offset 3), the Ts3 map fixes (0x10 cleared, no alpha bit), no path 3 (oracle parity)
 0x0073f180 function pppShapeIterInit_2        # the pppShapeIterInit body again
 0x0073f1c0 function pppDrawMdlLoopDisPosCon   # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x1c set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x1c set-up
 0x0073f1f0 function pppDrawMdlLoopDisPosCon2  # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x20 second set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x20 second set-up
 0x0073f220 function pppDrawMdlLoopDisPosDes   # ppp program table record "pppDrawMdlLoopDisPos" +0x24 destructor; not a function start in the Ghidra dump
-0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump
+0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_dis_pos_draw: Loop with the object relative to the running part: T(-g_pppWorldMatrix pos) x obj+0x10 and g_pppViewMatrixCopy x that as the request matrices; Z work area; no path 3 (oracle parity)
 0x0073f9a0 function pppShapeIterInit_3        # the pppShapeIterInit body again
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
@@ -3817,17 +3817,17 @@
 0x007490c0 function pppKeMdlBmpCon2           # ppp program table record "pppKeMdlBmp" +0x20 set-up; not a function start in the Ghidra dump
 0x007490d0 function pppKeMdlBmpDraw           # ppp program table record "pppKeMdlBmp" draw; not a function start in the Ghidra dump
 0x007497e0 function pppKeMdlTfdCon            # ppp program table record "pppKeMdlTfd" (0x00c3ab98) +0x1c set-up; "pppKeMdlTfd" (0x00c3ab98) +0x20 second set-up; "pppKeMdlTfd" (0x00c3c240) +0x1c set-up and 1 more
-0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0
+0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (One): one pos/speed/accel triple at area [[prog+0xc]+8] stepped (key +8..+0x10 on its frame); KeMdl_MkTkClut(key+0x14, key+0x18, pos, 0); KeMdl_Draw(obj, model, area0, key[0x1c] << 2, 0, 0, 1, 0, part+0x70, part[0x78]) (oracle parity)
 0x007498f0 function pppKeMdlTfdUvCon          # ppp program table record "pppKeMdlTfdUv" (0x00c3dd48) +0x1c set-up; "pppKeMdlTfdUv" (0x00c3dd48) +0x20 second set-up
-0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20
+0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (One, uv): three triples (+0, +0x10, +0x1c; key +8, +0x20, +0x2c); KeMdl_Draw u, v = ftol of the second and third positions (oracle parity)
 0x00749b10 function pppKeMdlTfd2Con           # ppp program table record "pppKeMdlTfd2" (0x00c3dd70) +0x1c set-up; "pppKeMdlTfd2" (0x00c3dd70) +0x20 second set-up
-0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw
+0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Two): KeMdl_Draw mode = key +0x1d (oracle parity)
 0x00749c30 function pppKeMdlTfdUv2Con         # ppp program table record "pppKeMdlTfdUv2" (0x00c3dd98) +0x1c set-up; "pppKeMdlTfdUv2" (0x00c3dd98) +0x20 second set-up
-0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw
+0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Two, uv): mode = key +0x38 (oracle parity)
 0x00749e60 function pppKeMdlTfd3Con           # ppp program table record "pppKeMdlTfd3" (0x00c3ddc0) +0x1c set-up; "pppKeMdlTfd3" (0x00c3ddc0) +0x20 second set-up
-0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60
+0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three): mode = key +0x1d..+0x21 OR-ed, zmat = obj+0xa0+[[prog+0xc]+0xc] (oracle parity)
 0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
-0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
+0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three, uv): mode = key +0x38..+0x3c OR-ed, zmat as Tfd3 (oracle parity)
 0x0074a1e0 function pppNeiDrawMdlPointLightDraw # ppp program table record "pppNeiDrawMdlPointLight" draw; not a function start in the Ghidra dump
 0x0074a850 function pppNeiDrawMdlSemiPointLightDraw # ppp program table record "pppNeiDrawMdlSemiPointLight" draw; not a function start in the Ghidra dump
 0x0074ae70 function pppNeiDrawMdlTsPointLightDraw # ppp program table record "pppNeiDrawMdlTsPointLight" draw; not a function start in the Ghidra dump
@@ -3939,11 +3939,11 @@
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
 0x00759fb0 function pppKeLnsLpSftCon          # ppp program table record "pppKeLnsLpSft" (0x00c3ac60) +0x1c set-up; "pppKeLnsLpSft" (0x00c3ac60) +0x20 second set-up; "pppKeLnsLpSft" (0x00c3c308) +0x1c set-up and 1 more
 0x00759fd0 function pppKeLnsArndCon           # ppp program table record "pppKeLnsArnd" (0x00c3aa30) +0x1c set-up; "pppKeLnsArnd" (0x00c3c0d8) +0x1c set-up
-0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump
+0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Arnd): pppKeLnsArndUpdate, then a 6-word descriptor at ebp-0x30 (set_ptr32 obj, area, key colour x part +0x70 >> 12, g_pppScreenMatrix, key +0xc size, part +0x60 position) for KeLnsArnd_Draw(desc, 0) (oracle parity)
 0x0075a0f0 function pppKeLnsArndTCon          # ppp program table record "pppKeLnsArndT" +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
-0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
-0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control
+0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280; ours: = lns::bridge::ppp_ke_lns_t_draw (Arnd): update; on the key frame size into area +0x34; colour into +0x38; FFXVu0CopyVector(area +0x14, part +0x60) (oracle parity)
+0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control; ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Arnd): descriptor from the area (+0x34 size, +0x38 colour, +0x14 position) for KeLnsArnd_Draw(desc, 4) (oracle parity)
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
 0x0075a370 function pppKeLnsClmCon            # fh v3:exact 0x0075a460
 0x0075a3a0 function pppKeLnsClmDraw           # ppp program table record "pppKeLnsClm" draw; not a function start in the Ghidra dump
@@ -3953,22 +3953,22 @@
 0x0075a610 function pppKeLnsClmTOtDraw        # the g_pppOtList draw pppKeLnsClmTCon registers (node area+0x40)
 0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
-0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump
+0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Crn): as pppKeLnsArndDraw with the key halves +0x10/+0x12 in the descriptor, KeLnsCrn_Draw (oracle parity)
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
-0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
-0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c)
+0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0; ours: = lns::bridge::ppp_ke_lns_t_draw (Crn): size +0x2c, key halves as floats +0x34/+0x38, colour +0x30, position +0xc (oracle parity)
+0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c); ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Crn): +0x34/+0x38 truncated to halves (fistp, chop) in the descriptor, KeLnsCrn_Draw(desc, 4) (oracle parity)
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
 0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
-0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump
+0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Fls): the Crn layout with pppKeLnsFlsUpdate and KeLnsFls_Draw (oracle parity)
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
-0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
-0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20)
+0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0; ours: = lns::bridge::ppp_ke_lns_t_draw (Fls): size +0x30, key +0x10 as a float at +0x38, +0x12 at +0x3c, colour +0x34, position +0x10 (oracle parity)
+0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20); ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Fls): +0x38 truncated, +0x3c, KeLnsFls_Draw(desc, 4) (oracle parity)
 0x0075ae90 function pppKeLnsFlsUpdate         # fh v3:bsim1.00 0x0075af80
 0x0075af30 function pppKeLnsLpCon             # fh v3:exact 0x0075b020
 0x0075af60 function pppKeLnsLpCon2            # ppp program table record "pppKeLnsLp" (0x00c3aa08) +0x20 second set-up; "pppKeLnsLp" (0x00c3c0b0) +0x20 second set-up
-0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070
+0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070; ours: = lns::bridge::ppp_ke_lns_lp_draw: key frame adds +8/+4 to area +0xa8/+0x9c, bytes +0xc/+0xd to +0x8e/+0x8f; with +0x8f, +0x90 = obj matrix x (0,0,1,1); +0x80 = obj +0x40; KeLnsLp_Update(set_ptr32 area, obj +0x40, g_pppViewMatrix, g_pppScreenMatrix) (oracle parity)
 0x0075b090 function pppKeLnsLpTCon            # ppp program table record "pppKeLnsLpT" +0x1c set-up
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
@@ -6685,6 +6685,7 @@
 0x00822b20 function Sg_ClothRodMin            # kind 4: as Sg_ClothRodMax when |b - a|^2 < lim; name ours; ported
 0x00822c10 function Sg_ClothRodFixPin         # kind 5: rods {i16 a, i16 b, f32 len}: b = a + d * len / |d|, or b = a (Sg_VecCopy4) when |d|^2 <= 1e-5; name ours; ported
 0x00822cf0 function Sg_ClothRodFix            # kind 6: both points to length len, or b = a when |d| <= 1e-5; name ours; ported
+0x00822de0 function Sg_ClothStep              # (chr): the cloth step: wind (Sg_CreateVectorFromHV + rand), follow of the model group, anchors from bones, rods 1-6, collision spheres/capsules/planes, the floor, velocity/previous buffers, written back to the model vertices; repeats +0x812 times when far; called from 0x0082e390
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
 0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
 0x00824620 function Ch_ClothMeshMappingOffset # fh v3:exact 0x008246b0
@@ -6953,6 +6954,7 @@
 0x0082dab0 function Sg_SetCameraFollow        # (on): bit 1 of g_CameraFollow 0x00c496d5 (bit 0 is 0x0082d030's); with both set Sg_ControlMain turns the camera after the player's heading; script native at 0x00a77950 and the map defaults (Light_Set run, 0x00839xxx) call it with 1; returns the old byte without bit 1 in al; name ours; ported (ffx_sg::state)
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
+0x0082dbc0 function Sg_ClothPlaceAnchors      # (chr): each cloth anchor vertex = weighted corners of its model triangle (+ lift along the normal when Ch_UseAnchorVertex or bit 0); zeroed on level 0xc58 with a collapsed matrix; called from 0x0082e390 after the cloth step
 0x0082e200 function Ch_IsShadowExceptionId    # (chr): 1 for characters 3 and 0x67 (u16 +0), else 0; Ch_DrawShadow's per-character test; name ours
 0x0082e220 function Ch_CullByDistance         # (chr): +0x178 = camera distance (MsCameraGetPosNow(1), _CIsqrt) to +0x694; with +0x194 bit 11: hide bit 3 of +0x180 when the instance is not visible, bit 5 beyond +0x174 (half on level 0x24f9 with Valefor's bit 2); returns 1 when hidden; called after Ch_UpdateClothMatrix; name ours
 0x0082e3e0 function Ch_DrawShadowQuad         # (chr, -, p3): the shadow quad: matrix by -facing +0x158 and position +0x7c, graphicUpdateShadowMap (size, uv) then Ch_DrawQuad; returns p3; called for shadow mode 2 with Ch_IsNotExceptionId; name ours
@@ -7369,6 +7371,7 @@
 0x0083e9d0 function Sg_IdSetEffectTableIndex  # fh v3:bsim1.00 0x0083e9d0
 0x0083e9e0 function Sg_IdSetMapTable          # (i, v): g_ChrIdMapTable[i] = v
 0x0083ea00 function Sg_IdSetPtr               # fh v3:exact 0x0083ea00
+0x0083ecd0 function Sg_ChrPushApart           # (a, b, reach, dist): pushes two chrs apart by reach - dist in x-z, shared by their +0x500 weights (both <0: by Sg_VectorGetLengthXZ from their anchors); +0x4c/+0x54 step, +0x194 bit 5; caller 0x0083d3b0
 0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010
 0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00
 0x0083f050 function SgStrdupD                    # layout: alphabetical run between SgReallocD and Sg_FreeA (1 unnamed in the gap); Switch 0x7100431a40 SgStrdupD is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -8265,6 +8268,7 @@
 0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
 0x00867740 function AtelExecCtrlEvent         # fh v3:exact 0x008676e0
 0x008677a0 function AtelExecCtrlEventInit_008677a0 # (ctrl): the event start of AtelExecCtrlEvent: debug strings "EVENT INIT cnt %5d", "INI id %3d/cnt %5d", "DECODE SIGNAL", "EVENT START"; Script_Run of the init, AtelDecodeSignal, op_event_effect_init, MsBattleExeClear, AtelClearPauseFlag; own name
+0x008683e0 function Atel_CtrlStart             # (ctrl): the default start callback (+0x50, AtelRequireCtrlWork): Script_Run(worker, ctrl +8, 1) on each worker until its +0x34 bit 4, then AtelDecodeSignal(i, -1) for each, ctrl bit 3 set -> ctrl (0 without workers); name ours; ported in helpers (script round 17)
 0x008690a0 function AtelStartSignal           # (worker, node): starts a queued request at its level and entry
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2           # fh v3:bsim1.00 0x008692f0
@@ -9448,6 +9452,7 @@
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0; (file): version u16 +4 >= 0xc8, slot u16 +8: 0x01841da0[slot] = image (+0x20/+0x24), size (+0x28/+0x2a); slots 0/4 copy the image to 0x0184b610/0x0185b610; slots 0..5 copy the CLUT (+0x30/+0x10); 0, or 1
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
 0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
+0x008ac2f0 function TOGetFFXLangJmp           # jmp TOGetFFXLang (0x006410e0); pppDrawMdl3Draw/Semi3Draw divide a screen-space model's +0x30 by 1.8 when it returns 0xb; name ours
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0; TOGetFFXLang -> "us" 1, "fr" 2, "es" 3, "de" 4, "it" 5, "kr" 9, "ch" 10, "uk" 18, else "jp"
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
@@ -9959,6 +9964,7 @@
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
+0x008d5750 function MenuEquip_IsSelectable    # (id, any): MsGetSaveWeapon(id, &unused) slot: 0 when empty (+2) or flag 2 (+3); 1 with any; 0 for flags 4/8; else MenuList_IsEmptySlot; name ours
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
@@ -14354,6 +14360,7 @@
 0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
+0x00c3a500 label    g_pppFpCurrentId          # u32: the playing field effect's +0x44 halfword (pppFpLoop 0x00729c33); pppDrawMdl3Draw (map 0x3e: 0x2c..0x2f), pppDrawMdlTs3Draw/LoopZDraw (per-map ids) patch their requests by it; name ours
 0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
 0x00c3e6a0 label    g_pppClutCsmStep          # 32 signed bytes: the CLUT entry step (in u32 entries) after entry i & 0x1f in CSM1 order (1, 9, -15, ...); pppKeTkFadeDraw (0x0072ee50) copies it to its buffer +0x400; ours
@@ -15307,6 +15314,8 @@
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
+0x0230fea0 label    g_pppFpWoodMatrix         # the camera billboard rotation pppFpSetWoodMatrix (0x0072a690) builds (camera row 1 normalised, (y, -x, 0, 0), their outer product, camera translation 0x0230ff90); pppFpSetDrawMatrix mode 2: g_pppViewMatrix = g_pppWorldMatrix x it; name ours
+0x0230fee0 label    g_pppWoodMatrixWork       # pppDrawMatrixWoodSta builds the billboard rows here, then FFXVu0CopyMatrix to g_pppWoodMatrix (0x0230fde0); name ours
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
 0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
 0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
