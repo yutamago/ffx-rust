@@ -277,6 +277,45 @@ pub mod bridge {
     pub const PRAY_EFFECT: Global<u32> = Global::new(0x025d_5a24);
     /// What `rcEffectTaskFlagWait` waits to be 0 (read only there).
     pub const FLAG_WAIT: Global<u32> = Global::new(0x025d_5c10);
+    /// The request `rcefPostRequest` stores: five words at `0x025d5c18`
+    /// (the first argument, the float, the third, a zero, the fourth, the
+    /// fifth; `+0x10` is the zero). Nothing in the PC build reads them.
+    pub const REQUEST: u32 = 0x025d_5c18;
+    /// Set by `rcefPostRequest`; `rcEffectTaskRequestWait` waits for it to
+    /// be 0, and nothing in the PC build clears it.
+    pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
+    /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
+    pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// `op_oef2_sound_cue_check(mask)` (`0x008000f0`).
+    pub const SOUND_CUE_CHECK: u32 = 0x0080_00f0;
+    /// `MsEffectCheckMotion(x)` (`0x00787840`).
+    pub const MS_EFFECT_CHECK_MOTION: u32 = 0x0078_7840;
+    /// `MsSetChrDirTarget` (`0x00795eb0`, six words).
+    pub const MS_SET_CHR_DIR_TARGET: u32 = 0x0079_5eb0;
+    /// `MsGetWeaponHandle(chr, n)` (`0x00795b40`).
+    pub const MS_GET_WEAPON_HANDLE: u32 = 0x0079_5b40;
+    /// `Ch_SetHideEffect(handle, hide)` (`0x0082b2a0`).
+    pub const CH_SET_HIDE_EFFECT: u32 = 0x0082_b2a0;
+    /// The effect's oef2 data (`rcefPlaySE`'s source of sound entries).
+    pub const RCEF_OEF2: Global<u32> = Global::new(0x025d_5a28);
+    /// `op_oef2_a_get(data, kind, id)` (`0x007e3810`).
+    pub const OP_OEF2_A_GET: u32 = 0x007e_3810;
+    /// `op_oef2_sep_number_get(entry)` (`0x007fff80`).
+    pub const OP_OEF2_SEP_NUMBER_GET: u32 = 0x007f_ff80;
+    /// `op_oef2_se_on(entry, a, b)` (`0x007ffe10`).
+    pub const OP_OEF2_SE_ON: u32 = 0x007f_fe10;
+    /// `rcefMainCreateObj(kind)` (`0x00925140`).
+    pub const RCEF_MAIN_CREATE_OBJ: u32 = 0x0092_5140;
+    /// `rcefTaskSetSeq(task, seq)` (`0x0092ee20`).
+    pub const RCEF_TASK_SET_SEQ: u32 = 0x0092_ee20;
+    /// `rcefChrFini(obj)` (`0x00930710`).
+    pub const RCEF_CHR_FINI: u32 = 0x0093_0710;
+    /// `g_pppEnvSlot`: where `pppInitEnv` keeps the current environment.
+    pub const PPP_ENV_SLOT: Global<u32> = Global::new(0x00c3_a4cc);
+    /// `graphicVFXDestroy(lo, hi)` (cdecl, a 64-bit instance handle).
+    pub const VFX_DESTROY: u32 = 0x0064_5280;
+    /// `graphicVFXGetRenderDataByInstance(lo, hi)` (cdecl).
+    pub const VFX_GET_RENDER_DATA: u32 = 0x0064_53d0;
 
     fn level(mem: &impl Mem, t: u32) -> i32 {
         mem.read(t + header::LEVEL)
@@ -583,6 +622,202 @@ pub mod bridge {
         if FLAG_WAIT.get(mem) == 0 {
             rcef_task_ret_seq_cont(mem, t);
         }
+    }
+
+    // ---- round 21 ----
+
+    /// `rcefPostRequest(a, f, b, c, d)` (`0x0092eba0`, an exported effect
+    /// import; name ours): stores the request at [`REQUEST`] (the float
+    /// copied through the x87 stack, so a signalling NaN turns quiet) and
+    /// sets [`REQUEST_PENDING`]. Returns `d` (left in `eax`).
+    pub fn rcef_post_request(mem: &mut impl Mem, args: [u32; 5]) -> u32 {
+        let [a, f, b, c, d] = args;
+        let f = ffx_bridge::x87::round_trip(f32::from_bits(f)).to_bits();
+        let r = mem.rebase(REQUEST);
+        mem.write(r, a);
+        mem.write(r + 4, f);
+        mem.write(r + 8, b);
+        mem.write(r + 0x10, c);
+        mem.write(r + 0xc, 0u32);
+        mem.write(r + 0x14, d);
+        REQUEST_PENDING.set(mem, 1);
+        d
+    }
+
+    /// `rcEffectTaskRequestWait(task)` (`0x009304e0`, name ours): a
+    /// sequence that returns once [`REQUEST_PENDING`] is 0.
+    pub fn rc_effect_task_request_wait(mem: &mut impl Mem, t: u32) {
+        if REQUEST_PENDING.get(mem) == 0 {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcefAnimeFini(id)` (`0x0092f4a0`): `graphicVFXDestroy` of the
+    /// handle `id << 32`. Returns its `eax`.
+    pub fn rcef_anime_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(VFX_DESTROY);
+        call(mem, f, &[0, id])
+    }
+
+    /// `rcefModelFini(id)` (`0x0092f710`): the handle `(id << 32) +
+    /// program` (the current program sign-extended) destroyed when the
+    /// renderer has render data for it. Returns the last call's `eax`.
+    pub fn rcef_model_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let p = CURRENT_PROGRAM.get(mem);
+        let hi = id.wrapping_add(if p.cast_signed() < 0 { u32::MAX } else { 0 });
+        let f = mem.rebase(VFX_GET_RENDER_DATA);
+        let r = call(mem, f, &[p, hi]);
+        if r == 0 {
+            return 0;
+        }
+        let f = mem.rebase(VFX_DESTROY);
+        call(mem, f, &[p, hi])
+    }
+
+    // ---- round 22 ----
+
+    /// `rcefObjFini(obj)` (`0x0092fee0`, an object's finaliser
+    /// [`obj::FINI`]): the particle part's finaliser (`0x0092efc0`, empty),
+    /// [`rcef_anime_fini`] with the animation's address (`+0x330`) as the
+    /// id, [`rcef_model_fini`] with the model's (`+0x3c0`), then the empty
+    /// destructor. Returns `rcefModelFini`'s `eax`.
+    pub fn rcef_obj_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcef_anime_fini(mem, o.wrapping_add(obj::ANIME), call);
+        rcef_model_fini(mem, o.wrapping_add(obj::MODEL), call)
+    }
+
+    // ---- round 23 ----
+
+    /// `rcEffectTaskSoundCueWait(task)` (`0x00930500`, name ours): a
+    /// sequence that returns once `op_oef2_sound_cue_check(0x800)` is 0.
+    pub fn rc_effect_task_sound_cue_wait<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(SOUND_CUE_CHECK);
+        if call(mem, f, &[0x800]) == 0 {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcEffectTaskMotionWait(task)` (`0x00930430`): returns once
+    /// `MsEffectCheckMotion` of the current level's first argument is -1.
+    pub fn rc_effect_task_motion_wait<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        let a: u32 = mem.read(args_slot(t, level(mem, t)));
+        let f = mem.rebase(MS_EFFECT_CHECK_MOTION);
+        if call(mem, f, &[a]) == u32::MAX {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcefSetChrDirTarget(chr, a, b)` (`0x0092e750`, name ours):
+    /// `MsSetChrDirTarget(chr, 1, 0, 0, a, b)`, its `eax`.
+    pub fn rcef_set_chr_dir_target<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let [chr, a, b] = args;
+        let f = mem.rebase(MS_SET_CHR_DIR_TARGET);
+        call(mem, f, &[chr, 1, 0, 0, a, b])
+    }
+
+    /// `rcefSetChrDirTarget2(chr, a, b, c)` (`0x0092e960`, name ours):
+    /// `MsSetChrDirTarget(chr, 2, 0, a, b, c)`, its `eax`.
+    pub fn rcef_set_chr_dir_target2<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        let [chr, a, b, c] = args;
+        let f = mem.rebase(MS_SET_CHR_DIR_TARGET);
+        call(mem, f, &[chr, 2, 0, a, b, c])
+    }
+
+    /// `rcefWeaponSetHide(chr, show)` (`0x0092eb70`, name ours): with a
+    /// weapon handle (`MsGetWeaponHandle(chr, 0)`),
+    /// `Ch_SetHideEffect(handle, show == 0)` and its `eax`; else 0.
+    pub fn rcef_weapon_set_hide<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        chr: u32,
+        show: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(MS_GET_WEAPON_HANDLE);
+        let h = call(mem, f, &[chr, 0]);
+        if h == 0 {
+            return 0;
+        }
+        let f = mem.rebase(CH_SET_HIDE_EFFECT);
+        call(mem, f, &[h, u32::from(show == 0)])
+    }
+
+    /// `rcefPlaySE(id)` (`0x0092e680`): the sound entry `id` of the effect
+    /// data at [`RCEF_OEF2`] (`op_oef2_a_get(data, 6, id)`),
+    /// `op_oef2_sep_number_get` of it (unused), then
+    /// `op_oef2_se_on(entry, 0x40, 0x100)` and its `eax`.
+    pub fn rcef_play_se<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let data = RCEF_OEF2.get(mem);
+        let f = mem.rebase(OP_OEF2_A_GET);
+        let e = call(mem, f, &[data, 6, id]);
+        let f = mem.rebase(OP_OEF2_SEP_NUMBER_GET);
+        call(mem, f, &[e]);
+        let f = mem.rebase(OP_OEF2_SE_ON);
+        call(mem, f, &[e, 0x40, 0x100])
+    }
+
+    /// `rcefMainCreateTask(kind, seq)` (`0x00925170`): `rcefMainCreateObj
+    /// (kind)` with the sequence set (`rcefTaskSetSeq`). Returns the
+    /// object.
+    pub fn rcef_main_create_task<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        kind: u32,
+        seq: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(RCEF_MAIN_CREATE_OBJ);
+        let o = call(mem, f, &[kind]);
+        let f = mem.rebase(RCEF_TASK_SET_SEQ);
+        call(mem, f, &[o, seq]);
+        o
+    }
+
+    /// `rcefChrDelete(obj)` (`0x00930600`, name ours): `rcefChrFini`, then
+    /// the object freed into the current ppp environment
+    /// (`pppMemFree(env, env + 0x10, obj)`, `env` read through
+    /// `g_pppEnvSlot`). Returns the free's `eax`.
+    pub fn rcef_chr_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(RCEF_CHR_FINI);
+        call(mem, f, &[o]);
+        let slot = PPP_ENV_SLOT.get(mem);
+        let env = mem.read::<u32>(slot);
+        let f = mem.rebase(super::PPP_MEM_FREE);
+        call(mem, f, &[env, env.wrapping_add(0x10), o])
     }
 
     // ---- round 4: running tasks, objects, particle parts ----

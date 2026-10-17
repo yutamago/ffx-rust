@@ -1,9 +1,9 @@
-# Field: load the first manual save (salvage ship deck, cdsp0000), trace,
+# Field: load save slot 1 (ffx_001, salvage ship deck, cdsp0000) without the title menu, trace,
 # walk about and talk. Ranges: the global random generator (0x00c42200),
 # the 68 generators at 0x01135ee0, the party records (0x0113205c, 18 x
 # 0x94), the pad word (0x00ccb170). Screenshots before and after the
 # walk (field-walk-<n>.bmp; models must be drawn).
-load 1 cdsp0000
+load direct 1 cdsp0000
 lockstep on
 wait 30
 shot $OUT\field-walk-1.bmp

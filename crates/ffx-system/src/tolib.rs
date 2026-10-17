@@ -1601,4 +1601,779 @@ pub mod bridge {
         }
         mem.write(g.wrapping_add(0x1c), 0u32);
     }
+
+    /// The loaded font/menu textures (`0x01841da0`, 16-byte entries: image
+    /// data, CLUT data, image size, `i16` width and height; [`IMAGE_SIZES`]
+    /// is the size pair).
+    pub const TEXTURES: Global<[u32; 4]> = Global::new(0x0184_1da0);
+    /// The two fixed image buffers (textures 0 and 4).
+    pub const TEXTURE_IMAGE_BUFFERS: [(u16, u32); 2] = [(0, 0x0184_b610), (4, 0x0185_b610)];
+    /// The CLUT buffers of textures 0..=5.
+    pub const TEXTURE_CLUT_BUFFERS: [u32; 6] = [
+        0x0186_4e10,
+        0x0186_56c0,
+        0x0186_5840,
+        0x0186_59c0,
+        0x0186_55f0,
+        0x0186_5b60,
+    ];
+
+    /// `TOFTCTransfer(file)` (`0x008ac130`): a font/menu texture file
+    /// (version `u16` `+4` from 0xc8, slot `u16` `+8`) registered in
+    /// [`TEXTURES`]: image (`+0x20` offset, `+0x24` size), size (`+0x28`,
+    /// `+0x2a`); textures 0 and 4 copy the image into their own buffer;
+    /// slots 0..=5 copy the CLUT (`+0x30` offset, `+0x10` size) into theirs,
+    /// others get none. Returns 0, or 1 for an old file or a slot above 5.
+    /// (The original also passes the slot to the empty `dbgPrintf`.)
+    #[allow(clippy::many_single_char_names)] // file, slot, entry, size
+    pub fn ftc_transfer(mem: &mut impl Mem, f: u32) -> u32 {
+        if mem.read::<u16>(f.wrapping_add(4)) < 0xc8 {
+            return 1;
+        }
+        let k = mem.read::<u16>(f.wrapping_add(8));
+        let e = TEXTURES.ptr(mem).addr.wrapping_add(u32::from(k) << 4);
+        let image = f.wrapping_add(mem.read(f.wrapping_add(0x20)));
+        let size: u32 = mem.read(f.wrapping_add(0x24));
+        mem.write(e, image);
+        mem.write(e.wrapping_add(8), size);
+        let w: u16 = mem.read(f.wrapping_add(0x28));
+        let h: u16 = mem.read(f.wrapping_add(0x2a));
+        mem.write(e.wrapping_add(0xc), w);
+        mem.write(e.wrapping_add(0xe), h);
+        for (slot, buf) in TEXTURE_IMAGE_BUFFERS {
+            if k == slot {
+                let buf = mem.rebase(buf);
+                copy_bytes(mem, buf, image, size);
+                mem.write(e, buf);
+            }
+        }
+        let Some(&clut) = TEXTURE_CLUT_BUFFERS.get(usize::from(k)) else {
+            mem.write(e.wrapping_add(4), 0u32);
+            return 1;
+        };
+        let clut = mem.rebase(clut);
+        mem.write(e.wrapping_add(4), clut);
+        let src = f.wrapping_add(mem.read(f.wrapping_add(0x30)));
+        let n: u32 = mem.read(f.wrapping_add(0x10));
+        copy_bytes(mem, clut, src, n);
+        0
+    }
+
+    /// `memcpy(dst, src, n)`, byte by byte.
+    fn copy_bytes(mem: &mut impl Mem, dst: u32, src: u32, n: u32) {
+        for i in 0..n {
+            let b: u8 = mem.read(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), b);
+        }
+    }
+
+    /// The menu calls of [`player_list_init`].
+    pub trait PlayerList<M> {
+        /// `MsGetSaveInParty(&count)`: the party's ids.
+        fn in_party(&mut self, mem: &mut M, count: u32) -> u32;
+        /// `MsGetSaveOutParty(&count)`: the reserve's ids.
+        fn out_party(&mut self, mem: &mut M, count: u32) -> u32;
+        /// `MsGetSavePlyJoined(chr)`.
+        fn joined(&mut self, mem: &mut M, chr: u32) -> u32;
+    }
+
+    /// The player menu's state (`0x01841c14`): `+0` the player ids
+    /// (`g_TkMenuPlayers`), `+8` the party-and-reserve count, `+0xc` the
+    /// full count, `+0x10` the party count, `+0x14` a word, `+0x18` the
+    /// party bits (`g_TkMenuPartyBits`), `+0x1c` the listed mask, `+0x20`
+    /// the joined mask.
+    pub const PLAYER_MENU: u32 = 0x0184_1c14;
+
+    /// `0x008a8f40(flags)`: the player list built from the party and the
+    /// reserve (`MsGetSaveInParty`, `MsGetSaveOutParty`, each with a
+    /// scratch count), then every other joined character (0..=7,
+    /// `MsGetSavePlyJoined`); free slots (0xff) and character 7 never
+    /// listed, nobody when `flags`' high half is 1.
+    #[allow(clippy::many_single_char_names)] // menu state, list, count
+    pub fn player_list_init<M: Mem>(
+        mem: &mut M,
+        flags: u32,
+        count: u32,
+        k: &mut impl PlayerList<M>,
+    ) {
+        let g = mem.rebase(PLAYER_MENU);
+        let none = flags & 0xffff_0000 == 0x1_0000;
+        mem.write(g.wrapping_add(0x1c), [0u32; 2]);
+        let mut mask = 0u32;
+        let mut n = 0u32;
+        let take = |mem: &mut M, p: u32, party: bool, mask: &mut u32, n: &mut u32| {
+            let len: i32 = mem.read(count);
+            for d in 0..len.max(0).cast_unsigned() {
+                let c: u8 = mem.read(p.wrapping_add(d));
+                if c == 0xff || c == 7 || none {
+                    continue;
+                }
+                mem.write(g.wrapping_add(*n), c);
+                *n += 1;
+                let bit = 1u32.wrapping_shl(u32::from(c));
+                *mask |= bit;
+                if party {
+                    let v: u32 = mem.read(g.wrapping_add(0x18));
+                    mem.write(g.wrapping_add(0x18), v | bit);
+                }
+            }
+        };
+        let p = k.in_party(mem, count);
+        mem.write(g.wrapping_add(0x18), 0u32);
+        take(mem, p, true, &mut mask, &mut n);
+        mem.write(g.wrapping_add(0x10), n);
+        let p = k.out_party(mem, count);
+        take(mem, p, false, &mut mask, &mut n);
+        mem.write(g.wrapping_add(8), n);
+        mem.write(g.wrapping_add(0x1c), mask);
+        let mut joined = 0u32;
+        for b in 0..8u32 {
+            if k.joined(mem, b) != 0 && b != 7 && !none {
+                let bit = 1u32 << b;
+                joined |= bit;
+                if mask & bit == 0 {
+                    mem.write(g.wrapping_add(n), b.to_le_bytes()[0]);
+                    n += 1;
+                }
+            }
+        }
+        mem.write(g.wrapping_add(0xc), n);
+        mem.write(g.wrapping_add(0x20), joined | mask);
+        mem.write(g.wrapping_add(0x14), 0u32);
+    }
+
+    /// The battle info window's state (`0x0133f5bc..0x0133f6a2`).
+    pub const INFO_WIN: u32 = 0x0133_f5bc;
+
+    /// `TOBtlInitInfoWinMes()` (`0x00897bd0`): the battle info window laid
+    /// out for the screen: its corners (x 700 and 1400, y 101, 109 and
+    /// 160) through `graphicUiRemapX2`/`Y2` (passed in as `remap(y, v)`)
+    /// and `_ftol2_sse`, then three line records of position, size and
+    /// float origin, all from those. Returns 0.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // `mov word, ax`; fild
+    pub fn btl_init_info_win_mes<M: Mem>(
+        mem: &mut M,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) -> u32 {
+        let g = |off: u32| INFO_WIN.wrapping_add(off);
+        let w16 = |mem: &mut M, a: u32, v: u16| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let w32 = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let b = mem.rebase(0x0133_c93d);
+        mem.write(b, 0u8);
+        w16(mem, g(0), 0xff);
+        let mut pick = |mem: &mut M, y: bool, v: f32| -> u16 {
+            let r = remap(mem, y, v);
+            ffx_bridge::x87::ftol(mem, f64::from(r)) as u16
+        };
+        let a0 = pick(mem, false, 700.0);
+        w16(mem, 0x0133_f68c, a0);
+        let b0 = pick(mem, true, 101.0);
+        w16(mem, 0x0133_f690, b0);
+        let c0 = pick(mem, false, 700.0);
+        w16(mem, 0x0133_f694, c0);
+        let d0 = pick(mem, true, 109.0);
+        w16(mem, 0x0133_f698, d0);
+        let e0 = pick(mem, false, 1400.0);
+        w16(mem, 0x0133_f69c, e0);
+        let f0 = pick(mem, true, 160.0);
+        w16(mem, 0x0133_f6a0, f0);
+        let dx = e0.wrapping_sub(a0);
+        let x = f32::from(a0.cast_signed());
+        let y = f32::from(b0.cast_signed());
+        for (a, v) in [
+            (0x0133_f688, 0),
+            (0x0133_f618, 0),
+            (0x0133_f61a, c0),
+            (0x0133_f61c, d0),
+            (0x0133_f61e, dx),
+        ] {
+            w16(mem, a, v);
+        }
+        for (a, v) in [
+            (0x0133_f624, x),
+            (0x0133_f628, y),
+            (0x0133_f640, x),
+            (0x0133_f644, y),
+        ] {
+            w32(mem, a, v.to_bits());
+        }
+        for (a, v) in [
+            (0x0133_f65c, x),
+            (0x0133_f660, y),
+            (0x0133_f678, x),
+            (0x0133_f67c, y),
+        ] {
+            w32(mem, a, v.to_bits());
+        }
+        for a in [0x0133_f630, 0x0133_f64c, 0x0133_f668, 0x0133_f684] {
+            w32(mem, a, 0);
+        }
+        for (a, v) in [
+            (0x0133_f62c, 0),
+            (0x0133_f634, 0),
+            (0x0133_f636, c0),
+            (0x0133_f638, d0),
+            (0x0133_f63a, dx),
+            (0x0133_f648, 0),
+            (0x0133_f650, 0),
+            (0x0133_f652, c0),
+            (0x0133_f654, d0),
+            (0x0133_f656, dx),
+            (0x0133_f664, 0),
+            (0x0133_f66c, 0),
+            (0x0133_f66e, c0),
+            (0x0133_f670, d0),
+            (0x0133_f672, dx),
+            (0x0133_f680, 0),
+        ] {
+            w16(mem, a, v);
+        }
+        0
+    }
+
+    /// `TOSortMessageWindowPriority(out)` (`0x008b00a0`): the message-window
+    /// slots in use (`u16` 1 at the slot object) as (slot, priority `+4`)
+    /// pairs, unused ones (0x7fff, 0x7fff), put in order by the compiled
+    /// exchange sort (for each `c`, every `j` with a lower signed priority
+    /// swapped into place `c`); then `out` (eight `u16`) filled with 0xffff
+    /// and the slots in order up to the first unused one. Returns how many
+    /// were written.
+    pub fn sort_message_window_priority(mem: &mut impl Mem, out: u32) -> u32 {
+        let slots = crate::window::bridge::MSG_WINDOW_SLOTS.ptr(mem).addr;
+        let mut e = [(0x7fffu16, 0x7fffi16); 8];
+        for (k, item) in (0u16..).zip(e.iter_mut()) {
+            let s: u32 = mem.read(slots.wrapping_add(4 * u32::from(k)));
+            if mem.read::<u16>(s) == 1 {
+                *item = (k, mem.read(s.wrapping_add(4)));
+            }
+        }
+        for c in 0..8 {
+            for j in 0..8 {
+                if e[j].1 < e[c].1 {
+                    e.swap(c, j);
+                }
+            }
+        }
+        mem.write(out, [u32::MAX; 4]);
+        let mut n = 0u32;
+        for &(idx, _) in &e {
+            if idx == 0x7fff {
+                break;
+            }
+            mem.write(out.wrapping_add(2 * n), idx);
+            n += 1;
+        }
+        n
+    }
+
+    /// Whether `TOGetFontWidth` corrects for the screen's aspect
+    /// (`0x018663ec`).
+    pub const FONT_ASPECT_ON: Global<u32> = Global::new(0x0186_63ec);
+
+    /// The calls `TOGetFontWidth` makes.
+    pub trait FontWidth<M> {
+        /// `graphicFontGetScreenWH()`.
+        fn screen_wh(&mut self, mem: &mut M) -> (i32, i32);
+        /// `TOGetFFXLang()`.
+        fn lang(&mut self, mem: &mut M) -> u32;
+        /// `TOGetFontWidthInPiexl(width, scale)`.
+        fn width(&mut self, mem: &mut M, width: f32, scale: f32) -> f32;
+        /// `TOGetFontSpaceInPiexl(kind)`.
+        fn space(&mut self, mem: &mut M, kind: u32) -> f32;
+    }
+
+    /// `TOGetFontWidth(text, kind, &width, table)` (`0x008b9330`): the
+    /// on-screen width of the character at `text` (stored at `width`) and
+    /// the address after it. The glyph width comes from the font's width
+    /// table `table` (`TOGetFontWidthTblAdrs`, [`TEXTURES`] `+4`; a
+    /// Korean/Chinese double-byte page with code 4, 0x410 further on) or,
+    /// for the codes 0x26..=0x2f and 6, from tables 0..=3 and 5, a quarter
+    /// of its signed byte; without one, the stale word the original reads
+    /// (the screen's width/height ratio). Then [`font_width_in_pixel`] of
+    /// it at the kind's scale plus [`font_space_in_pixel`], times the
+    /// aspect correction (`w/h / 1.2307693`) when [`FONT_ASPECT_ON`]. A
+    /// positive width is stored, except that a run of repeated 0x47
+    /// codes adds it (twice for table 4) once per code; codes 6 and below
+    /// 0x30 are two bytes long. In 53-bit precision.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )] // one routine; fild; the cursors
+    pub fn font_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        kind: u32,
+        out: u32,
+        table: u32,
+        k: &mut impl FontWidth<M>,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let orig = text;
+        let mut p = text;
+        let (w, h) = k.screen_wh(mem);
+        let ratio = f32::from_bits(store(div(f64::from(w as f32), f64::from(h as f32))));
+        let aspect = f32::from_bits(store(div(f64::from(ratio), 1.230_769_276_618_957_5)));
+        let lang = k.lang(mem);
+        let big = (lang == 9 || lang == 10) && mem.read::<u8>(p) == 4;
+        if big {
+            p = p.wrapping_add(1);
+        }
+        mem.write(out, 0f32);
+        let mut off = if big { 0x410u32 } else { 0 };
+        let scale: f32 = if kind == 3 || kind == 1 {
+            FONT_SCALE.get(mem)
+        } else {
+            f32::from_bits(0x3f47_ae14)
+        };
+        let tbl = |mem: &M, t: u32| -> u32 {
+            mem.read(TEXTURES.ptr(mem).addr.wrapping_add((t << 4) + 4))
+        };
+        let quarter = |mem: &M, at: u32| -> f32 {
+            let v = i32::from(mem.read::<i8>(at));
+            f32::from_bits(store(mul(f64::from(v), 0.25)))
+        };
+        let mut glyph = ratio;
+        let b: u8 = mem.read(p);
+        let next = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+        if b >= 0x30 {
+            let t = tbl(mem, table);
+            off = off.wrapping_sub(0x30).wrapping_add(u32::from(b));
+            glyph = quarter(mem, t.wrapping_add(off));
+        }
+        let row = u32::from(b).wrapping_mul(0xd0).wrapping_add(next);
+        if (0x2c..=0x2f).contains(&b) {
+            let t = tbl(mem, 0);
+            glyph = quarter(
+                mem,
+                t.wrapping_add(row).wrapping_add(off).wrapping_sub(0x2320),
+            );
+        }
+        for (lo, t, base) in [(0x2au8, 1, 0x2250u32), (0x28, 2, 0x20b0), (0x26, 3, 0x1f10)] {
+            if b == lo || b == lo + 1 {
+                let t = tbl(mem, t);
+                glyph = quarter(mem, t.wrapping_add(row).wrapping_sub(base));
+            }
+        }
+        if b == 6 {
+            let t = tbl(mem, 5);
+            glyph = if t == 0 {
+                56.0
+            } else {
+                quarter(mem, t.wrapping_add(next).wrapping_sub(0x30))
+            };
+        }
+        let wpx = k.width(mem, glyph, scale);
+        let sp = k.space(mem, kind);
+        let mut r = add(load(sp.to_bits()), load(wpx.to_bits()));
+        if FONT_ASPECT_ON.get(mem) != 0 {
+            r = mul(r, load(aspect.to_bits()));
+        }
+        let res = f32::from_bits(store(r));
+        let first: u8 = mem.read(orig);
+        let c: u8 = mem.read(p);
+        let repeat = first == 0x47 && mem.read::<u8>(p.wrapping_add(1)) == c;
+        if res > 0.0 {
+            if repeat {
+                if c != 0x47 {
+                    return p;
+                }
+                let res = load(res.to_bits());
+                loop {
+                    let o: f32 = mem.read(out);
+                    let v = if table == 4 {
+                        add(mul(res, 2.0), load(o.to_bits()))
+                    } else {
+                        add(load(o.to_bits()), res)
+                    };
+                    p = p.wrapping_add(1);
+                    mem.write(out, f32::from_bits(store(v)));
+                    if mem.read::<u8>(p) != 0x47 {
+                        return p;
+                    }
+                }
+            }
+            mem.write(out, res);
+        }
+        let c: u8 = mem.read(p);
+        if c == 6 || c < 0x30 {
+            return p.wrapping_add(2);
+        }
+        if first == 0x47 && mem.read::<u8>(p.wrapping_add(1)) == c {
+            if c != 0x47 {
+                return p;
+            }
+            loop {
+                p = p.wrapping_add(1);
+                if mem.read::<u8>(p) != 0x47 {
+                    return p;
+                }
+            }
+        }
+        p.wrapping_add(1)
+    }
+
+    /// `0x008fa4f0(id)`: the window layout of `id` from the image tables:
+    /// ids `0..=0xc6` and `0xc8..=0x18e` from the first, `0x190..=0x256`
+    /// from the second, `0x258..=0x289` from the third (a tail call); each
+    /// later range overriding, and otherwise `id` itself.
+    pub fn window_layout_of(mem: &mut impl Mem, id: u32) -> u32 {
+        let [first, second, third] = [LAYOUT_TABLES[0].1, LAYOUT_TABLES[1].1, LAYOUT_TABLES[2].1];
+        let mut r = id;
+        if id <= 0xc6 {
+            r = copy_layout_from(mem, first, id);
+        }
+        if id.wrapping_sub(0xc8) <= 0xc6 {
+            r = copy_layout_from(mem, first, id - 0xc8);
+        }
+        if id.wrapping_sub(0x190) <= 0xc6 {
+            r = copy_layout_from(mem, second, id - 0x190);
+        }
+        if id.wrapping_sub(0x258) <= 0x31 {
+            return copy_layout_from(mem, third, id - 0x258);
+        }
+        r
+    }
+
+    /// `0x008a8e20()`: `MsGetSaveEventAddress() + 0x3d48`, the save's gil
+    /// (`g_SaveGil`, `0x011307d8`).
+    pub fn save_gil_address(mem: &impl Mem) -> u32 {
+        mem.rebase(0x0112_ca90).wrapping_add(0x3d48)
+    }
+
+    /// The calls [`texture_name`] makes outside this module.
+    pub trait TextureName<M> {
+        /// `MsBattleGetStatus()`.
+        fn battle_status(&mut self, mem: &mut M) -> u32;
+        /// `TkGetLang()`.
+        fn tk_lang(&mut self, mem: &mut M) -> u32;
+        /// `TOGetFFXLang()` (through its thunk `0x008ac2f0`).
+        fn ffx_lang(&mut self, mem: &mut M) -> u32;
+        /// `dbgPrintf(fmt)`, for an unknown id.
+        fn print(&mut self, mem: &mut M, fmt: u32);
+    }
+
+    /// Image addresses of [`texture_name`]'s name tables, `(plain, flagged)`.
+    const TEXTURE_TABLES: [(u32, u32); 7] = [
+        (0x00c5_9568, 0x00c5_95a8), // 0x3c00, TkGetLang 0
+        (0x00c5_95e8, 0x00c5_9628), // 0x3c00 other languages, 0x3d40
+        (0x00c5_9668, 0x00c5_96e8), // 0x3d10
+        (0x00c5_96a8, 0x00c5_9728), // 0x3d20
+        (0x00c5_9768, 0x00c5_97a8), // 0x3d30
+        (0x00c5_97f8, 0x00c5_9838), // 0x3d80, by the byte
+        (0x00c5_9bc0, 0x00c5_9c00), // 0x3d00, appended to a prefix
+    ];
+
+    fn c_strlen(mem: &impl Mem, p: u32) -> u32 {
+        let mut n = 0u32;
+        while mem.read::<u8>(p.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    /// `TOGetTextureName(id, nibbles, index, high, &size)` (`0x008acf50`):
+    /// the name of picture `index` of texture family `id`. One nibble of
+    /// `nibbles` (the high one when `high`) picks a column `k` (twice the
+    /// nibble's low three bits; its bit 3 or `high` picks the second,
+    /// "flagged" table set). By `id`:
+    ///
+    /// - `0x3c00`: `TkGetLang()` 0 or not picks the table pair;
+    /// - `0x3d00`: the prefix (`0x025d08a0`, or `0x025d06a0` in battle by
+    ///   `MsBattleGetStatus`) copied to `0x025d07a0` (`0x025d05a0`), the
+    ///   table's name appended, and the result interned (`0x008ab440`);
+    /// - `0x3d10`, `0x3d20`, `0x3d30`, `0x3d40`: one table pair each;
+    /// - `0x3d01`, `0x3d60`: by `TOGetFFXLang()` 0, 9 or 10 a table pair
+    ///   indexed by `index` alone, flagged by `high` only (another language
+    ///   reads the word at `k + 4 * index`, as the original does);
+    /// - `0x3d80`: indexed by the byte `nibbles`, flagged by `high`;
+    /// - anything else: `dbgPrintf("VIRTUOS ASSERTION:Font not found.")`
+    ///   and `k` returned.
+    ///
+    /// The tables are indexed by `index + k` otherwise. `size` gets the two
+    /// words of entry `(index + k) / 2` of `0x00b5f8d0` (flagged) or
+    /// `0x00b5f890` (entry 0 for an unknown id).
+    #[allow(clippy::too_many_lines)]
+    pub fn texture_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        nibbles: u32,
+        index: u32,
+        high: u32,
+        size: u32,
+        calls: &mut impl TextureName<M>,
+    ) -> u32 {
+        let high = high & 0xffff != 0;
+        let byte = nibbles & 0xff;
+        let nib = if high { byte >> 4 } else { byte & 0xf };
+        let (nib, second) = if nib >= 8 {
+            (nib - 8, true)
+        } else {
+            (nib, false)
+        };
+        let k = nib * 2;
+        let half = |v: u32| i32::from(u16::try_from(v & 0xffff).unwrap_or(0).cast_signed());
+        let index = half(index);
+        let id = half(id);
+        let at = |mem: &M, table: u32, i: i32| -> u32 {
+            let t = mem.rebase(table);
+            mem.read(t.wrapping_add(i.cast_unsigned().wrapping_mul(4)))
+        };
+        let pair = |i: usize, flagged: bool| {
+            let (p, f) = TEXTURE_TABLES[i];
+            if flagged { f } else { p }
+        };
+        let flagged = second || high;
+        let by_lang =
+            |mem: &mut M, calls: &mut dyn FnMut(&mut M) -> u32, tables: [(u32, u32); 3]| {
+                let lang = calls(mem);
+                let idx = index + k.cast_signed();
+                let name = match lang {
+                    0 => at(mem, if high { tables[0].1 } else { tables[0].0 }, index),
+                    9 => at(mem, if high { tables[1].1 } else { tables[1].0 }, index),
+                    10 => at(mem, if high { tables[2].1 } else { tables[2].0 }, index),
+                    _ => mem.read(k.wrapping_add(index.cast_unsigned().wrapping_mul(4))),
+                };
+                (name, idx, high)
+            };
+        let (name, idx, flag) = match id {
+            0x3c00 => {
+                let table = usize::from(calls.tk_lang(mem) != 0);
+                let idx = index + k.cast_signed();
+                (at(mem, pair(table, flagged), idx), idx, flagged)
+            }
+            0x3d00 => {
+                let (src, dst) = if calls.battle_status(mem) == 0 {
+                    (0x025d_08a0, 0x025d_07a0)
+                } else {
+                    (0x025d_06a0, 0x025d_05a0)
+                };
+                let (src, dst) = (mem.rebase(src), mem.rebase(dst));
+                let mut n = 0u32;
+                loop {
+                    let c: u8 = mem.read(src.wrapping_add(n));
+                    mem.write(dst.wrapping_add(n), c);
+                    n = n.wrapping_add(1);
+                    if c == 0 {
+                        break;
+                    }
+                }
+                let idx = index + k.cast_signed();
+                let tail = at(mem, pair(6, flagged), idx);
+                let len = c_strlen(mem, tail);
+                let end = dst.wrapping_add(c_strlen(mem, dst));
+                for i in 0..=len {
+                    let c: u8 = mem.read(tail.wrapping_add(i));
+                    mem.write(end.wrapping_add(i), c);
+                }
+                (intern_name(mem, dst), idx, flagged)
+            }
+            0x3d10 | 0x3d20 | 0x3d30 | 0x3d40 => {
+                let table = match id {
+                    0x3d10 => 2,
+                    0x3d20 => 3,
+                    0x3d30 => 4,
+                    _ => 1,
+                };
+                let idx = index + k.cast_signed();
+                (at(mem, pair(table, flagged), idx), idx, flagged)
+            }
+            0x3d01 => by_lang(
+                mem,
+                &mut |m| calls.ffx_lang(m),
+                [
+                    (0x00c5_9878, 0x00c5_9938),
+                    (0x00c5_98f8, 0x00c5_99c0),
+                    (0x00c5_98b8, 0x00c5_9980),
+                ],
+            ),
+            0x3d60 => by_lang(
+                mem,
+                &mut |m| calls.ffx_lang(m),
+                [
+                    (0x00c5_9a00, 0x00c5_9b00),
+                    (0x00c5_9ac0, 0x00c5_9b80),
+                    (0x00c5_9a40, 0x00c5_9b40),
+                ],
+            ),
+            0x3d80 => {
+                let idx = byte.cast_signed();
+                (at(mem, pair(5, high), idx), idx, high)
+            }
+            _ => {
+                let fmt = mem.rebase(0x00b6_2dd0);
+                calls.print(mem, fmt);
+                (k, -1, false)
+            }
+        };
+        let sizes = mem.rebase(if flag { 0x00b5_f8d0 } else { 0x00b5_f890 });
+        let e = sizes.wrapping_add((idx / 2).cast_unsigned().wrapping_mul(8));
+        let w: [u32; 2] = mem.read(e);
+        mem.write(size, w);
+        name
+    }
+
+    /// `g_TOMessageWindowSlots` (`0x01865b3c`): 8 message-window objects.
+    pub const MESSAGE_SLOTS: Global<[u32; 8]> = Global::new(0x0186_5b3c);
+    /// The message-window frame paddings (`0x00c59ed8`): per style, i16
+    /// left, top, right, bottom.
+    pub const FRAME_PADDING: u32 = 0x00c5_9ed8;
+    /// `g_CurrentMapNo` (`0x012fbc40`).
+    pub const CURRENT_MAP: Global<u32> = Global::new(0x012f_bc40);
+
+    /// Message window `i`'s frame padding (left, top, right, bottom), by
+    /// the style (`+4` of its object's `+0x10`).
+    fn frame_padding(mem: &impl Mem, i: i32) -> [i32; 4] {
+        let slot = MESSAGE_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let obj: u32 = mem.read(slot);
+        let style: u32 = mem.read(obj.wrapping_add(0x10));
+        let s = i32::from(mem.read::<i16>(style.wrapping_add(4)));
+        let at = mem
+            .rebase(FRAME_PADDING)
+            .wrapping_add(s.cast_unsigned().wrapping_mul(8));
+        let p: [i16; 4] = mem.read(at);
+        p.map(i32::from)
+    }
+
+    /// An x87 value through `fstp dword`, back on the x87.
+    #[allow(clippy::cast_possible_truncation)] // the original rounds to f32
+    fn dword(v: f64) -> f64 {
+        f64::from(v as f32)
+    }
+
+    /// An `int` through `fild` and `fstp dword`, back on the x87.
+    #[allow(clippy::cast_precision_loss)] // the original rounds to f32
+    fn f32_of(v: i32) -> f64 {
+        f64::from(v as f32)
+    }
+
+    /// `0x008afbb0(i, x, y, w, h)`: message window `i` placed. Outside
+    /// message-window mode 1 the frame padding is taken off the rectangle
+    /// and put back after the x87 rounding (`ftol`). On map 0x17 a window at
+    /// (400, 0x110) moves by (-45, +5). With a screen (passed in) at least
+    /// 0x2d0 high it is kept inside the safe area: vertically within
+    /// 31.2..384.8 (by the padding's top, for window type 1); horizontally
+    /// for type 1 within 7.5%..92.5% of the screen width mapped back
+    /// through the 416-line scale and the 4:3 offset (±10), else within
+    /// 38.4..473.6. Then `TOSetWindowRect` (map 0x15b turns a 0x1d8 x 0xf6
+    /// window 0x1ba wide there only) and the message area, padded again.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn place_message_window<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        rect: [i32; 4],
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) {
+        use ffx_bridge::x87;
+        let [mut x, mut y, mut w, mut h] = rect;
+        let mode = crate::menu::bridge::message_window_mode(mem);
+        if mode != 1 {
+            let [l, t, r, b] = frame_padding(mem, i);
+            x = x.wrapping_add(l);
+            y = y.wrapping_add(t);
+            w = w.wrapping_sub(r.wrapping_add(l));
+            h = h.wrapping_sub(b.wrapping_add(t));
+        }
+        let mut fx = f32_of(x);
+        let mut fy = f32_of(y);
+        if CURRENT_MAP.get(mem) == 0x17 && x == 400 && y == 0x110 {
+            fx = dword(x87::sub(fx, 45.0));
+            fy = dword(x87::add(fy, 5.0));
+        }
+        let ftol = |mem: &M, v: f64| x87::ftol(mem, v).cast_signed();
+        if mode == 1 {
+            x = ftol(mem, fx);
+            y = ftol(mem, fy);
+        } else {
+            let [l, t, r, b] = frame_padding(mem, i);
+            x = ftol(mem, x87::sub(fx, f64::from(l)));
+            y = ftol(mem, x87::sub(fy, f64::from(t)));
+            w = w.wrapping_add(r.wrapping_add(l));
+            h = h.wrapping_add(b.wrapping_add(t));
+        }
+        let (sw, sh) = screen_wh(mem);
+        if sh >= 0x2d0 {
+            let bottom = y.wrapping_add(h);
+            let (l, t) = if crate::window::bridge::window_type(mem, i) == 1 {
+                let p = frame_padding(mem, i);
+                (p[0], p[1])
+            } else {
+                (0, 0)
+            };
+            let left = l.wrapping_add(x);
+            let right = x.wrapping_add(w).wrapping_sub(l);
+            let top = f32_of(y.wrapping_add(t));
+            let low: f64 = 31.199_995_040_893_555;
+            let high = f64::from(f32::from_bits(0x43c0_6667));
+            if low <= top || top.is_nan() {
+                let b = f32_of(bottom.wrapping_sub(t));
+                if b > high {
+                    y = ftol(
+                        mem,
+                        x87::add(x87::sub(384.800_018_310_546_9, f32_of(h)), f32_of(t)),
+                    );
+                }
+            } else {
+                y = ftol(mem, x87::sub(low, f32_of(t)));
+            }
+            let lf = f32_of(l);
+            if crate::window::bridge::window_type(mem, i) == 1 {
+                let shf = f32_of(sh);
+                let swf = f32_of(sw);
+                let scale = dword(x87::div(shf, 416.0));
+                let q = x87::div(1.230_769_276_618_957_5, x87::div(swf, shf));
+                let off = dword(x87::mul(x87::mul(swf, x87::sub(1.0, q)), 0.5));
+                let lim = x87::mul(x87::mul(swf, 0.149_999_976_158_142_1), 0.5);
+                let v = x87::sub(x87::add(x87::mul(scale, f32_of(left)), off), 1.0);
+                if v < lim {
+                    let u = x87::div(x87::sub(lim, off), scale);
+                    x = ftol(mem, x87::add(x87::sub(u, lf), 10.0));
+                } else {
+                    let lim2 = x87::mul(x87::mul(swf, 1.850_000_023_841_858), 0.5);
+                    let v = x87::add(1.0, x87::add(x87::mul(f32_of(right), scale), off));
+                    if v > lim2 {
+                        let u = x87::div(x87::sub(lim2, off), scale);
+                        x = ftol(mem, x87::sub(x87::add(x87::sub(u, f32_of(w)), lf), 10.0));
+                    }
+                }
+            } else if f32_of(left) < f64::from(f32::from_bits(0x4219_9998)) {
+                x = ftol(mem, x87::sub(38.399_993_896_484_375, lf));
+            } else if 473.600_006_103_515_6 < f32_of(right) {
+                x = ftol(
+                    mem,
+                    x87::add(x87::sub(473.600_006_103_515_6, f32_of(w)), lf),
+                );
+            }
+        }
+        let shown_w = if CURRENT_MAP.get(mem) == 0x15b && w == 0x1d8 && h == 0xf6 {
+            0x1ba
+        } else {
+            w
+        };
+        set_window_rect(mem, i, [x, y, shown_w, h]);
+        if crate::menu::bridge::message_window_mode(mem) == 1 {
+            crate::window::bridge::set_message_area(mem, i, [x, y, w, h]);
+        } else {
+            let [l, t, r, b] = frame_padding(mem, i);
+            crate::window::bridge::set_message_area(
+                mem,
+                i,
+                [
+                    x.wrapping_add(l),
+                    y.wrapping_add(t),
+                    w.wrapping_sub(r).wrapping_sub(l),
+                    h.wrapping_sub(b).wrapping_sub(t),
+                ],
+            );
+        }
+    }
 }

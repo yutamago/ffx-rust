@@ -218,7 +218,7 @@ call_ones! {
 }
 
 /// `Native_FpBind` (`0x0091b070`, `0x8009`): `(fp, bone)` ->
-/// `Fp_BindToWorker(worker, fp, bone)`; 1.
+/// `AtelBindFp(worker, fp, bone)`; 1.
 pub fn native_fp_bind<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let bone = pop(h, s);
     let fp = pop(h, s);

@@ -7476,3 +7476,715 @@ fn round11_system_functions_match_the_original_on_the_snapshot() {
     };
     round11(&mut a, &mut b, &mut Xorshift(0x4011_0002));
 }
+
+/// Round 12: the next logic-class system functions.
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::items_after_statements
+)] // one script; a, b: the oracles; the callback adapters sit by their use
+fn round12(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let orig = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().eax
+    };
+    // texture files registered and copied
+    let file = alloc(a, b, 0x400);
+    for slot in 0..8u16 {
+        for version in [0xc7u16, 0xc8] {
+            let bytes: Vec<u8> = (0..0x400).map(|_| (rng.next() & 0xff) as u8).collect();
+            a.write(file, &bytes).unwrap();
+            b.write(file, &bytes).unwrap();
+            put(a, b, file + 4, version);
+            put(a, b, file + 8, slot);
+            put(a, b, file + 0x20, 0x100u32);
+            put(a, b, file + 0x24, rng.next() % 0x100);
+            put(a, b, file + 0x30, 0x200u32);
+            put(a, b, file + 0x10, rng.next() % 0x100);
+            assert_eq!(
+                eax(a, 0x008a_c130, &[file]),
+                t::ftc_transfer(b, file),
+                "{slot} {version:#x}"
+            );
+            same_memory("texture files", a, b);
+        }
+    }
+    // the player list over stand-ins: party and reserve arrays with
+    // counts, the joined test a bit mask
+    let cells = alloc(a, b, 0x40);
+    let party = cells + 0x10;
+    let reserve = cells + 0x20;
+    for (k, (f, list)) in [(0x0078_5270u32, party), (0x0078_52d0, reserve)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = u32::try_from(k).unwrap();
+        // mov eax, [esp+4]; mov ecx, [cells + 4k]; mov [eax], ecx; mov eax, list; ret
+        let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+        code.extend_from_slice(&(cells + 4 * k).to_le_bytes());
+        code.extend_from_slice(&[0x89, 0x08, 0xb8]);
+        code.extend_from_slice(&list.to_le_bytes());
+        code.push(0xc3);
+        let s = stand_in8(a, b, 0xa00 + 0x20 * k, &code);
+        redirect(a, b, f, s);
+    }
+    let mut code = vec![0x8b, 0x4c, 0x24, 0x04, 0xa1];
+    code.extend_from_slice(&(cells + 8).to_le_bytes());
+    code.extend_from_slice(&[0xd3, 0xe8, 0x83, 0xe0, 0x01, 0xc3]);
+    let join = stand_in8(a, b, 0xa40, &code);
+    redirect(a, b, 0x0078_53a0, join);
+    struct Players<'f>(&'f dyn Fn(&mut Oracle, u32, &[u32]) -> u32);
+    impl t::PlayerList<Oracle> for Players<'_> {
+        fn in_party(&mut self, m: &mut Oracle, c: u32) -> u32 {
+            (self.0)(m, 0x0078_5270, &[c])
+        }
+        fn out_party(&mut self, m: &mut Oracle, c: u32) -> u32 {
+            (self.0)(m, 0x0078_52d0, &[c])
+        }
+        fn joined(&mut self, m: &mut Oracle, c: u32) -> u32 {
+            (self.0)(m, 0x0078_53a0, &[c])
+        }
+    }
+    let count = alloc(a, b, 4);
+    for _ in 0..12 {
+        put(a, b, cells, [rng.next() % 5, rng.next() % 5, rng.next()]);
+        for k in 0..16u32 {
+            put(
+                a,
+                b,
+                party + k,
+                [0xffu8, 7, 0, 1, 2, 3, 4, 5, 6][(rng.next() % 9) as usize],
+            );
+        }
+        let flags = [0u32, 0x1_0000, 0x2_0003][(rng.next() % 3) as usize];
+        eax(a, 0x008a_8f40, &[flags]);
+        t::player_list_init(b, flags, count, &mut Players(&orig));
+        let v: u32 = Mem::read(b, count);
+        Mem::write(a, count, v);
+        same_memory("player list", a, b);
+    }
+    // the battle info window, the remaps through the render module's
+    // originals on b
+    assert_eq!(
+        eax(a, 0x0089_7bd0, &[]),
+        t::btl_init_info_win_mes(b, |m, y, v| {
+            let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+            let r = m
+                .call(at, Conv::Cdecl, &[v.to_bits()])
+                .unwrap()
+                .st0
+                .unwrap();
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let r = r as f32;
+            r
+        })
+    );
+    same_memory("battle info window", a, b);
+    // message-window priorities
+    let slots = window::bridge::MSG_WINDOW_SLOTS.ptr(b).addr;
+    let out = alloc(a, b, 0x10);
+    for _ in 0..20 {
+        for k in 0..8u32 {
+            let s = alloc(a, b, 8);
+            put(
+                a,
+                b,
+                s,
+                [
+                    u16::try_from(rng.next() % 3).unwrap(),
+                    0,
+                    u16::try_from(rng.next() % 9).unwrap().wrapping_sub(4),
+                    0,
+                ],
+            );
+            put(a, b, slots + 4 * k, s);
+        }
+        assert_eq!(
+            eax(a, 0x008b_00a0, &[out]),
+            t::sort_message_window_priority(b, out)
+        );
+        same_memory("message priorities", a, b);
+    }
+    // character widths: TOGetFFXLang from a cell, width tables filled
+    let lang_cell = alloc(a, b, 4);
+    let mut code = vec![0xa1];
+    code.extend_from_slice(&lang_cell.to_le_bytes());
+    code.push(0xc3);
+    let get_lang = stand_in8(a, b, 0xa60, &code);
+    redirect(a, b, 0x0064_10e0, get_lang);
+    let tex = t::TEXTURES.ptr(b).addr;
+    for slot in 0..6u32 {
+        let tbl = random_block(a, b, rng, 0x2400);
+        put(
+            a,
+            b,
+            tex + 16 * slot + 4,
+            if slot == 5 && rng.next().is_multiple_of(2) {
+                0
+            } else {
+                tbl + 0x400
+            },
+        );
+    }
+    let wh = alloc(a, b, 8);
+    struct Fw<'f>(&'f dyn Fn(&mut Oracle, u32, &[u32]) -> u32, u32);
+    impl t::FontWidth<Oracle> for Fw<'_> {
+        fn screen_wh(&mut self, m: &mut Oracle) -> (i32, i32) {
+            (self.0)(m, 0x0064_0db0, &[self.1, self.1 + 4]);
+            (Mem::read(m, self.1), Mem::read(m, self.1 + 4))
+        }
+        fn lang(&mut self, m: &mut Oracle) -> u32 {
+            (self.0)(m, 0x0064_10e0, &[])
+        }
+        fn width(&mut self, m: &mut Oracle, w: f32, s: f32) -> f32 {
+            let wh = self.1;
+            t::font_width_in_pixel(m, w, s, |m| {
+                let at = m.rebase(0x0064_0db0);
+                m.call(at, Conv::Cdecl, &[wh, wh + 4]).unwrap();
+                (Mem::read(m, wh), Mem::read(m, wh + 4))
+            })
+        }
+        fn space(&mut self, m: &mut Oracle, k: u32) -> f32 {
+            let wh = self.1;
+            t::font_space_in_pixel(
+                m,
+                k,
+                |m| {
+                    let at = m.rebase(0x0064_10e0);
+                    m.call(at, Conv::Cdecl, &[]).unwrap().eax
+                },
+                |m| {
+                    let at = m.rebase(0x0064_0db0);
+                    m.call(at, Conv::Cdecl, &[wh, wh + 4]).unwrap();
+                    (Mem::read(m, wh), Mem::read(m, wh + 4))
+                },
+            )
+        }
+    }
+    let text = alloc(a, b, 0x10);
+    let width = alloc(a, b, 4);
+    for n in 0..300 {
+        let mut bytes: Vec<u8> = (0..8)
+            .map(|_| {
+                [
+                    4u8, 6, 0x26, 0x27, 0x28, 0x2a, 0x2c, 0x2f, 0x30, 0x47, 0x47, 0x50, 0x10,
+                ][(rng.next() % 13) as usize]
+            })
+            .collect();
+        bytes.push(0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        put(a, b, lang_cell, [0u32, 1, 9, 10][(rng.next() % 4) as usize]);
+        set(a, b, t::FONT_ASPECT_ON, rng.next() % 2);
+        set(
+            a,
+            b,
+            t::FONT_SCALES,
+            [[0.0f32, 3.75][(rng.next() % 2) as usize], 2.5],
+        );
+        set(
+            a,
+            b,
+            t::FONT_SPACES,
+            [[0.0f32, 4.0][(rng.next() % 2) as usize], 6.0],
+        );
+        let kind = rng.next() % 5;
+        let table = rng.next() % 5; // table 5 may be null; the original only checks it for code 6
+        put(a, b, width, rng.next() % 64);
+        assert_eq!(
+            eax(a, 0x008b_9330, &[text, kind, width, table]),
+            t::font_width(b, text, kind, width, table, &mut Fw(&orig, wh)),
+            "{n} {bytes:x?}"
+        );
+        let v: [u32; 2] = Mem::read(b, wh);
+        Mem::write(a, wh, v);
+        same_memory("character widths", a, b);
+    }
+}
+
+#[test]
+fn round12_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round12(&mut a, &mut b, &mut Xorshift(0x4012_0001));
+}
+
+#[test]
+fn round12_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round12(&mut a, &mut b, &mut Xorshift(0x4012_0002));
+}
+
+/// Round 13's system functions.
+fn round13(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    use tolib::bridge as t;
+    // window layouts by id, across every range and past the last
+    for id in (0..0x2a0u32).chain([0x2ff, 0x1000, u32::MAX]) {
+        assert_eq!(
+            eax(a, 0x008f_a4f0, &[id]),
+            t::window_layout_of(b, id),
+            "{id:#x}"
+        );
+        same_memory("window layouts", a, b);
+    }
+    assert_eq!(eax(a, 0x008a_8e20, &[]), t::save_gil_address(b));
+    // the magic texture loaded once, through a stand-in recording the id
+    let cell = alloc(a, b, 4);
+    let load = stand_in8(a, b, 0xa80, &recorder(cell, 0x5a5a_0013));
+    redirect(a, b, 0x0064_20b0, load);
+    for _ in 0..16 {
+        let handle = if rng.next() & 1 == 0 {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), rng.next(), handle],
+        );
+        set(a, b, mb::MAGIC_TEXTURE_LOADED, rng.next() & 1);
+        put(a, b, cell, 0u32);
+        let got = mb::is_load_texture(b, |m, id| {
+            let at = m.rebase(0x0064_20b0);
+            m.call(at, Conv::Cdecl, &[id]).unwrap();
+        });
+        assert_eq!(eax(a, 0x009d_a280, &[]), got);
+        same_memory("magic texture", a, b);
+    }
+}
+
+#[test]
+fn round13_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13(&mut a, &mut b, &mut Xorshift(0x4013_0001));
+}
+
+#[test]
+fn round13_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13(&mut a, &mut b, &mut Xorshift(0x4013_0002));
+}
+
+/// Round 13's language-dependent help picture names.
+fn round13_help_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let cell = alloc(a, b, 4);
+    let mut getter = vec![0xa1];
+    getter.extend_from_slice(&cell.to_le_bytes());
+    getter.push(0xc3);
+    let lang = stand_in8(a, b, 0xaa0, &getter);
+    redirect(a, b, 0x0064_10e0, lang);
+    let out = alloc(a, b, 0x200);
+    let prefix = alloc(a, b, 0x110);
+    let prefix_cell = ffx_system::files::bridge::STREAM_PREFIX;
+    let mut percent = vec![b'x'; 0x90];
+    percent.extend_from_slice(b"%%/");
+    let prefixes: [Option<&[u8]>; 5] = [
+        None,
+        Some(b""),
+        Some(b"data/"),
+        Some(&percent),
+        Some(&[b'y'; 0xd0]),
+    ];
+    for pre in prefixes {
+        match pre {
+            Some(text) => {
+                let mut v = text.to_vec();
+                v.push(0);
+                a.write(prefix, &v).unwrap();
+                b.write(prefix, &v).unwrap();
+                set(a, b, prefix_cell, prefix);
+            }
+            None if prefix_cell.get(a) == 0 => continue,
+            None => {}
+        }
+        for l in [0u32, 1, 2, 3, 4, 5, 9, 10] {
+            put(a, b, cell, l);
+            for n in [
+                0i32,
+                1,
+                7,
+                42,
+                -3,
+                i32::MAX,
+                i32::MIN,
+                rng.next().cast_signed(),
+            ] {
+                put(a, b, out, [0xa5u8; 0x200]);
+                eax(a, 0x0077_4ae0, &[out, n.cast_unsigned()]);
+                ffx_system::files::bridge::help_texture_name(b, out, n, l);
+                same_memory("help names", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn round13_help_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0011));
+}
+
+#[test]
+fn round13_help_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0012));
+}
+
+/// Round 13's texture names over stand-ins for the languages, the battle
+/// status and `dbgPrintf`.
+#[allow(clippy::items_after_statements)]
+fn round13_texture_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    let getter = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let ffx = stand_in8(a, b, 0xac0, &getter(cells));
+    redirect(a, b, 0x0064_10e0, ffx);
+    let tk = stand_in8(a, b, 0xad0, &getter(cells + 4));
+    redirect(a, b, 0x0088_7c30, tk);
+    let battle = stand_in8(a, b, 0xae0, &getter(cells + 8));
+    redirect(a, b, 0x0078_16f0, battle);
+    let print = stand_in8(a, b, 0xaf0, &recorder(cells + 12, 0x5a5a_1300));
+    redirect(a, b, 0x0062_f500, print);
+    struct Calls;
+    impl t::TextureName<Oracle> for Calls {
+        fn battle_status(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0078_16f0, &[])
+        }
+        fn tk_lang(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0088_7c30, &[])
+        }
+        fn ffx_lang(&mut self, m: &mut Oracle) -> u32 {
+            eax(m, 0x0064_10e0, &[])
+        }
+        fn print(&mut self, m: &mut Oracle, fmt: u32) {
+            eax(m, 0x0062_f500, &[fmt]);
+        }
+    }
+    let size = alloc(a, b, 8);
+    let ids = [
+        0x3c00u32,
+        0x3d00,
+        0x3d01,
+        0x3d10,
+        0x3d20,
+        0x3d30,
+        0x3d40,
+        0x3d60,
+        0x3d80,
+        0x3bff,
+        0x3d02,
+        0x3d31,
+        0x3d81,
+        0x3e00,
+        0x13d00,
+        0xffff_3d10,
+    ];
+    let prefixes = [0x025d_08a0u32, 0x025d_06a0];
+    for id in ids {
+        for _ in 0..24 {
+            put(a, b, cells, [0u32, 9, 10][(rng.next() % 3) as usize]);
+            put(a, b, cells + 4, rng.next() & 1);
+            put(a, b, cells + 8, rng.next() & 1);
+            for p in prefixes {
+                let n = rng.next() % 24;
+                let mut text: Vec<u8> = (0..n).map(|_| b'a' + (rng.next() % 26) as u8).collect();
+                text.push(0);
+                let at = a.rebase(p);
+                a.write(at, &text).unwrap();
+                b.write(at, &text).unwrap();
+            }
+            // nibbles whose column k (0..=14) keeps index + k within the
+            // 16-entry tables (or the byte below 16 for 0x3d80)
+            let high = rng.next() & 1;
+            let lang_table = matches!(id, 0x3d01 | 0x3d60);
+            let nibbles = if id == 0x3d80 {
+                rng.next() % 16
+            } else {
+                rng.next() & 0xff
+            };
+            let nib = if high == 0 {
+                nibbles & 0xf
+            } else {
+                nibbles >> 4
+            };
+            let k = (nib & 7) * 2;
+            let index = if lang_table {
+                rng.next() % 16
+            } else {
+                rng.next() % (16 - k)
+            };
+            let high = high | (rng.next() & 0xffff_0000);
+            put(a, b, size, [0xa5a5_a5a5u32; 2]);
+            put(a, b, cells + 12, 0u32);
+            let args = [id, nibbles | (rng.next() & 0xffff_ff00), index, high, size];
+            let want = eax(a, 0x008a_cf50, &args);
+            let got = t::texture_name(b, args[0], args[1], args[2], args[3], args[4], &mut Calls);
+            assert_eq!(want, got, "{args:x?}");
+            same_memory("texture names", a, b);
+        }
+    }
+}
+
+#[test]
+fn round13_texture_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0021));
+}
+
+#[test]
+fn round13_texture_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_texture_names(&mut a, &mut b, &mut Xorshift(0x4013_0022));
+}
+
+/// Round 13's magic file start-up, over logging stand-ins.
+#[allow(clippy::items_after_statements)]
+fn round13_magic_file(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as mb;
+    let log = alloc(a, b, 0x80);
+    let cursor = alloc(a, b, 4);
+    let stub = |a: &mut Oracle, b: &mut Oracle, k: u32| {
+        stand_in8(
+            a,
+            b,
+            0xb00 + 0x30 * k,
+            &logger(cursor, 0x1300_0000 + (k << 8)),
+        )
+    };
+    let printf = stub(a, b, 0);
+    let init = stub(a, b, 1);
+    for (k, sym) in [(2u32, 0x0064_3260u32), (3, 0x0064_2f10)] {
+        let s = stub(a, b, k);
+        redirect(a, b, sym, s);
+    }
+    // resetZanmatoSepList takes no argument: count its calls
+    let mut count = vec![0x83, 0x05];
+    count.extend_from_slice(&(log + 0x7c).to_le_bytes());
+    count.extend_from_slice(&[0x01, 0xc3]);
+    let s = stand_in8(a, b, 0xb00 + 0x30 * 4, &count);
+    redirect(a, b, 0x007a_8f20, s);
+    for (slot, to) in [(0x00b0_c380u32, printf), (0x022f_b6a0, init)] {
+        let at = a.rebase(slot);
+        a.write(at, &to.to_le_bytes()).unwrap();
+        b.write(at, &to.to_le_bytes()).unwrap();
+    }
+    struct Calls(u32, u32);
+    impl mb::MagicFileCalls<Oracle> for Calls {
+        fn printf(&mut self, m: &mut Oracle, fmt: u32, arg: Option<u32>) {
+            let mut args = vec![fmt];
+            args.extend(arg);
+            m.call(self.0, Conv::Cdecl, &args).unwrap();
+        }
+        fn game_over_notify(&mut self, m: &mut Oracle, on: u32) {
+            eax(m, 0x0064_3260, &[on]);
+        }
+        fn init_magic(&mut self, m: &mut Oracle, imports: u32) {
+            m.call(self.1, Conv::Cdecl, &[imports]).unwrap();
+        }
+        fn fog_fade(&mut self, m: &mut Oracle, on: u32) {
+            eax(m, 0x0064_2f10, &[on]);
+        }
+        fn reset_zanmato(&mut self, m: &mut Oracle) {
+            eax(m, 0x007a_8f20, &[]);
+        }
+    }
+    let mut calls = Calls(printf, init);
+    let ids = [
+        0x2c7u32, 0x296, 0x29e, 0xa8, 0x1b2, 0x262, 0, 1, 0x2c6, 0x2c8,
+    ];
+    for _ in 0..40 {
+        let id = if rng.next().is_multiple_of(3) {
+            rng.next()
+        } else {
+            ids[(rng.next() % 10) as usize]
+        };
+        let handle = if rng.next() & 1 == 0 {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        set(
+            a,
+            b,
+            mb::MAGIC_FILE,
+            [rng.next(), rng.next(), rng.next(), handle],
+        );
+        put(a, b, cursor, log);
+        put(a, b, log, [0u32; 0x1f]);
+        eax(a, 0x009d_a7a0, &[id]);
+        mb::magic_file_set_magic_id(b, id, &mut calls);
+        same_memory("magic id", a, b);
+        if rng.next() & 1 == 0 {
+            let start = ids[(rng.next() % 10) as usize];
+            set(
+                a,
+                b,
+                mb::MAGIC_FILE,
+                [start, rng.next(), rng.next(), handle],
+            );
+        }
+        put(a, b, cursor, log);
+        assert_eq!(
+            eax(a, 0x009d_a7f0, &[]),
+            mb::magic_file_start(b, &mut calls)
+        );
+        same_memory("magic start", a, b);
+    }
+}
+
+#[test]
+fn round13_magic_file_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0031));
+}
+
+#[test]
+fn round13_magic_file_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0032));
+}
+
+/// Round 13's message-window placement over a stand-in screen size.
+#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 8);
+    // mov eax, [esp+4]; mov ecx, [w]; mov [eax], ecx; mov eax, [esp+8]; mov ecx, [h]; mov [eax], ecx; ret
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    code.extend_from_slice(&cells.to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    code.extend_from_slice(&(cells + 4).to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let wh = stand_in8(a, b, 0xc00, &code);
+    redirect(a, b, 0x0064_0db0, wh);
+    let windows = alloc(a, b, 8 * 0x80);
+    let messages = alloc(a, b, 8 * 0x80);
+    let objects = alloc(a, b, 8 * 0x20);
+    let styles = alloc(a, b, 8 * 0x10);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        put(a, b, wb::WINDOWS.ptr(a).addr + 4 * k, windows + 0x80 * k);
+        put(
+            a,
+            b,
+            wb::MSG_WINDOWS.ptr(a).addr + 4 * k,
+            messages + 0x80 * k,
+        );
+        put(a, b, objects + 0x20 * k + 0x10, styles + 0x10 * k);
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    set(a, b, t::MESSAGE_SLOTS, slots);
+    let screens = [
+        (640, 480),
+        (1280, 720),
+        (1920, 1080),
+        (2560, 1080),
+        (1024, 768),
+        (3840, 2160),
+        (720, 1280),
+    ];
+    let maps = [0x17u32, 0x15b, 0, 0x40];
+    for _ in 0..3000 {
+        let i = (rng.next() % 8) as i32;
+        let (sw, sh) = screens[(rng.next() % 7) as usize];
+        put(a, b, cells, [sw, sh]);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        set(a, b, t::CURRENT_MAP, maps[(rng.next() % 4) as usize]);
+        put(
+            a,
+            b,
+            styles + 0x10 * i.cast_unsigned() + 4,
+            (rng.next() % 8) as u16,
+        );
+        put(
+            a,
+            b,
+            windows + 0x80 * i.cast_unsigned() + 4,
+            (rng.next() % 3) as u16,
+        );
+        let rect = match rng.next() % 8 {
+            0 => [
+                400,
+                0x110,
+                (rng.next() % 500) as i32,
+                (rng.next() % 300) as i32,
+            ],
+            1 => [
+                (rng.next() % 600) as i32 - 50,
+                (rng.next() % 450) as i32 - 50,
+                0x1d8,
+                0xf6,
+            ],
+            2 => [
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+                rng.next().cast_signed(),
+            ],
+            _ => [
+                (rng.next() % 600) as i32 - 50,
+                (rng.next() % 450) as i32 - 50,
+                (rng.next() % 520) as i32,
+                (rng.next() % 300) as i32,
+            ],
+        };
+        let args = [
+            i.cast_unsigned(),
+            rect[0].cast_unsigned(),
+            rect[1].cast_unsigned(),
+            rect[2].cast_unsigned(),
+            rect[3].cast_unsigned(),
+        ];
+        eax(a, 0x008a_fbb0, &args);
+        t::place_message_window(b, i, rect, |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message windows", a, b);
+    }
+}
+
+#[test]
+fn round13_message_windows_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0041));
+}
+
+#[test]
+fn round13_message_windows_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0042));
+}

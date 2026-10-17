@@ -3182,6 +3182,263 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ke::bridge::ke_th_cp_add_bp(&mut mem(), cp, pool, (a, b), w)
     }
+    // ---- round 19 ----
+    /// `AbmapItemUsableAt(chr, node, item)`.
+    AbmapItemUsableAt @ 0x00a4_9310 => extern "C" fn shim_abmap_item_usable_at(chr: u32, node: u32, item: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_usable_at(&mut mem(), [chr, node, item], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapItemApplyAt(chr, node, item, mark)`.
+    AbmapItemApplyAt @ 0x00a5_b400 => extern "C" fn shim_abmap_item_apply_at(chr: u32, node: u32, item: u32, mark: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_apply_at(&mut mem(), [chr, node, item, mark], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapItemNodeEffect(node, ctx)`.
+    AbmapItemNodeEffect @ 0x00a4_9440 => extern "C" fn shim_abmap_item_node_effect(node: u32, ctx: u32) -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_node_effect(&mut mem(), node, ctx, t, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapItemApplyNode(node, ctx)`.
+    AbmapItemApplyNode @ 0x00a5_b490 => extern "C" fn shim_abmap_item_apply_node(node: u32, ctx: u32) -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_apply_node(&mut mem(), node, ctx, t, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapSetupKindShapes()`.
+    AbmapSetupKindShapes @ 0x00a5_b230 => extern "C" fn shim_abmap_setup_kind_shapes() -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_setup_kind_shapes(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiGetFogParam(near, far, limit)`.
+    yiGetFogParam @ 0x0090_8bb0 => extern "C" fn shim_yi_get_fog_param(near: u32, far: u32, limit: u32) {
+        yi::bridge::yi_get_fog_param(&mut mem(), [near, far, limit], &mut |_, f, a| call_float(f, a));
+    }
+
+    /// `AbmapPadStartSlideOut(pad)`.
+    AbmapPadStartSlideOut @ 0x00a4_8c20 => extern "C" fn shim_abmap_pad_start_slide_out(pad: u32) {
+        abmap::bridge::abmap_pad_start_slide_out(&mut mem(), pad);
+    }
+
+    /// `AbmapPadStartSlideIn(pad)`.
+    AbmapPadStartSlideIn @ 0x00a4_8f20 => extern "C" fn shim_abmap_pad_start_slide_in(pad: u32) {
+        abmap::bridge::abmap_pad_start_slide_in(&mut mem(), pad);
+    }
+
+    /// `AbmapPadSlideOutStep(p)`.
+    AbmapPadSlideOutStep @ 0x00a5_9800 => extern "C" fn shim_abmap_pad_slide_out_step(p: u32) {
+        abmap::bridge::abmap_pad_slide_out_step(&mut mem(), p);
+    }
+
+    /// `AbmapPadSlideInStep(p)`.
+    AbmapPadSlideInStep @ 0x00a5_a270 => extern "C" fn shim_abmap_pad_slide_in_step(p: u32) {
+        abmap::bridge::abmap_pad_slide_in_step(&mut mem(), p);
+    }
+
+    /// `AbmapRectTweenIn(r)`.
+    AbmapRectTweenIn @ 0x00a5_a080 => extern "C" fn shim_abmap_rect_tween_in(r: u32) {
+        abmap::bridge::abmap_rect_tween_in(&mut mem(), r);
+    }
+
+    /// `AbmapRectTweenOut(r)`.
+    AbmapRectTweenOut @ 0x00a5_a170 => extern "C" fn shim_abmap_rect_tween_out(r: u32) {
+        abmap::bridge::abmap_rect_tween_out(&mut mem(), r);
+    }
+
+    /// `AbmapMaskNodeFlags(mask)`.
+    AbmapMaskNodeFlags @ 0x00a4_7400 => extern "C" fn shim_abmap_mask_node_flags(mask: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        abmap::bridge::abmap_mask_node_flags(&mut mem(), mask as u8);
+    }
+
+    /// `AbmapMarkEmptyMenus()`.
+    AbmapMarkEmptyMenus @ 0x00a5_aca0 => extern "C" fn shim_abmap_mark_empty_menus() -> u32 {
+        abmap::bridge::abmap_mark_empty_menus(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiGetFogColor(out)`.
+    yiGetFogColor @ 0x0090_8980 => extern "C" fn shim_yi_get_fog_color(out: u32) -> u32 {
+        let mut tmp = Scratch([0; 0x20]);
+        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_get_fog_color(&mut mem(), out, t, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefPostRequest(a, f, b, c, d)`.
+    rcefPostRequest @ 0x0092_eba0 => extern "C" fn shim_rcef_post_request(a: u32, f: u32, b: u32, c: u32, d: u32) -> u32 {
+        task::bridge::rcef_post_request(&mut mem(), [a, f, b, c, d])
+    }
+
+    /// `rcEffectTaskRequestWait(task)`.
+    rcEffectTaskRequestWait @ 0x0093_04e0 => extern "C" fn shim_rc_effect_task_request_wait(t: u32) {
+        task::bridge::rc_effect_task_request_wait(&mut mem(), t);
+    }
+
+    /// `rcefAnimeFini(id)`.
+    rcefAnimeFini @ 0x0092_f4a0 => extern "C" fn shim_rcef_anime_fini(id: u32) -> u32 {
+        task::bridge::rcef_anime_fini(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefModelFini(id)`.
+    rcefModelFini @ 0x0092_f710 => extern "C" fn shim_rcef_model_fini(id: u32) -> u32 {
+        task::bridge::rcef_model_fini(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiAnimDetachAll(scene, obj)`.
+    yiAnimDetachAll @ 0x0091_49a0 => extern "C" fn shim_yi_anim_detach_all(scene: u32, obj: u32) -> u32 {
+        yi::bridge::yi_anim_detach_all(&mut mem(), scene, obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_DrawScene()`.
+    Yn_DrawScene @ 0x0091_a240 => extern "C" fn shim_yn_draw_scene() {
+        model::bridge::yn_draw_scene(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapItemEffectAtNode(chr, node, item)`.
+    AbmapItemEffectAtNode @ 0x00a4_93b0 => extern "C" fn shim_abmap_item_effect_at_node(chr: u32, node: u32, item: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_item_effect_at_node(&mut mem(), [chr, node, item], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapEnterCommandMenu()`.
+    AbmapEnterCommandMenu @ 0x00a5_9950 => extern "C" fn shim_abmap_enter_command_menu() -> u32 {
+        abmap::bridge::abmap_enter_command_menu(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapEnterItemMenu()`.
+    AbmapEnterItemMenu @ 0x00a5_98a0 => extern "C" fn shim_abmap_enter_item_menu() -> u32 {
+        abmap::bridge::abmap_enter_item_menu(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiDisposeAnimDObj(obj, kind)`.
+    yiDisposeAnimDObj @ 0x0090_84b0 => extern "C" fn shim_yi_dispose_anim_dobj(obj: u32, kind: u32) -> u32 {
+        yi::bridge::yi_dispose_anim_dobj(&mut mem(), obj, kind, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefObjFini(obj)`.
+    rcefObjFini @ 0x0092_fee0 => extern "C" fn shim_rcef_obj_fini(o: u32) -> u32 {
+        task::bridge::rcef_obj_fini(&mut mem(), o, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapFillCommandMenu(pad, kind)`.
+    AbmapFillCommandMenu @ 0x00a4_59e0 => extern "C" fn shim_abmap_fill_command_menu(pad: u32, kind: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_fill_command_menu(&mut mem(), pad, kind, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_GuideEdgeFade(p, a, b, rect, out)`.
+    Yn_GuideEdgeFade @ 0x0091_f530 => extern "C" fn shim_yn_guide_edge_fade(p: u32, a: u32, b: u32, rect: u32, out: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        guide::bridge::yn_guide_edge_fade(&mut mem(), [p, a, b, rect, out], w)
+    }
+
+    /// `rcbgSceneSetChadist(scene)`.
+    rcbgSceneSetChadist @ 0x0092_0790 => extern "C" fn shim_rcbg_scene_set_chadist(scene: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_scene_set_chadist(&mut mem(), scene, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcEffectTaskSoundCueWait(task)`.
+    rcEffectTaskSoundCueWait @ 0x0093_0500 => extern "C" fn shim_rc_effect_task_sound_cue_wait(t: u32) {
+        task::bridge::rc_effect_task_sound_cue_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcEffectTaskMotionWait(task)`.
+    rcEffectTaskMotionWait @ 0x0093_0430 => extern "C" fn shim_rc_effect_task_motion_wait(t: u32) {
+        task::bridge::rc_effect_task_motion_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcefSetChrDirTarget(chr, a, b)`.
+    rcefSetChrDirTarget @ 0x0092_e750 => extern "C" fn shim_rcef_set_chr_dir_target(chr: u32, a: u32, b: u32) -> u32 {
+        task::bridge::rcef_set_chr_dir_target(&mut mem(), [chr, a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefSetChrDirTarget2(chr, a, b, c)`.
+    rcefSetChrDirTarget2 @ 0x0092_e960 => extern "C" fn shim_rcef_set_chr_dir_target2(chr: u32, a: u32, b: u32, c: u32) -> u32 {
+        task::bridge::rcef_set_chr_dir_target2(&mut mem(), [chr, a, b, c], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefWeaponSetHide(chr, show)`.
+    rcefWeaponSetHide @ 0x0092_eb70 => extern "C" fn shim_rcef_weapon_set_hide(chr: u32, show: u32) -> u32 {
+        task::bridge::rcef_weapon_set_hide(&mut mem(), chr, show, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefPlaySE(id)`.
+    rcefPlaySE @ 0x0092_e680 => extern "C" fn shim_rcef_play_se(id: u32) -> u32 {
+        task::bridge::rcef_play_se(&mut mem(), id, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefMainCreateTask(kind, seq)`.
+    rcefMainCreateTask @ 0x0092_5170 => extern "C" fn shim_rcef_main_create_task(kind: u32, seq: u32) -> u32 {
+        task::bridge::rcef_main_create_task(&mut mem(), kind, seq, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefChrDelete(obj)`.
+    rcefChrDelete @ 0x0093_0600 => extern "C" fn shim_rcef_chr_delete(o: u32) -> u32 {
+        task::bridge::rcef_chr_delete(&mut mem(), o, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_SetChadist()`.
+    Yn_SetChadist @ 0x0091_a250 => extern "C" fn shim_yn_set_chadist() {
+        model::bridge::yn_set_chadist(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `Yn_PreBgLayerDispOff(n)`.
+    Yn_PreBgLayerDispOff @ 0x0091_a7c0 => extern "C" fn shim_yn_pre_bg_layer_disp_off(n: u32) -> u32 {
+        model::bridge::yn_pre_bg_layer_disp_off(&mut mem(), n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_PreBgLayerDispOn(n)`.
+    Yn_PreBgLayerDispOn @ 0x0091_a830 => extern "C" fn shim_yn_pre_bg_layer_disp_on(n: u32) -> u32 {
+        model::bridge::yn_pre_bg_layer_disp_on(&mut mem(), n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxSpringDelete(spring)`.
+    rcfxSpringDelete @ 0x0092_8c60 => extern "C" fn shim_rcfx_spring_delete(p: u32) -> u32 {
+        model::bridge::rcfx_spring_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxNailDelete(nail)`.
+    rcfxNailDelete @ 0x0092_9070 => extern "C" fn shim_rcfx_nail_delete(p: u32) -> u32 {
+        model::bridge::rcfx_nail_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_FPm173End()`.
+    Yn_FPm173End @ 0x0091_9ab0 => extern "C" fn shim_yn_fpm173_end() -> u32 {
+        model::bridge::yn_fpm173_end(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgTrxPairSetNo(p, n)`.
+    rcbgTrxPairSetNo @ 0x0092_21e0 => extern "C" fn shim_rcbg_trx_pair_set_no(p: u32, n: u32) -> u32 {
+        model::bridge::rcbg_trx_pair_set_no(&mut mem(), p, n, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiSetBackColor(c)`.
+    yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
+        yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiSetFogColor(c)`.
+    yiSetFogColor @ 0x0090_a2c0 => extern "C" fn shim_yi_set_fog_color(c: u32) {
+        yi::bridge::yi_set_fog_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiSetFogParam(near, far, limit)`.
+    yiSetFogParam @ 0x0090_a350 => extern "C" fn shim_yi_set_fog_param(near: u32, far: u32, limit: u32) {
+        yi::bridge::yi_set_fog_param(&mut mem(), [near, far, limit], &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiDisableHamonEff()`.
+    yiDisableHamonEff @ 0x0090_8450 => extern "C" fn shim_yi_disable_hamon_eff() -> u32 {
+        yi::bridge::yi_disable_hamon_eff(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

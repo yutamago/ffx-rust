@@ -1967,7 +1967,7 @@ pub mod bridge {
         w
     }
 
-    /// `MenuSubCmd_RefreshHelp()` (`0x008e49b0`): the sub-command window's
+    /// `TkMenuRefreshSubCmdHelp()` (`0x008e49b0`): the sub-command window's
     /// help message for its cursor (`+0x5c + 12 × cursor`).
     pub fn menu_sub_cmd_refresh_help(mem: &mut impl Mem) {
         let w = MENU_SUB_CMD_WINDOW.get(mem);

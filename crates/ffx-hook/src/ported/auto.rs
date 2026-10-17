@@ -300,18 +300,6 @@ ported! {
     ClassChrShaderRender_GetVertexInfo @ 0x0069_f880 => extern "thiscall" fn auto_0069f880(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0069F880, &[a0])
     }
-    /// return argument + offset: `return (a0 + 0xc)`.
-    FieldAddrc_006a0440 @ 0x006a_0440 => extern "C" fn auto_006a0440(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_006A0440, &[a0])
-    }
-    /// return argument + offset: `return (a0 + 0xc)`.
-    FieldAddrc_006a0450 @ 0x006a_0450 => extern "C" fn auto_006a0450(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_006A0450, &[a0])
-    }
-    /// return argument + offset: `return (a0 + 0x10)`.
-    FieldAddr10_006a06c0 @ 0x006a_06c0 => extern "stdcall" fn auto_006a06c0(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_006A06C0, &[a0])
-    }
     /// load and compute: `t0 = u32[(a0 + 0xc)]; t1 = u32[(a0 + 0x8)]; return ((t0 - t1) >>s 0x2)`.
     PhyreScene_LoadCompute_006a29a0 @ 0x006a_29a0 => extern "thiscall" fn auto_006a29a0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006A29A0, &[a0])
@@ -387,10 +375,6 @@ ported! {
     /// store constant to field: `u8[(a0 + 0x6)] = 0x0`.
     graphicSetFieldConst6_006d59f0 @ 0x006d_59f0 => extern "thiscall" fn auto_006d59f0(a0: u32) {
         ffx_auto::run(&mut mem(), &t::R_006D59F0, &[a0]);
-    }
-    /// pass-through: `return a0`.
-    Identity_006d7b20 @ 0x006d_7b20 => extern "stdcall" fn auto_006d7b20(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_006D7B20, &[a0])
     }
     /// return field u32: `t0 = u32[(a0 + 0x6d8)]; return t0`.
     PhyFMVPlayerManager_getCurrentFrame @ 0x006d_91b0 => extern "thiscall" fn auto_006d91b0(a0: u32) -> u32 {
@@ -944,18 +928,6 @@ ported! {
     CopyFields_007ecb20 @ 0x007e_cb20 => extern "C" fn auto_007ecb20(a0: u32, a1: u32, a2: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_007ECB20, &[a0, a1, a2])
     }
-    /// return argument + offset: `return (a0 + 0x10)`.
-    FieldAddr10_00806e10 @ 0x0080_6e10 => extern "C" fn auto_00806e10(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_00806E10, &[a0])
-    }
-    /// return argument + offset: `return (a0 + 0x4)`.
-    FieldAddr4_00806e30 @ 0x0080_6e30 => extern "C" fn auto_00806e30(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_00806E30, &[a0])
-    }
-    /// return argument + offset: `return (a0 + 0x4)`.
-    FieldAddr4_00806e40 @ 0x0080_6e40 => extern "C" fn auto_00806e40(a0: u32) -> u32 {
-        ffx_auto::call(&mut mem(), &t::R_00806E40, &[a0])
-    }
     /// store constant to field: `u8[(a0 + 0x210)] = 0xff; return 0x0`.
     SetFieldConst210_008106a0 @ 0x0081_06a0 => extern "C" fn auto_008106a0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_008106A0, &[a0])
@@ -1317,8 +1289,12 @@ ported! {
         ffx_auto::call(&mut mem(), &t::R_008BE3F0, &[a0])
     }
     /// return constant: `return 0x200000`.
-    ReturnConst200000_008bec80 @ 0x008b_ec80 => extern "C" fn auto_008bec80() -> u32 {
+    TOMenuGetHelpWorkSize @ 0x008b_ec80 => extern "C" fn auto_008bec80() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_008BEC80, &[])
+    }
+    /// return constant: `return 0x100000`.
+    TOMenuGetPacketBuffSize @ 0x008b_ee00 => extern "C" fn auto_008bee00() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008BEE00, &[])
     }
     /// several stores: set field/global (constants, arguments, addresses): `u32[&0x0186a234] = (a1 & 0xffff); u32[&0x0186a230] = (a1 & 0xfff); u32[(a0 + 0x1c)] = 0x0; return a0`.
     SeveralStoresSetFieldGlobalConstantsArgumentsAddresses_008bf070 @ 0x008b_f070 => extern "C" fn auto_008bf070(a0: u32, a1: u32) -> u32 {

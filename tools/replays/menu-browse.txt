@@ -1,10 +1,10 @@
-# Menu: load the first manual save (salvage ship deck), open the main
+# Menu: load save slot 1 (ffx_001, salvage ship deck) without the title menu, open the main
 # menu and walk through its screens (items, abilities, status, config),
 # back out and close it. Ranges: the pad word (0x00ccb170) and the party
 # records (0x0113205c, 18 x 0x94); the window tables hold heap pointers,
 # which differ between any two runs. Screenshots at fixed frames go to
 # $OUT\menu-browse-<n>.bmp (the trace's folder), for tools/shot-compare.py.
-load 1 cdsp0000
+load direct 1 cdsp0000
 lockstep on
 wait 30
 trace 0x00ccb170:8 0x0113205c:0xa68

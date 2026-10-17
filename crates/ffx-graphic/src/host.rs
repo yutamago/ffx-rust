@@ -42,6 +42,16 @@ pub trait Host: Mem {
         f32::NAN
     }
 
+    /// Calls a CRT intrinsic (`_CIsin`, `_CIcos` through the game's import
+    /// thunk at `addr`) with `x` in `ST0`; returns its `ST0` result as the
+    /// caller's `fstp m32` stores it.
+    ///
+    /// The default returns NaN, as [`Host::call_st0`]'s does.
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let _ = (addr, x);
+        f32::NAN
+    }
+
     /// [`Host::call_st0`] of the original at `sym`.
     fn call_sym_st0(&mut self, sym: u32, conv: Conv, args: &[u32]) -> f32 {
         let addr = self.rebase(sym);
@@ -86,6 +96,27 @@ impl Host for ffx_bridge::RawMem {
         // the originals through their pointers, as they would their stack
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
         SCRATCH.with(|s| s.get() as usize as u32)
+    }
+
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let mut out = 0f32;
+        // SAFETY: `addr` is the import thunk of a CRT intrinsic, which takes
+        // its argument in ST0 and leaves its result alone there (eax, ecx,
+        // edx, the x87 and SSE registers clobbered). The x87 stack is empty
+        // here (Rust keeps no values in it). Only edi, which the callee
+        // keeps, is read after the call.
+        unsafe {
+            std::arch::asm!(
+                "fld qword ptr [{x}]",
+                "call {f}",
+                "fstp dword ptr [edi]",
+                x = in(reg) &raw const x,
+                f = in(reg) addr,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
     }
 
     fn call_st0(&mut self, addr: u32, conv: Conv, args: &[u32]) -> f32 {

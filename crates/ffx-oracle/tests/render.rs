@@ -27,7 +27,14 @@ use ffx_oracle::{Conv, Oracle, Pages};
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
 const CAVE: u32 = 0x0064_0660;
-const CAVE_LEN: u32 = 1800;
+const CAVE_LEN: u32 = 1768;
+/// After the stubs: `fld qword [esp+4]; call [esp+0xc]; ret` (an intrinsic
+/// with its argument in ST0), then at `+16` `fstp st(0); ret`.
+const TRAMPOLINE: u32 = CAVE + CAVE_LEN;
+const TRAMPOLINE_CODE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -110,7 +117,30 @@ impl Host for G<'_> {
         let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
             panic!("call_st0 {addr:#x}: no float in ST0");
         };
+        // pop the result, as the caller's fstp does
+        let pop = self.0.rebase(TRAMPOLINE) + 16;
+        self.0.call(pop, Conv::Cdecl, &[]).unwrap();
         // as `fstp m32`: a NaN keeps its sign and top fraction bits
+        let bits = if v.is_nan() {
+            let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
+            let sign = u32::from(raw[9] >> 7) << 31;
+            sign | 0x7fc0_0000 | ((mant >> 40) as u32 & 0x007f_ffff)
+        } else {
+            ffx_bridge::x87::store(v)
+        };
+        f32::from_bits(bits)
+    }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let at = self.0.rebase(TRAMPOLINE);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap();
+        let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
+            panic!("call_intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
         let bits = if v.is_nan() {
             let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
             let sign = u32::from(raw[9] >> 7) << 31;
@@ -175,6 +205,8 @@ impl Twins {
             cave_next: cave,
         };
         t.log = t.zeros(0x8000);
+        let at = t.rebase(TRAMPOLINE);
+        t.write(at, &TRAMPOLINE_CODE);
         t
     }
 
@@ -4171,6 +4203,649 @@ fn round6_helpers_match_the_original() {
                     Out::U32(ut::pstring_tree_find(g, head, key))
                 });
             }
+        }
+    }
+}
+
+/// A float `less` (cdecl, `al = a < b`) written into the cave.
+fn cave_float_less(t: &mut Twins) -> u32 {
+    let less = t.cave_next;
+    let code = [
+        0xd9, 0x44, 0x24, 0x04, 0xd8, 0x5c, 0x24, 0x08, 0xdf, 0xe0, 0xf6, 0xc4, 0x01, 0x0f, 0x95,
+        0xc0, 0xc3,
+    ];
+    t.write(less, &code);
+    t.cave_next += code.len() as u32;
+    less
+}
+
+/// Allocates a NUL-terminated string.
+fn cstr(t: &mut Twins, s: &str) -> u32 {
+    let mut b = s.as_bytes().to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one case per function
+fn round7_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x7007_0007);
+    let names = ["", "a", "ab", "water", "water2", "fire"];
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 12 {
+            0 => {
+                let scene = build_scene(&mut t, &mut rng);
+                let n = rng.below(5);
+                t.w32(scene + 0x11c8, n);
+                let mut meshes = Vec::new();
+                for _ in 0..n {
+                    let mesh = if rng.chance(5) { 0 } else { t.zeros(0x20) };
+                    if mesh != 0 && !rng.chance(4) {
+                        let draw = t.alloc(&rng.bytes(0x20));
+                        t.w32(mesh + 0x1c, draw);
+                    }
+                    meshes.extend(mesh.to_le_bytes());
+                }
+                let meshes = t.alloc(&meshes);
+                t.w32(scene + 0x11d0, meshes);
+                let on = rng.next();
+                t.check(&what, 0x0066_e7b0, Conv::Thiscall(scene), &[on], |g| {
+                    st::scene_set_meshes_visible(g, scene, on);
+                    Out::None
+                });
+            }
+            1 => {
+                let scene = build_scene(&mut t, &mut rng);
+                let c: [f32; 6] = std::array::from_fn(|_| rng.float());
+                let second = rng.next();
+                let mut args: Vec<u32> = c.iter().map(|x| x.to_bits()).collect();
+                args.push(second);
+                t.check(&what, 0x0066_ea70, Conv::Thiscall(scene), &args, |g| {
+                    st::scene_set_colour_pair(g, scene, c, second);
+                    Out::None
+                });
+            }
+            2 => {
+                let scene = build_scene(&mut t, &mut rng);
+                let n = rng.below(6);
+                let states: Vec<u8> = (0..n)
+                    .flat_map(|_| (if rng.chance(3) { rng.below(3) } else { 1 }).to_le_bytes())
+                    .collect();
+                let states = t.alloc(&states);
+                t.w32(scene + 0x60, states);
+                let segs: Vec<u8> = (0..n)
+                    .flat_map(|_| (if rng.chance(3) { 0 } else { rng.next() | 1 }).to_le_bytes())
+                    .collect();
+                let segs = t.alloc(&segs);
+                let obj = t.alloc(&rng.bytes(0x60));
+                t.w8(obj + 0x24, u8::from(!rng.chance(5)));
+                t.w32(obj + 0x54, segs);
+                t.w32(obj + 0x58, n);
+                t.check(&what, 0x0065_2250, Conv::Fastcall, &[obj], |g| {
+                    Out::U32(st::segments_ready(g, obj))
+                });
+            }
+            3 => {
+                let sm = t.alloc(&rng.bytes(0x4070));
+                let q = if rng.chance(4) {
+                    rng.next()
+                } else {
+                    rng.below(5)
+                };
+                t.check(&what, 0x006c_eaa0, Conv::Thiscall(sm), &[q], |g| {
+                    Out::U32(ut::shadow_set_quality(g, sm, q))
+                });
+                let v: [f32; 4] = std::array::from_fn(|_| rng.float());
+                let args: Vec<u32> = v.iter().map(|x| x.to_bits()).collect();
+                let b = t.alloc(&rng.bytes(0x70));
+                t.check(&what, 0x006c_4620, Conv::Thiscall(b), &args, |g| {
+                    ut::set_positive_floats(g, b, v);
+                    Out::None
+                });
+                t.check(&what, 0x006c_47a0, Conv::Thiscall(b), &[], |g| {
+                    Out::U32(ut::render_params_reset(g, b))
+                });
+            }
+            4 => {
+                let less = cave_float_less(&mut t);
+                let n = 1 + rng.below(12);
+                let base = t.alloc(&float_bytes(&mut rng, n as usize));
+                let hole = rng.below(n);
+                let top = if rng.chance(4) {
+                    hole + rng.below(2)
+                } else {
+                    rng.below(hole + 1)
+                };
+                let value = t.alloc(&float_bytes(&mut rng, 1));
+                t.check(
+                    &what,
+                    0x006c_7730,
+                    Conv::Cdecl,
+                    &[base, hole, top, value, less],
+                    |g| Out::U32(ut::float_push_heap(g, base, hole, top, value, less)),
+                );
+            }
+            5 => {
+                let less = cave_float_less(&mut t);
+                let v = t.alloc(&float_bytes(&mut rng, 3));
+                let (a, b, c) = (v, v + 4, v + 8);
+                t.check(&what, 0x006c_74d0, Conv::Cdecl, &[a, b, c, less], |g| {
+                    // the callback's eax above al is its fnstsw: x87 state, not a result
+                    Out::U8(ut::float_median3(g, a, b, c, less) as u8)
+                });
+            }
+            6 => {
+                use ffx_graphic::texanim::bridge as ta;
+                let i = rng.below(4);
+                let e = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i;
+                let work = t.alloc(&rng.bytes(0x34 * 64 + 0x440));
+                t.w32(e, u32::from(!rng.chance(4)));
+                t.w32(e + 4, work);
+                let (which, pos) = (rng.below(16), rng.next());
+                let (sym, base) = if rng.chance(2) {
+                    (0x0077_fc90, 0)
+                } else {
+                    (0x0078_0750, 0x400)
+                };
+                t.check(&what, sym, Conv::Cdecl, &[i, which, pos], |g| {
+                    Out::U32(ut::tex_anim_start(g, base, i, which, pos))
+                });
+            }
+            7 => {
+                let obj = t.alloc(&rng.bytes(0xb0));
+                t.check(&what, 0x006f_7700, Conv::Fastcall, &[obj], |g| {
+                    Out::U32(ut::init_flash_table(g, obj))
+                });
+                let owner = rng.next();
+                t.check(&what, 0x006d_3560, Conv::Thiscall(obj), &[owner], |g| {
+                    Out::U32(ut::shadow_entry_init(g, obj, owner))
+                });
+            }
+            8 => {
+                let mgr = t.alloc(&rng.bytes(0x90));
+                let n = rng.below(6);
+                let mut mats = Vec::new();
+                for _ in 0..n {
+                    let m = if rng.chance(5) {
+                        0
+                    } else {
+                        let m = t.zeros(0x20);
+                        let s = cstr(&mut t, names[rng.below(6) as usize]);
+                        t.w32(m + 0x10, s | rng.below(2));
+                        m
+                    };
+                    mats.extend(m.to_le_bytes());
+                }
+                let mats = t.alloc(&mats);
+                t.w32(mgr + 0x74, n | (rng.next() & 0x8000_0000));
+                t.w32(mgr + 0x78, mats);
+                let name = cstr(&mut t, names[rng.below(6) as usize]);
+                t.check(&what, 0x006b_20a0, Conv::Thiscall(mgr), &[name], |g| {
+                    Out::U32(ut::tex_anim_material_index(g, mgr, name))
+                });
+                let n = rng.below(6);
+                let anims = t.zeros(0x20 * n as usize + 4);
+                for k in 0..n {
+                    let s = if rng.chance(5) {
+                        rng.below(2)
+                    } else {
+                        cstr(&mut t, names[rng.below(6) as usize]) | rng.below(2)
+                    };
+                    t.w32(anims + 0x20 * k + 0x18, s);
+                }
+                t.w32(mgr + 0x64, n | (rng.next() & 0x8000_0000));
+                t.w32(mgr + 0x68, anims);
+                let name = if rng.chance(6) {
+                    0
+                } else {
+                    cstr(&mut t, names[rng.below(6) as usize])
+                };
+                t.check(&what, 0x006b_1ef0, Conv::Thiscall(mgr), &[name], |g| {
+                    Out::U32(ut::tex_anim_find_animation(g, mgr, name))
+                });
+            }
+            9 => {
+                let obj = t.alloc(&rng.bytes(0x90));
+                let n = rng.below(5);
+                let list = t.zeros(0x20 * n as usize + 4);
+                for k in 0..n {
+                    let s = t.stub(None, 0x40 + k, true, 1, 1, rng.next());
+                    let vt = t.zeros(0x10);
+                    t.w32(vt + 4, s);
+                    t.w32(list + 0x20 * k, vt);
+                }
+                t.w32(obj + 0x7c, n | (rng.next() & 0x8000_0000));
+                t.w32(obj + 0x80, list);
+                let v = rng.float();
+                t.check(
+                    &what,
+                    0x006b_47e0,
+                    Conv::Thiscall(obj),
+                    &[v.to_bits()],
+                    |g| {
+                        ut::set_all_params(g, obj, v);
+                        Out::None
+                    },
+                );
+            }
+            10 => {
+                t.check(&what, 0x006c_26d0, Conv::Cdecl, &[], |_| {
+                    Out::U32(ut::RENDER_CONST_180)
+                });
+                t.check(&what, 0x006c_2700, Conv::Cdecl, &[], |_| {
+                    Out::U32(ut::RENDER_CONST_51)
+                });
+                let f = rng.next() as u8;
+                let at = t.rebase(ut::RENDER_FLAG.sym);
+                t.w8(at, f);
+                t.check(&what, 0x006b_c960, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::render_flag(g))
+                });
+                let obj = t.alloc(&rng.bytes(0x40));
+                let sym = if rng.chance(2) {
+                    0x006f_7bd0
+                } else {
+                    0x006f_7c00
+                };
+                t.check(&what, sym, Conv::Fastcall, &[obj], |g| {
+                    Out::U32(ut::buffer_size_bytes(g, obj))
+                });
+            }
+            _ => {
+                t.global(
+                    ut::PRX_STATE.sym,
+                    if rng.chance(2) { 3 } else { rng.below(5) },
+                );
+                t.global(
+                    ut::PRX_PENDING.sym,
+                    if rng.chance(2) { 0 } else { rng.next() },
+                );
+                t.check(&what, 0x006f_9b70, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::prx_complete(g))
+                });
+                t.check(&what, 0x006f_9b80, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::prx_idle(g))
+                });
+            }
+        }
+    }
+}
+
+/// A scene list cursor for the cursor steps: `+0x14` the end node, `+0x18`
+/// the current node, `+0x1c` the node the validity check looks for (the
+/// list's nodes at `+0x2c`, linked at `+0x40`). Nodes are 0x60 bytes with
+/// the next node at `+0`.
+fn build_cursor(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let n = 1 + rng.below(5) as usize;
+    let nodes: Vec<u32> = (0..n).map(|_| t.alloc(&rng.bytes(0x60))).collect();
+    for k in 0..n {
+        let next = if k + 1 < n { nodes[k + 1] } else { 0 };
+        t.w32(nodes[k], next);
+        t.w32(nodes[k] + 0x40, if k + 1 < n { nodes[k + 1] } else { 0 });
+        let data = t.alloc(&rng.bytes(0x90));
+        t.w32(nodes[k] + 0x2c, data);
+    }
+    let cur = t.alloc(&rng.bytes(0x40));
+    let end = if rng.chance(3) {
+        nodes[rng.below(n as u32) as usize]
+    } else {
+        rng.next()
+    };
+    t.w32(cur + 0x14, end);
+    // validity: node +0x18 is the "list" (0 = valid), +0x1c the sought node
+    let start = if rng.chance(5) {
+        0
+    } else {
+        nodes[rng.below(n as u32) as usize]
+    };
+    t.w32(cur + 0x18, start);
+    // a node that ends the search: the last one, as a list with +0x40 set
+    let at = nodes[rng.below(n as u32) as usize];
+    t.w32(cur + 0x1c, at);
+    for &k in &nodes {
+        t.w32(k + 0x2c, nodes[0]);
+        if rng.chance(2) {
+            t.w32(k + 0x40, 0);
+        }
+    }
+    t.w32(nodes[n - 1] + 0x40, 0);
+    cur
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one case per function
+fn round8_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x8008_0008);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 6 {
+            0 => {
+                let scene = build_scene(&mut t, &mut rng);
+                let view: Vec<u8> = (0..16)
+                    .flat_map(|_| (rng.below(2000) as f32 / 100.0 - 10.0).to_le_bytes())
+                    .collect();
+                let view = t.alloc(&view);
+                if rng.chance(2) {
+                    let on = u32::from(!rng.chance(4));
+                    t.check(&what, 0x0063_9b30, Conv::Cdecl, &[view, on], |g| {
+                        st::camera_set_world_matrix_sub(g, view, on);
+                        Out::None
+                    });
+                } else {
+                    let camera = if rng.chance(4) {
+                        0
+                    } else {
+                        t.alloc(&rng.bytes(0x100))
+                    };
+                    t.w32(scene + 0x654, camera);
+                    t.stub_sym(st::CAMERA_UPDATE_VIEW, Conv::Thiscall(0), 0, rng.next());
+                    t.check(&what, 0x0064_2410, Conv::Cdecl, &[view], |g| {
+                        st::minimap_camera_set_world_matrix(g, view);
+                        Out::None
+                    });
+                }
+            }
+            1 => {
+                build_scene(&mut t, &mut rng);
+                let (sym, method, n) = [
+                    (0x0063_95e0, st::SCENE_SET_CAMERA_FOVY, 1),
+                    (0x0063_95c0, st::SCENE_SET_CAMERA_ASPECT_RATIO, 1),
+                ][rng.below(2) as usize];
+                t.stub_sym(method, Conv::Thiscall(0), n, rng.next());
+                let v = t.alloc(&float_bytes(&mut rng, 1));
+                t.check(&what, sym, Conv::Cdecl, &[v], |g| {
+                    Out::U32(st::camera_set_from_ptr(g, method, v))
+                });
+                let (sym, method, n) = [
+                    (0x0064_26c0, st::SCENE_SET_OBJECT_TRANSLATION, 2),
+                    (0x0063_8f30, st::SCENE_HIDE_2D_LAYER, 1),
+                    (0x0063_8f60, st::SCENE_SHOW_2D_LAYER, 1),
+                ][rng.below(3) as usize];
+                let ret = rng.next();
+                t.stub_sym(method, Conv::Thiscall(0), n, ret);
+                let args: Vec<u32> = (0..n).map(|_| rng.next()).collect();
+                t.check(&what, sym, Conv::Cdecl, &args, |g| {
+                    Out::U32(st::scene_call(g, method, &args))
+                });
+            }
+            2 | 3 => {
+                build_scene(&mut t, &mut rng);
+                t.stub_sym(
+                    st::SCENE_SET_MESH_INSTANCE_WORLD_MATRIX,
+                    Conv::Stdcall,
+                    2,
+                    rng.next(),
+                );
+                let n = rng.below(4);
+                let mut items = Vec::new();
+                for _ in 0..n {
+                    let segs = 1 + rng.below(4);
+                    let table = t.alloc(&rng.bytes(0x6c * segs as usize + 0x20));
+                    for k in 0..segs {
+                        t.w32(table + 0x6c * k + 0x18, rng.below(4));
+                    }
+                    let holder = t.alloc(&rng.bytes(0x6c * 4 + 0x20));
+                    t.w32(holder, segs | (rng.next() & 0x8000_0000));
+                    t.w32(holder + 4, table);
+                    let mesh = t.zeros(0x20);
+                    t.w32(mesh, holder);
+                    items.extend(mesh.to_le_bytes());
+                }
+                let items = t.alloc(&items);
+                let list = if rng.chance(8) { 0 } else { t.zeros(0x20) };
+                if list != 0 {
+                    t.w32(list, n | (rng.next() & 0x8000_0000));
+                    t.w32(list + 4, items);
+                }
+                let m = rng.next();
+                if round % 6 == 2 {
+                    t.check(&what, 0x0063_c3e0, Conv::Cdecl, &[list, m], |g| {
+                        st::character_set_world_matrix(g, list, m);
+                        Out::None
+                    });
+                } else {
+                    let id = rng.below(6);
+                    t.check(&what, 0x0063_c430, Conv::Cdecl, &[list, m, id], |g| {
+                        st::character_set_world_matrix_by_mdl_id(g, list, m, id);
+                        Out::None
+                    });
+                }
+            }
+            _ => {
+                t.stub_sym(st::CURSOR_SET_NODE, Conv::Thiscall(0), 1, rng.next());
+                let cur = build_cursor(&mut t, &mut rng);
+                let (sym, seek) = [
+                    (0x0065_eaf0, true),
+                    (0x0065_ebd0, true),
+                    (0x0065_ec40, true),
+                    (0x0065_ecb0, true),
+                    (0x0065_ed20, false),
+                    (0x0065_ed80, false),
+                    (0x0065_ede0, false),
+                    (0x0065_ee40, false),
+                ][rng.below(8) as usize];
+                t.check(&what, sym, Conv::Fastcall, &[cur], |g| {
+                    Out::U32(st::cursor_step(g, cur, seek))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round9_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x9009_0009);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 5 {
+            0 => {
+                let out = t.alloc(&rng.bytes(64));
+                let a = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    (rng.below(10_000) as f32 - 5000.0) / 1000.0
+                };
+                let (sym, y) = if rng.chance(2) {
+                    (0x0066_c8a0, false)
+                } else {
+                    (0x0066_c920, true)
+                };
+                t.check(&what, sym, Conv::Cdecl, &[out, a.to_bits()], |g| {
+                    Out::U32(ut::rotation(g, out, a.to_bits(), y))
+                });
+            }
+            1 => {
+                let cur = t.alloc(&rng.bytes(0x20));
+                let obj = t.alloc(&rng.bytes(0x90));
+                let node = t.alloc(&rng.bytes(0x40));
+                t.w32(node + 0x2c, obj);
+                let stride = rng.below(3) * 4;
+                t.w32(obj + 0x1c, stride);
+                let pos = t.zeros(0x40);
+                t.w32(node + 0x34, pos);
+                t.w32(node + 0x3c, rng.below(5));
+                // a chain of links that may equal the stepping position
+                let mut link = pos;
+                if rng.chance(3) {
+                    link = rng.next();
+                } else if stride != 0 {
+                    for k in 0..6 {
+                        let next = if rng.chance(4) {
+                            rng.next()
+                        } else {
+                            pos + stride * (k + 1)
+                        };
+                        t.w32(pos + stride * k, next);
+                    }
+                } else {
+                    t.w32(pos, if rng.chance(2) { pos } else { rng.next() });
+                }
+                t.w32(node + 8, link);
+                t.check(&what, 0x0044_1dc0, Conv::Thiscall(cur), &[node], |g| {
+                    Out::U32(ut::cursor_set_node(g, cur, node))
+                });
+            }
+            2 => {
+                let list = t.alloc(&rng.bytes(0x50));
+                let nodes: Vec<u32> = (0..=rng.below(4)).map(|_| t.zeros(0x50)).collect();
+                for w in nodes.windows(2) {
+                    t.w32(w[0] + 0x40, w[1]);
+                }
+                t.w32(list + 0x2c, if rng.chance(6) { 0 } else { nodes[0] });
+                t.w32(list + 0x40, rng.below(2));
+                let cur = t.zeros(0x20);
+                t.w32(cur + 0x18, if rng.chance(6) { 0 } else { list });
+                let at = if rng.chance(2) {
+                    nodes[rng.below(nodes.len() as u32) as usize]
+                } else {
+                    rng.next()
+                };
+                t.w32(cur + 0x1c, at);
+                let sym = [0x0044_1e10, 0x0044_1e40, 0x006a_29c0][rng.below(3) as usize];
+                t.check(&what, sym, Conv::Thiscall(cur), &[], |g| {
+                    Out::U8(managers::bridge::cursor_valid(g, cur))
+                });
+            }
+            3 => {
+                t.stub_sym(ut::RESET_FIELDS, Conv::Thiscall(0), 0, rng.next());
+                t.stub_sym(ut::MEMBER_INIT_585230, Conv::Thiscall(0), 0, rng.next());
+                let obj = t.alloc(&rng.bytes(0x60));
+                t.check(&what, 0x006c_40c0, Conv::Thiscall(obj), &[], |g| {
+                    Out::U32(ut::reset_and_construct(g, obj))
+                });
+            }
+            _ => {
+                let pp = t.alloc(&rng.bytes(0x1210));
+                let list = if rng.chance(5) {
+                    0
+                } else {
+                    t.alloc(&rng.bytes(0x40))
+                };
+                if list != 0 && rng.chance(2) {
+                    t.w32(list + 0x1c, list + 0x1c);
+                }
+                // a stand-in for the cursor advance (fastcall): logs the
+                // cursor's eight words, then sets its count and position
+                let at = t.rebase(ut::CURSOR_NEXT_464F30);
+                let log = t.log;
+                let (cnt, p0, p4) = (rng.below(2), rng.next(), rng.next());
+                let mut c: Vec<u8> = vec![0xa1];
+                c.extend(log.to_le_bytes()); // mov eax, [log]
+                c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+                c.push(0x05);
+                c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+                for i in 0..8u8 {
+                    c.extend([0x8b, 0x51, 4 * i]); // mov edx, [ecx+4i]
+                    c.extend([0x89, 0x50, 4 * i]); // mov [eax+4i], edx
+                }
+                c.extend([0xff, 0x05]);
+                c.extend(log.to_le_bytes()); // inc dword [log]
+                c.extend([0xc7, 0x41, 0x0c]);
+                c.extend(cnt.to_le_bytes()); // mov [ecx+0xc], cnt
+                c.extend([0xc7, 0x41, 0x10]);
+                c.extend(p4.to_le_bytes()); // mov [ecx+0x10], p4
+                c.extend([0xc7, 0x01]);
+                c.extend(p0.to_le_bytes()); // mov [ecx], p0
+                c.push(0xc3);
+                let stub = t.cave_next;
+                t.write(stub, &c);
+                t.cave_next += c.len() as u32;
+                let mut j = vec![0xe9];
+                j.extend(stub.wrapping_sub(at + 5).to_le_bytes());
+                t.write(at, &j);
+                t.check(&what, 0x0069_8400, Conv::Thiscall(pp), &[list], |g| {
+                    Out::U32(ut::post_process_set_first_entry(g, pp, list))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn round9_more_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x9009_000a);
+    let names = ["", "a", "water", "fire"];
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        {
+            let mgr = t.alloc(&rng.bytes(0x90));
+            t.w32(mgr + 8, rng.below(2));
+            t.w32(mgr + 0xc, rng.below(2));
+            // materials naming animations
+            // past 0xff materials sometimes, so eax's upper bytes show
+            let n = if rng.chance(4) {
+                0x100 + rng.below(5)
+            } else {
+                rng.below(5)
+            };
+            let mut mats = Vec::new();
+            for _ in 0..n {
+                let m = if rng.chance(5) {
+                    0
+                } else {
+                    let m = t.zeros(0x20);
+                    let s = cstr(&mut t, names[rng.below(2) as usize]);
+                    t.w32(m + 0x10, s | rng.below(2));
+                    m
+                };
+                mats.extend(m.to_le_bytes());
+            }
+            let mats = t.alloc(&mats);
+            t.w32(mgr + 0x74, n | (rng.next() & 0x8000_0000));
+            t.w32(mgr + 0x78, mats);
+            // animations: 0x20 bytes, the name a PString at +4
+            let k = rng.below(4);
+            let anims = t.alloc(&rng.bytes(0x20 * k as usize + 4));
+            for j in 0..k {
+                let s = cstr(&mut t, names[rng.below(2) as usize]);
+                t.w32(anims + 0x20 * j + 4, s);
+                t.w32(
+                    anims + 0x20 * j + 8,
+                    (0x3fe + rng.below(4)) | (rng.next() & 0x8000_0000),
+                );
+            }
+            t.w32(mgr + 0x7c, k);
+            t.w32(mgr + 0x80, anims);
+            let i = if n > 0x100 && rng.chance(2) {
+                0x100 + rng.below(6)
+            } else {
+                rng.below(6)
+            };
+            let (frame, abs) = (0x3fe + rng.below(4), rng.below(2));
+            t.check(
+                &what,
+                0x006b_42c0,
+                Conv::Thiscall(mgr),
+                &[i, frame, abs],
+                |g| Out::U32(ut::tex_anim_set_frame(g, mgr, i, frame, abs)),
+            );
         }
     }
 }
