@@ -432,6 +432,38 @@ pub mod bridge {
         src_step
     }
 
+    /// `opus_0437_fade_step_00a6e260(b)` (`0x00a6e260`): each of the
+    /// `u16 b[0]` 0x60-byte entries from `b + 0x3c` that is in use (`i16`
+    /// slot at `+0` not negative) counts its `u8 +2` up; below 0x20 its
+    /// `u16 +0x52` = `(0x20 - count) * 0x80`, else its slot in the table
+    /// `[b + 0xc]` gets `0xfffe` and the entry is freed (slot -1, count 0).
+    /// Returns `eax` as left: 0 for no entries, else the end of the last.
+    pub fn opus_0437_fade_step<M: Mem>(mem: &mut M, b: u32) -> u32 {
+        let count = |mem: &M| u32::from(mem.read::<u16>(b));
+        let entry = |i: u32| b.wrapping_add(0x3c + 0x60 * i);
+        let mut i = 0;
+        while i < count(mem) {
+            let e = entry(i);
+            i += 1;
+            let slot: i16 = mem.read(e);
+            if slot < 0 {
+                continue;
+            }
+            let c = mem.read::<u8>(e.wrapping_add(2)).wrapping_add(1);
+            mem.write(e.wrapping_add(2), c);
+            if c < 0x20 {
+                mem.write(e.wrapping_add(0x52), (0x20 - u16::from(c)) * 0x80);
+            } else {
+                let table: u32 = mem.read(b.wrapping_add(0xc));
+                let at = table.wrapping_add((i32::from(slot) * 2).cast_unsigned());
+                mem.write(at, 0xfffe_u16);
+                mem.write(e, u16::MAX);
+                mem.write(e.wrapping_add(2), 0u8);
+            }
+        }
+        if i == 0 { 0 } else { entry(i) }
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,

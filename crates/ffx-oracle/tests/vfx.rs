@@ -10395,3 +10395,30 @@ fn texels_halve_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn opus_0437_fade_step_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_e260);
+        let (b, table) = (p.alloc(0x3c + 0x60 * 12), p.alloc(0x400));
+        for _ in 0..3000 {
+            p.fill(b, 0x3c + 0x60 * 12, &mut rng);
+            p.fill(table, 0x400, &mut rng);
+            p.set(b, u16::try_from(rng.below(13)).unwrap());
+            p.set(b + 0xc, table + 0x200);
+            for i in 0..12 {
+                let e = b + 0x3c + 0x60 * i;
+                let slot = if rng.chance(25) {
+                    -1 - i16::try_from(rng.below(3)).unwrap()
+                } else {
+                    i16::try_from(rng.below(0x200)).unwrap() - 0x100
+                };
+                p.set(e, slot);
+                p.set(e + 2, rng.pick(&[0u8, 0x1e, 0x1f, 0x20, 0xff, 5]));
+            }
+            p.check("0x00a6e260", 0x00a6_e260, &[b], |m| {
+                Some(small::bridge::opus_0437_fade_step(m, b))
+            });
+        }
+    }
+}

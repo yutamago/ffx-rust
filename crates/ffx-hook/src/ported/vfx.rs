@@ -1523,6 +1523,10 @@ ported! {
     TreeNext_0069ebd0 @ 0x0069_ebd0 => extern "thiscall" fn tree_next_0069ebd0(it: u32) -> u32 {
         tree::bridge::opus_tree_next(&mut mem(), it)
     }
+    /// `opus_0437_fade_step_00a6e260(b)`.
+    opus_0437_fade_step_00a6e260 @ 0x00a6_e260 => extern "C" fn opus_0437_fade_step(b: u32) -> u32 {
+        small::bridge::opus_0437_fade_step(&mut mem(), b)
+    }
     /// `op_texels_halve_v_00a38560(dst, dst_step, src, src_step, n, size)`.
     op_texels_halve_v_00a38560 @ 0x00a3_8560 => extern "C" fn op_texels_halve_v(dst: u32, dst_step: u32, src: u32, src_step: u32, n: u32, size: u32) -> u32 {
         small::bridge::op_texels_halve_v(&mut mem(), dst, dst_step, src, src_step, n, size)
