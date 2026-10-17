@@ -11640,7 +11640,7 @@ fn round30_grid_bounds_and_sea_fade_match_the_original() {
         t.same(
             "AbmapCalcBounds",
             |o| o.eax(0x00a5_ae40, &[]),
-            |m| abmap::bridge::abmap_calc_bounds(m),
+            abmap::bridge::abmap_calc_bounds,
         );
         // the fade
         t.put(fade, rng.below(5));
