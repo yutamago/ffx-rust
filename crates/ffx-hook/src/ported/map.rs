@@ -3787,6 +3787,11 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `SndStandbyShoutStream(data)`.
+    SndStandbyShoutStream @ 0x0081_e3b0 => extern "C" fn shim_snd_standby_shout_stream(data: u32) -> u32 {
+        nkz::bridge::snd_standby_shout_stream(&mut mem(), data, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsSeSeparateDataSend(data, size)`.
     SqsSeSeparateDataSend @ 0x0081_e600 => extern "C" fn shim_sqs_se_separate_data_send(data: u32, size: u32) -> u32 {
         nkz::bridge::sqs_se_separate_data_send(&mut mem(), data, size, &mut |_, f, a| call_cdecl(f, a))

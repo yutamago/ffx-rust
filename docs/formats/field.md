@@ -1536,6 +1536,11 @@ block of SE data names:
 - Each listed id then goes to `iSfxLoadData(id, 0)`, and the queue is sent
   (a tail call to `SqsIopCommandSend`, whose result it returns).
 
+`SndStandbyShoutStream(data)` (`0x0081e3b0`, round 44) loads one shout
+wave: when the length at `+0xc` is in `1..=0x10000` (signed) it calls
+`iSfxLoadData(i16 +8, 0)` and returns that call's result. Otherwise it
+returns the length, which is what `eax` still holds.
+
 ## The Sqs IOP command builders (round 39)
 
 The command builders append one 32-byte command (`op`, then up to three

@@ -12721,6 +12721,22 @@ fn round40_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             |o| o.eax(0x0081_e600, &[data, size]),
             |m| nkz::bridge::sqs_se_separate_data_send(m, data, size, call),
         );
+        // round 44: SndStandbyShoutStream on a header (length in range or not)
+        env.reset(t, rng);
+        let len = match rng.below(5) {
+            0 => 0,
+            1 => 0x1_0000,
+            2 => 0x1_0001,
+            3 => 0x8000_0000 | rng.next(),
+            _ => 1 + rng.below(0x1_0000),
+        };
+        t.put(data + 0xc, len);
+        t.put(data + 8, rng.next());
+        t.same(
+            "SndStandbyShoutStream",
+            |o| o.eax(0x0081_e3b0, &[data]),
+            |m| nkz::bridge::snd_standby_shout_stream(m, data, call),
+        );
     }
 }
 

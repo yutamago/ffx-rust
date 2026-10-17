@@ -6582,7 +6582,7 @@
 0x0081e250 function SqsReportIopSoundStatus   # fh v3:bsim1.00 0x0081e360
 0x0081e260 function SqsReportStandby         # (): unanswered standby requests (0x012f414c != g_SqsIopResult) flush the command queue (SqsIopCommandSend when next > top); ++0x012f414c, (1, count) to g_SqsRpcSend2, Sqs_CallRpc2(0, _, 0x0081fcb0, 0); callers SqsMusicDataRead, SqsMusicDataSend, SqsSetReverbAttribute, SqsStraightStreamingDigitalModeSet; between SqsReportIopSoundStatus and SqsReportStandbyStatus alphabetically; name ours; ported (field round 36)
 0x0081e2d0 function SqsReportStandbyStatus    # (x); called by SndReportStandbyStatusDirect; alphabetical slot; ported (field round 36): (flush) -> 0x012f414c - g_SqsIopResult, the queue flushed first when flush and requests are unanswered
-0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8
+0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8; ported (field round 44): (data): length +0xc in 1..=0x10000 (signed) -> iSfxLoadData(i16 +8, 0), returns its eax; else returns the length
 0x0081e3e0 function SqsSeBlockPlaying         # (id); SndIsSepPlay for block SEs (bit 31 set); alphabetical slot before SqsSeForcePlay; ported (field round 33)
 0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot; ported (field round 33): iSfxForceStart(id, volume, pan), returns the new SE handle 0x012f4e7c
 0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820); ported (field round 33)

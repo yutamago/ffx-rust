@@ -1151,4 +1151,20 @@ pub mod bridge {
         }
         sqs_iop_command_send(mem, call)
     }
+
+    /// `SndStandbyShoutStream(data)` (`0x0081e3b0`): for a length at
+    /// `+0xc` in `1..=0x10000` (signed), `iSfxLoadData(i16 +8, 0)`, whose
+    /// result it returns; else the length (left in `eax`).
+    pub fn snd_standby_shout_stream<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        call: &mut C,
+    ) -> u32 {
+        let len = mem.read::<i32>(data.wrapping_add(0xc));
+        if len <= 0 || len > 0x1_0000 {
+            return len.cast_unsigned();
+        }
+        let id = i32::from(mem.read::<i16>(data.wrapping_add(8))).cast_unsigned();
+        glue(mem, super::I_SFX_LOAD_DATA, &[id, 0], call)
+    }
 }
