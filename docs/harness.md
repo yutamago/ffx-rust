@@ -273,7 +273,30 @@ originals where the comparisons read them: `%TEMP%\ffx-snap\<replay>-orig.trace`
 Test games play their sound at 5% master volume (`FFX_TEST_VOLUME`,
 0-100), set in each slot's own `GameSetting.ini`, never the user's.
 
-MEASUREMENTS
+Measured 2026-10-17 (16 threads; the host also ran other agents' builds,
+so CPU is the whole machine's load, sampled every 2 s):
+
+| Games side by side | Wall | Host CPU | `FFX.exe` memory | Free memory (min) |
+|---|---|---|---|---|
+| 1 | 26 s | 81 % | 0.6 GB | 9.4 GB |
+| 2 | 24–25 s | 87–88 % | 1.0–1.1 GB | 8.4 GB |
+| 3 | 33 s | 89 % | 1.6 GB | 7.1 GB |
+| 4 | 27–40 s | 82–91 % | 1.9–2.4 GB | 6.0 GB |
+
+One replay takes about 22 s alone. Three side by side take 33 s, four 33
+to 40 s, but with four one of three runs lost a key press on the load
+screen (a Flash screen, timed by the wall clock) and loaded the autosave
+instead: hence 3 slots by default. `run-all.sh` took 52–100 s for its
+replays one after the other and 24–36 s side by side (whole script with
+the builds: 73–124 s against 45–61 s).
+
+Side by side or not, the comparisons give the same results: every
+difference seen, in 9 serial and parallel runs, was one known to come and
+go in the game folder too: the pad word range (`0x00ccb170`) of
+`field-walk` or `menu-browse` missing one frame's transition value (a
+frame where only the previous pad word still holds the button), and a few
+dozen pixels on the menu's animated cursor. They come from neither the
+instance folders nor the pool.
 
 ## Tests
 

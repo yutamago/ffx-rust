@@ -53,7 +53,11 @@ pub fn wait_for(
 /// # Errors
 /// Fails when the title does not appear.
 pub fn to_title(game: &mut Game) -> Result<Image> {
-    game.wait_for_open("titl00", 30, 3000)?;
+    // An earlier `wait_for_open` (for another file) may have read the
+    // event already: the opening can start before or after that file.
+    if !game.opened().iter().any(|e| e.contains("titl00")) {
+        game.wait_for_open("titl00", 30, 3000)?;
+    }
     // Fast mode ends the logos at once (the hook clears their movie's
     // flag); without it they last a while in real time, so keep tapping
     // for up to two minutes.
