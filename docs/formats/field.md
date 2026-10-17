@@ -1483,7 +1483,103 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
-## 2D lines, circles and triangles (rounds 41-43)
+## The Ke thing effects' render data (round 51)
+
+`InitVFXKeThRenderData(a, b, c)` (`0x007658b0`) sets up the renderer's
+data for the Ke thing effects:
+- The texture count (`i32` at `0x02305840`) is clamped to 20 and written
+  back.
+- Its locals hold three 20-word arrays, zeroed, then 0x50c, 0xc18 and 0
+  for each texture (width, height, flags), and twenty 256-byte name slots,
+  each texture's holding `"NoTexture"` (`sprintf`). Later slots and the
+  bytes after each string are left uninitialised.
+- It then calls `graphicVFXCreate(a, b, c)`, `graphicVFXCreateDataBuffer(a,
+  b, count, widths, heights, names, flags)` and
+  `graphicVFXGetRenderDataByInstance(a, b)`, all renderer glue.
+- It returns 1 when the last of these gives non-zero, else 0
+  (`neg; sbb; neg`).
+
+## The effect crosshair (round 50)
+
+`pppDrawCrosshair()` (`0x007606f0`, name ours; from `pppPartDraw` and
+`pppPartLoop`) draws a crosshair at the point `(x, y)` at `0x00d4b4e8`
+(`i32` each). Nothing in the dump writes that point, so it is probably a
+debug cursor. With x = 0x7fff it draws nothing and returns 0x7fff.
+Otherwise it draws six lines through the line packet writer `0x00760ce0`
+(glue), in 12.4 units around the screen centre (0x800):
+- grey (`0x80808080`): verticals at x and x - 1 from y - 10 to y + 10, and
+  a horizontal at y from x - 20 to x + 20;
+- black (`0x80000000`), the same shape one unit right and down.
+
+It returns the last line's `eax`.
+
+## Map 0xad's effect steps (round 49)
+
+The two step functions of map 0xad's effect object (`rcbgFPm173*`; the
+object's step is `+0x1c`, its character `+0x10`):
+- `rcbgFPm173ProcKonjyo(obj)` (`0x00922e60`):
+  - At step 0, effect 0x58 sticks to the character at bone 2
+    (`pppFpSetStickChr`) and restarts (`Fp_Restart`).
+  - At step 0x32, effect 0x59 does the same at bone 0x35, and `+0x20`
+    becomes 0.
+  - It returns the restart's `eax`; any other step leaves the step itself
+    in `eax`.
+- `rcbgFPm173ProcJect(obj)` (`0x00922c50`) switches on the step:
+  - 0x25: `rcbgFPmRestart(0x53, chr, 0x2f)`.
+  - 0x82: effect 0x54 sticks at bone 2 and restarts.
+  - 200: `Fp_End(0x54)` (Ghidra drops the argument, which goes through
+    the function's own argument slot before the tail jump).
+  - 0x100: `rcbgFPmRestart(0x55, chr, 0x5d)`, and `+0x20` becomes 0.
+  - Other steps leave the jump table's index in `eax`: 4 within
+    0x25..=0x100, else the step less 0x25.
+
+## The scene loading check (round 48)
+
+`Sg_IsSceneLoading()` (`0x0081fcd0`, name ours; from `Sg_MainLoop`)
+returns 1 in three cases, else 0:
+- the field map is loading (`graphicIsFieldMapLoading`) and no battle map
+  is shown (`graphicIsAnyBattleMap`);
+- characters are loading or being instantiated for a map in the list
+  (`graphicIsCharacterLoadingOrInstanciating`, `graphicIsMapInList`), again
+  outside a battle map;
+- the scene's assets are not all loaded (`graphicIsAllSceneAssetsLoaded`)
+  while the screen fade colour is locked (`graphicIsScreenFadeColorLocked`).
+
+The queries are made in that order and only as far as each answer needs.
+
+## Three small helpers (round 47)
+
+All names ours.
+- `rcVu0IntToFloat(a, b)` (`0x00927ba0`, from `0x009283f0`): `b` goes to
+  the VU0 register `0x00c8f980`, is converted there by
+  `op_ivec4_to_fvec4(reg, reg)`, and is copied to `a`. It returns the last
+  word copied.
+- `SqsOefSetPacketAddrRange(oef, lo, hi, v)` (`0x0081ca20`, called by
+  `opu_md_etc` though placed among the `Sqs*`): for `n` from `lo` to `hi`
+  (signed, inclusive) it calls `op_md_packet_set_addr(e, v, v >> 31)` on
+  each non-null `e = op_oef2_a_get(oef, 4, n)`. The caller ignores `eax`,
+  which the loop leaves undefined when it does not run.
+- `AbmapDigitRight(a, x, y, d)` (`0x00a59630`, from `0x00a4f630`) calls
+  `ToMakeBtlEasyDigitRightAbmap(a, f32(x), f32(y), d, [0x00b34254],
+  [0x00b92194])`, the integers converted by `fild` and stored as `f32`, and
+  returns its `eax`.
+
+## The sphere grid's help line (round 46)
+
+`AbmapHelpLineDraw(a, b, c)` (`0x00a594c0`, name ours; called five times
+by `AbmapHelpMessageStep_00a59350`) adds one text line to the VFX packet
+buffer:
+- It calls `TOAddPktBaseMesFontLAbmap(pos + 0x10, kind, a, b, c, 0, 0,
+  0x80, 0x80, 0x80, alpha, 0)`, `pos` being `g_PppPacketPos`
+  (`0x0230fd2c`), which takes the result. It returns that result.
+- The alpha is the fade byte `+0x115b9` of the grid data (`g_Abmap`):
+  0x80 (opaque) draws with kind 0, anything else with kind 7.
+
+`AbmapFillUseItemMenu` (`0x00a45fd0`) is not ported: it stores a dword at
+a menu entry's `+0x48` whose high half is a stack word it never writes
+(`mov WORD PTR [ebp-4], si`, then `mov eax, [ebp-4]`).
+
+## 2D lines, circles, triangles and boxes (rounds 41-43, 52)
 
 `rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
 vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
@@ -1518,6 +1614,26 @@ triangle inscribed in that circle:
   the others; `w` is 0.
 - It is drawn with `rcPrimDraw2D(0x4c, verts, 3, colour)` and the same UI
   type calls.
+
+`rcPrimBox(x, y, w, h, colour, ui)` (`0x00925b60`, round 52) draws the
+box centred on `(x, y)`:
+- The halves are `f32(w * 0.5)` and `f32(0.5 * h)` (0.5 is the `f64` at
+  `0x00b92220`).
+- The corners are `(x - w/2, y - h/2)`, `(x + w/2, y - h/2)`,
+  `(x - w/2, y + h/2)` and `(x + w/2, y + h/2)`, each coordinate stored as
+  `f32`, with depth 256.0 and `w` 0.
+- It is drawn as `rcPrimDraw2D(0x44, verts, 4, colour)`, with the UI type
+  set through `graphicSetNowUIType` (`0x006437c0`) rather than
+  `cgraphicSetNowUIType`.
+
+Two neighbours are not ported (round 52):
+- `rcbgFPm173ProcKieru` (`0x00922dc0`): at step 0x4b it fills two position
+  locals (`Ch_ElemGetPos`, `Ch_OptposGet`) and restarts effect 0x61. At
+  every later step it still sets the effect's stick position from those
+  locals (`y - y0 * 0.1`), which are then uninitialised stack.
+- `0x009283f0`: it converts `i16` triples to float vectors through a
+  4-word local whose fourth word it never writes, and
+  `rcbgModelScaleVector` copies that `w` to the destination.
 
 ## Separate SE wave data (round 40)
 

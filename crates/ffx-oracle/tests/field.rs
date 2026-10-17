@@ -12830,6 +12830,10 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             Some(rcui::bridge::SET_NOW_UI_TYPE),
             log_stub(log2, rv, 1, 1),
         ),
+        (
+            Some(rcui::bridge::GRAPHIC_SET_NOW_UI_TYPE),
+            log_stub(log2, rv, 2, 1),
+        ),
     ]);
     for _ in 0..rounds {
         let a: [u32; 6] = [
@@ -12868,6 +12872,15 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
                 v.to_bits()
             }
         };
+        // round 52: the box
+        let bx = [a[0], a[1], rng.any_float(), rng.any_float(), a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x40, rng);
+        t.same(
+            "rcPrimBox",
+            |o| o.eax(0x0092_5b60, &bx),
+            |m| rcui::bridge::rc_prim_box(m, bx, work, call),
+        );
         let tri = [a[0], a[1], c[2], angle, a[4], a[5]];
         t.put(log2, 0u32);
         t.fill(work, 0x30, rng);
@@ -12895,4 +12908,380 @@ fn round41_on_a_snapshot_matches_the_original() {
     };
     let mut rng = Xorshift(0x0029_0002);
     round41_cases(&mut t, &mut rng, 60);
+}
+
+// ---- round 46 ----
+
+/// Round 46 on `t`: `AbmapHelpLineDraw` over a synthetic grid (its fade
+/// byte opaque or not), `TOAddPktBaseMesFontLAbmap` logged.
+fn round46_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    use ffx_field::abmap;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, grid) = (t.alloc(4 + 0x40 * 4), t.alloc(4), t.alloc(0x1_15c0));
+    let mut stub = log_tail(log, 1, 12, 6, &[]);
+    stub.push(0xa1); // mov eax, [rv]; ret
+    stub.extend_from_slice(&rv.to_le_bytes());
+    stub.push(0xc3);
+    t.cave(&[(Some(abmap::bridge::TO_ADD_PKT_MES_FONT_L_ABMAP), stub)]);
+    t.set(abmap::ABMAP, grid);
+    for _ in 0..rounds {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let alpha = if rng.below(3) == 0 {
+            0x80u8
+        } else {
+            u8::try_from(rng.below(256)).unwrap()
+        };
+        t.put(grid + 0x1_15b9, alpha);
+        t.set(ke::PACKET_POS, rng.next());
+        let a = [rng.next(), rng.next(), rng.next()];
+        t.same(
+            "AbmapHelpLineDraw",
+            |o| o.eax(0x00a5_94c0, &a),
+            |m| abmap::bridge::abmap_help_line_draw(m, a, call),
+        );
+    }
+}
+
+/// Round 46: `AbmapHelpLineDraw`.
+#[test]
+fn round46_abmap_help_line_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x002e_0001);
+    round46_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 46 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round46_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x002e_0002);
+    round46_cases(&mut t, &mut rng, 40);
+}
+
+// ---- round 47 ----
+
+/// Round 47 on `t`: `rcVu0IntToFloat` (the conversion run as the
+/// original), `SqsOefSetPacketAddrRange` and `AbmapDigitRight` (their
+/// callees logged; the entry getter gives 0 now and then).
+fn round47_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    use ffx_field::abmap;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, rv0) = (t.alloc(4 + 0x20 * 300), t.alloc(4), t.alloc(4));
+    t.cave(&[
+        (Some(nkz::bridge::OP_OEF2_A_GET), log_stub(log, rv0, 1, 3)),
+        (
+            Some(nkz::bridge::OP_MD_PACKET_SET_ADDR),
+            log_stub(log, rv, 2, 3),
+        ),
+        (
+            Some(abmap::bridge::TO_MAKE_DIGIT_RIGHT_ABMAP),
+            log_stub(log, rv, 3, 6),
+        ),
+    ]);
+    let (a, b) = (t.alloc(0x10), t.alloc(0x10));
+    for _ in 0..rounds {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(b, 0x10, rng);
+        t.fill(a, 0x10, rng);
+        t.same(
+            "rcVu0IntToFloat",
+            |o| o.eax(0x0092_7ba0, &[a, b]),
+            |m| vu0::bridge::rc_vu0_int_to_float(m, a, b, call),
+        );
+        t.put(rv0, if rng.below(4) == 0 { 0 } else { rng.next() });
+        let lo = rng.range(-5, 20);
+        let hi = lo + rng.range(-3, 30);
+        let args = [
+            rng.next(),
+            lo.cast_unsigned(),
+            hi.cast_unsigned(),
+            rng.next(),
+        ];
+        t.same(
+            "SqsOefSetPacketAddrRange",
+            |o| o.void(0x0081_ca20, &args),
+            |m| nkz::bridge::sqs_oef_set_packet_addr_range(m, args, call),
+        );
+        t.put(log, 0u32);
+        let d = [
+            rng.next(),
+            rng.next(),
+            rng.range(-100_000, 100_000).cast_unsigned(),
+            rng.next(),
+        ];
+        t.same(
+            "AbmapDigitRight",
+            |o| o.eax(0x00a5_9630, &d),
+            |m| abmap::bridge::abmap_digit_right(m, d, call),
+        );
+    }
+}
+
+/// Round 47: three small helpers.
+#[test]
+fn round47_small_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x002f_0001);
+    round47_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 47 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round47_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x002f_0002);
+    round47_cases(&mut t, &mut rng, 40);
+}
+
+// ---- round 48 ----
+
+/// Round 48 on `t`: `Sg_IsSceneLoading` over every answer of its six
+/// queries (stand-ins logging the order of the calls).
+fn round48_cases(t: &mut Twin) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rvs) = (t.alloc(4 + 0x20 * 16), t.alloc(4 * 6));
+    let list: Vec<(Option<u32>, Vec<u8>)> = (0..6u32)
+        .map(|k| {
+            (
+                Some(yi::bridge::SCENE_QUERIES[k as usize]),
+                log_stub(log, rvs + 4 * k, k + 1, 0),
+            )
+        })
+        .collect();
+    t.cave(&list);
+    for bits in 0..64u32 {
+        t.put(log, 0u32);
+        for k in 0..6 {
+            t.put(rvs + 4 * k, (bits >> k) & 1);
+        }
+        t.same(
+            "Sg_IsSceneLoading",
+            |o| o.eax(0x0081_fcd0, &[]),
+            |m| yi::bridge::sg_is_scene_loading(m, call),
+        );
+    }
+}
+
+/// Round 48: `Sg_IsSceneLoading`.
+#[test]
+fn round48_scene_loading_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    round48_cases(&mut t);
+}
+
+/// Round 48 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round48_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    round48_cases(&mut t);
+}
+
+// ---- round 49 ----
+
+/// Round 49 on `t`: map 0xad's effect steps (`rcbgFPm173ProcKonjyo`,
+/// `rcbgFPm173ProcJect`) at every step they act on and around them, the
+/// effect calls logged.
+fn round49_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, obj) = (t.alloc(4 + 0x20 * 8), t.alloc(4), t.alloc(0x30));
+    t.cave(&[
+        (Some(model::PPP_FP_SET_STICK_CHR), log_stub(log, rv, 1, 3)),
+        (Some(model::FP_RESTART), log_stub(log, rv, 2, 1)),
+        (Some(model::FP_END), log_stub(log, rv, 3, 1)),
+        (Some(model::RCBG_FPM_RESTART), log_stub(log, rv, 4, 3)),
+    ]);
+    let steps = [
+        0u32,
+        0x32,
+        0x25,
+        0x82,
+        200,
+        0x100,
+        0x24,
+        0x26,
+        0x101,
+        0x31,
+        0x33,
+        u32::MAX,
+        0x8000_0000,
+    ];
+    for k in 0..200 {
+        let step = if k < steps.len() * 2 {
+            steps[k % steps.len()]
+        } else {
+            rng.next()
+        };
+        t.fill(obj, 0x30, rng);
+        t.put(obj + 0x1c, step);
+        t.put(rv, rng.next());
+        t.put(log, 0u32);
+        t.same(
+            "rcbgFPm173ProcKonjyo",
+            |o| o.eax(0x0092_2e60, &[obj]),
+            |m| model::bridge::rcbg_fpm173_proc_konjyo(m, obj, call),
+        );
+        t.put(log, 0u32);
+        t.same(
+            "rcbgFPm173ProcJect",
+            |o| o.eax(0x0092_2c50, &[obj]),
+            |m| model::bridge::rcbg_fpm173_proc_ject(m, obj, call),
+        );
+    }
+}
+
+/// Round 49: map 0xad's effect steps.
+#[test]
+fn round49_fpm173_steps_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0031_0001);
+    round49_cases(&mut t, &mut rng);
+}
+
+/// Round 49 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round49_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0031_0002);
+    round49_cases(&mut t, &mut rng);
+}
+
+// ---- round 50 ----
+
+/// Round 50 on `t`: `pppDrawCrosshair` (none at x 0x7fff, else six lines
+/// logged).
+fn round50_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 8), t.alloc(4));
+    t.cave(&[(Some(ke::bridge::PPP_LINE), log_stub(log, rv, 1, 6))]);
+    let at = t.b.rebase(ke::bridge::CROSSHAIR);
+    for k in 0..100 {
+        let x = match k % 4 {
+            0 => 0x7fff,
+            1 => rng.range(-0x900, 0x900).cast_unsigned(),
+            _ => rng.next(),
+        };
+        t.put(at, x);
+        t.put(at + 4, rng.next());
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.same(
+            "pppDrawCrosshair",
+            |o| o.eax(0x0076_06f0, &[]),
+            |m| ke::bridge::ppp_draw_crosshair(m, call),
+        );
+    }
+}
+
+/// Round 50: `pppDrawCrosshair`.
+#[test]
+fn round50_crosshair_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0032_0001);
+    round50_cases(&mut t, &mut rng);
+}
+
+/// Round 50 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round50_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0032_0002);
+    round50_cases(&mut t, &mut rng);
+}
+
+// ---- round 51 ----
+
+/// A `graphicVFXCreateDataBuffer` stand-in: its three 20-word arrays (args
+/// 4, 5, 7) to `log`, `log + 0x50`, `log + 0xa0`, the first 10 bytes of its
+/// first `n` (arg 3) 256-byte names (arg 6) to 16-byte slots from
+/// `log + 0xf0`, its first three arguments to `log + 0x14f0`; returns
+/// 0x5678.
+fn vfx_buffer_stub(log: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57]; // push esi; push edi (args from [esp + 0xc])
+    let arg = |i: u8| 0x0c + 4 * (i - 1);
+    for (a, dst) in [(4u8, log), (5, log + 0x50), (7, log + 0xa0)] {
+        c.extend_from_slice(&[0x8b, 0x74, 0x24, arg(a), 0xbf]); // mov esi, [esp + a]; mov edi, dst
+        c.extend_from_slice(&dst.to_le_bytes());
+        c.extend_from_slice(&[0xb9, 20, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 20; rep movsd
+    }
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, arg(6), 0xbf]); // the names
+    c.extend_from_slice(&(log + 0xf0).to_le_bytes());
+    // mov ecx, [esp + n]; test ecx, ecx; jle end; per name: its first 10
+    // bytes (movsd; movsd; movsw) to a 16-byte slot, the source on by 256
+    // (the rest of a slot is uninitialised in the original)
+    c.extend_from_slice(&[0x8b, 0x4c, 0x24, arg(3), 0x85, 0xc9, 0x7e, 0x10]);
+    c.extend_from_slice(&[
+        0xa5, 0xa5, 0x66, 0xa5, 0x81, 0xc6, 0xf6, 0, 0, 0, 0x83, 0xc7, 0x06, 0x49, 0x75, 0xf0,
+    ]);
+    for i in 0..3u8 {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg(i + 1), 0xa3]); // mov eax, [esp + arg]; mov [tail + 4i], eax
+        c.extend_from_slice(&(log + 0x14f0 + 4 * u32::from(i)).to_le_bytes());
+    }
+    c.extend_from_slice(&[0x5f, 0x5e, 0xb8]); // pop edi; pop esi; mov eax, 0x5678; ret
+    c.extend_from_slice(&0x5678u32.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 51 on `t`: `InitVFXKeThRenderData` with texture counts around
+/// the clamp (negative, 0, 1..20, over 20), the three renderer calls
+/// logged (the data buffer's arrays and names copied out).
+fn round51_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, buf, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(0x1500), t.alloc(4));
+    let [create, buffer, render] = ke::bridge::GRAPHIC_VFX_CREATE;
+    t.cave(&[
+        (Some(create), log_stub(log, rv, 1, 3)),
+        (Some(buffer), vfx_buffer_stub(buf)),
+        (Some(render), log_stub(log, rv, 2, 2)),
+    ]);
+    let at = t.b.rebase(ke::bridge::KE_TH_TEXTURES);
+    for k in 0..60 {
+        let n = match k % 5 {
+            0 => rng.range(-5, 0),
+            1 => rng.range(21, 1000),
+            _ => rng.range(1, 20),
+        };
+        t.put(at, n);
+        t.put(log, 0u32);
+        t.put(rv, if k % 3 == 0 { 0 } else { rng.next() });
+        t.fill(buf, 0x1500, rng);
+        let work = t.stack_scratch(0x100);
+        t.fill(work, 0x1500, rng);
+        let a = [rng.next(), rng.next(), rng.next()];
+        t.same(
+            "InitVFXKeThRenderData",
+            |o| o.eax(0x0076_58b0, &a),
+            |m| ke::bridge::init_vfx_ke_th_render_data(m, a, work, call),
+        );
+    }
+}
+
+/// Round 51: `InitVFXKeThRenderData`.
+#[test]
+fn round51_ke_th_render_data_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0033_0001);
+    round51_cases(&mut t, &mut rng);
+}
+
+/// Round 51 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round51_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0033_0002);
+    round51_cases(&mut t, &mut rng);
 }

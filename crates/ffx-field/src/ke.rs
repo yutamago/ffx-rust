@@ -1823,6 +1823,108 @@ pub mod bridge {
         mem.write(q.wrapping_add(0x24), store(t));
         1
     }
+
+    // ---- field round 50 ----
+
+    /// The crosshair's point (`i32` x, y; x 0x7fff: none; nothing in the
+    /// dump writes them).
+    pub const CROSSHAIR: u32 = 0x00d4_b4e8;
+    /// The line packet writer the crosshair uses (`0x00760ce0`, glue:
+    /// `(x0, y0, x1, y1, rgba, f32 1.0)` in 12.4 screen units).
+    pub const PPP_LINE: u32 = 0x0076_0ce0;
+
+    /// `pppDrawCrosshair()` (`0x007606f0`, name ours; from `pppPartDraw` and
+    /// `pppPartLoop`): unless x is 0x7fff (then `eax` stays 0x7fff), a
+    /// crosshair at the point `(x, y)` (`0x00d4b4e8`) through the line
+    /// writer, in 12.4 units around the screen centre (0x800):
+    /// - grey (`0x80808080`): two vertical lines at x and x - 1 from y - 10
+    ///   to y + 10, one horizontal line at y from x - 20 to x + 20;
+    /// - black (`0x80000000`), one unit right and down: verticals at x + 1
+    ///   and x + 2 from y - 9 to y + 11, the horizontal at y + 1 from
+    ///   x - 19 to x + 21.
+    ///
+    /// Returns the last line's `eax`.
+    pub fn ppp_draw_crosshair<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let at = mem.rebase(CROSSHAIR);
+        let [x, y] = mem.read::<[i32; 2]>(at);
+        if x == 0x7fff {
+            return 0x7fff;
+        }
+        let u = |v: i32, d: i32| (v.wrapping_add(0x800 + d).wrapping_mul(0x10)).cast_unsigned();
+        let f = mem.rebase(PPP_LINE);
+        let one = 0x3f80_0000;
+        let lines = [
+            [u(x, 0), u(y, -10), u(x, 0), u(y, 10), 0x8080_8080],
+            [u(x, -1), u(y, -10), u(x, -1), u(y, 10), 0x8080_8080],
+            [u(x, -20), u(y, 0), u(x, 20), u(y, 0), 0x8080_8080],
+            [u(x, 1), u(y, -9), u(x, 1), u(y, 11), 0x8000_0000],
+            [u(x, 2), u(y, -9), u(x, 2), u(y, 11), 0x8000_0000],
+            [u(x, -19), u(y, 1), u(x, 21), u(y, 1), 0x8000_0000],
+        ];
+        let mut r = 0;
+        for [x0, y0, x1, y1, c] in lines {
+            r = call(mem, f, &[x0, y0, x1, y1, c, one]);
+        }
+        r
+    }
+
+    // ---- field round 51 ----
+
+    /// The Ke thing effects' texture count (`i32`, clamped to 20 by
+    /// `InitVFXKeThRenderData`).
+    pub const KE_TH_TEXTURES: u32 = 0x0230_5840;
+    /// `graphicVFXCreate(a, b, c)`, `graphicVFXCreateDataBuffer(a, b, n,
+    /// w, h, names, flags)`, `graphicVFXGetRenderDataByInstance(a, b)`
+    /// (glue).
+    pub const GRAPHIC_VFX_CREATE: [u32; 3] = [0x0064_4de0, 0x0064_5040, 0x0064_53d0];
+    /// The size of `InitVFXKeThRenderData`'s locals: three 20-word arrays
+    /// and twenty 256-byte names.
+    pub const KE_TH_WORK: u32 = 3 * 0x50 + 20 * 0x100;
+
+    /// `InitVFXKeThRenderData(a, b, c)` (`0x007658b0`): the renderer's data
+    /// for the Ke thing effects.
+    /// - The texture count (`0x02305840`) is clamped to 20 (signed) and
+    ///   written back.
+    /// - In `work` (the original's locals, [`KE_TH_WORK`] bytes): three
+    ///   20-word arrays, zeroed, then for each texture 0x50c, 0xc18 and 0
+    ///   (width, height, flags), and a 256-byte name slot per texture
+    ///   holding `"NoTexture"` (`sprintf`; later slots are not written).
+    /// - Then `graphicVFXCreate(a, b, c)`, `graphicVFXCreateDataBuffer(a,
+    ///   b, count, widths, heights, names, flags)` and
+    ///   `graphicVFXGetRenderDataByInstance(a, b)`; returns 1 when that
+    ///   gave a render data pointer, else 0 (`neg`/`sbb`/`neg`).
+    pub fn init_vfx_ke_th_render_data<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b, c]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let (w, h, flags, names) = (work, work + 0x50, work + 0xa0, work + 0xf0);
+        for arr in [w, h, flags] {
+            mem.write(arr, [0u32; 20]);
+        }
+        let at = mem.rebase(KE_TH_TEXTURES);
+        if mem.read::<i32>(at) > 0x14 {
+            mem.write(at, 0x14i32);
+        }
+        let mut i = 0i32;
+        while i < mem.read::<i32>(at) {
+            let k = i.cast_unsigned();
+            mem.write(names + 0x100 * k, *b"NoTexture\0");
+            mem.write(w + 4 * k, 0x50cu32);
+            mem.write(h + 4 * k, 0xc18u32);
+            mem.write(flags + 4 * k, 0u32);
+            i += 1;
+        }
+        let [create, buffer, render] = GRAPHIC_VFX_CREATE.map(|f| mem.rebase(f));
+        call(mem, create, &[a, b, c]);
+        let n = mem.read::<u32>(at);
+        call(mem, buffer, &[a, b, n, w, h, names, flags]);
+        u32::from(call(mem, render, &[a, b]) != 0)
+    }
 }
 
 #[cfg(test)]

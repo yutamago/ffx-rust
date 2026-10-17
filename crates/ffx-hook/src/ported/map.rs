@@ -3777,6 +3777,16 @@ ported! {
         rcui::bridge::rc_prim_circle_line(&mut mem(), [x, y, r, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcPrimBox(x, y, w, h, colour, ui)`: the vertices in a local buffer,
+    /// as the original's.
+    rcPrimBox @ 0x0092_5b60 => extern "C" fn shim_rc_prim_box(x: u32, y: u32, w: u32, h: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 16]);
+        let mut v = Verts([0; 16]);
+        let wk = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_box(&mut mem(), [x, y, w, h, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local
     /// buffer, as the original's.
     rcPrimTri @ 0x0092_70c0 => extern "C" fn shim_rc_prim_tri(x: u32, y: u32, r: u32, angle: u32, colour: u32, ui: u32) -> u32 {
@@ -3785,6 +3795,57 @@ ported! {
         let mut v = Verts([0; 12]);
         let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `InitVFXKeThRenderData(a, b, c)`: the arrays and names in a local
+    /// buffer, as the original's.
+    InitVFXKeThRenderData @ 0x0076_58b0 => extern "C" fn shim_init_vfx_ke_th_render_data(a: u32, b: u32, c: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Work([u8; ke::bridge::KE_TH_WORK as usize]);
+        let mut v = Work([0; ke::bridge::KE_TH_WORK as usize]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        ke::bridge::init_vfx_ke_th_render_data(&mut mem(), [a, b, c], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `pppDrawCrosshair()`.
+    pppDrawCrosshair @ 0x0076_06f0 => extern "C" fn shim_ppp_draw_crosshair() -> u32 {
+        ke::bridge::ppp_draw_crosshair(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgFPm173ProcKonjyo(obj)`.
+    rcbgFPm173ProcKonjyo @ 0x0092_2e60 => extern "C" fn shim_rcbg_fpm173_proc_konjyo(obj: u32) -> u32 {
+        model::bridge::rcbg_fpm173_proc_konjyo(&mut mem(), obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgFPm173ProcJect(obj)`.
+    rcbgFPm173ProcJect @ 0x0092_2c50 => extern "C" fn shim_rcbg_fpm173_proc_ject(obj: u32) -> u32 {
+        model::bridge::rcbg_fpm173_proc_ject(&mut mem(), obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Sg_IsSceneLoading()`.
+    Sg_IsSceneLoading @ 0x0081_fcd0 => extern "C" fn shim_sg_is_scene_loading() -> u32 {
+        yi::bridge::sg_is_scene_loading(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcVu0IntToFloat(a, b)`.
+    rcVu0IntToFloat @ 0x0092_7ba0 => extern "C" fn shim_rc_vu0_int_to_float(a: u32, b: u32) -> u32 {
+        vu0::bridge::rc_vu0_int_to_float(&mut mem(), a, b, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsOefSetPacketAddrRange(oef, lo, hi, v)`: void, its caller ignores
+    /// `eax`.
+    SqsOefSetPacketAddrRange @ 0x0081_ca20 => extern "C" fn shim_sqs_oef_set_packet_addr_range(oef: u32, lo: u32, hi: u32, v: u32) {
+        nkz::bridge::sqs_oef_set_packet_addr_range(&mut mem(), [oef, lo, hi, v], &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapDigitRight(a, x, y, d)`.
+    AbmapDigitRight @ 0x00a5_9630 => extern "C" fn shim_abmap_digit_right(a: u32, x: u32, y: u32, d: u32) -> u32 {
+        abmap::bridge::abmap_digit_right(&mut mem(), [a, x, y, d], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapHelpLineDraw(a, b, c)`.
+    AbmapHelpLineDraw @ 0x00a5_94c0 => extern "C" fn shim_abmap_help_line_draw(a: u32, b: u32, c: u32) -> u32 {
+        abmap::bridge::abmap_help_line_draw(&mut mem(), [a, b, c], &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `SndStandbyShoutStream(data)`.

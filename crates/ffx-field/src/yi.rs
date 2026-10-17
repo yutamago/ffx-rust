@@ -5154,4 +5154,42 @@ pub mod bridge {
     ) -> u32 {
         map_read_reset(mem, false, call)
     }
+
+    // ---- field round 48 ----
+
+    /// The renderer's loading queries `Sg_IsSceneLoading` asks:
+    /// `graphicIsFieldMapLoading`, `graphicIsAnyBattleMap`,
+    /// `graphicIsCharacterLoadingOrInstanciating`, `graphicIsMapInList`,
+    /// `graphicIsAllSceneAssetsLoaded`, `graphicIsScreenFadeColorLocked`.
+    pub const SCENE_QUERIES: [u32; 6] = [
+        0x0064_1bf0,
+        0x0064_1bd0,
+        0x0064_1bc0,
+        0x0064_2610,
+        0x0064_1ba0,
+        0x0064_1cb0,
+    ];
+
+    /// `Sg_IsSceneLoading()` (`0x0081fcd0`, name ours; from `Sg_MainLoop`):
+    /// 1 while the field map loads outside a battle map, while characters
+    /// load (or instantiate) for a listed map outside a battle map, or
+    /// while the scene's assets are not all in and the screen fade colour
+    /// is locked; else 0. The queries are made in that order and only as
+    /// far as needed.
+    pub fn sg_is_scene_loading<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let mut q = |mem: &mut M, k: usize| {
+            let f = mem.rebase(SCENE_QUERIES[k]);
+            call(mem, f, &[]) != 0
+        };
+        if q(mem, 0) && !q(mem, 1) {
+            return 1;
+        }
+        if q(mem, 2) && q(mem, 3) && !q(mem, 1) {
+            return 1;
+        }
+        u32::from(!q(mem, 4) && q(mem, 5))
+    }
 }

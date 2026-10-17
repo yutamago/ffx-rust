@@ -4125,6 +4125,7 @@
 0x007605d0 function pppFreeAllEnvObjects      # (): for each of *0x00d4b4cc object blocks (0x80 from 0x00d4e390), *g_pppEnvSlot = the pmcom environment 0x010d4cfc and pppAllFreePObject(block); called by pppDataRcv, pppPartDraw; name ours
 0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
+0x007606f0 function pppDrawCrosshair         # (): unless 0x00d4b4e8 (x) is 0x7fff, a crosshair at (x, y) through the line packet writer 0x00760ce0 in 12.4 units around 0x800: grey verticals at x, x - 1 (y +-10), horizontal at y (x +-20); black copies one unit right/down; returns the last line's eax (0x7fff when none); from pppPartDraw, pppPartLoop; name ours; ported (field round 50)
 0x007610a0 function dumpFvector               # fh switch:bsim1.00 0x71002d1e50
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
 0x00761250 function pppDataLastPair_00761250 # ours: (data, a, b) -> b: the records from data + [data+4] (16-byte headers, kind i8 +1 until 0xff, i16 +2 entries of 20/28/32/40/24/32/40/48 bytes by kind 0..7): the +8/+0xc words of the last kind 2, 3, 6 or 7 record into a and b (0 for none); caller pppDataRcv
@@ -4152,7 +4153,7 @@
 0x00764b70 function KeThResHd_BPAlloc            # layout+callees: sorts between KeThCp_Update and KeThResHd_Init, and its named callees match the Switch 0x710030aee0 KeThResHd_BPAlloc's (similarity 1.00: is_ptr32_null); symbols from Fahrenheit's server export
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
 0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)
-0x007658b0 function InitVFXKeThRenderData     # fh v3:exact 0x007659a0
+0x007658b0 function InitVFXKeThRenderData     # fh v3:exact 0x007659a0; ported (field round 51): (a, b, c): texture count 0x02305840 clamped to 20 (signed, written back); three zeroed 20-word local arrays get 0x50c, 0xc18, 0 per texture and a 256-byte name slot "NoTexture" each (sprintf); graphicVFXCreate(a, b, c), graphicVFXCreateDataBuffer(a, b, n, widths, heights, names, flags), graphicVFXGetRenderDataByInstance(a, b); returns 1 when that is non-zero, else 0 (neg/sbb/neg)
 0x00765f10 function resetVFXKeThRenderData       # layout+callees: sorts between InitVFXKeThRenderData and updateVFXKeThRenderData, and its named callees match the Switch 0x710030b810 resetVFXKeThRenderData's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export
 0x007665a0 function SetGlobal_02305844 # cdecl(v): *0x02305844 = v, returns v; name ours
 0x007665b0 function SetGlobal_02305840 # cdecl(v): *0x02305840 = v, returns v; name ours
@@ -6687,6 +6688,7 @@
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081c260 function SqsCmdSetC4C6            # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc4 (bit 12 of u16 ctx +0x21a set) or +0xc6 of ctx +0x220; in the IOP command table next to SqsCmdSetC2, no direct callers; name ours; ported (field round 33)
 0x0081c4f0 function opu_md_etc                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100404b50 opu_md_etc, 3 votes, round 1
+0x0081ca20 function SqsOefSetPacketAddrRange # (oef, lo, hi, v): for n = lo..=hi (signed) op_md_packet_set_addr(op_oef2_a_get(oef, 4, n), v, v >> 31) when non-null; called by opu_md_etc (0x0081c4f0), placed among the Sqs functions; caller ignores eax; name ours; ported (field round 47)
 0x0081cbd0 function Sqs_CallRpc                  # structure: (cmd): waits for the sound RPC client 0x012f4e20 to be idle (FFXSifCheckStatRpc), then FFXSifCallRpc(client, cmd, send 0x40, recv 0x400) until accepted; 21 callers, the Sqs* IOP command wrappers 0x0081d010..; name ours; ported (field round 33): returns FFXSifCallRpc's eax
 0x0081cc20 function Sqs_CallRpc2             # (cmd, _, end, arg): Sqs_CallRpc on the second client 0x012f4e48 (send 0x00c4945c, recv 0x00c49464, 0x40 bytes each), end/arg passed on; returns FFXSifCallRpc's; name ours; ported (field round 33)
 0x0081cc70 function Sqs_DecodeAdpcm          # (src, dst) -> dst + 0x6400: PS-ADPCM, 25 x (256 left + 256 right i16 samples) from 9-byte blocks (header: filter << 4 | shift), filters 0x00c49470, history 0x012f4f90; from SqsStraightStreamingDataSend; name ours; ported (field round 33)
@@ -6758,6 +6760,7 @@
 0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here; ported (field round 39): command (0x33, 0), 0x012f4efc = 3, 0x012f4edc = 0
 0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here; ported (field round 39): command (0x3e, v & 0x7f)
 0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here; ported (field round 39): command (0x3f, frames, v & 0x7f); returns frames
+0x0081fcd0 function Sg_IsSceneLoading        # () -> 1 while the field map loads outside a battle map (graphicIsFieldMapLoading, graphicIsAnyBattleMap), characters load for a listed map outside a battle map (graphicIsCharacterLoadingOrInstanciating, graphicIsMapInList), or the scene assets are not all in with the fade colour locked (graphicIsAllSceneAssetsLoaded, graphicIsScreenFadeColorLocked); from Sg_MainLoop; name ours; ported (field round 48)
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
 0x008202d0 function Sg_ReturnConst1_008202d0     # auto-port shape (return constant, cdecl): return 0x1; callers: Sg_MainLoop; name ours
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
@@ -11316,9 +11319,9 @@
 0x00922b70 function rcbgFPm173Init               # (part) -> part: +0x10..0x24 cleared, type 0x20008, functions 0x00922b40, 0x00922be0; map 0xad's part (0x00921a50)
 0x00922bb0 function rcbgFPm173New             # (): rcAlloc 0x28 (rcbgFP.c), rcbgFPm173Init
 0x00922be0 function rcbgFPm173Proc000            # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553060 rcbgFPm173Proc000 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00922c50 function rcbgFPm173ProcJect           # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553190 rcbgFPm173ProcJect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00922c50 function rcbgFPm173ProcJect           # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553190 rcbgFPm173ProcJect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 49): by step +0x1c: 0x25 rcbgFPmRestart(0x53, +0x10, 0x2f); 0x82 pppFpSetStickChr(0x54, +0x10, 2) + Fp_Restart(0x54); 200 Fp_End(0x54) (Ghidra drops the argument); 0x100 rcbgFPmRestart(0x55, +0x10, 0x5d), +0x20 = 0; other steps leave the jump-table index in eax (4 in range, else step - 0x25)
 0x00922dc0 function rcbgFPm173ProcKieru          # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x71005533b0 rcbgFPm173ProcKieru is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00922e60 function rcbgFPm173ProcKonjyo         # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x71005532b0 rcbgFPm173ProcKonjyo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00922e60 function rcbgFPm173ProcKonjyo         # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x71005532b0 rcbgFPm173ProcKonjyo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 49): step +0x1c 0: pppFpSetStickChr(0x58, +0x10, 2), Fp_Restart(0x58) (tail); 0x32: effect 0x59 bone 0x35, +0x20 = 0; returns Fp_Restart's eax, else the step
 0x00922eb0 function rcbgFPm173ProcSphere         # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553320 rcbgFPm173ProcSphere is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
@@ -11388,7 +11391,7 @@
 0x009258f0 function rcRealloc                 # fh v3:exact 0x009258f0 _rcRealloc
 0x00925950 function rcVec4fToFixed            # (out, v): four floats * 16.0 to 12.4 fixed point (ftol each), returns the last
 0x009259c0 function rcPrimBatu                # fh v3:exact 0x009259c0
-0x00925b60 function rcPrimBox                 # fh v3:exact 0x00925b60
+0x00925b60 function rcPrimBox                 # fh v3:exact 0x00925b60; ported (field round 52): (x, y, w, h, colour, ui): corners (x -+ f32(w * 0.5), y -+ f32(0.5 * h)) at depth 256, rcPrimDraw2D(0x44, verts, 4, colour) between graphicSetNowUIType(2) (when ui) and (0), whose eax it returns
 0x00925c50 function rcPrimBoxLine                # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551660 rcPrimBoxLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925db0 function rcPrimCircle                 # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551e10 rcPrimCircle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0; ported (field round 42): (x, y, r, colour, ui): 65 stack vertices, the box (x - r, y - k), (x + r, y + k) at depth 256 and 63 zero ones, k = r * 1.1666666 * 416 / 448 (f64), rcPrimDraw2D(0x42, verts, 0x41, colour) with the UI type as rcPrimLine; returns cgraphicSetNowUIType(0)'s eax
@@ -11410,6 +11413,7 @@
 0x00927ac0 function rcVectorToFixed_00927ac0  # the same code as rcVectorToFixed_009273e0
 0x00927b00 function rcbgModelScaleVector      # (dst, v, s): the same code as rcbgScaleVector 0x009200a0; rcbgModelFToS0
 0x00927b60 function rcbgModelVectorToInt      # (dst, v): v through vf31, four floats truncated by 0x00808b00 (_ftol2_sse each); rcbgModelFToS0
+0x00927ba0 function rcVu0IntToFloat          # (a, b) -> a.w: b to the VU0 register 0x00c8f980, op_ivec4_to_fvec4(reg, reg), the register to a; caller 0x009283f0; name ours; ported (field round 47)
 0x00927be0 function rcbgModelCreate           # fh v3:exact 0x00927be0
 0x00927d70 function rcbgModelCreateFromOMD    # fh switch:cg2 0x71008bf5f8
 0x00927d80 function rcbgModelCreateMesh       # fh switch:cg2 0x7100545130
@@ -12367,6 +12371,8 @@
 0x00a58df0 function AbmapFlagConnectedLinks   # fh v3:exact 0x00a58df0 +AbmapFlagConnectedLinks; cdecl(flag) -> eax node pointer past the last: nodes whose kind record (MsGetExcelData(kind, [0x01a860e0])) has +0x10 bit 0x8000 OR flag into byte +0xe of every link (+0xa808, 0x14 each, count i16 +4) touching them; ported (ffx-pcui)
 0x00a58ec0 function AbmapTryChangePlayer      # fh v3:exact 0x00a58ec0 +AbmapTryChangePlayer; pad edge 4/8 (+0x11672): TkMenuSetPrev/NextPlayer, direction +0x115be, previous +0x115bd, current +0x115bc, homing on +0x110cc+0x50*current at 0.25, AbmapState_HomeOnNode pushed (+0x115a8 -> +0x115b0); tail jmp AbmapResetCursorCamera; ported (ffx-pcui)
 0x00a59350 function AbmapHelpMessageStep_00a59350 # structure: (message): counts down the area-map help timer (g_Abmap +0x11666) and draws its message through TOMacroSetByte1/TOMacroSetValue and TOAddPktBaseMesFontLAbmap, or starts message 0x48/0x23 (0x00a594c0) when the timer is out; callers AbmapSetHelpMessage and the area-map screens; name ours
+0x00a594c0 function AbmapHelpLineDraw        # (a, b, c) -> packet end: TOAddPktBaseMesFontLAbmap(g_PppPacketPos + 0x10, kind, a, b, c, 0, 0, 0x80, 0x80, 0x80, alpha, 0) into g_PppPacketPos, alpha = g_Abmap +0x115b9 (kind 0 when 0x80, else 7); 5 calls in AbmapHelpMessageStep_00a59350; name ours; ported (field round 46)
+0x00a59630 function AbmapDigitRight          # (a, x, y, d): ToMakeBtlEasyDigitRightAbmap(a, f32(x), f32(y), d, [0x00b34254], [0x00b92194]) (fild, stored as f32); caller 0x00a4f630; name ours; ported (field round 47)
 0x00a59680 function CopyDeref_00a59680           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[((a0 * 0x340) + t0)]; u16[(((a0 * 0x340) + t0) + 0x8)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0x2)]; u16[(((a0 * 0x340) + t0) + 0xa)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0x4)]; u16[(((a0 * 0x340) + t0) + 0xc)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0x6)]; u16[(((a0 * 0x340) + t0) + 0xe)] = t4; t5 = u16[(((a0 * 0x340) + t0) + 0x10)]; u16[(((a0 * 0x340) + t0) + 0x14)] = t5; t6 = u16[(((a0 * 0x340) + t0) + 0x12)]; u16[(((a0 * 0x340) + t0) + 0x16)] = t6; return t6; callers: no direct caller; name ours
 0x00a596d0 function CopyDeref_00a596d0           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[(((a0 * 0x340) + t0) + 0x8)]; u16[(((a0 * 0x340) + t0) + 0x2a)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0xa)]; u16[(((a0 * 0x340) + t0) + 0x2c)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0xc)]; u16[(((a0 * 0x340) + t0) + 0x2e)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0xe)]; u16[(((a0 * 0x340) + t0) + 0x30)] = t4; u8[(((a0 * 0x340) + t0) + 0x32)] = 0x0; u32[(((a0 * 0x340) + t0) + 0x34)] = &0x00a5a170; return t4; callers: no direct caller; name ours
 0x00a59710 function AbmapForEachNode          # (f, arg): f(node, arg) over the +2 nodes (kind -1 skipped) until non-zero
@@ -14981,6 +14987,7 @@
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
 0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
 0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
+0x00d4b4e8 label    g_PppCrosshair               # i32 x, y of pppDrawCrosshair's point (x 0x7fff: none); read by 0x007606f0 and 0x00760f30, no writer in the dump
 0x00d4be38 label    g_pppPmcomTexRecs         # 12-byte texture records pppSetPmcom2Texture_007629e0 fills (count at 0x00d4be34; u16s at +4, +6, +8); pppDataSetTex_007628c0 copies words 0 and 1 into the data records
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)
@@ -15830,6 +15837,7 @@
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
 0x023056e8 label    g_GsRegisterSink          # the one word every PS2 GS register write of the texture-animation code lands in (loadImage and the TexAnim_* tag helpers)
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
+0x02305840 label    g_KeThTextureCount           # the Ke thing effects' texture count (InitVFXKeThRenderData clamps it to 20)
 0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
 0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
 0x0230fca0 label    g_pppFillMatrix           # 16 words every updateVFXRenderData fill request takes (+0x1d4; the Shp request +0xd0)

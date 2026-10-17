@@ -1167,4 +1167,30 @@ pub mod bridge {
         let id = i32::from(mem.read::<i16>(data.wrapping_add(8))).cast_unsigned();
         glue(mem, super::I_SFX_LOAD_DATA, &[id, 0], call)
     }
+
+    /// `op_oef2_a_get(oef, kind, n)` (`0x007e3810`).
+    pub const OP_OEF2_A_GET: u32 = 0x007e_3810;
+    /// `op_md_packet_set_addr(p, lo, hi)` (`0x00a69de0`).
+    pub const OP_MD_PACKET_SET_ADDR: u32 = 0x00a6_9de0;
+
+    /// `SqsOefSetPacketAddrRange(oef, lo, hi, v)` (`0x0081ca20`, name ours;
+    /// called by `opu_md_etc`, placed among the `Sqs*`): for each `n` from
+    /// `lo` to `hi` (signed, inclusive), the effect's kind-4 entry `n`
+    /// (`op_oef2_a_get`) gets `op_md_packet_set_addr(entry, v, v >> 31)`
+    /// when there is one. Its caller ignores `eax`.
+    pub fn sqs_oef_set_packet_addr_range<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [oef, lo, hi, v]: [u32; 4],
+        call: &mut C,
+    ) {
+        let (get, set) = (mem.rebase(OP_OEF2_A_GET), mem.rebase(OP_MD_PACKET_SET_ADDR));
+        let mut n = lo.cast_signed();
+        while n <= hi.cast_signed() {
+            let e = call(mem, get, &[oef, 4, n.cast_unsigned()]);
+            if e != 0 {
+                call(mem, set, &[e, v, (v.cast_signed() >> 31).cast_unsigned()]);
+            }
+            n = n.wrapping_add(1);
+        }
+    }
 }

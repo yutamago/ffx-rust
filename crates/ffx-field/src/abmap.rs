@@ -2093,4 +2093,58 @@ pub mod bridge {
         }
         g
     }
+
+    // ---- field round 46: the help line ----
+
+    /// `TOAddPktBaseMesFontLAbmap(pkt, kind, ..)` (`0x008e8fb0`).
+    pub const TO_ADD_PKT_MES_FONT_L_ABMAP: u32 = 0x008e_8fb0;
+
+    /// `AbmapHelpLineDraw(a, b, c)` (`0x00a594c0`, name ours; the five
+    /// calls of `AbmapHelpMessageStep_00a59350`): a text line through
+    /// `TOAddPktBaseMesFontLAbmap(pos + 0x10, kind, a, b, c, 0, 0, 0x80,
+    /// 0x80, 0x80, alpha, 0)`, the packet position (`0x0230fd2c`) set to
+    /// its result, which it returns. The fade byte `+0x115b9` of the grid
+    /// data is the alpha; 0x80 (opaque) draws with kind 0, anything else
+    /// with kind 7.
+    pub fn abmap_help_line_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b, c]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let alpha = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x1_15b9)));
+        let kind = if alpha == 0x80 { 0 } else { 7 };
+        let pos = crate::ke::PACKET_POS.get(mem).wrapping_add(0x10);
+        let f = mem.rebase(TO_ADD_PKT_MES_FONT_L_ABMAP);
+        let r = call(
+            mem,
+            f,
+            &[pos, kind, a, b, c, 0, 0, 0x80, 0x80, 0x80, alpha, 0],
+        );
+        crate::ke::PACKET_POS.set(mem, r);
+        r
+    }
+
+    /// `ToMakeBtlEasyDigitRightAbmap(..)` (`0x00905660`).
+    pub const TO_MAKE_DIGIT_RIGHT_ABMAP: u32 = 0x0090_5660;
+    /// Its last two arguments (`f32`, `.rdata`).
+    pub const DIGIT_RIGHT_CONSTS: [u32; 2] = [0x00b3_4254, 0x00b9_2194];
+
+    /// `AbmapDigitRight(a, x, y, d)` (`0x00a59630`, name ours; from
+    /// `0x00a4f630`): `ToMakeBtlEasyDigitRightAbmap(a, f32(x), f32(y), d,
+    /// [0x00b34254], [0x00b92194])` with the integer position as floats
+    /// (`fild`, stored as `f32`) and the two constants copied through the
+    /// x87; returns its `eax`.
+    pub fn abmap_digit_right<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, x, y, d]: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{round_trip, store};
+        let fx = store(f64::from(x.cast_signed()));
+        let fy = store(f64::from(y.cast_signed()));
+        let [c1, c2] =
+            DIGIT_RIGHT_CONSTS.map(|k| round_trip(mem.read::<f32>(mem.rebase(k))).to_bits());
+        let f = mem.rebase(TO_MAKE_DIGIT_RIGHT_ABMAP);
+        call(mem, f, &[a, fx, fy, d, c1, c2])
+    }
 }
