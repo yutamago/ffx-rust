@@ -9433,6 +9433,7 @@
 0x008aac10 function MenuMain_StoreVramBlock   # (buf, vram, bytes): sceGsSetDefStoreImage(0x01841c70, ...), FlushCache, sceGsExecStoreImage; glue; name ours
 0x008aad60 function TkMenuMainSetIgnoreJoinFlag # fh v3:cg3 0x8aad10
 0x008aad70 function TkMenuMainSleepMenu       # fh v3:exact 0x008aad20
+0x008aadd0 function MenuMain_RemoveAllMenus   # (): TkMenuMainRemoveMenu(slot) for slots 0..0x19, last result; the menu close 0x008a9ca0; name ours
 0x008aae00 function Pause_Request             # 0x01340850 = 1 (Pause_Update runs while set); own name
 0x008aae10 function TkMenuRefreshPartyList    # fh v3:bsim1.00 0x008aadc0
 0x008aae30 function MenuParty_RefreshMask     # 0x01841c2c = bits of the party slot ids (count TkMenuGetPlayerPartyMask); own name
@@ -9674,11 +9675,13 @@
 0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name
+0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
 0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
 0x008bc340 function TkBtlEndDraw                 # the after-battle results screen's draw: its callees (TOMenuOpenPktBuffTmp, TOMkpShapeXYWHUV, DrawWaterWaveShapeC2, TOGetSaveChrName, ToMakeBtlEasyEdgeFont*, ToMakeBtlEasyDigitRight, TOGetFFXLang, the cos/sin lookups) are the Switch TkBtlEndDraw's (9536 bytes there, split into helpers here), and it sorts after TkBtlEndCtrl; called from 0x008bb7d6 (a block of 0x008bb690, which TkBtlEndCtrl calls)
+0x008bda00 function BtlEnd_GetSaveNextAP      # (chr): jmp MsGetSaveNextAP(chr); caller 0x008bdaf0 (battle results AP); sibling of BtlEnd_GetNextAP; name ours
 0x008bda10 function BtlEnd_GetResult          # (i) 0x02310f20[i]; own name
 0x008bda20 function BtlEnd_GetResult19        # 0x02310f6c (entry 19); own name
 0x008bda40 function BtlEnd_GetNextAP          # (chr) tail call MsGetNextAP; own name
@@ -9948,6 +9951,7 @@
 0x008cd1b0 function MenuSummon_OpenWindow     # (): TkMenuMainAllocWindow into 0x0186a5a0 (TkMenuSummonCloseWindow's): +8 0x008ccac0, +0xc 0x008cced0, +0x10 0x008cebe0, +0x14 0x008cd230, +0x1c 0x008ccad0, +0x54 = 0x155; returns TkMenuMainRegistWindow's result; TkMenuCtrlSummon state 9; name ours
 0x008cd1f0 function MenuSummon_RestartWindow  # aeon window: +0x45 = 0, +0x28 = 0 or 2 by 0x0186a5fc, then TkMn2InitStatusBG; own name
 0x008cd320 function MenuSummon_GrowInfo      # (stat, chr, *cost, *gain): *cost = -1, *gain = 0; for stat < 10 *cost = u16 +4 of MenuSummon_GrowEntry(stat) and, while MenuSummon_GetStat(chr's record, desc 0x00c5a608 + 0x1c stat, max) < desc +0x14, *gain = Math_Clamp1To99(desc +0x18 (chr, max)) and 1; else 0; relies on MenuSummon_GetStat leaving edx (the descriptor); name ours
+0x008cd3b0 function MenuSummon_RefreshGrowMasks # (chr): masks 0x0186a600/0x0186a604 cleared; per stat 0..10 MenuSummon_GrowInfo(stat, chr, &item, &count): count <= MsGetSaveItemNum(item) (signed) sets the afford bit, and the grow bit when GrowInfo != 0; returns the last item count; callers TkMenuCtrlSummon; name ours
 0x008cd430 function TkMn2CloseSummonGrowWindow # (): close request for 0x0186a5a8 (opened by TkMn2OpenSummonGrowWindow), kept
 0x008cd440 function TkMenuSummonCloseWindow2  # (): close request for 0x0186a5ac (TkMenuCtrlSummon's), forget it
 0x008cd460 function MenuSummon_GrowWindowCtrl_008cd460 # the aeon grow window's control (+0xc of TkMn2OpenSummonGrowWindow's window): states in 0x0186a610, TkMn2StepStatusBG, list ctrl, help message; own name
@@ -15158,6 +15162,7 @@
 0x01330097 label    g_SndHddError             # u8 set once by SndSeqIopCommandSendMain
 0x0133009c label    g_SndBattleMusicDataSize  # u32 iMusicDataSend result (SndMusicStandby)
 0x013300e0 label    g_SndMusicVolume          # u8[256] per music (SndGetMusicVolume)
+0x013301e0 label    g_TkSyncVDisableCount     # TkSyncVDI counts up, TkSyncVEI down (at least 0)
 0x013301e4 label    g_TkSoundSyncVFlag        # cleared by TkClearSoundSyncVFlag
 0x013301ec label    g_TkSoundSyncVFlag3       # TkGetSoundSyncVFlag3, TkClearSoundSyncVFlag3
 0x013301f4 label    g_TkGsCsr                 # TkGetGsRegisterCSR
@@ -15291,6 +15296,8 @@
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
 0x0186a5a4 label    g_TkMenuSummonStatusWindow# MenuSummon_CloseStatusWindow
 0x0186a5fc label    g_TkMenuSummonRestartCount# <= 1: MenuSummon_RestartWindow sets state 0, else 2
+0x0186a600 label    g_TkMenuSummonGrowMask    # aeon stats that grow and can be paid for (MenuSummon_RefreshGrowMasks)
+0x0186a604 label    g_TkMenuSummonAffordMask  # aeon stats whose growth items the party has (MenuSummon_RefreshGrowMasks)
 0x0186a624 label    g_TkMenuEquipAltMode      # toggled in TkMenuCtrlEquip (MenuEquip_IsAltMode)
 0x0186a630 label    g_TkMenuEquipItem         # MenuEquip_PickItem
 0x0186a820 label    g_TkMenuStatusWindows     # status menu windows by index (MenuStatus_CloseWindow)

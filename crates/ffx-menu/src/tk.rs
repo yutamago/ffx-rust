@@ -7402,6 +7402,121 @@ pub mod bridge {
         let s = call(mem, f, &[u32::from(id)]);
         menu_parse_item_keys(mem, s);
     }
+
+    /// The aeon stats whose growth the party can pay for (`u32` bit mask,
+    /// `0x0186a604`).
+    pub const SUMMON_AFFORD_MASK: Global<u32> = Global::new(0x0186_a604);
+    /// The aeon stats that can grow and can be paid for (`u32` bit mask,
+    /// `0x0186a600`).
+    pub const SUMMON_GROW_MASK: Global<u32> = Global::new(0x0186_a600);
+
+    /// `MenuSummon_RefreshGrowMasks(chr)` (`0x008cd3b0`, own name): both
+    /// masks cleared, then for the 10 stats `MenuSummon_GrowInfo(stat, chr,
+    /// &item, &count)`: when `count <= MsGetSaveItemNum(item)` (signed) the
+    /// stat's bit joins [`SUMMON_AFFORD_MASK`], and [`SUMMON_GROW_MASK`]
+    /// too when the info call returned non-zero. Returns the last item
+    /// count. `local` is 8 bytes of out slots (item, count).
+    pub fn menu_summon_refresh_grow_masks<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        SUMMON_GROW_MASK.set(mem, 0);
+        SUMMON_AFFORD_MASK.set(mem, 0);
+        let info = mem.rebase(0x008c_d320);
+        let num = mem.rebase(0x0079_04b0);
+        let (item, count) = (local, local.wrapping_add(4));
+        let mut owned = 0;
+        for stat in 0..10u32 {
+            let bit = 1u32 << stat;
+            let grows = call(mem, info, &[stat, chr, item, count]);
+            let id: u32 = mem.read(item);
+            owned = call(mem, num, &[id]);
+            if mem.read::<i32>(count) <= owned.cast_signed() {
+                let m = SUMMON_AFFORD_MASK.get(mem);
+                SUMMON_AFFORD_MASK.set(mem, m | bit);
+                if grows != 0 {
+                    let m = SUMMON_GROW_MASK.get(mem);
+                    SUMMON_GROW_MASK.set(mem, m | bit);
+                }
+            }
+        }
+        owned
+    }
+
+    /// `BtlEnd_GetSaveNextAP(chr)` (`0x008bda00`, own name): a jump to
+    /// `MsGetSaveNextAP(chr)`; its caller is the battle results' AP code (`0x008bdaf0`).
+    pub fn btl_end_get_save_next_ap<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0078_52b0);
+        call(mem, f, &[chr])
+    }
+
+    /// `BtlEnd_AddGil(gil)` (`0x008ba3a0`, own name): a jump to
+    /// `MsPayGIL(-gil)`; the battle results add their gil with it
+    /// (`0x008ba590`).
+    pub fn btl_end_add_gil<M: Mem>(
+        mem: &mut M,
+        gil: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0078_59a0);
+        call(mem, f, &[gil.wrapping_neg()])
+    }
+
+    /// `TkMn2DrawKickPacket()` (`0x008c0c40`):
+    /// [`tk_mn2_draw_kick_packet_body`] with the scissor clear; its result.
+    pub fn tk_mn2_draw_kick_packet<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        tk_mn2_draw_kick_packet_body(mem, 1, call)
+    }
+
+    /// `TkSyncVDI()` (`0x00887f20`): the v-sync disable count (`0x013301e0`,
+    /// which [`tk_sync_v_ei`] counts down) up by one, then
+    /// `SetGlobal013301f0(0)`, whose result it returns.
+    pub fn tk_sync_vdi<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = mem.rebase(0x0133_01e0);
+        let n: u32 = mem.read(at);
+        mem.write(at, n.wrapping_add(1));
+        let f = mem.rebase(0x0088_7e80);
+        call(mem, f, &[0])
+    }
+
+    /// `TkMenuRefreshPartyList()` (`0x008aae10`): `TOPlayerListInit(0)`, then
+    /// `TOSummonListInit(0)`, whose result it returns.
+    pub fn tk_menu_refresh_party_list<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_8f40);
+        call(mem, f, &[0]);
+        let f = mem.rebase(0x008a_9090);
+        call(mem, f, &[0])
+    }
+
+    /// `MenuMain_RemoveAllMenus()` (`0x008aadd0`, own name):
+    /// `TkMenuMainRemoveMenu(slot)` for the 25 slots; the last result. The
+    /// menu's close (`0x008a9ca0`) calls it.
+    pub fn menu_main_remove_all_menus<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_ab20);
+        let mut last = 0;
+        for slot in 0..0x19 {
+            last = call(mem, f, &[slot]);
+        }
+        last
+    }
 }
 
 #[cfg(test)]

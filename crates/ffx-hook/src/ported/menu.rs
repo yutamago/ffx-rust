@@ -3430,4 +3430,36 @@ ported! {
     MenuItem_LoadTargetKeys @ 0x008c_5320 => extern "C" fn menu_item_load_target_keys(target: i32) {
         tk::menu_item_load_target_keys(&mut mem(), target, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuSummon_RefreshGrowMasks(chr)`.
+    MenuSummon_RefreshGrowMasks @ 0x008c_d3b0 => extern "C" fn menu_summon_refresh_grow_masks(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_summon_refresh_grow_masks(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_GetSaveNextAP(chr)`.
+    BtlEnd_GetSaveNextAP @ 0x008b_da00 => extern "C" fn btl_end_get_save_next_ap(chr: u32) -> u32 {
+        tk::btl_end_get_save_next_ap(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_AddGil(gil)`.
+    BtlEnd_AddGil @ 0x008b_a3a0 => extern "C" fn btl_end_add_gil(gil: u32) -> u32 {
+        tk::btl_end_add_gil(&mut mem(), gil, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawKickPacket()`.
+    TkMn2DrawKickPacket @ 0x008c_0c40 => extern "C" fn tk_mn2_draw_kick_packet() -> u32 {
+        tk::tk_mn2_draw_kick_packet(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSyncVDI()`.
+    TkSyncVDI @ 0x0088_7f20 => extern "C" fn tk_sync_vdi() -> u32 {
+        tk::tk_sync_vdi(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuRefreshPartyList()`.
+    TkMenuRefreshPartyList @ 0x008a_ae10 => extern "C" fn tk_menu_refresh_party_list() -> u32 {
+        tk::tk_menu_refresh_party_list(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_RemoveAllMenus()`.
+    MenuMain_RemoveAllMenus @ 0x008a_add0 => extern "C" fn menu_main_remove_all_menus() -> u32 {
+        tk::menu_main_remove_all_menus(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
 }

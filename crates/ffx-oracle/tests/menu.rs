@@ -7510,3 +7510,100 @@ fn menu_round19_batch2_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` replaced in both oracles by a stand-in of `(stat, _, *a, *b)`:
+/// `*a = A[stat]`, `*b = B[stat]`, returns `C[stat]` (tables of 10 words).
+fn out2_by_index(t: &mut Twins, f: u32, a: &[u32], b: &[u32], c: &[u32]) {
+    let words = |v: &[u32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    let (ta, tb, tc) = (t.alloc(&words(a)), t.alloc(&words(b)), t.alloc(&words(c)));
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x4c, 0x24, 0x04][..],              // mov ecx, [esp + 4]
+        &[0x8b, 0x04, 0x8d], &ta.to_le_bytes(),     // mov eax, [ecx*4 + A]
+        &[0x8b, 0x54, 0x24, 0x0c, 0x89, 0x02],      // mov edx, [esp + 12]; mov [edx], eax
+        &[0x8b, 0x04, 0x8d], &tb.to_le_bytes(),     // mov eax, [ecx*4 + B]
+        &[0x8b, 0x54, 0x24, 0x10, 0x89, 0x02],      // mov edx, [esp + 16]; mov [edx], eax
+        &[0x8b, 0x04, 0x8d], &tc.to_le_bytes(),     // mov eax, [ecx*4 + C]
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_round19_batch3_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0003) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    for round in 0..64u32 {
+        // MenuSummon_RefreshGrowMasks: stand-in grow infos, recorded item counts
+        let items: Vec<u32> = (0..10).map(|_| t.rng.below(0x10000)).collect();
+        let owned = t.rng.pick(&[0u32, 1, 5, 99, 0xffff_ffff]);
+        let counts: Vec<u32> = (0..10)
+            .map(|_| owned.wrapping_add(t.rng.below(5)).wrapping_sub(2))
+            .collect();
+        let grows: Vec<u32> = (0..10).map(|_| t.rng.pick(&[0u32, 1, 0x100])).collect();
+        out2_by_index(&mut t, 0x008c_d320, &items, &counts, &grows);
+        record_n(&mut t, 0x0079_04b0, 1, owned);
+        t.scramble(tk::SUMMON_GROW_MASK.sym, 8);
+        let chr = t.rng.next();
+        t.twin(
+            "MenuSummon_RefreshGrowMasks",
+            0x008c_d3b0,
+            &[chr],
+            U32,
+            |o| {
+                w(tk::menu_summon_refresh_grow_masks(
+                    o,
+                    chr,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+        // BtlEnd_GetSaveNextAP and BtlEnd_AddGil over recorders
+        let ap = t.rng.next();
+        record_n(&mut t, 0x0078_52b0, 1, ap);
+        let arg = t.rng.int();
+        t.twin("BtlEnd_GetSaveNextAP", 0x008b_da00, &[arg], U32, |o| {
+            w(tk::btl_end_get_save_next_ap(o, arg, &mut callback))
+        });
+        let paid = t.rng.next();
+        record_n(&mut t, 0x0078_59a0, 1, paid);
+        t.twin("BtlEnd_AddGil", 0x008b_a3a0, &[arg], U32, |o| {
+            w(tk::btl_end_add_gil(o, arg, &mut callback))
+        });
+        // TkMn2DrawKickPacket: the original body
+        if round % 8 == 0 {
+            t.twin("TkMn2DrawKickPacket", 0x008c_0c40, &[], U32, |o| {
+                w(tk::tk_mn2_draw_kick_packet(o, &mut callback))
+            });
+        }
+        // TkSyncVDI: the count from any value, SetGlobal013301f0 original
+        t.scramble(0x0133_01e0, 4);
+        t.twin("TkSyncVDI", 0x0088_7f20, &[], U32, |o| {
+            w(tk::tk_sync_vdi(o, &mut callback))
+        });
+        // TkMenuRefreshPartyList over recorders
+        let r1 = t.rng.next();
+        record_n(&mut t, 0x008a_8f40, 1, r1);
+        let r2 = t.rng.next();
+        record_n(&mut t, 0x008a_9090, 1, r2);
+        t.twin("TkMenuRefreshPartyList", 0x008a_ae10, &[], U32, |o| {
+            w(tk::tk_menu_refresh_party_list(o, &mut callback))
+        });
+        // MenuMain_RemoveAllMenus over a recorder
+        let r3 = t.rng.next();
+        record_n(&mut t, 0x008a_ab20, 1, r3);
+        t.twin("MenuMain_RemoveAllMenus", 0x008a_add0, &[], U32, |o| {
+            w(tk::menu_main_remove_all_menus(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
