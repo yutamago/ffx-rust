@@ -286,6 +286,14 @@ pub mod bridge {
     pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
     /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
     pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// `TkSetVibrateStream(a, b, entry)` (`0x00875fb0`).
+    pub const TK_SET_VIBRATE_STREAM: u32 = 0x0087_5fb0;
+    /// `op_oef2_stream_cue(entry, arg, mask)` (`0x00800390`).
+    pub const OP_OEF2_STREAM_CUE: u32 = 0x0080_0390;
+    /// `rcefAnimeStart(anime, data, out0, out1)` (`0x0092f470`).
+    pub const RCEF_ANIME_START: u32 = 0x0092_f470;
+    /// `rcefSetupDraw(draw, tex, a, b)` (`0x0092f6b0`).
+    pub const RCEF_SETUP_DRAW: u32 = 0x0092_f6b0;
     /// `op_oef2_sound_cue_check(mask)` (`0x008000f0`).
     pub const SOUND_CUE_CHECK: u32 = 0x0080_00f0;
     /// `MsEffectCheckMotion(x)` (`0x00787840`).
@@ -818,6 +826,110 @@ pub mod bridge {
         let env = mem.read::<u32>(slot);
         let f = mem.rebase(super::PPP_MEM_FREE);
         call(mem, f, &[env, env.wrapping_add(0x10), o])
+    }
+
+    // ---- round 24 ----
+
+    /// The effect data's entry `id` of `kind` (`op_oef2_a_get`).
+    fn oef2_entry<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        kind: u32,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(OP_OEF2_A_GET);
+        call(mem, f, &[data, kind, id])
+    }
+
+    /// `rcefSetVibrate(id, arg)` (`0x0092ec60`; Fahrenheit's Switch BSim
+    /// guess was `rcefStreamCue`): `TkSetVibrateStream(7, arg, entry)` of
+    /// the effect data's kind 5 entry `id`, its `eax`.
+    pub fn rcef_set_vibrate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        arg: u32,
+        call: &mut C,
+    ) -> u32 {
+        let data = RCEF_OEF2.get(mem);
+        let e = oef2_entry(mem, data, 5, id, call);
+        let f = mem.rebase(TK_SET_VIBRATE_STREAM);
+        call(mem, f, &[7, arg, e])
+    }
+
+    /// `rcefStreamCue(id, arg)` (`0x0092ebf0`): `op_oef2_stream_cue(entry,
+    /// arg, 0x800)` of the kind 6 entry `id`, its `eax`.
+    pub fn rcef_stream_cue<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        arg: u32,
+        call: &mut C,
+    ) -> u32 {
+        let data = RCEF_OEF2.get(mem);
+        let e = oef2_entry(mem, data, 6, id, call);
+        let f = mem.rebase(OP_OEF2_STREAM_CUE);
+        call(mem, f, &[e, arg, 0x800])
+    }
+
+    /// `rcefPlayStream(id)` (`0x0092e6b0`): unless a stream cue is busy
+    /// (`op_oef2_sound_cue_check(0x800)`, whose `eax` is then returned),
+    /// [`rcef_play_se`]'s `op_oef2_se_on` of the kind 6 entry `id`.
+    pub fn rcef_play_stream<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(SOUND_CUE_CHECK);
+        let busy = call(mem, f, &[0x800]);
+        if busy != 0 {
+            return busy;
+        }
+        let data = RCEF_OEF2.get(mem);
+        let e = oef2_entry(mem, data, 6, id, call);
+        let f = mem.rebase(OP_OEF2_SE_ON);
+        call(mem, f, &[e, 0x40, 0x100])
+    }
+
+    /// `rcefObjAnimeStart(env, obj, id)` (`0x00925590`, an effect import;
+    /// name ours): `rcefAnimeStart(obj + 0x330, entry, obj + 0x1f0, obj +
+    /// 0x170)` with the kind 4 entry `id` of `env`'s data (`+8`).
+    pub fn rcef_obj_anime_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        obj_start(mem, args, obj::ANIME, RCEF_ANIME_START, call)
+    }
+
+    /// `rcefObjSetupDraw(env, obj, id)` (`0x00925690`, an effect import;
+    /// name ours): `rcefSetupDraw(obj + 0x3c0, entry, obj + 0x1f0, obj +
+    /// 0x170)` with the kind 4 entry `id`.
+    pub fn rcef_obj_setup_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        obj_start(mem, args, obj::MODEL, RCEF_SETUP_DRAW, call)
+    }
+
+    fn obj_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 3],
+        part: u32,
+        f: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [env, o, id] = args;
+        let data = mem.read::<u32>(env.wrapping_add(8));
+        let e = oef2_entry(mem, data, 4, id, call);
+        let f = mem.rebase(f);
+        let a = [
+            o.wrapping_add(part),
+            e,
+            o.wrapping_add(0x1f0),
+            o.wrapping_add(0x170),
+        ];
+        call(mem, f, &a)
     }
 
     // ---- round 4: running tasks, objects, particle parts ----
