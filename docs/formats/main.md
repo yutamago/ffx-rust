@@ -738,3 +738,12 @@ The push-apart pass (`0x0083d3b0`) collects the active characters into
 `Sg_ChrSortByZ(n)` (`0x0083eb30`): a selection sort on `+0x14` (z),
 where each place takes the last remaining character whose z is at most
 the smallest seen (`fcomp` with `C0 | C3`, so a NaN is never taken).
+
+## Round 13: a frame of the motion script (`SG_SeqFrame`)
+
+`SG_SeqFrame(chr)` (`0x008377c0`) runs `SG_SeqStep` until a step stops:
+1 (waiting) runs `Ch_MotionLoopFrame`; 2 (the script's end) runs it too
+and clears `+0x736` when `+0x728` is 0; 3 (a hold) sets `+0x734` and
+clears `+0x736`; -1 (an unknown code) calls `yiAssert(0, "SG:SeqFrame",
+"seq err")`. Any other result steps again. `eax` is left as the last
+callee's (the loop step's, the assertion's) or 3 for a hold.

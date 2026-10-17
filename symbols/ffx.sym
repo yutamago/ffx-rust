@@ -7203,7 +7203,7 @@
 0x00837780 function Ch_RegMotionToTop            # layout+callees: sorts between Ch_RegMotionGetExistMem and Ch_RelElemMapping, and its named callees match the Switch 0x71004214b0 Ch_RegMotionToTop's (similarity 1.00: Cache_ToTop); symbols from Fahrenheit's server export
 0x00837790 function Ch_RegMotionUse              # layout+callees: sorts between Ch_RegMotionGetExistMem and Ch_RelElemMapping, and its named callees match the Switch 0x71004214c0 Ch_RegMotionUse's (similarity 1.00: Cache_Use); symbols from Fahrenheit's server export
 0x008377a0 function Ch_RelElemMapping         # fh v3:exact 0x00837820
-0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err")
+0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err"): wait 1 and end 2 advance Ch_MotionLoopFrame (end with +0x728 at 0 clears +0x736), hold 3 sets +0x734 and clears +0x736, -1 asserts; ported (ffx_sg::seq)
 0x00837860 function Ch_SeqGetFastMotion       # fh v3:exact 0x008378e0
 0x00837900 function SG_SeqStep                # motion script opcodes 0-6 ("unknown motion sequence code %x"); 1 = play clip (clip, loops, start mark, end mark)
 0x00837ac0 function Ch_SetSequence            # (actor, character << 16 | number): finds the motion in the character's sequences; was SG_SetMotion

@@ -1452,6 +1452,10 @@ ported! {
     Sg_ChrSortByZ @ 0x0083_eb30 => extern "C" fn sg_chr_sort_by_z(n: i32) {
         state::bridge::chr_sort_by_z(&mut mem(), n);
     }
+    /// `SG_SeqFrame(chr)`.
+    SG_SeqFrame @ 0x0083_77c0 => extern "C" fn sg_seq_frame(chr: u32) -> u32 {
+        seq::bridge::seq_frame(&mut mem(), chr)
+    }
     /// `Sg_ControlPlayer()`.
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);

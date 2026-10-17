@@ -5130,3 +5130,75 @@ fn sort_by_z_snapshot() {
     let mut rng = Xorshift(0x5eed_0e32);
     sort_by_z_cases(&mut a, &mut b, &mut rng, 1500, true);
 }
+
+// Main round 13: SG_SeqFrame over short motion scripts.
+fn seq_frame_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 91, sq::YI_ASSERT, 3, 0x5a);
+    recorder(a, b, 92, sq::CH_SET_MOTION_SEQ, 5, 0);
+    recorder(a, b, 93, sq::DBG_PRINTF, 2, 0x6001);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        let chr = block(a, b, rng, 0x800);
+        // ops until one that stops: 1 (9 bytes), 2 (1), 3 (3), 6 (3) step;
+        // 0, 5 and unknown codes stop
+        let script = alloc(a, b, 0x80);
+        let mut p = 0;
+        while p < 0x70 {
+            let op = [1u8, 2, 3, 6, 1, 2, 3, 6, 0, 5, 7, 0xff][rng.below(12) as usize];
+            put(a, b, script + p, op);
+            for k in 1..9 {
+                let v = if k % 2 == 1 { rng.below(3) } else { 0 };
+                put(a, b, script + p + k, u8::try_from(v).unwrap());
+            }
+            p += match op {
+                1 => 9,
+                2 => 1,
+                3 | 6 => 3,
+                _ => break,
+            };
+        }
+        if p >= 0x70 {
+            put(a, b, script + p, 0u8);
+        }
+        put(a, b, chr + 0x714, script);
+        let clips = block(a, b, rng, 0x20);
+        let entries = block(a, b, rng, 16 * 4);
+        let marks = block(a, b, rng, 2 * 4);
+        for k in 0..4 {
+            put(a, b, entries + 16 * k + 8, marks);
+        }
+        put(a, b, clips + 0x10, entries);
+        put(a, b, chr + 0x710, clips);
+        put(a, b, chr + 0x728, u16::try_from(rng.below(2)).unwrap());
+        put(a, b, chr + 0x72a, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, chr + 0x737, u8::try_from(rng.below(5)).unwrap());
+        // the loop: frame, end, length, loops
+        put(a, b, chr + 0x740, rng.int());
+        put(a, b, chr + 0x71c, rng.int());
+        put(a, b, chr + 0x720, rng.below(0x400));
+        put(a, b, chr + 0x724, rng.int());
+        twin("SG_SeqFrame", a, b, 0x0083_77c0, &[chr], |m| {
+            sq::seq_frame(&mut H(m), chr)
+        });
+    }
+}
+
+#[test]
+fn seq_frame_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e41);
+    seq_frame_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn seq_frame_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0e42);
+    seq_frame_cases(&mut a, &mut b, &mut rng, 1500);
+}

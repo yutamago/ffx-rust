@@ -781,6 +781,48 @@ pub mod bridge {
     /// "unknown motion sequence code %x\n".
     pub const UNKNOWN_CODE_TEXT: u32 = 0x00b5_9aa4;
 
+    /// "SG:SeqFrame" and "seq err" (`.rdata`).
+    pub const SEQ_FRAME_TEXT: u32 = 0x00b5_9ad0;
+    pub const SEQ_ERR_TEXT: u32 = 0x00b5_9ac8;
+
+    /// `SG_SeqFrame(chr)` (`0x008377c0`): [`seq_step`] until it waits (1),
+    /// ends (2), holds (3) or fails (-1, `yiAssert(0, "SG:SeqFrame", "seq
+    /// err")`). Waiting and ending advance the loop (`Ch_MotionLoopFrame`);
+    /// an end with `+0x728` at 0 clears `+0x736`; holding sets `+0x734`
+    /// and clears `+0x736`. Returns the `eax` the original leaves: the
+    /// loop step's result, 3 for a hold, the assertion's for a failure.
+    pub fn seq_frame(h: &mut impl ffx_bridge::Host, chr: u32) -> u32 {
+        let r = loop {
+            let r = seq_step(h, chr);
+            if matches!(r.cast_signed(), 1..=3 | -1) {
+                break r;
+            }
+        };
+        match r.cast_signed() {
+            -1 => {
+                let (at, s1, s2) = (
+                    h.rebase(YI_ASSERT),
+                    h.rebase(SEQ_FRAME_TEXT),
+                    h.rebase(SEQ_ERR_TEXT),
+                );
+                h.call(at, &[0, s1, s2])
+            }
+            1 => ffx_chara::motion::bridge::ch_motion_loop_frame(h, chr),
+            2 => {
+                let v = ffx_chara::motion::bridge::ch_motion_loop_frame(h, chr);
+                if h.read::<u16>(chr.wrapping_add(0x728)) == 0 {
+                    h.write(chr.wrapping_add(0x736), 0u8);
+                }
+                v
+            }
+            _ => {
+                h.write(chr.wrapping_add(0x734), 1u8);
+                h.write(chr.wrapping_add(0x736), 0u8);
+                r
+            }
+        }
+    }
+
     /// `SG_SeqStep(chr)` (`0x00837900`): one opcode of the character's
     /// motion script (`+0x714`; `u16` operands read as
     /// `ReadU16Unaligned`, sign-extended bytes). 0 ends it (2), 5 holds it
