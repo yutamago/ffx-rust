@@ -171,6 +171,32 @@ pub mod bridge {
         h.call(at, &[])
     }
 
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+
+    /// `Sg_PLightAllocate(n)` (`0x00831950`): the old lights disposed
+    /// ([`plight_dispose`]), a table of `n` 44-byte lights allocated
+    /// (`user_malloc`), the count `n`; each light off with `+0xc` and
+    /// `+0x1c` 1.0 (the rest as allocated). Returns the table.
+    pub fn plight_allocate(h: &mut impl Host, n: u32) -> u32 {
+        plight_dispose(h);
+        let at = h.rebase(USER_MALLOC);
+        let t = h.call(at, &[n.wrapping_mul(0x2c)]);
+        PLIGHT_TABLE.set(h, t);
+        PLIGHT_COUNT.set(h, n);
+        let mut t = t;
+        let mut e = 0u32;
+        for _ in 0..n.cast_signed().max(0) {
+            h.write(t.wrapping_add(e).wrapping_add(0x28), 0u8);
+            t = PLIGHT_TABLE.get(h);
+            h.write(t.wrapping_add(e).wrapping_add(0xc), 1.0f32);
+            t = PLIGHT_TABLE.get(h);
+            h.write(t.wrapping_add(e).wrapping_add(0x1c), 1.0f32);
+            t = PLIGHT_TABLE.get(h);
+            e = e.wrapping_add(0x2c);
+        }
+        t
+    }
+
     /// `Sg_AccRequestCurrent()` (`0x0082bdf0`, native `0x4019`; its
     /// argument unread): the post-process cross-fade capture turned on
     /// (`0x00639150`), then the request flag `0x012ffae4` that

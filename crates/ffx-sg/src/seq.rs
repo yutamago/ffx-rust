@@ -218,4 +218,65 @@ pub mod bridge {
             }
         }
     }
+
+    /// `user_free_thunk` and `Cache_Unuse`, called as the game's (with
+    /// `Ch_MemMoveSetTrigger`).
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const CACHE_UNUSE: u32 = 0x0084_0d70;
+    /// `Ch_MemMoveSetTrigger`.
+    pub const MEM_MOVE_SET_TRIGGER: u32 = 0x0082_7250;
+    /// `g_ChrCount`, `g_ChrArray` (`0x880` bytes each).
+    pub const CHR_COUNT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x023c_44e0);
+    pub const CHR_ARRAY: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x023c_44e4);
+
+    /// `SG_DisposeMotionGroup(a, b, key)` (`0x00836e20`): the loaded group
+    /// (none: returns 0) loses its sequences (`+4` of them, 20 bytes each
+    /// at `+0xc`) and its entry. A character group (`a` 0) or the system
+    /// group (`a` 2) goes back to the cache (`Cache_Unuse(2, b << 16 |
+    /// key)`, `0x903e7` for the system one); any other is freed (`user_free`)
+    /// and the memory move triggered. Every active character still on it
+    /// gets no motion (`Ch_MotionSetNull`). Returns the end of the
+    /// character array (`eax` after the loop).
+    pub fn dispose_motion_group(h: &mut impl ffx_bridge::Host, a: i32, b: i32, key: u32) -> u32 {
+        let group = find_motion_group(h, a, b, key);
+        if group == 0 {
+            return 0;
+        }
+        let mut k = 0u32;
+        while k.cast_signed() < h.read::<i32>(group.wrapping_add(4)) {
+            let seqs: u32 = h.read(group.wrapping_add(0xc));
+            remove_sequence(h, seqs.wrapping_add(20 * k));
+            k += 1;
+        }
+        remove_motion_group(h, group);
+        let cached = match a {
+            0 => Some((b.cast_unsigned() << 16) | key),
+            2 => Some(0x0009_03e7),
+            _ => None,
+        };
+        if let Some(id) = cached {
+            let at = h.rebase(CACHE_UNUSE);
+            h.call(at, &[2, id]);
+        } else {
+            let at = h.rebase(USER_FREE);
+            h.call(at, &[group]);
+            let at = h.rebase(MEM_MOVE_SET_TRIGGER);
+            h.call(at, &[]);
+        }
+        let end = |h: &mut _| {
+            let n = CHR_COUNT.get(h);
+            CHR_ARRAY.get(h).wrapping_add(n.wrapping_mul(0x880))
+        };
+        let mut p = CHR_ARRAY.get(h);
+        let mut stop = end(h);
+        while p != stop {
+            if h.read::<u8>(p.wrapping_add(2)) != 0 && h.read::<u32>(p.wrapping_add(0x7e8)) == group
+            {
+                ffx_chara::motion::bridge::ch_motion_set_null(h, p);
+            }
+            p = p.wrapping_add(0x880);
+            stop = end(h);
+        }
+        stop
+    }
 }
