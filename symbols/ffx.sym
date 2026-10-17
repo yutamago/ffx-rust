@@ -3520,6 +3520,7 @@
 0x007287b0 function JobSchedule_pppPart_fillBuffer_drawShp_007287b0 # fh v3:exact 0x007288a0
 0x007289d0 function pppNull                   # a lone ret: the step, set-up and draw of 69 program table entries (the pppop_* records and others)
 0x00728a60 function vfx_vec3_scale3           # (dst, v, sx, sy, sz) dst.xyz = v.xyz * (sx, sy, sz)
+0x00728dd0 function pppViewOutCode           # ours: (x f32, y f32) -> outcode: 1 x < -8/9, 2 x >= 8/9 (the f32 8/9 as a double, 0x00b514e0/e8), 4 y < -0.5, 8 y >= 0.5; NaN none; pppCheckViewCylinder calls it for four corners
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
@@ -3840,28 +3841,36 @@
 0x0074bc50 function Vec4AddScalars_0074bc50    # ours: (dst, src, x, y, z, w): dst = src + (x, y, z, w), each f32 sum through the x87
 0x0074bde0 function pppVu0MaddW_copy_0074bde0    # the same code as pppVu0MaddW (0x0072c650; call targets equal), a copy the compiler kept; own name; ported with mat::bridge::ppp_vu0_madd, caller 0x007ed0c0
 0x0074be90 function Vec4SubScalars_0074be90    # ours: (dst, src, x, y, z, w): dst = src - (x, y, z, w), then restoreVf00Register
+0x0074c280 function pppFtoiRgba_0074c280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailDraw)
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
 0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
+0x0074d280 function pppFtoiRgba_0074d280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailXDraw)
 0x0074d490 function pppKeShpTailX             # ppp program table record "pppKeShpTailX" step: the same code as pppKeShpTail
 0x0074d540 function pppKeShpTailXCon          # ppp program table record "pppKeShpTailX" (0x00c3b228) +0x1c set-up; "pppKeShpTailX" (0x00c3c8d0) +0x1c set-up
 0x0074d570 function pppKeShpTailXDraw         # ppp program table record "pppKeShpTailX" draw; not a function start in the Ghidra dump
+0x0074e280 function pppFtoiRgba_0074e280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2Draw)
 0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
 0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump
+0x0074f2c0 function pppFtoiRgba_0074f2c0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2XDraw)
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
 0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
 0x00750020 function pppVec4Copy               # (dst, src) four floats through the FPU (fld/fstp)
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
+0x00750130 function pppFtoiRgba_00750130       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3Draw)
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
 0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
 0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
 0x00750620 function pppKeShpTail3Draw         # ppp program table record "pppKeShpTail3" draw; not a function start in the Ghidra dump
+0x00751680 function pppKeShpTail3VfCopy_00751680 # ours: (dst) -> last word: the emulated VU0 registers 0x00c8f7b0..0x00c8f7ef (16 words) to dst + 0xc0; caller pppKeShpTail3Draw
+0x00751930 function pppFtoiRgba_00751930       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3XDraw)
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
 0x00751eb0 function pppKeShpTail3XCon         # ppp program table record "pppKeShpTail3X" +0x1c set-up: the same code as pppKeShpTail3Con
 0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
 0x00751fc0 function pppKeShpTail3XDraw        # ppp program table record "pppKeShpTail3X" draw; not a function start in the Ghidra dump
+0x007535a0 function pppFtoiRgba_007535a0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailPhtDraw)
 0x00753f10 function pppKeShpTailPht           # ppp program table record "pppKeShpTailPht" step: as pppKeShpTail3X (velocity, then position) with 27 slots, index +0x1f4, f32 motion at +0x1e0/+0x1e4/+0x1e8, key's halves at +0x30 and floats at +0x1c
 0x00754180 function pppKeShpTailPhtCon        # ppp program table record "pppKeShpTailPht" +0x1c set-up: as pppKeShpTail3Con, index +0x294, CRT rand() at +0x292, float motion +0x280.. cleared
 0x00754260 function pppKeShpTailPhtCon2       # ppp program table record "pppKeShpTailPht" +0x20 set-up: clears the ring index, seed and motion (no rand)
@@ -4085,6 +4094,7 @@
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
 0x007610a0 function dumpFvector               # fh switch:bsim1.00 0x71002d1e50
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
+0x00761250 function pppDataLastPair_00761250 # ours: (data, a, b) -> b: the records from data + [data+4] (16-byte headers, kind i8 +1 until 0xff, i16 +2 entries of 20/28/32/40/24/32/40/48 bytes by kind 0..7): the +8/+0xc words of the last kind 2, 3, 6 or 7 record into a and b (0 for none); caller pppDataRcv
 0x007614a0 function pppDataRcv                # fh v3:exact 0x00761590
 0x00761c00 function pppDbgAlloc                  # layout: alphabetical run between pppDataRcv and pppGetPartMatrix (1 unnamed in the gap); Switch 0x71002d1eb0 pppDbgAlloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00761c40 function pppGetPartMatrix          # fh switch:bsim1.00 0x71002d4cc0
@@ -4093,6 +4103,7 @@
 0x00761e20 function pppPartDraw               # fh switch:cg4 0x71002d37e0
 0x00762240 function pppPartLoop               # fh v3:exact+call.cs 0x00762330 cdecl
 0x00762550 function pppSetPartMatrix          # fh switch:cg2 0x71008b5328
+0x007628c0 function pppDataSetTex_007628c0    # ours: (data, base, a, b) -> b: the records as pppDataLastPair_00761250 walks them; kinds 2, 3, 6, 7 get words 0 and 1 of 12-byte record u8 +4 + base of 0x00d4be38 at +8/+0xc, the last pair into a and b; caller pppDataRcv
 0x007629e0 function pppSetPmcom2Texture_007629e0 # (prog): uploads the pmcom texture with sceGsSetDefLoadImage / sceGsExecLoadImage after FlushCache; its own messages say "setPmcom2Texture depth error!!!" (and "... 2 !!!"); caller pppDataRcv; own name from the message
 0x00762f50 function KePmcomAlloc                 # (bytes) -> block: bytes + 15 rounded down to 8 from the pmcom arena 0x00e524f0..0x00f524f0 (next 0x00d524a4); past the end restarts at the base (spins forever when it still does not fit); 0x00760080 ("pmcom_data_init")
 0x00762fa0 function KePmcomQueuePush             # (kind, p): (kind, set_ptr32(p)) into the 256-entry ring at 0x010d4d28, index 0x010d552c back to 0 past 255; 0x0075ff00
@@ -6317,6 +6328,7 @@
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007fead0 function op_et_chr_slot_007fead0      # ours: (chr) -> the low byte when any of the top 4 bits is set, else the first g_EtChr record whose u16 +0xe is the low byte, else the first with a handle, else -1; caller 0x007feba0
+0x007feb20 function op_et_chr_count_same_no_007feb20 # ours: (h) -> how many of the 240 g_EtChr records share the character number (+4) of handle h's record (itself included), 0 for a null or unknown handle; caller op_et_monster_free
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
 0x007fed60 function op_et_eff_index           # (id) -> the first g_EtEff record with this ID, or -1
 0x007fedf0 function opus_chr_handles_clear    # () the 240 g_EtChrHandles zeroed
@@ -11899,10 +11911,13 @@
 0x00a33c40 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGame_PGameSettings__Get_00a33c40 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PGame::PGameSettings *>::Get" (its own __FUNCTION__ in an error print)
 0x00a38480 function StoreComputed_00a38480       # auto-port shape (several stores: computed, into field, stdcall): t0 = u32[(a0 + 0xc)]; u32[a1] = t0; t1 = u32[(a0 + 0x10)]; u32[(a1 + 0x4)] = t1; t2 = u32[(a0 + 0x30)]; u32[(a1 + 0x8)] = (t2 & 0xfffffff); return (t2 & 0xfffffff); callers: no direct caller; name ours
 0x00a384b0 function SetFieldComputed30_00a384b0  # auto-port shape (store computed to field, stdcall): t0 = u32[(a0 + 0x30)]; u32[a1] = (t0 & 0xfffffff); return a1; callers: no direct caller; name ours
+0x00a38560 function op_texels_halve_v_00a38560 # ours: (dst, dst_step, src, src_step, n, size) -> src_step (size if nothing done): op_texels_halve_00a385f0 down a column (texel i from src + 2i src_step and the one below); caller 0x00a384d0
+0x00a385f0 function op_texels_halve_00a385f0  # ours: (dst, src, n, size) -> eax as left: n pairs of adjacent texels averaged rounding up (size 4: per byte of RGBA words, size 1: bytes); a mip level of one row; caller 0x00a384d0 (with 0x00a38670 for two rows)
 0x00a39900 function SetFields_00a39900           # auto-port shape (several stores: set field (constants, arguments, addresses), stdcall): u32[a0] = 0x8; u32[(a0 + 0x4)] = 0x1ffe; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x1; u32[(a0 + 0x14)] = 0x1; u32[(a0 + 0x8)] = 0x2000; u32[(a0 + 0x18)] = 0x0; return a0; callers: no direct caller; name ours
 0x00a39b00 function StoreComputed_00a39b00       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x20)]; t1 = u32[(a0 + 0x1c)]; t2 = u32[(a0 + 0x18)]; u32[(t0 + 0x1c)] = t1; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = (t2 + 0x10); t5 = u32[(t2 + 0x30)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = (t7 & 0xfffffff); return t6; callers: ; name ours
 0x00a39bc0 function op_node_pool_init_00a39bc0  # ours: (set, n, v) -> set: seven list heads at +0x10 + 0x38k (empty, +0x30 0x70000000) and n nodes at +0x1a8 + 0x38i chained into the first list (owner set); the lists op_node_requeue_00a39f00 moves between; callers 0x00a35780, 0x00a38180, 0x00a3bcd0
 0x00a39f00 function op_node_requeue_00a39f00    # ours: (n) -> eax the state word: a node in state 2 (top nibble of +0x30) unlinks (+0x1c prev, +0x20 next) and goes in at the front of [n+0x18]+0x48's list, state 1; callers 0x00a374e0, 0x00a38c40, 0x00a39200, 0x00a398a0, 0x00a3ac90
+0x00a39f60 function op_node_requeue_all_00a39f60 # ours: (set) -> set + 0x80 in eax: every node of the list headed at set + 0x80 (first at +0x1c) moved as op_node_requeue_00a39f00 moves one (to the front of [n+0x18]+0x48, state 1); caller 0x00a3b380
 0x00a3a010 function StoreComputed_00a3a010       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x18)]; t1 = u32[(a0 + 0x20)]; t2 = u32[(a0 + 0x1c)]; u32[(t1 + 0x1c)] = t2; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = ((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)); t5 = u32[(((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)) + 0x20)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = ((t7 & 0xfffffff) | (a1 << 0x1c)); return ((t7 & 0xfffffff) | (a1 << 0x1c)); callers:  and 3 more; name ours
 0x00a3b210 function opd_config_memory            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'memory'; Switch 0x7100864950 opd_config_memory (symbols from Fahrenheit's server export)
 0x00a3ba10 function op_node_slot_00a3ba10        # ours: (node) -> base + 16 ((node - base - 0x438) / 0x38 + 99), base = [0x01a858b4] (the render object's 0x38-byte nodes and their 16-byte slots); caller 0x00a39200
@@ -12142,6 +12157,7 @@
 0x00a6d670 function op_vertex_normal_point44_ffx_2 # callees: its named callees match the Switch 0x71003df590 op_vertex_normal_point44_ffx_2's (similarity 0.78: Ch_DrawCalcShade, Ch_GetChrRenderInstance, MagicFile_GetMagicId, graphicPS2LightingSetupEffect, op_ffxlight_to_omdlight_0279); symbols from Fahrenheit's server export
 0x00a6d890 function op_0437_vertex_normal_point44_ffx # callees: its named callees match the Switch 0x7100871320 op_0437_vertex_normal_point44_ffx's (similarity 1.00: FFXVu0ApplyMatrix, op_ffxlight_to_omdlight, op_matrix_light4_vector, user_aligned_malloc); symbols from Fahrenheit's server export
 0x00a6dbe0 function opp_0437_cmd_a6dbe0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x6000 sets up the part's buffers and calls opus_0437_dot_draw, opus_0437_draw (per bone, bone set 0x0080e160/0x0080e900), 0x00a6ed40 and op_m_copy; ported in crates/ffx-vfx slots
+0x00a6e260 function opus_0437_fade_step_00a6e260 # ours: (b) -> eax as left: the u16 b[0] 0x60-byte entries from b+0x3c in use (i16 slot +0 >= 0) count u8 +2 up; below 0x20 u16 +0x52 = (0x20 - n) * 0x80, else slot [b+0xc][slot] = 0xfffe and the entry freed; caller opp_0437_cmd_a6dbe0
 0x00a6e2e0 function opus_0437_dot_draw        # fh switch:cg2 0x7100870250
 0x00a6e5d0 function opus_0437_dot_set            # layout+callees: sorts between opus_0437_dot_draw and opus_0437_draw, and its named callees match the Switch 0x71008701d0 opus_0437_dot_set's (similarity 1.00: op_xyz_scale); symbols from Fahrenheit's server export
 0x00a6e650 function opus_0437_draw            # fh switch:cg2 0x7100870ea0
@@ -13856,6 +13872,7 @@
 0x00b41280 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PFramework_PApplicationViewport_unsigned_int__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PFramework::PApplicationViewport,unsigned_int>::vftable
 0x00b41298 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PFramework_PInputMapper_unsigned_int__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PFramework::PInputMapper,unsigned_int>::vftable
 0x00b41358 label BacktraceOutputWin32_vftable # fh v4:imported BacktraceOutputWin32::vftable
+0x00b41b50 label    g_StrNoTexture            # "NoTexture": the name opus_0582_dot_draw gives the data buffers it creates (graphicVFXCreateDataBuffer)
 0x00b41d9c label    g_AlphaScaleExtended      # .rdata f32 512.0: useExtendedAlpha(1) copies it to g_AlphaScale
 0x00b43e04 label Phyre_PClassDescriptorForType_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorForType<ClassDynamicMesh>::vftable
 0x00b43e4c label Phyre_PClassDescriptorAbstract_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<ClassDynamicMesh>::vftable
@@ -14571,6 +14588,7 @@
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
 0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
 0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
+0x00d4be38 label    g_pppPmcomTexRecs         # 12-byte texture records pppSetPmcom2Texture_007629e0 fills (count at 0x00d4be34; u16s at +4, +6, +8); pppDataSetTex_007628c0 copies words 0 and 1 into the data records
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)
 0x010d4d28 label    g_KePmcomQueue               # 256 entries of (kind, pointer) (KePmcomQueuePush)

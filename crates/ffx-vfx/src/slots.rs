@@ -1796,6 +1796,370 @@ pub mod bridge {
         }
     }
 
+    /// The `opus_0582_dot_draw` point arrays: instance 0 has two segments
+    /// of 9000 points and 18000 indices (line pairs), instance 0x1000 one
+    /// of 2500 of each (points).
+    const DOT_LINE_PTS: u32 = 9000;
+    const DOT_LINE_IDX: u32 = 18000;
+    const DOT_PTS: u32 = 0x9c4;
+
+    /// `opus_0582_dot_draw(b, rec, m, hold)` (`0x00a72b80`), the
+    /// `opus_0582` dots: `b` holds a count and 32-byte entries from `+0x10`
+    /// (`f32` radius x, height, radius z, scale; `u16 +0x10` angle, `i16
+    /// +0x12` its step, `i16 +0x14` strand spread, `u16 +0x16` life,
+    /// colour bytes `+0x18..+0x1b`, `i8 +0x1c` fade-in).
+    ///
+    /// When any entry's spread / 16 is not 0 the line instance `(0, b)`
+    /// is used (made when missing: `graphicVFXCreate` with
+    /// `calculateVFXSP_AlphaFunction(rec +0xc2)`, `graphicVFXCreateDataBuffer`
+    /// of 2 segments named `"NoTexture"`, render data `+0xb8` = 1,
+    /// `graphicVFXSetup` or `graphicVFXDestroy`, `op_pair_index`); the
+    /// point instance `(0x1000, b)` always (one segment, `+0xb8` = 0).
+    /// The scratch `op_spr_alloc(0x1200)` keeps the alpha and steps at
+    /// `+0x1000..+0x1014` and two copies of the emulated r0 at `+0x1020`;
+    /// the matrix `m` goes to the VU0 registers `0x00c8f890..`. Segments
+    /// come from `graphicDynGeoMemManagerGetBufferForSegment`; any failure
+    /// returns early (the scratch is not freed then).
+    ///
+    /// Each entry: a fade-in `c` gives alpha `(8 - c) * 16` and counts
+    /// down, else a life `l` gives `l * 8` (0x80 from 16) and counts down,
+    /// else the entry is skipped; nothing counts while `hold`, and the
+    /// angle steps with the counters. With `n` = spread / 16 (32 from
+    /// 64) 0 the entry is one point of the point instance (index in
+    /// order); else, alternating between the two line segments, `n`
+    /// points with the angle stepping by spread / `n` and the alpha by
+    /// -128 / `n` (not below 0), joined by line pairs. A point is
+    /// `(sin a * x * s, y, cos a * z * s)` (`g_pppSinTable`, cosine a
+    /// quarter turn on), its colour the bytes / 256 and the alpha / 256.
+    /// The segments' point and index counts are set and their tails
+    /// cleared (`memset`); each instance's render data gets
+    /// `FFXVu0MulMatrix(rd, g_pppFillMatrix, m)`, a zero translation,
+    /// `+0x80` = 0, bounds -100000..100000, `graphicVFXSetVisible` and
+    /// `graphicVFXUpdate`; then `op_spr_free(0x1200)`. All callees through
+    /// `call`.
+    ///
+    /// The locals the callees take by address lie below `frame` (the
+    /// original's frame pointer, down to `frame - 0x39c`).
+    #[allow(clippy::too_many_lines)]
+    pub fn opus_0582_dot_draw<M: Mem>(
+        mem: &mut M,
+        b: u32,
+        rec: u32,
+        m: u32,
+        hold: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use crate::x87::{MUL, Reg};
+        let n_parts = |mem: &M| mem.read::<u32>(b);
+        let lines = (0..n_parts(mem)).any(|i| {
+            let s = i32::from(mem.read::<i16>(b.wrapping_add(0x24 + 0x20 * i)));
+            s / 16 != 0
+        });
+        let spr = go(mem, 0x007e_6a00, &[0x1200], call);
+        for k in 0..16 {
+            let v: u32 = mem.read(m.wrapping_add(4 * k));
+            mem.write(addr(mem, 0x00c8_f890).wrapping_add(4 * k), v);
+        }
+        let local = |off: u32| frame.wrapping_sub(off);
+        // "NoTexture" (0x00b41b50) into a name, copied 0x100 on for `copy`
+        let name = |mem: &mut M, at: u32, copy: bool| {
+            let s = addr(mem, 0x00b4_1b50);
+            let (a, c): (u64, u16) = (mem.read(s), mem.read(s.wrapping_add(8)));
+            mem.write(at, a);
+            mem.write(at.wrapping_add(8), c);
+            let mut i = 0;
+            if !copy {
+                return;
+            }
+            loop {
+                let ch: u8 = mem.read(at.wrapping_add(i));
+                mem.write(at.wrapping_add(0x100 + i), ch);
+                if ch == 0 {
+                    break;
+                }
+                i += 1;
+            }
+        };
+        // make the instance (lo, b) when it has no render data
+        let make = |mem: &mut M,
+                    call: &mut _,
+                    lo: u32,
+                    segs: u32,
+                    pts: u32,
+                    idx: u32,
+                    nm: u32,
+                    zero: u32,
+                    b8: u32|
+         -> u32 {
+            let a = u32::from(mem.read::<u8>(rec.wrapping_add(0xc2)));
+            let alpha = go(mem, 0x0071_2c30, &[a], call);
+            go(mem, 0x0064_4de0, &[lo, b, alpha], call);
+            go(mem, 0x0064_5040, &[lo, b, segs, pts, idx, nm, zero], call);
+            let rd = go(mem, 0x0064_53d0, &[lo, b], call);
+            if rd != 0 {
+                mem.write(rd.wrapping_add(0xb8), b8);
+            }
+            if go(mem, 0x0064_5780, &[lo, b], call) == 0 {
+                go(mem, 0x0064_5280, &[lo, b], call);
+            }
+            let rd = go(mem, 0x0064_53d0, &[lo, b], call);
+            if rd != 0 {
+                go(mem, 0x00a7_0ce0, &[lo, b], call);
+            }
+            rd
+        };
+        let mut rd1 = 0;
+        if lines {
+            rd1 = go(mem, 0x0064_53d0, &[0, b], call);
+            if rd1 == 0 {
+                name(mem, local(0x304), true);
+                for (off, v) in [
+                    (0x394, DOT_LINE_PTS),
+                    (0x390, DOT_LINE_PTS),
+                    (0x380, DOT_LINE_IDX),
+                    (0x37c, DOT_LINE_IDX),
+                    (0x39c, 0),
+                    (0x398, 0),
+                ] {
+                    mem.write(local(off), v);
+                }
+                let (p, i, n, z) = (local(0x394), local(0x380), local(0x304), local(0x39c));
+                rd1 = make(mem, call, 0, 2, p, i, n, z, 1);
+                if rd1 == 0 {
+                    return;
+                }
+            }
+        }
+        let mut rd2 = go(mem, 0x0064_53d0, &[0x1000, b], call);
+        if rd2 == 0 {
+            name(mem, local(0x104), false);
+            for off in [0x384, 0x388] {
+                mem.write(local(off), DOT_PTS);
+            }
+            mem.write(local(0x38c), 0u32);
+            let (p, i, n, z) = (local(0x384), local(0x388), local(0x104), local(0x38c));
+            rd2 = make(mem, call, 0x1000, 1, p, i, n, z, 0);
+            if rd2 == 0 {
+                return;
+            }
+        }
+        let r0: [u32; 4] = mem.read(addr(mem, 0x00c8_f508));
+        mem.write(spr.wrapping_add(0x1020), r0);
+        let r0: [u32; 4] = mem.read(addr(mem, 0x00c8_f508));
+        mem.write(spr.wrapping_add(0x1030), r0);
+        mem.write(spr.wrapping_add(0x1040), spr.wrapping_add(0x10));
+        mem.write(spr.wrapping_add(0x1044), spr.wrapping_add(0x10));
+        let geo = |mem: &M, rd: u32| mem.read::<u32>(rd.wrapping_add(0x94));
+        // per line segment: point, colour and index cursors, point count
+        let mut seg_pts = [0u32; 2];
+        let mut seg_col = [0u32; 2];
+        let mut seg_idx = [0u32; 2];
+        let mut seg_n = [0u32; 2];
+        if lines {
+            for s in 0..2 {
+                if go(
+                    mem,
+                    0x0063_fdb0,
+                    &[rd1, s, DOT_LINE_PTS, DOT_LINE_IDX],
+                    call,
+                ) == 0
+                {
+                    return;
+                }
+            }
+            let g = geo(mem, rd1);
+            for (s, at) in [g, g.wrapping_add(0x6c)].into_iter().enumerate() {
+                seg_pts[s] = mem.read(at.wrapping_add(0xc));
+                seg_col[s] = mem.read(at.wrapping_add(0x14));
+                seg_idx[s] = mem.read(at.wrapping_add(0x1c));
+            }
+        }
+        if go(mem, 0x0063_fdb0, &[rd2, 0, DOT_PTS, DOT_PTS], call) == 0 {
+            return;
+        }
+        let g = geo(mem, rd2);
+        let mut pts: u32 = mem.read(g.wrapping_add(0xc));
+        let mut col: u32 = mem.read(g.wrapping_add(0x14));
+        let mut idx: u32 = mem.read(g.wrapping_add(0x1c));
+        let mut n_dots = 0u32;
+        let inv = f64_at(mem, 0x00b5_0198);
+        let sin = |mem: &M, a: u32| -> f32 {
+            mem.read(addr(mem, 0x00c4_4bf0).wrapping_add(4 * (a & 0xfff)))
+        };
+        let st = |k: u32| spr.wrapping_add(k);
+        // one point and its colour
+        let point = |mem: &mut M, e: u32, a: u32, p: u32, c: u32| {
+            let rd = |mem: &M, o: u32| mem.read::<f32>(e.wrapping_add(o));
+            let x = Reg::load_f32(sin(mem, a))
+                .mem(MUL, rd(mem, 0))
+                .mem(MUL, rd(mem, 0xc))
+                .store();
+            mem.write(p, x);
+            mem.write(p.wrapping_add(4), crate::x87::load_f32(rd(mem, 4)));
+            let z = Reg::load_f32(sin(mem, a.wrapping_add(0x400)))
+                .mem(MUL, rd(mem, 8))
+                .mem(MUL, rd(mem, 0xc))
+                .store();
+            mem.write(p.wrapping_add(8), z);
+            for k in 0..3 {
+                let v = f64::from(mem.read::<u8>(e.wrapping_add(0x18 + k)));
+                mem.write(
+                    c.wrapping_add(4 * k),
+                    Reg::Num(v).constant(MUL, inv).store(),
+                );
+            }
+            #[allow(clippy::cast_precision_loss)] // fild; fstp m32
+            let alpha = mem.read::<i32>(st(0x1000)) as f32;
+            mem.write(
+                c.wrapping_add(0xc),
+                Reg::load_f32(alpha).constant(MUL, inv).store(),
+            );
+        };
+        let mut s = 0usize;
+        for i in 0..n_parts(mem) {
+            let e = b.wrapping_add(0x10 + 0x20 * i);
+            let fade: i8 = mem.read(e.wrapping_add(0x1c));
+            let step = if fade != 0 {
+                let a = (8 - i32::from(fade)) << 4;
+                mem.write(st(0x1000), a);
+                if hold == 0 {
+                    mem.write(e.wrapping_add(0x1c), fade.wrapping_sub(1));
+                }
+                hold == 0
+            } else {
+                let life: i16 = mem.read(e.wrapping_add(0x16));
+                if life == 0 {
+                    continue;
+                }
+                let a = if life < 0x10 {
+                    i32::from(life) << 3
+                } else {
+                    0x80
+                };
+                mem.write(st(0x1000), a);
+                if hold == 0 {
+                    mem.write(e.wrapping_add(0x16), life.wrapping_sub(1));
+                }
+                hold == 0
+            };
+            let ang: u16 = mem.read(e.wrapping_add(0x10));
+            let ang = if step {
+                ang.wrapping_add(mem.read(e.wrapping_add(0x12)))
+            } else {
+                ang
+            };
+            mem.write(e.wrapping_add(0x10), ang & 0xfff);
+            let spread = i32::from(mem.read::<i16>(e.wrapping_add(0x14)));
+            let n = spread / 16;
+            if n == 0 {
+                mem.write(st(0x1014), 0u32);
+            } else {
+                let n = if n >= 0x40 { 0x20 } else { n };
+                mem.write(st(0x1014), n);
+                mem.write(st(0x1010), spread / n);
+                mem.write(st(0x1004), -0x80 / n);
+            }
+            let mut a = u32::from(ang & 0xfff);
+            let total: i32 = mem.read(st(0x1014));
+            if total == 0 {
+                point(mem, e, a, pts, col);
+                pts = pts.wrapping_add(0xc);
+                col = col.wrapping_add(0x10);
+                #[allow(clippy::cast_possible_truncation)] // a u16 index
+                mem.write(idx, n_dots as u16);
+                idx = idx.wrapping_add(2);
+                n_dots = n_dots.wrapping_add(1);
+                continue;
+            }
+            if !lines {
+                continue;
+            }
+            let mut left = total;
+            while left > 0 {
+                point(mem, e, a, seg_pts[s], seg_col[s]);
+                seg_pts[s] = seg_pts[s].wrapping_add(0xc);
+                seg_col[s] = seg_col[s].wrapping_add(0x10);
+                if left < mem.read::<i32>(st(0x1014)) {
+                    #[allow(clippy::cast_possible_truncation)] // u16 indices
+                    let k = seg_n[s] as u16;
+                    mem.write(seg_idx[s], k.wrapping_sub(1));
+                    mem.write(seg_idx[s].wrapping_add(2), k);
+                    seg_idx[s] = seg_idx[s].wrapping_add(4);
+                }
+                a = a.wrapping_add(mem.read::<u32>(st(0x1010)));
+                let al = mem
+                    .read::<i32>(st(0x1000))
+                    .wrapping_add(mem.read::<i32>(st(0x1004)));
+                mem.write(st(0x1000), al.max(0));
+                left -= 1;
+                seg_n[s] = seg_n[s].wrapping_add(1);
+            }
+            s ^= 1;
+        }
+        let tail =
+            |mem: &mut M, call: &mut _, rd: u32, at: u32, p: u32, ix: u32, np: u32, ni: u32| {
+                let g = geo(mem, rd).wrapping_add(at);
+                let base: u32 = mem.read(g.wrapping_add(0xc));
+                let n = (p.wrapping_sub(base).cast_signed() >> 2) / 3;
+                mem.write(g.wrapping_add(4), n);
+                let g = geo(mem, rd).wrapping_add(at);
+                let base: u32 = mem.read(g.wrapping_add(0x1c));
+                mem.write(g.wrapping_add(8), ix.wrapping_sub(base).cast_signed() >> 1);
+                let n: u32 = mem.read(geo(mem, rd).wrapping_add(at + 4));
+                go(
+                    mem,
+                    0x0094_964c,
+                    &[p, 0, np.wrapping_sub(n).wrapping_mul(0xc)],
+                    call,
+                );
+                let n: u32 = mem.read(geo(mem, rd).wrapping_add(at + 8));
+                go(
+                    mem,
+                    0x0094_964c,
+                    &[ix, 0, ni.wrapping_sub(n).wrapping_mul(2)],
+                    call,
+                );
+            };
+        if lines {
+            for (k, at) in [0, 0x6c].into_iter().enumerate() {
+                tail(
+                    mem,
+                    call,
+                    rd1,
+                    at,
+                    seg_pts[k],
+                    seg_idx[k],
+                    DOT_LINE_PTS,
+                    DOT_LINE_IDX,
+                );
+            }
+        }
+        tail(mem, call, rd2, 0, pts, idx, DOT_PTS, DOT_PTS);
+        let show = |mem: &mut M, call: &mut _, rd: u32, lo: u32| {
+            let fill = addr(mem, 0x0230_fca0);
+            go(mem, 0x006e_d5c0, &[rd, fill, m], call);
+            for at in [0x2c, 0x1c, 0xc] {
+                mem.write(rd.wrapping_add(at), 0.0f32);
+            }
+            mem.write(rd.wrapping_add(0x3c), 1.0f32);
+            mem.write(rd.wrapping_add(0x80), 0u32);
+            for at in [0x98, 0x9c, 0xa0] {
+                mem.write(rd.wrapping_add(at), -100_000.0f32);
+            }
+            for at in [0xa4, 0xa8, 0xac] {
+                mem.write(rd.wrapping_add(at), 100_000.0f32);
+            }
+            go(mem, 0x0064_5710, &[lo, b, 1], call);
+            go(mem, 0x0064_58a0, &[lo, b], call);
+        };
+        if lines {
+            show(mem, call, rd1, 0);
+        }
+        show(mem, call, rd2, 0x1000);
+        go(mem, 0x007e_6a60, &[0x1200], call);
+    }
+
     /// `obj[0..4]` = the emulated r0 (`0x00c8f508`), `obj +4` = `rec
     /// +0x34`, and `obj + 0x80` = the part matrix at `obj`.
     fn r0_matrix<M: Mem>(
