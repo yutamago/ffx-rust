@@ -1474,6 +1474,32 @@ pub mod bridge {
         r
     }
 
+    /// The current id table (`Sg_IdSetPtr`'s, 16-byte entries).
+    pub const ID_TABLE: Global<u32> = Global::new(0x0130_1a84);
+    /// `g_ChrIdMapTable`: the kinds `0x30..0x3f` stand for.
+    pub const CHR_ID_MAP_TABLE: u32 = 0x0130_19d8;
+
+    /// `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`): whether entry `i`'s kind
+    /// (low 7 bits of `+0xc`) applies to `chr`: 1 everyone, 2 anyone but
+    /// the player, 13 characters with bit 2 of `+0x198`, 14 the player;
+    /// kinds `0x30..0x3f` stand for the kind in `g_ChrIdMapTable` (a whole
+    /// word, followed again); anything else 0.
+    pub fn id_match_chr(mem: &impl Mem, chr: u32, i: u32) -> u32 {
+        let e = ID_TABLE.get(mem).wrapping_add(16 * i).wrapping_add(0xc);
+        let mut kind = mem.read::<u32>(e) & 0x7f;
+        let map = mem.rebase(CHR_ID_MAP_TABLE);
+        loop {
+            match kind {
+                1 => return 1,
+                2 => return u32::from(chr != get_player(mem)),
+                13 => return (mem.read::<u32>(chr.wrapping_add(0x198)) >> 2) & 1,
+                14 => return u32::from(chr == get_player(mem)),
+                0x30..=0x3f => kind = mem.read(map.wrapping_add(4 * kind)),
+                _ => return 0,
+            }
+        }
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
