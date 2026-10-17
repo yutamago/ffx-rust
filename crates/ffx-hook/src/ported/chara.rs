@@ -1895,4 +1895,12 @@ ported! {
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::sg_id_walk(&mut mem(), chr, p, i, scratch(), &mut c)
     }
+    /// `Ch_DataRead(id)`.
+    Ch_DataRead @ 0x0082_9ef0 => extern "C" fn ch_data_read(id: u32) -> u32 {
+        sy::ch_data_read(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RomReadEventMGRPcb(req)`.
+    Ch_RomReadEventMGRPcb @ 0x0082_a7d0 => extern "C" fn ch_rom_read_event_mgrp_cb(req: u32) -> u32 {
+        sy::ch_rom_read_event_mgrp_cb(&mut mem(), req, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

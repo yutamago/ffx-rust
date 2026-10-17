@@ -8595,3 +8595,128 @@ fn round14_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round14b_matches_the_original() {
+    for mut t in twins() {
+        round14b_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round14b_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0014_b14b);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let yet = fk.fake(t, 0x0083_ffe0, 1, 2);
+    let index = fk.fake(t, 0x0082_a640, 2, 1);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 3, 0x100);
+    let name = fk.fake(t, 0x0083_8100, 4, 1);
+    let section = fk.fake(t, 0x0083_8150, 5, 2);
+    // Sg_MemSetStr: the name (the caller's stack) copied out, then logged
+    let names = t.alloc(32);
+    let mut pre = vec![0x8b, 0x44, 0x24, 0x08];
+    for k in 0..8u8 {
+        pre.extend([0x8b, 0x48, 4 * k, 0x89, 0x0d]);
+        pre.extend((names + 4 * u32::from(k)).to_le_bytes());
+    }
+    let (set_code, set_str) = fk.fake_code_idxs(t, &pre, 6, &[0]);
+    let at = t.a.rebase(0x0083_c580);
+    let mut jmp = vec![0xe9];
+    jmp.extend(set_code.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    let entry = fk.fake(t, 0x0084_0560, 7, 3);
+    let not_yet = fk.fake(t, 0x0084_05f0, 8, 3);
+    let load = fk.fake(t, 0x0082_a1c0, 9, 4);
+    let add = fk.fake(t, 0x0083_7630, 10, 2);
+    let (size_code, size) = fk.fake_code(t, 11, 1);
+    let (file_code, file) = fk.fake_code(t, 12, 1);
+    let (read_code, read) = fk.fake_code(t, 13, 3);
+    t.put_u32(t.a.rebase(0x0231_0c54), size_code);
+    t.put_u32(t.a.rebase(0x0231_0c98), file_code);
+    t.put_u32(t.a.rebase(0x0231_0c40), read_code);
+    // Cache_Entry_RenderData: writes its two slot pointers and two words
+    let (slots, words) = (t.alloc(8), t.alloc(8));
+    let mut pre = vec![];
+    for (k, src) in [(3u8, slots), (4, slots + 4), (5, words), (6, words + 4)] {
+        // mov eax, [esp + 4k]; mov ecx, src (as a value); mov [eax], ecx
+        pre.extend([0x8b, 0x44, 0x24, 4 * k, 0x8b, 0x0d]);
+        pre.extend(src.to_le_bytes());
+        pre.extend([0x89, 0x08]);
+    }
+    let (render, _) = fk.fake_code_idxs(t, &pre, 14, &[0, 1]);
+    let at = t.a.rebase(0x0084_0680);
+    let mut jmp = vec![0xe9];
+    jmp.extend(render.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    let strs = t.alloc(32);
+    t.put(strs, b"c010\0\0\0\0chr\0");
+    for round in 0..24u32 {
+        fk.reset(t);
+        t.put_u32(yet, rng.next() % 4);
+        t.put_u32(
+            index,
+            if rng.next().is_multiple_of(5) {
+                u32::MAX
+            } else {
+                rng.next() % 64
+            },
+        );
+        t.put_u32(heap, 0x1200_0000 + 0x1000 * round);
+        t.put_u32(name, strs);
+        t.put_u32(section, strs + 8);
+        for r in [set_str, entry, not_yet, load, add, file, read] {
+            t.put_u32(r, rng.next());
+        }
+        t.put_u32(
+            size,
+            if rng.next().is_multiple_of(5) {
+                0
+            } else {
+                rng.next() % 0x10000
+            },
+        );
+        let (a, b) = (t.alloc(4), t.alloc(4));
+        t.put_u32(a, rng.next());
+        t.put_u32(b, rng.next());
+        t.put_u32(slots, a);
+        t.put_u32(slots + 4, b);
+        t.put_u32(words, rng.next());
+        t.put_u32(words + 4, rng.next());
+        let id = rng.next() % 0x10000;
+        let scratch = t.alloc(sy::DATA_READ_SCRATCH as usize);
+        let at = t.a.rebase(0x0082_9ef0);
+        let ra = t.a.call(at, Conv::Cdecl, &[id]).unwrap();
+        let rb = sy::ch_data_read(&mut t.b, id, scratch, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{}: Ch_DataRead {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, sy::DATA_READ_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        // the copied name: only up to its NUL (the rest is either stack)
+        for o in [&mut t.a, &mut t.b] {
+            let mut n = Oracle::read(o, names, 32).unwrap();
+            if let Some(end) = n.iter().position(|&c| c == 0) {
+                n[end..].fill(0);
+            }
+            o.write(names, &n).unwrap();
+        }
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_DataRead {round} memory",
+            t.name
+        );
+        let req = t.alloc(0x20);
+        t.put_u32(req + 0xc, rng.next());
+        t.put_u32(req + 0x10, rng.next());
+        t.check(
+            &format!("Ch_RomReadEventMGRPcb {round}"),
+            0x0082_a7d0,
+            &[req],
+            |m| {
+                Res::Int(sy::ch_rom_read_event_mgrp_cb(m, req, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+}
