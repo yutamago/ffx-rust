@@ -229,10 +229,12 @@
 0x0044f8c0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PEntity__Get_0044f8c0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PEntity *>::Get" (its own __FUNCTION__ in an error print)
 0x0044f9a0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix *>::Get" (its own __FUNCTION__ in an error print)
 0x00450350 function Phyre_PClassDescriptorConcrete_Phyre_PEntity__getValueFromScriptContext # fh switch:bsim0.90 0x71000b4480 Phyre::PClassDescriptorConcrete<Phyre::PEntity>::getValueFromScriptContext
+0x00451190 function PMatrix4_toWorldMatrix3x4 # structure: thiscall(dst, m): rows 1-3 of a 4x4 to a 3x4, row 0's x/y/z as the last column; graphicCameraSetWorldMatrix and PhyreScene_setAbmapCamera build the camera world matrix with it; name ours
 0x004514a0 function Phyre_PWorldMatrix_Bind   # fh v3:exact 0x00451580 Phyre::PWorldMatrix::Bind
 0x004517d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix__Get_004517d0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix &>::Get" (its own __FUNCTION__ in an error print)
 0x004518a0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PMatrix4x3_const__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PMatrix4x3 const &>::Get" (its own __FUNCTION__ in an error print)
 0x00451970 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix_const__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix const &>::Get" (its own __FUNCTION__ in an error print)
+0x00451c30 function PMatrix4_lookAt           # structure: thiscall(m, eye, target, up): normalises up and target - eye (_CIsqrt), cross products into a view basis; reads 3 floats of each vector; PhyreScene_setAbmapCamera and Phyre_CharacterLighting_setLightDir; name ours
 0x00452300 function Phyre_PClassDescriptorForType_Phyre_PEntity__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b4500 Phyre::PClassDescriptorForType<Phyre::PEntity>::getPointerFromScriptContext
 0x004537d0 function Phyre_PCamera_Bind        # fh v3:exact 0x004538a0 Phyre::PCamera::Bind
 0x00454070 function Phyre_PCameraProjection_Bind # fh v3:exact 0x00454140 Phyre::PCameraProjection::Bind
@@ -2640,6 +2642,7 @@
 0x006e7720 function RemapButtonIcon_setButtonIconScale # fh v3:bsim1.00 0x006e7850 RemapButtonIcon::setButtonIconScale
 0x006e8750 function TipSystem_Get             # fh v3:bsim1.00 0x006e8890 TipSystem::Get
 0x006e8770 function TipSystem_PushTip         # fh v3:exact 0x006e88b0 TipSystem::PushTip
+0x006e8810 function TipSystem_PlayTip         # structure: thiscall(tips, id): with an Iggy movie (this[0]) enables the menu and calls its AS3 "OnPlay"(0, id), then replay; returns 1 (0 without a movie); graphicPushTip's callee; name ours
 0x006e8a1f function Catch_All_006e8b5f        # fh v3:cg2 0x6e8b5f Catch_All@006e8b5f
 0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90
 0x006e96c0 function InitIggyHelper               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Loc_Texture_Saveload_Attention_Before_Game'; Switch 0x710029c7b0 InitIggyHelper (symbols from Fahrenheit's server export)
@@ -12177,6 +12180,7 @@
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
+0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md)
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00ccb170 label    g_Virtuos_InputManager    # the object Virtuos_InputManager_getInstance returns
 0x00ccb228 label    g_GraphicScreenDttOffset  # two floats: graphicScreenSetDttOffset / graphicScreenGetDttOffset
@@ -12207,6 +12211,7 @@
 0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
+0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy
 0x00cccb00 label    g_GraphicPauseGame        # graphicCheckPauseGame returns it; graphicPauseGameDestroy deletes it
@@ -12214,7 +12219,9 @@
 0x00cdec28 label    g_ShadowManager           # ShadowManager_getInstance
 0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang)
 0x00cdedf0 label    g_DynGeoFillBuffer        # graphicDynGeoFillBufferIsValid: *(*this) != 0
+0x00ce5170 label    g_FogEffectManager        # Phyre_FogEffectManager_GetInstance; graphicSetChrFogFade
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
+0x00ce6ea4 label    g_TipSystem               # TipSystem_Get; graphicPushTip, graphicPushTipByLocId
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce9010 label    g_FmodManager             # FmodManager* (0x50 bytes; +8 FfxFmod, +0x10 queue mutex, +0x14 sync mutex, +0x18/+0x1c events, +0x28/+0x2c ring write/read, +0x30.. sync command); iFmodInitialize
