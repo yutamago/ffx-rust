@@ -33,7 +33,7 @@ RADIUS = 12
 TOLERANCE = 24
 BLOCK = 40
 COARSE = 25
-SKY = 120  # coarse shots: rows above this are left out
+SKY = 160  # coarse shots: rows above this are left out (the beams reach the y 120 block)
 
 
 def block_means(w, h, px):
