@@ -1440,4 +1440,103 @@ ported! {
             |m| ffx_sg::state::bridge::get_norm(m),
         )
     }
+
+    // ---- round 8
+
+    /// `Ch_DataReadSync(id)`.
+    Ch_DataReadSync @ 0x0082_a040 => extern "C" fn ch_data_read_sync(id: u32) -> u32 {
+        mo::bridge::ch_data_read_sync(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetClipZ(chr, z)`: the old value in ST0.
+    Ch_SetClipZ @ 0x0082_b150 => extern "C" fn ch_set_clip_z(chr: u32, z: f32) -> f32 {
+        c::ch_set_clip_z(&mut mem(), chr, z, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetHideEvent(chr, flags)`.
+    Ch_SetHideEvent @ 0x0082_b2c0 => extern "C" fn ch_set_hide_event(chr: u32, flags: u32) -> u32 {
+        c::ch_set_hide_event(&mut mem(), chr, flags, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetResHide(chr, hide)`.
+    Ch_SetResHide @ 0x0082_b4e0 => extern "C" fn ch_set_res_hide(chr: u32, hide: u32) -> u32 {
+        c::ch_set_res_hide(&mut mem(), chr, hide, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetShadeCol(chr, r, g, b, frames)`.
+    Ch_SetShadeCol @ 0x0082_b5d0 => extern "C" fn ch_set_shade_col(chr: u32, r: f32, g: f32, b: f32, frames: u32) -> u32 {
+        c::ch_set_shade_col(&mut mem(), chr, [r, g, b], frames, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_EnableSetTexture(v)`: the old value.
+    Ch_EnableSetTexture @ 0x0083_0330 => extern "C" fn ch_enable_set_texture(v: u32) -> i32 {
+        sy::ch_enable_set_texture(&mut mem(), v, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_UpdateClothHideFlag(chr)`.
+    Ch_UpdateClothHideFlag @ 0x0083_1480 => extern "C" fn ch_update_cloth_hide_flag(chr: u32) -> u32 {
+        mo::bridge::ch_update_cloth_hide_flag(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_NeckSetRot(chr, x, y)`.
+    Ch_NeckSetRot @ 0x0083_4ff0 => extern "C" fn ch_neck_set_rot(chr: u32, x: f32, y: f32) {
+        c::ch_neck_set_rot(&mut mem(), chr, x, y, ffx_sg::quat::bridge::matrix_to_quaternion);
+    }
+    /// `Ch_NeckSetTarget(chr, target)`.
+    Ch_NeckSetTarget @ 0x0083_5050 => extern "C" fn ch_neck_set_target(chr: u32, target: u32) {
+        c::ch_neck_set_target(&mut mem(), chr, target, ffx_sg::quat::bridge::matrix_to_quaternion);
+    }
+    /// `Ch_NeckSetTargetCamera(chr)`.
+    Ch_NeckSetTargetCamera @ 0x0083_5080 => extern "C" fn ch_neck_set_target_camera(chr: u32) {
+        c::ch_neck_set_target_camera(&mut mem(), chr, ffx_sg::quat::bridge::matrix_to_quaternion);
+    }
+    /// `Ch_NeckSetTargetPos(chr, &pos)`.
+    Ch_NeckSetTargetPos @ 0x0083_50a0 => extern "C" fn ch_neck_set_target_pos(chr: u32, pos: u32) {
+        c::ch_neck_set_target_pos(&mut mem(), chr, pos, ffx_sg::quat::bridge::matrix_to_quaternion);
+    }
+    /// `ChN_ReadSystemMGRPsync(a, b)`.
+    ChN_ReadSystemMGRPsync @ 0x0083_6a50 => extern "C" fn chn_read_system_mgrp_sync(a: u32, b: u32) -> u32 {
+        mo::bridge::chn_read_system_mgrp_sync(&mut mem(), a, b, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RegMotionGetExistMem()`.
+    Ch_RegMotionGetExistMem @ 0x0083_7730 => extern "C" fn ch_reg_motion_get_exist_mem() -> u32 {
+        mo::bridge::ch_reg_motion_get_exist_mem(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RegMotionToTop()`.
+    Ch_RegMotionToTop @ 0x0083_7780 => extern "C" fn ch_reg_motion_to_top() -> u32 {
+        mo::bridge::ch_reg_motion(&mut mem(), mo::bridge::CACHE_TO_TOP, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RegMotionUse()`.
+    Ch_RegMotionUse @ 0x0083_7790 => extern "C" fn ch_reg_motion_use() -> u32 {
+        mo::bridge::ch_reg_motion(&mut mem(), mo::bridge::CACHE_USE, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_CalcLight(chr, &coeff)`.
+    Ch_CalcLight @ 0x0083_c6f0 => extern "C" fn ch_calc_light(chr: u32, coeff: u32) -> u32 {
+        c::ch_calc_light(&mut mem(), chr, coeff, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_TextureSetAnim(chr, a, b)`.
+    Ch_TextureSetAnim @ 0x0083_d040 => extern "C" fn ch_texture_set_anim(chr: u32, a: u32, b: u32) -> u32 {
+        ta::ch_texture_set_anim(&mut mem(), chr, a, b, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_Allocate_InitAll(n)`.
+    Ch_Allocate_InitAll @ 0x0082_5670 => extern "C" fn ch_allocate_init_all(n: i32) -> u32 {
+        h::ch_allocate_init_all(&mut mem(), n, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_BlkNew(header, key, x)`: the block.
+    Ch_BlkNew @ 0x0082_5860 => extern "C" fn ch_blk_new(header: u32, key: u32, x: u32) -> u32 {
+        h::ch_blk_new(&mut mem(), header, key, x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RomDataReadInit()`.
+    Ch_RomDataReadInit @ 0x0082_a5f0 => extern "C" fn ch_rom_data_read_init() -> u32 {
+        sy::ch_rom_data_read_init(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DrawClothClear(chr)`.
+    Ch_DrawClothClear @ 0x0083_0b90 => extern "C" fn ch_draw_cloth_clear(chr: u32) -> u32 {
+        mo::bridge::ch_draw_cloth_clear(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SysDrawSetSituation(v)`.
+    Ch_SysDrawSetSituation @ 0x0083_0cd0 => extern "C" fn ch_sys_draw_set_situation(v: u32) -> u32 {
+        sy::ch_sys_draw_set_situation(&mut mem(), v, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DrawReserveCalcNorm()`.
+    Ch_DrawReserveCalcNorm @ 0x0083_36a0 => extern "C" fn ch_draw_reserve_calc_norm() -> u32 {
+        h::ch_draw_reserve_calc_norm(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_AnimCopyNear(chr)`: the result in `al`.
+    Ch_AnimCopyNear @ 0x0083_9200 => extern "C" fn ch_anim_copy_near(chr: u32) -> u8 {
+        mo::bridge::ch_anim_copy_near(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
