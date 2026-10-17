@@ -9123,3 +9123,676 @@ fn round13_field_helpers_match_the_original() {
         );
     }
 }
+
+/// Round 14: a character's direction (`MsGetChrDir` stood in, the
+/// angle wrap through `_CIfmod`), the rcui character lists and vector
+/// add, layer animation steps, key frame tracks and the image placement
+/// search.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round14_field_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000e_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (dirv, pausev, handles) = (t.alloc(4), t.alloc(4), t.alloc(0x80));
+    // MsGetChrDir(chr, &out): `mov ecx, [dirv]; mov eax, [esp + 8]; mov [eax], ecx; ret`
+    let mut dir = vec![0x8b, 0x0d];
+    dir.extend_from_slice(&dirv.to_le_bytes());
+    dir.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x89, 0x08, 0xc3]);
+    // MsGetChrHandle(id): `mov eax, [esp + 4]; mov eax, [handles + eax * 4]; ret`
+    let mut handle = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+    handle.extend_from_slice(&handles.to_le_bytes());
+    handle.push(0xc3);
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(vu0::MS_GET_CHR_DIR), dir),
+        (Some(rcui::MS_GET_CHR_HANDLE), handle),
+        (Some(yi::SG_GET_PAUSE), log_stub(env.log, pausev, 120, 0)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let rw = t.alloc(0x1000);
+    t.set(rcui::WORK, rw);
+    let (dst, a, b) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    let (anim, frames) = (t.alloc(0x20), t.alloc(0x40));
+    let r = t.alloc(0x9e000);
+    let (track, recs) = (t.alloc(0x30), t.alloc(0x200));
+    let page = t.alloc(0x20);
+    let imgs: Vec<u32> = (0..5).map(|_| t.alloc(0x160)).collect();
+    for k in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        // a character's direction
+        let d = match k % 3 {
+            0 => float_in(&mut rng, -20, 0),
+            1 => float_in(&mut rng, 7, 20),
+            _ => float_in(&mut rng, 0, 6),
+        };
+        t.put(dirv, d);
+        let out = t.stack_scratch(0);
+        t.same(
+            "rcefGetChrDir",
+            |o| o.float(0x0092_dfd0, &[rng_free(k)]),
+            |m| {
+                bits(vu0::bridge::rcef_get_chr_dir(
+                    m,
+                    rng_free(k),
+                    out,
+                    call,
+                    fcall,
+                ))
+            },
+        );
+        // the rcui lists
+        for i in 0..0x20 {
+            let h = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.put(handles + 4 * i, h);
+        }
+        t.put(rw + 0x824, rng.below(4));
+        t.put(rw + 0x828, rng.next());
+        t.put(rw + 0x82c, rng.next());
+        t.same(
+            "rcuiCollectChrHandlesByGroup",
+            |o| o.void(0x0093_23b0, &[]),
+            |m| rcui::bridge::rcui_collect_chr_handles_by_group(m, call),
+        );
+        for i in 0..4 {
+            t.put(a + 4 * i, float_in(&mut rng, -50, 50));
+            t.put(b + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        t.same(
+            "rcuiVu0AddVector",
+            |o| o.void(0x0093_7540, &[dst, a, b]),
+            |m| rcui::bridge::rcui_vu0_add_vector(m, dst, a, b),
+        );
+        // a layer animation
+        let n = rng.range(0, 6);
+        t.put(
+            anim,
+            rng.below(4) | ([0u32, 0x100, 0x200][rng.below(3) as usize]),
+        );
+        t.put(anim + 4, u16::try_from(rng.below(40)).unwrap());
+        t.put(anim + 6, i16::try_from(rng.range(0, n.max(1) - 1)).unwrap());
+        t.put(anim + 8, n);
+        t.put(anim + 0xc, frames);
+        t.put(anim + 0x14, rng.range(-0x100, 0x600));
+        t.put(anim + 0x18, rng.range(0, 0x200));
+        t.fill(frames, 0x40, &mut rng);
+        for i in 0..0x10 {
+            t.put(frames + 4 * i + 1, u8::try_from(rng.below(12)).unwrap());
+        }
+        t.same(
+            "rcbgLayerAnimStep",
+            |o| o.eax(0x0093_0920, &[anim]),
+            |m| scene::bridge::rcbg_layer_anim_step(m, anim),
+        );
+        // a key frame track
+        t.put(pausev, u32::from(rng.below(5) == 0));
+        let idx = rng.below(4);
+        t.put(track + 8, u16::try_from(idx).unwrap());
+        t.put(track + 2, u16::try_from(rng.below(2)).unwrap());
+        t.put(track + 0xa, u16::try_from(rng.below(4)).unwrap());
+        t.put(track + 0x14, rng.below(100));
+        t.put(track + 0x18, rng.below(100));
+        t.put(track + 0x24, rng.next());
+        t.put(r + 0x9d5c4 + 4 * idx, recs);
+        t.put(r + 0x9d6c4 + 4 * idx, rng.below(6));
+        t.put(r + 0x9cabc, rng.next());
+        for i in 0..0x10 {
+            t.put(recs + 0x20 * i + 4, rng.below(20));
+        }
+        let now = rng.below(200);
+        t.same(
+            "yiKeyFrameAdvance",
+            |o| o.eax(0x0091_4180, &[r, track, now]),
+            |m| yi::bridge::yi_key_frame_advance(m, r, track, now, call),
+        );
+        // image placement
+        t.put(page + 0x10, rng.range(16, 128));
+        t.put(page + 0x14, rng.range(16, 128));
+        let used = rng.below(5);
+        for (i, &o) in imgs.iter().enumerate() {
+            let size = |rng: &mut Xorshift| {
+                if rng.below(2) == 0 {
+                    1u32 << rng.below(6)
+                } else {
+                    1 + rng.below(40)
+                }
+            };
+            let (w, h) = (size(&mut rng), size(&mut rng));
+            t.put(o + 0x11c, rng.below(100));
+            t.put(o + 0x120, rng.below(100));
+            t.put(o + 0x13c, w);
+            t.put(o + 0x140, h);
+            let next = if i + 1 < used as usize {
+                imgs[i + 1]
+            } else {
+                0
+            };
+            t.put(o + 0x15c, next);
+        }
+        t.put(page + 0x1c, if used == 0 { 0 } else { imgs[0] });
+        let img = imgs[4];
+        t.same(
+            "yiImageRman_serch",
+            |o| o.eax(0x0091_7b70, &[0, page, img]),
+            |m| yi::bridge::yi_image_rman_serch(m, page, img),
+        );
+    }
+}
+
+/// A character number for the stand-ins (unused by them).
+fn rng_free(k: u32) -> u32 {
+    k % 7
+}
+
+/// Round 15: Hermite curves (the weights stored as floats, products in
+/// the original's order), linked key frame tracks, the rectangle and
+/// triangle overlap on x/z (through `FFXVu0ApplyMatrix` or unsigned
+/// integers).
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round15_field_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000f_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let pausev = t.alloc(4);
+    let list: Vec<(Option<u32>, Vec<u8>)> =
+        vec![(Some(yi::SG_GET_PAUSE), log_stub(env.log, pausev, 130, 0))];
+    t.cave_from(env.cave_end, &list);
+    let ps: Vec<u32> = (0..4).map(|_| t.alloc(0x10)).collect();
+    let out = t.alloc(0x10);
+    let r = t.alloc(0x9e000);
+    let (track, recs, recs2) = (t.alloc(0x30), t.alloc(0x800), t.alloc(0x800));
+    let (tri, m, a, b) = (t.alloc(0x30), t.alloc(0x40), t.alloc(0x10), t.alloc(0x10));
+    for k in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        // Hermite curves
+        let tt = float_in(&mut rng, -1, 2);
+        for &p in &ps {
+            for i in 0..4 {
+                t.put(p + 4 * i, float_in(&mut rng, -100, 100));
+            }
+        }
+        let p = [ps[0], ps[1], ps[2], ps[3]];
+        let args = [tt, p[0], p[1], p[2], p[3], out];
+        if k % 2 == 0 {
+            t.same(
+                "yiHermiteVec2",
+                |o| o.void(0x0091_4700, &args),
+                |m| yi::bridge::yi_hermite_vec2(m, tt, p, out),
+            );
+        } else {
+            t.same(
+                "yiHermiteVec4",
+                |o| o.void(0x0091_47b0, &args),
+                |m| yi::bridge::yi_hermite_vec4(m, tt, p, out),
+            );
+        }
+        // a linked key frame track
+        t.put(pausev, u32::from(rng.below(6) == 0));
+        let idx = rng.below(4);
+        t.put(track + 8, u16::try_from(idx).unwrap());
+        t.put(track + 2, u16::try_from(rng.below(2)).unwrap());
+        t.put(track + 0xa, u16::try_from(rng.below(3)).unwrap());
+        t.put(track + 0x14, rng.below(100));
+        t.put(track + 0x18, rng.below(100));
+        t.put(track + 0x24, recs + 0x80 * rng.below(3));
+        t.put(r + 0x9d4c4 + 4 * idx, recs2);
+        t.put(r + 0x9d6c4 + 4 * idx, rng.below(6));
+        t.put(r + 0x9cabc, rng.next());
+        for base in [recs, recs2] {
+            for i in 0..0x10 {
+                t.put(
+                    base + 0x80 * i,
+                    u8::try_from(u32::from(rng.below(8) == 0)).unwrap(),
+                );
+                t.put(
+                    base + 0x80 * i + 4,
+                    if rng.below(8) == 0 { 0 } else { rng.below(20) },
+                );
+            }
+        }
+        let now = rng.below(200);
+        t.same(
+            "yiKeyFrameAdvanceLinked",
+            |o| o.eax(0x0091_4070, &[r, track, now]),
+            |m| yi::bridge::yi_key_frame_advance_linked(m, r, track, now, call),
+        );
+        // rectangle and triangle
+        for i in 0..4 {
+            t.put(a + 4 * i, float_in(&mut rng, -8, 8));
+            t.put(b + 4 * i, float_in(&mut rng, -8, 8));
+        }
+        let mat = if k % 2 == 0 { 0 } else { m };
+        for i in 0..12 {
+            let v = if mat == 0 {
+                rng.below(10)
+            } else {
+                float_in(&mut rng, -8, 8)
+            };
+            t.put(tri + 4 * i, v);
+        }
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(&mut rng, -2, 2));
+        }
+        let work = t.stack_scratch(0);
+        t.same(
+            "yiRectTriOverlapXZ",
+            |o| o.eax(0x0091_0070, &[tri, mat, a, b]),
+            |o| yi::bridge::yi_rect_tri_overlap_xz(o, tri, mat, [a, b], work, call),
+        );
+    }
+}
+
+/// A renderer stand-in for `updateVFXRenderDataShp` and
+/// `InitVFXRenderDataShp`: records `id`, the arguments in `logged`, the
+/// render description (bytes 2..0x10 and 0x1c..0x20 of argument 3; the
+/// others are the original's uninitialised stack and the stack address of
+/// its matrix) and the 64 bytes that matrix pointer (`+0x10`) points at,
+/// from `dst`.
+fn capture_desc_stub(dst: u32, id: u32, logged: &[u32]) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xc7, 0x05];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    for (j, &i) in (0u32..).zip(logged) {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, u8::try_from(0xc + 4 * i).unwrap(), 0xa3]);
+        c.extend_from_slice(&(dst + 4 + 4 * j).to_le_bytes());
+    }
+    let copy = |c: &mut Vec<u8>, deref: bool, add: u8, to: u32, n: u32| {
+        c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x18]);
+        if deref {
+            c.extend_from_slice(&[0x8b, 0x76, 0x10]);
+        }
+        c.extend_from_slice(&[0x83, 0xc6, add, 0xbf]);
+        c.extend_from_slice(&to.to_le_bytes());
+        c.push(0xb9);
+        c.extend_from_slice(&n.to_le_bytes());
+        c.extend_from_slice(&[0xf3, 0xa4]);
+    };
+    copy(&mut c, false, 2, dst + 0x20, 0xe);
+    copy(&mut c, false, 0x1c, dst + 0x40, 4);
+    copy(&mut c, true, 0, dst + 0x50, 0x40);
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Round 15 (the draw family): the lens shapes' render data
+/// (`KeLnsArnd_Draw`, `KeLnsCrn_Draw`, `KeLnsFls_Draw`) with the
+/// renderer's functions stood in; their descriptions and matrices are
+/// recorded and compared.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round15_lens_render_data_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000f_0002);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = env.log;
+    let (rdv, afv, cap) = (t.alloc(4), t.alloc(4), t.alloc(0x200));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(ke::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE),
+            log_stub(log, rdv, 140, 2),
+        ),
+        (Some(ke::GRAPHIC_VFX_UPDATE), log_stub(log, env.rv, 141, 2)),
+        (
+            Some(ke::GRAPHIC_VFX_SET_VISIBLE),
+            log_stub(log, env.rv, 142, 3),
+        ),
+        (
+            Some(ke::CALCULATE_VFX_SP_ALPHA_FUNCTION),
+            log_stub(log, afv, 143, 1),
+        ),
+        (
+            Some(ke::UPDATE_VFX_RENDER_DATA_SHP),
+            capture_desc_stub(cap, 144, &[0, 1, 2, 4]),
+        ),
+        (
+            Some(ke::INIT_VFX_RENDER_DATA_SHP),
+            capture_desc_stub(cap + 0x100, 145, &[0, 1, 2, 4, 5]),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let (e, shape, s, data, table) = (
+        t.alloc(0x20),
+        t.alloc(0x20),
+        t.alloc(0xb0),
+        t.alloc(4),
+        t.alloc(0x100),
+    );
+    let scales = t.alloc(0x10);
+    let off = t.b.rebase(ke::VFX_OFFSET);
+    let ot = t.b.rebase(ke::PPP_OT_DRAWING);
+    let prog = t.b.rebase(ke::PPP_CURRENT_PROGRAM);
+    let default = t.b.rebase(ke::LNS_DEFAULT);
+    for k in 0..90u32 {
+        env.reset(&mut t, &mut rng);
+        t.write(cap, &[0; 0x200]);
+        // the source
+        for i in 0..0x2c {
+            t.put(s + 4 * i, float_in(&mut rng, -8, 8));
+        }
+        t.put(
+            s + 0x7c,
+            if rng.below(6) == 0 {
+                0
+            } else {
+                float_in(&mut rng, 0, 2)
+            },
+        );
+        t.put(s + 0xa4, float_in(&mut rng, 0, 40));
+        t.put(s + 0x8f, u8::try_from(rng.below(2)).unwrap());
+        for i in 0..3 {
+            t.put(off + 4 * i, float_in(&mut rng, -4, 4));
+            t.put(scales + 4 * i, float_in(&mut rng, -3, 3));
+        }
+        // the shape and its frames
+        t.put(shape, if rng.below(8) == 0 { default } else { s });
+        t.put(shape + 4, if rng.below(8) == 0 { 0 } else { data });
+        t.put(shape + 8, u16::try_from(rng.below(0x800)).unwrap());
+        t.put(shape + 0xa, u8::try_from(rng.below(3)).unwrap());
+        t.put(shape + 0xb, u8::try_from(rng.below(0x100)).unwrap());
+        t.put(data, table);
+        t.fill(table, 0x100, &mut rng);
+        for i in 0..8 {
+            t.put(table + 8 * i + 0x10, 0x80u16);
+            t.put(
+                table + 8 * i + 0x12,
+                u16::try_from(0x100 + rng.below(0x600)).unwrap(),
+            );
+        }
+        t.put(table + 0x84, 0x10u32);
+        // the lens object
+        t.put(e, if rng.below(5) == 0 { 0 } else { rng.next() | 1 });
+        t.put(e + 4, shape);
+        t.put(e + 8, rng.next());
+        t.put(e + 0x10, float_in(&mut rng, -4, 4));
+        t.put(e + 0x14, u16::try_from(1 + rng.below(30)).unwrap());
+        t.put(e + 0x16, u16::try_from(1 + rng.below(30)).unwrap());
+        t.put(e + 0x18, scales);
+        t.put(ot, rng.below(2));
+        t.put(prog, rng.next());
+        t.put(rdv, rng.below(2));
+        t.put(afv, rng.next());
+        let flags = u16::try_from(rng.below(0x10000)).unwrap();
+        let work = t.stack_scratch(0);
+        match k % 3 {
+            0 => {
+                // Arnd reads its scale vector at +0x14
+                t.put(e + 0x14, scales);
+                t.same(
+                    "KeLnsArnd_Draw",
+                    |o| o.void(0x0076_9340, &[e, u32::from(flags)]),
+                    |m| ke::bridge::ke_lns_arnd_draw(m, e, flags, work, call),
+                );
+            }
+            1 => t.same(
+                "KeLnsCrn_Draw",
+                |o| o.void(0x0076_9d70, &[e, u32::from(flags)]),
+                |m| ke::bridge::ke_lns_crn_draw(m, e, flags, work, call),
+            ),
+            _ => {
+                t.put(e + 0x16, u8::try_from(rng.below(3)).unwrap());
+                t.put(e + 0x17, u8::try_from(rng.below(3)).unwrap());
+                t.same(
+                    "KeLnsFls_Draw",
+                    |o| o.void(0x0076_a1f0, &[e, u32::from(flags)]),
+                    |m| ke::bridge::ke_lns_fls_draw(m, e, flags, work, call),
+                );
+            }
+        }
+    }
+}
+
+/// A renderer stand-in recording `id`, the arguments in `logged`, the
+/// byte ranges `segs` (offset, length) of the description at argument
+/// `desc`, and, when its flags word has bit 13, the 64 bytes its matrix
+/// pointer (`+0x30`) points at (`KeMdl_Draw`'s descriptions).
+fn capture_segs_stub(dst: u32, id: u32, logged: &[u32], desc: u32, segs: &[(u32, u32)]) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xc7, 0x05];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    for (j, &i) in (0u32..).zip(logged) {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, u8::try_from(0xc + 4 * i).unwrap(), 0xa3]);
+        c.extend_from_slice(&(dst + 4 + 4 * j).to_le_bytes());
+    }
+    let d = u8::try_from(0xc + 4 * desc).unwrap();
+    let mut to = dst + 0x20;
+    for &(off, n) in segs {
+        c.extend_from_slice(&[
+            0x8b,
+            0x74,
+            0x24,
+            d,
+            0x83,
+            0xc6,
+            u8::try_from(off).unwrap(),
+            0xbf,
+        ]);
+        c.extend_from_slice(&to.to_le_bytes());
+        c.push(0xb9);
+        c.extend_from_slice(&n.to_le_bytes());
+        c.extend_from_slice(&[0xf3, 0xa4]);
+        to += n;
+    }
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, d, 0xf7, 0x06]);
+    c.extend_from_slice(&0x2000u32.to_le_bytes());
+    c.extend_from_slice(&[0x74, 15, 0x8b, 0x76, 0x30, 0xbf]);
+    c.extend_from_slice(&(dst + 0xa0).to_le_bytes());
+    c.push(0xb9);
+    c.extend_from_slice(&0x40u32.to_le_bytes());
+    c.extend_from_slice(&[0xf3, 0xa4, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Round 16: `KeMdl_Draw`, the VFX model's render data: the colour
+/// through the emulated EE registers (`pppEePmulth`, `pppEePpacb`, the
+/// register words compared), the flags, view matrix and description
+/// handed to the stood-in renderer.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round16_model_render_data_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = env.log;
+    let (rdv, afv, zv, cap) = (t.alloc(4), t.alloc(4), t.alloc(4), t.alloc(0x400));
+    let segs = [(0, 0xb), (0xc, 0x24), (0x34, 0x14)];
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(ke::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE),
+            log_stub(log, rdv, 150, 2),
+        ),
+        (Some(ke::GRAPHIC_VFX_UPDATE), log_stub(log, env.rv, 151, 2)),
+        (
+            Some(ke::GRAPHIC_VFX_PATH3_UPDATE),
+            log_stub(log, env.rv, 152, 2),
+        ),
+        (
+            Some(ke::CALCULATE_VFX_SP_ALPHA_FUNCTION),
+            log_stub(log, afv, 153, 1),
+        ),
+        (Some(ke::CALCULATE_VFX_SP_ZMAT), log_stub(log, zv, 154, 1)),
+        (
+            Some(ke::GRAPHIC_VFX_SET_CLUT_PARAMETERS),
+            log_stub(log, env.rv, 155, 5),
+        ),
+        (
+            Some(ke::UPDATE_VFX_RENDER_DATA),
+            capture_segs_stub(cap, 156, &[0, 1, 2], 3, &segs),
+        ),
+        (
+            Some(ke::INIT_VFX_RENDER_DATA),
+            capture_segs_stub(cap + 0x100, 157, &[0, 1, 2, 4], 3, &segs),
+        ),
+        (
+            Some(ke::INIT_VFX_PATH3_RENDER_DATA),
+            capture_segs_stub(cap + 0x200, 158, &[0, 1, 2, 4], 3, &segs),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let (slot, envb, recs, pb) = (t.alloc(4), t.alloc(0x40), t.alloc(0x100), t.alloc(0x20));
+    let (e, colw, part) = (t.alloc(0xa0), t.alloc(0x40), t.alloc(0x80));
+    t.set(task::main::ENV_SLOT, slot);
+    t.put(slot, envb);
+    t.put(envb + 0x20, recs);
+    let ee = t.b.rebase(ke::EE_REGS);
+    let shift = t.b.rebase(ke::PPP_COLOR_CON_SHIFT);
+    let part_at = t.b.rebase(ke::PPP_CURRENT_PART);
+    let prog = t.b.rebase(ke::PPP_CURRENT_PROGRAM);
+    let view = t.b.rebase(ke::PPP_VIEW_MATRIX);
+    let clut = t.b.rebase(0x010d_5600);
+    for k in 0..80u32 {
+        env.reset(&mut t, &mut rng);
+        t.write(cap, &[0; 0x400]);
+        t.fill(ee, 0xb0, &mut rng);
+        t.fill(colw, 0x40, &mut rng);
+        t.put(shift, 4 * rng.below(4));
+        t.fill(part, 0x80, &mut rng);
+        t.put(part_at, part);
+        if k % 5 == 0 {
+            // a colour of 0: nothing drawn, only the registers written
+            t.write(ee, &[0; 0xb0]);
+            t.write(colw, &[0; 0x40]);
+            t.write(part, &[0; 0x80]);
+        }
+        t.put(prog, rng.next());
+        for i in 0..16 {
+            t.put(view + 4 * i, float_in(&mut rng, -4, 4));
+            t.put(e + 0x10 + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        t.put(e + 0x90, rng.next());
+        t.put(e + 0x94, rng.next());
+        for i in 0..3 {
+            t.put(clut + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        let idx = rng.below(8);
+        t.put(recs + 0x20 * idx + 0x1c, pb);
+        t.fill(pb, 0x20, &mut rng);
+        t.put(rdv, rng.below(2));
+        t.put(afv, rng.next());
+        t.put(zv, rng.next());
+        let a = [
+            e,
+            idx,
+            colw,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.below(0x40),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        ];
+        let work = t.stack_scratch(0);
+        t.same(
+            "KeMdl_Draw",
+            |o| o.void(0x0076_6ff0, &a),
+            |m| ke::bridge::ke_mdl_draw(m, a, work, call),
+        );
+    }
+}
+
+/// Keyword `i` of a parser keyword table (the strings it points at),
+/// past the end "junk".
+fn table_keyword(t: &Twin, table: u32, i: u32) -> String {
+    let n = (0..8)
+        .take_while(|&k| Mem::read::<u32>(&t.b, t.b.rebase(table) + 4 * k) != 0)
+        .count();
+    if i as usize >= n {
+        return "junk".to_string();
+    }
+    let s = Mem::read::<u32>(&t.b, t.b.rebase(table) + 4 * i);
+    (0..)
+        .map(|j| Mem::read::<u8>(&t.b, s + j))
+        .take_while(|&c| c != 0)
+        .map(char::from)
+        .collect()
+}
+
+/// Round 16 (rcui and anime helpers): the VU0 vector subtraction, the
+/// vector clamp, the rigid matrix inverse, the projection to integers
+/// (its `1/w` left in `ST0`) and the anime frame configuration keywords.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round16_rcui_and_anime_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_0002);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (dst, a, b, m) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10), t.alloc(0x40));
+    let (out, chunk, parse, data, anime) = (
+        t.alloc(0x40),
+        t.alloc(8),
+        t.alloc(0x90),
+        t.alloc(0x200),
+        t.alloc(0x20),
+    );
+    for _ in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        for i in 0..4 {
+            t.put(a + 4 * i, float_in(&mut rng, -50, 50));
+            t.put(b + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        t.same(
+            "rcuiVu0SubVector",
+            |o| o.void(0x0093_76b0, &[dst, a, b]),
+            |o| rcui::bridge::rcui_vu0_sub_vector(o, dst, a, b),
+        );
+        let (lo, hi) = (float_in(&mut rng, -30, 0), float_in(&mut rng, 0, 30));
+        let work = t.stack_scratch(0);
+        t.same(
+            "rcuiClampVector",
+            |o| o.eax(0x0093_cd20, &[dst, a, lo, hi]),
+            |o| rcui::bridge::rcui_clamp_vector(o, dst, a, (lo, hi), work, call),
+        );
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(&mut rng, -4, 4));
+        }
+        t.same(
+            "rcuiInvertRigidMatrix",
+            |o| o.eax(0x0093_d090, &[out, m]),
+            |o| rcui::bridge::rcui_invert_rigid_matrix(o, out, m, work, call),
+        );
+        t.put(m + 0x3c, float_in(&mut rng, 1, 8));
+        let raw = rng.below(2);
+        t.same(
+            "rcuiProjectToInt",
+            |o| o.float(0x0093_d710, &[out, m, a, raw]),
+            |o| {
+                bits(rcui::bridge::rcui_project_to_int(
+                    o,
+                    out,
+                    (m, a),
+                    raw,
+                    work,
+                    call,
+                ))
+            },
+        );
+        // anime frames
+        let mut text = b"head ".to_vec();
+        for _ in 0..rng.below(5) {
+            let w = table_keyword(&t, model::ANIME_CONFIG_KEYS, rng.below(4));
+            text.extend(w.bytes());
+            for _ in 0..=rng.below(9) {
+                text.extend(format!(" {}", rng.range(0, 5)).bytes());
+            }
+            text.push(b' ');
+        }
+        text.push(0);
+        t.write(data, &text);
+        parser_over(&mut t, chunk, parse, data);
+        t.put(chunk + 4, u32::try_from(text.len() - 1).unwrap());
+        t.put(parse + 8, 1u32);
+        t.write(anime, &[0; 0x20]);
+        t.same(
+            "rcbgAnimeLoadConfig",
+            |o| o.eax(0x0093_a650, &[anime, parse]),
+            |o| model::bridge::rcbg_anime_load_config(o, anime, parse, call),
+        );
+    }
+}

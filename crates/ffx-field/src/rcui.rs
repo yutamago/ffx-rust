@@ -25,6 +25,18 @@ pub const CH_SET_MOTION_SPEED: u32 = 0x0082_b380;
 pub const LOAD_TITLE_FORMAT: u32 = 0x00b6_8500;
 /// `Gu_WindowSetTitle(w, title)` (`0x0084b6a0`).
 pub const GU_WINDOW_SET_TITLE: u32 = 0x0084_b6a0;
+/// `MsGetChrHandle(id)` (`0x00795080`).
+pub const MS_GET_CHR_HANDLE: u32 = 0x0079_5080;
+/// The VU0 register at `0x00c8f970`: `rcuiVu0AddVector`'s second operand.
+pub const VF_ADD_B: Global<[u32; 4]> = Global::new(0x00c8_f970);
+/// `rcuiCopyVector(dst, src)` (`0x0093ce50`).
+pub const RCUI_COPY_VECTOR: u32 = 0x0093_ce50;
+/// `rcuiCopyMatrix(dst, src)` (`0x0093ce10`).
+pub const RCUI_COPY_MATRIX: u32 = 0x0093_ce10;
+/// `rcuiApplyMatrix(dst, m, v)` (`0x0093cbf0`).
+pub const RCUI_APPLY_MATRIX: u32 = 0x0093_cbf0;
+/// The `.rdata` double `rcuiProjectToInt` scales by (`0x00b313a0`).
+pub const PROJECT_SCALE: u32 = 0x00b3_13a0;
 
 /// Offsets in the work area.
 pub mod work {
@@ -592,5 +604,166 @@ pub mod bridge {
         let win = mem.read::<u32>(w.wrapping_add(4));
         let f = mem.rebase(super::GU_WINDOW_SET_TITLE);
         call(mem, f, &[win, buf])
+    }
+
+    /// `rcuiCollectChrHandlesByGroup()` (`0x009323b0`): characters 0x14
+    /// to 0x1b (counted at `+0x828`), then 0 to 0xe (`+0x82c`), each with
+    /// a handle (`MsGetChrHandle`) added to the work's lists (index
+    /// `+0x830`, handle `+0x870`, count `+0x824`).
+    pub fn rcui_collect_chr_handles_by_group<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::MS_GET_CHR_HANDLE);
+        for (ids, counter) in [(0x14u32..0x1c, 0x828u32), (0..0xf, 0x82c)] {
+            for id in ids {
+                let h = call(mem, f, &[id]);
+                if h == 0 {
+                    continue;
+                }
+                let w = WORK.get(mem);
+                let c = mem.read::<u32>(w.wrapping_add(counter)).wrapping_add(1);
+                mem.write(w.wrapping_add(counter), c);
+                let n = mem.read::<u32>(w.wrapping_add(0x824));
+                mem.write(w.wrapping_add(0x830).wrapping_add(n.wrapping_mul(4)), id);
+                let n = mem.read::<u32>(w.wrapping_add(0x824));
+                mem.write(w.wrapping_add(0x870).wrapping_add(n.wrapping_mul(4)), h);
+                let n = mem.read::<u32>(w.wrapping_add(0x824)).wrapping_add(1);
+                mem.write(w.wrapping_add(0x824), n);
+            }
+        }
+    }
+
+    /// `rcuiVu0AddVector(dst, a, b)` (`0x00937540`): `dst = (a.xyz + b.xyz,
+    /// a.w)` through the VU0 registers at `0x00c8f980` (`a`, then the sum)
+    /// and `0x00c8f970` (`b`).
+    pub fn rcui_vu0_add_vector(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let va = mem.read::<[u32; 4]>(a);
+        super::VF_COPY.set(mem, va);
+        let vb = mem.read::<[u32; 4]>(b);
+        super::VF_ADD_B.set(mem, vb);
+        let s = |i: usize| x87::store(x87::load(va[i]) + x87::load(vb[i]));
+        let r = [s(0), s(1), s(2), va[3]];
+        super::VF_COPY.set(mem, r);
+        mem.write(dst, r);
+    }
+
+    // ---- round 16 ----
+
+    /// `rcuiVu0SubVector(dst, a, b)` (`0x009376b0`): `dst = (a.xyz -
+    /// b.xyz, a.w)` through the VU0 registers as [`rcui_vu0_add_vector`],
+    /// `vf00` restored before the store.
+    pub fn rcui_vu0_sub_vector(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let va = mem.read::<[u32; 4]>(a);
+        super::VF_COPY.set(mem, va);
+        let vb = mem.read::<[u32; 4]>(b);
+        super::VF_ADD_B.set(mem, vb);
+        let s = |i: usize| x87::store(x87::load(va[i]) - x87::load(vb[i]));
+        let r = [s(0), s(1), s(2), va[3]];
+        super::VF_COPY.set(mem, r);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let r = super::VF_COPY.get(mem);
+        mem.write(dst, r);
+    }
+
+    /// `rcuiClampVector(dst, v, lo, hi)` (`0x0093cd20`): each of the four
+    /// floats clamped to `lo..=hi` (`lo` wins below, `hi` above, NaN kept)
+    /// into `work` (16 bytes, the original's stack), then
+    /// `rcuiCopyVector(dst, work)`; returns that.
+    pub fn rcui_clamp_vector<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        dst: u32,
+        v: u32,
+        (lo, hi): (u32, u32),
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let (l, h) = (f32::from_bits(lo), f32::from_bits(hi));
+        for i in 0..4u32 {
+            let x = mem.read::<f32>(v.wrapping_add(4 * i));
+            let r = if l > x {
+                lo
+            } else if x > h {
+                hi
+            } else {
+                x.to_bits()
+            };
+            mem.write(work.wrapping_add(4 * i), x87::copy(r));
+        }
+        let f = mem.rebase(super::RCUI_COPY_VECTOR);
+        call(mem, f, &[dst, work])
+    }
+
+    /// `rcuiInvertRigidMatrix(dst, m, work)` (`0x0093d090`): the inverse of
+    /// a rotation-and-translation matrix: `m` transposed into `work` (64
+    /// bytes), its last column replaced by `-(R^T t)` (each `-(t.y r1 +
+    /// r0 t.x + t.z r2)`, `t` = `m`'s `+0xc`/`+0x1c`/`+0x2c`), the bottom
+    /// row (0, 0, 0, 1); then `rcuiCopyMatrix(dst, work)`; returns that.
+    pub fn rcui_invert_rigid_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        dst: u32,
+        m: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        for i in 0..4u32 {
+            for j in 0..4u32 {
+                let v = x87::copy(mem.read(m.wrapping_add(16 * j + 4 * i)));
+                mem.write(work.wrapping_add(16 * i + 4 * j), v);
+            }
+        }
+        let ld = |mem: &M, at: u32| x87::load(mem.read(at));
+        for r in 0..3u32 {
+            let row = work.wrapping_add(16 * r);
+            let s = ld(mem, m.wrapping_add(0x1c)) * ld(mem, row.wrapping_add(4))
+                + ld(mem, row) * ld(mem, m.wrapping_add(0xc))
+                + ld(mem, m.wrapping_add(0x2c)) * ld(mem, row.wrapping_add(8));
+            mem.write(row.wrapping_add(0xc), x87::store(-s));
+        }
+        mem.write(work.wrapping_add(0x38), 0f32);
+        mem.write(work.wrapping_add(0x34), 0f32);
+        mem.write(work.wrapping_add(0x30), 0f32);
+        mem.write(work.wrapping_add(0x3c), 1f32);
+        let f = mem.rebase(super::RCUI_COPY_MATRIX);
+        call(mem, f, &[dst, work])
+    }
+
+    /// `rcuiProjectToInt(out, m, v, raw, work)` (`0x0093d710`):
+    /// `rcuiApplyMatrix(work, m, v)`, x/y/z divided by w (through `1/w`
+    /// stored as a float), then the four as integers (`ftol`): times the
+    /// `.rdata` double at `0x00b313a0` unless `raw` (w unchanged).
+    /// Returns `1/w`, which the original leaves in `ST0`.
+    pub fn rcui_project_to_int<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        out: u32,
+        mv: (u32, u32),
+        raw: u32,
+        work: u32,
+        call: &mut C,
+    ) -> f32 {
+        let f = mem.rebase(super::RCUI_APPLY_MATRIX);
+        call(mem, f, &[work, mv.0, mv.1]);
+        let w = x87::load(mem.read(work.wrapping_add(0xc)));
+        let inv = x87::load(x87::store(1.0 / w));
+        for i in 0..3u32 {
+            let at = work.wrapping_add(4 * i);
+            let v = x87::load(mem.read(at));
+            mem.write(at, x87::store(v * inv));
+        }
+        let k = if raw == 0 {
+            Some(mem.read::<f64>(mem.rebase(super::PROJECT_SCALE)))
+        } else {
+            None
+        };
+        for i in 0..3u32 {
+            let v = x87::load(mem.read(work.wrapping_add(4 * i)));
+            let r = ffx_bridge::x87::ftol(mem, k.map_or(v, |k| v * k));
+            mem.write(out.wrapping_add(4 * i), r);
+        }
+        let r = ffx_bridge::x87::ftol(mem, k.map_or(w, |k| w * k));
+        mem.write(out.wrapping_add(0xc), r);
+        #[allow(clippy::cast_possible_truncation)] // a stored float
+        let inv = inv as f32;
+        inv
     }
 }

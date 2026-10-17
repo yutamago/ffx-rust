@@ -68,10 +68,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             [chr, 0, stop, 0, 0],
         ][rng.below(4) as usize];
         let rec = c::ms_get_command(b, args[2], args[3], args[4]);
-        let ra = a
+        let r = a
             .call(a.rebase(0x0078_ce50), ffx_oracle::Conv::Cdecl, &args)
-            .unwrap()
-            .eax;
+            .unwrap();
+        assert!(r.st0.is_none(), "MsGetCommand {args:x?}: a float in ST0");
+        let ra = r.eax;
         assert_eq!(ra, rec, "MsGetCommand {args:x?}");
         let cmd = if rec != 0 && rng.below(2) == 0 {
             rec
