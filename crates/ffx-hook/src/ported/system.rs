@@ -6,7 +6,7 @@ use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
     accessor, btl, cd, config, container, daps, dtor, files, fixup, heap, instance, math, menu,
-    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, vbf, window,
+    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -121,6 +121,141 @@ fn with_sorter<R>(
     PRED.with(|c| c.set(saved));
     std::hint::black_box(&mut tmp);
     r
+}
+
+/// A name lookup through a kernel or battle table (`get(id, &strings)`):
+/// the record's `u16` offset at `field`, the next word's with `kana` and
+/// the hiragana setting on (`MsGetSaveConfigHiragana`).
+fn table_name(
+    id: u32,
+    field: u32,
+    kana: bool,
+    get: impl FnOnce(&mut super::RawMem, u32, u32) -> u32,
+) -> u32 {
+    let m = &mut mem();
+    let field = if kana && ffx_battle::save::bridge::ms_get_save_config_hiragana(m) != 0 {
+        field + 4
+    } else {
+        field
+    };
+    let mut tmp = 0u32;
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let at = std::ptr::addr_of_mut!(tmp) as u32;
+    let r = tolib::bridge::table_name(m, id, field, at, get);
+    std::hint::black_box(&mut tmp);
+    r
+}
+
+/// The menu, script and sound calls of the TO library, through the
+/// originals' addresses (their hooks where those are ported).
+struct GameMenu;
+
+impl<M> tolib::bridge::SaveMenu<M> for GameMenu {
+    fn set_debug_lock(&mut self, mem: &mut M, v: u32) {
+        call_sym(mem, 0x0088_8420, &[v]);
+    }
+    fn reset_toggles(&mut self, mem: &mut M) {
+        call_sym(mem, 0x008b_4eb0, &[]);
+    }
+    fn set_screen_x2(&mut self, mem: &mut M, v: u32) {
+        call_sym(mem, 0x008a_b020, &[v]);
+    }
+    fn set_frame_ratio_diff(&mut self, mem: &mut M, v: i32) -> u32 {
+        call_sym(mem, 0x008a_b260, &[v.cast_unsigned()])
+    }
+}
+
+impl<M> tolib::bridge::MainWindows<M> for GameMenu {
+    fn alloc(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x008a_a1a0, &[])
+    }
+    fn regist(&mut self, mem: &mut M, w: u32) -> u32 {
+        call_sym(mem, 0x008a_ab00, &[w])
+    }
+}
+
+impl<M> tolib::bridge::ChrStatus<M> for GameMenu {
+    fn cursor_flag(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0079_4ca0, &[chr])
+    }
+    fn event_flag(&mut self, mem: &mut M, chr: u32, command: u32) -> u32 {
+        call_sym(mem, 0x0079_4f20, &[chr, command])
+    }
+    fn dist(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0079_4e00, &[chr])
+    }
+    fn dead(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0079_5780, &[chr])
+    }
+}
+
+impl<M> tolib::bridge::SummonList<M> for GameMenu {
+    fn status_num(&mut self, mem: &mut M, id: u32, strings: u32) -> u32 {
+        call_sym(mem, 0x0079_0200, &[id, strings])
+    }
+    fn command_max(&mut self, mem: &mut M, list: u32, kind: u32, a: u32, b: u32) -> i32 {
+        call_sym(mem, 0x008d_2d80, &[list, kind, a, b]).cast_signed()
+    }
+    fn command_offset(&mut self, mem: &mut M, list: u32, kind: u32, a: u32, b: u32) -> i32 {
+        call_sym(mem, 0x008d_2dc0, &[list, kind, a, b]).cast_signed()
+    }
+    fn joined(&mut self, mem: &mut M, chr: u32) -> u32 {
+        call_sym(mem, 0x0078_5380, &[chr])
+    }
+}
+
+impl<M> tolib::bridge::MenuMusic<M> for GameMenu {
+    fn keep_white_in_out(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0086_bc30, &[])
+    }
+    fn keep_clear11(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0086_bc50, &[])
+    }
+    fn music_number(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0087_3b00, &[])
+    }
+    fn regist_music_number(&mut self, mem: &mut M, n: u32) {
+        call_sym(mem, 0x0087_3d00, &[n]);
+    }
+    fn now_playing(&mut self, mem: &mut M) -> u32 {
+        call_sym(mem, 0x0088_63f0, &[])
+    }
+    fn cross_start(&mut self, mem: &mut M, n: u32, frames: u32) -> u32 {
+        call_sym(mem, 0x0088_6830, &[n, frames])
+    }
+    fn fade_out(&mut self, mem: &mut M, n: u32, frames: u32) -> u32 {
+        call_sym(mem, 0x0088_6af0, &[n, frames])
+    }
+}
+
+/// `graphicFontGetScreenWH(&w, &h)` (the original, or its hook).
+fn font_screen_wh<M>(m: &mut M) -> (i32, i32) {
+    let mut wh = [0i32; 2];
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let at = wh.as_mut_ptr() as u32;
+    call_sym(m, 0x0064_0db0, &[at, at + 4]);
+    std::hint::black_box(&mut wh);
+    (wh[0], wh[1])
+}
+
+/// `SndIsSepPlay(id)` or, with `stop`, `SndSepStop(id)` (their hooks).
+fn limit_sound<M>(m: &mut M, stop: bool, id: u32) -> u32 {
+    call_sym(m, if stop { 0x0088_6eb0 } else { 0x0088_6680 }, &[id])
+}
+
+/// `TOGetFontWidthInPiexl(a, b)` (ported), for the TO library's callers.
+fn font_width<M: Mem>(m: &mut M, a: f32, b: f32) -> f32 {
+    tolib::bridge::font_width_in_pixel(m, a, b, font_screen_wh)
+}
+
+/// `TOGetFontSpaceInPiexl(kind)` (ported).
+fn font_space<M: Mem>(m: &mut M, kind: u32) -> f32 {
+    tolib::bridge::font_space_in_pixel(
+        m,
+        kind,
+        |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+        font_screen_wh,
+    )
 }
 
 /// The heap's Win32 calls, through the game's own import slots (so they are
@@ -3756,6 +3891,326 @@ ported! {
     /// `TOControlMessageWindowForMenu()`.
     TOControlMessageWindowForMenu @ 0x008a_b9a0 => extern "C" fn to_control_message_window_for_menu() -> u32 {
         window::bridge::control_message_window_for_menu(&mut mem(), call_ptr)
+    }
+    /// `TOSetPktSide(x)`.
+    TOSetPktSide_009047a0 @ 0x0090_47a0 => extern "C" fn to_set_pkt_side(x: u32) -> u32 {
+        tolib::bridge::set_pkt_side(&mut mem(), x)
+    }
+    /// `TOMenuAtelRelease()`.
+    TOMenuAtelRelease_008be350 @ 0x008b_e350 => extern "C" fn to_menu_atel_release() {
+        tolib::bridge::menu_atel_release(&mut mem(), ffx_script::vm::bridge::atel_remove_ctrl_work);
+    }
+    /// `TOBtlPadScrollUp(w)`.
+    TOBtlPadScrollUp @ 0x0089_8e20 => extern "C" fn to_btl_pad_scroll_up(w: u32) -> u32 {
+        tolib::bridge::btl_pad_scroll(&mut mem(), w, stub::LINE_FEED_HEIGHT, false)
+    }
+    /// `TOBtlPadScrollDown(w)`.
+    TOBtlPadScrollDown @ 0x0089_8df0 => extern "C" fn to_btl_pad_scroll_down(w: u32) -> u32 {
+        tolib::bridge::btl_pad_scroll(&mut mem(), w, stub::LINE_FEED_HEIGHT, true)
+    }
+    /// `0x008a2ba0(p)`.
+    Tick4_008a2ba0 @ 0x008a_2ba0 => extern "C" fn tick4_008a2ba0(p: u32) -> u32 {
+        tolib::bridge::tick4(&mut mem(), p)
+    }
+    /// `0x008dfe70(w)`.
+    MessageHold_008dfe70 @ 0x008d_fe70 => extern "C" fn message_hold_008dfe70(w: u32) -> u32 {
+        tolib::bridge::message_hold(&mut mem(), w)
+    }
+    /// `TOInitPadData()`.
+    TOInitPadData @ 0x008a_dbd0 => extern "C" fn to_init_pad_data() -> u32 {
+        tolib::bridge::init_pad_data(&mut mem())
+    }
+    /// `TOMenuClearControlPadBuff()`.
+    TOMenuClearControlPadBuff @ 0x008b_e3d0 => extern "C" fn to_menu_clear_control_pad_buff() -> u32 {
+        tolib::bridge::init_pad_data(&mut mem())
+    }
+    /// `TOMenuGetDBuffDC(&out)`.
+    TOMenuGetDBuffDC @ 0x008a_8e30 => extern "C" fn to_menu_get_dbuff_dc(out: u32) -> u32 {
+        tolib::bridge::menu_get_dbuff_dc(&mut mem(), out, ffx_sg::state::bridge::get_dbuff_dc)
+    }
+    /// `TOInitMenuGraph()`.
+    TOInitMenuGraph @ 0x008b_e330 => extern "C" fn to_init_menu_graph() -> u32 {
+        tolib::bridge::init_menu_graph(&mut mem(), ffx_sg::state::bridge::get_dbuff_dc)
+    }
+    /// `TOMenuOpenPktBuffTmp()`: `TOOpenPktbuff` (`0x00904600`) not ported.
+    TOMenuOpenPktBuffTmp @ 0x008b_ef30 => extern "C" fn to_menu_open_pkt_buff_tmp() -> u32 {
+        tolib::bridge::menu_open_pkt_buff_tmp(&mut mem(), |m| call_sym(m, 0x0090_4600, &[]))
+    }
+    /// `TOCloseHelpWindow()`.
+    TOCloseHelpWindow_008b3790 @ 0x008b_3790 => extern "C" fn to_close_help_window() -> u32 {
+        tolib::bridge::close_help_window(&mut mem())
+    }
+    /// `TOGetCommandName(id)` (`MsGetComData`).
+    TOGetComName_008b8d70 @ 0x008b_8d70 => extern "C" fn to_get_com_name(id: u32) -> u32 {
+        table_name(id, 0, false, ffx_battle::stat::bridge::ms_get_com_data)
+    }
+    /// `TOGetAbilityName(id)` (`MsGetRomAbility`).
+    TOGetAbilityName_008b8d90 @ 0x008b_8d90 => extern "C" fn to_get_ability_name(id: u32) -> u32 {
+        table_name(id, 0, false, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::A_ABILITY, id, t))
+    }
+    /// `MsGetRomPlyCommand` name (kana-aware).
+    TOGetPlyCommandName_008bebb0 @ 0x008b_ebb0 => extern "C" fn to_get_ply_command_name(id: u32) -> u32 {
+        table_name(id, 0, true, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::COMMAND, id, t))
+    }
+    /// `MsGetRomPlyCommand` help text (kana-aware).
+    TOGetPlyCommandHelp_008beb70 @ 0x008b_eb70 => extern "C" fn to_get_ply_command_help(id: u32) -> u32 {
+        table_name(id, 8, true, |m, id, t| ffx_kernel::bridge::rom(m, ffx_kernel::bridge::COMMAND, id, t))
+    }
+    /// `MsImportantPtr` name (kana-aware).
+    TOGetImportantName_008bec30 @ 0x008b_ec30 => extern "C" fn to_get_important_name(id: u32) -> u32 {
+        table_name(id, 0, true, ffx_battle::save::bridge::ms_important_ptr)
+    }
+    /// `MsImportantPtr` help text (kana-aware).
+    TOGetImportantHelp_008bebf0 @ 0x008b_ebf0 => extern "C" fn to_get_important_help(id: u32) -> u32 {
+        table_name(id, 8, true, ffx_battle::save::bridge::ms_important_ptr)
+    }
+    /// `0x008b3730(_, i)`.
+    TOSaveSlotShown_008b3730 @ 0x008b_3730 => extern "C" fn to_save_slot_shown(_x: u32, i: u32) -> u32 {
+        tolib::bridge::save_slot_shown(&mem(), i)
+    }
+    /// `0x008b7f80(p)`.
+    TOCountLineBreaks_008b7f80 @ 0x008b_7f80 => extern "C" fn to_count_line_breaks(p: u32) -> u32 {
+        tolib::bridge::count_line_breaks(&mem(), p)
+    }
+    /// `0x008df690(p, n)`.
+    TOSkipCountedCodes_008df690 @ 0x008d_f690 => extern "C" fn to_skip_counted_codes(p: u32, n: u32) -> u32 {
+        tolib::bridge::skip_counted_codes(&mem(), p, n)
+    }
+    /// `0x008b89a0(i, text)`.
+    TOSetMessageText_008b89a0 @ 0x008b_89a0 => extern "C" fn to_set_message_text(i: i32, text: u32) -> u32 {
+        tolib::bridge::set_message_text(&mut mem(), i, text)
+    }
+    /// `0x00890e30(tag, end, flags)`.
+    TOBtlPacketTag_00890e30 @ 0x0089_0e30 => extern "C" fn to_btl_packet_tag(tag: u32, end: u32, flags: u32) -> u32 {
+        tolib::bridge::gif_tag(&mut mem(), tag, end, flags)
+    }
+    /// `0x008a8f00(bits, i)`.
+    TOBit16_008a8f00 @ 0x008a_8f00 => extern "C" fn to_bit16(bits: u32, i: i32) -> u32 {
+        tolib::bridge::bit16(&mem(), bits, i)
+    }
+    /// `TOSeqHasScene(i, name)`.
+    TOSeqHasScene_008ae000 @ 0x008a_e000 => extern "C" fn to_seq_has_scene(i: i32, name: u32) -> u32 {
+        scene::bridge::has_scene(&mem(), i, name)
+    }
+    /// `TOResetMessageVars(i)`.
+    TOResetMessageVars_008b8680 @ 0x008b_8680 => extern "C" fn to_reset_message_vars(i: i32) -> u32 {
+        tolib::bridge::reset_message_vars(&mut mem(), i)
+    }
+    /// `TOInitMessage(i)`.
+    TOInitMessage @ 0x008b_8210 => extern "C" fn to_init_message(i: i32) -> u32 {
+        tolib::bridge::init_message(&mut mem(), i)
+    }
+    /// `TOSelectMacroDic()`.
+    TOSelectMacroDic_008b56d0 @ 0x008b_56d0 => extern "C" fn to_select_macro_dic() -> u32 {
+        let m = &mut mem();
+        let lang = instance::bridge::ffx_lang(m, &mut phyre_printf);
+        tolib::bridge::select_macro_dic(m, lang)
+    }
+    /// `TOJoinsNeighbours(p)`.
+    TOJoinsNeighbours_008b5760 @ 0x008b_5760 => extern "C" fn to_joins_neighbours(p: u32) -> u32 {
+        let m = mem();
+        let lang = instance::bridge::ffx_lang(&m, &mut phyre_printf);
+        tolib::bridge::joins_neighbours(&m, p, lang)
+    }
+    /// `TOBtlInitLimitTimer()`.
+    TOBtlInitLimitTimer @ 0x0089_7f00 => extern "C" fn to_btl_init_limit_timer() -> u32 {
+        tolib::bridge::btl_init_limit_timer(
+            &mut mem(),
+            |m, i, n, x, y| {
+                scene::bridge::get_point(m, i.cast_signed(), n, [x, y], menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+            },
+            limit_sound,
+        )
+    }
+    /// `TOLoadMenuOpen(menu)`.
+    TOLoadMenuOpen_008b3510 @ 0x008b_3510 => extern "C" fn to_load_menu_open(menu: u32) -> u32 {
+        tolib::bridge::save_menu_open(&mut mem(), menu, true, &mut GameMenu)
+    }
+    /// `TOSaveMenuOpen(menu)`.
+    TOSaveMenuOpen_008b3580 @ 0x008b_3580 => extern "C" fn to_save_menu_open(menu: u32) -> u32 {
+        tolib::bridge::save_menu_open(&mut mem(), menu, false, &mut GameMenu)
+    }
+    /// `TOMenuFieldMusic()`.
+    TOMenuFieldMusic_008bdf60 @ 0x008b_df60 => extern "C" fn to_menu_field_music() -> u32 {
+        tolib::bridge::menu_music(&mut mem(), &mut GameMenu)
+    }
+    /// `TOBtlCtrlLibraWindow()`.
+    TOBtlCtrlLibraWindow @ 0x0089_1a30 => extern "C" fn to_btl_ctrl_libra_window() -> u32 {
+        tolib::bridge::btl_ctrl_libra_window(&mut mem(), |m, id| call_sym(m, 0x0088_6ba0, &[id]))
+    }
+    /// `TOBtlInit()`.
+    TOBtlInit @ 0x0089_77f0 => extern "C" fn to_btl_init() -> u32 {
+        tolib::bridge::btl_init(&mut mem())
+    }
+    /// `TOMenuCloseMainWindows(owner)`.
+    TOMenuCloseMainWindows_008a9230 @ 0x008a_9230 => extern "C" fn to_menu_close_main_windows(owner: u32) -> u32 {
+        tolib::bridge::close_main_windows(&mut mem(), owner, call_ptr, |m, w| call_sym(m, 0x008a_a3f0, &[w]))
+    }
+    /// `TOSetWindowRect(i, x, y, w, h)`.
+    TOSetWindowRect_00906dd0 @ 0x0090_6dd0 => extern "C" fn to_set_window_rect(i: i32, x: i32, y: i32, w: i32, h: i32) -> u32 {
+        tolib::bridge::set_window_rect(&mut mem(), i, [x, y, w, h])
+    }
+    /// `TOBtlSetDamageValueShort(a, b, d, e, f, g, h)`.
+    TOBtlSetDamageValue_0089baa0 @ 0x0089_baa0 => extern "C" fn to_btl_set_damage_value_short(a: u32, b: u32, d: u32, e: u32, f: u32, g: u32, h: u32) -> i32 {
+        btl::bridge::set_damage_value_short(&mut mem(), [a, b, d, e, f, g, h])
+    }
+    /// `TOMoveWindowEntry(i, x, y, n)`.
+    TOMoveWindowEntry_00901090 @ 0x0090_1090 => extern "C" fn to_move_window_entry(i: i32, x: i32, y: i32, n: u32) {
+        tolib::bridge::move_window_entry(&mut mem(), i, x, y, n);
+    }
+    /// `TOGetButtonIconWidth(code)`.
+    TOGetButtonIconWidth @ 0x008b_65e0 => extern "C" fn to_get_button_icon_width(code: u32) -> u32 {
+        tolib::bridge::button_icon_width(&mem(), code)
+    }
+    /// `TOSeqClearScene(i)`.
+    TOSeqClearScene_008adf80 @ 0x008a_df80 => extern "C" fn to_seq_clear_scene(i: u32) -> u32 {
+        tolib::bridge::clear_scene_slots(&mut mem(), i)
+    }
+    /// `TOMessageSlotMode1(i, a, b, c)`.
+    TOMessageSlotMode1_008b0020 @ 0x008b_0020 => extern "C" fn to_message_slot_mode1(i: u32, a: u32, b: u32, c: u32) -> u32 {
+        tolib::bridge::message_slot_mode1(&mut mem(), i, a, b, c)
+    }
+    /// `TOMessageSlotCursor(i, x, y, v)`.
+    TOMessageSlotCursor_008af730 @ 0x008a_f730 => extern "C" fn to_message_slot_cursor(i: u32, x: i32, y: i32, v: u32) -> u32 {
+        tolib::bridge::message_slot_cursor(&mut mem(), i, x, y, v)
+    }
+    /// `TOGsFRAMEPacket(fbp, fbw, psm, fbmsk)`.
+    TOGsFramePacket_008fd1f0 @ 0x008f_d1f0 => extern "C" fn to_gs_frame_packet(a: i32, b: i32, c: i32, d: i32) -> u32 {
+        tolib::bridge::frame_packet(&mut mem(), [a, b, c, d])
+    }
+    /// `TOMenuMainWindowOpen()`.
+    TOMenuMainWindowOpen_008a8e70 @ 0x008a_8e70 => extern "C" fn to_menu_main_window_open() -> u32 {
+        tolib::bridge::menu_main_window_open(&mut mem(), &mut GameMenu)
+    }
+    /// `TOStartWindowEntry(i, x, y, n)`.
+    TOStartWindowEntry_00901000 @ 0x0090_1000 => extern "C" fn to_start_window_entry(i: i32, x: i32, y: i32, n: i32) {
+        tolib::bridge::start_window_entry(&mut mem(), i, x, y, n);
+    }
+    /// `TOSetExeWindowArea(bank)`.
+    TOSetExeWindowArea @ 0x0090_6ce0 => extern "C" fn to_set_exe_window_area(bank: u32) {
+        tolib::bridge::set_exe_window_area(&mut mem(), bank);
+    }
+    /// `TOBtlMakeTargetCommandBit()`.
+    TOBtlMakeTargetCommandBit @ 0x0089_83f0 => extern "C" fn to_btl_make_target_command_bit() -> u32 {
+        let mut tmp = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let r = tolib::bridge::btl_make_target_command_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data);
+        std::hint::black_box(&mut tmp);
+        r
+    }
+    /// `TOBtlMakeTargetChrStatusBit()`.
+    TOBtlMakeTargetChrStatusBit @ 0x0089_8330 => extern "C" fn to_btl_make_target_chr_status_bit() {
+        tolib::bridge::btl_make_target_chr_status_bit(&mut mem(), &mut GameMenu);
+    }
+    /// `TOGetFontWidthInPiexl(a, b)`.
+    TOGetFontWidthInPiexl @ 0x008f_a6b0 => extern "C" fn to_get_font_width_in_piexl(a: f32, b: f32) -> f32 {
+        tolib::bridge::font_width_in_pixel(&mut mem(), a, b, font_screen_wh)
+    }
+    /// `TOWideWindowX(i, x)`.
+    TOWideWindowX_008b8430 @ 0x008b_8430 => extern "C" fn to_wide_window_x(i: i32, x: f32) -> f32 {
+        tolib::bridge::wide_window_x(&mut mem(), i, x, font_screen_wh)
+    }
+    /// `TOGetFontSpaceInPiexl(kind)`.
+    TOGetFontSpaceInPiexl @ 0x008f_a570 => extern "C" fn to_get_font_space_in_piexl(kind: u32) -> f32 {
+        tolib::bridge::font_space_in_pixel(
+            &mut mem(),
+            kind,
+            |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+            font_screen_wh,
+        )
+    }
+    /// `TOInitMessageSlot(i)`.
+    TOInitMessageSlot_008ada30 @ 0x008a_da30 => extern "C" fn to_init_message_slot(i: i32) -> u32 {
+        tolib::bridge::init_message_slot(&mut mem(), i)
+    }
+    /// `TOSeqInitScene(i)`.
+    TOSeqInitScene @ 0x008a_eec0 => extern "C" fn to_seq_init_scene(i: i32) -> u32 {
+        scene::bridge::init_scene(&mut mem(), i)
+    }
+    /// `TOGetImageWH(id, &w, &h)`.
+    TOGetImageWH @ 0x008a_c400 => extern "C" fn to_get_image_wh(id: u32, w: u32, h: u32) -> u32 {
+        tolib::bridge::get_image_wh(
+            &mut mem(),
+            id,
+            [w, h],
+            |m| ffx_menu::tk::bridge::tk_get_lang(m).cast_unsigned(),
+            |m| call_sym(m, 0x0078_16f0, &[]),
+        )
+    }
+    /// `TOBtlLimitTimerStop()` (two copies).
+    TOBtlLimitTimerStop_0089ab20 @ 0x0089_ab20 => extern "C" fn to_btl_limit_timer_stop_0089ab20() -> u32 {
+        tolib::bridge::limit_timer_stop(&mut mem(), limit_sound)
+    }
+    /// `TOBtlLimitTimerStop()`, second copy.
+    TOBtlLimitTimerStop_0089aba0 @ 0x0089_aba0 => extern "C" fn to_btl_limit_timer_stop_0089aba0() -> u32 {
+        tolib::bridge::limit_timer_stop(&mut mem(), limit_sound)
+    }
+    /// `TOBtlLimitTimerStart()`.
+    TOBtlLimitTimerStart_0089ab50 @ 0x0089_ab50 => extern "C" fn to_btl_limit_timer_start() {
+        tolib::bridge::limit_timer_start(&mut mem(), |m, play, id| call_sym(m, if play { 0x0088_6e80 } else { 0x0088_6680 }, &[id]));
+    }
+    /// `TOCopyWindowLayout(table, i)`.
+    TOCopyWindowLayout_00905e90 @ 0x0090_5e90 => extern "C" fn to_copy_window_layout(table: u32, i: u32) -> u32 {
+        tolib::bridge::copy_window_layout(&mut mem(), table, i)
+    }
+    /// `TOMenuInit()`.
+    TOMenuInit @ 0x008b_e800 => extern "C" fn to_menu_init() -> u32 {
+        tolib::bridge::menu_init(&mut mem())
+    }
+    /// `TOMenuInitBrush()`.
+    TOMenuInitBrush @ 0x0090_0f40 => extern "C" fn to_menu_init_brush() -> u32 {
+        tolib::bridge::menu_init_brush(&mut mem())
+    }
+    /// `TOAmapMakeItemList(k)`.
+    TOAmapMakeItemList @ 0x008c_6730 => extern "C" fn to_amap_make_item_list(k: u32) -> u32 {
+        tolib::bridge::amap_make_item_list(&mut mem(), k, |m, mode| call_sym(m, 0x008c_8e60, &[mode]))
+    }
+    /// `TOGetShapTextureName(id)`.
+    TOGetShapTextureName @ 0x008a_c8c0 => extern "C" fn to_get_shap_texture_name(id: u32) -> u32 {
+        tolib::bridge::shap_texture_name(&mut mem(), id, |m| instance::bridge::ffx_lang(m, &mut phyre_printf))
+    }
+    /// `TOSeqInitParam()`.
+    TOSeqInitParam @ 0x008a_e6f0 => extern "C" fn to_seq_init_param() {
+        let mut local = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(local) as u32;
+        scene::bridge::init_param(&mut mem(), at, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+        std::hint::black_box(&mut local);
+    }
+    /// `TOCopyWindowLayout` from the table at `0x00c5b460`.
+    TOCopyWindowLayout_008fa7d0 @ 0x008f_a7d0 => extern "C" fn to_copy_window_layout_008fa7d0(i: u32) -> u32 {
+        tolib::bridge::copy_layout_from(&mut mem(), 0x00c5_b460, i)
+    }
+    /// `TOCopyWindowLayout` from the table at `0x00c5c2c8`.
+    TOCopyWindowLayout_008fa450 @ 0x008f_a450 => extern "C" fn to_copy_window_layout_008fa450(i: u32) -> u32 {
+        tolib::bridge::copy_layout_from(&mut mem(), 0x00c5_c2c8, i)
+    }
+    /// `TOCopyWindowLayout` from the table at `0x00c5d578`.
+    TOCopyWindowLayout_008fa790 @ 0x008f_a790 => extern "C" fn to_copy_window_layout_008fa790(i: u32) -> u32 {
+        tolib::bridge::copy_layout_from(&mut mem(), 0x00c5_d578, i)
+    }
+    /// `TOGetFontAdvance(kind, font, size)`.
+    TOGetFontAdvance_008fa740 @ 0x008f_a740 => extern "C" fn to_get_font_advance(kind: u32, font: u32, size: f32) -> f32 {
+        tolib::bridge::font_advance(&mut mem(), kind, font, size, font_width, font_space)
+    }
+    /// `TOAddFontWidthSpace(glyph, font, size)`.
+    TOAddFontWidthSpace @ 0x008e_8ed0 => extern "C" fn to_add_font_width_space(glyph: u32, font: u32, size: f32) {
+        tolib::bridge::add_font_width_space(&mut mem(), glyph, font, size, font_screen_wh, font_width, font_space);
+    }
+    /// `TOWideWindowRect(i, out, x, y, w, h)`.
+    TOWideWindowRect_008b8d10 @ 0x008b_8d10 => extern "C" fn to_wide_window_rect(i: i32, out: u32, x: i32, y: i32, w: i32, h: i32) -> i32 {
+        tolib::bridge::wide_window_rect(&mut mem(), i, out, [x, y, w, h], |m, i, x| {
+            tolib::bridge::wide_window_x(m, i, x, font_screen_wh)
+        })
+    }
+    /// `TOInternName(name)`.
+    TOInternName_008ab440 @ 0x008a_b440 => extern "C" fn to_intern_name(name: u32) -> u32 {
+        tolib::bridge::intern_name(&mut mem(), name)
+    }
+    /// `TOSummonListInit()`.
+    TOSummonListInit_008a9090 @ 0x008a_9090 => extern "C" fn to_summon_list_init() {
+        tolib::bridge::summon_list_init(&mut mem(), &mut GameMenu);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

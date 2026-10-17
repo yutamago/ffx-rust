@@ -1,42 +1,80 @@
 #!/bin/bash
 # Runs every replay with the Rust replacements and compares it with the
 # original's recorded run (docs/harness.md): events for the traces, pixels
-# for the menu's screenshots. The original runs are recorded once with
+# for the screenshots. The replays run side by side, each in its own game
+# slot (instance, port, home, output folder). The original runs are recorded
+# once with
 #   tools/replays/run-all.sh --record
 # (twice: screenshots are compared outside what differs between them).
+#
+# Each call writes into its own folder, %TEMP%\ffx-snap\runs\<id>\<tag>\
+# (traces, screenshots, the replay's output), kept for inspection; the
+# recorded originals stay where the comparisons find them:
+# %TEMP%\ffx-snap\<replay>-orig.trace, -orig2.trace and
+# ~/ffx-work/replay-shots/orig, orig2 (FFX_REPLAY_SHOTS).
+#
+# FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
 set -u
-source "$(dirname "$0")/../in-game-slot.sh"
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
 export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
-win='C:\Users\USER\AppData\Local\Temp\ffx-snap'
-lin=/mnt/c/Users/USER/AppData/Local/Temp/ffx-snap
-log="$FFX_GAME_DIR/ffx-hook.log"
-shots=/tmp/ffx-replay-shots
+temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')"
+temp_win="${temp_win%\\}"
+win="$temp_win\\ffx-snap"
+lin="$(wslpath "$win")"
+shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots}"  # outlives a WSL restart (/tmp does not)
+id="$(date +%Y%m%d-%H%M%S)-$$"
+runs="$lin/runs/$id"
+replays=(field-walk battle-attack menu-browse)
+
+# Build once, not three times side by side.
+tools/build-hook.sh >/dev/null || exit 1
+cargo build -q --release -p ffx-harness --example replay || exit 1
+replay="$repo/target/release/examples/replay"
+
 run() { # replay, tag, [original]
-    local n
-    n=$(wc -l < "$log")
-    rm -f "$lin/$1-$2.trace" "$lin/$1"-*.bmp
-    timeout 900 cargo run -q --release -p ffx-harness --example replay -- \
-        "tools/replays/$1.txt" "$win\\$1-$2.trace" ${3:-} >/dev/null 2>&1
-    tail -n +"$n" "$log" | grep -A4 -E 'FAULT|PANIC' | head -6
-    if ls "$lin/$1"-*.bmp >/dev/null 2>&1; then
-        mkdir -p "$shots/$2"
-        cp "$lin/$1"-*.bmp "$shots/$2/"
-    fi
+    local dir="$runs/$2"
+    mkdir -p "$dir"
+    timeout 900 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
+        > "$dir/$1.out" 2>&1
+    echo "$1 $2: exit $?" >> "$dir/$1.out"
+    grep '^hook log:' "$dir/$1.out" | head -6
 }
-bad=0
+# Runs `run` for each replay with these arguments, side by side unless
+# FFX_REPLAY_SERIAL=1.
+each() {
+    for r in "${replays[@]}"; do
+        if [[ "${FFX_REPLAY_SERIAL:-}" == 1 ]]; then
+            run "$r" "$@"
+        else
+            run "$r" "$@" &
+        fi
+    done
+    wait
+}
+start=$SECONDS
 if [ "${1:-}" = --record ]; then
-    rm -rf "$shots/orig" "$shots/orig2"
-    for r in field-walk battle-attack menu-browse; do run "$r" orig original; run "$r" orig2 original; done
+    for tag in orig orig2; do
+        each "$tag" original
+        rm -rf "${shots:?}/$tag"
+        mkdir -p "$shots/$tag"
+        for r in "${replays[@]}"; do
+            cp "$runs/$tag/$r-$tag.trace" "$lin/$r-$tag.trace"
+            cp "$runs/$tag/$r"-*.bmp "$shots/$tag/" 2>/dev/null
+        done
+    done
+    echo "recorded in $((SECONDS - start)) s ($runs)"
     exit 0
 fi
-rm -rf "$shots/rust"
-for r in field-walk battle-attack menu-browse; do
-    run "$r" rust
-    cmp=(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$lin/$r-rust.trace" --also "$lin/$r-orig2.trace")
+each rust
+echo "replays took $((SECONDS - start)) s ($runs)"
+bad=0
+for r in "${replays[@]}"; do
+    # the pad word's range (press timing): field-walk 3, menu-browse 0
+    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; *) ign=() ;; esac
+    cmp=(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$lin/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
-python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$shots/rust" --coarse field-walk || bad=1
+python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" --coarse field-walk || bad=1
 exit $bad

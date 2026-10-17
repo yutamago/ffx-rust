@@ -9796,3 +9796,191 @@ fn round16_rcui_and_anime_match_the_original() {
         );
     }
 }
+
+/// Round 17: `FFXSamp0TransMatrix`, the vector scale, the sphere grid's
+/// panel sounds (`SndSepPlaySimple` stood in) and the 2D segment
+/// intersection.
+#[test]
+fn round17_field_helpers_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0011_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![(
+        Some(abmap::SND_SEP_PLAY_SIMPLE),
+        log_stub(env.log, env.rv, 170, 1),
+    )];
+    t.cave_from(env.cave_end, &list);
+    let (dst, m, v, out) = (t.alloc(0x40), t.alloc(0x40), t.alloc(0x10), t.alloc(0x10));
+    let pts: Vec<u32> = (0..4).map(|_| t.alloc(8)).collect();
+    for k in 0..60u32 {
+        env.reset(&mut t, &mut rng);
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        for i in 0..4 {
+            t.put(v + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        t.same(
+            "FFXSamp0TransMatrix",
+            |o| o.eax(0x0093_d830, &[dst, m, v]),
+            |o| rcui::bridge::ffx_samp0_trans_matrix(o, dst, m, v),
+        );
+        let s = float_in(&mut rng, -8, 8);
+        t.same(
+            "rcuiScaleVec4",
+            |o| o.eax(0x0093_d7d0, &[out, v, s]),
+            |o| rcui::bridge::rcui_scale_vec4(o, out, v, s),
+        );
+        let which = rng.below(2);
+        t.same(
+            "abmap_snd_chg_panel",
+            |o| o.eax(0x00a4_5910 + 0x10 * which, &[]),
+            |o| abmap::bridge::abmap_snd_chg_panel(o, which, call),
+        );
+        for &p in &pts {
+            t.put(p, float_in(&mut rng, -10, 10));
+            t.put(p + 4, float_in(&mut rng, -10, 10));
+        }
+        if k % 6 == 0 {
+            // parallel segments
+            let (ax, ay) = (
+                Mem::read::<u32>(&t.b, pts[0]),
+                Mem::read::<u32>(&t.b, pts[0] + 4),
+            );
+            let (bx, by) = (
+                Mem::read::<u32>(&t.b, pts[1]),
+                Mem::read::<u32>(&t.b, pts[1] + 4),
+            );
+            t.put(pts[2], ax);
+            t.put(pts[2] + 4, ay);
+            t.put(pts[3], bx);
+            t.put(pts[3] + 4, by);
+        }
+        let p = [pts[0], pts[1], pts[2], pts[3]];
+        t.same(
+            "yiSegIntersect2",
+            |o| o.eax(0x0091_cd00, &[p[0], p[1], p[2], p[3], out]),
+            |o| yi::bridge::yi_seg_intersect2(o, p, out),
+        );
+    }
+}
+
+/// Round 18: the Tidus limit tables, and sphere grid set-up: kind sizes
+/// (`op_oef2_a_get` stood in), locked menu entries
+/// (`MsGetSavePlayerPtr` stood in), link cells and node link lists.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round18_abmap_and_nkz_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (recv, savev) = (t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(abmap::OP_OEF2_A_GET), log_stub(env.log, recv, 180, 3)),
+        (
+            Some(abmap::MS_GET_SAVE_PLAYER_PTR),
+            log_stub(env.log, savev, 181, 1),
+        ),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let (rec, save, pads, link) = (
+        t.alloc(0x20),
+        t.alloc(0x100),
+        t.alloc(0x340 * 2),
+        t.alloc(0x10),
+    );
+    t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
+    t.put(savev, save);
+    for _ in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        // indices past 3 read the original's stack
+        let i = rng.below(4);
+        for (k, f) in [(0u32, 0x00a5_cb30u32), (1, 0x00a5_cb80)] {
+            t.same(
+                "NkzTidusLimitTable",
+                |o| o.eax(f, &[i]),
+                |_| nkz::bridge::nkz_tidus_limit_table(k, i),
+            );
+        }
+        // kind sizes
+        t.fill(rec, 0x20, &mut rng);
+        t.put(recv, rec);
+        let src = rng.next();
+        t.same(
+            "AbmapSetKindSizes",
+            |o| o.eax(0x00a5_adf0, &[src]),
+            |o| abmap::bridge::abmap_set_kind_sizes(o, src, call),
+        );
+        // locked entries
+        t.fill(save, 0x100, &mut rng);
+        t.put(grid + 0x115bc, u8::try_from(rng.below(7)).unwrap());
+        let pad = rng.below(2);
+        let p = pads + 0x340 * pad;
+        t.put(p + 0x1e, i16::try_from(rng.range(-1, 20)).unwrap());
+        for k in 0..20 {
+            t.put(p + 0x48 + 0xc * k, rng.below(0x100));
+        }
+        t.same(
+            "AbmapMarkLockedEntries",
+            |o| o.eax(0x00a5_a2e0, &[pad]),
+            |o| abmap::bridge::abmap_mark_locked_entries(o, pad, call),
+        );
+        // the grid's nodes and links
+        let (nodes, links) = (rng.range(0, 40), rng.range(0, 60));
+        t.put(grid + 2, i16::try_from(nodes).unwrap());
+        t.put(grid + 4, i16::try_from(links).unwrap());
+        for n in 0..41u32 {
+            let nd = grid + 0x808 + 0x28 * n;
+            t.fill(nd, 0x28, &mut rng);
+            t.put(nd + 6, if rng.below(4) == 0 { 0xffffu16 } else { 1 });
+            t.put(nd, i16::try_from(rng.range(-0xa00, 0xa00)).unwrap());
+            t.put(nd + 2, i16::try_from(rng.range(-0x920, 0x920)).unwrap());
+        }
+        for l in 0..61u32 {
+            let at = grid + 0xa808 + 0x14 * l;
+            t.fill(at, 0x14, &mut rng);
+            t.put(at, u16::try_from(rng.below(42)).unwrap());
+            t.put(at + 2, u16::try_from(rng.below(42)).unwrap());
+        }
+        t.put(link, u16::try_from(rng.below(41)).unwrap());
+        t.put(link + 2, u16::try_from(rng.below(41)).unwrap());
+        t.same(
+            "AbmapLinkCells",
+            |o| o.eax(0x00a5_a760, &[link]),
+            |o| abmap::bridge::abmap_link_cells(o, link),
+        );
+        t.same(
+            "AbmapCollectNodeLinks",
+            |o| o.eax(0x00a5_b140, &[]),
+            abmap::bridge::abmap_collect_node_links,
+        );
+        // a beam added to a lens's list
+        let (cp, pool, va, vb) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+        let blocks: Vec<u32> = (0..2).map(|_| t.alloc(0x40 + 0x30 * 8 + 0x10)).collect();
+        for &b in &blocks {
+            t.fill(b, 0x80, &mut rng);
+        }
+        t.put(blocks[0], if rng.below(2) == 0 { 0 } else { blocks[1] });
+        t.put(pool + 1, u8::try_from(rng.below(8)).unwrap());
+        t.put(pool + 4, if rng.below(5) == 0 { 0 } else { blocks[0] });
+        let old = t.alloc(0x10);
+        t.put(cp, if rng.below(2) == 0 { 0 } else { old });
+        t.put(cp + 4, u8::try_from(rng.below(0x40)).unwrap());
+        for i in 0..4 {
+            t.put(va + 4 * i, float_in(&mut rng, -9, 9));
+            t.put(vb + 4 * i, float_in(&mut rng, -9, 9));
+        }
+        let work = t.stack_scratch(0);
+        t.same(
+            "KeThCp_AddBp",
+            |o| o.eax(0x0076_44d0, &[cp, pool, va, vb]),
+            |o| ke::bridge::ke_th_cp_add_bp(o, cp, pool, (va, vb), work),
+        );
+    }
+}

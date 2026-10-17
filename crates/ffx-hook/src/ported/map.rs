@@ -3130,6 +3130,58 @@ ported! {
     rcbgAnimeLoadConfig @ 0x0093_a650 => extern "C" fn shim_rcbg_anime_load_config(anime: u32, p: u32) -> u32 {
         model::bridge::rcbg_anime_load_config(&mut mem(), anime, p, &mut |_, f, a| call_cdecl(f, a))
     }
+    // ---- round 17 ----
+    /// `FFXSamp0TransMatrix(dst, m, t)`.
+    FFXSamp0TransMatrix @ 0x0093_d830 => extern "C" fn shim_ffx_samp0_trans_matrix(dst: u32, m: u32, t: u32) -> u32 {
+        rcui::bridge::ffx_samp0_trans_matrix(&mut mem(), dst, m, t)
+    }
+    /// `rcuiScaleVec4(dst, v, s)`.
+    rcuiScaleVec4 @ 0x0093_d7d0 => extern "C" fn shim_rcui_scale_vec4(dst: u32, v: u32, s: u32) -> u32 {
+        rcui::bridge::rcui_scale_vec4(&mut mem(), dst, v, s)
+    }
+    /// `abmap_snd_chg_panel0()`.
+    abmap_snd_chg_panel0 @ 0x00a4_5910 => extern "C" fn shim_abmap_snd_chg_panel0() -> u32 {
+        abmap::bridge::abmap_snd_chg_panel(&mut mem(), 0, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `abmap_snd_chg_panel1()`.
+    abmap_snd_chg_panel1 @ 0x00a4_5920 => extern "C" fn shim_abmap_snd_chg_panel1() -> u32 {
+        abmap::bridge::abmap_snd_chg_panel(&mut mem(), 1, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiSegIntersect2(a, b, c, d, out)`.
+    yiSegIntersect2 @ 0x0091_cd00 => extern "C" fn shim_yi_seg_intersect2(a: u32, b: u32, c: u32, d: u32, out: u32) -> u32 {
+        yi::bridge::yi_seg_intersect2(&mut mem(), [a, b, c, d], out)
+    }
+    // ---- round 18 ----
+    /// `NkzTidusLimitTableA(i)`.
+    NkzTidusLimitTableA @ 0x00a5_cb30 => extern "C" fn shim_nkz_tidus_limit_table_a(i: u32) -> u32 {
+        nkz::bridge::nkz_tidus_limit_table(0, i)
+    }
+    /// `NkzTidusLimitTableB(i)`.
+    NkzTidusLimitTableB @ 0x00a5_cb80 => extern "C" fn shim_nkz_tidus_limit_table_b(i: u32) -> u32 {
+        nkz::bridge::nkz_tidus_limit_table(1, i)
+    }
+    /// `AbmapSetKindSizes(src)`.
+    AbmapSetKindSizes @ 0x00a5_adf0 => extern "C" fn shim_abmap_set_kind_sizes(src: u32) -> u32 {
+        abmap::bridge::abmap_set_kind_sizes(&mut mem(), src, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapMarkLockedEntries(pad)`.
+    AbmapMarkLockedEntries @ 0x00a5_a2e0 => extern "C" fn shim_abmap_mark_locked_entries(pad: u32) -> u32 {
+        abmap::bridge::abmap_mark_locked_entries(&mut mem(), pad, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapLinkCells(link)`.
+    AbmapLinkCells @ 0x00a5_a760 => extern "C" fn shim_abmap_link_cells(link: u32) -> u32 {
+        abmap::bridge::abmap_link_cells(&mut mem(), link)
+    }
+    /// `AbmapCollectNodeLinks()`.
+    AbmapCollectNodeLinks @ 0x00a5_b140 => extern "C" fn shim_abmap_collect_node_links() -> u32 {
+        abmap::bridge::abmap_collect_node_links(&mut mem())
+    }
+    /// `KeThCp_AddBp(cp, pool, a, b)`.
+    KeThCp_AddBp @ 0x0076_44d0 => extern "C" fn shim_ke_th_cp_add_bp(cp: u32, pool: u32, a: u32, b: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ke::bridge::ke_th_cp_add_bp(&mut mem(), cp, pool, (a, b), w)
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

@@ -91,6 +91,118 @@ In Rust so far:
   - `.webm` movies: an open VP8/VP9 decoder with Vorbis/Opus audio.
   - Steam: optional (achievements) behind a feature flag.
 
+## What gets ported
+
+Not every game function needs an exact port. `tools/classify.py` sorts the
+17,986 functions of the game modules into five categories and writes
+`symbols/classes.tsv` (address, category, one line of evidence);
+`tools/progress.py` counts what is left in its "to port" columns (logic
+not replaced yet).
+
+| category | what | what happens to it |
+|---|---|---|
+| logic | decides game state or the original look: battle, field, events, the script VM and natives, characters, menu logic, effect simulation, the PS2 Snd layer | ported exactly, with oracle parity |
+| glue | only passes data to a replaced library (state setters on its objects, render targets, shaders, buffers, packet writers): PhyreEngine/D3D11 (render), Iggy (pc-ui), FMOD (FfxFmod, FmodMusic/Sfx/Voice, iMusic/iSfx), the movie player | replaced in M4 at the library boundary, not ported |
+| platform | file layer (fios, CD/DVD emulation, VBF), allocators (Sg_Mem, user heap), threads and locks, settings, saves on disk, Steam, window/input setup, std:: copies | replaced by the host and Rust `std` |
+| debug | debug consoles, debug drawing, host0: readers, Deci2, tweak overlays | not ported now; kept as mod-tool candidates (below) |
+| dead | nothing reaches it (no call, jump or pointer anywhere in the image), or PS2-only (memory card, IOP) | not ported |
+
+Numbers (2026-10-17, with runtime coverage; functions and size):
+
+| module | logic | glue | platform | debug | dead |
+|---|---|---|---|---|---|
+| vfx | 1490 (491K) | 189 (62K) | 41 (4K) | 19 (4K) | 673 (74K) |
+| system | 1302 (266K) | 145 (82K) | 445 (56K) | 25 (3K) | 1247 (116K) |
+| render | 469 (63K) | 662 (212K) | 53 (7K) | 14 (2K) | 782 (49K) |
+| map | 972 (194K) | 30 (10K) | 2 (0K) | 219 (60K) | 451 (60K) |
+| battle | 1151 (214K) | 1 (1K) | 0 | 141 (96K) | 143 (14K) |
+| menu | 777 (183K) | 3 (0K) | 1 (0K) | 172 (22K) | 237 (20K) |
+| script | 2042 (182K) | 0 | 13 (1K) | 24 (9K) | 241 (18K) |
+| pc-ui | 461 (83K) | 205 (58K) | 63 (8K) | 62 (26K) | 417 (31K) |
+| main | 560 (103K) | 6 (2K) | 84 (6K) | 127 (25K) | 96 (13K) |
+| chara | 443 (66K) | 20 (4K) | 2 (0K) | 39 (3K) | 106 (10K) |
+| sound | 134 (10K) | 305 (29K) | 47 (2K) | 1 (0K) | 118 (8K) |
+| movie | 49 (6K) | 68 (9K) | 35 (5K) | 25 (7K) | 215 (18K) |
+| ps2-emu | 54 (8K) | 0 | 3 (2K) | 0 | 65 (4K) |
+| **GAME** | **9904 (1870K)** | **1634 (469K)** | **789 (90K)** | **868 (257K)** | **4791 (433K)** |
+
+So about 60% of the game code by size is logic and needs an exact port.
+Of the 5,199 functions ported so far, 3,614 are logic; 657 are dead, 381
+glue, 327 debug and 220 platform.
+
+How the evidence works, in order (first rule that fires): reachability
+from the PE entry point and from every function address found in the
+image's data (vtables, native and overlay tables, exception tables) or as
+an immediate in code, plus Ghidra's calls and objdump's direct
+call/jmp/jcc edges (Ghidra leaves out tail jumps), with the 676 blocks
+those reach that Ghidra made no function for (thunks, tail-call targets)
+as nodes of their own; then name rules (the
+PC-only rules stop at 0x00760000, where the PS2 game code starts and
+porters reuse words like Menu*, Save*; scene state the new renderer
+needs as input is logic even under a glue prefix: camera view and
+projection, fog/ambient/background colours, screen fades, mesh and
+skeleton matrices, character lighting, 2D-layer and mesh visibility, the
+minimap and area-map camera); then Iggy/PhyreEngine calls and
+Win32 imports; then, in the PC port's part of the image (below
+0x00760000), copies of std:: and PhyreEngine container code are platform:
+functions whose every call goes to allocators, trees, free lists, vectors,
+std:: copies or platform code, static initialisers (atexit), destructors
+only exception unwinding reaches, and the unnamed stubs between the PS2 SDK
+stand-ins; then pure GS/DMA packet writers are glue (the packet API,
+`TOAdp*`, `rcPacketData*`, the `sceDma*`/`sceGs*` kicks, and functions that
+only call it, read-only getters and VU0 scratch, and write no global any
+logic reads); then propagation (a function only debug code calls is
+debug, callers outside the game modules included, and an unnamed function
+between two debug methods of one class, such as the free camera's, is
+debug; glue and platform pass one hop to unnamed callees). Anything left is
+logic: skipping something necessary breaks parity, porting something
+unnecessary only costs time. A debug-sounding name that logic calls (an
+"is debug" flag the battle code reads, an rc math helper) is logic.
+
+**Runtime coverage** checks the static verdict. `ffx-hook`'s coverage mode
+(`FFX_COVERAGE=<list>`, `crates/ffx-hook/src/coverage.rs`) puts a one-time
+`int3` on the first byte of every dead and debug candidate; the vectored
+handler restores the byte, logs the address and resumes. `tools/coverage-run.sh`
+runs it on the original code (`--hook-disable replacements`, so ported
+functions count too) through the three replays and the coverage session
+(`tools/replays/coverage-session.txt`: boot, load, walk and talk, a battle
+with attacks, skills, a summon attempt and items, every main menu screen,
+the PC menu) on all five saves; `tools/coverage.py merge` keeps the union in
+`symbols/coverage.txt`, which `tools/classify.py` reads: a function that ran
+is a root, and one no static reference reaches is logic (debug when it
+looks like debug); a debug-named function that ran and that logic calls is
+logic. Of 5,844 armed candidates, 63 ran. Of the 34 that were dead in the
+first classification, the better static graph (blocks Ghidra misses,
+fall-through) already explained 32; the last two (`MenuTuto_GetChoice` and
+its neighbour, reached only at run time) moved to logic. Of the 29 debug
+functions that ran, 5 moved to logic (two VU-emulation helpers with an
+assert, `rcuiCopyMatrix`/`rcuiMulMatrix` that the movie camera uses, one
+battle helper); the other 24 are debug code the release build calls every
+frame or at start-up without doing anything visible (the PC tweak overlays'
+init and render, `Sg_MainDebug`, `Native_DebugPrint`, `dbgPrintf`).
+The saves load on Besaid (bsil0000, three) and in Kilika (kami0100, two).
+Not covered yet: saving (not scripted), whether the blind summon attempt
+actually summoned (the battle menu is driven without checking the screen),
+and later content; dead stays a static verdict there.
+
+### Debug code worth keeping (mod-tool candidates)
+
+| family | functions | what it is | could become |
+|---|---|---|---|
+| `Ms_Gui_*` (battle) | 11 + ~120 helpers | in-battle debug consoles: config, chr 1/2, info, camera, map data, shake, reference position | a battle inspector overlay: actor stats, ATB/CTB, camera and shake tuning, live |
+| `MsDebug*` | 13 | full gil/items/weapons, add item/weapon, debug info read, out camera, env save | a cheat/test panel for modders (give items, set HP) |
+| `rcui*`, `rcbgGuide*` (debug-only parts) | 51 + ~160 | the rc map tool's windows: camera, layers, alpha, anime, FP memory, guide map converter | a map viewer/editor: layers, camera paths, guide map export |
+| `Gu_*`, `Gui_*`, `gui_*` | 140 | the PS2 debug GUI toolkit: windows, buttons, selectors, mouse, printf | the widget layer for the other tools, or replaced by our own overlay UI |
+| `Sg_Db*` | 14 | debug primitives: boxes, circles, 2D vertices | collision and trigger visualisation in the field |
+| `Sg_Capture*` | 7 | capture mode with filters, selection, GUI hide, capture to file | a photo mode |
+| `TkPutDebugFont*`, `TkDebug*`, `TkGetDebugControler*` | 24 | debug text on screen, pad history | an on-screen log and input display |
+| `AtelDebug*`, `AtelPs2DebugString*`, `AtelSetUpSourceDebug`, `AtelLoadDebugData` | 6 | the event script's debug draw and source debug data | an event script debugger (step, breakpoints, worker state) |
+| `Ch_DrawGet/Set*`, `Ch_GuiGet*`, `Ch_PacketSetSpec*` | 16 | character draw parameters: specular, shadow colour/direction, parameter edit | a character look editor |
+| `*TweakUtil*`, `DebugMenuManager` | 23 | the PC port's tweak overlays: post process, lighting, animation, battle params | renderer and lighting tuning panels |
+| `yiGui_setfogparam*` | 2 | fog parameter window | fog editing in the map editor |
+| `debugLoadForViewer`, `debugSavedataLoadAll`, `SaveDataPreDebugSave` | 3 | save viewer and debug saves | a save-file viewer/editor |
+| `sceDeci2*`, `TkInitDeci2` | 3 | the PS2 host debugger link | nothing (PS2 only) |
+
 ## Strategy
 
 ### Rules for every rewritten function

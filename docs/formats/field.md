@@ -801,6 +801,127 @@ renderer takes over:
 - `0x0093c730` draws a bar through `Gu_SetXyzf2`/`Gu_SetRgbaq` packets:
   replaced by ffx-render.
 
+## Round 17
+
+- `FFXSamp0TransMatrix` (`0x0093d830`, ten callers): a matrix copy with
+  its translation moved by a vector; `rcuiScaleVec4` (`0x0093d7d0`);
+  `abmap_snd_chg_panel0/1` (`0x00a45910`/`0x00a45920`): sounds
+  0x8000006d/0x8000006e through `SndSepPlaySimple`.
+- `yiSegIntersect2` (`0x0091cd00`): the crossing of two 2D segments.
+  The first cross product is kept as an `f64` (`fst qword`), the
+  differences and quotients are stored as `f32`, and the epsilons
+  (±1e-5) come from `.rdata`.
+
+## Debug (mod-tool candidates)
+
+Debug code is not ported (the user's rule from round 17). These
+functions stay with the original and could become mod tools. Those
+marked "ported earlier" were done before the rule; their ports are
+behaviour-exact and stay.
+
+Tweak overlays and allocator statistics:
+- `BasicDebugTweakUtil_initialize`/`_render`/`_setEnabled` (`0x006b9360`,
+  `0x006ba1a0`, `0x006baf60`) and `0x006ba110`: the basic debug overlay
+  (character and map names, fps).
+- `BtlChrParamConfigTweakUitl_initialize` (`0x006b94a0`) and `_render`:
+  battle character parameter editor (invincibility, ...).
+- `BtlDebugTweakUtil_initialize` (`0x006b9600`) and `_render`: battle
+  debug information.
+- `CharacterAnimationTweakUtil_initialize` (`0x006b97f0`),
+  `CharacterTextureAnimationTweakUtil_initialize` (`0x006b9aa0`),
+  `0x006b9970`, `0x006b9e20` and their `_render`s: animation and texture
+  animation browsers.
+- `GameParamConfigTweakUitl_initialize` (`0x006b9cd0`): game parameter
+  cheats (full items, full commands).
+- `CharacterSwitchTweakUtil_render`, `MapSwitchTweakUtil_render`: the
+  character and map switchers' overlays.
+- `mspace_malloc_stats` (`0x006ea450`): allocator statistics print.
+
+Prints and dumps:
+- `0x00760830`: VFX clip/draw counters print (`CL%d:%d DR%d:%d`).
+- `prcPrintTex0` (`0x00766e60`): prints a GS TEX0 register.
+- `yiAssert` (`0x0090ae50`): the renderer's assertion print.
+- `yiDumpMatrix` (`0x0090b4b0`): prints a matrix.
+- `yiArc_GSmemwriteV110` (`0x0090ec94`): writes GS memory to a file.
+- `yiImage_dumpall` (`0x00918680`, ported earlier): prints every page's
+  images (a no-op on PC).
+- `yiImage_printusemem` (`0x00918ba0`): GS memory use print.
+- `rcPrint` (`0x00927550`): the `rc` libraries' print.
+- `rcbgModelDump` (`0x00928180`): prints a model's primitives.
+- `RopeDebug2` (`0x00930e70`): prints rope (spring) points.
+- `rcefMemChk`, `rcefMemDebugDisp`, `rcefMemDebugInit` (`0x00937400`,
+  `0x00937440`, `0x009374f0`): the effect heap's checks and usage prints.
+- `0x0093ce80`, `0x0093cfa0`: print integer vectors and matrices.
+- `0x00a5bda0`: the sphere grid's "Ps2 Communication Start" debug
+  entry.
+- `0x00760bf0`: the VFX "drawField is not implemented" warning loop
+  (listed in round 12).
+
+Debug camera:
+- `FreeCamera_handleInput` (`0x00680030`), `FreeCamera_setFreePause`
+  (`0x00680320`) and `0x0067fda0`: the free debug camera.
+
+`host0:`/`host:` readers and writers:
+- `yiLoadBattleFieldParticleNo`/`yiLoadFieldParticleNo` (`0x00909120`,
+  `0x009092e0`): field particle files from `host0:/ffx/proj/map/f_particle`.
+- `yiImage_readonlyTIM1`/`TIM2` (`0x00918f20`, `0x00919370`): TIM images
+  from `host0:`.
+- `yiMapSetup` (`0x00909680`, ported earlier): builds the
+  `host0:%s%s.vpa` path.
+
+The `rcui` map editor and the map tool's text format:
+- `rcuiCameraProc` (`0x00931910`), `rcuiMotionProc` (`0x00935340`), the
+  menus `0x00931e90`, `0x009325c0` and `0x00935000`, `rcuiVramWrite`
+  (`0x00937190`), `rcuiResetChrPos` (`0x00937b70`) and `rcuiMakeFullPath`
+  (`0x00937b20`): the in-game map editor's windows.
+- `rcuiLoadSetTitle` and `rcuiMakeBasePath` were ported earlier.
+- `0x0093c730`: the editor's Z value bar (also under "Replaced by
+  ffx-render").
+- Writers to `host:` and shell calls:
+  - `0x00934bc0`: the `map2d.bin` path.
+  - `0x00938010`: `chmod`.
+  - `rcbgGuideMapConvSub` (`0x00938080`) and `rcbgGuideMapSaveSub`
+    (`0x009391d0`): guide map conversion and save.
+  - `rcbgFpSaveSub` (`0x00938350`): field particle save.
+  - `0x00938590` and `0x00938a10`: `gmobjdat` saves.
+  - `rcbgSaveBinNormal` (`0x00939040`).
+  - `rcbgSaveChkPackList` (`0x00939480`).
+  - `rcbgSaveText` (`0x00939b10`).
+  - `0x0093a200`: `ls -l`.
+- The text map loaders:
+  - `rcbgFpLoadTextSub` (`0x0093a800`), `0x0093a890`,
+    `rcbgFpTrxTexLoadTextGetTrxCnt` (`0x0093a910`) and `0x0093aa60`.
+  - `0x0093ab80`: a transfer's text config, ten keywords.
+  - `0x0093af60` (the camera's text loader).
+  - `rcbgSceneLoadTextModel`, `rcbgSceneLoadTextSub` and
+    `rcbgSceneLoadTextSubConfig`.
+  - `rcbgSceneLoadTexture`, `rcbgSceneLoadTextureAnime`,
+    `rcbgSceneLoadTextureAnimeRect` and `rcbgSceneLoadTextureNormal`.
+  - `rcbgTrxTexLoadFromFile` (`0x0093beb0`).
+- Their keyword helpers `rcbgPalLoadConfig`,
+  `rcbgSceneLoadTextSubConfigKeys`, `rcbgSceneLoadTextCameraCalcRef`
+  (also called by `rcuiCameraProc`) and `rcbgAnimeLoadConfig` were ported
+  earlier.
+
+## Sphere grid set-up and lens beams (round 18)
+
+From here on, functions are picked by `symbols/classes.tsv` (category
+`logic`) and blocker count.
+- `NkzTidusLimitTableA`/`B` (`0x00a5cb30`/`0x00a5cb80`): four-entry
+  local tables (24, 20, 20, 18 and 11 to 14). An index past 3 reads the
+  original's stack; the port returns 0.
+- `AbmapSetKindSizes` (`0x00a5adf0`): the eight node kinds' sizes from
+  `op_oef2_a_get`.
+- `AbmapMarkLockedEntries` (`0x00a5a2e0`): menu entries whose save bit is
+  clear.
+- `AbmapLinkCells` (`0x00a5a760`): a link's end cells on the grid's
+  20-wide map.
+- `AbmapCollectNodeLinks` (`0x00a5b140`): each node's links (up to five;
+  a sixth overflows into the next words after a `dbgPrintf`, as in the
+  original).
+- `KeThCp_AddBp` (`0x007644d0`): a beam block taken off its pool's free
+  list, set up (`KeThBP_Init`) and pushed onto the lens's list.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

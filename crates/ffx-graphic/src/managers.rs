@@ -350,7 +350,11 @@ pub mod bridge {
     /// head is `this` (root at `+0xc`); nodes `+0` lower, `+4` higher,
     /// `+0xc` the key. The node, else 0.
     pub fn tree_find(m: &impl Mem, this: u32, key_ptr: u32) -> u32 {
-        let key: u32 = m.read(key_ptr);
+        tree_find_key(m, this, m.read(key_ptr))
+    }
+
+    /// [`tree_find`] of a key value.
+    pub fn tree_find_key(m: &impl Mem, this: u32, key: u32) -> u32 {
         let mut node: u32 = m.read(this + 0xc);
         while node != this {
             let k: u32 = m.read(node + 0xc);

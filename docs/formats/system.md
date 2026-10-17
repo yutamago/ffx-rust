@@ -158,3 +158,64 @@ object at `0x00ccb15c`, the release takes the tracker's mutex
 `+0x10`, removes the node (`Phyre::PRedBlackTree::remove`) and pushes it
 on the free list at `0x00c31eb4` (`Phyre::PFreeList::deallocate`). Then it
 releases the mutex.
+
+## Language-dependent text tables
+
+`TOGetFFXLangStr` (`0x008ac300`) maps `TOGetFFXLang()` to a two-letter
+code: 1 `us`, 2 `fr`, 3 `es`, 4 `de`, 5 `it`, 9 `kr`, 10 `ch`, 18 `uk`,
+anything else `jp`. `0x008b56d0` picks the macro dictionary at
+`0x01869eb8` the same way: us `0x00b63018`, fr `0x00b63e28`, es
+`0x00b642d8`, de `0x00b634c8`, it `0x00b63978`, kr `0x00b650e8`, ch
+`0x00b64788`. Japanese and the other values leave the pointer alone.
+`0x008b5760` decides whether a text code joins its neighbours.
+Japanese joins a `,` pair around a value up to 0x63. Korean and Chinese
+join codes from 0x30 whose neighbours both lie in `0x5a..=0x8d`. Other
+languages never join.
+
+Names shown in menus come from the kernel and battle tables. The getter
+(`MsGetComData`, `MsGetRomAbility`, `MsGetRomPlyCommand`,
+`MsImportantPtr`) returns a record plus the base of its string table.
+The record's `u16` at `+0` (name) or `+8` (help) is an offset into that
+table. The command and key-item getters (`0x008bebb0`, `0x008beb70`,
+`0x008bec30`, `0x008bebf0`) use the next word's offset, `+4` or `+0xc`,
+when the hiragana setting is on (`MsGetSaveConfigHiragana`, menu config
+bit 3).
+
+## Save/load menu set-up
+
+`0x008b3510` (load) and `0x008b3580` (save) prepare the save/load menu.
+1. Clear `0x018663c4`, then call `TkMcSetDebugLock(1)`.
+2. Clear the menu's `+0x1c`, the word `0x01866250` and the two flag
+   bytes at `0x01866268`, then reset the toggles
+   (`MenuSaveLoad_ResetToggles`).
+3. Set `0x0186628a`: 1 for load, 0 for save.
+4. Turn the screen-x2 flag off and set the frame ratio difference to -16.
+
+`0x0186628a` decides which slots of `g_TkSaveSlots` (`0x01866290`)
+`0x008b3730` reports as shown. With it clear, only state 1 counts. With
+it set, any state up to 2 counts, and so does state 4.
+
+## Debug and development code (not ported)
+
+None of this runs in normal play. It stays unported, and it is listed
+here so the useful parts can come back as mod tools.
+
+| Function | What it does |
+|---|---|
+| `SetDebugHandler` `0x0062f4d0`, `dbgPrintf` `0x0062f500`, `scePrintf` `0x0062fbf0`, `debug_exit_trace` `0x0062f510` | The PS2 SDK's debug-print entry points, left as empty stubs on PC. |
+| `sceDeci2Open` `0x0062f680`, `sceDeci2ReqSend` `0x0062f690`, `sceDeci2ExReqSend` `0x0062f660` | DECI2 host-link stubs (the PS2 devkit protocol); they return without doing anything. |
+| `printf2` `0x0076dd10` | Formats a message (`vsprintf`) and routes it by its `FFXDEBUG` prefix: to `dbgPrintf`, or (debug config set) to the game's text output. |
+| `TODapsInit`/`TODapsDraw`/`TODapsSetPos`/`TODapsString`/`TODapsInteger`/`TODapsPrintf`/`TODapsMakePkt` `0x0089dc10..0x0089dde0` | The on-screen debug text buffer (see "Debug print buffer"). Some were ported in earlier rounds; the rest stay. Useful as a mod overlay. |
+| `TODebugAddPadPrintFlag` `0x008abd00`, `TODebugGetPadPrintFlag` `0x008abd20` | Cycle and read the pad-print debug mode (0..3). The menu advances it when both menu pad words are 0x100. |
+| `FFXIsDebug` `0x00887c50`, `0x00887c80` | Read and set the debug flag `0x0133c910`. The setter only works when `g_GsDefDrawEnv2` is set. |
+| `SaveDataPreDebugSave` `0x006484d0`, `SaveDataManager_preDebugSave` `0x006f2410`, `SaveDataManager_debugSave_Internal` `0x006f0510`, `debugSavedataLoadAll` `0x006492c0` | The debug save path. It stamps the CRC (`SaveDataWriteCrc`) and writes the raw save to a file in the default save folder (`_wfopen`/`fwrite`); the load-all variant reads them back. A candidate mod tool for save editing. |
+| `SaveDataTtyWrite` `0x00648820`, `SaveDataTtyWrite2` `0x00648850` | Print save-system status lines to the console (`fprintf`). |
+| `debugLoadForViewer` `0x00649040` | Builds a path (`sprintf`) and reads that file into memory (`fopen`/`fread`), printing `SKS_DEBUG` messages on failure. Called from the save menu (`0x008b55e0`). |
+| `debugPrintString`/`debugPrintStringToHex`/`debugPrintStringToUTF8` `0x00649180..0x00649220` | Print a string as text, as hex, or as UTF-8 code points (`SKS_DEBUG: %s: ...`). Handy for text-encoding mods. |
+| `prcPrintMatrix` `0x00766c50`, `prcPrintPacket` `0x00766d10` | Dump a 4x4 matrix or a GS packet to the console. |
+| `ModelBuffer_PrintMemUsage` `0x0072c1a0` | Empty stub that once reported model-buffer memory use. |
+| `0x00687850`, `0x00687e90` | Load `dbghelp.dll` from "Debugging Tools for Windows" and write crash minidumps. |
+| `0x0092ccf0`, `0x0092cdd0` | Reload a field's FP and guide-map data from the development tree ("DEBUG FP LOAD", `rcbgDebug.c`); nothing calls them. |
+| `0x00a42a00`, `0x00a42ab0`, `0x00a42f50` (`read_debug.c`) and `pc_fat_index_filename_set` `0x00a42fc0`, `pc_module_sizetbl_set` `0x00a43080`, `pc_sizetbl_set` `0x00a430c0`, `pc_sizetbl_set_Ex` `0x00a43100` | Point the CD layer at `host0:/ffx/proj/...` index and size tables; `host0:` is the devkit host. |
+| `TOInitBattleFontPath` `0x008ad780`, `TOInitEventFontPath` `0x008ad840` | Build font file paths under `host0:/ffx/master/...`. Classed as file layer, not game state: they only choose where fonts are read from. |
+| `0x00a7aee0` | Loads `host0:%s.irx` modules (IOP drivers); nothing calls it. |

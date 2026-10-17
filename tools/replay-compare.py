@@ -9,10 +9,13 @@ traces drift even when the logic agrees.
   (a battle's draws and an event script's) interleave differently between
   runs; per generator their order is fixed.
 
-Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace]
+Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace] [--ignore N,...]
 Exits 1 when anything differs. With `--also`, a second run of the original:
 a range passes when B matches either original run (the originals themselves
-can differ by an event where a press lands a frame apart).
+can differ by an event where a press lands a frame apart). `--ignore`
+leaves trace ranges out by index: the pad word (0x00ccb170) records when
+the harness's presses land, which varies by a frame between any two runs
+of the original, and is no game result.
 """
 import sys
 from collections import defaultdict
@@ -48,12 +51,19 @@ def main():
         k = argv.index("--also")
         also = events(argv[k + 1])
         argv = argv[:k] + argv[k + 2:]
+    ignore = set()
+    if "--ignore" in argv:
+        k = argv.index("--ignore")
+        ignore = {int(x) for x in argv[k + 1].split(",")}
+        argv = argv[:k] + argv[k + 2:]
     sys.argv = sys.argv[:1] + argv
     if len(sys.argv) not in (3, 5):
         sys.exit(__doc__)
     bad = 0
     ea, eb = events(sys.argv[1]), events(sys.argv[2])
     for i, (x, y) in enumerate(zip(ea, eb)):
+        if i in ignore:
+            continue
         if x != y and also is not None and i < len(also) and also[i] == y:
             print(f"range {i}: matches the second original run")
             continue

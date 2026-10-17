@@ -10,7 +10,10 @@
 //! - [`ui`]: the UI's coordinate remaps and font metrics;
 //! - [`managers`]: the post-process, shadow, texture-animation and
 //!   dynamic-geometry managers' accessors;
-//! - [`cache`]: the model cache (`Cache_*`).
+//! - [`cache`]: the model cache (`Cache_*`);
+//! - [`state`]: the scene state `ffx-render` reads: fog, ambient and
+//!   background colours, the screen fade, the cameras, the 2D layers,
+//!   skeleton matrices and character lighting.
 //!
 //! `PhyreEngine` and the C++ objects on it are library code: bridges call
 //! them through [`host::Host`], never port them. The data layouts are in
@@ -21,6 +24,8 @@ pub mod host;
 pub mod managers;
 pub mod render_data;
 pub mod scene;
+pub mod state;
 pub mod texanim;
 pub mod ui;
+pub mod util;
 pub mod vfx;

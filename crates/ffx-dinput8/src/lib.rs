@@ -94,6 +94,9 @@ unsafe fn install_hooks(base: usize) {
         }
         Err(wrong) => log(&format!("  not patching: {wrong}")),
     }
+    // Last, so it only arms bytes no hook or patch owns.
+    // SAFETY: forwarded from the caller.
+    unsafe { ffx_hook::coverage::install(base) };
 }
 
 fn real_direct_input8_create() -> Option<DirectInput8CreateFn> {

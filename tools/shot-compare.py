@@ -16,16 +16,30 @@ Screenshots whose name starts with a `--coarse` prefix are compared by the
 mean brightness of BLOCK x BLOCK blocks instead: where the whole picture
 moves between runs of the original (the field's camera sways with a timer
 that the replay does not pin down), a block may differ by COARSE levels, or
-twice what the two original runs differ by, whichever is more. A missing
-character model changes its blocks by about 50.
+twice what the two original runs differ by, whichever is more, leaving out
+the top SKY rows (the field's searchlight beams sweep on the wall clock;
+one run measured 38 there). A missing character model changes its blocks
+by about 50.
 """
 import pathlib
 import struct
 import sys
 
 RADIUS = 12
+# a pixel counts only when a channel differs by more than this: the menu
+# cursor's glow pulses on the wall clock, and two original runs can agree on
+# a glow pixel by chance (seen: 8 to 15 levels); a missing or moved element
+# differs by far more
+TOLERANCE = 24
+# regions left out per screenshot (x0, y0, x1, y1, top-left origin): the
+# main menu's play time blinks its colon once a second of wall time, so two
+# original runs can both show it while the port's run catches it off
+MASKS = {
+    "menu-browse-2.bmp": [(140, 575, 165, 605)],
+}
 BLOCK = 40
 COARSE = 25
+SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
 
 
 def block_means(w, h, px):
@@ -54,6 +68,10 @@ for a_path in sorted(a_dir.glob("*.bmp")):
     _, _, r = pixels(r_dir / a_path.name)
     if coarse and a_path.name.startswith(coarse):
         ma, mb, mr = block_means(w, h, a), block_means(w, h, b), block_means(w, h, r)
+        # the top band: the deck's searchlight beams sweep on the wall clock
+        for m in (ma, mb, mr):
+            for k in [k for k in m if k[1] * BLOCK < SKY]:
+                del m[k]
         limit = max(COARSE, 2 * max(abs(ma[k] - mb[k]) for k in ma))
         worst = max(ma, key=lambda k: abs(ma[k] - mr[k]))
         d = abs(ma[worst] - mr[worst])
@@ -71,7 +89,10 @@ for a_path in sorted(a_dir.glob("*.bmp")):
     stable_diff = 0
     box = [w, h, -1, -1]
     for i in range(0, w * h * 4, 4):
-        if not noise[i // 4] and a[i:i + 3] != r[i:i + 3]:
+        if not noise[i // 4] and max(abs(a[i + c] - r[i + c]) for c in range(3)) > TOLERANCE:
+            mx, my = (i // 4) % w, h - 1 - (i // 4) // w
+            if any(x0 <= mx < x1 and y0 <= my < y1 for x0, y0, x1, y1 in MASKS.get(a_path.name, ())):
+                continue
             stable_diff += 1
             x, y = (i // 4) % w, h - 1 - (i // 4) // w
             box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]
