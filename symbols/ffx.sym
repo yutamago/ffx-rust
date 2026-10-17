@@ -563,6 +563,7 @@
 0x004c7ce0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PRenderTarget__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PRenderTarget *>::Get" (its own __FUNCTION__ in an error print)
 0x004c7dc0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PRenderTargetBase__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PRenderTargetBase *>::Get" (its own __FUNCTION__ in an error print)
 0x004c82b0 function Phyre_PRendering_PRenderTargetBase_getViewportSize # fh v3:exact 0x004c83d0 Phyre::PRendering::PRenderTargetBase::getViewportSize
+0x004c9c20 function PMatrix4_RowTimes_004c9c20 # thiscall(m, out, v), ret 8: out = the row vector v (4 floats) times the 4x4 m (x87, each component stored); name ours
 0x004c9cb0 function PMatrix4_TransformPoint_004c9cb0 # thiscall(m, out, p), ret 8: out = (p.x, p.y, p.z, 1) times the 4x4 m (x87, each component summed x, y, z then the translation row); the box clip tests' call; name ours
 0x004caba0 function Phyre_PRendering_PShadowCaster_Bind # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'm_splits'; Switch 0x71000ebcb0 Phyre::PRendering::PShadowCaster::Bind (symbols from Fahrenheit's server export)
 0x004cae20 function Phyre_PRendering_PShadowCaster_CheckLightShadowCasterCompatibility # fh switch:bsim1.00 0x71000ec4e0 Phyre::PRendering::PShadowCaster::CheckLightShadowCasterCompatibility
@@ -2102,6 +2103,7 @@
 0x00651070 function PhyreScene_DrawZPrePass      # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'ADDITIONAL_ZPREPASS'; Switch 0x71001f6c50 PhyreScene::DrawZPrePass (symbols from Fahrenheit's server export)
 0x006513f0 function PhyreScene_ForceSetShadowSolution # thiscall(this, v), ret 4: +0xf9cc = v; name Fahrenheit's (Switch BSim)
 0x00651400 function PhyreScene_ForceTransparent # fh v3:exact 0x006515b0 PhyreScene::ForceTransparent
+0x00651650 function PhyreScene_GetScreenAdjustedView_00651650 # thiscall(scene, out), ret 4: out = the camera's 4x4 (*(scene +0xdc) +0x34) times [1 0 0 0; 0 4/3 0 0; 0 0 1 0; 0 d 0 1], d = 0.33333337 - 2 (scene +0xf9c0 + +0xf9bc); returns out; callers 0x0064fbb0, 0x006526a0; name ours
 0x006517d0 function PhyreScene_GetSplitScreenStat # thiscall(this): u32 +0x10d8c; name Fahrenheit's (Switch BSim)
 0x00651be0 function PhyreScene_preRender         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f2cf0 PhyreScene::preRender, 2 votes, round 2
 0x00652250 function SegmentList_AllReady      # structure: fastcall(this): with +0x24 pending, 1 when every non-null entry of +0x54 (+0x58 of them) has scene state *(g_PhyreScene +0x60)[i] == 1 (then +0x24 cleared), else 0; name ours

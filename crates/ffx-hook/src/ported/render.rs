@@ -1371,6 +1371,12 @@ ported! {
     graphicSetSpecularMapParamsEx @ 0x0064_39b0 => extern "C" fn graphic_set_specular_params_ex(id: u32, a: u32, f0: u32, f1: u32, f2: u32, b: u32, g0: u32, g1: u32, g2: u32, g3: u32) {
         ut::graphic_set_specular_params_ex(&mut mem(), [id, a, f0, f1, f2, b, g0, g1, g2, g3]);
     }
+
+    // ---- round 20 ----
+    /// `PhyreScene_GetScreenAdjustedView_00651650(this, out)`.
+    PhyreScene_GetScreenAdjustedView_00651650 @ 0x0065_1650 => extern "thiscall" fn scene_screen_adjusted_view(this: u32, out: u32) -> u32 {
+        ut::scene_screen_adjusted_view(&mut mem(), this, out)
+    }
 }
 
 /// A singleton's pointer.

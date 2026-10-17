@@ -865,3 +865,16 @@ Round 19:
 - `graphicSetSpecularMapParamsEx(...)` (`0x006439b0`):
   `SpecularMapParamsManager_SetParams` on `SpecularMapParamsManager_GetInstance()`
   with its ten words (the floats copied through the x87).
+
+Round 20:
+
+- `PhyreScene_GetScreenAdjustedView_00651650(scene, out)` (`0x00651650`,
+  `thiscall`, `ret 4`, returns `out`): `out` = the camera's 4x4 at
+  `*(scene +0xdc) +0x34` times `[1 0 0 0; 0 4/3 0 0; 0 0 1 0; 0 d 0 1]`
+  (row vectors), with `4/3` the `f32` at `0x00b43d34` and `d = 0.33333337
+  - 2 * (scene +0xf9c0 + scene +0xf9bc)` (the `f64` at `0x00b43d40`; the
+  sum and its double kept at 53 bits, `d` stored as a float). The
+  adjustment matrix is first written into `out`; each camera row times it
+  (`PMatrix4_RowTimes_004c9c20`, bottom row first) goes to a temporary,
+  then the four rows are copied over `out`. `PhyreScene_getViewProjectionMatrix`
+  inlines the same adjustment.

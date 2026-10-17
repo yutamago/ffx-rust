@@ -6525,3 +6525,69 @@ fn round19_box_rounding_matches_the_original() {
         }
     }
 }
+
+// ---- round 20 ----
+
+fn round20_case(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    // PMatrix4_RowTimes runs, original on both sides
+    let scene = t.alloc(&rng.bytes(0xfa00));
+    let f = |rng: &mut Rng| -> f32 {
+        if rng.chance(3) {
+            rng.float()
+        } else {
+            (rng.below(41) as f32 - 20.0) / 16.0
+        }
+    };
+    for off in [0xf9bc, 0xf9c0] {
+        let v = f(rng);
+        t.write(scene + off, &v.to_le_bytes());
+    }
+    let cam: Vec<u8> = (0..0x20).flat_map(|_| f(rng).to_le_bytes()).collect();
+    let cam = t.alloc(&cam);
+    t.w32(scene + 0xdc, cam);
+    let out = t.alloc(&rng.bytes(0x40));
+    t.check(what, 0x0065_1650, Conv::Thiscall(scene), &[out], |g| {
+        Out::U32(ut::scene_screen_adjusted_view(g, scene, out))
+    });
+}
+
+#[test]
+fn round20_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2020_0020);
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round20_case(&mut t, &mut rng, &what);
+    }
+}
+
+#[test]
+fn snapshot_round20_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own scene and camera
+    let scene = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    if scene != 0 && t.r32(scene + 0xdc) != 0 {
+        let out = t.zeros(0x40);
+        t.check(
+            "snapshot scene",
+            0x0065_1650,
+            Conv::Thiscall(scene),
+            &[out],
+            |g| Out::U32(ut::scene_screen_adjusted_view(g, scene, out)),
+        );
+    }
+    let mut rng = Rng(0x5020_0020);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round20_case(&mut t, &mut rng, &what);
+    }
+}

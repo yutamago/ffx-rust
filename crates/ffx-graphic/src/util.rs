@@ -1826,4 +1826,48 @@ pub mod bridge {
         let mgr = h.call_sym(SPECULAR_GET_INSTANCE, Conv::Cdecl, &[]);
         specular_set_params(h, mgr, p);
     }
+
+    // ---- round 20 ----
+
+    /// `PMatrix4_RowTimes_004c9c20(m, out, v)` (`thiscall`): `out` = the
+    /// row vector `v` (4 floats) times the 4x4 `m`.
+    pub const ROW_TIMES: u32 = 0x004c_9c20;
+    /// The `4/3` (`f32`) and the `0.33333337` (`f64`) of the screen
+    /// adjustment.
+    pub const SCREEN_ADJUST_ASPECT: u32 = 0x00b4_3d34;
+    pub const SCREEN_ADJUST_THIRD: u32 = 0x00b4_3d40;
+
+    /// `PhyreScene_GetScreenAdjustedView_00651650(scene, out)`
+    /// (`0x00651650`, `thiscall`, `ret 4`): `out` = the camera's 4x4 at
+    /// `*(scene +0xdc) +0x34` times `[1 0 0 0; 0 4/3 0 0; 0 0 1 0; 0 d 0
+    /// 1]`, `d = 0.33333337 - 2 * (scene +0xf9c0 + +0xf9bc)` (stored as a
+    /// float). The adjustment is built in `out` itself, each row product
+    /// (`PMatrix4_RowTimes`, bottom row first) goes to a temporary in
+    /// [`Host::scratch`], then all four are copied over it. Returns `out`.
+    pub fn scene_screen_adjusted_view(h: &mut impl Host, scene: u32, out: u32) -> u32 {
+        let k = rt(h.read(h.rebase(SCREEN_ADJUST_ASPECT)));
+        let third = f64::from_bits(h.read(h.rebase(SCREEN_ADJUST_THIRD)));
+        let a = x87::load(h.read(scene + 0xf9c0));
+        let s = x87::add(a, x87::load(h.read(scene + 0xf9bc)));
+        let d = x87::store(x87::sub(third, x87::add(s, s)));
+        let one = 1f32.to_bits();
+        let p = [one, 0, 0, 0, 0, k, 0, 0, 0, 0, one, 0, 0, d, 0, one];
+        for (i, v) in (0u32..).zip(p) {
+            h.write(out + 4 * i, v);
+        }
+        let view = h.read::<u32>(scene + 0xdc).wrapping_add(0x34);
+        let tmp = h.scratch();
+        for r in (0..4u32).rev() {
+            h.call_sym(
+                ROW_TIMES,
+                Conv::Thiscall(out),
+                &[tmp + 0x10 * r, view + 0x10 * r],
+            );
+        }
+        for i in 0..16 {
+            let v = rt(h.read(tmp + 4 * i));
+            h.write(out + 4 * i, v);
+        }
+        out
+    }
 }
