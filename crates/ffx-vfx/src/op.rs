@@ -1736,4 +1736,24 @@ pub mod bridge {
         mem.write(t.wrapping_add(i.wrapping_mul(4)).wrapping_add(oef), v);
         1
     }
+
+    /// `0x02322794`: a byte that also shows `op_num_xy_set`'s numbers.
+    pub const NUM_SHOW: Global<u8> = Global::new(0x0232_2794);
+
+    /// `op_num_xy_set(x, y)` (`0x007e65e0`): `opd_num_xy_set(x, y)` (through
+    /// `call`) once when `NUM_SHOW` is set and again in debug mode.
+    pub fn op_num_xy_set<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        y: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(0x00a5_e2b0).ptr(mem).addr;
+        if NUM_SHOW.get(mem) != 0 {
+            call(mem, f, &[x, y]);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            call(mem, f, &[x, y]);
+        }
+    }
 }

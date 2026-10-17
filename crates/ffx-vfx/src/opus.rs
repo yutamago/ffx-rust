@@ -324,4 +324,95 @@ pub mod bridge {
         }
         base().wrapping_add(0xc0)
     }
+
+    /// `opu_end(obj, cmd)` (`0x0080c3f0`): unless the object is held
+    /// (`u16 +0x216`), its part (`+0x220`) is cleared (first 16 bytes);
+    /// if its `g_EtEff` record (`EFF[u16 part +0x14]`) still points at it
+    /// with a type nibble of 4, the object waits (`+0x210` = 0x78) and
+    /// `cmd` comes back; otherwise unit `u16 +0x214` of the list `obj +
+    /// 0x300` is shut down (`opus_prog_off`, `opus_draw_off`,
+    /// `yonExtMapDeleteId`, through `call`) and `obj +0x218` decremented.
+    /// Then `+0x210` = 1 and 0 is returned.
+    pub fn opu_end<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u16>(obj.wrapping_add(0x216)) == 0 {
+            let part: u32 = mem.read(obj.wrapping_add(0x220));
+            mem.write(part, [0u32; 4]);
+            let i = u32::from(mem.read::<u16>(part.wrapping_add(0x14)));
+            let e = EFF.ptr(mem).at(i).addr;
+            if mem.read::<u32>(e + 4) == part && mem.read::<u32>(e) & 0xf000_0000 == 0x4000_0000 {
+                mem.write(obj.wrapping_add(0x210), 0x78u8);
+                return cmd;
+            }
+            let list = obj.wrapping_add(0x300);
+            let no = u32::from(mem.read::<u16>(obj.wrapping_add(0x214)));
+            for (f, args) in [(0x0080_14c0u32, [list, no]), (0x0080_0d10, [list, no])] {
+                let f = Global::<u32>::new(f).ptr(mem).addr;
+                call(mem, f, &args);
+            }
+            let id = i32::from(mem.read::<i16>(obj.wrapping_add(0x214))).cast_unsigned();
+            let f = Global::<u32>::new(0x0080_7830).ptr(mem).addr;
+            call(mem, f, &[id]);
+            let n: u16 = mem.read(obj.wrapping_add(0x218));
+            mem.write(obj.wrapping_add(0x218), n.wrapping_sub(1));
+        }
+        mem.write(obj.wrapping_add(0x210), 1u8);
+        0
+    }
+
+    /// `opus_chr_width_00800cd0(chr, battle)` (`0x00800cd0`): a character's
+    /// width / 6: `MsGetChrWidth(chr)` when `battle` is set, else
+    /// `Ch_GetThickness(g_EtChrHandles[chr])` (both float results, through
+    /// `fcall`), stored as `f32` before and after the division. Returns
+    /// it in `ST0`.
+    pub fn opus_chr_width<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        battle: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        use crate::x87::Reg;
+        let w = if battle == 0 {
+            let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+            let f = Global::<u32>::new(0x0082_ad70).ptr(mem).addr;
+            fcall(mem, f, &[h])
+        } else {
+            let f = Global::<u32>::new(0x0079_5a20).ptr(mem).addr;
+            fcall(mem, f, &[chr])
+        };
+        let div: crate::x87::Op = |a, b| a / b;
+        let six: f64 = mem.read(Global::<u32>::new(0x00b3_eb88).ptr(mem).addr);
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let w = w as f32;
+        Reg::load_f32(w).constant(div, six).store()
+    }
+
+    /// `opus_clip_off_all_in_battle()` (`0x00800bb0`): when
+    /// `MsBattleChrStart()` is not 0, every character handle in the first
+    /// 32 `g_EtChrHandles` slots gets `Ch_EnClip(h, 0)` (through `call`).
+    /// Returns what the original leaves in `eax`: the last call's result,
+    /// or the last handle read.
+    pub fn opus_clip_off_all_in_battle<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(0x0078_0cb0).ptr(mem).addr;
+        let mut eax = call(mem, f, &[]);
+        if eax == 0 {
+            return 0;
+        }
+        let clip = Global::<u32>::new(0x0082_aa30).ptr(mem).addr;
+        for i in 0..32 {
+            let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(i).get(mem);
+            eax = h;
+            if h != 0 {
+                eax = call(mem, clip, &[h, 0]);
+            }
+        }
+        eax
+    }
 }

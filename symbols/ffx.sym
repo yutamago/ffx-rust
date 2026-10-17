@@ -5757,6 +5757,7 @@
 0x007e3070 function op_float_scale            # (dst, v, s) *dst = *v * s (f32)
 0x007e30a0 function op_or16_64                # (dst, src, u16 v) 64-bit dst = *src | v
 0x007e30c0 function op_color_shift_store_word # (src, base) dword base + g_pppColorConShift = *src; the shift cleared
+0x007e3100 function op_ivec4_to_fvec4_007e3100 # ours: (dst, src): the four i32 of src (copied first) as f32 into dst (fild/fstp)
 0x007e31c0 function op_vec_w_sub              # (dst, v, s) dst.w = v.w - s
 0x007e31e0 function op_pow2                   # (n) -> 2^n (1 for n <= 0)
 0x007e3360 function op_fabs                   # (x) -> |x| (-x when x < 0, through the FPU)
@@ -6050,6 +6051,7 @@
 0x00800bb0 function opus_clip_off_all_in_battle # fh v3:bsim1.00 0x00800ad0
 0x00800be0 function opus_clip_on_all_in_battle # fh v3:bsim1.00 0x00800b00
 0x00800c10 function opus_cscale_get              # layout+callees: sorts between opus_clip_on_all_in_battle and opus_draw_off, and its named callees match the Switch 0x71003f55b0 opus_cscale_get's (similarity 1.00: Ch_GetFixHeight, Ch_GetThickness, MsGetChrHeight, MsGetChrWidth); symbols from Fahrenheit's server export
+0x00800cd0 function opus_chr_width_00800cd0    # ours: (chr, battle) -> float in ST0: MsGetChrWidth(chr) when battle, else Ch_GetThickness(g_EtChrHandles[chr]), divided by 6.0 (0x00b3eb88); 4 callers in the opus code
 0x00800d10 function opus_draw_off             # fh v3:exact 0x00800c30
 0x00800d60 function opu_id_list_add           # (unit, short id) -> index: adds id to the i16 list at unit+0x1c (u16 length +0x34, the last place kept) unless found before the first negative entry (opu_et_ovl)
 0x00800da0 function opu_eff_part_index        # (unit) -> the g_EtEff record (+0x14)'s part: +0x1a & 7 when below its count (+8), else the index of +0x18 in its byte list (+0x10), else count & ~0xff
@@ -14737,6 +14739,7 @@
 0x02321580 label    g_OpDebugChrFlags            # byte: bit 1 with g_OpDebugMode makes opus_get_chr_status_index use g_OpDebugChrResident instead of Ch_EffectGetResidentPtr
 0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
+0x02322794 label    g_OpNumShow                  # byte: op_num_xy_set shows its numbers (opd_num_xy_set) when set, again in debug mode
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
 0x023c35c0 label    g_OpOef2SoundCueArgs      # the arguments of g_OpOef2SoundCueRing

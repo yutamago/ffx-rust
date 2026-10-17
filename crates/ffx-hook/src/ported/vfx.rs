@@ -60,6 +60,26 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// An original cdecl function of up to 12 word arguments that returns a
+/// float in `ST0` (`MsGetChrWidth`, `Ch_GetThickness`): the value at the
+/// x87's precision (the declared `f64` return pops `ST0`).
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+fn call_ptr_f64(f: u32, a: &[u32]) -> f64 {
+    type F12 =
+        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> f64;
+    let mut w = [0u32; 12];
+    let n = a.len().min(12);
+    w[..n].copy_from_slice(&a[..n]);
+    // SAFETY: a cdecl function of at most 12 word arguments returning in
+    // ST0; the extra zero words sit on the caller's side of the stack.
+    unsafe {
+        let g: F12 = std::mem::transmute::<usize, F12>(f as usize);
+        g(
+            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11],
+        )
+    }
+}
+
 /// A rand program with the CRT's `srand`.
 fn rand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, kind: Kind) {
     rand::bridge::ppp_rand(&mut mem(), obj, key, ctrl, spread, kind, &mut |_, seed| {
@@ -1212,6 +1232,26 @@ ported! {
     /// `op_irandom_p(n, b, c, d)`: a jump to `op_irandom_core_007e35c0`.
     op_irandom_p @ 0x007e_5d50 => extern "C" fn op_irandom_p(n: u32, b: u32, c: u32, d: u32) -> u32 {
         rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
+    }
+    /// `opu_end(obj, cmd)`.
+    opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_chr_width_00800cd0(chr, battle)`: a float in `ST0`.
+    opus_chr_width_00800cd0 @ 0x0080_0cd0 => extern "C" fn opus_chr_width(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_chr_width(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_clip_off_all_in_battle()`.
+    opus_clip_off_all_in_battle @ 0x0080_0bb0 => extern "C" fn opus_clip_off_all_in_battle() -> u32 {
+        opus::bridge::opus_clip_off_all_in_battle(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_ivec4_to_fvec4_007e3100(dst, src)`.
+    op_ivec4_to_fvec4_007e3100 @ 0x007e_3100 => extern "C" fn op_ivec4_to_fvec4(dst: u32, src: u32) {
+        vec::bridge::ivec4_to_fvec4(&mut mem(), dst, src);
+    }
+    /// `op_num_xy_set(x, y)`.
+    op_num_xy_set @ 0x007e_65e0 => extern "C" fn op_num_xy_set(x: u32, y: u32) {
+        op::bridge::op_num_xy_set(&mut mem(), x, y, &mut |_, f, a| call_ptr(f, a));
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

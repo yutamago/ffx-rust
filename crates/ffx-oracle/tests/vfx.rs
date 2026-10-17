@@ -7114,3 +7114,130 @@ fn round10d_helpers_match_the_original() {
         }
     }
 }
+
+/// Runs the original (cdecl) in `a`, which leaves a float in `ST0`, and
+/// `rust` in `b`; checks the float (NaN for NaN) and the memory.
+fn check_st0(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    args: &[u32],
+    rust: impl FnOnce(&mut Oracle) -> f64,
+) {
+    let at = p.sym(sym);
+    let r =
+        p.a.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    let st0 = r
+        .st0
+        .unwrap_or_else(|| panic!("{}: {what}: no float in ST0", p.name));
+    let mine = rust(&mut p.b);
+    assert!(
+        st0.to_bits() == mine.to_bits() || (st0.is_nan() && mine.is_nan()),
+        "{}: {what}: {st0} vs {mine}",
+        p.name
+    );
+    p.same(what);
+}
+
+/// A stand-in at `sym` that returns the `f32` at `at` in `ST0`
+/// (`fld dword [at]; ret`).
+fn float_stub(p: &mut Pair, sym: u32, at: u32) {
+    let mut c = vec![0xd9, 0x05]; // fld dword [at]
+    c.extend(at.to_le_bytes());
+    c.push(0xc3);
+    let s = p.sym(sym);
+    p.a.write(s, &c).unwrap();
+    p.b.write(s, &c).unwrap();
+}
+
+/// An original that returns in `ST0`, called from a bridge.
+fn call_original_f(m: &mut Oracle, f: u32, args: &[u32]) -> f64 {
+    m.call(f, Conv::Cdecl, args)
+        .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+        .st0
+        .unwrap_or_else(|| panic!("{f:#x}: no float in ST0"))
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round10e_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_c3f0);
+        let cells = p.alloc(16);
+        for (sym, words, ret) in [
+            (0x0080_14c0u32, &[0u8, 0][..], None),
+            (0x0080_0d10, &[0, 0], None),
+            (0x0078_0cb0, &[], Some(cells)),
+            (0x0082_aa30, &[0, 0], None),
+            (0x00a5_e2b0, &[0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        float_stub(&mut p, 0x0079_5a20, cells + 4);
+        float_stub(&mut p, 0x0082_ad70, cells + 8);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let (obj, part, src, dst) = (p.alloc(0x400), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        for _ in 0..3000 {
+            // opu_end
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(part, 0x40, &mut rng);
+            p.set(obj + 0x220, part);
+            p.set(obj + 0x216, u16::from(rng.chance(20)));
+            let i = rng.below(512);
+            p.set(part + 0x14, u16::try_from(i).unwrap());
+            p.set(eff + 0x20 * i + 4, if rng.chance(70) { part } else { 0 });
+            p.set(
+                eff + 0x20 * i,
+                rng.pick(&[0x4000_0001u32, 0x5000_0000, 0x4fff_ffff]),
+            );
+            let cmd = rng.next();
+            p.check("opu_end", 0x0080_c3f0, &[obj, cmd], |m| {
+                Some(opus::bridge::opu_end(m, obj, cmd, &mut call_original))
+            });
+            // opus_chr_width
+            for k in 1..3 {
+                let x = finite(&mut rng);
+                p.set(cells + 4 * k, x);
+            }
+            let chr = rng.below(0xf0);
+            p.set(handles + 4 * chr, rng.next());
+            let battle = rng.pick(&[0u32, 1, 0x100]);
+            check_st0(&mut p, "opus_chr_width", 0x0080_0cd0, &[chr, battle], |m| {
+                f64::from(opus::bridge::opus_chr_width(
+                    m,
+                    chr,
+                    battle,
+                    &mut call_original_f,
+                ))
+            });
+            // opus_clip_off_all_in_battle
+            p.set(cells, rng.pick(&[0u32, 1]));
+            for k in 0..32 {
+                p.set(handles + 4 * k, if rng.chance(50) { 0 } else { rng.next() });
+            }
+            p.check("opus_clip_off_all_in_battle", 0x0080_0bb0, &[], |m| {
+                Some(opus::bridge::opus_clip_off_all_in_battle(
+                    m,
+                    &mut call_original,
+                ))
+            });
+            // op_ivec4_to_fvec4
+            p.fill(src, 0x10, &mut rng);
+            let d = rng.pick(&[dst, src]);
+            p.check("op_ivec4_to_fvec4", 0x007e_3100, &[d, src], |m| {
+                vec::bridge::ivec4_to_fvec4(m, d, src);
+                None
+            });
+            // op_num_xy_set
+            p.put(op::bridge::NUM_SHOW, u8::from(rng.chance(50)));
+            p.put(op::bridge::DEBUG_MODE, u8::from(rng.chance(50)));
+            let (x, y) = (rng.next(), rng.next());
+            p.check("op_num_xy_set", 0x007e_65e0, &[x, y], |m| {
+                op::bridge::op_num_xy_set(m, x, y, &mut call_original);
+                None
+            });
+        }
+    }
+}

@@ -58,4 +58,14 @@ pub mod bridge {
             mem.write(dst + 4 * i, crate::x87::load(if below { s } else { a }));
         }
     }
+
+    /// `op_ivec4_to_fvec4_007e3100(dst, src)` (`0x007e3100`): the four
+    /// `i32` of `src` (read first) as `f32` into `dst`.
+    pub fn ivec4_to_fvec4(mem: &mut impl Mem, dst: u32, src: u32) {
+        let v: [i32; 4] = mem.read(src);
+        for (i, x) in (0u32..).zip(v) {
+            #[allow(clippy::cast_precision_loss)] // fild, fstp m32
+            mem.write(dst + 4 * i, x as f32);
+        }
+    }
 }
