@@ -1887,4 +1887,12 @@ ported! {
     Ch_BlkDisposeAll @ 0x0082_59c0 => extern "C" fn ch_blk_dispose_all() {
         c::ch_blk_dispose_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
     }
+    /// `Sg_IdWalk(chr, p, i)`.
+    Sg_IdWalk @ 0x0083_d960 => extern "C" fn sg_id_walk(chr: u32, p: u32, i: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::sg_id_walk(&mut mem(), chr, p, i, scratch(), &mut c)
+    }
 }
