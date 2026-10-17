@@ -1595,6 +1595,7 @@
 0x00638f30 function graphic2DHideLayer        # fh v3:bsim1.00 0x006390e0
 0x00638f60 function graphic2DShowLayer        # fh v3:bsim1.00 0x00639110
 0x00638fb0 function graphicAbmapDestory       # fh v3:exact 0x00639160
+0x00638fd0 function graphicAbmapGetVertexInfo    # structure: (a, b) -> AbmapManager_GetVertexInfo(a, b); the graphic* wrapper the area-map effects call (0x007f49e0, 0x00a4ac20, 0x00a657c0, ...); between graphic2DShowLayer and graphicAbmapDestory; name ours after the callee
 0x006390f0 function graphicAbmapUpdate        # fh v3:exact 0x006392a0
 0x00639110 function graphicActivateBlurEffectEx  # layout: alphabetical run between graphicAbmapUpdate and graphicActivateLoadingScreen (1 unnamed in the gap); Switch 0x71001d7cc0 graphicActivateBlurEffectEx is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639130 function graphicActivateLoadingScreen # fh v3:bsim1.00 0x006392e0
@@ -1823,6 +1824,7 @@
 0x006435e0 function graphicSetMagicFileAsyncLoadEnable # fh v3:exact 0x00643790
 0x00643610 function graphicSetMapAlphaFast    # fh switch:bsim1.00 0x71001dd660
 0x00643670 function graphicSetMaterialColourScale2 # fh v3:exact 0x00643820
+0x00643700 function graphicSetMeshVertexColorMorphValue # layout and calls: the Switch name yiSetMIMeParamDObj calls, sorting between graphicSetMaterialColourScale2 and graphicSetMiniMapType, as here; calls MorphManager_GetInstance; only caller yiSetMIMeParamDObj
 0x00643720 function graphicSetMiniMapType     # fh v3:bsim1.00 0x006438d0
 0x00643730 function graphicSetMotionBlurEnable # fh v3:exact 0x006438e0
 0x00643750 function graphicSetMotionBlurWeight # fh v3:bsim1.00 0x00643900
@@ -1971,6 +1973,7 @@
 0x0064b7e0 function Phyre_PCluster_create_PTexture2D # stdcall (count): Phyre_PCluster_create(count, 0x00ca37d0 PTexture2D descriptor, 0); PhyreEngine code, left original. fh: yiSetRootMatrix (switch bsim1.00, a wrong match)
 0x0064b800 function Phyre_PCluster_create_PWorldMatrix # stdcall (count): Phyre_PCluster_create(count, 0x00c92090 PWorldMatrix descriptor, 0); PhyreEngine code, left original. fh: SqsEeSoundCreateTime (switch bsim1.00, a wrong match)
 0x0064dc00 function PhyreScene_PhyreScene     # fh v3:exact 0x0064ddb0 PhyreScene::PhyreScene
+0x0064fa50 function ThrowStdException_0064fa50   # structure: (x): _CxxThrowException(&x, the throw info at 0x00bf749c); never returns; 12 callers in the PhyreScene code (growing arrays); name ours
 0x0064faa0 function PhyreScene_ChangeToHSVPass # fh v3:bsim1.00 0x0064fc50 PhyreScene::ChangeToHSVPass
 0x00650670 function PhyreScene_DrawMostVFX    # fh v3:exact 0x00650820 PhyreScene::DrawMostVFX
 0x00650cb0 function PhyreScene_DrawNormalUI      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f4d30 PhyreScene::DrawNormalUI, 2 votes, round 1
@@ -2318,6 +2321,7 @@
 0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
 0x00687050 function user_mem_size             # cdecl(p): jmp UserHeap_MemSize; fh v3:bsim1.00 0x006871f0
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
+0x00687070 function vsnprintf1K_00687070         # structure: (buffer, fmt, ...) -> _vsnprintf_s(buffer, 0x400, fmt, args); used by the four user-heap report printers 0x006882a0..0x006885f0, next to user_malloc/user_realloc; name ours
 0x00687190 function Init68_00687190 # thiscall(this; a, b), ret 8 -> this: +0 a, +8 b, +4 and +0xc..+0x40 zeroed; callers 0x006870b0, 0x00687130; name ours
 0x00689510 function TouchRecord_Reset # thiscall(rec) -> rec: one TouchRecords_Init record reset; callers 0x00689580, 0x006897d0; name ours
 0x006895c0 function PArray_Reset_006895c0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
@@ -3403,6 +3407,7 @@
 0x00734ef0 function pppKeDMatFrDraw           # fh v3:exact 0x00734fc0
 0x00734f80 function pppKeDMatPhtDraw          # ppp program table record "pppKeDMatPht" draw: area 1 = cdc_Mul4x4(g_pppViewMatrix, area 0), then pppDrawMatrixFront's scaling without the mode byte
 0x00735020 function pppKeDMatPhtFrDraw        # ppp program table record "pppKeDMatPhtFr" draw: area 0's rows scaled by the part's scale (+0x60) into area 1, its position through g_pppViewMatrix, then the same for the object's matrix
+0x00735100 function Vec3AddScalars_00735100      # structure: (dst, src, x, y, z): dst.xyz = src.xyz + (x, y, z); callers sg_calcenvelope_normW and the rcbg/rcui geometry code; name ours
 0x00735160 function pppKeZCrctDraw            # fh v3:exact 0x00735230
 0x007354c0 function pppKeZCrctShpDraw         # fh v3:exact 0x00735590
 0x00735ee0 function pppEiZCrctDisPosDraw      # ppp program table record "pppEiZCrctDisPos" draw
@@ -3566,6 +3571,7 @@
 0x0074b500 function pppNeiDrawMdlTsPointLightCon # ppp program table record "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x1c set-up; "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x20 second set-up
 0x0074b630 function pppVu0AddY                # (dst, v, vec by value: .y at +0x14): dst.x = v.x + y (vaddy.x); leaves dst in eax
 0x0074b650 function pppVu0AddZ                # as pppVu0AddY with the z (+0x18)
+0x0074b670 function Vec3SubScalars_0074b670      # structure: (dst, src, x, y, z): dst.xyz = src.xyz - (x, y, z), then restoreVf00Register; the subtracting twin of Vec3AddScalars_00735100, next to pppVu0AddY/AddZ; name ours
 0x0074b6a0 function pppNeiDrawShapePointLightDraw # ppp program table record "pppNeiDrawShapePointLight" draw; not a function start in the Ghidra dump
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
@@ -4006,6 +4012,7 @@
 0x0077a1d0 function sa_task_init2                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'i!=TASK_GRUPE_MAX'; Switch 0x7100330060 sa_task_init2 (symbols from Fahrenheit's server export)
 0x0077a2c0 function sa_task_start             # fh switch:bsim1.00 0x710032ff90
 0x0077a330 function task_create_global        # fh switch:bsim1.00 0x710032ffb0
+0x0077a390 function task_create_in_group         # structure: (group, entry, stack, prio): loads the group's stack/priority words from its record (0x0112a818[group] +0xc..+0x18) into the task globals 0x02310c00..0x02310c0c, task_create_asm, restores two of them; called by the eight per-group task wrappers 0x00779f80..0x0077a060 (the sa task file, beside task_create_global); name ours
 0x0077a480 function SPAD_CALL                 # stand-in: only "Virtuos Warning: Asm function 'SPAD_CALL' not implementd" through the empty dbgPrintf
 0x0077a490 function rgb32_to_24_asm           # stand-in: only "... Asm function 'rgb32_to_24_asm' not implementd" through dbgPrintf
 0x0077a4a0 function sa_printf_set             # stand-in: only "... Asm function 'sa_printf_set' not implementd" through dbgPrintf
@@ -4581,6 +4588,7 @@
 0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
 0x00796ea0 function msGetChrPos               # fh v3:exact 0x00796eb0
 0x00796f20 function msSetChrBodyHit           # fh v3:exact 0x00796f30
+0x00797080 function msSetChrVisibleFlag          # structure: (chr, slot, on): writes the visibility byte chr +0x16 + slot, then hides or shows the model and its effects (Ch_SetHideBattle, Ch_SetHideEffect, op_et_bindeff), recursing into the weapons (MsGetWeapon); callers MsSetChrVisible, MsSetChrVisibleAppear/Camera/Main, MsCommandReturnChrStatusAll; between msSetChrBodyHit and msSetChrWeight; name ours
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0
@@ -4729,6 +4737,8 @@
 0x0079e7c0 function MsGetStatusLook           # (i) -> bits: 1 +0x606 bit 1, 2 +0xdce, 4 +0x606 bit 9, 8 +0x613, 0x10 +0x614, 0x20 +0x616 bit 10; MsStatusEffectCheck (into +0x6f8, op_et_astatus_effect_change); name ours
 0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
+0x0079eb10 function MsSetChrEffect_0079eb10      # structure: (chr, ...): unless chr is 0xff, starts an effect for it (MsGetEffID, op_et_eff); callers Native_7017 and two battle effect functions; name ours
+0x0079ebe0 function MsSetChrEffectNext_0079ebe0  # structure: (chr, a, b): effect id from the chr's effect counter (+0xe2a, then incremented) with MsGetEffID(.., 0xe, chr), started with op_et_eff; callers MsSetStealEffect, MsSetStealGillEffect, MsStatusDefenseEffect; name ours
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl
 0x0079ed20 function MsSetStealGillEffect      # fh call.cs cdecl
 0x0079ed40 function MsSetWeaponEffectAttribute # fh v3:exact 0x0079ed60
@@ -4884,6 +4894,7 @@
 0x007a8450 function Native_70e0                # 0x70e0: 1 when the actor can act and its partner (+0xded) has +0xdf1 clear; ported in native_btl/native_move (script round 9)
 0x007a84c0 function Native_706b                # 0x706b: (selector, a, b): 0x0082aea0(picked model, a, b & 1); 0; ported in native_btl/native_move (script round 9)
 0x007a8620 function Native_7000                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8)
+0x007a86e0 function Clamp0To6_007a86e0           # structure: (n) -> n clamped to 0..6; called by the eight battle natives 0x007a6060..0x007a6e10 next to Native_7000; name ours
 0x007a8700 function GetFieldPtr0_007a8700        # auto-port shape (return address of a field's target, cdecl): t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1); callers: Native_703c_Poll, Native_7097_Poll, Native_BtlRunEvent_Poll and 4 more; name ours
 0x007a8920 function addMonDieSe                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Please increase ZanmatoSep Size\\n'; Switch 0x7100382390 addMonDieSe (symbols from Fahrenheit's server export)
 0x007a8970 function MsGetGlobal0112c8d8_007a8970 # auto-port shape (return global u32, cdecl): t0 = u32[&0x0112c8d8]; return t0; callers: MsSetChrStatInfo; name ours
@@ -5036,6 +5047,7 @@
 0x007b2430 function MsRegistInputCue          # fh v3:exact 0x007b2440
 0x007b24a0 function MsAutoCommandStatusCheck  # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it; was Battle_ActorCanAct
 0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl
+0x007b26d0 function MsAutoInsertCommand_007b26d0 # structure: (chr, command, target, ...): clears a command struct (MsStructClear), fills it and queues it (MsInsertBtlCommand); callers MsAutoCureProcess, MsAutoPhenixProcess, MsAutoPotionProcess (the auto-item abilities); name ours
 0x007b27b0 function MsAutoPhenixProcess       # fh v3:exact 0x007b27c0
 0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl
 0x007b2910 function MsAutoRelifeProcess_007b2910 # fh v3:exact 0x007b2920
@@ -5147,7 +5159,10 @@
 0x007ba9a0 function MsBindCamera              # fh v3:exact 0x007ba920
 0x007ba9c0 function MsBindOffCamera           # fh v3:exact 0x007ba940
 0x007baaa0 function MsSplineInit              # fh v3:bsim1.00 0x007baa20
+0x007bb370 function MsAtelCameraRefAddCircleArea_007bb370 # structure: as MsAtelCameraEyeAddArea_007bb410, pops the floats and adds a circle constraint through 0x007bf1f0; callers Native_CamRefAddCircleArea and three more; name ours
+0x007bb410 function MsAtelCameraEyeAddArea_007bb410 # structure: gets/caches the worker's camera (AtelGetCameraWorkAdrs, MsAtelGetCameraID), pops six floats and adds an eye constraint: kind 4 through 0x007bf330, kinds 5/6 through 0x007bf420 (docs/formats/script.md, natives 0x6006-0x6008); callers Native_Cam_6006/6007/6008 and three more; name ours
 0x007bb6a0 function setCameraMatrixToPhyreScene # fh switch:cg2 0x71003a0fe0
+0x007bb840 function MsAtelScreenShake            # structure: script-side screen shake: pops int, int, int, float, int from the Atel stack and calls MsScreenShake; its six callers are the shake natives (Native_Cam_606b, Native_Cam_6071, ...); the screen twin of MsAtelCameraShake next to it; name ours
 0x007bb8c0 function MsAtelCameraShake            # structure: script-side camera shake: gets/caches the worker's camera (AtelGetCameraWorkAdrs, MsAtelGetCameraID(5, ...)), pops int, int, int, float, int from the Atel stack and calls MsCameraShake(cam, side, mode, ...); its 16 callers 0x007b8e80.. are the camera shake natives passing constant side/mode; name ours (inlined on the Switch)
 0x007bba50 function MsCopyScreenMatrix        # fh v3:bsim1.00 0x007bb9d0
 0x007bba70 function MsEffectCameraInit        # resets the override camera: look-at/eye/up (0x01136fd8/fc8/fe8) to defaults, roll 0, screen depth 0x02311428 = 1024.0, off (0x0231142c = 0); was Cam_OverrideReset
@@ -5289,6 +5304,8 @@
 0x007e31c0 function op_vec_w_sub              # (dst, v, s) dst.w = v.w - s
 0x007e31e0 function op_pow2                   # (n) -> 2^n (1 for n <= 0)
 0x007e3360 function op_fabs                   # (x) -> |x| (-x when x < 0, through the FPU)
+0x007e33e0 function op_random_per                # layout and size: between op_fabs and op_table2_get, where the Switch's op random file has op_random_per (472 bytes; ours 473): VU0-emulated random number with the g_Vu0_RSeeded seeding; callers in the opu code (0x00810ba0, 0x00810d10, 0x00812b10)
+0x007e35c0 function op_irandom_core_007e35c0     # structure: VU0-emulated random generator step (sets the VU0 R registers 0x00c8f974.., 1.0 at 0x00c8f538, ftol) called by op_irandom_p and two opu functions; next to op_random_per; name ours
 0x007e37b0 function op_table2_get             # (t, i, j) -> word j of t + t[i]
 0x007e37f0 function op_vec_splat              # (dst, v) dst = (v, v, v, 1.0)
 0x007e3810 function op_oef2_a_get             # fh v3:exact 0x007e3720
@@ -5406,6 +5423,7 @@
 0x007ecec0 function op_vec_w_scale            # (dst, v, s) dst.w = v.w * s
 0x007ecf30 function op_anm_tex0_reset         # fh v3:bsim1.00 0x007ece50
 0x007ed0c0 function op_shape_draw             # fh v3:cg2 0x7ecfe0
+0x007f49e0 function op_shape_draw_eamap          # layout and code: follows op_shape_draw, where the Switch's op_shape file has op_shape_draw_eamap (3904 bytes; ours 4850) next; draws a shape over the area map: graphicAbmapGetVertexInfo (0x00638fd0), graphicFontGetScreenWH; callers the area-map effects 0x00a4fe40, 0x00a51340, 0x00a51560
 0x007f5ed0 function op_spr_cmd_size           # (cmd) -> ((i16) cmd[+2] * (14 if cmd[0] bit 3 else 7) + 7) * 16
 0x007f5f70 function opus_wave_cmd_7f5f70        # ours (g_MagicImports slot used by every overlay): (obj, cmd) opp command; kind 0x1000 opus_no_get, 0x007e5260 into a local, op_unit_m_scale(obj, 0.0625), then opus_0154_wave_draw unless 0x012fb7d0; kind 0x2000 branches on MsGetAnimaChainOff; ported in crates/ffx-vfx slots
 0x007f65d0 function opus_0154_wave_draw          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e1f80 opus_0154_wave_draw, 3 votes, round 1
@@ -5569,6 +5587,7 @@
 0x00801480 function opus_osu_init_group          # (battle i, n): zeroes the first 16 bytes of n 0x100-byte units of g_OpusBattle[i]'s +0x20 table; its only caller 0x007fda80 calls opus_osu_init_group, opus_osu_init, set_ptr32, opus_get_eff_status_index, the callees of the Switch's opu_init, which calls opus_osu_init_group (0x71003f4160); sorts between opus_osu_init and opus_prog_off; the vfx porter's opus_parts_clear
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
+0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
@@ -6248,6 +6267,7 @@
 0x00836d30 function SG_AddSequence            # 0x14-byte sequence -> g_ChrSequences (0x01300a08) table ("SG:AddMseq"); Ch_SeqLink relinks it
 0x00836da0 function SG_RemoveMotionGroup      # (group): clears its entry in the motion group table 0x013011e0 (50 x {group, i16, i16, key})
 0x00836de0 function SG_RemoveSequence         # (seq): clears its entry in g_ChrSequences, then Ch_SeqLink (tail call); beside SG_AddSequence
+0x00836e20 function SG_DisposeMotionGroup_00836e20 # structure: (chr, group, i): finds the motion group (SG_FindMotionGroup), removes its sequences and the group (SG_RemoveSequence, SG_RemoveMotionGroup), frees it (user_free) and resets the motion (Ch_MotionSetNull, Cache_Unuse); callers Ch_DisposeMGRP, Ch_DisposeAllMGRP, ChN_DisposeSystemMGRP; name ours
 0x00836f10 function SG_FindMotionGroup        # (a, b, key) -> the loaded motion group with those numbers and key, 0 else; callers ChN_ReadSystemMGRP, Chr_LoadMotionGroup
 0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
 0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
@@ -6555,6 +6575,7 @@
 0x00843590 function StoreComputedToGlobal_00843590 # auto-port shape (store computed to global, cdecl): t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1); callers: ; name ours
 0x00844a80 function Sg_IdDrawMain             # fh v3:exact 0x00844a80
 0x00844bb0 function Sg_IdExistShade           # () -> i8 0x013034b8; Fahrenheit Switch BSim 1.00 0x7100428040
+0x00844bc0 function Sg_IdFixupAndSet_00844bc0    # structure: (id map): sets the character ID-shade flag (map version +4 > 0x1202, telling graphicCharacterLightingSetMapIdFlagChanged on a change), turns the map's offsets into pointers (get_ptr32_func/set_ptr32) and installs it (Sg_IdSetPtr); callers Sg_MapInit, yiMapReadMaster, yiMapSetup, rcbgIDLoad; name ours
 0x00844ca0 function Sg_IdInitAll              # fh v3:bsim1.00 0x00844ca0
 0x00844cb0 function Sg_Id_coltest             # fh v3:bsim1.00 0x00844cb0
 0x00844cd0 function Sg_MapGetDirSelect        # fh v3:bsim1.00 0x00844cd0
@@ -6959,6 +6980,7 @@
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
 0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100
+0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
 0x00862800 function Fp_BindToWorker              # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (0x0072a530) or other object kinds (0x0072a590/0x0072a5e0)
@@ -7255,6 +7277,7 @@
 0x00872860 function AtelCancelSignals         # (worker, level, mode): drops queued signals above level, replying to waiting REQSW/REQEW senders
 0x008729c0 function Flag_01326b28_008729c0 # (): byte 0 of *0x01326b28 |= 0x80, +0x210 |= 2, returns the object; caller 0x006bce00; name ours
 0x008729e0 function Check_01326b28_008729e0 # (): 1 when 0x01325b88 is set and byte 3 of *0x01326b28 & 3 == 2; caller 0x006662f0; name ours
+0x00872aa0 function AtelCheckCaptMonster         # layout and code: the Switch name sorting between AtelCheck and AtelCheckMenuOtakaraFlag that fits (AtelCheckCaptMonster, 288 bytes; ours 175): checks monster capture counts through NkzGetMonsterListNum and MsGetMonsterCapture; callers the script natives 0x0085d780, 0x0085d8c0, 0x0085db90
 0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
@@ -7328,6 +7351,7 @@
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
+0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours
 0x008772e0 function AtelClearCameraMatrixFlag # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelCameraMatrixFlag = -1
@@ -7367,6 +7391,7 @@
 0x0087a440 function TkMemDump                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '\\n%p:%08x '; Switch 0x7100487370 TkMemDump (symbols from Fahrenheit's server export)
 0x0087bdcd function AtelDebugCtrl                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710047bae0 AtelDebugCtrl, 2 votes, round 2
 0x0087ddd0 function AtelDebugDrawRect         # fh switch:bsim1.00 0x710047b940
+0x00883340 function TkDebugHexDump_00883340      # structure: prints a memory dump on the debug font (TkSetDebugFontLocate, TkPutDebugFontString(PEuc), "%05X "); name ours
 0x00885110 function AtelSetDebugDraw          # (v) byte 0x01328a78, the debug draw toggle (debug pad button 0x800 flips it); own name
 0x00885120 function TkCreateDECI2Header       # fh v3:exact 0x00885080
 0x00885150 function TkGetDebugControler1Hist  # (i) TkGetControlerHist(0, 0, i) zero-extended; Switch name, alphabetical slot TkCreateDECI2Header..TkGetDebugControlerAnalog (two slots, two names)
@@ -7718,6 +7743,8 @@
 0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
 0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes
 0x0088f140 function TkPutDebugFontString      # fh switch:bsim1.00 0x7100492f20
+0x0088f160 function TkPutDebugFontStringEuc      # layout: the one Switch name between TkPutDebugFontString and TkPutDebugFontStringP (TkPutDebugFontStringEuc, 268 bytes; ours 212)
+0x0088f240 function TkPutDebugFontStringCore_0088f240 # structure: the worker every TkPutDebugFontString* variant calls: finds a free debug-font buffer slot (TkSetDebugFontBuffer, "TkSetDebugFontBuffer:no free buffer!!"), stores position, colour and text; name ours
 0x0088f4c0 function TkPutDebugFontStringP     # fh switch:bsim1.00 0x7100492a20
 0x0088f4e0 function TkPutDebugFontStringPEuc     # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100493060 TkPutDebugFontStringPEuc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0088f5c0 function TkPutDebugFontStringPR       # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100492fd0 TkPutDebugFontStringPR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -8095,6 +8122,7 @@
 0x008b4110 function MenuSave_PathIcon         # (out, n) "/S/" + "010906%02d.ico"; own name
 0x008b41e0 function MenuSave_IconName         # (out, n) sprintf "010906%02d.ico"; own name
 0x008b4230 function MenuSave_PathIconSys      # (out, n) "/S/icon.sys"; own name
+0x008b44b0 function TkMenuListWindowCtrl_008b44b0 # structure: (window): the list window state machine (+0x28 state < 0x13): circle confirms through the callback +0x1c (cursor +0x48, row +0x45), cross cancels (state 0x11), up/down/L1 move the cursor within the count +0x30, with the menu sounds 0x80000001/3/4; called by eight menu screens (UpdateGearCustomizationMenuState and others); name ours
 0x008b4e40 function TkMenuGetSaveFileInfo     # (i) -> &0x0159ec70[i * 0x40], i clamped to 0..0x62: the 99 save files (save/load menu code)
 0x008b4e70 function MenuSaveLoad_Reset        # (v) save/load flags cleared, second window +0x58 = v; own name
 0x008b4eb0 function MenuSaveLoad_ResetToggles # u8 0x0186626a, 0x0186626b = 0; own name
@@ -8129,6 +8157,8 @@
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b71c0 function TOGetEasyMesWHForCredits  # fh switch:bsim1.00 0x71004f15e0
 0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0
+0x008b78b0 function TOGetFontInfoInterMode       # layout and calls: the Switch name after TOGetFontInfo here (TOGetFontInfoInterMode, 744 bytes, calls TOGetFFXLang; ours 801, calls TOGetFFXLang)
+0x008b7be0 function TOGetFontWidthInterMode      # layout and calls: (a, b, c) -> TOGetFontWidth(a, b, c, TOGetInternationalBaseDicType()); the Switch's TOGetFontWidthInterMode (calls TOGetFFXLang and _TOGetFontWidth) sorts after TOGetFontInfoInterMode, as here
 0x008b7c40 function TOGetTable_01868a90       # (i) -> [[0x01868a90 + 4 i] + 0xc]; name ours
 0x008b7c60 function TOGetLineFeedHeight       # fh v3:bsim1.00 0x008b7c10
 0x008b7ca0 function TOGetMessageStatus        # fh v3:bsim1.00 0x008b7c50
@@ -8224,8 +8254,12 @@
 0x008bf9b0 function TkMn2DrawCommonPlateL     # fh switch:bsim1.00 0x71004c66f0
 0x008bf9f0 function TkMn2DrawCommonPlateR     # fh switch:bsim1.00 0x71004c6740
 0x008bfa30 function TkMn2DrawCommonWindow     # fh switch:bsim1.00 0x71004c6840
+0x008bfa70 function TkMn2DrawCommonWindowType    # layout: the three unnamed functions between TkMn2DrawCommonWindow and TkMn2DrawCrossCursor take the Switch names that sort there, in order (TkMn2DrawCommonWindowType 1308 bytes, TkMn2DrawCrossCharFace 532, TkMn2DrawCrossCmdCursor 224; ours 2010, 806, 229)
+0x008c0250 function TkMn2DrawCrossCharFace       # layout: second of the three (see TkMn2DrawCommonWindowType); draws a character face shape (TOGetShapTextureName, TOGetImageWH, graphicDrawUIElement, the Albhed Rikku check)
+0x008c0580 function TkMn2DrawCrossCmdCursor      # layout: third of the three (see TkMn2DrawCommonWindowType); draws the blinking command cursor (TkMenuGetTimer blink bit, x offset 3*cos(time), TOMkpShapeXYWHUV)
 0x008c0670 function TkMn2DrawCrossCursor      # fh v3:exact+call.cs 0x008c0640 cdecl
 0x008c0a10 function MenuMn2_StepDrawY         # 0x0186a238 += 16; own name
+0x008c0c50 function TkMn2DrawFlush_008c0c50      # structure: (kick): records the high-water marks of the menu draw cursor (g_TkMn2DrawY), clears the scissor and, when asked, waits for VU1 (TkVU1SyncPath); callers TkMn2DrawKickSyncPacket and its neighbours; name ours
 0x008c0cc0 function TkMn2DrawKickSyncPacket   # fh call.cs cdecl
 0x008c0dd0 function MenuMn2_StepDrawY80       # g_TkMn2DrawY = MenuMn2_Plus80(y + 16); own name
 0x008c0e00 function TkMenuDrawMenuAbility     # fh switch:bsim1.00 0x71004c1b70
@@ -8273,6 +8307,7 @@
 0x008c2300 function TkMn2RestoreFontShade     # (): the four g_TkMn2FontShade words back from the copies after each (0x023cc474, 0x46c, 0x464, 0x45c)
 0x008c2330 function TkMn2SaveFontShade        # (): the four g_TkMn2FontShade words to the copies after each
 0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
+0x008c2390 function TkMn2BuildItemList_008c2390  # structure: fills a menu list from the save's items and weapons (MsGetSaveWeaponList, MsSaveItemTypeBuffer/NumBuffer, TkMsGetRomItem, TkMenuSummonEnable, ...); callers TkMn2RefreshList and two menu screens; name ours
 0x008c2ad0 function TkMn2SeqGetColor          # (name) TOSeqGetColor(1, name, &local), the word returned; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
 0x008c2af0 function TkMn2SeqGetColorCustom    # (i, name) TOSeqGetColor(i, ...); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
 0x008c2b10 function TkMn2SeqGetNum            # (name) TOSeqGetNum(1, ...), the halfword sign-extended; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
@@ -8305,6 +8340,7 @@
 0x008c67e0 function TkGetAbilityMapIdFromItemId # fh switch:bsim0.94 0x71004cbd30
 0x008c6800 function MenuAbility_RefreshList   # (chr) item list from MsMenuStatusNum(0,0) @ABDE commands learnt (MsGetSaveCommand), usable by flag +0x22 bit 6 and MP cost +0x25; rows to g_TkMenuItemRows; own name
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
+0x008c69a0 function TkMenuItemHealAmount_008c69a0 # structure: (item, player, mp) -> what the item restores: kind 6 (byte +0x28) = power * 50, kind 8 = max HP or MP * power / 16, kind 7 = (player byte +0x31 + power) / 2 * power; next to Cmd_HealAmount and the MenuItem helpers; name ours
 0x008c6a30 function MenuItem_UsableByte       # (list, i) item list entry i byte +3 (window +0x1c callback); own name
 0x008c6a40 function MenuItem_UsableByte2      # (list, i) copy of MenuItem_UsableByte; own name
 0x008c6a60 function MenuItem_Less             # (a, b) a < b signed; own name
@@ -8531,6 +8567,7 @@
 0x008ddf80 function TkMenuMainMes             # fh switch:bsim1.00 0x71004c33a0
 0x008ddfa0 function TkMenuMenu1Help           # fh switch:bsim1.00 0x71004c35e0
 0x008ddfc0 function TkMenuMenu1Mes            # fh switch:bsim1.00 0x71004c33d0
+0x008de080 function TkMenuSaveMesText_008de080   # structure: (id) -> MsMenuGetText(3, id, MsGetSaveConfigHiragana()): a save/load menu message; callers TkMenuCtrlSaveLoad, TkMenuJumpToLoadedScene and the save screens; cg-match lead TkMenuSaveMes (3 votes) conflicts with the fh bsim name TkMenuSaveMes at 0x008ddf20, so name ours
 0x008de0a0 function MenuDraw_GifTag           # (packet, a, b, c) 64-byte GIF header, returns packet + 0x40; own name
 0x008de140 function TkMenuStatusMes           # fh switch:bsim1.00 0x71004c3520
 0x008de1a0 function MenuStatus_Plus10         # (p) p + 0x10; no caller; own name
@@ -8777,6 +8814,9 @@
 0x00903300 function TOMkpSetEnvSubFont        # fh v3:exact 0x00903300
 0x009034b0 function TOMkpShapePartIndexXYWHC2 # fh v3:exact 0x009034b0
 0x00903a10 function TOMkpShapeXY              # fh v3:exact 0x00903a10
+0x00903a50 function TOMkpShapeXYC2               # layout: the three unnamed functions between TOMkpShapeXY and TOMkpShapeXYWHUV take the Switch names sorting there, in order (TOMkpShapeXYC2, TOMkpShapeXYDirect, TOMkpShapeXYWHC2); this one passes no width/height (0, 0) to TOAdpEasyShapeXYWHC2, then TOCtrlPkt
+0x00903a80 function TOMkpShapeXYDirect           # layout: second of the three (see TOMkpShapeXYC2)
+0x00903b70 function TOMkpShapeXYWHC2             # layout: third of the three (see TOMkpShapeXYC2)
 0x00903bb0 function TOMkpShapeXYWHUV          # fh v3:exact+call.cs 0x00903bb0 cdecl
 0x00903ee0 function TOMkpShapeXYWHUVC2        # fh v3:exact+call.cs 0x00903ee0 cdecl
 0x009042e0 function TOMkpValueFontMClutRight     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008bb278 TOMkpValueFontMClutRight, 2 votes, round 2
@@ -8805,6 +8845,7 @@
 0x00905930 function ToMakeBtlEasyEdgeFont     # fh v3:exact+call.cs 0x00905930 cdecl
 0x00905970 function ToMakeBtlEasyEdgeFontA    # fh v3:exact 0x00905970
 0x00905ab0 function ToMakeBtlEasyFont         # fh v3:exact+call.cs 0x00905ab0 cdecl
+0x00905e90 function TOTableEntry_00905e90        # structure: (table, i) -> entry i of a counted table (count at +0), 0 when i is out of range; callers the TO font tables 0x008fa450, 0x008fa790, 0x008fa7d0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
 0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
@@ -8946,6 +8987,7 @@
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
 0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0
+0x0090a4d0 function yiSetMIMeParamDObj           # layout and calls: the one unused Switch name between yiSetIDPage and yiSetMatrixDObj that fits (yiSetMIMeParamDObj, 76 bytes, calls graphicSetMeshVertexColorMorphValue; ours 56 bytes): (dobj, &value): stores the value in the DObj record (0x018df624 + dobj * 0xb4) when dobj < g_YiDObjCount and passes it to 0x00643700
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
 0x0090a5c0 function yiSetColorDObj               # (index, a, b) -> 0/-1: the low bytes of a's and b's four words into the object's colours (+0x90..+0x97)
@@ -9107,6 +9149,7 @@
 0x0091aa00 function Yn_SceneSetDC                # (a, float b, c, float d): scene +0xdc..+0xe8, +0xec = 0.0, +0xf0 = 0; script native 0x0091b610
 0x0091aa60 function Yn_PreBgSetData           # fh v3:exact 0x0091aa60
 0x0091aae0 function Yn_MapPartSetPos             # (part, x, y): +0x4c, +0x50, move counters +0x7c, +0x80 = 0; natives 0x8052 (0x0091c1e0), 0x8053, 0x8054
+0x0091abc0 function Yn_MapPartSet44_0091abc0     # structure: (part, a, b): for a part below Yn_MapPartCount, stores the non-zero floats at part +0x44/+0x48 (0xc0-byte parts of g_YnMapSystem), clears +0x74/+0x78 and passes them on through 0x00639d60; the porters' Yn_MapPartSet14/24 style; name ours
 0x0091ac40 function Yn_MapPartSet24              # (part, a, b): +0x24, +0x28; native 0x8016 (0x0091b2e0)
 0x0091ac80 function Yn_MapPartSetSize            # (part, w, h): +4, +8; native 0x8019 (0x0091b360)
 0x0091acc0 function Yn_MapPartSet14              # (part, v): float +0x14; native 0x8014 (0x0091b280)
@@ -10270,6 +10313,7 @@
 0x00a581f0 function AbmapCalcLinkPointsStraight # fh v3:exact 0x00a581f0 +AbmapCalcLinkPointsStraight
 0x00a58df0 function AbmapFlagConnectedLinks   # fh v3:exact 0x00a58df0 +AbmapFlagConnectedLinks
 0x00a58ec0 function AbmapTryChangePlayer      # fh v3:exact 0x00a58ec0 +AbmapTryChangePlayer
+0x00a59350 function AbmapHelpMessageStep_00a59350 # structure: (message): counts down the area-map help timer (g_Abmap +0x11666) and draws its message through TOMacroSetByte1/TOMacroSetValue and TOAddPktBaseMesFontLAbmap, or starts message 0x48/0x23 (0x00a594c0) when the timer is out; callers AbmapSetHelpMessage and the area-map screens; name ours
 0x00a59680 function CopyDeref_00a59680           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[((a0 * 0x340) + t0)]; u16[(((a0 * 0x340) + t0) + 0x8)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0x2)]; u16[(((a0 * 0x340) + t0) + 0xa)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0x4)]; u16[(((a0 * 0x340) + t0) + 0xc)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0x6)]; u16[(((a0 * 0x340) + t0) + 0xe)] = t4; t5 = u16[(((a0 * 0x340) + t0) + 0x10)]; u16[(((a0 * 0x340) + t0) + 0x14)] = t5; t6 = u16[(((a0 * 0x340) + t0) + 0x12)]; u16[(((a0 * 0x340) + t0) + 0x16)] = t6; return t6; callers: no direct caller; name ours
 0x00a596d0 function CopyDeref_00a596d0           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[(((a0 * 0x340) + t0) + 0x8)]; u16[(((a0 * 0x340) + t0) + 0x2a)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0xa)]; u16[(((a0 * 0x340) + t0) + 0x2c)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0xc)]; u16[(((a0 * 0x340) + t0) + 0x2e)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0xe)]; u16[(((a0 * 0x340) + t0) + 0x30)] = t4; u8[(((a0 * 0x340) + t0) + 0x32)] = 0x0; u32[(((a0 * 0x340) + t0) + 0x34)] = &0x00a5a170; return t4; callers: no direct caller; name ours
 0x00a59710 function AbmapForEachNode          # (f, arg): f(node, arg) over the +2 nodes (kind -1 skipped) until non-zero
@@ -10328,6 +10372,9 @@
 0x00a64b60 function opd_heap_display_set_par  # fh v3:exact 0x00a64b60
 0x00a65060 function opd_unit_osu                 # str-match switch: only user of 45 string(s) held once by both builds, e.g. '     (%3d)umax'; Switch 0x710086a720 opd_unit_osu (symbols from Fahrenheit's server export)
 0x00a65750 function op1_md_draw               # fh v3:exact 0x00a65750
+0x00a657c0 function op1_md_draw_eiabm            # layout: the three unnamed functions between op1_md_draw and op1_mdc_ref_nolight take the Switch names that sort there, in order: op1_md_draw_eiabm (9400 bytes; ours 10573, "NoTexture"), op1_md_draw_eiabm_sphe (3168; 2892), op1_mdc_draw (388; 376)
+0x00a68140 function op1_md_draw_eiabm_sphe       # layout: second of the three (see op1_md_draw_eiabm)
+0x00a68c90 function op1_mdc_draw                 # layout: third of the three (see op1_md_draw_eiabm)
 0x00a68e10 function op1_mdc_ref_nolight       # fh v3:exact 0x00a68e10
 0x00a68ff0 function op_ffxambient_to_omdambient # fh v3:exact 0x00a68ff0
 0x00a690c0 function op_ffxlight_to_omdlight   # fh v3:exact 0x00a690c0

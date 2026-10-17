@@ -47,19 +47,6 @@
 0x00402a20	glue	only called from glue code (0x6ff290)
 0x00402b00	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): Settings_CopyDefaultTables
 0x00402b50	logic	default (no rule: ported to be safe)
-0x00405a6b	logic	default (no rule: ported to be safe)
-0x00405a77	logic	default (no rule: ported to be safe)
-0x00405a83	logic	default (no rule: ported to be safe)
-0x00405a90	logic	default (no rule: ported to be safe)
-0x00405ac0	logic	default (no rule: ported to be safe)
-0x00405af0	logic	default (no rule: ported to be safe)
-0x00405b10	logic	default (no rule: ported to be safe)
-0x00405b30	logic	default (no rule: ported to be safe)
-0x00405b60	logic	default (no rule: ported to be safe)
-0x00405b90	logic	default (no rule: ported to be safe)
-0x00405ba0	logic	default (no rule: ported to be safe)
-0x00405bb0	logic	default (no rule: ported to be safe)
-0x00405cb0	logic	default (no rule: ported to be safe)
 0x0042d370	logic	default (no rule: ported to be safe)
 0x0042d3c0	logic	default (no rule: ported to be safe)
 0x0042d3d0	logic	default (no rule: ported to be safe)
@@ -920,7 +907,7 @@
 0x0063a810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceGetClothVertexBuffers
 0x0063b1b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceGetMaxiumBoundingBox
 0x0063b200	dead	unreachable from the entry point and every pointer table
-0x0063b230	logic	default (no rule: ported to be safe)
+0x0063b230	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceIsVisible
 0x0063b290	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInstanceOutputAllVertexBuffers
 0x0063b5b0	dead	unreachable from the entry point and every pointer table
 0x0063b5d0	logic	scene state the renderer needs (original look first): graphicCharacterInstanceSetBTUFadeCenter
@@ -980,7 +967,7 @@
 0x0063de40	logic	default (no rule: ported to be safe)
 0x0063de60	dead	unreachable from the entry point and every pointer table
 0x0063df30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDestroyFmv
-0x0063df50	logic	default (no rule: ported to be safe)
+0x0063df50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDetachChrClusterFrom3DWorld
 0x0063df60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDoneResetMapParam
 0x0063df70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicDrawDream
 0x0063e500	dead	unreachable from the entry point and every pointer table
@@ -1805,7 +1792,7 @@
 0x00660300	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_00660300
 0x00660330	logic	scene state the renderer needs (original look first): PhyreScene_isAnyBattleMap
 0x00660350	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isDrawingNonUI2DScene
-0x006603c0	logic	default (no rule: ported to be safe)
+0x006603c0	glue	only called from glue code (graphicCharacterInstanceIsVisible)
 0x00660400	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isOpeningScreenPlaying
 0x00660420	glue	calls PhyreEngine Phyre_PRedBlackTree_successor
 0x006604d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_isVFXTextureLoaded
@@ -2267,8 +2254,8 @@
 0x0067dfc0	glue	only called from glue code (graphicMenuReset)
 0x0067e310	glue	only called from glue code (MenuManager_GetMenuVertexInfo)
 0x0067e3b0	dead	unreachable from the entry point and every pointer table
-0x0067e4a0	glue	only called from glue code (MenuManager_GetMenuVertexInfo)
-0x0067e4d0	glue	only called from glue code (graphicSetUiDrawType)
+0x0067e4a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_SeveralStoresCopyIntoTable_0067e4a0
+0x0067e4d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetField5b8c_0067e4d0
 0x0067e4e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_SetMenuDrawFontShadow
 0x0067e4f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_SetMenuUiInstanceUnloaded
 0x0067e6a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): MenuManager_SetMenuUiMaterialUnloaded
@@ -2497,8 +2484,8 @@
 0x0068d4f0	dead	unreachable from the entry point and every pointer table
 0x0068d530	dead	unreachable from the entry point and every pointer table
 0x0068d570	dead	unreachable from the entry point and every pointer table
-0x0068d5b0	platform	only called from platform code (AsyncControllerTaskManager_GetControllerInfo)
-0x0068d5d0	platform	only called from platform code (AsyncControllerTaskManager_GetControllerInfo)
+0x0068d5b0	logic	default (no rule: ported to be safe)
+0x0068d5d0	logic	default (no rule: ported to be safe)
 0x0068d610	dead	unreachable from the entry point and every pointer table
 0x0068d640	dead	unreachable from the entry point and every pointer table
 0x0068d660	dead	unreachable from the entry point and every pointer table
@@ -2996,7 +2983,7 @@
 0x006a0bb0	dead	unreachable from the entry point and every pointer table
 0x006a0bd0	dead	unreachable from the entry point and every pointer table
 0x006a0bf0	dead	unreachable from the entry point and every pointer table
-0x006a0c40	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreMalloc_0042fb80)
+0x006a0c40	logic	default (no rule: ported to be safe)
 0x006a0c70	dead	unreachable from the entry point and every pointer table
 0x006a0ca0	dead	unreachable from the entry point and every pointer table
 0x006a0cd0	dead	unreachable from the entry point and every pointer table
@@ -3057,13 +3044,13 @@
 0x006a22d0	logic	default (no rule: ported to be safe)
 0x006a2370	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_hide
 0x006a2390	glue	only called from glue code (PhyreScene_doOnCharacterAllAssetsLoaded and 1 more)
-0x006a25e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
+0x006a25e0	glue	calls PhyreEngine Phyre_PhyreFree
 0x006a2670	glue	calls PhyreEngine Phyre_PhyreFree
 0x006a2700	glue	calls PhyreEngine Phyre_PhyreFree
 0x006a2790	glue	calls PhyreEngine Phyre_PhyreFree
 0x006a2830	glue	calls PhyreEngine Phyre_PFreeList_allocateNewBlock, Phyre_PFreeList_deallocate, Phyre_PRedBlackTree_postInsertFinalize
 0x006a28b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassLoadedCharacterTable_insertPrototype
-0x006a29a0	glue	only called from glue code (PhyreScene_DrawZPrePass)
+0x006a29a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_LoadCompute_006a29a0
 0x006a29c0	logic	default (no rule: ported to be safe)
 0x006a29f0	dead	unreachable from the entry point and every pointer table
 0x006a2a10	dead	unreachable from the entry point and every pointer table
@@ -3389,7 +3376,7 @@
 0x006bd150	dead	unreachable from the entry point and every pointer table
 0x006bd160	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (std_string_ctor_move)
 0x006bd1e0	logic	default (no rule: ported to be safe)
-0x006bd290	glue	only called from glue code (PhyreScene_render)
+0x006bd290	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_ReturnConst0_006bd290
 0x006bd2a0	dead	unreachable from the entry point and every pointer table
 0x006bd2b0	dead	unreachable from the entry point and every pointer table
 0x006bd2c0	dead	unreachable from the entry point and every pointer table
@@ -3801,8 +3788,8 @@
 0x006d5970	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_reset
 0x006d59c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_resize
 0x006d59e0	glue	only called from glue code (graphicBrokenScreenUpdateOpacity)
-0x006d59f0	glue	only called from glue code (graphicBrokenScreenStartKeepFrame)
-0x006d5a00	logic	default (no rule: ported to be safe)
+0x006d59f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetFieldConst6_006d59f0
+0x006d5a00	glue	calls PhyreEngine Phyre_PCluster_dtor_PCluster
 0x006d5a70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_updateLightParameters
 0x006d5ad0	dead	unreachable from the entry point and every pointer table
 0x006d5af0	dead	unreachable from the entry point and every pointer table
@@ -4562,7 +4549,7 @@
 0x006fa0b0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
 0x006fa130	dead	unreachable from the entry point and every pointer table
 0x006fa190	logic	default (no rule: ported to be safe)
-0x006fa200	glue	only called from glue code (0x6d8f30)
+0x006fa200	logic	default (no rule: ported to be safe)
 0x006fa210	dead	unreachable from the entry point and every pointer table
 0x006fa280	glue	glue name (FMOD or the movie player): FmodManager_registCommandAsync1
 0x006fa2a0	glue	glue name (FMOD or the movie player): FmodManager_registCommandAsync
@@ -4967,7 +4954,7 @@
 0x00708510	glue	calls PhyreEngine Phyre_PSerialization_PStreamFileWin32_isOpen, Phyre_PSerialization_PStreamFile_ctor
 0x007085a0	glue	calls PhyreEngine Phyre_PSerialization_PStreamFile_read
 0x007085e0	glue	only called from glue code (FfxFmod_initEventSystem)
-0x00708610	glue	only called from glue code (FfxFmod_initEventSystem)
+0x00708610	glue	glue name (FMOD or the movie player): FfxFmod_SetGlobal00c3a480_00708610
 0x00708630	glue	glue name (FMOD or the movie player): FmodMusic_FmodMusic
 0x007086b0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (user_free_thunk)
 0x00708720	glue	glue name (FMOD or the movie player): FmodMusic_clear
@@ -6848,23 +6835,23 @@
 0x0077a4c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): task_init_asm
 0x0077a4d0	logic	default (no rule: ported to be safe)
 0x0077a4e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): task_wait
-0x0077a4f0	platform	only called from platform code (dvd_cd_fat_data_size)
-0x0077a500	platform	only called from platform code (dvd_cd_fat_sector)
-0x0077a510	platform	only called from platform code (dvd_cd_fat_size)
-0x0077a520	platform	only called from platform code (dvd_cd_fid_sector)
-0x0077a530	platform	only called from platform code (dvd_cd_fid_size)
-0x0077a540	platform	only called from platform code (dvd_cd_id_sector)
-0x0077a550	platform	only called from platform code (dvd_cd_id_size)
-0x0077a560	platform	only called from platform code (dvd_cd_unk7)
-0x0077a570	platform	only called from platform code (dvd_cd_unk8)
-0x0077a580	platform	only called from platform code (dvd_cd_fat_data_size)
-0x0077a590	platform	only called from platform code (dvd_cd_fat_sector)
-0x0077a5a0	platform	only called from platform code (dvd_cd_fat_size)
-0x0077a5b0	platform	only called from platform code (dvd_cd_fid_sector)
-0x0077a5c0	platform	only called from platform code (dvd_cd_fid_size)
-0x0077a5d0	platform	only called from platform code (dvd_cd_id_sector)
-0x0077a5e0	platform	only called from platform code (dvd_cd_id_size)
-0x0077a5f0	platform	only called from platform code (dvd_cd_unk7)
+0x0077a4f0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst2_0077a4f0
+0x0077a500	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst118_0077a500
+0x0077a510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst20000_0077a510
+0x0077a520	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst158_0077a520
+0x0077a530	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst82_0077a530
+0x0077a540	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst117_0077a540
+0x0077a550	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst30_0077a550
+0x0077a560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConstf_0077a560
+0x0077a570	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst10_0077a570
+0x0077a580	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst2_0077a580
+0x0077a590	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst118_0077a590
+0x0077a5a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst20000_0077a5a0
+0x0077a5b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst158_0077a5b0
+0x0077a5c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst82_0077a5c0
+0x0077a5d0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst117_0077a5d0
+0x0077a5e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst30_0077a5e0
+0x0077a5f0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConstf_0077a5f0
 0x0077a600	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_cd_unk8_lang3
 0x0077a610	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_cd_fat_data_size_lang2
 0x0077a620	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_cd_fat_sector_lang2
@@ -6903,14 +6890,14 @@
 0x0077a830	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_cd_unk7_lang18
 0x0077a840	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_cd_unk8_lang18
 0x0077a850	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_cd_fat_data_size_english
-0x0077a860	platform	only called from platform code (dvd_cd_fat_sector)
-0x0077a870	platform	only called from platform code (dvd_cd_fat_size)
-0x0077a880	platform	only called from platform code (dvd_cd_fid_sector)
-0x0077a890	platform	only called from platform code (dvd_cd_fid_size)
-0x0077a8a0	platform	only called from platform code (dvd_cd_id_sector)
-0x0077a8b0	platform	only called from platform code (dvd_cd_id_size)
-0x0077a8c0	platform	only called from platform code (dvd_cd_unk7)
-0x0077a8d0	platform	only called from platform code (dvd_cd_unk8)
+0x0077a860	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst118_0077a860
+0x0077a870	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst20000_0077a870
+0x0077a880	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst158_0077a880
+0x0077a890	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst82_0077a890
+0x0077a8a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst117_0077a8a0
+0x0077a8b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst30_0077a8b0
+0x0077a8c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConstf_0077a8c0
+0x0077a8d0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): dvd_ReturnConst10_0077a8d0
 0x0077a8e0	dead	unreachable from the entry point and every pointer table
 0x0077a930	dead	unreachable from the entry point and every pointer table
 0x0077adb0	dead	unreachable from the entry point and every pointer table
@@ -8846,17 +8833,17 @@
 0x007d7a40	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
 0x007d7b20	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
 0x007d80a0	debug	debug name: Ms_Gui_BattleProc
-0x007d92d0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d93f0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d9470	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d92d0	debug	only called from debug code (Ms_Gui_BattleProc and 1 more)
+0x007d93f0	debug	only called from debug code (0x7d7b20)
+0x007d9470	debug	only called from debug code (Ms_Gui_BattleProc)
 0x007d94f0	dead	unreachable from the entry point and every pointer table
-0x007d9550	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d95e0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d9700	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d9950	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d9ab0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d9af0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
-0x007d9b00	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9550	debug	only called from debug code (Ms_Gui_BattleProc)
+0x007d95e0	debug	only called from debug code (Ms_Gui_ReferencePos)
+0x007d9700	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
+0x007d9950	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
+0x007d9ab0	debug	only called from debug code (MsDebugBtlPrint)
+0x007d9af0	debug	only called from debug code (0x7d38c0)
+0x007d9b00	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d9c20	debug	debug name: Ms_Gui_ReferencePos
 0x007dabc0	debug	unnamed, between the debug methods Ms_Gui_ReferencePos and Ms_Gui_BattleInfoProc
 0x007dacd0	debug	unnamed, between the debug methods Ms_Gui_ReferencePos and Ms_Gui_BattleInfoProc
@@ -16366,23 +16353,23 @@
 0x0093e370	debug	only called from debug code (chr_anim_win)
 0x0093e510	debug	debug name: chr_anim_win
 0x0093e570	debug	debug name: Gui_NameinputProc
-0x0093ee10	debug	only called from debug code (sasa_menu)
-0x0093f900	debug	only called from debug code (0x93ee10)
-0x0093fd60	debug	only called from debug code (0x940660)
+0x0093ee10	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x0093f900	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x0093fd60	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
 0x0093feb0	dead	unreachable from the entry point and every pointer table
-0x009401c0	debug	only called from debug code (0x93ee10)
-0x009402c0	debug	only called from debug code (0x93f900)
-0x00940380	debug	only called from debug code (0x93f900)
-0x00940480	debug	only called from debug code (0x93f900)
-0x00940580	debug	only called from debug code (0x93ee10)
-0x00940660	debug	only called from debug code (0x93ee10)
-0x00940f30	debug	only called from debug code (0x940660)
-0x009410e0	debug	only called from debug code (0x93ee10)
+0x009401c0	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x009402c0	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x00940380	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x00940480	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x00940580	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x00940660	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x00940f30	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
+0x009410e0	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
 0x00941200	dead	unreachable from the entry point and every pointer table
 0x00941380	dead	unreachable from the entry point and every pointer table
-0x00941460	debug	only called from debug code (0x93ee10)
+0x00941460	debug	unnamed, between the debug methods Gui_NameinputProc and Gui_AddrOfGlobal025d5fa0_00941820
 0x009415e0	dead	unreachable from the entry point and every pointer table
-0x00941820	debug	only called from debug code (Gui_MovieDebugProc)
+0x00941820	debug	debug name: Gui_AddrOfGlobal025d5fa0_00941820
 0x00941830	debug	only calls debug code (Gu_WindowCreate, Gui_MovieDebugProc)
 0x00941860	dead	unreachable from the entry point and every pointer table
 0x00941980	debug	only called from debug code (0x93ee10)
@@ -16455,7 +16442,7 @@
 0x009438e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): VirtualFree_Decommit
 0x00943940	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): VirtualFree_Release
 0x009439a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): VirtualAlloc_Reserve_NA
-0x009439d0	platform	only called from platform code (0x9488a0)
+0x009439d0	logic	default (no rule: ported to be safe)
 0x009439f0	platform	only called from platform code (0x942680)
 0x00943a50	platform	only called from platform code (0x944080 and 2 more)
 0x00943b10	dead	unreachable from the entry point and every pointer table
@@ -16911,6 +16898,8 @@
 0x009df8a0	dead	unreachable from the entry point and every pointer table
 0x009df8e0	dead	unreachable from the entry point and every pointer table
 0x009df910	dead	unreachable from the entry point and every pointer table
+0x00a25860	glue	calls PhyreEngine Phyre_PBase_GetClassDescriptor
+0x00a258c0	logic	default (no rule: ported to be safe)
 0x00a25960	dead	unreachable from the entry point and every pointer table
 0x00a25990	platform	imports GetSystemMetrics
 0x00a259f0	logic	default (no rule: ported to be safe)
@@ -17006,7 +16995,7 @@
 0x00a28ee0	logic	default (no rule: ported to be safe)
 0x00a28ef0	logic	default (no rule: ported to be safe)
 0x00a28f00	dead	unreachable from the entry point and every pointer table
-0x00a28f30	glue	only called from glue code (0xa265f0)
+0x00a28f30	logic	default (no rule: ported to be safe)
 0x00a28f40	logic	default (no rule: ported to be safe)
 0x00a28ff0	glue	only called from glue code (FFEscMenu_update)
 0x00a29030	logic	default (no rule: ported to be safe)
@@ -17021,7 +17010,7 @@
 0x00a38100	dead	unreachable from the entry point and every pointer table
 0x00a38120	dead	unreachable from the entry point and every pointer table
 0x00a38180	glue	calls Iggy _IggyGDrawFree@4
-0x00a38300	glue	only called from glue code (0xa3d9f0)
+0x00a38300	logic	default (no rule: ported to be safe)
 0x00a38380	dead	unreachable from the entry point and every pointer table
 0x00a383a0	logic	default (no rule: ported to be safe)
 0x00a38450	dead	unreachable from the entry point and every pointer table
@@ -17042,7 +17031,7 @@
 0x00a39940	dead	unreachable from the entry point and every pointer table
 0x00a39a30	glue	only called from glue code (opd_config_memory and 1 more)
 0x00a39a90	glue	only called from glue code (0xa3a5f0 and 1 more)
-0x00a39b00	glue	only called from glue code (0xa3b610)
+0x00a39b00	logic	default (no rule: ported to be safe)
 0x00a39b40	dead	unreachable from the entry point and every pointer table
 0x00a39ba0	dead	unreachable from the entry point and every pointer table
 0x00a39bc0	logic	default (no rule: ported to be safe)
@@ -17105,60 +17094,6 @@
 0x00a3cd10	dead	unreachable from the entry point and every pointer table
 0x00a3cd30	logic	default (no rule: ported to be safe)
 0x00a3cdb0	dead	unreachable from the entry point and every pointer table
-0x00a3ce00	logic	default (no rule: ported to be safe)
-0x00a3cec0	glue	calls Iggy IggyGDrawSendWarning
-0x00a3cf40	glue	calls Iggy IggyGDrawSendWarning
-0x00a3cfc0	logic	default (no rule: ported to be safe)
-0x00a3d020	glue	calls Iggy IggyGDrawSendWarning
-0x00a3d1f0	dead	unreachable from the entry point and every pointer table
-0x00a3d240	logic	default (no rule: ported to be safe)
-0x00a3d280	logic	default (no rule: ported to be safe)
-0x00a3d2d0	dead	unreachable from the entry point and every pointer table
-0x00a3d300	dead	unreachable from the entry point and every pointer table
-0x00a3d310	logic	default (no rule: ported to be safe)
-0x00a3d3c0	logic	default (no rule: ported to be safe)
-0x00a3d3d0	logic	default (no rule: ported to be safe)
-0x00a3d410	logic	default (no rule: ported to be safe)
-0x00a3d4f0	dead	unreachable from the entry point and every pointer table
-0x00a3d510	dead	unreachable from the entry point and every pointer table
-0x00a3d540	dead	unreachable from the entry point and every pointer table
-0x00a3d570	logic	default (no rule: ported to be safe)
-0x00a3d5c0	dead	unreachable from the entry point and every pointer table
-0x00a3d5f0	logic	default (no rule: ported to be safe)
-0x00a3d6d0	logic	default (no rule: ported to be safe)
-0x00a3d6f0	dead	unreachable from the entry point and every pointer table
-0x00a3d720	logic	default (no rule: ported to be safe)
-0x00a3d780	glue	calls Iggy _IggyPlayerDestroy@4
-0x00a3d7c0	logic	default (no rule: ported to be safe)
-0x00a3d7d0	dead	unreachable from the entry point and every pointer table
-0x00a3d7f0	dead	unreachable from the entry point and every pointer table
-0x00a3d850	dead	unreachable from the entry point and every pointer table
-0x00a3d900	glue	calls Iggy _IggyPlayerCreateFromMemory@12, _IggyPlayerInitializeAndTickRS@4, _IggyPlayerPlay@4
-0x00a3d9b0	logic	default (no rule: ported to be safe)
-0x00a3d9f0	glue	calls Iggy _IggyPlayerDraw@4, _IggyPlayerGetBackgroundColor@8, _IggyPlayerReadyToTick@4
-0x00a3db30	glue	calls Iggy _IggyPlayerGotoFrameRS@12
-0x00a3db40	dead	unreachable from the entry point and every pointer table
-0x00a3dbb0	dead	unreachable from the entry point and every pointer table
-0x00a3dbf0	dead	unreachable from the entry point and every pointer table
-0x00a3dcc0	dead	unreachable from the entry point and every pointer table
-0x00a3dd00	logic	default (no rule: ported to be safe)
-0x00a3dd20	logic	default (no rule: ported to be safe)
-0x00a3dd50	logic	default (no rule: ported to be safe)
-0x00a3dd60	logic	default (no rule: ported to be safe)
-0x00a3dd90	logic	default (no rule: ported to be safe)
-0x00a3ddc0	logic	default (no rule: ported to be safe)
-0x00a3dde0	logic	default (no rule: ported to be safe)
-0x00a3ddf0	logic	default (no rule: ported to be safe)
-0x00a3dea0	logic	default (no rule: ported to be safe)
-0x00a3dec0	logic	default (no rule: ported to be safe)
-0x00a3df00	logic	default (no rule: ported to be safe)
-0x00a3df20	logic	default (no rule: ported to be safe)
-0x00a3df60	dead	unreachable from the entry point and every pointer table
-0x00a3df80	dead	unreachable from the entry point and every pointer table
-0x00a3dfa0	dead	unreachable from the entry point and every pointer table
-0x00a3dfb0	logic	default (no rule: ported to be safe)
-0x00a3e030	logic	default (no rule: ported to be safe)
-0x00a3e040	logic	default (no rule: ported to be safe)
 0x00a42250	dead	unreachable from the entry point and every pointer table
 0x00a42270	dead	unreachable from the entry point and every pointer table
 0x00a42360	logic	default (no rule: ported to be safe)
