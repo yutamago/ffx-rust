@@ -3564,6 +3564,21 @@ ported! {
         geom::bridge::rc_angle_2d(&mut mem(), [x0, y0, x1, y1], |_, f, a| call_float(f, a))
     }
 
+    /// `abmap_set_chr_pos(chr, target)`.
+    abmap_set_chr_pos @ 0x00a4_58f0 => extern "C" fn shim_abmap_set_chr_pos(chr: u32, target: u32) -> u32 {
+        abmap::bridge::abmap_set_chr_pos(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefBlurUpdate(e)`.
+    rcefBlurUpdate @ 0x0092_4bf0 => extern "C" fn shim_rcef_blur_update(e: u32) {
+        task::bridge::rcef_blur_update(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcfxNailUpdate(fx, ctx)`.
+    rcfxNailUpdate @ 0x0092_9190 => extern "C" fn shim_rcfx_nail_update(fx: u32, ctx: u32) -> u32 {
+        model::bridge::rcfx_nail_update(&mut mem(), fx, ctx)
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

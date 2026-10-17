@@ -286,6 +286,8 @@ pub mod bridge {
     pub const REQUEST_PENDING: Global<u32> = Global::new(0x025d_5c34);
     /// The program index `pppRunPartStd` is running (`g_pppCurrentProgram`).
     pub const CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+    /// `Sg_Blur(v)` (`0x0082bee0`).
+    pub const SG_BLUR: u32 = 0x0082_bee0;
     /// `MsScreenOffset(x, y)` (`0x007bc0c0`, floats).
     pub const MS_SCREEN_OFFSET: u32 = 0x007b_c0c0;
     /// The pre-computed sine table (`g_pppSinTable`, 4096 `f32`s).
@@ -1055,6 +1057,45 @@ pub mod bridge {
         } else {
             call(mem, f, &[0, 0]);
             mem.write(e.wrapping_add(0x214), 0u32);
+        }
+    }
+
+    // ---- round 28 ----
+
+    /// `rcefBlurUpdate(e)` (`0x00924bf0`, from `rcefMainProcRunAfter`;
+    /// name ours): while on (`+0x228`) with a mode (`+0x218`), the blur
+    /// `+0x21c` (mode 2: faded, `(frames - done) * blur / frames` with the
+    /// frames `+0x220` and done `+0x224`) to `Sg_Blur`; the count advances
+    /// and after the frames `Sg_Blur(0)` turns it off.
+    pub fn rcef_blur_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u32>(e.wrapping_add(0x228)) == 0 {
+            return;
+        }
+        let mode = mem.read::<u32>(e.wrapping_add(0x218));
+        if mode == 0 {
+            return;
+        }
+        let mut v = mem.read::<i32>(e.wrapping_add(0x21c));
+        let frames = mem.read::<i32>(e.wrapping_add(0x220));
+        if mode == 2 && frames > 0 {
+            let done = mem.read::<i32>(e.wrapping_add(0x224));
+            v = frames
+                .wrapping_sub(done)
+                .wrapping_mul(v)
+                .wrapping_div(frames);
+        }
+        let done = mem.read::<i32>(e.wrapping_add(0x224)).wrapping_add(1);
+        mem.write(e.wrapping_add(0x224), done);
+        let f = mem.rebase(SG_BLUR);
+        if done <= mem.read::<i32>(e.wrapping_add(0x220)) {
+            call(mem, f, &[v.cast_unsigned()]);
+        } else {
+            call(mem, f, &[0]);
+            mem.write(e.wrapping_add(0x228), 0u32);
         }
     }
 
