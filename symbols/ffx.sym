@@ -14283,6 +14283,7 @@
 0x012a22c0 label    g_EtChr                      # 240 x 0x20 effect character records: +0 handle, +4 chr number, +0xc u16 bind flags, +0xe draw flag index, +0x17 bit 0 stone (op_et_*, op_get_chr*)
 0x012a40c0 label    g_OpusBattle                 # the battle's opus object: +0x1c draw list, +0x20 parts, +0x3a genko counter (opus_get_osu_by_draw default, op_et_battle_genko_counter_get)
 0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
+0x012a4104 label    g_OpusNoTable                # 32-byte entries, a unit pointer at +4 (this address): opus_no_get / opus_parent_get take the number for 0xfe00..0xfeff from its +0x1a & 0x7ff0, indexed by the unit's u16 +0x14
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
@@ -14731,6 +14732,8 @@
 0x023114c4 label g_CameraMatrixOn          # u32 bit 0 (MsSetCameraMatrix)
 0x023114f4 label g_BtlPosFocus             # i32, -1 after MsBtlPosInit
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
+0x02321580 label    g_OpDebugChrFlags            # byte: bit 1 with g_OpDebugMode makes opus_get_chr_status_index use g_OpDebugChrResident instead of Ch_EffectGetResidentPtr
+0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
@@ -14739,6 +14742,7 @@
 0x023c3642 label    g_OpOef2SoundCueCount     # u16 queued cues (<= 32); op_oef2_sound_cue_check returns it, op_oef2_sound_wait waits for 0
 0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
 0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
+0x023c37a0 label    g_OpOef2Seps                 # 32 x (sound sep handle, user mask) slots: op_oef2_sep_free_all clears a mask, stopping (SndSepStop, SndSepClear) a slot left with no user
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray

@@ -1141,6 +1141,38 @@ ported! {
     Vec2SubScalarsFlags_0075e870 @ 0x0075_e870 => extern "C" fn vec2_sub_scalars_flags(dst: u32, src: u32, x: u32, y: u32) {
         vec::bridge::vec2_sub_scalars_flags(&mut mem(), dst, src, f32::from_bits(x), f32::from_bits(y));
     }
+    /// `opus_get_chr_status_index(chr, no, add)`.
+    opus_get_chr_status_index @ 0x007f_e970 => extern "C" fn opus_get_chr_status_index(chr: u32, no: u32, add: u32) -> i32 {
+        et::bridge::opus_get_chr_status_index(&mut mem(), chr, no, add, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_xyz_scale(dst, src, s)`.
+    op_xyz_scale @ 0x007e_a850 => extern "C" fn op_xyz_scale(dst: u32, src: u32, s: u32) -> u32 {
+        op::bridge::op_xyz_scale(&mut mem(), dst, src, s)
+    }
+    /// `op_heap_display_clear()`.
+    op_heap_display_clear @ 0x007f_f260 => extern "C" fn op_heap_display_clear() {
+        op::bridge::op_heap_display_clear(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_sep_free_all(mask)`.
+    op_oef2_sep_free_all @ 0x007f_ff30 => extern "C" fn op_oef2_sep_free_all(mask: u32) -> u32 {
+        op::bridge::op_oef2_sep_free_all(&mut mem(), mask, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpSetStickChr(id, chr, bone)`.
+    pppFpSetStickChr @ 0x0072_a530 => extern "C" fn ppp_fp_set_stick_chr(id: u32, chr: u32, bone: u32) -> u32 {
+        fp::bridge::ppp_fp_set_stick_chr(&mut mem(), id, chr, bone, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpSetStickPos(id, pos)`.
+    pppFpSetStickPos @ 0x0072_a630 => extern "C" fn ppp_fp_set_stick_pos(id: u32, pos: u32) {
+        fp::bridge::ppp_fp_set_stick_pos(&mut mem(), id, pos, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_parent_get(obj, unit)`.
+    opus_parent_get @ 0x0080_1f00 => extern "C" fn opus_parent_get(obj: u32, unit: u32) -> u32 {
+        opus::bridge::opus_parent_get(&mem(), obj, unit)
+    }
+    /// `op_free(heap, p)`.
+    op_free @ 0x007f_f1d0 => extern "C" fn op_free(heap: u32, p: u32) {
+        op::bridge::op_free(&mut mem(), heap, p, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

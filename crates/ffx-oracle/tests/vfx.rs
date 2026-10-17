@@ -6737,3 +6737,175 @@ fn round10_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10b_helpers_match_the_original() {
+    use fp::bridge as f;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_e970);
+        let cells = p.alloc(16);
+        for (sym, words, ret) in [
+            (0x0082_a9b0u32, &[0u8][..], Some(cells)),
+            (0x0082_61b0, &[0], Some(cells + 4)),
+            (0x0088_6eb0, &[0], None),
+            (0x0088_6d80, &[0], None),
+            (0x00a6_49c0, &[], None),
+            (0x006e_d9a0, &[0], None),
+            (0x0062_f500, &[0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let (chr_tab, handles) = (
+            p.sym(et::bridge::CHR.sym),
+            p.sym(et::bridge::CHR_HANDLES.sym),
+        );
+        let debug = p.sym(op::bridge::DEBUG_MODE.sym);
+        let seps = p.sym(op::bridge::OEF2_SEPS.sym);
+        let (src, dst) = (p.alloc(0x20), p.alloc(0x20));
+        let table = p.alloc(0x64 + 0x50 * 8);
+        let obj = p.alloc(0x400);
+        let units = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let heap = p.alloc(0x400) + 0x300;
+        for round in 0..1500 {
+            // opus_get_chr_status_index: a crowded or sparse record table
+            for i in 0..240u32 {
+                let full = rng.chance(if round % 3 == 0 { 99 } else { 30 });
+                p.set(
+                    chr_tab + 0x20 * i,
+                    if full { 0x100 + rng.below(8) } else { 0 },
+                );
+                let h = if rng.chance(if round % 5 == 0 { 99 } else { 50 }) {
+                    0x100 + rng.below(8)
+                } else {
+                    0
+                };
+                p.set(handles + 4 * i, h);
+            }
+            p.set(debug, u8::from(rng.chance(30)));
+            p.put(et::bridge::DEBUG_CHR_FLAGS, rng.next().to_le_bytes()[0]);
+            p.put(et::bridge::DEBUG_CHR_RESIDENT, rng.pick(&[0u32, 0x1234]));
+            p.set(cells, rng.pick(&[0u32, 0x5678]));
+            let some = 0x100 + rng.below(8);
+            let chr = rng.pick(&[0u32, some, 0x200]);
+            let (no, add) = (rng.next(), rng.pick(&[0u32, 1]));
+            p.check(
+                "opus_get_chr_status_index",
+                0x007f_e970,
+                &[chr, no, add],
+                |m| {
+                    Some(
+                        et::bridge::opus_get_chr_status_index(m, chr, no, add, &mut call_original)
+                            .cast_unsigned(),
+                    )
+                },
+            );
+            // op_xyz_scale
+            for i in 0..4 {
+                let x = rng.float();
+                p.set(src + 4 * i, x);
+            }
+            let k = rng.float();
+            p.check("op_xyz_scale", 0x007e_a850, &[dst, src, k], |m| {
+                Some(op::bridge::op_xyz_scale(m, dst, src, k))
+            });
+            p.check("op_heap_display_clear", 0x007f_f260, &[], |m| {
+                op::bridge::op_heap_display_clear(m, &mut call_original);
+                None
+            });
+            // op_oef2_sep_free_all
+            for i in 0..32u32 {
+                p.set(seps + 8 * i, rng.next());
+                p.set(seps + 8 * i + 4, 1u32 << rng.below(4) | 1 << rng.below(4));
+            }
+            let mask = 1u32 << rng.below(5);
+            p.check("op_oef2_sep_free_all", 0x007f_ff30, &[mask], |m| {
+                Some(op::bridge::op_oef2_sep_free_all(
+                    m,
+                    mask,
+                    &mut call_original,
+                ))
+            });
+            // pppFpSetStickChr, pppFpSetStickPos
+            let n = rng.below(8);
+            p.set(table + 4, u16::try_from(n).unwrap());
+            for i in 0..n {
+                p.set(table + 0x64 + 0x50 * i, rng.pick(&[0u16, 1, 2, 3]));
+            }
+            p.put(f::DATA, if rng.chance(90) { table } else { 0 });
+            p.set(cells + 4, rng.pick(&[0u32, u32::MAX, 3]));
+            let id = rng.pick(&[0u32, 1, 2, 3, 0x1_0001]);
+            let (c, b) = (rng.next(), rng.next());
+            p.check("pppFpSetStickChr", 0x0072_a530, &[id, c, b], |m| {
+                Some(f::ppp_fp_set_stick_chr(m, id, c, b, &mut call_original))
+            });
+            p.check("pppFpSetStickPos", 0x0072_a630, &[id, src], |m| {
+                f::ppp_fp_set_stick_pos(m, id, src, &mut call_original);
+                None
+            });
+            // opus_parent_get
+            p.fill(units, 0x1000, &mut rng);
+            p.set(obj + 0x320, units);
+            for (k, at) in [0x314u32, 0x310, 0x318].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(obj + at, l);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(l + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                }
+                p.set(l + 2 * n, 0xffffu16);
+            }
+            for i in 0..16 {
+                let u = units + 0x100 * i;
+                p.set(u + 0x1a, u16::try_from(rng.below(8)).unwrap());
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                p.set(u + 0x14, u16::try_from(rng.below(4)).unwrap());
+            }
+            let ntab = p.sym(opus::bridge::NO_TABLE.sym);
+            for i in 0..4 {
+                p.set(ntab + 32 * i, units + 0x100 * rng.below(16));
+            }
+            let unit = units + 0x100 * rng.below(16);
+            let r = rng.below(8);
+            p.set(
+                unit + 0xb8,
+                rng.pick(&[
+                    0u16,
+                    0xff00,
+                    0xffff,
+                    0xfffe,
+                    0xfe05,
+                    u16::try_from(r).unwrap(),
+                ]),
+            );
+            p.check("opus_parent_get", 0x0080_1f00, &[obj, unit], |m| {
+                Some(opus::bridge::opus_parent_get(m, obj, unit))
+            });
+            // op_free over a few linked records
+            let top = rng.below(8);
+            p.set(heap - 4, u16::try_from(top).unwrap());
+            p.set(heap - 2, u16::try_from(rng.below(8)).unwrap());
+            for i in 0..10u32 {
+                let e = heap - 16 * i;
+                p.set(e, 0x1000 + rng.below(6));
+                let prev = u16::try_from(rng.below(top + 1)).unwrap();
+                let next = u16::try_from(rng.below(top + 1)).unwrap();
+                p.set(
+                    e + 8,
+                    if rng.chance(20) {
+                        0u32
+                    } else {
+                        u32::from(prev) | u32::from(next) << 16
+                    },
+                );
+            }
+            let some = 0x1000 + rng.below(6);
+            let blk = rng.pick(&[0u32, some]);
+            p.check("op_free", 0x007f_f1d0, &[heap, blk], |m| {
+                op::bridge::op_free(m, heap, blk, &mut call_original);
+                None
+            });
+        }
+    }
+}

@@ -274,4 +274,54 @@ pub mod bridge {
         }
         base(&rd)
     }
+
+    /// `opus_parent_get(obj, unit)` (`0x00801f00`): the matrix (`+0xc0`)
+    /// of the unit `u16 unit +0xb8` names, among the object's units (parts
+    /// at `obj +0x320`, index lists `+0x314`, `+0x310`, `+0x318`): 0 gives
+    /// the object's own matrix (`obj + 0x280`), 0xff00 `unit`'s, a
+    /// negative `-k` the unit `k` steps up the parent chain (`u16
+    /// +0x1c`), 0xfe00..=0xfeff the number from `NO_TABLE` as in
+    /// `opus_no_get`, a non-negative one the unit with that number (`u16
+    /// +0x1a`), else the first unit's.
+    pub fn opus_parent_get(mem: &impl Mem, obj: u32, unit: u32) -> u32 {
+        let mut n: u16 = mem.read(unit.wrapping_add(0xb8));
+        let base = || mem.read::<u32>(obj.wrapping_add(0x320));
+        if n == 0 {
+            return obj.wrapping_add(0x280);
+        }
+        if n & 0x8000 != 0 {
+            if n == 0xff00 {
+                return unit.wrapping_add(0xc0);
+            }
+            if n & 0xff00 == 0xfe00 && n != 0xffff {
+                let i = u32::from(mem.read::<u16>(unit.wrapping_add(0x14)));
+                let e: u32 = mem.read(NO_TABLE.ptr(mem).addr.wrapping_add(32 * i));
+                n = (mem.read::<u16>(e.wrapping_add(0x1a)) & 0x7ff0) | (n & 0xf);
+            } else {
+                let mut u = unit;
+                for _ in 0..n.wrapping_neg() {
+                    u = u32::from(mem.read::<u16>(u.wrapping_add(0x1c)))
+                        .wrapping_shl(8)
+                        .wrapping_add(base());
+                }
+                return u.wrapping_add(0xc0);
+            }
+        }
+        let want = i32::from(n.cast_signed());
+        for at in [0x314u32, 0x310, 0x318] {
+            let mut e: u32 = mem.read(obj.wrapping_add(at));
+            loop {
+                let i: i16 = mem.read(e);
+                if i < 0 {
+                    break;
+                }
+                let u = (i32::from(i) << 8).cast_unsigned().wrapping_add(base());
+                if i32::from(mem.read::<u16>(u.wrapping_add(0x1a))) == want {
+                    return u.wrapping_add(0xc0);
+                }
+                e = e.wrapping_add(2);
+            }
+        }
+        base().wrapping_add(0xc0)
+    }
 }

@@ -1446,4 +1446,120 @@ pub mod bridge {
             snd(mem, 0x0080_0170, &[], call);
         }
     }
+
+    /// `op_xyz_scale(dst, src, s)` (`0x007ea850`): VU0's `MUL.xyz` by a
+    /// scalar: `src` and `s` through `0x00c8f970`/`0x00c8f980` (the
+    /// arguments in `a0`..`a2`, `a3` 0), `dst.xyz` = `src.xyz * s` (`w`
+    /// untouched). Returns the last word written (`z`, left in `eax`).
+    pub fn op_xyz_scale(mem: &mut impl Mem, dst: u32, src: u32, s: u32) -> u32 {
+        use x87::{MUL, Reg};
+        for (n, a) in [dst, src, s, 0].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_ps2::ee::bridge::set_func_param(mem, n as u32, a);
+        }
+        let vr = Global::<u32>::new(0x00c8_f970).ptr(mem).addr;
+        let sr = Global::<u32>::new(0x00c8_f980).ptr(mem).addr;
+        let v: [u32; 4] = mem.read(src);
+        mem.write(vr, v);
+        mem.write(sr, x87::load(s));
+        let k = Reg::load(s);
+        for i in 0..2 {
+            let r = Reg::load_f32(rf(mem, vr + 4 * i)).reg(MUL, k).store();
+            mem.write(vr + 4 * i, r);
+        }
+        let r = k.mem(MUL, rf(mem, vr + 8)).store();
+        mem.write(vr + 8, r);
+        let out: [u32; 3] = mem.read(vr);
+        mem.write(dst, out);
+        out[2]
+    }
+
+    /// `op_heap_display_clear()` (`0x007ff260`): in debug mode,
+    /// `opd_heap_display_clear()` (`0x00a649c0`, through `call`).
+    pub fn op_heap_display_clear<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if DEBUG_MODE.get(mem) != 0 {
+            let f = Global::<u32>::new(0x00a6_49c0).ptr(mem).addr;
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `g_OpOef2Seps` (`0x023c37a0`): 32 sound-sep slots of (handle, user
+    /// mask).
+    pub const OEF2_SEPS: Global<[u32; 2]> = Global::new(0x023c_37a0);
+
+    /// `op_oef2_sep_free_all(mask)` (`0x007fff30`): `mask` cleared from
+    /// every sep slot's users; a slot left with none is stopped and
+    /// cleared (`SndSepStop`, `SndSepClear`, through `call`) and its
+    /// handle set to 0. Returns `mask` (left in `eax`).
+    pub fn op_oef2_sep_free_all<M: Mem>(
+        mem: &mut M,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for i in 0..32 {
+            let at = OEF2_SEPS.ptr(mem).at(i).addr;
+            let users: u32 = mem.read(at + 4);
+            if users & mask == 0 {
+                continue;
+            }
+            mem.write(at + 4, users & !mask);
+            if users & !mask == 0 {
+                let h: u32 = mem.read(at);
+                for f in [0x0088_6eb0u32, 0x0088_6d80] {
+                    let f = Global::<u32>::new(f).ptr(mem).addr;
+                    call(mem, f, &[h]);
+                }
+                mem.write(at, 0u32);
+            }
+        }
+        mask
+    }
+
+    /// `op_free(heap, p)` (`0x007ff1d0`): frees block `p` of an op heap.
+    /// The heap's 16-byte block records go down from `heap` (record `i`
+    /// at `heap - 16 * i`: `+0` the block, `+8` and `+0xa` the `i16`
+    /// previous and next record, 0 when free); the highest record number
+    /// is at `heap - 4`, the count of blocks at `heap - 2`. The record of
+    /// `p` (from 2 up) is unlinked and cleared, the count decremented and
+    /// the highest number lowered when it was the last; a `p` not found
+    /// is reported through `dbgPrintf` (`0x00b586bc`, through `call`).
+    pub fn op_free<M: Mem>(
+        mem: &mut M,
+        heap: u32,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if p == 0 {
+            return;
+        }
+        let top = i32::from(mem.read::<i16>(heap.wrapping_sub(4)));
+        let rec = |i: i32| heap.wrapping_sub(i.cast_unsigned().wrapping_shl(4));
+        let found = (2..=top).find(|&i| {
+            mem.read::<u32>(rec(i).wrapping_add(8)) != 0 && mem.read::<u32>(rec(i)) == p
+        });
+        let Some(i) = found else {
+            let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+            let msg = Global::<u32>::new(0x00b5_86bc).ptr(mem).addr;
+            call(mem, f, &[msg]);
+            return;
+        };
+        if i >= top {
+            #[allow(clippy::cast_possible_truncation)] // an i16 count
+            mem.write(heap.wrapping_sub(4), (top - 1) as i16);
+        }
+        let e = rec(i);
+        let prev = i32::from(mem.read::<i16>(e.wrapping_add(8)));
+        let next: i16 = mem.read(e.wrapping_add(0xa));
+        mem.write(rec(prev).wrapping_add(0xa), next);
+        if next != 0 {
+            #[allow(clippy::cast_possible_truncation)] // the i16 field
+            mem.write(rec(i32::from(next)).wrapping_add(8), prev as i16);
+        }
+        mem.write(e.wrapping_add(8), 0u32);
+        let n: u16 = mem.read(heap.wrapping_sub(2));
+        mem.write(heap.wrapping_sub(2), n.wrapping_sub(1));
+    }
 }
