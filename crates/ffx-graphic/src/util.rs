@@ -675,4 +675,330 @@ pub mod bridge {
         }
         (n & !0xff) | 1
     }
+
+    // ---- round 10 ----
+
+    /// `FloatHeap_MakeHeap(first, last, less)` (`0x006c7410`):
+    /// `std::_Make_heap` on floats: from the last parent down, each value
+    /// is sifted to a leaf and pushed back up (`FloatHeap_PushHeap`).
+    /// Returns `eax`: the last parent index (0 after any work).
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)] // signed indices
+    pub fn float_make_heap(h: &mut impl Host, first: u32, last: u32, less: u32) -> u32 {
+        let at = |i: i32| first.wrapping_add((i as u32).wrapping_mul(4));
+        let n = (last.wrapping_sub(first) as i32) >> 2;
+        let mut half = n / 2;
+        if half <= 0 {
+            return half as u32;
+        }
+        let mut edx = half * 2 + 2;
+        let value = h.scratch() + 0x100;
+        while half > 0 {
+            let v = rt(h.read(at(half - 1)));
+            h.write(value, v);
+            half -= 1;
+            edx -= 2;
+            let mut hole = half;
+            let mut child = edx;
+            while child < n {
+                let a = rt(h.read(at(child)));
+                let b = rt(h.read(at(child - 1)));
+                if less_than(h, less, a, b) {
+                    child -= 1;
+                }
+                let v = rt(h.read(at(child)));
+                h.write(at(hole), v);
+                hole = child;
+                child = child * 2 + 2;
+            }
+            if child == n {
+                let v = rt(h.read(at(n - 1)));
+                h.write(at(hole), v);
+                hole = n - 1;
+            }
+            float_push_heap(h, first, hole as u32, half as u32, value, less);
+        }
+        half as u32
+    }
+
+    /// `FloatSort_Insertion(first, last, less)` (`0x006c7320`):
+    /// `std::_Insertion_sort` on floats: a value less than the first moves
+    /// the run up by one with `memmove` (bytes unchanged) and goes first;
+    /// otherwise it sinks past larger neighbours (moved through
+    /// `fld`/`fstp`).
+    pub fn float_insertion_sort(h: &mut impl Host, first: u32, last: u32, less: u32) {
+        if first == last {
+            return;
+        }
+        let mut cur = first + 4;
+        while cur != last {
+            let v = rt(h.read(cur));
+            let f = rt(h.read(first));
+            if less_than(h, less, v, f) {
+                let n = cur - first;
+                let mut run = vec![0u8; n as usize];
+                h.read_bytes(first, &mut run);
+                h.write_bytes(first + 4, &run);
+                h.write(first, rt(v));
+            } else {
+                let mut hole = cur;
+                let mut prev = cur - 4;
+                loop {
+                    let p = rt(h.read(prev));
+                    if !less_than(h, less, v, p) {
+                        break;
+                    }
+                    let p = rt(h.read(prev));
+                    h.write(hole, p);
+                    hole = prev;
+                    prev -= 4;
+                }
+                h.write(hole, rt(v));
+            }
+            cur += 4;
+        }
+    }
+
+    /// The `PArray` growths `0x0066c700` and `0x0066c690` (`thiscall(array,
+    /// capacity)`).
+    pub const ARRAY_GROW_3890: u32 = 0x0066_c700;
+    pub const ARRAY_GROW_3898: u32 = 0x0066_c690;
+
+    /// `PhyreScene_PushPair3890(this, a, b)` (`0x00656b90`): `a` and `b`
+    /// appended at the count `+0x38a0` to the arrays `+0x3894` and
+    /// `+0x389c`; when the first array (`+0x3890` capacity, bit 31 a flag)
+    /// is full both grow by 0x400. Returns the second growth's `eax`, or
+    /// the first array's capacity.
+    pub fn scene_push_pair(h: &mut impl Host, this: u32, a: u32, b: u32) -> u32 {
+        let n: u32 = h.read(this + 0x38a0);
+        let arr: u32 = h.read(this + 0x3894);
+        h.write(arr + 4 * n, a);
+        let n: u32 = h.read(this + 0x38a0);
+        let arr: u32 = h.read(this + 0x389c);
+        h.write(arr + 4 * n, b);
+        let cap = h.read::<u32>(this + 0x3890) & 0x7fff_ffff;
+        let n = h.read::<u32>(this + 0x38a0).wrapping_add(1);
+        h.write(this + 0x38a0, n);
+        if n < cap {
+            return cap;
+        }
+        h.call_sym(
+            ARRAY_GROW_3890,
+            Conv::Thiscall(this + 0x3890),
+            &[cap + 0x400],
+        );
+        let cap2 = h.read::<u32>(this + 0x3898) & 0x7fff_ffff;
+        h.call_sym(
+            ARRAY_GROW_3898,
+            Conv::Thiscall(this + 0x3898),
+            &[cap2 + 0x400],
+        )
+    }
+
+    /// The grad-mesh pool's current set (`0x00cdec24`).
+    pub const GRAD_MESH_SET: Global<u32> = Global::new(0x00cd_ec24);
+    /// The CRT `printf` import slot.
+    pub const PRINTF_SLOT: u32 = 0x00b0_c380;
+
+    /// `GetASpareGradMeshInstance(this, &extra)` (`0x006cc980`): the first
+    /// free one of the current set's 16 slots (bytes `+0xdc4`, 16 per set)
+    /// is taken; `extra` gets its `+0xd44` word and its `+0xcc4` word is
+    /// returned. With none free, a message (`GetASpareGradMeshInstance() , Shouldn't
+    /// get here, contact cg please`) is printed and 0 returned.
+    pub fn get_spare_grad_mesh(h: &mut impl Host, this: u32, out: u32) -> u32 {
+        let set = GRAD_MESH_SET.get(h);
+        let base = this.wrapping_add(set.wrapping_mul(16));
+        for i in 0..16 {
+            if h.read::<u8>(base + 0xdc4 + i) == 0 {
+                h.write(base + 0xdc4 + i, 1u8);
+                let set = GRAD_MESH_SET.get(h);
+                let k = set.wrapping_mul(16).wrapping_add(i);
+                let extra: u32 = h.read(this.wrapping_add(4 * k) + 0xd44);
+                h.write(out, extra);
+                let set = GRAD_MESH_SET.get(h);
+                let k = set.wrapping_mul(16).wrapping_add(i);
+                return h.read(this.wrapping_add(4 * k) + 0xcc4);
+            }
+        }
+        let slot = h.rebase(PRINTF_SLOT);
+        let printf: u32 = h.read(slot);
+        let msg = h.rebase(0x00b4_97c0);
+        h.call(printf, Conv::Cdecl, &[msg]);
+        0
+    }
+
+    // ---- round 11 ----
+
+    /// `TkMenuGetCurrentPlayerPos` and `TkMenuGetPlayerFromIndex2_008a9b00`.
+    pub const MENU_CURRENT_PLAYER_POS: u32 = 0x008a_9870;
+    pub const MENU_PLAYER_FROM_INDEX: u32 = 0x008a_9b00;
+
+    /// `graphicGetCurrentFrame()` (`0x008e1c50`): the menu's player at its
+    /// current position. Returns its `eax`.
+    pub fn get_current_frame(h: &mut impl Host) -> u32 {
+        let pos = h.call_sym(MENU_CURRENT_PLAYER_POS, Conv::Cdecl, &[]);
+        h.call_sym(MENU_PLAYER_FROM_INDEX, Conv::Cdecl, &[pos])
+    }
+
+    /// `TextureAnimationManager_GetInstance` and `TextureAnimationManager_SetFrame`.
+    pub const TEX_ANIM_GET_INSTANCE: u32 = 0x006b_02e0;
+    pub const TEX_ANIM_SET_FRAME: u32 = 0x006b_42c0;
+
+    /// `graphicTextureAnimationSetFrame(i, frame)` (`0x00643a20`):
+    /// `TextureAnimationManager_SetFrame(i, frame, 0)` on the manager.
+    pub fn graphic_tex_anim_set_frame(h: &mut impl Host, i: u32, frame: u32) -> u32 {
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(TEX_ANIM_SET_FRAME, Conv::Thiscall(mgr), &[i, frame, 0])
+    }
+
+    /// `TexAnim_ResetPos` and `tex_anim_pos_set_old`.
+    pub const TEX_ANIM_RESET_POS: u32 = 0x0077_fda0;
+    pub const TEX_ANIM_POS_SET_OLD: u32 = 0x0078_08f0;
+
+    /// `TexAnim_PosSet(i, which, v)` (`0x0077e9a0`): by `g_ChrTexAnim[i]`'s
+    /// format (`+0xd`): old (0) `tex_anim_pos_set_old`, new (1)
+    /// `TexAnim_ResetPos` (tail calls: their `eax`); else nothing
+    /// (`eax` the format - 1).
+    pub fn tex_anim_pos_set(h: &mut impl Host, i: u32, which: u32, v: u32) -> u32 {
+        use crate::texanim::bridge::CHR_TEXANIM;
+        let e = CHR_TEXANIM.ptr(h).addr.wrapping_add(i.wrapping_mul(0x30));
+        #[allow(clippy::cast_sign_loss)] // movsx
+        let fmt = i32::from(h.read::<i8>(e + 0xd)) as u32;
+        match fmt {
+            0 => h.call_sym(TEX_ANIM_POS_SET_OLD, Conv::Cdecl, &[i, which, v]),
+            1 => h.call_sym(TEX_ANIM_RESET_POS, Conv::Cdecl, &[i, which, v]),
+            _ => fmt.wrapping_sub(1),
+        }
+    }
+
+    /// The CRT `sprintf` import slot.
+    pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+
+    /// `PhyreScene_SetNumberText(this, n)` (`0x0066e5e0`): with `+0xfc00`
+    /// set, `+0xfc64 = n` and its decimal text (`sprintf "%d"`) at `+0xfc68`.
+    pub fn scene_set_number_text(h: &mut impl Host, scene: u32, n: u32) {
+        if h.read::<u8>(scene + 0xfc00) == 0 {
+            return;
+        }
+        h.write(scene + 0xfc64, n);
+        let slot = h.rebase(SPRINTF_SLOT);
+        let sprintf: u32 = h.read(slot);
+        let fmt = h.rebase(0x00b0_f604);
+        h.call(sprintf, Conv::Cdecl, &[scene + 0xfc68, fmt, n]);
+    }
+
+    /// `TextureAnimationManager_SetPaused(this, i, paused)` (`0x006b3600`):
+    /// the animation named by material `i + +8 + +0xc` gets its `+0x1c`
+    /// byte.
+    pub fn tex_anim_set_paused(m: &mut impl Mem, this: u32, i: u32, paused: u32) {
+        use crate::managers::bridge::find_by_name;
+        let a: u32 = m.read(this + 0xc);
+        let b: u32 = m.read(this + 8);
+        let i = i.wrapping_add(a.wrapping_add(b));
+        if i >= m.read::<u32>(this + 0x74) & 0x7fff_ffff {
+            return;
+        }
+        let list: u32 = m.read(this + 0x78);
+        let mat: u32 = m.read(list + 4 * i);
+        if mat == 0 {
+            return;
+        }
+        let name = pstring_text(m, mat + 0x10);
+        let anim = find_by_name(m, this, name);
+        if anim != 0 {
+            #[allow(clippy::cast_possible_truncation)] // the byte argument
+            m.write(anim + 0x1c, paused as u8);
+        }
+    }
+
+    /// `BrokenScreenEffect_GetInstance`.
+    pub const BROKEN_SCREEN_GET_INSTANCE: u32 = 0x006d_4de0;
+
+    /// `BrokenScreenEffect_BufferSize(n)` (`0x006393c0`): the vertex bytes
+    /// for `n` pieces, `((8n-1)/16 + 5 + (24n-49)/16 + 2*((12n-1)/16) +
+    /// (16n-1)/16) * 32` in unsigned arithmetic (after the instance getter).
+    pub fn broken_screen_buffer_size(h: &mut impl Host, n: u32) -> u32 {
+        h.call_sym(BROKEN_SCREEN_GET_INSTANCE, Conv::Cdecl, &[]);
+        let a = n.wrapping_mul(24).wrapping_sub(0x31) >> 4;
+        let b = n.wrapping_mul(12).wrapping_sub(1) >> 4;
+        let c = n.wrapping_mul(16).wrapping_sub(1) >> 4;
+        let d = (n.wrapping_mul(8).wrapping_sub(1) >> 4).wrapping_add(5);
+        let sum = a
+            .wrapping_add(b.wrapping_mul(2))
+            .wrapping_add(c)
+            .wrapping_add(d);
+        sum << 5
+    }
+
+    /// The scene's draw check `0x006721b0` (`thiscall(scene)`).
+    pub const SCENE_CHECK_6721B0: u32 = 0x0067_21b0;
+
+    /// `PhyreScene_AddDrawEntry(this, e, kind)` (`0x00656c10`): up to 0xc00
+    /// entries each: with `kind`, `e`'s `+0xc` to the list `+0x38cc` (count
+    /// `+0xf8cc`); else `e` to `+0x68cc` (count `+0xf8d0`), and a set
+    /// `0x006721b0` check sets the byte `+0x10d2c`.
+    #[allow(clippy::cast_possible_wrap)] // signed counts
+    pub fn scene_add_draw_entry(h: &mut impl Host, scene: u32, e: u32, kind: u32) {
+        if kind & 0xff != 0 {
+            let n: u32 = h.read(scene + 0xf8cc);
+            if (n as i32) < 0xc00 {
+                let v: u32 = h.read(e + 0xc);
+                h.write(scene.wrapping_add(n.wrapping_mul(4)) + 0x38cc, v);
+                h.write(scene + 0xf8cc, n.wrapping_add(1));
+            }
+            return;
+        }
+        let n: u32 = h.read(scene + 0xf8d0);
+        if (n as i32) >= 0xc00 {
+            return;
+        }
+        h.write(scene.wrapping_add(n.wrapping_mul(4)) + 0x68cc, e);
+        let n = h.read::<u32>(scene + 0xf8d0).wrapping_add(1);
+        h.write(scene + 0xf8d0, n);
+        if h.call_sym(SCENE_CHECK_6721B0, Conv::Thiscall(scene), &[]) != 0 {
+            h.write(scene + 0x10d2c, 1u8);
+        }
+    }
+
+    /// The scene calls of `ShadowManager_ResetSolution`.
+    pub const SCENE_UPDATE_SHADOW_CLUSTERS: u32 = 0x0065_7920;
+    pub const SCENE_FORCE_SET_SHADOW_SOLUTION: u32 = 0x0065_13f0;
+
+    /// `ShadowManager_ResetSolution(this, keep)` (`0x006ceb10`): the shadow
+    /// state reset (`+0x403c` from `0x00c34400`, flags `+0x4030`/`+0x4044`/
+    /// `+0x404c`/`+0x4054`, the compare callback `+0x4048` =
+    /// `Compute_006cc8b0`, `+0x4058`/`+0x405c` 0); without `keep` also
+    /// `+0x4034` = -10, `+0x400c` set and `+0x403c` again. Then the scene's
+    /// shadow clusters and `PhyreScene_ForceSetShadowSolution(keep ? 0 :
+    /// 2)` (a tail call: its `eax`).
+    pub fn shadow_reset_solution(h: &mut impl Host, this: u32, keep: u32) -> u32 {
+        let d = rt(h.read(h.rebase(0x00c3_4400)));
+        h.write(this + 0x403c, d);
+        h.write(this + 0x4030, 0u8);
+        h.write(this + 0x4044, 1u8);
+        let cb = h.rebase(0x006c_c8b0);
+        h.write(this + 0x4048, cb);
+        h.write(this + 0x404c, 1u8);
+        h.write(this + 0x4054, 0u8);
+        h.write(this + 0x4058, 0u32);
+        h.write(this + 0x405c, 0u32);
+        let arg = if keep != 0 {
+            0
+        } else {
+            h.write(this + 0x404c, 1u8);
+            let k = rt(h.read(h.rebase(0x00b3_04fc)));
+            h.write(this + 0x4034, k);
+            let d = rt(h.read(h.rebase(0x00c3_4400)));
+            h.write(this + 0x400c, 1u8);
+            h.write(this + 0x403c, d);
+            2
+        };
+        let scene = crate::scene::bridge::SCENE.get(h);
+        h.call_sym(SCENE_UPDATE_SHADOW_CLUSTERS, Conv::Thiscall(scene), &[]);
+        let scene = crate::scene::bridge::SCENE.get(h);
+        h.call_sym(
+            SCENE_FORCE_SET_SHADOW_SOLUTION,
+            Conv::Thiscall(scene),
+            &[arg],
+        )
+    }
 }

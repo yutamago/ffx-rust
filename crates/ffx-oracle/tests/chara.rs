@@ -3077,7 +3077,7 @@ fn settings_and_accessors_match_the_original_on(t: &mut Twin) {
         void!(sy::ch_set_allocate_err(m))
     });
     t.check("Ch_FunctionHistoryClear", 0x0083_3760, &[], |m| {
-        void!(sy::HISTORY_9E8.set(m, 0))
+        void!(sy::CALC_NORM_CURSOR.set(m, 0))
     });
     let outs = t.alloc(12);
     let chrs = live_characters(t, &mut rng);

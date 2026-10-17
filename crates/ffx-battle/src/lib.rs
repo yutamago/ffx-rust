@@ -31,6 +31,7 @@ mod formation;
 pub mod menu;
 pub mod minor;
 pub mod misc;
+pub mod parse;
 pub mod pos;
 pub mod rng;
 pub mod save;

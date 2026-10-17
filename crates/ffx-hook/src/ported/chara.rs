@@ -1069,7 +1069,7 @@ ported! {
     }
     /// `Ch_FunctionHistoryClear()`.
     Ch_FunctionHistoryClear @ 0x0083_3760 => extern "C" fn ch_function_history_clear() {
-        sy::HISTORY_9E8.set(&mut mem(), 0);
+        sy::CALC_NORM_CURSOR.set(&mut mem(), 0);
     }
 
     // ---- more accessors

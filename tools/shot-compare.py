@@ -41,6 +41,9 @@ STREAK_WIDTH = 2
 # original runs can both show it while the port's run catches it off
 MASKS = {
     "menu-browse-2.bmp": [(140, 575, 165, 605)],
+    # a searchlight beam's lower end (blocks at y 240, x 1000-1120; up to 41 seen)
+    "field-walk-1.bmp": [(1000, 240, 1120, 280)],
+    "field-walk-2.bmp": [(1000, 240, 1120, 280)],
 }
 BLOCK = 40
 COARSE = 25
@@ -75,7 +78,9 @@ for a_path in sorted(a_dir.glob("*.bmp")):
         ma, mb, mr = block_means(w, h, a), block_means(w, h, b), block_means(w, h, r)
         # the top band: the deck's searchlight beams sweep on the wall clock
         for m in (ma, mb, mr):
-            for k in [k for k in m if k[1] * BLOCK < SKY]:
+            for k in [k for k in m if k[1] * BLOCK < SKY or any(
+                    x0 <= k[0] * BLOCK < x1 and y0 <= k[1] * BLOCK < y1
+                    for x0, y0, x1, y1 in MASKS.get(a_path.name, ()))]:
                 del m[k]
         limit = max(COARSE, 2 * max(abs(ma[k] - mb[k]) for k in ma))
         worst = max(ma, key=lambda k: abs(ma[k] - mr[k]))

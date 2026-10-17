@@ -78,43 +78,43 @@ pub mod bridge {
         u32::from(g.get(mem))
     }
 
-    /// The reader's entry points the character module calls through: the
-    /// sync (`Ch_ReadSync`), the kind-table callback (`Chr_TableIndex`)
-    /// and the event motion group read (`Ch_RomReadEventMGRPsync`).
-    pub const READ_SYNC_FN: Global<u32> = Global::new(0x0231_0c48);
-    pub const TABLE_FN: Global<u32> = Global::new(0x0231_0c50);
-    pub const READ_EVENT_FN: Global<u32> = Global::new(0x0231_0cc0);
+    /// Entries of `g_CdLib` (`0x02310c40`), the CD library's function
+    /// table, by offset: `+8` (`Ch_ReadSync`), `+0x10` (`Chr_TableIndex`,
+    /// `Ch_RomDataReadInit`) and `+0x80` (`Ch_RomReadEventMGRPsync`).
+    pub const CD_LIB_08: Global<u32> = Global::new(0x0231_0c48);
+    pub const CD_LIB_10: Global<u32> = Global::new(0x0231_0c50);
+    pub const CD_LIB_80: Global<u32> = Global::new(0x0231_0cc0);
     /// Per kind (8): a table of `i16` count and `i16` ids.
     pub const KIND_TABLES: Global<u32> = Global::new(0x012f_fab8);
-    /// Per kind: the `i16` `Chr_TableIndex` passes to [`TABLE_FN`].
+    /// Per kind: the `i16` `Chr_TableIndex` passes to [`CD_LIB_10`].
     pub const KIND_ARGS: Global<i16> = Global::new(0x00c4_9660);
     /// The `i8` index step per table entry.
     pub const KIND_STRIDE: Global<i8> = Global::new(0x00c4_967f);
 
     /// `Ch_ReadSync()` (`0x0082a5e0`): a tail jump through
-    /// [`READ_SYNC_FN`]; its result.
+    /// [`CD_LIB_08`]; its result.
     pub fn ch_read_sync<M: Mem>(
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let f = READ_SYNC_FN.get(mem);
+        let f = CD_LIB_08.get(mem);
         call(mem, f, &[])
     }
 
-    /// `Ch_RomReadEventMGRPsync(p)` (`0x0082a7f0`): [`READ_EVENT_FN`]`(12,
+    /// `Ch_RomReadEventMGRPsync(p)` (`0x0082a7f0`): [`CD_LIB_80`]`(12,
     /// p)`; its result.
     pub fn ch_rom_read_event_mgrp_sync<M: Mem>(
         mem: &mut M,
         p: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let f = READ_EVENT_FN.get(mem);
+        let f = CD_LIB_80.get(mem);
         call(mem, f, &[12, p])
     }
 
     /// `Chr_TableIndex(id)` (`0x0082a640`): the position of `id & 0xfff`
     /// in its kind's table (kind `id >> 12 & 0xf`, 0..=7), counted in
-    /// [`KIND_STRIDE`] steps, after calling [`TABLE_FN`] with the kind's
+    /// [`KIND_STRIDE`] steps, after calling [`CD_LIB_10`] with the kind's
     /// [`KIND_ARGS`] entry; -1 when absent.
     pub fn chr_table_index<M: Mem>(
         mem: &mut M,
@@ -134,7 +134,7 @@ pub mod bridge {
             let at = table.wrapping_add(2 + 2 * i.cast_unsigned());
             if i32::from(mem.read::<i16>(at)) == want {
                 let arg = i32::from(mem.read::<i16>(KIND_ARGS.ptr(mem).addr.wrapping_add(2 * k)));
-                let f = TABLE_FN.get(mem);
+                let f = CD_LIB_10.get(mem);
                 call(mem, f, &[arg.cast_unsigned()]);
                 return index;
             }
@@ -220,25 +220,25 @@ pub mod bridge {
         old
     }
 
-    /// `g_CdLib` (`0x02310c40`): the reader's function table; entries 0
-    /// (read), 4 (table) and 5 (table size) are used here.
-    pub const CD_LIB_READ: Global<u32> = Global::new(0x0231_0c40);
-    pub const CD_LIB_SIZE: Global<u32> = Global::new(0x0231_0c54);
+    /// `g_CdLib` itself (`+0`, read) and `+0x14` (a table's size), as
+    /// `Ch_RomDataReadInit` uses them.
+    pub const CD_LIB: Global<u32> = Global::new(0x0231_0c40);
+    pub const CD_LIB_14: Global<u32> = Global::new(0x0231_0c54);
 
     /// `Ch_RomDataReadInit()` (`0x0082a5f0`): the kind tables:
-    /// `TABLE_FN(0x14)`, then for kinds 0..7 a buffer of the table's size
-    /// (`CD_LIB_SIZE(kind)`, `user_malloc`) named `"tenuki.gomen."`
+    /// `CD_LIB_10(0x14)`, then for kinds 0..7 a buffer of the table's size
+    /// (`CD_LIB_14(kind)`, `user_malloc`) named `"tenuki.gomen."`
     /// (`Sg_MemSetStr(p, name, kind)`), stored in [`KIND_TABLES`] and read
-    /// into (`CD_LIB_READ(kind, p, 0, 0)`). Returns the last read's result.
+    /// into (`CD_LIB(kind, p, 0, 0)`). Returns the last read's result.
     pub fn ch_rom_data_read_init<M: Mem>(
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        let f = TABLE_FN.get(mem);
+        let f = CD_LIB_10.get(mem);
         call(mem, f, &[0x14]);
         let mut r = 0;
         for kind in 0..7u32 {
-            let f = CD_LIB_SIZE.get(mem);
+            let f = CD_LIB_14.get(mem);
             let size = call(mem, f, &[kind]);
             let p = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[size]);
             let slot = KIND_TABLES.ptr(mem).addr + 4 * kind;
@@ -250,7 +250,7 @@ pub mod bridge {
                 &[p, name, kind],
             );
             let p: u32 = mem.read(slot);
-            let f = CD_LIB_READ.get(mem);
+            let f = CD_LIB.get(mem);
             r = call(mem, f, &[kind, p, 0, 0]);
         }
         r
@@ -443,8 +443,9 @@ pub mod bridge {
     pub const SYS_7E4: Global<u32> = Global::new(0x0130_07e4);
     /// `u32` set by `Ch_SysSet6e0`.
     pub const SYS_6E0: Global<u32> = Global::new(0x00c4_96e0);
-    /// `u32` cleared by `Ch_FunctionHistoryClear`.
-    pub const HISTORY_9E8: Global<u32> = Global::new(0x0130_09e8);
+    /// `Ch_DrawReserveCalcNorm`'s round-robin cursor into the character
+    /// array (0: start over); cleared by `Ch_FunctionHistoryClear`.
+    pub const CALC_NORM_CURSOR: Global<u32> = Global::new(0x0130_09e8);
 
     /// `Ch_SetDrawIcon(on)` (`0x00830c70`) and `Ch_SetDrawIcon2(on)`
     /// (`0x00830c80`): bit 0.
