@@ -5,7 +5,7 @@
 //! (synthetic state, needs `FFX_GAME_DIR`) and, with `FFX_SNAPSHOT`, on the
 //! snapshot's state too.
 
-#![allow(dead_code)]
+#![allow(dead_code, clippy::many_single_char_names)]
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -508,6 +508,219 @@ fn opus_0437_dots_match_the_original() {
                     ))
                 });
             }
+        }
+    }
+}
+fn check_deep_n(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    args: &[u32],
+    rust: impl FnOnce(&mut Oracle, u32) -> Option<u32>,
+) {
+    let n = u8::try_from(args.len()).unwrap();
+    let at = p.sym(THUNK);
+    let mut c = vec![0x81, 0xec, 0, 2, 0, 0]; // sub esp, 0x200
+    for _ in 0..n {
+        c.extend([0xff, 0xb4, 0x24]); // push [esp + 0x200 + 4n]
+        c.extend((0x200 + 4 * u32::from(n)).to_le_bytes());
+    }
+    c.push(0xe8); // call sym
+    let call_end = at + u32::try_from(c.len()).unwrap() + 4;
+    c.extend(p.sym(sym).wrapping_sub(call_end).to_le_bytes());
+    c.extend([0x81, 0xc4]); // add esp, 0x200 + 4n
+    c.extend((0x200 + 4 * u32::from(n)).to_le_bytes());
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    let w = 4 * u32::from(n);
+    let frame = p.b.stack_range().end - 0x100 - w - 4 - 0x200 - w - 4 - 4;
+    let r =
+        p.a.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    assert!(
+        r.st0.is_none(),
+        "{}: {what}: the original returns {:?} in ST0",
+        p.name,
+        r.st0
+    );
+    if let Some(mine) = rust(&mut p.b, frame) {
+        assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+    }
+    p.same(what);
+}
+
+/// Random scene lights (`Sg_LightGetDir`/`Sg_LightGetColor`'s cells):
+/// finite floats, and now and then any (quiet NaNs, infinities).
+fn scene_lights(p: &mut Pair, rng: &mut Xorshift) {
+    let (lights, third) = (p.sym(0x00c4_9724), p.sym(0x0130_08e8));
+    for i in 0..0x1c {
+        let x = if rng.chance(10) {
+            rng.float()
+        } else {
+            finite(rng)
+        };
+        p.set(lights + 4 * i, x);
+    }
+    for i in 0..4 {
+        let x = if rng.chance(10) {
+            rng.float()
+        } else {
+            finite(rng)
+        };
+        p.set(third + 4 * i, x);
+    }
+}
+
+#[test]
+fn light_conversions_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_91c0);
+        let (colours, dirs) = (p.alloc(0x40), p.alloc(0x40));
+        let r0 = p.sym(0x00c8_f508);
+        let ambient = p.sym(0x00c4_9774);
+        for round in 0..3000 {
+            scene_lights(&mut p, &mut rng);
+            p.fill(colours, 0x40, &mut rng);
+            p.fill(dirs, 0x40, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.check(
+                "op_ffxlight_to_omdlight_0279",
+                0x00a6_91c0,
+                &[colours, dirs],
+                |o| {
+                    Some(hi_md::bridge::op_ffxlight_to_omdlight_0279(
+                        o,
+                        colours,
+                        dirs,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // the ambient channels round 0..1, the edges and beyond
+            for k in 0..4 {
+                let x: f32 = match round % 3 {
+                    0 => f32::from_bits(rng.float()),
+                    1 => rng.pick(&[0.0, -0.0, 0.996_093_75, 0.999, 1.0, 1.001, -0.001, 0.5]),
+                    _ => f32::from(u16::try_from(rng.below(300)).unwrap()) / 256.0 - 0.1,
+                };
+                p.set(ambient + 4 * k, x.to_bits());
+            }
+            check_deep_n(
+                &mut p,
+                "op_ffxambient_to_omdambient",
+                0x00a6_8ff0,
+                &[],
+                |o, frame| {
+                    Some(hi_md::bridge::op_ffxambient_to_omdambient(
+                        o,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn tex0_change_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_9ca0);
+        let sizes: [u32; 8] = p.get(p.sym(0x00c8_8aa8));
+        let packet = p.alloc(0x2000);
+        for round in 0..3000 {
+            p.fill(packet, 0x2000, &mut rng);
+            let mut chain = Vec::new();
+            for _ in 0..rng.below(7) {
+                let ty = rng.pick(&[0x02u8, 0x03, 0x06, 0x07, 0x12, 0x00, 0x01, 0x45, 0xfe, 0x80]);
+                chain.push((ty, i16::try_from(rng.below(5)).unwrap()));
+            }
+            chain.push((0xff, 0));
+            tags(&mut p, packet, &chain, |ty| sizes[usize::from(ty & 7)]);
+            // TEX0 bases near each other, so the range test picks some
+            let mut t = packet + 0x20;
+            for &(ty, n) in &chain {
+                if rng.chance(70) {
+                    let v: u32 = p.get(t + 8);
+                    let base = 0x3000 + rng.below(0x1000);
+                    p.set(t + 8, v & 0xffff_c000 | base);
+                }
+                t += 0x10 + u32::try_from(n).unwrap() * sizes[usize::from(ty & 7)];
+            }
+            let mut bases = Vec::new();
+            let mut t = packet + 0x20;
+            for &(ty, n) in &chain {
+                bases.push(p.get::<u32>(t + 8) & 0x3fff);
+                t += 0x10 + u32::try_from(n).unwrap() * sizes[usize::from(ty & 7)];
+            }
+            // a tag stepping back (count -1 of 0x30 bytes) onto the end
+            if round % 4 == 3 {
+                p.set(packet + 0x21, rng.pick(&[0x07u8, 0x47]));
+                p.set(packet + 0x22, -1i16);
+                p.set(packet + 1, 0xffu8);
+            }
+            let (lo, hi) = match round % 3 {
+                0 => (0, 0x4000),
+                1 if rng.chance(50) => (rng.pick(&bases), rng.pick(&bases)),
+                1 => (0x3000 + rng.below(0x800), 0x3800 + rng.below(0x800)),
+                _ => (rng.next() & 0xffff, rng.next()),
+            };
+            if round % 5 == 0 {
+                p.check(
+                    "op_md_tex0_change",
+                    0x00a6_9c80,
+                    &[packet, rng.next()],
+                    |o| Some(hi_md::bridge::op_md_tex0_change_range(o, packet, 0, 0x4000)),
+                );
+            } else {
+                let x = rng.next();
+                p.check(
+                    "op_md_tex0_change_range",
+                    0x00a6_9ca0,
+                    &[packet, x, lo, hi],
+                    |o| {
+                        #[allow(clippy::cast_possible_truncation)]
+                        Some(hi_md::bridge::op_md_tex0_change_range(
+                            o, packet, lo as u16, hi as u16,
+                        ))
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn md_vn_index_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_9f10);
+        let (packet, out, table) = (p.alloc(0x1000), p.alloc(0x400), p.alloc(0x40 * 8));
+        for _ in 0..3000 {
+            p.fill(packet, 0x1000, &mut rng);
+            p.fill(out, 0x400, &mut rng);
+            p.fill(table, 0x200, &mut rng);
+            let lists = rng.pick(&[0i16, 1, 3, 8, -2]);
+            p.set(packet + 0x12, lists);
+            let mut t = packet + 0x20;
+            for _ in 0..rng.below(4) {
+                let n = rng.below(4);
+                p.set(t + 1, rng.pick(&[0x00u8, 0x10, 0x12, 0xfe]));
+                p.set(t + 2, u16::try_from(n).unwrap());
+                for k in 0..n {
+                    let e = t + 0x20 + 0x1c * k;
+                    for v in 0..3 {
+                        let idx = rng.below(u32::try_from(lists.max(1)).unwrap());
+                        p.set(e + 2 * v, u16::try_from(idx).unwrap());
+                        p.set(e + 0x14 + 2 * v, rng.pick(&[0u16, 1, 2, 3, 0x8001]));
+                    }
+                }
+                t += 0x20 + 0x1c * n;
+            }
+            p.set(t + 1, 0xffu8);
+            p.check("op_md_vn_index", 0x00a6_9f10, &[packet, out, table], |o| {
+                Some(hi_md::bridge::op_md_vn_index(o, packet, out, table))
+            });
         }
     }
 }

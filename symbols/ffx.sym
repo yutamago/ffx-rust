@@ -12342,6 +12342,7 @@
 0x00a698c0 function op_md_packet_size_00a698c0   # ours: (packet) -> 0 at a tag of type nibble 0x10/0x20, else at the 0xf0 end tag (6 (i16 +0x12 + i16 +0x14) + 0x1f + end - packet) & 0x7ffffff0; tags as in op_md_packet_set_addr (g_OpMdTagSizes); callers 0x0081c4f0, 0x00a69290
 0x00a69940 function op_md_spr_init_x64        # fh v3:bsim1.00 0x00a69940; ours: (obj, init, work) -> work+0x300: copies the 0x50-byte init block to work+0x300 through g_Ee_Gpr+0x20 (the emulated v0, the last 16 bytes stay), fills the default pointers +0x338/+0x33c, the ranges +0x390/+0x394/+0x39c and the DMA/GIF packet at work+0x100 (md::bridge::op_md_spr_init_x64)
 0x00a69c80 function op_md_tex0_change         # fh switch:bsim1.00 0x71003ccfd0
+0x00a69ca0 function op_md_tex0_change_range_00a69ca0 # ours: (packet, _, lo, hi) -> end tag: textured tags (type bit 1) with TEX0 TBP0 (+8 bits 0..13) in lo..=hi get TBP0 and CBP (+0xc bits 5..18) minus (their minimum over the textured tags - 0x3fff), 16-bit, 0 when negative; tags step by g_OpMdTagSizes; op_md_tex0_change passes 0..0x4000
 0x00a69de0 function op_md_packet_set_addr     # (packet, a, b): unless MagicFile_GetMagicId is 0x94, 0x239 or 0xd0, every tag from packet+0x20 (until type 0xff at +1) takes a at +8, b at +0xc; tag = 0x10 + count (i16 +2) * g_OpMdTagSizes[type & 7]; g_MagicImports slot 620
 0x00a69f10 function op_md_vn_index            # fh v3:exact 0x00a69f10
 0x00a69fe0 function op_md_vn_index_sub        # fh switch:bsim0.92 0x71003cd320

@@ -300,6 +300,21 @@ A packet's tags start at `+0x20`: type byte `+1`, `i16` count `+2`.
   of every tag up to the end tag (type 0xff), with the same step
   (`opp_0582_cmd_a70910` kind 0x4000).
 
+- `op_md_tex0_change_range_00a69ca0(packet, _, lo, hi)` (`0x00a69ca0`;
+  `op_md_tex0_change` at `0x00a69c80` passes `0..0x4000`) rebases the
+  `TEX0` (`+8`, 64 bits) of the textured tags (type bit 1): with `m` the
+  smallest `TBP0 - 0x3fff` (bits 0..13) over them and `n` the same for
+  `CBP` (bits 37..50, `+0xc >> 5`), each tag whose `TBP0` is in `lo..=hi`
+  gets `TBP0 - m` and `CBP - n` (16-bit; never negative, so they come out
+  0x3fff above the smallest, and the `TBP0` overflows into bit 14). Tags
+  step `0x10 + n x g_OpMdTagSizes[type & 7]` (`0x00c88aa8`) to the end tag
+  (0xff).
+- `op_md_vn_index(packet, out, table)` (`0x00a69f10`): `[packet] |= 8`,
+  `packet +0x1c = out - packet`; the `i16 +0x12` 64-byte lists in `table`
+  are emptied and filled by `op_md_vn_index_sub` from every element
+  (0x1c bytes, tags as above); `out` gets `u16 +0x14`, then from `+0x10`
+  each list's count and entries. Returns the end rounded up to 16.
+
 ### oef2 entry links
 
 `op_oef2_entry_link_00a6a320(e, i)` (`0x00a6a320`, from `opu_part_init`
@@ -315,6 +330,13 @@ area `w = [work + 0x390]`: `op_ffxlight_to_omdlight(w + 0x80, w + 0xc0)`,
 then `op_matrix_light4_vector(w + 0x40, model +0x28, model +0x2c)` and
 `op_matrix_light4_vector(w + 0xc0, w + 0xc0, model +0x2c)`. Its `eax` is
 the last copy's last word, the light matrix's `w` 0.
+
+`op_ffxlight_to_omdlight_0279(colours, dirs)` (`0x00a691c0`) is
+`op_ffxlight_to_omdlight` with the ambient colour (`Sg_LightGetColor(3)`)
+in `colours` row 3 instead of `r0`. `op_ffxambient_to_omdambient()`
+(`0x00a68ff0`) turns the ambient colour into RGBA bytes (`x 256` as
+`f32`, above 255 is 255, below 0 is 0, else truncated) and leaves them in
+`eax`; its callers drop them.
 
 ### `opus_0437` dots
 

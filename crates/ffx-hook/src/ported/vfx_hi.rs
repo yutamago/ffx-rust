@@ -41,4 +41,31 @@ ported! {
     opus_0582_break_bytes_00a72310 @ 0x00a7_2310 => extern "C" fn opus_0582_break_bytes(list: u32) -> u32 {
         hi_md::bridge::opus_0582_break_bytes(&mem(), list)
     }
+    /// `op_md_tex0_change(packet, x)`: the range `0..=0x4000`.
+    op_md_tex0_change @ 0x00a6_9c80 => extern "C" fn op_md_tex0_change(packet: u32, _x: u32) -> u32 {
+        hi_md::bridge::op_md_tex0_change_range(&mut mem(), packet, 0, 0x4000)
+    }
+    /// `op_md_tex0_change_range_00a69ca0(packet, x, lo, hi)`.
+    op_md_tex0_change_range_00a69ca0 @ 0x00a6_9ca0 => extern "C" fn op_md_tex0_change_range(packet: u32, _x: u32, lo: u32, hi: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 arguments
+        hi_md::bridge::op_md_tex0_change_range(&mut mem(), packet, lo as u16, hi as u16)
+    }
+    /// `op_md_vn_index(packet, out, table)`.
+    op_md_vn_index @ 0x00a6_9f10 => extern "C" fn op_md_vn_index(packet: u32, out: u32, table: u32) -> u32 {
+        hi_md::bridge::op_md_vn_index(&mut mem(), packet, out, table)
+    }
+    /// `op_ffxlight_to_omdlight_0279(colours, dirs)`.
+    op_ffxlight_to_omdlight_0279 @ 0x00a6_91c0 => extern "C" fn op_ffxlight_to_omdlight_0279(colours: u32, dirs: u32) -> u32 {
+        hi_md::bridge::op_ffxlight_to_omdlight_0279(&mut mem(), colours, dirs, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_ffxambient_to_omdambient()`: its locals in a buffer on this
+    /// shim's stack.
+    op_ffxambient_to_omdambient @ 0x00a6_8ff0 => extern "C" fn op_ffxambient_to_omdambient() -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x20]);
+        let mut locals = Locals([0; 0x20]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x20;
+        hi_md::bridge::op_ffxambient_to_omdambient(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a))
+    }
 }
