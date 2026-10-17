@@ -853,3 +853,155 @@ double.
 |---|---|---|---|
 | `0x008f3300` | 4.0 | -3.0; -2.0 for languages 1..=8 and from 12 | 0.8 |
 | `0x008f3420` | 0.0 | -5.5 (language 0), -6.0 (9), else -5.0 | 0.77 for language 0, else 0.8 |
+
+## Play time, cross icons, info window (round 28)
+
+`TOMenuDrawTimer(frames, x, y, alpha, kind)` (`0x008e19f0`) draws a play
+time right-aligned at `x` in the battle edge font, scale 0.63 and 1.5
+(`0x00b66864`, `0x00b3eb58`): the minutes (`frames / 60 % 60`, `"%02d"`),
+a `J` (0x4a, the font's separator) and the hours (`frames / 3600`, at
+most 999). Each piece moves left by its width (`ToGetBtlEasyFontWidth`,
+`ToGetBtlEasyDigitWidth2`) and one letter space
+(`TOGetFontSpaceInPiexl(0)`), two for languages 1..=8. The separator is
+drawn only for `kind` 0x25, with 0x25 as its alpha. Every piece's `y` is
+`y - graphicUiRemapY2(9.0)`. Sums are doubles, each position rounded to
+`f32`.
+
+`DrawCrossCtbIcon(id, x, y, w, h)` (`0x0089e660`) draws battle icons
+from the cross-menu sheet with `TOMkpShapeXYWHUV(400, ...)` after
+`setButtonData(-1, id)`. Only ids 0x1b6, 0x1b7 and the ones it does not
+know end with `resetButtonData()`. UVs are texels over 1024.
+
+| ids | quads |
+|---|---|
+| 0x1b8..=0x1c2 | one: `u0 = (id % 2 × 129 + 768)`, width 120; `v0 = (id - 0x1b8) / 2 × 96`, height 80 |
+| 0x1c3..=0x1ca | a frame, then `x + 0.3w, y + 0.2h, 0.4w × 0.6h` with `u0 = (id - 0x1c3) × 31 + 769`, width 30, `v` 0.8105..0.8555 |
+| 0x1cb..=0x1d2 | a frame, then `x + 0.52w, y + 0.55h, 0.288w × 0.4h` with `u0 = (id - 0x1cb) % 4 × 60 + 769` (+1 for 0x1cf), width 47; `v0` 0.873 below 0x1cf else 0.9316, height 50 |
+| 0x1d3, 0x1d4 | the frames alone |
+| 0x1b6, 0x1b7 | two arrow halves, sized `remapX2(14) × remapY2(15)` and `remapX2(24) × remapY2(12)` |
+
+The multipliers are doubles of `f32` values (0.3 is `0.30000001192…`).
+
+`TOBtlDrawInfoWinMes()` (`0x00895140`) draws the battle info window's
+four lines (`g_BtlInfoWinLines`, `0x0133f618`, 0x1c bytes each: `+0`
+`i16` shown, `+0xc`/`+0x10` position, `+0x18` text) with
+`TOMkpCrossExtMesFontLClut(0, text, x, y, 0, 0.78, 1.0)` inside
+`OpenFontScissor` of the `i16` box at `0x0133f694` (x0, y0, x1, y1 at
+4-byte steps), then `CloseScissor`. It draws nothing while libra's auto
+mode (`0x0133d6e0`) is 1, `g_BtlInfoWinShown` (`0x0133c93d`) is clear or
+bit 0x400 of the menu settings (`MsGetSaveMenu`) is clear.
+
+## Battle help window and command pads (round 28)
+
+`TOBtlDrawHelpWin()` (`0x008936d0`) draws the help band
+(`TOMkpShapeXYWHUVC2(-1, ...)` at `remapX2(145), remapY2(96)`, size
+`remapX2(1600) × remapY2(55)`, grey 0x80808080/0x808080) and its frame
+(`TOMkpShapeXYWHUV(0x3e, ...)`, `remapX2(95) × remapY2(22)` at y
+`remapY2(78)`) inside `TODrawScissorXYWH(0, 0, 0x200, 0x1a0)`, then the help
+text `g_BtlHelpText` with `TOMkpCrossExtMesFontLClut(0, text, x, y, 0,
+0.78, 1.0)` at `remapX2(235)`, `remapY2(101)`. Nothing is drawn while
+libra's auto mode is 1 or menu bit 0x400 is clear; while the window is
+closed (`g_BtlHelpWinOpen` not 1) it only resets `g_BtlHelpScroll`
+(`0x0133c940`).
+
+A text wider (`ToGetCrossExtMesFontWidth`) than `remapX2(435)` scrolls
+when the info window is shown or libra's auto mode is not 0. Inside
+`OpenFontScissor(40, 40, 178, 62)`:
+
+1. `scroll -= 0.8` (stored as `f32`).
+2. The text is drawn at `x + scroll`.
+3. While `x + scroll + width < 158`, it is drawn again at `x + scroll +
+   width + 20`.
+4. Once `x + scroll + width < 40`, `scroll = (width + 20) + scroll`.
+
+The sums are doubles of `f32` values, in that order.
+
+Battle command list windows (`w`, the 0xf0-byte levels at `0x0133c900`)
+take the TO pad words at `0x025d09d2` (held, triggered `+2`, repeated
+`+4`):
+
+| offset | field |
+|---|---|
+| `+1` | `u8`, stepped when going back a level |
+| `+8` | `i16` actor |
+| `+0xa` | `i8` picks needed |
+| `+0xb` | `i8` picks made |
+| `+0xe` | `i16[]` cursor of each pick |
+| `+0x16` | `u16[]` command of each pick |
+| `+0x1e` | `u16` command under the cursor |
+| `+0x20` | the window's `i16` command list |
+| `+0x38`, `+0x3a` | `i16` columns, rows shown |
+| `+0x40`, `+0x42`, `+0x44` | `i16` first shown entry, cursor, entries |
+| `+0x88` | step function (`0x00898e40` idle) |
+
+`TOGetPadStatusPrepare(w)` (`0x0089d610`) runs while the battle windows
+are open and the window is idle. Cancel (0x40) undoes the last pick
+(slots back to 0xff, `MsSetUseItem(0)`, click 4) or goes back a level
+(`TOBtlSetPrevAction`, click 4). Confirm (0x20) asks
+`TOCheckBtlCommandUse(actor, command)`: a usable command is recorded as
+a pick; with more picks needed `MsSetUseItem(first pick)`, else
+`TOBtlSetNextAction(actor, command)`. Otherwise, unless opposite
+directions are held, up/down move by a row and wrap into the list,
+left/right move by one and clamp. The first shown entry follows the
+cursor by a row, with `TOBtlPadScrollDown`/`Up` as the step function,
+and is clamped to the list.
+
+`TOBtlGetLeftPad(w)` (`0x008a22f0`) and `TOBtlGetRightPad(w)`
+(`0x008a2690`) are the same function with cancel on 0x2000 and 0x8000.
+Their confirm checks the current pick's command. 0x10 uses the
+character's skip command (`MsMenuGetChrSkipCommand`): `g_BtlCommandRec`
+(`0x023cc040`) gets the actor, the command, target 0xff and the actor's
+bit (also in `0x0133d178`), `MsSetBtlCommand` takes it, and the windows
+close (`TOCloseBtlWindow(g_BtlWindowChr)`, `TOBtlCloseHelpWin`,
+`TOSeqInitAllScene(2)`, `g_BtlWindowChr = 0xff`). 0x04 with no aeon out
+calls `TOBtlSetNextAction(actor, 0x3002)`. Going back a level clicks 1
+here. Only up/down move, and the scroll does not change the step
+function.
+
+A zero column count makes the originals divide by zero; the ports take
+the quotient as 0.
+
+`MenuItem_ApplyHeal_008c8c40(target)` (`0x008c8c40`, from
+`TkMenuCtrlItem`) heals with the item in use (`u16` at `0x0186a3a8`):
+`target` alone when `0x0186a391` is 1, else every aeon and then every
+party member its record's `+0x22` bits 0x80 and 0x40 select. Each gets
+`TkMenuItemHealAmount_008c69a0(item, who, 0)` through `TkMenuAddHPCapped`.
+
+`DrawWaterWaveShapeC2(x, y, w, h, u, v, uw, vh, su, sv, c0, c1)`
+(`0x008e7d30`) draws a quad of the water-wave sheet (shape 0x3e81) whose
+texture drifts with `graphicGetTime()`. Each coordinate is
+`frac((time × speed + start) / sheet size)`, with the time read again for
+`v`; every step is rounded to `f32` and the fraction subtracts
+`_ftol2_sse`'s integer. `u1 = u + uw / width` and `v1 = v + vh / height`.
+The colours `c0` (top-left vertex) and `c1` go in byte by byte. The
+`graphicDrawUIElement(record, texture, 1, 0, 0)` record has `+0x90` and
+`+0x94` zeroed; its other unused words are stack leftovers in the
+original.
+
+## Fitted command labels (round 29)
+
+`QuickRecoverMenuDraw(text, x, y, w, alpha, scale, extra, align, scroll,
+slot)` (`0x00904ba0`, called only by `TOBtlDrawCommandWindow`) draws a
+battle-font label (`ToMakeBtlEasyEdgeFont`) into a box `w` wide. `align`
+1 centres it at `x` (by half of `w` when the text is wider), 0 starts it
+at `x`. Any other value leaves the left edge uninitialised (stack
+garbage).
+
+A text no wider than `w` is drawn as is. A wider one:
+
+- With `scroll` 1 it scrolls in marquee slot `min(slot, 3)`. State is
+  `g_QRScrollOffset` (`0x01876110`), the text's xor hash at `0x01876120`,
+  `g_QRScrollPhase` (`0x01871708`) and a frame count at `0x01876130`. A
+  text whose hash's low nibble changed restarts it. Phase 0 waits 51
+  frames at offset 0, phase 1 slides 0.5 a frame until the text's end
+  meets the box's (`w - width`), and phase 2 waits 51 frames. The text is
+  drawn at `left + offset` and again 10 past its end, inside
+  `OpenFontScissor(left, y - 2, left + w, y + 20)`.
+- Otherwise it is cut. The ellipsis is `HHH` for languages 1..=8, else
+  `>`. The text is written glyph by glyph through the TO font cursor at
+  `0x025d09a0` (colour 0x80808080, `+4` x, `+8` y, `+0x1b` alpha;
+  `TOMakeBtlEasyFontEdge`, `TOMakePktBtlEasyFont`, `TOAddFontWidthSpace`).
+  Group 1 codes go to `x`, 16 lower. The first glyph whose advance passes
+  `left + w - ellipsis width` stops it. A `G` (0x47) there is narrowed by
+  the `G` glyph's width until it fits and is drawn. The ellipsis follows
+  at the cursor. A text that ends first gets no ellipsis.

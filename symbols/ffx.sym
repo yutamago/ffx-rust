@@ -9405,11 +9405,11 @@
 0x00893510 function TOBtlDrawGetItemMessageWindow # fh v3:exact+call.cs 0x00893480 cdecl
 0x008935f0 function TOBtlDrawGetLimitTypeMessageWindow # fh v3:exact+call.cs 0x00893560 cdecl
 0x00893660 function TOBtlDrawGetMoneyMessageWindow # fh v3:exact+call.cs 0x008935d0 cdecl
-0x008936d0 function TOBtlDrawHelpWin          # fh v3:exact 0x00893640
+0x008936d0 function TOBtlDrawHelpWin          # fh v3:exact 0x00893640; cdecl(): battle help band and frame, then g_BtlHelpText at remapX2(235)/Y2(101), scrolling (g_BtlHelpScroll -0.8 a frame, wraps by width+20) when wider than remapX2(435) and the info window is shown or libra auto is not 0; closed (g_BtlHelpWinOpen != 1) resets the scroll; ported (system round 28)
 0x00893a30 function TOBtlDrawInfoWin          # fh v3:exact 0x008939a0
 0x008947c0 function TOBtlDrawInfoWinBack         # layout: alphabetical run between TOBtlDrawInfoWin and TOBtlDrawInfoWinElementLamp (1 unnamed in the gap); Switch 0x710049f400 TOBtlDrawInfoWinBack is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00894b40 function TOBtlDrawInfoWinElementLamp # fh v3:cg4 0x894ab0
-0x00895140 function TOBtlDrawInfoWinMes       # fh v3:exact 0x008950b0
+0x00895140 function TOBtlDrawInfoWinMes       # fh v3:exact 0x008950b0; cdecl(): libra auto off, 0x0133c93d and menu bit 0x400: the four info lines (0x0133f618, 0x1c each) via TOMkpCrossExtMesFontLClut inside OpenFontScissor of the i16 box 0x0133f694; ported (system round 28)
 0x00895240 function TOBtlDrawInfoWinStatus    # fh v3:exact 0x008951b0
 0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl
 0x00895390 function TOBtlDrawLibraWindow      # fh v3:exact 0x00895300
@@ -9506,7 +9506,7 @@
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad
 0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad
 0x0089d390 function TOBtlGetTargetPad         # fh v3:exact 0x0089d300 _TOBtlGetTargetPad
-0x0089d610 function TOGetPadStatusPrepare     # fh v3:exact 0x0089d580 _TOGetPadStatusPrepare
+0x0089d610 function TOGetPadStatusPrepare     # fh v3:exact 0x0089d580 _TOGetPadStatusPrepare; cdecl(w): command list window frame while idle (+0x88 the empty step 0x00898e40): cancel 0x40 undo pick/TOBtlSetPrevAction, confirm 0x20 TOCheckBtlCommandUse/TOBtlSetNextAction, d-pad cursor (+0x42) by row +0x38/entry, first row +0x40 follows with TOBtlPadScrollDown/Up; ported (system round 28)
 0x0089d9b0 function TOBtlDrawSimpleHelpMes    # fh v3:cg7 0x89d920 __TOBtlDrawSimpleHelpMes
 0x0089db60 function TOBtlInitSimpleHelpMes       # structure: (i): g_BtlSimpleHelpMes[i] = {0, type 7, 0, 0}; Switch TOBtlInitSimpleHelpMes (32 bytes); sorts after TOBtlDrawSimpleHelpMes, as here
 0x0089dba0 function TOBtlOpenSimpleHelpMes       # structure: (i, message): g_BtlSimpleHelpMes[i] = {open 1, type 7, message}, size from TOGetMessageWH; callers are the TOBtlDraw*MessageWindow functions; Switch TOBtlOpenSimpleHelpMes (96 bytes) sorts after TOBtlInitSimpleHelpMes, as here
@@ -9522,7 +9522,7 @@
 0x0089e410 function TOTextWidthGlyphs_0089e410 # (text): sum of glyph width+1 (+5 when flagged) from the 4-byte glyph table at 0x00c58f02; codes < 0x30 use 0xa0 + next byte; stepped with TOSkipCode; name ours
 0x0089e4f0 function PushEntry_013402b8 # cdecl(a, b, c) -> c: 12-byte entry *0x01340438 (then incremented) at 0x013402b8 = (u16 1, u16 a at +4, u16 b at +6, c at +8); caller 0x009415e0; name ours
 0x0089e600 function TONumberFontString_0089e600 # cdecl(src, dst): digits kept, space -> :, - . / -> G H I (any other char spins the original forever; the battle number font); caller 0x008ebb80; name ours
-0x0089e660 function DrawCrossCtbIcon          # fh v3:exact 0x0089e5d0
+0x0089e660 function DrawCrossCtbIcon          # fh v3:exact 0x0089e5d0; cdecl(id, x, y, w, h) -> eax of the last call: battle command/CTB icon quads (TOMkpShapeXYWHUV 400) for ids 0x1b6..0x1d4; resetButtonData only for 0x1b6/0x1b7/unknown ids; ported (system round 28)
 0x0089eca0 function TOBtlCloseComWinChange    # fh switch:bsim1.00 0x71004b0aa0
 0x0089ece0 function TOBtlCtrlCtbWindow        # fh v3:bsim0.94 0x0089ec70
 0x0089f0e0 function TOBtlDrawChangePrim       # fh v3:exact 0x0089f070
@@ -9538,8 +9538,8 @@
 0x008a1ce0 function TODrawLimitBG             # fh v3:exact 0x008a1c70
 0x008a2030 function TOInitGilInput            # cdecl(max): 0x01340454 (7 words) cleared; +8/+0x14 = MsGetGIL(), +0xc = max >= 0 && gil >= max ? max : gil, u16 +2 = digits - 1 ('%d'); 0x023cc038 = 0; returns digits - 1; name ours
 0x008a2160 function TOBtlGetChangePad         # fh v3:exact 0x008a2100 _TOBtlGetChangePad
-0x008a22f0 function TOBtlGetLeftPad           # fh v3:cg10 0x8a2290 _TOBtlGetLeftPad
-0x008a2690 function TOBtlGetRightPad          # fh v3:cg10 0x8a2630 _TOBtlGetRightPad
+0x008a22f0 function TOBtlGetLeftPad           # fh v3:cg10 0x8a2290 _TOBtlGetLeftPad; cdecl(w): side command window, cancel 0x2000; confirm checks the current pick, 0x10 skip command (MsMenuGetChrSkipCommand -> g_BtlCommandRec, MsSetBtlCommand, windows closed), 0x04 summon/0x3002, up/down by row; differs from TOBtlGetRightPad only in the cancel bit; ported (system round 28)
+0x008a2690 function TOBtlGetRightPad          # fh v3:cg10 0x8a2630 _TOBtlGetRightPad; cdecl(w): TOBtlGetLeftPad with cancel 0x8000; ported (system round 28)
 0x008a2ad0 function TOBtlCtbAnimStep_008a2ad0 # cdecl(rec) -> 0: i8 step +0xf picks 4, 7, 11, 16 to add to i16 +0x10; after four steps +0xf = 0 and +0x14 = 0x008a2b10; caller TOBtlCtrlCtbWindow; name ours
 0x008a2ba0 function Tick4_008a2ba0 # cdecl(p) -> 0: ++(i8)p+0xf; at 4: 0, p+0x14 = 0x008a2bc0; name ours
 0x008a2da0 function TODrawWaitBtlWinChange    # fh v3:cg3 0x8a2d40 __TODrawWaitBtlWinChange
@@ -10079,6 +10079,7 @@
 0x008c8a30 function MenuItem_ItemTargetMask_008c8a30 # (item) the item version of MenuAbility_CommandTargetMask: TkMsGetRomItem record, then each aeon / party member MenuItem_TargetNeedsRecovery accepts; caller TkMenuCtrlItem; own name
 0x008c8ba0 function TkMenuItemImportantRefresh # fh v3:exact 0x008c8b70
 0x008c8c30 function TOAmapGetItemListMax      # fh v3:bsim1.00 0x008c8c00
+0x008c8c40 function MenuItem_ApplyHeal_008c8c40 # cdecl(target) -> eax of the last call: item 0x0186a3a8 heals target (0x0186a391 == 1) or every aeon/party member its TkMsGetRomItem record +0x22 bits 0x80/0x40 pick, TkMenuItemHealAmount_008c69a0 + TkMenuAddHPCapped each; caller TkMenuCtrlItem; the item twin of MenuAbility_ApplyHeal_008c6d00; ported (system round 28); name ours
 0x008c8d10 function TkMenuAddHPCapped # cdecl(chr, delta): TkMenuSetHP(chr, min(TkMenuGetHP + delta, TkMenuGetMaxHP)) (signed); name ours
 0x008c8e20 function MenuItem_AddMP            # (chr, n) TkMenuSetMP(min(MP + n, max MP)); own name
 0x008c8e60 function TkMenuItemRefresh         # fh v3:exact 0x008c8e30
@@ -10377,7 +10378,7 @@
 0x008e02f0 function hardCodeToFixTheWrongData    # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'azit0600'; Switch 0x71005002b0 hardCodeToFixTheWrongData (symbols from Fahrenheit's server export)
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
-0x008e19f0 function TOMenuDrawTimer              # callees: its named callees match the Switch 0x71004d6a90 TOMenuDrawTimer's (similarity 1.00: TOGetFFXLang, TOGetFontSpaceInPiexl, ToGetBtlEasyDigitWidth2, ToGetBtlEasyFontWidth, ToMakeBtlEasyEdgeDigit2); symbols from Fahrenheit's server export
+0x008e19f0 function TOMenuDrawTimer              # callees: its named callees match the Switch 0x71004d6a90 TOMenuDrawTimer's (similarity 1.00: TOGetFFXLang, TOGetFontSpaceInPiexl, ToGetBtlEasyDigitWidth2, ToGetBtlEasyFontWidth, ToMakeBtlEasyEdgeDigit2); symbols from Fahrenheit's server export; cdecl(frames, x, y, alpha, kind): play time hours J minutes right-aligned at x in the battle edge font (scale 0.63/1.5), J only for kind 0x25; ported (system round 28)
 0x008e1c50 function graphicGetCurrentFrame_008e1c50 # duplicate Switch name (0x006410d0 has it); fh switch:bsim1.00 0x71001d9db0: TkMenuGetPlayerFromIndex2_008a9b00(TkMenuGetCurrentPlayerPos())
 0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
 0x008e2250 function GetGlobal01871558_008e2250   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01871558]; return t0; callers: no direct caller; name ours
@@ -10447,7 +10448,7 @@
 0x008e7110 function DrawCrossMenuSummonPlateNoHPMPClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100525170 DrawCrossMenuSummonPlateNoHPMPClut's (similarity 0.60: TOGetSaveChrName, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008e75c0 function DrawMesFontLClutTypeRGBA_ForHelp # callees: its named callees match the Switch 0x710050fcc0 DrawMesFontLClutTypeRGBA_ForHelp's (similarity 0.82: TOAddFontWidthSpace, TOAddPktChangeMacro_help, TODrawScaleButtonIconRGBA, TOGetFontInfo, TOGetGroup); symbols from Fahrenheit's server export
 0x008e7a90 function DrawScaleButtonIconRGBA   # fh v3:exact 0x008e7a90
-0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl
+0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl; (x, y, w, h, u, v, uw, vh, su, sv, c0, c1) -> eax of graphicDrawUIElement: shape 0x3e81 quad, u/v = frac((graphicGetTime()*speed + start) / sheet size) as f32, u1/v1 add uw/w, vh/h; colours c0/c1 bytes; record +0x90/+0x94 zeroed; ported (system round 28)
 0x008e7ed0 function GetLocationText           # fh switch:bsim1.00 0x710050f050
 0x008e7ef0 function GetLocationWH                # layout+callees: sorts between GetLocationText and OpenFontScissor, and its named callees match the Switch 0x710050f080 GetLocationWH's (similarity 0.67: AtelGetSaveDicName, MsGetSaveConfigEnglish); symbols from Fahrenheit's server export
 0x008e8940 function OpenFontScissor           # (x0, y0, x1, y1 floats): g_TkMenuScissorOn = 1, XYUV mode 1, the box; fh v3:bsim1.00 0x008e8940
@@ -10659,7 +10660,7 @@
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
 0x009048f0 function TOSetScreenWH # cdecl(w, h): u16 g_TOScreenW = w, g_TOScreenH = h (the setter of TOGetScreenWH); caller 0x008fae20; name ours
 0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70
-0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0
+0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0; cdecl(text, x, y, w, alpha, scale, extra, align, scroll, slot): battle-font label fitted to w: align 1 centres, 0 left (else left unset); wider text marquees in slot min(slot,3) (scroll 1: 51-frame waits, -0.5/frame, drawn twice 10 apart in OpenFontScissor) or is cut glyph by glyph with an ellipsis HHH/> (a G at the cut narrowed by the G glyph width); callers TOBtlDrawCommandWindow; ported (system round 29)
 0x00905190 function ToGetBtlEasyDigitWidth    # fh v3:exact 0x00905190
 0x00905230 function ToGetBtlEasyDigitWidth2      # layout+callees: sorts between ToGetBtlEasyDigitWidth and ToGetBtlEasyFontWidth, and its named callees match the Switch 0x7100506420 ToGetBtlEasyDigitWidth2's (similarity 1.00: ToGetBtlEasyDigitWidth); symbols from Fahrenheit's server export
 0x00905290 function ToGetBtlEasyFontWidth     # fh v3:exact+call.cs 0x00905290 cdecl
@@ -15487,7 +15488,10 @@
 0x0133c900 label g_BtlActionStack # 0xf0 bytes per command-window level, indexed by g_BtlActionDepth (TOBtlSetPrevAction 0x0089a630); name ours
 0x0133c910 label    g_FFXIsDebug              # i8: FFXIsDebug
 0x0133c93c label    g_BtlHelpWinOpen          # u8: TOBtlCloseHelpWin clears it
+0x0133c93d label    g_BtlInfoWinShown         # u8: TOBtlInitInfoWinMes clears it; TOBtlDrawInfoWinMes draws only while set; name ours
+0x0133c940 label    g_BtlHelpScroll           # f32 help text scroll offset: TOBtlDrawHelpWin moves it by -0.8 a frame and wraps it, resets it to 0 while the help window is closed; name ours
 0x0133d0d0 label g_BtlActionList # 0x140 bytes restored from g_BtlActionSaved by TOBtlSetPrevAction; name ours
+0x0133d178 label    g_BtlTargetSelMask        # u32 selected-target bits (TOBtlMakeTargetTargetBit; TOBtlGetLeftPad/RightPad set the actor's bit for a skip command); name ours
 0x0133d210 label g_BtlActionSaved # 0x140 bytes, see g_BtlActionList; name ours
 0x0133d6ec label g_BtlCommandMissed        # u32: set when MsSetTargetsMotion keeps no target, else cleared (MsCommandCueProcess)
 0x0133d6f0 label    g_BtlCurPosCount          # i16: cursor positions TOBtlSetCurPos pushed (at most 4) into g_BtlCurPos
@@ -15497,6 +15501,8 @@
 0x0133f530 label    g_BtlHelpTextH            # i16 height TOGetMessageWH gives g_BtlHelpText (TOBtlSetDirectHelpMes, TOBtlSetCommandHelpMes); name ours
 0x0133f534 label    g_BtlHelpTextW            # f32 width TOGetMessageWH gives g_BtlHelpText; name ours
 0x0133f538 label    g_BtlHelpText             # 0x80-byte battle help text: cleared, then the text copied (unbounded) by TOBtlSetDirectHelpMes/TOBtlSetCommandHelpMes; name ours
+0x0133f618 label    g_BtlInfoWinLines         # 4 records of 0x1c: +0 i16 shown, +0xc/+0x10 f32 x, y, +0x18 text (TOBtlInitInfoWinMes lays them out, TOBtlDrawInfoWinMes draws them); name ours
+0x0133f694 label    g_BtlInfoWinBox           # 4 i16 at 4-byte steps: x0, y0, x1, y1 of the info window font scissor (TOBtlDrawInfoWinMes); name ours
 0x0133f798 label    g_BtlLuluLimitTbl         # 16 bytes: running sums of the ASCII digits TOBtlSetLuluLimitTbl gets
 0x0133f7b4 label    g_BtlCurPos               # 4 cursor positions of 8 bytes (x +0, y +4, z +6, u16) pushed by TOBtlSetCurPos
 0x0133faa0 label g_TODapsUsed # i16 bytes used in g_TODapsBuffer (TODapsString, TODapsSetPos, TODapsInit); name ours
@@ -15607,6 +15613,8 @@
 0x018716f0 label    g_InvokedFromSelectCursor # SetInvokedFromSelectCursor
 0x018716f4 label    g_TOPktDmaChannel         # TODrawKick passes it to sceDmaSend with g_TOPktBuff[0]; name ours
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
+0x01871708 label    g_QRScrollPhase           # u8[4] QuickRecoverMenuDraw marquee phase: 0 wait, 1 slide, 2 wait at the end; name ours
+0x01876110 label    g_QRScrollOffset          # f32[4] QuickRecoverMenuDraw marquee offsets; 0x01876120 u32[4] text xor hashes (low nibble), 0x01876130 u32[4] frame counts; name ours
 0x018763e8 label    g_FFXToAlbhedTbl          # the Al Bhed character table (TOGetFFXToAlbhedTblAdrs)
 0x01876da8 label    g_Windows                 # TO window pointers: +0 in use (i16), +4 type, +8 state, +0x60 handler per state, +0x74 current handler (TOGetWindowType/Status, TOCloseWindow, TOControlWindow)
 0x01876e00 label    g_YiRender                   # the field renderer object (yiRender_*'s this): +0x68788 animation id bound, +0x9cac0 64 animation slots of 0x28, +0x9d4c4 keyframe data, +0x9d9c4 texture swap count, +0x9d9c8 64 swaps of 0x720 (yiAttachChrDObj, yiTexSwapSetFrame)
@@ -15756,6 +15764,8 @@
 0x023cbec4 label    g_SndStreamTable          # voice stream position table: u16 groups, u16 offsets; group: u16 count, u16 offsets; entry list: u16 count, u16 sectors (0xffff gaps) (SndStreamDVDPos)
 0x023cbee0 label    g_TkSinLookup             # u16 table (Math_SinLookup)
 0x023cbf6c label    g_FontWidths              # a byte per character code, two-byte codes too (TkGetStrWidth)
+0x023cc040 label    g_BtlCommandRec           # command record handed to MsSetBtlCommand by TOBtlGetLeftPad/RightPad: +0 actor, +3 1, +8 u16 command, +0xa u16 0xff, +0x10 actor bit; name ours
+0x023cc088 label    g_BtlWindowChr            # i16 character whose command window is open; TOCloseBtlWindow(it), then 0xff (TOBtlGetLeftPad/RightPad); name ours
 0x023cc08c label    g_BtlWindowOpen           # zeroed by TOCloseBtlWindow
 0x023cc092 label g_BtlActionDepth # i8 command-window level (TOBtlSetPrevAction decrements it); name ours
 0x023cc120 label    g_TkMn2ListMax2           # TkMn2GetListMax2

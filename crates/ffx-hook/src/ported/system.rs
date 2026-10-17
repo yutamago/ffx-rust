@@ -6036,6 +6036,76 @@ ported! {
         let at = std::ptr::addr_of_mut!(scratch) as usize as u32;
         tolib::bridge::to_btl_set_command_help_mes(&mut mem(), command, at, call_sym)
     }
+    /// `TOMenuDrawTimer(frames, x, y, alpha, kind)`.
+    TOMenuDrawTimer @ 0x008e_19f0 => extern "C" fn to_menu_draw_timer(frames: u32, x: u32, y: u32, alpha: u32, kind: u32) {
+        let mut frame = [0u32; 4];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = frame.as_mut_ptr() as u32;
+        tolib::bridge::to_menu_draw_timer(&mut mem(), [frames, x, y, alpha, kind], at, call_sym, fcall);
+        std::hint::black_box(&mut frame);
+    }
+    /// `DrawCrossCtbIcon(id, x, y, w, h)`.
+    DrawCrossCtbIcon @ 0x0089_e660 => extern "C" fn draw_cross_ctb_icon(id: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        tolib::bridge::draw_cross_ctb_icon(&mut mem(), [id, x, y, w, h], call_sym, fcall)
+    }
+    /// `TOBtlDrawInfoWinMes()`.
+    TOBtlDrawInfoWinMes @ 0x0089_5140 => extern "C" fn to_btl_draw_info_win_mes() {
+        tolib::bridge::to_btl_draw_info_win_mes(&mut mem(), call_sym);
+    }
+    /// `TOBtlDrawHelpWin()`.
+    TOBtlDrawHelpWin @ 0x0089_36d0 => extern "C" fn to_btl_draw_help_win() {
+        let mut width = 0f32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(width) as u32;
+        tolib::bridge::to_btl_draw_help_win(&mut mem(), at, call_sym, fcall);
+        std::hint::black_box(&mut width);
+    }
+    /// `TOGetPadStatusPrepare(w)`.
+    TOGetPadStatusPrepare @ 0x0089_d610 => extern "C" fn to_get_pad_status_prepare(w: u32) {
+        tolib::bridge::to_get_pad_status_prepare(&mut mem(), w, call_sym);
+    }
+    /// `TOBtlGetLeftPad(w)`.
+    TOBtlGetLeftPad @ 0x008a_22f0 => extern "C" fn to_btl_get_left_pad(w: u32) {
+        tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x2000, call_sym);
+    }
+    /// `TOBtlGetRightPad(w)`.
+    TOBtlGetRightPad @ 0x008a_2690 => extern "C" fn to_btl_get_right_pad(w: u32) {
+        tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x8000, call_sym);
+    }
+    /// `MenuItem_ApplyHeal_008c8c40(target)`.
+    MenuItem_ApplyHeal_008c8c40 @ 0x008c_8c40 => extern "C" fn menu_item_apply_heal(target: u32) -> u32 {
+        let mut strings = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = std::ptr::addr_of_mut!(strings) as u32;
+        let r = tolib::bridge::menu_item_apply_heal(&mut mem(), target, at, call_sym);
+        std::hint::black_box(&mut strings);
+        r
+    }
+    /// `DrawWaterWaveShapeC2(x, y, w, h, u, v, uw, vh, su, sv, c0, c1)`.
+    DrawWaterWaveShapeC2 @ 0x008e_7d30 => extern "C" fn draw_water_wave_shape_c2(
+        x: u32, y: u32, w: u32, h: u32, u: u32, v: u32, uw: u32, vh: u32, su: u32, sv: u32, c0: u32, c1: u32
+    ) -> u32 {
+        let mut frame = [0u32; 0x28];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = frame.as_mut_ptr() as u32;
+        let r = tolib::bridge::draw_water_wave_shape_c2(
+            &mut mem(), [x, y, w, h, u, v, uw, vh, su, sv, c0, c1], at, call_sym, fcall,
+        );
+        std::hint::black_box(&mut frame);
+        r
+    }
+    /// `QuickRecoverMenuDraw(text, x, y, w, alpha, scale, extra, align, scroll, slot)`.
+    QuickRecoverMenuDraw @ 0x0090_4ba0 => extern "C" fn quick_recover_menu_draw(
+        text: u32, x: u32, y: u32, w: u32, alpha: u32, scale: u32, extra: u32, align: u32, scroll: u32, slot: u32
+    ) {
+        let mut frame = [0u32; 0x14];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = frame.as_mut_ptr() as u32;
+        tolib::bridge::quick_recover_menu_draw(
+            &mut mem(), [text, x, y, w, alpha, scale, extra, align, scroll, slot], at, call_sym, fcall,
+        );
+        std::hint::black_box(&mut frame);
+    }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32
