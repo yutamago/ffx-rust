@@ -5682,6 +5682,14 @@ ported! {
     TOSnapWindowRect @ 0x0090_6e90 => extern "C" fn to_snap_window_rect(win: u32) {
         tolib::bridge::snap_window_rect(&mut mem(), win);
     }
+    /// `TOInitLanguage()`.
+    TOInitLanguage @ 0x008a_d900 => extern "C" fn to_init_language() {
+        tolib::bridge::init_language(&mut mem(), call_sym);
+    }
+    /// `TOTimedMacroMessage(arg)`.
+    TOTimedMacroMessage @ 0x008b_9220 => extern "C" fn to_timed_macro_message(arg: u32) {
+        tolib::bridge::timed_macro_message(&mut mem(), arg, call_sym);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

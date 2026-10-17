@@ -9333,6 +9333,7 @@
 0x008ad4d0 function TOInit                       # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOInit(): about to read menu base_ftc file!!!!\\n'; Switch 0x71004f38b0 TOInit (symbols from Fahrenheit's server export)
 0x008ad780 function TOInitBattleFontPath      # fh v3:bsim0.92 0x008ad730
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
+0x008ad900 function TOInitLanguage            # (): by TkGetLang (0 by FFXGetAsiaMode 0/1/2 -> 0/0x11/9 swapped NTSC; 1 -> 1; 2..5 -> same PAL; 18 -> 0x12 PAL) sets 0x01865b5c, g_FFXLangSwapFlag, g_FFXVideoMode; name ours
 0x008ada30 function TOInitMessageSlot_008ada30 # cdecl(i): g_TOMessageWindowSlots[i] zeroed, parts = window i, message i, entry i; window memset 0x7c, TOInitMessage(i), tags +2/+4 = i, slot +4 = -1, message handler 0x008b64a0; name ours
 0x008adbd0 function TOInitPadData             # fh v3:bsim1.00 0x008adb80; memset(0x025d09c0, 0, 0xc0), 0x025d09de = 0x80808080
 0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0; (): for the 8 message-window objects, u16 +0/+8 of +0x10, u16 +0/+0x2c of +0x14, bytes +0/+1 of +0x18 cleared
@@ -9488,6 +9489,7 @@
 0x008b8dd0 function TOStdGetWeaponName        # cdecl(id): tail call MsGetSaveWeaponName(id); sits after TOStdGetItemName; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
 0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
+0x008b9220 function TOTimedMacroMessage       # cdecl(arg): frames 0x018663d4 counted while 0x018663d0; TOCountMapVisits; state 0x018663d1 0: TOSelectMacroDic_008b56d0 table 0x01869eb8, row g_GraphicMapId - 0x189; state 1: at frame table[row*0x32+col] TOMessageCallF8_008b8ca0(arg), col up to 0x32; 0 frame clears all; name ours
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth; (text, kind, &w, table) -> next: glyph width (tables via 0x01841da4, kr/ch code-4 pages) -> TOGetFontWidthInPiexl + space (x aspect when 0x018663ec); 0x47 runs; 6 and < 0x30 are 2 bytes
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH

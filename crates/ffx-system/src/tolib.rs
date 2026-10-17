@@ -4586,7 +4586,11 @@ pub mod bridge {
     /// `+0x38` (1, width `total / n`) followed by the item's position
     /// (`x + k × width`, `y`). A zero `n` makes the original fault
     /// (`idiv`); here it gives a zero width.
-    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)] // byte and halfword stores
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )] // byte and halfword stores
     pub fn set_message_choice(mem: &mut impl Mem, i: u32, n: u32, x: u32, y: u32, total: u32) {
         let m: u32 = mem.read(
             crate::window::bridge::MSG_WINDOWS
@@ -4644,6 +4648,99 @@ pub mod bridge {
             let v = f64::from(mem.read::<f32>(win.wrapping_add(0x28 + 4 * k)));
             let low = ffx_bridge::x87::cvttsd2si(v) as u16;
             mem.write(win.wrapping_add(0x48 + 4 * k), f32::from(low));
+        }
+    }
+
+    /// `0x008ad900()`: the TO library's language (`0x01865b5c`), language
+    /// swap flag (`g_FFXLangSwapFlag`) and video mode (`g_FFXVideoMode`,
+    /// 1 for PAL) from `TkGetLang()` (through `call`): 0 by
+    /// `FFXGetAsiaMode()` (0 Japanese 0, 1 → 0x11, 2 → 9, all swapped,
+    /// NTSC; another leaves them); 1 English (1, NTSC); 2..=5 (2, 3, 4,
+    /// 5) and 18 (0x12) PAL. Other languages leave them.
+    pub fn init_language<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let set = |mem: &mut M, lang: u32, swap: u32, video: u32| {
+            mem.write(mem.rebase(0x0186_5b5c), lang);
+            mem.write(mem.rebase(0x0186_5cdc), swap);
+            mem.write(mem.rebase(0x0186_5f00), video);
+        };
+        match call(mem, 0x0088_7c30, &[]) {
+            0 => match call(mem, 0x0088_7c20, &[]) {
+                0 => set(mem, 0, 1, 0),
+                1 => set(mem, 0x11, 1, 0),
+                2 => set(mem, 9, 1, 0),
+                _ => {}
+            },
+            1 => set(mem, 1, 0, 0),
+            l @ 2..=5 => set(mem, l, 0, 1),
+            18 => set(mem, 0x12, 0, 1),
+            _ => {}
+        }
+    }
+
+    /// `0x008b9220(arg)`: a timed macro message: while `0x018663d0` is 1 a
+    /// frame is counted (`0x018663d4`), then [`count_map_visits`]'s
+    /// counter steps (`TOCountMapVisits`). With frames counted, state
+    /// `0x018663d1` 0 picks the map's table (`TOSelectMacroDic_008b56d0`
+    /// leaves it in `0x01869eb8`; row `g_GraphicMapId - 0x189` in
+    /// `0x018663d8`) and moves to state 1; state 1 shows the next message
+    /// (`TOMessageCallF8_008b8ca0(arg)`, column `0x018663dc` stepped up to
+    /// 0x32) when its frame (`table[row × 0x32 + column]`) is reached, and
+    /// at a 0 frame everything is cleared. Calls go through `call`.
+    pub fn timed_macro_message<M: Mem>(
+        mem: &mut M,
+        arg: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let frames_at = g(mem, 0x0186_63d4);
+        if mem.read::<u8>(g(mem, 0x0186_63d0)) == 1 {
+            let f: u32 = mem.read(frames_at);
+            mem.write(frames_at, f.wrapping_add(1));
+        }
+        call(mem, 0x008b_5680, &[]);
+        let n: u32 = mem.read(frames_at);
+        if n.cast_signed() <= 0 {
+            return;
+        }
+        let state_at = g(mem, 0x0186_63d1);
+        let table_at = g(mem, 0x0186_9eb8);
+        let (row_at, col_at) = (g(mem, 0x0186_63d8), g(mem, 0x0186_63dc));
+        match mem.read::<u8>(state_at) {
+            0 => {
+                mem.write(table_at, 0u32);
+                call(mem, 0x008b_56d0, &[]);
+                if mem.read::<u32>(table_at) != 0 {
+                    let map: u32 = mem.read(g(mem, 0x0133_0844));
+                    mem.write(state_at, 1u8);
+                    mem.write(row_at, map.wrapping_sub(0x189));
+                }
+            }
+            1 => {
+                let cell = |mem: &M| -> u32 {
+                    let t: u32 = mem.read(table_at);
+                    let row: u32 = mem.read(row_at);
+                    let col: u32 = mem.read(col_at);
+                    mem.read(
+                        t.wrapping_add(row.wrapping_mul(0x32).wrapping_add(col).wrapping_mul(4)),
+                    )
+                };
+                if cell(mem) == n {
+                    let col: u32 = mem.read(col_at);
+                    if col.cast_signed() < 0x32 {
+                        mem.write(col_at, col.wrapping_add(1));
+                    }
+                    call(mem, 0x008b_8ca0, &[arg]);
+                }
+                if cell(mem) == 0 {
+                    mem.write(g(mem, 0x0186_63d0), 0u8);
+                    mem.write(frames_at, 0u32);
+                    mem.write(state_at, 0u8);
+                    mem.write(row_at, 0u32);
+                    mem.write(col_at, 0u32);
+                    mem.write(g(mem, 0x0186_63e0), 0u32);
+                }
+            }
+            _ => {}
         }
     }
 }
