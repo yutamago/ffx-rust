@@ -43,6 +43,14 @@ unsafe extern "system" fn fault(
         let r = &*(*info).ExceptionRecord;
         (r.ExceptionCode.cast_unsigned(), r.ExceptionAddress as usize)
     };
+    // Coverage mode's one-time breakpoints (`coverage`): put the byte
+    // back and run the function from its start.
+    #[cfg(target_arch = "x86")]
+    if code == 0x8000_0003 && crate::coverage::hit(at) {
+        // SAFETY: the system passes a valid context of the faulting thread.
+        unsafe { (*(*info).ContextRecord).Eip = at as u32 };
+        return -1; // EXCEPTION_CONTINUE_EXECUTION
+    }
     let serious = matches!(
         code,
         0xc000_0005 | 0xc000_001d | 0xc000_00fd | 0xc000_0409 | 0xc000_0094 | 0xc000_0096
