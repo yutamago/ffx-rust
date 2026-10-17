@@ -3757,6 +3757,36 @@ ported! {
         yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
     }
 
+    /// `SqsReportStandby()`.
+    SqsReportStandby @ 0x0081_e260 => extern "C" fn shim_sqs_report_standby() -> u32 {
+        nkz::bridge::sqs_report_standby(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsReportStandbyStatus(flush)`.
+    SqsReportStandbyStatus @ 0x0081_e2d0 => extern "C" fn shim_sqs_report_standby_status(flush: u32) -> u32 {
+        nkz::bridge::sqs_report_standby_status(&mut mem(), flush, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsDataSendingCompleted(wait)`.
+    SqsDataSendingCompleted @ 0x0081_cfd0 => extern "C" fn shim_sqs_data_sending_completed(wait: u32) -> u32 {
+        nkz::bridge::sqs_data_sending_completed(&mut mem(), wait, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsInitMusicInfoHdd(path)`.
+    SqsInitMusicInfoHdd @ 0x0081_d3c0 => extern "C" fn shim_sqs_init_music_info_hdd(path: u32) -> u32 {
+        nkz::bridge::sqs_init_info_hdd(&mut mem(), path, 7, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsInitWaveInfoHdd(path)`.
+    SqsInitWaveInfoHdd @ 0x0081_d470 => extern "C" fn shim_sqs_init_wave_info_hdd(path: u32) -> u32 {
+        nkz::bridge::sqs_init_info_hdd(&mut mem(), path, 6, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSetProjectBase(path)`.
+    SqsSetProjectBase @ 0x0081_eab0 => extern "C" fn shim_sqs_set_project_base(path: u32) -> u32 {
+        nkz::bridge::sqs_set_project_base(&mut mem(), path, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiPolyBufExecVif(buf, codes, words)`.
     yiPolyBufExecVif @ 0x0091_13a0 => extern "C" fn shim_yi_poly_buf_exec_vif(buf: u32, codes: u32, words: u32) -> u32 {
         yi::bridge::yi_poly_buf_exec_vif(&mut mem(), buf, codes, words)

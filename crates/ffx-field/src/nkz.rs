@@ -134,6 +134,17 @@ pub const SQS_REPLY: u32 = 0x012f_4f00;
 /// Four histories of four words: each send shifts them down and puts
 /// reply words `+0x10`, `+0x18`, `+0x30` and `+0x34` last.
 pub const SQS_REPLY_HISTORY: u32 = 0x012f_4f48;
+/// Standby requests sent (`SqsReportStandby`); `SqsReportStandbyStatus`
+/// reports this less [`SQS_IOP_RESULT`], the requests answered.
+pub const SQS_STANDBY_SENT: Global<u32> = Global::new(0x012f_414c);
+/// The end function `SqsReportStandby` gives `Sqs_CallRpc2` (not a
+/// function in the dump; it stores the answered count to [`SQS_IOP_RESULT`]).
+pub const SQS_STANDBY_DONE: u32 = 0x0081_fcb0;
+/// Flags; bit 0 cleared by the standby request's end function.
+pub const SQS_RPC_FLAGS: Global<u32> = Global::new(0x012f_4e74);
+/// Set while a reply history update is pending (`SqsReportStandby` reads
+/// it, without effect).
+pub const SQS_REPLY_PENDING: Global<u32> = Global::new(0x012f_4f44);
 /// What `SqsIopCommandSend` returns.
 pub const SQS_IOP_RESULT: Global<u32> = Global::new(0x012f_4150);
 /// The last SE handle `SqsSePlay`/`SqsSeForcePlay` gave (never 0).
@@ -768,5 +779,107 @@ pub mod bridge {
             }
         }
         dst
+    }
+
+    // ---- field round 36: standby requests, data sends, info files ----
+
+    /// Sends the queued IOP commands when there are any (`next > top`).
+    fn flush_commands<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) {
+        if super::SQS_CMD_NEXT.get(mem) > super::SQS_CMD_TOP.get(mem) {
+            sqs_iop_command_send(mem, call);
+        }
+    }
+
+    /// `SqsReportStandby()` (`0x0081e260`, name ours: it sorts between
+    /// `SqsReportIopSoundStatus` and `SqsReportStandbyStatus`): with
+    /// requests unanswered (`0x012f414c` != `0x012f4150`) the queued
+    /// commands go first; then the request count goes up and `(1, count)`
+    /// to the second client's send buffer, sent with `Sqs_CallRpc2(0, _,
+    /// end, 0)` (`end` = `0x0081fcb0`), whose result it returns.
+    pub fn sqs_report_standby<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        if super::SQS_STANDBY_SENT.get(mem) != super::SQS_IOP_RESULT.get(mem) {
+            flush_commands(mem, call);
+        }
+        let n = super::SQS_STANDBY_SENT.get(mem).wrapping_add(1);
+        super::SQS_STANDBY_SENT.set(mem, n);
+        let buf = super::SQS_RPC_SEND2.get(mem);
+        mem.write(buf, 1u32);
+        let buf = super::SQS_RPC_SEND2.get(mem);
+        mem.write(buf.wrapping_add(4), n);
+        let done = mem.rebase(super::SQS_STANDBY_DONE);
+        sqs_call_rpc2(mem, 0, done, 0, call)
+    }
+
+    /// `SqsReportStandbyStatus(flush)` (`0x0081e2d0`): with `flush` and
+    /// requests unanswered, the queued commands go; returns the requests
+    /// unanswered (sent less answered, wrapping).
+    pub fn sqs_report_standby_status<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        flush: u32,
+        call: &mut C,
+    ) -> u32 {
+        if flush != 0 && super::SQS_STANDBY_SENT.get(mem) != super::SQS_IOP_RESULT.get(mem) {
+            flush_commands(mem, call);
+        }
+        super::SQS_STANDBY_SENT
+            .get(mem)
+            .wrapping_sub(super::SQS_IOP_RESULT.get(mem))
+    }
+
+    /// `SqsDataSendingCompleted(wait)` (`0x0081cfd0`): 1 when
+    /// `SqsSifDmaState(1, wait)` is not negative, else 0.
+    pub fn sqs_data_sending_completed<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        wait: u32,
+        call: &mut C,
+    ) -> u32 {
+        u32::from(sqs_sif_dma_state(mem, wait, call).cast_signed() >= 0)
+    }
+
+    /// Copies the string `s` (its NUL included) to the send buffer and
+    /// calls `Sqs_CallRpc(cmd)`.
+    fn send_string<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        cmd: u32,
+        call: &mut C,
+    ) -> u32 {
+        let buf = super::SQS_RPC_SEND.get(mem);
+        let mut i = 0u32;
+        loop {
+            let c = mem.read::<u8>(s.wrapping_add(i));
+            mem.write(buf.wrapping_add(i), c);
+            i = i.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+        }
+        sqs_call_rpc(mem, cmd, call)
+    }
+
+    /// `SqsInitMusicInfoHdd(path)` (`0x0081d3c0`, command 7) and
+    /// `SqsInitWaveInfoHdd(path)` (`0x0081d470`, command 6): the path to
+    /// the send buffer, then `Sqs_CallRpc`; its result.
+    pub fn sqs_init_info_hdd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        path: u32,
+        cmd: u32,
+        call: &mut C,
+    ) -> u32 {
+        send_string(mem, path, cmd, call)
+    }
+
+    /// `SqsSetProjectBase(path)` (`0x0081eab0`): the path through command 2;
+    /// a non-zero result is a pointer, whose word it returns (0 stays 0).
+    pub fn sqs_set_project_base<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        path: u32,
+        call: &mut C,
+    ) -> u32 {
+        let r = send_string(mem, path, 2, call);
+        if r == 0 { 0 } else { mem.read::<u32>(r) }
     }
 }

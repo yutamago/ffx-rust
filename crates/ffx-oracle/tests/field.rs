@@ -11887,6 +11887,8 @@ struct SqsEnv {
     check_cnt: u32,
     call_cnt: u32,
     dma_cnt: u32,
+    /// Where the next stand-in may go in [`CAVE`].
+    cave_end: u32,
 }
 
 impl SqsEnv {
@@ -11933,7 +11935,7 @@ impl SqsEnv {
         iob.push(0xc3);
         list.push((None, iob));
         list.push((None, log_stub(log, rv, 0x30, 2)));
-        let at = t.cave(&list);
+        let (at, cave_end) = t.cave_from(0, &list);
         let n = at.len();
         let iob_slot = t.b.rebase(yi::CRT_IOB_FUNC);
         let fprintf_slot = t.b.rebase(yi::CRT_FPRINTF);
@@ -11946,6 +11948,7 @@ impl SqsEnv {
             check_cnt,
             call_cnt,
             dma_cnt,
+            cave_end,
         }
     }
 
@@ -12326,4 +12329,123 @@ fn round34_on_a_snapshot_matches_the_original() {
     };
     let mut rng = Xorshift(0x0022_0002);
     round34_cases(&mut t, &mut rng, 100);
+}
+
+// ---- round 36 ----
+
+/// Round 36 on `t`: the standby requests, `SqsDataSendingCompleted`, the
+/// info file paths and `SqsSetProjectBase` (its pointer result through a
+/// second `FFXSifCallRpc` stand-in).
+#[allow(clippy::too_many_lines)] // one function after another
+fn round36_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let env = SqsEnv::install(t);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (send, recv, send2, recv2) = (t.alloc(0x40), t.alloc(0x400), t.alloc(0x40), t.alloc(0x40));
+    let path = t.alloc(0x40);
+    let state = |t: &mut Twin, rng: &mut Xorshift| {
+        t.set(nkz::SQS_RPC_SEND, send);
+        t.set(nkz::SQS_RPC_RECV, recv);
+        t.set(nkz::SQS_RPC_SEND2, send2);
+        t.set(nkz::SQS_RPC_RECV2, recv2);
+        let count = rng.next();
+        t.set(nkz::SQS_STANDBY_SENT, count);
+        t.set(
+            nkz::SQS_IOP_RESULT,
+            if rng.below(2) == 0 { count } else { rng.next() },
+        );
+        let top = rng.next();
+        t.set(nkz::SQS_CMD_TOP, top);
+        let next = match rng.below(3) {
+            0 => top, // an empty queue is not sent
+            _ => top.wrapping_add(rng.below(0x100)).wrapping_sub(0x40),
+        };
+        t.set(nkz::SQS_CMD_NEXT, next);
+        t.set(nkz::SQS_REPLY_PENDING, rng.below(2));
+        t.set(nkz::SQS_RPC_FLAGS, rng.next());
+        t.fill(recv2, 0x40, rng);
+        let h = t.b.rebase(nkz::SQS_REPLY_HISTORY);
+        t.fill(h, 0x40, rng);
+    };
+    for _ in 0..rounds {
+        env.reset(t, rng);
+        state(t, rng);
+        t.same(
+            "SqsReportStandby",
+            |o| o.eax(0x0081_e260, &[]),
+            |m| nkz::bridge::sqs_report_standby(m, call),
+        );
+        env.reset(t, rng);
+        state(t, rng);
+        let flush = rng.below(2) * rng.next();
+        t.same(
+            "SqsReportStandbyStatus",
+            |o| o.eax(0x0081_e2d0, &[flush]),
+            |m| nkz::bridge::sqs_report_standby_status(m, flush, call),
+        );
+        env.reset(t, rng);
+        let wait = rng.below(2) * rng.next();
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        t.same(
+            "SqsDataSendingCompleted",
+            |o| o.eax(0x0081_cfd0, &[wait]),
+            |m| nkz::bridge::sqs_data_sending_completed(m, wait, call),
+        );
+        // a path of 0..62 non-NUL bytes, then the NUL
+        let n = rng.below(63);
+        let mut p: Vec<u8> = (0..n)
+            .map(|_| 1 + u8::try_from(rng.below(255)).unwrap())
+            .collect();
+        p.push(0);
+        t.write(path, &p);
+        t.fill(send, 0x40, rng);
+        for (name, f, cmd) in [
+            ("SqsInitMusicInfoHdd", 0x0081_d3c0, 7),
+            ("SqsInitWaveInfoHdd", 0x0081_d470, 6),
+        ] {
+            env.reset(t, rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[path]),
+                |m| nkz::bridge::sqs_init_info_hdd(m, path, cmd, call),
+            );
+        }
+        env.reset(t, rng);
+        t.same(
+            "SqsSetProjectBase",
+            |o| o.eax(0x0081_eab0, &[path]),
+            |m| nkz::bridge::sqs_set_project_base(m, path, call),
+        );
+    }
+    // FFXSifCallRpc giving a pointer (0 now and then): the word it reads
+    let (rv, word) = (t.alloc(4), t.alloc(4));
+    let stub = log_stub(env.log9, rv, 0x40, 2);
+    t.cave_from(env.cave_end, &[(Some(nkz::SIF_CALL_RPC), stub)]);
+    for k in 0..rounds {
+        env.reset(t, rng);
+        t.put(rv, if k % 4 == 0 { 0 } else { word });
+        t.put(word, rng.next());
+        t.same(
+            "SqsSetProjectBase (pointer)",
+            |o| o.eax(0x0081_eab0, &[path]),
+            |m| nkz::bridge::sqs_set_project_base(m, path, call),
+        );
+    }
+}
+
+/// Round 36: the Sqs standby requests, data sends and info paths.
+#[test]
+fn round36_sqs_standby_and_paths_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0024_0001);
+    round36_cases(&mut t, &mut rng, 200);
+}
+
+/// Round 36 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round36_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0024_0002);
+    round36_cases(&mut t, &mut rng, 40);
 }

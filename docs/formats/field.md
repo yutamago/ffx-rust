@@ -1483,6 +1483,31 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## Sqs standby requests and info paths (round 36)
+
+- Standby requests count up in `0x012f414c`; `0x012f4150` (what
+  `SqsIopCommandSend` returns) holds the count answered.
+  - `SqsReportStandby()` (`0x0081e260`, name ours) first sends the queued
+    IOP commands when requests are unanswered and the queue is not empty
+    (`next > top`, unsigned).
+  - It then counts one more request, writes `(1, count)` to the second
+    client's send buffer and calls `Sqs_CallRpc2(0, _, 0x0081fcb0, 0)`, returning its result.
+- The request's end function (`0x0081fcb0`; not a function in the
+  Ghidra dump, so not ported) copies the first word of the second client's
+  receive buffer to `0x012f4150` and clears bit 0 of `0x012f4e74`.
+  Nothing calls it on PC, where `FFXSifCallRpc` is a stub.
+- `SqsReportStandbyStatus(flush)` (`0x0081e2d0`) sends the queue the same
+  way when `flush` is set. It returns the requests unanswered (sent less
+  answered, wrapping).
+- `SqsDataSendingCompleted(wait)` (`0x0081cfd0`): 1 when
+  `SqsSifDmaState(1, wait)` is not negative, else 0.
+- Three functions copy a path (its NUL included) to the send buffer and
+  call `Sqs_CallRpc` with a command, returning its result:
+  - `SqsInitMusicInfoHdd(path)` (`0x0081d3c0`): command 7.
+  - `SqsInitWaveInfoHdd(path)` (`0x0081d470`): command 6.
+  - `SqsSetProjectBase(path)` (`0x0081eab0`): command 2, and it returns the
+    word a non-zero result points at (0 on PC).
+
 ## The poly buffer's VIF interpreter (round 35)
 
 `yiPolyBufExecVif(buf, codes, words)` (`0x009113a0`, name ours; eight
