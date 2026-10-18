@@ -251,4 +251,57 @@ pub mod bridge {
         mem.write(masks.wrapping_add(8), out[0] | out[1]);
         total
     }
+
+    /// `BtlEnd_BuildList_008bde00()` (own name): the battle-end list.
+    /// `0x01869f19` is set when any character `g_BtlCountsBattle`
+    /// (`0x02310ea0`, bytes) counts has a nonzero `g_TkBtlEndResults`
+    /// (`0x02310f20`, words) entry. For each counted character `i` (of 8),
+    /// entry `n` (14 bytes from `0x01869f20`) gets: `+0` `BtlEnd_RowX(n,
+    /// count)`, `+2` `6n`, `+4` 0, `+6` `i` (`u16`s), `+8`
+    /// `TkMenuGetPlayerDamegedColor(i)`, `+9` `BtlEnd_InParty(i)`, `+0xa`
+    /// 0 (bytes). The count goes to `g_TkBtlEndList` (`0x01869f18`), then
+    /// `BtlEnd_CompactList` (its `eax` returned). Callees through `call`.
+    pub fn btl_end_build_list<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let counts = mem.rebase(0x0231_0ea0);
+        let results = mem.rebase(0x0231_0f20);
+        let any_result = mem.rebase(0x0186_9f19);
+        mem.write(any_result, 0u8);
+        let mut count = 0u32;
+        for i in 0..8 {
+            if mem.read::<u8>(counts + i) != 0 {
+                if mem.read::<u32>(results + 4 * i) != 0 {
+                    mem.write(any_result, 1u8);
+                }
+                count += 1;
+            }
+        }
+        let mut n = 0u32;
+        let mut entry = mem.rebase(0x0186_9f20);
+        for i in 0..8 {
+            if mem.read::<u8>(counts + i) == 0 {
+                continue;
+            }
+            #[allow(clippy::cast_possible_truncation)] // u16 stores
+            {
+                mem.write(entry + 2, (n * 6) as u16);
+                mem.write(entry + 4, 0u16);
+                mem.write(entry + 6, i as u16);
+                let colour = call(mem, 0x008b_9eb0, &[i]);
+                mem.write(entry + 8, colour as u8);
+                let in_party = call(mem, 0x008b_9ec0, &[i]);
+                mem.write(entry + 9, in_party as u8);
+                let x = call(mem, 0x008b_a370, &[n, count]);
+                mem.write(entry, x as u16);
+            }
+            mem.write(entry + 0xa, 0u8);
+            n += 1;
+            entry += 0xe;
+        }
+        #[allow(clippy::cast_possible_truncation)] // at most 8
+        mem.write(mem.rebase(0x0186_9f18), count as u8);
+        call(mem, 0x008b_a400, &[])
+    }
 }

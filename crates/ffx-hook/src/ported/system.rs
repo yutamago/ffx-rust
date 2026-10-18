@@ -1439,6 +1439,14 @@ ported! {
     TOGetLangColonWidth_008df4f0 @ 0x008d_f4f0 => extern "C" fn to_get_lang_colon_width(kind: u32, font: u32) -> u32 {
         tolib::bridge::lang_colon_width(&mut mem(), kind, font, call_sym)
     }
+    /// `prcPacketDataClose(self)`.
+    prcPacketDataClose @ 0x0076_6b90 => extern "C" fn prc_packet_data_close(this: u32) -> u32 {
+        pkt::bridge::prc_packet_data_close(&mut mem(), this, call_sym)
+    }
+    /// `BtlEnd_BuildList_008bde00()`.
+    BtlEnd_BuildList_008bde00 @ 0x008b_de00 => extern "C" fn btl_end_build_list() -> u32 {
+        btl::bridge::btl_end_build_list(&mut mem(), call_sym)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

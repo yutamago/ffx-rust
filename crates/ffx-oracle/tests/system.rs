@@ -19898,3 +19898,90 @@ fn round34_mes_wrappers_match_the_original_on_the_snapshot() {
     };
     round34_mes_wrappers(&mut a, &mut b, &mut Xorshift(0x4034_0072));
 }
+
+/// Round 35 group A: `prcPacketDataClose` (its `dbgPrintf` a logging
+/// stand-in; the packet cursor also aliasing the descriptor) and
+/// `BtlEnd_BuildList_008bde00` (its callees the originals).
+#[allow(clippy::cast_possible_truncation)]
+fn round35_close_and_list(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let ret = alloc(a, b, 4);
+    let printf = stand_in8(a, b, 0, &copy_logger(cursor, 0xf500, 4, &ret_cell(ret)));
+    redirect(a, b, 0x0062_f500, printf);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let buf = alloc(a, b, 0x400);
+    let desc = alloc(a, b, 0x40) + 0x20;
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, ret, rng.next());
+        let tag = match rng.next() % 6 {
+            0 => desc - 4,
+            1 => desc - 8,
+            2 => desc - 0xc,
+            _ => buf + (rng.next() % 0x3c) * 0x10,
+        };
+        let start = match rng.next() % 3 {
+            0 => buf,
+            1 => tag,
+            _ => buf + rng.next() % 0x400,
+        };
+        let size = tag.wrapping_add(0x10).wrapping_sub(start);
+        let limit = match rng.next() % 4 {
+            0 => size,
+            1 => size.wrapping_sub(1),
+            2 => size.wrapping_add(1),
+            _ => rng.next(),
+        };
+        put(a, b, desc, start);
+        put(a, b, desc + 4, tag);
+        put(a, b, desc + 8, limit);
+        assert_eq!(
+            eax(a, 0x0076_6b90, &[desc]),
+            pkt::bridge::prc_packet_data_close(b, desc, call),
+            "close {k}"
+        );
+        same_memory(&format!("close {k}"), a, b);
+    }
+    let counts = a.rebase(0x0231_0ea0);
+    let results = a.rebase(0x0231_0f20);
+    let entries = a.rebase(0x0186_9f20);
+    for k in 0..200u32 {
+        for i in 0..8 {
+            let counted = [0u8, 0, 1, 0xff, 7][(rng.next() % 5) as usize];
+            put(a, b, counts + i, counted);
+            let result = match rng.next() % 6 {
+                0 => rng.next(),
+                1 => rng.next() & 0xffff_ff00,
+                _ => 0,
+            };
+            put(a, b, results + 4 * i, result);
+        }
+        // stale entries: every byte the list writes must be written
+        for j in 0..0x70 {
+            put(a, b, entries + j, rng.next() as u8);
+        }
+        assert_eq!(
+            eax(a, 0x008b_de00, &[]),
+            btl::bridge::btl_end_build_list(b, call),
+            "list {k}"
+        );
+        same_memory(&format!("list {k}"), a, b);
+    }
+}
+
+#[test]
+fn round35_close_and_list_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round35_close_and_list(&mut a, &mut b, &mut Xorshift(0x4035_0011));
+}
+
+#[test]
+fn round35_close_and_list_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round35_close_and_list(&mut a, &mut b, &mut Xorshift(0x4035_0012));
+}

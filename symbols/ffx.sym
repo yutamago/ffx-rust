@@ -4193,7 +4193,7 @@
 0x00766770 function updateVFXKeThRenderData   # fh v3:exact 0x00766860
 0x007669c0 function updateVFXKeThSetPoint     # fh v3:exact 0x00766ab0
 0x00766ae0 function ScreenProjection # cdecl(m): FFXVu0UnitMatrix(m), then the perspective terms from g_Screens[0] (+8 near, +0xc far, +0x10/+0x14 w/h against 512/416, +0x1c focal); name ours
-0x00766b90 function prcPacketDataClose           # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'size <= self->m_size'; Switch 0x7100306940 prcPacketDataClose (symbols from Fahrenheit's server export)
+0x00766b90 function prcPacketDataClose           # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'size <= self->m_size'; Switch 0x7100306940 prcPacketDataClose (symbols from Fahrenheit's server export); cdecl(self) -> eax: 16-byte end tag 0x8000, 0x10000000, 0, 0 at the cursor self+4, cursor += 0x10, asserts size (cursor - self+0) <= self+8 (signed) through dbgPrintf; returns the size (or dbgPrintf's eax); ported (system round 35)
 0x00766be0 function prcPacketDataDraw         # fh switch:bsim1.00 0x71003069a0
 0x00766c20 function prcPacketDataDrawPtr      # fh switch:bsim1.00 0x71003069f0
 0x00766c50 function prcPrintMatrix               # str-match switch: only user of 2 string(s) held once by both builds, e.g. '---- FAMTRIX\\n'; Switch 0x7100306ce0 prcPrintMatrix (symbols from Fahrenheit's server export)
@@ -10329,6 +10329,7 @@
 0x008bda80 function BtlEnd_SelectedWeapon     # (): MsGetSaveWeapon(id, local): id u16 0x02310f8e[[0x0186a1a4]] (spoils) when [0x0186a19c] (inverted while [0x0186a1a8]) != 0, else u16 [0x025cc580][[0x0186a190] + [0x0186a1a0]]; caller TkBtlEndCtrl; name ours
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
+0x008bde00 function BtlEnd_BuildList_008bde00 # (): 0x01869f19 = any counted character (g_BtlCountsBattle) with a nonzero g_TkBtlEndResults; one 14-byte g_TkBtlEndList entry per counted character (+0 BtlEnd_RowX(n, count), +2 6n, +6 chr, +8 TkMenuGetPlayerDamegedColor, +9 BtlEnd_InParty), count to 0x01869f18, then BtlEnd_CompactList (its eax); ported (system round 35); name ours
 0x008bdf10 function BtlEnd_InitGilStep        # 0x01869f14 = result 19 (the gil won), 0x01869f10 = its step (gil/189 | 1, +2 on a multiple of 5); own name
 0x008bdf60 function TOMenuFieldMusic_008bdf60 # (): after the menu: keep white in/out: nothing; clear 11: cross-fade to AtelGetMusicNumber (0x78), else AtelRegistMusicNumber(-1) and fade out; name ours
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours

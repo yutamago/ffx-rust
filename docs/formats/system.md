@@ -1505,3 +1505,18 @@ pushed as literals (no relocation entries), not addresses.
   `0x008ea000` is `0x008ea060` in grey; `0x008f2ff0(cursor, value, x, y,
   colour)` writes `TOValueToMesFontL(value, text, 0)` from a 32-byte
   local like `0x008ed0a0`.
+
+## Round 35
+
+- `prcPacketDataClose(self)` (`pppYanagi.c`, a packet descriptor: start
+  `+0`, cursor `+4`, size `+8`) writes the 16-byte end tag `0x8000`,
+  `0x1000_0000`, 0, 0 at the cursor, advances it by 0x10 and asserts
+  `size <= self->m_size` (signed) with `dbgPrintf`. It returns the size in
+  `eax`, or `dbgPrintf`'s result when the assertion fires.
+- `BtlEnd_BuildList_008bde00()` builds the battle-end list
+  (`g_TkBtlEndList`, 14-byte entries from `0x01869f20`): one entry per
+  character counted in `g_BtlCountsBattle`, with its row x
+  (`BtlEnd_RowX(n, count)`), `6n`, the character, its damaged colour and
+  whether it is in the party; `0x01869f19` is set when any counted
+  character has a nonzero `g_TkBtlEndResults` word. It ends in
+  `BtlEnd_CompactList` and returns its `eax`.
