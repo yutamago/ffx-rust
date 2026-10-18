@@ -10992,6 +10992,7 @@
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
+0x00913200 function yiScreff_draw            # (scene) -> last vertex call's eax: the screen distortion's per-frame grid: fade line from the inverted camera +0x67f78 and depth +0xbe07c (on +0xbe078 bit 0), graphicSetDistortionBlur(+0xbe0a0 / 128), 9 x 9 vertices from _CIfmod/_CIsin waves of phases +0xbe080/+0xbe084, speed +0xbe094, amplitude +0xbe098 (clamped 0..1), colour +0xbe0a4.. faded to grey (fistp with chop), graphicUpdateDistortionVertex(row, col, r, g, b, a, u, v); +0xbe0a8 += 1, +0xbe080 += +0xbe090 x 1.5, +0xbe084 += +0xbe090; name ours (yiScreff_entry's body); ported (field r3 G, lifted)
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
 0x00914070 function yiKeyFrameAdvanceLinked   # (r, track, now): yiKeyFrameAdvance for tracks of chained 0x80-byte records (+0x24 current, +4 length, bit 0 end; restart from r +0x9d4c4[+8]); paused returns now; yiKeyFrame_main; name ours

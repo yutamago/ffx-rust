@@ -14574,3 +14574,91 @@ fn r1f_player_marker_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x00f1_0004);
     r1f_player_cases(&mut t, &mut rng);
 }
+
+// ---- field agent r3, group G: the screen distortion ----
+
+/// [`log_stub`] with 0x40-byte entries (up to 15 words).
+fn wide_log_stub(log: u32, rv: u32, id: u32, args: u32) -> Vec<u8> {
+    let mut c = log_stub(log, rv, id, args);
+    assert_eq!(c[8], 0x05);
+    c[8] = 0x06; // shl ecx, 6
+    c
+}
+
+/// The distortion state of a synthetic or real scene at `r`: flags,
+/// depth, the camera matrix, phases, speed, amplitude, colour.
+fn r1g_state(t: &mut Twin, rng: &mut Xorshift, r: u32) {
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| float_in(rng, lo, hi);
+    t.put(r + 0xbe078, rng.below(4));
+    t.put(r + 0xbe07c, f(rng, -50, 300));
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+        #[allow(clippy::cast_precision_loss)]
+        let x = if i >= 12 && i != 15 {
+            rng.range(-500, 500) as f32
+        } else {
+            ident + rng.range(-200, 200) as f32 / 1000.0
+        };
+        t.put(r + 0x67f78 + 4 * i, x.to_bits());
+    }
+    t.put(r + 0x68360, f(rng, 1, 40));
+    t.put(r + 0xbe0a0, rng.range(-10, 300));
+    for o in [0xbe080u32, 0xbe084] {
+        t.put(r + o, f(rng, -8, 8));
+    }
+    t.put(r + 0xbe090, f(rng, -1, 1));
+    t.put(r + 0xbe094, f(rng, -1, 1));
+    t.put(r + 0xbe098, f(rng, -2, 2));
+    t.put(r + 0xbe0a4, rng.next());
+    t.put(r + 0xbe0a8, rng.next());
+}
+
+/// `yiScreff_draw` on `t` at `r` (`real`: the scene's own state first).
+fn r1g_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    t.install_trig();
+    let (log, rv) = (t.alloc(4 + 0x40 * 128), t.alloc(4));
+    t.cave_from(
+        0x500,
+        &[
+            (Some(0x0064_2f30), log_stub(log, rv, 1, 1)),
+            (Some(0x0064_4940), wide_log_stub(log, rv, 2, 8)),
+        ],
+    );
+    let work = t.stack_scratch(0x800);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for k in 0..40 {
+        if !(real && k == 0) {
+            r1g_state(t, rng, r);
+        }
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.same_but(
+            "yiScreff_draw",
+            &skip,
+            |o| o.eax(0x0091_3200, &[r]),
+            |m| ffx_field::screff::yi_screff_draw(m, r, work, call, fcall),
+        );
+    }
+}
+
+/// Group G on the image: synthetic scenes.
+#[test]
+fn r1g_screen_distortion_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0071_0001);
+    let r = t.alloc(0xb_e100);
+    r1g_cases(&mut t, &mut rng, r, false);
+}
+
+/// Group G on the snapshot (`FFX_SNAPSHOT`): the game's renderer.
+#[test]
+fn r1g_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0071_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r1g_cases(&mut t, &mut rng, r, true);
+}

@@ -2708,6 +2708,17 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         )
     }
+    /// `yiScreff_draw(scene)` (field agent r3, group G).
+    yiScreff_draw @ 0x0091_3200 => extern "C" fn shim_yi_screff_draw(scene: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::screff::WORK as usize / 4 }>::new();
+        ffx_field::screff::yi_screff_draw(
+            &mut mem(),
+            scene,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));
