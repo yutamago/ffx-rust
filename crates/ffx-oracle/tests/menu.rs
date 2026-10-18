@@ -8126,3 +8126,128 @@ fn menu_round20_batch1_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// A stand-in `MsGetSaveWeapon(id, local)`: `base + (id & 0xff) * 8`, so
+/// every id has its own slot (`local` untouched).
+fn weapon_slots(t: &mut Twins, base: u32) {
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x0f, 0xb6, 0x44, 0x24, 0x04][..],        // movzx eax, byte [esp + 4]
+        &[0xc1, 0xe0, 0x03],                        // shl eax, 3
+        &[0x05], &base.to_le_bytes(),               // add eax, base
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x007a_bbd0);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_round21_shop_windows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0021_81d0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    // five windows a round from the 32 slots
+    for round in 0..5u32 {
+        // the shop record, the prices, the counts and the gil recorded
+        let record = t.alloc_random(0x80);
+        record_n(&mut t, 0x008c_1af0, 2, record);
+        for (f, n) in [
+            (0x008d_9170u32, 1u8),
+            (0x008d_9370, 1),
+            (0x008d_9410, 1),
+            (0x008d_b3b0, 1),
+            (0x008d_b400, 1),
+            (0x0079_04b0, 1),
+            (0x0078_4e80, 0),
+        ] {
+            let r = t.rng.next();
+            record_n(&mut t, f, n, r);
+        }
+        let weapon = t.rng.next();
+        record_n(&mut t, 0x007a_bbd0, 1, weapon);
+        for g in [0x0186_ab1c, 0x0186_aba8, 0x0186_ac20, 0x0186_ac2c] {
+            t.scramble(g, 4);
+        }
+        t.scramble(0x0159_7740, 0x200);
+        let parent = t.alloc_random(0x60);
+        let k = i16::try_from(t.rng.below(0x40)).unwrap_or(0) - 0xc;
+        t.put(parent + 0x48, k);
+        t.twin(
+            "MenuWShop_OpenSubWindow2",
+            0x008d_81d0,
+            &[parent],
+            U32,
+            |o| w(tk::menu_wshop_open_sub_window2(o, parent, &mut callback)),
+        );
+        t.twin(
+            "MenuWShop_OpenSubWindow3",
+            0x008d_82d0,
+            &[parent],
+            U32,
+            |o| {
+                w(tk::menu_wshop_open_sub_window3(
+                    o,
+                    parent,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+        t.twin("MenuShop_OpenBuyWindow", 0x008d_a860, &[parent], U32, |o| {
+            w(tk::menu_shop_open_buy_window(o, parent, &mut callback))
+        });
+        t.twin(
+            "MenuShop_OpenSellWindow",
+            0x008d_aa00,
+            &[parent],
+            U32,
+            |o| w(tk::menu_shop_open_sell_window(o, parent, &mut callback)),
+        );
+        // the aeon menu's second window: the current aeon fixed, the
+        // status background and the grow masks recorded
+        let summon = if round == 0 {
+            0xffff_ffff
+        } else {
+            t.rng.below(8)
+        };
+        return_const(&mut t, 0x008a_9880, summon);
+        let bg = t.rng.next();
+        record_n(&mut t, 0x008d_4ed0, 0, bg);
+        let grow = t.rng.next();
+        record_n(&mut t, 0x008c_d3b0, 1, grow);
+        t.scramble(0x0186_a5ac, 4);
+        t.twin("MenuSummon_OpenWindow2", 0x008c_eda0, &[], U32, |o| {
+            w(tk::menu_summon_open_window2(o, &mut callback))
+        });
+    }
+    // MenuItem_CountGearByOwner over stand-in gear slots
+    let slots = t.alloc(&vec![0; 0x800]);
+    weapon_slots(&mut t, slots);
+    for round in 0..48u32 {
+        let n = match round % 6 {
+            0 => 0,
+            1 => t.rng.pick(&[0xffff_ffff, 0x8000_0000, 0xffff_ff00]),
+            2 => 1,
+            _ => t.rng.below(0x60),
+        };
+        t.put(t.sym(0x0186_a250), n);
+        let mut gear = t.rng.bytes(0x800);
+        for s in gear.chunks_mut(8) {
+            // owners mostly in range, kinds mostly 0 or 1
+            s[4] = t.rng.pick(&[0u8, 1, 3, 6, 6, 7, 8, 0xff]);
+            s[5] = t.rng.pick(&[0u8, 0, 1, 1, 2, 0x80]);
+        }
+        t.put_bytes(slots, &gear);
+        t.scramble(0x0159_7770, 0x180);
+        t.scramble(0x0186_a3e4, 0x20);
+        t.twin("MenuItem_CountGearByOwner", 0x008c_94e0, &[], U32, |o| {
+            w(tk::menu_item_count_gear_by_owner(o, local, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

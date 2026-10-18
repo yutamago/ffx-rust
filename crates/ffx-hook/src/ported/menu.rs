@@ -3321,6 +3321,34 @@ ported! {
         };
         tk::menu_kaizou_weapon_byte4(&mut m, w, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuWShop_OpenSubWindow2(parent)`: the weapon shop's buy-amount window.
+    MenuWShop_OpenSubWindow2 @ 0x008d_81d0 => extern "C" fn menu_wshop_open_sub_window2(parent: u32) -> u32 {
+        tk::menu_wshop_open_sub_window2(&mut mem(), parent, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSubWindow3(parent)`: the weapon shop's sell window.
+    MenuWShop_OpenSubWindow3 @ 0x008d_82d0 => extern "C" fn menu_wshop_open_sub_window3(parent: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_open_sub_window3(&mut mem(), parent, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_OpenBuyWindow(parent)`: the item shop's buy-amount window.
+    MenuShop_OpenBuyWindow @ 0x008d_a860 => extern "C" fn menu_shop_open_buy_window(parent: u32) -> u32 {
+        tk::menu_shop_open_buy_window(&mut mem(), parent, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_OpenSellWindow(parent)`: the item shop's sell window.
+    MenuShop_OpenSellWindow @ 0x008d_aa00 => extern "C" fn menu_shop_open_sell_window(parent: u32) -> u32 {
+        tk::menu_shop_open_sell_window(&mut mem(), parent, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_OpenWindow2()`: the aeon menu's second window.
+    MenuSummon_OpenWindow2 @ 0x008c_eda0 => extern "C" fn menu_summon_open_window2() -> u32 {
+        tk::menu_summon_open_window2(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_CountGearByOwner()`: the item menu's equipment counts.
+    MenuItem_CountGearByOwner @ 0x008c_94e0 => extern "C" fn menu_item_count_gear_by_owner() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_count_gear_by_owner(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuMain_BusyMask()`.
     MenuMain_BusyMask @ 0x008a_a610 => extern "C" fn menu_main_busy_mask() -> u32 {
         tk::menu_main_busy_mask(&mut mem(), &mut |_, f, a| call_ptr(f, a))
