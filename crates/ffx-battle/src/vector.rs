@@ -178,6 +178,71 @@ pub mod bridge {
         mem.write(out, r);
     }
 
+    /// The axis of [`ms_rot_matrix`]: `MsRotMatrixX` (`0x007c3170`),
+    /// `MsRotMatrixY` (`0x007c3480`), `MsRotMatrixZ` (`0x007c3790`).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Axis {
+        X,
+        Y,
+        Z,
+    }
+
+    /// `MsRotMatrixX/Y/Z(out, m, angle)`: `out = m` with each row's pair of
+    /// lanes `(p, q)` (`y, z` for X, `x, z` for Y, `x, y` for Z) turned by
+    /// `angle`: `p' = q·(-s) + f32(p·c)`, `q' = q·c + f32(p·s)` (`c`, `s`
+    /// the `f32` `_CIcos`, `_CIsin` from the caller), the other lanes
+    /// copied through the x87. Through the VU registers as the original
+    /// leaves them: `m` in [`VF_M`], the rotation rows at `0x00c8f810`
+    /// (`c`, `s` in `p`, `q`) and `0x00c8f820` (`-s`, `c`), whose other
+    /// lanes are the original's uninitialized locals (left as they were
+    /// here), the result rows from `0x00c8f830`, the last row's products
+    /// in [`VF_ACC`]'s `p`, `q`. `out` may be `m`. Returns the last word
+    /// (the original's `eax`).
+    #[allow(clippy::many_single_char_names)] // matrix, lanes, cos and sin
+    pub fn ms_rot_matrix(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        axis: Axis,
+        out: u32,
+        m: u32,
+        angle: u32,
+    ) -> u32 {
+        use crate::pos::bridge::Trig;
+        use ffx_bridge::x87::{add, load, mul, store};
+        let c = trig(Trig::Cos, angle);
+        let s = trig(Trig::Sin, angle);
+        let ns = store(-load(s));
+        let (p, q) = match axis {
+            Axis::X => (1, 2),
+            Axis::Y => (0, 2),
+            Axis::Z => (0, 1),
+        };
+        let src: Mat4 = mem.read(m);
+        VF_M.set(mem, src);
+        let rot = VF_V.ptr(mem).addr;
+        for (row, (a, b)) in [(0, (c, s)), (0x10, (ns, c))] {
+            mem.write(rot + row + 4 * p, a);
+            mem.write(rot + row + 4 * q, b);
+        }
+        let mut r = src;
+        let acc = VF_ACC.ptr(mem).addr;
+        for (k, row) in r.iter_mut().enumerate() {
+            let v = src[k];
+            let pc = store(mul(load(v[p as usize]), load(c)));
+            let ps = store(mul(load(v[p as usize]), load(s)));
+            mem.write(acc + 4 * p, pc);
+            mem.write(acc + 4 * q, ps);
+            for (lane, w) in row.iter_mut().enumerate() {
+                *w = store(load(v[lane]));
+            }
+            row[p as usize] = store(add(mul(load(v[q as usize]), load(ns)), load(pc)));
+            row[q as usize] = store(add(mul(load(v[q as usize]), load(c)), load(ps)));
+        }
+        mem.write(rot + 0x20, r);
+        mem.write(out, r);
+        r[3][3]
+    }
+
     /// `MsNearRag(a, b)` (`0x007c04c0`): [`near_rag`], an `f32` (on the x87
     /// stack).
     pub fn ms_near_rag(mem: &impl Mem, a: u32, b: u32) -> f32 {

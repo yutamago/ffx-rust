@@ -230,6 +230,48 @@ fn polar(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
         0
     });
     same("MsVectorNormal2", a, b);
+    // the rotations, sometimes in place; the rotation rows' other lanes
+    // are the original's uninitialized locals (copied)
+    for (name, sym, axis, free) in [
+        (
+            "MsRotMatrixX",
+            0x007c_3170,
+            v::Axis::X,
+            [0x810u32, 0x81c, 0x820, 0x82c],
+        ),
+        (
+            "MsRotMatrixY",
+            0x007c_3480,
+            v::Axis::Y,
+            [0x814, 0x81c, 0x824, 0x82c],
+        ),
+        (
+            "MsRotMatrixZ",
+            0x007c_3790,
+            v::Axis::Z,
+            [0x818, 0x81c, 0x828, 0x82c],
+        ),
+    ] {
+        let vals: Vec<u8> = (0..0x10).flat_map(|_| float(rng).to_le_bytes()).collect();
+        poke(a, b, buf + 0x80, &vals);
+        let out = if rng.below(2) == 0 {
+            buf + 0x80
+        } else {
+            buf + 0xc0
+        };
+        let angle = float(rng);
+        let args = [out, buf + 0x80, angle];
+        twin(name, a, b, sym, &args, ALL, |m| {
+            v::ms_rot_matrix(m, &stand_in, axis, out, buf + 0x80, angle)
+        });
+        for o in free {
+            let at = 0x00c8_f000 + o;
+            let at = a.rebase(at);
+            let w = a.read(at, 4).unwrap();
+            b.write(at, &w).unwrap();
+        }
+        same(name, a, b);
+    }
 }
 
 #[test]

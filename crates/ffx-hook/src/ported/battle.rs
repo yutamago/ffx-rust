@@ -13,10 +13,12 @@ use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::free::bridge as free;
 use ffx_battle::input::bridge as input;
+use ffx_battle::motion::bridge as motion;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
 use ffx_battle::process::bridge as process;
 use ffx_battle::save_param::bridge as sparam;
+use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
@@ -3403,5 +3405,57 @@ ported! {
     /// `MsFieldItemFree()`: the heap through the game.
     MsFieldItemFree @ 0x0079_8f90 => extern "C" fn ms_field_item_free() {
         free::ms_field_item_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsCalcMotionSpeed(actor)`.
+    MsCalcMotionSpeed @ 0x0078_ac20 => extern "C" fn ms_calc_motion_speed(actor: u32) -> u32 {
+        motion::ms_calc_motion_speed(&mut mem(), actor)
+    }
+    /// `MsCheckChrTouch_007ab750(i, actor)`: its two position vectors in
+    /// the port's frame; the CRT through its import slots.
+    MsCheckChrTouch_007ab750 @ 0x007a_b750 => extern "C" fn ms_check_chr_touch(i: u32, actor: u32) -> i32 {
+        let mut m = mem();
+        motion::ms_check_chr_touch(&mut target::Dm::new(&mut m), &crt_trig, i, actor)
+    }
+    /// `MsMotionProcess()`: script's callees through the game.
+    MsMotionProcess @ 0x007a_a160 => extern "C" fn ms_motion_process() {
+        let mut m = mem();
+        script!(s);
+        motion::ms_motion_process(&mut target::Dm::new(&mut m), &crt_trig, &mut s);
+    }
+    /// `MsRotMatrixX(out, m, angle)`: the CRT through its import slots;
+    /// the rotation rows' spare lanes are left as they were.
+    MsRotMatrixX @ 0x007c_3170 => extern "C" fn ms_rot_matrix_x(out: u32, m: u32, angle: u32) -> u32 {
+        vector::ms_rot_matrix(&mut mem(), &crt_trig, vector::Axis::X, out, m, angle)
+    }
+    /// `MsRotMatrixY(out, m, angle)`: as `MsRotMatrixX`.
+    MsRotMatrixY @ 0x007c_3480 => extern "C" fn ms_rot_matrix_y(out: u32, m: u32, angle: u32) -> u32 {
+        vector::ms_rot_matrix(&mut mem(), &crt_trig, vector::Axis::Y, out, m, angle)
+    }
+    /// `MsRotMatrixZ(out, m, angle)`: as `MsRotMatrixX`.
+    MsRotMatrixZ @ 0x007c_3790 => extern "C" fn ms_rot_matrix_z(out: u32, m: u32, angle: u32) -> u32 {
+        vector::ms_rot_matrix(&mut mem(), &crt_trig, vector::Axis::Z, out, m, angle)
+    }
+    /// `MsSpecialSeaMatrix_0079df90(chr, id, work)`: `Yn_SeaSetMatrix`
+    /// (map) through the game.
+    MsSpecialSeaMatrix_0079df90 @ 0x0079_df90 => extern "C" fn ms_special_sea_matrix(chr: u32, id: u32, work: u32) {
+        special::ms_special_sea_matrix(&mut mem(), &mut call_ptr, chr, id, work);
+    }
+    /// `MsSpecialChrMatrix_0079e030(angles, unused)`: its locals in the
+    /// port's frame; the CRT through its import slots.
+    MsSpecialChrMatrix_0079e030 @ 0x0079_e030 => extern "C" fn ms_special_chr_matrix(angles: u32, _unused: u32) {
+        let mut m = mem();
+        special::ms_special_chr_matrix(&mut target::Dm::new(&mut m), &crt_trig, angles);
+    }
+    /// `MsBtlChrFreeAll()`: chara's `Ch_Dispose`, the heap and script's
+    /// callees through the game.
+    MsBtlChrFreeAll @ 0x0079_3480 => extern "C" fn ms_btl_chr_free_all() {
+        let mut m = mem();
+        script!(s);
+        free::ms_btl_chr_free_all(&mut target::Dm::new(&mut m), &mut s);
+    }
+    /// `MsChrCreatePacket(actor)`: `Ch_ModelCreatePacket` (chara) through
+    /// the game.
+    MsChrCreatePacket @ 0x0079_3d90 => extern "C" fn ms_chr_create_packet(actor: u32) -> u32 {
+        free::ms_chr_create_packet(&mut mem(), &mut call_ptr, actor)
     }
 }

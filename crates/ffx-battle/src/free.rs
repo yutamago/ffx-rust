@@ -205,4 +205,58 @@ pub mod bridge {
         game(mem, call, USER_FREE, &[p]);
         0
     }
+
+    /// `Ch_Dispose(model)` (chara).
+    pub const CH_DISPOSE: u32 = 0x0082_66f0;
+    /// `Ch_ModelCreatePacket(model)` (chara).
+    pub const CH_MODEL_CREATE_PACKET: u32 = 0x0082_7280;
+
+    /// `MsBtlChrFreeAll()` (`0x00793480`): every model of the 0x5d actors
+    /// and records that is no ride (`+0x12`) disposed (`Ch_Dispose`), then
+    /// each one's share flag `+0x3e` cleared and the actor disposed
+    /// (`MsDebugFullCommand_00796dc0`, flags 2 with `+0x22`, 4 with
+    /// `+0x21`), and the extra block (`g_BtlChrExtra`) freed and cleared.
+    pub fn ms_btl_chr_free_all<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        s: &mut crate::atel::bridge::Script<'_, crate::target::bridge::Dm<'d>>,
+    ) {
+        use crate::actor::bridge::ms_get_chr;
+        for i in 0..0x5d {
+            let a = ms_get_chr(mem, i);
+            let model: u32 = mem.read(a);
+            if model != 0 && mem.read::<u8>(a.wrapping_add(0x12)) == 0 {
+                game(mem, &mut *s.call, CH_DISPOSE, &[model]);
+            }
+        }
+        for i in 0..0x5d {
+            let a = ms_get_chr(mem, i);
+            mem.write(a.wrapping_add(0x3e), 0u8);
+            let mut flags = 0;
+            if mem.read::<u8>(a.wrapping_add(0x22)) != 0 {
+                flags = 2;
+            }
+            if mem.read::<u8>(a.wrapping_add(0x21)) != 0 {
+                flags |= 4;
+            }
+            crate::damage_end::bridge::ms_chr_dispose(mem, s, i, a, flags);
+        }
+        let extra = crate::flow::bridge::CHR_EXTRA;
+        let p = extra.get(mem);
+        game(mem, &mut *s.call, USER_FREE, &[p]);
+        extra.set(mem, 0);
+    }
+
+    /// `MsChrCreatePacket(actor)` (`0x00793d90`): with its packet request
+    /// (`+0x3a`) and a model, the model's packets are made
+    /// (`Ch_ModelCreatePacket`): 1; else 0. The request ends cleared.
+    pub fn ms_chr_create_packet<M: Mem>(mem: &mut M, call: Call<'_, M>, a: u32) -> u32 {
+        let model: u32 = mem.read(a);
+        let asked = mem.read::<u8>(a.wrapping_add(0x3a)) != 0;
+        let made = asked && model != 0;
+        if made {
+            game(mem, call, CH_MODEL_CREATE_PACKET, &[model]);
+        }
+        mem.write(a.wrapping_add(0x3a), 0u8);
+        u32::from(made)
+    }
 }

@@ -5005,7 +5005,7 @@
 0x0078a890 function DmgCalc_CheckHit          # fh v3:exact 0x0078a950 +DmgCalc_CheckHit
 0x0078aac0 function DmgCalc_DmgImmunity       # fh v3:exact 0x0078ab80 +DmgCalc_DmgImmunity
 0x0078ab20 function MsCalcMagic               # fh v3:exact 0x0078abe0
-0x0078ac20 function MsCalcMotionSpeed         # fh v3:exact 0x0078ace0
+0x0078ac20 function MsCalcMotionSpeed         # fh v3:exact 0x0078ace0; ported (battle round 18)
 0x0078ad40 function DmgCalc_Protect           # Fahrenheit's v3 name (+DmgCalc_Protect, 0x0078ae00); physical damage halved when the result's +0xb (protect) is set, flag 0x40; ported (ffx_battle::damage)
 0x0078ad80 function DmgCalc_GravImmunity      # fh v3:exact 0x0078ae40 +DmgCalc_GravImmunity
 0x0078adc0 function DmgCalc_Shell             # Fahrenheit's v3 name (+DmgCalc_Shell, 0x0078ae80); magic damage halved when the result's +0xa (shell) is set, flag 0x20; ported
@@ -5176,7 +5176,7 @@
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
 0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420; ours: (i, flags) hidden, bind/status effects off, script i+5 cancelled, model and weapons disposed by flags; ported (battle round 13)
-0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490
+0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490; ported (battle round 18)
 0x00793500 function MsBtlChrFreeMem           # fh v3:exact 0x00793510; ported (battle round 18)
 0x00793530 function MsBtlChrGetMem            # fh v3:exact 0x00793540
 0x00793570 function MsBtlChrInfoFree          # fh v3:exact 0x00793580
@@ -5188,7 +5188,7 @@
 0x00793ba0 function MsCalcChrDir              # fh v3:exact 0x00793bb0
 0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
-0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0
+0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0; ported (battle round 18)
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10; ours: (all): 0x5d records +0x30 = 1, +0x28 = 0xff; with all each actor reset (head target, MsEffectEndMotion 0, normals, matrix, specular, visible); ran-away petrified out of place: MsStoneMove; ported (battle round 12)
 0x00793ef0 function MsCommandStartChrStatusAll # fh v3:exact 0x00793f00
 0x00793f10 function MsDetachWeapon               # layout: alphabetical run between MsCommandStartChrStatusAll and MsGetChr (1 unnamed in the gap); Switch 0x71003472c0 MsDetachWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5418,7 +5418,9 @@
 0x0079ddb0 function MsBattleSpecialCameraPause # fh v3:exact 0x0079ddd0
 0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00; ported (battle round 18)
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80
+0x0079df90 function MsSpecialSeaMatrix_0079df90 # (chr, id, work): Ch_OptposGetMatrix(chr, id, 0, work+0x7c0), its rows normalized (MsVectorNormal), Yn_SeaSetMatrix; MsBattleSpecial's kinds 2 (id 0xe) and 3 (id 5) on actor 0x14's model; name ours; ported (battle round 18)
 0x0079dfe0 function MsSpCameraProcess            # layout+callees: sorts between MsBattleSpecialInit and MsTransSpPos, and its named callees match the Switch 0x71003797d0 MsSpCameraProcess's (similarity 1.00: MsSetNormalUpVector, MsTransSpPos); symbols from Fahrenheit's server export
+0x0079e030 function MsSpecialChrMatrix_0079e030 # (angles): each shown, unridden actor's matrix at g_BtlSpecialMem + 0x40 i: scale 0.01, MsRotMatrixY(dir + pi/2), Z(angles[2]), X(angles[0]), its position turned likewise; Ch_SetOrgMatrix; MsBattleSpecial kind 1's last call; name ours; ported (battle round 18)
 0x0079e1b0 function MsTransSpPos                 # callees: its named callees match the Switch 0x71003796e0 MsTransSpPos's (similarity 1.00: FFXVu0UnitMatrix, MsApplyMatrix, MsRotMatrixX, MsRotMatrixZ); symbols from Fahrenheit's server export
 0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
@@ -5766,7 +5768,7 @@
 0x007aa050 function MsGetChrTargetInfo        # (i, kind, &pos, &width, &height) -> msCheckSameTarget: MsGetChrInfo of the actor's targets (+0xdc0 via MsEffectCheckTarget), their mean width and height; named here; ported
 0x007aa100 function MsMotionPosCheck          # fh v3:exact 0x007aa120
 0x007aa140 function MsMotionPosCheckAll       # fh v3:exact 0x007aa160
-0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180
+0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180; ported (battle round 18)
 0x007aa260 function MsMotionSpeedSetNormal    # fh switch:bsim1.00 0x71003619d0
 0x007aa280 function msMoveReset               # fh switch:bsim1.00 0x71003606e0
 0x007aa2a0 function MsGetChrPredictPos           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100361470 MsGetChrPredictPos, 3 votes, round 2; cdecl(i), eax garbage: one frame of actor i's move (+0x415 & 0x7f: 7 spline +0x454 at frame +0x452 of +0x45a, 0x10 straight step, else towards MsGetMoveTargetPos with bit 0x80 steering or MsGetChrMoveAccelPos), then the direction easing (+0x42e, MsGetDirMode, MsCameraMoveCalc curve 2, Ch_SetDirF); ported (ffx_battle::predict, battle round 17)
@@ -5788,6 +5790,7 @@
 0x007ab6c0 function MsTerminateMotion         # fh v3:exact 0x007ab6e0
 0x007ab700 function MsCheckNeckMotion         # cdecl(actor) -> 0 when motion +0x3f0 is 0x20-0x24 or 0x48-0x4c, else -1; MsMoveChr sets the neck target only on -1 (was FUN_007ab700); ported (ffx_battle::predict, battle round 16)
 0x007ab730 function MsMotionSpeedReset        # fh switch:bsim1.00 0x71003619f0
+0x007ab750 function MsCheckChrTouch_007ab750  # (i, actor) -> 0 when actor i, at its battle position, is within the f32 sum of its and another's width of one of actors 0..0x1b (MsPointLen2D), that one going to g_BtlEffectWait with 0xfc; else -1; MsMotionProcess's only callee of it, inlined in Switch's MsMotionProcess (fh cg_switch calls: MsGetChrWidth, MsGetChrBtlPos, MsPointLen2D after MsSetMotion); name ours; ported (battle round 18)
 0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
 0x007ab970 function MsEquipSaveWeapon         # fh v3:exact 0x007ab990
@@ -6145,9 +6148,9 @@
 0x007c2e10 function MsMulVector               # fh v3:exact 0x007c2da0
 0x007c2ec0 function MsPointLen                # fh v3:exact 0x007c2e50
 0x007c3030 function MsPointLen2D              # fh v3:exact 0x007c2fd0
-0x007c3170 function MsRotMatrixX              # fh v3:exact 0x007c3110
-0x007c3480 function MsRotMatrixY              # fh v3:bsim1.00 0x007c3420
-0x007c3790 function MsRotMatrixZ              # fh v3:bsim1.00 0x007c3730
+0x007c3170 function MsRotMatrixX              # fh v3:exact 0x007c3110; ported (battle round 18)
+0x007c3480 function MsRotMatrixY              # fh v3:bsim1.00 0x007c3420; ported (battle round 18)
+0x007c3790 function MsRotMatrixZ              # fh v3:bsim1.00 0x007c3730; ported (battle round 18)
 0x007c3aa0 function MsRotTransPers               # layout: alphabetical run between MsRotMatrixZ and MsScreenMatrix (1 unnamed in the gap); Switch 0x710039efc0 MsRotTransPers is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007c3d60 function MsScreenMatrix            # fh v3:exact 0x007c3d00
 0x007c40b0 function MsSubPoint                # fh v3:cg6 0x7c4050
@@ -14408,6 +14411,7 @@
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
 0x00b549f8 label s_BtlEffectReadError      # MsEffectRead's MsBattleError message (reading while an event effect plays or the actor reads already)
 0x00b54ba8 label s_BtlCommandCueError      # MsCommandCueProcess's MsBattleError message for an entry of a bad actor or list
+0x00b54cb8 label k_HundredthF64            # f64 0.01: MsSpecialChrMatrix_0079e030's scale of the actors' +0x3a0 scale to their matrices
 0x00b54f28 label g_TwoThirdsPi             # f32 2pi/3, and -2pi/3 at 0x00b54f2c: MsDirTurn's limits
 0x00b55178 label g_FloatScreenDepth        # f32 1024.0, the default screen depth (MsEffectCameraInit)
 0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
