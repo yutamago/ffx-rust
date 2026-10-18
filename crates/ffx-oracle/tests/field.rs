@@ -13863,3 +13863,277 @@ fn r1c_chg_chr_clut_on_a_snapshot_matches_the_original() {
         }
     }
 }
+
+// ---- field agent r2, group D: an effect object's frame ----
+
+/// [`log_stub`] logging argument `k` as the word at `[arg k] + off` (a
+/// pointer into the caller's frame, which differs between the original
+/// and the port).
+fn deref_log_stub(log: u32, rv: u32, id: u32, args: u32, k: u32, off: u8) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0xc1, 0xe1, 0x05, 0xc7, 0x81]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    for i in 0..args {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, u8::try_from(4 + 4 * i).unwrap()]);
+        if i == k {
+            c.extend_from_slice(&[0x8b, 0x40, off]); // mov eax, [eax + off]
+        }
+        c.extend_from_slice(&[0x89, 0x81]);
+        c.extend_from_slice(&(log + 8 + 4 * i).to_le_bytes());
+    }
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Small floats for an object's motion, colours and matrices.
+fn r1d_float(rng: &mut Xorshift) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let x = match rng.below(6) {
+        0 => 0.0,
+        1 => f32::from_bits(rng.float()),
+        _ => rng.range(-3000, 3000) as f32 / 1000.0,
+    };
+    x.to_bits()
+}
+
+/// The VFX, ppp and character calls of an object's frame, stood in.
+struct R1dEnv {
+    log: u32,
+    rvs: u32,
+}
+
+impl R1dEnv {
+    fn install(t: &mut Twin) -> Self {
+        let (log, rvs) = (t.alloc(4 + 0x20 * 128), t.alloc(0x40));
+        let (chrs, mats) = (t.alloc(0x2000), t.alloc(0x40 * 16));
+        let rv = |k: u32| rvs + 4 * k;
+        t.cave(&[
+            (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+            (
+                Some(task::ATEL_CHAR_FROM_BIND_PC),
+                handle_stub(chrs + 0x1000),
+            ),
+            (
+                Some(task::CH_ELEM_GET_MATRIX),
+                table_stub(mats, 0x40, 15, [0, 1, 2]),
+            ),
+            (
+                Some(task::YI_GET_MATRIX_DOBJ),
+                table_stub(mats, 0x40, 15, [0, 0, 1]),
+            ),
+            (Some(task::PPP_START_PART), log_stub(log, rv(0), 1, 5)),
+            (Some(task::PPP_SET_MATRIX), log_stub(log, rv(0), 2, 1)),
+            (Some(task::PPP_ALL_FREE_POBJECT), log_stub(log, rv(0), 3, 1)),
+            (Some(task::RUN_PART), log_stub(log, rv(1), 4, 3)),
+            (Some(task::VFX_GET_RENDER_DATA), log_stub(log, rv(2), 5, 2)),
+            (Some(task::VFX_UPDATE), log_stub(log, rv(0), 6, 2)),
+            (Some(task::VFX_PATH3_UPDATE), log_stub(log, rv(0), 7, 2)),
+            (
+                Some(task::UPDATE_RENDER_DATA_SHP),
+                deref_log_stub(log, rv(0), 8, 5, 2, 0),
+            ),
+            (
+                Some(task::INIT_RENDER_DATA_SHP),
+                deref_log_stub(log, rv(0), 9, 6, 2, 0),
+            ),
+            (
+                Some(task::UPDATE_RENDER_DATA),
+                deref_log_stub(log, rv(0), 10, 4, 2, 0x1c),
+            ),
+            (
+                Some(task::INIT_RENDER_DATA),
+                deref_log_stub(log, rv(0), 11, 5, 2, 0x1c),
+            ),
+            (
+                Some(task::INIT_PATH3_RENDER_DATA),
+                deref_log_stub(log, rv(0), 12, 5, 2, 0x1c),
+            ),
+            (Some(task::ALPHA_FUNCTION), log_stub(log, rv(3), 13, 1)),
+            (Some(task::Z_MAT), log_stub(log, rv(4), 14, 1)),
+            (Some(task::SET_ENLARGE), log_stub(log, rv(0), 15, 1)),
+            (Some(task::RESET_ENLARGE), log_stub(log, rv(0), 16, 0)),
+        ]);
+        Self { log, rvs }
+    }
+
+    fn reset(&self, t: &mut Twin, rng: &mut Xorshift) {
+        t.put(self.log, 0u32);
+        for k in 0..16 {
+            t.put(
+                self.rvs + 4 * k,
+                if k == 1 || k == 2 {
+                    rng.below(2)
+                } else {
+                    rng.next()
+                },
+            );
+        }
+    }
+}
+
+/// A synthetic effect object at `obj` (0x480 bytes) with its part,
+/// animation and model, the data they point at in `data` (0x2000 bytes).
+fn r1d_object(t: &mut Twin, rng: &mut Xorshift, obj: u32, data: u32, live: bool) {
+    for w in 0..0x120 {
+        t.put(obj + 4 * w, r1d_float(rng));
+    }
+    for w in 0..0x800 {
+        t.put(data + 4 * w, r1d_float(rng));
+    }
+    t.put(obj + 0xbc, rng.next() & 0x7ff9 & !0x1000);
+    t.put(obj + 0xc0, if rng.below(2) == 0 { 0 } else { data });
+    t.put(obj + 0x270, rng.below(8));
+    t.put(obj + 0x274, rng.below(3));
+    let maybe = |rng: &mut Xorshift, p: u32| if rng.below(3) == 0 { 0 } else { p };
+    // the part
+    let p = obj + 0x280;
+    t.put(
+        p,
+        if live {
+            rng.below(4) | 1
+        } else {
+            rng.below(4) & 2
+        },
+    );
+    t.put(p + 4, data);
+    for (o, v) in [
+        (0x10u32, data + 0x100),
+        (0x14, data + 0x200),
+        (0x18, data + 0x210),
+        (0x1c, data + 0x220),
+    ] {
+        t.put(data + o, v);
+    }
+    t.put(p + 8, rng.below(8));
+    t.put(
+        p + 0x18,
+        [0x7fff, 0x8000, 0x2_6000, 0x2_6001, 0x5_0000, rng.next()][rng.below(6) as usize],
+    );
+    let (pm, pv) = (maybe(rng, data + 0x300), maybe(rng, data + 0x340));
+    t.put(p + 0x90, pm);
+    t.put(p + 0x94, pv);
+    t.put(p + 0x98, maybe(rng, data + 0x350));
+    // the animation
+    let a = obj + 0x330;
+    t.put(a, rng.below(2) | u32::from(live));
+    t.put(a + 4, data + 0x400);
+    let idx = rng.below(4);
+    t.put(a + 0x42, u16::try_from(idx).unwrap());
+    for k in 0..4 {
+        t.put(
+            data + 0x410 + 8 * k,
+            0x40u16 + 0x10 * u16::try_from(k).unwrap(),
+        );
+    }
+    for k in 0..4 {
+        t.put(data + 0x444 + 0x10 * k, 0x20u32);
+    }
+    t.put(a + 0x48, data + 0x500);
+    t.put(a + 0x4c, data + 0x540);
+    // the model
+    let m = obj + 0x3c0;
+    t.put(m, rng.below(2) | u32::from(live));
+    t.put(m + 4, data + 0x600);
+    t.put(m + 0x10, rng.next());
+    t.put(m + 0x18, rng.next() & 0xff);
+    t.put(m + 0x80, data + 0x700);
+    t.put(m + 0x84, data + 0x740);
+}
+
+/// Group D on `t`.
+fn r1d_cases(t: &mut Twin, rng: &mut Xorshift, env: &R1dEnv) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (obj, data, envbuf) = (t.alloc(0x480), t.alloc(0x2000), t.alloc(0x100));
+    t.put(envbuf, envbuf + 0x40);
+    let slot = t.b.rebase(ffx_field::abmap::PPP_ENV_SLOT);
+    t.put(slot, envbuf);
+    let kept = t.b.rebase(task::bridge::PAR_KEPT[0].0);
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for k in 0..160u32 {
+        env.reset(t, rng);
+        r1d_object(t, rng, obj, data, k % 5 != 0);
+        t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 2 == 0));
+        t.set(
+            task::bridge::CURRENT_PROGRAM,
+            [0u32, 3, 0x8000_0001][rng.below(3) as usize],
+        );
+        for g in 0..10 {
+            t.put(
+                kept + 4 * g,
+                if rng.below(4) == 0 { obj + 0x280 } else { 0 },
+            );
+        }
+        let (a, m) = (obj + 0x330, obj + 0x3c0);
+        t.same_but(
+            "rcefObjCalcLocalMatrix",
+            &skip,
+            |o| o.void(0x0092_f9d0, &[obj]),
+            |b| task::bridge::rcef_obj_calc_local_matrix(b, obj, work, call),
+        );
+        t.same_but(
+            "rcefParProc",
+            &skip,
+            |o| o.void(0x0092_f010, &[obj + 0x280]),
+            |b| task::bridge::rcef_par_proc(b, obj + 0x280, call),
+        );
+        t.same_but(
+            "rcefAnimeDraw",
+            &skip,
+            |o| o.void(0x0092_f290, &[a]),
+            |b| task::bridge::rcef_anime_draw(b, a, work, call),
+        );
+        t.same_but(
+            "rcefAnimeProc",
+            &skip,
+            |o| o.void(0x0092_f4f0, &[a]),
+            |b| task::bridge::rcef_anime_proc(b, a, work, call),
+        );
+        t.same_but(
+            "rcefModelProc",
+            &skip,
+            |o| o.eax(0x0092_f510, &[m]),
+            |b| task::bridge::rcef_model_proc(b, m, work, call),
+        );
+        t.same_but(
+            "rcefModelProc_0092f770",
+            &skip,
+            |o| o.eax(0x0092_f770, &[m]),
+            |b| task::bridge::rcef_model_proc_live(b, m, work, call),
+        );
+        r1d_object(t, rng, obj, data, k % 5 != 0);
+        t.same_but(
+            "rcefObjProc",
+            &skip,
+            |o| o.eax(0x0093_0060, &[obj]),
+            |b| task::bridge::rcef_obj_proc(b, obj, work, call),
+        );
+    }
+}
+
+/// Group D on the image.
+#[test]
+fn r1d_obj_frame_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00d1_0001);
+    let env = R1dEnv::install(&mut t);
+    r1d_cases(&mut t, &mut rng, &env);
+}
+
+/// Group D on the snapshot (`FFX_SNAPSHOT`): the game's matrices, ppp
+/// globals and VFX state, the VFX calls stood in.
+#[test]
+fn r1d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00d1_0002);
+    let env = R1dEnv::install(&mut t);
+    r1d_cases(&mut t, &mut rng, &env);
+}

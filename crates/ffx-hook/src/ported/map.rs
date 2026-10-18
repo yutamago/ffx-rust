@@ -2626,6 +2626,40 @@ ported! {
     rcefChgChrClut @ 0x0092_dd30 => extern "C" fn shim_rcef_chg_chr_clut(i: u32, add: u32, mul: u32) -> u32 {
         task::bridge::rcef_chg_chr_clut(&mut mem(), i, add, mul, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcefObjCalcLocalMatrix(obj)` (field agent r2, group D).
+    rcefObjCalcLocalMatrix @ 0x0092_f9d0 => extern "C" fn shim_rcef_obj_calc_local_matrix(obj: u32) {
+        let mut w = super::StackFrame::<60>::new();
+        task::bridge::rcef_obj_calc_local_matrix(&mut mem(), obj, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefParProc(par)`.
+    rcefParProc @ 0x0092_f010 => extern "C" fn shim_rcef_par_proc(par: u32) {
+        task::bridge::rcef_par_proc(&mut mem(), par, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefAnimeDraw(anim)`.
+    rcefAnimeDraw @ 0x0092_f290 => extern "C" fn shim_rcef_anime_draw(anim: u32) {
+        let mut w = super::StackFrame::<1>::new();
+        task::bridge::rcef_anime_draw(&mut mem(), anim, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefAnimeProc(anim)`.
+    rcefAnimeProc @ 0x0092_f4f0 => extern "C" fn shim_rcef_anime_proc(anim: u32) {
+        let mut w = super::StackFrame::<1>::new();
+        task::bridge::rcef_anime_proc(&mut mem(), anim, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefModelProc(model)`.
+    rcefModelProc @ 0x0092_f510 => extern "C" fn shim_rcef_model_proc(model: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_model_proc(&mut mem(), model, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefModelProc_0092f770(model)`.
+    rcefModelProc_0092f770 @ 0x0092_f770 => extern "C" fn shim_rcef_model_proc_live(model: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_model_proc_live(&mut mem(), model, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefObjProc(obj)`.
+    rcefObjProc @ 0x0093_0060 => extern "C" fn shim_rcef_obj_proc(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<60>::new();
+        task::bridge::rcef_obj_proc(&mut mem(), obj, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));
