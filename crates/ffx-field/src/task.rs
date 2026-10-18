@@ -286,6 +286,93 @@ pub const VU0_SUB_D720: u32 = 0x0092_d720;
 pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
 /// `rcVec3fNormalize(v)` (`0x00921360`).
 pub const VEC3F_NORMALIZE: u32 = 0x0092_1360;
+/// `get_ptr32_func(p)` (`0x00a44650`).
+pub const GET_PTR32: u32 = 0x00a4_4650;
+/// `set_ptr32(p)` (`0x00a44700`).
+pub const SET_PTR32: u32 = 0x00a4_4700;
+/// `pppStartPart(part, rate, data, set_ups)` (`0x007123c0`).
+pub const PPP_START_PART: u32 = 0x0071_23c0;
+/// `pppSetMatrix(part)` (`0x00717410`).
+pub const PPP_SET_MATRIX: u32 = 0x0071_7410;
+/// `pppAllFreePObject(part)` (`0x00711f20`).
+pub const PPP_ALL_FREE_POBJECT: u32 = 0x0071_1f20;
+/// `rcefRunPart(env, part, arg)` (`0x0092eec0`).
+pub const RUN_PART: u32 = 0x0092_eec0;
+/// `rcefAnimeStep(anim)` (`0x0092f400`).
+pub const ANIME_STEP: u32 = 0x0092_f400;
+/// `g_pppWorldMatrix` (`0x0230ffa0`).
+pub const PPP_WORLD_MATRIX: u32 = 0x0230_ffa0;
+/// `g_pppCameraMatrix` (`0x0230ff60`).
+pub const PPP_CAMERA_MATRIX: u32 = 0x0230_ff60;
+/// `g_pppViewMatrix` (`0x0230ff20`).
+pub const PPP_VIEW_MATRIX: u32 = 0x0230_ff20;
+/// `g_pppViewMatrixCopy` (`0x0230fe20`).
+pub const PPP_VIEW_MATRIX_COPY: u32 = 0x0230_fe20;
+/// The part scale `rcefParProc` writes: three floats at `0x0230fd50`.
+pub const PPP_SCALE: u32 = 0x0230_fd50;
+/// 4096.0 (`f64`, `.rdata`): `rcefParProc`'s colour scale.
+pub const PAR_COLOUR_SCALE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_15c8);
+/// 128.0 (`f64`, `.rdata`): the colour scale of `rcefAnimeDraw` and
+/// `rcefModelProc`.
+pub const COLOUR_128: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b4_c170);
+/// `graphicVFXGetRenderDataByInstance(lo, hi)` (`0x006453d0`).
+pub const VFX_GET_RENDER_DATA: u32 = 0x0064_53d0;
+/// `graphicVFXUpdate(lo, hi)` (`0x006458a0`).
+pub const VFX_UPDATE: u32 = 0x0064_58a0;
+/// `graphicVFXPath3Update(lo, hi)` (`0x00645600`).
+pub const VFX_PATH3_UPDATE: u32 = 0x0064_5600;
+/// `updateVFXRenderDataShp(lo, hi, part, obj, segment)` (`0x0071b8a0`).
+pub const UPDATE_RENDER_DATA_SHP: u32 = 0x0071_b8a0;
+/// `InitVFXRenderDataShp(lo, hi, part, obj, shape, f)` (`0x00711460`).
+pub const INIT_RENDER_DATA_SHP: u32 = 0x0071_1460;
+/// `updateVFXRenderData(lo, hi, part, obj)` (`0x00718610`).
+pub const UPDATE_RENDER_DATA: u32 = 0x0071_8610;
+/// `InitVFXRenderData(lo, hi, part, obj, e)` (`0x00711180`).
+pub const INIT_RENDER_DATA: u32 = 0x0071_1180;
+/// `InitVFXPath3RenderData(lo, hi, part, obj, e)` (`0x00710fd0`).
+pub const INIT_PATH3_RENDER_DATA: u32 = 0x0071_0fd0;
+/// `calculateVFXSP_AlphaFunction(f)` (`0x00712c30`).
+pub const ALPHA_FUNCTION: u32 = 0x0071_2c30;
+/// `calculateVFXSP_ZMat(z)` (`0x00712d00`).
+pub const Z_MAT: u32 = 0x0071_2d00;
+/// `setVfxShapeEnlargeBufferFactor(n)` (`0x00717610`).
+pub const SET_ENLARGE: u32 = 0x0071_7610;
+/// `resetVfxShapeEnlargeBufferFactor()` (`0x00717600`).
+pub const RESET_ENLARGE: u32 = 0x0071_7600;
+/// `rcVu0Add_0092f790(a, b, c)` (`0x0092f790`).
+pub const VU0_ADD_F790: u32 = 0x0092_f790;
+/// `rcVu0Add4_0092f880(a, b, c)` (`0x0092f880`).
+pub const VU0_ADD4_F880: u32 = 0x0092_f880;
+/// `rcbgScaleVector_0092f7f0(dst, v, s)` (`0x0092f7f0`).
+pub const SCALE_VECTOR_F7F0: u32 = 0x0092_f7f0;
+/// `rcMat4fSetScaleVec3f(m, v)` (`0x00925820`).
+pub const SET_SCALE_VEC3F: u32 = 0x0092_5820;
+/// The effects' base matrix (`0x025d59e0`, name ours): flag 0x4000 of
+/// `rcefObjCalcLocalMatrix` multiplies it in.
+pub const RCEF_BASE_MATRIX: u32 = 0x025d_59e0;
+/// 11.38 (`f32`, `.rdata`): an object's rotation units per radian
+/// (`rcefObjCalcLocalMatrix`).
+pub const ROT_UNITS: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b6_78ec);
+/// -1.0 (`f32`, `.rdata`).
+pub const MINUS_ONE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b9_2340);
+/// `rcefVecToField(v)` (`0x0092d7e0`).
+pub const VEC_TO_FIELD: u32 = 0x0092_d7e0;
+/// `Ch_ElemGetBaseMatrix(chr, e, out)` (`0x00833b80`).
+pub const CH_ELEM_GET_BASE_MATRIX: u32 = 0x0083_3b80;
+/// `rcbgScaleVector_0092d780(dst, v, s)` (`0x0092d780`).
+pub const SCALE_VECTOR_D780: u32 = 0x0092_d780;
+/// `rcMat4fSetScale0001(m)` (`0x0092de80`).
+pub const SET_SCALE_0001: u32 = 0x0092_de80;
+/// `MsGetChrPos(i, out)` (`0x007956e0`).
+pub const MS_GET_CHR_POS: u32 = 0x0079_56e0;
+/// `Ch_GetScale(chr, x, y, z)` (`0x0082ad00`).
+pub const CH_GET_SCALE: u32 = 0x0082_ad00;
+/// The base matrix `rcefSetChrBaseMatrix` builds without an output
+/// (`0x0193c090`, name ours: `g_RcefChrBaseMatrix`).
+pub const CHR_BASE_MATRIX: u32 = 0x0193_c090;
+/// -0.001 (`f32`, `.rdata`): the element offset scale of
+/// `rcefCalcChrElemRot*Matrix`.
+pub const MILLI_NEG: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b6_7e20);
 /// `Ch_ClutGetNb(chr)` (`0x0083c9a0`).
 pub const CH_CLUT_GET_NB: u32 = 0x0083_c9a0;
 /// `Ch_ClutGetSize(chr, c)` (`0x0083c9f0`).
@@ -2015,6 +2102,527 @@ pub mod bridge {
                 obj.wrapping_add(0x1b0),
             ],
         )
+    }
+
+    // ---- field agent r2, group D: an effect object's frame ----
+
+    /// The six particle parts `rcefParCreate` keeps (`g_RcefParKept`) and
+    /// the life (`+0x18` of the part body, `> ` when `true`, else `>=`)
+    /// past which `rcefParProc` lets each go.
+    pub const PAR_KEPT: [(u32, u32, bool); 6] = [
+        (0x0193_c0d0, 0x8000, false),
+        (0x0193_c0d8, 0x2_6000, true),
+        (0x0193_c0dc, 0x7000, false),
+        (0x0193_c0e0, 0x3_2000, true),
+        (0x0193_c0e4, 0xa000, false),
+        (0x0193_c0e8, 0x5_0000, false),
+    ];
+
+    /// `rcefParProc(par)` (`0x0092f010`): for a live part (bit 0): the ppp
+    /// environment's three data pointers (`get_ptr32_func` of the data's
+    /// `+0x14..+0x1c`), the part started once (bit 1: `pppStartPart`),
+    /// `pppSetMatrix`, the world matrix from `+0x90`, the scale of
+    /// `+0x94` by `+0x9c..` into `0x0230fd50..`, the colour words of
+    /// `+0x98` (times 4096, toward zero, negative to 0) at `+0x80`, the
+    /// world matrix's row lengths at `+0x70..`, the view matrices, then
+    /// `rcefRunPart`; a finished part (or a kept one past its life,
+    /// [`PAR_KEPT`], which is forgotten) is freed (`pppAllFreePObject`)
+    /// and its flags cleared.
+    #[allow(clippy::too_many_lines)] // the original's steps in turn
+    pub fn rcef_par_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u8>(p) & 1 == 0 {
+            return;
+        }
+        let at = |o: u32| p.wrapping_add(o);
+        let body = at(0x10);
+        let gp = mem.rebase(super::GET_PTR32);
+        for (k, o) in [0x14u32, 0x18, 0x1c].into_iter().enumerate() {
+            let d = mem.read::<u32>(at(4));
+            let v = call(mem, gp, &[mem.read::<u32>(d.wrapping_add(o))]);
+            let env = env_now(mem);
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            mem.write(env.wrapping_add(0x20 + 4 * k as u32), v);
+        }
+        if mem.read::<u8>(p) & 2 == 0 {
+            let d = mem.read::<u32>(at(4));
+            let t = call(mem, gp, &[mem.read::<u32>(d.wrapping_add(0x10))]);
+            let i = mem.read::<u32>(at(8));
+            let v = mem.read::<u32>(t.wrapping_add(i.wrapping_mul(4)));
+            let f = mem.rebase(super::PPP_START_PART);
+            call(mem, f, &[body, 0x1000, v, 1, 0]);
+            let w = mem.read::<u32>(p) | 2;
+            mem.write(p, w);
+        }
+        let f = mem.rebase(super::PPP_SET_MATRIX);
+        call(mem, f, &[body]);
+        let world = mem.rebase(super::PPP_WORLD_MATRIX);
+        let m = mem.read::<u32>(at(0x90));
+        if m != 0 {
+            let f = mem.rebase(super::COPY_MATRIX);
+            call(mem, f, &[world, m]);
+        }
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<u32>(a));
+        if mem.read::<u32>(at(0x94)) != 0 {
+            let dst = mem.rebase(super::PPP_SCALE);
+            for k in 0..3u32 {
+                let q = mem.read::<u32>(at(0x94));
+                let v =
+                    crate::x87::store(ld(mem, at(0x9c + 4 * k)) * ld(mem, q.wrapping_add(4 * k)));
+                mem.write(dst.wrapping_add(4 * k), v);
+            }
+        }
+        if mem.read::<u32>(at(0x98)) != 0 {
+            let k = super::PAR_COLOUR_SCALE.get(mem);
+            for c in 0..4u32 {
+                let s = mem.read::<u32>(at(0x98));
+                let x = ld(mem, s.wrapping_add(4 * c));
+                // fcom 0.0: negative stays 0; NaN converts (to 0x8000_0000)
+                #[allow(clippy::cast_possible_truncation)] // the low word, as the original stores
+                let v = if x < 0.0 {
+                    0
+                } else {
+                    ffx_bridge::x87::cvttsd2si(x * k) as u16
+                };
+                mem.write(at(0x80 + 2 * c), v);
+            }
+        }
+        for (k, row) in [0u32, 0x10, 0x20].into_iter().enumerate() {
+            let len = crate::geom::bridge::rc_vec3f_length(&*mem, world.wrapping_add(row));
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            mem.write(at(0x70 + 4 * k as u32), len.to_bits());
+        }
+        let (view, cam, copy) = (
+            mem.rebase(super::PPP_VIEW_MATRIX),
+            mem.rebase(super::PPP_CAMERA_MATRIX),
+            mem.rebase(super::PPP_VIEW_MATRIX_COPY),
+        );
+        let f = mem.rebase(super::MUL_MATRIX);
+        call(mem, f, &[view, cam, world]);
+        let f = mem.rebase(super::COPY_MATRIX);
+        call(mem, f, &[copy, view]);
+        let f = mem.rebase(super::RUN_PART);
+        let mut done = call(mem, f, &[env_now(mem), body, 0x30]) != 0;
+        if !done {
+            let life = mem.read::<i32>(at(0x18));
+            for (g, limit, strict) in PAR_KEPT {
+                let g = mem.rebase(g);
+                if mem.read::<u32>(g) != p {
+                    continue;
+                }
+                let limit = limit.cast_signed();
+                if (strict && life > limit) || (!strict && life >= limit) {
+                    mem.write(g, 0u32);
+                    done = true;
+                    break;
+                }
+            }
+        }
+        if done {
+            let f = mem.rebase(super::PPP_ALL_FREE_POBJECT);
+            call(mem, f, &[body]);
+            mem.write(p, 0u32);
+        }
+    }
+
+    /// The current ppp environment (`*g_pppEnvSlot`).
+    fn env_now(mem: &impl Mem) -> u32 {
+        let slot = mem.read::<u32>(mem.rebase(crate::abmap::PPP_ENV_SLOT));
+        mem.read::<u32>(slot)
+    }
+
+    /// The colour clamp of `rcefAnimeDraw` and `rcefModelProc`: four
+    /// floats at `c` times 128.0 (`_ftol2_sse`), clamped to 0..=255, as
+    /// bytes at `dst`.
+    fn colour_bytes(mem: &mut impl Mem, c: u32, dst: u32) {
+        let k = super::COLOUR_128.get(mem);
+        for j in 0..4u32 {
+            let x = crate::x87::load(mem.read::<u32>(c.wrapping_add(4 * j)));
+            let v = ffx_bridge::x87::ftol(&*mem, x * k).cast_signed();
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped
+            mem.write(dst.wrapping_add(j), v.clamp(0, 0xff) as u8);
+        }
+    }
+
+    /// `rcefAnimeDraw(anim)` (`0x0092f290`, name ours: the drawing half of
+    /// `rcefAnimeProc`): the shape's matrix (`+0x50` = camera x `+0x48`),
+    /// the colour (`+0x4c`) as bytes at `+0x14`, `+0x24` the VFX packet
+    /// position; then the shape's render data (instance `(0, anim)`):
+    /// updated and drawn when it exists, else created
+    /// (`InitVFXRenderDataShp` with the shape's alpha function, buffers
+    /// enlarged 8 times meanwhile). `work` holds the shape pointer
+    /// (`set_ptr32` of `+4`) the VFX calls take by address.
+    pub fn rcef_anime_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        let at = |o: u32| a.wrapping_add(o);
+        let base = mem.read::<u32>(at(4));
+        let idx = i32::from(mem.read::<i16>(at(0x42))).cast_unsigned();
+        let f = mem.rebase(super::MUL_MATRIX);
+        let cam = mem.rebase(super::PPP_CAMERA_MATRIX);
+        let m = mem.read::<u32>(at(0x48));
+        call(mem, f, &[at(0x50), cam, m]);
+        let c = mem.read::<u32>(at(0x4c));
+        let body = at(0x10);
+        colour_bytes(mem, c, body.wrapping_add(4));
+        let pos = crate::ke::PACKET_POS.get(mem);
+        mem.write(body.wrapping_add(0x14), pos);
+        let off =
+            i32::from(mem.read::<i16>(base.wrapping_add(idx.wrapping_mul(8)).wrapping_add(0x10)));
+        let shape = base.wrapping_add(off.cast_unsigned());
+        let f = mem.rebase(super::SET_PTR32);
+        let w = call(mem, f, &[base]);
+        mem.write(work, w);
+        let f = mem.rebase(super::VFX_GET_RENDER_DATA);
+        let seg = u32::from(mem.read::<u16>(at(0x42)));
+        if call(mem, f, &[0, a]) != 0 {
+            let f = mem.rebase(super::UPDATE_RENDER_DATA_SHP);
+            call(mem, f, &[0, a, work, body, seg]);
+            let f = mem.rebase(super::VFX_UPDATE);
+            call(mem, f, &[0, a]);
+        } else {
+            let d = mem.read::<u32>(shape.wrapping_add(4));
+            let alpha = mem.read::<u8>(d.wrapping_add(shape).wrapping_add(4));
+            let f = mem.rebase(super::ALPHA_FUNCTION);
+            let af = call(mem, f, &[u32::from(alpha)]);
+            let f = mem.rebase(super::SET_ENLARGE);
+            call(mem, f, &[8]);
+            let f = mem.rebase(super::INIT_RENDER_DATA_SHP);
+            call(mem, f, &[0, a, work, body, seg, af]);
+            let f = mem.rebase(super::RESET_ENLARGE);
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `rcefAnimeProc(anim)` (`0x0092f4f0`): a live animation (bit 0) is
+    /// drawn ([`rcef_anime_draw`]) and stepped (`rcefAnimeStep`).
+    pub fn rcef_anime_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u8>(a) & 1 != 0 {
+            rcef_anime_draw(mem, a, work, call);
+            let f = mem.rebase(super::ANIME_STEP);
+            call(mem, f, &[a]);
+        }
+    }
+
+    /// `rcefModelProc(model)` (`0x0092f510`): the model's matrix (`+0x88` =
+    /// camera x `+0x80`), the colour (`+0x84`) as bytes at `+0x28`, `+0x44`
+    /// the VFX packet position, then its render data (instance
+    /// `(g_pppCurrentProgram, model)` as 64 bits): updated
+    /// (`updateVFXRenderData`) and drawn (path 3 with flag 4 of `+0x10`),
+    /// else created with the alpha function (and the z test of `+0x54`
+    /// unless flag 0x2000). `work` is the 0x20-byte block the VFX calls
+    /// take, the model data (`set_ptr32` of `+4`) at `+0x1c`. Returns the
+    /// last VFX call's `eax`.
+    pub fn rcef_model_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let at = |o: u32| m.wrapping_add(o);
+        let body = at(0x10);
+        let f = mem.rebase(super::MUL_MATRIX);
+        let cam = mem.rebase(super::PPP_CAMERA_MATRIX);
+        let src = mem.read::<u32>(at(0x80));
+        call(mem, f, &[at(0x88), cam, src]);
+        let c = mem.read::<u32>(at(0x84));
+        colour_bytes(mem, c, at(0x28));
+        let pos = crate::ke::PACKET_POS.get(mem);
+        mem.write(at(0x44), pos);
+        let f = mem.rebase(super::SET_PTR32);
+        let d = mem.read::<u32>(at(4));
+        let w = call(mem, f, &[d]);
+        mem.write(work.wrapping_add(0x1c), w);
+        let cur = CURRENT_PROGRAM.get(mem);
+        // (cur, m) as a 64-bit sum: m plus cur's sign extension
+        let (lo, hi) = (cur, m.wrapping_sub(u32::from(cur.cast_signed() < 0)));
+        let path3 = |mem: &M| mem.read::<u8>(body) & 4 != 0;
+        let f = mem.rebase(super::VFX_GET_RENDER_DATA);
+        if call(mem, f, &[lo, hi]) != 0 {
+            let f = mem.rebase(super::UPDATE_RENDER_DATA);
+            call(mem, f, &[lo, hi, work, body]);
+            let f = if path3(mem) {
+                super::VFX_PATH3_UPDATE
+            } else {
+                super::VFX_UPDATE
+            };
+            let f = mem.rebase(f);
+            call(mem, f, &[lo, hi])
+        } else {
+            let alpha = u32::from(mem.read::<u8>(at(0x18)));
+            let f = mem.rebase(super::ALPHA_FUNCTION);
+            let mut e = call(mem, f, &[alpha]);
+            if mem.read::<u32>(body) & 0x2000 == 0 {
+                let f = mem.rebase(super::Z_MAT);
+                let z = mem.read::<u32>(at(0x54));
+                e |= call(mem, f, &[z]);
+            }
+            let f = if path3(mem) {
+                super::INIT_PATH3_RENDER_DATA
+            } else {
+                super::INIT_RENDER_DATA
+            };
+            let f = mem.rebase(f);
+            call(mem, f, &[lo, hi, work, body, e])
+        }
+    }
+
+    /// `rcefModelProc_0092f770(model)` (`0x0092f770`): [`rcef_model_proc`]
+    /// for a live model (bit 0, a tail call); else returns the model.
+    pub fn rcef_model_proc_live<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        if mem.read::<u8>(m) & 1 == 0 {
+            return m;
+        }
+        rcef_model_proc(mem, m, work, call)
+    }
+
+    /// `rcefObjCalcLocalMatrix(obj)` (`0x0092f9d0`): the object's motion
+    /// step (`rcVu0Add_0092f790`: rotation `+0xd0` += `+0xe0` += `+0xf0`,
+    /// position `+0x100` += `+0x110` += `+0x120`, scale `+0x130` += `+0x140`
+    /// += `+0x150`; `rcVu0Add4_0092f880`: colour `+0x170` += `+0x180` +=
+    /// `+0x190`), then the local matrix `+0x1b0`: scale, flag 0x2000 a
+    /// facing from the speed `+0xe0` (normalised times -1, crossed with
+    /// up), flag 0x4000 the z turn kept and the base matrix
+    /// `0x025d59e0`, rotation `+0x100` times 11.38 (`.rdata` `f32`) at
+    /// position `+0xd0` (`op_rt_m_yxz`). `work` is 0xf0 bytes (the
+    /// original's frame: three matrices and three vectors).
+    #[allow(clippy::too_many_lines)] // the original's steps in turn
+    pub fn rcef_obj_calc_local_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        let at = |x: u32| o.wrapping_add(x);
+        let w = |x: u32| work.wrapping_add(x);
+        let (m3, m2, m1, c, b, a) = (w(0), w(0x40), w(0x80), w(0xc0), w(0xd0), w(0xe0));
+        let (e, d) = (w(0x90), w(0xa0));
+        let add = mem.rebase(super::VU0_ADD_F790);
+        for (dst, src) in [
+            (0xe0u32, 0xf0u32),
+            (0xd0, 0xe0),
+            (0x110, 0x120),
+            (0x100, 0x110),
+            (0x140, 0x150),
+            (0x130, 0x140),
+        ] {
+            call(mem, add, &[at(dst), at(dst), at(src)]);
+        }
+        let add4 = mem.rebase(super::VU0_ADD4_F880);
+        call(mem, add4, &[at(0x180), at(0x180), at(0x190)]);
+        call(mem, add4, &[at(0x170), at(0x170), at(0x180)]);
+        let scale = mem.rebase(super::SCALE_VECTOR_F7F0);
+        let k = crate::x87::copy(super::ROT_UNITS.get(mem));
+        call(mem, scale, &[a, at(0x100), k]);
+        let unit = mem.rebase(super::UNIT_MATRIX);
+        call(mem, unit, &[at(0x1b0)]);
+        call(mem, unit, &[m2]);
+        let f = mem.rebase(super::SET_SCALE_VEC3F);
+        call(mem, f, &[m2, at(0x130)]);
+        let rt = mem.rebase(super::OP_RT_M_YXZ);
+        let mul = mem.rebase(super::MUL_MATRIX);
+        let norm = mem.rebase(super::VEC3F_NORMALIZE);
+        let flags = |mem: &M| mem.read::<u32>(at(0xbc));
+        let zero4 = |mem: &mut M, v: u32| {
+            for k in 0..4 {
+                mem.write(v.wrapping_add(4 * k), 0u32);
+            }
+        };
+        if flags(mem) & 0x2000 != 0 {
+            call(mem, unit, &[m1]);
+            call(mem, unit, &[m3]);
+            zero4(mem, c);
+            call(mem, rt, &[m3, m2, a, c]);
+            zero4(mem, a);
+            let minus = crate::x87::copy(super::MINUS_ONE.get(mem));
+            call(mem, scale, &[c, at(0xe0), minus]);
+            call(mem, norm, &[c]);
+            let f = mem.rebase(super::COPY_QWORD_F850);
+            call(mem, f, &[d, c]);
+            for (k, v) in (0u32..).zip([0, minus, 0, 0]) {
+                mem.write(b.wrapping_add(4 * k), v);
+            }
+            let cross = mem.rebase(super::VEC3F_MUL);
+            call(mem, cross, &[m1, c, b]);
+            call(mem, norm, &[m1]);
+            call(mem, cross, &[e, m1, d]);
+            call(mem, norm, &[e]);
+            call(mem, mul, &[m2, m1, m3]);
+        }
+        if flags(mem) & 0x4000 != 0 {
+            mem.write(a.wrapping_add(4), 0u32);
+            mem.write(a, 0u32);
+            call(mem, unit, &[m1]);
+            zero4(mem, b);
+            call(mem, rt, &[m1, m1, a, b]);
+            call(mem, mul, &[m2, m1, m2]);
+            let base = mem.rebase(super::RCEF_BASE_MATRIX);
+            call(mem, mul, &[m2, base, m2]);
+            mem.write(a.wrapping_add(8), 0u32);
+        }
+        call(mem, rt, &[at(0x1b0), m2, a, at(0xd0)]);
+    }
+
+    /// `rcefObjProc(obj)` (`0x00930060`): the local and world matrices,
+    /// then the part (`+0x280`), the animation (`+0x330`) and the model
+    /// (`+0x3c0`, a tail call whose `eax` it returns). `work` is 0xf0
+    /// bytes.
+    pub fn rcef_obj_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcef_obj_calc_local_matrix(mem, o, work, call);
+        rcef_obj_calc_world_matrix(mem, o, work, call);
+        rcef_par_proc(mem, o.wrapping_add(0x280), call);
+        rcef_anime_proc(mem, o.wrapping_add(0x330), work, call);
+        rcef_model_proc_live(mem, o.wrapping_add(0x3c0), work, call)
+    }
+
+    // ---- field agent r2, group E: character matrices for effects ----
+
+    /// The common start of `rcefCalcChrElemRotBaseMatrix` and
+    /// `rcefCalcChrElemRotMatrix`: in `work` (0x130 bytes: four matrices
+    /// and two vectors at `+0x100`, `+0x110`), `r` = the turn by `v`
+    /// (copied, `rcefVecToField`) of identity `m`, then the element's base
+    /// matrix into `b` and the identity `t` given `b`'s translation times
+    /// -0.001 (`.rdata` `f32`). Returns `(h, r, b, t)`.
+    fn elem_rot_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, v]: [u32; 3],
+        [r, m, t, b]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let unit = mem.rebase(super::UNIT_MATRIX);
+        call(mem, unit, &[r]);
+        call(mem, unit, &[m]);
+        let (va, vz) = (work.wrapping_add(0x100), work.wrapping_add(0x110));
+        let f = mem.rebase(super::COPY_QWORD_D6F0);
+        call(mem, f, &[va, v]);
+        let f = mem.rebase(super::VEC_TO_FIELD);
+        call(mem, f, &[va]);
+        for k in 0..4 {
+            mem.write(vz.wrapping_add(4 * k), 0u32);
+        }
+        let f = mem.rebase(super::OP_RT_M_YXZ);
+        call(mem, f, &[r, m, va, vz]);
+        call(mem, unit, &[t]);
+        let f = mem.rebase(super::CH_ELEM_GET_BASE_MATRIX);
+        call(mem, f, &[h, e, b]);
+        let k = crate::x87::copy(super::MILLI_NEG.get(mem));
+        let f = mem.rebase(super::SCALE_VECTOR_D780);
+        call(mem, f, &[t.wrapping_add(0x30), b.wrapping_add(0x30), k]);
+        h
+    }
+
+    /// `rcefCalcChrElemRotBaseMatrix(i, e, out, v)` (`0x0092d8c0`, Switch
+    /// name by layout): `out` = 0.001 scale x the element's base position
+    /// (negated, x 0.001) x the turn by `v`. `work` is 0x130 bytes.
+    pub fn rcef_calc_chr_elem_rot_base_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, out, v]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        let (r, t, m) = (work, work.wrapping_add(0x40), work.wrapping_add(0x80));
+        elem_rot_start(mem, [i, e, v], [r, m, t, m], work, call);
+        let f = mem.rebase(super::SET_SCALE_0001);
+        call(mem, f, &[out]);
+        let mul = mem.rebase(super::MUL_MATRIX);
+        call(mem, mul, &[out, t, out]);
+        call(mem, mul, &[out, r, out]);
+    }
+
+    /// `rcefCalcChrElemRotMatrix(i, e, out, v)` (`0x0092d9a0`, Switch name
+    /// by layout): as [`rcef_calc_chr_elem_rot_base_matrix`] with the turn
+    /// about the element (moved there and back, the inverse translation
+    /// negated through `fchs`), then placed at the character's position
+    /// (`MsGetChrPos`). `work` is 0x130 bytes.
+    pub fn rcef_calc_chr_elem_rot_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, out, v]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        let (r, b, t, p) = (
+            work,
+            work.wrapping_add(0x40),
+            work.wrapping_add(0x80),
+            work.wrapping_add(0xc0),
+        );
+        elem_rot_start(mem, [i, e, v], [r, b, t, b], work, call);
+        let unit = mem.rebase(super::UNIT_MATRIX);
+        call(mem, unit, &[p]);
+        let f = mem.rebase(super::MS_GET_CHR_POS);
+        call(mem, f, &[i, p.wrapping_add(0x30)]);
+        let f = mem.rebase(super::SET_SCALE_0001);
+        call(mem, f, &[out]);
+        let mul = mem.rebase(super::MUL_MATRIX);
+        call(mem, mul, &[out, t, out]);
+        call(mem, mul, &[out, r, out]);
+        for k in 0..3 {
+            let a = t.wrapping_add(0x30 + 4 * k);
+            let x = crate::x87::copy(mem.read::<u32>(a)) ^ 0x8000_0000;
+            mem.write(a, x);
+        }
+        call(mem, mul, &[out, t, out]);
+        call(mem, mul, &[out, p, out]);
+    }
+
+    /// `rcefSetChrBaseMatrix(i, m, out)` (`0x0092e830`, Switch name by
+    /// layout): `m` (into `out`, or `0x0193c090` without one) with its rows
+    /// scaled by the character's scale times its data scale
+    /// (`Ch_GetScale`, `Ch_GetDataScale`), made the character's base
+    /// matrix (`Ch_SetOrgMatrix`). `work` holds the three scale floats.
+    pub fn rcef_set_chr_base_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, m, out]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let s = f64::from(ffx_chara::chr::bridge::ch_get_data_scale(&*mem, h));
+        let (x, y, z) = (work, work.wrapping_add(4), work.wrapping_add(8));
+        let f = mem.rebase(super::CH_GET_SCALE);
+        call(mem, f, &[h, x, y, z]);
+        let mut k = [0u32; 3];
+        for (j, a) in [x, y, z].into_iter().enumerate() {
+            k[j] = crate::x87::store(crate::x87::load(mem.read::<u32>(a)) * s);
+            mem.write(a, k[j]);
+        }
+        let dst = if out == 0 {
+            mem.rebase(super::CHR_BASE_MATRIX)
+        } else {
+            out
+        };
+        let f = mem.rebase(super::COPY_MATRIX);
+        call(mem, f, &[dst, m]);
+        let f = mem.rebase(super::SCALE_VECTOR_D690);
+        for (j, kj) in (0u32..).zip(k) {
+            let row = dst.wrapping_add(0x10 * j);
+            call(mem, f, &[row, row, kj]);
+        }
+        let f = mem.rebase(super::CH_SET_ORG_MATRIX);
+        call(mem, f, &[h, dst]);
     }
 }
 

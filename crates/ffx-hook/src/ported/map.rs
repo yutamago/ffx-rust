@@ -2626,6 +2626,88 @@ ported! {
     rcefChgChrClut @ 0x0092_dd30 => extern "C" fn shim_rcef_chg_chr_clut(i: u32, add: u32, mul: u32) -> u32 {
         task::bridge::rcef_chg_chr_clut(&mut mem(), i, add, mul, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcefObjCalcLocalMatrix(obj)` (field agent r2, group D).
+    rcefObjCalcLocalMatrix @ 0x0092_f9d0 => extern "C" fn shim_rcef_obj_calc_local_matrix(obj: u32) {
+        let mut w = super::StackFrame::<60>::new();
+        task::bridge::rcef_obj_calc_local_matrix(&mut mem(), obj, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefParProc(par)`.
+    rcefParProc @ 0x0092_f010 => extern "C" fn shim_rcef_par_proc(par: u32) {
+        task::bridge::rcef_par_proc(&mut mem(), par, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefAnimeDraw(anim)`.
+    rcefAnimeDraw @ 0x0092_f290 => extern "C" fn shim_rcef_anime_draw(anim: u32) {
+        let mut w = super::StackFrame::<1>::new();
+        task::bridge::rcef_anime_draw(&mut mem(), anim, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefAnimeProc(anim)`.
+    rcefAnimeProc @ 0x0092_f4f0 => extern "C" fn shim_rcef_anime_proc(anim: u32) {
+        let mut w = super::StackFrame::<1>::new();
+        task::bridge::rcef_anime_proc(&mut mem(), anim, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefModelProc(model)`.
+    rcefModelProc @ 0x0092_f510 => extern "C" fn shim_rcef_model_proc(model: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_model_proc(&mut mem(), model, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefModelProc_0092f770(model)`.
+    rcefModelProc_0092f770 @ 0x0092_f770 => extern "C" fn shim_rcef_model_proc_live(model: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_model_proc_live(&mut mem(), model, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefObjProc(obj)`.
+    rcefObjProc @ 0x0093_0060 => extern "C" fn shim_rcef_obj_proc(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<60>::new();
+        task::bridge::rcef_obj_proc(&mut mem(), obj, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefCalcChrElemRotBaseMatrix(i, e, out, v)` (field agent r2, group E).
+    rcefCalcChrElemRotBaseMatrix @ 0x0092_d8c0 => extern "C" fn shim_rcef_calc_chr_elem_rot_base_matrix(i: u32, e: u32, out: u32, v: u32) {
+        let mut w = super::StackFrame::<76>::new();
+        task::bridge::rcef_calc_chr_elem_rot_base_matrix(&mut mem(), [i, e, out, v], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefCalcChrElemRotMatrix(i, e, out, v)`.
+    rcefCalcChrElemRotMatrix @ 0x0092_d9a0 => extern "C" fn shim_rcef_calc_chr_elem_rot_matrix(i: u32, e: u32, out: u32, v: u32) {
+        let mut w = super::StackFrame::<76>::new();
+        task::bridge::rcef_calc_chr_elem_rot_matrix(&mut mem(), [i, e, out, v], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefSetChrBaseMatrix(i, m, out)`.
+    rcefSetChrBaseMatrix @ 0x0092_e830 => extern "C" fn shim_rcef_set_chr_base_matrix(i: u32, m: u32, out: u32) {
+        let mut w = super::StackFrame::<4>::new();
+        task::bridge::rcef_set_chr_base_matrix(&mut mem(), [i, m, out], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgFPmStartList(list, n)`.
+    rcbgFPmStartList @ 0x0092_23b0 => extern "C" fn shim_rcbg_fpm_start_list(list: u32, n: i32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        model::bridge::rcbg_fpm_start_list(&mut mem(), list, n, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPm097Proc000(obj)`.
+    rcbgFPm097Proc000 @ 0x0092_25d0 => extern "C" fn shim_rcbg_fpm097_proc000(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        model::bridge::rcbg_fpm_start(&mut mem(), obj, model::FPM097_START, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPm565Proc000(obj)`.
+    rcbgFPm565Proc000 @ 0x0092_2fb0 => extern "C" fn shim_rcbg_fpm565_proc000(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        model::bridge::rcbg_fpm_start(&mut mem(), obj, model::FPM565_START, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgGuideUpdateWalk(guide, m, p)` (field agent r2, group F).
+    rcbgGuideUpdateWalk @ 0x0091_ecb0 => extern "C" fn shim_rcbg_guide_update_walk(g: u32, m: u32, p: u32) {
+        let mut w = super::StackFrame::<44>::new();
+        guide::bridge::rcbg_guide_update_walk(&mut mem(), [g, m, p], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgGuideDrawPlayer(guide, a, b, rect, _, alpha, p, q, dir, smooth)`.
+    rcbgGuideDrawPlayer @ 0x0091_cf10 => extern "C" fn shim_rcbg_guide_draw_player(
+        g: u32, a: u32, b: u32, rect: u32, _unused: u32, alpha: u32, p: u32, q: u32, dir: u32, smooth: u32
+    ) -> u32 {
+        let mut w = super::StackFrame::<32>::new();
+        guide::bridge::rcbg_guide_draw_player(
+            &mut mem(),
+            [g, a, b, rect, alpha, p, q, dir, smooth],
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));
@@ -4214,6 +4296,14 @@ fn call_float(f: u32, args: camera::FArgs<'_>) -> f64 {
                 usize,
                 unsafe extern "C" fn(u32, u32) -> f32,
             >(f as usize)(a, b))
+        },
+        // SAFETY: a cdecl function of three words returning a float
+        // (`Math_AngleStep`); the declared `f32` return pops ST0.
+        camera::FArgs::Stack(&[a, b, c]) => unsafe {
+            f64::from(std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32) -> f32,
+            >(f as usize)(a, b, c))
         },
         camera::FArgs::Stack(a) => {
             crate::log::log(&format!("map: no float call of {} words", a.len()));
