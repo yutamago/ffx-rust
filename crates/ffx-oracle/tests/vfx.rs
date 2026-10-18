@@ -13173,3 +13173,78 @@ fn round28b_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round28c_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_a690);
+        let hist = p.alloc(4);
+        // TkGetControlerHist answers from a cell; 0x007ec4f0 (an import
+        // jump) and KaGDebFirstCall recorded; Sg_GetDBuffDC and
+        // op_gs1_init run
+        deref_recorder_with(&mut p, 0x0088_8d70, &[0, 0, 0], Some(hist));
+        deref_recorder(&mut p, 0x007e_c4f0, &[]);
+        deref_recorder(&mut p, 0x00a5_bd80, &[]);
+        // op_gs1_init (0x007eb570) replaced by a stub that logs the two
+        // environment halves it may read (+0x60, +0x120) and the flag
+        let gs_log = p.alloc(0xc4);
+        let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x83, 0xc6, 0x60, 0xbf];
+        c.extend(gs_log.to_le_bytes());
+        c.extend([0xb9, 0x18, 0, 0, 0, 0xf3, 0xa5]);
+        c.extend([0x8b, 0x74, 0x24, 0x0c, 0x81, 0xc6, 0x20, 0x01, 0, 0]);
+        c.extend([0xb9, 0x18, 0, 0, 0, 0xf3, 0xa5]);
+        c.extend([0x8b, 0x44, 0x24, 0x10, 0x89, 0x07, 0x5f, 0x5e, 0xc3]);
+        let at = p.sym(0x007e_b570);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let frame = p.b.stack_range().start + 0x100;
+        let camera = p.sym(0x0230_ff60);
+        let dc = p.sym(0x012f_b900);
+        let part = p.alloc(0x80);
+        for round in 0..2000 {
+            // pppFpSetWoodMatrix
+            for i in 0..16 {
+                let v = if rng.chance(10) { 0 } else { rng.float() };
+                p.set(camera + 4 * i, v);
+            }
+            p.check(
+                &format!("pppFpSetWoodMatrix round {round}"),
+                0x0072_a690,
+                &[],
+                |m| Some(fp::bridge::ppp_fp_set_wood_matrix(m, frame)),
+            );
+            // pppFpSetRotMatrix
+            p.fill(part, 0x80, &mut rng);
+            for at in (0x40..0x6c).step_by(4) {
+                let v = rng.float();
+                p.set(part + at, v);
+            }
+            let mode = rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, 0xff, 0x101]);
+            p.check(
+                &format!("pppFpSetRotMatrix({mode:#x}) round {round}"),
+                0x0072_a2e0,
+                &[part, mode],
+                |m| Some(mat::bridge::ppp_fp_set_rot_matrix(m, part, mode)),
+            );
+            // op_loop_ffx_after
+            if round % 4 == 0 {
+                p.fill(dc, 0x200, &mut rng);
+                p.fill(p.sym(0x023c_bbf0), 4, &mut rng);
+                p.fill(p.sym(0x0233_28d0), 8, &mut rng);
+                p.fill(p.sym(0x0233_2e80), 0x14, &mut rng);
+                p.put(op::bridge::DEBUG_MODE, u8::from(rng.chance(50)));
+                p.set(hist, rng.next());
+                p.check(
+                    &format!("op_loop_ffx_after round {round}"),
+                    0x007f_f680,
+                    &[],
+                    |m| {
+                        op::bridge::op_loop_ffx_after(m, frame, &mut call_original);
+                        None
+                    },
+                );
+            }
+        }
+    }
+}

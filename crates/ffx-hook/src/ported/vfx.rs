@@ -1969,6 +1969,30 @@ ported! {
         let at = frame.at();
         op::bridge::op_rot_m_y_apply(&mut mem(), dst, src, angle, at, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppFpSetWoodMatrix()`.
+    pppFpSetWoodMatrix @ 0x0072_a690 => extern "C" fn ppp_fp_set_wood_matrix() -> u32 {
+        // the original's three local vectors
+        let mut frame = super::StackFrame::<12>::new();
+        let at = frame.at();
+        fp::bridge::ppp_fp_set_wood_matrix(&mut mem(), at)
+    }
+    /// `pppFpSetRotMatrix(part, mode)`.
+    pppFpSetRotMatrix @ 0x0072_a2e0 => extern "C" fn ppp_fp_set_rot_matrix(part: u32, mode: u32) -> u32 {
+        mat::bridge::ppp_fp_set_rot_matrix(&mut mem(), part, mode)
+    }
+    /// `op_loop_ffx_after()`.
+    op_loop_ffx_after @ 0x007f_f680 => extern "C" fn op_loop_ffx_after() {
+        // the original's locals (the frame number, then the GS environment
+        // at a 16-byte boundary, as its aligned frame has them): with an
+        // unaligned environment the game crashed in the replays
+        #[repr(C, align(16))]
+        struct Locals([u32; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let at = locals.0.as_mut_ptr() as u32 + 0xc;
+        op::bridge::op_loop_ffx_after(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

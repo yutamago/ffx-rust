@@ -420,6 +420,38 @@ pub mod bridge {
         vu0::matrix_copy(mem, r(mem, VIEW_MATRIX_COPY), view)
     }
 
+    /// `pppFpSetWoodMatrix()` (`0x0072a690`): `g_pppFpWoodMatrix`, the
+    /// camera-facing rotation the "wood" effects draw with
+    /// ([`ppp_fp_set_draw_matrix`] mode 2), built in `frame` (0x30 bytes,
+    /// the original's three local vectors): row 1 = the camera matrix's
+    /// row 1 (`w` 0) normalized, row 0 = its (`y`, `-x`, 0, 0)
+    /// normalized, row 2 = row 0 x row 1 normalized, row 3 = the camera's
+    /// position row (`FFXVu0Normalize`, `FFXVu0CopyVector`,
+    /// `FFXVu0OuterProduct`). Returns the last copy's eax (the position's
+    /// `w`).
+    pub fn ppp_fp_set_wood_matrix(mem: &mut impl Mem, frame: u32) -> u32 {
+        use crate::x87::load;
+        use ffx_ps2::vu0::bridge as vu0;
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let (side, up, fwd) = (frame, frame + 0x10, frame + 0x20);
+        let wood = r(mem, FP_WOOD_MATRIX);
+        let cam: [u32; 3] = mem.read(r(mem, CAMERA_MATRIX) + 0x10);
+        mem.write(up, [load(cam[0]), load(cam[1]), load(cam[2]), 0]);
+        vu0::normalize(mem, up, up);
+        vu0::copy_vector(mem, wood + 0x10, up);
+        let [x, y]: [u32; 2] = mem.read(up);
+        mem.write(side, [load(y), load(x) ^ 0x8000_0000, 0, 0]);
+        vu0::normalize(mem, side, side);
+        vu0::copy_vector(mem, wood, side);
+        vu0::outer_product(mem, fwd, side, up);
+        vu0::normalize(mem, fwd, fwd);
+        vu0::copy_vector(mem, wood + 0x20, fwd);
+        let pos = r(mem, CAMERA_MATRIX) + 0x30;
+        vu0::copy_vector(mem, wood + 0x30, pos)
+    }
+
     /// `g_pppFpHeapDisplaySet` (`0x00cec218`): set by
     /// `pppFpInitHeapDisplay` and [`ppp_set_fp_pdt`]; `pppPartLoop` runs
     /// `pppFpInitHeapDisplay` while it is 0.
