@@ -1405,6 +1405,36 @@ ported! {
     CdReadDirect_0076d140 @ 0x0076_d140 => extern "C" fn cd_read_direct(sector: u32, size: u32, buffer: u32, mode: u32) -> u32 {
         cd::bridge::read_direct(&mut mem(), [sector, size, buffer, mode], call_sym)
     }
+    /// `CdSetModule_0076c510(m)`.
+    CdSetModule_0076c510 @ 0x0076_c510 => extern "C" fn cd_set_module(m: i32) -> i32 {
+        cd::bridge::cd_set_module(&mut mem(), m, call_sym)
+    }
+    /// `PcFileTblSet(path)`.
+    PcFileTblSet @ 0x00a4_2b70 => extern "C" fn pc_file_tbl_set(path: u32) -> u32 {
+        cd::bridge::pc_file_tbl_set(&mut mem(), path, call_sym)
+    }
+    /// `TOBtlOpenSignWindow(id)`.
+    TOBtlOpenSignWindow @ 0x0089_8c60 => extern "C" fn to_btl_open_sign_window(id: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        tolib::bridge::btl_open_sign_window(&mut mem(), id, scratch, call_sym)
+    }
+    /// `TOGetTextWidth_008b8040(text)`.
+    TOGetTextWidth_008b8040 @ 0x008b_8040 => extern "C" fn to_get_text_width_inter_mode(text: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        tolib::bridge::text_width_inter_mode(&mut mem(), text, scratch, call_sym)
+    }
+    /// `TOGetColonWidth_008dfe20(font)`.
+    TOGetColonWidth_008dfe20 @ 0x008d_fe20 => extern "C" fn to_get_colon_width(font: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tolib::bridge::colon_width(&mut mem(), font, scratch, call_sym)
+    }
+    /// `Vec3At24_0061a7f0(out)`.
+    Vec3At24_0061a7f0 @ 0x0061_a7f0 => extern "thiscall" fn vec3_at_24(this: u32, out: u32) -> u32 {
+        accessor::bridge::vec3_at_24(&mut mem(), this, out)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

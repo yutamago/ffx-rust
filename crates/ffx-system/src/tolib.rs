@@ -12169,4 +12169,72 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// `MsGetComData(id, &strings)` (battle module) and
+    /// `TOBtlOpenSimpleHelpMes(i, message)`.
+    pub const MS_GET_COM_DATA: u32 = 0x0079_a4b0;
+    pub const OPEN_SIMPLE_HELP: u32 = 0x0089_dba0;
+    /// `TOGetFontWidthInterMode(text, font, &width)`.
+    pub const FONT_WIDTH_INTER_MODE: u32 = 0x008b_7be0;
+
+    /// `TOBtlOpenSignWindow(id)` (`0x00898c60`): when command `id`'s
+    /// record (`MsGetComData(id as u16, &strings)`, `strings` in
+    /// `scratch`) has bit 2 of its `+0x1c`, opens simple help window 1
+    /// on its name (`u16 +0` + `strings`) and returns 1; else 0.
+    pub fn btl_open_sign_window<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let record = call(mem, MS_GET_COM_DATA, &[id & 0xffff, scratch]);
+        if mem.read::<u8>(record.wrapping_add(0x1c)) & 4 == 0 {
+            return 0;
+        }
+        let strings: u32 = mem.read(scratch);
+        let name = u32::from(mem.read::<u16>(record)).wrapping_add(strings);
+        call(mem, OPEN_SIMPLE_HELP, &[1, name]);
+        1
+    }
+
+    /// `TOGetTextWidth_008b8040(text)`: the sum of the words
+    /// `TOGetFontWidthInterMode(p, 0, &w)` writes while it steps `p`
+    /// through the text (until a NUL), added as integers (the callee's
+    /// width is an `f32`, as for [`text_width`]; the original adds its
+    /// bits). `w` lives in `scratch`, which
+    /// starts as `text` (the original's argument slot) and keeps its last
+    /// value when a call leaves it.
+    pub fn text_width_inter_mode<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(scratch, text);
+        let mut sum = 0u32;
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            p = call(mem, FONT_WIDTH_INTER_MODE, &[p, 0, scratch]);
+            sum = sum.wrapping_add(mem.read(scratch));
+        }
+        sum
+    }
+
+    /// `TOGetColonWidth_008dfe20(font)`: the width
+    /// `TOGetFontWidthInterMode(":", font, &w)` gives (`w` from 0.0, an
+    /// `f32`), truncated by `ftol2_sse`. `scratch` holds the `':'` (byte
+    /// `+0`) and `w` (`+4`).
+    pub fn colon_width<M: Mem>(
+        mem: &mut M,
+        font: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let width = scratch.wrapping_add(4);
+        mem.write(width, 0.0f32);
+        mem.write(scratch, b':');
+        call(mem, FONT_WIDTH_INTER_MODE, &[scratch, font, width]);
+        let w: f32 = mem.read(width);
+        ffx_bridge::x87::ftol(mem, ffx_bridge::x87::load(w.to_bits()))
+    }
 }

@@ -1403,3 +1403,23 @@ pushed as literals (no relocation entries), not addresses.
   and `FlushCache(0)`, and returns `sceCdRead(sector, size / 2048, buffer,
   mode)` (signed division); with `g_FFXHddMode` set it prints
   `"sceCdRead()"` between rules.
+- `CdSetModule_0076c510(m)` selects CD module `m`: `g_CdLib_FileBase` =
+  the `i16` entry `m` of `[0x02310c6c]`, `0x02310c64 = m`; a negative
+  first file stores 0 and returns -1. Before `sa_file_read_init`
+  (`0x01128a85` clear) it calls `movie_err("sa_file_read_init!=0",
+  libmscd.c, 0x594)` first.
+- `PcFileTblSet(path)` frees the old PC file-name table `0x02310c70`
+  (`user_free_thunk`) and loads `0x00a42ab0(path, 0)` in its place.
+- `TOBtlOpenSignWindow(id)` opens simple help window 1 on command `id`'s
+  name (`MsGetComData(id as u16, &strings)`: `u16 +0` + `strings`) when
+  bit 2 of the record's `+0x1c` is set (returns 1), else returns 0.
+- `TOGetTextWidth_008b8040(text)` adds up the words
+  `TOGetFontWidthInterMode(p, 0, &w)` writes while stepping through the
+  text, as integers, although that width is an `f32` (`0x008b70c0` reads
+  the same callee family's width as a float). `&w` is the function's own
+  argument slot, so a call that writes nothing adds the previous word (at
+  first the text pointer). `TOGetColonWidth_008dfe20(font)` measures
+  `":"` the same way (as an `f32` from 0.0) and returns it through
+  `ftol2_sse`.
+- `Vec3At24_0061a7f0(out)` (thiscall, `ret 4`) copies the three floats
+  at `+0x24` to `out` and returns `out`.

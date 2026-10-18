@@ -18861,3 +18861,195 @@ fn round33_cd_queue_matches_the_original_on_the_snapshot() {
     };
     round33_cd_queue(&mut a, &mut b, &mut Xorshift(0x4033_0062));
 }
+
+/// Round 33 group G: `CdSetModule_0076c510`, `PcFileTblSet`,
+/// `TOBtlOpenSignWindow` and the two width helpers over logging
+/// stand-ins (out-pointer arguments are not logged: the original's point
+/// into its stack).
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines
+)]
+fn round33_small(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use cd::bridge as c;
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 8);
+    // TOGetFontWidthInterMode: copies its text's first byte to
+    // [cells + 0x1c], writes [cells + 0xc] through its third argument and
+    // returns its first plus [cells + 0x10]
+    // (mov eax, [esp+4]; movzx eax, byte [eax]; mov [cells + 0x1c], eax)
+    let mut width = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0xa3];
+    width.extend_from_slice(&(cells + 0x1c).to_le_bytes());
+    width.extend(store_through(2, cells + 0xc));
+    width.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x03, 0x05]);
+    width.extend_from_slice(&(cells + 0x10).to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (c::MOVIE_ERR, vec![0, 1, 2], vec![], vec![]),
+        (c::USER_FREE, vec![0], vec![], vec![]),
+        (c::READ_FILE_TABLE, vec![0, 1], vec![], ret_cell(cells)),
+        (
+            t::MS_GET_COM_DATA,
+            vec![0],
+            vec![],
+            [store_through(1, cells + 4), ret_cell(cells + 8)].concat(),
+        ),
+        (t::OPEN_SIMPLE_HELP, vec![0, 1], vec![], vec![]),
+        (t::FONT_WIDTH_INTER_MODE, vec![1], vec![], width),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let modules = alloc(a, b, 0x40);
+    let init = a.rebase(c::READ_INIT_DONE);
+    let saved_table = c::MODULE_FILES.get(a);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        set(a, b, c::MODULE_FILES, modules);
+        let firsts: [i16; 16] =
+            std::array::from_fn(|_| [0i16, 5, 0x7fff, -1, -0x8000, 300][(rng.next() % 6) as usize]);
+        put(a, b, modules, firsts);
+        put(a, b, init, (rng.next() % 2) as u8);
+        let m = (rng.next() % 16).cast_signed();
+        assert_eq!(
+            eax(a, 0x0076_c510, &[m.cast_unsigned()]).cast_signed(),
+            c::cd_set_module(b, m, call),
+            "module {k}"
+        );
+        same_memory(&format!("module {k}"), a, b);
+    }
+    set(a, b, c::MODULE_FILES, saved_table);
+    let saved = c::PC_FILE_TABLE.get(a);
+    for k in 0..50u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        set(
+            a,
+            b,
+            c::PC_FILE_TABLE,
+            [0, rng.next()][(rng.next() % 2) as usize],
+        );
+        let path = rng.next();
+        assert_eq!(
+            eax(a, 0x00a4_2b70, &[path]),
+            c::pc_file_tbl_set(b, path, call),
+            "tbl set {k}"
+        );
+        same_memory(&format!("tbl set {k}"), a, b);
+    }
+    set(a, b, c::PC_FILE_TABLE, saved);
+    let record = alloc(a, b, 0x20);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, record, rng.next() as u16);
+        put(a, b, record + 0x1c, rng.next() as u8);
+        put(a, b, cells + 4, rng.next());
+        put(a, b, cells + 8, record);
+        let id = rng.next();
+        assert_eq!(
+            eax(a, 0x0089_8c60, &[id]),
+            t::btl_open_sign_window(b, id, scratch, call),
+            "sign {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("sign {k}"), a, b);
+    }
+    let text = alloc(a, b, 0x40);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        let bytes: [u8; 0x20] = std::array::from_fn(|i| {
+            if i == 0x1f || rng.next().is_multiple_of(6) {
+                0
+            } else {
+                0x41
+            }
+        });
+        put(a, b, text, bytes);
+        put(a, b, cells + 0xc, rng.next() % 40);
+        put(a, b, cells + 0x10, 1 + rng.next() % 3);
+        assert_eq!(
+            eax(a, 0x008b_8040, &[text]),
+            t::text_width_inter_mode(b, text, scratch, call),
+            "width {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("width {k}"), a, b);
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [
+                (rng.next() % 4000) as f32 / 7.0 - 100.0,
+                f32::NAN,
+                3e9,
+                -0.5,
+            ][(rng.next() % 4) as usize],
+        );
+        let font = rng.next();
+        assert_eq!(
+            eax(a, 0x008d_fe20, &[font]),
+            t::colon_width(b, font, scratch, call),
+            "colon {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("colon {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_small_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_small(&mut a, &mut b, &mut Xorshift(0x4033_0071));
+}
+
+#[test]
+fn round33_small_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_small(&mut a, &mut b, &mut Xorshift(0x4033_0072));
+}
+
+/// `Vec3At24_0061a7f0` (thiscall), no signalling NaNs.
+#[test]
+fn round33_vec3_at_24_matches_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mut rng = Xorshift(0x4033_0081);
+    let this = alloc(a, b, 0x40);
+    let out = alloc(a, b, 0x10);
+    for k in 0..200 {
+        let words: [u32; 0x10] = std::array::from_fn(|_| {
+            loop {
+                let f = rng.float();
+                if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+                    break f.to_bits();
+                }
+            }
+        });
+        put(a, b, this, words);
+        let to = if k % 5 == 0 { this + 0x28 } else { out };
+        let at = a.rebase(0x0061_a7f0);
+        let r = a.call(at, Conv::Thiscall(this), &[to]).unwrap().eax;
+        assert_eq!(r, accessor::bridge::vec3_at_24(b, this, to), "vec3 {k}");
+        same_memory(&format!("vec3 {k}"), a, b);
+    }
+}

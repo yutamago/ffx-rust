@@ -753,4 +753,62 @@ pub mod bridge {
         }
         r
     }
+
+    /// `g_CdLib + 0x24`: the module [`cd_set_module`] selected.
+    pub const MODULE: Global<i32> = Global::new(0x0231_0c64);
+    /// `g_CdLib + 0x30`: the PC file-name table [`pc_file_name`] reads.
+    pub const PC_FILE_TABLE: Global<u32> = Global::new(0x0231_0c70);
+    /// The byte `sa_file_read_init` sets (`0x01128a85`).
+    pub const READ_INIT_DONE: u32 = 0x0112_8a85;
+    /// `"sa_file_read_init!=0"`.
+    pub const READ_INIT_TEXT: u32 = 0x00b5_1eec;
+    /// `user_free_thunk(p)` and `pc_ReadWholeFile_00a42a00(path, &size)`.
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const READ_WHOLE_FILE: u32 = 0x00a4_2a00;
+    /// `0x00a42ab0(path, size)`: the file read into a fresh buffer.
+    pub const READ_FILE_TABLE: u32 = 0x00a4_2ab0;
+
+    /// `CdSetModule_0076c510(m)`: `movie_err("sa_file_read_init!=0",
+    /// libmscd.c, 0x594)` before `sa_file_read_init` has run, then module
+    /// `m`: [`FILE_BASE`] its first file (`i16` entry `m` of
+    /// [`MODULE_FILES`]) and [`MODULE`] `m`; a negative first file stores
+    /// 0 and returns -1, else the first file.
+    pub fn cd_set_module<M: Mem>(
+        mem: &mut M,
+        m: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        if mem.read::<u8>(mem.rebase(READ_INIT_DONE)) == 0 {
+            let text = mem.rebase(READ_INIT_TEXT);
+            let file = mem.rebase(LIBMSCD_FILE);
+            call(mem, MOVIE_ERR, &[text, file, 0x594]);
+        }
+        let table = MODULE_FILES.get(mem);
+        let first =
+            i32::from(mem.read::<i16>(table.wrapping_add(m.cast_unsigned().wrapping_mul(2))));
+        FILE_BASE.set(mem, first);
+        MODULE.set(mem, m);
+        if first < 0 {
+            FILE_BASE.set(mem, 0);
+            return -1;
+        }
+        first
+    }
+
+    /// `PcFileTblSet(path)` (`0x00a42b70`): frees the old
+    /// [`PC_FILE_TABLE`] (`user_free_thunk`, when set) and loads `path`
+    /// as the new one (`0x00a42ab0(path, 0)`), which it also returns.
+    pub fn pc_file_tbl_set<M: Mem>(
+        mem: &mut M,
+        path: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let old = PC_FILE_TABLE.get(mem);
+        if old != 0 {
+            call(mem, USER_FREE, &[old]);
+        }
+        let table = call(mem, READ_FILE_TABLE, &[path, 0]);
+        PC_FILE_TABLE.set(mem, table);
+        table
+    }
 }

@@ -1386,6 +1386,7 @@
 0x0061a110 function ReturnMinus1_0061a110 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x0061a2a0 function Phyre_PScripting_PClassCallableMethodScript_PCallerScript_vcall # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Unable to copy argument %d from varargs list to context\\n'; Switch 0x71001a1f10 Phyre::PScripting::PClassCallableMethodScript::PCallerScript::vcall (symbols from Fahrenheit's server export)
 0x0061a730 function PWorldMatrixController_setVftable # thiscall(this): *this = Phyre_PWorldMatrixController_vftable (callers 0x005d6d10, 0x005d6d20); eax untouched; name ours
+0x0061a7f0 function Vec3At24_0061a7f0          # thiscall(out), ret 4 -> out: the three floats at this+0x24 to out (fld/fstp); no direct caller; ported (system round 33); name ours
 0x0061a810 function IdentityAt34_0061a810 # thiscall(this): the 4x4 at +0x34 set to the identity (fld1/fldz stores); no direct caller; name ours; ported (system round 32)
 0x0061a860 function VFile_VFile               # fh v3:exact 0x0061aa20 VFile::VFile
 0x0061a960 function VFile_dtor_VFile          # fh v3:exact 0x0061ab20 VFile::~VFile
@@ -4239,6 +4240,7 @@
 0x0076c320 function CDfileSize_CD             # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; was Cd_FileSize
 0x0076c410 function CDfileSize_CD_EX          # fh v3:exact 0x0076c520
 0x0076c440 function cd_file_size_bytes # cdecl(n): (sectors to the next entry * 0x100 - top byte) * 8 for entry n + g_CdLib+0x20, 0 when absent (bit 23); caller Cd_QueueRead; name ours
+0x0076c510 function CdSetModule_0076c510         # cdecl(m) -> first file or -1: movie_err("sa_file_read_init!=0", libmscd.c, 0x594) before sa_file_read_init; g_CdLib_FileBase = i16 [0x02310c6c][m] (0 when negative), 0x02310c64 = m; ported (system round 33); name ours
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
 0x0076ce20 function CdQueueSector_0076ce20       # (sector) -> CdQueueSectorRead_0076ce40(sector, 0, 0); g_CdLib slot +0x8c (CdEnvInit, _DAT_02310ccc); ported (system round 33); name ours
 0x0076ce40 function CdQueueSectorRead_0076ce40   # (sector, a, b) -> id: the first free g_CdChannels request (+0x31 busy): +0x1c sector, +0x28 a, +8 b, +0x30/+0x31 set, the rest zeroed, +0x24 the next g_CdReadId (1 past 0xffff); all 64 busy: movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x96d) and request 64 written anyway; Ghidra's void is wrong (eax is the id); ported (system round 33); name ours
@@ -10257,6 +10259,7 @@
 0x008b7fd0 function TOGetTableKind2Data_008b7fd0 # cdecl(i): entry i of 0x01868a90 + 0x18 when its byte 1 is 2, else 0; name ours
 0x008b7ff0 function TOGetTableKind2Byte7_008b7ff0 # cdecl(i): i8 byte 7 of entry i of 0x01868a90 when its byte 1 is 2, else -1; name ours
 0x008b8010 function TOMessageTableByte2_008b8010 # cdecl(i): i8 byte 2 of entry i of 0x01868a90 when message window i has +0x1e == 1 and the entry's kind (byte 1) >= 1, else -1; name ours
+0x008b8040 function TOGetTextWidth_008b8040      # cdecl(text) -> sum of the words TOGetFontWidthInterMode(p, 0, &w) writes while stepping p to the NUL (added as integers though w is an f32; &w is the argument slot); ported (system round 33); name ours
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b80b0 function TOCountMessageWords_008b80b0 # (window, text): words up to the first line code: glyphs 1, macros and 0x10 counters their TOGetChangeMacroWordCount, 0xb icons and 9 n>=0xc0 one; name ours
 0x008b8140 function TOCountMessageWordsAbove_008b8140 # cdecl(window, text, limit) -> words before the first byte <= limit (signed): as TOCountMessageWords_008b80b0 (glyphs 1, macros and 0x10 counters TOGetChangeMacroWordCount, 0xb and 9 n>=0xc0 one); name ours
@@ -10832,6 +10835,7 @@
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0; (code, window, pen): applies control codes 7, 9, 0xa, 0xb (button icon), 0xe to a message pen; ported (system round 33)
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
+0x008dfe20 function TOGetColonWidth_008dfe20     # cdecl(font) -> ftol2_sse(w) of TOGetFontWidthInterMode(":", font, &w), w from 0.0; ported (system round 33); name ours
 0x008dfe70 function MessageHold_008dfe70 # cdecl(w) -> 0: w+0x2c = 4 (u16), w+0x124 = itself; name ours
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
 0x008e01b0 function TOInitMessageWaitNamesp      # layout+callees: sorts between TODrawMovieMessageWaitNamesp and hardCodeToFixTheWrongData, and its named callees match the Switch 0x7100500c20 TOInitMessageWaitNamesp's (similarity 1.00: TOGetFFXVideoMode); symbols from Fahrenheit's server export
