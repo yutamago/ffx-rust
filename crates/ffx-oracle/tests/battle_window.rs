@@ -29,6 +29,12 @@ fn dress(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
         poke(a, b, p + 0x590, &[bits]);
         fill(a, b, rng, p + 0x606, 2);
     }
+    // the spare actor MsGetChr hands out for index 0xff (an empty slot's)
+    let spare = ffx_battle::actor::bridge::CHR_SPARE.ptr(b).addr;
+    for o in [0x10, 0xdc8, 0xdca, 0xdcd, 0xdd8] {
+        let v = if rng.below(2) == 0 { 0 } else { rng.byte() | 1 };
+        poke(a, b, spare + o, &[v]);
+    }
     // now and then all eight monsters living (a full monster list)
     if rng.below(6) == 0 {
         for i in 0..8 {
