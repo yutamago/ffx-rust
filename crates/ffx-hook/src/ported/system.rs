@@ -1176,6 +1176,44 @@ ported! {
             call_ptr,
         )
     }
+    /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.
+    sce_Vectormath_Scalar_Aos_inverse @ 0x0057_3d00 => extern "C" fn sce_vectormath_inverse(out: u32, m: u32) -> u32 {
+        math::bridge::inverse4(&mut mem(), out, m)
+    }
+    /// `0x00684b00(kind, u, v, &u_out, &v_out)`.
+    SheetCellUV_00684b00 @ 0x0068_4b00 => extern "stdcall" fn sheet_cell_uv(kind: u32, u: f32, v: f32, u_out: u32, v_out: u32) -> u32 {
+        render::bridge::sheet_cell_uv(&mut mem(), kind, u, v, [u_out, v_out])
+    }
+    /// `0x006851d0(this, mode)`.
+    AbmapManager_ResetLayers_006851d0 @ 0x0068_51d0 => extern "thiscall" fn abmap_reset_layers(this: u32, mode: u32) -> u32 {
+        render::bridge::abmap_reset_layers(&mut mem(), this, mode)
+    }
+    /// `LocalizationManager_Initialize(this)`.
+    LocalizationManager_Initialize @ 0x006d_b090 => extern "thiscall" fn localization_initialize(this: u32) -> u32 {
+        config::bridge::localization_initialize(&mut mem(), this)
+    }
+    /// `TOSeqStopExecScene(i)`.
+    TOSeqStopExecScene @ 0x008a_f380 => extern "C" fn to_seq_stop_exec_scene(i: i32) -> u32 {
+        scene::bridge::stop_exec_scene(&mut mem(), i)
+    }
+    /// `0x008f0590(pkt, command, x, y, colour)`.
+    TOAddPktCommandIconName_008f0590 @ 0x008f_0590 => extern "C" fn to_add_pkt_command_icon_name(pkt: u32, command: u32, x: u32, y: u32, colour: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        pkt::bridge::add_command_icon_name(&mut mem(), [pkt, command, x, y, colour], scratch, call_sym)
+    }
+    /// `MagicFile_GetEffectOverlayTable()`.
+    MagicFile_GetEffectOverlayTable @ 0x009d_a370 => extern "C" fn magic_file_get_effect_overlay_table() -> u32 {
+        stub::bridge::magic_file_effect_overlay_table(&mut mem(), call_ptr)
+    }
+    /// `0x009db230(high)`.
+    PppCurrentProgramKey_009db230 @ 0x009d_b230 => extern "C" fn ppp_current_program_key(high: u32) -> u64 {
+        math::bridge::current_program_key(&mem(), high)
+    }
+    /// `0x009db250(high, low)`.
+    WideKey_009db250 @ 0x009d_b250 => extern "C" fn wide_key(high: u32, low: u32) -> u64 {
+        math::bridge::wide_key(high, low)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)

@@ -928,7 +928,7 @@
 0x005721b0 function Phyre_PScripting_RegisterVectorMatrixTypes # fh switch:bsim1.00 0x71000764d0 Phyre::PScripting::RegisterVectorMatrixTypes
 0x00572e70 function Phyre_PScripting_VectorIndexHandler # str: the only user of the string "Phyre::PScripting::VectorIndexHandler" (its own __FUNCTION__ in an error print)
 0x005736c0 function Phyre_PScripting_VectorNewIndexHandler # str: the only user of the string "Phyre::PScripting::VectorNewIndexHandler" (its own __FUNCTION__ in an error print)
-0x00573d00 function sce_Vectormath_Scalar_Aos_inverse # fh switch:bsim1.00 0x710001c700 sce::Vectormath::Scalar::Aos::inverse
+0x00573d00 function sce_Vectormath_Scalar_Aos_inverse # fh switch:bsim1.00 0x710001c700 sce::Vectormath::Scalar::Aos::inverse; cdecl(out, m) -> out: column-major 4x4 inverse by cofactors (minors of rows 2-3 and 0-1 stored f32, det sum innermost first, 1/det, cofactor * inv); out written after all reads; ported (system round 32)
 0x00574760 function Phyre_PRedBlackTree_clear # fh v3:exact 0x005748d0 Phyre::PRedBlackTree::clear
 0x00574860 function Phyre_PRedBlackTree_countNodes # fh v3:exact 0x005749d0 Phyre::PRedBlackTree::countNodes
 0x00574910 function Phyre_PRedBlackTree_leftRotate # layout: alphabetical run between Phyre_PRedBlackTree_countNodes and Phyre_PRedBlackTree_orphanAllContents (1 unnamed in the gap); Switch 0x71000bd5d0 Phyre::PRedBlackTree::leftRotate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2492,9 +2492,11 @@
 0x00680320 function FreeCamera_setFreePause   # fh v3:exact 0x006804d0 FreeCamera::setFreePause
 0x00680410 function FreeCamera_setType        # fh switch:cg2 0x71008a1cd8 FreeCamera::setType
 0x006843a0 function AbmapManager_CheckWordVertex # fh v3:exact 0x00684540 AbmapManager::CheckWordVertex
+0x00684b00 function SheetCellUV_00684b00 # stdcall(kind, u, v, &u_out, &v_out) -> v_out: 0x3700 (u/2, v/4), 0x3720 (u/2, v/4+1/4), 0x3740 (u/2+1/2, v/4), 0x3760 (u/2, v/2+1/2), 0x37a0 (u/2+1/2, v/2+1/2), else (0, 0); name ours; ported (system round 32)
 0x00684ca0 function AbmapManager_GetMeshInstace  # thiscall(mgr, i) -> entry i's mesh instance (+0xc; entry 0 once the count +4 is above 1); only caller PhyreScene_RenderABmap as on the Switch (AbmapManager::GetMeshInstace, 32 bytes, called by PhyreScene::RenderABmap); sorts between AbmapManager_CheckWordVertex and AbmapManager_GetVertexInfo; cg-match switch lead 0x71008a1fd8 (2 votes); the system porter's EntryWordC_00684ca0
 0x00684cd0 function AbmapManager_GetVertexInfo # fh v3:exact 0x00684e70 AbmapManager::GetVertexInfo
 0x00684eb0 function AbmapManager_InstanceUpdateMaterialShader # layout+callees: sorts between AbmapManager_GetVertexInfo and AbmapManager_ToDestroy, and its named callees match the Switch 0x71001c1550 AbmapManager_InstanceUpdateMaterialShader's (similarity 1.00: Phyre_PhyrePrintf); symbols from Fahrenheit's server export
+0x006851d0 function AbmapManager_ResetLayers_006851d0 # thiscall(this, mode), ret 4 -> eax: mode 0 negates +8 and clears words +4/+8 of every 0x6c entry of lists +0xd8/+0xdc (new value > 0) or +0xd0/+0xd4 (list: +0x90 count, +0x94 entries); 1 list +0x94; 2/3 [+0xc8]+0x90 = 0/1; caller 0x006390d0 (on [0x00ccc838]); name ours; ported (system round 32)
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -2900,7 +2902,7 @@
 0x006dabf0 function PhyFMVPlayerManager_SetVolume_006dabf0 # cdecl(f32 volume 0..1): 0x00c34420 = volume; while the movie player (0x00cded3c) plays (+0x6d0) and g_WaitFramesByTime == 1, also 0x00a28330(volume) (PVideoPlayback); caller iSoundUpdate; movie player glue; name ours
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
-0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
+0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings; thiscall(this) -> 0: *g_Settings 1..5 -> (1, 1 us/2 fr/4 de/5 it/3 es, 1), 6 -> (3, 9, 0), 7 -> (3, 10, 0), else (0, 0, 0) into +0, +4, +8; ported (system round 32)
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
 0x006db6e0 function Worker_CloseSemaphore # thiscall: CloseHandle(this+0x2c); name ours
@@ -10144,7 +10146,7 @@
 0x008af0d0 function TOSeqStartScene           # fh v3:exact 0x008af080
 0x008af1b0 function TOSeqStartSceneDrawContinue # fh v3:exact 0x008af160
 0x008af2a0 function TOSeqStartSceneNoErase       # layout: alphabetical run between TOSeqStartSceneDrawContinue and TOSeqStopExecScene (1 unnamed in the gap); Switch 0x71004fd0e0 TOSeqStartSceneNoErase is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008af380 function TOSeqStopExecScene        # fh v3:exact 0x008af330
+0x008af380 function TOSeqStopExecScene        # fh v3:exact 0x008af330; cdecl(i) -> i << 8: each of scene i's 8 slots with +2 != 1 and state 2 or 3 gets state 4 and byte +8 = 0; ported (system round 32)
 0x008af4f0 function TOSeqStopScene            # fh v3:exact 0x008af4a0
 0x008af590 function TOSetEnvMovieMessage      # fh v3:exact 0x008af540
 0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570; cdecl(bank): g_TOMessageWindowSlots[8] = 0x01865ce0/0x01865dc0 + 0x1c k, SetGlobal_01841e0c(bank), TOSetExeWindowArea(bank), TOSetExeMessageArea(bank)
@@ -10958,6 +10960,7 @@
 0x008efcd0 function TOAdpWords3 # cdecl(p, a, b, c) -> p + 0x10: a, b, c, 0; name ours
 0x008efd00 function TOAdpXYZWOffset # cdecl(p, x, y, z, w) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, w * 16; name ours
 0x008efd40 function TOAdpZBUF                    # structure: (pkt, zbp, psm, zmsk) -> pkt + 16: A+D qword with register 0x4e (ZBUF_1); last of the TOAdp run after TOAdpXYZWOffset; name ours after the GS register
+0x008f0590 function TOAddPktCommandIconName_008f0590 # cdecl(pkt, command, x, y, colour) -> packet: MsGetComData(command, &strings), TOAddPktMenuIcon(pkt, x+0xc, y+1, rec+0x14 byte), TOAddPktBaseMesFontLAbmap(.., -1, strings + rec u16 +0, x+0x1a, y+1, colour, 0, 0x80 x4, 0); callers 0x00a4f250, 0x00a4f9a0, 0x00a59320; name ours; ported (system round 32)
 0x008f0680 function TOAdpMenuIconImportantName # fh v3:exact 0x008f0680
 0x008f0700 function TOAdpMenuIconItemAbmap    # fh v3:cg3 0x8f0700
 0x008f0770 function TOAdpMenuIconItemName     # fh v3:cg4 0x8f0770
@@ -12362,7 +12365,7 @@
 0x009da280 function IsLoadTexture             # fh v3:exact 0x009da280; flag 0x01940ab0 set: 1; handle 0x00c64cac -1: 0; else graphicMagicVFXLoadTexture([0x00c64ca0]), set flag, 1
 0x009da2c0 function GetU32_01940ab4 # () -> u32 at 0x01940ab4; name ours
 0x009da2d0 function MagicFile_Cleanup         # fh v3:bsim1.00 0x009da2d0; (): graphicMagicSetToBeDeletePath(graphicMagicGetPath()), graphicMagicSetPath(0x00b8fbeb); 0x00c64ca8 = 0x00c64ca4 = id, 0x00c64cb0 = handle, id = handle = -1
-0x009da370 function MagicFile_GetEffectOverlayTable # fh v3:exact 0x009da370
+0x009da370 function MagicFile_GetEffectOverlayTable # fh v3:exact 0x009da370; () -> 0 unless g_MagicFile_MagicId and g_MagicFile_Handle are both not -1, then a tail jump through [0x022fb6a4]; ported (system round 32)
 0x009da390 function MagicFile_GetHandle       # fh v3:bsim1.00 0x009da390
 0x009da3a0 function GetU32_00c64ca4 # () -> u32 at 0x00c64ca4; name ours
 0x009da3b0 function MagicFile_GetMagicId      # fh v3:bsim1.00 0x009da3a0
@@ -12389,6 +12392,8 @@
 0x009dafe0 function MagicFile_SetAsyncLoad    # (): graphicSetMagicFileAsyncLoadEnable(1 for magic 0x26e..0x274/0x15c/0x277/0x27b, 3 for 0x15e, else 2); name ours
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
 0x009db190 function magic_ret0_009db190       # g_MagicImports slot 301: xor eax, eax; ret; hidden from the dump
+0x009db230 function PppCurrentProgramKey_009db230 # cdecl(high) -> edx:eax = (high << 32) + sign-extended pppCurrentProgram; name ours; ported (system round 32)
+0x009db250 function WideKey_009db250 # cdecl(high, low) -> edx:eax = (high << 32) + sign-extended low; name ours; ported (system round 32)
 0x009db490 function CopyFields_009db490          # auto-port shape (several stores: copy into field, cdecl): t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; t4 = u32[&0x00c8f508]; u32[(a0 + 0x10)] = t4; t5 = u32[&0x00c8f50c]; u32[(a0 + 0x14)] = t5; t6 = u32[&0x00c8f510]; u32[(a0 + 0x18)] = t6; t7 = u32[&0x00c8f514]; u32[(a0 + 0x1c)] = t7; t8 = u32[&0x00c8f508]; u32[(a0 + 0x20)] = t8; t9 = u32[&0x00c8f50c]; u32[(a0 + 0x24)] = t9; t10 = u32[&0x00c8f510]; u32[(a0 + 0x28)] = t10; t11 = u32[&0x00c8f514]; u32[(a0 + 0x2c)] = t11; t12 = u32[&0x00c8f508]; u32[(a0 + 0x30)] = t12; t13 = u32[&0x00c8f50c]; u32[(a0 + 0x34)] = t13; t14 = u32[&0x00c8f510]; u32[(a0 + 0x38)] = t14; t15 = u32[&0x00c8f514]; u32[(a0 + 0x3c)] = t15; return t15; callers: no direct caller; name ours
 0x009dba10 function FFXVu0MulMatrix_thunk     # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump
 0x009dbea0 function magic_nop_009dbea0        # g_MagicImports slot 720 (354 overlays): a lone ret; hidden from the dump

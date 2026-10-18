@@ -278,6 +278,75 @@ pub fn scale_to_unit(v: [f32; 3], s: f32) -> [f32; 3] {
     ]
 }
 
+/// `sce::Vectormath::Scalar::Aos::inverse(Matrix4)` (`0x00573d00`): the
+/// inverse of a column-major 4x4 matrix by cofactors (the scalar
+/// Vectormath form): 2x2 minors of rows 2-3 and 0-1, the first column's
+/// cofactors, `1 / det` (the cofactor sum, innermost first), then every
+/// cofactor times it. Each product sum is formed at the x87's 53 bits and
+/// stored as an `f32` where the original stores one.
+#[must_use]
+pub fn inverse4(m: &Matrix) -> Matrix {
+    let r = |i: usize| load(m[i]);
+    let f = |x: f32| load(x);
+    // the 2x2 minors `a b - c d`
+    let minor = |a: usize, b: usize, c: usize, d: usize| (r(a) * r(b) - r(c) * r(d)).store();
+    let t1 = minor(10, 3, 11, 2);
+    let t2 = minor(14, 7, 15, 6);
+    let t3 = minor(10, 1, 2, 9);
+    let t4 = minor(14, 5, 13, 6);
+    let t5 = minor(9, 3, 1, 11);
+    let t6 = minor(13, 7, 5, 15);
+    // the first column's cofactors
+    let c0 = (r(9) * f(t2) - r(11) * f(t4) - r(10) * f(t6)).store();
+    let c1 = (r(13) * f(t1) - r(15) * f(t3) - r(14) * f(t5)).store();
+    let c2 = (f(t4) * r(3) + r(2) * f(t6) - r(1) * f(t2)).store();
+    let c3 = (f(t5) * r(6) + r(7) * f(t3) - r(5) * f(t1)).store();
+    let det = f(c3) * r(12) + (f(c2) * r(8) + (f(c1) * r(4) + f(c0) * r(0)));
+    let inv = (Reg::ONE / det).store();
+    // the products the other columns reuse
+    let p = |a: usize, t: f32| (r(a) * f(t)).store();
+    let (p8_t2, p12_t1, p0_t2, p4_t1) = (p(8, t2), p(12, t1), p(0, t2), p(4, t1));
+    let (p8_t4, p12_t3, p0_t4, p4_t3) = (p(8, t4), p(12, t3), p(0, t4), p(4, t3));
+    let (p8_t6, p12_t5, p0_t6, p4_t5) = (p(8, t6), p(12, t5), p(0, t6), p(4, t5));
+    // the 2x2 minors of rows 0-1
+    let u1 = minor(8, 1, 9, 0);
+    let u2 = minor(12, 5, 13, 4);
+    let u3 = minor(8, 3, 11, 0);
+    let u4 = minor(12, 7, 15, 4);
+    let u5 = minor(8, 2, 0, 10);
+    let u6 = minor(12, 6, 4, 14);
+    let col2 = [
+        (r(11) * f(u2) - r(9) * f(u4) + f(p8_t6)).store(),
+        (r(15) * f(u1) - r(13) * f(u3) + f(p12_t5)).store(),
+        (f(u4) * r(1) - r(3) * f(u2) - f(p0_t6)).store(),
+        (r(5) * f(u3) - r(7) * f(u1) - f(p4_t5)).store(),
+    ];
+    let col3 = [
+        (r(9) * f(u6) - r(10) * f(u2) + f(p8_t4)).store(),
+        (r(13) * f(u5) - r(14) * f(u1) + f(p12_t3)).store(),
+        (f(u2) * r(2) - r(1) * f(u6) - f(p0_t4)).store(),
+        (f(u1) * r(6) - r(5) * f(u5) - f(p4_t3)).store(),
+    ];
+    let col1 = [
+        (r(10) * f(u4) - r(11) * f(u6) - f(p8_t2)).store(),
+        (r(14) * f(u3) - r(15) * f(u5) - f(p12_t1)).store(),
+        (f(u6) * r(3) - f(u4) * r(2) + f(p0_t2)).store(),
+        (f(u5) * r(7) - f(u3) * r(6) + f(p4_t1)).store(),
+    ];
+    let col0 = [c0, c1, c2, c3];
+    let mut out = [0.0; 16];
+    for (k, c) in col0
+        .iter()
+        .chain(&col1)
+        .chain(&col2)
+        .chain(&col3)
+        .enumerate()
+    {
+        out[k] = (f(*c) * f(inv)).store();
+    }
+    out
+}
+
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -464,6 +533,31 @@ pub mod bridge {
         );
         mem.write(m.wrapping_add(0x2c), 1f32.to_bits());
         mem.write(m.wrapping_add(0x3c), 0u32);
+    }
+
+    /// `pppCurrentProgram` (`0x0230fd20`).
+    pub const PPP_CURRENT_PROGRAM: Global<u32> = Global::new(0x0230_fd20);
+
+    /// `0x009db250(high, low)`: the 64-bit `(high << 32) + low`, `low`
+    /// sign-extended (what the original leaves in `edx:eax`).
+    #[must_use]
+    pub fn wide_key(high: u32, low: u32) -> u64 {
+        (u64::from(high) << 32).wrapping_add(i64::from(low.cast_signed()).cast_unsigned())
+    }
+
+    /// `0x009db230(high)`: [`wide_key`] of `high` and the effect program
+    /// running ([`PPP_CURRENT_PROGRAM`]).
+    pub fn current_program_key(mem: &impl Mem, high: u32) -> u64 {
+        wide_key(high, PPP_CURRENT_PROGRAM.get(mem))
+    }
+
+    /// `sce::Vectormath::Scalar::Aos::inverse(out, m)` (`0x00573d00`):
+    /// [`super::inverse4`] of the matrix at `m` written to `out` once every
+    /// element is computed (so they may be the same); returns `out`.
+    pub fn inverse4(mem: &mut impl Mem, out: u32, m: u32) -> u32 {
+        let inv = super::inverse4(&read_matrix(mem, m));
+        write_matrix(mem, out, &inv);
+        out
     }
 }
 

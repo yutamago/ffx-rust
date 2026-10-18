@@ -551,4 +551,21 @@ pub mod bridge {
             }
         }
     }
+
+    /// `TOSeqStopExecScene(i)` (`0x008af380`): every slot of scene `i`
+    /// that is running (state 2 or 3) and not kept (`+2` is not 1) stops:
+    /// state 4 and the name's first byte (`+8`) cleared. Returns `i <<
+    /// 8` (the original's `eax`).
+    pub fn stop_exec_scene(mem: &mut impl Mem, i: i32) -> u32 {
+        for j in 0..8 {
+            let s = slot(mem, i, j);
+            let kept = mem.read::<u16>(s.wrapping_add(2)) == 1;
+            let state: u16 = mem.read(s);
+            if !kept && (state == 2 || state == 3) {
+                mem.write(s, 4u16);
+                mem.write(s.wrapping_add(8), 0u8);
+            }
+        }
+        i.cast_unsigned().wrapping_shl(8)
+    }
 }

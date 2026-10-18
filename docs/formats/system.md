@@ -1246,3 +1246,38 @@ Language 11 (`TOGetFFXLang`) widens the labels by 22 (UVs follow),
 heightens 0x21 by 1, moves the HP/MP numbers 11 right, and moves the AP
 label (x -10, U -35, width +25 or +20, U end +20). The water colours are
 pushed as literals (no relocation entries), not addresses.
+
+## Round 32's smaller functions
+
+- `sce::Vectormath::Scalar::Aos::inverse(out, m)` (`0x00573d00`, cdecl,
+  returns `out`) is the scalar Vectormath 4x4 inverse by cofactors, a
+  debug build that stores every intermediate as an `f32`: the six 2x2
+  minors of rows 2-3 (`m10 m3 - m11 m2`, `m14 m7 - m15 m6`, `m10 m1 - m2
+  m9`, `m14 m5 - m13 m6`, `m9 m3 - m1 m11`, `m13 m7 - m5 m15`), the first
+  column's four cofactors, `1 / det` with det summed innermost first
+  (`c3 m12 + (c2 m8 + (c1 m4 + c0 m0))`), twelve reused products, the
+  six minors of rows 0-1, the other columns' cofactors, then each
+  cofactor times `1 / det`. `out` is written only after all reads.
+- `SheetCellUV_00684b00(kind, u, v, &u, &v)` (stdcall) maps a 0..1 UV into
+  a cell of a 2x4 sheet by kind (0x3700, 0x3720, 0x3740: quarter-height
+  cells; 0x3760, 0x37a0: the bottom halves). Where the original adds no
+  offset the port adds none either: `-0 * 0.5` stays `-0`.
+- `AbmapManager_ResetLayers_006851d0(mode)` (thiscall) on the area-map
+  manager: mode 0 negates `+8` and clears words `+4` and `+8` of each
+  0x6c-byte entry of the layer lists `+0xd8`/`+0xdc` (new value positive)
+  or `+0xd0`/`+0xd4`; mode 1 list `+0x94`; modes 2/3 set `[+0xc8]+0x90`.
+  `eax` (which `0x006390d0` returns) is the last list, `[+0xc8]` or the
+  mode.
+- `LocalizationManager_Initialize` (thiscall) maps the settings' language
+  index (`*g_Settings`) to (kind, game language, western): 1..5 give
+  (1, 1/2/4/5/3, 1), 6 and 7 (3, 9 or 10, 0), anything else zeros.
+- `TOSeqStopExecScene(i)` stops each running (state 2 or 3) slot of scene
+  `i` whose `+2` is not 1: state 4, name byte cleared; `eax` is `i << 8`.
+- `TOAddPktCommandIconName_008f0590(pkt, command, x, y, colour)` adds a
+  command's icon (`TOAddPktMenuIcon` at `x + 0xc, y + 1`) and its name
+  (`TOAddPktBaseMesFontLAbmap` at `x + 0x1a, y + 1`).
+- `MagicFile_GetEffectOverlayTable` tail-jumps through `[0x022fb6a4]`
+  while a magic file is loaded, else returns 0.
+- `0x009db230(high)` and `0x009db250(high, low)` return the 64-bit `(high
+  << 32) + low` in `edx:eax` (`low` sign-extended; for the first,
+  `pppCurrentProgram`).
