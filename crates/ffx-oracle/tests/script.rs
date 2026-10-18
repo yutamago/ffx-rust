@@ -4605,6 +4605,11 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
     (a, b)
 }
 
+/// Group 0's natives that can read an uninitialised local of the original
+/// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot):
+/// tested on chosen arguments only.
+const R20_UNINIT: [u32; 3] = [0x0085_fd80, 0x0086_0000, 0x0085_8290];
+
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
 /// large, floats in and out of the angle range; results and memory.
@@ -4682,6 +4687,89 @@ fn round19_natives_match_the_original() {
             }
             compared += 1;
         }
+        // group 0's spline positions (0x0099, 0x009c) on a three-point
+        // table: with no points their out vector stays the original's
+        // uninitialised local, so the random loop leaves them out
+        {
+            let (a, b) = pair.get_or_insert_with(|| r19_pair(&pages, &exe, c));
+            let w = actors(a, b)[0];
+            let word = 0x100;
+            let pv = v::atel_get_real_var_adrs(&mut Run(b), w, word);
+            poke(a, b, pv, 3u32);
+            for k in 0..12u32 {
+                #[allow(clippy::cast_precision_loss)] // small
+                let x = (k as f32 - 5.0) * 1.25;
+                poke(a, b, pv + 0x10 + 4 * k, x.to_bits());
+            }
+            for sym in [0x0085_fd80, 0x0086_0000] {
+                for n in [0u32, 1, 2] {
+                    let push = [(stack::INT, word), (stack::INT, n)];
+                    native_case(a, b, w, sym, &push, &format!("{sym:#x} n {n}"));
+                    compared += 1;
+                }
+            }
+            // 0x00f7's start: AtelGetPartyWorker reads below its locals
+            // for a negative slot
+            for slot in 0..4 {
+                for n in [0u32, 2] {
+                    let push = [(stack::INT, slot), (stack::INT, n)];
+                    native_case(a, b, w, 0x0085_8290, &push, &format!("0x00f7 {slot} {n}"));
+                    compared += 1;
+                }
+            }
+            // 0x013a's choice window: open window 1, then the poll on each
+            // state and the result
+            for st in [0u16, 1, 2, 3, 4, 5] {
+                let open = [1, 0, 0, 0, 0, 0, 0, 0].map(|x| (stack::INT, x));
+                native_case(a, b, w, 0x0085_fb30, &open, &format!("0x013a start {st}"));
+                let win = v::atel_get_mes_win_work(b, 1);
+                poke(a, b, win + 0x14, st);
+                native_case(a, b, w, 0x0085_fcd0, &[], &format!("0x013a poll {st}"));
+                native_case(a, b, w, 0x0085_fd40, &[], &format!("0x013a result {st}"));
+                compared += 3;
+            }
+            pair = None;
+        }
+        // group 0's flag and table natives on the values the snapshots
+        // lack: flag words with every bit, the level-2 turn block, the
+        // party slots, a bit index past the save block's set, each
+        // MsEventEffectGetStat result
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let (a, b) = (&mut a, &mut b);
+            let w = actors(a, b)[0];
+            let int = |v: u32| (stack::INT, v);
+            let me = u32::from(Mem::read::<u16>(b, w + 0x2e));
+            poke(a, b, w + 0x36, 0xffff_u16);
+            native_case(a, b, w, 0x0085_bae0, &[int(me)], "0x0118 all bits");
+            let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+            let blk = Mem::read::<u32>(b, v::script_worker_level(b, w, lvl) + 0x48);
+            // battle.snap's workers leave the block pointer 0xcdcdcdcd
+            if blk >= 0x1_0000 && blk != 0xcdcd_cdcd {
+                for x in [0x10_u16, 0x20, 0x01] {
+                    poke(a, b, blk + 2, x);
+                    native_case(a, b, w, 0x0085_a130, &[], &format!("0x00c3 {x:#x}"));
+                }
+            }
+            for slot in [0u32, 1, 2, 0xff] {
+                poke(a, b, w + 0x40, slot);
+                native_case(a, b, w, 0x0085_bbe0, &[], &format!("0x00cd slot {slot}"));
+            }
+            for i in [639u32, 640, 641] {
+                native_case(a, b, w, 0x0085_eb30, &[int(i)], &format!("0x0238 {i}"));
+            }
+            poke(a, b, w + worker::LEVEL, 2u8);
+            let f = (stack::FLOAT, 1.5f32.to_bits());
+            native_case(a, b, w, 0x0085_9510, &[f], "0x0022 level 2");
+            for r in 0..8 {
+                for o in [&mut *a, &mut *b] {
+                    let at = o.rebase(0x0078_8bd0);
+                    o.stub_return(at, r).unwrap();
+                }
+                native_case(a, b, w, 0x0085_f070, &[], &format!("0x00dd {r}"));
+            }
+            compared += 19;
+        }
         // the polls without keep on a read that reports done (0): 5 for
         // 0x5062, 1 for 0x5064 (the reads stubbed on both sides)
         {
@@ -4717,6 +4805,9 @@ fn round19_natives_match_the_original() {
         }
         for i in 0..n {
             for &(sym, float) in &PORTED {
+                if R20_UNINIT.contains(&sym) {
+                    continue;
+                }
                 for round in 0..3 {
                     if pair.as_ref().is_some_and(|(_, b)| !ctx_ok(b)) {
                         pair = None;
