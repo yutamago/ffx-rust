@@ -4207,7 +4207,7 @@
 0x00769230 function KeBornRnd2                # fh v3:exact 0x00769340
 0x00769340 function KeLnsArnd_Draw            # fh v3:exact 0x00769450
 0x00769690 function KeLnsFls_Init             # fh switch:bsim1.00 0x710031dda0
-0x007696c0 function KeLnsClm_Draw             # fh v3:exact 0x007697d0
+0x007696c0 function KeLnsClm_Draw             # fh v3:exact 0x007697d0; (e, flags): a lens column, one render record per shape element (alpha (0.75 k + 0.25) * colour >> 24 * s +0x7c * fade, row 3 a running position); ported (field r8, ke::bridge::ke_lns_clm_draw)
 0x00769ca0 function KeLnsClm_Init             # fh v3:exact 0x00769db0
 0x00769cd0 function KeLnsClm_SetShp           # fh v3:exact 0x00769de0
 0x00769d70 function KeLnsCrn_Draw             # fh v3:exact 0x00769e80
@@ -15464,6 +15464,8 @@
 0x010d4d28 label    g_KePmcomQueue               # 256 entries of (kind, pointer) (KePmcomQueuePush)
 0x010d552c label    g_KePmcomQueueIndex          # its write index, back to 0 past 255
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
+0x010d560c label    g_KeLnsClmMaxRecords        # the largest record count of any lens column's render data (+0x94 +4); KeLnsClm_Draw asks every segment for it; name ours
+0x010d5610 label    g_KeLnsClmMaxIndices        # the largest index count (3 * +0x94 +8) of any lens column's render data; KeLnsClm_Draw; name ours
 0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
 0x01127c80 label g_CdChannels # CD channel records, 0x38 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
 0x01128a80 label g_CdReadId # i32: last read-request id, 1..=0xffff (Cd_QueueRead, CDfileReadSector_CD wrap it to 1 past 0xffff); request 64 of g_CdChannels starts here, so an overfull queue overwrites it; name ours

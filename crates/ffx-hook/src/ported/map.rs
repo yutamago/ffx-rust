@@ -3373,6 +3373,15 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_arnd_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `KeLnsClm_Draw(e, flags)`.
+    KeLnsClm_Draw @ 0x0076_96c0 => extern "C" fn shim_ke_lns_clm_draw(e: u32, flags: u32) {
+        #[repr(C, align(16))]
+        struct ClmWork([u8; ke::clm::WORK as usize]);
+        let mut work = ClmWork([0; ke::clm::WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_clm_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `KeLnsCrn_Draw(e, flags)`.
     KeLnsCrn_Draw @ 0x0076_9d70 => extern "C" fn shim_ke_lns_crn_draw(e: u32, flags: u32) {
         let mut work = Work([0; 0xa4]);
