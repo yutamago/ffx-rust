@@ -1470,6 +1470,17 @@ ported! {
             call_sym,
         );
     }
+    /// `ShapeDataModify(shape, id)`.
+    ShapeDataModify @ 0x008e_8a10 => extern "C" fn shape_data_modify(shape: u32, id: i32) {
+        tolib::bridge::shape_data_modify(
+            &mut mem(),
+            shape,
+            id,
+            fcall,
+            crt_cos,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y(v) } else { ffx_graphic::ui::remap_x(v) },
+        );
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

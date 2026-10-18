@@ -19365,3 +19365,111 @@ fn round34_cross_number_matches_the_original_on_the_snapshot() {
     };
     round34_cross_number(&mut a, &mut b, &mut Xorshift(0x4034_0032));
 }
+
+/// Round 34 group D: `ShapeDataModify` with the clock from a cell, `fcos`
+/// in the C runtime's slot and the original 720p remaps.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
+fn round34_shape_data_modify(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let clock = alloc(a, b, 8);
+    let slot = a.rebase(0x00b0_c3b4);
+    let fcos = a.rebase(0x00b0_bfc0);
+    a.write(fcos, &[0xd9u8, 0xff, 0xc3]).unwrap();
+    b.write(fcos, &[0xd9u8, 0xff, 0xc3]).unwrap();
+    put(a, b, slot, fcos);
+    let mut v = vec![0xdd, 0x05];
+    v.extend_from_slice(&clock.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x180, &v);
+    redirect(a, b, 0x0064_1410, s);
+    // fld qword [esp+4]; call [slot]; ret
+    let mut v = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x15];
+    v.extend_from_slice(&slot.to_le_bytes());
+    v.push(0xc3);
+    let cos_thunk = stand_in8(a, b, 0x1c0, &v);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let cos = |m: &mut Oracle, v: f64| {
+        let bits = v.to_bits();
+        m.call(cos_thunk, Conv::Cdecl, &[bits as u32, (bits >> 32) as u32])
+            .unwrap()
+            .st0
+            .unwrap()
+    };
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4800 } else { 0x0064_47c0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let shape = alloc(a, b, 0x40);
+    let ids: [i32; 15] = [
+        0x3e, 0x19b, 0x19c, 0x19f, 0x1f7, 0x1fb, 0x1fc, 0x1023, 0x1024, 0x102d, 0, 0x19d, 0x1fd,
+        -1, 0x2000,
+    ];
+    for k in 0..1500u32 {
+        let id = ids[(rng.next() as usize) % ids.len()];
+        for w in 0..0x10 {
+            let v = match w {
+                4..=7 | 0xc..=0xf => {
+                    [0u32, 0, 0x45, 0x46, 0x80, u32::MAX, rng.next()][(rng.next() % 7) as usize]
+                }
+                _ => {
+                    let f = [
+                        (rng.next() % 4000) as f32 / 3.0 - 600.0,
+                        -0.0,
+                        0.0,
+                        f32::from_bits(rng.next()),
+                    ][(rng.next() % 4) as usize];
+                    if f.is_nan() {
+                        f32::NAN.to_bits()
+                    } else {
+                        f.to_bits()
+                    }
+                }
+            };
+            put(a, b, shape + 4 * w, v);
+        }
+        if k % 3 == 0 {
+            put(a, b, shape + 0x10, [0u32; 3]);
+        }
+        put(
+            a,
+            b,
+            clock,
+            [
+                f64::from(rng.next() % 100_000) / 777.0,
+                0.0,
+                1e7,
+                // cos(3t) just under 0.5: its f32 rounding lifts the alpha
+                // to 123
+                (0.5f64.acos() + 1e-9 / 0.75f64.sqrt()) / 3.0,
+            ][(rng.next() % 4) as usize],
+        );
+        eax(a, 0x008e_8a10, &[shape, id.cast_unsigned()]);
+        tolib::bridge::shape_data_modify(b, shape, id, fcall, cos, remap);
+        same_memory(&format!("shape {k} ({id:#x})"), a, b);
+    }
+}
+
+#[test]
+fn round34_shape_data_modify_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_shape_data_modify(&mut a, &mut b, &mut Xorshift(0x4034_0041));
+}
+
+#[test]
+fn round34_shape_data_modify_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_shape_data_modify(&mut a, &mut b, &mut Xorshift(0x4034_0042));
+}

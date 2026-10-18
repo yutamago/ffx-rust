@@ -12548,4 +12548,135 @@ pub mod bridge {
             }
         }
     }
+
+    /// `ShapeDataModify(shape, id)` (`0x008e8a10`): the HD port's fixes to
+    /// the shape record `shape` (`+0`/`+4` and `+0x20`/`+0x24` the corners,
+    /// `+8`/`+0xc` and `+0x28`/`+0x2c` the UVs, `f32`; `+0x10..+0x18`,
+    /// `+0x1c`, `+0x30..+0x38`, `+0x3c` colour words) for a few shape ids
+    /// (signed): new corners through `graphicUiRemapX`/`Y` (`remap`, the
+    /// 720p remaps), new UVs, fixed offsets. Shapes 0x19b and 0x19c clear
+    /// both alphas when the first colour is black, else make both colours
+    /// grey (0x80); with 0x1fb they then pulse each non-zero alpha to
+    /// `ftol(f32(cos(graphicGetTime() * 3)) * 10 + 118)` (`fcall`, `cos` the
+    /// C runtime's `_CIcos`). 0x1024 and 0x102d move up 20 or 30, take 25
+    /// off the right edge and turn alphas from 0x46 (signed) into 0x80.
+    /// Sums are formed at 53 bits and stored as `f32`.
+    #[allow(clippy::too_many_lines)]
+    pub fn shape_data_modify<M: Mem>(
+        mem: &mut M,
+        shape: u32,
+        id: i32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+        mut cos: impl FnMut(&mut M, f64) -> f64,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+    ) {
+        use ffx_bridge::x87;
+        const GET_TIME: u32 = 0x0064_1410;
+        let at = |off: u32| shape.wrapping_add(off);
+        let f = |mem: &M, off: u32| f64::from(mem.read::<f32>(at(off)));
+        let store = |v: f64| f32::from_bits(x87::store(v));
+        let mut corners = |mem: &mut M, [x0, y0, x1, y1]: [Option<f32>; 4]| {
+            for (off, y, v) in [
+                (0, false, x0),
+                (4, true, y0),
+                (0x20, false, x1),
+                (0x24, true, y1),
+            ] {
+                if let Some(v) = v {
+                    let r = remap(mem, y, v);
+                    mem.write(at(off), r);
+                }
+            }
+        };
+        let uvs = |mem: &mut M, uv: [f32; 4]| {
+            for (off, v) in [8, 0xc, 0x28, 0x2c].into_iter().zip(uv) {
+                mem.write(at(off), v);
+            }
+        };
+        // each set alpha pulsing with the clock
+        let mut pulse = |mem: &mut M| {
+            for off in [0x1c, 0x3c] {
+                if mem.read::<u32>(at(off)) != 0 {
+                    let t = fcall(mem, GET_TIME, &[]);
+                    let c = f64::from(store(cos(mem, x87::mul(t, 3.0))));
+                    let alpha = x87::ftol(mem, x87::add(x87::mul(c, 10.0), 118.0));
+                    mem.write(at(off), alpha);
+                }
+            }
+        };
+        // black: no alphas; else grey colours and the pulse
+        let grey_or_clear = |mem: &mut M, pulse: &mut dyn FnMut(&mut M)| {
+            if [0x10, 0x14, 0x18]
+                .iter()
+                .all(|&off| mem.read::<u32>(at(off)) == 0)
+            {
+                mem.write(at(0x1c), 0u32);
+                mem.write(at(0x3c), 0u32);
+                return;
+            }
+            for off in [0x10, 0x14, 0x18, 0x30, 0x34, 0x38] {
+                mem.write(at(off), 0x80u32);
+            }
+            pulse(mem);
+        };
+        match id {
+            0x3e => corners(mem, [Some(36.0), None, Some(200.0), None]),
+            0x19b => {
+                corners(mem, [Some(138.0), Some(702.0), Some(268.0), Some(716.0)]);
+                uvs(mem, [0.0, 400.0 / 1024.0, 240.0 / 1024.0, 434.0 / 1024.0]);
+                grey_or_clear(mem, &mut pulse);
+            }
+            0x19c => {
+                mem.write(at(0), 0.0f32);
+                corners(mem, [None, Some(571.0), Some(130.0), Some(585.0)]);
+                uvs(
+                    mem,
+                    [
+                        465.0 / 1024.0,
+                        406.0 / 1024.0,
+                        705.0 / 1024.0,
+                        440.0 / 1024.0,
+                    ],
+                );
+                grey_or_clear(mem, &mut pulse);
+            }
+            0x19f => {
+                mem.write(at(0), 0.0f32);
+                corners(mem, [None, Some(700.0), Some(275.0), Some(720.0)]);
+                uvs(mem, [0.0, 846.0 / 1024.0, 518.0 / 1024.0, 896.0 / 1024.0]);
+            }
+            0x1f7 => {
+                mem.write(at(4), store(x87::sub(f(mem, 4), 10.0)));
+                mem.write(at(0x24), store(x87::sub(f(mem, 0x24), 10.0)));
+            }
+            0x1fb => {
+                corners(mem, [Some(200.0), Some(695.0), Some(280.0), Some(725.0)]);
+                pulse(mem);
+            }
+            0x1fc => {
+                mem.write(at(4), store(x87::sub(f(mem, 4), 10.0)));
+                mem.write(at(0x24), store(x87::add(f(mem, 0x24), 0.0)));
+                mem.write(at(0), store(x87::add(f(mem, 0), 15.0)));
+                mem.write(at(0x20), store(x87::add(f(mem, 0x20), 35.0)));
+            }
+            0x1023 => {
+                let w = x87::sub(x87::sub(f(mem, 0x20), f(mem, 0)), 25.0);
+                mem.write(at(0x20), store(w));
+                mem.write(at(0), 0.0f32);
+                corners(mem, [None, Some(560.0), None, Some(584.0)]);
+            }
+            0x1024 | 0x102d => {
+                let up = if id == 0x1024 { 20.0 } else { 30.0 };
+                mem.write(at(4), store(x87::sub(f(mem, 4), up)));
+                mem.write(at(0x24), store(x87::sub(f(mem, 0x24), up)));
+                mem.write(at(0x20), store(x87::sub(f(mem, 0x20), 25.0)));
+                for off in [0x1c, 0x3c] {
+                    if mem.read::<i32>(at(off)) >= 0x46 {
+                        mem.write(at(off), 0x80u32);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }

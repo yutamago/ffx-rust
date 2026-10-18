@@ -1456,3 +1456,14 @@ pushed as literals (no relocation entries), not addresses.
   `TOAdpCrossFontM_FFX(p, x, y, colour, 0x80, 0x80, 0x80, 0x80, scale)`
   from `x - scale * (n * (gap + 10) - gap)` (each step at 53 bits, stored
   `f32`), stepping `(gap + 10) * scale`, a double that is never stored.
+- `ShapeDataModify(shape, id)` (shape record: corners `+0/+4`,
+  `+0x20/+0x24`; UVs `+8/+0xc`, `+0x28/+0x2c`; colour words
+  `+0x10..+0x18`, `+0x1c`, `+0x30..+0x38`, `+0x3c`) fixes shapes for the
+  HD port with `graphicUiRemapX/Y` (720p): 0x3e, 0x19b, 0x19c, 0x19f and
+  0x1fb get new corners (0x19b/0x19c/0x19f new UVs), 0x1f7 and 0x1fc move
+  up 10 (0x1fc also x0 + 15, x1 + 35, y1 + 0.0), 0x1023 narrows by its x0
+  and 25 and gets y 560..584, 0x1024/0x102d move up 20/30, take 25 off x1
+  and turn alphas from 0x46 into 0x80. 0x19b/0x19c clear both alphas when
+  the first colour is black, else grey both colours; with 0x1fb each
+  non-zero alpha then pulses as `ftol(f32(cos(graphicGetTime() * 3)) * 10
+  + 118)`.
