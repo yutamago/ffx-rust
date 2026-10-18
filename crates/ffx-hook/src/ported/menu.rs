@@ -3321,6 +3321,74 @@ ported! {
         };
         tk::menu_kaizou_weapon_byte4(&mut m, w, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuWShop_OpenSubWindow2(parent)`: the weapon shop's buy-amount window.
+    MenuWShop_OpenSubWindow2 @ 0x008d_81d0 => extern "C" fn menu_wshop_open_sub_window2(parent: u32) -> u32 {
+        tk::menu_wshop_open_sub_window2(&mut mem(), parent, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenSubWindow3(parent)`: the weapon shop's sell window.
+    MenuWShop_OpenSubWindow3 @ 0x008d_82d0 => extern "C" fn menu_wshop_open_sub_window3(parent: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_open_sub_window3(&mut mem(), parent, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_OpenBuyWindow(parent)`: the item shop's buy-amount window.
+    MenuShop_OpenBuyWindow @ 0x008d_a860 => extern "C" fn menu_shop_open_buy_window(parent: u32) -> u32 {
+        tk::menu_shop_open_buy_window(&mut mem(), parent, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_OpenSellWindow(parent)`: the item shop's sell window.
+    MenuShop_OpenSellWindow @ 0x008d_aa00 => extern "C" fn menu_shop_open_sell_window(parent: u32) -> u32 {
+        tk::menu_shop_open_sell_window(&mut mem(), parent, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_OpenWindow2()`: the aeon menu's second window.
+    MenuSummon_OpenWindow2 @ 0x008c_eda0 => extern "C" fn menu_summon_open_window2() -> u32 {
+        tk::menu_summon_open_window2(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_CountGearByOwner()`: the item menu's equipment counts.
+    MenuItem_CountGearByOwner @ 0x008c_94e0 => extern "C" fn menu_item_count_gear_by_owner() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_count_gear_by_owner(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenSubCmdWindowRect(id, texts, values, n, b44, x, y, width, h)`.
+    TkMenuOpenSubCmdWindowRect @ 0x008e_4930 => extern "C" fn tk_menu_open_sub_cmd_window_rect(id: u32, texts: u32, values: u32, n: u32, b44: u32, x: f32, y: f32, width: f32, h: f32) -> u32 {
+        tk::tk_menu_open_sub_cmd_window_rect(&mut mem(), [id, texts, values, n, b44], [x, y, width, h], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenSubCmdWindowBeside(id, texts, values, n, b44)`.
+    TkMenuOpenSubCmdWindowBeside @ 0x008e_46b0 => extern "C" fn tk_menu_open_sub_cmd_window_beside(id: u32, texts: u32, values: u32, n: u32, b44: u32) -> u32 {
+        tk::tk_menu_open_sub_cmd_window_beside(&mut mem(), [id, texts, values, n, b44], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMsSetSaveParam(chr)`.
+    TkMsSetSaveParam @ 0x008c_3070 => extern "C" fn tk_ms_set_save_param(chr: u32) -> u32 {
+        tk::tk_ms_set_save_param(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_AddAbility(weapon, ability)`.
+    MenuKaizou_AddAbility @ 0x008d_5680 => extern "C" fn menu_kaizou_add_ability(weapon: u32, ability: u32) -> u32 {
+        tk::menu_kaizou_add_ability(&mut mem(), weapon, ability, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMsEventEffectRead(id)`.
+    TkMsEventEffectRead @ 0x0087_2470 => extern "C" fn tk_ms_event_effect_read(id: u32) -> u32 {
+        tk::tk_ms_event_effect_read(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkResetClip()`.
+    TkResetClip @ 0x0088_c710 => extern "C" fn tk_reset_clip() -> u32 {
+        tk::tk_reset_clip(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_Reset()`.
+    MenuMain_Reset @ 0x008a_a570 => extern "C" fn menu_main_reset() -> u32 {
+        tk::menu_main_reset(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawRows(window, _, first, x, y)`: nine item rows.
+    MenuItem_DrawRows @ 0x008c_99f0 => extern "C" fn menu_item_draw_rows(window: u32, _unused: u32, first: u32, x: f32, y: f32) {
+        tk::menu_item_draw_rows(&mut mem(), window, first, [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuNameEntry_Commit()`: the typed name written.
+    MenuNameEntry_Commit @ 0x008c_4e60 => extern "C" fn menu_name_entry_commit() -> u32 {
+        tk::menu_name_entry_commit(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkHideAttachedChrs(actor, hide)`: returns `actor`.
+    TkHideAttachedChrs @ 0x0087_2380 => extern "C" fn tk_hide_attached_chrs(actor: u32, hide: u32) -> u32 {
+        tk::tk_hide_attached_chrs(&mut mem(), actor, hide, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuMain_BusyMask()`.
     MenuMain_BusyMask @ 0x008a_a610 => extern "C" fn menu_main_busy_mask() -> u32 {
         tk::menu_main_busy_mask(&mut mem(), &mut |_, f, a| call_ptr(f, a))

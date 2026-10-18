@@ -16,12 +16,14 @@
 //! - [`op`]: the op layer's services;
 //! - [`et`]: its character and effect tables;
 //! - [`opus`]: opus effect objects and their script commands;
+//! - [`anmm`]: `opp_anmm`'s sprite-animation commands;
 //! - [`opd`]: the debug display;
 //! - [`hi_md`], [`hi_opus`]: the high range's model helpers and opus
 //!   effects.
 //!
 //! [`x87`] reproduces the game thread's float arithmetic bit for bit.
 
+pub mod anmm;
 pub mod draw;
 pub mod et;
 pub mod fp;

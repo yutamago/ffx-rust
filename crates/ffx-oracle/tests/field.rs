@@ -13285,3 +13285,1566 @@ fn round51_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0033_0002);
     round51_cases(&mut t, &mut rng);
 }
+
+// ---- field agent r1, group A: the VU1 render parameters ----
+
+/// The float fields `yiRender_setupparamVU1` and `yiRender_updatematrixp`
+/// read through the x87 (no signalling NaNs: the emulator keeps them).
+const R1A_FLOATS: [u32; 6] = [0x681fc, 0x68200, 0x67f38, 0x67f4c, 0x68370, 0x681f8];
+
+/// The fog inputs (`yiRender_setupFogParam`): finite (an infinite scale
+/// makes a NaN whose sign the x87 and SSE pick differently; the game's
+/// data holds none).
+const R1A_FOG: [u32; 4] = [0x681f8, 0x68344, 0x68348, 0x6834c];
+
+/// Group A on `t` over the renderer at `r` (`real`: the snapshot's own,
+/// left as it is on the first pass).
+fn r1a_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, real: bool) {
+    for k in 0..120 {
+        if !(real && k == 0) {
+            t.fill(r + 0x6_7600, 0xd00, rng);
+            for o in R1A_FLOATS {
+                t.put(r + o, rng.float());
+            }
+            for o in R1A_FOG {
+                let v = rng.float();
+                t.put(
+                    r + o,
+                    if v & 0x7f80_0000 == 0x7f80_0000 {
+                        v & 0xbfff_ffff
+                    } else {
+                        v
+                    },
+                );
+            }
+            t.put(r + 0x67f08, rng.next());
+            for o in [0x68368u32, 0x6836c] {
+                let v = match rng.below(4) {
+                    0 => rng.float(),
+                    1 => {
+                        #[allow(clippy::cast_precision_loss)]
+                        let x = 2048.0 + rng.range(-3000, 3000) as f32 / 4.0;
+                        x.to_bits()
+                    }
+                    2 => 2048.0f32.to_bits(),
+                    _ => (2048.0f32
+                        + 1e10 * f32::from_bits(rng.float() & 0x8000_0000 | 0x3f80_0000))
+                    .to_bits(),
+                };
+                t.put(r + o, v);
+            }
+        }
+        t.same(
+            "yiRender_setupparamVU1",
+            |o| o.eax(0x0090_da90, &[r]),
+            |m| yi::bridge::yi_render_setupparam_vu1(m, r),
+        );
+        t.same(
+            "yiRender_updatematrixp",
+            |o| o.eax(0x0090_dd80, &[r]),
+            |m| yi::bridge::yi_render_updatematrixp(m, r),
+        );
+    }
+}
+
+/// `yiRender_term` over a synthetic renderer, the frees and engine calls
+/// logged.
+fn r1a_term_cases(t: &mut Twin, rng: &mut Xorshift, r: u32) {
+    let env = LoadEnv::install(t, rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    for _ in 0..40 {
+        env.reset(t, rng);
+        t.fill(r + 0x6_8000, 0x4_0000, rng);
+        t.fill(r + 0x9_c000, 0x2000, rng);
+        t.fill(r + 0xb_a3c0, 0x40, rng);
+        t.put(r + 0x9_caa8, if rng.below(2) == 0 { 0 } else { rng.next() });
+        for o in [0xba3ccu32, 0xba3dc] {
+            t.put(r + o, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        t.same(
+            "yiRender_term",
+            |o| o.eax(0x0090_dd00, &[r]),
+            |m| yi::bridge::yi_render_term(m, r, call),
+        );
+    }
+}
+
+/// Group A: `yiRender_setupparamVU1`, `yiRender_updatematrixp`,
+/// `yiRender_term`.
+#[test]
+fn r1a_vu1_render_parameters_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00a1_0001);
+    let r = t.alloc(0xb_e100);
+    r1a_cases(&mut t, &mut rng, r, false);
+    r1a_term_cases(&mut t, &mut rng, r);
+}
+
+/// Group A on the snapshot (`FFX_SNAPSHOT`): the game's own renderer.
+#[test]
+fn r1a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00a1_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r1a_cases(&mut t, &mut rng, r, true);
+    let r = t.alloc(0xb_e100);
+    r1a_term_cases(&mut t, &mut rng, r);
+}
+
+// ---- field agent r1, group B: the character helpers of `rcefUtil` ----
+
+/// `copy len bytes from src + ((arg a + arg b) & mask) * len to arg d`:
+/// a stand-in for a callee that fills a caller's buffer from its
+/// arguments (`Ch_ElemGetMatrix`, `Ch_OptposGet`); saves `esi`/`edi`.
+fn table_stub(src: u32, len: u32, mask: u32, [a, b, d]: [u8; 3]) -> Vec<u8> {
+    let arg = |k: u8| 0x0c + 4 * k;
+    let mut c = vec![
+        0x56,
+        0x57,
+        0x8b,
+        0x44,
+        0x24,
+        arg(a),
+        0x03,
+        0x44,
+        0x24,
+        arg(b),
+        0x25,
+    ];
+    c.extend_from_slice(&mask.to_le_bytes());
+    c.extend_from_slice(&[0x69, 0xc0]);
+    c.extend_from_slice(&len.to_le_bytes());
+    c.extend_from_slice(&[0x8d, 0xb0]);
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x7c, 0x24, arg(d), 0xb9]);
+    c.extend_from_slice(&len.to_le_bytes());
+    c.extend_from_slice(&[0xf3, 0xa4, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// `return base + (arg 0 & 7) * 0x200`: a handle stand-in over eight
+/// synthetic characters.
+fn handle_stub(base: u32) -> Vec<u8> {
+    let mut c = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x09, 0x05,
+    ];
+    c.extend_from_slice(&base.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// One pass of group B's functions on `t` for character `i`.
+#[allow(clippy::too_many_lines)] // one function after another
+fn r1b_pass(t: &mut Twin, rng: &mut Xorshift, i: u32, e: u32, obj: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (out, v) = (t.alloc(0x40), t.alloc(0x10));
+    let work = t.stack_scratch(0x200);
+    // rcbgScaleVector_0092d690 copies its float argument as a quadword
+    // into the emulated VU0 register at 0x00c8f970: the three words past it
+    // are the caller's stack, which differs between the original and the
+    // port (as in round 7's vector tests)
+    let skip = [(t.b.rebase(0x00c8_f974), 12)];
+    let n = rng.below(4);
+    t.same_but(
+        "rcefGetChrHandle",
+        &skip,
+        |o| o.eax(0x0092_e1c0, &[i]),
+        |m| task::bridge::rcef_get_chr_handle(m, i, call),
+    );
+    t.same_but(
+        "rcefGetChrElemNo",
+        &skip,
+        |o| o.eax(0x0092_e000, &[i, n]),
+        |m| task::bridge::rcef_get_chr_elem_no(m, i, n, call),
+    );
+    t.same_but(
+        "rcefGetChrMatrix",
+        &skip,
+        |o| o.void(0x0092_e240, &[i, e, out]),
+        |m| task::bridge::rcef_get_chr_matrix(m, i, e, out, call),
+    );
+    t.same_but(
+        "rcefGetChrMatrixOpt",
+        &skip,
+        |o| o.void(0x0092_e270, &[i, n, out]),
+        |m| task::bridge::rcef_get_chr_matrix_opt(m, i, n, out, call),
+    );
+    t.same_but(
+        "rcefGetChrPos",
+        &skip,
+        |o| o.eax(0x0092_e2f0, &[i, e, out]),
+        |m| task::bridge::rcef_get_chr_pos(m, i, e, out, work, call),
+    );
+    t.same_but(
+        "rcefGetChrPosY0",
+        &skip,
+        |o| o.eax(0x0092_e380, &[i, e, out]),
+        |m| task::bridge::rcef_get_chr_pos_y0(m, i, e, out, work, call),
+    );
+    t.same_but(
+        "rcefGetChrPosOpt",
+        &skip,
+        |o| o.eax(0x0092_e340, &[i, n, out]),
+        |m| task::bridge::rcef_get_chr_pos_opt(m, i, n, out, work, call),
+    );
+    t.same_but(
+        "rcefGetChrPosOptY0",
+        &skip,
+        |o| o.eax(0x0092_e360, &[i, n, out]),
+        |m| task::bridge::rcef_get_chr_pos_opt_y0(m, i, n, out, work, call),
+    );
+    t.same_but(
+        "rcefGetChrWidth",
+        &skip,
+        |o| o.float(0x0092_e3a0, &[i]),
+        |m| bits(task::bridge::rcef_get_chr_width(m, i, call)),
+    );
+    t.same_but(
+        "rcefGetChrEyeHeight",
+        &skip,
+        |o| o.float(0x0092_e110, &[i]),
+        |m| bits(task::bridge::rcef_get_chr_eye_height(m, i, work, call)),
+    );
+    for k in 0..4 {
+        t.put(v + 4 * k, rng.float());
+    }
+    t.same_but(
+        "rcefGetChrElemPos",
+        &skip,
+        |o| o.eax(0x0092_e0a0, &[i, e, v, out]),
+        |m| task::bridge::rcef_get_chr_elem_pos(m, [i, e, v, out], work, call),
+    );
+    t.same_but(
+        "rcefGetChrElemOff",
+        &skip,
+        |o| o.eax(0x0092_e020, &[i, e, out]),
+        |m| task::bridge::rcef_get_chr_elem_off(m, [i, e, out], work, call),
+    );
+    t.same_but(
+        "rcefGetChrFrontVec",
+        &skip,
+        |o| o.void(0x0092_e170, &[i, out]),
+        |m| task::bridge::rcef_get_chr_front_vec(m, i, out, work, call),
+    );
+    t.same_but(
+        "rcefObjAttachChrOpt",
+        &skip,
+        |o| o.void(0x0092_f9a0, &[obj, i, n]),
+        |m| task::bridge::rcef_obj_attach_chr_opt(m, obj, i, n, call),
+    );
+}
+
+/// The calls group B makes that change the game (the CLUTs, the base
+/// matrix), stood in and logged.
+fn r1b_logged(t: &mut Twin, i: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    t.same(
+        "rcefResetChrBaseMatrix",
+        |o| o.void(0x0092_e730, &[i]),
+        |m| task::bridge::rcef_reset_chr_base_matrix(m, i, call),
+    );
+    t.same(
+        "rcefCreateChrClut",
+        |o| o.eax(0x0092_deb0, &[i]),
+        |m| task::bridge::rcef_create_chr_clut(m, i, call),
+    );
+    t.same(
+        "rcefDisposeChrClut",
+        |o| o.eax(0x0092_df10, &[i]),
+        |m| task::bridge::rcef_dispose_chr_clut(m, i, call),
+    );
+}
+
+/// Group B on the image: the handles, matrices and option positions stood
+/// in over eight synthetic characters, in and out of a battle.
+#[test]
+fn r1b_rcef_chr_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00b1_0001);
+    let (log, rv) = (t.alloc(4 + 0x20 * 64), t.alloc(4));
+    let (chrs, blocks) = (t.alloc(0x2000), t.alloc(0x400));
+    let (mats, opts) = (t.alloc(0x40 * 16), t.alloc(0x10 * 16));
+    for k in 0..16 {
+        t.put(chrs + 0x200 * k + 0x1c4, blocks + 0x40 * k);
+    }
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (
+            Some(task::CH_ELEM_GET_MATRIX),
+            table_stub(mats, 0x40, 15, [0, 1, 2]),
+        ),
+        (
+            Some(task::CH_OPTPOS_GET),
+            table_stub(opts, 0x10, 15, [0, 1, 2]),
+        ),
+        (Some(task::CH_OPTPOS_GET_ELEMENT), log_stub(log, rv, 1, 3)),
+        (Some(task::CH_SET_ORG_MATRIX), log_stub(log, rv, 2, 2)),
+        (Some(task::CH_CLUT_CREATE), log_stub(log, rv, 3, 1)),
+        (Some(task::CH_CLUT_DISPOSE), log_stub(log, rv, 4, 1)),
+    ]);
+    let obj = t.alloc(0x200);
+    for k in 0..150 {
+        t.put(log, 0u32);
+        t.put(rv, rng.below(40));
+        for p in [mats, opts] {
+            for w in 0..0x100 {
+                t.put(p + 4 * w, rng.float());
+            }
+        }
+        for w in 0..0x100 {
+            t.put(blocks + 4 * w, rng.float());
+        }
+        t.fill(obj, 0x200, &mut rng);
+        t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 3 == 0));
+        let i = if k < 20 { k } else { rng.next() };
+        let e = rng.below(40);
+        r1b_pass(&mut t, &mut rng, i, e, obj);
+        r1b_logged(&mut t, i);
+    }
+}
+
+/// Group B on the snapshot (`FFX_SNAPSHOT`): the game's own characters
+/// (each index whose handle is not null), the changing calls stood in.
+#[test]
+fn r1b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00b1_0002);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 64), t.alloc(4));
+    t.cave(&[
+        (Some(task::CH_SET_ORG_MATRIX), log_stub(log, rv, 2, 2)),
+        (Some(task::CH_CLUT_CREATE), log_stub(log, rv, 3, 1)),
+        (Some(task::CH_CLUT_DISPOSE), log_stub(log, rv, 4, 1)),
+    ]);
+    let obj = t.alloc(0x200);
+    let mut seen = 0;
+    for i in 0..40 {
+        let h = task::bridge::rcef_get_chr_handle(&mut t.b, i, call);
+        if h == 0 {
+            continue;
+        }
+        seen += 1;
+        for _ in 0..4 {
+            t.put(log, 0u32);
+            t.fill(obj, 0x200, &mut rng);
+            let e = rng.below(3);
+            r1b_pass(&mut t, &mut rng, i, e, obj);
+            r1b_logged(&mut t, i);
+        }
+    }
+    eprintln!("{seen} characters");
+}
+
+// ---- field agent r1, group C: an effect object's matrices ----
+
+/// Group C on `t`: synthetic effect objects over every flag combination,
+/// hanging from a parent object, a character (`i` in `chars`) or a display
+/// object.
+fn r1c_cases(t: &mut Twin, rng: &mut Xorshift, chars: &[u32], dobjs: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (obj, parent, out) = (t.alloc(0x300), t.alloc(0x300), t.alloc(0x40));
+    let work = t.stack_scratch(0x200);
+    // scratch the emulated VU0 registers keep from the callers' stacks
+    // (rcbgScaleVector's quadword copy of its float argument)
+    let skip = [(t.b.rebase(0x00c8_f974), 12)];
+    for k in 0..300u32 {
+        t.fill(obj, 0x300, rng);
+        for w in 0..0xc0 {
+            t.put(obj + 4 * w, rng.float());
+            t.put(parent + 4 * w, rng.float());
+        }
+        for w in 0..16 {
+            t.put(out + 4 * w, rng.float());
+        }
+        let flags = (k & 0xff) | if k & 0x100 != 0 { 0x1000 } else { 0 } | (rng.next() & 0x100);
+        t.put(obj + 0xbc, flags);
+        t.put(obj + 0xc0, if rng.below(3) == 0 { 0 } else { parent });
+        let i = chars[rng.below(u32::try_from(chars.len()).unwrap()) as usize];
+        t.put(
+            obj + 0x270,
+            if flags & 0x16 == 4 {
+                rng.below(dobjs)
+            } else {
+                i
+            },
+        );
+        t.put(obj + 0x274, rng.below(3));
+        if rng.below(3) == 0 {
+            // a vertical row 2 flattens to zero: the identity branch
+            for p in [parent + 0x1f0 + 0x20, parent + 0x1f0 + 0x28] {
+                t.put(p, 0u32);
+            }
+        }
+        t.same_but(
+            "rcefObjCalcParentMatrix",
+            &skip,
+            |o| o.void(0x0092_fc60, &[obj, out]),
+            |m| task::bridge::rcef_obj_calc_parent_matrix(m, obj, out, work, call),
+        );
+        t.same_but(
+            "rcefObjCalcWorldMatrix",
+            &skip,
+            |o| o.eax(0x0092_fe30, &[obj]),
+            |m| task::bridge::rcef_obj_calc_world_matrix(m, obj, work, call),
+        );
+    }
+}
+
+/// Group C on the image: the handles, character matrices and display
+/// objects stood in.
+#[test]
+fn r1c_obj_matrices_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c1_0001);
+    let (chrs, mats, dmats) = (t.alloc(0x2000), t.alloc(0x40 * 16), t.alloc(0x40 * 16));
+    // small floats: Ch_GetRot wraps its angle a turn at a time
+    for w in 0..0x800 {
+        #[allow(clippy::cast_precision_loss)]
+        let x = rng.range(-4000, 4000) as f32 / 1000.0;
+        t.put(chrs + 4 * w, x.to_bits());
+    }
+    for w in 0..0x100 {
+        t.put(mats + 4 * w, rng.float());
+        t.put(dmats + 4 * w, rng.float());
+    }
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (
+            Some(task::CH_ELEM_GET_MATRIX),
+            table_stub(mats, 0x40, 15, [0, 1, 2]),
+        ),
+        (
+            Some(task::YI_GET_MATRIX_DOBJ),
+            table_stub(dmats, 0x40, 15, [0, 0, 1]),
+        ),
+    ]);
+    for battle in [0i8, 1] {
+        t.set(ffx_battle::state::bridge::STATUS, battle);
+        r1c_cases(&mut t, &mut rng, &[0, 1, 2, 3, 9, 0x8000_0001], 16);
+    }
+}
+
+/// Group C on the snapshot (`FFX_SNAPSHOT`): the game's characters and
+/// display objects.
+#[test]
+fn r1c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c1_0002);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    // asked of both: the handle lookup writes game state
+    let chars: Vec<u32> = (0..40)
+        .filter(|&i| {
+            task::bridge::rcef_get_chr_handle(&mut t.a, i, call);
+            task::bridge::rcef_get_chr_handle(&mut t.b, i, call) != 0
+        })
+        .collect();
+    if chars.is_empty() {
+        return;
+    }
+    r1c_cases(&mut t, &mut rng, &chars, 4);
+}
+
+/// `return table[arg k & mask]` (a word table).
+fn word_table_stub(table: u32, mask: u32, k: u8) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 4 + 4 * k, 0x25];
+    c.extend_from_slice(&mask.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x85]);
+    c.extend_from_slice(&table.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// The CLUT tint factors: small and large, negative, zero.
+fn r1c_tints(t: &mut Twin, rng: &mut Xorshift, add: u32, mul: u32) {
+    for j in 0..4 {
+        #[allow(clippy::cast_precision_loss)]
+        let a = match rng.below(4) {
+            0 => 0.0,
+            1 => rng.range(-300, 300) as f32,
+            _ => rng.range(-64, 64) as f32 / 4.0,
+        };
+        #[allow(clippy::cast_precision_loss)]
+        let m = match rng.below(5) {
+            0 => 1.0,
+            1 => f32::from_bits(rng.float()),
+            _ => rng.range(-100, 400) as f32 / 128.0,
+        };
+        t.put(add + 4 * j, a.to_bits());
+        t.put(mul + 4 * j, m.to_bits());
+    }
+}
+
+/// `rcefChgChrClut` on the image: CLUT counts, sizes and buffers stood in
+/// (the live CLUT sometimes over the original).
+#[test]
+fn r1c_chg_chr_clut_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c1_0003);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (chrs, nb, sizes, orgs, ptrs) = (
+        t.alloc(0x2000),
+        t.alloc(4),
+        t.alloc(32),
+        t.alloc(32),
+        t.alloc(32),
+    );
+    let (buf, add, mul) = (t.alloc(0x4000), t.alloc(0x10), t.alloc(0x10));
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (Some(task::CH_CLUT_GET_NB), word_table_stub(nb, 0, 0)),
+        (Some(task::CH_CLUT_GET_SIZE), word_table_stub(sizes, 7, 1)),
+        (Some(task::CH_CLUT_GET_ORG_PTR), word_table_stub(orgs, 7, 1)),
+        (Some(task::CH_CLUT_GET_PTR), word_table_stub(ptrs, 7, 1)),
+    ]);
+    for k in 0..200u32 {
+        t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 2 == 0));
+        t.fill(buf, 0x4000, &mut rng);
+        t.put(nb, rng.range(-2, 8));
+        for c in 0..8 {
+            t.put(sizes + 4 * c, rng.range(-1, 0x40));
+            t.put(orgs + 4 * c, buf + 0x400 * c);
+            let p = if rng.below(4) == 0 {
+                buf + 0x400 * c + 4 * rng.below(3)
+            } else {
+                buf + 0x2000 + 0x400 * (c & 7)
+            };
+            t.put(ptrs + 4 * c, p.min(buf + 0x3c00));
+        }
+        r1c_tints(&mut t, &mut rng, add, mul);
+        let i = rng.below(16);
+        t.same(
+            "rcefChgChrClut",
+            |o| o.eax(0x0092_dd30, &[i, add, mul]),
+            |m| task::bridge::rcef_chg_chr_clut(m, i, add, mul, call),
+        );
+    }
+}
+
+/// `rcefChgChrClut` on the snapshot (`FFX_SNAPSHOT`): the characters' own
+/// CLUTs.
+#[test]
+fn r1c_chg_chr_clut_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c1_0004);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (add, mul) = (t.alloc(0x10), t.alloc(0x10));
+    for i in 0..40 {
+        task::bridge::rcef_get_chr_handle(&mut t.a, i, call);
+        if task::bridge::rcef_get_chr_handle(&mut t.b, i, call) == 0 {
+            continue;
+        }
+        for _ in 0..3 {
+            r1c_tints(&mut t, &mut rng, add, mul);
+            t.same(
+                "rcefChgChrClut",
+                |o| o.eax(0x0092_dd30, &[i, add, mul]),
+                |m| task::bridge::rcef_chg_chr_clut(m, i, add, mul, call),
+            );
+        }
+    }
+}
+
+// ---- field agent r2, group D: an effect object's frame ----
+
+/// [`log_stub`] logging argument `k` as the word at `[arg k] + off` (a
+/// pointer into the caller's frame, which differs between the original
+/// and the port).
+fn deref_log_stub(log: u32, rv: u32, id: u32, args: u32, k: u32, off: u8) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0xc1, 0xe1, 0x05, 0xc7, 0x81]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    for i in 0..args {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, u8::try_from(4 + 4 * i).unwrap()]);
+        if i == k {
+            c.extend_from_slice(&[0x8b, 0x40, off]); // mov eax, [eax + off]
+        }
+        c.extend_from_slice(&[0x89, 0x81]);
+        c.extend_from_slice(&(log + 8 + 4 * i).to_le_bytes());
+    }
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Small floats for an object's motion, colours and matrices.
+fn r1d_float(rng: &mut Xorshift) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let x = match rng.below(6) {
+        0 => 0.0,
+        1 => f32::from_bits(rng.float()),
+        _ => rng.range(-3000, 3000) as f32 / 1000.0,
+    };
+    x.to_bits()
+}
+
+/// The VFX, ppp and character calls of an object's frame, stood in.
+struct R1dEnv {
+    log: u32,
+    rvs: u32,
+}
+
+impl R1dEnv {
+    fn install(t: &mut Twin) -> Self {
+        let (log, rvs) = (t.alloc(4 + 0x20 * 128), t.alloc(0x40));
+        let (chrs, mats) = (t.alloc(0x2000), t.alloc(0x40 * 16));
+        let rv = |k: u32| rvs + 4 * k;
+        t.cave(&[
+            (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+            (
+                Some(task::ATEL_CHAR_FROM_BIND_PC),
+                handle_stub(chrs + 0x1000),
+            ),
+            (
+                Some(task::CH_ELEM_GET_MATRIX),
+                table_stub(mats, 0x40, 15, [0, 1, 2]),
+            ),
+            (
+                Some(task::YI_GET_MATRIX_DOBJ),
+                table_stub(mats, 0x40, 15, [0, 0, 1]),
+            ),
+            (Some(task::PPP_START_PART), log_stub(log, rv(0), 1, 5)),
+            (Some(task::PPP_SET_MATRIX), log_stub(log, rv(0), 2, 1)),
+            (Some(task::PPP_ALL_FREE_POBJECT), log_stub(log, rv(0), 3, 1)),
+            (Some(task::RUN_PART), log_stub(log, rv(1), 4, 3)),
+            (Some(task::VFX_GET_RENDER_DATA), log_stub(log, rv(2), 5, 2)),
+            (Some(task::VFX_UPDATE), log_stub(log, rv(0), 6, 2)),
+            (Some(task::VFX_PATH3_UPDATE), log_stub(log, rv(0), 7, 2)),
+            (
+                Some(task::UPDATE_RENDER_DATA_SHP),
+                deref_log_stub(log, rv(0), 8, 5, 2, 0),
+            ),
+            (
+                Some(task::INIT_RENDER_DATA_SHP),
+                deref_log_stub(log, rv(0), 9, 6, 2, 0),
+            ),
+            (
+                Some(task::UPDATE_RENDER_DATA),
+                deref_log_stub(log, rv(0), 10, 4, 2, 0x1c),
+            ),
+            (
+                Some(task::INIT_RENDER_DATA),
+                deref_log_stub(log, rv(0), 11, 5, 2, 0x1c),
+            ),
+            (
+                Some(task::INIT_PATH3_RENDER_DATA),
+                deref_log_stub(log, rv(0), 12, 5, 2, 0x1c),
+            ),
+            (Some(task::ALPHA_FUNCTION), log_stub(log, rv(3), 13, 1)),
+            (Some(task::Z_MAT), log_stub(log, rv(4), 14, 1)),
+            (Some(task::SET_ENLARGE), log_stub(log, rv(0), 15, 1)),
+            (Some(task::RESET_ENLARGE), log_stub(log, rv(0), 16, 0)),
+        ]);
+        Self { log, rvs }
+    }
+
+    fn reset(&self, t: &mut Twin, rng: &mut Xorshift) {
+        t.put(self.log, 0u32);
+        for k in 0..16 {
+            t.put(
+                self.rvs + 4 * k,
+                if k == 1 || k == 2 {
+                    rng.below(2)
+                } else {
+                    rng.next()
+                },
+            );
+        }
+    }
+}
+
+/// A synthetic effect object at `obj` (0x480 bytes) with its part,
+/// animation and model, the data they point at in `data` (0x2000 bytes).
+fn r1d_object(t: &mut Twin, rng: &mut Xorshift, obj: u32, data: u32, live: bool) {
+    for w in 0..0x120 {
+        t.put(obj + 4 * w, r1d_float(rng));
+    }
+    for w in 0..0x800 {
+        t.put(data + 4 * w, r1d_float(rng));
+    }
+    t.put(obj + 0xbc, rng.next() & 0x7ff9 & !0x1000);
+    t.put(obj + 0xc0, if rng.below(2) == 0 { 0 } else { data });
+    t.put(obj + 0x270, rng.below(8));
+    t.put(obj + 0x274, rng.below(3));
+    let maybe = |rng: &mut Xorshift, p: u32| if rng.below(3) == 0 { 0 } else { p };
+    // the part
+    let p = obj + 0x280;
+    t.put(
+        p,
+        if live {
+            rng.below(4) | 1
+        } else {
+            rng.below(4) & 2
+        },
+    );
+    t.put(p + 4, data);
+    for (o, v) in [
+        (0x10u32, data + 0x100),
+        (0x14, data + 0x200),
+        (0x18, data + 0x210),
+        (0x1c, data + 0x220),
+    ] {
+        t.put(data + o, v);
+    }
+    t.put(p + 8, rng.below(8));
+    t.put(
+        p + 0x18,
+        [0x7fff, 0x8000, 0x2_6000, 0x2_6001, 0x5_0000, rng.next()][rng.below(6) as usize],
+    );
+    let (pm, pv) = (maybe(rng, data + 0x300), maybe(rng, data + 0x340));
+    t.put(p + 0x90, pm);
+    t.put(p + 0x94, pv);
+    t.put(p + 0x98, maybe(rng, data + 0x350));
+    // the animation
+    let a = obj + 0x330;
+    t.put(a, rng.below(2) | u32::from(live));
+    t.put(a + 4, data + 0x400);
+    let idx = rng.below(4);
+    t.put(a + 0x42, u16::try_from(idx).unwrap());
+    for k in 0..4 {
+        t.put(
+            data + 0x410 + 8 * k,
+            0x40u16 + 0x10 * u16::try_from(k).unwrap(),
+        );
+    }
+    for k in 0..4 {
+        t.put(data + 0x444 + 0x10 * k, 0x20u32);
+    }
+    t.put(a + 0x48, data + 0x500);
+    t.put(a + 0x4c, data + 0x540);
+    // the model
+    let m = obj + 0x3c0;
+    t.put(m, rng.below(2) | u32::from(live));
+    t.put(m + 4, data + 0x600);
+    t.put(m + 0x10, rng.next());
+    t.put(m + 0x18, rng.next() & 0xff);
+    t.put(m + 0x80, data + 0x700);
+    t.put(m + 0x84, data + 0x740);
+}
+
+/// Group D on `t`.
+fn r1d_cases(t: &mut Twin, rng: &mut Xorshift, env: &R1dEnv) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (obj, data, envbuf) = (t.alloc(0x480), t.alloc(0x2000), t.alloc(0x100));
+    t.put(envbuf, envbuf + 0x40);
+    let slot = t.b.rebase(ffx_field::abmap::PPP_ENV_SLOT);
+    t.put(slot, envbuf);
+    let kept = t.b.rebase(task::bridge::PAR_KEPT[0].0);
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for k in 0..160u32 {
+        env.reset(t, rng);
+        r1d_object(t, rng, obj, data, k % 5 != 0);
+        t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 2 == 0));
+        t.set(
+            task::bridge::CURRENT_PROGRAM,
+            [0u32, 3, 0x8000_0001][rng.below(3) as usize],
+        );
+        for g in 0..10 {
+            t.put(
+                kept + 4 * g,
+                if rng.below(4) == 0 { obj + 0x280 } else { 0 },
+            );
+        }
+        let (a, m) = (obj + 0x330, obj + 0x3c0);
+        t.same_but(
+            "rcefObjCalcLocalMatrix",
+            &skip,
+            |o| o.void(0x0092_f9d0, &[obj]),
+            |b| task::bridge::rcef_obj_calc_local_matrix(b, obj, work, call),
+        );
+        t.same_but(
+            "rcefParProc",
+            &skip,
+            |o| o.void(0x0092_f010, &[obj + 0x280]),
+            |b| task::bridge::rcef_par_proc(b, obj + 0x280, call),
+        );
+        t.same_but(
+            "rcefAnimeDraw",
+            &skip,
+            |o| o.void(0x0092_f290, &[a]),
+            |b| task::bridge::rcef_anime_draw(b, a, work, call),
+        );
+        t.same_but(
+            "rcefAnimeProc",
+            &skip,
+            |o| o.void(0x0092_f4f0, &[a]),
+            |b| task::bridge::rcef_anime_proc(b, a, work, call),
+        );
+        t.same_but(
+            "rcefModelProc",
+            &skip,
+            |o| o.eax(0x0092_f510, &[m]),
+            |b| task::bridge::rcef_model_proc(b, m, work, call),
+        );
+        t.same_but(
+            "rcefModelProc_0092f770",
+            &skip,
+            |o| o.eax(0x0092_f770, &[m]),
+            |b| task::bridge::rcef_model_proc_live(b, m, work, call),
+        );
+        r1d_object(t, rng, obj, data, k % 5 != 0);
+        t.same_but(
+            "rcefObjProc",
+            &skip,
+            |o| o.eax(0x0093_0060, &[obj]),
+            |b| task::bridge::rcef_obj_proc(b, obj, work, call),
+        );
+    }
+}
+
+/// Group D on the image.
+#[test]
+fn r1d_obj_frame_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00d1_0001);
+    let env = R1dEnv::install(&mut t);
+    r1d_cases(&mut t, &mut rng, &env);
+}
+
+/// Group D on the snapshot (`FFX_SNAPSHOT`): the game's matrices, ppp
+/// globals and VFX state, the VFX calls stood in.
+#[test]
+fn r1d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00d1_0002);
+    let env = R1dEnv::install(&mut t);
+    r1d_cases(&mut t, &mut rng, &env);
+}
+
+// ---- field agent r2, group E: character matrices, FP start lists ----
+
+/// `*arg 2 = table[arg 0 & 7]` (`pppFpGetMngPtr`'s run record).
+fn run_out_stub(table: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0x8b, 0x04, 0x85];
+    c.extend_from_slice(&table.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x01, 0xc3]);
+    c
+}
+
+/// Group E's character matrices on `t` for characters `chars`.
+fn r1e_chr_cases(t: &mut Twin, rng: &mut Xorshift, chars: &[u32], battle: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (out, v, m) = (t.alloc(0x40), t.alloc(0x10), t.alloc(0x40));
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for _ in 0..120 {
+        let i = chars[rng.below(u32::try_from(chars.len()).unwrap()) as usize];
+        let e = rng.below(3);
+        for w in 0..16 {
+            t.put(out + 4 * w, r1d_float(rng));
+            t.put(m + 4 * w, r1d_float(rng));
+        }
+        for w in 0..4 {
+            t.put(v + 4 * w, r1d_float(rng));
+        }
+        t.same_but(
+            "rcefCalcChrElemRotBaseMatrix",
+            &skip,
+            |o| o.void(0x0092_d8c0, &[i, e, out, v]),
+            |b| task::bridge::rcef_calc_chr_elem_rot_base_matrix(b, [i, e, out, v], work, call),
+        );
+        // MsGetChrPos indexes the battle actors: a battle-only function
+        if battle {
+            t.same_but(
+                "rcefCalcChrElemRotMatrix",
+                &skip,
+                |o| o.void(0x0092_d9a0, &[i, e, out, v]),
+                |b| task::bridge::rcef_calc_chr_elem_rot_matrix(b, [i, e, out, v], work, call),
+            );
+        }
+        let dst = if rng.below(3) == 0 { 0 } else { out };
+        t.same_but(
+            "rcefSetChrBaseMatrix",
+            &skip,
+            |o| o.void(0x0092_e830, &[i, m, dst]),
+            |b| task::bridge::rcef_set_chr_base_matrix(b, [i, m, dst], work, call),
+        );
+    }
+}
+
+/// Group E's FP start lists on `t`: synthetic lists, then the two maps'
+/// own (in the image's data).
+fn r1e_fp_cases(t: &mut Twin, rng: &mut Xorshift, chars: &[u32]) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, runs, recs) = (
+        t.alloc(4 + 0x20 * 128),
+        t.alloc(4),
+        t.alloc(0x20),
+        t.alloc(0x100),
+    );
+    let (list, obj) = (t.alloc(0x38 * 12), t.alloc(0x20));
+    // past the character stand-ins the callers placed
+    t.cave_from(
+        0x500,
+        &[
+            (Some(model::PPP_FP_GET_MNG_PTR), run_out_stub(runs)),
+            (Some(model::PPP_FP_RESET_STICK), log_stub(log, rv, 1, 1)),
+            (Some(model::PPP_FP_SET_STICK_CHR), log_stub(log, rv, 2, 3)),
+            (Some(model::PPP_FP_SET_STICK_MAP), log_stub(log, rv, 3, 2)),
+            (Some(model::FP_RESTART), log_stub(log, rv, 4, 1)),
+            (Some(model::FP_END), log_stub(log, rv, 5, 1)),
+        ],
+    );
+    let work = t.stack_scratch(0x200);
+    // rcbgFPmGetMatrix scales through the emulated VU0 register at
+    // 0x00c8f970, three words of it the callers' stacks
+    let skip = [(t.b.rebase(0x00c8_f974), 12)];
+    for k in 0..200u32 {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        for r in 0..8 {
+            let run = if rng.below(8) == 0 {
+                0
+            } else {
+                recs + 0x20 * r
+            };
+            t.put(runs + 4 * r, run);
+        }
+        t.fill(recs, 0x100, rng);
+        for w in 0..(0x38 * 12 / 4) {
+            t.put(list + 4 * w, r1d_float(rng));
+        }
+        for e in 0..12 {
+            let at = list + 0x38 * e;
+            t.put(at, u16::try_from(rng.below(0x10000)).unwrap());
+            let i = chars[rng.below(u32::try_from(chars.len()).unwrap()) as usize];
+            t.put(at + 2, u16::try_from(i).unwrap());
+            t.put(at + 4, u16::try_from(rng.below(0x10000)).unwrap());
+            t.put(at + 6, u8::try_from(rng.below(7)).unwrap());
+            t.put(at + 7, u8::from(rng.below(2) == 0));
+        }
+        if chars == [0, 1, 5, 7] {
+            // the image: both handle paths (a snapshot keeps its own state)
+            t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 2 == 0));
+        }
+        let n = rng.range(-1, 12);
+        t.same_but(
+            "rcbgFPmStartList",
+            &skip,
+            |o| o.eax(0x0092_23b0, &[list, n.cast_unsigned()]),
+            |b| model::bridge::rcbg_fpm_start_list(b, list, n, work, call),
+        );
+        t.put(log, 0u32);
+        for (f, spec) in [
+            (0x0092_25d0u32, model::FPM097_START),
+            (0x0092_2fb0, model::FPM565_START),
+        ] {
+            t.same_but(
+                "rcbgFPm*Proc000",
+                &skip,
+                |o| o.eax(f, &[obj]),
+                |b| model::bridge::rcbg_fpm_start(b, obj, spec, work, call),
+            );
+        }
+    }
+}
+
+/// Group E on the image: handles, matrices and positions stood in.
+#[test]
+fn r1e_chr_matrices_and_fp_lists_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00e1_0001);
+    let (log, rv) = (t.alloc(4 + 0x20 * 1024), t.alloc(4));
+    let (chrs, mats) = (t.alloc(0x2000), t.alloc(0x40 * 16));
+    for w in 0..0x800 {
+        t.put(chrs + 4 * w, r1d_float(&mut rng));
+    }
+    let blocks = t.alloc(0x400);
+    for w in 0..0x100 {
+        t.put(mats + 4 * w, r1d_float(&mut rng));
+        t.put(blocks + 4 * w, r1d_float(&mut rng));
+    }
+    for k in 0..16 {
+        t.put(chrs + 0x200 * k + 0x1c4, blocks + 0x40 * k);
+    }
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (
+            Some(task::CH_ELEM_GET_BASE_MATRIX),
+            table_stub(mats, 0x40, 15, [0, 1, 2]),
+        ),
+        (
+            Some(task::MS_GET_CHR_POS),
+            table_stub(mats, 0x10, 15, [0, 0, 1]),
+        ),
+        (Some(task::CH_SET_ORG_MATRIX), log_stub(log, rv, 1, 2)),
+    ]);
+    for battle in [0i8, 1] {
+        t.set(ffx_battle::state::bridge::STATUS, battle);
+        r1e_chr_cases(&mut t, &mut rng, &[0, 1, 5, 7], true);
+    }
+    r1e_fp_cases(&mut t, &mut rng, &[0, 1, 5, 7]);
+}
+
+/// Group E on the snapshot (`FFX_SNAPSHOT`): the game's characters (their
+/// base matrix stood in) and FP state.
+#[test]
+fn r1e_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00e1_0002);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 1024), t.alloc(4));
+    t.cave(&[(Some(task::CH_SET_ORG_MATRIX), log_stub(log, rv, 1, 2))]);
+    let chars: Vec<u32> = (0..40)
+        .filter(|&i| {
+            task::bridge::rcef_get_chr_handle(&mut t.a, i, call);
+            task::bridge::rcef_get_chr_handle(&mut t.b, i, call) != 0
+        })
+        .collect();
+    if chars.is_empty() {
+        return;
+    }
+    let battle = ffx_battle::state::bridge::STATUS.get(&t.b) != 0;
+    r1e_chr_cases(&mut t, &mut rng, &chars, battle);
+    r1e_fp_cases(&mut t, &mut rng, &chars);
+}
+
+// ---- field agent r2, group F: the minimap fog ----
+
+/// `*arg 0 = [w]; *arg 1 = [h]` (`graphicFontGetScreenWH`).
+fn screen_wh_stub(w: u32, h: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    c.extend_from_slice(&w.to_le_bytes());
+    c.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    c.extend_from_slice(&h.to_le_bytes());
+    c.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    c
+}
+
+/// `rcbgGuideUpdateWalk` on `t`: synthetic guides (walked bitmaps, mesh
+/// bounds), view matrices from identity to random, every minimap type,
+/// the VFX calls logged.
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn r1f_walk_cases(t: &mut Twin, rng: &mut Xorshift) {
+    use guide::bridge as gb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rvs, next, arena) = (
+        t.alloc(4 + 0x20 * 64),
+        t.alloc(0x20),
+        t.alloc(4),
+        t.alloc(0x8_0000),
+    );
+    let (sw, sh, mo, g, bitmap) = (
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x100),
+        t.alloc(0x100),
+        t.alloc(0x200),
+    );
+    let (m, p, pkt) = (t.alloc(0x40), t.alloc(0x10), t.alloc(0x100));
+    let rv = |k: u32| rvs + 4 * k;
+    t.cave_from(
+        0x500,
+        &[
+            (Some(gb::FONT_SCREEN_WH), screen_wh_stub(sw, sh)),
+            (Some(gb::MINI_MAP_TYPE), log_stub(log, rv(0), 1, 0)),
+            (Some(gb::USER_MALLOC), bump_stub(next)),
+            (Some(gb::USER_FREE_THUNK), log_stub(log, rv(1), 2, 1)),
+            (Some(gb::MESH_OBJECT), ret_stub(mo)),
+            (Some(guide::VFX_GET_RENDER_DATA), log_stub(log, rv(2), 3, 2)),
+            (Some(gb::INIT_RECTS), deref_log_stub(log, rv(1), 4, 4, 2, 4)),
+            (Some(gb::SET_MESH_NAME), log_stub(log, rv(1), 5, 3)),
+            (
+                Some(gb::UPDATE_RECTS),
+                deref_log_stub(log, rv(1), 6, 3, 2, 4),
+            ),
+            (Some(gb::VFX_2D_UPDATE), log_stub(log, rv(1), 7, 2)),
+        ],
+    );
+    let fog = t.b.rebase(gb::FOG_PACKET);
+    t.put(fog, pkt);
+    t.put(g + 0x70, bitmap);
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let mut quads = 0u64;
+    for k in 0..60u32 {
+        t.put(log, 0u32);
+        t.put(next, arena);
+        t.put(rv(0), [0u32, 1, 2, 3, 4, 5, rng.next()][(k % 7) as usize]);
+        t.put(rv(1), rng.next());
+        t.put(rv(2), rng.below(2));
+        t.put(sw, [640i32, 1280, 1920, 0, 1366][rng.below(5) as usize]);
+        t.put(sh, [480i32, 720, 1080, 0, 768][rng.below(5) as usize]);
+        t.fill(bitmap, 0x200, rng);
+        t.fill(pkt, 0x100, rng);
+        #[allow(clippy::cast_precision_loss)]
+        for (o, x) in [
+            (0x90u32, rng.range(-60, 60) as f32),
+            (0xa8, rng.range(-60, 60) as f32),
+        ] {
+            t.put(mo + o, x.to_bits());
+        }
+        // identity, a translated identity, or random rows (w row kept
+        // near 1 so the divide stays finite)
+        for i in 0..16u32 {
+            let ident = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+            #[allow(clippy::cast_precision_loss)]
+            let x = match k % 3 {
+                1 if i >= 12 && i != 15 => rng.range(-800, 800) as f32,
+                2 if i % 4 != 3 => ident + rng.range(-1000, 1000) as f32 / 1000.0,
+                _ => ident,
+            };
+            t.put(m + 4 * i, x.to_bits());
+        }
+        #[allow(clippy::cast_precision_loss)]
+        for i in 0..4 {
+            t.put(p + 4 * i, (rng.range(-3000, 3000) as f32 / 4.0).to_bits());
+        }
+        if k % 6 == 0 {
+            // the band's edges exactly at the rows (identity: v.y = 0)
+            t.put(p + 4, 40.0f32.to_bits());
+            t.put(p + 0xc, (-40.0f32).to_bits());
+        }
+        t.set(
+            task::bridge::CURRENT_PROGRAM,
+            [0u32, 3, 0x8000_0001][rng.below(3) as usize],
+        );
+        t.same_but(
+            "rcbgGuideUpdateWalk",
+            &skip,
+            |o| o.void(0x0091_ecb0, &[g, m, p]),
+            |b| gb::rcbg_guide_update_walk(b, [g, m, p], work, call),
+        );
+        quads += u64::from(t.b.read::<u32>(work + 4));
+    }
+    assert!(quads > 1000, "the cases draw cells ({quads})");
+}
+
+/// Group F on the image.
+#[test]
+fn r1f_minimap_fog_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00f1_0001);
+    r1f_walk_cases(&mut t, &mut rng);
+}
+
+/// Group F on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r1f_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00f1_0002);
+    r1f_walk_cases(&mut t, &mut rng);
+}
+
+/// [`log_stub`] that first copies the 16 bytes at argument `k` (a pointer
+/// into the caller's frame) to `dst`.
+fn copy16_log_stub(dst: u32, k: u8, log: u32, rv: u32, id: u32, args: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c + 4 * k, 0xbf];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 0x04, 0x00, 0x00, 0x00, 0xf3, 0xa5, 0x5f, 0x5e]);
+    c.extend(log_stub(log, rv, id, args));
+    c
+}
+
+/// `rcbgGuideDrawPlayer` on `t`: steps inside, across and outside the
+/// map rect, with and without a direction (or its -10000 mark), smoothing
+/// on and off; the two primitives logged with their colours.
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn r1f_player_cases(t: &mut Twin, rng: &mut Xorshift) {
+    use guide::bridge as gb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    t.install_trig();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(CODE_AREA + 0x160);
+        o.write(at, &CIACOS_STUB).unwrap();
+        let s = o.rebase(CIACOS_SLOT);
+        o.write(s, &at.to_le_bytes()).unwrap();
+    }
+    let (log, rv, cols) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(0x20));
+    t.cave_from(
+        0x500,
+        &[
+            (Some(gb::PRIM_TRI), copy16_log_stub(cols, 4, log, rv, 1, 4)),
+            (
+                Some(gb::PRIM_CIRCLE_LINE),
+                copy16_log_stub(cols + 0x10, 3, log, rv, 2, 3),
+            ),
+        ],
+    );
+    let (g, a, b, rect, p, q, dir) = (
+        t.alloc(0x80),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(4),
+    );
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let coord = |rng: &mut Xorshift| float_in(rng, -120, 120);
+    for k in 0..300u32 {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(g + 0x74, rng.next());
+        // the rect (x0, y0, x1, y1), the step and the edge
+        for (at, n) in [(rect, 4u32), (a, 4), (b, 4), (p, 4), (q, 4)] {
+            for i in 0..n {
+                t.put(at + 4 * i, coord(rng));
+            }
+        }
+        if k % 4 == 0 {
+            t.put(b, t.b.read::<u32>(a)); // a vertical step
+        }
+        let d = match k % 5 {
+            0 => (-10000.0f32).to_bits(),
+            _ => float_in(rng, -6, 6),
+        };
+        t.put(dir, d);
+        let dirp = if k % 7 == 0 { 0 } else { dir };
+        let alpha = float_in(rng, 0, 1);
+        let smooth = rng.below(2);
+        t.same_but(
+            "rcbgGuideDrawPlayer",
+            &skip,
+            |o| {
+                o.eax(
+                    0x0091_cf10,
+                    &[g, a, b, rect, rng_word(k), alpha, p, q, dirp, smooth],
+                )
+            },
+            |m| {
+                gb::rcbg_guide_draw_player(
+                    m,
+                    [g, a, b, rect, alpha, p, q, dirp, smooth],
+                    work,
+                    call,
+                    fcall,
+                )
+            },
+        );
+    }
+}
+
+/// A word for an unused argument.
+fn rng_word(k: u32) -> u32 {
+    k.wrapping_mul(0x9e37_79b9)
+}
+
+/// Group F's player marker on the image.
+#[test]
+fn r1f_player_marker_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00f1_0003);
+    r1f_player_cases(&mut t, &mut rng);
+}
+
+/// Group F's player marker on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r1f_player_marker_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00f1_0004);
+    r1f_player_cases(&mut t, &mut rng);
+}
+
+// ---- field agent r3, group G: the screen distortion ----
+
+/// [`log_stub`] with 0x40-byte entries (up to 15 words).
+fn wide_log_stub(log: u32, rv: u32, id: u32, args: u32) -> Vec<u8> {
+    let mut c = log_stub(log, rv, id, args);
+    assert_eq!(c[8], 0x05);
+    c[8] = 0x06; // shl ecx, 6
+    c
+}
+
+/// The distortion state of a synthetic or real scene at `r`: flags,
+/// depth, the camera matrix, phases, speed, amplitude, colour.
+fn r1g_state(t: &mut Twin, rng: &mut Xorshift, r: u32) {
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| float_in(rng, lo, hi);
+    t.put(r + 0xbe078, rng.below(4));
+    t.put(r + 0xbe07c, f(rng, -50, 300));
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+        #[allow(clippy::cast_precision_loss)]
+        let x = if i >= 12 && i != 15 {
+            rng.range(-500, 500) as f32
+        } else {
+            ident + rng.range(-200, 200) as f32 / 1000.0
+        };
+        t.put(r + 0x67f78 + 4 * i, x.to_bits());
+    }
+    t.put(r + 0x68360, f(rng, 1, 40));
+    t.put(r + 0xbe0a0, rng.range(-10, 300));
+    for o in [0xbe080u32, 0xbe084] {
+        t.put(r + o, f(rng, -8, 8));
+    }
+    t.put(r + 0xbe090, f(rng, -1, 1));
+    t.put(r + 0xbe094, f(rng, -1, 1));
+    t.put(r + 0xbe098, f(rng, -2, 2));
+    t.put(r + 0xbe0a4, rng.next());
+    t.put(r + 0xbe0a8, rng.next());
+}
+
+/// `yiScreff_draw` on `t` at `r` (`real`: the scene's own state first).
+fn r1g_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    t.install_trig();
+    let (log, rv) = (t.alloc(4 + 0x40 * 128), t.alloc(4));
+    t.cave_from(
+        0x500,
+        &[
+            (Some(0x0064_2f30), log_stub(log, rv, 1, 1)),
+            (Some(0x0064_4940), wide_log_stub(log, rv, 2, 8)),
+        ],
+    );
+    let work = t.stack_scratch(0x800);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for k in 0..100 {
+        if !(real && k == 0) {
+            r1g_state(t, rng, r);
+        }
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.same_but(
+            "yiScreff_draw",
+            &skip,
+            |o| o.eax(0x0091_3200, &[r]),
+            |m| ffx_field::screff::yi_screff_draw(m, r, work, call, fcall),
+        );
+    }
+}
+
+/// Group G on the image: synthetic scenes.
+#[test]
+fn r1g_screen_distortion_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0071_0001);
+    let r = t.alloc(0xb_e100);
+    r1g_cases(&mut t, &mut rng, r, false);
+}
+
+/// Group G on the snapshot (`FFX_SNAPSHOT`): the game's renderer.
+#[test]
+fn r1g_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0071_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r1g_cases(&mut t, &mut rng, r, true);
+}
+
+// ---- field agent r3, group H: the ability map's lifted draws ----
+
+/// `graphicDrawUIAbmapElement(verts, buf, n)` stand-in: copies the 0x80
+/// bytes of `verts` (`buf` is the callee's scratch, never written by the
+/// caller) and `n` to `dst + count * 0x84` (`count` the word at
+/// `dst - 4`, then one more).
+fn abmap_element_stub(dst: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend_from_slice(&(dst - 4).to_le_bytes());
+    // edi = dst + count * 0x84
+    c.extend_from_slice(&[0x69, 0xf8, 0x84, 0x00, 0x00, 0x00, 0x81, 0xc7]);
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x0c, 0xb9, 0x20, 0, 0, 0, 0xf3, 0xa5]);
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x14, 0xab]); // n
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&(dst - 4).to_le_bytes());
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group H on `t`: an ability map work area at `ab` (synthetic grid,
+/// frame counter), the packet buffer, the element draws copied.
+fn r1h_cases(t: &mut Twin, rng: &mut Xorshift, synthetic: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (copies, pkt) = (t.alloc(4 + 0x84 * 400), t.alloc(0x4_0000));
+    t.cave_from(
+        0x500,
+        &[(Some(0x0063_e930), abmap_element_stub(copies + 4))],
+    );
+    let ab = if synthetic {
+        let ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+        Some(ab)
+    } else {
+        None
+    };
+    let ab = ab.unwrap_or_else(|| ffx_field::abmap::ABMAP.get(&t.b));
+    let pp = t.b.rebase(0x01a8_60ec);
+    let work = t.stack_scratch(0x800);
+    for k in 0..40 {
+        t.put(copies, 0u32);
+        t.put(pp, pkt);
+        if synthetic || k > 0 {
+            for c in 0..(17 * 20) {
+                t.put(ab + 0x12e60 + c, u8::from(rng.below(3) == 0));
+            }
+            t.put(ab + 0x11698, rng.next());
+            // the corner records: (x, y, _, scale), 18 rows of 21
+            for w in 0..(18 * 0x150 / 4) {
+                let v = match w % 4 {
+                    0 | 1 => rng.range(-40_000, 40_000).cast_unsigned(),
+                    3 => float_in(rng, -3, 3),
+                    _ => rng.next(),
+                };
+                t.put(ab + 0x116c0 + 4 * w, v);
+            }
+        }
+        t.same(
+            "AbmapDrawGridMarks",
+            |o| o.eax(0x00a4_9f10, &[]),
+            |m| ffx_field::abmap_draw::abmap_draw_grid_marks(m, work, call),
+        );
+    }
+}
+
+/// Group H on the image.
+#[test]
+fn r1h_abmap_draws_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_0001);
+    r1h_cases(&mut t, &mut rng, true);
+}
+
+/// Group H on the snapshot (`FFX_SNAPSHOT`), over a synthetic work area
+/// when the snapshot has none.
+#[test]
+fn r1h_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_0002);
+    let real = ffx_field::abmap::ABMAP.get(&t.b) != 0;
+    r1h_cases(&mut t, &mut rng, !real);
+}
+
+/// The node kinds `AbmapDrawMap` tells apart, and two others.
+const R1H_KINDS: [u16; 9] = [
+    0x40, 0x2710, 0x2f00, 0x3000, 0x3200, 0x3500, 0x3600, 0x2f80, 0x3100,
+];
+
+/// `AbmapDrawMap` on `t`: a synthetic ability map (node count and
+/// records, node data blocks through the table at `0x01a85f78`, the view
+/// matrix), the packet buffer, the element draws copied.
+fn r1h_map_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (copies, pkt, ab, blocks) = (
+        t.alloc(4 + 0x84 * 64),
+        t.alloc(0x4_0000),
+        t.alloc(0x1_4000),
+        t.alloc(0x4_0000),
+    );
+    t.cave_from(
+        0x600,
+        &[(Some(0x0063_e930), abmap_element_stub(copies + 4))],
+    );
+    t.set(ffx_field::abmap::ABMAP, ab);
+    let (pp, table) = (t.b.rebase(0x01a8_60ec), t.b.rebase(0x01a8_5f78));
+    for i in 0..4u32 {
+        t.put(table + 4 * i, blocks + 0x1_0000 * i);
+    }
+    let work = t.stack_scratch(0x800);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let mut drawn = 0;
+    for k in 0..60u32 {
+        t.put(copies, 0u32);
+        t.put(pp, pkt);
+        t.fill(pkt, 0x100, rng);
+        // each node's kind (`+0x10`, also the offset of its data block)
+        for i in 0..4u32 {
+            let kind = R1H_KINDS[rng.below(9) as usize];
+            let p = blocks + 0x1_0000 * i;
+            t.put(p + 0x10, kind);
+            let d = p + u32::from(kind);
+            // the block's own kind word (the low 14 bits pick the texture
+            // window) and the GS register word after it
+            t.put(d + 0x10, u32::from(kind) | (rng.next() & 0xffff_c000));
+            t.put(d + 0x14, rng.next());
+            for w in 0..0x10u32 {
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(d + 0x20 + 2 * w, rng.range(-300, 300) as i16);
+            }
+        }
+        let n = u16::try_from(k % 5).unwrap();
+        t.put(ab, n);
+        #[allow(clippy::cast_possible_truncation)]
+        for j in 0..8u32 {
+            let rec = ab + 8 + 0x10 * j;
+            for h in 0..8u32 {
+                t.put(rec + 2 * h, rng.range(-400, 400) as i16);
+            }
+            t.put(rec + 6, u16::try_from(rng.below(4)).unwrap());
+        }
+        for w in 0..0x10u32 {
+            let ident = if w % 5 == 0 { 1.0f32 } else { 0.0 };
+            #[allow(clippy::cast_precision_loss)]
+            let x = ident + rng.range(-100, 100) as f32 / 400.0;
+            t.put(ab + 0x113e0 + 4 * w, x.to_bits());
+        }
+        // half the cases moved onto the screen box (1528..2576, 1600..2304),
+        // so the clip checks also stop early
+        if rng.below(2) == 0 {
+            #[allow(clippy::cast_precision_loss)]
+            for (w, v) in [(12u32, rng.range(1500, 2600)), (13, rng.range(1570, 2330))] {
+                t.put(ab + 0x113e0 + 4 * w, (v as f32).to_bits());
+            }
+        }
+        t.put(t.b.rebase(0x00c8_fac4), rng.next());
+        t.same_but(
+            "AbmapDrawMap",
+            &skip,
+            |o| o.eax(0x00a4_ce20, &[]),
+            |m| ffx_field::abmap_draw::abmap_draw_map(m, work, call),
+        );
+        drawn += t.b.read::<u32>(copies);
+    }
+    assert!(drawn > 20, "the cases draw elements ({drawn})");
+}
+
+/// `AbmapDrawMap` on the image.
+#[test]
+fn r1h_abmap_map_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_0003);
+    r1h_map_cases(&mut t, &mut rng);
+}
+
+/// `AbmapDrawMap` on the snapshot (`FFX_SNAPSHOT`), over a synthetic map.
+#[test]
+fn r1h_abmap_map_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_0004);
+    r1h_map_cases(&mut t, &mut rng);
+}

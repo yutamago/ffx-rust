@@ -12659,7 +12659,7 @@
 0x00887f40	logic	default (no rule: ported to be safe)
 0x00887fd0	dead	unreachable from the entry point and every pointer table
 0x00888010	logic	default (no rule: ported to be safe)
-0x00888030	logic	default (no rule: ported to be safe)
+0x00888030	glue	reviewed: path formatting (menu round 21)
 0x008880b0	dead	unreachable from the entry point and every pointer table
 0x00888160	dead	unreachable from the entry point and every pointer table
 0x00888170	dead	unreachable from the entry point and every pointer table
@@ -12680,12 +12680,12 @@
 0x00888440	dead	unreachable from the entry point and every pointer table
 0x00888480	logic	default (no rule: ported to be safe)
 0x008884a0	logic	default (no rule: ported to be safe)
-0x008884e0	logic	default (no rule: ported to be safe)
+0x008884e0	platform	reviewed: sceMcSync wrapper (menu round 21)
 0x00888570	logic	default (no rule: ported to be safe)
 0x008885c0	dead	unreachable from the entry point and every pointer table
 0x00888620	logic	default (no rule: ported to be safe)
 0x00888650	logic	default (no rule: ported to be safe)
-0x00888680	logic	default (no rule: ported to be safe)
+0x00888680	platform	reviewed: TkSetVsyncHandler: vsync emulation thread (menu round 21)
 0x008886f0	logic	default (no rule: ported to be safe)
 0x00888720	dead	unreachable from the entry point and every pointer table
 0x00888740	logic	default (no rule: ported to be safe)
@@ -12812,7 +12812,7 @@
 0x0088c850	debug	only called from debug code (AtelDebugPage_System_0087fca0)
 0x0088c860	platform	reviewed: TKMallocAndReadEventFTC: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)
 0x0088cac0	platform	reviewed: TKMallocAndReadEventMessage: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)
-0x0088ccf0	logic	default (no rule: ported to be safe)
+0x0088ccf0	glue	reviewed: TKMallocAndReadMenuMessage: language path + file read (menu round 21)
 0x0088ce80	logic	default (no rule: ported to be safe)
 0x0088d120	logic	default (no rule: ported to be safe)
 0x0088d140	platform	reviewed: TkCdRead: dispatches through the GetCD() object (menu round 19)
@@ -13170,7 +13170,7 @@
 0x008a9090	logic	default (no rule: ported to be safe)
 0x008a9230	logic	default (no rule: ported to be safe)
 0x008a92a0	dead	unreachable from the entry point and every pointer table
-0x008a9510	logic	default (no rule: ported to be safe)
+0x008a9510	platform	reviewed: GS image upload loop (menu round 21)
 0x008a95c0	dead	unreachable from the entry point and every pointer table
 0x008a9670	logic	default (no rule: ported to be safe)
 0x008a9680	logic	default (no rule: ported to be safe)
@@ -14993,7 +14993,7 @@
 0x0090bc40	dead	unreachable from the entry point and every pointer table
 0x0090bc70	dead	unreachable from the entry point and every pointer table
 0x0090bd20	dead	unreachable from the entry point and every pointer table
-0x0090bdb0	logic	default (no rule: ported to be safe)
+0x0090bdb0	glue	reviewed: sprintf label for a PC renderer object (field round 1)
 0x0090be60	dead	unreachable from the entry point and every pointer table
 0x0090bee0	dead	unreachable from the entry point and every pointer table
 0x0090bf10	logic	default (no rule: ported to be safe)

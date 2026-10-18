@@ -5955,18 +5955,24 @@
 0x007b7f20 function MsGetBattle112be90        # g_MagicImports slot 592 (2 overlays): returns the dword at 0x0112be90; hidden from the dump
 0x007b7f50 function MsEffectSetCameraBufFloat # fh v3:exact 0x007b7ed0
 0x007b7f70 function Native_CamFocusTimeLinear    # 0x602e: args (frames) -> 0; linear transition time for the battle camera's focus point (half 0, 0x007bde50 type 1); paired with 0x6010 (eye half)
+0x007b7fe0 function Native_602f # 0x602f: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 1); 0; ported in native_mods (script round 19); name ours
 0x007b8050 function Native_Cam_6030            # 0x6030: (frames): MsCameraMoveFrame(cam, 0, 0, frames, 3); 0; ported in native_cam
+0x007b80c0 function Native_6031 # 0x6031: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 3); 0; ported in native_mods (script round 19); name ours
 0x007b8130 function Native_CamFocusTimeEase      # 0x6032: args (accel, hold, decel frames, curve) -> 0; eased transition for the focus (half 0, 0x007bd860 type 2: total = sum); e.g. (20, 10, 20, 0)
 0x007b8150 function Native_6033                # 0x6033: no args -> 0x007ba5b0(worker, args, stack, 0, 1); 0; ported in native_chr (script round 12)
 0x007b8170 function Native_Cam_6035            # 0x6035: 0x007bb520(w, a, s, 0); 0; ported in native_cam
+0x007b8190 function Native_6036 # 0x6036: 0x007bb210(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
+0x007b81b0 function Native_6037 # 0x6037: MsCameraResetDirVector(cam, 0) (0x007bec90); the camera handle; ported in native_mods (script round 19); name ours
 0x007b8210 function Native_CamFocusCut           # 0x6034: () -> cam; drops the focus half's transition and applies the target now (0x007bed60(cam, 0)); 0x6016 is the eye version
 0x007b8270 function Native_CamFocusWait          # 0x6038 (poll): waits until the focus half's transition ends (0x007bdd20(cam, 0) == 0 -> 5); 0x601a is the eye version ("CameraWaitStart!")
+0x007b82d0 function Native_6039 # 0x6039: Cam_IsMoving(cam, 0) (0x007bdd20); ported in native_mods (script round 19); name ours
 0x007b8330 function Native_Cam_601c            # 0x601c: (var, degrees): 0x007bf520(cam, 1, 1, &var, radians); the handle; ported in native_cam
 0x007b83d0 function Native_601e                # 0x601e: args (var, deg f) -> 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera; ported in native_chr (script round 12)
 0x007b8470 function Native_Cam_601d            # 0x601d: (var, degrees, y, x): 0x007bf600(cam, 1, 1, &var, radians, y, x); the handle; ported in native_cam
 0x007b8530 function Native_Cam_601f            # 0x601f: as 0x601d with 0 for the mode; ported in native_cam
 0x007b85f0 function Native_6042                # 0x6042: args (v) -> 0x007bdf90(cam, 0, v ^ 0xffff); the camera; ported in native_chr (script round 12)
 0x007b8660 function Native_Cam_6043            # 0x6043: (v): 0x007bdf90(cam, 1, v ^ 0xffff); the handle; ported in native_cam
+0x007b86d0 function Native_603e # 0x603e: 0x007bad10(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
 0x007b86f0 function Native_Cam_603f            # 0x603f: 0x007bad10(w, a, s, 0); 0; ported in native_cam
 0x007b8710 function Native_CamEyeOrbitScaled     # 0x6040: args (actor a, actor b, height, yaw deg, pitch deg, distance) -> cam; 0x007badb0(half 1, mode 1): eye = mean of actors + height * actor height + orbit at distance/100 * actor size
 0x007b8730 function Native_CamFocusOrbitScaled   # 0x6041: same as 0x6040 for the focus point (half 0, mode 1); most common shot setup, e.g. (-2, -1, 49, 0, 0, -70)
@@ -5974,6 +5980,7 @@
 0x007b8770 function Native_CamFocusOrbit         # 0x6045: same as 0x6044 for the focus point (half 0, mode 2)
 0x007b8790 function Native_604c                # 0x604c: no args -> 0x007badb0(..., 1, 3); 0; ported in native_chr (script round 12)
 0x007b87b0 function Native_Cam_604d            # 0x604d: 0x007badb0(w, a, s, 1, 4); 0; ported in native_cam
+0x007b87d0 function Native_6065 # 0x6065: (p): MsCameraPriority(cam, p) (0x007be0a0); the camera handle; ported in native_mods (script round 19); name ours
 0x007b8840 function Native_Cam_607d            # 0x607d: (v): 0x007bcdd0(cam, v); the handle; ported in native_cam
 0x007b88b0 function Native_CamSetDepthMaskMode   # ?0x607e: args (flags; <0 keeps the old value | 2) -> cam; camera +0xcac; Battle cam update passes it to 0x0082cb60 (full-screen Z mask enable)
 0x007b8920 function Native_CamSetDepthMask       # ?0x607f: args (plane 0/1, z) -> cam; camera +0xcb0/+0xcb4 -> 0x0082ce20 -> full-screen Z rectangle (0x0082bb90, 0x006430f0 z/16.77M) that hides geometry beyond z
@@ -5981,13 +5988,21 @@
 0x007b8a10 function Native_Cam_6087            # 0x6087: 0x007beae0(cam, 0); the handle; ported in native_cam
 0x007b8a70 function Native_Cam_6088            # 0x6088: 0x007beae0(cam, 1); the handle; ported in native_cam
 0x007b8ad0 function Native_604e                # 0x604e: no args -> six: 0x007bc930(f, 1), 0x007bc890(f, e, d, c, b, a, 0); 0; ported in native_chr (script round 12)
+0x007b8b50 function Native_6075 # 0x6075: (b, a): 0x007bc870(b, a); 0; ported in native_mods (script round 19); name ours
 0x007b8b80 function Native_604f                # 0x604f: args (v) -> 0x007bc950(v, 0, v); ported in native_chr (script round 12)
 0x007b8ba0 function Native_6050                # 0x6050: no args -> five: 0x007bc750(e, d, c, b, a); 0; ported in native_chr (script round 12)
 0x007b8c00 function Native_6052                # 0x6052: args (b, a) -> MsScreenLinkSet(b, 0, a); ported in native_chr (script round 12)
 0x007b8c30 function Native_6051                # 0x6051: args (b, a) -> MsScreenLinkSet(b, 1, a) (0x007bbdd0); ported in native_chr (script round 12)
+0x007b8c60 function Native_6053 # 0x6053: (id, v): MsScreenMove(id, 0, v, 1); 0; ported in native_mods (script round 19); name ours
+0x007b8c90 function Native_6054 # 0x6054: (id, v): MsScreenMove(id, 0, v, 3); 0; ported in native_mods (script round 19); name ours
 0x007b8cc0 function Native_6055                # 0x6055: args (d, c, b, a) -> MsScreenMoveAcc(d, 0, c, b, a) (0x007bbeb0); ported in native_chr (script round 12)
+0x007b8d10 function Native_6056 # 0x6056: (id, v): MsScreenMove(id, 1, v, 1); 0; ported in native_mods (script round 19); name ours
+0x007b8d40 function Native_6057 # 0x6057: (id, v): MsScreenMove(id, 1, v, 3); 0; ported in native_mods (script round 19); name ours
 0x007b8d70 function Native_6058                # 0x6058: no args -> as 0x6055 with mode 1; ported in native_chr (script round 12)
-0x007b8e00 function Native_607b_copy_007b8e00    # the same code as Native_607b (0x007b8e40; call targets equal), a copy the compiler kept; own name
+0x007b8dc0 function Native_6079 # 0x6079: (id): MsScreenMoveReset(id, 0) (0x007bc010); 0; ported in native_mods (script round 19); name ours
+0x007b8de0 function Native_607a # 0x607a: (id): MsScreenMoveReset(id, 1); 0; ported in native_mods (script round 19); name ours
+0x007b8e00 function Native_607c # 0x607c: (id): AtelGetBattleIdAdrs2(worker) (0x0086a990, unused), args +0 = id; id; ported in native_mods (script round 19); the same code as Native_607b (0x007b8e40; call targets equal), a copy the compiler kept; own name
+0x007b8e20 function Native_607c_Poll # 0x607c: done (5) once MsScreenMoveCheck(args +0, 1) (0x007bbfc0) is 0; ported in native_mods (script round 19); name ours
 0x007b8e40 function Native_607b                # 0x607b (start): args (screen) -> start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0; ported in native_chr (script round 12)
 0x007b8e60 function Native_607b_Poll           # 0x607b (poll): args (screen) -> start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0; ported in native_chr (script round 12)
 0x007b8e80 function Native_Cam_605c            # 0x605c: returns 0x007bb8c0(w, a, s, 0, 1); ported in native_cam
@@ -5999,12 +6014,19 @@
 0x007b8fe0 function Native_Cam_6076            # 0x6076: 0x007ba950(); 0. Not a function start in the dump yet; ported in native_cam
 0x007b8ff0 function Native_6069                # 0x6069: no args -> MsAtelCameraShake(worker, args, stack, 0, 3) (0x007bb8c0); ported in native_chr (script round 12)
 0x007b9010 function Native_CamSetRoll            # 0x603a: args (degrees) -> cam; 0x007bfa80 stores radians in the camera's +0xc94 (eye half's roll channel)
+0x007b9090 function Native_606a # 0x606a: MsAtelCameraShake(worker, args, stack, 1, 3)'s EAX; ported in native_mods (script round 19); name ours
 0x007b90b0 function Native_CamSetScreenDepth     # 0x603b: args (depth e.g. 404, 624, 1024) -> cam; debug string "MsCameraSetScrDpt"; 0x007bfbd0 (projection distance, i.e. zoom/FOV)
 0x007b9150 function Native_606c                # 0x606c: no args -> the shake with (0, 4); ported in native_chr (script round 12)
+0x007b9170 function Native_606d # 0x606d: MsAtelCameraShake(.., 1, 4)'s EAX; ported in native_mods (script round 19); name ours
 0x007b9190 function Native_6077_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id; ported in native_chr (script round 13)
+0x007b91d0 function Native_606f # 0x606f: MsAtelCameraShake(.., 0, 5)'s EAX; ported in native_mods (script round 19); name ours
 0x007b91f0 function Native_6078                # 0x6078 (float): no args -> jumps to 0x007bd510(worker, args, stack) (ST0); ported in native_chr (script round 12)
+0x007b9200 function Native_6070 # 0x6070: MsAtelCameraShake(.., 1, 5)'s EAX; ported in native_mods (script round 19); name ours
 0x007b9220 function Native_CamSetPos             # 0x6002: args (x, y, z) floats -> 0; sets the camera eye position (side 1) via Cam_SetPos 0x007bf940; side 1 = "cam", side 0 = "ref" per the debug dump "ref%s\ncam%s" in 0x007d2430; a few hard-coded per-map fixes
+0x007b9240 function Native_6072 # 0x6072: MsAtelCameraShake(.., 0, 6)'s EAX; ported in native_mods (script round 19); name ours
 0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
+0x007b9280 function Native_6073 # 0x6073: MsAtelCameraShake(.., 1, 6)'s EAX; ported in native_mods (script round 19); name ours
+0x007b92a0 function Native_6085 # 0x6085: 0x007ba460(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
 0x007b92c0 function Native_6081                # 0x6081: no args -> the shake with (0, 7); ported in native_chr (script round 12)
 0x007b92e0 function Native_CamSetPolar           # 0x6004: args (theta deg, phi deg, len) -> 0; sets the eye (side 1) in polar form around its reference, degrees * pi/180 (Cam_SetPolar 0x007bf700; "theta,phi,len" in the camera dump)
 0x007b9300 function Native_6082                # 0x6082: no args -> the shake with (1, 7); ported in native_chr (script round 12)
@@ -6014,14 +6036,21 @@
 0x007b9380 function Native_Cam_6084            # 0x6084: returns 0x007bb8c0(w, a, s, 1, 8); ported in native_cam
 0x007b93a0 function Native_Cam_6007            # 0x6007: 0x007bb410(w, a, s, 1, 0); 0; ported in native_cam
 0x007b93c0 function Native_Cam_6008            # 0x6008: 0x007bb410(w, a, s, 1, 1); 0; ported in native_cam
+0x007b93e0 function Native_6009 # 0x6009: 0x007bab90(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
 0x007b9400 function Native_Cam_603c            # 0x603c: 0x007bac40(w, a, s, 1); 0; ported in native_cam
 0x007b9420 function Native_605e                # 0x605e: no args -> 0x007bb840(..., 1); 0; ported in native_chr (script round 12)
 0x007b9440 function Native_600a                # 0x600a: no args -> 0x007bb2b0(..., 1, 0); 0; ported in native_chr (script round 12)
+0x007b9460 function Native_6068 # 0x6068: MsAtelScreenShake(worker, args, stack, 2) (0x007bb840); 0; ported in native_mods (script round 19); name ours
+0x007b9480 function Native_600b # 0x600b: 0x007bb2b0(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours
 0x007b94a0 function Native_Cam_606b            # 0x606b: 0x007bb840(w, a, s, 3); 0; ported in native_cam
+0x007b94c0 function Native_600c # 0x600c: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0; ported in native_mods (script round 19); name ours
 0x007b94e0 function Native_606e                # 0x606e: no args -> 0x007bb840(..., 4); 0; ported in native_chr (script round 12)
+0x007b9500 function Native_600d # 0x600d: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours
 0x007b9520 function Native_Cam_600f            # 0x600f: 0x007bed10(cam, 1); the handle; ported in native_cam
 0x007b9580 function Native_Cam_6071            # 0x6071: 0x007bb840(w, a, s, 5); 0; ported in native_cam
+0x007b95a0 function Native_600e # 0x600e: (on): 0x007bf1a0(cam, 1, on & 1); the camera handle; ported in native_mods (script round 19); name ours
 0x007b9610 function Native_6074                # 0x6074: no args -> 0x007bb840(worker, args, stack, 6); 0; ported in native_chr (script round 12)
+0x007b9630 function Native_6089 # 0x6089: (p8, p7, p6, p5, p4 f, p3, p2 f, p1): MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0; ported in native_mods (script round 19); name ours
 0x007b96c0 function Native_CamMove               # 0x6010: args (frames) -> 0; starts the eye (side 1) moving to its set position over n frames, linear (Cam_StartMove 0x007bde50, mode 0)
 0x007b9730 function Native_Cam_6011            # 0x6011: (frames): MsCameraMoveFrame(cam, 1, 1, frames, 1); 0; ported in native_cam
 0x007b97a0 function Native_Cam_605f            # 0x605f: 0x007c4f50(cam, 0); 0; ported in native_cam
@@ -6034,6 +6063,7 @@
 0x007b99a0 function Native_Cam_6063            # 5 once 0x007c4f10(cam, 1) is 0; ported in native_cam
 0x007b9a00 function Native_Cam_6017            # 0x6017: 0x007bb520(w, a, s, 1); 0; ported in native_cam
 0x007b9a20 function Native_Cam_6062            # 5 once 0x007c4f10(cam, 0) is 0; ported in native_cam
+0x007b9a80 function Native_6018 # 0x6018: 0x007bb210(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
 0x007b9aa0 function Native_Cam_6064            # (id) into the args word; EAX is the id; ported in native_cam
 0x007b9ac0 function Native_Cam_6019            # 0x6019: 0x007bec90(cam, 1); the handle; ported in native_cam
 0x007b9b20 function Native_Cam_6064_Poll       # 0x6064 poll: 5 once 0x007c5680(args[0]) is 0; ported in native_cam
@@ -6044,11 +6074,18 @@
 0x007b9d20 function Native_Cam_6046            # 0x6046: returns 0x007bb970(w, a, s, 1); ported in native_cam
 0x007b9d40 function Native_Cam_6021            # 0x6021: 0x007ba3c0(w, a, s, 0); 0; ported in native_cam
 0x007b9d60 function Native_Cam_6047            # 0x6047: returns 0x007bb970(w, a, s, 0); ported in native_cam
+0x007b9d80 function Native_6086 # 0x6086: 0x007ba460(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
 0x007b9da0 function Native_Cam_6048            # 0x6048: MsCameraGetID(cam) == cam clears g_BtlSplines[1]; the handle; ported in native_cam
+0x007b9e10 function Native_6022 # 0x6022: 0x007bb5d0(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours
 0x007b9e30 function Native_CamPathAddEye         # 0x6049: () -> cam; 0x007baac0(cam, 1): appends the eye's yaw/pitch/distance and roll to path list 1 (0x01136b60, max 32), used by the path move 0x007ba020 (>= 3 points)
+0x007b9e90 function Native_6023 # 0x6023: 0x007bb5d0(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours
 0x007b9eb0 function Native_Cam_604a            # 0x604a: as 0x6048 for g_BtlSplines[0]; ported in native_cam
+0x007b9f20 function Native_6024 # 0x6024: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours
 0x007b9f40 function Native_CamPathAddFocus       # 0x604b: () -> cam; 0x007baac0(cam, 0): appends the focus point to path list 0
+0x007b9fa0 function Native_6025 # 0x6025: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours
+0x007b9fc0 function Native_6026 # 0x6026: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0; ported in native_mods (script round 19); name ours
 0x007b9fe0 function Native_CamRefSetTarget       # 0x6027: args (target, bone?, y offset) -> 0; ref (side 0) follow mode 3: +0xc = target, +0xe = bone, offset (0,y,0) (0x007beeb0); scripts push (0, -1, y); ?target/bone meaning
+0x007ba000 function Native_603d # 0x603d: 0x007bac40(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
 0x007ba020 function Native_Cam_6059            # 0x6059: (path, a): focus along path (0/1 battle spline lists, else a variable): 0x007bfe70(cam, 0, path, 0.0, a); 0; ported in native_cam
 0x007ba0e0 function Native_Cam_6028            # 0x6028: 0x007bb2b0(w, a, s, 0, 0); 0; ported in native_cam
 0x007ba100 function Native_Cam_605a            # 0x605a: (path, t, a): as 0x6059 from t; ported in native_cam
@@ -6057,6 +6094,7 @@
 0x007ba210 function Native_Cam_605b            # 0x605b: (path, a): eye along path: 0x007bfd90(cam, 1, path, a); 0; ported in native_cam
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
+0x007ba350 function Native_602c # 0x602c: (on): 0x007bf1a0(cam, 0, on & 1); the camera handle; ported in native_mods (script round 19); name ours
 0x007ba650 function MsAtelCameraInit          # fh v3:exact 0x007ba5d0
 0x007ba6d0 function MsAtelFreeCameraID           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100391fa0 MsAtelFreeCameraID, 2 votes, round 1
 0x007ba780 function MsAtelGetCameraID         # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110; was Cam_GetHandle
@@ -6535,6 +6573,8 @@
 0x00800770 function op_part_init              # fh v3:exact 0x00800690
 0x008008b0 function op_part_run               # fh v3:exact 0x008007d0
 0x008009c0 function op_part_free              # fh v3:exact 0x008008e0
+0x00800ab0 function opus_copy_1k_00800ab0     # (dst, src) -> src + 0x400: 0x400 bytes word by word upward; restores a 1 KB block after 0x00826950 in opu_motion_etc (0x00804beb); name ours
+0x00800af0 function opus_copy_1k_00800af0     # (src, dst) -> src + 0x400: as opus_copy_1k_00800ab0 with the arguments swapped; saves the block before 0x00826950 in opu_motion_etc (0x00804bd4); name ours
 0x00800b40 function opus_chara_center_check      # layout+callees: sorts between op_part_free and opus_clip_off_all_in_battle, and its named callees match the Switch 0x71003f56a0 opus_chara_center_check's (similarity 1.00: MsBattleWater, MsGetChrFly); symbols from Fahrenheit's server export
 0x00800b70 function opus_cheight_get             # layout+callees: sorts between op_part_free and opus_clip_off_all_in_battle, and its named callees match the Switch 0x71003f5620 opus_cheight_get's (similarity 1.00: Ch_GetFixHeight, MsGetChrHeight); symbols from Fahrenheit's server export
 0x00800bb0 function opus_clip_off_all_in_battle # fh v3:bsim1.00 0x00800ad0
@@ -6560,6 +6600,7 @@
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00801780 function opus_list_add_00801780       # ours: (set, id, list) -> 0 after putting id into the first negative i16 of [set+0x10+4 list] (u16 +0x34 - 1 entries) and u16 +0x38 += 1, else -1; caller 0x0080b180
 0x008017d0 function opu_local_etc                # callees: its named callees match the Switch 0x71003e41c0 opu_local_etc's (similarity 0.83: op_m_copy, op_mul_m, op_vector_m, opus_no_get, restoreVf00Register); symbols from Fahrenheit's server export
+0x00801a50 function opu_local_link            # layout: the only unused Switch name sorting between opu_local_etc and opu_matrix_etc (Switch 0x71003e4030, 72 bytes); flag nibble 0/1: unit u16 +0xb8 = cmd+2, unit byte +0x19 bit 7 cleared/set; -> cmd + 4
 0x00801ab0 function opu_matrix_etc               # layout+callees: sorts between opu_local_etc and opu_world, and its named callees match the Switch 0x71003e4390 opu_matrix_etc's (similarity 0.62: op_apply_m_w1, op_mul_m, op_rot_m, op_trans_m, op_unit_m); symbols from Fahrenheit's server export
 0x00801d00 function opu_world                    # callees: its named callees match the Switch 0x71003e4080 opu_world's (similarity 0.75: op_apply_m_w1, op_m_copy, op_mul_m33, op_rt_m_6, op_unit_m_scale); symbols from Fahrenheit's server export
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
@@ -6651,6 +6692,7 @@
 0x0080b180 function opu_unit_etc                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'LoadedByOPU_UNIT_ETC'; Switch 0x7100400d30 opu_unit_etc (symbols from Fahrenheit's server export)
 0x0080b650 function op_part_init_check        # fh v3:exact 0x0080b7b0
 0x0080b670 function opu_part_init                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos FIXME: particle data address in effect overlay was N'; Switch 0x71003e4710 opu_part_init (symbols from Fahrenheit's server export)
+0x0080b7d0 function opu_part_kill             # layout: the only unused Switch name sorting between opu_part_init and opu_part_run (Switch 0x71003e4c00, 48 bytes); (host, cmd) -> cmd + 2 after calling [[host+0x350]+0x54](host+0x220 unit)
 0x0080b800 function opu_part_run                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos: FIXME osu->malloc is NULL in opu_part_run() u_15.c '; Switch 0x71003e4860 opu_part_run (symbols from Fahrenheit's server export)
 0x0080bd50 function opp_main                  # fh v3:exact 0x0080bea0
 0x0080c3f0 function opu_end                      # layout+callees: sorts between opp_main and opu_wait, and its named callees match the Switch 0x71003f3230 opu_end's (similarity 1.00: opus_draw_off, opus_prog_off, yonExtMapDeleteId); symbols from Fahrenheit's server export
@@ -6668,9 +6710,23 @@
 0x00810240 function opp_dbg_draw_spl             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'u_dbg_draw_spl error'; Switch 0x71003f65e0 opp_dbg_draw_spl (symbols from Fahrenheit's server export)
 0x008106a0 function SetFieldConst210_008106a0    # auto-port shape (store constant to field, cdecl): u8[(a0 + 0x210)] = 0xff; return 0x0; callers: no direct caller; name ours
 0x008106c0 function CopyField21b_008106c0        # auto-port shape (store copy to field, cdecl): t0 = u8[(a0 + 0x21b)]; u8[(a0 + 0x210)] = t0; return (a2 + 0x2); callers: no direct caller; name ours
+0x008106e0 function opp_anmm_wait_random      # opp_anmm command (table 0x00c49318 slot 3): host +0x210 = op_irandom_core(host byte +0x21b); -> cmd + 2 (anmm::bridge::wait_random); name ours
 0x00810710 function GetFieldPtr_00810710         # auto-port shape (return address of a field's target, cdecl): t0 = u16[(a2 + 0x2)]; return (sx16(t0) + a2); callers: no direct caller; name ours
+0x00810720 function opp_anmm_sprite_set       # opp_anmm command slot 7: work +4 = texture i16 cmd+2 of the part's oef, +8 = 0xff010000 | part byte +0xb3, +0xc = 0x100, +0x1c = 0x80808080, +0x2c/+0x3c = 0; -> cmd + 4; name ours
+0x00810790 function opp_anmm_flag_on          # opp_anmm command slot 8: without flags (+0x21a & 0xf000) work byte +8 |= 0x80; -> cmd + 2; name ours
+0x008107c0 function opp_anmm_vec_set          # opp_anmm command slot 4: flagged x/y/z of the target (offset 0x00c49300, scales 0x00c49398) = i16 * scale / 4096; name ours
+0x00810890 function opp_anmm_vec_add_random   # opp_anmm command slot 5: as opp_anmm_vec_add, each value times 2d-3 for three VU0 R draws; name ours
+0x00810a90 function opp_anmm_vec_add          # opp_anmm command slot 6: as opp_anmm_vec_set, added; name ours
 0x00810b70 function CopyField21a_00810b70        # auto-port shape (store copy to field, cdecl): t0 = u16[(a0 + 0x21a)]; t1 = u16[(a2 + 0x2)]; t2 = u16[((((sx16(t0) >>s 0xc) & 0x7) * 0x2) + &0x00c4930c)]; u16[(sx16(t2) + a3)] = t1; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810ba0 function opp_anmm_short_add_random # opp_anmm command slot 10: work i16 at 0x00c4930c[(+0x21a >> 12) & 7] += op_random_per(i16 cmd+2); -> cmd + 4; name ours
+0x00810be0 function opp_anmm_pair_set         # opp_anmm command slot 11: u16 pair cmd+2 to work +0x2c (flag 0x1000) or +0x1c; -> cmd + 6; name ours
+0x00810c20 function opp_anmm_mode_set         # opp_anmm command slot 12: work +0x4e = i16 +0x21a >> 12; mode 2 copies floats +0x10..+0x18 to +0x40..+0x48; -> cmd + 2; name ours
+0x00810c60 function opp_anmm_rgba_set         # opp_anmm command slot 13: work bytes +0x1c..+0x1f for flags 0x1000..0x8000 from the next words; name ours
 0x00810cd0 function CopyField_00810cd0           # auto-port shape (store copy to field, cdecl): t0 = u8[(a2 + 0x2)]; u8[(a3 + 0x4f)] = t0; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810cf0 function opp_anmm_loop             # opp_anmm command slot 15: --work byte +0x4f; nonzero: cmd + i16 cmd+2, else cmd + 4; name ours
+0x00810d10 function opp_anmm_branch_random    # opp_anmm command slot 16: op_random_per(0x100) < i16 cmd+2: cmd + u16 cmd+4, else cmd + 6; name ours
+0x00810d50 function opp_anmm_fade             # opp_anmm command slot 17: at work + i16 cmd+2: step byte +0x2c = cmd+5, host +0x210 = |cmd+4 - byte +0x1c| / |step| (1 for 0); -> cmd + 6; name ours
+0x00810da0 function opp_anmm_part_float       # opp_anmm command slot 18: work + byte cmd+2 = the part's float at byte cmd+3 (part u16 work +0x4c); -> cmd + 4; name ours
 0x00810e20 function opp_anmm_fin_en_bone5        # callees: its named callees match the Switch 0x71003f7a90 opp_anmm_fin_en_bone5's (similarity 0.75: Ch_ElemGetParent, op_irandom_p, op_random_p); symbols from Fahrenheit's server export
 0x00810ed0 function opp_anmm_fin_en_bone3x    # fh switch:bsim1.00 0x71003f7b60
 0x00811120 function opp_anm                      # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f7dc0 opp_anm, 3 votes, round 2
@@ -6687,6 +6743,12 @@
 0x00814790 function opu_et_ovl                # fh switch:bsim1.00 0x7100406310
 0x008148c0 function opu_dvd                      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004067d0 opu_dvd, 3 votes, round 3
 0x00814a00 function opu_file                     # str-match switch: only user of 8 string(s) held once by both builds, e.g. '(op)\\t\\t\\ttexture count change (%d) !!!\\n'; Switch 0x7100406900 opu_file (symbols from Fahrenheit's server export)
+0x00814c90 function opf_cir                   # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 3: unit circles opus_no_get(+0xa0): +0x90/+0x98 = sin/cos(ftol +0x48) * +0x40 / 16 + base, +0x94 = +0x44 / 16 + base
+0x00814d20 function opf_cir2                  # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 7: opf_cir, then u16 +0xb0 bit 0x2000 set unless +0x30/16 + |base - opus_no_get(+0xa2)|xz > +0x40/16
+0x00814e50 function opf_cir_gw                # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 8: angle/radius/height at the unit's byte offsets +0xa0..+0xa2: +0x90 = (sin r + x) / 16, +0x98 = (r cos + z) / 16, +0x94 = (y + h) / 16
+0x00814f00 function opf_cir_y                 # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 5: opf_cir without the base's y
+0x00814fa0 function opf_cirz_gw               # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 9: opf_cir_gw in y and x (+0x94 sine, +0x90 cosine, +0x98 height)
+0x00815050 function opf_normal                # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 0: VU 0x00c8f8e0.. and unit +0x90.. = unit +0x40.. / 16; -> ptr
 0x008155b0 function opf_sph                      # callees: its named callees match the Switch 0x71003f6180 opf_sph's (similarity 1.00: op_apply_m_w1, op_rt_m, op_unit_m, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
 0x00815670 function opf_spl_gw                   # callees: its named callees match the Switch 0x71003f6540 opf_spl_gw's (similarity 1.00: op_spline_xyz, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
 0x008157a0 function opu_camera                   # callees: its named callees match the Switch 0x71003fc5b0 opu_camera's (similarity 0.94: MagicFile_GetMagicId, MsBattleGetStatus, MsBattleSpecialCameraPause, MsCameraGetPosNow, MsCameraResetMove); symbols from Fahrenheit's server export
@@ -6698,8 +6760,10 @@
 0x00816030 function opu_en_lock                  # layout: alphabetical run between opu_en_etc and opu_en_on (1 unnamed in the gap); Switch 0x71003fbf60 opu_en_lock is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
+0x00816610 function opu_etc                   # layout: sorts between opu_et_no and opu_ffx (Switch opu_etc 0x71003fcca0, 104 bytes, ours 107); unit +0xa8 + i16 cmd+2 = byte/u16/word cmd+4 by flag nibble 0/1/2 (-> cmd+6/+6/+8), else -> cmd
 0x00816680 function opu_ffx                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd240 opu_ffx's (similarity 0.71: MsEffectMotionLevel, MsEffectReady, Sg_EnableDrawGui, Sg_EnableDrawMap, Sg_EnableDrawMenu); symbols from Fahrenheit's server export
 0x008167b0 function opu_fin_type                 # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd0b0 opu_fin_type's (similarity 1.00: op_deg_get, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
+0x00816870 function opu_jloop                 # layout: sorts between opu_fin_type and opu_jump_etc2 (Switch opu_jloop 60 bytes, ours 54), the loop counterpart of opu_sloop: --unit byte +0xb4+nibble, back by i16 cmd+2 while nonzero, else cmd + 4
 0x008168b0 function GetFieldPtr2_008168b0        # auto-port shape (return address of a field's target, cdecl): t0 = u16[(a1 + 0x2)]; return (sx16(t0) + a1); callers: no direct caller; name ours
 0x00816e50 function opu_jump_etc2                # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fba80 opu_jump_etc2's (similarity 0.83: Ch_GetFieldMode, Ch_GetHide, MsGetChrFly, MsGetDamageResult, opus_get_chr_status_index); symbols from Fahrenheit's server export
 0x008170c0 function opu_mem                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fcd10 opu_mem's (similarity 1.00: op_free, op_heap_init); symbols from Fahrenheit's server export
@@ -6708,13 +6772,16 @@
 0x008172b0 function opu_signal                   # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd360 opu_signal's (similarity 1.00: AtelGetEffectFlag, AtelSetEffectFlag); symbols from Fahrenheit's server export
 0x00817300 function opu_sloop                    # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fbde0 opu_sloop's (similarity 0.67: MsGetDamageInfo, op_irandom_p); symbols from Fahrenheit's server export
 0x00817470 function opu_sys                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd1a0 opu_sys's (similarity 1.00: MsEffectWaitFlag); symbols from Fahrenheit's server export
+0x00817530 function opu_unit_max              # behaviour (Switch opu_unit_max, 68 bytes; ours 88): host u16 +0x334 = cmd+2, clearing the 4 program pointers of each unit from the old count up; -> cmd + 4
 0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
+0x008178f0 function opu_eff_flag_008178f0     # (host, cmd): g_EtEff[unit u16 +0x14] +0xc flags vs (i16 +4 << 16 | i16 +2): nibble&7 0 set, 1 clear, 2/3 jump i16 +6 on any/none, 4/5 wait on any/none; name ours
 0x00817ad0 function opu_level                    # callees: its named callees match the Switch 0x71003fd8e0 opu_level's (similarity 1.00: Ch_EffectGetEffectLevel, Ch_EffectSetEffectLevel, MsGetChrMotionSignal); symbols from Fahrenheit's server export
 0x00817c30 function op_add64                  # (dst, src, n) 64-bit dst = src + (i32) n
 0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
 0x00817f50 function opu_r_en                     # callees: its named callees match the Switch 0x71003ff6d0 opu_r_en's (similarity 0.80: Ch_GetRot, MsGetChrBtlDir, MsSetChrDirTarget, op_deg_get); symbols from Fahrenheit's server export
 0x00818110 function opu_r_etc                    # layout+callees: sorts between opu_r_en and opu_v_2d, and its named callees match the Switch 0x71003ffe60 opu_r_etc's (similarity 1.00: op_deg_in_check); symbols from Fahrenheit's server export
 0x00818200 function opu_r_u                      # layout+callees: sorts between opu_r_en and opu_v_2d, and its named callees match the Switch 0x71003ff9a0 opu_r_u's (similarity 1.00: op_deg_get, opus_no_get); symbols from Fahrenheit's server export
+0x008182f0 function opu_v_stop_008182f0       # (host, cmd): flagged +0x70.. = -(+0x50.. / u16 cmd+2) (bits 9..11 = 0) or +0x80.. = -(+0x60.. / n) (= 1); -> cmd + 4; name ours
 0x00818dc0 function opu_v_2d                     # callees: its named callees match the Switch 0x7100400620 opu_v_2d's (similarity 0.71: op_mul_m, op_rtp_w1, op_trans_m, op_unit_m, opus_no_get); symbols from Fahrenheit's server export
 0x00818ed0 function opu_v_en                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fe760 opu_v_en, 2 votes, round 2
 0x008190e0 function opu_v_en_move                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fef00 opu_v_en_move, 2 votes, round 1
@@ -6729,6 +6796,7 @@
 0x0081b1e0 function opus_get_chr_pos             # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003fec20 opus_get_chr_pos's (similarity 1.00: Ch_GetPos); symbols from Fahrenheit's server export
 0x0081b270 function opus_set_chr_dirf            # callees: its named callees match the Switch 0x71003ff2b0 opus_set_chr_dirf's (similarity 1.00: Ch_SetDirF, MsBattleChrStart, MsSetChrDirF); symbols from Fahrenheit's server export
 0x0081b2b0 function opus_set_chr_pos             # callees: its named callees match the Switch 0x71003ff220 opus_set_chr_pos's (similarity 1.00: Ch_SetPos3, MsBattleChrStart, MsSetChrPos); symbols from Fahrenheit's server export
+0x0081b4d0 function opu_motion_cb_0081b4d0    # (host, cmd): unit byte +0xba (the motion callback, 0x00c492c8) = cmd+2, u16 +0xa0/+0xa2 = cmd+4/+6; 8/9: +0x40.. = +0x90.. * 16; 0xb: +0xa4/+0x44/+0x48 = +0x90..; -> cmd + 8; name ours
 0x0081b560 function opu_spl                      # callees: its named callees match the Switch 0x7100401030 opu_spl's (similarity 0.88: op_free, op_malloc, op_mul_m, op_spline_xyz, op_spline_xyz_table); symbols from Fahrenheit's server export
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081c260 function SqsCmdSetC4C6            # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc4 (bit 12 of u16 ctx +0x21a set) or +0xc6 of ctx +0x220; in the IOP command table next to SqsCmdSetC2, no direct callers; name ours; ported (field round 33)
@@ -7926,6 +7994,7 @@
 0x00855c40 function FFXUsbMouse_IopMemGet        # layout+callees: sorts between FFXUsbMouseRead2 and debugSetRikkuName, and its named callees match the Switch 0x7100449b10 FFXUsbMouse_IopMemGet's (similarity 1.00: FFXSifCallRpc); symbols from Fahrenheit's server export
 0x00855c70 function Native_MsgSetValue           # 0x009e: args (window, slot, type, value) -> window; sets inline text variable `slot` of a message window: byte +0 of g_MsgVars[window*32+slot] = type (0x008b8960), int +4 = value (0x008b8980); text code 0x12 reads them (0x008b6660 area: type 0 raw ptr, 0x13-0x23 and 0x2b-0x32 number formatting, '3'-'7' item/key-item names); scripts push e.g. (5, 0, 0, v48) right before 0x006a
 0x00855cd0 function Native_0059              # 0x0059: (r, h, z1): for point triggers (types 3, 6) the position's +0x30 = z1, +0x38 = h, +0x1c = r; 1, else 0; ported in native_move (script round 11)
+0x00855d50 function Native_003c # 0x003c: (v): 0x0086f8a0(worker, v); 0; ported in native_mods (script round 19); name ours
 0x00855d70 function Native_013c # 0x013c: args as Msg_ShowSetup -> Msg_ShowSetup(worker, args, stack, 8); ported in native_sys (script round 18); name ours
 0x00855d90 function Native_0101 # 0x0101: args (id, pan, frames) -> frames: SndSepPanTranslate(id, pan, frames); ported in native_sys (script round 18); name ours
 0x00855dd0 function Native_01d4              # 0x01d4: (slot, on): 0x0082aa30 on the slot's model, bit 0; ported in native_move (script round 11)
@@ -7951,18 +8020,24 @@
 0x008563e0 function Native_019b # 0x019b: args (b, a) -> 1: yiAttachChrDObj(+0xa8, chr, a) with a character; ported in native_sys (script round 18); name ours
 0x00856460 function Native_SetTouchRange         # 0x0085: args (float r) -> 1; worker transform (0x0086c2b0) +0x48 = r, sets dirty bit ctx+0x36 |= 1; debug panel labels +0x48 "TCR:" (0x0087ace0, table 0x00c539c8); shared init worker pushes 10.0; ported in native_btl/native_move (script round 10)
 0x00856490 function Native_001e # 0x001e: args (v f, _ f) -> float v; ported in native_sys (script round 18); name ours
+0x008564b0 function Native_01d6 # 0x01d6: (id): voice id's stream position (SndStreamDVDPos, 0x00887790; 0 when it is -1) and the two words 0x00885ba0(id, &a, &b) gives through 0x00885bf0(0, &; ported in native_mods (script round 19); name ours
 0x00856520 function Native_023d              # 0x023d: 0x00647e40(), a pending [0x025d5ebc] cleared after 0x00642390(7), then 0x00786b00(), 0x00782050(), 0x0088d1c0(0), 0x00643e70(); 1; ported in native_move (script round 11)
 0x00856570 function Native_00a2              # 0x00a2: (window, a, b, c, d) bytes: the window's +0x10 = a << 24 | d << 16 | c << 8 | b (pushed and popped back); it; ported in native_move (script round 11)
+0x008565f0 function Native_000d # 0x000d: jumps to 0x0086bc70; ported in native_mods (script round 19); name ours
 0x00856600 function Native_SetTouchRange_copy_00856600 # 0x005b: the same code as Native_SetTouchRange (0x00856460; call targets equal), a copy the compiler kept, and the Rust handler is Native_SetTouchRange's; ported in native_sys (script round 18); own name
 0x00856630 function Native_AlwaysTrue019c        # 0x019c () -> 1; no pops, constant 1 (PS2 check stubbed on PC?); scripts use it inside conditions ("pushimm 32; and; land; func 0x019c; land")
 0x00856640 function Native_023e # 0x023e: args (id int) -> id: SndSepLock(id); ported in native_sys (script round 18); name ours
 0x00856660 function Native_00e9              # 0x00e9: (on): the current ctrl work's +1 bit 4; on != 0; ported in native_move (script round 11)
+0x008566a0 function Native_000e # 0x000e: jumps to 0x0086bc80; ported in native_mods (script round 19); name ours
 0x008566b0 function Native_ControlEnable         # 0x005d: no args -> 1; FUN_00871ab0: type-1 party workers (+0x40 != -1, flag 0x200) get flag 0x20, player worker's model goes to FUN_0082dad0, context byte 0 |= 2
 0x008566c0 function Native_00a4              # 0x00a4 (float): (a, b): the distance between workers a and b; ported in native_move (script round 11)
 0x00856740 function Native_01d7 # 0x01d7: args (v int) -> v: GetCD() +0x8c(v); ported in native_sys (script round 18); name ours
 0x00856770 function Native_023f              # 0x023f: 0x008749e0(v); v; ported in native_move (script round 11)
+0x00856790 function Native_000f # 0x000f: jumps to 0x0086c1c0; ported in native_mods (script round 19); name ours
 0x008567a0 function Native_019f              # 0x019f: (v) -> 0x0086c530(v); ported in native_move (script round 11)
 0x008567c0 function Native_ControlDisable        # 0x005e: no args -> 0; FUN_008719e0: clears flag 0x20 and the speed (pos+0x0c) of type-1 workers, FUN_0082dad0(0), context byte 0 &= ~2
+0x008567d0 function Native_00ea # 0x00ea: bit 4 of the current ctrl work's byte +1; ported in native_mods (script round 19); name ours
+0x008567e0 function Native_01d8 # 0x01d8: (stream, entry, from, to, len): Vibrate_StartLevel(stream, entry, from, to, len) (0x00876050), the first four clamped to 0..7, 0..1, 0..0x7f, 0..0x7f;; ported in native_mods (script round 19); name ours
 0x00856890 function Native_013e              # 0x013e: (on): +0x36 bit 15; on != 0; ported in native_move (script round 11)
 0x008568d0 function Native_0240              # 0x0240: (b, on): 0x007ad5e0(b, on != 0); that; ported in native_move (script round 11)
 0x00856910 function Native_0010              # 0x0010: jumps to 0x0086c1d0; ported in native_move (script round 11)
@@ -7974,16 +8049,21 @@
 0x00856a50 function Native_00b1              # 0x00b1 (float): (v) into the move block's +0x18; ST0 it; ported in native_move (script round 11)
 0x00856a80 function Native_01da              # 0x01da: (d, c, b, a): 0x00876050(3, d, c, b, a); 1; ported in native_move (script round 11)
 0x00856ad0 function CT_0241_ret               # 0x0241 (on) -> on != 0; sets/clears bit 3 of field state +0x210 (*0x01326b28, 0x01325db0); ?no static reader found; was Native_FieldSetFlag08
+0x00856b10 function Native_01a1 # 0x01a1: (i, a f, b f, c f, d f): yiSetMIMeParamDObj(i, &(a, b, c, d)) (0x0090a4d0); 1; ported in native_mods (script round 19); name ours
+0x00856ba0 function Native_0031 # 0x0031: Atel_SetWorkerFlag200(worker, 1) (0x008712a0), 0x0086a0e0(); 1; ported in native_mods (script round 19); name ours
 0x00856bc0 function Native_00ec              # 0x00ec: (chr): its party slot (0..=2, 0x007852f0), -1 when absent; ported in native_move (script round 11)
 0x00856c30 function Native_MoveStart             # 0x0018: args (slotMask, mode, param); current move slot: +0x00 = param, +0x02 = mode (low 7 bits: 1 walk, 2 walk at speed, 5/6/7/9 timed, 9 jump arc), slots in mask (bit 0x20 = all) share it (FUN_00870440); arrive radius 0 adds 0x800; scripts "0, 0xc001, 0" then 0x001a
+0x00856da0 function Native_0032 # 0x0032: Atel_SetWorkerFlag200(worker, 0), 0x0086a0e0(); 0; ported in native_mods (script round 19); name ours
 0x00856dc0 function Native_024d              # 0x024d: (on): the current ctrl work's +0x210 bit 6; on != 0; ported in native_move (script round 11)
 0x00856e00 function Native_01db # 0x01db: args (v int) -> v: 0x00876290(v); ported in native_sys (script round 18); name ours
 0x00856e20 function Native_GetWorkerPos          # 0x00a3: args (worker, &x, &y, &z) -> 0; each & is a variable location word resolved by Script_VarAddress; Script_GetWorkerPos 0x0086a2f0 writes the position (midpoint of the two endpoints for worker types 2/5)
+0x00856e90 function Native_01a2 # 0x01a2: pushes a 0 (the fourth float), then as 0x01a1; 1; ported in native_mods (script round 19); name ours
 0x00856f20 function Native_0140              # 0x0140: (dst, list, mask, n, _, msg): as 0x0237 with the entries taken from the message table 0x008b70a0(msg, 0x0086bbc0()) (entry 2 * id, +1 when 0x0086bad0()) and no copy after the text; k << 8; ported in native_move (script round 11)
 0x00857180 function Native_SetTalkRange          # 0x0061: args (range: float, truncated); pos block (FUN_0086c2b0) +0x40; talk check 0x00866980: dist <= ctx+0x1f0 + range; usually 13.0
 0x008571c0 function GetField40_008571c0          # auto-port shape (return field u32, cdecl): t0 = u32[(a0 + 0x40)]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x008571d0 function Native_01dc              # 0x01dc: 3 pushed and popped back, 0x00876290(3); 3; ported in native_move (script round 11)
 0x00857200 function Native_0242              # 0x0242: jumps to 0x00777e90; ported in native_move (script round 11)
+0x00857210 function Native_01a3 # 0x01a3: pushes two 0s, then as 0x01a1; 1; ported in native_mods (script round 19); name ours
 0x008572b0 function Native_00ee              # 0x00ee: (worker): its +0x34 bit 5; ported in native_move (script round 11)
 0x008572e0 function Native_SetRadius44           # 0x0062: args (r: float, truncated); pos block +0x44, ?collision/push radius (consumer not found); usually 6.0, set next to 0x0061/0x0063; ported in native_btl/native_move (script round 10)
 0x00857320 function Native_01ef # 0x01ef: () -> 2 (pushed and popped back): 0x00876290(it); ported in native_sys (script round 18); name ours
@@ -7999,35 +8079,44 @@
 0x00857660 function Native_01dd # 0x01dd: args (v int) start: v into the argument word; -> v; ported in native_sys (script round 18); name ours
 0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`; ported in native_move (script round 11)
 0x00857690 function Native_0245              # 0x0245: 0x007fb680(); 1; ported in native_move (script round 11)
+0x008576a0 function Native_00f0 # 0x00f0: (&v): 0x0086d190(worker, variable address); 1; ported in native_mods (script round 19); name ours
 0x008576d0 function Native_01a6              # 0x01a6: fills the empty party slots (0x007852f0) with the lowest characters 0..=7 that are available (0x00785380 1) and not already in a slot, then 0x00786950(slots); 1; ported in native_move (script round 11)
 0x008577c0 function Native_SetTYZAngle           # 0x008d: args (float a) -> -; transform +0x4c = a, dirty bit; debug label "TYZ:" (0x0087ae00); init pushes 1.0471976 (60 deg), same as 0x0063 (+0x3c, "TZX:"); ? vertical angle of the talk/touch area; ported in native_btl/native_move (script round 10)
 0x008577f0 function Native_01de_Poll_copy_008577f0 # 0x01dd poll: the same code as Native_01de_Poll (0x008579d0; call targets equal), a copy the compiler kept, and the Rust handler is Native_01de_Poll's; ported in native_sys (script round 18); own name
+0x00857810 function Native_0246 # 0x0246: 0x007fb730(); 1; ported in native_mods (script round 19); name ours
 0x00857820 function Native_00a7              # 0x00a7: (worker): its +0x34 bit 1 cleared; 0; ported in native_btl/native_move (script round 10)
 0x00857850 function Native_00f2              # 0x00f2: (v) -> 0x00870190(v); ported in native_move (script round 11)
 0x00857870 function Native_MsgSetText            # 0x0064: args (window, msg); window (FUN_0086be90) +0x08/+0x0c = Msg_Text(msg), +0x16 = Msg_Flags(msg); g 0x01325ac0 = msg
 0x008578c0 function Native_BitIndex            # 0x0142: (mask, n): the index of the nth set bit of mask (from bit 0), 0 if there are fewer; ported in native_msg
+0x00857910 function Native_0247 # 0x0247: 0x007fb720(); 1; ported in native_mods (script round 19); name ours
 0x00857920 function Native_01de              # 0x01de start: 3 pushed and popped back into the args; 3; ported in native_move (script round 11)
 0x00857950 function Native_00a8              # 0x00a8: (worker): its +0x34 bit 1 set; 1; ported in native_move (script round 11)
 0x00857980 function Native_015e              # 0x015e: (v) -> 0x008701c0(v); ported in native_btl/native_move (script round 10)
 0x008579a0 function Native_MoveWait              # 0x001a poll: no args; done (5) when current move slot mode (+0x02 & 0x7f) is 0
 0x008579d0 function Native_01de_Poll         # 0x01de poll: done (5) once 0x00875de0(v) is 0; ported in native_move (script round 11)
+0x008579f0 function Native_0248 # 0x0248: 0x007fb520(); 1; ported in native_mods (script round 19); name ours
 0x00857a00 function Native_0141              # 0x0141: (window, v, var): the window's +8, +0xc = the variable's address, +0x16 = v; 0; ported in native_move (script round 11)
 0x00857a60 function Native_00aa              # 0x00aa: (v): 0x0086f3d0(v); v; ported in native_btl/native_move (script round 10)
 0x00857a80 function Native_015d              # 0x015d: (v) -> 0x00870160(v); ported in native_move (script round 11)
 0x00857aa0 function Native_01ea # 0x01ea: args (var int) -> 1: 0x008715e0(AtelGetRealVarAdrs(var)); ported in native_sys (script round 18); name ours
 0x00857ad0 function Native_0143              # 0x0143: (frames): 0x00877450 with [0x00b92350] / (frames * [0x00b92220]) ([0x00b92340] for 0), then 0x00861000(frames, 0); frames; ported in native_move (script round 11)
 0x00857b30 function Native_TurnWait              # 0x001b poll: no args; done (5) when the turn struct mode (+0x02 & 0x1f) is 0
+0x00857b60 function Native_0249 # 0x0249: 0x007fb510(); 1; ported in native_mods (script round 19); name ours
 0x00857b70 function Native_01a7              # 0x01a7 start: (v): 0x00798fd0(v) and the pending reward given without a window (item 0x00790550, key item 0x0088e790, primer 0x007ab910(0x007abbd0(..)), gil 0x007859a0); the args get +0xc = the primer, +8 = whether it was new, +0xa = 0; no new primer runs 0x00798b60(); ported in native_move (script round 11)
 0x00857c30 function Native_00da              # 0x00da: jumps to 0x0086a9b0; ported in native_move (script round 11)
 0x00857c40 function Native_MinimapSetCorner      # 0x00f3 (corner) -> corner; minimap 0x0193bf80 position: 0 top-left (0x50,0x40), 1 top-right (0x1b0,0x40), 2 bottom-left, 3 bottom-right, 4 centre (0x0091d930); ported in native_move (script round 11)
+0x00857c60 function Native_015a # 0x015a: (i, b, a): message window i's +0x16 = b (u16), +8 and +0xc = a; 0; ported in native_mods (script round 19); name ours
 0x00857cb0 function Native_024a              # 0x024a: (on): bit 13 of *0x00785290(), then 0x008724a0(); on != 0; ported in native_move (script round 11)
+0x00857cf0 function Native_01ec # 0x01ec: (b, a): TkSetVibrateStream(b, a, stream) (0x00875fb0) with the current ctrl work's +0x44 when it is set; 1; ported in native_mods (script round 19); name ours
 0x00857d40 function Native_0144              # 0x0144: (frames): 0x00877450 with 1 / (frames * [0x00b92220]) (1 for 0), then 0x00861000(frames, 0x7f); frames; ported in native_move (script round 11)
 0x00857da0 function Native_MoveSetSpeed          # 0x0016: args (speed) -> speed; current move slot +0x10 (move mode 2 step = speed, 0x00869xxx); usually 16.0
 0x00857dd0 function Native_00e2              # 0x00e2: 0x0086f430(v); v; ported in native_move (script round 11)
 0x00857df0 function Native_00f6              # 0x00f6 start: (n, worker) into the args words (n at least 1); EAX the args address; ported in native_move (script round 11)
 0x00857e30 function Native_024b              # 0x024b: (slot, on): 0x0082b2c0(model, on) for a used slot with a model and motion (+0xb04 not 0xff); on != 0; ported in native_move (script round 11)
+0x00857ea0 function Native_007b # 0x007b: (i) -> ReturnConst_008b7cc0(text i) (0x008b7cc0), the text from Msg_Text1 (0x0086b170) when 0x0086bbc0() is set, else Msg_Text (0x0086bf30); ported in native_mods (script round 19); name ours
 0x00857ef0 function Native_01a7_Poll         # 0x01a7 poll: done (5) without a new primer; else state +0xa 0 plays 0x00821750(0x10001) (then 1), 1 ends (1); ported in native_move (script round 11)
 0x00857f40 function Native_SetMoveSpeed          # 0x006c: args (float v) -> v; 0x0086f350 sets move block +0x10 for all 9 levels (0x5c8 + i*0x4c); debug label "SVR:" (0x0087a730); 0x0086d300 resets it to 0; init pushes 16.0, the player 34.0
+0x00857f70 function Native_01ed # 0x01ed: an endless loop: dbgPrintf, the top popped and pushed back with a 2 under it, forever; debug native, not ported (script round 19); name ours
 0x00857fb0 function Native_00e1              # 0x00e1: jumps to 0x0086a9d0; ported in native_move (script round 11)
 0x00857fc0 function Native_0145              # 0x0145: (b, a): 0x00919e50(b, a); 1; ported in native_move (script round 11)
 0x00857ff0 function Native_00f6_Poll         # 0x00f6 poll: done (5) for a negative worker or once 0x00863520(worker, n) is 0; ported in native_move (script round 11)
@@ -8038,14 +8127,18 @@
 0x008580c0 function Native_MsgSetPos             # 0x0065: args (window, x, y, anchor); window +0x00 = x, +0x02 = y, +0x1c = anchor (FUN_008af850 places by it); x/y patched for maps 0x17/0xab/0xd4 (*0x012fbc40); scripts "0, 256, 224, 4"
 0x008581a0 function Native_0146              # 0x0146: 0x00919e80(v); v; ported in native_move (script round 11)
 0x008581c0 function Native_MapChange             # 0x0011: args (map, entrance); FUN_0086ff40(map, entrance, 1) -> 0x0088ea60 writes them to the game state (0x00785240: +0 map, +2 previous, +0xc entrance); scripts "pushimm 263; pushimm 0" before end
+0x008581f0 function Native_00ad # 0x00ad: (v): AtelSetSaveDicIndex(v) (0x00870ef0); v; ported in native_mods (script round 19); name ours
 0x00858210 function Native_LangGroupNotJpAsia    # 0x0253 () -> 0 when the language group (LangManager +0) is 0 (jp) or 3 (kr, ch), 4; else 1; memochek picks its logo parts by it; ported in native_move (script round 11)
 0x00858230 function Native_01a7_Result       # 0x01a7: a new primer runs 0x00798b60(); 1; ported in native_move (script round 11)
+0x00858250 function Native_0147 # 0x0147: (v): the worker's +0xbc = v with bit 31 set (0 stays 0), +0xb4 = the f32 at 0x00b41db0; that word; ported in native_mods (script round 19); name ours
+0x00858290 function Native_00f7 # 0x00f7: (slot, n): args +0 = AtelGetPartyWorker(slot) (0x0086a5e0), +4 = n, at least 1; the args address, or the worker when n is not positive; ported in native_mods (script round 19); name ours
 0x008582e0 function Native_01d9              # 0x01d9: the text 0x0078fcf0(3, 0x202c, 0x007851f0()) copied to 0x00784fb0(6); 1; ported in native_move (script round 11)
+0x00858320 function Native_00ae # 0x00ae: jumps to AtelGetSaveDic (0x0086c410); ported in native_mods (script round 19); name ours
 0x00858330 function Native_00ab              # 0x00ab: (map, entrance): AtelSetEventJump2(map, entrance, 1); 0; ported in native_move (script round 11)
 0x00858360 function Native_MsgSetStyle           # 0x0066: args (window, style) -> window; window +0x20 byte, passed to 0x00906e60 (window object +4) when shown (0x00858b50); ?frame/style; scripts mostly 0/1
 0x00858390 function Native_01a8              # 0x01a8: (chr): +0x54 of 0x00785330(chr); ported in native_move (script round 11)
 0x008583b0 function Native_MinimapSetMarker      # 0x0148 (marker, worker) -> value; worker +0xbc = marker | 0x80000000 (0 = default), +0xb4 = -10000.0; read by Minimap_GetWorkerMarker 0x0086b740 for the field minimap 0x0091da80
-0x00858400 function Native_00f6_Poll_copy_00858400 # the same code as Native_00f6_Poll (0x00857ff0; call targets equal), a copy the compiler kept; own name
+0x00858400 function Native_00f7_Poll # 0x00f7: done (5) for no worker or when 0x00863520(worker, n) is 0; else 0; ported in native_mods (script round 19); the same code as Native_00f6_Poll (0x00857ff0; call targets equal), a copy the compiler kept; own name
 0x00858430 function Native_0255              # 0x0255: bits 14-15 of *0x00785290(); ported in native_move (script round 11)
 0x00858440 function Native_00af # 0x00af: args (v int) -> v: 0x0086f3c0(v); ported in native_sys (script round 18); name ours
 0x00858460 function Native_MapJump               # 0x010b (map, entrance) -> 0; 0x0086ff40 -> 0x0088ea60: game state 0x0112ca90 +0 = map, +2 = previous map, +0xc = entrance; scripts push (263, 0) then end
@@ -8054,8 +8147,10 @@
 0x00858500 function Native_01a9 # 0x01a9: args (i int) -> 0x00785330(i) +0x50; ported in native_sys (script round 18); name ours
 0x00858520 function Native_00f8                  # native 0x00f8 int handler (g_NativeTables group 0 entry 0xf8, ffx-script native_counts); 1 calls in the shipped scripts; calls AtelGetRealVarAdrs, AtelPopStackInteger, TkIsDebug; name by id
 0x00858580 function Native_0149              # 0x0149: (on): the current ctrl work's +2 bit 7; on != 0; ported in native_move (script round 11)
+0x008585c0 function Native_00b0 # 0x00b0: jumps to AtelGetBattleSceneGroup (0x0086a9a0); ported in native_mods (script round 19); name ours
 0x008585d0 function Native_0254              # 0x0254: (v): bits 14-15 of *0x00785290() = v, then 0x00a53de0(0x0112ec7c); v; ported in native_move (script round 11)
 0x00858610 function Native_010c              # 0x010c: (map, entrance): AtelSetEventJump2(map, entrance, 0); 0; ported in native_move (script round 11)
+0x00858640 function Native_0068 # 0x0068: (i, b, a): message window i's +4 = b, +6 = a; 0; ported in native_mods (script round 19); name ours
 0x00858690 function Native_01aa # 0x01aa: args (i int) -> 0x00785330(i) +0x58; ported in native_sys (script round 18); name ours
 0x008586b0 function Native_00b2              # 0x00b2: (on) -> 0x0083add0(on != 0); ported in native_move (script round 11)
 0x008586e0 function Native_01e1 # 0x01e1: () -> 0x0082a9a0(chr) for attach kind 1 with a character, else 0; ported in native_sys (script round 18); name ours
@@ -8065,19 +8160,26 @@
 0x008587a0 function Native_GetYawToMoveTarget    # 0x001f: no args -> float; FUN_0088b430 atan2 in XZ from position to current move slot target (+0x28/+0x30); scripts feed it to 0x0028
 0x00858800 function Native_01ab              # 0x01ab: jumps to 0x00784f50; ported in native_move (script round 11)
 0x00858810 function Native_00b3              # 0x00b3: (v): the first of 0x0083adf0's words replaced by v (0x0083b110); v; ported in native_move (script round 11)
+0x00858850 function Native_0067 # 0x0067: (i, v): v's low and high halves pushed back, then as 0x0068 (the window's +4 = low, +6 = high); 0; ported in native_mods (script round 19); name ours
 0x008588b0 function Native_0257              # 0x0257: (window): its +0x28 = 0; ported in native_move (script round 11)
+0x008588e0 function Native_014b # 0x014b: (on): SndSetFoot3dStatus(party slot, on) (0x008870b0) when the worker has a slot; on != 0; ported in native_mods (script round 19); name ours
 0x00858920 function Native_00fa              # 0x00fa: 0x0088eb40(v); v; ported in native_move (script round 11)
 0x00858940 function Native_01e2              # 0x01e2: jumps to 0x009085a0; ported in native_move (script round 11)
 0x00858950 function Native_01ac              # 0x01ac: (v) -> 0x00790af0(v); ported in native_move (script round 11)
 0x00858970 function Native_AngleToPoint          # 0x00f4 float (x, y, z) -> atan2 angle from the worker's x/z (0x0086c2b0) to (x, z), y ignored (0x0088b430)
 0x008589d0 function Native_0069              # 0x0069: (window, b, a): the window's +0x1e = b, +0x1f = a; window; ported in native_move (script round 11)
 0x00858a20 function Native_00b4              # 0x00b4: (v): the second of 0x0083adf0's three words replaced by v (0x0083b110); v; ported in native_move (script round 11)
+0x00858a60 function Native_0258 # 0x0258: (on): when on != 0 differs from 0x0086bbc0(), args +0 = 0, MsSetSaveConfigEnglish(on) (0x00785ed0) and TOSwapInternationalEnvInit(0x0086bbc0()) (0x008; ported in native_mods (script round 19); name ours
 0x00858ab0 function Native_01e3              # 0x01e3: jumps to 0x00908450; ported in native_move (script round 11)
 0x00858ac0 function Native_00fb              # 0x00fb: (window) -> 0x008b8010(window); ported in native_btl/native_move (script round 10)
+0x00858af0 function Native_014c # 0x014c: (slot, on): SndSetFoot3dStatus(slot, on != 0) (0x008870b0); on != 0; ported in native_mods (script round 19); name ours
 0x00858b30 function Native_01ad              # 0x01ad: (v) -> 0x00790b90(v, 1); ported in native_move (script round 11)
 0x00858b50 function Native_MsgOpen               # 0x006a: args (window, mode) -> window; window state +0x14 = 1 (opening); Msg_ClampChoices(win, mode) gives the flags in +0x1d (bit 2 = choice, uses Msg_Flags choice count); sets up and shows the text box (0x008ada30, 0x00906d90, 0x008b0000, position 0x008af850/0x008afa90, 0x008ade10); mode is 0 (32825 calls), 2 (211) or 66
 0x00858c90 function Native_01e4               # 0x01e4: `(x, y, z, n)`: returns `0x0090a470(x, y, z, n)`'s `EAX`. (ffx_script::vm::bridge::native_map)
+0x00858cf0 function Native_00b5 # 0x00b5: (b): Sg_GetTkAntiXYB(&x, &y, &b) (0x0083adf0), then Sg_SetTkAntiXYB(x, y, b) (0x0083b110) with the popped b; b; ported in native_mods (script round 19); name ours
 0x00858d30 function Native_GetPitchToMoveTarget  # 0x0020: no args -> float; second result of FUN_0088b4d0 (vertical angle to the move target); scripts feed it to 0x0029; ported in native_move (script round 11)
+0x00858da0 function Native_0258_Poll # 0x0258: done (5) once args +0 is set; else TOSwapInternationalEnvExec() (0x008b0340): 0 keeps waiting, anything else sets args +0 to -1 and is done; ported in native_mods (script round 19); name ours
+0x00858dd0 function Native_00fc # 0x00fc: (v) -> 0x008700e0(v); ported in native_mods (script round 19); name ours
 0x00858df0 function Native_01ae # 0x01ae: args (v int) -> 0x00790b90(v, -1); ported in native_sys (script round 18); name ours
 0x00858e10 function Native_014d              # 0x014d: jumps to 0x0086bcc0; ported in native_move (script round 11)
 0x00858e20 function Native_00b6 # 0x00b6: () -> a of 0x0083adf0(&a, 0, 0); ported in native_sys (script round 18); name ours
@@ -8092,27 +8194,38 @@
 0x00859060 function Native_MsgClose              # 0x006b: args (window) -> window; Msg_CloseWindow 0x008640f0 (state 3 = closing unless already 0/3)
 0x00859080 function Native_00b7 # 0x00b7: () -> b of 0x0083adf0(0, &b, 0); ported in native_sys (script round 18); name ours
 0x008590a0 function Native_01b0              # 0x01b0: (b, a): 0x00873eb0(b, a) (the original first prints both through the C runtime's printf, a debug line left out here); b; ported in native_move (script round 11)
+0x008590e0 function Native_025a # 0x025a: jumps to 0x0086a7f0; ported in native_mods (script round 19); name ours
 0x008590f0 function Native_01e9              # 0x01e9 start: (window, wait) into the args; 0x008640f0(window); ported in native_move (script round 11)
 0x00859120 function Native_014f              # 0x014f: (c, b, a) floats: 1 when c is greater than 0x0088b400(wrap(b - a), c); ported in native_move (script round 11)
+0x008591a0 function Native_0023 # 0x0023: (v f): position block +0x20 = v; v; ported in native_mods (script round 19); name ours
 0x008591d0 function Native_01e6               # 0x01e6: `(n, x, y)`: `0x0090a430(n, x, y)`; returns `n`. (ffx_script::vm::bridge::native_map)
 0x00859220 function Native_00b8 # 0x00b8: () -> c of 0x0083adf0(0, 0, &c); ported in native_sys (script round 18); name ours
 0x00859240 function Native_01b1              # 0x01b1: 0x00873db0(); 1; ported in native_move (script round 11)
 0x00859250 function Native_MusicLoad_Result      # 0x0102 int: Music_Load(music) 0x00886960 -> music; FMOD cmd 0x28 = FmodMusic::read (0x00709080, ids < 0xb6); ported in native_move (script round 11)
 0x00859270 function Native_025b              # 0x025b: (v): 0x00822380 with 0x17 as 0x16 and 0x19 as 0x18 (0x16 itself does nothing); the value used; ported in native_move (script round 11)
 0x008592c0 function Native_01e9_Poll         # 0x01e9 poll: done (5) without the wait flag or once the window's state (+0x14) is 0 or 4; ported in native_move (script round 11)
+0x008592f0 function Native_0024 # 0x0024: (v f): position block +0x24 = v; v; ported in native_mods (script round 19); name ours
 0x00859320 function Native_01e7              # 0x01e7: (track, v): 0x008869e0, 0x008868f0(track, v), current music = track; 1; ported in native_move (script round 11)
 0x00859360 function Native_01b2              # 0x01b2: (v) -> 0x007904b0(v); ported in native_move (script round 11)
+0x00859380 function Native_0150 # 0x0150: SndSetFoot3dStatus(party slot, 1); 1; ported in native_mods (script round 19); name ours
 0x008593a0 function Native_0103              # 0x0103: 0x00886800; ported in native_move (script round 11)
+0x008593e0 function Native_00b9 # 0x00b9: r = Sg_EnableTkAnti(0) (0x0083add0), then Sg_EnableTkAnti(r); r; ported in native_mods (script round 19); name ours
 0x00859400 function Native_025c              # 0x025c: jumps to 0x0086c270; ported in native_move (script round 11)
 0x00859410 function Native_FootstepHookEnable    # 0x0151 (material) -> 1; sets bit n of 0x0132ff2c: footstep sound on ground material n (Snd_KickFoot 0x008866b0) goes to a script request (0x00876950) instead of the SE; ?
 0x00859430 function Native_0021              # 0x0021 (float): (float yaw): wrapped (0x0088bc20) into the move block +0x44 (worker +0x5fc + level*0x4c); ST0 it; ported in native_btl/native_move (script round 10)
+0x00859470 function Native_01e8 # 0x01e8: (v): SndSepClear(v) (0x00886d80); 1; ported in native_mods (script round 19); name ours
+0x00859490 function Native_01b4 # 0x01b4: TkSndIsReadShoutVoice() != 0 (0x00887b00); ported in native_mods (script round 19); name ours
 0x008594a0 function SetFieldConst44_008594a0     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x44)] = 0x0; return 0x1; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x008594c0 function Native_016c              # 0x016c: the current music (when not negative) 0x00886a60, current music -1; 1; ported in native_move (script round 11)
+0x008594f0 function Native_0152 # 0x0152: SndSetFoot3dStatus(party slot, 0); 0; ported in native_mods (script round 19); name ours
+0x00859510 function Native_0022 # 0x0022: (a f): the current level's turn block (+0x600 + level * 0x4c) +0 = Math_WrapAngle(a); that angle; ported in native_mods (script round 19); name ours
 0x00859550 function Native_01f0              # 0x01f0 (float): 0x00873e50(v); ST0 v; ported in native_move (script round 11)
 0x00859580 function Native_01b5              # 0x01b5: 0x00644280(1), then jumps to 0x00874060; ported in native_move (script round 11)
 0x00859590 function Native_SetMapFadeType        # 0x00bc: args (t) -> t; g_SaveData+0x11 = t; at the map change 0x0086ff40 picks 0x0082cbc0 (t=0) or 0x0082cbe0 (t=1) fade; scripts push it right before map jump 0x010b
 0x008595b0 function Native_016d              # 0x016d: 0x00886a60; ported in native_move (script round 11)
 0x008595f0 function GetField0_008595f0           # auto-port shape (return field u32, cdecl): t0 = u32[a1]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
+0x00859600 function Native_0153 # 0x0153: (slot): SndSetFoot3dStatus(slot, 0); 0; ported in native_mods (script round 19); name ours
+0x00859620 function Native_01f1 # 0x01f1: jumps to AtelGetHalfTurnAngle (0x00873ad0); ported in native_mods (script round 19); name ours
 0x00859630 function Native_01b6              # 0x01b6: 0x007ad6e0() != 0; ported in native_move (script round 11)
 0x00859640 function Native_TurnSetYaw            # 0x0028: args (yaw) -> wrapped yaw; turn struct +0x20 = wrap(yaw), +0x2c = wrap(current yaw pos+0x34 - yaw) (FUN_0088bc20)
 0x008596b0 function Native_SetMapFadeFrames      # 0x00bb: args (n) -> n; g_SaveData+0x12 = n; 0x0086ff40 passes it to 0x0088eb50 (frame counters 0x01330850/54) and to the fade; scripts push 0 or 15 before 0x010b
@@ -8133,6 +8246,7 @@
 0x00859c40 function Native_0167              # 0x0167: 0x008869f0(); 1; ported in native_move (script round 11)
 0x00859c50 function Native_MsgSelect_Poll      # 0x007d poll (and 0x013b): closed/state 4: choice (0x008b7fd0 first byte if 0x008b7ff0 > 0, else -1) into args +4, 1; open with text shown and 0x008b7fb0 == 2: choice stored, window closed; ported in native_msg
 0x00859d00 function Native_0155              # 0x0155: 0x00887100(v, 1); 1; ported in native_move (script round 11)
+0x00859d20 function Native_01b9 # 0x01b9: 0x007ad710(0)'s EAX; ported in native_mods (script round 19); name ours
 0x00859d30 function Native_00bf              # 0x00bf (float): (i): +0xc of 0x0086c020(worker, i); ported in native_move (script round 11)
 0x00859d50 function Native_025e              # 0x025e: (v) -> 0x00643e80(v); ported in native_move (script round 11)
 0x00859d70 function Native_MusicWaitLoaded       # 0x0105 start: empty (poll 0x00859df0 returns 5, int 0x00859ee0 returns 1); PS2 wait stubbed on PC; scripts call it right after 0x0102; ported in native_move (script round 11)
@@ -8142,34 +8256,48 @@
 0x00859df0 function Native_MusicWaitLoaded_Poll # 0x0105 poll: done (5) at once; ported in native_move (script round 11)
 0x00859e00 function Native_00c0              # 0x00c0 (float): +0x10; ported in native_move (script round 11)
 0x00859e20 function Native_025f              # 0x025f: (b, a): 0x00643500(b, a); 0; ported in native_move (script round 11)
+0x00859e50 function Native_0026 # 0x0026: (a f): position block +0x30 = the wrapped angle; that angle; ported in native_mods (script round 19); name ours
+0x00859e90 function Native_0162 # 0x0162: SndSetKinuStatus(party slot, 1); 1, 0 without a slot; ported in native_mods (script round 19); name ours
 0x00859ec0 function Native_01bc              # 0x01bc: 0x00870140(v); 1; ported in native_move (script round 11)
 0x00859ee0 function Native_MusicWaitLoaded_Result # 0x0105 int: returns 1; ported in native_move (script round 11)
 0x00859ef0 function Native_00c1              # 0x00c1 (float): +0x14; ported in native_move (script round 11)
 0x00859f10 function Native_0260              # 0x0260: one value dropped; 1; ported in native_move (script round 11)
+0x00859f30 function Native_0027 # 0x0027: (a f): position block +0x38 = the wrapped angle; that angle; ported in native_mods (script round 19); name ours
+0x00859f70 function Native_0164 # 0x0164: SndSetKinuStatus(party slot, 0); 1, 0 without a slot; ported in native_mods (script round 19); name ours
 0x00859fa0 function Native_01f4              # 0x01f4: (mask, n): the n-th set bit of mask among bits 8-15, -1 when there are fewer; ported in native_move (script round 11)
 0x00859ff0 function Native_01bd              # 0x01bd: 0x008715f0(v); 1; ported in native_move (script round 11)
 0x0085a010 function Native_0106              # 0x0106: (i, b, var): the record 0x008773f0(i) gets +0 = b, +4 = 0x00a44700(the variable's address); 1; ported in native_move (script round 11)
 0x0085a070 function Native_00c2              # 0x00c2 (float): +8; ported in native_move (script round 11)
 0x0085a090 function Native_0261              # 0x0261: one value dropped; 1; ported in native_move (script round 11)
 0x0085a0b0 function Native_002b              # 0x002b (float): (float v) -> 0x00871520(worker, level, v)'s ST0; ported in native_btl/native_move (script round 10)
+0x0085a0e0 function Native_01be # 0x01be: jumps to AtelGetWaterBattleEffect (0x0086c8a0); ported in native_mods (script round 19); name ours
+0x0085a0f0 function Native_0163 # 0x0163: (slot): SndSetKinuStatus(slot, 1); 1; ported in native_mods (script round 19); name ours
 0x0085a110 function Native_0262              # 0x0262: 1; ported in native_move (script round 11)
 0x0085a120 function Native_0263              # 0x0263: 1; ported in native_move (script round 11)
+0x0085a130 function Native_00c3 # 0x00c3: 1 when the low five bits of the u16 at +2 of the current level's (Script_WorkerLevel) +0x48 block are set; ported in native_mods (script round 19); name ours
+0x0085a160 function Native_01f5 # 0x01f5: (on): TkMenuSetDummyControlerFlag(on != 0) (0x008ca570); on != 0; ported in native_mods (script round 19); name ours
 0x0085a190 function Native_01bf              # 0x01bf: 0x008708d0(); 1; ported in native_move (script round 11)
 0x0085a1a0 function Native_002c              # 0x002c (float): (float v) -> 0x00871500(worker, level, v)'s ST0; ported in native_btl/native_move (script round 10)
+0x0085a1d0 function Native_0165 # 0x0165: (slot): SndSetKinuStatus(slot, 0); 1; ported in native_mods (script round 19); name ours
 0x0085a1f0 function Native_0107              # 0x0107: (i, v): the record 0x008773f0(i) with an object (+4, its +0 bit 1 set) gets +8 = v; 1; ported in native_move (script round 11)
 0x0085a230 function Native_0264              # 0x0264: 0x008cc150(v); 0; ported in native_move (script round 11)
 0x0085a250 function Native_01c0              # 0x01c0: (i, v): 0x0086fa60(i, v) with i clamped to 0..=3; v; ported in native_move (script round 11)
 0x0085a2a0 function Native_TurnSetSpeed          # 0x002e: args (rad/frame); turn struct +0x10 (FUN_00871580), the turn step (0x00869xxx; +0x14 when flag 0x200); default pi/64; scripts 0.1047
+0x0085a2d0 function Native_01f6 # 0x01f6: (b): TkMenuSetDummyControlerPending(1 << b) (0x008ca560); b; ported in native_mods (script round 19); name ours
+0x0085a300 function Native_01ff # 0x01ff: SndSetFootStatus(party slot, 1) (0x00887100) and SndSetKinuStatus(party slot, 1), each when the worker has a slot; 1; ported in native_mods (script round 19); name ours
 0x0085a340 function Native_00c4              # 0x00c4: 1 while the move block runs (mode, +2 & 0x7f); ported in native_move (script round 11)
 0x0085a370 function Native_0108              # 0x0108: (i, second, x, y, z): the record 0x008773f0(i) with an object (+4, its +0 bit 1 cleared) gets the point at +0x14 (second) or +8; 1; ported in native_move (script round 11)
 0x0085a410 function Native_0266              # 0x0266: jumps to 0x008cc140; ported in native_move (script round 11)
+0x0085a420 function Native_01c1 # 0x01c1: 0x00873c40(); 1; ported in native_mods (script round 19); name ours
 0x0085a430 function Native_0200              # 0x0200: (v): 0x00887100(v, 1) and 0x00887130(v, 1) (each pushed and popped back); 1; ported in native_move (script round 11)
 0x0085a480 function Native_SetTurnSpeed          # 0x00e3 float (radians per frame?): worker thread slot (ctx +0x32) record +0x14 (worker +0x878 + slot*0x44), default pi/64; scripts push 0.1745 (10 deg)
+0x0085a4b0 function Native_0232 # 0x0232: (b): args +0 = 1 << b, +4 = ReturnConst2_00a54750() (2); that count; ported in native_mods (script round 19); name ours
 0x0085a4e0 function Native_SetTurnMotions        # 0x00c5: args (m0, m1, m2, m3) -> 0; ctx+0xae0..0xaec = the four motion ids in push order (e.g. 69735/69736/69733/69734 = 0x1106x); indexed by 0x00c6's kind
 0x0085a540 function Native_0267_Poll           # 0x0267 poll: Msg_ChoicePoll with both choices handled by 0x008cc150 (a two-word table on its stack); ported in native_btl/native_msg (script round 8)
 0x0085a570 function Native_01c2              # 0x01c2: 0x00873d30(); 1; ported in native_move (script round 11)
 0x0085a580 function Native_0201              # 0x0201: the bound character (when not -1) gets 0x00887100(chr, 0) and 0x00887130(chr, 0); 1; ported in native_move (script round 11)
 0x0085a5c0 function Native_TurnSetSpeed2         # 0x002f: args (rad/frame); turn struct +0x18 (FUN_00871560); default pi/64; ?second-axis or in-motion turn speed; scripts 0.1745
+0x0085a5f0 function Native_0232_Poll # 0x0232: the count decremented, TkMenuSetDummyControlerPending(args +0); done (5) when the count is no longer positive; ported in native_mods (script round 19); name ours
 0x0085a620 function Native_0267_Result         # 0x0267 int: tail jump to Native_MsgSelect_Result (0x0085a6f0); ported in native_btl/native_msg (script round 8)
 0x0085a630 function Native_010a              # 0x010a: (i): the record 0x008773f0(i) with a first word gets 0x00886eb0(it) and 0x008772f0(i); 1; ported in native_move (script round 11)
 0x0085a670 function Native_GetTurnKind           # 0x00c6: args () -> bit0 = remaining turn angle (turn block +0x2c at ctx+0x890+level*0x44) > 0, bit1 = |angle| beyond the threshold g_01327124 (degrees, via 0x00873ad0); used as `func 0x00c6; popi3; pushi3; func 0x00c7; func_facc 0x5000`
@@ -8178,13 +8306,14 @@
 0x0085a770 function Native_0202              # 0x0202: (v): 0x00887100(v, 0) and 0x00887130(v, 0) (each pushed and popped back); 1; ported in native_move (script round 11)
 0x0085a7c0 function Native_0030              # 0x0030 (float): (v) -> 0x00871540(worker, level, v)'s ST0; ported in native_move (script round 11)
 0x0085a7f0 function Native_0265              # 0x0265: [0x00cccacc]; ported in native_move (script round 11)
+0x0085a800 function Native_01f7 # 0x01f7: (a, b, c): AtelRegistBattleEndMovieFadeout(a, b, c) (0x0086e840); 0; ported in native_mods (script round 19); name ours
 0x0085a840 function Native_01c4              # 0x01c4: 0x00873dd0(on != 0); that; ported in native_move (script round 11)
 0x0085a870 function Native_0109              # 0x0109: (i): the record 0x008773f0(i) gets 0x00876930(it, 1) when its first word is set; 1; ported in native_move (script round 11)
 0x0085a8a0 function Native_015b              # 0x015b start: (event, window): the pending [EVENT_REWARD] given with a window: sound 0x80000026, the ctrl work's +3 bit 2, 0x00798fd0(event), the window's macros (TOMacroSetType/TOMacroSetValue) and text (0x401d, item 0x4018/0x4019, key item 0x4017, primer 0x4016, gil 0x401a), each part given (0x00790550, 0x0088e790, 0x007ab910, 0x007859a0), the window opened; the args get the window, 1, whether the primer was new and the primer (no new primer: 0x00798b60()); 0x0086a130(), the window's +0x1d bit 4; the window record; ported in native_move (script round 11)
 0x0085ab80 function Native_SetMoveParam3C        # 0x006d: args (float a) -> a; move block +0x3c for all 9 levels (0x0086f1c0); 0x0086d300 default pi; init pushes 0.1309 (7.5 deg); ? angle limit used while moving; ported in native_btl/native_move (script round 10)
 0x0085abb0 function Native_GetTurnMotion         # 0x00c7: args (kind) -> ctx+0xae0[kind], the motion set by 0x00c5
 0x0085abd0 function Native_MsgWaitEx             # 0x0084 start: args (window, x) -> -; window clamped to 0..7, saved with x (x is always 1 in the scripts) in the call state; window +0x1d |= 0x10; end slot 0x0085b6d0
-0x0085ac20 function Native_01c4_copy_0085ac20    # the same code as Native_01c4 (0x0085a840; call targets equal), a copy the compiler kept; own name
+0x0085ac20 function Native_0227 # 0x0227: (on): 0x00873dd0(on != 0); on != 0; ported in native_mods (script round 19); the same code as Native_01c4 (0x0085a840; call targets equal), a copy the compiler kept; own name
 0x0085ac50 function Native_01f9              # 0x01f9: (chr): Native_00cb on it, then 0x00786aa0(chr, 0); 1; ported in native_move (script round 11)
 0x0085ac90 function Native_010d              # 0x010d: (i) up to 0xfe: 0x0088e790(0xa004 + i); 1, else 0; ported in native_move (script round 11)
 0x0085acd0 function Native_SetMoveParam40        # 0x006e: args (float a) -> a; move block +0x40 for all 9 levels (0x0086f170); default pi; init 0.1309; ? second angle limit; ported in native_btl/native_move (script round 10)
@@ -8197,6 +8326,7 @@
 0x0085af70 function Native_015b_Poll         # 0x015b poll: Native_MsgWaitEx_Poll, then the args' state +0xa: 0 waits for its done bit (then 1); 1 (with +8 set: 0x00821750(0x10001)) becomes 2; 2 ends (1); 0 otherwise; ported in native_move (script round 11)
 0x0085afd0 function Native_010f              # 0x010f: (window, c, b, a): the window's +0x22 = c, +0x23 = b, +0x24 = a; window; ported in native_move (script round 11)
 0x0085b030 function Native_SetTurnSpeedAll       # 0x00e4 float (speed) -> speed; same field for all 9 slots (0x0086f300); sibling 0x006f sets +0x10 (0x0086f2b0); ported in native_btl/native_move (script round 10)
+0x0085b060 function Native_0228 # 0x0228: (flags, b, a): how far the current level's turn target (+0x884 + level * 0x44) is from the position block's yaw (+0x34), wrapped (Math_WrapAngle) and ; ported in native_mods (script round 19); name ours
 0x0085b170 function CT_01FC_ret_teachAbilityToPartyMemberSilently # fh v3:bsim1.00 0x0085b010 +CT_01FC_ret_teachAbilityToPartyMemberSilently; ported in native_move (script round 11)
 0x0085b1a0 function Native_01c5              # 0x01c5 start: (a, b): the current ctrl work's +0x210 bit 4 cleared; the args get +0xa = b, +0xb = a, +0xc = 0x40102 (others 0); 0x00888430(b); for worker +0xa8 0x5045 0x00648640(1), 0x0086e820(1, 1), 0x006486e0(2) and 0x00822570()'s result, else 0x5045; ported in native_move (script round 11)
 0x0085b230 function Native_SetTurnParam18        # 0x0070: args (float a) -> a; turn block +0x18 (0x0086f260); default pi/64; init 0.1745; ported in native_btl/native_move (script round 10)
@@ -8207,8 +8337,10 @@
 0x0085b4c0 function Native_015b_Result       # 0x015b: Native_015b (0x0085b4c0, 0x015b result): the current ctrl work's +3 bit 2 cleared, 0x0086a130(); 1; ported in native_move (script round 11)
 0x0085b4e0 function Native_0036                # 0x0036: (worker): 0x00863e10(it, level) for levels 0..9; 0; ported in native_move
 0x0085b520 function Native_0112              # 0x0112: jumps to 0x0086ddb0; ported in native_move (script round 11)
+0x0085b530 function Native_015c # 0x015c: (on): TkSndSetFootKickStay(on != 0) (0x00887b40); on != 0; ported in native_mods (script round 19); name ours
 0x0085b560 function Native_00c9              # 0x00c9 (float): (i): the signed word +6 of 0x0086c020(worker, i) as a float; ported in native_move (script round 11)
 0x0085b590 function Native_01c5_Poll         # 0x01c5 poll: for worker +0xa8 0x5045 waits while 0x00822540() is -1 and 0x00648100() is 0; else done (1); ported in native_move (script round 11)
+0x0085b5c0 function Native_0113 # 0x0113: jumps to AtelGetSave20 (0x0086d9d0); ported in native_mods (script round 19); name ours
 0x0085b5d0 function CT_0216_exec_teachAbilityToPartyMemberWithMsg # fh v3:exact 0x0085b470 +CT_0216_exec_teachAbilityToPartyMemberWithMsg; ported in native_move (script round 11)
 0x0085b620 function Native_WorkerStopMove        # 0x0077: args (worker) -> 0; Script_StopMove(Script_GetWorker(w), -1); scripts push `pushimm -1; func 0x0033` (own index)
 0x0085b650 function Native_015f              # 0x015f: 0x0088e790(v); v; ported in native_move (script round 11)
@@ -8224,13 +8356,22 @@
 0x0085b920 function CT_0216_ret_teachAbilityToPartyMemberWithMsg # fh v3:exact 0x0085b7c0 +CT_0216_ret_teachAbilityToPartyMemberWithMsg; ported in native_move (script round 11)
 0x0085b950 function Native_WorkerStopTurn        # 0x0078: args (worker) -> 0; Script_StopTurn(Script_GetWorker(w), -1)
 0x0085b980 function Native_MsgWait_Poll          # 0x007c poll: tail call to Native_MsgWaitEx_Poll
+0x0085b990 function Native_0168 # 0x0168: (v): 0x00886950(v); v; ported in native_mods (script round 19); name ours
 0x0085b9b0 function Native_WorkerSetFlag0200     # 0x0116 (worker) -> worker; worker +0x36: clears 0x400, sets 0x200; ?meaning
 0x0085b9f0 function Native_00cc              # 0x00cc: (chr): 1 when 0x00785380(chr) is 1; ported in native_move (script round 11)
+0x0085ba20 function Native_01fd # 0x01fd: (b, a) -> MsSetSaveCommandWithPrefix(b, a, 0) (0x00874200); ported in native_mods (script round 19); name ours
 0x0085ba50 function Native_GetWorkerId           # 0x0033: args (worker, -1 = self) -> u16 worker+0x2e (worker id, the same id 0x0043 writes to ctx+10); pushed -1 in 27060 of 27417 calls
 0x0085ba80 function Native_MsgWait_End           # 0x007c int result: closes the saved window (Msg_CloseWindow); returns 0
+0x0085bab0 function Native_0169 # 0x0169: (b, a): 0x008868e0(b, a); 1; ported in native_mods (script round 19); name ours
+0x0085bae0 function Native_0118 # 0x0118: (i): worker i's +0x36 gets bit 10 and loses bit 9; i; ported in native_mods (script round 19); name ours
+0x0085bb20 function Native_01fe # 0x01fe: (b, a) -> MsGetSaveCommand(b, a) (0x00785020); ported in native_mods (script round 19); name ours
+0x0085bb50 function Native_0072 # 0x0072: (v): SetField_00870520(worker, level, v) (the level's move block +0x5bc word); v; ported in native_mods (script round 19); name ours
 0x0085bb80 function Native_GetWorkerX            # 0x0038: args (worker) -> float x of Script_GetWorker(worker)'s position (FUN_0086c2b0 +0)
 0x0085bbb0 function Native_016a              # 0x016a: 0x00886ab0(b, a); a; ported in native_move (script round 11)
+0x0085bbe0 function Native_00cd # 0x00cd: 1 when the worker's party slot (+0x40) is one of the three MsGetSavePartyMember (0x007852f0) gives and not 0xff, else 0; ported in native_mods (script round 19); name ours
 0x0085bc50 function Native_0117              # 0x0117: (worker): its +0x36 bit 10 cleared, bits 9 and 12 set; worker; ported in native_move (script round 11)
+0x0085bc90 function Native_0073 # 0x0073: (v): SetField_00871170(worker, level, v) (the level's turn block +0x868 word); v; ported in native_mods (script round 19); name ours
+0x0085bcc0 function Native_020c # 0x020c: (i): worker i's +0x38 gets bit 8; i pushed back and popped, and that worker's +0x38 gets bit 2; 1; ported in native_mods (script round 19); name ours
 0x0085bd10 function Native_017f              # 0x017f: (v): the current music i (0x00873b00) gets 0x00886ab0(i, v) when not negative; i; ported in native_move (script round 11)
 0x0085bd40 function Native_GetWorkerY            # 0x0039: args (worker) -> float y (+4)
 0x0085bd70 function Native_0119              # 0x0119: (on, clamped 0..1) -> 0x0086b150(worker +0x40, on); ported in native_btl/native_move (script round 10)
@@ -8240,10 +8381,13 @@
 0x0085be70 function Native_016b              # 0x016b: 0x00886b40(c, b, a); a; ported in native_move (script round 11)
 0x0085beb0 function Native_01ba              # 0x01ba: (worker, on): the worker's bound character (0..=7) gets 0x0086b150(chr, on) (on clamped to 0..=1); else 0; ported in native_move (script round 11)
 0x0085bf10 function Native_GetWorkerZ            # 0x003a: args (worker) -> float z (+8)
+0x0085bf40 function Native_0075 # 0x0075: (v): SetFields_0086f120(worker, v); v; ported in native_mods (script round 19); name ours
 0x0085bf70 function Native_020d              # 0x020d: 0x00870fa0(v); v; ported in native_move (script round 11)
 0x0085bf90 function Native_00e6              # 0x00e6: (chr): 1 when it is in a party slot (0x007852f0); ported in native_move (script round 11)
 0x0085c000 function Native_0180              # 0x0180: (a, b): i = 0x00873b00(); 0x00886b40(i, a, b) when i >= 0; i; ported in native_btl/native_move (script round 10)
+0x0085c040 function Native_0079 # 0x0079: (v) -> v (popped and returned); ported in native_mods (script round 19); name ours
 0x0085c060 function Native_EnableTrigger         # 0x0034: args (kind); worker+0xab |= 1 << kind; bits gate the worker's event entries (0x00876xxx; bit 0 = talk, 0x00866980); default 0xf7 for type 1, 0xff types 2/3/5/6
+0x0085c090 function Native_020e # 0x020e: AtelGetSphereMonitor() (0x0086c4b0), its low word; ported in native_mods (script round 19); name ours
 0x0085c0a0 function Native_011a              # 0x011a: (c, b, a): 0x00874b70(&c, b, &a) on the variables' addresses; 1; ported in native_move (script round 11)
 0x0085c100 function Native_020f              # 0x020f: (v): 0x00870130(v), then the ctrl work 0x0086c1f0() made current (AtelChangeCurrentCtrl) and handed to 0x00780c70; the previous one; ported in native_move (script round 11)
 0x0085c130 function Native_LineExtend            # 0x007a: args (float a, float b) -> 1/0; only worker types 2/5 (two endpoints at transform +0 and +0x30): p0 moves back a units and p1 forward b units along the line; sets dirty bit; scripts push (10, 10); ported in native_move (script round 11)
@@ -8257,10 +8401,13 @@
 0x0085c400 function Native_00cf              # 0x00cf: (v) into +0xaf0; v; ported in native_move (script round 11)
 0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
 0x0085c430 function Native_016f              # 0x016f: (v): record 0x0088c830() +0xb8 = v, +0xba = 0x0086c1c0(); 0x0088e800(record); v; ported in native_btl/native_move (script round 10)
+0x0085c470 function Native_003e # 0x003e: (mask): Atel_CopyTurnAngles(worker, mask) (0x0086db80); 0; ported in native_mods (script round 19); name ours
 0x0085c490 function Native_023b              # 0x023b: (v) -> 0x0086b9e0(v); ported in native_move (script round 11)
 0x0085c4b0 function GetFieldaf0_0085c4b0         # auto-port shape (return field u32, cdecl): t0 = u32[(a0 + 0xaf0)]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
 0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
+0x0085c530 function Native_0170 # 0x0170: (b, a): the save block's (0x0088c830()) +0xb8 = a, +0xba = b (u16s), TkBackupEventJump(block) (0x0088e800); a; ported in native_mods (script round 19); name ours
+0x0085c580 function Native_007e # 0x007e: jumps to AtelGetNowCtrlTopId (0x0086c1a0); ported in native_mods (script round 19); name ours
 0x0085c590 function Native_TurnGetField38     # 0x003f: () -> float, the turn block's +0x38
 0x0085c5b0 function CT_01D1_ret               # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8; was Native_StopMoveAllLevels; ported in native_move (script round 11)
 0x0085c600 function Native_023c              # 0x023c: (b, n): 1 when 0x0086b9e0(b + i) is set for all i below n, else 0; ported in native_move (script round 11)
@@ -8268,18 +8415,26 @@
 0x0085c680 function Native_CharRestoreHp         # 0x0171 (chr) -> HP; Party_GetChar(chr): +0x1c = max(+0x1c, +0x24), clears +0x3d; ?HP fields
 0x0085c6b0 function Native_WaitFrames_Poll_0000  # 0x0000 poll: count -= 1 per frame (or -= FUN_00645d90() elapsed frames when *0x0112a008 && FUN_0076efc0()); done when count < 1
 0x0085c6f0 function Native_00d2              # 0x00d2: 0x00863fe0(worker, i) for the nine levels (the worker id pushed and popped back first); 0; ported in native_move (script round 11)
+0x0085c740 function Native_0040 # 0x0040: the current level's +0x48 block's +0x3c; ported in native_mods (script round 19); name ours
 0x0085c760 function Native_SpriteSetColor        # 0x0129 (slot, c0, c2, c1) -> slot; bytes +0x10/+0x12/+0x11 clamped 0-255; drawn as R,G,B (+0x10,+0x11,+0x12), so the push order is r, b, g
 0x0085c7b0 function Native_GetEntranceX          # 0x0080: args () -> float; Event_GetEntrance()+0xc; the script start passes 0x80/0x81/0x82 to set-pos 0x0013; ported in native_btl/native_move (script round 10)
+0x0085c7d0 function Native_00d3 # 0x00d3: Script_StopMove(worker, -1) (0x00863e10) through its own index pushed and popped; 0; ported in native_mods (script round 19); name ours
+0x0085c810 function Native_0211 # 0x0211: (i): AtelSetHelpEventFlag(i, 0) (0x008701f0); i; ported in native_mods (script round 19); name ours
+0x0085c840 function Native_0041 # 0x0041: the current level's +0x48 block's +0x40; ported in native_mods (script round 19); name ours
 0x0085c860 function Native_CharRestoreMp         # 0x0172 (chr) -> ...; Party_GetChar(chr): +0x20 = max(+0x20, +0x28); returns +0x1c after filling (bug?); ?MP fields
 0x0085c890 function Native_012a              # 0x012a: (b, a): 0x00874970(b, a); b; ported in native_btl/native_move (script round 10)
 0x0085c8c0 function Native_0007              # 0x0007: (slot): 0x00862780(worker, slot); 1; ported in native_btl/native_move (script round 10)
 0x0085c8f0 function Native_GetEntranceY          # 0x0081: args () -> float; Event_GetEntrance()+0x10; ported in native_btl/native_move (script round 10)
+0x0085c910 function Native_00d4 # 0x00d4: Script_StopTurn(worker, -1) (0x00863fe0) the same way; 0; ported in native_mods (script round 19); name ours
 0x0085c950 function Native_0212              # 0x0212: (on, v): the current ctrl work's +0x208 = v, +2 bit 0 = on; on != 0; ported in native_move (script round 11)
 0x0085c9a0 function Native_SetPlayer             # 0x0043: no args -> own id; FUN_0086f6a0: ctx+0x0a = worker id, ctx+0x218/0x228 = its position; follows 0x0001/0x0042 in party workers; ported in native_btl/native_move (script round 10)
 0x0085c9c0 function Native_0177              # 0x0177: (on): +0x36 bit 6 = on, and bit 15 set when on; on != 0; ported in native_move (script round 11)
 0x0085ca00 function Worker_Detach                # (worker, [pops dispose]): frees worker+0xaa attachment (1 model 0x008722f0 "TK:ChN_DataDispose", 2 0x007ba9c0, 4/5 0x0086f4c0); +0xaa = 0, +0xa8 = 0; ported in native_move (script round 11)
+0x0085caf0 function Native_011e # 0x011e: (b, a): 0x00874ad0(b, a); b; ported in native_mods (script round 19); name ours
 0x0085cb20 function Native_GetEntranceZ          # 0x0082: args () -> float; Event_GetEntrance()+0x14
 0x0085cb40 function Native_SetPartyIndex         # 0x0042: args (index, -1 = NPC) -> index; worker+0x40 = index (model +0x18c via FUN_00872160), flag 0x200 = (index == 0), +0xaf = index<8 ? index : 15, g 0x0132ffa0[index] = worker id; ported in native_move (script round 11)
+0x0085cbe0 function Native_0214 # 0x0214: (i, e) -> Ch_OptposGetElement(model, e, 0) (0x00835660) for worker i when it is a character (+0xaa 1) with a model (+0x9c), else 0; ported in native_mods (script round 19); name ours
+0x0085cc30 function Native_0178 # 0x0178: (i) -> AtelGetEffectFlag(i) (0x0086b030); ported in native_mods (script round 19); name ours
 0x0085cc50 function Native_SpriteSetPos          # 0x011f (slot, x, y) -> slot; i16 +4/+6 (0x00874b30); one language/map special case remaps (0x10e, 0xd5) -> (0x122, 0xd5)
 0x0085cce0 function Native_GetEntranceYaw        # 0x0083: args () -> float; Event_GetEntrance()+8; the script start feeds it to 0x0095 (Native_SetYaw)
 0x0085cd00 function Native_VoiceStandby          # 0x00d5 start: args (voice id) -> -; keeps the id in 0x01325af0, delay 0x01325ad0 = 0x0067a9d0(id, 1); prints "VoiceStandbyInit!"; ids like 208556482
@@ -8302,54 +8457,84 @@
 0x0085d310 function Native_0122              # 0x0122: (i) clamped to 0..=13: 0x00888c00(0, 0, i)'s low byte; ported in native_move (script round 11)
 0x0085d360 function Native_VoiceStandby_End      # 0x00d5 int result: "VoiceStandbyResult!"; Voice_Prepare(id) 0x00887570 unless one is already prepared (0x0132ff1c)
 0x0085d3a0 function Native_0217              # 0x0217: 0x00798b60(); 1; ported in native_move (script round 11)
+0x0085d3b0 function Native_008a # 0x008a: jumps to AtelGetEventMapCameraId (0x0086b5d0); ported in native_mods (script round 19); name ours
 0x0085d3c0 function Native_ChrLoadAlias          # 0x0134 (chr id): tail call to Native_ChrLoad 0x0085d000
 0x0085d3d0 function Native_017b              # 0x017b: 0x00863860(v); v; ported in native_move (script round 11)
-0x0085d3f0 function Native_01ac_copy_0085d3f0    # the same code as Native_01ac (0x00858950; call targets equal), a copy the compiler kept; own name
+0x0085d3f0 function Native_0218 # 0x0218: (i) -> MsGetMonsterCapture(i) (0x00790af0); ported in native_mods (script round 19); the same code as Native_01ac (0x00858950; call targets equal), a copy the compiler kept; own name
 0x0085d410 function Native_LineGetCrossSide      # 0x008b: args () -> side or -1; 0x008632b0 (types 5/6: per-actor table at worker[0xb9]) else bits 1-2 of ctx+0x36, which the line-crossing code (0x00860000.c ~6720/6955) sets to 2 or 0 for the side crossed; 3 -> -1; used in e2 of type-5 workers; ? which side the player crossed from
+0x0085d440 function Native_0123 # 0x0123: (v) -> v (popped and returned); ported in native_mods (script round 19); name ours
 0x0085d460 function Native_0203              # 0x0203 start: (chr) into the args, state 0; chr; ported in native_move (script round 11)
 0x0085d480 function Native_017c              # 0x017c: (track): 0x008869e0, 0x008868b0, current music = track; 1; ported in native_move (script round 11)
+0x0085d4b0 function Native_024e # 0x024e: (v): the current ctrl work's +0x214 = v; v; ported in native_mods (script round 19); name ours
 0x0085d4e0 function Native_0044              # 0x0044: the flag word 0x00888c40(0, 0, 0x0086af30()); ported in native_move (script round 11)
-0x0085d500 function Native_01af_copy_0085d500    # the same code as Native_01af (0x00858e70; call targets equal), a copy the compiler kept; own name
+0x0085d500 function Native_0219 # 0x0219: (b, a) -> AddMonsterCapture(b, a) (0x00790b90); ported in native_mods (script round 19); the same code as Native_01af (0x00858e70; call targets equal), a copy the compiler kept; own name
+0x0085d530 function Native_0124 # 0x0124: (v) -> v (popped and returned); ported in native_mods (script round 19); name ours
 0x0085d550 function Native_0203_Poll         # 0x0203 poll: steps the args' state: 0 waits for 0x0086ade0() to clear; 1 for the loader's +8(1), 0x00887b30() and 0x0076f060() (then 0x0086f460(worker id)); 2 0x00836a40(chr, 0); 3 waits for 0x00836a50(chr, 0) (then 0x00829ef0); 4 for 0x0082a040(chr), then done (5); ported in native_move (script round 11)
+0x0085d620 function Native_00f1 # 0x00f1: (key) -> Script_LineActorSide(worker, key) (0x008632b0) when it is not negative; else, when key is the position block's +0x28 or that is 0xffff, the w; ported in native_mods (script round 19); name ours
+0x0085d680 function Native_017d # 0x017d: (id): SndMusicMultiStart(id) (0x008868b0), AtelRegistMusicNumber(id) (0x00873d00); 1; ported in native_mods (script round 19); name ours
 0x0085d6b0 function Native_VoiceStart            # 0x00d6 start: args () -> -; "VoiceStartInit!"; delay 0x01325ad8 = 0x0067a9d0(id, 2); wait count from g_ScriptState+0x214 or 0x00885d20
+0x0085d760 function Native_0045 # 0x0045: the buttons of 0x0086af50() through Pad_MapButtons; ported in native_mods (script round 19); name ours
 0x0085d780 function Native_021a              # 0x021a: (b, a) -> 0x00872aa0(0, b, a, 0); ported in native_move (script round 11)
 0x0085d7b0 function Native_0128              # 0x0128: (worker, angle) -> 0x0088b730(angle, the offset from that worker); ported in native_move (script round 11)
 0x0085d830 function Native_017e              # 0x017e: (track, v): 0x00886830(track, v) when 0x008863f0() is not negative, else 0x008869e0 and 0x00886a20; current music = track; 1; ported in native_move (script round 11)
+0x0085d890 function Native_024f # 0x024f: the buttons of 0x0086af60() through Pad_MapButtons; ported in native_mods (script round 19); name ours
+0x0085d8b0 function Native_008c # 0x008c: the current ctrl work's +0x1f4; ported in native_mods (script round 19); name ours
 0x0085d8c0 function Native_021b              # 0x021b: (b, a) -> 0x00872aa0(1, b, a, 0); ported in native_move (script round 11)
 0x0085d8f0 function Native_01c5_Result       # 0x01c5: the outcome from the args (+0xb the mode, +0xc the state, +0xf/+4 for 0x0086e820), 6 or 2 by 0x00822540() for worker +0xa8 0x5045 (the dbgPrintf before it, empty in this build, is left out); 0x00648640(0), the ctrl work's +0x210 bit 4 set; ported in native_move (script round 11)
 0x0085d9b0 function Native_PadPressed            # 0x0046: no args -> u16 buttons pressed this frame (g 0x013270d0 = pad +6 = (prev^cur)&cur), remapped by FUN_00888c40; scripts "& 32"
 0x0085d9d0 function Native_VoiceStart_Poll       # 0x00d6 poll: "VoiceStartExec: Frames = %d!"; waits out the delay, the stream (0x0081d710 bit 0x10000, 0x0076f060) and the count; returns 5
 0x0085dac0 function Native_0184              # 0x0184: 0x00886a90(v) with v clamped to -128..=127; 1; ported in native_move (script round 11)
 0x0085db10 function Native_0127              # 0x0127: (worker): [native_0128] with the own touch range (position +0x48) pushed; ported in native_move (script round 11)
+0x0085db40 function Native_008e # 0x008e: (v f): position block +0x1c = v; v; ported in native_mods (script round 19); name ours
 0x0085db70 function Native_0047              # 0x0047: the flag word 0x00888c40(0, 0, 0x0086af80()); ported in native_move (script round 11)
+0x0085db90 function Native_021c # 0x021c: (id) -> AtelCheckCaptMonster(2, 0, id, 0) (0x00872aa0); ported in native_mods (script round 19); name ours
 0x0085dbb0 function Native_0185              # 0x0185: (track, v): 0x00886aa0(track, v) with v clamped to -128..=127; 1; ported in native_move (script round 11)
 0x0085dc10 function Native_0203_Result       # 0x0203: the chr pushed back, 0x0085d000(worker, args, stack), 0x00863650(worker id); the former's result; ported in native_move (script round 11)
 0x0085dc50 function Native_012b              # 0x012b: (on): the current ctrl work's +2 bit 6; on != 0; ported in native_move (script round 11)
 0x0085dc90 function Native_0204              # 0x0204 (float): (v) into the position's +0x2c; ST0 it; ported in native_move (script round 11)
+0x0085dcc0 function Native_0048 # 0x0048: AtelGetControlerT() (0x0086af30), the low word; ported in native_mods (script round 19); name ours
 0x0085dcd0 function Native_021d              # 0x021d: every primer (0x007abd10(0, 0, 0, &n)) whose record (0x007abbd0) has +3 bit 3 gets 0x007ab970(0, 0, it) and 0x008c30d0(); 1 when any did; ported in native_move (script round 11)
+0x0085dd50 function Native_0186 # 0x0186: (pitch, b): SndMusicPitchDirect(pitch, b) (0x00886930), pitch clamped to -0x80..0x7f and b to 0..0xff; 1; ported in native_mods (script round 19); name ours
+0x0085ddc0 function Native_0049 # 0x0049: 0x0086af50(), the low word; ported in native_mods (script round 19); name ours
+0x0085ddd0 function Native_012c # 0x012c: (b, a): the current ctrl work's +4 = a, +6 = b (u16s); 1; ported in native_mods (script round 19); name ours
 0x0085de10 function Native_MsgIsReady            # 0x008f: args (window) -> 1 if window state is 0 or 4, or 2 with the text box state (0x008b7ca0) 3; else 0
+0x0085de60 function Native_0250 # 0x0250: 0x0086af60(), the low word; ported in native_mods (script round 19); name ours
 0x0085de70 function Native_01c6              # 0x01c6: jumps to 0x0088e5e0; ported in native_move (script round 11)
 0x0085de80 function Native_VoiceStart_End        # 0x00d6 int result: "VoiceStartResult!"; Voice_Play(0x00873b80(), 0x00873b90()) at 0x00887690; resets 0x01325ae4 (Ghidra misses this function)
+0x0085df00 function Native_0187 # 0x0187: (id, pitch, frames): SndMusicPitchTranslate(id, pitch, frames) (0x00886940), pitch clamped to -0x80..0x7f and frames to 0..0xff; id; ported in native_mods (script round 19); name ours
 0x0085df80 function Native_012d              # 0x012d: (i): word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c; ported in native_move (script round 11)
+0x0085dfc0 function Native_021f # 0x021f: (i): AtelSetLoveParamDisable(i, 0) (0x00870250); i; ported in native_mods (script round 19); name ours
+0x0085dff0 function Native_004a # 0x004a: AtelGetControler() (0x0086af70), the low word; ported in native_mods (script round 19); name ours
+0x0085e000 function Native_01c7 # 0x01c7: jumps to 0x008741d0; ported in native_mods (script round 19); name ours
 0x0085e010 function Native_0220              # 0x0220: 0x00870250(v, 1); v; ported in native_move (script round 11)
 0x0085e040 function Native_012e              # 0x012e: (i, v): word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c += v; the sum; ported in native_move (script round 11)
 0x0085e090 function Native_VoiceStop             # 0x00d7: args () -> 0; unless 0x012fb8a0 == 1, Voice_Stop 0x00887780 (clears 0x0132ff1c, 0x0067a7a0) (Ghidra misses this function)
 0x0085e0b0 function Native_0091              # 0x0091 (float): () -> float: the position block's +0x34 (yaw); ported in native_btl/native_move (script round 10)
+0x0085e0d0 function Native_004b # 0x004b: 0x0086af80(), the low word; ported in native_mods (script round 19); name ours
+0x0085e0e0 function Native_01cb # 0x01cb: (i): worker i's +0x38 gets bit 2; 1; ported in native_mods (script round 19); name ours
 0x0085e110 function Native_0221              # 0x0221: (i): word i of the table at 0x00c86e28; ported in native_move (script round 11)
 0x0085e130 function Native_004c              # 0x004c: (i): bit i of the flag word for 0x0086af30(); ported in native_move (script round 11)
+0x0085e170 function Native_012f # 0x012f: (i, n): the save block's (0x0088c830()) counter i (clamped to 0..7, +0x2c + 4 i) less n, 0 when that is negative; the new value; ported in native_mods (script round 19); name ours
 0x0085e1d0 function Native_VoiceIsPlaying        # 0x00d8: args () -> 1 while the voice plays (countdown 0x01325ae0/e4 or 0x008864b0), else 0; "VoiceStatusStart!" / "VoiceStatusExec: Frame = %d!"; scripts loop `func 0x00d8; popa_jz` after 0x00d6
 0x0085e270 function Native_0090              # 0x0090 (float): the position's +0x20; ported in native_move (script round 11)
 0x0085e290 function Native_MusicFadeOut          # 0x0188 (frames) -> frames; <1 stops current music now, else fades it (0x00886af0); then plays the queued music 0x00c526d0 (id | volume << 8) if any; ported in native_move (script round 11)
 0x0085e340 function Native_01ca              # 0x01ca: +0x38 bit 2; 1; ported in native_move (script round 11)
+0x0085e380 function Native_0222 # 0x0222: (i) -> the word at 0x00c8756c + 4 i; ported in native_mods (script round 19); name ours
 0x0085e3a0 function Native_0174              # 0x0174 (float): the position's +0x30; ported in native_move (script round 11)
+0x0085e3c0 function Native_004f # 0x004f: (b): bit b of 0x0086af50()'s buttons through Pad_MapButtons; ported in native_mods (script round 19); name ours
 0x0085e400 function Native_01cc              # 0x01cc: jumps to 0x008863f0; ported in native_move (script round 11)
 0x0085e410 function Native_0130              # 0x0130: (i, v): word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c = v (0 when negative); the clamped i; ported in native_move (script round 11)
+0x0085e460 function Native_0223 # 0x0223: (on): bit 4 of the save menu word (MsGetSaveMenu, 0x00785290) = on != 0, TkRefreshActuator() (0x00872480); on != 0; ported in native_mods (script round 19); name ours
 0x0085e4a0 function Native_SoundWait_Poll        # 0x00d9 poll only: voice-sync countdown (0x01325aec/0x01325ae8, "VoiceSyncStart!", "VoiceSyncExec: Frame = %d!") else done when no sound request is pending (0x008864b0)
 0x0085e550 function Native_0181              # 0x0181 (float): the position's +0x38; ported in native_move (script round 11)
 0x0085e570 function Native_01f8              # 0x01f8: (track, frames): 0 or less stops the current music (0x00886a60, 0x00886800); else a track not negative fades (0x00886af0(track, frames)); frames; ported in native_move (script round 11)
+0x0085e5d0 function Native_01cd # 0x01cd: jumps to AtelGetMusicNumber (0x00873b00); ported in native_mods (script round 19); name ours
 0x0085e5e0 function Native_0251              # 0x0251: (i): bit i of the flag word for 0x0086af60(); ported in native_move (script round 11)
 0x0085e620 function Native_0006                # 0x0006: (slot, model, motion): attachment of a model to the worker character in a slot (+0xaf4/+0xafc/+0xb04/+0xb14); 1; ported in native_btl/native_move (script round 9)
+0x0085e760 function Native_0131 # 0x0131: (i): clears bit i of the save block's (0x0088c830()) 20-word bit set at +0x4c (nothing past it); 1; ported in native_mods (script round 19); name ours
+0x0085e7a0 function Native_0173 # 0x0173: the position block's +0x24; ported in native_mods (script round 19); name ours
 0x0085e7c0 function Native_01ce              # 0x01ce: a worker with a character gets 0x007fb290(chr), 0x007fbab0(chr) and +0x38 bit 4; 1; ported in native_move (script round 11)
+0x0085e800 function Native_0224 # 0x0224: bit 4 of the save menu word; ported in native_mods (script round 19); name ours
 0x0085e820 function Native_004d              # 0x004d: (i): bit i of the flag word for 0x0086af70(); 0 for worker 11 on story 0x31 with [0x0112d6c9] bit 5; ported in native_move (script round 11)
 0x0085e890 function Native_0189              # 0x0189 start: 0x00873e60(v); v (that function only sets AL, so EAX keeps the popped value's upper bytes); ported in native_move (script round 11)
 0x0085e8b0 function Native_0239              # 0x0239: (i): bit i (below 640) of the record 0x0088c830()'s flags at +0x4c set; 1; ported in native_move (script round 11)
@@ -8359,42 +8544,65 @@
 0x0085ea10 function Native_0225              # 0x0225: 0x00870f60(v); v; ported in native_move (script round 11)
 0x0085ea30 function Native_0189_Poll         # 0x0189 poll: 1; ported in native_move (script round 11)
 0x0085ea40 function Native_01cf              # 0x01cf: a worker with a character gets 0x007fba40(chr) and +0x38 bit 4 cleared; 1; ported in native_move (script round 11)
+0x0085ea80 function Native_004e # 0x004e: (b): bit b of 0x0086af80()'s buttons through Pad_MapButtons; ported in native_mods (script round 19); name ours
 0x0085eac0 function Native_0092              # 0x0092 (float): (worker): its position's +0x20; ported in native_move (script round 11)
 0x0085eaf0 function Native_00db_Poll         # 0x00db poll: 0x00872470(v), then done (5) when 0x00788bd0() is 3, or 1 on map 0x10e; ported in native_move (script round 11)
+0x0085eb30 function Native_0238 # 0x0238: (i): bit i of the save block's bit set at +0x4c (0 past it); ported in native_mods (script round 19); name ours
 0x0085eb80 function Native_0226              # 0x0226: 0x00729050(on != 0); that; ported in native_move (script round 11)
 0x0085ebb0 function Native_018a              # 0x018a: 0x008702f0(v); v; ported in native_move (script round 11)
 0x0085ebd0 function Native_0003              # 0x0003: (v): +0xa8 = v, +0xaa = 3; 0; ported in native_move (script round 11)
 0x0085ec00 function Native_0205              # 0x0205: 0x00862700(worker, 0); ported in native_move (script round 11)
+0x0085ec30 function Native_0176 # 0x0176: (i): worker i's position block +0x30; ported in native_mods (script round 19); name ours
 0x0085ec60 function Native_0050              # 0x0050: (i): bit i of 0x0086af30()'s low word; ported in native_move (script round 11)
 0x0085ec90 function Native_018b              # 0x018b: 0x00863af0(v); v; ported in native_move (script round 11)
 0x0085ecb0 function Native_0004              # 0x0004: (v): worker +0xa8 = v (u16), +0xaa = 4; 0; ported in native_btl/native_move (script round 10)
 0x0085ece0 function SetFieldBits38_0085ece0      # auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x200); return 0x1; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x0085ed00 function Native_0135              # 0x0135: jumps to 0x00784e80; ported in native_move (script round 11)
-0x0085ed40 function SetFieldBits38_0085ed40      # auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x400); return 0x1; callers: no direct caller; name ours
+0x0085ed10 function Native_0182 # 0x0182: (i): worker i's position block +0x38; ported in native_mods (script round 19); name ours
+0x0085ed40 function SetFieldBits38_0085ed40 # 0x022a: the worker's +0x38 gets bit 10; 1 (the auto-port's shim stays); ported in native_mods (script round 19); auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x400); return 0x1; callers: no direct caller; name ours
+0x0085ed60 function Native_018c # 0x018c: (id, pitch, x): SndSePitchDirect(id, pitch, x) (0x00886d20); 1; ported in native_mods (script round 19); name ours
+0x0085eda0 function Native_0053 # 0x0053: (b): bit b of 0x0086af50(); ported in native_mods (script round 19); name ours
 0x0085edd0 function Native_0197              # 0x0197: (v): +0xa8 = v, +0xaa = 5; 0; ported in native_move (script round 11)
 0x0085ee00 function Native_00dc              # 0x00dc start: nothing (EAX as it was; the dispatch ignores it); ported in native_move (script round 11)
 0x0085ee10 function Native_0206              # 0x0206: 0x00862680(worker, 0); ported in native_move (script round 11)
 0x0085ee40 function Native_0136              # 0x0136: (v): 1 when 0x007859a0(-v) is not negative; ported in native_move (script round 11)
 0x0085ee70 function Native_00dc_Poll         # 0x00dc poll: 0x008633e0(worker id) (bit 0: done); ported in native_move (script round 11)
-0x0085eea0 function SetFields_0085eea0           # auto-port shape (several stores: set field (constants, arguments, addresses), cdecl): u32[a1] = 0x0; u32[(a1 + 0x4)] = 0xa; return a1; callers: no direct caller; name ours
+0x0085eea0 function SetFields_0085eea0 # 0x022b: args +0 = 0, +4 = 10 (the auto-port's shim stays); the args address; ported in native_mods (script round 19); auto-port shape (several stores: set field (constants, arguments, addresses), cdecl): u32[a1] = 0x0; u32[(a1 + 0x4)] = 0xa; return a1; callers: no direct caller; name ours
+0x0085eec0 function Native_0175 # 0x0175: (i): worker i's position block +0x24; ported in native_mods (script round 19); name ours
+0x0085eef0 function Native_0008 # 0x0008: 0 (xor eax, eax; ret); ported in native_mods (script round 19); name ours
+0x0085ef00 function Native_018d # 0x018d: (id, a, pitch, b): SndSePitchTranslate(id, a, pitch, b) (0x00886d50); 1; ported in native_mods (script round 19); name ours
+0x0085ef50 function Native_0252 # 0x0252: (b): bit b of 0x0086af60(); ported in native_mods (script round 19); name ours
 0x0085ef80 function Native_0137              # 0x0137: (v): 1 when 0x007859a0(v) is not negative; ported in native_move (script round 11)
+0x0085efb0 function Native_022b_Poll # 0x022b: state 0 counts +4 down, then moves to state 1; state 1 is done (5) once GetGlobal01a85f70_00a547e0() is set; else 0; ported in native_mods (script round 19); name ours
 0x0085f010 function Native_0207              # 0x0207: a worker with a character gets 0x00862700(worker, 1); 1; ported in native_move (script round 11)
 0x0085f040 function Native_SetArriveRadius       # 0x0017: args (radius) -> radius; current move slot +0x38 (FUN_00870d10), the radius 0x002d sets for all slots; 0 adds 0x800 in 0x0018
+0x0085f070 function Native_00dd # 0x00dd: MsEventEffectGetStat() (0x00788bd0): 0 and 6 give 0, 1, 3 and 5 give 1, the rest themselves; ported in native_mods (script round 19); name ours
 0x0085f0b0 function Native_0094              # 0x0094 (float): 0x0086f040(worker, v); ST0 v; ported in native_move (script round 11)
 0x0085f0e0 function Native_0051              # 0x0051: (i): bit i of 0x0086af70()'s low word; ported in native_move (script round 11)
+0x0085f110 function Native_018e # 0x018e: (v): 0x00873d20(v), SndVagStreamVolumeDirect(v) (0x00887990); 0; ported in native_mods (script round 19); name ours
 0x0085f140 function Native_0138              # 0x0138: 0x00785c20(v), then jumps to 0x00784e80; ported in native_move (script round 11)
+0x0085f160 function Native_0009 # 0x0009: AtelGetCharHandle(worker) (0x0086ae80); ported in native_mods (script round 19); name ours
 0x0085f170 function Native_SetYaw                # 0x0095: args (float a) -> a; Script_StopTurn(self), a = Angle_Wrap(a) into transform +0x20 (movement heading, read by 0x008629c0) and +0x34 (model rot Y); updates the model (0x0082b1b0/0x0082b520) or 0x0086f4c0
+0x0085f210 function Native_0208 # 0x0208: AtelBindEff2OffSome(worker, 1) (0x00862680) for a character (+0xaa 1) with a model; 1; ported in native_mods (script round 19); name ours
 0x0085f240 function Native_018f              # 0x018f: (b, a): 0x00873d20(a), 0x008879b0(b, a); 0; ported in native_move (script round 11)
 0x0085f280 function Native_00de_Poll         # 0x00de poll: 0x00863350(worker id); ported in native_move (script round 11)
-0x0085f2d0 function GetFieldU8aa_0085f2d0        # auto-port shape (return field u8, cdecl): t0 = u8[(a0 + 0xaa)]; return t0; callers: no direct caller; name ours
+0x0085f2a0 function Native_0052 # 0x0052: (b): bit b of 0x0086af80(); ported in native_mods (script round 19); name ours
+0x0085f2d0 function GetFieldU8aa_0085f2d0 # 0x000a: the worker's type (+0xaa; the auto-port's shim stays); ported in native_mods (script round 19); auto-port shape (return field u8, cdecl): t0 = u8[(a0 + 0xaa)]; return t0; callers: no direct caller; name ours
+0x0085f2e0 function Native_022c # 0x022c: (i, v): SetByte_0186a429_008ca370(i, v); 1; ported in native_mods (script round 19); name ours
 0x0085f310 function Native_SfxPlay               # 0x00df (sfx) -> sfx; Sfx_PlayDefault 0x00886e80: pan 0x3f, volume 0x7f
-0x0085f360 function GetFieldU16a8_0085f360       # auto-port shape (return field u16, cdecl): t0 = u16[(a0 + 0xa8)]; return t0; callers: no direct caller; name ours
+0x0085f330 function Native_0190 # 0x0190: (v): 0x00873d10(v), 0x00887970(v); 0; ported in native_mods (script round 19); name ours
+0x0085f360 function GetFieldU16a8_0085f360 # 0x000b: the worker's +0xa8 (u16; the auto-port's shim stays); ported in native_mods (script round 19); auto-port shape (return field u16, cdecl): t0 = u16[(a0 + 0xa8)]; return t0; callers: no direct caller; name ours
 0x0085f370 function Native_TriggerSetLine        # 0x0054: args (x1, y1, z1, x2, y2, z2) -> 1; worker types 2/5 only: pos block +0..8 = point 1, +0x30..0x38 = point 2, +0x1c = -1.0, sets active flag 0x80 (+0x34) and dirty (+0x36 |= 1); ported in native_move (script round 11)
 0x0085f430 function Native_0209              # 0x0209: a worker with a character gets 0x00862700(worker, 2); 1; ported in native_move (script round 11)
 0x0085f460 function Native_SetPitch              # 0x0096: args (float a) -> a; Script_StopTurn(self), Angle_Wrap(a) into transform +0x24 (second heading angle in 0x008629c0) and +0x30 (model rot X); ? pitch; ported in native_move (script round 11)
+0x0085f4c0 function Native_022d # 0x022d: (mask): args +0 = mask; mask; ported in native_mods (script round 19); name ours
 0x0085f4e0 function Native_0193              # 0x0193: (track): unloaded tracks (0x00886680) are requested (0x00886e80); a loaded one not marked (bit 6) in the worker's track list (0x0086ac60, 0x0086ac30, 0x0086ac90) gets 0x00886ff0(track, 0xc, 0x7f or 0x3f); track; ported in native_move (script round 11)
 0x0085f5a0 function Native_GetOwnWorkerType      # 0x0076: args () -> Script_GetWorkerType(ctx+0x2e); the first call in the shared init worker's e0 (`func 0x0076; popb`); ported in native_btl/native_move (script round 10)
+0x0085f5c0 function Native_0191 # 0x0191: (b, a): 0x00873d10(a), 0x00887980(b, a); 0; ported in native_mods (script round 19); name ours
+0x0085f600 function Native_022d_Poll # 0x022d: done (5) once a button of args +0 is down in AtelGetControler()'s buttons through Pad_MapButtons; ported in native_mods (script round 19); name ours
+0x0085f640 function Native_000c # 0x000c: (i): Sg_SetPlayer(i) (0x0082dad0); i; ported in native_mods (script round 19); name ours
 0x0085f660 function Native_020a              # 0x020a: 0x00862680(worker, 2); ported in native_move (script round 11)
+0x0085f690 function Native_0183 # 0x0183: (a f): Script_StopTurn(worker, -1) (0x00863fe0), position block +0x38 = Math_WrapAngle(a), AtelSetMoveHokanMode(worker, 0) (0x008703b0), and AtelSetBi; ported in native_mods (script round 19); name ours
 0x0085f700 function Native_0192              # 0x0192 (float): (v) into the current ctrl work's +0x1f0; ST0 it; ported in native_move (script round 11)
 0x0085f730 function Native_0139              # 0x0139 start: 0x00860b00(worker, args, stack, 0); ported in native_move (script round 11)
 0x0085f750 function Native_009b              # 0x009b: (a, b) vector variables: their six floats pushed (b first) for [native_trigger_set_line]; ported in native_move (script round 11)
@@ -8402,40 +8610,51 @@
 0x0085f850 function Native_0139_Poll         # 0x0139 poll: jumps to Native_MsgSelect_Poll; ported in native_move (script round 11)
 0x0085f860 function Native_022e              # 0x022e: (d, c, b, a): 0x00870280(d, c, b, a); 1; ported in native_move (script round 11)
 0x0085f8b0 function Native_0194              # 0x0194: 0x0086f060(v); v; ported in native_move (script round 11)
+0x0085f8d0 function Native_01df # 0x01df: (i): worker i's +0x38 gets bit 3 when it is a character (+0xaa 1); 1; ported in native_mods (script round 19); name ours
 0x0085f900 function Native_0139_Result       # 0x0139: Native_MsgSelect_Result, then the first args word pushed and popped back and handed to 0x008b7c40; ported in native_move (script round 11)
 0x0085f940 function Native_01a0              # 0x01a0: (track, b, a): as 0x0193 with 0x00886e50(track, b, a) for an unloaded track, the volume a (halved when [record +0x28]) and also 0x00886e20(track, 0xc, b); track; ported in native_move (script round 11)
 0x0085fa20 function Native_0055              # 0x0055: (r): for triggers (types 2, 3, 5, 6) the position's +0x1c; 1, else 0; ported in native_move (script round 11)
 0x0085fa80 function Native_MsgGetState           # 0x0097: args (window) -> u16 Msg_Window(w)+0x14 (0 closed, 1 opening, 2 open, 3 closing, 4 ?); scripts loop until it is 2
 0x0085faa0 function CT_0013_setPosition       # 0x0013: args (x, y, z) -> 0; FUN_00870b20: worker position, model (FUN_0082b480) or ?camera (FUN_007bf940); for the player also ctx+0x218; was Native_SetPos_0013
 0x0085fb00 function Native_0195_Poll         # 0x0195 poll: done (5) once 0x0086b060() is 0; ported in native_move (script round 11)
-0x0085fb10 function SetFieldBits38_0085fb10      # auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x800); return 0x1; callers: no direct caller; name ours
+0x0085fb10 function SetFieldBits38_0085fb10 # 0x0230: the worker's +0x38 gets bit 11; 1 (the auto-port's shim stays); ported in native_mods (script round 19); auto-port shape (store bit set to field, cdecl): t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x800); return 0x1; callers: no direct caller; name ours
+0x0085fb30 function Native_013a # 0x013a: 0x00860b00(worker, args, stack, 8)'s EAX (the choice window open, as 0x0139's start with 8); ported in native_mods (script round 19); name ours
 0x0085fb50 function Native_0098              # 0x0098: (var, n): 0x00870fc0(worker, the variable's address), 0x00871610(worker, n as float), 0x00871630(worker, 0); 1; ported in native_move (script round 11)
 0x0085fbb0 function Native_01d0              # 0x01d0: the worker id pushed and popped back; its +0x38 bit 3 set when it has a character (+0xaa 1); 1; ported in native_move (script round 11)
 0x0085fbf0 function Native_TriggerSetActive      # 0x0056: args (on) -> 1 (0 for other types); worker types 2/3/5/6: +0x34 bit 0x80 = on, +0x36 |= 1
+0x0085fc50 function Native_0125 # 0x0125: (b f, a f): 0x00870970(worker, b, a, 1); 0; ported in native_mods (script round 19); name ours
 0x0085fca0 function Native_0231              # 0x0231: (worker): its +0x38 bit 11; 1; ported in native_move (script round 11)
+0x0085fcd0 function Native_013a_Poll # 0x013a: jumps to Native_MsgSelect_Poll (0x00859c50); ported in native_mods (script round 19); name ours
 0x0085fce0 function Native_0196              # 0x0196: (v): attached workers (+0xaa 4, 5) get 0x00862800(worker, v, +0xa8); 1; ported in native_move (script round 11)
 0x0085fd20 function Native_WaitFrames_01d1       # 0x01d1 start (frames) -> result slot
-0x0085fd40 function Native_0139_Result_copy_0085fd40 # the same code as Native_0139_Result (0x0085f900; call targets equal), a copy the compiler kept; own name
+0x0085fd40 function Native_013a_Result # 0x013a: Native_MsgSelect_Result(worker, args, stack) (0x0085a6f0), args +0 pushed and popped back -> TOGetTable_01868a90(it) (0x008b7c40); ported in native_mods (script round 19); the same code as Native_0139_Result (0x0085f900; call targets equal), a copy the compiler kept; own name
+0x0085fd80 function Native_0099 # 0x0099: (&points, n): 0x00862b20(&p, points, n), then AtelSetPos3d(worker, p, 0); 1; ported in native_mods (script round 19); name ours
+0x0085fe10 function Native_0233 # 0x0233: (v): TkMn2SetMainFrameRatioDiff(v) (0x008ab260); v; ported in native_mods (script round 19); name ours
 0x0085fe30 function Native_0132              # 0x0132: (worker, on): for a trigger worker (types 2, 3, 5, 6) +0x34 bit 7 = on; 1, else 0; ported in native_move (script round 11)
 0x0085fea0 function Native_SetPos_0126           # 0x0126 (x, y, z floats) -> 0; Worker_SetPos 0x00870b20 (also moves the model, and the player record if this is the player); ported in native_move (script round 11)
 0x0085ff30 function Native_SfxPlayEx             # 0x00fd (sfx, pan, volume 0-127) -> sfx; Sfx_Play 0x00886e50 -> FMOD cmd 0x33 (FmodSfx_Start)
 0x0085ff70 function Native_WaitFrames_Poll_01d1  # 0x01d1 poll: counts down, done at < 1, or immediately when 0x0133c913 is set (?skip)
 0x0085ffa0 function Native_0198              # 0x0198: (c, b, a): for +0xaa 5, 0x00908330(c, b, a); 1, else 0; ported in native_move (script round 11)
 0x0085fff0 function Native_0234              # 0x0234: 0x0086a040(); 1; ported in native_move (script round 11)
+0x00860000 function Native_009c # 0x009c: (&points, n): 0x00862b70(&p, points, n), then AtelSetPos3d(worker, p, 0); 1; ported in native_mods (script round 19); name ours
 0x00860090 function Native_00fe              # 0x00fe: 0x00886f60(b, a); a; ported in native_move (script round 11)
 0x008600c0 function Native_TriggerSetActive2     # 0x005c: same code as 0x0056 at its own address (+0x34 bit 0x80); used in entries e8/e9 as on/off pairs
+0x00860120 function Native_0014 # 0x0014: (b f, a f): 0x0086f750(worker, b, a); 0; ported in native_mods (script round 19); name ours
 0x00860170 function Native_0235              # 0x0235: jumps to 0x008729d0; ported in native_move (script round 11)
 0x00860180 function Native_01d2              # 0x01d2: (msg): 1 when its text (0x0086b170 or 0x0086ba90 by 0x0086bbc0()) equals the record 0x0088c830()'s string at +0xec; ported in native_move (script round 11)
 0x00860200 function Native_0199              # 0x0199: (b, a): as 0x0198 with +0xa8 first (pushed with b and a and popped back); ported in native_move (script round 11)
 0x00860290 function Native_0133              # 0x0133: jmp 0x0085fe30 (same handler); ported in native_btl/native_move (script round 10)
 0x008602a0 function Native_MsgShowWait           # 0x013b start (window, message, choice a?, choice b?, x, y, anchor) -> 0x008607a0 mode 2: position (+0, +2, +0x1c), Msg_Text, +0x1e/+0x1f, opens; scripts push (2, 49, 0, 1, 256, 224, 4)
+0x008602c0 function Native_00ff # 0x00ff: (id, pan): SndSepPanDirect(id, pan) (0x00886df0); pan; ported in native_mods (script round 19); name ours
 0x008602f0 function Native_MoveSetTarget         # 0x0015: args (x, y, z) -> 0; FUN_0086f780: current move slot +0x28..0x30 = target, +0x1c..0x24 = current position as start
 0x00860350 function Native_0236              # 0x0236: (msg) -> its text: 0x0086b170 when 0x0086bbc0() is set, else 0x0086bf30; ported in native_btl/native_move (script round 10)
 0x00860390 function Native_009a              # 0x009a: (v): for types 5 and 6 the position's +0x28 = v; v; ported in native_move (script round 11)
 0x008603d0 function Native_MsgShowWait_Poll      # 0x013b poll: tail call to 0x00859c50: waits on window state +0x14 (0 or 4 done; 2 = choice made) and stores the chosen option
 0x008603e0 function Native_TriggerSetPoint       # 0x0057: args (x, y, z) -> 1; worker types 3/6 only: position = point, +0x34 |= 0x80, +0x36 |= 1; ported in native_move (script round 11)
 0x00860460 function Native_0100              # 0x0100: 0x00886ff0(c, b, a); a; ported in native_move (script round 11)
+0x008604a0 function Native_003b # 0x003b: (v): 0x0086f940(worker, v); 0; ported in native_mods (script round 19); name ours
 0x008604c0 function Native_0237              # 0x0237: (dst, list, mask, n): builds a choice text into the string variable dst from the n string pointers of the variable list: a header (0x00b5b9f8), each entry (separated by 0x00b5b9f0) with the enabled/disabled colour (0x00b5b9e8/0x00b5b9ec) where the mask bit changes and a choice code (0x10, '0' + k) before the enabled ones, a trailer (0x00b5b9f4), then the text copied again after its terminator; the choice count k << 8; ported in native_move (script round 11)
+0x00860720 function Native_01d3 # 0x01d3: 1 (mov eax, 1; ret); ported in native_mods (script round 19); name ours
 0x00860730 function Native_01c9              # 0x01c9: (b, a): 0x009084b0(b, a); 1; ported in native_move (script round 11)
 0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
 0x008607a0 function Msg_ShowSetup              # (worker, args, stack, mode): pops (window, message, b, a, x, y, anchor), re-pushes them for Native_MsgSetPos, style 0, text, flags 0, choice bytes +0x1e/+0x1f, MsgOpen with mode|2, then Native_MsgSelect; mode 0 from Native_MsgShowWait, 8 from 0x00855d70; ported in native_msg
@@ -8792,6 +9011,7 @@
 0x00872340 function TkCheckPlayVoice          # fh v3:exact 0x008722e0
 0x00872350 function TkCheckSoftWareReset      # fh v3:bsim1.00 0x008722f0
 0x00872360 function Tk_GetScale               # (which) f32 0x01325b98[which != 0]; own name
+0x00872380 function TkHideAttachedChrs        # (actor, hide): for k 0..2 with u16 +0xb14 bit k, u16 +0xb04[k] != 0xff, +0xaf4[k] != 0: Ch_SetHideEvent(chr, hide), Ch_SetShadowMode(chr, 0); eax = actor; caller 0x0086e5b0 (event actor restore); own name
 0x00872470 function TkMsEventEffectRead          # layout+callees: sorts between TkCheckSoftWareReset and TkRefreshActuator, and its named callees match the Switch 0x7100474340 TkMsEventEffectRead's (similarity 1.00: MsEventEffectRead); symbols from Fahrenheit's server export
 0x00872480 function TkRefreshActuator         # TkSetControlerActuatorMode(0, 0, menu setting bit 4); Switch name, alphabetical slot TkCheckSoftWareReset..TkRefreshHdd; was Pad_RefreshActuatorMode
 0x008724a0 function TkRefreshHdd              # fh v3:exact+call.cs 0x00872440 cdecl
@@ -9353,6 +9573,7 @@
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
+0x0088c830 function TkGetSaveEventAddress     # jmp MsGetSaveEventAddress (5 bytes); name ours
 0x0088c850 function TkGetSavedLang            # () byte 0x01330874 (stored from TkGetLang at init) zero-extended; own name
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
@@ -9703,6 +9924,7 @@
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aa470 function MenuMain_ResetAllWindows  # the 32 window records (0x98 bytes from 0x01840900) reset; own name
 0x008aa4b0 function MenuMain_ResetWindow      # (window) defaults: callbacks/state 0, ids +0x2c/+0x2e = -1, +0x34 = 0x01000000, +0x3e = 0x0101; own name
+0x008aa570 function MenuMain_Reset            # (): 28 words 0x01840888..0x018408f4 (g_TkMenuSlots, g_TkMenuMainActiveMask, g_TkMenuDBuffIndex) cleared; MenuMain_ResetAllWindows; MenuHelp_SetRatio2(1) (eax); own name
 0x008aa610 function MenuMain_BusyMask         # (): g_TkMenuMainActiveMask | bit 31 when TkCdReadSync(1); when that is 0, 0x80000000 if AtelIsCallbackQue() == 1; name ours
 0x008aa690 function MenuMain_RestoreVram      # (): MenuMain_LoadVramBlock(0x01340870 + i*0x10000, 0xbc000 + i*0x4000, 0x10000) for 13 blocks; menu close in 0x008a9ca0 (after MenuMain_SaveVram on open); name ours
 0x008aa710 function MenuMain_LoadVramBlock    # (buf, vram, bytes): sceGsSetDefLoadImage(0x01841cd0, vram/64, 8, 0, 0, 0, 512, bytes/4/512), FlushCache, sceGsExecLoadImage; glue; name ours
@@ -10129,6 +10351,7 @@
 0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00
 0x008c2d00 function TkMn2WeaponBuySellWindow     # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8a60 TkMn2WeaponBuySellWindow's (similarity 0.62: DrawCrossMenuIconWeaponName2, TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008c3070 function TkMsSetSaveParam             # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8120 TkMsSetSaveParam's (similarity 1.00: MsSetSaveParam, TkMenuGetHP, TkMenuGetMP, TkMenuGetMaxHP, TkMenuGetMaxMP); symbols from Fahrenheit's server export
+0x008c30d0 function TkMsSetSaveParamAll       # jmp MsSetSaveParamAll (5 bytes); name ours, after TkMsSetSaveParam
 0x008c30e0 function TkFindLegendWeapon_008c30e0  # (kind) -> the saved weapon whose flags +3 bit 2 (legend) are set and +4 == kind, from MsGetSaveWeaponList; dbgPrintf "TK:Found Legend weapon(%d)" / "not found"; only caller TkSetLegendAbility (the Switch inlines it there, hence the string match); own name
 0x008c3170 function TkSetLegendAbility        # fh call.cs cdecl
 0x008c32d0 function MenuItem_Plus10           # (p) p + 0x10; no caller; own name
@@ -10141,6 +10364,7 @@
 0x008c43f0 function MenuNameEntry_OpenCharWindow # (chr): TkMenuMainAllocWindow with +8 0x008c3530, +0xc 0x008c3ce0, +0x10 0x008c3ec0, +0x14 0x008c44b0, +0x3e = 3, +0x58 chr; TkMenuMainRegistWindow; then 0x023cc3c4/c0/bc = chr, 0x023cc3c8 = 0; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c44d0 function MenuNameEntry_DeleteKey   # (): TOGetFFXLang() 10, 9 or 11 and MenuItem_KeysMatch(g_TkMenuItemTarget) -> every leading non-empty 4-byte entry of g_TkMenuItemKeyUse (0x0186a280) cleared, else the last one; callers 0x008c3891, 0x008c3a33 in the name entry's control step 0x008c3580; own name
+0x008c4e60 function MenuNameEntry_Commit      # (): g_TkMenuItemTarget >= 0: MsGetSaveChrName(t), +0x13 MenuItem_KeysMatch(t), +0x12 TOGetFFXLangJmp(); else save +0xec; g_TkMenuItemKeyUse entries copied (code; 6..0x2f + byte 1; 4 + byte 1 (+ byte 2 below 0x30)), 0-terminated; achievementUnlockAchievement 0xf+0x1a (target 0x11), 0xd, 0xe; own name
 0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
 0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
@@ -10191,6 +10415,8 @@
 0x008c93c0 function TkMenuItemClearWindow2    # (): the same for 0x0186a39c
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
+0x008c94e0 function MenuItem_CountGearByOwner # (): u16 counts [7][2] at 0x0186a3e4 cleared; per i < TkMn2GetNameModeMax() (signed) MsGetSaveWeapon(u16 g_TkMenuItemList[i], &local): owner byte +4 < 7 -> counts[owner*2 + (byte +5 != 0)]++; eax: count, the last index or slot; caller 0x008c5480 (case 0x8c57bb); own name
+0x008c99f0 function MenuItem_DrawRows         # (window, _, first, f32 x, f32 y): x' = f32(graphicUiRemapX2(210) + x); nine MenuItem_DrawRow(window, x', y', first + i), y' += graphicUiRemapY2(77) (f32); caller the item list draw; own name
 0x008c9a70 function MenuItem_DrawRow          # (window, x, y, index): index in 0..u16 window+0x30: TODrawMenuPlateXYWHType(x, y, rx2(740), ry2(60), 5); window+0x45 > 0 and index == i16 +0x2c: TkMn2DrawCrossCmdCursor(x + rx2(160), y + ry2(4), 1); g_TkMenuItemList[index] byte +2 set: DrawCrossMenuIconWeaponName2(MsGetSaveWeapon(id, &local), x, y, 0); caller 0x008c99f0; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b60 function MenuItem_GetLinePos       # (): TkMn2SeqGetPos("p_linmline", 0x0186a400), ("p_rinmline", 0x0186a404); no direct callers; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b90 function Menu_FindFlagged          # (entries, from, to): first index in from..to whose 4-byte entry has byte +2 set, else -1; name ours
@@ -10252,6 +10478,7 @@
 0x008cecf0 function MenuSummon_GrowEntry      # (i) TkMn2GetSummonGrow + 8i + 8 * TkMn2GetSummonGrowMax; own name
 0x008ced10 function Math_Clamp1To99           # (n) -> n clamped to 1..99
 0x008ced30 function TkMn2OpenSummonGrowWindow # fh v3:exact 0x008ced00
+0x008ceda0 function MenuSummon_OpenWindow2    # (): TkMenuGetCurrentSummon(); TkMenuMainAllocWindow into 0x0186a5ac (TkMenuSummonCloseWindow2): +0x48/+0x32 0, +0x30 10, +0x3a 9, +8 0x008cd310, +0xc 0x008cd6d0, +0x10 0x008ce750, +0x14 0x008ceee0, +0x1c 0x008cd420, +0x3e 2, +0x42 1, +0x36 3, +0x45 0, +0x54 0xaa; registered, TkMn2InitStatusBG, MenuSummon_RefreshGrowMasks(aeon); returned; caller TkMenuCtrlSummon step 0x18; own name
 0x008cee30 function MenuSummon_RestartGrowWindow# TkMenuRestartSelFileWindow(0x0186a5a8); own name
 0x008cee50 function MenuSummon_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186a5ac); own name
 0x008cee70 function MenuSummon_SetStat        # (base, desc, max, v): the store MenuSummon_GetStat reads; name ours
@@ -10301,6 +10528,7 @@
 0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
+0x008d5680 function MenuKaizou_AddAbility     # (weapon, ability): first u16 slot (+0xe, u8 +0xb of them) that is 0 or 0xff gets ability; tail jump TkMsSetSaveParamAll; caller the customize step 0xd; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d56f0 function MenuKaizou_WeaponByte4    # (w): MsGetSaveWeapon(u16 [0x0186aa38][i16 w+0x48], &local): -1 when its byte +2 is 0, else its byte +4; name ours
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
@@ -10318,7 +10546,9 @@
 0x008d7630 function MenuWShop_CloseSubWindow3 # close 0x0186aafc; own name
 0x008d7650 function MenuWShop_CloseSubWindow1 # close 0x0186aaf4; own name
 0x008d7670 function MenuWShop_CloseSubWindow4 # close 0x0186ab00; own name
+0x008d81d0 function MenuWShop_OpenSubWindow2  # (parent): weapon shop buy-amount window into 0x0186aaf8 (MenuWShop_CloseSubWindow2): +0xc 0x008d7690, +0x10 0x008d7a40, +0x14 0x008d84d0, +0x3e 4, +0x58 parent, +0x5c MenuWShop_GetRecord(u16 shop record [+2 + 2*i16 parent+0x48]), +0x60 MenuShop_WeaponPrice(+0x5c), +0x64 1, +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008d8260 function MenuWShop_OpenListWindow  # (): TkMenuMainAllocWindow into 0x0186aaf0: +0xc 0x008d77f0, +0x10 0x008d7aa0, +0x14 0x008d84e0, +0x48/+0x32 0, +0x30 u16 0x0186ab10, +0x3e 3, +0x42 1, +0x3a 9, +0x45 -1, +0x37 0, +0x28 0; registered, returned; caller 0x008d6e40; name ours
+0x008d82d0 function MenuWShop_OpenSubWindow3  # (parent): weapon shop sell window into 0x0186aafc (MenuWShop_CloseSubWindow3): +0xc 0x008d7860, +0x10 0x008d7cc0, +0x14 0x008d84f0, +0x3e 4, +0x58 parent, id = u16 g_TkMenuItemList[i16 parent+0x48], +0x5c MsGetSaveWeapon(id, &local), +0x60 MenuShop_WeaponSellPrice(+0x5c), +0x64 1, +0x68 MsGetGIL(), +0x6c id, u16 +0x48 1; registered, returned; own name
 0x008d8370 function MenuWShop_OpenSubWindow1  # (): TkMenuMainAllocWindow into 0x0186aaf4: +0xc 0x008d79c0, +0x10 0x008d7d20, +0x14 0x008d8500, +0x1c 0x008d75d0, +0x3e 3, +0x30 TkMn2GetNameModeMax(), +0x3a 9, +0x45 -1; registered, MenuWShop_InitCursor(w) returned; caller 0x008d6e40; name ours
 0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
@@ -10338,8 +10568,10 @@
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008d9e20 function TkMenuCtrlSelFileWindow      # callees: its named callees match the Switch 0x71004db0b0 TkMenuCtrlSelFileWindow's (similarity 0.67: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
+0x008da860 function MenuShop_OpenBuyWindow    # (parent): item shop buy-amount window into 0x0186ac3c (TkMenuWShopCloseWindow): +0xc 0x008d9bd0, +0x10 0x008d9fe0, +0x14 0x008daae0, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 TkMn2GetExcelData(g_TkMenuWShopList, [0x0186ac2c]) [+2 + 2*i16 parent+0x48], +0x60 MenuShop_Price(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008da8f0 function MenuWShop_OpenSelWindow   # (): TkMenuMainAllocWindow into 0x0186ac34: +0xc 0x008d9da0, +0x10 0x008da050, +0x14 0x008daaf0, +0x48/+0x32 = 0, +0x30 = u16 0x0186ac24, +0x3e 3, +0x34 0x30000, +0x42 1, +0x3a 10, +0x45 -1; registered, returned; caller TkMenuCtrlWShop; name ours
 0x008da9c0 function MenuWShop_OpenWindow3     # (): TkMenuMainAllocWindow into 0x0186ac30 (TkMenuWShopCloseWindow3's): +0xc 0x008d9e10, +0x10 0x008da6b0, +0x14 0x008dab10, +0x3e = 2, +0x36 = 3; registered, returned; caller 0x008da7a0; name ours
+0x008daa00 function MenuShop_OpenSellWindow   # (parent): item shop sell window into 0x0186ac40 (TkMenuWShopCloseWindow2): +0xc 0x008d9e20, +0x10 0x008da730, +0x14 0x008dab20, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 g_TkMenuItemList[i16 parent+0x48], +0x60 MenuShop_SellPrice(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
@@ -10533,7 +10765,9 @@
 0x008e3730 function TkMenuCtrlAskYesNoWindow     # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e6f50 TkMenuCtrlAskYesNoWindow's (similarity 1.00: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
 0x008e4560 function TkMenuGetYesNoWindowHeight   # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e7760 TkMenuGetYesNoWindowHeight's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
+0x008e46b0 function TkMenuOpenSubCmdWindowBeside # (id, texts, values, n, b44): width 0x165, or open 0x023cc128 i16 +0x4e - its cursor entry's width (+0x60 + 12 i16 +0x48) - 0x18; TkMenuOpenSubCmdWindowMain_008e4790 into 0x023cc124: +0x46 0, +0x3e 3, +0x3f 0, +0x14 0x008e4a90, +0x10 0x008e4140, +0x4a open +0x4e - new +0x4e + open +0x4a (0x30), +0x94 1, +0x4c 0x25, +0x90 -1; own name
 0x008e4790 function TkMenuOpenSubCmdWindowMain_008e4790 # duplicate name (0x008e33d0 has it); layout+callees: sorts between TkMenuGetYesNoWindowHeight and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e8190 TkMenuOpenSubCmdWindowMain's (similarity 1.00: TkMenuMainAllocWindow, TkMenuMainRegistWindow, TkMn2StringWidth); symbols from Fahrenheit's server export
+0x008e4930 function TkMenuOpenSubCmdWindowRect # (id, texts, values, n, b44, f32 x, y, width, h): TkMenuOpenSubCmdWindowMain_008e4790(id, texts, values, n, ftol(width), b44) into 0x023cc128, u16 +0x4a/+0x4c/+0x4e/+0x50 = ftol(x, y, width, h); returns it (Ghidra drops the fld arguments); own name
 0x008e49b0 function TkMenuRefreshSubCmdHelp   # TkMenuSetHelpMessage of the sub-command window cursor entry +0x5c+12i; the Switch TkMenuRefreshSubCmdHelp (48 bytes) calls only TkMenuSetHelpMessage and sorts right before TkMenuRestartSubCmdWindow2, as here; was MenuSubCmd_RefreshHelp
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e49f0 function TkMenuRestartSubCmdWindow1 # (): 0x023cc124 +0x45 = 0, +0x28 = 1 (TkMenuRestartSubCmdWindow2 does 0x023cc128)
@@ -10972,7 +11206,9 @@
 0x0090cf00 function yiRender_initpacket       # (r): the fixed GS packet at +0x27624 (32 words); returns 0
 0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
-0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90
+0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90; ported (field r1 A): fog param, VU1 block +0x676a8 (clip window from +0x68368/+0x6836c less 2048 via _ftol2_sse, +0x68370 max |a|,|b|, +0x676d4 max of +0x67f38/+0x67f4c, fog/matrix copies); returns the word at +0x68228
+0x0090dd00 function yiRender_term             # (r): yiRender_resetobj, +0x9c198/+0xbe0ac/+0xbe0b0 = 0, +0x67f34 = -1, yiFree(+0xba3cc), yiFree(+0xba3dc), both pairs zeroed; returns the second free's eax. Name: Switch yiRender.c yiRender_term (0x710053a240, 0x90 bytes, between reset and serchminmax) is the only unused yiRender_ name of this size; this frees the packet buffers yiRender_resetobj only rewinds
+0x0090dd80 function yiRender_updatematrixp    # (r): seven VU1 UNPACK matrix packets (+0x67ba8.. from +0x67f38.., UNPACK 0x6c04xxxx) and the scale matrix at +0x67d88 (identity with +0x681f8/+0x681fc/+0x68200 on the diagonal); returns 1.0's bits (Matrix_Identity's eax); from yiRender_draw. Name: Switch yiRender_updatematrixp (0x7100539480, 0x280 bytes, after makematrixpacket 0x40 bytes) matches size and role
 0x0090e000 function yiSwizzleColumns          # (src, dst): a 16x16 8-bit block's four column groups reordered by the table at 0x00c5da80; yiSwizzlePage
 0x0090e0b0 function yiSwizzleImage            # (w, h, src, dst): a format-0x13 image swizzled in 128x64 tiles; "Error : width is not 2^n" to stderr; yiLoadVramImage
 0x0090e2e0 function yiSwizzlePage             # (w, h, src, dst): 8-bit lines of 0x80 bytes to GS block order (tables 0x00c5db40, 0x00c5db60); yiSwizzleImage
@@ -11000,6 +11236,7 @@
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
+0x00913200 function yiScreff_draw            # (scene) -> last vertex call's eax: the screen distortion's per-frame grid: fade line from the inverted camera +0x67f78 and depth +0xbe07c (on +0xbe078 bit 0), graphicSetDistortionBlur(+0xbe0a0 / 128), 9 x 9 vertices from _CIfmod/_CIsin waves of phases +0xbe080/+0xbe084, speed +0xbe094, amplitude +0xbe098 (clamped 0..1), colour +0xbe0a4.. faded to grey (fistp with chop), graphicUpdateDistortionVertex(row, col, r, g, b, a, u, v); +0xbe0a8 += 1, +0xbe080 += +0xbe090 x 1.5, +0xbe084 += +0xbe090; name ours (yiScreff_entry's body); ported (field r4, by hand)
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
 0x00914070 function yiKeyFrameAdvanceLinked   # (r, track, now): yiKeyFrameAdvance for tracks of chained 0x80-byte records (+0x24 current, +4 length, bit 0 end; restart from r +0x9d4c4[+8]); paused returns now; yiKeyFrame_main; name ours
@@ -11235,6 +11472,7 @@
 0x0091cd00 function yiSegIntersect2           # (a, b, c, d, out) -> 1 with out the crossing of the 2D segments a..b and c..d (both parameters in 0..1, |D| > 1e-5), else 0; name ours
 0x0091ce50 function rcbgGuideSetWalkFog       # (guide): on maps 0x246, 0x248, 0x24e, 0x24f (0x0086c1f0) the fog of war +0x70 = MsGetSaveWalkMap + 0x200 * index, the mesh object's flag bit 1 cleared (rcbgGuideSetModelSub)
 0x0091cef0 function rcbgGuideDelete           # (guide): rcbgGuideFini, then rcFree; rcbgFini (g_YnMapSystem +4)
+0x0091cf10 function rcbgGuideDrawPlayer       # (guide, a, b, rect, unused, alpha f, p, q, dir*, smooth) -> rcPrimCircleLine's eax: the minimap's player marker: step a..b clipped to rect (yiSegIntersect2 on its four edges, else b), Yn_GuideEdgeFade past edge p..q, heading acos of the normalised step (2pi - it for y > 0), toward the edge past it or with *dir at -10000 (stored in *dir), smoothed by Math_AngleStep(*dir, heading, |wrap(*dir - heading)| x edge distance); rcPrimTri size 6 coloured 204/96/32 to 0x00c5e380 by level +0x74 & 15 / 15, rcPrimCircleLine radius level x 10 coloured 0x00c5e3c0; name ours (alphabetical layout: between rcbgGuideDelete and rcbgGuideFade, no Switch name there); ported (field r2 F)
 0x0091d280 function Guide_FadeStep               # (show): steps the minimap's fade g_GuideFade toward shown (128) or hidden (0)
 0x0091d3a0 function Guide_FadeOff                # (): minimap hidden at once (g_GuideFade = 0); Guide_Update when g_GuideFlags bit 0 is clear
 0x0091d3d0 function rcbgGuideFini             # (guide): graphicVFXDestroy of its instance (low 0x0230fd20, high guide) when graphicVFXGetRenderDataByInstance finds it; rcbgModelDelete of the walk model +8
@@ -11258,7 +11496,7 @@
 0x0091da10 function rcbgGuideUpdate           # fh switch:bsim1.00 0x7100541de0
 0x0091da30 function rcbgGuideGetScreen           # (guide, &scale, &offset): g_GuideSize / 256 and g_GuidePos - (256, 208) as floats; from rcbgGuideUpdateEx
 0x0091da80 function rcbgGuideUpdateEx         # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0; was Guide_Update
-0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0
+0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0; ported (field r2 F): the minimap fog: layout from graphicFontGetScreenWH and graphicGetMiniMapType (x -1317/-1243, y -1820/-1860 at 0.75 x w/512), 64 rows of 40-unit cells from Guide_MeshObject's corner, rows inside p.y-40 .. p.w+40 after m and the divide, one 0x70-byte quad per cell (walked bit of guide +0x70 as 0 / 2^32 in the third float) into a user_malloc buffer for the VFX rects of (g_pppCurrentProgram, guide) 'RenderMiniMapFog', GIF tags at the packet 0x00c498dc; frame 0xb0
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
 0x0091f530 function Yn_GuideEdgeFade          # (p, a, b, rect, out) -> 1 beyond: h = |rect x0 - x1| / 2, r = distance of p from segment a-b (Yn_NearestOnLine2D, clamped); r^2 > (0.2h)^2 -> out 1.0, returns 1; else out = (r - 0.15h)/(0.05h) clamped 0..1, returns 0; from 0x0091cf10; name ours
 0x0091f640 function Guide_SetEnabled             # (on): g_GuideEnabled; from BasicDebugTweakUtil_handleInput
@@ -11356,10 +11594,12 @@
 0x00922290 function rcbgFPmGetMatrix          # (fp, out): rotation +0x18 (x 0x00b678ec), identity scaled by +0x28, op_rt_m_yxz with +0x8
 0x00922300 function rcbgFPmRestart            # (id, chr, elem): pppFpGetMngPtr, flag 0x100, Fp_Restart, Ch_ElemGetMatrix into mng + 0xc; rcbgFPm173Proc*
 0x00922350 function rcbgFPmGetElemMatrix      # (out, chr, elem): Ch_ElemGetMatrix, three rows times 10.0
+0x009223b0 function rcbgFPmStartList          # (list, n) -> 1 once started: per 0x38-byte entry pppFpGetMngPtr (missing ends), pppFpResetStick, +6: 1 stick chr (+2, bone +4), 2 stick map, 3/4 run|4, 5 run|0x100; run|0x60, rcbgFPmGetMatrix(entry, run+0xc), Fp_Restart if +7 else Fp_End; name ours; ported (field r2 E)
 0x009224b0 function rcbgScaleVector_009224b0  # the same code as rcbgScaleVector 0x009200a0
 0x00922510 function rcCopyQword_00922510      # (dst, src): as rcCopyQword_0091cb40
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
 0x009225a0 function rcbgFPm097New             # (): rcAlloc 0x40 (rcbgFP.c), rcbgFPm097Init
+0x009225d0 function rcbgFPm097Proc000         # (obj): rcbgFPmStartList(0x00c5e4b8, 9); started: obj+8 = 0x00922600, returns obj (else 0); name: Switch rcbgFPm097Proc000 by layout (after rcbgFPm097Init/New, sets the next step); ported (field r2 E)
 0x00922930 function rcbgFpFadeInit               # (fade, id, step, frames): pppFpIDdispOff(id), then 0, id, step (float), frames, 0; rcbgFPm097's process (0x00922600)
 0x00922970 function Yn_SeaFpFade              # (fade): state +0 off/in/on/out: field effect +4 shown and restarted when lim < a < 0 or 0 < a < lim (a +8, lim Yn_SeaGetAngPtr +8), faded in/out over +0xc frames (count +0x10), hidden and ended; weight to chunk entry +0x2c, rcbgFPmGetMatrix copied to the effect manager +0xc; from 0x00922600; name ours
 0x00922b50 function rcbgFPm173End             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
@@ -11373,6 +11613,7 @@
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
 0x00922f80 function rcbgFPm565New             # (): rcAlloc 0x10 (rcbgFP.c), rcbgFPm565Init
+0x00922fb0 function rcbgFPm565Proc000         # (obj): rcbgFPmStartList(0x00c5e6b0, 3); started: obj+8 = 0x00922fe0, returns obj (else 0); rcbgFPm565Init installs it; name: Switch rcbgFPm565Proc000; ported (field r2 E)
 0x00923100 function rcbgFpGetWork             # fh v3:exact 0x00923100
 0x00923190 function rcbgFPmGetPartData        # (id, n, part, k): pppFpGetMngPtr data, +0x30 chain n times, +8 table, part (0x10 from +0x28), +0xc offsets[k] + 0xa0 + node; 0 when missing
 0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
@@ -11622,29 +11863,46 @@
 0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
 0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092d880 function SetGlobals_0092d880          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2; callers: no direct caller; name ours
+0x0092d8c0 function rcefCalcChrElemRotBaseMatrix # (i, e, out, v): out = 0.001 scale x element base position (x -0.001, f32 0x00b67e20) x turn by v (rcefVecToField, op_rt_m_yxz); Switch rcefUtil name by layout (PC run rcefAngleWrap, [rcefBlur], rcefCalcChrElemRotBaseMatrix, rcefCalcChrElemRotMatrix, rcefCalcChrElemRotTargetMatrix, rcefCalcChrRotMatrix, rcefCalcRotMatrix 0x0092dcd0 is alphabetical; sizes ordered as the Switch's); ported (field r2 E)
+0x0092d9a0 function rcefCalcChrElemRotMatrix  # (i, e, out, v): as rcefCalcChrElemRotBaseMatrix, turned about the element (moved there and back, fchs) and placed at MsGetChrPos (battle only); Switch rcefUtil name by layout (PC run rcefAngleWrap, [rcefBlur], rcefCalcChrElemRotBaseMatrix, rcefCalcChrElemRotMatrix, rcefCalcChrElemRotTargetMatrix, rcefCalcChrRotMatrix, rcefCalcRotMatrix 0x0092dcd0 is alphabetical; sizes ordered as the Switch's); ported (field r2 E)
 0x0092dcd0 function rcefCalcRotMatrix            # layout+callees: sorts between rcbgTrxSetTag and rcefChgChrClut, and its named callees match the Switch 0x71005581b0 rcefCalcRotMatrix's (similarity 0.67: FFXVu0UnitMatrix, op_rt_m_yxz); symbols from Fahrenheit's server export
-0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
+0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340; ported (field r1 C): (i, add f32[4], mul f32[4]): every CLUT colour channel = ftol((add[j] + original byte) * mul[j]) clamped 0..255 into Ch_ClutGetPtr; eax: the count when <= 0, else the last CLUT's mul pointer (or its Ch_ClutGetPtr when empty)
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
 0x0092de50 function rcMat4fSetScale001           # (m) -> identity scaled by 0.01 (0x00b1f2b0); FFXVu0UnitMatrix's eax
 0x0092de80 function rcMat4fSetScale0001          # (m) -> identity scaled by 0.001 (0x00b368a4)
+0x0092deb0 function rcefCreateChrClut         # (i): Ch_ClutCreate(rcefGetChrHandle(i)), a tail call; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092ded0 function rcefAngleToDir            # (out, a): (-sin a, 0, -cos a, 0)
+0x0092df10 function rcefDisposeChrClut        # (i): Ch_ClutDispose(rcefGetChrHandle(i)), a tail call; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092df90 function rcefEffectEndMotion       # g_MagicImports slot 432 (39 overlays), before rcefEffectReady: MsEffectEndMotion(dword 0x025d5bb8, 0); hidden from the dump
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092dfd0 function rcefGetChrDir             # (chr) -> float: MsGetChrDir into a local, rcefAngleWrap of it (ST0). Switch rcefGetChrDir: the rcef name for a character's direction; caller 0x00924a20
-0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
+0x0092e000 function rcefGetChrElemNo          # (i, n) -> Ch_OptposGetElement(handle, n, 0); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e020 function rcefGetChrElemOff         # (i, e, out): (element e's translation - option 0 element's) x 10.0 (f32 0x00b92318), frame 0x80; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e0a0 function rcefGetChrElemPos         # (i, e, v, out): v *= 1000.0 (f32 0x00b1f2cc), v.w = 1, FFXVu0ApplyMatrix(out, element e's matrix, v); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e110 function rcefGetChrEyeHeight       # (i) -> ST0: (Ch_OptposGet 0).y - (Ch_OptposGet 2).y, x 10.0 (f64 0x00b922b0), stored as f32; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e170 function rcefGetChrFrontVec        # (i, out): rcefGetChrMatrixOpt(i, 0) row 2 copied to out, rcVec3fNormalize; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0; ported (field r1 B)
 0x0092e1e0 function rcbgChrFindById              # (id) -> first character (Ch_HandleRewind / Ch_HandleGetNext) whose Ch_GetId is id, else 0; rcbgFPm097's process
-0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
+0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240; ported (field r1 B)
+0x0092e270 function rcefGetChrMatrixOpt       # (i, n, out): rcefGetChrMatrix(i, rcefGetChrElemNo(i, n), out) (tail call; Ghidra drops out); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e2f0 function rcefGetChrPos             # (i, e, out): Ch_ElemGetMatrix into the frame, translation row to out (rcCopyQword_0092d6f0's eax); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e340 function rcefGetChrPosOpt          # (i, n, out): rcefGetChrPos of option position n's element; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e360 function rcefGetChrPosOptY0        # (i, n, out): rcefGetChrPosY0 of option position n's element; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e380 function rcefGetChrPosY0           # (i, e, out): rcefGetChrPos, out.y = 0; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
+0x0092e3a0 function rcefGetChrWidth           # (i) -> ST0: Ch_GetThickness x 10.0 (f64 0x00b922b0), stored as f32; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092e400 function rcAngleDiff                  # (float a, float b) -> |a - b| as f32, 2pi - it past pi (doubles 0x00b92288, 0x00b39378); g_MagicImports
 0x0092e580 function rcefLerp                  # (a, b, t, mode) -> ST0: a + w (b - a), w = t, sin table (mode 2, t * 16384) or cosine ease (mode 1, (sin(t * 32768 - 16384) + 1) / 2); g_MagicImports (0x00c65470); name ours
 0x0092e620 function rcefIsBattle              # fh v3:bsim1.00 0x0092e620
 0x0092e630 function rcefScaleMatrix100        # (m): three rows times 100.0 (rcbgScaleVector_0092d690); rcefGetChrMatrix
 0x0092e680 function rcefPlaySE                # fh v3:exact 0x0092e680
 0x0092e6b0 function rcefPlayStream            # fh v3:exact 0x0092e6b0
+0x0092e730 function rcefResetChrBaseMatrix    # (i): Ch_SetOrgMatrix(handle, NULL); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092e750 function rcefSetChrDirTarget       # (chr, a, b): MsSetChrDirTarget(chr, 1, 0, 0, a, b); name ours
 0x0092e770 function rcefWorkCall_00925530     # g_MagicImports slot 472 (9 overlays): 0x00925530(0x025d5a20); hidden from the dump
 0x0092e780 function rcefResetMotion           # fh switch:bsim1.00 0x7100556210
 0x0092e7a0 function rcefReverseList           # g_MagicImports slot 521 (1 overlay): reverses the dwords from 0x025d5bc0 (count at 0x025d5bbc) in place; hidden from the dump
 0x0092e7e0 function rcefSetArmorVisible          # layout+callees: sorts between rcefResetMotion and rcefSetDamage, and its named callees match the Switch 0x7100556f70 rcefSetArmorVisible's (similarity 1.00: Ch_SetHideEffect, MsGetWeaponHandle); symbols from Fahrenheit's server export
+0x0092e830 function rcefSetChrBaseMatrix      # (i, m, out): m into out (or g_RcefChrBaseMatrix 0x0193c090) with rows scaled by Ch_GetScale x Ch_GetDataScale, then Ch_SetOrgMatrix; name: Switch rcefSetChrBaseMatrix by layout (between rcefSetArmorVisible 0x0092e7e0 and rcefSetChrDirTarget2 0x0092e960); ported (field r2 E)
 0x0092e960 function rcefSetChrDirTarget2      # (chr, a, b, c): MsSetChrDirTarget(chr, 2, 0, a, b, c); name ours
 0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
@@ -11671,27 +11929,28 @@
 0x0092eec0 function rcefRunPart               # (env, part, arg): *g_pppEnvSlot = env, pppRunPart(part, arg); rcefParProc
 0x0092eee0 function rcefParCreate             # fh v3:exact 0x0092eee0
 0x0092efd0 function rcefParInit               # fh v3:exact 0x0092efd0
-0x0092f010 function rcefParProc               # fh v3:exact 0x0092f010
+0x0092f010 function rcefParProc               # fh v3:exact 0x0092f010; ported (field r2 D): live part: env +0x20..+0x28 from data +0x14..+0x1c, pppStartPart once (bit 1), pppSetMatrix, world matrix from +0x90, scale +0x94 x +0x9c into 0x0230fd50, colour words +0x98 x 4096 at +0x80, row lengths +0x70, view matrices, rcefRunPart(env, part, 0x30); finished or kept past its life (g_RcefParKept limits) -> pppAllFreePObject, flags 0
+0x0092f290 function rcefAnimeDraw             # (anim): shape matrix +0x50 = camera x +0x48, colour bytes +0x14 (x128, clamp), +0x24 packet pos, render data of instance (0, anim) updated (updateVFXRenderDataShp, graphicVFXUpdate) or created (InitVFXRenderDataShp with the shape's alpha function, enlarge factor 8); name ours (the drawing half of rcefAnimeProc, which calls it before rcefAnimeStep); ported (field r2 D)
 0x0092f400 function rcefAnimeStep             # (anim): frame time +0x40 += speed +0x44, next key past +0x12 of the key, loops (key flag 0x80) or stops after the last; rcefAnimeProc's step
 0x0092f470 function rcefAnimeStart               # (anime, data, out0, out1): +4 data, +0x48/+0x4c outputs, +0 = 1 (running), +0x20 = anime + 0x50; 0x00925590 starts obj +0x330 with obj +0x1f0, +0x170
 0x0092f4a0 function rcefAnimeFini             # fh v3:exact 0x0092f4a0
 0x0092f4c0 function rcefAnimeInit             # fh v3:exact 0x0092f4c0
-0x0092f4f0 function rcefAnimeProc             # fh v3:exact 0x0092f4f0
-0x0092f510 function rcefModelProc             # fh switch:cg2 0x710054c990
+0x0092f4f0 function rcefAnimeProc             # fh v3:exact 0x0092f4f0; ported (field r2 D): live anim: rcefAnimeDraw, rcefAnimeStep
+0x0092f510 function rcefModelProc             # fh switch:cg2 0x710054c990; ported (field r2 D): matrix +0x88 = camera x +0x80, colour bytes +0x28 (x128, clamp), +0x44 packet pos, render data of instance (g_pppCurrentProgram, model) updated/drawn (path 3 with +0x10 bit 2) or created (alpha function | z test of +0x54 unless 0x2000); work 0x20 with set_ptr32(+4) at +0x1c
 0x0092f6b0 function rcefSetupDraw             # (draw, tex, a, b): a draw record: GIF tag (0x1c, 0x00c498dc, 0x44), buffers 0x0230fd60/0x0230fda0 (0x00925690)
 0x0092f710 function rcefModelFini             # fh v3:exact 0x0092f710
 0x0092f750 function rcefModelInit             # fh v3:exact 0x0092f750
-0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770
+0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770; ported (field r2 D): rcefModelProc for a live model (bit 0, tail call), else returns the model
 0x0092f790 function rcVu0Add_0092f790        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller rcefObjCalcLocalMatrix; name ours; ported (field round 45)
 0x0092f7f0 function rcbgScaleVector_0092f7f0  # the same code as rcbgScaleVector 0x009200a0
 0x0092f850 function rcCopyQword_0092f850      # (dst, src): as rcCopyQword_0091cb40; rcefObjCalcLocalMatrix, rcefObjCalcParentMatrix
 0x0092f880 function rcVu0Add4_0092f880       # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec4AddScalars_0074bc50 on it with c's words, the register to a); caller rcefObjCalcLocalMatrix; name ours; ported (field round 45)
 0x0092f920 function rcefObjLinkLast              # (obj, child): child after the last of obj's chain (+0xcc next, child +0xc8 = previous)
 0x0092f970 function rcefObjAttachChr          # fh v3:exact 0x0092f970
-0x0092f9a0 function rcefObjAttachChrOpt       # fh v3:exact 0x0092f9a0
-0x0092f9d0 function rcefObjCalcLocalMatrix    # fh v3:exact 0x0092f9d0
-0x0092fc60 function rcefObjCalcParentMatrix   # fh v3:exact 0x0092fc60
-0x0092fe30 function rcefObjCalcWorldMatrix    # fh v3:exact 0x0092fe30
+0x0092f9a0 function rcefObjAttachChrOpt       # fh v3:exact 0x0092f9a0; ported (field r1 B)
+0x0092f9d0 function rcefObjCalcLocalMatrix    # fh v3:exact 0x0092f9d0; ported (field r2 D): motion step (rcVu0Add rot/pos/scale, rcVu0Add4 colour), local matrix +0x1b0 = op_rt_m_yxz(scale matrix [+0x2000 facing from speed +0xe0, +0x4000 z turn and g_RcefBaseMatrix], rot +0x100 x 11.38 (f32 0x00b678ec), pos +0xd0); frame 0xf0
+0x0092fc60 function rcefObjCalcParentMatrix   # fh v3:exact 0x0092fc60; ported (field r1 C): by +0xbc: parent +0xc0's +0x1f0 / identity, flag 2 rcefGetChrMatrix(+0x270, +0x274), 4 yiGetMatrixDObj(+0x270); 0x20 row 2 flattened (all zero: identity) with rows 0/1 by cross products; 0x10 identity turned by -Ch_GetRot * 651.9 - 1024 (f64 0x00b51590, 0x00b51ba8) at the old translation (op_rt_m_yxz); 0x40 rotation reset; no 0x80: rows normalised
+0x0092fe30 function rcefObjCalcWorldMatrix    # fh v3:exact 0x0092fe30; ported (field r1 C): parent into +0x230 (once: flag 0x1000, again with 0x100), +0x1f0 = +0x230 x +0x1b0 (FFXVu0MulMatrix's eax)
 0x0092fe90 function rcefObjCreate                # layout: alphabetical run between rcefObjCalcWorldMatrix and rcefObjFini (2 unnamed in the gap); Switch 0x710054cd60 rcefObjCreate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0092feb0 function rcefObjDelete                # layout: alphabetical run between rcefObjCalcWorldMatrix and rcefObjFini (2 unnamed in the gap); Switch 0x710054cc50 rcefObjDelete is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0092fee0 function rcefObjFini               # fh v3:exact 0x0092fee0
@@ -11699,7 +11958,7 @@
 0x0092fff0 function rcefObjIsAnimeEnd            # (obj) -> bit 0 of obj +0x330 (rcefAnimeStart's running flag) clear; as rcefObjIsParEnd for +0x280
 0x00930010 function rcefObjIsParEnd           # fh v3:bsim1.00 0x00930010
 0x00930030 function rcefObjNew                # fh v3:bsim1.00 0x00930030
-0x00930060 function rcefObjProc               # fh v3:exact+call.cs 0x00930060 cdecl
+0x00930060 function rcefObjProc               # fh v3:exact+call.cs 0x00930060 cdecl; ported (field r2 D): local, world matrices, rcefParProc(+0x280), rcefAnimeProc(+0x330), rcefModelProc_0092f770(+0x3c0) (tail)
 0x009301e0 function rcefObjClearMode             # (obj): obj +0xbc &= ~0xff0; rcefObjSetMode calls it then ORs the mode in
 0x00930200 function rcefObjSetMode            # fh v3:exact 0x00930200
 0x00930220 function rcefTaskCtrlAdd           # fh v3:exact 0x00930220
@@ -12395,6 +12654,8 @@
 0x00a493b0 function AbmapItemEffectAtNode     # (chr, node, item) -> bits: AbmapItemUsableAt for one node index: 0 unless held, else AbmapItemNodeEffect(g_Abmap +0x808 + 0x28 node, ctx); from AbmapTryUseItem; name ours
 0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
+0x00a49f10 function AbmapDrawGridMarks        # (): the ability map's 17 x 20 grid marks (g_Abmap + 0x12e60, a byte a cell, corners (x, y, _, scale) from g_Abmap + 0x116c0, 21 a row): a GS sprite packet per set cell at 0x01a860ec and graphicDrawUIAbmapElement(verts 0x80 bytes, scratch, 10) with the pulse of g_Abmap + 0x11698 & 0x1ff; from 0x00a54660; name ours; ported (field r4, by hand)
+0x00a4ce20 function AbmapDrawMap              # (): the ability map's main pass: per node (count i16 at g_Abmap, 16-byte records from +8, data through the table 0x01a85f78) AbmapMakeNodeMatrix, the view matrix g_Abmap + 0x113e0 through the emulated VU0 registers, GS packets at 0x01a860ec (Vec2SubScalarsFlags against the screen box 1528,1600..2576,2304), texture window by kind (0x2f00/0x2710/0x3000/0x3200/0x3600, 0x3500 as 0x2710), graphicDrawUIAbmapElement(verts, 0, 2); returns 0; from 0x00a54660; name ours; ported (field r4, by hand)
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
 0x00a53de0 function eiAbmDataInit             # fh v3:exact 0x00a53de0
 0x00a545a0 function eiAbmDraw                 # fh v3:exact 0x00a545a0
@@ -15419,6 +15680,8 @@
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
+0x011a006a label    g_OpOvlEffectOn           # byte: op_ovl_effect_init (0x007fcdd0) sets 1, op_ovl_effect_free clears it; the mdc transfer cues run only while set
+0x011a006c label    g_OpusCameraLimit         # i16: an opus camera command (case 9) sets 0x1000 + its depth, case 10 and op_ovl_effect_init clear it; nonzero turns on the screen-depth limit
 0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
 0x011a0083 label    g_OpOef2BattleStreamPlaying # byte, op_oef2_se_on / op_oef2_se_3d_on set it to 1 before starting a battle stream
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
@@ -15814,6 +16077,7 @@
 0x0186a394 label    g_TkMenuItemWindow        # the item menu's window (TkMenuCtrlItem, TkMenuItemCloseWindow, TkMenuItemClearWindow)
 0x0186a3a8 label    g_TkMenuAbilityCommand    # u16 the ability menu's command id (set by 0x008c6bc0; Cmd_HealAmount, MsGetRomPlyCommand in MenuAbility_ApplyHeal)
 0x0186a3b0 label    g_TkMenuItemFirstUsable   # i16 inventory slot of the first usable item, -1 for none (TkMenuItemRefresh)
+0x0186a3e4 label    g_TkMenuItemGearCounts    # u16 [owner 0..6][weapon, armour] (MenuItem_CountGearByOwner)
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
@@ -15885,6 +16149,7 @@
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
+0x0193c090 label    g_RcefChrBaseMatrix       # name ours: rcefSetChrBaseMatrix's output without one
 0x0193c0d0 label    g_RcefParKept                # particle parts rcefParCreate remembers for some magic effects: +0 0x20e, +8 0x180, +0x10 0x168, +0x18 0x217 (entry 2); +0xc 0xbf, +0x14 0x216 (entry 1)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
 0x0193cd2c label g_MemSystem # set to 0x0193c390 by 0x009428b0 (MemSystem_Ensure's slow path); name ours
@@ -16023,6 +16288,7 @@
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
+0x025d59e0 label    g_RcefBaseMatrix          # name ours: the matrix rcefObjCalcLocalMatrix's flag 0x4000 multiplies in (after g_RcbgWorldMatrix)
 0x025d5a20 label    g_RcefColorWork              # the effect's colour work (rcefWorkSet layout, +0x1c0..): rcefColorSet/rcefColorFade
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
 0x025d5a28 label    g_RcefOef2                   # the effect's oef2 data: rcefPlaySE's op_oef2_a_get(it, 6, id)

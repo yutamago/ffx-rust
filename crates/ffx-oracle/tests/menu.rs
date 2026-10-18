@@ -8126,3 +8126,372 @@ fn menu_round20_batch1_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// A stand-in `MsGetSaveWeapon(id, local)`: `base + (id & 0xff) * 8`, so
+/// every id has its own slot (`local` untouched).
+fn weapon_slots(t: &mut Twins, base: u32) {
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x0f, 0xb6, 0x44, 0x24, 0x04][..],        // movzx eax, byte [esp + 4]
+        &[0xc1, 0xe0, 0x03],                        // shl eax, 3
+        &[0x05], &base.to_le_bytes(),               // add eax, base
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x007a_bbd0);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_round21_shop_windows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0021_81d0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    // five windows a round from the 32 slots
+    for round in 0..5u32 {
+        // the shop record, the prices, the counts and the gil recorded
+        let record = t.alloc_random(0x80);
+        record_n(&mut t, 0x008c_1af0, 2, record);
+        for (f, n) in [
+            (0x008d_9170u32, 1u8),
+            (0x008d_9370, 1),
+            (0x008d_9410, 1),
+            (0x008d_b3b0, 1),
+            (0x008d_b400, 1),
+            (0x0079_04b0, 1),
+            (0x0078_4e80, 0),
+        ] {
+            let r = t.rng.next();
+            record_n(&mut t, f, n, r);
+        }
+        let weapon = t.rng.next();
+        record_n(&mut t, 0x007a_bbd0, 1, weapon);
+        for g in [0x0186_ab1c, 0x0186_aba8, 0x0186_ac20, 0x0186_ac2c] {
+            t.scramble(g, 4);
+        }
+        t.scramble(0x0159_7740, 0x200);
+        let parent = t.alloc_random(0x60);
+        let k = i16::try_from(t.rng.below(0x40)).unwrap_or(0) - 0xc;
+        t.put(parent + 0x48, k);
+        t.twin(
+            "MenuWShop_OpenSubWindow2",
+            0x008d_81d0,
+            &[parent],
+            U32,
+            |o| w(tk::menu_wshop_open_sub_window2(o, parent, &mut callback)),
+        );
+        t.twin(
+            "MenuWShop_OpenSubWindow3",
+            0x008d_82d0,
+            &[parent],
+            U32,
+            |o| {
+                w(tk::menu_wshop_open_sub_window3(
+                    o,
+                    parent,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+        t.twin("MenuShop_OpenBuyWindow", 0x008d_a860, &[parent], U32, |o| {
+            w(tk::menu_shop_open_buy_window(o, parent, &mut callback))
+        });
+        t.twin(
+            "MenuShop_OpenSellWindow",
+            0x008d_aa00,
+            &[parent],
+            U32,
+            |o| w(tk::menu_shop_open_sell_window(o, parent, &mut callback)),
+        );
+        // the aeon menu's second window: the current aeon fixed, the
+        // status background and the grow masks recorded
+        let summon = if round == 0 {
+            0xffff_ffff
+        } else {
+            t.rng.below(8)
+        };
+        return_const(&mut t, 0x008a_9880, summon);
+        let bg = t.rng.next();
+        record_n(&mut t, 0x008d_4ed0, 0, bg);
+        let grow = t.rng.next();
+        record_n(&mut t, 0x008c_d3b0, 1, grow);
+        t.scramble(0x0186_a5ac, 4);
+        t.twin("MenuSummon_OpenWindow2", 0x008c_eda0, &[], U32, |o| {
+            w(tk::menu_summon_open_window2(o, &mut callback))
+        });
+    }
+    // MenuItem_CountGearByOwner over stand-in gear slots
+    let slots = t.alloc(&vec![0; 0x800]);
+    weapon_slots(&mut t, slots);
+    for round in 0..48u32 {
+        let n = match round % 6 {
+            0 => 0,
+            1 => t.rng.pick(&[0xffff_ffff, 0x8000_0000, 0xffff_ff00]),
+            2 => 1,
+            _ => t.rng.below(0x60),
+        };
+        t.put(t.sym(0x0186_a250), n);
+        let mut gear = t.rng.bytes(0x800);
+        for s in gear.chunks_mut(8) {
+            // owners mostly in range, kinds mostly 0 or 1
+            s[4] = t.rng.pick(&[0u8, 1, 3, 6, 6, 7, 8, 0xff]);
+            s[5] = t.rng.pick(&[0u8, 0, 1, 1, 2, 0x80]);
+        }
+        t.put_bytes(slots, &gear);
+        t.scramble(0x0159_7770, 0x180);
+        t.scramble(0x0186_a3e4, 0x20);
+        t.twin("MenuItem_CountGearByOwner", 0x008c_94e0, &[], U32, |o| {
+            w(tk::menu_item_count_gear_by_owner(o, local, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// A stand-in returning `start`, `start + 1`, ... on successive calls.
+fn return_counter(t: &mut Twins, f: u32, start: u32) {
+    let cell = t.alloc(&start.to_le_bytes()).to_le_bytes();
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0xa1][..], &cell,                         // mov eax, [cell]
+        &[0xff, 0x05], &cell,                       // inc dword [cell]
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_round21_sub_cmd_windows_and_params_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0021_4930) else {
+        return;
+    };
+    // TOGetMessageSizePacked as `return text` (the width is its low half)
+    let code = [0x8b, 0x44, 0x24, 0x04, 0xc3]; // mov eax, [esp + 4]; ret
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x008b_7170);
+        o.write(at, &code).unwrap();
+    }
+    // floats: a quiet NaN, out of range, negative, fractions, small values
+    let pick = |t: &mut Twins| -> f32 {
+        match t.rng.below(8) {
+            0 => f32::NAN,
+            1 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            2 => -f32::from_bits(t.rng.next() & 0x4fff_ffff),
+            3 => 3e9,
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 500) / 4.0,
+        }
+    };
+    let table = |t: &mut Twins| {
+        let v: Vec<u8> = (0..6)
+            .flat_map(|_| (t.rng.next() & 0x00ff_00ff).to_le_bytes())
+            .collect();
+        t.alloc(&v)
+    };
+    for round in 0..48u32 {
+        // every window free again (32 records of 0x98 bytes)
+        let windows = t.sym(tk::MENU_WINDOWS.sym);
+        for k in 0..0x20u32 {
+            t.put(windows + k * 0x98 + 0x40, 0u8);
+        }
+        let n = t.rng.pick(&[0u32, 0xffff_ffff, 1, 2, 3, 4, 6]);
+        let (texts, values) = (table(&mut t), table(&mut t));
+        let (id, b44) = (t.rng.next(), t.rng.next());
+        let rect = [pick(&mut t), pick(&mut t), pick(&mut t), pick(&mut t)];
+        let mut args = vec![id, texts, values, n, b44];
+        args.extend(rect.map(f32::to_bits));
+        t.twin("TkMenuOpenSubCmdWindowRect", 0x008e_4930, &args, U32, |o| {
+            w(tk::tk_menu_open_sub_cmd_window_rect(
+                o,
+                [id, texts, values, n, b44],
+                rect,
+                &mut callback,
+            ))
+        });
+        // the second window beside none or a random open one
+        let open = if round % 4 == 0 {
+            0
+        } else {
+            let open = t.alloc_random(0x200);
+            let k = i16::try_from(t.rng.below(24)).unwrap_or(0) - 8;
+            t.put(open + 0x48, k);
+            open
+        };
+        t.put(t.sym(tk::MENU_SUB_CMD_WINDOW.sym), open);
+        let args = [id, texts, values, n, b44];
+        t.twin(
+            "TkMenuOpenSubCmdWindowBeside",
+            0x008e_46b0,
+            &args,
+            U32,
+            |o| {
+                w(tk::tk_menu_open_sub_cmd_window_beside(
+                    o,
+                    args,
+                    &mut callback,
+                ))
+            },
+        );
+        // TkMsSetSaveParam: HP and MP below, at and above the maximum
+        record_n(&mut t, 0x0078_60f0, 1, 0x11);
+        for (get, max, set) in [
+            (0x008a_98c0u32, 0x008a_9990u32, 0x008a_ae90u32),
+            (0x008a_9970, 0x008a_99b0, 0x008a_aef0),
+        ] {
+            let m = t.rng.pick_or_any(&[0, 1, 9999, 0x8000_0000, 0x7fff_ffff]);
+            let v = match t.rng.below(4) {
+                0 => m,
+                1 => m.wrapping_add(1),
+                2 => m.wrapping_sub(1),
+                _ => t.rng.next(),
+            };
+            return_const(&mut t, get, v);
+            // the maximum counts up: the set takes the second fetch
+            return_counter(&mut t, max, m);
+            let r = t.rng.next();
+            record_n(&mut t, set, 2, r);
+        }
+        let chr = t.rng.below(0x12);
+        t.twin("TkMsSetSaveParam", 0x008c_3070, &[chr], U32, |o| {
+            w(tk::tk_ms_set_save_param(o, chr, &mut callback))
+        });
+        // MenuKaizou_AddAbility: slots full, free (0 or 0xff) or none
+        let mut weapon = t.rng.bytes(0x20);
+        weapon[0xb] = t.rng.pick(&[0u8, 1, 2, 4, 4, 8]);
+        for k in 0..8 {
+            let v =
+                u16::try_from(t.rng.pick(&[0, 0xff, 0x8001, 0x2034, 0x2034, 0x0100])).unwrap_or(0);
+            weapon[0xe + 2 * k..0x10 + 2 * k].copy_from_slice(&v.to_le_bytes());
+        }
+        let weapon = t.alloc(&weapon);
+        let all = t.rng.next();
+        record_n(&mut t, 0x0078_6900, 0, all);
+        let ability = t.rng.next();
+        t.twin(
+            "MenuKaizou_AddAbility",
+            0x008d_5680,
+            &[weapon, ability],
+            U32,
+            |o| {
+                w(tk::menu_kaizou_add_ability(
+                    o,
+                    weapon,
+                    ability,
+                    &mut callback,
+                ))
+            },
+        );
+        // TkMsEventEffectRead, TkResetClip and MenuMain_Reset over recorders
+        let r = t.rng.next();
+        record_n(&mut t, 0x0078_8c60, 1, r);
+        t.scramble(0x0132_6b80, 4);
+        let id = t.rng.next();
+        t.twin("TkMsEventEffectRead", 0x0087_2470, &[id], U32, |o| {
+            w(tk::tk_ms_event_effect_read(o, id, &mut callback))
+        });
+        let debug = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0088_7d10, debug);
+        let r = t.rng.next();
+        record_n(&mut t, 0x0088_5120, 5, r);
+        t.scramble(0x0133_0700, 0x10);
+        t.twin("TkResetClip", 0x0088_c710, &[], U32, |o| {
+            w(tk::tk_reset_clip(o, &mut callback))
+        });
+        if round % 8 == 7 {
+            let r = t.rng.next();
+            record_n(&mut t, 0x008a_a470, 0, r);
+            let r = t.rng.next();
+            record_n(&mut t, 0x008a_b270, 1, r);
+            t.scramble(0x0184_0884, 0x78);
+            t.twin("MenuMain_Reset", 0x008a_a570, &[], U32, |o| {
+                w(tk::menu_main_reset(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round21_rows_names_and_hides_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0021_4e60) else {
+        return;
+    };
+    // MenuItem_DrawRow, the name and English lookups and the unlocks recorded
+    record_n(&mut t, 0x008c_9a70, 4, 0x61);
+    // MsGetSaveConfigEnglish counts its calls
+    return_counter(&mut t, 0x0078_51d0, 0x62);
+    record_n(&mut t, 0x0082_b2c0, 2, 0x63);
+    record_n(&mut t, 0x0082_b820, 2, 0x64);
+    let float = |t: &mut Twins| -> f32 {
+        match t.rng.below(6) {
+            0 => f32::NAN,
+            1 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 500) / 3.0,
+        }
+    };
+    for round in 0..48u32 {
+        let (window, first) = (t.rng.next(), t.rng.pick_or_any(&[0, 1, 0x7fff_fffc]));
+        let (x, y) = (float(&mut t), float(&mut t));
+        let args = [window, t.rng.next(), first, x.to_bits(), y.to_bits()];
+        t.twin("MenuItem_DrawRows", 0x008c_99f0, &args, VOID, |o| {
+            tk::menu_item_draw_rows(o, window, first, [x, y], &mut ui_remap, &mut callback);
+            0
+        });
+        // MenuNameEntry_Commit: a character or the save's name, keys of
+        // every kind, the languages that ask for the English setting
+        let target = t
+            .rng
+            .pick(&[0u32, 3, 0xd, 0xe, 0x11, 0x12, 0xffff_ffff, 0x8000_0000]);
+        t.put(t.sym(tk::MENU_ITEM_TARGET.sym), target);
+        let name = t.alloc_random(0x40);
+        let r = t.rng.next();
+        record_n(&mut t, 0x0078_4fb0, 1, name);
+        return_const(&mut t, 0x008c_5390, r);
+        let lang = t.rng.pick(&[0u32, 1, 9, 10, 11]);
+        return_const(&mut t, 0x008a_c2f0, lang);
+        let save = t.alloc_random(0x140);
+        return_const(&mut t, 0x0088_c830, save);
+        let unlock = t.rng.next();
+        record_n(&mut t, 0x0082_2380, 1, unlock);
+        let n = if round % 5 == 0 { 0 } else { t.rng.below(9) };
+        let mut keys = vec![0u8; 4 * 10];
+        for k in 0..n as usize {
+            keys[4 * k] = t.rng.pick(&[1u8, 4, 4, 5, 6, 0x2f, 0x30, 0x80, 0xff]);
+            keys[4 * k + 1] = t.rng.pick(&[0u8, 0x2f, 0x30, 0x41, 0xff]);
+            keys[4 * k + 2] = t.rng.pick(&[0u8, 0x41, 0x7f]);
+            keys[4 * k + 3] = t.rng.pick(&[0u8, 9]);
+        }
+        t.put_bytes(t.sym(tk::ITEM_KEYS), &keys);
+        t.twin("MenuNameEntry_Commit", 0x008c_4e60, &[], U32, |o| {
+            w(tk::menu_name_entry_commit(o, &mut callback))
+        });
+        // TkHideAttachedChrs: masks, ids and pointers on and off
+        let actor = t.alloc_random(0xb20);
+        let mask = t.rng.pick(&[0u16, 1, 2, 3, 0xfffc, 0xffff]);
+        t.put(actor + 0xb14, mask);
+        for k in 0..2u32 {
+            let id = u16::try_from(t.rng.pick(&[0, 0xff, 0x1ff, 3])).unwrap_or(0);
+            t.put(actor + 0xb04 + 2 * k, id);
+            let chr = t.rng.pick(&[0u32, 0x00c0_0000 + k, 0x1234_5678]);
+            t.put(actor + 0xaf4 + 4 * k, chr);
+        }
+        let hide = t.rng.pick_or_any(&[0, 1]);
+        t.twin(
+            "TkHideAttachedChrs",
+            0x0087_2380,
+            &[actor, hide],
+            U32,
+            |o| w(tk::tk_hide_attached_chrs(o, actor, hide, &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -1840,6 +1840,450 @@ pub mod bridge {
             scene::bridge::rcbg_scene_del_objects(mem, c, kind, call);
         }
     }
+
+    // ---- field agent r2, group F: the minimap fog ----
+
+    /// The `.rdata` constants of `rcbgGuideUpdateWalk` (`f64` unless
+    /// noted): the default x scale 0.75 (`f32`), 1/512, 0.5, 416, the
+    /// layout x scale 0.75, the layouts' x offsets -1243 and -1317 and y
+    /// offsets -1820 and -1860, 2.0, 10.0, the cell 40.0, -40.0, and 2^32
+    /// (`f32`).
+    pub const WALK_K: [u32; 15] = [
+        0x00b4_3d18,
+        0x00b4_1cc0,
+        0x00b9_2220,
+        0x00b4_1d30,
+        0x00b5_1bd0,
+        0x00b6_76d0,
+        0x00b6_76d8,
+        0x00b6_76e0,
+        0x00b6_76e8,
+        0x00b9_2270,
+        0x00b9_22b0,
+        0x00b5_af28,
+        0x00b5_b8a8,
+        0x00b1_1f14,
+        0,
+    ];
+    /// `graphicFontGetScreenWH(w, h)` (`0x00640db0`).
+    pub const FONT_SCREEN_WH: u32 = 0x0064_0db0;
+    /// `graphicGetMiniMapType()` (`0x00641320`).
+    pub const MINI_MAP_TYPE: u32 = 0x0064_1320;
+    /// `user_malloc(size)` (`0x00687020`).
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    /// `user_free_thunk(p)` (`0x00687010`).
+    pub const USER_FREE_THUNK: u32 = 0x0068_7010;
+    /// `Guide_MeshObject(guide)` (`0x0091d460`).
+    pub const MESH_OBJECT: u32 = 0x0091_d460;
+    /// `rcPacketDataInit(p)` (`0x00927a20`).
+    pub const PACKET_INIT: u32 = 0x0092_7a20;
+    /// `rcPacketDataOpenAdr(p, addr)` (`0x00927a70`).
+    pub const PACKET_OPEN_ADR: u32 = 0x0092_7a70;
+    /// The packet address the minimap fog opens (`0x00c498dc`).
+    pub const FOG_PACKET: u32 = 0x00c4_98dc;
+    /// `rcCopyQword_0091cbd0(dst, src)` (`0x0091cbd0`).
+    pub const COPY_QWORD_CBD0: u32 = 0x0091_cbd0;
+    /// `FFXVu0ApplyMatrix(dst, m, v)` (`0x006ed2e0`).
+    pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+    /// `FFXVu0DivVectorXYZ(dst, v, w)` (`0x006ed420`).
+    pub const DIV_VECTOR_XYZ: u32 = 0x006e_d420;
+    /// `updateVFXRenderDataRects(lo, hi, rects)` (`0x0071a330`).
+    pub const UPDATE_RECTS: u32 = 0x0071_a330;
+    /// `graphicVFX2DUpdate(lo, hi)` (`0x00644bc0`).
+    pub const VFX_2D_UPDATE: u32 = 0x0064_4bc0;
+    /// `InitVFXRenderDataRects(lo, hi, rects, flags)` (`0x00711350`).
+    pub const INIT_RECTS: u32 = 0x0071_1350;
+    /// `graphicVFXSetMeshInstanceName(lo, hi, name)` (`0x006456a0`).
+    pub const SET_MESH_NAME: u32 = 0x0064_56a0;
+    /// `"RenderMiniMapFog"` (`0x00b0da48`).
+    pub const FOG_NAME: u32 = 0x00b0_da48;
+
+    /// `rcbgGuideUpdateWalk(guide, m, p)` (`0x0091ecb0`): the minimap's fog
+    /// of the unwalked: the screen layout (`graphicFontGetScreenWH`, the
+    /// minimap type's offsets), then for each of the 64 rows of 40-unit
+    /// cells around `p` whose band (`p.y` and `p.w` -/+ 40) the row's
+    /// edges reach after `m` and the perspective divide, one quad of two
+    /// triangles per cell (0x70 bytes, the cell's walked bit of the guide's
+    /// bitmap `+0x70` as 0 or 2^32 in each vertex's third float) into a
+    /// `user_malloc` buffer handed to the VFX rects of instance
+    /// (`g_pppCurrentProgram`, guide) (`"RenderMiniMapFog"`), with the GIF
+    /// tags of the packet at `0x00c498dc` around them. `work` is 0xb0 bytes
+    /// (the original's frame: the rect block, three vectors, the start
+    /// point, the packet, the screen size).
+    #[allow(clippy::too_many_lines)] // the original's steps in turn
+    pub fn rcbg_guide_update_walk<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [g, m, p]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) {
+        let w = |o: u32| work.wrapping_add(o);
+        let (rect, a, b, v, start, pk, sw, sh) = (
+            w(0),
+            w(0x50),
+            w(0x60),
+            w(0x70),
+            w(0x80),
+            w(0x90),
+            w(0xa0),
+            w(0xa4),
+        );
+        let kd = |mem: &M, k: usize| {
+            let at = mem.rebase(WALK_K[k]);
+            mem.read::<f64>(at)
+        };
+        let kf = |mem: &M, k: usize| {
+            let at = mem.rebase(WALK_K[k]);
+            mem.read::<u32>(at)
+        };
+        let ld = x87::load;
+        let st = x87::store;
+        // the layout: x scale and offset, y scale and offset
+        let (mut sx, mut ox, mut oy, mut sy) = (x87::copy(kf(mem, 0)), 0u32, 0u32, 0x3f80_0000u32);
+        let f = mem.rebase(FONT_SCREEN_WH);
+        call(mem, f, &[sw, sh]);
+        let fw = ld(st(f64::from(mem.read::<i32>(sw))));
+        let unit = st(fw * kd(mem, 1));
+        let half_w = st(fw * kd(mem, 2));
+        let fh = ld(st(f64::from(mem.read::<i32>(sh))));
+        let scale_h = st(fh / kd(mem, 3));
+        let half_h = st(fh * kd(mem, 2));
+        let f = mem.rebase(MINI_MAP_TYPE);
+        let kind = call(mem, f, &[]);
+        if (1..=4).contains(&kind) {
+            sx = st(ld(unit) * kd(mem, 4));
+            let xo = if kind <= 2 { kd(mem, 6) } else { kd(mem, 5) };
+            ox = st(ld(unit) * xo - ld(half_w));
+            sy = scale_h;
+            let yo = if kind % 2 == 1 {
+                kd(mem, 7)
+            } else {
+                kd(mem, 8)
+            };
+            oy = st(ld(scale_h) * yo - ld(half_h));
+        }
+        let f = mem.rebase(USER_MALLOC);
+        let buf = call(mem, f, &[0x7_0000]);
+        mem.write(rect, buf);
+        mem.write(rect.wrapping_add(4), 0u32);
+        for (k, word) in (0u32..).zip([
+            0x3f80_0000u32,
+            0,
+            0,
+            0,
+            0,
+            0x3f80_0000,
+            0,
+            0,
+            0,
+            0,
+            0x3f80_0000,
+            0,
+            0,
+            0,
+            0,
+            0x3f80_0000,
+        ]) {
+            mem.write(rect.wrapping_add(0xc + 4 * k), word);
+        }
+        let f = mem.rebase(MESH_OBJECT);
+        let mo = call(mem, f, &[g]);
+        let (two, ten) = (kd(mem, 9), kd(mem, 10));
+        let x0 = st((ld(mem.read::<u32>(mo.wrapping_add(0x90))) - two) * ten);
+        let z0 = st((two + ld(mem.read::<u32>(mo.wrapping_add(0xa8)))) * ten);
+        for (k, word) in (0u32..).zip([x0, 0, z0, 0x3f80_0000]) {
+            mem.write(start.wrapping_add(4 * k), word);
+        }
+        let f = mem.rebase(PACKET_INIT);
+        call(mem, f, &[pk]);
+        let f = mem.rebase(PACKET_OPEN_ADR);
+        let addr = mem.read::<u32>(mem.rebase(FOG_PACKET));
+        call(mem, f, &[pk, addr]);
+        let q = mem.read::<u32>(pk.wrapping_add(4));
+        for (k, word) in
+            (0u32..).zip([0x3_0000u32, 0, 0x47, 0, 0, 0, 1, 0, 0x3100_0108, 0, 0x4e, 0])
+        {
+            mem.write(q.wrapping_add(4 * k), word);
+        }
+        let (step, minus_cell) = (kd(mem, 11), kd(mem, 12));
+        let lo_y = st(ld(mem.read::<u32>(p.wrapping_add(4))) - step);
+        let hi_y = st(ld(mem.read::<u32>(p.wrapping_add(0xc))) - minus_cell);
+        let cursor_end = q.wrapping_add(0x30);
+        let copy = mem.rebase(COPY_QWORD_CBD0);
+        let apply = mem.rebase(APPLY_MATRIX);
+        let div = mem.rebase(DIV_VECTOR_XYZ);
+        let big = ld(x87::copy(kf(mem, 13)));
+        let mut cur = buf;
+        let mut count = 0u32;
+        let rd = |mem: &M, at: u32| mem.read::<u32>(at);
+        for r in 0..0x40u32 {
+            call(mem, copy, &[a, start]);
+            call(mem, copy, &[b, start]);
+            let fr = ld(st(f64::from(r)));
+            let az = st(ld(rd(mem, a.wrapping_add(8))) - fr * step);
+            mem.write(a.wrapping_add(8), az);
+            mem.write(b.wrapping_add(8), st(ld(az) - step));
+            call(mem, apply, &[v, m, b]);
+            let vw = x87::copy(rd(mem, v.wrapping_add(0xc)));
+            call(mem, div, &[v, v, vw]);
+            // skip a row past the far edge (fcompp: hi_y < v.y)
+            if ld(hi_y) < ld(rd(mem, v.wrapping_add(4))) {
+                continue;
+            }
+            call(mem, apply, &[v, m, a]);
+            let vw = x87::copy(rd(mem, v.wrapping_add(0xc)));
+            call(mem, div, &[v, v, vw]);
+            if ld(lo_y) > ld(rd(mem, v.wrapping_add(4))) {
+                continue;
+            }
+            let row = mem.read::<u32>(g.wrapping_add(0x70)).wrapping_add(r * 8);
+            let mut bits = u32::from(mem.read::<u8>(row));
+            let mut next = row.wrapping_add(1);
+            let mut mask = 1u32;
+            for _ in 0..0x40 {
+                let walked = mask & bits != 0;
+                let flag = if walked { st(-1.0 + big) } else { 0 };
+                let mut vertex = |mem: &mut M, src: u32, at: u32| {
+                    call(mem, apply, &[v, m, src]);
+                    let w = ld(rd(mem, v.wrapping_add(0xc)));
+                    for k in 0..3 {
+                        let c = v.wrapping_add(4 * k);
+                        let x = st(ld(rd(mem, c)) / w);
+                        mem.write(c, x);
+                    }
+                    let x = st(ld(rd(mem, v)) * ld(sx) + ld(ox));
+                    let y = st(ld(rd(mem, v.wrapping_add(4))) * ld(sy) + ld(oy));
+                    mem.write(cur.wrapping_add(at), x);
+                    mem.write(cur.wrapping_add(at + 4), y);
+                    mem.write(cur.wrapping_add(at + 8), flag);
+                };
+                vertex(mem, a, 0);
+                vertex(mem, b, 0x1c);
+                let ax = st(ld(rd(mem, a)) + step);
+                mem.write(a, ax);
+                let bx = st(step + ld(rd(mem, b)));
+                mem.write(b, bx);
+                vertex(mem, a, 0x38);
+                vertex(mem, b, 0x54);
+                mask <<= 1;
+                cur = cur.wrapping_add(0x70);
+                count += 1;
+                mem.write(rect.wrapping_add(4), count);
+                if mask == 0x100 {
+                    bits = u32::from(mem.read::<u8>(next));
+                    next = next.wrapping_add(1);
+                    mask = 1;
+                }
+            }
+        }
+        let program = crate::task::bridge::CURRENT_PROGRAM.get(mem);
+        let (lo, hi) = (
+            program,
+            g.wrapping_sub(u32::from(program.cast_signed() < 0)),
+        );
+        mem.write(rect.wrapping_add(8), 0x1000u32);
+        let f = mem.rebase(super::VFX_GET_RENDER_DATA);
+        if call(mem, f, &[lo, hi]) == 0 {
+            let f = mem.rebase(INIT_RECTS);
+            call(mem, f, &[lo, hi, rect, 0x802]);
+            let f = mem.rebase(SET_MESH_NAME);
+            let name = mem.rebase(FOG_NAME);
+            call(mem, f, &[lo, hi, name]);
+        } else {
+            let f = mem.rebase(UPDATE_RECTS);
+            call(mem, f, &[lo, hi, rect]);
+            let f = mem.rebase(VFX_2D_UPDATE);
+            call(mem, f, &[lo, hi]);
+        }
+        for (k, word) in (0u32..).zip([0x5_0000u32, 0, 0x47, 0, 0x3100_0108, 1, 0x4e, 0]) {
+            mem.write(cursor_end.wrapping_add(4 * k), word);
+        }
+        let f = mem.rebase(USER_FREE_THUNK);
+        call(mem, f, &[cur.wrapping_sub(count.wrapping_mul(0x70))]);
+    }
+
+    /// `rcbgGuideDrawPlayer`'s `.rdata` constants: -10000 (`f32`, the "no
+    /// direction yet" mark), 2π, 15, the colour bases 204, 96, 32, 128,
+    /// the triangle size 6.0 (`f32`) and 10 (`f64` unless noted).
+    pub const PLAYER_K: [u32; 9] = [
+        0x00b4_1db0,
+        0x00b3_9378,
+        0x00b9_22c0,
+        0x00b6_76b0,
+        0x00b5_ee40,
+        0x00b4_12f8,
+        0x00b4_c170,
+        0x00b9_2308,
+        0x00b9_22b0,
+    ];
+    /// The player marker's colour (`0x00c5e380`, three floats) and the
+    /// circle's (`0x00c5e3c0`, four).
+    pub const PLAYER_COLOUR: u32 = 0x00c5_e380;
+    /// See [`PLAYER_COLOUR`].
+    pub const CIRCLE_COLOUR: u32 = 0x00c5_e3c0;
+    /// `yiSegIntersect2(a, b, c, d, out)` (`0x0091cd00`).
+    pub const SEG_INTERSECT: u32 = 0x0091_cd00;
+    /// `Yn_GuideEdgeFade(p, a, b, rect, out)` (`0x0091f530`).
+    pub const EDGE_FADE: u32 = 0x0091_f530;
+    /// `Yn_NearestOnLine2D(out, a, b, p, clamp)` (`0x0091cc00`).
+    pub const NEAREST_ON_LINE: u32 = 0x0091_cc00;
+    /// `rcVec3fNormalize(v)` (`0x00921360`).
+    pub const NORMALIZE: u32 = 0x0092_1360;
+    /// `Math_WrapAngle(a)` (`0x0088bc20`, `ST0`).
+    pub const WRAP_ANGLE: u32 = 0x0088_bc20;
+    /// `Math_AngleStep(cur, target, step)` (`0x0088b570`, `ST0`).
+    pub const ANGLE_STEP: u32 = 0x0088_b570;
+    /// `rcPrimTri(x, y, r, angle, colour, ui)` (`0x009270c0`).
+    pub const PRIM_TRI: u32 = 0x0092_70c0;
+    /// `rcPrimCircleLine(x, y, r, colour, ui)` (`0x00925ea0`).
+    pub const PRIM_CIRCLE_LINE: u32 = 0x0092_5ea0;
+
+    /// `rcbgGuideDrawPlayer(guide, a, b, rect, _, alpha, p, q, dir, smooth)`
+    /// (`0x0091cf10`, name ours; from `rcbgGuideUpdateEx`): the player's
+    /// marker on the minimap. The step `a`..`b` is clipped to `rect`'s
+    /// edges (`yiSegIntersect2`; else `b`), `Yn_GuideEdgeFade` says
+    /// whether the player is past the edge `p`..`q`; then the heading of
+    /// `a` to `b` (`_CIacos` of the normalised step, `2π -` it for a
+    /// positive y), or, past the edge or with `*dir` at -10000, the
+    /// direction to the edge (stored in `*dir`); with `smooth` and inside,
+    /// the heading turns from `*dir` at most the edge distance times the
+    /// angle left (`Math_AngleStep`). The triangle (`rcPrimTri`, the colour
+    /// faded by the guide's level `+0x74`) and the circle
+    /// (`rcPrimCircleLine`, radius the level times 10) whose `eax` it
+    /// returns. `work` is 0x80 bytes (the original's frame).
+    #[allow(clippy::too_many_lines)] // the original's steps in turn
+    pub fn rcbg_guide_draw_player<M, C, F>(
+        mem: &mut M,
+        [g, a, b, rect, alpha, p, q, dir, smooth]: [u32; 9],
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        let w = |o: u32| work.wrapping_add(o);
+        let (p1, p2, p3, p4, out, t, col, dist) = (
+            w(0),
+            w(0x10),
+            w(0x20),
+            w(0x30),
+            w(0x40),
+            w(0x50),
+            w(0x60),
+            w(0x70),
+        );
+        let kd = |mem: &M, k: usize| {
+            let at = mem.rebase(PLAYER_K[k]);
+            mem.read::<f64>(at)
+        };
+        let kf = |mem: &M, k: usize| {
+            let at = mem.rebase(PLAYER_K[k]);
+            mem.read::<u32>(at)
+        };
+        let (ld, st) = (x87::load, x87::store);
+        let rd = |mem: &M, at: u32| mem.read::<u32>(at);
+        let r = |mem: &M, k: u32| x87::copy(rd(mem, rect.wrapping_add(4 * k)));
+        for (v, x, y) in [(p1, 0u32, 1u32), (p2, 2, 1), (p3, 0, 3), (p4, 2, 3)] {
+            let (x, y) = (r(mem, x), r(mem, y));
+            for (k, word) in (0u32..).zip([x, y, 0, 0]) {
+                mem.write(v.wrapping_add(4 * k), word);
+            }
+        }
+        let f = mem.rebase(SEG_INTERSECT);
+        let hit = [(p1, p2), (p3, p4), (p1, p3), (p2, p4)]
+            .into_iter()
+            .any(|(c, d)| call(mem, f, &[a, b, c, d, out]) != 0);
+        let f = mem.rebase(EDGE_FADE);
+        let near = call(mem, f, &[a, p, q, rect, dist]);
+        if !hit {
+            let f = mem.rebase(COPY_QWORD_CBD0);
+            call(mem, f, &[out, b]);
+        }
+        let norm = mem.rebase(NORMALIZE);
+        let acos = mem.rebase(crate::vu0::CI_ACOS);
+        let two_pi = kd(mem, 1);
+        // the heading of the unit vector at `t`: acos x, 2π less it for y > 0
+        let heading = |mem: &mut M, call: &mut C, fcall: &mut F| {
+            call(mem, norm, &[t]);
+            let x = ld(rd(mem, t));
+            let ang = st(fcall(mem, acos, crate::camera::FArgs::St0(x)));
+            if 0.0 < ld(rd(mem, t.wrapping_add(4))) {
+                st(two_pi - ld(ang))
+            } else {
+                ang
+            }
+        };
+        let mut inside = near == 0;
+        #[allow(clippy::float_cmp)] // fucompp: exact
+        let marked = dir != 0 && ld(rd(mem, dir)) == ld(kf(mem, 0));
+        if marked {
+            inside = false;
+        }
+        if marked || near != 0 {
+            let f = mem.rebase(NEAREST_ON_LINE);
+            call(mem, f, &[t, p, q, a, 0]);
+            for k in 0..2u32 {
+                let v = st(ld(rd(mem, t.wrapping_add(4 * k))) - ld(rd(mem, a.wrapping_add(4 * k))));
+                mem.write(t.wrapping_add(4 * k), v);
+            }
+            mem.write(t.wrapping_add(0xc), 0u32);
+            mem.write(t.wrapping_add(8), 0u32);
+            let ang = heading(mem, call, fcall);
+            if dir != 0 {
+                mem.write(dir, ang);
+            }
+        }
+        for k in 0..2u32 {
+            let v = st(ld(rd(mem, b.wrapping_add(4 * k))) - ld(rd(mem, a.wrapping_add(4 * k))));
+            mem.write(t.wrapping_add(4 * k), v);
+        }
+        mem.write(t.wrapping_add(0xc), 0u32);
+        mem.write(t.wrapping_add(8), 0u32);
+        let mut ang = heading(mem, call, fcall);
+        if smooth != 0 && inside && dir != 0 {
+            let cur = x87::copy(rd(mem, dir));
+            let d = st(ld(cur) - ld(ang));
+            let f = mem.rebase(WRAP_ANGLE);
+            let wr = st(fcall(mem, f, crate::camera::FArgs::Stack(&[d])));
+            let step = st(ld(wr & 0x7fff_ffff) * ld(rd(mem, dist)));
+            let f = mem.rebase(ANGLE_STEP);
+            ang = st(fcall(
+                mem,
+                f,
+                crate::camera::FArgs::Stack(&[cur, ang, step]),
+            ));
+        }
+        let level = mem.read::<u32>(g.wrapping_add(0x74)) & 0xf;
+        let lv = st(ld(st(f64::from(level))) / kd(mem, 2));
+        let c = mem.rebase(PLAYER_COLOUR);
+        for (k, base) in [(0u32, 3usize), (1, 4), (2, 5)] {
+            let base = kd(mem, base);
+            let ck = ld(rd(mem, c.wrapping_add(4 * k)));
+            mem.write(col.wrapping_add(4 * k), st(base + (ck - base) * ld(lv)));
+        }
+        mem.write(col.wrapping_add(0xc), st(ld(alpha) * kd(mem, 6)));
+        let (ox, oy) = (
+            x87::copy(rd(mem, out)),
+            x87::copy(rd(mem, out.wrapping_add(4))),
+        );
+        let f = mem.rebase(PRIM_TRI);
+        call(mem, f, &[ox, oy, x87::copy(kf(mem, 7)), ang, col, 0]);
+        let f = mem.rebase(COPY_QWORD_CBD0);
+        let cc = mem.rebase(CIRCLE_COLOUR);
+        call(mem, f, &[col, cc]);
+        let cw = st(ld(rd(mem, col.wrapping_add(0xc))) * ld(alpha));
+        mem.write(col.wrapping_add(0xc), cw);
+        let radius = st(ld(lv) * kd(mem, 8));
+        let (ox, oy) = (
+            x87::copy(rd(mem, out)),
+            x87::copy(rd(mem, out.wrapping_add(4))),
+        );
+        let f = mem.rebase(PRIM_CIRCLE_LINE);
+        call(mem, f, &[ox, oy, radius, col, 0])
+    }
 }
 
 #[cfg(test)]
