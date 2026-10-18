@@ -10131,7 +10131,7 @@
 0x008adf80 function TOSeqClearScene_008adf80 # cdecl(i) -> i << 8: all 8 slots of scene i: state (u16) and name byte 0; name ours
 0x008ae000 function TOSeqHasScene_008ae000 # cdecl(i, name): 1 when one of scene i's 8 slots (0x01865f28 + i*0x100) is named name; name ours
 0x008ae070 function TOSeqCheckTermScene       # fh v3:exact 0x008ae020
-0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0
+0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0; (i): steps scene i's eight sequence slots (1 start, 2 wait for +4 or TkMenuIsTermScene, 4 stop) and packs the used ones first; ported (system round 33)
 0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0; cdecl(i, a, b) -> eax: each of the 8 g_TOSeqSlots of scene i in state 2 or 3 runs TOMenuExecLayerHandle(i, a, slot +0x1c, b); eax is the last slot's call result or its state; ported (system round 30)
 0x008ae340 function TOSeqDrawLayer            # fh switch:bsim1.00 0x71004fcea0; cdecl(i, a) -> TOSeqDraw(i, a, 0); ported (system round 32)
 0x008ae360 function TOSeqGetColor             # fh v3:exact 0x008ae310
@@ -10922,6 +10922,8 @@
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
+0x008e9970 function TOAdpButtonIcon_008e9970     # (cursor, c, x, y) -> TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, 0x80 x4); ported (system round 33); name ours
+0x008e99a0 function TOAdpButtonIconRGBA_008e99a0 # (cursor, c, x, y, r, g, b, a) -> packet cursor: sets g_TOPktCursor, then button icon c as TOMkpShapeXYC2 shapes (d-pad @..O one per direction bit, digits c + 0x230 with 1/2 swapped by TOGetSystemConfirmButtonAssign, ` 0x270); ported (system round 33); name ours
 0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398

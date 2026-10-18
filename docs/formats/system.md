@@ -1330,3 +1330,20 @@ pushed as literals (no relocation entries), not addresses.
   before `nagi0700.ebp` with `g_FullArenaLocalization`
   (`sprintf("%s%s%s", head, prefix, name)`: anything after the name is
   cut).
+- `TOSeqCtrl(i)` (`0x008ae0f0`) steps scene `i`'s eight sequence slots:
+  state 1 runs `TkMenuStartScene(i, handle)` and continues as 2; state 2
+  becomes 3 when the `u16` at `+4` is 1, else 4 once
+  `TkMenuIsTermScene(i, handle)`; state 4 runs `TkMenuStopScene` and
+  frees the slot. The handle (`+0x1c`) is read again for each call. The
+  slots in use then move to the front in order through a zeroed 0x100-byte
+  local, which is copied back whole. `eax` is left over (a stack address
+  at times); no caller reads it.
+- `TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, r, g, b, a)` sets the
+  packet cursor `0x018716cc` and draws button icon `c` with
+  `TOMkpShapeXYC2(id, x, y, rgba, rgba)` (`rgba` from the four low bytes):
+  for `@`..`O` one shape per direction bit (0x258/0x259 for bit 1, then
+  0x25a/0x25b, 0x25c/0x25d, 0x25e/0x25f; the second id when set); for the
+  digits `c + 0x230`, except that `1` and `2` swap to 0x262/0x261 when
+  `TOGetSystemConfirmButtonAssign()` is 1 (and return at once); for `` ` ``
+  0x270. It returns the packet cursor. `0x008e9970(cursor, c, x, y)`
+  passes grey (0x80 each).

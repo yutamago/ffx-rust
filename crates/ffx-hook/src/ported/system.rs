@@ -1366,6 +1366,18 @@ ported! {
     updateVFXKeThSetPoint @ 0x0076_69c0 => extern "C" fn update_vfx_keth_set_point(mesh: u32, i: i32) -> u32 {
         render::bridge::keth_set_point(&mut mem(), mesh, i)
     }
+    /// `TOSeqCtrl(i)`.
+    TOSeqCtrl @ 0x008a_e0f0 => extern "C" fn to_seq_ctrl(i: i32) {
+        scene::bridge::seq_ctrl(&mut mem(), i, call_sym);
+    }
+    /// `TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, r, g, b, a)`.
+    TOAdpButtonIconRGBA_008e99a0 @ 0x008e_99a0 => extern "C" fn to_adp_button_icon_rgba(cursor: u32, c: u32, x: u32, y: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tolib::bridge::button_icon_rgba(&mut mem(), [cursor, c, x, y, r, g, b, a], call_sym)
+    }
+    /// `TOAdpButtonIcon_008e9970(cursor, c, x, y)`.
+    TOAdpButtonIcon_008e9970 @ 0x008e_9970 => extern "C" fn to_adp_button_icon(cursor: u32, c: u32, x: u32, y: u32) -> u32 {
+        tolib::bridge::button_icon(&mut mem(), [cursor, c, x, y], call_sym)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

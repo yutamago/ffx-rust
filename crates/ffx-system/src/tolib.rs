@@ -11856,4 +11856,79 @@ pub mod bridge {
         mem.write(w.wrapping_add(0xb0), fraction % per_line);
         more.cast_unsigned()
     }
+    /// `TOMkpShapeXYC2(id, x, y, c0, c1)` (`0x00903a50`).
+    pub const SHAPE_XY_C2: u32 = 0x0090_3a50;
+
+    /// `TOMkpShapeXYC2(id, x, y, rgba, rgba)`.
+    fn shape_xy_c2<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        [x, y, rgba]: [u32; 3],
+        id: u32,
+    ) {
+        call(mem, SHAPE_XY_C2, &[id, x, y, rgba, rgba]);
+    }
+
+    /// `TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, r, g, b, a)`: sets the
+    /// packet cursor ([`crate::pkt::bridge::PACKET_CURSOR`]), then draws the
+    /// icon for code `c` at `(x, y)` as `TOMkpShapeXYC2` shapes in the
+    /// colour of the four low bytes (both corners): `@`..`O` (the d-pad)
+    /// one shape per direction bit (0x258 or 0x259 for bit 1, 0x25a/0x25b
+    /// bit 2, 0x25c/0x25d bit 4, 0x25e/0x25f bit 8, the second when set);
+    /// the digits `c + 0x230`, except `1`/`2` with the confirm button
+    /// swapped (`TOGetSystemConfirmButtonAssign() == 1`: 0x262/0x261,
+    /// returning at once); `` ` `` 0x270. Returns the packet cursor.
+    #[allow(clippy::many_single_char_names)] // the original's arguments
+    pub fn button_icon_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [cursor, mut c, x, y, r, g, b, a] = args;
+        let cursor_at = crate::pkt::bridge::PACKET_CURSOR;
+        cursor_at.set(mem, cursor);
+        let rgba = (a & 0xff) << 24 | (b & 0xff) << 16 | (g & 0xff) << 8 | (r & 0xff);
+        if c.wrapping_sub(0x40) <= 0xf {
+            c &= 0xf;
+            for (bit, off, on) in [
+                (1, 0x258, 0x259),
+                (2, 0x25a, 0x25b),
+                (4, 0x25c, 0x25d),
+                (8, 0x25e, 0x25f),
+            ] {
+                shape_xy_c2(
+                    mem,
+                    &mut call,
+                    [x, y, rgba],
+                    if c & bit != 0 { on } else { off },
+                );
+            }
+        }
+        if c.wrapping_sub(0x30) <= 9 {
+            if call(mem, 0x008a_cf30, &[]) == 1 && (0x31..=0x32).contains(&c) {
+                shape_xy_c2(
+                    mem,
+                    &mut call,
+                    [x, y, rgba],
+                    if c == 0x31 { 0x262 } else { 0x261 },
+                );
+                return cursor_at.get(mem);
+            }
+            shape_xy_c2(mem, &mut call, [x, y, rgba], c + 0x230);
+        }
+        if c == 0x60 {
+            shape_xy_c2(mem, &mut call, [x, y, rgba], 0x270);
+        }
+        cursor_at.get(mem)
+    }
+
+    /// `TOAdpButtonIcon_008e9970(cursor, c, x, y)`:
+    /// [`button_icon_rgba`] in grey (`0x80` each).
+    pub fn button_icon<M: Mem>(
+        mem: &mut M,
+        [cursor, c, x, y]: [u32; 4],
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        button_icon_rgba(mem, [cursor, c, x, y, 0x80, 0x80, 0x80, 0x80], call)
+    }
 }

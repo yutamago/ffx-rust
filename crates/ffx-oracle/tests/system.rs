@@ -18340,3 +18340,144 @@ fn round33_pc_file_name_matches_the_original_on_the_snapshot() {
     };
     round33_pc_file_name(&mut a, &mut b, &mut Xorshift(0x4033_0022), true);
 }
+
+/// Round 33 group C: `TOSeqCtrl` (the scene stand-ins log their arguments;
+/// `TkMenuStartScene`'s also bumps slot 0's handle, so a handle read once
+/// shows in the next call's arguments) and the button icons over a
+/// logging `TOMkpShapeXYC2`.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round33_seq_ctrl_and_icons(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let slots = scene::bridge::SLOTS.ptr(a).addr;
+    for k in 0..400u32 {
+        let i = rng.next() % 3;
+        let base = slots + 0x100 * i;
+        let mut bump = vec![0xff, 0x05];
+        bump.extend_from_slice(&(base + 0x1c).to_le_bytes());
+        bump.extend(ret_cell(cells));
+        let s = stand_in8(a, b, 0x400, &copy_logger(cursor, 0xc880, 2, &bump));
+        redirect(a, b, scene::bridge::TK_MENU_START_SCENE, s);
+        let s = stand_in8(
+            a,
+            b,
+            0x480,
+            &copy_logger(cursor, 0xbb90, 2, &ret_cell(cells + 4)),
+        );
+        redirect(a, b, scene::bridge::TK_MENU_IS_TERM_SCENE, s);
+        let s = stand_in8(
+            a,
+            b,
+            0x500,
+            &copy_logger(cursor, 0xc8a0, 2, &ret_cell(cells + 8)),
+        );
+        redirect(a, b, scene::bridge::TK_MENU_STOP_SCENE, s);
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        put(
+            a,
+            b,
+            cells + 4,
+            [0, 0, 1, rng.next()][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 8, rng.next());
+        for j in 0..8 {
+            let at = base + 0x20 * j;
+            let words: [u32; 8] = std::array::from_fn(|_| rng.next());
+            put(a, b, at, words);
+            let state = [0u16, 0, 1, 2, 3, 4, 5, 0xffff, 0x0101][(rng.next() % 9) as usize];
+            put(a, b, at, state);
+            put(
+                a,
+                b,
+                at + 4,
+                [0u16, 1, 1, 2, 0x0101][(rng.next() % 5) as usize],
+            );
+            put(a, b, at + 6, (rng.next() % 2) as u16);
+        }
+        eax(a, 0x008a_e0f0, &[i]);
+        scene::bridge::seq_ctrl(b, i.cast_signed(), call);
+        same_memory(&format!("seq ctrl {k}"), a, b);
+    }
+    // the button icons
+    let s = stand_in8(a, b, 0x580, &copy_logger(cursor, 0x3a50, 5, &[]));
+    redirect(a, b, tolib::bridge::SHAPE_XY_C2, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x600,
+        &copy_logger(cursor, 0xcf30, 0, &ret_cell(cells + 0xc)),
+    );
+    redirect(a, b, 0x008a_cf30, s);
+    let cursor_global = ffx_system::pkt::bridge::PACKET_CURSOR;
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [0u32, 1, 1, 2, u32::MAX][(rng.next() % 5) as usize],
+        );
+        set(a, b, cursor_global, rng.next());
+        let c = match rng.next() % 4 {
+            0 => 0x40 + rng.next() % 16,
+            1 => 0x30 + rng.next() % 10,
+            2 => [
+                0x60,
+                0x2f,
+                0x3a,
+                0x3f,
+                0x50,
+                0x5f,
+                0x61,
+                0x20,
+                0x140,
+                0xffff_ff40,
+            ][(rng.next() % 10) as usize],
+            _ => [0x31, 0x32][(rng.next() % 2) as usize],
+        };
+        if k % 2 == 0 {
+            let args = [
+                rng.next(),
+                c,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            assert_eq!(
+                eax(a, 0x008e_99a0, &args),
+                tolib::bridge::button_icon_rgba(b, args, call),
+                "icon rgba {k} ({c:#x})"
+            );
+        } else {
+            let args = [rng.next(), c, rng.next(), rng.next()];
+            assert_eq!(
+                eax(a, 0x008e_9970, &args),
+                tolib::bridge::button_icon(b, args, call),
+                "icon {k} ({c:#x})"
+            );
+        }
+        same_memory(&format!("icon {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_seq_ctrl_and_icons_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_seq_ctrl_and_icons(&mut a, &mut b, &mut Xorshift(0x4033_0031));
+}
+
+#[test]
+fn round33_seq_ctrl_and_icons_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_seq_ctrl_and_icons(&mut a, &mut b, &mut Xorshift(0x4033_0032));
+}
