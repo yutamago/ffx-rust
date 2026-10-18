@@ -1294,3 +1294,132 @@ pushed as literals (no relocation entries), not addresses.
   counts down first; at 0, `+0xb0 = ftol(Tk_GetScale(english) ×
   f32(+0xac) + +0xb0)`, and each whole 30 (25 in the 50 Hz mode) moves
   into the line count `+0xa0`.
+
+## Round 33
+
+- `updateVFXKeThSetPoint(mesh, i)` (`0x007669c0`) copies point `i` of a
+  Ke thing mesh from three pairs of tables (16-byte rows): points 0–5 from
+  `0x02305848`/`0x023058a8`, 6–11 from `0x0230f908`/`0x0230f968` (row
+  `i - 6`), 12 on from `0x02305908`/`0x0230a908` (row `i - 12`). Three
+  floats go to the positions (`[mesh + 0xc] + 12 i`), four to the colours
+  (`[mesh + 0x14] + 16 i`, read after the position stores), all through
+  `fld`/`fstp`. `i` is signed; `eax` is the colour base.
+- `Cluster_UnpackArrayFixups(out, cursor, lists, pointer_arrays)`
+  (`0x0060dac0`) and `Cluster_UnpackPointerFixups(out, cursor, lists)`
+  (`0x0060db20`) walk `[lists] & 0x7fffffff` 36-byte list headers at
+  `[lists + 4]`, handing each list to `Fixup_UnpackArrayList` /
+  `Fixup_UnpackList` as `(cursor, records, n, [header + 4])`: `n` is the
+  header's `+0x18` (`+0x20` for pointer arrays, the low byte of the flag
+  word) or `+0x1c`; `records` starts at `[out + 4]` and advances 16 or 28
+  bytes per entry. Both return 0.
+- `PcFileName_00a42c00(loc)` builds the PC file name of entry `loc` of the
+  CD's name table (`[GetCD() + 0x30]`: a count, then `count + 1` offsets
+  from the table) in `0x01a85c30` and returns it (Ghidra's `void` is
+  wrong; `CDfileName_PC` and the file-size readers use the result), or 0
+  after `dbgPrintf("file name NULL !!!!!\n")` when there is no table, the
+  entry is empty or reversed, or its address is 0; a `loc` at or past the
+  count first prints `"Virtuos ERR: bad filename location ..."`. While
+  copying, `$USER$` becomes `Sg_GetUserName2()` (skipped when that is
+  null) and every set read-name substitution (`set_read_chgname`'s 16
+  pairs) its replacement. A substitution overwrites the copy from the
+  matched byte with the replacement and its NUL and resumes at the last
+  byte matched and written, so the later pairs are tried there too. An
+  empty pattern never advances: the original loops forever. Afterwards
+  `dbg_` goes before `nagi0000.ebp` when `ReturnGlobalSx8_006bc960()`,
+  `200thunder_` before `kami0400.ebp` with `0x01a85ba4`, and `full_`
+  before `nagi0700.ebp` with `g_FullArenaLocalization`
+  (`sprintf("%s%s%s", head, prefix, name)`: anything after the name is
+  cut).
+- `TOSeqCtrl(i)` (`0x008ae0f0`) steps scene `i`'s eight sequence slots:
+  state 1 runs `TkMenuStartScene(i, handle)` and continues as 2; state 2
+  becomes 3 when the `u16` at `+4` is 1, else 4 once
+  `TkMenuIsTermScene(i, handle)`; state 4 runs `TkMenuStopScene` and
+  frees the slot. The handle (`+0x1c`) is read again for each call. The
+  slots in use then move to the front in order through a zeroed 0x100-byte
+  local, which is copied back whole. `eax` is left over (a stack address
+  at times); no caller reads it.
+- `TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, r, g, b, a)` sets the
+  packet cursor `0x018716cc` and draws button icon `c` with
+  `TOMkpShapeXYC2(id, x, y, rgba, rgba)` (`rgba` from the four low bytes):
+  for `@`..`O` one shape per direction bit (0x258/0x259 for bit 1, then
+  0x25a/0x25b, 0x25c/0x25d, 0x25e/0x25f; the second id when set); for the
+  digits `c + 0x230`, except that `1` and `2` swap to 0x262/0x261 when
+  `TOGetSystemConfirmButtonAssign()` is 1 (and return at once); for `` ` ``
+  0x270. It returns the packet cursor. `0x008e9970(cursor, c, x, y)`
+  passes grey (0x80 each).
+- `TOBtlDrawCrossParamPlate(chr, x, y)` (`0x00892cb0`), drawn like the
+  status plate (`rx`/`ry` = `graphicUiRemapX2`/`Y2`, heights first):
+  the frame (shape -1, 320 x 45, UVs in texels 984, 98, 1581, 148), then
+  `TOBtlDrawCrossLimitGauge(chr, x + rx(10), y + ry(29), rx(300), ry(8))`,
+  the HP label 0xe9 and the MP label 0xea at `(x + rx(5 or 185), y +
+  ry(2))`, and both numbers with `ToMakeBtlEasyEdgeDigitRight(n, x +
+  rx(160 or 305), y - ry(4), colour, 0.65, 0.0)`. Language 11 has wider
+  labels (68 x 24 and 66.4 x 24 against 61.5 x 23 and 49 x 23) and takes
+  3 (HP) or 6 (MP) off `x` at 53 bits before the store (it also adds 0.0
+  to `y`, which changes nothing). The HP's colour comes from
+  `MsCalcWeakLevel(hp, max)`: 1 and 2 give 2, 3 gives 0x53, anything else
+  0; the MP's is 0. Ghidra shows two of the gauge's five arguments and
+  one of the numbers' six.
+- `TOSetDrawInfo(code, window, pen)` (`0x008df8f0`) applies one control
+  code to a message pen (`+4` x, `+8` y, `+0x1a` icon mode, `+0x1b`
+  colour nibbles); the argument byte is read again at every test:
+  - 7: 0xe0..=0xef moves the pen right by `n - 0xe0`; otherwise
+    `TOGetMessageWH(i16 window+4, code + 2, &w, &h, i16 window+0x1a,
+    0x103)` (`w` starts at 0.0; `h` lands in the caller's argument slot),
+    then `'8'` (with `window + 0x24` zero) and `'1'` run
+    `TOFirstInitMessageNormal(window, [window + 0x8c] + 2, pen)`, `'2'`
+    sets `x = window+0x50 - w`, and 0x40..=0xbf `x = window+0x48 + (4n -
+    0x100)`.
+  - 9: `'0'` zeroes `window + 0xac`, other values below 0xc0 set it to `n
+    - '0'`, from 0xc0 `window + 0xb4 = n - 0xc0`.
+  - 0xa: the colour nibbles, as in the cross-menu text writer.
+  - 0xb: a button icon between `setButtonData(n, -1)` and
+    `resetButtonData`. Icon modes 1 and 3 draw it at scale 0.73 under
+    `graphicSetButtonIconScale(1.15, 1.15)` at `y + 5.5 +
+    AdjustButtonIconY`. Otherwise at 0.65: language 10 at `y + 3.0 +
+    adjust` (and the pen moves 8 when the language, asked again, is 11 on
+    map 0xb8); language 9 with `graphicGetAbmap() == 1` at `y + 1.0`
+    without adjusting; else at `y (+ 2.0 for '4'..'7') + 3.0 + adjust`
+    (the pen moves 7 on map 0xb8). After a move, `'8'` on map 0xb8 takes
+    1.0 back. `window + 0x9c` counts icons; with `window + 0xac` zero,
+    `window + 0xa0` steps up to `window + 0xa8` (signed). The pen then
+    moves by `TOGetScaleButtonIconWidth(n, scale)` + 1.5 (modes 1, 3) or
+    + 1.0.
+  - 0xe: `'0'..'3'` set the icon mode; mode 3 with `'A'` moves the pen
+    5.0; `'@'` sets mode 3, `'A'` mode 1.
+  - 8, 0xc, 0xd and other codes do nothing.
+- The CD read queue's `CdQueueSectorRead_0076ce40(sector, a, b)` takes
+  the first free `g_CdChannels` request and returns its id (Ghidra's
+  `void` is wrong): `+0x1c` sector, `+0x28 a`, `+8 b`, `+0x30`/`+0x31`
+  set, `+4`, `+0xc..+0x18`, `+0`, `+0x20`, `+0x2c` and the `u16` `+0x34`
+  zeroed, `+0x24` the next `g_CdReadId` (1 after 0xffff). With all 64
+  busy it calls `movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x96d)` and
+  fills request 64 anyway, which starts at `g_CdReadId` (the old id is
+  read before that request's `+0` is cleared). `0x0076ce20(sector)`
+  passes `a = b = 0`.
+- `CdReadDirect_0076d140(sector, size, buffer, mode)` clears `0x01128a87`
+  (byte) and `0x01128ab0`, warns about a buffer off 64 bytes, keeps
+  `sector, size, buffer, [mode]` at `0x01128acc`, runs `hdd_state_clear`
+  and `FlushCache(0)`, and returns `sceCdRead(sector, size / 2048, buffer,
+  mode)` (signed division); with `g_FFXHddMode` set it prints
+  `"sceCdRead()"` between rules.
+- `CdSetModule_0076c510(m)` selects CD module `m`: `g_CdLib_FileBase` =
+  the `i16` entry `m` of `[0x02310c6c]`, `0x02310c64 = m`; a negative
+  first file stores 0 and returns -1. Before `sa_file_read_init`
+  (`0x01128a85` clear) it calls `movie_err("sa_file_read_init!=0",
+  libmscd.c, 0x594)` first.
+- `PcFileTblSet(path)` frees the old PC file-name table `0x02310c70`
+  (`user_free_thunk`) and loads `0x00a42ab0(path, 0)` in its place.
+- `TOBtlOpenSignWindow(id)` opens simple help window 1 on command `id`'s
+  name (`MsGetComData(id as u16, &strings)`: `u16 +0` + `strings`) when
+  bit 2 of the record's `+0x1c` is set (returns 1), else returns 0.
+- `TOGetTextWidth_008b8040(text)` adds up the words
+  `TOGetFontWidthInterMode(p, 0, &w)` writes while stepping through the
+  text, as integers, although that width is an `f32` (`0x008b70c0` reads
+  the same callee family's width as a float). `&w` is the function's own
+  argument slot, so a call that writes nothing adds the previous word (at
+  first the text pointer). `TOGetColonWidth_008dfe20(font)` measures
+  `":"` the same way (as an `f32` from 0.0) and returns it through
+  `ftol2_sse`.
+- `Vec3At24_0061a7f0(out)` (thiscall, `ret 4`) copies the three floats
+  at `+0x24` to `out` and returns `out`.

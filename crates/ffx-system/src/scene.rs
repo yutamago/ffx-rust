@@ -579,4 +579,59 @@ pub mod bridge {
     ) -> u32 {
         draw(mem, i, a, 0, call)
     }
+    /// `TkMenuStartScene(i, handle)`.
+    pub const TK_MENU_START_SCENE: u32 = 0x00a7_c880;
+    /// `TkMenuIsTermScene(i, handle)`.
+    pub const TK_MENU_IS_TERM_SCENE: u32 = 0x00a7_bb90;
+    /// `TkMenuStopScene(i, handle)`.
+    pub const TK_MENU_STOP_SCENE: u32 = 0x00a7_c8a0;
+
+    /// `TOSeqCtrl(i)` (`0x008ae0f0`): steps scene `i`'s eight slots
+    /// ([`SLOTS`]; the state read as `i16`, the handle `+0x1c` read again
+    /// for each call). State 1 starts the scene (`TkMenuStartScene`) and
+    /// goes on as state 2; state 2 becomes 3 when `+4` is 1, else 4 once
+    /// `TkMenuIsTermScene`; state 4 stops it (`TkMenuStopScene`) and frees
+    /// the slot (0). Then the slots in use (state not 0) move to the front
+    /// in order and the rest are zeroed. `call` takes an `ffx.sym`
+    /// address.
+    pub fn seq_ctrl<M: Mem>(mem: &mut M, i: i32, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let first = slot(mem, i, 0);
+        let scene = i;
+        let i = i.cast_unsigned();
+        for k in 0..8 {
+            let slot = slot(mem, scene, k);
+            let handle = |mem: &M| mem.read::<u32>(slot.wrapping_add(0x1c));
+            let mut state: i16 = mem.read(slot);
+            if state == 1 {
+                let s = handle(mem);
+                call(mem, TK_MENU_START_SCENE, &[i, s]);
+                mem.write(slot, 2i16);
+                state = 2;
+            }
+            if state == 2 {
+                if mem.read::<u16>(slot.wrapping_add(4)) == 1 {
+                    mem.write(slot, 3i16);
+                } else {
+                    let s = handle(mem);
+                    if call(mem, TK_MENU_IS_TERM_SCENE, &[i, s]) != 0 {
+                        mem.write(slot, 4i16);
+                    }
+                }
+            } else if state == 4 {
+                let s = handle(mem);
+                call(mem, TK_MENU_STOP_SCENE, &[i, s]);
+                mem.write(slot, 0i16);
+            }
+        }
+        let mut packed = [[0u8; 0x20]; 8];
+        let mut used = 0;
+        for k in 0..8 {
+            let slot = slot(mem, scene, k);
+            if mem.read::<u16>(slot) != 0 {
+                packed[used] = mem.read(slot);
+                used += 1;
+            }
+        }
+        mem.write(first, packed);
+    }
 }

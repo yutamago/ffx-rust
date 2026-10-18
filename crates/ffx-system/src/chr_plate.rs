@@ -15,7 +15,7 @@
 
 /// The bridges over game memory.
 pub mod bridge {
-    use ffx_bridge::Mem;
+    use ffx_bridge::{Mem, x87};
 
     /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)`.
     const SHAPE: u32 = 0x0090_3bb0;
@@ -83,6 +83,11 @@ pub mod bridge {
     /// A UV of the 1024-unit shape atlas, as the dword constant.
     const fn a32(n: f32) -> f32 {
         n / 1024.0
+    }
+
+    /// `x` stored as a dword (`fstp`, NaNs as the x87 keeps them).
+    fn store32(x: f64) -> f32 {
+        f32::from_bits(x87::store(x))
     }
 
     /// `x` rounded to a dword.
@@ -156,6 +161,11 @@ pub mod bridge {
         fn shape(&mut self, shape: u32, x: f32, y: f32, [w, h]: [f32; 2], uv: [f32; 4]) {
             let h = self.ry(h);
             let w = self.rx(w);
+            self.quad(shape, [x, y, w, h], uv);
+        }
+
+        /// A `TOMkpShapeXYWHUV` quad of remapped size `(w, h)` at `(x, y)`.
+        fn quad(&mut self, shape: u32, [x, y, w, h]: [f32; 4], uv: [f32; 4]) {
             let [u0, v0, u1, v1] = uv.map(f32::to_bits);
             let args = [
                 shape,
@@ -169,6 +179,42 @@ pub mod bridge {
                 v1,
             ];
             self.run(SHAPE, &args);
+        }
+
+        /// A battle plate's label: `rx(w)` x `ry(h)` (height first) at
+        /// `(x + rx(dx), y + ry(2))`; the wide layout adds 0.0 to `y` and
+        /// takes `back` off `x` at 53 bits before each store.
+        fn cross_label(
+            &mut self,
+            shape: u32,
+            wide: bool,
+            [w, h]: [f32; 2],
+            dx: f32,
+            back: f64,
+            uv: [f32; 4],
+        ) {
+            let h = self.ry(h);
+            let w = self.rx(w);
+            let y = x87::add(f64::from(self.ry(2.0)), f64::from(self.y));
+            let y = store32(if wide { x87::add(y, 0.0) } else { y });
+            let x = x87::add(f64::from(self.rx(dx)), f64::from(self.x));
+            let x = store32(if wide { x87::sub(x, back) } else { x });
+            self.quad(shape, [x, y, w, h], uv);
+        }
+
+        /// A battle plate's number, right-aligned at `(x + rx(dx), y - ry(4))`.
+        fn cross_digits(&mut self, value: u32, dx: f32, colour: u32) {
+            let y = store32(x87::sub(f64::from(self.y), f64::from(self.ry(4.0))));
+            let x = store32(x87::add(f64::from(self.rx(dx)), f64::from(self.x)));
+            let args = [
+                value,
+                x.to_bits(),
+                y.to_bits(),
+                colour,
+                BTL_DIGIT_SCALE.to_bits(),
+                0,
+            ];
+            self.run(EDGE_DIGIT_RIGHT, &args);
         }
 
         /// A grey `TOMkpShapeXYWHUVC2` quad, as [`Plate::shape`].
@@ -558,6 +604,115 @@ pub mod bridge {
             p.mem.write(gap_word, label.gap);
             p.party_row(label, gap_word);
         }
+        p.eax
+    }
+    /// `TOBtlDrawCrossLimitGauge(chr, x, y, w, h)`.
+    const CROSS_LIMIT_GAUGE: u32 = 0x0089_2910;
+    /// `MsGetRamChrHP(chr)`, `MsGetRamChrHPmax`, `MsGetRamChrMP` and
+    /// `MsCalcWeakLevel(hp, max)` (battle module).
+    const BTL_HP: u32 = 0x0079_add0;
+    const BTL_MAX_HP: u32 = 0x0079_adf0;
+    const BTL_MP: u32 = 0x0079_ae50;
+    const WEAK_LEVEL: u32 = 0x0078_bf00;
+    /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, colour, scale, extra)`.
+    const EDGE_DIGIT_RIGHT: u32 = 0x0090_5890;
+    /// The battle numbers' scale (`0.65`, extra 0.0).
+    const BTL_DIGIT_SCALE: f32 = 0.65;
+
+    /// `TOBtlDrawCrossParamPlate(chr, x, y)` (`0x00892cb0`): battle member
+    /// `chr`'s small HP/MP plate at `(x, y)`: the frame (shape -1, UVs in
+    /// texels), the overdrive gauge (`TOBtlDrawCrossLimitGauge(chr, x +
+    /// rx(10), y + ry(29), rx(300), ry(8))`), the HP and MP labels
+    /// (shapes 0xe9 and 0xea; language 11 has wider ones, `+ 0.0` on `y`
+    /// and 3 or 6 off `x`, at 53 bits before the store) and both numbers
+    /// right-aligned (`ToMakeBtlEasyEdgeDigitRight(n, x + rx(160 or 305),
+    /// y - ry(4), colour, 0.65, 0.0)`). The HP's colour comes from
+    /// `MsCalcWeakLevel(hp, max)`: 1 and 2 give 2, 3 gives 0x53, anything
+    /// else 0 (the MP's is 0). `remap` and `call` as in
+    /// [`draw_chr_status_plate`]; returns the last call's `eax`.
+    #[allow(clippy::many_single_char_names)] // x, y and the plate
+    pub fn draw_cross_param_plate<M: Mem>(
+        mem: &mut M,
+        [chr, x, y]: [u32; 3],
+        remap: impl FnMut(&mut M, bool, f32) -> f32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut p = Plate {
+            mem,
+            remap,
+            call,
+            chr,
+            x: f32::from_bits(x),
+            y: f32::from_bits(y),
+            eax: 0,
+        };
+        let (px, py) = (f64::from(p.x), f64::from(p.y));
+        p.shape(
+            u32::MAX,
+            p.x,
+            p.y,
+            [320.0, 45.0],
+            [984.0, 98.0, 1581.0, 148.0],
+        );
+        let h = p.ry(8.0);
+        let w = p.rx(300.0);
+        let gy = store32(x87::add(f64::from(p.ry(29.0)), py));
+        let gx = store32(x87::add(f64::from(p.rx(10.0)), px));
+        p.run(
+            CROSS_LIMIT_GAUGE,
+            &[chr, gx.to_bits(), gy.to_bits(), w.to_bits(), h.to_bits()],
+        );
+        let wide = p.run(LANG, &[]) == 0xb;
+        if wide {
+            p.cross_label(
+                0xe9,
+                true,
+                [68.0, 24.0],
+                5.0,
+                3.0,
+                [a32(370.0), a32(12.0), a32(455.0), a32(42.0)],
+            );
+        } else {
+            p.cross_label(
+                0xe9,
+                false,
+                [61.5, 23.0],
+                5.0,
+                0.0,
+                [a32(356.0), a32(15.0), a32(436.0), a32(41.0)],
+            );
+        }
+        let max = p.run(BTL_MAX_HP, &[chr]);
+        let hp = p.run(BTL_HP, &[chr]);
+        let colour = match p.run(WEAK_LEVEL, &[hp, max]) {
+            1 | 2 => 2,
+            3 => 0x53,
+            _ => 0,
+        };
+        let hp = p.run(BTL_HP, &[chr]);
+        p.cross_digits(hp, 160.0, colour);
+        let wide = p.run(LANG, &[]) == 0xb;
+        if wide {
+            p.cross_label(
+                0xea,
+                true,
+                [66.4, 24.0],
+                185.0,
+                6.0,
+                [a32(500.0), a32(12.0), a32(583.0), a32(42.0)],
+            );
+        } else {
+            p.cross_label(
+                0xea,
+                false,
+                [49.0, 23.0],
+                185.0,
+                0.0,
+                [a32(510.0), a32(15.0), a32(570.0), a32(41.0)],
+            );
+        }
+        let mp = p.run(BTL_MP, &[chr]);
+        p.cross_digits(mp, 305.0, 0);
         p.eax
     }
 }

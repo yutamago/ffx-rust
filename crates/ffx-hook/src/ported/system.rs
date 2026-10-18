@@ -1350,6 +1350,91 @@ ported! {
     Fixup_SetArrayObject @ 0x0060_ae30 => extern "C" fn fixup_set_array_object(record: u32, index: u32) {
         fixup::bridge::set_object(&mut mem(), record, index);
     }
+    /// `Cluster_UnpackArrayFixups(out, cursor, lists, pointer_arrays)`.
+    Cluster_UnpackArrayFixups @ 0x0060_dac0 => extern "C" fn cluster_unpack_array_fixups(out: u32, cursor: u32, lists: u32, pointer_arrays: u32) -> u32 {
+        fixup::bridge::unpack_array_fixups(&mut mem(), out, cursor, lists, pointer_arrays, call_sym)
+    }
+    /// `Cluster_UnpackPointerFixups(out, cursor, lists)`.
+    Cluster_UnpackPointerFixups @ 0x0060_db20 => extern "C" fn cluster_unpack_pointer_fixups(out: u32, cursor: u32, lists: u32) -> u32 {
+        fixup::bridge::unpack_pointer_fixups(&mut mem(), out, cursor, lists, call_sym)
+    }
+    /// `PcFileName_00a42c00(loc)`.
+    PcFileName_00a42c00 @ 0x00a4_2c00 => extern "C" fn pc_file_name(loc: i32) -> u32 {
+        cd::bridge::pc_file_name(&mut mem(), loc, call_sym)
+    }
+    /// `updateVFXKeThSetPoint(mesh, i)`.
+    updateVFXKeThSetPoint @ 0x0076_69c0 => extern "C" fn update_vfx_keth_set_point(mesh: u32, i: i32) -> u32 {
+        render::bridge::keth_set_point(&mut mem(), mesh, i)
+    }
+    /// `TOSeqCtrl(i)`.
+    TOSeqCtrl @ 0x008a_e0f0 => extern "C" fn to_seq_ctrl(i: i32) {
+        scene::bridge::seq_ctrl(&mut mem(), i, call_sym);
+    }
+    /// `TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, r, g, b, a)`.
+    TOAdpButtonIconRGBA_008e99a0 @ 0x008e_99a0 => extern "C" fn to_adp_button_icon_rgba(cursor: u32, c: u32, x: u32, y: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tolib::bridge::button_icon_rgba(&mut mem(), [cursor, c, x, y, r, g, b, a], call_sym)
+    }
+    /// `TOAdpButtonIcon_008e9970(cursor, c, x, y)`.
+    TOAdpButtonIcon_008e9970 @ 0x008e_9970 => extern "C" fn to_adp_button_icon(cursor: u32, c: u32, x: u32, y: u32) -> u32 {
+        tolib::bridge::button_icon(&mut mem(), [cursor, c, x, y], call_sym)
+    }
+    /// `TOBtlDrawCrossParamPlate(chr, x, y)`.
+    TOBtlDrawCrossParamPlate @ 0x0089_2cb0 => extern "C" fn to_btl_draw_cross_param_plate(chr: u32, x: u32, y: u32) -> u32 {
+        chr_plate::bridge::draw_cross_param_plate(
+            &mut mem(),
+            [chr, x, y],
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
+    /// `TOSetDrawInfo(code, window, pen)`.
+    TOSetDrawInfo @ 0x008d_f8f0 => extern "C" fn to_set_draw_info(code: u32, window: u32, pen: u32) {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tolib::bridge::set_draw_info(&mut mem(), [code, window, pen], scratch, call_sym, fcall);
+    }
+    /// `CdQueueSectorRead_0076ce40(sector, a, b)`.
+    CdQueueSectorRead_0076ce40 @ 0x0076_ce40 => extern "C" fn cd_queue_sector_read(sector: u32, a: u32, b: u32) -> u32 {
+        cd::bridge::queue_sector_read(&mut mem(), [sector, a, b], call_sym)
+    }
+    /// `CdQueueSector_0076ce20(sector)`.
+    CdQueueSector_0076ce20 @ 0x0076_ce20 => extern "C" fn cd_queue_sector(sector: u32) -> u32 {
+        cd::bridge::queue_sector(&mut mem(), sector, call_sym)
+    }
+    /// `CdReadDirect_0076d140(sector, size, buffer, mode)`.
+    CdReadDirect_0076d140 @ 0x0076_d140 => extern "C" fn cd_read_direct(sector: u32, size: u32, buffer: u32, mode: u32) -> u32 {
+        cd::bridge::read_direct(&mut mem(), [sector, size, buffer, mode], call_sym)
+    }
+    /// `CdSetModule_0076c510(m)`.
+    CdSetModule_0076c510 @ 0x0076_c510 => extern "C" fn cd_set_module(m: i32) -> i32 {
+        cd::bridge::cd_set_module(&mut mem(), m, call_sym)
+    }
+    /// `PcFileTblSet(path)`.
+    PcFileTblSet @ 0x00a4_2b70 => extern "C" fn pc_file_tbl_set(path: u32) -> u32 {
+        cd::bridge::pc_file_tbl_set(&mut mem(), path, call_sym)
+    }
+    /// `TOBtlOpenSignWindow(id)`.
+    TOBtlOpenSignWindow @ 0x0089_8c60 => extern "C" fn to_btl_open_sign_window(id: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        tolib::bridge::btl_open_sign_window(&mut mem(), id, scratch, call_sym)
+    }
+    /// `TOGetTextWidth_008b8040(text)`.
+    TOGetTextWidth_008b8040 @ 0x008b_8040 => extern "C" fn to_get_text_width_inter_mode(text: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        tolib::bridge::text_width_inter_mode(&mut mem(), text, scratch, call_sym)
+    }
+    /// `TOGetColonWidth_008dfe20(font)`.
+    TOGetColonWidth_008dfe20 @ 0x008d_fe20 => extern "C" fn to_get_colon_width(font: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tolib::bridge::colon_width(&mut mem(), font, scratch, call_sym)
+    }
+    /// `Vec3At24_0061a7f0(out)`.
+    Vec3At24_0061a7f0 @ 0x0061_a7f0 => extern "thiscall" fn vec3_at_24(this: u32, out: u32) -> u32 {
+        accessor::bridge::vec3_at_24(&mut mem(), this, out)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)
