@@ -10948,6 +10948,7 @@
 0x008e99a0 function TOAdpButtonIconRGBA_008e99a0 # (cursor, c, x, y, r, g, b, a) -> packet cursor: sets g_TOPktCursor, then button icon c as TOMkpShapeXYC2 shapes (d-pad @..O one per direction bit, digits c + 0x230 with 1/2 swapped by TOGetSystemConfirmButtonAssign, ` 0x270); ported (system round 33); name ours
 0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
+0x008ea000 function TOAddPktMesFont1612Grey_008ea000 # cdecl(cursor, text, x, y, colour) -> TOAddPktMesFont1612_008ea060(.., 0x80 x4); ported (system round 34); name ours
 0x008ea060 function TOAddPktMesFont1612_008ea060 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> packet cursor: 16x12 glyphs (shadow+face, x += width+1), codes 0xa colour nibbles and 0xb icons via 0x008e9970 at ftol(x), ftol(y) (x += 22); pen 0x025d09a0; ported (system round 34); name ours
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
@@ -10959,9 +10960,12 @@
 0x008ed030 function Identity_008ed030 # cdecl(x) -> x (frame-pointer build); name ours
 0x008ed040 function Identity_008ed040         # cdecl(x) -> x; name ours
 0x008ed050 function Identity_008ed050 # cdecl(x) -> x (frame-pointer build), jumps to Identity_008ed040; name ours
+0x008ed060 function TOAddPktBaseMesFontPlain_008ed060 # cdecl(cursor, text, x, y) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, 0 (key, not -1), text, x, y, 0, 0, 0x80 x4); ported (system round 34); name ours
+0x008ed0a0 function TOAddPktBaseMesFont_008ed0a0  # cdecl(cursor, text, x, y, colour) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, 0x80 x4); ported (system round 34); name ours
+0x008ed160 function TOAddPktBaseMesFontRGBA_008ed160 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, r, g, b, a); ported (system round 34); name ours
 0x008ed190 function TOAdpEasyMesFontLClutRGBAInterMode # layout+callees: sorts between TOAdpCrossFontS_ASCII and TOAdpEasyShapeXYWHC2, and its named callees match the Switch 0x71005104b0 TOAdpEasyMesFontLClutRGBAInterMode's (similarity 1.00: TOGetFontInfoInterMode, TOMakePktFont1612Font, TOMakePktFont1612Shadow, TOSkipCode); symbols from Fahrenheit's server export
 0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
-0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
+0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # ported (system round 34: kind 0 into 0x008e92a0); the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
 0x008ee600 function TOAdpFontM_ASCII_SaMenu      # layout+callees: sorts between TOAdpFontM_ASCII and TOAdpGsDirectRGBA, and its named callees match the Switch 0x7100514720 TOAdpFontM_ASCII_SaMenu's (similarity 1.00: BeginScissor_XYUV, TOGetImageWH, TOGetTextureName, graphicFontDraw); symbols from Fahrenheit's server export
 0x008ef670 function TOAdpALPHA # cdecl(p, A, B, C, D, FIX) -> p + 0x10: GS register 0x42 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
@@ -10995,6 +10999,7 @@
 0x008f0830 function TOAdpMenuIconWeaponName   # fh v3:exact 0x008f0830
 0x008f08e0 function TOAdpMenuIconWeaponName2  # fh v3:exact 0x008f08e0
 0x008f2f70 function Identity_008f2f70         # cdecl(x) -> x; TOMkpSetEnvSubFont and 0x008ed320.. call it; name ours
+0x008f2ff0 function TOAddPktMesValue_008f2ff0     # cdecl(cursor, value, x, y, colour): TOValueToMesFontL(value, text, 0) into a 32-byte local, then TOAddPktBaseMesFont_008ed0a0's call; ported (system round 34); name ours
 0x008f30b0 function TOAdpValueFontLClutRight     # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050c1a0 TOAdpValueFontLClutRight's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLClutTypeRGBA, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
 0x008f3170 function TOAdpValueFontLClutRightRGBA # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050e9d0 TOAdpValueFontLClutRightRGBA's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLAbmap, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
 0x008f3300 function TOMkpBtlDigitRight_008f3300 # cdecl(ret, value, x, y, alpha) -> ret: ToMakeBtlEasyDigitRight(value, f32(x) + 4.0, f32(y) + dy, alpha, 0.8, 0.0), dy -3.0 or -2.0 for languages 1..8 and >= 12; caller 0x0076f850; name ours

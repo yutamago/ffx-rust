@@ -1498,3 +1498,10 @@ pushed as literals (no relocation entries), not addresses.
   `ftol(graphicUiRemapY2(350))` when `0x0133c93f` is set); the colour is
   `0x80008080` below 1.0 and `0x80808080` otherwise, NaN included (Ghidra's
   `1.0 <= f` has NaN the other way).
+- The writers' wrappers: `0x008ed0a0(cursor, text, x, y, colour)` and
+  `0x008ed160(.., r, g, b, a)` pass key -1 and kind 0 to `0x008e92a0` (grey
+  for the first), `0x008ee210(cursor, key, ..)` passes its key, and
+  `0x008ed060(cursor, text, x, y)` key 0 and colour 0 in grey;
+  `0x008ea000` is `0x008ea060` in grey; `0x008f2ff0(cursor, value, x, y,
+  colour)` writes `TOValueToMesFontL(value, text, 0)` from a 32-byte
+  local like `0x008ed0a0`.

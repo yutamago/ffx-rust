@@ -12796,4 +12796,110 @@ pub mod bridge {
         ];
         call(mem, 0x0090_1490, &args);
     }
+    /// `TOAddPktBaseMesFontLClutTypeRGBA` and `0x008ea060`, the writers
+    /// the wrappers below call.
+    pub const BASE_MES_FONT: u32 = 0x008e_92a0;
+    pub const MES_FONT_1612: u32 = 0x008e_a060;
+    /// `TOValueToMesFontL(value, out, width)`.
+    pub const VALUE_TO_MES_FONT_L: u32 = 0x008b_9140;
+
+    /// `TOAddPktBaseMesFont_008ed0a0(cursor, text, x, y, colour)`:
+    /// `TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0,
+    /// 0x80, 0x80, 0x80, 0x80)`.
+    pub fn base_mes_font<M: Mem>(
+        mem: &mut M,
+        [cursor, text, x, y, colour]: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let args = [
+            cursor,
+            u32::MAX,
+            text,
+            x,
+            y,
+            colour,
+            0,
+            0x80,
+            0x80,
+            0x80,
+            0x80,
+        ];
+        call(mem, BASE_MES_FONT, &args)
+    }
+
+    /// `TOAddPktBaseMesFontPlain_008ed060(cursor, text, x, y)`: the writer
+    /// with key 0 (not -1), colour 0 and grey.
+    pub fn base_mes_font_plain<M: Mem>(
+        mem: &mut M,
+        [cursor, text, x, y]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let args = [cursor, 0, text, x, y, 0, 0, 0x80, 0x80, 0x80, 0x80];
+        call(mem, BASE_MES_FONT, &args)
+    }
+
+    /// `TOAddPktBaseMesFontRGBA_008ed160(cursor, text, x, y, colour, r, g,
+    /// b, a)`: the writer with key -1 and kind 0.
+    #[allow(clippy::many_single_char_names)] // the original's arguments
+    pub fn base_mes_font_rgba<M: Mem>(
+        mem: &mut M,
+        [cursor, text, x, y, colour, r, g, b, a]: [u32; 9],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let args = [cursor, u32::MAX, text, x, y, colour, 0, r, g, b, a];
+        call(mem, BASE_MES_FONT, &args)
+    }
+
+    /// `TOAddPktBaseMesFontLClutRGBA_copy_008ee210(cursor, key, text, x, y,
+    /// colour, r, g, b, a)`: the writer with kind 0.
+    #[allow(clippy::many_single_char_names)] // the original's arguments
+    pub fn base_mes_font_l_clut_rgba<M: Mem>(
+        mem: &mut M,
+        [cursor, key, text, x, y, colour, r, g, b, a]: [u32; 10],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let args = [cursor, key, text, x, y, colour, 0, r, g, b, a];
+        call(mem, BASE_MES_FONT, &args)
+    }
+
+    /// `TOAddPktMesFont1612Grey_008ea000(cursor, text, x, y, colour)`:
+    /// `0x008ea060` in grey (0x80 each).
+    pub fn mes_font_1612_grey<M: Mem>(
+        mem: &mut M,
+        [cursor, text, x, y, colour]: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let args = [cursor, text, x, y, colour, 0x80, 0x80, 0x80, 0x80];
+        call(mem, MES_FONT_1612, &args)
+    }
+
+    /// The text `TOAddPktMesValue_008f2ff0` formats into (the original's
+    /// 32-byte local).
+    pub const MES_VALUE_TEXT: u32 = 0x20;
+
+    /// `TOAddPktMesValue_008f2ff0(cursor, value, x, y, colour)`: `value`
+    /// written as text (`TOValueToMesFontL(value, text, 0)`) with
+    /// [`base_mes_font`].
+    pub fn mes_value<M: Mem>(
+        mem: &mut M,
+        [cursor, value, x, y, colour]: [u32; 5],
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, VALUE_TO_MES_FONT_L, &[value, text, 0]);
+        let args = [
+            cursor,
+            u32::MAX,
+            text,
+            x,
+            y,
+            colour,
+            0,
+            0x80,
+            0x80,
+            0x80,
+            0x80,
+        ];
+        call(mem, BASE_MES_FONT, &args)
+    }
 }

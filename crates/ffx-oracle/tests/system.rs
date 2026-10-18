@@ -19791,3 +19791,110 @@ fn round34_boxes_match_the_original_on_the_snapshot() {
     };
     round34_boxes(&mut a, &mut b, &mut Xorshift(0x4034_0062));
 }
+
+/// Round 34 group G: the 16x12 writers' wrappers over logging stand-ins
+/// for the two writers and `TOValueToMesFontL` (which puts a test word in
+/// its text).
+#[allow(clippy::many_single_char_names)]
+fn round34_mes_wrappers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let text = alloc(a, b, t::MES_VALUE_TEXT as usize);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    // the text pointer is the original's stack: log the value and width
+    let stands: Vec<Stand> = vec![
+        (t::BASE_MES_FONT, all(11), vec![], ret_cell(cells)),
+        (t::MES_FONT_1612, all(9), vec![], ret_cell(cells + 4)),
+        (
+            t::VALUE_TO_MES_FONT_L,
+            vec![0, 2],
+            vec![],
+            store_through(1, cells + 8),
+        ),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        for w in 0..3 {
+            put(a, b, cells + 4 * w, rng.next());
+        }
+        let w: [u32; 10] = std::array::from_fn(|_| rng.next());
+        let tag = format!("wrapper {k}");
+        match k % 6 {
+            0 => assert_eq!(
+                eax(a, 0x008e_d0a0, &w[..5]),
+                t::base_mes_font(b, [w[0], w[1], w[2], w[3], w[4]], call),
+                "{tag}"
+            ),
+            1 => assert_eq!(
+                eax(a, 0x008e_d060, &w[..4]),
+                t::base_mes_font_plain(b, [w[0], w[1], w[2], w[3]], call),
+                "{tag}"
+            ),
+            2 => {
+                let args: [u32; 9] = std::array::from_fn(|i| w[i]);
+                assert_eq!(
+                    eax(a, 0x008e_d160, &args),
+                    t::base_mes_font_rgba(b, args, call),
+                    "{tag}"
+                );
+            }
+            3 => assert_eq!(
+                eax(a, 0x008e_e210, &w),
+                t::base_mes_font_l_clut_rgba(b, w, call),
+                "{tag}"
+            ),
+            4 => assert_eq!(
+                eax(a, 0x008e_a000, &w[..5]),
+                t::mes_font_1612_grey(b, [w[0], w[1], w[2], w[3], w[4]], call),
+                "{tag}"
+            ),
+            _ => {
+                let args = [w[0], w[1], w[2], w[3], w[4]];
+                // the writer's text argument differs (stack against scratch): log it apart
+                assert_eq!(
+                    eax(a, 0x008f_2ff0, &args),
+                    t::mes_value(b, args, text, call),
+                    "{tag}"
+                );
+                let s: [u32; 8] = Mem::read(b, text);
+                Mem::write(a, text, s);
+                // the logged text pointers differ: compare the rest
+                let n: u32 = Mem::read(a, cursor);
+                let m: u32 = Mem::read(b, cursor);
+                assert_eq!(n, m, "{tag}");
+                let at = n - 4 * 12 + 4 * 3;
+                let p: u32 = Mem::read(b, at);
+                Mem::write(a, at, p);
+            }
+        }
+        same_memory(&tag, a, b);
+    }
+}
+
+#[test]
+fn round34_mes_wrappers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_mes_wrappers(&mut a, &mut b, &mut Xorshift(0x4034_0071));
+}
+
+#[test]
+fn round34_mes_wrappers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_mes_wrappers(&mut a, &mut b, &mut Xorshift(0x4034_0072));
+}

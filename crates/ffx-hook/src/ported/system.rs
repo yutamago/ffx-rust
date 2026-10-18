@@ -1505,6 +1505,32 @@ ported! {
             call_sym,
         );
     }
+    /// `TOAddPktBaseMesFont_008ed0a0(cursor, text, x, y, colour)`.
+    TOAddPktBaseMesFont_008ed0a0 @ 0x008e_d0a0 => extern "C" fn to_add_pkt_base_mes_font(cursor: u32, text: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tolib::bridge::base_mes_font(&mut mem(), [cursor, text, x, y, colour], call_sym)
+    }
+    /// `TOAddPktBaseMesFontPlain_008ed060(cursor, text, x, y)`.
+    TOAddPktBaseMesFontPlain_008ed060 @ 0x008e_d060 => extern "C" fn to_add_pkt_base_mes_font_plain(cursor: u32, text: u32, x: u32, y: u32) -> u32 {
+        tolib::bridge::base_mes_font_plain(&mut mem(), [cursor, text, x, y], call_sym)
+    }
+    /// `TOAddPktBaseMesFontRGBA_008ed160(cursor, text, x, y, colour, r, g, b, a)`.
+    TOAddPktBaseMesFontRGBA_008ed160 @ 0x008e_d160 => extern "C" fn to_add_pkt_base_mes_font_rgba(cursor: u32, text: u32, x: u32, y: u32, colour: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tolib::bridge::base_mes_font_rgba(&mut mem(), [cursor, text, x, y, colour, r, g, b, a], call_sym)
+    }
+    /// `TOAddPktBaseMesFontLClutRGBA_copy_008ee210(cursor, key, text, x, y, colour, r, g, b, a)`.
+    TOAddPktBaseMesFontLClutRGBA_copy_008ee210 @ 0x008e_e210 => extern "C" fn to_add_pkt_base_mes_font_l_clut_rgba_copy(cursor: u32, key: u32, text: u32, x: u32, y: u32, colour: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tolib::bridge::base_mes_font_l_clut_rgba(&mut mem(), [cursor, key, text, x, y, colour, r, g, b, a], call_sym)
+    }
+    /// `TOAddPktMesFont1612Grey_008ea000(cursor, text, x, y, colour)`.
+    TOAddPktMesFont1612Grey_008ea000 @ 0x008e_a000 => extern "C" fn to_add_pkt_mes_font_1612_grey(cursor: u32, text: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tolib::bridge::mes_font_1612_grey(&mut mem(), [cursor, text, x, y, colour], call_sym)
+    }
+    /// `TOAddPktMesValue_008f2ff0(cursor, value, x, y, colour)`.
+    TOAddPktMesValue_008f2ff0 @ 0x008f_2ff0 => extern "C" fn to_add_pkt_mes_value(cursor: u32, value: u32, x: u32, y: u32, colour: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        tolib::bridge::mes_value(&mut mem(), [cursor, value, x, y, colour], text, call_sym)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)
