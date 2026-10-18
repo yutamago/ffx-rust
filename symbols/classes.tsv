@@ -14993,7 +14993,7 @@
 0x0090bc40	dead	unreachable from the entry point and every pointer table
 0x0090bc70	dead	unreachable from the entry point and every pointer table
 0x0090bd20	dead	unreachable from the entry point and every pointer table
-0x0090bdb0	logic	default (no rule: ported to be safe)
+0x0090bdb0	glue	reviewed: sprintf label for a PC renderer object (field round 1)
 0x0090be60	dead	unreachable from the entry point and every pointer table
 0x0090bee0	dead	unreachable from the entry point and every pointer table
 0x0090bf10	logic	default (no rule: ported to be safe)

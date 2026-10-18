@@ -235,6 +235,7 @@ REVIEWED = {
     0x008a9510: ("platform", "GS image upload loop (menu round 21)"),
     0x0088ccf0: ("glue", "TKMallocAndReadMenuMessage: language path + file read (menu round 21)"),
     0x00888030: ("glue", "path formatting (menu round 21)"),
+    0x0090bdb0: ("glue", "sprintf label for a PC renderer object (field round 1)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
