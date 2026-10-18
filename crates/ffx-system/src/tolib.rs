@@ -12237,4 +12237,27 @@ pub mod bridge {
         let w: f32 = mem.read(width);
         ffx_bridge::x87::ftol(mem, ffx_bridge::x87::load(w.to_bits()))
     }
+
+    /// `TOGetLangColonWidth_008df4f0(kind, font)`: the `':'` width
+    /// (`TOGetColonWidth_008dfe20(font)`) for kind 0 in language 2 and
+    /// kind 1 in languages 1..=5 (`0x008dfe10`, a jump to
+    /// `TOGetFFXLang`, asked first); 0 otherwise.
+    pub fn lang_colon_width<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        font: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lang = call(mem, 0x008d_fe10, &[]);
+        let wanted = match kind {
+            0 => lang == 2,
+            1 => lang.wrapping_sub(1) <= 4,
+            _ => false,
+        };
+        if wanted {
+            call(mem, 0x008d_fe20, &[font])
+        } else {
+            0
+        }
+    }
 }

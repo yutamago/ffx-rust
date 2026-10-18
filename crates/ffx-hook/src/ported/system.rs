@@ -1435,6 +1435,16 @@ ported! {
     Vec3At24_0061a7f0 @ 0x0061_a7f0 => extern "thiscall" fn vec3_at_24(this: u32, out: u32) -> u32 {
         accessor::bridge::vec3_at_24(&mut mem(), this, out)
     }
+    /// `TOGetLangColonWidth_008df4f0(kind, font)`.
+    TOGetLangColonWidth_008df4f0 @ 0x008d_f4f0 => extern "C" fn to_get_lang_colon_width(kind: u32, font: u32) -> u32 {
+        tolib::bridge::lang_colon_width(&mut mem(), kind, font, call_sym)
+    }
+    /// `MagicFile_Init()`.
+    MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
+        menu::bridge::magic_file_init(&mut mem(), |m, fmt| {
+            menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, None);
+        })
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

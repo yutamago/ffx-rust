@@ -1423,3 +1423,11 @@ pushed as literals (no relocation entries), not addresses.
   `ftol2_sse`.
 - `Vec3At24_0061a7f0(out)` (thiscall, `ret 4`) copies the three floats
   at `+0x24` to `out` and returns `out`.
+
+## Round 34
+
+- `TOGetLangColonWidth_008df4f0(kind, font)` is `TOGetColonWidth_008dfe20
+  (font)` for kind 0 in language 2 and kind 1 in languages 1..=5, else 0.
+- `MagicFile_Init()` prints `"MagicFile: Init()\n"`, sets the magic id,
+  the handle, `0x00c64ca8` and `g_BtlCommandWait` to -1 and tail-jumps to
+  `MagicFile_ResetPreloaded` (its `eax`).

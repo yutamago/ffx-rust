@@ -19053,3 +19053,70 @@ fn round33_vec3_at_24_matches_the_original() {
         same_memory(&format!("vec3 {k}"), a, b);
     }
 }
+
+/// Round 34 group A: `TOGetLangColonWidth_008df4f0` and `MagicFile_Init`
+/// (its `printf` through the import slot, a logging stand-in).
+fn round34_small(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let s = stand_in8(a, b, 0, &copy_logger(cursor, 0xc2f0, 0, &ret_cell(cells)));
+    redirect(a, b, 0x008a_c2f0, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x80,
+        &copy_logger(cursor, 0xfe20, 1, &ret_cell(cells + 4)),
+    );
+    redirect(a, b, 0x008d_fe20, s);
+    let printf = stand_in8(a, b, 0x100, &copy_logger(cursor, 0xc380, 1, &[]));
+    let slot = a.rebase(0x00b0_c380);
+    put(a, b, slot, printf);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [0u32, 1, 2, 3, 5, 6, 9, 0xb, u32::MAX][(rng.next() % 9) as usize],
+        );
+        put(a, b, cells + 4, rng.next());
+        let kind = [0u32, 1, 2, u32::MAX][(rng.next() % 4) as usize];
+        let font = rng.next();
+        assert_eq!(
+            eax(a, 0x008d_f4f0, &[kind, font]),
+            tolib::bridge::lang_colon_width(b, kind, font, call),
+            "colon {k}"
+        );
+        same_memory(&format!("colon {k}"), a, b);
+    }
+    for k in 0..3 {
+        put(a, b, cursor, log);
+        for at in [0x00c6_4ca0, 0x00c6_4ca8, 0x00c6_4cac, 0x00c6_4cb0] {
+            put(a, b, a.rebase(at), rng.next());
+        }
+        let r = menu::bridge::magic_file_init(b, |m, fmt| {
+            let f: u32 = Mem::read(m, slot);
+            m.call(f, Conv::Cdecl, &[fmt]).unwrap();
+        });
+        assert_eq!(eax(a, 0x009d_a3e0, &[]), r, "magic init {k}");
+        same_memory(&format!("magic init {k}"), a, b);
+    }
+}
+
+#[test]
+fn round34_small_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_small(&mut a, &mut b, &mut Xorshift(0x4034_0011));
+}
+
+#[test]
+fn round34_small_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_small(&mut a, &mut b, &mut Xorshift(0x4034_0012));
+}

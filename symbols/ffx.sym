@@ -10837,6 +10837,7 @@
 0x008dea20 function MenuStatus_ResetEntry     # (entry) u16 +0 and +0x2c cleared, returns 0; own name
 0x008dee00 function TODrawMessageWaitNamesp      # callees: its named callees match the Switch 0x7100500df0 TODrawMessageWaitNamesp's (similarity 0.73: TOConvAlbhedWord, TODrawChangeMacro2, TOGetChangeMacroWidth, TOGetChangeMacroWordCount, TOGetFontInfo); symbols from Fahrenheit's server export
 0x008df4c0 function StoreComputed_008df4c0       # auto-port shape (several stores: computed, into field, cdecl): t0 = u8[(a0 + 0x5b)]; u8[(a0 + 0x5b)] = ((t0 + 0xf0) & 0xff); u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0; callers: no direct caller; name ours
+0x008df4f0 function TOGetLangColonWidth_008df4f0 # cdecl(kind, font) -> TOGetColonWidth_008dfe20(font) for kind 0 in language 2 or kind 1 in languages 1..5 (0x008dfe10, a jmp to TOGetFFXLang), else 0; callers pass i16 window+0x1a; ported (system round 34); name ours
 0x008df520 function TOFirstInitMessageNormal     # layout+callees: sorts between TODrawMessageWaitNamesp and TOGetGroup, and its named callees match the Switch 0x7100500760 TOFirstInitMessageNormal's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df570 function TOTextScrollTick_008df570 # cdecl(w) -> eax: +0xb4 counts down; at 0 +0xb0 = ftol(Tk_GetScale(MsGetSaveConfigEnglish()) * f32(+0xac) + +0xb0), whole 30s (25 when TOGetFFXVideoMode) move to +0xa0; callers 0x008de970, 0x008ded60; name ours; ported (system round 32)
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
@@ -10846,6 +10847,7 @@
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0; (code, window, pen): applies control codes 7, 9, 0xa, 0xb (button icon), 0xe to a message pen; ported (system round 33)
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
+0x008dfe10 function TOGetFFXLang_008dfe10       # jmp TOGetFFXLang; name ours
 0x008dfe20 function TOGetColonWidth_008dfe20     # cdecl(font) -> ftol2_sse(w) of TOGetFontWidthInterMode(":", font, &w), w from 0.0; ported (system round 33); name ours
 0x008dfe70 function MessageHold_008dfe70 # cdecl(w) -> 0: w+0x2c = 4 (u16), w+0x124 = itself; name ours
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
@@ -12393,7 +12395,7 @@
 0x009da3a0 function GetU32_00c64ca4 # () -> u32 at 0x00c64ca4; name ours
 0x009da3b0 function MagicFile_GetMagicId      # fh v3:bsim1.00 0x009da3a0
 0x009da3d0 function MagicFile_GetToBeDeleteMagicId # () -> [0x00c64ca8]; fh switch:bsim1.00 0x71007e2dd0
-0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0
+0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0; (): printf "MagicFile: Init()", 0x00c64ca0/ac/a8/b0 = -1, tail jmp MagicFile_ResetPreloaded; ported (system round 34)
 0x009da420 function MagicFile_IsNexData       # fh v3:bsim1.00 0x009da410
 0x009da430 function MagicFile_Load            # fh v3:exact 0x009da420
 0x009da700 function MagicFile_NeedRestoreCamera  # layout+callees: sorts between MagicFile_Load and MagicFile_SetMagicId, and its named callees match the Switch 0x71007e3120 MagicFile_NeedRestoreCamera's (similarity 1.00: MsGetBattleScene); symbols from Fahrenheit's server export; (): 1 if 0x01940abc, previous magic 0x00c64ca8 is 0xa5/0x133, or 0x152 in battle scene 0x018b0046
