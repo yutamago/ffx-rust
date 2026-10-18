@@ -12,8 +12,9 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, instance, intl, math,
-    menu, msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, instance,
+    intl, math, menu, msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf,
+    window,
 };
 
 /// The game thread's x87 control word.
@@ -17411,4 +17412,160 @@ fn round31_small_matches_the_original_on_the_snapshot() {
         return;
     };
     round31_small(&mut a, &mut b, &mut Xorshift(0x4031_0052));
+}
+
+/// A stand-in: the symbol, the arguments it logs, the arguments it logs
+/// by their first word, and its tail.
+type Stand = (u32, Vec<u8>, Vec<u8>, Vec<u8>);
+
+/// `TOMenuDrawChrStatusPlate_008ff490` over the original remaps, with
+/// logging stand-ins for the shapes, the water, the getters, the texts
+/// and numbers (pointer arguments logged by what they point at).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round32_chr_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use chr_plate::bridge as p;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x80);
+    let scratch = alloc(a, b, p::SCRATCH_BYTES as usize);
+    // (sym, logged arguments, arguments logged by their first word, tail)
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0090_3bb0, all(9), vec![], vec![]),
+        (0x0090_3ee0, all(11), vec![], vec![]),
+        (0x008e_7d30, all(12), vec![], vec![]),
+        (0x008a_9b60, vec![], vec![], ret_cell(cells)),
+        (0x008a_c2f0, vec![], vec![], ret_cell(cells + 4)),
+        (0x008a_98c0, all(1), vec![], ret_cell(cells + 8)),
+        (0x008a_9990, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x008a_9970, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x008a_99b0, all(1), vec![], ret_cell(cells + 0x14)),
+        (0x008a_9b80, all(1), vec![], ret_cell(cells + 0x18)),
+        (0x008a_9930, all(1), vec![], ret_cell(cells + 0x1c)),
+        (0x008a_9950, all(1), vec![], ret_cell(cells + 0x20)),
+        (0x008a_9a70, all(1), vec![], ret_cell(cells + 0x24)),
+        (0x008a_c850, all(1), vec![], ret_cell(cells + 0x28)),
+        (0x0090_5930, all(6), vec![], ret_cell(cells + 0x2c)),
+        (
+            0x0090_1660,
+            vec![1, 2, 3, 4, 5],
+            vec![0],
+            ret_cell(cells + 0x30),
+        ),
+        (0x008c_eb00, all(3), vec![], ret_cell(cells + 0x34)),
+        (
+            0x0090_5230,
+            vec![0, 2, 3],
+            vec![],
+            store_through(1, cells + 0x38),
+        ),
+        (0x0090_5820, all(6), vec![], ret_cell(cells + 0x3c)),
+        (0x0090_55c0, all(6), vec![], ret_cell(cells + 0x40)),
+        (0x0078_4e90, all(1), vec![], ret_cell(cells + 0x44)),
+        (0x0078_52b0, all(1), vec![], ret_cell(cells + 0x48)),
+        (0x008d_3690, all(6), vec![], ret_cell(cells + 0x4c)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    // sprintf through its import slot: logs the format and the two
+    // numbers, writes a word of text
+    let k = stands.len() as u32;
+    let s = stand_in8(
+        a,
+        b,
+        0x80 * k,
+        &pick_logger(
+            cursor,
+            0x5f,
+            &[1, 2, 3],
+            &[],
+            &store_through(0, cells + 0x50),
+        ),
+    );
+    put(a, b, a.rebase(0x00b0_c3dc), s);
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x15 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            cells,
+            [0u32, u32::MAX, rng.next()][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            [0xbu32, 0xb, 0, 1, 2][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 1, 9999, u32::MAX, 0x8000_0000][(rng.next() % 5) as usize],
+        );
+        put(a, b, cells + 0x38, (rng.next() % 2000) as f32 / 8.0);
+        put(a, b, cells + 0x50, rng.next() & 0x00ff_ffff);
+        let chr = [
+            0u32,
+            3,
+            7,
+            8,
+            12,
+            0x11,
+            0x12,
+            0x20,
+            u32::MAX,
+            (rng.next() % 0x14),
+        ][(rng.next() % 10) as usize];
+        let x = ((rng.next() % 8000) as f32 / 7.0 - 100.0).to_bits();
+        let y = ((rng.next() % 6000) as f32 / 3.0 - 50.0).to_bits();
+        let r = eax(a, 0x008f_f490, &[chr, x, y]);
+        assert_eq!(
+            r,
+            p::draw_chr_status_plate(b, [chr, x, y], scratch, remap, call),
+            "chr plate {k}"
+        );
+        let s: [u32; 9] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("chr plate {k} chr {chr:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round32_chr_plate_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_chr_plate(&mut a, &mut b, &mut Xorshift(0x4032_0011));
+}
+
+#[test]
+fn round32_chr_plate_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_chr_plate(&mut a, &mut b, &mut Xorshift(0x4032_0012));
 }

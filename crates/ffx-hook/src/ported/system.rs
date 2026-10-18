@@ -5,9 +5,9 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, heap, instance, intl,
-    math, menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib,
-    vbf, window,
+    accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, heap,
+    instance, intl, math, menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub,
+    sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -1163,6 +1163,18 @@ ported! {
     /// `TOMenuTransFacePlyTex()`.
     TOMenuTransFacePlyTex @ 0x0090_1100 => extern "C" fn to_menu_trans_face_ply_tex() -> u32 {
         intl::bridge::trans_face_ply_tex(&mut mem(), call_ptr)
+    }
+    /// `TOMenuDrawChrStatusPlate_008ff490(chr, x, y)`.
+    TOMenuDrawChrStatusPlate_008ff490 @ 0x008f_f490 => extern "C" fn to_menu_draw_chr_status_plate(chr: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<9>::new();
+        let scratch = frame.at();
+        chr_plate::bridge::draw_chr_status_plate(
+            &mut mem(),
+            [chr, x, y],
+            scratch,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
     }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {

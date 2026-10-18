@@ -1208,3 +1208,41 @@ record's `+8` is the widest item; on map 0x17, for the record with `+0x14`
 - `TOMenuTransFacePlyTex` uploads `0x01c80000` (0x200x0x100, format 0x13)
   to 0x3a00. That push has no relocation entry: the address is literal
   even when the image is relocated.
+
+## A character's status plate (round 32)
+
+`TOMenuDrawChrStatusPlate_008ff490(chr, x, y)` (cdecl, `x`/`y` floats)
+draws one character's plate in the menus (the callers are the aeon grow
+window `0x008cdba0` and two other menu screens). Sizes go through
+`graphicUiRemapX2`/`Y2`; positions are `x + rx(dx)`, `y + ry(dy)` added
+at x87 precision and stored as dwords. In order:
+
+1. Background. Party members (`chr < 8`, signed) whose bit is set in
+   `TOMenuGetYesNoWindow()` get sheet shape -3 at UV (0, 0) and the
+   water: four 250x64 `DrawWaterWaveShapeC2` strips (U 0 and 250 scrolling
+   (50, -20) with alpha 0x1a, U 300 and 550 scrolling (-80, -10) with
+   alpha 0x33, blue 0xc56870 fading to clear across each pair). The
+   others get shape -3 at V 700. Then the right panel (shape -3, 415x70
+   at `rx(1090)`). Aeons and higher numbers get sheet -6 (1110x70), the
+   panel, then the water.
+2. Numbers above 0x11 (unsigned, so negatives too) get only the empty
+   labels and frames (shapes 0x21, 0x22, 0xc8, -1, 0x3d at slightly
+   different offsets: 842, 1034, `y - ry(5)`, the AP label at 948).
+3. An aeon whose `TkMenuGetHP` is 0 or less gets
+   `TkMn2DrawSummonPlateCheckHP(ftol(x), ftol(y), chr)` (`ftol(y)` taken
+   first). Everyone else gets the name (`ToMakeBtlEasyEdgeFont`, alpha
+   from `MenuPlayer_DamageClass2`, scale 0.82, extra 1.0), the overdrive
+   label (0x21), `HP/max` as `"%5d/%5d"` through the CRT `sprintf` import
+   into a 32-byte stack buffer and `TOMkpCrossEasyStrFontSClut`, the
+   Sphere Level label (0x22) and `MP/max` as `"%4d/%4d"`.
+4. Party members: the gauge frames (0xc8, -1, 0x3d), the AP label, the
+   Sphere Levels centred on `rx(1076)` (`ToGetBtlEasyDigitWidth2` writes
+   the width into the same stack word that holds the language gap), the
+   label 0xc8 and `MsGetNextAP - MsGetSaveNextAP` right-aligned. Aeons:
+   two grey `TOMkpShapeXYWHUVC2` frames and
+   `TkMn2DrawCrossLimitParam(x, y, rx(350), ry(8), limit, limit max)`.
+
+Language 11 (`TOGetFFXLang`) widens the labels by 22 (UVs follow),
+heightens 0x21 by 1, moves the HP/MP numbers 11 right, and moves the AP
+label (x -10, U -35, width +25 or +20, U end +20). The water colours are
+pushed as literals (no relocation entries), not addresses.
