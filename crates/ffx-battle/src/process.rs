@@ -931,36 +931,31 @@ pub mod bridge {
         {
             end_kind.set(mem, 6);
         }
-        // the status 0x21 check, skipped when the debug pad's combination
-        // was looked at and not pressed
-        let mut check_end_status = true;
         if game(mem, &mut *call, FFX_IS_DEBUG, &[]) != 0 && ps2 {
             let [start, square] = DEBUG_END;
-            let forced = pad & start != 0
+            if pad & start != 0
                 && pad & square != 0
-                && game(mem, &mut *call, MS_CHECK_SOFT_RESET_OK, &[]) != 0;
-            if forced {
+                && game(mem, &mut *call, MS_CHECK_SOFT_RESET_OK, &[]) != 0
+            {
                 STATUS.set(mem, 1);
                 crate::menu::bridge::END_FORCED.set(mem, 5);
             }
-            if forced || STATUS.get(mem) == 1 {
-                if pad & DEBUG_COMBO == DEBUG_COMBO {
-                    for f in [OPD_EXIT_FROM_OVL, MS_NOW_MUSIC_STOP, MS_CAMERA_INIT] {
+            // (the original then skips the status 0x21 test below: it can
+            // only be status 1 there)
+            if STATUS.get(mem) == 1 && pad & DEBUG_COMBO == DEBUG_COMBO {
+                for f in [OPD_EXIT_FROM_OVL, MS_NOW_MUSIC_STOP, MS_CAMERA_INIT] {
+                    game(mem, &mut *call, f, &[]);
+                }
+                if pad & DEBUG_RESTART != 0 {
+                    for f in DEBUG_RESTART_STEPS {
                         game(mem, &mut *call, f, &[]);
                     }
-                    if pad & DEBUG_RESTART != 0 {
-                        for f in DEBUG_RESTART_STEPS {
-                            game(mem, &mut *call, f, &[]);
-                        }
-                    }
-                    battle_exe(mem, call);
-                    return;
                 }
-                check_end_status = false;
+                battle_exe(mem, call);
+                return;
             }
         }
-        let end =
-            (check_end_status && STATUS.get(mem) == 0x21) || matches!(end_kind.get(mem), 5 | 6);
+        let end = STATUS.get(mem) == 0x21 || matches!(end_kind.get(mem), 5 | 6);
         if end {
             for (f, args) in END_STEPS {
                 game(mem, &mut *call, f, args);
