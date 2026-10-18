@@ -2708,6 +2708,27 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         )
     }
+    /// `yiScreff_draw(scene)`.
+    yiScreff_draw @ 0x0091_3200 => extern "C" fn shim_yi_screff_draw(scene: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::screff::WORK as usize / 4 }>::new();
+        ffx_field::screff::yi_screff_draw(
+            &mut mem(),
+            scene,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
+    /// `AbmapDrawGridMarks()`.
+    AbmapDrawGridMarks @ 0x00a4_9f10 => extern "C" fn shim_abmap_draw_grid_marks() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::abmap_draw::GRID_WORK as usize / 4 }>::new();
+        ffx_field::abmap_draw::abmap_draw_grid_marks(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapDrawMap()`.
+    AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();
+        ffx_field::abmap_draw::abmap_draw_map(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));

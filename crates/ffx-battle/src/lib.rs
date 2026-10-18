@@ -35,6 +35,7 @@ pub mod exec;
 pub mod flow;
 mod formation;
 pub mod free;
+pub mod getmem;
 pub mod input;
 pub mod menu;
 pub mod minor;
