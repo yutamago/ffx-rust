@@ -6155,6 +6155,21 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let mut r15 = Xorshift(0x15e5_0001 ^ u32::from(synthetic));
     let mut r16 = Xorshift(0x16e5_0001 ^ u32::from(synthetic));
     let mut r17 = Xorshift(0x17e5_0001 ^ u32::from(synthetic));
+    let mut r18m = Xorshift(0x18e5_0101 ^ u32::from(synthetic));
+    // a special stage's work (round 18): matrices, the sea's, angles
+    let work = scratch(a, b, 0x870);
+    // Ch_ModelCreatePacket's stub (round 18) and its record
+    let crec = scratch(a, b, EXCHANGE_REC as usize);
+    for o in [&mut *a, &mut *b] {
+        logging_stub(
+            o,
+            ffx_battle::free::bridge::CH_MODEL_CREATE_PACKET,
+            SPECIAL_STUBS,
+            crec,
+            1,
+            0,
+        );
+    }
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -6175,6 +6190,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         deaths(a, b, rng, &w, out);
         input(a, b, &w, out, irec);
         damage_end(a, b, rng, &w, out);
+        models_freed(a, b, &mut r18m, &w, crec);
         battle_end(a, b, rng, &w, out, [nrec, erec, prec, srec], files);
         battle_frame(a, b, rng, &w, out, grec);
         effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
@@ -6184,6 +6200,135 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         let whole = r17.below(2) == 0;
         move_steps(a, b, &mut r17, &w, &f, whole);
         ball_splines(a, b, &mut r17, &w, &f, out);
+        motions(a, b, &mut r18m, &w, &f, work);
+    }
+    // the teardown last (it clears the actors and the script managers)
+    let mut r18 = Xorshift(0x18e5_0001 ^ u32::from(synthetic));
+    for _ in 0..200 {
+        teardown(a, b, &mut r18, work);
+    }
+}
+
+/// The battle's teardown leaves (`ffx_battle::free`): the heap,
+/// `Sg_FreeA` and `op_et_battle_effect_free` are the logging stubs
+/// ([`PROCESS_CALLEES`], [`FREE_CALLEES`]); `AtelRemoveCtrlWork` and
+/// `Yn_SeaResetMatrix` run as the originals (the latter in both).
+fn teardown(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, work: u32) {
+    use ffx_battle::free::bridge as fr;
+    let mut call = game_call;
+    let ptr = |rng: &mut Xorshift| [0, rng.next() | 1, rng.next()][rng.below(3) as usize];
+    for g in [
+        ffx_battle::actor::bridge::CHR_TOP,
+        ffx_battle::actor::bridge::MON_TOP,
+        ffx_battle::actor::bridge::WEAPON_TOP,
+        ffx_battle::misc::bridge::NUMBERS,
+        ffx_battle::misc::bridge::EFFECT_BUFFER,
+        ffx_battle::misc::bridge::ITEM_MEM,
+        ffx_battle::misc::bridge::ITEM_MEM2,
+        ffx_battle::misc::bridge::ET_EFFECT_READ,
+        ffx_battle::parse::bridge::EFFECT_READ_STAT,
+        fr::FIELD_ITEM,
+        fr::FIELD_ITEM2,
+    ] {
+        let v = ptr(rng);
+        set(a, b, g, v);
+    }
+    let v = ptr(rng).cast_signed();
+    set(a, b, ffx_battle::state::bridge::MEM_CHECK2, v);
+    let m = ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr;
+    for o in [4, 0xc, 0x58, 0x60] {
+        poke(a, b, m + o, &ptr(rng).to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        ffx_battle::minor::bridge::ATEL_CAM_ON,
+        u8::from(rng.below(2) == 0),
+    );
+    let records = ffx_battle::atel::bridge::SCRIPT_RECORDS.ptr(b).addr;
+    for k in 0..4 {
+        poke(a, b, records + 0x20 * k + 4, &ptr(rng).to_le_bytes());
+    }
+    let text = ffx_battle::flow::bridge::MENU_TEXT.ptr(b).addr;
+    for k in 0..17 {
+        poke(a, b, text + 12 * k, &[u8::from(rng.below(3) == 0)]);
+        poke(a, b, text + 12 * k + 8, &ptr(rng).to_le_bytes());
+    }
+    // the special stage: its work's up vector pointer is null or a word of
+    // the work itself
+    let kind = [0i8, 1, 2, 3, 4, -1][rng.below(6) as usize];
+    set(a, b, fr::SPECIAL_KIND, kind);
+    let up = [0, work + 0x40][rng.below(2) as usize];
+    poke(a, b, work + 0x810, &up.to_le_bytes());
+    let w = if (1..=3).contains(&kind) || rng.below(2) == 0 {
+        work
+    } else {
+        0
+    };
+    set(a, b, fr::SPECIAL_MEM, w);
+    // screen 0's shake and the sea's matrix away from what the undoing
+    // writes
+    let screen = ffx_battle::camera::bridge::SCREENS.ptr(b).addr;
+    poke(a, b, screen + 0x16c, &[1]);
+    poke(a, b, screen + 0x30, &floats(rng, 1));
+    let sea = ffx_field::guide::SEA_MATRIX.ptr(b).addr;
+    poke(a, b, sea, &floats(rng, 16));
+    for (k, (name, sym)) in (0..).zip([
+        ("MsBtlChrFreeMem", 0x0079_3500),
+        ("MsNumberFreeMem", 0x0079_f990),
+        ("MsEtEffectStop", 0x0079_e7b0),
+        ("MsEffectEnvFree", 0x0078_7a40),
+        ("MsEffectBufferFree_00782750", 0x0078_2750),
+        ("MsBattleSpecialFree", 0x0079_dde0),
+        ("MsBtlFreeItemMem", 0x0079_9f70),
+        ("MsMemCheckFree", 0x0079_9ec0),
+        ("MsFieldItemFree", 0x0079_8f90),
+    ]) {
+        twin(name, a, b, sym, &[], 0, |m| {
+            dm(m, |m| match k {
+                0 => fr::ms_btl_chr_free_mem(m, &mut call),
+                1 => fr::ms_number_free_mem(m, &mut call),
+                2 => fr::ms_et_effect_stop(m, &mut call),
+                3 => fr::ms_effect_env_free(m, &mut call),
+                4 => fr::ms_effect_buffer_free(m, &mut call),
+                5 => fr::ms_battle_special_free(m, &mut call),
+                6 => fr::ms_btl_free_item_mem(m, &mut call),
+                7 => fr::ms_mem_check_free(m, &mut call),
+                _ => fr::ms_field_item_free(m, &mut call),
+            });
+            0
+        });
+        same(name, a, b);
+    }
+    twin("MsAtelRegistFree", a, b, 0x0079_7a90, &[], 0, |m| {
+        dm(m, |m| {
+            fr::ms_atel_regist_free(m, &mut call, ffx_script::vm::bridge::atel_remove_ctrl_work);
+        });
+        0
+    });
+    same("MsAtelRegistFree", a, b);
+    for _ in 0..2 {
+        let i = rng.below(4);
+        twin(
+            "MsBtlScriptRecordFree_00782640",
+            a,
+            b,
+            0x0078_2640,
+            &[i],
+            0,
+            |m| {
+                dm(m, |m| fr::ms_btl_script_record_free(m, &mut call, i));
+                0
+            },
+        );
+        same("MsBtlScriptRecordFree_00782640", a, b);
+    }
+    for _ in 0..6 {
+        let i = [rng.below(17), rng.below(0x14), rng.next()][rng.below(3) as usize];
+        twin("MsMenuFreeText", a, b, 0x0078_fb00, &[i], ALL, |m| {
+            dm(m, |m| fr::ms_menu_free_text(m, &mut call, i)).cast_unsigned()
+        });
+        same(&format!("MsMenuFreeText {i:#x}"), a, b);
     }
 }
 
@@ -6629,4 +6774,233 @@ fn targets_match_the_original_on_a_snapshot() {
         return;
     };
     check(&mut a, &mut b, &mut Xorshift(0x7a46_0002), false);
+}
+
+/// The actors' motions each frame (`ffx_battle::motion`, round 18 group
+/// 2) on sane actors: their speed fields, queued motions, stance counters
+/// and the touch check's conditions at random.
+fn motions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, f: &Fakes, work: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::motion::bridge as mo;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    sane_actors(a, b, rng, w, f);
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    // the fake characters' texture animations: none, or an entry of the
+    // static table
+    for c in 0..3 {
+        let chr = f.chars + c * 0x1000;
+        poke(a, b, chr + 0x6fc, &u32::from(flag(rng, 2)).to_le_bytes());
+        poke(a, b, chr + 0x700, &rng.below(4).to_le_bytes());
+    }
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        for (o, n) in [
+            (0x12, 6),
+            (0xdce, 6),
+            (0x613, 5),
+            (0x614, 2),
+            (0x432, 4),
+            (0x508, 2),
+            (0x38, 4),
+            (0x412, 4),
+            (0xdf0, 6),
+        ] {
+            poke(a, b, p + o, &[flag(rng, n)]);
+        }
+        poke(a, b, p + 0x2d, &[flag(rng, 2) ^ 1]);
+        poke(a, b, p + 0x415, &[[0, 0, 0, 1][rng.below(4) as usize]]);
+        poke(a, b, p + 0x606, &[0, [0u8, 8][rng.below(2) as usize]]);
+        poke(a, b, p + 0x5c6, &[[0xffu8, 0xff, 3][rng.below(3) as usize]]);
+        poke(a, b, p + 0x3f0, &[u8::try_from(rng.below(0x40)).unwrap()]);
+        poke(a, b, p + 0x404, &[u8::try_from(rng.below(3)).unwrap()]);
+        let mut words = [0u16; 4];
+        for w in &mut words {
+            *w = [
+                0,
+                0x100,
+                0x80,
+                0xffff,
+                u16::try_from(rng.below(0x400)).unwrap(),
+            ][rng.below(5) as usize];
+        }
+        // +0x3fc the base speed, +0x400 the current, +0x402 the fixed
+        poke(a, b, p + 0x3fc, &words[0].to_le_bytes());
+        poke(a, b, p + 0x400, &words[1].to_le_bytes());
+        poke(a, b, p + 0x402, &words[2].to_le_bytes());
+        poke(a, b, p + 0x406, &[u8::try_from(rng.below(0x20)).unwrap()]);
+        poke(
+            a,
+            b,
+            p + 0x3f2,
+            &[[0xffu8, 0xff, 0xff, 0, 5][rng.below(5) as usize]],
+        );
+        poke(a, b, p + 0x427, &[u8::try_from(rng.below(5)).unwrap()]);
+        poke(a, b, p + 0x428, &[u8::try_from(rng.below(4)).unwrap()]);
+    }
+    set(
+        a,
+        b,
+        ffx_battle::body::bridge::MOTION_BUSY,
+        rng.next() & rng.next() & rng.next(),
+    );
+    set(a, b, ffx_battle::atel::bridge::CAMERA_STATE, flag(rng, 3));
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::COMMAND_CUE_COUNT,
+        i8::from(flag(rng, 2) == 1),
+    );
+    let status = [0i8, 0x1b, 3][rng.below(3) as usize];
+    set(a, b, ffx_battle::state::bridge::STATUS, status);
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    twin("MsCalcMotionSpeed", a, b, 0x0078_ac20, &[actor], ALL, |m| {
+        mo::ms_calc_motion_speed(m, actor)
+    });
+    same("MsCalcMotionSpeed", a, b);
+    zero_stack(a);
+    twin(
+        "MsCheckChrTouch_007ab750",
+        a,
+        b,
+        0x007a_b750,
+        &[i, actor],
+        ALL,
+        |m| dm(m, |m| mo::ms_check_chr_touch(m, h.trig, i, actor)).cast_unsigned(),
+    );
+    local_words(a, b);
+    same("MsCheckChrTouch_007ab750", a, b);
+    zero_stack(a);
+    twin("MsMotionProcess", a, b, 0x007a_a160, &[], 0, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            mo::ms_motion_process(m, h.trig, &mut s);
+        });
+        0
+    });
+    local_words(a, b);
+    same("MsMotionProcess", a, b);
+    special_matrices(a, b, rng, w, work);
+}
+
+/// The special stage's matrices (`ffx_battle::special`): the actors' in
+/// the work, and on the snapshots the sea's from a live model.
+fn special_matrices(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, work: u32) {
+    use ffx_battle::special::bridge as sp;
+    let h = host();
+    let mut call = game_call;
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        poke(a, b, p + 0x32, &[u8::from(rng.below(5) == 0)]);
+        poke(a, b, p + 0x12, &[u8::from(rng.below(5) == 0)]);
+        poke(a, b, p + 0x3a0, &floats(rng, 3));
+    }
+    let angles = work + 0x800;
+    poke(a, b, angles, &floats(rng, 4));
+    let mem = if rng.below(6) == 0 { 0 } else { work };
+    set(a, b, ffx_battle::free::bridge::SPECIAL_MEM, mem);
+    zero_stack(a);
+    twin(
+        "MsSpecialChrMatrix_0079e030",
+        a,
+        b,
+        0x0079_e030,
+        &[angles, 0],
+        0,
+        |m| {
+            dm(m, |m| sp::ms_special_chr_matrix(m, h.trig, angles));
+            0
+        },
+    );
+    rot_locals(a, b);
+    local_words(a, b);
+    same("MsSpecialChrMatrix_0079e030", a, b);
+    let live: Vec<u32> =
+        LIVE_CHRS.with(|c| c.borrow().iter().copied().filter(|&c| c != 0).collect());
+    if !live.is_empty() {
+        let chr = live[rng.below(u32::try_from(live.len()).unwrap()) as usize];
+        let id = [5, 0xe, rng.below(0x20)][rng.below(3) as usize];
+        twin(
+            "MsSpecialSeaMatrix_0079df90",
+            a,
+            b,
+            0x0079_df90,
+            &[chr, id, work],
+            0,
+            |m| {
+                dm(m, |m| {
+                    sp::ms_special_sea_matrix(m, &mut call, chr, id, work);
+                });
+                0
+            },
+        );
+        same("MsSpecialSeaMatrix_0079df90", a, b);
+    }
+}
+
+/// The rotation rows' lanes `MsRotMatrixX` (the last one called) takes
+/// from its uninitialized locals, copied from `a`.
+fn rot_locals(a: &mut Oracle, b: &mut Oracle) {
+    for o in [0x810u32, 0x81c, 0x820, 0x82c] {
+        let at = a.rebase(0x00c8_f000 + o);
+        let v = a.read(at, 4).unwrap();
+        b.write(at, &v).unwrap();
+    }
+}
+
+/// Code no test runs (`MsBattleSpecial`'s), for round 18's stubs.
+const SPECIAL_STUBS: u32 = 0x0079_d430;
+
+/// `MsChrCreatePacket` (its `Ch_ModelCreatePacket` the stub at
+/// [`SPECIAL_STUBS`], records at `crec`) and, now and then,
+/// `MsBtlChrFreeAll` (chara's disposals the [`FREE_CALLEES`] stubs).
+fn models_freed(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, crec: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::free::bridge as fr;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let i = rng.below(ACTORS);
+    let p = w.actor(i);
+    poke(a, b, p + 0x3a, &[[0u8, 1, 0x80][rng.below(3) as usize]]);
+    let model = b.read(p, 4).unwrap();
+    if rng.below(3) == 0 {
+        poke(a, b, p, &[0; 4]);
+    }
+    twin("MsChrCreatePacket", a, b, 0x0079_3d90, &[p], ALL, |m| {
+        dm(m, |m| fr::ms_chr_create_packet(m, &mut call, p))
+    });
+    poke(a, b, p, &model);
+    let _ = crec;
+    same("MsChrCreatePacket", a, b);
+    if rng.below(8) != 0 {
+        return;
+    }
+    for k in 0..ACTORS {
+        let q = w.actor(k);
+        for o in [0x12u32, 0x21, 0x22, 0x3e, 0x11] {
+            poke(a, b, q + o, &[u8::from(rng.below(3) == 0)]);
+        }
+    }
+    let extra = [0, rng.next() | 1][rng.below(2) as usize];
+    set(a, b, ffx_battle::flow::bridge::CHR_EXTRA, extra);
+    twin("MsBtlChrFreeAll", a, b, 0x0079_3480, &[], 0, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            fr::ms_btl_chr_free_all(m, &mut s);
+        });
+        0
+    });
+    same("MsBtlChrFreeAll", a, b);
 }

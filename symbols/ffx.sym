@@ -4808,7 +4808,9 @@
 0x007821e0 function MsBattleWater             # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...); was Battle_IsUnderwater
 0x007821f0 function MsBtlBridgeBtl2Event      # fh v3:exact 0x007822b0
 0x007824e0 function MsBtlBridgeEvent2Btl      # fh v3:exact 0x007825a0
+0x00782640 function MsBtlScriptRecordFree_00782640 # (i): Sg_FreeA(g_BtlScriptRecords[i] +4, 5) and the pointer cleared; MsBattleFree (i 1) and MsBattleAllFree (i 0) call it, where Switch's MsBattleFree/MsBattleAllFree inline a Sg_FreeA (fh cg_switch calls); name ours; ported (battle round 18)
 0x007826b0 function MsDebugInfoRead              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host0:/home/%s/%s'; Switch 0x7100337290 MsDebugInfoRead (symbols from Fahrenheit's server export)
+0x00782750 function MsEffectBufferFree_00782750 # (): user_free(g_BtlEffectBuffer), cleared; MsBattleFree's only call between Sg_IdSetEffectTableIndex and MsNumberFreeMem, inlined as a user_free in Switch's MsBattleFree (fh cg_switch calls); name ours; ported (battle round 18)
 0x00782770 function MsEnvInit                 # fh v3:exact 0x00782830
 0x007827f0 function MsFldGetScene             # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; was Enc_FindFormation
 0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights
@@ -4939,7 +4941,7 @@
 0x007878a0 function MsEffectCheckMotion2         # layout: alphabetical run between MsEffectCheckMotion and MsEffectCheckTarget (1 unnamed in the gap); Switch 0x7100351240 MsEffectCheckMotion2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787900 function MsEffectCheckTarget       # fh v3:exact 0x007879c0
 0x00787950 function MsEffectEndMotion         # fh v3:exact 0x00787a10; ours: (i, kind): after MsEffectResetMotionDisable: move flag off (not kind 3), kinds 1/6 +0x449, 4/5 +0x44f, motion 0 for 0/3/4/5 (8 with +0x436); +0x450 cleared, MsSetChrWeak; ported (battle round 12)
-0x00787a40 function MsEffectEnvFree           # fh v3:cg2 0x787b00
+0x00787a40 function MsEffectEnvFree           # fh v3:cg2 0x787b00; ported (battle round 18)
 0x00787a60 function MsEffectEnvInit              # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f540 MsEffectEnvInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787a70 function MsEffectFileNumber           # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f6a0 MsEffectFileNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787ab0 function MsEffectForceFree         # fh v3:exact 0x00787b70; ours: (id) event effect 0x29f ends through MagicFile_GetEffectOverlayTable(0)+0x20 with 0x0113336c, any other op_ovl_effect_forced_free; their eax; ported (battle round 14)
@@ -5003,7 +5005,7 @@
 0x0078a890 function DmgCalc_CheckHit          # fh v3:exact 0x0078a950 +DmgCalc_CheckHit
 0x0078aac0 function DmgCalc_DmgImmunity       # fh v3:exact 0x0078ab80 +DmgCalc_DmgImmunity
 0x0078ab20 function MsCalcMagic               # fh v3:exact 0x0078abe0
-0x0078ac20 function MsCalcMotionSpeed         # fh v3:exact 0x0078ace0
+0x0078ac20 function MsCalcMotionSpeed         # fh v3:exact 0x0078ace0; ported (battle round 18)
 0x0078ad40 function DmgCalc_Protect           # Fahrenheit's v3 name (+DmgCalc_Protect, 0x0078ae00); physical damage halved when the result's +0xb (protect) is set, flag 0x40; ported (ffx_battle::damage)
 0x0078ad80 function DmgCalc_GravImmunity      # fh v3:exact 0x0078ae40 +DmgCalc_GravImmunity
 0x0078adc0 function DmgCalc_Shell             # Fahrenheit's v3 name (+DmgCalc_Shell, 0x0078ae80); magic damage halved when the result's +0xa (shell) is set, flag 0x20; ported
@@ -5092,7 +5094,7 @@
 0x0078fa30 function MsMenuCloseTitleWindow    # fh v3:exact+call.cs 0x0078fa80 cdecl
 0x0078fa80 function MsMenuCountStatus         # fh switch:bsim1.00 0x710035e1f0
 0x0078faa0 function MsMenuDefCountStatus      # fh switch:bsim1.00 0x710035e250
-0x0078fb00 function MsMenuFreeText            # fh v3:exact 0x0078fb50
+0x0078fb00 function MsMenuFreeText            # fh v3:exact 0x0078fb50; ported (battle round 18)
 0x0078fb60 function MsMenuGetBtlEndText       # fh v3:bsim1.00 0x0078fbb0
 0x0078fb80 function MsMenuGetChrSkipCommand   # fh v3:exact 0x0078fbd0
 0x0078fbb0 function MsMenuGetHelp             # fh v3:exact 0x0078fc00
@@ -5174,8 +5176,8 @@
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
 0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420; ours: (i, flags) hidden, bind/status effects off, script i+5 cancelled, model and weapons disposed by flags; ported (battle round 13)
-0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490
-0x00793500 function MsBtlChrFreeMem           # fh v3:exact 0x00793510
+0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490; ported (battle round 18)
+0x00793500 function MsBtlChrFreeMem           # fh v3:exact 0x00793510; ported (battle round 18)
 0x00793530 function MsBtlChrGetMem            # fh v3:exact 0x00793540
 0x00793570 function MsBtlChrInfoFree          # fh v3:exact 0x00793580
 0x007935b0 function MsBtlChrInit              # fh v3:exact 0x007935c0
@@ -5186,7 +5188,7 @@
 0x00793ba0 function MsCalcChrDir              # fh v3:exact 0x00793bb0
 0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
-0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0
+0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0; ported (battle round 18)
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10; ours: (all): 0x5d records +0x30 = 1, +0x28 = 0xff; with all each actor reset (head target, MsEffectEndMotion 0, normals, matrix, specular, visible); ran-away petrified out of place: MsStoneMove; ported (battle round 12)
 0x00793ef0 function MsCommandStartChrStatusAll # fh v3:exact 0x00793f00
 0x00793f10 function MsDetachWeapon               # layout: alphabetical run between MsCommandStartChrStatusAll and MsGetChr (1 unnamed in the gap); Switch 0x71003472c0 MsDetachWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5292,7 +5294,7 @@
 0x00797970 function MsAtelGetSysReq              # layout: alphabetical run between MsAtelChrInit and MsAtelRegist (3 unnamed in the gap); Switch 0x710033b620 MsAtelGetSysReq is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007979d0 function MsAtelParseSysTag         # (kind, i, n): with MsAtelGetHandler's handler, its work decodes (AtelDecodeCommand, AtelDecodeSignal) until AtelGetRequestLevel < 7: 0, else -1; ported. layout: alphabetical run between MsAtelChrInit and MsAtelRegist (3 unnamed in the gap); Switch 0x710033b570 MsAtelParseSysTag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00797a40 function MsAtelRegist              # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each); was Script_Register
-0x00797a90 function MsAtelRegistFree          # fh v3:exact 0x00797aa0
+0x00797a90 function MsAtelRegistFree          # fh v3:exact 0x00797aa0; ported (battle round 18)
 0x00797ae0 function MsAtelRegistInit          # fh v3:exact 0x00797af0
 0x00797b70 function MsAtelRequestAdd          # fh v3:exact 0x00797b80
 0x00797bc0 function MsAtelRequestCamera       # ?(slot, actor, handler id, handler2, ...): queues handlers (0x00797b70, Mon_FindHandler) and starts them through 0x00797d50; used by 0x703f with a finish flag out-param; was Battle_RunEvent
@@ -5323,7 +5325,7 @@
 0x00798e90 function MsBtlStartAP              # fh v3:exact 0x00798ea0
 0x00798eb0 function MsCalcWeaponCap           # fh v3:exact 0x00798ec0
 0x00798f10 function MsDebugAddWeapon             # layout: alphabetical run between MsCalcWeaponCap and MsFieldItemFree (1 unnamed in the gap); Switch 0x7100358a50 MsDebugAddWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00798f90 function MsFieldItemFree           # fh v3:bsim1.00 0x00798fa0
+0x00798f90 function MsFieldItemFree           # fh v3:bsim1.00 0x00798fa0; ported (battle round 18)
 0x00798fd0 function MsFieldItemGet            # fh v3:bsim1.00+call.cs 0x00798fe0 cdecl
 0x00798ff0 function MsFieldItemGetMes         # fh v3:exact 0x00799000
 0x00799020 function MsFieldItemRead           # fh v3:exact 0x00799030
@@ -5343,10 +5345,11 @@
 0x00799b40 function MsSetChrMimic             # fh v3:exact 0x00799b50
 0x00799cd0 function MsSetDeathSentence        # fh v3:exact 0x00799ce0; ours: Doom's countdown +0x5c8, then command 0x3120 on itself; ported (battle round 12)
 0x00799d50 function MsSetProvokingCommand     # fh v3:exact 0x00799d60; ours: Provoke: +0x6c6 on the provoker +0x5c4 as the cursor may pick it; ported (battle round 12)
+0x00799ec0 function MsMemCheckFree            # callee order: MsBattleAllFree calls MsFieldItemFree, 0x007a0cb0, this, as Switch's MsBattleAllFree calls MsFieldItemFree, MsWeaponNameFree, MsMemCheckFree (fh cg_switch calls); layout: just before MsMemCheckInit; frees g_BtlMemCheck2 and clears it; ported (battle round 18)
 0x00799ee0 function MsMemCheckInit            # fh v3:cg2 0x799ef0
 0x00799f00 function MsMemCheckRegist          # fh v3:exact 0x00799f10
 0x00799f20 function MsMemCheckSum             # fh v3:exact 0x00799f30
-0x00799f70 function MsBtlFreeItemMem          # fh v3:bsim1.00 0x00799f80
+0x00799f70 function MsBtlFreeItemMem          # fh v3:bsim1.00 0x00799f80; ported (battle round 18)
 0x00799fb0 function MsBtlGetItemMem           # fh v3:exact 0x00799fc0
 0x0079a000 function MsBtlInitItemMem          # fh switch:cg2 0x71008ac2f8
 0x0079a0c0 function MsCheckRange              # fh v3:bsim1.00+call.cs 0x0079a0d0 cdecl
@@ -5413,9 +5416,11 @@
 0x0079d430 function MsBattleSpecial           # fh v3:exact 0x0079d450
 0x0079dd90 function MsBattleSpecialCameraFree # fh v3:exact 0x0079ddb0
 0x0079ddb0 function MsBattleSpecialCameraPause # fh v3:exact 0x0079ddd0
-0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00
+0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00; ported (battle round 18)
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80
+0x0079df90 function MsSpecialSeaMatrix_0079df90 # (chr, id, work): Ch_OptposGetMatrix(chr, id, 0, work+0x7c0), its rows normalized (MsVectorNormal), Yn_SeaSetMatrix; MsBattleSpecial's kinds 2 (id 0xe) and 3 (id 5) on actor 0x14's model; name ours; ported (battle round 18)
 0x0079dfe0 function MsSpCameraProcess            # layout+callees: sorts between MsBattleSpecialInit and MsTransSpPos, and its named callees match the Switch 0x71003797d0 MsSpCameraProcess's (similarity 1.00: MsSetNormalUpVector, MsTransSpPos); symbols from Fahrenheit's server export
+0x0079e030 function MsSpecialChrMatrix_0079e030 # (angles): each shown, unridden actor's matrix at g_BtlSpecialMem + 0x40 i: scale 0.01, MsRotMatrixY(dir + pi/2), Z(angles[2]), X(angles[0]), its position turned likewise; Ch_SetOrgMatrix; MsBattleSpecial kind 1's last call; name ours; ported (battle round 18)
 0x0079e1b0 function MsTransSpPos                 # callees: its named callees match the Switch 0x71003796e0 MsTransSpPos's (similarity 1.00: FFXVu0UnitMatrix, MsApplyMatrix, MsRotMatrixX, MsRotMatrixZ); symbols from Fahrenheit's server export
 0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
@@ -5432,7 +5437,7 @@
 0x0079e6a0 function MsEtEffectRead            # fh v3:exact 0x0079e6c0
 0x0079e730 function MsEtEffectReadInit        # fh v3:bsim1.00 0x0079e750
 0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0
-0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0
+0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0; ported (battle round 18)
 0x0079e7c0 function MsGetStatusLook           # (i) -> bits: 1 +0x606 bit 1, 2 +0xdce, 4 +0x606 bit 9, 8 +0x613, 0x10 +0x614, 0x20 +0x616 bit 10; MsStatusEffectCheck (into +0x6f8, op_et_astatus_effect_change); name ours
 0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850; ours: (i): the prayer effect +0xea0 ends (op_et_prayeff_send_read_through); kind 8 (+0xdea) ends 0x10's and 0x11's first; ported (battle round 12)
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
@@ -5456,7 +5461,7 @@
 0x0079f380 function MsCalcCursorPos           # fh v3:exact 0x0079f3a0
 0x0079f5e0 function MsNumberCalcProcess       # fh v3:exact 0x0079f600
 0x0079f660 function MsNumberDrawProcess       # fh v3:exact 0x0079f680
-0x0079f990 function MsNumberFreeMem              # layout: alphabetical run between MsNumberDrawProcess and MsNumberGetMem (1 unnamed in the gap); Switch 0x7100361a60 MsNumberFreeMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0079f990 function MsNumberFreeMem              # layout: alphabetical run between MsNumberDrawProcess and MsNumberGetMem (1 unnamed in the gap); Switch 0x7100361a60 MsNumberFreeMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (battle round 18)
 0x0079f9b0 function MsNumberGetMem            # fh v3:exact 0x0079f9d0
 0x0079f9f0 function MsNumberInit              # fh v3:cg2 0x79fa10
 0x0079fa00 function MsNumberRegist            # fh v3:exact+call.cs 0x0079fa20 cdecl; ours: (i, kind, value, other, x, flags, style): a damage number's digits and word (kind 1 MP, 3/4/5 words at 0x00c424a0..ac) via MsNumberPut; ported (battle round 12)
@@ -5763,7 +5768,7 @@
 0x007aa050 function MsGetChrTargetInfo        # (i, kind, &pos, &width, &height) -> msCheckSameTarget: MsGetChrInfo of the actor's targets (+0xdc0 via MsEffectCheckTarget), their mean width and height; named here; ported
 0x007aa100 function MsMotionPosCheck          # fh v3:exact 0x007aa120
 0x007aa140 function MsMotionPosCheckAll       # fh v3:exact 0x007aa160
-0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180
+0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180; ported (battle round 18)
 0x007aa260 function MsMotionSpeedSetNormal    # fh switch:bsim1.00 0x71003619d0
 0x007aa280 function msMoveReset               # fh switch:bsim1.00 0x71003606e0
 0x007aa2a0 function MsGetChrPredictPos           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100361470 MsGetChrPredictPos, 3 votes, round 2; cdecl(i), eax garbage: one frame of actor i's move (+0x415 & 0x7f: 7 spline +0x454 at frame +0x452 of +0x45a, 0x10 straight step, else towards MsGetMoveTargetPos with bit 0x80 steering or MsGetChrMoveAccelPos), then the direction easing (+0x42e, MsGetDirMode, MsCameraMoveCalc curve 2, Ch_SetDirF); ported (ffx_battle::predict, battle round 17)
@@ -5785,6 +5790,7 @@
 0x007ab6c0 function MsTerminateMotion         # fh v3:exact 0x007ab6e0
 0x007ab700 function MsCheckNeckMotion         # cdecl(actor) -> 0 when motion +0x3f0 is 0x20-0x24 or 0x48-0x4c, else -1; MsMoveChr sets the neck target only on -1 (was FUN_007ab700); ported (ffx_battle::predict, battle round 16)
 0x007ab730 function MsMotionSpeedReset        # fh switch:bsim1.00 0x71003619f0
+0x007ab750 function MsCheckChrTouch_007ab750  # (i, actor) -> 0 when actor i, at its battle position, is within the f32 sum of its and another's width of one of actors 0..0x1b (MsPointLen2D), that one going to g_BtlEffectWait with 0xfc; else -1; MsMotionProcess's only callee of it, inlined in Switch's MsMotionProcess (fh cg_switch calls: MsGetChrWidth, MsGetChrBtlPos, MsPointLen2D after MsSetMotion); name ours; ported (battle round 18)
 0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
 0x007ab970 function MsEquipSaveWeapon         # fh v3:exact 0x007ab990
@@ -6142,9 +6148,9 @@
 0x007c2e10 function MsMulVector               # fh v3:exact 0x007c2da0
 0x007c2ec0 function MsPointLen                # fh v3:exact 0x007c2e50
 0x007c3030 function MsPointLen2D              # fh v3:exact 0x007c2fd0
-0x007c3170 function MsRotMatrixX              # fh v3:exact 0x007c3110
-0x007c3480 function MsRotMatrixY              # fh v3:bsim1.00 0x007c3420
-0x007c3790 function MsRotMatrixZ              # fh v3:bsim1.00 0x007c3730
+0x007c3170 function MsRotMatrixX              # fh v3:exact 0x007c3110; ported (battle round 18)
+0x007c3480 function MsRotMatrixY              # fh v3:bsim1.00 0x007c3420; ported (battle round 18)
+0x007c3790 function MsRotMatrixZ              # fh v3:bsim1.00 0x007c3730; ported (battle round 18)
 0x007c3aa0 function MsRotTransPers               # layout: alphabetical run between MsRotMatrixZ and MsScreenMatrix (1 unnamed in the gap); Switch 0x710039efc0 MsRotTransPers is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007c3d60 function MsScreenMatrix            # fh v3:exact 0x007c3d00
 0x007c40b0 function MsSubPoint                # fh v3:cg6 0x7c4050
@@ -8782,6 +8788,7 @@
 0x00872340 function TkCheckPlayVoice          # fh v3:exact 0x008722e0
 0x00872350 function TkCheckSoftWareReset      # fh v3:bsim1.00 0x008722f0
 0x00872360 function Tk_GetScale               # (which) f32 0x01325b98[which != 0]; own name
+0x00872380 function TkHideAttachedChrs        # (actor, hide): for k 0..2 with u16 +0xb14 bit k, u16 +0xb04[k] != 0xff, +0xaf4[k] != 0: Ch_SetHideEvent(chr, hide), Ch_SetShadowMode(chr, 0); eax = actor; caller 0x0086e5b0 (event actor restore); own name
 0x00872470 function TkMsEventEffectRead          # layout+callees: sorts between TkCheckSoftWareReset and TkRefreshActuator, and its named callees match the Switch 0x7100474340 TkMsEventEffectRead's (similarity 1.00: MsEventEffectRead); symbols from Fahrenheit's server export
 0x00872480 function TkRefreshActuator         # TkSetControlerActuatorMode(0, 0, menu setting bit 4); Switch name, alphabetical slot TkCheckSoftWareReset..TkRefreshHdd; was Pad_RefreshActuatorMode
 0x008724a0 function TkRefreshHdd              # fh v3:exact+call.cs 0x00872440 cdecl
@@ -9343,6 +9350,7 @@
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
+0x0088c830 function TkGetSaveEventAddress     # jmp MsGetSaveEventAddress (5 bytes); name ours
 0x0088c850 function TkGetSavedLang            # () byte 0x01330874 (stored from TkGetLang at init) zero-extended; own name
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
@@ -9693,6 +9701,7 @@
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aa470 function MenuMain_ResetAllWindows  # the 32 window records (0x98 bytes from 0x01840900) reset; own name
 0x008aa4b0 function MenuMain_ResetWindow      # (window) defaults: callbacks/state 0, ids +0x2c/+0x2e = -1, +0x34 = 0x01000000, +0x3e = 0x0101; own name
+0x008aa570 function MenuMain_Reset            # (): 28 words 0x01840888..0x018408f4 (g_TkMenuSlots, g_TkMenuMainActiveMask, g_TkMenuDBuffIndex) cleared; MenuMain_ResetAllWindows; MenuHelp_SetRatio2(1) (eax); own name
 0x008aa610 function MenuMain_BusyMask         # (): g_TkMenuMainActiveMask | bit 31 when TkCdReadSync(1); when that is 0, 0x80000000 if AtelIsCallbackQue() == 1; name ours
 0x008aa690 function MenuMain_RestoreVram      # (): MenuMain_LoadVramBlock(0x01340870 + i*0x10000, 0xbc000 + i*0x4000, 0x10000) for 13 blocks; menu close in 0x008a9ca0 (after MenuMain_SaveVram on open); name ours
 0x008aa710 function MenuMain_LoadVramBlock    # (buf, vram, bytes): sceGsSetDefLoadImage(0x01841cd0, vram/64, 8, 0, 0, 0, 512, bytes/4/512), FlushCache, sceGsExecLoadImage; glue; name ours
@@ -10119,6 +10128,7 @@
 0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00
 0x008c2d00 function TkMn2WeaponBuySellWindow     # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8a60 TkMn2WeaponBuySellWindow's (similarity 0.62: DrawCrossMenuIconWeaponName2, TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008c3070 function TkMsSetSaveParam             # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8120 TkMsSetSaveParam's (similarity 1.00: MsSetSaveParam, TkMenuGetHP, TkMenuGetMP, TkMenuGetMaxHP, TkMenuGetMaxMP); symbols from Fahrenheit's server export
+0x008c30d0 function TkMsSetSaveParamAll       # jmp MsSetSaveParamAll (5 bytes); name ours, after TkMsSetSaveParam
 0x008c30e0 function TkFindLegendWeapon_008c30e0  # (kind) -> the saved weapon whose flags +3 bit 2 (legend) are set and +4 == kind, from MsGetSaveWeaponList; dbgPrintf "TK:Found Legend weapon(%d)" / "not found"; only caller TkSetLegendAbility (the Switch inlines it there, hence the string match); own name
 0x008c3170 function TkSetLegendAbility        # fh call.cs cdecl
 0x008c32d0 function MenuItem_Plus10           # (p) p + 0x10; no caller; own name
@@ -10131,6 +10141,7 @@
 0x008c43f0 function MenuNameEntry_OpenCharWindow # (chr): TkMenuMainAllocWindow with +8 0x008c3530, +0xc 0x008c3ce0, +0x10 0x008c3ec0, +0x14 0x008c44b0, +0x3e = 3, +0x58 chr; TkMenuMainRegistWindow; then 0x023cc3c4/c0/bc = chr, 0x023cc3c8 = 0; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c44d0 function MenuNameEntry_DeleteKey   # (): TOGetFFXLang() 10, 9 or 11 and MenuItem_KeysMatch(g_TkMenuItemTarget) -> every leading non-empty 4-byte entry of g_TkMenuItemKeyUse (0x0186a280) cleared, else the last one; callers 0x008c3891, 0x008c3a33 in the name entry's control step 0x008c3580; own name
+0x008c4e60 function MenuNameEntry_Commit      # (): g_TkMenuItemTarget >= 0: MsGetSaveChrName(t), +0x13 MenuItem_KeysMatch(t), +0x12 TOGetFFXLangJmp(); else save +0xec; g_TkMenuItemKeyUse entries copied (code; 6..0x2f + byte 1; 4 + byte 1 (+ byte 2 below 0x30)), 0-terminated; achievementUnlockAchievement 0xf+0x1a (target 0x11), 0xd, 0xe; own name
 0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
 0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
@@ -10181,6 +10192,8 @@
 0x008c93c0 function TkMenuItemClearWindow2    # (): the same for 0x0186a39c
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
+0x008c94e0 function MenuItem_CountGearByOwner # (): u16 counts [7][2] at 0x0186a3e4 cleared; per i < TkMn2GetNameModeMax() (signed) MsGetSaveWeapon(u16 g_TkMenuItemList[i], &local): owner byte +4 < 7 -> counts[owner*2 + (byte +5 != 0)]++; eax: count, the last index or slot; caller 0x008c5480 (case 0x8c57bb); own name
+0x008c99f0 function MenuItem_DrawRows         # (window, _, first, f32 x, f32 y): x' = f32(graphicUiRemapX2(210) + x); nine MenuItem_DrawRow(window, x', y', first + i), y' += graphicUiRemapY2(77) (f32); caller the item list draw; own name
 0x008c9a70 function MenuItem_DrawRow          # (window, x, y, index): index in 0..u16 window+0x30: TODrawMenuPlateXYWHType(x, y, rx2(740), ry2(60), 5); window+0x45 > 0 and index == i16 +0x2c: TkMn2DrawCrossCmdCursor(x + rx2(160), y + ry2(4), 1); g_TkMenuItemList[index] byte +2 set: DrawCrossMenuIconWeaponName2(MsGetSaveWeapon(id, &local), x, y, 0); caller 0x008c99f0; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b60 function MenuItem_GetLinePos       # (): TkMn2SeqGetPos("p_linmline", 0x0186a400), ("p_rinmline", 0x0186a404); no direct callers; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b90 function Menu_FindFlagged          # (entries, from, to): first index in from..to whose 4-byte entry has byte +2 set, else -1; name ours
@@ -10242,6 +10255,7 @@
 0x008cecf0 function MenuSummon_GrowEntry      # (i) TkMn2GetSummonGrow + 8i + 8 * TkMn2GetSummonGrowMax; own name
 0x008ced10 function Math_Clamp1To99           # (n) -> n clamped to 1..99
 0x008ced30 function TkMn2OpenSummonGrowWindow # fh v3:exact 0x008ced00
+0x008ceda0 function MenuSummon_OpenWindow2    # (): TkMenuGetCurrentSummon(); TkMenuMainAllocWindow into 0x0186a5ac (TkMenuSummonCloseWindow2): +0x48/+0x32 0, +0x30 10, +0x3a 9, +8 0x008cd310, +0xc 0x008cd6d0, +0x10 0x008ce750, +0x14 0x008ceee0, +0x1c 0x008cd420, +0x3e 2, +0x42 1, +0x36 3, +0x45 0, +0x54 0xaa; registered, TkMn2InitStatusBG, MenuSummon_RefreshGrowMasks(aeon); returned; caller TkMenuCtrlSummon step 0x18; own name
 0x008cee30 function MenuSummon_RestartGrowWindow# TkMenuRestartSelFileWindow(0x0186a5a8); own name
 0x008cee50 function MenuSummon_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186a5ac); own name
 0x008cee70 function MenuSummon_SetStat        # (base, desc, max, v): the store MenuSummon_GetStat reads; name ours
@@ -10291,6 +10305,7 @@
 0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
+0x008d5680 function MenuKaizou_AddAbility     # (weapon, ability): first u16 slot (+0xe, u8 +0xb of them) that is 0 or 0xff gets ability; tail jump TkMsSetSaveParamAll; caller the customize step 0xd; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d56f0 function MenuKaizou_WeaponByte4    # (w): MsGetSaveWeapon(u16 [0x0186aa38][i16 w+0x48], &local): -1 when its byte +2 is 0, else its byte +4; name ours
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
@@ -10308,7 +10323,9 @@
 0x008d7630 function MenuWShop_CloseSubWindow3 # close 0x0186aafc; own name
 0x008d7650 function MenuWShop_CloseSubWindow1 # close 0x0186aaf4; own name
 0x008d7670 function MenuWShop_CloseSubWindow4 # close 0x0186ab00; own name
+0x008d81d0 function MenuWShop_OpenSubWindow2  # (parent): weapon shop buy-amount window into 0x0186aaf8 (MenuWShop_CloseSubWindow2): +0xc 0x008d7690, +0x10 0x008d7a40, +0x14 0x008d84d0, +0x3e 4, +0x58 parent, +0x5c MenuWShop_GetRecord(u16 shop record [+2 + 2*i16 parent+0x48]), +0x60 MenuShop_WeaponPrice(+0x5c), +0x64 1, +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008d8260 function MenuWShop_OpenListWindow  # (): TkMenuMainAllocWindow into 0x0186aaf0: +0xc 0x008d77f0, +0x10 0x008d7aa0, +0x14 0x008d84e0, +0x48/+0x32 0, +0x30 u16 0x0186ab10, +0x3e 3, +0x42 1, +0x3a 9, +0x45 -1, +0x37 0, +0x28 0; registered, returned; caller 0x008d6e40; name ours
+0x008d82d0 function MenuWShop_OpenSubWindow3  # (parent): weapon shop sell window into 0x0186aafc (MenuWShop_CloseSubWindow3): +0xc 0x008d7860, +0x10 0x008d7cc0, +0x14 0x008d84f0, +0x3e 4, +0x58 parent, id = u16 g_TkMenuItemList[i16 parent+0x48], +0x5c MsGetSaveWeapon(id, &local), +0x60 MenuShop_WeaponSellPrice(+0x5c), +0x64 1, +0x68 MsGetGIL(), +0x6c id, u16 +0x48 1; registered, returned; own name
 0x008d8370 function MenuWShop_OpenSubWindow1  # (): TkMenuMainAllocWindow into 0x0186aaf4: +0xc 0x008d79c0, +0x10 0x008d7d20, +0x14 0x008d8500, +0x1c 0x008d75d0, +0x3e 3, +0x30 TkMn2GetNameModeMax(), +0x3a 9, +0x45 -1; registered, MenuWShop_InitCursor(w) returned; caller 0x008d6e40; name ours
 0x008d83e0 function MenuWShop_OpenSubWindow4  # (): TkMenuMainAllocWindow with +0xc 0x008d7a30, +0x10 0x008d7f50, +0x14 0x008d8510, +0x3e = 1, kept in 0x0186ab00 (MenuWShop_CloseSubWindow4), TkMenuMainRegistWindow; returns it; name ours
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
@@ -10328,8 +10345,10 @@
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008d9e20 function TkMenuCtrlSelFileWindow      # callees: its named callees match the Switch 0x71004db0b0 TkMenuCtrlSelFileWindow's (similarity 0.67: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
+0x008da860 function MenuShop_OpenBuyWindow    # (parent): item shop buy-amount window into 0x0186ac3c (TkMenuWShopCloseWindow): +0xc 0x008d9bd0, +0x10 0x008d9fe0, +0x14 0x008daae0, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 TkMn2GetExcelData(g_TkMenuWShopList, [0x0186ac2c]) [+2 + 2*i16 parent+0x48], +0x60 MenuShop_Price(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008da8f0 function MenuWShop_OpenSelWindow   # (): TkMenuMainAllocWindow into 0x0186ac34: +0xc 0x008d9da0, +0x10 0x008da050, +0x14 0x008daaf0, +0x48/+0x32 = 0, +0x30 = u16 0x0186ac24, +0x3e 3, +0x34 0x30000, +0x42 1, +0x3a 10, +0x45 -1; registered, returned; caller TkMenuCtrlWShop; name ours
 0x008da9c0 function MenuWShop_OpenWindow3     # (): TkMenuMainAllocWindow into 0x0186ac30 (TkMenuWShopCloseWindow3's): +0xc 0x008d9e10, +0x10 0x008da6b0, +0x14 0x008dab10, +0x3e = 2, +0x36 = 3; registered, returned; caller 0x008da7a0; name ours
+0x008daa00 function MenuShop_OpenSellWindow   # (parent): item shop sell window into 0x0186ac40 (TkMenuWShopCloseWindow2): +0xc 0x008d9e20, +0x10 0x008da730, +0x14 0x008dab20, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 g_TkMenuItemList[i16 parent+0x48], +0x60 MenuShop_SellPrice(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
@@ -10523,7 +10542,9 @@
 0x008e3730 function TkMenuCtrlAskYesNoWindow     # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e6f50 TkMenuCtrlAskYesNoWindow's (similarity 1.00: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
 0x008e4560 function TkMenuGetYesNoWindowHeight   # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e7760 TkMenuGetYesNoWindowHeight's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
+0x008e46b0 function TkMenuOpenSubCmdWindowBeside # (id, texts, values, n, b44): width 0x165, or open 0x023cc128 i16 +0x4e - its cursor entry's width (+0x60 + 12 i16 +0x48) - 0x18; TkMenuOpenSubCmdWindowMain_008e4790 into 0x023cc124: +0x46 0, +0x3e 3, +0x3f 0, +0x14 0x008e4a90, +0x10 0x008e4140, +0x4a open +0x4e - new +0x4e + open +0x4a (0x30), +0x94 1, +0x4c 0x25, +0x90 -1; own name
 0x008e4790 function TkMenuOpenSubCmdWindowMain_008e4790 # duplicate name (0x008e33d0 has it); layout+callees: sorts between TkMenuGetYesNoWindowHeight and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e8190 TkMenuOpenSubCmdWindowMain's (similarity 1.00: TkMenuMainAllocWindow, TkMenuMainRegistWindow, TkMn2StringWidth); symbols from Fahrenheit's server export
+0x008e4930 function TkMenuOpenSubCmdWindowRect # (id, texts, values, n, b44, f32 x, y, width, h): TkMenuOpenSubCmdWindowMain_008e4790(id, texts, values, n, ftol(width), b44) into 0x023cc128, u16 +0x4a/+0x4c/+0x4e/+0x50 = ftol(x, y, width, h); returns it (Ghidra drops the fld arguments); own name
 0x008e49b0 function TkMenuRefreshSubCmdHelp   # TkMenuSetHelpMessage of the sub-command window cursor entry +0x5c+12i; the Switch TkMenuRefreshSubCmdHelp (48 bytes) calls only TkMenuSetHelpMessage and sorts right before TkMenuRestartSubCmdWindow2, as here; was MenuSubCmd_RefreshHelp
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e49f0 function TkMenuRestartSubCmdWindow1 # (): 0x023cc124 +0x45 = 0, +0x28 = 1 (TkMenuRestartSubCmdWindow2 does 0x023cc128)
@@ -14431,6 +14452,7 @@
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
 0x00b549f8 label s_BtlEffectReadError      # MsEffectRead's MsBattleError message (reading while an event effect plays or the actor reads already)
 0x00b54ba8 label s_BtlCommandCueError      # MsCommandCueProcess's MsBattleError message for an entry of a bad actor or list
+0x00b54cb8 label k_HundredthF64            # f64 0.01: MsSpecialChrMatrix_0079e030's scale of the actors' +0x3a0 scale to their matrices
 0x00b54f28 label g_TwoThirdsPi             # f32 2pi/3, and -2pi/3 at 0x00b54f2c: MsDirTurn's limits
 0x00b55178 label g_FloatScreenDepth        # f32 1024.0, the default screen depth (MsEffectCameraInit)
 0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
@@ -15098,6 +15120,7 @@
 0x0112a8e3 label g_BtlEndKind              # i8 MsBattleProcess_Status_007917d0 copies g_BtlEndForced at state 0x1d; name ours
 0x0112a8e4 label g_BtlCameraState          # u8, 2: no script camera requests unless an actor asks (MsAtelRequestCamera)
 0x0112a8e5 label g_BtlCameraOnce           # u8: 1 while a script camera request runs (set by 0x007981e0); MsEffectStart's state 3 waits on it with g_BtlCameraState
+0x0112a8e6 label g_BtlSpecialKind          # i8: the battle's special stage, 1 screen shake (MsScreenResetShake(0) on free), 2 and 3 the sea (Yn_SeaResetMatrix); MsBattleSpecialFree clears it; name ours
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
 0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
@@ -15356,6 +15379,8 @@
 0x01135d70 label g_BtlAtelRequests           # 16 x 4 u16 effect requests (MsAtelRequestAdd 0x00797b70)
 0x01135df0 label g_AtelCamOn               # u8; with 2 words after and 5 at 0x01134518, cleared by MsAtelCamInit
 0x01135e00 label g_BtlAbilityMap           # 8 x 0x1c bytes cleared by MsInitChrAbilityMap
+0x01135ff4 label g_BtlFieldItem            # u32: a buffer MsFieldItemFree frees and clears; name ours
+0x01135ffc label g_BtlFieldItem2           # u32: the second buffer MsFieldItemFree frees and clears; name ours
 0x01136000 label g_BtlMemCheck               # i32 work memory booked, from 0x40; MsMemCheckRegist (0x00799f00) adds size + 0x4f rounded to 64
 0x01136004 label g_BtlMemCheck2              # cleared by MsMemCheckInit (0x00799ee0)
 0x01136008 label g_BtlNoCommand            # MsGetComData's record for IDs of no table (kinds 0, 1, 5, 7, 9-0xb)
@@ -15363,6 +15388,7 @@
 0x0113606c label g_BtlRegMotion               # u32; Reset by MsRegMotionInit, with [REG_MOTION_FLAG].
 0x01136070 label g_BtlComBuf                  # u32; Reset by MsComBufInit.
 0x01136074 label g_BtlComBufEntries        # entries of 3 x u16 (command, effect, underwater effect) after the g_BtlComBuf count; MsGetMagicEffNum's substitutions
+0x011360a4 label g_BtlSpecialMem           # u32: the special stage's work (+0x810 an up vector MsBattleSpecialFree sets back), user_free'd by MsBattleSpecialFree; name ours
 0x011360a8 label g_BtlEtEffectRead            # u32; Reset by MsEtEffectReadInit; MsEtEffectStop stops an effect while it is set.
 0x011360ac label g_BtlNumberDigits          # u8[9]: the digits MsNumberDigits split (lowest first)
 0x011360b8 label g_BtlNumbers                 # u32; Reset by MsNumberInit (the damage numbers).
@@ -15821,6 +15847,7 @@
 0x0186a394 label    g_TkMenuItemWindow        # the item menu's window (TkMenuCtrlItem, TkMenuItemCloseWindow, TkMenuItemClearWindow)
 0x0186a3a8 label    g_TkMenuAbilityCommand    # u16 the ability menu's command id (set by 0x008c6bc0; Cmd_HealAmount, MsGetRomPlyCommand in MenuAbility_ApplyHeal)
 0x0186a3b0 label    g_TkMenuItemFirstUsable   # i16 inventory slot of the first usable item, -1 for none (TkMenuItemRefresh)
+0x0186a3e4 label    g_TkMenuItemGearCounts    # u16 [owner 0..6][weapon, armour] (MenuItem_CountGearByOwner)
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
