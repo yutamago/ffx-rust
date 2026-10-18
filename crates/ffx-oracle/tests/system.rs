@@ -17896,3 +17896,154 @@ fn round32_abmap_layers_match_the_original_on_the_snapshot() {
     };
     round32_abmap_layers(&mut a, &mut b, &mut Xorshift(0x4032_0042));
 }
+
+/// Round 32 group C: `TOSeqDrawLayer`, `TOMenuTransFaceSmnTex`, the
+/// identity at `+0x34`, the VU0 scale and the text scroll clock.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round32_more(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    // TOMenuExecLayerHandle (under TOSeqDraw) and TOTransImageHL: loggers
+    let s = stand_in8(a, b, 0, &copy_logger(cursor, 0xb220, 4, &ret_cell(cells)));
+    redirect(a, b, 0x00a7_b220, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x80,
+        &copy_logger(cursor, 0x0b10, 7, &ret_cell(cells + 4)),
+    );
+    redirect(a, b, 0x008b_0b10, s);
+    // Tk_GetScale(which): fld dword [cells + 8]; TOGetFFXVideoMode: [cells + 0xc]
+    let mut fld = vec![0xd9, 0x05];
+    fld.extend_from_slice(&(cells + 8).to_le_bytes());
+    let s = stand_in8(a, b, 0x100, &pick_logger(cursor, 0x2360, &[0], &[], &fld));
+    redirect(a, b, 0x0087_2360, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x180,
+        &pick_logger(cursor, 0xc3a0, &[], &[], &ret_cell(cells + 0xc)),
+    );
+    redirect(a, b, 0x008a_c3a0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let slots = scene::bridge::SLOTS.ptr(a).addr;
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        let i = rng.next() % 3;
+        for j in 0..8 {
+            let at = slots + 0x100 * i + 0x20 * j;
+            put(a, b, at, [0u16, 2, 3, 4][(rng.next() % 4) as usize]);
+            put(a, b, at + 0x1c, rng.next());
+        }
+        let x = rng.next();
+        assert_eq!(
+            eax(a, 0x008a_e340, &[i, x]),
+            scene::bridge::draw_layer(b, i.cast_signed(), x, call),
+            "draw layer {k}"
+        );
+        same_memory(&format!("draw layer {k}"), a, b);
+    }
+    for k in 0..4 {
+        put(a, b, cursor, log);
+        put(a, b, cells + 4, rng.next());
+        assert_eq!(
+            eax(a, 0x0090_1130, &[]),
+            intl::bridge::trans_face_smn_tex(b, b_call),
+            "smn tex {k}"
+        );
+        same_memory(&format!("smn tex {k}"), a, b);
+    }
+    // the identity at +0x34 (thiscall)
+    let this = alloc(a, b, 0x80);
+    for k in 0..10 {
+        let junk: [u32; 0x20] = std::array::from_fn(|_| rng.next());
+        put(a, b, this, junk);
+        let at = a.rebase(0x0061_a810);
+        a.call(at, Conv::Thiscall(this), &[]).unwrap();
+        math::bridge::identity_at_34(b, this);
+        same_memory(&format!("identity {k}"), a, b);
+    }
+    // the VU0 scale (no signalling NaNs)
+    let quiet = |rng: &mut Xorshift| loop {
+        let f = rng.float();
+        if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+            return f;
+        }
+    };
+    let v = alloc(a, b, 0x10);
+    let out = alloc(a, b, 0x10);
+    for k in 0..500u32 {
+        let words: [u32; 4] = std::array::from_fn(|_| quiet(rng).to_bits());
+        put(a, b, v, words);
+        let s = quiet(rng);
+        let to = if k % 4 == 0 { v } else { out };
+        assert_eq!(
+            eax(a, 0x009d_bd90, &[to, s.to_bits(), v]),
+            math::bridge::vu0_scale_xyz(b, to, s, v),
+            "vu0 scale {k}"
+        );
+        same_memory(&format!("vu0 scale {k}"), a, b);
+    }
+    // the text scroll clock
+    let w = alloc(a, b, 0x100);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells + 8,
+            [1.0f32, 0.5, 1.25, 2.0, (rng.next() % 1000) as f32 / 7.0][(rng.next() % 5) as usize],
+        );
+        put(a, b, cells + 0xc, rng.next() % 2);
+        put(
+            a,
+            b,
+            w + 0xb4,
+            [0u32, 0, 0, 1, 5, u32::MAX][(rng.next() % 6) as usize],
+        );
+        put(a, b, w + 0xac, (rng.next() % 200).cast_signed() - 20);
+        put(a, b, w + 0xb0, (rng.next() % 100).cast_signed() - 10);
+        put(a, b, w + 0xa0, rng.next() % 50);
+        if k % 10 == 0 {
+            // exactly one line's worth
+            put(a, b, cells + 8, 1.0f32);
+            put(a, b, w + 0xb4, 0u32);
+            put(a, b, w + 0xac, 10i32);
+            put(a, b, w + 0xb0, [20i32, 15][(rng.next() % 2) as usize]);
+        }
+        assert_eq!(
+            eax(a, 0x008d_f570, &[w]),
+            tolib::bridge::text_scroll_tick(b, w, call, fcall),
+            "scroll tick {k}"
+        );
+        same_memory(&format!("scroll tick {k}"), a, b);
+    }
+}
+
+#[test]
+fn round32_more_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_more(&mut a, &mut b, &mut Xorshift(0x4032_0051));
+}
+
+#[test]
+fn round32_more_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_more(&mut a, &mut b, &mut Xorshift(0x4032_0052));
+}

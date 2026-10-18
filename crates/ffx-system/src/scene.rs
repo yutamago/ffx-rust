@@ -568,4 +568,15 @@ pub mod bridge {
         }
         i.cast_unsigned().wrapping_shl(8)
     }
+
+    /// `TOSeqDrawLayer(i, a)` (`0x008ae340`): [`draw`]`(i, a, 0)`; its
+    /// result.
+    pub fn draw_layer<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        a: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        draw(mem, i, a, 0, call)
+    }
 }

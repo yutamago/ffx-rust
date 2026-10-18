@@ -1214,6 +1214,26 @@ ported! {
     WideKey_009db250 @ 0x009d_b250 => extern "C" fn wide_key(high: u32, low: u32) -> u64 {
         math::bridge::wide_key(high, low)
     }
+    /// `0x0061a810(this)`.
+    IdentityAt34_0061a810 @ 0x0061_a810 => extern "thiscall" fn identity_at_34(this: u32) {
+        math::bridge::identity_at_34(&mut mem(), this);
+    }
+    /// `TOSeqDrawLayer(i, a)`.
+    TOSeqDrawLayer @ 0x008a_e340 => extern "C" fn to_seq_draw_layer(i: i32, a: u32) -> u32 {
+        scene::bridge::draw_layer(&mut mem(), i, a, call_sym)
+    }
+    /// `0x008df570(w)`.
+    TOTextScrollTick_008df570 @ 0x008d_f570 => extern "C" fn to_text_scroll_tick(w: u32) -> u32 {
+        tolib::bridge::text_scroll_tick(&mut mem(), w, call_sym, fcall)
+    }
+    /// `TOMenuTransFaceSmnTex()`.
+    TOMenuTransFaceSmnTex @ 0x0090_1130 => extern "C" fn to_menu_trans_face_smn_tex() -> u32 {
+        intl::bridge::trans_face_smn_tex(&mut mem(), call_ptr)
+    }
+    /// `0x009dbd90(out, s, v)`.
+    Vu0ScaleXyz_009dbd90 @ 0x009d_bd90 => extern "C" fn vu0_scale_xyz(out: u32, s: f32, v: u32) -> u32 {
+        math::bridge::vu0_scale_xyz(&mut mem(), out, s, v)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)

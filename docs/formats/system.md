@@ -1281,3 +1281,16 @@ pushed as literals (no relocation entries), not addresses.
 - `0x009db230(high)` and `0x009db250(high, low)` return the 64-bit `(high
   << 32) + low` in `edx:eax` (`low` sign-extended; for the first,
   `pppCurrentProgram`).
+- `TOSeqDrawLayer(i, a)` is `TOSeqDraw(i, a, 0)`.
+- `TOMenuTransFaceSmnTex` uploads the aeons' face sheet `0x01ca0000`
+  (0x200x0x100, format 0x13) to 0x3800; like the party sheet's, the push
+  has no relocation entry.
+- `IdentityAt34_0061a810` (thiscall) sets the 4x4 at `+0x34` to the
+  identity.
+- `Vu0ScaleXyz_009dbd90(out, s, v)` goes through the VU0 emulation's
+  registers: `0x00c8f820 = s`, `0x00c8f830 = v`, its `x, y, z` times `s`
+  (rounded to `f32`), then the register is copied to `out`; `eax` is `w`.
+- `TOTextScrollTick_008df570(w)` is a text window's scroll clock: `+0xb4`
+  counts down first; at 0, `+0xb0 = ftol(Tk_GetScale(english) ×
+  f32(+0xac) + +0xb0)`, and each whole 30 (25 in the 50 Hz mode) moves
+  into the line count `+0xa0`.

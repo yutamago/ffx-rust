@@ -439,4 +439,15 @@ pub mod bridge {
         let data = 0x01c8_0000;
         upload(mem, &mut call, data, 0x3a00, 0x13, (0x200, 0x100))
     }
+
+    /// `TOMenuTransFaceSmnTex()` (`0x00901130`): the aeons' face texture
+    /// (`0x01ca0000`, 0x200 x 0x100, format 0x13) to 0x3800, the address
+    /// literal as in [`trans_face_ply_tex`] (no relocation entry); the
+    /// upload's `eax`.
+    pub fn trans_face_smn_tex<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        upload(mem, &mut call, 0x01ca_0000, 0x3800, 0x13, (0x200, 0x100))
+    }
 }

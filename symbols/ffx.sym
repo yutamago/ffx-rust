@@ -1386,6 +1386,7 @@
 0x0061a110 function ReturnMinus1_0061a110 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x0061a2a0 function Phyre_PScripting_PClassCallableMethodScript_PCallerScript_vcall # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Unable to copy argument %d from varargs list to context\\n'; Switch 0x71001a1f10 Phyre::PScripting::PClassCallableMethodScript::PCallerScript::vcall (symbols from Fahrenheit's server export)
 0x0061a730 function PWorldMatrixController_setVftable # thiscall(this): *this = Phyre_PWorldMatrixController_vftable (callers 0x005d6d10, 0x005d6d20); eax untouched; name ours
+0x0061a810 function IdentityAt34_0061a810 # thiscall(this): the 4x4 at +0x34 set to the identity (fld1/fldz stores); no direct caller; name ours; ported (system round 32)
 0x0061a860 function VFile_VFile               # fh v3:exact 0x0061aa20 VFile::VFile
 0x0061a960 function VFile_dtor_VFile          # fh v3:exact 0x0061ab20 VFile::~VFile
 0x0061a9b0 function VFileReadedBuffer_dtor_VFileReadedBuffer # fh switch:bsim1.00 0x710007d7d0 VFileReadedBuffer::~VFileReadedBuffer
@@ -10132,7 +10133,7 @@
 0x008ae070 function TOSeqCheckTermScene       # fh v3:exact 0x008ae020
 0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0
 0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0; cdecl(i, a, b) -> eax: each of the 8 g_TOSeqSlots of scene i in state 2 or 3 runs TOMenuExecLayerHandle(i, a, slot +0x1c, b); eax is the last slot's call result or its state; ported (system round 30)
-0x008ae340 function TOSeqDrawLayer            # fh switch:bsim1.00 0x71004fcea0
+0x008ae340 function TOSeqDrawLayer            # fh switch:bsim1.00 0x71004fcea0; cdecl(i, a) -> TOSeqDraw(i, a, 0); ported (system round 32)
 0x008ae360 function TOSeqGetColor             # fh v3:exact 0x008ae310
 0x008ae3a0 function TOSeqGetColorRGBA            # layout: alphabetical run between TOSeqGetColor and TOSeqGetNum (1 unnamed in the gap); Switch 0x71004f7670 TOSeqGetColorRGBA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008ae410 function TOSeqGetNum               # fh v3:exact 0x008ae3c0
@@ -10820,6 +10821,7 @@
 0x008dee00 function TODrawMessageWaitNamesp      # callees: its named callees match the Switch 0x7100500df0 TODrawMessageWaitNamesp's (similarity 0.73: TOConvAlbhedWord, TODrawChangeMacro2, TOGetChangeMacroWidth, TOGetChangeMacroWordCount, TOGetFontInfo); symbols from Fahrenheit's server export
 0x008df4c0 function StoreComputed_008df4c0       # auto-port shape (several stores: computed, into field, cdecl): t0 = u8[(a0 + 0x5b)]; u8[(a0 + 0x5b)] = ((t0 + 0xf0) & 0xff); u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0; callers: no direct caller; name ours
 0x008df520 function TOFirstInitMessageNormal     # layout+callees: sorts between TODrawMessageWaitNamesp and TOGetGroup, and its named callees match the Switch 0x7100500760 TOFirstInitMessageNormal's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
+0x008df570 function TOTextScrollTick_008df570 # cdecl(w) -> eax: +0xb4 counts down; at 0 +0xb0 = ftol(Tk_GetScale(MsGetSaveConfigEnglish()) * f32(+0xac) + +0xb0), whole 30s (25 when TOGetFFXVideoMode) move to +0xa0; callers 0x008de970, 0x008ded60; name ours; ported (system round 32)
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
 0x008df690 function TOSkipCountedCodes_008df690 # cdecl(p, n): TOSkipCode until n codes <= 2 or >= 0x26 passed; name ours
 0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export; cdecl(msg): row kind +8 of 0x00c5b1b0 (0x24 bytes): words 0-4 -> +0x100..+0x110, word 5 -> +0x12c (mode 1: 0x008dfea0), words 6/7 -> +0xf4/+0xf8
@@ -11072,7 +11074,7 @@
 0x00901000 function TOStartWindowEntry_00901000 # cdecl(i, x, y, n): as 0x00901090, but when +0xe == 0: +8 = 0, +6 = n, +0xc = n/14 + 2, +0xe = 1; name ours
 0x00901090 function TOMoveWindowEntry_00901090 # cdecl(i, x, y, n): i < 16, new position: 0x018762e0[i] = 1, x, y; unless +0xe == 1: +6/+8 = n, +0xa = 0x000a000a; name ours
 0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020; () -> eax: TOTransImageHL(0x01c80000, 0x3a00, 0x13, 0, 0, 0x200, 0x100); the push of 0x01c80000 has no relocation entry; ported (system round 31)
-0x00901130 function TOMenuTransFaceSmnTex     # fh switch:bsim1.00 0x7100522040
+0x00901130 function TOMenuTransFaceSmnTex     # fh switch:bsim1.00 0x7100522040; () -> eax: TOTransImageHL(0x01ca0000, 0x3800, 0x13, 0, 0, 0x200, 0x100); the push has no relocation entry; ported (system round 32)
 0x00901160 function TOMenuTransSmallFacePlyTex # fh switch:bsim1.00 0x7100522000
 0x00901190 function TOMkpActiveChrCursor      # fh v3:exact 0x00901190
 0x00901280 function TOMkpBtlLimitLuluMidareCounter # fh v3:exact 0x00901280
@@ -12396,6 +12398,7 @@
 0x009db250 function WideKey_009db250 # cdecl(high, low) -> edx:eax = (high << 32) + sign-extended low; name ours; ported (system round 32)
 0x009db490 function CopyFields_009db490          # auto-port shape (several stores: copy into field, cdecl): t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; t4 = u32[&0x00c8f508]; u32[(a0 + 0x10)] = t4; t5 = u32[&0x00c8f50c]; u32[(a0 + 0x14)] = t5; t6 = u32[&0x00c8f510]; u32[(a0 + 0x18)] = t6; t7 = u32[&0x00c8f514]; u32[(a0 + 0x1c)] = t7; t8 = u32[&0x00c8f508]; u32[(a0 + 0x20)] = t8; t9 = u32[&0x00c8f50c]; u32[(a0 + 0x24)] = t9; t10 = u32[&0x00c8f510]; u32[(a0 + 0x28)] = t10; t11 = u32[&0x00c8f514]; u32[(a0 + 0x2c)] = t11; t12 = u32[&0x00c8f508]; u32[(a0 + 0x30)] = t12; t13 = u32[&0x00c8f50c]; u32[(a0 + 0x34)] = t13; t14 = u32[&0x00c8f510]; u32[(a0 + 0x38)] = t14; t15 = u32[&0x00c8f514]; u32[(a0 + 0x3c)] = t15; return t15; callers: no direct caller; name ours
 0x009dba10 function FFXVu0MulMatrix_thunk     # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump
+0x009dbd90 function Vu0ScaleXyz_009dbd90 # cdecl(out, s, v) -> w bits: VU0 regs 0x00c8f820 = s, 0x00c8f830 = v with xyz *= s (f32), copied to out; no direct caller; name ours; ported (system round 32)
 0x009dbea0 function magic_nop_009dbea0        # g_MagicImports slot 720 (354 overlays): a lone ret; hidden from the dump
 0x009ddb30 function Difference_009ddb30 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x009ddb40 function Difference_009ddb40 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours

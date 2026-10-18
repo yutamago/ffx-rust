@@ -11813,4 +11813,47 @@ pub mod bridge {
         let row: u32 = mem.read(pen.wrapping_add(8));
         draw(mem, &mut call, ellipsis, rt(at), rt(row));
     }
+
+    /// `0x008df570(w)`: a text window's scroll clock. While `+0xb4` counts
+    /// down nothing else happens; at 0 the fraction `+0xb0` gains
+    /// `Tk_GetScale(MsGetSaveConfigEnglish()) × +0xac` (the step as an
+    /// `f32`, the sum at the x87's 53 bits, truncated), and every whole 30
+    /// (25 in the 50 Hz video mode, `TOGetFFXVideoMode` non-zero) moves
+    /// into the line count `+0xa0`. Returns what the original leaves in
+    /// `eax` (the lines added, the fraction, or the countdown).
+    pub fn text_scroll_tick<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let countdown: u32 = mem.read(w.wrapping_add(0xb4));
+        if countdown != 0 {
+            let n = countdown.wrapping_sub(1);
+            mem.write(w.wrapping_add(0xb4), n);
+            return n;
+        }
+        let english = call(mem, 0x0078_51d0, &[]);
+        let scale = fcall(mem, 0x0087_2360, &[english]);
+        let step = x87::store(f64::from(mem.read::<i32>(w.wrapping_add(0xac))));
+        let fraction = f64::from(mem.read::<i32>(w.wrapping_add(0xb0)));
+        let sum = x87::add(x87::mul(scale, x87::load(step)), fraction);
+        let fraction = x87::ftol(mem, sum);
+        mem.write(w.wrapping_add(0xb0), fraction);
+        let per_line = if call(mem, 0x008a_c3a0, &[]) == 0 {
+            30
+        } else {
+            25
+        };
+        let fraction = fraction.cast_signed();
+        if fraction < per_line {
+            return fraction.cast_unsigned();
+        }
+        let lines: i32 = mem.read(w.wrapping_add(0xa0));
+        let more = fraction / per_line;
+        mem.write(w.wrapping_add(0xa0), lines.wrapping_add(more));
+        mem.write(w.wrapping_add(0xb0), fraction % per_line);
+        more.cast_unsigned()
+    }
 }

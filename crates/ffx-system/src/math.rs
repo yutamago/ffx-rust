@@ -559,6 +559,40 @@ pub mod bridge {
         write_matrix(mem, out, &inv);
         out
     }
+
+    /// `0x0061a810(this)` (thiscall): the 4x4 at `+0x34` set to the
+    /// identity (1.0 on the diagonal, 0 elsewhere).
+    pub fn identity_at_34(mem: &mut impl Mem, this: u32) {
+        let mut m = [0.0f32; 16];
+        for k in 0..4 {
+            m[5 * k] = 1.0;
+        }
+        write_matrix(mem, this.wrapping_add(0x34), &m);
+    }
+
+    /// The VU0 emulation's registers `0x009dbd90` works in: the scale at
+    /// `0x00c8f820`, the vector at `0x00c8f830`.
+    pub const VU0_SCALE: Global<f32> = Global::new(0x00c8_f820);
+    pub const VU0_VECTOR: Global<[u32; 4]> = Global::new(0x00c8_f830);
+
+    /// `0x009dbd90(out, s, v)`: `v.xyz × s` with `w` kept (the PS2's
+    /// `vmulx`), through the VU0 registers: [`VU0_SCALE`] = `s` (as `fst`
+    /// stores it), [`VU0_VECTOR`] = `v`, then its `x`, `y`, `z` scaled
+    /// (rounded to `f32`), and the register copied to `out`. Returns `w`'s
+    /// bits (the original's `eax`).
+    pub fn vu0_scale_xyz(mem: &mut impl Mem, out: u32, s: f32, v: u32) -> u32 {
+        use ffx_bridge::x87;
+        let scale = x87::load(s.to_bits());
+        VU0_SCALE.set(mem, f32::from_bits(x87::store(scale)));
+        let mut r: [u32; 4] = mem.read(v);
+        VU0_VECTOR.set(mem, r);
+        for c in &mut r[..3] {
+            *c = x87::store(x87::mul(x87::load(*c), scale));
+        }
+        VU0_VECTOR.set(mem, r);
+        mem.write(out, r);
+        r[3]
+    }
 }
 
 #[cfg(test)]
