@@ -17,6 +17,7 @@
 //! - [`task`]: the field effects' tasks and objects (`rcef`).
 //! - [`rcui`]: the field UI helpers.
 //! - [`ke`]: `Ke` resource heaps and lens flare objects.
+//! - [`kedtt`]: the Ke distortion sprites (`KeDttSpr`).
 //! - [`yi`]: the field renderer's state and display objects.
 //! - [`vu0`]: the VU0-style vector helpers (`KeVu0*`).
 //! - [`nkz`]: overdrive tables (`Nkz`) and sound status (`Sqs`).
@@ -33,6 +34,7 @@ pub mod freecam;
 pub mod geom;
 pub mod guide;
 pub mod ke;
+pub mod kedtt;
 pub mod keth;
 pub mod model;
 pub mod nkz;

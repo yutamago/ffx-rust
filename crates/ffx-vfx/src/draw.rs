@@ -20,6 +20,23 @@ pub mod bridge {
     /// `g_pppCurrentProgram`.
     pub const CURRENT_PROGRAM: u32 = 0x0230_fd20;
 
+    /// The levels (`graphicLevelGetNameHash`) whose shape fields
+    /// `pppShapeFieldRenderOn_00743030` turns off.
+    pub const SHAPE_FIELD_PLAIN_LEVELS: [u32; 9] = [
+        0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139,
+    ];
+
+    /// `pppShapeFieldRenderOn_00743030()` (`0x00743030`): 0 on the nine
+    /// [`SHAPE_FIELD_PLAIN_LEVELS`], else 1 (`graphicLevelGetNameHash`
+    /// through `call`).
+    pub fn shape_field_render_on<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let h = call(mem, g(mem, NAME_HASH), &[]);
+        u32::from(!SHAPE_FIELD_PLAIN_LEVELS.contains(&h))
+    }
+
     /// `graphicVFXGetRenderDataByInstance(lo, hi)`, called through `call`.
     const GET_RENDER_DATA: u32 = 0x0064_53d0;
     /// `graphicDynGeoMemManagerGetCurrentBufferId()`, called through `call`.

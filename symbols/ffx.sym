@@ -3583,7 +3583,7 @@
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x00729060 function pppFpDispDebug               # str-match switch: only user of 6 string(s) held once by both builds, e.g. '---- FP Disp Status Start\\n\\n'; Switch 0x71002d72b0 pppFpDispDebug (symbols from Fahrenheit's server export)
-0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
+0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0; (): op_fp_effect_free, every effect's objects freed and g_FpData cleared, the heap2 block and packet buffer freed, point lights disposed of (fp::bridge::ppp_fp_free)
 0x00729280 function pppFpGetHeapMaxUseSize       # () -> 0x00cec210, the ppp heap's high-water mark; caller the rcui FP memory window as on the Switch (pppFpGetHeapMaxUseSize, called by rcuiFpMemProc); sorts between pppFpFree and pppFpGetHeapSize; the vfx porter's pppFpGetHeapPeak
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292d0 function pppFpGetHeapUsed          # () -> 0x00cec20c, the field-effect heap use of the last pppFpLoop
@@ -3598,12 +3598,13 @@
 0x00729530 function Fp_RestartGroup           # (group) Fp_Restart for every g_FpData entry of the group (+0x66): g_FpRun +0 = 0, +0x1d = 0
 0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
 0x007295b0 function pppFpIDdispOn             # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump); was Fp_Show
+0x007295f0 function pppFpIDfree_007295f0      # ours: (id): with g_FpData loaded, each effect with that id (+0x64) gets pppAllFreePObject on its run record (g_pppFpHeap current) and counter -0x1000 (not started); callers in 0x00910000/0x00930000 (fp::bridge::ppp_fp_id_free)
 0x00729660 function Fp_End                       # (id): sets entry +0x1d = 1; the 0x00729060 dump shows Stat END
 0x00729700 function Fp_Restart                   # (id): counter = 0, +0x1d = 0 (Stat RUN from the start)
 0x00729810 function Fp_RestartMode2              # ?(id): counter = 0, +0x1d = 2 (shown as END; probably play once and stop)
 0x00729850 function pppFpInfPrint             # fh v3:exact 0x00729940
 0x007299e0 function pppFpInitHeapDisplay      # fh v3:exact 0x00729ad0
-0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00
+0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00; (stat): the inverse of pppFpSaveStat, 2 bits per effect with a nonzero id: Fp_Restart, hidden flag (fp::bridge::ppp_fp_load_stat)
 0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0
 0x00729f70 function pppFpPointLightInit       # fh v3:bsim1.00 0x0072a060
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080
@@ -3618,8 +3619,8 @@
 0x0072a690 function pppFpSetWoodMatrix        # fh v3:exact 0x0072a780
 0x0072a750 function pppFpStopStatus           # fh v3:bsim1.00+call.cs 0x0072a840 cdecl
 0x0072a760 function Fp_IdState_0072a760         # ours: (id) -> run state of the first g_FpData entry with i16 +0x64 == id: 0 not started (g_FpRun +0 = -0x1000), 1 running, 2 ended (+0x1d set), -1 no table or entry; callers 0x0091c860, 0x00933cc0
-0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0
-0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export
+0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0; (data): installs a field's effect table (run/display records, heaps, packet buffer); ported (fp::bridge::ppp_set_fp_pdt)
+0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export; (oef): op_fp_effect_init, op_oef2_set2, then texture_load(a_get(oef,2,i),1) for u16 +0x44 and clut_load(a_get(oef,3,i),1) for u16 +0x46 (fp::bridge::ppp_set_fp_tex)
 0x0072ab20 function pppVu0Length_copy_0072ab20   # the pppVu0Length body again (emulated VU0 length into 0x00c8f820.., _CIsqrt, Q); callers pppFpInfPrint, 0x00728ac0; the system agent's finding (vfx family, placed among system names); own name
 0x0072ac20 function ModelBuffer_AllocateBuffer # fh v3:bsim1.00 0x0072ad10
 0x0072ac30 function ModelBuffer_ClearAll      # fh v3:bsim1.00 0x0072ad20
@@ -3652,7 +3653,7 @@
 0x0072d930 function pppMatrixYZX              # fh v3:bsim1.00 0x0072da10
 0x0072db10 function pppMatrixZXY              # ppp program table record "pppMatrixZXY" step: as pppMatrixXYZ with pppGetRotMatrixZXY
 0x0072dcf0 function pppMatrixZYX              # fh v3:bsim1.00 0x0072ddd0
-0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0
+0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0; ours: cdecl(p) -> new p+0x38 (eax left by op_spr_free; on an early stop the render data or 0): model distortion: four VFX instances 10000 apart in the 64-bit key (0x0230fd20, p+0x48) get "FrameBuffer" data buffers (3 vertices a triangle of the model p+0x1c records) the first time; each needs geometry, render data and buffer segment; first instance's model buffer follows the model; fill request (JobSchedule_pppPart_getFillBufferRequest): render data/geometries, world p+0x14 / local p+0x10 matrices, colour p+0x30, scale (+0x148/+0x14c are uninitialised locals), screen (dtt) offsets, view 0x0230fc60 and fill matrices; p+0x38 += 0x30 a vertex when p+0x40; VFXUpdate for listed magic (0x10e only with p+0x24 == 1), else four VFXDttUpdates; ported (field r6, ffx_field::kedtt)
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
 0x0072e730 function pppKeMdlDttCon            # ppp program table record "pppKeMdlDtt" +0x1c set-up: area 0 +0xa8/+0xa0/+0xa4 = 0
 0x0072e760 function pppKeMdlDttCon2           # ppp program table record "pppKeMdlDtt" +0x20 set-up: area 0 +0xa8/+0xa0/+0xa4 = 0 (as pppKeMdlDttCon)
@@ -3855,6 +3856,7 @@
 0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up; ours: unit matrix, null/zero words from +0x40, frame count (draw::bridge::shape_con FIELD_CON)
 0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor; ours: graphicVFXDestroy unless one of 9 level hashes, frees +0xe0/+0xe4/+0xf0 (draw::bridge::ppp_des FIELD_DES)
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
+0x00743030 function pppShapeFieldRenderOn_00743030 # ours: () -> 0 when graphicLevelGetNameHash() is one of 0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, else 1; 0x00741b90 and pppDrawShapeFieldDraw skip their shape-field render data on 0 (draw::bridge::shape_field_render_on)
 0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_REV_CON)
 0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_REV_DES)
 0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
@@ -4181,7 +4183,9 @@
 0x00764b70 function KeThResHd_BPAlloc            # layout+callees: sorts between KeThCp_Update and KeThResHd_Init, and its named callees match the Switch 0x710030aee0 KeThResHd_BPAlloc's (similarity 1.00: is_ptr32_null); symbols from Fahrenheit's server export
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
 0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)
+0x00764de0 function KeThBP_MkStrip_00764de0   # ours: cdecl() -> the walk 0x0230f9c8: KeThBP_MkGifPk's strip: per point left (walk +4 point, +0x14 stride, +0x1c count) the point through 0x0230fac0 over w, colours 0x0230fa40/fa50 stepped (KeAddScaledColor), side offset along the direction bisector times widths 0x0230fa00/fa0c, fade 1 - age(+0x1c) * 0x0230f9f4, last 1/w; 10 vertices (outer, inner, centre, inner, outer at both ends) times w through 0x0230fb00 to 0x02305908 + 0xa0 i, colours / 256 at +0x5000; ported (field r6, ffx_field::keth::ke_th_bp_mk_strip)
 0x007658b0 function InitVFXKeThRenderData     # fh v3:exact 0x007659a0; ported (field round 51): (a, b, c): texture count 0x02305840 clamped to 20 (signed, written back); three zeroed 20-word local arrays get 0x50c, 0xc18, 0 per texture and a 256-byte name slot "NoTexture" each (sprintf); graphicVFXCreate(a, b, c), graphicVFXCreateDataBuffer(a, b, n, widths, heights, names, flags), graphicVFXGetRenderDataByInstance(a, b); returns 1 when that is non-zero, else 0 (neg/sbb/neg)
+0x00765a10 function KeThBP_MkStripEnd_00765a10 # ours: cdecl() -> the walk 0x0230f9c8 (eax): KeThBP_MkGifPk's strip end cap after KeThBP_MkStrip_00764de0 (caller 0x00763100): walk +0x20 = +0, six vertices to 0x0230f908 (second end; first end + offset, + inner offset, itself, - inner, - offset; times w through 0x0230fb00), colours / 256 to 0x0230f968 (edge colour stepped, centre colour for the middle; outer alpha 0), width scale 0x0230fa0c += 0x0230fa08 clamped at 0, walk +0 += 0xd0; ported (field r7, ffx_field::keth::ke_th_bp_mk_strip_end)
 0x00765f10 function resetVFXKeThRenderData       # layout+callees: sorts between InitVFXKeThRenderData and updateVFXKeThRenderData, and its named callees match the Switch 0x710030b810 resetVFXKeThRenderData's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export
 0x007665a0 function SetGlobal_02305844 # cdecl(v): *0x02305844 = v, returns v; name ours
 0x007665b0 function SetGlobal_02305840 # cdecl(v): *0x02305840 = v, returns v; name ours
@@ -4201,7 +4205,7 @@
 0x00767530 function KeMdl_MkTkClut            # fh v3:exact 0x00767610
 0x007676c0 function KeVu0MulX                    # (dst, src, s): dst.x = src.x * s (a VU macro helper); 0x0088a040
 0x00767720 function KeVu0SubX                    # (dst, src, s): dst.x = src.x - s, then restoreVf00Register (tail call); 0x0088a040
-0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870
+0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870; ours: cdecl(p) -> 0: the distortion sprite: p+0 through its matrix p+0x28, Q = vf00.w / w; centre outside 1707..2389 x 1840..2256 hides the VFX instance (key 0x0230fd20 / p+0x60); else a 9-vertex fan (rim from VU0 0x00c8f880/890/8a0) into the render data (desc rd+0x94: verts +0xc, colours +0x14, UVs +0x18 into the "FrameBuffer" buffer, indices +0x1c), created on the first draw; ported (field r6, ffx_field::kedtt)
 0x00768d30 function KeDttSpr_MkGifPk_Pre      # fh v3:exact 0x00768e40
 0x00769230 function KeBornRnd2                # fh v3:exact 0x00769340
 0x00769340 function KeLnsArnd_Draw            # fh v3:exact 0x00769450
@@ -6354,10 +6358,12 @@
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
+0x007e11a0 function op_symbol_find_007e11a0  # ours: (name, list) -> the first symbol of the op script symbol list (next +0x20) whose name [+0] matches (exact or, with i16 +0x12, A-Z folded; hashes sum(byte ^ 0x6f i) at +0x18/+0x1c) and whose alias [+4] is absent or differs; 0 when none (op::bridge::op_symbol_find)
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
 0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
 0x007e1cc0 function op_read_line_007e1cc0        # ours: (src, out, max) -> bytes stored: the op script reader's next line (src: [+0] bytes, +0xc position, +0x10 end) up to 0/0xff/CR/LF, two-byte characters (>= 0x80) kept whole, at most max-1 bytes and a NUL, position stepped back one; callers 0x007e1d50, 0x007e2270
+0x007e1d50 function op_token_get_007e1d50    # ours: (file, src, out, &pos, max, &eol, flags) -> out's length: op_token, joining a trailing \\ onto the next line (op_read_line) unless flags & 4, appending further tokens unless flags & 1 (op::bridge::op_token_get)
 0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
@@ -6396,11 +6402,12 @@
 0x007e4830 function op_oef2_tex_clut_cue_multi # fh v3:exact 0x007e4740
 0x007e4c30 function op_oef2_tex_clut_cue_trans # fh v3:exact 0x007e4b40
 0x007e4e40 function op_oef2_tex_clut_ovl_clear # fh v3:exact 0x007e4d50
-0x007e4e80 function op_oef2_tex_clut_ovl_trans # fh v3:exact 0x007e4d90
+0x007e4e80 function op_oef2_tex_clut_ovl_trans # fh v3:exact 0x007e4d90; (mask): while g_OpTexVdispLoad (0x011a0066), each overlay CLUT below g_OpOef2ClutOvlCount in mask reloaded: flag 0 -> op_oef2_texture_load(rec, 1), flagged without a record -> dbgPrintf (op::bridge::op_oef2_tex_clut_ovl_trans)
 0x007e4fc0 function op_oef2_tex_pos_replace   # (rec, pos) -> old low 14 bits: table-2 record low 14 bits = pos's, byte +0x1f = 1
 0x007e4ff0 function op_oef2_tex_pos_set       # (rec, pos) -> new low half: table-2 record low 14 bits = (pos & 0x3fff) + (old & 0xfc), byte +0x1f = 1
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
+0x007e5260 function op_oef2_tex0_get_007e5260  # ours: (oef, no, out): the 0x20-byte texture register record no of oef (op_oef2_a_get kind 2) into out, or a default by byte 0x011a0064 and word 0x011a0730 (op::bridge::op_oef2_tex0_get); callers opus_wave_cmd_7f5f70, 0x007f0b80
 0x007e5660 function op_vec_zero               # (dst) four zero words
 0x007e5680 function op_oef2_tex_clut_init_007e5680 # ours: () -> 0: clears g_OpOef2ClutOvl, 0x011a01a0.., 0x011a02a0.., g_OpOef2ClutCues (64 dwords each), the cue head/count dword and g_OpOef2ClutOvlCount; caller 0x007ff960
 0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
@@ -6486,7 +6493,7 @@
 0x007eb760 function op_gs1_init               # fh v3:exact 0x007eb670
 0x007eba80 function op_gs_clear_host             # layout+callees: sorts between op_gs1_init and op_init_draw, and its named callees match the Switch 0x71003c9230 op_gs_clear_host's (similarity 1.00: op_spr_alloc, op_spr_free, sceGsSetDefLoadImage, sceGsSyncPath); symbols from Fahrenheit's server export
 0x007ec410 function op_init_draw              # fh v3:bsim1.00 0x007ec330
-0x007ec470 function op_ot_draw                # fh v3:exact+call.cs 0x007ec390 cdecl
+0x007ec470 function op_ot_draw                # fh v3:exact+call.cs 0x007ec390 cdecl; (): clears g_OpOtFrameWords, op_func_ot(0), graphicVFXSyncPath, pppOtFunc_Control(g_pppOtList), op_func_ot(0x20), g_OpWotNodes relinked while g_OpWotTrigger, op_func_ot(0x40), (0x60) (op::bridge::op_ot_draw)
 0x007ec790 function op_texflush               # fh v3:bsim1.00 0x007ec6b0
 0x007ec7d0 function op_wot_triger             # fh v3:exact 0x007ec6f0
 0x007ec7e0 function op_zbuf_clear             # fh v3:exact 0x007ec700
@@ -6523,7 +6530,7 @@
 0x007fa5c0 function create0706AccRenderDataBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e3d80 create0706AccRenderDataBuffer, 4 votes, round 1
 0x007fae40 function op_chr_status_reset_exception # layout+callees: sorts between create0706AccRenderDataBuffer and op_et_astatus_effect_change, and its named callees match the Switch 0x71003ec1e0 op_chr_status_reset_exception's (similarity 1.00: op_et_astatus_effect_off); symbols from Fahrenheit's server export
 0x007faed0 function op_et_astatus_effect_change # fh v3:exact 0x007fadf0
-0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20
+0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20; (chr): opu_unit_free_by_id(g_OpusBattle, 0x60004000 + i), +0x10/+0x18 = 0x80808080, opus_chara_rgba_set(chr, 0x80808080, w), opus_chara_status_rgb_set(chr, w) with w = MsBattleChrStart() != 0, Ch_ClutDispose when +0x17 bit 0; +0x17 = 0 (et::bridge::op_et_astatus_effect_off)
 0x007fb0a0 function op_et_astatus_effect_off_all # layout: alphabetical run between op_et_astatus_effect_off and op_et_battle_effect_free (1 unnamed in the gap); Switch 0x71003f2130 op_et_astatus_effect_off_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007fb170 function op_et_battle_effect_free  # fh v3:exact 0x007fb090
 0x007fb1e0 function op_et_battle_effect_init  # fh v3:exact 0x007fb100
@@ -6578,8 +6585,8 @@
 0x007fc9a0 function op_et_flag1_off           # g_MagicImports slot 631 (1 overlay): byte 0x011a006e &= 0xfe; hidden from the dump
 0x007fc9b0 function op_et_weapon_unit         # (h) -> unit ID: weapon object by the record's u16 +0xe (opus_get_weapon_by_no; else record +8, slot 0), opu_et_unit(obj, 0, 9, (0x300000 + g_OpusWeaponEffCount[slot]++) << 8 | index); g_MagicImports slot 623
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
-0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0
-0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10
+0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0; (obj): for a g_OpusWeapons object: dbgPrintf, opu_unit_free_by_oef2(g_OpusBattle, it), slot cleared (number 0xff) (et::bridge::op_et_weapon_free)
+0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10; (): op_et_weapon_free for each nonzero g_OpusWeapons slot (et::bridge::op_et_weapon_free_all)
 0x007fcb60 function op_et_weapon_init         # fh v3:exact 0x007fca80
 0x007fcbd0 function magic_nop_007fcbd0        # g_MagicImports slot 224 (1 overlay): a lone ret; hidden from the dump
 0x007fcbf0 function op_event_effect_free      # fh v3:exact 0x007fcb10
@@ -6632,7 +6639,7 @@
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
 0x007ff1d0 function op_free                   # fh v3:exact 0x007ff0f0
-0x007ff260 function op_heap_display_clear     # fh v3:bsim1.00 0x007ff180
+0x007ff260 function op_heap_display_clear     # fh v3:bsim1.00 0x007ff180; (flags): in debug mode a tail jump to opd_heap_display_clear, so flags & 3 is the gauge (pppSetFpPdt passes 0x601)
 0x007ff290 function op_heap_display_set       # fh v3:bsim1.00 0x007ff1b0
 0x007ff2b0 function op_heap_display_set_par   # fh v3:exact 0x007ff1d0
 0x007ff2d0 function op_heap_init                 # layout: alphabetical run between op_heap_display_set_par and op_init_ffx (1 unnamed in the gap); Switch 0x71003dfe40 op_heap_init is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6699,6 +6706,8 @@
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
+0x00802450 function opus_mdc_head_set_00802450 # ours: (head, mats, set, part, tex) -> op_oef2_a_get(set +0x60 [part +0x1e], 4, tex) or 0: an mdc draw head like opus_mdc_packet_set's, colour word from part +0xc8 (opus::bridge::opus_mdc_head_set)
+0x00802bd0 function opus_mdc_lights_get_00802bd0 # ours: (head, _, list, unit, nos): the 4 light colours [head +0x24] and positions [head +0x28] reset to r0, then for each nonzero u16 at nos +2k the opus_no_get unit's +0x90 position (w = +0x4c / 16) and +0xc8 colour bytes / 128; head bytes +0x4c/+0x4d = ftol(unit +0x30/+0x4c) / 2 clamped 0..0x80 (opus::bridge::opus_mdc_lights_get)
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
 0x00803170 function endU16MeshBreakRenderDataBuffer # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e8a90 endU16MeshBreakRenderDataBuffer's (similarity 1.00: FFXVu0UnitMatrix, graphicVFXSetVisible); symbols from Fahrenheit's server export
 0x00803610 function op_mdc_mem_transfer          # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e84d0 op_mdc_mem_transfer's (similarity 1.00: Ch_ModelGetBaseMatrix, Ch_ModelGetNromPtr, Ch_ModelGetVtexPtr); symbols from Fahrenheit's server export
@@ -6721,7 +6730,7 @@
 0x00805510 function opus_mdc_break_draw          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e77c0 opus_mdc_break_draw, 4 votes, round 3
 0x00805980 function opus_mdc_break_make          # layout+callees: sorts between opus_mdc_break_draw and opus_mdc_break_make_VitaSafe, and its named callees match the Switch 0x71003e8920 opus_mdc_break_make's (similarity 1.00: opus_mdc_break_make_VitaSafe); symbols from Fahrenheit's server export
 0x008059c0 function opus_mdc_break_make_VitaSafe # layout+callees: sorts between opus_mdc_break_draw and opus_mdc_free, and its named callees match the Switch 0x71003e7100 opus_mdc_break_make_VitaSafe's (similarity 1.00: Ch_GetBigImageSize, FFXVu0ApplyMatrix, FFXVu0CopyMatrix, debug_exit_trace, op_irandom_p); symbols from Fahrenheit's server export
-0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
+0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0; (oef, chr, heap, second): the chr status record's mdc number (+0x14, +0x15 with second) taken (0xff), Ch_TextureSetClutBase/ImageBase(chr, -1, -1), op_free(heap, op_oef2_a_get(oef, 4, no)) and op_oef2_a_set(oef, 4, no, 0) (opus::bridge::opus_mdc_free)
 0x00806230 function opus_motion_set              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003e4eb0 opus_motion_set, 6 votes, round 1
 0x008062c0 function opus_rt_m_chara              # layout+callees: sorts between opus_motion_set and yonExtMapDeleteId, and its named callees match the Switch 0x71003e52e0 opus_rt_m_chara's (similarity 1.00: Ch_GetDataScale, Ch_GetScaleX, Ch_GetScaleY, Ch_GetScaleZ, MsGetChrScale); symbols from Fahrenheit's server export; (m, chr, k, angles, trans, battle), eax unread: scale from MsGetChrScale (battle and chr < 0x20) or Ch_GetScaleX/Y/Z(g_EtChrHandles[chr]) into a 16-byte local at [ebp - 0x20] (aligned frame), times Ch_GetDataScale * k * 0.001f * (1/256) (op_xyz_scale), op_unit_m_scale2, then op_rt_m / op_rot_m / op_trans_m by which of angles, trans are set
 0x00806450 function opusIdentity_00806450     # (v) -> v (an MSVC container accessor)
@@ -6766,11 +6775,13 @@
 0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
 0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
+0x00807b70 function opus_hsv_rgba_00807b70 # ours: (out, src, n, time, sat, val, mix) -> src + 8n: n 8-byte HSV entries (i16 hue/sat/val, alpha byte +6) shifted toward the hue ftol(time / 5.33) % 0x300 by mix/256, sat/val offsets, into RGBA words; zero entries give 0 (opus::bridge::opus_hsv_rgba)
 0x00807de0 function op_ota_encount1_draw         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e92c0 op_ota_encount1_draw, 4 votes, round 1
 0x00807e90 function op_rgb_to_hsv_00807e90      # ours: (out, src, n) -> out end: n rgba byte colours to u16 hue (0..0x2ff, 0x100 a sextant pair), saturation (256 d / max), value, alpha; callers 0x008079f0, 0x00807de0, 0x00808000
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
+0x00808b00 function op_fvec4_to_ivec4_00808b00 # ours: (dst, src): src's four f32 (copied first) truncated by _ftol2 into dst's i32; called on g_Vu0_VfMove in place (vec::bridge::fvec4_to_ivec4)
 0x00808b70 function Vec4Max_00808b70           # ours: (dst, src, x, y, z, w): each component the larger of src's and the argument's (fcom: the argument when unordered); 65 functions above it
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
@@ -11327,6 +11338,7 @@
 0x0090c120 function yiRender_addDirectBlock   # (render, src, n): data pointer +0xba3e0 aligned to 64, DMA ref tag 0x30000000|(n+1) at +0xba3f0 (+0xba3f8 counts), block VIF FLUSH, STMOD, STCYCL 1,1, DIRECTHL n, n quadwords; returns src + 16n; name ours
 0x0090c1f0 function yiRender_addRef              # (render, addr, qwc u16): DMA ref tag (0x30000000 | qwc, addr) at render +0xba3f0, which moves 16 on; render +0xba3f8 counts tags
 0x0090c230 function yiRender_addRefData          # (render, block): yiRender_addRef of block +0x10 for block's u16 quadword count
+0x0090c400 function yiRender_create          # ours (the buffers it yiMallocs are the two yiRender_destroy frees; called once by yiInit with g_YiRender, 0, 0x3000, 0x2400): cdecl(r, direct, data, refs) -> yiClutAlloc_makepacket's eax: camera/view words, FFXSamp0ViewScreenMatrix(+0x67f38, 512, 1, 0.47, 2048, 2048, 1, 2^24-1, 2, 65536), identities +0x67f78..+0x68078, (0,0,0,1) rows +0x680b8/+0x680f8, the seven VU1 matrix packets +0x67ba8.., bounds, colours, yiAnimInfo_init, yiVramSetup(0, 0), packet buffers +0xba3cc/+0xba3dc/+0xba3ec (16-byte entries), Z address, then initpacket, yiScreff_init, initfog, yiClutAlloc_init(+0x67f20), yiClutAlloc_makepacket(r, 0, 0x48); ported (field r6, yi::bridge::yi_render_create)
 0x0090ccb0 function yiPkUnpackMatrixDma          # (m, out, addr): DMA tag 0x20000005, VIF FLUSH, STCYCL 1,1, UNPACK V4-32 x4 to addr, then the matrix
 0x0090cd10 function yiPkUnpackMatrix             # (m, out, addr): VIF UNPACK V4-32 x4 to addr (0x6c040000 | addr), then the matrix
 0x0090cd50 function yiRender_resetall         # (r): yiRender_resetobj, +0x9c198/+0xbe0ac/+0xbe0b0 = 0, +0x67f34 = -1; yiInit
@@ -15448,15 +15460,22 @@
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
+0x00cec1f8 label    g_FpPointLightCap         # point lights pppFpPointLightProc (0x00729f90) has defined/allocated (0x24 bytes each); pppFpFree disposes of them (Sg_PLightDispose_thunk) when > 0; name ours
 0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec200 label    g_pppFpPacketSize         # field-effect packet budget (pppFpGetPacketSize)
 0x00cec204 label    g_pppFpPacketUsed         # last pppFpLoop's packet use (g_PppPacketPos - 0x00cec220)
 0x00cec208 label    g_pppFpPacketPeak         # peak of g_pppFpPacketUsed
 0x00cec20c label    g_pppFpHeapUsed           # last pppFpLoop's heap use
 0x00cec210 label    g_pppFpHeapPeak           # peak of g_pppFpHeapUsed
+0x00cec218 label    g_pppFpHeapDisplaySet     # set by pppFpInitHeapDisplay and pppSetFpPdt; pppPartLoop runs pppFpInitHeapDisplay while it is 0; name ours (fp::bridge::HEAP_DISPLAY_SET)
+0x00cec220 label    g_pppFpPacketBuf          # field-effect packet buffer: pppSetFpPdt user_mallocs it once (0xc0000, 0x100000 or 0x140000 by g_FpData byte +2), pppFpLoop starts g_PppPacketPos there, pppFpFree frees it; name ours
+0x00cec224 label    g_pppFpHeap2Buf           # g_pppFpHeap2's block: pppSetFpPdt user_mallocs g_FpData byte +1 x 8 KB once and pppCreateHeap's it, pppFpFree frees it; name ours
+0x00cec228 label    g_pppFpWide               # pppSetFpPdt sets it for 0x28 effects or graphicLevelGetNameHash() 0x234; 0x00756740 then uses -1.1/1.1 for two -1/1 bounds; name ours
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
 0x00cec23c label    g_pppFpHeap2                 # the field effects' second ppp heap (pppFpGetHeapSize)
+0x00cec258 label    g_pppFpEnv                # the field effects' ppp environment: pppSetFpPdt's pppInitEnv(g_pppFpHeap, g_FpData, it, 0x40000); name ours
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
+0x00d2c25c label    g_pppFpWood               # pppSetFpPdt sets it when an effect has kind byte +0x6a 2; pppFpLoop then calls pppFpSetWoodMatrix; name ours
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
 0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
@@ -15825,6 +15844,7 @@
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x0119fef0 label    g_OpusMonsterFlags        # byte per g_OpusMonsters slot (bit 7 skips the texture move in 0x00808640, bit 0 picks the first VRAM spot)
 0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
+0x0119fefc label    g_OpusWeaponCounter       # signed byte per g_OpusWeapons slot that 0x00811050 steps up and down (0..0x7f); op_et_weapon_free clears it; name ours
 0x0119ff90 label    g_OpSprEnd                # end of g_OpSprStack's 16 KB block: ops_init_spr (0x007e6c30) sets it to user_malloc(0x4000) + 0x4000
 0x011a0010 label    g_OpFog                      # the effects' fog (op_fog_param_set): colour bytes +0..+2, near/far/param f32 +4..+0xc (yiGetFogParam), -(255/(far-near)) +0x10, 255-param +0x14, -near +0x18, 255.0 +0x1c
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
@@ -15854,6 +15874,7 @@
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
+0x012a89a8 label    g_OpWotNodes              # 0x1023 16-byte nodes op_ot_draw relinks while g_OpWotTrigger is set (+4 next node, +8 itself); name ours
 0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
 0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
 0x012f4140 label    g_SqsWaveInfoDone            # non-zero: SqsInitWaveInfo does nothing
@@ -16346,6 +16367,7 @@
 0x0230f968 label    g_KeThPointColourB           # updateVFXKeThSetPoint 0x7669c0: points 6-11's colours (row i-6); name ours
 0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
 0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
+0x0230fc60 label    g_pppDttVertexMatrix      # ours: 16 floats KeDttSpr_MkGifPk takes its vertices through (after scaling them back by 1/Q), next to g_pppFillMatrix
 0x0230fca0 label    g_pppFillMatrix           # 16 words every updateVFXRenderData fill request takes (+0x1d4; the Shp request +0xd0)
 0x0230fd20 label    g_pppCurrentProgram       # the program index pppRunPartStd is running, 0 after
 0x0230fd24 label    g_pppObjectCount          # pppRunPartStd adds each birth record's object count
@@ -16401,6 +16423,7 @@
 0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02322794 label    g_OpNumShow                  # byte: op_num_xy_set shows its numbers (opd_num_xy_set) when set, again in debug mode
+0x02332e98 label    g_OpOtFrameWords          # two words op_ot_draw clears each frame; nothing else in the dump references them; name ours
 0x02332ea0 label    g_OpSprFlag               # byte beside g_OpSprTop, cleared by ops_init_spr (0x007e6c30); use unknown
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)

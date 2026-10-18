@@ -5277,6 +5277,172 @@ pub mod bridge {
         last
     }
 
+    /// `yiRender_create(r, direct, data, refs)` (`0x0090c400`, called by
+    /// `yiInit` with `g_YiRender, 0, 0x3000, 0x2400`; the buffers it
+    /// allocates are the ones `yiRender_destroy` frees): the renderer's
+    /// initial state. The camera, view adjust and fog words, the screen
+    /// projection (`FFXSamp0ViewScreenMatrix` into `+0x67f38`: screen z
+    /// 512, aspect 1 x 0.47, centre 2048, z 1..2^24, near 2 / far 65536),
+    /// five identity matrices (`+0x67f78`..`+0x68078`) and two whose rows
+    /// are `(0, 0, 0, 1)` (`+0x680b8`, `+0x680f8`), the seven VU1 matrix
+    /// packets of `yiRender_updatematrixp` over them, the scene bounds
+    /// (±`f32::MAX`), colours and fog, `yiAnimInfo_init(+0x9cab8)`,
+    /// `yiVramSetup(0, 0)`, the three packet buffers (`yiMalloc` of 16
+    /// bytes each: `direct` (none when 0) at `+0xba3cc`, `data` at
+    /// `+0xba3dc`, `refs` at `+0xba3ec`), the Z buffer address, then the
+    /// GS packet, screen distortion, fog and CLUT packet set up. Returns
+    /// `yiClutAlloc_makepacket`'s `eax`.
+    #[allow(clippy::too_many_lines)] // one initialiser, as the original
+    pub fn yi_render_create<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        r: u32,
+        [direct, data, refs]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        const ONE: u32 = 0x3f80_0000;
+        let at = |o: u32| r.wrapping_add(o);
+        let fill = |mem: &mut M, offsets: &[u32], v: u32| {
+            for &o in offsets {
+                mem.write(at(o), v);
+            }
+        };
+        let f = |mem: &M, c: u32| x87::copy(mem.read::<u32>(mem.rebase(c)));
+
+        // the camera's state, view adjust
+        fill(
+            mem,
+            &[
+                0x68148, 0x6814c, 0x68158, 0x68138, 0x68150, 0x6815c, 0x67f08, 0x68384, 0x68788,
+                0x6e18c, 0x9c190, 0x9c198, 0x6813c, 0x68160, 0x68140, 0x68144,
+            ],
+            0,
+        );
+        mem.write(at(0x67f0c), u32::MAX);
+        mem.write(at(0x68154), ONE);
+        mem.write(at(0x68164), 0xbf80_0000u32); // -1.0
+
+        // the projection: screen z, aspect, centre, z range, near and far
+        let screen = [
+            f(mem, 0x00b4_1d9c), // 512
+            ONE,
+            f(mem, 0x00b6_70c4), // 0.47
+            f(mem, 0x00b5_1a20), // 2048
+            f(mem, 0x00b5_1a20),
+            ONE,
+            0x4b7f_ffff, // 16777215
+            0x4000_0000, // 2
+            0x4780_0000, // 65536
+        ];
+        let mut args = vec![at(0x67f38)];
+        args.extend_from_slice(&screen);
+        call(mem, mem.rebase(VIEW_SCREEN_MATRIX), &args);
+
+        // identity, and rows of (0, 0, 0, 1)
+        let mut identity = [0u32; 16];
+        let mut w_rows = [0u32; 16];
+        for i in 0..4 {
+            identity[5 * i] = ONE;
+            w_rows[4 * i + 3] = ONE;
+        }
+        for o in [0x67f78, 0x67fb8, 0x67ff8, 0x68038] {
+            mem.write(at(o), identity);
+        }
+        mem.write(at(0x680b8), w_rows);
+        mem.write(at(0x680f8), w_rows);
+        mem.write(at(0x68078), identity);
+        // their VU1 packets (VU memory addresses)
+        for (packet, m, vu) in [
+            (0x67ba8, 0x67f38, 8),
+            (0x67c08, 0x67f78, 0xc),
+            (0x67c68, 0x67fb8, 0xc),
+            (0x67cc8, 0x67ff8, 0xc),
+            (0x67de8, 0x680b8, 0x18),
+            (0x67e48, 0x680f8, 0x1c),
+            (0x67ea8, 0x68078, 0x20),
+        ] {
+            yi_pk_unpack_matrix_dma(mem, at(m), at(packet), vu);
+        }
+
+        // screen size and scale, the scene bounds, colours
+        let half = f(mem, 0x00b5_1a20); // 2048
+        mem.write(at(0x681a8), [half, half, f(mem, 0x00b5_01c4), ONE]);
+        let k = f(mem, 0x00b6_70c0);
+        mem.write(at(0x681b8), [k, k, f(mem, 0x00b6_70bc), ONE]);
+        let ten = f(mem, 0x00b9_2318); // 10.0
+        mem.write(at(0x681f8), [ten; 4]);
+        mem.write(at(0x6820c), [ONE; 4]);
+        mem.write(at(0x6821c), [0u32; 4]);
+        let max = f(mem, 0x00b1_7504);
+        mem.write(at(0x681c8), [max, max, max, ONE]);
+        let min = f(mem, 0x00b1_f2d0);
+        mem.write(at(0x681d8), [min, min, min, ONE]);
+        mem.write(at(0x681e8), [0u32, 0, 0, ONE]);
+        fill(mem, &[0x6819c, 0x681a0, 0x681a4], 1);
+        fill(mem, &[0x68348, 0x6834c, 0x68344], 0);
+        mem.write(at(0x68208), 0x8080_8080u32);
+        mem.write(at(0x68340), 0x8000_0000u32);
+        fill(mem, &[0x68378, 0x6837c, 0x68380], 0);
+        mem.write(at(0x68374), 0x2080_8080u32);
+        fill(
+            mem,
+            &[
+                0x9c198, 0x9caa8, 0x9ca9c, 0x9caa0, 0x9caa4, 0x9caac, 0x9cab0,
+            ],
+            0,
+        );
+        mem.write(at(0x6822c), [0u32, 0, 0, ONE]);
+        call(mem, mem.rebase(ANIM_INFO_INIT), &[at(0x9cab8)]);
+        mem.write(at(0x9d9c4), 0u32);
+        mem.write(at(0x67f1c), 0u32);
+        call(mem, mem.rebase(VRAM_SETUP), &[0, 0]);
+
+        // the packet buffers: start, cursor, end, count
+        let malloc = mem.rebase(MALLOC);
+        if direct == 0 {
+            mem.write(at(0xba3cc), [0u32; 4]);
+        } else {
+            let b = call(mem, malloc, &[direct.wrapping_mul(0x10)]);
+            let end = b.wrapping_add(direct.wrapping_mul(0x10));
+            mem.write(at(0xba3cc), [b, b, end, direct]);
+        }
+        fill(mem, &[0xba410, 0xba40c, 0x67f2c, 0xba408], 0);
+        mem.write(at(0xba414), ONE);
+        mem.write(at(0xba418), [ONE; 3]);
+        mem.write(at(0xba424), [0u32; 3]);
+        let b = call(mem, malloc, &[data.wrapping_mul(0x10)]);
+        mem.write(at(0xba3dc), b);
+        mem.write(at(0xba3e0), b);
+        mem.write(at(0xba3e8), data);
+        let start = mem.read::<u32>(at(0xba3dc));
+        mem.write(at(0xba3e4), start.wrapping_add(data.wrapping_mul(0x10)));
+        let b = call(mem, malloc, &[refs << 4]);
+        mem.write(at(0xba3ec), [b, b]);
+        mem.write(at(0xba3f8), [0u32, refs]);
+        fill(mem, &[0xbe0ac, 0xbe0b0], 0);
+        let z = call(mem, mem.rebase(VRAM_GET_ADDR_Z), &[]);
+        mem.write(at(0x9cab4), z);
+        mem.write(at(0x68360), f(mem, 0x00b5_5178));
+        fill(mem, &[0x6823c, 0x67f28, 0x13b10, 0xba400, 0xba404], 0);
+        mem.write(at(0x67f30), [u32::MAX; 2]);
+        mem.write(at(0x68368), [half, half, 0]);
+
+        yi_render_initpacket(mem, r);
+        yi_screff_init(mem, r);
+        yi_render_initfog(mem, r);
+        let mode = mem.read::<u32>(at(0x67f20));
+        call(mem, mem.rebase(CLUT_ALLOC_INIT), &[mode]);
+        call(mem, mem.rebase(CLUT_ALLOC_MAKEPACKET), &[r, 0, 0x48])
+    }
+
+    /// The functions [`yi_render_create`] calls.
+    const VIEW_SCREEN_MATRIX: u32 = 0x0093_d960;
+    const ANIM_INFO_INIT: u32 = 0x0091_4310;
+    const VRAM_SETUP: u32 = 0x0091_7f20;
+    const MALLOC: u32 = 0x0090_bbd0;
+    const VRAM_GET_ADDR_Z: u32 = 0x0082_ce80;
+    const CLUT_ALLOC_INIT: u32 = 0x0091_6e60;
+    const CLUT_ALLOC_MAKEPACKET: u32 = 0x0091_7050;
+
     /// `yiRender_term(r)` (`0x0090dd00`, the Switch build's name for the
     /// `yiRender.c` function of this size between `reset` and
     /// `serchminmax`): [`yi_render_resetobj`], `+0x9c198`, `+0xbe0ac`,

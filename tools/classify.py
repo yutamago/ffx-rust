@@ -252,6 +252,8 @@ REVIEWED = {
     0x00401100: ("glue", "memmove wrapper (system round 31)"),
     0x00401330: ("glue", "STL error_code compare (system round 31)"),
     0x00401370: ("glue", "STL error_code compare (system round 31)"),
+    0x00703910: ("glue", "calls a function pointer by argument count (system round 32)"),
+    0x006412b0: ("glue", "forwards to MapPart_LangOverride on [0x00ccc81c] (system round 32)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
