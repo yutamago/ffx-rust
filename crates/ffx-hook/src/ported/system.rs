@@ -5,9 +5,9 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, heap, instance, math,
-    menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib, vbf,
-    window,
+    accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, heap,
+    instance, intl, math, menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub,
+    sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -1108,6 +1108,132 @@ ported! {
         btl::bridge::set_target_callback(&mut mem(), w);
     }
 
+    /// `cd_decode_data(req)`.
+    cd_decode_data @ 0x0076_d440 => extern "C" fn cd_decode_data(req: u32) -> u32 {
+        cd::bridge::decode_data(&mut mem(), req, call_ptr)
+    }
+    /// `TOSwapInternationalEnvExec()`.
+    TOSwapInternationalEnvExec @ 0x008b_0340 => extern "C" fn to_swap_international_env_exec() -> u32 {
+        intl::bridge::exec(&mut mem(), call_ptr)
+    }
+    /// `TOSwapInternationalEnvExecMenu()`.
+    TOSwapInternationalEnvExecMenu @ 0x008b_0440 => extern "C" fn to_swap_international_env_exec_menu() -> u32 {
+        intl::bridge::exec_menu(&mut mem(), call_ptr)
+    }
+    /// `TOSwapInternationalEnvExecNonBlock()`.
+    TOSwapInternationalEnvExecNonBlock @ 0x008b_0500 => extern "C" fn to_swap_international_env_exec_non_block() -> u32 {
+        intl::bridge::exec_non_block(&mut mem(), call_ptr)
+    }
+    /// `TOTransTexture()`.
+    TOTransTexture @ 0x008b_1020 => extern "C" fn to_trans_texture() -> u32 {
+        intl::bridge::trans_texture(&mut mem(), call_ptr)
+    }
+    /// `TOTransTexture_008b1190()`.
+    TOTransTexture_008b1190 @ 0x008b_1190 => extern "C" fn to_trans_texture_menu() -> u32 {
+        intl::bridge::trans_texture_menu(&mut mem(), call_ptr)
+    }
+    /// `0x0076d0e0(file, archive)`.
+    cd_channel_state_0076d0e0 @ 0x0076_d0e0 => extern "C" fn cd_channel_state(file: u32, archive: u32) -> u32 {
+        cd::bridge::channel_state(&mem(), file, archive)
+    }
+    /// `0x008a2b10(rec)`.
+    TOBtlCtbSlideStep_008a2b10 @ 0x008a_2b10 => extern "C" fn to_btl_ctb_slide_step(rec: u32) -> u32 {
+        window::bridge::slide_step(&mut mem(), rec, 0x008a_2b60)
+    }
+    /// `0x008a2b60(rec)`.
+    TOBtlCtbAnimStep_008a2b60 @ 0x008a_2b60 => extern "C" fn to_btl_ctb_anim_step_back(rec: u32) -> u32 {
+        window::bridge::anim_step_8a2b60(&mut mem(), rec)
+    }
+    /// `0x008a2bc0(rec)`.
+    TOBtlCtbSlideStep_008a2bc0 @ 0x008a_2bc0 => extern "C" fn to_btl_ctb_slide_step2(rec: u32) -> u32 {
+        window::bridge::slide_step(&mut mem(), rec, 0x008a_2c10)
+    }
+    /// `0x008a2c10(rec)`.
+    TOBtlCtbAnimWait_008a2c10 @ 0x008a_2c10 => extern "C" fn to_btl_ctb_anim_wait(rec: u32) -> u32 {
+        window::bridge::anim_wait_8a2c10(&mut mem(), rec)
+    }
+    /// `0x009066b0(u, v, k)`.
+    TOSetUIVertexUV_009066b0 @ 0x0090_66b0 => extern "C" fn to_set_ui_vertex_uv(u: f32, v: f32, k: u32) -> u32 {
+        render::bridge::set_ui_vertex_uv(&mut mem(), u, v, k)
+    }
+    /// `0x009066d0(x, y, k)`.
+    TOSetUIVertexXY_009066d0 @ 0x0090_66d0 => extern "C" fn to_set_ui_vertex_xy(x: f32, y: f32, k: u32) -> u32 {
+        render::bridge::set_ui_vertex_xy(&mut mem(), x, y, k)
+    }
+    /// `TOMenuTransFacePlyTex()`.
+    TOMenuTransFacePlyTex @ 0x0090_1100 => extern "C" fn to_menu_trans_face_ply_tex() -> u32 {
+        intl::bridge::trans_face_ply_tex(&mut mem(), call_ptr)
+    }
+    /// `TOMenuDrawChrStatusPlate_008ff490(chr, x, y)`.
+    TOMenuDrawChrStatusPlate_008ff490 @ 0x008f_f490 => extern "C" fn to_menu_draw_chr_status_plate(chr: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<9>::new();
+        let scratch = frame.at();
+        chr_plate::bridge::draw_chr_status_plate(
+            &mut mem(),
+            [chr, x, y],
+            scratch,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
+    /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.
+    sce_Vectormath_Scalar_Aos_inverse @ 0x0057_3d00 => extern "C" fn sce_vectormath_inverse(out: u32, m: u32) -> u32 {
+        math::bridge::inverse4(&mut mem(), out, m)
+    }
+    /// `0x00684b00(kind, u, v, &u_out, &v_out)`.
+    SheetCellUV_00684b00 @ 0x0068_4b00 => extern "stdcall" fn sheet_cell_uv(kind: u32, u: f32, v: f32, u_out: u32, v_out: u32) -> u32 {
+        render::bridge::sheet_cell_uv(&mut mem(), kind, u, v, [u_out, v_out])
+    }
+    /// `0x006851d0(this, mode)`.
+    AbmapManager_ResetLayers_006851d0 @ 0x0068_51d0 => extern "thiscall" fn abmap_reset_layers(this: u32, mode: u32) -> u32 {
+        render::bridge::abmap_reset_layers(&mut mem(), this, mode)
+    }
+    /// `LocalizationManager_Initialize(this)`.
+    LocalizationManager_Initialize @ 0x006d_b090 => extern "thiscall" fn localization_initialize(this: u32) -> u32 {
+        config::bridge::localization_initialize(&mut mem(), this)
+    }
+    /// `TOSeqStopExecScene(i)`.
+    TOSeqStopExecScene @ 0x008a_f380 => extern "C" fn to_seq_stop_exec_scene(i: i32) -> u32 {
+        scene::bridge::stop_exec_scene(&mut mem(), i)
+    }
+    /// `0x008f0590(pkt, command, x, y, colour)`.
+    TOAddPktCommandIconName_008f0590 @ 0x008f_0590 => extern "C" fn to_add_pkt_command_icon_name(pkt: u32, command: u32, x: u32, y: u32, colour: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        pkt::bridge::add_command_icon_name(&mut mem(), [pkt, command, x, y, colour], scratch, call_sym)
+    }
+    /// `MagicFile_GetEffectOverlayTable()`.
+    MagicFile_GetEffectOverlayTable @ 0x009d_a370 => extern "C" fn magic_file_get_effect_overlay_table() -> u32 {
+        stub::bridge::magic_file_effect_overlay_table(&mut mem(), call_ptr)
+    }
+    /// `0x009db230(high)`.
+    PppCurrentProgramKey_009db230 @ 0x009d_b230 => extern "C" fn ppp_current_program_key(high: u32) -> u64 {
+        math::bridge::current_program_key(&mem(), high)
+    }
+    /// `0x009db250(high, low)`.
+    WideKey_009db250 @ 0x009d_b250 => extern "C" fn wide_key(high: u32, low: u32) -> u64 {
+        math::bridge::wide_key(high, low)
+    }
+    /// `0x0061a810(this)`.
+    IdentityAt34_0061a810 @ 0x0061_a810 => extern "thiscall" fn identity_at_34(this: u32) {
+        math::bridge::identity_at_34(&mut mem(), this);
+    }
+    /// `TOSeqDrawLayer(i, a)`.
+    TOSeqDrawLayer @ 0x008a_e340 => extern "C" fn to_seq_draw_layer(i: i32, a: u32) -> u32 {
+        scene::bridge::draw_layer(&mut mem(), i, a, call_sym)
+    }
+    /// `0x008df570(w)`.
+    TOTextScrollTick_008df570 @ 0x008d_f570 => extern "C" fn to_text_scroll_tick(w: u32) -> u32 {
+        tolib::bridge::text_scroll_tick(&mut mem(), w, call_sym, fcall)
+    }
+    /// `TOMenuTransFaceSmnTex()`.
+    TOMenuTransFaceSmnTex @ 0x0090_1130 => extern "C" fn to_menu_trans_face_smn_tex() -> u32 {
+        intl::bridge::trans_face_smn_tex(&mut mem(), call_ptr)
+    }
+    /// `0x009dbd90(out, s, v)`.
+    Vu0ScaleXyz_009dbd90 @ 0x009d_bd90 => extern "C" fn vu0_scale_xyz(out: u32, s: f32, v: u32) -> u32 {
+        math::bridge::vu0_scale_xyz(&mut mem(), out, s, v)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)
@@ -5757,6 +5883,12 @@ ported! {
     CheckPreviousLevel_00872a00 @ 0x0087_2a00 => extern "C" fn check_previous_level() -> u32 {
         tolib::bridge::previous_level_check(&mut mem(), call_sym)
     }
+    /// `TOLayoutMessageChoices_008b9a60(w, sel)`.
+    TOLayoutMessageChoices_008b9a60 @ 0x008b_9a60 => extern "C" fn to_layout_message_choices(w: u32, sel: u32) -> u32 {
+        let mut frame = super::StackFrame::<12>::new();
+        let scratch = frame.at();
+        tolib::bridge::layout_message_choices(&mut mem(), w, sel, scratch, call_sym, fcall)
+    }
     /// `TOSetMessageChoice(i, n, x, y, total)`.
     TOSetMessageChoice @ 0x008b_8880 => extern "C" fn to_set_message_choice(i: u32, n: u32, x: u32, y: u32, total: u32) {
         tolib::bridge::set_message_choice(&mut mem(), i, n, x, y, total);
@@ -6072,6 +6204,12 @@ ported! {
     /// `TOBtlGetLeftPad(w)`.
     TOBtlGetLeftPad @ 0x008a_22f0 => extern "C" fn to_btl_get_left_pad(w: u32) {
         tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x2000, call_sym);
+    }
+    /// `TOBtlGetStdPad(w)`.
+    TOBtlGetStdPad @ 0x0089_cde0 => extern "C" fn to_btl_get_std_pad(w: u32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        tolib::bridge::to_btl_get_std_pad(&mut mem(), w, scratch, call_sym);
     }
     /// `TOBtlGetRightPad(w)`.
     TOBtlGetRightPad @ 0x008a_2690 => extern "C" fn to_btl_get_right_pad(w: u32) {

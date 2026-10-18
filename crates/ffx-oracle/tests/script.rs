@@ -4633,10 +4633,11 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
     (a, b)
 }
 
-/// Group 0's natives that can read an uninitialised local of the original
-/// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot):
-/// tested on chosen arguments only.
-const R20_UNINIT: [u32; 3] = [0x0085_fd80, 0x0086_0000, 0x0085_8290];
+/// Natives that can read an uninitialised local of the original
+/// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot),
+/// tested on chosen arguments only; and `0xb008`'s start, which leaves `EAX` as it was
+/// (the dispatch ignores it) and writes nothing.
+const R20_UNINIT: [u32; 4] = [0x0085_fd80, 0x0086_0000, 0x0085_8290, 0x0076_eb00];
 
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
@@ -4797,6 +4798,54 @@ fn round19_natives_match_the_original() {
                 native_case(a, b, w, 0x0085_f070, &[], &format!("0x00dd {r}"));
             }
             compared += 19;
+        }
+        // group 7's battle-global natives on values the snapshots lack: the
+        // 0x70f8 list (count 3, read index 1) and its 0x70f6 reset, the
+        // first 0x007b19d0 record with distinct bytes +0/+1, the pad
+        // orientation, 0x7081's state byte
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let (a, b) = (&mut a, &mut b);
+            let w = actors(a, b)[0];
+            let (n, i) = (a.rebase(0x0113_63ec), a.rebase(0x0113_63ed));
+            poke(a, b, n, 3u8);
+            poke(a, b, i, 1u8);
+            for k in 0..4 {
+                native_case(a, b, w, 0x007a_36e0, &[], &format!("0x70f8 {k}"));
+            }
+            poke(a, b, i, 1u8);
+            native_case(a, b, w, 0x007a_34e0, &[], "0x70f6");
+            native_case(a, b, w, 0x007a_36e0, &[], "0x70f8 after 0x70f6");
+            let r = orig(a, 0x007b_19d0, &[0]);
+            assert_eq!(r, orig(b, 0x007b_19d0, &[0]));
+            poke(a, b, r, 5u8);
+            poke(a, b, r + 1, 9u8);
+            native_case(a, b, w, 0x007a_3c00, &[], "0x710e");
+            native_case(a, b, w, 0x007a_3c90, &[], "0x710f");
+            for v in [5u32, 6, 0xff] {
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x007a_7340,
+                    &[(stack::INT, v)],
+                    &format!("0x7099 {v}"),
+                );
+            }
+            let st = a.rebase(0x0112_c022);
+            for x in [0u8, 1, 2] {
+                poke(a, b, st, x);
+                native_case(a, b, w, 0x007a_5d60, &[], &format!("0x7081 poll {x}"));
+            }
+            // 0xc059's command-menu panel bit set and cleared on commands
+            // of both halves (0x3000-0x305f, 0x3060 on)
+            for i in [0x3000u32, 0x3015, 0x3061] {
+                for on in [0u32, 1, 0] {
+                    let push = [(stack::INT, i), (stack::INT, on)];
+                    native_case(a, b, w, 0x0087_82a0, &push, &format!("0xc059 {i} {on}"));
+                }
+            }
+            compared += 23;
         }
         // the polls without keep on a read that reports done (0): 5 for
         // 0x5062, 1 for 0x5064 (the reads stubbed on both sides)

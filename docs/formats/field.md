@@ -1855,6 +1855,215 @@ VU0 registers (`0x00c8f788` Q, `0x00c8f790` ACC, `0x00c8f7d0`..,
 `0x00c8f910`/`0x00c8f950` matrices) and EE registers (`0x00c8f588`) as the
 original's inlined macro code does, and leave them as it does.
 
+## The Ke thread belt path's update (field agent r5)
+
+`KeThBP_Update(p)` (`0x007637f0`) moves a belt path `o = p[+0x40]` (set
+up by `KeThBP_Init`; template `p[+0x4c]`, guide path point `o[+0x14]`,
+child pool `p[+0x48]`, the thing's matrix at `p`):
+
+| `o` offset | Type | Meaning |
+|---|---|---|
+| `0x00`/`0x04` | ptr | The list of children it spawned (next, previous) |
+| `0x08`/`0x0c` | ptr | Its link in a parent segment's list (next, the slot pointing at it) |
+| `0x14` | ptr | The guide path point the head heads for |
+| `0x18` | `f32` | The head's time; whole steps are taken by `_ftol2_sse` |
+| `0x1c` | `u16` | Steps taken (the return value) |
+| `0x1e` | `u8` | Children spawned |
+| `0x30` | `f32` | Its length |
+| `0x34`/`0x36` | `u16`/`u8` | The ring's tail and head segment |
+| `0x37` | `u8` | Segments (`0x30` bytes from `+0x40`) |
+| `0x38`/`0x3c` | `u16` | The drawn span and its first segment |
+| `0x3e` | `u16` | Flags: 2 frozen, 4 capped, 8 done, 0x10 dead, 0x20 running, 0x40 held, 0x80 loop, 0x100 start, 0x400 normalise, 0x800 path end (becomes 0x40), 0x1000 (given to children), 0x2000 steering |
+
+A segment: position `+0` (xyzw), weight `+0xc`, children `+0x18`, curl
+`+0x1c`, direction `+0x20`. A guide point: position `+0`, reach flag
+`+0xc` (0: arrived once inside the near radius, else once outside it),
+far radius `+0x10`, weight `+0x14`, near radius `+0x18`, next `+0x1c`.
+
+The time moves by the template's `+0x34`; a step 0.999999 complete
+counts. Unless running or capped, steps stop at the template's `+0x42`
+(loop 0x80 makes it running). Each step the ring moves on; the head
+moves one step length (`+0x20`) along its direction, then steers toward
+the point (weight `+0x2c`, plus the point's weight ramping in between
+its far and near radius), wobbles (one of three rotations `0x00c3e730`
+by `KeVu0RndI() % 3`, angle `(rnd % 1001 - 500) / 500 x +0x28`) and, on
+a reused segment, follows its old direction by `1 - +0x24`. A segment's
+curl is the previous one's plus `(rnd / 2^14 - 1) x +0x3c`, clamped to
+0..1 (eased by `+0x24` on reused segments). A new segment may spawn a
+child belt path when `rnd & +0x41` is 0 (0xff: never) and fewer than
+`+0x40` children exist. Its VU0 scratch is `0x010d5530..0x010d55fc`.
+
+## The Ke distortion sprite (field agent r6)
+
+`KeDttSpr_MkGifPk(p)` (`0x00767790`, returns 0) draws a sprite that
+shows the frame buffer under it, shifted: a fan of eight triangles
+around a centre, in the instance's PC render data. The sprite object:
+position `+0` (xyzw), colour `+0x10` (0..255, f32 each), its matrix
+`+0x28`, flags `+0x3c` (bit 0: the rim keeps the colour's alpha, else
+0), the VFX instance `+0x60` (key: low word `g_pppCurrentProgram`, high
+word the instance plus the low word's sign).
+
+The effect program leaves the shape in the emulated VU0 registers:
+
+| Register | Meaning |
+|---|---|
+| `0x00c8f840` | UV origin (subtracted from a vertex's x, y); moved by `vf01` (`0x00c8f7a0`) x, y times Q |
+| `0x00c8f880`, `0x00c8f8a0` | The rim's axes (x, y); `0x00c8f8a0` x and `0x00c8f884` are scaled by Q, the other two words not (the original's) |
+| `0x00c8f890` | The rim's diagonal (x, y, both scaled by Q) |
+| `0x00c8f8b0` / `0x00c8f8c0` | UV offsets of the axes (x for the `0x8a0` vertices, y for the `0x880` ones) and of the diagonal; times Q into `0x00c8f8f0` / `0x00c8f900` |
+| `0x00c8f910` | UV scale (x) |
+
+Q is `vf00.w / w` of the position after the matrix; the centre
+(`0x00c8f850`) is x, y, z times Q. A centre outside 1707..2389 x
+1840..2256 hides the instance (`graphicVFXSetVisible(.., 0)`); the
+original also tests 0..4096 for magic 0x6a and 0x1bd, but a window test
+follows for every magic, so the window always decides. The first draw
+(no render data through the instance's dynamic geometry) creates the
+instance (`graphicVFXCreate(.., 0x1000)`) and its data buffer
+`graphicVFXCreateDataBuffer(.., 1, &9, &0x18, "FrameBuffer", &1)`, sets
+the description's `+0x24` to 2 and calls `graphicVFXSetup`. Then, given
+a buffer segment (`graphicDynGeoMemManagerGetBufferForSegment(rd, 0,
+desc+4, desc+8)`), the description `rd + 0x94` gets:
+
+- `+0x14`: nine colours (over 255), the rim's alpha per bit 0;
+- `+0x0c`: nine vertices (xyz): the centre and the rim centre ± axis
+  or diagonal, in the order +A, +B, +C, (+Bx, -By), -A, -B, -C,
+  (-Bx, +By), each back over Q (`KeVu0ScaleVecXYZ`) and through the
+  view matrix `0x0230fc60`;
+- `+0x1c`: the triangles `(0, i + 2, i + 1)` for i = 0..6 and
+  `(0, 1, 8)` (`u16`);
+- `+0x18`: per vertex `uv = (x, y) - origin` plus its UV offset (the
+  rim's signs), times the scale into `0x00c8f930`, then
+  `u = (su * 1024 - 2048) / 682 + 0.5`,
+  `v = (0.5 - (sv * 1024 - 2048) / 448) * ratio - bias` (682 becomes
+  512, ratio 1.3333333 and bias `graphicGetCut2DSceneBias()` while a 2D
+  cut scene draws).
+
+The render data's matrix becomes `g_pppFillMatrix` (translation
+cleared, `+0x3c` 1.0), its bounds `+0x98..` -100000 / `+0xa4..` 100000;
+the instance is made visible, `graphicUseOptimizedVFXShader(geometry, 0)`,
+and updated: `graphicVFXSetZCorrectionValue(.., centre z)` and
+`graphicVFXUpdate` for magic 0x92 while `g_VfxPass`, else
+`graphicVFXDttUpdate`. `KeVu0ScaleVecXYZ` takes its scale as a vector:
+the original's other three words are its caller's saved registers, and
+they end up in `vf01` y, z, w.
+
+## The Ke thread belt path's strip (field agent r6)
+
+`KeThBP_MkStrip_00764de0()` (`0x00764de0`, called by `KeThBP_MkGifPk`;
+returns the walk's address) turns the points of a belt path into a strip
+of quads, one row of ten vertices per point, over globals at
+`0x0230f9c8..`:
+
+| Address | Meaning |
+|---|---|
+| `0x0230f9c8` | The walk: `+4` the next point (xyzw, `+0x1c` its age), `+0x14` the stride, `+0x1c` the points left |
+| `0x0230f9cc` / `0x0230f9d0` | `1 / w` of the next point (0 for w 0) / of the last |
+| `0x0230f9d8` / `0x0230f9e0` | The direction (x, y, unit) to the next point / the last one |
+| `0x0230f9e8` | The side offset at the strip's first end (last point's) |
+| `0x0230f9f0` / `0x0230f9f4` | The fade `1 - age * rate` / the rate |
+| `0x0230f9f8` | The inner edge's share of the offset |
+| `0x0230fa00` / `0x0230fa0c` | The half widths (x, y) / their scale |
+| `0x0230fa10` | The colour scale (`FFXVu0MulVector`) |
+| `0x0230fa20` / `0x0230fa30` | The edge / centre colour's step per point (`KeAddScaledColor(.., 1.0)`) |
+| `0x0230fa40` / `0x0230fa50` | The edge / centre colour |
+| `0x0230fa60` / `0x0230fa70` | The vertex last built at the second / first end |
+| `0x0230fa80` / `0x0230fa90` / `0x0230faa0` | The next point (through `0x0230fac0`, x, y, z over w), the strip's second end, its first |
+| `0x0230fb00` | The matrix the vertices go back through |
+
+Per point: the direction is the unit `(next - end1).xy` (0 for a zero
+length), the offset at the second end the unit bisector of the last
+and the new direction turned a quarter (`(ny, -nx)`), times the half
+widths, the width scale, the fade and the last point's `1 / w`. The
+row, at `0x02305908 + 0xa0 i`: the first and second end plus the
+offset, plus the offset times the inner share, the ends themselves,
+minus the inner offset, minus the offset; each vertex is `(w x, w y,
+w z, w)` through `0x0230fb00`. Colours (at `+0x5000`, over 256): the
+edge colour before and after its step at the two ends, the centre's
+for the middle pair; the outer pairs' alpha is 0. Then the ends move
+on (`end0 = end1`, `end1 = next`, the offset kept) and the walk steps.
+
+### The strip's end cap (field agent r7)
+
+`KeThBP_MkStripEnd_00765a10()` (`0x00765a10`, after the strip; returns
+the walk) sets the walk's `+0x20` to its `+0`, then writes six vertices
+to `0x0230f908` (colours to `0x0230f968`, over 256): the second end in
+the edge colour before its step (alpha 0), then around the first end:
+plus the offset (alpha 0), plus the inner offset (edge alpha), the end
+itself in the centre colour after its step, minus the inner offset,
+minus the offset (alpha 0); the edge colour steps before the second
+vertex. The vertices are built in `0x0230fa60` (its z, w left as they
+are), times w, through `0x0230fb00`. The width scale `0x0230fa0c` grows
+by `0x0230fa08` and is clamped at 0 (-0 kept); the walk's `+0` moves on
+by 0xd0.
+
+## The renderer's initial state (field agent r6)
+
+`yiRender_create(r, direct, data, refs)` (`0x0090c400`; `yiInit` calls
+it once with `g_YiRender, 0, 0x3000, 0x2400`, and `yiRender_destroy`
+frees two of its buffers) sets up the renderer object:
+
+| Offset | Value |
+|---|---|
+| `+0x67f38` | `FFXSamp0ViewScreenMatrix(m, 512, 1, 0.47, 2048, 2048, 1, 16777215, 2, 65536)` |
+| `+0x67f78`, `+0x67fb8`, `+0x67ff8`, `+0x68038`, `+0x68078` | Identity |
+| `+0x680b8`, `+0x680f8` | Rows `(0, 0, 0, 1)` |
+| `+0x67ba8`.. | Seven VU1 matrix packets (`yiPkUnpackMatrixDma` layout) of `+0x67f38` (VU address 8), the next three identities (0xc each), `+0x680b8` (0x18), `+0x680f8` (0x1c), `+0x68078` (0x20) |
+| `+0x681a8` / `+0x681b8` | `(2048, 2048, 2^23, 1)` / `(0x3a043217, 0x3a043217, 0x34000001, 1)` (`.rdata` bits; about 1/1983 and 2^-23) |
+| `+0x681c8` / `+0x681d8` | Bounds `(f32::MAX x3, 1)` / `(-f32::MAX x3, 1)` |
+| `+0x681f8` / `+0x6820c` / `+0x6821c` | `10.0 x4` / `1.0 x4` / `0 x4` |
+| `+0x68208` / `+0x68340` / `+0x68374` | `0x80808080` / `0x80000000` / `0x20808080` |
+| `+0xba3cc` | `direct` x 16 bytes (`yiMalloc`; start, cursor, end, count; all 0 when `direct` is 0) |
+| `+0xba3dc` | `data` x 16 bytes (start, cursor, end, count) |
+| `+0xba3ec` | `refs` x 16 bytes (start, cursor, 0, count) |
+| `+0x9cab4` | `Sg_VramGetAddrZ()` |
+| `+0x68360` / `+0x68368` | 1024.0 / `(2048, 2048, 0)` |
+
+Then `yiAnimInfo_init(+0x9cab8)`, `yiVramSetup(0, 0)`,
+`yiRender_initpacket`, `yiScreff_init`, `yiRender_initfog`,
+`yiClutAlloc_init(+0x67f20)` and `yiClutAlloc_makepacket(r, 0, 0x48)`,
+whose `eax` it returns.
+
+## The Ke model distortion (field agent r6)
+
+`KeDttMdl_MkGifPk(p)` (`0x0072ded0`) draws a model through the frame
+buffer copy: four VFX instances whose 64-bit keys are 10000 apart (low
+word `g_pppCurrentProgram`, high word `p + 0x48`). The object:
+
+| Offset | Meaning |
+|---|---|
+| `0x08` | Two words for the PS2 GIF packet (`op_spr_alloc(0xd8)`, freed at the end; built for nothing on PC) |
+| `0x10` / `0x14` | Local / world matrix (the fill request copies both; local `[0]`, `[5]` times `+0x20` are the scale) |
+| `0x18` | Put back at the end |
+| `0x1c` | The model: records from `+[+4]` while their `+1` byte is 0 (count `i16 +2`, `0x10` header plus `0x14` per entry); `+0x10` the job (`i16`) |
+| `0x24` | 1: the Z-corrected update for magic 0x10e |
+| `0x28` | A 64-bit GS value: `((((v >> 16) & 0x7ff) - 1) << 10 | (v & 0x7ff)) << 4`, `| 0xa` low / `| 0xfffffffc` high into the packet |
+| `0x30` | The colour (pointer to a vector) |
+| `0x38` | The vertex offset: `+= 0x30 x` the model's counts when `+0x40` is set (returned) |
+
+The first draw (no render data for the first key) creates each instance
+(`graphicVFXCreate(.., 0x1000)`, `graphicVFXCreateDataBuffer(.., 1,
+&n, &n, "FrameBuffer", &1)` with `n` three per record entry), marks its
+render data mode 4 (`+0xc4`), the description's `+0x24` 2, a
+`ModelBuffer_AllocateBuffer(model)` index at `+0xc2` (the first also
+`+0xc0` = 1), and sets it up. Each instance then needs dynamic geometry,
+render data and a buffer segment, else the draw stops; the segment words
+are reset. When the first instance's model buffer belongs to another
+model it is released and reallocated. With a fill buffer
+(`graphicDynGeoFillBufferIsValid`), the request (kind 3) gets the four
+render data (`+0x10`) and geometries (`+0x20`), world (`+0x30`) and local
+(`+0x70`, its `+0x90`/`+0x94` minus the screen's distortion offset)
+matrices, fill (`+0xb0`) and view (`+0xf0`) matrices, colour (`+0x130`),
+scale (`+0x140`; `+0x148`/`+0x14c` are two locals the original never
+sets), model, `+0x40`, `+0x3c`, offset, `+0x24` (`+0x150..+0x160`), the
+screen offset (`+0x164`) and `+0x16c` = magic 0x29e/0x29f in the VFX
+pass. Update: `graphicVFXUpdate` of the first key for magic 0x6a, 0x119,
+0x133, 0x25d, 0x1ae, 0x46, 0x203, 0x182, 0x241, 0x233, 0x264, 0x20a,
+0x23a, 0x29b, 0x1bd, 0x49, 0x1db (and 0x10e with `+0x24` == 1; around it
+the first render data's mode is 1 for 0x203, 0x15c, 0x15e, 0x182, 0x241,
+0x20a, 0x23a, 0x29b, 0x1db, 0x46; 0x15c and 0x15e never get there),
+else `graphicVFXDttUpdate` of all four.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

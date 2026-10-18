@@ -106,4 +106,31 @@ pub mod bridge {
     pub fn gs_set_def_draw_env2(mem: &impl Mem) -> i32 {
         i32::from(DEF_DRAW_ENV2.get(mem))
     }
+
+    /// `g_Settings` (`0x022fb504`): the settings block's address.
+    pub const SETTINGS: Global<u32> = Global::new(0x022f_b504);
+
+    /// `LocalizationManager_Initialize(this)` (`0x006db090`, thiscall):
+    /// the manager's three words from the settings' language index
+    /// (`*g_Settings`): 1..=5 the Western languages (`+0` 1, `+8` 1, `+4`
+    /// the game language 1 us, 2 fr, 4 de, 5 it, 3 es), 6 Korean and 7
+    /// Chinese (`+0` 3, `+4` 9 or 10, `+8` 0); anything else Japanese
+    /// (all 0). Returns 0.
+    pub fn localization_initialize(mem: &mut impl Mem, this: u32) -> u32 {
+        let settings = SETTINGS.get(mem);
+        let [kind, lang, western] = match mem.read::<u32>(settings) {
+            1 => [1, 1, 1],
+            2 => [1, 2, 1],
+            3 => [1, 4, 1],
+            4 => [1, 5, 1],
+            5 => [1, 3, 1],
+            6 => [3, 9, 0],
+            7 => [3, 10, 0],
+            _ => [0, 0, 0],
+        };
+        mem.write(this, kind);
+        mem.write(this.wrapping_add(4), lang);
+        mem.write(this.wrapping_add(8), western);
+        0
+    }
 }

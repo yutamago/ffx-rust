@@ -1256,9 +1256,9 @@ ported! {
     op_xyz_scale @ 0x007e_a850 => extern "C" fn op_xyz_scale(dst: u32, src: u32, s: u32) -> u32 {
         op::bridge::op_xyz_scale(&mut mem(), dst, src, s)
     }
-    /// `op_heap_display_clear()`.
-    op_heap_display_clear @ 0x007f_f260 => extern "C" fn op_heap_display_clear() {
-        op::bridge::op_heap_display_clear(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    /// `op_heap_display_clear(flags)`.
+    op_heap_display_clear @ 0x007f_f260 => extern "C" fn op_heap_display_clear(flags: u32) {
+        op::bridge::op_heap_display_clear(&mut mem(), flags);
     }
     /// `op_oef2_sep_free_all(mask)`.
     op_oef2_sep_free_all @ 0x007f_ff30 => extern "C" fn op_oef2_sep_free_all(mask: u32) -> u32 {
@@ -1638,6 +1638,13 @@ ported! {
     // opp_anmm's sprite commands (host, set, cmd, work) -> next command.
     // The random ones' extra callee stack words (the original's saved
     // registers and return address) only reach VU0 scratch: zeros here.
+    /// `opp_anmm(host, set)`.
+    opp_anmm @ 0x0081_24b0 => extern "C" fn opp_anmm(host: u32, set: u32) -> u32 {
+        // the original's local at [ebp - 0xc] (set_ptr32's result)
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        anmm::bridge::opp_anmm(&mut mem(), host, set, at, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opp_anmm_wait_random(host, set, cmd, work)`.
     opp_anmm_wait_random @ 0x0081_06e0 => extern "C" fn opp_anmm_wait_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
         let _ = (set, work);
@@ -1767,6 +1774,150 @@ ported! {
     /// `opf_spl_gw(host, ptr)`.
     opf_spl_gw @ 0x0081_5670 => extern "C" fn opf_spl_gw(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_spl_gw(&mut mem(), host, ptr)
+    }
+    /// `opf_rel(host, ptr)`.
+    opf_rel @ 0x0081_5120 => extern "C" fn opf_rel(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel(&mut mem(), host, ptr)
+    }
+    /// `opf_rel2(host, ptr)`.
+    opf_rel2 @ 0x0081_5350 => extern "C" fn opf_rel2(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel2(&mut mem(), host, ptr)
+    }
+    /// `opu_vzero(host, cmd)`.
+    opu_vzero @ 0x0081_afa0 => extern "C" fn opu_vzero(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vzero(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_spl(host, cmd)`.
+    opu_spl @ 0x0081_b560 => extern "C" fn opu_spl(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_spl(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opd_exit_from_ovl()`.
+    opd_exit_from_ovl @ 0x007f_f8e0 => extern "C" fn opd_exit_from_ovl() -> u32 {
+        op::bridge::opd_exit_from_ovl(&mut mem())
+    }
+    /// `op_heap_display_set(a, b, c)`: `eax` is left alone outside debug
+    /// mode; 0 here.
+    op_heap_display_set @ 0x007f_f290 => extern "C" fn op_heap_display_set(a: u32, b: u32, c: u32) -> u32 {
+        op::bridge::op_heap_display_set(&mut mem(), [a, b, c], &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_num_vdisp()`.
+    op_num_vdisp @ 0x007e_6560 => extern "C" fn op_num_vdisp() -> u32 {
+        op::bridge::op_num_vdisp(&mut mem(), &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_num_display(x)`.
+    op_num_display @ 0x007e_6440 => extern "C" fn op_num_display(x: u32) -> u32 {
+        op::bridge::op_num_display(&mut mem(), x, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `ops_init_spr()`.
+    ops_init_spr @ 0x007e_6c30 => extern "C" fn ops_init_spr() -> u32 {
+        op::bridge::ops_init_spr(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_rt_m_xyz(m, src, angles, t)`.
+    op_rt_m_xyz @ 0x007e_9970 => extern "C" fn op_rt_m_xyz(m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        op::bridge::op_rt_m_xyz(&mut mem(), m, src, angles, t)
+    }
+    /// `opus_get_bone_vertex(out, chr, bone)`.
+    opus_get_bone_vertex @ 0x0080_54d0 => extern "C" fn opus_get_bone_vertex(out: u32, chr: u32, bone: u32) -> u32 {
+        opus::bridge::opus_get_bone_vertex(&mut mem(), out, chr, bone, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_cheight_get(chr, battle)`: returns in `ST0`.
+    opus_cheight_get @ 0x0080_0b70 => extern "C" fn opus_cheight_get(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_cheight_get(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_get_chr_pos(chr, out)`.
+    opus_get_chr_pos @ 0x0081_b1e0 => extern "C" fn opus_get_chr_pos(chr: u32, out: u32) -> u32 {
+        opus::bridge::opus_get_chr_pos(&mut mem(), chr, out, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_symbol_find_007e11a0(name, list)`.
+    op_symbol_find_007e11a0 @ 0x007e_11a0 => extern "C" fn op_symbol_find(name: u32, list: u32) -> u32 {
+        op::bridge::op_symbol_find(&mem(), name, list)
+    }
+    /// `op_token_get_007e1d50(file, src, out, pos, max, eol, flags)`.
+    op_token_get_007e1d50 @ 0x007e_1d50 => extern "C" fn op_token_get(file: u32, src: u32, out: u32, pos: u32, max: u32, eol: u32, flags: u32) -> u32 {
+        op::bridge::op_token_get(&mut mem(), file, src, out, pos, max, eol, flags, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_tex0_get_007e5260(oef, no, out)`.
+    op_oef2_tex0_get_007e5260 @ 0x007e_5260 => extern "C" fn op_oef2_tex0_get(oef: u32, no: u32, out: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 argument
+        op::bridge::op_oef2_tex0_get(&mut mem(), oef, no as u16, out)
+    }
+    /// `opus_mdc_head_set_00802450(head, mats, set, part, tex)`.
+    opus_mdc_head_set_00802450 @ 0x0080_2450 => extern "C" fn opus_mdc_head_set(head: u32, mats: u32, set: u32, part: u32, tex: u32) -> u32 {
+        opus::bridge::opus_mdc_head_set(&mut mem(), head, mats, set, part, tex)
+    }
+    /// `pppSendPacket(rpc, tag, data, n)`.
+    pppSendPacket @ 0x0076_b3d0 => extern "C" fn ppp_send_packet(rpc: u32, tag: u32, data: u32, n: u32) -> u32 {
+        ppp::bridge::ppp_send_packet(&mut mem(), rpc, tag, data, n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_chara_status_rgb_set(chr, weapons)`.
+    opus_chara_status_rgb_set @ 0x0080_aa00 => extern "C" fn opus_chara_status_rgb_set(chr: u32, weapons: u32) {
+        opus::bridge::opus_chara_status_rgb_set(&mut mem(), chr, weapons, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_chara_rgba_set(chr, rgba, weapons)`.
+    opus_chara_rgba_set @ 0x0080_a560 => extern "C" fn opus_chara_rgba_set(chr: u32, rgba: u32, weapons: u32) {
+        opus::bridge::opus_chara_rgba_set(&mut mem(), chr, rgba, weapons, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_mdc_lights_get_00802bd0(head, _, list, unit, nos)`.
+    opus_mdc_lights_get_00802bd0 @ 0x0080_2bd0 => extern "C" fn opus_mdc_lights_get(head: u32, unused: u32, list: u32, unit: u32, nos: u32) {
+        let _ = unused;
+        opus::bridge::opus_mdc_lights_get(&mut mem(), head, list, unit, nos);
+    }
+    /// `opus_hsv_rgba_00807b70(out, src, n, time, sat, val, mix)`.
+    opus_hsv_rgba_00807b70 @ 0x0080_7b70 => extern "C" fn opus_hsv_rgba(out: u32, src: u32, n: i32, time: i32, sat: i32, val: i32, mix: i32) -> u32 {
+        opus::bridge::opus_hsv_rgba(&mut mem(), out, src, n, time, sat, val, mix)
+    }
+    /// `pppSetFpPdt(data)`.
+    pppSetFpPdt @ 0x0072_a7f0 => extern "C" fn ppp_set_fp_pdt(data: u32) {
+        fp::bridge::ppp_set_fp_pdt(&mut mem(), data, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpFree()`.
+    pppFpFree @ 0x0072_91c0 => extern "C" fn ppp_fp_free() {
+        fp::bridge::ppp_fp_free(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpIDfree_007295f0(id)`.
+    pppFpIDfree_007295f0 @ 0x0072_95f0 => extern "C" fn ppp_fp_id_free(id: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        fp::bridge::ppp_fp_id_free(&mut mem(), id as u16, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpLoadStat(stat)`.
+    pppFpLoadStat @ 0x0072_9a10 => extern "C" fn ppp_fp_load_stat(stat: u32) {
+        fp::bridge::ppp_fp_load_stat(&mut mem(), stat);
+    }
+    /// `pppSetFpTex(oef)`.
+    pppSetFpTex @ 0x0072_aa40 => extern "C" fn ppp_set_fp_tex(oef: u32) {
+        fp::bridge::ppp_set_fp_tex(&mut mem(), oef, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppShapeFieldRenderOn_00743030()`.
+    pppShapeFieldRenderOn_00743030 @ 0x0074_3030 => extern "C" fn shape_field_render_on() -> u32 {
+        draw::bridge::shape_field_render_on(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_weapon_free(obj)`.
+    op_et_weapon_free @ 0x007f_ca90 => extern "C" fn op_et_weapon_free(obj: u32) {
+        et::bridge::op_et_weapon_free(&mut mem(), obj, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_weapon_free_all()`.
+    op_et_weapon_free_all @ 0x007f_caf0 => extern "C" fn op_et_weapon_free_all() {
+        et::bridge::op_et_weapon_free_all(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_fvec4_to_ivec4_00808b00(dst, src)`.
+    op_fvec4_to_ivec4_00808b00 @ 0x0080_8b00 => extern "C" fn fvec4_to_ivec4(dst: u32, src: u32) {
+        vec::bridge::fvec4_to_ivec4(&mut mem(), dst, src);
+    }
+    /// `op_ot_draw()`.
+    op_ot_draw @ 0x007e_c470 => extern "C" fn op_ot_draw() {
+        op::bridge::op_ot_draw(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_tex_clut_ovl_trans(mask)`.
+    op_oef2_tex_clut_ovl_trans @ 0x007e_4e80 => extern "C" fn op_oef2_tex_clut_ovl_trans(mask: u32) {
+        op::bridge::op_oef2_tex_clut_ovl_trans(&mut mem(), mask, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_mdc_free(oef, chr, heap, second)`.
+    opus_mdc_free @ 0x0080_61a0 => extern "C" fn opus_mdc_free(oef: u32, chr: u32, heap: u32, second: u32) {
+        opus::bridge::opus_mdc_free(&mut mem(), oef, chr, heap, second, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_astatus_effect_off(chr)`.
+    op_et_astatus_effect_off @ 0x007f_b000 => extern "C" fn op_et_astatus_effect_off(chr: u32) {
+        et::bridge::op_et_astatus_effect_off(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a));
     }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
