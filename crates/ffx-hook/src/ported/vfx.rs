@@ -1828,6 +1828,27 @@ ported! {
     opus_get_chr_pos @ 0x0081_b1e0 => extern "C" fn opus_get_chr_pos(chr: u32, out: u32) -> u32 {
         opus::bridge::opus_get_chr_pos(&mut mem(), chr, out, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_symbol_find_007e11a0(name, list)`.
+    op_symbol_find_007e11a0 @ 0x007e_11a0 => extern "C" fn op_symbol_find(name: u32, list: u32) -> u32 {
+        op::bridge::op_symbol_find(&mem(), name, list)
+    }
+    /// `op_token_get_007e1d50(file, src, out, pos, max, eol, flags)`.
+    op_token_get_007e1d50 @ 0x007e_1d50 => extern "C" fn op_token_get(file: u32, src: u32, out: u32, pos: u32, max: u32, eol: u32, flags: u32) -> u32 {
+        op::bridge::op_token_get(&mut mem(), file, src, out, pos, max, eol, flags, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_tex0_get_007e5260(oef, no, out)`.
+    op_oef2_tex0_get_007e5260 @ 0x007e_5260 => extern "C" fn op_oef2_tex0_get(oef: u32, no: u32, out: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 argument
+        op::bridge::op_oef2_tex0_get(&mut mem(), oef, no as u16, out)
+    }
+    /// `opus_mdc_head_set_00802450(head, mats, set, part, tex)`.
+    opus_mdc_head_set_00802450 @ 0x0080_2450 => extern "C" fn opus_mdc_head_set(head: u32, mats: u32, set: u32, part: u32, tex: u32) -> u32 {
+        opus::bridge::opus_mdc_head_set(&mut mem(), head, mats, set, part, tex)
+    }
+    /// `pppSendPacket(rpc, tag, data, n)`.
+    pppSendPacket @ 0x0076_b3d0 => extern "C" fn ppp_send_packet(rpc: u32, tag: u32, data: u32, n: u32) -> u32 {
+        ppp::bridge::ppp_send_packet(&mut mem(), rpc, tag, data, n, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

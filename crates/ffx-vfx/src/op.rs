@@ -2714,6 +2714,147 @@ pub mod bridge {
         u32::from(r)
     }
 
+    /// The op script symbol hash: the bytes (sign-extended, ASCII letters
+    /// lowered when `nocase`) each combined by XOR with `0x6f` times its index,
+    /// summed (wrapping).
+    fn op_symbol_hash(mem: &impl Mem, name: u32, nocase: bool) -> u32 {
+        let mut sum = 0u32;
+        let mut salt = 0u32;
+        let mut at = name;
+        loop {
+            let mut c: u8 = mem.read(at);
+            if c == 0 {
+                return sum;
+            }
+            if nocase && c.wrapping_sub(b'A') <= 0x19 {
+                c = c.wrapping_add(0x20);
+            }
+            sum = sum.wrapping_add(i32::from(c.cast_signed()).cast_unsigned() ^ salt);
+            salt = salt.wrapping_add(0x6f);
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// `0x007e11a0(name, list)` (`op_symbol_find`): the first symbol of the
+    /// list (linked by `+0x20`) that `name` names. A symbol has its name at
+    /// `[+0]`, an alias at `[+4]`, `i16 +0x12` set for a case-blind one,
+    /// and the name's hashes (see [`op_symbol_hash`]) at `+0x18` (exact)
+    /// and `+0x1c` (case-blind). An exact symbol matches when the hash and
+    /// the name match and the alias is absent or differs from `name`; a
+    /// case-blind one when they match with letters folded and
+    /// `op_str_equal(name, alias, 1)` is 0. Returns the symbol, or 0.
+    pub fn op_symbol_find(mem: &impl Mem, name: u32, list: u32) -> u32 {
+        let exact = op_symbol_hash(mem, name, false);
+        let blind = op_symbol_hash(mem, name, true);
+        let fold = |c: u8| {
+            if c.wrapping_sub(b'A') <= 0x19 {
+                c.wrapping_add(0x20)
+            } else {
+                c
+            }
+        };
+        // strcmp, with or without folding
+        let same = |a: u32, b: u32, nocase: bool| {
+            let mut i = 0u32;
+            loop {
+                let (mut x, mut y) = (
+                    mem.read::<u8>(a.wrapping_add(i)),
+                    mem.read::<u8>(b.wrapping_add(i)),
+                );
+                if nocase {
+                    (x, y) = (fold(x), fold(y));
+                }
+                if x != y {
+                    return false;
+                }
+                if x == 0 {
+                    return true;
+                }
+                i = i.wrapping_add(1);
+            }
+        };
+        let mut sym = list;
+        while sym != 0 {
+            let own: u32 = mem.read(sym);
+            let alias: u32 = mem.read(sym.wrapping_add(4));
+            if mem.read::<i16>(sym.wrapping_add(0x12)) == 0 {
+                if exact == mem.read::<u32>(sym.wrapping_add(0x18))
+                    && own != 0
+                    && same(name, own, false)
+                    && (alias == 0 || !same(name, alias, false))
+                {
+                    return sym;
+                }
+            } else if blind == mem.read::<u32>(sym.wrapping_add(0x1c))
+                && own != 0
+                && same(name, own, true)
+                && op_str_equal(mem, name, alias, 1) == 0
+            {
+                return sym;
+            }
+            sym = mem.read(sym.wrapping_add(0x20));
+        }
+        0
+    }
+
+    /// The byte `0x011a0064` that picks `op_oef2_tex0_get`'s second
+    /// register layout.
+    pub const TEX0_ALT: Global<u8> = Global::new(0x011a_0064);
+    /// The word `0x011a0730` whose low 9 bits give `op_oef2_tex0_get`'s
+    /// default base.
+    pub const TEX0_BASE: Global<u32> = Global::new(0x011a_0730);
+
+    /// `0x007e5260(oef, no, out)` (`op_oef2_tex0_get`): the 0x20-byte
+    /// texture record `no` of `oef` (`op_oef2_a_get(oef, 2, no)`) copied to
+    /// `out` for a non-negative `i16 no`. Otherwise a default: a base `b`
+    /// from [`TEX0_BASE`]'s low 9 bits (`b << 5` for an even `no`, else
+    /// 0xd00 for 0 and 0 for anything else; 0x1a00 for `no` = 0x8000 in the
+    /// plain layout). With [`TEX0_ALT`]: `+0` = `b | 0x64120000` (0x64a21a00
+    /// for 0x8000), `+8` = 0x20200000, `+0xc` = 0x2000200, `+0x10`/`+0x14`
+    /// = 0, byte `+0x18` = 1 (10 for 0x8000), byte `+0x19` = 0. Plain: `+0`
+    /// = `b | 0xe4020000`, `+8` = 0x8200000, `+0xc` = 0x800200, `+0x10`/
+    /// `+0x14` = 0, `u16 +0x18` = 0. Returns `eax` as left: the record's
+    /// last word, `+0` (alt layout; 0xffff8000 for 0x8000) or `out`.
+    pub fn op_oef2_tex0_get(mem: &mut impl Mem, oef: u32, no: u16, out: u32) -> u32 {
+        let n = no.cast_signed();
+        if n >= 0 {
+            let rec = op_oef2_a_get(mem, oef, 2, i32::from(n).cast_unsigned());
+            let words: [u32; 8] = mem.read(rec);
+            mem.write(out, words);
+            return words[7];
+        }
+        let base = || {
+            let b = TEX0_BASE.get(mem) & 0x1ff;
+            if no & 1 == 0 {
+                b << 5
+            } else if b != 0 {
+                0
+            } else {
+                0xd00
+            }
+        };
+        if TEX0_ALT.get(mem) != 0 {
+            let ret = if no == 0x8000 {
+                mem.write(out, 0x64a2_1a00u32);
+                mem.write(out.wrapping_add(0x18), 10u8);
+                0xffff_8000
+            } else {
+                let v = base() | 0x6412_0000;
+                mem.write(out, v);
+                mem.write(out.wrapping_add(0x18), 1u8);
+                v
+            };
+            mem.write(out.wrapping_add(8), [0x2020_0000u32, 0x0200_0200, 0, 0]);
+            mem.write(out.wrapping_add(0x19), 0u8);
+            return ret;
+        }
+        let b = if no == 0x8000 { 0x1a00 } else { base() };
+        mem.write(out, b | 0xe402_0000);
+        mem.write(out.wrapping_add(8), [0x0820_0000u32, 0x0080_0200, 0, 0]);
+        mem.write(out.wrapping_add(0x18), 0u16);
+        out
+    }
+
     /// `op_str_equal_007e2600(a, b, nocase)` (`0x007e2600`): -1 when the
     /// two strings are equal (ASCII letters folded to lower case when
     /// `nocase`), else 0; 0 for a null string.
@@ -3245,6 +3386,86 @@ pub mod bridge {
     pub const COMMENT_DEPTH: Global<u32> = Global::new(0x0113_fc64);
     /// See [`COMMENT_DEPTH`].
     pub const IN_COMMENT: Global<u32> = Global::new(0x0113_fc60);
+
+    /// The op script reader's line counter (`0x0113fc5c`), which
+    /// `op_line_length` advances.
+    pub const SCRIPT_LINE: Global<u32> = Global::new(0x0113_fc5c);
+
+    /// `0x007e1d50(file, src, out, pos, max, eol, flags)` (`op_token_get`):
+    /// the next token into `out` ([`op_token`] on `src`, `*pos`, `max` and
+    /// the line end `*eol`; a class-1 result is read again unless `flags &
+    /// 2`). A `\` token at or past the line end (class 6) continues on
+    /// the next line, unless `flags & 4`: the line counter advances
+    /// (`op_line_length(file, SCRIPT_LINE)`), the next line is read into
+    /// `src` (`op_read_line(file, src, max)`, its length to `*eol`) and
+    /// `*pos` = 0. With `flags & 1` the token's length is returned.
+    /// Otherwise further tokens are appended to `out` (each at its current
+    /// end, with what room is left) until one adds nothing; a class-1
+    /// token stops it, cut off again and `*pos` put back before it.
+    /// Returns `out`'s length.
+    #[allow(clippy::too_many_arguments)]
+    pub fn op_token_get<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        src: u32,
+        out: u32,
+        pos: u32,
+        max: u32,
+        eol: u32,
+        flags: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let backslash = Global::<u32>::new(0x00b8_f87c).ptr(mem).addr;
+        let mut end;
+        loop {
+            end = mem.read::<u32>(eol);
+            let mut class = op_token(mem, src, out, pos, max, end, call);
+            if class == 1 && flags & 2 == 0 {
+                class = op_token(mem, src, out, pos, max, end, call);
+            }
+            if mem.read::<i32>(pos) < end.cast_signed()
+                || class != 6
+                || out == 0
+                || op_str_equal(mem, out, backslash, 0) == 0
+            {
+                break;
+            }
+            if flags & 4 != 0 {
+                break;
+            }
+            let lines = SCRIPT_LINE.ptr(mem).addr;
+            op_line_length(mem, file, lines);
+            let n = op_read_line(mem, file, src, max);
+            mem.write(eol, n);
+            mem.write(pos, 0u32);
+        }
+        let mut len = if out == 0 { 0 } else { op_strlen(mem, out) };
+        if flags & 1 != 0 {
+            return len;
+        }
+        loop {
+            let before: u32 = mem.read(pos);
+            let class = op_token(
+                mem,
+                src,
+                out.wrapping_add(len),
+                pos,
+                max.wrapping_sub(len),
+                end,
+                call,
+            );
+            let n = op_strlen(mem, out);
+            if n == len {
+                return n;
+            }
+            if class == 1 {
+                mem.write(out.wrapping_add(len), 0u8);
+                mem.write(pos, before);
+                return len;
+            }
+            len = n;
+        }
+    }
 
     /// `op_token_007e1f80(src, out, pos, max, eol)` (`0x007e1f80`): the
     /// next token of an op script from `src + *pos` into `out` (at most

@@ -12092,3 +12092,200 @@ fn round26d_helpers_match_the_original() {
         }
     }
 }
+
+/// The op script symbol hash (`0x007e11a0`'s): bytes sign-extended, combined by XOR
+/// with 0x6f times the index, summed.
+fn op_symbol_hash(s: &[u8], nocase: bool) -> u32 {
+    let mut sum = 0u32;
+    for (i, &c) in (0u32..).zip(s) {
+        let c = if nocase && c.is_ascii_uppercase() {
+            c + 0x20
+        } else {
+            c
+        };
+        sum = sum.wrapping_add(i32::from(c.cast_signed()).cast_unsigned() ^ (0x6f * i));
+    }
+    sum
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn op_script_symbols_and_tokens_match_the_original() {
+    let names: [&[u8]; 7] = [b"abc", b"ABC", b"Abc", b"aZ", b"az", b"", b"\xe9z"];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_11a0);
+        deref_recorder(&mut p, 0x007e_1450, &[0, 0]);
+        // 0x007e11a0: the names as C strings, a list of 8 symbols
+        let strs = p.alloc(0x100);
+        let at: Vec<u32> = (0..names.len())
+            .map(|i| strs + 0x20 * u32::try_from(i).unwrap())
+            .collect();
+        for (k, n) in names.iter().enumerate() {
+            for (i, &c) in (0u32..).zip(n.iter()) {
+                p.set(at[k] + i, c);
+            }
+            p.set(at[k] + u32::try_from(n.len()).unwrap(), 0u8);
+        }
+        let syms = p.alloc(0x24 * 8);
+        for _ in 0..3000 {
+            for s in 0..8u32 {
+                let e = syms + 0x24 * s;
+                p.fill(e, 0x24, &mut rng);
+                let k = rng.below(7) as usize;
+                p.set(e, if rng.chance(10) { 0 } else { at[k] });
+                let a = rng.below(7) as usize;
+                p.set(e + 4, if rng.chance(40) { 0 } else { at[a] });
+                p.set(e + 0x12, rng.pick(&[0u16, 1]));
+                let good = rng.chance(80);
+                let (h, hb) = (
+                    op_symbol_hash(names[k], false),
+                    op_symbol_hash(names[k], true),
+                );
+                p.set(e + 0x18, if good { h } else { rng.next() });
+                p.set(e + 0x1c, if good { hb } else { rng.next() });
+                p.set(e + 0x20, if s == 7 { 0 } else { e + 0x24 });
+            }
+            let name = at[rng.below(7) as usize];
+            let first = syms + 0x24 * rng.below(8);
+            let list = rng.pick(&[first, first, 0]);
+            p.check("0x007e11a0", 0x007e_11a0, &[name, list], |o| {
+                Some(op::bridge::op_symbol_find(o, name, list))
+            });
+        }
+        // 0x007e1d50 over the tokenizer
+        let class = p.sym(op::bridge::CHAR_CLASS.sym);
+        for c in 0..256u32 {
+            let k = match u8::try_from(c).unwrap() {
+                b'a' | b'b' | b'1' => 1,
+                b'"' => 3,
+                b' ' | b'\t' => 5,
+                b'\\' => 6,
+                b'(' => 8,
+                b';' => 7,
+                0 => 0,
+                _ => 2,
+            };
+            p.set(class + c, k);
+        }
+        let (src, out, pos, eol) = (p.alloc(0x80), p.alloc(0x80), p.alloc(4), p.alloc(4));
+        let (file, data) = (p.alloc(0x20), p.alloc(0x100));
+        let chars = *b"a1 \\(\"z;";
+        for _ in 0..5000 {
+            let len = 4 + rng.below(0x20);
+            for i in 0..len {
+                let c = rng.pick(&chars);
+                p.set(src + i, c);
+            }
+            // often a continuation at the end of the line
+            if rng.chance(50) {
+                p.set(src + len - 1, b'\\');
+            }
+            p.set(src + len, 0u8);
+            for i in 0..0x100 {
+                let c = if rng.chance(8) {
+                    b'\n'
+                } else {
+                    rng.pick(&chars)
+                };
+                p.set(data + i, c);
+            }
+            p.set(file, data);
+            p.set(file + 0xc, rng.below(0x40));
+            p.set(file + 0x10, 0x40 + rng.below(0x40));
+            p.fill(out, 0x80, &mut rng);
+            p.set(pos, rng.below(len));
+            p.set(eol, len - rng.below(3));
+            p.put(op::bridge::COMMENT_DEPTH, 0u32);
+            p.put(op::bridge::IN_COMMENT, 0u32);
+            let max = rng.pick(&[0x40u32, 0x10, 3]);
+            let flags = rng.below(8);
+            // (a null out faults in op_token: never passed)
+            let o = out;
+            p.check(
+                "0x007e1d50",
+                0x007e_1d50,
+                &[file, src, o, pos, max, eol, flags],
+                |m| {
+                    Some(op::bridge::op_token_get(
+                        m,
+                        file,
+                        src,
+                        o,
+                        pos,
+                        max,
+                        eol,
+                        flags,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn round27a_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_5260);
+        let oef = p.alloc(0x2200);
+        let out = p.alloc(0x20);
+        let (head, set, part) = (p.alloc(0x50), p.alloc(0x100), p.alloc(0x100));
+        // pppSendPacket: the RPC call recorded
+        deref_recorder(&mut p, 0x00a4_4750, &[0; 9]);
+        deref_recorder(&mut p, 0x0062_f4c0, &[0]);
+        let (rpc, tag, data) = (p.alloc(0x20), p.alloc(4), p.alloc(0x100));
+        for _ in 0..3000 {
+            p.fill(oef, 0x2200, &mut rng);
+            p.set(oef + 8, 0x100u32);
+            p.set(oef + 0x10, 0x40u32);
+            for n in 0..0x100 {
+                p.set(oef + 0x100 + 0x20 * n + 0x10, rng.next() | 1);
+            }
+            p.fill(out, 0x20, &mut rng);
+            p.put(op::bridge::TEX0_ALT, u8::from(rng.chance(50)));
+            let any = rng.next();
+            let base = rng.pick(&[0u32, 0x200, any]);
+            p.put(op::bridge::TEX0_BASE, base);
+            let no = rng.pick(&[0x8000u16, 0x8001, 0xfffe, 0xffff, 0, 5, 0x7fff]);
+            p.check("0x007e5260", 0x007e_5260, &[oef, u32::from(no), out], |o| {
+                Some(op::bridge::op_oef2_tex0_get(o, oef, no, out))
+            });
+            p.fill(rpc, 0x20, &mut rng);
+            p.fill(tag, 4, &mut rng);
+            p.fill(data, 0x100, &mut rng);
+            p.put(ppp::bridge::WAIT_DONE, rng.pick(&[1u32, 7]));
+            let pk = p.sym(ppp::bridge::SEND_PACKET.sym);
+            p.fill(pk, 0x20, &mut rng);
+            let n = rng.pick(&[0u32, 1, 4, 0x13, 0x100]);
+            p.check("pppSendPacket", 0x0076_b3d0, &[rpc, tag, data, n], |o| {
+                Some(ppp::bridge::ppp_send_packet(
+                    o,
+                    rpc,
+                    tag,
+                    data,
+                    n,
+                    &mut call_original,
+                ))
+            });
+            p.fill(head, 0x50, &mut rng);
+            p.fill(set, 0x100, &mut rng);
+            p.fill(part, 0x100, &mut rng);
+            p.set(part + 0x1e, u8::try_from(rng.below(16)).unwrap());
+            for g in 0..16 {
+                p.set(set + 0x60 + 4 * g, oef);
+            }
+            let mats = rng.next();
+            let tex = rng.pick(&[u32::MAX, 0, 7, 0x80, 0x8000_0000]);
+            p.check(
+                "0x00802450",
+                0x0080_2450,
+                &[head, mats, set, part, tex],
+                |o| {
+                    Some(opus::bridge::opus_mdc_head_set(
+                        o, head, mats, set, part, tex,
+                    ))
+                },
+            );
+        }
+    }
+}

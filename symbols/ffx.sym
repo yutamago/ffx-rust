@@ -6260,10 +6260,12 @@
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
+0x007e11a0 function op_symbol_find_007e11a0  # ours: (name, list) -> the first symbol of the op script symbol list (next +0x20) whose name [+0] matches (exact or, with i16 +0x12, A-Z folded; hashes sum(byte ^ 0x6f i) at +0x18/+0x1c) and whose alias [+4] is absent or differs; 0 when none (op::bridge::op_symbol_find)
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
 0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
 0x007e1cc0 function op_read_line_007e1cc0        # ours: (src, out, max) -> bytes stored: the op script reader's next line (src: [+0] bytes, +0xc position, +0x10 end) up to 0/0xff/CR/LF, two-byte characters (>= 0x80) kept whole, at most max-1 bytes and a NUL, position stepped back one; callers 0x007e1d50, 0x007e2270
+0x007e1d50 function op_token_get_007e1d50    # ours: (file, src, out, &pos, max, &eol, flags) -> out's length: op_token, joining a trailing \\ onto the next line (op_read_line) unless flags & 4, appending further tokens unless flags & 1 (op::bridge::op_token_get)
 0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
@@ -6307,6 +6309,7 @@
 0x007e4ff0 function op_oef2_tex_pos_set       # (rec, pos) -> new low half: table-2 record low 14 bits = (pos & 0x3fff) + (old & 0xfc), byte +0x1f = 1
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
+0x007e5260 function op_oef2_tex0_get_007e5260  # ours: (oef, no, out): the 0x20-byte texture register record no of oef (op_oef2_a_get kind 2) into out, or a default by byte 0x011a0064 and word 0x011a0730 (op::bridge::op_oef2_tex0_get); callers opus_wave_cmd_7f5f70, 0x007f0b80
 0x007e5660 function op_vec_zero               # (dst) four zero words
 0x007e5680 function op_oef2_tex_clut_init_007e5680 # ours: () -> 0: clears g_OpOef2ClutOvl, 0x011a01a0.., 0x011a02a0.., g_OpOef2ClutCues (64 dwords each), the cue head/count dword and g_OpOef2ClutOvlCount; caller 0x007ff960
 0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
@@ -6605,6 +6608,7 @@
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
+0x00802450 function opus_mdc_head_set_00802450 # ours: (head, mats, set, part, tex) -> op_oef2_a_get(set +0x60 [part +0x1e], 4, tex) or 0: an mdc draw head like opus_mdc_packet_set's, colour word from part +0xc8 (opus::bridge::opus_mdc_head_set)
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
 0x00803170 function endU16MeshBreakRenderDataBuffer # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e8a90 endU16MeshBreakRenderDataBuffer's (similarity 1.00: FFXVu0UnitMatrix, graphicVFXSetVisible); symbols from Fahrenheit's server export
 0x00803610 function op_mdc_mem_transfer          # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e84d0 op_mdc_mem_transfer's (similarity 1.00: Ch_ModelGetBaseMatrix, Ch_ModelGetNromPtr, Ch_ModelGetVtexPtr); symbols from Fahrenheit's server export

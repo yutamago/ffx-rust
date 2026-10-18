@@ -1195,6 +1195,52 @@ pub mod bridge {
         call(mem, f, &[h, out, out.wrapping_add(4), out.wrapping_add(8)])
     }
 
+    /// `0x00802450(head, mats, set, part, tex)` (`opus_mdc_head_set`): a
+    /// model draw head: `+0` = the part's `u16 +0xc0`, `+4` = the set's
+    /// `+0x28`, `u16 +8` = the part's `+0xc2`, `+0xc`/`+0x10`/`+0x14`/
+    /// `+0x1c` = 0, `+0x18` = the part's `+0xc8`, `+0x20`..`+0x2c` = `mats +
+    /// 0xc0`, `mats`, `mats + 0x40`, `mats + 0x80`, `+0x34` = the set's
+    /// `+0x54`, `+0x38`..`+0x44` = 0, `u16 +0x4c` = 0x8080. For a
+    /// non-negative `tex` returns the part's oef (`[set +0x60 + 4 group]`,
+    /// group byte `+0x1e`) table-4 entry `tex` (`op_oef2_a_get`), else 0.
+    pub fn opus_mdc_head_set(
+        mem: &mut impl Mem,
+        head: u32,
+        mats: u32,
+        set: u32,
+        part: u32,
+        tex: u32,
+    ) -> u32 {
+        let at = |o: u32| head.wrapping_add(o);
+        let v: u32 = mem.read(part.wrapping_add(0xc8));
+        mem.write(at(0x18), v);
+        mem.write(at(0x1c), 0u32);
+        mem.write(at(0x10), [0u32; 2]);
+        let v = u32::from(mem.read::<u16>(part.wrapping_add(0xc0)));
+        mem.write(at(0), v);
+        let v: u32 = mem.read(set.wrapping_add(0x28));
+        mem.write(at(4), v);
+        mem.write(at(0xc), 0u32);
+        mem.write(at(0x40), 0u32);
+        mem.write(at(0x38), [0u32; 2]);
+        mem.write(at(0x4c), 0x8080u16);
+        let v: u32 = mem.read(set.wrapping_add(0x54));
+        mem.write(at(0x34), v);
+        let v: u16 = mem.read(part.wrapping_add(0xc2));
+        mem.write(at(8), v);
+        mem.write(at(0x28), mats.wrapping_add(0x40));
+        mem.write(at(0x2c), mats.wrapping_add(0x80));
+        mem.write(at(0x24), mats);
+        mem.write(at(0x20), mats.wrapping_add(0xc0));
+        mem.write(at(0x44), 0u32);
+        if tex.cast_signed() < 0 {
+            return 0;
+        }
+        let g = u32::from(mem.read::<u8>(part.wrapping_add(0x1e)));
+        let oef: u32 = mem.read(set.wrapping_add(0x60 + 4 * g));
+        crate::op::bridge::op_oef2_a_get(mem, oef, 4, tex)
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and
