@@ -1808,6 +1808,53 @@ ours), which returns the number of source words it read:
   words of the row. Otherwise only the first `count` words are written.
 - The address is not wrapped to the buffer.
 
+## The screen distortion and the sphere grid's draws (field agent r4)
+
+`yiScreff_draw(scene)` (`0x00913200`) updates the 9 x 9 grid of the
+field's screen distortion (heat haze, under water) each frame:
+- With `+0xbe078` bit 0 (fading in) the fade line is the camera matrix
+  `+0x67f78` inverted (`FFXVu0InversMatrix`) applied to `(0, -depth, 1, 1)`
+  (depth `+0xbe07c`): `fade = y / (208 / +0x68360 * 64) * 208 - 208`.
+- `graphicSetDistortionBlur(+0xbe0a0 / 128)`.
+- Row `r` samples two waves (phase `+0xbe080`, speed `+0xbe094`, the
+  second three times as fast and opposite) at `0` for the top row, `64r + 64`
+  below; the column waves start from `+0xbe084` and step `64 * speed`,
+  wrapped past pi. Texture coordinates `(r/8, c/8)` move by
+  `amplitude (+0xbe098) * t` (the second wave a third of that), clamped to
+  0..1. `t` is 1 unless fading: then `(52c + fade) / 128` clamped (kept
+  with bit 1), and the top row keeps 0. Colours: the tint `+0xbe0a4..`, or
+  `(c - 128) t + 128` and alpha `128 t` while fading (`t < 1`).
+- `graphicUpdateDistortionVertex(row, col, r, g, b, a, u, v)`, the colour
+  bytes as `f32`s / 128; then `+0xbe0a8 += 1`, `+0xbe080 += 1.5 x
+  +0xbe090`, `+0xbe084 += +0xbe090`.
+
+`AbmapDrawGridMarks()` (`0x00a49f10`) marks the sphere grid's 17 x 20
+cells (`g_Abmap + 0x12e60`, a byte each). Corners are `(x i32, y i32, _,
+scale f32)` records from `g_Abmap + 0x116c0`, 21 to a row. A set cell
+fills the GS packet at `0x01a860ec` with two 4-vertex strips (tags 4 and
+`0x8004`, `0x302a4000`, `0x512`): per corner the texture quad of a pulse
+`p = (g_Abmap[0x11698] & 0x1ff) / 256 - 1` scaled by the corner's scale,
+colour 0x40, the position at z `0x2000`. The two quads then go to
+`graphicDrawUIAbmapElement(vertices, scratch, 10)` with screen positions
+`v / 16 - 2048 + (256, 208)` and texture coordinates times 512.
+
+`AbmapDrawMap()` (`0x00a4ce20`) draws each node (`g_Abmap + 8`, 16 bytes,
+count `i16` at `g_Abmap`; kind template `*(0x01a85f78 + 4 * node[+6])`,
+block at `template + i16 template[+0x10]`): `AbmapMakeNodeMatrix` times the
+view `g_Abmap + 0x113e0`; the block's four corners (`i16` pairs at `+0x20`,
+in 16ths) through it, the node skipped when a `w <= 0`; projected with
+`Q = 1 / w`; checked against the box (1528, 1600)..(2576, 2304) with
+`Vec2SubScalarsFlags` (`0x0075e870`), which only stops the checks early.
+The packet holds the texture quad from the block's `+0x30` (origin) and
+`+0x34` (size) pairs in 4096ths times each corner's `q`, the positions in
+16ths of a pixel. The element's texture window depends on the block's
+kind `+0x10 & 0x3fff` (`0x3500` as `0x2710`): `0x2f00` `u/2 + 3/8`;
+`0x2710` `u/4 + 3/4, v/2 + 1/2`; `0x3000` `u/2 + 1/2, v - 1/4`; `0x3200`
+`u/2`; `0x3600` `u/8 + 7/8, v/4 + 1/4`. Both work through the emulated
+VU0 registers (`0x00c8f788` Q, `0x00c8f790` ACC, `0x00c8f7d0`..,
+`0x00c8f910`/`0x00c8f950` matrices) and EE registers (`0x00c8f588`) as the
+original's inlined macro code does, and leave them as it does.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

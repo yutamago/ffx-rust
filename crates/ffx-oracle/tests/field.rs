@@ -14628,7 +14628,7 @@ fn r1g_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, real: bool) {
     );
     let work = t.stack_scratch(0x800);
     let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
-    for k in 0..40 {
+    for k in 0..100 {
         if !(real && k == 0) {
             r1g_state(t, rng, r);
         }
@@ -14710,14 +14710,20 @@ fn r1h_cases(t: &mut Twin, rng: &mut Xorshift, synthetic: bool) {
                 t.put(ab + 0x12e60 + c, u8::from(rng.below(3) == 0));
             }
             t.put(ab + 0x11698, rng.next());
-            for w in 0..0x40u32 {
-                t.put(ab + 0x1182c + 4 * w, float_in(rng, -300, 300));
+            // the corner records: (x, y, _, scale), 18 rows of 21
+            for w in 0..(18 * 0x150 / 4) {
+                let v = match w % 4 {
+                    0 | 1 => rng.range(-40_000, 40_000).cast_unsigned(),
+                    3 => float_in(rng, -3, 3),
+                    _ => rng.next(),
+                };
+                t.put(ab + 0x116c0 + 4 * w, v);
             }
         }
         t.same(
             "AbmapDrawGridMarks",
             |o| o.eax(0x00a4_9f10, &[]),
-            |m| ffx_field::abmap_lift::abmap_draw_grid_marks(m, work, call),
+            |m| ffx_field::abmap_draw::abmap_draw_grid_marks(m, work, call),
         );
     }
 }
@@ -14780,6 +14786,10 @@ fn r1h_map_cases(t: &mut Twin, rng: &mut Xorshift) {
             let p = blocks + 0x1_0000 * i;
             t.put(p + 0x10, kind);
             let d = p + u32::from(kind);
+            // the block's own kind word (the low 14 bits pick the texture
+            // window) and the GS register word after it
+            t.put(d + 0x10, u32::from(kind) | (rng.next() & 0xffff_c000));
+            t.put(d + 0x14, rng.next());
             for w in 0..0x10u32 {
                 #[allow(clippy::cast_possible_truncation)]
                 t.put(d + 0x20 + 2 * w, rng.range(-300, 300) as i16);
@@ -14801,11 +14811,20 @@ fn r1h_map_cases(t: &mut Twin, rng: &mut Xorshift) {
             let x = ident + rng.range(-100, 100) as f32 / 400.0;
             t.put(ab + 0x113e0 + 4 * w, x.to_bits());
         }
+        // half the cases moved onto the screen box (1528..2576, 1600..2304),
+        // so the clip checks also stop early
+        if rng.below(2) == 0 {
+            #[allow(clippy::cast_precision_loss)]
+            for (w, v) in [(12u32, rng.range(1500, 2600)), (13, rng.range(1570, 2330))] {
+                t.put(ab + 0x113e0 + 4 * w, (v as f32).to_bits());
+            }
+        }
+        t.put(t.b.rebase(0x00c8_fac4), rng.next());
         t.same_but(
             "AbmapDrawMap",
             &skip,
             |o| o.eax(0x00a4_ce20, &[]),
-            |m| ffx_field::abmap_lift::abmap_draw_map(m, work, call),
+            |m| ffx_field::abmap_draw::abmap_draw_map(m, work, call),
         );
         drawn += t.b.read::<u32>(copies);
     }
