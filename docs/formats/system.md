@@ -1431,3 +1431,23 @@ pushed as literals (no relocation entries), not addresses.
 - `MagicFile_Init()` prints `"MagicFile: Init()\n"`, sets the magic id,
   the handle, `0x00c64ca8` and `g_BtlCommandWait` to -1 and tail-jumps to
   `MagicFile_ResetPreloaded` (its `eax`).
+- The 16x12 message writers share the pen `0x025d09a0` (colour bytes
+  `+0..+3`, x/y `f32` at `+4`/`+8`, `+0x1a` kind, `+0x1b` colour nibbles)
+  and the glyph record `0x01841d50`, both cleared first; the integer pen
+  is stored as `f32`. `TOGetGroup` gets the code byte in a register whose
+  upper bytes are left over (the last argument's for the first code in
+  `0x008e92a0`, 0 in `0x008ea060`, then the text pointer's).
+  - `TOAddPktBaseMesFontLClutTypeRGBA(cursor, key, text, x, y, colour,
+    kind, r, g, b, a)`: group 1 returns to the start x and adds 16 to y;
+    group 2: `7 0xe1..=0xef` moves x, `0xa` the colour nibbles, `0xb n`
+    the icon `0x008e99a0(cursor, n, ftol(x), ftol(y), r, g, b, a)` then x
+    `+= f32(TOGetButtonIconWidth(n)) * [0x00c5d778]` (codes other than 7
+    end with `resetButtonData`); group 3 `TOAddPktChangeMacro(key, text,
+    pen)` unless `key` is -1; group 4 the record, then for kind 1 edge and
+    face with `TOAddFontWidthSpace(pen, record, [0x00c5d784])`, else shadow
+    and face between `graphicSetUiDrawType(1/0)` and
+    `graphicFontSetUiShadowType(0/1)` with the space at 0.78.
+  - `0x008ea060(cursor, text, x, y, colour, r, g, b, a)`: glyphs get
+    shadow and face and move x by the record's width `+0x1c` + 1.0; `0xb n`
+    draws `0x008e9970(cursor, n, ftol(x), ftol(y))` and adds 22; returns
+    `cursor` for an empty text.

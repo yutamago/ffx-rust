@@ -12260,4 +12260,239 @@ pub mod bridge {
             0
         }
     }
+
+    /// The pen the 16x12 message writers draw with (`0x025d09a0`): the
+    /// colour bytes `+0..+3`, x `+4`, y `+8` (f32), `+0xc..+0x18` cleared,
+    /// the shadow/edge kind `+0x1a`, the colour nibbles `+0x1b`.
+    pub const MES_PEN: u32 = 0x025d_09a0;
+    /// The glyph record they fill (`0x01841d50`, 0x40 bytes; its width
+    /// `+0x1c`).
+    pub const MES_GLYPH: u32 = 0x0184_1d50;
+
+    /// `0xa n` on the pen's colour byte `+0x1b`: a non-zero low nibble `l`
+    /// puts `l - 1` in its low nibble, a high nibble from 4 puts
+    /// `(n & 0xf0) - 0x40` in its high one (`n` read for each).
+    fn pen_colour_code(mem: &mut impl Mem, pen: u32, code: u32) {
+        let at = pen.wrapping_add(0x1b);
+        let mut c: u8 = mem.read(at);
+        let low = mem.read::<u8>(code.wrapping_add(1)) & 0xf;
+        if low != 0 {
+            c = c & 0xf0 | (low - 1);
+            mem.write(at, c);
+        }
+        let high = mem.read::<u8>(code.wrapping_add(1)) & 0xf0;
+        if high >= 0x40 {
+            c = c & 0xf | (high - 0x40);
+            mem.write(at, c);
+        }
+    }
+
+    /// `TOGetGroup`'s argument as the writers pass it: the text byte in
+    /// the low byte of a register whose upper bytes still hold `upper`.
+    fn group_arg(mem: &impl Mem, p: u32, upper: u32) -> u32 {
+        upper & 0xffff_ff00 | u32::from(mem.read::<u8>(p))
+    }
+
+    /// `TOAddPktBaseMesFontLClutTypeRGBA(cursor, key, text, x, y, colour,
+    /// kind, r, g, b, a)` (`0x008e92a0`): writes `text` with the 16x12 font
+    /// from the integer pen `(x, y)` (stored as `f32`) and returns the
+    /// packet cursor ([`crate::pkt::bridge::PACKET_CURSOR`], first set to
+    /// `cursor`). The glyph record is cleared and the pen set up
+    /// ([`MES_PEN`]: colour bytes `r g b a`, `+0x1a` = `kind`, `+0x1b` =
+    /// `colour`). Per `TOGetGroup` of each code:
+    /// - 1 (new line): x back to its start, y + 16.0.
+    /// - 2 (control): 7 with 0xe1..=0xef moves x by `n - 0xe0`; 0xa sets
+    ///   the colour nibbles; 0xb draws button icon `n`
+    ///   (`TOAdpButtonIconRGBA_008e99a0(cursor, n, ftol(x), ftol(y), r, g,
+    ///   b, a)`) and moves x by `f32(TOGetButtonIconWidth(n)) *
+    ///   [0x00c5d778]`; codes other than 7 end with `resetButtonData`.
+    /// - 3 (macro): `TOAddPktChangeMacro(key, text, pen)` unless `key` is
+    ///   -1.
+    /// - 4 (glyph): its record (`TOGetFontInfo`), then with kind 1 the edge
+    ///   and face packets and `TOAddFontWidthSpace(pen, record,
+    ///   [0x00c5d784])`; else the shadow and face between
+    ///   `graphicSetUiDrawType(1)`/`(0)` and `graphicFontSetUiShadowType(0)`
+    ///   /`(1)`, and the width space at 0.78.
+    ///
+    /// `TOGetGroup` gets the byte with the upper bytes the original's
+    /// register holds (`a`'s for the first code, then the text pointer's).
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation // mov byte
+    )]
+    pub fn base_mes_font_l_clut_type_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 11],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let [cursor, key, text, x, y, colour, kind, r, g, b, a] = args;
+        let store = |v: f64| f32::from_bits(x87::store(v));
+        let cursor_at = crate::pkt::bridge::PACKET_CURSOR;
+        let glyph = mem.rebase(MES_GLYPH);
+        let pen = mem.rebase(MES_PEN);
+        let pen_x = pen.wrapping_add(4);
+        let pen_y = pen.wrapping_add(8);
+        mem.write(glyph, [0u32; 0x10]);
+        mem.write(pen, [0u32; 7]);
+        cursor_at.set(mem, cursor);
+        let x0 = store(f64::from(x.cast_signed()));
+        mem.write(pen.wrapping_add(1), g as u8);
+        mem.write(pen.wrapping_add(2), b as u8);
+        mem.write(pen_x, x0);
+        mem.write(pen.wrapping_add(3), a as u8);
+        mem.write(pen.wrapping_add(0x1a), kind as u8);
+        mem.write(pen_y, store(f64::from(y.cast_signed())));
+        mem.write(pen, r as u8);
+        mem.write(pen.wrapping_add(0x1b), colour as u8);
+        let f = |mem: &M, at: u32| f64::from(mem.read::<f32>(at));
+        let mut p = text;
+        let mut upper = a;
+        while mem.read::<u8>(p) != 0 {
+            match call(mem, 0x008d_f610, &[group_arg(mem, p, upper)]) {
+                1 => {
+                    mem.write(pen_x, x0);
+                    mem.write(pen_y, store(x87::add(f(mem, pen_y), 16.0)));
+                }
+                2 => {
+                    let code: u8 = mem.read(p);
+                    if code == 7 {
+                        let n: u8 = mem.read(p.wrapping_add(1));
+                        if n > 0xe0 && n < 0xf0 {
+                            let x = x87::add(f64::from(n - 0xe0), f(mem, pen_x));
+                            mem.write(pen_x, store(x));
+                        }
+                    } else {
+                        if code == 0xa {
+                            pen_colour_code(mem, pen, p);
+                        }
+                        if mem.read::<u8>(p) == 0xb {
+                            let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                            call(mem, 0x008b_1350, &[n, u32::MAX]);
+                            let yi = x87::ftol(mem, f(mem, pen_y));
+                            let xi = x87::ftol(mem, f(mem, pen_x));
+                            let c = cursor_at.get(mem);
+                            let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                            let args = [c, n, xi, yi, r, g, b, a];
+                            let c = call(mem, 0x008e_99a0, &args);
+                            cursor_at.set(mem, c);
+                            let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                            let w = call(mem, 0x008b_65e0, &[n]).cast_signed();
+                            let w = f64::from(store(f64::from(w)));
+                            let unit = f(mem, mem.rebase(0x00c5_d778));
+                            let x = x87::add(x87::mul(w, unit), f(mem, pen_x));
+                            mem.write(pen_x, store(x));
+                        }
+                        call(mem, 0x008b_1330, &[]);
+                    }
+                }
+                3 => {
+                    if key != u32::MAX {
+                        call(mem, 0x008e_9b80, &[key, p, pen]);
+                    }
+                }
+                4 => {
+                    call(mem, 0x008b_7240, &[p, glyph]);
+                    let space = if mem.read::<u8>(pen.wrapping_add(0x1a)) == 1 {
+                        call(mem, 0x0090_6260, &[pen, glyph]);
+                        call(mem, 0x0090_6270, &[pen, glyph]);
+                        mem.read::<u32>(mem.rebase(0x00c5_d784))
+                    } else {
+                        call(mem, 0x0064_3af0, &[1]);
+                        call(mem, 0x0064_0dd0, &[0]);
+                        call(mem, 0x0090_6290, &[pen, glyph]);
+                        call(mem, 0x0064_0dd0, &[1]);
+                        call(mem, 0x0090_6270, &[pen, glyph]);
+                        call(mem, 0x0064_3af0, &[0]);
+                        0.78f32.to_bits()
+                    };
+                    let space = x87::round_trip(f32::from_bits(space)).to_bits();
+                    call(mem, 0x008e_8ed0, &[pen, glyph, space]);
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+            upper = p;
+        }
+        cursor_at.get(mem)
+    }
+
+    /// `TOAddPktMesFont1612_008ea060(cursor, text, x, y, colour, r, g, b,
+    /// a)`: the plain variant of [`base_mes_font_l_clut_type_rgba`]: the
+    /// pen as there (kind 0), glyphs (group 4) with their shadow and face
+    /// packets and x moved by the record's width `+0x1c` plus 1.0; control
+    /// codes 0xa (colour nibbles) and 0xb (button icon
+    /// `TOAdpButtonIcon_008e9970(cursor, n, ftol(x), ftol(y))`, x + 22.0),
+    /// every control code ending with `resetButtonData`; other groups
+    /// skipped. Returns the packet cursor (`cursor` for an empty text).
+    #[allow(clippy::many_single_char_names, clippy::cast_possible_truncation)] // mov byte
+    pub fn mes_font_1612<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let [cursor, text, x, y, colour, r, g, b, a] = args;
+        let store = |v: f64| f32::from_bits(x87::store(v));
+        let cursor_at = crate::pkt::bridge::PACKET_CURSOR;
+        let glyph = mem.rebase(MES_GLYPH);
+        let pen = mem.rebase(MES_PEN);
+        let pen_x = pen.wrapping_add(4);
+        let pen_y = pen.wrapping_add(8);
+        mem.write(glyph, [0u32; 0x10]);
+        mem.write(pen, 0u32);
+        mem.write(pen.wrapping_add(0x18), 0u32);
+        mem.write(pen_x, 0u32);
+        mem.write(pen_x, store(f64::from(x.cast_signed())));
+        for off in [8, 0xc, 0x10, 0x14] {
+            mem.write(pen.wrapping_add(off), 0u32);
+        }
+        mem.write(pen_y, store(f64::from(y.cast_signed())));
+        mem.write(pen, [r as u8, g as u8, b as u8, a as u8]);
+        mem.write(pen.wrapping_add(0x1a), 0u8);
+        mem.write(pen.wrapping_add(0x1b), colour as u8);
+        cursor_at.set(mem, cursor);
+        if mem.read::<u8>(text) == 0 {
+            return cursor;
+        }
+        let f = |mem: &M, at: u32| f64::from(mem.read::<f32>(at));
+        let mut p = text;
+        let mut upper = 0;
+        loop {
+            match call(mem, 0x008d_f610, &[group_arg(mem, p, upper)]) {
+                2 => {
+                    if mem.read::<u8>(p) == 0xa {
+                        pen_colour_code(mem, pen, p);
+                    }
+                    if mem.read::<u8>(p) == 0xb {
+                        let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                        call(mem, 0x008b_1350, &[n, u32::MAX]);
+                        let yi = x87::ftol(mem, f(mem, pen_y));
+                        let xi = x87::ftol(mem, f(mem, pen_x));
+                        let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                        let c = cursor_at.get(mem);
+                        let c = call(mem, 0x008e_9970, &[c, n, xi, yi]);
+                        cursor_at.set(mem, c);
+                        mem.write(pen_x, store(x87::add(f(mem, pen_x), 22.0)));
+                    }
+                    call(mem, 0x008b_1330, &[]);
+                }
+                4 => {
+                    call(mem, 0x008b_7240, &[p, glyph]);
+                    call(mem, 0x0090_6290, &[pen, glyph]);
+                    call(mem, 0x0090_6270, &[pen, glyph]);
+                    let w = f(mem, glyph.wrapping_add(0x1c));
+                    let x = x87::add(x87::add(w, 1.0), f(mem, pen_x));
+                    mem.write(pen_x, store(x));
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+            upper = p;
+            if mem.read::<u8>(p) == 0 {
+                return cursor_at.get(mem);
+            }
+        }
+    }
 }

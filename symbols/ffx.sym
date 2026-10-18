@@ -10941,11 +10941,12 @@
 0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0; glyph+4 snapped to pixels (trunc(x*ws+0.5)/ws), then + font width + space of kind byte +0x1a
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
-0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
+0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0; (cursor, key, text, x, y, colour, kind, r, g, b, a) -> packet cursor: 16x12 text from the integer pen (pen 0x025d09a0; kind 1 edge, else shadow); ported (system round 34)
 0x008e9970 function TOAdpButtonIcon_008e9970     # (cursor, c, x, y) -> TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, 0x80 x4); ported (system round 33); name ours
 0x008e99a0 function TOAdpButtonIconRGBA_008e99a0 # (cursor, c, x, y, r, g, b, a) -> packet cursor: sets g_TOPktCursor, then button icon c as TOMkpShapeXYC2 shapes (d-pad @..O one per direction bit, digits c + 0x230 with 1/2 swapped by TOGetSystemConfirmButtonAssign, ` 0x270); ported (system round 33); name ours
 0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
+0x008ea060 function TOAddPktMesFont1612_008ea060 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> packet cursor: 16x12 glyphs (shadow+face, x += width+1), codes 0xa colour nibbles and 0xb icons via 0x008e9970 at ftol(x), ftol(y) (x += 22); pen 0x025d09a0; ported (system round 34); name ours
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
 0x008eb270 function TOAddPktMenuIconRGBA      # fh v3:exact 0x008eb270

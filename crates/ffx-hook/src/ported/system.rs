@@ -1445,6 +1445,14 @@ ported! {
             menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, None);
         })
     }
+    /// `TOAddPktBaseMesFontLClutTypeRGBA(cursor, key, text, x, y, colour, kind, r, g, b, a)`.
+    TOAddPktBaseMesFontLClutTypeRGBA @ 0x008e_92a0 => extern "C" fn to_add_pkt_base_mes_font_l_clut_type_rgba(cursor: u32, key: u32, text: u32, x: u32, y: u32, colour: u32, kind: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tolib::bridge::base_mes_font_l_clut_type_rgba(&mut mem(), [cursor, key, text, x, y, colour, kind, r, g, b, a], call_sym)
+    }
+    /// `TOAddPktMesFont1612_008ea060(cursor, text, x, y, colour, r, g, b, a)`.
+    TOAddPktMesFont1612_008ea060 @ 0x008e_a060 => extern "C" fn to_add_pkt_mes_font_1612(cursor: u32, text: u32, x: u32, y: u32, colour: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tolib::bridge::mes_font_1612(&mut mem(), [cursor, text, x, y, colour, r, g, b, a], call_sym)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

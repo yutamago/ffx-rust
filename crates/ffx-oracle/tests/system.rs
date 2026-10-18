@@ -19120,3 +19120,151 @@ fn round34_small_matches_the_original_on_the_snapshot() {
     };
     round34_small(&mut a, &mut b, &mut Xorshift(0x4034_0012));
 }
+
+/// Round 34 group B: the 16x12 message writers `0x008e92a0` and
+/// `0x008ea060` over logging stand-ins. `TOGetGroup` logs its whole
+/// argument (the original's register keeps upper bytes) and answers by the
+/// byte's low three bits ([0, 1, 2, 2, 4, 3, 4, 2]: 7, 0xa and 0xb are
+/// control codes); `TOSkipCode` steps two bytes; `TOGetFontInfo` puts a
+/// test width in the record.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round34_mes_writers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let groups = alloc(a, b, 0x20);
+    put(a, b, groups, [0u32, 1, 2, 2, 4, 3, 4, 2]);
+    let glyph = a.rebase(t::MES_GLYPH);
+    // mov eax, [cells + 0x10]; mov [glyph + 0x1c], eax
+    let mut font_info = vec![0xa1];
+    font_info.extend_from_slice(&(cells + 0x10).to_le_bytes());
+    font_info.push(0xa3);
+    font_info.extend_from_slice(&(glyph + 0x1c).to_le_bytes());
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008d_f610, all(1), vec![], table_tail(4, 0, groups)),
+        (
+            0x008d_fd80,
+            all(1),
+            vec![],
+            vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, 0x02],
+        ),
+        (0x008b_1350, all(2), vec![], vec![]),
+        (0x008b_1330, vec![], vec![], vec![]),
+        (0x008e_99a0, all(8), vec![], ret_cell(cells)),
+        (0x008e_9970, all(4), vec![], ret_cell(cells + 4)),
+        (0x008b_65e0, all(1), vec![], ret_cell(cells + 8)),
+        (0x008e_9b80, all(3), vec![], vec![]),
+        (0x008b_7240, all(2), vec![], font_info),
+        (0x0090_6260, all(2), vec![], vec![]),
+        (0x0090_6270, all(2), vec![], vec![]),
+        (0x0090_6290, all(2), vec![], vec![]),
+        (0x008e_8ed0, all(3), vec![], vec![]),
+        (0x0064_3af0, all(1), vec![], vec![]),
+        (0x0064_0dd0, all(1), vec![], vec![]),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let text = alloc(a, b, 0x40);
+    let codes = [1u8, 9, 7, 7, 0xa, 0xa, 0xb, 0xb, 5, 4, 0xc, 8, 0x10];
+    let args = [
+        0u8, 0xe0, 0xe1, 0xe7, 0xef, 0xf0, 0x31, 0x45, 0x0f, 0x10, 0x40, 0x7f, 0xa3, 0xff,
+    ];
+    let pen = a.rebase(t::MES_PEN);
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        let mut bytes = [0u8; 0x40];
+        let n = (rng.next() % 12) as usize;
+        for i in 0..n {
+            bytes[2 * i] = codes[(rng.next() as usize) % codes.len()];
+            bytes[2 * i + 1] = args[(rng.next() as usize) % args.len()];
+        }
+        put(a, b, text, bytes);
+        for w in 0..8 {
+            put(a, b, pen + 4 * w, rng.next());
+        }
+        put(a, b, cells, rng.next());
+        put(a, b, cells + 4, rng.next());
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 12, 0x7fff_ffff, u32::MAX][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 0x10, (rng.next() % 4000) as f32 / 7.0 - 50.0);
+        put(
+            a,
+            b,
+            a.rebase(0x00c5_d778),
+            [1.0f32, 0.75, 1.5, 1e30][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            a.rebase(0x00c5_d784),
+            [1.0f32, 0.5, -2.0][(rng.next() % 3) as usize],
+        );
+        let xy = |rng: &mut Xorshift| {
+            [
+                rng.next() % 2000,
+                rng.next(),
+                (rng.next() % 100).wrapping_neg(),
+                0x7fff_ffff,
+                16_777_217,
+            ][(rng.next() % 5) as usize]
+        };
+        let (x, y) = (xy(rng), xy(rng));
+        let key = [u32::MAX, rng.next()][(rng.next() % 2) as usize];
+        let kind = [0u32, 1, 1, 2, 0x101][(rng.next() % 5) as usize];
+        let colour = rng.next();
+        let rgba: [u32; 4] = std::array::from_fn(|_| rng.next());
+        let c = rng.next();
+        if k % 2 == 0 {
+            let args = [
+                c, key, text, x, y, colour, kind, rgba[0], rgba[1], rgba[2], rgba[3],
+            ];
+            assert_eq!(
+                eax(a, 0x008e_92a0, &args),
+                t::base_mes_font_l_clut_type_rgba(b, args, call),
+                "base mes {k}"
+            );
+        } else {
+            let args = [c, text, x, y, colour, rgba[0], rgba[1], rgba[2], rgba[3]];
+            assert_eq!(
+                eax(a, 0x008e_a060, &args),
+                t::mes_font_1612(b, args, call),
+                "mes 1612 {k}"
+            );
+        }
+        same_memory(&format!("mes writer {k}"), a, b);
+    }
+}
+
+#[test]
+fn round34_mes_writers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_mes_writers(&mut a, &mut b, &mut Xorshift(0x4034_0021));
+}
+
+#[test]
+fn round34_mes_writers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_mes_writers(&mut a, &mut b, &mut Xorshift(0x4034_0022));
+}
