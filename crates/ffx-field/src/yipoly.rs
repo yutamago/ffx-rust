@@ -636,3 +636,259 @@ pub fn yi_rect_to_omd_build<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
     }
     count
 }
+
+/// A texture region for [`yi_poly_tex_map_xz`] (the original's last four
+/// arguments): the texture's height, the GS `TEX0` buffer word `tbp`
+/// (base bits 0..8, buffer width bits 16..21 in 64 texels, format bits
+/// 24..29; 0 for the default), and the `CLAMP` ranges `u` and `v` (the
+/// first texel in bits 0..10, the last in 16..26; `u` 0 for the default
+/// 256 x 256 region).
+#[derive(Clone, Copy, Debug)]
+pub struct TexRegion {
+    pub height: u32,
+    pub tbp: u32,
+    pub u: u32,
+    pub v: u32,
+}
+
+/// The highest set bit of `x`'s low 16 bits, or -1 (the `TW`/`TH` loops).
+fn log2_16(x: u32) -> u32 {
+    (0..16)
+        .rev()
+        .find(|&i| x & (1 << i) != 0)
+        .unwrap_or(u32::MAX)
+}
+
+/// `fistp` under the round-toward-zero control word the original sets,
+/// low 16 bits (NaN and out of range give the integer indefinite, whose
+/// low half is 0).
+#[allow(clippy::cast_possible_truncation)] // the u16 store
+fn chop16(x: f64) -> u16 {
+    ffx_bridge::x87::cvttsd2si(x) as u16
+}
+
+/// `yiPolyTexMapXZ` (`0x00912b70`, name ours): maps a packet built by
+/// [`yi_poly_split_rect_xz`] onto a texture laid over the x/z rectangle
+/// `min..max` (vectors; x and z read). Every group tag gets the region's
+/// `TEX0` low word at `+0x08` and `+0x10` (`tbp`'s base, buffer width and
+/// format; `TW`/`TH` the highest set bit below 16 of the width and the
+/// height, or -1; 0x221a00 and those for `tbp` 0), its `CLAMP` at `+0x18`
+/// (region clamp; 0x3fc00a for `u` 0) and 0 at `+0x0c`, `+0x14`, `+0x1c`.
+/// The width is the buffer width's (256 for `u` 0, the height 256 too).
+/// Untextured triangles (tag 0x20, 0x14 bytes each) get grey colours
+/// (0x80808080); textured ones (0x22, 0x20 bytes) too, and UVs (`u16
+/// +0x14..+0x1e`, in 1/4096) from their vertices' x and z (vertex
+/// indices `u16 +0x0c..+0x10`, 0x10 bytes each from `packet + [+0x08]`):
+/// `(x - min.x) / (max.x - min.x)` and `(-z - min.z) / (max.z - min.z)`,
+/// scaled to the region (its first texel over the width, its texel count
+/// over the width; v over the height), plus half a texel, each step
+/// stored as `f32`, then truncated (`fistp` under chop; out of range 0).
+/// The triangles of other tags are counted over without moving on; a tag
+/// of kind 0xff ends the packet, else its `i16 +0x10` records (tags and
+/// triangles) do.
+///
+/// The original leaves its loop registers in `eax`; its one caller
+/// (`0x00911fc0`) clears it.
+pub fn yi_poly_tex_map_xz(mem: &mut impl Mem, packet: u32, min: u32, max: u32, tex: TexRegion) {
+    use ffx_bridge::x87::{add, div, ftol, mul, sub};
+    let st = |x: f64| x87::load(x87::store(x));
+
+    // the region in texture coordinates, and the texture's size
+    let (offset, scale, width, height, clamp);
+    if tex.u == 0 {
+        (offset, scale) = ([0.0, 0.0], [1.0, 1.0]);
+        (width, height, clamp) = (0x100, 0x100, 0x003f_c00a);
+    } else {
+        let (u0, u1) = (tex.u & 0x7ff, (tex.u >> 16) & 0x7ff);
+        let (v0, v1) = (tex.v & 0x7ff, (tex.v >> 16) & 0x7ff);
+        width = ((tex.tbp >> 16) & 0x3f) << 6;
+        height = tex.height;
+        clamp = u0 << 4 | v0 << 24 | u1 << 14 | 0xa;
+        let w = f64::from(width);
+        let h = st(f64::from(height.cast_signed())); // fild, then an f32 store
+        // the region's size in texels, through ftol2_sse
+        let span = |lo: u32, hi: u32| {
+            let n = ftol(mem, add(sub(f64::from(hi), f64::from(lo)), 1.0));
+            f64::from(n.cast_signed())
+        };
+        offset = [st(div(f64::from(u0), w)), st(div(f64::from(v0), h))];
+        scale = [st(div(span(u0, u1), w)), st(div(span(v0, v1), h))];
+    }
+    let half = [
+        st(div(0.5, f64::from(width))),
+        st(div(0.5, st(f64::from(height.cast_signed())))),
+    ];
+    let (tw, th) = (log2_16(width), log2_16(height));
+    let tex0 = if tex.tbp == 0 {
+        th << 30 | tw << 26 | 0x0022_1a00
+    } else {
+        let t = tex.tbp;
+        ((t >> 24) & 0x3f) << 20 | ((t >> 16) & 0x3f) << 14 | th << 30 | tw << 26 | (t & 0x1ff) << 5
+    };
+
+    let size = [
+        st(sub(x87::load(mem.read(max)), x87::load(mem.read(min)))),
+        st(sub(
+            x87::load(mem.read(max + 8)),
+            x87::load(mem.read(min + 8)),
+        )),
+    ];
+    let verts = packet.wrapping_add(mem.read::<u32>(packet + 8));
+    let mut at = packet.wrapping_add(0x20);
+    let mut done = 0;
+    while done < i32::from(mem.read::<i16>(packet + 0x10)) {
+        let tag = at;
+        at = at.wrapping_add(0x20);
+        done += 1;
+        if mem.read::<u8>(tag + 1) == 0xff {
+            break;
+        }
+        mem.write(tag + 0x18, clamp);
+        mem.write(tag + 8, tex0);
+        mem.write(tag + 0x10, tex0);
+        mem.write(tag + 0xc, 0u32);
+        mem.write(tag + 0x14, 0u32);
+        mem.write(tag + 0x1c, 0u32);
+        let mut i = 0;
+        while i < i32::from(mem.read::<i16>(tag + 2)) {
+            match mem.read::<u8>(tag + 1) {
+                0x20 => {
+                    mem.write(at, [0x8080_8080u32; 3]);
+                    at = at.wrapping_add(0x14);
+                    done += 1;
+                }
+                0x22 => {
+                    let tri = at;
+                    at = at.wrapping_add(0x20);
+                    mem.write(tri, [0x8080_8080u32; 3]);
+                    // the original rereads min for every vertex; nothing is
+                    // written between those reads
+                    let origin = [x87::load(mem.read(min)), x87::load(mem.read(min + 8))];
+                    let mut uv = [[0u16; 2]; 3];
+                    for (k, pair) in (0u32..).zip(uv.iter_mut()) {
+                        let index = u32::from(mem.read::<u16>(tri + 0xc + 2 * k));
+                        let v = verts.wrapping_add(index * 16);
+                        let x = x87::load(mem.read(v));
+                        let z = x87::load(mem.read(v + 8));
+                        let s = [
+                            st(div(sub(x, origin[0]), size[0])),
+                            st(div(sub(-z, origin[1]), size[1])),
+                        ];
+                        for (j, out) in pair.iter_mut().enumerate() {
+                            let coord = st(add(mul(s[j], scale[j]), offset[j]));
+                            let coord = st(add(coord, half[j]));
+                            *out = chop16(mul(coord, 4096.0));
+                        }
+                    }
+                    for (k, pair) in (0u32..).zip(uv) {
+                        mem.write(tri + 0x14 + 4 * k, pair);
+                    }
+                    done += 1;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+    }
+}
+
+/// The default render target of [`yi_tex_target_clear`]: a GS `FRAME`
+/// word (buffer 0xd0, width 8 x 64 pixels, format 2: 16-bit colour).
+pub const DEFAULT_FRAME: u32 = 0x0208_00d0;
+/// `0x00912690(packet, qwc)`: sends a DMA packet on channel 2 (path 3)
+/// after syncing the MFIFO and the GS paths; returns `sceGsSyncPath`'s.
+pub const SEND_GS_PACKET: u32 = 0x0091_2690;
+/// [`yi_tex_target_clear`]'s scratch: the packet, up to 0x150 bytes
+/// (16-byte aligned for the DMA).
+pub const CLEAR_WORK: u32 = 0x150;
+
+/// GS register numbers in the packet's A+D quadwords.
+const PRIM: u32 = 0x00;
+const RGBAQ: u32 = 0x01;
+const XYZ2: u32 = 0x05;
+const XYZ3: u32 = 0x0d;
+const XYOFFSET_1: u32 = 0x18;
+const SCISSOR_1: u32 = 0x40;
+const TEST_1: u32 = 0x47;
+const FRAME_1: u32 = 0x4c;
+const ZBUF_1: u32 = 0x4e;
+const TEXFLUSH: u32 = 0x3f;
+
+/// `yiTexTargetClear` (`0x009126f0`, name ours): one GS packet, sent with
+/// [`SEND_GS_PACKET`] (its result returned), that clears the frame buffer
+/// 0x108 (format 1, width 8) to black over the screen (offset 0x800, 0;
+/// sprite `0x7000, 0x7300` to `0x9000, 0x8d00`, Z always) and then fills a rectangle of
+/// `frame` (0 for [`DEFAULT_FRAME`]) with opaque black (`RGBAQ`
+/// 0xff000000), centred at 0x800, 0x800 by `XYOFFSET` (12.4):
+/// - `u` 0: `w` by `h` (`w`, `h` signed; offset `0x800 - w / 2`, `0x800 -
+///   h / 2`, toward zero), no scissor;
+/// - else `u` and `v` are `CLAMP`-style ranges (first texel bits 0..10,
+///   last 16..26): the offset is `0x800 - (last + 1) / 2` on each axis,
+///   the rectangle from first to last texel past it, inclusive, and `u`
+///   itself is written as `SCISSOR_1` (its high word 0).
+///
+/// The `XYOFFSET` quadword's y half is 0 (the original drops it). Every
+/// register is an A+D pair (value low and high words, register number);
+/// the GIF tag is `NLOOP` qwc - 1, `EOP`, `NREG` 1 (`A+D`). Its one caller
+/// (`0x00911fc0`) passes its region width as `v` when `u` is a range.
+///
+/// `work` is [`CLEAR_WORK`] bytes, 16-byte aligned.
+pub fn yi_tex_target_clear<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+    mem: &mut M,
+    frame: u32,
+    (u, v): (u32, u32),
+    h: u32,
+    work: u32,
+    call: &mut C,
+) -> u32 {
+    let frame = if frame == 0 { DEFAULT_FRAME } else { frame };
+    let half = |n: u32| (n.cast_signed() / 2).cast_unsigned();
+    // the offset, and the rectangle's corners in the offset's frame
+    let (x0, y0, x1, y1);
+    let mut regs: Vec<(u32, u32)> = vec![
+        (0x800 << 4, XYOFFSET_1),
+        (0x0108_0108, FRAME_1),
+        (0x3100_0108, ZBUF_1),
+        (0x0003_0000, TEST_1),
+        (6, PRIM),
+        (0, RGBAQ),
+        (0x7300_7000, XYZ2),
+        (0x8d00_9000, XYZ2),
+        (frame, FRAME_1),
+    ];
+    if u == 0 {
+        let (ox, oy) = (
+            0x800u32.wrapping_sub(half(v)),
+            0x800u32.wrapping_sub(half(h)),
+        );
+        (x0, y0, x1, y1) = (ox, oy, ox.wrapping_add(v), oy.wrapping_add(h));
+        regs.push((ox << 4, XYOFFSET_1));
+    } else {
+        let (u0, u1) = (u & 0x7ff, (u >> 16) & 0x7ff);
+        let (v0, v1) = (v & 0x7ff, (v >> 16) & 0x7ff);
+        let (ox, oy) = (0x800 - u1.div_ceil(2), 0x800 - v1.div_ceil(2));
+        regs.push((u, SCISSOR_1));
+        regs.push((ox << 4, XYOFFSET_1));
+        (x0, y0) = (ox + u0, oy + v0);
+        (x1, y1) = (x0 + 1 + u1.wrapping_sub(u0), y0 + 1 + v1.wrapping_sub(v0));
+    }
+    let xy = |x: u32, y: u32| (y << 4) << 16 | x << 4;
+    regs.extend([
+        (0x3100_0108, ZBUF_1),
+        (0x0003_0000, TEST_1),
+        (6, PRIM),
+        (0xff00_0000, RGBAQ),
+        (xy(x0, y0), XYZ3),
+        (xy(x1, y1), XYZ2),
+        (0x0007_0000, TEST_1),
+        (0, TEXFLUSH),
+        (frame, FRAME_1),
+    ]);
+    let qwc = 1 + u32::try_from(regs.len()).unwrap_or(0);
+    mem.write(work, [0x8000 | (qwc - 1), 0x1000_0000, 0xe, 0]);
+    for (at, (value, reg)) in (work + 0x10..).step_by(0x10).zip(regs) {
+        mem.write(at, [value, 0, reg, 0]);
+    }
+    let f = mem.rebase(SEND_GS_PACKET);
+    call(mem, f, &[work, qwc])
+}

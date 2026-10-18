@@ -1828,6 +1828,32 @@ field's screen distortion (heat haze, under water) each frame:
   bytes as `f32`s / 128; then `+0xbe0a8 += 1`, `+0xbe080 += 1.5 x
   +0xbe090`, `+0xbe084 += +0xbe090`.
 
+`AbmapProjectGrid()` (`0x00a47630`, first in the ability map's draw
+`0x00a54660`) fills those corner records: grid point `(x, y, 0)` for
+18 rows from y -2336 and 21 columns from x -2560, 256 apart, through the
+view matrix `g_Abmap + 0x113e0` as the original's VU0 macro code does
+(point in `0x00c8f940` with w 1, the matrix copied to `0x00c8f950`,
+accumulator `0x00c8f790`, result `0x00c8f930`; the last row is scaled
+by vf00.w, which it reads once and again after each projected point). A
+point with `w <= 0` or NaN keeps its old record. Else `Q = vf00.w / w`
+(`0x00c8f788`), the point times `Q`, a `vsub.xy` pair against the screen
+box (1528, 1600)..(2576, 2304) that only sets the VU0 status
+(`0x00c8fac4` from the EE zero register, then the zero 0x40 and sign
+0x80 bits; vf00 restored after each), and the record gets `x * 16`, `y *
+16`, `z` (`ftol2_sse`) and `Q + vf00.x`. Then all 340 marks are set to 1.
+The registers are left as the original leaves them.
+
+`AbmapPlyTagRect(tag, out)` (`0x00a482d0`, three calls in `0x00a5a4b0`)
+gives a player tag's screen rectangle. After `AbmapSetupPlyTag` it puts
+the tag's position (`+0x10`) through the same view matrix and registers;
+with `w < 0` or `w == 0` (a NaN goes on) only `out[0] = 1e11`. Else the
+point times `Q = vf00.w / w` (registers `0x00c8f7d0..`, `w` also at
+`0x00c8f7e0`), plus the tag's `i16 +0x46`/`+0x48 >> 4` over the zoom
+`g_Abmap + 0x11350`, is the corner `+0x4e & 3` picks (0 bottom left, 1
+bottom right, 2 top right, 3 top left) of `(x0, y0, x1, y1)`; the width
+global `0x02305828` first becomes `ftol(10 / zoom + width)`, the height
+is `0x02305824`.
+
 `AbmapDrawGridMarks()` (`0x00a49f10`) marks the sphere grid's 17 x 20
 cells (`g_Abmap + 0x12e60`, a byte each). Corners are `(x i32, y i32, _,
 scale f32)` records from `g_Abmap + 0x116c0`, 21 to a row. A set cell
@@ -1837,6 +1863,14 @@ fills the GS packet at `0x01a860ec` with two 4-vertex strips (tags 4 and
 colour 0x40, the position at z `0x2000`. The two quads then go to
 `graphicDrawUIAbmapElement(vertices, scratch, 10)` with screen positions
 `v / 16 - 2048 + (256, 208)` and texture coordinates times 512.
+
+`AbmapGridMarkUVs()` (`0x00a4ac20`, from `eiAbmDraw` each frame unless
+`g_GraphicSkipFrame`) keeps the marks' texture coordinates in the vertex
+info "NoTexture" (`graphicAbmapGetVertexInfo("NoTexture", 10)`, `+0x94`,
+coordinates at `+0x18`) pulsing: per set cell the same eight quad
+corners, scaled by the corner scales through the emulated VU0 registers
+(`0x00c8f7d0`, scale `0x00c8f7e0`) into the packet buffer (eight
+vectors), then the next 16 floats get `x * 512` and `1 - y * 512`.
 
 `AbmapDrawMap()` (`0x00a4ce20`) draws each node (`g_Abmap + 8`, 16 bytes,
 count `i16` at `g_Abmap`; kind template `*(0x01a85f78 + 4 * node[+6])`,
@@ -2138,6 +2172,37 @@ counts of any column are kept in `0x010d560c` / `0x010d5610`; every
 column asks its segment buffer for those. Each element then updates the
 render data (`updateVFXRenderDataShapeField` with the shape frame's
 record) for a live instance.
+
+`yiPolyTexMapXZ(packet, min, max, _, height, tbp, u, v)` (`0x00912b70`,
+called by `0x00911fc0` after the split) lays a texture region over the
+x/z rectangle `min..max` and maps the packet onto it. `tbp` is a GS
+`TEX0` buffer word (base bits 0..8, width bits 16..21 in 64 texels,
+format bits 24..29), `u`/`v` are `CLAMP` ranges (first texel bits
+0..10, last 16..26) and `height` the texture's height; `u` 0 means the
+default region (256 x 256, `CLAMP` 0x3fc00a) and `tbp` 0 the default
+buffer (`TEX0` 0x221a00 plus `TW`/`TH`). Each group tag gets `TEX0`'s low
+word at `+0x08` and `+0x10` (`TW`/`TH` the highest set bit below 16 of
+the width and height, -1 for none), `CLAMP` at `+0x18`, 0 at `+0x0c`,
+`+0x14`, `+0x1c`. Every triangle gets 0x80808080 colours; a textured
+one's `u16` UVs (`+0x14..+0x1e`, 1/4096) are `(x - min.x) / dx` and `(-z
+- min.z) / dz` per vertex, times the region's size over the texture's
+(the texel count from `ftol2_sse`), plus its first texel over the
+texture's size, plus half a texel, each step stored as `f32`, then
+truncated (`fistp` under chop, out of range 0). Untextured triangles
+are 0x14 bytes, textured 0x20; triangles of other tag kinds are counted
+but not stepped over.
+
+`yiTexTargetClear(frame, u, v, h)` (`0x009126f0`, before the minimap
+render in `0x00911fc0`) sends one GS packet through `0x00912690`
+(`Sg_MFIFOSync`, `sceGsSyncPath`, DMA channel 2 `sceDmaSendN`): it clears
+frame buffer 0x108 to black over the screen, then fills a rectangle of
+`frame` (0 for 0x020800d0) with opaque black (`RGBAQ` 0xff000000) and
+flushes the texture cache. With `u` 0 the rectangle is `v` by `h`
+centred on 0x800 (`XYOFFSET` `0x800 - v / 2`, `0x800 - h / 2`); else `u`
+and `v` are `CLAMP`-style ranges, `u` is also written as `SCISSOR_1`,
+and the offset is `0x800 - (last + 1) / 2` per axis. The `XYOFFSET`
+quadword's y half is always 0, and its caller passes its region width
+where a `v` range is read when `u` is a range; both are kept.
 
 ## Floats
 
