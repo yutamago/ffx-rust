@@ -1948,6 +1948,41 @@ and updated: `graphicVFXSetZCorrectionValue(.., centre z)` and
 the original's other three words are its caller's saved registers, and
 they end up in `vf01` y, z, w.
 
+## The Ke thread belt path's strip (field agent r6)
+
+`KeThBP_MkStrip_00764de0()` (`0x00764de0`, called by `KeThBP_MkGifPk`;
+returns the walk's address) turns the points of a belt path into a strip
+of quads, one row of ten vertices per point, over globals at
+`0x0230f9c8..`:
+
+| Address | Meaning |
+|---|---|
+| `0x0230f9c8` | The walk: `+4` the next point (xyzw, `+0x1c` its age), `+0x14` the stride, `+0x1c` the points left |
+| `0x0230f9cc` / `0x0230f9d0` | `1 / w` of the next point (0 for w 0) / of the last |
+| `0x0230f9d8` / `0x0230f9e0` | The direction (x, y, unit) to the next point / the last one |
+| `0x0230f9e8` | The side offset at the strip's first end (last point's) |
+| `0x0230f9f0` / `0x0230f9f4` | The fade `1 - age * rate` / the rate |
+| `0x0230f9f8` | The inner edge's share of the offset |
+| `0x0230fa00` / `0x0230fa0c` | The half widths (x, y) / their scale |
+| `0x0230fa10` | The colour scale (`FFXVu0MulVector`) |
+| `0x0230fa20` / `0x0230fa30` | The edge / centre colour's step per point (`KeAddScaledColor(.., 1.0)`) |
+| `0x0230fa40` / `0x0230fa50` | The edge / centre colour |
+| `0x0230fa60` / `0x0230fa70` | The vertex last built at the second / first end |
+| `0x0230fa80` / `0x0230fa90` / `0x0230faa0` | The next point (through `0x0230fac0`, x, y, z over w), the strip's second end, its first |
+| `0x0230fb00` | The matrix the vertices go back through |
+
+Per point: the direction is the unit `(next - end1).xy` (0 for a zero
+length), the offset at the second end the unit bisector of the last
+and the new direction turned a quarter (`(ny, -nx)`), times the half
+widths, the width scale, the fade and the last point's `1 / w`. The
+row, at `0x02305908 + 0xa0 i`: the first and second end plus the
+offset, plus the offset times the inner share, the ends themselves,
+minus the inner offset, minus the offset; each vertex is `(w x, w y,
+w z, w)` through `0x0230fb00`. Colours (at `+0x5000`, over 256): the
+edge colour before and after its step at the two ends, the centre's
+for the middle pair; the outer pairs' alpha is 0. Then the ends move
+on (`end0 = end1`, `end1 = next`, the offset kept) and the walk steps.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

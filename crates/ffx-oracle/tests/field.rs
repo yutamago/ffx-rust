@@ -15334,3 +15334,178 @@ fn r6a_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0061_0002);
     r6a_cases(&mut t, &mut rng, 200, true);
 }
+
+// ---- field agent r6, group B: the belt path's strip ----
+
+/// A float in `lo..hi` with a full 24-bit significand (products and
+/// sums of these round, unlike sixteenths).
+fn r6b_fine(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let u = (rng.next() >> 8) as f32 / 16_777_216.0;
+    (lo + (hi - lo) * u).to_bits()
+}
+
+/// The strip's state between points (`0x0230f9cc..0x0230fb40`):
+/// direction, offsets, widths, fade, colours and ends, the matrices.
+fn r6b_state(t: &mut Twin, rng: &mut Xorshift) {
+    let g = |t: &Twin, a: u32| t.b.rebase(a);
+    for a in [0x0230_f9cc, 0x0230_f9d0] {
+        let at = g(t, a);
+        t.put(at, sixteenths(rng, 1, 32));
+    }
+    // the last direction: a unit vector (or none)
+    let (dx, dy) = if rng.below(5) == 0 {
+        (0.0f32, 0.0f32)
+    } else {
+        let a = f32::from_bits(sixteenths(rng, -50, 50));
+        (a.cos(), a.sin())
+    };
+    let at = g(t, 0x0230_f9e0);
+    t.put(at, dx.to_bits());
+    t.put(at + 4, dy.to_bits());
+    // sixteenths now and then, else full significands
+    let fine = rng.below(3) != 0;
+    for (a, lo, hi) in [
+        (0x0230_f9d8u32, -1.0, 1.0),
+        (0x0230_f9dc, -1.0, 1.0),
+        (0x0230_f9e8, -8.0, 8.0),
+        (0x0230_f9ec, -8.0, 8.0),
+        (0x0230_f9f0, 0.0, 1.0),
+        (0x0230_f9f4, 0.0, 0.5),
+        (0x0230_f9f8, 0.0, 1.0),
+        (0x0230_fa00, 0.0, 20.0),
+        (0x0230_fa04, 0.0, 20.0),
+        (0x0230_fa0c, 0.0, 2.0),
+    ] {
+        let at = g(t, a);
+        #[allow(clippy::cast_possible_truncation)]
+        let v = if fine {
+            r6b_fine(rng, lo, hi)
+        } else {
+            sixteenths(rng, (lo * 16.0) as i32, (hi * 16.0) as i32)
+        };
+        t.put(at, v);
+    }
+    if fine {
+        for a in [0x0230_f9cc, 0x0230_f9d0] {
+            let at = g(t, a);
+            t.put(at, r6b_fine(rng, 0.01, 2.0));
+        }
+    }
+    // colours 0..255, their steps and scale
+    for a in [0x0230_fa40u32, 0x0230_fa50] {
+        let at = g(t, a);
+        for i in 0..4 {
+            t.put(at + 4 * i, sixteenths(rng, 0, 255 * 16));
+        }
+    }
+    for a in [0x0230_fa10u32, 0x0230_fa20, 0x0230_fa30] {
+        let at = g(t, a);
+        for i in 0..4 {
+            t.put(at + 4 * i, sixteenths(rng, -40, 40));
+        }
+    }
+    // the ends (projected: w the point's 1 / w) and the vertices' sides
+    for a in [
+        0x0230_fa60u32,
+        0x0230_fa70,
+        0x0230_fa80,
+        0x0230_fa90,
+        0x0230_faa0,
+    ] {
+        let at = g(t, a);
+        for i in 0..3 {
+            t.put(at + 4 * i, sixteenths(rng, -100 * 16, 100 * 16));
+        }
+        t.put(at + 0xc, sixteenths(rng, 1, 32));
+    }
+    let (p, u) = (g(t, 0x0230_fac0), g(t, 0x0230_fb00));
+    let exact = rng.below(3) == 0;
+    r6a_matrix(t, rng, p, exact);
+    r6a_matrix(t, rng, u, false);
+}
+
+/// One `KeThBP_MkStrip_00764de0` case: a walk of 0..=6 points (`stride`
+/// apart), sometimes repeating the last end (a zero direction) or with
+/// w 0.
+fn r6b_case(t: &mut Twin, rng: &mut Xorshift, state: u32) {
+    let n = rng.below(7);
+    let stride = 0x20 + 0x10 * rng.below(3);
+    let points = t.alloc((stride * 7) as usize);
+    t.fill(points, (stride * 7) as usize, rng);
+    let end1 = t.b.rebase(0x0230_fa90);
+    let mut last = [t.b.read::<u32>(end1), t.b.read::<u32>(end1 + 4)];
+    for i in 0..7 {
+        let pt = points + stride * i;
+        for k in 0..3 {
+            t.put(pt + 4 * k, sixteenths(rng, -100 * 16, 100 * 16));
+        }
+        let w = match rng.below(8) {
+            0 => 0,
+            1 => 0x3f80_0000,
+            _ => sixteenths(rng, 4, 64),
+        };
+        t.put(pt + 0xc, w);
+        let age = if rng.below(2) == 0 {
+            sixteenths(rng, 0, 64)
+        } else {
+            r6b_fine(rng, 0.0, 4.0)
+        };
+        t.put(pt + 0x1c, age);
+        // with the identity projection and w 1 the point lands on itself:
+        // the same x, y as the last gives a zero direction
+        if w == 0x3f80_0000 && rng.below(2) == 0 {
+            t.put(pt, last[0]);
+            t.put(pt + 4, last[1]);
+        }
+        last = [t.b.read::<u32>(pt), t.b.read::<u32>(pt + 4)];
+    }
+    t.put(state + 4, points);
+    t.put(state + 0x14, stride);
+    t.put(
+        state + 0x1c,
+        if rng.below(8) == 0 {
+            0u32.wrapping_sub(rng.below(3))
+        } else {
+            n
+        },
+    );
+}
+
+fn r6b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let work = t.stack_scratch(0x800);
+    let state = t.alloc(0x20);
+    let walk = t.b.rebase(0x0230_f9c8);
+    t.put(walk, state);
+    for k in 0..cases {
+        if !(real && k == 0) {
+            r6b_state(t, rng);
+        }
+        t.fill(state, 0x20, rng);
+        r6b_case(t, rng, state);
+        t.same(
+            "KeThBP_MkStrip_00764de0",
+            |o| o.eax(0x0076_4de0, &[]),
+            |m| ffx_field::keth::ke_th_bp_mk_strip(m, work, call),
+        );
+    }
+}
+
+/// Group B on the image.
+#[test]
+fn r6b_belt_path_strip_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0062_0001);
+    r6b_cases(&mut t, &mut rng, 300, false);
+}
+
+/// Group B on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r6b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0062_0002);
+    r6b_cases(&mut t, &mut rng, 150, true);
+}
