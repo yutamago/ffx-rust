@@ -8782,6 +8782,7 @@
 0x00872340 function TkCheckPlayVoice          # fh v3:exact 0x008722e0
 0x00872350 function TkCheckSoftWareReset      # fh v3:bsim1.00 0x008722f0
 0x00872360 function Tk_GetScale               # (which) f32 0x01325b98[which != 0]; own name
+0x00872380 function TkHideAttachedChrs        # (actor, hide): for k 0..2 with u16 +0xb14 bit k, u16 +0xb04[k] != 0xff, +0xaf4[k] != 0: Ch_SetHideEvent(chr, hide), Ch_SetShadowMode(chr, 0); eax = actor; caller 0x0086e5b0 (event actor restore); own name
 0x00872470 function TkMsEventEffectRead          # layout+callees: sorts between TkCheckSoftWareReset and TkRefreshActuator, and its named callees match the Switch 0x7100474340 TkMsEventEffectRead's (similarity 1.00: MsEventEffectRead); symbols from Fahrenheit's server export
 0x00872480 function TkRefreshActuator         # TkSetControlerActuatorMode(0, 0, menu setting bit 4); Switch name, alphabetical slot TkCheckSoftWareReset..TkRefreshHdd; was Pad_RefreshActuatorMode
 0x008724a0 function TkRefreshHdd              # fh v3:exact+call.cs 0x00872440 cdecl
@@ -9343,6 +9344,7 @@
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
+0x0088c830 function TkGetSaveEventAddress     # jmp MsGetSaveEventAddress (5 bytes); name ours
 0x0088c850 function TkGetSavedLang            # () byte 0x01330874 (stored from TkGetLang at init) zero-extended; own name
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
@@ -10133,6 +10135,7 @@
 0x008c43f0 function MenuNameEntry_OpenCharWindow # (chr): TkMenuMainAllocWindow with +8 0x008c3530, +0xc 0x008c3ce0, +0x10 0x008c3ec0, +0x14 0x008c44b0, +0x3e = 3, +0x58 chr; TkMenuMainRegistWindow; then 0x023cc3c4/c0/bc = chr, 0x023cc3c8 = 0; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
 0x008c44d0 function MenuNameEntry_DeleteKey   # (): TOGetFFXLang() 10, 9 or 11 and MenuItem_KeysMatch(g_TkMenuItemTarget) -> every leading non-empty 4-byte entry of g_TkMenuItemKeyUse (0x0186a280) cleared, else the last one; callers 0x008c3891, 0x008c3a33 in the name entry's control step 0x008c3580; own name
+0x008c4e60 function MenuNameEntry_Commit      # (): g_TkMenuItemTarget >= 0: MsGetSaveChrName(t), +0x13 MenuItem_KeysMatch(t), +0x12 TOGetFFXLangJmp(); else save +0xec; g_TkMenuItemKeyUse entries copied (code; 6..0x2f + byte 1; 4 + byte 1 (+ byte 2 below 0x30)), 0-terminated; achievementUnlockAchievement 0xf+0x1a (target 0x11), 0xd, 0xe; own name
 0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
 0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
@@ -10184,6 +10187,7 @@
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
 0x008c94e0 function MenuItem_CountGearByOwner # (): u16 counts [7][2] at 0x0186a3e4 cleared; per i < TkMn2GetNameModeMax() (signed) MsGetSaveWeapon(u16 g_TkMenuItemList[i], &local): owner byte +4 < 7 -> counts[owner*2 + (byte +5 != 0)]++; eax: count, the last index or slot; caller 0x008c5480 (case 0x8c57bb); own name
+0x008c99f0 function MenuItem_DrawRows         # (window, _, first, f32 x, f32 y): x' = f32(graphicUiRemapX2(210) + x); nine MenuItem_DrawRow(window, x', y', first + i), y' += graphicUiRemapY2(77) (f32); caller the item list draw; own name
 0x008c9a70 function MenuItem_DrawRow          # (window, x, y, index): index in 0..u16 window+0x30: TODrawMenuPlateXYWHType(x, y, rx2(740), ry2(60), 5); window+0x45 > 0 and index == i16 +0x2c: TkMn2DrawCrossCmdCursor(x + rx2(160), y + ry2(4), 1); g_TkMenuItemList[index] byte +2 set: DrawCrossMenuIconWeaponName2(MsGetSaveWeapon(id, &local), x, y, 0); caller 0x008c99f0; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b60 function MenuItem_GetLinePos       # (): TkMn2SeqGetPos("p_linmline", 0x0186a400), ("p_rinmline", 0x0186a404); no direct callers; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b90 function Menu_FindFlagged          # (entries, from, to): first index in from..to whose 4-byte entry has byte +2 set, else -1; name ours

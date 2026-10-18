@@ -6128,6 +6128,155 @@ pub mod bridge {
         call(mem, f, &[1])
     }
 
+    /// `MenuItem_DrawRows(window, _, first, x, y)` (`0x008c99f0`, own name;
+    /// `x`, `y` `f32`): nine `MenuItem_DrawRow(window, x', y', first + i)`,
+    /// `x' = f32(graphicUiRemapX2(210) + x)` once, `y'` from `y` and after
+    /// each row `f32(graphicUiRemapY2(77) + y')`. The original's `eax` is
+    /// what the last remap leaves (no caller reads it).
+    pub fn menu_item_draw_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        first: u32,
+        [x, y]: [f32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| v as f32;
+        let left = r(remap(mem, false, 210.0) + f64::from(x));
+        let mut top = ffx_bridge::x87::round_trip(y);
+        let row = mem.rebase(0x008c_9a70);
+        for i in 0..9u32 {
+            call(
+                mem,
+                row,
+                &[window, left.to_bits(), top.to_bits(), first.wrapping_add(i)],
+            );
+            top = r(remap(mem, true, 77.0) + f64::from(top));
+        }
+    }
+
+    /// `MenuNameEntry_Commit()` (`0x008c4e60`, own name): writes the typed
+    /// name. The target ([`MENU_ITEM_TARGET`], signed): `>= 0` a
+    /// character, `MsGetSaveChrName(t)` with `+0x13` =
+    /// `MenuItem_KeysMatch(t)` and `+0x12` = `TOGetFFXLangJmp()`; else the
+    /// save's `+0xec` (`TkGetSaveEventAddress`, a jump to
+    /// `MsGetSaveEventAddress`). Each key entry of `g_TkMenuItemKeyUse`
+    /// (4 bytes, up to a code 0) is copied as its code, then for codes
+    /// `6..=0x2f` its byte `+1`, for code 4 its byte `+1` and, below 0x30,
+    /// `+2`; for a character target each key first asks `TOGetFFXLangJmp()`
+    /// (up to three times: 0, 10, 9) and calls `MsGetSaveConfigEnglish()` on
+    /// a match. A 0 ends the name. Then the achievements:
+    /// target 0x11 unlocks 0xf and 0x1a, 0xd 0xd, 0xe 0xe
+    /// (`achievementUnlockAchievement`). Returns what the original leaves in
+    /// `eax`: the last unlock's result, else the key count, else (no keys)
+    /// the language or the save address.
+    pub fn menu_name_entry_commit<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let target = |mem: &M| MENU_ITEM_TARGET.get(mem).cast_signed();
+        let lang_f = mem.rebase(0x008a_c2f0);
+        let t = target(mem);
+        let (mut out, mut last) = if t >= 0 {
+            let f = mem.rebase(0x0078_4fb0);
+            let name = call(mem, f, &[t.cast_unsigned()]);
+            let f = mem.rebase(0x008c_5390);
+            let t = target(mem).cast_unsigned();
+            let [m, ..] = call(mem, f, &[t]).to_le_bytes();
+            mem.write(name.wrapping_add(0x13), m);
+            let lang = call(mem, lang_f, &[]);
+            mem.write(name.wrapping_add(0x12), lang.to_le_bytes()[0]);
+            (name, lang)
+        } else {
+            let f = mem.rebase(0x0088_c830);
+            let save = call(mem, f, &[]);
+            (save.wrapping_add(0xec), save)
+        };
+        let keys = MENU_ITEM_KEY_USE.ptr(mem).addr;
+        let english = mem.rebase(0x0078_51d0);
+        let mut k = 0u32;
+        let mut code: u8 = mem.read(keys);
+        while code != 0 {
+            let entry = keys.wrapping_add(4 * k);
+            if target(mem) >= 0 {
+                let mut matched = false;
+                for want in [0u32, 10, 9] {
+                    if call(mem, lang_f, &[]) == want {
+                        matched = true;
+                        break;
+                    }
+                }
+                if matched {
+                    call(mem, english, &[]);
+                }
+            }
+            let mut put = |mem: &mut M, v: u8| {
+                mem.write(out, v);
+                out = out.wrapping_add(1);
+            };
+            put(mem, code);
+            let a: u8 = mem.read(entry.wrapping_add(1));
+            if code.wrapping_sub(6) <= 0x29 {
+                put(mem, a);
+            } else if code == 4 {
+                put(mem, a);
+                if a < 0x30 {
+                    let b: u8 = mem.read(entry.wrapping_add(2));
+                    put(mem, b);
+                }
+            }
+            k += 1;
+            last = k;
+            code = mem.read(keys.wrapping_add(4 * k));
+        }
+        mem.write(out, 0u8);
+        let unlock = mem.rebase(0x0082_2380);
+        let ids: &[u32] = match target(mem) {
+            0x11 => &[0xf, 0x1a],
+            0xd => &[0xd],
+            0xe => &[0xe],
+            _ => &[],
+        };
+        for &id in ids {
+            last = call(mem, unlock, &[id]);
+        }
+        last
+    }
+
+    /// `TkHideAttachedChrs(actor, hide)` (`0x00872380`, own name): for the
+    /// actor's two attached characters (`+0xaf4`, ids `u16 +0xb04`), each
+    /// whose bit (1, 2) of `u16 +0xb14` is set, id is not `0xff` and pointer
+    /// not 0: `Ch_SetHideEvent(chr, hide)` and `Ch_SetShadowMode(chr, 0)`.
+    /// The original leaves `actor` in `eax`.
+    pub fn tk_hide_attached_chrs<M: Mem>(
+        mem: &mut M,
+        actor: u32,
+        hide: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for k in 0..2u32 {
+            let mask: u16 = mem.read(actor.wrapping_add(0xb14));
+            if u32::from(mask) & (1 << k) == 0 {
+                continue;
+            }
+            if mem.read::<u16>(actor.wrapping_add(0xb04 + 2 * k)) == 0xff {
+                continue;
+            }
+            let at = actor.wrapping_add(0xaf4 + 4 * k);
+            let chr: u32 = mem.read(at);
+            if chr == 0 {
+                continue;
+            }
+            let f = mem.rebase(0x0082_b2c0);
+            call(mem, f, &[chr, hide]);
+            let chr: u32 = mem.read(at);
+            let f = mem.rebase(0x0082_b820);
+            call(mem, f, &[chr, 0]);
+        }
+        actor
+    }
+
     /// `MenuStatus_OpenWindow(a, index, b, c)` (`0x008d3140`, own name): a
     /// window from `TkMenuMainAllocWindow()` kept in [`STATUS_WINDOWS`]
     /// `[index]`, with the status window's callbacks (`+8` `0x008d2670`,

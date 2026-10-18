@@ -8418,3 +8418,80 @@ fn menu_round21_sub_cmd_windows_and_params_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round21_rows_names_and_hides_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0021_4e60) else {
+        return;
+    };
+    // MenuItem_DrawRow, the name and English lookups and the unlocks recorded
+    record_n(&mut t, 0x008c_9a70, 4, 0x61);
+    // MsGetSaveConfigEnglish counts its calls
+    return_counter(&mut t, 0x0078_51d0, 0x62);
+    record_n(&mut t, 0x0082_b2c0, 2, 0x63);
+    record_n(&mut t, 0x0082_b820, 2, 0x64);
+    let float = |t: &mut Twins| -> f32 {
+        match t.rng.below(6) {
+            0 => f32::NAN,
+            1 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 500) / 3.0,
+        }
+    };
+    for round in 0..48u32 {
+        let (window, first) = (t.rng.next(), t.rng.pick_or_any(&[0, 1, 0x7fff_fffc]));
+        let (x, y) = (float(&mut t), float(&mut t));
+        let args = [window, t.rng.next(), first, x.to_bits(), y.to_bits()];
+        t.twin("MenuItem_DrawRows", 0x008c_99f0, &args, VOID, |o| {
+            tk::menu_item_draw_rows(o, window, first, [x, y], &mut ui_remap, &mut callback);
+            0
+        });
+        // MenuNameEntry_Commit: a character or the save's name, keys of
+        // every kind, the languages that ask for the English setting
+        let target = t
+            .rng
+            .pick(&[0u32, 3, 0xd, 0xe, 0x11, 0x12, 0xffff_ffff, 0x8000_0000]);
+        t.put(t.sym(tk::MENU_ITEM_TARGET.sym), target);
+        let name = t.alloc_random(0x40);
+        let r = t.rng.next();
+        record_n(&mut t, 0x0078_4fb0, 1, name);
+        return_const(&mut t, 0x008c_5390, r);
+        let lang = t.rng.pick(&[0u32, 1, 9, 10, 11]);
+        return_const(&mut t, 0x008a_c2f0, lang);
+        let save = t.alloc_random(0x140);
+        return_const(&mut t, 0x0088_c830, save);
+        let unlock = t.rng.next();
+        record_n(&mut t, 0x0082_2380, 1, unlock);
+        let n = if round % 5 == 0 { 0 } else { t.rng.below(9) };
+        let mut keys = vec![0u8; 4 * 10];
+        for k in 0..n as usize {
+            keys[4 * k] = t.rng.pick(&[1u8, 4, 4, 5, 6, 0x2f, 0x30, 0x80, 0xff]);
+            keys[4 * k + 1] = t.rng.pick(&[0u8, 0x2f, 0x30, 0x41, 0xff]);
+            keys[4 * k + 2] = t.rng.pick(&[0u8, 0x41, 0x7f]);
+            keys[4 * k + 3] = t.rng.pick(&[0u8, 9]);
+        }
+        t.put_bytes(t.sym(tk::ITEM_KEYS), &keys);
+        t.twin("MenuNameEntry_Commit", 0x008c_4e60, &[], U32, |o| {
+            w(tk::menu_name_entry_commit(o, &mut callback))
+        });
+        // TkHideAttachedChrs: masks, ids and pointers on and off
+        let actor = t.alloc_random(0xb20);
+        let mask = t.rng.pick(&[0u16, 1, 2, 3, 0xfffc, 0xffff]);
+        t.put(actor + 0xb14, mask);
+        for k in 0..2u32 {
+            let id = u16::try_from(t.rng.pick(&[0, 0xff, 0x1ff, 3])).unwrap_or(0);
+            t.put(actor + 0xb04 + 2 * k, id);
+            let chr = t.rng.pick(&[0u32, 0x00c0_0000 + k, 0x1234_5678]);
+            t.put(actor + 0xaf4 + 4 * k, chr);
+        }
+        let hide = t.rng.pick_or_any(&[0, 1]);
+        t.twin(
+            "TkHideAttachedChrs",
+            0x0087_2380,
+            &[actor, hide],
+            U32,
+            |o| w(tk::tk_hide_attached_chrs(o, actor, hide, &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

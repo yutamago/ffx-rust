@@ -3377,6 +3377,18 @@ ported! {
     MenuMain_Reset @ 0x008a_a570 => extern "C" fn menu_main_reset() -> u32 {
         tk::menu_main_reset(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_DrawRows(window, _, first, x, y)`: nine item rows.
+    MenuItem_DrawRows @ 0x008c_99f0 => extern "C" fn menu_item_draw_rows(window: u32, _unused: u32, first: u32, x: f32, y: f32) {
+        tk::menu_item_draw_rows(&mut mem(), window, first, [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuNameEntry_Commit()`: the typed name written.
+    MenuNameEntry_Commit @ 0x008c_4e60 => extern "C" fn menu_name_entry_commit() -> u32 {
+        tk::menu_name_entry_commit(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkHideAttachedChrs(actor, hide)`: returns `actor`.
+    TkHideAttachedChrs @ 0x0087_2380 => extern "C" fn tk_hide_attached_chrs(actor: u32, hide: u32) -> u32 {
+        tk::tk_hide_attached_chrs(&mut mem(), actor, hide, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuMain_BusyMask()`.
     MenuMain_BusyMask @ 0x008a_a610 => extern "C" fn menu_main_busy_mask() -> u32 {
         tk::menu_main_busy_mask(&mut mem(), &mut |_, f, a| call_ptr(f, a))
