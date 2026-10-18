@@ -4,7 +4,12 @@
 depends on them, their ffx-oracle tests on the image alone and on both
 snapshots, then the hook build and the replays.
 
-  tools/verify-batch.py [BASE] [--no-replays] [--dry-run]
+Oracle tests are chosen narrowly: the test files of the crates the batch
+touches (not of every crate depending on them), the test files it changed,
+and the modules whose hook shims it changed. Every FULL_EVERY-th run, or with
+--full, the files of every dependent crate run as well.
+
+  tools/verify-batch.py [BASE] [--full] [--no-replays] [--dry-run]
 
 BASE defaults to origin/main (the last verified, pushed state). Exits 1 on
 the first failure.
@@ -27,6 +32,9 @@ ORACLE = {
 }
 # changes here affect every oracle test
 EVERYTHING = ("crates/ffx-oracle/src/", "crates/ffx-bridge/", "Cargo.lock")
+# a wide run (every dependent crate's tests) every this many verifications
+FULL_EVERY = 4
+COUNT = pathlib.Path.home() / "ffx-work/verify-count"
 
 
 def run(cmd, env=None, dry=False):
@@ -57,7 +65,12 @@ def main():
             break
         affected |= more
     every = any(f.startswith(EVERYTHING) for f in changed)
-    tests = sorted({t for c in affected for t in ORACLE.get(c, [])})
+    n = int(COUNT.read_text()) + 1 if COUNT.exists() else 1
+    wide = "--full" in sys.argv or n % FULL_EVERY == 0
+    if not dry:
+        COUNT.write_text(str(n))
+    tests = sorted({t for c in (affected if wide else touched) for t in ORACLE.get(c, [])})
+    tests += [pathlib.Path(f).stem for f in changed if f.startswith("crates/ffx-oracle/tests/")]
     files = sorted(p.stem for p in (REPO / "crates/ffx-oracle/tests").glob("*.rs"))
     if every:
         oracle = files
@@ -70,7 +83,7 @@ def main():
         oracle = [f for f in files if any(f == t or f.startswith(t + "_") for t in tests)]
     print(f"changed since {base}: {len(changed)} files; crates touched: {sorted(touched)}")
     print(f"affected crates: {sorted(affected)}")
-    print(f"oracle tests: {oracle}")
+    print(f"oracle tests ({'wide' if wide or every else 'narrow'}, run {n}): {oracle}")
     unit = sorted(affected - {"ffx-oracle", "ffx-hook", "ffx-dinput8", "ffx-launch", "ffx-render", "ffx-studio"})
     env = {"FFX_GAME_DIR": str(GAME)}
     if unit:
