@@ -251,6 +251,50 @@ pub mod bridge {
         signal(mem, id, 0x8000);
     }
 
+    /// `g_OpusWeaponCounter` (`0x0119fefc`): a signed byte per weapon slot
+    /// that 0x00811050 steps up and down (0..0x7f); cleared with the slot.
+    pub const WEAPON_COUNTER: Global<u8> = Global::new(0x0119_fefc);
+
+    /// `op_et_weapon_free(obj)` (`0x007fca90`): for a weapon object in
+    /// `g_OpusWeapons`, a debug line (`dbgPrintf`), its units freed from
+    /// the battle's opus object ([`opu_unit_free_by_oef2`]) and its slot
+    /// cleared: object 0, effect count and counter 0, number 0xff.
+    /// Callees through `call`.
+    pub fn op_et_weapon_free<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use crate::opus::bridge::{WEAPON_NOS, WEAPONS, opus_get_weapon_index};
+        let Ok(i) = u32::try_from(opus_get_weapon_index(mem, obj)) else {
+            return;
+        };
+        let print = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+        let msg = Global::<u32>::new(0x00b5_8414).ptr(mem).addr;
+        call(mem, print, &[msg]);
+        let slot = WEAPONS.ptr(mem).at(i);
+        let (list, oef) = (OPUS_BATTLE.get(mem), slot.get(mem));
+        opu_unit_free_by_oef2(mem, list, oef, call);
+        slot.set(mem, 0);
+        WEAPON_EFF_COUNT.ptr(mem).at(i).set(mem, 0);
+        WEAPON_COUNTER.ptr(mem).at(i).set(mem, 0);
+        WEAPON_NOS.ptr(mem).at(i).set(mem, 0xff);
+    }
+
+    /// `op_et_weapon_free_all()` (`0x007fcaf0`): [`op_et_weapon_free`] for
+    /// each of the four weapon slots holding an object.
+    pub fn op_et_weapon_free_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        for i in 0..4 {
+            let obj = crate::opus::bridge::WEAPONS.ptr(mem).at(i).get(mem);
+            if obj != 0 {
+                op_et_weapon_free(mem, obj, call);
+            }
+        }
+    }
+
     /// The draw flag index of character `h`'s record, if it has one.
     fn draw_index(mem: &impl Mem, h: u32) -> Option<u32> {
         let i = find_chr(mem, h)?;

@@ -3852,6 +3852,7 @@
 0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up; ours: unit matrix, null/zero words from +0x40, frame count (draw::bridge::shape_con FIELD_CON)
 0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor; ours: graphicVFXDestroy unless one of 9 level hashes, frees +0xe0/+0xe4/+0xf0 (draw::bridge::ppp_des FIELD_DES)
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
+0x00743030 function pppShapeFieldRenderOn_00743030 # ours: () -> 0 when graphicLevelGetNameHash() is one of 0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, else 1; 0x00741b90 and pppDrawShapeFieldDraw skip their shape-field render data on 0 (draw::bridge::shape_field_render_on)
 0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_REV_CON)
 0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_REV_DES)
 0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
@@ -6396,7 +6397,7 @@
 0x007eb760 function op_gs1_init               # fh v3:exact 0x007eb670
 0x007eba80 function op_gs_clear_host             # layout+callees: sorts between op_gs1_init and op_init_draw, and its named callees match the Switch 0x71003c9230 op_gs_clear_host's (similarity 1.00: op_spr_alloc, op_spr_free, sceGsSetDefLoadImage, sceGsSyncPath); symbols from Fahrenheit's server export
 0x007ec410 function op_init_draw              # fh v3:bsim1.00 0x007ec330
-0x007ec470 function op_ot_draw                # fh v3:exact+call.cs 0x007ec390 cdecl
+0x007ec470 function op_ot_draw                # fh v3:exact+call.cs 0x007ec390 cdecl; (): clears g_OpOtFrameWords, op_func_ot(0), graphicVFXSyncPath, pppOtFunc_Control(g_pppOtList), op_func_ot(0x20), g_OpWotNodes relinked while g_OpWotTrigger, op_func_ot(0x40), (0x60) (op::bridge::op_ot_draw)
 0x007ec790 function op_texflush               # fh v3:bsim1.00 0x007ec6b0
 0x007ec7d0 function op_wot_triger             # fh v3:exact 0x007ec6f0
 0x007ec7e0 function op_zbuf_clear             # fh v3:exact 0x007ec700
@@ -6488,8 +6489,8 @@
 0x007fc9a0 function op_et_flag1_off           # g_MagicImports slot 631 (1 overlay): byte 0x011a006e &= 0xfe; hidden from the dump
 0x007fc9b0 function op_et_weapon_unit         # (h) -> unit ID: weapon object by the record's u16 +0xe (opus_get_weapon_by_no; else record +8, slot 0), opu_et_unit(obj, 0, 9, (0x300000 + g_OpusWeaponEffCount[slot]++) << 8 | index); g_MagicImports slot 623
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
-0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0
-0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10
+0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0; (obj): for a g_OpusWeapons object: dbgPrintf, opu_unit_free_by_oef2(g_OpusBattle, it), slot cleared (number 0xff) (et::bridge::op_et_weapon_free)
+0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10; (): op_et_weapon_free for each nonzero g_OpusWeapons slot (et::bridge::op_et_weapon_free_all)
 0x007fcb60 function op_et_weapon_init         # fh v3:exact 0x007fca80
 0x007fcbd0 function magic_nop_007fcbd0        # g_MagicImports slot 224 (1 overlay): a lone ret; hidden from the dump
 0x007fcbf0 function op_event_effect_free      # fh v3:exact 0x007fcb10
@@ -6684,6 +6685,7 @@
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
+0x00808b00 function op_fvec4_to_ivec4_00808b00 # ours: (dst, src): src's four f32 (copied first) truncated by _ftol2 into dst's i32; called on g_Vu0_VfMove in place (vec::bridge::fvec4_to_ivec4)
 0x00808b70 function Vec4Max_00808b70           # ours: (dst, src, x, y, z, w): each component the larger of src's and the argument's (fcom: the argument when unordered); 65 functions above it
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
@@ -15687,6 +15689,7 @@
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x0119fef0 label    g_OpusMonsterFlags        # byte per g_OpusMonsters slot (bit 7 skips the texture move in 0x00808640, bit 0 picks the first VRAM spot)
 0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
+0x0119fefc label    g_OpusWeaponCounter       # signed byte per g_OpusWeapons slot that 0x00811050 steps up and down (0..0x7f); op_et_weapon_free clears it; name ours
 0x0119ff90 label    g_OpSprEnd                # end of g_OpSprStack's 16 KB block: ops_init_spr (0x007e6c30) sets it to user_malloc(0x4000) + 0x4000
 0x011a0010 label    g_OpFog                      # the effects' fog (op_fog_param_set): colour bytes +0..+2, near/far/param f32 +4..+0xc (yiGetFogParam), -(255/(far-near)) +0x10, 255-param +0x14, -near +0x18, 255.0 +0x1c
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
@@ -15716,6 +15719,7 @@
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
+0x012a89a8 label    g_OpWotNodes              # 0x1023 16-byte nodes op_ot_draw relinks while g_OpWotTrigger is set (+4 next node, +8 itself); name ours
 0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
 0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
 0x012f4140 label    g_SqsWaveInfoDone            # non-zero: SqsInitWaveInfo does nothing
@@ -16255,6 +16259,7 @@
 0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02322794 label    g_OpNumShow                  # byte: op_num_xy_set shows its numbers (opd_num_xy_set) when set, again in debug mode
+0x02332e98 label    g_OpOtFrameWords          # two words op_ot_draw clears each frame; nothing else in the dump references them; name ours
 0x02332ea0 label    g_OpSprFlag               # byte beside g_OpSprTop, cleared by ops_init_spr (0x007e6c30); use unknown
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)

@@ -69,6 +69,17 @@ pub mod bridge {
         }
     }
 
+    /// `op_fvec4_to_ivec4_00808b00(dst, src)` (`0x00808b00`): the four
+    /// `f32` of `src` (read first) truncated to `i32` (`_ftol2`) into
+    /// `dst`.
+    pub fn fvec4_to_ivec4(mem: &mut impl Mem, dst: u32, src: u32) {
+        let v: [f32; 4] = mem.read(src);
+        for (i, x) in (0u32..).zip(v) {
+            let n = ffx_bridge::x87::ftol(mem, f64::from(x));
+            mem.write(dst + 4 * i, n);
+        }
+    }
+
     /// `Vec4AddScalars_0074bc50(dst, src, x, y, z, w)` (`0x0074bc50`):
     /// `dst` = `src` + (`x`, `y`, `z`, `w`).
     pub fn vec4_add_scalars(mem: &mut impl Mem, dst: u32, src: u32, k: [f32; 4]) {

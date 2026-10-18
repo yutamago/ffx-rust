@@ -3374,6 +3374,38 @@ pub mod bridge {
         }
     }
 
+    /// Two words `op_ot_draw` clears each frame (`0x02332e98`); nothing else
+    /// in the dump touches them.
+    pub const OT_FRAME_WORDS: Global<[u32; 2]> = Global::new(0x0233_2e98);
+    /// `g_OpWotNodes` (`0x012a89a8`): 0x1023 16-byte nodes `op_ot_draw`
+    /// relinks while [`WOT_TRIGGER`] is set: `+4` the next node, `+8`
+    /// itself.
+    pub const WOT_NODES: Global<[u32; 4]> = Global::new(0x012a_89a8);
+
+    /// `op_ot_draw()` (`0x007ec470`): the frame's draws: [`OT_FRAME_WORDS`]
+    /// cleared, OT list 0 ([`op_func_ot`]), `graphicVFXSyncPath()`, the ppp
+    /// OT list (`pppOtFunc_Control(g_pppOtList)`), OT list 0x20, the
+    /// [`WOT_NODES`] relinked while [`WOT_TRIGGER`] is set, then OT lists
+    /// 0x40 and 0x60. Callees through `call`.
+    pub fn op_ot_draw<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        OT_FRAME_WORDS.set(mem, [0, 0]);
+        op_func_ot(mem, 0, call);
+        let sync = Global::<u32>::new(0x0064_5840).ptr(mem).addr;
+        call(mem, sync, &[]);
+        let list = Global::<u32>::new(0x0230_fff0).ptr(mem).addr;
+        crate::part::bridge::ppp_ot_func_control(mem, list, call);
+        op_func_ot(mem, 0x20, call);
+        if WOT_TRIGGER.get(mem) != 0 {
+            for i in 0..0x1023 {
+                let node = WOT_NODES.ptr(mem).at(i).addr;
+                mem.write(node.wrapping_add(4), node.wrapping_add(0x10));
+                mem.write(node.wrapping_add(8), node);
+            }
+        }
+        op_func_ot(mem, 0x40, call);
+        op_func_ot(mem, 0x60, call);
+    }
+
     /// `g_OpCharClass` (`0x0113fb58`): the op script tokenizer's class of
     /// each byte (1 word, 2 two-byte word, 3/4 quotes, 5 space, 6/8 single
     /// character, 7 comment or statement end).

@@ -12640,3 +12640,151 @@ fn fp_free_and_stat_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round27e_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_c470);
+        let hash = p.alloc(4);
+        deref_recorder_with(&mut p, 0x0064_1da0, &[], Some(hash));
+        // opu_unit_free_by_oef2's callees as in round10d; dbgPrintf,
+        // graphicVFXSyncPath and the OT functions recorded
+        for (sym, words) in [
+            (0x007f_e920u32, &[0u8][..]),
+            (0x0064_5280, &[0, 0]),
+            (0x0080_0d10, &[0, 0]),
+            // only the format: op_et_weapon_free passes nothing more
+            (0x0062_f500, &[0]),
+            (0x0064_5840, &[]),
+            (0x00a7_0910, &[0, 0]),
+        ] {
+            deref_recorder(&mut p, sym, words);
+        }
+        let fns = p.sym(0x00a7_0910);
+        let order = p.sym(op::bridge::FUNC_OT_ORDER.sym);
+        let slots = p.sym(op::bridge::FUNC_OT.sym);
+        let ot_list = p.sym(0x0230_fff0);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let weapons = p.sym(opus::bridge::WEAPONS.sym);
+        let list = p.alloc(0x100);
+        let units = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let (dst, src) = (p.alloc(0x10), p.alloc(0x20));
+        for round in 0..1500 {
+            // 0x00743030
+            let any = rng.next();
+            let h = rng.pick(&[
+                0x76fu32, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, 0x770, 0, any,
+            ]);
+            p.set(hash, h);
+            p.check(&format!("0x00743030({h:#x})"), 0x0074_3030, &[], |m| {
+                Some(draw::bridge::shape_field_render_on(m, &mut call_original))
+            });
+            // 0x00808b00, in place as its callers use it, overlapping (src is
+            // copied first) or apart
+            for i in 0..4 {
+                let v = rng.float();
+                p.set(src + 4 * i, v);
+            }
+            let to = rng.pick(&[src, src + 4, dst]);
+            p.check("0x00808b00", 0x0080_8b00, &[to, src], |m| {
+                vec::bridge::fvec4_to_ivec4(m, to, src);
+                None
+            });
+            // op_et_weapon_free(_all): the units as round10d sets them up
+            for i in 0..512u32 {
+                p.set(eff + 0x20 * i + 0x1c, u8::try_from(rng.below(20)).unwrap());
+                p.set(eff + 0x20 * i, rng.next());
+            }
+            p.fill(units, 0x1000, &mut rng);
+            p.set(p.sym(0x012a_12fc), 0u32);
+            p.set(list + 0x38, 0x20u16);
+            for i in 0..16 {
+                let u = units + 0x100 * i;
+                p.set(u + 0xbc, 0u32);
+                p.set(u + 0x16, 0u8);
+                p.set(u + 0x1e, u8::try_from(rng.below(6)).unwrap());
+            }
+            for i in 0..16 {
+                p.set(list + 0x60 + 4 * i, 0x100 + rng.below(6));
+            }
+            p.set(list + 0x20, units);
+            for (k, at) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+                let li = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, li);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(li + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                }
+                p.set(li + 2 * n, 0xffffu16);
+            }
+            p.put(et::bridge::OPUS_BATTLE, list);
+            for i in 0..4 {
+                p.set(
+                    weapons + 4 * i,
+                    rng.pick(&[0u32, 0x100, 0x101, 0x102, 0x106]),
+                );
+            }
+            p.fill(p.sym(0x0119_fe9c), 4, &mut rng);
+            p.fill(p.sym(0x0119_fef8), 8, &mut rng);
+            if rng.chance(50) {
+                let obj = rng.pick(&[0u32, 0x100, 0x101, 0x102, 0x106]);
+                p.check(
+                    &format!("op_et_weapon_free round {round}"),
+                    0x007f_ca90,
+                    &[obj],
+                    |m| {
+                        et::bridge::op_et_weapon_free(m, obj, &mut call_original);
+                        None
+                    },
+                );
+            } else {
+                p.check(
+                    &format!("op_et_weapon_free_all round {round}"),
+                    0x007f_caf0,
+                    &[],
+                    |m| {
+                        et::bridge::op_et_weapon_free_all(m, &mut call_original);
+                        None
+                    },
+                );
+            }
+            // op_ot_draw: lists 0, 0x20, 0x40 and 0x60 with a few slots
+            // each, an empty ppp OT list
+            for i in 0..0x80u32 {
+                p.set(order + i, -1i8);
+            }
+            for list in [0u32, 0x20, 0x40, 0x60] {
+                let n = rng.below(4);
+                let first = rng.below(8);
+                for i in 0..n {
+                    p.set(order + list + i, i8::try_from((first + 3 * i) % 8).unwrap());
+                }
+            }
+            for i in 0..0x68u32 {
+                let e = slots + 16 * i;
+                p.set(e, fns);
+                p.set(e + 4, rng.next());
+                p.set(e + 8, rng.next());
+                p.set(e + 0xc, u16::try_from(rng.below(3)).unwrap());
+            }
+            p.set(ot_list + 4, ot_list);
+            p.set(ot_list + 0xc, 0u16);
+            p.put(op::bridge::WOT_TRIGGER, u8::from(rng.chance(50)));
+            let nodes = p.sym(op::bridge::WOT_NODES.sym);
+            p.fill(nodes, 0x40, &mut rng);
+            p.fill(nodes + 0x10220, 0x20, &mut rng);
+            p.fill(p.sym(op::bridge::OT_FRAME_WORDS.sym), 8, &mut rng);
+            p.check(
+                &format!("op_ot_draw round {round}"),
+                0x007e_c470,
+                &[],
+                |m| {
+                    op::bridge::op_ot_draw(m, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}

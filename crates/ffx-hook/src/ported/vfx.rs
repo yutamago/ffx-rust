@@ -1887,6 +1887,26 @@ ported! {
     pppSetFpTex @ 0x0072_aa40 => extern "C" fn ppp_set_fp_tex(oef: u32) {
         fp::bridge::ppp_set_fp_tex(&mut mem(), oef, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppShapeFieldRenderOn_00743030()`.
+    pppShapeFieldRenderOn_00743030 @ 0x0074_3030 => extern "C" fn shape_field_render_on() -> u32 {
+        draw::bridge::shape_field_render_on(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_weapon_free(obj)`.
+    op_et_weapon_free @ 0x007f_ca90 => extern "C" fn op_et_weapon_free(obj: u32) {
+        et::bridge::op_et_weapon_free(&mut mem(), obj, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_weapon_free_all()`.
+    op_et_weapon_free_all @ 0x007f_caf0 => extern "C" fn op_et_weapon_free_all() {
+        et::bridge::op_et_weapon_free_all(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_fvec4_to_ivec4_00808b00(dst, src)`.
+    op_fvec4_to_ivec4_00808b00 @ 0x0080_8b00 => extern "C" fn fvec4_to_ivec4(dst: u32, src: u32) {
+        vec::bridge::fvec4_to_ivec4(&mut mem(), dst, src);
+    }
+    /// `op_ot_draw()`.
+    op_ot_draw @ 0x007e_c470 => extern "C" fn op_ot_draw() {
+        op::bridge::op_ot_draw(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)
