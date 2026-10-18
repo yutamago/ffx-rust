@@ -968,6 +968,172 @@ pub mod bridge {
         cmd.wrapping_add(2)
     }
 
+    /// `op_spline_xyz_table(x, pts, n)` (`0x007ea2d0`), called through
+    /// `call`.
+    const OP_SPLINE_XYZ_TABLE: u32 = 0x007e_a2d0;
+    /// `0x007e7330(dst, a, b)`, called through `call`.
+    const OP_RT_TO: u32 = 0x007e_7330;
+
+    /// `opu_spl(host, cmd)` (`0x0081b560`): spline motion, by the flag
+    /// nibble.
+    /// - 0: a new spline record for the unit (`+0xbc`; the old one freed,
+    ///   `op_free`/`op_malloc` on the heap `[host +0x3a8]`): `n` (`i16
+    ///   cmd+2`) points of 16 bytes after a 16-byte head (`+0` = `n`,
+    ///   `+8` the points, `+0xc` the knots after them, `+7` = 1 when the
+    ///   `u16 cmd+6` is 0), each point the `+0x40` (or, with that flag,
+    ///   `+0x90`) x, y, z of the unit `opus_no_get` gives for the `u16`s
+    ///   at `cmd + i16 cmd+4`; then `op_spline_xyz_table(knots, points,
+    ///   n)`. Returns `cmd + 8`.
+    /// - 1: the unit's `+0x40` = the spline of the unit `u16 cmd+2` (0:
+    ///   itself) at `t = +0x4c / 256` (`op_spline_xyz` into the host's
+    ///   `+0`, scaled by 16 when `u16 cmd+4` is set, else 1), and `+0x90`
+    ///   = `+0x40` / 16. Returns `cmd + 6`.
+    /// - 2: as 1, and a second point at `t + +0x6c` (or `t + 1e-6` for a
+    ///   zero `+0x6c`) into the host's `+0x10` (scaled the same only with
+    ///   the flag, then / 16); `0x007e7330(host +0x40, +0x90, host +0x10)`
+    ///   and the unit's matrix `+0xc0` = `host +0x280` times `host
+    ///   +0x40` (`op_mul_m`). Returns `cmd + 6`.
+    /// - 3: the motion callback `+0xba` = 0xa, `u16 +0xa0`/`+0xa2` =
+    ///   `cmd+2`/`+4`. Returns `cmd + 6`.
+    /// - Any other nibble returns `cmd`; the original also pops the
+    ///   caller's `esi`, `edi` and `ebx` off the wrong stack slots there
+    ///   (not reproduced).
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::similar_names,
+        clippy::redundant_guards
+    )]
+    pub fn opu_spl<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::op::bridge as op;
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let list = host.wrapping_add(0x300);
+        let kind = mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000;
+        let k256: f64 = mem.read(g(mem, 0x00b5_0198));
+        let k16: u32 = mem.read(g(mem, 0x00b9_231c));
+        let k16 = crate::x87::load(k16);
+        let k_16: u32 = mem.read(g(mem, 0x00b5_8354));
+        let k_16 = crate::x87::load(k_16);
+        // the unit `u16 cmd+2` names (0: the unit itself) and its spline
+        let source = |mem: &M| {
+            let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+            if no == 0 {
+                unit
+            } else {
+                opus_no_get(mem, list, unit, no)
+            }
+        };
+        let at_t = |mem: &mut M, sp: u32, out: u32, t: f32| {
+            let n = i32::from(mem.read::<i16>(sp)).cast_unsigned();
+            let pts: u32 = mem.read(sp.wrapping_add(8));
+            let x: u32 = mem.read(sp.wrapping_add(0xc));
+            op::op_spline_xyz(mem, out, crate::x87::load_f32(t), pts, x, n);
+        };
+        match kind {
+            0x1000 => {
+                let s = source(mem);
+                let sp: u32 = mem.read(s.wrapping_add(0xbc));
+                let t = Reg::load_f32(f(mem, unit.wrapping_add(0x4c)))
+                    .constant(MUL, k256)
+                    .store();
+                at_t(mem, sp, host, t);
+                let k = if mem.read::<u16>(cmd.wrapping_add(4)) != 0 {
+                    k16
+                } else {
+                    1.0f32.to_bits()
+                };
+                op::op_xyz_scale(mem, unit.wrapping_add(0x40), host, k);
+                op::op_xyz_scale(mem, unit.wrapping_add(0x90), unit.wrapping_add(0x40), k_16);
+                cmd.wrapping_add(6)
+            }
+            0 => {
+                let heap: u32 = mem.read(host.wrapping_add(0x3a8));
+                let old: u32 = mem.read(unit.wrapping_add(0xbc));
+                op::op_free(mem, heap, old, call);
+                let n: u16 = mem.read(cmd.wrapping_add(2));
+                let count = i32::from(n.cast_signed());
+                let heap: u32 = mem.read(host.wrapping_add(0x3a8));
+                let size = (count.cast_unsigned() << 5).wrapping_add(0x10);
+                let rec = op::op_malloc(mem, heap, size, call);
+                mem.write(unit.wrapping_add(0xbc), rec);
+                mem.write(rec, n);
+                let pts = rec.wrapping_add(0x10);
+                mem.write(
+                    rec.wrapping_add(0xc),
+                    (count.cast_unsigned() << 4).wrapping_add(pts),
+                );
+                mem.write(rec.wrapping_add(8), pts);
+                let nos = i32::from(mem.read::<i16>(cmd.wrapping_add(4)))
+                    .cast_unsigned()
+                    .wrapping_add(cmd);
+                let flag: u16 = mem.read(cmd.wrapping_add(6));
+                let from = if flag == 0 { 0x40u32 } else { 0x90 };
+                let mut i = 0i16;
+                while i32::from(i) < count {
+                    let k = i32::from(i).cast_unsigned();
+                    let no = u32::from(mem.read::<u16>(nos.wrapping_add(2 * k)));
+                    let s = opus_no_get(mem, list, unit, no);
+                    for c in 0..3u32 {
+                        let v: u32 = mem.read(s.wrapping_add(from + 4 * c));
+                        mem.write(pts.wrapping_add(16 * k + 4 * c), crate::x87::load(v));
+                    }
+                    i = i.wrapping_add(1);
+                }
+                let (x, p): (u32, u32) = (
+                    mem.read(rec.wrapping_add(0xc)),
+                    mem.read(rec.wrapping_add(8)),
+                );
+                let f = Global::<u32>::new(OP_SPLINE_XYZ_TABLE).ptr(mem).addr;
+                call(mem, f, &[x, p, count.cast_unsigned()]);
+                mem.write(rec.wrapping_add(7), u8::from(flag == 0));
+                cmd.wrapping_add(8)
+            }
+            0x2000 => {
+                let s = source(mem);
+                let sp: u32 = mem.read(s.wrapping_add(0xbc));
+                let a = crate::x87::load_f32(f(mem, unit.wrapping_add(0x4c)));
+                let t = Reg::load_f32(a).constant(MUL, k256).store();
+                at_t(mem, sp, host, t);
+                let e: f32 = f(mem, unit.wrapping_add(0x6c));
+                let a2 = match Reg::load_f32(e) {
+                    Reg::Num(z) if z == 0.0 => {
+                        let c: f64 = mem.read(g(mem, 0x00b3_68a8));
+                        Reg::load_f32(a).constant(crate::x87::ADD, c).store()
+                    }
+                    _ => Reg::load_f32(e).mem(crate::x87::ADD, a).store(),
+                };
+                let t2 = Reg::load_f32(a2).constant(MUL, k256).store();
+                let second = host.wrapping_add(0x10);
+                at_t(mem, sp, second, t2);
+                if mem.read::<u16>(cmd.wrapping_add(4)) == 0 {
+                    op::op_xyz_scale(mem, unit.wrapping_add(0x40), host, 1.0f32.to_bits());
+                } else {
+                    op::op_xyz_scale(mem, unit.wrapping_add(0x40), host, k16);
+                    op::op_xyz_scale(mem, second, second, k16);
+                }
+                op::op_xyz_scale(mem, unit.wrapping_add(0x90), unit.wrapping_add(0x40), k_16);
+                op::op_xyz_scale(mem, second, second, k_16);
+                let m = host.wrapping_add(0x40);
+                let f = Global::<u32>::new(OP_RT_TO).ptr(mem).addr;
+                call(mem, f, &[m, unit.wrapping_add(0x90), second]);
+                op::op_mul_m(mem, unit.wrapping_add(0xc0), host.wrapping_add(0x280), m);
+                cmd.wrapping_add(6)
+            }
+            0x3000 => {
+                mem.write(unit.wrapping_add(0xba), 0xau8);
+                let a: [u16; 2] = mem.read(cmd.wrapping_add(2));
+                mem.write(unit.wrapping_add(0xa0), a);
+                cmd.wrapping_add(6)
+            }
+            _ => cmd,
+        }
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and

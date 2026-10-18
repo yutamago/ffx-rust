@@ -11713,3 +11713,124 @@ fn opu_vzero_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opu_spl_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_b560);
+        deref_recorder(&mut p, 0x0062_f500, &[0]);
+        let host = p.alloc(0x400);
+        let parts = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let cmd = p.alloc(0x40);
+        let arena = p.alloc(0x2010);
+        let spl2 = p.alloc(0x10);
+        let (spl, pts, xs, scratch) = (
+            p.alloc(0x10),
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x100),
+        );
+        let vu = p.sym(0x00c8_f500);
+        for round in 0..1500 {
+            for k in 0..0x100 {
+                let v = rng.float();
+                p.set(host + 4 * k, v);
+            }
+            p.fill(vu, 0x500, &mut rng);
+            for k in 0..0x400 {
+                let v = rng.float();
+                p.set(parts + 4 * k, v);
+            }
+            let list = host + 0x300;
+            p.set(list + 0x20, parts);
+            for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, l);
+                p.set(l, 0xffffu16);
+            }
+            for i in 0..16 {
+                let u = parts + 0x100 * i;
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                p.set(u + 0xbc, spl);
+            }
+            let unit = parts + 0x100 * (1 + rng.below(15));
+            p.set(host + 0x220, unit);
+            p.fill(cmd, 0x40, &mut rng);
+            let kind = rng.below(4);
+            p.set(
+                host + 0x21a,
+                u16::try_from(kind << 12 | rng.below(0x1000)).unwrap(),
+            );
+            let no = rng.pick(&[0u16, 0xff00, 0xffff, 0xfffe]);
+            p.set(cmd + 2, no);
+            p.set(cmd + 4, rng.pick(&[0u16, 1]));
+            match kind {
+                0 => {
+                    // a fresh heap with the unit's old record in it (its
+                    // second record is the emulated r0: zero, as in the game)
+                    for k in 0..4 {
+                        p.set(vu + 8 + 4 * k, 0u32);
+                    }
+                    let heap = p.check("op_heap_init", 0x007f_f2d0, &[arena, 0x2000], |m| {
+                        Some(op::bridge::op_heap_init(m, arena, 0x2000))
+                    });
+                    p.set(host + 0x3a8, heap);
+                    let old = p.check("op_malloc", 0x007f_f780, &[heap, 0x40], |m| {
+                        Some(op::bridge::op_malloc(m, heap, 0x40, &mut call_original))
+                    });
+                    p.set(unit + 0xbc, if rng.chance(80) { old } else { 0 });
+                    let n = rng.pick(&[0u16, 1, 2, 3, 5]);
+                    p.set(cmd + 2, n);
+                    p.set(cmd + 4, 0x10u16);
+                    p.set(cmd + 6, rng.pick(&[0u16, 1]));
+                    p.put(op::bridge::SPR_TOP, 0i8);
+                    let spr = p.sym(op::bridge::SPR_STACK.sym);
+                    p.set(spr, scratch);
+                    for i in 0..8 {
+                        let v = rng.pick(&[0xff00u16, 0xffff, 0xfffe]);
+                        p.set(cmd + 0x10 + 2 * i, v);
+                    }
+                }
+                1 | 2 => {
+                    let n = rng.below(8) + 2;
+                    p.set(spl, u16::try_from(n).unwrap());
+                    p.set(spl + 8, pts);
+                    p.set(spl + 0xc, xs);
+                    // the unit's own spline (no 0) differs from the others'
+                    p.set(spl2, u16::try_from(rng.below(8) + 2).unwrap());
+                    p.set(spl2 + 8, pts + 0x10);
+                    p.set(spl2 + 0xc, xs);
+                    p.set(unit + 0xbc, spl2);
+                    let mut x = 0f32;
+                    for i in 0..16 {
+                        x += f32::from_bits(finite(&mut rng)).abs().min(50.0);
+                        p.set(xs + 4 * i, x);
+                    }
+                    for i in 16..48 {
+                        let d = finite(&mut rng);
+                        p.set(xs + 4 * i, d);
+                    }
+                    for i in 0..0x40 {
+                        let v = finite(&mut rng);
+                        p.set(pts + 4 * i, v);
+                    }
+                    let any = f32::from_bits(finite(&mut rng));
+                    let t = rng.pick(&[0.0f32, x * 85.0, any]);
+                    p.set(unit + 0x4c, t);
+                    let e = rng.pick(&[0.0f32, -0.0, 3.5, any]);
+                    p.set(unit + 0x6c, e);
+                    p.put(op::bridge::SPR_TOP, 0i8);
+                    let spr = p.sym(op::bridge::SPR_STACK.sym);
+                    p.set(spr, scratch);
+                }
+                _ => {}
+            }
+            let _ = round;
+            p.check("opu_spl", 0x0081_b560, &[host, cmd], |m| {
+                Some(opus::bridge::opu_spl(m, host, cmd, &mut call_original))
+            });
+        }
+    }
+}

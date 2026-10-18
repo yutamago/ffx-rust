@@ -1780,6 +1780,10 @@ ported! {
     opu_vzero @ 0x0081_afa0 => extern "C" fn opu_vzero(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_vzero(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_spl(host, cmd)`.
+    opu_spl @ 0x0081_b560 => extern "C" fn opu_spl(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_spl(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)
