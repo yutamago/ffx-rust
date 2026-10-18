@@ -1870,6 +1870,23 @@ ported! {
     pppSetFpPdt @ 0x0072_a7f0 => extern "C" fn ppp_set_fp_pdt(data: u32) {
         fp::bridge::ppp_set_fp_pdt(&mut mem(), data, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppFpFree()`.
+    pppFpFree @ 0x0072_91c0 => extern "C" fn ppp_fp_free() {
+        fp::bridge::ppp_fp_free(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpIDfree_007295f0(id)`.
+    pppFpIDfree_007295f0 @ 0x0072_95f0 => extern "C" fn ppp_fp_id_free(id: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        fp::bridge::ppp_fp_id_free(&mut mem(), id as u16, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpLoadStat(stat)`.
+    pppFpLoadStat @ 0x0072_9a10 => extern "C" fn ppp_fp_load_stat(stat: u32) {
+        fp::bridge::ppp_fp_load_stat(&mut mem(), stat);
+    }
+    /// `pppSetFpTex(oef)`.
+    pppSetFpTex @ 0x0072_aa40 => extern "C" fn ppp_set_fp_tex(oef: u32) {
+        fp::bridge::ppp_set_fp_tex(&mut mem(), oef, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

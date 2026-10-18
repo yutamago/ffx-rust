@@ -3579,7 +3579,7 @@
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x00729060 function pppFpDispDebug               # str-match switch: only user of 6 string(s) held once by both builds, e.g. '---- FP Disp Status Start\\n\\n'; Switch 0x71002d72b0 pppFpDispDebug (symbols from Fahrenheit's server export)
-0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
+0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0; (): op_fp_effect_free, every effect's objects freed and g_FpData cleared, the heap2 block and packet buffer freed, point lights disposed of (fp::bridge::ppp_fp_free)
 0x00729280 function pppFpGetHeapMaxUseSize       # () -> 0x00cec210, the ppp heap's high-water mark; caller the rcui FP memory window as on the Switch (pppFpGetHeapMaxUseSize, called by rcuiFpMemProc); sorts between pppFpFree and pppFpGetHeapSize; the vfx porter's pppFpGetHeapPeak
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292d0 function pppFpGetHeapUsed          # () -> 0x00cec20c, the field-effect heap use of the last pppFpLoop
@@ -3594,12 +3594,13 @@
 0x00729530 function Fp_RestartGroup           # (group) Fp_Restart for every g_FpData entry of the group (+0x66): g_FpRun +0 = 0, +0x1d = 0
 0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
 0x007295b0 function pppFpIDdispOn             # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump); was Fp_Show
+0x007295f0 function pppFpIDfree_007295f0      # ours: (id): with g_FpData loaded, each effect with that id (+0x64) gets pppAllFreePObject on its run record (g_pppFpHeap current) and counter -0x1000 (not started); callers in 0x00910000/0x00930000 (fp::bridge::ppp_fp_id_free)
 0x00729660 function Fp_End                       # (id): sets entry +0x1d = 1; the 0x00729060 dump shows Stat END
 0x00729700 function Fp_Restart                   # (id): counter = 0, +0x1d = 0 (Stat RUN from the start)
 0x00729810 function Fp_RestartMode2              # ?(id): counter = 0, +0x1d = 2 (shown as END; probably play once and stop)
 0x00729850 function pppFpInfPrint             # fh v3:exact 0x00729940
 0x007299e0 function pppFpInitHeapDisplay      # fh v3:exact 0x00729ad0
-0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00
+0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00; (stat): the inverse of pppFpSaveStat, 2 bits per effect with a nonzero id: Fp_Restart, hidden flag (fp::bridge::ppp_fp_load_stat)
 0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0
 0x00729f70 function pppFpPointLightInit       # fh v3:bsim1.00 0x0072a060
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080
@@ -3615,7 +3616,7 @@
 0x0072a750 function pppFpStopStatus           # fh v3:bsim1.00+call.cs 0x0072a840 cdecl
 0x0072a760 function Fp_IdState_0072a760         # ours: (id) -> run state of the first g_FpData entry with i16 +0x64 == id: 0 not started (g_FpRun +0 = -0x1000), 1 running, 2 ended (+0x1d set), -1 no table or entry; callers 0x0091c860, 0x00933cc0
 0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0; (data): installs a field's effect table (run/display records, heaps, packet buffer); ported (fp::bridge::ppp_set_fp_pdt)
-0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export
+0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export; (oef): op_fp_effect_init, op_oef2_set2, then texture_load(a_get(oef,2,i),1) for u16 +0x44 and clut_load(a_get(oef,3,i),1) for u16 +0x46 (fp::bridge::ppp_set_fp_tex)
 0x0072ab20 function pppVu0Length_copy_0072ab20   # the pppVu0Length body again (emulated VU0 length into 0x00c8f820.., _CIsqrt, Q); callers pppFpInfPrint, 0x00728ac0; the system agent's finding (vfx family, placed among system names); own name
 0x0072ac20 function ModelBuffer_AllocateBuffer # fh v3:bsim1.00 0x0072ad10
 0x0072ac30 function ModelBuffer_ClearAll      # fh v3:bsim1.00 0x0072ad20
@@ -15306,6 +15307,7 @@
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
+0x00cec1f8 label    g_FpPointLightCap         # point lights pppFpPointLightProc (0x00729f90) has defined/allocated (0x24 bytes each); pppFpFree disposes of them (Sg_PLightDispose_thunk) when > 0; name ours
 0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec200 label    g_pppFpPacketSize         # field-effect packet budget (pppFpGetPacketSize)
 0x00cec204 label    g_pppFpPacketUsed         # last pppFpLoop's packet use (g_PppPacketPos - 0x00cec220)

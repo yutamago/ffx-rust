@@ -12533,3 +12533,110 @@ fn ppp_set_fp_pdt_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn fp_free_and_stat_match_the_original() {
+    use fp::bridge as f;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_91c0);
+        // pppAllFreePObject, op_fp_effect_free, user_free_thunk,
+        // Sg_PLightDispose_thunk, op_fp_effect_init, op_oef2_texture_load
+        // and op_oef2_clut_load recorded
+        for (sym, words) in [
+            (0x0071_1f20u32, &[0u8][..]),
+            (0x007f_cc40, &[]),
+            (0x0068_7010, &[0]),
+            (0x0083_1a30, &[]),
+            (0x007f_cc60, &[]),
+            (0x007e_5030, &[0, 0]),
+            (0x007e_46b0, &[0, 0]),
+        ] {
+            deref_recorder(&mut p, sym, words);
+        }
+        let env = p.alloc(4);
+        let slot = p.sym(ffx_vfx::draw::bridge::ENV_SLOT);
+        p.set(slot, env);
+        let data = p.alloc(0x20 + 0x50 * 0x30);
+        let stat = p.alloc(0x20);
+        let run = p.sym(f::RUN.sym);
+        let disp = p.sym(f::DISP.sym);
+        let oef = p.alloc(0x4000);
+        for round in 0..2000 {
+            p.fill(data, 0x20 + 0x50 * 0x30, &mut rng);
+            let n = rng.pick(&[0u16, 1, 5, 0x30]);
+            p.set(data + 4, n);
+            for k in 0..0x30u32 {
+                let id = rng.pick(&[0u16, 0, 1, 2, 7, 0x8001]);
+                p.set(data + 0x64 + 0x50 * k, id);
+            }
+            p.put(f::DATA, if rng.chance(15) { 0 } else { data });
+            p.fill(run, 0x80 * 0x30, &mut rng);
+            p.fill(disp, 0x4c * 0x30, &mut rng);
+            p.fill(stat, 0x20, &mut rng);
+            p.fill(env, 4, &mut rng);
+            let id = rng.pick(&[0u32, 1, 2, 7, 0x8001, 0x1_0001]);
+            p.check(
+                &format!("0x007295f0({id:#x}) round {round}"),
+                0x0072_95f0,
+                &[id],
+                |m| {
+                    #[allow(clippy::cast_possible_truncation)] // a u16 argument
+                    f::ppp_fp_id_free(m, id as u16, &mut call_original);
+                    None
+                },
+            );
+            let at = if rng.chance(10) { 0 } else { stat };
+            p.check(
+                &format!("pppFpLoadStat round {round}"),
+                0x0072_9a10,
+                &[at],
+                |m| {
+                    f::ppp_fp_load_stat(m, at);
+                    None
+                },
+            );
+            for buf in [f::HEAP2_BUF, f::PACKET_BUF] {
+                let any = rng.next();
+                p.put(buf, rng.pick(&[0u32, any]));
+            }
+            let cap = rng.pick(&[0i32, 1, 5, -1, i32::MIN]);
+            p.put(f::POINT_LIGHT_CAP, cap);
+            p.fill(env, 4, &mut rng);
+            p.check(&format!("pppFpFree round {round}"), 0x0072_91c0, &[], |m| {
+                f::ppp_fp_free(m, &mut call_original);
+                None
+            });
+            // pppSetFpTex: tables inside the block, its data at +0x3200
+            p.fill(oef, 0x4000, &mut rng);
+            p.set(oef + 8, 0x100u32);
+            p.set(oef + 0xc, 0x2100u32);
+            p.set(oef + 0x3c, 0x3200u32);
+            if rng.chance(30) {
+                p.set(oef + 0x3240, 0u16);
+                for c in (0x3242..=0x3252).step_by(2) {
+                    p.set(oef + c, 0u16);
+                }
+            }
+            for n in 0..0x100u32 {
+                if rng.chance(20) {
+                    p.set(oef + 0x100 + 0x20 * n + 0x10, 0u32);
+                }
+                if rng.chance(20) {
+                    p.set(oef + 0x2100 + 0x10 * n + 2, 0u16);
+                }
+            }
+            p.set(oef + 0x44, rng.pick(&[0u16, 1, 5, 0x101]));
+            p.set(oef + 0x46, rng.pick(&[0u16, 1, 5, 0x101]));
+            p.check(
+                &format!("pppSetFpTex round {round}"),
+                0x0072_aa40,
+                &[oef],
+                |m| {
+                    f::ppp_set_fp_tex(m, oef, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}

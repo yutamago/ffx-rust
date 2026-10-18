@@ -543,6 +543,158 @@ pub mod bridge {
         stat(2).set(mem, 0);
         stat(1).set(mem, 0);
     }
+
+    /// `g_FpPointLightCap` (`0x00cec1f8`): how many point lights
+    /// `pppFpPointLightProc` has defined (`Sg_PLightDefine`); `pppFpFree`
+    /// disposes of them.
+    pub const POINT_LIGHT_CAP: Global<i32> = Global::new(0x00ce_c1f8);
+
+    /// `*g_pppEnvSlot` = `g_pppFpHeap`: the field effects' heap current.
+    fn set_env(mem: &mut impl Mem) {
+        let slot: u32 = mem.read(
+            Global::<u32>::new(crate::draw::bridge::ENV_SLOT)
+                .ptr(mem)
+                .addr,
+        );
+        let heap = crate::heap::bridge::FP_HEAP.ptr(mem).addr;
+        mem.write(slot, heap);
+    }
+
+    /// [`set_env`], then `pppAllFreePObject(run)`.
+    fn free_objects<M: Mem>(
+        mem: &mut M,
+        run: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        set_env(mem);
+        let free = Global::<u32>::new(0x0071_1f20).ptr(mem).addr;
+        call(mem, free, &[run]);
+    }
+
+    /// `pppFpFree()` (`0x007291c0`): `op_fp_effect_free()`; with a table
+    /// loaded, every effect's objects freed (`pppAllFreePObject` on its run
+    /// record, `g_pppFpHeap` current) and [`DATA`] cleared; the second
+    /// heap's block and the packet buffer freed (`user_free_thunk`) and
+    /// cleared; defined point lights disposed of
+    /// (`Sg_PLightDispose_thunk`) and [`POINT_LIGHT_CAP`] cleared. Callees
+    /// through `call`.
+    pub fn ppp_fp_free<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let effect_free = r(mem, 0x007f_cc40);
+        call(mem, effect_free, &[]);
+        let table = DATA.get(mem);
+        if table != 0 {
+            set_env(mem);
+            let mut k = 0u32;
+            let mut n = u32::from(mem.read::<u16>(table.wrapping_add(4)));
+            while k < n {
+                let run = RUN.ptr(mem).at(k).addr;
+                free_objects(mem, run, call);
+                k += 1;
+                n = u32::from(mem.read::<u16>(DATA.get(mem).wrapping_add(4)));
+            }
+            DATA.set(mem, 0);
+        }
+        let user_free = r(mem, 0x0068_7010);
+        for buf in [HEAP2_BUF, PACKET_BUF] {
+            let p = buf.get(mem);
+            if p != 0 {
+                call(mem, user_free, &[p]);
+                buf.set(mem, 0);
+            }
+        }
+        if POINT_LIGHT_CAP.get(mem) > 0 {
+            let dispose = r(mem, 0x0083_1a30);
+            call(mem, dispose, &[]);
+            POINT_LIGHT_CAP.set(mem, 0);
+        }
+    }
+
+    /// `pppFpIDfree_007295f0(id)` (`0x007295f0`): with a table loaded,
+    /// every effect with that id (`u16 +0x64`) has its objects freed
+    /// (`pppAllFreePObject`, `g_pppFpHeap` current) and goes back to not
+    /// started (counter -0x1000). Callees through `call`.
+    pub fn ppp_fp_id_free<M: Mem>(
+        mem: &mut M,
+        id: u16,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let table = DATA.get(mem);
+        if table == 0 {
+            return;
+        }
+        set_env(mem);
+        let n = u32::from(mem.read::<u16>(table.wrapping_add(4)));
+        for k in 0..n {
+            if mem.read::<u16>(table.wrapping_add(0x64 + 0x50 * k)) == id {
+                let run = RUN.ptr(mem).at(k).addr;
+                free_objects(mem, run, call);
+                mem.write(run, NOT_STARTED);
+            }
+        }
+    }
+
+    /// `pppFpLoadStat(stat)` (`0x00729a10`): the inverse of
+    /// [`ppp_fp_save_stat`]: each effect with a nonzero id takes the next
+    /// two bits of `stat` (four effects a byte, low bits first): the first
+    /// restarts it (`Fp_Restart(id)`), the second is its hidden flag
+    /// (display `+0` bit 0x10). Nothing without `stat` or a table.
+    pub fn ppp_fp_load_stat(mem: &mut impl Mem, stat: u32) {
+        let table = DATA.get(mem);
+        if stat == 0 || table == 0 {
+            return;
+        }
+        let n = u32::from(mem.read::<u16>(table.wrapping_add(4)));
+        let (mut byte, mut bit) = (stat, 0u32);
+        for k in 0..n {
+            let id = mem.read::<u16>(table.wrapping_add(0x64 + 0x50 * k));
+            if id == 0 {
+                continue;
+            }
+            if mem.read::<u8>(byte) & (1 << bit) != 0 {
+                fp_restart(mem, u32::from(id));
+            }
+            let d = DISP.ptr(mem).at(k).addr;
+            let flags: u32 = mem.read(d);
+            let hidden = mem.read::<u8>(byte) & (2 << bit) != 0;
+            mem.write(d, if hidden { flags | 0x10 } else { flags & !0x10 });
+            bit += 2;
+            if bit >= 8 {
+                bit = 0;
+                byte = byte.wrapping_add(1);
+            }
+        }
+    }
+
+    /// `pppSetFpTex(oef)` (`0x0072aa40`): `op_fp_effect_init()`, the oef2
+    /// file set (`op_oef2_set2`), then each of its `u16 +0x44` textures
+    /// (`op_oef2_texture_load(op_oef2_a_get(oef, 2, i), 1)`) and `u16
+    /// +0x46` palettes (`op_oef2_clut_load(op_oef2_a_get(oef, 3, i), 1)`)
+    /// loaded. Callees other than the oef2 lookups through `call`.
+    pub fn ppp_set_fp_tex<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use crate::op::bridge as op;
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let init = r(mem, 0x007f_cc60);
+        call(mem, init, &[]);
+        op::op_oef2_set2(mem, oef);
+        for (count, kind, load) in [(0x44u32, 2u32, 0x007e_5030u32), (0x46, 3, 0x007e_46b0)] {
+            let load = r(mem, load);
+            let mut i = 0u32;
+            while i < u32::from(mem.read::<u16>(oef.wrapping_add(count))) {
+                let a = op::op_oef2_a_get(mem, oef, kind, i);
+                call(mem, load, &[a, 1]);
+                i += 1;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
