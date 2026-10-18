@@ -258,6 +258,40 @@ pub const MAIN_SET_PAR: u32 = 0x0092_56d0;
 pub const OBJ_ATTACH_CHR: u32 = 0x0092_f970;
 /// `rcCopyQword_00924f90(dst, src)` (`0x00924f90`).
 pub const COPY_QWORD: u32 = 0x0092_4f90;
+/// `MsGetChrHandle(i)` (`0x00795080`).
+pub const MS_GET_CHR_HANDLE: u32 = 0x0079_5080;
+/// `AtelGetCharHandleFromBindPC(i)` (`0x0086ae90`).
+pub const ATEL_CHAR_FROM_BIND_PC: u32 = 0x0086_ae90;
+/// `Ch_OptposGetElement(chr, n, k)` (`0x00835660`).
+pub const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
+/// `Ch_OptposGet(chr, n, out)` (`0x008354f0`).
+pub const CH_OPTPOS_GET: u32 = 0x0083_54f0;
+/// `Ch_ElemGetMatrix(chr, e, out)` (`0x00833c30`).
+pub const CH_ELEM_GET_MATRIX: u32 = 0x0083_3c30;
+/// `Ch_SetOrgMatrix(chr, m)` (`0x0082b3e0`).
+pub const CH_SET_ORG_MATRIX: u32 = 0x0082_b3e0;
+/// `Ch_ClutCreate(chr)` (`0x0083c710`).
+pub const CH_CLUT_CREATE: u32 = 0x0083_c710;
+/// `Ch_ClutDispose(chr)` (`0x0083c810`).
+pub const CH_CLUT_DISPOSE: u32 = 0x0083_c810;
+/// `rcefScaleMatrix100(m)` (`0x0092e630`).
+pub const SCALE_MATRIX_100: u32 = 0x0092_e630;
+/// `rcCopyQword_0092d6f0(dst, src)` (`0x0092d6f0`).
+pub const COPY_QWORD_D6F0: u32 = 0x0092_d6f0;
+/// `rcbgScaleVector_0092d690(dst, v, s)` (`0x0092d690`).
+pub const SCALE_VECTOR_D690: u32 = 0x0092_d690;
+/// `rcVu0Sub_0092d720(dst, a, b)` (`0x0092d720`).
+pub const VU0_SUB_D720: u32 = 0x0092_d720;
+/// `FFXVu0ApplyMatrix(dst, m, v)` (`0x006ed2e0`).
+pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+/// `rcVec3fNormalize(v)` (`0x00921360`).
+pub const VEC3F_NORMALIZE: u32 = 0x0092_1360;
+/// 10.0 as an `f64` (`.rdata`): `rcefGetChrWidth`, `rcefGetChrEyeHeight`.
+pub const TEN: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b9_22b0);
+/// 10.0 as an `f32` (`.rdata`): `rcefGetChrElemOff`'s scale.
+pub const TEN_F32: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b9_2318);
+/// 1000.0 as an `f32` (`.rdata`): `rcefGetChrElemPos`'s scale.
+pub const THOUSAND_F32: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b1_f2cc);
 
 /// The tasks and objects where the game keeps them, through
 /// [`ffx_bridge::Mem`].
@@ -1511,6 +1545,278 @@ pub mod bridge {
         let v = (mem.read::<u32>(at) & 0xffff_e00f) | flags;
         mem.write(at, v);
         v
+    }
+
+    // ---- field agent r1, group B: the character helpers of `rcefUtil` ----
+
+    /// `rcefGetChrHandle(i)` (`0x0092e1c0`): `MsGetChrHandle(i)` in a battle
+    /// (`rcefIsBattle`), else `AtelGetCharHandleFromBindPC(i)` (both tail
+    /// calls); returns its `eax`.
+    pub fn rcef_get_chr_handle<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = if rcef_is_battle(mem) {
+            super::MS_GET_CHR_HANDLE
+        } else {
+            super::ATEL_CHAR_FROM_BIND_PC
+        };
+        let f = mem.rebase(f);
+        call(mem, f, &[i])
+    }
+
+    /// `rcefGetChrElemNo(i, n)` (`0x0092e000`, Switch name by layout):
+    /// `Ch_OptposGetElement(handle, n, 0)`, the element of the
+    /// character's option position `n`.
+    pub fn rcef_get_chr_elem_no<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        n: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_OPTPOS_GET_ELEMENT);
+        call(mem, f, &[h, n, 0])
+    }
+
+    /// `rcefGetChrMatrix(i, e, out)` (`0x0092e240`): `Ch_ElemGetMatrix`
+    /// of element `e`, then `rcefScaleMatrix100(out)`.
+    pub fn rcef_get_chr_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        e: u32,
+        out: u32,
+        call: &mut C,
+    ) {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
+        call(mem, f, &[h, e, out]);
+        let f = mem.rebase(super::SCALE_MATRIX_100);
+        call(mem, f, &[out]);
+    }
+
+    /// `rcefGetChrMatrixOpt(i, n, out)` (`0x0092e270`): [`rcef_get_chr_matrix`]
+    /// of option position `n`'s element ([`rcef_get_chr_elem_no`]).
+    pub fn rcef_get_chr_matrix_opt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        n: u32,
+        out: u32,
+        call: &mut C,
+    ) {
+        let e = rcef_get_chr_elem_no(mem, i, n, call);
+        rcef_get_chr_matrix(mem, i, e, out, call);
+    }
+
+    /// `rcefGetChrPos(i, e, out)` (`0x0092e2f0`): element `e`'s matrix
+    /// (`Ch_ElemGetMatrix` into `work`, 0x40 bytes: the original's
+    /// frame) and its translation row copied to `out`
+    /// (`rcCopyQword_0092d6f0`, whose `eax` it returns).
+    pub fn rcef_get_chr_pos<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        e: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
+        call(mem, f, &[h, e, work]);
+        let f = mem.rebase(super::COPY_QWORD_D6F0);
+        call(mem, f, &[out, work.wrapping_add(0x30)])
+    }
+
+    /// `rcefGetChrPosY0(i, e, out)` (`0x0092e380`): [`rcef_get_chr_pos`],
+    /// then `out.y` = 0.0.
+    pub fn rcef_get_chr_pos_y0<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        e: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let r = rcef_get_chr_pos(mem, i, e, out, work, call);
+        mem.write(out.wrapping_add(4), 0u32);
+        r
+    }
+
+    /// `rcefGetChrPosOpt(i, n, out)` (`0x0092e340`): [`rcef_get_chr_pos`]
+    /// of option position `n`'s element.
+    pub fn rcef_get_chr_pos_opt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        n: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let e = rcef_get_chr_elem_no(mem, i, n, call);
+        rcef_get_chr_pos(mem, i, e, out, work, call)
+    }
+
+    /// `rcefGetChrPosOptY0(i, n, out)` (`0x0092e360`): [`rcef_get_chr_pos_y0`]
+    /// of option position `n`'s element.
+    pub fn rcef_get_chr_pos_opt_y0<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        n: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let e = rcef_get_chr_elem_no(mem, i, n, call);
+        rcef_get_chr_pos_y0(mem, i, e, out, work, call)
+    }
+
+    /// `rcefGetChrWidth(i)` (`0x0092e3a0`): `Ch_GetThickness` times 10.0
+    /// (an `f64` in `.rdata`), stored as `f32`.
+    pub fn rcef_get_chr_width<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        call: &mut C,
+    ) -> f32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let t = ffx_chara::chr::bridge::ch_get_thickness(&*mem, h);
+        let k = super::TEN.get(mem);
+        f32::from_bits(crate::x87::store(f64::from(t) * k))
+    }
+
+    /// `rcefResetChrBaseMatrix(i)` (`0x0092e730`): `Ch_SetOrgMatrix(handle,
+    /// NULL)`.
+    pub fn rcef_reset_chr_base_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        call: &mut C,
+    ) {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_SET_ORG_MATRIX);
+        call(mem, f, &[h, 0]);
+    }
+
+    /// `rcefCreateChrClut(i)` (`0x0092deb0`): `Ch_ClutCreate(handle)` (a
+    /// tail call); returns its `eax`.
+    pub fn rcef_create_chr_clut<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_CLUT_CREATE);
+        call(mem, f, &[h])
+    }
+
+    /// `rcefDisposeChrClut(i)` (`0x0092df10`): `Ch_ClutDispose(handle)` (a
+    /// tail call); returns its `eax`.
+    pub fn rcef_dispose_chr_clut<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_CLUT_DISPOSE);
+        call(mem, f, &[h])
+    }
+
+    /// `rcefGetChrElemPos(i, e, v, out)` (`0x0092e0a0`): element `e`'s
+    /// matrix into `work` (0x40 bytes), `v` scaled in place by 1000.0
+    /// (`rcbgScaleVector_0092d690`), `v.w` = 1.0, then
+    /// `FFXVu0ApplyMatrix(out, work, v)`, whose `eax` it returns.
+    pub fn rcef_get_chr_elem_pos<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, v, out]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
+        call(mem, f, &[h, e, work]);
+        let k = crate::x87::copy(super::THOUSAND_F32.get(mem));
+        let f = mem.rebase(super::SCALE_VECTOR_D690);
+        call(mem, f, &[v, v, k]);
+        mem.write(v.wrapping_add(0xc), 0x3f80_0000u32);
+        let f = mem.rebase(super::APPLY_MATRIX);
+        call(mem, f, &[out, work, v])
+    }
+
+    /// `rcefGetChrEyeHeight(i)` (`0x0092e110`): option positions 0 and 2
+    /// (`Ch_OptposGet` into `work`, 0x20 bytes), (y0 - y2) times 10.0,
+    /// stored as `f32`.
+    pub fn rcef_get_chr_eye_height<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        work: u32,
+        call: &mut C,
+    ) -> f32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_OPTPOS_GET);
+        let (a, b) = (work.wrapping_add(0x10), work);
+        call(mem, f, &[h, 0, a]);
+        call(mem, f, &[h, 2, b]);
+        let ya = crate::x87::load(mem.read::<u32>(a.wrapping_add(4)));
+        let yb = crate::x87::load(mem.read::<u32>(b.wrapping_add(4)));
+        let k = super::TEN.get(mem);
+        f32::from_bits(crate::x87::store((ya - yb) * k))
+    }
+
+    /// `rcefGetChrElemOff(i, e, out)` (`0x0092e020`): the matrices of
+    /// element `e` and of option position 0's element (into `work`, 0x80
+    /// bytes: `e`'s first), `out` = their translation rows' difference
+    /// (`rcVu0Sub_0092d720(out, e's, option's)`) times 10.0
+    /// (`rcbgScaleVector_0092d690`, whose `eax` it returns).
+    pub fn rcef_get_chr_elem_off<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, out]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let n = rcef_get_chr_elem_no(mem, i, 0, call);
+        let (m1, m2) = (work, work.wrapping_add(0x40));
+        let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
+        call(mem, f, &[h, e, m1]);
+        call(mem, f, &[h, n, m2]);
+        let f = mem.rebase(super::VU0_SUB_D720);
+        call(mem, f, &[out, m1.wrapping_add(0x30), m2.wrapping_add(0x30)]);
+        let k = crate::x87::copy(super::TEN_F32.get(mem));
+        let f = mem.rebase(super::SCALE_VECTOR_D690);
+        call(mem, f, &[out, out, k])
+    }
+
+    /// `rcefGetChrFrontVec(i, out)` (`0x0092e170`): option position 0's
+    /// matrix ([`rcef_get_chr_matrix_opt`] into `work`, 0x40 bytes), its
+    /// third row copied to `out` and normalised (`rcVec3fNormalize`).
+    pub fn rcef_get_chr_front_vec<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        rcef_get_chr_matrix_opt(mem, i, 0, work, call);
+        let f = mem.rebase(super::COPY_QWORD_D6F0);
+        call(mem, f, &[out, work.wrapping_add(0x20)]);
+        let f = mem.rebase(super::VEC3F_NORMALIZE);
+        call(mem, f, &[out]);
+    }
+
+    /// `rcefObjAttachChrOpt(obj, i, n)` (`0x0092f9a0`):
+    /// `rcefObjAttachChr(obj, i, Ch_OptposGetElement(handle, n, 0))` (a
+    /// tail call).
+    pub fn rcef_obj_attach_chr_opt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        i: u32,
+        n: u32,
+        call: &mut C,
+    ) {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_OPTPOS_GET_ELEMENT);
+        let e = call(mem, f, &[h, n, 0]);
+        let f = mem.rebase(super::OBJ_ATTACH_CHR);
+        call(mem, f, &[obj, i, e]);
     }
 }
 

@@ -2540,6 +2540,82 @@ ported! {
     yiRender_updatematrixp @ 0x0090_dd80 => extern "C" fn shim_yi_render_updatematrixp(r: u32) -> u32 {
         yi::bridge::yi_render_updatematrixp(&mut mem(), r)
     }
+    /// `rcefGetChrHandle(i)` (field agent r1, group B).
+    rcefGetChrHandle @ 0x0092_e1c0 => extern "C" fn shim_rcef_get_chr_handle(i: u32) -> u32 {
+        task::bridge::rcef_get_chr_handle(&mut mem(), i, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrElemNo(i, n)`.
+    rcefGetChrElemNo @ 0x0092_e000 => extern "C" fn shim_rcef_get_chr_elem_no(i: u32, n: u32) -> u32 {
+        task::bridge::rcef_get_chr_elem_no(&mut mem(), i, n, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrMatrix(i, e, out)`.
+    rcefGetChrMatrix @ 0x0092_e240 => extern "C" fn shim_rcef_get_chr_matrix(i: u32, e: u32, out: u32) {
+        task::bridge::rcef_get_chr_matrix(&mut mem(), i, e, out, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefGetChrMatrixOpt(i, n, out)`.
+    rcefGetChrMatrixOpt @ 0x0092_e270 => extern "C" fn shim_rcef_get_chr_matrix_opt(i: u32, n: u32, out: u32) {
+        task::bridge::rcef_get_chr_matrix_opt(&mut mem(), i, n, out, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefGetChrPos(i, e, out)`.
+    rcefGetChrPos @ 0x0092_e2f0 => extern "C" fn shim_rcef_get_chr_pos(i: u32, e: u32, out: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        task::bridge::rcef_get_chr_pos(&mut mem(), i, e, out, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrPosY0(i, e, out)`.
+    rcefGetChrPosY0 @ 0x0092_e380 => extern "C" fn shim_rcef_get_chr_pos_y0(i: u32, e: u32, out: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        task::bridge::rcef_get_chr_pos_y0(&mut mem(), i, e, out, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrPosOpt(i, n, out)`.
+    rcefGetChrPosOpt @ 0x0092_e340 => extern "C" fn shim_rcef_get_chr_pos_opt(i: u32, n: u32, out: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        task::bridge::rcef_get_chr_pos_opt(&mut mem(), i, n, out, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrPosOptY0(i, n, out)`.
+    rcefGetChrPosOptY0 @ 0x0092_e360 => extern "C" fn shim_rcef_get_chr_pos_opt_y0(i: u32, n: u32, out: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        task::bridge::rcef_get_chr_pos_opt_y0(&mut mem(), i, n, out, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrWidth(i)`.
+    rcefGetChrWidth @ 0x0092_e3a0 => extern "C" fn shim_rcef_get_chr_width(i: u32) -> f32 {
+        task::bridge::rcef_get_chr_width(&mut mem(), i, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrEyeHeight(i)`.
+    rcefGetChrEyeHeight @ 0x0092_e110 => extern "C" fn shim_rcef_get_chr_eye_height(i: u32) -> f32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_get_chr_eye_height(&mut mem(), i, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrElemPos(i, e, v, out)`.
+    rcefGetChrElemPos @ 0x0092_e0a0 => extern "C" fn shim_rcef_get_chr_elem_pos(i: u32, e: u32, v: u32, out: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        task::bridge::rcef_get_chr_elem_pos(&mut mem(), [i, e, v, out], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrElemOff(i, e, out)`.
+    rcefGetChrElemOff @ 0x0092_e020 => extern "C" fn shim_rcef_get_chr_elem_off(i: u32, e: u32, out: u32) -> u32 {
+        let mut w = super::StackFrame::<32>::new();
+        task::bridge::rcef_get_chr_elem_off(&mut mem(), [i, e, out], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefGetChrFrontVec(i, out)`.
+    rcefGetChrFrontVec @ 0x0092_e170 => extern "C" fn shim_rcef_get_chr_front_vec(i: u32, out: u32) {
+        let mut w = super::StackFrame::<16>::new();
+        task::bridge::rcef_get_chr_front_vec(&mut mem(), i, out, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefResetChrBaseMatrix(i)`.
+    rcefResetChrBaseMatrix @ 0x0092_e730 => extern "C" fn shim_rcef_reset_chr_base_matrix(i: u32) {
+        task::bridge::rcef_reset_chr_base_matrix(&mut mem(), i, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefCreateChrClut(i)`.
+    rcefCreateChrClut @ 0x0092_deb0 => extern "C" fn shim_rcef_create_chr_clut(i: u32) -> u32 {
+        task::bridge::rcef_create_chr_clut(&mut mem(), i, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefDisposeChrClut(i)`.
+    rcefDisposeChrClut @ 0x0092_df10 => extern "C" fn shim_rcef_dispose_chr_clut(i: u32) -> u32 {
+        task::bridge::rcef_dispose_chr_clut(&mut mem(), i, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefObjAttachChrOpt(obj, i, n)`.
+    rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
+        task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `yiRotMatrixSeq(m, angles, order)`.
     yiRotMatrixSeq @ 0x0091_51c0 => extern "C" fn shim_yi_rot_matrix_seq(m: u32, angles: u32, order: u32) -> u32 {
         yi::bridge::yi_rot_matrix_seq(&mut mem(), m, angles, order, &mut |_, f, a| call_cdecl(f, a))
