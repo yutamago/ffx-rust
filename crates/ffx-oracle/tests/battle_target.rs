@@ -6185,6 +6185,128 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         move_steps(a, b, &mut r17, &w, &f, whole);
         ball_splines(a, b, &mut r17, &w, &f, out);
     }
+    // the teardown last (it clears the actors and the script managers)
+    let mut r18 = Xorshift(0x18e5_0001 ^ u32::from(synthetic));
+    let work = scratch(a, b, 0x820);
+    for _ in 0..200 {
+        teardown(a, b, &mut r18, work);
+    }
+}
+
+/// The battle's teardown leaves (`ffx_battle::free`): the heap,
+/// `Sg_FreeA` and `op_et_battle_effect_free` are the logging stubs
+/// ([`PROCESS_CALLEES`], [`FREE_CALLEES`]); `AtelRemoveCtrlWork` and
+/// `Yn_SeaResetMatrix` run as the originals (the latter in both).
+fn teardown(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, work: u32) {
+    use ffx_battle::free::bridge as fr;
+    let mut call = game_call;
+    let ptr = |rng: &mut Xorshift| [0, rng.next() | 1, rng.next()][rng.below(3) as usize];
+    for g in [
+        ffx_battle::actor::bridge::CHR_TOP,
+        ffx_battle::actor::bridge::MON_TOP,
+        ffx_battle::actor::bridge::WEAPON_TOP,
+        ffx_battle::misc::bridge::NUMBERS,
+        ffx_battle::misc::bridge::EFFECT_BUFFER,
+        ffx_battle::misc::bridge::ITEM_MEM,
+        ffx_battle::misc::bridge::ITEM_MEM2,
+        ffx_battle::misc::bridge::ET_EFFECT_READ,
+        ffx_battle::parse::bridge::EFFECT_READ_STAT,
+        fr::FIELD_ITEM,
+        fr::FIELD_ITEM2,
+    ] {
+        let v = ptr(rng);
+        set(a, b, g, v);
+    }
+    let v = ptr(rng).cast_signed();
+    set(a, b, ffx_battle::state::bridge::MEM_CHECK2, v);
+    let m = ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr;
+    for o in [4, 0xc, 0x58, 0x60] {
+        poke(a, b, m + o, &ptr(rng).to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        ffx_battle::minor::bridge::ATEL_CAM_ON,
+        u8::from(rng.below(2) == 0),
+    );
+    let records = ffx_battle::atel::bridge::SCRIPT_RECORDS.ptr(b).addr;
+    for k in 0..4 {
+        poke(a, b, records + 0x20 * k + 4, &ptr(rng).to_le_bytes());
+    }
+    let text = ffx_battle::flow::bridge::MENU_TEXT.ptr(b).addr;
+    for k in 0..17 {
+        poke(a, b, text + 12 * k, &[u8::from(rng.below(3) == 0)]);
+        poke(a, b, text + 12 * k + 8, &ptr(rng).to_le_bytes());
+    }
+    // the special stage: its work's up vector pointer is null or a word of
+    // the work itself
+    let kind = [0i8, 1, 2, 3, 4, -1][rng.below(6) as usize];
+    set(a, b, fr::SPECIAL_KIND, kind);
+    let up = [0, work + 0x40][rng.below(2) as usize];
+    poke(a, b, work + 0x810, &up.to_le_bytes());
+    let w = if (1..=3).contains(&kind) || rng.below(2) == 0 {
+        work
+    } else {
+        0
+    };
+    set(a, b, fr::SPECIAL_MEM, w);
+    for (k, (name, sym)) in (0..).zip([
+        ("MsBtlChrFreeMem", 0x0079_3500),
+        ("MsNumberFreeMem", 0x0079_f990),
+        ("MsEtEffectStop", 0x0079_e7b0),
+        ("MsEffectEnvFree", 0x0078_7a40),
+        ("MsEffectBufferFree_00782750", 0x0078_2750),
+        ("MsBattleSpecialFree", 0x0079_dde0),
+        ("MsBtlFreeItemMem", 0x0079_9f70),
+        ("MsMemCheckFree", 0x0079_9ec0),
+        ("MsFieldItemFree", 0x0079_8f90),
+    ]) {
+        twin(name, a, b, sym, &[], 0, |m| {
+            dm(m, |m| match k {
+                0 => fr::ms_btl_chr_free_mem(m, &mut call),
+                1 => fr::ms_number_free_mem(m, &mut call),
+                2 => fr::ms_et_effect_stop(m, &mut call),
+                3 => fr::ms_effect_env_free(m, &mut call),
+                4 => fr::ms_effect_buffer_free(m, &mut call),
+                5 => fr::ms_battle_special_free(m, &mut call),
+                6 => fr::ms_btl_free_item_mem(m, &mut call),
+                7 => fr::ms_mem_check_free(m, &mut call),
+                _ => fr::ms_field_item_free(m, &mut call),
+            });
+            0
+        });
+        same(name, a, b);
+    }
+    twin("MsAtelRegistFree", a, b, 0x0079_7a90, &[], 0, |m| {
+        dm(m, |m| {
+            fr::ms_atel_regist_free(m, &mut call, ffx_script::vm::bridge::atel_remove_ctrl_work);
+        });
+        0
+    });
+    same("MsAtelRegistFree", a, b);
+    for _ in 0..2 {
+        let i = rng.below(4);
+        twin(
+            "MsBtlScriptRecordFree_00782640",
+            a,
+            b,
+            0x0078_2640,
+            &[i],
+            0,
+            |m| {
+                dm(m, |m| fr::ms_btl_script_record_free(m, &mut call, i));
+                0
+            },
+        );
+        same("MsBtlScriptRecordFree_00782640", a, b);
+    }
+    for _ in 0..6 {
+        let i = [rng.below(17), rng.below(0x14), rng.next()][rng.below(3) as usize];
+        twin("MsMenuFreeText", a, b, 0x0078_fb00, &[i], ALL, |m| {
+            dm(m, |m| fr::ms_menu_free_text(m, &mut call, i)).cast_unsigned()
+        });
+        same(&format!("MsMenuFreeText {i:#x}"), a, b);
+    }
 }
 
 /// `_CIcos` on a double as the patched thunk computes it (`x²`,

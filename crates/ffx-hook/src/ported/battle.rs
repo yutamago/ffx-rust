@@ -11,6 +11,7 @@ use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
+use ffx_battle::free::bridge as free;
 use ffx_battle::input::bridge as input;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
@@ -3351,5 +3352,56 @@ ported! {
     /// `MsCameraMoveCalc(near, value, start, mv)`: the CRT's `_CIcos`.
     MsCameraMoveCalc @ 0x007b_da80 => extern "C" fn ms_camera_move_calc(near: u32, value: u32, start: u32, mv: u32) -> u32 {
         camera::ms_camera_move_calc(&mut mem(), &crt_cos, near, value, start, mv)
+    }
+    /// `MsBtlChrFreeMem()`: the heap through the game.
+    MsBtlChrFreeMem @ 0x0079_3500 => extern "C" fn ms_btl_chr_free_mem() {
+        free::ms_btl_chr_free_mem(&mut mem(), &mut call_ptr);
+    }
+    /// `MsNumberFreeMem()`: the heap through the game.
+    MsNumberFreeMem @ 0x0079_f990 => extern "C" fn ms_number_free_mem() {
+        free::ms_number_free_mem(&mut mem(), &mut call_ptr);
+    }
+    /// `MsAtelRegistFree()`: the heap through the game, `AtelRemoveCtrlWork`
+    /// (script).
+    MsAtelRegistFree @ 0x0079_7a90 => extern "C" fn ms_atel_regist_free() {
+        free::ms_atel_regist_free(&mut mem(), &mut call_ptr, ffx_script::vm::bridge::atel_remove_ctrl_work);
+    }
+    /// `MsEtEffectStop()`: `op_et_battle_effect_free` (vfx).
+    MsEtEffectStop @ 0x0079_e7b0 => extern "C" fn ms_et_effect_stop() {
+        free::ms_et_effect_stop(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBtlScriptRecordFree_00782640(i)`: `Sg_FreeA` (main).
+    MsBtlScriptRecordFree_00782640 @ 0x0078_2640 => extern "C" fn ms_btl_script_record_free(i: u32) {
+        free::ms_btl_script_record_free(&mut mem(), &mut call_ptr, i);
+    }
+    /// `MsEffectEnvFree()`: the heap through the game.
+    MsEffectEnvFree @ 0x0078_7a40 => extern "C" fn ms_effect_env_free() {
+        free::ms_effect_env_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsEffectBufferFree_00782750()`: the heap through the game.
+    MsEffectBufferFree_00782750 @ 0x0078_2750 => extern "C" fn ms_effect_buffer_free() {
+        free::ms_effect_buffer_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBattleSpecialFree()`: `Yn_SeaResetMatrix` (map) and the heap
+    /// through the game.
+    MsBattleSpecialFree @ 0x0079_dde0 => extern "C" fn ms_battle_special_free() {
+        free::ms_battle_special_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBtlFreeItemMem()`: the heap through the game.
+    MsBtlFreeItemMem @ 0x0079_9f70 => extern "C" fn ms_btl_free_item_mem() {
+        free::ms_btl_free_item_mem(&mut mem(), &mut call_ptr);
+    }
+    /// `MsMemCheckFree()`: the heap through the game.
+    MsMemCheckFree @ 0x0079_9ec0 => extern "C" fn ms_mem_check_free() {
+        free::ms_mem_check_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsMenuFreeText(i)`: the heap through the game; the original's
+    /// clear of its own argument slots (dead caller stack) is not done.
+    MsMenuFreeText @ 0x0078_fb00 => extern "C" fn ms_menu_free_text(i: u32) -> i32 {
+        free::ms_menu_free_text(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsFieldItemFree()`: the heap through the game.
+    MsFieldItemFree @ 0x0079_8f90 => extern "C" fn ms_field_item_free() {
+        free::ms_field_item_free(&mut mem(), &mut call_ptr);
     }
 }
