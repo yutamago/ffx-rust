@@ -426,4 +426,17 @@ pub mod bridge {
         let data = word(mem, 0x0184_1e08);
         upload(mem, &mut call, data, 0x2ea0, 0, (0x40, 0x40))
     }
+
+    /// `TOMenuTransFacePlyTex()` (`0x00901100`): the menu's face texture
+    /// (0x200 x 0x100, format 0x13) to 0x3a00; the upload's `eax`. The
+    /// original pushes `0x01c80000` with no relocation entry, so the
+    /// address stays literal even in a relocated image (the game runs at
+    /// its preferred base, where both agree).
+    pub fn trans_face_ply_tex<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data = 0x01c8_0000;
+        upload(mem, &mut call, data, 0x3a00, 0x13, (0x200, 0x100))
+    }
 }

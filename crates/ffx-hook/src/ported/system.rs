@@ -1132,6 +1132,38 @@ ported! {
     TOTransTexture_008b1190 @ 0x008b_1190 => extern "C" fn to_trans_texture_menu() -> u32 {
         intl::bridge::trans_texture_menu(&mut mem(), call_ptr)
     }
+    /// `0x0076d0e0(file, archive)`.
+    cd_channel_state_0076d0e0 @ 0x0076_d0e0 => extern "C" fn cd_channel_state(file: u32, archive: u32) -> u32 {
+        cd::bridge::channel_state(&mem(), file, archive)
+    }
+    /// `0x008a2b10(rec)`.
+    TOBtlCtbSlideStep_008a2b10 @ 0x008a_2b10 => extern "C" fn to_btl_ctb_slide_step(rec: u32) -> u32 {
+        window::bridge::slide_step(&mut mem(), rec, 0x008a_2b60)
+    }
+    /// `0x008a2b60(rec)`.
+    TOBtlCtbAnimStep_008a2b60 @ 0x008a_2b60 => extern "C" fn to_btl_ctb_anim_step_back(rec: u32) -> u32 {
+        window::bridge::anim_step_8a2b60(&mut mem(), rec)
+    }
+    /// `0x008a2bc0(rec)`.
+    TOBtlCtbSlideStep_008a2bc0 @ 0x008a_2bc0 => extern "C" fn to_btl_ctb_slide_step2(rec: u32) -> u32 {
+        window::bridge::slide_step(&mut mem(), rec, 0x008a_2c10)
+    }
+    /// `0x008a2c10(rec)`.
+    TOBtlCtbAnimWait_008a2c10 @ 0x008a_2c10 => extern "C" fn to_btl_ctb_anim_wait(rec: u32) -> u32 {
+        window::bridge::anim_wait_8a2c10(&mut mem(), rec)
+    }
+    /// `0x009066b0(u, v, k)`.
+    TOSetUIVertexUV_009066b0 @ 0x0090_66b0 => extern "C" fn to_set_ui_vertex_uv(u: f32, v: f32, k: u32) -> u32 {
+        render::bridge::set_ui_vertex_uv(&mut mem(), u, v, k)
+    }
+    /// `0x009066d0(x, y, k)`.
+    TOSetUIVertexXY_009066d0 @ 0x0090_66d0 => extern "C" fn to_set_ui_vertex_xy(x: f32, y: f32, k: u32) -> u32 {
+        render::bridge::set_ui_vertex_xy(&mut mem(), x, y, k)
+    }
+    /// `TOMenuTransFacePlyTex()`.
+    TOMenuTransFacePlyTex @ 0x0090_1100 => extern "C" fn to_menu_trans_face_ply_tex() -> u32 {
+        intl::bridge::trans_face_ply_tex(&mut mem(), call_ptr)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)

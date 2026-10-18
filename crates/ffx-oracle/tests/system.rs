@@ -11754,7 +11754,8 @@ fn round20_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         // the save window
         let words: Vec<u8> = (0..0x20)
             .flat_map(|_| {
-                let w: u16 = if rng.next().is_multiple_of(2) {
+                // a high bit: the generator's low bits alternate
+                let w: u16 = if (rng.next() >> 16).is_multiple_of(2) {
                     0xff
                 } else {
                     rng.next() as u16
@@ -17285,4 +17286,129 @@ fn round31_choices_match_the_original_on_the_snapshot() {
         return;
     };
     round31_choices(&mut a, &mut b, &mut Xorshift(0x4031_0042));
+}
+
+/// A UI vertex setter's bridge.
+type SetPair = fn(&mut Oracle, f32, f32, u32) -> u32;
+
+/// The CTB window's animation steps, the CD channel lookup, the UI vertex
+/// setters and `TOMenuTransFacePlyTex`.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round31_small(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let rec = alloc(a, b, 0x20);
+    for k in 0..2000u32 {
+        let bytes: [u32; 8] = std::array::from_fn(|_| rng.next());
+        put(a, b, rec, bytes);
+        put(
+            a,
+            b,
+            rec + 0xf,
+            ((rng.next() % 5) as u8).wrapping_sub(u8::from(k % 7 == 0)),
+        );
+        put(
+            a,
+            b,
+            rec + 0xc,
+            [0x0fu8, 0x10, 0x11, 0x80, 0x7f, rng.next() as u8][(rng.next() % 6) as usize],
+        );
+        let (f, which) = [
+            (0x008a_2b10u32, 0),
+            (0x008a_2bc0, 1),
+            (0x008a_2b60, 2),
+            (0x008a_2c10, 3),
+        ][(k % 4) as usize];
+        if which == 2 {
+            put(a, b, rec + 0xf, (rng.next() % 4) as u8);
+        }
+        let r = eax(a, f, &[rec]);
+        let s = match which {
+            0 => window::bridge::slide_step(b, rec, 0x008a_2b60),
+            1 => window::bridge::slide_step(b, rec, 0x008a_2c10),
+            2 => window::bridge::anim_step_8a2b60(b, rec),
+            _ => window::bridge::anim_wait_8a2c10(b, rec),
+        };
+        assert_eq!(r, s, "anim step {f:#x} {k}");
+        same_memory(&format!("anim step {f:#x} {k}"), a, b);
+    }
+    // the CD channels (sometimes only the last one matches)
+    let channels = cd::bridge::CHANNELS.ptr(a).addr;
+    for k in 0..400u32 {
+        let (file, archive) = (rng.next() % 2, rng.next() % 2);
+        let last_only = k % 8 == 0;
+        for c in 0..64u32 {
+            let at = channels + c * 0x38;
+            put(a, b, at + 8, rng.next() % 2);
+            put(a, b, at + 0x28, rng.next() % 2);
+            let used = if last_only {
+                c == 63
+            } else {
+                rng.next().is_multiple_of(3)
+            };
+            put(a, b, at + 0x31, u8::from(used));
+        }
+        if last_only {
+            put(a, b, channels + 63 * 0x38 + 8, archive);
+            put(a, b, channels + 63 * 0x38 + 0x28, file);
+        }
+        set(a, b, cd::bridge::READING, rng.next() % 2);
+        let reading = if last_only { 63 } else { rng.next() % 16 };
+        set(a, b, cd::bridge::READING_CHANNEL, reading);
+        assert_eq!(
+            eax(a, 0x0076_d0e0, &[file, archive]),
+            cd::bridge::channel_state(b, file, archive),
+            "channel state {k}"
+        );
+    }
+    // the UI vertices (no signalling NaNs: the emulator keeps them)
+    let quiet = |rng: &mut Xorshift| loop {
+        let f = rng.float();
+        if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+            return f;
+        }
+    };
+    for k in 0..400u32 {
+        let (x, y, n) = (quiet(rng), quiet(rng), rng.next() % 4);
+        let (f, set_pair): (u32, SetPair) = if k % 2 == 0 {
+            (0x0090_66d0, render::bridge::set_ui_vertex_xy)
+        } else {
+            (0x0090_66b0, render::bridge::set_ui_vertex_uv)
+        };
+        let r = eax(a, f, &[x.to_bits(), y.to_bits(), n]);
+        assert_eq!(r, set_pair(b, x, y, n), "ui vertex {k}");
+        same_memory(&format!("ui vertex {k}"), a, b);
+    }
+    // TOMenuTransFacePlyTex over a logging TOTransImageHL
+    let log = alloc(a, b, 0x40);
+    let cursor = alloc(a, b, 4);
+    let ret = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0, &copy_logger(cursor, 0x0b10, 7, &ret_cell(ret)));
+    redirect(a, b, 0x008b_0b10, s);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for k in 0..4 {
+        put(a, b, cursor, log);
+        put(a, b, ret, rng.next());
+        let r = eax(a, 0x0090_1100, &[]);
+        assert_eq!(
+            r,
+            intl::bridge::trans_face_ply_tex(b, b_call),
+            "face texture {k}"
+        );
+        same_memory(&format!("face texture {k}"), a, b);
+    }
+}
+
+#[test]
+fn round31_small_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round31_small(&mut a, &mut b, &mut Xorshift(0x4031_0051));
+}
+
+#[test]
+fn round31_small_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round31_small(&mut a, &mut b, &mut Xorshift(0x4031_0052));
 }

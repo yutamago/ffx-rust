@@ -1186,3 +1186,25 @@ the line, 0x40..0xbf put x at `4a - 0x100`, 0xe1..0xef step x by `a -
 record's `+8` is the widest item; on map 0x17, for the record with `+0x14`
 0x1c7 and `+0x16` 199, the items are stacked instead (x 0, y `+ 21.5k`).
 `eax` is the item count, or the line record when there is none.
+
+## Small helpers (round 31)
+
+- The CTB window's line animation runs four 4-frame steps through the
+  record's step function (`+0x14`): `TOBtlCtbAnimStep_008a2ad0` (+4, +7,
+  +11, +16 to `+0x10`), `TOBtlCtbSlideStep_008a2b10` (a quarter of the
+  row change from `i8 +0xd` to `+0xc`, 0x16 per row, to `+0x12`, then
+  exactly on the row), `TOBtlCtbAnimStep_008a2b60` (-16, -11, -7, -4),
+  then the step function is cleared and a record whose row is 0x10 or
+  more switched off (byte `+0`). `Tick4_008a2ba0` waits four frames before
+  the same slide (`0x008a2bc0`) and wait (`0x008a2c10`). Steps outside
+  0..4 read the original's stack table out of range; the ports add 0.
+- `cd_channel_state_0076d0e0(file, archive)`: the first of the 64 CD
+  channels (`g_CdChannels`, 0x38 bytes) in use (`+0x31`) for that file
+  (`+0x28`) and archive (`+8`): 2 while it is the one being read
+  (`g_CdLib +0x70` set, `+0x74` its index), else 1; 0 for none.
+- `0x009066d0(x, y, k)` and `0x009066b0(u, v, k)` set vertex `k` (0x20
+  bytes) of the UI element record at `0x025d1700` (position at `+0`,
+  texture coordinates at `+8`); `eax` is `k << 5`.
+- `TOMenuTransFacePlyTex` uploads `0x01c80000` (0x200x0x100, format 0x13)
+  to 0x3a00. That push has no relocation entry: the address is literal
+  even when the image is relocated.

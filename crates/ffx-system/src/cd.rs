@@ -274,6 +274,33 @@ pub mod bridge {
         mem.write(c.wrapping_add(0x34), 0u8);
     }
 
+    /// `g_CdLib + 0x70`: non-zero while a channel is being read.
+    pub const READING: Global<u32> = Global::new(0x0231_0cb0);
+    /// `g_CdLib + 0x74`: the channel being read.
+    pub const READING_CHANNEL: Global<u32> = Global::new(0x0231_0cb4);
+
+    /// `0x0076d0e0(file, archive)`: the first of the 64 [`CHANNELS`] in use (byte
+    /// `+0x31` non-zero) for file `+0x28` and archive `+8` (64 channels):
+    /// 2 when it is the one being read ([`READING`], [`READING_CHANNEL`]),
+    /// 1 when it is only queued, 0 for none.
+    pub fn channel_state(mem: &impl Mem, file: u32, archive: u32) -> u32 {
+        let base = CHANNELS.ptr(mem).addr;
+        for k in 0..64u32 {
+            let ch = base.wrapping_add(k * 0x38);
+            if mem.read::<u8>(ch.wrapping_add(0x31)) != 0
+                && mem.read::<u32>(ch.wrapping_add(0x28)) == file
+                && mem.read::<u32>(ch.wrapping_add(8)) == archive
+            {
+                return if READING.get(mem) != 0 && READING_CHANNEL.get(mem) == k {
+                    2
+                } else {
+                    1
+                };
+            }
+        }
+        0
+    }
+
     /// `0x0076c250(n)`: [`cd_file_sector`] of `n` relative to the current
     /// module ([`FILE_BASE`] added; a tail jump).
     pub fn cd_module_file_sector_rel(mem: &impl Mem, n: i32) -> u32 {
