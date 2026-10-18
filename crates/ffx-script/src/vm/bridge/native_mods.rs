@@ -2215,6 +2215,292 @@ pub fn native_003b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
+// ---- group 6: the camera and screen ----
+
+/// The worker's camera handle (`native_cam::cam`: its `+0x3c` slot, filled
+/// on first use through `MsAtelGetCameraID`).
+fn cam(h: &mut impl NativeHost, w: u32) -> u32 {
+    super::native_cam::cam(h, w)
+}
+
+/// `f(worker, args, stack, k...)`; 0.
+fn fwd0<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32, f: u32, k: &[u32]) -> u32 {
+    let mut args = [w, a, s, 0, 0];
+    let n = 3 + k.len().min(2);
+    args[3..n].copy_from_slice(&k[..n - 3]);
+    call(h, f, &args[..n]);
+    0
+}
+
+/// `0x6009` (`0x007b93e0`): `0x007bab90(worker, args, stack, 1)`; 0.
+pub fn native_6009<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_ab90, &[1])
+}
+
+/// `0x600b` (`0x007b9480`): `0x007bb2b0(worker, args, stack, 1, 1)`; 0.
+pub fn native_600b<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b2b0, &[1, 1])
+}
+
+/// `0x600c` (`0x007b94c0`): `MsAtelCameraRefAddCircleArea_007bb370(worker,
+/// args, stack, 1, 0)`; 0.
+pub fn native_600c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b370, &[1, 0])
+}
+
+/// `0x600d` (`0x007b9500`): `MsAtelCameraRefAddCircleArea_007bb370(worker,
+/// args, stack, 1, 1)`; 0.
+pub fn native_600d<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b370, &[1, 1])
+}
+
+/// `(on)`: `0x007bf1a0(cam, side, on & 1)`; the camera handle.
+fn cam_bit<H: NativeHost>(h: &mut H, w: u32, s: u32, side: u32) -> u32 {
+    let c = cam(h, w);
+    let v = pop(h, s);
+    call(h, 0x007b_f1a0, &[c, side, v & 1]);
+    c
+}
+
+/// `0x600e` (`0x007b95a0`): `(on)`: `0x007bf1a0(cam, 1, on & 1)`; the
+/// camera handle.
+pub fn native_600e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    cam_bit(h, w, s, 1)
+}
+
+/// `0x602c` (`0x007ba350`): `(on)`: `0x007bf1a0(cam, 0, on & 1)`; the
+/// camera handle.
+pub fn native_602c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    cam_bit(h, w, s, 0)
+}
+
+/// `0x6018` (`0x007b9a80`): `0x007bb210(worker, args, stack, 1)`; 0.
+pub fn native_6018<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b210, &[1])
+}
+
+/// `0x6036` (`0x007b8190`): `0x007bb210(worker, args, stack, 0)`; 0.
+pub fn native_6036<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b210, &[0])
+}
+
+/// `0x6022` (`0x007b9e10`): `0x007bb5d0(worker, args, stack, 0, 0)`; 0.
+pub fn native_6022<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b5d0, &[0, 0])
+}
+
+/// `0x6023` (`0x007b9e90`): `0x007bb5d0(worker, args, stack, 0, -1)`; 0.
+pub fn native_6023<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b5d0, &[0, u32::MAX])
+}
+
+/// `0x6024` (`0x007b9f20`): `MsAtelCameraEyeAddArea_007bb410(worker,
+/// args, stack, 0, -1)`; 0.
+pub fn native_6024<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b410, &[0, u32::MAX])
+}
+
+/// `0x6025` (`0x007b9fa0`): `MsAtelCameraEyeAddArea_007bb410(worker,
+/// args, stack, 0, 0)`; 0.
+pub fn native_6025<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b410, &[0, 0])
+}
+
+/// `0x6026` (`0x007b9fc0`): `MsAtelCameraEyeAddArea_007bb410(worker,
+/// args, stack, 0, 1)`; 0.
+pub fn native_6026<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b410, &[0, 1])
+}
+
+/// `(frames)`: `MsCameraMoveFrame(cam, side, mode, frames, ty)`
+/// (`0x007bde50`); 0.
+fn cam_move<H: NativeHost>(h: &mut H, w: u32, s: u32, side: u32, mode: u32, ty: u32) -> u32 {
+    let c = cam(h, w);
+    let n = pop(h, s);
+    call(h, 0x007b_de50, &[c, side, mode, n, ty]);
+    0
+}
+
+/// `0x602f` (`0x007b7fe0`): `(frames)`: `MsCameraMoveFrame(cam, 0, 1,
+/// frames, 1)`; 0.
+pub fn native_602f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    cam_move(h, w, s, 0, 1, 1)
+}
+
+/// `0x6031` (`0x007b80c0`): `(frames)`: `MsCameraMoveFrame(cam, 0, 1,
+/// frames, 3)`; 0.
+pub fn native_6031<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    cam_move(h, w, s, 0, 1, 3)
+}
+
+/// `0x6037` (`0x007b81b0`): `MsCameraResetDirVector(cam, 0)`
+/// (`0x007bec90`); the camera handle.
+pub fn native_6037<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let c = cam(h, w);
+    call(h, 0x007b_ec90, &[c, 0]);
+    c
+}
+
+/// `0x6039` (`0x007b82d0`): `Cam_IsMoving(cam, 0)` (`0x007bdd20`).
+pub fn native_6039<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let c = cam(h, w);
+    call(h, 0x007b_dd20, &[c, 0])
+}
+
+/// `0x603d` (`0x007ba000`): `0x007bac40(worker, args, stack, 0)`; 0.
+pub fn native_603d<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_ac40, &[0])
+}
+
+/// `0x603e` (`0x007b86d0`): `0x007bad10(worker, args, stack, 1)`; 0.
+pub fn native_603e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_ad10, &[1])
+}
+
+/// `(id, v)`: `MsScreenMove(id, side, v, ty)` (`0x007bbdf0`); 0.
+fn screen_move<H: NativeHost>(h: &mut H, s: u32, side: u32, ty: u32) -> u32 {
+    let [v, id] = pops::<2>(h, s);
+    call(h, 0x007b_bdf0, &[id, side, v, ty]);
+    0
+}
+
+/// `0x6053` (`0x007b8c60`): `(id, v)`: `MsScreenMove(id, 0, v, 1)`; 0.
+pub fn native_6053<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    screen_move(h, s, 0, 1)
+}
+
+/// `0x6054` (`0x007b8c90`): `(id, v)`: `MsScreenMove(id, 0, v, 3)`; 0.
+pub fn native_6054<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    screen_move(h, s, 0, 3)
+}
+
+/// `0x6056` (`0x007b8d10`): `(id, v)`: `MsScreenMove(id, 1, v, 1)`; 0.
+pub fn native_6056<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    screen_move(h, s, 1, 1)
+}
+
+/// `0x6057` (`0x007b8d40`): `(id, v)`: `MsScreenMove(id, 1, v, 3)`; 0.
+pub fn native_6057<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    screen_move(h, s, 1, 3)
+}
+
+/// `0x6065` (`0x007b87d0`): `(p)`: `MsCameraPriority(cam, p)`
+/// (`0x007be0a0`); the camera handle.
+pub fn native_6065<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let c = cam(h, w);
+    let p = pop(h, s);
+    call(h, 0x007b_e0a0, &[c, p]);
+    c
+}
+
+/// `0x6068` (`0x007b9460`): `MsAtelScreenShake(worker, args, stack, 2)`
+/// (`0x007bb840`); 0.
+pub fn native_6068<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_b840, &[2])
+}
+
+/// `MsAtelCameraShake(worker, args, stack, side, kind)` (`0x007bb8c0`),
+/// its `EAX`.
+fn shake<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32, side: u32, kind: u32) -> u32 {
+    call(h, 0x007b_b8c0, &[w, a, s, side, kind])
+}
+
+/// `0x606a` (`0x007b9090`): `MsAtelCameraShake(worker, args, stack, 1,
+/// 3)`'s `EAX`.
+pub fn native_606a<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    shake(h, w, a, s, 1, 3)
+}
+
+/// `0x606d` (`0x007b9170`): `MsAtelCameraShake(.., 1, 4)`'s `EAX`.
+pub fn native_606d<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    shake(h, w, a, s, 1, 4)
+}
+
+/// `0x606f` (`0x007b91d0`): `MsAtelCameraShake(.., 0, 5)`'s `EAX`.
+pub fn native_606f<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    shake(h, w, a, s, 0, 5)
+}
+
+/// `0x6070` (`0x007b9200`): `MsAtelCameraShake(.., 1, 5)`'s `EAX`.
+pub fn native_6070<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    shake(h, w, a, s, 1, 5)
+}
+
+/// `0x6072` (`0x007b9240`): `MsAtelCameraShake(.., 0, 6)`'s `EAX`.
+pub fn native_6072<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    shake(h, w, a, s, 0, 6)
+}
+
+/// `0x6073` (`0x007b9280`): `MsAtelCameraShake(.., 1, 6)`'s `EAX`.
+pub fn native_6073<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    shake(h, w, a, s, 1, 6)
+}
+
+/// `0x6075` (`0x007b8b50`): `(b, a)`: `0x007bc870(b, a)`; 0.
+pub fn native_6075<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b] = pops::<2>(h, s);
+    call(h, 0x007b_c870, &[b, a]);
+    0
+}
+
+/// `0x6079` (`0x007b8dc0`): `(id)`: `MsScreenMoveReset(id, 0)`
+/// (`0x007bc010`); 0.
+pub fn native_6079<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let id = pop(h, s);
+    call(h, 0x007b_c010, &[id, 0]);
+    0
+}
+
+/// `0x607a` (`0x007b8de0`): `(id)`: `MsScreenMoveReset(id, 1)`; 0.
+pub fn native_607a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let id = pop(h, s);
+    call(h, 0x007b_c010, &[id, 1]);
+    0
+}
+
+/// `0x607c` (`0x007b8e00`, start, like `0x607b`'s): `(id)`:
+/// `AtelGetBattleIdAdrs2(worker)` (`0x0086a990`, unused), args `+0` =
+/// `id`; `id`.
+pub fn native_607c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    call(h, 0x0086_a990, &[w]);
+    let id = pop(h, s);
+    h.write(a, id);
+    id
+}
+
+/// `0x607c` (`0x007b8e20`, poll): done (5) once `MsScreenMoveCheck(args
+/// +0, 1)` (`0x007bbfc0`) is 0.
+pub fn native_607c_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let id = h.read::<u32>(a);
+    if call(h, 0x007b_bfc0, &[id, 1]) == 0 {
+        5
+    } else {
+        0
+    }
+}
+
+/// `0x6085` (`0x007b92a0`): `0x007ba460(worker, args, stack, 1)`; 0.
+pub fn native_6085<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_a460, &[1])
+}
+
+/// `0x6086` (`0x007b9d80`): `0x007ba460(worker, args, stack, 0)`; 0.
+pub fn native_6086<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    fwd0(h, w, a, s, 0x007b_a460, &[0])
+}
+
+/// `0x6089` (`0x007b9630`): `(p8, p7, p6, p5, p4 f, p3, p2 f, p1)`:
+/// `MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1)` (`0x007c57b0`); 0.
+pub fn native_6089<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let p1 = pop(h, s);
+    let p2 = popf(h, s);
+    let p3 = pop(h, s);
+    let p4 = popf(h, s);
+    let [p5, p6, p7, p8] = pops::<4>(h, s);
+    call(h, 0x007c_57b0, &[p8, p7, 9, p6, p5, p4, p3, p2, p1]);
+    0
+}
+
 /// The Rust version of a round-19 handler, if there is one.
 #[must_use]
 #[allow(clippy::too_many_lines)] // one arm per handler
@@ -2449,12 +2735,51 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0085_8a60 => Int(native_0258),
         0x0085_8da0 => Int(native_0258_poll),
         0x0085_90e0 => Int(native_025a),
+        0x007b_93e0 => Int(native_6009),
+        0x007b_9480 => Int(native_600b),
+        0x007b_94c0 => Int(native_600c),
+        0x007b_9500 => Int(native_600d),
+        0x007b_95a0 => Int(native_600e),
+        0x007b_9a80 => Int(native_6018),
+        0x007b_9e10 => Int(native_6022),
+        0x007b_9e90 => Int(native_6023),
+        0x007b_9f20 => Int(native_6024),
+        0x007b_9fa0 => Int(native_6025),
+        0x007b_9fc0 => Int(native_6026),
+        0x007b_a350 => Int(native_602c),
+        0x007b_7fe0 => Int(native_602f),
+        0x007b_80c0 => Int(native_6031),
+        0x007b_8190 => Int(native_6036),
+        0x007b_81b0 => Int(native_6037),
+        0x007b_82d0 => Int(native_6039),
+        0x007b_a000 => Int(native_603d),
+        0x007b_86d0 => Int(native_603e),
+        0x007b_8c60 => Int(native_6053),
+        0x007b_8c90 => Int(native_6054),
+        0x007b_8d10 => Int(native_6056),
+        0x007b_8d40 => Int(native_6057),
+        0x007b_87d0 => Int(native_6065),
+        0x007b_9460 => Int(native_6068),
+        0x007b_9090 => Int(native_606a),
+        0x007b_9170 => Int(native_606d),
+        0x007b_91d0 => Int(native_606f),
+        0x007b_9200 => Int(native_6070),
+        0x007b_9240 => Int(native_6072),
+        0x007b_9280 => Int(native_6073),
+        0x007b_8b50 => Int(native_6075),
+        0x007b_8dc0 => Int(native_6079),
+        0x007b_8de0 => Int(native_607a),
+        0x007b_8e00 => Int(native_607c),
+        0x007b_8e20 => Int(native_607c_poll),
+        0x007b_92a0 => Int(native_6085),
+        0x007b_9d80 => Int(native_6086),
+        0x007b_9630 => Int(native_6089),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] knows, and whether it returns a float.
-pub const PORTED: [(u32, bool); 237] = [
+pub const PORTED: [(u32, bool); 276] = [
     (0x0087_78d0, false),
     (0x0087_78f0, false),
     (0x0087_7920, false),
@@ -2692,4 +3017,43 @@ pub const PORTED: [(u32, bool); 237] = [
     (0x0085_8a60, false),
     (0x0085_8da0, false),
     (0x0085_90e0, false),
+    (0x007b_93e0, false),
+    (0x007b_9480, false),
+    (0x007b_94c0, false),
+    (0x007b_9500, false),
+    (0x007b_95a0, false),
+    (0x007b_9a80, false),
+    (0x007b_9e10, false),
+    (0x007b_9e90, false),
+    (0x007b_9f20, false),
+    (0x007b_9fa0, false),
+    (0x007b_9fc0, false),
+    (0x007b_a350, false),
+    (0x007b_7fe0, false),
+    (0x007b_80c0, false),
+    (0x007b_8190, false),
+    (0x007b_81b0, false),
+    (0x007b_82d0, false),
+    (0x007b_a000, false),
+    (0x007b_86d0, false),
+    (0x007b_8c60, false),
+    (0x007b_8c90, false),
+    (0x007b_8d10, false),
+    (0x007b_8d40, false),
+    (0x007b_87d0, false),
+    (0x007b_9460, false),
+    (0x007b_9090, false),
+    (0x007b_9170, false),
+    (0x007b_91d0, false),
+    (0x007b_9200, false),
+    (0x007b_9240, false),
+    (0x007b_9280, false),
+    (0x007b_8b50, false),
+    (0x007b_8dc0, false),
+    (0x007b_8de0, false),
+    (0x007b_8e00, false),
+    (0x007b_8e20, false),
+    (0x007b_92a0, false),
+    (0x007b_9d80, false),
+    (0x007b_9630, false),
 ];
