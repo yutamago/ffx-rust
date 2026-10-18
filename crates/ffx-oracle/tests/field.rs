@@ -15564,3 +15564,266 @@ fn r6c_on_a_snapshot_matches_the_original() {
     let r = yi::state::RENDER.ptr(&t.b).addr;
     r6c_cases(&mut t, &mut rng, r, 20, true);
 }
+
+// ---- field agent r6, group D: the model distortion ----
+
+/// `(a, b)`: `*a` and `*b` from the two words at `src` (the screen offset
+/// getters).
+fn pair_out_stub(src: u32) -> Vec<u8> {
+    let mut c = vec![];
+    for (i, arg) in [(0u32, 4u8), (4, 8)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0x8b, 0x0d]); // mov eax, [esp + arg]; mov ecx, [src + i]
+        c.extend_from_slice(&(src + i).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x08]); // mov [eax], ecx
+    }
+    c.push(0xc3);
+    c
+}
+
+/// [`r6a_log_stub`] answering from `table` in turn (`count` the index).
+fn r6d_seq_stub(log: u32, id: u32, args: &[LogArg], table: u32, count: u32) -> Vec<u8> {
+    let mut c = r6a_log_stub(log, 0, id, args);
+    c.truncate(c.len() - 6); // mov eax, [rv]; ret
+    c.push(0xa1);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x85]);
+    c.extend_from_slice(&table.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// The stand-ins' return words for `KeDttMdl_MkGifPk`.
+struct R6dReturns {
+    log: u32,
+    rd_instance: u32,
+    geometry: u32,
+    buffer: u32,
+    model_buffer: u32,
+    valid: u32,
+    request: u32,
+    offsets: u32,
+    rest: u32,
+}
+
+impl R6dReturns {
+    fn install(t: &mut Twin) -> Self {
+        use LogArg::{Deref, Word};
+        let log = t.alloc(4 + 0x40 * 48);
+        // the render data table: a call count and five answers
+        let rd_instance = t.alloc(0x20);
+        let [geometry, buffer, model_buffer, valid, request, rest] =
+            [0; 6].map(|_: u32| t.alloc(4));
+        let offsets = t.alloc(0x10);
+        let w = |n: usize| vec![Word; n];
+        // the render data by instance: the first answer at rd_instance + 4,
+        // then one per created instance; the call count at rd_instance
+        let list = [
+            (
+                0x0064_53d0u32,
+                r6d_seq_stub(log, 1, &w(2), rd_instance + 4, rd_instance),
+            ),
+            (0x0064_4de0, r6a_log_stub(log, rest, 2, &w(3))),
+            (
+                0x0064_5040,
+                r6a_log_stub(
+                    log,
+                    rest,
+                    3,
+                    &[Word, Word, Word, Deref(1), Deref(1), Deref(3), Deref(1)],
+                ),
+            ),
+            (0x0064_5780, r6a_log_stub(log, rest, 4, &w(2))),
+            (0x0064_5380, r6a_log_stub(log, geometry, 5, &w(2))),
+            (0x0063_fdb0, r6a_log_stub(log, buffer, 6, &w(4))),
+            (0x0072_ac20, r6a_log_stub(log, rest, 7, &w(1))),
+            (0x0072_c190, r6a_log_stub(log, model_buffer, 8, &w(1))),
+            (0x0072_c1b0, r6a_log_stub(log, rest, 9, &w(1))),
+            (0x0063_fd70, ret_stub_at(valid)),
+            (0x0072_8660, r6a_log_stub(log, request, 10, &w(1))),
+            (0x0064_2d10, pair_out_stub(offsets)),
+            (0x0064_58a0, r6a_log_stub(log, rest, 11, &w(2))),
+            (0x0064_5330, r6a_log_stub(log, rest, 12, &w(2))),
+        ];
+        let list: Vec<_> = list.into_iter().map(|(f, c)| (Some(f), c)).collect();
+        std::fs::write("/tmp/seqstub.bin", &list[0].1).unwrap();
+        t.cave_from(0, &list);
+        Self {
+            log,
+            rd_instance,
+            geometry,
+            buffer,
+            model_buffer,
+            valid,
+            request,
+            offsets,
+            rest,
+        }
+    }
+}
+
+/// A model of 0..=4 records of `+1` byte 0 (counts -2..=40, mostly
+/// positive), ended by a record whose `+1` is 0xff or another kind.
+fn r6d_model(t: &mut Twin, rng: &mut Xorshift) -> u32 {
+    let model = t.alloc(0x40 + 0x10 * 5 + 0x14 * 40 * 5);
+    t.fill(model, 0x40, rng);
+    t.put(model + 4, 0x20u32);
+    t.put(model + 0x10, i16::try_from(rng.range(-3, 300)).unwrap());
+    let mut rec = model + 0x20;
+    for _ in 0..rng.below(5) {
+        let n = if rng.below(8) == 0 {
+            rng.range(-2, 0)
+        } else {
+            rng.range(0, 40)
+        };
+        t.put(rec + 1, 0u8);
+        t.put(rec + 2, i16::try_from(n).unwrap());
+        rec = rec.wrapping_add((0x10 + 0x14 * n).cast_unsigned());
+        if n < 0 {
+            // a negative count steps back: the walk ends where it lands
+            break;
+        }
+    }
+    t.put(rec + 1, [0xffu8, 1, 2][rng.below(3) as usize]);
+    model
+}
+
+#[allow(clippy::too_many_lines)] // one object graph a case
+fn r6d_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let s = R6dReturns::install(t);
+    let work = t.stack_scratch(0x800);
+    let spr = t.alloc(0x400);
+    let (spr_top, spr_stack) = (t.b.rebase(0x0233_2ea1), t.b.rebase(0x0119_fe10));
+    let (program, magic, pass, dtt) = (
+        t.b.rebase(0x0230_fd20),
+        t.b.rebase(0x00c6_4ca0),
+        t.b.rebase(0x0113_335c),
+        t.b.rebase(0x00cc_b228),
+    );
+    let req = t.alloc(0x180);
+    for k in 0..cases {
+        if !(real && k == 0) {
+            for a in [0x0230_fc60u32, 0x0230_fca0] {
+                let at = t.b.rebase(a);
+                r6a_matrix(t, rng, at, false);
+            }
+        }
+        t.put(spr_top, 0u8);
+        t.put(spr_stack, spr);
+        t.fill(spr, 0x100, rng);
+        let p = t.alloc(0x50);
+        t.fill(p, 0x50, rng);
+        let m = t.alloc(0x40);
+        r6a_matrix(t, rng, m, false);
+        t.put(p + 0x10, m);
+        let world = t.alloc(0x40);
+        r6a_matrix(t, rng, world, false);
+        t.put(p + 0x14, world);
+        let model = r6d_model(t, rng);
+        t.put(p + 0x1c, model);
+        t.put(p + 0x20, float_in(rng, -4, 4));
+        t.put(p + 0x24, rng.below(3));
+        // the width now and then 0 (its 64-bit minus one borrows)
+        let tex = rng.next()
+            & if rng.below(4) == 0 {
+                0xf800_ffff
+            } else {
+                u32::MAX
+            };
+        t.put(p + 0x28, tex);
+        let color = t.alloc(0x10);
+        t.fill(color, 0x10, rng);
+        t.put(p + 0x30, color);
+        t.put(p + 0x40, rng.below(2) * rng.next());
+        t.put(
+            program,
+            if rng.below(2) == 0 {
+                rng.below(8)
+            } else {
+                rng.next()
+            },
+        );
+        let magics = [
+            0x10eu32, 0x10e, 0x6a, 0x1db, 0x203, 0x15c, 0x29e, 0x29f, 7, 0x46,
+        ];
+        t.put(magic, magics[rng.below(10) as usize]);
+        t.put(pass, rng.below(2));
+        t.put(dtt, float_in(rng, -8, 8));
+        t.put(dtt + 4, float_in(rng, -8, 8));
+        // the render data, the four instances' share one
+        let rd = r6a_render_data(t, rng);
+        let geometry = t.alloc(0x28);
+        t.fill(geometry, 0x28, rng);
+        t.put(geometry + 0x24, if rng.below(8) == 0 { 0 } else { rd });
+        t.put(s.geometry, if rng.below(8) == 0 { 0 } else { geometry });
+        t.put(s.rd_instance, 0u32);
+        t.put(s.rd_instance + 4, if rng.below(3) == 0 { 0 } else { rd });
+        for i in 1..5 {
+            t.put(
+                s.rd_instance + 4 + 4 * i,
+                if rng.below(4) == 0 { 0 } else { rd },
+            );
+        }
+        t.put(s.buffer, if rng.below(8) == 0 { 0 } else { rng.next() | 1 });
+        let mb = t.alloc(0x10);
+        t.fill(mb, 0x10, rng);
+        if rng.below(2) == 0 {
+            t.put(mb + 8, model);
+        }
+        t.put(s.model_buffer, if rng.below(4) == 0 { 0 } else { mb });
+        t.put(s.valid, rng.below(4).min(1));
+        t.fill(req, 0x180, rng);
+        t.put(s.request, req);
+        // the screen offset: floats (the emulator keeps signalling NaNs
+        // the CPU's fld/fstp quiets)
+        t.put(s.offsets, float_in(rng, -100, 100));
+        t.put(s.offsets + 4, float_in(rng, -100, 100));
+        t.put(s.rest, rng.next());
+        t.put(s.log, 0u32);
+        // the scale's z and w: the original's uninitialised locals
+        let skip = [(req + 0x148, 8)];
+        eprintln!(
+            "DBGK {k} rd {rd:#x} geo {geometry:#x} sgeo {:#x} g24 {:#x} rd94 {:#x} ret {:#x} words {:x?}",
+            t.b.read::<u32>(s.geometry),
+            t.b.read::<u32>(geometry + 0x24),
+            t.b.read::<u32>(rd + 0x94),
+            s.geometry,
+            [
+                s.geometry,
+                s.buffer,
+                s.model_buffer,
+                s.valid,
+                s.request,
+                s.rest,
+                s.rd_instance
+            ]
+        );
+        t.same_but(
+            "KeDttMdl_MkGifPk",
+            &skip,
+            |o| o.eax(0x0072_ded0, &[p]),
+            |m| ffx_field::kedtt::ke_dtt_mdl_mk_gif_pk(m, p, work, call, fcall),
+        );
+    }
+}
+
+/// Group D on the image.
+#[test]
+fn r6d_model_distortion_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0064_0001);
+    r6d_cases(&mut t, &mut rng, 400, false);
+}
+
+/// Group D on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r6d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0064_0002);
+    r6d_cases(&mut t, &mut rng, 200, true);
+}

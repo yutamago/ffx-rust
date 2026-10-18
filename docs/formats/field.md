@@ -2010,6 +2010,46 @@ Then `yiAnimInfo_init(+0x9cab8)`, `yiVramSetup(0, 0)`,
 `yiClutAlloc_init(+0x67f20)` and `yiClutAlloc_makepacket(r, 0, 0x48)`,
 whose `eax` it returns.
 
+## The Ke model distortion (field agent r6)
+
+`KeDttMdl_MkGifPk(p)` (`0x0072ded0`) draws a model through the frame
+buffer copy: four VFX instances whose 64-bit keys are 10000 apart (low
+word `g_pppCurrentProgram`, high word `p + 0x48`). The object:
+
+| Offset | Meaning |
+|---|---|
+| `0x08` | Two words for the PS2 GIF packet (`op_spr_alloc(0xd8)`, freed at the end; built for nothing on PC) |
+| `0x10` / `0x14` | Local / world matrix (the fill request copies both; local `[0]`, `[5]` times `+0x20` are the scale) |
+| `0x18` | Put back at the end |
+| `0x1c` | The model: records from `+[+4]` while their `+1` byte is 0 (count `i16 +2`, `0x10` header plus `0x14` per entry); `+0x10` the job (`i16`) |
+| `0x24` | 1: the Z-corrected update for magic 0x10e |
+| `0x28` | A 64-bit GS value: `((((v >> 16) & 0x7ff) - 1) << 10 | (v & 0x7ff)) << 4`, `| 0xa` low / `| 0xfffffffc` high into the packet |
+| `0x30` | The colour (pointer to a vector) |
+| `0x38` | The vertex offset: `+= 0x30 x` the model's counts when `+0x40` is set (returned) |
+
+The first draw (no render data for the first key) creates each instance
+(`graphicVFXCreate(.., 0x1000)`, `graphicVFXCreateDataBuffer(.., 1,
+&n, &n, "FrameBuffer", &1)` with `n` three per record entry), marks its
+render data mode 4 (`+0xc4`), the description's `+0x24` 2, a
+`ModelBuffer_AllocateBuffer(model)` index at `+0xc2` (the first also
+`+0xc0` = 1), and sets it up. Each instance then needs dynamic geometry,
+render data and a buffer segment, else the draw stops; the segment words
+are reset. When the first instance's model buffer belongs to another
+model it is released and reallocated. With a fill buffer
+(`graphicDynGeoFillBufferIsValid`), the request (kind 3) gets the four
+render data (`+0x10`) and geometries (`+0x20`), world (`+0x30`) and local
+(`+0x70`, its `+0x90`/`+0x94` minus the screen's distortion offset)
+matrices, fill (`+0xb0`) and view (`+0xf0`) matrices, colour (`+0x130`),
+scale (`+0x140`; `+0x148`/`+0x14c` are two locals the original never
+sets), model, `+0x40`, `+0x3c`, offset, `+0x24` (`+0x150..+0x160`), the
+screen offset (`+0x164`) and `+0x16c` = magic 0x29e/0x29f in the VFX
+pass. Update: `graphicVFXUpdate` of the first key for magic 0x6a, 0x119,
+0x133, 0x25d, 0x1ae, 0x46, 0x203, 0x182, 0x241, 0x233, 0x264, 0x20a,
+0x23a, 0x29b, 0x1bd, 0x49, 0x1db (and 0x10e with `+0x24` == 1; around it
+the first render data's mode is 1 for 0x203, 0x15c, 0x15e, 0x182, 0x241,
+0x20a, 0x23a, 0x29b, 0x1db, 0x46; 0x15c and 0x15e never get there),
+else `graphicVFXDttUpdate` of all four.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

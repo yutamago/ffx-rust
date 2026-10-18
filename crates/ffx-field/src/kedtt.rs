@@ -157,8 +157,13 @@ impl G {
 /// The VFX instance key of the sprite: the current program and the
 /// instance (with the program's sign carried, a 64-bit sum).
 fn key<M: Mem>(mem: &M, p: u32) -> [u32; 2] {
+    instance_base(mem, mem.read::<u32>(p + obj::INSTANCE))
+}
+
+/// The 64-bit key of instance `hi`: the current program plus `hi` in
+/// the high word.
+fn instance_base<M: Mem>(mem: &M, hi: u32) -> [u32; 2] {
     let lo = mem.read::<u32>(mem.rebase(ext::PROGRAM));
-    let hi = mem.read::<u32>(p + obj::INSTANCE);
     let carry = if lo.cast_signed() < 0 { u32::MAX } else { 0 };
     [lo, hi.wrapping_add(carry)]
 }
@@ -558,4 +563,315 @@ fn store_uv<M: Mem>(mem: &mut M, at: u32, s: &Screen) {
     let tv = st(0.5 - (ld(v) * 1024.0 - 2048.0) / 448.0);
     let tv = st(ld(st(ld(tv) * s.ratio)) - s.bias);
     mem.write(at, [tu, tv]);
+}
+
+/// The model distortion object's fields (`KeDttMdl_MkGifPk`'s `p`).
+mod mdl {
+    /// Two words for the GIF packet's `+0x10`.
+    pub const GIF: u32 = 0x08;
+    /// The local matrix (its `[0]` and `[5]`, times [`SCALE`], are the
+    /// fill request's scale).
+    pub const MATRIX: u32 = 0x10;
+    /// The world matrix (16 words; its translation `+0x30` read too).
+    pub const WORLD: u32 = 0x14;
+    /// Kept: put back at the end.
+    pub const KEPT: u32 = 0x18;
+    /// The model: `+4` its records' offset, `+0x10` its job (`i16`).
+    pub const MODEL: u32 = 0x1c;
+    pub const SCALE: u32 = 0x20;
+    /// 1: the Z-corrected update for magic 0x10e.
+    pub const KIND: u32 = 0x24;
+    /// A 64-bit GS register value: width bits 16..27, height bits 0..11.
+    pub const TEX: u32 = 0x28;
+    /// The colour (vector).
+    pub const COLOR: u32 = 0x30;
+    /// The vertex offset: moved on by 0x30 a vertex when [`ADVANCE`].
+    pub const OFFSET: u32 = 0x38;
+    pub const X3C: u32 = 0x3c;
+    pub const ADVANCE: u32 = 0x40;
+    /// The VFX instance (the key's high word; the four instances are
+    /// 10000 apart in the 64-bit key).
+    pub const INSTANCE: u32 = 0x48;
+}
+
+/// The calls [`ke_dtt_mdl_mk_gif_pk`] makes besides [`ext`]'s.
+mod mdl_ext {
+    pub const SCREEN_RATIO: u32 = 0x0064_13f0;
+    pub const SPR_ALLOC: u32 = 0x007e_6a00;
+    pub const SPR_FREE: u32 = 0x007e_6a60;
+    pub const MODEL_BUFFER_ALLOCATE: u32 = 0x0072_ac20;
+    pub const MODEL_BUFFER_GET: u32 = 0x0072_c190;
+    pub const MODEL_BUFFER_RELEASE: u32 = 0x0072_c1b0;
+    pub const FILL_BUFFER_IS_VALID: u32 = 0x0063_fd70;
+    pub const FILL_BUFFER_REQUEST: u32 = 0x0072_8660;
+    pub const SCREEN_DTT_OFFSET: u32 = 0x0064_2cf0;
+    pub const SCREEN_OFFSET: u32 = 0x0064_2d10;
+}
+
+/// The scratch [`ke_dtt_mdl_mk_gif_pk`] needs: a vector, the data
+/// buffer's description, two offsets.
+pub const MDL_WORK: u32 = 0x40;
+
+/// The magic whose model distortions take the Z-corrected update
+/// (`graphicVFXUpdate` of the first instance) instead of four
+/// `graphicVFXDttUpdate`s; 0x10e only for objects of kind 1.
+const MDL_Z_CORRECTED: [u32; 17] = [
+    0x6a, 0x119, 0x133, 0x25d, 0x1ae, 0x46, 0x203, 0x182, 0x241, 0x233, 0x264, 0x20a, 0x23a, 0x29b,
+    0x1bd, 0x49, 0x1db,
+];
+const MDL_KIND_MAGIC: u32 = 0x10e;
+/// Of those, the ones whose first instance draws in mode 1 for the
+/// update (back to 4 after). 0x15c and 0x15e are not among them, so
+/// their entries never apply (the original's list).
+const MDL_MODE_1: [u32; 10] = [
+    0x203, 0x15c, 0x15e, 0x182, 0x241, 0x20a, 0x23a, 0x29b, 0x1db, 0x46,
+];
+/// The magic whose fill request is flagged in the VFX pass.
+const MDL_PASS_FLAGGED: [u32; 2] = [0x29e, 0x29f];
+
+/// Instance `k` of the four (`base + 10000 k` as a 64-bit sum).
+fn instance_key([lo, hi]: [u32; 2], k: u32) -> [u32; 2] {
+    let v = (u64::from(hi) << 32 | u64::from(lo)).wrapping_add(u64::from(k * 10_000));
+    #[allow(clippy::cast_possible_truncation)] // the two halves
+    [v as u32, (v >> 32) as u32]
+}
+
+/// The model's records from `rec` while their `+1` byte is 0: each
+/// gives its count (`i16 +2`), and the next record follows its `count`
+/// 0x14-byte entries and 0x10-byte header.
+fn walk_records<M: Mem>(mem: &M, mut rec: u32, mut each: impl FnMut(i32)) {
+    while mem.read::<u8>(rec + 1) == 0 {
+        let n = i32::from(mem.read::<i16>(rec + 2));
+        each(n);
+        rec = rec
+            .wrapping_add(n.wrapping_mul(0x14).cast_unsigned())
+            .wrapping_add(0x10);
+    }
+}
+
+/// One draw of the model distortion `p` (`KeDttMdl_MkGifPk(p)`,
+/// `0x0072ded0`).
+///
+/// The model's four VFX instances (10000 apart) get their
+/// `"FrameBuffer"` data buffers the first time (three vertices a
+/// triangle of the model's records, mode 4, a model buffer each, the
+/// first marked); each then needs its dynamic geometry, render data and
+/// buffer segment (else the draw stops), whose segment is reset. The
+/// first instance's model buffer follows the model. A fill request (when
+/// the renderer has a fill buffer) takes the four render data and
+/// geometries, the world and local matrices, colour, scale, model,
+/// offsets, the screen's distortion offset and offset, the view and fill
+/// matrices. The vertex offset `p + 0x38` moves on by 0x30 a vertex when
+/// `p + 0x40`; the instances are updated. A GIF packet header is built
+/// in scratchpad (`op_spr_alloc(0xd8)`) for the original's PS2 path.
+/// Returns the new vertex offset (the original's `eax`; on an early stop
+/// the render data looked up or 0).
+#[allow(clippy::too_many_lines)] // one pass, as the original
+pub fn ke_dtt_mdl_mk_gif_pk<M, C, F>(
+    mem: &mut M,
+    p: u32,
+    work: u32,
+    call: &mut C,
+    fcall: &mut F,
+) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+    F: FnMut(&mut M, u32, FArgs<'_>) -> f64,
+{
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let advance = mem.read::<u32>(p + mdl::ADVANCE);
+    let x3c = mem.read::<u32>(p + mdl::X3C);
+    let model = mem.read::<u32>(p + mdl::MODEL);
+    let records = model.wrapping_add(mem.read::<u32>(model + 4));
+    let kept = mem.read::<u32>(p + mdl::KEPT);
+    let f = r(mem, mdl_ext::SCREEN_RATIO);
+    fcall(mem, f, FArgs::Stack(&[])); // dropped
+    let base = instance_base(mem, mem.read::<u32>(p + mdl::INSTANCE));
+    let m = mem.read::<u32>(p + mdl::MATRIX);
+    let scale = ld(mem.read::<u32>(p + mdl::SCALE));
+    let sx = st(ld(mem.read::<u32>(m)) * scale);
+    let sy = st(ld(mem.read::<u32>(m + 0x14)) * scale);
+    let world = mem.read::<u32>(p + mdl::WORLD);
+    call(mem, r(mem, ext::COPY_VECTOR), &[work, world + 0x30]);
+    let first_draw = call(mem, r(mem, ext::GET_RENDER_DATA_BY_INSTANCE), &base) == 0;
+
+    // the PS2 path's GIF packet header
+    let pk = call(mem, r(mem, mdl_ext::SPR_ALLOC), &[0xd8]);
+    let gif = mem.read::<[u32; 2]>(p + mdl::GIF);
+    mem.write(
+        pk,
+        [
+            0x8001u32,
+            0xc02d_c000,
+            0x1241_2eee,
+            0x4124,
+            gif[0],
+            gif[1],
+            6,
+            0,
+        ],
+    );
+    mem.write(pk + 0x30, [0x44u32, 0, 0x42, 0]);
+    let tex = mem.read::<u32>(p + mdl::TEX);
+    let width = u64::from((tex >> 16) & 0x7ff).wrapping_sub(1);
+    let reg = ((width << 10) | u64::from(tex & 0x7ff)) << 4;
+    #[allow(clippy::cast_possible_truncation)] // the two halves
+    mem.write(
+        pk + 0x50,
+        [reg as u32 | 0xa, (reg >> 32) as u32 | 0xffff_fffc, 8, 0],
+    );
+    mem.write(pk + 0xc0, [0xffff_fff8u32; 2]);
+    let kind = mem.read::<u32>(p + mdl::KIND);
+    mem.write(pk + 0xd0, mem.read::<u32>(p + mdl::OFFSET));
+
+    if first_draw {
+        let mut count = 0i32;
+        walk_records(mem, records, |n| {
+            count = count.wrapping_add(n.wrapping_mul(3));
+        });
+        let (name, n0, n1, one) = (work + 0x10, work + 0x20, work + 0x24, work + 0x28);
+        for k in 0..4 {
+            let [lo, hi] = instance_key(base, k);
+            mem.write(name, *b"FrameBuffer\0");
+            mem.write(n0, count);
+            mem.write(n1, count);
+            mem.write(one, 1u32);
+            call(mem, r(mem, ext::VFX_CREATE), &[lo, hi, 0x1000]);
+            call(
+                mem,
+                r(mem, ext::VFX_CREATE_DATA_BUFFER),
+                &[lo, hi, 1, n0, n1, name, one],
+            );
+            let rd = call(mem, r(mem, ext::GET_RENDER_DATA_BY_INSTANCE), &[lo, hi]);
+            if rd != 0 {
+                mem.write(rd + 0xc4, 4u16);
+                let d = mem.read::<u32>(rd + 0x94);
+                mem.write(d + desc::KIND, 2u32);
+                let model = mem.read::<u32>(p + mdl::MODEL);
+                #[allow(clippy::cast_possible_truncation)] // a u16 index
+                let buffer = call(mem, r(mem, mdl_ext::MODEL_BUFFER_ALLOCATE), &[model]) as u16;
+                if k == 0 {
+                    mem.write(rd + 0xc0, 1u8);
+                }
+                mem.write(rd + 0xc2, buffer);
+            }
+            call(mem, r(mem, ext::VFX_SETUP), &[lo, hi]);
+        }
+    }
+
+    // each instance's geometry, render data and buffer segment
+    let mut geometries = [0u32; 4];
+    let mut rds = [0u32; 4];
+    for k in 0..4 {
+        let geometry = call(mem, r(mem, ext::GET_DYN_GEOMETRY), &instance_key(base, k));
+        geometries[k as usize] = geometry;
+        let rd = call(mem, r(mem, ext::GET_RENDER_DATA_BY_GEOMETRY), &[geometry]);
+        if geometry == 0 || rd == 0 {
+            return rd;
+        }
+        let d = mem.read::<u32>(rd + 0x94);
+        let [seg_a, seg_b] = mem.read::<[u32; 2]>(d + desc::SEGMENT);
+        if call(
+            mem,
+            r(mem, ext::GET_BUFFER_FOR_SEGMENT),
+            &[rd, 0, seg_a, seg_b],
+        ) == 0
+        {
+            return 0;
+        }
+        rds[k as usize] = rd;
+        let d = mem.read::<u32>(rd + 0x94);
+        mem.write(d + desc::SEGMENT, 0u32);
+        let d = mem.read::<u32>(rd + 0x94);
+        mem.write(d + desc::SEGMENT + 4, 0u32);
+    }
+
+    // the first instance's model buffer follows the model
+    let rd0 = rds[0];
+    let index = u32::from(mem.read::<u16>(rd0 + 0xc2));
+    let buffer = call(mem, r(mem, mdl_ext::MODEL_BUFFER_GET), &[index]);
+    if buffer != 0 && mem.read::<u32>(buffer + 8) != mem.read::<u32>(p + mdl::MODEL) {
+        let index = u32::from(mem.read::<u16>(rd0 + 0xc2));
+        call(mem, r(mem, mdl_ext::MODEL_BUFFER_RELEASE), &[index]);
+        let model = mem.read::<u32>(p + mdl::MODEL);
+        #[allow(clippy::cast_possible_truncation)] // a u16 index
+        let fresh = call(mem, r(mem, mdl_ext::MODEL_BUFFER_ALLOCATE), &[model]) as u16;
+        mem.write(rd0 + 0xc2, fresh);
+    }
+
+    if call(mem, r(mem, mdl_ext::FILL_BUFFER_IS_VALID), &[]) != 0 {
+        let model = mem.read::<u32>(p + mdl::MODEL);
+        let job = i32::from(mem.read::<i16>(model + 0x10)).cast_unsigned();
+        let req = call(mem, r(mem, mdl_ext::FILL_BUFFER_REQUEST), &[job]);
+        mem.write(req + 0x10, rds);
+        mem.write(req + 0x20, geometries);
+        mem.write(req, 3u8);
+        let world = mem.read::<[u32; 16]>(mem.read::<u32>(p + mdl::WORLD));
+        mem.write(req + 0x30, world);
+        let local = mem.read::<[u32; 16]>(mem.read::<u32>(p + mdl::MATRIX));
+        mem.write(req + 0x70, local);
+        let color = mem.read::<[u32; 4]>(mem.read::<u32>(p + mdl::COLOR));
+        mem.write(req + 0x130, color);
+        // the scale's z and w: two words of the original's frame it never
+        // sets (0 here)
+        mem.write(req + 0x140, [sx, sy, 0, 0]);
+        let model = mem.read::<u32>(p + mdl::MODEL);
+        let offset = mem.read::<u32>(pk + 0xd0);
+        mem.write(req + 0x150, [model, advance, x3c, offset, kind]);
+        let (a, b) = (work + 0x30, work + 0x34);
+        call(mem, r(mem, mdl_ext::SCREEN_DTT_OFFSET), &[a, b]);
+        for (at, by) in [(req + 0x90, a), (req + 0x94, b)] {
+            let v = st(ld(mem.read::<u32>(at)) - ld(mem.read::<u32>(by)));
+            mem.write(at, v);
+        }
+        call(mem, r(mem, mdl_ext::SCREEN_OFFSET), &[a, b]);
+        let offset = [mem.read::<u32>(a), mem.read::<u32>(b)].map(x87::copy);
+        mem.write(req + 0x164, offset);
+        let view = mem.read::<[u32; 16]>(r(mem, ext::VIEW));
+        mem.write(req + 0xf0, view);
+        let fill = mem.read::<[u32; 16]>(r(mem, ext::FILL_MATRIX));
+        mem.write(req + 0xb0, fill);
+        let magic = mem.read::<u32>(r(mem, ext::MAGIC_ID));
+        let flagged =
+            MDL_PASS_FLAGGED.contains(&magic) && mem.read::<u32>(r(mem, ext::VFX_PASS)) != 0;
+        mem.write(req + 0x16c, u32::from(flagged));
+    }
+
+    // the vertex offset moves past the model's vertices
+    if advance != 0 {
+        let mut moved = mem.read::<u32>(pk + 0xd0);
+        walk_records(mem, records, |n| {
+            moved = moved.wrapping_add(n.wrapping_mul(0x30).cast_unsigned());
+        });
+        mem.write(pk + 0xd0, moved);
+    }
+
+    // the update
+    let magic = mem.read::<u32>(r(mem, ext::MAGIC_ID));
+    let z_corrected = if magic == MDL_KIND_MAGIC {
+        kind == 1
+    } else {
+        MDL_Z_CORRECTED.contains(&magic)
+    };
+    if z_corrected {
+        let magic = mem.read::<u32>(r(mem, ext::MAGIC_ID));
+        if MDL_MODE_1.contains(&magic) {
+            mem.write(rd0 + 0xc4, 1u16);
+        }
+        call(mem, r(mem, ext::VFX_UPDATE), &base);
+        let magic = mem.read::<u32>(r(mem, ext::MAGIC_ID));
+        if MDL_MODE_1.contains(&magic) {
+            mem.write(rd0 + 0xc4, 4u16);
+        }
+    } else {
+        for k in 0..4 {
+            call(mem, r(mem, ext::VFX_DTT_UPDATE), &instance_key(base, k));
+        }
+    }
+    mem.write(p + mdl::KEPT, kept);
+    let offset = mem.read::<u32>(pk + 0xd0);
+    mem.write(p + mdl::OFFSET, offset);
+    call(mem, r(mem, mdl_ext::SPR_FREE), &[0xd8]);
+    offset
 }

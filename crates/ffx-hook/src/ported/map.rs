@@ -2749,6 +2749,17 @@ ported! {
         let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_WORK as usize / 4 }>::new();
         ffx_field::keth::ke_th_bp_mk_strip(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `KeDttMdl_MkGifPk(p)`.
+    KeDttMdl_MkGifPk @ 0x0072_ded0 => extern "C" fn shim_ke_dtt_mdl_mk_gif_pk(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::kedtt::MDL_WORK as usize / 4 }>::new();
+        ffx_field::kedtt::ke_dtt_mdl_mk_gif_pk(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
     /// `KeDttSpr_MkGifPk(p)`.
     KeDttSpr_MkGifPk @ 0x0076_7790 => extern "C" fn shim_ke_dtt_spr_mk_gif_pk(p: u32) -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::kedtt::WORK as usize / 4 }>::new();

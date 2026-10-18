@@ -3648,7 +3648,7 @@
 0x0072d930 function pppMatrixYZX              # fh v3:bsim1.00 0x0072da10
 0x0072db10 function pppMatrixZXY              # ppp program table record "pppMatrixZXY" step: as pppMatrixXYZ with pppGetRotMatrixZXY
 0x0072dcf0 function pppMatrixZYX              # fh v3:bsim1.00 0x0072ddd0
-0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0
+0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0; ours: cdecl(p) -> new p+0x38 (eax left by op_spr_free; on an early stop the render data or 0): model distortion: four VFX instances 10000 apart in the 64-bit key (0x0230fd20, p+0x48) get "FrameBuffer" data buffers (3 vertices a triangle of the model p+0x1c records) the first time; each needs geometry, render data and buffer segment; first instance's model buffer follows the model; fill request (JobSchedule_pppPart_getFillBufferRequest): render data/geometries, world p+0x14 / local p+0x10 matrices, colour p+0x30, scale (+0x148/+0x14c are uninitialised locals), screen (dtt) offsets, view 0x0230fc60 and fill matrices; p+0x38 += 0x30 a vertex when p+0x40; VFXUpdate for listed magic (0x10e only with p+0x24 == 1), else four VFXDttUpdates; ported (field r6, ffx_field::kedtt)
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
 0x0072e730 function pppKeMdlDttCon            # ppp program table record "pppKeMdlDtt" +0x1c set-up: area 0 +0xa8/+0xa0/+0xa4 = 0
 0x0072e760 function pppKeMdlDttCon2           # ppp program table record "pppKeMdlDtt" +0x20 set-up: area 0 +0xa8/+0xa0/+0xa4 = 0 (as pppKeMdlDttCon)
