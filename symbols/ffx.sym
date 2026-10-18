@@ -6569,6 +6569,8 @@
 0x00800770 function op_part_init              # fh v3:exact 0x00800690
 0x008008b0 function op_part_run               # fh v3:exact 0x008007d0
 0x008009c0 function op_part_free              # fh v3:exact 0x008008e0
+0x00800ab0 function opus_copy_1k_00800ab0     # (dst, src) -> src + 0x400: 0x400 bytes word by word upward; restores a 1 KB block after 0x00826950 in opu_motion_etc (0x00804beb); name ours
+0x00800af0 function opus_copy_1k_00800af0     # (src, dst) -> src + 0x400: as opus_copy_1k_00800ab0 with the arguments swapped; saves the block before 0x00826950 in opu_motion_etc (0x00804bd4); name ours
 0x00800b40 function opus_chara_center_check      # layout+callees: sorts between op_part_free and opus_clip_off_all_in_battle, and its named callees match the Switch 0x71003f56a0 opus_chara_center_check's (similarity 1.00: MsBattleWater, MsGetChrFly); symbols from Fahrenheit's server export
 0x00800b70 function opus_cheight_get             # layout+callees: sorts between op_part_free and opus_clip_off_all_in_battle, and its named callees match the Switch 0x71003f5620 opus_cheight_get's (similarity 1.00: Ch_GetFixHeight, MsGetChrHeight); symbols from Fahrenheit's server export
 0x00800bb0 function opus_clip_off_all_in_battle # fh v3:bsim1.00 0x00800ad0
@@ -6594,6 +6596,7 @@
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00801780 function opus_list_add_00801780       # ours: (set, id, list) -> 0 after putting id into the first negative i16 of [set+0x10+4 list] (u16 +0x34 - 1 entries) and u16 +0x38 += 1, else -1; caller 0x0080b180
 0x008017d0 function opu_local_etc                # callees: its named callees match the Switch 0x71003e41c0 opu_local_etc's (similarity 0.83: op_m_copy, op_mul_m, op_vector_m, opus_no_get, restoreVf00Register); symbols from Fahrenheit's server export
+0x00801a50 function opu_local_link            # layout: the only unused Switch name sorting between opu_local_etc and opu_matrix_etc (Switch 0x71003e4030, 72 bytes); flag nibble 0/1: unit u16 +0xb8 = cmd+2, unit byte +0x19 bit 7 cleared/set; -> cmd + 4
 0x00801ab0 function opu_matrix_etc               # layout+callees: sorts between opu_local_etc and opu_world, and its named callees match the Switch 0x71003e4390 opu_matrix_etc's (similarity 0.62: op_apply_m_w1, op_mul_m, op_rot_m, op_trans_m, op_unit_m); symbols from Fahrenheit's server export
 0x00801d00 function opu_world                    # callees: its named callees match the Switch 0x71003e4080 opu_world's (similarity 0.75: op_apply_m_w1, op_m_copy, op_mul_m33, op_rt_m_6, op_unit_m_scale); symbols from Fahrenheit's server export
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
@@ -6685,6 +6688,7 @@
 0x0080b180 function opu_unit_etc                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'LoadedByOPU_UNIT_ETC'; Switch 0x7100400d30 opu_unit_etc (symbols from Fahrenheit's server export)
 0x0080b650 function op_part_init_check        # fh v3:exact 0x0080b7b0
 0x0080b670 function opu_part_init                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos FIXME: particle data address in effect overlay was N'; Switch 0x71003e4710 opu_part_init (symbols from Fahrenheit's server export)
+0x0080b7d0 function opu_part_kill             # layout: the only unused Switch name sorting between opu_part_init and opu_part_run (Switch 0x71003e4c00, 48 bytes); (host, cmd) -> cmd + 2 after calling [[host+0x350]+0x54](host+0x220 unit)
 0x0080b800 function opu_part_run                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos: FIXME osu->malloc is NULL in opu_part_run() u_15.c '; Switch 0x71003e4860 opu_part_run (symbols from Fahrenheit's server export)
 0x0080bd50 function opp_main                  # fh v3:exact 0x0080bea0
 0x0080c3f0 function opu_end                      # layout+callees: sorts between opp_main and opu_wait, and its named callees match the Switch 0x71003f3230 opu_end's (similarity 1.00: opus_draw_off, opus_prog_off, yonExtMapDeleteId); symbols from Fahrenheit's server export
@@ -6702,9 +6706,23 @@
 0x00810240 function opp_dbg_draw_spl             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'u_dbg_draw_spl error'; Switch 0x71003f65e0 opp_dbg_draw_spl (symbols from Fahrenheit's server export)
 0x008106a0 function SetFieldConst210_008106a0    # auto-port shape (store constant to field, cdecl): u8[(a0 + 0x210)] = 0xff; return 0x0; callers: no direct caller; name ours
 0x008106c0 function CopyField21b_008106c0        # auto-port shape (store copy to field, cdecl): t0 = u8[(a0 + 0x21b)]; u8[(a0 + 0x210)] = t0; return (a2 + 0x2); callers: no direct caller; name ours
+0x008106e0 function opp_anmm_wait_random      # opp_anmm command (table 0x00c49318 slot 3): host +0x210 = op_irandom_core(host byte +0x21b); -> cmd + 2 (anmm::bridge::wait_random); name ours
 0x00810710 function GetFieldPtr_00810710         # auto-port shape (return address of a field's target, cdecl): t0 = u16[(a2 + 0x2)]; return (sx16(t0) + a2); callers: no direct caller; name ours
+0x00810720 function opp_anmm_sprite_set       # opp_anmm command slot 7: work +4 = texture i16 cmd+2 of the part's oef, +8 = 0xff010000 | part byte +0xb3, +0xc = 0x100, +0x1c = 0x80808080, +0x2c/+0x3c = 0; -> cmd + 4; name ours
+0x00810790 function opp_anmm_flag_on          # opp_anmm command slot 8: without flags (+0x21a & 0xf000) work byte +8 |= 0x80; -> cmd + 2; name ours
+0x008107c0 function opp_anmm_vec_set          # opp_anmm command slot 4: flagged x/y/z of the target (offset 0x00c49300, scales 0x00c49398) = i16 * scale / 4096; name ours
+0x00810890 function opp_anmm_vec_add_random   # opp_anmm command slot 5: as opp_anmm_vec_add, each value times 2d-3 for three VU0 R draws; name ours
+0x00810a90 function opp_anmm_vec_add          # opp_anmm command slot 6: as opp_anmm_vec_set, added; name ours
 0x00810b70 function CopyField21a_00810b70        # auto-port shape (store copy to field, cdecl): t0 = u16[(a0 + 0x21a)]; t1 = u16[(a2 + 0x2)]; t2 = u16[((((sx16(t0) >>s 0xc) & 0x7) * 0x2) + &0x00c4930c)]; u16[(sx16(t2) + a3)] = t1; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810ba0 function opp_anmm_short_add_random # opp_anmm command slot 10: work i16 at 0x00c4930c[(+0x21a >> 12) & 7] += op_random_per(i16 cmd+2); -> cmd + 4; name ours
+0x00810be0 function opp_anmm_pair_set         # opp_anmm command slot 11: u16 pair cmd+2 to work +0x2c (flag 0x1000) or +0x1c; -> cmd + 6; name ours
+0x00810c20 function opp_anmm_mode_set         # opp_anmm command slot 12: work +0x4e = i16 +0x21a >> 12; mode 2 copies floats +0x10..+0x18 to +0x40..+0x48; -> cmd + 2; name ours
+0x00810c60 function opp_anmm_rgba_set         # opp_anmm command slot 13: work bytes +0x1c..+0x1f for flags 0x1000..0x8000 from the next words; name ours
 0x00810cd0 function CopyField_00810cd0           # auto-port shape (store copy to field, cdecl): t0 = u8[(a2 + 0x2)]; u8[(a3 + 0x4f)] = t0; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810cf0 function opp_anmm_loop             # opp_anmm command slot 15: --work byte +0x4f; nonzero: cmd + i16 cmd+2, else cmd + 4; name ours
+0x00810d10 function opp_anmm_branch_random    # opp_anmm command slot 16: op_random_per(0x100) < i16 cmd+2: cmd + u16 cmd+4, else cmd + 6; name ours
+0x00810d50 function opp_anmm_fade             # opp_anmm command slot 17: at work + i16 cmd+2: step byte +0x2c = cmd+5, host +0x210 = |cmd+4 - byte +0x1c| / |step| (1 for 0); -> cmd + 6; name ours
+0x00810da0 function opp_anmm_part_float       # opp_anmm command slot 18: work + byte cmd+2 = the part's float at byte cmd+3 (part u16 work +0x4c); -> cmd + 4; name ours
 0x00810e20 function opp_anmm_fin_en_bone5        # callees: its named callees match the Switch 0x71003f7a90 opp_anmm_fin_en_bone5's (similarity 0.75: Ch_ElemGetParent, op_irandom_p, op_random_p); symbols from Fahrenheit's server export
 0x00810ed0 function opp_anmm_fin_en_bone3x    # fh switch:bsim1.00 0x71003f7b60
 0x00811120 function opp_anm                      # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f7dc0 opp_anm, 3 votes, round 2
@@ -6721,6 +6739,12 @@
 0x00814790 function opu_et_ovl                # fh switch:bsim1.00 0x7100406310
 0x008148c0 function opu_dvd                      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004067d0 opu_dvd, 3 votes, round 3
 0x00814a00 function opu_file                     # str-match switch: only user of 8 string(s) held once by both builds, e.g. '(op)\\t\\t\\ttexture count change (%d) !!!\\n'; Switch 0x7100406900 opu_file (symbols from Fahrenheit's server export)
+0x00814c90 function opf_cir                   # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 3: unit circles opus_no_get(+0xa0): +0x90/+0x98 = sin/cos(ftol +0x48) * +0x40 / 16 + base, +0x94 = +0x44 / 16 + base
+0x00814d20 function opf_cir2                  # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 7: opf_cir, then u16 +0xb0 bit 0x2000 set unless +0x30/16 + |base - opus_no_get(+0xa2)|xz > +0x40/16
+0x00814e50 function opf_cir_gw                # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 8: angle/radius/height at the unit's byte offsets +0xa0..+0xa2: +0x90 = (sin r + x) / 16, +0x98 = (r cos + z) / 16, +0x94 = (y + h) / 16
+0x00814f00 function opf_cir_y                 # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 5: opf_cir without the base's y
+0x00814fa0 function opf_cirz_gw               # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 9: opf_cir_gw in y and x (+0x94 sine, +0x90 cosine, +0x98 height)
+0x00815050 function opf_normal                # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 0: VU 0x00c8f8e0.. and unit +0x90.. = unit +0x40.. / 16; -> ptr
 0x008155b0 function opf_sph                      # callees: its named callees match the Switch 0x71003f6180 opf_sph's (similarity 1.00: op_apply_m_w1, op_rt_m, op_unit_m, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
 0x00815670 function opf_spl_gw                   # callees: its named callees match the Switch 0x71003f6540 opf_spl_gw's (similarity 1.00: op_spline_xyz, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
 0x008157a0 function opu_camera                   # callees: its named callees match the Switch 0x71003fc5b0 opu_camera's (similarity 0.94: MagicFile_GetMagicId, MsBattleGetStatus, MsBattleSpecialCameraPause, MsCameraGetPosNow, MsCameraResetMove); symbols from Fahrenheit's server export
@@ -6732,8 +6756,10 @@
 0x00816030 function opu_en_lock                  # layout: alphabetical run between opu_en_etc and opu_en_on (1 unnamed in the gap); Switch 0x71003fbf60 opu_en_lock is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
+0x00816610 function opu_etc                   # layout: sorts between opu_et_no and opu_ffx (Switch opu_etc 0x71003fcca0, 104 bytes, ours 107); unit +0xa8 + i16 cmd+2 = byte/u16/word cmd+4 by flag nibble 0/1/2 (-> cmd+6/+6/+8), else -> cmd
 0x00816680 function opu_ffx                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd240 opu_ffx's (similarity 0.71: MsEffectMotionLevel, MsEffectReady, Sg_EnableDrawGui, Sg_EnableDrawMap, Sg_EnableDrawMenu); symbols from Fahrenheit's server export
 0x008167b0 function opu_fin_type                 # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd0b0 opu_fin_type's (similarity 1.00: op_deg_get, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
+0x00816870 function opu_jloop                 # layout: sorts between opu_fin_type and opu_jump_etc2 (Switch opu_jloop 60 bytes, ours 54), the loop counterpart of opu_sloop: --unit byte +0xb4+nibble, back by i16 cmd+2 while nonzero, else cmd + 4
 0x008168b0 function GetFieldPtr2_008168b0        # auto-port shape (return address of a field's target, cdecl): t0 = u16[(a1 + 0x2)]; return (sx16(t0) + a1); callers: no direct caller; name ours
 0x00816e50 function opu_jump_etc2                # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fba80 opu_jump_etc2's (similarity 0.83: Ch_GetFieldMode, Ch_GetHide, MsGetChrFly, MsGetDamageResult, opus_get_chr_status_index); symbols from Fahrenheit's server export
 0x008170c0 function opu_mem                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fcd10 opu_mem's (similarity 1.00: op_free, op_heap_init); symbols from Fahrenheit's server export
@@ -6742,13 +6768,16 @@
 0x008172b0 function opu_signal                   # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd360 opu_signal's (similarity 1.00: AtelGetEffectFlag, AtelSetEffectFlag); symbols from Fahrenheit's server export
 0x00817300 function opu_sloop                    # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fbde0 opu_sloop's (similarity 0.67: MsGetDamageInfo, op_irandom_p); symbols from Fahrenheit's server export
 0x00817470 function opu_sys                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd1a0 opu_sys's (similarity 1.00: MsEffectWaitFlag); symbols from Fahrenheit's server export
+0x00817530 function opu_unit_max              # behaviour (Switch opu_unit_max, 68 bytes; ours 88): host u16 +0x334 = cmd+2, clearing the 4 program pointers of each unit from the old count up; -> cmd + 4
 0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
+0x008178f0 function opu_eff_flag_008178f0     # (host, cmd): g_EtEff[unit u16 +0x14] +0xc flags vs (i16 +4 << 16 | i16 +2): nibble&7 0 set, 1 clear, 2/3 jump i16 +6 on any/none, 4/5 wait on any/none; name ours
 0x00817ad0 function opu_level                    # callees: its named callees match the Switch 0x71003fd8e0 opu_level's (similarity 1.00: Ch_EffectGetEffectLevel, Ch_EffectSetEffectLevel, MsGetChrMotionSignal); symbols from Fahrenheit's server export
 0x00817c30 function op_add64                  # (dst, src, n) 64-bit dst = src + (i32) n
 0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
 0x00817f50 function opu_r_en                     # callees: its named callees match the Switch 0x71003ff6d0 opu_r_en's (similarity 0.80: Ch_GetRot, MsGetChrBtlDir, MsSetChrDirTarget, op_deg_get); symbols from Fahrenheit's server export
 0x00818110 function opu_r_etc                    # layout+callees: sorts between opu_r_en and opu_v_2d, and its named callees match the Switch 0x71003ffe60 opu_r_etc's (similarity 1.00: op_deg_in_check); symbols from Fahrenheit's server export
 0x00818200 function opu_r_u                      # layout+callees: sorts between opu_r_en and opu_v_2d, and its named callees match the Switch 0x71003ff9a0 opu_r_u's (similarity 1.00: op_deg_get, opus_no_get); symbols from Fahrenheit's server export
+0x008182f0 function opu_v_stop_008182f0       # (host, cmd): flagged +0x70.. = -(+0x50.. / u16 cmd+2) (bits 9..11 = 0) or +0x80.. = -(+0x60.. / n) (= 1); -> cmd + 4; name ours
 0x00818dc0 function opu_v_2d                     # callees: its named callees match the Switch 0x7100400620 opu_v_2d's (similarity 0.71: op_mul_m, op_rtp_w1, op_trans_m, op_unit_m, opus_no_get); symbols from Fahrenheit's server export
 0x00818ed0 function opu_v_en                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fe760 opu_v_en, 2 votes, round 2
 0x008190e0 function opu_v_en_move                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fef00 opu_v_en_move, 2 votes, round 1
@@ -6763,6 +6792,7 @@
 0x0081b1e0 function opus_get_chr_pos             # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003fec20 opus_get_chr_pos's (similarity 1.00: Ch_GetPos); symbols from Fahrenheit's server export
 0x0081b270 function opus_set_chr_dirf            # callees: its named callees match the Switch 0x71003ff2b0 opus_set_chr_dirf's (similarity 1.00: Ch_SetDirF, MsBattleChrStart, MsSetChrDirF); symbols from Fahrenheit's server export
 0x0081b2b0 function opus_set_chr_pos             # callees: its named callees match the Switch 0x71003ff220 opus_set_chr_pos's (similarity 1.00: Ch_SetPos3, MsBattleChrStart, MsSetChrPos); symbols from Fahrenheit's server export
+0x0081b4d0 function opu_motion_cb_0081b4d0    # (host, cmd): unit byte +0xba (the motion callback, 0x00c492c8) = cmd+2, u16 +0xa0/+0xa2 = cmd+4/+6; 8/9: +0x40.. = +0x90.. * 16; 0xb: +0xa4/+0x44/+0x48 = +0x90..; -> cmd + 8; name ours
 0x0081b560 function opu_spl                      # callees: its named callees match the Switch 0x7100401030 opu_spl's (similarity 0.88: op_free, op_malloc, op_mul_m, op_spline_xyz, op_spline_xyz_table); symbols from Fahrenheit's server export
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081c260 function SqsCmdSetC4C6            # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc4 (bit 12 of u16 ctx +0x21a set) or +0xc6 of ctx +0x220; in the IOP command table next to SqsCmdSetC2, no direct callers; name ours; ported (field round 33)
@@ -15639,6 +15669,8 @@
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
+0x011a006a label    g_OpOvlEffectOn           # byte: op_ovl_effect_init (0x007fcdd0) sets 1, op_ovl_effect_free clears it; the mdc transfer cues run only while set
+0x011a006c label    g_OpusCameraLimit         # i16: an opus camera command (case 9) sets 0x1000 + its depth, case 10 and op_ovl_effect_init clear it; nonzero turns on the screen-depth limit
 0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
 0x011a0083 label    g_OpOef2BattleStreamPlaying # byte, op_oef2_se_on / op_oef2_se_3d_on set it to 1 before starting a battle stream
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
