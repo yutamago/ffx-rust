@@ -393,4 +393,42 @@ pub mod bridge {
         PACKET_CURSOR.set(mem, next);
         next
     }
+
+    /// `0x008f0590(pkt, command, x, y, colour)`: a command's icon and name
+    /// in a packet: `MsGetComData(command, &strings)` (the strings base in
+    /// `scratch`), `TOAddPktMenuIcon(pkt, x + 0xc, y + 1, record +0x14)`,
+    /// then `TOAddPktBaseMesFontLAbmap(that, -1, strings + record +0 (u16),
+    /// x + 0x1a, y + 1, colour, 0, 0x80, 0x80, 0x80, 0x80, 0)`; returns the
+    /// last packet cursor. `call` takes `ffx.sym` addresses.
+    pub fn add_command_icon_name<M: Mem>(
+        mem: &mut M,
+        [pkt, command, x, y, colour]: [u32; 5],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let record = call(mem, 0x0079_a4b0, &[command, scratch]);
+        let strings: u32 = mem.read(scratch);
+        let name = u32::from(mem.read::<u16>(record)).wrapping_add(strings);
+        let icon = u32::from(mem.read::<u8>(record.wrapping_add(0x14)));
+        let y = y.wrapping_add(1);
+        let at = call(mem, 0x008e_b240, &[pkt, x.wrapping_add(0xc), y, icon]);
+        call(
+            mem,
+            0x008e_8fb0,
+            &[
+                at,
+                0xffff_ffff,
+                name,
+                x.wrapping_add(0x1a),
+                y,
+                colour,
+                0,
+                0x80,
+                0x80,
+                0x80,
+                0x80,
+                0,
+            ],
+        )
+    }
 }

@@ -7,6 +7,7 @@
 pub mod accessor;
 pub mod btl;
 pub mod cd;
+pub mod chr_plate;
 pub mod cmdwin;
 pub mod config;
 pub mod container;
@@ -16,6 +17,7 @@ pub mod files;
 pub mod fixup;
 pub mod heap;
 pub mod instance;
+pub mod intl;
 pub mod math;
 pub mod menu;
 pub mod msg;

@@ -2729,6 +2729,17 @@ ported! {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();
         ffx_field::abmap_draw::abmap_draw_map(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `KeThBP_Update(p)`.
+    KeThBP_Update @ 0x0076_37f0 => extern "C" fn shim_ke_th_bp_update(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_update(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));

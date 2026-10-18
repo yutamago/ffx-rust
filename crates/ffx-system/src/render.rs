@@ -104,4 +104,106 @@ pub mod bridge {
         base.wrapping_sub(0x214)
             .wrapping_add(count.cast_unsigned().wrapping_mul(0x214))
     }
+
+    /// The UI element record `BeginScissor_XY`/`graphicDrawUIElement` draw
+    /// (`0x025d1700`): 0x20-byte vertices, `x, y` at `+0`, `u, v` at `+8`,
+    /// the colour words at `+0x10`.
+    pub const UI_VERTICES: u32 = 0x025d_1700;
+
+    /// `0x009066d0(x, y, k)`: vertex `k`'s position (`f32`s through the
+    /// x87, signalling NaNs quieted). Returns `k × 0x20` (the original's
+    /// `eax`).
+    pub fn set_ui_vertex_xy(mem: &mut impl Mem, x: f32, y: f32, k: u32) -> u32 {
+        set_ui_vertex_pair(mem, 0, x, y, k)
+    }
+
+    /// `0x009066b0(u, v, k)`: vertex `k`'s texture coordinates, as
+    /// [`set_ui_vertex_xy`].
+    pub fn set_ui_vertex_uv(mem: &mut impl Mem, u: f32, v: f32, k: u32) -> u32 {
+        set_ui_vertex_pair(mem, 8, u, v, k)
+    }
+
+    fn set_ui_vertex_pair(mem: &mut impl Mem, off: u32, a: f32, b: f32, k: u32) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let at = k.wrapping_shl(5);
+        let vertex = mem.rebase(UI_VERTICES).wrapping_add(at).wrapping_add(off);
+        mem.write(vertex, round_trip(a));
+        mem.write(vertex.wrapping_add(4), round_trip(b));
+        at
+    }
+
+    /// `0x00684b00(kind, u, v, &u_out, &v_out)` (stdcall): a 0..1 UV
+    /// moved into one region of a 2 x 4 sheet: kind 0x3700 the top-left
+    /// quarter-height cell (`u / 2`, `v / 4`), 0x3720 the one below it
+    /// (`v / 4 + 1/4`), 0x3740 the top-right (`u / 2 + 1/2`), 0x3760 the
+    /// bottom-left half (`v / 2 + 1/2`), 0x37a0 the bottom-right half;
+    /// any other kind gives (0, 0). Each output is computed in `f64` and
+    /// stored as an `f32`. Returns `v_out` (the original's `eax`).
+    pub fn sheet_cell_uv(mem: &mut impl Mem, kind: u32, u: f32, v: f32, out: [u32; 2]) -> u32 {
+        // `x * scale`, plus the half/quarter offset where the original
+        // adds one (an added 0 would turn -0 into +0)
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let place = |x: f32, scale: f64, offset: Option<f64>| {
+            let scaled = f64::from(x) * scale;
+            offset.map_or(scaled, |o| scaled + o) as f32
+        };
+        let (u, v) = match kind {
+            0x3700 => (place(u, 0.5, None), place(v, 0.25, None)),
+            0x3720 => (place(u, 0.5, None), place(v, 0.25, Some(0.25))),
+            0x3740 => (place(u, 0.5, Some(0.5)), place(v, 0.25, None)),
+            0x3760 => (place(u, 0.5, None), place(v, 0.5, Some(0.5))),
+            0x37a0 => (place(u, 0.5, Some(0.5)), place(v, 0.5, Some(0.5))),
+            _ => (0.0, 0.0),
+        };
+        mem.write(out[0], u);
+        mem.write(out[1], v);
+        out[1]
+    }
+
+    /// One of the area-map manager's layer lists (`+0x90` count, `+0x94`
+    /// 0x6c-byte entries): words `+4` and `+8` of every entry cleared.
+    /// Returns the list (what the original's loop leaves in `eax`).
+    fn clear_layer_list(mem: &mut impl Mem, this: u32, off: u32) -> u32 {
+        let at = this.wrapping_add(off);
+        let mut k = 0i32;
+        loop {
+            let l: u32 = mem.read(at);
+            if k >= mem.read::<i32>(l.wrapping_add(0x90)) {
+                return l;
+            }
+            for word in [4u32, 8] {
+                let l: u32 = mem.read(at);
+                let entries: u32 = mem.read(l.wrapping_add(0x94));
+                let e = entries.wrapping_add(k.cast_unsigned().wrapping_mul(0x6c));
+                mem.write(e.wrapping_add(word), 0u32);
+            }
+            k += 1;
+        }
+    }
+
+    /// `0x006851d0(this, mode)` (thiscall, `ret 4`; the area-map manager,
+    /// called through `0x006390d0`): mode 0 flips the sign of `+8` and
+    /// clears the entries of layer lists `+0xd8` and `+0xdc` when the new
+    /// value is positive, else `+0xd0` and `+0xd4`; mode 1 clears list
+    /// `+0x94`; modes 2 and 3 set word `+0x90` of `[+0xc8]` to 0 and 1.
+    /// Returns what the original leaves in `eax`: the last list, the
+    /// `+0xc8` object, or `mode` for other modes.
+    pub fn abmap_reset_layers(mem: &mut impl Mem, this: u32, mode: u32) -> u32 {
+        match mode {
+            0 => {
+                let v = mem.read::<i32>(this.wrapping_add(8)).wrapping_neg();
+                mem.write(this.wrapping_add(8), v);
+                let lists = if v > 0 { [0xd8, 0xdc] } else { [0xd0, 0xd4] };
+                clear_layer_list(mem, this, lists[0]);
+                clear_layer_list(mem, this, lists[1])
+            }
+            1 => clear_layer_list(mem, this, 0x94),
+            2 | 3 => {
+                let o: u32 = mem.read(this.wrapping_add(0xc8));
+                mem.write(o.wrapping_add(0x90), mode - 2);
+                o
+            }
+            _ => mode,
+        }
+    }
 }
