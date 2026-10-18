@@ -1360,3 +1360,31 @@ pushed as literals (no relocation entries), not addresses.
   `MsCalcWeakLevel(hp, max)`: 1 and 2 give 2, 3 gives 0x53, anything else
   0; the MP's is 0. Ghidra shows two of the gauge's five arguments and
   one of the numbers' six.
+- `TOSetDrawInfo(code, window, pen)` (`0x008df8f0`) applies one control
+  code to a message pen (`+4` x, `+8` y, `+0x1a` icon mode, `+0x1b`
+  colour nibbles); the argument byte is read again at every test:
+  - 7: 0xe0..=0xef moves the pen right by `n - 0xe0`; otherwise
+    `TOGetMessageWH(i16 window+4, code + 2, &w, &h, i16 window+0x1a,
+    0x103)` (`w` starts at 0.0; `h` lands in the caller's argument slot),
+    then `'8'` (with `window + 0x24` zero) and `'1'` run
+    `TOFirstInitMessageNormal(window, [window + 0x8c] + 2, pen)`, `'2'`
+    sets `x = window+0x50 - w`, and 0x40..=0xbf `x = window+0x48 + (4n -
+    0x100)`.
+  - 9: `'0'` zeroes `window + 0xac`, other values below 0xc0 set it to `n
+    - '0'`, from 0xc0 `window + 0xb4 = n - 0xc0`.
+  - 0xa: the colour nibbles, as in the cross-menu text writer.
+  - 0xb: a button icon between `setButtonData(n, -1)` and
+    `resetButtonData`. Icon modes 1 and 3 draw it at scale 0.73 under
+    `graphicSetButtonIconScale(1.15, 1.15)` at `y + 5.5 +
+    AdjustButtonIconY`. Otherwise at 0.65: language 10 at `y + 3.0 +
+    adjust` (and the pen moves 8 when the language, asked again, is 11 on
+    map 0xb8); language 9 with `graphicGetAbmap() == 1` at `y + 1.0`
+    without adjusting; else at `y (+ 2.0 for '4'..'7') + 3.0 + adjust`
+    (the pen moves 7 on map 0xb8). After a move, `'8'` on map 0xb8 takes
+    1.0 back. `window + 0x9c` counts icons; with `window + 0xac` zero,
+    `window + 0xa0` steps up to `window + 0xa8` (signed). The pen then
+    moves by `TOGetScaleButtonIconWidth(n, scale)` + 1.5 (modes 1, 3) or
+    + 1.0.
+  - 0xe: `'0'..'3'` set the icon mode; mode 3 with `'A'` moves the pen
+    5.0; `'@'` sets mode 3, `'A'` mode 1.
+  - 8, 0xc, 0xd and other codes do nothing.

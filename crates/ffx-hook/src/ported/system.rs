@@ -1387,6 +1387,12 @@ ported! {
             call_ptr,
         )
     }
+    /// `TOSetDrawInfo(code, window, pen)`.
+    TOSetDrawInfo @ 0x008d_f8f0 => extern "C" fn to_set_draw_info(code: u32, window: u32, pen: u32) {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tolib::bridge::set_draw_info(&mut mem(), [code, window, pen], scratch, call_sym, fcall);
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

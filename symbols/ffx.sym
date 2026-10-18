@@ -10827,7 +10827,7 @@
 0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export; cdecl(msg): row kind +8 of 0x00c5b1b0 (0x24 bytes): words 0-4 -> +0x100..+0x110, word 5 -> +0x12c (mode 1: 0x008dfea0), words 6/7 -> +0xf4/+0xf8
 0x008df7b0 function TORightingMessage            # layout+callees: sorts between TOInitMessageCallBack and TOScanDrawInfo, and its named callees match the Switch 0x7100501880 TORightingMessage's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
-0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0
+0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0; (code, window, pen): applies control codes 7, 9, 0xa, 0xb (button icon), 0xe to a message pen; ported (system round 33)
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
 0x008dfe70 function MessageHold_008dfe70 # cdecl(w) -> 0: w+0x2c = 4 (u16), w+0x124 = itself; name ours
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp

@@ -18573,3 +18573,170 @@ fn round33_cross_plate_matches_the_original_on_the_snapshot() {
     };
     round33_cross_plate(&mut a, &mut b, &mut Xorshift(0x4033_0042));
 }
+
+/// Round 33 group E: `TOSetDrawInfo` over logging stand-ins (the message
+/// size writes a test width; `AdjustButtonIconY` and the icon width
+/// return test floats in ST0; `TOGetFFXLang` returns its cell and then
+/// bumps it, so 10 then 11 reaches the language-11 move). The message
+/// size writes its width only while `cells + 0x18` is set, and the icon
+/// drawer changes the icon mode (`cells + 0x14`), which the original reads
+/// again for the pen step.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round33_set_draw_info(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, t::SET_DRAW_INFO_SCRATCH as usize);
+    let pen = alloc(a, b, 0x20);
+    // cmp dword [cells + 0x18], 0; je over the store
+    let mut message_wh = vec![0x83, 0x3d];
+    message_wh.extend_from_slice(&(cells + 0x18).to_le_bytes());
+    message_wh.extend_from_slice(&[0x00, 0x74, 0x0b]);
+    message_wh.extend(store_through(2, cells));
+    // mov al, [cells + 0x14]; mov [pen + 0x1a], al
+    let mut draw_icon = vec![0xa0];
+    draw_icon.extend_from_slice(&(cells + 0x14).to_le_bytes());
+    draw_icon.push(0xa2);
+    draw_icon.extend_from_slice(&(pen + 0x1a).to_le_bytes());
+
+    let fld = |cell: u32| {
+        let mut v = vec![0xd9, 0x05];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v
+    };
+    let mut lang = ret_cell(cells + 0xc);
+    lang.extend_from_slice(&[0xff, 0x05]);
+    lang.extend_from_slice(&(cells + 0xc).to_le_bytes());
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008b_9650, vec![0, 1, 4, 5], vec![], message_wh),
+        (0x008d_f520, all(3), vec![], vec![]),
+        (0x008b_1350, all(2), vec![], vec![]),
+        (0x008b_1330, vec![], vec![], vec![]),
+        (0x008e_5280, all(5), vec![], fld(cells + 4)),
+        (0x008f_8ee0, all(8), vec![], draw_icon),
+        (0x008f_a800, all(2), vec![], fld(cells + 8)),
+        (0x008a_c2f0, vec![], vec![], lang),
+        (0x0064_1060, vec![], vec![], ret_cell(cells + 0x10)),
+        (0x0064_2ec0, all(2), vec![], vec![]),
+        (0x0064_2c60, vec![], vec![], vec![]),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let small = |rng: &mut Xorshift| (rng.next() % 4000) as f32 / 8.0 - 100.0;
+    let code = alloc(a, b, 0x10);
+    let window = alloc(a, b, 0x100);
+    let map = a.rebase(0x012f_bc40);
+    let args = [
+        0u8, 1, b'0', b'1', b'2', b'3', b'4', b'5', b'7', b'8', b'9', b'@', b'A', b'B', 0x3f, 0x40,
+        0x41, 0x7f, 0xbf, 0xc0, 0xc5, 0xdf, 0xe0, 0xe7, 0xef, 0xf0, 0xff, 0x0f, 0x10, 0x21, 0x5a,
+    ];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        let kind = [
+            7u8, 8, 9, 0xa, 0xb, 0xb, 0xb, 0xc, 0xd, 0xe, 0, 6, 0xf, 0xff,
+        ][(rng.next() % 14) as usize];
+        let n = args[(rng.next() as usize) % args.len()];
+        put(a, b, code, [kind, n, b'x', 0]);
+        for w in 0..0x40 {
+            put(a, b, window + 4 * w, rng.next());
+        }
+        for (off, v) in [(0x48, small(rng)), (0x50, small(rng))] {
+            put(a, b, window + off, v);
+        }
+        put(a, b, window + 0x24, [0u16, 0, 1][(rng.next() % 3) as usize]);
+        put(
+            a,
+            b,
+            window + 0xac,
+            [0u32, 0, 1, rng.next()][(rng.next() % 4) as usize],
+        );
+        let shown = (rng.next() % 5).cast_signed() - 1;
+        put(a, b, window + 0xa0, shown);
+        put(
+            a,
+            b,
+            window + 0xa8,
+            shown + (rng.next() % 3).cast_signed() - 1,
+        );
+        for w in 0..8 {
+            put(a, b, pen + 4 * w, rng.next());
+        }
+        put(a, b, pen + 4, small(rng));
+        put(a, b, pen + 8, small(rng));
+        put(
+            a,
+            b,
+            pen + 0x1a,
+            [0u8, 1, 2, 3, 4, 0xff][(rng.next() % 6) as usize],
+        );
+        put(a, b, cells, small(rng));
+        put(a, b, cells + 4, small(rng) / 16.0);
+        put(a, b, cells + 8, small(rng) / 2.0);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [8u32, 9, 10, 0, 0xb][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x10,
+            [0u32, 1, 1, 2][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x14,
+            [0u8, 1, 3, 2][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 0x18, rng.next() % 3);
+        put(
+            a,
+            b,
+            map,
+            [0xb8u32, 0xb8, 0, 0xb7][(rng.next() % 4) as usize],
+        );
+        put(a, b, scratch, [0u32, 0]);
+        let r = [code, window, pen];
+        eax(a, 0x008d_f8f0, &r);
+        t::set_draw_info(b, r, scratch, call, fcall);
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("set draw info {k} ({kind:#x} {n:#x})"), a, b);
+    }
+}
+
+#[test]
+fn round33_set_draw_info_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_set_draw_info(&mut a, &mut b, &mut Xorshift(0x4033_0051));
+}
+
+#[test]
+fn round33_set_draw_info_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_set_draw_info(&mut a, &mut b, &mut Xorshift(0x4033_0052));
+}

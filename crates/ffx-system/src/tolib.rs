@@ -11931,4 +11931,242 @@ pub mod bridge {
     ) -> u32 {
         button_icon_rgba(mem, [cursor, c, x, y, 0x80, 0x80, 0x80, 0x80], call)
     }
+
+    /// The scratch [`set_draw_info`] hands `TOGetMessageWH`: the width and
+    /// height it writes (`[ebp-8]`, `[ebp+8]`), 8 bytes.
+    pub const SET_DRAW_INFO_SCRATCH: u32 = 8;
+
+    /// `TOSetDrawInfo(code, window, pen)` (`0x008df8f0`): applies the
+    /// control code at `code` (`code[0]`, its argument `n = code[1]`, read
+    /// again at each test) to message window `window` and pen `pen` (`+4`
+    /// x, `+8` y, `+0x1a` the icon mode byte, `+0x1b` the colour nibbles):
+    /// - 7: `n` 0xe0..=0xef moves the pen right by `n - 0xe0`. Otherwise
+    ///   `TOGetMessageWH(window +4, code + 2, &w, &h, window +0x1a, 0x103)`
+    ///   (the two `i16` sign-extended; `w` starts at 0.0 and `h` holds
+    ///   `code`, in `scratch`), then `'8'` (with the `u16` at
+    ///   `window + 0x24` 0) and `'1'` run
+    ///   `TOFirstInitMessageNormal(window, [window + 0x8c] + 2, pen)`,
+    ///   `'2'` puts the pen's x at `window + 0x50 - w` and 0x40..=0xbf at
+    ///   `window + 0x48 + (4 n - 0x100)`.
+    /// - 9: `'0'` zeroes `window + 0xac`, another `n` below 0xc0 sets it to
+    ///   `n - '0'`; `n` from 0xc0 sets `window + 0xb4` to `n - 0xc0`.
+    /// - 0xa: a non-zero low nibble `l` puts `l - 1` in the colour byte's
+    ///   low nibble; a high nibble from 4 puts `(n & 0xf0) - 0x40` in its
+    ///   high one.
+    /// - 0xb: button icon `n` (`setButtonData(n, -1)` first,
+    ///   `resetButtonData` last). Icon modes 1 and 3 draw it at scale 0.73
+    ///   inside `graphicSetButtonIconScale(1.15, 1.15)` /
+    ///   `graphicResetButtonIconScale`, at `y + 5.5 + AdjustButtonIconY`.
+    ///   Otherwise at 0.65: language 10 at `y + 3.0 + AdjustButtonIconY`
+    ///   (then, if the language is also 11 on map 0xb8, the pen moves 8);
+    ///   language 9 with `graphicGetAbmap() == 1` at `y + 1.0` without the
+    ///   adjustment; else at `y (+ 2.0 for '4'..='7') + 3.0 +
+    ///   AdjustButtonIconY` (then on map 0xb8 the pen moves 7). After a
+    ///   move, `'8'` on map 0xb8 takes 1.0 back. Then `window + 0x9c`
+    ///   counts the icon and, while `window + 0xac` is 0, `window + 0xa0`
+    ///   steps up to `window + 0xa8` (signed); the pen moves by
+    ///   `TOGetScaleButtonIconWidth(n, scale)` plus 1.5 (modes 1, 3, read
+    ///   again) or 1.0.
+    /// - 0xe: `'0'..='3'` set the icon mode to `n - '0'`; mode 3 with `'A'`
+    ///   moves the pen 5.0; `'@'` sets mode 3 and `'A'` mode 1.
+    /// - 8, 0xc, 0xd and anything else: nothing.
+    ///
+    /// Sums are formed at the x87's 53 bits in the original's order and
+    /// stored as `f32`. `call` and `fcall` take `ffx.sym` addresses.
+    #[allow(clippy::too_many_lines)]
+    pub fn set_draw_info<M: Mem>(
+        mem: &mut M,
+        [code, window, pen]: [u32; 3],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87;
+        const MESSAGE_WH: u32 = 0x008b_9650;
+        const FIRST_INIT_MESSAGE: u32 = 0x008d_f520;
+        const SET_BUTTON: u32 = 0x008b_1350;
+        const RESET_BUTTON: u32 = 0x008b_1330;
+        const ADJUST_ICON_Y: u32 = 0x008e_5280;
+        const DRAW_ICON: u32 = 0x008f_8ee0;
+        const ICON_WIDTH: u32 = 0x008f_a800;
+        const LANG: u32 = 0x008a_c2f0;
+        const GET_ABMAP: u32 = 0x0064_1060;
+        const SET_ICON_SCALE: u32 = 0x0064_2ec0;
+        const RESET_ICON_SCALE: u32 = 0x0064_2c60;
+        const CURRENT_MAP: u32 = 0x012f_bc40;
+        const SCALE: f32 = 0.65;
+        const SCALE_BIG: f32 = 0.73;
+        let arg = |mem: &M| mem.read::<u8>(code.wrapping_add(1));
+        let store = |v: f64| f32::from_bits(x87::store(v));
+        let pen_x = pen.wrapping_add(4);
+        let pen_y = pen.wrapping_add(8);
+        let mode = pen.wrapping_add(0x1a);
+        let f = |mem: &M, at: u32| f64::from(mem.read::<f32>(at));
+        match mem.read::<u8>(code) {
+            7 => {
+                let n = arg(mem);
+                if (0xe0..0xf0).contains(&n) {
+                    let x = x87::add(f64::from(n - 0xe0), f(mem, pen_x));
+                    mem.write(pen_x, store(x));
+                    return;
+                }
+                mem.write(scratch, 0.0f32);
+                mem.write(scratch.wrapping_add(4), code);
+                let lines = i32::from(mem.read::<i16>(window.wrapping_add(4)));
+                let width = i32::from(mem.read::<i16>(window.wrapping_add(0x1a)));
+                let args = [
+                    lines.cast_unsigned(),
+                    code.wrapping_add(2),
+                    scratch,
+                    scratch.wrapping_add(4),
+                    width.cast_unsigned(),
+                    0x103,
+                ];
+                call(mem, MESSAGE_WH, &args);
+                for (c, needs_zero) in [(b'8', true), (b'1', false)] {
+                    if arg(mem) == c
+                        && (!needs_zero || mem.read::<u16>(window.wrapping_add(0x24)) == 0)
+                    {
+                        let line = mem.read::<u32>(window.wrapping_add(0x8c)).wrapping_add(2);
+                        call(mem, FIRST_INIT_MESSAGE, &[window, line, pen]);
+                    }
+                }
+                if arg(mem) == b'2' {
+                    let x = x87::sub(f(mem, window.wrapping_add(0x50)), f(mem, scratch));
+                    mem.write(pen_x, store(x));
+                }
+                let n = arg(mem);
+                if (0x40..0xc0).contains(&n) {
+                    let step = f64::from(u32::from(n) * 4 - 0x100);
+                    let x = x87::add(step, f(mem, window.wrapping_add(0x48)));
+                    mem.write(pen_x, store(x));
+                }
+            }
+            9 => {
+                let wait = window.wrapping_add(0xac);
+                if arg(mem) == b'0' {
+                    mem.write(wait, 0u32);
+                }
+                let n = arg(mem);
+                if n < 0xc0 && n != b'0' {
+                    mem.write(wait, u32::from(n).wrapping_sub(0x30));
+                }
+                let n = arg(mem);
+                if n >= 0xc0 {
+                    mem.write(window.wrapping_add(0xb4), u32::from(n - 0xc0));
+                }
+            }
+            0xa => {
+                let colour = pen.wrapping_add(0x1b);
+                let low = arg(mem) & 0xf;
+                if low != 0 {
+                    let c = mem.read::<u8>(colour) & 0xf0 | (low - 1);
+                    mem.write(colour, c);
+                }
+                let high = arg(mem) & 0xf0;
+                if high >= 0x40 {
+                    let c = mem.read::<u8>(colour) & 0xf | (high - 0x40);
+                    mem.write(colour, c);
+                }
+            }
+            0xb => {
+                let n = u32::from(arg(mem));
+                call(mem, SET_BUTTON, &[n, u32::MAX]);
+                let icon = |mem: &mut M,
+                            call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                            y: f32,
+                            scale: f32| {
+                    let x: u32 = mem.read(pen_x);
+                    let n = u32::from(mem.read::<u8>(code.wrapping_add(1)));
+                    let args = [n, x, y.to_bits(), scale.to_bits(), 0x80, 0x80, 0x80, 0x80];
+                    call(mem, DRAW_ICON, &args);
+                };
+                let big = matches!(mem.read::<u8>(mode), 1 | 3);
+                if big {
+                    call(mem, SET_ICON_SCALE, &[1.15f32.to_bits(), 1.15f32.to_bits()]);
+                    let lift = fcall(
+                        mem,
+                        ADJUST_ICON_Y,
+                        &[SCALE_BIG.to_bits(), 0x80, 0x80, 0x80, 0x80],
+                    );
+                    let y = store(x87::add(x87::add(f(mem, pen_y), 5.5), lift));
+                    icon(mem, &mut call, y, SCALE_BIG);
+                    call(mem, RESET_ICON_SCALE, &[]);
+                } else {
+                    let map = |mem: &M| mem.read::<u32>(mem.rebase(CURRENT_MAP));
+                    let moved = if call(mem, LANG, &[]) == 10 {
+                        let lift = fcall(
+                            mem,
+                            ADJUST_ICON_Y,
+                            &[SCALE.to_bits(), 0x80, 0x80, 0x80, 0x80],
+                        );
+                        let y = store(x87::add(x87::add(f(mem, pen_y), 3.0), lift));
+                        icon(mem, &mut call, y, SCALE);
+                        (call(mem, LANG, &[]) == 0xb && map(mem) == 0xb8).then_some(8.0)
+                    } else {
+                        if call(mem, LANG, &[]) == 9 && call(mem, GET_ABMAP, &[]) == 1 {
+                            let y = store(x87::add(f(mem, pen_y), 1.0));
+                            icon(mem, &mut call, y, SCALE);
+                        } else {
+                            let mut y = mem.read::<f32>(pen_y);
+                            if (0x34..=0x37).contains(&arg(mem)) {
+                                y = store(x87::add(f64::from(y), 2.0));
+                            }
+                            let lift = fcall(
+                                mem,
+                                ADJUST_ICON_Y,
+                                &[SCALE.to_bits(), 0x80, 0x80, 0x80, 0x80],
+                            );
+                            let y = store(x87::add(x87::add(f64::from(y), 3.0), lift));
+                            icon(mem, &mut call, y, SCALE);
+                        }
+                        (map(mem) == 0xb8).then_some(7.0)
+                    };
+                    if let Some(step) = moved {
+                        let x = store(x87::add(f(mem, pen_x), step));
+                        mem.write(pen_x, x);
+                        if map(mem) == 0xb8 && arg(mem) == b'8' {
+                            mem.write(pen_x, store(x87::sub(f64::from(x), 1.0)));
+                        }
+                    }
+                }
+                let count = window.wrapping_add(0x9c);
+                let v = mem.read::<u32>(count).wrapping_add(1);
+                mem.write(count, v);
+                if mem.read::<u32>(window.wrapping_add(0xac)) == 0 {
+                    let shown = window.wrapping_add(0xa0);
+                    let v = mem.read::<i32>(shown);
+                    if v < mem.read::<i32>(window.wrapping_add(0xa8)) {
+                        mem.write(shown, v.wrapping_add(1));
+                    }
+                }
+                let n = u32::from(arg(mem));
+                let x = if matches!(mem.read::<u8>(mode), 1 | 3) {
+                    let w = fcall(mem, ICON_WIDTH, &[n, SCALE_BIG.to_bits()]);
+                    x87::add(x87::add(w, 1.5), f(mem, pen_x))
+                } else {
+                    let w = fcall(mem, ICON_WIDTH, &[n, SCALE.to_bits()]);
+                    x87::add(x87::add(w, 1.0), f(mem, pen_x))
+                };
+                mem.write(pen_x, store(x));
+                call(mem, RESET_BUTTON, &[]);
+            }
+            0xe => {
+                let n = arg(mem);
+                if (0x30..=0x33).contains(&n) {
+                    mem.write(mode, n - 0x30);
+                }
+                if mem.read::<u8>(mode) == 3 && arg(mem) == b'A' {
+                    mem.write(pen_x, store(x87::add(f(mem, pen_x), 5.0)));
+                }
+                if arg(mem) == b'@' {
+                    mem.write(mode, 3u8);
+                }
+                if arg(mem) == b'A' {
+                    mem.write(mode, 1u8);
+                }
+            }
+            _ => {}
+        }
+    }
 }
