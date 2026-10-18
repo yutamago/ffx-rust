@@ -13248,3 +13248,102 @@ fn round28c_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn ppp_fp_point_light_proc_matches_the_original() {
+    use fp::bridge as f;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_9f90);
+        let (block, light, radius, att) = (p.alloc(4), p.alloc(4), p.alloc(4), p.alloc(4));
+        let buf = p.alloc(0x24 * 8);
+        // user_malloc answers the block; the Sg_PLight* getters, setters,
+        // user_free_thunk and Ch_PLightSetEnable recorded; the two float
+        // getters return cells in ST0
+        for (sym, words, ret) in [
+            (0x0068_7020u32, &[0u8][..], Some(block)),
+            (0x0083_1950, &[0], None),
+            (0x0083_19b0, &[0, 0, 0, 0, 0, 0, 0, 0, 0], None),
+            (0x0083_1a60, &[0, 0, 0, 0], None),
+            (0x0083_1b00, &[0], Some(light)),
+            (0x0083_1b30, &[0, 0, 0, 0], None),
+            (0x0083_1bf0, &[0, 0], None),
+            (0x0083_1c60, &[0, 0], None),
+            (0x0082_6db0, &[], None),
+            (0x0083_0ae0, &[0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        float_stub(&mut p, 0x0083_1b80, radius);
+        float_stub(&mut p, 0x0083_1a40, att);
+        // user_free_thunk sits 0x10 before user_malloc: a 16-byte stub
+        // counting its calls and keeping the last pointer
+        let freed = p.alloc(8);
+        let mut c = vec![0xff, 0x05];
+        c.extend(freed.to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x04, 0xa3]);
+        c.extend((freed + 4).to_le_bytes());
+        c.push(0xc3);
+        assert_eq!(c.len(), 16);
+        let at = p.sym(0x0068_7010);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        // Sg_PLightDispose_thunk sits 0x10 before the attenuation getter:
+        // a short counting stub
+        let disposed = p.alloc(4);
+        let mut c = vec![0xff, 0x05];
+        c.extend(disposed.to_le_bytes());
+        c.push(0xc3);
+        let at = p.sym(0x0083_1a30);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        // Ch_HandleGetNext walks a zero-ended handle list
+        let (walk, handles) = (p.alloc(4), p.alloc(0x20));
+        let mut c = vec![0xa1];
+        c.extend(walk.to_le_bytes());
+        c.extend([0x8b, 0x00, 0x83, 0x05]);
+        c.extend(walk.to_le_bytes());
+        c.extend([0x04, 0xc3]);
+        let at = p.sym(0x0082_6d70);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        for round in 0..3000 {
+            let cap = rng.pick(&[-1i32, 0, 1, 3, 6]);
+            let want = rng.pick(&[0u32, 1, 2, 5, 7, u32::MAX]);
+            p.put(f::POINT_LIGHT_CAP, cap);
+            p.put(f::POINT_LIGHT_A, want);
+            let on = rng.next();
+            p.put(f::POINT_LIGHT_B, on);
+            for i in 0..0x24 * 8 / 4 {
+                let v = rng.float();
+                p.set(buf + 4 * i, v);
+            }
+            p.set(block, buf);
+            let v = rng.next();
+            p.set(light, v);
+            // finite: the harness hands back ST0 NaNs canonical
+            for cell in [radius, att] {
+                let v = finite(&mut rng);
+                p.set(cell, v);
+            }
+            let n = rng.below(4);
+            for i in 0..n {
+                p.set(handles + 4 * i, 0x100 + i);
+            }
+            p.set(handles + 4 * n, 0u32);
+            p.set(walk, handles);
+            p.check(
+                &format!("pppFpPointLightProc({want:#x}, cap {cap}) round {round}"),
+                0x0072_9f90,
+                &[],
+                |m| {
+                    Some(f::ppp_fp_point_light_proc(
+                        m,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+    }
+}

@@ -1980,6 +1980,10 @@ ported! {
     pppFpSetRotMatrix @ 0x0072_a2e0 => extern "C" fn ppp_fp_set_rot_matrix(part: u32, mode: u32) -> u32 {
         mat::bridge::ppp_fp_set_rot_matrix(&mut mem(), part, mode)
     }
+    /// `pppFpPointLightProc()`.
+    pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
+        fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `op_loop_ffx_after()`.
     op_loop_ffx_after @ 0x007f_f680 => extern "C" fn op_loop_ffx_after() {
         // the original's locals (the frame number, then the GS environment
