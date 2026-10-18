@@ -4846,7 +4846,15 @@ fn round19_natives_match_the_original() {
                 poke(a, b, st, x);
                 native_case(a, b, w, 0x007a_5d60, &[], &format!("0x7081 poll {x}"));
             }
-            compared += 14;
+            // 0xc059's command-menu panel bit set and cleared on commands
+            // of both halves (0x3000-0x305f, 0x3060 on)
+            for i in [0x3000u32, 0x3015, 0x3061] {
+                for on in [0u32, 1, 0] {
+                    let push = [(stack::INT, i), (stack::INT, on)];
+                    native_case(a, b, w, 0x0087_82a0, &push, &format!("0xc059 {i} {on}"));
+                }
+            }
+            compared += 23;
         }
         // 0x7076 with its three spline callees stubbed: its own record
         // writes and the order around them

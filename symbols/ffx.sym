@@ -9225,25 +9225,34 @@
 0x008781f0 function Native_c057                # 0xc057: no args -> debug (mod-tool candidate): copies 0x68c0 bytes from the address + 0x40 into g_SaveData and TkFlushSyncH ('copy to saveram'); 1; debug, not ported (mod-tool candidate)
 0x00878230 function Native_c056                # 0xc056: no args -> debug (mod-tool candidate): TkCdRead(group, index, adrs) with a dbgPrintf (a debug file read); 1; debug, not ported (mod-tool candidate)
 0x00878280 function Native_c058                # 0xc058: args (v) -> AtelGetRealVarAdrs(worker, v); ported in native_chr (script round 12)
+0x008782a0 function Native_c059 # 0xc059: (i, on) -> MsGetSaveCommandMenuPanel(i) (0x007850b0) before MsSetSaveCommandMenuPanel(i, on != 0) (0x00785d40); ported in native_mods (script round 21); name ours
 0x008782f0 function Native_c05a # 0xc05a: args (event int, variation int) -> 1: SndKickFoot(0xff, event, 0, variation); ported in native_sys (script round 18); name ours
 0x00878330 function Native_c05b                # 0xc05b: args (v int) -> debug (mod-tool candidate): AtelPs2DebugString2("DEBUG:%d/%d" of the worker id +0x2e and v) (0x00873c80); v; debug, not ported (mod-tool candidate)
 0x00878390 function Native_c008 # 0xc008: args (var int) -> 1: AtelGetRealVarAdrs(worker, var), unused; ported in native_sys (script round 18); name ours
 0x008783c0 function Native_c05c # 0xc05c: AtelPs2DebugString2(sprintf("DEBUG:%d/0x%x", worker id, v)); v; debug native, not ported (script round 18); name ours
+0x00878420 function Native_c000 # 0xc000: under TkIsDebug only: the save event block (TkGetSaveEventAddress) written to a PS2 development-host file (AtelPCCreate/AtelPCWrite 0x21ec bytes, name at 0x00c52dc0); 1, else 0; debug native, not ported (script round 21); name ours
 0x00878470 function Native_c05d # 0xc05d: args (v int) -> v: 0x00887ca0(v); ported in native_sys (script round 18); name ours
+0x00878490 function Native_c001 # 0xc001: under TkIsDebug only: the save event block read back from that host file (AtelPCOpen/AtelPCRead); 1, else 0; debug native, not ported (script round 21); name ours
 0x008784e0 function Native_c002                # 0xc002: args (on) -> MsSetSaveConfigHiragana(on != 0) (0x00785f40); 0; ported in native_chr (script round 12)
 0x00878510 function Native_c003                # 0xc003: args (map) -> AtelMapLoad(map) (0x0086dca0); ported in native_chr (script round 12)
 0x00878530 function Native_c031                # 0xc031: args (v) -> 0x0086dcd0(v); ported in native_chr (script round 12)
+0x00878550 function Native_c019 # 0xc019: (map): AtelMapLoadNoCache(map) (0x0086dd30); 0; ported in native_mods (script round 21); name ours
 0x00878570 function Native_c004 # 0xc004: under TkIsDebug (0 in this build) 0x0083a4f0(b, a); 1; debug native, not ported (script round 18); name ours
 0x008785b0 function Native_c005 # 0xc005: under TkIsDebug (0 in this build) 0x0083a580(v); 1; debug native, not ported (script round 18); name ours
+0x008785e0 function Native_c006 # 0xc006: under TkIsDebug only: 0x0083a570(); 1; debug native, not ported (script round 21); name ours
 0x00878600 function Native_c007                # 0xc007: args (map, index) -> TkSetStartMapIndex(map, index) (0x0088ebf0); map; ported in native_chr (script round 12)
 0x00878630 function Native_c009                # 0xc009: args (mode) -> AtelSetEventMode(mode) (0x00873e40); mode; ported in native_chr (script round 12)
 0x00878650 function Native_c00c                # 0xc00c: no args -> debug (mod-tool candidate): in a debug build (TkIsDebug) yiLoadFieldParticleNo(v); 1 in release; debug, not ported (mod-tool candidate)
 0x00878690 function Native_c00b                # 0xc00b: no args -> debug (mod-tool candidate): in a debug build yiLoadBattleFieldParticleNo(v); 1 in release; debug, not ported (mod-tool candidate)
 0x008786d0 function Native_c00d                # 0xc00d: args (on) -> MsSetSaveConfigCreditName(on != 0) (0x00785e90); on != 0; ported in native_chr (script round 12)
+0x00878700 function Native_c00e # 0xc00e: (id, b, c, d): SqsSePlay(id, b, c, d) (0x0081e4e0); id; ported in native_mods (script round 21); name ours
 0x00878750 function Native_c00f # 0xc00f: args (var int) -> 0: AtelGetRealVarAdrs(worker, var), unused; ported in native_sys (script round 18); name ours
 0x00878770 function Native_c010 # 0xc010: args (voice int) -> 1: SndStandbyStream(voice); ported in native_sys (script round 18); name ours
+0x00878790 function Native_c011 # 0xc011: SndStartStream() (0x00887630); 1; ported in native_mods (script round 21); name ours
+0x008787a0 function Native_c012 # 0xc012: SndGetStreamState() != 0 (0x008864b0); ported in native_mods (script round 21); name ours
 0x008787b0 function Native_c013                # 0xc013: no args -> 1 when MsGetSaveConfigHiragana() (0x007851f0) is 1; ported in native_chr (script round 12)
 0x008787c0 function Native_c014                # 0xc014: no args -> 1 when 0x007851b0() is not 0; ported in native_chr (script round 12)
+0x008787d0 function Native_c015 # 0xc015: the variable's address taken, then under TkIsDebug only: a host file read into a TkMalloc buffer and sent with SndSepTrans; 1; debug native, not ported (script round 21); name ours
 0x00878860 function Native_c016 # 0xc016: args (v int) -> 1: 0x00886e80(v); ported in native_sys (script round 18); name ours
 0x00878880 function Native_c017 # 0xc017: args (v int) -> 1: 0x00886eb0(v); ported in native_sys (script round 18); name ours
 0x008788a0 function Native_c018                # 0xc018: no args -> debug (mod-tool candidate): in a debug build SqsSetProjectBase(&var); 1 in release; debug, not ported (mod-tool candidate)
@@ -9263,14 +9272,18 @@
 0x00878c60 function Native_c024_Poll           # 0xc024 (poll): args (_, v) -> start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1; ported in native_chr (script round 12)
 0x00878c70 function Native_c025                  # native 0xc025 int handler (g_NativeTables group c entry 0x25, ffx-script native_counts); 4 calls in the shipped scripts; calls AtelPopStackInteger, MsGetSaveChrName, MsGetSaveChrNameSize, Msg_Text; name by id; ported in native_chr (script round 13)
 0x00878ce0 function Native_c026 # 0xc026: args (var int, v int) -> 1: 0x00886a00(variable address, v); ported in native_sys (script round 18); name ours
+0x00878d20 function Native_c027 # 0xc027: under TkIsDebug only: TOSetCollectBit(-1) and 0x0088e780(0xa004 + k) for k < 26; 0; debug native, not ported (script round 21); name ours
 0x00878d60 function Native_c028                # 0xc028: no args -> debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1; debug, not ported (mod-tool candidate)
 0x00878d90 function Native_c029 # 0xc029: args (flags, b, a) -> a if flags & 2 else b; 0x0088bc20 (angle wrap) on level +0x884 - yaw, dropped; ported in native_sys (script round 18); name ours
 0x00878e10 function Native_c02a                # 0xc02a: no args -> debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v; debug, not ported (mod-tool candidate)
+0x00878e50 function Native_c02b # 0xc02b: 0 (xor eax, eax; ret); ported in native_mods (script round 21); name ours
 0x00878e60 function Native_c02c                # 0xc02c: args (v int) -> int: the popped value; int: the popped value; ported in native_chr (script round 12)
 0x00878e80 function Native_c02f                # 0xc02f: args (on, v f) -> the current ctrl work's +0x208 = v and +2 bit 0 = on != 0; EAX on != 0; ported in native_chr (script round 12)
 0x00878ed0 function Native_c030                # 0xc030: no args -> TkIsDebug(), then the current ctrl work's +0x1f4; ported in native_chr (script round 12)
 0x00878ef0 function Native_c032 # 0xc032: () -> 1: Script_WorkerLevel(worker, +0x32), unused; ported in native_sys (script round 18); name ours
+0x00878f10 function Native_c033 # 0xc033: jumps to Ch_EnableGetTexture (0x00830320); ported in native_mods (script round 21); name ours
 0x00878f20 function Native_c034 # 0xc034: pops v; under TkIsDebug (0 in this build) 0x00830330(1); 1; debug native, not ported (script round 18); name ours
+0x00878f50 function Native_c035 # 0xc035: (pc) -> AtelGetCharHandleFromBindPC(pc) (0x0086ae90); ported in native_mods (script round 21); name ours
 0x00878f70 function Native_c036                # 0xc036: args (on) -> pppFpSetDisp(on != 0) (0x00729050); on != 0; ported in native_chr (script round 12)
 0x00878fa0 function Native_c037 # 0xc037: args (i int) -> table + u16 table[2i (+1 when 0x0086bad0())], table = 0x008b9130(); ported in native_sys (script round 18); name ours
 0x00878fe0 function Native_c038 # 0xc038: args (c, b, var) -> 1: GetCD() +0x10(c), +0(b, &var, 0, 0); ported in native_sys (script round 18); name ours
@@ -9281,7 +9294,10 @@
 0x008790d0 function Native_c03d # 0xc03d: args (bit int, on int) -> on: effect flag bit set/cleared; ported in native_sys (script round 18); name ours
 0x00879110 function Native_c03e # 0xc03e: args (v int) -> 0x00886680(v); ported in native_sys (script round 18); name ours
 0x00879130 function Native_c03f # 0xc03f: args (v int) -> v: 0x00887180(v); ported in native_sys (script round 18); name ours
+0x00879150 function Native_c040 # 0xc040: jumps to 0x00886430; ported in native_mods (script round 21); name ours
 0x00879160 function Native_c041 # 0xc041: args (v int) -> v: 0x008871c0(v); ported in native_sys (script round 18); name ours
+0x00879180 function Native_c042 # 0xc042: jumps to SndGetSoundType (0x00886440); ported in native_mods (script round 21); name ours
+0x00879190 function Native_c043 # 0xc043: SndSepClearAll() (0x00886db0); 1; ported in native_mods (script round 21); name ours
 0x008791a0 function Native_c044 # 0xc044: args (v int) -> 0: 0x0088c7f0(v); ported in native_sys (script round 18); name ours
 0x008791c0 function Native_c045 # 0xc045: args (v int) -> 0x0088c800(v); ported in native_sys (script round 18); name ours
 0x008791e0 function Native_c046 # 0xc046: args (v int) -> 0: 0x0088c820(v); ported in native_sys (script round 18); name ours
@@ -9293,6 +9309,8 @@
 0x008792c0 function Native_c04a # 0xc04a: args (offset int, v f) -> ftol(v), stored as u32 at 0x0088c830() + offset; ported in native_sys (script round 18); name ours
 0x00879300 function Native_c04c # 0xc04c: args (offset int, v f) -> ftol(v), stored as u16 at 0x0088c830() + offset; ported in native_sys (script round 18); name ours
 0x00879340 function Native_c04e # 0xc04e: args (offset int, v f) -> ftol(v), stored as u8 at 0x0088c830() + offset; ported in native_sys (script round 18); name ours
+0x00879380 function Native_c04f # 0xc04f: 1 (mov eax, 1; ret); ported in native_mods (script round 21); name ours
+0x00879390 function Native_c050 # 0xc050: movie_stop_prog() (0x0076f090) when movie_run_check() (0x0076f060); 1; ported in native_mods (script round 21); name ours
 0x008793b0 function Native_c051                # 0xc051: args (on) -> TkSetTGS(on != 0) (0x0088ec10); on != 0; ported in native_chr (script round 12)
 0x008793e0 function Native_c052                # 0xc052: no args -> jumps to 0x0088d6d0; ported in native_chr (script round 12)
 0x008793f0 function Native_c053                # 0xc053: no args -> four popped and dropped; 0; ported in native_chr (script round 12)
@@ -11137,6 +11155,7 @@
 0x00907cc0 function yiWindowGrowInit         # (window): progress +6 = 0, drawn (x0, y0, x0, y1) (kind 0 slot +0x60; table g_YiWindowHandlers)
 0x00907cf0 function yiWindowGrowOpen         # (window): progress += 0x2aa (<= 0x1000), drawn x1 from it; at x1: state 2, handler 0x00907d70 (kind 0)
 0x00907d80 function yiWindowSetHandlers       # (window): +0x60..+0x70, +0x78 = the six handlers of kind +4 (i16) from the table 0x00c5d788 (6 words a kind)
+0x00907e60 function Native_9000 # 0x9000: an "atel_test_print!" line through the empty dbgPrintf; 0; ported in native_mods (script round 21); name ours
 0x00907e70 function yiGetMapName              # (out): sprintf "%s" of the current map's name (table 0x025d5888, count 0x01934ec8)
 0x00907f00 function yiMapGetSection              # (map, index) -> map + section offset (+0x10 + 4 index) for data tagged MAP1, else 0; loadPhyreFieldMap, yiMapReadMaster, yiObjReadCallback, yiSetIDPage, yiSetPreBgPage
 0x00907f50 function initEventList             # fh v3:exact 0x00907f50
@@ -11414,6 +11433,7 @@
 0x0091ae80 function Yn_SeaSetPos              # fh v3:bsim1.00 0x0091ae80
 0x0091aea0 function Yn_SeaSetUvSpd            # fh v3:exact 0x0091aea0
 0x0091af10 function pppStoreComputed_0091af10    # auto-port shape (several stores: computed, into field, cdecl): t0 = u16[(a0 + 0x10)]; u32[a1] = sx16(t0); t1 = u16[(a0 + 0x12)]; u32[a2] = sx16(t1); return a2; callers: pppDrawMdlSeaDraw; name ours
+0x0091af30 function Native_8069 # 0x8069: (b, a): pppFpSetStickMapDObj(a, b) (0x0072a5e0); 1; ported in native_mods (script round 21); name ours
 0x0091af60 function Native_MapSpriteWait      # 0x8004: start): pushes 1 and goes on as [`native_8005`] (so `+4` is 1). (ffx_script::vm::bridge::native_map)
 0x0091af80 function Native_806a               # 0x806a: `0x0091a260(x)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091afa0 function Native_MapSpriteWait_Poll # 0x8004: [`native_8005_poll`]. (ffx_script::vm::bridge::native_map)
@@ -11426,6 +11446,7 @@
 0x0091b0a0 function Native_FpBindPos             # 0x800a: args (fp id, x, y, z) -> 1; debug "**** mpfpbindpos id:%d pos:%f,%f,%f"; 0x00862920 sets the bound effect's offset (0x0072a630)
 0x0091b130 function Native_FpUnbind              # 0x800b: args (fp id; <= 0 = all) -> 1; 0x008628a0 clears the worker's FP slots (0x0072a120)
 0x0091b160 function Native_800c               # 0x800c: `(on)` -> `0x00729050(on != 0)`; returns `on != 0`. (ffx_script::vm::bridge::native_map)
+0x0091b190 function Native_800e # 0x800e: jumps to Yn_MapPartCount (0x0091a3d0); ported in native_mods (script round 21); name ours
 0x0091b1a0 function Native_MapPartShow           # 0x800f: args (part index) -> 1; language override through 0x006412b0, then 0x0091a830 clears bit 0 of the 0xc0-byte map part entry and enables it (0x00644120(i, 1))
 0x0091b1e0 function Native_MapPartHide           # 0x8010: args (part index) -> 1; 0x0091a7c0 sets bit 0 and disables the part (0x00644120(i, 0))
 0x0091b200 function Native_8011               # 0x8011: `0x0091ab30(a, b, c)`; 1. (ffx_script::vm::bridge::native_map)
@@ -11447,9 +11468,14 @@
 0x0091b490 function Native_8021               # 0x8021: `0x00919f40(x)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091b4b0 function Native_8022               # 0x8022: `0x00919fe0(a, b)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091b4e0 function Native_8023 # 0x8023: args (a f, b f) -> 1: 0x0091ad40(a, b); ported in native_sys (script round 18); name ours
+0x0091b530 function Native_8024 # 0x8024: jumps to Yn_SceneGetB8 (0x0091a700); ported in native_mods (script round 21); name ours
+0x0091b540 function Native_8025 # 0x8025: jumps to Yn_SceneGetBC (0x0091a730); ported in native_mods (script round 21); name ours
 0x0091b550 function Native_8026               # 0x8026: `(a, x, b, c, d)` (x a float) -> `0x0091ad80(a, x, b, c, d)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b5c0 function Native_8027 # 0x8027: 0x0091a900(); 1; ported in native_mods (script round 21); name ours
 0x0091b5d0 function Native_8028 # 0x8028: args (v f) -> 1: 0x0091ad10(v); ported in native_sys (script round 18); name ours
+0x0091b600 function Native_8029 # 0x8029: jumps to Yn_SceneGetAC (0x0091a6d0); ported in native_mods (script round 21); name ours
 0x0091b610 function Native_802a # 0x802a: args (a, b f, c, d f) -> 1: 0x0091aa00(a, b, c, d); ported in native_sys (script round 18); name ours
+0x0091b670 function Native_802b # 0x802b: 0x0091a8d0(); 1; ported in native_mods (script round 21); name ours
 0x0091b680 function Native_802c               # 0x802c: `0x0091a220()`; 1. (ffx_script::vm::bridge::native_map)
 0x0091b690 function Native_802d               # 0x802d: `0x0091a200()`; 1. (ffx_script::vm::bridge::native_map)
 0x0091b6a0 function Native_802e               # 0x802e: `0x0091a9c0(a, b)`; 1. (ffx_script::vm::bridge::native_map)
@@ -11457,6 +11483,8 @@
 0x0091b6f0 function Native_8030               # 0x8030: `0x0091aa90(a, b)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091b720 function Native_8031 # 0x8031: args (v) -> 0x0091a2e0(v); ported in native_sys (script round 18); name ours
 0x0091b740 function Native_8032               # 0x8032: `(x)` -> `0x00919df0(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b770 function Native_8033 # 0x8033: jumps to Yn_GuideMapGetLimit (0x00919ca0); ported in native_mods (script round 21); name ours
+0x0091b780 function Native_8034 # 0x8034: 0x00919b70(); 1; ported in native_mods (script round 21); name ours
 0x0091b790 function Native_8035               # 0x8035: `0x00729530`/`0x007294f0`. (ffx_script::vm::bridge::native_map)
 0x0091b7d0 function Native_8036               # 0x8036: `0x00729440`/`0x00729400`. (ffx_script::vm::bridge::native_map)
 0x0091b810 function Native_FogSetParams       # 0x8037: `(a, b, c)` -> `yiSetFogParam(a, b, c)`; on stage `0x140` also `0x006431e0(a)`, `0x006431a0(b)`, `0x006431c0(c / 255)` and `0x00643180(1.0)`; 1. (ffx_script::vm::bridge::native_map)
@@ -11480,6 +11508,9 @@
 0x0091c000 function Native_BackGetRed         # 0x8049: the back colour's red. (ffx_script::vm::bridge::native_map)
 0x0091c030 function Native_BackGetGreen       # 0x804a: green. (ffx_script::vm::bridge::native_map)
 0x0091c060 function Native_BackGetBlue        # 0x804b: blue. (ffx_script::vm::bridge::native_map)
+0x0091c090 function Native_804c # 0x804c: (part, v f): Yn_MapPartSet44_0091abc0(part, v, v); 1; ported in native_mods (script round 21); name ours
+0x0091c0d0 function Native_804d # 0x804d: (part, v f): Yn_MapPartSet44_0091abc0(part, v, 0.0); 1; ported in native_mods (script round 21); name ours
+0x0091c110 function Native_804e # 0x804e: (part, v f): Yn_MapPartSet44_0091abc0(part, 0.0, v); 1; ported in native_mods (script round 21); name ours
 0x0091c150 function Native_804f               # 0x804f: `(a, x, b)` -> `0x0091a150(a, x, x, b)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091c1a0 function Native_8050 # 0x8050: args (v) -> float 0x0091a530(v); ported in native_sys (script round 18); name ours
 0x0091c1c0 function Native_8051 # 0x8051: args (v) -> float 0x0091a4e0(v); ported in native_sys (script round 18); name ours
@@ -11489,6 +11520,7 @@
 0x0091c2d0 function Native_8055 # 0x8055: args (a, b f, c f, d) -> 1: 0x0091a0f0(a, b, c, d); ported in native_sys (script round 18); name ours
 0x0091c330 function Native_8056 # 0x8056: args (v) -> float 0x0091a330(v); ported in native_sys (script round 18); name ours
 0x0091c350 function Native_8057 # 0x8057: args (v) -> float 0x0091a380(v); ported in native_sys (script round 18); name ours
+0x0091c370 function Native_8058 # 0x8058: (pc, b, a): pppFpSetStickChr(a, AtelGetCharHandleFromBindPC(pc), b) (0x0072a530, 0x0086ae90); 1; ported in native_mods (script round 21); name ours
 0x0091c3c0 function Native_8059               # 0x8059: `(a, b)` -> `0x0072a590(b, a)` (the top first); 1. (ffx_script::vm::bridge::native_map)
 0x0091c3f0 function Native_805a # 0x805a: args (v) -> 1: 0x0072a120(v); ported in native_sys (script round 18); name ours
 0x0091c410 function Native_FpSetStickPos      # 0x805b: `(n, x, y, z)` -> `pppFpSetStickPos(n, &[z, y, x])` (the floats in pop order); 1. (ffx_script::vm::bridge::native_map)
@@ -11499,6 +11531,7 @@
 0x0091c510 function Native_8060               # 0x8060: `0x00729480(x)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091c530 function Native_FieldSetMaskBit       # 0x8000: args (bit, on) -> bit; 0x0088eba0 sets/clears the bit in 0x018ded0c (default -9/-1, saved by Script init 0x00865dc0); ?meaning; map 0x188 forces bit 14 on
 0x0091c580 function Native_8061 # 0x8061: args (v) -> 1: 0x00908580(v); ported in native_sys (script round 18); name ours
+0x0091c5a0 function Native_8062 # 0x8062: 0x00908440(); 1; ported in native_mods (script round 21); name ours
 0x0091c5b0 function Native_8001               # 0x8001: `(on)`: `0x00909e20(0x10)` and `0x00643df0(1)`, or `0x00909e10(0x10)` and `0x00643df0(0)`; returns `on`. (ffx_script::vm::bridge::native_map)
 0x0091c600 function Native_8063 # 0x8063: args (a f, b f, c f, d f) -> 1: 0x0090a200(a, b, c, d); ported in native_sys (script round 18); name ours
 0x0091c670 function Native_FpRun                 # 0x8002: args (fp id, restart) -> restart; restart != 0: Fp_Restart (run from start), 0: Fp_End
@@ -11510,6 +11543,7 @@
 0x0091c7e0 function Native_MapSpriteWaitEnd   # 0x8005: start): `(a, b)` into the args words (`+0` a, `+4` b); returns `a`. (ffx_script::vm::bridge::native_map)
 0x0091c810 function Native_BltzSetObjModels      # ?0x8067: args (worker a, worker b, mode, unused) -> 1; Blitzball only (bltz000x); first map object of type 0x20008 gets both workers' models (+0x9c via 0x0086b3a0) and mode (0x00922ef0)
 0x0091c860 function Native_MapSpriteWaitEnd_Poll# 0x8005: the state of sprite object `+0` (`0x0072a760`): 1 not done, 2 done unless `+4` is set, others done (5). (ffx_script::vm::bridge::native_map)
+0x0091c890 function Native_8068 # 0x8068: Yn_FPm173End() (0x00919ab0); 1; ported in native_mods (script round 21); name ours
 0x0091c8a0 function Native_Compare_0091c8a0      # auto-port shape (compare, cdecl): t0 = u32[&0x012fbc40]; return (t0 == 0x140); callers: Native_FogSetParams, Native_FogSetColor, Native_FogSetRed and 2 more; name ours
 0x0091cae0 function rcbgScaleVector_0091cae0  # the same code as rcbgScaleVector 0x009200a0; rcbgGuideUpdateEx
 0x0091cb40 function rcCopyQword_0091cb40      # (dst, src): VFX_Copy16From(vf31 0x00c8f980, src), VFX_Copy16To(vf31, dst): a quadword copied through the emulated VU0 register (lqc2/sqc2); rcbgGuideUpdateEx
@@ -12637,6 +12671,7 @@
 0x00a43ff0 function set_movie_matrix_sub         # layout+callees: sorts between sa_get_decode_size and spline_get_near_point, and its named callees match the Switch 0x7100856de0 set_movie_matrix_sub's (similarity 0.60: MsCameraMatrix, MsSetCameraMatrix, yiRenderEnable); symbols from Fahrenheit's server export
 0x00a44120 function spline_get_near_point     # fh v3:exact 0x00a44120
 0x00a44420 function spline_get_near_point_init # fh v3:exact 0x00a44420
+0x00a445f0 function Native_d000 # 0xd000: (v): popped for an "abiritymap_debug(%d)" line through the empty dbgPrintf; 0; ported in native_mods (script round 21); name ours
 0x00a44650 function get_ptr32_func            # fh v3:bsim1.00 0x00a44650
 0x00a44660 function SetGlobal01a85f38_00a44660   # auto-port shape (store argument to global, cdecl): u32[&0x01a85f38] = a0; return a0; callers: no direct caller; name ours
 0x00a446a0 function is_ptr32_null             # fh v3:exact 0x00a446a0

@@ -1994,12 +1994,12 @@ pub fn native_022b_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     0
 }
 
-/// `0x0008` (`0x0085eef0`): 0 (`xor eax, eax; ret`).
+/// `0x0008`, `0xc02b` (`0x0085eef0`, `0x00878e50`): 0 (`xor eax, eax; ret`).
 pub fn native_0008<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `0x01d3` (`0x00860720`): 1 (`mov eax, 1; ret`).
+/// `0x01d3`, `0xc04f` (`0x00860720`, `0x00879380`): 1 (`mov eax, 1; ret`).
 pub fn native_01d3<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     1
 }
@@ -3368,6 +3368,191 @@ pub fn native_7114<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
+// ---- groups 8, 9, c, d: map parts, system, the rest ----
+
+/// `0x8069` (`0x0091af30`): `(b, a)`: `pppFpSetStickMapDObj(a, b)`
+/// (`0x0072a5e0`); 1.
+pub fn native_8069<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b] = pops::<2>(h, s);
+    call(h, 0x0072_a5e0, &[a, b]);
+    1
+}
+
+/// `0x800e` (`0x0091b190`): jumps to `Yn_MapPartCount` (`0x0091a3d0`).
+pub fn native_800e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0091_a3d0)
+}
+
+/// `0x8024` (`0x0091b530`, float): jumps to `Yn_SceneGetB8`
+/// (`0x0091a700`).
+pub fn native_8024<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> f64 {
+    tailf(h, w, a, s, 0x0091_a700)
+}
+
+/// `0x8025` (`0x0091b540`, float): jumps to `Yn_SceneGetBC`
+/// (`0x0091a730`).
+pub fn native_8025<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> f64 {
+    tailf(h, w, a, s, 0x0091_a730)
+}
+
+/// `0x8029` (`0x0091b600`, float): jumps to `Yn_SceneGetAC`
+/// (`0x0091a6d0`).
+pub fn native_8029<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> f64 {
+    tailf(h, w, a, s, 0x0091_a6d0)
+}
+
+/// `0x8033` (`0x0091b770`, float): jumps to `Yn_GuideMapGetLimit`
+/// (`0x00919ca0`).
+pub fn native_8033<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> f64 {
+    tailf(h, w, a, s, 0x0091_9ca0)
+}
+
+/// `0x8027` (`0x0091b5c0`): `0x0091a900()`; 1.
+pub fn native_8027<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0091_a900, 1)
+}
+
+/// `0x802b` (`0x0091b670`): `0x0091a8d0()`; 1.
+pub fn native_802b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0091_a8d0, 1)
+}
+
+/// `0x8034` (`0x0091b780`): `0x00919b70()`; 1.
+pub fn native_8034<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0091_9b70, 1)
+}
+
+/// `0x8062` (`0x0091c5a0`): `0x00908440()`; 1.
+pub fn native_8062<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0090_8440, 1)
+}
+
+/// `0x8068` (`0x0091c890`): `Yn_FPm173End()` (`0x00919ab0`); 1.
+pub fn native_8068<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0091_9ab0, 1)
+}
+
+/// `(part, v f)`: `Yn_MapPartSet44_0091abc0(part, x, y)` (`0x0091abc0`)
+/// with `(x, y)` from `v` by `pick`; 1.
+fn part44<H: NativeHost>(h: &mut H, s: u32, pick: fn(u32) -> (u32, u32)) -> u32 {
+    let v = popf(h, s);
+    let part = pop(h, s);
+    let (x, y) = pick(v);
+    call(h, 0x0091_abc0, &[part, x, y]);
+    1
+}
+
+/// `0x804c` (`0x0091c090`): `(part, v f)`:
+/// `Yn_MapPartSet44_0091abc0(part, v, v)`; 1.
+pub fn native_804c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    part44(h, s, |v| (v, v))
+}
+
+/// `0x804d` (`0x0091c0d0`): `(part, v f)`:
+/// `Yn_MapPartSet44_0091abc0(part, v, 0.0)`; 1.
+pub fn native_804d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    part44(h, s, |v| (v, 0))
+}
+
+/// `0x804e` (`0x0091c110`): `(part, v f)`:
+/// `Yn_MapPartSet44_0091abc0(part, 0.0, v)`; 1.
+pub fn native_804e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    part44(h, s, |v| (0, v))
+}
+
+/// `0x8058` (`0x0091c370`): `(pc, b, a)`: `pppFpSetStickChr(a,
+/// AtelGetCharHandleFromBindPC(pc), b)` (`0x0072a530`, `0x0086ae90`); 1.
+pub fn native_8058<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b, pc] = pops::<3>(h, s);
+    let c = call(h, 0x0086_ae90, &[pc]);
+    call(h, 0x0072_a530, &[a, c, b]);
+    1
+}
+
+/// `0x9000` (`0x00907e60`): an `"atel_test_print!"` line through the empty
+/// `dbgPrintf`; 0.
+pub fn native_9000<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    0
+}
+
+/// `0xc059` (`0x008782a0`): `(i, on)` -> `MsGetSaveCommandMenuPanel(i)`
+/// (`0x007850b0`) before `MsSetSaveCommandMenuPanel(i, on != 0)`
+/// (`0x00785d40`).
+pub fn native_c059<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let on = u32::from(pop(h, s) != 0);
+    let i = pop(h, s);
+    let r = call(h, 0x0078_50b0, &[i]);
+    call(h, 0x0078_5d40, &[i, on]);
+    r
+}
+
+/// `0xc019` (`0x00878550`): `(map)`: `AtelMapLoadNoCache(map)`
+/// (`0x0086dd30`); 0.
+pub fn native_c019<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one0(h, s, 0x0086_dd30)
+}
+
+/// `0xc00e` (`0x00878700`): `(id, b, c, d)`: `SqsSePlay(id, b, c, d)`
+/// (`0x0081e4e0`); `id`.
+pub fn native_c00e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [d, c, b, id] = pops::<4>(h, s);
+    call(h, 0x0081_e4e0, &[id, b, c, d]);
+    id
+}
+
+/// `0xc011` (`0x00878790`): `SndStartStream()` (`0x00887630`); 1.
+pub fn native_c011<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0088_7630, 1)
+}
+
+/// `0xc012` (`0x008787a0`): `SndGetStreamState() != 0` (`0x008864b0`).
+pub fn native_c012<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    u32::from(call(h, 0x0088_64b0, &[]) != 0)
+}
+
+/// `0xc033` (`0x00878f10`): jumps to `Ch_EnableGetTexture`
+/// (`0x00830320`).
+pub fn native_c033<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0083_0320)
+}
+
+/// `0xc035` (`0x00878f50`): `(pc)` -> `AtelGetCharHandleFromBindPC(pc)`
+/// (`0x0086ae90`).
+pub fn native_c035<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one(h, s, 0x0086_ae90)
+}
+
+/// `0xc040` (`0x00879150`): jumps to `0x00886430`.
+pub fn native_c040<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0088_6430)
+}
+
+/// `0xc042` (`0x00879180`): jumps to `SndGetSoundType` (`0x00886440`).
+pub fn native_c042<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0088_6440)
+}
+
+/// `0xc043` (`0x00879190`): `SndSepClearAll()` (`0x00886db0`); 1.
+pub fn native_c043<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0088_6db0, 1)
+}
+
+/// `0xc050` (`0x00879390`): `movie_stop_prog()` (`0x0076f090`) when
+/// `movie_run_check()` (`0x0076f060`); 1.
+pub fn native_c050<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    if call(h, 0x0076_f060, &[]) != 0 {
+        call(h, 0x0076_f090, &[]);
+    }
+    1
+}
+
+/// `0xd000` (`0x00a445f0`): `(v)`: popped for an `"abiritymap_debug(%d)"`
+/// line through the empty `dbgPrintf`; 0.
+pub fn native_d000<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    pop(h, s);
+    0
+}
+
 /// The Rust version of a round-19 handler, if there is one.
 #[must_use]
 #[allow(clippy::too_many_lines)] // one arm per handler
@@ -3444,7 +3629,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x00a7_a720 | 0x00a7_a7a0 => Int(native_508a),
         0x00a7_a740 => Int(native_5041),
         0x00a7_a7c0 | 0x00a7_a830 => Int(native_5043),
-        0x0085_eef0 => Int(native_0008),
+        0x0085_eef0 | 0x0087_8e50 => Int(native_0008),
         0x0085_f160 => Int(native_0009),
         0x0085_f2d0 => Int(native_000a),
         0x0085_f360 => Int(native_000b),
@@ -3553,7 +3738,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0085_e000 => Int(native_01c7),
         0x0085_e0e0 => Int(native_01cb),
         0x0085_e5d0 => Int(native_01cd),
-        0x0086_0720 => Int(native_01d3),
+        0x0086_0720 | 0x0087_9380 => Int(native_01d3),
         0x0085_64b0 => Int(native_01d6),
         0x0085_67e0 => Int(native_01d8),
         0x0085_f8d0 => Int(native_01df),
@@ -3726,12 +3911,40 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_6790 => Int(native_7121),
         0x007a_7ee0 => Int(native_7124),
         0x007a_5240 => Int(native_7127),
+        0x0087_8700 => Int(native_c00e),
+        0x0087_8790 => Int(native_c011),
+        0x0087_87a0 => Int(native_c012),
+        0x0087_8550 => Int(native_c019),
+        0x0087_8f10 => Int(native_c033),
+        0x0087_8f50 => Int(native_c035),
+        0x0087_9150 => Int(native_c040),
+        0x0087_9180 => Int(native_c042),
+        0x0087_9190 => Int(native_c043),
+        0x0087_9390 => Int(native_c050),
+        0x0087_82a0 => Int(native_c059),
+        0x0091_b190 => Int(native_800e),
+        0x0091_b530 => Float(native_8024),
+        0x0091_b540 => Float(native_8025),
+        0x0091_b5c0 => Int(native_8027),
+        0x0091_b600 => Float(native_8029),
+        0x0091_b670 => Int(native_802b),
+        0x0091_b770 => Float(native_8033),
+        0x0091_b780 => Int(native_8034),
+        0x0091_c090 => Int(native_804c),
+        0x0091_c0d0 => Int(native_804d),
+        0x0091_c110 => Int(native_804e),
+        0x0091_c370 => Int(native_8058),
+        0x0091_c5a0 => Int(native_8062),
+        0x0091_c890 => Int(native_8068),
+        0x0091_af30 => Int(native_8069),
+        0x0090_7e60 => Int(native_9000),
+        0x00a4_45f0 => Int(native_d000),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] knows, and whether it returns a float.
-pub const PORTED: [(u32, bool); 366] = [
+pub const PORTED: [(u32, bool); 396] = [
     (0x0087_78d0, false),
     (0x0087_78f0, false),
     (0x0087_7920, false),
@@ -4098,4 +4311,34 @@ pub const PORTED: [(u32, bool); 366] = [
     (0x007a_6790, false),
     (0x007a_7ee0, false),
     (0x007a_5240, false),
+    (0x0087_8700, false),
+    (0x0087_8790, false),
+    (0x0087_87a0, false),
+    (0x0087_8550, false),
+    (0x0087_8e50, false),
+    (0x0087_8f10, false),
+    (0x0087_8f50, false),
+    (0x0087_9150, false),
+    (0x0087_9180, false),
+    (0x0087_9190, false),
+    (0x0087_9380, false),
+    (0x0087_9390, false),
+    (0x0087_82a0, false),
+    (0x0091_b190, false),
+    (0x0091_b530, true),
+    (0x0091_b540, true),
+    (0x0091_b5c0, false),
+    (0x0091_b600, true),
+    (0x0091_b670, false),
+    (0x0091_b770, true),
+    (0x0091_b780, false),
+    (0x0091_c090, false),
+    (0x0091_c0d0, false),
+    (0x0091_c110, false),
+    (0x0091_c370, false),
+    (0x0091_c5a0, false),
+    (0x0091_c890, false),
+    (0x0091_af30, false),
+    (0x0090_7e60, false),
+    (0x00a4_45f0, false),
 ];

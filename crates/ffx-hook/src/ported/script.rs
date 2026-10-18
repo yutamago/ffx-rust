@@ -6548,4 +6548,44 @@ ported! {
     Native_7127 @ 0x007a_5240 => extern "C" fn n_7a5240(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_7127(&mut mem(), w, a, s)
     }
+    /// `Native_c00e(worker, args, stack)`.
+    Native_c00e @ 0x0087_8700 => extern "C" fn n_878700(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c00e(&mut mem(), w, a, s)
+    }
+    /// `Native_c019(worker, args, stack)`.
+    Native_c019 @ 0x0087_8550 => extern "C" fn n_878550(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c019(&mut mem(), w, a, s)
+    }
+    /// `Native_c035(worker, args, stack)`.
+    Native_c035 @ 0x0087_8f50 => extern "C" fn n_878f50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c035(&mut mem(), w, a, s)
+    }
+    /// `Native_c059(worker, args, stack)`.
+    Native_c059 @ 0x0087_82a0 => extern "C" fn n_8782a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c059(&mut mem(), w, a, s)
+    }
+    /// `Native_804c(worker, args, stack)`.
+    Native_804c @ 0x0091_c090 => extern "C" fn n_91c090(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_804c(&mut mem(), w, a, s)
+    }
+    /// `Native_804d(worker, args, stack)`.
+    Native_804d @ 0x0091_c0d0 => extern "C" fn n_91c0d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_804d(&mut mem(), w, a, s)
+    }
+    /// `Native_804e(worker, args, stack)`.
+    Native_804e @ 0x0091_c110 => extern "C" fn n_91c110(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_804e(&mut mem(), w, a, s)
+    }
+    /// `Native_8058(worker, args, stack)`.
+    Native_8058 @ 0x0091_c370 => extern "C" fn n_91c370(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_8058(&mut mem(), w, a, s)
+    }
+    /// `Native_8069(worker, args, stack)`.
+    Native_8069 @ 0x0091_af30 => extern "C" fn n_91af30(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_8069(&mut mem(), w, a, s)
+    }
+    /// `Native_d000(worker, args, stack)`.
+    Native_d000 @ 0x00a4_45f0 => extern "C" fn n_a445f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_d000(&mut mem(), w, a, s)
+    }
 }
