@@ -12224,7 +12224,7 @@
 0x00878700	logic	default (no rule: ported to be safe)
 0x00878750	logic	default (no rule: ported to be safe)
 0x00878770	logic	default (no rule: ported to be safe)
-0x008787d0	logic	default (no rule: ported to be safe)
+0x008787d0	debug	reviewed: native 0xc015: TkIsDebug-only / debug loop (script round 21)
 0x00878860	logic	default (no rule: ported to be safe)
 0x00878880	logic	default (no rule: ported to be safe)
 0x008788a0	debug	reviewed: debug native 0xc018 (script rounds 11-15)
@@ -12638,7 +12638,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: 0x8787d0, AtelEventSetUp, Native_00f8
+0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)

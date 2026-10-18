@@ -12,6 +12,7 @@ use ffx_battle::effect::bridge as effect;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::free::bridge as free;
+use ffx_battle::getmem::bridge as getmem;
 use ffx_battle::input::bridge as input;
 use ffx_battle::motion::bridge as motion;
 use ffx_battle::parse::bridge as parse;
@@ -3457,5 +3458,59 @@ ported! {
     /// the game.
     MsChrCreatePacket @ 0x0079_3d90 => extern "C" fn ms_chr_create_packet(actor: u32) -> u32 {
         free::ms_chr_create_packet(&mut mem(), &mut call_ptr, actor)
+    }
+    /// `MsBattleSpecial()`: its locals (which go to map code) in a frame
+    /// on this stack; map's callees through the game, the CRT through its
+    /// import slots.
+    MsBattleSpecial @ 0x0079_d430 => extern "C" fn ms_battle_special() {
+        let mut m = mem();
+        let mut frame = super::StackFrame::<{ (special::SPECIAL_LOCALS / 4) as usize }>::new();
+        let locals = frame.at();
+        special::ms_battle_special(&mut target::Dm::new(&mut m), &mut call_ptr, &crt_trig, locals);
+    }
+    /// `MsAtelUpdate0_007972e0(ctrl)`: script 0's per-frame update, with
+    /// `MsBattleSpecial`'s locals in a frame on this stack.
+    MsAtelUpdate0_007972e0 @ 0x0079_72e0 => extern "C" fn ms_atel_update0(ctrl: u32) -> u32 {
+        let mut m = mem();
+        let mut frame = super::StackFrame::<{ (special::SPECIAL_LOCALS / 4) as usize }>::new();
+        let locals = frame.at();
+        script!(s);
+        special::ms_atel_update0(&mut target::Dm::new(&mut m), &mut s, &crt_trig, locals, ctrl)
+    }
+    /// `MsBtlBridgeBtl2Event()`: script's event accessors, chara's and
+    /// graphic's callees through the game.
+    MsBtlBridgeBtl2Event @ 0x0078_21f0 => extern "C" fn ms_btl_bridge_btl2_event() {
+        script!(s);
+        free::ms_btl_bridge_btl2_event(&mut mem(), &mut s);
+    }
+    /// `MsBattleFree()`: the other modules' callees through the game.
+    MsBattleFree @ 0x0078_1590 => extern "C" fn ms_battle_free() -> u32 {
+        let mut m = mem();
+        script!(s);
+        free::ms_battle_free(&mut target::Dm::new(&mut m), &mut s)
+    }
+    /// `MsBattleAllFree()`: the other modules' callees through the game;
+    /// `MsMenuFreeText`'s stack clear is not done (see its port).
+    MsBattleAllFree @ 0x0078_0b40 => extern "C" fn ms_battle_all_free() -> u32 {
+        let mut m = mem();
+        script!(s);
+        free::ms_battle_all_free(&mut target::Dm::new(&mut m), &mut s)
+    }
+    /// `MsNumberGetMem()`: the heap through the game.
+    MsNumberGetMem @ 0x0079_f9b0 => extern "C" fn ms_number_get_mem() {
+        getmem::ms_number_get_mem(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBtlGetItemMem()`: the heap through the game.
+    MsBtlGetItemMem @ 0x0079_9fb0 => extern "C" fn ms_btl_get_item_mem() {
+        getmem::ms_btl_get_item_mem(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBtlScriptRecordShift_00782670()`.
+    MsBtlScriptRecordShift_00782670 @ 0x0078_2670 => extern "C" fn ms_btl_script_record_shift() {
+        getmem::ms_btl_script_record_shift(&mut mem());
+    }
+    /// `MsBtlEncountEffect_007829b0(kind, &out)`:
+    /// `AtelGetWaterBattleEffect` (script) through the game.
+    MsBtlEncountEffect_007829b0 @ 0x0078_29b0 => extern "C" fn ms_btl_encount_effect(kind: u32, out: u32) -> u32 {
+        getmem::ms_btl_encount_effect(&mut mem(), &mut call_ptr, kind, out)
     }
 }

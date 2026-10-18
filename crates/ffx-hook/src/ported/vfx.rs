@@ -5,8 +5,8 @@ use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
 use ffx_vfx::{
-    draw, et, fp, heap, lns, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small, tree,
-    vec, wave,
+    anmm, draw, et, fp, heap, lns, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small,
+    tree, vec, wave,
 };
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
@@ -1332,6 +1332,10 @@ ported! {
     opus_chr_width_00800cd0 @ 0x0080_0cd0 => extern "C" fn opus_chr_width(chr: u32, battle: u32) -> f32 {
         opus::bridge::opus_chr_width(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `op_ovl_effect_init()`.
+    op_ovl_effect_init @ 0x007f_cdd0 => extern "C" fn op_ovl_effect_init() -> u32 {
+        op::bridge::op_ovl_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opus_clip_off_all_in_battle()`.
     opus_clip_off_all_in_battle @ 0x0080_0bb0 => extern "C" fn opus_clip_off_all_in_battle() -> u32 {
         opus::bridge::opus_clip_off_all_in_battle(&mut mem(), &mut |_, f, a| call_ptr(f, a))
@@ -1630,6 +1634,223 @@ ported! {
     /// `op_et_chr_slot_007fead0(chr)`.
     op_et_chr_slot_007fead0 @ 0x007f_ead0 => extern "C" fn op_et_chr_slot(chr: u32) -> u32 {
         et::bridge::op_et_chr_slot(&mem(), chr)
+    }
+    // opp_anmm's sprite commands (host, set, cmd, work) -> next command.
+    // The random ones' extra callee stack words (the original's saved
+    // registers and return address) only reach VU0 scratch: zeros here.
+    /// `opp_anmm(host, set)`.
+    opp_anmm @ 0x0081_24b0 => extern "C" fn opp_anmm(host: u32, set: u32) -> u32 {
+        // the original's local at [ebp - 0xc] (set_ptr32's result)
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        anmm::bridge::opp_anmm(&mut mem(), host, set, at, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opp_anmm_wait_random(host, set, cmd, work)`.
+    opp_anmm_wait_random @ 0x0081_06e0 => extern "C" fn opp_anmm_wait_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (set, work);
+        anmm::bridge::wait_random(&mut mem(), host, cmd, [0; 3])
+    }
+    /// `opp_anmm_sprite_set(host, set, cmd, work)`.
+    opp_anmm_sprite_set @ 0x0081_0720 => extern "C" fn opp_anmm_sprite_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = host;
+        anmm::bridge::sprite_set(&mut mem(), set, cmd, work)
+    }
+    /// `opp_anmm_flag_on(host, set, cmd, work)`.
+    opp_anmm_flag_on @ 0x0081_0790 => extern "C" fn opp_anmm_flag_on(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::flag_on(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_vec_set(host, set, cmd, work)`.
+    opp_anmm_vec_set @ 0x0081_07c0 => extern "C" fn opp_anmm_vec_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::vec_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_vec_add_random(host, set, cmd, work)`.
+    opp_anmm_vec_add_random @ 0x0081_0890 => extern "C" fn opp_anmm_vec_add_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::vec_add_random(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_vec_add(host, set, cmd, work)`.
+    opp_anmm_vec_add @ 0x0081_0a90 => extern "C" fn opp_anmm_vec_add(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::vec_add(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_short_add_random(host, set, cmd, work)`.
+    opp_anmm_short_add_random @ 0x0081_0ba0 => extern "C" fn opp_anmm_short_add_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::short_add_random(&mut mem(), host, cmd, work, [0; 3])
+    }
+    /// `opp_anmm_pair_set(host, set, cmd, work)`.
+    opp_anmm_pair_set @ 0x0081_0be0 => extern "C" fn opp_anmm_pair_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::pair_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_mode_set(host, set, cmd, work)`.
+    opp_anmm_mode_set @ 0x0081_0c20 => extern "C" fn opp_anmm_mode_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::mode_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_rgba_set(host, set, cmd, work)`.
+    opp_anmm_rgba_set @ 0x0081_0c60 => extern "C" fn opp_anmm_rgba_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::rgba_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_loop(host, set, cmd, work)`.
+    opp_anmm_loop @ 0x0081_0cf0 => extern "C" fn opp_anmm_loop(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (host, set);
+        anmm::bridge::loop_back(&mut mem(), cmd, work)
+    }
+    /// `opp_anmm_branch_random(host, set, cmd, work)`.
+    opp_anmm_branch_random @ 0x0081_0d10 => extern "C" fn opp_anmm_branch_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (host, set, work);
+        anmm::bridge::branch_random(&mut mem(), cmd, [0; 3])
+    }
+    /// `opp_anmm_fade(host, set, cmd, work)`.
+    opp_anmm_fade @ 0x0081_0d50 => extern "C" fn opp_anmm_fade(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::fade(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_part_float(host, set, cmd, work)`.
+    opp_anmm_part_float @ 0x0081_0da0 => extern "C" fn opp_anmm_part_float(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = host;
+        anmm::bridge::part_float(&mut mem(), set, cmd, work)
+    }
+    /// `opus_encount0_init(obj)`.
+    opus_encount0_init @ 0x007f_8480 => extern "C" fn opus_encount0_init(obj: u32) -> u32 {
+        opus::bridge::opus_encount0_init(&mut mem(), obj)
+    }
+    /// `opu_part_kill(host, cmd)`.
+    opu_part_kill @ 0x0080_b7d0 => extern "C" fn opu_part_kill(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_part_kill(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_local_link(host, cmd)`.
+    opu_local_link @ 0x0080_1a50 => extern "C" fn opu_local_link(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_local_link(&mut mem(), host, cmd)
+    }
+    /// `opu_etc(host, cmd)`.
+    opu_etc @ 0x0081_6610 => extern "C" fn opu_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_etc(&mut mem(), host, cmd)
+    }
+    /// `opu_jloop(host, cmd)`.
+    opu_jloop @ 0x0081_6870 => extern "C" fn opu_jloop(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_jloop(&mut mem(), host, cmd)
+    }
+    /// `opu_unit_max(host, cmd)`.
+    opu_unit_max @ 0x0081_7530 => extern "C" fn opu_unit_max(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_unit_max(&mut mem(), host, cmd)
+    }
+    /// `opus_copy_1k_00800ab0(dst, src)`.
+    opus_copy_1k_00800ab0 @ 0x0080_0ab0 => extern "C" fn opus_copy_1k(dst: u32, src: u32) -> u32 {
+        opus::bridge::copy_1k(&mut mem(), dst, src)
+    }
+    /// `opus_copy_1k_00800af0(src, dst)`.
+    opus_copy_1k_00800af0 @ 0x0080_0af0 => extern "C" fn opus_copy_1k_rev(src: u32, dst: u32) -> u32 {
+        opus::bridge::copy_1k(&mut mem(), dst, src)
+    }
+    /// `opf_cir(host, ptr)`.
+    opf_cir @ 0x0081_4c90 => extern "C" fn opf_cir(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir(&mut mem(), host, ptr)
+    }
+    /// `opf_cir2(host, ptr)`.
+    opf_cir2 @ 0x0081_4d20 => extern "C" fn opf_cir2(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir2(&mut mem(), host, ptr)
+    }
+    /// `opf_cir_gw(host, ptr)`.
+    opf_cir_gw @ 0x0081_4e50 => extern "C" fn opf_cir_gw(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir_gw(&mut mem(), host, ptr)
+    }
+    /// `opf_cir_y(host, ptr)`.
+    opf_cir_y @ 0x0081_4f00 => extern "C" fn opf_cir_y(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir_y(&mut mem(), host, ptr)
+    }
+    /// `opf_cirz_gw(host, ptr)`.
+    opf_cirz_gw @ 0x0081_4fa0 => extern "C" fn opf_cirz_gw(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cirz_gw(&mut mem(), host, ptr)
+    }
+    /// `opf_sph(host, ptr)`.
+    opf_sph @ 0x0081_55b0 => extern "C" fn opf_sph(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_sph(&mut mem(), host, ptr)
+    }
+    /// `opf_spl_gw(host, ptr)`.
+    opf_spl_gw @ 0x0081_5670 => extern "C" fn opf_spl_gw(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_spl_gw(&mut mem(), host, ptr)
+    }
+    /// `opf_rel(host, ptr)`.
+    opf_rel @ 0x0081_5120 => extern "C" fn opf_rel(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel(&mut mem(), host, ptr)
+    }
+    /// `opf_rel2(host, ptr)`.
+    opf_rel2 @ 0x0081_5350 => extern "C" fn opf_rel2(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel2(&mut mem(), host, ptr)
+    }
+    /// `opu_vzero(host, cmd)`.
+    opu_vzero @ 0x0081_afa0 => extern "C" fn opu_vzero(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vzero(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_spl(host, cmd)`.
+    opu_spl @ 0x0081_b560 => extern "C" fn opu_spl(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_spl(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opd_exit_from_ovl()`.
+    opd_exit_from_ovl @ 0x007f_f8e0 => extern "C" fn opd_exit_from_ovl() -> u32 {
+        op::bridge::opd_exit_from_ovl(&mut mem())
+    }
+    /// `op_heap_display_set(a, b, c)`: `eax` is left alone outside debug
+    /// mode; 0 here.
+    op_heap_display_set @ 0x007f_f290 => extern "C" fn op_heap_display_set(a: u32, b: u32, c: u32) -> u32 {
+        op::bridge::op_heap_display_set(&mut mem(), [a, b, c], &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_num_vdisp()`.
+    op_num_vdisp @ 0x007e_6560 => extern "C" fn op_num_vdisp() -> u32 {
+        op::bridge::op_num_vdisp(&mut mem(), &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_num_display(x)`.
+    op_num_display @ 0x007e_6440 => extern "C" fn op_num_display(x: u32) -> u32 {
+        op::bridge::op_num_display(&mut mem(), x, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `ops_init_spr()`.
+    ops_init_spr @ 0x007e_6c30 => extern "C" fn ops_init_spr() -> u32 {
+        op::bridge::ops_init_spr(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_rt_m_xyz(m, src, angles, t)`.
+    op_rt_m_xyz @ 0x007e_9970 => extern "C" fn op_rt_m_xyz(m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        op::bridge::op_rt_m_xyz(&mut mem(), m, src, angles, t)
+    }
+    /// `opus_get_bone_vertex(out, chr, bone)`.
+    opus_get_bone_vertex @ 0x0080_54d0 => extern "C" fn opus_get_bone_vertex(out: u32, chr: u32, bone: u32) -> u32 {
+        opus::bridge::opus_get_bone_vertex(&mut mem(), out, chr, bone, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_cheight_get(chr, battle)`: returns in `ST0`.
+    opus_cheight_get @ 0x0080_0b70 => extern "C" fn opus_cheight_get(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_cheight_get(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_get_chr_pos(chr, out)`.
+    opus_get_chr_pos @ 0x0081_b1e0 => extern "C" fn opus_get_chr_pos(chr: u32, out: u32) -> u32 {
+        opus::bridge::opus_get_chr_pos(&mut mem(), chr, out, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opf_normal(host, ptr)`.
+    opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_normal(&mut mem(), host, ptr)
+    }
+    /// `opu_eff_flag_008178f0(host, cmd)`.
+    opu_eff_flag_008178f0 @ 0x0081_78f0 => extern "C" fn opu_eff_flag(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_eff_flag(&mut mem(), host, cmd)
+    }
+    /// `opu_v_rev(host, cmd)`.
+    opu_v_rev @ 0x0081_9a20 => extern "C" fn opu_v_rev(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_rev(&mut mem(), host, cmd)
+    }
+    /// `opu_v_stop_008182f0(host, cmd)`.
+    opu_v_stop_008182f0 @ 0x0081_82f0 => extern "C" fn opu_v_stop(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_stop(&mut mem(), host, cmd)
+    }
+    /// `opu_motion_cb_0081b4d0(host, cmd)`.
+    opu_motion_cb_0081b4d0 @ 0x0081_b4d0 => extern "C" fn opu_motion_cb(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_motion_cb(&mut mem(), host, cmd)
+    }
+    /// `opus_prog_on(set, list)`.
+    opus_prog_on @ 0x0080_1700 => extern "C" fn opus_prog_on(set: u32, list: u32) -> u32 {
+        opus::bridge::opus_prog_on(&mut mem(), set, list)
     }
     /// `opus_list_add_00801780(set, id, list)`.
     opus_list_add_00801780 @ 0x0080_1780 => extern "C" fn opus_list_add(set: u32, id: u32, list: u32) -> u32 {
@@ -2254,6 +2475,14 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32;
         opus::bridge::opus_get_bone_matrix(&mut mem(), out, chr, bone, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_mimic_check(chr)`.
+    opus_mimic_check @ 0x0080_f630 => extern "C" fn opus_mimic_check(chr: u32) -> u32 {
+        opus::bridge::opus_mimic_check(&mut mem(), chr)
+    }
+    /// `opus_chara_root_m_get(out, chr)`.
+    opus_chara_root_m_get @ 0x0080_5400 => extern "C" fn opus_chara_root_m_get(out: u32, chr: u32) -> u32 {
+        opus::bridge::opus_chara_root_m_get(&mut mem(), out, chr, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opus_rt_m_chara(m, chr, k, angles, trans, battle)`.
     opus_rt_m_chara @ 0x0080_62c0 => extern "C" fn opus_rt_m_chara(m: u32, chr: u32, k: u32, angles: u32, trans: u32, battle: u32) {
         // the original's 16-byte scale local, at [ebp - 0x20]
@@ -2361,6 +2590,10 @@ ported! {
     /// `op_func_before_wot_set(func, a, b, c)`.
     op_func_before_wot_set @ 0x007e_b3c0 => extern "C" fn op_func_before_wot_set(func: u32, a: u32, b: u32, c: u32) -> i32 {
         op::bridge::op_func_before_wot_set(&mut mem(), func, a, b, c)
+    }
+    /// `op_func_final_set(func, a, b, c)`.
+    op_func_final_set @ 0x007e_b410 => extern "C" fn op_func_final_set(func: u32, a: u32, b: u32, c: u32) -> i32 {
+        op::bridge::op_func_final_set(&mut mem(), func, a, b, c)
     }
     /// `op_func_before_ot_free(slot)`.
     op_func_before_ot_free @ 0x007e_b350 => extern "C" fn op_func_before_ot_free(slot: u32) {

@@ -3064,15 +3064,15 @@ const BARE_RET: [u32; 6] = [
     0x0076_ec20,
 ];
 
-/// Every Rust native against the original on each actor of each ctrl work
-/// in use, with small integer and float arguments on the worker's stack
+/// The Rust natives of `groups` against the original on each actor of each
+/// ctrl work in use, with small integer and float arguments on the worker's
+/// stack
 /// (the same on both sides): the result (`EAX`, or `ST0` for the float
 /// ones) and all memory. A call the original cannot finish in the emulator
 /// (an import with no stub) is skipped and counted.
-#[test]
 #[allow(clippy::too_many_lines)] // the loop over every native and its checks
-fn natives_match_the_original() {
-    use ffx_script::vm::bridge::native::{self, Native, PORTED};
+fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
+    use ffx_script::vm::bridge::native::{self, Native};
     let (Some(dir), Some(snap)) = (
         std::env::var_os("FFX_GAME_DIR"),
         std::env::var_os("FFX_SNAPSHOT"),
@@ -3083,7 +3083,7 @@ fn natives_match_the_original() {
     let exe = PathBuf::from(dir).join("FFX.exe");
     let pages = Pages::read(PathBuf::from(snap)).unwrap();
     let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
-    let mut rng = Xorshift(0x5eed_0005);
+    let mut rng = Xorshift(rng_seed);
     let (mut compared, mut stops) = (0, 0);
     let mut seen = std::collections::BTreeSet::new();
     for c in ctrls {
@@ -3093,18 +3093,11 @@ fn natives_match_the_original() {
             actors(a, b).len().min(12)
         };
         for i in 0..n {
-            for &(sym, float) in PORTED
-                .iter()
-                .chain(&ffx_script::vm::bridge::native_map::PORTED)
-                .chain(&ffx_script::vm::bridge::native_cam::PORTED)
-                .chain(&ffx_script::vm::bridge::native_msg::PORTED)
-                .chain(&ffx_script::vm::bridge::native_move::PORTED)
-                .chain(&ffx_script::vm::bridge::native_btl::PORTED)
-                .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
-                .chain(&ffx_script::vm::bridge::native_sys::PORTED)
-                .chain(&ffx_script::vm::bridge::native_chr::PORTED)
-                .chain(&ffx_script::vm::bridge::native_mods::PORTED)
-            {
+            for &(sym, float) in groups.iter().flat_map(|l| l.iter()) {
+                // tested on chosen arguments in round19_natives_match_the_original
+                if R20_UNINIT.contains(&sym) {
+                    continue;
+                }
                 // a native that ran alike on both sides may still have made
                 // a ctrl work from a garbage-filled worker's words current
                 // (battle.snap's worker 5 of 0xf46010 is 0xcd fill): start
@@ -3179,17 +3172,9 @@ fn natives_match_the_original() {
             }
         }
     }
-    let never: Vec<String> = PORTED
+    let never: Vec<String> = groups
         .iter()
-        .chain(&ffx_script::vm::bridge::native_map::PORTED)
-        .chain(&ffx_script::vm::bridge::native_cam::PORTED)
-        .chain(&ffx_script::vm::bridge::native_msg::PORTED)
-        .chain(&ffx_script::vm::bridge::native_move::PORTED)
-        .chain(&ffx_script::vm::bridge::native_btl::PORTED)
-        .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
-        .chain(&ffx_script::vm::bridge::native_sys::PORTED)
-        .chain(&ffx_script::vm::bridge::native_chr::PORTED)
-        .chain(&ffx_script::vm::bridge::native_mods::PORTED)
+        .flat_map(|l| l.iter())
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();
@@ -3198,6 +3183,49 @@ fn natives_match_the_original() {
         never.join(" ")
     );
     assert!(compared > 0, "nothing ran");
+}
+
+/// [`natives_match`] split by module so the test threads share the work.
+mod natives_match_the_original {
+    use ffx_script::vm::bridge as m;
+
+    #[test]
+    fn native() {
+        super::natives_match(&[&m::native::PORTED], 0x5eed_0005);
+    }
+    #[test]
+    fn map_cam_msg() {
+        super::natives_match(
+            &[
+                &m::native_map::PORTED,
+                &m::native_cam::PORTED,
+                &m::native_msg::PORTED,
+            ],
+            0x5eed_0105,
+        );
+    }
+    #[test]
+    fn moves() {
+        super::natives_match(&[&m::native_move::PORTED], 0x5eed_0205);
+    }
+    #[test]
+    fn btl() {
+        super::natives_match(
+            &[&m::native_btl::PORTED, &m::native_btl2::PORTED],
+            0x5eed_0305,
+        );
+    }
+    #[test]
+    fn sys_chr() {
+        super::natives_match(
+            &[&m::native_sys::PORTED, &m::native_chr::PORTED],
+            0x5eed_0405,
+        );
+    }
+    #[test]
+    fn mods() {
+        super::natives_match(&[&m::native_mods::PORTED], 0x5eed_0505);
+    }
 }
 
 /// The non-native VM helpers of round 13 against the original, on every
@@ -4605,6 +4633,12 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
     (a, b)
 }
 
+/// Natives that can read an uninitialised local of the original
+/// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot),
+/// tested on chosen arguments only; and `0xb008`'s start, which leaves `EAX` as it was
+/// (the dispatch ignores it) and writes nothing.
+const R20_UNINIT: [u32; 4] = [0x0085_fd80, 0x0086_0000, 0x0085_8290, 0x0076_eb00];
+
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
 /// large, floats in and out of the angle range; results and memory.
@@ -4682,6 +4716,137 @@ fn round19_natives_match_the_original() {
             }
             compared += 1;
         }
+        // group 0's spline positions (0x0099, 0x009c) on a three-point
+        // table: with no points their out vector stays the original's
+        // uninitialised local, so the random loop leaves them out
+        {
+            let (a, b) = pair.get_or_insert_with(|| r19_pair(&pages, &exe, c));
+            let w = actors(a, b)[0];
+            let word = 0x100;
+            let pv = v::atel_get_real_var_adrs(&mut Run(b), w, word);
+            poke(a, b, pv, 3u32);
+            for k in 0..12u32 {
+                #[allow(clippy::cast_precision_loss)] // small
+                let x = (k as f32 - 5.0) * 1.25;
+                poke(a, b, pv + 0x10 + 4 * k, x.to_bits());
+            }
+            for sym in [0x0085_fd80, 0x0086_0000] {
+                for n in [0u32, 1, 2] {
+                    let push = [(stack::INT, word), (stack::INT, n)];
+                    native_case(a, b, w, sym, &push, &format!("{sym:#x} n {n}"));
+                    compared += 1;
+                }
+            }
+            // 0x00f7's start: AtelGetPartyWorker reads below its locals
+            // for a negative slot
+            for slot in 0..4 {
+                for n in [0u32, 2] {
+                    let push = [(stack::INT, slot), (stack::INT, n)];
+                    native_case(a, b, w, 0x0085_8290, &push, &format!("0x00f7 {slot} {n}"));
+                    compared += 1;
+                }
+            }
+            // 0x013a's choice window: open window 1, then the poll on each
+            // state and the result
+            for st in [0u16, 1, 2, 3, 4, 5] {
+                let open = [1, 0, 0, 0, 0, 0, 0, 0].map(|x| (stack::INT, x));
+                native_case(a, b, w, 0x0085_fb30, &open, &format!("0x013a start {st}"));
+                let win = v::atel_get_mes_win_work(b, 1);
+                poke(a, b, win + 0x14, st);
+                native_case(a, b, w, 0x0085_fcd0, &[], &format!("0x013a poll {st}"));
+                native_case(a, b, w, 0x0085_fd40, &[], &format!("0x013a result {st}"));
+                compared += 3;
+            }
+            pair = None;
+        }
+        // group 0's flag and table natives on the values the snapshots
+        // lack: flag words with every bit, the level-2 turn block, the
+        // party slots, a bit index past the save block's set, each
+        // MsEventEffectGetStat result
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let (a, b) = (&mut a, &mut b);
+            let w = actors(a, b)[0];
+            let int = |v: u32| (stack::INT, v);
+            let me = u32::from(Mem::read::<u16>(b, w + 0x2e));
+            poke(a, b, w + 0x36, 0xffff_u16);
+            native_case(a, b, w, 0x0085_bae0, &[int(me)], "0x0118 all bits");
+            let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+            let blk = Mem::read::<u32>(b, v::script_worker_level(b, w, lvl) + 0x48);
+            // battle.snap's workers leave the block pointer 0xcdcdcdcd
+            if blk >= 0x1_0000 && blk != 0xcdcd_cdcd {
+                for x in [0x10_u16, 0x20, 0x01] {
+                    poke(a, b, blk + 2, x);
+                    native_case(a, b, w, 0x0085_a130, &[], &format!("0x00c3 {x:#x}"));
+                }
+            }
+            for slot in [0u32, 1, 2, 0xff] {
+                poke(a, b, w + 0x40, slot);
+                native_case(a, b, w, 0x0085_bbe0, &[], &format!("0x00cd slot {slot}"));
+            }
+            for i in [639u32, 640, 641] {
+                native_case(a, b, w, 0x0085_eb30, &[int(i)], &format!("0x0238 {i}"));
+            }
+            poke(a, b, w + worker::LEVEL, 2u8);
+            let f = (stack::FLOAT, 1.5f32.to_bits());
+            native_case(a, b, w, 0x0085_9510, &[f], "0x0022 level 2");
+            for r in 0..8 {
+                for o in [&mut *a, &mut *b] {
+                    let at = o.rebase(0x0078_8bd0);
+                    o.stub_return(at, r).unwrap();
+                }
+                native_case(a, b, w, 0x0085_f070, &[], &format!("0x00dd {r}"));
+            }
+            compared += 19;
+        }
+        // group 7's battle-global natives on values the snapshots lack: the
+        // 0x70f8 list (count 3, read index 1) and its 0x70f6 reset, the
+        // first 0x007b19d0 record with distinct bytes +0/+1, the pad
+        // orientation, 0x7081's state byte
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let (a, b) = (&mut a, &mut b);
+            let w = actors(a, b)[0];
+            let (n, i) = (a.rebase(0x0113_63ec), a.rebase(0x0113_63ed));
+            poke(a, b, n, 3u8);
+            poke(a, b, i, 1u8);
+            for k in 0..4 {
+                native_case(a, b, w, 0x007a_36e0, &[], &format!("0x70f8 {k}"));
+            }
+            poke(a, b, i, 1u8);
+            native_case(a, b, w, 0x007a_34e0, &[], "0x70f6");
+            native_case(a, b, w, 0x007a_36e0, &[], "0x70f8 after 0x70f6");
+            let r = orig(a, 0x007b_19d0, &[0]);
+            assert_eq!(r, orig(b, 0x007b_19d0, &[0]));
+            poke(a, b, r, 5u8);
+            poke(a, b, r + 1, 9u8);
+            native_case(a, b, w, 0x007a_3c00, &[], "0x710e");
+            native_case(a, b, w, 0x007a_3c90, &[], "0x710f");
+            for v in [5u32, 6, 0xff] {
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x007a_7340,
+                    &[(stack::INT, v)],
+                    &format!("0x7099 {v}"),
+                );
+            }
+            let st = a.rebase(0x0112_c022);
+            for x in [0u8, 1, 2] {
+                poke(a, b, st, x);
+                native_case(a, b, w, 0x007a_5d60, &[], &format!("0x7081 poll {x}"));
+            }
+            // 0xc059's command-menu panel bit set and cleared on commands
+            // of both halves (0x3000-0x305f, 0x3060 on)
+            for i in [0x3000u32, 0x3015, 0x3061] {
+                for on in [0u32, 1, 0] {
+                    let push = [(stack::INT, i), (stack::INT, on)];
+                    native_case(a, b, w, 0x0087_82a0, &push, &format!("0xc059 {i} {on}"));
+                }
+            }
+            compared += 23;
+        }
         // the polls without keep on a read that reports done (0): 5 for
         // 0x5062, 1 for 0x5064 (the reads stubbed on both sides)
         {
@@ -4717,6 +4882,9 @@ fn round19_natives_match_the_original() {
         }
         for i in 0..n {
             for &(sym, float) in &PORTED {
+                if R20_UNINIT.contains(&sym) {
+                    continue;
+                }
                 for round in 0..3 {
                     if pair.as_ref().is_some_and(|(_, b)| !ctx_ok(b)) {
                         pair = None;

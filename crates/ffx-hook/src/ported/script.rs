@@ -5724,4 +5724,864 @@ ported! {
     Native_5045 @ 0x00a7_a830 => extern "C" fn n_a7a830(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_5043(&mut mem(), w, a, s)
     }
+    /// `Native_0009(worker, args, stack)`.
+    Native_0009 @ 0x0085_f160 => extern "C" fn n_85f160(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0009(&mut mem(), w, a, s)
+    }
+    /// `Native_000c(worker, args, stack)`.
+    Native_000c @ 0x0085_f640 => extern "C" fn n_85f640(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_000c(&mut mem(), w, a, s)
+    }
+    /// `Native_0014(worker, args, stack)`.
+    Native_0014 @ 0x0086_0120 => extern "C" fn n_860120(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0014(&mut mem(), w, a, s)
+    }
+    /// `Native_0022(worker, args, stack)`.
+    Native_0022 @ 0x0085_9510 => extern "C" fn n_859510(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0022(&mut mem(), w, a, s)
+    }
+    /// `Native_0023(worker, args, stack)`.
+    Native_0023 @ 0x0085_91a0 => extern "C" fn n_8591a0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0023(&mut mem(), w, a, s)
+    }
+    /// `Native_0024(worker, args, stack)`.
+    Native_0024 @ 0x0085_92f0 => extern "C" fn n_8592f0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0024(&mut mem(), w, a, s)
+    }
+    /// `Native_0026(worker, args, stack)`.
+    Native_0026 @ 0x0085_9e50 => extern "C" fn n_859e50(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0026(&mut mem(), w, a, s)
+    }
+    /// `Native_0027(worker, args, stack)`.
+    Native_0027 @ 0x0085_9f30 => extern "C" fn n_859f30(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0027(&mut mem(), w, a, s)
+    }
+    /// `Native_0031(worker, args, stack)`.
+    Native_0031 @ 0x0085_6ba0 => extern "C" fn n_856ba0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0031(&mut mem(), w, a, s)
+    }
+    /// `Native_0032(worker, args, stack)`.
+    Native_0032 @ 0x0085_6da0 => extern "C" fn n_856da0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0032(&mut mem(), w, a, s)
+    }
+    /// `Native_003b(worker, args, stack)`.
+    Native_003b @ 0x0086_04a0 => extern "C" fn n_8604a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_003b(&mut mem(), w, a, s)
+    }
+    /// `Native_003c(worker, args, stack)`.
+    Native_003c @ 0x0085_5d50 => extern "C" fn n_855d50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_003c(&mut mem(), w, a, s)
+    }
+    /// `Native_003e(worker, args, stack)`.
+    Native_003e @ 0x0085_c470 => extern "C" fn n_85c470(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_003e(&mut mem(), w, a, s)
+    }
+    /// `Native_0040(worker, args, stack)`.
+    Native_0040 @ 0x0085_c740 => extern "C" fn n_85c740(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0040(&mut mem(), w, a, s)
+    }
+    /// `Native_0041(worker, args, stack)`.
+    Native_0041 @ 0x0085_c840 => extern "C" fn n_85c840(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0041(&mut mem(), w, a, s)
+    }
+    /// `Native_004e(worker, args, stack)`.
+    Native_004e @ 0x0085_ea80 => extern "C" fn n_85ea80(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_004e(&mut mem(), w, a, s)
+    }
+    /// `Native_004f(worker, args, stack)`.
+    Native_004f @ 0x0085_e3c0 => extern "C" fn n_85e3c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_004f(&mut mem(), w, a, s)
+    }
+    /// `Native_0052(worker, args, stack)`.
+    Native_0052 @ 0x0085_f2a0 => extern "C" fn n_85f2a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0052(&mut mem(), w, a, s)
+    }
+    /// `Native_0053(worker, args, stack)`.
+    Native_0053 @ 0x0085_eda0 => extern "C" fn n_85eda0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0053(&mut mem(), w, a, s)
+    }
+    /// `Native_0067(worker, args, stack)`.
+    Native_0067 @ 0x0085_8850 => extern "C" fn n_858850(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0067(&mut mem(), w, a, s)
+    }
+    /// `Native_0068(worker, args, stack)`.
+    Native_0068 @ 0x0085_8640 => extern "C" fn n_858640(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0068(&mut mem(), w, a, s)
+    }
+    /// `Native_0072(worker, args, stack)`.
+    Native_0072 @ 0x0085_bb50 => extern "C" fn n_85bb50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0072(&mut mem(), w, a, s)
+    }
+    /// `Native_0073(worker, args, stack)`.
+    Native_0073 @ 0x0085_bc90 => extern "C" fn n_85bc90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0073(&mut mem(), w, a, s)
+    }
+    /// `Native_0075(worker, args, stack)`.
+    Native_0075 @ 0x0085_bf40 => extern "C" fn n_85bf40(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0075(&mut mem(), w, a, s)
+    }
+    /// `Native_0079(worker, args, stack)`.
+    Native_0079 @ 0x0085_c040 => extern "C" fn n_85c040(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0079(&mut mem(), w, a, s)
+    }
+    /// `Native_007b(worker, args, stack)`.
+    Native_007b @ 0x0085_7ea0 => extern "C" fn n_857ea0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_007b(&mut mem(), w, a, s)
+    }
+    /// `Native_008e(worker, args, stack)`.
+    Native_008e @ 0x0085_db40 => extern "C" fn n_85db40(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_008e(&mut mem(), w, a, s)
+    }
+    /// `Native_0099(worker, args, stack)`.
+    Native_0099 @ 0x0085_fd80 => extern "C" fn n_85fd80(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0099(&mut mem(), w, a, s)
+    }
+    /// `Native_009c(worker, args, stack)`.
+    Native_009c @ 0x0086_0000 => extern "C" fn n_860000(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_009c(&mut mem(), w, a, s)
+    }
+    /// `Native_00ad(worker, args, stack)`.
+    Native_00ad @ 0x0085_81f0 => extern "C" fn n_8581f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00ad(&mut mem(), w, a, s)
+    }
+    /// `Native_00b5(worker, args, stack)`.
+    Native_00b5 @ 0x0085_8cf0 => extern "C" fn n_858cf0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00b5(&mut mem(), w, a, s)
+    }
+    /// `Native_00c3(worker, args, stack)`.
+    Native_00c3 @ 0x0085_a130 => extern "C" fn n_85a130(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00c3(&mut mem(), w, a, s)
+    }
+    /// `Native_00cd(worker, args, stack)`.
+    Native_00cd @ 0x0085_bbe0 => extern "C" fn n_85bbe0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00cd(&mut mem(), w, a, s)
+    }
+    /// `Native_00d3(worker, args, stack)`.
+    Native_00d3 @ 0x0085_c7d0 => extern "C" fn n_85c7d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00d3(&mut mem(), w, a, s)
+    }
+    /// `Native_00d4(worker, args, stack)`.
+    Native_00d4 @ 0x0085_c910 => extern "C" fn n_85c910(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00d4(&mut mem(), w, a, s)
+    }
+    /// `Native_00f0(worker, args, stack)`.
+    Native_00f0 @ 0x0085_76a0 => extern "C" fn n_8576a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00f0(&mut mem(), w, a, s)
+    }
+    /// `Native_00f1(worker, args, stack)`.
+    Native_00f1 @ 0x0085_d620 => extern "C" fn n_85d620(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00f1(&mut mem(), w, a, s)
+    }
+    /// `Native_00f7(worker, args, stack)`.
+    Native_00f7 @ 0x0085_8290 => extern "C" fn n_858290(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00f7(&mut mem(), w, a, s)
+    }
+    /// `Native_00f7_Poll(worker, args, stack)`.
+    Native_00f7_Poll @ 0x0085_8400 => extern "C" fn n_858400(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00f7_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_00fc(worker, args, stack)`.
+    Native_00fc @ 0x0085_8dd0 => extern "C" fn n_858dd0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00fc(&mut mem(), w, a, s)
+    }
+    /// `Native_00ff(worker, args, stack)`.
+    Native_00ff @ 0x0086_02c0 => extern "C" fn n_8602c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_00ff(&mut mem(), w, a, s)
+    }
+    /// `Native_0118(worker, args, stack)`.
+    Native_0118 @ 0x0085_bae0 => extern "C" fn n_85bae0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0118(&mut mem(), w, a, s)
+    }
+    /// `Native_011e(worker, args, stack)`.
+    Native_011e @ 0x0085_caf0 => extern "C" fn n_85caf0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_011e(&mut mem(), w, a, s)
+    }
+    /// `Native_0123(worker, args, stack)`.
+    Native_0123 @ 0x0085_d440 => extern "C" fn n_85d440(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0079(&mut mem(), w, a, s)
+    }
+    /// `Native_0124(worker, args, stack)`.
+    Native_0124 @ 0x0085_d530 => extern "C" fn n_85d530(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0079(&mut mem(), w, a, s)
+    }
+    /// `Native_0125(worker, args, stack)`.
+    Native_0125 @ 0x0085_fc50 => extern "C" fn n_85fc50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0125(&mut mem(), w, a, s)
+    }
+    /// `Native_012c(worker, args, stack)`.
+    Native_012c @ 0x0085_ddd0 => extern "C" fn n_85ddd0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_012c(&mut mem(), w, a, s)
+    }
+    /// `Native_012f(worker, args, stack)`.
+    Native_012f @ 0x0085_e170 => extern "C" fn n_85e170(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_012f(&mut mem(), w, a, s)
+    }
+    /// `Native_0131(worker, args, stack)`.
+    Native_0131 @ 0x0085_e760 => extern "C" fn n_85e760(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0131(&mut mem(), w, a, s)
+    }
+    /// `Native_013a(worker, args, stack)`.
+    Native_013a @ 0x0085_fb30 => extern "C" fn n_85fb30(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_013a(&mut mem(), w, a, s)
+    }
+    /// `Native_013a_Poll(worker, args, stack)`.
+    Native_013a_Poll @ 0x0085_fcd0 => extern "C" fn n_85fcd0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_013a_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_013a_Result(worker, args, stack)`.
+    Native_013a_Result @ 0x0085_fd40 => extern "C" fn n_85fd40(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_013a_result(&mut mem(), w, a, s)
+    }
+    /// `Native_0147(worker, args, stack)`.
+    Native_0147 @ 0x0085_8250 => extern "C" fn n_858250(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0147(&mut mem(), w, a, s)
+    }
+    /// `Native_014b(worker, args, stack)`.
+    Native_014b @ 0x0085_88e0 => extern "C" fn n_8588e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_014b(&mut mem(), w, a, s)
+    }
+    /// `Native_014c(worker, args, stack)`.
+    Native_014c @ 0x0085_8af0 => extern "C" fn n_858af0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_014c(&mut mem(), w, a, s)
+    }
+    /// `Native_0150(worker, args, stack)`.
+    Native_0150 @ 0x0085_9380 => extern "C" fn n_859380(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0150(&mut mem(), w, a, s)
+    }
+    /// `Native_0152(worker, args, stack)`.
+    Native_0152 @ 0x0085_94f0 => extern "C" fn n_8594f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0152(&mut mem(), w, a, s)
+    }
+    /// `Native_0153(worker, args, stack)`.
+    Native_0153 @ 0x0085_9600 => extern "C" fn n_859600(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0153(&mut mem(), w, a, s)
+    }
+    /// `Native_015a(worker, args, stack)`.
+    Native_015a @ 0x0085_7c60 => extern "C" fn n_857c60(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_015a(&mut mem(), w, a, s)
+    }
+    /// `Native_015c(worker, args, stack)`.
+    Native_015c @ 0x0085_b530 => extern "C" fn n_85b530(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_015c(&mut mem(), w, a, s)
+    }
+    /// `Native_0162(worker, args, stack)`.
+    Native_0162 @ 0x0085_9e90 => extern "C" fn n_859e90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0162(&mut mem(), w, a, s)
+    }
+    /// `Native_0163(worker, args, stack)`.
+    Native_0163 @ 0x0085_a0f0 => extern "C" fn n_85a0f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0163(&mut mem(), w, a, s)
+    }
+    /// `Native_0164(worker, args, stack)`.
+    Native_0164 @ 0x0085_9f70 => extern "C" fn n_859f70(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0164(&mut mem(), w, a, s)
+    }
+    /// `Native_0165(worker, args, stack)`.
+    Native_0165 @ 0x0085_a1d0 => extern "C" fn n_85a1d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0165(&mut mem(), w, a, s)
+    }
+    /// `Native_0168(worker, args, stack)`.
+    Native_0168 @ 0x0085_b990 => extern "C" fn n_85b990(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0168(&mut mem(), w, a, s)
+    }
+    /// `Native_0169(worker, args, stack)`.
+    Native_0169 @ 0x0085_bab0 => extern "C" fn n_85bab0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0169(&mut mem(), w, a, s)
+    }
+    /// `Native_0170(worker, args, stack)`.
+    Native_0170 @ 0x0085_c530 => extern "C" fn n_85c530(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0170(&mut mem(), w, a, s)
+    }
+    /// `Native_0173(worker, args, stack)`.
+    Native_0173 @ 0x0085_e7a0 => extern "C" fn n_85e7a0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0173(&mut mem(), w, a, s)
+    }
+    /// `Native_0175(worker, args, stack)`.
+    Native_0175 @ 0x0085_eec0 => extern "C" fn n_85eec0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0175(&mut mem(), w, a, s)
+    }
+    /// `Native_0176(worker, args, stack)`.
+    Native_0176 @ 0x0085_ec30 => extern "C" fn n_85ec30(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0176(&mut mem(), w, a, s)
+    }
+    /// `Native_0178(worker, args, stack)`.
+    Native_0178 @ 0x0085_cc30 => extern "C" fn n_85cc30(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0178(&mut mem(), w, a, s)
+    }
+    /// `Native_017d(worker, args, stack)`.
+    Native_017d @ 0x0085_d680 => extern "C" fn n_85d680(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_017d(&mut mem(), w, a, s)
+    }
+    /// `Native_0182(worker, args, stack)`.
+    Native_0182 @ 0x0085_ed10 => extern "C" fn n_85ed10(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0182(&mut mem(), w, a, s)
+    }
+    /// `Native_0183(worker, args, stack)`.
+    Native_0183 @ 0x0085_f690 => extern "C" fn n_85f690(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_0183(&mut mem(), w, a, s)
+    }
+    /// `Native_0186(worker, args, stack)`.
+    Native_0186 @ 0x0085_dd50 => extern "C" fn n_85dd50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0186(&mut mem(), w, a, s)
+    }
+    /// `Native_0187(worker, args, stack)`.
+    Native_0187 @ 0x0085_df00 => extern "C" fn n_85df00(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0187(&mut mem(), w, a, s)
+    }
+    /// `Native_018c(worker, args, stack)`.
+    Native_018c @ 0x0085_ed60 => extern "C" fn n_85ed60(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_018c(&mut mem(), w, a, s)
+    }
+    /// `Native_018d(worker, args, stack)`.
+    Native_018d @ 0x0085_ef00 => extern "C" fn n_85ef00(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_018d(&mut mem(), w, a, s)
+    }
+    /// `Native_018e(worker, args, stack)`.
+    Native_018e @ 0x0085_f110 => extern "C" fn n_85f110(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_018e(&mut mem(), w, a, s)
+    }
+    /// `Native_0190(worker, args, stack)`.
+    Native_0190 @ 0x0085_f330 => extern "C" fn n_85f330(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0190(&mut mem(), w, a, s)
+    }
+    /// `Native_0191(worker, args, stack)`.
+    Native_0191 @ 0x0085_f5c0 => extern "C" fn n_85f5c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0191(&mut mem(), w, a, s)
+    }
+    /// `Native_01a1(worker, args, stack)`.
+    Native_01a1 @ 0x0085_6b10 => extern "C" fn n_856b10(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01a1(&mut mem(), w, a, s)
+    }
+    /// `Native_01a2(worker, args, stack)`.
+    Native_01a2 @ 0x0085_6e90 => extern "C" fn n_856e90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01a2(&mut mem(), w, a, s)
+    }
+    /// `Native_01a3(worker, args, stack)`.
+    Native_01a3 @ 0x0085_7210 => extern "C" fn n_857210(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01a3(&mut mem(), w, a, s)
+    }
+    /// `Native_01cb(worker, args, stack)`.
+    Native_01cb @ 0x0085_e0e0 => extern "C" fn n_85e0e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01cb(&mut mem(), w, a, s)
+    }
+    /// `Native_01d6(worker, args, stack)`.
+    Native_01d6 @ 0x0085_64b0 => extern "C" fn n_8564b0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01d6(&mut mem(), w, a, s)
+    }
+    /// `Native_01d8(worker, args, stack)`.
+    Native_01d8 @ 0x0085_67e0 => extern "C" fn n_8567e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01d8(&mut mem(), w, a, s)
+    }
+    /// `Native_01df(worker, args, stack)`.
+    Native_01df @ 0x0085_f8d0 => extern "C" fn n_85f8d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01df(&mut mem(), w, a, s)
+    }
+    /// `Native_01e8(worker, args, stack)`.
+    Native_01e8 @ 0x0085_9470 => extern "C" fn n_859470(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01e8(&mut mem(), w, a, s)
+    }
+    /// `Native_01ec(worker, args, stack)`.
+    Native_01ec @ 0x0085_7cf0 => extern "C" fn n_857cf0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01ec(&mut mem(), w, a, s)
+    }
+    /// `Native_01f5(worker, args, stack)`.
+    Native_01f5 @ 0x0085_a160 => extern "C" fn n_85a160(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01f5(&mut mem(), w, a, s)
+    }
+    /// `Native_01f6(worker, args, stack)`.
+    Native_01f6 @ 0x0085_a2d0 => extern "C" fn n_85a2d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01f6(&mut mem(), w, a, s)
+    }
+    /// `Native_01f7(worker, args, stack)`.
+    Native_01f7 @ 0x0085_a800 => extern "C" fn n_85a800(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01f7(&mut mem(), w, a, s)
+    }
+    /// `Native_01fd(worker, args, stack)`.
+    Native_01fd @ 0x0085_ba20 => extern "C" fn n_85ba20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01fd(&mut mem(), w, a, s)
+    }
+    /// `Native_01fe(worker, args, stack)`.
+    Native_01fe @ 0x0085_bb20 => extern "C" fn n_85bb20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01fe(&mut mem(), w, a, s)
+    }
+    /// `Native_01ff(worker, args, stack)`.
+    Native_01ff @ 0x0085_a300 => extern "C" fn n_85a300(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_01ff(&mut mem(), w, a, s)
+    }
+    /// `Native_0208(worker, args, stack)`.
+    Native_0208 @ 0x0085_f210 => extern "C" fn n_85f210(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0208(&mut mem(), w, a, s)
+    }
+    /// `Native_020c(worker, args, stack)`.
+    Native_020c @ 0x0085_bcc0 => extern "C" fn n_85bcc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_020c(&mut mem(), w, a, s)
+    }
+    /// `Native_0211(worker, args, stack)`.
+    Native_0211 @ 0x0085_c810 => extern "C" fn n_85c810(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0211(&mut mem(), w, a, s)
+    }
+    /// `Native_0214(worker, args, stack)`.
+    Native_0214 @ 0x0085_cbe0 => extern "C" fn n_85cbe0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0214(&mut mem(), w, a, s)
+    }
+    /// `Native_0218(worker, args, stack)`.
+    Native_0218 @ 0x0085_d3f0 => extern "C" fn n_85d3f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0218(&mut mem(), w, a, s)
+    }
+    /// `Native_0219(worker, args, stack)`.
+    Native_0219 @ 0x0085_d500 => extern "C" fn n_85d500(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0219(&mut mem(), w, a, s)
+    }
+    /// `Native_021c(worker, args, stack)`.
+    Native_021c @ 0x0085_db90 => extern "C" fn n_85db90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_021c(&mut mem(), w, a, s)
+    }
+    /// `Native_021f(worker, args, stack)`.
+    Native_021f @ 0x0085_dfc0 => extern "C" fn n_85dfc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_021f(&mut mem(), w, a, s)
+    }
+    /// `Native_0222(worker, args, stack)`.
+    Native_0222 @ 0x0085_e380 => extern "C" fn n_85e380(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0222(&mut mem(), w, a, s)
+    }
+    /// `Native_0223(worker, args, stack)`.
+    Native_0223 @ 0x0085_e460 => extern "C" fn n_85e460(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0223(&mut mem(), w, a, s)
+    }
+    /// `Native_0227(worker, args, stack)`.
+    Native_0227 @ 0x0085_ac20 => extern "C" fn n_85ac20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0227(&mut mem(), w, a, s)
+    }
+    /// `Native_0228(worker, args, stack)`.
+    Native_0228 @ 0x0085_b060 => extern "C" fn n_85b060(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0228(&mut mem(), w, a, s)
+    }
+    /// `Native_022b_Poll(worker, args, stack)`.
+    Native_022b_Poll @ 0x0085_efb0 => extern "C" fn n_85efb0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_022b_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_022c(worker, args, stack)`.
+    Native_022c @ 0x0085_f2e0 => extern "C" fn n_85f2e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_022c(&mut mem(), w, a, s)
+    }
+    /// `Native_022d(worker, args, stack)`.
+    Native_022d @ 0x0085_f4c0 => extern "C" fn n_85f4c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_022d(&mut mem(), w, a, s)
+    }
+    /// `Native_022d_Poll(worker, args, stack)`.
+    Native_022d_Poll @ 0x0085_f600 => extern "C" fn n_85f600(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_022d_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_0232(worker, args, stack)`.
+    Native_0232 @ 0x0085_a4b0 => extern "C" fn n_85a4b0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0232(&mut mem(), w, a, s)
+    }
+    /// `Native_0232_Poll(worker, args, stack)`.
+    Native_0232_Poll @ 0x0085_a5f0 => extern "C" fn n_85a5f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0232_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_0233(worker, args, stack)`.
+    Native_0233 @ 0x0085_fe10 => extern "C" fn n_85fe10(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0233(&mut mem(), w, a, s)
+    }
+    /// `Native_0238(worker, args, stack)`.
+    Native_0238 @ 0x0085_eb30 => extern "C" fn n_85eb30(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0238(&mut mem(), w, a, s)
+    }
+    /// `Native_024e(worker, args, stack)`.
+    Native_024e @ 0x0085_d4b0 => extern "C" fn n_85d4b0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_024e(&mut mem(), w, a, s)
+    }
+    /// `Native_0252(worker, args, stack)`.
+    Native_0252 @ 0x0085_ef50 => extern "C" fn n_85ef50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0252(&mut mem(), w, a, s)
+    }
+    /// `Native_0258(worker, args, stack)`.
+    Native_0258 @ 0x0085_8a60 => extern "C" fn n_858a60(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0258(&mut mem(), w, a, s)
+    }
+    /// `Native_0258_Poll(worker, args, stack)`.
+    Native_0258_Poll @ 0x0085_8da0 => extern "C" fn n_858da0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_0258_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_6009(worker, args, stack)`.
+    Native_6009 @ 0x007b_93e0 => extern "C" fn n_7b93e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6009(&mut mem(), w, a, s)
+    }
+    /// `Native_600b(worker, args, stack)`.
+    Native_600b @ 0x007b_9480 => extern "C" fn n_7b9480(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_600b(&mut mem(), w, a, s)
+    }
+    /// `Native_600c(worker, args, stack)`.
+    Native_600c @ 0x007b_94c0 => extern "C" fn n_7b94c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_600c(&mut mem(), w, a, s)
+    }
+    /// `Native_600d(worker, args, stack)`.
+    Native_600d @ 0x007b_9500 => extern "C" fn n_7b9500(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_600d(&mut mem(), w, a, s)
+    }
+    /// `Native_600e(worker, args, stack)`.
+    Native_600e @ 0x007b_95a0 => extern "C" fn n_7b95a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_600e(&mut mem(), w, a, s)
+    }
+    /// `Native_6018(worker, args, stack)`.
+    Native_6018 @ 0x007b_9a80 => extern "C" fn n_7b9a80(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6018(&mut mem(), w, a, s)
+    }
+    /// `Native_6022(worker, args, stack)`.
+    Native_6022 @ 0x007b_9e10 => extern "C" fn n_7b9e10(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6022(&mut mem(), w, a, s)
+    }
+    /// `Native_6023(worker, args, stack)`.
+    Native_6023 @ 0x007b_9e90 => extern "C" fn n_7b9e90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6023(&mut mem(), w, a, s)
+    }
+    /// `Native_6024(worker, args, stack)`.
+    Native_6024 @ 0x007b_9f20 => extern "C" fn n_7b9f20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6024(&mut mem(), w, a, s)
+    }
+    /// `Native_6025(worker, args, stack)`.
+    Native_6025 @ 0x007b_9fa0 => extern "C" fn n_7b9fa0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6025(&mut mem(), w, a, s)
+    }
+    /// `Native_6026(worker, args, stack)`.
+    Native_6026 @ 0x007b_9fc0 => extern "C" fn n_7b9fc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6026(&mut mem(), w, a, s)
+    }
+    /// `Native_602c(worker, args, stack)`.
+    Native_602c @ 0x007b_a350 => extern "C" fn n_7ba350(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_602c(&mut mem(), w, a, s)
+    }
+    /// `Native_602f(worker, args, stack)`.
+    Native_602f @ 0x007b_7fe0 => extern "C" fn n_7b7fe0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_602f(&mut mem(), w, a, s)
+    }
+    /// `Native_6031(worker, args, stack)`.
+    Native_6031 @ 0x007b_80c0 => extern "C" fn n_7b80c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6031(&mut mem(), w, a, s)
+    }
+    /// `Native_6036(worker, args, stack)`.
+    Native_6036 @ 0x007b_8190 => extern "C" fn n_7b8190(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6036(&mut mem(), w, a, s)
+    }
+    /// `Native_6037(worker, args, stack)`.
+    Native_6037 @ 0x007b_81b0 => extern "C" fn n_7b81b0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6037(&mut mem(), w, a, s)
+    }
+    /// `Native_6039(worker, args, stack)`.
+    Native_6039 @ 0x007b_82d0 => extern "C" fn n_7b82d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6039(&mut mem(), w, a, s)
+    }
+    /// `Native_603d(worker, args, stack)`.
+    Native_603d @ 0x007b_a000 => extern "C" fn n_7ba000(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_603d(&mut mem(), w, a, s)
+    }
+    /// `Native_603e(worker, args, stack)`.
+    Native_603e @ 0x007b_86d0 => extern "C" fn n_7b86d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_603e(&mut mem(), w, a, s)
+    }
+    /// `Native_6053(worker, args, stack)`.
+    Native_6053 @ 0x007b_8c60 => extern "C" fn n_7b8c60(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6053(&mut mem(), w, a, s)
+    }
+    /// `Native_6054(worker, args, stack)`.
+    Native_6054 @ 0x007b_8c90 => extern "C" fn n_7b8c90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6054(&mut mem(), w, a, s)
+    }
+    /// `Native_6056(worker, args, stack)`.
+    Native_6056 @ 0x007b_8d10 => extern "C" fn n_7b8d10(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6056(&mut mem(), w, a, s)
+    }
+    /// `Native_6057(worker, args, stack)`.
+    Native_6057 @ 0x007b_8d40 => extern "C" fn n_7b8d40(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6057(&mut mem(), w, a, s)
+    }
+    /// `Native_6065(worker, args, stack)`.
+    Native_6065 @ 0x007b_87d0 => extern "C" fn n_7b87d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6065(&mut mem(), w, a, s)
+    }
+    /// `Native_6068(worker, args, stack)`.
+    Native_6068 @ 0x007b_9460 => extern "C" fn n_7b9460(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6068(&mut mem(), w, a, s)
+    }
+    /// `Native_606a(worker, args, stack)`.
+    Native_606a @ 0x007b_9090 => extern "C" fn n_7b9090(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_606a(&mut mem(), w, a, s)
+    }
+    /// `Native_606d(worker, args, stack)`.
+    Native_606d @ 0x007b_9170 => extern "C" fn n_7b9170(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_606d(&mut mem(), w, a, s)
+    }
+    /// `Native_606f(worker, args, stack)`.
+    Native_606f @ 0x007b_91d0 => extern "C" fn n_7b91d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_606f(&mut mem(), w, a, s)
+    }
+    /// `Native_6070(worker, args, stack)`.
+    Native_6070 @ 0x007b_9200 => extern "C" fn n_7b9200(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6070(&mut mem(), w, a, s)
+    }
+    /// `Native_6072(worker, args, stack)`.
+    Native_6072 @ 0x007b_9240 => extern "C" fn n_7b9240(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6072(&mut mem(), w, a, s)
+    }
+    /// `Native_6073(worker, args, stack)`.
+    Native_6073 @ 0x007b_9280 => extern "C" fn n_7b9280(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6073(&mut mem(), w, a, s)
+    }
+    /// `Native_6075(worker, args, stack)`.
+    Native_6075 @ 0x007b_8b50 => extern "C" fn n_7b8b50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6075(&mut mem(), w, a, s)
+    }
+    /// `Native_6079(worker, args, stack)`.
+    Native_6079 @ 0x007b_8dc0 => extern "C" fn n_7b8dc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6079(&mut mem(), w, a, s)
+    }
+    /// `Native_607a(worker, args, stack)`.
+    Native_607a @ 0x007b_8de0 => extern "C" fn n_7b8de0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_607a(&mut mem(), w, a, s)
+    }
+    /// `Native_607c(worker, args, stack)`.
+    Native_607c @ 0x007b_8e00 => extern "C" fn n_7b8e00(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_607c(&mut mem(), w, a, s)
+    }
+    /// `Native_607c_Poll(worker, args, stack)`.
+    Native_607c_Poll @ 0x007b_8e20 => extern "C" fn n_7b8e20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_607c_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_6085(worker, args, stack)`.
+    Native_6085 @ 0x007b_92a0 => extern "C" fn n_7b92a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6085(&mut mem(), w, a, s)
+    }
+    /// `Native_6086(worker, args, stack)`.
+    Native_6086 @ 0x007b_9d80 => extern "C" fn n_7b9d80(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6086(&mut mem(), w, a, s)
+    }
+    /// `Native_6089(worker, args, stack)`.
+    Native_6089 @ 0x007b_9630 => extern "C" fn n_7b9630(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_6089(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlSetFlagBded(worker, args, stack)`.
+    Native_BtlSetFlagBded @ 0x007a_39d0 => extern "C" fn n_7a39d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7001(&mut mem(), w, a, s)
+    }
+    /// `Native_700e(worker, args, stack)`.
+    Native_700e @ 0x007a_5690 => extern "C" fn n_7a5690(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_700e(&mut mem(), w, a, s)
+    }
+    /// `Native_7042(worker, args, stack)`.
+    Native_7042 @ 0x007a_6060 => extern "C" fn n_7a6060(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7042(&mut mem(), w, a, s)
+    }
+    /// `Native_7044(worker, args, stack)`.
+    Native_7044 @ 0x007a_6e10 => extern "C" fn n_7a6e10(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7044(&mut mem(), w, a, s)
+    }
+    /// `Native_7045(worker, args, stack)`.
+    Native_7045 @ 0x007a_4da0 => extern "C" fn n_7a4da0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7045(&mut mem(), w, a, s)
+    }
+    /// `Native_7056(worker, args, stack)`.
+    Native_7056 @ 0x007a_6e80 => extern "C" fn n_7a6e80(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7056(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlFindActor(worker, args, stack)`.
+    Native_BtlFindActor @ 0x007a_6170 => extern "C" fn n_7a6170(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7069(&mut mem(), w, a, s)
+    }
+    /// `Native_706c(worker, args, stack)`.
+    Native_706c @ 0x007a_6bc0 => extern "C" fn n_7a6bc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_706c(&mut mem(), w, a, s)
+    }
+    /// `Native_7072(worker, args, stack)`.
+    Native_7072 @ 0x007a_6330 => extern "C" fn n_7a6330(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7072(&mut mem(), w, a, s)
+    }
+    /// `Native_7074(worker, args, stack)`.
+    Native_7074 @ 0x007a_29f0 => extern "C" fn n_7a29f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7074(&mut mem(), w, a, s)
+    }
+    /// `Native_7077(worker, args, stack)`.
+    Native_7077 @ 0x007a_5450 => extern "C" fn n_7a5450(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7077(&mut mem(), w, a, s)
+    }
+    /// `Native_7079(worker, args, stack)`.
+    Native_7079 @ 0x007a_7200 => extern "C" fn n_7a7200(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7079(&mut mem(), w, a, s)
+    }
+    /// `Native_7080(worker, args, stack)`.
+    Native_7080 @ 0x007a_2c70 => extern "C" fn n_7a2c70(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7080(&mut mem(), w, a, s)
+    }
+    /// `Native_7089(worker, args, stack)`.
+    Native_7089 @ 0x007a_7c40 => extern "C" fn n_7a7c40(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7089(&mut mem(), w, a, s)
+    }
+    /// `Native_7090(worker, args, stack)`.
+    Native_7090 @ 0x007a_49c0 => extern "C" fn n_7a49c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7090(&mut mem(), w, a, s)
+    }
+    /// `Native_7094(worker, args, stack)`.
+    Native_7094 @ 0x007a_72c0 => extern "C" fn n_7a72c0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7094(&mut mem(), w, a, s)
+    }
+    /// `Native_7095(worker, args, stack)`.
+    Native_7095 @ 0x007a_61d0 => extern "C" fn n_7a61d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7095(&mut mem(), w, a, s)
+    }
+    /// `Native_7098(worker, args, stack)`.
+    Native_7098 @ 0x007a_2dc0 => extern "C" fn n_7a2dc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7098(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlSetPadOrientation(worker, args, stack)`.
+    Native_BtlSetPadOrientation @ 0x007a_7340 => extern "C" fn n_7a7340(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7099(&mut mem(), w, a, s)
+    }
+    /// `Native_70a3(worker, args, stack)`.
+    Native_70a3 @ 0x007a_3730 => extern "C" fn n_7a3730(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70a3(&mut mem(), w, a, s)
+    }
+    /// `Native_70a7(worker, args, stack)`.
+    Native_70a7 @ 0x007a_54f0 => extern "C" fn n_7a54f0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_70a7(&mut mem(), w, a, s)
+    }
+    /// `Native_70b4(worker, args, stack)`.
+    Native_70b4 @ 0x007a_7130 => extern "C" fn n_7a7130(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70b4(&mut mem(), w, a, s)
+    }
+    /// `Native_70b6(worker, args, stack)`.
+    Native_70b6 @ 0x007a_52b0 => extern "C" fn n_7a52b0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70b6(&mut mem(), w, a, s)
+    }
+    /// `Native_70b7(worker, args, stack)`.
+    Native_70b7 @ 0x007a_6640 => extern "C" fn n_7a6640(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70b7(&mut mem(), w, a, s)
+    }
+    /// `Native_70c0(worker, args, stack)`.
+    Native_70c0 @ 0x007a_6c70 => extern "C" fn n_7a6c70(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_70c0(&mut mem(), w, a, s)
+    }
+    /// `Native_70c6(worker, args, stack)`.
+    Native_70c6 @ 0x007a_3950 => extern "C" fn n_7a3950(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70c6(&mut mem(), w, a, s)
+    }
+    /// `Native_70c7(worker, args, stack)`.
+    Native_70c7 @ 0x007a_39f0 => extern "C" fn n_7a39f0(w: u32, a: u32, s: u32) -> f64 {
+        native_mods::native_70c7(&mut mem(), w, a, s)
+    }
+    /// `Native_70c8(worker, args, stack)`.
+    Native_70c8 @ 0x007a_75e0 => extern "C" fn n_7a75e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70c8(&mut mem(), w, a, s)
+    }
+    /// `Native_70ca(worker, args, stack)`.
+    Native_70ca @ 0x007a_7ab0 => extern "C" fn n_7a7ab0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70ca(&mut mem(), w, a, s)
+    }
+    /// `Native_70cb(worker, args, stack)`.
+    Native_70cb @ 0x007a_7b40 => extern "C" fn n_7a7b40(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70cb(&mut mem(), w, a, s)
+    }
+    /// `Native_70d3(worker, args, stack)`.
+    Native_70d3 @ 0x007a_4a90 => extern "C" fn n_7a4a90(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70d3(&mut mem(), w, a, s)
+    }
+    /// `Native_70d4(worker, args, stack)`.
+    Native_70d4 @ 0x007a_4f20 => extern "C" fn n_7a4f20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70d4(&mut mem(), w, a, s)
+    }
+    /// `Native_70e4(worker, args, stack)`.
+    Native_70e4 @ 0x007a_2b50 => extern "C" fn n_7a2b50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70e4(&mut mem(), w, a, s)
+    }
+    /// `Native_70e5(worker, args, stack)`.
+    Native_70e5 @ 0x007a_4c70 => extern "C" fn n_7a4c70(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70e5(&mut mem(), w, a, s)
+    }
+    /// `Native_70e6(worker, args, stack)`.
+    Native_70e6 @ 0x007a_4e00 => extern "C" fn n_7a4e00(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70e6(&mut mem(), w, a, s)
+    }
+    /// `Native_70f3(worker, args, stack)`.
+    Native_70f3 @ 0x007a_3300 => extern "C" fn n_7a3300(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70f3(&mut mem(), w, a, s)
+    }
+    /// `Native_70f4(worker, args, stack)`.
+    Native_70f4 @ 0x007a_2ad0 => extern "C" fn n_7a2ad0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70f4(&mut mem(), w, a, s)
+    }
+    /// `Native_70f9(worker, args, stack)`.
+    Native_70f9 @ 0x007a_5fc0 => extern "C" fn n_7a5fc0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70f9(&mut mem(), w, a, s)
+    }
+    /// `Native_70fb(worker, args, stack)`.
+    Native_70fb @ 0x007a_37e0 => extern "C" fn n_7a37e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_70fb(&mut mem(), w, a, s)
+    }
+    /// `Native_7100(worker, args, stack)`.
+    Native_7100 @ 0x007a_7d20 => extern "C" fn n_7a7d20(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7100(&mut mem(), w, a, s)
+    }
+    /// `Native_7116(worker, args, stack)`.
+    Native_7116 @ 0x007a_6930 => extern "C" fn n_7a6930(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7116(&mut mem(), w, a, s)
+    }
+    /// `Native_711f(worker, args, stack)`.
+    Native_711f @ 0x007a_6200 => extern "C" fn n_7a6200(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_711f(&mut mem(), w, a, s)
+    }
+    /// `Native_7120(worker, args, stack)`.
+    Native_7120 @ 0x007a_65a0 => extern "C" fn n_7a65a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7120(&mut mem(), w, a, s)
+    }
+    /// `Native_7121(worker, args, stack)`.
+    Native_7121 @ 0x007a_6790 => extern "C" fn n_7a6790(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7121(&mut mem(), w, a, s)
+    }
+    /// `Native_7124(worker, args, stack)`.
+    Native_7124 @ 0x007a_7ee0 => extern "C" fn n_7a7ee0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7124(&mut mem(), w, a, s)
+    }
+    /// `Native_7127(worker, args, stack)`.
+    Native_7127 @ 0x007a_5240 => extern "C" fn n_7a5240(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7127(&mut mem(), w, a, s)
+    }
+    /// `Native_c00e(worker, args, stack)`.
+    Native_c00e @ 0x0087_8700 => extern "C" fn n_878700(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c00e(&mut mem(), w, a, s)
+    }
+    /// `Native_c019(worker, args, stack)`.
+    Native_c019 @ 0x0087_8550 => extern "C" fn n_878550(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c019(&mut mem(), w, a, s)
+    }
+    /// `Native_c035(worker, args, stack)`.
+    Native_c035 @ 0x0087_8f50 => extern "C" fn n_878f50(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c035(&mut mem(), w, a, s)
+    }
+    /// `Native_c059(worker, args, stack)`.
+    Native_c059 @ 0x0087_82a0 => extern "C" fn n_8782a0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_c059(&mut mem(), w, a, s)
+    }
+    /// `Native_804c(worker, args, stack)`.
+    Native_804c @ 0x0091_c090 => extern "C" fn n_91c090(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_804c(&mut mem(), w, a, s)
+    }
+    /// `Native_804d(worker, args, stack)`.
+    Native_804d @ 0x0091_c0d0 => extern "C" fn n_91c0d0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_804d(&mut mem(), w, a, s)
+    }
+    /// `Native_804e(worker, args, stack)`.
+    Native_804e @ 0x0091_c110 => extern "C" fn n_91c110(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_804e(&mut mem(), w, a, s)
+    }
+    /// `Native_8058(worker, args, stack)`.
+    Native_8058 @ 0x0091_c370 => extern "C" fn n_91c370(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_8058(&mut mem(), w, a, s)
+    }
+    /// `Native_8069(worker, args, stack)`.
+    Native_8069 @ 0x0091_af30 => extern "C" fn n_91af30(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_8069(&mut mem(), w, a, s)
+    }
+    /// `Native_d000(worker, args, stack)`.
+    Native_d000 @ 0x00a4_45f0 => extern "C" fn n_a445f0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_d000(&mut mem(), w, a, s)
+    }
 }
