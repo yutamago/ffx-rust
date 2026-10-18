@@ -4780,7 +4780,7 @@
 0x00780750 function TexAnim_StartOld          # structure: as TexAnim_StartNew at +0x400 of the work buffer; old-format file (before tex_anim_no_set_old); name ours
 0x007807c0 function tex_anim_no_set_old       # fh v3:exact 0x00780890
 0x007808f0 function tex_anim_pos_set_old      # fh v3:exact 0x007809c0
-0x00780b40 function MsBattleAllFree           # fh v3:exact 0x00780c10
+0x00780b40 function MsBattleAllFree           # fh v3:exact 0x00780c10; ported (battle round 19)
 0x00780c90 function MsBattleCheck             # fh v3:exact+call.cs 0x00780d60 cdecl
 0x00780cb0 function MsBattleChrStart          # fh v3:bsim1.00 0x00780d80
 0x00780cc0 function MsBattleCursorCalc        # fh v3:exact 0x00780d90
@@ -4792,7 +4792,7 @@
 0x00781020 function MsBattleExe               # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; was Battle_Load
 0x00781530 function MsBattleExeClear          # fh v3:exact 0x00781600
 0x00781550 function MsBattleExeSetIndex       # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex; was Battle_RequestFile
-0x00781590 function MsBattleFree              # fh v3:exact 0x00781660
+0x00781590 function MsBattleFree              # fh v3:exact 0x00781660; ported (battle round 19)
 0x00781630 function MsBattleGetChrDisposeFlag # fh v3:bsim1.00 0x00781700
 0x00781680 function MsBattleGetFontAddress    # fh v3:exact 0x00781750
 0x007816a0 function MsBattleGetMapCircleOn    # fh v3:bsim1.00 0x00781770
@@ -4806,15 +4806,17 @@
 0x00782050 function MsBattleReadData          # fh v3:exact 0x00782110
 0x00782090 function MsBattleReadDataNB        # fh v3:exact 0x00782150
 0x007821e0 function MsBattleWater             # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...); was Battle_IsUnderwater
-0x007821f0 function MsBtlBridgeBtl2Event      # fh v3:exact 0x007822b0
+0x007821f0 function MsBtlBridgeBtl2Event      # fh v3:exact 0x007822b0; ported (battle round 19)
 0x007824e0 function MsBtlBridgeEvent2Btl      # fh v3:exact 0x007825a0
 0x00782640 function MsBtlScriptRecordFree_00782640 # (i): Sg_FreeA(g_BtlScriptRecords[i] +4, 5) and the pointer cleared; MsBattleFree (i 1) and MsBattleAllFree (i 0) call it, where Switch's MsBattleFree/MsBattleAllFree inline a Sg_FreeA (fh cg_switch calls); name ours; ported (battle round 18)
+0x00782670 function MsBtlScriptRecordShift_00782670 # (): g_BtlScriptRecords' second 0x20-byte record copied over the first (rep movs from 0x0112a9a4), g_BtlStatus 0, the second's +4 cleared; MsBattleInit's callee; name ours; ported (battle round 19)
 0x007826b0 function MsDebugInfoRead              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host0:/home/%s/%s'; Switch 0x7100337290 MsDebugInfoRead (symbols from Fahrenheit's server export)
 0x00782750 function MsEffectBufferFree_00782750 # (): user_free(g_BtlEffectBuffer), cleared; MsBattleFree's only call between Sg_IdSetEffectTableIndex and MsNumberFreeMem, inlined as a user_free in Switch's MsBattleFree (fh cg_switch calls); name ours; ported (battle round 18)
 0x00782770 function MsEnvInit                 # fh v3:exact 0x00782830
 0x007827f0 function MsFldGetScene             # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; was Enc_FindFormation
 0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights
 0x00782970 function MsGetBattleScene          # *0x0112a9f0 << 16 | *0x0112a9fc while in battle (0x0112a8e0), else 0; ?field index << 16 | formation (battle scripts compare it to e.g. 0x2050000); was Battle_GetBattleId
+0x007829b0 function MsBtlEncountEffect_007829b0 # (kind, &out) -> -1/0 for kind -1, 1/0x65 (3/0x3f under water: AtelGetWaterBattleEffect) for kinds 1-3, else 0/0x31 (2/0x31); out unless null; MsBattleExe's callee; name ours; ported (battle round 19)
 0x00782a10 function MsGetEncountType          # fh v3:bsim1.00 0x00782ad0
 0x00782a20 function MsGetFileSize             # fh v3:exact 0x00782ae0
 0x00782ae0 function MsGetMapCenter            # fh v3:exact 0x00782ba0
@@ -4869,7 +4871,7 @@
 0x00785140 function MsGetSaveCommandUse       # fh v3:exact 0x00785200
 0x007851b0 function BitTestOfGlobal_007851b0     # auto-port shape (bit test of global, cdecl): t0 = u32[&0x0113079c]; return ((t0 >>s 0x5) & 0x1); callers: ; name ours
 0x007851c0 function MsGetSaveConfigCursorSave # fh v3:exact 0x00785280
-0x007851d0 function MsGetSaveConfigEnglish    # fh v3:bsim1.00+call.cs 0x00785290 cdecl
+0x007851d0 function MsGetSaveConfigEnglish    # fh v3:bsim1.00+call.cs 0x00785290 cdecl; 3 bytes (xor eax, eax; ret): too small to hook, the bridge is ffx_battle::getmem
 0x007851f0 function MsGetSaveConfigHiragana   # fh v3:bsim1.00+call.cs 0x007852b0 cdecl
 0x00785230 function BitTestOfGlobal_00785230     # auto-port shape (bit test of global, cdecl): t0 = u32[&0x0113079c]; return ((t0 >>s 0x4) & 0x1); callers: ; name ours
 0x00785240 function MsGetSaveEventAddress     # returns &g_SaveData (0x0112ca90); +0xc = entrance index (0x0088d670), +0x11/+0x12 = map fade type/frames; was SaveData_Get
@@ -5281,6 +5283,7 @@
 0x00797020 function msSetChrShadowReq         # (p, k, v): shadow request k (< 3) of actor/weapon record p = v; first non-negative of +0x26..+0x28 (stopping at 0) into +0x25, mode +0x2a[that] into +0x29 and Ch_SetShadowMode; returns +0 the character; name ours
 0x00797080 function msSetChrVisibleReq        # (i, k, v): visibility request +0x16[k] = v; visible (+0x15) when +0x16..+0x19 all set: Ch_SetHideBattle/Effect, Ch_EnMapID(+0x32), Ch_SetCalcNorm(+0x33), msSetChrShadowReq(p,1,-1/0), msSetChrBodyHit; op_et_bindeff for +0x36; recurses to +0x13 and actors with +0x43f == i (with +0x440); weapons with +0x1d; hiding queued in 0x02311060 while 0x011363b8 & 0x01136b58; name ours
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
+0x007972e0 function MsAtelUpdate0_007972e0    # (ctrl): AtelBattleSetUp's per-frame callback for script 0 (MsAtelSetUp passes it as MsAtelUpdate1/2 for 1, 2): each work's AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), then MsMotionProcess and MsBattleSpecial, then the signals again; name ours (after MsAtelUpdate1); ported (battle round 19)
 0x00797350 function MsAtelUpdate2             # cdecl(ctrl) -> eax: script 2's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp: over AtelGetCtrlworkActorTotal(ctrl) works AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), AtelDecodeSignal(k, -1); same code as 0x007973b0; ported (ffx_battle::atel, battle round 17); name ours
 0x007973b0 function MsAtelUpdate1             # cdecl(ctrl) -> eax: script 1's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp; same code as 0x00797350; ported (ffx_battle::atel, battle round 17); name ours
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
@@ -5350,7 +5353,7 @@
 0x00799f00 function MsMemCheckRegist          # fh v3:exact 0x00799f10
 0x00799f20 function MsMemCheckSum             # fh v3:exact 0x00799f30
 0x00799f70 function MsBtlFreeItemMem          # fh v3:bsim1.00 0x00799f80; ported (battle round 18)
-0x00799fb0 function MsBtlGetItemMem           # fh v3:exact 0x00799fc0
+0x00799fb0 function MsBtlGetItemMem           # fh v3:exact 0x00799fc0; ported (battle round 19)
 0x0079a000 function MsBtlInitItemMem          # fh switch:cg2 0x71008ac2f8
 0x0079a0c0 function MsCheckRange              # fh v3:bsim1.00+call.cs 0x0079a0d0 cdecl
 0x0079a0e0 function MsCheckStatus             # fh v3:exact 0x0079a0f0
@@ -5413,7 +5416,7 @@
 0x0079d250 function MsBtlListInit             # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc; was Enc_InitTable
 0x0079d290 function MsComBufInit              # fh v3:bsim1.00 0x0079d2b0
 0x0079d2f0 function MsGetMagicEffNum          # fh v3:exact 0x0079d310
-0x0079d430 function MsBattleSpecial           # fh v3:exact 0x0079d450
+0x0079d430 function MsBattleSpecial           # fh v3:exact 0x0079d450; ported (battle round 19)
 0x0079dd90 function MsBattleSpecialCameraFree # fh v3:exact 0x0079ddb0
 0x0079ddb0 function MsBattleSpecialCameraPause # fh v3:exact 0x0079ddd0
 0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00; ported (battle round 18)
@@ -5462,7 +5465,7 @@
 0x0079f5e0 function MsNumberCalcProcess       # fh v3:exact 0x0079f600
 0x0079f660 function MsNumberDrawProcess       # fh v3:exact 0x0079f680
 0x0079f990 function MsNumberFreeMem              # layout: alphabetical run between MsNumberDrawProcess and MsNumberGetMem (1 unnamed in the gap); Switch 0x7100361a60 MsNumberFreeMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (battle round 18)
-0x0079f9b0 function MsNumberGetMem            # fh v3:exact 0x0079f9d0
+0x0079f9b0 function MsNumberGetMem            # fh v3:exact 0x0079f9d0; ported (battle round 19)
 0x0079f9f0 function MsNumberInit              # fh v3:cg2 0x79fa10
 0x0079fa00 function MsNumberRegist            # fh v3:exact+call.cs 0x0079fa20 cdecl; ours: (i, kind, value, other, x, flags, style): a damage number's digits and word (kind 1 MP, 3/4/5 words at 0x00c424a0..ac) via MsNumberPut; ported (battle round 12)
 0x0079fc00 function MsNumberDigits            # ours: (n, &digits) -> count: n's decimal digits (lowest first, up to 9) into 0x011360ac, its address to digits; 0 for n < 0; MsNumberRegist's only callee of it; ported (battle round 12)
@@ -15390,6 +15393,7 @@
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
 0x0112a984 label g_BtlScriptRecords        # 2 x 0x20: +0 i8 the first record's work count (record 1's base), +0x10 script file (MsAtelGetHandler kind 2); copied from 0x0112a9a4 by 0x00782670
+0x0112a9a4 label g_BtlScriptRecord1        # the second of g_BtlScriptRecords' two 0x20-byte records (MsBtlScriptRecordShift_00782670 moves it to the first)
 0x0112a9b0 label g_BtlPosFile              # pointer to the battle map's position file: flag, i8 group count, records of 0x20 (flag set) or 3 x 0x20 per group (MsBtlGetPos)
 0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not

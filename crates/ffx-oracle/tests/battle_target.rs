@@ -6156,10 +6156,23 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let mut r16 = Xorshift(0x16e5_0001 ^ u32::from(synthetic));
     let mut r17 = Xorshift(0x17e5_0001 ^ u32::from(synthetic));
     let mut r18m = Xorshift(0x18e5_0101 ^ u32::from(synthetic));
+    let mut r19 = Xorshift(0x19e5_0001 ^ u32::from(synthetic));
     // a special stage's work (round 18): matrices, the sea's, angles
     let work = scratch(a, b, 0x870);
     // Ch_ModelCreatePacket's stub (round 18) and its record
     let crec = scratch(a, b, EXCHANGE_REC as usize);
+    // the special stage's map callees (round 19) and the port's locals
+    let srecs: Vec<u32> = SPECIAL_CALLEES
+        .iter()
+        .map(|(_, spec)| scratch(a, b, copying_rec_len(spec) as usize))
+        .collect();
+    let locals = scratch(a, b, ffx_battle::special::bridge::SPECIAL_LOCALS as usize);
+    // MsBtlBridgeBtl2Event's tables and records (round 19)
+    let btables = scratch(a, b, 0x40 * 8);
+    let brec = scratch(a, b, (EXCHANGE_REC * 15) as usize);
+    // the setup leaves' stub records and heap block (round 19)
+    let grec2 = scratch(a, b, (EXCHANGE_REC * 2) as usize);
+    let heap = scratch(a, b, 0x8a90);
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6169,7 +6182,16 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             1,
             0,
         );
+        for (k, ((f, spec), rec)) in (1u32..).zip(SPECIAL_CALLEES.iter().zip(&srecs)) {
+            let ret = if *f == ffx_battle::special::bridge::YN_PSIM_GET_HANDLE {
+                0x1234
+            } else {
+                0
+            };
+            copying_stub(o, *f, SPECIAL_STUBS + 0x80 * k, *rec, spec, ret);
+        }
     }
+    bridge_stubs(a, b, btables, brec);
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -6201,6 +6223,16 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         move_steps(a, b, &mut r17, &w, &f, whole);
         ball_splines(a, b, &mut r17, &w, &f, out);
         motions(a, b, &mut r18m, &w, &f, work);
+        if r19.below(4) == 0 {
+            atel_update0(a, b, &mut r19, &w, work, locals);
+        }
+        special_stage(a, b, &mut r19, &w, work, locals);
+        if r19.below(6) == 0 {
+            bridge_to_event(a, b, &mut r19, &w, &f, btables, brec);
+        }
+        if r19.below(4) == 0 {
+            setup_leaves(a, b, &mut r19, grec2, heap, out);
+        }
     }
     // the teardown last (it clears the actors and the script managers)
     let mut r18 = Xorshift(0x18e5_0001 ^ u32::from(synthetic));
@@ -6955,8 +6987,75 @@ fn rot_locals(a: &mut Oracle, b: &mut Oracle) {
     }
 }
 
-/// Code no test runs (`MsBattleSpecial`'s), for round 18's stubs.
-const SPECIAL_STUBS: u32 = 0x0079_d430;
+/// Code no test runs (`Ms_Gui_BattleConsoleProc`'s, a debug window), for
+/// rounds 18 and 19's stubs, 0x80 bytes each.
+const SPECIAL_STUBS: u32 = 0x007c_6110;
+
+/// The map callees `MsBattleSpecial` passes its locals to, stubbed by
+/// [`copying_stub`] (`true`: a pointer whose four words are kept):
+/// `yiSetRotTransDObj(i, rot, pos)`, `Yn_PSimSetPos(h, k, v)`,
+/// `Yn_SeaSetPos(v)`, `Yn_SeaSetAng(v)`, `Yn_SeaSetUvSpd(u, v)`,
+/// `Yn_PSimGetHandle_00919f00(i)` (returns 0x1234).
+const SPECIAL_CALLEES: [(u32, &[bool]); 6] = {
+    use ffx_battle::special::bridge as sp;
+    [
+        (sp::YI_SET_ROT_TRANS_DOBJ, &[false, true, true]),
+        (sp::YN_PSIM_SET_POS, &[false, false, true]),
+        (sp::YN_SEA_SET_POS, &[true]),
+        (sp::YN_SEA_SET_ANG, &[true]),
+        (sp::YN_SEA_SET_UV_SPD, &[false, false]),
+        (sp::YN_PSIM_GET_HANDLE, &[false]),
+    ]
+};
+
+/// Bytes of one [`copying_stub`] record ring (8 entries after a count
+/// and a result word).
+fn copying_rec_len(spec: &[bool]) -> u32 {
+    8 + 8 * spec.iter().map(|&p| if p { 16 } else { 4 }).sum::<u32>()
+}
+
+/// Replaces `f` by a stub at `at` that counts its calls at `rec`, returns
+/// the word at `rec + 4` (`ret`), and keeps each call's arguments in a
+/// ring of 8 from `rec + 8`: a word, or for a `spec` `true` the four words
+/// it points at (so locals compare by value, not by address).
+fn copying_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, spec: &[bool], ret: u32) {
+    let size: u32 = spec.iter().map(|&p| if p { 16 } else { 4 }).sum();
+    let mut code = vec![0x8b, 0x0d];
+    code.extend(rec.to_le_bytes());
+    code.extend([0xff, 0x05]);
+    code.extend(rec.to_le_bytes());
+    code.extend([0x83, 0xe1, 0x07, 0x69, 0xc9]);
+    code.extend(size.to_le_bytes());
+    code.extend([0x81, 0xc1]);
+    code.extend((rec + 8).to_le_bytes());
+    let mut off = 0u32;
+    for (k, &ptr) in (0u8..).zip(spec) {
+        if ptr {
+            code.extend([0x8b, 0x54, 0x24, 4 + 4 * k]);
+            for j in 0..4u8 {
+                code.extend([0x8b, 0x42, 4 * j, 0x89, 0x81]);
+                code.extend(off.to_le_bytes());
+                off += 4;
+            }
+        } else {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x81]);
+            code.extend(off.to_le_bytes());
+            off += 4;
+        }
+    }
+    code.push(0xa1);
+    code.extend((rec + 4).to_le_bytes());
+    code.push(0xc3);
+    assert!(code.len() <= 0x80);
+    o.write(rec, &[0; 4]).unwrap();
+    o.write(rec + 4, &ret.to_le_bytes()).unwrap();
+    let at = o.rebase(at);
+    o.write(at, &code).unwrap();
+    let entry = o.rebase(f);
+    let rel = at.wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
+}
 
 /// `MsChrCreatePacket` (its `Ch_ModelCreatePacket` the stub at
 /// [`SPECIAL_STUBS`], records at `crec`) and, now and then,
@@ -7003,4 +7102,507 @@ fn models_freed(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, c
         0
     });
     same("MsBtlChrFreeAll", a, b);
+}
+
+/// `MsBattleSpecial` (round 19) on a work of random angles and counters:
+/// kinds 0-4, the boat and sea models live ones on the snapshots (none on
+/// the image: their optional positions need a real model); the map
+/// callees are [`SPECIAL_CALLEES`]' stubs, `locals` the port's locals
+/// (cleared after, as the original's stack is not compared).
+fn special_stage(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    work: u32,
+    locals: u32,
+) {
+    use ffx_battle::special::bridge as sp;
+    let h = host();
+    let mut call = game_call;
+    let kind = [1i8, 1, 1, 2, 3, 0, 4][rng.below(7) as usize];
+    set(a, b, ffx_battle::free::bridge::SPECIAL_KIND, kind);
+    set(a, b, ffx_battle::free::bridge::SPECIAL_MEM, work);
+    // the stage's angles and floats, the counters small
+    poke(a, b, work + 0x800, &floats(rng, 0x19));
+    for (o, x) in [
+        (0x850, rng.range(-3, 3)),
+        (0x854, rng.range(-1, 3)),
+        (0x858, rng.range(-2, 4)),
+        (0x85c, rng.range(-1, 4)),
+        (0x860, rng.range(1, 30)),
+    ] {
+        poke(a, b, work + o, &x.to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        sp::CURRENT_MAP,
+        [0x3d, 0x3d, 7][rng.below(3) as usize],
+    );
+    let live: Vec<u32> =
+        LIVE_CHRS.with(|c| c.borrow().iter().copied().filter(|&c| c != 0).collect());
+    let saved: Vec<Vec<u8>> = [0x14, 0x17]
+        .iter()
+        .map(|&i| b.read(w.actor(i), 4).unwrap())
+        .collect();
+    for i in [0x14, 0x17] {
+        let m = if live.is_empty() || rng.below(4) == 0 {
+            0
+        } else {
+            live[rng.below(u32::try_from(live.len()).unwrap()) as usize]
+        };
+        poke(a, b, w.actor(i), &m.to_le_bytes());
+    }
+    zero_stack(a);
+    poke(a, b, locals, &vec![0; sp::SPECIAL_LOCALS as usize]);
+    twin("MsBattleSpecial", a, b, 0x0079_d430, &[], 0, |m| {
+        dm(m, |m| sp::ms_battle_special(m, &mut call, h.trig, locals));
+        0
+    });
+    poke(a, b, locals, &vec![0; sp::SPECIAL_LOCALS as usize]);
+    rot_locals(a, b);
+    local_words(a, b);
+    same(&format!("MsBattleSpecial kind {kind}"), a, b);
+    for (i, m) in [0x14, 0x17].into_iter().zip(saved) {
+        poke(a, b, w.actor(i), &m);
+    }
+}
+
+/// `MsAtelUpdate0_007972e0` (round 19) on a control of no works (an image
+/// has no script set up for decoding; `MsAtelUpdate1` covers the work
+/// loops): the motions and the special stage between them. The original's
+/// `eax` is `MsBattleSpecial`'s leftover then, not compared. Right after
+/// [`motions`], on its actors.
+fn atel_update0(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    work: u32,
+    locals: u32,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::special::bridge as sp;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    // the stage's models none (their optional positions need real ones)
+    let saved: Vec<Vec<u8>> = [0x14, 0x17]
+        .iter()
+        .map(|&i| b.read(w.actor(i), 4).unwrap())
+        .collect();
+    for i in [0x14, 0x17] {
+        poke(a, b, w.actor(i), &[0; 4]);
+    }
+    let ctrl = scratch(a, b, 0x10);
+    poke(a, b, ctrl, &[0; 0x10]);
+    poke(a, b, ctrl + 0xe, &rng.next().to_le_bytes()[..2]);
+    // kind 1 without its boat reads stack words MsMotionProcess left
+    // (`special_stage` covers it)
+    let kind = [0i8, 2, 3][rng.below(3) as usize];
+    set(a, b, ffx_battle::free::bridge::SPECIAL_KIND, kind);
+    set(a, b, ffx_battle::free::bridge::SPECIAL_MEM, work);
+    zero_stack(a);
+    poke(a, b, locals, &vec![0; sp::SPECIAL_LOCALS as usize]);
+    twin(
+        "MsAtelUpdate0_007972e0",
+        a,
+        b,
+        0x0079_72e0,
+        &[ctrl],
+        0,
+        |m| {
+            dm(m, |m| {
+                let mut s = Script {
+                    call: &mut call,
+                    signal: &mut signal,
+                    off: &mut off,
+                };
+                sp::ms_atel_update0(m, &mut s, h.trig, locals, ctrl)
+            });
+            0
+        },
+    );
+    poke(a, b, locals, &vec![0; sp::SPECIAL_LOCALS as usize]);
+    rot_locals(a, b);
+    local_words(a, b);
+    same("MsAtelUpdate0_007972e0", a, b);
+    for (i, m) in [0x14, 0x17].into_iter().zip(saved) {
+        poke(a, b, w.actor(i), &m);
+    }
+}
+
+/// `MsBtlBridgeBtl2Event`'s script getters, each a [`table_stub`] over
+/// the event actors (`ELEM`: over `(e, n)` pairs), and its setters,
+/// [`logging_stub`]s.
+const BRIDGE_GETTERS: [u32; 8] = {
+    use ffx_battle::free::bridge as fr;
+    [
+        fr::ATEL_GET_EVENT_BIND_ID,
+        fr::ATEL_GET_EVENT_CHAR_ID,
+        fr::ATEL_GET_EVENT_CHAR_HANDLE,
+        fr::ATEL_GET_EVENT_ACTOR_LINK_WORK,
+        fr::ATEL_GET_BIND_PC,
+        fr::ATEL_GET_HIDE_STATUS,
+        fr::ATEL_GET_KEEP_BATTLE_PARTY,
+        fr::ATEL_GET_EVENT_ELEM_STATUS,
+    ]
+};
+const BRIDGE_SETTERS: [(u32, u8); 6] = {
+    use ffx_battle::free::bridge as fr;
+    [
+        (fr::ATEL_SET_EVENT_ELEM_HANDLE, 3),
+        (fr::ATEL_SET_EVENT_ELEM_POS, 3),
+        (fr::ATEL_SET_EVENT_ELEM_CHAR_ID, 3),
+        (fr::ATEL_SET_EVENT_ELEM_STATUS, 3),
+        (fr::ATEL_SET_EVENT_CHAR_HANDLE, 2),
+        (fr::ATEL_SET_EVENT_ACTOR_LINK_WORK, 2),
+    ]
+};
+/// The event actors the bridge test sets up at most.
+const BRIDGE_ACTORS: u32 = 4;
+/// Where the bridge stubs go (after [`SPECIAL_CALLEES`]' in
+/// [`SPECIAL_STUBS`]): getters 0x20 bytes each, then the logging ones.
+const BRIDGE_STUBS: u32 = SPECIAL_STUBS + 0x400;
+
+/// Replaces `f` by a stub at `at` returning `table[arg0]` (`pair`:
+/// `table[2 arg0 + arg1]`), words.
+fn table_stub(o: &mut Oracle, f: u32, at: u32, table: u32, pair: bool) {
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04];
+    if pair {
+        code.extend([0x03, 0xc0, 0x03, 0x44, 0x24, 0x08]);
+    }
+    code.extend([0x8b, 0x04, 0x85]);
+    code.extend(table.to_le_bytes());
+    code.push(0xc3);
+    let at = o.rebase(at);
+    o.write(at, &code).unwrap();
+    let entry = o.rebase(f);
+    let rel = at.wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
+}
+
+/// The bridge stubs in both oracles: tables from `tables` (0x40 bytes
+/// each), setter records from `rec` ([`EXCHANGE_REC`] each), then the
+/// actor total's and `graphicLevelGetNameHash`'s.
+fn bridge_stubs(a: &mut Oracle, b: &mut Oracle, tables: u32, rec: u32) {
+    use ffx_battle::free::bridge as fr;
+    for o in [&mut *a, &mut *b] {
+        for (k, f) in (0u32..).zip(BRIDGE_GETTERS) {
+            let pair = f == fr::ATEL_GET_EVENT_ELEM_STATUS;
+            table_stub(o, f, BRIDGE_STUBS + 0x20 * k, tables + 0x40 * k, pair);
+        }
+        let base = BRIDGE_STUBS + 0x20 * 8;
+        for (k, (f, n)) in (0u32..).zip(BRIDGE_SETTERS) {
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        logging_stub(
+            o,
+            fr::ATEL_GET_EVENT_ACTOR_TOTAL,
+            base + 0x40 * 6,
+            rec + EXCHANGE_REC * 6,
+            0,
+            0,
+        );
+        logging_stub(
+            o,
+            fr::GRAPHIC_LEVEL_GET_NAME_HASH,
+            base + 0x40 * 7,
+            rec + EXCHANGE_REC * 7,
+            0,
+            0,
+        );
+        // MsBattleFree's and MsBattleAllFree's other callees (round 19;
+        // GetCD is the effect stubs' already)
+        for (k, (f, n)) in (8u32..).zip([
+            (fr::GRAPHIC_SET_IS_BATTLE_MAP, 1u8),
+            (fr::SG_ID_SET_EFFECT_TABLE_INDEX, 1),
+            (fr::TO_CLEAR_BTL_WINDOW, 0),
+            (fr::GRAPHIC_MENU_UNLOAD_SPECIAL_TEXTURE, 1),
+            (fr::TROPHY_MANAGER_DESTROY_INSTANCE, 0),
+        ]) {
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+    }
+}
+
+/// `MsBtlBridgeBtl2Event` (round 19) on event actors made up in the
+/// stubs' tables: bound or not, their bind PCs the actor they name, an
+/// actor of their character ID, or none.
+fn bridge_to_event(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    f: &Fakes,
+    tables: u32,
+    rec: u32,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::free::bridge as fr;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let n = rng.below(BRIDGE_ACTORS + 1);
+    poke(a, b, rec + EXCHANGE_REC * 6 + 4, &n.to_le_bytes());
+    let hash = [0x21e8u32, 0x21e8, 7][rng.below(3) as usize];
+    poke(a, b, rec + EXCHANGE_REC * 7 + 4, &hash.to_le_bytes());
+    let id_of = |o: &mut Oracle, k: u32| {
+        u32::from_le_bytes(o.read(w.actor(k) + 4, 4).unwrap().try_into().unwrap())
+    };
+    for e in 0..BRIDGE_ACTORS {
+        let k = rng.below(0x1f);
+        let id = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            id_of(b, k)
+        };
+        let pc = [u32::MAX, k, rng.below(0x1f), 0x30][rng.below(4) as usize];
+        let values = [
+            [1, 1, 1, 0, 2][rng.below(5) as usize],
+            id,
+            [0, 0x1111, 0x2222][rng.below(3) as usize],
+            rng.below(0x100),
+            pc,
+            [0, 0, 1, 0xffff_fffe][rng.below(4) as usize],
+            u32::from(rng.below(3) == 0),
+        ];
+        for (g, v) in (0u32..).zip(values) {
+            poke(a, b, tables + 0x40 * g + 4 * e, &v.to_le_bytes());
+        }
+        for m in 0..2 {
+            poke(
+                a,
+                b,
+                tables + 0x40 * 7 + 4 * (2 * e + m),
+                &u32::from(rng.below(3) != 0).to_le_bytes(),
+            );
+        }
+    }
+    // what this changes, put back after (the next round's calls expect
+    // `dress`'s models, records and actors)
+    let first = ffx_battle::actor::bridge::ms_get_chr(b, ACTORS);
+    // (and the battle's globals, which the whole teardown below clears)
+    let regions: Vec<(u32, usize)> = vec![
+        (f.chars, 0x3000),
+        (first, (0x5d - ACTORS as usize) * 0x390),
+        (w.actor(0), (ACTORS * ACTOR) as usize),
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    // the fake models without cluts or texture animations (their
+    // pointers would be random), the weapon records' models fake or none
+    for c in 0..3 {
+        let chr = f.chars + c * 0x1000;
+        poke(a, b, chr + ffx_chara::layout::CLUTS, &[0; 4]);
+        // a texture animation of the static table, or none
+        poke(
+            a,
+            b,
+            chr + 0x6fc,
+            &u32::from(rng.below(2) == 0).to_le_bytes(),
+        );
+        poke(a, b, chr + 0x700, &rng.below(4).to_le_bytes());
+        // the model block Ch_SetThickness takes its default from
+        poke(a, b, chr + 0x1c4, &f.chars.to_le_bytes());
+    }
+    for k in ACTORS..0x5d {
+        let p = ffx_battle::actor::bridge::ms_get_chr(b, k);
+        let m = [0, f.chars + 0x1000 * rng.below(3)][rng.below(2) as usize];
+        poke(a, b, p, &m.to_le_bytes());
+        poke(
+            a,
+            b,
+            p + 4,
+            &[0, rng.next()][rng.below(2) as usize].to_le_bytes(),
+        );
+        poke(a, b, p + 0x12, &[0]);
+    }
+    // in battle scene 0x02370000 at times (models handed over there stay
+    // hidden on level 0x21e8)
+    if rng.below(2) == 0 {
+        use ffx_battle::state::bridge as st;
+        poke(a, b, tables + 0x1f0, &0x237u16.to_le_bytes());
+        poke(a, b, tables + 0x1f4, &[0]);
+        set(a, b, st::SCENE_FIELD, tables + 0x1f0);
+        set(a, b, st::SCENE_GROUP, tables + 0x1f4);
+        set(a, b, st::STATUS, 1);
+    }
+    // the party (kept members are looked up in its first three) and the
+    // actors' party slots, both small
+    let party: Vec<u8> = (0..7)
+        .map(|_| u8::try_from(rng.below(8)).unwrap())
+        .collect();
+    poke(a, b, ffx_battle::ability::bridge::PARTY.ptr(b).addr, &party);
+    for k in 0..ACTORS {
+        poke(
+            a,
+            b,
+            w.actor(k) + 0xc,
+            &[u8::try_from(rng.below(8)).unwrap()],
+        );
+    }
+    for k in 0..ACTORS {
+        let p = w.actor(k);
+        for o in [0x12u32, 0x1b, 0x1c, 0x21, 0x22, 0x3a] {
+            poke(a, b, p + o, &[u8::from(rng.below(3) == 0)]);
+        }
+    }
+    twin("MsBtlBridgeBtl2Event", a, b, 0x0078_21f0, &[], 0, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            fr::ms_btl_bridge_btl2_event(m, &mut s);
+        });
+        0
+    });
+    same("MsBtlBridgeBtl2Event", a, b);
+    // the whole teardown on what is left (in battle or not)
+    if rng.below(2) == 0 {
+        let status = [0i8, 1, 0x1b][rng.below(3) as usize];
+        set(a, b, ffx_battle::state::bridge::STATUS, status);
+        // the state the teardown clears, set
+        set(a, b, ffx_battle::save::bridge::USE_ITEM, 0x2001);
+        set(a, b, ffx_battle::process::bridge::LIMIT_TYPE_CUE, 1);
+        set(a, b, ffx_battle::minor::bridge::ZANMATO_SEP, [7; 10]);
+        // the special stage's up vector (special_stage left floats there)
+        let sm = ffx_battle::free::bridge::SPECIAL_MEM.get(b);
+        if sm != 0 {
+            poke(a, b, sm + 0x810, &[0; 4]);
+        }
+        let all = rng.below(2) == 0;
+        if all {
+            // menu text 0 not freed: the original's clear after freeing it
+            // lands on MsBattleAllFree's return address (docs/formats/battle.md)
+            let text = ffx_battle::flow::bridge::MENU_TEXT.ptr(b).addr;
+            poke(a, b, text + 8, &[0; 4]);
+        }
+        let (name, sym) = if all {
+            ("MsBattleAllFree", 0x0078_0b40)
+        } else {
+            ("MsBattleFree", 0x0078_1590)
+        };
+        twin(name, a, b, sym, &[], ALL, |m| {
+            dm(m, |m| {
+                let mut s = Script {
+                    call: &mut call,
+                    signal: &mut signal,
+                    off: &mut off,
+                };
+                if all {
+                    fr::ms_battle_all_free(m, &mut s)
+                } else {
+                    fr::ms_battle_free(m, &mut s)
+                }
+            })
+        });
+        same(name, a, b);
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+}
+
+/// The setup leaves (`ffx_battle::getmem`, round 19): `user_malloc` and
+/// `AtelGetWaterBattleEffect` stubbed for the call (records at `rec`, the
+/// heap handing out `heap` or null), then put back.
+fn setup_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, heap: u32, out: u32) {
+    use ffx_battle::getmem::bridge as gm;
+    let mut call = game_call;
+    // the battle's globals these change, put back after
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let base = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 14;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in
+            (0u32..).zip([(gm::USER_MALLOC, 1), (gm::ATEL_GET_WATER_BATTLE_EFFECT, 0)])
+        {
+            let at = o.rebase(f);
+            saved.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+    }
+    // MsNumberGetMem clears what it got unchecked: a block always there
+    poke(a, b, rec + 4, &heap.to_le_bytes());
+    let water = u32::from(rng.below(2) == 0);
+    poke(a, b, rec + EXCHANGE_REC + 4, &water.to_le_bytes());
+    twin(
+        "MsGetSaveConfigEnglish",
+        a,
+        b,
+        0x0078_51d0,
+        &[],
+        ALL,
+        |_| gm::ms_get_save_config_english(),
+    );
+    let numbers = [0, 0, rng.next() | 1][rng.below(3) as usize];
+    set(a, b, ffx_battle::misc::bridge::NUMBERS, numbers);
+    twin("MsNumberGetMem", a, b, 0x0079_f9b0, &[], 0, |m| {
+        dm(m, |m| gm::ms_number_get_mem(m, &mut call));
+        0
+    });
+    same("MsNumberGetMem", a, b);
+    let got = [heap, heap, 0][rng.below(3) as usize];
+    poke(a, b, rec + 4, &got.to_le_bytes());
+    twin("MsBtlGetItemMem", a, b, 0x0079_9fb0, &[], 0, |m| {
+        dm(m, |m| gm::ms_btl_get_item_mem(m, &mut call));
+        0
+    });
+    same("MsBtlGetItemMem", a, b);
+    let r1 = gm::SCRIPT_RECORD1.ptr(b).addr;
+    fill(a, b, rng, r1, 0x20);
+    let status = ffx_battle::state::bridge::STATUS.get(b);
+    twin(
+        "MsBtlScriptRecordShift_00782670",
+        a,
+        b,
+        0x0078_2670,
+        &[],
+        0,
+        |m| {
+            gm::ms_btl_script_record_shift(m);
+            0
+        },
+    );
+    same("MsBtlScriptRecordShift_00782670", a, b);
+    set(a, b, ffx_battle::state::bridge::STATUS, status);
+    for _ in 0..3 {
+        let kind = [u32::MAX, 0, 1, 2, 3, 4, rng.next()][rng.below(7) as usize];
+        let o = [0, out + 0x80][rng.below(2) as usize];
+        twin(
+            "MsBtlEncountEffect_007829b0",
+            a,
+            b,
+            0x0078_29b0,
+            &[kind, o],
+            ALL,
+            |m| dm(m, |m| gm::ms_btl_encount_effect(m, &mut call, kind, o)),
+        );
+        same("MsBtlEncountEffect_007829b0", a, b);
+    }
+    for (k, (f, v)) in saved.into_iter().enumerate() {
+        let o = if k < 2 { &mut *a } else { &mut *b };
+        let at = o.rebase(f);
+        o.write(at, &v).unwrap();
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
 }
