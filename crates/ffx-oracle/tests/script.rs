@@ -3064,15 +3064,15 @@ const BARE_RET: [u32; 6] = [
     0x0076_ec20,
 ];
 
-/// Every Rust native against the original on each actor of each ctrl work
-/// in use, with small integer and float arguments on the worker's stack
+/// The Rust natives of `groups` against the original on each actor of each
+/// ctrl work in use, with small integer and float arguments on the worker's
+/// stack
 /// (the same on both sides): the result (`EAX`, or `ST0` for the float
 /// ones) and all memory. A call the original cannot finish in the emulator
 /// (an import with no stub) is skipped and counted.
-#[test]
 #[allow(clippy::too_many_lines)] // the loop over every native and its checks
-fn natives_match_the_original() {
-    use ffx_script::vm::bridge::native::{self, Native, PORTED};
+fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
+    use ffx_script::vm::bridge::native::{self, Native};
     let (Some(dir), Some(snap)) = (
         std::env::var_os("FFX_GAME_DIR"),
         std::env::var_os("FFX_SNAPSHOT"),
@@ -3083,7 +3083,7 @@ fn natives_match_the_original() {
     let exe = PathBuf::from(dir).join("FFX.exe");
     let pages = Pages::read(PathBuf::from(snap)).unwrap();
     let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
-    let mut rng = Xorshift(0x5eed_0005);
+    let mut rng = Xorshift(rng_seed);
     let (mut compared, mut stops) = (0, 0);
     let mut seen = std::collections::BTreeSet::new();
     for c in ctrls {
@@ -3093,18 +3093,11 @@ fn natives_match_the_original() {
             actors(a, b).len().min(12)
         };
         for i in 0..n {
-            for &(sym, float) in PORTED
-                .iter()
-                .chain(&ffx_script::vm::bridge::native_map::PORTED)
-                .chain(&ffx_script::vm::bridge::native_cam::PORTED)
-                .chain(&ffx_script::vm::bridge::native_msg::PORTED)
-                .chain(&ffx_script::vm::bridge::native_move::PORTED)
-                .chain(&ffx_script::vm::bridge::native_btl::PORTED)
-                .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
-                .chain(&ffx_script::vm::bridge::native_sys::PORTED)
-                .chain(&ffx_script::vm::bridge::native_chr::PORTED)
-                .chain(&ffx_script::vm::bridge::native_mods::PORTED)
-            {
+            for &(sym, float) in groups.iter().flat_map(|l| l.iter()) {
+                // tested on chosen arguments in round19_natives_match_the_original
+                if R20_UNINIT.contains(&sym) {
+                    continue;
+                }
                 // a native that ran alike on both sides may still have made
                 // a ctrl work from a garbage-filled worker's words current
                 // (battle.snap's worker 5 of 0xf46010 is 0xcd fill): start
@@ -3179,17 +3172,9 @@ fn natives_match_the_original() {
             }
         }
     }
-    let never: Vec<String> = PORTED
+    let never: Vec<String> = groups
         .iter()
-        .chain(&ffx_script::vm::bridge::native_map::PORTED)
-        .chain(&ffx_script::vm::bridge::native_cam::PORTED)
-        .chain(&ffx_script::vm::bridge::native_msg::PORTED)
-        .chain(&ffx_script::vm::bridge::native_move::PORTED)
-        .chain(&ffx_script::vm::bridge::native_btl::PORTED)
-        .chain(&ffx_script::vm::bridge::native_btl2::PORTED)
-        .chain(&ffx_script::vm::bridge::native_sys::PORTED)
-        .chain(&ffx_script::vm::bridge::native_chr::PORTED)
-        .chain(&ffx_script::vm::bridge::native_mods::PORTED)
+        .flat_map(|l| l.iter())
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();
@@ -3198,6 +3183,49 @@ fn natives_match_the_original() {
         never.join(" ")
     );
     assert!(compared > 0, "nothing ran");
+}
+
+/// [`natives_match`] split by module so the test threads share the work.
+mod natives_match_the_original {
+    use ffx_script::vm::bridge as m;
+
+    #[test]
+    fn native() {
+        super::natives_match(&[&m::native::PORTED], 0x5eed_0005);
+    }
+    #[test]
+    fn map_cam_msg() {
+        super::natives_match(
+            &[
+                &m::native_map::PORTED,
+                &m::native_cam::PORTED,
+                &m::native_msg::PORTED,
+            ],
+            0x5eed_0105,
+        );
+    }
+    #[test]
+    fn moves() {
+        super::natives_match(&[&m::native_move::PORTED], 0x5eed_0205);
+    }
+    #[test]
+    fn btl() {
+        super::natives_match(
+            &[&m::native_btl::PORTED, &m::native_btl2::PORTED],
+            0x5eed_0305,
+        );
+    }
+    #[test]
+    fn sys_chr() {
+        super::natives_match(
+            &[&m::native_sys::PORTED, &m::native_chr::PORTED],
+            0x5eed_0405,
+        );
+    }
+    #[test]
+    fn mods() {
+        super::natives_match(&[&m::native_mods::PORTED], 0x5eed_0505);
+    }
 }
 
 /// The non-native VM helpers of round 13 against the original, on every
