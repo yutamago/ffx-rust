@@ -15024,3 +15024,806 @@ fn r5k_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0091_0002);
     r5k_cases(&mut t, &mut rng, 150);
 }
+
+// ---- field agent r6, group A: the distortion sprite ----
+
+/// A logged argument: the word, or `n` words where it points.
+#[derive(Clone, Copy)]
+enum LogArg {
+    Word,
+    Deref(u8),
+}
+
+/// [`wide_log_stub`] whose arguments may be pointers to log through
+/// (stack buffers' addresses differ between the original and the port,
+/// their contents don't).
+fn r6a_log_stub(log: u32, rv: u32, id: u32, args: &[LogArg]) -> Vec<u8> {
+    // mov ecx, [log]; shl ecx, 6; mov [ecx + log + 4], id
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0xc1, 0xe1, 0x06, 0xc7, 0x81]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    let mut slot = log + 8;
+    for (i, a) in (0u8..).zip(args) {
+        // mov edx, [esp + 4 + 4i]
+        c.extend_from_slice(&[0x8b, 0x54, 0x24, 4 + 4 * i]);
+        let words = match *a {
+            LogArg::Word => {
+                c.extend_from_slice(&[0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend_from_slice(&slot.to_le_bytes());
+                slot += 4;
+                continue;
+            }
+            LogArg::Deref(n) => n,
+        };
+        for k in 0..words {
+            c.extend_from_slice(&[0x8b, 0x42, 4 * k, 0x89, 0x81]); // mov eax, [edx + 4k]
+            c.extend_from_slice(&slot.to_le_bytes());
+            slot += 4;
+        }
+    }
+    assert!(slot <= log + 0x44, "the entry outgrows 0x40 bytes");
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// The stand-ins' return words: the dynamic geometry, the render data by
+/// instance, the buffer segment, the 2D cut scene flag and bias, the rest.
+struct R6aReturns {
+    log: u32,
+    geometry: u32,
+    rd: u32,
+    buffer: u32,
+    cut: u32,
+    bias: u32,
+    rest: u32,
+}
+
+impl R6aReturns {
+    /// The renderer glue `KeDttSpr_MkGifPk` calls, stood in.
+    fn install(t: &mut Twin) -> Self {
+        use LogArg::{Deref, Word};
+        let log = t.alloc(4 + 0x40 * 32);
+        let [geometry, rd, buffer, cut, bias, rest] = [0; 6].map(|_: u32| t.alloc(4));
+        let w = |n: usize| vec![Word; n];
+        let list = [
+            (0x0064_5380u32, r6a_log_stub(log, geometry, 1, &w(2))),
+            (0x0064_1c00, ret_stub_at(cut)),
+            (0x0064_1130, fld_stub(bias)),
+            (0x0064_4de0, r6a_log_stub(log, rest, 2, &w(3))),
+            (
+                0x0064_5040,
+                r6a_log_stub(
+                    log,
+                    rest,
+                    3,
+                    &[Word, Word, Word, Deref(1), Deref(1), Deref(3), Deref(1)],
+                ),
+            ),
+            (0x0064_53d0, r6a_log_stub(log, rd, 4, &w(2))),
+            (0x0064_5780, r6a_log_stub(log, rest, 5, &w(2))),
+            (0x0063_fdb0, r6a_log_stub(log, buffer, 6, &w(4))),
+            (0x0064_5710, r6a_log_stub(log, rest, 7, &w(3))),
+            (0x0064_4ac0, r6a_log_stub(log, rest, 8, &w(2))),
+            (0x0064_5750, r6a_log_stub(log, rest, 9, &w(3))),
+            (0x0064_58a0, r6a_log_stub(log, rest, 10, &w(2))),
+            (0x0064_5330, r6a_log_stub(log, rest, 11, &w(2))),
+        ];
+        let list: Vec<_> = list.into_iter().map(|(f, c)| (Some(f), c)).collect();
+        t.cave_from(0, &list);
+        Self {
+            log,
+            geometry,
+            rd,
+            buffer,
+            cut,
+            bias,
+            rest,
+        }
+    }
+}
+
+/// `mov eax, [at]; ret`.
+fn ret_stub_at(at: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend_from_slice(&at.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// A render data block (`+0x94` its description with fresh, random
+/// vertex, colour, UV and index buffers).
+fn r6a_render_data(t: &mut Twin, rng: &mut Xorshift) -> u32 {
+    let rd = t.alloc(0xb0);
+    t.fill(rd, 0xb0, rng);
+    let d = t.alloc(0x28);
+    t.fill(d, 0x28, rng);
+    t.put(rd + 0x94, d);
+    for (at, len) in [(0xcu32, 0x6c), (0x14, 0x90), (0x18, 0x48), (0x1c, 0x30)] {
+        let b = t.alloc(len);
+        t.fill(b, len, rng);
+        t.put(d + at, b);
+    }
+    rd
+}
+
+/// A random matrix near the identity (or the identity).
+fn r6a_matrix(t: &mut Twin, rng: &mut Xorshift, at: u32, exact: bool) {
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 16 } else { 0 };
+        let v = if exact {
+            sixteenths(rng, ident, ident)
+        } else if i >= 12 && i != 15 {
+            sixteenths(rng, -16 * 16, 16 * 16)
+        } else {
+            sixteenths(rng, ident - 2, ident + 2)
+        };
+        t.put(at + 4 * i, v);
+    }
+}
+
+/// The VU0 registers the effect program leaves for the sprite.
+fn r6a_registers(t: &mut Twin, rng: &mut Xorshift) {
+    let [rims, uvs, origin, vf01, scale, vf00w, view, fill] = [
+        0x00c8_f880,
+        0x00c8_f8b0,
+        0x00c8_f840,
+        0x00c8_f7a0,
+        0x00c8_f910,
+        0x00c0_a010,
+        0x0230_fc60,
+        0x0230_fca0,
+    ]
+    .map(|a| t.b.rebase(a));
+    for i in 0..12 {
+        t.put(rims + 4 * i, float_in(rng, -60, 60));
+    }
+    for i in 0..8 {
+        t.put(uvs + 4 * i, float_in(rng, -20, 20));
+    }
+    for i in 0..4 {
+        t.put(origin + 4 * i, float_in(rng, 1500, 2600));
+        t.put(vf01 + 4 * i, float_in(rng, -10, 10));
+    }
+    t.put(scale, float_in(rng, 0, 2));
+    let w = if rng.below(4) == 0 {
+        float_in(rng, 1, 3)
+    } else {
+        0x3f80_0000
+    };
+    t.put(vf00w, w);
+    r6a_matrix(t, rng, view, false);
+    r6a_matrix(t, rng, fill, false);
+}
+
+/// The window edges the centre is tested against (exactly on them).
+const R6A_EDGES: [(f32, f32); 6] = [
+    (1707.0, 2000.0),
+    (2389.0, 2000.0),
+    (2000.0, 1840.0),
+    (2000.0, 2256.0),
+    (1706.9375, 2000.0),
+    (2000.0, 2256.0625),
+];
+
+/// `KeDttSpr_MkGifPk` cases on `t` (`real`: the first keeps the
+/// snapshot's registers and matrices).
+fn r6a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let s = R6aReturns::install(t);
+    let work = t.stack_scratch(0x800);
+    // KeVu0ScaleVecXYZ copies its scale vector into vf01: the three words
+    // past the scale are the original's caller's saved registers
+    let skip = [(t.b.rebase(0x00c8_f7a4), 12)];
+    let (program, magic, pass) = (
+        t.b.rebase(0x0230_fd20),
+        t.b.rebase(0x00c6_4ca0),
+        t.b.rebase(0x0113_335c),
+    );
+    for k in 0..cases {
+        if !(real && k == 0) {
+            r6a_registers(t, rng);
+        }
+        let p = t.alloc(0x70);
+        t.fill(p, 0x70, rng);
+        let w = float_in(rng, 1, 40);
+        let wf = f64::from(f32::from_bits(w));
+        let exact = rng.below(3) == 0;
+        let (x, y) = if exact && rng.below(2) == 0 {
+            R6A_EDGES[rng.below(6) as usize]
+        } else {
+            let x = f32::from_bits(float_in(rng, 1650, 2450));
+            let y = f32::from_bits(float_in(rng, 1790, 2300));
+            (x, y)
+        };
+        // with the identity and w 1 the centre lands on (x, y) exactly
+        let w = if exact { 0x3f80_0000 } else { w };
+        let wf = if exact { 1.0 } else { wf };
+        #[allow(clippy::cast_possible_truncation)]
+        for (i, v) in [x, y].into_iter().enumerate() {
+            t.put(p + 4 * i as u32, ((f64::from(v) * wf) as f32).to_bits());
+        }
+        t.put(p + 8, float_in(rng, -100, 100));
+        t.put(p + 0xc, w);
+        // now and then the game's UV scale: the centre's UV lands inside
+        // the frame buffer (v near 0.5), where the cut scene bias moves
+        // the exponent
+        if rng.below(2) == 0 {
+            let origin = t.b.rebase(0x00c8_f840);
+            for (i, c) in [x, y].into_iter().enumerate() {
+                let noise = f32::from_bits(sixteenths(rng, -8 * 16, 8 * 16));
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(origin + 4 * i as u32, (c - 64.0 + noise).to_bits());
+            }
+            t.put(t.b.rebase(0x00c8_f910), (1.0f32 / 32.0).to_bits());
+        }
+        // exactly on the centre, a rim offset makes a zero (whose sign the
+        // subtraction's order decides)
+        if exact && rng.below(2) == 0 {
+            let rim_b = t.b.rebase(0x00c8_f890);
+            t.put(rim_b, x.to_bits());
+            t.put(rim_b + 4, y.to_bits());
+        }
+        for i in 0..4 {
+            t.put(p + 0x10 + 4 * i, float_in(rng, 0, 255));
+        }
+        let m = t.alloc(0x40);
+        r6a_matrix(t, rng, m, exact);
+        t.put(p + 0x28, m);
+        t.put(p + 0x3c, rng.next());
+        t.put(p + 0x60, rng.next());
+        t.put(
+            program,
+            if rng.below(2) == 0 {
+                rng.below(8)
+            } else {
+                rng.next()
+            },
+        );
+        t.put(
+            magic,
+            [0x92u32, 0x92, 0x6a, 0x1bd, 7][rng.below(5) as usize],
+        );
+        t.put(pass, rng.below(2));
+        // the render data: through the geometry, or created on the first draw
+        let rd = r6a_render_data(t, rng);
+        let geometry = if rng.below(5) == 0 {
+            0
+        } else {
+            let g = t.alloc(0x28);
+            t.fill(g, 0x28, rng);
+            t.put(g + 0x24, if rng.below(4) == 0 { 0 } else { rd });
+            g
+        };
+        t.put(s.geometry, geometry);
+        t.put(s.rd, if rng.below(5) == 0 { 0 } else { rd });
+        t.put(s.buffer, if rng.below(6) == 0 { 0 } else { rng.next() | 1 });
+        t.put(s.cut, rng.below(3) / 2);
+        t.put(s.bias, float_in(rng, -2, 2));
+        t.put(s.rest, rng.next());
+        t.put(s.log, 0u32);
+        t.same_but(
+            "KeDttSpr_MkGifPk",
+            &skip,
+            |o| o.eax(0x0076_7790, &[p]),
+            |m| ffx_field::kedtt::ke_dtt_spr_mk_gif_pk(m, p, work, call, fcall),
+        );
+    }
+}
+
+/// Group A on the image.
+#[test]
+fn r6a_distortion_sprite_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0061_0001);
+    r6a_cases(&mut t, &mut rng, 400, false);
+}
+
+/// Group A on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r6a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0061_0002);
+    r6a_cases(&mut t, &mut rng, 200, true);
+}
+
+// ---- field agent r6, group B: the belt path's strip ----
+
+/// A float in `lo..hi` with a full 24-bit significand (products and
+/// sums of these round, unlike sixteenths).
+fn r6b_fine(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let u = (rng.next() >> 8) as f32 / 16_777_216.0;
+    (lo + (hi - lo) * u).to_bits()
+}
+
+/// The strip's state between points (`0x0230f9cc..0x0230fb40`):
+/// direction, offsets, widths, fade, colours and ends, the matrices.
+fn r6b_state(t: &mut Twin, rng: &mut Xorshift) {
+    let g = |t: &Twin, a: u32| t.b.rebase(a);
+    for a in [0x0230_f9cc, 0x0230_f9d0] {
+        let at = g(t, a);
+        t.put(at, sixteenths(rng, 1, 32));
+    }
+    // the last direction: a unit vector (or none)
+    let (dx, dy) = if rng.below(5) == 0 {
+        (0.0f32, 0.0f32)
+    } else {
+        let a = f32::from_bits(sixteenths(rng, -50, 50));
+        (a.cos(), a.sin())
+    };
+    let at = g(t, 0x0230_f9e0);
+    t.put(at, dx.to_bits());
+    t.put(at + 4, dy.to_bits());
+    // sixteenths now and then, else full significands
+    let fine = rng.below(3) != 0;
+    for (a, lo, hi) in [
+        (0x0230_f9d8u32, -1.0, 1.0),
+        (0x0230_f9dc, -1.0, 1.0),
+        (0x0230_f9e8, -8.0, 8.0),
+        (0x0230_f9ec, -8.0, 8.0),
+        (0x0230_f9f0, 0.0, 1.0),
+        (0x0230_f9f4, 0.0, 0.5),
+        (0x0230_f9f8, 0.0, 1.0),
+        (0x0230_fa00, 0.0, 20.0),
+        (0x0230_fa04, 0.0, 20.0),
+        (0x0230_fa0c, 0.0, 2.0),
+    ] {
+        let at = g(t, a);
+        #[allow(clippy::cast_possible_truncation)]
+        let v = if fine {
+            r6b_fine(rng, lo, hi)
+        } else {
+            sixteenths(rng, (lo * 16.0) as i32, (hi * 16.0) as i32)
+        };
+        t.put(at, v);
+    }
+    if fine {
+        for a in [0x0230_f9cc, 0x0230_f9d0] {
+            let at = g(t, a);
+            t.put(at, r6b_fine(rng, 0.01, 2.0));
+        }
+    }
+    // colours 0..255, their steps and scale
+    for a in [0x0230_fa40u32, 0x0230_fa50] {
+        let at = g(t, a);
+        for i in 0..4 {
+            t.put(at + 4 * i, sixteenths(rng, 0, 255 * 16));
+        }
+    }
+    for a in [0x0230_fa10u32, 0x0230_fa20, 0x0230_fa30] {
+        let at = g(t, a);
+        for i in 0..4 {
+            t.put(at + 4 * i, sixteenths(rng, -40, 40));
+        }
+    }
+    // the ends (projected: w the point's 1 / w) and the vertices' sides
+    for a in [
+        0x0230_fa60u32,
+        0x0230_fa70,
+        0x0230_fa80,
+        0x0230_fa90,
+        0x0230_faa0,
+    ] {
+        let at = g(t, a);
+        for i in 0..3 {
+            t.put(at + 4 * i, sixteenths(rng, -100 * 16, 100 * 16));
+        }
+        t.put(at + 0xc, sixteenths(rng, 1, 32));
+    }
+    let (p, u) = (g(t, 0x0230_fac0), g(t, 0x0230_fb00));
+    let exact = rng.below(3) == 0;
+    r6a_matrix(t, rng, p, exact);
+    r6a_matrix(t, rng, u, false);
+}
+
+/// One `KeThBP_MkStrip_00764de0` case: a walk of 0..=6 points (`stride`
+/// apart), sometimes repeating the last end (a zero direction) or with
+/// w 0.
+fn r6b_case(t: &mut Twin, rng: &mut Xorshift, state: u32) {
+    let n = rng.below(7);
+    let stride = 0x20 + 0x10 * rng.below(3);
+    let points = t.alloc((stride * 7) as usize);
+    t.fill(points, (stride * 7) as usize, rng);
+    let end1 = t.b.rebase(0x0230_fa90);
+    let mut last = [t.b.read::<u32>(end1), t.b.read::<u32>(end1 + 4)];
+    for i in 0..7 {
+        let pt = points + stride * i;
+        for k in 0..3 {
+            t.put(pt + 4 * k, sixteenths(rng, -100 * 16, 100 * 16));
+        }
+        let w = match rng.below(8) {
+            0 => 0,
+            1 => 0x3f80_0000,
+            _ => sixteenths(rng, 4, 64),
+        };
+        t.put(pt + 0xc, w);
+        let age = if rng.below(2) == 0 {
+            sixteenths(rng, 0, 64)
+        } else {
+            r6b_fine(rng, 0.0, 4.0)
+        };
+        t.put(pt + 0x1c, age);
+        // with the identity projection and w 1 the point lands on itself:
+        // the same x, y as the last gives a zero direction
+        if w == 0x3f80_0000 && rng.below(2) == 0 {
+            t.put(pt, last[0]);
+            t.put(pt + 4, last[1]);
+        }
+        last = [t.b.read::<u32>(pt), t.b.read::<u32>(pt + 4)];
+    }
+    t.put(state + 4, points);
+    t.put(state + 0x14, stride);
+    t.put(
+        state + 0x1c,
+        if rng.below(8) == 0 {
+            0u32.wrapping_sub(rng.below(3))
+        } else {
+            n
+        },
+    );
+}
+
+fn r6b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let work = t.stack_scratch(0x800);
+    let state = t.alloc(0x20);
+    let walk = t.b.rebase(0x0230_f9c8);
+    t.put(walk, state);
+    for k in 0..cases {
+        if !(real && k == 0) {
+            r6b_state(t, rng);
+        }
+        t.fill(state, 0x20, rng);
+        r6b_case(t, rng, state);
+        t.same(
+            "KeThBP_MkStrip_00764de0",
+            |o| o.eax(0x0076_4de0, &[]),
+            |m| ffx_field::keth::ke_th_bp_mk_strip(m, work, call),
+        );
+    }
+}
+
+/// Group B on the image.
+#[test]
+fn r6b_belt_path_strip_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0062_0001);
+    r6b_cases(&mut t, &mut rng, 300, false);
+}
+
+/// Group B on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r6b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0062_0002);
+    r6b_cases(&mut t, &mut rng, 150, true);
+}
+
+// ---- field agent r6, group C: the renderer's initial state ----
+
+/// `yiRender_create` on `t` at `r` (`real`: the snapshot's own object
+/// first), its `yiMalloc` a bump allocator.
+fn r6c_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let next = t.alloc(4);
+    let arena = t.alloc(0x10_0000);
+    t.cave_from(0, &[(Some(0x0090_bbd0), bump_stub(next))]);
+    for k in 0..cases {
+        t.put(next, arena);
+        if !(real && k == 0) {
+            // the object's words the function leaves alone stay random
+            for _ in 0..0x400u32 {
+                let o = rng.below(0xb_e100 / 4) * 4;
+                t.put(r + o, rng.next());
+            }
+            for o in (0x67b80u32..0x68800)
+                .step_by(4)
+                .chain((0xba3c0..0xba440).step_by(4))
+            {
+                t.put(r + o, rng.next());
+            }
+            t.put(r + 0x67f20, rng.below(6));
+        }
+        let direct = [0u32, 0, 1, 0x40, 0x123][rng.below(5) as usize];
+        let (data, refs) = (rng.below(0x400), rng.below(0x400));
+        t.same(
+            "yiRender_create",
+            |o| o.eax(0x0090_c400, &[r, direct, data, refs]),
+            |m| ffx_field::yi::bridge::yi_render_create(m, r, [direct, data, refs], call),
+        );
+    }
+}
+
+/// Group C on the image.
+#[test]
+fn r6c_render_create_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0063_0001);
+    let r = t.alloc(0xb_e100);
+    r6c_cases(&mut t, &mut rng, r, 30, false);
+}
+
+/// Group C on the snapshot (`FFX_SNAPSHOT`): the game's renderer object.
+#[test]
+fn r6c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0063_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r6c_cases(&mut t, &mut rng, r, 20, true);
+}
+
+// ---- field agent r6, group D: the model distortion ----
+
+/// `(a, b)`: `*a` and `*b` from the two words at `src` (the screen offset
+/// getters).
+fn pair_out_stub(src: u32) -> Vec<u8> {
+    let mut c = vec![];
+    for (i, arg) in [(0u32, 4u8), (4, 8)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0x8b, 0x0d]); // mov eax, [esp + arg]; mov ecx, [src + i]
+        c.extend_from_slice(&(src + i).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x08]); // mov [eax], ecx
+    }
+    c.push(0xc3);
+    c
+}
+
+/// [`r6a_log_stub`] answering from `table` in turn (`count` the index).
+fn r6d_seq_stub(log: u32, id: u32, args: &[LogArg], table: u32, count: u32) -> Vec<u8> {
+    let mut c = r6a_log_stub(log, 0, id, args);
+    c.truncate(c.len() - 6); // mov eax, [rv]; ret
+    c.push(0xa1);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x85]);
+    c.extend_from_slice(&table.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// The stand-ins' return words for `KeDttMdl_MkGifPk`.
+struct R6dReturns {
+    log: u32,
+    rd_instance: u32,
+    geometry: u32,
+    buffer: u32,
+    model_buffer: u32,
+    valid: u32,
+    request: u32,
+    offsets: u32,
+    rest: u32,
+}
+
+impl R6dReturns {
+    fn install(t: &mut Twin) -> Self {
+        use LogArg::{Deref, Word};
+        let log = t.alloc(4 + 0x40 * 48);
+        // the render data table: a call count and five answers
+        let rd_instance = t.alloc(0x20);
+        let [geometry, buffer, model_buffer, valid, request, rest] =
+            [0; 6].map(|_: u32| t.alloc(4));
+        let offsets = t.alloc(0x10);
+        let w = |n: usize| vec![Word; n];
+        // the render data by instance: the first answer at rd_instance + 4,
+        // then one per created instance; the call count at rd_instance
+        let list = [
+            (
+                0x0064_53d0u32,
+                r6d_seq_stub(log, 1, &w(2), rd_instance + 4, rd_instance),
+            ),
+            (0x0064_4de0, r6a_log_stub(log, rest, 2, &w(3))),
+            (
+                0x0064_5040,
+                r6a_log_stub(
+                    log,
+                    rest,
+                    3,
+                    &[Word, Word, Word, Deref(1), Deref(1), Deref(3), Deref(1)],
+                ),
+            ),
+            (0x0064_5780, r6a_log_stub(log, rest, 4, &w(2))),
+            (0x0064_5380, r6a_log_stub(log, geometry, 5, &w(2))),
+            (0x0063_fdb0, r6a_log_stub(log, buffer, 6, &w(4))),
+            (0x0072_ac20, r6a_log_stub(log, rest, 7, &w(1))),
+            (0x0072_c190, r6a_log_stub(log, model_buffer, 8, &w(1))),
+            (0x0072_c1b0, r6a_log_stub(log, rest, 9, &w(1))),
+            (0x0063_fd70, ret_stub_at(valid)),
+            (0x0072_8660, r6a_log_stub(log, request, 10, &w(1))),
+            (0x0064_2d10, pair_out_stub(offsets)),
+            (0x0064_58a0, r6a_log_stub(log, rest, 11, &w(2))),
+            (0x0064_5330, r6a_log_stub(log, rest, 12, &w(2))),
+        ];
+        let list: Vec<_> = list.into_iter().map(|(f, c)| (Some(f), c)).collect();
+        std::fs::write("/tmp/seqstub.bin", &list[0].1).unwrap();
+        t.cave_from(0, &list);
+        Self {
+            log,
+            rd_instance,
+            geometry,
+            buffer,
+            model_buffer,
+            valid,
+            request,
+            offsets,
+            rest,
+        }
+    }
+}
+
+/// A model of 0..=4 records of `+1` byte 0 (counts -2..=40, mostly
+/// positive), ended by a record whose `+1` is 0xff or another kind.
+fn r6d_model(t: &mut Twin, rng: &mut Xorshift) -> u32 {
+    let model = t.alloc(0x40 + 0x10 * 5 + 0x14 * 40 * 5);
+    t.fill(model, 0x40, rng);
+    t.put(model + 4, 0x20u32);
+    t.put(model + 0x10, i16::try_from(rng.range(-3, 300)).unwrap());
+    let mut rec = model + 0x20;
+    for _ in 0..rng.below(5) {
+        let n = if rng.below(8) == 0 {
+            rng.range(-2, 0)
+        } else {
+            rng.range(0, 40)
+        };
+        t.put(rec + 1, 0u8);
+        t.put(rec + 2, i16::try_from(n).unwrap());
+        rec = rec.wrapping_add((0x10 + 0x14 * n).cast_unsigned());
+        if n < 0 {
+            // a negative count steps back: the walk ends where it lands
+            break;
+        }
+    }
+    t.put(rec + 1, [0xffu8, 1, 2][rng.below(3) as usize]);
+    model
+}
+
+#[allow(clippy::too_many_lines)] // one object graph a case
+fn r6d_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let s = R6dReturns::install(t);
+    let work = t.stack_scratch(0x800);
+    let spr = t.alloc(0x400);
+    let (spr_top, spr_stack) = (t.b.rebase(0x0233_2ea1), t.b.rebase(0x0119_fe10));
+    let (program, magic, pass, dtt) = (
+        t.b.rebase(0x0230_fd20),
+        t.b.rebase(0x00c6_4ca0),
+        t.b.rebase(0x0113_335c),
+        t.b.rebase(0x00cc_b228),
+    );
+    let req = t.alloc(0x180);
+    for k in 0..cases {
+        if !(real && k == 0) {
+            for a in [0x0230_fc60u32, 0x0230_fca0] {
+                let at = t.b.rebase(a);
+                r6a_matrix(t, rng, at, false);
+            }
+        }
+        t.put(spr_top, 0u8);
+        t.put(spr_stack, spr);
+        t.fill(spr, 0x100, rng);
+        let p = t.alloc(0x50);
+        t.fill(p, 0x50, rng);
+        let m = t.alloc(0x40);
+        r6a_matrix(t, rng, m, false);
+        t.put(p + 0x10, m);
+        let world = t.alloc(0x40);
+        r6a_matrix(t, rng, world, false);
+        t.put(p + 0x14, world);
+        let model = r6d_model(t, rng);
+        t.put(p + 0x1c, model);
+        t.put(p + 0x20, float_in(rng, -4, 4));
+        t.put(p + 0x24, rng.below(3));
+        // the width now and then 0 (its 64-bit minus one borrows)
+        let tex = rng.next()
+            & if rng.below(4) == 0 {
+                0xf800_ffff
+            } else {
+                u32::MAX
+            };
+        t.put(p + 0x28, tex);
+        let color = t.alloc(0x10);
+        t.fill(color, 0x10, rng);
+        t.put(p + 0x30, color);
+        t.put(p + 0x40, rng.below(2) * rng.next());
+        t.put(
+            program,
+            if rng.below(2) == 0 {
+                rng.below(8)
+            } else {
+                rng.next()
+            },
+        );
+        let magics = [
+            0x10eu32, 0x10e, 0x6a, 0x1db, 0x203, 0x15c, 0x29e, 0x29f, 7, 0x46,
+        ];
+        t.put(magic, magics[rng.below(10) as usize]);
+        t.put(pass, rng.below(2));
+        t.put(dtt, float_in(rng, -8, 8));
+        t.put(dtt + 4, float_in(rng, -8, 8));
+        // the render data, the four instances' share one
+        let rd = r6a_render_data(t, rng);
+        let geometry = t.alloc(0x28);
+        t.fill(geometry, 0x28, rng);
+        t.put(geometry + 0x24, if rng.below(8) == 0 { 0 } else { rd });
+        t.put(s.geometry, if rng.below(8) == 0 { 0 } else { geometry });
+        t.put(s.rd_instance, 0u32);
+        t.put(s.rd_instance + 4, if rng.below(3) == 0 { 0 } else { rd });
+        for i in 1..5 {
+            t.put(
+                s.rd_instance + 4 + 4 * i,
+                if rng.below(4) == 0 { 0 } else { rd },
+            );
+        }
+        t.put(s.buffer, if rng.below(8) == 0 { 0 } else { rng.next() | 1 });
+        let mb = t.alloc(0x10);
+        t.fill(mb, 0x10, rng);
+        if rng.below(2) == 0 {
+            t.put(mb + 8, model);
+        }
+        t.put(s.model_buffer, if rng.below(4) == 0 { 0 } else { mb });
+        t.put(s.valid, rng.below(4).min(1));
+        t.fill(req, 0x180, rng);
+        t.put(s.request, req);
+        // the screen offset: floats (the emulator keeps signalling NaNs
+        // the CPU's fld/fstp quiets)
+        t.put(s.offsets, float_in(rng, -100, 100));
+        t.put(s.offsets + 4, float_in(rng, -100, 100));
+        t.put(s.rest, rng.next());
+        t.put(s.log, 0u32);
+        // the scale's z and w: the original's uninitialised locals
+        let skip = [(req + 0x148, 8)];
+        eprintln!(
+            "DBGK {k} rd {rd:#x} geo {geometry:#x} sgeo {:#x} g24 {:#x} rd94 {:#x} ret {:#x} words {:x?}",
+            t.b.read::<u32>(s.geometry),
+            t.b.read::<u32>(geometry + 0x24),
+            t.b.read::<u32>(rd + 0x94),
+            s.geometry,
+            [
+                s.geometry,
+                s.buffer,
+                s.model_buffer,
+                s.valid,
+                s.request,
+                s.rest,
+                s.rd_instance
+            ]
+        );
+        t.same_but(
+            "KeDttMdl_MkGifPk",
+            &skip,
+            |o| o.eax(0x0072_ded0, &[p]),
+            |m| ffx_field::kedtt::ke_dtt_mdl_mk_gif_pk(m, p, work, call, fcall),
+        );
+    }
+}
+
+/// Group D on the image.
+#[test]
+fn r6d_model_distortion_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0064_0001);
+    r6d_cases(&mut t, &mut rng, 400, false);
+}
+
+/// Group D on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r6d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0064_0002);
+    r6d_cases(&mut t, &mut rng, 200, true);
+}

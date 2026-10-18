@@ -2532,6 +2532,10 @@ ported! {
     yiRender_setupparamVU1 @ 0x0090_da90 => extern "C" fn shim_yi_render_setupparam_vu1(r: u32) -> u32 {
         yi::bridge::yi_render_setupparam_vu1(&mut mem(), r)
     }
+    /// `yiRender_create(r, direct, data, refs)`.
+    yiRender_create @ 0x0090_c400 => extern "C" fn shim_yi_render_create(r: u32, direct: u32, data: u32, refs: u32) -> u32 {
+        yi::bridge::yi_render_create(&mut mem(), r, [direct, data, refs], &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `yiRender_term(r)`.
     yiRender_term @ 0x0090_dd00 => extern "C" fn shim_yi_render_term(r: u32) -> u32 {
         yi::bridge::yi_render_term(&mut mem(), r, &mut |_, f, a| call_cdecl(f, a))
@@ -2733,6 +2737,33 @@ ported! {
     KeThBP_Update @ 0x0076_37f0 => extern "C" fn shim_ke_th_bp_update(p: u32) -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::keth::WORK as usize / 4 }>::new();
         ffx_field::keth::ke_th_bp_update(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
+    /// `KeThBP_MkStrip_00764de0()`.
+    KeThBP_MkStrip_00764de0 @ 0x0076_4de0 => extern "C" fn shim_ke_th_bp_mk_strip() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_mk_strip(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeDttMdl_MkGifPk(p)`.
+    KeDttMdl_MkGifPk @ 0x0072_ded0 => extern "C" fn shim_ke_dtt_mdl_mk_gif_pk(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::kedtt::MDL_WORK as usize / 4 }>::new();
+        ffx_field::kedtt::ke_dtt_mdl_mk_gif_pk(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
+    /// `KeDttSpr_MkGifPk(p)`.
+    KeDttSpr_MkGifPk @ 0x0076_7790 => extern "C" fn shim_ke_dtt_spr_mk_gif_pk(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::kedtt::WORK as usize / 4 }>::new();
+        ffx_field::kedtt::ke_dtt_spr_mk_gif_pk(
             &mut mem(),
             p,
             w.at(),

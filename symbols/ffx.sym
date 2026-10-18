@@ -3651,7 +3651,7 @@
 0x0072d930 function pppMatrixYZX              # fh v3:bsim1.00 0x0072da10
 0x0072db10 function pppMatrixZXY              # ppp program table record "pppMatrixZXY" step: as pppMatrixXYZ with pppGetRotMatrixZXY
 0x0072dcf0 function pppMatrixZYX              # fh v3:bsim1.00 0x0072ddd0
-0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0
+0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0; ours: cdecl(p) -> new p+0x38 (eax left by op_spr_free; on an early stop the render data or 0): model distortion: four VFX instances 10000 apart in the 64-bit key (0x0230fd20, p+0x48) get "FrameBuffer" data buffers (3 vertices a triangle of the model p+0x1c records) the first time; each needs geometry, render data and buffer segment; first instance's model buffer follows the model; fill request (JobSchedule_pppPart_getFillBufferRequest): render data/geometries, world p+0x14 / local p+0x10 matrices, colour p+0x30, scale (+0x148/+0x14c are uninitialised locals), screen (dtt) offsets, view 0x0230fc60 and fill matrices; p+0x38 += 0x30 a vertex when p+0x40; VFXUpdate for listed magic (0x10e only with p+0x24 == 1), else four VFXDttUpdates; ported (field r6, ffx_field::kedtt)
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
 0x0072e730 function pppKeMdlDttCon            # ppp program table record "pppKeMdlDtt" +0x1c set-up: area 0 +0xa8/+0xa0/+0xa4 = 0
 0x0072e760 function pppKeMdlDttCon2           # ppp program table record "pppKeMdlDtt" +0x20 set-up: area 0 +0xa8/+0xa0/+0xa4 = 0 (as pppKeMdlDttCon)
@@ -4180,6 +4180,7 @@
 0x00764b70 function KeThResHd_BPAlloc            # layout+callees: sorts between KeThCp_Update and KeThResHd_Init, and its named callees match the Switch 0x710030aee0 KeThResHd_BPAlloc's (similarity 1.00: is_ptr32_null); symbols from Fahrenheit's server export
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
 0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)
+0x00764de0 function KeThBP_MkStrip_00764de0   # ours: cdecl() -> the walk 0x0230f9c8: KeThBP_MkGifPk's strip: per point left (walk +4 point, +0x14 stride, +0x1c count) the point through 0x0230fac0 over w, colours 0x0230fa40/fa50 stepped (KeAddScaledColor), side offset along the direction bisector times widths 0x0230fa00/fa0c, fade 1 - age(+0x1c) * 0x0230f9f4, last 1/w; 10 vertices (outer, inner, centre, inner, outer at both ends) times w through 0x0230fb00 to 0x02305908 + 0xa0 i, colours / 256 at +0x5000; ported (field r6, ffx_field::keth::ke_th_bp_mk_strip)
 0x007658b0 function InitVFXKeThRenderData     # fh v3:exact 0x007659a0; ported (field round 51): (a, b, c): texture count 0x02305840 clamped to 20 (signed, written back); three zeroed 20-word local arrays get 0x50c, 0xc18, 0 per texture and a 256-byte name slot "NoTexture" each (sprintf); graphicVFXCreate(a, b, c), graphicVFXCreateDataBuffer(a, b, n, widths, heights, names, flags), graphicVFXGetRenderDataByInstance(a, b); returns 1 when that is non-zero, else 0 (neg/sbb/neg)
 0x00765f10 function resetVFXKeThRenderData       # layout+callees: sorts between InitVFXKeThRenderData and updateVFXKeThRenderData, and its named callees match the Switch 0x710030b810 resetVFXKeThRenderData's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export
 0x007665a0 function SetGlobal_02305844 # cdecl(v): *0x02305844 = v, returns v; name ours
@@ -4200,7 +4201,7 @@
 0x00767530 function KeMdl_MkTkClut            # fh v3:exact 0x00767610
 0x007676c0 function KeVu0MulX                    # (dst, src, s): dst.x = src.x * s (a VU macro helper); 0x0088a040
 0x00767720 function KeVu0SubX                    # (dst, src, s): dst.x = src.x - s, then restoreVf00Register (tail call); 0x0088a040
-0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870
+0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870; ours: cdecl(p) -> 0: the distortion sprite: p+0 through its matrix p+0x28, Q = vf00.w / w; centre outside 1707..2389 x 1840..2256 hides the VFX instance (key 0x0230fd20 / p+0x60); else a 9-vertex fan (rim from VU0 0x00c8f880/890/8a0) into the render data (desc rd+0x94: verts +0xc, colours +0x14, UVs +0x18 into the "FrameBuffer" buffer, indices +0x1c), created on the first draw; ported (field r6, ffx_field::kedtt)
 0x00768d30 function KeDttSpr_MkGifPk_Pre      # fh v3:exact 0x00768e40
 0x00769230 function KeBornRnd2                # fh v3:exact 0x00769340
 0x00769340 function KeLnsArnd_Draw            # fh v3:exact 0x00769450
@@ -11318,6 +11319,7 @@
 0x0090c120 function yiRender_addDirectBlock   # (render, src, n): data pointer +0xba3e0 aligned to 64, DMA ref tag 0x30000000|(n+1) at +0xba3f0 (+0xba3f8 counts), block VIF FLUSH, STMOD, STCYCL 1,1, DIRECTHL n, n quadwords; returns src + 16n; name ours
 0x0090c1f0 function yiRender_addRef              # (render, addr, qwc u16): DMA ref tag (0x30000000 | qwc, addr) at render +0xba3f0, which moves 16 on; render +0xba3f8 counts tags
 0x0090c230 function yiRender_addRefData          # (render, block): yiRender_addRef of block +0x10 for block's u16 quadword count
+0x0090c400 function yiRender_create          # ours (the buffers it yiMallocs are the two yiRender_destroy frees; called once by yiInit with g_YiRender, 0, 0x3000, 0x2400): cdecl(r, direct, data, refs) -> yiClutAlloc_makepacket's eax: camera/view words, FFXSamp0ViewScreenMatrix(+0x67f38, 512, 1, 0.47, 2048, 2048, 1, 2^24-1, 2, 65536), identities +0x67f78..+0x68078, (0,0,0,1) rows +0x680b8/+0x680f8, the seven VU1 matrix packets +0x67ba8.., bounds, colours, yiAnimInfo_init, yiVramSetup(0, 0), packet buffers +0xba3cc/+0xba3dc/+0xba3ec (16-byte entries), Z address, then initpacket, yiScreff_init, initfog, yiClutAlloc_init(+0x67f20), yiClutAlloc_makepacket(r, 0, 0x48); ported (field r6, yi::bridge::yi_render_create)
 0x0090ccb0 function yiPkUnpackMatrixDma          # (m, out, addr): DMA tag 0x20000005, VIF FLUSH, STCYCL 1,1, UNPACK V4-32 x4 to addr, then the matrix
 0x0090cd10 function yiPkUnpackMatrix             # (m, out, addr): VIF UNPACK V4-32 x4 to addr (0x6c040000 | addr), then the matrix
 0x0090cd50 function yiRender_resetall         # (r): yiRender_resetobj, +0x9c198/+0xbe0ac/+0xbe0b0 = 0, +0x67f34 = -1; yiInit
@@ -16327,6 +16329,7 @@
 0x02305840 label    g_KeThTextureCount           # the Ke thing effects' texture count (InitVFXKeThRenderData clamps it to 20)
 0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
 0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
+0x0230fc60 label    g_pppDttVertexMatrix      # ours: 16 floats KeDttSpr_MkGifPk takes its vertices through (after scaling them back by 1/Q), next to g_pppFillMatrix
 0x0230fca0 label    g_pppFillMatrix           # 16 words every updateVFXRenderData fill request takes (+0x1d4; the Shp request +0xd0)
 0x0230fd20 label    g_pppCurrentProgram       # the program index pppRunPartStd is running, 0 after
 0x0230fd24 label    g_pppObjectCount          # pppRunPartStd adds each birth record's object count
