@@ -1481,6 +1481,12 @@ ported! {
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y(v) } else { ffx_graphic::ui::remap_x(v) },
         );
     }
+    /// `MsgExpandCodes_00776940(out, text, arg, jump, flag)`.
+    MsgExpandCodes_00776940 @ 0x0077_6940 => extern "C" fn msg_expand_codes(out: u32, text: u32, arg: u32, jump: u32, flag: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        msg::bridge::expand_codes(&mut mem(), [out, text, arg, jump, flag], scratch, call_ptr)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

@@ -19473,3 +19473,210 @@ fn round34_shape_data_modify_matches_the_original_on_the_snapshot() {
     };
     round34_shape_data_modify(&mut a, &mut b, &mut Xorshift(0x4034_0042));
 }
+
+/// One random stretch of a script message for `round34_expand_codes`:
+/// text, copied and unknown codes, the record codes and nested
+/// if/then/else/end-if blocks (`depth` deep at most).
+fn expand_stretch(rng: &mut Xorshift, out: &mut Vec<u8>, depth: u32) {
+    let rec = |out: &mut Vec<u8>, words: &[u32]| {
+        for w in words {
+            out.extend_from_slice(&w.to_le_bytes());
+        }
+    };
+    for _ in 0..rng.next() % 6 {
+        match rng.next() % 14 {
+            0 | 1 => out.extend([0x41 + (rng.next() % 26) as u8, 3, 0xff]),
+            2 => out.extend([0x13, [0x30u8, 0x37, 0x38, 0x2f][(rng.next() % 4) as usize]]),
+            3 => out.extend([
+                0xb,
+                [0x30u8, 0x49, 0x4a, 0x60, 0x2f, 0xfb, 0xf5][(rng.next() % 7) as usize],
+            ]),
+            4 => out.extend([[1u8, 0xa, 0x2f, 0x12][(rng.next() % 4) as usize], 0x41]),
+            5 => out.extend([0xb, 0xf9]),
+            6 => {
+                out.extend([0xb, 0xfa]);
+                rec(out, &[rng.next() | 1]);
+            }
+            7 => {
+                // MenuTextCode's stand-in steps 8 bytes
+                out.extend([0xb, 0xf4]);
+                // bytes that end an if when misread four bytes in
+                rec(out, &[0x0101_0101, 0x41f2_0b41]);
+            }
+            8 => {
+                out.extend([0xb, 0xf6]);
+                let t = rng.next() % 3;
+                rec(
+                    out,
+                    &[t | (rng.next() % 0x40) << 16, rng.next() % 4, rng.next()],
+                );
+            }
+            9 => {
+                if rng.next().is_multiple_of(8) {
+                    out.extend([0xb, 0xf7]);
+                    rec(out, &[rng.next()]);
+                }
+            }
+            10 => {
+                out.extend([0xb, 0xf8]);
+                let kind = [0u32, 1, 2, 3, 4, 5, 0x80][(rng.next() % 7) as usize];
+                rec(
+                    out,
+                    &[
+                        (rng.next() % 4) | kind << 16,
+                        (rng.next() % 4) | (rng.next() % 0x40) << 16,
+                        rng.next(),
+                    ],
+                );
+            }
+            _ => {
+                if depth >= 3 {
+                    continue;
+                }
+                out.extend([0xb, 0xf0]);
+                let d0 = (rng.next() % 3) | (rng.next() % 8) << 8 | (rng.next() % 3) << 16;
+                let side = |rng: &mut Xorshift| (rng.next() % 4) | (rng.next() % 0x40) << 16;
+                let words = [
+                    d0,
+                    side(rng),
+                    side(rng),
+                    [0u32, 1, 5, u32::MAX, rng.next()][(rng.next() % 5) as usize],
+                ];
+                rec(out, &words);
+                if !rng.next().is_multiple_of(4) {
+                    out.extend([0xb, 0xf1]);
+                }
+                expand_stretch(rng, out, depth + 1);
+                if rng.next().is_multiple_of(2) {
+                    out.extend([0xb, 0xf3]);
+                    expand_stretch(rng, out, depth + 1);
+                }
+                if !rng.next().is_multiple_of(10) {
+                    out.extend([0xb, 0xf2]);
+                }
+            }
+        }
+    }
+}
+
+/// Round 34 group E: `MsgExpandCodes_00776940` over random code streams,
+/// with fake getter, setter and call tables of logging stand-ins,
+/// random variables and a `MenuTextCode_00774860` stand-in that moves
+/// both cursors (its pointer arguments are not logged: the original's
+/// point into its stack).
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round34_expand_codes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use msg::bridge as m;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 8);
+    let mut slot = 0u32;
+    let mut stand = |a: &mut Oracle, b: &mut Oracle, tag: u32, args: &[u8], tail: &[u8]| {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * slot,
+            &pick_logger(cursor, tag, args, &[], tail),
+        );
+        slot += 1;
+        s
+    };
+    let getters: Vec<u32> = (0..4)
+        .map(|k| stand(a, b, 0x100 + k, &[0], &ret_cell(cells + 4 * k)))
+        .collect();
+    let setters: Vec<u32> = (0..4)
+        .map(|k| stand(a, b, 0x200 + k, &[0, 1], &[]))
+        .collect();
+    let call_table: Vec<u32> = (0..4).map(|k| stand(a, b, 0x300 + k, &[0], &[])).collect();
+    // out += 3; code += 8
+    let s = stand(
+        a,
+        b,
+        0x4860,
+        &[2],
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x83, 0x00, 0x03, 0x8b, 0x44, 0x24, 0x08, 0x83, 0x00, 0x08,
+        ],
+    );
+    redirect(a, b, m::MENU_TEXT_CODE, s);
+    let s = stand(a, b, 0xae50, &[0, 1, 2], &[]);
+    redirect(a, b, m::YI_ASSERT, s);
+    let tables = alloc(a, b, 0x30);
+    for (k, list) in [&getters, &setters, &call_table].into_iter().enumerate() {
+        let t = tables + 0x10 * k as u32;
+        for (i, f) in list.iter().enumerate() {
+            put(a, b, t + 4 * i as u32, *f);
+        }
+    }
+    put(a, b, a.rebase(m::SCRIPT_GETTERS), tables);
+    put(a, b, a.rebase(m::SCRIPT_SETTERS), tables + 0x10);
+    put(a, b, a.rebase(m::SCRIPT_CALLS), tables + 0x20);
+    let vars = alloc(a, b, 0x100);
+    put(a, b, a.rebase(m::SCRIPT_VARS), vars);
+    let call = |o: &mut Oracle, f: u32, args: &[u32]| o.call(f, Conv::Cdecl, args).unwrap().eax;
+    let text = alloc(a, b, 0x1000);
+    let out = alloc(a, b, 0x1000);
+    let words = alloc(a, b, 8);
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        let mut bytes = Vec::new();
+        expand_stretch(rng, &mut bytes, 0);
+        bytes.push(0);
+        bytes.resize(0x400, 0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        for w in 0..0x40 {
+            put(
+                a,
+                b,
+                vars + 4 * w,
+                [0u32, 1, 5, u32::MAX, 0x8000_0000, rng.next()][(rng.next() % 6) as usize],
+            );
+        }
+        for w in 0..4 {
+            put(
+                a,
+                b,
+                cells + 4 * w,
+                [0u32, 1, 5, u32::MAX, rng.next()][(rng.next() % 5) as usize],
+            );
+        }
+        put(a, b, words, [rng.next(), rng.next()]);
+        let base = if k % 16 == 0 {
+            out.wrapping_sub(0x3fff)
+        } else {
+            out
+        };
+        put(a, b, a.rebase(m::MES_BUFFER), base);
+        put(a, b, a.rebase(m::EXPAND_JUMP_BASE), rng.next());
+        let jump = if k % 3 == 0 { 0 } else { words };
+        let flag = if k % 4 == 0 { 0 } else { words + 4 };
+        let arg = rng.next();
+        let args = [out, text, arg, jump, flag];
+        assert_eq!(
+            eax(a, 0x0077_6940, &args),
+            m::expand_codes(b, args, scratch, call),
+            "expand {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("expand {k}"), a, b);
+    }
+}
+
+#[test]
+fn round34_expand_codes_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_expand_codes(&mut a, &mut b, &mut Xorshift(0x4034_0051));
+}
+
+#[test]
+fn round34_expand_codes_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_expand_codes(&mut a, &mut b, &mut Xorshift(0x4034_0052));
+}

@@ -4635,6 +4635,7 @@
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x007767d0 function PatchMenuRecords_007767d0 # (): screen 5 page 0: records 3/4 +6 = 0x53/0x83, 5 unlinked, 7 +1 = 0 and unlinked, 8 +1 |= 1 +6 = 0x56, 9 +6 = 0x86; screen 0xb pages 13/14: unlink and +6 edits; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
+0x00776940 function MsgExpandCodes_00776940     # cdecl(out, text, arg, &jump, &flag) -> end past the NUL, or 0 at a 0xb 0xf7 jump: copies a script message evaluating 0xb 0xf0..0xfa (if/then/end if/else over a 64-byte condition stack, MenuTextCode, variable sets, jumps, calls through the 0x00c416d0/d4/dc tables); Ghidra's void is wrong; ported (system round 34, msg.rs); name ours
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
 0x00777000 function CdOpenCheck_sub              # callees: its named callees match the Switch 0x71003227a0 CdOpenCheck_sub's (similarity 0.80: TkSyncV, movie_wait, read_err_disp_set, sceCdDiskReady); symbols from Fahrenheit's server export
 0x00777230 function ReturnAddress_00777230 # () -> 0x00c41748 (an address in the image); name ours

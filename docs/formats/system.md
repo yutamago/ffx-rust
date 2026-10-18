@@ -1467,3 +1467,20 @@ pushed as literals (no relocation entries), not addresses.
   the first colour is black, else grey both colours; with 0x1fb each
   non-zero alpha then pulses as `ftol(f32(cos(graphicGetTime() * 3)) * 10
   + 118)`.
+- `MsgExpandCodes_00776940(out, text, arg, &jump, &flag)` copies a
+  script message, evaluating the `0xb 0xf0..0xfa` codes (one-byte codes
+  are 3 and 0x30 up; the others take two):
+  `0xf0` pushes a comparison (16-byte record: `a` from getter `d1 &
+  0xffff`(`d1 >> 16`) / variable `d1 >> 16` / 0 by `d0`'s low byte, `b`
+  likewise from `d2` / `d3` by byte 2; operator byte 1: 1 `!=`, 2 `>=`, 3
+  `<=`, 4 `>`, 5 `<`, 6 `&`, else `==`, signed) on a 64-byte condition
+  stack; `0xf1` on a false top and `0xf3` on a true one skip to the
+  matching `0xf3`/`0xf2` (only `0xf1` stops at `0xf3`); `0xf2` pops
+  (`report_rangecheckfailure` past 64); `0xf4` runs
+  `MenuTextCode_00774860(&out, &p, arg)`; with `jump`: `0xf6` sets a
+  variable or calls a setter, `0xf7` stores its word +
+  `*0x0112a03c` at `0x0112a084`, sets `*jump` and returns 0, `0xf8` calls
+  the call table with a getter, a variable, 0 or `d2`; `0xf9` sets
+  `0x0112a074`; `0xfa` sets `*flag`. At the NUL it clears `*jump` and
+  returns the end past the NUL (Ghidra's `void` is wrong). Each code
+  first `yiAssert`s that `out` is under 0x4000 bytes into `*0x0112a02c`.
