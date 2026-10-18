@@ -15908,8 +15908,9 @@ fn round28_help_win_matches_the_original_on_the_snapshot() {
     round28_help_win(&mut a, &mut b, &mut Xorshift(0x4028_0032));
 }
 
-/// `TOGetPadStatusPrepare` over logging stand-ins for the click, the item
-/// in use and the battle action calls.
+/// `TOGetPadStatusPrepare`, the side pads and `TOBtlGetStdPad` over
+/// logging stand-ins for the click, the item in use and the battle action
+/// calls.
 #[allow(
     clippy::many_single_char_names,
     clippy::too_many_lines,
@@ -15951,12 +15952,52 @@ fn round28_pad_prepare(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     }
     let s = stand_in8(a, b, 0x500, &marker(cursor, 0x2870));
     redirect(a, b, 0x0089_0eb0, s);
+    // the standard pad's MsCheckLeftWindow and MsGetSaveWindow (count
+    // from a cell into its third argument, the list from another)
+    let more = alloc(a, b, 0x10);
+    let windows = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x580, &logger_returning(cursor, 1, more));
+    redirect(a, b, 0x0078_f700, s);
+    let mut v = logger_args(cursor, 2);
+    v.truncate(v.len() - 5);
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(more + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xa1]);
+    v.extend_from_slice(&(more + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x600, &v);
+    redirect(a, b, 0x0078_5410, s);
+    put(a, b, more + 8, windows + 0x20);
+    let [flag, missed] = [0x0133_d6e4, 0x0133_d6ec].map(|x| a.rebase(x));
     let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
     let [open, libra, depth, pad] =
         [0x023c_c08c, 0x0133_d6e0, 0x023c_c092, 0x025d_09d2].map(|x| a.rebase(x));
     let idle = a.rebase(t::SCROLL_DONE);
-    for k in 0..4000u32 {
+    for k in 0..8000u32 {
         put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            more,
+            [0u32, 1, 5, u32::MAX][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            more + 4,
+            [0u32, 1, 2, 4, 8, u32::MAX, (-5i32).cast_unsigned()][(rng.next() % 7) as usize],
+        );
+        let entries: [u16; 0x20] = std::array::from_fn(|_| {
+            if (rng.next() >> 16).is_multiple_of(2) {
+                0xff
+            } else {
+                rng.next() as u16
+            }
+        });
+        put(a, b, windows, entries);
+        put(a, b, flag, rng.next() % 3);
+        put(a, b, missed, rng.next() % 3);
         put(
             a,
             b,
@@ -16028,10 +16069,21 @@ fn round28_pad_prepare(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             [(1 + rng.next() % 3) as i8, (rng.next() % 4) as i8 - 1],
         );
         put(a, b, a.rebase(0x023c_c088), rng.next() as u16);
-        match k % 3 {
+        if k % 4 == 3 && rng.next().is_multiple_of(3) {
+            // the right window's list check, more often
+            put(a, b, depth, 0i8);
+            put(a, b, pad + 2, 0x2000u16);
+        }
+        match k % 4 {
             0 => {
                 eax(a, 0x0089_d610, &[w]);
                 t::to_get_pad_status_prepare(b, w, call);
+            }
+            3 => {
+                eax(a, 0x0089_cde0, &[w]);
+                t::to_btl_get_std_pad(b, w, scratch, call);
+                let v: u32 = Mem::read(b, scratch);
+                Mem::write(a, scratch, v);
             }
             n => {
                 let (f, cancel) = [(0x008a_22f0, 0x2000), (0x008a_2690, 0x8000)][n as usize - 1];
