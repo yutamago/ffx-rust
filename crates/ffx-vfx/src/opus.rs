@@ -458,6 +458,118 @@ pub mod bridge {
         cmd.wrapping_add(2)
     }
 
+    /// `opu_part_kill(host, cmd)` (`0x0080b7d0`): the host's part driver
+    /// (`[host +0x350]`) is told through its function at `+0x54` to end the
+    /// current unit (`host +0x220`). Returns `cmd + 2`.
+    pub fn opu_part_kill<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let driver: u32 = mem.read(host.wrapping_add(0x350));
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let f: u32 = mem.read(driver.wrapping_add(0x54));
+        call(mem, f, &[unit]);
+        cmd.wrapping_add(2)
+    }
+
+    /// `opu_local_link(host, cmd)` (`0x00801a50`): for flag nibble 0 (the
+    /// top four bits of `u16 host +0x21a`) the unit's link `u16 +0xb8` =
+    /// the command's `+2` and bit 7 of its byte `+0x19` cleared; for 1 the
+    /// same with the bit set; other nibbles change nothing. Returns `cmd +
+    /// 4`.
+    pub fn opu_local_link(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let kind = mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000;
+        if kind == 0 || kind == 0x1000 {
+            let v: u16 = mem.read(cmd.wrapping_add(2));
+            let b: u8 = mem.read(unit.wrapping_add(0x19));
+            let b = if kind == 0 { b & 0x7f } else { b | 0x80 };
+            mem.write(unit.wrapping_add(0x19), b);
+            mem.write(unit.wrapping_add(0xb8), v);
+        }
+        cmd.wrapping_add(4)
+    }
+
+    /// `opu_etc(host, cmd)` (`0x00816610`): the unit's work area at `+0xa8`
+    /// plus the command's `i16 +2` takes a value from `+4` by the flag
+    /// nibble: 0 a byte, 1 a `u16` (both return `cmd + 6`), 2 a word
+    /// (`cmd + 8`). Other nibbles write nothing and return `cmd` (the
+    /// interpreter would run it again).
+    pub fn opu_etc(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let off = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let at = off.wrapping_add(unit).wrapping_add(0xa8);
+        match mem.read::<u16>(host.wrapping_add(0x21a)) >> 12 {
+            0 => {
+                let v: u8 = mem.read(cmd.wrapping_add(4));
+                mem.write(at, v);
+                cmd.wrapping_add(6)
+            }
+            1 => {
+                let v: u16 = mem.read(cmd.wrapping_add(4));
+                mem.write(at, v);
+                cmd.wrapping_add(6)
+            }
+            2 => {
+                let v: u32 = mem.read(cmd.wrapping_add(4));
+                mem.write(at, v);
+                cmd.wrapping_add(8)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_jloop(host, cmd)` (`0x00816870`): the unit's loop counter
+    /// (byte `+0xb4` + the flag nibble, set by `opu_sloop`) down by one;
+    /// while not 0 back by the command's `i16 +2` (from `cmd`), else `cmd +
+    /// 4`.
+    pub fn opu_jloop(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let k = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)) >> 12);
+        let at = k.wrapping_add(unit).wrapping_add(0xb4);
+        let c = mem.read::<u8>(at).wrapping_sub(1);
+        mem.write(at, c);
+        if c == 0 {
+            return cmd.wrapping_add(4);
+        }
+        i32::from(mem.read::<i16>(cmd.wrapping_add(2)))
+            .cast_unsigned()
+            .wrapping_add(cmd)
+    }
+
+    /// `opu_unit_max(host, cmd)` (`0x00817530`): the unit count `u16 host
+    /// +0x334` becomes the command's `u16 +2`; each unit from the old count
+    /// up to the new one (0x100 bytes from `[host +0x320]`, while the
+    /// difference as an `i16` stays positive) has its four program
+    /// pointers cleared. Returns `cmd + 4`.
+    pub fn opu_unit_max(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let n: u16 = mem.read(cmd.wrapping_add(2));
+        let old: u16 = mem.read(host.wrapping_add(0x334));
+        let units: u32 = mem.read(host.wrapping_add(0x320));
+        let mut at = (u32::from(old) << 8).wrapping_add(units);
+        let mut left = n.wrapping_sub(old).cast_signed();
+        while left > 0 {
+            mem.write(at, [0u32; 4]);
+            at = at.wrapping_add(0x100);
+            left -= 1;
+        }
+        mem.write(host.wrapping_add(0x334), n);
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x00800ab0(dst, src)` and `0x00800af0(src, dst)`: 0x400 bytes
+    /// copied word by word upward (the save and restore of a 1 KB block
+    /// around `0x00826950` in `opu_motion_etc`). Return `src + 0x400`.
+    pub fn copy_1k(mem: &mut impl Mem, dst: u32, src: u32) -> u32 {
+        for i in 0..0x100u32 {
+            let v: u32 = mem.read(src.wrapping_add(4 * i));
+            mem.write(dst.wrapping_add(4 * i), v);
+        }
+        src.wrapping_add(0x400)
+    }
+
     /// `opu_et_no(obj, cmd)` (`0x008165d0`): the part at `+0x220` takes its
     /// effect's number (the effect's `u16` at `+0x1a`, bits 4-14) plus the
     /// command's `i16`.
@@ -844,7 +956,8 @@ pub mod bridge {
     /// high half (`eax` as left); -1 when no list entry or no part is
     /// free.
     pub fn opus_prog_on(mem: &mut impl Mem, set: u32, list: u32) -> u32 {
-        let count = u32::from(mem.read::<u16>(set.wrapping_add(0x34)).wrapping_sub(1)).cast_signed();
+        let count =
+            u32::from(mem.read::<u16>(set.wrapping_add(0x34)).wrapping_sub(1)).cast_signed();
         let table: u32 = mem.read(set.wrapping_add(0x10).wrapping_add(list.wrapping_mul(4)));
         let idx = |i: i16| i32::from(i).cast_unsigned();
         let mut i = 0i16;

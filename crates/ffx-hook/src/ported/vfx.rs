@@ -1712,6 +1712,34 @@ ported! {
     opus_encount0_init @ 0x007f_8480 => extern "C" fn opus_encount0_init(obj: u32) -> u32 {
         opus::bridge::opus_encount0_init(&mut mem(), obj)
     }
+    /// `opu_part_kill(host, cmd)`.
+    opu_part_kill @ 0x0080_b7d0 => extern "C" fn opu_part_kill(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_part_kill(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_local_link(host, cmd)`.
+    opu_local_link @ 0x0080_1a50 => extern "C" fn opu_local_link(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_local_link(&mut mem(), host, cmd)
+    }
+    /// `opu_etc(host, cmd)`.
+    opu_etc @ 0x0081_6610 => extern "C" fn opu_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_etc(&mut mem(), host, cmd)
+    }
+    /// `opu_jloop(host, cmd)`.
+    opu_jloop @ 0x0081_6870 => extern "C" fn opu_jloop(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_jloop(&mut mem(), host, cmd)
+    }
+    /// `opu_unit_max(host, cmd)`.
+    opu_unit_max @ 0x0081_7530 => extern "C" fn opu_unit_max(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_unit_max(&mut mem(), host, cmd)
+    }
+    /// `opus_copy_1k_00800ab0(dst, src)`.
+    opus_copy_1k_00800ab0 @ 0x0080_0ab0 => extern "C" fn opus_copy_1k(dst: u32, src: u32) -> u32 {
+        opus::bridge::copy_1k(&mut mem(), dst, src)
+    }
+    /// `opus_copy_1k_00800af0(src, dst)`.
+    opus_copy_1k_00800af0 @ 0x0080_0af0 => extern "C" fn opus_copy_1k_rev(src: u32, dst: u32) -> u32 {
+        opus::bridge::copy_1k(&mut mem(), dst, src)
+    }
     /// `opus_prog_on(set, list)`.
     opus_prog_on @ 0x0080_1700 => extern "C" fn opus_prog_on(set: u32, list: u32) -> u32 {
         opus::bridge::opus_prog_on(&mut mem(), set, list)

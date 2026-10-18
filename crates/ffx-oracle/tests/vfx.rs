@@ -11334,3 +11334,70 @@ fn opp_anmm_commands_match_the_original() {
         }
     }
 }
+
+#[test]
+fn round25_opu_commands_match_the_original() {
+    type Op = fn(&mut Oracle, u32, u32) -> u32;
+    let cmds: [(&str, u32, Op); 4] = [
+        ("opu_local_link", 0x0080_1a50, opus::bridge::opu_local_link),
+        ("opu_etc", 0x0081_6610, opus::bridge::opu_etc),
+        ("opu_jloop", 0x0081_6870, opus::bridge::opu_jloop),
+        ("opu_unit_max", 0x0081_7530, opus::bridge::opu_unit_max),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_6610);
+        let host = p.alloc(0x400);
+        let unit = p.alloc(0x200);
+        let units = p.alloc(0x2000);
+        let driver = p.alloc(0x60);
+        let cmd = p.alloc(0x10);
+        let (a, b) = (p.alloc(0x400), p.alloc(0x400));
+        // the part driver's function: a recorder of its argument in the
+        // code padding after .text
+        deref_recorder(&mut p, HOST_HANDLERS, &[0]);
+        let recorder = p.sym(HOST_HANDLERS);
+        for round in 0..3000 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(units, 0x2000, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            p.set(host + 0x320, units);
+            p.set(host + 0x350, driver);
+            p.set(driver + 0x54, recorder);
+            let kind = rng.below(5) << 12 | rng.below(0x1000);
+            p.set(host + 0x21a, u16::try_from(kind).unwrap());
+            // loop counters near their end, unit counts within 0x20
+            for k in 0..16 {
+                p.set(unit + 0xb4 + k, u8::try_from(rng.below(3)).unwrap());
+            }
+            p.set(host + 0x334, u16::try_from(rng.below(0x20)).unwrap());
+            // in-bounds offsets and counts (unit work area, 0x20 units)
+            let off = if round % 2 == 0 {
+                i16::try_from(rng.below(0x20)).unwrap()
+            } else {
+                rng.pick(&[0i16, 3, 0x40, -0x20])
+            };
+            p.set(cmd + 2, off);
+            let (name, sym, f) = rng.pick(&cmds);
+            p.check(name, sym, &[host, cmd], |m| Some(f(m, host, cmd)));
+            p.check("opu_part_kill", 0x0080_b7d0, &[host, cmd], |m| {
+                Some(opus::bridge::opu_part_kill(
+                    m,
+                    host,
+                    cmd,
+                    &mut call_original,
+                ))
+            });
+            p.fill(a, 0x400, &mut rng);
+            p.fill(b, 0x400, &mut rng);
+            let (d, s) = rng.pick(&[(a, b), (b, a), (a, a + 0x10), (a + 0x10, a)]);
+            p.check("0x00800ab0", 0x0080_0ab0, &[d, s], |m| {
+                Some(opus::bridge::copy_1k(m, d, s))
+            });
+            p.check("0x00800af0", 0x0080_0af0, &[s, d], |m| {
+                Some(opus::bridge::copy_1k(m, d, s))
+            });
+        }
+    }
+}
