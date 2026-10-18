@@ -1855,6 +1855,44 @@ VU0 registers (`0x00c8f788` Q, `0x00c8f790` ACC, `0x00c8f7d0`..,
 `0x00c8f910`/`0x00c8f950` matrices) and EE registers (`0x00c8f588`) as the
 original's inlined macro code does, and leave them as it does.
 
+## The Ke thread belt path's update (field agent r5)
+
+`KeThBP_Update(p)` (`0x007637f0`) moves a belt path `o = p[+0x40]` (set
+up by `KeThBP_Init`; template `p[+0x4c]`, guide path point `o[+0x14]`,
+child pool `p[+0x48]`, the thing's matrix at `p`):
+
+| `o` offset | Type | Meaning |
+|---|---|---|
+| `0x00`/`0x04` | ptr | The list of children it spawned (next, previous) |
+| `0x08`/`0x0c` | ptr | Its link in a parent segment's list (next, the slot pointing at it) |
+| `0x14` | ptr | The guide path point the head heads for |
+| `0x18` | `f32` | The head's time; whole steps are taken by `_ftol2_sse` |
+| `0x1c` | `u16` | Steps taken (the return value) |
+| `0x1e` | `u8` | Children spawned |
+| `0x30` | `f32` | Its length |
+| `0x34`/`0x36` | `u16`/`u8` | The ring's tail and head segment |
+| `0x37` | `u8` | Segments (`0x30` bytes from `+0x40`) |
+| `0x38`/`0x3c` | `u16` | The drawn span and its first segment |
+| `0x3e` | `u16` | Flags: 2 frozen, 4 capped, 8 done, 0x10 dead, 0x20 running, 0x40 held, 0x80 loop, 0x100 start, 0x400 normalise, 0x800 path end (becomes 0x40), 0x1000 (given to children), 0x2000 steering |
+
+A segment: position `+0` (xyzw), weight `+0xc`, children `+0x18`, curl
+`+0x1c`, direction `+0x20`. A guide point: position `+0`, reach flag
+`+0xc` (0: arrived once inside the near radius, else once outside it),
+far radius `+0x10`, weight `+0x14`, near radius `+0x18`, next `+0x1c`.
+
+The time moves by the template's `+0x34`; a step 0.999999 complete
+counts. Unless running or capped, steps stop at the template's `+0x42`
+(loop 0x80 makes it running). Each step the ring moves on; the head
+moves one step length (`+0x20`) along its direction, then steers toward
+the point (weight `+0x2c`, plus the point's weight ramping in between
+its far and near radius), wobbles (one of three rotations `0x00c3e730`
+by `KeVu0RndI() % 3`, angle `(rnd % 1001 - 500) / 500 x +0x28`) and, on
+a reused segment, follows its old direction by `1 - +0x24`. A segment's
+curl is the previous one's plus `(rnd / 2^14 - 1) x +0x3c`, clamped to
+0..1 (eased by `+0x24` on reused segments). A new segment may spawn a
+child belt path when `rnd & +0x41` is 0 (0xff: never) and fewer than
+`+0x40` children exist. Its VU0 scratch is `0x010d5530..0x010d55fc`.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

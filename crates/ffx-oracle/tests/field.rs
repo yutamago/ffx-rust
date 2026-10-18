@@ -14848,3 +14848,179 @@ fn r1h_abmap_map_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0081_0004);
     r1h_map_cases(&mut t, &mut rng);
 }
+
+// ---- field agent r5 group K: KeThBP_Update ----
+
+/// A float `lo / 16 ..= hi / 16`, as bits.
+fn sixteenths(rng: &mut Xorshift, lo: i32, hi: i32) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let v = rng.range(lo, hi) as f32 / 16.0;
+    v.to_bits()
+}
+
+/// Calls `f` (an `ffx.sym` address) in both oracles.
+fn both_call(t: &mut Twin, f: u32, args: &[u32]) {
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.call(at, Conv::Cdecl, args).unwrap();
+    }
+}
+
+/// A belt path of `n` segments set up by the original `KeThBP_Init`, its
+/// state randomised: time, counters, ring indices, flags `flags`, and
+/// per segment a position, curl, direction and a list of `children`.
+fn r5k_belt(t: &mut Twin, rng: &mut Xorshift, n: u32, flags: u16, children: &[u32]) -> u32 {
+    let o = t.alloc((0x50 + 0x30 * n) as usize);
+    let args = t.alloc(8);
+    t.put(args, o);
+    t.put(args + 4, u8::try_from(n).unwrap());
+    both_call(t, 0x0076_3030, &[args]);
+    t.put(o + 0x18, sixteenths(rng, 0, 40 * 16));
+    t.put(o + 0x1c, u16::try_from(rng.below(40)).unwrap());
+    t.put(o + 0x1e, u8::try_from(rng.below(4)).unwrap());
+    t.put(o + 0x30, sixteenths(rng, 0, 100 * 16));
+    t.put(o + 0x34, u16::try_from(rng.below(n)).unwrap());
+    t.put(o + 0x36, u8::try_from(rng.below(n)).unwrap());
+    t.put(o + 0x3e, flags);
+    for s in 0..n {
+        let seg = o + 0x40 + 0x30 * s;
+        for w in 0..3 {
+            t.put(seg + 4 * w, sixteenths(rng, -50 * 16, 50 * 16));
+            t.put(seg + 0x20 + 4 * w, sixteenths(rng, -16, 16));
+        }
+        t.put(seg + 0xc, sixteenths(rng, 0, 16));
+        t.put(seg + 0x1c, sixteenths(rng, -4, 20));
+        t.put(seg + 0x18, 0u32);
+    }
+    // the children hang off random segments, linked by +8
+    for &c in children {
+        let seg = o + 0x40 + 0x30 * rng.below(n);
+        let head = t.b.read::<u32>(seg + 0x18);
+        t.put(c + 8, head);
+        t.put(c + 0xc, rng.next());
+        t.put(seg + 0x18, c);
+    }
+    o
+}
+
+/// One `KeThBP_Update` case: a template, a guide path of 1..=4 points, a
+/// pool, a belt path with children; `flags` its `+0x3e`.
+#[allow(clippy::too_many_lines)] // the whole object graph
+fn r5k_case(t: &mut Twin, rng: &mut Xorshift, flags: u16) -> u32 {
+    let tm = t.alloc(0x50);
+    t.put(tm + 0x20, sixteenths(rng, 4, 48));
+    t.put(tm + 0x24, sixteenths(rng, 0, 16));
+    t.put(tm + 0x28, sixteenths(rng, 0, 30 * 16));
+    t.put(tm + 0x2c, sixteenths(rng, 0, 16));
+    t.put(tm + 0x34, sixteenths(rng, 0, 6 * 16));
+    t.put(tm + 0x3c, sixteenths(rng, 0, 8));
+    t.put(tm + 0x40, u8::try_from(rng.below(5)).unwrap());
+    t.put(tm + 0x41, [0xffu8, 0, 1, 3][rng.below(4) as usize]);
+    t.put(tm + 0x42, u8::try_from(rng.below(12)).unwrap());
+    // the guide path: position, reach flag, far radius, weight, near, next
+    let points = 1 + rng.below(4);
+    let path = t.alloc((0x20 * points) as usize);
+    for i in 0..points {
+        let pt = path + 0x20 * i;
+        for w in 0..3 {
+            t.put(pt + 4 * w, sixteenths(rng, -60 * 16, 60 * 16));
+        }
+        t.put(pt + 0xc, if rng.below(2) == 0 { 0 } else { 0x3f80_0000u32 });
+        // now and then a near radius wide enough to hold the head
+        let near = if rng.below(4) == 0 {
+            rng.range(60 * 16, 120 * 16)
+        } else {
+            rng.range(0, 20 * 16)
+        };
+        t.put(pt + 0x18, sixteenths(rng, near, near + 1));
+        t.put(pt + 0x10, sixteenths(rng, near + 16, near + 60 * 16));
+        t.put(pt + 0x14, sixteenths(rng, 0, 16));
+        t.put(pt + 0x1c, if i + 1 < points { pt + 0x20 } else { 0 });
+    }
+    // the pool of child belt paths (KeThResHd_Init: 2-segment blocks)
+    let (blocks, size) = (rng.below(4), 1 + rng.below(3));
+    let pool = t.alloc((0x10 + 0xe0 * 4) as usize);
+    both_call(t, KE_TH_RES_HD_INIT, &[pool, blocks, size]);
+    let kids: Vec<u32> = (0..rng.below(3))
+        .map(|_| r5k_belt(t, rng, 2, 0, &[]))
+        .collect();
+    let n = 2 + rng.below(7);
+    let o = r5k_belt(t, rng, n, flags, &kids);
+    // now and then a step all but complete (time + speed just short of a
+    // whole number)
+    if rng.below(6) == 0 {
+        #[allow(clippy::cast_precision_loss)]
+        let whole = rng.below(30) as f32;
+        t.put(o + 0x18, (whole + 0.5).to_bits());
+        t.put(tm + 0x34, 0.499_999_97f32.to_bits());
+    }
+    // now and then the steps taken equal the time's (running stops)
+    if rng.below(6) == 0 {
+        let time = f32::from_bits(t.b.read::<u32>(o + 0x18));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        t.put(o + 0x1c, time as u16);
+    }
+    // no path point only where the update stops on it (running)
+    let none = flags & 0x20 != 0 && rng.below(6) == 0;
+    t.put(o + 0x14, if none { 0 } else { path });
+    // the thing: its matrix (+0, the wobble's rotations start from it)
+    // and its parts
+    let p = t.alloc(0x50);
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 16 } else { 0 };
+        t.put(p + 4 * i, sixteenths(rng, ident - 3, ident + 3));
+    }
+    t.put(p + 0x40, o);
+    // the start point: the path's first or a later one
+    t.put(p + 0x44, path + 0x20 * rng.below(points));
+    t.put(p + 0x48, pool);
+    t.put(p + 0x4c, tm);
+    p
+}
+
+/// The flag words the cases draw from (`+0x3e`): frozen 2, capped 4,
+/// done 8, running 0x20, held 0x40, loop 0x80, start 0x100, 0x200
+/// (cleared when capped), normalise 0x400, path end 0x800, 0x1000 (passed
+/// to children), steering 0x2000.
+const R5K_FLAGS: [u16; 12] = [
+    2, 4, 8, 0x20, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
+];
+
+fn r5k_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let work = t.stack_scratch(0x800);
+    for _ in 0..cases {
+        let mut flags = 0u16;
+        for f in R5K_FLAGS {
+            if rng.below(4) == 0 {
+                flags |= f;
+            }
+        }
+        let p = r5k_case(t, rng, flags);
+        t.set(vu0::VU0_R, 0x3f80_0000 | (rng.next() & 0x007f_ffff));
+        t.same(
+            "KeThBP_Update",
+            |o| o.eax(0x0076_37f0, &[p]),
+            |m| ffx_field::keth::ke_th_bp_update(m, p, work, call, fcall),
+        );
+    }
+}
+
+/// Group K on the image.
+#[test]
+fn r5k_belt_path_update_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0091_0001);
+    r5k_cases(&mut t, &mut rng, 300);
+}
+
+/// Group K on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r5k_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0091_0002);
+    r5k_cases(&mut t, &mut rng, 150);
+}
