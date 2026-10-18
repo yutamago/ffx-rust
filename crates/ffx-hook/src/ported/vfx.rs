@@ -1919,6 +1919,31 @@ ported! {
     op_et_astatus_effect_off @ 0x007f_b000 => extern "C" fn op_et_astatus_effect_off(chr: u32) {
         et::bridge::op_et_astatus_effect_off(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppKeLnsClmUpdate(obj, key, prog)`.
+    pppKeLnsClmUpdate @ 0x0075_a6a0 => extern "C" fn ppp_ke_lns_clm_update(obj: u32, key: u32, prog: u32) {
+        lns::bridge::ppp_ke_lns_clm_update(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_change_chr_status_en()`.
+    opus_change_chr_status_en @ 0x007f_e0f0 => extern "C" fn opus_change_chr_status_en() -> u32 {
+        // the original's locals: the index map and both flag copies
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_chr_status_en(&mut mem(), at)
+    }
+    /// `opus_change_eff_status_en_007fe280()`.
+    opus_change_eff_status_en_007fe280 @ 0x007f_e280 => extern "C" fn opus_change_eff_status_en() -> u32 {
+        // the original's local index map
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_eff_status_en(&mut mem(), at)
+    }
+    /// `opus_change_osu_en_by_chr_status(list)`.
+    opus_change_osu_en_by_chr_status @ 0x007f_e340 => extern "C" fn opus_change_osu_en_by_chr_status(list: u32) -> u32 {
+        // the original's local index map
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_osu_en_by_chr_status(&mut mem(), list, at)
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

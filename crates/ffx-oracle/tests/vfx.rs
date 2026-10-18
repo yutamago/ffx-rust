@@ -12905,3 +12905,135 @@ fn round27f_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round28a_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_e0f0);
+        let got = p.alloc(4);
+        // set_ptr32 and KeLnsClm_SetShp recorded, get_ptr32 answers from a cell
+        deref_recorder(&mut p, 0x00a4_4700, &[0]);
+        deref_recorder_with(&mut p, 0x00a4_4650, &[0], Some(got));
+        deref_recorder(&mut p, 0x0076_9cd0, &[0, 0, 0]);
+        let (obj, key, prog, offs) = (p.alloc(0x200), p.alloc(0x20), p.alloc(0x10), p.alloc(8));
+        let (env, table) = (p.alloc(0x40), p.alloc(0x100));
+        let env_at = p.alloc(4);
+        p.set(p.sym(ffx_vfx::draw::bridge::ENV_SLOT), env_at);
+        p.set(env_at, env);
+        let frame = p.b.stack_range().start + 0x100;
+        let chr_tab = p.sym(et::bridge::CHR.sym);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let (list, units, idx) = (p.alloc(0x40), p.alloc(0x1000), p.alloc(0x60));
+        for round in 0..1500 {
+            // pppKeLnsClmUpdate
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(env, 0x40, &mut rng);
+            p.set(env + 0x24, table);
+            p.set(prog + 0xc, offs);
+            p.set(offs, rng.below(0x40) * 4);
+            p.set(offs + 4, rng.below(0x40) * 4);
+            let any = rng.next();
+            let cur = rng.pick(&[any, any.wrapping_add(1)]);
+            p.set(key, cur);
+            p.set(obj + 0xc, any);
+            let shape = rng.pick(&[0xffffu32, 0, 3, 0x3f]);
+            p.set(key + 4, shape);
+            let slot = table + 4 * shape;
+            p.set(got, if rng.chance(30) { slot } else { rng.next() });
+            p.check(
+                &format!("pppKeLnsClmUpdate round {round}"),
+                0x0075_a6a0,
+                &[obj, key, prog],
+                |m| {
+                    lns::bridge::ppp_ke_lns_clm_update(m, obj, key, prog, &mut call_original);
+                    None
+                },
+            );
+            // the characters: handles in g_EtChrHandles, some moved
+            p.fill(handles, 0xf0 * 4, &mut rng);
+            // sometimes nothing moved
+            let still = rng.chance(15);
+            for i in 0..240u32 {
+                let r = chr_tab + 0x20 * i;
+                p.fill(r, 0x20, &mut rng);
+                if rng.chance(30) {
+                    let u = rng.below(0xf0);
+                    let h = 0x1000 + u;
+                    p.set(handles + 4 * u, h);
+                    p.set(r, if rng.chance(90) { h } else { 0x9999 });
+                    let k = if still || rng.chance(50) {
+                        u
+                    } else {
+                        rng.below(0xf0)
+                    };
+                    p.set(r + 0xe, u16::try_from(k).unwrap());
+                } else {
+                    p.set(r, 0u32);
+                }
+            }
+            p.fill(p.sym(et::bridge::DRAW_FLAGS.sym), 0xf0, &mut rng);
+            p.fill(p.sym(et::bridge::DRAW_FLAGS2.sym), 0xf0, &mut rng);
+            match rng.below(3) {
+                0 => {
+                    p.check(
+                        &format!("opus_change_chr_status_en round {round}"),
+                        0x007f_e0f0,
+                        &[],
+                        |m| Some(et::bridge::opus_change_chr_status_en(m, frame)),
+                    );
+                }
+                1 => {
+                    for j in 0..512u32 {
+                        let r = eff + 0x20 * j;
+                        p.set(r, if rng.chance(70) { u32::MAX } else { rng.next() });
+                        p.set(r + 8, u8::try_from(rng.below(9)).unwrap());
+                        p.set(r + 9, u8::try_from(rng.below(9)).unwrap());
+                        for k in 0..16 {
+                            p.set(r + 0x10 + k, u8::try_from(rng.below(0xf0)).unwrap());
+                        }
+                    }
+                    p.check(
+                        &format!("0x007fe280 round {round}"),
+                        0x007f_e280,
+                        &[],
+                        |m| Some(et::bridge::opus_change_eff_status_en(m, frame)),
+                    );
+                }
+                _ => {
+                    p.fill(units, 0x1000, &mut rng);
+                    for i in 0..16u32 {
+                        p.set(
+                            units + 0x100 * i + 0x18,
+                            u8::try_from(rng.below(0xf0)).unwrap(),
+                        );
+                    }
+                    p.set(list + 0x20, units);
+                    // each unit in one list at most: a second remap would
+                    // read the map at 0xff, past its end (the original's
+                    // other locals)
+                    let first = rng.below(16);
+                    for (k, at) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+                        let k = u32::try_from(k).unwrap();
+                        let li = idx + 0x20 * k;
+                        p.set(list + at, li);
+                        let n = rng.below(6);
+                        for i in 0..n {
+                            let u = (first + 5 * k + i) % 16;
+                            p.set(li + 2 * i, u16::try_from(u).unwrap());
+                        }
+                        p.set(li + 2 * n, rng.pick(&[0xffffu16, 0x8000]));
+                    }
+                    p.check(
+                        &format!("opus_change_osu_en_by_chr_status round {round}"),
+                        0x007f_e340,
+                        &[list],
+                        |m| Some(et::bridge::opus_change_osu_en_by_chr_status(m, list, frame)),
+                    );
+                }
+            }
+        }
+    }
+}

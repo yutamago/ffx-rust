@@ -4022,7 +4022,7 @@
 0x0075a4f0 function pppKeLnsClmTDes           # fh v3:cg2 0x75a5e0
 0x0075a540 function pppKeLnsClmTDraw          # fh v3:exact 0x0075a630
 0x0075a610 function pppKeLnsClmTOtDraw        # the g_pppOtList draw pppKeLnsClmTCon registers (node area+0x40)
-0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
+0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790; (obj, key, prog): for the current key, work area = obj +0xa0 + [[prog+0xc]]: +0 = set_ptr32(obj +0xa0 + [[prog+0xc]+4]), shape +4 (0xffff clears, else KeLnsClm_SetShp unless already set), +0xa/+0xc/+0xe from key +0x12/+0x10/+0x17 (lns::bridge::ppp_ke_lns_clm_update)
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
 0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Crn): as pppKeLnsArndDraw with the key halves +0x10/+0x12 in the descriptor, KeLnsCrn_Draw (oracle parity)
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
@@ -6608,10 +6608,11 @@
 0x007fdc80 function opu_debug_reload          # g_MagicImports slot 717 (130 overlays), after opu_main_host: with the debug flag 0x02322790, per bit of 0x02321580 frees/reloads the debug oef2 objects (0x023215c0..0x023215dc) through op_et_encount_effect_free, 0x007e5c10, op_oef2_set2, 0x007e3b70; hidden from the dump
 0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50; (list, id), eax unread: the first g_EtEff record with id k: opu_eff_free_by_id(id), then every unit of index lists +0x10/+0x14/+0x18 with u16 +0x14 == k through opus_prog_off, opus_draw_off, yonExtMapDeleteId (as opu_unit_free_by_oef2)
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
-0x007fe0f0 function opus_change_chr_status_en    # layout: alphabetical run between opu_unit_free_by_oef2 and opus_change_chrhd_battle_to_ffx (1 unnamed in the gap); Switch 0x71003ef890 opus_change_chr_status_en is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007fe0f0 function opus_change_chr_status_en    # layout: alphabetical run between opu_unit_free_by_oef2 and opus_change_chrhd_battle_to_ffx (1 unnamed in the gap); Switch 0x71003ef890 opus_change_chr_status_en is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (): after opus_chr_index_map, each live g_EtChr record takes its draw flags (both tables) from its old index +0xe and +0xe = the new one (et::bridge::opus_change_chr_status_en)
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
 0x007fe200 function opus_change_chrhd_ffx_to_battle # fh v3:exact 0x007fe120
-0x007fe340 function opus_change_osu_en_by_chr_status # fh v3:exact 0x007fe260
+0x007fe280 function opus_change_eff_status_en_007fe280 # ours: (): after opus_chr_index_map, every live g_EtEff record's character indices (byte +8 of them at +0x10, byte +9 at +0x18) remapped to the map's low byte; sits between opus_change_chr_status_en and opus_change_osu_en_by_chr_status (et::bridge::opus_change_eff_status_en)
+0x007fe340 function opus_change_osu_en_by_chr_status # fh v3:exact 0x007fe260; (list): after opus_chr_index_map, the unit character index (+0x18) of every unit in the list's index lists +0x10/+0x14/+0x18 remapped, 0xff and up -> 0xff (et::bridge::opus_change_osu_en_by_chr_status)
 0x007fe430 function op_is_not_0119fe90        # (x) -> -1 unless x is the word at 0x0119fe90, else 0
 0x007fe450 function opus_chr_index_map        # (out) -> moved: out = 240 u16 0xffff, then out[record +0xe] = the record handle's place in g_EtChrHandles; counts the places that differ from +0xe
 0x007fe4c0 function op_is_not_encount         # (x) -> -1 unless x is g_OpusEncount, else 0
