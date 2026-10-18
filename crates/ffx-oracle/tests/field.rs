@@ -15509,3 +15509,58 @@ fn r6b_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0062_0002);
     r6b_cases(&mut t, &mut rng, 150, true);
 }
+
+// ---- field agent r6, group C: the renderer's initial state ----
+
+/// `yiRender_create` on `t` at `r` (`real`: the snapshot's own object
+/// first), its `yiMalloc` a bump allocator.
+fn r6c_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let next = t.alloc(4);
+    let arena = t.alloc(0x10_0000);
+    t.cave_from(0, &[(Some(0x0090_bbd0), bump_stub(next))]);
+    for k in 0..cases {
+        t.put(next, arena);
+        if !(real && k == 0) {
+            // the object's words the function leaves alone stay random
+            for _ in 0..0x400u32 {
+                let o = rng.below(0xb_e100 / 4) * 4;
+                t.put(r + o, rng.next());
+            }
+            for o in (0x67b80u32..0x68800)
+                .step_by(4)
+                .chain((0xba3c0..0xba440).step_by(4))
+            {
+                t.put(r + o, rng.next());
+            }
+            t.put(r + 0x67f20, rng.below(6));
+        }
+        let direct = [0u32, 0, 1, 0x40, 0x123][rng.below(5) as usize];
+        let (data, refs) = (rng.below(0x400), rng.below(0x400));
+        t.same(
+            "yiRender_create",
+            |o| o.eax(0x0090_c400, &[r, direct, data, refs]),
+            |m| ffx_field::yi::bridge::yi_render_create(m, r, [direct, data, refs], call),
+        );
+    }
+}
+
+/// Group C on the image.
+#[test]
+fn r6c_render_create_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0063_0001);
+    let r = t.alloc(0xb_e100);
+    r6c_cases(&mut t, &mut rng, r, 30, false);
+}
+
+/// Group C on the snapshot (`FFX_SNAPSHOT`): the game's renderer object.
+#[test]
+fn r6c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0063_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r6c_cases(&mut t, &mut rng, r, 20, true);
+}

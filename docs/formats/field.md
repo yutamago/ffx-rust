@@ -1983,6 +1983,33 @@ edge colour before and after its step at the two ends, the centre's
 for the middle pair; the outer pairs' alpha is 0. Then the ends move
 on (`end0 = end1`, `end1 = next`, the offset kept) and the walk steps.
 
+## The renderer's initial state (field agent r6)
+
+`yiRender_create(r, direct, data, refs)` (`0x0090c400`; `yiInit` calls
+it once with `g_YiRender, 0, 0x3000, 0x2400`, and `yiRender_destroy`
+frees two of its buffers) sets up the renderer object:
+
+| Offset | Value |
+|---|---|
+| `+0x67f38` | `FFXSamp0ViewScreenMatrix(m, 512, 1, 0.47, 2048, 2048, 1, 16777215, 2, 65536)` |
+| `+0x67f78`, `+0x67fb8`, `+0x67ff8`, `+0x68038`, `+0x68078` | Identity |
+| `+0x680b8`, `+0x680f8` | Rows `(0, 0, 0, 1)` |
+| `+0x67ba8`.. | Seven VU1 matrix packets (`yiPkUnpackMatrixDma` layout) of `+0x67f38` (VU address 8), the next three identities (0xc each), `+0x680b8` (0x18), `+0x680f8` (0x1c), `+0x68078` (0x20) |
+| `+0x681a8` / `+0x681b8` | `(2048, 2048, 2^23, 1)` / `(0x3a043217, 0x3a043217, 0x34000001, 1)` (`.rdata` bits; about 1/1983 and 2^-23) |
+| `+0x681c8` / `+0x681d8` | Bounds `(f32::MAX x3, 1)` / `(-f32::MAX x3, 1)` |
+| `+0x681f8` / `+0x6820c` / `+0x6821c` | `10.0 x4` / `1.0 x4` / `0 x4` |
+| `+0x68208` / `+0x68340` / `+0x68374` | `0x80808080` / `0x80000000` / `0x20808080` |
+| `+0xba3cc` | `direct` x 16 bytes (`yiMalloc`; start, cursor, end, count; all 0 when `direct` is 0) |
+| `+0xba3dc` | `data` x 16 bytes (start, cursor, end, count) |
+| `+0xba3ec` | `refs` x 16 bytes (start, cursor, 0, count) |
+| `+0x9cab4` | `Sg_VramGetAddrZ()` |
+| `+0x68360` / `+0x68368` | 1024.0 / `(2048, 2048, 0)` |
+
+Then `yiAnimInfo_init(+0x9cab8)`, `yiVramSetup(0, 0)`,
+`yiRender_initpacket`, `yiScreff_init`, `yiRender_initfog`,
+`yiClutAlloc_init(+0x67f20)` and `yiClutAlloc_makepacket(r, 0, 0x48)`,
+whose `eax` it returns.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
