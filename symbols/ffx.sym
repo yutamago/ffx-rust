@@ -4876,7 +4876,7 @@
 0x007849d0 function MsDebugFullItem           # fh v3:exact 0x00784a90
 0x00784ac0 function MsDebugFullMember         # fh v3:exact 0x00784b80
 0x00784b60 function MsDebugFullSummon            # layout+callees: sorts between MsDebugFullMember and MsExchangeSaveParty, and its named callees match the Switch 0x7100370f30 MsDebugFullSummon's (similarity 1.00: MsSetSavePlyJoin); symbols from Fahrenheit's server export
-0x00784d00 function MsExchangeSaveParty       # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2); was Party_SwapIn
+0x00784d00 function MsExchangeSaveParty       # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2); was Party_SwapIn; the reserve's entries above 7 cleared first; chr's place: reserve, front, else (may join) the first empty reserve then front slot; neither fixed (MsGetSavePlyFix); -1 swapped, else 0; ported (battle round 22, ffx_battle::save)
 0x00784e40 function MsGetBattleMessageFlag       # layout: alphabetical run between MsExchangeSaveParty and MsGetCheckEnglish (1 unnamed in the gap); Switch 0x7100372350 MsGetBattleMessageFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00784e60 function MsGetCheckEnglish         # fh v3:exact 0x00784f20
 0x00784e80 function MsGetGIL                  # fh v3:bsim1.00+call.cs 0x00784f40 cdecl
@@ -4906,7 +4906,7 @@
 0x007852d0 function MsGetSaveOutParty         # fh v3:bsim1.00 0x00785390
 0x007852f0 function MsGetSavePartyMember      # fh v3:bsim1.00+call.cs 0x007853b0 cdecl
 0x00785330 function MsGetSavePlayerPtr        # (i < 0x12) -> 0x94-byte character record at 0x0113205c + i*0x94 (+0x1c/+0x20 cur HP/MP?, +0x24/+0x28 max HP/MP?); was Party_GetChar
-0x00785360 function MsGetSavePlyFix              # layout: alphabetical run between MsGetSavePlayerPtr and MsGetSavePlyJoin (1 unnamed in the gap); Switch 0x7100373e50 MsGetSavePlyFix is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00785360 function MsGetSavePlyFix              # layout: alphabetical run between MsGetSavePlayerPtr and MsGetSavePlyJoin (1 unnamed in the gap); Switch 0x7100373e50 MsGetSavePlyFix is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ply_save +0x2c bit 2 (0/1); hooked by ffx-auto; ffx_battle::save::ms_get_save_ply_fix is the bridge MsExchangeSaveParty calls (round 22)
 0x00785380 function MsGetSavePlyJoin          # fh v3:exact+call.cs 0x00785440 cdecl
 0x007853a0 function MsGetSavePlyJoined        # fh v3:bsim1.00+call.cs 0x00785460 cdecl
 0x007853c0 function MsGetSavePlyLeft             # layout: alphabetical run between MsGetSavePlyJoined and MsGetSaveSP (1 unnamed in the gap); Switch 0x7100373890 MsGetSavePlyLeft is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5416,7 +5416,7 @@
 0x0079af60 function MsGetRamChrSummon         # fh v3:bsim1.00 0x0079af70
 0x0079af80 function MsGetRamPartyMember          # layout: alphabetical run between MsGetRamChrSummon and MsGetStatusThreat (1 unnamed in the gap); Switch 0x710036c690 MsGetRamPartyMember is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079afc0 function MsGetStatusThreat         # fh v3:exact 0x0079afd0
-0x0079aff0 function MsMergeDamage                # layout+callees: sorts between MsGetStatusThreat and MsResetAutoStatus, and its named callees match the Switch 0x710036bb80 MsMergeDamage's (similarity 1.00: MsBtlChrNumCheck, MsGetChr, MsGetChrCommand); symbols from Fahrenheit's server export
+0x0079aff0 function MsMergeDamage                # layout+callees: sorts between MsGetStatusThreat and MsResetAutoStatus, and its named callees match the Switch 0x710036bb80 MsMergeDamage's (similarity 1.00: MsBtlChrNumCheck, MsGetChr, MsGetChrCommand); symbols from Fahrenheit's server export; (chr, target): folds the target's results left for chr's running command into one at the next's place (ORs of +2/+4/+0x18/+0x1a, sums of +0x1c-+0x28, hit kind), returns how many; ported (battle round 22, ffx_battle::cue)
 0x0079b170 function MsSeveralStoresCopyIntoTable_0079b170 # auto-port shape (several stores: copy into table, cdecl): u8[((a0 * 0x4) + &0x0112aa00)] = (a1 & 0xff); t0 = u16[(a2 + (a1 * 0x4))]; u16[((a0 * 0x4) + &0x0112aa02)] = t0; return ((a2 & 0xffff0000) | t0); callers: MsGetCTBlist; name ours
 0x0079b1a0 function MsResetAutoStatus         # fh v3:exact 0x0079b1b0
 0x0079b290 function MsSetAutoStatus           # fh v3:exact 0x0079b2a0

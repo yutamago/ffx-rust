@@ -1,7 +1,10 @@
 //! A party actor from the save (`ffx_battle::save_param`, round 22:
-//! `MsSetRamChrParam`) against the original, as in `battle.rs`: the shared
-//! battle world, random save records and equipment (pieces with no, empty
-//! and real auto-abilities), on the image alone and on both snapshots.
+//! `MsSetRamChrParam`) and party swaps (`ffx_battle::save`:
+//! `MsExchangeSaveParty` and its `MsGetSavePlyFix` bridge) against the
+//! original, as in
+//! `battle.rs`: the shared battle world, random save records, equipment
+//! (pieces with no, empty and real auto-abilities) and party slots, on the
+//! image alone and on both snapshots.
 
 // a and b are the two oracles throughout
 #![allow(clippy::many_single_char_names)]
@@ -52,6 +55,45 @@ fn dress(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, chr: u32
     }
 }
 
+/// A party swap: the 20 party slots (characters 0-9 and 0xff), the first
+/// ten characters' join and fixed bits, the character and slot at random.
+fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_battle::save::bridge as sv;
+    let party = sv::IN_PARTY.ptr(b).addr;
+    let slots: Vec<u8> = (0..0x14)
+        .map(|_| match rng.below(4) {
+            0 | 1 => 0xff,
+            _ => u8::try_from(rng.below(10)).unwrap(),
+        })
+        .collect();
+    poke(a, b, party, &slots);
+    for chr in 0..10 {
+        let flags = u8::try_from(rng.below(8)).unwrap() | (rng.byte() & 0xf8);
+        poke(
+            a,
+            b,
+            PLY_SAVE.ptr(b).addr + chr * sp::PLY_SAVE_SIZE + 0x2c,
+            &[flags],
+        );
+    }
+    let chr = [0xffff_ffff, 0xff, 0x105, rng.below(10), rng.below(10)][rng.below(5) as usize];
+    let slot = [-1, rng.range(0, 0x14), rng.range(0, 3), rng.range(0, 0x14)][rng.below(4) as usize];
+    twin(
+        "MsExchangeSaveParty",
+        a,
+        b,
+        0x0078_4d00,
+        &[chr, slot.cast_unsigned()],
+        ALL,
+        |m| sv::ms_exchange_save_party(m, chr, slot),
+    );
+    same("MsExchangeSaveParty", a, b);
+    let c = rng.below(10) | rng.next() << 8;
+    twin("MsGetSavePlyFix", a, b, 0x0078_5360, &[c], ALL, |m| {
+        sv::ms_get_save_ply_fix(m, c)
+    });
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let aab = ffx_kernel::bridge::A_ABILITY;
@@ -66,6 +108,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             sp::ms_set_ram_chr_param(m, chr).cast_unsigned()
         });
         same("MsSetRamChrParam", a, b);
+        exchange(a, b, rng);
     }
 }
 

@@ -341,6 +341,72 @@ pub mod bridge {
         left
     }
 
+    /// A damage result (`0x2c` bytes from a buffer's `+0x18`).
+    const RESULT: u32 = 0x2c;
+
+    /// `MsMergeDamage(chr, target)` (`0x0079aff0`): in each of `target`'s
+    /// two buffers for `chr`'s (low byte) running command, the results
+    /// left (from `+0` the next to `+1` the count) folded into one at the
+    /// next's place, which becomes the last (`+1` = next + 1): a copy of
+    /// the last result with bytes `+2`, `+4` and words `+0x18`, `+0x1a`
+    /// the ORs of the left ones', `+0x1c`-`+0x28` their sums, and `+1`
+    /// (the hit kind) 2 when one is 2, else 0 when one is 0 and it was
+    /// still 1, else 1. Returns how many results were folded; 0 for no
+    /// actor.
+    pub fn ms_merge_damage(mem: &mut impl Mem, chr: u32, target: u32) -> i32 {
+        let c = chr & 0xff;
+        if ms_btl_chr_num_check(c) == 0 {
+            return 0;
+        }
+        let id = byte(mem, crate::actor::bridge::ms_get_chr_command(mem, c), 2);
+        let t = ms_get_chr(mem, target);
+        let mut folded = 0i32;
+        for o in BUFFERS {
+            let b = t.wrapping_add(o);
+            if u32::from(byte(mem, b, 2)) != c || byte(mem, b, 3) != id {
+                continue;
+            }
+            let (next, count) = (u32::from(byte(mem, b, 0)), u32::from(byte(mem, b, 1)));
+            let entry = |k: u32| b.wrapping_add(0x18).wrapping_add(k.wrapping_mul(RESULT));
+            let mut merged = [0u8; RESULT as usize];
+            mem.read_bytes(entry(count.wrapping_sub(1)), &mut merged);
+            let (mut flags2, mut flags4) = (0u8, 0u8);
+            let (mut words, mut sums) = ([0u16; 2], [0i32; 4]);
+            let mut kind = 1u8;
+            for k in next..count {
+                let e = entry(k);
+                flags2 |= byte(mem, e, 2);
+                flags4 |= byte(mem, e, 4);
+                for (w, at) in words.iter_mut().zip([0x18u32, 0x1a]) {
+                    *w |= mem.read::<u16>(e.wrapping_add(at));
+                }
+                for (sum, at) in sums.iter_mut().zip([0x1cu32, 0x20, 0x24, 0x28]) {
+                    *sum = sum.wrapping_add(mem.read(e.wrapping_add(at)));
+                }
+                match byte(mem, e, 1) {
+                    0 if kind == 1 => kind = 0,
+                    2 => kind = 2,
+                    _ => {}
+                }
+            }
+            if next < count {
+                folded += (count - next).cast_signed();
+            }
+            merged[1] = kind;
+            merged[2] = flags2;
+            merged[4] = flags4;
+            merged[0x18..0x1a].copy_from_slice(&words[0].to_le_bytes());
+            merged[0x1a..0x1c].copy_from_slice(&words[1].to_le_bytes());
+            for (k, sum) in sums.iter().enumerate() {
+                merged[0x1c + 4 * k..0x20 + 4 * k].copy_from_slice(&sum.to_le_bytes());
+            }
+            mem.write_bytes(entry(next), &merged);
+            let last = byte(mem, b, 0).wrapping_add(1);
+            mem.write(b.wrapping_add(1), last);
+        }
+        folded
+    }
+
     /// `MsGetTargetList(chr, &n)` (`0x007b7090`): `chr`'s (low byte) target
     /// list (`+0xd40`, 31 bytes): its running command's targets (`+0x10`
     /// words after its `+2`, else the actor's `+0xdc0`), party members

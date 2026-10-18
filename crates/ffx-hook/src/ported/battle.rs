@@ -3721,6 +3721,14 @@ ported! {
     msFieldItemGet @ 0x0079_9420 => extern "C" fn ms_field_item_get(i: u32, spoils: u32) {
         reward::ms_field_item_get(&mut mem(), &mut call_ptr, i, spoils);
     }
+    /// `MsMergeDamage(chr, target)`.
+    MsMergeDamage @ 0x0079_aff0 => extern "C" fn ms_merge_damage(chr: u32, target: u32) -> i32 {
+        cue::ms_merge_damage(&mut mem(), chr, target)
+    }
+    /// `MsExchangeSaveParty(chr, slot)`.
+    MsExchangeSaveParty @ 0x0078_4d00 => extern "C" fn ms_exchange_save_party(chr: u32, slot: i32) -> u32 {
+        save::ms_exchange_save_party(&mut mem(), chr, slot)
+    }
     /// `MsWeaponNameNum_Weapon_007a1c00(gear)`.
     MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
         gear::ms_weapon_name_num_weapon(&mem(), at)

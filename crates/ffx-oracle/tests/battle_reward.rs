@@ -76,6 +76,7 @@ fn families() -> Vec<Vec<u16>> {
         vec![
             ab::BREAK_HP_LIMIT,
             ab::BREAK_MP_LIMIT,
+            ab::RIBBON,
             ab::HP_STROLL,
             ab::MP_STROLL,
             ab::PICKPOCKET,

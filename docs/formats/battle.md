@@ -910,6 +910,24 @@ actor's `+0xd80`, at most 0x40
 swaps of `i = brnd(0x10) % n` and `j = (i + 1 + (n < 3 ? 0 : brnd(0x10) %
 (n − 2))) % n`.
 
+### Damage merges and party swaps
+
+`MsMergeDamage(chr, target)` (`0x0079aff0`, `ffx_battle::cue`) folds the
+results left in each of the target's buffers for `chr`'s running command
+(from `+0` the next to `+1` the count) into one at the next's place,
+which becomes the last: a copy of the last result whose bytes `+2`, `+4`
+and words `+0x18`, `+0x1a` are the ORs of the folded ones', `+0x1c`-
+`+0x28` their sums, and hit kind `+1` 2 when one is 2, 0 when one is 0
+(before any 2), else 1. It returns how many it folded.
+
+`MsExchangeSaveParty(chr, slot)` (`0x00784d00`, `ffx_battle::save`) swaps
+`chr` into one of the 20 party slots (0-2 the front, 3-19 the reserve;
+entries above 7 count as none): `chr`'s own place is found in the reserve,
+then the front; a character in neither that may join (`ply_save` `+0x2c`
+bit 0) takes the first empty reserve slot, else the first empty front one.
+Neither `chr` nor the slot's character may be fixed (bit 2,
+`MsGetSavePlyFix`, `0x00785360`). It returns -1 when it swapped.
+
 ### Test stubs
 
 `battle_target`'s stub area from `Ms_Gui_BattleConsoleProc` to
