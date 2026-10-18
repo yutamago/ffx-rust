@@ -82,15 +82,31 @@ def main():
         cmd = ["cargo", "test", "--release", "-p", "ffx-oracle"]
         for t in oracle:
             cmd += ["--test", t]
+        # build once, then run the image and both snapshots side by side
+        run(cmd + ["--no-run"], env, dry)
+        os.environ.pop("FFX_SNAPSHOT", None)
+        procs = []
         for snap in ("", "field", "battle"):
-            e = dict(env)
+            e = {**os.environ, **env}
             if snap:
                 e["FFX_SNAPSHOT"] = str(SNAPS / f"{snap}.snap")
-            print(f"== oracle {'image only' if not snap else snap}")
-            if not snap:
-                if not dry:
-                    os.environ.pop("FFX_SNAPSHOT", None)
-            run(cmd, e, dry)
+            name = snap or "image only"
+            print(f"== oracle {name}: $ {' '.join(cmd)}", flush=True)
+            if dry:
+                continue
+            out = open(f"/tmp/verify-oracle-{snap or 'image'}.log", "w+")
+            procs.append((name, out, subprocess.Popen(cmd, cwd=REPO, env=e, stdout=out, stderr=subprocess.STDOUT)))
+        failed = []
+        for name, out, p in procs:
+            p.wait()
+            out.seek(0)
+            print(f"== oracle {name}", flush=True)
+            sys.stdout.write(out.read())
+            sys.stdout.flush()
+            if p.returncode:
+                failed.append(name)
+        if failed:
+            sys.exit(f"failed: {' '.join(cmd)} ({', '.join(failed)})")
     if any(f.startswith("crates/") for f in changed):
         run(["python3", "-I", "tools/check-ported.py"], env, dry)
         run(["python3", "-I", "tools/check-clobber.py"], env, dry)
