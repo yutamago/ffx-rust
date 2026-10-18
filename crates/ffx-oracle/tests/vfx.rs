@@ -11834,3 +11834,133 @@ fn opu_spl_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opp_anmm_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_24b0);
+        let cells = p.alloc(16);
+        // the render, character and bone calls stand in; the local
+        // set_ptr32 fills is recorded by value
+        for (sym, words, ret) in [
+            (0x0064_53d0u32, &[0u8, 0][..], Some(cells)),
+            (0x0064_5280, &[0, 0], None),
+            (0x0083_3d10, &[0, 0, 0, 0], None),
+            (0x0080_5400, &[0, 0], None),
+            (0x0080_5430, &[0, 0, 0], None),
+            (0x0071_b8a0, &[0, 0, 1, 0, 0], None),
+            (0x0064_58a0, &[0, 0], None),
+            (0x0071_2c30, &[0], Some(cells + 4)),
+            (0x0071_7610, &[0], None),
+            (0x0071_1460, &[0, 0, 1, 0, 0, 0], None),
+            (0x0071_7600, &[], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        float_stub(&mut p, 0x0082_ab60, cells + 8);
+        let host = p.alloc(0x400);
+        let unit = p.alloc(0x100);
+        let head = p.alloc(0x20 + 0x50 * 4);
+        let set = p.alloc(0x100);
+        let parts = p.alloc(0x1000);
+        let cmds = p.alloc(0x40);
+        let anim = p.alloc(0x80);
+        let vu = p.sym(0x00c8_f500);
+        let handles = p.sym(0x012a_8100);
+        let draw = p.sym(0x012a_84c0);
+        // the local the port fills: in the oracle's own stack, outside the
+        // compared memory
+        let frame = p.b.stack_range().start + 0x100;
+        // command lists: vec_set x, y, z then wait 2; or the end command
+        p.set(cmds, 0x7004u16);
+        p.set(cmds + 8, 0x0201u16);
+        p.set(cmds + 0x20, 0u16);
+        for _ in 0..1500 {
+            p.fill(host, 0x400, &mut rng);
+            for k in 0..0x40 {
+                let v = rng.float();
+                p.set(host + 0xb0 + 4 * k, v);
+            }
+            p.fill(vu, 0x500, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(set, 0x100, &mut rng);
+            p.fill(parts, 0x1000, &mut rng);
+            for k in 1..4 {
+                let v = u16::try_from(rng.below(0x400)).unwrap();
+                p.set(cmds + 2 * k, v);
+            }
+            p.set(host + 0x220, unit);
+            p.set(unit + 0xa8, head);
+            p.set(unit + 0xb8, 0u16);
+            p.set(set + 0x20, parts);
+            let n = rng.below(5);
+            p.set(head, u16::try_from(n).unwrap());
+            p.set(head + 4, rng.next());
+            for k in 0..16 {
+                p.set(
+                    parts + 0x100 * k + 0x18,
+                    u8::try_from(rng.below(240)).unwrap(),
+                );
+            }
+            for k in 0..240 {
+                p.set(draw + k, u8::try_from(rng.below(4)).unwrap());
+                p.set(handles + 4 * k, rng.next());
+            }
+            p.set(cells, rng.pick(&[0u32, 1]));
+            p.set(cells + 4, rng.next());
+            // Ch_GetDataScale's ST0 reaches the port as f64: no NaN payloads
+            let ds = finite(&mut rng);
+            p.set(cells + 8, ds);
+            // the texture animation: 1..3 frames, frame data at +0x40
+            let frames = rng.below(3) + 1;
+            p.set(anim + 4, u16::try_from(frames).unwrap());
+            for f in 0..frames {
+                p.set(anim + 0x10 + 8 * f, 0x40u16);
+                p.set(
+                    anim + 0x12 + 8 * f,
+                    rng.pick(&[0x200u16, 0x7ff, 0xfe00, 0, 0xffff, 0xfdff]),
+                );
+                p.set(anim + 0x14 + 8 * f, rng.pick(&[0u8, 0x80]));
+            }
+            p.fill(anim + 0x40, 0x40, &mut rng);
+            p.set(anim + 0x44, 8u32);
+            for s in 0..4 {
+                let w = head + 0x20 + 0x50 * s;
+                for k in 0..0x14 {
+                    let v = rng.float();
+                    p.set(w + 4 * k, v);
+                }
+                p.set(w, rng.pick(&[0, cmds, cmds, cmds + 0x20]));
+                p.set(w + 4, if rng.chance(70) { anim } else { 0 });
+                p.set(w + 8, rng.pick(&[0u8, 0x80]));
+                p.set(w + 9, rng.pick(&[1u8, 3]));
+                p.set(w + 0xa, rng.pick(&[1u8, 2]));
+                p.set(w + 0xb, u8::try_from(rng.below(frames + 1)).unwrap());
+                p.set(w + 0xc, u16::try_from(rng.below(0x10000)).unwrap());
+                p.set(w + 0xe, u16::try_from(rng.below(0x100)).unwrap());
+                for k in 0..4 {
+                    p.set(w + 0x1c + k, u8::try_from(rng.below(256)).unwrap());
+                    p.set(w + 0x2c + k, u8::try_from(rng.below(256)).unwrap());
+                }
+                p.set(w + 0x3c, u16::try_from(rng.below(0x10000)).unwrap());
+                p.set(w + 0x3e, u16::try_from(rng.below(0x100)).unwrap());
+                let e = f32::from(u8::try_from(rng.below(20)).unwrap());
+                p.set(w + 0x40, e);
+                p.set(w + 0x44, e + 1.0);
+                p.set(w + 0x4c, u16::try_from(rng.below(16)).unwrap());
+                p.set(w + 0x4e, u8::try_from(rng.below(7)).unwrap());
+            }
+            p.check("opp_anmm", 0x0081_24b0, &[host, set], |m| {
+                Some(anmm::bridge::opp_anmm(
+                    m,
+                    host,
+                    set,
+                    frame,
+                    &mut call_original,
+                    &mut call_original_f,
+                ))
+            });
+        }
+    }
+}

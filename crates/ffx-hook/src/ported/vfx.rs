@@ -1638,6 +1638,13 @@ ported! {
     // opp_anmm's sprite commands (host, set, cmd, work) -> next command.
     // The random ones' extra callee stack words (the original's saved
     // registers and return address) only reach VU0 scratch: zeros here.
+    /// `opp_anmm(host, set)`.
+    opp_anmm @ 0x0081_24b0 => extern "C" fn opp_anmm(host: u32, set: u32) -> u32 {
+        // the original's local at [ebp - 0xc] (set_ptr32's result)
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        anmm::bridge::opp_anmm(&mut mem(), host, set, at, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opp_anmm_wait_random(host, set, cmd, work)`.
     opp_anmm_wait_random @ 0x0081_06e0 => extern "C" fn opp_anmm_wait_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
         let _ = (set, work);
