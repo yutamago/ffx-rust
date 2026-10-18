@@ -806,6 +806,168 @@ pub mod bridge {
         0
     }
 
+    /// The step `opf_rel` and `opf_rel2` share, in the emulated VU
+    /// registers: `0x00c8f8d0` = the unit's `+0x40..+0x4c`, `0x00c8f8f0` =
+    /// the base point `from` (16 bytes), `0x00c8f900` = `to +0x90..`;
+    /// `0x00c8f970` = `to - from` (x, y, z), its `w` side `0x00c8f980..98c`
+    /// = 1/256 and `0x00c8f52c..534`; `restoreVf00Register`; then each of
+    /// x, y, z times the unit's `+0x40`, times 1/256, plus `from`, each
+    /// rounded to `f32`, into `0x00c8f970..978` and `v0` (`0x00c8f528..530`,
+    /// `0x00c8f534` = `0x00c8f97c`). The first two also go to the unit's
+    /// `+0x90`/`+0x94` at the byte offset `g_pppColorConShift`. Returns
+    /// the new `v0` z.
+    fn opf_rel_step(mem: &mut impl Mem, unit: u32, from: u32, to: u32) -> u32 {
+        let k256 = 0x3b80_0000u32;
+        let v0 = g(mem, 0x00c8_f528);
+        mem.write(v0, k256);
+        let w: [u32; 4] = mem.read(unit.wrapping_add(0x40));
+        mem.write(g(mem, 0x00c8_f8d0), w);
+        let w: [u32; 4] = mem.read(from);
+        mem.write(g(mem, 0x00c8_f8f0), w);
+        let w: [u32; 4] = mem.read(to.wrapping_add(0x90));
+        mem.write(g(mem, 0x00c8_f900), w);
+        let (vf, base, dst) = (
+            g(mem, 0x00c8_f970),
+            g(mem, 0x00c8_f8f0),
+            g(mem, 0x00c8_f900),
+        );
+        let d0 = crate::x87::sub(f(mem, dst), f(mem, base));
+        mem.write(vf, d0);
+        let d1 = crate::x87::sub(f(mem, dst + 4), f(mem, base + 4));
+        let t: u32 = mem.read(v0 + 4);
+        mem.write(vf + 0x14, t);
+        let t: u32 = mem.read(v0 + 8);
+        mem.write(vf + 0x18, t);
+        mem.write(vf + 4, d1);
+        let d2 = crate::x87::sub(f(mem, dst + 8), f(mem, base + 8));
+        let t: u32 = mem.read(v0 + 0xc);
+        mem.write(vf + 0x10, k256);
+        mem.write(vf + 0x1c, t);
+        mem.write(vf + 8, d2);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        for scale in [g(mem, 0x00c8_f8d0), vf + 0x10] {
+            let k = Reg::load(mem.read(scale));
+            for i in 0..3 {
+                let v = k.mem(MUL, f(mem, vf + 4 * i)).store();
+                mem.write(vf + 4 * i, v);
+            }
+        }
+        for i in 0..3 {
+            let v = crate::x87::add(f(mem, vf + 4 * i), f(mem, base + 4 * i));
+            mem.write(vf + 4 * i, v);
+            mem.write(v0 + 4 * i, v);
+        }
+        let t: u32 = mem.read(vf + 0xc);
+        mem.write(v0 + 0xc, t);
+        let x: u32 = mem.read(vf);
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        mem.write(shift.wrapping_add(unit).wrapping_add(0x90), x);
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        let y: u32 = mem.read(v0 + 4);
+        mem.write(shift.wrapping_add(unit).wrapping_add(0x94), y);
+        mem.read(v0 + 8)
+    }
+
+    /// `opf_rel(host, ptr)` (`0x00815120`): the unit placed between the
+    /// units of `u16 +0xa0` and `+0xa2` (`opus_no_get`): their `+0x90`
+    /// difference times the unit's `+0x40` / 256 from the first
+    /// ([`opf_rel_step`]); `+0x98` from `v0`, `g_pppColorConShift`
+    /// cleared. Returns `ptr`.
+    pub fn opf_rel(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let list = host.wrapping_add(0x300);
+        let n0 = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let n1 = u32::from(mem.read::<u16>(unit.wrapping_add(0xa2)));
+        let base = opus_no_get(mem, list, unit, n0);
+        let other = opus_no_get(mem, list, unit, n1);
+        let z = opf_rel_step(mem, unit, base.wrapping_add(0x90), other);
+        crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
+        mem.write(unit.wrapping_add(0x98), z);
+        ptr
+    }
+
+    /// `opf_rel2(host, ptr)` (`0x00815350`): as [`opf_rel`] from the point
+    /// the host keeps at `+0` (`+0`, `+4`, `+8` = the unit's `+0xa4`,
+    /// `+0x44`, `+0x48`) toward the unit of `u16 +0xa0`, with `v0`'s `y`
+    /// 0 to start. Afterwards `v0` = (old `v0` z, `0x00c8f510`, `v0` w,
+    /// `0x00c8f514`), the unit's `+0x98` = that z. Returns `ptr`.
+    pub fn opf_rel2(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let n0 = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let other = opus_no_get(mem, host.wrapping_add(0x300), unit, n0);
+        for (k, o) in [0xa4u32, 0x44, 0x48].into_iter().enumerate() {
+            let v: u32 = mem.read(unit.wrapping_add(o));
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            mem.write(host.wrapping_add(4 * k as u32), crate::x87::load(v));
+        }
+        let v0 = g(mem, 0x00c8_f528);
+        mem.write(v0 + 4, 0u32);
+        let z = opf_rel_step(mem, unit, host, other);
+        let gpr = g(mem, 0x00c8_f508);
+        let (a, b): (u32, u32) = (mem.read(gpr + 8), mem.read(gpr + 0xc));
+        let w: u32 = mem.read(v0 + 0xc);
+        mem.write(v0 + 8, w);
+        mem.write(v0 + 4, a);
+        mem.write(v0 + 0xc, b);
+        mem.write(v0, z);
+        mem.write(unit.wrapping_add(0x98), z);
+        crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
+        ptr
+    }
+
+    /// `opu_vzero(host, cmd)` (`0x0081afa0`): clears parts of the unit's
+    /// motion by the flag nibble: 0 the position `+0x30` and `+0x40`
+    /// (16 bytes each) to the emulated `r0` (`g_Ee_Gpr`, `0x00c8f508`),
+    /// 1 `+0x40..+0x48` and 2 `+0x30..+0x38` to 0; after those three the
+    /// unit's motion callback runs (`0x00c492c8[byte +0xba]`, through
+    /// `call` with `(host, cmd)`). 4 sets `+0x50..+0x8c` to `r0`, 5 zeroes
+    /// `+0x60..+0x68` and `+0x80..+0x88`, 6 `+0x50..+0x58` and
+    /// `+0x70..+0x78`; other nibbles change nothing. Returns `cmd + 2`.
+    pub fn opu_vzero<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let gpr = g(mem, 0x00c8_f508);
+        let zero3 = |mem: &mut M, at: u32| mem.write(unit.wrapping_add(at), [0u32; 3]);
+        let copy = |mem: &mut M, at: u32| {
+            let r0: [u32; 4] = mem.read(gpr);
+            mem.write(unit.wrapping_add(at), r0);
+        };
+        match mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000 {
+            k @ (0 | 0x1000 | 0x2000) => {
+                match k {
+                    0 => {
+                        copy(mem, 0x30);
+                        copy(mem, 0x40);
+                    }
+                    0x1000 => zero3(mem, 0x40),
+                    _ => zero3(mem, 0x30),
+                }
+                let cb = u32::from(mem.read::<u8>(unit.wrapping_add(0xba)));
+                let f: u32 = mem.read(g(mem, 0x00c4_92c8) + 4 * cb);
+                call(mem, f, &[host, cmd]);
+            }
+            0x4000 => {
+                for at in [0x50, 0x60, 0x70, 0x80] {
+                    copy(mem, at);
+                }
+            }
+            0x5000 => {
+                zero3(mem, 0x60);
+                zero3(mem, 0x80);
+            }
+            0x6000 => {
+                zero3(mem, 0x50);
+                zero3(mem, 0x70);
+            }
+            _ => {}
+        }
+        cmd.wrapping_add(2)
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and

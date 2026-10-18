@@ -11619,3 +11619,97 @@ fn opf_sph_and_spl_gw_match_the_original() {
         }
     }
 }
+
+#[test]
+fn opf_rel_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_5120);
+        let host = p.alloc(0x400);
+        let parts = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let vu = p.sym(0x00c8_f500);
+        let ptr = rng.next();
+        for round in 0..3000 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(vu, 0x500, &mut rng);
+            // VF00, which restoreVf00Register puts back
+            let vf00 = p.sym(0x00c0_a004);
+            p.fill(vf00, 0x10, &mut rng);
+            for k in 0..0x400 {
+                let v = rng.float();
+                p.set(parts + 4 * k, v);
+            }
+            let list = host + 0x300;
+            p.set(list + 0x20, parts);
+            for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, l);
+                p.set(l, 0xffffu16);
+            }
+            for i in 0..16 {
+                let u = parts + 0x100 * i;
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                if rng.chance(20) {
+                    p.set(u, 0u32);
+                }
+            }
+            let unit = parts + 0x100 * (1 + rng.below(15));
+            p.set(host + 0x220, unit);
+            for at in [0xa0, 0xa2] {
+                let n = rng.pick(&[0xff00u16, 0xffff, 0xfffe, 0xfffd]);
+                p.set(unit + at, n);
+            }
+            p.put(
+                rand::bridge::COLOR_CON_SHIFT,
+                rng.pick(&[0u32, 0, 4, 8, 0x10]),
+            );
+            if round % 2 == 0 {
+                p.check("opf_rel", 0x0081_5120, &[host, ptr], |m| {
+                    Some(opus::bridge::opf_rel(m, host, ptr))
+                });
+            } else {
+                p.check("opf_rel2", 0x0081_5350, &[host, ptr], |m| {
+                    Some(opus::bridge::opf_rel2(m, host, ptr))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn opu_vzero_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_afa0);
+        let host = p.alloc(0x400);
+        let unit = p.alloc(0x100);
+        let cmd = p.alloc(0x10);
+        let gpr = p.sym(0x00c8_f508);
+        let vu = p.sym(0x00c8_f500);
+        // motion callback slot 1 (null in the game): a recorder of its
+        // two arguments; slot 0 is opf_normal
+        deref_recorder(&mut p, HOST_HANDLERS, &[0, 0]);
+        let recorder = p.sym(HOST_HANDLERS);
+        let table = p.sym(0x00c4_92c8);
+        p.set(table + 4, recorder);
+        for _ in 0..3000 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(vu, 0x500, &mut rng);
+            p.fill(gpr, 0x10, &mut rng);
+            // opf_normal's floats: no signalling NaNs
+            for k in 0..4 {
+                let v = rng.float();
+                p.set(unit + 0x40 + 4 * k, v);
+                let v = rng.float();
+                p.set(gpr + 4 * k, v);
+            }
+            p.set(host + 0x220, unit);
+            p.set(unit + 0xba, u8::try_from(rng.below(2)).unwrap());
+            let fl = rng.below(8) << 12 | rng.below(0x1000);
+            p.set(host + 0x21a, u16::try_from(fl).unwrap());
+            p.check("opu_vzero", 0x0081_afa0, &[host, cmd], |m| {
+                Some(opus::bridge::opu_vzero(m, host, cmd, &mut call_original))
+            });
+        }
+    }
+}

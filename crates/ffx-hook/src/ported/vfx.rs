@@ -1768,6 +1768,18 @@ ported! {
     opf_spl_gw @ 0x0081_5670 => extern "C" fn opf_spl_gw(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_spl_gw(&mut mem(), host, ptr)
     }
+    /// `opf_rel(host, ptr)`.
+    opf_rel @ 0x0081_5120 => extern "C" fn opf_rel(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel(&mut mem(), host, ptr)
+    }
+    /// `opf_rel2(host, ptr)`.
+    opf_rel2 @ 0x0081_5350 => extern "C" fn opf_rel2(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel2(&mut mem(), host, ptr)
+    }
+    /// `opu_vzero(host, cmd)`.
+    opu_vzero @ 0x0081_afa0 => extern "C" fn opu_vzero(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vzero(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)
