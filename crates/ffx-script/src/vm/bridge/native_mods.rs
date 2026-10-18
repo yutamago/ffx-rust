@@ -2501,6 +2501,873 @@ pub fn native_6089<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
+// ---- group b: the movie callbacks the PC port left out ----
+
+/// `0xb005`-`0xb007`, `0xb008`'s poll and int, `0xb00e`, `0xb00f`
+/// (`0x0076ead0`, `0x0076eae0`, `0x0076eaf0`, `0x0076eb10`, `0x0076eb20`,
+/// `0x0076ecc0`, `0x0076ecd0`): a "Virtuos Warning: Movie on Windows, PS3
+/// & PS Vita is not impelemented yet!" line naming the PS2 callback
+/// through the empty `dbgPrintf`; 0 (the poll keeps waiting).
+pub fn native_b005<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    0
+}
+
+/// `0xb008` (`0x0076eb00`, start): the same warning for
+/// `movie_start_debug_init`; `dbgPrintf` leaves `EAX` as it was, which the
+/// dispatch ignores (0 here).
+pub fn native_b008<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    0
+}
+// ---- group 7: battle ----
+
+/// The worker's battle actor index (`AtelGetBattleIdAdrs2`, `0xff` for
+/// none).
+fn bactor(h: &impl NativeHost, w: u32) -> u32 {
+    u32::from(h.read::<u8>(super::atel_get_battle_id_adrs2(w)))
+}
+
+/// `MsGetChr(i)` (`0x00794020`).
+fn bchr(h: &mut impl NativeHost, i: u32) -> u32 {
+    call(h, 0x0079_4020, &[i])
+}
+
+/// `Battle_FirstSelectedActor(actor, selector, 0, 1)` (`0x007947f0`).
+fn first(h: &mut impl NativeHost, actor: u32, sel: u32) -> u32 {
+    call(h, 0x0079_47f0, &[actor, sel, 0, 1])
+}
+
+/// The byte at the global `sym`, sign-extended.
+fn gi8(h: &impl NativeHost, sym: u32) -> u32 {
+    i32::from(h.read::<i8>(h.rebase(sym))).cast_unsigned()
+}
+
+/// The byte at the global `sym` = `v`.
+fn set_g8(h: &mut impl NativeHost, sym: u32, v: u8) {
+    let at = h.rebase(sym);
+    h.write(at, v);
+}
+
+/// `0x7074` (`0x007a29f0`): `(v)` -> `MsDetachWeapon(actor, v)`
+/// (`0x00793f10`).
+pub fn native_7074<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let i = bactor(h, w);
+    call(h, 0x0079_3f10, &[i, v])
+}
+
+/// `0x70f4` (`0x007a2ad0`): `(b, a)` -> `0x007a8b40(actor, b, a)`.
+pub fn native_70f4<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let [a, b] = pops::<2>(h, s);
+    call(h, 0x007a_8b40, &[i, b, a])
+}
+
+/// `0x70e4` (`0x007a2b50`): `(b, a)` -> `MsGetDamageLimit(first of b,
+/// first of a)` (`0x0079a860`, each through `Battle_FirstSelectedActor`).
+pub fn native_70e4<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b] = pops::<2>(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, b);
+    let y = first(h, i, a);
+    call(h, 0x0079_a860, &[x, y])
+}
+
+/// `0x7080` (`0x007a2c70`): `(v)`: `0x008720e0(handle, v)` with
+/// `MsGetChrHandle(2)` (`0x00795080`) when there is one; 0.
+pub fn native_7080<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let c = call(h, 0x0079_5080, &[2]);
+    if c != 0 {
+        call(h, 0x0087_20e0, &[c, v]);
+    }
+    0
+}
+
+/// `0x70ad` (`0x007a2cd0`): jumps to `0x007ad6e0`.
+pub fn native_70ad<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x007a_d6e0)
+}
+
+/// `0x7098` (`0x007a2dc0`): `MsCheckDefenseMotion(MsGetChr(actor))`
+/// (`0x007af2f0`), 0 without an actor.
+pub fn native_7098<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let i = bactor(h, w);
+    if i == 0xff {
+        return 0;
+    }
+    let c = bchr(h, i);
+    call(h, 0x007a_f2f0, &[c])
+}
+
+/// `0x70f3` (`0x007a3300`): `(b, a)` -> `0x007a8ad0(b, a)`.
+pub fn native_70f3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b] = pops::<2>(h, s);
+    call(h, 0x007a_8ad0, &[b, a])
+}
+
+/// `0x70fc` (`0x007a3440`): the `u16` at `0x01136410`.
+pub fn native_70fc<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    u32::from(h.read::<u16>(h.rebase(0x0113_6410)))
+}
+
+/// `0x70db` (`0x007a3450`): the `i8` at `0x0112ca06`.
+pub fn native_70db<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_ca06)
+}
+
+/// `0x70f6` (`0x007a34e0`): the bytes `0x011363ec` and `0x011363ed` = 0
+/// (the list `0x70f8` reads, emptied); 0.
+pub fn native_70f6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    set_g8(h, 0x0113_63ec, 0);
+    set_g8(h, 0x0113_63ed, 0);
+    0
+}
+
+/// `0x70d9` (`0x007a3500`): `Ch_ModelSetHide(model, 1, the i8 at
+/// 0x0112ca06)` (`0x0082aea0`) for actor 13's model (`MsGetChr(0xd)`
+/// `+0`) when it has one; that byte, read again.
+pub fn native_70d9<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let c = bchr(h, 0xd);
+    let m = h.read::<u32>(c);
+    let v = gi8(h, 0x0112_ca06);
+    if m == 0 {
+        return v;
+    }
+    call(h, 0x0082_aea0, &[m, 1, v]);
+    gi8(h, 0x0112_ca06)
+}
+
+/// `0x70f8` (`0x007a36e0`): the next `u16` of the list at `0x011363f0`
+/// (read index `0x011363ed`, count `0x011363ec`, the index advanced), 0
+/// past the end.
+pub fn native_70f8<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let (pi, pn) = (h.rebase(0x0113_63ed), h.rebase(0x0113_63ec));
+    let i = h.read::<u8>(pi);
+    if i >= h.read::<u8>(pn) {
+        return 0;
+    }
+    let v = h.read::<u16>(h.rebase(0x0113_63f0) + 2 * u32::from(i));
+    h.write(pi, i.wrapping_add(1));
+    u32::from(v)
+}
+
+/// `0x70a3` (`0x007a3730`): `Battle_ScriptPlayMotion(worker, args, stack,
+/// 0)` (`0x007a8fc0`) with the actor's `+0x38` byte set to 1 for the call
+/// and put back; `+0x3f3` = 1 when `+0x434` is set; the old byte
+/// (sign-extended).
+pub fn native_70a3<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let c = bchr(h, i);
+    let old = h.read::<i8>(c + 0x38);
+    h.write(c + 0x38, 1_u8);
+    call(h, 0x007a_8fc0, &[w, a, s, 0]);
+    let busy = h.read::<u8>(c + 0x434);
+    h.write(c + 0x38, old);
+    if busy != 0 {
+        h.write(c + 0x3f3, 1_u8);
+    }
+    i32::from(old).cast_unsigned()
+}
+
+/// `0x70fb` (`0x007a37e0`): `(p5, p4, p3, p2, p1)` -> `0x007a8f60(actor,
+/// p5, -16, p3, 0, p2)` when `0x007a8b40(actor, p5, p4)` and
+/// `0x007a8ad0(p5, p1)` both hold, else (or for 0xff) 0xff.
+pub fn native_70fb<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let [p1, p2, p3, p4, p5] = pops::<5>(h, s);
+    if call(h, 0x007a_8b40, &[i, p5, p4]) == 0 || call(h, 0x007a_8ad0, &[p5, p1]) == 0 {
+        return 0xff;
+    }
+    call(
+        h,
+        0x007a_8f60,
+        &[i, p5, (-16_i32).cast_unsigned(), p3, 0, p2],
+    )
+}
+
+/// `0x70c6` (`0x007a3950`): `(v)` -> `0x007b7ed0(v)`.
+pub fn native_70c6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one(h, s, 0x007b_7ed0)
+}
+
+/// `0x710a` (`0x007a3970`): the `i8` at `0x0112ca10`, which becomes 1.
+pub fn native_710a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let v = gi8(h, 0x0112_ca10);
+    set_g8(h, 0x0112_ca10, 1);
+    v
+}
+
+/// `Native_BtlSetFlagBded` (`0x007a39d0`, `0x7001`): `(v)`: the byte
+/// `0x0112bded` = `v & 1`; 0.
+pub fn native_7001<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    #[allow(clippy::cast_possible_truncation)] // `and al, 1`
+    set_g8(h, 0x0112_bded, (v & 1) as u8);
+    0
+}
+
+/// `0x70c7` (`0x007a39f0`, float): `(v)` -> `0x007b7ef0(v)`'s `ST0`.
+pub fn native_70c7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
+    let v = pop(h, s);
+    callf(h, 0x007b_7ef0, &[v])
+}
+
+/// `Atel_GetBattleCountF` (`0x007a3ac0`, `0x70f0`, float): the `i32` at
+/// `0x0112c900` as `f32` (`helpers::atel_get_battle_count_f`, whose shim
+/// it is).
+pub fn native_70f0<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> f64 {
+    super::helpers::atel_get_battle_count_f(h)
+}
+
+/// The first of the four `0x007b19d0(k)` records whose byte `+0` is set:
+/// its byte `+off`; 0 for none.
+fn first_record(h: &mut impl NativeHost, off: u32) -> u32 {
+    for k in 0..4 {
+        let p = call(h, 0x007b_19d0, &[k]);
+        if h.read::<u8>(p) != 0 {
+            return u32::from(h.read::<u8>(p + off));
+        }
+    }
+    0
+}
+
+/// `0x710e` (`0x007a3c00`): the first set byte `+0` of the four
+/// `0x007b19d0(k)` records, 0 for none.
+pub fn native_710e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    first_record(h, 0)
+}
+
+/// `0x710f` (`0x007a3c90`): that record's byte `+1`, 0 for none.
+pub fn native_710f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    first_record(h, 1)
+}
+
+/// `0x711e` (`0x007a3f40`): the `i8` at `0x0112ca15`.
+pub fn native_711e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_ca15)
+}
+
+/// `Native_BtlIsUnderwater` (`0x007a4550`, `0x7005`): the `i8` at
+/// `0x0112c9ce`.
+pub fn native_7005<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_c9ce)
+}
+
+/// `0x7090` (`0x007a49c0`): `(v)`: `MsEtCriticalEffect(actor, v)`
+/// (`0x0079e590`); 0.
+pub fn native_7090<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let i = bactor(h, w);
+    call(h, 0x0079_e590, &[i, v]);
+    0
+}
+
+/// `(c, b, a)`: the first actor of selector `c`.
+fn pop3_first<H: NativeHost>(h: &mut H, w: u32, s: u32) -> (u32, u32, u32) {
+    let [a, b, c] = pops::<3>(h, s);
+    let i = bactor(h, w);
+    (first(h, i, c), b, a)
+}
+
+/// `0x70d3` (`0x007a4a90`): `(sel, b, a)`: `MsSetChrEffect_0079eb10(x, b,
+/// 7, a, 1)` for the first actor `x` of `sel`, whose `+0xe12` counts up
+/// when it starts; 0.
+pub fn native_70d3<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let (x, b, a) = pop3_first(h, w, s);
+    if call(h, 0x0079_eb10, &[x, b, 7, a, 1]) != 0 {
+        let c = bchr(h, x);
+        let n = h.read::<u8>(c + 0xe12).wrapping_add(1);
+        h.write(c + 0xe12, n);
+    }
+    0
+}
+
+/// `0x70e5` (`0x007a4c70`): `(sel, b, a)`: `0x0079eca0(first of sel, b,
+/// a)`; 0.
+pub fn native_70e5<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let (x, b, a) = pop3_first(h, w, s);
+    call(h, 0x0079_eca0, &[x, b, a]);
+    0
+}
+
+/// `0x70e6` (`0x007a4e00`): `(sel, b, a)`: `0x0079ec40(first of sel, b,
+/// a)`; 0.
+pub fn native_70e6<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let (x, b, a) = pop3_first(h, w, s);
+    call(h, 0x0079_ec40, &[x, b, a]);
+    0
+}
+
+/// `0x70d4` (`0x007a4f20`): `(sel, b, a)` -> `0x0079eba0(first of sel, b,
+/// a, 1)`.
+pub fn native_70d4<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let (x, b, a) = pop3_first(h, w, s);
+    call(h, 0x0079_eba0, &[x, b, a, 1])
+}
+
+/// `0x7045` (`0x007a4da0`): `(sel)` -> `MsSetMove(first of sel, 0xc)`
+/// (`0x007a9fc0`, `ST0`) over the double at `0x00b43d70`, rounded to
+/// `f32`, truncated.
+pub fn native_7045<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let v = pop(h, s);
+    let x = first(h, i, v);
+    let r = callf(h, 0x007a_9fc0, &[x, 0xc]);
+    let k = f64::from_bits(h.read(h.rebase(0x00b4_3d70)));
+    let q = r32(x87::div(r, k));
+    x87::ftol(h, q)
+}
+
+/// `0x70da` (`0x007a4df0`): the `i8` at `0x0112c9dc`.
+pub fn native_70da<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_c9dc)
+}
+
+/// `0x7127` (`0x007a5240`): `(b, a)` -> `0x007969a0(b, a)`.
+pub fn native_7127<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b] = pops::<2>(h, s);
+    call(h, 0x0079_69a0, &[b, a])
+}
+
+/// `0x70b6` (`0x007a52b0`): `(sel)` -> `MsSetMove(first of sel, 0xc)` over
+/// `0x007a88e0(the actor's record)` (both `ST0`, the divisor rounded to
+/// `f32`), rounded to `f32`, truncated.
+pub fn native_70b6<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let c = bchr(h, i);
+    let v = pop(h, s);
+    let x = first(h, i, v);
+    let d = r32(callf(h, 0x007a_88e0, &[c]));
+    let r = callf(h, 0x007a_9fc0, &[x, 0xc]);
+    let q = r32(x87::div(r, d));
+    x87::ftol(h, q)
+}
+
+/// `0x7077` (`0x007a5450`): `(sel, a)`: `MsGetTargetDist(x, a, 0)`
+/// (`0x007a9a40`, 0.0 when the first actor `x` of `sel` is 0xff) over the
+/// double at `0x00b49968` plus the one at `0x00b43d80`, rounded to `f32`,
+/// at most the `f32` at `0x00b4ae10`, truncated.
+pub fn native_7077<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [a, b] = pops::<2>(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, b);
+    let t = if x == 0xff {
+        0.0
+    } else {
+        r32(callf(h, 0x007a_9a40, &[x, a, 0]))
+    };
+    let k1 = f64::from_bits(h.read(h.rebase(0x00b4_9968)));
+    let k2 = f64::from_bits(h.read(h.rebase(0x00b4_3d80)));
+    let v = r32(x87::add(x87::div(t, k1), k2));
+    let cap = x87::load(h.read(h.rebase(0x00b4_ae10)));
+    // fcom: only a larger value (not NaN) takes the cap
+    let v = if v > cap { cap } else { v };
+    x87::ftol(h, v)
+}
+
+/// `0x70a7` (`0x007a54f0`, float): `(sel, a)` -> `0x007b2c90(first of sel,
+/// a)`'s `ST0`.
+pub fn native_70a7<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let [a, b] = pops::<2>(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, b);
+    callf(h, 0x007b_2c90, &[x, a])
+}
+
+/// `0x700e` (`0x007a5690`): `(sel)`: `MsSetDamage(actor, sel, 0)`
+/// (`0x0078d980`) for an actor; 0.
+pub fn native_700e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let i = bactor(h, w);
+    if i != 0xff {
+        call(h, 0x0078_d980, &[i, v, 0]);
+    }
+    0
+}
+
+/// `0x7076` (`0x007a56f0`): `(c, f f, a)`: `MsSetBallSplineInit(actor)`
+/// (`0x007b7c80`), the actor's `+0x45a` = `c` and `+0x452` = 0 (`u16`s),
+/// `MsSetBallSpline(actor)` (`0x007b78c0`), `MsMoveSpline(2, actor, c, f,
+/// a)` (`0x007ab010`), `+0x452` = 1; 0.
+pub fn native_7076<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let a = pop(h, s);
+    let f = popf(h, s);
+    let c = pop(h, s);
+    call(h, 0x007b_7c80, &[i]);
+    let r = bchr(h, i);
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    h.write(r + 0x45a, c as u16);
+    h.write(r + 0x452, 0_u16);
+    call(h, 0x007b_78c0, &[i]);
+    call(h, 0x007a_b010, &[2, i, c, f, a]);
+    h.write(r + 0x452, 1_u16);
+    0
+}
+
+/// `0x703d` (`0x007a5980`): the byte `0x0112a8e4` = 0; 0.
+pub fn native_703d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    set_g8(h, 0x0112_a8e4, 0);
+    0
+}
+
+/// `0x703e` (`0x007a5a10`, poll): with `0x0112a8e4` set, `0x0112a8e5`
+/// drops to 0 when it is 1. Unless the `i8` at `0x0112c9e4` is negative
+/// and `0x0112c9d0`, `0x0112c9d8`, `0x0112bde1`, `0x0112c944` are all 0,
+/// the pair at `0x0112ca08` = (0xff, 0xde) and it waits (0). Else the
+/// first of the 31 actors that is busy (`+0xdc8` with `+0x508`, `+0x432`
+/// or `+0xdfb`: kind 0xdf) or acting (`+0x10` with `+0x436` or `+0xdf0`:
+/// 0xdd) goes to `0x0112ca08` with its kind and it waits; none: done (5).
+pub fn native_703e_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let g = |h: &H, sym: u32| h.read::<u8>(h.rebase(sym));
+    if g(h, 0x0112_a8e4) != 0 {
+        let v = g(h, 0x0112_a8e5);
+        set_g8(h, 0x0112_a8e5, if v == 1 { 0 } else { v });
+    }
+    if h.read::<i8>(h.rebase(0x0112_c9e4)) >= 0
+        || [0x0112_c9d0, 0x0112_c9d8, 0x0112_bde1, 0x0112_c944]
+            .into_iter()
+            .any(|x| g(h, x) != 0)
+    {
+        let at = h.rebase(0x0112_ca08);
+        h.write(at, 0xdeff_u16);
+        return 0;
+    }
+    for k in 0..0x1f_u8 {
+        let c = bchr(h, u32::from(k));
+        let b = |h: &H, off: u32| h.read::<u8>(c + off) != 0;
+        let kind = if b(h, 0xdc8) && (b(h, 0x508) || b(h, 0x432) || b(h, 0xdfb)) {
+            0xdf
+        } else if b(h, 0x10) && (b(h, 0x436) || b(h, 0xdf0)) {
+            0xdd
+        } else {
+            continue;
+        };
+        set_g8(h, 0x0112_ca08, k);
+        set_g8(h, 0x0112_ca09, kind);
+        return 0;
+    }
+    5
+}
+
+/// `0x7081` (`0x007a5d60`, poll): done (5) when the byte `0x0112c022` is
+/// 1, else 0.
+pub fn native_7081_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    if h.read::<u8>(h.rebase(0x0112_c022)) == 1 {
+        5
+    } else {
+        0
+    }
+}
+
+/// `0x70f9` (`0x007a5fc0`): `(p5, p4, p3, p2, p1)` -> `0x007a8f60(actor,
+/// p5, p4, p3, p2, p1)`.
+pub fn native_70f9<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [p1, p2, p3, p4, p5] = pops::<5>(h, s);
+    let i = bactor(h, w);
+    call(h, 0x007a_8f60, &[i, p5, p4, p3, p2, p1])
+}
+
+/// `Clamp0To6_007a86e0(v)`.
+fn win6(h: &mut impl NativeHost, v: u32) -> u32 {
+    call(h, 0x007a_86e0, &[v])
+}
+
+/// Battle text `k` of the table at `tab` (`+0` holds `u16` offsets, two
+/// per entry by `MsGetSaveConfigHiragana()` (`0x007851f0`)): its address.
+fn btext(h: &mut impl NativeHost, tab: u32, k: u32) -> u32 {
+    let hira = call(h, 0x0078_51f0, &[]);
+    let off = h.read::<u16>(tab + hira.wrapping_add(k.wrapping_mul(2)).wrapping_mul(4));
+    tab + u32::from(off)
+}
+
+/// `0x7042` (`0x007a6060`): `(win, k, x, y, anchor)`: `0x0112c250` = `k`;
+/// `TODrawAMES(win clamped 0..6, text k, x, y, anchor)` (`0x0089b140`)
+/// from the table at `*0x0112a9b8` when there is one; 0.
+pub fn native_7042<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [p1, p2, p3, k, wv] = pops::<5>(h, s);
+    let win = win6(h, wv);
+    let tab = h.read::<u32>(h.rebase(0x0112_a9b8));
+    let at = h.rebase(0x0112_c250);
+    h.write(at, k);
+    if tab != 0 {
+        let t = btext(h, tab, k);
+        call(h, 0x0089_b140, &[win, t, p3, p2, p1]);
+    }
+    0
+}
+
+/// `0x711f` (`0x007a6200`): as `0x7042` from the table at `*0x0112a998`,
+/// only when `MsGetBattleMessageFlag()` (`0x00784e40`) is set and the word
+/// at `0x01841d20` is not 0; 0.
+pub fn native_711f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [p1, p2, p3, k, wv] = pops::<5>(h, s);
+    let win = win6(h, wv);
+    let tab = h.read::<u32>(h.rebase(0x0112_a998));
+    let at = h.rebase(0x0112_c250);
+    h.write(at, k);
+    if tab != 0 && call(h, 0x0078_4e40, &[]) != 0 {
+        let t = btext(h, tab, k);
+        if h.read::<u32>(h.rebase(0x0184_1d20)) != 0 {
+            call(h, 0x0089_b140, &[win, t, p3, p2, p1]);
+        }
+    }
+    0
+}
+
+/// `(win, k)`: `0x0112c250` = `k`; `f(win clamped, text k)` from the table
+/// at `*tab_sym`, with the message-flag checks of `0x711f` when `flag`.
+fn line<H: NativeHost>(h: &mut H, s: u32, tab_sym: u32, flag: bool, f: u32) -> u32 {
+    let [k, wv] = pops::<2>(h, s);
+    let win = win6(h, wv);
+    let tab = h.read::<u32>(h.rebase(tab_sym));
+    let at = h.rebase(0x0112_c250);
+    h.write(at, k);
+    if tab == 0 || (flag && call(h, 0x0078_4e40, &[]) == 0) {
+        return 0;
+    }
+    let t = btext(h, tab, k);
+    if flag && h.read::<u32>(h.rebase(0x0184_1d20)) == 0 {
+        return 0;
+    }
+    call(h, f, &[win, t]);
+    0
+}
+
+/// `0x7072` (`0x007a6330`): `(win, k)`: `TODrawAMES_EVJIMAKU(win, text
+/// k)` (`0x0089b230`) from `*0x0112a9b8`; 0.
+pub fn native_7072<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    line(h, s, 0x0112_a9b8, false, 0x0089_b230)
+}
+
+/// `0x70b7` (`0x007a6640`): `(win, k)`:
+/// `TODrawAMES_EVJIMAKU_ALBHED(win, text k)` (`0x0089b290`) from
+/// `*0x0112a9b8`; 0.
+pub fn native_70b7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    line(h, s, 0x0112_a9b8, false, 0x0089_b290)
+}
+
+/// `0x7121` (`0x007a6790`): `(win, k)`: as `0x70b7` from `*0x0112a998`
+/// with `0x711f`'s checks; 0.
+pub fn native_7121<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    line(h, s, 0x0112_a998, true, 0x0089_b290)
+}
+
+/// `0x7069` (`0x007a6170`, `Native_BtlFindActor`): `(p4, p3, p2, p1)` ->
+/// `MsActTargetSearch(0, p4, p3, p2, 7, p1, 0, &pick)` (`0x007acd40`)'s
+/// pick (an out word, zeroed first).
+pub fn native_7069<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [p1, p2, p3, p4] = pops::<4>(h, s);
+    let o = h.scratch();
+    h.write(o, 0_u32);
+    call(h, 0x007a_cd40, &[0, p4, p3, p2, 7, p1, 0, o]);
+    h.read(o)
+}
+
+/// `0x7095` (`0x007a61d0`): `MsGetChrMoveFrameRest(actor)` (`0x007a9320`),
+/// 0 without an actor.
+pub fn native_7095<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let i = bactor(h, w);
+    if i == 0xff {
+        return 0;
+    }
+    call(h, 0x007a_9320, &[i])
+}
+
+/// `0x7120` (`0x007a65a0`): `(b, a)`: `0x0079d090(a)`, `b` dropped; 0.
+pub fn native_7120<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [a, _b] = pops::<2>(h, s);
+    call(h, 0x0079_d090, &[a]);
+    0
+}
+
+/// `0x7065` (`0x007a6760`, poll): `GetCD()`; done (5) once `0x007a8c20()`
+/// is set and `msVoiceCheckStanby(0)` (`0x007b2c10`) is 0.
+pub fn native_7065_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0076_d0d0, &[]);
+    if call(h, 0x007a_8c20, &[]) != 0 && call(h, 0x007b_2c10, &[0]) == 0 {
+        5
+    } else {
+        0
+    }
+}
+
+/// `0x7065` (`0x007a6950`, int): `SndStartStream()` (`0x00887630`); 0.
+pub fn native_7065<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    void(h, 0x0088_7630, 0)
+}
+
+/// `0x7116` (`0x007a6930`): `MsEffectSetGuard(actor)` (`0x0079e510`).
+pub fn native_7116<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let i = bactor(h, w);
+    call(h, 0x0079_e510, &[i])
+}
+
+/// `0x7066` (`0x007a6960`): jumps to `0x007b2c00`.
+pub fn native_7066<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x007b_2c00)
+}
+
+/// `0x7067` (`0x007a6a30`): `msVoiceIsStreaming() != 0` (`0x007b2be0`).
+pub fn native_7067<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    u32::from(call(h, 0x007b_2be0, &[]) != 0)
+}
+
+/// `0x7068` (`0x007a6ad0`, poll): 1 once `msVoiceIsStreaming()` is 0, else
+/// 0.
+pub fn native_7068_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    u32::from(call(h, 0x007b_2be0, &[]) == 0)
+}
+
+/// `0x706c` (`0x007a6bc0`): `(sel, k)`: for the first actor `x` of `sel`,
+/// the record of its `+0x14` actor: with `+0xf2c` set and `k` at most
+/// 0x1f, sound `k` (`+0xeac + 4 k`) plays (`MsSEP3Dregist(3, x, se, 0,
+/// 0)`, `0x007a0a30`) unless it is 0 or the last one (`0x0112c8e0`, then
+/// updated); 0.
+pub fn native_706c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [k, sel] = pops::<2>(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, sel);
+    if x.cast_signed() < 0 {
+        return 0;
+    }
+    let c = bchr(h, x);
+    let o = u32::from(h.read::<u8>(c + 0x14));
+    let d = bchr(h, o);
+    if h.read::<u8>(d + 0xf2c) == 0 || k > 0x1f {
+        return 0;
+    }
+    let se = h.read::<u32>(d + k * 4 + 0xeac);
+    let last = h.rebase(0x0112_c8e0);
+    if se == 0 || h.read::<u32>(last) == se {
+        return 0;
+    }
+    call(h, 0x007a_0a30, &[3, x, se, 0, 0]);
+    h.write(last, se);
+    0
+}
+
+/// `0x70c0` (`0x007a6c70`, float): `(sel)` -> `0x00794990(first of sel)`'s
+/// `ST0`.
+pub fn native_70c0<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let v = pop(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, v);
+    callf(h, 0x0079_4990, &[x])
+}
+
+/// `0x7044` (`0x007a6e10`): `(win)`: `TOCloseMessageWindow(win clamped
+/// 0..6)` (`0x008ab8f0`); 0.
+pub fn native_7044<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let k = win6(h, v);
+    call(h, 0x008a_b8f0, &[k]);
+    0
+}
+
+/// `0x7056` (`0x007a6e80`): `(v)`: `MsBattleSpecialInit(v)`
+/// (`0x0079de60`); 0.
+pub fn native_7056<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one0(h, s, 0x0079_de60)
+}
+
+/// `0x7070` (`0x007a7010`): `SetByte_00c58ef4(1)` (`0x0089bc60`); 0.
+pub fn native_7070<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0089_bc60, &[1]);
+    0
+}
+
+/// `0x70b4` (`0x007a7130`): for an actor, `+0xf65` = 8,
+/// `MsResetWeaponEffectAttribute(actor, record)` (`0x0079ea90`), then
+/// `0x007ad5b0(actor, +0xf64, +0xf65)`; 0.
+pub fn native_70b4<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let i = bactor(h, w);
+    if i == 0xff {
+        return 0;
+    }
+    let c = bchr(h, i);
+    h.write(c + 0xf65, 8_u8);
+    call(h, 0x0079_ea90, &[i, c]);
+    let (b65, b64) = (h.read::<u8>(c + 0xf65), h.read::<u8>(c + 0xf64));
+    call(h, 0x007a_d5b0, &[i, u32::from(b64), u32::from(b65)]);
+    0
+}
+
+/// `0x7079` (`0x007a7200`): for an actor, the equipment refresh:
+/// `MsResetAutoStatus(record)`, `MsSetRamChrParam(actor)`,
+/// `MsSetChrWeak(actor, -1)`, `MsSetAutoStatus(record)`,
+/// `MsStatusEffectCheck(actor)`, `MsSetWeaponEffectAttribute(actor,
+/// record)`; 0.
+pub fn native_7079<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let i = bactor(h, w);
+    if i == 0xff {
+        return 0;
+    }
+    let c = bchr(h, i);
+    call(h, 0x0079_b1a0, &[c]);
+    call(h, 0x0079_c5f0, &[i]);
+    call(h, 0x0078_d7f0, &[i, u32::MAX]);
+    call(h, 0x0079_b290, &[c]);
+    call(h, 0x0079_eff0, &[i]);
+    call(h, 0x0079_ed40, &[i, c]);
+    0
+}
+
+/// `0x7094` (`0x007a72c0`): `(b f, a f, v)`:
+/// `MsSetChrTransparentVisible(actor, b, a, v, record +0x423)`
+/// (`0x00796550`) for an actor; 0.
+pub fn native_7094<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let v = pop(h, s);
+    let [a, b] = popfs::<2>(h, s);
+    if i != 0xff {
+        let c = bchr(h, i);
+        let k = u32::from(h.read::<u8>(c + 0x423));
+        call(h, 0x0079_6550, &[i, b, a, v, k]);
+    }
+    0
+}
+
+/// `Native_BtlSetPadOrientation` (`0x007a7340`, `0x7099`): `(v)`: the byte
+/// `0x0112c9cd` = `v & 3`; that value.
+pub fn native_7099<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s) & 3;
+    #[allow(clippy::cast_possible_truncation)] // two bits
+    set_g8(h, 0x0112_c9cd, v as u8);
+    v
+}
+
+/// `0x704d` (`0x007a74e0`): 0 (`xor eax, eax; ret`).
+pub fn native_704d<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    0
+}
+
+/// `(sel, a)` -> `f(first of sel, a)`, 0 when there is none (negative).
+fn sel_call<H: NativeHost>(h: &mut H, w: u32, s: u32, f: u32) -> u32 {
+    let [a, sel] = pops::<2>(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, sel);
+    if x.cast_signed() < 0 {
+        return 0;
+    }
+    call(h, f, &[x, a])
+}
+
+/// `0x70c8` (`0x007a75e0`): `(sel, a)` -> `0x0079fda0(first of sel, a)`,
+/// 0 for none.
+pub fn native_70c8<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    sel_call(h, w, s, 0x0079_fda0)
+}
+
+/// `0x70ca` (`0x007a7ab0`): `(sel, se)` -> `MsRegSEplay2(first of sel,
+/// se)` (`0x007a0140`), 0 for none.
+pub fn native_70ca<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    sel_call(h, w, s, 0x007a_0140)
+}
+
+/// `0x70cb` (`0x007a7b40`): `(sel, se)` -> `MsRegSEplay3(first of sel,
+/// se)` (`0x007a0170`), 0 for none.
+pub fn native_70cb<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    sel_call(h, w, s, 0x007a_0170)
+}
+
+/// `Native_BtlGetTurnActor` (`0x007a76e0`, `0x708d`): the `i8` at
+/// `0x0112c9e2`.
+pub fn native_708d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_c9e2)
+}
+
+/// `0x70ae` (`0x007a7790`): the `i8` at `0x0112c9e3`.
+pub fn native_70ae<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_c9e3)
+}
+
+/// `0x70af` (`0x007a79a0`): jumps to `MsGetVoiceEventFlag` (`0x007986a0`).
+pub fn native_70af<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0079_86a0)
+}
+
+/// `0x70de` (`0x007a79b0`): jumps to `0x00785210`.
+pub fn native_70de<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0078_5210)
+}
+
+/// `0x70e8` (`0x007a7a90`): jumps to `MsGetGIL` (`0x00784e80`).
+pub fn native_70e8<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x0078_4e80)
+}
+
+/// `0x70e9` (`0x007a7b00`): jumps to `0x007b2b30`.
+pub fn native_70e9<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    tail(h, w, a, s, 0x007b_2b30)
+}
+
+/// `0x70c5` (`0x007a7c20`): 1 when the byte `0x0112c9f5` is set.
+pub fn native_70c5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    u32::from(h.read::<u8>(h.rebase(0x0112_c9f5)) != 0)
+}
+
+/// `0x7089` (`0x007a7c40`): `(sel, se, frames)` -> `MsRegSEfade(first of
+/// sel, se, frames)` (`0x007a00d0`), 0 for none.
+pub fn native_7089<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let [n, se, sel] = pops::<3>(h, s);
+    let i = bactor(h, w);
+    let x = first(h, i, sel);
+    if x.cast_signed() < 0 {
+        return 0;
+    }
+    call(h, 0x007a_00d0, &[x, se, n])
+}
+
+/// `0x70eb` (`0x007a7d10`): `brnd(0x11)` (`0x007988f0`).
+pub fn native_70eb<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0079_88f0, &[0x11])
+}
+
+/// `0x7100` (`0x007a7d20`): `(sel)` -> `0x007a8be0(MsGetChrBit(actor, sel,
+/// 0, 1))` (`0x00794330`).
+pub fn native_7100<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let i = bactor(h, w);
+    let v = pop(h, s);
+    let m = call(h, 0x0079_4330, &[i, v, 0, 1]);
+    call(h, 0x007a_8be0, &[m])
+}
+
+/// `0x7124` (`0x007a7ee0`): `(id)`: `0x0112c250` = `id`;
+/// `MsSetVoiceId(id)` (`0x007b2b50`) when `MsGetBattleMessageFlag()`; `id`.
+pub fn native_7124<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let at = h.rebase(0x0112_c250);
+    h.write(at, v);
+    if call(h, 0x0078_4e40, &[]) != 0 {
+        call(h, 0x007b_2b50, &[v]);
+    }
+    v
+}
+
+/// `0x7101` (`0x007a7f60`): the `i8` at `0x0112a905`.
+pub fn native_7101<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    gi8(h, 0x0112_a905)
+}
+
+/// `0x70cf` (`0x007a7f70`): the `i8` at `*0x0112a9c0 + 1`.
+pub fn native_70cf<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let p = h.read::<u32>(h.rebase(0x0112_a9c0));
+    i32::from(h.read::<i8>(p + 1)).cast_unsigned()
+}
+
+/// `0x7113` (`0x007a8090`): the byte `0x0112c9e5` = 1; 0.
+pub fn native_7113<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    set_g8(h, 0x0112_c9e5, 1);
+    0
+}
+
+/// `0x7114` (`0x007a80a0`): the byte `0x0112c9e5` = 2; 0.
+pub fn native_7114<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    set_g8(h, 0x0112_c9e5, 2);
+    0
+}
+
 /// The Rust version of a round-19 handler, if there is one.
 #[must_use]
 #[allow(clippy::too_many_lines)] // one arm per handler
@@ -2774,12 +3641,97 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007b_92a0 => Int(native_6085),
         0x007b_9d80 => Int(native_6086),
         0x007b_9630 => Int(native_6089),
+        0x0076_ead0 | 0x0076_eae0 | 0x0076_eaf0 | 0x0076_eb10 | 0x0076_eb20 | 0x0076_ecc0
+        | 0x0076_ecd0 => Int(native_b005),
+        0x0076_eb00 => Int(native_b008),
+        0x007a_39d0 => Int(native_7001),
+        0x007a_4550 => Int(native_7005),
+        0x007a_5690 => Int(native_700e),
+        0x007a_5980 => Int(native_703d),
+        0x007a_5a10 => Int(native_703e_poll),
+        0x007a_6060 => Int(native_7042),
+        0x007a_6e10 => Int(native_7044),
+        0x007a_4da0 => Int(native_7045),
+        0x007a_74e0 => Int(native_704d),
+        0x007a_6e80 => Int(native_7056),
+        0x007a_6760 => Int(native_7065_poll),
+        0x007a_6950 => Int(native_7065),
+        0x007a_6960 => Int(native_7066),
+        0x007a_6a30 => Int(native_7067),
+        0x007a_6ad0 => Int(native_7068_poll),
+        0x007a_6170 => Int(native_7069),
+        0x007a_6bc0 => Int(native_706c),
+        0x007a_7010 => Int(native_7070),
+        0x007a_6330 => Int(native_7072),
+        0x007a_29f0 => Int(native_7074),
+        0x007a_56f0 => Int(native_7076),
+        0x007a_5450 => Int(native_7077),
+        0x007a_7200 => Int(native_7079),
+        0x007a_2c70 => Int(native_7080),
+        0x007a_5d60 => Int(native_7081_poll),
+        0x007a_7c40 => Int(native_7089),
+        0x007a_76e0 => Int(native_708d),
+        0x007a_49c0 => Int(native_7090),
+        0x007a_72c0 => Int(native_7094),
+        0x007a_61d0 => Int(native_7095),
+        0x007a_2dc0 => Int(native_7098),
+        0x007a_7340 => Int(native_7099),
+        0x007a_3730 => Int(native_70a3),
+        0x007a_54f0 => Float(native_70a7),
+        0x007a_2cd0 => Int(native_70ad),
+        0x007a_7790 => Int(native_70ae),
+        0x007a_79a0 => Int(native_70af),
+        0x007a_7130 => Int(native_70b4),
+        0x007a_52b0 => Int(native_70b6),
+        0x007a_6640 => Int(native_70b7),
+        0x007a_6c70 => Float(native_70c0),
+        0x007a_7c20 => Int(native_70c5),
+        0x007a_3950 => Int(native_70c6),
+        0x007a_39f0 => Float(native_70c7),
+        0x007a_75e0 => Int(native_70c8),
+        0x007a_7ab0 => Int(native_70ca),
+        0x007a_7b40 => Int(native_70cb),
+        0x007a_7f70 => Int(native_70cf),
+        0x007a_4a90 => Int(native_70d3),
+        0x007a_4f20 => Int(native_70d4),
+        0x007a_3500 => Int(native_70d9),
+        0x007a_4df0 => Int(native_70da),
+        0x007a_3450 => Int(native_70db),
+        0x007a_79b0 => Int(native_70de),
+        0x007a_2b50 => Int(native_70e4),
+        0x007a_4c70 => Int(native_70e5),
+        0x007a_4e00 => Int(native_70e6),
+        0x007a_7a90 => Int(native_70e8),
+        0x007a_7b00 => Int(native_70e9),
+        0x007a_7d10 => Int(native_70eb),
+        0x007a_3ac0 => Float(native_70f0),
+        0x007a_3300 => Int(native_70f3),
+        0x007a_2ad0 => Int(native_70f4),
+        0x007a_34e0 => Int(native_70f6),
+        0x007a_36e0 => Int(native_70f8),
+        0x007a_5fc0 => Int(native_70f9),
+        0x007a_37e0 => Int(native_70fb),
+        0x007a_3440 => Int(native_70fc),
+        0x007a_7d20 => Int(native_7100),
+        0x007a_7f60 => Int(native_7101),
+        0x007a_3970 => Int(native_710a),
+        0x007a_3c00 => Int(native_710e),
+        0x007a_3c90 => Int(native_710f),
+        0x007a_8090 => Int(native_7113),
+        0x007a_80a0 => Int(native_7114),
+        0x007a_6930 => Int(native_7116),
+        0x007a_3f40 => Int(native_711e),
+        0x007a_6200 => Int(native_711f),
+        0x007a_65a0 => Int(native_7120),
+        0x007a_6790 => Int(native_7121),
+        0x007a_7ee0 => Int(native_7124),
+        0x007a_5240 => Int(native_7127),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] knows, and whether it returns a float.
-pub const PORTED: [(u32, bool); 276] = [
+pub const PORTED: [(u32, bool); 366] = [
     (0x0087_78d0, false),
     (0x0087_78f0, false),
     (0x0087_7920, false),
@@ -3056,4 +4008,94 @@ pub const PORTED: [(u32, bool); 276] = [
     (0x007b_92a0, false),
     (0x007b_9d80, false),
     (0x007b_9630, false),
+    (0x0076_ead0, false),
+    (0x0076_eae0, false),
+    (0x0076_eaf0, false),
+    (0x0076_eb00, false),
+    (0x0076_eb10, false),
+    (0x0076_eb20, false),
+    (0x0076_ecc0, false),
+    (0x0076_ecd0, false),
+    (0x007a_39d0, false),
+    (0x007a_4550, false),
+    (0x007a_5690, false),
+    (0x007a_5980, false),
+    (0x007a_5a10, false),
+    (0x007a_6060, false),
+    (0x007a_6e10, false),
+    (0x007a_4da0, false),
+    (0x007a_74e0, false),
+    (0x007a_6e80, false),
+    (0x007a_6760, false),
+    (0x007a_6950, false),
+    (0x007a_6960, false),
+    (0x007a_6a30, false),
+    (0x007a_6ad0, false),
+    (0x007a_6170, false),
+    (0x007a_6bc0, false),
+    (0x007a_7010, false),
+    (0x007a_6330, false),
+    (0x007a_29f0, false),
+    (0x007a_56f0, false),
+    (0x007a_5450, false),
+    (0x007a_7200, false),
+    (0x007a_2c70, false),
+    (0x007a_5d60, false),
+    (0x007a_7c40, false),
+    (0x007a_76e0, false),
+    (0x007a_49c0, false),
+    (0x007a_72c0, false),
+    (0x007a_61d0, false),
+    (0x007a_2dc0, false),
+    (0x007a_7340, false),
+    (0x007a_3730, false),
+    (0x007a_54f0, true),
+    (0x007a_2cd0, false),
+    (0x007a_7790, false),
+    (0x007a_79a0, false),
+    (0x007a_7130, false),
+    (0x007a_52b0, false),
+    (0x007a_6640, false),
+    (0x007a_6c70, true),
+    (0x007a_7c20, false),
+    (0x007a_3950, false),
+    (0x007a_39f0, true),
+    (0x007a_75e0, false),
+    (0x007a_7ab0, false),
+    (0x007a_7b40, false),
+    (0x007a_7f70, false),
+    (0x007a_4a90, false),
+    (0x007a_4f20, false),
+    (0x007a_3500, false),
+    (0x007a_4df0, false),
+    (0x007a_3450, false),
+    (0x007a_79b0, false),
+    (0x007a_2b50, false),
+    (0x007a_4c70, false),
+    (0x007a_4e00, false),
+    (0x007a_7a90, false),
+    (0x007a_7b00, false),
+    (0x007a_7d10, false),
+    (0x007a_3ac0, true),
+    (0x007a_3300, false),
+    (0x007a_2ad0, false),
+    (0x007a_34e0, false),
+    (0x007a_36e0, false),
+    (0x007a_5fc0, false),
+    (0x007a_37e0, false),
+    (0x007a_3440, false),
+    (0x007a_7d20, false),
+    (0x007a_7f60, false),
+    (0x007a_3970, false),
+    (0x007a_3c00, false),
+    (0x007a_3c90, false),
+    (0x007a_8090, false),
+    (0x007a_80a0, false),
+    (0x007a_6930, false),
+    (0x007a_3f40, false),
+    (0x007a_6200, false),
+    (0x007a_65a0, false),
+    (0x007a_6790, false),
+    (0x007a_7ee0, false),
+    (0x007a_5240, false),
 ];

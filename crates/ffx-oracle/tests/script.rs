@@ -4633,10 +4633,20 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
     (a, b)
 }
 
-/// Group 0's natives that can read an uninitialised local of the original
-/// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot):
-/// tested on chosen arguments only.
-const R20_UNINIT: [u32; 3] = [0x0085_fd80, 0x0086_0000, 0x0085_8290];
+/// Natives that can read an uninitialised local of the original
+/// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot),
+/// tested on chosen arguments only; `0x7076`, whose `MsSetBallSplineInit`
+/// and `MsSetBallSpline` copy callee locals left unwritten (`MsGetChrPos`
+/// without an actor, `Ch_OptposGet` without the element) into the actor
+/// and spline records, so the two stacks' leftovers differ; and `0xb008`'s start, which leaves `EAX` as it was
+/// (the dispatch ignores it) and writes nothing.
+const R20_UNINIT: [u32; 5] = [
+    0x0085_fd80,
+    0x0086_0000,
+    0x0085_8290,
+    0x007a_56f0,
+    0x0076_eb00,
+];
 
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
@@ -4797,6 +4807,70 @@ fn round19_natives_match_the_original() {
                 native_case(a, b, w, 0x0085_f070, &[], &format!("0x00dd {r}"));
             }
             compared += 19;
+        }
+        // group 7's battle-global natives on values the snapshots lack: the
+        // 0x70f8 list (count 3, read index 1) and its 0x70f6 reset, the
+        // first 0x007b19d0 record with distinct bytes +0/+1, the pad
+        // orientation, 0x7081's state byte
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let (a, b) = (&mut a, &mut b);
+            let w = actors(a, b)[0];
+            let (n, i) = (a.rebase(0x0113_63ec), a.rebase(0x0113_63ed));
+            poke(a, b, n, 3u8);
+            poke(a, b, i, 1u8);
+            for k in 0..4 {
+                native_case(a, b, w, 0x007a_36e0, &[], &format!("0x70f8 {k}"));
+            }
+            poke(a, b, i, 1u8);
+            native_case(a, b, w, 0x007a_34e0, &[], "0x70f6");
+            native_case(a, b, w, 0x007a_36e0, &[], "0x70f8 after 0x70f6");
+            let r = orig(a, 0x007b_19d0, &[0]);
+            assert_eq!(r, orig(b, 0x007b_19d0, &[0]));
+            poke(a, b, r, 5u8);
+            poke(a, b, r + 1, 9u8);
+            native_case(a, b, w, 0x007a_3c00, &[], "0x710e");
+            native_case(a, b, w, 0x007a_3c90, &[], "0x710f");
+            for v in [5u32, 6, 0xff] {
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x007a_7340,
+                    &[(stack::INT, v)],
+                    &format!("0x7099 {v}"),
+                );
+            }
+            let st = a.rebase(0x0112_c022);
+            for x in [0u8, 1, 2] {
+                poke(a, b, st, x);
+                native_case(a, b, w, 0x007a_5d60, &[], &format!("0x7081 poll {x}"));
+            }
+            compared += 14;
+        }
+        // 0x7076 with its three spline callees stubbed: its own record
+        // writes and the order around them
+        {
+            let (mut a, mut b) = r19_pair(&pages, &exe, c);
+            let (a, b) = (&mut a, &mut b);
+            for o in [&mut *a, &mut *b] {
+                for f in [0x007b_7c80, 0x007b_78c0, 0x007a_b010] {
+                    let at = o.rebase(f);
+                    o.stub_return(at, 0).unwrap();
+                }
+            }
+            for w in actors(a, b) {
+                if Mem::read::<u8>(b, v::atel_get_battle_id_adrs2(w)) == 0xff {
+                    continue;
+                }
+                let push = [
+                    (stack::INT, 0x1234),
+                    (stack::FLOAT, 0.5f32.to_bits()),
+                    (stack::INT, 1),
+                ];
+                native_case(a, b, w, 0x007a_56f0, &push, "0x7076 stubbed");
+                compared += 1;
+            }
         }
         // the polls without keep on a read that reports done (0): 5 for
         // 0x5062, 1 for 0x5064 (the reads stubbed on both sides)

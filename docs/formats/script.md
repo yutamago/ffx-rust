@@ -727,6 +727,49 @@ camera-area, shake and eye/ref helpers (`MsAtelCameraShake` passes its
 between them. `0x607c` keeps the screen id in the args word and waits
 until `MsScreenMoveCheck(id, 1)` is 0.
 
+Script round 21 continued with groups b and 7. Group b's table
+(`0x00c40e30`) has 16 entries: `AtelInitTotal` pushes it, and the next
+address the code refers to, `0x00c40f30`, is the kernel menu's accessor
+table (`0x00770540` stores it into `0x00c416d0`; its entries are
+`KernelSaveCommand_*` and the like, `cdecl(chr)`). IDs `0xb010` on would
+read that table as handler slots and are not natives. Of the 16, the
+eight slots left (`0xb005`-`0xb008`, `0xb00e`, `0xb00f`) are the PC port's
+stubs for the PS2 movie callbacks: a "Virtuos Warning: Movie on Windows,
+PS3 & PS Vita is not impelemented yet!" line naming the callback
+(`movie_pause_resulti`, `movie_ch_resulti`, `movie_vol_resulti`,
+`movie_start_debug_init`/`_exec`/`_resulti`,
+`movie_op_frame_draw_acc_path3_resulti`, `movie_frame_pal_resulti`)
+through the empty `dbgPrintf`, then 0. `0xb008`'s poll returning 0 waits
+forever; its start leaves `EAX` as it was.
+
+Group 7's last 81 battle natives read the worker's actor
+(`AtelGetBattleIdAdrs2`, 0xff for none) and most pick their target with
+`Battle_FirstSelectedActor(actor, selector, 0, 1)`: effects
+(`MsSetChrEffect_0079eb10`, whose start counts the actor's `+0xe12`,
+`MsEtCriticalEffect`, `MsEffectSetGuard`), the sound registrations
+(`MsRegSEplay2`/`3`, `MsRegSEfade`, `0x706c`'s per-actor sound table at
+`+0xeac`, which skips the last one played, `0x0112c8e0`), the equipment
+refresh `0x7079`, the ball spline `0x7076`, the battle text windows
+(`0x7042`, `0x7072`, `0x70b7`, and `0x711f`/`0x7121` behind
+`MsGetBattleMessageFlag` and `0x01841d20`: the window clamped by
+`Clamp0To6_007a86e0`, `0x0112c250` = the text index, the text from the
+table at `*0x0112a9b8` or `*0x0112a998`, two `u16` offsets per entry by
+`MsGetSaveConfigHiragana`) and a run of byte getters and setters on the
+battle globals around `0x0112c9xx`. `0x7045`, `0x70b6` and `0x7077` scale a
+`MsSetMove`/`MsGetTargetDist` float and truncate it (`0x7077` capped by the
+`f32` at `0x00b4ae10`, NaN passing the `fcom`). `0x703e`'s poll waits
+while any of the 31 actors is busy or acting and records which in
+`0x0112ca08`/`0x0112ca09` (0xdf, 0xdd; 0xff/0xde when the battle state
+rules the check out). `0x70f0` is `Atel_GetBattleCountF`, which keeps its
+shim. 34 of the 81 are bare jumps, global reads or writes, or missing from
+the dump, and run in Rust only through the dispatch.
+
+Group 4's table (`0x00c88d88`) has 71 entries (`0x4000`-`0x4046`) and ends
+where group 5's (`0x00c891f8`) begins, so `0x4047`-`0x40d7` read group 5's
+entries (`0x4047 + k` is `0x5000 + k`): the same slots, the same handler
+addresses, hence the same Rust handlers through the dispatch. The table
+lists those IDs with the group-5 row they alias.
+
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
 returns 0, so leaving them out changes nothing: the round-11 ports drop
@@ -1464,37 +1507,149 @@ API is generated from this table. `-`: none. A result starting with
 | `0x4044` | `Native_4044` | - | three popped and dropped; 0 | - | int `0x00a77cb0` (native_chr) |
 | `0x4045` | `Native_4045` | v | 0x0082d9d0(v) | - | int `0x00a77ce0` (native_chr) |
 | `0x4046` | `Native_4046` | v | Ch_DrawSetShadowSemi(v) (0x00821b20) | - | int `0x00a77d00` (native_chr) |
+| `0x4047` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) (as `0x5000`: group 4's table runs into group 5's) |
+| `0x4048` | `Native_ChrLoadMotionGroup` | n int | int: 0, Chr_LoadMotionGroup(n) (0x008375f0) | - (the poll returns 5) | start `0x00a799b0`, poll `0x00a79a10`, int `0x00a79a20` (native_chr) (as `0x5001`: group 4's table runs into group 5's) |
 | `0x4049` | `Native_5002` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model | - | int `0x00a787a0` (native_mods) |
+| `0x404a` | `Native_ChrWaitMotion_5003` | - | 5 when done | until the character's motion has ended (+0x736) | start `0x00a787d0`, poll `0x00a788a0` (native) (as `0x5003`: group 4's table runs into group 5's) |
 | `0x404b` | `Native_501f_copy_00a788d0` | - | int: 1 when the model's +0x736 is set, else 0 (also without a model) | - | int `0x00a788d0` (native_mods) |
+| `0x404c` | `Native_ChrReleaseMotion` | - | 0 (automatic motions take over) | - | int `0x00a78940` (native) (as `0x5005`: group 4's table runs into group 5's) |
+| `0x404d` | `Native_5006` | scale f | 0: Ch_SetScaleAll(model, scale) (0x0082b590) | - | int `0x00a78a40` (native_chr) (as `0x5006`: group 4's table runs into group 5's) |
+| `0x404e` | `Native_5007` | n, x f, y f, z f | Ch_SetScale(model, n, x, y, z) (0x0082b560) | - | int `0x00a789a0` (native_chr) (as `0x5007`: group 4's table runs into group 5's) |
+| `0x404f` | `Native_ChrHide` | hide int (0, 1) | 0 | - | int `0x00a78ac0` (native) (as `0x5008`: group 4's table runs into group 5's) |
+| `0x4050` | `Native_ChrSetPushWeight` | weight f (push weight) | float: previous weight | - | float `0x00a78b30` (native) (as `0x5009`: group 4's table runs into group 5's) |
 | `0x4051` | `Native_500a` | height f | 0: Ch_SetHitHeight(model, height) (0x0082b320) for a model | - | int `0x00a78c20` (native_mods) |
+| `0x4052` | `Native_500b` | v f | 0: Ch_SetJimen(model, v) (0x0082b360) | - | int `0x00a78b90` (native_chr) (as `0x500b`: group 4's table runs into group 5's) |
+| `0x4053` | `Native_500c` | v | popped and dropped (the original only prints a warning for a model); 0 | - | int `0x00a78d30` (native_chr) (as `0x500c`: group 4's table runs into group 5's) |
+| `0x4054` | `Native_500d` | v int | 0: Ch_SetHideEvent(model, v) (0x0082b2c0) | - | int `0x00a78df0` (native_chr) (as `0x500d`: group 4's table runs into group 5's) |
+| `0x4055` | `Native_ChrSetGroundFollow` | on int: stick to the ground | 0 | - | int `0x00a78cb0` (native) (as `0x500e`: group 4's table runs into group 5's) |
+| `0x4056` | `Native_ChrSetBodyHit` | on int: collide with characters | 0 | - | int `0x00a78da0` (native) (as `0x500f`: group 4's table runs into group 5's) |
+| `0x4057` | `Native_ChrLoadSystemMgrp` | chr id int, n int | start: the args words; int: 0, ChN_ReadSystemMGRP(id, n) (0x00836870) | - (the poll returns 5) | start `0x00a79820`, poll `0x00a79970`, int `0x00a79980` (native_chr) (as `0x5010`: group 4's table runs into group 5's) |
 | `0x4058` | `Native_5011` | v int | 0: ChN_DisposeSystemMGRP(the model's u16 +0, v) (0x00836830) for a model | - | int `0x00a78e50` (native_mods) |
+| `0x405a` | `Native_5013` | mode int | 0: Ch_SetFieldMode, Ch_SetMotionType(model, mode) (0x0082b1e0, 0x0082b3a0) | - | int `0x00a78ec0` (native_chr) (as `0x5013`: group 4's table runs into group 5's) |
+| `0x405b` | `Native_5014` | v f, n | Ch_SetShade(model, v, n) (0x0082b5b0) | - | int `0x00a78f30` (native_chr) (as `0x5014`: group 4's table runs into group 5's) |
+| `0x405c` | `Native_5015` | r f, g f, b f, n int | 0: Ch_SetShadeCol(model, r, g, b, n) (0x0082b5d0) | - | int `0x00a78fb0` (native_chr) (as `0x5015`: group 4's table runs into group 5's) |
+| `0x405d` | `Native_ChrSetOffset` | x f, y f, z f: model offset | 0 | - | int `0x00a790b0` (native) (as `0x5016`: group 4's table runs into group 5's) |
+| `0x405e` | `Native_ChrSetGroundMode` | mode int (0 clamp, 1 snap, 2 float) | 0 | - | int `0x00a79130` (native) (as `0x5017`: group 4's table runs into group 5's) |
+| `0x405f` | `Native_5018` | v int | 0: Ch_SetMotionSpeed(model, v) (0x0082b380) | - | int `0x00a791e0` (native_chr) (as `0x5018`: group 4's table runs into group 5's) |
+| `0x4060` | `Native_5019` | - | Native_PlayMotionCommon(worker, stack, 0, 0) | - | int `0x00a79220` (native_chr) (as `0x5019`: group 4's table runs into group 5's) |
+| `0x4061` | `Native_ChrPlayMotion` | motion args as Native_PlayMotionCommon (stack) | 0 | - | int `0x00a79270` (native_move) (as `0x501a`: group 4's table runs into group 5's) |
+| `0x4062` | `Native_ChrSetMotion_501b` | motion int | 0 | - | int `0x00a792d0` (native) (as `0x501b`: group 4's table runs into group 5's) |
 | `0x4064` | `Native_501d` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model (as 0x5002) | - | int `0x00a79310` (native_mods) |
+| `0x4065` | `Native_ChrWaitMotion_501e` | - | 5 when done | until the scripted motion has ended | start `0x00a79370`, poll `0x00a793c0` (native) (as `0x501e`: group 4's table runs into group 5's) |
+| `0x4066` | `Native_501f` | - | 1 while the worker's model has +0x736 set | - | int `0x00a79450` (native_chr) (as `0x501f`: group 4's table runs into group 5's) |
+| `0x4067` | `Native_ChrReleaseMotion2` | - | 0 (as 0x5005) | - | int `0x00a794b0` (native) (as `0x5020`: group 4's table runs into group 5's) |
+| `0x4068` | `Native_ChrSetMotionSpeed` | speed int (8.8, 256 = 1x) | 0 | - | int `0x00a79510` (native) (as `0x5021`: group 4's table runs into group 5's) |
+| `0x4069` | `Native_ChrSetMotionSeqLevel` | level int | 0 | - | int `0x00a79550` (native_move) (as `0x5022`: group 4's table runs into group 5's) |
 | `0x406a` | `Native_5023` | v int | 0 (the model asked for and v popped, both unused) | - | int `0x00a795b0` (native_mods) |
 | `0x406b` | `Native_5024` | v int | 0 (as 0x5023) | - | int `0x00a79620` (native_mods) |
+| `0x406c` | `Native_ChrSetAutoMotion` | slot int, motion int (-1 default) | 0 | - | int `0x00a79670` (native) (as `0x5025`: group 4's table runs into group 5's) |
+| `0x406d` | `Native_5026` | worker, point, &x, &y, &z | Ch_ElemGetPos(model, point, 0, &v) (0x00833d10) into the three variables (null ones skipped); 0 | - | int `0x00a796e0` (native_chr) (as `0x5026`: group 4's table runs into group 5's) |
 | `0x406e` | `Native_5027` | i int, element int, x f, y f, z f, ox var, oy var, oz var | 0: Ch_ElemGetPos(worker i's model, element, &(x, y, z, 1.0), &out) (0x00833d10) and out's three words into the variables (null ones skipped; nothing without a model) | - | int `0x00a79860` (native_mods) |
+| `0x406f` | `Native_5028` | v f | Ch_MoveSetChgRun(model, v) (0x0082b040), 0.0 without a model | - | float `0x00a799d0` (native_chr) (as `0x5028`: group 4's table runs into group 5's) |
+| `0x4070` | `Native_ChrSetShadowMode` | mode int | int: Ch_SetShadowMode's result | - | int `0x00a79a40` (native) (as `0x5029`: group 4's table runs into group 5's) |
+| `0x4071` | `Native_ChrSetDistanceCull` | on int | int: previous | - | int `0x00a79af0` (native) (as `0x502a`: group 4's table runs into group 5's) |
 | `0x4072` | `Native_502b` | - | 0 (the model asked for, unused) | - | int `0x00a79b70` (native_mods) |
+| `0x4073` | `Native_502c` | worker, point | as Native_ChrAttach with Ch_BindToElemDirect (0x00832680) | - | int `0x00a79bc0` (native_chr) (as `0x502c`: group 4's table runs into group 5's) |
+| `0x4074` | `Native_ChrAttach` | worker int (-1 detaches), point int | 0: Ch_BindToElem(model, that worker's model, point) (0x00832630) | - | int `0x00a79c50` (native_chr) (as `0x502d`: group 4's table runs into group 5's) |
 | `0x4075` | `Native_502e` | - | int: Ch_IdGetMap(model) (0x0083d840), 0 without a model | - | int `0x00a79d10` (native_mods) |
 | `0x4076` | `Native_502f` | i int | int: Ch_IdGetMap(worker i's model), 0 without a model | - | int `0x00a79d60` (native_mods) |
 | `0x4077` | `Native_5030` | - | int: Ch_IdGetSound(model) (0x0083d900), 0 without a model | - | int `0x00a79db0` (native_mods) |
 | `0x4078` | `Native_5031` | i int | int: Ch_IdGetSound(worker i's model), 0 without a model | - | int `0x00a79e00` (native_mods) |
+| `0x4079` | `Native_ChrPlayDefaultMotion` | - | 0 (default motion) | - | int `0x00a79e60` (native_move) (as `0x5032`: group 4's table runs into group 5's) |
+| `0x407a` | `Native_ChrFadeAlpha` | alpha f, frames int (0 at once) | 0 | - | int `0x00a79ea0` (native) (as `0x5033`: group 4's table runs into group 5's) |
+| `0x407b` | `Native_ChrSetMotionBlend` | frames int: blend into the next motion | 0 | - | int `0x00a79f40` (native) (as `0x5034`: group 4's table runs into group 5's) |
+| `0x407c` | `Native_5035` | - | Ch_GetSeqFrame(model) (0x00836af0), 0 without a model | - | int `0x00a79fa0` (native_chr) (as `0x5035`: group 4's table runs into group 5's) |
+| `0x407d` | `Native_5036` | - | 0x00a7a980(worker, args, stack, 0) | - | int `0x00a7a120` (native_chr) (as `0x5036`: group 4's table runs into group 5's) |
+| `0x407e` | `Native_5037` | worker int, x var, y var, z var | 0: the model's point 0 (Ch_OptposGet 0x008354f0) into the variables (null ones skipped) | - | int `0x00a7a140` (native_chr) (as `0x5037`: group 4's table runs into group 5's) |
 | `0x407f` | `Native_5038` | i int, x var, y var, z var | 0: worker i's model's +0x6b4, +0x6b8, +0x6bc into the variables (null ones skipped) | - | int `0x00a7a250` (native_mods) |
+| `0x4080` | `Native_ChrSetHitRadiusScale` | scale f | float: Ch_SetThickness(model, scale) (0x0082b880); 0.0 without a model | - | float `0x00a7a340` (native_chr) (as `0x5039`: group 4's table runs into group 5's) |
+| `0x4081` | `Native_503a` | z f | float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model | - | float `0x00a7a3d0` (native_chr) (as `0x503a`: group 4's table runs into group 5's) |
+| `0x4082` | `Native_503b` | b, a | ChN_DisposeSystemMGRP(b, a) (0x00836830) when the worker has a model | - | int `0x00a7a450` (native_chr) (as `0x503b`: group 4's table runs into group 5's) |
+| `0x4083` | `Native_503c` | v int | 0: Ch_DisposeMGRP(v) (0x00836ad0) | - | int `0x00a7a4d0` (native_chr) (as `0x503c`: group 4's table runs into group 5's) |
+| `0x4084` | `Native_503d` | v int | 0: ChN_DataDispose(v, 1) (0x00824f00) | - | int `0x00a7a520` (native_chr) (as `0x503d`: group 4's table runs into group 5's) |
+| `0x4085` | `Native_503e` | b int, a int | 0: ChN_DataDispose(b, a) (0x00824f00) | - | int `0x00a7a570` (native_chr) (as `0x503e`: group 4's table runs into group 5's) |
+| `0x4086` | `Native_503f` | v | Ch_SetSequence(model, v) (0x00837ac0) | - | int `0x00a7a5a0` (native_chr) (as `0x503f`: group 4's table runs into group 5's) |
+| `0x4087` | `Native_ChrSetMotion2` | motion int | 0 | - | int `0x00a7a610` (native_move) (as `0x5040`: group 4's table runs into group 5's) |
 | `0x4088` | `Native_5019_copy_00a7a740` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 0) | - | int `0x00a7a740` (native_mods) |
+| `0x4089` | `Native_ChrPlayMotion2` | as 0x501a | 0 | - | int `0x00a7a780` (native_move) (as `0x5042`: group 4's table runs into group 5's) |
 | `0x408a` | `Native_5043` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 1) | - | int `0x00a7a7c0` (native_mods) |
+| `0x408b` | `Native_5044` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 1, 1) (0x00a7aae0) | - | int `0x00a7a810` (native_chr) (as `0x5044`: group 4's table runs into group 5's) |
 | `0x408c` | `Native_5045` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 0, 1) (as 0x5043) | - | int `0x00a7a830` (native_mods) |
+| `0x408d` | `Native_5046` | - | Native_PlayMotionCommon(worker, stack, 1, 1) | - | int `0x00a7a880` (native_chr) (as `0x5046`: group 4's table runs into group 5's) |
+| `0x408e` | `Native_5047` | worker int, v int | 0: Ch_SetSequence(that worker's model, v) (0x00837ac0) | - | int `0x00a7a900` (native_chr) (as `0x5047`: group 4's table runs into group 5's) |
+| `0x408f` | `Native_5048` | - | as 0x5047 | - | int `0x00a7a940` (native_chr) (as `0x5048`: group 4's table runs into group 5's) |
+| `0x4090` | `Native_5049` | worker | start: the args word = that worker's model, also EAX; poll: 0 while the model in the args word has +0x736 set (or there is none), else 5 | see the poll | start `0x00a785f0`, poll `0x00a78620` (native_chr) (as `0x5049`: group 4's table runs into group 5's) |
+| `0x4091` | `Native_504a` | worker | as 0x501f for that worker | - | int `0x00a78640` (native_chr) (as `0x504a`: group 4's table runs into group 5's) |
+| `0x4092` | `Native_504b` | worker | Ch_ResetMotion (0x0082b080) on that worker's model | - | int `0x00a78670` (native_chr) (as `0x504b`: group 4's table runs into group 5's) |
+| `0x4093` | `Native_504c` | worker int, v int | 0: Ch_SetMotionSpeed(that worker's model, v) (0x0082b380) | - | int `0x00a786a0` (native_chr) (as `0x504c`: group 4's table runs into group 5's) |
+| `0x4094` | `Native_504d` | v f | Ch_AllSetThicknessEvent(v) (0x0082a8d0); 0.0 | - | float `0x00a786e0` (native_chr) (as `0x504d`: group 4's table runs into group 5's) |
+| `0x4095` | `Native_ChrLoad` | chr int | int: 0x00829ef0's result | - | int `0x00a79800` (native_move) (as `0x504e`: group 4's table runs into group 5's) |
+| `0x4096` | `Native_504f` | slot int | int: args +0xc, Ch_DataReadSync(slot)'s result (0x0082a040) | until Ch_DataReadSync(slot) is 0 (poll 1), or 5 with args +8 set | start `0x00a79340`, poll `0x00a79380`, int `0x00a79410` (native_chr) (as `0x504f`: group 4's table runs into group 5's) |
+| `0x4097` | `Native_5050` | worker int, v int | 0: Ch_MotionSet737(that worker's model, v) (0x00837570) | - | int `0x00a78710` (native_chr) (as `0x5050`: group 4's table runs into group 5's) |
+| `0x4098` | `Native_ChrGetMotionFrame` | - | int: motion frame (8.8) | - | int `0x00a78750` (native) (as `0x5051`: group 4's table runs into group 5's) |
+| `0x4099` | `Native_5052` | worker, point, x f, y f, z f | Ch_BindToElemDirectOfs(model, that worker's model, point, x, y, z) (0x008326e0); worker -1 detaches with the offset | - | int `0x00a787e0` (native_chr) (as `0x5052`: group 4's table runs into group 5's) |
 | `0x409a` | `Native_5053` | i int, id int | int: Ch_ElemGetDirect(worker i's model, id) (0x00833bf0), 0 without a model | - | int `0x00a78900` (native_mods) |
+| `0x409b` | `Native_5054` | part int, on int | int: Ch_ModelSetHide(model, part, on) (0x0082aea0); 0 without a model | - | int `0x00a78960` (native_chr) (as `0x5054`: group 4's table runs into group 5's) |
 | `0x409c` | `Native_5055` | v int | int: Ch_ModelGetHide(model, v) (0x0082add0), 0 without a model | - | int `0x00a78a10` (native_mods) |
+| `0x409d` | `Native_5056` | v int | int: Ch_SetCalcNorm(model, v) (0x00835750); 0 without a model | - | int `0x00a78a80` (native_chr) (as `0x5056`: group 4's table runs into group 5's) |
+| `0x409e` | `Native_ChrSetBoneUpdate` | worker int, on int | int: previous | - | int `0x00a78af0` (native) (as `0x5057`: group 4's table runs into group 5's) |
+| `0x409f` | `Native_5058` | v int | 0: Ch_AllSetCalcNorm(v) (0x008325b0) | - | int `0x00a78b70` (native_chr) (as `0x5058`: group 4's table runs into group 5's) |
 | `0x40a0` | `Native_5059` | slot int, motion int | 0: Ch_SetSysMotion(model, slot, motion) (0x00837d00) for a model | - | int `0x00a78bd0` (native_mods) |
+| `0x40a1` | `Native_505a` | b, a | Ch_TextureSetClutBase(model, b, a) (0x008313c0), 0 without a model | - | int `0x00a78c60` (native_chr) (as `0x505a`: group 4's table runs into group 5's) |
 | `0x40a2` | `Native_505b` | b int, a int | int: Ch_TextureSetImageBase(model, b, a) (0x00831390), 0 without a model | - | int `0x00a78ce0` (native_mods) |
+| `0x40a3` | `Native_ChrSetNextMotionBlend` | frames int (-1 = 0, 0 = 1) | 0 | - | int `0x00a78d70` (native) (as `0x505c`: group 4's table runs into group 5's) |
+| `0x40a4` | `Native_ChrGetMotion` | - | int: motion id | - | int `0x00a78dd0` (native) (as `0x505d`: group 4's table runs into group 5's) |
+| `0x40a5` | `Native_505e` | - | Ch_GetSp(model) (0x0082ad60), 0.0 without a model | - | float `0x00a78e20` (native_chr) (as `0x505e`: group 4's table runs into group 5's) |
+| `0x40a6` | `Native_505f` | v int | 0: Ch_MotionSetLoop(model, v) (0x00839960) | - | int `0x00a78e90` (native_chr) (as `0x505f`: group 4's table runs into group 5's) |
+| `0x40a7` | `Native_5060` | v | Ch_IdEnableShade(model, v) (0x008340f0) | - | int `0x00a78f00` (native_chr) (as `0x5060`: group 4's table runs into group 5's) |
+| `0x40a8` | `Native_5061` | b int, a int | 0: Ch_MgrpRead(b, a) (0x00836a40) | - | int `0x00a78f80` (native_chr) (as `0x5061`: group 4's table runs into group 5's) |
 | `0x40a9` | `Native_5062` | id int, n int, keep int | the id; the poll 5 when done; int slot the args word +0xc (with keep, ChN_ReadSystemMGRPsync's result) | with keep set one call of ChN_ReadSystemMGRPsync(id, n) (0x00836a50), else until it returns 0 | start `0x00a79030`, poll `0x00a79070`, int `0x00a79120` (native_mods) |
+| `0x40aa` | `Native_5063` | id int, n int | int: args +0xc, ChN_ReadSystemMGRPsync(id, n)'s result (0x00836a50) | as 0x504f | start `0x00a79160`, poll `0x00a791a0`, int `0x00a79210` (native_chr) (as `0x5063`: group 4's table runs into group 5's) |
 | `0x40ab` | `Native_5064` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
+| `0x40ac` | `Native_5065` | v int | 0: 0x00837650(v) (the dbgPrintf left out) | - | int `0x00a79420` (native_chr) (as `0x5065`: group 4's table runs into group 5's) |
+| `0x40ad` | `Native_5066` | n | start: args +0 = n, +0xc = 0; EAX n; poll: 1 once 0x00837670(n) is 0 (the dbgPrintf left out), else 0; int: args +0xc | see the poll | start `0x00a79480`, poll `0x00a794d0`, int `0x00a79540` (native_chr) (as `0x5066`: group 4's table runs into group 5's) |
+| `0x40ae` | `Native_5067` | v | Ch_DrawSetCull(model, v) (0x008300b0) | - | int `0x00a79580` (native_chr) (as `0x5067`: group 4's table runs into group 5's) |
+| `0x40af` | `Native_WaitCdIdle` | - | 1 when done | until the CD reads are idle | poll `0x00a795d0` (native) (as `0x5068`: group 4's table runs into group 5's) |
+| `0x40b0` | `Native_5069` | v | Ch_SetKeepFps(model, v) (0x00839b50), 0 without a model | - | int `0x00a795e0` (native_chr) (as `0x5069`: group 4's table runs into group 5's) |
+| `0x40b1` | `Native_506a` | v | Ch_PLightSetEnable(model, v) (0x00830ae0) | - | int `0x00a79640` (native_chr) (as `0x506a`: group 4's table runs into group 5's) |
 | `0x40b2` | `Native_506b` | - | int: Ch_PLightGetEnable(model) (0x00830ad0), 0 without a model | - | int `0x00a796c0` (native_mods) |
 | `0x40b3` | `Native_506c` | bits int, mask int | 0: Ch_PLightSetEnableMask(model, bits, mask) (0x00830b00) for a model | - | int `0x00a797b0` (native_mods) |
+| `0x40b4` | `Native_506d` | a f, b f | Ch_SetRotX(model, wrap(b degrees), a) (0x008357f0) | - | int `0x00a79a80` (native_chr) (as `0x506d`: group 4's table runs into group 5's) |
+| `0x40b5` | `Native_506e` | v f | Ch_BindSetScale(model, v) (0x00832610) | - | int `0x00a79b30` (native_chr) (as `0x506e`: group 4's table runs into group 5's) |
+| `0x40b6` | `Native_506f` | v int (popped only for a model) | 0: Ch_SetHideCalc(model, v) (0x0082b280) | - | int `0x00a79b90` (native_chr) (as `0x506f`: group 4's table runs into group 5's) |
 | `0x40b7` | `Native_5070` | - | int: Ch_GetHideCalc(model) (0x0082abe0), 0 without a model | - | int `0x00a79c30` (native_mods) |
+| `0x40b8` | `Native_5071` | v | Ch_TextureLoadImage(model, v) (0x00831300) | - | int `0x00a79cc0` (native_chr) (as `0x5071`: group 4's table runs into group 5's) |
+| `0x40b9` | `Native_5072` | - | Ch_IdGetPNum(model) (0x0082adc0), 0 without a model | - | int `0x00a79cf0` (native_chr) (as `0x5072`: group 4's table runs into group 5's) |
+| `0x40ba` | `Native_5073` | v | Ch_SetOverlapHit(model, v) (0x0082b420), popped only for a model | - | int `0x00a79d30` (native_chr) (as `0x5073`: group 4's table runs into group 5's) |
 | `0x40bb` | `Native_5074` | - | int: Ch_GetOverlapHit(model) (0x0082ac70), 0 without a model | - | int `0x00a79d90` (native_mods) |
+| `0x40bc` | `Native_ChrGetMotionFrameOf` | worker int | int: its motion frame | - | int `0x00a79dd0` (native) (as `0x5075`: group 4's table runs into group 5's) |
+| `0x40bd` | `Native_5076` | on int (popped only for a model) | 0: Ch_MouthSetAutoTalk(model, on) (0x00834770) | - | int `0x00a79e30` (native_chr) (as `0x5076`: group 4's table runs into group 5's) |
 | `0x40be` | `Native_5077` | - | int: Ch_MouthGetAutoTalk(model) (0x00834740), 0 without a model | - | int `0x00a79e80` (native_mods) |
+| `0x40bf` | `Native_5078` | b int, a int | 0: Ch_TextureSetAnim(model, b, a) (0x0083d040) | - | int `0x00a79ef0` (native_chr) (as `0x5078`: group 4's table runs into group 5's) |
+| `0x40c0` | `Native_5079` | on int | 0: Ch_NeckSetEnable(model, on) (0x00834f60) | - | int `0x00a79f70` (native_chr) (as `0x5079`: group 4's table runs into group 5's) |
+| `0x40c1` | `Native_507a` | worker int | 0: Ch_NeckSetTarget(model, that worker's model) (0x00835050) | - | int `0x00a79fc0` (native_chr) (as `0x507a`: group 4's table runs into group 5's) |
+| `0x40c2` | `Native_507b` | x f, y f, z f | Ch_NeckSetTargetPos(model, &[x, y, z]) (0x008350a0) | - | int `0x00a7a000` (native_chr) (as `0x507b`: group 4's table runs into group 5's) |
+| `0x40c3` | `Native_507c` | - | Ch_NeckSetTargetCamera(model) (0x00835080) | - | int `0x00a7a070` (native_chr) (as `0x507c`: group 4's table runs into group 5's) |
+| `0x40c4` | `Native_507d` | b f, a f | degrees: Ch_NeckSetRot(model, wrap(b), wrap(a)) (0x00834ff0) | - | int `0x00a7a090` (native_chr) (as `0x507d`: group 4's table runs into group 5's) |
+| `0x40c5` | `CT_507E_ret` | worker int, on int: mouth flapping | 0 | - | int `0x00a7a210` (native) (as `0x507e`: group 4's table runs into group 5's) |
 | `0x40c6` | `Native_507f` | i int, v f | 0: 0x0082ae30(model, i, v) for a model | - | int `0x00a7a380` (native_mods) |
+| `0x40c7` | `Native_5080` | v f | Ch_SetHiju(model, v) (0x0082b340) | - | int `0x00a7a410` (native_chr) (as `0x5080`: group 4's table runs into group 5's) |
+| `0x40c8` | `Native_5081` | v | Ch_SetChocobo(model, v) (0x0082b130), popped only for a model | - | int `0x00a7a4a0` (native_chr) (as `0x5081`: group 4's table runs into group 5's) |
+| `0x40c9` | `Native_5082` | v | Ch_ClothSetEnable(model, v) (0x0082a930), popped only for a model | - | int `0x00a7a4f0` (native_chr) (as `0x5082`: group 4's table runs into group 5's) |
+| `0x40ca` | `Native_5083` | v | Ch_Vu1SetClipmode(model, v) (0x0082b970), popped only for a model | - | int `0x00a7a540` (native_chr) (as `0x5083`: group 4's table runs into group 5's) |
+| `0x40cb` | `Native_5084` | v f | Ch_NeckSetSpeed(model, v) (0x00835020) | - | int `0x00a7a5d0` (native_chr) (as `0x5084`: group 4's table runs into group 5's) |
+| `0x40cc` | `Native_5085` | v f | Ch_ShadowSetHeight(model, v) (0x00830cb0) | - | int `0x00a7a640` (native_chr) (as `0x5085`: group 4's table runs into group 5's) |
+| `0x40cd` | `Native_5086` | - | Ch_ReserveCalcNorm(model) (0x00835710) | - | int `0x00a7a680` (native_chr) (as `0x5086`: group 4's table runs into group 5's) |
+| `0x40ce` | `Native_ChrRefreshAllBones` | - | 0 | - | int `0x00a7a6a0` (native) (as `0x5087`: group 4's table runs into group 5's) |
+| `0x40cf` | `Native_5088` | v f, n | Ch_SetShadeID(model, v, n) (0x0082b720) | - | int `0x00a7a6b0` (native_chr) (as `0x5088`: group 4's table runs into group 5's) |
+| `0x40d0` | `Native_5089` | - | Native_PlayMotionCommon(worker, stack, 2, 0) | - | int `0x00a7a700` (native_chr) (as `0x5089`: group 4's table runs into group 5's) |
 | `0x40d1` | `Native_508a` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) | - | int `0x00a7a720` (native_mods) |
+| `0x40d2` | `Native_508b` | - | the same as 0x5089 | - | int `0x00a7a760` (native_chr) (as `0x508b`: group 4's table runs into group 5's) |
 | `0x40d3` | `Native_508c` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) (as 0x508a) | - | int `0x00a7a7a0` (native_mods) |
+| `0x40d4` | `Native_508d` | v | Ch_TextureSetAnimTimer(model, v) (0x0083d070) | - | int `0x00a7a7e0` (native_chr) (as `0x508d`: group 4's table runs into group 5's) |
+| `0x40d5` | `Native_508e` | v | Ch_ClothEnableGrav(model, v) (0x008245f0) | - | int `0x00a7a850` (native_chr) (as `0x508e`: group 4's table runs into group 5's) |
+| `0x40d6` | `Native_508f` | v int (popped only for a model) | 0: the model's +0x870 byte = v | - | int `0x00a7a8a0` (native_chr) (as `0x508f`: group 4's table runs into group 5's) |
+| `0x40d7` | `Native_5090` | v | the model's +0x871 byte, popped only for a model | - | int `0x00a7a8d0` (native_chr) (as `0x5090`: group 4's table runs into group 5's) |
 | `0x5000` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) |
 | `0x5001` | `Native_ChrLoadMotionGroup` | n int | int: 0, Chr_LoadMotionGroup(n) (0x008375f0) | - (the poll returns 5) | start `0x00a799b0`, poll `0x00a79a10`, int `0x00a79a20` (native_chr) |
 | `0x5002` | `Native_5002` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model | - | int `0x00a787a0` (native_mods) |
@@ -1777,9 +1932,11 @@ API is generated from this table. `-`: none. A result starting with
 | `0x6088` | `Native_Cam_6088` | - | int: camera handle (0x007beae0(cam, 1)) | - | int `0x007b8a70` (native_cam) |
 | `0x6089` | `Native_6089` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
 | `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
+| `0x7001` | `Native_BtlSetFlagBded` | v | int: the byte 0x0112bded = v & 1; 0 | - | int `0x007a39d0` (native_mods) |
 | `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530`, poll `0x007a35c0` (native_btl) |
 | `0x7003` | `Native_7003` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
 | `0x7004` | `Native_7004` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
+| `0x7005` | `Native_BtlIsUnderwater` | - | int: the i8 at 0x0112c9ce | - | int `0x007a4550` (native_mods) |
 | `0x7006` | `Native_7006` | a int, b int | 0 (as 0x7003 with 1, when actor +0x41d) | - | int `0x007a3f50` (native_btl) |
 | `0x7007` | `Native_ActorPlayMotion` | as 0x007a8fc0(worker, args, stack, 0) | its result | - | int `0x007a35a0` (native_move) |
 | `0x7008` | `Native_ActorWaitMotion` | - | 5 when done | until the actor's motion ends (no actor/model: at once) | poll `0x007a3980` (native_btl) |
@@ -1788,6 +1945,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x700b` | `Native_BtlUseCommand` | targets int (selector), command int | 1 if used, else 0 (actor cannot act) | - | int `0x007a44b0` (native_btl) |
 | `0x700c` | `Native_700c` | - | 0 (0x007a9150(worker, args, stack, 0.0)) | - | int `0x007a4310` (native_btl) |
 | `0x700d` | `Native_700d` | mode int, k int | int: 0x007a87f0(&to, &from, actor, abs k, 0); with the actor locked (+0x44e), 1 for a negative k else 0 | - | int `0x007a63f0` (native_btl) |
+| `0x700e` | `Native_700e` | sel | int: MsSetDamage(actor, sel, 0) (0x0078d980) for an actor; 0 | - | int `0x007a5690` (native_mods) |
 | `0x700f` | `Native_GetActorProperty` | selector int, property int | int: MsGetChrStatInfo's value | - | int `0x007a4d50` (native_btl) |
 | `0x7010` | `Native_BtlSelectTarget` | a int, b int, c int, d int | int: the selected target | - | int `0x007a5af0` (native_btl) |
 | `0x7011` | `Native_7011` | v int | 0; the byte 0x0112a8fc = v & 1 | - | int `0x007a4280` (native_btl2) |
@@ -1834,10 +1992,15 @@ API is generated from this table. `-`: none. A result starting with
 | `0x703a` | `Native_703a` | v int | 0: the actor's +0x3fc (u16) = v through f32, truncated | - | int `0x007a7360` (native_btl) |
 | `0x703b` | `CT_703B_ret_setCommandDisabled` | selector int, a int, b int | int: actors handled | - | int `0x007a6ef0` (native_btl) |
 | `0x703c` | `Native_703c` | v int | the request handle; poll 0x007a8700 | until it ends | start `0x007a5540`, poll `0x007a5680` (native_btl) |
+| `0x703d` | `Native_703d` | - | int: the byte 0x0112a8e4 = 0; 0 | - | int `0x007a5980` (native_mods) |
+| `0x703e` | `Native_703e_Poll` | - | with 0x0112a8e4 set, 0x0112a8e5 drops to 0 when it is 1. Unless the i8 at 0x0112c9e4 is negative and 0x0112c9d0, 0x0112c9d8, 0x0112bde1, 0x0112c944 are all 0, the pair at 0x0112ca08 = (0xff, 0xde) and it waits (0). Else the first of the 31 actors that is busy (+0xdc8 with +0x508, +0x432 or +0xdfb: kind 0xdf) or acting (+0x10 with +0x436 or +0xdf0: 0xdd) goes to 0x0112ca08 with its kind and it waits; none: done (5) | - | poll `0x007a5a10` (native_mods) |
 | `0x703f` | `Native_BtlRunEvent` | event int, a int | the event handle; poll its 0x007a8700 | until the event ends | start `0x007a5df0`, poll `0x007a5ec0` (native_btl) |
 | `0x7040` | `Native_7040` | v int | int: 0x0079e8c0(actor, v); 0 without an actor | - | int `0x007a5610` (native_btl) |
 | `0x7041` | `Native_7041` | - | 0 | - | int `0x007a56d0` (native_btl) |
+| `0x7042` | `Native_7042` | win, k, x, y, anchor | int: 0x0112c250 = k; TODrawAMES(win clamped 0..6, text k, x, y, anchor) (0x0089b140) from the table at *0x0112a9b8 when there is one; 0 | - | int `0x007a6060` (native_mods) |
 | `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | poll `0x007a6a40` (native_btl2) |
+| `0x7044` | `Native_7044` | win | int: TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0 | - | int `0x007a6e10` (native_mods) |
+| `0x7045` | `Native_7045` | sel | int: MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated | - | int `0x007a4da0` (native_mods) |
 | `0x7046` | `Native_7046` | v int | 0: MsMoveSplineSet(v) (0x007ab140) | - | int `0x007a5220` (native_btl) |
 | `0x7047` | `Native_7047` | i int, a int | 0 | - | int `0x007a5270` (native_btl) |
 | `0x7048` | `Native_7048` | i int, x f, y f, z f | 0 | - | int `0x007a53f0` (native_btl) |
@@ -1845,6 +2008,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
 | `0x704b` | `Native_704b` | selector int, motion int, b int | the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7640`, poll `0x007a7850` (native_btl) |
 | `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2) |
+| `0x704d` | `Native_704d` | - | int: 0 (xor eax, eax; ret) | - | int `0x007a74e0` (native_mods) |
 | `0x704e` | `Native_704e` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
 | `0x704f` | `Native_704f` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
 | `0x7050` | `Native_7050` | selector int | the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0) | until 0x007a8700(args) is done | start `0x007a7400`, poll `0x007a74f0` (native_btl) |
@@ -1853,6 +2017,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7053` | `Native_7053` | f f | 0: 0x007a9150(worker, args, stack, f) | - | int `0x007a4470` (native_btl) |
 | `0x7054` | `Native_7054` | to int, from int, point int | 0: the from actor's model point (Ch_OptposGet 0x008354f0) through 0x0079e1b0(0, &v) into MsSetChrPosReset(to, &v) (0x00796220) | - | int `0x007a7fe0` (native_btl) |
 | `0x7055` | `Native_7055` | b int | 0 | - | int `0x007a3eb0` (native_btl) |
+| `0x7056` | `Native_7056` | v | int: MsBattleSpecialInit(v) (0x0079de60); 0 | - | int `0x007a6e80` (native_mods) |
 | `0x7057` | `Native_7057` | target int, f f (dropped), b int, a int | 0: MsSetChrDirTarget(actor, target, 0, -1, b, a) (0x00795eb0) | - | int `0x007a4220` (native_btl) |
 | `0x7058` | `Native_7058` | selector int, motion int | int: 0 when the picked actor plays it, else -1 | - | int `0x007a8160` (native_btl) |
 | `0x7059` | `Native_7059` | v int: target | float: distance (MsGetTargetDist mode 1) | - | float `0x007a6e40` (native_btl) |
@@ -1867,21 +2032,35 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7062` | `Native_7062` | a int, b int | int: 0x0079eba0(actor, a, b, 1) | - | int `0x007a4580` (native_btl) |
 | `0x7063` | `Native_7063` | - | 5 when the actor's +0xe13 is clear, else 0 | until +0xe13 is clear | poll `0x007a5dc0` (native_btl) |
 | `0x7064` | `Native_7064` | v int | v, kept in the argument word and the word 0x0112c24c | until 0x007a8c20() is set and 0x007b2c10(1) is 0 (poll 5) | start `0x007a63d0`, poll `0x007a64c0`, int `0x007a65d0` (native_btl2) |
+| `0x7065` | `Native_7065_Poll` | - | GetCD(); done (5) once 0x007a8c20() is set and msVoiceCheckStanby(0) (0x007b2c10) is 0 | - | poll `0x007a6760`, int `0x007a6950` (native_mods) |
+| `0x7066` | `Native_7066` | - | int: jumps to 0x007b2c00 | - | int `0x007a6960` (native_mods) |
+| `0x7067` | `Native_7067` | - | int: msVoiceIsStreaming() != 0 (0x007b2be0) | - | int `0x007a6a30` (native_mods) |
+| `0x7068` | `Native_7068_Poll` | - | 1 once msVoiceIsStreaming() is 0, else 0 | - | poll `0x007a6ad0` (native_mods) |
+| `0x7069` | `Native_BtlFindActor` | p4, p3, p2, p1 | int: MsActTargetSearch(0, p4, p3, p2, 7, p1, 0, &pick) (0x007acd40)'s pick (an out word, zeroed first) | - | int `0x007a6170` (native_mods) |
 | `0x706a` | `Native_706a` | selector int | int: 0 when the selected actor's +0xdc0 is 1 << its index, else -1 | - | int `0x007a7580` (native_btl2) |
 | `0x706b` | `Native_706b` | selector int, a int, b int | 0 | - | int `0x007a84c0` (native_btl) |
+| `0x706c` | `Native_706c` | sel, k | int: for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist(3, x, se, 0, 0), 0x007a0a30) unless it is 0 or the last one (0x0112c8e0, then updated); 0 | - | int `0x007a6bc0` (native_mods) |
 | `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2) |
 | `0x706e` | `Native_706e` | selector int, voice int | the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7020`, poll `0x007a71f0` (native_btl) |
 | `0x706f` | `Native_706f` | as 0x007a8fc0(worker, args, stack, 1) | its result | - | int `0x007a36c0` (native_btl) |
+| `0x7070` | `Native_7070` | - | int: SetByte_00c58ef4(1) (0x0089bc60); 0 | - | int `0x007a7010` (native_mods) |
 | `0x7071` | `Native_7071` | - | 0: 0x0089bc60(0) | - | int `0x007a70b0` (native_btl) |
+| `0x7072` | `Native_7072` | win, k | int: TODrawAMES_EVJIMAKU(win, text k) (0x0089b230) from *0x0112a9b8; 0 | - | int `0x007a6330` (native_mods) |
 | `0x7073` | `Native_7073` | weapon int | int: MsAttachWeapon(actor, weapon)'s result | - | int `0x007a85f0` (native_btl2) |
+| `0x7074` | `Native_7074` | v | int: MsDetachWeapon(actor, v) (0x00793f10) | - | int `0x007a29f0` (native_mods) |
 | `0x7075` | `Native_7075` | selector int, b int, a int | the argument word = 1 when 0x007ab360(record +0xc, b, a, 0, 1, worker, &out) set out for any selected actor below 31 with a command record (0x00795bb0), else 0 | until 0x007a8700(args) (poll) | start `0x007a78f0`, poll `0x007a7aa0` (native_btl2) |
+| `0x7076` | `Native_7076` | c, f f, a | int: MsSetBallSplineInit(actor) (0x007b7c80), the actor's +0x45a = c and +0x452 = 0 (u16s), MsSetBallSpline(actor) (0x007b78c0), MsMoveSpline(2, actor, c, f, a) (0x007ab010), +0x452 = 1; 0 | - | int `0x007a56f0` (native_mods) |
+| `0x7077` | `Native_7077` | sel, a | int: MsGetTargetDist(x, a, 0) (0x007a9a40, 0.0 when the first actor x of sel is 0xff) over the double at 0x00b49968 plus the one at 0x00b43d80, rounded to f32, at most the f32 at 0x00b4ae10, truncated | - | int `0x007a5450` (native_mods) |
 | `0x7078` | `Native_7078` | selector int, b int, a int | int: MsGetComInfo(picked, b, a) (0x0078cd30) | - | int `0x007a6540` (native_btl) |
+| `0x7079` | `Native_7079` | - | int: for an actor, the equipment refresh: MsResetAutoStatus(record), MsSetRamChrParam(actor), MsSetChrWeak(actor, -1), MsSetAutoStatus(record), MsStatusEffectCheck(actor), MsSetWeaponEffectAttribute(actor, record); 0 | - | int `0x007a7200` (native_mods) |
 | `0x707a` | `Native_707a` | selector int | int: 0x0079a920's result | - | int `0x007a2a80` (native_btl) |
 | `0x707b` | `Native_707b` | selector int, k int | int: 0x0079fd40(picked, k) | - | int `0x007a7470` (native_btl) |
 | `0x707c` | `Native_707c_Poll` | - | 5 when done | until the actor's (or its +0x14 owner's, when +0x11 is clear) +0xf2c is set or +0xf2e is clear; 5 without an actor | poll `0x007a7260` (native_btl2) |
 | `0x707d` | `Native_707d` | k int: battle flag, v int | int: v | - | int `0x007a81f0` (native_btl) |
 | `0x707e` | `Native_707e` | k int: battle flag + 1 | int: the flag (0 for k without one) | - | int `0x007a27e0` (native_btl) |
 | `0x707f` | `Native_707f` | selector int | 0 | - | int `0x007a5e50` (native_btl) |
+| `0x7080` | `Native_7080` | v | int: 0x008720e0(handle, v) with MsGetChrHandle(2) (0x00795080) when there is one; 0 | - | int `0x007a2c70` (native_mods) |
+| `0x7081` | `Native_7081_Poll` | - | done (5) when the byte 0x0112c022 is 1, else 0 | - | poll `0x007a5d60` (native_mods) |
 | `0x7082` | `Native_7082` | b int, a int | int: 0x0079eb10(actor, b, 1, a, 1) | - | int `0x007a41e0` (native_btl) |
 | `0x7083` | `Native_7083` | n int, _ int | 0: for n > 0 with +0xe15 set and no +0xea8, op_et_weapon_unit(model, 0, ...) (0x007fc9b0) into +0xea8 | - | int `0x007a42a0` (native_btl) |
 | `0x7084` | `Native_7084` | - | 0 | - | int `0x007a4440` (native_btl) |
@@ -1889,16 +2068,23 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7086` | `Native_7086` | - | 0 | - | int `0x007a2ce0` (native_btl) |
 | `0x7087` | `Native_7087` | selector int, b int, a int | int: 0x0079fcf0(picked, b, a); 0 for none | - | int `0x007a7880` (native_btl) |
 | `0x7088` | `Native_7088` | selector int, se int | int: MsRegSEplay(picked, se) (0x007a0100); 0 for none | - | int `0x007a79c0` (native_btl) |
+| `0x7089` | `Native_7089` | sel, se, frames | int: MsRegSEfade(first of sel, se, frames) (0x007a00d0), 0 for none | - | int `0x007a7c40` (native_mods) |
 | `0x708a` | `Native_708a` | v int | 0: 0x00782b40(v) | - | int `0x007a3710` (native_btl) |
 | `0x708b` | `Native_708b` | v int | int: 0x00782940(v) | - | int `0x007a3900` (native_btl) |
 | `0x708c` | `Native_708c` | a int, b int | int: 0x00782ba0(a, b) | - | int `0x007a3920` (native_btl) |
+| `0x708d` | `Native_BtlGetTurnActor` | - | int: the i8 at 0x0112c9e2 | - | int `0x007a76e0` (native_mods) |
 | `0x708e` | `Native_708e` | - | int: the actor's signed +0x508 after MsMotionPosCheck (0x007aa100; +0x4f0 = 10.0, +0x34 = 1 around it when +0x608 and +0x505 are set) | - | int `0x007a5c20` (native_btl) |
 | `0x708f` | `Native_708f` | v int | int: 0x007a8720(actor, v, 1) | - | int `0x007a6700` (native_btl) |
+| `0x7090` | `Native_7090` | v | int: MsEtCriticalEffect(actor, v) (0x0079e590); 0 | - | int `0x007a49c0` (native_mods) |
 | `0x7091` | `Native_7091` | to int, from int (selectors) | 0: the 40-byte name +0x540 and +0xdd5 copied from one picked actor to the other | - | int `0x007a77c0` (native_btl) |
 | `0x7092` | `Native_7092` | selector int | int: (0x00794fb0(index) - the second float of 0x007956e0(index, &v)) rounded to f32, times 100, truncated | - | int `0x007a5f10` (native_btl2) |
 | `0x7093` | `Native_7093` | - | int: 0x00791780(actor, record) | - | int `0x007a60f0` (native_btl) |
+| `0x7094` | `Native_7094` | b f, a f, v | int: MsSetChrTransparentVisible(actor, b, a, v, record +0x423) (0x00796550) for an actor; 0 | - | int `0x007a72c0` (native_mods) |
+| `0x7095` | `Native_7095` | - | int: MsGetChrMoveFrameRest(actor) (0x007a9320), 0 without an actor | - | int `0x007a61d0` (native_mods) |
 | `0x7096` | `Native_7096` | - | int: the signed byte 0x0112c9fa | - | int `0x007a7b30` (native_btl) |
 | `0x7097` | `Native_7097` | v int | the handle; poll 0x007a8700 | until it ends | start `0x007a5780`, poll `0x007a58c0` (native_btl) |
+| `0x7098` | `Native_7098` | - | int: MsCheckDefenseMotion(MsGetChr(actor)) (0x007af2f0), 0 without an actor | - | int `0x007a2dc0` (native_mods) |
+| `0x7099` | `Native_BtlSetPadOrientation` | v | int: the byte 0x0112c9cd = v & 3; that value | - | int `0x007a7340` (native_mods) |
 | `0x709a` | `Native_709a` | - | int: 0 when the actor is the one in the signed byte 0x0112c9e4, else 1 | - | int `0x007a2eb0` (native_btl2) |
 | `0x709b` | `Native_709b` | selector int | float: the second float of the vector 0x007956e0(selected actor, &v) writes | - | float `0x007a3170` (native_btl2) |
 | `0x709c` | `Native_709c` | a int, b int (selectors) | float: as 0x70c2 with 0x007c4990's fourth result | - | float `0x007a3330` (native_btl2) |
@@ -1908,19 +2094,27 @@ API is generated from this table. `-`: none. A result starting with
 | `0x70a0` | `Native_70a0` | v int | int: the old signed byte 0x0112c9fc; it becomes v & 1 | - | int `0x007a73d0` (native_btl2) |
 | `0x70a1` | `Native_ActorGetSlotRef` | selector int | int: the picked actor's +0xc, -6 - slot, or 0xff | - | int `0x007a6b40` (native_btl) |
 | `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440`, poll `0x007a7500` (native_btl) |
+| `0x70a3` | `Native_70a3` | - | int: Battle_ScriptPlayMotion(worker, args, stack, 0) (0x007a8fc0) with the actor's +0x38 byte set to 1 for the call and put back; +0x3f3 = 1 when +0x434 is set; the old byte (sign-extended) | - | int `0x007a3730` (native_mods) |
 | `0x70a4` | `Native_70a4` | - | 0: 0x0079cca0() | - | int `0x007a7630` (native_btl) |
 | `0x70a5` | `Native_70a5` | x f, y f, z f | 0 | - | int `0x007a76f0` (native_btl) |
 | `0x70a6` | `Native_70a6` | v int | int: v; the byte 0x0112c9ff = v | - | int `0x007a77a0` (native_btl2) |
+| `0x70a7` | `Native_70a7` | sel, a | float: 0x007b2c90(first of sel, a)'s ST0 | - | float `0x007a54f0` (native_mods) |
 | `0x70a8` | `Native_70a8` | selector int, property int, value f | 0 | - | int `0x007a57e0` (native_btl) |
 | `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | poll `0x007a6cb0` (native_btl2) |
 | `0x70aa` | `Native_GetSelfProperty` | property int | int: the actor's own property | - | int `0x007a4ea0` (native_btl) |
 | `0x70ab` | `Native_SetActorProperty` | property int, value int | int: 0x007b4b70(actor, property, -13, value) | - | int `0x007a5360` (native_move) |
 | `0x70ac` | `Native_70ac` | i int | float: actor float property i | - | float `0x007a5650` (native_btl) |
+| `0x70ad` | `Native_70ad` | - | int: jumps to 0x007ad6e0 | - | int `0x007a2cd0` (native_mods) |
+| `0x70ae` | `Native_70ae` | - | int: the i8 at 0x0112c9e3 | - | int `0x007a7790` (native_mods) |
+| `0x70af` | `Native_70af` | - | int: jumps to MsGetVoiceEventFlag (0x007986a0) | - | int `0x007a79a0` (native_mods) |
 | `0x70b0` | `Native_70b0` | selector int | int: the steps the picked actor needs (from +0x40e, or the +0x4cc/+0x4d0 ramp over the distance) | - | int `0x007a4f80` (native_btl) |
 | `0x70b1` | `Native_70b1` | v int | debug (mod-tool candidate): dbgPrintf("##### %d : %x : c%02d #####", v, v, actor) (a bare ret in this build); 0 | - | int `0x007a4a60` (not ported) |
 | `0x70b2` | `Native_SetSelfFloatProperty` | property int, value f | 0 (MsSetChrMotionInfo) | - | int `0x007a5930` (native_btl) |
 | `0x70b3` | `Native_70b3` | v int | int: 0x007b2b60(v) | - | int `0x007a7df0` (native_btl2) |
+| `0x70b4` | `Native_70b4` | - | int: for an actor, +0xf65 = 8, MsResetWeaponEffectAttribute(actor, record) (0x0079ea90), then 0x007ad5b0(actor, +0xf64, +0xf65); 0 | - | int `0x007a7130` (native_mods) |
 | `0x70b5` | `Native_70b5` | - | 0 | - | int `0x007a2f40` (native_btl) |
+| `0x70b6` | `Native_70b6` | sel | int: MsSetMove(first of sel, 0xc) over 0x007a88e0(the actor's record) (both ST0, the divisor rounded to f32), rounded to f32, truncated | - | int `0x007a52b0` (native_mods) |
+| `0x70b7` | `Native_70b7` | win, k | int: TODrawAMES_EVJIMAKU_ALBHED(win, text k) (0x0089b290) from *0x0112a9b8; 0 | - | int `0x007a6640` (native_mods) |
 | `0x70b8` | `Native_70b8` | v int | int: v; the byte 0x0112ca00 = v | - | int `0x007a7860` (native_btl2) |
 | `0x70b9` | `Native_70b9` | selector int | float: what 0x00795170(0xb, MsGetChrBit(actor, selector, 0, 1), 0, &out) writes | - | float `0x007a2ee0` (native_btl2) |
 | `0x70ba` | `Native_70ba` | selector int | float: what 0x00795170(0xa, MsGetChrBit(actor, selector, 0, 1), 0, &out) writes | - | float `0x007a3040` (native_btl2) |
@@ -1929,42 +2123,72 @@ API is generated from this table. `-`: none. A result starting with
 | `0x70bd` | `Native_70bd` | selector int | the selected actor's index (kept in the argument word) | until that actor's +0xe13 is clear (poll 5) | start `0x007a5ed0`, poll `0x007a6030` (native_btl2) |
 | `0x70be` | `Native_70be` | selector int | float: the picked actor's direction (MsGetChrDir 0x00794d20) in degrees (MsNearRag(0, d) * 180 / pi) | - | float `0x007a3780` (native_btl) |
 | `0x70bf` | `Native_70bf` | v f | 0; the actor's f32 +0x3ac = v and, with a model, 0x00832610(model, v) | - | int `0x007a6ae0` (native_btl2) |
+| `0x70c0` | `Native_70c0` | sel | float: 0x00794990(first of sel)'s ST0 | - | float `0x007a6c70` (native_mods) |
 | `0x70c1` | `Native_70c1` | b int, a int (selectors) | int: the distance between the two actors' positions (0x00795170 mode 1, 0x007c3030), truncated | - | int `0x007a4b90` (native_btl2) |
 | `0x70c2` | `Native_70c2` | a int, b int (selectors) | float: the angle from a's position to b's (0x007c4990's third result; positions from 0x00795170 mode 5) in degrees | - | float `0x007a31d0` (native_btl2) |
 | `0x70c3` | `Native_70c3` | selector int | float: MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees, as 0x70be | - | float `0x007a3650` (native_btl) |
 | `0x70c4` | `Native_70c4` | selector int | int: 1 when one of the selected actor's two weapon slots (+0x592) holds a weapon with bit 3 of its +3 (MsGetSaveWeapon 0x007abbd0), else 0 | - | int `0x007a2ba0` (native_btl2) |
+| `0x70c5` | `Native_70c5` | - | int: 1 when the byte 0x0112c9f5 is set | - | int `0x007a7c20` (native_mods) |
+| `0x70c6` | `Native_70c6` | v | int: 0x007b7ed0(v) | - | int `0x007a3950` (native_mods) |
+| `0x70c7` | `Native_70c7` | v | float: 0x007b7ef0(v)'s ST0 | - | float `0x007a39f0` (native_mods) |
+| `0x70c8` | `Native_70c8` | sel, a | int: 0x0079fda0(first of sel, a), 0 for none | - | int `0x007a75e0` (native_mods) |
 | `0x70c9` | `Native_70c9` | selector int, k int | int: 0x0079fdf0(picked, k) | - | int `0x007a7740` (native_btl) |
+| `0x70ca` | `Native_70ca` | sel, se | int: MsRegSEplay2(first of sel, se) (0x007a0140), 0 for none | - | int `0x007a7ab0` (native_mods) |
+| `0x70cb` | `Native_70cb` | sel, se | int: MsRegSEplay3(first of sel, se) (0x007a0170), 0 for none | - | int `0x007a7b40` (native_mods) |
 | `0x70cc` | `Native_70cc` | selector int | int: the set (actor +0xdc0 = it) | - | int `0x007a7cb0` (native_btl) |
 | `0x70cd` | `Native_70cd` | selector int | int: the set (actor +0xdc0 |= it) | - | int `0x007a7d60` (native_btl) |
 | `0x70ce` | `Native_70ce` | selector int | int: the set (cleared from actor +0xdc0) | - | int `0x007a7f20` (native_btl) |
+| `0x70cf` | `Native_70cf` | - | int: the i8 at *0x0112a9c0 + 1 | - | int `0x007a7f70` (native_mods) |
 | `0x70d0` | `Native_70d0` | v int | 0; the byte 0x0112c9de = v & 1 | - | int `0x007a4380` (native_btl2) |
 | `0x70d1` | `Native_70d1` | selector int | int: the picked actor's +0xe12 | - | int `0x007a5cb0` (native_btl) |
 | `0x70d2` | `Native_70d2` | selector int | int: the selected actor's byte +0xe13 | - | int `0x007a6130` (native_btl2) |
+| `0x70d3` | `Native_70d3` | sel, b, a | int: MsSetChrEffect_0079eb10(x, b, 7, a, 1) for the first actor x of sel, whose +0xe12 counts up when it starts; 0 | - | int `0x007a4a90` (native_mods) |
+| `0x70d4` | `Native_70d4` | sel, b, a | int: 0x0079eba0(first of sel, b, a, 1) | - | int `0x007a4f20` (native_mods) |
 | `0x70d5` | `Native_70d5` | selector int | int: the picked index (actor +0x6d1) | - | int `0x007a7fa0` (native_btl) |
 | `0x70d6` | `Native_70d6` | c int, b int, a int | int: 0x00789bf0(chr i, chr j, r, r +0x28, r +0x2a, 0, r +0x23, 0, 0, 0, 0) with i, j the actors selected by c, b and r = 0x0078ce50(i, 0, -1, 0, &a) | - | int `0x007a80b0` (native_btl2) |
 | `0x70d7` | `Native_70d7` | selector int, motion int | 0: MsDamageSetMotion(picked, motion, picked != actor) (0x0078ca20) unless the picked actor's +0x422 actor has +0xdcc | - | int `0x007a30f0` (native_btl) |
 | `0x70d8` | `Native_70d8` | v int | int: v; the byte 0x0112ca06 = v & 1 | - | int `0x007a3400` (native_btl2) |
+| `0x70d9` | `Native_70d9` | - | int: Ch_ModelSetHide(model, 1, the i8 at 0x0112ca06) (0x0082aea0) for actor 13's model (MsGetChr(0xd) +0) when it has one; that byte, read again | - | int `0x007a3500` (native_mods) |
+| `0x70da` | `Native_70da` | - | int: the i8 at 0x0112c9dc | - | int `0x007a4df0` (native_mods) |
+| `0x70db` | `Native_70db` | - | int: the i8 at 0x0112ca06 | - | int `0x007a3450` (native_mods) |
 | `0x70dc` | `Native_70dc` | selector int, i int | 0: 40 bytes of the name table *0x0112a9b8 (entry MsGetSaveConfigHiragana() + 2i) into the picked actor's +0x540 | - | int `0x007a7a10` (native_btl) |
 | `0x70dd` | `Native_70dd` | v int | int: v; the word 0x0112c8fc = v | - | int `0x007a7f80` (native_btl2) |
+| `0x70de` | `Native_70de` | - | int: jumps to 0x00785210 | - | int `0x007a79b0` (native_mods) |
 | `0x70df` | `Native_70df` | v int | int: 1 when the byte 0x0112a8e0 is set and the i16 at *0x0112a9f0 is v >> 16, else 0 | - | int `0x007a4ee0` (native_btl2) |
 | `0x70e0` | `Native_70e0` | - | int: 1 when the actor and its partner can act | - | int `0x007a8450` (native_btl) |
 | `0x70e1` | `Native_70e1` | - | int: 1 when the actor named by the actor's signed byte +0xded has +0xdf1 clear, else 0 (0 without an actor) | - | int `0x007a85a0` (native_btl2) |
 | `0x70e2` | `Native_70e2` | selector int, v int | 0 | - | int `0x007a32a0` (native_btl) |
 | `0x70e3` | `Native_70e3` | v int | 0; once (word 0x0112be98 is 0): 0x0112be9c = v, 0x0083c4a0(0x40), 0x0112be98 = 0x00687020(v), 0x00799f00(it, v) | - | int `0x007a7da0` (native_btl2) |
+| `0x70e4` | `Native_70e4` | b, a | int: MsGetDamageLimit(first of b, first of a) (0x0079a860, each through Battle_FirstSelectedActor) | - | int `0x007a2b50` (native_mods) |
+| `0x70e5` | `Native_70e5` | sel, b, a | int: 0x0079eca0(first of sel, b, a); 0 | - | int `0x007a4c70` (native_mods) |
+| `0x70e6` | `Native_70e6` | sel, b, a | int: 0x0079ec40(first of sel, b, a); 0 | - | int `0x007a4e00` (native_mods) |
 | `0x70e7` | `Native_70e7` | command int | int: the actor's +0xdc0 = 0x007996d0(actor, command, bit 1 of record +0x1a clear, 1), record = 0x0078ce50(actor, 0, -1, 0, &command) | - | int `0x007a8680` (native_btl2) |
+| `0x70e8` | `Native_70e8` | - | int: jumps to MsGetGIL (0x00784e80) | - | int `0x007a7a90` (native_mods) |
+| `0x70e9` | `Native_70e9` | - | int: jumps to 0x007b2b30 | - | int `0x007a7b00` (native_mods) |
 | `0x70ea` | `Native_70ea` | v int | int: v (MsSet01130838(v), 0x007b2b40) | - | int `0x007a7b10` (native_btl) |
+| `0x70eb` | `Native_70eb` | - | int: brnd(0x11) (0x007988f0) | - | int `0x007a7d10` (native_mods) |
 | `0x70ec` | `Native_01b2_copy_007a2c50` | v int | int: 0x007904b0(v), as Native_01b2 | - | int `0x007a2c50` (native_btl2) |
 | `0x70ed` | `Native_70ed` | b int, a int | int: MsSaveItemUse(b, a) (0x00790550) | - | int `0x007a2ca0` (native_btl) |
 | `0x70ee` | `Native_70ee` | b int, a int | int: by a + b: < 0x20 0x30de, < 0x30 0x30df, < 0x3f 0x30e0, < 0x50 0x30e1, else 0x30e2 | - | int `0x007a7b90` (native_btl2) |
 | `0x70ef` | `Native_70ef` | selector int, signal int | 0: MsEffectSendSignal(picked, signal) (0x0079e4f0) | - | int `0x007a64f0` (native_btl) |
+| `0x70f0` | `Atel_GetBattleCountF` | - | float: the i32 at 0x0112c900 as f32 (helpers::atel_get_battle_count_f, whose shim it is) | - | float `0x007a3ac0` (native_mods) |
 | `0x70f1` | `Native_70f1` | - | 0: the actor's 20 item slots in g_BtlItemMem2 (+id*0x478) freed (0xff) | - | int `0x007a2d30` (native_btl2) |
 | `0x70f2` | `Native_70f2` | item int | 0: the item put in the actor's first free slot of 20 (g_BtlItemMem2) | - | int `0x007a2e60` (native_btl2) |
+| `0x70f3` | `Native_70f3` | b, a | int: 0x007a8ad0(b, a) | - | int `0x007a3300` (native_mods) |
+| `0x70f4` | `Native_70f4` | b, a | int: 0x007a8b40(actor, b, a) | - | int `0x007a2ad0` (native_mods) |
 | `0x70f5` | `Native_70f5` | command int, selector int | int: 0x0078c690(selected actor, 0x0079a4b0(command, 0), 0) | - | int `0x007a2f80` (native_btl2) |
+| `0x70f6` | `Native_70f6` | - | int: the bytes 0x011363ec and 0x011363ed = 0 (the list 0x70f8 reads, emptied); 0 | - | int `0x007a34e0` (native_mods) |
 | `0x70f7` | `Native_70f7` | v int | int: v; appended to the 16 u16 at 0x011363f0 (count: the byte 0x011363ec) while there is room | - | int `0x007a3560` (native_btl2) |
+| `0x70f8` | `Native_70f8` | - | int: the next u16 of the list at 0x011363f0 (read index 0x011363ed, count 0x011363ec, the index advanced), 0 past the end | - | int `0x007a36e0` (native_mods) |
+| `0x70f9` | `Native_70f9` | p5, p4, p3, p2, p1 | int: 0x007a8f60(actor, p5, p4, p3, p2, p1) | - | int `0x007a5fc0` (native_mods) |
 | `0x70fa` | `Native_70fa` | v int | 0; the u16 0x01136410 = v | - | int `0x007a3420` (native_btl2) |
+| `0x70fb` | `Native_70fb` | p5, p4, p3, p2, p1 | int: 0x007a8f60(actor, p5, -16, p3, 0, p2) when 0x007a8b40(actor, p5, p4) and 0x007a8ad0(p5, p1) both hold, else (or for 0xff) 0xff | - | int `0x007a37e0` (native_mods) |
+| `0x70fc` | `Native_70fc` | - | int: the u16 at 0x01136410 | - | int `0x007a3440` (native_mods) |
 | `0x70fd` | `Native_70fd` | b int, a int | int: the actor index; unless the u16 0x01136410 is set, the actor's +0x714 = 1, +0x726/+0x727 = a, +0x728/+0x729 = b | - | int `0x007a3a10` (native_btl2) |
 | `0x70fe` | `Native_70fe` | e int, d int, b int, a int | 0; the actor's +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e | - | int `0x007a3b80` (native_btl2) |
 | `0x70ff` | `Native_70ff` | - | int: the actor's +0xdc0, also stored in the word 0x0112c8d0 | - | int `0x007a3d00` (native_btl2) |
+| `0x7100` | `Native_7100` | sel | int: 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330) | - | int `0x007a7d20` (native_mods) |
+| `0x7101` | `Native_7101` | - | int: the i8 at 0x0112a905 | - | int `0x007a7f60` (native_mods) |
 | `0x7102` | `Native_7102` | a int, b int (selectors) | int: actor a's index (0xff for none), stored in actor b's +0x438 (+0x439 = 1) | - | int `0x007a35d0` (native_btl2) |
 | `0x7103` | `Native_7103` | selector int, x f, y f, z f | 0: the selected actor's model (0x00795080) gets mode 3 and the vector at +0x4c0 (0x008350a0) | - | int `0x007a3880` (native_btl2) |
 | `0x7104` | `Native_7104` | a int, b int, c int | int: 0x0079d2a0(a, b, c) | - | int `0x007a6600` (native_btl) |
@@ -1973,13 +2197,19 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7107` | `Native_7107` | n int | int: ftol((MsDirTurn(chr, yaw +0x514[+0x511]) - +0x490) / pi * n) (0x007a9650; f32 steps) | - | int `0x007a6800` (native_btl) |
 | `0x7108` | `Native_7108` | a int, b int | 0 | - | int `0x007a40a0` (native_btl) |
 | `0x7109` | `Native_7109` | selector int, reset int, f f | int: the number of picked actors; each with a model: +0x407 = 1, with reset 0x00796070(i, 0), +0x505 = 1, +0x50c = 0; +0x43d = 0, +0x538 = f | - | int `0x007a3df0` (native_btl) |
+| `0x710a` | `Native_710a` | - | int: the i8 at 0x0112ca10, which becomes 1 | - | int `0x007a3970` (native_mods) |
 | `0x710b` | `Native_710b_Poll` | - | 5 when done | until the byte 0x0112ca10 is set | poll `0x007a3a80` (native_btl2) |
 | `0x710c` | `Native_710c` | - | int: the signed byte 0x0112ca0d, first counted down by 1 while above 0 (only with an actor) | - | int `0x007a2c10` (native_btl2) |
 | `0x710d` | `Native_710d` | - | 0; the actor's +0x411 = 0 | - | int `0x007a3c20` (native_btl2) |
+| `0x710e` | `Native_710e` | - | int: the first set byte +0 of the four 0x007b19d0(k) records, 0 for none | - | int `0x007a3c00` (native_mods) |
+| `0x710f` | `Native_710f` | - | int: that record's byte +1, 0 for none | - | int `0x007a3c90` (native_mods) |
 | `0x7110` | `Native_7110` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 1 (0x00834770) | - | int `0x007a3d30` (native_btl2) |
 | `0x7111` | `Native_7111` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 0 | - | int `0x007a3ff0` (native_btl2) |
 | `0x7112` | `Native_7112` | c int, _ f (dropped), b int, a int | 0; 0x00795eb0(actor, c, 1, -1, b, a) | - | int `0x007a43d0` (native_btl2) |
+| `0x7113` | `Native_7113` | - | int: the byte 0x0112c9e5 = 1; 0 | - | int `0x007a8090` (native_mods) |
+| `0x7114` | `Native_7114` | - | int: the byte 0x0112c9e5 = 2; 0 | - | int `0x007a80a0` (native_mods) |
 | `0x7115` | `Native_7115` | - | 0: MsSetChrDirLeave(actor) (0x00795e70) | - | int `0x007a4560` (native_btl) |
+| `0x7116` | `Native_7116` | - | int: MsEffectSetGuard(actor) (0x0079e510) | - | int `0x007a6930` (native_mods) |
 | `0x7117` | `Native_7117` | targets int, command int | 1: Battle_QueueCommand(actor, command, MsGetChrBit(actor, targets, 0, 1, 1, 0x40)) after MsMotionPosCheck when +0x3f9 is set; 0 without an actor | - | int `0x007a4b00` (native_btl) |
 | `0x7118` | `Native_7118` | v int | int: v; the byte 0x0112ca11 = v | - | int `0x007a81d0` (native_btl) |
 | `0x7119` | `Native_7119` | v int | int: v; the byte 0x0112ca12 = v | - | int `0x007a8430` (native_btl2) |
@@ -1987,10 +2217,16 @@ API is generated from this table. `-`: none. A result starting with
 | `0x711b` | `Native_711b` | v int | int: v & 1, stored in the byte 0x0112ca13 | - | int `0x007a3dd0` (native_btl2) |
 | `0x711c` | `Native_711c` | v int | int: v; the u16 0x0112c94e = v | - | int `0x007a8530` (native_btl) |
 | `0x711d` | `Native_711d` | height f | 0: Ch_ShadowSetHeight(MsGetChrHandle(actor), height) for a model (0x00795080, 0x00830cb0) | - | int `0x007a4330` (native_btl) |
+| `0x711e` | `Native_711e` | - | int: the i8 at 0x0112ca15 | - | int `0x007a3f40` (native_mods) |
+| `0x711f` | `Native_711f` | - | int: as 0x7042 from the table at *0x0112a998, only when MsGetBattleMessageFlag() (0x00784e40) is set and the word at 0x01841d20 is not 0; 0 | - | int `0x007a6200` (native_mods) |
+| `0x7120` | `Native_7120` | b, a | int: 0x0079d090(a), b dropped; 0 | - | int `0x007a65a0` (native_mods) |
+| `0x7121` | `Native_7121` | win, k | int: as 0x70b7 from *0x0112a998 with 0x711f's checks; 0 | - | int `0x007a6790` (native_mods) |
 | `0x7122` | `Native_7122` | selector int | int: the selected actor's index; its model's +0x4d4 = 1 | - | int `0x007a3ef0` (native_btl2) |
 | `0x7123` | `Native_7123` | weapon int | int: MsAttachWeapon(5, weapon)'s result | - | int `0x007a2980` (native_btl2) |
+| `0x7124` | `Native_7124` | id | int: 0x0112c250 = id; MsSetVoiceId(id) (0x007b2b50) when MsGetBattleMessageFlag(); id | - | int `0x007a7ee0` (native_mods) |
 | `0x7125` | `Native_7125` | - | 0; MsAttachWeapon(4, 0) when the worker's actor is 4 | - | int `0x007a8650` (native_btl2) |
 | `0x7126` | `Native_7126` | i int | int: i (0xff for a negative i); actor i's +0x3e = 1 and its two parts' (0x00795b10(i, k)) +0x3e = 1 | - | int `0x007a8550` (native_btl2) |
+| `0x7127` | `Native_7127` | b, a | int: 0x007969a0(b, a) | - | int `0x007a5240` (native_mods) |
 | `0x8000` | `Native_FieldSetMaskBit` | group int, on int: map draw group (TkSetMapGroupDrawStatus) | int: group | - | int `0x0091c530` (native) |
 | `0x8001` | `Native_8001` | on int: rendering on/off (yiRenderEnable bit 0x10, 0x00643df0) | int: on | - | int `0x0091c5b0` (native_map) |
 | `0x8002` | `Native_FpRun` | fp int: field program, restart int (0 ends it) | int: restart | - | int `0x0091c670` (native) |
@@ -2089,11 +2325,17 @@ API is generated from this table. `-`: none. A result starting with
 | `0xb002` | `Native_b002` | - | debug (mod-tool candidate): a dbgPrintf line only; 0 | - | int `0x0076ea30` (not ported) |
 | `0xb003` | `Native_b003` | - | int: graphicGetCurrentFrame() (0x006410d0, a jump) | - | int `0x0076ea40` (native_chr) |
 | `0xb004` | `Native_b004` | - | start: graphicSetPauseVideoAtEndFrame(0); poll: 0x00643e50(), the movie camera off, movie -1, g_WaitFramesByTime 0, 1; int: graphicDestroyFmv(), 0 | - | start `0x0076ea50`, poll `0x0076ea60`, int `0x0076eac0` (native_chr) |
+| `0xb005` | `Native_b005` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076ead0` (native_mods) |
+| `0xb006` | `Native_b006` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076eae0` (native_mods) |
+| `0xb007` | `Native_b007` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076eaf0` (native_mods) |
+| `0xb008` | `Native_b008` | - | the same warning for movie_start_debug_init; dbgPrintf leaves EAX as it was, which the dispatch ignores (0 here) | - | start `0x0076eb00`, poll `0x0076eb10`, int `0x0076eb20` (native_mods) |
 | `0xb009` | `Native_b009` | - | int: 0; g_WaitFramesByTime 1, 0x006427c0(0), 0x0076edc0() | until 0x00641ce0() is 0 and 0x00645dc0() is not | start `0x0076eb30`, poll `0x0076eb40`, int `0x0076eb60` (native_chr) |
 | `0xb00a` | `Native_b00a` | movie, flags | int: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; int: 0; start: the movie = movie, graphicInitFMVPlayer(movie, flags & 0x80); when it starts, 0x006427c0(0), g_WaitFramesByTime, the done flag and 0x0112a00c = 1. EAX the last call's; poll: 5 unless 0x0112a00c is set while 0x00641ce0() or not 0x00645dc0(); int: 0 | see the poll | start `0x0076eb80`, poll `0x0076ebe0`, int `0x0076ec10`, int `0x0076ec10`, int `0x0076ec10` (native_chr) |
 | `0xb00b` | `Native_b00b` | - | poll: 5 when 0x00645e50() is not 0; int: graphicDestroyFmv() for movie 0x34 (the dbgPrintf left out), then 0xb001's int; start: a bare ret | see the poll | start `0x0076ec20`, poll `0x0076ec30`, int `0x0076ec40` (native_chr) |
 | `0xb00c` | `Native_b00c` | - | jumps to 0x00641140 (after a dbgPrintf, left out) | - | int `0x0076ec90` (native_chr) |
 | `0xb00d` | `Native_b00d` | - | the movie done flag = 0; 0 | - | int `0x0076ecb0` (native_chr) |
+| `0xb00e` | `Native_b00e` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076ecc0` (native_mods) |
+| `0xb00f` | `Native_b00f` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076ecd0` (native_mods) |
 | `0xc002` | `Native_c002` | on | MsSetSaveConfigHiragana(on != 0) (0x00785f40); 0 | - | int `0x008784e0` (native_chr) |
 | `0xc003` | `Native_c003` | map | AtelMapLoad(map) (0x0086dca0) | - | int `0x00878510` (native_chr) |
 | `0xc004` | `Native_c004` | a int, b int | debug (mod-tool candidate): under TkIsDebug (0 in this build) 0x0083a4f0(b, a); 1 | - | int `0x00878570` (not ported) |
