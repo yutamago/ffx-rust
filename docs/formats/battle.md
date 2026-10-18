@@ -860,6 +860,21 @@ names 0x5000, 0x5001); the first that holds gives the name (weapons
 0x5000-0x5046, armour 0x504a-0x509e). The port keeps the list as a table
 in the original's order (`weapon_name`, `armor_name`).
 
+### Menu window lists
+
+`MsGetSaveWindow(chr, kind, &count)` (`0x00785410`, `ffx_battle::menu`)
+returns the list a battle menu window shows and its count. Kinds 1-4, 7
+and 0xc-0xf are the character's own lists in `g_BtlItemMem2` (0x478 bytes
+each, character 0 for an invalid `chr`), 6, 0x11, 0x14 the item windows
+and the save's items, 0x15/0x16 one command (0x3121, 0x3122); 5, 8-0xb
+and 0x12 build a list (`0x0112c268`-`0x0112c376`, 0xff after): the aeons
+in (the first sister ends it with 0x30ff: the original sets its loop
+counter to 0x30ff), every actor in, the living party slots then the other
+living characters (0x12: only those able to switch, `+0xdd8`), the reserve
+then the first eight characters, the living monsters. The count of kind
+5 is 10 although its list is filled to 0x1f. `MsGetChrStatusBits_0078f930`
+returns an actor's `+0x606` in `ax`, the actor pointer's upper half above.
+
 ### Test stubs
 
 `battle_target`'s stub area from `Ms_Gui_BattleConsoleProc` to

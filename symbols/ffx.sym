@@ -4896,7 +4896,7 @@
 0x007853c0 function MsGetSavePlyLeft             # layout: alphabetical run between MsGetSavePlyJoined and MsGetSaveSP (1 unnamed in the gap); Switch 0x7100373890 MsGetSavePlyLeft is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007853e0 function MsGetSaveSP               # fh v3:exact 0x007854a0
 0x00785400 function MsGetSaveWalkMap          # fh v3:bsim1.00 0x007854c0
-0x00785410 function MsGetSaveWindow           # fh v3:exact 0x007854d0
+0x00785410 function MsGetSaveWindow           # fh v3:exact 0x007854d0; (chr, kind, &count) -> a menu window's list: the character's own lists in g_BtlItemMem2 (0x478 each), item windows, save items, or lists built here (0x0112c268-0x0112c376); ported (battle round 22, ffx_battle::menu)
 0x00785960 function MsInitParamData           # fh v3:bsim1.00 0x00785a20
 0x00785990 function MsMuteBattleSubTitle      # fh v3:bsim1.00 0x00785a50
 0x007859a0 function MsPayGIL                  # fh v3:exact+call.cs 0x00785a60 cdecl
@@ -5096,6 +5096,7 @@
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
 0x0078f8f0 function MsGetRomBtlText           # fh v3:bsim1.00+call.cs 0x0078f940 cdecl
+0x0078f930 function MsGetChrStatusBits_0078f930 # (chr) -> actor (chr & 0xff) u16 status bits +0x606 in ax (eax's upper half the actor pointer's); callers TOBtlMakeStatusBuff, TOBtlSetInfoWinParam; own name; ported (battle round 22, ffx_battle::menu)
 0x0078f950 function MsMenuBitStatus           # fh switch:bsim1.00 0x710035e1d0
 0x0078f970 function MsMenuCheckChrLive        # fh v3:exact 0x0078f9c0
 0x0078f990 function MsMenuCheckChrLook        # fh v3:exact 0x0078f9e0
@@ -15486,6 +15487,13 @@
 0x0112c258 label g_BtlGroupIndex           # u8: the encounter's group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
 0x0112c259 label g_BtlSlotIndex            # u8: the formation's slot in its group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
 0x0112c25a label g_BtlSceneName            # char[9]: "<map>_<nn>", the field record's 8 name bytes and the formation number (MsBattleExe's sprintf "%s_%02d"); name ours
+0x0112c268 label g_BtlSummonList           # u16 x 0x1f MsGetSaveWindow kind 5: the aeons in, 0x30ff at the first sister and no more, 0xff after (count 10); own name
+0x0112c27c label g_BtlActorList            # u16 x 0x1f MsGetSaveWindow kind 8: every actor in (+0x10), 0xff after; own name
+0x0112c2ba label g_BtlLivingList           # u16 x 0x1f MsGetSaveWindow kind 9: the living party slots, then the other living characters; own name
+0x0112c2f8 label g_BtlSwitchList           # u16 x 0x1f MsGetSaveWindow kind 0x12: as g_BtlLivingList among those able to switch (+0xdd8); own name
+0x0112c336 label g_BtlReserveList          # u16 x 0x1f MsGetSaveWindow kind 0xa: the reserve slots (in, not out, +0xdc8 clear), then the first eight characters alike; own name
+0x0112c374 label g_BtlOneEntryList         # u16 MsGetSaveWindow kinds 0x15/0x16: command 0x3121 or 0x3122; own name
+0x0112c376 label g_BtlMonsterList          # u16 x 8 MsGetSaveWindow kind 0xb: the living monsters (0x14 on), 0xff after; own name
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
 0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)

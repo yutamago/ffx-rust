@@ -3700,6 +3700,14 @@ ported! {
     MsWeaponNameNum_Armor_007a0d10 @ 0x007a_0d10 => extern "C" fn ms_weapon_name_num_armor(at: u32) -> u32 {
         gear::ms_weapon_name_num_armor(&mem(), at)
     }
+    /// `MsGetSaveWindow(chr, kind, &count)`: a menu window's list.
+    MsGetSaveWindow @ 0x0078_5410 => extern "C" fn ms_get_save_window(chr: u32, kind: u32, count: u32) -> u32 {
+        menu::ms_get_save_window(&mut mem(), chr, kind, count)
+    }
+    /// `MsGetChrStatusBits_0078f930(chr)`.
+    MsGetChrStatusBits_0078f930 @ 0x0078_f930 => extern "C" fn ms_get_chr_status_bits(chr: u32) -> u32 {
+        menu::ms_get_chr_status_bits(&mem(), chr)
+    }
     /// `MsWeaponNameNum_Weapon_007a1c00(gear)`.
     MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
         gear::ms_weapon_name_num_weapon(&mem(), at)
