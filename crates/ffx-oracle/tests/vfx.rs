@@ -11456,3 +11456,74 @@ fn round25d_opu_commands_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opf_circles_match_the_original() {
+    type Cb = fn(&mut Oracle, u32, u32) -> u32;
+    let cbs: [(&str, u32, Cb); 5] = [
+        ("opf_cir", 0x0081_4c90, opus::bridge::opf_cir),
+        ("opf_cir2", 0x0081_4d20, opus::bridge::opf_cir2),
+        ("opf_cir_gw", 0x0081_4e50, opus::bridge::opf_cir_gw),
+        ("opf_cir_y", 0x0081_4f00, opus::bridge::opf_cir_y),
+        ("opf_cirz_gw", 0x0081_4fa0, opus::bridge::opf_cirz_gw),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_4c90);
+        // the host's unit list at +0x300: parts at +0x320, index lists
+        let host = p.alloc(0x400);
+        let parts = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let ptr = rng.next();
+        for round in 0..4000 {
+            p.fill(host, 0x400, &mut rng);
+            for k in 0..0x400 {
+                let v = if rng.chance(10) {
+                    // angles near the table's range, small radii
+                    f32::from(u16::try_from(rng.below(0x3000)).unwrap()).to_bits()
+                } else {
+                    rng.float()
+                };
+                p.set(parts + 4 * k, v);
+            }
+            let list = host + 0x300;
+            p.set(list + 0x20, parts);
+            for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, l);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(l + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                }
+                p.set(l + 2 * n, 0xffffu16);
+            }
+            for i in 0..16 {
+                let u = parts + 0x100 * i;
+                p.set(u + 0x1a, u16::try_from(rng.below(8)).unwrap());
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                p.set(u + 0x1e, u8::try_from(rng.below(2)).unwrap());
+                if rng.chance(20) {
+                    p.set(u, 0u32);
+                }
+            }
+            let unit = parts + 0x100 * (1 + rng.below(15));
+            p.set(host + 0x220, unit);
+            let (name, sym, f) = rng.pick(&cbs);
+            if name.ends_with("_gw") {
+                for at in 0xa0..0xa3 {
+                    let o = rng.pick(&[0x30i8, 0x40, 0x44, 0x48, 0x5c, -0x10, 0x7c]);
+                    p.set(unit + at, o);
+                }
+                if round % 3 == 0 {
+                    p.set(unit + 0xa2, 0u8);
+                }
+            } else {
+                for at in [0xa0, 0xa2] {
+                    let n = rng.pick(&[0xff00u16, 0xffff, 0xfffe, 0, 1, 3, 7]);
+                    p.set(unit + at, n);
+                }
+            }
+            p.check(name, sym, &[host, ptr], |m| Some(f(m, host, ptr)));
+        }
+    }
+}

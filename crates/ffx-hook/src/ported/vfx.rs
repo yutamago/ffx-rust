@@ -1740,6 +1740,26 @@ ported! {
     opus_copy_1k_00800af0 @ 0x0080_0af0 => extern "C" fn opus_copy_1k_rev(src: u32, dst: u32) -> u32 {
         opus::bridge::copy_1k(&mut mem(), dst, src)
     }
+    /// `opf_cir(host, ptr)`.
+    opf_cir @ 0x0081_4c90 => extern "C" fn opf_cir(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir(&mut mem(), host, ptr)
+    }
+    /// `opf_cir2(host, ptr)`.
+    opf_cir2 @ 0x0081_4d20 => extern "C" fn opf_cir2(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir2(&mut mem(), host, ptr)
+    }
+    /// `opf_cir_gw(host, ptr)`.
+    opf_cir_gw @ 0x0081_4e50 => extern "C" fn opf_cir_gw(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir_gw(&mut mem(), host, ptr)
+    }
+    /// `opf_cir_y(host, ptr)`.
+    opf_cir_y @ 0x0081_4f00 => extern "C" fn opf_cir_y(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cir_y(&mut mem(), host, ptr)
+    }
+    /// `opf_cirz_gw(host, ptr)`.
+    opf_cirz_gw @ 0x0081_4fa0 => extern "C" fn opf_cirz_gw(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_cirz_gw(&mut mem(), host, ptr)
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

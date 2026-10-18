@@ -37,7 +37,7 @@ pub mod bridge {
     use ffx_bridge::{Global, Mem, Ptr};
 
     use crate::et::bridge::{EFF, OPUS_BATTLE};
-    use crate::x87::{MUL, Reg};
+    use crate::x87::{ADD, MUL, Reg};
 
     /// `g_OpusWeapons`: the four weapon objects.
     pub const WEAPONS: Global<u32> = Global::new(0x0119_fea0);
@@ -568,6 +568,173 @@ pub mod bridge {
             mem.write(dst.wrapping_add(4 * i), v);
         }
         src.wrapping_add(0x400)
+    }
+
+    /// The `f64` constant 1/16 (`0x00b921e0`).
+    const SIXTEENTH: f64 = 0.0625;
+
+    /// `ftol(angle) & 0xfff` and the two table entries the `opf_cir*`
+    /// callbacks read: `0x00c43bf0[i + 0x400]` (= `g_pppSinTable[i]`) and
+    /// `g_pppSinTable[(i + 0x400) & 0xfff]`.
+    fn opf_sin_cos(mem: &impl Mem, angle: f32) -> (f32, f32) {
+        let a = ffx_bridge::x87::ftol(mem, Reg::load_f32(angle).value());
+        let i = (a & 0xfff) + 0x400;
+        let t1 = f(mem, g(mem, 0x00c4_3bf0).wrapping_add(4 * i));
+        let t2 = f(mem, g(mem, 0x00c4_4bf0).wrapping_add(4 * (i & 0xfff)));
+        (t1, t2)
+    }
+
+    /// The circle of `opf_cir`, `opf_cir2` and `opf_cir_y` around the
+    /// base unit `b`: angle `+0x48`, radius `+0x40`, height `+0x44`:
+    /// `+0x90 = t1 r / 16 + b.x`, `+0x98 = t2 r / 16 + b.z`, `+0x94 =
+    /// y / 16` plus `b.y` when `add_y`.
+    fn opf_circle(mem: &mut impl Mem, unit: u32, base: u32, add_y: bool) {
+        let (t1, t2) = opf_sin_cos(mem, f(mem, unit.wrapping_add(0x48)));
+        let radius = f(mem, unit.wrapping_add(0x40));
+        let x = Reg::load_f32(t1)
+            .mem(MUL, radius)
+            .constant(MUL, SIXTEENTH)
+            .reg(ADD, Reg::load_f32(f(mem, base.wrapping_add(0x90))))
+            .store();
+        mem.write(unit.wrapping_add(0x90), x);
+        let z = Reg::load_f32(t2)
+            .mem(MUL, radius)
+            .constant(MUL, SIXTEENTH)
+            .mem(ADD, f(mem, base.wrapping_add(0x98)))
+            .store();
+        mem.write(unit.wrapping_add(0x98), z);
+        let y = Reg::Num(SIXTEENTH).mem(MUL, f(mem, unit.wrapping_add(0x44)));
+        let y = if add_y {
+            y.mem(ADD, f(mem, base.wrapping_add(0x94)))
+        } else {
+            y
+        };
+        mem.write(unit.wrapping_add(0x94), y.store());
+    }
+
+    /// `opf_cir(host, ptr)` (`0x00814c90`): the unit circles the unit
+    /// `opus_no_get(host +0x300, unit, u16 +0xa0)` (see [`opf_circle`]).
+    /// Returns `ptr`.
+    pub fn opf_cir(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let no = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let b = opus_no_get(mem, host.wrapping_add(0x300), unit, no);
+        opf_circle(mem, unit, b, true);
+        ptr
+    }
+
+    /// `opf_cir_y(host, ptr)` (`0x00814f00`): as [`opf_cir`] with the
+    /// height not offset by the base's.
+    pub fn opf_cir_y(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let no = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let b = opus_no_get(mem, host.wrapping_add(0x300), unit, no);
+        opf_circle(mem, unit, b, false);
+        ptr
+    }
+
+    /// `opf_cir2(host, ptr)` (`0x00814d20`): as [`opf_cir`] around the unit
+    /// of `u16 +0xa0`; then with the horizontal distance `d` from it to the
+    /// unit of `u16 +0xa2` (`sqrt |dx^2 + dz^2|`, each step rounded to
+    /// `f32`), bit 0x2000 of `u16 +0xb0` is cleared when `+0x30 / 16 + d`
+    /// (`f32`) is above `+0x40 / 16`, else set (also for a NaN).
+    pub fn opf_cir2(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let list = host.wrapping_add(0x300);
+        let n0 = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let n1 = u32::from(mem.read::<u16>(unit.wrapping_add(0xa2)));
+        let base = opus_no_get(mem, list, unit, n0);
+        let other = opus_no_get(mem, list, unit, n1);
+        opf_circle(mem, unit, base, true);
+        let dx = crate::x87::sub(
+            f(mem, other.wrapping_add(0x90)),
+            f(mem, base.wrapping_add(0x90)),
+        );
+        let dz = crate::x87::sub(
+            f(mem, other.wrapping_add(0x98)),
+            f(mem, base.wrapping_add(0x98)),
+        );
+        let (dz, dx) = (Reg::load_f32(dz), Reg::load_f32(dx));
+        let d2 = dx.reg(MUL, dx).reg(ADD, dz.reg(MUL, dz)).store();
+        // fabs, _CIsqrt, fstp m32
+        let dist = match Reg::load_f32(d2) {
+            Reg::Num(v) => Reg::Num(ffx_bridge::x87::sqrt(v.abs())),
+            Reg::Nan(bits) => Reg::Nan(bits & 0x7fff_ffff),
+        }
+        .store();
+        let reach = Reg::load_f32(f(mem, unit.wrapping_add(0x30)))
+            .constant(MUL, SIXTEENTH)
+            .mem(ADD, dist)
+            .store();
+        let lim = Reg::load_f32(f(mem, unit.wrapping_add(0x40))).constant(MUL, SIXTEENTH);
+        let above =
+            matches!((Reg::load_f32(reach), lim), (Reg::Num(v), Reg::Num(limit)) if v > limit);
+        let fl: u16 = mem.read(unit.wrapping_add(0xb0));
+        let fl = if above { fl & 0xdfff } else { fl | 0x2000 };
+        mem.write(unit.wrapping_add(0xb0), fl);
+        ptr
+    }
+
+    /// The circle of `opf_cir_gw` and `opf_cirz_gw`: the angle, radius and
+    /// height are the unit's floats at the signed byte offsets `+0xa0`,
+    /// `+0xa1` and `+0xa2` (0.0 for a 0 offset); `in_x` puts the sine
+    /// term on `+0x90`/`+0x40` (else on `+0x94`/`+0x44`).
+    fn opf_circle_gw(mem: &mut impl Mem, unit: u32, in_x: bool) {
+        let at = |mem: &dyn Fn(u32) -> i8, o: u32| {
+            i32::from(mem(unit.wrapping_add(o)))
+                .cast_unsigned()
+                .wrapping_add(unit)
+        };
+        let byte = |a: u32| mem.read::<i8>(a);
+        let (pa, pb) = (at(&byte, 0xa0), at(&byte, 0xa1));
+        let pc = (byte(unit.wrapping_add(0xa2)) != 0).then(|| at(&byte, 0xa2));
+        let angle = crate::x87::load_f32(f(mem, pa));
+        let r = crate::x87::load_f32(f(mem, pb));
+        let h = pc.map_or(0.0, |p| crate::x87::load_f32(f(mem, p)));
+        let (t1, t2) = opf_sin_cos(mem, angle);
+        // the sine term's axis, the cosine term's axis, the height's axis
+        let (s_at, c_at, h_at) = if in_x {
+            (0x40u32, 0x48u32, 0x44u32)
+        } else {
+            (0x44, 0x40, 0x48)
+        };
+        let v = Reg::load_f32(t1)
+            .reg(MUL, Reg::load_f32(r))
+            .reg(ADD, Reg::load_f32(f(mem, unit.wrapping_add(s_at))))
+            .constant(MUL, SIXTEENTH)
+            .store();
+        mem.write(unit.wrapping_add(s_at + 0x50), v);
+        let v = Reg::load_f32(r)
+            .mem(MUL, t2)
+            .mem(ADD, f(mem, unit.wrapping_add(c_at)))
+            .constant(MUL, SIXTEENTH)
+            .store();
+        mem.write(unit.wrapping_add(c_at + 0x50), v);
+        let v = Reg::load_f32(f(mem, unit.wrapping_add(h_at)))
+            .mem(ADD, h)
+            .constant(MUL, SIXTEENTH)
+            .store();
+        mem.write(unit.wrapping_add(h_at + 0x50), v);
+    }
+
+    /// `opf_cir_gw(host, ptr)` (`0x00814e50`): the unit circles its own
+    /// `+0x40` (x) and `+0x48` (z): `+0x90 = (t1 r + x) / 16`, `+0x98 =
+    /// (r t2 + z) / 16`, `+0x94 = (+0x44 + h) / 16`, the angle, radius and
+    /// height `h` read at the unit's signed byte offsets `+0xa0..+0xa2`
+    /// (see [`opf_circle_gw`]). Returns `ptr`.
+    pub fn opf_cir_gw(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        opf_circle_gw(mem, unit, true);
+        ptr
+    }
+
+    /// `opf_cirz_gw(host, ptr)` (`0x00814fa0`): as [`opf_cir_gw`] with the
+    /// circle in y and x: `+0x94` from `+0x44` and the sine, `+0x90` from
+    /// `+0x40` and the cosine, the height on `+0x98` from `+0x48`.
+    pub fn opf_cirz_gw(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        opf_circle_gw(mem, unit, false);
+        ptr
     }
 
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
