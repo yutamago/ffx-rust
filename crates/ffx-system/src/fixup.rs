@@ -109,6 +109,70 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `Fixup_UnpackArrayList` (`0x0060a340`).
+    pub const UNPACK_ARRAY_LIST: u32 = 0x0060_a340;
+    /// `Fixup_UnpackList` (`0x0060a750`).
+    pub const UNPACK_LIST: u32 = 0x0060_a750;
+
+    /// `Cluster_UnpackArrayFixups(out, cursor, lists, pointer_arrays)`
+    /// (`0x0060dac0`): for each of the `[lists] & 0x7fffffff` 36-byte list
+    /// headers at `[lists + 4]`, `Fixup_UnpackArrayList(cursor, records, n,
+    /// objects)`, with `n` the header's `+0x18` (`+0x20` when the low byte
+    /// of `pointer_arrays` is set) and `objects` its `+4`; `records` starts
+    /// at `[out + 4]` and advances `n × 16` bytes. Returns 0. `call` takes
+    /// an `ffx.sym` address.
+    pub fn unpack_array_fixups<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        cursor: u32,
+        lists: u32,
+        pointer_arrays: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let headers: u32 = mem.read(lists.wrapping_add(4));
+        let count = mem.read::<u32>(lists) & 0x7fff_ffff;
+        let mut records: u32 = mem.read(out.wrapping_add(4));
+        let count_at = if pointer_arrays & 0xff != 0 {
+            0x20
+        } else {
+            0x18
+        };
+        for k in 0..count {
+            let header = headers.wrapping_add(k.wrapping_mul(0x24));
+            let n: u32 = mem.read(header.wrapping_add(count_at));
+            let objects: u32 = mem.read(header.wrapping_add(4));
+            call(mem, UNPACK_ARRAY_LIST, &[cursor, records, n, objects]);
+            records = records.wrapping_add(n.wrapping_mul(16));
+        }
+        0
+    }
+
+    /// `Cluster_UnpackPointerFixups(out, cursor, lists)` (`0x0060db20`): for
+    /// each of the `[lists] & 0x7fffffff` 36-byte list headers at
+    /// `[lists + 4]`, `Fixup_UnpackList(cursor, records, n, objects)`, with
+    /// `n` the header's `+0x1c` and `objects` its `+4`; `records` starts at
+    /// `[out + 4]` and advances `n × 28` bytes. Returns 0. `call` takes an
+    /// `ffx.sym` address.
+    pub fn unpack_pointer_fixups<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        cursor: u32,
+        lists: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let headers: u32 = mem.read(lists.wrapping_add(4));
+        let count = mem.read::<u32>(lists) & 0x7fff_ffff;
+        let mut records: u32 = mem.read(out.wrapping_add(4));
+        for k in 0..count {
+            let header = headers.wrapping_add(k.wrapping_mul(0x24));
+            let objects: u32 = mem.read(header.wrapping_add(4));
+            let n: u32 = mem.read(header.wrapping_add(0x1c));
+            call(mem, UNPACK_LIST, &[cursor, records, n, objects]);
+            records = records.wrapping_add(n.wrapping_mul(28));
+        }
+        0
+    }
 }
 
 #[cfg(test)]

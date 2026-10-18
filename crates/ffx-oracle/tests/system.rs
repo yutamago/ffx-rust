@@ -18047,3 +18047,115 @@ fn round32_more_matches_the_original_on_the_snapshot() {
     };
     round32_more(&mut a, &mut b, &mut Xorshift(0x4032_0052));
 }
+
+/// Round 33 group A: `updateVFXKeThSetPoint` and the two cluster fixup
+/// unpackers.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn round33_keth_and_clusters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    // no signalling NaNs (the oracle keeps them signalling through fld)
+    let quiet = |rng: &mut Xorshift| loop {
+        let f = rng.float();
+        if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+            return f.to_bits();
+        }
+    };
+    if synthetic {
+        for (pos, col) in render::bridge::KETH_POINT_TABLES {
+            for k in 0..0x30 * 4 {
+                let w = quiet(rng);
+                put(a, b, a.rebase(pos) - 0x40 + 4 * k, w);
+                let w = quiet(rng);
+                put(a, b, a.rebase(col) - 0x40 + 4 * k, w);
+            }
+        }
+    }
+    let mesh = alloc(a, b, 0x40);
+    let pos = alloc(a, b, 0x400);
+    let col = alloc(a, b, 0x400);
+    let col2 = alloc(a, b, 0x400);
+    for k in 0..400u32 {
+        let i = (rng.next() % 44) as i32 - 3;
+        put(a, b, mesh + 0xc, pos + 0x40);
+        put(a, b, mesh + 0x14, col + 0x40);
+        let mut m = mesh;
+        if k % 8 == 7 && i >= 0 {
+            // a position store lands on [mesh + 0x14]: the colour base is
+            // read after it
+            let word = rng.next() % 3;
+            m = pos + 0x40 + 12 * i.cast_unsigned() + 4 * word - 0x14;
+            put(a, b, m + 0xc, pos + 0x40);
+            put(a, b, m + 0x14, col + 0x40);
+            let (table, row) = match i {
+                ..6 => (0, i),
+                6..12 => (1, i - 6),
+                _ => (2, i - 12),
+            };
+            let src =
+                a.rebase(render::bridge::KETH_POINT_TABLES[table].0) + 16 * row.cast_unsigned();
+            put(a, b, src + 4 * word, col2 + 0x40);
+        }
+        assert_eq!(
+            eax(a, 0x0076_69c0, &[m, i.cast_unsigned()]),
+            render::bridge::keth_set_point(b, m, i),
+            "keth point {k} ({i})"
+        );
+        same_memory(&format!("keth point {k} ({i})"), a, b);
+    }
+    // the unpackers over logging stand-ins
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0, &copy_logger(cursor, 0xa340, 4, &[]));
+    redirect(a, b, fixup::bridge::UNPACK_ARRAY_LIST, s);
+    let s = stand_in8(a, b, 0x80, &copy_logger(cursor, 0xa750, 4, &[]));
+    redirect(a, b, fixup::bridge::UNPACK_LIST, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let out = alloc(a, b, 8);
+    let lists = alloc(a, b, 8);
+    let headers = alloc(a, b, 0x24 * 8);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        let n = (rng.next() % 7) | [0, 0x8000_0000][(rng.next() % 2) as usize];
+        put(a, b, lists, n);
+        put(a, b, lists + 4, headers);
+        put(a, b, out + 4, rng.next());
+        for w in 0..0x24 * 2 {
+            put(a, b, headers + 4 * w, rng.next());
+        }
+        let c = rng.next();
+        if k % 2 == 0 {
+            let flag = [0u32, 1, 0x100, 0xffff_ff00, rng.next()][(rng.next() % 5) as usize];
+            assert_eq!(
+                eax(a, 0x0060_dac0, &[out, c, lists, flag]),
+                fixup::bridge::unpack_array_fixups(b, out, c, lists, flag, call),
+                "array fixups {k}"
+            );
+        } else {
+            assert_eq!(
+                eax(a, 0x0060_db20, &[out, c, lists]),
+                fixup::bridge::unpack_pointer_fixups(b, out, c, lists, call),
+                "pointer fixups {k}"
+            );
+        }
+        same_memory(&format!("cluster fixups {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_keth_and_clusters_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_keth_and_clusters(&mut a, &mut b, &mut Xorshift(0x4033_0011), true);
+}
+
+#[test]
+fn round33_keth_and_clusters_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_keth_and_clusters(&mut a, &mut b, &mut Xorshift(0x4033_0012), false);
+}

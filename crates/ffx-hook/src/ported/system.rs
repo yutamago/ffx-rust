@@ -1350,6 +1350,18 @@ ported! {
     Fixup_SetArrayObject @ 0x0060_ae30 => extern "C" fn fixup_set_array_object(record: u32, index: u32) {
         fixup::bridge::set_object(&mut mem(), record, index);
     }
+    /// `Cluster_UnpackArrayFixups(out, cursor, lists, pointer_arrays)`.
+    Cluster_UnpackArrayFixups @ 0x0060_dac0 => extern "C" fn cluster_unpack_array_fixups(out: u32, cursor: u32, lists: u32, pointer_arrays: u32) -> u32 {
+        fixup::bridge::unpack_array_fixups(&mut mem(), out, cursor, lists, pointer_arrays, call_sym)
+    }
+    /// `Cluster_UnpackPointerFixups(out, cursor, lists)`.
+    Cluster_UnpackPointerFixups @ 0x0060_db20 => extern "C" fn cluster_unpack_pointer_fixups(out: u32, cursor: u32, lists: u32) -> u32 {
+        fixup::bridge::unpack_pointer_fixups(&mut mem(), out, cursor, lists, call_sym)
+    }
+    /// `updateVFXKeThSetPoint(mesh, i)`.
+    updateVFXKeThSetPoint @ 0x0076_69c0 => extern "C" fn update_vfx_keth_set_point(mesh: u32, i: i32) -> u32 {
+        render::bridge::keth_set_point(&mut mem(), mesh, i)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

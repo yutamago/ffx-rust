@@ -1294,3 +1294,21 @@ pushed as literals (no relocation entries), not addresses.
   counts down first; at 0, `+0xb0 = ftol(Tk_GetScale(english) ×
   f32(+0xac) + +0xb0)`, and each whole 30 (25 in the 50 Hz mode) moves
   into the line count `+0xa0`.
+
+## Round 33
+
+- `updateVFXKeThSetPoint(mesh, i)` (`0x007669c0`) copies point `i` of a
+  Ke thing mesh from three pairs of tables (16-byte rows): points 0–5 from
+  `0x02305848`/`0x023058a8`, 6–11 from `0x0230f908`/`0x0230f968` (row
+  `i - 6`), 12 on from `0x02305908`/`0x0230a908` (row `i - 12`). Three
+  floats go to the positions (`[mesh + 0xc] + 12 i`), four to the colours
+  (`[mesh + 0x14] + 16 i`, read after the position stores), all through
+  `fld`/`fstp`. `i` is signed; `eax` is the colour base.
+- `Cluster_UnpackArrayFixups(out, cursor, lists, pointer_arrays)`
+  (`0x0060dac0`) and `Cluster_UnpackPointerFixups(out, cursor, lists)`
+  (`0x0060db20`) walk `[lists] & 0x7fffffff` 36-byte list headers at
+  `[lists + 4]`, handing each list to `Fixup_UnpackArrayList` /
+  `Fixup_UnpackList` as `(cursor, records, n, [header + 4])`: `n` is the
+  header's `+0x18` (`+0x20` for pointer arrays, the low byte of the flag
+  word) or `+0x1c`; `records` starts at `[out + 4]` and advances 16 or 28
+  bytes per entry. Both return 0.
