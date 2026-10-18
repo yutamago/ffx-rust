@@ -12679,4 +12679,121 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// The message box both [`mes_box`] writers size from: its height and
+    /// width (`i16` at `0x025d1642`, `0x025d1644`) and the frame's two words
+    /// (`0x025d163c`, `0x025d1638`).
+    pub const MES_BOX: u32 = 0x025d_1638;
+
+    /// The box's height and width (sign-extended) and frame words.
+    fn mes_box_dims(mem: &impl Mem) -> (u32, u32, u32, u32) {
+        let at = mem.rebase(MES_BOX);
+        let h = i32::from(mem.read::<i16>(at.wrapping_add(0xa))).cast_unsigned();
+        let w = i32::from(mem.read::<i16>(at.wrapping_add(0xc))).cast_unsigned();
+        (h, w, mem.read(at.wrapping_add(4)), mem.read(at))
+    }
+
+    /// `TODrawMesBox_008ff370(text, x, y, extra)`: the shadow
+    /// (`TOMakePktBoxXYWHRGBA(x + 4, y + 4, w, h, 0, 0, 0, 0x80)`), the frame
+    /// (`0x008fd390(x, y, w, h, [0x025d163c], [0x025d1638])`) and the text
+    /// (`0x00901cb0(text, x + 15, y + 2, extra)`), with the box size of
+    /// [`MES_BOX`]. Returns the last call's `eax`.
+    pub fn mes_box<M: Mem>(
+        mem: &mut M,
+        [text, x, y, extra]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (h, w, _, _) = mes_box_dims(mem);
+        let shadow = [x.wrapping_add(4), y.wrapping_add(4), w, h, 0, 0, 0, 0x80];
+        call(mem, 0x008f_b150, &shadow);
+        let (h, w, frame_a, frame_b) = mes_box_dims(mem);
+        call(mem, 0x008f_d390, &[x, y, w, h, frame_a, frame_b]);
+        call(
+            mem,
+            0x0090_1cb0,
+            &[text, x.wrapping_add(0xf), y.wrapping_add(2), extra],
+        )
+    }
+
+    /// The words `TODrawMesBoxFit_008ff3e0` hands `TOGetMessageWH` (the
+    /// text's width and height, the original's locals).
+    pub const MES_BOX_FIT_SCRATCH: u32 = 8;
+
+    /// `TODrawMesBoxFit_008ff3e0(text, x, y, extra)`: [`mes_box`] with the
+    /// box as wide as the text: `TOGetMessageWH(0, text, &w, &h, 0, 0)` (in
+    /// `scratch`), the shadow `ftol(478.0 - w)` and the frame `ftol(482.0 -
+    /// w)` wide.
+    pub fn mes_box_fit<M: Mem>(
+        mem: &mut M,
+        [text, x, y, extra]: [u32; 4],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let args = [0, text, scratch, scratch.wrapping_add(4), 0, 0];
+        call(mem, 0x008b_9650, &args);
+        let w = |mem: &M| x87::load(mem.read::<u32>(scratch));
+        let (h, _, _, _) = mes_box_dims(mem);
+        let shadow_w = x87::ftol(mem, x87::sub(478.0, w(mem)));
+        let shadow = [
+            x.wrapping_add(4),
+            y.wrapping_add(4),
+            shadow_w,
+            h,
+            0,
+            0,
+            0,
+            0x80,
+        ];
+        call(mem, 0x008f_b150, &shadow);
+        let (h, _, frame_a, frame_b) = mes_box_dims(mem);
+        let frame_w = x87::ftol(mem, x87::sub(482.0, w(mem)));
+        call(mem, 0x008f_d390, &[x, y, frame_w, h, frame_a, frame_b]);
+        call(
+            mem,
+            0x0090_1cb0,
+            &[text, x.wrapping_add(0xf), y.wrapping_add(2), extra],
+        )
+    }
+
+    /// `BtlDrawRatio_008955e0()`: with `0x0133f77c` set, draws
+    /// `0x00901490(f, x + 15, y - 20, colour)` for the `f32` `f` at
+    /// `0x0133f794`, `x`/`y` the `i16` at `0x0133f780`/`0x0133f782`; with the
+    /// byte `0x0133c93f` set `y` is first refreshed to the low half of
+    /// `ftol(graphicUiRemapY2(350))` (`remap`). The colour is
+    /// `0x80008080` below 1.0, else (NaN too) `0x80808080`.
+    pub fn btl_draw_ratio<M: Mem>(
+        mem: &mut M,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        if mem.read::<u32>(g(mem, 0x0133_f77c)) == 0 {
+            return;
+        }
+        let y_at = g(mem, 0x0133_f782);
+        if mem.read::<u8>(g(mem, 0x0133_c93f)) != 0 {
+            let v = remap(mem, true, 350.0);
+            #[allow(clippy::cast_possible_truncation)] // mov word, cx
+            let y = x87::ftol(mem, f64::from(v)) as u16;
+            mem.write(y_at, y);
+        }
+        let y = i32::from(mem.read::<i16>(y_at));
+        let f: u32 = mem.read(g(mem, 0x0133_f794));
+        let colour = if x87::load(f) < 1.0 {
+            0x8000_8080
+        } else {
+            0x8080_8080
+        };
+        let x = i32::from(mem.read::<i16>(g(mem, 0x0133_f780)));
+        let f = x87::round_trip(f32::from_bits(f)).to_bits();
+        let args = [
+            f,
+            x.wrapping_add(0xf).cast_unsigned(),
+            y.wrapping_sub(0x14).cast_unsigned(),
+            colour,
+        ];
+        call(mem, 0x0090_1490, &args);
+    }
 }

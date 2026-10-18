@@ -1487,6 +1487,24 @@ ported! {
         let scratch = frame.at();
         msg::bridge::expand_codes(&mut mem(), [out, text, arg, jump, flag], scratch, call_ptr)
     }
+    /// `TODrawMesBox_008ff370(text, x, y, extra)`.
+    TODrawMesBox_008ff370 @ 0x008f_f370 => extern "C" fn to_draw_mes_box(text: u32, x: u32, y: u32, extra: u32) -> u32 {
+        tolib::bridge::mes_box(&mut mem(), [text, x, y, extra], call_sym)
+    }
+    /// `TODrawMesBoxFit_008ff3e0(text, x, y, extra)`.
+    TODrawMesBoxFit_008ff3e0 @ 0x008f_f3e0 => extern "C" fn to_draw_mes_box_fit(text: u32, x: u32, y: u32, extra: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tolib::bridge::mes_box_fit(&mut mem(), [text, x, y, extra], scratch, call_sym)
+    }
+    /// `BtlDrawRatio_008955e0()`.
+    BtlDrawRatio_008955e0 @ 0x0089_55e0 => extern "C" fn btl_draw_ratio() {
+        tolib::bridge::btl_draw_ratio(
+            &mut mem(),
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
+        );
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

@@ -19680,3 +19680,114 @@ fn round34_expand_codes_matches_the_original_on_the_snapshot() {
     };
     round34_expand_codes(&mut a, &mut b, &mut Xorshift(0x4034_0052));
 }
+
+/// Round 34 group F: the message boxes `0x008ff370`/`0x008ff3e0` and
+/// `BtlDrawRatio_008955e0` over logging stand-ins and the original remap.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn round34_boxes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, t::MES_BOX_FIT_SCRATCH as usize);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008f_b150, all(8), vec![], ret_cell(cells)),
+        (0x008f_d390, all(6), vec![], ret_cell(cells)),
+        (0x0090_1cb0, all(4), vec![], ret_cell(cells + 4)),
+        (
+            0x008b_9650,
+            vec![0, 1, 4, 5],
+            vec![],
+            store_through(2, cells + 8),
+        ),
+        (0x0090_1490, all(4), vec![], vec![]),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let mes_box = a.rebase(t::MES_BOX);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            mes_box,
+            [rng.next(), rng.next(), rng.next(), rng.next()],
+        );
+        put(a, b, cells, rng.next());
+        put(a, b, cells + 4, rng.next());
+        let w = [
+            (rng.next() % 6000) as f32 / 9.0,
+            478.0,
+            -3.5,
+            f32::NAN,
+            1e12,
+        ][(rng.next() % 5) as usize];
+        put(a, b, cells + 8, w);
+        let args = [rng.next(), rng.next() % 1000, rng.next(), rng.next()];
+        match k % 3 {
+            0 => assert_eq!(
+                eax(a, 0x008f_f370, &args),
+                t::mes_box(b, args, call),
+                "box {k}"
+            ),
+            1 => {
+                assert_eq!(
+                    eax(a, 0x008f_f3e0, &args),
+                    t::mes_box_fit(b, args, scratch, call),
+                    "fit {k}"
+                );
+                let s: [u32; 2] = Mem::read(b, scratch);
+                Mem::write(a, scratch, s);
+            }
+            _ => {
+                put(a, b, a.rebase(0x0133_f77c), (rng.next() % 3) & 1);
+                put(a, b, a.rebase(0x0133_c93f), (rng.next() % 2) as u8);
+                put(a, b, a.rebase(0x0133_f780), [rng.next(), rng.next()]);
+                let f = [
+                    0.5f32,
+                    1.0,
+                    1.5,
+                    f32::NAN,
+                    -0.0,
+                    (rng.next() % 300) as f32 / 100.0,
+                ][(rng.next() % 6) as usize];
+                put(a, b, a.rebase(0x0133_f794), f);
+                eax(a, 0x0089_55e0, &[]);
+                t::btl_draw_ratio(b, remap, call);
+            }
+        }
+        same_memory(&format!("boxes {k}"), a, b);
+    }
+}
+
+#[test]
+fn round34_boxes_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_boxes(&mut a, &mut b, &mut Xorshift(0x4034_0061));
+}
+
+#[test]
+fn round34_boxes_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_boxes(&mut a, &mut b, &mut Xorshift(0x4034_0062));
+}

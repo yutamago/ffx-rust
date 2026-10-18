@@ -9847,6 +9847,7 @@
 0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl
 0x00895390 function TOBtlDrawLibraWindow      # fh v3:exact 0x00895300
 0x00895480 function TOBtlDrawLimitGauge       # fh v3:exact 0x008953f0
+0x008955e0 function BtlDrawRatio_008955e0       # (): with 0x0133f77c set, 0x00901490(f32 0x0133f794, i16 0x0133f780 + 15, i16 0x0133f782 - 20, 0x80008080 below 1.0 else 0x80808080); 0x0133c93f refreshes y = ftol(graphicUiRemapY2(350)); ported (system round 34); name ours
 0x00895660 function TOBtlDrawLuluLimitWindow  # fh v3:exact 0x008955d0
 0x00895940 function TOBtlDrawParamPlate       # fh v3:exact 0x008958b0
 0x00895ae0 function TOBtlDrawScanWinElementLamp # fh v3:cg4 0x895a50
@@ -11090,6 +11091,8 @@
 0x008ff020 function TOXyoffsetPacket_008ff020 # cdecl(x, y) -> x: at *0x018716cc a GIF tag (0x8001, 0x10000000, A+D) and XYOFFSET_1 (x, y | sign of x), the cursor +0x20; caller TODrawMovieMessage; name ours
 0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
 0x008ff260 function TOMenuDrawBrush2             # layout+callees: sorts between TOMakePktShapeCursor and TOMenuInitBrush, and its named callees match the Switch 0x7100528420 TOMenuDrawBrush2's (similarity 0.67: TOMkpShapeXYWHUV, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008ff370 function TODrawMesBox_008ff370       # cdecl(text, x, y, extra): TOMakePktBoxXYWHRGBA shadow at +4, frame 0x008fd390, text 0x00901cb0 at (x+15, y+2), box size i16 0x025d1644/0x025d1642; ported (system round 34); name ours
+0x008ff3e0 function TODrawMesBoxFit_008ff3e0    # cdecl(text, x, y, extra): TODrawMesBox_008ff370 with widths ftol(478 - w) and ftol(482 - w) from TOGetMessageWH; ported (system round 34); name ours
 0x008ff490 function TOMenuDrawChrStatusPlate_008ff490 # cdecl(chr, x, y) -> eax of the last call: menu status plate: background (party: TOMenuGetYesNoWindow bit chr picks the clear sheet + DrawWaterWaveShapeC2 water (colours 0x00c56870/0x1ac56870/0x33c56870, literal pushes) or the dark one; others sheet -6 + water), right panel; chr > 0x11 (unsigned) empty labels; aeon (8..=0x11) with TkMenuGetHP <= 0 -> TkMn2DrawSummonPlateCheckHP(ftol x, ftol y, chr), else name (ToMakeBtlEasyEdgeFont, MenuPlayer_DamageClass2 alpha), HP %5d/%5d and MP %4d/%4d (sprintf import, TOMkpCrossEasyStrFontSClut); party gauge row (Sphere Levels centred by ToGetBtlEasyDigitWidth2, AP to next level MsGetNextAP - MsGetSaveNextAP) or aeon overdrive (TkMn2DrawCrossLimitParam); language 11 moves the labels; callers 0x008cdba0, 0x008ce750, 0x008d6860; name ours; ported (system round 32)
 0x009008c0 function TOMenuDrawStatusPlayerPlate  # layout+callees: sorts between TOMakePktShapeCursor and TOMenuInitBrush, and its named callees match the Switch 0x71005267a0 TOMenuDrawStatusPlayerPlate's (similarity 0.71: MsGetNextAP, MsGetSaveNextAP, TOGetSaveChrName, TOMenuDrawKickTmp, TOMenuOpenPktBuffTmp); symbols from Fahrenheit's server export
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0

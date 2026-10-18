@@ -1484,3 +1484,17 @@ pushed as literals (no relocation entries), not addresses.
   `0x0112a074`; `0xfa` sets `*flag`. At the NUL it clears `*jump` and
   returns the end past the NUL (Ghidra's `void` is wrong). Each code
   first `yiAssert`s that `out` is under 0x4000 bytes into `*0x0112a02c`.
+- `TODrawMesBox_008ff370(text, x, y, extra)` draws a message box sized by
+  the `i16` pair at `0x025d1644` (width) / `0x025d1642` (height): a black
+  shadow (`TOMakePktBoxXYWHRGBA(x + 4, y + 4, w, h, 0, 0, 0, 0x80)`), the
+  frame (`0x008fd390(x, y, w, h, [0x025d163c], [0x025d1638])`) and the
+  text (`0x00901cb0(text, x + 15, y + 2, extra)`).
+  `TODrawMesBoxFit_008ff3e0` measures the text first (`TOGetMessageWH(0,
+  text, &w, &h, 0, 0)`) and uses `ftol(478 - w)` and `ftol(482 - w)` as
+  the widths.
+- `BtlDrawRatio_008955e0()` draws `0x00901490(f, x + 15, y - 20, colour)`
+  while `0x0133f77c` is set (`f` the `f32` at `0x0133f794`, `x`/`y` the
+  `i16` at `0x0133f780`/`0x0133f782`, `y` refreshed to
+  `ftol(graphicUiRemapY2(350))` when `0x0133c93f` is set); the colour is
+  `0x80008080` below 1.0 and `0x80808080` otherwise, NaN included (Ghidra's
+  `1.0 <= f` has NaN the other way).
