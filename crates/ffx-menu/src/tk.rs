@@ -5928,6 +5928,206 @@ pub mod bridge {
         last
     }
 
+    /// `TkMenuOpenSubCmdWindowRect(id, texts, values, n, b44, x, y, width,
+    /// h)` (`0x008e4930`, own name; the last four are `f32`): the one-row
+    /// sub-command window ([`tk_menu_open_sub_cmd_window_row`] with `id`,
+    /// `texts`, `values`, `n`, `ftol2_sse(width)` and `b44`) kept in
+    /// [`MENU_SUB_CMD_WINDOW`], then `+0x4a`, `+0x4c`, `+0x4e`, `+0x50`
+    /// (`u16`) the four floats through `ftol2_sse` (each stored through the
+    /// global, read again). Returns the global.
+    pub fn tk_menu_open_sub_cmd_window_rect<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        rect: [f32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [id, texts, values, n, b44] = args;
+        let width = ffx_bridge::x87::ftol(mem, f64::from(rect[2]));
+        let w = tk_menu_open_sub_cmd_window_row(mem, [id, texts, values, n, width, b44], call);
+        MENU_SUB_CMD_WINDOW.set(mem, w);
+        for (o, v) in [0x4au32, 0x4c, 0x4e, 0x50].into_iter().zip(rect) {
+            let [lo, hi, ..] = ffx_bridge::x87::ftol(mem, f64::from(v)).to_le_bytes();
+            let w = MENU_SUB_CMD_WINDOW.get(mem);
+            mem.write(w.wrapping_add(o), u16::from_le_bytes([lo, hi]));
+        }
+        MENU_SUB_CMD_WINDOW.get(mem)
+    }
+
+    /// `TkMenuOpenSubCmdWindowBeside(id, texts, values, n, b44)`
+    /// (`0x008e46b0`, own name): the second sub-command window
+    /// ([`MENU_SUB_CMD_WINDOW2`]) beside the open one
+    /// ([`MENU_SUB_CMD_WINDOW`]). Its width: `0x165` with none open, else
+    /// the open window's `i16 +0x4e` less its cursor entry's text width
+    /// (`+0x60 + 12 * i16 +0x48`) less `0x18`; then
+    /// [`tk_menu_open_sub_cmd_window_row`]. The new window (each field
+    /// through the global): `+0x46` (`u16`) 0, layer 3, `+0x3f` 0, `+0x14`
+    /// `0x008e4a90`, `+0x10` `0x008e4140`; `+0x4a` (`u16`) the open
+    /// window's `+0x4e - new +0x4e + +0x4a` (`i16`s; 0x30 with none open),
+    /// `+0x94` 1, `+0x4c` 0x25, `+0x90` -1. Returns the global.
+    pub fn tk_menu_open_sub_cmd_window_beside<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [id, texts, values, n, b44] = args;
+        let i16_at = |mem: &M, at: u32| i32::from(mem.read::<i16>(at));
+        let open = MENU_SUB_CMD_WINDOW.get(mem);
+        let width = if open == 0 {
+            0x165
+        } else {
+            let k = i16_at(mem, open.wrapping_add(0x48))
+                .wrapping_add(8)
+                .wrapping_mul(12);
+            let text: i32 = mem.read(open.wrapping_add(k.cast_unsigned()));
+            i16_at(mem, open.wrapping_add(0x4e))
+                .wrapping_sub(text)
+                .wrapping_sub(0x18)
+        };
+        let w = tk_menu_open_sub_cmd_window_row(
+            mem,
+            [id, texts, values, n, width.cast_unsigned(), b44],
+            call,
+        );
+        MENU_SUB_CMD_WINDOW2.set(mem, w);
+        mem.write(w.wrapping_add(0x46), 0u16);
+        let at = |mem: &M, o: u32| MENU_SUB_CMD_WINDOW2.get(mem).wrapping_add(o);
+        let a = at(mem, 0x3e);
+        mem.write(a, 3u8);
+        let a = at(mem, 0x3f);
+        mem.write(a, 0u8);
+        for (o, f) in [(0x14u32, 0x008e_4a90u32), (0x10, 0x008e_4140)] {
+            let handler = mem.rebase(f);
+            let a = at(mem, o);
+            mem.write(a, handler);
+        }
+        let open = MENU_SUB_CMD_WINDOW.get(mem);
+        let w = MENU_SUB_CMD_WINDOW2.get(mem);
+        let x = if open == 0 {
+            0x30
+        } else {
+            i16_at(mem, open.wrapping_add(0x4e))
+                .wrapping_sub(i16_at(mem, w.wrapping_add(0x4e)))
+                .wrapping_add(i16_at(mem, open.wrapping_add(0x4a)))
+        };
+        mem.write(w.wrapping_add(0x94), 1u32);
+        let [lo, hi, ..] = x.to_le_bytes();
+        let a = at(mem, 0x4a);
+        mem.write(a, u16::from_le_bytes([lo, hi]));
+        let a = at(mem, 0x4c);
+        mem.write(a, 0x25u16);
+        let a = at(mem, 0x90);
+        mem.write(a, u32::MAX);
+        MENU_SUB_CMD_WINDOW2.get(mem)
+    }
+
+    /// `TkMsSetSaveParam(chr)` (`0x008c3070`, Fahrenheit's Switch name):
+    /// `MsSetSaveParam(chr)`, then HP and MP each clamped to their maximum
+    /// (signed; `TkMenuGetHP`/`TkMenuGetMaxHP`, `TkMenuSetHP`, the same for
+    /// MP; the maximum is fetched again for the set). Returns what the
+    /// original leaves in `eax`: `TkMenuSetMP`'s result after a clamp, else
+    /// the maximum MP.
+    pub fn tk_ms_set_save_param<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0078_60f0);
+        call(mem, f, &[chr]);
+        let mut last = 0;
+        for (get, max, set) in [
+            (0x008a_98c0u32, 0x008a_9990u32, 0x008a_ae90u32),
+            (0x008a_9970, 0x008a_99b0, 0x008a_aef0),
+        ] {
+            let get = mem.rebase(get);
+            let max = mem.rebase(max);
+            let v = call(mem, get, &[chr]).cast_signed();
+            last = call(mem, max, &[chr]);
+            if v > last.cast_signed() {
+                let m = call(mem, max, &[chr]);
+                let set = mem.rebase(set);
+                last = call(mem, set, &[chr, m]);
+            }
+        }
+        last
+    }
+
+    /// `MenuKaizou_AddAbility(weapon, ability)` (`0x008d5680`, own name):
+    /// the first of the weapon's `u8 +0xb` ability slots (`u16` from
+    /// `+0xe`) that is 0 or `0xff` gets `ability` (`u16`); none when all are
+    /// taken. Then `TkMsSetSaveParamAll()` (`0x008c30d0`, a jump to
+    /// `MsSetSaveParamAll`; a tail jump: its result).
+    pub fn menu_kaizou_add_ability<M: Mem>(
+        mem: &mut M,
+        weapon: u32,
+        ability: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slots = u32::from(mem.read::<u8>(weapon.wrapping_add(0xb)));
+        for k in 0..slots {
+            let at = weapon.wrapping_add(0xe + 2 * k);
+            let v: u16 = mem.read(at);
+            if v == 0 || v == 0xff {
+                let [lo, hi, ..] = ability.to_le_bytes();
+                mem.write(at, u16::from_le_bytes([lo, hi]));
+                break;
+            }
+        }
+        let f = mem.rebase(0x008c_30d0);
+        call(mem, f, &[])
+    }
+
+    /// `TkMsEventEffectRead(id)` (`0x00872470`, Fahrenheit's Switch name):
+    /// `g_AtelOverlayStatus` (`u8 0x01326b80`) = 1, then a tail jump to
+    /// `MsEventEffectRead(id)` (its result).
+    pub fn tk_ms_event_effect_read<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let status = mem.rebase(0x0132_6b80);
+        mem.write(status, 1u8);
+        let f = mem.rebase(0x0078_8c60);
+        call(mem, f, &[id])
+    }
+
+    /// `TkResetClip()` (`0x0088c710`, Fahrenheit's name): with `TkIsDebug()`
+    /// nonzero, `TkCreateDECI2Header(0x01330700, 0x10c, 0xeffa, 0x45, 0x48)`
+    /// and `u16 0x01330708` = 0. Returns what the original leaves in `eax`:
+    /// `TkIsDebug()`'s 0, or the header call's result.
+    pub fn tk_reset_clip<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7d10);
+        let debug = call(mem, f, &[]);
+        if debug == 0 {
+            return 0;
+        }
+        let header = mem.rebase(0x0133_0700);
+        let f = mem.rebase(0x0088_5120);
+        let r = call(mem, f, &[header, 0x10c, 0xeffa, 0x45, 0x48]);
+        mem.write(mem.rebase(0x0133_0708), 0u16);
+        r
+    }
+
+    /// `MenuMain_Reset()` (`0x008aa570`, own name): the 28 words from
+    /// [`MENU_SLOTS`] (the slots, the active mask, the buffer index)
+    /// cleared, `MenuMain_ResetAllWindows()`, `MenuHelp_SetRatio2(1)` (its
+    /// result returned).
+    pub fn menu_main_reset<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slots = MENU_SLOTS.ptr(mem).addr;
+        for k in 0..28u32 {
+            mem.write(slots.wrapping_add(4 * k), 0u32);
+        }
+        let f = mem.rebase(0x008a_a470);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x008a_b270);
+        call(mem, f, &[1])
+    }
+
     /// `MenuStatus_OpenWindow(a, index, b, c)` (`0x008d3140`, own name): a
     /// window from `TkMenuMainAllocWindow()` kept in [`STATUS_WINDOWS`]
     /// `[index]`, with the status window's callbacks (`+8` `0x008d2670`,

@@ -3349,6 +3349,34 @@ ported! {
         let local = frame.at();
         tk::menu_item_count_gear_by_owner(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuOpenSubCmdWindowRect(id, texts, values, n, b44, x, y, width, h)`.
+    TkMenuOpenSubCmdWindowRect @ 0x008e_4930 => extern "C" fn tk_menu_open_sub_cmd_window_rect(id: u32, texts: u32, values: u32, n: u32, b44: u32, x: f32, y: f32, width: f32, h: f32) -> u32 {
+        tk::tk_menu_open_sub_cmd_window_rect(&mut mem(), [id, texts, values, n, b44], [x, y, width, h], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenSubCmdWindowBeside(id, texts, values, n, b44)`.
+    TkMenuOpenSubCmdWindowBeside @ 0x008e_46b0 => extern "C" fn tk_menu_open_sub_cmd_window_beside(id: u32, texts: u32, values: u32, n: u32, b44: u32) -> u32 {
+        tk::tk_menu_open_sub_cmd_window_beside(&mut mem(), [id, texts, values, n, b44], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMsSetSaveParam(chr)`.
+    TkMsSetSaveParam @ 0x008c_3070 => extern "C" fn tk_ms_set_save_param(chr: u32) -> u32 {
+        tk::tk_ms_set_save_param(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_AddAbility(weapon, ability)`.
+    MenuKaizou_AddAbility @ 0x008d_5680 => extern "C" fn menu_kaizou_add_ability(weapon: u32, ability: u32) -> u32 {
+        tk::menu_kaizou_add_ability(&mut mem(), weapon, ability, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMsEventEffectRead(id)`.
+    TkMsEventEffectRead @ 0x0087_2470 => extern "C" fn tk_ms_event_effect_read(id: u32) -> u32 {
+        tk::tk_ms_event_effect_read(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkResetClip()`.
+    TkResetClip @ 0x0088_c710 => extern "C" fn tk_reset_clip() -> u32 {
+        tk::tk_reset_clip(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_Reset()`.
+    MenuMain_Reset @ 0x008a_a570 => extern "C" fn menu_main_reset() -> u32 {
+        tk::menu_main_reset(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuMain_BusyMask()`.
     MenuMain_BusyMask @ 0x008a_a610 => extern "C" fn menu_main_busy_mask() -> u32 {
         tk::menu_main_busy_mask(&mut mem(), &mut |_, f, a| call_ptr(f, a))

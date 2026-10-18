@@ -9693,6 +9693,7 @@
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aa470 function MenuMain_ResetAllWindows  # the 32 window records (0x98 bytes from 0x01840900) reset; own name
 0x008aa4b0 function MenuMain_ResetWindow      # (window) defaults: callbacks/state 0, ids +0x2c/+0x2e = -1, +0x34 = 0x01000000, +0x3e = 0x0101; own name
+0x008aa570 function MenuMain_Reset            # (): 28 words 0x01840888..0x018408f4 (g_TkMenuSlots, g_TkMenuMainActiveMask, g_TkMenuDBuffIndex) cleared; MenuMain_ResetAllWindows; MenuHelp_SetRatio2(1) (eax); own name
 0x008aa610 function MenuMain_BusyMask         # (): g_TkMenuMainActiveMask | bit 31 when TkCdReadSync(1); when that is 0, 0x80000000 if AtelIsCallbackQue() == 1; name ours
 0x008aa690 function MenuMain_RestoreVram      # (): MenuMain_LoadVramBlock(0x01340870 + i*0x10000, 0xbc000 + i*0x4000, 0x10000) for 13 blocks; menu close in 0x008a9ca0 (after MenuMain_SaveVram on open); name ours
 0x008aa710 function MenuMain_LoadVramBlock    # (buf, vram, bytes): sceGsSetDefLoadImage(0x01841cd0, vram/64, 8, 0, 0, 0, 512, bytes/4/512), FlushCache, sceGsExecLoadImage; glue; name ours
@@ -10119,6 +10120,7 @@
 0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00
 0x008c2d00 function TkMn2WeaponBuySellWindow     # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8a60 TkMn2WeaponBuySellWindow's (similarity 0.62: DrawCrossMenuIconWeaponName2, TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008c3070 function TkMsSetSaveParam             # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8120 TkMsSetSaveParam's (similarity 1.00: MsSetSaveParam, TkMenuGetHP, TkMenuGetMP, TkMenuGetMaxHP, TkMenuGetMaxMP); symbols from Fahrenheit's server export
+0x008c30d0 function TkMsSetSaveParamAll       # jmp MsSetSaveParamAll (5 bytes); name ours, after TkMsSetSaveParam
 0x008c30e0 function TkFindLegendWeapon_008c30e0  # (kind) -> the saved weapon whose flags +3 bit 2 (legend) are set and +4 == kind, from MsGetSaveWeaponList; dbgPrintf "TK:Found Legend weapon(%d)" / "not found"; only caller TkSetLegendAbility (the Switch inlines it there, hence the string match); own name
 0x008c3170 function TkSetLegendAbility        # fh call.cs cdecl
 0x008c32d0 function MenuItem_Plus10           # (p) p + 0x10; no caller; own name
@@ -10293,6 +10295,7 @@
 0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
+0x008d5680 function MenuKaizou_AddAbility     # (weapon, ability): first u16 slot (+0xe, u8 +0xb of them) that is 0 or 0xff gets ability; tail jump TkMsSetSaveParamAll; caller the customize step 0xd; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d56f0 function MenuKaizou_WeaponByte4    # (w): MsGetSaveWeapon(u16 [0x0186aa38][i16 w+0x48], &local): -1 when its byte +2 is 0, else its byte +4; name ours
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
@@ -10529,7 +10532,9 @@
 0x008e3730 function TkMenuCtrlAskYesNoWindow     # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e6f50 TkMenuCtrlAskYesNoWindow's (similarity 1.00: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg); symbols from Fahrenheit's server export
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
 0x008e4560 function TkMenuGetYesNoWindowHeight   # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e7760 TkMenuGetYesNoWindowHeight's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
+0x008e46b0 function TkMenuOpenSubCmdWindowBeside # (id, texts, values, n, b44): width 0x165, or open 0x023cc128 i16 +0x4e - its cursor entry's width (+0x60 + 12 i16 +0x48) - 0x18; TkMenuOpenSubCmdWindowMain_008e4790 into 0x023cc124: +0x46 0, +0x3e 3, +0x3f 0, +0x14 0x008e4a90, +0x10 0x008e4140, +0x4a open +0x4e - new +0x4e + open +0x4a (0x30), +0x94 1, +0x4c 0x25, +0x90 -1; own name
 0x008e4790 function TkMenuOpenSubCmdWindowMain_008e4790 # duplicate name (0x008e33d0 has it); layout+callees: sorts between TkMenuGetYesNoWindowHeight and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e8190 TkMenuOpenSubCmdWindowMain's (similarity 1.00: TkMenuMainAllocWindow, TkMenuMainRegistWindow, TkMn2StringWidth); symbols from Fahrenheit's server export
+0x008e4930 function TkMenuOpenSubCmdWindowRect # (id, texts, values, n, b44, f32 x, y, width, h): TkMenuOpenSubCmdWindowMain_008e4790(id, texts, values, n, ftol(width), b44) into 0x023cc128, u16 +0x4a/+0x4c/+0x4e/+0x50 = ftol(x, y, width, h); returns it (Ghidra drops the fld arguments); own name
 0x008e49b0 function TkMenuRefreshSubCmdHelp   # TkMenuSetHelpMessage of the sub-command window cursor entry +0x5c+12i; the Switch TkMenuRefreshSubCmdHelp (48 bytes) calls only TkMenuSetHelpMessage and sorts right before TkMenuRestartSubCmdWindow2, as here; was MenuSubCmd_RefreshHelp
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e49f0 function TkMenuRestartSubCmdWindow1 # (): 0x023cc124 +0x45 = 0, +0x28 = 1 (TkMenuRestartSubCmdWindow2 does 0x023cc128)

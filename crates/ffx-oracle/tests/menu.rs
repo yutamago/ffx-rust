@@ -8251,3 +8251,170 @@ fn menu_round21_shop_windows_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// A stand-in returning `start`, `start + 1`, ... on successive calls.
+fn return_counter(t: &mut Twins, f: u32, start: u32) {
+    let cell = t.alloc(&start.to_le_bytes()).to_le_bytes();
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0xa1][..], &cell,                         // mov eax, [cell]
+        &[0xff, 0x05], &cell,                       // inc dword [cell]
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_round21_sub_cmd_windows_and_params_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0021_4930) else {
+        return;
+    };
+    // TOGetMessageSizePacked as `return text` (the width is its low half)
+    let code = [0x8b, 0x44, 0x24, 0x04, 0xc3]; // mov eax, [esp + 4]; ret
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x008b_7170);
+        o.write(at, &code).unwrap();
+    }
+    // floats: a quiet NaN, out of range, negative, fractions, small values
+    let pick = |t: &mut Twins| -> f32 {
+        match t.rng.below(8) {
+            0 => f32::NAN,
+            1 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            2 => -f32::from_bits(t.rng.next() & 0x4fff_ffff),
+            3 => 3e9,
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 500) / 4.0,
+        }
+    };
+    let table = |t: &mut Twins| {
+        let v: Vec<u8> = (0..6)
+            .flat_map(|_| (t.rng.next() & 0x00ff_00ff).to_le_bytes())
+            .collect();
+        t.alloc(&v)
+    };
+    for round in 0..48u32 {
+        // every window free again (32 records of 0x98 bytes)
+        let windows = t.sym(tk::MENU_WINDOWS.sym);
+        for k in 0..0x20u32 {
+            t.put(windows + k * 0x98 + 0x40, 0u8);
+        }
+        let n = t.rng.pick(&[0u32, 0xffff_ffff, 1, 2, 3, 4, 6]);
+        let (texts, values) = (table(&mut t), table(&mut t));
+        let (id, b44) = (t.rng.next(), t.rng.next());
+        let rect = [pick(&mut t), pick(&mut t), pick(&mut t), pick(&mut t)];
+        let mut args = vec![id, texts, values, n, b44];
+        args.extend(rect.map(f32::to_bits));
+        t.twin("TkMenuOpenSubCmdWindowRect", 0x008e_4930, &args, U32, |o| {
+            w(tk::tk_menu_open_sub_cmd_window_rect(
+                o,
+                [id, texts, values, n, b44],
+                rect,
+                &mut callback,
+            ))
+        });
+        // the second window beside none or a random open one
+        let open = if round % 4 == 0 {
+            0
+        } else {
+            let open = t.alloc_random(0x200);
+            let k = i16::try_from(t.rng.below(24)).unwrap_or(0) - 8;
+            t.put(open + 0x48, k);
+            open
+        };
+        t.put(t.sym(tk::MENU_SUB_CMD_WINDOW.sym), open);
+        let args = [id, texts, values, n, b44];
+        t.twin(
+            "TkMenuOpenSubCmdWindowBeside",
+            0x008e_46b0,
+            &args,
+            U32,
+            |o| {
+                w(tk::tk_menu_open_sub_cmd_window_beside(
+                    o,
+                    args,
+                    &mut callback,
+                ))
+            },
+        );
+        // TkMsSetSaveParam: HP and MP below, at and above the maximum
+        record_n(&mut t, 0x0078_60f0, 1, 0x11);
+        for (get, max, set) in [
+            (0x008a_98c0u32, 0x008a_9990u32, 0x008a_ae90u32),
+            (0x008a_9970, 0x008a_99b0, 0x008a_aef0),
+        ] {
+            let m = t.rng.pick_or_any(&[0, 1, 9999, 0x8000_0000, 0x7fff_ffff]);
+            let v = match t.rng.below(4) {
+                0 => m,
+                1 => m.wrapping_add(1),
+                2 => m.wrapping_sub(1),
+                _ => t.rng.next(),
+            };
+            return_const(&mut t, get, v);
+            // the maximum counts up: the set takes the second fetch
+            return_counter(&mut t, max, m);
+            let r = t.rng.next();
+            record_n(&mut t, set, 2, r);
+        }
+        let chr = t.rng.below(0x12);
+        t.twin("TkMsSetSaveParam", 0x008c_3070, &[chr], U32, |o| {
+            w(tk::tk_ms_set_save_param(o, chr, &mut callback))
+        });
+        // MenuKaizou_AddAbility: slots full, free (0 or 0xff) or none
+        let mut weapon = t.rng.bytes(0x20);
+        weapon[0xb] = t.rng.pick(&[0u8, 1, 2, 4, 4, 8]);
+        for k in 0..8 {
+            let v =
+                u16::try_from(t.rng.pick(&[0, 0xff, 0x8001, 0x2034, 0x2034, 0x0100])).unwrap_or(0);
+            weapon[0xe + 2 * k..0x10 + 2 * k].copy_from_slice(&v.to_le_bytes());
+        }
+        let weapon = t.alloc(&weapon);
+        let all = t.rng.next();
+        record_n(&mut t, 0x0078_6900, 0, all);
+        let ability = t.rng.next();
+        t.twin(
+            "MenuKaizou_AddAbility",
+            0x008d_5680,
+            &[weapon, ability],
+            U32,
+            |o| {
+                w(tk::menu_kaizou_add_ability(
+                    o,
+                    weapon,
+                    ability,
+                    &mut callback,
+                ))
+            },
+        );
+        // TkMsEventEffectRead, TkResetClip and MenuMain_Reset over recorders
+        let r = t.rng.next();
+        record_n(&mut t, 0x0078_8c60, 1, r);
+        t.scramble(0x0132_6b80, 4);
+        let id = t.rng.next();
+        t.twin("TkMsEventEffectRead", 0x0087_2470, &[id], U32, |o| {
+            w(tk::tk_ms_event_effect_read(o, id, &mut callback))
+        });
+        let debug = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0088_7d10, debug);
+        let r = t.rng.next();
+        record_n(&mut t, 0x0088_5120, 5, r);
+        t.scramble(0x0133_0700, 0x10);
+        t.twin("TkResetClip", 0x0088_c710, &[], U32, |o| {
+            w(tk::tk_reset_clip(o, &mut callback))
+        });
+        if round % 8 == 7 {
+            let r = t.rng.next();
+            record_n(&mut t, 0x008a_a470, 0, r);
+            let r = t.rng.next();
+            record_n(&mut t, 0x008a_b270, 1, r);
+            t.scramble(0x0184_0884, 0x78);
+            t.twin("MenuMain_Reset", 0x008a_a570, &[], U32, |o| {
+                w(tk::menu_main_reset(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
