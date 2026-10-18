@@ -2060,15 +2060,12 @@ pub mod bridge {
         out[2]
     }
 
-    /// `op_heap_display_clear()` (`0x007ff260`): in debug mode,
-    /// `opd_heap_display_clear()` (`0x00a649c0`, through `call`).
-    pub fn op_heap_display_clear<M: Mem>(
-        mem: &mut M,
-        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) {
+    /// `op_heap_display_clear(flags)` (`0x007ff260`): in debug mode,
+    /// `opd_heap_display_clear(flags)` (a tail jump, so the caller's
+    /// argument is the gauge: `pppSetFpPdt` passes 0x601).
+    pub fn op_heap_display_clear(mem: &mut impl Mem, flags: u32) {
         if DEBUG_MODE.get(mem) != 0 {
-            let f = Global::<u32>::new(0x00a6_49c0).ptr(mem).addr;
-            call(mem, f, &[]);
+            crate::opd::bridge::opd_heap_display_clear(mem, flags);
         }
     }
 

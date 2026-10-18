@@ -6834,7 +6834,6 @@ fn round10b_helpers_match_the_original() {
             (0x0082_61b0, &[0], Some(cells + 4)),
             (0x0088_6eb0, &[0], None),
             (0x0088_6d80, &[0], None),
-            (0x00a6_49c0, &[], None),
             (0x006e_d9a0, &[0], None),
             (0x0062_f500, &[0], None),
         ] {
@@ -6908,8 +6907,9 @@ fn round10b_helpers_match_the_original() {
             p.check("op_xyz_scale", 0x007e_a850, &[dst, src, k], |m| {
                 Some(op::bridge::op_xyz_scale(m, dst, src, k))
             });
-            p.check("op_heap_display_clear", 0x007f_f260, &[], |m| {
-                op::bridge::op_heap_display_clear(m, &mut call_original);
+            let flags = rng.pick(&[0u32, 1, 2, 3, 0x601, 0x8603]);
+            p.check("op_heap_display_clear", 0x007f_f260, &[flags], |m| {
+                op::bridge::op_heap_display_clear(m, flags);
                 None
             });
             // op_oef2_sep_free_all
@@ -12462,6 +12462,74 @@ fn round27c_helpers_match_the_original() {
                     None
                 },
             );
+        }
+    }
+}
+
+#[test]
+fn ppp_set_fp_pdt_matches_the_original() {
+    use fp::bridge as f;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_a7f0);
+        let hash = p.alloc(4);
+        // pppInitData, pppInitEnv, user_malloc, pppCreateHeap, set_ptr32,
+        // FFXVu0UnitMatrix and graphicLevelGetNameHash recorded
+        for (sym, words, ret) in [
+            (0x0071_1fa0u32, &[0u8, 0, 0][..], None),
+            (0x0071_69d0, &[0, 0, 0, 0], None),
+            (0x0068_7020, &[0], None),
+            (0x0072_c480, &[0, 0, 0], None),
+            (0x00a4_4700, &[0], None),
+            (0x006e_d9a0, &[0], None),
+            (0x0064_1da0, &[], Some(hash)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let data = p.alloc(0x20 + 0x50 * 0x29);
+        let run = p.sym(f::RUN.sym);
+        let disp = p.sym(f::DISP.sym);
+        let gauges = p.sym(opd::bridge::HEAP_DISPLAY.sym);
+        for _ in 0..1500 {
+            p.fill(data, 0x20 + 0x50 * 0x29, &mut rng);
+            let n = rng.pick(&[0u16, 1, 3, 0x27, 0x28, 0x29]);
+            p.set(data + 4, n);
+            p.set(data + 1, rng.pick(&[0u8, 1, 0x20, 0xff]));
+            p.set(data + 2, rng.pick(&[0u8, 1, 2, 3, 0xff]));
+            for k in 0..u32::from(n) {
+                let fx = data + 0x20 + 0x50 * k;
+                for i in 0..3 {
+                    let v = rng.float();
+                    p.set(fx + 0x38 + 4 * i, v);
+                }
+                let kind = if rng.chance(10) {
+                    2u8
+                } else {
+                    rng.pick(&[0u8, 1, 3])
+                };
+                p.set(fx + 0x4a, kind);
+            }
+            p.fill(run, 0x80 * 0x2a, &mut rng);
+            p.fill(disp, 0x4c * 0x2a, &mut rng);
+            p.fill(gauges, 0x100, &mut rng);
+            p.put(op::bridge::DEBUG_MODE, u8::from(rng.chance(50)));
+            let any = rng.next();
+            p.put(f::HEAP2_BUF, rng.pick(&[0u32, 0, any]));
+            let any = rng.next();
+            p.put(f::PACKET_BUF, rng.pick(&[0u32, 0, any]));
+            for g in [f::HEAP_DISPLAY_SET, f::WIDE, f::WOOD] {
+                let v = rng.next();
+                p.put(g, v);
+            }
+            for s in f::STATS {
+                let v = rng.next();
+                p.set(p.sym(s), v);
+            }
+            let any = rng.next();
+            p.set(hash, rng.pick(&[0x234u32, 0x233, 0, any]));
+            p.check("pppSetFpPdt", 0x0072_a7f0, &[data], |m| {
+                f::ppp_set_fp_pdt(m, data, &mut call_original);
+                None
+            });
         }
     }
 }

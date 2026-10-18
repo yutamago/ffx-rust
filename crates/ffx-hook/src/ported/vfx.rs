@@ -1256,9 +1256,9 @@ ported! {
     op_xyz_scale @ 0x007e_a850 => extern "C" fn op_xyz_scale(dst: u32, src: u32, s: u32) -> u32 {
         op::bridge::op_xyz_scale(&mut mem(), dst, src, s)
     }
-    /// `op_heap_display_clear()`.
-    op_heap_display_clear @ 0x007f_f260 => extern "C" fn op_heap_display_clear() {
-        op::bridge::op_heap_display_clear(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    /// `op_heap_display_clear(flags)`.
+    op_heap_display_clear @ 0x007f_f260 => extern "C" fn op_heap_display_clear(flags: u32) {
+        op::bridge::op_heap_display_clear(&mut mem(), flags);
     }
     /// `op_oef2_sep_free_all(mask)`.
     op_oef2_sep_free_all @ 0x007f_ff30 => extern "C" fn op_oef2_sep_free_all(mask: u32) -> u32 {
@@ -1865,6 +1865,10 @@ ported! {
     /// `opus_hsv_rgba_00807b70(out, src, n, time, sat, val, mix)`.
     opus_hsv_rgba_00807b70 @ 0x0080_7b70 => extern "C" fn opus_hsv_rgba(out: u32, src: u32, n: i32, time: i32, sat: i32, val: i32, mix: i32) -> u32 {
         opus::bridge::opus_hsv_rgba(&mut mem(), out, src, n, time, sat, val, mix)
+    }
+    /// `pppSetFpPdt(data)`.
+    pppSetFpPdt @ 0x0072_a7f0 => extern "C" fn ppp_set_fp_pdt(data: u32) {
+        fp::bridge::ppp_set_fp_pdt(&mut mem(), data, &mut |_, f, a| call_ptr(f, a));
     }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {

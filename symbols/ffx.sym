@@ -3614,7 +3614,7 @@
 0x0072a690 function pppFpSetWoodMatrix        # fh v3:exact 0x0072a780
 0x0072a750 function pppFpStopStatus           # fh v3:bsim1.00+call.cs 0x0072a840 cdecl
 0x0072a760 function Fp_IdState_0072a760         # ours: (id) -> run state of the first g_FpData entry with i16 +0x64 == id: 0 not started (g_FpRun +0 = -0x1000), 1 running, 2 ended (+0x1d set), -1 no table or entry; callers 0x0091c860, 0x00933cc0
-0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0
+0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0; (data): installs a field's effect table (run/display records, heaps, packet buffer); ported (fp::bridge::ppp_set_fp_pdt)
 0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export
 0x0072ab20 function pppVu0Length_copy_0072ab20   # the pppVu0Length body again (emulated VU0 length into 0x00c8f820.., _CIsqrt, Q); callers pppFpInfPrint, 0x00728ac0; the system agent's finding (vfx family, placed among system names); own name
 0x0072ac20 function ModelBuffer_AllocateBuffer # fh v3:bsim1.00 0x0072ad10
@@ -6541,7 +6541,7 @@
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
 0x007ff1d0 function op_free                   # fh v3:exact 0x007ff0f0
-0x007ff260 function op_heap_display_clear     # fh v3:bsim1.00 0x007ff180
+0x007ff260 function op_heap_display_clear     # fh v3:bsim1.00 0x007ff180; (flags): in debug mode a tail jump to opd_heap_display_clear, so flags & 3 is the gauge (pppSetFpPdt passes 0x601)
 0x007ff290 function op_heap_display_set       # fh v3:bsim1.00 0x007ff1b0
 0x007ff2b0 function op_heap_display_set_par   # fh v3:exact 0x007ff1d0
 0x007ff2d0 function op_heap_init                 # layout: alphabetical run between op_heap_display_set_par and op_init_ffx (1 unnamed in the gap); Switch 0x71003dfe40 op_heap_init is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -15312,9 +15312,15 @@
 0x00cec208 label    g_pppFpPacketPeak         # peak of g_pppFpPacketUsed
 0x00cec20c label    g_pppFpHeapUsed           # last pppFpLoop's heap use
 0x00cec210 label    g_pppFpHeapPeak           # peak of g_pppFpHeapUsed
+0x00cec218 label    g_pppFpHeapDisplaySet     # set by pppFpInitHeapDisplay and pppSetFpPdt; pppPartLoop runs pppFpInitHeapDisplay while it is 0; name ours (fp::bridge::HEAP_DISPLAY_SET)
+0x00cec220 label    g_pppFpPacketBuf          # field-effect packet buffer: pppSetFpPdt user_mallocs it once (0xc0000, 0x100000 or 0x140000 by g_FpData byte +2), pppFpLoop starts g_PppPacketPos there, pppFpFree frees it; name ours
+0x00cec224 label    g_pppFpHeap2Buf           # g_pppFpHeap2's block: pppSetFpPdt user_mallocs g_FpData byte +1 x 8 KB once and pppCreateHeap's it, pppFpFree frees it; name ours
+0x00cec228 label    g_pppFpWide               # pppSetFpPdt sets it for 0x28 effects or graphicLevelGetNameHash() 0x234; 0x00756740 then uses -1.1/1.1 for two -1/1 bounds; name ours
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
 0x00cec23c label    g_pppFpHeap2                 # the field effects' second ppp heap (pppFpGetHeapSize)
+0x00cec258 label    g_pppFpEnv                # the field effects' ppp environment: pppSetFpPdt's pppInitEnv(g_pppFpHeap, g_FpData, it, 0x40000); name ours
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
+0x00d2c25c label    g_pppFpWood               # pppSetFpPdt sets it when an effect has kind byte +0x6a 2; pppFpLoop then calls pppFpSetWoodMatrix; name ours
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
 0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it

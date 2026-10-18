@@ -419,6 +419,130 @@ pub mod bridge {
         }
         vu0::matrix_copy(mem, r(mem, VIEW_MATRIX_COPY), view)
     }
+
+    /// `g_pppFpHeapDisplaySet` (`0x00cec218`): set by
+    /// `pppFpInitHeapDisplay` and [`ppp_set_fp_pdt`]; `pppPartLoop` runs
+    /// `pppFpInitHeapDisplay` while it is 0.
+    pub const HEAP_DISPLAY_SET: Global<u32> = Global::new(0x00ce_c218);
+    /// `g_pppFpPacketBuf` (`0x00cec220`): the field effects' packet buffer
+    /// (`pppFpLoop` starts `g_PppPacketPos` there), allocated once.
+    pub const PACKET_BUF: Global<u32> = Global::new(0x00ce_c220);
+    /// `g_pppFpHeap2Buf` (`0x00cec224`): the second heap's block, allocated
+    /// once.
+    pub const HEAP2_BUF: Global<u32> = Global::new(0x00ce_c224);
+    /// `g_pppFpWide` (`0x00cec228`): set for a table of 0x28 effects or the
+    /// level whose name hash is 0x234; 0x00756740 then uses 1.1 for some
+    /// of its 1.0 bounds.
+    pub const WIDE: Global<u32> = Global::new(0x00ce_c228);
+    /// `g_pppFpEnv` (`0x00cec258`): the field effects' environment
+    /// `pppInitEnv` fills.
+    pub const ENV: Global<u32> = Global::new(0x00ce_c258);
+    /// `g_pppFpWood` (`0x00d2c25c`): some effect has kind byte 2, so
+    /// `pppFpLoop` sets up the wood matrix (`pppFpSetWoodMatrix`).
+    pub const WOOD: Global<u32> = Global::new(0x00d2_c25c);
+
+    /// `pppSetFpPdt(data)` (`0x0072a7f0`): installs a field's effect table:
+    /// [`FP_DISP`] on, [`DATA`] = `data`, `pppInitData(data,
+    /// g_pppProgramTable, 0)`, `pppInitEnv(g_pppFpHeap, data, ENV,
+    /// 0x40000)`. The first time a table asks for a second heap (`byte
+    /// +1` blocks of 8 KB) it is allocated (`user_malloc`) and made
+    /// (`pppCreateHeap(g_pppFpHeap2, ..)`). The heap use and peak are reset,
+    /// the heap display redone (`op_heap_display_clear(0x601)`,
+    /// `op_heap_display_set_par(g_pppFpHeap, 0x8603)`), [`HEAP_DISPLAY_SET`]
+    /// set. Each of the `u16 +4` effects (0x50 bytes from `+0x20`) gets
+    /// its run record: `+0` its `+0x30`, `+0x20..+0x28` its floats
+    /// `+0x38..+0x40`, `+0x30` a fresh `set_ptr32(0)`, `+0x3c` 0,
+    /// `+0x40..+0x6c` its `+0..+0x2c`; and its display record: three zero
+    /// words and a unit matrix (`FFXVu0UnitMatrix`). An effect with kind
+    /// byte `+0x4a` 2 sets [`WOOD`]. [`WIDE`] for 0x28 effects or level
+    /// hash 0x234 (`graphicLevelGetNameHash`, not asked for 0x28). The
+    /// packet buffer is allocated once: 0xc0000 bytes, 0x100000 for `byte
+    /// +2` 1, 0x140000 for 2; its use and peak reset. Callees through
+    /// `call`.
+    pub fn ppp_set_fp_pdt<M: Mem>(
+        mem: &mut M,
+        data: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let stat = |i: usize| Global::<u32>::new(STATS[i]);
+        FP_DISP.set(mem, 1);
+        DATA.set(mem, data);
+        let init_data = r(mem, 0x0071_1fa0);
+        let programs = r(mem, 0x00c3_a508);
+        call(mem, init_data, &[data, programs, 0]);
+        let heap = crate::heap::bridge::FP_HEAP.ptr(mem).addr;
+        let init_env = r(mem, 0x0071_69d0);
+        let (table, env) = (DATA.get(mem), ENV.ptr(mem).addr);
+        call(mem, init_env, &[heap, table, env, 0x4_0000]);
+        let malloc = r(mem, 0x0068_7020);
+        if HEAP2_BUF.get(mem) == 0 {
+            let blocks = mem.read::<u8>(DATA.get(mem).wrapping_add(1));
+            if blocks != 0 {
+                let size = u32::from(blocks) << 13;
+                let buf = call(mem, malloc, &[size]);
+                HEAP2_BUF.set(mem, buf);
+                let heap2 = crate::heap::bridge::FP_HEAP2.ptr(mem).addr;
+                let create = r(mem, 0x0072_c480);
+                call(mem, create, &[heap2, buf, size]);
+            }
+        }
+        stat(4).set(mem, 0);
+        stat(3).set(mem, 0);
+        crate::op::bridge::op_heap_display_clear(mem, 0x601);
+        crate::op::bridge::op_heap_display_set_par(mem, heap, 0x8603);
+        HEAP_DISPLAY_SET.set(mem, 1);
+        WOOD.set(mem, 0);
+        let set_ptr32 = r(mem, 0x00a4_4700);
+        let unit_matrix = r(mem, 0x006e_d9a0);
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u16>(DATA.get(mem).wrapping_add(4))) {
+            // the table is read before the calls, as the original keeps it
+            let fx = DATA.get(mem).wrapping_add(0x20 + 0x50 * k);
+            let run = RUN.ptr(mem).at(k).addr;
+            let disp = DISP.ptr(mem).at(k).addr;
+            let ptr = call(mem, set_ptr32, &[0]);
+            mem.write(run.wrapping_add(0x30), ptr);
+            mem.write(run.wrapping_add(0x3c), 0u32);
+            let words: [u32; 12] = mem.read(fx);
+            mem.write(run.wrapping_add(0x40), words);
+            let first: u32 = mem.read(fx.wrapping_add(0x30));
+            mem.write(run, first);
+            for i in 0..3 {
+                let v: u32 = mem.read(fx.wrapping_add(0x38 + 4 * i));
+                mem.write(run.wrapping_add(0x20 + 4 * i), crate::x87::load(v));
+            }
+            mem.write(disp, [0u32; 3]);
+            call(mem, unit_matrix, &[disp.wrapping_add(0xc)]);
+            if mem.read::<u8>(fx.wrapping_add(0x4a)) == 2 {
+                WOOD.set(mem, 1);
+            }
+            k += 1;
+        }
+        WIDE.set(mem, 0);
+        let wide = mem.read::<u16>(DATA.get(mem).wrapping_add(4)) == 0x28 || {
+            let hash = r(mem, 0x0064_1da0);
+            call(mem, hash, &[]) == 0x234
+        };
+        if wide {
+            WIDE.set(mem, 1);
+        }
+        if PACKET_BUF.get(mem) != 0 {
+            return;
+        }
+        let size = match mem.read::<u8>(DATA.get(mem).wrapping_add(2)) {
+            1 => 0x10_0000,
+            2 => 0x14_0000,
+            _ => 0xc_0000,
+        };
+        stat(0).set(mem, size);
+        let buf = call(mem, malloc, &[size]);
+        PACKET_BUF.set(mem, buf);
+        stat(2).set(mem, 0);
+        stat(1).set(mem, 0);
+    }
 }
 
 #[cfg(test)]
