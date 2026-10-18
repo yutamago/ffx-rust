@@ -1378,6 +1378,15 @@ ported! {
     TOAdpButtonIcon_008e9970 @ 0x008e_9970 => extern "C" fn to_adp_button_icon(cursor: u32, c: u32, x: u32, y: u32) -> u32 {
         tolib::bridge::button_icon(&mut mem(), [cursor, c, x, y], call_sym)
     }
+    /// `TOBtlDrawCrossParamPlate(chr, x, y)`.
+    TOBtlDrawCrossParamPlate @ 0x0089_2cb0 => extern "C" fn to_btl_draw_cross_param_plate(chr: u32, x: u32, y: u32) -> u32 {
+        chr_plate::bridge::draw_cross_param_plate(
+            &mut mem(),
+            [chr, x, y],
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

@@ -18481,3 +18481,95 @@ fn round33_seq_ctrl_and_icons_match_the_original_on_the_snapshot() {
     };
     round33_seq_ctrl_and_icons(&mut a, &mut b, &mut Xorshift(0x4033_0032));
 }
+
+/// Round 33 group D: `TOBtlDrawCrossParamPlate` over the original remaps,
+/// with logging stand-ins for the shapes, the gauge, the battle getters,
+/// the weak level and the numbers.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn round33_cross_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0090_3bb0, all(9), vec![], ret_cell(cells)),
+        (0x0089_2910, all(5), vec![], ret_cell(cells + 4)),
+        (0x008a_c2f0, vec![], vec![], ret_cell(cells + 8)),
+        (0x0079_add0, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x0079_adf0, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x0079_ae50, all(1), vec![], ret_cell(cells + 0x14)),
+        (0x0078_bf00, all(2), vec![], ret_cell(cells + 0x18)),
+        (0x0090_5890, all(6), vec![], ret_cell(cells + 0x1c)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for j in 0..8 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            cells + 8,
+            [0xbu32, 0xb, 0, 1, 9][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x18,
+            [0u32, 1, 2, 3, 4, u32::MAX][(rng.next() % 6) as usize],
+        );
+        let chr = rng.next() % 8;
+        // the wide layout's `+ 0.0` changes nothing here: `ry(2) + y`
+        // is never -0 (`a + -a` rounds to +0)
+        let (x, y) = match k % 10 {
+            0 | 1 => (f32::from_bits(rng.next()), f32::from_bits(rng.next())),
+            2 => (1.0e9, -1.0e-9),
+            _ => (
+                (rng.next() % 8000) as f32 / 7.0 - 100.0,
+                (rng.next() % 6000) as f32 / 3.0 - 50.0,
+            ),
+        };
+        // no signalling NaNs
+        let quiet = |f: f32| if f.is_nan() { f32::NAN } else { f };
+        let (x, y) = (quiet(x).to_bits(), quiet(y).to_bits());
+        assert_eq!(
+            eax(a, 0x0089_2cb0, &[chr, x, y]),
+            chr_plate::bridge::draw_cross_param_plate(b, [chr, x, y], remap, call),
+            "cross plate {k}"
+        );
+        same_memory(&format!("cross plate {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_cross_plate_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_cross_plate(&mut a, &mut b, &mut Xorshift(0x4033_0041));
+}
+
+#[test]
+fn round33_cross_plate_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_cross_plate(&mut a, &mut b, &mut Xorshift(0x4033_0042));
+}

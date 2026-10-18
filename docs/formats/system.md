@@ -1347,3 +1347,16 @@ pushed as literals (no relocation entries), not addresses.
   `TOGetSystemConfirmButtonAssign()` is 1 (and return at once); for `` ` ``
   0x270. It returns the packet cursor. `0x008e9970(cursor, c, x, y)`
   passes grey (0x80 each).
+- `TOBtlDrawCrossParamPlate(chr, x, y)` (`0x00892cb0`), drawn like the
+  status plate (`rx`/`ry` = `graphicUiRemapX2`/`Y2`, heights first):
+  the frame (shape -1, 320 x 45, UVs in texels 984, 98, 1581, 148), then
+  `TOBtlDrawCrossLimitGauge(chr, x + rx(10), y + ry(29), rx(300), ry(8))`,
+  the HP label 0xe9 and the MP label 0xea at `(x + rx(5 or 185), y +
+  ry(2))`, and both numbers with `ToMakeBtlEasyEdgeDigitRight(n, x +
+  rx(160 or 305), y - ry(4), colour, 0.65, 0.0)`. Language 11 has wider
+  labels (68 x 24 and 66.4 x 24 against 61.5 x 23 and 49 x 23) and takes
+  3 (HP) or 6 (MP) off `x` at 53 bits before the store (it also adds 0.0
+  to `y`, which changes nothing). The HP's colour comes from
+  `MsCalcWeakLevel(hp, max)`: 1 and 2 give 2, 3 gives 0x53, anything else
+  0; the MP's is 0. Ghidra shows two of the gauge's five arguments and
+  one of the numbers' six.

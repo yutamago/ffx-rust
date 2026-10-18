@@ -9813,7 +9813,7 @@
 0x00892870 function TOBtlDrawCaptureMonsterMessageWindow # fh call.cs cdecl
 0x008928b0 function TOBtlDrawChangeSeqAnm0    # fh v3:exact 0x00892820
 0x00892910 function TOBtlDrawCrossLimitGauge  # fh v3:exact 0x00892880
-0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20
+0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20; (chr, x, y): battle HP/MP plate: frame, TOBtlDrawCrossLimitGauge(chr, x, y, w, h) (five words; Ghidra shows two), HP/MP labels 0xe9/0xea, ToMakeBtlEasyEdgeDigitRight (six words) with the HP colour from MsCalcWeakLevel; ported (system round 33, chr_plate.rs)
 0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200
 0x008933c0 function TOBtlDrawEnemyLimit       # fh v3:exact 0x00893330
 0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl
