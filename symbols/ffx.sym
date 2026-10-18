@@ -15666,6 +15666,7 @@
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x0119fef0 label    g_OpusMonsterFlags        # byte per g_OpusMonsters slot (bit 7 skips the texture move in 0x00808640, bit 0 picks the first VRAM spot)
 0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
+0x0119ff90 label    g_OpSprEnd                # end of g_OpSprStack's 16 KB block: ops_init_spr (0x007e6c30) sets it to user_malloc(0x4000) + 0x4000
 0x011a0010 label    g_OpFog                      # the effects' fog (op_fog_param_set): colour bytes +0..+2, near/far/param f32 +4..+0xc (yiGetFogParam), -(255/(far-near)) +0x10, 255-param +0x14, -near +0x18, 255.0 +0x1c
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
@@ -16233,6 +16234,7 @@
 0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02322794 label    g_OpNumShow                  # byte: op_num_xy_set shows its numbers (opd_num_xy_set) when set, again in debug mode
+0x02332ea0 label    g_OpSprFlag               # byte beside g_OpSprTop, cleared by ops_init_spr (0x007e6c30); use unknown
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
 0x023c35c0 label    g_OpOef2SoundCueArgs      # the arguments of g_OpOef2SoundCueRing

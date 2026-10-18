@@ -186,6 +186,106 @@ pub mod bridge {
         op_func_ot_set(mem, func, a, b, c, 0x60)
     }
 
+    /// `opd_exit_from_ovl()` (`0x007ff8e0`): every texture/CLUT overlay
+    /// cleared (`op_oef2_tex_clut_ovl_clear(-1)`); returns its result.
+    pub fn opd_exit_from_ovl(mem: &mut impl Mem) -> u32 {
+        op_oef2_tex_clut_ovl_clear(mem, u32::MAX)
+    }
+
+    /// `op_heap_display_set(a, b, c)` (`0x007ff290`): in debug mode a jump
+    /// to `opd_heap_display_set(a, b, c)` (through `call`), returning its
+    /// result; otherwise nothing (`eax` as the caller left it: `None`).
+    pub fn op_heap_display_set<M: Mem>(
+        mem: &mut M,
+        args: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        if DEBUG_MODE.get(mem) == 0 {
+            return None;
+        }
+        let f = Global::<u32>::new(0x00a6_4b20).ptr(mem).addr;
+        Some(call(mem, f, &args))
+    }
+
+    /// `op_num_vdisp()` (`0x007e6560`): `opd_num_vdisp()` (through `call`)
+    /// when [`NUM_SHOW`] is set, and again (a jump) in debug mode. Returns
+    /// the last call's result (`None`: `eax` untouched).
+    pub fn op_num_vdisp<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let f = Global::<u32>::new(0x00a5_dfb0).ptr(mem).addr;
+        let mut r = None;
+        if NUM_SHOW.get(mem) != 0 {
+            r = Some(call(mem, f, &[]));
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            r = Some(call(mem, f, &[]));
+        }
+        r
+    }
+
+    /// `op_num_display(x)` (`0x007e6440`): as [`op_num_vdisp`] with
+    /// `opd_num_display(x)`.
+    pub fn op_num_display<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let f = Global::<u32>::new(0x00a5_dd90).ptr(mem).addr;
+        let mut r = None;
+        if NUM_SHOW.get(mem) != 0 {
+            r = Some(call(mem, f, &[x]));
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            r = Some(call(mem, f, &[x]));
+        }
+        r
+    }
+
+    /// `g_OpSprEnd` (`0x0119ff90`): the end of [`SPR_STACK`]'s block.
+    pub const SPR_END: Global<u32> = Global::new(0x0119_ff90);
+    /// The byte `0x02332ea0` beside [`SPR_TOP`], cleared with it.
+    pub const SPR_FLAG: Global<u8> = Global::new(0x0233_2ea0);
+
+    /// `ops_init_spr()` (`0x007e6c30`): the op scratch stack is 16 KB from
+    /// `user_malloc(0x4000)` (through `call`): [`SPR_STACK`] its start,
+    /// [`SPR_END`] its end, [`SPR_FLAG`] and [`SPR_TOP`] 0. Returns the end.
+    pub fn ops_init_spr<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(0x0068_7020).ptr(mem).addr;
+        let b = call(mem, f, &[0x4000]);
+        SPR_STACK.set(mem, b);
+        let end = b.wrapping_add(0x4000);
+        SPR_END.set(mem, end);
+        SPR_TOP.set(mem, 0);
+        SPR_FLAG.set(mem, 0);
+        end
+    }
+
+    /// `op_rt_m_xyz(m, src, angles, t)` (`0x007e9970`): `src` turned about
+    /// X, then Y, then Z by the three floats at `angles` (`op_rot_m_x/y/z`)
+    /// into `m`, and `t`'s x, y, z added to `m +0x30..+0x38`. Returns `t`.
+    pub fn op_rt_m_xyz(mem: &mut impl Mem, m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        use crate::mat::Axis;
+        for (k, axis) in [Axis::X, Axis::Y, Axis::Z].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            let a: u32 = mem.read(angles.wrapping_add(4 * k as u32));
+            let from = if k == 0 { src } else { m };
+            op_rt_m(mem, m, from, f32::from_bits(x87::load(a)), axis);
+        }
+        for k in 0..3u32 {
+            let v = x87::add(
+                mem.read(t.wrapping_add(4 * k)),
+                mem.read(m.wrapping_add(0x30 + 4 * k)),
+            );
+            mem.write(m.wrapping_add(0x30 + 4 * k), v);
+        }
+        t
+    }
+
     /// `op_func_before_ot_free(slot)` (`0x007eb350`): list 0.
     pub fn op_func_before_ot_free(mem: &mut impl Mem, slot: u32) {
         op_func_ot_free(mem, slot, 0);

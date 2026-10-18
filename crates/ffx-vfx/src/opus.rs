@@ -1134,6 +1134,67 @@ pub mod bridge {
         }
     }
 
+    /// `opus_get_bone_vertex(out, chr, bone)` (`0x008054d0`): with bit
+    /// 0x8000 the option position `bone & 0x7fff` (`Ch_OptposGet(chr, i,
+    /// out)`), else the element's position (`Ch_ElemGetPos(chr, bone, 0,
+    /// out)`), through `call`. Returns the callee's result.
+    pub fn opus_get_bone_vertex<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        chr: u32,
+        bone: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if bone & 0x8000 != 0 {
+            let f = g(mem, 0x0083_54f0);
+            call(mem, f, &[chr, bone & 0x7fff, out])
+        } else {
+            let f = g(mem, 0x0083_3d10);
+            call(mem, f, &[chr, bone, 0, out])
+        }
+    }
+
+    /// `opus_cheight_get(chr, battle)` (`0x00800b70`): the character's
+    /// height, `MsGetChrHeight(chr)` in battle, else
+    /// `Ch_GetFixHeight(g_EtChrHandles[chr])` (through `fcall`), rounded to
+    /// `f32` (returned in `ST0`).
+    pub fn opus_cheight_get<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        battle: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        let v = if battle != 0 {
+            let f = g(mem, 0x0079_50f0);
+            fcall(mem, f, &[chr])
+        } else {
+            let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+            let f = g(mem, 0x0082_aba0);
+            fcall(mem, f, &[h])
+        };
+        f32::from_bits(crate::x87::load(ffx_bridge::x87::store(v)))
+    }
+
+    /// `opus_get_chr_pos(chr, out)` (`0x0081b1e0`): `out` = the emulated
+    /// `r0` (16 bytes), then the character's position
+    /// (`Ch_GetPos(g_EtChrHandles[chr], out, out + 4, out + 8)`, through
+    /// `call`) when it has a handle. Returns the callee's result, or `chr`.
+    pub fn opus_get_chr_pos<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        out: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(out, r0);
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        if h == 0 {
+            return chr;
+        }
+        let f = g(mem, 0x0082_ac90);
+        call(mem, f, &[h, out, out.wrapping_add(4), out.wrapping_add(8)])
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and

@@ -11964,3 +11964,131 @@ fn opp_anmm_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round26d_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_9970);
+        let cells = p.alloc(16);
+        for (sym, words, ret) in [
+            (0x00a6_4b20u32, &[0u8, 0, 0][..], None),
+            (0x00a5_dfb0, &[], None),
+            (0x00a5_dd90, &[0], None),
+            (0x0068_7020, &[0], Some(cells)),
+            (0x0083_54f0, &[0, 0, 0], None),
+            (0x0083_3d10, &[0, 0, 0, 0], None),
+            (0x0082_ac90, &[0, 0, 0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        float_stub(&mut p, 0x0079_50f0, cells + 4);
+        float_stub(&mut p, 0x0082_aba0, cells + 8);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let gpr = p.sym(0x00c8_f508);
+        let (m, src, ang, t, out) = (
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x10),
+        );
+        let ovl = p.sym(op::bridge::OEF2_CLUT_OVL.sym);
+        for _ in 0..2000 {
+            p.put(op::bridge::DEBUG_MODE, u8::from(rng.chance(50)));
+            p.put(op::bridge::NUM_SHOW, u8::from(rng.chance(50)));
+            let args = [rng.next(), rng.next(), rng.next()];
+            p.check("op_heap_display_set", 0x007f_f290, &args, |o| {
+                op::bridge::op_heap_display_set(o, args, &mut call_original)
+            });
+            p.check("op_num_vdisp", 0x007e_6560, &[], |o| {
+                op::bridge::op_num_vdisp(o, &mut call_original)
+            });
+            let x = rng.next();
+            p.check("op_num_display", 0x007e_6440, &[x], |o| {
+                op::bridge::op_num_display(o, x, &mut call_original)
+            });
+            p.set(cells, rng.next());
+            p.put(
+                op::bridge::SPR_TOP,
+                rng.next().to_le_bytes()[0].cast_signed(),
+            );
+            p.put(op::bridge::SPR_FLAG, rng.next().to_le_bytes()[0]);
+            p.check("ops_init_spr", 0x007e_6c30, &[], |o| {
+                Some(op::bridge::ops_init_spr(o, &mut call_original))
+            });
+            for k in 0..64 {
+                let any = rng.next();
+                let v = rng.pick(&[0, any, any & 0xffff_0000]);
+                p.set(ovl + 4 * k, v);
+            }
+            p.check("opd_exit_from_ovl", 0x007f_f8e0, &[], |o| {
+                Some(op::bridge::opd_exit_from_ovl(o))
+            });
+            for k in 0..16 {
+                let v = rng.float();
+                p.set(src + 4 * k, v);
+                let v = rng.float();
+                p.set(m + 4 * k, v);
+            }
+            for k in 0..4 {
+                let v = rng.float();
+                p.set(ang + 4 * k, v);
+                let v = rng.float();
+                p.set(t + 4 * k, v);
+            }
+            let dst = rng.pick(&[m, src]);
+            p.check("op_rt_m_xyz", 0x007e_9970, &[dst, src, ang, t], |o| {
+                Some(op::bridge::op_rt_m_xyz(o, dst, src, ang, t))
+            });
+            let chr = rng.below(240);
+            let bone = rng.below(0x10000);
+            p.check(
+                "opus_get_bone_vertex",
+                0x0080_54d0,
+                &[out, chr, bone],
+                |o| {
+                    Some(opus::bridge::opus_get_bone_vertex(
+                        o,
+                        out,
+                        chr,
+                        bone,
+                        &mut call_original,
+                    ))
+                },
+            );
+            p.set(
+                handles + 4 * chr,
+                if rng.chance(30) { 0 } else { rng.next() },
+            );
+            p.fill(gpr, 0x10, &mut rng);
+            p.check("opus_get_chr_pos", 0x0081_b1e0, &[chr, out], |o| {
+                Some(opus::bridge::opus_get_chr_pos(
+                    o,
+                    chr,
+                    out,
+                    &mut call_original,
+                ))
+            });
+            for c in [cells + 4, cells + 8] {
+                let v = finite(&mut rng);
+                p.set(c, v);
+            }
+            let battle = rng.pick(&[0u32, 1, 0x100]);
+            check_st0(
+                &mut p,
+                "opus_cheight_get",
+                0x0080_0b70,
+                &[chr, battle],
+                |o| {
+                    f64::from(opus::bridge::opus_cheight_get(
+                        o,
+                        chr,
+                        battle,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+    }
+}
