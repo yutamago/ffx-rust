@@ -642,6 +642,19 @@ loading `+0x433` to `g_BtlEffectWait` with motion 0xd0), `0x00784420`
 (monsters shown, placed, made visible), `MsCalcChrDirAll` and
 `MsSetChrVisibleEvent` are ported; the machine itself is not yet.
 
+## Round 21
+
+A test leak found in round 20 (drawing the round-19 steps' random stream
+for the new steps made a later `MsEffectStart` divide by zero in the
+original, at `0x00786346`: a `g_KernelPlyRom` record's byte `+0x1c`) came
+from the test, not the port: `MsBattleExe`'s leaves step handed its heap
+stub's 0x8a90-byte block to `MsBtlChrGetMem`, which asks for 0x1e270 bytes
+of actors, and `MsBtlChrInit` then initialized all 0x1f actors past the
+block's end, over the scratch tables allocated after it (the fake ply_rom
+table first). The step's globals were put back, the bytes after the block
+were not. The step now gets a block of its own of 0x1e270 bytes; the shared
+stream passes on the image and battle.snap.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

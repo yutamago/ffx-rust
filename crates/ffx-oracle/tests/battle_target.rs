@@ -6175,6 +6175,12 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let grec2 = scratch(a, b, (EXCHANGE_REC * 2) as usize);
     let erec2 = scratch(a, b, (EXCHANGE_REC * 27) as usize);
     let heap = scratch(a, b, 0x8a90);
+    // MsBattleExe's heap (round 21): its own block for the 0x1e270 bytes of
+    // actors MsBtlChrGetMem asks for. Handing it `heap` (0x8a90) let
+    // MsBtlChrInit write past its end over the scratch tables after it
+    // (the fake g_KernelPlyRom first), and a later MsEffectStart divided by
+    // a cleared ply_rom byte.
+    let actor_heap = scratch(a, b, 0x1e270);
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6236,7 +6242,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             setup_leaves(a, b, &mut r19, grec2, heap, out);
         }
         if r19.below(4) == 0 {
-            exe_leaves(a, b, &mut r19, erec2, heap, out);
+            exe_leaves(a, b, &mut r19, erec2, actor_heap, out);
         }
         if r20.below(4) == 0 {
             read_leaves(a, b, &mut r20, &w, erec2, out);
