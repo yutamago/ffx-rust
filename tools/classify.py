@@ -230,6 +230,12 @@ REVIEWED = {
     0x008beeb0: ("glue", "TOMenuGetSummonMes: MsMenuGetText(0xc, id, hiragana), like TOMenuGetNameMes (system round 30)"),
     0x00a42a00: ("platform", "pc_ReadWholeFile: sceOpen/sceRead into user_malloc (system round 30)"),
     0x0076d5a0: ("platform", "CD stream read (sceCdRead) (system round 30)"),
+    0x00888680: ("platform", "TkSetVsyncHandler: vsync emulation thread (menu round 21)"),
+    0x008884e0: ("platform", "sceMcSync wrapper (menu round 21)"),
+    0x008a9510: ("platform", "GS image upload loop (menu round 21)"),
+    0x0088ccf0: ("glue", "TKMallocAndReadMenuMessage: language path + file read (menu round 21)"),
+    0x00888030: ("glue", "path formatting (menu round 21)"),
+    0x0090bdb0: ("glue", "sprintf label for a PC renderer object (field round 1)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
