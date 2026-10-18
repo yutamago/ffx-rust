@@ -1983,6 +1983,20 @@ edge colour before and after its step at the two ends, the centre's
 for the middle pair; the outer pairs' alpha is 0. Then the ends move
 on (`end0 = end1`, `end1 = next`, the offset kept) and the walk steps.
 
+### The strip's end cap (field agent r7)
+
+`KeThBP_MkStripEnd_00765a10()` (`0x00765a10`, after the strip; returns
+the walk) sets the walk's `+0x20` to its `+0`, then writes six vertices
+to `0x0230f908` (colours to `0x0230f968`, over 256): the second end in
+the edge colour before its step (alpha 0), then around the first end:
+plus the offset (alpha 0), plus the inner offset (edge alpha), the end
+itself in the centre colour after its step, minus the inner offset,
+minus the offset (alpha 0); the edge colour steps before the second
+vertex. The vertices are built in `0x0230fa60` (its z, w left as they
+are), times w, through `0x0230fb00`. The width scale `0x0230fa0c` grows
+by `0x0230fa08` and is clamped at 0 (-0 kept); the walk's `+0` moves on
+by 0xd0.
+
 ## The renderer's initial state (field agent r6)
 
 `yiRender_create(r, direct, data, refs)` (`0x0090c400`; `yiInit` calls

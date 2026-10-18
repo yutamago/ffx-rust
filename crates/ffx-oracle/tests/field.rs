@@ -15827,3 +15827,60 @@ fn r6d_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0064_0002);
     r6d_cases(&mut t, &mut rng, 200, true);
 }
+
+// ---- field agent r7, group A: the belt path strip's end cap ----
+
+fn r7a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let work = t.stack_scratch(0x800);
+    let state = t.alloc(0x40);
+    let walk = t.b.rebase(0x0230_f9c8);
+    t.put(walk, state);
+    let (step, width) = (t.b.rebase(0x0230_fa08), t.b.rebase(0x0230_fa0c));
+    for k in 0..cases {
+        if !(real && k == 0) {
+            r6b_state(t, rng);
+        }
+        t.fill(state, 0x40, rng);
+        // the width scale's step: now and then enough to go below 0
+        let v = if rng.below(2) == 0 {
+            r6b_fine(rng, -3.0, 1.0)
+        } else {
+            sixteenths(rng, -32, 16)
+        };
+        t.put(step, v);
+        if rng.below(8) == 0 {
+            // exactly to 0 (and -0)
+            let w = f32::from_bits(t.b.read::<u32>(width));
+            t.put(step, (-w).to_bits());
+        }
+        if rng.below(8) == 0 {
+            // -0 + -0 stays -0 (not below 0)
+            t.put(width, 0x8000_0000u32);
+            t.put(step, 0x8000_0000u32);
+        }
+        t.same(
+            "KeThBP_MkStripEnd_00765a10",
+            |o| o.eax(0x0076_5a10, &[]),
+            |m| ffx_field::keth::ke_th_bp_mk_strip_end(m, work, call),
+        );
+    }
+}
+
+/// Group A on the image.
+#[test]
+fn r7a_strip_end_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0071_a001);
+    r7a_cases(&mut t, &mut rng, 300, false);
+}
+
+/// Group A on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r7a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0071_a002);
+    r7a_cases(&mut t, &mut rng, 150, true);
+}

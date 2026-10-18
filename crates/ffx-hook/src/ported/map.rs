@@ -2744,6 +2744,11 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         )
     }
+    /// `KeThBP_MkStripEnd_00765a10()`.
+    KeThBP_MkStripEnd_00765a10 @ 0x0076_5a10 => extern "C" fn shim_ke_th_bp_mk_strip_end() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_END_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_mk_strip_end(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `KeThBP_MkStrip_00764de0()`.
     KeThBP_MkStrip_00764de0 @ 0x0076_4de0 => extern "C" fn shim_ke_th_bp_mk_strip() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_WORK as usize / 4 }>::new();

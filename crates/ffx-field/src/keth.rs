@@ -902,3 +902,133 @@ where
         mem.write(state + 4, next_point);
     }
 }
+
+/// The strip's end cap ([`ke_th_bp_mk_strip_end`]).
+pub mod strip_end {
+    /// How much the width scale grows at the cap.
+    pub const WIDTH_STEP: u32 = 0x0230_fa08;
+    /// Six vertices (xyzw), and their colours.
+    pub const VERTS: u32 = 0x0230_f908;
+    pub const COLORS: u32 = 0x0230_f968;
+}
+
+/// The scratch [`ke_th_bp_mk_strip_end`] needs: three colours and a
+/// vertex.
+pub const STRIP_END_WORK: u32 = 0x40;
+
+/// The cap's vertices after the first: the first end plus (share of the
+/// offset, inner) and their colour (the edge colour after its step, or
+/// the centre's) and alpha.
+/// (side: share of the offset and inner, centre colour, alpha).
+type CapVertex = (Option<(f64, bool)>, bool, bool);
+
+const STRIP_END: [CapVertex; 5] = [
+    (Some((1.0, false)), false, false),
+    (Some((1.0, true)), false, true),
+    (None, true, true),
+    (Some((-1.0, true)), false, true),
+    (Some((-1.0, false)), false, false),
+];
+
+/// The belt path strip's end cap (`KeThBP_MkStripEnd_00765a10()`,
+/// `0x00765a10`, called by `KeThBP_MkGifPk` after
+/// [`ke_th_bp_mk_strip`]).
+///
+/// The walk's `+0x20` keeps its `+0` (which then moves on by 0xd0). Six
+/// vertices into [`strip_end::VERTS`]: the strip's second end (the edge
+/// colour scaled, alpha 0), then around its first: plus the offset, plus
+/// the inner offset, itself, minus the inner offset, minus the offset;
+/// each times its w and back through [`strip::UNPROJECT`], colours over
+/// 256 into [`strip_end::COLORS`]. Between them the edge and centre
+/// colours step on, and the width scale grows by
+/// [`strip_end::WIDTH_STEP`] (not below 0). Returns the walk's address
+/// (the original's `eax`).
+pub fn ke_th_bp_mk_strip_end<M, C>(mem: &mut M, work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use strip::{CENTRE, COLOR_SCALE, EDGE, END0, END1, OFFSET, SIDE1};
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let g = |mem: &M, a: u32| ld(mem.read::<u32>(mem.rebase(a)));
+    let put = |mem: &mut M, a: u32, x: f64| {
+        let at = mem.rebase(a);
+        mem.write(at, st(x));
+    };
+    let state = mem.read::<u32>(r(mem, strip::STATE));
+    mem.write(state + 0x20, mem.read::<u32>(state));
+    let (edge, centre, vertex) = (work, work + 0x10, work + 0x30);
+    let scale = r(mem, COLOR_SCALE);
+    // a vertex `src` times its w, back through the matrix, with a colour
+    let emit = |mem: &mut M, call: &mut C, i: u32, src: u32, color: u32, alpha: bool| {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let [x, y, z, w] = mem.read::<[u32; 4]>(r(mem, src)).map(ld);
+        mem.write(vertex, [st(w * x), st(w * y), st(z * w), st(w)]);
+        call(
+            mem,
+            r(mem, APPLY_MATRIX),
+            &[vertex, r(mem, strip::UNPROJECT), vertex],
+        );
+        let pos = mem.read::<[u32; 4]>(vertex).map(x87::copy);
+        let at = r(mem, strip_end::VERTS) + 0x10 * i;
+        mem.write(at, pos);
+        let rgba = mem.read::<[u32; 4]>(color).map(ld);
+        let a = if alpha { st(rgba[3] / 256.0) } else { 0 };
+        let rgb = [rgba[0], rgba[1], rgba[2]].map(|c| st(c / 256.0));
+        let at = r(mem, strip_end::COLORS) + 0x10 * i;
+        mem.write(at, [rgb[0], rgb[1], rgb[2], a]);
+    };
+
+    // the second end, in the edge colour before its step
+    call(mem, r(mem, MUL_VECTOR), &[edge, r(mem, EDGE), scale]);
+    emit(mem, call, 0, END1, edge, false);
+    let e = r(mem, EDGE);
+    call(
+        mem,
+        r(mem, ADD_SCALED_COLOR),
+        &[e, e, r(mem, strip::EDGE_STEP), 0x3f80_0000],
+    );
+    call(mem, r(mem, MUL_VECTOR), &[edge, e, scale]);
+    // the width scale grows (not below 0)
+    let width = st(g(mem, strip_end::WIDTH_STEP) + g(mem, strip::WIDTH_SCALE));
+    let width = if ld(width) < 0.0 { 0 } else { width };
+    let at = r(mem, strip::WIDTH_SCALE);
+    mem.write(at, width);
+
+    // around the first end
+    let inner = g(mem, strip::INNER);
+    let offset = (g(mem, OFFSET), g(mem, OFFSET + 4));
+    for (i, &(side, centre_color, alpha)) in (1u32..).zip(&STRIP_END) {
+        let src = if let Some((sign, in_edge)) = side {
+            for (j, o) in [(0, offset.0), (4, offset.1)] {
+                let e = g(mem, END0 + j);
+                let o = if in_edge { o * inner } else { o };
+                put(mem, SIDE1 + j, if sign < 0.0 { e - o } else { e + o });
+            }
+            SIDE1
+        } else {
+            END0
+        };
+        if centre_color {
+            let c = r(mem, CENTRE);
+            call(
+                mem,
+                r(mem, ADD_SCALED_COLOR),
+                &[c, c, r(mem, strip::CENTRE_STEP), 0x3f80_0000],
+            );
+            call(mem, r(mem, MUL_VECTOR), &[centre, c, scale]);
+        }
+        emit(
+            mem,
+            call,
+            i,
+            src,
+            if centre_color { centre } else { edge },
+            alpha,
+        );
+    }
+    let state = mem.read::<u32>(r(mem, strip::STATE));
+    let v = mem.read::<u32>(state).wrapping_add(0xd0);
+    mem.write(state, v);
+    state
+}
