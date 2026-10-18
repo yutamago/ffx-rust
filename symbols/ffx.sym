@@ -5279,6 +5279,8 @@
 0x00797020 function msSetChrShadowReq         # (p, k, v): shadow request k (< 3) of actor/weapon record p = v; first non-negative of +0x26..+0x28 (stopping at 0) into +0x25, mode +0x2a[that] into +0x29 and Ch_SetShadowMode; returns +0 the character; name ours
 0x00797080 function msSetChrVisibleReq        # (i, k, v): visibility request +0x16[k] = v; visible (+0x15) when +0x16..+0x19 all set: Ch_SetHideBattle/Effect, Ch_EnMapID(+0x32), Ch_SetCalcNorm(+0x33), msSetChrShadowReq(p,1,-1/0), msSetChrBodyHit; op_et_bindeff for +0x36; recurses to +0x13 and actors with +0x43f == i (with +0x440); weapons with +0x1d; hiding queued in 0x02311060 while 0x011363b8 & 0x01136b58; name ours
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
+0x00797350 function MsAtelUpdate2             # cdecl(ctrl) -> eax: script 2's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp: over AtelGetCtrlworkActorTotal(ctrl) works AtelDecodeSignal(k, -1), AtelDecodeCommand(k, 0), AtelDecodeSignal(k, -1); same code as 0x007973b0; ported (ffx_battle::atel, battle round 17); name ours
+0x007973b0 function MsAtelUpdate1             # cdecl(ctrl) -> eax: script 1's per-frame update MsAtelSetUp (0x00798390) gives AtelBattleSetUp; same code as 0x00797350; ported (ffx_battle::atel, battle round 17); name ours
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x00797490 function MsAtelActorWorkInit          # callees: its named callees match the Switch 0x710033ced0 MsAtelActorWorkInit's (similarity 0.75: AtelChangeCurrentCtrl, AtelInitInternalActorWork, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x007974e0 function MsAtelCamFree             # fh v3:exact 0x007974f0

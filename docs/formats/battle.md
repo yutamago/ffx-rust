@@ -508,6 +508,20 @@ written (a target actor index past 30, a kind without a target with
 direction mode 8, an actor without a character whose battle position the
 file lacks): the original's stack garbage there, the port's zeros.
 
+## The battle scripts' per-frame updates
+
+`MsAtelSetUp(k)` (`0x00798390`) registers battle script `k` with
+`AtelBattleSetUp`, handing it the script control at `0x01134484 + k *
+0x54` and a per-frame update: `0x007972e0` for script 0 (it also runs
+`MsMotionProcess` and `MsBattleSpecial` between the commands and the
+signals), and for scripts 1 and 2 `MsAtelUpdate1` (`0x007973b0`) and
+`MsAtelUpdate2` (`0x00797350`), two copies of the same code
+(`ffx_battle::atel::ms_atel_update`). Over the control's works (its
+`u16` count at `+0xc`, `AtelGetCtrlworkActorTotal`): each work's signals
+(`AtelDecodeSignal(k, -1)`), then each one's command (`AtelDecodeCommand(k,
+0)`), then the signals again. eax is left as the last `AtelDecodeSignal`'s
+result, or the count when there are no works.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

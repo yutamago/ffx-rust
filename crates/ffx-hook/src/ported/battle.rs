@@ -2321,6 +2321,16 @@ ported! {
         script!(s);
         atel::ms_set_voice_check(&mut mem(), &mut s, i, voice, flags, actor, out)
     }
+    /// `MsAtelUpdate1(ctrl)`: script 1's per-frame update.
+    MsAtelUpdate1 @ 0x0079_73b0 => extern "C" fn ms_atel_update1(ctrl: u32) -> u32 {
+        script!(s);
+        atel::ms_atel_update(&mut mem(), &mut s, ctrl)
+    }
+    /// `MsAtelUpdate2(ctrl)`: script 2's per-frame update.
+    MsAtelUpdate2 @ 0x0079_7350 => extern "C" fn ms_atel_update2(ctrl: u32) -> u32 {
+        script!(s);
+        atel::ms_atel_update(&mut mem(), &mut s, ctrl)
+    }
     /// `MsAtelParseSysTag(kind, i, n)`.
     MsAtelParseSysTag @ 0x0079_79d0 => extern "C" fn ms_atel_parse_sys_tag(kind: u32, i: u32, n: i32) -> i32 {
         script!(s);

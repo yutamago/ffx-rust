@@ -56,6 +56,8 @@ pub mod bridge {
     pub const ATEL_DECODE_COMMAND: u32 = 0x0086_41c0;
     /// `AtelGetRequestLevel`.
     pub const ATEL_GET_REQUEST_LEVEL: u32 = 0x0086_c3f0;
+    /// `AtelGetCtrlworkActorTotal`.
+    pub const ATEL_GET_CTRLWORK_ACTOR_TOTAL: u32 = 0x0086_afe0;
     /// `AtelGetBasicWork`.
     pub const ATEL_GET_BASIC_WORK: u32 = 0x0086_a830;
     /// `AtelGetCameraWorkAdrs`.
@@ -571,6 +573,31 @@ pub mod bridge {
         };
         call(mem, s, ATEL_SET_CURRENT_CTRL, &[cur]);
         r
+    }
+
+    /// `MsAtelUpdate1(ctrl)` (`0x007973b0`) and `MsAtelUpdate2(ctrl)`
+    /// (`0x00797350`), the same code twice: the per-frame update
+    /// `MsAtelSetUp` gives `AtelBattleSetUp` for its scripts 1 and 2 (0 has
+    /// `0x007972e0`, which also runs the motions and specials). Over script
+    /// control `ctrl`'s works (`AtelGetCtrlworkActorTotal`): each one's
+    /// signals (`AtelDecodeSignal(k, -1)`), then each one's command
+    /// (`AtelDecodeCommand(k, 0)`), then the signals again. Returns what the
+    /// original leaves in eax: the last `AtelDecodeSignal`'s result, or the
+    /// work count when there are none.
+    pub fn ms_atel_update<M: Mem>(mem: &mut M, s: &mut Script<'_, M>, ctrl: u32) -> u32 {
+        let n = call(mem, s, ATEL_GET_CTRLWORK_ACTOR_TOTAL, &[ctrl]);
+        let works = 0..n.cast_signed().max(0).cast_unsigned();
+        let mut last = n;
+        for k in works.clone() {
+            last = call(mem, s, ATEL_DECODE_SIGNAL, &[k, u32::MAX]);
+        }
+        for k in works.clone() {
+            call(mem, s, ATEL_DECODE_COMMAND, &[k, 0]);
+        }
+        for k in works {
+            last = call(mem, s, ATEL_DECODE_SIGNAL, &[k, u32::MAX]);
+        }
+        last
     }
 
     /// The frame `MsDefenseStartProcess` keeps its three vectors in.

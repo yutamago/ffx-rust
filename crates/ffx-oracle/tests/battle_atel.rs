@@ -169,6 +169,35 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, block: u
         },
     );
     same("MsAtelParseSysTag", a, b);
+    // the scripts' per-frame updates (MsAtelUpdate1, MsAtelUpdate2) on a
+    // script control work (its work count a u16 at +0xc), current as the
+    // script engine makes it (g_ScriptContext) before the call: on a
+    // snapshot any of the seven of g_AtelCtrlWorks (0x238 apart; the
+    // battle scripts' are 2-4, as MsAtelSetUp has AtelBattleSetUp set
+    // them up, empty on both snapshots; the field snapshot's field script
+    // has works), else one of no works (an image has no script set up for
+    // the works' decoding)
+    for (name, f) in [
+        ("MsAtelUpdate1", 0x0079_73b0u32),
+        ("MsAtelUpdate2", 0x0079_7350),
+    ] {
+        let ctrl = if !w.synthetic && rng.below(4) != 0 {
+            0x0132_5ba0 + 0x238 * rng.below(7)
+        } else {
+            let c = scratch(a, b, 0x10);
+            poke(a, b, c, &[0; 0x10]);
+            poke(a, b, c + 0xe, &rng.next().to_le_bytes()[..2]);
+            c
+        };
+        if !w.synthetic {
+            poke(a, b, 0x0132_6b28, &ctrl.to_le_bytes());
+        }
+        twin(name, a, b, f, &[ctrl], ALL, |m| {
+            script!(s, block);
+            at::ms_atel_update(m, &mut s, ctrl)
+        });
+        same(name, a, b);
+    }
     // a motion
     let i = rng.below(ACTORS);
     let p = w.actor(i);
@@ -944,6 +973,46 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         let open = rng.below(2);
         poke(a, b, rec + 0x78, &open.to_le_bytes());
         parse_callees(a, b, rng, &w, block, worker);
+    }
+}
+
+/// `MsAtelUpdate1` and `MsAtelUpdate2` with their script calls logged:
+/// the snapshots' ctrl works hold no works (the battle scripts' are empty
+/// there), so on fresh image oracles `AtelDecodeSignal` and
+/// `AtelDecodeCommand` are recording stubs in both (their counts,
+/// arguments and results compared) over a ctrl work of up to 20 works.
+#[test]
+fn script_updates_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let rng = &mut Xorshift(0xa7e1_0017);
+    let block = scratch(a, b, 0x20);
+    let rec = scratch(a, b, 2 * (8 + 0x40 * 2));
+    let ctrl = scratch(a, b, 0x10);
+    for _ in 0..200 {
+        for o in [&mut *a, &mut *b] {
+            logging_stub(o, at::ATEL_DECODE_SIGNAL, STUBS, rec, 2, 0);
+            logging_stub(o, at::ATEL_DECODE_COMMAND, STUBS + 0x40, rec + 0x88, 2, 0);
+        }
+        // results the stubs give
+        poke(a, b, rec + 4, &rng.next().to_le_bytes());
+        poke(a, b, rec + 0x8c, &rng.next().to_le_bytes());
+        poke(a, b, ctrl, &[0; 0x10]);
+        let n = [0, 1, rng.below(21)][rng.below(3) as usize];
+        poke(a, b, ctrl + 0xc, &u16::try_from(n).unwrap().to_le_bytes());
+        poke(a, b, ctrl + 0xe, &rng.next().to_le_bytes()[..2]);
+        for (name, f) in [
+            ("MsAtelUpdate1", 0x0079_73b0u32),
+            ("MsAtelUpdate2", 0x0079_7350),
+        ] {
+            twin(name, a, b, f, &[ctrl], ALL, |m| {
+                script!(s, block);
+                at::ms_atel_update(m, &mut s, ctrl)
+            });
+            same(name, a, b);
+        }
     }
 }
 
