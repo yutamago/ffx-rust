@@ -447,6 +447,20 @@ pub mod bridge {
         call(mem, 0x0064_35e0, &[mode])
     }
 
+    /// `MagicFile_Init()` (`0x009da3e0`): prints `"MagicFile: Init()\n"`
+    /// (`printf(fmt)`, passed in), sets the magic id (`0x00c64ca0`), the
+    /// handle (`0x00c64cac`), `0x00c64ca8` and `g_BtlCommandWait`
+    /// (`0x00c64cb0`) to -1, then ends in [`magic_file_reset_preloaded`]
+    /// (a tail jump; its `eax`).
+    pub fn magic_file_init<M: Mem>(mem: &mut M, printf: impl FnOnce(&mut M, u32)) -> u32 {
+        let fmt = mem.rebase(0x00b7_0724);
+        printf(mem, fmt);
+        for at in [0x00c6_4ca0, 0x00c6_4cac, 0x00c6_4ca8, 0x00c6_4cb0] {
+            mem.write(mem.rebase(at), u32::MAX);
+        }
+        magic_file_reset_preloaded(mem)
+    }
+
     /// `0x009dadc0()`: the preloaded-magic tables cleared: 0xd00 bytes at
     /// `0x0193fdb0`, twelve words each at `0x0193fd78` and `0x0193fd44`,
     /// and `0x0193fd40`. Returns 0.

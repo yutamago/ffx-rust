@@ -4635,6 +4635,7 @@
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x007767d0 function PatchMenuRecords_007767d0 # (): screen 5 page 0: records 3/4 +6 = 0x53/0x83, 5 unlinked, 7 +1 = 0 and unlinked, 8 +1 |= 1 +6 = 0x56, 9 +6 = 0x86; screen 0xb pages 13/14: unlink and +6 edits; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
+0x00776940 function MsgExpandCodes_00776940     # cdecl(out, text, arg, &jump, &flag) -> end past the NUL, or 0 at a 0xb 0xf7 jump: copies a script message evaluating 0xb 0xf0..0xfa (if/then/end if/else over a 64-byte condition stack, MenuTextCode, variable sets, jumps, calls through the 0x00c416d0/d4/dc tables); Ghidra's void is wrong; ported (system round 34, msg.rs); name ours
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
 0x00777000 function CdOpenCheck_sub              # callees: its named callees match the Switch 0x71003227a0 CdOpenCheck_sub's (similarity 0.80: TkSyncV, movie_wait, read_err_disp_set, sceCdDiskReady); symbols from Fahrenheit's server export
 0x00777230 function ReturnAddress_00777230 # () -> 0x00c41748 (an address in the image); name ours
@@ -9860,6 +9861,7 @@
 0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl
 0x00895390 function TOBtlDrawLibraWindow      # fh v3:exact 0x00895300
 0x00895480 function TOBtlDrawLimitGauge       # fh v3:exact 0x008953f0
+0x008955e0 function BtlDrawRatio_008955e0       # (): with 0x0133f77c set, 0x00901490(f32 0x0133f794, i16 0x0133f780 + 15, i16 0x0133f782 - 20, 0x80008080 below 1.0 else 0x80808080); 0x0133c93f refreshes y = ftol(graphicUiRemapY2(350)); ported (system round 34); name ours
 0x00895660 function TOBtlDrawLuluLimitWindow  # fh v3:exact 0x008955d0
 0x00895940 function TOBtlDrawParamPlate       # fh v3:exact 0x008958b0
 0x00895ae0 function TOBtlDrawScanWinElementLamp # fh v3:cg4 0x895a50
@@ -10851,6 +10853,7 @@
 0x008dea20 function MenuStatus_ResetEntry     # (entry) u16 +0 and +0x2c cleared, returns 0; own name
 0x008dee00 function TODrawMessageWaitNamesp      # callees: its named callees match the Switch 0x7100500df0 TODrawMessageWaitNamesp's (similarity 0.73: TOConvAlbhedWord, TODrawChangeMacro2, TOGetChangeMacroWidth, TOGetChangeMacroWordCount, TOGetFontInfo); symbols from Fahrenheit's server export
 0x008df4c0 function StoreComputed_008df4c0       # auto-port shape (several stores: computed, into field, cdecl): t0 = u8[(a0 + 0x5b)]; u8[(a0 + 0x5b)] = ((t0 + 0xf0) & 0xff); u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0; callers: no direct caller; name ours
+0x008df4f0 function TOGetLangColonWidth_008df4f0 # cdecl(kind, font) -> TOGetColonWidth_008dfe20(font) for kind 0 in language 2 or kind 1 in languages 1..5 (0x008dfe10, a jmp to TOGetFFXLang), else 0; callers pass i16 window+0x1a; ported (system round 34); name ours
 0x008df520 function TOFirstInitMessageNormal     # layout+callees: sorts between TODrawMessageWaitNamesp and TOGetGroup, and its named callees match the Switch 0x7100500760 TOFirstInitMessageNormal's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df570 function TOTextScrollTick_008df570 # cdecl(w) -> eax: +0xb4 counts down; at 0 +0xb0 = ftol(Tk_GetScale(MsGetSaveConfigEnglish()) * f32(+0xac) + +0xb0), whole 30s (25 when TOGetFFXVideoMode) move to +0xa0; callers 0x008de970, 0x008ded60; name ours; ported (system round 32)
 0x008df610 function TOGetGroup                # fh v3:exact 0x008df600
@@ -10860,6 +10863,7 @@
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0; (code, window, pen): applies control codes 7, 9, 0xa, 0xb (button icon), 0xe to a message pen; ported (system round 33)
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
+0x008dfe10 function TOGetFFXLang_008dfe10       # jmp TOGetFFXLang; name ours
 0x008dfe20 function TOGetColonWidth_008dfe20     # cdecl(font) -> ftol2_sse(w) of TOGetFontWidthInterMode(":", font, &w), w from 0.0; ported (system round 33); name ours
 0x008dfe70 function MessageHold_008dfe70 # cdecl(w) -> 0: w+0x2c = 4 (u16), w+0x124 = itself; name ours
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
@@ -10949,15 +10953,17 @@
 0x008e8980 function OpenScissor               # fh v3:bsim1.00 0x008e8980
 0x008e89c0 function SetInvokedFromSelectCursor # fh v3:bsim1.00 0x008e89c0
 0x008e89d0 function SetWakkalimitMagicFileTexturesUnloaded # layout+callees: sorts between SetInvokedFromSelectCursor and TOAddFontWidthSpace, and its named callees match the Switch 0x7100501f80 SetWakkalimitMagicFileTexturesUnloaded's (similarity 1.00: graphicMenuSetTextureUnloadedInMaterial); symbols from Fahrenheit's server export
-0x008e8a10 function ShapeDataModify              # layout+callees: sorts between SetInvokedFromSelectCursor and TOAddFontWidthSpace, and its named callees match the Switch 0x710051d350 ShapeDataModify's (similarity 1.00: graphicGetTime, graphicUiRemapX, graphicUiRemapY); symbols from Fahrenheit's server export
+0x008e8a10 function ShapeDataModify              # layout+callees: sorts between SetInvokedFromSelectCursor and TOAddFontWidthSpace, and its named callees match the Switch 0x710051d350 ShapeDataModify's (similarity 1.00: graphicGetTime, graphicUiRemapX, graphicUiRemapY); symbols from Fahrenheit's server export; (shape, id): the HD port's per-shape fixes (720p remaps, UVs, offsets, alpha pulse ftol(f32(cos(t*3))*10+118)); ported (system round 34)
 0x008e8ed0 function TOAddFontWidthSpace       # fh v3:exact 0x008e8ed0; glyph+4 snapped to pixels (trunc(x*ws+0.5)/ws), then + font width + space of kind byte +0x1a
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
-0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
+0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0; (cursor, key, text, x, y, colour, kind, r, g, b, a) -> packet cursor: 16x12 text from the integer pen (pen 0x025d09a0; kind 1 edge, else shadow); ported (system round 34)
 0x008e9970 function TOAdpButtonIcon_008e9970     # (cursor, c, x, y) -> TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, 0x80 x4); ported (system round 33); name ours
 0x008e99a0 function TOAdpButtonIconRGBA_008e99a0 # (cursor, c, x, y, r, g, b, a) -> packet cursor: sets g_TOPktCursor, then button icon c as TOMkpShapeXYC2 shapes (d-pad @..O one per direction bit, digits c + 0x230 with 1/2 swapped by TOGetSystemConfirmButtonAssign, ` 0x270); ported (system round 33); name ours
 0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
+0x008ea000 function TOAddPktMesFont1612Grey_008ea000 # cdecl(cursor, text, x, y, colour) -> TOAddPktMesFont1612_008ea060(.., 0x80 x4); ported (system round 34); name ours
+0x008ea060 function TOAddPktMesFont1612_008ea060 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> packet cursor: 16x12 glyphs (shadow+face, x += width+1), codes 0xa colour nibbles and 0xb icons via 0x008e9970 at ftol(x), ftol(y) (x += 22); pen 0x025d09a0; ported (system round 34); name ours
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
 0x008eb270 function TOAddPktMenuIconRGBA      # fh v3:exact 0x008eb270
@@ -10968,9 +10974,12 @@
 0x008ed030 function Identity_008ed030 # cdecl(x) -> x (frame-pointer build); name ours
 0x008ed040 function Identity_008ed040         # cdecl(x) -> x; name ours
 0x008ed050 function Identity_008ed050 # cdecl(x) -> x (frame-pointer build), jumps to Identity_008ed040; name ours
+0x008ed060 function TOAddPktBaseMesFontPlain_008ed060 # cdecl(cursor, text, x, y) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, 0 (key, not -1), text, x, y, 0, 0, 0x80 x4); ported (system round 34); name ours
+0x008ed0a0 function TOAddPktBaseMesFont_008ed0a0  # cdecl(cursor, text, x, y, colour) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, 0x80 x4); ported (system round 34); name ours
+0x008ed160 function TOAddPktBaseMesFontRGBA_008ed160 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, r, g, b, a); ported (system round 34); name ours
 0x008ed190 function TOAdpEasyMesFontLClutRGBAInterMode # layout+callees: sorts between TOAdpCrossFontS_ASCII and TOAdpEasyShapeXYWHC2, and its named callees match the Switch 0x71005104b0 TOAdpEasyMesFontLClutRGBAInterMode's (similarity 1.00: TOGetFontInfoInterMode, TOMakePktFont1612Font, TOMakePktFont1612Shadow, TOSkipCode); symbols from Fahrenheit's server export
 0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
-0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
+0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # ported (system round 34: kind 0 into 0x008e92a0); the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
 0x008ee600 function TOAdpFontM_ASCII_SaMenu      # layout+callees: sorts between TOAdpFontM_ASCII and TOAdpGsDirectRGBA, and its named callees match the Switch 0x7100514720 TOAdpFontM_ASCII_SaMenu's (similarity 1.00: BeginScissor_XYUV, TOGetImageWH, TOGetTextureName, graphicFontDraw); symbols from Fahrenheit's server export
 0x008ef670 function TOAdpALPHA # cdecl(p, A, B, C, D, FIX) -> p + 0x10: GS register 0x42 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
@@ -11004,6 +11013,7 @@
 0x008f0830 function TOAdpMenuIconWeaponName   # fh v3:exact 0x008f0830
 0x008f08e0 function TOAdpMenuIconWeaponName2  # fh v3:exact 0x008f08e0
 0x008f2f70 function Identity_008f2f70         # cdecl(x) -> x; TOMkpSetEnvSubFont and 0x008ed320.. call it; name ours
+0x008f2ff0 function TOAddPktMesValue_008f2ff0     # cdecl(cursor, value, x, y, colour): TOValueToMesFontL(value, text, 0) into a 32-byte local, then TOAddPktBaseMesFont_008ed0a0's call; ported (system round 34); name ours
 0x008f30b0 function TOAdpValueFontLClutRight     # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050c1a0 TOAdpValueFontLClutRight's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLClutTypeRGBA, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
 0x008f3170 function TOAdpValueFontLClutRightRGBA # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050e9d0 TOAdpValueFontLClutRightRGBA's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLAbmap, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
 0x008f3300 function TOMkpBtlDigitRight_008f3300 # cdecl(ret, value, x, y, alpha) -> ret: ToMakeBtlEasyDigitRight(value, f32(x) + 4.0, f32(y) + dy, alpha, 0.8, 0.0), dy -3.0 or -2.0 for languages 1..8 and >= 12; caller 0x0076f850; name ours
@@ -11100,6 +11110,8 @@
 0x008ff020 function TOXyoffsetPacket_008ff020 # cdecl(x, y) -> x: at *0x018716cc a GIF tag (0x8001, 0x10000000, A+D) and XYOFFSET_1 (x, y | sign of x), the cursor +0x20; caller TODrawMovieMessage; name ours
 0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
 0x008ff260 function TOMenuDrawBrush2             # layout+callees: sorts between TOMakePktShapeCursor and TOMenuInitBrush, and its named callees match the Switch 0x7100528420 TOMenuDrawBrush2's (similarity 0.67: TOMkpShapeXYWHUV, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008ff370 function TODrawMesBox_008ff370       # cdecl(text, x, y, extra): TOMakePktBoxXYWHRGBA shadow at +4, frame 0x008fd390, text 0x00901cb0 at (x+15, y+2), box size i16 0x025d1644/0x025d1642; ported (system round 34); name ours
+0x008ff3e0 function TODrawMesBoxFit_008ff3e0    # cdecl(text, x, y, extra): TODrawMesBox_008ff370 with widths ftol(478 - w) and ftol(482 - w) from TOGetMessageWH; ported (system round 34); name ours
 0x008ff490 function TOMenuDrawChrStatusPlate_008ff490 # cdecl(chr, x, y) -> eax of the last call: menu status plate: background (party: TOMenuGetYesNoWindow bit chr picks the clear sheet + DrawWaterWaveShapeC2 water (colours 0x00c56870/0x1ac56870/0x33c56870, literal pushes) or the dark one; others sheet -6 + water), right panel; chr > 0x11 (unsigned) empty labels; aeon (8..=0x11) with TkMenuGetHP <= 0 -> TkMn2DrawSummonPlateCheckHP(ftol x, ftol y, chr), else name (ToMakeBtlEasyEdgeFont, MenuPlayer_DamageClass2 alpha), HP %5d/%5d and MP %4d/%4d (sprintf import, TOMkpCrossEasyStrFontSClut); party gauge row (Sphere Levels centred by ToGetBtlEasyDigitWidth2, AP to next level MsGetNextAP - MsGetSaveNextAP) or aeon overdrive (TkMn2DrawCrossLimitParam); language 11 moves the labels; callers 0x008cdba0, 0x008ce750, 0x008d6860; name ours; ported (system round 32)
 0x009008c0 function TOMenuDrawStatusPlayerPlate  # layout+callees: sorts between TOMakePktShapeCursor and TOMenuInitBrush, and its named callees match the Switch 0x71005267a0 TOMenuDrawStatusPlayerPlate's (similarity 0.71: MsGetNextAP, MsGetSaveNextAP, TOGetSaveChrName, TOMenuDrawKickTmp, TOMenuOpenPktBuffTmp); symbols from Fahrenheit's server export
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
@@ -11117,6 +11129,7 @@
 0x00901660 function TOMkpCrossEasyStrFontSClut # fh v3:exact+call.cs 0x00901660 cdecl
 0x009016b0 function TOMkpCrossExtMesFontLClut # fh v3:exact+call.cs 0x009016b0 cdecl
 0x00901700 function TOMkpCrossExtMesFontLClutTypeRGBA # fh v3:exact+call.cs 0x00901700 cdecl
+0x009019f0 function TOAdpCrossNumber_009019f0   # cdecl(value, x, y, colour, scale, gap): sprintf("%d") then TOAdpCrossFontM_FFX per glyph (9 words), right-aligned on x with (gap + 10) * scale per glyph; ported (system round 34); name ours
 0x00901c50 function TOMkpEasyMesFontLCenter   # fh v3:exact 0x00901c50
 0x00901f40 function TOMkpEasyStrFontM         # fh v3:bsim1.00 0x00901f40
 0x00902040 function TOMkpEasyStrFontS         # fh v3:exact 0x00902040
@@ -12411,7 +12424,7 @@
 0x009da3a0 function GetU32_00c64ca4 # () -> u32 at 0x00c64ca4; name ours
 0x009da3b0 function MagicFile_GetMagicId      # fh v3:bsim1.00 0x009da3a0
 0x009da3d0 function MagicFile_GetToBeDeleteMagicId # () -> [0x00c64ca8]; fh switch:bsim1.00 0x71007e2dd0
-0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0
+0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0; (): printf "MagicFile: Init()", 0x00c64ca0/ac/a8/b0 = -1, tail jmp MagicFile_ResetPreloaded; ported (system round 34)
 0x009da420 function MagicFile_IsNexData       # fh v3:bsim1.00 0x009da410
 0x009da430 function MagicFile_Load            # fh v3:exact 0x009da420
 0x009da700 function MagicFile_NeedRestoreCamera  # layout+callees: sorts between MagicFile_Load and MagicFile_SetMagicId, and its named callees match the Switch 0x71007e3120 MagicFile_NeedRestoreCamera's (similarity 1.00: MsGetBattleScene); symbols from Fahrenheit's server export; (): 1 if 0x01940abc, previous magic 0x00c64ca8 is 0xa5/0x133, or 0x152 in battle scene 0x018b0046
