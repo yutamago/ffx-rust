@@ -2740,6 +2740,17 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         )
     }
+    /// `KeDttSpr_MkGifPk(p)`.
+    KeDttSpr_MkGifPk @ 0x0076_7790 => extern "C" fn shim_ke_dtt_spr_mk_gif_pk(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::kedtt::WORK as usize / 4 }>::new();
+        ffx_field::kedtt::ke_dtt_spr_mk_gif_pk(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));

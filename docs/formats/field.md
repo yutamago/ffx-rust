@@ -1893,6 +1893,61 @@ curl is the previous one's plus `(rnd / 2^14 - 1) x +0x3c`, clamped to
 child belt path when `rnd & +0x41` is 0 (0xff: never) and fewer than
 `+0x40` children exist. Its VU0 scratch is `0x010d5530..0x010d55fc`.
 
+## The Ke distortion sprite (field agent r6)
+
+`KeDttSpr_MkGifPk(p)` (`0x00767790`, returns 0) draws a sprite that
+shows the frame buffer under it, shifted: a fan of eight triangles
+around a centre, in the instance's PC render data. The sprite object:
+position `+0` (xyzw), colour `+0x10` (0..255, f32 each), its matrix
+`+0x28`, flags `+0x3c` (bit 0: the rim keeps the colour's alpha, else
+0), the VFX instance `+0x60` (key: low word `g_pppCurrentProgram`, high
+word the instance plus the low word's sign).
+
+The effect program leaves the shape in the emulated VU0 registers:
+
+| Register | Meaning |
+|---|---|
+| `0x00c8f840` | UV origin (subtracted from a vertex's x, y); moved by `vf01` (`0x00c8f7a0`) x, y times Q |
+| `0x00c8f880`, `0x00c8f8a0` | The rim's axes (x, y); `0x00c8f8a0` x and `0x00c8f884` are scaled by Q, the other two words not (the original's) |
+| `0x00c8f890` | The rim's diagonal (x, y, both scaled by Q) |
+| `0x00c8f8b0` / `0x00c8f8c0` | UV offsets of the axes (x for the `0x8a0` vertices, y for the `0x880` ones) and of the diagonal; times Q into `0x00c8f8f0` / `0x00c8f900` |
+| `0x00c8f910` | UV scale (x) |
+
+Q is `vf00.w / w` of the position after the matrix; the centre
+(`0x00c8f850`) is x, y, z times Q. A centre outside 1707..2389 x
+1840..2256 hides the instance (`graphicVFXSetVisible(.., 0)`); the
+original also tests 0..4096 for magic 0x6a and 0x1bd, but a window test
+follows for every magic, so the window always decides. The first draw
+(no render data through the instance's dynamic geometry) creates the
+instance (`graphicVFXCreate(.., 0x1000)`) and its data buffer
+`graphicVFXCreateDataBuffer(.., 1, &9, &0x18, "FrameBuffer", &1)`, sets
+the description's `+0x24` to 2 and calls `graphicVFXSetup`. Then, given
+a buffer segment (`graphicDynGeoMemManagerGetBufferForSegment(rd, 0,
+desc+4, desc+8)`), the description `rd + 0x94` gets:
+
+- `+0x14`: nine colours (over 255), the rim's alpha per bit 0;
+- `+0x0c`: nine vertices (xyz): the centre and the rim centre ± axis
+  or diagonal, in the order +A, +B, +C, (+Bx, -By), -A, -B, -C,
+  (-Bx, +By), each back over Q (`KeVu0ScaleVecXYZ`) and through the
+  view matrix `0x0230fc60`;
+- `+0x1c`: the triangles `(0, i + 2, i + 1)` for i = 0..6 and
+  `(0, 1, 8)` (`u16`);
+- `+0x18`: per vertex `uv = (x, y) - origin` plus its UV offset (the
+  rim's signs), times the scale into `0x00c8f930`, then
+  `u = (su * 1024 - 2048) / 682 + 0.5`,
+  `v = (0.5 - (sv * 1024 - 2048) / 448) * ratio - bias` (682 becomes
+  512, ratio 1.3333333 and bias `graphicGetCut2DSceneBias()` while a 2D
+  cut scene draws).
+
+The render data's matrix becomes `g_pppFillMatrix` (translation
+cleared, `+0x3c` 1.0), its bounds `+0x98..` -100000 / `+0xa4..` 100000;
+the instance is made visible, `graphicUseOptimizedVFXShader(geometry, 0)`,
+and updated: `graphicVFXSetZCorrectionValue(.., centre z)` and
+`graphicVFXUpdate` for magic 0x92 while `g_VfxPass`, else
+`graphicVFXDttUpdate`. `KeVu0ScaleVecXYZ` takes its scale as a vector:
+the original's other three words are its caller's saved registers, and
+they end up in `vf01` y, z, w.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

@@ -15024,3 +15024,313 @@ fn r5k_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0091_0002);
     r5k_cases(&mut t, &mut rng, 150);
 }
+
+// ---- field agent r6, group A: the distortion sprite ----
+
+/// A logged argument: the word, or `n` words where it points.
+#[derive(Clone, Copy)]
+enum LogArg {
+    Word,
+    Deref(u8),
+}
+
+/// [`wide_log_stub`] whose arguments may be pointers to log through
+/// (stack buffers' addresses differ between the original and the port,
+/// their contents don't).
+fn r6a_log_stub(log: u32, rv: u32, id: u32, args: &[LogArg]) -> Vec<u8> {
+    // mov ecx, [log]; shl ecx, 6; mov [ecx + log + 4], id
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0xc1, 0xe1, 0x06, 0xc7, 0x81]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&id.to_le_bytes());
+    let mut slot = log + 8;
+    for (i, a) in (0u8..).zip(args) {
+        // mov edx, [esp + 4 + 4i]
+        c.extend_from_slice(&[0x8b, 0x54, 0x24, 4 + 4 * i]);
+        let words = match *a {
+            LogArg::Word => {
+                c.extend_from_slice(&[0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend_from_slice(&slot.to_le_bytes());
+                slot += 4;
+                continue;
+            }
+            LogArg::Deref(n) => n,
+        };
+        for k in 0..words {
+            c.extend_from_slice(&[0x8b, 0x42, 4 * k, 0x89, 0x81]); // mov eax, [edx + 4k]
+            c.extend_from_slice(&slot.to_le_bytes());
+            slot += 4;
+        }
+    }
+    assert!(slot <= log + 0x44, "the entry outgrows 0x40 bytes");
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// The stand-ins' return words: the dynamic geometry, the render data by
+/// instance, the buffer segment, the 2D cut scene flag and bias, the rest.
+struct R6aReturns {
+    log: u32,
+    geometry: u32,
+    rd: u32,
+    buffer: u32,
+    cut: u32,
+    bias: u32,
+    rest: u32,
+}
+
+impl R6aReturns {
+    /// The renderer glue `KeDttSpr_MkGifPk` calls, stood in.
+    fn install(t: &mut Twin) -> Self {
+        use LogArg::{Deref, Word};
+        let log = t.alloc(4 + 0x40 * 32);
+        let [geometry, rd, buffer, cut, bias, rest] = [0; 6].map(|_: u32| t.alloc(4));
+        let w = |n: usize| vec![Word; n];
+        let list = [
+            (0x0064_5380u32, r6a_log_stub(log, geometry, 1, &w(2))),
+            (0x0064_1c00, ret_stub_at(cut)),
+            (0x0064_1130, fld_stub(bias)),
+            (0x0064_4de0, r6a_log_stub(log, rest, 2, &w(3))),
+            (
+                0x0064_5040,
+                r6a_log_stub(
+                    log,
+                    rest,
+                    3,
+                    &[Word, Word, Word, Deref(1), Deref(1), Deref(3), Deref(1)],
+                ),
+            ),
+            (0x0064_53d0, r6a_log_stub(log, rd, 4, &w(2))),
+            (0x0064_5780, r6a_log_stub(log, rest, 5, &w(2))),
+            (0x0063_fdb0, r6a_log_stub(log, buffer, 6, &w(4))),
+            (0x0064_5710, r6a_log_stub(log, rest, 7, &w(3))),
+            (0x0064_4ac0, r6a_log_stub(log, rest, 8, &w(2))),
+            (0x0064_5750, r6a_log_stub(log, rest, 9, &w(3))),
+            (0x0064_58a0, r6a_log_stub(log, rest, 10, &w(2))),
+            (0x0064_5330, r6a_log_stub(log, rest, 11, &w(2))),
+        ];
+        let list: Vec<_> = list.into_iter().map(|(f, c)| (Some(f), c)).collect();
+        t.cave_from(0, &list);
+        Self {
+            log,
+            geometry,
+            rd,
+            buffer,
+            cut,
+            bias,
+            rest,
+        }
+    }
+}
+
+/// `mov eax, [at]; ret`.
+fn ret_stub_at(at: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend_from_slice(&at.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// A render data block (`+0x94` its description with fresh, random
+/// vertex, colour, UV and index buffers).
+fn r6a_render_data(t: &mut Twin, rng: &mut Xorshift) -> u32 {
+    let rd = t.alloc(0xb0);
+    t.fill(rd, 0xb0, rng);
+    let d = t.alloc(0x28);
+    t.fill(d, 0x28, rng);
+    t.put(rd + 0x94, d);
+    for (at, len) in [(0xcu32, 0x6c), (0x14, 0x90), (0x18, 0x48), (0x1c, 0x30)] {
+        let b = t.alloc(len);
+        t.fill(b, len, rng);
+        t.put(d + at, b);
+    }
+    rd
+}
+
+/// A random matrix near the identity (or the identity).
+fn r6a_matrix(t: &mut Twin, rng: &mut Xorshift, at: u32, exact: bool) {
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 16 } else { 0 };
+        let v = if exact {
+            sixteenths(rng, ident, ident)
+        } else if i >= 12 && i != 15 {
+            sixteenths(rng, -16 * 16, 16 * 16)
+        } else {
+            sixteenths(rng, ident - 2, ident + 2)
+        };
+        t.put(at + 4 * i, v);
+    }
+}
+
+/// The VU0 registers the effect program leaves for the sprite.
+fn r6a_registers(t: &mut Twin, rng: &mut Xorshift) {
+    let [rims, uvs, origin, vf01, scale, vf00w, view, fill] = [
+        0x00c8_f880,
+        0x00c8_f8b0,
+        0x00c8_f840,
+        0x00c8_f7a0,
+        0x00c8_f910,
+        0x00c0_a010,
+        0x0230_fc60,
+        0x0230_fca0,
+    ]
+    .map(|a| t.b.rebase(a));
+    for i in 0..12 {
+        t.put(rims + 4 * i, float_in(rng, -60, 60));
+    }
+    for i in 0..8 {
+        t.put(uvs + 4 * i, float_in(rng, -20, 20));
+    }
+    for i in 0..4 {
+        t.put(origin + 4 * i, float_in(rng, 1500, 2600));
+        t.put(vf01 + 4 * i, float_in(rng, -10, 10));
+    }
+    t.put(scale, float_in(rng, 0, 2));
+    let w = if rng.below(4) == 0 {
+        float_in(rng, 1, 3)
+    } else {
+        0x3f80_0000
+    };
+    t.put(vf00w, w);
+    r6a_matrix(t, rng, view, false);
+    r6a_matrix(t, rng, fill, false);
+}
+
+/// The window edges the centre is tested against (exactly on them).
+const R6A_EDGES: [(f32, f32); 6] = [
+    (1707.0, 2000.0),
+    (2389.0, 2000.0),
+    (2000.0, 1840.0),
+    (2000.0, 2256.0),
+    (1706.9375, 2000.0),
+    (2000.0, 2256.0625),
+];
+
+/// `KeDttSpr_MkGifPk` cases on `t` (`real`: the first keeps the
+/// snapshot's registers and matrices).
+fn r6a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let s = R6aReturns::install(t);
+    let work = t.stack_scratch(0x800);
+    // KeVu0ScaleVecXYZ copies its scale vector into vf01: the three words
+    // past the scale are the original's caller's saved registers
+    let skip = [(t.b.rebase(0x00c8_f7a4), 12)];
+    let (program, magic, pass) = (
+        t.b.rebase(0x0230_fd20),
+        t.b.rebase(0x00c6_4ca0),
+        t.b.rebase(0x0113_335c),
+    );
+    for k in 0..cases {
+        if !(real && k == 0) {
+            r6a_registers(t, rng);
+        }
+        let p = t.alloc(0x70);
+        t.fill(p, 0x70, rng);
+        let w = float_in(rng, 1, 40);
+        let wf = f64::from(f32::from_bits(w));
+        let exact = rng.below(3) == 0;
+        let (x, y) = if exact && rng.below(2) == 0 {
+            R6A_EDGES[rng.below(6) as usize]
+        } else {
+            let x = f32::from_bits(float_in(rng, 1650, 2450));
+            let y = f32::from_bits(float_in(rng, 1790, 2300));
+            (x, y)
+        };
+        // with the identity and w 1 the centre lands on (x, y) exactly
+        let w = if exact { 0x3f80_0000 } else { w };
+        let wf = if exact { 1.0 } else { wf };
+        #[allow(clippy::cast_possible_truncation)]
+        for (i, v) in [x, y].into_iter().enumerate() {
+            t.put(p + 4 * i as u32, ((f64::from(v) * wf) as f32).to_bits());
+        }
+        t.put(p + 8, float_in(rng, -100, 100));
+        t.put(p + 0xc, w);
+        // now and then the game's UV scale: the centre's UV lands inside
+        // the frame buffer (v near 0.5), where the cut scene bias moves
+        // the exponent
+        if rng.below(2) == 0 {
+            let origin = t.b.rebase(0x00c8_f840);
+            for (i, c) in [x, y].into_iter().enumerate() {
+                let noise = f32::from_bits(sixteenths(rng, -8 * 16, 8 * 16));
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(origin + 4 * i as u32, (c - 64.0 + noise).to_bits());
+            }
+            t.put(t.b.rebase(0x00c8_f910), (1.0f32 / 32.0).to_bits());
+        }
+        // exactly on the centre, a rim offset makes a zero (whose sign the
+        // subtraction's order decides)
+        if exact && rng.below(2) == 0 {
+            let rim_b = t.b.rebase(0x00c8_f890);
+            t.put(rim_b, x.to_bits());
+            t.put(rim_b + 4, y.to_bits());
+        }
+        for i in 0..4 {
+            t.put(p + 0x10 + 4 * i, float_in(rng, 0, 255));
+        }
+        let m = t.alloc(0x40);
+        r6a_matrix(t, rng, m, exact);
+        t.put(p + 0x28, m);
+        t.put(p + 0x3c, rng.next());
+        t.put(p + 0x60, rng.next());
+        t.put(
+            program,
+            if rng.below(2) == 0 {
+                rng.below(8)
+            } else {
+                rng.next()
+            },
+        );
+        t.put(
+            magic,
+            [0x92u32, 0x92, 0x6a, 0x1bd, 7][rng.below(5) as usize],
+        );
+        t.put(pass, rng.below(2));
+        // the render data: through the geometry, or created on the first draw
+        let rd = r6a_render_data(t, rng);
+        let geometry = if rng.below(5) == 0 {
+            0
+        } else {
+            let g = t.alloc(0x28);
+            t.fill(g, 0x28, rng);
+            t.put(g + 0x24, if rng.below(4) == 0 { 0 } else { rd });
+            g
+        };
+        t.put(s.geometry, geometry);
+        t.put(s.rd, if rng.below(5) == 0 { 0 } else { rd });
+        t.put(s.buffer, if rng.below(6) == 0 { 0 } else { rng.next() | 1 });
+        t.put(s.cut, rng.below(3) / 2);
+        t.put(s.bias, float_in(rng, -2, 2));
+        t.put(s.rest, rng.next());
+        t.put(s.log, 0u32);
+        t.same_but(
+            "KeDttSpr_MkGifPk",
+            &skip,
+            |o| o.eax(0x0076_7790, &[p]),
+            |m| ffx_field::kedtt::ke_dtt_spr_mk_gif_pk(m, p, work, call, fcall),
+        );
+    }
+}
+
+/// Group A on the image.
+#[test]
+fn r6a_distortion_sprite_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0061_0001);
+    r6a_cases(&mut t, &mut rng, 400, false);
+}
+
+/// Group A on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r6a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0061_0002);
+    r6a_cases(&mut t, &mut rng, 200, true);
+}

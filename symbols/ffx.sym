@@ -4197,7 +4197,7 @@
 0x00767530 function KeMdl_MkTkClut            # fh v3:exact 0x00767610
 0x007676c0 function KeVu0MulX                    # (dst, src, s): dst.x = src.x * s (a VU macro helper); 0x0088a040
 0x00767720 function KeVu0SubX                    # (dst, src, s): dst.x = src.x - s, then restoreVf00Register (tail call); 0x0088a040
-0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870
+0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870; ours: cdecl(p) -> 0: the distortion sprite: p+0 through its matrix p+0x28, Q = vf00.w / w; centre outside 1707..2389 x 1840..2256 hides the VFX instance (key 0x0230fd20 / p+0x60); else a 9-vertex fan (rim from VU0 0x00c8f880/890/8a0) into the render data (desc rd+0x94: verts +0xc, colours +0x14, UVs +0x18 into the "FrameBuffer" buffer, indices +0x1c), created on the first draw; ported (field r6, ffx_field::kedtt)
 0x00768d30 function KeDttSpr_MkGifPk_Pre      # fh v3:exact 0x00768e40
 0x00769230 function KeBornRnd2                # fh v3:exact 0x00769340
 0x00769340 function KeLnsArnd_Draw            # fh v3:exact 0x00769450
@@ -16305,6 +16305,7 @@
 0x02305840 label    g_KeThTextureCount           # the Ke thing effects' texture count (InitVFXKeThRenderData clamps it to 20)
 0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
 0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
+0x0230fc60 label    g_pppDttVertexMatrix      # ours: 16 floats KeDttSpr_MkGifPk takes its vertices through (after scaling them back by 1/Q), next to g_pppFillMatrix
 0x0230fca0 label    g_pppFillMatrix           # 16 words every updateVFXRenderData fill request takes (+0x1d4; the Shp request +0xd0)
 0x0230fd20 label    g_pppCurrentProgram       # the program index pppRunPartStd is running, 0 after
 0x0230fd24 label    g_pppObjectCount          # pppRunPartStd adds each birth record's object count
