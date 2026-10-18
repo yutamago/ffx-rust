@@ -2719,6 +2719,11 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         )
     }
+    /// `AbmapDrawGridMarks()` (field agent r3, group H).
+    AbmapDrawGridMarks @ 0x00a4_9f10 => extern "C" fn shim_abmap_draw_grid_marks() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::abmap_lift::WORK as usize / 4 }>::new();
+        ffx_field::abmap_lift::abmap_draw_grid_marks(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));

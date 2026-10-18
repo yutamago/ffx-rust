@@ -27,6 +27,7 @@
 #![allow(clippy::many_single_char_names)] // registers, pointers and vector parts, as the originals
 
 pub mod abmap;
+pub mod abmap_lift;
 pub mod camera;
 pub mod freecam;
 pub mod geom;

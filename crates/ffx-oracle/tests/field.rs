@@ -14662,3 +14662,82 @@ fn r1g_on_a_snapshot_matches_the_original() {
     let r = yi::state::RENDER.ptr(&t.b).addr;
     r1g_cases(&mut t, &mut rng, r, true);
 }
+
+// ---- field agent r3, group H: the ability map's lifted draws ----
+
+/// `graphicDrawUIAbmapElement(verts, buf, n)` stand-in: copies the 0x80
+/// bytes of `verts` (`buf` is the callee's scratch, never written by the
+/// caller) and `n` to `dst + count * 0x84` (`count` the word at
+/// `dst - 4`, then one more).
+fn abmap_element_stub(dst: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend_from_slice(&(dst - 4).to_le_bytes());
+    // edi = dst + count * 0x84
+    c.extend_from_slice(&[0x69, 0xf8, 0x84, 0x00, 0x00, 0x00, 0x81, 0xc7]);
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x0c, 0xb9, 0x20, 0, 0, 0, 0xf3, 0xa5]);
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x14, 0xab]); // n
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&(dst - 4).to_le_bytes());
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group H on `t`: an ability map work area at `ab` (synthetic grid,
+/// frame counter), the packet buffer, the element draws copied.
+fn r1h_cases(t: &mut Twin, rng: &mut Xorshift, synthetic: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (copies, pkt) = (t.alloc(4 + 0x84 * 400), t.alloc(0x4_0000));
+    t.cave_from(
+        0x500,
+        &[(Some(0x0063_e930), abmap_element_stub(copies + 4))],
+    );
+    let ab = if synthetic {
+        let ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+        Some(ab)
+    } else {
+        None
+    };
+    let ab = ab.unwrap_or_else(|| ffx_field::abmap::ABMAP.get(&t.b));
+    let pp = t.b.rebase(0x01a8_60ec);
+    let work = t.stack_scratch(0x800);
+    for k in 0..40 {
+        t.put(copies, 0u32);
+        t.put(pp, pkt);
+        if synthetic || k > 0 {
+            for c in 0..(17 * 20) {
+                t.put(ab + 0x12e60 + c, u8::from(rng.below(3) == 0));
+            }
+            t.put(ab + 0x11698, rng.next());
+            for w in 0..0x40u32 {
+                t.put(ab + 0x1182c + 4 * w, float_in(rng, -300, 300));
+            }
+        }
+        t.same(
+            "AbmapDrawGridMarks",
+            |o| o.eax(0x00a4_9f10, &[]),
+            |m| ffx_field::abmap_lift::abmap_draw_grid_marks(m, work, call),
+        );
+    }
+}
+
+/// Group H on the image.
+#[test]
+fn r1h_abmap_draws_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_0001);
+    r1h_cases(&mut t, &mut rng, true);
+}
+
+/// Group H on the snapshot (`FFX_SNAPSHOT`), over a synthetic work area
+/// when the snapshot has none.
+#[test]
+fn r1h_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_0002);
+    let real = ffx_field::abmap::ABMAP.get(&t.b) != 0;
+    r1h_cases(&mut t, &mut rng, !real);
+}
