@@ -254,6 +254,7 @@ REVIEWED = {
     0x00401370: ("glue", "STL error_code compare (system round 31)"),
     0x00703910: ("glue", "calls a function pointer by argument count (system round 32)"),
     0x006412b0: ("glue", "forwards to MapPart_LangOverride on [0x00ccc81c] (system round 32)"),
+    0x00784ac0: ("debug", "MsDebugFullMember: only under the debug menu toggle 0x0112a905 (battle round 21)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
