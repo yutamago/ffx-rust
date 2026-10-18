@@ -341,12 +341,87 @@ pub mod bridge {
         left
     }
 
+    /// A damage result (`0x2c` bytes from a buffer's `+0x18`).
+    const RESULT: u32 = 0x2c;
+
+    /// `MsMergeDamage(chr, target)` (`0x0079aff0`): in each of `target`'s
+    /// two buffers for `chr`'s (low byte) running command, the results
+    /// left (from `+0` the next to `+1` the count) folded into one at the
+    /// next's place, which becomes the last (`+1` = next + 1): a copy of
+    /// the last result with bytes `+2`, `+4` and words `+0x18`, `+0x1a`
+    /// the ORs of the left ones', `+0x1c`-`+0x28` their sums, and `+1`
+    /// (the hit kind) 2 when one is 2, else 0 when one is 0 and it was
+    /// still 1, else 1. Returns how many results were folded; 0 for no
+    /// actor.
+    pub fn ms_merge_damage(mem: &mut impl Mem, chr: u32, target: u32) -> i32 {
+        let c = chr & 0xff;
+        if ms_btl_chr_num_check(c) == 0 {
+            return 0;
+        }
+        let id = byte(mem, crate::actor::bridge::ms_get_chr_command(mem, c), 2);
+        let t = ms_get_chr(mem, target);
+        let mut folded = 0i32;
+        for o in BUFFERS {
+            let b = t.wrapping_add(o);
+            if u32::from(byte(mem, b, 2)) != c || byte(mem, b, 3) != id {
+                continue;
+            }
+            let (next, count) = (u32::from(byte(mem, b, 0)), u32::from(byte(mem, b, 1)));
+            let entry = |k: u32| b.wrapping_add(0x18).wrapping_add(k.wrapping_mul(RESULT));
+            let mut merged = [0u8; RESULT as usize];
+            mem.read_bytes(entry(count.wrapping_sub(1)), &mut merged);
+            let (mut flags2, mut flags4) = (0u8, 0u8);
+            let (mut words, mut sums) = ([0u16; 2], [0i32; 4]);
+            let mut kind = 1u8;
+            for k in next..count {
+                let e = entry(k);
+                flags2 |= byte(mem, e, 2);
+                flags4 |= byte(mem, e, 4);
+                for (w, at) in words.iter_mut().zip([0x18u32, 0x1a]) {
+                    *w |= mem.read::<u16>(e.wrapping_add(at));
+                }
+                for (sum, at) in sums.iter_mut().zip([0x1cu32, 0x20, 0x24, 0x28]) {
+                    *sum = sum.wrapping_add(mem.read(e.wrapping_add(at)));
+                }
+                match byte(mem, e, 1) {
+                    0 if kind == 1 => kind = 0,
+                    2 => kind = 2,
+                    _ => {}
+                }
+            }
+            if next < count {
+                folded += (count - next).cast_signed();
+            }
+            merged[1] = kind;
+            merged[2] = flags2;
+            merged[4] = flags4;
+            merged[0x18..0x1a].copy_from_slice(&words[0].to_le_bytes());
+            merged[0x1a..0x1c].copy_from_slice(&words[1].to_le_bytes());
+            for (k, sum) in sums.iter().enumerate() {
+                merged[0x1c + 4 * k..0x20 + 4 * k].copy_from_slice(&sum.to_le_bytes());
+            }
+            mem.write_bytes(entry(next), &merged);
+            let last = byte(mem, b, 0).wrapping_add(1);
+            mem.write(b.wrapping_add(1), last);
+        }
+        folded
+    }
+
     /// `MsGetTargetList(chr, &n)` (`0x007b7090`): `chr`'s (low byte) target
     /// list (`+0xd40`, 31 bytes): its running command's targets (`+0x10`
     /// words after its `+2`, else the actor's `+0xdc0`), party members
     /// first in party order, then the rest by index, 0xff after; `n` their
     /// number. Null, and `n` 0, for no actor.
     pub fn ms_get_target_list(mem: &mut impl Mem, chr: u32, n: u32) -> u32 {
+        let (list, count) = target_list(mem, chr);
+        if n != 0 {
+            mem.write(n, count);
+        }
+        list
+    }
+
+    /// [`ms_get_target_list`]'s list and count.
+    fn target_list(mem: &mut impl Mem, chr: u32) -> (u32, u32) {
         let c = chr & 0xff;
         let mut count = 0u32;
         let mut list = 0;
@@ -377,6 +452,66 @@ pub mod bridge {
             }
             for k in count..0x1f {
                 mem.write(list.wrapping_add(k), 0xffu8);
+            }
+        }
+        (list, count)
+    }
+
+    /// The most entries of a random target list.
+    pub const RANDOM_LIST_MAX: u32 = 0x40;
+    /// `"list_over"` (`.rdata`), `MsBattleError`'s message past
+    /// [`RANDOM_LIST_MAX`].
+    pub const LIST_OVER: u32 = 0x00b5_50a4;
+
+    /// `MsGetTargetRandomList(chr, &n, shuffle)` (`0x007b7170`): `chr`'s
+    /// (low byte) weighted target list at its `+0xd80`: each target of
+    /// [`ms_get_target_list`] as many times as its hits are left
+    /// ([`ms_get_damage_info`]), at most [`RANDOM_LIST_MAX`] (past them
+    /// `MsBattleError("list_over")`, which hangs). With `shuffle`, as many
+    /// swaps as entries: `i = brnd(0x10) % n`, `j = (i + 1 + (n < 3 ? 0 :
+    /// brnd(0x10) % (n − 2))) % n`. Their number into `n` unless null; the
+    /// list, null for no actor.
+    pub fn ms_get_target_random_list<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        chr: u32,
+        n: u32,
+        shuffle: u32,
+    ) -> u32 {
+        use crate::rng::bridge::brnd;
+        let c = chr & 0xff;
+        let mut count = 0i32;
+        let mut list = 0;
+        if ms_btl_chr_num_check(c) != 0 {
+            list = ms_get_chr(mem, c).wrapping_add(0xd80);
+            let (targets, k) = target_list(mem, c);
+            for t in 0..k {
+                let target: u8 = mem.read(targets.wrapping_add(t));
+                let hits = ms_get_damage_info(mem, c, target.into(), [0; 3]);
+                for _ in 0..hits.max(0) {
+                    if count.cast_unsigned() < RANDOM_LIST_MAX {
+                        mem.write(list.wrapping_add(count.cast_unsigned()), target);
+                        count += 1;
+                    } else {
+                        let msg = mem.rebase(LIST_OVER);
+                        crate::input::bridge::ms_battle_error(mem, &mut *call, msg);
+                    }
+                }
+            }
+            if shuffle != 0 {
+                let at = |k: i32| list.wrapping_add(k.cast_unsigned());
+                for _ in 0..count {
+                    let i = brnd(mem, 0x10).cast_signed() % count;
+                    let step = if count < 3 {
+                        0
+                    } else {
+                        brnd(mem, 0x10).cast_signed() % (count - 2)
+                    };
+                    let j = (step + 1 + i) % count;
+                    let (a, b): (u8, u8) = (mem.read(at(i)), mem.read(at(j)));
+                    mem.write(at(i), b);
+                    mem.write(at(j), a);
+                }
             }
         }
         if n != 0 {
