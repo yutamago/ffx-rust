@@ -11348,10 +11348,12 @@
 0x00922290 function rcbgFPmGetMatrix          # (fp, out): rotation +0x18 (x 0x00b678ec), identity scaled by +0x28, op_rt_m_yxz with +0x8
 0x00922300 function rcbgFPmRestart            # (id, chr, elem): pppFpGetMngPtr, flag 0x100, Fp_Restart, Ch_ElemGetMatrix into mng + 0xc; rcbgFPm173Proc*
 0x00922350 function rcbgFPmGetElemMatrix      # (out, chr, elem): Ch_ElemGetMatrix, three rows times 10.0
+0x009223b0 function rcbgFPmStartList          # (list, n) -> 1 once started: per 0x38-byte entry pppFpGetMngPtr (missing ends), pppFpResetStick, +6: 1 stick chr (+2, bone +4), 2 stick map, 3/4 run|4, 5 run|0x100; run|0x60, rcbgFPmGetMatrix(entry, run+0xc), Fp_Restart if +7 else Fp_End; name ours; ported (field r2 E)
 0x009224b0 function rcbgScaleVector_009224b0  # the same code as rcbgScaleVector 0x009200a0
 0x00922510 function rcCopyQword_00922510      # (dst, src): as rcCopyQword_0091cb40
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
 0x009225a0 function rcbgFPm097New             # (): rcAlloc 0x40 (rcbgFP.c), rcbgFPm097Init
+0x009225d0 function rcbgFPm097Proc000         # (obj): rcbgFPmStartList(0x00c5e4b8, 9); started: obj+8 = 0x00922600, returns obj (else 0); name: Switch rcbgFPm097Proc000 by layout (after rcbgFPm097Init/New, sets the next step); ported (field r2 E)
 0x00922930 function rcbgFpFadeInit               # (fade, id, step, frames): pppFpIDdispOff(id), then 0, id, step (float), frames, 0; rcbgFPm097's process (0x00922600)
 0x00922970 function Yn_SeaFpFade              # (fade): state +0 off/in/on/out: field effect +4 shown and restarted when lim < a < 0 or 0 < a < lim (a +8, lim Yn_SeaGetAngPtr +8), faded in/out over +0xc frames (count +0x10), hidden and ended; weight to chunk entry +0x2c, rcbgFPmGetMatrix copied to the effect manager +0xc; from 0x00922600; name ours
 0x00922b50 function rcbgFPm173End             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
@@ -11365,6 +11367,7 @@
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
 0x00922f80 function rcbgFPm565New             # (): rcAlloc 0x10 (rcbgFP.c), rcbgFPm565Init
+0x00922fb0 function rcbgFPm565Proc000         # (obj): rcbgFPmStartList(0x00c5e6b0, 3); started: obj+8 = 0x00922fe0, returns obj (else 0); rcbgFPm565Init installs it; name: Switch rcbgFPm565Proc000; ported (field r2 E)
 0x00923100 function rcbgFpGetWork             # fh v3:exact 0x00923100
 0x00923190 function rcbgFPmGetPartData        # (id, n, part, k): pppFpGetMngPtr data, +0x30 chain n times, +8 table, part (0x10 from +0x28), +0xc offsets[k] + 0xa0 + node; 0 when missing
 0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
@@ -11614,6 +11617,8 @@
 0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
 0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092d880 function SetGlobals_0092d880          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2; callers: no direct caller; name ours
+0x0092d8c0 function rcefCalcChrElemRotBaseMatrix # (i, e, out, v): out = 0.001 scale x element base position (x -0.001, f32 0x00b67e20) x turn by v (rcefVecToField, op_rt_m_yxz); Switch rcefUtil name by layout (PC run rcefAngleWrap, [rcefBlur], rcefCalcChrElemRotBaseMatrix, rcefCalcChrElemRotMatrix, rcefCalcChrElemRotTargetMatrix, rcefCalcChrRotMatrix, rcefCalcRotMatrix 0x0092dcd0 is alphabetical; sizes ordered as the Switch's); ported (field r2 E)
+0x0092d9a0 function rcefCalcChrElemRotMatrix  # (i, e, out, v): as rcefCalcChrElemRotBaseMatrix, turned about the element (moved there and back, fchs) and placed at MsGetChrPos (battle only); Switch rcefUtil name by layout (PC run rcefAngleWrap, [rcefBlur], rcefCalcChrElemRotBaseMatrix, rcefCalcChrElemRotMatrix, rcefCalcChrElemRotTargetMatrix, rcefCalcChrRotMatrix, rcefCalcRotMatrix 0x0092dcd0 is alphabetical; sizes ordered as the Switch's); ported (field r2 E)
 0x0092dcd0 function rcefCalcRotMatrix            # layout+callees: sorts between rcbgTrxSetTag and rcefChgChrClut, and its named callees match the Switch 0x71005581b0 rcefCalcRotMatrix's (similarity 0.67: FFXVu0UnitMatrix, op_rt_m_yxz); symbols from Fahrenheit's server export
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340; ported (field r1 C): (i, add f32[4], mul f32[4]): every CLUT colour channel = ftol((add[j] + original byte) * mul[j]) clamped 0..255 into Ch_ClutGetPtr; eax: the count when <= 0, else the last CLUT's mul pointer (or its Ch_ClutGetPtr when empty)
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
@@ -11651,6 +11656,7 @@
 0x0092e780 function rcefResetMotion           # fh switch:bsim1.00 0x7100556210
 0x0092e7a0 function rcefReverseList           # g_MagicImports slot 521 (1 overlay): reverses the dwords from 0x025d5bc0 (count at 0x025d5bbc) in place; hidden from the dump
 0x0092e7e0 function rcefSetArmorVisible          # layout+callees: sorts between rcefResetMotion and rcefSetDamage, and its named callees match the Switch 0x7100556f70 rcefSetArmorVisible's (similarity 1.00: Ch_SetHideEffect, MsGetWeaponHandle); symbols from Fahrenheit's server export
+0x0092e830 function rcefSetChrBaseMatrix      # (i, m, out): m into out (or g_RcefChrBaseMatrix 0x0193c090) with rows scaled by Ch_GetScale x Ch_GetDataScale, then Ch_SetOrgMatrix; name: Switch rcefSetChrBaseMatrix by layout (between rcefSetArmorVisible 0x0092e7e0 and rcefSetChrDirTarget2 0x0092e960); ported (field r2 E)
 0x0092e960 function rcefSetChrDirTarget2      # (chr, a, b, c): MsSetChrDirTarget(chr, 2, 0, a, b, c); name ours
 0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
@@ -15883,6 +15889,7 @@
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
+0x0193c090 label    g_RcefChrBaseMatrix       # name ours: rcefSetChrBaseMatrix's output without one
 0x0193c0d0 label    g_RcefParKept                # particle parts rcefParCreate remembers for some magic effects: +0 0x20e, +8 0x180, +0x10 0x168, +0x18 0x217 (entry 2); +0xc 0xbf, +0x14 0x216 (entry 1)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
 0x0193cd2c label g_MemSystem # set to 0x0193c390 by 0x009428b0 (MemSystem_Ensure's slow path); name ours

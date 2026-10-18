@@ -2660,6 +2660,36 @@ ported! {
         let mut w = super::StackFrame::<60>::new();
         task::bridge::rcef_obj_proc(&mut mem(), obj, w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcefCalcChrElemRotBaseMatrix(i, e, out, v)` (field agent r2, group E).
+    rcefCalcChrElemRotBaseMatrix @ 0x0092_d8c0 => extern "C" fn shim_rcef_calc_chr_elem_rot_base_matrix(i: u32, e: u32, out: u32, v: u32) {
+        let mut w = super::StackFrame::<76>::new();
+        task::bridge::rcef_calc_chr_elem_rot_base_matrix(&mut mem(), [i, e, out, v], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefCalcChrElemRotMatrix(i, e, out, v)`.
+    rcefCalcChrElemRotMatrix @ 0x0092_d9a0 => extern "C" fn shim_rcef_calc_chr_elem_rot_matrix(i: u32, e: u32, out: u32, v: u32) {
+        let mut w = super::StackFrame::<76>::new();
+        task::bridge::rcef_calc_chr_elem_rot_matrix(&mut mem(), [i, e, out, v], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefSetChrBaseMatrix(i, m, out)`.
+    rcefSetChrBaseMatrix @ 0x0092_e830 => extern "C" fn shim_rcef_set_chr_base_matrix(i: u32, m: u32, out: u32) {
+        let mut w = super::StackFrame::<4>::new();
+        task::bridge::rcef_set_chr_base_matrix(&mut mem(), [i, m, out], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgFPmStartList(list, n)`.
+    rcbgFPmStartList @ 0x0092_23b0 => extern "C" fn shim_rcbg_fpm_start_list(list: u32, n: i32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        model::bridge::rcbg_fpm_start_list(&mut mem(), list, n, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPm097Proc000(obj)`.
+    rcbgFPm097Proc000 @ 0x0092_25d0 => extern "C" fn shim_rcbg_fpm097_proc000(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        model::bridge::rcbg_fpm_start(&mut mem(), obj, model::FPM097_START, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPm565Proc000(obj)`.
+    rcbgFPm565Proc000 @ 0x0092_2fb0 => extern "C" fn shim_rcbg_fpm565_proc000(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        model::bridge::rcbg_fpm_start(&mut mem(), obj, model::FPM565_START, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));

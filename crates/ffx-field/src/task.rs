@@ -355,6 +355,24 @@ pub const RCEF_BASE_MATRIX: u32 = 0x025d_59e0;
 pub const ROT_UNITS: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b6_78ec);
 /// -1.0 (`f32`, `.rdata`).
 pub const MINUS_ONE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b9_2340);
+/// `rcefVecToField(v)` (`0x0092d7e0`).
+pub const VEC_TO_FIELD: u32 = 0x0092_d7e0;
+/// `Ch_ElemGetBaseMatrix(chr, e, out)` (`0x00833b80`).
+pub const CH_ELEM_GET_BASE_MATRIX: u32 = 0x0083_3b80;
+/// `rcbgScaleVector_0092d780(dst, v, s)` (`0x0092d780`).
+pub const SCALE_VECTOR_D780: u32 = 0x0092_d780;
+/// `rcMat4fSetScale0001(m)` (`0x0092de80`).
+pub const SET_SCALE_0001: u32 = 0x0092_de80;
+/// `MsGetChrPos(i, out)` (`0x007956e0`).
+pub const MS_GET_CHR_POS: u32 = 0x0079_56e0;
+/// `Ch_GetScale(chr, x, y, z)` (`0x0082ad00`).
+pub const CH_GET_SCALE: u32 = 0x0082_ad00;
+/// The base matrix `rcefSetChrBaseMatrix` builds without an output
+/// (`0x0193c090`, name ours: `g_RcefChrBaseMatrix`).
+pub const CHR_BASE_MATRIX: u32 = 0x0193_c090;
+/// -0.001 (`f32`, `.rdata`): the element offset scale of
+/// `rcefCalcChrElemRot*Matrix`.
+pub const MILLI_NEG: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00b6_7e20);
 /// `Ch_ClutGetNb(chr)` (`0x0083c9a0`).
 pub const CH_CLUT_GET_NB: u32 = 0x0083_c9a0;
 /// `Ch_ClutGetSize(chr, c)` (`0x0083c9f0`).
@@ -2476,6 +2494,135 @@ pub mod bridge {
         rcef_par_proc(mem, o.wrapping_add(0x280), call);
         rcef_anime_proc(mem, o.wrapping_add(0x330), work, call);
         rcef_model_proc_live(mem, o.wrapping_add(0x3c0), work, call)
+    }
+
+    // ---- field agent r2, group E: character matrices for effects ----
+
+    /// The common start of `rcefCalcChrElemRotBaseMatrix` and
+    /// `rcefCalcChrElemRotMatrix`: in `work` (0x130 bytes: four matrices
+    /// and two vectors at `+0x100`, `+0x110`), `r` = the turn by `v`
+    /// (copied, `rcefVecToField`) of identity `m`, then the element's base
+    /// matrix into `b` and the identity `t` given `b`'s translation times
+    /// -0.001 (`.rdata` `f32`). Returns `(h, r, b, t)`.
+    fn elem_rot_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, v]: [u32; 3],
+        [r, m, t, b]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let unit = mem.rebase(super::UNIT_MATRIX);
+        call(mem, unit, &[r]);
+        call(mem, unit, &[m]);
+        let (va, vz) = (work.wrapping_add(0x100), work.wrapping_add(0x110));
+        let f = mem.rebase(super::COPY_QWORD_D6F0);
+        call(mem, f, &[va, v]);
+        let f = mem.rebase(super::VEC_TO_FIELD);
+        call(mem, f, &[va]);
+        for k in 0..4 {
+            mem.write(vz.wrapping_add(4 * k), 0u32);
+        }
+        let f = mem.rebase(super::OP_RT_M_YXZ);
+        call(mem, f, &[r, m, va, vz]);
+        call(mem, unit, &[t]);
+        let f = mem.rebase(super::CH_ELEM_GET_BASE_MATRIX);
+        call(mem, f, &[h, e, b]);
+        let k = crate::x87::copy(super::MILLI_NEG.get(mem));
+        let f = mem.rebase(super::SCALE_VECTOR_D780);
+        call(mem, f, &[t.wrapping_add(0x30), b.wrapping_add(0x30), k]);
+        h
+    }
+
+    /// `rcefCalcChrElemRotBaseMatrix(i, e, out, v)` (`0x0092d8c0`, Switch
+    /// name by layout): `out` = 0.001 scale x the element's base position
+    /// (negated, x 0.001) x the turn by `v`. `work` is 0x130 bytes.
+    pub fn rcef_calc_chr_elem_rot_base_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, out, v]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        let (r, t, m) = (work, work.wrapping_add(0x40), work.wrapping_add(0x80));
+        elem_rot_start(mem, [i, e, v], [r, m, t, m], work, call);
+        let f = mem.rebase(super::SET_SCALE_0001);
+        call(mem, f, &[out]);
+        let mul = mem.rebase(super::MUL_MATRIX);
+        call(mem, mul, &[out, t, out]);
+        call(mem, mul, &[out, r, out]);
+    }
+
+    /// `rcefCalcChrElemRotMatrix(i, e, out, v)` (`0x0092d9a0`, Switch name
+    /// by layout): as [`rcef_calc_chr_elem_rot_base_matrix`] with the turn
+    /// about the element (moved there and back, the inverse translation
+    /// negated through `fchs`), then placed at the character's position
+    /// (`MsGetChrPos`). `work` is 0x130 bytes.
+    pub fn rcef_calc_chr_elem_rot_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, e, out, v]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        let (r, b, t, p) = (
+            work,
+            work.wrapping_add(0x40),
+            work.wrapping_add(0x80),
+            work.wrapping_add(0xc0),
+        );
+        elem_rot_start(mem, [i, e, v], [r, b, t, b], work, call);
+        let unit = mem.rebase(super::UNIT_MATRIX);
+        call(mem, unit, &[p]);
+        let f = mem.rebase(super::MS_GET_CHR_POS);
+        call(mem, f, &[i, p.wrapping_add(0x30)]);
+        let f = mem.rebase(super::SET_SCALE_0001);
+        call(mem, f, &[out]);
+        let mul = mem.rebase(super::MUL_MATRIX);
+        call(mem, mul, &[out, t, out]);
+        call(mem, mul, &[out, r, out]);
+        for k in 0..3 {
+            let a = t.wrapping_add(0x30 + 4 * k);
+            let x = crate::x87::copy(mem.read::<u32>(a)) ^ 0x8000_0000;
+            mem.write(a, x);
+        }
+        call(mem, mul, &[out, t, out]);
+        call(mem, mul, &[out, p, out]);
+    }
+
+    /// `rcefSetChrBaseMatrix(i, m, out)` (`0x0092e830`, Switch name by
+    /// layout): `m` (into `out`, or `0x0193c090` without one) with its rows
+    /// scaled by the character's scale times its data scale
+    /// (`Ch_GetScale`, `Ch_GetDataScale`), made the character's base
+    /// matrix (`Ch_SetOrgMatrix`). `work` holds the three scale floats.
+    pub fn rcef_set_chr_base_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, m, out]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let s = f64::from(ffx_chara::chr::bridge::ch_get_data_scale(&*mem, h));
+        let (x, y, z) = (work, work.wrapping_add(4), work.wrapping_add(8));
+        let f = mem.rebase(super::CH_GET_SCALE);
+        call(mem, f, &[h, x, y, z]);
+        let mut k = [0u32; 3];
+        for (j, a) in [x, y, z].into_iter().enumerate() {
+            k[j] = crate::x87::store(crate::x87::load(mem.read::<u32>(a)) * s);
+            mem.write(a, k[j]);
+        }
+        let dst = if out == 0 {
+            mem.rebase(super::CHR_BASE_MATRIX)
+        } else {
+            out
+        };
+        let f = mem.rebase(super::COPY_MATRIX);
+        call(mem, f, &[dst, m]);
+        let f = mem.rebase(super::SCALE_VECTOR_D690);
+        for (j, kj) in (0u32..).zip(k) {
+            let row = dst.wrapping_add(0x10 * j);
+            call(mem, f, &[row, row, kj]);
+        }
+        let f = mem.rebase(super::CH_SET_ORG_MATRIX);
+        call(mem, f, &[h, dst]);
     }
 }
 

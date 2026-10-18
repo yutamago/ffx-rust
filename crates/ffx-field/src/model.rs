@@ -259,6 +259,18 @@ pub const PPP_FP_GET_MNG_PTR: u32 = 0x0072_92f0;
 pub const FP_RESTART: u32 = 0x0072_9700;
 /// `pppFpSetStickChr(fp, chr, bone)` (`0x0072a530`).
 pub const PPP_FP_SET_STICK_CHR: u32 = 0x0072_a530;
+/// `pppFpResetStick(id)` (`0x0072a120`).
+pub const PPP_FP_RESET_STICK: u32 = 0x0072_a120;
+/// `pppFpSetStickMap(id, part)` (`0x0072a590`).
+pub const PPP_FP_SET_STICK_MAP: u32 = 0x0072_a590;
+/// `rcbgFPmGetMatrix(fp, out)` (`0x00922290`).
+pub const RCBG_FPM_GET_MATRIX: u32 = 0x0092_2290;
+/// Map 0x61's FP list (`rcbgFPm097Proc000`: 9 entries at `0x00c5e4b8`)
+/// and its next step (`0x00922600`).
+pub const FPM097_START: [u32; 3] = [0x00c5_e4b8, 9, 0x0092_2600];
+/// Map 0x235's FP list (`rcbgFPm565Proc000`: 3 entries at `0x00c5e6b0`)
+/// and its next step (`0x00922fe0`).
+pub const FPM565_START: [u32; 3] = [0x00c5_e6b0, 3, 0x0092_2fe0];
 /// `rcbgFPmRestart(fp, chr, bone)` (`0x00922300`).
 pub const RCBG_FPM_RESTART: u32 = 0x0092_2300;
 /// `Ch_OptposGetElement(chr, n, k)` (`0x00835660`).
@@ -3395,6 +3407,96 @@ pub mod bridge {
                 if i <= 0xdb { 4 } else { i }
             }
         }
+    }
+
+    // ---- field agent r2, group E: the FP start lists ----
+
+    /// `rcbgFPmStartList(list, n)` (`0x009223b0`, name ours): each of the
+    /// `n` 0x38-byte entries (id `i16` at `+0`) starts its FP effect: run
+    /// (`pppFpGetMngPtr` into `work`; a missing one ends the list),
+    /// `pppFpResetStick`, then by `+6`: 1 stuck to character `+2` (bone
+    /// `+4`), 2 to map part `+2`, 3 and 4 run flag 4, 5 run flag 0x100;
+    /// run flags 0x60, the matrix (`rcbgFPmGetMatrix(entry, run + 0xc)`),
+    /// and `Fp_Restart` with `+7` set, else `Fp_End` (the id unsigned).
+    /// Returns 1 once an entry was started, else 0.
+    pub fn rcbg_fpm_start_list<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        list: u32,
+        n: i32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let mut ret = 0;
+        for k in 0..n.max(0).cast_unsigned() {
+            let e = list.wrapping_add(0x38 * k);
+            let sx =
+                |mem: &M, o: u32| i32::from(mem.read::<i16>(e.wrapping_add(o))).cast_unsigned();
+            let id = sx(mem, 0);
+            let f = mem.rebase(super::PPP_FP_GET_MNG_PTR);
+            call(mem, f, &[id, 0, work]);
+            if mem.read::<u32>(work) == 0 {
+                return ret;
+            }
+            let f = mem.rebase(super::PPP_FP_RESET_STICK);
+            call(mem, f, &[id]);
+            let or = |mem: &mut M, bits: u32| {
+                let run = mem.read::<u32>(work);
+                let v = mem.read::<u32>(run) | bits;
+                mem.write(run, v);
+            };
+            match mem.read::<u8>(e.wrapping_add(6)) {
+                1 => {
+                    let i = sx(mem, 2);
+                    let h = crate::task::bridge::rcef_get_chr_handle(mem, i, call);
+                    let f = mem.rebase(super::PPP_FP_SET_STICK_CHR);
+                    let bone = sx(mem, 4);
+                    call(mem, f, &[id, h, bone]);
+                }
+                2 => {
+                    let f = mem.rebase(super::PPP_FP_SET_STICK_MAP);
+                    let part = sx(mem, 2);
+                    call(mem, f, &[id, part]);
+                }
+                3 | 4 => or(mem, 4),
+                5 => or(mem, 0x100),
+                _ => {}
+            }
+            or(mem, 0x60);
+            let run = mem.read::<u32>(work);
+            let f = mem.rebase(super::RCBG_FPM_GET_MATRIX);
+            call(mem, f, &[e, run.wrapping_add(0xc)]);
+            let uid = u32::from(mem.read::<u16>(e));
+            let f = if mem.read::<u8>(e.wrapping_add(7)) == 0 {
+                super::FP_END
+            } else {
+                super::FP_RESTART
+            };
+            let f = mem.rebase(f);
+            call(mem, f, &[uid]);
+            ret = 1;
+        }
+        ret
+    }
+
+    /// The start of a map effect with a fixed FP list
+    /// (`rcbgFPm097Proc000`, `rcbgFPm565Proc000`): [`rcbg_fpm_start_list`]
+    /// of (`list`, `n`); once started, the object's step function (`+8`)
+    /// becomes `next`. Returns the object then, else 0.
+    pub fn rcbg_fpm_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        [list, n, next]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let list = mem.rebase(list);
+        let r = rcbg_fpm_start_list(mem, list, n.cast_signed(), work, call);
+        if r == 0 {
+            return 0;
+        }
+        let next = mem.rebase(next);
+        mem.write(obj.wrapping_add(8), next);
+        obj
     }
 }
 

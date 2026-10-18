@@ -14137,3 +14137,197 @@ fn r1d_on_a_snapshot_matches_the_original() {
     let env = R1dEnv::install(&mut t);
     r1d_cases(&mut t, &mut rng, &env);
 }
+
+// ---- field agent r2, group E: character matrices, FP start lists ----
+
+/// `*arg 2 = table[arg 0 & 7]` (`pppFpGetMngPtr`'s run record).
+fn run_out_stub(table: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0x8b, 0x04, 0x85];
+    c.extend_from_slice(&table.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x01, 0xc3]);
+    c
+}
+
+/// Group E's character matrices on `t` for characters `chars`.
+fn r1e_chr_cases(t: &mut Twin, rng: &mut Xorshift, chars: &[u32], battle: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (out, v, m) = (t.alloc(0x40), t.alloc(0x10), t.alloc(0x40));
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for _ in 0..120 {
+        let i = chars[rng.below(u32::try_from(chars.len()).unwrap()) as usize];
+        let e = rng.below(3);
+        for w in 0..16 {
+            t.put(out + 4 * w, r1d_float(rng));
+            t.put(m + 4 * w, r1d_float(rng));
+        }
+        for w in 0..4 {
+            t.put(v + 4 * w, r1d_float(rng));
+        }
+        t.same_but(
+            "rcefCalcChrElemRotBaseMatrix",
+            &skip,
+            |o| o.void(0x0092_d8c0, &[i, e, out, v]),
+            |b| task::bridge::rcef_calc_chr_elem_rot_base_matrix(b, [i, e, out, v], work, call),
+        );
+        // MsGetChrPos indexes the battle actors: a battle-only function
+        if battle {
+            t.same_but(
+                "rcefCalcChrElemRotMatrix",
+                &skip,
+                |o| o.void(0x0092_d9a0, &[i, e, out, v]),
+                |b| task::bridge::rcef_calc_chr_elem_rot_matrix(b, [i, e, out, v], work, call),
+            );
+        }
+        let dst = if rng.below(3) == 0 { 0 } else { out };
+        t.same_but(
+            "rcefSetChrBaseMatrix",
+            &skip,
+            |o| o.void(0x0092_e830, &[i, m, dst]),
+            |b| task::bridge::rcef_set_chr_base_matrix(b, [i, m, dst], work, call),
+        );
+    }
+}
+
+/// Group E's FP start lists on `t`: synthetic lists, then the two maps'
+/// own (in the image's data).
+fn r1e_fp_cases(t: &mut Twin, rng: &mut Xorshift, chars: &[u32]) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, runs, recs) = (
+        t.alloc(4 + 0x20 * 128),
+        t.alloc(4),
+        t.alloc(0x20),
+        t.alloc(0x100),
+    );
+    let (list, obj) = (t.alloc(0x38 * 12), t.alloc(0x20));
+    // past the character stand-ins the callers placed
+    t.cave_from(
+        0x500,
+        &[
+            (Some(model::PPP_FP_GET_MNG_PTR), run_out_stub(runs)),
+            (Some(model::PPP_FP_RESET_STICK), log_stub(log, rv, 1, 1)),
+            (Some(model::PPP_FP_SET_STICK_CHR), log_stub(log, rv, 2, 3)),
+            (Some(model::PPP_FP_SET_STICK_MAP), log_stub(log, rv, 3, 2)),
+            (Some(model::FP_RESTART), log_stub(log, rv, 4, 1)),
+            (Some(model::FP_END), log_stub(log, rv, 5, 1)),
+        ],
+    );
+    let work = t.stack_scratch(0x200);
+    // rcbgFPmGetMatrix scales through the emulated VU0 register at
+    // 0x00c8f970, three words of it the callers' stacks
+    let skip = [(t.b.rebase(0x00c8_f974), 12)];
+    for k in 0..200u32 {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        for r in 0..8 {
+            let run = if rng.below(8) == 0 {
+                0
+            } else {
+                recs + 0x20 * r
+            };
+            t.put(runs + 4 * r, run);
+        }
+        t.fill(recs, 0x100, rng);
+        for w in 0..(0x38 * 12 / 4) {
+            t.put(list + 4 * w, r1d_float(rng));
+        }
+        for e in 0..12 {
+            let at = list + 0x38 * e;
+            t.put(at, u16::try_from(rng.below(0x10000)).unwrap());
+            let i = chars[rng.below(u32::try_from(chars.len()).unwrap()) as usize];
+            t.put(at + 2, u16::try_from(i).unwrap());
+            t.put(at + 4, u16::try_from(rng.below(0x10000)).unwrap());
+            t.put(at + 6, u8::try_from(rng.below(7)).unwrap());
+            t.put(at + 7, u8::from(rng.below(2) == 0));
+        }
+        if chars == [0, 1, 5, 7] {
+            // the image: both handle paths (a snapshot keeps its own state)
+            t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 2 == 0));
+        }
+        let n = rng.range(-1, 12);
+        t.same_but(
+            "rcbgFPmStartList",
+            &skip,
+            |o| o.eax(0x0092_23b0, &[list, n.cast_unsigned()]),
+            |b| model::bridge::rcbg_fpm_start_list(b, list, n, work, call),
+        );
+        t.put(log, 0u32);
+        for (f, spec) in [
+            (0x0092_25d0u32, model::FPM097_START),
+            (0x0092_2fb0, model::FPM565_START),
+        ] {
+            t.same_but(
+                "rcbgFPm*Proc000",
+                &skip,
+                |o| o.eax(f, &[obj]),
+                |b| model::bridge::rcbg_fpm_start(b, obj, spec, work, call),
+            );
+        }
+    }
+}
+
+/// Group E on the image: handles, matrices and positions stood in.
+#[test]
+fn r1e_chr_matrices_and_fp_lists_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00e1_0001);
+    let (log, rv) = (t.alloc(4 + 0x20 * 1024), t.alloc(4));
+    let (chrs, mats) = (t.alloc(0x2000), t.alloc(0x40 * 16));
+    for w in 0..0x800 {
+        t.put(chrs + 4 * w, r1d_float(&mut rng));
+    }
+    let blocks = t.alloc(0x400);
+    for w in 0..0x100 {
+        t.put(mats + 4 * w, r1d_float(&mut rng));
+        t.put(blocks + 4 * w, r1d_float(&mut rng));
+    }
+    for k in 0..16 {
+        t.put(chrs + 0x200 * k + 0x1c4, blocks + 0x40 * k);
+    }
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (
+            Some(task::CH_ELEM_GET_BASE_MATRIX),
+            table_stub(mats, 0x40, 15, [0, 1, 2]),
+        ),
+        (
+            Some(task::MS_GET_CHR_POS),
+            table_stub(mats, 0x10, 15, [0, 0, 1]),
+        ),
+        (Some(task::CH_SET_ORG_MATRIX), log_stub(log, rv, 1, 2)),
+    ]);
+    for battle in [0i8, 1] {
+        t.set(ffx_battle::state::bridge::STATUS, battle);
+        r1e_chr_cases(&mut t, &mut rng, &[0, 1, 5, 7], true);
+    }
+    r1e_fp_cases(&mut t, &mut rng, &[0, 1, 5, 7]);
+}
+
+/// Group E on the snapshot (`FFX_SNAPSHOT`): the game's characters (their
+/// base matrix stood in) and FP state.
+#[test]
+fn r1e_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00e1_0002);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 1024), t.alloc(4));
+    t.cave(&[(Some(task::CH_SET_ORG_MATRIX), log_stub(log, rv, 1, 2))]);
+    let chars: Vec<u32> = (0..40)
+        .filter(|&i| {
+            task::bridge::rcef_get_chr_handle(&mut t.a, i, call);
+            task::bridge::rcef_get_chr_handle(&mut t.b, i, call) != 0
+        })
+        .collect();
+    if chars.is_empty() {
+        return;
+    }
+    let battle = ffx_battle::state::bridge::STATUS.get(&t.b) != 0;
+    r1e_chr_cases(&mut t, &mut rng, &chars, battle);
+    r1e_fp_cases(&mut t, &mut rng, &chars);
+}
