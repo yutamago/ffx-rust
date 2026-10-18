@@ -6658,9 +6658,23 @@
 0x00810240 function opp_dbg_draw_spl             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'u_dbg_draw_spl error'; Switch 0x71003f65e0 opp_dbg_draw_spl (symbols from Fahrenheit's server export)
 0x008106a0 function SetFieldConst210_008106a0    # auto-port shape (store constant to field, cdecl): u8[(a0 + 0x210)] = 0xff; return 0x0; callers: no direct caller; name ours
 0x008106c0 function CopyField21b_008106c0        # auto-port shape (store copy to field, cdecl): t0 = u8[(a0 + 0x21b)]; u8[(a0 + 0x210)] = t0; return (a2 + 0x2); callers: no direct caller; name ours
+0x008106e0 function opp_anmm_wait_random      # opp_anmm command (table 0x00c49318 slot 3): host +0x210 = op_irandom_core(host byte +0x21b); -> cmd + 2 (anmm::bridge::wait_random); name ours
 0x00810710 function GetFieldPtr_00810710         # auto-port shape (return address of a field's target, cdecl): t0 = u16[(a2 + 0x2)]; return (sx16(t0) + a2); callers: no direct caller; name ours
+0x00810720 function opp_anmm_sprite_set       # opp_anmm command slot 7: work +4 = texture i16 cmd+2 of the part's oef, +8 = 0xff010000 | part byte +0xb3, +0xc = 0x100, +0x1c = 0x80808080, +0x2c/+0x3c = 0; -> cmd + 4; name ours
+0x00810790 function opp_anmm_flag_on          # opp_anmm command slot 8: without flags (+0x21a & 0xf000) work byte +8 |= 0x80; -> cmd + 2; name ours
+0x008107c0 function opp_anmm_vec_set          # opp_anmm command slot 4: flagged x/y/z of the target (offset 0x00c49300, scales 0x00c49398) = i16 * scale / 4096; name ours
+0x00810890 function opp_anmm_vec_add_random   # opp_anmm command slot 5: as opp_anmm_vec_add, each value times 2d-3 for three VU0 R draws; name ours
+0x00810a90 function opp_anmm_vec_add          # opp_anmm command slot 6: as opp_anmm_vec_set, added; name ours
 0x00810b70 function CopyField21a_00810b70        # auto-port shape (store copy to field, cdecl): t0 = u16[(a0 + 0x21a)]; t1 = u16[(a2 + 0x2)]; t2 = u16[((((sx16(t0) >>s 0xc) & 0x7) * 0x2) + &0x00c4930c)]; u16[(sx16(t2) + a3)] = t1; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810ba0 function opp_anmm_short_add_random # opp_anmm command slot 10: work i16 at 0x00c4930c[(+0x21a >> 12) & 7] += op_random_per(i16 cmd+2); -> cmd + 4; name ours
+0x00810be0 function opp_anmm_pair_set         # opp_anmm command slot 11: u16 pair cmd+2 to work +0x2c (flag 0x1000) or +0x1c; -> cmd + 6; name ours
+0x00810c20 function opp_anmm_mode_set         # opp_anmm command slot 12: work +0x4e = i16 +0x21a >> 12; mode 2 copies floats +0x10..+0x18 to +0x40..+0x48; -> cmd + 2; name ours
+0x00810c60 function opp_anmm_rgba_set         # opp_anmm command slot 13: work bytes +0x1c..+0x1f for flags 0x1000..0x8000 from the next words; name ours
 0x00810cd0 function CopyField_00810cd0           # auto-port shape (store copy to field, cdecl): t0 = u8[(a2 + 0x2)]; u8[(a3 + 0x4f)] = t0; return (a2 + 0x4); callers: no direct caller; name ours
+0x00810cf0 function opp_anmm_loop             # opp_anmm command slot 15: --work byte +0x4f; nonzero: cmd + i16 cmd+2, else cmd + 4; name ours
+0x00810d10 function opp_anmm_branch_random    # opp_anmm command slot 16: op_random_per(0x100) < i16 cmd+2: cmd + u16 cmd+4, else cmd + 6; name ours
+0x00810d50 function opp_anmm_fade             # opp_anmm command slot 17: at work + i16 cmd+2: step byte +0x2c = cmd+5, host +0x210 = |cmd+4 - byte +0x1c| / |step| (1 for 0); -> cmd + 6; name ours
+0x00810da0 function opp_anmm_part_float       # opp_anmm command slot 18: work + byte cmd+2 = the part's float at byte cmd+3 (part u16 work +0x4c); -> cmd + 4; name ours
 0x00810e20 function opp_anmm_fin_en_bone5        # callees: its named callees match the Switch 0x71003f7a90 opp_anmm_fin_en_bone5's (similarity 0.75: Ch_ElemGetParent, op_irandom_p, op_random_p); symbols from Fahrenheit's server export
 0x00810ed0 function opp_anmm_fin_en_bone3x    # fh switch:bsim1.00 0x71003f7b60
 0x00811120 function opp_anm                      # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f7dc0 opp_anm, 3 votes, round 2

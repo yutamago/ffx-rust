@@ -360,6 +360,48 @@ particles, 0x20 bytes each from `+0x30`:
 Each step adds 64.0 in 53 bits to the stored `f32` and rounds at the store.
 Returns the plane count (0 for none) in `eax`.
 
+## Sprite-animation commands (`opp_anmm`)
+
+`opp_anmm` (`0x008124b0`) runs a command list per animated sprite. A
+command is an `i16`: its low byte picks a handler in the table at
+`0x00c49318`, the whole word is kept in the host's `u16 +0x21a`, and the
+interpreter calls `handler(host, set, cmd, work)` (it returns the next
+command) until one sets the wait byte `host +0x210`. `set +0x20` holds the
+0x100-byte parts, `set +0x60` the oef pointers; `work u16 +0x4c` is the
+sprite's part.
+
+Flag bits 12..15 of the command say which of x, y, z (w) the vector and
+colour commands read, one word each in that order. For the vector commands
+`(flags >> 7) & 0xe` is an index `i`: the target is `work` + the `i16` at
+`0x00c49300 + 2 i`, and x, y, z are scaled by the `i32`s at `0x00c49398 +
+16 i` and 1/4096 (`fild`, rounded to `f32`, times the `f64` 1/4096).
+
+| Slot | Address | Command |
+| --- | --- | --- |
+| 0 | `0x008106a0` | wait forever (`+0x210` = 0xff), returns 0 |
+| 1 | `0x008106c0` | wait the command's high byte |
+| 2 | `0x00810710` | jump by `i16 +2` |
+| 3 | `0x008106e0` | wait `op_irandom_core(high byte)` |
+| 4 | `0x008107c0` | vector set |
+| 5 | `0x00810890` | vector add, each value times `2d - 3` for three VU0 `R` draws |
+| 6 | `0x00810a90` | vector add |
+| 7 | `0x00810720` | sprite set: texture `i16 +2` of the part's oef, `+8` = 0xff010000 with the part's byte `+0xb3`, `+0xc` = 0x100, colour 0x80808080, `+0x2c`/`+0x3c` = 0 |
+| 8 | `0x00810790` | without flags, `work +8` bit 7 |
+| 9 | `0x00810b70` | `i16` at `work` + `0x00c4930c[(flags >> 12) & 7]` = `+2` |
+| 10 | `0x00810ba0` | the same `i16` += `op_random_per(i16 +2)` |
+| 11 | `0x00810be0` | `u16` pair `+2` to `work +0x2c` (flag 0x1000) or `+0x1c` |
+| 12 | `0x00810c20` | mode `work +0x4e` = `flags >> 12`; mode 2 copies `+0x10..+0x18` to `+0x40` |
+| 13 | `0x00810c60` | colour bytes `work +0x1c..+0x1f` |
+| 14 | `0x00810cd0` | loop count `work +0x4f` = byte `+2` |
+| 15 | `0x00810cf0` | loop: count down, back by `i16 +2` while not 0 |
+| 16 | `0x00810d10` | branch by `u16 +4` when `op_random_per(0x100)` < `i16 +2` |
+| 17 | `0x00810d50` | fade: at `work + i16 +2` step `+0x2c` = byte `+5`, wait = `|byte +4 - byte +0x1c|` / `|step|` |
+| 18 | `0x00810da0` | `work` + byte `+2` = the part's float at byte `+3` |
+
+The random commands pass one argument to random functions that read four;
+the other three are the handler's saved registers and return address, which
+end up only in emulated VU0 registers (`crates/ffx-vfx/src/anmm.rs`).
+
 ## Render-data counts (`clearVFXRenderDataShp*`, `caculateVFXRenderDataShapeFieldBufferSize`)
 
 A VFX render data (`graphicVFXGetRenderDataByInstance`) has `i32 +0x90`

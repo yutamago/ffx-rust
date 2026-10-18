@@ -10,8 +10,8 @@ use std::sync::{Arc, OnceLock};
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_vfx::{
-    draw, et, fp, heap, lns, mat, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small,
-    tree, vec, wave, x87,
+    anmm, draw, et, fp, heap, lns, mat, md, mdl, op, opd, opus, part, ppp, prog, rand, slots,
+    small, tree, vec, wave, x87,
 };
 
 fn exe() -> Option<PathBuf> {
@@ -11210,6 +11210,127 @@ fn data_set_tex_matches_the_original() {
                 &[data, base, out, out + 4],
                 |m| Some(small::bridge::ppp_data_set_tex(m, data, base, out, out + 4)),
             );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opp_anmm_commands_match_the_original() {
+    use anmm::bridge as a;
+    type Cmd = fn(&mut Oracle, u32, u32, u32, u32) -> u32;
+    let plain: [(&str, u32, Cmd); 10] = [
+        ("sprite_set", 0x0081_0720, |m, _, s, c, w| {
+            a::sprite_set(m, s, c, w)
+        }),
+        ("flag_on", 0x0081_0790, |m, h, _, c, w| {
+            a::flag_on(m, h, c, w)
+        }),
+        ("vec_set", 0x0081_07c0, |m, h, _, c, w| {
+            a::vec_set(m, h, c, w)
+        }),
+        ("vec_add_random", 0x0081_0890, |m, h, _, c, w| {
+            a::vec_add_random(m, h, c, w)
+        }),
+        ("vec_add", 0x0081_0a90, |m, h, _, c, w| {
+            a::vec_add(m, h, c, w)
+        }),
+        ("pair_set", 0x0081_0be0, |m, h, _, c, w| {
+            a::pair_set(m, h, c, w)
+        }),
+        ("mode_set", 0x0081_0c20, |m, h, _, c, w| {
+            a::mode_set(m, h, c, w)
+        }),
+        ("rgba_set", 0x0081_0c60, |m, h, _, c, w| {
+            a::rgba_set(m, h, c, w)
+        }),
+        ("loop_back", 0x0081_0cf0, |m, _, _, c, w| {
+            a::loop_back(m, c, w)
+        }),
+        ("part_float", 0x0081_0da0, |m, _, s, c, w| {
+            a::part_float(m, s, c, w)
+        }),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_24b0);
+        let host = p.alloc(0x400);
+        let set = p.alloc(0x500);
+        let parts = p.alloc(0x1200);
+        let oef = p.alloc(0x100);
+        let work = p.alloc(0x800);
+        let cmd = p.alloc(0x40);
+        p.put(rand::bridge::COLOR_CON_SHIFT, 0);
+        // the callee stack words the random commands pass on: the
+        // oracle's saved esi/edi/ebp and the return address it pushes
+        let warm = p.sym(0x0081_0790);
+        for o in [&mut p.a, &mut p.b] {
+            o.call_cdecl(warm, &[host, set, cmd, work]).unwrap();
+        }
+        let top = p.a.stack_range().end - 0x100;
+        let ret: u32 = Mem::read(&p.a, top - 4 * 5);
+        for round in 0..3000 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(work, 0x800, &mut rng);
+            for k in 0..0x18 {
+                let v = rng.float();
+                p.set(work + 4 * k, v);
+            }
+            p.fill(cmd, 0x40, &mut rng);
+            p.fill(set, 0x500, &mut rng);
+            p.fill(parts, 0x1200, &mut rng);
+            p.fill(oef, 0x100, &mut rng);
+            p.set(set + 0x20, parts);
+            // part numbers below 16, oef groups below 16, small textures
+            p.set(work + 0x4c, u16::try_from(rng.below(16)).unwrap());
+            for k in 0..16 {
+                p.set(
+                    parts + 0x100 * k + 0x1e,
+                    u8::try_from(rng.below(16)).unwrap(),
+                );
+                p.set(set + 0x60 + 4 * k, oef + 0x80 * (k & 1));
+            }
+            p.set(oef + 0x10, rng.below(0x20));
+            p.set(oef + 0x90, rng.below(0x20));
+            p.set(work + 0x4f, u8::try_from(rng.below(4)).unwrap());
+            let i = rng.below(16).cast_signed() - 4;
+            p.set(cmd + 2, i16::try_from(i).unwrap());
+            let off = rng.pick(&[0i16, 4, 0x20, -4, 0x100]);
+            p.set(cmd + 0x22, off);
+            for k in 0..0x40 {
+                let v = rng.float();
+                p.set(parts + 0x100 * (k / 4) + 4 * (k % 4) + 0x40, v);
+            }
+            let f: u16 = (rng.next() & 0xff0f) as u16;
+            p.set(host + 0x21a, f);
+            p.put(rand::bridge::R, 0x3f80_0000 | rng.below(0x80_0000));
+            p.put(rand::bridge::SEEDED, u32::from(rng.chance(80)));
+            let (name, sym, port) = rng.pick(&plain);
+            // fade takes its work offset from cmd + 2: the second command
+            let at = if round % 2 == 0 { cmd } else { cmd + 0x20 };
+            p.check(name, sym, &[host, set, at, work], |m| {
+                Some(port(m, host, set, at, work))
+            });
+            p.check("fade", 0x0081_0d50, &[host, set, cmd + 0x20, work], |m| {
+                Some(a::fade(m, host, cmd + 0x20, work))
+            });
+            p.check("wait_random", 0x0081_06e0, &[host, set, cmd, work], |m| {
+                Some(a::wait_random(
+                    m,
+                    host,
+                    cmd,
+                    [0x2222_2222, 0x4444_4444, ret],
+                ))
+            });
+            let junk = [0x3333_3333, 0x2222_2222, 0x4444_4444];
+            p.check(
+                "short_add_random",
+                0x0081_0ba0,
+                &[host, set, cmd, work],
+                |m| Some(a::short_add_random(m, host, cmd, work, junk)),
+            );
+            p.check("branch_random", 0x0081_0d10, &[host, set, cmd, work], |m| {
+                Some(a::branch_random(m, cmd, junk))
+            });
         }
     }
 }

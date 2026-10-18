@@ -5,8 +5,8 @@ use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
 use ffx_vfx::{
-    draw, et, fp, heap, lns, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small, tree,
-    vec, wave,
+    anmm, draw, et, fp, heap, lns, md, mdl, op, opd, opus, part, ppp, prog, rand, slots, small,
+    tree, vec, wave,
 };
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
@@ -1634,6 +1634,83 @@ ported! {
     /// `op_et_chr_slot_007fead0(chr)`.
     op_et_chr_slot_007fead0 @ 0x007f_ead0 => extern "C" fn op_et_chr_slot(chr: u32) -> u32 {
         et::bridge::op_et_chr_slot(&mem(), chr)
+    }
+    // opp_anmm's sprite commands (host, set, cmd, work) -> next command.
+    // The random ones' extra callee stack words (the original's saved
+    // registers and return address) only reach VU0 scratch: zeros here.
+    /// `opp_anmm_wait_random(host, set, cmd, work)`.
+    opp_anmm_wait_random @ 0x0081_06e0 => extern "C" fn opp_anmm_wait_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (set, work);
+        anmm::bridge::wait_random(&mut mem(), host, cmd, [0; 3])
+    }
+    /// `opp_anmm_sprite_set(host, set, cmd, work)`.
+    opp_anmm_sprite_set @ 0x0081_0720 => extern "C" fn opp_anmm_sprite_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = host;
+        anmm::bridge::sprite_set(&mut mem(), set, cmd, work)
+    }
+    /// `opp_anmm_flag_on(host, set, cmd, work)`.
+    opp_anmm_flag_on @ 0x0081_0790 => extern "C" fn opp_anmm_flag_on(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::flag_on(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_vec_set(host, set, cmd, work)`.
+    opp_anmm_vec_set @ 0x0081_07c0 => extern "C" fn opp_anmm_vec_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::vec_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_vec_add_random(host, set, cmd, work)`.
+    opp_anmm_vec_add_random @ 0x0081_0890 => extern "C" fn opp_anmm_vec_add_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::vec_add_random(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_vec_add(host, set, cmd, work)`.
+    opp_anmm_vec_add @ 0x0081_0a90 => extern "C" fn opp_anmm_vec_add(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::vec_add(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_short_add_random(host, set, cmd, work)`.
+    opp_anmm_short_add_random @ 0x0081_0ba0 => extern "C" fn opp_anmm_short_add_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::short_add_random(&mut mem(), host, cmd, work, [0; 3])
+    }
+    /// `opp_anmm_pair_set(host, set, cmd, work)`.
+    opp_anmm_pair_set @ 0x0081_0be0 => extern "C" fn opp_anmm_pair_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::pair_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_mode_set(host, set, cmd, work)`.
+    opp_anmm_mode_set @ 0x0081_0c20 => extern "C" fn opp_anmm_mode_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::mode_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_rgba_set(host, set, cmd, work)`.
+    opp_anmm_rgba_set @ 0x0081_0c60 => extern "C" fn opp_anmm_rgba_set(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::rgba_set(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_loop(host, set, cmd, work)`.
+    opp_anmm_loop @ 0x0081_0cf0 => extern "C" fn opp_anmm_loop(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (host, set);
+        anmm::bridge::loop_back(&mut mem(), cmd, work)
+    }
+    /// `opp_anmm_branch_random(host, set, cmd, work)`.
+    opp_anmm_branch_random @ 0x0081_0d10 => extern "C" fn opp_anmm_branch_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (host, set, work);
+        anmm::bridge::branch_random(&mut mem(), cmd, [0; 3])
+    }
+    /// `opp_anmm_fade(host, set, cmd, work)`.
+    opp_anmm_fade @ 0x0081_0d50 => extern "C" fn opp_anmm_fade(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::fade(&mut mem(), host, cmd, work)
+    }
+    /// `opp_anmm_part_float(host, set, cmd, work)`.
+    opp_anmm_part_float @ 0x0081_0da0 => extern "C" fn opp_anmm_part_float(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = host;
+        anmm::bridge::part_float(&mut mem(), set, cmd, work)
+    }
+    /// `opus_encount0_init(obj)`.
+    opus_encount0_init @ 0x007f_8480 => extern "C" fn opus_encount0_init(obj: u32) -> u32 {
+        opus::bridge::opus_encount0_init(&mut mem(), obj)
     }
     /// `opus_prog_on(set, list)`.
     opus_prog_on @ 0x0080_1700 => extern "C" fn opus_prog_on(set: u32, list: u32) -> u32 {
