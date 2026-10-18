@@ -14331,3 +14331,246 @@ fn r1e_on_a_snapshot_matches_the_original() {
     r1e_chr_cases(&mut t, &mut rng, &chars, battle);
     r1e_fp_cases(&mut t, &mut rng, &chars);
 }
+
+// ---- field agent r2, group F: the minimap fog ----
+
+/// `*arg 0 = [w]; *arg 1 = [h]` (`graphicFontGetScreenWH`).
+fn screen_wh_stub(w: u32, h: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    c.extend_from_slice(&w.to_le_bytes());
+    c.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    c.extend_from_slice(&h.to_le_bytes());
+    c.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    c
+}
+
+/// `rcbgGuideUpdateWalk` on `t`: synthetic guides (walked bitmaps, mesh
+/// bounds), view matrices from identity to random, every minimap type,
+/// the VFX calls logged.
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn r1f_walk_cases(t: &mut Twin, rng: &mut Xorshift) {
+    use guide::bridge as gb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rvs, next, arena) = (
+        t.alloc(4 + 0x20 * 64),
+        t.alloc(0x20),
+        t.alloc(4),
+        t.alloc(0x8_0000),
+    );
+    let (sw, sh, mo, g, bitmap) = (
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x100),
+        t.alloc(0x100),
+        t.alloc(0x200),
+    );
+    let (m, p, pkt) = (t.alloc(0x40), t.alloc(0x10), t.alloc(0x100));
+    let rv = |k: u32| rvs + 4 * k;
+    t.cave_from(
+        0x500,
+        &[
+            (Some(gb::FONT_SCREEN_WH), screen_wh_stub(sw, sh)),
+            (Some(gb::MINI_MAP_TYPE), log_stub(log, rv(0), 1, 0)),
+            (Some(gb::USER_MALLOC), bump_stub(next)),
+            (Some(gb::USER_FREE_THUNK), log_stub(log, rv(1), 2, 1)),
+            (Some(gb::MESH_OBJECT), ret_stub(mo)),
+            (Some(guide::VFX_GET_RENDER_DATA), log_stub(log, rv(2), 3, 2)),
+            (Some(gb::INIT_RECTS), deref_log_stub(log, rv(1), 4, 4, 2, 4)),
+            (Some(gb::SET_MESH_NAME), log_stub(log, rv(1), 5, 3)),
+            (
+                Some(gb::UPDATE_RECTS),
+                deref_log_stub(log, rv(1), 6, 3, 2, 4),
+            ),
+            (Some(gb::VFX_2D_UPDATE), log_stub(log, rv(1), 7, 2)),
+        ],
+    );
+    let fog = t.b.rebase(gb::FOG_PACKET);
+    t.put(fog, pkt);
+    t.put(g + 0x70, bitmap);
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let mut quads = 0u64;
+    for k in 0..60u32 {
+        t.put(log, 0u32);
+        t.put(next, arena);
+        t.put(rv(0), [0u32, 1, 2, 3, 4, 5, rng.next()][(k % 7) as usize]);
+        t.put(rv(1), rng.next());
+        t.put(rv(2), rng.below(2));
+        t.put(sw, [640i32, 1280, 1920, 0, 1366][rng.below(5) as usize]);
+        t.put(sh, [480i32, 720, 1080, 0, 768][rng.below(5) as usize]);
+        t.fill(bitmap, 0x200, rng);
+        t.fill(pkt, 0x100, rng);
+        #[allow(clippy::cast_precision_loss)]
+        for (o, x) in [
+            (0x90u32, rng.range(-60, 60) as f32),
+            (0xa8, rng.range(-60, 60) as f32),
+        ] {
+            t.put(mo + o, x.to_bits());
+        }
+        // identity, a translated identity, or random rows (w row kept
+        // near 1 so the divide stays finite)
+        for i in 0..16u32 {
+            let ident = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+            #[allow(clippy::cast_precision_loss)]
+            let x = match k % 3 {
+                1 if i >= 12 && i != 15 => rng.range(-800, 800) as f32,
+                2 if i % 4 != 3 => ident + rng.range(-1000, 1000) as f32 / 1000.0,
+                _ => ident,
+            };
+            t.put(m + 4 * i, x.to_bits());
+        }
+        #[allow(clippy::cast_precision_loss)]
+        for i in 0..4 {
+            t.put(p + 4 * i, (rng.range(-3000, 3000) as f32 / 4.0).to_bits());
+        }
+        if k % 6 == 0 {
+            // the band's edges exactly at the rows (identity: v.y = 0)
+            t.put(p + 4, 40.0f32.to_bits());
+            t.put(p + 0xc, (-40.0f32).to_bits());
+        }
+        t.set(
+            task::bridge::CURRENT_PROGRAM,
+            [0u32, 3, 0x8000_0001][rng.below(3) as usize],
+        );
+        t.same_but(
+            "rcbgGuideUpdateWalk",
+            &skip,
+            |o| o.void(0x0091_ecb0, &[g, m, p]),
+            |b| gb::rcbg_guide_update_walk(b, [g, m, p], work, call),
+        );
+        quads += u64::from(t.b.read::<u32>(work + 4));
+    }
+    assert!(quads > 1000, "the cases draw cells ({quads})");
+}
+
+/// Group F on the image.
+#[test]
+fn r1f_minimap_fog_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00f1_0001);
+    r1f_walk_cases(&mut t, &mut rng);
+}
+
+/// Group F on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r1f_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00f1_0002);
+    r1f_walk_cases(&mut t, &mut rng);
+}
+
+/// [`log_stub`] that first copies the 16 bytes at argument `k` (a pointer
+/// into the caller's frame) to `dst`.
+fn copy16_log_stub(dst: u32, k: u8, log: u32, rv: u32, id: u32, args: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c + 4 * k, 0xbf];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 0x04, 0x00, 0x00, 0x00, 0xf3, 0xa5, 0x5f, 0x5e]);
+    c.extend(log_stub(log, rv, id, args));
+    c
+}
+
+/// `rcbgGuideDrawPlayer` on `t`: steps inside, across and outside the
+/// map rect, with and without a direction (or its -10000 mark), smoothing
+/// on and off; the two primitives logged with their colours.
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn r1f_player_cases(t: &mut Twin, rng: &mut Xorshift) {
+    use guide::bridge as gb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    t.install_trig();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(CODE_AREA + 0x160);
+        o.write(at, &CIACOS_STUB).unwrap();
+        let s = o.rebase(CIACOS_SLOT);
+        o.write(s, &at.to_le_bytes()).unwrap();
+    }
+    let (log, rv, cols) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(0x20));
+    t.cave_from(
+        0x500,
+        &[
+            (Some(gb::PRIM_TRI), copy16_log_stub(cols, 4, log, rv, 1, 4)),
+            (
+                Some(gb::PRIM_CIRCLE_LINE),
+                copy16_log_stub(cols + 0x10, 3, log, rv, 2, 3),
+            ),
+        ],
+    );
+    let (g, a, b, rect, p, q, dir) = (
+        t.alloc(0x80),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(4),
+    );
+    let work = t.stack_scratch(0x400);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let coord = |rng: &mut Xorshift| float_in(rng, -120, 120);
+    for k in 0..300u32 {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(g + 0x74, rng.next());
+        // the rect (x0, y0, x1, y1), the step and the edge
+        for (at, n) in [(rect, 4u32), (a, 4), (b, 4), (p, 4), (q, 4)] {
+            for i in 0..n {
+                t.put(at + 4 * i, coord(rng));
+            }
+        }
+        if k % 4 == 0 {
+            t.put(b, t.b.read::<u32>(a)); // a vertical step
+        }
+        let d = match k % 5 {
+            0 => (-10000.0f32).to_bits(),
+            _ => float_in(rng, -6, 6),
+        };
+        t.put(dir, d);
+        let dirp = if k % 7 == 0 { 0 } else { dir };
+        let alpha = float_in(rng, 0, 1);
+        let smooth = rng.below(2);
+        t.same_but(
+            "rcbgGuideDrawPlayer",
+            &skip,
+            |o| {
+                o.eax(
+                    0x0091_cf10,
+                    &[g, a, b, rect, rng_word(k), alpha, p, q, dirp, smooth],
+                )
+            },
+            |m| {
+                gb::rcbg_guide_draw_player(
+                    m,
+                    [g, a, b, rect, alpha, p, q, dirp, smooth],
+                    work,
+                    call,
+                    fcall,
+                )
+            },
+        );
+    }
+}
+
+/// A word for an unused argument.
+fn rng_word(k: u32) -> u32 {
+    k.wrapping_mul(0x9e37_79b9)
+}
+
+/// Group F's player marker on the image.
+#[test]
+fn r1f_player_marker_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00f1_0003);
+    r1f_player_cases(&mut t, &mut rng);
+}
+
+/// Group F's player marker on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r1f_player_marker_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00f1_0004);
+    r1f_player_cases(&mut t, &mut rng);
+}

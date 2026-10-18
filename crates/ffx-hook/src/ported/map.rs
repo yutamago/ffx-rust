@@ -2690,6 +2690,24 @@ ported! {
         let mut w = super::StackFrame::<1>::new();
         model::bridge::rcbg_fpm_start(&mut mem(), obj, model::FPM565_START, w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcbgGuideUpdateWalk(guide, m, p)` (field agent r2, group F).
+    rcbgGuideUpdateWalk @ 0x0091_ecb0 => extern "C" fn shim_rcbg_guide_update_walk(g: u32, m: u32, p: u32) {
+        let mut w = super::StackFrame::<44>::new();
+        guide::bridge::rcbg_guide_update_walk(&mut mem(), [g, m, p], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgGuideDrawPlayer(guide, a, b, rect, _, alpha, p, q, dir, smooth)`.
+    rcbgGuideDrawPlayer @ 0x0091_cf10 => extern "C" fn shim_rcbg_guide_draw_player(
+        g: u32, a: u32, b: u32, rect: u32, _unused: u32, alpha: u32, p: u32, q: u32, dir: u32, smooth: u32
+    ) -> u32 {
+        let mut w = super::StackFrame::<32>::new();
+        guide::bridge::rcbg_guide_draw_player(
+            &mut mem(),
+            [g, a, b, rect, alpha, p, q, dir, smooth],
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));
@@ -4278,6 +4296,14 @@ fn call_float(f: u32, args: camera::FArgs<'_>) -> f64 {
                 usize,
                 unsafe extern "C" fn(u32, u32) -> f32,
             >(f as usize)(a, b))
+        },
+        // SAFETY: a cdecl function of three words returning a float
+        // (`Math_AngleStep`); the declared `f32` return pops ST0.
+        camera::FArgs::Stack(&[a, b, c]) => unsafe {
+            f64::from(std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32) -> f32,
+            >(f as usize)(a, b, c))
         },
         camera::FArgs::Stack(a) => {
             crate::log::log(&format!("map: no float call of {} words", a.len()));
