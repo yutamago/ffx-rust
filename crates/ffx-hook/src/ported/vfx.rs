@@ -1638,6 +1638,13 @@ ported! {
     // opp_anmm's sprite commands (host, set, cmd, work) -> next command.
     // The random ones' extra callee stack words (the original's saved
     // registers and return address) only reach VU0 scratch: zeros here.
+    /// `opp_anmm(host, set)`.
+    opp_anmm @ 0x0081_24b0 => extern "C" fn opp_anmm(host: u32, set: u32) -> u32 {
+        // the original's local at [ebp - 0xc] (set_ptr32's result)
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        anmm::bridge::opp_anmm(&mut mem(), host, set, at, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opp_anmm_wait_random(host, set, cmd, work)`.
     opp_anmm_wait_random @ 0x0081_06e0 => extern "C" fn opp_anmm_wait_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
         let _ = (set, work);
@@ -1767,6 +1774,59 @@ ported! {
     /// `opf_spl_gw(host, ptr)`.
     opf_spl_gw @ 0x0081_5670 => extern "C" fn opf_spl_gw(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_spl_gw(&mut mem(), host, ptr)
+    }
+    /// `opf_rel(host, ptr)`.
+    opf_rel @ 0x0081_5120 => extern "C" fn opf_rel(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel(&mut mem(), host, ptr)
+    }
+    /// `opf_rel2(host, ptr)`.
+    opf_rel2 @ 0x0081_5350 => extern "C" fn opf_rel2(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_rel2(&mut mem(), host, ptr)
+    }
+    /// `opu_vzero(host, cmd)`.
+    opu_vzero @ 0x0081_afa0 => extern "C" fn opu_vzero(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vzero(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_spl(host, cmd)`.
+    opu_spl @ 0x0081_b560 => extern "C" fn opu_spl(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_spl(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opd_exit_from_ovl()`.
+    opd_exit_from_ovl @ 0x007f_f8e0 => extern "C" fn opd_exit_from_ovl() -> u32 {
+        op::bridge::opd_exit_from_ovl(&mut mem())
+    }
+    /// `op_heap_display_set(a, b, c)`: `eax` is left alone outside debug
+    /// mode; 0 here.
+    op_heap_display_set @ 0x007f_f290 => extern "C" fn op_heap_display_set(a: u32, b: u32, c: u32) -> u32 {
+        op::bridge::op_heap_display_set(&mut mem(), [a, b, c], &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_num_vdisp()`.
+    op_num_vdisp @ 0x007e_6560 => extern "C" fn op_num_vdisp() -> u32 {
+        op::bridge::op_num_vdisp(&mut mem(), &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_num_display(x)`.
+    op_num_display @ 0x007e_6440 => extern "C" fn op_num_display(x: u32) -> u32 {
+        op::bridge::op_num_display(&mut mem(), x, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `ops_init_spr()`.
+    ops_init_spr @ 0x007e_6c30 => extern "C" fn ops_init_spr() -> u32 {
+        op::bridge::ops_init_spr(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_rt_m_xyz(m, src, angles, t)`.
+    op_rt_m_xyz @ 0x007e_9970 => extern "C" fn op_rt_m_xyz(m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        op::bridge::op_rt_m_xyz(&mut mem(), m, src, angles, t)
+    }
+    /// `opus_get_bone_vertex(out, chr, bone)`.
+    opus_get_bone_vertex @ 0x0080_54d0 => extern "C" fn opus_get_bone_vertex(out: u32, chr: u32, bone: u32) -> u32 {
+        opus::bridge::opus_get_bone_vertex(&mut mem(), out, chr, bone, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_cheight_get(chr, battle)`: returns in `ST0`.
+    opus_cheight_get @ 0x0080_0b70 => extern "C" fn opus_cheight_get(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_cheight_get(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_get_chr_pos(chr, out)`.
+    opus_get_chr_pos @ 0x0081_b1e0 => extern "C" fn opus_get_chr_pos(chr: u32, out: u32) -> u32 {
+        opus::bridge::opus_get_chr_pos(&mut mem(), chr, out, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {

@@ -14574,3 +14574,453 @@ fn r1f_player_marker_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x00f1_0004);
     r1f_player_cases(&mut t, &mut rng);
 }
+
+// ---- field agent r3, group G: the screen distortion ----
+
+/// [`log_stub`] with 0x40-byte entries (up to 15 words).
+fn wide_log_stub(log: u32, rv: u32, id: u32, args: u32) -> Vec<u8> {
+    let mut c = log_stub(log, rv, id, args);
+    assert_eq!(c[8], 0x05);
+    c[8] = 0x06; // shl ecx, 6
+    c
+}
+
+/// The distortion state of a synthetic or real scene at `r`: flags,
+/// depth, the camera matrix, phases, speed, amplitude, colour.
+fn r1g_state(t: &mut Twin, rng: &mut Xorshift, r: u32) {
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| float_in(rng, lo, hi);
+    t.put(r + 0xbe078, rng.below(4));
+    t.put(r + 0xbe07c, f(rng, -50, 300));
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+        #[allow(clippy::cast_precision_loss)]
+        let x = if i >= 12 && i != 15 {
+            rng.range(-500, 500) as f32
+        } else {
+            ident + rng.range(-200, 200) as f32 / 1000.0
+        };
+        t.put(r + 0x67f78 + 4 * i, x.to_bits());
+    }
+    t.put(r + 0x68360, f(rng, 1, 40));
+    t.put(r + 0xbe0a0, rng.range(-10, 300));
+    for o in [0xbe080u32, 0xbe084] {
+        t.put(r + o, f(rng, -8, 8));
+    }
+    t.put(r + 0xbe090, f(rng, -1, 1));
+    t.put(r + 0xbe094, f(rng, -1, 1));
+    t.put(r + 0xbe098, f(rng, -2, 2));
+    t.put(r + 0xbe0a4, rng.next());
+    t.put(r + 0xbe0a8, rng.next());
+}
+
+/// `yiScreff_draw` on `t` at `r` (`real`: the scene's own state first).
+fn r1g_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    t.install_trig();
+    let (log, rv) = (t.alloc(4 + 0x40 * 128), t.alloc(4));
+    t.cave_from(
+        0x500,
+        &[
+            (Some(0x0064_2f30), log_stub(log, rv, 1, 1)),
+            (Some(0x0064_4940), wide_log_stub(log, rv, 2, 8)),
+        ],
+    );
+    let work = t.stack_scratch(0x800);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    for k in 0..100 {
+        if !(real && k == 0) {
+            r1g_state(t, rng, r);
+        }
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.same_but(
+            "yiScreff_draw",
+            &skip,
+            |o| o.eax(0x0091_3200, &[r]),
+            |m| ffx_field::screff::yi_screff_draw(m, r, work, call, fcall),
+        );
+    }
+}
+
+/// Group G on the image: synthetic scenes.
+#[test]
+fn r1g_screen_distortion_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0071_0001);
+    let r = t.alloc(0xb_e100);
+    r1g_cases(&mut t, &mut rng, r, false);
+}
+
+/// Group G on the snapshot (`FFX_SNAPSHOT`): the game's renderer.
+#[test]
+fn r1g_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0071_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r1g_cases(&mut t, &mut rng, r, true);
+}
+
+// ---- field agent r3, group H: the ability map's lifted draws ----
+
+/// `graphicDrawUIAbmapElement(verts, buf, n)` stand-in: copies the 0x80
+/// bytes of `verts` (`buf` is the callee's scratch, never written by the
+/// caller) and `n` to `dst + count * 0x84` (`count` the word at
+/// `dst - 4`, then one more).
+fn abmap_element_stub(dst: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend_from_slice(&(dst - 4).to_le_bytes());
+    // edi = dst + count * 0x84
+    c.extend_from_slice(&[0x69, 0xf8, 0x84, 0x00, 0x00, 0x00, 0x81, 0xc7]);
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x0c, 0xb9, 0x20, 0, 0, 0, 0xf3, 0xa5]);
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x14, 0xab]); // n
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&(dst - 4).to_le_bytes());
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group H on `t`: an ability map work area at `ab` (synthetic grid,
+/// frame counter), the packet buffer, the element draws copied.
+fn r1h_cases(t: &mut Twin, rng: &mut Xorshift, synthetic: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (copies, pkt) = (t.alloc(4 + 0x84 * 400), t.alloc(0x4_0000));
+    t.cave_from(
+        0x500,
+        &[(Some(0x0063_e930), abmap_element_stub(copies + 4))],
+    );
+    let ab = if synthetic {
+        let ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+        Some(ab)
+    } else {
+        None
+    };
+    let ab = ab.unwrap_or_else(|| ffx_field::abmap::ABMAP.get(&t.b));
+    let pp = t.b.rebase(0x01a8_60ec);
+    let work = t.stack_scratch(0x800);
+    for k in 0..40 {
+        t.put(copies, 0u32);
+        t.put(pp, pkt);
+        if synthetic || k > 0 {
+            for c in 0..(17 * 20) {
+                t.put(ab + 0x12e60 + c, u8::from(rng.below(3) == 0));
+            }
+            t.put(ab + 0x11698, rng.next());
+            // the corner records: (x, y, _, scale), 18 rows of 21
+            for w in 0..(18 * 0x150 / 4) {
+                let v = match w % 4 {
+                    0 | 1 => rng.range(-40_000, 40_000).cast_unsigned(),
+                    3 => float_in(rng, -3, 3),
+                    _ => rng.next(),
+                };
+                t.put(ab + 0x116c0 + 4 * w, v);
+            }
+        }
+        t.same(
+            "AbmapDrawGridMarks",
+            |o| o.eax(0x00a4_9f10, &[]),
+            |m| ffx_field::abmap_draw::abmap_draw_grid_marks(m, work, call),
+        );
+    }
+}
+
+/// Group H on the image.
+#[test]
+fn r1h_abmap_draws_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_0001);
+    r1h_cases(&mut t, &mut rng, true);
+}
+
+/// Group H on the snapshot (`FFX_SNAPSHOT`), over a synthetic work area
+/// when the snapshot has none.
+#[test]
+fn r1h_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_0002);
+    let real = ffx_field::abmap::ABMAP.get(&t.b) != 0;
+    r1h_cases(&mut t, &mut rng, !real);
+}
+
+/// The node kinds `AbmapDrawMap` tells apart, and two others.
+const R1H_KINDS: [u16; 9] = [
+    0x40, 0x2710, 0x2f00, 0x3000, 0x3200, 0x3500, 0x3600, 0x2f80, 0x3100,
+];
+
+/// `AbmapDrawMap` on `t`: a synthetic ability map (node count and
+/// records, node data blocks through the table at `0x01a85f78`, the view
+/// matrix), the packet buffer, the element draws copied.
+fn r1h_map_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (copies, pkt, ab, blocks) = (
+        t.alloc(4 + 0x84 * 64),
+        t.alloc(0x4_0000),
+        t.alloc(0x1_4000),
+        t.alloc(0x4_0000),
+    );
+    t.cave_from(
+        0x600,
+        &[(Some(0x0063_e930), abmap_element_stub(copies + 4))],
+    );
+    t.set(ffx_field::abmap::ABMAP, ab);
+    let (pp, table) = (t.b.rebase(0x01a8_60ec), t.b.rebase(0x01a8_5f78));
+    for i in 0..4u32 {
+        t.put(table + 4 * i, blocks + 0x1_0000 * i);
+    }
+    let work = t.stack_scratch(0x800);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let mut drawn = 0;
+    for k in 0..60u32 {
+        t.put(copies, 0u32);
+        t.put(pp, pkt);
+        t.fill(pkt, 0x100, rng);
+        // each node's kind (`+0x10`, also the offset of its data block)
+        for i in 0..4u32 {
+            let kind = R1H_KINDS[rng.below(9) as usize];
+            let p = blocks + 0x1_0000 * i;
+            t.put(p + 0x10, kind);
+            let d = p + u32::from(kind);
+            // the block's own kind word (the low 14 bits pick the texture
+            // window) and the GS register word after it
+            t.put(d + 0x10, u32::from(kind) | (rng.next() & 0xffff_c000));
+            t.put(d + 0x14, rng.next());
+            for w in 0..0x10u32 {
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(d + 0x20 + 2 * w, rng.range(-300, 300) as i16);
+            }
+        }
+        let n = u16::try_from(k % 5).unwrap();
+        t.put(ab, n);
+        #[allow(clippy::cast_possible_truncation)]
+        for j in 0..8u32 {
+            let rec = ab + 8 + 0x10 * j;
+            for h in 0..8u32 {
+                t.put(rec + 2 * h, rng.range(-400, 400) as i16);
+            }
+            t.put(rec + 6, u16::try_from(rng.below(4)).unwrap());
+        }
+        for w in 0..0x10u32 {
+            let ident = if w % 5 == 0 { 1.0f32 } else { 0.0 };
+            #[allow(clippy::cast_precision_loss)]
+            let x = ident + rng.range(-100, 100) as f32 / 400.0;
+            t.put(ab + 0x113e0 + 4 * w, x.to_bits());
+        }
+        // half the cases moved onto the screen box (1528..2576, 1600..2304),
+        // so the clip checks also stop early
+        if rng.below(2) == 0 {
+            #[allow(clippy::cast_precision_loss)]
+            for (w, v) in [(12u32, rng.range(1500, 2600)), (13, rng.range(1570, 2330))] {
+                t.put(ab + 0x113e0 + 4 * w, (v as f32).to_bits());
+            }
+        }
+        t.put(t.b.rebase(0x00c8_fac4), rng.next());
+        t.same_but(
+            "AbmapDrawMap",
+            &skip,
+            |o| o.eax(0x00a4_ce20, &[]),
+            |m| ffx_field::abmap_draw::abmap_draw_map(m, work, call),
+        );
+        drawn += t.b.read::<u32>(copies);
+    }
+    assert!(drawn > 20, "the cases draw elements ({drawn})");
+}
+
+/// `AbmapDrawMap` on the image.
+#[test]
+fn r1h_abmap_map_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_0003);
+    r1h_map_cases(&mut t, &mut rng);
+}
+
+/// `AbmapDrawMap` on the snapshot (`FFX_SNAPSHOT`), over a synthetic map.
+#[test]
+fn r1h_abmap_map_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_0004);
+    r1h_map_cases(&mut t, &mut rng);
+}
+
+// ---- field agent r5 group K: KeThBP_Update ----
+
+/// A float `lo / 16 ..= hi / 16`, as bits.
+fn sixteenths(rng: &mut Xorshift, lo: i32, hi: i32) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let v = rng.range(lo, hi) as f32 / 16.0;
+    v.to_bits()
+}
+
+/// Calls `f` (an `ffx.sym` address) in both oracles.
+fn both_call(t: &mut Twin, f: u32, args: &[u32]) {
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.call(at, Conv::Cdecl, args).unwrap();
+    }
+}
+
+/// A belt path of `n` segments set up by the original `KeThBP_Init`, its
+/// state randomised: time, counters, ring indices, flags `flags`, and
+/// per segment a position, curl, direction and a list of `children`.
+fn r5k_belt(t: &mut Twin, rng: &mut Xorshift, n: u32, flags: u16, children: &[u32]) -> u32 {
+    let o = t.alloc((0x50 + 0x30 * n) as usize);
+    let args = t.alloc(8);
+    t.put(args, o);
+    t.put(args + 4, u8::try_from(n).unwrap());
+    both_call(t, 0x0076_3030, &[args]);
+    t.put(o + 0x18, sixteenths(rng, 0, 40 * 16));
+    t.put(o + 0x1c, u16::try_from(rng.below(40)).unwrap());
+    t.put(o + 0x1e, u8::try_from(rng.below(4)).unwrap());
+    t.put(o + 0x30, sixteenths(rng, 0, 100 * 16));
+    t.put(o + 0x34, u16::try_from(rng.below(n)).unwrap());
+    t.put(o + 0x36, u8::try_from(rng.below(n)).unwrap());
+    t.put(o + 0x3e, flags);
+    for s in 0..n {
+        let seg = o + 0x40 + 0x30 * s;
+        for w in 0..3 {
+            t.put(seg + 4 * w, sixteenths(rng, -50 * 16, 50 * 16));
+            t.put(seg + 0x20 + 4 * w, sixteenths(rng, -16, 16));
+        }
+        t.put(seg + 0xc, sixteenths(rng, 0, 16));
+        t.put(seg + 0x1c, sixteenths(rng, -4, 20));
+        t.put(seg + 0x18, 0u32);
+    }
+    // the children hang off random segments, linked by +8
+    for &c in children {
+        let seg = o + 0x40 + 0x30 * rng.below(n);
+        let head = t.b.read::<u32>(seg + 0x18);
+        t.put(c + 8, head);
+        t.put(c + 0xc, rng.next());
+        t.put(seg + 0x18, c);
+    }
+    o
+}
+
+/// One `KeThBP_Update` case: a template, a guide path of 1..=4 points, a
+/// pool, a belt path with children; `flags` its `+0x3e`.
+#[allow(clippy::too_many_lines)] // the whole object graph
+fn r5k_case(t: &mut Twin, rng: &mut Xorshift, flags: u16) -> u32 {
+    let tm = t.alloc(0x50);
+    t.put(tm + 0x20, sixteenths(rng, 4, 48));
+    t.put(tm + 0x24, sixteenths(rng, 0, 16));
+    t.put(tm + 0x28, sixteenths(rng, 0, 30 * 16));
+    t.put(tm + 0x2c, sixteenths(rng, 0, 16));
+    t.put(tm + 0x34, sixteenths(rng, 0, 6 * 16));
+    t.put(tm + 0x3c, sixteenths(rng, 0, 8));
+    t.put(tm + 0x40, u8::try_from(rng.below(5)).unwrap());
+    t.put(tm + 0x41, [0xffu8, 0, 1, 3][rng.below(4) as usize]);
+    t.put(tm + 0x42, u8::try_from(rng.below(12)).unwrap());
+    // the guide path: position, reach flag, far radius, weight, near, next
+    let points = 1 + rng.below(4);
+    let path = t.alloc((0x20 * points) as usize);
+    for i in 0..points {
+        let pt = path + 0x20 * i;
+        for w in 0..3 {
+            t.put(pt + 4 * w, sixteenths(rng, -60 * 16, 60 * 16));
+        }
+        t.put(pt + 0xc, if rng.below(2) == 0 { 0 } else { 0x3f80_0000u32 });
+        // now and then a near radius wide enough to hold the head
+        let near = if rng.below(4) == 0 {
+            rng.range(60 * 16, 120 * 16)
+        } else {
+            rng.range(0, 20 * 16)
+        };
+        t.put(pt + 0x18, sixteenths(rng, near, near + 1));
+        t.put(pt + 0x10, sixteenths(rng, near + 16, near + 60 * 16));
+        t.put(pt + 0x14, sixteenths(rng, 0, 16));
+        t.put(pt + 0x1c, if i + 1 < points { pt + 0x20 } else { 0 });
+    }
+    // the pool of child belt paths (KeThResHd_Init: 2-segment blocks)
+    let (blocks, size) = (rng.below(4), 1 + rng.below(3));
+    let pool = t.alloc((0x10 + 0xe0 * 4) as usize);
+    both_call(t, KE_TH_RES_HD_INIT, &[pool, blocks, size]);
+    let kids: Vec<u32> = (0..rng.below(3))
+        .map(|_| r5k_belt(t, rng, 2, 0, &[]))
+        .collect();
+    let n = 2 + rng.below(7);
+    let o = r5k_belt(t, rng, n, flags, &kids);
+    // now and then a step all but complete (time + speed just short of a
+    // whole number)
+    if rng.below(6) == 0 {
+        #[allow(clippy::cast_precision_loss)]
+        let whole = rng.below(30) as f32;
+        t.put(o + 0x18, (whole + 0.5).to_bits());
+        t.put(tm + 0x34, 0.499_999_97f32.to_bits());
+    }
+    // now and then the steps taken equal the time's (running stops)
+    if rng.below(6) == 0 {
+        let time = f32::from_bits(t.b.read::<u32>(o + 0x18));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        t.put(o + 0x1c, time as u16);
+    }
+    // no path point only where the update stops on it (running)
+    let none = flags & 0x20 != 0 && rng.below(6) == 0;
+    t.put(o + 0x14, if none { 0 } else { path });
+    // the thing: its matrix (+0, the wobble's rotations start from it)
+    // and its parts
+    let p = t.alloc(0x50);
+    for i in 0..16u32 {
+        let ident = if i % 5 == 0 { 16 } else { 0 };
+        t.put(p + 4 * i, sixteenths(rng, ident - 3, ident + 3));
+    }
+    t.put(p + 0x40, o);
+    // the start point: the path's first or a later one
+    t.put(p + 0x44, path + 0x20 * rng.below(points));
+    t.put(p + 0x48, pool);
+    t.put(p + 0x4c, tm);
+    p
+}
+
+/// The flag words the cases draw from (`+0x3e`): frozen 2, capped 4,
+/// done 8, running 0x20, held 0x40, loop 0x80, start 0x100, 0x200
+/// (cleared when capped), normalise 0x400, path end 0x800, 0x1000 (passed
+/// to children), steering 0x2000.
+const R5K_FLAGS: [u16; 12] = [
+    2, 4, 8, 0x20, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
+];
+
+fn r5k_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let work = t.stack_scratch(0x800);
+    for _ in 0..cases {
+        let mut flags = 0u16;
+        for f in R5K_FLAGS {
+            if rng.below(4) == 0 {
+                flags |= f;
+            }
+        }
+        let p = r5k_case(t, rng, flags);
+        t.set(vu0::VU0_R, 0x3f80_0000 | (rng.next() & 0x007f_ffff));
+        t.same(
+            "KeThBP_Update",
+            |o| o.eax(0x0076_37f0, &[p]),
+            |m| ffx_field::keth::ke_th_bp_update(m, p, work, call, fcall),
+        );
+    }
+}
+
+/// Group K on the image.
+#[test]
+fn r5k_belt_path_update_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0091_0001);
+    r5k_cases(&mut t, &mut rng, 300);
+}
+
+/// Group K on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r5k_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0091_0002);
+    r5k_cases(&mut t, &mut rng, 150);
+}

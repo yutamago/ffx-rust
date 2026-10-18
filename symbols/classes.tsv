@@ -5,7 +5,7 @@
 0x00401090	dead	unreachable from the entry point and every pointer table
 0x004010b0	dead	unreachable from the entry point and every pointer table
 0x004010d0	dead	unreachable from the entry point and every pointer table
-0x00401100	logic	default (no rule: ported to be safe)
+0x00401100	glue	reviewed: memmove wrapper (system round 31)
 0x00401120	dead	unreachable from the entry point and every pointer table
 0x00401140	dead	unreachable from the entry point and every pointer table
 0x00401150	dead	unreachable from the entry point and every pointer table
@@ -16,8 +16,8 @@
 0x004012b0	dead	unreachable from the entry point and every pointer table
 0x004012f0	dead	unreachable from the entry point and every pointer table
 0x00401310	logic	default (no rule: ported to be safe)
-0x00401330	logic	default (no rule: ported to be safe)
-0x00401370	logic	default (no rule: ported to be safe)
+0x00401330	glue	reviewed: STL error_code compare (system round 31)
+0x00401370	glue	reviewed: STL error_code compare (system round 31)
 0x004013a0	logic	default (no rule: ported to be safe)
 0x004013b0	logic	default (no rule: ported to be safe)
 0x00401430	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
@@ -2578,7 +2578,7 @@
 0x006912c0	platform	thin wrapper: only forwards to platform code (0x6911f0)
 0x006912d0	platform	imports ReleaseMutex, WaitForSingleObject
 0x00691320	glue	thin wrapper: only forwards to glue code (ClusterManager_GetInstance, ClusterManager_loadPCluster)
-0x00691350	logic	default (no rule: ported to be safe)
+0x00691350	glue	reviewed: call-through-pointer thunk (system round 31)
 0x00691360	platform	imports ReleaseMutex, WaitForSingleObject
 0x00691550	platform	only called from platform code (AsyncLoadManager_loadCluster)
 0x006915e0	dead	unreachable from the entry point and every pointer table
@@ -4111,12 +4111,12 @@
 0x006f16e0	dead	unreachable from the entry point and every pointer table
 0x006f1730	dead	unreachable from the entry point and every pointer table
 0x006f1780	dead	unreachable from the entry point and every pointer table
-0x006f1820	logic	default (no rule: ported to be safe)
-0x006f1830	logic	default (no rule: ported to be safe)
-0x006f1850	logic	default (no rule: ported to be safe)
-0x006f1860	logic	default (no rule: ported to be safe)
-0x006f1880	logic	default (no rule: ported to be safe)
-0x006f1890	logic	default (no rule: ported to be safe)
+0x006f1820	glue	reviewed: call-through-pointer thunk (system round 31)
+0x006f1830	glue	reviewed: call-through-pointer thunk (system round 31)
+0x006f1850	glue	reviewed: call-through-pointer thunk (system round 31)
+0x006f1860	glue	reviewed: call-through-pointer thunk (system round 31)
+0x006f1880	glue	reviewed: call-through-pointer thunk (system round 31)
+0x006f1890	glue	reviewed: call-through-pointer thunk (system round 31)
 0x006f18b0	dead	unreachable from the entry point and every pointer table
 0x006f1900	platform	imports SteamUserStats
 0x006f1980	logic	default (no rule: ported to be safe)
@@ -12224,7 +12224,7 @@
 0x00878700	logic	default (no rule: ported to be safe)
 0x00878750	logic	default (no rule: ported to be safe)
 0x00878770	logic	default (no rule: ported to be safe)
-0x008787d0	logic	default (no rule: ported to be safe)
+0x008787d0	debug	reviewed: native 0xc015: TkIsDebug-only / debug loop (script round 21)
 0x00878860	logic	default (no rule: ported to be safe)
 0x00878880	logic	default (no rule: ported to be safe)
 0x008788a0	debug	reviewed: debug native 0xc018 (script rounds 11-15)
@@ -12638,7 +12638,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: 0x8787d0, AtelEventSetUp, Native_00f8
+0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)
@@ -16893,7 +16893,7 @@
 0x00a42760	logic	default (no rule: ported to be safe)
 0x00a42780	dead	unreachable from the entry point and every pointer table
 0x00a427e0	logic	default (no rule: ported to be safe)
-0x00a42810	logic	default (no rule: ported to be safe)
+0x00a42810	glue	reviewed: call-through-pointer thunk (system round 31)
 0x00a42830	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileName_PC
 0x00a42850	dead	unreachable from the entry point and every pointer table
 0x00a42870	platform	thin wrapper: only forwards to platform code (CDfileReadSector_CD)

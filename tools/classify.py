@@ -236,6 +236,22 @@ REVIEWED = {
     0x0088ccf0: ("glue", "TKMallocAndReadMenuMessage: language path + file read (menu round 21)"),
     0x00888030: ("glue", "path formatting (menu round 21)"),
     0x0090bdb0: ("glue", "sprintf label for a PC renderer object (field round 1)"),
+    0x00878420: ("debug", "native 0xc000: TkIsDebug-only / debug loop (script round 21)"),
+    0x00878490: ("debug", "native 0xc001: TkIsDebug-only / debug loop (script round 21)"),
+    0x008785e0: ("debug", "native 0xc006: TkIsDebug-only / debug loop (script round 21)"),
+    0x008787d0: ("debug", "native 0xc015: TkIsDebug-only / debug loop (script round 21)"),
+    0x00878d20: ("debug", "native 0xc027: TkIsDebug-only / debug loop (script round 21)"),
+    0x00691350: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x006f1820: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x006f1830: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x006f1850: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x006f1860: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x006f1880: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x006f1890: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x00a42810: ("glue", "call-through-pointer thunk (system round 31)"),
+    0x00401100: ("glue", "memmove wrapper (system round 31)"),
+    0x00401330: ("glue", "STL error_code compare (system round 31)"),
+    0x00401370: ("glue", "STL error_code compare (system round 31)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

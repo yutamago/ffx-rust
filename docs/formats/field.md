@@ -1808,6 +1808,91 @@ ours), which returns the number of source words it read:
   words of the row. Otherwise only the first `count` words are written.
 - The address is not wrapped to the buffer.
 
+## The screen distortion and the sphere grid's draws (field agent r4)
+
+`yiScreff_draw(scene)` (`0x00913200`) updates the 9 x 9 grid of the
+field's screen distortion (heat haze, under water) each frame:
+- With `+0xbe078` bit 0 (fading in) the fade line is the camera matrix
+  `+0x67f78` inverted (`FFXVu0InversMatrix`) applied to `(0, -depth, 1, 1)`
+  (depth `+0xbe07c`): `fade = y / (208 / +0x68360 * 64) * 208 - 208`.
+- `graphicSetDistortionBlur(+0xbe0a0 / 128)`.
+- Row `r` samples two waves (phase `+0xbe080`, speed `+0xbe094`, the
+  second three times as fast and opposite) at `0` for the top row, `64r + 64`
+  below; the column waves start from `+0xbe084` and step `64 * speed`,
+  wrapped past pi. Texture coordinates `(r/8, c/8)` move by
+  `amplitude (+0xbe098) * t` (the second wave a third of that), clamped to
+  0..1. `t` is 1 unless fading: then `(52c + fade) / 128` clamped (kept
+  with bit 1), and the top row keeps 0. Colours: the tint `+0xbe0a4..`, or
+  `(c - 128) t + 128` and alpha `128 t` while fading (`t < 1`).
+- `graphicUpdateDistortionVertex(row, col, r, g, b, a, u, v)`, the colour
+  bytes as `f32`s / 128; then `+0xbe0a8 += 1`, `+0xbe080 += 1.5 x
+  +0xbe090`, `+0xbe084 += +0xbe090`.
+
+`AbmapDrawGridMarks()` (`0x00a49f10`) marks the sphere grid's 17 x 20
+cells (`g_Abmap + 0x12e60`, a byte each). Corners are `(x i32, y i32, _,
+scale f32)` records from `g_Abmap + 0x116c0`, 21 to a row. A set cell
+fills the GS packet at `0x01a860ec` with two 4-vertex strips (tags 4 and
+`0x8004`, `0x302a4000`, `0x512`): per corner the texture quad of a pulse
+`p = (g_Abmap[0x11698] & 0x1ff) / 256 - 1` scaled by the corner's scale,
+colour 0x40, the position at z `0x2000`. The two quads then go to
+`graphicDrawUIAbmapElement(vertices, scratch, 10)` with screen positions
+`v / 16 - 2048 + (256, 208)` and texture coordinates times 512.
+
+`AbmapDrawMap()` (`0x00a4ce20`) draws each node (`g_Abmap + 8`, 16 bytes,
+count `i16` at `g_Abmap`; kind template `*(0x01a85f78 + 4 * node[+6])`,
+block at `template + i16 template[+0x10]`): `AbmapMakeNodeMatrix` times the
+view `g_Abmap + 0x113e0`; the block's four corners (`i16` pairs at `+0x20`,
+in 16ths) through it, the node skipped when a `w <= 0`; projected with
+`Q = 1 / w`; checked against the box (1528, 1600)..(2576, 2304) with
+`Vec2SubScalarsFlags` (`0x0075e870`), which only stops the checks early.
+The packet holds the texture quad from the block's `+0x30` (origin) and
+`+0x34` (size) pairs in 4096ths times each corner's `q`, the positions in
+16ths of a pixel. The element's texture window depends on the block's
+kind `+0x10 & 0x3fff` (`0x3500` as `0x2710`): `0x2f00` `u/2 + 3/8`;
+`0x2710` `u/4 + 3/4, v/2 + 1/2`; `0x3000` `u/2 + 1/2, v - 1/4`; `0x3200`
+`u/2`; `0x3600` `u/8 + 7/8, v/4 + 1/4`. Both work through the emulated
+VU0 registers (`0x00c8f788` Q, `0x00c8f790` ACC, `0x00c8f7d0`..,
+`0x00c8f910`/`0x00c8f950` matrices) and EE registers (`0x00c8f588`) as the
+original's inlined macro code does, and leave them as it does.
+
+## The Ke thread belt path's update (field agent r5)
+
+`KeThBP_Update(p)` (`0x007637f0`) moves a belt path `o = p[+0x40]` (set
+up by `KeThBP_Init`; template `p[+0x4c]`, guide path point `o[+0x14]`,
+child pool `p[+0x48]`, the thing's matrix at `p`):
+
+| `o` offset | Type | Meaning |
+|---|---|---|
+| `0x00`/`0x04` | ptr | The list of children it spawned (next, previous) |
+| `0x08`/`0x0c` | ptr | Its link in a parent segment's list (next, the slot pointing at it) |
+| `0x14` | ptr | The guide path point the head heads for |
+| `0x18` | `f32` | The head's time; whole steps are taken by `_ftol2_sse` |
+| `0x1c` | `u16` | Steps taken (the return value) |
+| `0x1e` | `u8` | Children spawned |
+| `0x30` | `f32` | Its length |
+| `0x34`/`0x36` | `u16`/`u8` | The ring's tail and head segment |
+| `0x37` | `u8` | Segments (`0x30` bytes from `+0x40`) |
+| `0x38`/`0x3c` | `u16` | The drawn span and its first segment |
+| `0x3e` | `u16` | Flags: 2 frozen, 4 capped, 8 done, 0x10 dead, 0x20 running, 0x40 held, 0x80 loop, 0x100 start, 0x400 normalise, 0x800 path end (becomes 0x40), 0x1000 (given to children), 0x2000 steering |
+
+A segment: position `+0` (xyzw), weight `+0xc`, children `+0x18`, curl
+`+0x1c`, direction `+0x20`. A guide point: position `+0`, reach flag
+`+0xc` (0: arrived once inside the near radius, else once outside it),
+far radius `+0x10`, weight `+0x14`, near radius `+0x18`, next `+0x1c`.
+
+The time moves by the template's `+0x34`; a step 0.999999 complete
+counts. Unless running or capped, steps stop at the template's `+0x42`
+(loop 0x80 makes it running). Each step the ring moves on; the head
+moves one step length (`+0x20`) along its direction, then steers toward
+the point (weight `+0x2c`, plus the point's weight ramping in between
+its far and near radius), wobbles (one of three rotations `0x00c3e730`
+by `KeVu0RndI() % 3`, angle `(rnd % 1001 - 500) / 500 x +0x28`) and, on
+a reused segment, follows its old direction by `1 - +0x24`. A segment's
+curl is the previous one's plus `(rnd / 2^14 - 1) x +0x3c`, clamped to
+0..1 (eased by `+0x24` on reused segments). A new segment may spawn a
+child belt path when `rnd & +0x41` is 0 (0xff: never) and fewer than
+`+0x40` children exist. Its VU0 scratch is `0x010d5530..0x010d55fc`.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
