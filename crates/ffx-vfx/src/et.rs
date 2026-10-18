@@ -337,6 +337,50 @@ pub mod bridge {
         mem.write(rec.wrapping_add(0x17), 0u8);
     }
 
+    /// `op_et_eff_target_center_0081b3e0(eff, out, filter)` (`0x0081b3e0`):
+    /// the mean position of an effect record's targets into `out`: for
+    /// each of its `byte +8` character indices (`+0x10`; the count read
+    /// again each turn), skipped when `filter` and not
+    /// `MsEffectGetTargetFlag(index)`, `out` = the emulated `r0`, then
+    /// `Ch_GetPos(handle, out, out + 4, out + 8)` for a handle in
+    /// `g_EtChrHandles`, summed (`f32`). Then `out` = the sums / their count
+    /// (0 / 0 gives the indefinite NaN). Callees through `call`.
+    pub fn op_et_eff_target_center<M: Mem>(
+        mem: &mut M,
+        eff: u32,
+        out: u32,
+        filter: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::Reg;
+        let addr = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let mut sum = [0f32; 3];
+        let mut found = 0i32;
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u8>(eff + 8)) {
+            let b = u32::from(mem.read::<u8>(eff + 0x10 + k));
+            k += 1;
+            if filter != 0 && call(mem, addr(mem, 0x0078_7c10), &[b]) == 0 {
+                continue;
+            }
+            let r0: [u32; 4] = mem.read(addr(mem, 0x00c8_f508));
+            mem.write(out, r0);
+            let h = CHR_HANDLES.ptr(mem).at(b).get(mem);
+            if h != 0 {
+                call(mem, addr(mem, 0x0082_ac90), &[h, out, out + 4, out + 8]);
+            }
+            for (i, s) in (0u32..).zip(sum.iter_mut()) {
+                *s = Reg::load(mem.read(out + 4 * i)).add_m32(*s).store();
+            }
+            found += 1;
+        }
+        #[allow(clippy::cast_precision_loss)] // fild: exact below 2^24
+        let count = found as f32;
+        for (i, s) in (0u32..).zip(sum) {
+            mem.write(out + 4 * i, Reg::load(s).div_m32(count).store());
+        }
+    }
+
     /// The draw flag index of character `h`'s record, if it has one.
     fn draw_index(mem: &impl Mem, h: u32) -> Option<u32> {
         let i = find_chr(mem, h)?;

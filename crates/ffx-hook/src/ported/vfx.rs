@@ -1944,6 +1944,31 @@ ported! {
         let at = frame.at();
         et::bridge::opus_change_osu_en_by_chr_status(&mut mem(), list, at)
     }
+    /// `pppCreateFrameBufferData_00715a40(lo, hi)`.
+    pppCreateFrameBufferData_00715a40 @ 0x0071_5a40 => extern "C" fn create_frame_buffer_data(lo: u32, hi: u32) -> u32 {
+        // the original's locals: count, sizes and name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        draw::bridge::create_frame_buffer_data(&mut mem(), lo, hi, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppCreateD3D11FrameBufferData_00716050(lo, hi, n)`.
+    pppCreateD3D11FrameBufferData_00716050 @ 0x0071_6050 => extern "C" fn create_d3d11_frame_buffer_data(lo: u32, hi: u32, n: u32) -> u32 {
+        // the original's locals: count, sizes and name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        draw::bridge::create_d3d11_frame_buffer_data(&mut mem(), lo, hi, n, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_eff_target_center_0081b3e0(eff, out, filter)`.
+    op_et_eff_target_center_0081b3e0 @ 0x0081_b3e0 => extern "C" fn op_et_eff_target_center(eff: u32, out: u32, filter: u32) {
+        et::bridge::op_et_eff_target_center(&mut mem(), eff, out, filter, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_rot_m_y_apply_007e7be0(dst, src, angle)`.
+    op_rot_m_y_apply_007e7be0 @ 0x007e_7be0 => extern "C" fn op_rot_m_y_apply(dst: u32, src: u32, angle: u32) {
+        // the original's local matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        op::bridge::op_rot_m_y_apply(&mut mem(), dst, src, angle, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

@@ -13037,3 +13037,139 @@ fn round28a_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round28b_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_b3e0);
+        let (flag, has) = (p.alloc(4), p.alloc(4));
+        // graphicVFXCreate, graphicVFXCreateDataBuffer (sizes, name and
+        // count recorded through their pointers), Ch_GetPos (writes
+        // nothing) and op_rot_m_y recorded; graphicVFXGetRenderDataByInstance
+        // and MsEffectGetTargetFlag answer from cells
+        for (sym, words, ret) in [
+            (0x0064_4de0u32, &[0u8, 0, 0][..], None),
+            // the name's first 12 bytes: the rest of 0x00715a40's is uninitialised
+            (0x0064_5040, &[0, 0, 0, 1, 1, 3, 1], None),
+            (0x0064_53d0, &[0, 0], Some(has)),
+            (0x0078_7c10, &[0], Some(flag)),
+            (0x0082_ac90, &[0, 0, 0, 0], None),
+            // the matrix is a local: its first row, not its address
+            (0x007e_9670, &[4, 4, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let frame = p.b.stack_range().start + 0x100;
+        // 0x007e7be0 hands its local matrix's address to op_apply_m_w1,
+        // which keeps it in the emulated function parameters: the port's
+        // matrix sits where the original's does (ebp - 0x44 below the
+        // three arguments and the return address the harness pushes)
+        let rot_frame = p.a.stack_range().end - 0x100 - 4 * 3 - 4 - 4 - 0x44;
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let (eff, out, src, dst) = (p.alloc(0x20), p.alloc(0x10), p.alloc(0x10), p.alloc(0x10));
+        let r0 = p.sym(0x00c8_f508);
+        for round in 0..2000 {
+            // the frame-buffer data
+            p.set(has, rng.pick(&[0u32, 1, 0x8000_0000]));
+            let (lo, hi) = (rng.next(), rng.next());
+            p.check(
+                &format!("0x00715a40 round {round}"),
+                0x0071_5a40,
+                &[lo, hi],
+                |m| {
+                    Some(draw::bridge::create_frame_buffer_data(
+                        m,
+                        lo,
+                        hi,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            let n = rng.pick(&[0u32, 1, 6, 0x1000, u32::MAX]);
+            p.check(
+                &format!("0x00716050 round {round}"),
+                0x0071_6050,
+                &[lo, hi, n],
+                |m| {
+                    Some(draw::bridge::create_d3d11_frame_buffer_data(
+                        m,
+                        lo,
+                        hi,
+                        n,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // the targets' centre: positions come from r0 (Ch_GetPos is
+            // recorded), some handles 0
+            p.fill(eff, 0x20, &mut rng);
+            p.set(eff + 8, u8::try_from(rng.below(9)).unwrap());
+            for k in 0..8 {
+                p.set(eff + 0x10 + k, u8::try_from(rng.below(0xf0)).unwrap());
+            }
+            p.fill(handles, 0xf0 * 4, &mut rng);
+            for u in 0..0xf0 {
+                if rng.chance(30) {
+                    p.set(handles + 4 * u, 0u32);
+                }
+            }
+            for i in 0..4 {
+                let v = rng.float();
+                p.set(r0 + 4 * i, v);
+            }
+            p.set(flag, rng.pick(&[0u32, 1]));
+            let filter = rng.pick(&[0u32, 1]);
+            p.check(
+                &format!("0x0081b3e0 round {round}"),
+                0x0081_b3e0,
+                &[eff, out, filter],
+                |m| {
+                    et::bridge::op_et_eff_target_center(m, eff, out, filter, &mut call_original);
+                    None
+                },
+            );
+            // the Y turn, in place or apart
+            for i in 0..4 {
+                let v = rng.float();
+                p.set(src + 4 * i, v);
+            }
+            let shift = rng.pick(&[0u32, 0, 4, 0x20]);
+            p.put(ffx_vfx::rand::bridge::COLOR_CON_SHIFT, shift);
+            let to = rng.pick(&[src, dst]);
+            let angle = rng.float();
+            p.check(
+                &format!("0x007e7be0 round {round}"),
+                0x007e_7be0,
+                &[to, src, angle],
+                |m| {
+                    op::bridge::op_rot_m_y_apply(m, to, src, angle, rot_frame, &mut call_original);
+                    None
+                },
+            );
+        }
+        // 0x00716050's whole name ("D3D11FrameBuffer" and its NUL)
+        deref_recorder(&mut p, 0x0064_5040, &[0, 0, 0, 1, 1, 5, 1]);
+        for round in 0..200 {
+            let (lo, hi, n) = (rng.next(), rng.next(), rng.below(0x100));
+            p.set(has, rng.pick(&[0u32, 1]));
+            p.check(
+                &format!("0x00716050 name round {round}"),
+                0x0071_6050,
+                &[lo, hi, n],
+                |m| {
+                    Some(draw::bridge::create_d3d11_frame_buffer_data(
+                        m,
+                        lo,
+                        hi,
+                        n,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

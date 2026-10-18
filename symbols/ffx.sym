@@ -3526,6 +3526,8 @@
 0x00714d40 function createVFXRenderDataBufferShapeField # fh v3:exact 0x00714e20
 0x00715170 function createVFXRenderDataBufferShp # fh v3:exact 0x00715250
 0x00715810 function createVFXRenderDataBufferShp_OShapeVu1 # layout+callees: sorts between createVFXRenderDataBufferShp and getAlphaForShpIgnoreAnFormatBaseOnSh, and its named callees match the Switch 0x71002dec70 createVFXRenderDataBufferShp_OShapeVu1's (similarity 0.60: graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXIsTextureWithBpLoaded); symbols from Fahrenheit's server export
+0x00715a40 function pppCreateFrameBufferData_00715a40 # ours: (lo, hi) -> bool: graphicVFXCreate(lo, hi, 0x10000), graphicVFXCreateDataBuffer(lo, hi, 1, &0x441, &0x1800, "FrameBuffer" (0x00b45b3c), &1), graphicVFXGetRenderDataByInstance != 0; PC renderer glue (draw::bridge::create_frame_buffer_data)
+0x00716050 function pppCreateD3D11FrameBufferData_00716050 # ours: (lo, hi, n) -> bool: as 0x00715a40 with flags 0x20000000, sizes 8n+4 and 12n+6 and the name "D3D11FrameBuffer" (0x00b47f18, strcpy); PC renderer glue (draw::bridge::create_d3d11_frame_buffer_data)
 0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630; ours: (shp) -> byte +0x1c when byte +0xf is 3, else the byte at shp + shp[1] + 4 (small::bridge::shp_alpha)
 0x00716570 function hashU                     # fh v3:exact 0x00716650
 0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export
@@ -6436,6 +6438,7 @@
 0x007e6cc0 function rcVec4fToFixed_copy_007e6cc0 # the same code as rcVec4fToFixed (0x00925950; call targets equal), a copy the compiler kept; own name
 0x007e6d80 function rcAngle2D                 # (x0, y0, x1, y1) -> ST0: direction of (x1 - x0, y1 - y0) in 0..2pi: quadrant q (NaN negative), atan(b/a) or pi/2 - atan(a/b), + q pi/2; from 0x007e6e50; name ours
 0x007e79a0 function op_apply_m_w1             # fh v3:exact 0x007e78b0
+0x007e7be0 function op_rot_m_y_apply_007e7be0 # ours: (dst, src, angle): a unit matrix local (from r0, 1.0 at +g_pppColorConShift, r2 = 1,0), op_rot_m_y(m, m, angle), op_apply_m_w1(dst, m, src) (op::bridge::op_rot_m_y_apply)
 0x007e7ed0 function op_deg_get                # fh v3:exact 0x007e7de0
 0x007e7f60 function op_deg_in_check              # layout: alphabetical run between op_deg_get and op_length_get (1 unnamed in the gap); Switch 0x71003dd2e0 op_deg_in_check is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007e7fc0 function op_length_get             # fh v3:bsim1.00 0x007e7ed0
@@ -6896,6 +6899,7 @@
 0x0081b1e0 function opus_get_chr_pos             # layout+callees: sorts between opu_v_etc and opus_set_chr_dirf, and its named callees match the Switch 0x71003fec20 opus_get_chr_pos's (similarity 1.00: Ch_GetPos); symbols from Fahrenheit's server export
 0x0081b270 function opus_set_chr_dirf            # callees: its named callees match the Switch 0x71003ff2b0 opus_set_chr_dirf's (similarity 1.00: Ch_SetDirF, MsBattleChrStart, MsSetChrDirF); symbols from Fahrenheit's server export
 0x0081b2b0 function opus_set_chr_pos             # callees: its named callees match the Switch 0x71003ff220 opus_set_chr_pos's (similarity 1.00: Ch_SetPos3, MsBattleChrStart, MsSetChrPos); symbols from Fahrenheit's server export
+0x0081b3e0 function op_et_eff_target_center_0081b3e0 # ours: (eff, out, filter): mean Ch_GetPos of a g_EtEff record's target characters (byte +8 indices at +0x10, MsEffectGetTargetFlag filter), r0 for a missing handle; 0/0 gives NaN (et::bridge::op_et_eff_target_center)
 0x0081b4d0 function opu_motion_cb_0081b4d0    # (host, cmd): unit byte +0xba (the motion callback, 0x00c492c8) = cmd+2, u16 +0xa0/+0xa2 = cmd+4/+6; 8/9: +0x40.. = +0x90.. * 16; 0xb: +0xa4/+0x44/+0x48 = +0x90..; -> cmd + 8; name ours
 0x0081b560 function opu_spl                      # callees: its named callees match the Switch 0x7100401030 opu_spl's (similarity 0.88: op_free, op_malloc, op_mul_m, op_spline_xyz, op_spline_xyz_table); symbols from Fahrenheit's server export; ported (effects round 26): nibble 0 builds the spline record +0xbc on the heap [host+0x3a8], 1/2 place the unit on it at +0x4c/256 (2 also a second point and the unit matrix +0xc0), 3 sets callback 0xa; other nibbles pop the caller's esi/edi/ebx from the wrong slots in the original
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30

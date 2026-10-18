@@ -1641,6 +1641,38 @@ pub mod bridge {
         mem.write(dst, o);
     }
 
+    /// `op_rot_m_y_apply_007e7be0(dst, src, angle)` (`0x007e7be0`): `dst` =
+    /// `src` turned by `angle` about Y: a unit matrix built in `frame`
+    /// (0x40 bytes, the original's local; every word first the emulated
+    /// `r0`'s, then 1.0 at `frame + g_pppColorConShift`, `r2` = (1.0, 0) in
+    /// its low words, 1.0 down the rest of the diagonal and the shift
+    /// cleared), `op_rot_m_y(m, m, angle)` (through `call`), then
+    /// [`op_apply_m_w1`]`(dst, m, src)`.
+    pub fn op_rot_m_y_apply<M: Mem>(
+        mem: &mut M,
+        dst: u32,
+        src: u32,
+        angle: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        for i in 0..4 {
+            mem.write(frame + 0x10 * i, r0);
+        }
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        mem.write(frame.wrapping_add(shift), 1.0f32);
+        mem.write(g(mem, 0x00c8_f528), [1.0f32.to_bits(), 0]);
+        for at in [0x14u32, 0x28, 0x3c] {
+            mem.write(frame + at, 1.0f32);
+        }
+        crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
+        let rot = g(mem, 0x007e_9670);
+        call(mem, rot, &[frame, frame, crate::x87::load(angle)]);
+        op_apply_m_w1(mem, dst, frame, src);
+    }
+
     /// The emulated VU0 registers `op_mul_m` uses besides those of
     /// `op_apply_m_w1`: the right matrix and the result at `0x00c8f910`.
     const MULM_C: u32 = 0x00c8_f910;
