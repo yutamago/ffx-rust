@@ -16497,3 +16497,165 @@ fn r8b_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0081_b002);
     r8b_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r9, group A: the map parts' chains gathered by a rectangle ----
+
+/// Group A on `t`: `yiRectToOMDBuild` over a renderer of 0 to 5 map
+/// parts (some skipped by kind or state) of 0 to 4 nodes each, with or
+/// without a matrix and a second packet.
+#[allow(clippy::too_many_lines)] // the parts, then the call
+fn r9a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, next, verts) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(4), t.alloc(4));
+    let (arena, vertex_area) = (t.alloc(0x10_0000), t.alloc(0x2_0000));
+    let mask = t.alloc(4);
+    t.cave_from(
+        0,
+        &[
+            (Some(model::USER_MALLOC), failing_bump_stub(mask, next)),
+            (Some(model::USER_FREE), log_stub(log, rv, 1, 1)),
+            (
+                Some(ffx_field::yipoly::SG_PACKET_GET_PTR),
+                log_stub(log, verts, 2, 0),
+            ),
+        ],
+    );
+    let r = t.alloc(0x6_8810 + 0xb4 * 6);
+    let packets = [t.alloc(0x8000), t.alloc(0x8000)];
+    let nodes = t.alloc(0x60 * 20);
+    let data = t.alloc(0x10000);
+    let (a, b, mat) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x40));
+    let work = t.stack_scratch(0x800);
+    for k in 0..cases {
+        t.put(log, 0u32);
+        t.put(next, arena);
+        t.put(verts, vertex_area);
+        t.put(mask, 0u32);
+        for p in packets {
+            t.fill(p, 0x8000, rng);
+        }
+        let ints = rng.below(3) == 0;
+        let m = if ints || rng.below(3) == 0 { 0 } else { mat };
+        for i in 0..16 {
+            let v = if i % 5 == 0 {
+                float_in(rng, 1, 2)
+            } else {
+                float_in(rng, -1, 1)
+            };
+            t.put(mat + 4 * i, v);
+        }
+        let whole = rng.below(6) == 0;
+        for i in 0..4 {
+            // corners in either order; whole numbers meet the bounds exactly
+            let corner = |rng: &mut Xorshift| {
+                if whole {
+                    (if rng.below(2) == 0 { -100f32 } else { 100f32 }).to_bits()
+                } else if ints {
+                    f32::from(u8::try_from(rng.below(16)).unwrap()).to_bits()
+                } else {
+                    float_in(rng, -2, 12)
+                }
+            };
+            let (x, y) = (corner(rng), corner(rng));
+            t.put(a + 4 * i, x);
+            t.put(b + 4 * i, y);
+        }
+        let parts = rng.below(6);
+        t.put(r + 0x6_8788, parts);
+        let (mut at, mut n_used) = (data, 0u32);
+        for p in 0..parts {
+            let part = r + 0x6_880e + 0xb4 * p;
+            t.fill(part, 0xb4, rng);
+            t.put(part, u16::try_from(rng.below(3)).unwrap());
+            t.put(part + 2, u16::try_from(2 + rng.below(3)).unwrap());
+            let count = rng.below(5);
+            let mut link = 0u32;
+            for _ in 0..count {
+                let node = nodes + 0x60 * n_used;
+                n_used += 1;
+                t.fill(node, 0x60, rng);
+                for i in 0..3 {
+                    let v = if ints {
+                        f32::from(u8::try_from(rng.below(12)).unwrap()).to_bits()
+                    } else {
+                        r6b_fine(rng, -4.0, 14.0)
+                    };
+                    t.put(node + 4 * i, v);
+                }
+                let radius = if ints {
+                    f32::from(u8::try_from(rng.below(4)).unwrap()).to_bits()
+                } else {
+                    r6b_fine(rng, 0.0, 3.0)
+                };
+                t.put(node + 0x2c, radius);
+                let mut w: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+                let (n, textured) = (rng.below(5), rng.below(3) == 0);
+                w.extend(r8a_block(rng, n, textured, ints));
+                let quads = u32::try_from(w.len()).unwrap().div_ceil(4);
+                w.resize(4 * quads as usize + 16, 0);
+                let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).collect();
+                t.write(at, &bytes);
+                t.put(node + 0x44, at);
+                t.put(node + 0x48, quads);
+                t.put(node + 0x4c, link);
+                link = node;
+                at += u32::try_from(bytes.len()).unwrap().next_multiple_of(0x10);
+            }
+            t.put(part + 0x26, link);
+        }
+        let outside = match rng.below(3) {
+            0 => 0,
+            _ => packets[1],
+        };
+        // no first packet only with no parts (the original writes to it)
+        let inside = if parts == 0 && rng.below(2) == 0 {
+            0
+        } else {
+            packets[0]
+        };
+        let sizes = [rng.below(0x8000), rng.below(0x8000)];
+        let unlimited = u32::from(k % 5 == 0);
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        t.same(
+            "yiRectToOMDBuild",
+            |o| {
+                o.eax(
+                    0x0091_2270,
+                    &[r, inside, sizes[0], outside, sizes[1], m, a, b, unlimited],
+                )
+            },
+            |o| {
+                ffx_field::yipoly::yi_rect_to_omd_build(
+                    o,
+                    r,
+                    (inside, sizes[0]),
+                    (outside, sizes[1]),
+                    m,
+                    [a, b],
+                    unlimited,
+                    work,
+                    call,
+                )
+            },
+        );
+    }
+}
+
+/// Group A (r9) on the image.
+#[test]
+fn r9a_rect_to_omd_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0091_a001);
+    r9a_cases(&mut t, &mut rng, 300);
+}
+
+/// Group A (r9) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r9a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0091_a002);
+    r9a_cases(&mut t, &mut rng, 120);
+}
