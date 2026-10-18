@@ -11235,6 +11235,7 @@
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
+0x00913200 function yiScreff_draw            # (scene) -> last vertex call's eax: the screen distortion's per-frame grid: fade line from the inverted camera +0x67f78 and depth +0xbe07c (on +0xbe078 bit 0), graphicSetDistortionBlur(+0xbe0a0 / 128), 9 x 9 vertices from _CIfmod/_CIsin waves of phases +0xbe080/+0xbe084, speed +0xbe094, amplitude +0xbe098 (clamped 0..1), colour +0xbe0a4.. faded to grey (fistp with chop), graphicUpdateDistortionVertex(row, col, r, g, b, a, u, v); +0xbe0a8 += 1, +0xbe080 += +0xbe090 x 1.5, +0xbe084 += +0xbe090; name ours (yiScreff_entry's body); ported (field r4, by hand)
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
 0x00914070 function yiKeyFrameAdvanceLinked   # (r, track, now): yiKeyFrameAdvance for tracks of chained 0x80-byte records (+0x24 current, +4 length, bit 0 end; restart from r +0x9d4c4[+8]); paused returns now; yiKeyFrame_main; name ours
@@ -12652,6 +12653,8 @@
 0x00a493b0 function AbmapItemEffectAtNode     # (chr, node, item) -> bits: AbmapItemUsableAt for one node index: 0 unless held, else AbmapItemNodeEffect(g_Abmap +0x808 + 0x28 node, ctx); from AbmapTryUseItem; name ours
 0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
+0x00a49f10 function AbmapDrawGridMarks        # (): the ability map's 17 x 20 grid marks (g_Abmap + 0x12e60, a byte a cell, corners (x, y, _, scale) from g_Abmap + 0x116c0, 21 a row): a GS sprite packet per set cell at 0x01a860ec and graphicDrawUIAbmapElement(verts 0x80 bytes, scratch, 10) with the pulse of g_Abmap + 0x11698 & 0x1ff; from 0x00a54660; name ours; ported (field r4, by hand)
+0x00a4ce20 function AbmapDrawMap              # (): the ability map's main pass: per node (count i16 at g_Abmap, 16-byte records from +8, data through the table 0x01a85f78) AbmapMakeNodeMatrix, the view matrix g_Abmap + 0x113e0 through the emulated VU0 registers, GS packets at 0x01a860ec (Vec2SubScalarsFlags against the screen box 1528,1600..2576,2304), texture window by kind (0x2f00/0x2710/0x3000/0x3200/0x3600, 0x3500 as 0x2710), graphicDrawUIAbmapElement(verts, 0, 2); returns 0; from 0x00a54660; name ours; ported (field r4, by hand)
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
 0x00a53de0 function eiAbmDataInit             # fh v3:exact 0x00a53de0
 0x00a545a0 function eiAbmDraw                 # fh v3:exact 0x00a545a0
