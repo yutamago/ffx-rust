@@ -17042,3 +17042,247 @@ fn round31_decode_matches_the_original_on_the_snapshot() {
     };
     round31_decode(&mut a, &mut b, &mut Xorshift(0x4031_0032));
 }
+
+/// A cdecl stand-in logging a tag, the arguments at `args` (stack word
+/// indices from 0), and the first word of the text each of `texts` points
+/// at; then running `tail` (which may set `eax`) and returning.
+fn pick_logger(cursor: u32, tag: u32, args: &[u8], texts: &[u8], tail: &[u8]) -> Vec<u8> {
+    // mov ecx, [cursor]; mov dword [ecx], tag
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0xc7, 0x01]);
+    v.extend_from_slice(&tag.to_le_bytes());
+    let mut at = 4u8;
+    for &k in args {
+        // mov eax, [esp+4+4k]; mov [ecx+at], eax
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, at]);
+        at += 4;
+    }
+    for &k in texts {
+        // mov eax, [esp+4+4k]; mov eax, [eax]; mov [ecx+at], eax
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 4 + 4 * k, 0x8b, 0x00, 0x89, 0x41, at]);
+        at += 4;
+    }
+    // add dword [cursor], at
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(at);
+    v.extend_from_slice(tail);
+    v.push(0xc3);
+    assert!(v.len() <= 0x80, "a stand-in slot");
+    v
+}
+
+/// `mov edx, [esp+4+4k]; mov eax, [cell]; mov [edx], eax`: a stand-in
+/// tail storing a test word through argument `k`.
+fn store_through(k: u8, cell: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x54, 0x24, 4 + 4 * k, 0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x02]);
+    v
+}
+
+/// `TOLayoutMessageChoices_008b9a60` over random message texts, with
+/// stand-ins for the measuring and choice calls (the code walk itself,
+/// `TOGetGroup` and `TOSkipCode`, is the game's).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round31_choices(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, t::CHOICE_SCRATCH_BYTES as usize);
+    let w = alloc(a, b, 0x100);
+    let window = alloc(a, b, 0x100);
+    let lines = alloc(a, b, 0x400) + 0x200;
+    let text = alloc(a, b, 0x200);
+    // TOGetMessageWH(i, text, &w, &h, mode, flags): w and h from cells
+    let mut tail = store_through(2, cells);
+    tail.extend_from_slice(&store_through(3, cells + 4));
+    let stand = |a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, code: &[u8]| {
+        let s = stand_in8(a, b, 0x80 * k, code);
+        redirect(a, b, sym, s);
+    };
+    stand(
+        a,
+        b,
+        0,
+        0x008b_9650,
+        &pick_logger(cursor, 0x9650, &[0, 4, 5], &[1], &tail),
+    );
+    // TOGetFontWidthInterMode(text, mode, &w)
+    stand(
+        a,
+        b,
+        1,
+        0x008b_7be0,
+        &pick_logger(cursor, 0x7be0, &[1], &[0], &store_through(2, cells + 8)),
+    );
+    // TOConvAlbhedWord(in, out)
+    stand(
+        a,
+        b,
+        2,
+        0x0090_6780,
+        &pick_logger(cursor, 0x6780, &[], &[0], &store_through(1, cells + 0xc)),
+    );
+    // TOGetButtonIconWidth(b)
+    stand(
+        a,
+        b,
+        3,
+        0x008b_65e0,
+        &pick_logger(cursor, 0x65e0, &[0], &[], &ret_cell(cells + 0x10)),
+    );
+    // TOIntToMes(value, out, digits, mode)
+    stand(
+        a,
+        b,
+        4,
+        0x008b_8290,
+        &pick_logger(
+            cursor,
+            0x8290,
+            &[0, 2, 3],
+            &[],
+            &store_through(1, cells + 0x14),
+        ),
+    );
+    // TOSetMessageChoice(i, n, x, y, total)
+    stand(
+        a,
+        b,
+        5,
+        0x008b_8880,
+        &pick_logger(cursor, 0x8880, &[0, 1, 2, 3, 4], &[], &[]),
+    );
+    // TOGetChangeMacroWidth(i, text, mode): fld dword [cell]
+    let mut fld = vec![0xd9, 0x05];
+    fld.extend_from_slice(&(cells + 0x18).to_le_bytes());
+    stand(
+        a,
+        b,
+        6,
+        0x008b_6a30,
+        &pick_logger(cursor, 0x6a30, &[0, 1, 2], &[], &fld),
+    );
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let map = a.rebase(0x012f_bc40);
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        let i = rng.next() % 8;
+        put(a, b, a.rebase(0x0186_8a90) + 4 * i, lines);
+        put(a, b, a.rebase(0x0186_76f0) + 4 * i, window);
+        let junk: [u32; 0x100] = std::array::from_fn(|_| rng.next());
+        put(a, b, lines - 0x200, junk);
+        put(a, b, lines + 5, (rng.next() % 4) as u8);
+        put(
+            a,
+            b,
+            window + 0xe,
+            [1u16, 1, 0, 2][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            window + 0x10,
+            [0x4000u16, 0, 0x4001][(rng.next() % 3) as usize],
+        );
+        put(a, b, window + 0x48, (rng.next() % 200) as f32 + 0.25);
+        put(a, b, window + 0x50, (rng.next() % 800) as f32 + 0.5);
+        put(a, b, cells, (rng.next() % 4000) as f32 / 8.0);
+        put(a, b, cells + 4, (rng.next() % 64) as f32);
+        put(a, b, cells + 8, (rng.next() % 400) as f32 / 4.0);
+        put(a, b, cells + 0xc, rng.next());
+        put(a, b, cells + 0x10, rng.next() % 40);
+        put(a, b, cells + 0x14, rng.next());
+        put(a, b, cells + 0x18, (rng.next() % 900) as f32 / 3.0);
+        // the text: line codes, alignment, icons, items, numbers, macros,
+        // characters
+        let mut bytes = Vec::new();
+        for _ in 0..(rng.next() % 24) {
+            match rng.next() % 12 {
+                0 => bytes.push([1u8, 2, 3][(rng.next() % 3) as usize]),
+                1 => bytes.extend_from_slice(&[
+                    7,
+                    [0x38u8, 0x31, 0x40, 0x7f, 0xbf, 0xc0, 0xe1, 0xef, 0xf0, 0x20]
+                        [(rng.next() % 10) as usize],
+                ]),
+                2 => bytes.extend_from_slice(&[0xb, rng.next() as u8]),
+                3 | 4 => bytes.extend_from_slice(&[0x10, (0x30 + rng.next() % 0x20) as u8]),
+                5 => bytes.extend_from_slice(&[
+                    0x10,
+                    [0xffu8, 0x4f, 0x50, 0x55, 0x5f, 0x60, 0x18][(rng.next() % 7) as usize],
+                ]),
+                6 => bytes.extend_from_slice(&[(0x12 + rng.next() % 0x12) as u8, rng.next() as u8]),
+                7 => bytes.extend_from_slice(&[4, rng.next() as u8, rng.next() as u8]),
+                _ => bytes.push((0x30 + rng.next() % 0xc0) as u8),
+            }
+        }
+        bytes.push(0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        put(a, b, w + 4, i as i16);
+        put(a, b, w + 0x1a, (rng.next() % 4) as i16);
+        put(a, b, w + 0x94, text);
+        let special = rng.next().is_multiple_of(4);
+        put(
+            a,
+            b,
+            w + 0x14,
+            if special { 0x1c7u16 } else { rng.next() as u16 },
+        );
+        put(
+            a,
+            b,
+            w + 0x16,
+            if special { 199u16 } else { rng.next() as u16 },
+        );
+        put(
+            a,
+            b,
+            map,
+            if rng.next().is_multiple_of(2) {
+                0x17u32
+            } else {
+                rng.next() % 0x40
+            },
+        );
+        let sel = [0u32, 1, 2, 3, 0x13, 0x20][(rng.next() % 6) as usize];
+        let r = eax(a, 0x008b_9a60, &[w, sel]);
+        assert_eq!(
+            r,
+            t::layout_message_choices(b, w, sel, scratch, call, fcall),
+            "choices {k}"
+        );
+        let mut s = vec![0u8; t::CHOICE_SCRATCH_BYTES as usize];
+        b.read_bytes(scratch, &mut s);
+        a.write(scratch, &s).unwrap();
+        same_memory(&format!("choices {k}"), a, b);
+    }
+}
+
+#[test]
+fn round31_choices_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round31_choices(&mut a, &mut b, &mut Xorshift(0x4031_0041));
+}
+
+#[test]
+fn round31_choices_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round31_choices(&mut a, &mut b, &mut Xorshift(0x4031_0042));
+}

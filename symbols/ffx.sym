@@ -9811,7 +9811,7 @@
 0x0089c7d0 function TOBtlDrawLibraRight          # layout+callees: sorts between TOBtlDrawLibraLeft and TOBtlDrawTargetCursor, and its named callees match the Switch 0x71004a0960 TOBtlDrawLibraRight's (similarity 1.00: MsGetMenuChrInfo, TOGetMessageWH, TOMkpCrossExtMesFontLClut, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad
-0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad
+0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad; cdecl(w): battle command list window frame: 0x10 skip command (click 1 first, g_BtlHelpWinOpen = 0), 4 next action 0x3002, top level 0x8000 MsCheckLeftWindow > 0 -> next action 0xffff, 0x2000 MsGetSaveWindow(actor, 0xd, &n) with trailing 0xff dropped -> 0xfffe; then d-pad, pick record, libra auto sets 0x0133d6e4 and trigger 0x40, cancel/confirm (refused: 0x0133d6e4 = 1) and scroll; ported (system round 31)
 0x0089d390 function TOBtlGetTargetPad         # fh v3:exact 0x0089d300 _TOBtlGetTargetPad
 0x0089d610 function TOGetPadStatusPrepare     # fh v3:exact 0x0089d580 _TOGetPadStatusPrepare; cdecl(w): command list window frame while idle (+0x88 the empty step 0x00898e40): cancel 0x40 undo pick/TOBtlSetPrevAction, confirm 0x20 TOCheckBtlCommandUse/TOBtlSetNextAction, d-pad cursor (+0x42) by row +0x38/entry, first row +0x40 follows with TOBtlPadScrollDown/Up; ported (system round 28)
 0x0089d9b0 function TOBtlDrawSimpleHelpMes    # fh v3:cg7 0x89d920 __TOBtlDrawSimpleHelpMes
@@ -10177,6 +10177,7 @@
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
 0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
+0x008b9a60 function TOLayoutMessageChoices_008b9a60 # cdecl(w, sel) -> eax (item count, or the line record when none): walks w+0x94 by TOGetGroup: line codes reset x (centred for window +0xe 1) and step y 0x10, code 0 ends, 1/2 end for sel&0xf != 0, 3 for sel&0xf == 3; 7 alignment, 0xb icon, 0x10 items 0x30.. at line record (0x01868a90[i]) +0x38+8k (flag, width closed by the next item/break, x, y), 0x50..0x5f numbers through TOIntToMes/TOSetMessageChoice; then +8 the widest item; map 0x17 with w+0x14 0x1c7, +0x16 199 stacks items (x 0, y += k*21.5); callers 0x008b8de0, 0x008de370, 0x008de5d0; name ours; ported (system round 31)
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
 0x008b9ec0 function BtlEnd_InParty            # (chr): 1 when chr is one of MsGetSavePartyMember(&a, &b, &c)'s three slots and not 0xff, else 0 (stack cookie); caller 0x008bde00; name ours
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name

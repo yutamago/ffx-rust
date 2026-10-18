@@ -5781,6 +5781,12 @@ ported! {
     CheckPreviousLevel_00872a00 @ 0x0087_2a00 => extern "C" fn check_previous_level() -> u32 {
         tolib::bridge::previous_level_check(&mut mem(), call_sym)
     }
+    /// `TOLayoutMessageChoices_008b9a60(w, sel)`.
+    TOLayoutMessageChoices_008b9a60 @ 0x008b_9a60 => extern "C" fn to_layout_message_choices(w: u32, sel: u32) -> u32 {
+        let mut frame = super::StackFrame::<12>::new();
+        let scratch = frame.at();
+        tolib::bridge::layout_message_choices(&mut mem(), w, sel, scratch, call_sym, fcall)
+    }
     /// `TOSetMessageChoice(i, n, x, y, total)`.
     TOSetMessageChoice @ 0x008b_8880 => extern "C" fn to_set_message_choice(i: u32, n: u32, x: u32, y: u32, total: u32) {
         tolib::bridge::set_message_choice(&mut mem(), i, n, x, y, total);

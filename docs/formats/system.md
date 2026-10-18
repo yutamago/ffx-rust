@@ -1142,3 +1142,47 @@ unpacked`, and the moved block's first byte (the file's first byte)
 names the method: 1 `sa_meth01dec_ex(block, data, n, buffer)`, 2
 `sa_meth01dec2_ex` (both stand-ins on PC that only print), other values
 nothing (`eax` is then the byte less 2).
+
+## The battle command list's pad (round 31)
+
+`TOBtlGetStdPad(w)` (`0x0089cde0`) is the item/skill list's frame, a
+sibling of `TOGetPadStatusPrepare` and the side pads. It runs only while
+`g_BtlWindowOpen` and with the idle step function (`+0x88` =
+`0x00898e40`). Before the d-pad, by the trigger word `0x025d09d4`: at the
+top level (`g_BtlActionDepth` 0) 0x10 takes the skip command
+(`MsMenuGetChrSkipCommand`; unlike the side pads it clicks 1 before the
+command record is written, and clears `g_BtlHelpWinOpen` itself instead
+of calling `TOBtlCloseHelpWin`); 0x04 asks for action 0x3002 (no summon
+out); 0x8000 opens the left window (`MsCheckLeftWindow` above 0, action
+0xffff) and 0x2000 the right one (action 0xfffe) when
+`MsGetSaveWindow(actor, 0xd, &n)` lists anything once its trailing 0xff
+entries are dropped (a negative `n` counts as a list). The d-pad works as
+in `TOGetPadStatusPrepare` (only exact repeated words move it), then the
+pick is recorded before the buttons are read again: Libra's auto mode
+(`0x0133d6e0` 1) forces the trigger to 0x40 and sets `0x0133d6e4` unless
+it or `g_BtlCommandMissed` is 1; a refused confirm (`TOCheckBtlCommandUse`
+negative) clicks 3 and sets `0x0133d6e4` too.
+
+## Laying out a message's choices (round 31)
+
+`TOLayoutMessageChoices_008b9a60(w, sel)` (cdecl) walks a message
+window record's text (`w +0x94`, window `i16 +4`, mode `i16 +0x1a`) with a
+pen (x an `f32` from 0, y from 0x10) and fills the window's line record
+(`0x01868a90[i]`): `+4` and the item count `+5` cleared first, item
+`a - 0x30` of a `0x10 a` code at `+0x38 + 8 × (a - 0x30)` (`+0` flag 1,
+`+2` width, `+4` x, `+6` y, both truncated with `_ftol2_sse`). An item's
+width is the pen's distance from its x when the next item or line code
+comes; `0x10 0xff` only closes. `0x10 0x50..0x5f` is a number: `[line
+record +0xc]` through `TOIntToMes(value, text, a - 0x4f, 1)`, measured,
+and set with `TOSetMessageChoice(i, a - 0x4f, x, y, width)`. Line codes
+(group 1) put x back to 0, or centre it for a centred window (`+0xe` 1:
+`(right +0x50 - left +0x48 - text width) × 0.5`); code 0 ends, 1 and 2 go
+back to y 0x10 and end for `sel & 0xf` non-zero, 3 steps y by 0x10 and
+ends for `sel & 0xf` 3. Code 7 aligns (0x38 and 0x31 centre the rest of
+the line, 0x40..0xbf put x at `4a - 0x100`, 0xe1..0xef step x by `a -
+0xe0`), 0x0b adds a button icon's width, macros (group 3) add
+`TOGetChangeMacroWidth` and characters `TOGetFontWidthInterMode` (after
+`TOConvAlbhedWord` in an Al Bhed window, `+0x10` 0x4000). At the end the
+record's `+8` is the widest item; on map 0x17, for the record with `+0x14`
+0x1c7 and `+0x16` 199, the items are stacked instead (x 0, y `+ 21.5k`).
+`eax` is the item count, or the line record when there is none.

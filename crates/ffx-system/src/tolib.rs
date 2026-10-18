@@ -4579,6 +4579,308 @@ pub mod bridge {
         u32::from(mem.read::<u8>(p.wrapping_add(3)) & 3 == 1)
     }
 
+    /// The scratch [`layout_message_choices`] hands its callees (0x30
+    /// bytes, the original's frame in this order): `+0` an Al Bhed
+    /// character (4 bytes), `+4` a font width, `+8` and `+0xc` a message's
+    /// width and height, `+0x10` a number's text (32 bytes).
+    pub const CHOICE_SCRATCH_BYTES: u32 = 0x30;
+
+    /// [`layout_message_choices`]'s pen.
+    struct ChoicePen {
+        /// The window (`i16` at `+4` of the record).
+        window: u32,
+        /// The text mode (`i16` at `+0x1a`), for the width functions.
+        mode: u32,
+        /// The pen's x, an `f32` (as bits).
+        x: u32,
+        /// The line's y: 0x10 for the first, 0x10 more per line break.
+        y: i32,
+        /// The choice item whose width the next item or break closes.
+        open: Option<u32>,
+        /// See [`CHOICE_SCRATCH_BYTES`].
+        scratch: u32,
+    }
+
+    impl ChoicePen {
+        /// The window's line record (`0x01868a90[window]`).
+        fn lines(&self, mem: &impl Mem) -> u32 {
+            mem.read(
+                mem.rebase(0x0186_8a90)
+                    .wrapping_add(self.window.wrapping_mul(4)),
+            )
+        }
+
+        /// The window (`g_MsgWindows[window]`).
+        fn record(&self, mem: &impl Mem) -> u32 {
+            mem.read(
+                mem.rebase(0x0186_76f0)
+                    .wrapping_add(self.window.wrapping_mul(4)),
+            )
+        }
+
+        /// Where `TOGetMessageWH` leaves a width.
+        fn text_width(&self) -> u32 {
+            self.scratch.wrapping_add(8)
+        }
+
+        /// The x that centres the last measured text in the window
+        /// (`(right +0x50 - left +0x48 - width) * 0.5`).
+        fn centred(&self, mem: &impl Mem) -> u32 {
+            use ffx_bridge::x87::{load, mul, store, sub};
+            let w = self.record(mem);
+            let right: u32 = mem.read(w.wrapping_add(0x50));
+            let left: u32 = mem.read(w.wrapping_add(0x48));
+            let width: u32 = mem.read(self.text_width());
+            store(mul(sub(sub(load(right), load(left)), load(width)), 0.5))
+        }
+
+        /// `x += width`, at `f32` (both `f32`).
+        fn advance(&mut self, width: u32) {
+            use ffx_bridge::x87::{add, load, store};
+            self.x = store(add(load(width), load(self.x)));
+        }
+
+        /// The open item's width (`+2`) becomes the pen's distance from
+        /// its x (`+4`), truncated; no item is open after.
+        fn close(&mut self, mem: &mut impl Mem) {
+            use ffx_bridge::x87::{ftol, load, sub};
+            if let Some(item) = self.open.take() {
+                let start = f64::from(mem.read::<i16>(item.wrapping_add(4)));
+                #[allow(clippy::cast_possible_truncation)] // `mov word`
+                let width = ftol(mem, sub(load(self.x), start)) as u16;
+                mem.write(item.wrapping_add(2), width);
+            }
+        }
+    }
+
+    /// The callees of [`layout_message_choices`].
+    const GET_GROUP: u32 = 0x008d_f610;
+    const SKIP_CODE: u32 = 0x008d_fd80;
+    const MESSAGE_WH: u32 = 0x008b_9650;
+    const FONT_WIDTH: u32 = 0x008b_7be0;
+    const CONV_ALBHED: u32 = 0x0090_6780;
+    const ICON_WIDTH: u32 = 0x008b_65e0;
+    const INT_TO_MES: u32 = 0x008b_8290;
+    const SET_CHOICE: u32 = 0x008b_8880;
+    const MACRO_WIDTH: u32 = 0x008b_6a30;
+
+    /// A group-2 code at `text` (`7` alignment, `0x0b` button icon, `0x10`
+    /// choice item) moves the pen.
+    fn choice_code<M: Mem>(
+        mem: &mut M,
+        pen: &mut ChoicePen,
+        text: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{ftol, load, store};
+        let code: u8 = mem.read(text);
+        let arg: u8 = mem.read(text.wrapping_add(1));
+        let (window, mode, width, height) = (
+            pen.window,
+            pen.mode,
+            pen.text_width(),
+            pen.scratch.wrapping_add(0xc),
+        );
+        if code == 7 {
+            // alignment of the rest of the line: 0x38 and 0x31 centre it,
+            // 0x40..0xc0 a fixed x, 0xe1..=0xef a small step right
+            call(
+                mem,
+                MESSAGE_WH,
+                &[window, text.wrapping_add(2), width, height, mode, 3],
+            );
+            if arg == 0x38 {
+                pen.x = pen.centred(mem);
+                return;
+            }
+            if arg == 0x31 {
+                pen.x = pen.centred(mem);
+            }
+            if (0x40..0xc0).contains(&arg) {
+                pen.x = store(f64::from(i32::from(arg) * 4 - 0x100));
+            }
+            if (0xe1..=0xef).contains(&arg) {
+                pen.advance(store(f64::from(arg - 0xe0)));
+            }
+            return;
+        }
+        if code == 0xb {
+            let icon = call(mem, ICON_WIDTH, &[u32::from(arg)]).cast_signed();
+            pen.advance(store(f64::from(icon)));
+        }
+        if code != 0x10 {
+            return;
+        }
+        if (0x50..0x60).contains(&arg) {
+            // a number item: its text, measured, set as a choice of
+            // arg - 0x4f items across the number's width
+            let n = u32::from(arg) - 0x4f;
+            let number = pen.scratch.wrapping_add(0x10);
+            let value: u32 = mem.read(pen.lines(mem).wrapping_add(0xc));
+            call(mem, INT_TO_MES, &[value, number, n, 1]);
+            call(mem, MESSAGE_WH, &[window, number, width, height, mode, 0]);
+            let measured: u32 = mem.read(width);
+            let total = ftol(mem, load(measured));
+            let x = ftol(mem, load(pen.x));
+            call(
+                mem,
+                SET_CHOICE,
+                &[window, n, x, pen.y.cast_unsigned(), total],
+            );
+            pen.advance(measured);
+            return;
+        }
+        pen.close(mem);
+        if arg != 0xff {
+            // item arg - 0x30 starts here: 8 bytes from the line record
+            // +0x38 (flag 1, width, x, y)
+            let lines = pen.lines(mem);
+            let count: u8 = mem.read(lines.wrapping_add(5));
+            mem.write(lines.wrapping_add(5), count.wrapping_add(1));
+            let item = pen
+                .lines(mem)
+                .wrapping_sub(0x148)
+                .wrapping_add(u32::from(arg) * 8);
+            mem.write(item, 1u32);
+            #[allow(clippy::cast_possible_truncation)] // `mov word`
+            let x = ftol(mem, load(pen.x)) as u16;
+            mem.write(item.wrapping_add(4), x);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // `mov word`
+            mem.write(item.wrapping_add(6), pen.y as u16);
+            pen.open = Some(item);
+        }
+    }
+
+    /// `TOLayoutMessageChoices_008b9a60(w, sel)` (`0x008b9a60`): walks the
+    /// text of message window record `w` (`+0x94`; window `i16 +4`, mode
+    /// `i16 +0x1a`) and lays out its choice items in the window's line
+    /// record (`0x01868a90[i]`: `+4` and the item count `+5` cleared
+    /// first). A pen starts at x 0 on line y 0x10; by the codes' groups
+    /// (`TOGetGroup`):
+    /// - 1 (line codes 0-3): the open item closed, x back to 0 (centred
+    ///   for a centred window, `+0xe` 1); 0 ends the text; 1 and 2 start
+    ///   over at y 0x10 and end it for a non-zero `sel & 0xf`; 3 steps y
+    ///   by 0x10 and ends it for `sel & 0xf` 3.
+    /// - 2: [`choice_code`].
+    /// - 3 (macros): x + `TOGetChangeMacroWidth(i, text, mode)`.
+    /// - 4 (characters): x + `TOGetFontWidthInterMode(text, mode, &w)`,
+    ///   through `TOConvAlbhedWord` for an Al Bhed window (`+0x10` 0x4000).
+    ///
+    /// Then the record's `+8` becomes the widest item; on map 0x17 for
+    /// record `+0x14` 0x1c7, `+0x16` 199 the items stack instead (x 0, y
+    /// `+ k × 21.5`). `scratch` is [`CHOICE_SCRATCH_BYTES`] long. Returns
+    /// what the original leaves in `eax`: the item count, or the line
+    /// record with none.
+    pub fn layout_message_choices<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        sel: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store};
+        let mut pen = ChoicePen {
+            window: i32::from(mem.read::<i16>(w.wrapping_add(4))).cast_unsigned(),
+            mode: i32::from(mem.read::<i16>(w.wrapping_add(0x1a))).cast_unsigned(),
+            x: 0,
+            y: 0x10,
+            open: None,
+            scratch,
+        };
+        let mut text: u32 = mem.read(w.wrapping_add(0x94));
+        let sel = sel & 0xf;
+        let mut max_y = 0;
+        let lines = pen.lines(mem);
+        mem.write(lines.wrapping_add(4), 0u8);
+        let lines = pen.lines(mem);
+        mem.write(lines.wrapping_add(5), 0u8);
+        loop {
+            let code: u8 = mem.read(text);
+            let mut more = true;
+            match call(mem, GET_GROUP, &[u32::from(code)]) {
+                1 => {
+                    pen.close(mem);
+                    pen.x = 0;
+                    if mem.read::<i16>(pen.record(mem).wrapping_add(0xe)) == 1 {
+                        let (width, height) = (pen.text_width(), scratch.wrapping_add(0xc));
+                        call(
+                            mem,
+                            MESSAGE_WH,
+                            &[pen.window, text.wrapping_add(1), width, height, pen.mode, 3],
+                        );
+                        pen.x = pen.centred(mem);
+                    }
+                    match mem.read::<u8>(text) {
+                        0 => more = false,
+                        1 | 2 => {
+                            pen.y = 0x10;
+                            more = sel == 0;
+                        }
+                        3 => {
+                            pen.y += 0x10;
+                            if sel == 3 && pen.y > max_y {
+                                max_y = pen.y;
+                                more = false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                2 => choice_code(mem, &mut pen, text, &mut call),
+                3 => {
+                    let width = fcall(mem, MACRO_WIDTH, &[pen.window, text, pen.mode]);
+                    pen.x = store(add(width, load(pen.x)));
+                }
+                4 => {
+                    let width = scratch.wrapping_add(4);
+                    let albhed = mem.read::<u16>(pen.record(mem).wrapping_add(0x10)) == 0x4000;
+                    if albhed {
+                        call(mem, CONV_ALBHED, &[text, scratch]);
+                        call(mem, FONT_WIDTH, &[scratch, pen.mode, width]);
+                    } else {
+                        call(mem, FONT_WIDTH, &[text, pen.mode, width]);
+                    }
+                    let width: u32 = mem.read(width);
+                    pen.advance(width);
+                }
+                _ => {}
+            }
+            text = call(mem, SKIP_CODE, &[text]);
+            if !more {
+                break;
+            }
+        }
+        // the widest item, and map 0x17's stacked items
+        let lines = pen.lines(mem);
+        mem.write(lines.wrapping_add(8), 0u16);
+        let mut eax = pen.lines(mem);
+        let stacked = mem.read::<u32>(mem.rebase(0x012f_bc40)) == 0x17
+            && mem.read::<i16>(w.wrapping_add(0x14)) == 0x1c7
+            && mem.read::<i16>(w.wrapping_add(0x16)) == 199;
+        let mut k = 0i32;
+        while k < i32::from(mem.read::<i8>(pen.lines(mem).wrapping_add(5))) {
+            let item =
+                |mem: &M, pen: &ChoicePen| pen.lines(mem).wrapping_add((k * 8).cast_unsigned());
+            if stacked {
+                mem.write(item(mem, &pen).wrapping_add(0x3c), 0u16);
+                let at = item(mem, &pen).wrapping_add(0x3e);
+                let y = f64::from(mem.read::<i16>(at));
+                #[allow(clippy::cast_possible_truncation)] // `mov word`
+                let y = ftol(mem, add(mul(f64::from(k), 21.5), y)) as u16;
+                mem.write(at, y);
+            }
+            let lines = pen.lines(mem);
+            let width: i16 = mem.read(item(mem, &pen).wrapping_add(0x3a));
+            if width > mem.read::<i16>(lines.wrapping_add(8)) {
+                mem.write(lines.wrapping_add(8), width);
+            }
+            k += 1;
+            eax = i32::from(mem.read::<i8>(pen.lines(mem).wrapping_add(5))).cast_unsigned();
+        }
+        eax
+    }
+
     /// `0x008b8880(i, n, x, y, total)`: message window `i` set up as a
     /// choice of `n` items (`+0x1c` 2): its line record (`0x01868a90`)
     /// gets `+1` and `+4` cleared, `+5` `n`, the cursor and top
