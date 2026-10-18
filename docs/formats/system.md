@@ -1091,3 +1091,54 @@ slot). Each slot in state 2 or 3 runs `TOMenuExecLayerHandle(i, a,
 handle, b)` (`0x00a7b220`) on its handle (`+0x1c`), in slot order. The
 original leaves in `eax` the last slot's call result, or that slot's
 state when it is not drawn; the port returns the same.
+
+## Swapping the international environment (round 31)
+
+A language change reloads the language files from the save region's
+archive (`0x00c59564`: 4 for English, 0x12 otherwise, set by
+`TOSwapInternationalEnvInit`). `TOSwapInternationalEnvExec`
+(`0x008b0340`) does it at once with `TODVDFileRead`; `...ExecNonBlock`
+(`0x008b0500`) spreads the same reads over frames with
+`TODVDFileStartRead` and the CD-busy check `0x008abb00` (CD table
+`+8(1)`). Order: file 0xb into `[0x01841e00]`, 0xa into
+`TOGetBtlMenuTexAdrs()`, 0xf into `[0x01841d9c]`, 0xe into
+`[0x01841d98]`, 8 into `[0x01841e08]`, 6 into `0x025d0d20`, 5 into the
+Al Bhed table, 7 into `0x025d0dc0`; `TOSeqInitAllScene(2)`; file 0x16
+into `0x01841e10` and `TkMenuSetSceneDataAdrs(2, 0x01841e10)`;
+`TOSeqInitParam()`; the battle data (`MsBattleReadData`, or file by file
+with `MsBattleReadDataNB(n)` until it returns 0, waiting for `GetCD()`'s
+`+8(1)` after each). State: step `0x01841d28` (0..0x1c, compared
+unsigned; others do nothing), done `0x01841d2c` (the return value),
+busy `0x01841d30`, battle file `0x01841d34`. Step 0x12 falls through
+into 0x13; step 0x1c prints "Done" every time it runs. With
+`g_DebugPadPrintFlag` the step and file count go to the debug screen.
+`...ExecMenu` (`0x008b0440`) reads file 0xd of `0x00c59978` into
+`0x0157f130` with its own step (`0x01841d38`, 0..6; 4 and 5 do nothing)
+and done flag (`0x01841d3c`).
+
+`TOTransTexture` (`0x008b1020`) then uploads the textures with
+`TOTransImageHL(data, dest, format, 0, 0, w, h)` from the texture table
+(`0x01841da0`, 16 bytes each: data, CLUT, size, `i16` w, h): entry
+`TOGetInternationalBaseDicType()` (not bounds-checked) to 0x3c00; out of
+battle entry 1 to 0x3d00 when `AtelGetExpandFTCAdrs()` is non-zero; in
+battle entry 2 to 0x3d00 when `MsBattleGetFontAddress()` is non-zero and
+entry 4 to 0x3d40 for language 0; then fixed-size images: `[0x01841d94]`
+0x80x0x100 to 0x3d80, `[0x01841d98]` 0x100x0x80 to 0x3dc0,
+`[0x01841e00]` and the battle-menu texture 0x100x0x100 (format 0x13) to
+0x3e00 and 0x3f00, `[0x01841e08]` 0x40x0x40 (format 0) to 0x2ea0. The
+menu's form `0x008b1190` uploads entries 0 and 4 for language 0 (else
+the dictionary's), entry 3 when `GetU32_0112a010()`, `[0x01841d9c]`
+0x200x0x80 to 0x3f00, and the last two only while no reload is busy.
+
+## Decoding a compressed CD file (round 31)
+
+`cd_decode_data(req)` (`0x0076d440`) unpacks a file in place: `req +4`
+the data, `+0x2c` its size; the unpacked size is the unaligned `u32` at
+data `+1`. Files up to 0x1800 bytes are copied whole to the read buffer
+(`[0x01128ac8]`) and `sa_decode(data, buffer)` unpacks them back. A
+larger file keeps its last 0x1800 bytes in the buffer, moves its first
+`size - 0x1800` bytes up, byte by byte from the end, to end at data `+
+unpacked`, and the moved block's first byte (the file's first byte)
+names the method: 1 `sa_meth01dec_ex(block, data, n, buffer)`, 2
+`sa_meth01dec2_ex` (both stand-ins on PC that only print), other values
+nothing (`eax` is then the byte less 2).

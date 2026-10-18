@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, instance, math, menu,
-    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, instance, intl, math,
+    menu, msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
 };
 
 /// The game thread's x87 control word.
@@ -16731,4 +16731,262 @@ fn round30_seq_draw_matches_the_original_on_the_snapshot() {
         return;
     };
     round30_seq_draw(&mut a, &mut b, &mut Xorshift(0x4030_0022));
+}
+
+/// `mov eax, [cell]`: a stand-in tail returning a word the test sets.
+fn ret_cell(cell: u32) -> Vec<u8> {
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v
+}
+
+/// Logging stand-ins at `syms` (tag = the address, `n` arguments), each
+/// returning its own word of `rets` (in order); `slot0` is the first
+/// stand-in slot used.
+fn loggers(a: &mut Oracle, b: &mut Oracle, cursor: u32, rets: u32, slot0: u32, syms: &[(u32, u8)]) {
+    for (k, &(sym, n)) in (0u32..).zip(syms) {
+        let code = copy_logger(cursor, sym, n, &ret_cell(rets + 4 * k));
+        let s = stand_in8(a, b, 0x80 * (slot0 + k), &code);
+        redirect(a, b, sym, s);
+    }
+}
+
+/// The callees of the international-environment reload.
+const ROUND31_ENV_CALLEES: [(u32, u8); 12] = [
+    (0x0062_f500, 1), // dbgPrintf
+    (0x0078_2050, 0), // MsBattleReadData
+    (0x0078_2090, 1), // MsBattleReadDataNB
+    (0x0089_de30, 2), // TODapsSetPos
+    (0x0089_dde0, 2), // TODapsPrintf
+    (0x008a_ba30, 3), // TODVDFileRead
+    (0x008a_bab0, 3), // TODVDFileStartRead
+    (0x008a_bb00, 0), // the CD-busy check
+    (0x008a_e5a0, 1), // TOSeqInitAllScene
+    (0x008a_e6f0, 0), // TOSeqInitParam
+    (0x00a7_c7f0, 2), // TkMenuSetSceneDataAdrs
+    (0x0090_6b20, 0), // TOGetFFXToAlbhedTblAdrs
+];
+
+/// `TOSwapInternationalEnvExec`, `...ExecMenu` and `...ExecNonBlock` over
+/// logging stand-ins (random results), from every step.
+#[allow(clippy::cast_possible_truncation)]
+fn round31_env(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use intl::bridge as i;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let n = ROUND31_ENV_CALLEES.len();
+    let rets = alloc(a, b, 4 * (n + 1));
+    loggers(a, b, cursor, rets, 0, &ROUND31_ENV_CALLEES);
+    // GetCD()'s +8: the CD wait of step 0x18
+    let cd_wait = stand_in8(
+        a,
+        b,
+        0x80 * n as u32,
+        &copy_logger(cursor, 0x0008, 1, &ret_cell(rets + 4 * n as u32)),
+    );
+    put(a, b, cd::bridge::CD_LIB.ptr(a).addr + 8, cd_wait);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for j in 0..=n as u32 {
+            // mostly 0 (a read finished, no more battle files)
+            let r = if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                rng.next()
+            };
+            put(a, b, rets + 4 * j, r);
+        }
+        set(a, b, i::ARCHIVE, rng.next() % 0x20);
+        set(a, b, i::MENU_ARCHIVE, rng.next() % 0x20);
+        set(a, b, i::DONE, rng.next() % 3);
+        set(a, b, i::BUSY, rng.next() % 3);
+        set(a, b, i::MENU_DONE, rng.next() % 3);
+        set(a, b, i::BATTLE_FILE, (rng.next() % 40).cast_signed() - 2);
+        set(
+            a,
+            b,
+            i::DEBUG_PRINT,
+            [0u8, 0, 1, 3][(rng.next() % 4) as usize],
+        );
+        for w in [
+            0x0184_1d98u32,
+            0x0184_1d9c,
+            0x0184_1e00,
+            0x0184_1e04,
+            0x0184_1e08,
+        ] {
+            put(a, b, a.rebase(w), rng.next());
+        }
+        let what = match k % 3 {
+            0 => {
+                set(a, b, i::STEP, rng.next() % 0x20);
+                let r = eax(a, 0x008b_0500, &[]);
+                assert_eq!(r, i::exec_non_block(b, b_call), "non-block {k}");
+                "non-block"
+            }
+            1 => {
+                set(a, b, i::MENU_STEP, rng.next() % 9);
+                let r = eax(a, 0x008b_0440, &[]);
+                assert_eq!(r, i::exec_menu(b, b_call), "menu {k}");
+                "menu"
+            }
+            _ => {
+                let r = eax(a, 0x008b_0340, &[]);
+                assert_eq!(r, i::exec(b, b_call), "exec {k}");
+                "exec"
+            }
+        };
+        same_memory(&format!("{what} {k}"), a, b);
+    }
+}
+
+#[test]
+fn round31_env_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round31_env(&mut a, &mut b, &mut Xorshift(0x4031_0011));
+}
+
+#[test]
+fn round31_env_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round31_env(&mut a, &mut b, &mut Xorshift(0x4031_0012));
+}
+
+/// The callees of the texture uploads.
+const ROUND31_TEX_CALLEES: [(u32, u8); 8] = [
+    (0x008b_0b10, 7), // TOTransImageHL
+    (0x0078_16f0, 0), // MsBattleGetStatus
+    (0x0078_1680, 0), // MsBattleGetFontAddress
+    (0x008a_c2f0, 0), // TOGetFFXLang
+    (0x0087_3ac0, 0), // AtelGetExpandFTCAdrs
+    (0x0077_4670, 0), // GetU32_0112a010
+    (0x008a_cf20, 0), // GetU32_01841d30
+    (0x008a_c760, 0), // TOGetInternationalBaseDicType
+];
+
+/// `TOTransTexture` and its menu form over logging stand-ins.
+fn round31_textures(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use intl::bridge as i;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let rets = alloc(a, b, 4 * ROUND31_TEX_CALLEES.len());
+    loggers(a, b, cursor, rets, 0, &ROUND31_TEX_CALLEES);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let textures = a.rebase(i::TEXTURES);
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, rets, rng.next());
+        for j in 1..7 {
+            put(a, b, rets + 4 * j, rng.next() % 2 * rng.next());
+        }
+        put(a, b, rets + 28, rng.next() % 6);
+        for w in 0..0x18 {
+            put(a, b, textures + 4 * w, rng.next());
+        }
+        for w in [
+            0x0184_1d94u32,
+            0x0184_1d98,
+            0x0184_1d9c,
+            0x0184_1e00,
+            0x0184_1e04,
+            0x0184_1e08,
+        ] {
+            put(a, b, a.rebase(w), rng.next());
+        }
+        if k % 2 == 0 {
+            let r = eax(a, 0x008b_1020, &[]);
+            assert_eq!(r, i::trans_texture(b, b_call), "trans texture {k}");
+        } else {
+            let r = eax(a, 0x008b_1190, &[]);
+            assert_eq!(r, i::trans_texture_menu(b, b_call), "menu textures {k}");
+        }
+        same_memory(&format!("textures {k}"), a, b);
+    }
+}
+
+#[test]
+fn round31_textures_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round31_textures(&mut a, &mut b, &mut Xorshift(0x4031_0021));
+}
+
+#[test]
+fn round31_textures_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round31_textures(&mut a, &mut b, &mut Xorshift(0x4031_0022));
+}
+
+/// `cd_decode_data` over logging stand-ins for the decoders: small and
+/// large files, every method byte, heads moved up and down.
+#[allow(clippy::cast_possible_truncation)]
+fn round31_decode(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let rets = alloc(a, b, 12);
+    loggers(
+        a,
+        b,
+        cursor,
+        rets,
+        0,
+        &[(0x00a4_3de0, 2), (0x00a4_3cb0, 4), (0x00a4_3ca0, 4)],
+    );
+    let buffer = alloc(a, b, 0x1800);
+    let req = alloc(a, b, 0x40);
+    let data = alloc(a, b, 0x3800);
+    set(a, b, cd::bridge::READ_BUFFER, buffer);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        for j in 0..3 {
+            put(a, b, rets + 4 * j, rng.next());
+        }
+        let size = if k % 20 == 0 {
+            0x1800 + k / 20 % 2
+        } else if k % 3 == 0 {
+            rng.next() % 0x1801
+        } else {
+            0x1801 + rng.next() % 0x1000
+        };
+        let packed = size.saturating_sub(0x1800);
+        // unpacked: within the block, from below the head to beyond it
+        let unpacked = (packed + rng.next() % 0x1000)
+            .saturating_sub(0x400)
+            .max(packed / 2);
+        let bytes: Vec<u8> = (0..0x3800).map(|_| rng.next() as u8).collect();
+        a.write(data, &bytes).unwrap();
+        b.write(data, &bytes).unwrap();
+        put(a, b, data, [0u8, 1, 2, 3, 0xff][(rng.next() % 5) as usize]);
+        put(a, b, data + 1, unpacked);
+        put(a, b, req + 4, data);
+        put(a, b, req + 0x2c, size);
+        let r = eax(a, 0x0076_d440, &[req]);
+        assert_eq!(r, cd::bridge::decode_data(b, req, b_call), "decode {k}");
+        same_memory(&format!("decode {k}"), a, b);
+    }
+}
+
+#[test]
+fn round31_decode_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round31_decode(&mut a, &mut b, &mut Xorshift(0x4031_0031));
+}
+
+#[test]
+fn round31_decode_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round31_decode(&mut a, &mut b, &mut Xorshift(0x4031_0032));
 }

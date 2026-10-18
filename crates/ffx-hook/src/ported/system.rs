@@ -5,9 +5,9 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, heap, instance, math,
-    menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib, vbf,
-    window,
+    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, heap, instance, intl,
+    math, menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub, sync, tolib,
+    vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -1108,6 +1108,30 @@ ported! {
         btl::bridge::set_target_callback(&mut mem(), w);
     }
 
+    /// `cd_decode_data(req)`.
+    cd_decode_data @ 0x0076_d440 => extern "C" fn cd_decode_data(req: u32) -> u32 {
+        cd::bridge::decode_data(&mut mem(), req, call_ptr)
+    }
+    /// `TOSwapInternationalEnvExec()`.
+    TOSwapInternationalEnvExec @ 0x008b_0340 => extern "C" fn to_swap_international_env_exec() -> u32 {
+        intl::bridge::exec(&mut mem(), call_ptr)
+    }
+    /// `TOSwapInternationalEnvExecMenu()`.
+    TOSwapInternationalEnvExecMenu @ 0x008b_0440 => extern "C" fn to_swap_international_env_exec_menu() -> u32 {
+        intl::bridge::exec_menu(&mut mem(), call_ptr)
+    }
+    /// `TOSwapInternationalEnvExecNonBlock()`.
+    TOSwapInternationalEnvExecNonBlock @ 0x008b_0500 => extern "C" fn to_swap_international_env_exec_non_block() -> u32 {
+        intl::bridge::exec_non_block(&mut mem(), call_ptr)
+    }
+    /// `TOTransTexture()`.
+    TOTransTexture @ 0x008b_1020 => extern "C" fn to_trans_texture() -> u32 {
+        intl::bridge::trans_texture(&mut mem(), call_ptr)
+    }
+    /// `TOTransTexture_008b1190()`.
+    TOTransTexture_008b1190 @ 0x008b_1190 => extern "C" fn to_trans_texture_menu() -> u32 {
+        intl::bridge::trans_texture_menu(&mut mem(), call_ptr)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)
