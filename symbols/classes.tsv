@@ -826,7 +826,7 @@
 0x00638ff0	dead	unreachable from the entry point and every pointer table
 0x00639060	dead	unreachable from the entry point and every pointer table
 0x006390c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapResetSegments
-0x006390d0	logic	default (no rule: ported to be safe)
+0x006390d0	glue	thin wrapper: only forwards to glue code (AbmapManager_ResetLayers_006851d0)
 0x006390f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapUpdate
 0x00639110	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicActivateBlurEffectEx
 0x00639130	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicActivateLoadingScreen
@@ -1002,7 +1002,7 @@
 0x006411d0	logic	scene state the renderer needs (original look first): graphicGetFogNear
 0x006411e0	debug	reviewed: g_FreeCamera (PC2 render/pc-ui round 1)
 0x00641230	logic	scene state the renderer needs (original look first): graphicGetGlobalAmbientColor
-0x006412b0	logic	default (no rule: ported to be safe)
+0x006412b0	glue	reviewed: forwards to MapPart_LangOverride on [0x00ccc81c] (system round 32)
 0x006412d0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataGetLoc
 0x006412f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetLocTextWithLength
 0x00641310	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetMagic0146Key
@@ -2285,7 +2285,7 @@
 0x00684cd0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): AbmapManager_GetVertexInfo
 0x00684eb0	dead	unreachable from the entry point and every pointer table
 0x00684ef0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
-0x006851d0	logic	default (no rule: ported to be safe)
+0x006851d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): AbmapManager_ResetLayers_006851d0
 0x006857b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): AbmapManager_ToDestroy
 0x006857c0	glue	only called from glue code (MenuTextureManager_UnLoadDefaultMenuTexture)
 0x00685840	glue	only called from glue code (graphicAbmapUpdate)
@@ -4530,7 +4530,7 @@
 0x007037e0	logic	default (no rule: ported to be safe)
 0x00703800	dead	unreachable from the entry point and every pointer table
 0x00703820	glue	only called from glue code (0x7030e0 and 1 more)
-0x00703910	logic	default (no rule: ported to be safe)
+0x00703910	glue	reviewed: calls a function pointer by argument count (system round 32)
 0x00703990	platform	imports CloseHandle, TerminateThread
 0x007039d0	platform	imports CloseHandle, TerminateThread
 0x00703a20	logic	default (no rule: ported to be safe)
