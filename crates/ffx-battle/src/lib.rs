@@ -31,6 +31,7 @@ pub mod death;
 pub mod effect;
 mod encounters;
 pub mod exchange;
+pub mod exe;
 pub mod exec;
 pub mod flow;
 mod formation;

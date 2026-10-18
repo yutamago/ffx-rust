@@ -10,6 +10,7 @@ use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
 use ffx_battle::exchange::bridge as exchange;
+use ffx_battle::exe::bridge as exe;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::free::bridge as free;
 use ffx_battle::getmem::bridge as getmem;
@@ -3512,5 +3513,42 @@ ported! {
     /// `AtelGetWaterBattleEffect` (script) through the game.
     MsBtlEncountEffect_007829b0 @ 0x0078_29b0 => extern "C" fn ms_btl_encount_effect(kind: u32, out: u32) -> u32 {
         getmem::ms_btl_encount_effect(&mut mem(), &mut call_ptr, kind, out)
+    }
+    /// `MsGetFileSize(dir, dir2, file)`: the CD object through the game.
+    MsGetFileSize @ 0x0078_2a20 => extern "C" fn ms_get_file_size(dir: u32, dir2: u32, file: u32) -> u32 {
+        getmem::ms_get_file_size(&mut mem(), &mut call_ptr, dir, dir2, file)
+    }
+    /// `MsBattleExeSetIndex(both, file)`: the CD object through the game.
+    MsBattleExeSetIndex @ 0x0078_1550 => extern "C" fn ms_battle_exe_set_index(both: u32, file: u32) -> u32 {
+        getmem::ms_battle_exe_set_index(&mut mem(), &mut call_ptr, both, file)
+    }
+    /// `MsEventEffectFree()`: `yiAssert` (map) through the game.
+    MsEventEffectFree @ 0x0078_8b90 => extern "C" fn ms_event_effect_free() -> u32 {
+        script!(s);
+        getmem::ms_event_effect_free(&mut mem(), &mut s)
+    }
+    /// `MsBtlChrGetMem()`: the heap through the game.
+    MsBtlChrGetMem @ 0x0079_3530 => extern "C" fn ms_btl_chr_get_mem() {
+        getmem::ms_btl_chr_get_mem(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBtlListCDpos(field, &group, &slot)`.
+    MsBtlListCDpos @ 0x0079_d0e0 => extern "C" fn ms_btl_list_cd_pos(field: u32, group: u32, slot: u32) -> u32 {
+        getmem::ms_btl_list_cd_pos(&mut mem(), field, group, slot)
+    }
+    /// `MsEtEffectEncount(kind, se)`: vfx and `MsRegSEplay2` through the game.
+    MsEtEffectEncount @ 0x0079_e5e0 => extern "C" fn ms_et_effect_encount(kind: u32, se: u32) -> u32 {
+        getmem::ms_et_effect_encount(&mut mem(), &mut call_ptr, kind, se)
+    }
+    /// `MsEtEffectSet()`: vfx through the game.
+    MsEtEffectSet @ 0x0079_e7a0 => extern "C" fn ms_et_effect_set() -> u32 {
+        getmem::ms_et_effect_set(&mut mem(), &mut call_ptr)
+    }
+    /// `MsBattleExe(mode, field, group, slot)`: the other modules' callees
+    /// and `MsBtlReadManage` through the game; `group`, `slot` (outputs of
+    /// `MsBtlListCDpos` in the original's own argument slots) in locals.
+    MsBattleExe @ 0x0078_1020 => extern "C" fn ms_battle_exe(mode: u32, field: u32, group: u32, slot: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        exe::ms_battle_exe(&mut target::Dm::new(&mut m), &mut s, mode, field, group, slot)
     }
 }
