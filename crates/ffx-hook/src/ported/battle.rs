@@ -3557,6 +3557,14 @@ ported! {
     MsBtlReadScene @ 0x0078_3d80 => extern "C" fn ms_btl_read_scene(file: u32) -> u32 {
         read::ms_btl_read_scene(&mut mem(), &mut call_ptr, file)
     }
+    /// `MsBtlReadManage()`: the map's, graphics', sound's, script's and
+    /// chara's callees, the CD object and `MsBtlReadSetScene`,
+    /// `MsBtlReadMonster` through the game.
+    MsBtlReadManage @ 0x0078_3020 => extern "C" fn ms_btl_read_manage() {
+        let mut m = mem();
+        script!(s);
+        read::ms_btl_read_manage(&mut target::Dm::new(&mut m), &mut s, &host());
+    }
     /// `MsGetRamChrCTBbasic()`.
     MsGetRamChrCTBbasic @ 0x0078_4220 => extern "C" fn ms_get_ram_chr_ctb_basic() -> i32 {
         read::ms_get_ram_chr_ctb_basic(&mut mem())

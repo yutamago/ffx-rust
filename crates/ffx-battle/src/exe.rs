@@ -112,8 +112,9 @@ pub mod bridge {
     /// `Sg_SetExecFrames(n)`, `Sg_SetPlayer(on)`,
     /// `Sg_MallocA(n, align, pool, name, flags)`, `Sg_SetKeepFps(on)`
     /// (main), `AtelEventSetUpForBattleMusic(n)` (script),
-    /// `TOInitBtlWindow()` (system), `MsBtlReadManage()` (battle, not yet
-    /// ported) and the battle inits called through the game.
+    /// `TOInitBtlWindow()` (system), `MsBtlReadManage()` (battle, ported in
+    /// `read`; the original's tail call, so its `eax` stays the result) and
+    /// the battle inits called through the game.
     pub const FFX_IS_DEBUG: u32 = 0x0088_7c50;
     pub const SS_SET_PROJECT_BASE: u32 = 0x0088_7a90;
     pub const SG_MEM_SET_ALIGN: u32 = 0x0083_c4a0;

@@ -4827,8 +4827,9 @@
 0x00782f70 function setBattleEnable           # fh v3:cg2 0x783030
 0x00782f80 function AsyncLoadNewCharacter     # fh v3:exact 0x00783040
 0x00782fd0 function FinishReadPhyreBattleMap  # fh v3:bsim1.00 0x00783090
+0x00782fe0 function MsBtlReadFileDone_00782fe0 # the battle file's read completion: MsBtlReadManage hands it to the CD object's +0 read with the file buffer; name ours
 0x00783000 function MsBtlReadInit             # fh v3:exact 0x007830b0
-0x00783020 function MsBtlReadManage           # fh v3:exact+call.cs 0x007830d0 cdecl
+0x00783020 function MsBtlReadManage           # fh v3:exact+call.cs 0x007830d0 cdecl; ported (battle round 21): the read's state machine over g_BtlStatus 4-0x22 (jump table 0x0078361c, index bytes 0x00783660), then MsBtlReadCueManage (docs/formats/battle.md)
 0x00783680 function MsBtlReadMonster          # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data; was Mon_LoadText
 0x007839b0 function MsBtlReadMonsterProcess   # fh v3:exact 0x00783a60
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
@@ -4844,6 +4845,7 @@
 0x00784260 function Mon_GetName               # kernel monster record string 0
 0x00784420 function MsPlaceMonsters_00784420  # () -> count: each monster (actors 0x14-0x1b) with a model shown to the event (Ch_SetHideEvent(chr, 0)), placed at its battle position (MsGetChrBtlPos, Ch_SetPos3), made visible unless +0x407 (MsSetChrVisibleAppear(i, 0)); MsBtlReadManage's callee; name ours; ported (battle round 20)
 0x007844c0 function readBtlMonsterName        # fh v3:exact 0x00784570
+0x00784500 function MsBtlReadAsyncTask_00784500 # graphicRegistAsyncTask(it, 0) from MsBtlReadManage's file step; name ours
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
 0x007846e0 function MsCheatPlayerPowerfulOff  # fh v3:cg2 0x784790
 0x00784720 function MsCheatPlayerPowerup      # fh v3:exact 0x007847d0; ours: (i) with the cheat: a party member (+0x591 0x11) healed full (numbers 0x81), gauge full, pose, standing motion; ported (battle round 12)
@@ -9392,6 +9394,7 @@
 0x00887100 function SndSetFootStatus          # (party, on): g_SndFootMask bit; Switch name by alphabetical slot
 0x00887130 function SndSetKinuStatus          # (party, on): g_SndKinuMask bit; Switch name by alphabetical slot
 0x00887160 function SndSetMusicMute           # (): g_SndMusicMute = 0; Switch name by alphabetical slot
+0x00887170 function SqsSetReverbPlaySwitch_thunk # jmp SqsSetReverbPlaySwitch (0x0081ec20); MsBtlReadManage: formation byte 1 == 1
 0x00887180 function SndSetSoundMode           # fh v3:exact 0x008870f0
 0x008871c0 function SndSetSoundType           # (t): g_SndSoundType = clamp(t, 0, 1); Switch name by alphabetical slot
 0x00887210 function SndSetStraightStreamingDigitalMode # (x): SqsStraightStreamingDigitalModeSet, status raised; Switch name by alphabetical slot
@@ -15133,7 +15136,7 @@
 0x00c42130 label g_ChrTexAnimSwizzle        # two 64-byte index tables (0x00c42130, 0x00c42170) for chr_texanim_clut_swizzle
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
 0x00c421d8 label g_EncountMode             # u32 how steps count toward encounters: 0 not, 1 with encounters on, 2 ten times (MsBattleEncountExe)
-0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
+0x00c421dc label g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative; MsBtlReadManage: 0 before queueing models, -1 once the cue waits are done, waits while the cue level is set and it is > 0
 0x00c421e0 label g_BtlEventEffectFile      # u32 MsEffectFileNumber of the event effect (MsEventEffectRead); name ours
 0x00c421e4 label g_BtlEventEffectClear     # u32 cleared by MsEventEffectRead; name ours
 0x00c421e8 label g_BtlEffectReadClear      # u32 cleared after MsEffectRead starts a file it waits for
@@ -15329,6 +15332,7 @@
 0x01128ab8 label    g_Cd_HddInstallCount      # hdd_install_check(g_Cd_HddInstall) (CdEnvInit); check_ex_file_size loops over that many
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
+0x0112a060 label g_BtlFieldModeB           # u32: 1 while 0x00c416c0 is 0xb and 0x0112a058 is 1 (0x00776110), else 0; MsBtlReadManage: 0 sets g_BtlStartReady after the party's models, 1 after the second models
 0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0
 0x0112a09c label    g_HelpMemUsed             # i32 help screen memory in use (HelpMem_Get adds, HelpMem_Free subtracts)
 0x0112a4fc label    g_Hdd_State               # 2 words zeroed by hdd_state_clear
@@ -15348,6 +15352,7 @@
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
 0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
+0x0112a8ec label g_BtlFileNumber           # u32 the battle file's number (MsBattleExe: MsBtlListCDpos); MsBtlReadManage reads it by the CD object; 0x102-0x104 make g_BtlFileKind 0
 0x0112a8f0 label g_BtlEffectCameraCall     # i32 effect camera asked for (MsEffectCameraCall, when not negative)
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f7 label g_BtlEncountFade          # u8: an encounter fades in (Sg_FadeInW(3)) and counts the battle (MsBattleEncountExe)
@@ -15376,10 +15381,13 @@
 0x0112a914 label g_BtlNoOverkill          # u8: set, no kill counts as an overkill (MsDamageCheckDeath)
 0x0112a915 label g_BtlMenuLook             # u8 set: MsMenuCheckLook always reports a looker
 0x0112a916 label g_BtlLimitFrozen          # u8 set: MsLimitUp fills no overdrive gauge
+0x0112a918 label g_BtlDebugReadWait        # u8 debug menu toggle (0x007cf140 env table, button text); set: each MsBtlReadManage step waits g_BtlReadWait frames
+0x0112a919 label g_BtlReadWait             # u8 frames left before MsBtlReadManage's next step while g_BtlDebugReadWait; 0x3c after each camera request; MsBattleExe clears it
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91c label g_BtlDebugEffectHold      # u8: the debug env menu's toggle (0x007c6e20, 0x007ce450); MsEffectStart's state 3 waits while set
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a922 label g_BtlMenuSkipAll          # u8 set: MsMenuGetChrSkipCommand gives 0xff
+0x0112a923 label g_BtlFirstAttackSet       # i8: a script's first strike (-1 none, MsBattleInit sets 0xff); MsBtlReadManage takes it over MsGetFirstAttack
 0x0112a926 label g_BtlNoHeadTarget         # u8 set: MsSetHeadTarget does nothing
 0x0112a929 label g_BtlRead2                # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a92c label    g_KernelCommand
@@ -15397,7 +15405,9 @@
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
 0x0112a984 label g_BtlScriptRecords        # 2 x 0x20: +0 i8 the first record's work count (record 1's base), +0x10 script file (MsAtelGetHandler kind 2); copied from 0x0112a9a4 by 0x00782670
+0x0112a98c label g_BtlFirstScript          # u32 the first script MsBtlReadManage registers in manager 0 (MsAtelRegist), before g_BtlSceneScript
 0x0112a9a4 label g_BtlScriptRecord1        # the second of g_BtlScriptRecords' two 0x20-byte records (MsBtlScriptRecordShift_00782670 moves it to the first)
+0x0112a9ac label g_BtlSceneScript          # u32 the formation file's section 0 (MsBtlReadSetScene); MsBtlReadManage's second MsAtelRegist in manager 0
 0x0112a9b0 label g_BtlPosFile              # pointer to the battle map's position file: flag, i8 group count, records of 0x20 (flag set) or 3 x 0x20 per group (MsBtlGetPos)
 0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
@@ -15476,6 +15486,7 @@
 0x0112c94c label g_BtlEndMusic             # u16 0x8c game over, 0x8a victory fanfare (MsMusicReadStart's caller, MsMusicSync); name ours
 0x0112c94e label g_BtlEndEffect            # u16 closing event effect (script 0x711c); MsEventEffectRead, MsEffectForceFree; name ours
 0x0112c950 label g_BtlStoneList            # up to 31 petrified actors (u32), count g_BtlStoneEffect (MsStoneRegist)
+0x0112c9cc label g_BtlStartReady           # u8: 0x00781650 is 1 with it set for encounter types outside 1-3; MsBattleExe clears it, MsBtlReadManage sets it (not on the first visit's party step)
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
 0x0112c9cf label g_BtlRegMotionFlag           # u8; with the one before it (same function, ffx_battle::misc)
@@ -15487,7 +15498,10 @@
 0x0112c9d6 label g_BtlResetWait2           # u8: a soft reset waits while set (MsCheckSoftResetOk)
 0x0112c9d7 label g_BtlEffectCameraMode     # u8 (MsEffectCameraCall's second argument)
 0x0112c9d8 label g_BtlEffectOverlayBusy    # u8: the overlay effect stands in while a magic file loads (MsEffectRead, MsEffectReadComplete)
+0x0112c9d9 label g_BtlExeMode              # i8 MsBattleExe's mode (0 from the field); MsBtlReadManage hands it to MsBattleExeSetIndex
+0x0112c9da label g_BtlMapStarted           # u8: MsBtlReadManage started the map's read (status 8); then it places the monsters at status 0xa; MsBattleExe clears it
 0x0112c9db label g_BtlChrScripts           # u8, actors' monster-file handlers usable (MsAtelGetHandler kind 3); MsBattleExe, 0x00784070 write it
+0x0112c9dc label g_BtlFirstAttack          # i8: 1 the party strikes first, 2 the monsters (MsGetFirstAttack(0x20) or g_BtlFirstAttackSet); MsBtlReadManage's status 0x15 queues the message (kind 2, or 3: 100 frames on scene 0x01e60046, else 0x19); a script sets it (AtelPopStackInteger)
 0x0112c9dd label g_BtlCameraKoHeight       # u8, MsGetChrCameraPos keeps a KO'd actor's (+0xdcc 2) +0xf70 height
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
@@ -15541,11 +15555,14 @@
 0x0112ca2c label g_BtlLabelLock            # u8: 1 blocks MsBattleLabelExe
 0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
+0x0112ca64 label g_BtlReadHold             # i32 frames: MsBtlReadManage counts it down each call and starts the battle (status 0x16) only at 0; set to 0x5a near 0x007f9280
 0x0112ca68 label g_BtlMapRead                 # u32; Reset by FinishReadPhyreBattleMap.
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
+0x0112ca78 label g_BtlFileKind             # u32: MsBtlReadManage sets 0 for battle files 0x102-0x104, else 1; later 8 or 9
 0x0112ca80 label g_BtlRead                 # u32; Reset by MsBtlReadInit.
+0x0112ca84 label g_BtlMonsterSlots         # 3 u32 counters handed out to monsters' +0x5c3; MsBtlReadManage's status 0xe clears them
 0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
 0x0112cabc label g_SaveLove                  # save +0x2c: u32 affection by character; MsAddLoveParam (0x007845e0) adds for 1-7 unless the sum passes 0x0ffffffe
 0x0112d67c label g_SaveScenario              # save +0xbec: u16 story progress (getScenerioFlag 0x00787360)
@@ -16228,6 +16245,7 @@
 0x02311060 label g_BtlHideQueue            # u32 characters queued to hide (index from 1)
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
+0x023112e0 label g_BtlFileName             # char[] the battle file's name (CD object +0x58), MsBtlReadManage copies it; strstr'd for "sins07_07", "znkd09_00"
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
 0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel
@@ -16275,6 +16293,7 @@
 0x023cc124 label    g_TkMenuSubCmdWindow2     # second sub-command window (MenuSubCmd_SetValue2)
 0x023cc128 label    g_TkMenuSubCmdWindow      # the open sub-command window (TkMenuCloseSubCmdWindow sets its +0x41 and clears this; TkMenuRestartSubCmdWindow2)
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
+0x025d06a0 label g_BtlSpecialTexture       # char[] the special texture's path (graphicMenuLoadSpecialTexture(8, it, 0) from MsBtlReadManage unless TkGetLang)
 0x025d09c0 label    g_TOPadGetCtrl            # u8: SetTOPadGetCtrl
 0x025d09d2 label    g_TOMenuPad               # 3 u16 (held, trg, rep): TOMenuGetControlPad/Trg/Rep return these when the dummy controller is on or held & 0xf000, else g_TOMenuPadAlt
 0x025d09d8 label    g_TOMenuPad2              # u16: TOMenuGetControlPad2

@@ -640,7 +640,7 @@ scripts, cameras. Its leaves `MsBtlReadScene` (directory 0x29, an async CD
 read into `g_BtlRead3`), `MsGetRamChrCTBbasic` (the first actor still
 loading `+0x433` to `g_BtlEffectWait` with motion 0xd0), `0x00784420`
 (monsters shown, placed, made visible), `MsCalcChrDirAll` and
-`MsSetChrVisibleEvent` are ported; the machine itself is not yet.
+`MsSetChrVisibleEvent` are ported; the machine itself in round 21.
 
 ## Round 21
 
@@ -654,6 +654,39 @@ block's end, over the scratch tables allocated after it (the fake ply_rom
 table first). The step's globals were put back, the bytes after the block
 were not. The step now gets a block of its own of 0x1e270 bytes; the shared
 stream passes on the image and battle.snap.
+
+`MsBtlReadManage` (`0x00783020`, `ffx_battle::read`) runs one step a call
+and then the read cue (`MsBtlReadCueManage`). With the debug toggle
+`g_BtlDebugReadWait` on, each step first waits `g_BtlReadWait` frames (0x3c
+after each camera request); `g_BtlReadHold` counts down every call. The
+first visit's path is scenario 0x9ce on level hash 0x223f. By status
+(each falls into the next unless it waits; the jump table at `0x0078361c`,
+its index bytes at `0x00783660`):
+
+| Status | Step |
+|---|---|
+| 4 | waits for the script callbacks (`AtelIsCallbackQue`) |
+| 5 → 6 | index, name (copied to `g_BtlFileName`), async task `0x00784500`, `g_BtlFileKind` (0 for files 0x102-0x104), the file read into the buffer (CD `+0`, completion `0x00782fe0`), the font path, the special texture unless `TkGetLang` |
+| 7 | `FlushCache(0)`, `MsBtlReadSetScene` (0xa skips the map) |
+| 8 → 9 | `g_BtlMapRead`, battle map (`g_BtlBattleMusic` bit 0x400) or field map, number its low ten bits; `g_BtlMapStarted` |
+| 9 → 0x22 | waits for the renderer (bits 0x20 and 0x40), `loadPhyreFieldMap` |
+| 0x22 → 0xa | waits for `g_BtlMapRead` |
+| 0xa → 0xb | directions, first strike (`MsGetFirstAttack(0x20)`, a script's `g_BtlFirstAttackSet` over it), the two scripts in manager 0 and set up, the reverb (formation byte 1), the battle count (below 0x0fffffff unless the steal rule is 2), camera 0x18, the party shown (none: motion 0x3f), the monsters placed once the map started |
+| 0xb → 0xc | each party member's model (and its battle count byte) and weapons queued |
+| 0xc | waits while the cue level is set and `g_NewCharacterLoads` > 0; `g_BtlStartReady` (0 on the first visit, else 1 with field mode 0), camera 0x75, `MsBtlReadMonster` |
+| 0xe → 0xf | the monster slot counters cleared, each monster (an ID and `+0x24`) model and weapon queued |
+| 0xf → 0x10 → 0x11 | waits, camera 0x76; the footsteps (`MsBtlReadScene`, formation byte 2) |
+| 0x13 → 0x14 | the party's second models queued (the loads count from 0 on the first visit) |
+| 0x14 → 0x15 | waits (the first visit also on the loads); `g_BtlStartReady` 1 on the first visit or with field mode 1 |
+| 0x15 | the first strike's message (kind 2 the party's; 3 the monsters', 100 frames on scene 0x01e60046, else 0x19) |
+| 0x16 → 1 | waits for the message window, the sound transfers, the actors' loads and the hold; then `Ch_CheckNbBattleChr`, the limit cue, system check 5, camera 0x7c |
+
+Other statuses only run the cue. The port calls the battle callees
+ported before directly (cue registration, cameras, motions, visibility,
+`MsAtelRegist`, `MsAtelSetUp`) and the map's, graphics', sound's, script's
+and chara's functions, the CD object, `MsBtlReadSetScene` and
+`MsBtlReadMonster` through the game. `MsBattleExe` keeps calling it
+through the game: it tail-calls it, so its `eax` is the read's.
 
 ## M2 remaining
 

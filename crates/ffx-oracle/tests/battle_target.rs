@@ -6181,6 +6181,10 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     // (the fake g_KernelPlyRom first), and a later MsEffectStart divided by
     // a cleared ply_rom byte.
     let actor_heap = scratch(a, b, 0x1e270);
+    // MsBtlReadManage's stub records and data (round 21)
+    let rmrec = scratch(a, b, (EXCHANGE_REC * READ_MANAGE_RECS) as usize);
+    let rmdata = scratch(a, b, 0x100);
+    let mut r21 = Xorshift(0x21e5_0001 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6246,6 +6250,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         if r20.below(4) == 0 {
             read_leaves(a, b, &mut r20, &w, erec2, out);
+        }
+        if r21.below(2) == 0 {
+            read_manage(a, b, &mut r21, &w, rmrec, effrec, rmdata, out);
         }
     }
     // the teardown last (it clears the actors and the script managers)
@@ -8030,5 +8037,322 @@ fn read_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, re
     }
     // the originals' stack as the later steps expect it (MsEffectStart
     // reads a local it never writes)
+    zero_stack(a);
+}
+
+/// `MsBtlReadManage`'s callees of other modules and the two battle readers
+/// it leaves to the game (`ffx_battle::read`), with their argument counts;
+/// then the CD object's methods `+0`, `+0x10`, `+0x14`, `+0x58` (round 21).
+const READ_MANAGE_CALLEES: [(u32, u8); 19] = {
+    use ffx_battle::read::bridge as rd;
+    [
+        (ffx_battle::getmem::bridge::GET_CD, 0),
+        (rd::ATEL_IS_CALLBACK_QUE, 0),
+        (rd::GRAPHIC_LEVEL_GET_NAME_HASH, 0),
+        (rd::GRAPHIC_REGIST_ASYNC_TASK, 2),
+        (rd::TO_INIT_BATTLE_FONT_PATH, 1),
+        (rd::TK_GET_LANG, 0),
+        (rd::GRAPHIC_MENU_LOAD_SPECIAL_TEXTURE, 3),
+        (rd::FLUSH_CACHE, 1),
+        (rd::MS_BTL_READ_SET_SCENE, 0),
+        (rd::GRAPHIC_SET_IS_BATTLE_MAP, 1),
+        (rd::YI_BATTLE_MAP_READ_NB, 2),
+        (rd::YI_FIELD_MAP_READ_NB, 2),
+        (rd::YI_GET_RENDER_STATUS, 0),
+        (rd::LOAD_PHYRE_FIELD_MAP, 0),
+        (rd::SQS_SET_REVERB_PLAY_SWITCH, 1),
+        (rd::CH_CHECK_NB_BATTLE_CHR, 0),
+        (rd::MS_BTL_READ_MONSTER, 0),
+        (rd::SG_MALLOC_A, 4),
+        (ffx_battle::getmem::bridge::MS_GET_CHECK_ENGLISH, 0),
+    ]
+};
+const READ_MANAGE_STUBS: u32 = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 48;
+const READ_MANAGE_RECS: u32 = 23;
+
+/// `MsBtlReadManage` (round 21): the read's state machine from each status
+/// a few calls on, its callees as [`READ_MANAGE_CALLEES`]' logging stubs
+/// (records from `rec`, results drawn) and `MsEffectStart`'s stubs for
+/// `MsAtelSetUp` (records from `erec`); `data` holds the CD's name, the
+/// formation and the scene's field and group. The battle's globals, the
+/// actors and `AsyncLoadNewCharacter`'s count are put back after.
+// (the picked values are small: the casts keep them)
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+fn read_manage(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    rec: u32,
+    erec: u32,
+    data: u32,
+    out: u32,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::read::bridge as rd;
+    macro_rules! pick {
+        ($rng:expr, $v:expr $(,)?) => {{
+            let v: &[u32] = $v;
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+        (w.actor(0), (ACTORS * ACTOR) as usize),
+        (rd::NEW_CHARACTER_LOADS.ptr(b).addr, 4),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let stub = |k: u32| rec + EXCHANGE_REC * k;
+    let cdobj = data;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, (f, n)) in (0u32..).zip(READ_MANAGE_CALLEES) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, READ_MANAGE_STUBS + 0x40 * k, stub(k), n, 0);
+        }
+        for (k, (slot, n)) in (19u32..).zip([(0u32, 4u8), (0x10, 1), (0x14, 1), (0x58, 1)]) {
+            logging_stub(o, 0, READ_MANAGE_STUBS + 0x40 * k, stub(k), n, 0);
+            let f = o.rebase(READ_MANAGE_STUBS + 0x40 * k);
+            o.write(cdobj + slot, &f.to_le_bytes()).unwrap();
+        }
+        saved.push(mine);
+    }
+    let started = start_stubs(a, b, erec);
+    // the CD object, the file's name, the formation (byte 1 the reverb,
+    // 2 the footsteps), the scene's field and group (0x01e60046 or near)
+    poke(a, b, stub(0) + 4, &cdobj.to_le_bytes());
+    poke(a, b, data + 0x60, b"btl_name_01\0");
+    poke(a, b, stub(22) + 4, &(data + 0x60).to_le_bytes());
+    poke(a, b, stub(17) + 4, &(out + 0xc0).to_le_bytes());
+    let formation = data + 0x80;
+    poke(
+        a,
+        b,
+        formation,
+        &[rng.byte(), pick!(rng, &[0, 1, 1, 2]) as u8, rng.byte(), 0],
+    );
+    set(a, b, ffx_battle::state::bridge::VOICE_EVENT, formation);
+    poke(a, b, data + 0x90, &0x01e6u16.to_le_bytes());
+    poke(a, b, data + 0x94, &[pick!(rng, &[0x46, 0x46, 0x45]) as u8]);
+    set(a, b, ffx_battle::state::bridge::SCENE_FIELD, data + 0x90);
+    set(a, b, ffx_battle::state::bridge::SCENE_GROUP, data + 0x94);
+    // the actors: present or not, their slot, model and weapons, ids; half
+    // the time none still loading
+    let loading = rng.below(2) == 0;
+    for i in 0..ACTORS {
+        poke(
+            a,
+            b,
+            w.actor(i) + 0x433,
+            &[u8::from(loading && rng.below(10) == 0)],
+        );
+    }
+    for i in 0..0x1c {
+        let p = w.actor(i);
+        poke(a, b, p + 0xdc8, &[u8::from(rng.below(3) != 0)]);
+        poke(a, b, p + 0xc, &[pick!(rng, &[i, i, rng.below(0x12)]) as u8]);
+        poke(a, b, p + 0x24, &[u8::from(rng.below(3) != 0)]);
+        let id = pick!(rng, &[0xffff, rng.below(0x400), rng.below(0x400)]) as u16;
+        poke(a, b, p + 0xe, &id.to_le_bytes());
+        poke(a, b, p + 0x407, &[u8::from(rng.below(3) == 0)]);
+    }
+    // the directions and the monsters' places need sane positions
+    let sane = placed(a, b, w, out);
+    let managers = ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr;
+    poke(a, b, managers, &pick!(rng, &[0, 1, 6, 7, 8]).to_le_bytes());
+    let mut status = pick!(
+        rng,
+        &[
+            4, 4, 4, 5, 5, 6, 7, 7, 7, 8, 9, 9, 0xa, 0xb, 0xc, 0xc, 0xd, 0xe, 0xf, 0xf, 0x10, 0x11,
+            0x13, 0x13, 0x14, 0x14, 0x14, 0x15, 0x15, 0x16, 0x16, 0x16, 0x17, 0x21, 0x22, 0x22,
+            0x23, 3, 0, 0xff, 0x80
+        ],
+    );
+    for step in 0..3 {
+        if step > 0 {
+            status = u32::from(
+                b.read(ffx_battle::state::bridge::STATUS.ptr(b).addr, 1)
+                    .unwrap()[0],
+            );
+        }
+        let to_party = |s: u32| matches!(s, 7 | 9 | 0xa | 0x22);
+        if !sane && to_party(status) {
+            status = 0xb;
+        }
+        set(a, b, ffx_battle::state::bridge::STATUS, status as u8 as i8);
+        // the debug wait (on, frames), the hold, the first visit
+        set(a, b, rd::DEBUG_READ_WAIT, u8::from(rng.below(5) == 0));
+        set(a, b, rd::READ_WAIT, pick!(rng, &[0, 0, 1, 0x3c]) as u8);
+        set(
+            a,
+            b,
+            rd::READ_HOLD,
+            pick!(rng, &[0, 0, 0, 1, 2, 0x5a, u32::MAX]).cast_signed(),
+        );
+        let first = rng.below(2) == 0;
+        set(
+            a,
+            b,
+            ffx_battle::save::bridge::SCENARIO,
+            if first || rng.below(4) == 0 {
+                0x9ce
+            } else {
+                0x9cd
+            },
+        );
+        poke(
+            a,
+            b,
+            stub(2) + 4,
+            &(if first { 0x223f } else { 0x2240u32 }).to_le_bytes(),
+        );
+        // the script callbacks, the language, the scene's result, the
+        // renderer, the map's flags
+        poke(
+            a,
+            b,
+            stub(1) + 4,
+            &u32::from(rng.below(3) == 0).to_le_bytes(),
+        );
+        poke(
+            a,
+            b,
+            stub(5) + 4,
+            &u32::from(rng.below(2) == 0).to_le_bytes(),
+        );
+        let scene = if sane {
+            pick!(rng, &[0xa, 0, 3])
+        } else {
+            pick!(rng, &[0, 3])
+        };
+        poke(a, b, stub(8) + 4, &scene.to_le_bytes());
+        poke(
+            a,
+            b,
+            stub(12) + 4,
+            &pick!(rng, &[0, 0, 0x20, 0x40, 0x60, 0x80]).to_le_bytes(),
+        );
+        let map_read = if sane {
+            u32::from(rng.below(2) == 0)
+        } else {
+            1
+        };
+        set(a, b, ffx_battle::misc::bridge::MAP_READ, map_read);
+        set(a, b, rd::MAP_STARTED, u8::from(rng.below(2) == 0));
+        set(
+            a,
+            b,
+            ffx_battle::exe::bridge::BATTLE_MUSIC,
+            rng.next() as u16,
+        );
+        set(
+            a,
+            b,
+            rd::FILE_NUMBER,
+            pick!(rng, &[0x101, 0x102, 0x103, 0x104, 0x105, rng.below(0x400)]),
+        );
+        set(a, b, rd::EXE_MODE, pick!(rng, &[0, 0, 1, 0xff]) as u8 as i8);
+        set(a, b, ffx_battle::exe::bridge::FILE_BUFFER, out + 0x80);
+        // the cues, the character loads, first strike, counts and rules
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::READ_CUE_LEVEL,
+            u8::from(rng.below(2) == 0),
+        );
+        set(
+            a,
+            b,
+            rd::NEW_CHARACTER_LOADS,
+            pick!(rng, &[u32::MAX, 0, 1, 3]).cast_signed(),
+        );
+        set(
+            a,
+            b,
+            rd::FIRST_ATTACK,
+            pick!(rng, &[0, 1, 2, 2, 3]) as u8 as i8,
+        );
+        set(
+            a,
+            b,
+            rd::FIRST_ATTACK_SET,
+            pick!(rng, &[0xff, 0xff, 0, 1, 2]) as u8 as i8,
+        );
+        set(a, b, rd::FIELD_MODE_B, pick!(rng, &[0, 1, 1, 2]));
+        set(a, b, rd::START_READY, rng.byte());
+        set(
+            a,
+            b,
+            ffx_battle::save::bridge::BATTLE_COUNT,
+            pick!(rng, &[0, 7, 0x0fff_fffe, 0x0fff_ffff, u32::MAX]),
+        );
+        set(
+            a,
+            b,
+            ffx_battle::save::bridge::STEAL_RULE,
+            pick!(rng, &[0, 1, 2]) as u8,
+        );
+        set(a, b, rd::FIRST_SCRIPT, rng.next());
+        set(a, b, rd::SCENE_SCRIPT, rng.next());
+        set(
+            a,
+            b,
+            ffx_battle::battle_end::bridge::MESSAGE_WINDOW,
+            pick!(rng, &[0, 0, 1]).cast_signed(),
+        );
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::SEP_TRANS,
+            pick!(rng, &[0, 0, 0, 1]),
+        );
+        twin(
+            &format!("MsBtlReadManage {status:#x}"),
+            a,
+            b,
+            0x0078_3020,
+            &[],
+            0,
+            |m| {
+                dm(m, |m| {
+                    let mut s = Script {
+                        call: &mut call,
+                        signal: &mut signal,
+                        off: &mut off,
+                    };
+                    rd::ms_btl_read_manage(m, &mut s, &h);
+                });
+                0
+            },
+        );
+        local_words(a, b);
+        rect_words(a, b);
+        same(&format!("MsBtlReadManage {status:#x}"), a, b);
+    }
+    unstub(a, b, &started);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
     zero_stack(a);
 }
