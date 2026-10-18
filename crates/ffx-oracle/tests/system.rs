@@ -12,8 +12,9 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    accessor, btl, cd, cmdwin, config, container, daps, dtor, files, fixup, instance, intl, math,
-    menu, msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf, window,
+    accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, instance,
+    intl, math, menu, msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf,
+    window,
 };
 
 /// The game thread's x87 control word.
@@ -17411,4 +17412,638 @@ fn round31_small_matches_the_original_on_the_snapshot() {
         return;
     };
     round31_small(&mut a, &mut b, &mut Xorshift(0x4031_0052));
+}
+
+/// A stand-in: the symbol, the arguments it logs, the arguments it logs
+/// by their first word, and its tail.
+type Stand = (u32, Vec<u8>, Vec<u8>, Vec<u8>);
+
+/// `TOMenuDrawChrStatusPlate_008ff490` over the original remaps, with
+/// logging stand-ins for the shapes, the water, the getters, the texts
+/// and numbers (pointer arguments logged by what they point at).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round32_chr_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use chr_plate::bridge as p;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x80);
+    let scratch = alloc(a, b, p::SCRATCH_BYTES as usize);
+    // (sym, logged arguments, arguments logged by their first word, tail)
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0090_3bb0, all(9), vec![], vec![]),
+        (0x0090_3ee0, all(11), vec![], vec![]),
+        (0x008e_7d30, all(12), vec![], vec![]),
+        (0x008a_9b60, vec![], vec![], ret_cell(cells)),
+        (0x008a_c2f0, vec![], vec![], ret_cell(cells + 4)),
+        (0x008a_98c0, all(1), vec![], ret_cell(cells + 8)),
+        (0x008a_9990, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x008a_9970, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x008a_99b0, all(1), vec![], ret_cell(cells + 0x14)),
+        (0x008a_9b80, all(1), vec![], ret_cell(cells + 0x18)),
+        (0x008a_9930, all(1), vec![], ret_cell(cells + 0x1c)),
+        (0x008a_9950, all(1), vec![], ret_cell(cells + 0x20)),
+        (0x008a_9a70, all(1), vec![], ret_cell(cells + 0x24)),
+        (0x008a_c850, all(1), vec![], ret_cell(cells + 0x28)),
+        (0x0090_5930, all(6), vec![], ret_cell(cells + 0x2c)),
+        (
+            0x0090_1660,
+            vec![1, 2, 3, 4, 5],
+            vec![0],
+            ret_cell(cells + 0x30),
+        ),
+        (0x008c_eb00, all(3), vec![], ret_cell(cells + 0x34)),
+        (
+            0x0090_5230,
+            vec![0, 2, 3],
+            vec![],
+            store_through(1, cells + 0x38),
+        ),
+        (0x0090_5820, all(6), vec![], ret_cell(cells + 0x3c)),
+        (0x0090_55c0, all(6), vec![], ret_cell(cells + 0x40)),
+        (0x0078_4e90, all(1), vec![], ret_cell(cells + 0x44)),
+        (0x0078_52b0, all(1), vec![], ret_cell(cells + 0x48)),
+        (0x008d_3690, all(6), vec![], ret_cell(cells + 0x4c)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    // sprintf through its import slot: logs the format and the two
+    // numbers, writes a word of text
+    let k = stands.len() as u32;
+    let s = stand_in8(
+        a,
+        b,
+        0x80 * k,
+        &pick_logger(
+            cursor,
+            0x5f,
+            &[1, 2, 3],
+            &[],
+            &store_through(0, cells + 0x50),
+        ),
+    );
+    put(a, b, a.rebase(0x00b0_c3dc), s);
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x15 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            cells,
+            [0u32, u32::MAX, rng.next()][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            [0xbu32, 0xb, 0, 1, 2][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 1, 9999, u32::MAX, 0x8000_0000][(rng.next() % 5) as usize],
+        );
+        put(a, b, cells + 0x38, (rng.next() % 2000) as f32 / 8.0);
+        put(a, b, cells + 0x50, rng.next() & 0x00ff_ffff);
+        let chr = [
+            0u32,
+            3,
+            7,
+            8,
+            12,
+            0x11,
+            0x12,
+            0x20,
+            u32::MAX,
+            (rng.next() % 0x14),
+        ][(rng.next() % 10) as usize];
+        let x = ((rng.next() % 8000) as f32 / 7.0 - 100.0).to_bits();
+        let y = ((rng.next() % 6000) as f32 / 3.0 - 50.0).to_bits();
+        let r = eax(a, 0x008f_f490, &[chr, x, y]);
+        assert_eq!(
+            r,
+            p::draw_chr_status_plate(b, [chr, x, y], scratch, remap, call),
+            "chr plate {k}"
+        );
+        let s: [u32; 9] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("chr plate {k} chr {chr:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round32_chr_plate_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_chr_plate(&mut a, &mut b, &mut Xorshift(0x4032_0011));
+}
+
+#[test]
+fn round32_chr_plate_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_chr_plate(&mut a, &mut b, &mut Xorshift(0x4032_0012));
+}
+
+/// Round 32's small functions: `TOSeqStopExecScene`, the sheet cell UVs
+/// (`0x00684b00`), `LocalizationManager_Initialize`, the 64-bit program
+/// keys, `MagicFile_GetEffectOverlayTable` and the command icon/name
+/// packet (`0x008f0590`).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round32_small(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    // TOSeqStopExecScene
+    let slots = scene::bridge::SLOTS.ptr(a).addr;
+    for k in 0..300u32 {
+        let i = rng.next() % 3;
+        for j in 0..8 {
+            let at = slots + 0x100 * i + 0x20 * j;
+            put(
+                a,
+                b,
+                at,
+                [0u16, 1, 2, 3, 4, 2, 3][(rng.next() % 7) as usize],
+            );
+            put(a, b, at + 2, [0u16, 1, 1, 2][(rng.next() % 4) as usize]);
+            put(a, b, at + 8, rng.next());
+        }
+        assert_eq!(
+            eax(a, 0x008a_f380, &[i]),
+            scene::bridge::stop_exec_scene(b, i.cast_signed()),
+            "stop scene {k}"
+        );
+        same_memory(&format!("stop scene {k}"), a, b);
+    }
+    // the sheet cell UVs (stdcall; no signalling NaNs)
+    let out = alloc(a, b, 8);
+    for k in 0..400u32 {
+        let kind = [
+            0x3700u32,
+            0x3720,
+            0x3740,
+            0x3760,
+            0x37a0,
+            0x3780,
+            0x36ff,
+            0x37a1,
+            rng.next(),
+        ][(rng.next() % 9) as usize];
+        let quiet = |rng: &mut Xorshift| loop {
+            let f = rng.float();
+            if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+                return f;
+            }
+        };
+        let (mut u, mut v) = (quiet(rng), quiet(rng));
+        if k % 7 == 0 {
+            // -0 shows where an offset is added
+            (u, v) = (-0.0, -0.0);
+        }
+        let r = call(
+            a,
+            0x0068_4b00,
+            Conv::Stdcall,
+            &[kind, u.to_bits(), v.to_bits(), out, out + 4],
+        )
+        .eax;
+        assert_eq!(
+            r,
+            render::bridge::sheet_cell_uv(b, kind, u, v, [out, out + 4]),
+            "cell uv {k}"
+        );
+        same_memory(&format!("cell uv {k}"), a, b);
+    }
+    // LocalizationManager_Initialize
+    let this = alloc(a, b, 0x10);
+    let settings = alloc(a, b, 4);
+    set(a, b, config::bridge::SETTINGS, settings);
+    for k in 0..30u32 {
+        put(a, b, settings, [k % 10, u32::MAX][usize::from(k == 29)]);
+        let words: [u32; 4] = std::array::from_fn(|_| rng.next());
+        put(a, b, this, words);
+        let at = a.rebase(0x006d_b090);
+        let r = a.call(at, Conv::Thiscall(this), &[]).unwrap().eax;
+        assert_eq!(
+            r,
+            config::bridge::localization_initialize(b, this),
+            "localization {k}"
+        );
+        same_memory(&format!("localization {k}"), a, b);
+    }
+    // the 64-bit keys: edx:eax
+    for k in 0..200u32 {
+        let (hi, lo) = (
+            rng.next(),
+            [0u32, 1, u32::MAX, 0x8000_0000, rng.next()][(rng.next() % 5) as usize],
+        );
+        set(a, b, math::bridge::PPP_CURRENT_PROGRAM, lo);
+        let r = call(a, 0x009d_b250, Conv::Cdecl, &[hi, lo]);
+        assert_eq!(
+            u64::from(r.edx) << 32 | u64::from(r.eax),
+            math::bridge::wide_key(hi, lo),
+            "key {k}"
+        );
+        let r = call(a, 0x009d_b230, Conv::Cdecl, &[hi]);
+        assert_eq!(
+            u64::from(r.edx) << 32 | u64::from(r.eax),
+            math::bridge::current_program_key(b, hi),
+            "program key {k}"
+        );
+    }
+    // MagicFile_GetEffectOverlayTable over a stand-in table function
+    let cell = alloc(a, b, 4);
+    let f = stand_in8(a, b, 0, &{
+        let mut v = ret_cell(cell);
+        v.push(0xc3);
+        v
+    });
+    put(a, b, a.rebase(0x022f_b6a4), f);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for k in 0..40u32 {
+        put(a, b, cell, rng.next());
+        put(
+            a,
+            b,
+            a.rebase(0x00c6_4ca0),
+            [u32::MAX, 0, 7][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            a.rebase(0x00c6_4cac),
+            [u32::MAX, 0, 3][(rng.next() % 3) as usize],
+        );
+        assert_eq!(
+            eax(a, 0x009d_a370, &[]),
+            stub::bridge::magic_file_effect_overlay_table(b, b_call),
+            "overlay table {k}"
+        );
+    }
+    // the command icon and name over logging stand-ins
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let record = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 4);
+    // MsGetComData(id, &strings): *strings = [cells + 8]; record
+    let mut tail = store_through(1, cells + 8);
+    tail.extend_from_slice(&ret_cell(cells + 0xc));
+    let s = stand_in8(a, b, 0x80, &pick_logger(cursor, 0xa4b0, &[0], &[], &tail));
+    redirect(a, b, 0x0079_a4b0, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x100,
+        &pick_logger(cursor, 0xb240, &[0, 1, 2, 3], &[], &ret_cell(cells)),
+    );
+    redirect(a, b, 0x008e_b240, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x180,
+        &pick_logger(
+            cursor,
+            0x8fb0,
+            &(0..12).collect::<Vec<u8>>(),
+            &[],
+            &ret_cell(cells + 4),
+        ),
+    );
+    redirect(a, b, 0x008e_8fb0, s);
+    put(a, b, cells + 0xc, record);
+    let call_sym = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        put(a, b, cells + 4, rng.next());
+        put(a, b, cells + 8, rng.next());
+        let bytes: [u32; 8] = std::array::from_fn(|_| rng.next());
+        put(a, b, record, bytes);
+        let args = [
+            rng.next(),
+            rng.next() % 0x400,
+            rng.next() % 2000,
+            rng.next() % 2000,
+            rng.next(),
+        ];
+        let r = eax(a, 0x008f_0590, &args);
+        assert_eq!(
+            r,
+            pkt::bridge::add_command_icon_name(b, args, scratch, call_sym),
+            "icon name {k}"
+        );
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("icon name {k}"), a, b);
+    }
+}
+
+#[test]
+fn round32_small_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_small(&mut a, &mut b, &mut Xorshift(0x4032_0021));
+}
+
+#[test]
+fn round32_small_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_small(&mut a, &mut b, &mut Xorshift(0x4032_0022));
+}
+
+/// `sce::Vectormath::Scalar::Aos::inverse` on random matrices (mostly
+/// ordinary floats, some special values; no signalling NaNs).
+fn round32_inverse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let input = alloc(a, b, 0x40);
+    let out = alloc(a, b, 0x40);
+    for k in 0..20000u32 {
+        // every third matrix spreads its exponents over 2^-60..2^60, so
+        // the sums round and their order shows
+        let wide = k % 3 == 0;
+        let m: [f32; 16] = std::array::from_fn(|_| {
+            loop {
+                let f = if wide {
+                    let e = rng.next() % 120 + 67;
+                    f32::from_bits(rng.next() & 0x807f_ffff | e << 23)
+                } else {
+                    rng.float()
+                };
+                if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+                    break f;
+                }
+            }
+        });
+        let mut m = m;
+        if k % 3 == 1 {
+            // nearly singular: column 3 is nearly column 0, so the cofactor
+            // sums cancel and their rounding order shows
+            for r in 0..4 {
+                let nudge = f32::from_bits(rng.next() % 0x40 + 0x3380_0000);
+                m[12 + r] = m[r] * (1.0 + nudge) + m[4 + r] * nudge;
+            }
+        }
+        put(a, b, input, m);
+        let to = if k % 5 == 0 { input } else { out };
+        assert_eq!(
+            eax(a, 0x0057_3d00, &[to, input]),
+            math::bridge::inverse4(b, to, input),
+            "inverse {k}"
+        );
+        same_memory(&format!("inverse {k}"), a, b);
+    }
+}
+
+#[test]
+fn round32_inverse_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_inverse(&mut a, &mut b, &mut Xorshift(0x4032_0031));
+}
+
+#[test]
+fn round32_inverse_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_inverse(&mut a, &mut b, &mut Xorshift(0x4032_0032));
+}
+
+/// `0x006851d0`, the area-map manager's layer reset (thiscall).
+fn round32_abmap_layers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let this = alloc(a, b, 0x100);
+    let lists = alloc(a, b, 6 * 0x100);
+    let entries = alloc(a, b, 6 * 8 * 0x6c);
+    for k in 0..400u32 {
+        for (j, off) in [0x94u32, 0xc8, 0xd0, 0xd4, 0xd8, 0xdc]
+            .into_iter()
+            .enumerate()
+        {
+            let j = u32::try_from(j).unwrap();
+            let l = lists + 0x100 * j;
+            put(a, b, this + off, l);
+            put(
+                a,
+                b,
+                l + 0x90,
+                [0i32, 1, 3, 8, -1][(rng.next() % 5) as usize],
+            );
+            put(a, b, l + 0x94, entries + 8 * 0x6c * j);
+        }
+        let junk: [u32; 0x510] = std::array::from_fn(|_| rng.next());
+        put(a, b, entries, junk);
+        put(
+            a,
+            b,
+            this + 8,
+            [0i32, 1, -1, 7, i32::MIN][(rng.next() % 5) as usize],
+        );
+        let mode = [0u32, 0, 1, 2, 3, 4, u32::MAX][(rng.next() % 7) as usize];
+        let at = a.rebase(0x0068_51d0);
+        let r = a.call(at, Conv::Thiscall(this), &[mode]).unwrap().eax;
+        assert_eq!(
+            r,
+            render::bridge::abmap_reset_layers(b, this, mode),
+            "layers {k}"
+        );
+        same_memory(&format!("layers {k}"), a, b);
+    }
+}
+
+#[test]
+fn round32_abmap_layers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_abmap_layers(&mut a, &mut b, &mut Xorshift(0x4032_0041));
+}
+
+#[test]
+fn round32_abmap_layers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_abmap_layers(&mut a, &mut b, &mut Xorshift(0x4032_0042));
+}
+
+/// Round 32 group C: `TOSeqDrawLayer`, `TOMenuTransFaceSmnTex`, the
+/// identity at `+0x34`, the VU0 scale and the text scroll clock.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round32_more(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    // TOMenuExecLayerHandle (under TOSeqDraw) and TOTransImageHL: loggers
+    let s = stand_in8(a, b, 0, &copy_logger(cursor, 0xb220, 4, &ret_cell(cells)));
+    redirect(a, b, 0x00a7_b220, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x80,
+        &copy_logger(cursor, 0x0b10, 7, &ret_cell(cells + 4)),
+    );
+    redirect(a, b, 0x008b_0b10, s);
+    // Tk_GetScale(which): fld dword [cells + 8]; TOGetFFXVideoMode: [cells + 0xc]
+    let mut fld = vec![0xd9, 0x05];
+    fld.extend_from_slice(&(cells + 8).to_le_bytes());
+    let s = stand_in8(a, b, 0x100, &pick_logger(cursor, 0x2360, &[0], &[], &fld));
+    redirect(a, b, 0x0087_2360, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x180,
+        &pick_logger(cursor, 0xc3a0, &[], &[], &ret_cell(cells + 0xc)),
+    );
+    redirect(a, b, 0x008a_c3a0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let slots = scene::bridge::SLOTS.ptr(a).addr;
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        let i = rng.next() % 3;
+        for j in 0..8 {
+            let at = slots + 0x100 * i + 0x20 * j;
+            put(a, b, at, [0u16, 2, 3, 4][(rng.next() % 4) as usize]);
+            put(a, b, at + 0x1c, rng.next());
+        }
+        let x = rng.next();
+        assert_eq!(
+            eax(a, 0x008a_e340, &[i, x]),
+            scene::bridge::draw_layer(b, i.cast_signed(), x, call),
+            "draw layer {k}"
+        );
+        same_memory(&format!("draw layer {k}"), a, b);
+    }
+    for k in 0..4 {
+        put(a, b, cursor, log);
+        put(a, b, cells + 4, rng.next());
+        assert_eq!(
+            eax(a, 0x0090_1130, &[]),
+            intl::bridge::trans_face_smn_tex(b, b_call),
+            "smn tex {k}"
+        );
+        same_memory(&format!("smn tex {k}"), a, b);
+    }
+    // the identity at +0x34 (thiscall)
+    let this = alloc(a, b, 0x80);
+    for k in 0..10 {
+        let junk: [u32; 0x20] = std::array::from_fn(|_| rng.next());
+        put(a, b, this, junk);
+        let at = a.rebase(0x0061_a810);
+        a.call(at, Conv::Thiscall(this), &[]).unwrap();
+        math::bridge::identity_at_34(b, this);
+        same_memory(&format!("identity {k}"), a, b);
+    }
+    // the VU0 scale (no signalling NaNs)
+    let quiet = |rng: &mut Xorshift| loop {
+        let f = rng.float();
+        if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+            return f;
+        }
+    };
+    let v = alloc(a, b, 0x10);
+    let out = alloc(a, b, 0x10);
+    for k in 0..500u32 {
+        let words: [u32; 4] = std::array::from_fn(|_| quiet(rng).to_bits());
+        put(a, b, v, words);
+        let s = quiet(rng);
+        let to = if k % 4 == 0 { v } else { out };
+        assert_eq!(
+            eax(a, 0x009d_bd90, &[to, s.to_bits(), v]),
+            math::bridge::vu0_scale_xyz(b, to, s, v),
+            "vu0 scale {k}"
+        );
+        same_memory(&format!("vu0 scale {k}"), a, b);
+    }
+    // the text scroll clock
+    let w = alloc(a, b, 0x100);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells + 8,
+            [1.0f32, 0.5, 1.25, 2.0, (rng.next() % 1000) as f32 / 7.0][(rng.next() % 5) as usize],
+        );
+        put(a, b, cells + 0xc, rng.next() % 2);
+        put(
+            a,
+            b,
+            w + 0xb4,
+            [0u32, 0, 0, 1, 5, u32::MAX][(rng.next() % 6) as usize],
+        );
+        put(a, b, w + 0xac, (rng.next() % 200).cast_signed() - 20);
+        put(a, b, w + 0xb0, (rng.next() % 100).cast_signed() - 10);
+        put(a, b, w + 0xa0, rng.next() % 50);
+        if k % 10 == 0 {
+            // exactly one line's worth
+            put(a, b, cells + 8, 1.0f32);
+            put(a, b, w + 0xb4, 0u32);
+            put(a, b, w + 0xac, 10i32);
+            put(a, b, w + 0xb0, [20i32, 15][(rng.next() % 2) as usize]);
+        }
+        assert_eq!(
+            eax(a, 0x008d_f570, &[w]),
+            tolib::bridge::text_scroll_tick(b, w, call, fcall),
+            "scroll tick {k}"
+        );
+        same_memory(&format!("scroll tick {k}"), a, b);
+    }
+}
+
+#[test]
+fn round32_more_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round32_more(&mut a, &mut b, &mut Xorshift(0x4032_0051));
+}
+
+#[test]
+fn round32_more_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round32_more(&mut a, &mut b, &mut Xorshift(0x4032_0052));
 }

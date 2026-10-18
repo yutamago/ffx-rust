@@ -46,4 +46,21 @@ pub mod bridge {
         mem.write(result, 0u32);
         super::MC_SYNC
     }
+
+    /// `MagicFile_GetEffectOverlayTable()` (`0x009da370`): with a magic file
+    /// loaded (`g_MagicFile_MagicId` and `g_MagicFile_Handle` both other
+    /// than -1) a tail jump through the function pointer at `0x022fb6a4`
+    /// (its result); 0 otherwise. `call` takes absolute addresses.
+    pub fn magic_file_effect_overlay_table<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id: u32 = mem.read(mem.rebase(0x00c6_4ca0));
+        let handle: u32 = mem.read(mem.rebase(0x00c6_4cac));
+        if id == u32::MAX || handle == u32::MAX {
+            return 0;
+        }
+        let f: u32 = mem.read(mem.rebase(0x022f_b6a4));
+        call(mem, f, &[])
+    }
 }

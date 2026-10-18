@@ -1208,3 +1208,89 @@ record's `+8` is the widest item; on map 0x17, for the record with `+0x14`
 - `TOMenuTransFacePlyTex` uploads `0x01c80000` (0x200x0x100, format 0x13)
   to 0x3a00. That push has no relocation entry: the address is literal
   even when the image is relocated.
+
+## A character's status plate (round 32)
+
+`TOMenuDrawChrStatusPlate_008ff490(chr, x, y)` (cdecl, `x`/`y` floats)
+draws one character's plate in the menus (the callers are the aeon grow
+window `0x008cdba0` and two other menu screens). Sizes go through
+`graphicUiRemapX2`/`Y2`; positions are `x + rx(dx)`, `y + ry(dy)` added
+at x87 precision and stored as dwords. In order:
+
+1. Background. Party members (`chr < 8`, signed) whose bit is set in
+   `TOMenuGetYesNoWindow()` get sheet shape -3 at UV (0, 0) and the
+   water: four 250x64 `DrawWaterWaveShapeC2` strips (U 0 and 250 scrolling
+   (50, -20) with alpha 0x1a, U 300 and 550 scrolling (-80, -10) with
+   alpha 0x33, blue 0xc56870 fading to clear across each pair). The
+   others get shape -3 at V 700. Then the right panel (shape -3, 415x70
+   at `rx(1090)`). Aeons and higher numbers get sheet -6 (1110x70), the
+   panel, then the water.
+2. Numbers above 0x11 (unsigned, so negatives too) get only the empty
+   labels and frames (shapes 0x21, 0x22, 0xc8, -1, 0x3d at slightly
+   different offsets: 842, 1034, `y - ry(5)`, the AP label at 948).
+3. An aeon whose `TkMenuGetHP` is 0 or less gets
+   `TkMn2DrawSummonPlateCheckHP(ftol(x), ftol(y), chr)` (`ftol(y)` taken
+   first). Everyone else gets the name (`ToMakeBtlEasyEdgeFont`, alpha
+   from `MenuPlayer_DamageClass2`, scale 0.82, extra 1.0), the overdrive
+   label (0x21), `HP/max` as `"%5d/%5d"` through the CRT `sprintf` import
+   into a 32-byte stack buffer and `TOMkpCrossEasyStrFontSClut`, the
+   Sphere Level label (0x22) and `MP/max` as `"%4d/%4d"`.
+4. Party members: the gauge frames (0xc8, -1, 0x3d), the AP label, the
+   Sphere Levels centred on `rx(1076)` (`ToGetBtlEasyDigitWidth2` writes
+   the width into the same stack word that holds the language gap), the
+   label 0xc8 and `MsGetNextAP - MsGetSaveNextAP` right-aligned. Aeons:
+   two grey `TOMkpShapeXYWHUVC2` frames and
+   `TkMn2DrawCrossLimitParam(x, y, rx(350), ry(8), limit, limit max)`.
+
+Language 11 (`TOGetFFXLang`) widens the labels by 22 (UVs follow),
+heightens 0x21 by 1, moves the HP/MP numbers 11 right, and moves the AP
+label (x -10, U -35, width +25 or +20, U end +20). The water colours are
+pushed as literals (no relocation entries), not addresses.
+
+## Round 32's smaller functions
+
+- `sce::Vectormath::Scalar::Aos::inverse(out, m)` (`0x00573d00`, cdecl,
+  returns `out`) is the scalar Vectormath 4x4 inverse by cofactors, a
+  debug build that stores every intermediate as an `f32`: the six 2x2
+  minors of rows 2-3 (`m10 m3 - m11 m2`, `m14 m7 - m15 m6`, `m10 m1 - m2
+  m9`, `m14 m5 - m13 m6`, `m9 m3 - m1 m11`, `m13 m7 - m5 m15`), the first
+  column's four cofactors, `1 / det` with det summed innermost first
+  (`c3 m12 + (c2 m8 + (c1 m4 + c0 m0))`), twelve reused products, the
+  six minors of rows 0-1, the other columns' cofactors, then each
+  cofactor times `1 / det`. `out` is written only after all reads.
+- `SheetCellUV_00684b00(kind, u, v, &u, &v)` (stdcall) maps a 0..1 UV into
+  a cell of a 2x4 sheet by kind (0x3700, 0x3720, 0x3740: quarter-height
+  cells; 0x3760, 0x37a0: the bottom halves). Where the original adds no
+  offset the port adds none either: `-0 * 0.5` stays `-0`.
+- `AbmapManager_ResetLayers_006851d0(mode)` (thiscall) on the area-map
+  manager: mode 0 negates `+8` and clears words `+4` and `+8` of each
+  0x6c-byte entry of the layer lists `+0xd8`/`+0xdc` (new value positive)
+  or `+0xd0`/`+0xd4`; mode 1 list `+0x94`; modes 2/3 set `[+0xc8]+0x90`.
+  `eax` (which `0x006390d0` returns) is the last list, `[+0xc8]` or the
+  mode.
+- `LocalizationManager_Initialize` (thiscall) maps the settings' language
+  index (`*g_Settings`) to (kind, game language, western): 1..5 give
+  (1, 1/2/4/5/3, 1), 6 and 7 (3, 9 or 10, 0), anything else zeros.
+- `TOSeqStopExecScene(i)` stops each running (state 2 or 3) slot of scene
+  `i` whose `+2` is not 1: state 4, name byte cleared; `eax` is `i << 8`.
+- `TOAddPktCommandIconName_008f0590(pkt, command, x, y, colour)` adds a
+  command's icon (`TOAddPktMenuIcon` at `x + 0xc, y + 1`) and its name
+  (`TOAddPktBaseMesFontLAbmap` at `x + 0x1a, y + 1`).
+- `MagicFile_GetEffectOverlayTable` tail-jumps through `[0x022fb6a4]`
+  while a magic file is loaded, else returns 0.
+- `0x009db230(high)` and `0x009db250(high, low)` return the 64-bit `(high
+  << 32) + low` in `edx:eax` (`low` sign-extended; for the first,
+  `pppCurrentProgram`).
+- `TOSeqDrawLayer(i, a)` is `TOSeqDraw(i, a, 0)`.
+- `TOMenuTransFaceSmnTex` uploads the aeons' face sheet `0x01ca0000`
+  (0x200x0x100, format 0x13) to 0x3800; like the party sheet's, the push
+  has no relocation entry.
+- `IdentityAt34_0061a810` (thiscall) sets the 4x4 at `+0x34` to the
+  identity.
+- `Vu0ScaleXyz_009dbd90(out, s, v)` goes through the VU0 emulation's
+  registers: `0x00c8f820 = s`, `0x00c8f830 = v`, its `x, y, z` times `s`
+  (rounded to `f32`), then the register is copied to `out`; `eax` is `w`.
+- `TOTextScrollTick_008df570(w)` is a text window's scroll clock: `+0xb4`
+  counts down first; at 0, `+0xb0 = ftol(Tk_GetScale(english) ×
+  f32(+0xac) + +0xb0)`, and each whole 30 (25 in the 50 Hz mode) moves
+  into the line count `+0xa0`.
