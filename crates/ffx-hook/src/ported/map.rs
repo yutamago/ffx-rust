@@ -2528,6 +2528,18 @@ ported! {
     yiRender_initfog @ 0x0091_3f50 => extern "C" fn shim_yi_render_initfog(r: u32) {
         yi::bridge::yi_render_initfog(&mut mem(), r);
     }
+    /// `yiRender_setupparamVU1(r)` (field agent r1, group A).
+    yiRender_setupparamVU1 @ 0x0090_da90 => extern "C" fn shim_yi_render_setupparam_vu1(r: u32) -> u32 {
+        yi::bridge::yi_render_setupparam_vu1(&mut mem(), r)
+    }
+    /// `yiRender_term(r)`.
+    yiRender_term @ 0x0090_dd00 => extern "C" fn shim_yi_render_term(r: u32) -> u32 {
+        yi::bridge::yi_render_term(&mut mem(), r, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiRender_updatematrixp(r)`.
+    yiRender_updatematrixp @ 0x0090_dd80 => extern "C" fn shim_yi_render_updatematrixp(r: u32) -> u32 {
+        yi::bridge::yi_render_updatematrixp(&mut mem(), r)
+    }
     /// `yiRotMatrixSeq(m, angles, order)`.
     yiRotMatrixSeq @ 0x0091_51c0 => extern "C" fn shim_yi_rot_matrix_seq(m: u32, angles: u32, order: u32) -> u32 {
         yi::bridge::yi_rot_matrix_seq(&mut mem(), m, angles, order, &mut |_, f, a| call_cdecl(f, a))

@@ -13285,3 +13285,110 @@ fn round51_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0033_0002);
     round51_cases(&mut t, &mut rng);
 }
+
+// ---- field agent r1, group A: the VU1 render parameters ----
+
+/// The float fields `yiRender_setupparamVU1` and `yiRender_updatematrixp`
+/// read through the x87 (no signalling NaNs: the emulator keeps them).
+const R1A_FLOATS: [u32; 6] = [0x681fc, 0x68200, 0x67f38, 0x67f4c, 0x68370, 0x681f8];
+
+/// The fog inputs (`yiRender_setupFogParam`): finite (an infinite scale
+/// makes a NaN whose sign the x87 and SSE pick differently; the game's
+/// data holds none).
+const R1A_FOG: [u32; 4] = [0x681f8, 0x68344, 0x68348, 0x6834c];
+
+/// Group A on `t` over the renderer at `r` (`real`: the snapshot's own,
+/// left as it is on the first pass).
+fn r1a_cases(t: &mut Twin, rng: &mut Xorshift, r: u32, real: bool) {
+    for k in 0..120 {
+        if !(real && k == 0) {
+            t.fill(r + 0x6_7600, 0xd00, rng);
+            for o in R1A_FLOATS {
+                t.put(r + o, rng.float());
+            }
+            for o in R1A_FOG {
+                let v = rng.float();
+                t.put(
+                    r + o,
+                    if v & 0x7f80_0000 == 0x7f80_0000 {
+                        v & 0xbfff_ffff
+                    } else {
+                        v
+                    },
+                );
+            }
+            t.put(r + 0x67f08, rng.next());
+            for o in [0x68368u32, 0x6836c] {
+                let v = match rng.below(4) {
+                    0 => rng.float(),
+                    1 => {
+                        #[allow(clippy::cast_precision_loss)]
+                        let x = 2048.0 + rng.range(-3000, 3000) as f32 / 4.0;
+                        x.to_bits()
+                    }
+                    2 => 2048.0f32.to_bits(),
+                    _ => (2048.0f32
+                        + 1e10 * f32::from_bits(rng.float() & 0x8000_0000 | 0x3f80_0000))
+                    .to_bits(),
+                };
+                t.put(r + o, v);
+            }
+        }
+        t.same(
+            "yiRender_setupparamVU1",
+            |o| o.eax(0x0090_da90, &[r]),
+            |m| yi::bridge::yi_render_setupparam_vu1(m, r),
+        );
+        t.same(
+            "yiRender_updatematrixp",
+            |o| o.eax(0x0090_dd80, &[r]),
+            |m| yi::bridge::yi_render_updatematrixp(m, r),
+        );
+    }
+}
+
+/// `yiRender_term` over a synthetic renderer, the frees and engine calls
+/// logged.
+fn r1a_term_cases(t: &mut Twin, rng: &mut Xorshift, r: u32) {
+    let env = LoadEnv::install(t, rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    for _ in 0..40 {
+        env.reset(t, rng);
+        t.fill(r + 0x6_8000, 0x4_0000, rng);
+        t.fill(r + 0x9_c000, 0x2000, rng);
+        t.fill(r + 0xb_a3c0, 0x40, rng);
+        t.put(r + 0x9_caa8, if rng.below(2) == 0 { 0 } else { rng.next() });
+        for o in [0xba3ccu32, 0xba3dc] {
+            t.put(r + o, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        t.same(
+            "yiRender_term",
+            |o| o.eax(0x0090_dd00, &[r]),
+            |m| yi::bridge::yi_render_term(m, r, call),
+        );
+    }
+}
+
+/// Group A: `yiRender_setupparamVU1`, `yiRender_updatematrixp`,
+/// `yiRender_term`.
+#[test]
+fn r1a_vu1_render_parameters_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00a1_0001);
+    let r = t.alloc(0xb_e100);
+    r1a_cases(&mut t, &mut rng, r, false);
+    r1a_term_cases(&mut t, &mut rng, r);
+}
+
+/// Group A on the snapshot (`FFX_SNAPSHOT`): the game's own renderer.
+#[test]
+fn r1a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00a1_0002);
+    let r = yi::state::RENDER.ptr(&t.b).addr;
+    r1a_cases(&mut t, &mut rng, r, true);
+    let r = t.alloc(0xb_e100);
+    r1a_term_cases(&mut t, &mut rng, r);
+}

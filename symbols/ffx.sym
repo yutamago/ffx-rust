@@ -10962,7 +10962,9 @@
 0x0090cf00 function yiRender_initpacket       # (r): the fixed GS packet at +0x27624 (32 words); returns 0
 0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
-0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90
+0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90; ported (field r1 A): fog param, VU1 block +0x676a8 (clip window from +0x68368/+0x6836c less 2048 via _ftol2_sse, +0x68370 max |a|,|b|, +0x676d4 max of +0x67f38/+0x67f4c, fog/matrix copies); returns the word at +0x68228
+0x0090dd00 function yiRender_term             # (r): yiRender_resetobj, +0x9c198/+0xbe0ac/+0xbe0b0 = 0, +0x67f34 = -1, yiFree(+0xba3cc), yiFree(+0xba3dc), both pairs zeroed; returns the second free's eax. Name: Switch yiRender.c yiRender_term (0x710053a240, 0x90 bytes, between reset and serchminmax) is the only unused yiRender_ name of this size; this frees the packet buffers yiRender_resetobj only rewinds
+0x0090dd80 function yiRender_updatematrixp    # (r): seven VU1 UNPACK matrix packets (+0x67ba8.. from +0x67f38.., UNPACK 0x6c04xxxx) and the scale matrix at +0x67d88 (identity with +0x681f8/+0x681fc/+0x68200 on the diagonal); returns 1.0's bits (Matrix_Identity's eax); from yiRender_draw. Name: Switch yiRender_updatematrixp (0x7100539480, 0x280 bytes, after makematrixpacket 0x40 bytes) matches size and role
 0x0090e000 function yiSwizzleColumns          # (src, dst): a 16x16 8-bit block's four column groups reordered by the table at 0x00c5da80; yiSwizzlePage
 0x0090e0b0 function yiSwizzleImage            # (w, h, src, dst): a format-0x13 image swizzled in 128x64 tiles; "Error : width is not 2^n" to stderr; yiLoadVramImage
 0x0090e2e0 function yiSwizzlePage             # (w, h, src, dst): 8-bit lines of 0x80 bytes to GS block order (tables 0x00c5db40, 0x00c5db60); yiSwizzleImage
