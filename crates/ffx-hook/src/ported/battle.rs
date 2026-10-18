@@ -14,6 +14,7 @@ use ffx_battle::exe::bridge as exe;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::free::bridge as free;
 use ffx_battle::getmem::bridge as getmem;
+use ffx_battle::init::bridge as init;
 use ffx_battle::input::bridge as input;
 use ffx_battle::motion::bridge as motion;
 use ffx_battle::parse::bridge as parse;
@@ -3556,6 +3557,93 @@ ported! {
     /// game.
     MsBtlReadScene @ 0x0078_3d80 => extern "C" fn ms_btl_read_scene(file: u32) -> u32 {
         read::ms_btl_read_scene(&mut mem(), &mut call_ptr, file)
+    }
+    /// `MsBtlReadManage()`: the map's, graphics', sound's, script's and
+    /// chara's callees, the CD object and `MsBtlReadSetScene`,
+    /// `MsBtlReadMonster` through the game.
+    MsBtlReadManage @ 0x0078_3020 => extern "C" fn ms_btl_read_manage() {
+        let mut m = mem();
+        script!(s);
+        read::ms_btl_read_manage(&mut target::Dm::new(&mut m), &mut s, &host());
+    }
+    /// `MsMemCheckSum(top)`: the heap and `MsBattleError` through the
+    /// game.
+    MsMemCheckSum @ 0x0079_9f20 => extern "C" fn ms_mem_check_sum(top: i32) -> u32 {
+        init::ms_mem_check_sum(&mut mem(), &mut call_ptr, top)
+    }
+    /// `MsBtlGetClear_007993e0(p, kind)`.
+    MsBtlGetClear_007993e0 @ 0x0079_93e0 => extern "C" fn ms_btl_get_clear(p: u32, kind: u32) -> u32 {
+        init::ms_btl_get_clear(&mut mem(), p, kind)
+    }
+    /// `MsBtlGetInit()`.
+    MsBtlGetInit @ 0x0079_8b60 => extern "C" fn ms_btl_get_init() -> u32 {
+        init::ms_btl_get_init(&mut mem())
+    }
+    /// `MsEtEffectNumber_0079f1c0(table, n)`: `MsBattleError` through the
+    /// game.
+    MsEtEffectNumber_0079f1c0 @ 0x0079_f1c0 => extern "C" fn ms_et_effect_number(table: u32, n: u32) -> u32 {
+        init::ms_et_effect_number(&mut mem(), &mut call_ptr, table, n)
+    }
+    /// `MsEtEffectInit()`.
+    MsEtEffectInit @ 0x0079_e670 => extern "C" fn ms_et_effect_init() -> u32 {
+        init::ms_et_effect_init(&mut mem(), &mut call_ptr)
+    }
+    /// `MsFieldItemRead()`: the CD object and the heap through the game.
+    MsFieldItemRead @ 0x0079_9020 => extern "C" fn ms_field_item_read() -> u32 {
+        init::ms_field_item_read(&mut mem(), &mut call_ptr)
+    }
+    /// `MsWeaponNameRead()`: `getExcelBinSize` and the heap through the
+    /// game.
+    MsWeaponNameRead @ 0x007a_2600 => extern "C" fn ms_weapon_name_read() -> u32 {
+        init::ms_weapon_name_read(&mut mem(), &mut call_ptr)
+    }
+    /// `MsImportantRead()`: as `MsWeaponNameRead`.
+    MsImportantRead @ 0x0079_08c0 => extern "C" fn ms_important_read() -> u32 {
+        init::ms_important_read(&mut mem(), &mut call_ptr)
+    }
+    /// `MsMenuReadText(i, load)`: the async read's request block in a frame
+    /// on this stack (the original's local); the CD object, the heap, the
+    /// pointer table and `getExcelBinSize` through the game.
+    MsMenuReadText @ 0x0078_fef0 => extern "C" fn ms_menu_read_text(i: u32, load: u32) -> u32 {
+        let mut request = super::StackFrame::<{ (init::MENU_TEXT_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        init::ms_menu_read_text(&mut mem(), &mut call_ptr, i, load, at)
+    }
+    /// `MsMenuReadStartText_00782b70(k)`: as `MsMenuReadText`.
+    MsMenuReadStartText_00782b70 @ 0x0078_2b70 => extern "C" fn ms_menu_read_start_text(k: u32) -> u32 {
+        let mut request = super::StackFrame::<{ (init::MENU_TEXT_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        init::ms_menu_read_start_text(&mut mem(), &mut call_ptr, k, at)
+    }
+    /// `MsBattleSpecialInit(kind)`: the heap and map through the game.
+    MsBattleSpecialInit @ 0x0079_de60 => extern "C" fn ms_battle_special_init(kind: u32) -> u32 {
+        init::ms_battle_special_init(&mut mem(), &mut call_ptr, kind)
+    }
+    /// `MsSetSaveStartGame()`: the CD object, main's heap, system, menu,
+    /// sphere grid and `MsWeaponNameNum` through the game.
+    MsSetSaveStartGame @ 0x0078_6b00 => extern "C" fn ms_set_save_start_game() -> u32 {
+        init::ms_set_save_start_game(&mut mem(), &mut call_ptr)
+    }
+    /// `MsBattleInit()`: the CD texts' request block in a frame on this
+    /// stack; the inits, the kernel reader, the heap, `MsBattleExe`, the
+    /// scene and the other modules' callees through the game.
+    MsBattleInit @ 0x0078_1700 => extern "C" fn ms_battle_init() -> u32 {
+        let mut request = super::StackFrame::<{ (init::MENU_TEXT_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        init::ms_battle_init(&mut mem(), &mut call_ptr, at)
+    }
+    /// `MsBattleProcess()`: one frame of the battle module; every callee
+    /// (the battle's hooked ports and the other modules') through the game.
+    MsBattleProcess @ 0x0079_0c10 => extern "C" fn ms_battle_process() {
+        process::ms_battle_process(&mut mem(), &mut call_ptr);
+    }
+    /// `MsBtlReadMonster()`: the monster file read's request block in a
+    /// frame on this stack (the original's local); the CD object, the heap
+    /// and the unported monster loaders through the game.
+    MsBtlReadMonster @ 0x0078_3680 => extern "C" fn ms_btl_read_monster() -> u32 {
+        let mut request = super::StackFrame::<{ (read::MONSTER_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_btl_read_monster(&mut mem(), &mut call_ptr, at)
     }
     /// `MsGetRamChrCTBbasic()`.
     MsGetRamChrCTBbasic @ 0x0078_4220 => extern "C" fn ms_get_ram_chr_ctb_basic() -> i32 {

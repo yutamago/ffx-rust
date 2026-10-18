@@ -6901,7 +6901,7 @@
 0x00784720	logic	default (no rule: ported to be safe)
 0x00784830	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00784860	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x007848b0	logic	debug-sounding name, but used by logic: MsBattleInit, Native_707d, Native_c03a
+0x007848b0	logic	reviewed: MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d flag 0x15 reach it (battle round 21)
 0x007849c0	debug	debug name: MsDebugFullGill
 0x007849d0	debug	debug name: MsDebugFullItem
 0x00784ac0	debug	reviewed: MsDebugFullMember: only under the debug menu toggle 0x0112a905 (battle round 21)

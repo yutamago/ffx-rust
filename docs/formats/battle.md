@@ -640,21 +640,162 @@ scripts, cameras. Its leaves `MsBtlReadScene` (directory 0x29, an async CD
 read into `g_BtlRead3`), `MsGetRamChrCTBbasic` (the first actor still
 loading `+0x433` to `g_BtlEffectWait` with motion 0xd0), `0x00784420`
 (monsters shown, placed, made visible), `MsCalcChrDirAll` and
-`MsSetChrVisibleEvent` are ported; the machine itself is not yet.
+`MsSetChrVisibleEvent` are ported; the machine itself in round 21.
+
+## Round 21
+
+A test leak found in round 20 (drawing the round-19 steps' random stream
+for the new steps made a later `MsEffectStart` divide by zero in the
+original, at `0x00786346`: a `g_KernelPlyRom` record's byte `+0x1c`) came
+from the test, not the port: `MsBattleExe`'s leaves step handed its heap
+stub's 0x8a90-byte block to `MsBtlChrGetMem`, which asks for 0x1e270 bytes
+of actors, and `MsBtlChrInit` then initialized all 0x1f actors past the
+block's end, over the scratch tables allocated after it (the fake ply_rom
+table first). The step's globals were put back, the bytes after the block
+were not. The step now gets a block of its own of 0x1e270 bytes; the shared
+stream passes on the image and battle.snap.
+
+`MsBtlReadManage` (`0x00783020`, `ffx_battle::read`) runs one step a call
+and then the read cue (`MsBtlReadCueManage`). With the debug toggle
+`g_BtlDebugReadWait` on, each step first waits `g_BtlReadWait` frames (0x3c
+after each camera request); `g_BtlReadHold` counts down every call. The
+first visit's path is scenario 0x9ce on level hash 0x223f. By status
+(each falls into the next unless it waits; the jump table at `0x0078361c`,
+its index bytes at `0x00783660`):
+
+| Status | Step |
+|---|---|
+| 4 | waits for the script callbacks (`AtelIsCallbackQue`) |
+| 5 → 6 | index, name (copied to `g_BtlFileName`), async task `0x00784500`, `g_BtlFileKind` (0 for files 0x102-0x104), the file read into the buffer (CD `+0`, completion `0x00782fe0`), the font path, the special texture unless `TkGetLang` |
+| 7 | `FlushCache(0)`, `MsBtlReadSetScene` (0xa skips the map) |
+| 8 → 9 | `g_BtlMapRead`, battle map (`g_BtlBattleMusic` bit 0x400) or field map, number its low ten bits; `g_BtlMapStarted` |
+| 9 → 0x22 | waits for the renderer (bits 0x20 and 0x40), `loadPhyreFieldMap` |
+| 0x22 → 0xa | waits for `g_BtlMapRead` |
+| 0xa → 0xb | directions, first strike (`MsGetFirstAttack(0x20)`, a script's `g_BtlFirstAttackSet` over it), the two scripts in manager 0 and set up, the reverb (formation byte 1), the battle count (below 0x0fffffff unless the steal rule is 2), camera 0x18, the party shown (none: motion 0x3f), the monsters placed once the map started |
+| 0xb → 0xc | each party member's model (and its battle count byte) and weapons queued |
+| 0xc | waits while the cue level is set and `g_NewCharacterLoads` > 0; `g_BtlStartReady` (0 on the first visit, else 1 with field mode 0), camera 0x75, `MsBtlReadMonster` |
+| 0xe → 0xf | the monster slot counters cleared, each monster (an ID and `+0x24`) model and weapon queued |
+| 0xf → 0x10 → 0x11 | waits, camera 0x76; the footsteps (`MsBtlReadScene`, formation byte 2) |
+| 0x13 → 0x14 | the party's second models queued (the loads count from 0 on the first visit) |
+| 0x14 → 0x15 | waits (the first visit also on the loads); `g_BtlStartReady` 1 on the first visit or with field mode 1 |
+| 0x15 | the first strike's message (kind 2 the party's; 3 the monsters', 100 frames on scene 0x01e60046, else 0x19) |
+| 0x16 → 1 | waits for the message window, the sound transfers, the actors' loads and the hold; then `Ch_CheckNbBattleChr`, the limit cue, system check 5, camera 0x7c |
+
+Other statuses only run the cue. The port calls the battle callees
+ported before directly (cue registration, cameras, motions, visibility,
+`MsAtelRegist`, `MsAtelSetUp`) and the map's, graphics', sound's, script's
+and chara's functions, the CD object, `MsBtlReadSetScene` and
+`MsBtlReadMonster` through the game. `MsBattleExe` keeps calling it
+through the game: it tail-calls it, so its `eax` is the read's.
+
+`MsBattleInit` (`0x00781700`, `ffx_battle::init`) runs once at the game's
+start. After the inits it reads eight kernel files whole (directory 0xd,
+then 0x2f for files 5 and 6): each size is stored as a halfword
+(`0x0112a9d2`, the field list's, read back signed; the others,
+`0x0112a972`-`0x0112a980`, unsigned) and its block is an aligned
+`user_malloc` booked with `MsMemCheckRegist`, read and waited for (CD
+`+8`). Then `Kernel_LoadTables` until it returns 0; menu texts 7, 9, 3
+(and 0xe-0x10 while `MsGetCheckEnglish`) and the start list
+(`0x00c421b4`, `i8` until a negative, `MsMenuReadStartText_00782b70`
+with `load` 1); key items, field items, weapon names; the new game's
+save; then an empty `MsBattleExe(-1, 0, 0, 1)`, its scene and scripts.
+`g_BtlExe` comes from `g_BtlExeKeep` after the memory word's label
+(`MsBattleLabelExe`), else 0. `MsMemCheckSum(0x70000)` gives the room
+left below 0x70000 past the booked work memory (less 0x10, rounded down
+to 64) a block of its own. With the debug menu's toggle `0x0112a905` the
+debug fills run (`MsDebugFullMember` is reviewed debug;
+`MsDebugFullCommand` stays logic: the PC booster menu `0x006fc970`
+reaches it).
+
+`MsMenuReadText(i, load)` (`0x0078fef0`) fills row `i` of `g_BtlMenuText`
+(12 bytes: busy byte, size, a 32-bit pointer table handle): thirteen texts
+are kernel files read whole (`getExcelBinSize`; 7 and 0xe are both
+`config_txt`), copied in and freed; 2, 0xd, 0xf and 0x10 are CD files of
+directory 0x27 (`MsGetFileSize(0x27, load ? 9 : 0x27, i)`) read
+asynchronously with a request block on the caller's stack whose `+0xc` is
+`i`; the completion `0x0078fed0` clears the busy byte. The port takes the
+block's address from the shim (a frame on the hook's stack). It returns 0
+(-1 past 0x10).
+
+`MsSetSaveStartGame` (`0x00786b00`) builds a new game's save: the first
+records of directory 0xd's files 3 (the menu's 7 words), 4 `party_data`
+(0x21 words from `g_SaveGil`, the starting items at `+0x44`/`+0x54` and
+the seed at `+4`) and 0x1f `menu_panel` (8 words); the weapons from
+`wep_data` until the first record comes again (`MsGetExcelData`'s
+fallback) or past 0x23 without `g_BtlAllWeapons`, a character's (byte 4
+below 7) with its name number (`MsWeaponNameNum`) and icon; 18
+`ply_save` records and names (also the default names), each name's
+bytes 18 and 19 the language and 1; `MsRandMize(frames + seed)`; the
+starting items with a count listed and marked found, the rest of the 0x100
+entries 0xff/0.
+
+`MsEtEffectInit` (`0x0079e670`) numbers the three status effect tables
+from 0 on (`MsEtEffectNumber_0079f1c0`: entries of 4 bytes up to three
+zero bytes; byte 0 0xff is skipped; past 0x18 `MsBattleError("eff_id")`).
+`MsBattleSpecialInit(kind)` (`0x0079de60`) makes the special stage's work
+for kinds 1-3 (the boat's roll step 0.002 from `0x00b54ca4`, map objects
+0x1c-0x1e's animations disposed). `0x0112a948` and `0x0112a960` are both
+named `g_KernelSummonGrow` in ffx.sym: `MsBattleInit` reads directory
+0xd's file 0xe into the first and 0x2f's file 6 into the second.
+
+`MsBattleProcess` (`0x00790c10`, `ffx_battle::process`), the battle
+module's frame, is ported (round 21); every callee goes through the game
+(the battle's are hooked ports), only the state it reads and writes
+itself is Rust. Each frame: `MsBtlReadManage`, `g_BtlLeaderAlive` 1 and,
+with `g_GsDefDrawEnv2` 1, the debug camera sleep. Outside a battle
+(status 0) a debug build's pad combination L1+R1+L2+R2+X (`0x4f`) starts
+the debug field's battle (`MsBattleLabelExe`), `g_BtlExe` starts a
+battle (`MsBattleExe(0, field, group, slot)`) and the event effect runs.
+In a battle: the debug status print, `g_BtlLeaderAlive` (actor 0's
+`+0x5d0` above 0), `g_BtlPad`, the 3D sounds (their result in
+`0x0112ca01`), the command frame count, the per-frame clears, the pause,
+title window and party position counters, the sound transfers; while
+`MsBattleCanProgress` the order (at status 1); damage, deaths, stone
+effects, hit motions, the two end fades; while it can progress and the
+first fade is 0 the status step, and at status 1 the input cue; then
+the window, command cue, overdrive, message cue, numbers, movement,
+motion positions and `MsEffectStart`. The original keeps the first fade's
+new value in `cl` across `MsBattleCanProgress`, which leaves `ecx` alone.
+A soft reset ends the battle (kind 6). A debug build with
+`g_GsDefDrawEnv2` 1 ends it on Start+Square (status 1,
+`g_BtlEndForced` 5); at status 1 the combination restarts the battle
+(with Triangle the whole module: free, init, `MsEtEffectRead`) and
+returns before the pad is kept; when it was checked and not held, the
+status 0x21 end check is skipped. Status 0x21 or end kind 5 or 6 end the
+battle (camera, reverb, fps, windows, `MsBtlGetTerm`, the save unless
+`g_BtlNoSave`, `MsBattleFree`, `AtelBattleEndCallback(encounter type,
+field << 16 | group, music, kind)`, the encounter type cleared). Then
+`g_BtlPadOld` and the event effect.
+
+`MsBtlReadMonster` (`0x00783680`, `ffx_battle::read`) reads one monster
+file per call (status 0xd while it runs): from `g_BtlNextMonster` on, a
+slot with an ID (`+0xe` not 0xffff) and a file (directory 0x10, the size
+of `MsGetChrID`'s file) shares the data block of an earlier slot with the
+same ID (its `+0x48`; then `+0x11` is 0 and `+0x14` that slot + 0x14),
+gets `readBtlMonsterName` and three kernel texts (the record's `u16`
+string offsets 0, 2 and 6: name `+0x50`, 0x40 bytes cleared, at most 0x3f
+copied; `+0x90`, 0x100/0xff; `+0x190`, 0x200/0x1ff), from
+`g_KernelMonster1` for IDs below 0x65, `g_KernelMonster2` for 0x65-0xb4,
+else `g_KernelMonster3`. With `g_BtlFileKind` set, IDs 0xfe, 0x11c and
+0x11f set it to 8, 9 or 0xc (and take the third table); a kind above 1
+then replaces the name with that character's default name and becomes
+1. A shared slot is attached (`Mon_AttachData`) and the next one tried;
+otherwise its file is read asynchronously into a new `mon_data` block
+with a request block on the stack (`+0xc` the slot; the port's comes from
+the shim) and the function returns -1 with the next slot noted. With no
+slot left: `Mon_LoadAll`, status 0xe, 0.
 
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.
 
-**377 functions, 88101 bytes** (223 named). By blockers: 0: 222, 1: 96, 2: 38, 3: 5, 4: 8, 5: 2, 6: 1, 7: 3, 15: 1, 16: 1.
+**360 functions, 80914 bytes** (211 named). By blockers: 0: 218, 1: 92, 2: 34, 3: 5, 4: 7, 5: 2, 7: 1, 15: 1.
 
-The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` and `MsBattleExe` set a battle up; encounters and rewards):
+The battle loop's top level still open (ported: `MsBattleProcess`, the frame, and `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; open: the scene reader, encounters and rewards):
 
 | Function | Address | Bytes | Blockers |
 |---|---|---|---|
-| `MsBattleProcess` | `0x00790c10` | 913 | 7 |
-| `MsBattleInit` | `0x00781700` | 1353 | 16 |
-| `MsBtlReadManage` | `0x00783020` | 1529 | 6 |
+| `MsBtlReadSetScene` | `0x00783e20` | 315 | 4 |
 | `MsGetItem` | `0x007990d0` | 728 | 1 |
 | `BattleRewards_AddGear` | `0x00798c10` | 630 | 3 |
 
@@ -694,7 +835,7 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 25 | `0x007aaff0` | `FUN_007aaff0` |  |
 | 0 | 25 | `0x00874200` | `MsSetSaveCommandWithPrefix` |  |
 | 0 | 26 | `0x007a86e0` | `Clamp0To6_007a86e0` |  |
-| 0 | 27 | `0x0078fed0` | `FUN_0078fed0` |  |
+| 0 | 27 | `0x0078fed0` | `MsMenuReadTextDone_0078fed0` |  |
 | 0 | 27 | `0x007b75a0` | `FUN_007b75a0` |  |
 | 0 | 28 | `0x0079adb0` | `MsGetRamChrFemale` |  |
 | 0 | 28 | `0x007b0500` | `FUN_007b0500` |  |
@@ -741,7 +882,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 51 | `0x007a0170` | `MsRegSEplay3` |  |
 | 0 | 52 | `0x007cf000` | `FUN_007cf000` |  |
 | 0 | 53 | `0x007877d0` | `MsEffectCameraGet` |  |
-| 0 | 53 | `0x007993e0` | `FUN_007993e0` |  |
 | 0 | 54 | `0x00795e70` | `MsSetChrDirLeave` |  |
 | 0 | 55 | `0x007907a0` | `FUN_007907a0` |  |
 | 0 | 55 | `0x0079ea90` | `MsResetWeaponEffectAttribute` |  |
@@ -764,11 +904,9 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 67 | `0x00795ff0` | `FUN_00795ff0` |  |
 | 0 | 67 | `0x0079ea40` | `MsPauseChrEffect` |  |
 | 0 | 68 | `0x00795dd0` | `FUN_00795dd0` |  |
-| 0 | 68 | `0x0079f1c0` | `FUN_0079f1c0` |  |
 | 0 | 69 | `0x007902f0` | `PasswordTextDispose` |  |
 | 0 | 69 | `0x00798950` | `Rng_ClockSeed` |  |
 | 0 | 69 | `0x0079d2a0` | `FUN_0079d2a0` |  |
-| 0 | 70 | `0x00799f20` | `MsMemCheckSum` |  |
 | 0 | 70 | `0x007c13c0` | `FUN_007c13c0` |  |
 | 0 | 71 | `0x007bed10` | `MsCameraResetFilter` |  |
 | 0 | 72 | `0x007c1000` | `FUN_007c1000` |  |
@@ -832,7 +970,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 157 | `0x007bce80` | `FUN_007bce80` |  |
 | 0 | 159 | `0x007b6f10` | `FUN_007b6f10` |  |
 | 0 | 160 | `0x007bc890` | `FUN_007bc890` |  |
-| 0 | 162 | `0x00799020` | `MsFieldItemRead` |  |
 | 0 | 163 | `0x007bf280` | `MsCameraSetFocus` |  |
 | 0 | 165 | `0x00795c90` | `FUN_00795c90` |  |
 | 0 | 166 | `0x007bc010` | `MsScreenMoveReset` |  |
@@ -885,22 +1022,20 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 1385 | `0x007c50f0` | `MsCameraShakeProcess` |  |
 | 0 | 2366 | `0x007c1be0` | `MsCameraMatrix` |  |
 | 1 | 9 | `0x00790290` | `FUN_00790290` | MsEffectSetMotion |
-| 1 | 16 | `0x00798b60` | `MsBtlGetInit` | FUN_007993e0 |
 | 1 | 21 | `0x0078f8f0` | `MsGetRomBtlText` | MsMenuGetText |
 | 1 | 21 | `0x0078fb60` | `MsMenuGetBtlEndText` | MsMenuGetText |
 | 1 | 21 | `0x007962b0` | `MsSetChrShadow` | MsSetChrShadowMode |
+| 1 | 23 | `0x00783990` | `MsBtlReadMonsterDone_00783990` | Mon_AttachData |
 | 1 | 24 | `0x00788b70` | `MsEffectWeaponInit` | op_et_weapon_init |
 | 1 | 24 | `0x007ba9a0` | `MsBindCamera` | FUN_007baa50 |
 | 1 | 25 | `0x00780c70` | `FUN_00780c70` | Enc_ResetWeights |
 | 1 | 25 | `0x00784b60` | `MsDebugFullSummon` | MsSetSavePlyJoin |
-| 1 | 26 | `0x00784ac0` | `MsDebugFullMember` | MsSetSavePlyJoin |
 | 1 | 26 | `0x00798fd0` | `MsFieldItemGet` | msFieldItemGet |
 | 1 | 34 | `0x00783b90` | `MsBtlReadPlayerModelProcess` | MsBtlChrRegist |
 | 1 | 36 | `0x007b7650` | `FUN_007b7650` | MsResetAvoidFlag |
 | 1 | 38 | `0x00786950` | `MsSetSavePartyMember` | MsExchangeSaveParty |
 | 1 | 38 | `0x007873a0` | `resetDefaultPlayerNameStatus` | setDefaultPlayerName |
-| 1 | 38 | `0x0079e670` | `MsEtEffectInit` | FUN_0079f1c0 |
-| 1 | 39 | `0x00782b70` | `FUN_00782b70` | MsMenuReadText |
+| 1 | 38 | `0x00798ff0` | `MsFieldItemGetMes` | msFieldItemGet |
 | 1 | 40 | `0x0079cb10` | `MsSetRamMonData` | MsSetRamChr |
 | 1 | 41 | `0x0079eae0` | `FUN_0079eae0` | MsPauseChrEffect |
 | 1 | 42 | `0x007993b0` | `MsSetWeaponName` | MsWeaponNameNum |
@@ -915,6 +1050,7 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 1 | 66 | `0x0079e590` | `MsEtCriticalEffect` | op_et_eff |
 | 1 | 67 | `0x0079dfe0` | `MsSpCameraProcess` | MsTransSpPos |
 | 1 | 69 | `0x0079fda0` | `FUN_0079fda0` | FUN_0079fe80 |
+| 1 | 72 | `0x00788d10` | `MsEventEffectReadComplete` | MagicFile_GetEffectOverlayTable |
 | 1 | 73 | `0x0079d090` | `FUN_0079d090` | MsGetBattleMessageFlag |
 | 1 | 75 | `0x0079fe30` | `FUN_0079fe30` | FUN_0079fd40 |
 | 1 | 79 | `0x007baa50` | `FUN_007baa50` | MsAtelGetCameraID |
@@ -925,8 +1061,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 1 | 95 | `0x00782ba0` | `FUN_00782ba0` | Enc_ResetWeights |
 | 1 | 98 | `0x0079e2a0` | `FUN_0079e2a0` | yiSetRotTransDObj |
 | 1 | 108 | `0x007b7d00` | `MsEffectChrGetLoveLoveMax` | MsGetRamChrFemale |
-| 1 | 110 | `0x007a2600` | `MsWeaponNameRead` | getExcelBinSize |
-| 1 | 112 | `0x007908c0` | `MsImportantRead` | getExcelBinSize |
 | 1 | 114 | `0x0079e510` | `MsEffectSetGuard` | FUN_0079ec40 |
 | 1 | 114 | `0x007bb840` | `MsAtelScreenShake` | MsScreenShake |
 | 1 | 123 | `0x007932b0` | `MesSetChrTargetPosToLimitSparePosy` | FUN_00796bb0 |
@@ -974,19 +1108,15 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 1 | 542 | `0x007bd860` | `MsCameraMoveAcc` | MsCameraSetStartPos |
 | 1 | 566 | `0x0079a200` | `MsGetCTBlist` | FUN_0079a020 |
 | 1 | 599 | `0x0079f380` | `MsCalcCursorPos` | graphicProject3DPointOntoScreenConsider2DScene |
-| 1 | 646 | `0x0078fef0` | `MsMenuReadText` | getExcelBinSize |
 | 1 | 728 | `0x007990d0` | `MsGetItem` | BattleRewards_AddGear |
 | 1 | 880 | `0x007c0120` | `FUN_007c0120` | spline_get_near_point |
 | 1 | 1393 | `0x007afe00` | `MsMenuLimitSet` | MsGetTargetRandomList |
 | 1 | 2555 | `0x007a1c00` | `MsWeaponNameNum_Armor_007a1c00` | MsGearHasAbility_007a0c20 |
 | 1 | 3811 | `0x007a0d10` | `MsWeaponNameNum_Weapon_007a0d10` | MsGearHasAbility_007a0c20 |
 | 2 | 20 | `0x00780cc0` | `MsBattleCursorCalc` | MsNumberDrawProcess, MsCalcCursorPos |
-| 2 | 23 | `0x00783990` | `FUN_00783990` | Mon_AttachData, MsBtlReadMonster |
 | 2 | 30 | `0x00796680` | `FUN_00796680` | FUN_00796880, FUN_007968b0 |
 | 2 | 30 | `0x007a0cf0` | `MsWeaponNameNum` | MsWeaponNameNum_Armor_007a1c00, MsWeaponNameNum_Weapon_007a0d10 |
-| 2 | 38 | `0x00798ff0` | `MsFieldItemGetMes` | FUN_007993e0, msFieldItemGet |
 | 2 | 49 | `0x00783fc0` | `FUN_00783fc0` | MsBtlReadWeapon, FUN_00784000 |
-| 2 | 72 | `0x00788d10` | `MsEventEffectReadComplete` | op_ovl_effect_init, MagicFile_GetEffectOverlayTable |
 | 2 | 83 | `0x007a8f60` | `FUN_007a8f60` | MsGetSameTarget, FUN_00796430 |
 | 2 | 103 | `0x00784000` | `FUN_00784000` | MsRegistSEdata, MsEffectWeaponInit |
 | 2 | 123 | `0x007cf970` | `FUN_007cf970` | FUN_007cf860, debug_exit_trace |
@@ -1008,7 +1138,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 2 | 249 | `0x007bf420` | `FUN_007bf420` | FUN_007c0a30, FUN_007c09b0 |
 | 2 | 270 | `0x007a89c0` | `MsSetChrVisibleBtl2Event` | FUN_007fae90, MsSetRamChr |
 | 2 | 275 | `0x007c0d40` | `FUN_007c0d40` | spline_get_near_point, spline_get_near_point_init |
-| 2 | 302 | `0x0079de60` | `MsBattleSpecialInit` | Yn_SeaCreate, Yn_PSimTest |
 | 2 | 308 | `0x007839b0` | `MsBtlReadMonsterProcess` | MsBtlChrRegist, MsSetChrTransparentVisible |
 | 2 | 408 | `0x007bb6a0` | `setCameraMatrixToPhyreScene` | MsAtelGetCameraID, FUN_0079e2a0 |
 | 2 | 412 | `0x00799420` | `msFieldItemGet` | FUN_00798bd0, MsWeaponNameNum |
@@ -1024,20 +1153,15 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 3 | 285 | `0x00787e00` | `MsEffectProcess` | MagicFile_GetEffectOverlayTable, op_effect_run_after, op_effect_run_before |
 | 3 | 630 | `0x00798c10` | `BattleRewards_AddGear` | FUN_00798bd0, MsWeaponNameNum, FUN_00798a90 |
 | 4 | 167 | `0x007b74d0` | `FUN_007b74d0` | FUN_007b77c0, FUN_007b75c0, FUN_007b7680, FUN_007b7650 |
+| 4 | 302 | `0x00782090` | `MsBattleReadDataNB` | MsBtlReadSetScene, Kernel_LoadTables, eiAbmSetLang, MsGetSaveConfigEnglish |
 | 4 | 315 | `0x00783e20` | `MsBtlReadSetScene` | MsBtlBridgeEvent2Btl, AtelEventRemoveForBattle, MsSetRamChrData, MsGetSaveConfigEnglish |
 | 4 | 766 | `0x00795250` | `MsGetChrLimitBarFlag` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796d10, MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos |
-| 4 | 774 | `0x00783680` | `MsBtlReadMonster` | Mon_AttachData, readBtlMonsterName, MsGetChrID, Mon_LoadAll |
-| 4 | 976 | `0x00786b00` | `MsSetSaveStartGame` | TkInitSaveWork, eiAbmDataInit, getExcelBinSize, MsWeaponNameNum |
 | 4 | 1539 | `0x007bc110` | `MsScreenProcess` | Cam_Apply, MsScreenMatrix, MsCameraMatrix, MsCameraShakeProcess |
 | 4 | 1624 | `0x0079b4f0` | `MsSetRamChr` | FUN_0079ca80, MsSetRamChrParam, MsGetSaveConfigEnglish, MsSetCommandUse |
 | 4 | 7007 | `0x007b4b70` | `MsSetChrStatInfo` | MsSetSavePlyJoin, MsSetChrShadowMode, MsSetChrVisibleMain, MsSetRamChrParam |
 | 5 | 406 | `0x00787470` | `setDefaultPlayerName` | FUN_00875220, debugSetRikkuName, FUN_008c5370, FUN_00875370, MsMenuGetText |
 | 5 | 702 | `0x007938e0` | `MsBtlWeaponRegist` | ChN_DataDispose, Ch_Allocate, MsSetWeaponEffectAttribute, Ch_Dispose, FUN_00796f70 |
-| 6 | 1529 | `0x00783020` | `MsBtlReadManage` | yiFieldMapReadNB, MsBtlReadMonster, TOInitBattleFontPath, MsBtlReadSetScene, yiBattleMapReadNB, Ch_CheckNbBattleChr |
-| 7 | 302 | `0x00782090` | `MsBattleReadDataNB` | MsImportantRead, MsWeaponNameRead, MsBtlReadSetScene, Kernel_LoadTables, eiAbmSetLang, FUN_00782b70, MsGetSaveConfigEnglish |
 | 7 | 347 | `0x007824e0` | `MsBtlBridgeEvent2Btl` | AtelGetEventElemCharIDFromID, AtelSetEventActorLinkWork, AtelGetEventElemHandleFromID, FUN_0086b440, AtelGetEventBindIdFromID, AtelGetEventActorLinkWork, AtelGetEventCharIDFromID |
-| 7 | 913 | `0x00790c10` | `MsBattleProcess` | MsBattleInit, TOControlBtlWindow, TODebugGetPadPrintFlag, MsBtlReadManage, TkCheckSoftWareReset, AtelBattleEndCallback, opd_exit_from_ovl |
 | 15 | 2436 | `0x007be110` | `MsCameraProcess` | FUN_007bcb80, FUN_007c0910, FUN_007c0a30, FUN_007bcd30, FUN_007c09b0, FUN_007bcab0, FUN_007c0d40, FUN_007c4d40, FUN_007c0650, MsSpCameraProcess, FUN_007c0ae0, FUN_007c0560, MsCamSetBtl, FUN_0079dd70, MsCameraShakeProcess |
-| 16 | 1353 | `0x00781700` | `MsBattleInit` | MsWeaponNameRead, MsSetSaveStartGame, MsMemCheckSum, MsFieldItemRead, MsBtlReadSetScene, MsDebugFullCommand, MsImportantRead, MsDebugFullMember, Kernel_LoadTables, MsBattleInitAtEvent, MsGetSaveConfigEnglish, MsBattleSpecialInit, MsBtlGetInit, MsEtEffectInit, MsMenuReadText, FUN_00782b70 |
 
 </details>

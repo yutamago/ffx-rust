@@ -58,6 +58,8 @@ CATS = ("logic", "glue", "platform", "debug", "dead")
 # verdicts from porters who read the function and found no rule matched it
 # (address: (category, evidence)); applied last, over every rule
 REVIEWED = {
+    0x00784ac0: ("debug", "MsDebugFullMember: only MsBattleInit, under the debug menu's toggle 0x0112a905 (battle round 21)"),
+    0x007848b0: ("logic", "MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d flag 0x15 reach it (battle round 21)"),
     0x007eb760: ("glue", "op_gs1_init: fixed GS register-setup packets (effects round 13)"),
     0x00775330: ("glue", "builds a GS packet (system round 19)"),
     0x0082bb90: ("glue", "builds a GS sprite packet (main round 5)"),
