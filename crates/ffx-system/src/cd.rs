@@ -274,6 +274,33 @@ pub mod bridge {
         mem.write(c.wrapping_add(0x34), 0u8);
     }
 
+    /// `g_CdLib + 0x70`: non-zero while a channel is being read.
+    pub const READING: Global<u32> = Global::new(0x0231_0cb0);
+    /// `g_CdLib + 0x74`: the channel being read.
+    pub const READING_CHANNEL: Global<u32> = Global::new(0x0231_0cb4);
+
+    /// `0x0076d0e0(file, archive)`: the first of the 64 [`CHANNELS`] in use (byte
+    /// `+0x31` non-zero) for file `+0x28` and archive `+8` (64 channels):
+    /// 2 when it is the one being read ([`READING`], [`READING_CHANNEL`]),
+    /// 1 when it is only queued, 0 for none.
+    pub fn channel_state(mem: &impl Mem, file: u32, archive: u32) -> u32 {
+        let base = CHANNELS.ptr(mem).addr;
+        for k in 0..64u32 {
+            let ch = base.wrapping_add(k * 0x38);
+            if mem.read::<u8>(ch.wrapping_add(0x31)) != 0
+                && mem.read::<u32>(ch.wrapping_add(0x28)) == file
+                && mem.read::<u32>(ch.wrapping_add(8)) == archive
+            {
+                return if READING.get(mem) != 0 && READING_CHANNEL.get(mem) == k {
+                    2
+                } else {
+                    1
+                };
+            }
+        }
+        0
+    }
+
     /// `0x0076c250(n)`: [`cd_file_sector`] of `n` relative to the current
     /// module ([`FILE_BASE`] added; a tail jump).
     pub fn cd_module_file_sector_rel(mem: &impl Mem, n: i32) -> u32 {
@@ -360,5 +387,67 @@ pub mod bridge {
         text.push(0);
         mem.write_bytes(buf, &text);
         buf
+    }
+
+    /// The CD reader's buffer pointer (`0x01128ac8`, `get_read_buffer`).
+    pub const READ_BUFFER: Global<u32> = Global::new(0x0112_8ac8);
+    /// `sa_decode(src, dst)`.
+    const SA_DECODE: u32 = 0x00a4_3de0;
+    /// `sa_meth01dec_ex(packed, dst, n, window)` (a stand-in on PC).
+    const SA_METH01DEC_EX: u32 = 0x00a4_3cb0;
+    /// `sa_meth01dec2_ex(packed, dst, n, window)` (a stand-in on PC).
+    const SA_METH01DEC2_EX: u32 = 0x00a4_3ca0;
+
+    /// `memcpy(dst, src, n)`.
+    fn copy(mem: &mut impl Mem, dst: u32, src: u32, n: u32) {
+        let mut bytes = vec![0u8; n as usize];
+        mem.read_bytes(src, &mut bytes);
+        mem.write_bytes(dst, &bytes);
+    }
+
+    /// `cd_decode_data(req)` (`0x0076d440`): decodes the compressed file
+    /// a read request (`+4` data, `+0x2c` size) brought in place. The
+    /// unpacked size is the unaligned `u32` at data `+1`. Up to 0x1800
+    /// bytes are copied to the [`READ_BUFFER`] whole and `sa_decode(data,
+    /// buffer)` unpacks them back over the data. A larger file keeps its
+    /// last 0x1800 bytes in the buffer and moves its first `size - 0x1800`
+    /// bytes up (byte by byte from the end) to end at data `+ unpacked`;
+    /// the moved block's first byte picks the decoder: 1
+    /// `sa_meth01dec_ex(block, data, n, buffer)`, 2 `sa_meth01dec2_ex`,
+    /// anything else none. Returns the decoder's `eax`, or for no decoder
+    /// the method byte less 2. `call` takes absolute addresses.
+    pub fn decode_data<M: Mem>(
+        mem: &mut M,
+        req: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let size: u32 = mem.read(req.wrapping_add(0x2c));
+        let data: u32 = mem.read(req.wrapping_add(4));
+        let unpacked: u32 = mem.read(data.wrapping_add(1));
+        let buffer = READ_BUFFER.get(mem);
+        if size <= 0x1800 {
+            copy(mem, buffer, data, size);
+            let f = mem.rebase(SA_DECODE);
+            return call(mem, f, &[data, buffer]);
+        }
+        let packed = size - 0x1800;
+        copy(mem, buffer, data.wrapping_add(packed), 0x1800);
+        // the head moves up byte by byte, last byte first (the two ranges
+        // may overlap)
+        let end = data.wrapping_add(unpacked);
+        let moved = if packed.cast_signed() > 0 { packed } else { 0 };
+        for k in 1..=moved {
+            let b: u8 = mem.read(data.wrapping_add(packed - k));
+            mem.write(end.wrapping_sub(k), b);
+        }
+        let block = end.wrapping_sub(moved);
+        let method: u8 = mem.read(block);
+        let decoder = match method {
+            1 => SA_METH01DEC_EX,
+            2 => SA_METH01DEC2_EX,
+            m => return u32::from(m).wrapping_sub(2),
+        };
+        let f = mem.rebase(decoder);
+        call(mem, f, &[block, data, packed, buffer])
     }
 }
