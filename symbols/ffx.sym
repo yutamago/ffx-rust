@@ -4241,8 +4241,9 @@
 0x0076cfc0 function SetGlobal_01128ac4 # cdecl(v): *0x01128ac4 = v, returns v; caller 0x0088e880; name ours
 0x0076cfd0 function FileReadMain              # fh v3:bsim1.00 0x0076d0f0
 0x0076d0d0 function GetCD                     # fh v3:bsim1.00 0x0076d1e0
+0x0076d0e0 function cd_channel_state_0076d0e0 # cdecl(file, archive) -> 0/1/2: first of the 64 g_CdChannels in use (+0x31) with file +0x28 and archive +8: 2 when g_CdLib+0x70 is set and +0x74 is its index, else 1; 0 for none; no direct caller; name ours; ported (system round 31)
 0x0076d200 function Sa_CdRead_task               # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'sceCdBreak() %d\\n'; Switch 0x710031eaa0 Sa_CdRead_task (symbols from Fahrenheit's server export)
-0x0076d440 function cd_decode_data               # layout+callees: sorts between Sa_CdRead_task and cd_file_sector, and its named callees match the Switch 0x710031eec0 cd_decode_data's (similarity 1.00: sa_decode, sa_meth01dec2_ex, sa_meth01dec_ex); symbols from Fahrenheit's server export
+0x0076d440 function cd_decode_data               # layout+callees: sorts between Sa_CdRead_task and cd_file_sector, and its named callees match the Switch 0x710031eec0 cd_decode_data's (similarity 1.00: sa_decode, sa_meth01dec2_ex, sa_meth01dec_ex); symbols from Fahrenheit's server export; cdecl(req) -> eax: req +4 data, +0x2c size, unpacked size = unaligned u32 at data+1; <= 0x1800: memcpy to [0x01128ac8], sa_decode(data, buf); else last 0x1800 bytes to the buffer, head (size-0x1800) moved up byte-wise to end at data+unpacked, method byte 1/2 -> sa_meth01dec_ex/2_ex(block, data, n, buf), other: eax = byte-2; ported (system round 31)
 0x0076d510 function cd_file_sector            # fh v3:exact 0x0076d620
 0x0076d530 function cd_channel_clear # cdecl(n): unless g_CdChannelKeepNames, zero the first byte of name n in g_CdChannelNames (0x80 each); then words +8,+4,+0,+0x30,+0x24 and byte +0x34 of channel n in g_CdChannels (0x38 each); name ours
 0x0076d600 function hdd_install_find # cdecl(archive, n): the HDD-install entry (0x34 bytes) whose archive byte (+0) and file number (+8) match, or 0 (also for -1 in either or an empty table); name ours
@@ -9916,7 +9917,7 @@
 0x0089c7d0 function TOBtlDrawLibraRight          # layout+callees: sorts between TOBtlDrawLibraLeft and TOBtlDrawTargetCursor, and its named callees match the Switch 0x71004a0960 TOBtlDrawLibraRight's (similarity 1.00: MsGetMenuChrInfo, TOGetMessageWH, TOMkpCrossExtMesFontLClut, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad
-0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad
+0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad; cdecl(w): battle command list window frame: 0x10 skip command (click 1 first, g_BtlHelpWinOpen = 0), 4 next action 0x3002, top level 0x8000 MsCheckLeftWindow > 0 -> next action 0xffff, 0x2000 MsGetSaveWindow(actor, 0xd, &n) with trailing 0xff dropped -> 0xfffe; then d-pad, pick record, libra auto sets 0x0133d6e4 and trigger 0x40, cancel/confirm (refused: 0x0133d6e4 = 1) and scroll; ported (system round 31)
 0x0089d390 function TOBtlGetTargetPad         # fh v3:exact 0x0089d300 _TOBtlGetTargetPad
 0x0089d610 function TOGetPadStatusPrepare     # fh v3:exact 0x0089d580 _TOGetPadStatusPrepare; cdecl(w): command list window frame while idle (+0x88 the empty step 0x00898e40): cancel 0x40 undo pick/TOBtlSetPrevAction, confirm 0x20 TOCheckBtlCommandUse/TOBtlSetNextAction, d-pad cursor (+0x42) by row +0x38/entry, first row +0x40 follows with TOBtlPadScrollDown/Up; ported (system round 28)
 0x0089d9b0 function TOBtlDrawSimpleHelpMes    # fh v3:cg7 0x89d920 __TOBtlDrawSimpleHelpMes
@@ -9953,7 +9954,11 @@
 0x008a22f0 function TOBtlGetLeftPad           # fh v3:cg10 0x8a2290 _TOBtlGetLeftPad; cdecl(w): side command window, cancel 0x2000; confirm checks the current pick, 0x10 skip command (MsMenuGetChrSkipCommand -> g_BtlCommandRec, MsSetBtlCommand, windows closed), 0x04 summon/0x3002, up/down by row; differs from TOBtlGetRightPad only in the cancel bit; ported (system round 28)
 0x008a2690 function TOBtlGetRightPad          # fh v3:cg10 0x8a2630 _TOBtlGetRightPad; cdecl(w): TOBtlGetLeftPad with cancel 0x8000; ported (system round 28)
 0x008a2ad0 function TOBtlCtbAnimStep_008a2ad0 # cdecl(rec) -> 0: i8 step +0xf picks 4, 7, 11, 16 to add to i16 +0x10; after four steps +0xf = 0 and +0x14 = 0x008a2b10; caller TOBtlCtrlCtbWindow; name ours
+0x008a2b10 function TOBtlCtbSlideStep_008a2b10 # cdecl(rec) -> 0: ++i8 +0xf, i16 +0x12 += (i8 +0xc - i8 +0xd) * 0x16 / 4 (toward 0); at 4: +0xf 0, +0x12 = +0xc * 0x16 (16-bit), +0x14 = 0x008a2b60; set by TOBtlCtbAnimStep_008a2ad0; name ours; ported (system round 31)
+0x008a2b60 function TOBtlCtbAnimStep_008a2b60 # cdecl(rec) -> 0: TOBtlCtbAnimStep_008a2ad0 backwards (-16, -11, -7, -4 to i16 +0x10 by i8 +0xf); at 4: +0xf 0, +0x14 0, byte +0 = 0 when i8 +0xc >= 0x10; name ours; ported (system round 31)
 0x008a2ba0 function Tick4_008a2ba0 # cdecl(p) -> 0: ++(i8)p+0xf; at 4: 0, p+0x14 = 0x008a2bc0; name ours
+0x008a2bc0 function TOBtlCtbSlideStep_008a2bc0 # cdecl(rec) -> 0: TOBtlCtbSlideStep_008a2b10 with +0x14 = 0x008a2c10 at the end; set by Tick4_008a2ba0; name ours; ported (system round 31)
+0x008a2c10 function TOBtlCtbAnimWait_008a2c10 # cdecl(rec) -> 0: ++i8 +0xf; at 4: +0xf 0, +0x14 0, byte +0 = 0 when i8 +0xc >= 0x10; name ours; ported (system round 31)
 0x008a2da0 function TODrawWaitBtlWinChange    # fh v3:cg3 0x8a2d40 __TODrawWaitBtlWinChange
 0x008a32b0 function TODrawWaitBtlWinInputGil  # fh v3:cg7 0x8a3250 __TODrawWaitBtlWinInputGil
 0x008a3680 function TODrawWaitBtlWinLeft      # fh v3:cg5 0x8a3620 __TODrawWaitBtlWinLeft
@@ -10155,14 +10160,15 @@
 0x008b0000 function TOSetWindowKindAndType_008b0000 # (window, kind, type): TOSetWindowKind(window, kind) then TOSetMessageType(window, type); name ours
 0x008b0020 function TOMessageSlotMode1_008b0020 # cdecl(i, a, b, c): message slot i: +0x14 part +0x1c = 1, +0x18 part bytes 1/2/3/7/6 = 0, a, b, 0, c, handler +0xfc = 0x008b64e0; name ours
 0x008b00a0 function TOSortMessageWindowPriority # fh v3:exact 0x008b0050; (out): in-use message-window slots by priority (+4, i16) with the compiled exchange sort; out = 8 u16 slot ids, 0xffff after; returns the count
-0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0
-0x008b0440 function TOSwapInternationalEnvExecMenu # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOSwapInternationalEnvExecMenu ---- Start\\n'; Switch 0x71004fb120 TOSwapInternationalEnvExecMenu (symbols from Fahrenheit's server export)
-0x008b0500 function TOSwapInternationalEnvExecNonBlock # fh v3:exact 0x008b04b0
+0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0; () -> [0x01841d2c]: TODVDFileRead of files 0xb,0xa,0xf,0xe,8,6,5,7 of [0x00c59564], TOSeqInitAllScene(2), file 0x16 -> 0x01841e10, TkMenuSetSceneDataAdrs(2), TOSeqInitParam, MsBattleReadData; ported (system round 31)
+0x008b0440 function TOSwapInternationalEnvExecMenu # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOSwapInternationalEnvExecMenu ---- Start\\n'; Switch 0x71004fb120 TOSwapInternationalEnvExecMenu (symbols from Fahrenheit's server export); () -> [0x01841d3c]: step 0x01841d38 0..6, file 0xd of [0x00c59978] -> 0x0157f130 through TODVDFileStartRead/0x008abb00; ported (system round 31)
+0x008b0500 function TOSwapInternationalEnvExecNonBlock # fh v3:exact 0x008b04b0; () -> [0x01841d2c]: step 0x01841d28 (0..0x1c, unsigned) of TOSwapInternationalEnvExec spread over frames, battle file counter 0x01841d34 (MsBattleReadDataNB), READ/COUNT debug lines; ported (system round 31)
 0x008b0920 function TOSwapInternationalEnvInit # fh v3:exact 0x008b08d0; MsSetSaveConfigEnglish(on); 0x00c59564 = on == 1 ? 4 : 0x12; 0x01841d28..+0x10 = 0
 0x008b0970 function TOSwapInternationalEnvInit_008b0970 # cdecl(english): MsSetSaveConfigEnglish(english); 0x00c59978 = english == 1 ? 4 : 0x12; 0x01841d38, 0x01841d3c = 0; twin of TOSwapInternationalEnvInit; name ours
 0x008b0b10 function TOTransImageHL               # layout+callees: sorts between TOSwapInternationalEnvInit and TOTransImageLH, and its named callees match the Switch 0x71004fb3c0 TOTransImageHL's (similarity 1.00: FlushCache, sceDmaGetChan, sceDmaSend, sceGsSyncPath); symbols from Fahrenheit's server export
 0x008b0da0 function TOTransImageLH               # layout+callees: sorts between TOSwapInternationalEnvInit and TOTransTexture, and its named callees match the Switch 0x71004fb560 TOTransImageLH's (similarity 1.00: FlushCache, sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath); symbols from Fahrenheit's server export
-0x008b1020 function TOTransTexture            # fh v3:exact 0x008b0fd0
+0x008b1020 function TOTransTexture            # fh v3:exact 0x008b0fd0; () -> eax of the last TOTransImageHL: textures 0x01841da0[dic type] -> 0x3c00, [1] or (battle) [2] -> 0x3d00, [4] -> 0x3d40 for lang 0, fixed 0x3d80/0x3dc0/0x3e00/0x3f00/0x2ea0; ported (system round 31)
+0x008b1190 function TOTransTexture_008b1190 # () -> eax: TOTransTexture's menu form: lang 0 textures [0] -> 0x3c00 and [4] -> 0x3d40, else [dic type] -> 0x3c00; [3] -> 0x3d00 when GetU32_0112a010; 0x3d80/0x3dc0/0x3f00 ([0x01841d9c] 0x200x0x80); [0x01841e00]/[0x01841e08] only while GetU32_01841d30 is 0; callers 0x008a9ca0, 0x008be840; name ours; ported (system round 31)
 0x008b1330 function resetButtonData           # fh v3:bsim1.00 0x008b12e0
 0x008b1350 function setButtonData             # fh v3:bsim1.00 0x008b1300
 0x008b1370 function MenuSaveLoad_BuildCrcTable# (table) 256 u16 CRC-16/0x1021 of i<<9 (TkCRC table variant); no caller; own name
@@ -10281,6 +10287,7 @@
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
 0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
+0x008b9a60 function TOLayoutMessageChoices_008b9a60 # cdecl(w, sel) -> eax (item count, or the line record when none): walks w+0x94 by TOGetGroup: line codes reset x (centred for window +0xe 1) and step y 0x10, code 0 ends, 1/2 end for sel&0xf != 0, 3 for sel&0xf == 3; 7 alignment, 0xb icon, 0x10 items 0x30.. at line record (0x01868a90[i]) +0x38+8k (flag, width closed by the next item/break, x, y), 0x50..0x5f numbers through TOIntToMes/TOSetMessageChoice; then +8 the widest item; map 0x17 with w+0x14 0x1c7, +0x16 199 stacks items (x 0, y += k*21.5); callers 0x008b8de0, 0x008de370, 0x008de5d0; name ours; ported (system round 31)
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
 0x008b9ec0 function BtlEnd_InParty            # (chr): 1 when chr is one of MsGetSavePartyMember(&a, &b, &c)'s three slots and not 0xff, else 0 (stack cookie); caller 0x008bde00; name ours
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name
@@ -11060,7 +11067,7 @@
 0x00900f80 function TOMoveEntry_00900f80 # cdecl(i, x, y, d): entry i (< 16) of 0x018762e0 moved to (x, y) (+0 = 1) unless there; unless +0xe == 1: +8 = 0, +6 = d, +0xc = d / 14 + 2; callers 0x008e3cf0, 0x008e4140; name ours
 0x00901000 function TOStartWindowEntry_00901000 # cdecl(i, x, y, n): as 0x00901090, but when +0xe == 0: +8 = 0, +6 = n, +0xc = n/14 + 2, +0xe = 1; name ours
 0x00901090 function TOMoveWindowEntry_00901090 # cdecl(i, x, y, n): i < 16, new position: 0x018762e0[i] = 1, x, y; unless +0xe == 1: +6/+8 = n, +0xa = 0x000a000a; name ours
-0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020
+0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020; () -> eax: TOTransImageHL(0x01c80000, 0x3a00, 0x13, 0, 0, 0x200, 0x100); the push of 0x01c80000 has no relocation entry; ported (system round 31)
 0x00901130 function TOMenuTransFaceSmnTex     # fh switch:bsim1.00 0x7100522040
 0x00901160 function TOMenuTransSmallFacePlyTex # fh switch:bsim1.00 0x7100522000
 0x00901190 function TOMkpActiveChrCursor      # fh v3:exact 0x00901190
@@ -11133,6 +11140,8 @@
 0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0; (id, scale) -> f32: ids 0x258..0x263/0x264..0x267/0x268/0x269 give graphicUiRemapX2(ftol(scale*54/64/64.5/147.4 + 0.5)); char 0x025d16e4 digits/space 9.0, ':;' 13.6, '@'..'O' 20.0 or 9.0 ('@' 33.5)
 0x00906420 function graphicDrawUIElementAfterSet # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100501fe0 graphicDrawUIElementAfterSet, 3 votes, round 1
 0x00906680 function SeveralStoresSetTableConstantsArgumentsAddresses_00906680 # auto-port shape (several stores: set table (constants, arguments, addresses), cdecl): u32[((a4 << 0x5) + &0x025d1710)] = a0; u32[((a4 << 0x5) + &0x025d1714)] = a1; u32[((a4 << 0x5) + &0x025d1718)] = a2; u32[((a4 << 0x5) + &0x025d171c)] = a3; return a3; callers: no direct caller; name ours
+0x009066b0 function TOSetUIVertexUV_009066b0 # cdecl(u, v, k) -> k << 5: f32 u, v (through fld/fstp) at 0x025d1708 + 0x20k (the UI element record BeginScissor_XYUV/graphicDrawUIElement use); no direct caller; name ours; ported (system round 31)
+0x009066d0 function TOSetUIVertexXY_009066d0 # cdecl(x, y, k) -> k << 5: f32 x, y at 0x025d1700 + 0x20k; no direct caller; name ours; ported (system round 31)
 0x009066f0 function TOShiftListedId # cdecl(id): 0x40e..=0x46e and 0x40e or in the zero-terminated table 0x00b66e44: id + 100; else id; name ours
 0x00906730 function GetU32_018763e0 # () -> u32 at 0x018763e0; name ours
 0x00906740 function StepSwitch_018763e0 # (): *0x018763e0 steps -1 -> 0 -> 1 -> -1 (other values stay), returns it; caller 0x006b8ce0; name ours

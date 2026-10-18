@@ -1091,3 +1091,120 @@ slot). Each slot in state 2 or 3 runs `TOMenuExecLayerHandle(i, a,
 handle, b)` (`0x00a7b220`) on its handle (`+0x1c`), in slot order. The
 original leaves in `eax` the last slot's call result, or that slot's
 state when it is not drawn; the port returns the same.
+
+## Swapping the international environment (round 31)
+
+A language change reloads the language files from the save region's
+archive (`0x00c59564`: 4 for English, 0x12 otherwise, set by
+`TOSwapInternationalEnvInit`). `TOSwapInternationalEnvExec`
+(`0x008b0340`) does it at once with `TODVDFileRead`; `...ExecNonBlock`
+(`0x008b0500`) spreads the same reads over frames with
+`TODVDFileStartRead` and the CD-busy check `0x008abb00` (CD table
+`+8(1)`). Order: file 0xb into `[0x01841e00]`, 0xa into
+`TOGetBtlMenuTexAdrs()`, 0xf into `[0x01841d9c]`, 0xe into
+`[0x01841d98]`, 8 into `[0x01841e08]`, 6 into `0x025d0d20`, 5 into the
+Al Bhed table, 7 into `0x025d0dc0`; `TOSeqInitAllScene(2)`; file 0x16
+into `0x01841e10` and `TkMenuSetSceneDataAdrs(2, 0x01841e10)`;
+`TOSeqInitParam()`; the battle data (`MsBattleReadData`, or file by file
+with `MsBattleReadDataNB(n)` until it returns 0, waiting for `GetCD()`'s
+`+8(1)` after each). State: step `0x01841d28` (0..0x1c, compared
+unsigned; others do nothing), done `0x01841d2c` (the return value),
+busy `0x01841d30`, battle file `0x01841d34`. Step 0x12 falls through
+into 0x13; step 0x1c prints "Done" every time it runs. With
+`g_DebugPadPrintFlag` the step and file count go to the debug screen.
+`...ExecMenu` (`0x008b0440`) reads file 0xd of `0x00c59978` into
+`0x0157f130` with its own step (`0x01841d38`, 0..6; 4 and 5 do nothing)
+and done flag (`0x01841d3c`).
+
+`TOTransTexture` (`0x008b1020`) then uploads the textures with
+`TOTransImageHL(data, dest, format, 0, 0, w, h)` from the texture table
+(`0x01841da0`, 16 bytes each: data, CLUT, size, `i16` w, h): entry
+`TOGetInternationalBaseDicType()` (not bounds-checked) to 0x3c00; out of
+battle entry 1 to 0x3d00 when `AtelGetExpandFTCAdrs()` is non-zero; in
+battle entry 2 to 0x3d00 when `MsBattleGetFontAddress()` is non-zero and
+entry 4 to 0x3d40 for language 0; then fixed-size images: `[0x01841d94]`
+0x80x0x100 to 0x3d80, `[0x01841d98]` 0x100x0x80 to 0x3dc0,
+`[0x01841e00]` and the battle-menu texture 0x100x0x100 (format 0x13) to
+0x3e00 and 0x3f00, `[0x01841e08]` 0x40x0x40 (format 0) to 0x2ea0. The
+menu's form `0x008b1190` uploads entries 0 and 4 for language 0 (else
+the dictionary's), entry 3 when `GetU32_0112a010()`, `[0x01841d9c]`
+0x200x0x80 to 0x3f00, and the last two only while no reload is busy.
+
+## Decoding a compressed CD file (round 31)
+
+`cd_decode_data(req)` (`0x0076d440`) unpacks a file in place: `req +4`
+the data, `+0x2c` its size; the unpacked size is the unaligned `u32` at
+data `+1`. Files up to 0x1800 bytes are copied whole to the read buffer
+(`[0x01128ac8]`) and `sa_decode(data, buffer)` unpacks them back. A
+larger file keeps its last 0x1800 bytes in the buffer, moves its first
+`size - 0x1800` bytes up, byte by byte from the end, to end at data `+
+unpacked`, and the moved block's first byte (the file's first byte)
+names the method: 1 `sa_meth01dec_ex(block, data, n, buffer)`, 2
+`sa_meth01dec2_ex` (both stand-ins on PC that only print), other values
+nothing (`eax` is then the byte less 2).
+
+## The battle command list's pad (round 31)
+
+`TOBtlGetStdPad(w)` (`0x0089cde0`) is the item/skill list's frame, a
+sibling of `TOGetPadStatusPrepare` and the side pads. It runs only while
+`g_BtlWindowOpen` and with the idle step function (`+0x88` =
+`0x00898e40`). Before the d-pad, by the trigger word `0x025d09d4`: at the
+top level (`g_BtlActionDepth` 0) 0x10 takes the skip command
+(`MsMenuGetChrSkipCommand`; unlike the side pads it clicks 1 before the
+command record is written, and clears `g_BtlHelpWinOpen` itself instead
+of calling `TOBtlCloseHelpWin`); 0x04 asks for action 0x3002 (no summon
+out); 0x8000 opens the left window (`MsCheckLeftWindow` above 0, action
+0xffff) and 0x2000 the right one (action 0xfffe) when
+`MsGetSaveWindow(actor, 0xd, &n)` lists anything once its trailing 0xff
+entries are dropped (a negative `n` counts as a list). The d-pad works as
+in `TOGetPadStatusPrepare` (only exact repeated words move it), then the
+pick is recorded before the buttons are read again: Libra's auto mode
+(`0x0133d6e0` 1) forces the trigger to 0x40 and sets `0x0133d6e4` unless
+it or `g_BtlCommandMissed` is 1; a refused confirm (`TOCheckBtlCommandUse`
+negative) clicks 3 and sets `0x0133d6e4` too.
+
+## Laying out a message's choices (round 31)
+
+`TOLayoutMessageChoices_008b9a60(w, sel)` (cdecl) walks a message
+window record's text (`w +0x94`, window `i16 +4`, mode `i16 +0x1a`) with a
+pen (x an `f32` from 0, y from 0x10) and fills the window's line record
+(`0x01868a90[i]`): `+4` and the item count `+5` cleared first, item
+`a - 0x30` of a `0x10 a` code at `+0x38 + 8 × (a - 0x30)` (`+0` flag 1,
+`+2` width, `+4` x, `+6` y, both truncated with `_ftol2_sse`). An item's
+width is the pen's distance from its x when the next item or line code
+comes; `0x10 0xff` only closes. `0x10 0x50..0x5f` is a number: `[line
+record +0xc]` through `TOIntToMes(value, text, a - 0x4f, 1)`, measured,
+and set with `TOSetMessageChoice(i, a - 0x4f, x, y, width)`. Line codes
+(group 1) put x back to 0, or centre it for a centred window (`+0xe` 1:
+`(right +0x50 - left +0x48 - text width) × 0.5`); code 0 ends, 1 and 2 go
+back to y 0x10 and end for `sel & 0xf` non-zero, 3 steps y by 0x10 and
+ends for `sel & 0xf` 3. Code 7 aligns (0x38 and 0x31 centre the rest of
+the line, 0x40..0xbf put x at `4a - 0x100`, 0xe1..0xef step x by `a -
+0xe0`), 0x0b adds a button icon's width, macros (group 3) add
+`TOGetChangeMacroWidth` and characters `TOGetFontWidthInterMode` (after
+`TOConvAlbhedWord` in an Al Bhed window, `+0x10` 0x4000). At the end the
+record's `+8` is the widest item; on map 0x17, for the record with `+0x14`
+0x1c7 and `+0x16` 199, the items are stacked instead (x 0, y `+ 21.5k`).
+`eax` is the item count, or the line record when there is none.
+
+## Small helpers (round 31)
+
+- The CTB window's line animation runs four 4-frame steps through the
+  record's step function (`+0x14`): `TOBtlCtbAnimStep_008a2ad0` (+4, +7,
+  +11, +16 to `+0x10`), `TOBtlCtbSlideStep_008a2b10` (a quarter of the
+  row change from `i8 +0xd` to `+0xc`, 0x16 per row, to `+0x12`, then
+  exactly on the row), `TOBtlCtbAnimStep_008a2b60` (-16, -11, -7, -4),
+  then the step function is cleared and a record whose row is 0x10 or
+  more switched off (byte `+0`). `Tick4_008a2ba0` waits four frames before
+  the same slide (`0x008a2bc0`) and wait (`0x008a2c10`). Steps outside
+  0..4 read the original's stack table out of range; the ports add 0.
+- `cd_channel_state_0076d0e0(file, archive)`: the first of the 64 CD
+  channels (`g_CdChannels`, 0x38 bytes) in use (`+0x31`) for that file
+  (`+0x28`) and archive (`+8`): 2 while it is the one being read
+  (`g_CdLib +0x70` set, `+0x74` its index), else 1; 0 for none.
+- `0x009066d0(x, y, k)` and `0x009066b0(u, v, k)` set vertex `k` (0x20
+  bytes) of the UI element record at `0x025d1700` (position at `+0`,
+  texture coordinates at `+8`); `eax` is `k << 5`.
+- `TOMenuTransFacePlyTex` uploads `0x01c80000` (0x200x0x100, format 0x13)
+  to 0x3a00. That push has no relocation entry: the address is literal
+  even when the image is relocated.

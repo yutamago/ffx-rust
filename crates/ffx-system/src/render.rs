@@ -104,4 +104,31 @@ pub mod bridge {
         base.wrapping_sub(0x214)
             .wrapping_add(count.cast_unsigned().wrapping_mul(0x214))
     }
+
+    /// The UI element record `BeginScissor_XY`/`graphicDrawUIElement` draw
+    /// (`0x025d1700`): 0x20-byte vertices, `x, y` at `+0`, `u, v` at `+8`,
+    /// the colour words at `+0x10`.
+    pub const UI_VERTICES: u32 = 0x025d_1700;
+
+    /// `0x009066d0(x, y, k)`: vertex `k`'s position (`f32`s through the
+    /// x87, signalling NaNs quieted). Returns `k × 0x20` (the original's
+    /// `eax`).
+    pub fn set_ui_vertex_xy(mem: &mut impl Mem, x: f32, y: f32, k: u32) -> u32 {
+        set_ui_vertex_pair(mem, 0, x, y, k)
+    }
+
+    /// `0x009066b0(u, v, k)`: vertex `k`'s texture coordinates, as
+    /// [`set_ui_vertex_xy`].
+    pub fn set_ui_vertex_uv(mem: &mut impl Mem, u: f32, v: f32, k: u32) -> u32 {
+        set_ui_vertex_pair(mem, 8, u, v, k)
+    }
+
+    fn set_ui_vertex_pair(mem: &mut impl Mem, off: u32, a: f32, b: f32, k: u32) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let at = k.wrapping_shl(5);
+        let vertex = mem.rebase(UI_VERTICES).wrapping_add(at).wrapping_add(off);
+        mem.write(vertex, round_trip(a));
+        mem.write(vertex.wrapping_add(4), round_trip(b));
+        at
+    }
 }

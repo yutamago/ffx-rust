@@ -569,12 +569,17 @@ pub mod bridge {
 
     /// `0x008a2ad0(rec)`: one step of a 4-step offset animation: the
     /// signed byte step `+0xf` picks 4, 7, 11 or 16 to add to the half
-    /// `+0x10`; after the fourth the step restarts and `+0x14` becomes
+    /// `+0x10` (a step outside 0..4 reads the original's stack; here it
+    /// adds 0); after the fourth the step restarts and `+0x14` becomes
     /// `0x008a2b10`. Returns 0.
     pub fn anim_step_8a2ad0(mem: &mut impl Mem, rec: u32) -> u32 {
         const STEPS: [i8; 4] = [4, 7, 11, 16];
         let c: i8 = mem.read(rec.wrapping_add(0xf));
-        let add = STEPS[usize::try_from(c).expect("a step of 0..4")];
+        let add = usize::try_from(c)
+            .ok()
+            .and_then(|k| STEPS.get(k))
+            .copied()
+            .unwrap_or(0);
         let v: i16 = mem.read(rec.wrapping_add(0x10));
         mem.write(rec.wrapping_add(0x10), v.wrapping_add(i16::from(add)));
         let c = c.wrapping_add(1);
@@ -583,6 +588,78 @@ pub mod bridge {
             mem.write(rec.wrapping_add(0xf), 0u8);
             let next = mem.rebase(0x008a_2b10);
             mem.write(rec.wrapping_add(0x14), next);
+        }
+        0
+    }
+
+    /// The second offset animation's steps (`0x008a2b60`): -16, -11, -7,
+    /// -4 added to the half `+0x10`.
+    const STEPS_8A2B60: [i8; 4] = [-16, -11, -7, -4];
+
+    /// `0x008a2b10(rec)` and `0x008a2bc0(rec)`: one step of a 4-step slide
+    /// of the half `+0x12` a quarter of the way from row `i8 +0xd` to row
+    /// `i8 +0xc` (0x16 per row, the quarter truncated toward 0) per step
+    /// (the step counter `+0xf` counts first); after the fourth `+0x12`
+    /// lands on row `+0xc` (a 16-bit product), the counter restarts and
+    /// the step function `+0x14` becomes `next` (`0x008a2b60` for
+    /// `0x008a2b10`, `0x008a2c10` for `0x008a2bc0`). Returns 0.
+    #[allow(clippy::cast_possible_truncation)] // `add word`
+    pub fn slide_step(mem: &mut impl Mem, rec: u32, next: u32) -> u32 {
+        let to = i32::from(mem.read::<i8>(rec.wrapping_add(0xc)));
+        let from = i32::from(mem.read::<i8>(rec.wrapping_add(0xd)));
+        let step = mem.read::<i8>(rec.wrapping_add(0xf)).wrapping_add(1);
+        mem.write(rec.wrapping_add(0xf), step);
+        let quarter = (to - from) * 0x16 / 4;
+        let y: i16 = mem.read(rec.wrapping_add(0x12));
+        mem.write(rec.wrapping_add(0x12), y.wrapping_add(quarter as i16));
+        if step >= 4 {
+            mem.write(rec.wrapping_add(0xf), 0u8);
+            mem.write(rec.wrapping_add(0x12), (to as i16).wrapping_mul(0x16));
+            let next = mem.rebase(next);
+            mem.write(rec.wrapping_add(0x14), next);
+        }
+        0
+    }
+
+    /// The end of an animation: the counter restarts, the step function
+    /// is cleared, and a record whose row (`i8 +0xc`) is 0x10 or more is
+    /// switched off (byte `+0` 0).
+    fn anim_end(mem: &mut impl Mem, rec: u32) {
+        mem.write(rec.wrapping_add(0xf), 0u8);
+        mem.write(rec.wrapping_add(0x14), 0u32);
+        if mem.read::<i8>(rec.wrapping_add(0xc)) >= 0x10 {
+            mem.write(rec, 0u8);
+        }
+    }
+
+    /// `0x008a2b60(rec)`: [`anim_step_8a2ad0`] backwards: the step `+0xf`
+    /// picks -16, -11, -7 or -4 to add to the half `+0x10` (a step outside
+    /// 0..4 reads the original's stack; here it adds 0); after the fourth
+    /// the animation ends ([`anim_end`]). Returns 0.
+    pub fn anim_step_8a2b60(mem: &mut impl Mem, rec: u32) -> u32 {
+        let c: i8 = mem.read(rec.wrapping_add(0xf));
+        let add = usize::try_from(c)
+            .ok()
+            .and_then(|k| STEPS_8A2B60.get(k))
+            .copied()
+            .unwrap_or(0);
+        let v: i16 = mem.read(rec.wrapping_add(0x10));
+        mem.write(rec.wrapping_add(0x10), v.wrapping_add(i16::from(add)));
+        let c = c.wrapping_add(1);
+        mem.write(rec.wrapping_add(0xf), c);
+        if c >= 4 {
+            anim_end(mem, rec);
+        }
+        0
+    }
+
+    /// `0x008a2c10(rec)`: a four-frame wait (`+0xf`) before the animation
+    /// ends ([`anim_end`]). Returns 0.
+    pub fn anim_wait_8a2c10(mem: &mut impl Mem, rec: u32) -> u32 {
+        let c = mem.read::<i8>(rec.wrapping_add(0xf)).wrapping_add(1);
+        mem.write(rec.wrapping_add(0xf), c);
+        if c >= 4 {
+            anim_end(mem, rec);
         }
         0
     }

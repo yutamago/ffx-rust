@@ -4579,6 +4579,308 @@ pub mod bridge {
         u32::from(mem.read::<u8>(p.wrapping_add(3)) & 3 == 1)
     }
 
+    /// The scratch [`layout_message_choices`] hands its callees (0x30
+    /// bytes, the original's frame in this order): `+0` an Al Bhed
+    /// character (4 bytes), `+4` a font width, `+8` and `+0xc` a message's
+    /// width and height, `+0x10` a number's text (32 bytes).
+    pub const CHOICE_SCRATCH_BYTES: u32 = 0x30;
+
+    /// [`layout_message_choices`]'s pen.
+    struct ChoicePen {
+        /// The window (`i16` at `+4` of the record).
+        window: u32,
+        /// The text mode (`i16` at `+0x1a`), for the width functions.
+        mode: u32,
+        /// The pen's x, an `f32` (as bits).
+        x: u32,
+        /// The line's y: 0x10 for the first, 0x10 more per line break.
+        y: i32,
+        /// The choice item whose width the next item or break closes.
+        open: Option<u32>,
+        /// See [`CHOICE_SCRATCH_BYTES`].
+        scratch: u32,
+    }
+
+    impl ChoicePen {
+        /// The window's line record (`0x01868a90[window]`).
+        fn lines(&self, mem: &impl Mem) -> u32 {
+            mem.read(
+                mem.rebase(0x0186_8a90)
+                    .wrapping_add(self.window.wrapping_mul(4)),
+            )
+        }
+
+        /// The window (`g_MsgWindows[window]`).
+        fn record(&self, mem: &impl Mem) -> u32 {
+            mem.read(
+                mem.rebase(0x0186_76f0)
+                    .wrapping_add(self.window.wrapping_mul(4)),
+            )
+        }
+
+        /// Where `TOGetMessageWH` leaves a width.
+        fn text_width(&self) -> u32 {
+            self.scratch.wrapping_add(8)
+        }
+
+        /// The x that centres the last measured text in the window
+        /// (`(right +0x50 - left +0x48 - width) * 0.5`).
+        fn centred(&self, mem: &impl Mem) -> u32 {
+            use ffx_bridge::x87::{load, mul, store, sub};
+            let w = self.record(mem);
+            let right: u32 = mem.read(w.wrapping_add(0x50));
+            let left: u32 = mem.read(w.wrapping_add(0x48));
+            let width: u32 = mem.read(self.text_width());
+            store(mul(sub(sub(load(right), load(left)), load(width)), 0.5))
+        }
+
+        /// `x += width`, at `f32` (both `f32`).
+        fn advance(&mut self, width: u32) {
+            use ffx_bridge::x87::{add, load, store};
+            self.x = store(add(load(width), load(self.x)));
+        }
+
+        /// The open item's width (`+2`) becomes the pen's distance from
+        /// its x (`+4`), truncated; no item is open after.
+        fn close(&mut self, mem: &mut impl Mem) {
+            use ffx_bridge::x87::{ftol, load, sub};
+            if let Some(item) = self.open.take() {
+                let start = f64::from(mem.read::<i16>(item.wrapping_add(4)));
+                #[allow(clippy::cast_possible_truncation)] // `mov word`
+                let width = ftol(mem, sub(load(self.x), start)) as u16;
+                mem.write(item.wrapping_add(2), width);
+            }
+        }
+    }
+
+    /// The callees of [`layout_message_choices`].
+    const GET_GROUP: u32 = 0x008d_f610;
+    const SKIP_CODE: u32 = 0x008d_fd80;
+    const MESSAGE_WH: u32 = 0x008b_9650;
+    const FONT_WIDTH: u32 = 0x008b_7be0;
+    const CONV_ALBHED: u32 = 0x0090_6780;
+    const ICON_WIDTH: u32 = 0x008b_65e0;
+    const INT_TO_MES: u32 = 0x008b_8290;
+    const SET_CHOICE: u32 = 0x008b_8880;
+    const MACRO_WIDTH: u32 = 0x008b_6a30;
+
+    /// A group-2 code at `text` (`7` alignment, `0x0b` button icon, `0x10`
+    /// choice item) moves the pen.
+    fn choice_code<M: Mem>(
+        mem: &mut M,
+        pen: &mut ChoicePen,
+        text: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{ftol, load, store};
+        let code: u8 = mem.read(text);
+        let arg: u8 = mem.read(text.wrapping_add(1));
+        let (window, mode, width, height) = (
+            pen.window,
+            pen.mode,
+            pen.text_width(),
+            pen.scratch.wrapping_add(0xc),
+        );
+        if code == 7 {
+            // alignment of the rest of the line: 0x38 and 0x31 centre it,
+            // 0x40..0xc0 a fixed x, 0xe1..=0xef a small step right
+            call(
+                mem,
+                MESSAGE_WH,
+                &[window, text.wrapping_add(2), width, height, mode, 3],
+            );
+            if arg == 0x38 {
+                pen.x = pen.centred(mem);
+                return;
+            }
+            if arg == 0x31 {
+                pen.x = pen.centred(mem);
+            }
+            if (0x40..0xc0).contains(&arg) {
+                pen.x = store(f64::from(i32::from(arg) * 4 - 0x100));
+            }
+            if (0xe1..=0xef).contains(&arg) {
+                pen.advance(store(f64::from(arg - 0xe0)));
+            }
+            return;
+        }
+        if code == 0xb {
+            let icon = call(mem, ICON_WIDTH, &[u32::from(arg)]).cast_signed();
+            pen.advance(store(f64::from(icon)));
+        }
+        if code != 0x10 {
+            return;
+        }
+        if (0x50..0x60).contains(&arg) {
+            // a number item: its text, measured, set as a choice of
+            // arg - 0x4f items across the number's width
+            let n = u32::from(arg) - 0x4f;
+            let number = pen.scratch.wrapping_add(0x10);
+            let value: u32 = mem.read(pen.lines(mem).wrapping_add(0xc));
+            call(mem, INT_TO_MES, &[value, number, n, 1]);
+            call(mem, MESSAGE_WH, &[window, number, width, height, mode, 0]);
+            let measured: u32 = mem.read(width);
+            let total = ftol(mem, load(measured));
+            let x = ftol(mem, load(pen.x));
+            call(
+                mem,
+                SET_CHOICE,
+                &[window, n, x, pen.y.cast_unsigned(), total],
+            );
+            pen.advance(measured);
+            return;
+        }
+        pen.close(mem);
+        if arg != 0xff {
+            // item arg - 0x30 starts here: 8 bytes from the line record
+            // +0x38 (flag 1, width, x, y)
+            let lines = pen.lines(mem);
+            let count: u8 = mem.read(lines.wrapping_add(5));
+            mem.write(lines.wrapping_add(5), count.wrapping_add(1));
+            let item = pen
+                .lines(mem)
+                .wrapping_sub(0x148)
+                .wrapping_add(u32::from(arg) * 8);
+            mem.write(item, 1u32);
+            #[allow(clippy::cast_possible_truncation)] // `mov word`
+            let x = ftol(mem, load(pen.x)) as u16;
+            mem.write(item.wrapping_add(4), x);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // `mov word`
+            mem.write(item.wrapping_add(6), pen.y as u16);
+            pen.open = Some(item);
+        }
+    }
+
+    /// `TOLayoutMessageChoices_008b9a60(w, sel)` (`0x008b9a60`): walks the
+    /// text of message window record `w` (`+0x94`; window `i16 +4`, mode
+    /// `i16 +0x1a`) and lays out its choice items in the window's line
+    /// record (`0x01868a90[i]`: `+4` and the item count `+5` cleared
+    /// first). A pen starts at x 0 on line y 0x10; by the codes' groups
+    /// (`TOGetGroup`):
+    /// - 1 (line codes 0-3): the open item closed, x back to 0 (centred
+    ///   for a centred window, `+0xe` 1); 0 ends the text; 1 and 2 start
+    ///   over at y 0x10 and end it for a non-zero `sel & 0xf`; 3 steps y
+    ///   by 0x10 and ends it for `sel & 0xf` 3.
+    /// - 2: [`choice_code`].
+    /// - 3 (macros): x + `TOGetChangeMacroWidth(i, text, mode)`.
+    /// - 4 (characters): x + `TOGetFontWidthInterMode(text, mode, &w)`,
+    ///   through `TOConvAlbhedWord` for an Al Bhed window (`+0x10` 0x4000).
+    ///
+    /// Then the record's `+8` becomes the widest item; on map 0x17 for
+    /// record `+0x14` 0x1c7, `+0x16` 199 the items stack instead (x 0, y
+    /// `+ k × 21.5`). `scratch` is [`CHOICE_SCRATCH_BYTES`] long. Returns
+    /// what the original leaves in `eax`: the item count, or the line
+    /// record with none.
+    pub fn layout_message_choices<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        sel: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store};
+        let mut pen = ChoicePen {
+            window: i32::from(mem.read::<i16>(w.wrapping_add(4))).cast_unsigned(),
+            mode: i32::from(mem.read::<i16>(w.wrapping_add(0x1a))).cast_unsigned(),
+            x: 0,
+            y: 0x10,
+            open: None,
+            scratch,
+        };
+        let mut text: u32 = mem.read(w.wrapping_add(0x94));
+        let sel = sel & 0xf;
+        let mut max_y = 0;
+        let lines = pen.lines(mem);
+        mem.write(lines.wrapping_add(4), 0u8);
+        let lines = pen.lines(mem);
+        mem.write(lines.wrapping_add(5), 0u8);
+        loop {
+            let code: u8 = mem.read(text);
+            let mut more = true;
+            match call(mem, GET_GROUP, &[u32::from(code)]) {
+                1 => {
+                    pen.close(mem);
+                    pen.x = 0;
+                    if mem.read::<i16>(pen.record(mem).wrapping_add(0xe)) == 1 {
+                        let (width, height) = (pen.text_width(), scratch.wrapping_add(0xc));
+                        call(
+                            mem,
+                            MESSAGE_WH,
+                            &[pen.window, text.wrapping_add(1), width, height, pen.mode, 3],
+                        );
+                        pen.x = pen.centred(mem);
+                    }
+                    match mem.read::<u8>(text) {
+                        0 => more = false,
+                        1 | 2 => {
+                            pen.y = 0x10;
+                            more = sel == 0;
+                        }
+                        3 => {
+                            pen.y += 0x10;
+                            if sel == 3 && pen.y > max_y {
+                                max_y = pen.y;
+                                more = false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                2 => choice_code(mem, &mut pen, text, &mut call),
+                3 => {
+                    let width = fcall(mem, MACRO_WIDTH, &[pen.window, text, pen.mode]);
+                    pen.x = store(add(width, load(pen.x)));
+                }
+                4 => {
+                    let width = scratch.wrapping_add(4);
+                    let albhed = mem.read::<u16>(pen.record(mem).wrapping_add(0x10)) == 0x4000;
+                    if albhed {
+                        call(mem, CONV_ALBHED, &[text, scratch]);
+                        call(mem, FONT_WIDTH, &[scratch, pen.mode, width]);
+                    } else {
+                        call(mem, FONT_WIDTH, &[text, pen.mode, width]);
+                    }
+                    let width: u32 = mem.read(width);
+                    pen.advance(width);
+                }
+                _ => {}
+            }
+            text = call(mem, SKIP_CODE, &[text]);
+            if !more {
+                break;
+            }
+        }
+        // the widest item, and map 0x17's stacked items
+        let lines = pen.lines(mem);
+        mem.write(lines.wrapping_add(8), 0u16);
+        let mut eax = pen.lines(mem);
+        let stacked = mem.read::<u32>(mem.rebase(0x012f_bc40)) == 0x17
+            && mem.read::<i16>(w.wrapping_add(0x14)) == 0x1c7
+            && mem.read::<i16>(w.wrapping_add(0x16)) == 199;
+        let mut k = 0i32;
+        while k < i32::from(mem.read::<i8>(pen.lines(mem).wrapping_add(5))) {
+            let item =
+                |mem: &M, pen: &ChoicePen| pen.lines(mem).wrapping_add((k * 8).cast_unsigned());
+            if stacked {
+                mem.write(item(mem, &pen).wrapping_add(0x3c), 0u16);
+                let at = item(mem, &pen).wrapping_add(0x3e);
+                let y = f64::from(mem.read::<i16>(at));
+                #[allow(clippy::cast_possible_truncation)] // `mov word`
+                let y = ftol(mem, add(mul(f64::from(k), 21.5), y)) as u16;
+                mem.write(at, y);
+            }
+            let lines = pen.lines(mem);
+            let width: i16 = mem.read(item(mem, &pen).wrapping_add(0x3a));
+            if width > mem.read::<i16>(lines.wrapping_add(8)) {
+                mem.write(lines.wrapping_add(8), width);
+            }
+            k += 1;
+            eax = i32::from(mem.read::<i8>(pen.lines(mem).wrapping_add(5))).cast_unsigned();
+        }
+        eax
+    }
+
     /// `0x008b8880(i, n, x, y, total)`: message window `i` set up as a
     /// choice of `n` items (`+0x1c` 2): its line record (`0x01868a90`)
     /// gets `+1` and `+4` cleared, `+5` `n`, the cursor and top
@@ -10662,35 +10964,77 @@ pub mod bridge {
     }
 
     /// Confirm: `TOCheckBtlCommandUse(actor +8, checked)` not negative
-    /// records the pick and counts it; below the picks needed (`+0xa`)
-    /// `MsSetUseItem(first pick)` and click 1, else
-    /// `TOBtlSetNextAction(actor, command under the cursor)` 1 gives click
-    /// 1. Anything else clicks 3.
+    /// commits the pick ([`commit_pick`]); a refused one clicks 3.
     fn confirm_pick<M: Mem>(
         mem: &mut M,
         w: u32,
         checked: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
-        const CLICK: u32 = 0x0088_6ba0;
         let actor = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
         if call(mem, 0x0089_aca0, &[actor, checked]).cast_signed() >= 0 {
-            record_pick(mem, w);
-            let n = mem.read::<i8>(w.wrapping_add(0xb)).wrapping_add(1);
-            mem.write(w.wrapping_add(0xb), n);
-            if n < mem.read::<i8>(w.wrapping_add(0xa)) {
-                let first = u32::from(mem.read::<u16>(w.wrapping_add(0x16)));
-                call(mem, 0x0079_0790, &[first]);
-                call(mem, CLICK, &[1]);
-                return;
+            commit_pick(mem, w, call);
+        } else {
+            call(mem, 0x0088_6ba0, &[3]);
+        }
+    }
+
+    /// An accepted pick: recorded and counted; below the picks needed
+    /// (`+0xa`) `MsSetUseItem(first pick)` and click 1, else
+    /// `TOBtlSetNextAction(actor, command under the cursor)` 1 gives click
+    /// 1 and anything else click 3.
+    fn commit_pick<M: Mem>(mem: &mut M, w: u32, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        const CLICK: u32 = 0x0088_6ba0;
+        record_pick(mem, w);
+        let n = mem.read::<i8>(w.wrapping_add(0xb)).wrapping_add(1);
+        mem.write(w.wrapping_add(0xb), n);
+        if n < mem.read::<i8>(w.wrapping_add(0xa)) {
+            let first = u32::from(mem.read::<u16>(w.wrapping_add(0x16)));
+            call(mem, 0x0079_0790, &[first]);
+            call(mem, CLICK, &[1]);
+            return;
+        }
+        let actor = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let command = i32::from(mem.read::<i16>(cursor_entry(mem, w))).cast_unsigned();
+        let ok = call(mem, 0x0089_a330, &[actor, command]) == 1;
+        call(mem, CLICK, &[if ok { 1 } else { 3 }]);
+    }
+
+    /// The repeated d-pad moves the cursor (`+0x42`) unless two opposite
+    /// directions are held (`0x9000`, `0x3000`, `0xc000`, `0x6000` of the
+    /// held word): up (0x1000) and down (0x4000) a row ([`wrap_row`]), left
+    /// (0x8000) and right (0x2000) an entry, clamped to the list (`+0x44`).
+    /// Only an exact repeated word counts.
+    fn dpad_move<M: Mem>(mem: &mut M, w: u32, pad: u32) {
+        let r16 = |mem: &M, off: u32| -> i16 { mem.read(w.wrapping_add(off)) };
+        let w16 = |mem: &mut M, off: u32, v: i16| mem.write(w.wrapping_add(off), v);
+        let held: u16 = mem.read(pad);
+        let both = |m: u16| held & m == m;
+        if both(0x9000) || both(0x3000) || both(0xc000) || both(0x6000) {
+            return;
+        }
+        let old = r16(mem, 0x42);
+        let rep: u16 = mem.read(pad.wrapping_add(4));
+        let step = r16(mem, 0x38);
+        let count = r16(mem, 0x44);
+        match rep {
+            0x1000 => w16(mem, 0x42, old.wrapping_sub(step)),
+            0x4000 => w16(mem, 0x42, old.wrapping_add(step)),
+            0x8000 => w16(mem, 0x42, old.wrapping_sub(1)),
+            0x2000 => w16(mem, 0x42, old.wrapping_add(1)),
+            _ => {}
+        }
+        if rep == 0x1000 || rep == 0x4000 {
+            wrap_row(mem, w);
+        }
+        if rep == 0x8000 || rep == 0x2000 {
+            if r16(mem, 0x42) < 0 {
+                w16(mem, 0x42, 0);
             }
-            let command = i32::from(mem.read::<i16>(cursor_entry(mem, w))).cast_unsigned();
-            if call(mem, 0x0089_a330, &[actor, command]) == 1 {
-                call(mem, CLICK, &[1]);
-                return;
+            if r16(mem, 0x42) >= count {
+                w16(mem, 0x42, count.wrapping_sub(1));
             }
         }
-        call(mem, CLICK, &[3]);
     }
 
     /// After a move by a row: a cursor above the list wraps by one row
@@ -10775,17 +11119,15 @@ pub mod bridge {
     /// - 0x04: click 3.
     /// - otherwise, unless two opposite d-pad directions are held, the
     ///   repeated up/down move the cursor a row ([`wrap_row`]), left/right
-    ///   one entry (clamped to the list); then [`follow_cursor`] with the
-    ///   scroll step functions, and a moved cursor sets `+0x1e` and clicks 1.
-    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    ///   one entry (clamped to the list; [`dpad_move`]); then
+    ///   [`follow_cursor`] with the scroll step functions, and a moved
+    ///   cursor sets `+0x1e` and clicks 1.
     pub fn to_get_pad_status_prepare<M: Mem>(
         mem: &mut M,
         w: u32,
         mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
         const CLICK: u32 = 0x0088_6ba0;
-        let r16 = |mem: &M, off: u32| -> i16 { mem.read(w.wrapping_add(off)) };
-        let w16 = |mem: &mut M, off: u32, v: i16| mem.write(w.wrapping_add(off), v);
         let pad = mem.rebase(0x025d_09d2);
         if mem.read::<u32>(mem.rebase(0x023c_c08c)) == 0
             || mem.read::<u32>(w.wrapping_add(0x88)) != mem.rebase(SCROLL_DONE)
@@ -10814,33 +11156,8 @@ pub mod bridge {
             call(mem, CLICK, &[3]);
             return;
         }
-        let old = r16(mem, 0x42);
-        let held: u16 = mem.read(pad);
-        let both = |m: u16| held & m == m;
-        let opposed = both(0x9000) || both(0x3000) || both(0xc000) || both(0x6000);
-        if !opposed {
-            let rep: u16 = mem.read(pad.wrapping_add(4));
-            let step = r16(mem, 0x38);
-            let count = r16(mem, 0x44);
-            match rep {
-                0x1000 => w16(mem, 0x42, old.wrapping_sub(step)),
-                0x4000 => w16(mem, 0x42, old.wrapping_add(step)),
-                0x8000 => w16(mem, 0x42, old.wrapping_sub(1)),
-                0x2000 => w16(mem, 0x42, old.wrapping_add(1)),
-                _ => {}
-            }
-            if rep == 0x1000 || rep == 0x4000 {
-                wrap_row(mem, w);
-            }
-            if rep == 0x8000 || rep == 0x2000 {
-                if r16(mem, 0x42) < 0 {
-                    w16(mem, 0x42, 0);
-                }
-                if r16(mem, 0x42) >= count {
-                    w16(mem, 0x42, count.wrapping_sub(1));
-                }
-            }
-        }
+        let old: i16 = mem.read(w.wrapping_add(0x42));
+        dpad_move(mem, w, pad);
         let cursor = follow_cursor(mem, w, true);
         if cursor != old {
             let command: u16 = mem.read(cursor_entry(mem, w));
@@ -10948,6 +11265,188 @@ pub mod bridge {
         }
         wrap_row(mem, w);
         let cursor = follow_cursor(mem, w, false);
+        if cursor != old {
+            let command: u16 = mem.read(cursor_entry(mem, w));
+            mem.write(w.wrapping_add(0x1e), command);
+            record_pick(mem, w);
+            call(mem, CLICK, &[1]);
+        }
+    }
+
+    /// [`to_btl_get_std_pad`]'s buttons before the d-pad (the skip
+    /// command, 0x04, and the left and right windows); true when one of
+    /// them ends the frame.
+    #[allow(clippy::cast_possible_truncation)] // `movzx edi, ax`
+    fn std_pad_shortcut<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        pad: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
+        const CLICK: u32 = 0x0088_6ba0;
+        const NEXT_ACTION: u32 = 0x0089_a330;
+        let depth = |mem: &M| mem.read::<i8>(mem.rebase(0x023c_c092));
+        let actor = |mem: &M| i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let trigger = |mem: &M| mem.read::<u32>(pad.wrapping_add(2));
+        if depth(mem) == 0 && trigger(mem) & 0x10 != 0 {
+            let a = actor(mem);
+            let skip = call(mem, 0x0078_fb80, &[a]) as u16;
+            if skip != 0 {
+                call(mem, CLICK, &[1]);
+                let rec = mem.rebase(0x023c_c040);
+                mem.write(rec.wrapping_add(8), skip);
+                let who: u8 = mem.read(w.wrapping_add(8));
+                mem.write(rec, who);
+                mem.write(rec.wrapping_add(3), 1u8);
+                mem.write(rec.wrapping_add(0xa), 0xffu16);
+                let bit = |mem: &M| 1u32.wrapping_shl(u32::from(mem.read::<u8>(w.wrapping_add(8))));
+                let b = bit(mem);
+                mem.write(rec.wrapping_add(0x10), b);
+                let b = bit(mem);
+                mem.write(mem.rebase(0x0133_d178), b);
+                call(mem, 0x0079_2d60, &[rec, 0, 0]);
+                let chr = mem.rebase(0x023c_c088);
+                let current = i32::from(mem.read::<i16>(chr)).cast_unsigned();
+                call(mem, 0x0089_ade0, &[current]);
+                mem.write(mem.rebase(0x0133_c93c), 0u8);
+                call(mem, 0x008a_e5a0, &[2]);
+                mem.write(chr, 0xffu16);
+                return true;
+            }
+            call(mem, CLICK, &[3]);
+        }
+        if trigger(mem) & 4 != 0 {
+            let ok = depth(mem) == 0
+                && {
+                    let a = actor(mem);
+                    call(mem, 0x0078_4ff0, &[a]) == 0
+                }
+                && {
+                    let a = actor(mem);
+                    call(mem, NEXT_ACTION, &[a, 0x3002]) == 1
+                };
+            call(mem, CLICK, &[if ok { 1 } else { 3 }]);
+            return true;
+        }
+        if depth(mem) == 0 {
+            if trigger(mem) & 0x8000 != 0 {
+                let a = actor(mem);
+                if call(mem, 0x0078_f700, &[a]).cast_signed() > 0 {
+                    let a = actor(mem);
+                    call(mem, NEXT_ACTION, &[a, 0xffff]);
+                    call(mem, CLICK, &[1]);
+                    return true;
+                }
+            }
+            if trigger(mem) & 0x2000 != 0 {
+                mem.write(scratch, 0u32);
+                let a = actor(mem);
+                let list = call(mem, 0x0078_5410, &[a, 0xd, scratch]);
+                let mut n: i32 = mem.read(scratch);
+                // trailing empty (0xff) entries do not count
+                while n > 0
+                    && mem.read::<u16>(
+                        list.wrapping_add(n.wrapping_mul(2).wrapping_sub(2).cast_unsigned()),
+                    ) == 0xff
+                {
+                    n -= 1;
+                    mem.write(scratch, n);
+                }
+                if n == 0 {
+                    call(mem, CLICK, &[3]);
+                } else {
+                    let a = actor(mem);
+                    call(mem, NEXT_ACTION, &[a, 0xfffe]);
+                    call(mem, CLICK, &[1]);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `TOBtlGetStdPad(w)` (`0x0089cde0`): one frame of the battle
+    /// command list window `w` (items, skills: the list at `+0x20`, the
+    /// picks at `+0xb`/`+0xa`) while the battle windows are open
+    /// (`g_BtlWindowOpen`) and its step function (`+0x88`) is the idle
+    /// [`SCROLL_DONE`]. By the trigger word (`0x025d09d4`):
+    /// - 0x10 at the top window level (`g_BtlActionDepth` 0): the
+    ///   character's skip command (`MsMenuGetChrSkipCommand`) clicks 1 and
+    ///   becomes its battle command (`0x023cc040` as in
+    ///   [`to_btl_get_side_pad`]), the window closed
+    ///   (`TOCloseBtlWindow(i16 0x023cc088)`), the help window flag
+    ///   (`g_BtlHelpWinOpen`) cleared, `TOSeqInitAllScene(2)`, `0x023cc088`
+    ///   0xff; without one click 3 and go on.
+    /// - 0x04: at the top level with no summon out
+    ///   (`MsGetSaveChrSummon`) `TOBtlSetNextAction(actor, 0x3002)` 1
+    ///   clicks 1; anything else clicks 3.
+    /// - at the top level, 0x8000 with `MsCheckLeftWindow(actor)` above 0
+    ///   goes to the left window (`TOBtlSetNextAction(actor, 0xffff)`,
+    ///   click 1); 0x2000 goes to the right one (`0xfffe`, click 1) when
+    ///   `MsGetSaveWindow(actor, 0xd, &n)` lists a command, trailing 0xff
+    ///   entries not counted (`n` lives in `scratch`), else clicks 3.
+    ///
+    /// Otherwise the d-pad moves the cursor ([`dpad_move`]) and the pick
+    /// is recorded. Libra's auto mode (`0x0133d6e0` 1) sets `0x0133d6e4`
+    /// unless it or `g_BtlCommandMissed` is 1 already, and forces the
+    /// trigger word to 0x40. Then cancel (0x40) undoes a pick
+    /// ([`undo_pick`]) or at a deeper level goes back
+    /// (`TOBtlSetPrevAction()`, `+1` stepped, click 4); confirm (0x20)
+    /// checks the pick (`TOCheckBtlCommandUse`; refused: click 3 and
+    /// `0x0133d6e4` set) and commits it ([`commit_pick`]); anything else
+    /// keeps the cursor's row shown ([`follow_cursor`]) and a moved
+    /// cursor sets `+0x1e`, records the pick again and clicks 1.
+    pub fn to_btl_get_std_pad<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const CLICK: u32 = 0x0088_6ba0;
+        let pad = mem.rebase(0x025d_09d2);
+        if mem.read::<u32>(mem.rebase(0x023c_c08c)) == 0
+            || mem.read::<u32>(w.wrapping_add(0x88)) != mem.rebase(SCROLL_DONE)
+        {
+            return;
+        }
+        if std_pad_shortcut(mem, w, pad, scratch, &mut call) {
+            return;
+        }
+        let depth = |mem: &M| mem.read::<i8>(mem.rebase(0x023c_c092));
+        let actor = |mem: &M| i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let old: i16 = mem.read(w.wrapping_add(0x42));
+        dpad_move(mem, w, pad);
+        record_pick(mem, w);
+        if LIBRA_AUTO.get(mem) == 1 {
+            let (flag, missed) = (mem.rebase(0x0133_d6e4), mem.rebase(0x0133_d6ec));
+            if mem.read::<u32>(flag) != 1 && mem.read::<u32>(missed) != 1 {
+                mem.write(flag, 1u32);
+            }
+            MENU_PAD_TRG.set(mem, 0x40);
+        }
+        let trigger: u8 = mem.read(pad.wrapping_add(2));
+        if trigger & 0x40 != 0 {
+            if !undo_pick(mem, w, &mut call) && depth(mem) > 0 {
+                call(mem, 0x0089_a630, &[]);
+                let n = mem.read::<u8>(w.wrapping_add(1)).wrapping_add(1);
+                mem.write(w.wrapping_add(1), n);
+                call(mem, CLICK, &[4]);
+            }
+            return;
+        }
+        if trigger & 0x20 != 0 {
+            let checked = u32::from(mem.read::<u16>(pick_slot(mem, w, 0x16)));
+            let a = actor(mem);
+            if call(mem, 0x0089_aca0, &[a, checked]).cast_signed() < 0 {
+                call(mem, CLICK, &[3]);
+                mem.write(mem.rebase(0x0133_d6e4), 1u32);
+                return;
+            }
+            commit_pick(mem, w, &mut call);
+            return;
+        }
+        let cursor = follow_cursor(mem, w, true);
         if cursor != old {
             let command: u16 = mem.read(cursor_entry(mem, w));
             mem.write(w.wrapping_add(0x1e), command);

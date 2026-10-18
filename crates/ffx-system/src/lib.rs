@@ -16,6 +16,7 @@ pub mod files;
 pub mod fixup;
 pub mod heap;
 pub mod instance;
+pub mod intl;
 pub mod math;
 pub mod menu;
 pub mod msg;
