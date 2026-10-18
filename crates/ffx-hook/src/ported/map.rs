@@ -2765,6 +2765,44 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         )
     }
+    /// `yiPolySplitRectXZ(r, list, inside, outside, cap_in, cap_out, m, a, b, unlimited)`.
+    yiPolySplitRectXZ @ 0x0091_0a90 => extern "C" fn shim_yi_poly_split_rect_xz(_r: u32, list: u32, inside: u32, outside: u32, cap_in: u32, cap_out: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
+        // 16-byte aligned: yiRectTriOverlapXZ hands its vectors to FFXVu0ApplyMatrix
+        #[repr(C, align(16))]
+        struct SplitWork([u8; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let mut work = SplitWork([0; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_poly_split_rect_xz(
+            &mut mem(),
+            list,
+            [inside, outside],
+            [cap_in, cap_out],
+            m,
+            [a, b],
+            unlimited,
+            w,
+            &mut |_, f, a| call_cdecl(f, a),
+        )
+    }
+    /// `yiPolySelectRectXZ(r, list, packet, cap, m, a, b, unlimited)`.
+    yiPolySelectRectXZ @ 0x0091_05b0 => extern "C" fn shim_yi_poly_select_rect_xz(_r: u32, list: u32, packet: u32, cap: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
+        // 16-byte aligned: yiRectTriOverlapXZ hands its vectors to FFXVu0ApplyMatrix
+        #[repr(C, align(16))]
+        struct SplitWork([u8; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let mut work = SplitWork([0; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_poly_select_rect_xz(
+            &mut mem(),
+            list,
+            packet,
+            cap,
+            m,
+            [a, b],
+            unlimited,
+            w,
+            &mut |_, f, a| call_cdecl(f, a),
+        )
+    }
     /// `KeDttSpr_MkGifPk(p)`.
     KeDttSpr_MkGifPk @ 0x0076_7790 => extern "C" fn shim_ke_dtt_spr_mk_gif_pk(p: u32) -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::kedtt::WORK as usize / 4 }>::new();
@@ -3334,6 +3372,15 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_arnd_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `KeLnsClm_Draw(e, flags)`.
+    KeLnsClm_Draw @ 0x0076_96c0 => extern "C" fn shim_ke_lns_clm_draw(e: u32, flags: u32) {
+        #[repr(C, align(16))]
+        struct ClmWork([u8; ke::clm::WORK as usize]);
+        let mut work = ClmWork([0; ke::clm::WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_clm_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `KeLnsCrn_Draw(e, flags)`.
     KeLnsCrn_Draw @ 0x0076_9d70 => extern "C" fn shim_ke_lns_crn_draw(e: u32, flags: u32) {
