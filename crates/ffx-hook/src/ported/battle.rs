@@ -208,9 +208,6 @@ fn host() -> target::Host<'static> {
     fn tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
         spline_via_stack(m, 0x0088_b3b0, out, points, n, t);
     }
-    fn ball(_: &mut target::Dm<'_>, i: u32) {
-        call1(0x007b_78c0, i);
-    }
     fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
         ffx_chara::chr::bridge::ch_neck_set_enable(
             m,
@@ -253,7 +250,6 @@ fn host() -> target::Host<'static> {
         spline: &spline,
         spline_tangent: &tangent,
         cos: &crt_cos,
-        ball_spline: &ball,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
         atel_total: &total,
@@ -3328,6 +3324,19 @@ ported! {
     MsMoveChr @ 0x007a_ab80 => extern "C" fn ms_move_chr() {
         let mut m = mem();
         predict::ms_move_chr(&mut target::Dm::new(&mut m), &host());
+    }
+    /// `MsSetBallSpline(i)`: rebuilds move spline 2 for actor `i`'s ball;
+    /// the caller's registers (the by-value vectors' spare words) are not
+    /// known here.
+    MsSetBallSpline @ 0x007b_78c0 => extern "C" fn ms_set_ball_spline(i: u32) {
+        let mut m = mem();
+        predict::ms_set_ball_spline(&mut target::Dm::new(&mut m), &host(), i, None);
+    }
+    /// `MsMoveSplineRegist(k, i, kind, point)`; the caller's `ebx` is not
+    /// known here.
+    MsMoveSplineRegist @ 0x007a_b0b0 => extern "C" fn ms_move_spline_regist(k: u32, i: u32, kind: u32, point: u32) {
+        let mut m = mem();
+        predict::ms_move_spline_regist(&mut target::Dm::new(&mut m), &host(), k, i, kind, point, None);
     }
     /// `MsCameraMoveCalc(near, value, start, mv)`: the CRT's `_CIcos`.
     MsCameraMoveCalc @ 0x007b_da80 => extern "C" fn ms_camera_move_calc(near: u32, value: u32, start: u32, mv: u32) -> u32 {

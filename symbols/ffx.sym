@@ -5769,7 +5769,7 @@
 0x007aab80 function MsMoveChr                 # fh v3:exact 0x007aaba0; cdecl(): per actor 0..30 with +0x10/+0x12 Ch_BindToElem to the ridden +0x43f and MsGetChrPredictPos, then the neck delay +0x439 (Ch_NeckSetTarget to +0x438 unless MsCheckNeckMotion, 0xff Ch_NeckSetEnable(chr, 0)); ported (ffx_battle::predict, battle round 17)
 0x007aac40 function MsGetChrMoveAccelPos      # (actor, n, speed, target, out) -> 1/0: frame n of an accelerated move (+0x454 accelerate, +0x456 cruise, +0x458 brake frames, +0x45c start speed; +0x4a0/+0x4a4 covered/scale); named here; ported
 0x007ab010 function MsMoveSpline                 # layout+callees: sorts between MsMoveChr and MsMoveSplineRegist, and its named callees match the Switch 0x7100361310 MsMoveSpline's (similarity 1.00: MsGetChr, MsGetChrDir); symbols from Fahrenheit's server export
-0x007ab0b0 function MsMoveSplineRegist        # fh v3:exact 0x007ab0d0
+0x007ab0b0 function MsMoveSplineRegist        # fh v3:exact 0x007ab0d0; cdecl(k, i, kind, point): appends point (also EE_MOVE) to move spline k < 3 (at most 0x20), then MsGetMoveTargetPos(i, kind) over it; ported (ffx_battle::predict, battle round 17)
 0x007ab140 function MsMoveSplineSet           # fh v3:exact 0x007ab160
 0x007ab160 function MsMoveTargetPos           # fh switch:cg2 0x71008b0578
 0x007ab170 function MsResetDirMove            # fh v3:bsim1.00 0x007ab190
@@ -5933,7 +5933,7 @@
 0x007b7170 function MsGetTargetRandomList     # fh v3:exact 0x007b70f0
 0x007b7280 function MsGetTargetRandomList2    # fh switch:cg4 0x710037d720
 0x007b72c0 function MsGetTargetSortList       # fh v3:exact 0x007b7240
-0x007b78c0 function MsSetBallSpline           # fh v3:exact 0x007b7840
+0x007b78c0 function MsSetBallSpline           # fh v3:exact 0x007b7840; cdecl(i): move spline 2 rebuilt as the ball's arc for thrower i to catcher +0x14 by the ball state +0x420 (0/1 to 40 units in front of the catcher or its first target's move position + g_BtlBallOffset, moved on by the distance when the result is 1; 2/3 to the catcher's optional position 11; 7 midpoints each); ported (ffx_battle::predict, battle round 17)
 0x007b7c80 function MsSetBallSplineInit          # callees: its named callees match the Switch 0x710038cd20 MsSetBallSplineInit's (similarity 1.00: MsGetChr, MsGetChrInfo, MsGetChrPos); symbols from Fahrenheit's server export
 0x007b7d00 function MsEffectChrGetLoveLoveMax    # callees: its named callees match the Switch 0x71003917e0 MsEffectChrGetLoveLoveMax's (similarity 1.00: MsGetChrStatDeath, MsGetChrStatStone, MsGetRamChrFemale, MsGetSavePlyJoin); symbols from Fahrenheit's server export
 0x007b7d70 function MsEffectChrMotionIn          # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003916f0 MsEffectChrMotionIn, 2 votes, round 1
@@ -15357,6 +15357,7 @@
 0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
 0x01136a7b label g_BtlActionRequestEntries # u8, the action request block's (0x01136a78) +3: entries a script left; MsActionRequest makes them a cue entry
 0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
+0x01136ac4 label g_BtlBallOffset           # [f32; 4] MsGetChrInfo kind 0xd of the thrower's targets (MsSetBallSplineInit 0x007b7c80), added to the ball's end (MsSetBallSpline, battle round 17); name ours
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
 0x01136b58 label g_BtlHideMask             # u32, with g_ActorPropertyLatch: msSetChrVisibleReq queues a hidden character (0x02311060) instead of hiding it
 0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count

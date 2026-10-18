@@ -134,8 +134,6 @@ pub mod bridge {
         pub spline_tangent: &'h dyn Fn(&mut Dm<'_>, u32, u32, u32, u32),
         /// `_CIcos` on a double (`MsCameraMoveCalc`).
         pub cos: &'h dyn Fn(f64) -> f64,
-        /// `MsSetBallSpline(i)` (`0x007b78c0`, battle, not ported yet).
-        pub ball_spline: &'h dyn Fn(&mut Dm<'_>, u32),
         /// `Ch_NeckSetEnable(chr, on)` (chara, `0x00834f60`).
         pub neck_enable: &'h dyn Fn(&mut Dm<'_>, u32, u32),
         /// `Ch_NeckSetTarget(chr, target)` (chara, `0x00835050`).

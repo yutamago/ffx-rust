@@ -14,6 +14,9 @@ pub mod bridge {
     /// the spline move's turn limits.
     pub const HALF_PI: Global<f64> = Global::new(0x00b1_1338);
     pub const MINUS_HALF_PI: Global<f64> = Global::new(0x00b3_ebb0);
+    /// `MsGetChrInfo` kind 0xd of the ball thrower's targets
+    /// (`MsSetBallSplineInit`), added to the ball's end (`0x01136ac4`).
+    pub const BALL_OFFSET: Global<[u32; 4]> = Global::new(0x0113_6ac4);
 
     fn byte(mem: &impl Mem, a: u32, o: u32) -> u8 {
         mem.read(a.wrapping_add(o))
@@ -144,7 +147,7 @@ pub mod bridge {
 
     /// `MsGetChrPredictPos(i)` (`0x007aa2a0`): one frame of actor `i`'s
     /// move (`+0x415 & 0x7f`; none for 0, or without a character): 7 along
-    /// move spline `+0x454` (`MsSetBallSpline` first for spline 2) at
+    /// move spline `+0x454` ([`ms_set_ball_spline`] first for spline 2) at
     /// frame `+0x452` of `+0x45a`, facing along its tangent with
     /// `+0x46c`; 0x10 a straight step (`+0x470` yaw, `+0x47c` pitch,
     /// `+0x460` speed); else towards [`ms_get_move_target_pos`]'s point
@@ -215,7 +218,12 @@ pub mod bridge {
                         end(mem);
                     }
                     if u16_at(mem, 0x454) == 2 {
-                        (host.ball_spline)(mem, i);
+                        let own = Regs {
+                            edi: i,
+                            esi: model,
+                            ebx: a,
+                        };
+                        ms_set_ball_spline(mem, host, i, Some(own));
                     }
                     let k = u32::from(u16_at(mem, 0x454));
                     let table = crate::target::bridge::MOVE_SPLINES
@@ -514,5 +522,210 @@ pub mod bridge {
                 }
             }
         }
+    }
+
+    /// The by-value vector `[x, w1, w2, w3]` a callee reads past its pushed
+    /// word: the caller's `edi`, `esi`, `ebx` (`regs`), else the words of
+    /// the VU register at `reg` as they were.
+    fn spare(mem: &Dm<'_>, x: u32, regs: Option<Regs>, reg: u32) -> [u32; 4] {
+        match regs {
+            Some(r) => [x, r.edi, r.esi, r.ebx],
+            None => {
+                let mut w: [u32; 4] = mem.read(reg);
+                w[0] = x;
+                w
+            }
+        }
+    }
+
+    /// `MsMoveSplineRegist(k, i, kind, point)` (`0x007ab0b0`): appends a
+    /// point to move spline `k` (0-2, at most 0x20 points; the count
+    /// `g_BtlMoveSplines[k]` first grows, the point going to `+0x10 *
+    /// count` of the spline): `point`'s four words when given (also into
+    /// `EE_MOVE`), then [`ms_get_move_target_pos`] of actor `i` for `kind`
+    /// over it. `ebx` is the caller's (`None`: the register words as they
+    /// were).
+    pub fn ms_move_spline_regist(
+        mem: &mut Dm<'_>,
+        host: &Host<'_>,
+        k: u32,
+        i: u32,
+        kind: u32,
+        point: u32,
+        ebx: Option<u32>,
+    ) {
+        if k > 2 {
+            return;
+        }
+        let counts = crate::misc::bridge::MOVE_SPLINES.ptr(mem).addr;
+        let n: i32 = mem.read(counts + 4 * k);
+        if n >= 0x20 {
+            return;
+        }
+        let n = n + 1;
+        let at = crate::target::bridge::MOVE_SPLINES
+            .ptr(mem)
+            .addr
+            .wrapping_add(
+                (k * 0x21)
+                    .wrapping_add(n.cast_unsigned())
+                    .wrapping_mul(0x10),
+            );
+        mem.write(counts + 4 * k, n);
+        if point != 0 {
+            let p: [u32; 4] = mem.read(point);
+            crate::camera::bridge::EE_MOVE.set(mem, p);
+            mem.write(at, p);
+        }
+        let a = ms_get_chr(mem, i);
+        let regs = ebx.map(|ebx| Regs {
+            edi: at,
+            esi: i,
+            ebx,
+        });
+        ms_get_move_target_pos(mem, host, i, a, kind, at, 0, regs);
+    }
+
+    /// `MsSetBallSpline(i)` (`0x007b78c0`): rebuilds move spline 2, the
+    /// ball's arc for actor `i` towards actor `+0x14` (`t`), by the ball
+    /// state `+0x420`. States 0 and 1: from the start `+0x390` (twice)
+    /// over seven midpoints (`MsMiddlePoint` at `s` growing by 1.3, less
+    /// 0.001 each, and `10 - s`, their heights pulled `k / 32` back towards
+    /// the start's for `k` 7 down to 1) to an end (twice): 40 units in
+    /// front of `t` when `t`'s first target (`+0xdc0`) is itself and the
+    /// state 0; else `MsGetMoveTargetPos` kind 12 plus `0x01136ac4`, which,
+    /// when `t`'s result on that target (`MsGetDamageResult`) is 1, is
+    /// moved on by the distance returned (`MsVectorNormal2` from the
+    /// start); those two ends on the ground (`MsGetChrGround` of `t` or the
+    /// target) unless underwater. States 2 and 3: from the start (twice)
+    /// over seven midpoints (`s` growing by 1.1, less 0.001 each), raised
+    /// by a sum of `v = -1 - len / 3` (`+0x45a`) growing by `-v / 4`, to
+    /// `t`'s character's optional position 11 (twice); state 3 within the
+    /// last 8 frames of the move. Other states nothing. `regs` are the
+    /// caller's `edi`, `esi`, `ebx`, the words past the by-value vectors'
+    /// first.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::similar_names,
+        clippy::many_single_char_names
+    )]
+    pub fn ms_set_ball_spline(mem: &mut Dm<'_>, host: &Host<'_>, i: u32, regs: Option<Regs>) {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let a = ms_get_chr(mem, i);
+        let t = u32::from(byte(mem, a, 0x14));
+        let ta = ms_get_chr(mem, t);
+        crate::misc::bridge::ms_move_spline_set(mem, 2);
+        let bits: i32 = mem.read(ta.wrapping_add(0xdc0));
+        let first = (0..0x1f).find(|&k| (bits >> k) & 1 != 0);
+        let result = match first {
+            Some(k) => crate::cue::bridge::ms_get_damage_result(mem, t, k, 0, 0, 0),
+            None => 0,
+        };
+        let state = byte(mem, a, 0x420);
+        if state > 3 {
+            return;
+        }
+        let ebx = regs.map(|r| r.ebx);
+        let start = a.wrapping_add(0x390);
+        let vf = crate::vector::bridge::VF_M.ptr(mem).addr;
+        let ten = 10.0f64;
+        mem.frame(0x50, |mem, f| {
+            let (end, mid, opt, dir) = (f, f + 0x10, f + 0x20, f + 0x30);
+            let regist = |mem: &mut Dm<'_>, p: u32| {
+                ms_move_spline_regist(mem, host, 2, 0, 0, p, ebx);
+            };
+            let middle = |mem: &mut Dm<'_>, q: u32, s: u32, tt: u32| {
+                let w = spare(mem, tt, regs, vf + 0x30);
+                v::ms_middle_point(mem, mid, start, q, [s, w[0], w[1], w[2], w[3]]);
+            };
+            if state >= 2 {
+                regist(mem, start);
+                regist(mem, start);
+                let model: u32 = mem.read(ta);
+                ffx_chara::attach::bridge::ch_optpos_get(mem, model, 0xb, opt);
+                let len = i32::from(mem.read::<u16>(a.wrapping_add(0x45a)));
+                let mut vv = store(f64::from(-1 - len / 3));
+                let dv = store(mul(-load(vv), 0.25));
+                let (mut acc, mut acc_y) = (0.0f32.to_bits(), 0.0f32.to_bits());
+                let mut step = 1.1f32.to_bits();
+                for _ in 0..7 {
+                    acc = store(add(load(acc), load(step)));
+                    acc_y = store(add(load(acc_y), load(vv)));
+                    vv = store(add(load(vv), load(dv)));
+                    let tt = store(sub(ten, load(acc)));
+                    middle(mem, opt, acc, tt);
+                    let y: u32 = mem.read(mid + 4);
+                    mem.write(mid + 4, store(add(load(y), load(acc_y))));
+                    regist(mem, mid);
+                    step = store(sub(load(step), 0.001));
+                }
+                regist(mem, opt);
+                regist(mem, opt);
+                let fr = i32::from(mem.read::<u16>(a.wrapping_add(0x452)));
+                if len - fr < 8 {
+                    mem.write(a.wrapping_add(0x420), 3u8);
+                }
+                return;
+            }
+            let ground_of = if first == Some(t) && state == 0 {
+                crate::pos::bridge::ms_get_chr_pos(mem, host.trig, t, end);
+                crate::body::bridge::ms_get_chr_dir(mem, t, dir);
+                let yaw: u32 = mem.read(dir);
+                let r = spare(mem, 40.0f32.to_bits(), regs, vf + 0x40);
+                v::ms_vector_polar2_rect(mem, host.trig, mid, 0, yaw, 0, r);
+                v::ms_add_point(mem, end, end, mid);
+                Some(t)
+            } else {
+                let own = Regs {
+                    edi: t,
+                    esi: a,
+                    ebx: first.unwrap_or(u32::MAX),
+                };
+                let d = quiet(ms_get_move_target_pos(
+                    mem,
+                    host,
+                    i,
+                    a,
+                    0xc,
+                    end,
+                    0,
+                    Some(own),
+                ));
+                let off = BALL_OFFSET.ptr(mem).addr;
+                v::ms_add_point(mem, end, end, off);
+                if result == 1 {
+                    let s = spare(mem, d, regs, vf + 0x20);
+                    v::ms_vector_normal2(mem, mid, start, end, s);
+                    v::ms_add_point(mem, end, end, mid);
+                    first
+                } else {
+                    None
+                }
+            };
+            if let Some(g) = ground_of
+                && crate::state::bridge::UNDERWATER.get(mem) == 0
+            {
+                let y = crate::body::bridge::ms_get_chr_ground(mem, g);
+                mem.write(end + 4, y.to_bits());
+            }
+            regist(mem, start);
+            regist(mem, start);
+            let mut acc = 0.0f32.to_bits();
+            let mut step = 1.3f32.to_bits();
+            for k in (1..=7).rev() {
+                acc = store(add(load(acc), load(step)));
+                let tt = store(sub(ten, load(acc)));
+                middle(mem, end, acc, tt);
+                let my = load(mem.read(mid + 4));
+                let y0 = load(f32_at(mem, a, 0x394));
+                let kf = load(store(f64::from(k)));
+                let y = store(add(mul(mul(sub(y0, my), kf), 0.031_25), my));
+                mem.write(mid + 4, y);
+                regist(mem, mid);
+                step = store(sub(load(step), 0.001));
+            }
+            regist(mem, end);
+            regist(mem, end);
+        });
     }
 }

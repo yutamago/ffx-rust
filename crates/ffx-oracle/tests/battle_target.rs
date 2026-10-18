@@ -34,9 +34,6 @@ fn host() -> t::Host<'static> {
     fn tangent(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
         spline_via(m, 0x0088_b3b0, out, points, n, x);
     }
-    fn ball(m: &mut t::Dm<'_>, i: u32) {
-        call(oracle(m), 0x007b_78c0, &[i]);
-    }
     fn neck_enable(m: &mut t::Dm<'_>, chr: u32, on: u32) {
         call(oracle(m), 0x0083_4f60, &[chr, on]);
     }
@@ -90,7 +87,6 @@ fn host() -> t::Host<'static> {
         spline: &spline,
         spline_tangent: &tangent,
         cos: &cos_stand_in,
-        ball_spline: &ball,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
         atel_total: &total,
@@ -6187,6 +6183,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         moves(a, b, &mut r16, &w, out);
         let whole = r17.below(2) == 0;
         move_steps(a, b, &mut r17, &w, &f, whole);
+        ball_splines(a, b, &mut r17, &w, &f, out);
     }
 }
 
@@ -6318,17 +6315,11 @@ fn no_nans(a: &mut Oracle, b: &mut Oracle, at: u32, len: u32) {
 /// `MsGetChrPredictPos` and `MsMoveChr` (round 17) on the
 /// dressed actors, every move kind.
 /// `whole`: `MsMoveChr`, else `MsGetChrPredictPos` actor by actor.
-fn move_steps(
-    a: &mut Oracle,
-    b: &mut Oracle,
-    rng: &mut Xorshift,
-    w: &World,
-    f: &Fakes,
-    whole: bool,
-) {
-    use ffx_battle::predict::bridge as pr;
-    let h = host();
-    let kinds = [0u8, 7, 7, 0x10, 1, 2, 3, 6, 8, 9, 10, 11, 13, 14];
+/// Actors the move originals can run, on top of `dress` (the calls since
+/// change them): the position file and move splines again, every actor
+/// with a character at a modest position and no NaN words, valid actor
+/// indexes, the dress-time battle places.
+fn sane_actors(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, f: &Fakes) {
     // the position file again (kind 1's battle position: the calls since
     // `dress` replace it, and a missing table leaves words of the target
     // unwritten, stack garbage in the original)
@@ -6376,13 +6367,157 @@ fn move_steps(
         );
         poke(a, b, p + 0x6d4, &[if rng.below(3) == 0 { 1 } else { 0xff }]);
         poke(a, b, p + 0x6dd, &[0]);
+    }
+    // the characters at modest positions (huge ones overflow on the way)
+    // and rotations
+    let mut seen = Vec::new();
+    for i in 0..ACTORS {
+        let c = u32::from_le_bytes(a.read(w.actor(i), 4).unwrap().try_into().unwrap());
+        if !seen.contains(&c) {
+            seen.push(c);
+            let v: Vec<u8> = (0..3)
+                .flat_map(|_| {
+                    (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 37.0)
+                        .to_bits()
+                        .to_le_bytes()
+                })
+                .collect();
+            poke(a, b, c + ffx_chara::layout::POS, &v);
+            // a rotation Ch_GetRot's wrap ends on, as `dress` sets it
+            let r = (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 97.0).to_bits();
+            poke(a, b, c + 0x158, &r.to_le_bytes());
+        }
+    }
+    // the actors another faces or moves to (+0x416, +0xded) of another
+    // character: two actors of one character stand at one point, and the
+    // direction between them (a zero vector) reads the w words the
+    // originals leave unwritten, stack garbage after an earlier step
+    let chr_of = |o: &mut Oracle, k: u32| {
+        u32::from_le_bytes(o.read(w.actor(k), 4).unwrap().try_into().unwrap())
+    };
+    for i in 0..ACTORS {
+        let own = chr_of(a, i);
+        let others: Vec<u32> = (0..ACTORS).filter(|&k| chr_of(a, k) != own).collect();
+        if others.is_empty() {
+            continue;
+        }
+        for o in [0x416, 0xded] {
+            let k = others[rng.below(u32::try_from(others.len()).unwrap()) as usize];
+            poke(a, b, w.actor(i) + o, &[u8::try_from(k).unwrap()]);
+        }
+    }
+}
+
+/// `MsMoveSplineRegist` and `MsSetBallSpline` (round 17 group 2) on
+/// sane actors of safe move kinds (the ball's end asks its targets' move
+/// positions: kinds 0x10 and above 0x12 move towards stack garbage, 12
+/// recurses, and 7 runs its spline at the frame plus `g_BtlMoveFrame`,
+/// past the table's points).
+fn ball_splines(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    f: &Fakes,
+    out: u32,
+) {
+    use ffx_battle::predict::bridge as pr;
+    let h = host();
+    sane_actors(a, b, rng, w, f);
+    let kinds = [0u8, 1, 2, 3, 6, 8, 10, 11, 13, 14];
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        let kind = kinds[rng.below(u32::try_from(kinds.len()).unwrap()) as usize];
+        poke(a, b, p + 0x415, &[kind]);
+        poke(a, b, p + 0x411, &[0]);
+        let len = u16::try_from(1 + rng.below(40)).unwrap();
+        poke(a, b, p + 0x45a, &len.to_le_bytes());
+        let fr = u16::try_from(rng.below(u32::from(len) + 1)).unwrap();
+        poke(a, b, p + 0x452, &fr.to_le_bytes());
+        poke(a, b, p + 0x454, &u16::from(rng.below(2) == 0).to_le_bytes());
+    }
+    // MsMoveSplineRegist: any spline (3 is none), any count (0x20 full)
+    for _ in 0..4 {
+        let k = rng.below(4);
+        let counts = ffx_battle::misc::bridge::MOVE_SPLINES.ptr(b).addr;
+        if k < 3 {
+            poke(a, b, counts + 4 * k, &rng.range(-1, 0x22).to_le_bytes());
+        }
+        let i = rng.below(ACTORS);
+        let kind = u32::from(kinds[rng.below(u32::try_from(kinds.len()).unwrap()) as usize]);
+        poke(a, b, out, &floats(rng, 4));
+        let point = if rng.below(4) == 0 { 0 } else { out };
+        let args = [k, i, kind, point];
+        zero_stack(a);
+        twin("MsMoveSplineRegist", a, b, 0x007a_b0b0, &args, 0, |m| {
+            dm(m, |m| {
+                pr::ms_move_spline_regist(m, &h, k, i, kind, point, Some(HARNESS.ebx));
+            });
+            0
+        });
+        local_words(a, b);
+        same(&format!("MsMoveSplineRegist {args:x?}"), a, b);
+    }
+    // MsSetBallSpline: thrower i, catcher +0x14, the ball state +0x420
+    let i = rng.below(ACTORS);
+    let p = w.actor(i);
+    let t = rng.below(ACTORS);
+    poke(a, b, p + 0x14, &[u8::try_from(t).unwrap()]);
+    let state = [0u8, 0, 1, 2, 3, 4, 0xff][rng.below(7) as usize];
+    poke(a, b, p + 0x420, &[state]);
+    let q = w.actor(t);
+    let first = [t, rng.below(ACTORS), t][rng.below(3) as usize];
+    let targets = match rng.below(5) {
+        0 => 0,
+        1 => rng.next() & 0x7fff_ffff,
+        _ => 1 << first,
+    };
+    poke(a, b, q + 0xdc0, &targets.to_le_bytes());
+    // the catcher's result on its first target: its own command (+0x72c)
+    // and a result entry in that target's first buffer (+0x774), +0x18 of
+    // 0, 1 (the end moved on) or -1
+    poke(a, b, q + 0xde5, &[0xff]);
+    let id = a.read(q + 0x72c + 2, 1).unwrap()[0];
+    let buf = w.actor(first) + 0x774;
+    let r = [0u8, 1, 1, 0xff][rng.below(4) as usize];
+    poke(a, b, buf, &[0, 1, u8::try_from(t).unwrap(), id]);
+    poke(a, b, buf + 0x18, &[r]);
+    poke(a, b, w.actor(first) + 0xa4c + 2, &[0xff]);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::UNDERWATER,
+        i8::from(rng.below(3) == 0),
+    );
+    poke(a, b, pr::BALL_OFFSET.ptr(b).addr, &floats(rng, 4));
+    zero_stack(a);
+    twin("MsSetBallSpline", a, b, 0x007b_78c0, &[i], 0, |m| {
+        dm(m, |m| pr::ms_set_ball_spline(m, &h, i, Some(HARNESS)));
+        0
+    });
+    local_words(a, b);
+    same(&format!("MsSetBallSpline {i} state {state} to {t}"), a, b);
+}
+
+fn move_steps(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    f: &Fakes,
+    whole: bool,
+) {
+    use ffx_battle::predict::bridge as pr;
+    let h = host();
+    let kinds = [0u8, 7, 7, 0x10, 1, 2, 3, 6, 8, 9, 10, 11, 13, 14];
+    sane_actors(a, b, rng, w, f);
+    for i in 0..ACTORS {
+        let p = w.actor(i);
         let kind = kinds[rng.below(u32::try_from(kinds.len()).unwrap()) as usize]
             | if rng.below(3) == 0 { 0x80 } else { 0 };
         poke(a, b, p + 0x415, &[kind]);
         // a length of at least 1 (0 makes 0/0 NaNs that meet, which the
-        // emulator resolves unlike the x87) and no ball spline (spline 2,
-        // MsSetBallSpline, still original, is called through the game but
-        // reads wild pointers on these actors)
+        // emulator resolves unlike the x87)
         let len = u16::try_from(1 + rng.below(12)).unwrap();
         poke(a, b, p + 0x45a, &len.to_le_bytes());
         // the frame within the move (a spline move past its length reads
@@ -6394,8 +6529,14 @@ fn move_steps(
             rng.below(2 * u32::from(len) + 2)
         };
         poke(a, b, p + 0x452, &u16::try_from(fr).unwrap().to_le_bytes());
-        let sp = u16::from(rng.below(2) == 0);
+        // spline 2 is the ball's, rebuilt each step (MsSetBallSpline): here
+        // in its states that need no target positions (2, 3: the catcher's
+        // optional position; above 3: none; `ball_splines` has 0 and 1)
+        let sp = u16::try_from(rng.below(3)).unwrap();
         poke(a, b, p + 0x454, &sp.to_le_bytes());
+        if sp == 2 {
+            poke(a, b, p + 0x420, &[[2u8, 3, 4][rng.below(3) as usize]]);
+        }
         // the direction modes as `status` sets them (MsGetDirMode), but
         // for 2, 7 and 9 (the targets' centre: none makes the indefinite
         // NaN, which the C runtime's stand-in meets in the emulator unlike
@@ -6450,40 +6591,6 @@ fn move_steps(
         }
         for o in [0x460, 0x464, 0x468, 0x474, 0x478, 0x480, 0x484, 0x4a8] {
             poke(a, b, p + o, &float(rng).to_le_bytes());
-        }
-    }
-    // the characters at modest positions (huge ones overflow on the way)
-    let mut seen = Vec::new();
-    for i in 0..ACTORS {
-        let c = u32::from_le_bytes(a.read(w.actor(i), 4).unwrap().try_into().unwrap());
-        if !seen.contains(&c) {
-            seen.push(c);
-            let v: Vec<u8> = (0..3)
-                .flat_map(|_| {
-                    (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 37.0)
-                        .to_bits()
-                        .to_le_bytes()
-                })
-                .collect();
-            poke(a, b, c + ffx_chara::layout::POS, &v);
-        }
-    }
-    // the actors another faces or moves to (+0x416, +0xded) of another
-    // character: two actors of one character stand at one point, and the
-    // direction between them (a zero vector) reads the w words the
-    // originals leave unwritten, stack garbage after an earlier step
-    let chr_of = |o: &mut Oracle, k: u32| {
-        u32::from_le_bytes(o.read(w.actor(k), 4).unwrap().try_into().unwrap())
-    };
-    for i in 0..ACTORS {
-        let own = chr_of(a, i);
-        let others: Vec<u32> = (0..ACTORS).filter(|&k| chr_of(a, k) != own).collect();
-        if others.is_empty() {
-            continue;
-        }
-        for o in [0x416, 0xded] {
-            let k = others[rng.below(u32::try_from(others.len()).unwrap()) as usize];
-            poke(a, b, w.actor(i) + o, &[u8::try_from(k).unwrap()]);
         }
     }
     if whole {

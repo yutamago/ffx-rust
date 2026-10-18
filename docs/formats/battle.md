@@ -466,6 +466,40 @@ the neck delay `+0x439` counts down, and at 0 the neck follows actor
 says no) or, for 0xff, stops (`Ch_NeckSetEnable(chr, 0)`). The character
 is the one read before the step.
 
+`MsMoveSplineRegist(k, i, kind, point)` (`0x007ab0b0`): for spline `k`
+< 3 with fewer than 0x20 points, the count (`g_BtlMoveSplines[k]`,
+`0x01136418`, `i32`) grows first and the point goes to `0x01136428 + k *
+0x210 + count * 0x10`: `point`'s four words when given (also into
+`EE_MOVE`), then `MsGetMoveTargetPos(i, actor i, kind, that point, 0)`
+over it (kind 0 writes nothing).
+
+`MsSetBallSpline(i)` (`0x007b78c0`) rebuilds move spline 2 for the ball
+thrown by actor `i` to its `+0x14` (the catcher `t`; `MsMoveSplineSet(2)`
+first): the catcher's first target `f` (lowest bit of `t`'s `+0xdc0`) and
+`t`'s result on it (`MsGetDamageResult(t, f)`, signed `+0x18`). By the
+ball state `+0x420` (signed byte; above 3 nothing):
+
+- 0 and 1: an end point. With `f == t` and state 0, 40 units in front of
+  `t` (`MsGetChrDir`, `MsVectorPolar2Rect` with 40.0 at `0x00b43db4`).
+  Otherwise `MsGetMoveTargetPos` kind 12 (the targets' move positions)
+  plus `g_BtlBallOffset` (`0x01136ac4`, set by `MsSetBallSplineInit`);
+  with a result of 1 the end moves on by the distance returned
+  (`MsVectorNormal2` from the start), else it stays and keeps its height.
+  The first two ends take the ground height (`MsGetChrGround` of `t`,
+  resp. `f`) unless underwater. The spline: the start `+0x390` twice,
+  seven midpoints, the end twice; midpoint `k` (7 down to 1) is
+  `MsMiddlePoint(start, end, s, 10 - s)` with `s` growing by a step of
+  1.3 that loses 0.001 each time, its height `y + (y0 - y) * k * 0.03125`.
+- 2 and 3: from the start twice to `t`'s character's optional position 11
+  twice, seven midpoints with the step 1.1, raised by a running sum of
+  `v = -1 - len / 3` (`+0x45a`), `v` growing by `-v / 4` each time; then
+  state 3 once fewer than 8 frames are left.
+
+Every value is stored as `f32` at each step (`s`, `10 - s`, the step,
+the sums). The by-value vectors' spare words (`MsVectorPolar2Rect`'s,
+`MsVectorNormal2`'s, `MsMiddlePoint`'s) are the caller's `edi`, `esi`,
+`ebx`.
+
 Facts the parity test found (`tests/battle_target.rs`, `move_steps`):
 only three move splines exist (`0x01136428 + 3 * 0x210` is
 `g_BtlMoveTarget`); a spline move past its length reads points beyond
