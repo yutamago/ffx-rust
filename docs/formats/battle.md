@@ -688,6 +688,56 @@ and chara's functions, the CD object, `MsBtlReadSetScene` and
 `MsBtlReadMonster` through the game. `MsBattleExe` keeps calling it
 through the game: it tail-calls it, so its `eax` is the read's.
 
+`MsBattleInit` (`0x00781700`, `ffx_battle::init`) runs once at the game's
+start. After the inits it reads eight kernel files whole (directory 0xd,
+then 0x2f for files 5 and 6): each size is stored as a halfword
+(`0x0112a9d2`, the field list's, read back signed; the others,
+`0x0112a972`-`0x0112a980`, unsigned) and its block is an aligned
+`user_malloc` booked with `MsMemCheckRegist`, read and waited for (CD
+`+8`). Then `Kernel_LoadTables` until it returns 0; menu texts 7, 9, 3
+(and 0xe-0x10 while `MsGetCheckEnglish`) and the start list
+(`0x00c421b4`, `i8` until a negative, `MsMenuReadStartText_00782b70`
+with `load` 1); key items, field items, weapon names; the new game's
+save; then an empty `MsBattleExe(-1, 0, 0, 1)`, its scene and scripts.
+`g_BtlExe` comes from `g_BtlExeKeep` after the memory word's label
+(`MsBattleLabelExe`), else 0. `MsMemCheckSum(0x70000)` gives the room
+left below 0x70000 past the booked work memory (less 0x10, rounded down
+to 64) a block of its own. With the debug menu's toggle `0x0112a905` the
+debug fills run (`MsDebugFullMember` is reviewed debug;
+`MsDebugFullCommand` stays logic: the PC booster menu `0x006fc970`
+reaches it).
+
+`MsMenuReadText(i, load)` (`0x0078fef0`) fills row `i` of `g_BtlMenuText`
+(12 bytes: busy byte, size, a 32-bit pointer table handle): thirteen texts
+are kernel files read whole (`getExcelBinSize`; 7 and 0xe are both
+`config_txt`), copied in and freed; 2, 0xd, 0xf and 0x10 are CD files of
+directory 0x27 (`MsGetFileSize(0x27, load ? 9 : 0x27, i)`) read
+asynchronously with a request block on the caller's stack whose `+0xc` is
+`i`; the completion `0x0078fed0` clears the busy byte. The port takes the
+block's address from the shim (a frame on the hook's stack). It returns 0
+(-1 past 0x10).
+
+`MsSetSaveStartGame` (`0x00786b00`) builds a new game's save: the first
+records of directory 0xd's files 3 (the menu's 7 words), 4 `party_data`
+(0x21 words from `g_SaveGil`, the starting items at `+0x44`/`+0x54` and
+the seed at `+4`) and 0x1f `menu_panel` (8 words); the weapons from
+`wep_data` until the first record comes again (`MsGetExcelData`'s
+fallback) or past 0x23 without `g_BtlAllWeapons`, a character's (byte 4
+below 7) with its name number (`MsWeaponNameNum`) and icon; 18
+`ply_save` records and names (also the default names), each name's
+bytes 18 and 19 the language and 1; `MsRandMize(frames + seed)`; the
+starting items with a count listed and marked found, the rest of the 0x100
+entries 0xff/0.
+
+`MsEtEffectInit` (`0x0079e670`) numbers the three status effect tables
+from 0 on (`MsEtEffectNumber_0079f1c0`: entries of 4 bytes up to three
+zero bytes; byte 0 0xff is skipped; past 0x18 `MsBattleError("eff_id")`).
+`MsBattleSpecialInit(kind)` (`0x0079de60`) makes the special stage's work
+for kinds 1-3 (the boat's roll step 0.002 from `0x00b54ca4`, map objects
+0x1c-0x1e's animations disposed). `0x0112a948` and `0x0112a960` are both
+named `g_KernelSummonGrow` in ffx.sym: `MsBattleInit` reads directory
+0xd's file 0xe into the first and 0x2f's file 6 into the second.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.
