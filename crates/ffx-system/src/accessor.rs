@@ -783,4 +783,14 @@ pub mod bridge {
         mem.read::<u32>(this.wrapping_add(at))
             .wrapping_add(i.wrapping_mul(scale))
     }
+    /// `Vec3At24_0061a7f0(out)` (`thiscall`, `ret 4`): the three floats at
+    /// `this + 0x24` to `out` through the x87 stack (a signalling NaN
+    /// becomes quiet); returns `out`.
+    pub fn vec3_at_24(mem: &mut impl Mem, this: u32, out: u32) -> u32 {
+        for k in 0..3 {
+            let v: f32 = mem.read(this.wrapping_add(0x24 + 4 * k));
+            mem.write(out.wrapping_add(4 * k), ffx_bridge::x87::round_trip(v));
+        }
+        out
+    }
 }

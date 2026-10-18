@@ -450,4 +450,365 @@ pub mod bridge {
         let f = mem.rebase(decoder);
         call(mem, f, &[block, data, packed, buffer])
     }
+
+    /// The file name `PcFileName_00a42c00` builds.
+    pub const PC_FILE_NAME: u32 = 0x01a8_5c30;
+    /// Set by `SetGlobal_01a85ba4` (a debug tweak): use the 200-thunder
+    /// `kami0400.ebp`.
+    pub const THUNDER_200: Global<u32> = Global::new(0x01a8_5ba4);
+    /// `Sg_GetUserName2()`.
+    pub const SG_GET_USER_NAME2: u32 = 0x0082_0620;
+    /// `ReturnGlobalSx8_006bc960()`: the sign-extended byte at `0x00cccab8`.
+    pub const RETURN_GLOBAL_SX8: u32 = 0x006b_c960;
+    /// `dbgPrintf(format, ...)`.
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// `"Virtuos ERR: bad filename location (loc var?), loc = %d\n"`.
+    pub const BAD_LOC_FORMAT: u32 = 0x00b7_ad5c;
+    /// `"file name NULL !!!!!\n"`.
+    pub const NAME_NULL_FORMAT: u32 = 0x00b7_ad98;
+    /// The three name rewrites at the end of `PcFileName_00a42c00`: the
+    /// file and the prefix put before it.
+    pub const NAME_PREFIXES: [(&[u8], &[u8]); 3] = [
+        (b"nagi0000.ebp", b"dbg_"),
+        (b"kami0400.ebp", b"200thunder_"),
+        (b"nagi0700.ebp", b"full_"),
+    ];
+
+    /// The C string at `s`: `out[j..]` gets every byte of it, the NUL
+    /// included, each re-read after the store before it (the original's
+    /// loop); returns `j` past the NUL.
+    fn copy_name(mem: &mut impl Mem, out: u32, mut j: u32, s: u32) -> u32 {
+        let first: u8 = mem.read(s);
+        mem.write(out.wrapping_add(j), first);
+        j = j.wrapping_add(1);
+        if mem.read::<u8>(s) != 0 {
+            let mut p = s;
+            loop {
+                let c: u8 = mem.read(p.wrapping_add(1));
+                p = p.wrapping_add(1);
+                mem.write(out.wrapping_add(j), c);
+                j = j.wrapping_add(1);
+                if mem.read::<u8>(p) == 0 {
+                    break;
+                }
+            }
+        }
+        j
+    }
+
+    /// Whether `$USER$` starts at `at` (bytes read up to the first that
+    /// differs).
+    fn user_tag_at(mem: &impl Mem, at: u32) -> bool {
+        (0..6).all(|k: u32| mem.read::<u8>(at.wrapping_add(k)) == b"$USER$"[k as usize])
+    }
+
+    /// `strstr(out, name)`, then `sprintf(out, "%s%s%s", head, prefix,
+    /// name)` with `head` the bytes before the match: `prefix` goes in
+    /// before the first `name` and whatever followed `name` is cut. The
+    /// original copies `head` to a 256-byte local first (`strncpy` over a
+    /// zeroed buffer; a head of 256 bytes or more overruns it).
+    fn put_prefix(mem: &mut impl Mem, out: u32, name: &[u8], prefix: &[u8]) {
+        let mut text = Vec::new();
+        loop {
+            let c: u8 = mem.read(out.wrapping_add(u32::try_from(text.len()).unwrap_or(u32::MAX)));
+            if c == 0 {
+                break;
+            }
+            text.push(c);
+        }
+        let Some(pos) = text.windows(name.len()).position(|w| w == name) else {
+            return;
+        };
+        let mut at = out.wrapping_add(u32::try_from(pos).unwrap_or(u32::MAX));
+        for &c in prefix.iter().chain(name).chain(&[0]) {
+            mem.write(at, c);
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// `PcFileName_00a42c00(loc)`: the PC file name of entry `loc` of the
+    /// file-name table (`[GetCD() + 0x30]`: a count, then offsets from the
+    /// table; entry `loc` runs from offset `loc` to offset `loc + 1`),
+    /// built in [`PC_FILE_NAME`], which it returns. `$USER$` becomes
+    /// `Sg_GetUserName2()` (unless that is null) and each set read-name
+    /// substitution its replacement; then `dbg_` goes before
+    /// `nagi0000.ebp` when `ReturnGlobalSx8_006bc960()`, `200thunder_`
+    /// before `kami0400.ebp` with [`THUNDER_200`], `full_` before
+    /// `nagi0700.ebp` with [`FULL_ARENA_LOCALIZATION`]. Returns 0 after
+    /// `dbgPrintf("file name NULL")` without a table, for an empty entry
+    /// or one at address 0; a `loc` at or past the count (signed) prints
+    /// the bad location first.
+    ///
+    /// Each substitution overwrites the name from the byte that matched
+    /// (the copy's NUL included), and the scan goes on from the last byte
+    /// matched and the last byte written: the later substitutions are
+    /// tried from there, and the next byte is copied after them. `call`
+    /// takes an `ffx.sym` address.
+    pub fn pc_file_name<M: Mem>(
+        mem: &mut M,
+        loc: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(get_cd(mem).wrapping_add(0x30));
+        let mut src = 0;
+        if table != 0 {
+            if loc < mem.read::<i32>(table) {
+                let entry = table.wrapping_add(loc.cast_unsigned().wrapping_mul(4));
+                let start: u32 = mem.read(entry.wrapping_add(4));
+                let end: u32 = mem.read(entry.wrapping_add(8));
+                if end.wrapping_sub(start).cast_signed() > 0 {
+                    src = start.wrapping_add(table);
+                }
+            } else {
+                let format = mem.rebase(BAD_LOC_FORMAT);
+                call(mem, DBG_PRINTF, &[format, loc.cast_unsigned()]);
+            }
+        }
+        if src == 0 {
+            let format = mem.rebase(NAME_NULL_FORMAT);
+            call(mem, DBG_PRINTF, &[format]);
+            return 0;
+        }
+        let user = call(mem, SG_GET_USER_NAME2, &[]);
+        let out = mem.rebase(PC_FILE_NAME);
+        let first: u8 = mem.read(src);
+        mem.write(out, first);
+        // `out[j]` holds the copy of `src[i]`
+        let (mut i, mut j) = (0u32, 0u32);
+        if mem.read::<u8>(src) != 0 {
+            loop {
+                if user_tag_at(mem, src.wrapping_add(i)) {
+                    if user != 0 {
+                        j = copy_name(mem, out, j, user).wrapping_sub(2);
+                        i = i.wrapping_add(5);
+                    }
+                } else {
+                    let from_table = CHGNAME_FROM.ptr(mem).addr;
+                    let to_table = CHGNAME_TO.ptr(mem).addr;
+                    for t in 0..16u32 {
+                        let from: u32 = mem.read(from_table.wrapping_add(4 * t));
+                        if from == 0 {
+                            continue;
+                        }
+                        let at = src.wrapping_add(i);
+                        let mut k = 0u32;
+                        if mem.read::<u8>(at) != 0 {
+                            loop {
+                                let c: u8 = mem.read(from.wrapping_add(k));
+                                if c == 0 || mem.read::<u8>(at.wrapping_add(k)) != c {
+                                    break;
+                                }
+                                k = k.wrapping_add(1);
+                                if mem.read::<u8>(at.wrapping_add(k)) == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                        if mem.read::<u8>(from.wrapping_add(k)) == 0 {
+                            let to: u32 = mem.read(to_table.wrapping_add(4 * t));
+                            j = copy_name(mem, out, j, to).wrapping_sub(2);
+                            i = i.wrapping_add(k).wrapping_sub(1);
+                        }
+                    }
+                }
+                i = i.wrapping_add(1);
+                j = j.wrapping_add(1);
+                let c: u8 = mem.read(src.wrapping_add(i));
+                mem.write(out.wrapping_add(j), c);
+                if mem.read::<u8>(src.wrapping_add(i)) == 0 {
+                    break;
+                }
+            }
+        }
+        let [(nagi0000, dbg), (kami0400, thunder), (nagi0700, full)] = NAME_PREFIXES;
+        if call(mem, RETURN_GLOBAL_SX8, &[]) != 0 {
+            put_prefix(mem, out, nagi0000, dbg);
+        }
+        if THUNDER_200.get(mem) != 0 {
+            put_prefix(mem, out, kami0400, thunder);
+        }
+        if FULL_ARENA_LOCALIZATION.get(mem) != 0 {
+            put_prefix(mem, out, nagi0700, full);
+        }
+        out
+    }
+    /// `g_CdChannels`: the 64 read requests (0x38 bytes: busy byte
+    /// `+0x31`); a 65th starts at [`READ_ID`].
+    pub const CD_CHANNELS: u32 = 0x0112_7c80;
+    /// `g_CdReadId`: the last read-request id (1..=0xffff).
+    pub const READ_ID: Global<i32> = Global::new(0x0112_8a80);
+    /// `movie_err(text, file, line)`.
+    pub const MOVIE_ERR: u32 = 0x0076_efa0;
+    /// `"q_cnt != READ_Q_CNT"` and `"..\program\lib\src\libmscd.c"`.
+    pub const QUEUE_FULL_TEXT: u32 = 0x00b5_1f04;
+    pub const LIBMSCD_FILE: u32 = 0x00b5_1d30;
+
+    /// `CdQueueSectorRead_0076ce40(sector, a, b)`: takes the first free
+    /// read request of [`CD_CHANNELS`] (request 64, over [`READ_ID`] and
+    /// what follows, after `movie_err("q_cnt != READ_Q_CNT", libmscd.c,
+    /// 0x96d)` when all are busy) and fills it: `+8 = b`, `+0x28 = a`,
+    /// busy `+0x31` and `+0x30` set, `+0x1c = sector`, everything else it
+    /// owns zeroed; the id `+0x24` is [`READ_ID`] plus 1 (1 past 0xffff),
+    /// stored back and returned. The fields are written in the original's
+    /// order, the old id read first (request 64's `+0` is the id).
+    pub fn queue_sector_read<M: Mem>(
+        mem: &mut M,
+        [sector, a, b]: [u32; 3],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let channels = mem.rebase(CD_CHANNELS);
+        let n = (0..64u32)
+            .find(|&n| mem.read::<u8>(channels.wrapping_add(n * 0x38 + 0x31)) == 0)
+            .unwrap_or(64);
+        if n == 64 {
+            let text = mem.rebase(QUEUE_FULL_TEXT);
+            let file = mem.rebase(LIBMSCD_FILE);
+            call(mem, MOVIE_ERR, &[text, file, 0x96d]);
+        }
+        let r = channels.wrapping_add(n * 0x38);
+        let at = |off: u32| r.wrapping_add(off);
+        mem.write(at(8), b);
+        mem.write(at(0x28), a);
+        let old = READ_ID.get(mem);
+        mem.write(at(0x31), 1u8);
+        mem.write(at(4), 0u32);
+        for off in [0xc, 0x10, 0x14, 0x18, 0, 0x20] {
+            mem.write(at(off), 0u32);
+        }
+        let mut id = old.wrapping_add(1);
+        READ_ID.set(mem, id);
+        if id > 0xffff {
+            id = 1;
+            READ_ID.set(mem, id);
+        }
+        mem.write(at(0x24), id);
+        mem.write(at(0x30), 1u8);
+        mem.write(at(0x34), 0u16);
+        mem.write(at(0x2c), 0u32);
+        mem.write(at(0x1c), sector);
+        id.cast_unsigned()
+    }
+
+    /// `CdQueueSector_0076ce20(sector)`: [`queue_sector_read`] with `a`
+    /// and `b` 0.
+    pub fn queue_sector<M: Mem>(
+        mem: &mut M,
+        sector: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        queue_sector_read(mem, [sector, 0, 0], call)
+    }
+
+    /// The last direct read `CdReadDirect_0076d140` starts: sector, size,
+    /// buffer and the mode's first word (`0x01128acc`..).
+    pub const DIRECT_READ: u32 = 0x0112_8acc;
+    /// `FlushCache(n)` and `sceCdRead(sector, sectors, buffer, mode)`.
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    pub const SCE_CD_READ: u32 = 0x00a4_47c0;
+    /// `g_FFXHddMode` (a byte).
+    pub const FFX_HDD_MODE: u32 = 0x0133_c913;
+    /// The rule, `"warning error !!! not 64byte align\n"` and
+    /// `"sceCdRead()\n"` (`dbgPrintf` texts).
+    pub const RULE_TEXT: u32 = 0x00b5_1d88;
+    pub const ALIGN_TEXT: u32 = 0x00b5_1dd4;
+    pub const CD_READ_TEXT: u32 = 0x00b5_1df8;
+
+    /// `CdReadDirect_0076d140(sector, size, buffer, mode)`: clears the byte
+    /// `0x01128a87` and the word `0x01128ab0`, prints a ruled "not 64byte
+    /// align" warning for a buffer not on 64 bytes, keeps the read in
+    /// [`DIRECT_READ`] (`[mode]` read first), runs `hdd_state_clear` and
+    /// `FlushCache(0)`, then returns `sceCdRead(sector, size / 2048
+    /// (signed, toward zero), buffer, mode)`; with [`FFX_HDD_MODE`] set a
+    /// ruled `"sceCdRead()"` follows. `call` takes `ffx.sym` addresses.
+    pub fn read_direct<M: Mem>(
+        mem: &mut M,
+        [sector, size, buffer, mode]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let ruled = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, text: u32| {
+            let rule = mem.rebase(RULE_TEXT);
+            let text = mem.rebase(text);
+            call(mem, DBG_PRINTF, &[rule]);
+            call(mem, DBG_PRINTF, &[text]);
+            call(mem, DBG_PRINTF, &[rule]);
+        };
+        mem.write(mem.rebase(0x0112_8a87), 0u8);
+        mem.write(mem.rebase(0x0112_8ab0), 0u32);
+        if buffer & 0x3f != 0 {
+            ruled(mem, &mut call, ALIGN_TEXT);
+        }
+        let mode_word: u32 = mem.read(mode);
+        let last = mem.rebase(DIRECT_READ);
+        mem.write(last, [sector, size, buffer, mode_word]);
+        hdd_state_clear(mem);
+        call(mem, FLUSH_CACHE, &[0]);
+        let sectors = size.cast_signed() / 2048;
+        let r = call(
+            mem,
+            SCE_CD_READ,
+            &[sector, sectors.cast_unsigned(), buffer, mode],
+        );
+        if mem.read::<u8>(mem.rebase(FFX_HDD_MODE)) != 0 {
+            ruled(mem, &mut call, CD_READ_TEXT);
+        }
+        r
+    }
+
+    /// `g_CdLib + 0x24`: the module [`cd_set_module`] selected.
+    pub const MODULE: Global<i32> = Global::new(0x0231_0c64);
+    /// `g_CdLib + 0x30`: the PC file-name table [`pc_file_name`] reads.
+    pub const PC_FILE_TABLE: Global<u32> = Global::new(0x0231_0c70);
+    /// The byte `sa_file_read_init` sets (`0x01128a85`).
+    pub const READ_INIT_DONE: u32 = 0x0112_8a85;
+    /// `"sa_file_read_init!=0"`.
+    pub const READ_INIT_TEXT: u32 = 0x00b5_1eec;
+    /// `user_free_thunk(p)` and `pc_ReadWholeFile_00a42a00(path, &size)`.
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const READ_WHOLE_FILE: u32 = 0x00a4_2a00;
+    /// `0x00a42ab0(path, size)`: the file read into a fresh buffer.
+    pub const READ_FILE_TABLE: u32 = 0x00a4_2ab0;
+
+    /// `CdSetModule_0076c510(m)`: `movie_err("sa_file_read_init!=0",
+    /// libmscd.c, 0x594)` before `sa_file_read_init` has run, then module
+    /// `m`: [`FILE_BASE`] its first file (`i16` entry `m` of
+    /// [`MODULE_FILES`]) and [`MODULE`] `m`; a negative first file stores
+    /// 0 and returns -1, else the first file.
+    pub fn cd_set_module<M: Mem>(
+        mem: &mut M,
+        m: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        if mem.read::<u8>(mem.rebase(READ_INIT_DONE)) == 0 {
+            let text = mem.rebase(READ_INIT_TEXT);
+            let file = mem.rebase(LIBMSCD_FILE);
+            call(mem, MOVIE_ERR, &[text, file, 0x594]);
+        }
+        let table = MODULE_FILES.get(mem);
+        let first =
+            i32::from(mem.read::<i16>(table.wrapping_add(m.cast_unsigned().wrapping_mul(2))));
+        FILE_BASE.set(mem, first);
+        MODULE.set(mem, m);
+        if first < 0 {
+            FILE_BASE.set(mem, 0);
+            return -1;
+        }
+        first
+    }
+
+    /// `PcFileTblSet(path)` (`0x00a42b70`): frees the old
+    /// [`PC_FILE_TABLE`] (`user_free_thunk`, when set) and loads `path`
+    /// as the new one (`0x00a42ab0(path, 0)`), which it also returns.
+    pub fn pc_file_tbl_set<M: Mem>(
+        mem: &mut M,
+        path: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let old = PC_FILE_TABLE.get(mem);
+        if old != 0 {
+            call(mem, USER_FREE, &[old]);
+        }
+        let table = call(mem, READ_FILE_TABLE, &[path, 0]);
+        PC_FILE_TABLE.set(mem, table);
+        table
+    }
 }

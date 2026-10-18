@@ -13,6 +13,12 @@ address and literal argument list can be read from the source, this checks:
 - a cdecl call passes at least the stack words the callee reads (measured
   from its machine code, which the dump's signatures do not always match).
 
+Calls through a file's own wrapper functions (any name, such as
+chr_plate.rs's `Plate::run`) are checked as the call each forwards to: a
+wrapper whose body passes a parameter target (or a fixed one) and a
+parameter word slice to a recognised call inherits its convention and word
+capacity; a wrapper around a closure field gets the callee-side checks only.
+
 CRT intrinsics take their operands on the x87 stack: an St0 shape for
 a two-operand intrinsic (or the reverse) is a mismatch too.
 """
@@ -183,6 +189,7 @@ def check(repo, exe_path, sizes):
     """Yields problem lines; returns via StopIteration the count of checked calls."""
     repo = Path(repo)
     problems, checked = [], 0
+    wrapped_sites = check.wrapped = []
     for name, (n, f, pat) in HELPERS.items():
         if not re.search(pat, (repo / f).read_text(encoding="utf-8")):
             problems.append(f"callarity: helper {name} ({f}) no longer passes {n} words as recorded; update tools/callarity.py")
@@ -225,6 +232,11 @@ def check(repo, exe_path, sizes):
             return int(expr.replace("_", ""), 16)
         if re.fullmatch(r"[A-Z][A-Z0-9_]*", expr):
             vals = consts.get(expr, set())
+            if len(vals) > 1:
+                # several files define it: the calling file's own one
+                own = set(int(v.replace("_", ""), 16) for v in
+                          re.findall(rf"const {expr}: u32 = (0x[0-9a-fA-F_]+);", code_file[0]))
+                vals = own if len(own) == 1 else vals
             return next(iter(vals)) if len(vals) == 1 else None
         if re.fullmatch(r"[a-z_]\w*", expr):
             body = scope(code, at)
@@ -248,10 +260,167 @@ def check(repo, exe_path, sizes):
         return None
 
     sites = re.compile(r"(?<![\w.])((?:[\w]+\.)*(?:\(?c\.)?(call\w*|\w+_call\w*|callf|fcall|ci)\)?)\(")
+
+    def classify(f, full, name, parts):
+        """(conv, word cap or None, closure, arm set name or None) of a call
+        through a named helper."""
+        conv = "cdecl"
+        if name in ("scene_call", "this_call", "call_virtual") or any("Conv::Thiscall" in p for p in parts):
+            conv = "thiscall"
+        elif any("Conv::Stdcall" in p for p in parts):
+            conv = "stdcall"
+        elif any("Conv::Fastcall" in p for p in parts):
+            conv = "fastcall"
+        cap, arms_of = None, None
+        method = "." in full.replace("(c.", "")
+        has_conv = any(p.startswith("Conv::") for p in parts)
+        # `(self.call)(..)`: a closure field, whose helper the call site
+        # doesn't name; only the callee side is checked
+        closure = full.endswith(")") and "(c." not in full
+        if closure:
+            pass
+        elif method and name in ("call", "call_sym", "call_st0", "call_sym_st0"):
+            cap = 8 if has_conv else 6
+        elif name in ("call_cdecl", "call_ptr", "call"):
+            cap = 8 if f.name == "loadsave.rs" else 12
+        elif name == "st0_cdecl" or (name == "fcall" and "ffx-chara" in f.parts):
+            arms_of = "st0_cdecl"
+        elif name == "fcall" and "ffx-system" in f.parts:
+            arms_of = "system_fcall"
+        elif name == "call_n":
+            cap = 12
+        elif name == "call_float" and "ffx-script" in f.parts:
+            cap = 6
+        return conv, cap, closure, arms_of
+
+    def word_call(where, label, conv, cap, arms_of, count, a):
+        """Checks one call of `count` words to `a`; returns 1 (checked)."""
+        if arms_of == "st0_cdecl" and count not in arm_sets["st0_cdecl"]:
+            problems.append(f"{where}: {label} passes {count} words; st0_cdecl takes {sorted(arm_sets['st0_cdecl'])}")
+        elif arms_of == "system_fcall" and count not in arm_sets["system_fcall"]:
+            problems.append(f"{where}: {label} passes {count} words; system.rs fcall takes {sorted(arm_sets['system_fcall'])}")
+        if cap is not None and count > cap:
+            problems.append(f"{where}: {label} passes {count} words; its helper passes at most {cap}")
+        reads, pops, forwards = exe.facts(a)
+        stack = count - (2 if conv == "fastcall" else 0)
+        if conv != "cdecl" and pops is not None and pops != 4 * max(stack, 0):
+            problems.append(f"{where}: {label} passes {stack} stack words ({conv}) to 0x{a:08x}, whose ret pops {pops // 4}")
+        elif conv == "cdecl" and pops and pops != 0:
+            problems.append(f"{where}: {label} calls 0x{a:08x} as cdecl, but it pops {pops // 4} words itself")
+        elif conv == "cdecl" and reads is not None and not forwards and stack < reads and a not in INHERITED:
+            problems.append(f"{where}: {label} passes {stack} words to 0x{a:08x}, which reads {reads}")
+        return 1
+
+    def slice_index(parts, slice_params=()):
+        return next((i for i, p in enumerate(parts)
+                     if re.fullmatch(r"&\[.*\]|&\w+", p, re.S) or p in slice_params), None)
+
+    def target_index(parts, k):
+        i = k - 1
+        while i >= 0 and parts[i].startswith("Conv::"):
+            i -= 1
+        return i
+
+    def params(code, at):
+        """Parameter names of the `fn` whose name ends at `at` (self
+        excluded), their types, and whether it takes self."""
+        sig = balanced(code, code.index("(", at))
+        names, types, has_self = [], [], False
+        for p in split_top(sig[1:-1]) if sig else []:
+            if re.fullmatch(r"&?(?:'\w+\s+)?(?:mut\s+)?self", p):
+                has_self = True
+                continue
+            m = re.fullmatch(r"(?:mut\s+)?(\w+)\s*:\s*(.+)", p, re.S)
+            names.append(m.group(1) if m else None)
+            types.append(m.group(2).strip() if m else "")
+        return names, types, has_self
+
+    def wrappers(code, f):
+        """Helper functions named outside `sites` that forward a parameter
+        target and a parameter word slice to one recognised call: name ->
+        (target param index or fixed address, slice param index, conv, cap,
+        closure, arm set, has self). Wrappers of wrappers resolve too."""
+        defs = {}
+        for m in re.finditer(r"\bfn (\w+)\s*(?:<[^>{]*>)?\s*\(", code):
+            if sites.fullmatch(m.group(1) + "("):
+                continue
+            body_at = code.find("{", balanced(code, m.end() - 1) and m.end() - 1 + len(balanced(code, m.end() - 1)))
+            body = balanced(code, body_at) if body_at >= 0 else None
+            if body:
+                defs.setdefault(m.group(1), []).append((m.start(), body_at, body))
+        found = {}
+        for _ in range(4):
+            grew = False
+            for fname, ds in defs.items():
+                if fname in found:
+                    continue
+                got = set()
+                for start, body_at, body in ds:
+                    names, types, has_self = params(code, start)
+                    slice_params = [n for n, t in zip(names, types) if n and re.fullmatch(r"&(?:'\w+\s+)?\[u32(?:;\s*\w+)?\]", t)]
+                    inner = []
+                    for im in sites.finditer(body):
+                        if body[max(0, im.start() - 3):im.start()] == "fn ":
+                            continue
+                        inner.append(("site", im))
+                    for wname in found:
+                        for im in re.finditer(rf"(?<![\w:])((?:[\w]+\.)*)({wname})\(", body):
+                            if body[max(0, im.start() - 3):im.start()] != "fn ":
+                                inner.append(("wrap", im))
+                    for kind, im in inner:
+                        args = balanced(body, im.end() - 1)
+                        if not args:
+                            continue
+                        parts = split_top(args[1:-1])
+                        if kind == "site":
+                            k = slice_index(parts, slice_params)
+                            if k is None or k == 0 or parts[k] not in slice_params:
+                                continue
+                            conv, cap, closure, arms_of = classify(f, im.group(1), im.group(2), parts)
+                            t = parts[target_index(parts, k)]
+                        else:
+                            ti, k, conv, cap, closure, arms_of, wself = found[im.group(2)]
+                            if wself and not im.group(1):
+                                continue
+                            if k >= len(parts) or parts[k] not in slice_params:
+                                continue
+                            if isinstance(ti, tuple):
+                                got.add((ti, names.index(parts[k]), conv, cap, closure, arms_of, has_self))
+                                continue
+                            if ti >= len(parts):
+                                continue
+                            t = parts[ti]
+                        # the target: a parameter (through lets and rebase) or a constant
+                        expr = t.strip()
+                        local = body[:body.find(args) if args in body else len(body)]
+                        for _ in range(4):
+                            lets = list(re.finditer(rf"let {re.escape(expr)}\s*=\s*([^;]+);", local)) \
+                                if re.fullmatch(r"[a-z_]\w*", expr) else []
+                            if not lets:
+                                break
+                            expr = lets[-1].group(1).strip()
+                        mm = re.fullmatch(r"(?:[\w.]+\.)?rebase\((.*)\)", expr, re.S)
+                        if mm:
+                            expr = mm.group(1).strip()
+                        if expr in names:
+                            got.add((names.index(expr), names.index(parts[k]), conv, cap, closure, arms_of, has_self))
+                        else:
+                            a = resolve(expr, code, body_at + body.find(args))
+                            if a is not None:
+                                got.add(((a,), names.index(parts[k]), conv, cap, closure, arms_of, has_self))
+                if len(got) == 1:
+                    found[fname] = got.pop()
+                    grew = True
+            if not grew:
+                break
+        return found
+
+    code_file = [""]
     for f in sorted(repo.glob("crates/*/src/**/*.rs")):
         if "ffx-oracle" in f.parts:
             continue
         code = f.read_text(encoding="utf-8", errors="replace")
+        code_file[0] = code
         for m in sites.finditer(code):
             if code[max(0, m.start() - 3):m.start()] == "fn ":
                 continue
@@ -285,22 +454,14 @@ def check(repo, exe_path, sizes):
                         problems.append(f"{where}: {name} gives {intr} {shape} x87 operand(s); it takes {want}")
                 continue
             # word calls: find the slice and the target before it
-            conv = "cdecl"
-            if name in ("scene_call", "this_call", "call_virtual") or any("Conv::Thiscall" in p for p in parts):
-                conv = "thiscall"
-            elif any("Conv::Stdcall" in p for p in parts):
-                conv = "stdcall"
-            elif any("Conv::Fastcall" in p for p in parts):
-                conv = "fastcall"
             if name == "call_virtual":
                 continue
-            k = next((i for i, p in enumerate(parts) if re.fullmatch(r"&\[.*\]|&\w+", p, re.S)), None)
+            conv, cap, closure, arms_of = classify(f, full, name, parts)
+            k = slice_index(parts)
             if k is None or k == 0:
                 continue
             count = slice_words(parts[k], code, m.start())
-            tgt_i = k - 1
-            while tgt_i >= 0 and parts[tgt_i].startswith("Conv::"):
-                tgt_i -= 1
+            tgt_i = target_index(parts, k)
             if name == "sfx_call" and k >= 3:
                 tgt_i, conv = k - 1, "thiscall"
             if name == "this_call" and k >= 3:
@@ -308,37 +469,25 @@ def check(repo, exe_path, sizes):
             a = resolve(parts[tgt_i], code, m.start()) if tgt_i >= 0 else None
             if count is None or a is None:
                 continue
-            cap = None
-            method = "." in full.replace("(c.", "")
-            has_conv = any(p.startswith("Conv::") for p in parts)
-            # `(self.call)(..)`: a closure field, whose helper the call site
-            # doesn't name; only the callee side is checked
-            closure = full.endswith(")") and "(c." not in full
-            if closure:
-                pass
-            elif method and name in ("call", "call_sym", "call_st0", "call_sym_st0"):
-                cap = 8 if has_conv else 6
-            elif name in ("call_cdecl", "call_ptr", "call"):
-                cap = 8 if f.name == "loadsave.rs" else 12
-            elif name == "st0_cdecl" or (name == "fcall" and "ffx-chara" in f.parts):
-                if count not in arm_sets["st0_cdecl"]:
-                    problems.append(f"{where}: {name} passes {count} words; st0_cdecl takes {sorted(arm_sets['st0_cdecl'])}")
-            elif name == "fcall" and "ffx-system" in f.parts:
-                if count not in arm_sets["system_fcall"]:
-                    problems.append(f"{where}: fcall passes {count} words; system.rs fcall takes {sorted(arm_sets['system_fcall'])}")
-            elif name == "call_n":
-                cap = 12
-            elif name == "call_float" and "ffx-script" in f.parts:
-                cap = 6
-            if cap is not None and count > cap:
-                problems.append(f"{where}: {name} passes {count} words; its helper passes at most {cap}")
-            reads, pops, forwards = exe.facts(a)
-            checked += 1
-            stack = count - (2 if conv == "fastcall" else 0)
-            if conv != "cdecl" and pops is not None and pops != 4 * max(stack, 0):
-                problems.append(f"{where}: {name} passes {stack} stack words ({conv}) to 0x{a:08x}, whose ret pops {pops // 4}")
-            elif conv == "cdecl" and pops and pops != 0:
-                problems.append(f"{where}: {name} calls 0x{a:08x} as cdecl, but it pops {pops // 4} words itself")
-            elif conv == "cdecl" and reads is not None and not forwards and stack < reads and a not in INHERITED:
-                problems.append(f"{where}: {name} passes {stack} words to 0x{a:08x}, which reads {reads}")
+            checked += word_call(where, name, conv, cap, arms_of, count, a)
+        # calls through the file's own wrappers (any name), checked as the
+        # call each forwards to
+        for wname, (ti, k, conv, cap, closure, arms_of, wself) in wrappers(code, f).items():
+            for m in re.finditer(rf"(?<![\w:])((?:[\w]+\.)*)({wname})\(", code):
+                if code[max(0, m.start() - 3):m.start()] == "fn " or (wself and not m.group(1)):
+                    continue
+                args = balanced(code, m.end() - 1)
+                parts = split_top(args[1:-1]) if args else []
+                if k >= len(parts):
+                    continue
+                count = slice_words(parts[k], code, m.start())
+                if isinstance(ti, tuple):
+                    a = ti[0]
+                else:
+                    a = resolve(parts[ti], code, m.start()) if ti < len(parts) else None
+                if count is None or a is None:
+                    continue
+                where = f"{f.relative_to(repo)}:{code[:m.start()].count(chr(10)) + 1}"
+                checked += word_call(where, wname, conv, cap, arms_of, count, a)
+                wrapped_sites.append(where)
     return problems, checked

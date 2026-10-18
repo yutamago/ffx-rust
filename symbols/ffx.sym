@@ -1386,6 +1386,7 @@
 0x0061a110 function ReturnMinus1_0061a110 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x0061a2a0 function Phyre_PScripting_PClassCallableMethodScript_PCallerScript_vcall # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Unable to copy argument %d from varargs list to context\\n'; Switch 0x71001a1f10 Phyre::PScripting::PClassCallableMethodScript::PCallerScript::vcall (symbols from Fahrenheit's server export)
 0x0061a730 function PWorldMatrixController_setVftable # thiscall(this): *this = Phyre_PWorldMatrixController_vftable (callers 0x005d6d10, 0x005d6d20); eax untouched; name ours
+0x0061a7f0 function Vec3At24_0061a7f0          # thiscall(out), ret 4 -> out: the three floats at this+0x24 to out (fld/fstp); no direct caller; ported (system round 33); name ours
 0x0061a810 function IdentityAt34_0061a810 # thiscall(this): the 4x4 at +0x34 set to the identity (fld1/fldz stores); no direct caller; name ours; ported (system round 32)
 0x0061a860 function VFile_VFile               # fh v3:exact 0x0061aa20 VFile::VFile
 0x0061a960 function VFile_dtor_VFile          # fh v3:exact 0x0061ab20 VFile::~VFile
@@ -4243,12 +4244,16 @@
 0x0076c320 function CDfileSize_CD             # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; was Cd_FileSize
 0x0076c410 function CDfileSize_CD_EX          # fh v3:exact 0x0076c520
 0x0076c440 function cd_file_size_bytes # cdecl(n): (sectors to the next entry * 0x100 - top byte) * 8 for entry n + g_CdLib+0x20, 0 when absent (bit 23); caller Cd_QueueRead; name ours
+0x0076c510 function CdSetModule_0076c510         # cdecl(m) -> first file or -1: movie_err("sa_file_read_init!=0", libmscd.c, 0x594) before sa_file_read_init; g_CdLib_FileBase = i16 [0x02310c6c][m] (0 when negative), 0x02310c64 = m; ported (system round 33); name ours
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
+0x0076ce20 function CdQueueSector_0076ce20       # (sector) -> CdQueueSectorRead_0076ce40(sector, 0, 0); g_CdLib slot +0x8c (CdEnvInit, _DAT_02310ccc); ported (system round 33); name ours
+0x0076ce40 function CdQueueSectorRead_0076ce40   # (sector, a, b) -> id: the first free g_CdChannels request (+0x31 busy): +0x1c sector, +0x28 a, +8 b, +0x30/+0x31 set, the rest zeroed, +0x24 the next g_CdReadId (1 past 0xffff); all 64 busy: movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x96d) and request 64 written anyway; Ghidra's void is wrong (eax is the id); ported (system round 33); name ours
 0x0076cfa0 function CdSetC40e19_0076cfa0 # cdecl(n): byte 0x00c40e19 = (n != 1); caller CdEnvInit; name ours
 0x0076cfc0 function SetGlobal_01128ac4 # cdecl(v): *0x01128ac4 = v, returns v; caller 0x0088e880; name ours
 0x0076cfd0 function FileReadMain              # fh v3:bsim1.00 0x0076d0f0
 0x0076d0d0 function GetCD                     # fh v3:bsim1.00 0x0076d1e0
 0x0076d0e0 function cd_channel_state_0076d0e0 # cdecl(file, archive) -> 0/1/2: first of the 64 g_CdChannels in use (+0x31) with file +0x28 and archive +8: 2 when g_CdLib+0x70 is set and +0x74 is its index, else 1; 0 for none; no direct caller; name ours; ported (system round 31)
+0x0076d140 function CdReadDirect_0076d140       # (sector, size, buffer, mode) -> sceCdRead(sector, size / 2048, buffer, mode) after hdd_state_clear and FlushCache(0); keeps the read at 0x01128acc, clears 0x01128a87/0x01128ab0, "not 64byte align" warning, "sceCdRead()" with g_FFXHddMode; CdEnvInit 0x0076c560 reads the sector table with it; ported (system round 33); name ours
 0x0076d200 function Sa_CdRead_task               # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'sceCdBreak() %d\\n'; Switch 0x710031eaa0 Sa_CdRead_task (symbols from Fahrenheit's server export)
 0x0076d440 function cd_decode_data               # layout+callees: sorts between Sa_CdRead_task and cd_file_sector, and its named callees match the Switch 0x710031eec0 cd_decode_data's (similarity 1.00: sa_decode, sa_meth01dec2_ex, sa_meth01dec_ex); symbols from Fahrenheit's server export; cdecl(req) -> eax: req +4 data, +0x2c size, unpacked size = unaligned u32 at data+1; <= 0x1800: memcpy to [0x01128ac8], sa_decode(data, buf); else last 0x1800 bytes to the buffer, head (size-0x1800) moved up byte-wise to end at data+unpacked, method byte 1/2 -> sa_meth01dec_ex/2_ex(block, data, n, buf), other: eax = byte-2; ported (system round 31)
 0x0076d510 function cd_file_sector            # fh v3:exact 0x0076d620
@@ -9835,7 +9840,7 @@
 0x00892870 function TOBtlDrawCaptureMonsterMessageWindow # fh call.cs cdecl
 0x008928b0 function TOBtlDrawChangeSeqAnm0    # fh v3:exact 0x00892820
 0x00892910 function TOBtlDrawCrossLimitGauge  # fh v3:exact 0x00892880
-0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20
+0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20; (chr, x, y): battle HP/MP plate: frame, TOBtlDrawCrossLimitGauge(chr, x, y, w, h) (five words; Ghidra shows two), HP/MP labels 0xe9/0xea, ToMakeBtlEasyEdgeDigitRight (six words) with the HP colour from MsCalcWeakLevel; ported (system round 33, chr_plate.rs)
 0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200
 0x008933c0 function TOBtlDrawEnemyLimit       # fh v3:exact 0x00893330
 0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl
@@ -10153,7 +10158,7 @@
 0x008adf80 function TOSeqClearScene_008adf80 # cdecl(i) -> i << 8: all 8 slots of scene i: state (u16) and name byte 0; name ours
 0x008ae000 function TOSeqHasScene_008ae000 # cdecl(i, name): 1 when one of scene i's 8 slots (0x01865f28 + i*0x100) is named name; name ours
 0x008ae070 function TOSeqCheckTermScene       # fh v3:exact 0x008ae020
-0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0
+0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0; (i): steps scene i's eight sequence slots (1 start, 2 wait for +4 or TkMenuIsTermScene, 4 stop) and packs the used ones first; ported (system round 33)
 0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0; cdecl(i, a, b) -> eax: each of the 8 g_TOSeqSlots of scene i in state 2 or 3 runs TOMenuExecLayerHandle(i, a, slot +0x1c, b); eax is the last slot's call result or its state; ported (system round 30)
 0x008ae340 function TOSeqDrawLayer            # fh switch:bsim1.00 0x71004fcea0; cdecl(i, a) -> TOSeqDraw(i, a, 0); ported (system round 32)
 0x008ae360 function TOSeqGetColor             # fh v3:exact 0x008ae310
@@ -10276,6 +10281,7 @@
 0x008b7fd0 function TOGetTableKind2Data_008b7fd0 # cdecl(i): entry i of 0x01868a90 + 0x18 when its byte 1 is 2, else 0; name ours
 0x008b7ff0 function TOGetTableKind2Byte7_008b7ff0 # cdecl(i): i8 byte 7 of entry i of 0x01868a90 when its byte 1 is 2, else -1; name ours
 0x008b8010 function TOMessageTableByte2_008b8010 # cdecl(i): i8 byte 2 of entry i of 0x01868a90 when message window i has +0x1e == 1 and the entry's kind (byte 1) >= 1, else -1; name ours
+0x008b8040 function TOGetTextWidth_008b8040      # cdecl(text) -> sum of the words TOGetFontWidthInterMode(p, 0, &w) writes while stepping p to the NUL (added as integers though w is an f32; &w is the argument slot); ported (system round 33); name ours
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b80b0 function TOCountMessageWords_008b80b0 # (window, text): words up to the first line code: glyphs 1, macros and 0x10 counters their TOGetChangeMacroWordCount, 0xb icons and 9 n>=0xc0 one; name ours
 0x008b8140 function TOCountMessageWordsAbove_008b8140 # cdecl(window, text, limit) -> words before the first byte <= limit (signed): as TOCountMessageWords_008b80b0 (glyphs 1, macros and 0x10 counters TOGetChangeMacroWordCount, 0xb and 9 n>=0xc0 one); name ours
@@ -10849,8 +10855,9 @@
 0x008df6d0 function TOInitMessageCallBack        # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ffb10 TOInitMessageCallBack's (similarity 1.00: TOGetMessageWindowMode); symbols from Fahrenheit's server export; cdecl(msg): row kind +8 of 0x00c5b1b0 (0x24 bytes): words 0-4 -> +0x100..+0x110, word 5 -> +0x12c (mode 1: 0x008dfea0), words 6/7 -> +0xf4/+0xf8
 0x008df7b0 function TORightingMessage            # layout+callees: sorts between TOInitMessageCallBack and TOScanDrawInfo, and its named callees match the Switch 0x7100501880 TORightingMessage's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008df7f0 function TOScanDrawInfo               # layout+callees: sorts between TOGetGroup and TOSetDrawInfo, and its named callees match the Switch 0x71004ff470 TOScanDrawInfo's (similarity 1.00: TOGetButtonIconWidth, TOGetMessageWH); symbols from Fahrenheit's server export
-0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0
+0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0; (code, window, pen): applies control codes 7, 9, 0xa, 0xb (button icon), 0xe to a message pen; ported (system round 33)
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
+0x008dfe20 function TOGetColonWidth_008dfe20     # cdecl(font) -> ftol2_sse(w) of TOGetFontWidthInterMode(":", font, &w), w from 0.0; ported (system round 33); name ours
 0x008dfe70 function MessageHold_008dfe70 # cdecl(w) -> 0: w+0x2c = 4 (u16), w+0x124 = itself; name ours
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
 0x008e01b0 function TOInitMessageWaitNamesp      # layout+callees: sorts between TODrawMovieMessageWaitNamesp and hardCodeToFixTheWrongData, and its named callees match the Switch 0x7100500c20 TOInitMessageWaitNamesp's (similarity 1.00: TOGetFFXVideoMode); symbols from Fahrenheit's server export
@@ -10944,6 +10951,8 @@
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
+0x008e9970 function TOAdpButtonIcon_008e9970     # (cursor, c, x, y) -> TOAdpButtonIconRGBA_008e99a0(cursor, c, x, y, 0x80 x4); ported (system round 33); name ours
+0x008e99a0 function TOAdpButtonIconRGBA_008e99a0 # (cursor, c, x, y, r, g, b, a) -> packet cursor: sets g_TOPktCursor, then button icon c as TOMkpShapeXYC2 shapes (d-pad @..O one per direction bit, digits c + 0x230 with 1/2 swapped by TOGetSystemConfirmButtonAssign, ` 0x270); ported (system round 33); name ours
 0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
@@ -12747,6 +12756,7 @@
 0x00a42a00 function pc_ReadWholeFile_00a42a00    # (path, &size) -> malloc'd contents (sceOpen, sceLseek size, user_malloc, sceRead), "file open err !!! <%s>" (read_debug.c); callers pc_sizetbl_set, pc_sizetbl_set_Ex, pc_module_sizetbl_set, pc_fat_index_filename_set; own name
 0x00a42b70 function PcFileTblSet              # fh v3:exact 0x00a42b70
 0x00a42ba0 function PcReadFunc_set            # fh v3:exact 0x00a42ba0
+0x00a42c00 function PcFileName_00a42c00         # (loc) -> 0x01a85c30 or 0: the PC name of CD name-table entry loc ($USER$ -> Sg_GetUserName2, set_read_chgname pairs, dbg_/200thunder_/full_ prefixes), "file name NULL !!!!!"; callers CDfileName_PC 0xa42830, 0xa42850 and the file-size readers; ported (cd.rs); name ours
 0x00a42f30 function clear_read_chgname        # fh v3:exact 0x00a42f30
 0x00a42fa0 function GetFullArenaLocalization # () -> u32 at 0x01a85ba8; name ours
 0x00a42fc0 function pc_fat_index_filename_set    # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'host0:/ffx/proj/battle/jp/cddata/cdrom.mdg'; Switch 0x71008588c0 pc_fat_index_filename_set (symbols from Fahrenheit's server export)
@@ -15514,6 +15524,7 @@
 0x01128aac label    g_Cd_DiskOpenCheck        # byte: disk_open_check_set; CdEnvInit clears it; the read loop 0x0076ccb0 reads it
 0x01128ab4 label    g_Cd_SectorBase           # added to every cdrom.mdg start sector (cd_file_sector); CdEnvInit: the disc's first sector less the table's own
 0x01128ab8 label    g_Cd_HddInstallCount      # hdd_install_check(g_Cd_HddInstall) (CdEnvInit); check_ex_file_size loops over that many
+0x01128acc label    g_CdDirectRead               # 4 words: sector, size, buffer, [mode] of the last CdReadDirect_0076d140; name ours
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
 0x0112a060 label g_BtlFieldModeB           # u32: 1 while 0x00c416c0 is 0xb and 0x0112a058 is 1 (0x00776110), else 0; MsBtlReadManage: 0 sets g_BtlStartReady after the party's models, 1 after the second models
@@ -16389,9 +16400,11 @@
 0x01940abc label g_BtlEffectSpecialScene   # u32: effect 0x84 by model 0x108f in scene 0x1e70000 (MsEffectRead)
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
+0x01a85ba4 label    g_Use200ThunderFile          # SetGlobal_01a85ba4 (BasicDebugTweakUtil_handleInput) sets it; PcFileName_00a42c00 then puts 200thunder_ before kami0400.ebp; name ours
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
+0x01a85c30 label    g_PcFileName                 # the name PcFileName_00a42c00 builds and returns; name ours
 0x01a860e0 label    g_AbmapNodeKinds             # the MsGetExcelData table AbmapFlagConnectedLinks looks node kinds up in (kind record +0x10 bit 0x8000 flags their links); name ours
 0x01a860fc label    g_AbmapMoveLimit             # the highest cost AbmapCalcMoveCost walks to (the cost's low 16 bits compared)
 0x01a86100 label    g_AbmapMoveStep              # the cost of the next step (1 when the link byte matches g_AbmapMoveMask, else 4)
@@ -16413,6 +16426,12 @@
 0x023056e8 label    g_GsRegisterSink          # the one word every PS2 GS register write of the texture-animation code lands in (loadImage and the TexAnim_* tag helpers)
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
 0x02305840 label    g_KeThTextureCount           # the Ke thing effects' texture count (InitVFXKeThRenderData clamps it to 20)
+0x02305848 label    g_KeThPointPosA              # updateVFXKeThSetPoint 0x7669c0: points 0-5's positions (xyz, 16-byte rows; setKeThPointColor 0x7665c0 fills these tables); name ours
+0x023058a8 label    g_KeThPointColourA           # updateVFXKeThSetPoint 0x7669c0: points 0-5's colours (four floats per row); name ours
+0x02305908 label    g_KeThPointPosC              # updateVFXKeThSetPoint 0x7669c0: positions of points 12 on (row i-12, 16 bytes); name ours
+0x0230a908 label    g_KeThPointColourC           # updateVFXKeThSetPoint 0x7669c0: colours of points 12 on (row i-12; setKeThPointColor 0x7665c0 writes them as byte / 256); name ours
+0x0230f908 label    g_KeThPointPosB              # updateVFXKeThSetPoint 0x7669c0: points 6-11's positions (row i-6); name ours
+0x0230f968 label    g_KeThPointColourB           # updateVFXKeThSetPoint 0x7669c0: points 6-11's colours (row i-6); name ours
 0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
 0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
 0x0230fc60 label    g_pppDttVertexMatrix      # ours: 16 floats KeDttSpr_MkGifPk takes its vertices through (after scaling them back by 1/Q), next to g_pppFillMatrix

@@ -257,6 +257,13 @@ REVIEWED = {
     0x00703910: ("glue", "calls a function pointer by argument count (system round 32)"),
     0x006412b0: ("glue", "forwards to MapPart_LangOverride on [0x00ccc81c] (system round 32)"),
     0x00784ac0: ("debug", "MsDebugFullMember: only under the debug menu toggle 0x0112a905 (battle round 21)"),
+    0x0069af70: ("glue", "MSVC std::_Tree::erase(first, last) (system round 33)"),
+    0x008e89d0: ("glue", "SetWakkalimitMagicFileTexturesUnloaded: forwards to graphicMenuSetTextureUnloadedInMaterial (system round 33)"),
+    0x0061b3c0: ("platform", "ATL string-resource lookup (LoadResource/LockResource) (system round 33)"),
+    0x0067a9f0: ("platform", "EternalCalm file size via sceOpen, stderr print (system round 33)"),
+    0x008ad840: ("platform", "TOInitEventFontPath: PS3Data path mapping via fiosUnifyFilename (system round 33)"),
+    0x0067a960: ("platform", "iSyncInitialize: operator new of the PC SyncManager (system round 33)"),
+    0x00687070: ("debug", "StackWalker crash-report formatter (system round 33)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

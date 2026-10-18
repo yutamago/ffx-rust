@@ -18047,3 +18047,1009 @@ fn round32_more_matches_the_original_on_the_snapshot() {
     };
     round32_more(&mut a, &mut b, &mut Xorshift(0x4032_0052));
 }
+
+/// Round 33 group A: `updateVFXKeThSetPoint` and the two cluster fixup
+/// unpackers.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn round33_keth_and_clusters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    // no signalling NaNs (the oracle keeps them signalling through fld)
+    let quiet = |rng: &mut Xorshift| loop {
+        let f = rng.float();
+        if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+            return f.to_bits();
+        }
+    };
+    if synthetic {
+        for (pos, col) in render::bridge::KETH_POINT_TABLES {
+            for k in 0..0x30 * 4 {
+                let w = quiet(rng);
+                put(a, b, a.rebase(pos) - 0x40 + 4 * k, w);
+                let w = quiet(rng);
+                put(a, b, a.rebase(col) - 0x40 + 4 * k, w);
+            }
+        }
+    }
+    let mesh = alloc(a, b, 0x40);
+    let pos = alloc(a, b, 0x400);
+    let col = alloc(a, b, 0x400);
+    let col2 = alloc(a, b, 0x400);
+    for k in 0..400u32 {
+        let i = (rng.next() % 44) as i32 - 3;
+        put(a, b, mesh + 0xc, pos + 0x40);
+        put(a, b, mesh + 0x14, col + 0x40);
+        let mut m = mesh;
+        if k % 8 == 7 && i >= 0 {
+            // a position store lands on [mesh + 0x14]: the colour base is
+            // read after it
+            let word = rng.next() % 3;
+            m = pos + 0x40 + 12 * i.cast_unsigned() + 4 * word - 0x14;
+            put(a, b, m + 0xc, pos + 0x40);
+            put(a, b, m + 0x14, col + 0x40);
+            let (table, row) = match i {
+                ..6 => (0, i),
+                6..12 => (1, i - 6),
+                _ => (2, i - 12),
+            };
+            let src =
+                a.rebase(render::bridge::KETH_POINT_TABLES[table].0) + 16 * row.cast_unsigned();
+            put(a, b, src + 4 * word, col2 + 0x40);
+        }
+        assert_eq!(
+            eax(a, 0x0076_69c0, &[m, i.cast_unsigned()]),
+            render::bridge::keth_set_point(b, m, i),
+            "keth point {k} ({i})"
+        );
+        same_memory(&format!("keth point {k} ({i})"), a, b);
+    }
+    // the unpackers over logging stand-ins
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0, &copy_logger(cursor, 0xa340, 4, &[]));
+    redirect(a, b, fixup::bridge::UNPACK_ARRAY_LIST, s);
+    let s = stand_in8(a, b, 0x80, &copy_logger(cursor, 0xa750, 4, &[]));
+    redirect(a, b, fixup::bridge::UNPACK_LIST, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let out = alloc(a, b, 8);
+    let lists = alloc(a, b, 8);
+    let headers = alloc(a, b, 0x24 * 8);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        let n = (rng.next() % 7) | [0, 0x8000_0000][(rng.next() % 2) as usize];
+        put(a, b, lists, n);
+        put(a, b, lists + 4, headers);
+        put(a, b, out + 4, rng.next());
+        for w in 0..0x24 * 2 {
+            put(a, b, headers + 4 * w, rng.next());
+        }
+        let c = rng.next();
+        if k % 2 == 0 {
+            let flag = [0u32, 1, 0x100, 0xffff_ff00, rng.next()][(rng.next() % 5) as usize];
+            assert_eq!(
+                eax(a, 0x0060_dac0, &[out, c, lists, flag]),
+                fixup::bridge::unpack_array_fixups(b, out, c, lists, flag, call),
+                "array fixups {k}"
+            );
+        } else {
+            assert_eq!(
+                eax(a, 0x0060_db20, &[out, c, lists]),
+                fixup::bridge::unpack_pointer_fixups(b, out, c, lists, call),
+                "pointer fixups {k}"
+            );
+        }
+        same_memory(&format!("cluster fixups {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_keth_and_clusters_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_keth_and_clusters(&mut a, &mut b, &mut Xorshift(0x4033_0011), true);
+}
+
+#[test]
+fn round33_keth_and_clusters_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_keth_and_clusters(&mut a, &mut b, &mut Xorshift(0x4033_0012), false);
+}
+
+/// Round 33 group B: `PcFileName_00a42c00` over stand-ins for
+/// `Sg_GetUserName2`, `ReturnGlobalSx8_006bc960` and `dbgPrintf`. No
+/// empty substitution pattern: one makes the original loop forever (it
+/// matches without advancing), and it is the only way to reach the
+/// scan's "at the NUL" branch. Heads stay under the original's 256-byte
+/// local.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round33_pc_file_name(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, real_table: bool) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    // the format only: the "file name NULL" print passes no second word
+    let s = stand_in8(a, b, 0x200, &copy_logger(cursor, 0xf500, 1, &[]));
+    redirect(a, b, cd::bridge::DBG_PRINTF, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x280,
+        &copy_logger(cursor, 0x0620, 0, &ret_cell(cells)),
+    );
+    redirect(a, b, cd::bridge::SG_GET_USER_NAME2, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x300,
+        &copy_logger(cursor, 0xc960, 0, &ret_cell(cells + 4)),
+    );
+    redirect(a, b, cd::bridge::RETURN_GLOBAL_SX8, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cd_table = cd::bridge::get_cd(a) + 0x30;
+    let strings = alloc(a, b, 0x400);
+    let text = |a: &mut Oracle, b: &mut Oracle, at: &mut u32, s: &[u8]| {
+        let p = *at;
+        a.write(p, s).unwrap();
+        b.write(p, s).unwrap();
+        put(a, b, p + s.len() as u32, 0u8);
+        *at += s.len() as u32 + 1;
+        p
+    };
+    let mut at = strings;
+    let users = [
+        text(a, b, &mut at, b"tidus"),
+        text(a, b, &mut at, b""),
+        text(a, b, &mut at, b"x"),
+    ];
+    let pattern_texts: [&[u8]; 6] = [b"ab", b"c", b"nagi", b"$USE", b"bc", b"0000"];
+    let patterns: Vec<u32> = pattern_texts
+        .iter()
+        .map(|s| text(a, b, &mut at, s))
+        .collect();
+    let replacement_texts: [&[u8]; 4] = [b"Q", b"", b"long_", b"ab"];
+    let replacements: Vec<u32> = replacement_texts
+        .iter()
+        .map(|s| text(a, b, &mut at, s))
+        .collect();
+    let pieces: [&[u8]; 12] = [
+        b"ab",
+        b"c",
+        b"$USER$",
+        b"$USE",
+        b"$USER",
+        b"/x/",
+        b"nagi0000.ebp",
+        b"kami0400.ebp",
+        b"nagi0700.ebp",
+        b"bc",
+        b"0000",
+        b"nagi",
+    ];
+    let set_flags = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [0, users[0], users[1], users[2]][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            [0u32, 1, 0xffff_ff80][(rng.next() % 3) as usize],
+        );
+        set(a, b, cd::bridge::THUNDER_200, rng.next() % 2);
+        set(a, b, cd::bridge::FULL_ARENA_LOCALIZATION, rng.next() % 2);
+        for t in 0..16 {
+            let p = if rng.next().is_multiple_of(3) {
+                (
+                    patterns[(rng.next() % 6) as usize],
+                    replacements[(rng.next() % 4) as usize],
+                )
+            } else {
+                (0, rng.next())
+            };
+            put(a, b, cd::bridge::CHGNAME_FROM.ptr(a).addr + 4 * t, p.0);
+            put(a, b, cd::bridge::CHGNAME_TO.ptr(a).addr + 4 * t, p.1);
+        }
+    };
+    if real_table {
+        // the snapshot's own table, with and without substitutions
+        let table: u32 = Mem::read(a, cd_table);
+        let count: i32 = if table == 0 { 0 } else { Mem::read(a, table) };
+        for k in 0..count.clamp(0, 400) {
+            set_flags(a, b, rng);
+            if k % 2 == 0 {
+                for t in 0..16 {
+                    put(a, b, cd::bridge::CHGNAME_FROM.ptr(a).addr + 4 * t, 0u32);
+                }
+            }
+            assert_eq!(
+                eax(a, 0x00a4_2c00, &[k.cast_unsigned()]),
+                cd::bridge::pc_file_name(b, k, call),
+                "real name {k}"
+            );
+            same_memory(&format!("real name {k}"), a, b);
+        }
+    }
+    let table = alloc(a, b, 0x800) + 0x20;
+    for k in 0..600u32 {
+        set_flags(a, b, rng);
+        let n = rng.next() % 6 + 1;
+        put(a, b, table, n);
+        let mut off = 4 * (n + 3);
+        let mut at = table + off;
+        for e in 0..=n {
+            put(a, b, table + 4 + 4 * e, off);
+            if e == n {
+                break;
+            }
+            // the byte before an entry: 0 or not
+            put(a, b, at - 1, (rng.next() % 2) as u8 * b'z');
+            let mut name = Vec::new();
+            for _ in 0..rng.next() % 6 {
+                name.extend_from_slice(pieces[(rng.next() % 12) as usize]);
+            }
+            name.push(0);
+            a.write(at, &name).unwrap();
+            b.write(at, &name).unwrap();
+            at += name.len() as u32 + 1;
+            off += name.len() as u32 + 1;
+        }
+        let mut loc: i32 = (rng.next() % (n + 3)).cast_signed() - 1;
+        match k % 20 {
+            // an empty entry and a reversed one
+            3 => put(a, b, table + 8, Mem::read::<u32>(a, table + 4)),
+            4 => put(a, b, table + 8, Mem::read::<u32>(a, table + 4) - 1),
+            // an entry at address 0
+            5 => put(a, b, table + 4, table.wrapping_neg()),
+            // no table
+            6 => put(a, b, cd_table, 0u32),
+            _ => put(a, b, cd_table, table),
+        }
+        if (3..=5).contains(&(k % 20)) {
+            loc = 0;
+            put(a, b, cd_table, table);
+        }
+        assert_eq!(
+            eax(a, 0x00a4_2c00, &[loc.cast_unsigned()]),
+            cd::bridge::pc_file_name(b, loc, call),
+            "file name {k} ({loc})"
+        );
+        same_memory(&format!("file name {k} ({loc})"), a, b);
+    }
+}
+
+#[test]
+fn round33_pc_file_name_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_pc_file_name(&mut a, &mut b, &mut Xorshift(0x4033_0021), false);
+}
+
+#[test]
+fn round33_pc_file_name_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_pc_file_name(&mut a, &mut b, &mut Xorshift(0x4033_0022), true);
+}
+
+/// Round 33 group C: `TOSeqCtrl` (the scene stand-ins log their arguments;
+/// `TkMenuStartScene`'s also bumps slot 0's handle, so a handle read once
+/// shows in the next call's arguments) and the button icons over a
+/// logging `TOMkpShapeXYC2`.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round33_seq_ctrl_and_icons(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let slots = scene::bridge::SLOTS.ptr(a).addr;
+    for k in 0..400u32 {
+        let i = rng.next() % 3;
+        let base = slots + 0x100 * i;
+        let mut bump = vec![0xff, 0x05];
+        bump.extend_from_slice(&(base + 0x1c).to_le_bytes());
+        bump.extend(ret_cell(cells));
+        let s = stand_in8(a, b, 0x400, &copy_logger(cursor, 0xc880, 2, &bump));
+        redirect(a, b, scene::bridge::TK_MENU_START_SCENE, s);
+        let s = stand_in8(
+            a,
+            b,
+            0x480,
+            &copy_logger(cursor, 0xbb90, 2, &ret_cell(cells + 4)),
+        );
+        redirect(a, b, scene::bridge::TK_MENU_IS_TERM_SCENE, s);
+        let s = stand_in8(
+            a,
+            b,
+            0x500,
+            &copy_logger(cursor, 0xc8a0, 2, &ret_cell(cells + 8)),
+        );
+        redirect(a, b, scene::bridge::TK_MENU_STOP_SCENE, s);
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        put(
+            a,
+            b,
+            cells + 4,
+            [0, 0, 1, rng.next()][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 8, rng.next());
+        for j in 0..8 {
+            let at = base + 0x20 * j;
+            let words: [u32; 8] = std::array::from_fn(|_| rng.next());
+            put(a, b, at, words);
+            let state = [0u16, 0, 1, 2, 3, 4, 5, 0xffff, 0x0101][(rng.next() % 9) as usize];
+            put(a, b, at, state);
+            put(
+                a,
+                b,
+                at + 4,
+                [0u16, 1, 1, 2, 0x0101][(rng.next() % 5) as usize],
+            );
+            put(a, b, at + 6, (rng.next() % 2) as u16);
+        }
+        eax(a, 0x008a_e0f0, &[i]);
+        scene::bridge::seq_ctrl(b, i.cast_signed(), call);
+        same_memory(&format!("seq ctrl {k}"), a, b);
+    }
+    // the button icons
+    let s = stand_in8(a, b, 0x580, &copy_logger(cursor, 0x3a50, 5, &[]));
+    redirect(a, b, tolib::bridge::SHAPE_XY_C2, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x600,
+        &copy_logger(cursor, 0xcf30, 0, &ret_cell(cells + 0xc)),
+    );
+    redirect(a, b, 0x008a_cf30, s);
+    let cursor_global = ffx_system::pkt::bridge::PACKET_CURSOR;
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [0u32, 1, 1, 2, u32::MAX][(rng.next() % 5) as usize],
+        );
+        set(a, b, cursor_global, rng.next());
+        let c = match rng.next() % 4 {
+            0 => 0x40 + rng.next() % 16,
+            1 => 0x30 + rng.next() % 10,
+            2 => [
+                0x60,
+                0x2f,
+                0x3a,
+                0x3f,
+                0x50,
+                0x5f,
+                0x61,
+                0x20,
+                0x140,
+                0xffff_ff40,
+            ][(rng.next() % 10) as usize],
+            _ => [0x31, 0x32][(rng.next() % 2) as usize],
+        };
+        if k % 2 == 0 {
+            let args = [
+                rng.next(),
+                c,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            assert_eq!(
+                eax(a, 0x008e_99a0, &args),
+                tolib::bridge::button_icon_rgba(b, args, call),
+                "icon rgba {k} ({c:#x})"
+            );
+        } else {
+            let args = [rng.next(), c, rng.next(), rng.next()];
+            assert_eq!(
+                eax(a, 0x008e_9970, &args),
+                tolib::bridge::button_icon(b, args, call),
+                "icon {k} ({c:#x})"
+            );
+        }
+        same_memory(&format!("icon {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_seq_ctrl_and_icons_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_seq_ctrl_and_icons(&mut a, &mut b, &mut Xorshift(0x4033_0031));
+}
+
+#[test]
+fn round33_seq_ctrl_and_icons_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_seq_ctrl_and_icons(&mut a, &mut b, &mut Xorshift(0x4033_0032));
+}
+
+/// Round 33 group D: `TOBtlDrawCrossParamPlate` over the original remaps,
+/// with logging stand-ins for the shapes, the gauge, the battle getters,
+/// the weak level and the numbers.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn round33_cross_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0090_3bb0, all(9), vec![], ret_cell(cells)),
+        (0x0089_2910, all(5), vec![], ret_cell(cells + 4)),
+        (0x008a_c2f0, vec![], vec![], ret_cell(cells + 8)),
+        (0x0079_add0, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x0079_adf0, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x0079_ae50, all(1), vec![], ret_cell(cells + 0x14)),
+        (0x0078_bf00, all(2), vec![], ret_cell(cells + 0x18)),
+        (0x0090_5890, all(6), vec![], ret_cell(cells + 0x1c)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for j in 0..8 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            cells + 8,
+            [0xbu32, 0xb, 0, 1, 9][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x18,
+            [0u32, 1, 2, 3, 4, u32::MAX][(rng.next() % 6) as usize],
+        );
+        let chr = rng.next() % 8;
+        // the wide layout's `+ 0.0` changes nothing here: `ry(2) + y`
+        // is never -0 (`a + -a` rounds to +0)
+        let (x, y) = match k % 10 {
+            0 | 1 => (f32::from_bits(rng.next()), f32::from_bits(rng.next())),
+            2 => (1.0e9, -1.0e-9),
+            _ => (
+                (rng.next() % 8000) as f32 / 7.0 - 100.0,
+                (rng.next() % 6000) as f32 / 3.0 - 50.0,
+            ),
+        };
+        // no signalling NaNs
+        let quiet = |f: f32| if f.is_nan() { f32::NAN } else { f };
+        let (x, y) = (quiet(x).to_bits(), quiet(y).to_bits());
+        assert_eq!(
+            eax(a, 0x0089_2cb0, &[chr, x, y]),
+            chr_plate::bridge::draw_cross_param_plate(b, [chr, x, y], remap, call),
+            "cross plate {k}"
+        );
+        same_memory(&format!("cross plate {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_cross_plate_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_cross_plate(&mut a, &mut b, &mut Xorshift(0x4033_0041));
+}
+
+#[test]
+fn round33_cross_plate_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_cross_plate(&mut a, &mut b, &mut Xorshift(0x4033_0042));
+}
+
+/// Round 33 group E: `TOSetDrawInfo` over logging stand-ins (the message
+/// size writes a test width; `AdjustButtonIconY` and the icon width
+/// return test floats in ST0; `TOGetFFXLang` returns its cell and then
+/// bumps it, so 10 then 11 reaches the language-11 move). The message
+/// size writes its width only while `cells + 0x18` is set, and the icon
+/// drawer changes the icon mode (`cells + 0x14`), which the original reads
+/// again for the pen step.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round33_set_draw_info(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, t::SET_DRAW_INFO_SCRATCH as usize);
+    let pen = alloc(a, b, 0x20);
+    // cmp dword [cells + 0x18], 0; je over the store
+    let mut message_wh = vec![0x83, 0x3d];
+    message_wh.extend_from_slice(&(cells + 0x18).to_le_bytes());
+    message_wh.extend_from_slice(&[0x00, 0x74, 0x0b]);
+    message_wh.extend(store_through(2, cells));
+    // mov al, [cells + 0x14]; mov [pen + 0x1a], al
+    let mut draw_icon = vec![0xa0];
+    draw_icon.extend_from_slice(&(cells + 0x14).to_le_bytes());
+    draw_icon.push(0xa2);
+    draw_icon.extend_from_slice(&(pen + 0x1a).to_le_bytes());
+
+    let fld = |cell: u32| {
+        let mut v = vec![0xd9, 0x05];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v
+    };
+    let mut lang = ret_cell(cells + 0xc);
+    lang.extend_from_slice(&[0xff, 0x05]);
+    lang.extend_from_slice(&(cells + 0xc).to_le_bytes());
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008b_9650, vec![0, 1, 4, 5], vec![], message_wh),
+        (0x008d_f520, all(3), vec![], vec![]),
+        (0x008b_1350, all(2), vec![], vec![]),
+        (0x008b_1330, vec![], vec![], vec![]),
+        (0x008e_5280, all(5), vec![], fld(cells + 4)),
+        (0x008f_8ee0, all(8), vec![], draw_icon),
+        (0x008f_a800, all(2), vec![], fld(cells + 8)),
+        (0x008a_c2f0, vec![], vec![], lang),
+        (0x0064_1060, vec![], vec![], ret_cell(cells + 0x10)),
+        (0x0064_2ec0, all(2), vec![], vec![]),
+        (0x0064_2c60, vec![], vec![], vec![]),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let small = |rng: &mut Xorshift| (rng.next() % 4000) as f32 / 8.0 - 100.0;
+    let code = alloc(a, b, 0x10);
+    let window = alloc(a, b, 0x100);
+    let map = a.rebase(0x012f_bc40);
+    let args = [
+        0u8, 1, b'0', b'1', b'2', b'3', b'4', b'5', b'7', b'8', b'9', b'@', b'A', b'B', 0x3f, 0x40,
+        0x41, 0x7f, 0xbf, 0xc0, 0xc5, 0xdf, 0xe0, 0xe7, 0xef, 0xf0, 0xff, 0x0f, 0x10, 0x21, 0x5a,
+    ];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        let kind = [
+            7u8, 8, 9, 0xa, 0xb, 0xb, 0xb, 0xc, 0xd, 0xe, 0, 6, 0xf, 0xff,
+        ][(rng.next() % 14) as usize];
+        let n = args[(rng.next() as usize) % args.len()];
+        put(a, b, code, [kind, n, b'x', 0]);
+        for w in 0..0x40 {
+            put(a, b, window + 4 * w, rng.next());
+        }
+        for (off, v) in [(0x48, small(rng)), (0x50, small(rng))] {
+            put(a, b, window + off, v);
+        }
+        put(a, b, window + 0x24, [0u16, 0, 1][(rng.next() % 3) as usize]);
+        put(
+            a,
+            b,
+            window + 0xac,
+            [0u32, 0, 1, rng.next()][(rng.next() % 4) as usize],
+        );
+        let shown = (rng.next() % 5).cast_signed() - 1;
+        put(a, b, window + 0xa0, shown);
+        put(
+            a,
+            b,
+            window + 0xa8,
+            shown + (rng.next() % 3).cast_signed() - 1,
+        );
+        for w in 0..8 {
+            put(a, b, pen + 4 * w, rng.next());
+        }
+        put(a, b, pen + 4, small(rng));
+        put(a, b, pen + 8, small(rng));
+        put(
+            a,
+            b,
+            pen + 0x1a,
+            [0u8, 1, 2, 3, 4, 0xff][(rng.next() % 6) as usize],
+        );
+        put(a, b, cells, small(rng));
+        put(a, b, cells + 4, small(rng) / 16.0);
+        put(a, b, cells + 8, small(rng) / 2.0);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [8u32, 9, 10, 0, 0xb][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x10,
+            [0u32, 1, 1, 2][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x14,
+            [0u8, 1, 3, 2][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 0x18, rng.next() % 3);
+        put(
+            a,
+            b,
+            map,
+            [0xb8u32, 0xb8, 0, 0xb7][(rng.next() % 4) as usize],
+        );
+        put(a, b, scratch, [0u32, 0]);
+        let r = [code, window, pen];
+        eax(a, 0x008d_f8f0, &r);
+        t::set_draw_info(b, r, scratch, call, fcall);
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("set draw info {k} ({kind:#x} {n:#x})"), a, b);
+    }
+}
+
+#[test]
+fn round33_set_draw_info_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_set_draw_info(&mut a, &mut b, &mut Xorshift(0x4033_0051));
+}
+
+#[test]
+fn round33_set_draw_info_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_set_draw_info(&mut a, &mut b, &mut Xorshift(0x4033_0052));
+}
+
+/// Round 33 group F: the CD read queue's sector request
+/// (`0x0076ce40`/`0x0076ce20`) and the direct read (`0x0076d140`) over
+/// logging stand-ins for `movie_err`, `dbgPrintf`, `FlushCache` and
+/// `sceCdRead`.
+fn round33_cd_queue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use cd::bridge as c;
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let stands: Vec<Stand> = vec![
+        (c::MOVIE_ERR, vec![0, 1, 2], vec![], vec![]),
+        (c::DBG_PRINTF, vec![0], vec![], vec![]),
+        (c::FLUSH_CACHE, vec![0], vec![], vec![]),
+        (c::SCE_CD_READ, vec![0, 1, 2, 3], vec![], ret_cell(cells)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let channels = a.rebase(c::CD_CHANNELS);
+    // everything from the requests to the direct read's words
+    let span = (a.rebase(c::DIRECT_READ) + 0x10 - channels) / 4;
+    let saved: Vec<u32> = (0..span).map(|w| Mem::read(a, channels + 4 * w)).collect();
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        let full = k % 10 == 0;
+        for w in 0..span {
+            put(a, b, channels + 4 * w, rng.next());
+        }
+
+        for n in 0..64 {
+            let busy = full || !rng.next().is_multiple_of(8);
+            put(
+                a,
+                b,
+                channels + 0x38 * n + 0x31,
+                u8::from(busy) * [1u8, 2, 0xff][(rng.next() % 3) as usize],
+            );
+        }
+        set(
+            a,
+            b,
+            c::READ_ID,
+            [0i32, 5, 0xfffe, 0xffff, 0x10000, -1, -5][(rng.next() % 7) as usize],
+        );
+        let args = [rng.next(), rng.next(), rng.next()];
+        if k % 2 == 0 {
+            assert_eq!(
+                eax(a, 0x0076_ce40, &args),
+                c::queue_sector_read(b, args, call),
+                "queue {k}"
+            );
+        } else {
+            assert_eq!(
+                eax(a, 0x0076_ce20, &args[..1]),
+                c::queue_sector(b, args[0], call),
+                "queue1 {k}"
+            );
+        }
+        same_memory(&format!("queue {k}"), a, b);
+        for (w, v) in (0u32..).zip(&saved) {
+            put(a, b, channels + 4 * w, *v);
+        }
+    }
+    let mode = alloc(a, b, 4);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        put(a, b, mode, rng.next());
+        put(
+            a,
+            b,
+            a.rebase(c::FFX_HDD_MODE),
+            [0u8, 0, 1, 0x80][(rng.next() % 4) as usize],
+        );
+        put(a, b, a.rebase(0x0112_8a84), [rng.next(), rng.next()]);
+        put(a, b, a.rebase(0x0112_8ab0), rng.next());
+        let size = [
+            0u32,
+            0x7ff,
+            0x800,
+            0x801,
+            0x1_0000,
+            0xffff_f800,
+            0xffff_f7ff,
+            u32::MAX,
+            rng.next(),
+        ][(rng.next() % 9) as usize];
+        let buffer = [0x1000u32, 0x1040, 0x1001, 0x103f, rng.next()][(rng.next() % 5) as usize];
+        let args = [rng.next(), size, buffer, mode];
+        assert_eq!(
+            eax(a, 0x0076_d140, &args),
+            c::read_direct(b, args, call),
+            "direct {k}"
+        );
+        same_memory(&format!("direct {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_cd_queue_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_cd_queue(&mut a, &mut b, &mut Xorshift(0x4033_0061));
+}
+
+#[test]
+fn round33_cd_queue_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_cd_queue(&mut a, &mut b, &mut Xorshift(0x4033_0062));
+}
+
+/// Round 33 group G: `CdSetModule_0076c510`, `PcFileTblSet`,
+/// `TOBtlOpenSignWindow` and the two width helpers over logging
+/// stand-ins (out-pointer arguments are not logged: the original's point
+/// into its stack).
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines
+)]
+fn round33_small(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use cd::bridge as c;
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 8);
+    // TOGetFontWidthInterMode: copies its text's first byte to
+    // [cells + 0x1c], writes [cells + 0xc] through its third argument and
+    // returns its first plus [cells + 0x10]
+    // (mov eax, [esp+4]; movzx eax, byte [eax]; mov [cells + 0x1c], eax)
+    let mut width = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0xa3];
+    width.extend_from_slice(&(cells + 0x1c).to_le_bytes());
+    width.extend(store_through(2, cells + 0xc));
+    width.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x03, 0x05]);
+    width.extend_from_slice(&(cells + 0x10).to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (c::MOVIE_ERR, vec![0, 1, 2], vec![], vec![]),
+        (c::USER_FREE, vec![0], vec![], vec![]),
+        (c::READ_FILE_TABLE, vec![0, 1], vec![], ret_cell(cells)),
+        (
+            t::MS_GET_COM_DATA,
+            vec![0],
+            vec![],
+            [store_through(1, cells + 4), ret_cell(cells + 8)].concat(),
+        ),
+        (t::OPEN_SIMPLE_HELP, vec![0, 1], vec![], vec![]),
+        (t::FONT_WIDTH_INTER_MODE, vec![1], vec![], width),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let modules = alloc(a, b, 0x40);
+    let init = a.rebase(c::READ_INIT_DONE);
+    let saved_table = c::MODULE_FILES.get(a);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        set(a, b, c::MODULE_FILES, modules);
+        let firsts: [i16; 16] =
+            std::array::from_fn(|_| [0i16, 5, 0x7fff, -1, -0x8000, 300][(rng.next() % 6) as usize]);
+        put(a, b, modules, firsts);
+        put(a, b, init, (rng.next() % 2) as u8);
+        let m = (rng.next() % 16).cast_signed();
+        assert_eq!(
+            eax(a, 0x0076_c510, &[m.cast_unsigned()]).cast_signed(),
+            c::cd_set_module(b, m, call),
+            "module {k}"
+        );
+        same_memory(&format!("module {k}"), a, b);
+    }
+    set(a, b, c::MODULE_FILES, saved_table);
+    let saved = c::PC_FILE_TABLE.get(a);
+    for k in 0..50u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        set(
+            a,
+            b,
+            c::PC_FILE_TABLE,
+            [0, rng.next()][(rng.next() % 2) as usize],
+        );
+        let path = rng.next();
+        assert_eq!(
+            eax(a, 0x00a4_2b70, &[path]),
+            c::pc_file_tbl_set(b, path, call),
+            "tbl set {k}"
+        );
+        same_memory(&format!("tbl set {k}"), a, b);
+    }
+    set(a, b, c::PC_FILE_TABLE, saved);
+    let record = alloc(a, b, 0x20);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, record, rng.next() as u16);
+        put(a, b, record + 0x1c, rng.next() as u8);
+        put(a, b, cells + 4, rng.next());
+        put(a, b, cells + 8, record);
+        let id = rng.next();
+        assert_eq!(
+            eax(a, 0x0089_8c60, &[id]),
+            t::btl_open_sign_window(b, id, scratch, call),
+            "sign {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("sign {k}"), a, b);
+    }
+    let text = alloc(a, b, 0x40);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        let bytes: [u8; 0x20] = std::array::from_fn(|i| {
+            if i == 0x1f || rng.next().is_multiple_of(6) {
+                0
+            } else {
+                0x41
+            }
+        });
+        put(a, b, text, bytes);
+        put(a, b, cells + 0xc, rng.next() % 40);
+        put(a, b, cells + 0x10, 1 + rng.next() % 3);
+        assert_eq!(
+            eax(a, 0x008b_8040, &[text]),
+            t::text_width_inter_mode(b, text, scratch, call),
+            "width {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("width {k}"), a, b);
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [
+                (rng.next() % 4000) as f32 / 7.0 - 100.0,
+                f32::NAN,
+                3e9,
+                -0.5,
+            ][(rng.next() % 4) as usize],
+        );
+        let font = rng.next();
+        assert_eq!(
+            eax(a, 0x008d_fe20, &[font]),
+            t::colon_width(b, font, scratch, call),
+            "colon {k}"
+        );
+        let s: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("colon {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_small_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_small(&mut a, &mut b, &mut Xorshift(0x4033_0071));
+}
+
+#[test]
+fn round33_small_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_small(&mut a, &mut b, &mut Xorshift(0x4033_0072));
+}
+
+/// `Vec3At24_0061a7f0` (thiscall), no signalling NaNs.
+#[test]
+fn round33_vec3_at_24_matches_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mut rng = Xorshift(0x4033_0081);
+    let this = alloc(a, b, 0x40);
+    let out = alloc(a, b, 0x10);
+    for k in 0..200 {
+        let words: [u32; 0x10] = std::array::from_fn(|_| {
+            loop {
+                let f = rng.float();
+                if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+                    break f.to_bits();
+                }
+            }
+        });
+        put(a, b, this, words);
+        let to = if k % 5 == 0 { this + 0x28 } else { out };
+        let at = a.rebase(0x0061_a7f0);
+        let r = a.call(at, Conv::Thiscall(this), &[to]).unwrap().eax;
+        assert_eq!(r, accessor::bridge::vec3_at_24(b, this, to), "vec3 {k}");
+        same_memory(&format!("vec3 {k}"), a, b);
+    }
+}

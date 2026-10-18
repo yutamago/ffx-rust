@@ -338,7 +338,7 @@
 0x0061b310	dead	unreachable from the entry point and every pointer table
 0x0061b330	platform	only called from platform code (0x625130)
 0x0061b380	dead	unreachable from the entry point and every pointer table
-0x0061b3c0	logic	default (no rule: ported to be safe)
+0x0061b3c0	platform	reviewed: ATL string-resource lookup (LoadResource/LockResource) (system round 33)
 0x0061b430	dead	unreachable from the entry point and every pointer table
 0x0061b4a0	platform	imports InterlockedCompareExchange, WaitForSingleObject
 0x0061b500	dead	unreachable from the entry point and every pointer table
@@ -2154,11 +2154,11 @@
 0x0067a900	platform	only called from platform code (FFXApplication_exitApplication)
 0x0067a930	glue	thin wrapper: only forwards to glue code (SyncManager_syncGetData)
 0x0067a950	glue	thin wrapper: only forwards to glue code (SyncManager_syncInit)
-0x0067a960	logic	default (no rule: ported to be safe)
+0x0067a960	platform	reviewed: iSyncInitialize: operator new of the PC SyncManager (system round 33)
 0x0067a990	dead	unreachable from the entry point and every pointer table
 0x0067a9b0	debug	reviewed: the REQ debug hook: forwards to the script debugger object at *0x00ce9014 (script round 17)
 0x0067a9d0	logic	default (no rule: ported to be safe)
-0x0067a9f0	logic	default (no rule: ported to be safe)
+0x0067a9f0	platform	reviewed: EternalCalm file size via sceOpen, stderr print (system round 33)
 0x0067aa50	logic	default (no rule: ported to be safe)
 0x0067aa70	logic	default (no rule: ported to be safe)
 0x0067aac0	logic	default (no rule: ported to be safe)
@@ -2315,7 +2315,7 @@
 0x00687020	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): user_malloc
 0x00687050	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): user_mem_size
 0x00687060	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): user_realloc
-0x00687070	logic	default (no rule: ported to be safe)
+0x00687070	debug	reviewed: StackWalker crash-report formatter (system round 33)
 0x00687090	dead	unreachable from the entry point and every pointer table
 0x006870b0	platform	only called from platform code (0x630870)
 0x00687130	dead	unreachable from the entry point and every pointer table
@@ -2752,7 +2752,7 @@
 0x0069ae80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ChrResourceCacheManager_enableChrDelayRelease
 0x0069af30	dead	unreachable from the entry point and every pointer table
 0x0069af40	dead	unreachable from the entry point and every pointer table
-0x0069af70	logic	default (no rule: ported to be safe)
+0x0069af70	glue	reviewed: MSVC std::_Tree::erase(first, last) (system round 33)
 0x0069b010	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, std_Tree_const_iterator_inc_00699ee0)
 0x0069b270	dead	unreachable from the entry point and every pointer table
 0x0069b2c0	dead	unreachable from the entry point and every pointer table
@@ -6040,11 +6040,11 @@
 0x0076c410	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_CD_EX
 0x0076c440	logic	default (no rule: ported to be safe)
 0x0076c490	logic	default (no rule: ported to be safe)
-0x0076c510	logic	default (no rule: ported to be safe)
+0x0076c510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdSetModule_0076c510
 0x0076c560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdEnvInit
 0x0076ccb0	platform	only called from platform code (Sa_CdRead_task)
-0x0076ce20	logic	default (no rule: ported to be safe)
-0x0076ce40	logic	default (no rule: ported to be safe)
+0x0076ce20	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdQueueSector_0076ce20
+0x0076ce40	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdQueueSectorRead_0076ce40
 0x0076cf60	logic	default (no rule: ported to be safe)
 0x0076cf80	logic	default (no rule: ported to be safe)
 0x0076cfa0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdSetC40e19_0076cfa0
@@ -6053,7 +6053,7 @@
 0x0076cff0	platform	only called from platform code (CdEnvInit)
 0x0076d0d0	logic	default (no rule: ported to be safe)
 0x0076d0e0	logic	default (no rule: ported to be safe)
-0x0076d140	logic	default (no rule: ported to be safe)
+0x0076d140	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdReadDirect_0076d140
 0x0076d200	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sa_CdRead_task
 0x0076d440	logic	default (no rule: ported to be safe)
 0x0076d510	logic	default (no rule: ported to be safe)
@@ -13314,7 +13314,7 @@
 0x008acf50	logic	default (no rule: ported to be safe)
 0x008ad4d0	logic	default (no rule: ported to be safe)
 0x008ad780	logic	default (no rule: ported to be safe)
-0x008ad840	logic	default (no rule: ported to be safe)
+0x008ad840	platform	reviewed: TOInitEventFontPath: PS3Data path mapping via fiosUnifyFilename (system round 33)
 0x008ad900	logic	default (no rule: ported to be safe)
 0x008ada30	logic	default (no rule: ported to be safe)
 0x008adaf0	dead	unreachable from the entry point and every pointer table
@@ -14369,7 +14369,7 @@
 0x008e8940	logic	default (no rule: ported to be safe)
 0x008e8980	logic	default (no rule: ported to be safe)
 0x008e89c0	logic	default (no rule: ported to be safe)
-0x008e89d0	logic	default (no rule: ported to be safe)
+0x008e89d0	glue	reviewed: SetWakkalimitMagicFileTexturesUnloaded: forwards to graphicMenuSetTextureUnloadedInMaterial (system round 33)
 0x008e8a10	logic	default (no rule: ported to be safe)
 0x008e8ed0	logic	default (no rule: ported to be safe)
 0x008e8fb0	logic	default (no rule: ported to be safe)
@@ -14378,8 +14378,8 @@
 0x008e9550	dead	unreachable from the entry point and every pointer table
 0x008e9720	dead	unreachable from the entry point and every pointer table
 0x008e9750	dead	unreachable from the entry point and every pointer table
-0x008e9970	logic	default (no rule: ported to be safe)
-0x008e99a0	logic	default (no rule: ported to be safe)
+0x008e9970	glue	GS packet API (TOAdpButtonIcon_008e9970): appends to or kicks a packet; replaced by ffx-render
+0x008e99a0	glue	GS packet API (TOAdpButtonIconRGBA_008e99a0): appends to or kicks a packet; replaced by ffx-render
 0x008e9b80	logic	default (no rule: ported to be safe)
 0x008e9ca0	logic	default (no rule: ported to be safe)
 0x008e9dd0	dead	unreachable from the entry point and every pointer table
