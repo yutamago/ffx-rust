@@ -6400,10 +6400,6 @@ ported! {
     Native_7074 @ 0x007a_29f0 => extern "C" fn n_7a29f0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_7074(&mut mem(), w, a, s)
     }
-    /// `Native_7076(worker, args, stack)`.
-    Native_7076 @ 0x007a_56f0 => extern "C" fn n_7a56f0(w: u32, a: u32, s: u32) -> u32 {
-        native_mods::native_7076(&mut mem(), w, a, s)
-    }
     /// `Native_7077(worker, args, stack)`.
     Native_7077 @ 0x007a_5450 => extern "C" fn n_7a5450(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_7077(&mut mem(), w, a, s)

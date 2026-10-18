@@ -5668,7 +5668,7 @@
 0x007a5680 function Native_703c_Poll           # 0x703c poll: 0x007a8700(args); ported in native_btl/native_move (script round 9)
 0x007a5690 function Native_700e # 0x700e: (sel): MsSetDamage(actor, sel, 0) (0x0078d980) for an actor; 0; ported in native_mods (script round 21); name ours
 0x007a56d0 function Native_7041                # 0x7041: nothing; 0; ported in native_btl/native_move (script round 9)
-0x007a56f0 function Native_7076 # 0x7076: (c, f f, a): MsSetBallSplineInit(actor) (0x007b7c80), the actor's +0x45a = c and +0x452 = 0 (u16s), MsSetBallSpline(actor) (0x007b78c0), MsMoveSpline(; ported in native_mods (script round 21); name ours
+0x007a56f0 function Native_7076 # 0x7076: (c, f f, a): MsSetBallSplineInit(actor) (0x007b7c80), the actor's +0x45a = c and +0x452 = 0 (u16s), MsSetBallSpline(actor) (0x007b78c0), MsMoveSpline(; left to the original: its callees copy unwritten locals (script round 21); name ours
 0x007a5780 function Native_7097                # 0x7097 start: (v): once at a time (0x0112a8e4) 0x007981e0(v, 2, worker, &out); out into args; ported in native_btl/native_msg (script round 8)
 0x007a57e0 function Native_70a8                # 0x70a8: (selector, property, value f): MsSetChrMotionInfo(picked, property, value); 0; ported in native_btl/native_move (script round 9)
 0x007a5840 function Native_7013 # 0x7013: args (v f) -> 0: 0x0082b840(model, v) when the actor has a model; ported in native_btl2 (script round 18); name ours

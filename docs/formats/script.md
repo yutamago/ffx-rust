@@ -749,7 +749,7 @@ Group 7's last 81 battle natives read the worker's actor
 `MsEtCriticalEffect`, `MsEffectSetGuard`), the sound registrations
 (`MsRegSEplay2`/`3`, `MsRegSEfade`, `0x706c`'s per-actor sound table at
 `+0xeac`, which skips the last one played, `0x0112c8e0`), the equipment
-refresh `0x7079`, the ball spline `0x7076`, the battle text windows
+refresh `0x7079`, the battle text windows
 (`0x7042`, `0x7072`, `0x70b7`, and `0x711f`/`0x7121` behind
 `MsGetBattleMessageFlag` and `0x01841d20`: the window clamped by
 `Clamp0To6_007a86e0`, `0x0112c250` = the text index, the text from the
@@ -760,7 +760,13 @@ battle globals around `0x0112c9xx`. `0x7045`, `0x70b6` and `0x7077` scale a
 `f32` at `0x00b4ae10`, NaN passing the `fcom`). `0x703e`'s poll waits
 while any of the 31 actors is busy or acting and records which in
 `0x0112ca08`/`0x0112ca09` (0xdf, 0xdd; 0xff/0xde when the battle state
-rules the check out). `0x70f0` is `Atel_GetBattleCountF`, which keeps its
+rules the check out). `0x7076` (the ball spline a shipped battle script
+calls) stays with the original: `MsSetBallSplineInit` copies the out
+vector `MsGetChrPos` may leave unwritten, and `MsSetBallSpline` positions
+`Ch_OptposGet` may not fill, into the actor and spline records, so a Rust
+caller one frame higher hands on different stack leftovers than the
+original handler (the script entries test on battle.snap shows it); it
+can move once `MsSetBallSpline`'s own port settles them. `0x70f0` is `Atel_GetBattleCountF`, which keeps its
 shim. 34 of the 81 are bare jumps, global reads or writes, or missing from
 the dump, and run in Rust only through the dispatch.
 
@@ -2061,7 +2067,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7073` | `Native_7073` | weapon int | int: MsAttachWeapon(actor, weapon)'s result | - | int `0x007a85f0` (native_btl2) |
 | `0x7074` | `Native_7074` | v | int: MsDetachWeapon(actor, v) (0x00793f10) | - | int `0x007a29f0` (native_mods) |
 | `0x7075` | `Native_7075` | selector int, b int, a int | the argument word = 1 when 0x007ab360(record +0xc, b, a, 0, 1, worker, &out) set out for any selected actor below 31 with a command record (0x00795bb0), else 0 | until 0x007a8700(args) (poll) | start `0x007a78f0`, poll `0x007a7aa0` (native_btl2) |
-| `0x7076` | `Native_7076` | c, f f, a | int: MsSetBallSplineInit(actor) (0x007b7c80), the actor's +0x45a = c and +0x452 = 0 (u16s), MsSetBallSpline(actor) (0x007b78c0), MsMoveSpline(2, actor, c, f, a) (0x007ab010), +0x452 = 1; 0 | - | int `0x007a56f0` (native_mods) |
+| `0x7076` | `Native_7076` | c int, f f, a int | 0: MsSetBallSplineInit(actor), the actor's +0x45a = c and +0x452 = 0, MsSetBallSpline(actor), MsMoveSpline(2, actor, c, f, a), +0x452 = 1 | - | int `0x007a56f0` (left to the original: its callees copy unwritten locals) |
 | `0x7077` | `Native_7077` | sel, a | int: MsGetTargetDist(x, a, 0) (0x007a9a40, 0.0 when the first actor x of sel is 0xff) over the double at 0x00b49968 plus the one at 0x00b43d80, rounded to f32, at most the f32 at 0x00b4ae10, truncated | - | int `0x007a5450` (native_mods) |
 | `0x7078` | `Native_7078` | selector int, b int, a int | int: MsGetComInfo(picked, b, a) (0x0078cd30) | - | int `0x007a6540` (native_btl) |
 | `0x7079` | `Native_7079` | - | int: for an actor, the equipment refresh: MsResetAutoStatus(record), MsSetRamChrParam(actor), MsSetChrWeak(actor, -1), MsSetAutoStatus(record), MsStatusEffectCheck(actor), MsSetWeaponEffectAttribute(actor, record); 0 | - | int `0x007a7200` (native_mods) |

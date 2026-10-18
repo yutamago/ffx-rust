@@ -4635,18 +4635,9 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
 
 /// Natives that can read an uninitialised local of the original
 /// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot),
-/// tested on chosen arguments only; `0x7076`, whose `MsSetBallSplineInit`
-/// and `MsSetBallSpline` copy callee locals left unwritten (`MsGetChrPos`
-/// without an actor, `Ch_OptposGet` without the element) into the actor
-/// and spline records, so the two stacks' leftovers differ; and `0xb008`'s start, which leaves `EAX` as it was
+/// tested on chosen arguments only; and `0xb008`'s start, which leaves `EAX` as it was
 /// (the dispatch ignores it) and writes nothing.
-const R20_UNINIT: [u32; 5] = [
-    0x0085_fd80,
-    0x0086_0000,
-    0x0085_8290,
-    0x007a_56f0,
-    0x0076_eb00,
-];
+const R20_UNINIT: [u32; 4] = [0x0085_fd80, 0x0086_0000, 0x0085_8290, 0x0076_eb00];
 
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
@@ -4855,30 +4846,6 @@ fn round19_natives_match_the_original() {
                 }
             }
             compared += 23;
-        }
-        // 0x7076 with its three spline callees stubbed: its own record
-        // writes and the order around them
-        {
-            let (mut a, mut b) = r19_pair(&pages, &exe, c);
-            let (a, b) = (&mut a, &mut b);
-            for o in [&mut *a, &mut *b] {
-                for f in [0x007b_7c80, 0x007b_78c0, 0x007a_b010] {
-                    let at = o.rebase(f);
-                    o.stub_return(at, 0).unwrap();
-                }
-            }
-            for w in actors(a, b) {
-                if Mem::read::<u8>(b, v::atel_get_battle_id_adrs2(w)) == 0xff {
-                    continue;
-                }
-                let push = [
-                    (stack::INT, 0x1234),
-                    (stack::FLOAT, 0.5f32.to_bits()),
-                    (stack::INT, 1),
-                ];
-                native_case(a, b, w, 0x007a_56f0, &push, "0x7076 stubbed");
-                compared += 1;
-            }
         }
         // the polls without keep on a read that reports done (0): 5 for
         // 0x5062, 1 for 0x5064 (the reads stubbed on both sides)

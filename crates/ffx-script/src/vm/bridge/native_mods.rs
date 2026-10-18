@@ -2885,26 +2885,6 @@ pub fn native_700e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `0x7076` (`0x007a56f0`): `(c, f f, a)`: `MsSetBallSplineInit(actor)`
-/// (`0x007b7c80`), the actor's `+0x45a` = `c` and `+0x452` = 0 (`u16`s),
-/// `MsSetBallSpline(actor)` (`0x007b78c0`), `MsMoveSpline(2, actor, c, f,
-/// a)` (`0x007ab010`), `+0x452` = 1; 0.
-pub fn native_7076<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
-    let i = bactor(h, w);
-    let a = pop(h, s);
-    let f = popf(h, s);
-    let c = pop(h, s);
-    call(h, 0x007b_7c80, &[i]);
-    let r = bchr(h, i);
-    #[allow(clippy::cast_possible_truncation)] // `mov word`
-    h.write(r + 0x45a, c as u16);
-    h.write(r + 0x452, 0_u16);
-    call(h, 0x007b_78c0, &[i]);
-    call(h, 0x007a_b010, &[2, i, c, f, a]);
-    h.write(r + 0x452, 1_u16);
-    0
-}
-
 /// `0x703d` (`0x007a5980`): the byte `0x0112a8e4` = 0; 0.
 pub fn native_703d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     set_g8(h, 0x0112_a8e4, 0);
@@ -3849,7 +3829,6 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_7010 => Int(native_7070),
         0x007a_6330 => Int(native_7072),
         0x007a_29f0 => Int(native_7074),
-        0x007a_56f0 => Int(native_7076),
         0x007a_5450 => Int(native_7077),
         0x007a_7200 => Int(native_7079),
         0x007a_2c70 => Int(native_7080),
@@ -3944,7 +3923,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
 }
 
 /// Every handler [`find`] knows, and whether it returns a float.
-pub const PORTED: [(u32, bool); 396] = [
+pub const PORTED: [(u32, bool); 395] = [
     (0x0087_78d0, false),
     (0x0087_78f0, false),
     (0x0087_7920, false),
@@ -4249,7 +4228,6 @@ pub const PORTED: [(u32, bool); 396] = [
     (0x007a_7010, false),
     (0x007a_6330, false),
     (0x007a_29f0, false),
-    (0x007a_56f0, false),
     (0x007a_5450, false),
     (0x007a_7200, false),
     (0x007a_2c70, false),
