@@ -2064,6 +2064,47 @@ the first render data's mode is 1 for 0x203, 0x15c, 0x15e, 0x182, 0x241,
 0x20a, 0x23a, 0x29b, 0x1db, 0x46; 0x15c and 0x15e never get there),
 else `graphicVFXDttUpdate` of all four.
 
+## The poly buffer's packet builders (field agent r8)
+
+At map load `0x00912270` hands a map part's VIF chains (a node: `+0x44`
+the VIF data, `+0x48` its size in quadwords, `+0x54` the next) to
+`yiPolySplitRectXZ` (`0x00910a90`, name ours) when it has two packets,
+else to `yiPolySelectRectXZ` (`0x009105b0`, name ours). Both run each
+node on the poly buffer `g_YiPolyBuf` (`0x025d1800`, cleared first): the
+four codes at `0x00c5db80` (`MARK 0`, `BASE 0x60`, `OFFSET 0x1d0`, `NOP`,
+the node's first four words skipped), then `yiPolyBufExecVif` up to each
+microprogram call. The block it leaves at `16 * [+0x406c]` holds the
+triangle count (`+0x00`), the texture flag (`+0x20`), the texture
+registers (`+0x30`/`+0x34`, `+0x40`/`+0x44` when `+0x48`, `+0x50`), and
+from quadword 10 (select: from `+0x04`) three GIF `RGBAQ` quadwords a
+triangle, three `UV` quadwords from `3 n` later and three positions from
+`6 n` later. Each triangle goes through `yiRectTriOverlapXZ` against the
+x/z rectangle (`a`, `b`; matrix `m` when not 0): the split puts the
+overlapping ones in its first packet and the others in its second, the
+select keeps the overlapping ones only.
+
+A packet: a 0x20-byte head (0x400, 0x20 (0 when the split's buffers
+could not be allocated), `+0x08` the size in bytes to the end tag, `u16
++0x10` the records after it, `i16 +0x12` the vertices), then per node a
+group tag (0x20 bytes: byte 1 the kind 0x20, `u16 +0x02` the triangles,
+`+0x08..+0x18` texture registers, `+0x18` the `+0x50` register), records
+of 0x14 bytes (three `rgba` colours, alphas 0x80, three `u16` vertex
+numbers), and once a node has met a textured block a textured tag (kind
+0x22) a block before that side's first triangle in it and 0x20-byte
+records (alphas 0x7f, three `u16` UV pairs at `+0x14`). An end tag (kind
+0xff) closes it; then the vertices (x, y, z, 1.0, through
+`FFXVu0ApplyMatrix(v, m, v)` when `m`), and the capacity word gets the
+size in words with them. Unless the last argument is set a node stops
+early once `(end - packet) / 4 + 4 (vertices + 0x6b)` (30 bits) reaches
+the capacity it was given (the select also when its vertices, kept at
+`Sg_PacketGetPtr`, would come within 0x3f0 quadwords of 0x10000). The
+split keeps its vertices in two `yiMallocQuiet` buffers (16 bytes per
+chain quadword, the second packet's first, freed through `yiFree`
+`0x0090bbc0` at the end); a failed allocation leaves both heads empty
+and leaks the first buffer. The originals copy a few stack bytes they
+never set into the head (`+0x16..+0x1c`) and tags (split: `+0x04`, and
+`+0x18` before a textured block); the ports write 0 there.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

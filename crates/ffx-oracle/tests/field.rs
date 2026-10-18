@@ -15884,3 +15884,325 @@ fn r7a_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0071_a002);
     r7a_cases(&mut t, &mut rng, 150, true);
 }
+
+// ---- field agent r8, group A: a VIF chain's triangles split by an x/z rectangle ----
+
+/// `user_malloc(size)`: 0 when bit 0 of `[mask]` was set (the mask shifts
+/// right each call), else [`bump_stub`].
+fn failing_bump_stub(mask: u32, next: u32) -> Vec<u8> {
+    let mut c = vec![0xd1, 0x2d]; // shr dword [mask], 1
+    c.extend_from_slice(&mask.to_le_bytes());
+    c.extend_from_slice(&[0x73, 0x03, 0x31, 0xc0, 0xc3]); // jnc +3; xor eax, eax; ret
+    c.extend(bump_stub(next));
+    c
+}
+
+/// One microprogram block as VIF words: a `UNPACK V4-32` of its
+/// quadwords at `TOPS` (`n` triangles: the count, the texture flag and
+/// registers, `n` colour, UV and position triples), then `MSCAL`.
+fn r8a_block(rng: &mut Xorshift, n: u32, textured: bool, ints: bool) -> Vec<u32> {
+    let qwc = 9 * n + 10;
+    let mut q: Vec<[u32; 4]> = (0..qwc)
+        .map(|_| [rng.next(), rng.next(), rng.next(), rng.next()])
+        .collect();
+    q[0][0] = n;
+    // where yiPolySelectRectXZ's colours start (10: right after the head)
+    q[0][1] = if rng.below(4) == 0 {
+        8 + rng.below(5)
+    } else {
+        10
+    };
+    q[2][0] = if textured { rng.next() | 1 } else { 0 };
+    if rng.below(2) == 0 {
+        q[4][2] = 0;
+    }
+    for t in 0..3 * n as usize {
+        let v = &mut q[6 * n as usize + 10 + t];
+        for c in &mut v[..3] {
+            *c = if ints {
+                rng.below(12)
+            } else {
+                float_in(rng, -4, 14)
+            };
+        }
+    }
+    let mut w = vec![0x6c00_8000 | qwc << 16];
+    for v in q {
+        w.extend_from_slice(&v);
+    }
+    w.push(0x1400_0000);
+    w
+}
+
+/// Group A on `t`: `yiPolySplitRectXZ` over random chains (0 to 3 nodes
+/// of 0 to 3 blocks, textured or not), with or without a matrix,
+/// capacities that stop it or not, and failing allocations.
+#[allow(clippy::too_many_lines)] // the chain, then the call
+fn r8a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, next, mask) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(4), t.alloc(4));
+    let arena = t.alloc(0x10_0000);
+    // the packet buffer's free end (yiPolySelectRectXZ's vertices)
+    let (verts, vertex_area) = (t.alloc(4), t.alloc(0x2_0000));
+    t.cave_from(
+        0,
+        &[
+            (Some(model::USER_MALLOC), failing_bump_stub(mask, next)),
+            (Some(model::USER_FREE), log_stub(log, rv, 1, 1)),
+            (
+                Some(ffx_field::yipoly::SG_PACKET_GET_PTR),
+                log_stub(log, verts, 2, 0),
+            ),
+        ],
+    );
+    let packets = [t.alloc(0x8000), t.alloc(0x8000)];
+    let caps = [t.alloc(4), t.alloc(4)];
+    let nodes = t.alloc(0x60 * 3);
+    let data = t.alloc(0x6000);
+    let (a, b, mat) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x40));
+    let work = t.stack_scratch(0x800);
+    let poly = t.b.rebase(ffx_field::yipoly::POLY_BUF);
+    for k in 0..cases {
+        t.put(log, 0u32);
+        t.put(next, arena);
+        t.put(verts, vertex_area);
+        t.put(
+            mask,
+            match rng.below(16) {
+                0 => 1,
+                1 => 2,
+                _ => 0,
+            },
+        );
+        if k % 4 == 0 {
+            t.fill(poly, 0x4088, rng);
+        }
+        for p in packets {
+            t.fill(p, 0x8000, rng);
+        }
+        let ints = rng.below(3) == 0;
+        let m = if ints { 0 } else { mat };
+        for i in 0..16 {
+            let v = if i % 5 == 0 {
+                float_in(rng, 1, 2)
+            } else {
+                float_in(rng, -1, 1)
+            };
+            t.put(mat + 4 * i, v);
+        }
+        for i in 0..4 {
+            t.put(a + 4 * i, float_in(rng, -2, 8));
+            t.put(b + 4 * i, float_in(rng, 2, 12));
+        }
+        // the chain
+        let count = match rng.below(8) {
+            0 => 0,
+            1..=3 => 1,
+            4..=5 => 2,
+            _ => 3,
+        };
+        let mut at = data;
+        for i in 0..count {
+            let node = nodes + 0x60 * i;
+            t.fill(node, 0x60, rng);
+            let mut w: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            for _ in 0..rng.below(4) {
+                if rng.below(3) == 0 {
+                    w.push(0);
+                }
+                let (n, textured) = (rng.below(7), rng.below(3) == 0);
+                let mut v = r8a_block(rng, n, textured, ints);
+                if k % 2 == 1 && rng.below(8) == 0 {
+                    // a negative count: yiPolySelectRectXZ takes none
+                    v[1] = 0u32.wrapping_sub(1 + rng.below(4));
+                }
+                w.extend(v);
+            }
+            let quads = u32::try_from(w.len()).unwrap().div_ceil(4);
+            let quads = match rng.below(6) {
+                0 => rng.below(quads + 1),
+                1 => quads + 1 + rng.below(3),
+                _ => quads,
+            };
+            w.resize(4 * quads as usize + 16, 0);
+            let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).collect();
+            t.write(at, &bytes);
+            t.put(node + 0x44, at);
+            t.put(node + 0x48, quads);
+            t.put(
+                node + 0x54,
+                if i + 1 == count {
+                    0
+                } else {
+                    nodes + 0x60 * (i + 1)
+                },
+            );
+            at += u32::try_from(bytes.len()).unwrap().next_multiple_of(0x10);
+        }
+        let list = if count == 0 { 0 } else { nodes };
+        for c in caps {
+            let v = match rng.below(3) {
+                0 => 0x1ac + rng.below(0x180),
+                _ => 0x1_0000,
+            };
+            t.put(c, v);
+        }
+        let unlimited = match rng.below(8) {
+            0 => 1,
+            1 => rng.next() | 2,
+            _ => 0,
+        };
+        // the original copies some stack bytes it never sets (see
+        // GroupTag): its frame starts out zeroed, as the port's values
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        if k % 2 == 1 {
+            t.same(
+                "yiPolySelectRectXZ",
+                |o| {
+                    o.eax(
+                        0x0091_05b0,
+                        &[rng.next(), list, packets[0], caps[0], m, a, b, unlimited],
+                    )
+                },
+                |o| {
+                    ffx_field::yipoly::yi_poly_select_rect_xz(
+                        o,
+                        list,
+                        packets[0],
+                        caps[0],
+                        m,
+                        [a, b],
+                        unlimited,
+                        work,
+                        call,
+                    )
+                },
+            );
+            continue;
+        }
+        t.same(
+            "yiPolySplitRectXZ",
+            |o| {
+                o.eax(
+                    0x0091_0a90,
+                    &[
+                        rng.next(),
+                        list,
+                        packets[0],
+                        packets[1],
+                        caps[0],
+                        caps[1],
+                        m,
+                        a,
+                        b,
+                        unlimited,
+                    ],
+                )
+            },
+            |o| {
+                ffx_field::yipoly::yi_poly_split_rect_xz(
+                    o,
+                    list,
+                    packets,
+                    caps,
+                    m,
+                    [a, b],
+                    unlimited,
+                    work,
+                    call,
+                )
+            },
+        );
+    }
+}
+
+/// `yiPolySelectRectXZ` filling the vertex room: blocks of 27 triangles,
+/// all inside, run again and again by `MSCAL`s (both double-buffer halves
+/// hold one), then one of 17 that ends exactly 0x3f1 quadwords short of
+/// 0x10000 (the run goes on once more), until 0x3f0 more would pass it.
+/// The vertex count wraps its `i16` on the way, which makes the capacity
+/// check's sum negative for a while (its 30-bit mask against a capacity
+/// of `0x5000_0000`).
+fn r8a_vertex_room(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, verts) = (t.alloc(4 + 0x20 * 4), t.alloc(4));
+    let area = t.alloc(0x11_0000);
+    t.cave_from(
+        0,
+        &[(
+            Some(ffx_field::yipoly::SG_PACKET_GET_PTR),
+            log_stub(log, verts, 2, 0),
+        )],
+    );
+    t.put(verts, area);
+    let (packet, cap, node, a, b) = (
+        t.alloc(0x8_0000),
+        t.alloc(4),
+        t.alloc(0x60),
+        t.alloc(0x10),
+        t.alloc(0x10),
+    );
+    let block = r8a_block(rng, 27, false, true);
+    let mut w: Vec<u32> = vec![0; 4];
+    w.extend(&block);
+    w.extend(&block);
+    w.extend(std::iter::repeat_n(0x1400_0000, 794));
+    w.extend(r8a_block(rng, 17, false, true));
+    w.extend(std::iter::repeat_n(0x1400_0000, 20));
+    let data = t.alloc(4 * w.len() + 0x10);
+    let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).collect();
+    t.write(data, &bytes);
+    t.put(node + 0x44, data);
+    t.put(node + 0x48, u32::try_from(w.len()).unwrap().div_ceil(4));
+    t.put(node + 0x54, 0u32);
+    t.put(cap, 0x5000_0000u32);
+    for i in 0..4 {
+        t.put(a + 4 * i, (-100f32).to_bits());
+        t.put(b + 4 * i, 100f32.to_bits());
+    }
+    let top = t.a.stack_range().end;
+    t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+    t.same(
+        "yiPolySelectRectXZ (vertex room)",
+        |o| o.eax(0x0091_05b0, &[0, node, packet, cap, 0, a, b, 0]),
+        |o| {
+            ffx_field::yipoly::yi_poly_select_rect_xz(
+                o,
+                node,
+                packet,
+                cap,
+                0,
+                [a, b],
+                0,
+                t_work(o),
+                call,
+            )
+        },
+    );
+}
+
+/// A scratch buffer in the bridge's stack.
+fn t_work(o: &Oracle) -> u32 {
+    o.stack_range().start + 0x1000
+}
+
+/// Group A on the image.
+#[test]
+fn r8a_poly_split_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_a001);
+    r8a_cases(&mut t, &mut rng, 400);
+    r8a_vertex_room(&mut t, &mut rng);
+}
+
+/// Group A on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r8a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_a002);
+    r8a_cases(&mut t, &mut rng, 150);
+    r8a_vertex_room(&mut t, &mut rng);
+}

@@ -11310,6 +11310,7 @@
 0x0090ae20 function yiPkAddGsAD                  # (q, reg, data): the A+D quadword (data, 0, reg, 0) of a GS register write
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50
 0x0090b4b0 function yiDumpMatrix                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%8.3f '; Switch 0x7100533fb0 yiDumpMatrix (symbols from Fahrenheit's server export)
+0x0090bbc0 function yiFree                    # (p): jmp user_free_thunk 0x00687010; the yi renderer's frees (yiRender_term, yiObjReadFinish, 0x00910a90); name ours (field r8)
 0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
 0x0090bbe0 function yiMalloc64                # fh v3:cg4 0x90bbe0
 0x0090bc00 function yiMallocD                    # layout+callees: sorts between yiMalloc64 and yiRender_destroy, and its named callees match the Switch 0x7100534bd0 yiMallocD's (similarity 1.00: user_malloc); symbols from Fahrenheit's server export
@@ -11354,6 +11355,8 @@
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
 0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
+0x009105b0 function yiPolySelectRectXZ        # (r, list, packet, cap, m, a, b, unlimited) -> 0: a VIF chain's triangles that overlap the x/z rectangle a..b (yiRectTriOverlapXZ) as one group-tagged packet, vertices kept at Sg_PacketGetPtr; 0x00912270 calls it without a second packet; name ours; ported (field r8, ffx_field::yipoly)
+0x00910a90 function yiPolySplitRectXZ         # (r, list, inside, outside, cap_in, cap_out, m, a, b, unlimited) -> 0: a VIF chain run on the poly buffer, its triangles split into two group-tagged packets by the x/z rectangle a..b (yiRectTriOverlapXZ), vertices kept in two yiMallocQuiet buffers; load time, from 0x00912270; name ours; ported (field r8, ffx_field::yipoly)
 0x009113a0 function yiPolyBufExecVif         # (buf, codes, words) -> words used: runs VIF codes on the poly buffer (STCYCL +0x4084, OFFSET +0x4078, BASE +0x4074, TOPS +0x4070, STMOD +0x407c, MARK +0x4080, STMASK +0x4068, STROW +0x4048, STCOL +0x4058, MPG/DIRECT skipped, UNPACK -> yiPolyBufUnpack) until words or an MSCAL/MSCALF/MSCNT (+0x406c = TOPS, double buffer flips); 8 callers in the yi renderer; name ours; ported (field round 35)
 0x00911620 function yiPolyBufUnpack          # (buf, src, code) -> source words read: a VIF UNPACK (code bits 24..25 size 32/16/8/V4-5, 26..27 count - 1, 0..9 row + TOPS +0x4070 when bit 15, byte +2 rows) into the poly buffer's VU memory; from 0x009113a0 (the poly buffer's VIF interpreter); name ours; ported (field round 34)
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
@@ -16428,6 +16431,7 @@
 0x025d17a8 label    g_YiVramRegions              # image VRAM allocator: limits +0 (region 1), +4 (0 = g_YiVramLimit), +8, +0xc; next addresses +0x10, +0x14 (g_YiVramNext), +0x18, +0x1c (yiVramAllocPsm)
 0x025d17ac label    g_YiVramLimit                # end of the image VRAM allocator (yiVramSetLimit)
 0x025d17bc label    g_YiVramNext                 # its next free address, in bytes (yiVramAlloc)
+0x025d1800 label    g_YiPolyBuf                  # the poly buffer: 0x4000 bytes of VU memory, then the VIF registers (yiPolyBufExecVif); +0x406c the last MSCAL's TOPS (yiPolySplitRectXZ reads the block there); name ours
 0x025d58a0 label    g_RcbgClipWorldMatrix        # g_RcbgViewWorldMatrix through g_RcbgClipMatrix (rcbgUpdateMatrix)
 0x025d58e0 label    g_RcbgClipMatrix             # rcbgSetClipMatrix
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
