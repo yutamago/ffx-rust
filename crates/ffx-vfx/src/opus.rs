@@ -1241,6 +1241,280 @@ pub mod bridge {
         crate::op::bridge::op_oef2_a_get(mem, oef, 4, tex)
     }
 
+    /// `Ch_SetShadeColEffect`, `Ch_SetShadeCol`, `Ch_SetTransparent` and
+    /// `MsGetWeaponHandle`, called through `call`.
+    const CH_SET_SHADE_COL_EFFECT: u32 = 0x0082_b6e0;
+    const CH_SET_SHADE_COL: u32 = 0x0082_b5d0;
+    const CH_SET_TRANSPARENT: u32 = 0x0082_b900;
+    const MS_GET_WEAPON_HANDLE: u32 = 0x0079_5b40;
+
+    /// The `g_EtChr` record of character `chr` (`opus_get_chr_status_index`;
+    /// the record before the table for none).
+    fn chr_record(mem: &mut impl Mem, chr: u32) -> u32 {
+        let i = crate::et::bridge::opus_get_chr_status_index(mem, chr, 0, 0, &mut |_, _, _| 0);
+        crate::et::bridge::CHR
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(0x20))
+    }
+
+    /// `opus_chara_status_rgb_set(chr, weapons)` (`0x0080aa00`): the
+    /// character's shade colour effect (`Ch_SetShadeColEffect(chr, r, g,
+    /// b)`) from its `g_EtChr` record: each channel the product of the bytes
+    /// `+0x18..+0x1a` and `+0x10..+0x12` / 16384. With `weapons`, also the
+    /// battle weapons of the record's `u16 +0xe` (`MsGetWeaponHandle(n, 0)`
+    /// and `(n, 1)`, when present). Callees through `call`.
+    pub fn opus_chara_status_rgb_set<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        weapons: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let rec = chr_record(mem, chr);
+        let n = u32::from(mem.read::<u16>(rec.wrapping_add(0xe)));
+        let scale: f64 = mem.read(g(mem, 0x00b5_1550));
+        let mut rgb = [0u32; 3];
+        for (i, c) in (0u32..).zip(rgb.iter_mut()) {
+            let status = u32::from(mem.read::<u8>(rec.wrapping_add(0x18 + i)));
+            let base = u32::from(mem.read::<u8>(rec.wrapping_add(0x10 + i)));
+            #[allow(clippy::cast_precision_loss)] // fild; small products are exact
+            let v = (status * base) as f32;
+            *c = Reg::load_f32(v).constant(MUL, scale).store().to_bits();
+        }
+        let set = g(mem, CH_SET_SHADE_COL_EFFECT);
+        call(mem, set, &[chr, rgb[0], rgb[1], rgb[2]]);
+        if weapons == 0 {
+            return;
+        }
+        let get = g(mem, MS_GET_WEAPON_HANDLE);
+        for hand in 0..2 {
+            let w = call(mem, get, &[n, hand]);
+            if w != 0 {
+                call(mem, set, &[w, rgb[0], rgb[1], rgb[2]]);
+            }
+        }
+    }
+
+    /// `opus_chara_rgba_set(chr, rgba, weapons)` (`0x0080a560`): the
+    /// character's shade colour and transparency from the bytes of `rgba`,
+    /// through the emulated VU0 as the original moves them: the bytes are
+    /// unpacked with the emulated `r0` (`0x00c8f508`) into the four words of
+    /// `v0` (`0x00c8f528`: byte 0 from `rgba`, the rest from `r0`; plain
+    /// bytes when `r0` is 0), each converted to a float, times 1/128, into
+    /// `0x00c8f980..98c`; `0x00c8f970..97c` = VF00 minus itself;
+    /// `restoreVf00Register`; each value of 255 or more (or a NaN) becomes
+    /// 255; then at least `0x00c8f970..` (`Vec4Max`). `Ch_SetShadeCol(chr,
+    /// r, g, b, 0)` and `Ch_SetTransparent(chr, a, 0)`, and with `weapons`
+    /// the same for the battle weapons of the record's `u16 +0xe` when it
+    /// is below 0x20 (`MsGetWeaponHandle(n, 0/1)`). The emulated registers
+    /// keep what the original leaves: `v0` = 255.0 and the unpacked words,
+    /// `0x00c8f538` and `0x00c8f960` = 1/128, `0x00c8f78c` = 255.0,
+    /// `0x00c8f964..96c` = `0x00c8f53c..544`. Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opus_chara_rgba_set<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        rgba: u32,
+        weapons: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let rec = chr_record(mem, chr);
+        let n = u32::from(mem.read::<u16>(rec.wrapping_add(0xe)));
+        // the image's rebase, for the emulated registers' addresses
+        let delta = g(mem, 0x00c8_f528).wrapping_sub(0x00c8_f528);
+        let r = move |a: u32| a.wrapping_add(delta);
+        let (v0, vf, k128) = (r(0x00c8_f528), r(0x00c8_f980), 0x3c00_0000u32);
+        let g0: [u8; 4] = mem.read(r(0x00c8_f508));
+        let g1: [u8; 4] = mem.read(r(0x00c8_f50c));
+        let p = rgba.to_le_bytes();
+        let words = [
+            [p[0], g0[0], g0[0], g0[1]],
+            [p[1], g0[1], g0[2], g0[3]],
+            [p[2], g0[2], g1[0], g1[1]],
+            [p[3], g0[3], g1[2], g1[3]],
+        ]
+        .map(u32::from_le_bytes);
+        mem.write(v0, words);
+        mem.write(r(0x00c8_f538), k128);
+        let next: [u32; 3] = mem.read(r(0x00c8_f53c));
+        mem.write(r(0x00c8_f964), next);
+        mem.write(v0, 0x437f_0000u32);
+        mem.write(r(0x00c8_f78c), 255.0f32);
+        mem.write(r(0x00c8_f960), k128);
+        for (i, w) in (0u32..).zip(words) {
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+            let f = w.cast_signed() as f32;
+            let v = Reg::load_f32(f).reg(MUL, Reg::load(k128)).store();
+            mem.write(vf + 4 * i, v);
+        }
+        let zero = r(0x00c8_f970);
+        let vf00 = r(0x00c0_a004);
+        for i in 0..4 {
+            let x = Reg::load(mem.read(vf00 + 4 * i));
+            mem.write(zero + 4 * i, x.reg(crate::x87::SUB, x).store());
+        }
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        for i in 0..4 {
+            let v = Reg::load(mem.read(vf + 4 * i));
+            if !matches!(v, Reg::Num(x) if x < 255.0) {
+                mem.write(vf + 4 * i, 255.0f32);
+            }
+        }
+        let k: [u32; 4] = mem.read(zero);
+        crate::vec::bridge::vec4_max(mem, vf, vf, k);
+        let c: [u32; 4] = mem.read(vf);
+        let c = c.map(crate::x87::load);
+        let shade = g(mem, CH_SET_SHADE_COL);
+        let alpha = g(mem, CH_SET_TRANSPARENT);
+        call(mem, shade, &[chr, c[0], c[1], c[2], 0]);
+        call(mem, alpha, &[chr, c[3], 0]);
+        if weapons == 0 || n >= 0x20 {
+            return;
+        }
+        let get = g(mem, MS_GET_WEAPON_HANDLE);
+        for hand in 0..2 {
+            let w = call(mem, get, &[n, hand]);
+            if w != 0 {
+                call(mem, shade, &[w, c[0], c[1], c[2], 0]);
+                call(mem, alpha, &[w, c[3], 0]);
+            }
+        }
+    }
+
+    /// `0x00802bd0(head, _, list, unit, nos)` (`opus_mdc_lights_get`): the
+    /// four light colours `[head +0x24]` and positions `[head +0x28]` (16
+    /// bytes each) start as the emulated `r0`; for each nonzero `u16` at
+    /// `nos + 2 k` (k = 1..4) the unit `opus_no_get(list, unit, no)` gives
+    /// position `k - 1` (its `+0x90..+0x98`, `w` = its `+0x4c` / 16) and
+    /// colour (its bytes `+0xc8..+0xcb` / 128). Then the head's bytes
+    /// `+0x4c` and `+0x4d` = `ftol` of the unit's `+0x30` and `+0x4c`, halved
+    /// (toward 0), clamped to 0..=0x80.
+    pub fn opus_mdc_lights_get(mem: &mut impl Mem, head: u32, list: u32, unit: u32, nos: u32) {
+        let cols: u32 = mem.read(head.wrapping_add(0x24));
+        let pos: u32 = mem.read(head.wrapping_add(0x28));
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        for k in 0..4 {
+            mem.write(cols.wrapping_add(16 * k), r0);
+        }
+        for k in 0..4 {
+            mem.write(pos.wrapping_add(16 * k), r0);
+        }
+        let k16: f64 = mem.read(g(mem, 0x00b9_21e0));
+        let k128: f64 = mem.read(g(mem, 0x00b1_70b8));
+        for k in 0..4u32 {
+            let no = u32::from(mem.read::<u16>(nos.wrapping_add(2 + 2 * k)));
+            if no == 0 {
+                continue;
+            }
+            let rec = opus_no_get(mem, list, unit, no);
+            let at = pos.wrapping_add(16 * k);
+            let xyz: [u32; 3] = mem.read(rec.wrapping_add(0x90));
+            mem.write(at, xyz);
+            let w = Reg::load_f32(f(mem, rec.wrapping_add(0x4c)))
+                .constant(MUL, k16)
+                .store();
+            mem.write(at.wrapping_add(0xc), w);
+            let col = cols.wrapping_add(16 * k);
+            for i in 0..4u32 {
+                let b = f64::from(mem.read::<u8>(rec.wrapping_add(0xc8 + i)));
+                let v = Reg::Num(b).constant(MUL, k128).store();
+                mem.write(col.wrapping_add(4 * i), v);
+            }
+        }
+        for (o, byte) in [(0x30u32, 0x4cu32), (0x4c, 0x4d)] {
+            let v = ffx_bridge::x87::ftol(mem, Reg::load_f32(f(mem, unit.wrapping_add(o))).value());
+            let half = v.cast_signed() / 2;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=0x80
+            let b = half.clamp(0, 0x80) as u8;
+            mem.write(head.wrapping_add(byte), b);
+        }
+    }
+
+    /// `0x00807b70(out, src, n, time, sat, val, mix)` (`opus_hsv_rgba`):
+    /// `n` colours from the 8-byte entries at `src` (`i16` hue in 0x300
+    /// steps, saturation, value, a byte alpha at `+6`) into the 4-byte RGBA
+    /// words at `out`; a zero first word gives 0. Each hue moves toward
+    /// the reference hue `ftol(f32(time) / 5.3333335) % 0x300` (the shorter
+    /// way round, the reference itself raised by 0x300 for the rest when
+    /// it lags) by `mix` / 256 (`mix` clamped to 0..=0x100), wrapped into
+    /// 0..0x300; saturation `+ sat` is clamped to 0..=0x100 and value `+
+    /// val` to 0..=0xff; then the six 0x80-wide hue sectors pick red,
+    /// green and blue from the value and the three products (integer
+    /// division toward 0). A hue outside the sectors keeps the previous
+    /// colour (initially `mix` as given, `out` and 0; the original's third
+    /// is an uninitialised local). Returns the entry after the last (`src`
+    /// for `n` <= 0).
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    pub fn opus_hsv_rgba(
+        mem: &mut impl Mem,
+        out: u32,
+        src: u32,
+        n: i32,
+        time: i32,
+        sat: i32,
+        val: i32,
+        mix: i32,
+    ) -> u32 {
+        let k: f64 = mem.read(g(mem, 0x00b5_8950));
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+        let t = Reg::load_f32(time as f32).constant(|a, b| a / b, k).store();
+        let mut reference = ffx_bridge::x87::ftol(mem, f64::from(t)).cast_signed() % 0x300;
+        let weight = mix.clamp(0, 0x100);
+        if n < 1 {
+            return src;
+        }
+        // the previous colour, for hues outside the sectors
+        let (mut r, mut gr, mut b) = (mix.cast_unsigned(), out, 0u32);
+        let (mut e, mut o) = (src, out);
+        for _ in 0..n {
+            if mem.read::<u32>(e) == 0 {
+                mem.write(o, 0u32);
+            } else {
+                let mut h = i32::from(mem.read::<i16>(e));
+                if reference > h {
+                    if reference - h >= 0x180 {
+                        h += 0x300;
+                    }
+                } else if h - reference >= 0x180 {
+                    reference += 0x300;
+                }
+                h = h.wrapping_add(reference.wrapping_sub(h).wrapping_mul(weight) / 256);
+                if h >= 0x300 {
+                    h -= 0x300;
+                } else if h < 0 {
+                    h += 0x300;
+                }
+                let s = (i32::from(mem.read::<i16>(e.wrapping_add(2))) + sat).clamp(0, 0x100);
+                let v = (i32::from(mem.read::<i16>(e.wrapping_add(4))) + val).clamp(0, 0xff);
+                let (sector, frac) = (h / 128, h % 128);
+                let p = ((0x100 - s) * v / 256).cast_unsigned();
+                let q = (0x8000i32.wrapping_sub(frac.wrapping_mul(s)).wrapping_mul(v) / 0x8000)
+                    .cast_unsigned();
+                let t2 = (0x8000i32
+                    .wrapping_sub((0x80 - frac).wrapping_mul(s))
+                    .wrapping_mul(v)
+                    / 0x8000)
+                    .cast_unsigned();
+                let v = v.cast_unsigned();
+                (r, gr, b) = match sector {
+                    0 => (v, t2, p),
+                    1 => (q, v, p),
+                    2 => (p, v, t2),
+                    3 => (p, q, v),
+                    4 => (t2, p, v),
+                    5 => (v, p, q),
+                    _ => (r, gr, b),
+                };
+                let a: u8 = mem.read(e.wrapping_add(6));
+                #[allow(clippy::cast_possible_truncation)] // the low bytes
+                mem.write(o, [r as u8, gr as u8, b as u8, a]);
+            }
+            e = e.wrapping_add(8);
+            o = o.wrapping_add(4);
+        }
+        e
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and

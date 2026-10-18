@@ -12289,3 +12289,179 @@ fn round27a_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+fn opus_chara_colours_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_a560);
+        let cells = p.alloc(16);
+        for (sym, words, ret) in [
+            (0x0082_b6e0u32, &[0u8, 0, 0, 0][..], None),
+            (0x0082_b5d0, &[0, 0, 0, 0, 0], None),
+            (0x0082_b900, &[0, 0, 0], None),
+            (0x0079_5b40, &[0, 0], Some(cells)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let chr_tab = p.sym(et::bridge::CHR.sym);
+        let vu = p.sym(0x00c8_f500);
+        let vf00 = p.sym(0x00c0_a004);
+        for round in 0..3000 {
+            for i in 0..240u32 {
+                let r = chr_tab + 0x20 * i;
+                p.set(
+                    r,
+                    if rng.chance(30) {
+                        0x100 + rng.below(8)
+                    } else {
+                        0
+                    },
+                );
+                p.fill(r + 0xc, 0x14, &mut rng);
+                p.set(
+                    r + 0xe,
+                    u16::try_from(rng.pick(&[0u32, 3, 0x1f, 0x20, 0x8000])).unwrap(),
+                );
+            }
+            p.fill(vu, 0x500, &mut rng);
+            // the emulated r0 is zero in the game; sometimes not here
+            if round % 2 == 0 {
+                p.set(vu + 8, [0u32; 4]);
+            }
+            for k in 0..4 {
+                let v = rng.float();
+                p.set(vf00 + 4 * k, v);
+            }
+            p.set(cells, rng.pick(&[0u32, 0x1234]));
+            let chr = 0x100 + rng.below(9);
+            let weapons = rng.pick(&[0u32, 1]);
+            p.check(
+                "opus_chara_status_rgb_set",
+                0x0080_aa00,
+                &[chr, weapons],
+                |o| {
+                    opus::bridge::opus_chara_status_rgb_set(o, chr, weapons, &mut call_original);
+                    None
+                },
+            );
+            let rgba = rng.next();
+            p.check(
+                "opus_chara_rgba_set",
+                0x0080_a560,
+                &[chr, rgba, weapons],
+                |o| {
+                    opus::bridge::opus_chara_rgba_set(o, chr, rgba, weapons, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round27c_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_7b70);
+        // 0x00807b70
+        let (out, src) = (p.alloc(0x40), p.alloc(0x80));
+        // 0x00802bd0
+        let (head, cols, pos, nos) = (p.alloc(0x50), p.alloc(0x40), p.alloc(0x40), p.alloc(0x10));
+        let list = p.alloc(0x40);
+        let parts = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let gpr = p.sym(0x00c8_f508);
+        for round in 0..4000 {
+            p.fill(out, 0x40, &mut rng);
+            for k in 0..16u32 {
+                let e = src + 8 * k;
+                p.fill(e, 8, &mut rng);
+                // the first entry's hue stays in range: the original's
+                // fallback colour is an uninitialised local
+                let h = if k == 0 {
+                    rng.below(0x300).cast_signed()
+                } else {
+                    rng.pick(&[0i32, 0x17f, 0x180, 0x2ff, -5, 0x500, -0x400])
+                        + rng.below(0x40).cast_signed()
+                };
+                p.set(e, i16::try_from(h).unwrap());
+                let s = i16::try_from(rng.below(0x140).cast_signed() - 0x20).unwrap();
+                p.set(e + 2, s);
+                let v = i16::try_from(rng.below(0x140).cast_signed() - 0x20).unwrap();
+                p.set(e + 4, v);
+                if k > 0 && rng.chance(15) {
+                    p.set(e, 0u32);
+                }
+            }
+            let n = rng.pick(&[0i32, -1, 1, 3, 16]);
+            let time =
+                rng.pick(&[0i32, 1, 1000, -1000, 0x7fff_ffff]) + rng.below(0x100).cast_signed();
+            let (sat, val) = (
+                rng.below(0x100).cast_signed() - 0x80,
+                rng.below(0x100).cast_signed() - 0x80,
+            );
+            let mix = rng.pick(&[0i32, 0x80, 0x100, 0x200, -4]);
+            p.check(
+                "0x00807b70",
+                0x0080_7b70,
+                &[
+                    out,
+                    src,
+                    n.cast_unsigned(),
+                    time.cast_unsigned(),
+                    sat.cast_unsigned(),
+                    val.cast_unsigned(),
+                    mix.cast_unsigned(),
+                ],
+                |o| {
+                    Some(opus::bridge::opus_hsv_rgba(
+                        o, out, src, n, time, sat, val, mix,
+                    ))
+                },
+            );
+            // 0x00802bd0: the opus_no_get list of the opf tests
+            for k in 0..0x400 {
+                let v = rng.float();
+                p.set(parts + 4 * k, v);
+            }
+            p.fill(list, 0x40, &mut rng);
+            p.set(list + 0x20, parts);
+            for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, l);
+                p.set(l, 0xffffu16);
+            }
+            for i in 0..16 {
+                p.set(
+                    parts + 0x100 * i + 0x1c,
+                    u16::try_from(rng.below(16)).unwrap(),
+                );
+            }
+            let unit = parts + 0x100 * (1 + rng.below(15));
+            for (o, big) in [(0x30u32, round % 3 == 0), (0x4c, round % 5 == 0)] {
+                let v = if big {
+                    f32::from(u16::try_from(rng.below(0x200)).unwrap()) - 64.0
+                } else {
+                    f32::from_bits(rng.float())
+                };
+                p.set(unit + o, v);
+            }
+            p.fill(head, 0x50, &mut rng);
+            p.set(head + 0x24, cols);
+            p.set(head + 0x28, pos);
+            p.fill(gpr, 0x10, &mut rng);
+            for k in 0..5 {
+                p.set(nos + 2 * k, rng.pick(&[0u16, 0xff00, 0xffff, 0xfffe]));
+            }
+            p.check(
+                "0x00802bd0",
+                0x0080_2bd0,
+                &[head, 0, list, unit, nos],
+                |o| {
+                    opus::bridge::opus_mdc_lights_get(o, head, list, unit, nos);
+                    None
+                },
+            );
+        }
+    }
+}

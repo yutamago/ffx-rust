@@ -1849,6 +1849,23 @@ ported! {
     pppSendPacket @ 0x0076_b3d0 => extern "C" fn ppp_send_packet(rpc: u32, tag: u32, data: u32, n: u32) -> u32 {
         ppp::bridge::ppp_send_packet(&mut mem(), rpc, tag, data, n, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_chara_status_rgb_set(chr, weapons)`.
+    opus_chara_status_rgb_set @ 0x0080_aa00 => extern "C" fn opus_chara_status_rgb_set(chr: u32, weapons: u32) {
+        opus::bridge::opus_chara_status_rgb_set(&mut mem(), chr, weapons, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_chara_rgba_set(chr, rgba, weapons)`.
+    opus_chara_rgba_set @ 0x0080_a560 => extern "C" fn opus_chara_rgba_set(chr: u32, rgba: u32, weapons: u32) {
+        opus::bridge::opus_chara_rgba_set(&mut mem(), chr, rgba, weapons, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_mdc_lights_get_00802bd0(head, _, list, unit, nos)`.
+    opus_mdc_lights_get_00802bd0 @ 0x0080_2bd0 => extern "C" fn opus_mdc_lights_get(head: u32, unused: u32, list: u32, unit: u32, nos: u32) {
+        let _ = unused;
+        opus::bridge::opus_mdc_lights_get(&mut mem(), head, list, unit, nos);
+    }
+    /// `opus_hsv_rgba_00807b70(out, src, n, time, sat, val, mix)`.
+    opus_hsv_rgba_00807b70 @ 0x0080_7b70 => extern "C" fn opus_hsv_rgba(out: u32, src: u32, n: i32, time: i32, sat: i32, val: i32, mix: i32) -> u32 {
+        opus::bridge::opus_hsv_rgba(&mut mem(), out, src, n, time, sat, val, mix)
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)
